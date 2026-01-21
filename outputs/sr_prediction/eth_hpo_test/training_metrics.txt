@@ -1,5 +1,0 @@
-SR PERFORMANCE PREDICTION - TRAINING METRICS
-================================================================================
-
-Training completed: 2025-11-02T17:44:44.171304
-

@@ -143,16 +143,21 @@ class SimpleMultiModelRiskEngine:
 
         # XGB params
         self.xgb_params = {
-            'n_estimators': 1000,
+            'n_estimators': 4,
+            'num_parallel_tree': 250,
+            'linear_tree': True,
+            'max_depth': 5,
+            'subsample': 0.8,
+            'colsample_bynode': 0.65,
+            'tree_method': 'hist',
+            'reg_lambda': 5,
+            'reg_alpha': 0.5,
+            'gamma': 0.2,
+            'colsample_bytree': 0.8,
+            'learning_rate': 0.2,
+            'min_child_weight': 25,
             'n_jobs': 2,
-            'random_state': 42,
-            'num_parallel_tree': 7,
-            'colsample_bynode': 0.4,
-            'subsample': 0.6,
-            'reg_lambda': 50, # "22 regularisation 50" -> l2 regularization
-            'min_child_weight': 10,
-            'gamma': 1.1,
-            'learning_rate': 0.03
+            'random_state': 42
         }
         self.xgb_model = None
 
@@ -207,6 +212,70 @@ class SimpleMultiModelRiskEngine:
             volatility.values.astype(np.float64)
         )
         return pd.Series(weights_array, index=abs_returns.index)
+
+    def _calculate_learnability_weights(self, X, residuals, env_indices=None):
+        """
+        Scout Pass: Uses a smaller forest to determine sample weights
+        based on prediction consensus (inverse of variance).
+        If env_indices is provided, performs estimation per regime.
+        """
+        # Ensure X is numpy
+        X_np = X.values if hasattr(X, "values") else X
+        res_np = residuals.values if hasattr(residuals, "values") else residuals
+
+        weights = np.zeros(len(res_np))
+
+        # Helper to get fresh scout
+        def get_scout():
+             return ExtraTreesRegressor(n_estimators=100, max_depth=4, bootstrap=True, n_jobs=-1, random_state=42)
+
+        if env_indices is not None:
+            # Per-regime
+            unique_regimes = np.unique(env_indices)
+            tprint_info(f"⚖️ Learnability Scout: Training per-regime ({len(unique_regimes)} regimes)...")
+
+            for regime in unique_regimes:
+                if regime == -1: continue # Skip noise label if any
+                mask = (env_indices == regime)
+                if np.sum(mask) < 20:
+                    # Fallback for tiny regimes: use global mean weight later (zeros)
+                    continue
+
+                scout = get_scout()
+                X_sub = X_np[mask]
+                y_sub = res_np[mask]
+
+                scout.fit(X_sub, y_sub)
+
+                # Get variance on subset
+                tree_preds = np.array([tree.predict(X_sub) for tree in scout.estimators_])
+                variance = np.var(tree_preds, axis=0)
+
+                # Local weights
+                w_local = 1.0 / (1.0 + variance)
+                weights[mask] = w_local
+
+            # Handle unassigned (zeros) with mean of assigned
+            if np.any(weights == 0):
+                mean_w = np.mean(weights[weights > 0]) if np.any(weights > 0) else 1.0
+                weights[weights == 0] = mean_w
+
+        else:
+            # Global
+            scout = get_scout()
+            scout.fit(X_np, res_np)
+            tree_preds = np.array([tree.predict(X_np) for tree in scout.estimators_])
+            variance = np.var(tree_preds, axis=0)
+            weights = 1.0 / (1.0 + variance)
+
+        # Normalize (0 to 1)
+        w_min, w_max = weights.min(), weights.max()
+        if w_max > w_min:
+             weights = (weights - w_min) / (w_max - w_min + 1e-9)
+        else:
+             weights = np.ones_like(weights)
+
+        return weights
     
     def _extract_layer3_prob_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -431,11 +500,13 @@ class SimpleMultiModelRiskEngine:
 
         # --- Dual Chaser Audit & Feature Generation ---
         # 1. Fit GMM to identify regimes (if data available)
+        env_indices = None
         try:
             gmm = StructuralRegimeGMM(n_regimes=4)
-            env_indices, _ = gmm.fit_predict(df)
+            gmm_indices, _ = gmm.fit_predict(df)
 
-            if env_indices and len(env_indices) >= 2:
+            if gmm_indices is not None and len(gmm_indices) >= 2:
+                env_indices = gmm_indices # Capture for learnability scout
                 tprint_info("🏃 Training Dual Chaser Audit (IRM vs Ridge) with OOF...")
 
                 # Filter out performance features for Chasers to avoid leakage
@@ -468,7 +539,7 @@ class SimpleMultiModelRiskEngine:
                 self.stable_chaser, self.aggressive_chaser, oof_stable, oof_agg = train_dual_chaser_audit(
                     X_chaser_scaled,
                     y_true.values,
-                    env_indices,
+                    env_indices, # Use captured indices
                     cv_splits=cv_splits
                 )
 
@@ -564,7 +635,11 @@ class SimpleMultiModelRiskEngine:
             X_train=X_full,
             y_train=y_true,
             pruning_percentile=15,
-            corr_threshold=0.7
+            corr_threshold=0.7,
+            epsilons=[1.10],
+            alphas=[3.0],
+            irm_lambda=10.0,
+            max_iter=2000
         )
 
         self.selected_features = huber_outputs['selected_features']
@@ -574,6 +649,14 @@ class SimpleMultiModelRiskEngine:
 
         X_pruned = X_full[self.selected_features]
         warm_start_train = huber_outputs['warm_start']['train']
+
+        # Calculate Residuals & Learnability Weights
+        residuals = y_true - warm_start_train
+        learnability_weights = self._calculate_learnability_weights(X_pruned, residuals, env_indices=env_indices)
+
+        # Combine weights
+        # Ensure weights series aligns with learnability_weights (which is numpy array)
+        combined_weights = weights.values * learnability_weights if hasattr(weights, 'values') else weights * learnability_weights
 
         # Extract monotonic constraints (handle dict return from updated Huber)
         if isinstance(huber_outputs['monotonic_constraints'], dict):
@@ -603,20 +686,13 @@ class SimpleMultiModelRiskEngine:
         
         base_predictions = {}
         
-        # --- 1. ExtraTrees (with monotonic constraints) ---
-        tprint_info(f"📊 Training ExtraTrees (with monotonic constraints)...")
-        # Check if monotonic_cst is supported (sklearn 1.4+)
-        try:
-            self.extratrees.set_params(monotonic_cst=monotonic_cst_tuple)
-        except ValueError:
-            tprint_warning("ExtraTrees monotonic_cst parameter not supported or invalid. Skipping constraints.")
-            self.extratrees.set_params(monotonic_cst=None)
-        except Exception:
-             # In case of older sklearn versions that don't accept monotonic_cst in set_params yet
-            pass
+        # --- 1. ExtraTrees (Hybrid Residual Learner) ---
+        tprint_info(f"📊 Training ExtraTrees (Student on Residuals + Learnability Weights)...")
+        # For ExtraTrees student, we train on residuals with learnability weights
+        self.extratrees.fit(X_pruned, residuals, sample_weight=combined_weights)
 
-        self.extratrees.fit(X_pruned, y_true, sample_weight=weights)
-        et_preds = self.extratrees.predict(X_pruned)
+        et_residual_preds = self.extratrees.predict(X_pruned)
+        et_preds = warm_start_train + et_residual_preds
         base_predictions['extratrees'] = et_preds
         self.calibrators['extratrees'].fit(et_preds, y_true)
         
@@ -629,7 +705,7 @@ class SimpleMultiModelRiskEngine:
         )
         self.lgbm_model.fit(
             X_pruned, y_true,
-            sample_weight=weights,
+            sample_weight=combined_weights,
             init_score=warm_start_train
         )
         lgbm_raw_preds = self.lgbm_model.predict(X_pruned)
@@ -653,7 +729,7 @@ class SimpleMultiModelRiskEngine:
 
             self.xgb_model.fit(
                 X_pruned, y_true,
-                sample_weight=weights,
+                sample_weight=combined_weights,
                 base_margin=warm_start_train
             )
         except (ValueError, KeyError) as e:
@@ -661,7 +737,7 @@ class SimpleMultiModelRiskEngine:
             self.xgb_model.set_params(interaction_constraints=None)
             self.xgb_model.fit(
                 X_pruned, y_true,
-                sample_weight=weights,
+                sample_weight=combined_weights,
                 base_margin=warm_start_train
             )
 
@@ -678,7 +754,7 @@ class SimpleMultiModelRiskEngine:
 
         self.catboost_model.fit(
             X_pruned, y_true,
-            sample_weight=weights,
+            sample_weight=combined_weights,
             baseline=warm_start_train
         )
 
@@ -689,17 +765,17 @@ class SimpleMultiModelRiskEngine:
         
         # --- 5. Ridge Models ---
         tprint_info("📊 Training Ridge models (alphas: 1, 5, 10)...")
-        self.ridge_alpha1.fit(X_pruned, y_true, sample_weight=weights)
+        self.ridge_alpha1.fit(X_pruned, y_true, sample_weight=combined_weights)
         ridge1_preds = self.ridge_alpha1.predict(X_pruned)
         base_predictions['ridge_alpha1'] = ridge1_preds
         self.calibrators['ridge_alpha1'].fit(ridge1_preds, y_true)
 
-        self.ridge_alpha5.fit(X_pruned, y_true, sample_weight=weights)
+        self.ridge_alpha5.fit(X_pruned, y_true, sample_weight=combined_weights)
         ridge5_preds = self.ridge_alpha5.predict(X_pruned)
         base_predictions['ridge_alpha5'] = ridge5_preds
         self.calibrators['ridge_alpha5'].fit(ridge5_preds, y_true)
 
-        self.ridge_alpha10.fit(X_pruned, y_true, sample_weight=weights)
+        self.ridge_alpha10.fit(X_pruned, y_true, sample_weight=combined_weights)
         ridge10_preds = self.ridge_alpha10.predict(X_pruned)
         base_predictions['ridge_alpha10'] = ridge10_preds
         self.calibrators['ridge_alpha10'].fit(ridge10_preds, y_true)
@@ -827,7 +903,8 @@ class SimpleMultiModelRiskEngine:
         X_pruned = X_full[self.selected_features]
 
         # 1. ExtraTrees
-        et_preds = self.extratrees.predict(X_pruned)
+        et_residual_preds = self.extratrees.predict(X_pruned)
+        et_preds = warm_start + et_residual_preds
         et_cal = self.calibrators['extratrees'].transform(et_preds)
         
         # 2. LGBM

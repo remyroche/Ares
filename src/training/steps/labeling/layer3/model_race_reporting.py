@@ -30,9 +30,11 @@ class Layer3ModelRaceReporter:
     """Comprehensive model race reporting for Layer 3 multi-horizon pipeline."""
     
     def __init__(self, outcomes_dir: Optional[Path] = None):
+        tprint_info("Starting Layer3ModelRaceReporter.__init__")
         self.outcomes_dir = outcomes_dir or Path('outcomes')
         self.outcomes_dir.mkdir(exist_ok=True, parents=True)
         self.ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        tprint_info("Finished Layer3ModelRaceReporter.__init__")
     
     def calculate_extended_metrics(self, y_true: np.ndarray, y_pred: np.ndarray, 
                                   task_type: str) -> Dict[str, float]:
@@ -47,10 +49,13 @@ class Layer3ModelRaceReporter:
         Returns:
             Dictionary of extended metrics
         """
+        tprint_info(f"Starting calculate_extended_metrics (task_type={task_type})")
         metrics = {}
         valid_mask = ~np.isnan(y_true) & ~np.isnan(y_pred)
         
         if np.sum(valid_mask) < 10:
+            tprint_warning("Insufficient valid samples in calculate_extended_metrics")
+            tprint_info("Finished calculate_extended_metrics (early exit)")
             return {'error': 'Insufficient valid samples'}
         
         y_true_clean = y_true[valid_mask]
@@ -134,6 +139,7 @@ class Layer3ModelRaceReporter:
                 metrics['Brier_Score'] = 1.0
                 metrics['ECE'] = 1.0
         
+        tprint_info("Finished calculate_extended_metrics")
         return metrics
     
     def calculate_model_correlations(self, models_dict: Dict[str, Any], 
@@ -149,10 +155,12 @@ class Layer3ModelRaceReporter:
         Returns:
             Dictionary with correlation metrics
         """
+        tprint_info(f"Starting calculate_model_correlations (horizon={horizon}, task_type={task_type})")
         suffix = f"{horizon}_{'reg' if task_type == 'regression' else 'cls'}"
         model_keys = [k for k in models_dict.keys() if k.endswith(suffix)]
         
         if len(model_keys) < 2:
+            tprint_info("Finished calculate_model_correlations (insufficient models)")
             return {'avg_correlation': 0.0, 'max_correlation': 0.0, 'min_correlation': 0.0}
         
         # Collect predictions
@@ -177,8 +185,10 @@ class Layer3ModelRaceReporter:
         valid_corrs = upper_triangle[~np.isnan(upper_triangle)]
         
         if len(valid_corrs) == 0:
+            tprint_info("Finished calculate_model_correlations (no valid correlations)")
             return {'avg_correlation': 0.0, 'max_correlation': 0.0, 'min_correlation': 0.0}
         
+        tprint_info("Finished calculate_model_correlations")
         return {
             'avg_correlation': np.mean(valid_corrs),
             'max_correlation': np.max(valid_corrs),
@@ -200,6 +210,7 @@ class Layer3ModelRaceReporter:
             y_prob_48: 48-bar probability targets
         """
         try:
+            tprint_info("Starting generate_model_race_report")
             tprint_info("🏁 Generating Layer 3 Model Race Report...")
             
             # Define tasks
@@ -271,9 +282,12 @@ class Layer3ModelRaceReporter:
             tprint_error(f"❌ Failed to generate model race report: {e}")
             import traceback
             traceback.print_exc()
+        finally:
+            tprint_info("Finished generate_model_race_report")
     
     def _generate_markdown_report(self, results_df: pd.DataFrame) -> None:
         """Generate markdown report from results DataFrame."""
+        tprint_info("Starting _generate_markdown_report")
         
         lines = ["# Layer 3 Model Race Report\n\n"]
         lines.append(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
@@ -401,3 +415,4 @@ class Layer3ModelRaceReporter:
         report_path.write_text("".join(lines))
         
         tprint_success(f"✅ Markdown report saved: {report_path}")
+        tprint_info("Finished _generate_markdown_report")

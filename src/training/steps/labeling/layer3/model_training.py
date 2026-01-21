@@ -25,9 +25,11 @@ try:
 except ImportError:
     CATBOOST_AVAILABLE = False
 
-from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
+from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs, HuberTeacherConfig
 from src.training.steps.labeling.layer3.feature_engineering import downcast_float
 from src.training.steps.labeling.focal_loss_utils import RobustFocalLoss, XGBFocalLoss
+from sklearn.base import BaseEstimator, RegressorMixin
+from sklearn.utils.validation import check_X_y, check_is_fitted, check_array
 from src.training.steps.labeling.probability_calibration import ProbabilityCalibrator
 from src.training.steps.labeling.irm_regime_pipeline import IRMLinearClassifier, IRMLinearRegressor
 
@@ -41,6 +43,102 @@ except ImportError:
     def tprint_error(msg): print(f"[ERROR] {msg}")
 
 logger = logging.getLogger(__name__)
+
+class RobustHuberExtraTrees(BaseEstimator, RegressorMixin):
+    def __init__(self,
+                 huber_epsilon=1.1,
+                 huber_alpha=7.0,
+                 et_n_estimators=1000,
+                 et_max_depth=6,
+                 min_samples_leaf=35,
+                 use_learnability_weighting=True,
+                 random_state=42,
+                 monotonic_cst=None):
+        self.huber_epsilon = huber_epsilon
+        self.huber_alpha = huber_alpha
+        self.et_n_estimators = et_n_estimators
+        self.et_max_depth = et_max_depth
+        self.min_samples_leaf = min_samples_leaf
+        self.use_learnability_weighting = use_learnability_weighting
+        self.random_state = random_state
+        self.monotonic_cst = monotonic_cst
+
+        # Models
+        self.teacher = HuberRegressor(epsilon=self.huber_epsilon, alpha=self.huber_alpha, fit_intercept=True, max_iter=2000)
+        self.student = ExtraTreesRegressor(
+            n_estimators=self.et_n_estimators,
+            max_depth=self.et_max_depth,
+            min_samples_leaf=self.min_samples_leaf,
+            bootstrap=True, # Required for variance/entropy calculation
+            n_jobs=-1,
+            random_state=self.random_state,
+            monotonic_cst=self.monotonic_cst
+        )
+
+    def _calculate_learnability_weights(self, X, residuals, sample_weight=None):
+        """
+        Scout Pass: Uses a smaller forest to determine sample weights
+        based on prediction consensus (inverse of variance).
+        """
+        scout = ExtraTreesRegressor(n_estimators=100, max_depth=4, bootstrap=True, n_jobs=-1, random_state=self.random_state)
+        scout.fit(X, residuals, sample_weight=sample_weight)
+
+        # Get variance across the 100 trees
+        # High variance = Low consensus = Low learnability
+        tree_preds = np.array([tree.predict(X) for tree in scout.estimators_])
+        variance = np.var(tree_preds, axis=0)
+
+        # Weight = 1 / (1 + Variance)
+        weights = 1.0 / (1.0 + variance)
+        return (weights - weights.min()) / (weights.max() - weights.min() + 1e-9)
+
+    def fit(self, X, y, sample_weight=None):
+        X, y = check_X_y(X, y)
+
+        # 1. Train the ERM-Huber Teacher
+        if sample_weight is not None:
+             self.teacher.fit(X, y, sample_weight=sample_weight)
+        else:
+             self.teacher.fit(X, y)
+
+        teacher_preds = self.teacher.predict(X)
+        residuals = y - teacher_preds
+
+        # 2. Calculate Learnability Weights (Optional Scout Pass)
+        final_weights = sample_weight
+        if self.use_learnability_weighting:
+            learn_weights = self._calculate_learnability_weights(X, residuals, sample_weight=sample_weight)
+            if sample_weight is not None:
+                final_weights = sample_weight * learn_weights
+            else:
+                final_weights = learn_weights
+
+        # 3. Train the ExtraTrees Student on Residuals
+        # Note: ExtraTreesRegressor.fit doesn't take monotonic_cst, it's init only
+        self.student.fit(X, residuals, sample_weight=final_weights)
+
+        self.is_fitted_ = True
+        return self
+
+    def predict(self, X):
+        check_is_fitted(self)
+        X = check_array(X)
+
+        # Final Prediction = Teacher (Global) + Student (Local Correction)
+        teacher_signal = self.teacher.predict(X)
+        student_correction = self.student.predict(X)
+
+        return teacher_signal + student_correction
+
+    def get_uncertainty(self, X):
+        """
+        Returns the entropy (std dev) of the ExtraTrees student.
+        Useful for downstream 'Confidence Dampening' in the Position Sizer.
+        """
+        check_is_fitted(self)
+        X = check_array(X)
+        tree_preds = np.array([tree.predict(X) for tree in self.student.estimators_])
+        return np.std(tree_preds, axis=0)
 
 def apply_huber_rotation_logic(X: pd.DataFrame, huber_coeffs: pd.Series, top_n: int = 3) -> pd.DataFrame:
     """
@@ -286,19 +384,21 @@ def train_xgboost_model(
     # 3. Warm Start
     base_margin = huber_output['warm_start']['train']
 
-    # 4. Parameters Aligned with Layer 2
+    # 4. Parameters Aligned with Layer 2 (Boosted Random Forest)
     params = {
-        'n_estimators': 100 if fast_mode else 500,
-        'learning_rate': 0.05,
-        'max_depth': 4 if task_type == 'classification' else 5,
-        'min_child_weight': 10,
-        'gamma': 0.5, # High regularization
-        'subsample': 0.6,
-        'colsample_bytree': 0.6,
-        'colsample_bynode': 0.4,
-        'reg_alpha': 0.3, # L1
-        'reg_lambda': 30, # Strong L2 (Reduced from 50)
-        'num_parallel_tree': 7,
+        'n_estimators': 4,
+        'learning_rate': 0.2,
+        'max_depth': 5,
+        'min_child_weight': 25,
+        'gamma': 0.2,
+        'subsample': 0.8,
+        'colsample_bytree': 0.8,
+        'colsample_bynode': 0.65,
+        'reg_alpha': 0.5,
+        'reg_lambda': 5,
+        'num_parallel_tree': 250,
+        'tree_method': 'hist',
+        'linear_tree': True,
         'monotone_constraints': tuple(final_constraints),
         'interaction_constraints': huber_output['interaction_constraints'] if huber_output['interaction_constraints'] else None,
         'n_jobs': -1,
@@ -420,104 +520,104 @@ def train_extratrees_constrained(
     fast_mode: bool = False
 ) -> Dict[str, Any]:
     """
-    Trains ExtraTrees model with Monotonic Constraints and IRM-style Robustness.
+    Trains ExtraTrees model with Monotonic Constraints and IRM-style Robustness using RobustHuberExtraTrees.
     """
-    tprint_info(f"   🌳 Training ExtraTrees ({task_type}): {model_name} with Constraints...")
+    tprint_info(f"   🌳 Training ExtraTrees ({task_type}): {model_name} with RobustHuberExtraTrees...")
 
     cfg = config or {}
-    et_params = cfg.get('et_params', {
-        'n_estimators': 100 if fast_mode else 500,
-        'max_depth': 6 if fast_mode else 12, # Constrained depth like Layer 2
-        'min_samples_leaf': 20,
-        'max_features': 0.8, # Feature subsampling
-        'bootstrap': True,
-        'n_jobs': -1,
-        'random_state': 42
-    })
-
     selected_features = huber_output['selected_features']
     X_t = X_train[selected_features].copy().astype(np.float32)
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X_t).astype(np.float32)
 
-    # Convert dict to array matching columns
     mono_dict = huber_output['monotonic_constraints']
     constraints = np.array([mono_dict.get(c, 0) for c in X_t.columns])
 
-    # Attempt to use monotonic_cst (sklearn 1.4+)
-    try:
-        if task_type == 'regression':
-            # Use MAE for robustness if possible, but standard is MSE
-            et_model = ExtraTreesRegressor(monotonic_cst=constraints, criterion='squared_error', **et_params)
-            et_model.fit(X_scaled, y_train, sample_weight=sample_weight)
-            preds = et_model.predict(X_scaled)
-        else:
-            et_model = ExtraTreesClassifier(monotonic_cst=constraints, criterion='log_loss', **et_params)
-            y_int = (y_train > 0).astype(int)
-            et_model.fit(X_scaled, y_int, sample_weight=sample_weight)
-            preds = et_model.predict_proba(X_scaled)[:, 1]
-
-    except TypeError:
-        # Fallback if version mismatch
-        tprint_warning(f"   ⚠️ ExtraTrees constraint fallback.")
-        if task_type == 'regression':
-            et_model = ExtraTreesRegressor(**et_params)
-            et_model.fit(X_scaled, y_train, sample_weight=sample_weight)
-            preds = et_model.predict(X_scaled)
-        else:
-            et_model = ExtraTreesClassifier(**et_params)
-            y_int = (y_train > 0).astype(int)
-            et_model.fit(X_scaled, y_int, sample_weight=sample_weight)
-            preds = et_model.predict_proba(X_scaled)[:, 1]
-
-    # Post-hoc Calibration for ExtraTrees (Vote-based probs are often uncalibrated)
-    if task_type == 'classification':
+    # Instantiate Model
+    if task_type == 'regression':
         try:
-            # ExtraTrees doesn't have an internal val set in this flow, but we can do a quick KFold calibration
-            # Or simpler: Split training data here since ET is fast
-            from sklearn.model_selection import train_test_split
-            X_cal_tr, X_cal_val, y_cal_tr, y_cal_val, w_cal_tr, w_cal_val = train_test_split(
-                X_scaled, y_int, sample_weight, test_size=0.2, random_state=42
+            et_model = RobustHuberExtraTrees(
+                huber_epsilon=1.1,
+                huber_alpha=7.0,
+                et_n_estimators=1000 if not fast_mode else 100,
+                et_max_depth=12 if not fast_mode else 6,
+                use_learnability_weighting=True,
+                monotonic_cst=constraints
             )
+            et_model.fit(X_scaled, y_train, sample_weight=sample_weight)
+            preds = et_model.predict(X_scaled)
+        except (TypeError, ValueError) as e:
+             # Fallback if monotonic_cst not supported or other init error
+             tprint_warning(f"   ⚠️ RobustHuberExtraTrees init/fit failed (likely monotonic_cst support): {e}. Retrying without constraints.")
+             try:
+                 et_model = RobustHuberExtraTrees(
+                    huber_epsilon=1.1,
+                    huber_alpha=7.0,
+                    et_n_estimators=1000 if not fast_mode else 100,
+                    et_max_depth=12 if not fast_mode else 6,
+                    use_learnability_weighting=True,
+                    monotonic_cst=None
+                )
+                 et_model.fit(X_scaled, y_train, sample_weight=sample_weight)
+                 preds = et_model.predict(X_scaled)
+             except Exception as e2:
+                 tprint_warning(f"   ⚠️ RobustHuberExtraTrees fallback failed: {e2}")
+                 et_model = None
+                 preds = np.zeros(len(y_train))
+        except Exception as e:
+             tprint_warning(f"   ⚠️ RobustHuberExtraTrees failed: {e}")
+             # Fallback
+             et_model = None
+             preds = np.zeros(len(y_train))
+    else:
+         # Standard ET for classification
+         tprint_info(f"   Using standard ExtraTreesClassifier for {task_type}")
+         et_params = cfg.get('et_params', {
+            'n_estimators': 100 if fast_mode else 500,
+            'max_depth': 6 if fast_mode else 12,
+            'min_samples_leaf': 20,
+            'max_features': 0.8,
+            'bootstrap': True,
+            'n_jobs': -1,
+            'random_state': 42
+         })
 
-            # Re-fit a small ET for calibration reference (or use OOB if available, but manual split is safer)
-            # Actually, using the fitted model on train data is biased.
-            # Best is to use CalibratedClassifierCV, but that changes the 'model' object structure.
-            # Let's stick to ProbabilityCalibrator using the full X_scaled predictions (Biased!) -> NO.
-            # Correct approach: Pre-calibration using CV is best, but here we just fit calibrator on the
-            # OOB estimates if bootstrap=True!
+         try:
+             et_model = ExtraTreesClassifier(monotonic_cst=constraints, criterion='log_loss', **et_params)
+             y_int = (y_train > 0).astype(int)
+             et_model.fit(X_scaled, y_int, sample_weight=sample_weight)
+             preds = et_model.predict_proba(X_scaled)[:, 1]
+         except TypeError:
+             et_model = ExtraTreesClassifier(**et_params)
+             y_int = (y_train > 0).astype(int)
+             et_model.fit(X_scaled, y_int, sample_weight=sample_weight)
+             preds = et_model.predict_proba(X_scaled)[:, 1]
 
-            if et_model.bootstrap and hasattr(et_model, 'oob_decision_function_'):
-                # Use OOB predictions for calibration! Perfect for Random Forests.
+         # Calibration (OOB)
+         if hasattr(et_model, 'bootstrap') and et_model.bootstrap and hasattr(et_model, 'oob_decision_function_'):
+            try:
                 oob_preds = et_model.oob_decision_function_
-                # oob_decision_function_ shape is (n_samples, n_classes)
-                if oob_preds.ndim > 1:
-                    oob_pos_preds = oob_preds[:, 1]
-                else:
-                    oob_pos_preds = oob_preds
-
-                # Check for NaNs (unsampled points)
+                oob_pos_preds = oob_preds[:, 1] if oob_preds.ndim > 1 else oob_preds
                 mask = ~np.isnan(oob_pos_preds)
                 if mask.sum() > 50:
                     calibrator = ProbabilityCalibrator(method='isotonic', min_samples=50, plot_calibration=False, save_plots=False)
                     cal_res = calibrator.fit(y_int[mask], oob_pos_preds[mask], sample_weights=sample_weight[mask] if sample_weight is not None else None)
+                    preds = calibrator.predict(preds)
+            except Exception as e:
+                tprint_warning(f"   ⚠️ ET Calibration failed: {e}")
 
-                    preds_cal = calibrator.predict(preds)
-                    tprint_info(f"   ⚖️  ET Calibrated (OOB): Brier improvement {cal_res['metrics'].get('brier_improvement', 0):.4f}")
-                    preds = preds_cal
-
-        except Exception as e:
-            tprint_warning(f"   ⚠️ ET Calibration failed: {e}")
-
-    # Calculate approximate SE
-    if hasattr(et_model, 'estimators_'):
-        if task_type == 'regression':
-            tree_preds = np.array([tree.predict(X_scaled) for tree in et_model.estimators_])
-        else:
-            tree_preds = np.array([tree.predict_proba(X_scaled)[:, 1] for tree in et_model.estimators_])
-        se = np.std(tree_preds, axis=0)
-    else:
-        se = np.ones(len(preds)) * 0.1
+    # SE Calculation
+    se = np.ones(len(preds)) * 0.1
+    if et_model is not None:
+        if hasattr(et_model, 'get_uncertainty'):
+            try:
+                se = et_model.get_uncertainty(X_scaled)
+            except:
+                pass
+        elif hasattr(et_model, 'estimators_'):
+             if task_type == 'classification':
+                 tree_preds = np.array([tree.predict_proba(X_scaled)[:, 1] for tree in et_model.estimators_])
+                 se = np.std(tree_preds, axis=0)
 
     return {
         'model': et_model,
@@ -897,6 +997,14 @@ def train_dual_head_models(
         # 1. Prepare Huber Teacher (Fold-Local & Stability Gated)
         tprint_info(f"🎓 Running Robust Huber Teacher for {suffix}...")
 
+        # Create specific config matching user request
+        huber_config = HuberTeacherConfig(
+            epsilons=(1.10,),
+            alphas=(3.0,),
+            irm_lambda=10.0,
+            max_iter=2000
+        )
+
         # Use existing utility
         huber_out = prepare_huber_teacher_outputs(
             X_context,
@@ -905,7 +1013,8 @@ def train_dual_head_models(
             n_time_splits=5, # Stability check
             use_irm=bool(irm_env_indices),
             irm_env_indices=irm_env_indices,
-            irm_lambda=irm_lambda
+            irm_lambda=irm_lambda,
+            config=huber_config
         )
 
         # 2. Train ExtraTrees

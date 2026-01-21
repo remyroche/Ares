@@ -1,0 +1,10 @@
+{
+  "row_count": 1,
+  "column_count": 5,
+  "artifact_name": "layer2_causal_graph_UNKNOWN_UNKNOWN_15m_long_20260120_222330",
+  "artifact_type": "metadata",
+  "file_path": "artifacts/pre_training/long/Analyst/label_based_layer_2/label_based_layer_2_layer2_causal_graph_UNKNOWN_UNKNOWN_15m_long_20260120_222330_long_Analyst_20260120_220031.parquet",
+  "file_size": 4951,
+  "timestamp": "2026-01-20T22:23:30.719993",
+  "compression": "auto"
+}

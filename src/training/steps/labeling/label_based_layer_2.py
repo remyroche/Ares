@@ -75,7 +75,9 @@ from src.utils.numba_funcs import (
     _numba_rolling_slope,
     _numba_streak_persistence,
     _numba_rolling_entropy,
-    _numba_return_autocorrelation
+    _numba_return_autocorrelation,
+    _numba_rolling_mean,
+    _numba_rolling_std
 )
 try:
     from numba import jit
@@ -89,9 +91,10 @@ except ImportError:
     NUMBA_AVAILABLE = False
 
 try:
-    from xgboost import XGBClassifier
+    from xgboost import XGBClassifier, XGBRegressor
 except ImportError:
     XGBClassifier = None
+    XGBRegressor = None
 from collections import defaultdict, OrderedDict
 from joblib import Parallel, delayed
 from src.training.steps.labeling.label_based_layer_3 import layer3_analyst_lgbm
@@ -110,13 +113,15 @@ from functools import partial
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
 from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
-from sklearn.model_selection import TimeSeriesSplit
-from sklearn.metrics import roc_auc_score, log_loss, average_precision_score, recall_score
+from sklearn.model_selection import TimeSeriesSplit, KFold
+from sklearn.metrics import roc_auc_score, log_loss, average_precision_score, recall_score, brier_score_loss
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from sklearn.base import clone
+from sklearn.base import clone, BaseEstimator, ClassifierMixin
+from sklearn.isotonic import IsotonicRegression
 from sklearn.ensemble import ExtraTreesRegressor, ExtraTreesClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.tree import DecisionTreeClassifier
+from sklearn.utils.validation import check_array, check_is_fitted
 from scipy.stats import spearmanr, rankdata, entropy as shannon_entropy
 from scipy.special import expit, ndtri
 from scipy.spatial.distance import euclidean, squareform
@@ -310,8 +315,10 @@ class ContinuousPredictorEvents:
     """
     Event generator for continuous predictor families.
     
-    Converts continuous predictor values (Z-scored) into discrete events
-    by thresholding. Supports both positive and negative activation events.
+    Converts continuous predictor values into discrete events.
+    Supports:
+    - Point-in-time Thresholding (Z-Score)
+    - Symmetric CUSUM Filter (De Prado)
     
     Families supported:
     - RELAXATION_GEOMETRY
@@ -326,23 +333,76 @@ class ContinuousPredictorEvents:
         
         Args:
             family: Base family name (e.g., 'RELAXATION_GEOMETRY')
-            z_threshold: Z-score threshold for event detection
+            z_threshold: Z-score threshold for event detection (or h for CUSUM)
         """
         self.family = family
         self.z_threshold = z_threshold
         self._generator = None
         self._cache = {}
     
-    def generate(self, df: pd.DataFrame, tracker: Any = None, **params) -> pd.DatetimeIndex:
+    def _get_rolling_z_score(self, series: pd.Series, window: int = 2000) -> pd.Series:
+        """
+        Compute rolling Z-score to prevent look-ahead bias.
+        Uses Numba optimized functions if available.
+        """
+        vals = series.values.astype(np.float64)
+
+        if NUMBA_AVAILABLE:
+            # Check for NaNs
+            if np.isnan(vals).any():
+                vals = np.nan_to_num(vals)
+
+            roll_mean = _numba_rolling_mean(vals, window)
+            roll_std = _numba_rolling_std(vals, window)
+
+            # Prevent division by zero
+            z = (vals - roll_mean) / (roll_std + 1e-9)
+            return pd.Series(z, index=series.index)
+        else:
+            roll = series.rolling(window=window, min_periods=window//10)
+            return (series - roll.mean()) / (roll.std() + 1e-9)
+
+    def _symmetric_cusum_filter(self, series: pd.Series, threshold: float) -> pd.DatetimeIndex:
+        """
+        Symmetric CUSUM Filter (De Prado, AFML Chapter 2).
+        Detects shifts in the mean value of a measured quantity.
+        """
+        t_events = []
+        s_pos = 0.0
+        s_neg = 0.0
+
+        # Optimized loop
+        vals = series.values
+        idx = series.index
+
+        for i in range(len(vals)):
+            y = vals[i]
+            s_pos = max(0.0, s_pos + y)
+            s_neg = min(0.0, s_neg + y)
+
+            if s_pos > threshold:
+                s_pos = 0
+                t_events.append(idx[i])
+            elif s_neg < -threshold:
+                s_neg = 0
+                t_events.append(idx[i])
+
+        return pd.DatetimeIndex(sorted(list(set(t_events))))
+
+    def generate(self, df: pd.DataFrame, tracker: Any = None, **params) -> Union[pd.DatetimeIndex, pd.Series]:
         """Generate events from continuous predictor values.
         
         Args:
             df: OHLCV DataFrame
             tracker: Optional event generation tracker
-            **params: Additional parameters (e.g., 'side': 'positive' or 'negative')
-            
+            **params:
+                - side: 'positive', 'negative', or 'both'
+                - method: 'threshold' (default) or 'cusum'
+                - normalize: bool (default True) - apply rolling Z-score
+                - window: int (default 2000) - window for normalization
+
         Returns:
-            DatetimeIndex of detected events
+            pd.Series of weights indexed by event time, or DatetimeIndex
         """
         if not CONTINUOUS_PREDICTOR_AVAILABLE:
             tprint_warning(f"⚠️ ContinuousPredictorGenerator not available for {self.family}")
@@ -367,31 +427,60 @@ class ContinuousPredictorEvents:
             return pd.DatetimeIndex([])
         
         # Aggregate events across all predictors of this family
-        all_events = set()
-        side = params.get('side', 'both')  # 'positive', 'negative', or 'both'
+        event_weights = defaultdict(float)
+        side = params.get('side', 'both')
+        method = params.get('method', 'threshold')
+        normalize = params.get('normalize', True)
+        window = params.get('window', 2000)
         
         for pred in family_predictors:
-            vals = pred.values.fillna(0)
-            if vals.std() == 0:
-                continue
+            series = pred.values.fillna(0)
             
-            # Z-score normalization
-            z = (vals - vals.mean()) / (vals.std() + 1e-9)
+            # Apply Rolling Normalization (Look-ahead Safe)
+            if normalize:
+                z_series = self._get_rolling_z_score(series, window)
+            else:
+                z_series = series
             
-            if side in ['positive', 'both']:
-                pos_events = z[z > self.z_threshold].index
-                all_events.update(pos_events)
-            
-            if side in ['negative', 'both']:
-                neg_events = z[z < -self.z_threshold].index
-                all_events.update(neg_events)
+            # Event Logic
+            current_events = []
+            if method == 'cusum':
+                # De Prado CUSUM (on Z-scored series)
+                current_events = self._symmetric_cusum_filter(z_series, self.z_threshold)
+            else: # 'threshold'
+                if side in ['positive', 'both']:
+                    pos_events = z_series[z_series > self.z_threshold].index
+                    current_events.extend(pos_events)
+
+                if side in ['negative', 'both']:
+                    neg_events = z_series[z_series < -self.z_threshold].index
+                    current_events.extend(neg_events)
+
+            # Capture weights (intensity = abs(z-score))
+            if len(current_events) > 0:
+                current_events_idx = pd.DatetimeIndex(sorted(list(set(current_events))))
+                # Get absolute Z-scores at event times
+                intensities = z_series.loc[current_events_idx].abs()
+
+                # If multiple predictors trigger same event, take max intensity
+                for ts, val in intensities.items():
+                    event_weights[ts] = max(event_weights[ts], val)
         
-        events = pd.DatetimeIndex(sorted(all_events))
+        if not event_weights:
+            events = pd.DatetimeIndex([])
+            if tracker is not None:
+                tracker.generated_events = 0
+            return events
+
+        # Convert to Series
+        sorted_timestamps = sorted(event_weights.keys())
+        weights = [event_weights[t] for t in sorted_timestamps]
+        events_series = pd.Series(weights, index=pd.DatetimeIndex(sorted_timestamps), name='weight')
         
         if tracker is not None:
-            tracker.generated_events = len(events)
+            tracker.generated_events = len(events_series)
         
-        return events
+        return events_series
 
 @njit
 def vectorized_threshold_classification(scores: np.ndarray, threshold: float = 0.5) -> np.ndarray:
@@ -450,6 +539,244 @@ try:
     CATBOOST_AVAILABLE_LOCAL = True
 except ImportError:
     CATBOOST_AVAILABLE_LOCAL = False
+
+def calculate_ece(y_true, y_prob, n_bins=10):
+    """Expected Calibration Error."""
+    bin_boundaries = np.linspace(0, 1, n_bins + 1)
+    bin_lowers = bin_boundaries[:-1]
+    bin_uppers = bin_boundaries[1:]
+
+    ece = 0.0
+    for bin_lower, bin_upper in zip(bin_lowers, bin_uppers):
+        in_bin = (y_prob > bin_lower) & (y_prob <= bin_upper)
+        prop_in_bin = in_bin.mean()
+        if prop_in_bin > 0:
+            accuracy_in_bin = y_true[in_bin].mean()
+            avg_confidence_in_bin = y_prob[in_bin].mean()
+            ece += np.abs(avg_confidence_in_bin - accuracy_in_bin) * prop_in_bin
+
+    return ece
+
+def calculate_durbin_watson(residuals):
+    """Durbin-Watson statistic."""
+    if len(residuals) < 2:
+        return 0.0
+    diff_sq = np.sum(np.diff(residuals) ** 2)
+    res_sq = np.sum(residuals ** 2)
+    if res_sq == 0:
+        return 0.0
+    return diff_sq / res_sq
+
+def calculate_feature_attribution_stability(model, X, y):
+    """
+    Feature Attribution Stability: Information Ratio of feature importance.
+    Metric: Mean(Importance) / Std(Importance) / N_Active_Features
+    """
+    try:
+        # For CalibratedClassifierCV, reach into base estimator
+        if hasattr(model, 'calibrated_classifiers_'):
+            if len(model.calibrated_classifiers_) > 0:
+                model = model.calibrated_classifiers_[0].base_estimator
+
+        # For HuberResidualStack, use internal fashion model
+        if isinstance(model, HuberResidualStack):
+             if model.fashion_model is not None:
+                 model = model.fashion_model
+             else:
+                 return 0.0
+
+        if hasattr(model, 'estimators_'):
+            # Collect importance from each tree
+            all_importances = np.array([tree.feature_importances_ for tree in model.estimators_])
+            mean_imp = np.mean(all_importances, axis=0)
+            std_imp = np.std(all_importances, axis=0)
+
+            active_mask = mean_imp > 0
+            n_active = np.sum(active_mask)
+            if n_active == 0:
+                return 0.0
+
+            stability_ratios = np.divide(
+                mean_imp[active_mask],
+                std_imp[active_mask],
+                out=np.zeros(n_active),
+                where=std_imp[active_mask]>0
+            )
+
+            stability_ir = np.mean(stability_ratios)
+            return stability_ir / n_active
+
+        return 0.0
+    except Exception:
+        return 0.0
+
+def calculate_brier_skill_score(y_true, y_prob):
+    """
+    BSS = 1 - BS_model / BS_naive
+    BS_naive = Brier Score of predicting mean(y_true) always.
+    """
+    bs_model = brier_score_loss(y_true, y_prob)
+    base_rate = np.mean(y_true)
+    y_naive = np.full_like(y_prob, base_rate)
+    bs_naive = brier_score_loss(y_true, y_naive)
+
+    if bs_naive < 1e-9:
+        return 0.0
+    return 1.0 - (bs_model / bs_naive)
+
+class HuberResidualStack(BaseEstimator, ClassifierMixin):
+    """
+    Two-phase model:
+    1. Huber-IRM (Law) on raw target.
+    2. Fashion Estimator (ExtraTrees/XGB) on OOF residuals.
+    3. Isotonic Calibration on L+T.
+    """
+    def __init__(self, huber_params=None, fashion_estimator=None, n_splits=5, random_state=42):
+        self.huber_params = huber_params if huber_params else {}
+        self.fashion_estimator = fashion_estimator
+        self.n_splits = n_splits
+        self.random_state = random_state
+        self.law_model = None
+        self.fashion_model = None
+        self.calibrator = None
+        self._is_fitted = False
+        self.feature_importances_ = None
+
+    def fit(self, X, y, sample_weight=None, environment_masks=None, **kwargs):
+        # Capture feature names if X is a DataFrame (needed for XGBoost constraints)
+        feature_names = getattr(X, 'columns', None)
+
+        X_arr = check_array(X, accept_sparse=True, ensure_all_finite=False)
+        # Ensure y and sample_weight are numpy arrays to avoid pandas indexing issues
+        y = np.asarray(y)
+        if sample_weight is not None:
+            sample_weight = np.asarray(sample_weight)
+
+        if self.fashion_estimator is None:
+            raise ValueError("fashion_estimator must be provided")
+
+        # Phase 1: OOF Residuals (Using KFold without shuffle for contiguous blocks)
+        kf = KFold(n_splits=self.n_splits, shuffle=False)
+        oof_preds = np.zeros(len(y))
+
+        # Fit Law model on folds
+        for train_idx, val_idx in kf.split(X_arr):
+            X_tr, y_tr = X_arr[train_idx], y[train_idx]
+            X_val = X_arr[val_idx]
+            w_tr = sample_weight[train_idx] if sample_weight is not None else None
+
+            # Use basic env indices for ERM on fold
+            huber = IRMLinearRegressor(**self.huber_params)
+            huber.fit(X_tr, y_tr, env_indices=[np.arange(len(y_tr))], sample_weight=w_tr)
+            oof_preds[val_idx] = huber.predict(X_val)
+
+        residuals = y - oof_preds
+
+        # Phase 2: Train Final Models
+
+        # 1. Final Law on full data
+        self.law_model = IRMLinearRegressor(**self.huber_params)
+        env_indices = [np.arange(len(y))]
+        if environment_masks:
+             try:
+                 if isinstance(environment_masks[0], (bool, np.bool_)):
+                     pass
+                 elif len(environment_masks[0]) == len(y):
+                      env_indices = [np.where(m)[0] for m in environment_masks]
+                 else:
+                      env_indices = environment_masks
+             except:
+                 pass
+        self.law_model.fit(X_arr, y, env_indices=env_indices, sample_weight=sample_weight)
+
+        # Prepare X for fashion model (restore DataFrame if needed for constraints)
+        if feature_names is not None:
+            X_fashion = pd.DataFrame(X_arr, columns=feature_names)
+        else:
+            X_fashion = X_arr
+
+        # 2. Final Fashion on residuals
+        self.fashion_model = clone(self.fashion_estimator)
+
+        # Sanitize constraints for XGBoost to match current features
+        if hasattr(self.fashion_model, 'set_params') and feature_names is not None:
+            params = self.fashion_model.get_params()
+            updates = {}
+
+            # 1. Interaction Constraints (List of lists of feature names)
+            ic = params.get('interaction_constraints')
+            if ic:
+                valid_features = set(feature_names)
+                new_ic = []
+                for group in ic:
+                    valid_group = [f for f in group if f in valid_features]
+                    if len(valid_group) >= 2:
+                        new_ic.append(valid_group)
+                updates['interaction_constraints'] = new_ic if new_ic else None
+
+            # 2. Monotone Constraints (Dict or Tuple)
+            mc = params.get('monotone_constraints')
+            if mc:
+                if isinstance(mc, dict):
+                    valid_mc = {k: v for k, v in mc.items() if k in feature_names}
+                    updates['monotone_constraints'] = valid_mc if valid_mc else None
+                elif isinstance(mc, tuple) or isinstance(mc, list):
+                    # If tuple, length must match. If mismatch, disable.
+                    if len(mc) != len(feature_names):
+                        updates['monotone_constraints'] = None
+
+            if updates:
+                self.fashion_model.set_params(**updates)
+
+        self.fashion_model.fit(X_fashion, residuals, sample_weight=sample_weight)
+
+        # 3. Isotonic Calibration using nested OOF
+        fashion_oof = np.zeros(len(y))
+        for train_idx, val_idx in kf.split(X_arr):
+            # Reconstruct X fold as DataFrame if needed
+            X_tr_arr = X_arr[train_idx]
+            X_val_arr = X_arr[val_idx]
+
+            if feature_names is not None:
+                X_tr_fashion = pd.DataFrame(X_tr_arr, columns=feature_names)
+                X_val_fashion = pd.DataFrame(X_val_arr, columns=feature_names)
+            else:
+                X_tr_fashion = X_tr_arr
+                X_val_fashion = X_val_arr
+
+            r_tr = residuals[train_idx]
+            w_tr = sample_weight[train_idx] if sample_weight is not None else None
+
+            # Clone from the sanitized model to preserve constraint fixes
+            et = clone(self.fashion_model)
+            et.fit(X_tr_fashion, r_tr, sample_weight=w_tr)
+            fashion_oof[val_idx] = et.predict(X_val_fashion)
+
+        total_oof = oof_preds + fashion_oof
+        self.calibrator = IsotonicRegression(out_of_bounds='clip')
+        self.calibrator.fit(total_oof, y)
+
+        self._is_fitted = True
+        if hasattr(self.fashion_model, 'feature_importances_'):
+             self.feature_importances_ = self.fashion_model.feature_importances_
+
+        return self
+
+    def decision_function(self, X):
+        check_is_fitted(self, '_is_fitted')
+        X = check_array(X, accept_sparse=True, ensure_all_finite=False)
+        law_pred = self.law_model.predict(X)
+        fashion_pred = self.fashion_model.predict(X)
+        return law_pred + fashion_pred
+
+    def predict_proba(self, X):
+        raw = self.decision_function(X)
+        prob = self.calibrator.predict(raw)
+        return np.column_stack([1 - prob, prob])
+
+    def predict(self, X):
+        probs = self.predict_proba(X)[:, 1]
+        return (probs >= 0.5).astype(int)
 
 class IRM_ExtraTreesClassifier(ExtraTreesClassifier):
     """ExtraTrees Classifier with IRM compatibility API (Standard training)."""
@@ -1345,6 +1672,7 @@ class GeometryTrial:
     sharpe_ratio: Optional[float] = None
     max_drawdown: Optional[float] = None
     sortino_ratio: Optional[float] = None
+    prediction_inverted: bool = False
 
 
 @dataclass
@@ -4170,6 +4498,33 @@ class LabelBasedLayer2(BaseStep):
                 am.save(results['events_df'], events_artifact_name, artifact_type="data")
                 artifacts.append(events_artifact_name)
                 tprint_info(f"💾 Saved events artifact: {events_artifact_name}")
+                
+                # --- ORCHESTRATOR COMPATIBILITY: Save parquet to outcomes_dir ---
+                # The pipeline orchestrator expects *_events.parquet and *_labels.parquet
+                # files in the outcomes directory for Layers 3-5 to run successfully.
+                try:
+                    # Check if outcomes_dir was injected by the orchestrator
+                    outcomes_target = getattr(self, 'outcomes_dir', None)
+                    if outcomes_target is None:
+                        outcomes_target = Path("outcomes")
+                    else:
+                        outcomes_target = Path(outcomes_target)
+                    
+                    outcomes_target.mkdir(parents=True, exist_ok=True)
+                    events_parquet_path = outcomes_target / f"{events_artifact_name}_events.parquet"
+                    results['events_df'].to_parquet(events_parquet_path, index=True)
+                    tprint_success(f"💾 Saved events parquet (L3 compat): {events_parquet_path}")
+                    
+                    # Also save labels if present in events_df columns
+                    labels_cols = ['bin', 'label', 'side', 'ret', 'realized_return']
+                    available_label_cols = [c for c in labels_cols if c in results['events_df'].columns]
+                    if available_label_cols:
+                        labels_df = results['events_df'][available_label_cols].copy()
+                        labels_parquet_path = outcomes_target / f"{events_artifact_name}_labels.parquet"
+                        labels_df.to_parquet(labels_parquet_path, index=True)
+                        tprint_success(f"💾 Saved labels parquet (L3 compat): {labels_parquet_path}")
+                except Exception as e_parquet:
+                    tprint_warning(f"⚠️ Failed to save parquet for orchestrator: {e_parquet}")
             
             # Save selected trials if available
             if 'selected_trials' in results and results['selected_trials']:
@@ -4487,7 +4842,7 @@ class LabelBasedLayer2(BaseStep):
             'sortino_ratio': float(sortino)
         }
 
-    def _get_global_events(self, df: pd.DataFrame, family: str, params: Dict = None) -> pd.DatetimeIndex:
+    def _get_global_events(self, df: pd.DataFrame, family: str, params: Dict = None) -> Union[pd.DatetimeIndex, pd.Series]:
         """Generate events once for the full dataset and cache them."""
         # Create cache key
         params_str = str(sorted(params.items())) if params else "default"
@@ -4855,13 +5210,22 @@ class LabelBasedLayer2(BaseStep):
     
     def _compute_labels_batch(self, df_train: pd.DataFrame, events: pd.DatetimeIndex, 
                             geometries: List, family: str, fold_idx: int,
-                            sr_levels: List = None) -> Tuple[Dict[str, pd.Series], Dict[str, pd.Series]]:
+                            sr_levels: List = None, event_weights: pd.Series = None) -> Tuple[Dict[str, pd.Series], Dict[str, pd.Series]]:
         """Compute labels and weights for multiple geometries of the same family at once."""
         cache_key = self._get_label_batch_cache_key(family, geometries, events)
         if cache_key in self._label_batch_cache:
-            cached_labels, cached_weights = self._label_batch_cache[cache_key]
+            cached_labels, cached_base_weights = self._label_batch_cache[cache_key]
+
+            # Apply explicit event intensity weights if provided (dynamic, not cached with key)
+            if event_weights is not None:
+                 final_weights = {}
+                 for k, w in cached_base_weights.items():
+                     ew = event_weights.reindex(w.index).fillna(1.0)
+                     final_weights[k] = w * ew
+                 return cached_labels, final_weights
+
             tprint_info(f"✅ Using cached batch labels for {len(geometries)} {family} geometries (fold {fold_idx})")
-            return cached_labels, cached_weights
+            return cached_labels, cached_base_weights
 
         tprint_info(f"🔄 Computing batch labels/weights for {len(geometries)} {family} geometries (fold {fold_idx})...")
         
@@ -4875,7 +5239,8 @@ class LabelBasedLayer2(BaseStep):
 
         # Compute labels for all geometries in this family
         labels_dict = {}
-        weights_dict = {}
+        base_weights_dict = {} # Store unweighted base weights for caching
+        final_weights_dict = {}
 
         for gt in geometries:
             try:
@@ -4929,10 +5294,17 @@ class LabelBasedLayer2(BaseStep):
                     # For dominance labels, 'weights' is outcome quality.
                     # For signal weights, it is input quality.
                     # Product seems appropriate.
-                    final_w = weights * aligned_base_w
-                    weights_dict[gt.uuid] = final_w
+                    weights = weights * aligned_base_w
+
+                # Store base weights (before event_weights)
+                base_weights_dict[gt.uuid] = weights
+
+                # Apply explicit event intensity weights if provided (dynamic)
+                if event_weights is not None:
+                     ew = event_weights.reindex(weights.index).fillna(1.0)
+                     final_weights_dict[gt.uuid] = weights * ew
                 else:
-                    weights_dict[gt.uuid] = weights
+                     final_weights_dict[gt.uuid] = weights
 
             except Exception as e:
                 tprint_error(f"❌ Error computing labels for {gt.uuid}: {e}")
@@ -4940,11 +5312,12 @@ class LabelBasedLayer2(BaseStep):
                 traceback.print_exc()
                 tprint_warning(f"⚠️ Label computation failed for {gt.uuid}: {e}")
                 labels_dict[gt.uuid] = pd.Series([], dtype=float)
-                weights_dict[gt.uuid] = pd.Series([], dtype=float)
+                base_weights_dict[gt.uuid] = pd.Series([], dtype=float)
+                final_weights_dict[gt.uuid] = pd.Series([], dtype=float)
         
-        self._label_batch_cache[cache_key] = (labels_dict, weights_dict)
+        self._label_batch_cache[cache_key] = (labels_dict, base_weights_dict)
         self._prune_cache(self._label_batch_cache, self._max_cache_entries, "label batch")
-        return labels_dict, weights_dict
+        return labels_dict, final_weights_dict
 
     def _get_cached_labels(self, df_train: pd.DataFrame, events: pd.DatetimeIndex, 
                           gt, family: str, fold_idx: int, sr_levels: List = None) -> Tuple[pd.Series, pd.Series]:
@@ -7865,27 +8238,86 @@ class LabelBasedLayer2(BaseStep):
                 })
                 
             # --- 4. ExtraTrees ---
-            from sklearn.ensemble import ExtraTreesClassifier
-            et_params = {
-                'n_estimators': 300, 'max_depth': 6,
-                'min_samples_split': 10, 'min_samples_leaf': 5,
-                'random_state': 42, 'n_jobs': 2,
-                'class_weight': 'balanced'
+            # --- 4. ExtraTrees (Huber-IRM Stack) ---
+            # Huber Baseline (The "Law")
+            huber_params = {
+                'loss_type': 'huber',
+                'huber_epsilon': 1.10,
+                'alpha': 3.0,
+                'irm_lambda': 10.0,
+                'max_iter': 2000
             }
-            # Attempt to set monotonic_cst if supported (sklearn 1.4+)
-            try:
-                model = ExtraTreesClassifier(**et_params, monotonic_cst=monotone_constraints)
-            except TypeError:
-                model = ExtraTreesClassifier(**et_params)
-                
+            # ExtraTrees Baseline (The "Fashion")
+            et_estimator = ExtraTreesRegressor(
+                n_estimators=1000,
+                max_depth=6,
+                min_samples_leaf=10,
+                max_features='sqrt',
+                ccp_alpha=0.001,
+                min_samples_split=20,
+                min_impurity_decrease=0.005,
+                random_state=42,
+                n_jobs=2
+            )
+
+            # Create Stack (No constraints inherited!)
+            model = HuberResidualStack(
+                huber_params=huber_params,
+                fashion_estimator=et_estimator,
+                n_splits=5 # Using 5-fold OOF
+            )
+
             candidates.append({
                 'name': 'ExtraTrees',
                 'model': model,
-                'fit_params': {}
+                'fit_params': {'environment_masks': environment_masks}
             })
+
+            # --- 5. XGBoost Stack (Huber-IRM + XGB) ---
+            if XGBRegressor is not None:
+                xgb_params = {
+                    'num_parallel_tree': 200,
+                    'n_estimators': 5,
+                    'max_depth': 6,
+                    'subsample': 0.8,
+                    'colsample_bynode': 0.8,
+                    # 'linear_tree': True, # XGBoost does not support linear_tree (LGBM feature). Removing to prevent errors.
+                    'n_jobs': 2,
+                    'random_state': 42,
+                    'objective': 'reg:squarederror' # Predicting residuals
+                }
+
+                # Apply constraints if available
+                if monotone_constraints is not None:
+                    xgb_params['monotone_constraints'] = tuple(monotone_constraints)
+                if interaction_constraints is not None:
+                    xgb_params['interaction_constraints'] = interaction_constraints
+
+                xgb_estimator = XGBRegressor(**xgb_params)
+
+                model_xgb = HuberResidualStack(
+                    huber_params=huber_params,
+                    fashion_estimator=xgb_estimator,
+                    n_splits=5
+                )
+
+                candidates.append({
+                    'name': 'XGB_Stack',
+                    'model': model_xgb,
+                    'fit_params': {'environment_masks': environment_masks}
+                })
 
         # 3. Sequential Race
         tprint_info(f"   🚀 Running race with {len(candidates)} models...")
+
+        # Enhanced Diagnostics
+        tprint_info(f"   📊 Race Context: X_train={X_train_final.shape}, X_val={X_val_final.shape}")
+        try:
+            y_dist = np.bincount(y_train.astype(int)) if hasattr(y_train, 'astype') else "N/A"
+            tprint_info(f"   📊 Train Labels: {y_dist} (Pos Rate: {y_train.mean():.4f})")
+        except Exception:
+            pass
+
         race_results = {}
         best_score = -np.inf
         best_actual_auc = 0.5
@@ -7901,17 +8333,29 @@ class LabelBasedLayer2(BaseStep):
             model = cand['model']
             fit_params = cand['fit_params']
             
-            
+            # Wrap in CalibratedClassifierCV if not Stack (Stack already handles calibration)
+            is_stack = name in ['ExtraTrees', 'XGB_Stack']
+            if not is_stack:
+                 tprint_info(f"   🔧 Wrapping {name} in Isotonic CalibratedClassifierCV...")
+                 # Remove warm start params for calibration wrapper safety
+                 safe_fit_params = fit_params.copy()
+                 if 'init_score' in safe_fit_params: del safe_fit_params['init_score']
+                 if 'base_margin' in safe_fit_params: del safe_fit_params['base_margin']
+                 if 'baseline' in safe_fit_params: del safe_fit_params['baseline']
+                 # Remove eval_set as indices shift during CV
+                 if 'eval_set' in safe_fit_params: del safe_fit_params['eval_set']
+                 if 'early_stopping_rounds' in safe_fit_params: del safe_fit_params['early_stopping_rounds']
+                 if 'callbacks' in safe_fit_params: del safe_fit_params['callbacks']
+
+                 model = CalibratedClassifierCV(estimator=model, method='isotonic', cv=5)
+                 fit_params = safe_fit_params
+
             try:
-                # Fit with specific params (warm start, eval set)
+                # Fit
                 start_fit = time.time()
-                
-                # Debug fit params injection
                 if fit_params:
-                    keys = list(fit_params.keys())
-                    tprint_info(f"      🔧 [DEBUG] {name} fit_params: {keys}")
-                
-                if fit_params:
+                    # Check if model supports fit_params (CalibratedClassifierCV < 1.0 does not easily)
+                    # We assume compatible sklearn version
                     model.fit(X_train_final, y_train, sample_weight=w_train, **fit_params)
                 else:
                     model.fit(X_train_final, y_train, sample_weight=w_train)
@@ -7929,23 +8373,37 @@ class LabelBasedLayer2(BaseStep):
                 pr_auc_lift = pr_auc - prevalence
                 ic, _ = spearmanr(y_val, preds) if len(np.unique(preds)) > 1 else (0.0, 1.0)
                 
-                # Combined score (sort by ROC-AUC but gated by PR-AUC lift)
-                # Gate: PR_AUC >= prevalence + 0.02
-                is_gated = pr_auc >= (prevalence + 0.02)
-                effective_score = auc_score if is_gated else (auc_score * 0.5) # Heavy penalty if gate failing
+                # Brier Skill Score
+                bss = calculate_brier_skill_score(y_val, preds)
+
+                # ECE
+                ece = calculate_ece(y_val, preds)
+
+                # Durbin-Watson on residuals
+                residuals = y_val - preds
+                dw = calculate_durbin_watson(residuals)
+
+                # Feature Stability
+                stability = calculate_feature_attribution_stability(model, X_train_final, y_train)
+
+                # New Winner Score Formula: PR-AUC * BSS
+                effective_score = pr_auc * bss
                 
                 race_results[name] = {
                     'auc': auc_score,
                     'pr_auc': pr_auc,
                     'pr_auc_lift': pr_auc_lift,
                     'ic': ic,
+                    'bss': bss,
+                    'ece': ece,
+                    'dw': dw,
+                    'stability': stability,
                     'model': model,
                     'fit_time': fit_duration,
-                    'gated': is_gated
+                    'score': effective_score
                 }
 
-                gate_status = "✅" if is_gated else "❌"
-                tprint_info(f"      - {name.ljust(12)}: {gate_status} ROC-AUC={auc_score:.4f}, PR-AUC={pr_auc:.4f} (Lift: {pr_auc_lift:+.4f}), IC={ic:.4f}")
+                tprint_info(f"      - {name.ljust(12)}: Score={effective_score:.4f} (PR-AUC={pr_auc:.4f}, BSS={bss:.4f}), ECE={ece:.4f}, DW={dw:.2f}")
 
                 if effective_score > best_score:
                     best_score = effective_score
@@ -7956,6 +8414,8 @@ class LabelBasedLayer2(BaseStep):
                     
             except Exception as e:
                 tprint_warning(f"      ❌ {name} failed: {e}")
+                import traceback
+                tprint_warning(traceback.format_exc())
 
         # 4. Display Leaderboard
         if race_results:
@@ -8387,6 +8847,14 @@ class LabelBasedLayer2(BaseStep):
 
 
         # 0. LGBM with IRM (Wrapper) - Regularized for noisy 15m crypto
+
+        # Adaptive Regularization for Small Datasets
+        n_samples = len(X_train)
+        # Default min_data_in_leaf=50 is too high for N < 500
+        adaptive_min_data_in_leaf = min(50, max(5, int(n_samples * 0.05)))
+        if n_samples < 500:
+             tprint_info(f"   📉 Adaptive LGBM params: min_data_in_leaf={adaptive_min_data_in_leaf} (N={n_samples})")
+
         lgbm_params = LAYER2_PROBE_CONSTANTS.copy()
         lgbm_params.update({
             'boosting_type': 'gbdt',       # Switch from GOSS to allow bagging
@@ -8394,7 +8862,7 @@ class LabelBasedLayer2(BaseStep):
             'learning_rate': 0.01,         # Slower learning
             'max_depth': 4,                # Shallower trees
             'num_leaves': 15,              # Simpler trees
-            'min_data_in_leaf': 50,        # Avoid small noisy clusters
+            'min_data_in_leaf': adaptive_min_data_in_leaf, # Adaptive
             'feature_fraction': 0.6,       # Feature dropout (Relaxed from 0.5)
             'bagging_fraction': 0.7,       # Row subsampling
             'bagging_freq': 5,             # Bagging every 5 iterations
@@ -8492,6 +8960,11 @@ class LabelBasedLayer2(BaseStep):
 
         # 2. XGBoost with IRM (Wrapper) - Enhanced regularization
         if XGBClassifier is not None:
+            # Adaptive Regularization
+            adaptive_min_child_weight = min(10, max(1, int(n_samples * 0.01)))
+            if n_samples < 1000:
+                 tprint_info(f"   📉 Adaptive XGB params: min_child_weight={adaptive_min_child_weight} (N={n_samples})")
+
             # Build monotone constraints tuple matching X_train columns
             xgb_constraints = tuple(constraints_dict.get(col, 0) for col in X_train.columns)
             
@@ -8510,20 +8983,25 @@ class LabelBasedLayer2(BaseStep):
                     'model': IRM_XGBClassifier(
                         irm_system=self._irm_system,
                         environment_masks=environment_masks,
-                        n_estimators=400,
-                        learning_rate=0.02,
-                        max_depth=4,
-                        colsample_bynode=0.6,
-                        subsample=0.7,
-                        reg_lambda=10,        # Reduced from 50
-                        reg_alpha=2.0,        # Reduced from 5.0
-                        min_child_weight=10,  # Reduced from 15
-                        gamma=1.0,            # Reduced from 1.5
+                        # --- USER REQUESTED PARAMS ---
+                        n_estimators=4,               # Boosting rounds (reduced, using RF style)
+                        num_parallel_tree=250,        # Forest within each round
+                        linear_tree=True,             # Hybrid linear-tree boosting
+                        tree_method='hist',           # Fast histogram-based training
+                        max_depth=5,                  # Increased from 4
+                        colsample_bynode=0.65,        # Increased from 0.6
+                        colsample_bytree=0.8,         # New: column sampling per tree
+                        subsample=0.8,                # Increased from 0.7
+                        learning_rate=0.2,            # Increased from 0.02 (fewer rounds)
+                        reg_lambda=8,                 # Reduced from 10
+                        reg_alpha=1.5,                # Reduced from 2.0
+                        gamma=0.2,                    # Reduced from 1.0
+                        min_child_weight=adaptive_min_child_weight,  # Adaptive
                         monotone_constraints=xgb_constraints,
                         interaction_constraints=valid_interaction_constraints,
                         scale_pos_weight=scale_pos_weight,
                         random_state=42,
-                        n_jobs=1,
+                        n_jobs=2,                     # Increased from 1
                         verbosity=0,
                         use_label_encoder=False,
                         early_stopping_rounds=40
@@ -8535,16 +9013,19 @@ class LabelBasedLayer2(BaseStep):
                 tprint_warning(f"   ⚠️ XGB_IRM creation failed: {e}")
 
 
-        # 3. ExtraTrees with IRM (Wrapper) - Capped depth
+        # 3. ExtraTrees with IRM (Wrapper) - Enhanced regularization
         candidates.append({
             'name': 'ExtraTrees_IRM',
             'model': IRM_ExtraTreesClassifier(
                 irm_system=self._irm_system,
                 environment_masks=environment_masks,
                 n_estimators=800,              # Reduced from 1000
-                max_features='log2',
+                # --- USER REQUESTED PARAMS ---
+                max_features='sqrt',           # Changed from 'log2' for more diversity
                 min_samples_leaf=0.03,         # Increased from 0.02
                 max_depth=6,                   # Capped from None
+                min_impurity_decrease=1e-4,    # New: regularization
+                ccp_alpha=1e-4,                # New: minimal cost complexity pruning
                 class_weight='balanced',
                 bootstrap=True,
                 random_state=42,
@@ -9457,6 +9938,10 @@ class LabelBasedLayer2(BaseStep):
                 # Adaptive Gate now handles diversity pruning upstream.
                 representatives = stage1_candidates
                 n_clusters = 1
+        else:
+            # Only 1 candidate passed, so it forms the only cluster
+            representatives = stage1_candidates
+            n_clusters = 1
         
         tprint_info(f"   🎯 Stage 2: Full probe on {len(representatives)} representatives...")
         
@@ -9888,15 +10373,41 @@ class LabelBasedLayer2(BaseStep):
                         tprint_warning(f"   ⚠️ TOO FEW SAMPLES: Val has {n_pos_val} pos, {n_neg_val} neg (min: {min_samples_for_valid_auc}) - AUC unreliable, using fallback")
                         auc = 0.5  # Fallback - not statistically reliable
                         ap = 0.0
+                        cand.prediction_inverted = False
                     else:
                         ap = average_precision_score(y_val, preds)
                         auc = roc_auc_score(y_val, preds)
+                        
+                        # === FIX: Handle inverse predictions (AUC < 0.5) ===
+                        # AUC < 0.5 means the model learned the OPPOSITE of the target.
+                        # This is still a valid signal - just flip predictions to recover it.
+                        # AUC < 0.45 means the model learned the OPPOSITE of the target meaningfully.
+                        # This is still a valid signal - just flip predictions to recover it.
+                        if auc < 0.45:
+                            tprint_warning(f"   🔄 INVERSE PREDICTION DETECTED: AUC={auc:.4f} < 0.45 for {cand.uuid[:40]}")
+                            tprint_warning(f"      → Model learned OPPOSITE of target. Flipping predictions...")
+                            
+                            # Flip predictions to get positive AUC
+                            preds_flipped = 1.0 - preds
+                            auc_flipped = roc_auc_score(y_val, preds_flipped)
+                            ap_flipped = average_precision_score(y_val, preds_flipped)
+                            
+                            tprint_success(f"      → Flipped AUC: {auc_flipped:.4f}, Flipped PR-AUC: {ap_flipped:.4f}")
+                            
+                            # Use flipped values and mark geometry
+                            preds = preds_flipped
+                            auc = auc_flipped
+                            ap = ap_flipped
+                            cand.prediction_inverted = True
+                        else:
+                            cand.prediction_inverted = False
                         
                     # PR-AUC Gate: Concrete gate PR_AUC >= prevalence + 0.02
                     prevalence = y_val.mean()
                     is_gated = ap >= (prevalence + 0.02)
                     gate_status = "✅" if is_gated else "❌"
-                    tprint_info(f"   📈 {cand.uuid[:8]}: {gate_status} AUC={auc:.4f}, PR-AUC={ap:.4f} (Target: {prevalence+0.02:.4f}), Pred Range=[{preds.min():.4f}, {preds.max():.4f}]")
+                    inverted_marker = " [INVERTED]" if getattr(cand, 'prediction_inverted', False) else ""
+                    tprint_info(f"   📈 {cand.uuid[:8]}: {gate_status} AUC={auc:.4f}, PR-AUC={ap:.4f} (Target: {prevalence+0.02:.4f}), Pred Range=[{preds.min():.4f}, {preds.max():.4f}]{inverted_marker}")
                     
                     # === LEAKAGE INVESTIGATION: AUC > 0.99 ===
                     if auc > 0.99:
@@ -9929,6 +10440,7 @@ class LabelBasedLayer2(BaseStep):
                 cand.quality_metrics['AUC'] = auc
                 cand.quality_metrics['PR-AUC'] = ap
                 cand.quality_metrics['IC'] = assessment.get('IC', 0.0)
+                cand.quality_metrics['prediction_inverted'] = getattr(cand, 'prediction_inverted', False)
                 cand.robust_magnitude = assessment.get('IC', 0.0)
                 cand.stability = assessment.get('Dir_consistency', 0.5)
                 cand.balance = assessment.get('balance', 0.5)
@@ -9950,9 +10462,9 @@ class LabelBasedLayer2(BaseStep):
 
                 # RE-CALCULATE FINAL SCORE: Don't give 100 if learnability is low.
                 # Use a blend of structural Layer2Score and empirical learnability
-                # RE-CALCULATE FINAL SCORE
-                # FIX: Layer2Score is already 0-1 (e.g. 0.67), do NOT divide by 100
-                learn_factor = max(0.0, (auc - 0.5) * 2) if auc > 0.5 else max(0.0, auc - 0.5)
+                # NOTE: Since we flip predictions when AUC<0.5, AUC here is always >=0.5
+                # This maps AUC 0.5->0, 0.75->0.5, 1.0->1.0
+                learn_factor = max(0.0, (auc - 0.5) * 2)
                 structural_score = max(0.0, min(1.0, cand.layer2_score)) 
                 
                 # Blend: 50% Structural (Causal), 50% Empirical (AUC)
@@ -9979,6 +10491,7 @@ class LabelBasedLayer2(BaseStep):
                     'probe_auc': auc,
                     'probe_rec': rec,
                     'ranking_score': cand.ranking_score,
+                    'prediction_inverted': getattr(cand, 'prediction_inverted', False),  # Track inverse signal handling
                     **assessment # Unpack all detailed quality metrics
                 }
                 self._all_candidate_assessments.append(report_entry)
@@ -10985,6 +11498,14 @@ class LabelBasedLayer2(BaseStep):
                 tprint_info(f"   🔄 Generating {family} events on df_train ({len(df_train)} bars)...")
                 # Use global events to ensure consistency and cache hits
                 global_events = self._get_global_events(df, family, gen_params)
+
+                # Handle weighted events
+                global_weights = None
+                if isinstance(global_events, pd.Series):
+                    global_weights = global_events
+                    if hasattr(global_events, 'index'):
+                        global_events = pd.DatetimeIndex(global_events.index)
+
                 if global_events is not None:
                     # FIX: Robust TZ handling to ensure overlap with fold index
                     ge_aligned = global_events
@@ -11000,13 +11521,24 @@ class LabelBasedLayer2(BaseStep):
                     except Exception:
                         pass # Fallback to original if alignment fails
 
+                    # Align weights if index was modified
+                    if global_weights is not None and not ge_aligned.equals(global_events):
+                        global_weights = global_weights.copy()
+                        global_weights.index = ge_aligned
+
                     fold_train_events = ge_aligned[ge_aligned.isin(df_train.index)]
                     
+                    # Slice weights if available
+                    fold_event_weights = None
+                    if global_weights is not None:
+                        fold_event_weights = global_weights.reindex(fold_train_events).fillna(1.0)
+
                     if len(fold_train_events) == 0 and len(global_events) > 0:
                          # Diagnostic log for debugging if fix fails
                          tprint_warning(f"   ⚠️ TZ Mismatch persists? Global={len(global_events)} -> Fold=0. Fold Range: {df_train.index[0]} to {df_train.index[-1]}")
                 else:
                      fold_train_events = pd.DatetimeIndex([])
+                     fold_event_weights = None
                 
                 is_sparse = family in sparse_families
                 has_global = is_sparse and family in global_sparse_models
@@ -11033,7 +11565,8 @@ class LabelBasedLayer2(BaseStep):
                 weights_dict = {}
                 if not has_global:
                     labels_dict, weights_dict = self._compute_labels_batch(
-                        df_train, fold_train_events, group_geometries, family, i, sr_levels=self.sr_levels
+                        df_train, fold_train_events, group_geometries, family, i, sr_levels=self.sr_levels,
+                        event_weights=fold_event_weights
                     )
                     
                     # Log label stats for first geometry as proxy

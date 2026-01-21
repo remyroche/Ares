@@ -31,7 +31,7 @@ import gc
 from sklearn.preprocessing import RobustScaler
 from sklearn.linear_model import LinearRegression, LogisticRegression, BayesianRidge
 from sklearn.model_selection import TimeSeriesSplit
-from sklearn.ensemble import ExtraTreesRegressor
+from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor
 from src.utils.irm_linear_regressor import IRMLinearRegressor, get_vol_env_indices
 from sklearn.base import clone
 from sklearn.metrics import roc_auc_score
@@ -203,8 +203,8 @@ def fit_bayes_teacher_oof(
             med_tr, s_tr = robust_stats(y_tr)
             y_tr = clip_with_stats(y_tr, med_tr, s_tr, k=winsor_k)
 
-        # Use IRM Ridge
-        model = IRMLinearRegressor(loss_type='ridge', alpha=1.0)
+        # Use IRM Huber
+        model = IRMLinearRegressor(loss_type='huber', alpha=1.0, irm_lambda=1.0)
         # Construct environments from weights if available
         w_tr = w[tr] if w is not None else None
         model.fit(X_tr, y_tr, env_indices=get_vol_env_indices(w_tr))
@@ -242,7 +242,7 @@ def fit_bayes_teacher_oof(
         std_oof[~valid_mask] = std_mean
 
     # Train final model on full data for production
-    final_model = IRMLinearRegressor(loss_type='ridge', alpha=1.0)
+    final_model = IRMLinearRegressor(loss_type='huber', alpha=1.0, irm_lambda=1.0)
     y_full = y.astype(np.float64)
     if not is_classifier:
         y_full = winsorize(y_full, k=winsor_k)
@@ -301,20 +301,54 @@ def train_chaser_student(
     X = np.asarray(X, dtype=np.float32)
     y = np.asarray(y)
 
-    # Teacher-uncertainty weights (chasers upweight uncertainty, bounded)
-    w_chase = uncertainty_to_chaser_weight(teacher.std_oof, clip=(0.5, 2.0))
-    w_final = combine_weights(base_weight, w_chase)
+    # --- Weighting Step (Entropy Proxy) ---
+    # Train a very fast ExtraTrees model on residuals (or similar) to proxy student entropy.
+    # Weight = Teacher_Std / Student_Entropy
 
-    # Robust normalization of final weights (clip + mean=1.0)
+    # 1. Train Proxy
+    proxy_target = y.astype(np.float64)
+    if mode == "regression":
+        proxy_target = y.astype(np.float64) - teacher.mu_oof # Residuals for proxy
+
+    et_proxy = ExtraTreesRegressor(
+        n_estimators=100,
+        max_features='sqrt',
+        max_depth=8, # Limit depth for speed/generalization
+        n_jobs=-1,
+        random_state=42
+    )
+    # Fit on full provided X (this is inside a specific regime or global, so it's consistent)
+    et_proxy.fit(X, proxy_target, sample_weight=base_weight)
+
+    # 2. Calculate Student Entropy (Variance of trees) on training data
+    # Collecting predictions from all trees: (n_estimators, n_samples)
+    all_tree_preds = np.array([tree.predict(X) for tree in et_proxy.estimators_])
+    student_entropy = np.var(all_tree_preds, axis=0)
+
+    # 3. Calculate Final Weights
+    # w = Teacher_Std / (Student_Entropy + eps)
+    # Both are vectors of length n_samples
+    eps_entropy = 1e-6
+    raw_chaser_w = teacher.std_oof / (student_entropy + eps_entropy)
+
+    # Clip and normalize
+    raw_chaser_w = np.clip(raw_chaser_w, 0.1, 10.0)
+    w_chase = normalize_weights(raw_chaser_w)
+
+    w_final = combine_weights(base_weight, w_chase)
     w_final = normalize_weights(w_final, clip_percentile=0.99)
 
     init_score = None
     baseline = None
 
+    # Dampening Factor
+    dampening = 0.8
+
     if mode == "regression":
         # Residual target
-        # Calculate raw residuals
-        r = y.astype(np.float64) - teacher.mu_oof
+        # Calculate raw residuals with Dampening
+        # r = y - 0.8 * teacher
+        r = y.astype(np.float64) - (dampening * teacher.mu_oof)
 
         # --- Internal Validation Split ---
         n_samples = len(X)
@@ -338,8 +372,9 @@ def train_chaser_student(
         if teacher.margin_oof is None:
             raise ValueError("For classification mode, teacher.margin_oof must be available.")
         target = y.astype(np.int32)
-        init_score = teacher.margin_oof.astype(np.float64)
-        baseline = teacher.margin_oof.astype(np.float64)
+        # Apply Dampening to base margin
+        init_score = teacher.margin_oof.astype(np.float64) * dampening
+        baseline = teacher.margin_oof.astype(np.float64) * dampening
 
         n_samples = len(X)
         split_idx = int(n_samples * 0.85)
@@ -369,17 +404,19 @@ def train_chaser_student(
             dvalid.set_base_margin(init_score_valid)
 
         default_params = {
-            "eta": 0.03,
-            "max_depth": 5, # Increased to 5
-            "min_child_weight": 10,
-            "subsample": 0.6,
-            "colsample_bytree": 0.7,
-            "colsample_bynode": 0.4,
-            "reg_lambda": 25.0, # Decreased to 25
-            "reg_alpha": 0.2, # Added L1 regularization
-            "gamma": 0.7, # Decreased to 0.7
-            "num_parallel_tree": 15, # Random Forest behavior
-            "n_jobs": -1
+            "learning_rate": 0.2, # Updated
+            "max_depth": 5, # Updated
+            "min_child_weight": 25, # Updated
+            "subsample": 0.8, # Updated
+            "colsample_bytree": 0.8, # Updated
+            "colsample_bynode": 0.65, # Updated
+            "reg_lambda": 5.0, # Updated
+            "reg_alpha": 0.5, # Updated
+            "gamma": 0.2, # Updated
+            "num_parallel_tree": 250, # Random Forest behavior (Boosted RF)
+            "tree_method": "hist", # Updated
+            "n_jobs": -1,
+            # "linear_tree": True # XGBoost does not support this parameter. Disabled to prevent crash.
         }
         if mode == "regression":
             default_params["objective"] = "reg:squarederror"
@@ -401,15 +438,26 @@ def train_chaser_student(
         if interaction_constraints_weak is not None:
             params["interaction_constraints"] = interaction_constraints_weak
 
+        # If user supplied n_estimators=4 in params (via logic), enforce it here.
+        # But 'num_boost_round' is argument.
+        # User request: "n_estimators=4". We should check if we should override num_boost_round.
+        # For Boosted RF (num_parallel_tree=250), n_estimators (num_boost_round) is usually small (e.g. 1 or 4).
+        # We'll default num_boost_round to 4 if it's the default 1000, unless passed explicitly differently.
+        # But we must respect the function arg if it's not the default.
+        # Given the instruction "n_estimators=4", we set it.
+        # To be safe, if num_boost_round is the default (1000), we change it to 4.
+        if num_boost_round == 1000:
+            num_boost_round = 4
+
         bst = xgb.train(
             params,
             dtrain,
             num_boost_round=num_boost_round,
             evals=[(dtrain, "train"), (dvalid, "valid")],
-            early_stopping_rounds=30, # Aggressive early stopping
+            early_stopping_rounds=None, # Usually RF doesn't need early stopping if rounds are fixed/low.
             verbose_eval=False
         )
-        return {"model": bst, "mode": mode, "type": "xgb", "params": params}
+        return {"model": bst, "mode": mode, "type": "xgb", "params": params, "dampening": dampening}
 
     # --- LightGBM ---
     elif model_type == "lgb":
@@ -567,9 +615,15 @@ def predict_chaser_student(
     mode = student_artifact["mode"]
     m_type = student_artifact["type"]
 
+    # Apply dampening if present in artifact
+    dampening = student_artifact.get("dampening", 1.0)
+
     if mode == "regression":
         if teacher_mu is None:
             raise ValueError("teacher_mu required for regression prediction")
+
+        # Apply dampening to teacher baseline
+        base_pred = dampening * teacher_mu
 
         if m_type == "xgb":
             d = xgb.DMatrix(X)
@@ -583,15 +637,18 @@ def predict_chaser_student(
         else:
             raise ValueError(f"Unknown model type {m_type}")
 
-        return teacher_mu + r_hat
+        return base_pred + r_hat
 
     elif mode == "classification":
         if teacher_margin is None:
             raise ValueError("teacher_margin required for classification prediction")
-            
+
+        # Apply dampening to teacher margin
+        base_margin = dampening * teacher_margin
+
         if m_type == "xgb":
             d = xgb.DMatrix(X)
-            d.set_base_margin(teacher_margin)
+            d.set_base_margin(base_margin)
             p_hat = model.predict(d) # Returns sigmoid(margin + delta)
         elif m_type == "lgb":
             # predict returns raw scores if raw_score=True, else probabilities
@@ -599,17 +656,17 @@ def predict_chaser_student(
             # We predict raw margin correction, add to baseline, then sigmoid.
             margin_delta = model.predict(X, raw_score=True)
             # Note: LGBM trained with init_score learns the residual margin.
-            p_hat = sigmoid(teacher_margin + margin_delta)
+            p_hat = sigmoid(base_margin + margin_delta)
         elif m_type == "cat":
             # CatBoost predict with prediction_type='RawFormulaVal' gives delta
             margin_delta = model.predict(X, prediction_type='RawFormulaVal')
-            p_hat = sigmoid(teacher_margin + margin_delta)
+            p_hat = sigmoid(base_margin + margin_delta)
         elif m_type == "et":
             # "residual_prob" subtype
             # Predicts (y - p_teacher)
             # Final p = p_teacher + delta
             # We need p_teacher, but we passed margin.
-            p_teacher = sigmoid(teacher_margin)
+            p_teacher = sigmoid(base_margin)
             delta = model.predict(X)
             p_hat = np.clip(p_teacher + delta, 0.0, 1.0)
         else:

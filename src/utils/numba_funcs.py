@@ -695,90 +695,127 @@ def _numba_streak_persistence(close, window=20):
     Streak = sequence of returns with same sign.
     Persistence = mean(streak_lengths) / std(streak_lengths)
 
-    This replaces the slow rolling().apply(streak_z) loop.
+    Optimized to O(N) using incremental updates with a circular buffer.
     """
     n = len(close)
     output = np.zeros(n, dtype=np.float64)
 
     # Pre-calculate signs of differences
-    # diff[i] = close[i] - close[i-1]
-    # We first calculate diffs manually to avoid dependency
-    diffs = np.zeros(n, dtype=np.float64)
+    signs = np.zeros(n, dtype=np.float64)
     for i in range(1, n):
-        diffs[i] = close[i] - close[i - 1]
+        d = close[i] - close[i - 1]
+        if d > 0:
+            signs[i] = 1.0
+        elif d < 0:
+            signs[i] = -1.0
+        else:
+            signs[i] = 0.0
 
-    signs = np.sign(diffs)
+    # State
+    # Max streaks is bounded by window size
+    capacity = window + 5
+    buf_lens = np.zeros(capacity, dtype=np.float64)
+    buf_signs = np.zeros(capacity, dtype=np.float64)
 
-    # Iterate through windows
-    for i in range(window, n):
-        # Window from i-window+1 to i (inclusive)
-        # Note: We look at the diffs occurring WITHIN the window.
-        # indices of interest: i-window+1 to i
+    head = 0
+    tail = 0
+    count = 0
 
-        # Extract window signs
-        # slice: [i-window+1 : i+1]
-        start_idx = i - window + 1
-        end_idx = i + 1
+    sum_len = 0.0
+    sum_sq = 0.0
 
-        if start_idx < 0:
-            start_idx = 0
-
-        # Numba slice
-        window_signs = signs[start_idx:end_idx]
-
-        # Calculate streaks in this window
-        if len(window_signs) < 2:
+    # Initialization loop (fill first window)
+    # Indices 1 to window
+    for k in range(1, window + 1):
+        if k >= n:
+            break
+        s = signs[k]
+        if s == 0:
             continue
 
-        current_streak = 0.0
-        # We can't use list append in nopython mode effectively if type inference is tricky,
-        # using a fixed size array or just computing stats online is better.
-        # But for streaks, we need the variance of lengths.
-        # Let's use a pre-allocated array buffer for this window
-        streak_buffer = np.zeros(window, dtype=np.float64)
-        streak_count = 0
-
-        last_sign = 0.0
-
-        for j in range(len(window_signs)):
-            s = window_signs[j]
-            if s == 0:
-                continue
-
-            if s == last_sign:
-                current_streak += 1.0
-            else:
-                if current_streak > 0:
-                    streak_buffer[streak_count] = current_streak
-                    streak_count += 1
-                current_streak = 1.0
-                last_sign = s
-
-        # Append last streak
-        if current_streak > 0:
-            streak_buffer[streak_count] = current_streak
-            streak_count += 1
-
-        # Compute Z-score stats
-        if streak_count < 2:
-            output[i] = 0.0
+        if count == 0:
+            buf_lens[tail] = 1.0
+            buf_signs[tail] = s
+            count = 1
+            sum_len += 1.0
+            sum_sq += 1.0
         else:
-            # Calculate mean and std manually
-            sum_val = 0.0
-            sum_sq = 0.0
-            for k in range(streak_count):
-                val = streak_buffer[k]
-                sum_val += val
-                sum_sq += val * val
-
-            mean_val = sum_val / streak_count
-            var_val = (sum_sq / streak_count) - (mean_val * mean_val)
-
-            if var_val < 1e-9:
-                output[i] = 0.0
+            last_s = buf_signs[tail]
+            if s == last_s:
+                old_len = buf_lens[tail]
+                new_len = old_len + 1.0
+                buf_lens[tail] = new_len
+                sum_len += 1.0
+                sum_sq += new_len * new_len - old_len * old_len
             else:
-                std_val = np.sqrt(var_val)
-                output[i] = mean_val / std_val
+                tail = (tail + 1) % capacity
+                buf_lens[tail] = 1.0
+                buf_signs[tail] = s
+                count += 1
+                sum_len += 1.0
+                sum_sq += 1.0
+
+    # Output for i=window
+    if window < n:
+        if count >= 2:
+            mean = sum_len / count
+            var = (sum_sq / count) - (mean * mean)
+            if var > 1e-9:
+                output[window] = mean / np.sqrt(var)
+
+    # Rolling loop
+    for i in range(window + 1, n):
+        # Leaving: i - window
+        leaving_idx = i - window
+        leaving_s = signs[leaving_idx]
+
+        if leaving_s != 0 and count > 0:
+            old_len = buf_lens[head]
+            new_len = old_len - 1.0
+
+            sum_len -= 1.0
+            sum_sq += new_len * new_len - old_len * old_len
+
+            if new_len <= 0:
+                head = (head + 1) % capacity
+                count -= 1
+            else:
+                buf_lens[head] = new_len
+
+        # Entering: i
+        entering_s = signs[i]
+        if entering_s != 0:
+            if count == 0:
+                # Reset pointers if empty
+                head = 0
+                tail = 0
+                buf_lens[tail] = 1.0
+                buf_signs[tail] = entering_s
+                count = 1
+                sum_len = 1.0
+                sum_sq = 1.0
+            else:
+                last_s = buf_signs[tail]
+                if entering_s == last_s:
+                    old_len = buf_lens[tail]
+                    new_len = old_len + 1.0
+                    buf_lens[tail] = new_len
+
+                    sum_len += 1.0
+                    sum_sq += new_len * new_len - old_len * old_len
+                else:
+                    tail = (tail + 1) % capacity
+                    buf_lens[tail] = 1.0
+                    buf_signs[tail] = entering_s
+                    count += 1
+                    sum_len += 1.0
+                    sum_sq += 1.0
+
+        if count >= 2:
+            mean = sum_len / count
+            var = (sum_sq / count) - (mean * mean)
+            if var > 1e-9:
+                output[i] = mean / np.sqrt(var)
 
     return output
 

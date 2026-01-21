@@ -391,6 +391,52 @@ class CausalSurpriseDetector:
                 f"exposure={self.zone_score_exposure:.2f}"
             )
 
+    def compute_regime_specific_reliability(self, regime_posteriors: pd.DataFrame) -> pd.DataFrame:
+        """
+        Compute specialist reliability scores per regime using weighted statistics.
+        Returns a DataFrame (Specialist x Regime) of reliability scores.
+        Q(s, r) = 1.0 / (Weighted_Variance(error_s | r) + epsilon)
+        """
+        if not self.specialist_errors_ or regime_posteriors is None or regime_posteriors.empty:
+            return pd.DataFrame()
+
+        errors_df = self._build_error_frame()
+        common_idx = errors_df.index.intersection(regime_posteriors.index)
+
+        if len(common_idx) < 50:
+            return pd.DataFrame()
+
+        errors_aligned = errors_df.loc[common_idx]
+        posteriors_aligned = regime_posteriors.loc[common_idx]
+
+        reliability_matrix = pd.DataFrame(index=errors_aligned.columns, columns=posteriors_aligned.columns)
+
+        for regime_col in posteriors_aligned.columns:
+            weights = posteriors_aligned[regime_col].values
+            weight_sum = np.sum(weights)
+
+            if weight_sum < 1e-6:
+                reliability_matrix[regime_col] = 1.0
+                continue
+
+            # Compute weighted variance of errors per specialist
+            # Var_w = sum(w * (x - mean_w)^2) / sum(w)
+            for spec in errors_aligned.columns:
+                err = errors_aligned[spec].values
+                weighted_mean = np.average(err, weights=weights)
+                weighted_var = np.average((err - weighted_mean)**2, weights=weights)
+
+                # Q(s,r) = Inverse Variance (Precision)
+                # Normalize? For now raw precision is fine, will normalize later
+                reliability_matrix.loc[spec, regime_col] = 1.0 / (weighted_var + 1e-4)
+
+        # Normalize columns (sum to 1 per regime?)
+        # Actually we want absolute quality, but for weighting we usually normalize across specialists.
+        # Let's normalize across specialists for each regime so sum(Q(:, r)) = 1
+        reliability_matrix = reliability_matrix.div(reliability_matrix.sum(axis=0), axis=1).fillna(1.0 / len(errors_aligned.columns))
+
+        return reliability_matrix
+
     def aggregate_specialist_surprise(
         self,
         spectral_reliability: Optional[Dict[str, Dict[str, Any]]] = None,
@@ -401,6 +447,7 @@ class CausalSurpriseDetector:
     ) -> pd.DataFrame:
         """
         Aggregate surprise scores across all specialists.
+        Uses regime-conditional weighting if regime_posteriors is provided.
 
         Args:
             regime_posteriors: DataFrame of regime posterior probabilities (soft regimes)
@@ -435,7 +482,9 @@ class CausalSurpriseDetector:
                 if self.verbose:
                     tprint_info(f"📊 Integrated regime volatility weighting (mean factor: {regime_weight.mean():.3f})")
             
-            # Step 5: Specialist Weighting (Inverse-Variance + Reliability)
+            # Step 5: Specialist Weighting (Regime-Conditional vs Global)
+
+            # 5a. Global Weights (Inverse-Variance + Reliability) - Fallback/Base
             inv_var_weights = {}
             for spec_name, meta in self.specialist_metadata_.items():
                 std_err = meta.get('std_error', 1.0)
@@ -444,7 +493,7 @@ class CausalSurpriseDetector:
             inv_var_series = pd.Series(inv_var_weights).reindex(surprise_df.columns).fillna(0.1)
             inv_var_series /= inv_var_series.sum()
 
-            # Reliability weights
+            # Global Reliability weights
             spectral_scores = pd.Series()
             if spectral_reliability:
                 spectral_scores = pd.Series({
@@ -466,16 +515,80 @@ class CausalSurpriseDetector:
             
             reliability_weight = reliability_weight.reindex(surprise_df.columns).fillna(0.1)
             
-            # Combine
-            final_weights = inv_var_series * reliability_weight
-            weight_series = final_weights / final_weights.sum()
+            # 5b. Regime-Conditional Weighting (The "Contract")
+            if regime_posteriors is not None:
+                # Compute Q(s, r) matrix
+                regime_reliability = self.compute_regime_specific_reliability(regime_posteriors)
 
-            # Aggregation logic
+                if not regime_reliability.empty:
+                    if self.verbose:
+                        tprint_info("   🧬 Applying Regime-Conditional Specialist Weighting...")
+
+                    # Align indices
+                    aligned_posteriors = regime_posteriors.reindex(surprise_df.index).fillna(1.0 / regime_posteriors.shape[1])
+
+                    # Compute dynamic weights W(t, s) = sum_r( P(r|t) * Q(s, r) )
+                    # Matrix multiplication: (T x R) @ (R x S) -> (T x S)
+                    # regime_reliability is (S x R), so we use its transpose (R x S)
+                    dynamic_weights = aligned_posteriors @ regime_reliability.T
+
+                    # Blend with Global Reliability (Stability Anchor)
+                    # W_final(t, s) = 0.7 * Dynamic(t, s) + 0.3 * Global(s)
+                    # Broadcast global weights across time
+                    global_weights_df = pd.DataFrame([reliability_weight.values] * len(surprise_df), index=surprise_df.index, columns=surprise_df.columns)
+
+                    # Ensure columns match
+                    dynamic_weights = dynamic_weights.reindex(columns=surprise_df.columns).fillna(0.0)
+
+                    # Combine
+                    combined_weights = 0.7 * dynamic_weights + 0.3 * global_weights_df
+
+                    # Normalize rows to sum to 1
+                    weight_matrix = combined_weights.div(combined_weights.sum(axis=1), axis=0).fillna(0.0)
+                else:
+                    # Fallback to global if regime reliability calc failed
+                    weight_series = (inv_var_series * reliability_weight)
+                    weight_series /= weight_series.sum()
+                    weight_matrix = pd.DataFrame([weight_series.values] * len(surprise_df), index=surprise_df.index, columns=surprise_df.columns)
+            else:
+                # Pure Global
+                final_weights = inv_var_series * reliability_weight
+                weight_series = final_weights / final_weights.sum()
+                weight_matrix = pd.DataFrame([weight_series.values] * len(surprise_df), index=surprise_df.index, columns=surprise_df.columns)
+
+            # Aggregation logic using time-varying weights
             aggregated = pd.DataFrame(index=surprise_df.index)
-            aggregated['max_surprise'] = (surprise_df * weight_series).max(axis=1)
-            aggregated['mean_surprise'] = (surprise_df * weight_series).sum(axis=1)
-            weighted_consensus = (surprise_df > self.surprise_threshold).mul(weight_series, axis=1).sum(axis=1)
-            aggregated['surprise_consensus'] = weighted_consensus * float(len(weight_series))
+
+            # Weighted Max/Mean/Consensus
+            # Element-wise multiplication: Surprise(t, s) * Weight(t, s)
+            weighted_surprise = surprise_df * weight_matrix
+
+            aggregated['max_surprise'] = weighted_surprise.max(axis=1)
+            aggregated['mean_surprise'] = weighted_surprise.sum(axis=1)
+
+            # Weighted Consensus: sum_s( I(surprise > thresh) * weight(t, s) )
+            is_surprised = (surprise_df > self.surprise_threshold).astype(float)
+            weighted_consensus = (is_surprised * weight_matrix).sum(axis=1)
+            # Scale consensus to be comparable to "number of specialists"
+            # Since weights sum to 1, we multiply by N_spec to get an "effective count"
+            n_specs = float(len(surprise_df.columns))
+            aggregated['surprise_consensus'] = weighted_consensus * n_specs
+
+            # Aggregate Signed Errors for Directionality
+            signed_errors = errors_df.reindex(surprise_df.columns, axis=1).fillna(0)
+            aggregated['mean_signed_error'] = (signed_errors * weight_matrix).sum(axis=1)
+
+            # Simple break stats (unweighted for raw count)
+            break_df = (surprise_df > self.surprise_threshold).astype(int)
+            aggregated['total_breaks'] = break_df.sum(axis=1)
+            aggregated['has_break'] = (aggregated['total_breaks'] > 0).astype(int)
+
+            zone_levels = self._compute_specialist_zone_levels(surprise_df)
+            zone_scores = self._compute_specialist_zone_scores(zone_levels, surprise_df)
+            combined_zone_score = self._compute_combined_zone_score(zone_scores, zone_levels)
+            adjusted_zone_score = combined_zone_score.reindex(aggregated.index).fillna(0.0)
+            adjusted_zone_score *= float(getattr(self, "zone_score_exposure", 1.0)) * float(exposure_scalar)
+            aggregated['zone_score'] = adjusted_zone_score.clip(0.0, self.zone_score_cap)
             
             # Aggregate Signed Errors for Directionality
             signed_errors = errors_df.reindex(surprise_df.columns, axis=1).fillna(0)
@@ -758,21 +871,39 @@ class CausalSurpriseDetector:
             scores = self.surprise_events_['max_surprise']
 
             # --- 1. Regime-Conditional Adaptive Thresholding ---
+            # Theta(t) = sum_r( P(r|t) * Theta_r )
+            # Theta_r = 96th percentile of scores weighted by regime probability
+
             if regime_posteriors is not None:
-                # Calculate thresholds per regime (using weighted quantile if possible, or global quantile on regime subsets)
-                # Simplified: Global rolling 96% quantile adjusted by regime volatility factors
-                # Low Vol Regime (0) -> Lower threshold (more sensitive)
-                # High Vol Regime (K) -> Higher threshold (less sensitive)
-
-                base_threshold = scores.rolling(window=2880, min_periods=100).quantile(0.96).fillna(event_threshold)
-
-                # Align posteriors
                 aligned_posteriors = regime_posteriors.reindex(scores.index).ffill().fillna(0.0)
                 n_regimes = aligned_posteriors.shape[1]
 
-                # Heuristic multipliers: Regime 0 (Low) -> 0.8x, Regime K (High) -> 1.2x
-                regime_multipliers = np.linspace(0.8, 1.2, n_regimes)
+                # Calculate Theta_r for each regime
+                # Since rolling weighted quantile is expensive, we approximate:
+                # 1. Calculate global rolling quantile baseline
+                # 2. Calculate regime-specific scaling factors based on historical volatility of scores in that regime
 
+                base_threshold = scores.rolling(window=2880, min_periods=100).quantile(0.96).fillna(event_threshold)
+
+                # Determine Score Volatility per Regime
+                regime_score_scales = []
+                for k in range(n_regimes):
+                    regime_col = aligned_posteriors.columns[k]
+                    weights = aligned_posteriors[regime_col].values
+                    if weights.sum() > 0:
+                        # Weighted mean of scores
+                        w_mean = np.average(scores.values, weights=weights)
+                        # Weighted std of scores
+                        w_std = np.sqrt(np.average((scores.values - w_mean)**2, weights=weights))
+                        regime_score_scales.append(w_std)
+                    else:
+                        regime_score_scales.append(1.0)
+
+                # Normalize scales relative to global mean scale
+                global_scale = np.mean(regime_score_scales)
+                regime_multipliers = [s / (global_scale + 1e-9) for s in regime_score_scales]
+
+                # Blend multipliers: Multiplier(t) = sum_r( P(r|t) * Multiplier_r )
                 effective_multiplier = pd.Series(0.0, index=scores.index)
                 for k in range(n_regimes):
                     col = aligned_posteriors.columns[k]
@@ -782,7 +913,7 @@ class CausalSurpriseDetector:
                 adaptive_threshold = adaptive_threshold.clip(lower=event_threshold)
 
                 if self.verbose:
-                    tprint_info(f"   🧬 Using Soft Regime-Conditional Thresholding (Mean Mult: {effective_multiplier.mean():.2f})")
+                    tprint_info(f"   🧬 Using Data-Driven Regime Thresholding (Mean Mult: {effective_multiplier.mean():.2f})")
             else:
                 # Fallback: Global Adaptive Threshold
                 rolling_threshold = scores.rolling(window=2880, min_periods=100).quantile(0.96)

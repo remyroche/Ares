@@ -1703,7 +1703,8 @@ def check_label_quality(
 
 def calculate_multifactor_score(
     candidates: List[Dict],
-    probe_features: pd.DataFrame
+    probe_features: pd.DataFrame,
+    regime_posteriors: Optional[pd.DataFrame] = None
 ) -> List[Dict]:
     if not candidates: return []
     scores = []
@@ -1747,6 +1748,47 @@ def calculate_multifactor_score(
                 else:
                     # Mismatch or unaligned array. Fallback to uniform.
                     weights_vals = np.ones(n)
+
+        # ---------------- REGIME-CONDITIONAL METRICS (The "Contract") ----------------
+        min_regime_lift = 0.0
+        max_regime_lift = 0.0
+        regime_dispersion = 0.0
+
+        if regime_posteriors is not None:
+            # Align posteriors
+            aligned_probs = regime_posteriors.reindex(labels.index).fillna(0.0)
+            regime_lifts = []
+
+            # Simple Lift proxy: Abs(Return) when label != 0 vs baseline
+            # Or simpler: weighted mean of absolute returns for events in that regime?
+            # Better: Use the 'lift' metric from probe (Meta-Sharpe - Base-Sharpe) but calculated per regime.
+            # Approximation: Mean(Label * Return) / Volatility per regime
+
+            returns = cand['returns']
+
+            for col in aligned_probs.columns:
+                p_r = aligned_probs[col]
+                # Soft-weighted mask for this regime
+                # Calculate weighted sharpe proxy
+                w_r = weights_vals * p_r.values
+                if w_r.sum() > 5: # Need minimal mass
+                    weighted_ret = (returns * labels).fillna(0) # Strategy return
+                    # Weighted Mean / Weighted Std
+                    mean_r = np.average(weighted_ret, weights=w_r)
+                    var_r = np.average((weighted_ret - mean_r)**2, weights=w_r)
+                    sharpe_r = mean_r / (np.sqrt(var_r) + 1e-9)
+                    regime_lifts.append(sharpe_r)
+
+            if regime_lifts:
+                min_regime_lift = min(regime_lifts)
+                max_regime_lift = max(regime_lifts)
+                regime_dispersion = np.std(regime_lifts)
+            else:
+                # Fallback if no regime alignment
+                min_regime_lift = 0.0
+                max_regime_lift = 0.0
+                regime_dispersion = 0.0
+        # -----------------------------------------------------------------------------
 
         if n > MAX_SAMPLES:
             indices = np.random.RandomState(42).choice(n, MAX_SAMPLES, replace=False)
@@ -1844,6 +1886,10 @@ def calculate_multifactor_score(
             'interventional_contrast': interventional_contrast,
             'overlap_support': overlap_support,
             'path_stability_var': path_stability_var,
+            # Regime-Conditional Metrics
+            'min_regime_lift': min_regime_lift,
+            'max_regime_lift': max_regime_lift,
+            'regime_dispersion': regime_dispersion
         }
         cand['metrics_raw'] = cand_raw_metrics
         raw_metric_log.append({
@@ -1859,21 +1905,39 @@ def calculate_multifactor_score(
 
     for i, cand in enumerate(scores):
         row = df_norm.iloc[i]
+        metrics = cand['metrics_raw']
+
+        # 1. Base Power: IC or F-stat
         power = max(row['ic'], row['f_stat'])
-        raw_sig = df_scores.iloc[i]['significance']
         
-        # Incorporate Causal Integrity into power if available
+        # 2. Causal Integrity Bonus
         ic_ic = row.get('interventional_contrast', 0.0)
         purity_score = (power * 0.7 + ic_ic * 0.3) if not np.isnan(ic_ic) else power
 
+        # 3. Regime Robustness (The Contract)
+        # Reward candidates that work everywhere (min_lift) and penalize dispersion
+        # Or allow Conditional if max_lift is high (but maybe scored lower than Core)
+
+        # Determine Admission Type
+        is_core = (metrics['min_regime_lift'] > 0.05) and (metrics['regime_dispersion'] < 0.5)
+        is_conditional = (metrics['max_regime_lift'] > 0.15) # High peak performance
+
+        cand['classification'] = 'CORE' if is_core else ('CONDITIONAL' if is_conditional else 'WEAK')
+
+        # Improved Ranking Formula
+        # Rank = a*(1-min_p) + b*min_lift - c*dispersion
+        # (Using row values which are normalized 0-1)
+        # Use significance (log n_eff) as proxy for (1-min_p) confidence
+
+        regime_score = row.get('min_regime_lift', 0.0) - 0.5 * row.get('regime_dispersion', 0.0)
+
         final_score = (
-            purity_score *
-            raw_sig *
-            row['stability'] *
-            row['balance'] *
-            row['density'] *
-            (1.0 + row['path_score'])
+            0.4 * purity_score +
+            0.2 * row['significance'] +
+            0.2 * row['stability'] +
+            0.2 * regime_score
         )
+
         cand['score'] = final_score
         cand['power'] = power
 
@@ -5221,7 +5285,14 @@ def orthogonal_label_generation(
             tprint_warning(f"Composite {comp['family']} failed: {e}")
 
     # 5. Multi-Factor Scoring
-    scored_candidates = calculate_multifactor_score(candidates, X_probe)
+    # Load regime posteriors if available for scoring
+    regime_posteriors = None
+    if 'regime_0' in df_full.columns: # Heuristic check if regime cols were added to df_full
+        regime_cols = [c for c in df_full.columns if c.startswith('regime_')]
+        if regime_cols:
+            regime_posteriors = df_full[regime_cols]
+
+    scored_candidates = calculate_multifactor_score(candidates, X_probe, regime_posteriors)
     
     if not scored_candidates:
         tprint_warning("No candidates passed gates.")

@@ -3448,53 +3448,15 @@ def generate_multi_horizon_candidates(df: pd.DataFrame) -> List[Dict]:
 def generate_regime_conditioned_candidates(df: pd.DataFrame, ohlcv_candidates: List[Dict], specialist_families: List[str]) -> List[Dict]:
     """
     Level 6: Regime-Conditioned Features.
-    Conditions OHLCV candidates on Specialist states (e.g. Return Shock when Inventory is High).
-    Uses implicit regimes defined by Specialist Weight > 0.5 (High) or < 0.2 (Low? or just 1-Weight).
-    Actually, just multiplying the weights (Soft Conditioning) is effective and simpler.
-    Condition = OHLCV_Weight * Specialist_Weight
-    """
-    candidates = []
     
-    # Pre-calculate specialist weights
-    spec_weights = {}
-    for fam in specialist_families:
-        spec_weights[fam] = get_specialist_event_matrix(df, fam)
-        
-    for cand in ohlcv_candidates:
-        w_ohlcv = cand['weight_vector']
-        if not isinstance(w_ohlcv, pd.Series): continue
-        
-        for fam, w_spec in spec_weights.items():
-            if not isinstance(w_spec, pd.Series): continue
-            
-            # Condition: OHLCV interaction with Specialist Regime
-            # We want to capture: "Shock occurring during High Specialist Activity"
-            # Simply multiplying the weights achieves this 'soft AND' logic.
-            # w_combined = w_ohlcv * w_spec
-            # But we might want to be more specific: "High Inventory" vs "Low Inventory"
-            # For now, let's stick to "Relevance" (High Weight)
-            
-            w_combined = w_ohlcv * w_spec
-            
-            # Filter: Check if we have enough mass
-            if w_combined.sum() > 5.0: # Arbitrary mass threshold, ensure some overlap exists
-                # Normalize?
-                # z_combined = (w_combined - w_combined.mean()) / (w_combined.std() + 1e-9) # No, keep as probability-like mass
-                
-                # We need to turn this into a weight vector acceptable by Layer 2
-                # It is already [0, 1] * [0, 1] -> [0, 1]
-                
-                 events_combined = w_combined[w_combined > 0.1].index # Lower threshold for combined
-                 
-                 if len(events_combined) > 50:
-                     candidates.append({
-                         'family': f'COND_{cand["family"]}_ON_{fam.replace("_SPECIALIST", "")}',
-                         'events': events_combined,
-                         'weight_vector': w_combined,
-                         'params': {'type': 'regime_conditioned', 'parent': cand['family'], 'condition': fam}
-                     })
-                     
-    return candidates
+    [DEPRECATED] Hard-coded conditional families (COND_...) are replaced by
+    Soft Regime Conditioning (Feature Injection) in the main model pipeline.
+    See LabelBasedLayer2 for GMM posterior injection.
+
+    Returns empty list to disable COND_ family generation.
+    """
+    tprint_info("   ⏭️ Skipping Regime-Conditioned Candidates (Replaced by Soft Regime Conditioning)")
+    return []
 
 def validate_candidates_with_causal_graph(candidates: List[Dict], df: pd.DataFrame, target_col: str = 'close', verbose: bool = True) -> List[Dict]:
     """
@@ -5932,6 +5894,7 @@ class CausalSurpriseEvents(BaseEventGenerator):
                 causal_graph: Dict[str, List[str]] = None, surprise_threshold: float = 1.25,
                 zone3_boost: float = 3.0, zone2_boost: float = 2.0, exposure_scalar: float = 1.0,
                 tracker: Optional[Any] = None,
+                regime_posteriors: Optional[pd.DataFrame] = None,
                 **params) -> pd.DatetimeIndex:
         
         # Merge params for convenience
@@ -5939,6 +5902,7 @@ class CausalSurpriseEvents(BaseEventGenerator):
                 'specialist_predictions': specialist_predictions,
                 'causal_graph': causal_graph,
                 'surprise_threshold': surprise_threshold,
+                'regime_posteriors': regime_posteriors,
                 **params
         }
         
@@ -5974,7 +5938,7 @@ class CausalSurpriseEvents(BaseEventGenerator):
 
             # Generate surprise events
             tprint_info("   🔍 CausalSurpriseEvents: Computing surprise scores...")
-            surprise_df = self.surprise_detector.aggregate_specialist_surprise()
+            surprise_df = self.surprise_detector.aggregate_specialist_surprise(regime_posteriors=regime_posteriors)
 
             if surprise_df.empty:
                 tprint_warning("   ⚠️ CausalSurpriseEvents: No surprise scores computed")
@@ -5986,7 +5950,7 @@ class CausalSurpriseEvents(BaseEventGenerator):
             self.surprise_detector.adaptive_calibration(target_density, duration_days)
 
             tprint_info("   🎯 CausalSurpriseEvents: Generating causal events...")
-            causal_events = self.surprise_detector.generate_causal_events()
+            causal_events = self.surprise_detector.generate_causal_events(regime_posteriors=regime_posteriors)
 
             if causal_events:
                 event_indices = list(causal_events.keys())

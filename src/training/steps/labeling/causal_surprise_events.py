@@ -396,10 +396,14 @@ class CausalSurpriseDetector:
         spectral_reliability: Optional[Dict[str, Dict[str, Any]]] = None,
         exposure_scalar: float = 1.0,
         regime_vol: Optional[pd.Series] = None,
-        market_data: Optional[pd.DataFrame] = None
+        market_data: Optional[pd.DataFrame] = None,
+        regime_posteriors: Optional[pd.DataFrame] = None
     ) -> pd.DataFrame:
         """
         Aggregate surprise scores across all specialists.
+
+        Args:
+            regime_posteriors: DataFrame of regime posterior probabilities (soft regimes)
         """
         try:
             if self.verbose:
@@ -502,12 +506,38 @@ class CausalSurpriseDetector:
                 bins=[-np.inf, 0.25, 0.66, np.inf],
                 labels=[1, 2, 3]
             ).astype(float).fillna(1)
+
+            # --- REGIME-CONDITIONAL PROBABILITY CALIBRATION ---
+            # Map consensus surprise to event probability using soft regime weights
+            if regime_posteriors is not None:
+                try:
+                    aligned_posteriors = regime_posteriors.reindex(aggregated.index).fillna(1.0 / regime_posteriors.shape[1])
+                    base_prob = self._calibrate_event_probability(aggregated['max_surprise'])
+
+                    # Regime-specific adjustments (heuristic: Volatile regimes have higher noise floor)
+                    # We assume regimes are ordered 0..K (Low..High Vol) - verify in production!
+                    # For now, we apply a sigmoid scaling based on regime index
+                    n_regimes = aligned_posteriors.shape[1]
+                    regime_factors = np.linspace(1.2, 0.8, n_regimes) # Low Vol -> Boost Prob, High Vol -> Dampen Prob (Noise)
+
+                    weighted_prob = pd.Series(0.0, index=aggregated.index)
+                    for k in range(n_regimes):
+                        regime_col = aligned_posteriors.columns[k]
+                        weighted_prob += aligned_posteriors[regime_col] * (base_prob * regime_factors[k])
+
+                    aggregated['event_probability'] = weighted_prob.clip(0.0, 1.0)
+                except Exception as e:
+                    tprint_warning(f"   ⚠️ Probability calibration failed: {e}")
+                    aggregated['event_probability'] = self._calibrate_event_probability(aggregated['max_surprise'])
+            else:
+                aggregated['event_probability'] = self._calibrate_event_probability(aggregated['max_surprise'])
             
             self.surprise_events_ = aggregated
             
             if self.verbose:
                 tprint_success(f"✅ Continuous surprise aggregation complete:")
                 tprint_info(f"   - ZoneScore Mean: {aggregated['zone_score'].mean():.4f}")
+                tprint_info(f"   - Event Prob Mean: {aggregated['event_probability'].mean():.4f}")
             
             return aggregated
         except Exception as e:
@@ -703,38 +733,60 @@ class CausalSurpriseDetector:
     
     def generate_causal_events(
         self,
-        event_threshold: float = 0.25,  # Lowered from 0.5 to capture more events
-        min_event_separation: float = 0.25,  # Lowered from 1 hour to 15 minutes
-        regime_vol: Optional[pd.Series] = None
+        event_threshold: float = 0.25,
+        min_event_separation: float = 0.25,
+        regime_vol: Optional[pd.Series] = None,
+        regime_posteriors: Optional[pd.DataFrame] = None
     ) -> Dict[int, Dict[str, Any]]:
         """
-        Generate causal surprise events from aggregated data.
+        Generate causal surprise events from aggregated data using Regime-Conditional Thresholds.
         
         Args:
-            event_threshold: Threshold for event generation (lowered default to 0.3)
-            min_event_separation: Minimum separation between events in hours (lowered to 0.25)
-            regime_vol: Optional volatility series for Regime Gating (Noise Filtering)
-            
-        Returns:
-            Dictionary of causal events
+            regime_posteriors: DataFrame of GMM posterior probabilities for soft thresholding.
         """
         try:
             if self.verbose:
                 tprint_info("🎯 Generating Causal Surprise Events...")
             
             if self.surprise_events_ is None or len(self.surprise_events_) == 0:
-                self.aggregate_specialist_surprise()
+                self.aggregate_specialist_surprise(regime_posteriors=regime_posteriors)
             
             if self.surprise_events_ is None or len(self.surprise_events_) == 0:
                 tprint_warning("   ⚠️ No surprise events found after aggregation - check specialist registration")
                 return {}
             
-            # --- 1. Adaptive Quantile Thresholding ---
-            # Instead of fixed threshold, use rolling 96th percentile of surprise magnitudes (User: 4% target)
-            # But ensure it doesn't fall below hard floor 'event_threshold'
             scores = self.surprise_events_['max_surprise']
-            rolling_threshold = scores.rolling(window=2880, min_periods=100).quantile(0.96) # 30 days of 15m
-            adaptive_threshold = rolling_threshold.fillna(event_threshold).clip(lower=event_threshold)
+
+            # --- 1. Regime-Conditional Adaptive Thresholding ---
+            if regime_posteriors is not None:
+                # Calculate thresholds per regime (using weighted quantile if possible, or global quantile on regime subsets)
+                # Simplified: Global rolling 96% quantile adjusted by regime volatility factors
+                # Low Vol Regime (0) -> Lower threshold (more sensitive)
+                # High Vol Regime (K) -> Higher threshold (less sensitive)
+
+                base_threshold = scores.rolling(window=2880, min_periods=100).quantile(0.96).fillna(event_threshold)
+
+                # Align posteriors
+                aligned_posteriors = regime_posteriors.reindex(scores.index).ffill().fillna(0.0)
+                n_regimes = aligned_posteriors.shape[1]
+
+                # Heuristic multipliers: Regime 0 (Low) -> 0.8x, Regime K (High) -> 1.2x
+                regime_multipliers = np.linspace(0.8, 1.2, n_regimes)
+
+                effective_multiplier = pd.Series(0.0, index=scores.index)
+                for k in range(n_regimes):
+                    col = aligned_posteriors.columns[k]
+                    effective_multiplier += aligned_posteriors[col] * regime_multipliers[k]
+
+                adaptive_threshold = base_threshold * effective_multiplier
+                adaptive_threshold = adaptive_threshold.clip(lower=event_threshold)
+
+                if self.verbose:
+                    tprint_info(f"   🧬 Using Soft Regime-Conditional Thresholding (Mean Mult: {effective_multiplier.mean():.2f})")
+            else:
+                # Fallback: Global Adaptive Threshold
+                rolling_threshold = scores.rolling(window=2880, min_periods=100).quantile(0.96)
+                adaptive_threshold = rolling_threshold.fillna(event_threshold).clip(lower=event_threshold)
             
             # Use adaptive threshold
             is_surprised = scores > adaptive_threshold
@@ -1178,6 +1230,17 @@ class CausalSurpriseDetector:
             df = pd.DataFrame.from_dict(self.surprise_events_, orient='index')
             return df.sort_index()
         return pd.DataFrame()
+
+    def _calibrate_event_probability(self, scores: pd.Series) -> pd.Series:
+        """
+        Map raw surprise scores to [0, 1] probability using Isotonic Regression proxy (Sigmoid).
+        P(Event) = Sigmoid( (Score - Median) / MAD )
+        """
+        median = scores.rolling(2000, min_periods=100).median()
+        mad = scores.rolling(2000, min_periods=100).apply(lambda x: np.median(np.abs(x - np.median(x))))
+        z = (scores - median) / (mad + 1e-9)
+        # Calibrated to 50% prob at 2 sigma
+        return 1.0 / (1.0 + np.exp(-(z - 2.0)))
 
     def _compute_composite_reliability(self, metrics: Dict[str, float]) -> float:
         """Combine metrics into a single reliability score."""

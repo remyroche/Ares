@@ -62,7 +62,8 @@ from src.training.steps.labeling.irm_regime_pipeline import (
     IRMLinearClassifier,
     IRMLinearRegressor,
     build_env_indices_for_index,
-    get_or_fit_regime_labels
+    get_or_fit_regime_labels,
+    get_regime_posteriors_from_path
 )
 from .de_prado_feature_engine import DePradoFeatureEngine, de_prado_feature_selection
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
@@ -4930,11 +4931,33 @@ class LabelBasedLayer2(BaseStep):
                     self._global_event_cache[cache_key] = pd.DatetimeIndex([])
             else:
                 gen_params = params if params else {}
-                # For causal generators, inject stored specialist predictions
+
+                # Fetch regime posteriors if available (for soft regime conditioning)
+                regime_posteriors = None
+                if self.irm_enabled and hasattr(self, 'irm_regime_dir'):
+                    try:
+                        # Use cached posteriors if available (performance optimization)
+                        if hasattr(self, '_cached_regime_posteriors') and self._cached_regime_posteriors is not None:
+                             regime_posteriors = self._cached_regime_posteriors
+                        else:
+                             regime_posteriors = get_regime_posteriors_from_path(df, self.irm_regime_dir)
+                             self._cached_regime_posteriors = regime_posteriors
+                    except Exception as e:
+                        # Non-fatal: just log and proceed without regime conditioning
+                        if self.verbose:
+                            tprint_warning(f"   ⚠️ Could not load regime posteriors for event generation: {e}")
+
+                # For causal generators, inject stored specialist predictions and regime posteriors
                 try:
                     if family.startswith('CAUSAL_') or family.endswith('_SPECIALIST'):
                         specialist_preds = getattr(self, '_oof_specialist_predictions', None)
-                        events = gen.generate(df, specialist_predictions=specialist_preds, tracker=tracker, **gen_params)
+                        events = gen.generate(
+                            df,
+                            specialist_predictions=specialist_preds,
+                            tracker=tracker,
+                            regime_posteriors=regime_posteriors,
+                            **gen_params
+                        )
                     else:
                         events = gen.generate(df, tracker=tracker, **gen_params)
 
@@ -5126,6 +5149,19 @@ class LabelBasedLayer2(BaseStep):
                             )
                         except Exception as e:
                             tprint_warning(f"   ⚠️ Causal denoising failed: {e}")
+
+                    # --- SOFT REGIME CONDITIONING ---
+                    if self.irm_enabled and hasattr(self, 'irm_regime_dir'):
+                        try:
+                            tprint_info("   🧬 Injecting Soft Regime Posteriors...")
+                            posteriors = get_regime_posteriors_from_path(df, self.irm_regime_dir)
+                            if not posteriors.empty:
+                                # Align indices
+                                posteriors = posteriors.reindex(X_all.index).fillna(0.0)
+                                X_all = pd.concat([X_all, posteriors], axis=1)
+                                tprint_info(f"   ✅ Added {len(posteriors.columns)} regime posterior features")
+                        except Exception as e:
+                            tprint_warning(f"   ⚠️ Failed to inject regime posteriors: {e}")
 
                     # Cache the full feature set
                     if not hasattr(self, '_cached_global_features'):

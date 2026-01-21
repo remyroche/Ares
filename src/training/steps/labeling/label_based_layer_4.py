@@ -58,6 +58,7 @@ from src.utils.layer4_optimized import (
     compute_proxy_entropy_numba
 )
 from src.training.steps.labeling.feature_engineering_utils import apply_layer2_price_processing
+from src.training.steps.labeling.layer4_checkpoint_manager import get_layer4_checkpoint_manager
 
 # Import entropy bars functionality
 try:
@@ -204,6 +205,65 @@ class SimpleMultiModelRiskEngine:
         self.selected_models = None
         self.optimized_weights = None
         self.model_selection_results = None
+
+    def get_state(self) -> Dict[str, Any]:
+        """
+        Get the current state of the risk engine for checkpointing.
+        """
+        return {
+            'extratrees': self.extratrees,
+            'lgbm_model': self.lgbm_model,
+            'xgb_model': self.xgb_model,
+            'catboost_model': self.catboost_model,
+            'ridge_alpha1': self.ridge_alpha1,
+            'ridge_alpha5': self.ridge_alpha5,
+            'ridge_alpha10': self.ridge_alpha10,
+            'calibrators': self.calibrators,
+            'consensus_calibrator': self.consensus_calibrator,
+            'selected_features': self.selected_features,
+            'huber_model': self.huber_model,
+            'huber_scaler': self.huber_scaler,
+            'huber_feature_columns': self.huber_feature_columns,
+            'is_fitted': self.is_fitted,
+            'selected_models': self.selected_models,
+            'optimized_weights': self.optimized_weights,
+            'model_selection_results': self.model_selection_results,
+            'gate_params': getattr(self, 'gate_params', None),
+            'stable_chaser': getattr(self, 'stable_chaser', None),
+            'aggressive_chaser': getattr(self, 'aggressive_chaser', None),
+            'dual_chaser_scaler': getattr(self, 'dual_chaser_scaler', None),
+        }
+
+    def load_state(self, state: Dict[str, Any]) -> None:
+        """
+        Load state from a checkpoint.
+        """
+        self.extratrees = state.get('extratrees', self.extratrees)
+        self.lgbm_model = state.get('lgbm_model', self.lgbm_model)
+        self.xgb_model = state.get('xgb_model', self.xgb_model)
+        self.catboost_model = state.get('catboost_model', self.catboost_model)
+        self.ridge_alpha1 = state.get('ridge_alpha1', self.ridge_alpha1)
+        self.ridge_alpha5 = state.get('ridge_alpha5', self.ridge_alpha5)
+        self.ridge_alpha10 = state.get('ridge_alpha10', self.ridge_alpha10)
+        self.calibrators = state.get('calibrators', self.calibrators)
+        self.consensus_calibrator = state.get('consensus_calibrator', self.consensus_calibrator)
+        self.selected_features = state.get('selected_features', self.selected_features)
+        self.huber_model = state.get('huber_model', self.huber_model)
+        self.huber_scaler = state.get('huber_scaler', self.huber_scaler)
+        self.huber_feature_columns = state.get('huber_feature_columns', self.huber_feature_columns)
+        self.is_fitted = state.get('is_fitted', self.is_fitted)
+        self.selected_models = state.get('selected_models', self.selected_models)
+        self.optimized_weights = state.get('optimized_weights', self.optimized_weights)
+        self.model_selection_results = state.get('model_selection_results', self.model_selection_results)
+
+        if 'gate_params' in state:
+            self.gate_params = state['gate_params']
+        if 'stable_chaser' in state:
+            self.stable_chaser = state['stable_chaser']
+        if 'aggressive_chaser' in state:
+            self.aggressive_chaser = state['aggressive_chaser']
+        if 'dual_chaser_scaler' in state:
+            self.dual_chaser_scaler = state['dual_chaser_scaler']
     
     def _compute_financial_weights(self, abs_returns: pd.Series, volatility: pd.Series) -> pd.Series:
         # Use Numba-optimized implementation
@@ -1259,74 +1319,201 @@ def train_layer4_simple_multimodel(
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
     Train Layer 4 using Layer 3 probability outputs, entropy bars, and market features.
+
+    Integrated with Layer 4 Checkpoint Manager for robust state saving and resuming.
     """
     cfg = config or {}
-    tprint_info("🚀 Starting Layer 4 Training (Layer 3 Probabilities + Entropy Bars)...")
-    
-    # Integrate entropy bars if enabled
     symbol = cfg.get('symbol', 'ETHUSDT')
     exchange = cfg.get('exchange', 'binance')
     
-    if cfg.get('use_entropy_bars', True):
-        oof_df, entropy_bars_df = integrate_entropy_bars_into_layer4(oof_df, symbol, exchange, cfg)
-        cfg['entropy_bars_df'] = entropy_bars_df
-    else:
-        tprint_info("⏭️ Layer 4: Skipping entropy bars (disabled in config)")
-        entropy_bars_df = pd.DataFrame()
+    tprint_info(f"🚀 Starting Layer 4 Training (Checkpoint Aware) for {symbol}...")
     
-    # Generate market features
-    # Use the local MetaLearnerFeatures class which is now properly implemented
-    generator = MetaLearnerFeatures(config=config)
-    market_features = generator.generate(
-        df=oof_df.join(market_data, how='left', rsuffix='_mkt'),
-        raw_price_col='close'
-    )
+    # Initialize Checkpoint Manager
+    manager = get_layer4_checkpoint_manager(symbol)
+    start_step = manager.get_auto_resume_step(symbol)
+    available_steps = manager.get_available_steps()
     
-    # Generate model performance features
-    perf_generator = ModelPerformanceFeatures(config=config)
-    # Prefer 'meta_prob' (L3 output) for performance tracking
-    pred_col = 'meta_prob' if 'meta_prob' in oof_df.columns else None
+    # Helper to check if we should run a step
+    def should_run(step_name):
+        return available_steps.index(step_name) >= available_steps.index(start_step)
 
-    if pred_col:
-        perf_features = perf_generator.generate(
-            df=oof_df,
-            pred_col=pred_col,
-            target_col=target_col
-        )
-        market_features = pd.concat([market_features, perf_features], axis=1)
-    else:
-        tprint_warning("⚠️ Layer 4: 'meta_prob' not found, skipping performance features.")
-
-    y_binary = (oof_df[target_col] > 0).astype(int)
-    abs_returns = oof_df[target_col].abs()
-    
-    kf = KFold(n_splits=n_folds, shuffle=False)
-    oof_bet_sizes = np.zeros(len(oof_df))
-    
-    # Instantiate engine once, but models will be re-trained per fold
+    # State variables (to be populated by running or loading)
+    entropy_bars_df = pd.DataFrame()
+    market_features = pd.DataFrame()
+    oof_bet_sizes = None
     engine = SimpleMultiModelRiskEngine()
+    final_metrics = {}
+    oof_df_out = None
     
-    for train_idx, val_idx in kf.split(oof_df):
-        engine.train(
-            df=oof_df.iloc[train_idx],
-            market_features=market_features.iloc[train_idx],
-            y_true=y_binary.iloc[train_idx],
-            abs_returns=abs_returns.iloc[train_idx]
+    # --- Step 0: Data Preparation ---
+    step_name = 'data_preparation'
+    if should_run(step_name):
+        tprint_info(f"📍 Executing {step_name}...")
+
+        # Integrate entropy bars if enabled
+        if cfg.get('use_entropy_bars', True):
+            oof_df, entropy_bars_df = integrate_entropy_bars_into_layer4(oof_df, symbol, exchange, cfg)
+            cfg['entropy_bars_df'] = entropy_bars_df
+        else:
+            tprint_info("⏭️ Layer 4: Skipping entropy bars (disabled in config)")
+            entropy_bars_df = pd.DataFrame()
+
+        manager.save_checkpoint(step_name, {
+            'meta_df': oof_df, # Naming convention from manager
+            'entropy_bars_df': entropy_bars_df,
+            'market_data': market_data
+        }, symbol, cfg)
+    else:
+        tprint_info(f"⏭️ Resuming past {step_name}...")
+        data = manager.load_checkpoint(step_name, symbol)
+        if data:
+            oof_df = data.get('meta_df', oof_df)
+            entropy_bars_df = data.get('entropy_bars_df', pd.DataFrame())
+            market_data = data.get('market_data', market_data)
+
+    # --- Step 1: Confidence Filtering ---
+    step_name = 'confidence_filtering'
+    if should_run(step_name):
+        tprint_info(f"📍 Executing {step_name}...")
+        # Currently a pass-through (or logic could be added here)
+        filtered_df = oof_df
+        manager.save_checkpoint(step_name, {'filtered_meta_df': filtered_df}, symbol, cfg)
+    else:
+        tprint_info(f"⏭️ Resuming past {step_name}...")
+        data = manager.load_checkpoint(step_name, symbol)
+        if data:
+            oof_df = data.get('filtered_meta_df', oof_df)
+
+    # --- Step 2: Feature Engineering ---
+    step_name = 'feature_engineering'
+    if should_run(step_name):
+        tprint_info(f"📍 Executing {step_name}...")
+
+        # Generate market features
+        generator = MetaLearnerFeatures(config=config)
+        mkt_feats = generator.generate(
+            df=oof_df.join(market_data, how='left', rsuffix='_mkt'),
+            raw_price_col='close'
         )
-        oof_bet_sizes[val_idx] = engine.predict_bet_size(
-            df=oof_df.iloc[val_idx],
-            market_features=market_features.iloc[val_idx]
-        )
-    
-    # Final fit on full data
-    final_metrics = engine.train(oof_df, market_features, y_binary, abs_returns)
-    
-    oof_df_out = oof_df.copy()
-    oof_df_out['layer4_prob'] = oof_bet_sizes
-    
-    # Add entropy bars information to metrics
-    if not entropy_bars_df.empty:
-        final_metrics['entropy_bars_count'] = len(entropy_bars_df)
-        final_metrics['entropy_features_count'] = len([col for col in oof_df_out.columns if col.startswith(('staleness_', 'drift_', 'lz_', 'trend_', 'entropy_', 'proxy_entropy'))])
+
+        # Generate model performance features
+        perf_generator = ModelPerformanceFeatures(config=config)
+        pred_col = 'meta_prob' if 'meta_prob' in oof_df.columns else None
+
+        if pred_col:
+            perf_feats = perf_generator.generate(
+                df=oof_df,
+                pred_col=pred_col,
+                target_col=target_col
+            )
+            market_features = pd.concat([mkt_feats, perf_feats], axis=1)
+        else:
+            tprint_warning("⚠️ Layer 4: 'meta_prob' not found, skipping performance features.")
+            market_features = mkt_feats
+
+        manager.save_checkpoint(step_name, {'market_features': market_features}, symbol, cfg)
+    else:
+        tprint_info(f"⏭️ Resuming past {step_name}...")
+        data = manager.load_checkpoint(step_name, symbol)
+        if data:
+            market_features = data.get('market_features', pd.DataFrame())
+
+    # --- Step 3: Gate Model Training (and OOF generation) ---
+    step_name = 'gate_model_training'
+    if should_run(step_name):
+        tprint_info(f"📍 Executing {step_name}...")
+
+        y_binary = (oof_df[target_col] > 0).astype(int)
+        abs_returns = oof_df[target_col].abs()
+
+        kf = KFold(n_splits=n_folds, shuffle=False)
+        oof_bet_sizes = np.zeros(len(oof_df))
+
+        # 1. CV Loop for OOF predictions
+        tprint_info("🔄 Running Cross-Validation for OOF predictions...")
+        # We use a temp engine for CV to not dirty the final engine state
+        cv_engine = SimpleMultiModelRiskEngine()
+
+        for train_idx, val_idx in kf.split(oof_df):
+            cv_engine.train(
+                df=oof_df.iloc[train_idx],
+                market_features=market_features.iloc[train_idx],
+                y_true=y_binary.iloc[train_idx],
+                abs_returns=abs_returns.iloc[train_idx]
+            )
+            oof_bet_sizes[val_idx] = cv_engine.predict_bet_size(
+                df=oof_df.iloc[val_idx],
+                market_features=market_features.iloc[val_idx]
+            )
+
+        # 2. Final Fit on full data
+        tprint_info("🧠 Training Final Gate Model...")
+        final_metrics = engine.train(oof_df, market_features, y_binary, abs_returns)
+
+        # Save state
+        # Note: gate_models usually expects a dict of models, here we pass the engine state
+        # The checkpoint manager is flexible with dicts
+        manager.save_checkpoint(step_name, {
+            'gate_models': engine.get_state(),
+            'oof_predictions': oof_bet_sizes,
+            'training_metrics': final_metrics
+        }, symbol, cfg)
+    else:
+        tprint_info(f"⏭️ Resuming past {step_name}...")
+        data = manager.load_checkpoint(step_name, symbol)
+        if data:
+            if 'gate_models' in data:
+                engine.load_state(data['gate_models'])
+            if 'oof_predictions' in data:
+                oof_bet_sizes = data['oof_predictions']
+            if 'training_metrics' in data:
+                final_metrics = data['training_metrics']
+
+    # --- Step 4: Gate Validation ---
+    step_name = 'gate_validation'
+    if should_run(step_name):
+        tprint_info(f"📍 Executing {step_name}...")
+        # Since we calculated OOF predictions in training, we can validate here
+        # (Or recalculate metrics)
+        manager.save_checkpoint(step_name, {'validation_metrics': final_metrics}, symbol, cfg)
+    else:
+        # Load metrics if needed
+        pass
+
+    # --- Step 5: Final Predictions ---
+    step_name = 'final_predictions'
+    if should_run(step_name):
+        tprint_info(f"📍 Executing {step_name}...")
+
+        oof_df_out = oof_df.copy()
+        if oof_bet_sizes is not None:
+            oof_df_out['layer4_prob'] = oof_bet_sizes
+        else:
+            tprint_warning("⚠️ No OOF predictions found for final output.")
+            oof_df_out['layer4_prob'] = 0.5 # Fallback
+
+        # Add entropy bars information to metrics
+        if not entropy_bars_df.empty:
+            final_metrics['entropy_bars_count'] = len(entropy_bars_df)
+            final_metrics['entropy_features_count'] = len([col for col in oof_df_out.columns if col.startswith(('staleness_', 'drift_', 'lz_', 'trend_', 'entropy_', 'proxy_entropy'))])
+
+        manager.save_checkpoint(step_name, {
+            'final_predictions': oof_df_out,
+            'final_metrics': final_metrics
+        }, symbol, cfg)
+
+        # Also save as Artifact
+        manager.save_checkpoint('artifact_saving', {
+            'model_state': engine.get_state(),
+            'final_predictions': oof_df_out,
+            'final_metrics': final_metrics
+        }, symbol, cfg)
+
+    else:
+        tprint_info(f"⏭️ Resuming past {step_name}...")
+        data = manager.load_checkpoint(step_name, symbol)
+        if data:
+            oof_df_out = data.get('final_predictions', pd.DataFrame())
+            final_metrics = data.get('final_metrics', {})
     
     return oof_df_out, final_metrics

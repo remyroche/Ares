@@ -391,16 +391,82 @@ class CausalSurpriseDetector:
                 f"exposure={self.zone_score_exposure:.2f}"
             )
 
-    def compute_regime_specific_reliability(self, regime_posteriors: pd.DataFrame) -> pd.DataFrame:
+    def _weighted_spearmanr(self, x: np.ndarray, y: np.ndarray, w: np.ndarray) -> float:
+        """Compute posterior-weighted Spearman correlation."""
+        try:
+            from scipy.stats import rankdata
+            m = np.isfinite(x) & np.isfinite(y) & np.isfinite(w) & (w > 0)
+            if m.sum() < 20:
+                return 0.0
+
+            xr = rankdata(x[m])
+            yr = rankdata(y[m])
+            ww = w[m]
+
+            # Weighted Pearson on ranks
+            sw = np.sum(ww)
+            xm = np.sum(ww * xr) / sw
+            ym = np.sum(ww * yr) / sw
+
+            cov = np.sum(ww * (xr - xm) * (yr - ym)) / sw
+            vx = np.sum(ww * (xr - xm)**2) / sw
+            vy = np.sum(ww * (yr - ym)**2) / sw
+
+            denom = np.sqrt(vx) * np.sqrt(vy)
+            return 0.0 if denom == 0 else float(cov / denom)
+        except Exception:
+            return 0.0
+
+    def _weighted_lift(self, signal: np.ndarray, ret: np.ndarray, w: np.ndarray) -> float:
+        """Compute posterior-weighted Lift (Top decile return - Bottom decile return)."""
+        try:
+            m = np.isfinite(signal) & np.isfinite(ret) & np.isfinite(w) & (w > 0)
+            if m.sum() < 20:
+                return 0.0
+
+            v = signal[m]
+            r = ret[m]
+            ww = w[m]
+
+            # Sort by signal
+            s_idx = np.argsort(v)
+            v_s = v[s_idx]
+            r_s = r[s_idx]
+            w_s = ww[s_idx]
+
+            cum_w = np.cumsum(w_s) / np.sum(w_s)
+
+            # Masks for top/bottom 10% mass
+            mask_lo = cum_w <= 0.10
+            mask_hi = cum_w >= 0.90
+
+            if mask_lo.sum() == 0 or mask_hi.sum() == 0:
+                return 0.0
+
+            mean_lo = np.average(r_s[mask_lo], weights=w_s[mask_lo])
+            mean_hi = np.average(r_s[mask_hi], weights=w_s[mask_hi])
+
+            return float(mean_hi - mean_lo)
+        except Exception:
+            return 0.0
+
+    def compute_regime_specific_reliability(
+        self,
+        regime_posteriors: pd.DataFrame,
+        market_data: Optional[pd.DataFrame] = None
+    ) -> pd.DataFrame:
         """
-        Compute specialist reliability scores per regime using weighted statistics.
+        Compute specialist reliability scores per regime using weighted statistics (IC, Lift, Precision).
         Returns a DataFrame (Specialist x Regime) of reliability scores.
-        Q(s, r) = 1.0 / (Weighted_Variance(error_s | r) + epsilon)
+        Q(s, r) = softplus(10*IC) * softplus(5*Lift) * (Precision^0.25)
         """
         if not self.specialist_errors_ or regime_posteriors is None or regime_posteriors.empty:
             return pd.DataFrame()
 
         errors_df = self._build_error_frame()
+        # Ensure errors_df is float
+        errors_df = errors_df.astype(float)
+
         common_idx = errors_df.index.intersection(regime_posteriors.index)
 
         if len(common_idx) < 50:
@@ -409,7 +475,15 @@ class CausalSurpriseDetector:
         errors_aligned = errors_df.loc[common_idx]
         posteriors_aligned = regime_posteriors.loc[common_idx]
 
-        reliability_matrix = pd.DataFrame(index=errors_aligned.columns, columns=posteriors_aligned.columns)
+        # Calculate forward returns if market data available
+        fwd_returns = None
+        if market_data is not None and 'close' in market_data.columns:
+            # Align market data first
+            mkt_aligned = market_data.reindex(common_idx).ffill()
+            # Use horizon consistent with typical events (e.g. 24 bars)
+            fwd_returns = mkt_aligned['close'].pct_change(24).shift(-24).fillna(0.0)
+
+        reliability_matrix = pd.DataFrame(index=errors_aligned.columns, columns=posteriors_aligned.columns).astype(float)
 
         for regime_col in posteriors_aligned.columns:
             weights = posteriors_aligned[regime_col].values
@@ -419,21 +493,50 @@ class CausalSurpriseDetector:
                 reliability_matrix[regime_col] = 1.0
                 continue
 
-            # Compute weighted variance of errors per specialist
-            # Var_w = sum(w * (x - mean_w)^2) / sum(w)
             for spec in errors_aligned.columns:
                 err = errors_aligned[spec].values
+
+                # 1. Precision (Inverse Variance)
                 weighted_mean = np.average(err, weights=weights)
                 weighted_var = np.average((err - weighted_mean)**2, weights=weights)
+                precision = 1.0 / (weighted_var + 1e-4)
 
-                # Q(s,r) = Inverse Variance (Precision)
-                # Normalize? For now raw precision is fine, will normalize later
-                reliability_matrix.loc[spec, regime_col] = 1.0 / (weighted_var + 1e-4)
+                # 2. IC & Lift (if returns available)
+                ic = 0.0
+                lift = 0.0
 
-        # Normalize columns (sum to 1 per regime?)
-        # Actually we want absolute quality, but for weighting we usually normalize across specialists.
-        # Let's normalize across specialists for each regime so sum(Q(:, r)) = 1
-        reliability_matrix = reliability_matrix.div(reliability_matrix.sum(axis=0), axis=1).fillna(1.0 / len(errors_aligned.columns))
+                if fwd_returns is not None:
+                    # Signal proxy: -error (if error = target - pred, then pred = target - error.
+                    # If target is price/return, lower error means better pred.
+                    # Ideally we want the PREDICTION, but here we only have errors stored for all specs.
+                    # Wait, we DO have specialist_predictions_!
+                    # Let's use predictions if available, else -error as proxy for "underprediction" (long signal?)
+                    # Actually, for "Surprise", the signal IS the magnitude or signed error.
+                    # Surprise = |Error| / Sigma.
+                    # Directional Surprise = -Error (if Error = Realized - Pred).
+                    # If Realized > Pred (Error > 0) -> Upside Surprise.
+                    # So Signal = Error.
+                    signal = err
+                    ret = fwd_returns.values
+
+                    ic = self._weighted_spearmanr(signal, ret, weights)
+                    lift = self._weighted_lift(signal, ret, weights)
+
+                # 3. Combine Metrics
+                # Softplus to handle negative values gracefully and emphasize positive performance
+                # score = softplus(10*IC) * softplus(5*Lift) * (Prec^0.25)
+                # Adding bias to softplus input to center around 1.0 for neutral
+                ic_score = np.log1p(np.exp(10.0 * ic))
+                lift_score = np.log1p(np.exp(5.0 * lift))
+                prec_score = precision ** 0.25
+
+                combined_score = ic_score * lift_score * prec_score
+                reliability_matrix.loc[spec, regime_col] = combined_score
+
+        # Normalize columns (sum to 1 per regime)
+        col_sums = reliability_matrix.sum(axis=0).replace(0.0, np.nan)
+        reliability_matrix = reliability_matrix.div(col_sums, axis=1)
+        reliability_matrix = reliability_matrix.fillna(1.0 / len(errors_aligned.columns))
 
         return reliability_matrix
 
@@ -516,16 +619,20 @@ class CausalSurpriseDetector:
             reliability_weight = reliability_weight.reindex(surprise_df.columns).fillna(0.1)
             
             # 5b. Regime-Conditional Weighting (The "Contract")
+            weight_matrix = None
             if regime_posteriors is not None:
-                # Compute Q(s, r) matrix
-                regime_reliability = self.compute_regime_specific_reliability(regime_posteriors)
+                # Compute Q(s, r) matrix (Passing market_data for IC/Lift)
+                regime_reliability = self.compute_regime_specific_reliability(regime_posteriors, market_data=market_data)
 
                 if not regime_reliability.empty:
                     if self.verbose:
                         tprint_info("   🧬 Applying Regime-Conditional Specialist Weighting...")
 
-                    # Align indices
-                    aligned_posteriors = regime_posteriors.reindex(surprise_df.index).fillna(1.0 / regime_posteriors.shape[1])
+                    # Align indices & Normalize Posteriors (prevent 0-mass rows)
+                    aligned_posteriors = regime_posteriors.reindex(surprise_df.index)
+                    aligned_posteriors = aligned_posteriors.fillna(1.0 / aligned_posteriors.shape[1])
+                    row_sums = aligned_posteriors.sum(axis=1).replace(0.0, np.nan)
+                    aligned_posteriors = aligned_posteriors.div(row_sums, axis=0).fillna(1.0 / aligned_posteriors.shape[1])
 
                     # Compute dynamic weights W(t, s) = sum_r( P(r|t) * Q(s, r) )
                     # Matrix multiplication: (T x R) @ (R x S) -> (T x S)
@@ -545,13 +652,9 @@ class CausalSurpriseDetector:
 
                     # Normalize rows to sum to 1
                     weight_matrix = combined_weights.div(combined_weights.sum(axis=1), axis=0).fillna(0.0)
-                else:
-                    # Fallback to global if regime reliability calc failed
-                    weight_series = (inv_var_series * reliability_weight)
-                    weight_series /= weight_series.sum()
-                    weight_matrix = pd.DataFrame([weight_series.values] * len(surprise_df), index=surprise_df.index, columns=surprise_df.columns)
-            else:
-                # Pure Global
+
+            if weight_matrix is None:
+                # Pure Global Fallback
                 final_weights = inv_var_series * reliability_weight
                 weight_series = final_weights / final_weights.sum()
                 weight_matrix = pd.DataFrame([weight_series.values] * len(surprise_df), index=surprise_df.index, columns=surprise_df.columns)
@@ -559,11 +662,12 @@ class CausalSurpriseDetector:
             # Aggregation logic using time-varying weights
             aggregated = pd.DataFrame(index=surprise_df.index)
 
-            # Weighted Max/Mean/Consensus
+            # Raw Intensity (unweighted max) vs Weighted Aggregates
+            aggregated['max_surprise'] = surprise_df.max(axis=1) # Raw intensity
+
+            # Weighted Mean/Consensus
             # Element-wise multiplication: Surprise(t, s) * Weight(t, s)
             weighted_surprise = surprise_df * weight_matrix
-
-            aggregated['max_surprise'] = weighted_surprise.max(axis=1)
             aggregated['mean_surprise'] = weighted_surprise.sum(axis=1)
 
             # Weighted Consensus: sum_s( I(surprise > thresh) * weight(t, s) )

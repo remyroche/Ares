@@ -1,0 +1,10 @@
+{
+  "row_count": 1,
+  "column_count": 1,
+  "artifact_name": "layer2_geometry_trials_UNKNOWN_UNKNOWN_15m_long_20260120_220513",
+  "artifact_type": "metadata",
+  "file_path": "artifacts/pre_training/long/Analyst/label_based_layer_2/label_based_layer_2_layer2_geometry_trials_UNKNOWN_UNKNOWN_15m_long_20260120_220513_long_Analyst_20260120_215105.parquet",
+  "file_size": 163915,
+  "timestamp": "2026-01-20T22:05:13.654635",
+  "compression": "auto"
+}

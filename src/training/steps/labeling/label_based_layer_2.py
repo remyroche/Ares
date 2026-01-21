@@ -1672,6 +1672,7 @@ class GeometryTrial:
     sharpe_ratio: Optional[float] = None
     max_drawdown: Optional[float] = None
     sortino_ratio: Optional[float] = None
+    prediction_inverted: bool = False
 
 
 @dataclass
@@ -4497,6 +4498,33 @@ class LabelBasedLayer2(BaseStep):
                 am.save(results['events_df'], events_artifact_name, artifact_type="data")
                 artifacts.append(events_artifact_name)
                 tprint_info(f"💾 Saved events artifact: {events_artifact_name}")
+                
+                # --- ORCHESTRATOR COMPATIBILITY: Save parquet to outcomes_dir ---
+                # The pipeline orchestrator expects *_events.parquet and *_labels.parquet
+                # files in the outcomes directory for Layers 3-5 to run successfully.
+                try:
+                    # Check if outcomes_dir was injected by the orchestrator
+                    outcomes_target = getattr(self, 'outcomes_dir', None)
+                    if outcomes_target is None:
+                        outcomes_target = Path("outcomes")
+                    else:
+                        outcomes_target = Path(outcomes_target)
+                    
+                    outcomes_target.mkdir(parents=True, exist_ok=True)
+                    events_parquet_path = outcomes_target / f"{events_artifact_name}_events.parquet"
+                    results['events_df'].to_parquet(events_parquet_path, index=True)
+                    tprint_success(f"💾 Saved events parquet (L3 compat): {events_parquet_path}")
+                    
+                    # Also save labels if present in events_df columns
+                    labels_cols = ['bin', 'label', 'side', 'ret', 'realized_return']
+                    available_label_cols = [c for c in labels_cols if c in results['events_df'].columns]
+                    if available_label_cols:
+                        labels_df = results['events_df'][available_label_cols].copy()
+                        labels_parquet_path = outcomes_target / f"{events_artifact_name}_labels.parquet"
+                        labels_df.to_parquet(labels_parquet_path, index=True)
+                        tprint_success(f"💾 Saved labels parquet (L3 compat): {labels_parquet_path}")
+                except Exception as e_parquet:
+                    tprint_warning(f"⚠️ Failed to save parquet for orchestrator: {e_parquet}")
             
             # Save selected trials if available
             if 'selected_trials' in results and results['selected_trials']:
@@ -8955,20 +8983,25 @@ class LabelBasedLayer2(BaseStep):
                     'model': IRM_XGBClassifier(
                         irm_system=self._irm_system,
                         environment_masks=environment_masks,
-                        n_estimators=400,
-                        learning_rate=0.02,
-                        max_depth=4,
-                        colsample_bynode=0.6,
-                        subsample=0.7,
-                        reg_lambda=10,        # Reduced from 50
-                        reg_alpha=2.0,        # Reduced from 5.0
-                        min_child_weight=adaptive_min_child_weight, # Adaptive
-                        gamma=1.0,            # Reduced from 1.5
+                        # --- USER REQUESTED PARAMS ---
+                        n_estimators=4,               # Boosting rounds (reduced, using RF style)
+                        num_parallel_tree=250,        # Forest within each round
+                        linear_tree=True,             # Hybrid linear-tree boosting
+                        tree_method='hist',           # Fast histogram-based training
+                        max_depth=5,                  # Increased from 4
+                        colsample_bynode=0.65,        # Increased from 0.6
+                        colsample_bytree=0.8,         # New: column sampling per tree
+                        subsample=0.8,                # Increased from 0.7
+                        learning_rate=0.2,            # Increased from 0.02 (fewer rounds)
+                        reg_lambda=8,                 # Reduced from 10
+                        reg_alpha=1.5,                # Reduced from 2.0
+                        gamma=0.5,                    # Reduced from 1.0
+                        min_child_weight=adaptive_min_child_weight,  # Adaptive
                         monotone_constraints=xgb_constraints,
                         interaction_constraints=valid_interaction_constraints,
                         scale_pos_weight=scale_pos_weight,
                         random_state=42,
-                        n_jobs=1,
+                        n_jobs=2,                     # Increased from 1
                         verbosity=0,
                         use_label_encoder=False,
                         early_stopping_rounds=40
@@ -8980,16 +9013,19 @@ class LabelBasedLayer2(BaseStep):
                 tprint_warning(f"   ⚠️ XGB_IRM creation failed: {e}")
 
 
-        # 3. ExtraTrees with IRM (Wrapper) - Capped depth
+        # 3. ExtraTrees with IRM (Wrapper) - Enhanced regularization
         candidates.append({
             'name': 'ExtraTrees_IRM',
             'model': IRM_ExtraTreesClassifier(
                 irm_system=self._irm_system,
                 environment_masks=environment_masks,
                 n_estimators=800,              # Reduced from 1000
-                max_features='log2',
+                # --- USER REQUESTED PARAMS ---
+                max_features='sqrt',           # Changed from 'log2' for more diversity
                 min_samples_leaf=0.03,         # Increased from 0.02
                 max_depth=6,                   # Capped from None
+                min_impurity_decrease=1e-4,    # New: regularization
+                ccp_alpha=1e-4,                # New: minimal cost complexity pruning
                 class_weight='balanced',
                 bootstrap=True,
                 random_state=42,
@@ -9902,6 +9938,10 @@ class LabelBasedLayer2(BaseStep):
                 # Adaptive Gate now handles diversity pruning upstream.
                 representatives = stage1_candidates
                 n_clusters = 1
+        else:
+            # Only 1 candidate passed, so it forms the only cluster
+            representatives = stage1_candidates
+            n_clusters = 1
         
         tprint_info(f"   🎯 Stage 2: Full probe on {len(representatives)} representatives...")
         
@@ -10333,15 +10373,41 @@ class LabelBasedLayer2(BaseStep):
                         tprint_warning(f"   ⚠️ TOO FEW SAMPLES: Val has {n_pos_val} pos, {n_neg_val} neg (min: {min_samples_for_valid_auc}) - AUC unreliable, using fallback")
                         auc = 0.5  # Fallback - not statistically reliable
                         ap = 0.0
+                        cand.prediction_inverted = False
                     else:
                         ap = average_precision_score(y_val, preds)
                         auc = roc_auc_score(y_val, preds)
+                        
+                        # === FIX: Handle inverse predictions (AUC < 0.5) ===
+                        # AUC < 0.5 means the model learned the OPPOSITE of the target.
+                        # This is still a valid signal - just flip predictions to recover it.
+                        # AUC < 0.45 means the model learned the OPPOSITE of the target meaningfully.
+                        # This is still a valid signal - just flip predictions to recover it.
+                        if auc < 0.45:
+                            tprint_warning(f"   🔄 INVERSE PREDICTION DETECTED: AUC={auc:.4f} < 0.45 for {cand.uuid[:40]}")
+                            tprint_warning(f"      → Model learned OPPOSITE of target. Flipping predictions...")
+                            
+                            # Flip predictions to get positive AUC
+                            preds_flipped = 1.0 - preds
+                            auc_flipped = roc_auc_score(y_val, preds_flipped)
+                            ap_flipped = average_precision_score(y_val, preds_flipped)
+                            
+                            tprint_success(f"      → Flipped AUC: {auc_flipped:.4f}, Flipped PR-AUC: {ap_flipped:.4f}")
+                            
+                            # Use flipped values and mark geometry
+                            preds = preds_flipped
+                            auc = auc_flipped
+                            ap = ap_flipped
+                            cand.prediction_inverted = True
+                        else:
+                            cand.prediction_inverted = False
                         
                     # PR-AUC Gate: Concrete gate PR_AUC >= prevalence + 0.02
                     prevalence = y_val.mean()
                     is_gated = ap >= (prevalence + 0.02)
                     gate_status = "✅" if is_gated else "❌"
-                    tprint_info(f"   📈 {cand.uuid[:8]}: {gate_status} AUC={auc:.4f}, PR-AUC={ap:.4f} (Target: {prevalence+0.02:.4f}), Pred Range=[{preds.min():.4f}, {preds.max():.4f}]")
+                    inverted_marker = " [INVERTED]" if getattr(cand, 'prediction_inverted', False) else ""
+                    tprint_info(f"   📈 {cand.uuid[:8]}: {gate_status} AUC={auc:.4f}, PR-AUC={ap:.4f} (Target: {prevalence+0.02:.4f}), Pred Range=[{preds.min():.4f}, {preds.max():.4f}]{inverted_marker}")
                     
                     # === LEAKAGE INVESTIGATION: AUC > 0.99 ===
                     if auc > 0.99:
@@ -10374,6 +10440,7 @@ class LabelBasedLayer2(BaseStep):
                 cand.quality_metrics['AUC'] = auc
                 cand.quality_metrics['PR-AUC'] = ap
                 cand.quality_metrics['IC'] = assessment.get('IC', 0.0)
+                cand.quality_metrics['prediction_inverted'] = getattr(cand, 'prediction_inverted', False)
                 cand.robust_magnitude = assessment.get('IC', 0.0)
                 cand.stability = assessment.get('Dir_consistency', 0.5)
                 cand.balance = assessment.get('balance', 0.5)
@@ -10395,9 +10462,9 @@ class LabelBasedLayer2(BaseStep):
 
                 # RE-CALCULATE FINAL SCORE: Don't give 100 if learnability is low.
                 # Use a blend of structural Layer2Score and empirical learnability
-                # RE-CALCULATE FINAL SCORE
-                # FIX: Layer2Score is already 0-1 (e.g. 0.67), do NOT divide by 100
-                learn_factor = max(0.0, (auc - 0.5) * 2) if auc > 0.5 else max(0.0, auc - 0.5)
+                # NOTE: Since we flip predictions when AUC<0.5, AUC here is always >=0.5
+                # This maps AUC 0.5->0, 0.75->0.5, 1.0->1.0
+                learn_factor = max(0.0, (auc - 0.5) * 2)
                 structural_score = max(0.0, min(1.0, cand.layer2_score)) 
                 
                 # Blend: 50% Structural (Causal), 50% Empirical (AUC)
@@ -10424,6 +10491,7 @@ class LabelBasedLayer2(BaseStep):
                     'probe_auc': auc,
                     'probe_rec': rec,
                     'ranking_score': cand.ranking_score,
+                    'prediction_inverted': getattr(cand, 'prediction_inverted', False),  # Track inverse signal handling
                     **assessment # Unpack all detailed quality metrics
                 }
                 self._all_candidate_assessments.append(report_entry)

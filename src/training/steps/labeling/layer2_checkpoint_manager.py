@@ -247,6 +247,9 @@ class Layer2CheckpointManager:
         if isinstance(obj, np.ndarray):
             return self._serialize_for_json(obj.tolist())
         
+        if isinstance(obj, pd.Index):
+            return self._serialize_for_json(obj.tolist())
+
         if isinstance(obj, (pd.DataFrame, pd.Series)):
             return self._serialize_for_json(obj.to_dict())
         

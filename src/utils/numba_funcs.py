@@ -435,33 +435,116 @@ def _numba_volatility_clustering(returns, window=20):
     """
     Calculate volatility clustering coefficient (GARCH-like behavior).
     Measures persistence of volatility - high values indicate clustering (chaos).
+
+    This is effectively Lag-1 autocorrelation of squared returns over the window.
+    O(N) optimized implementation.
+
+    WARNING: Assumes clean input (no NaNs/Infs). NaNs will propagate and poison the rolling statistics.
     """
     n = len(returns)
     output = np.zeros(n, dtype=np.float64)
 
-    for i in range(window, n):
-        # Calculate squared returns in window
-        sq_returns = returns[i - window : i] ** 2
+    if window <= 1:
+        return output
 
-        # Calculate autocorrelation of squared returns at lag 1
-        if len(sq_returns) > 1:
-            x = sq_returns[:-1]
-            y = sq_returns[1:]
+    # We use lag=1 on squared returns.
+    # The sub-window for correlation is window - 1.
+    w = float(window - 1)
+    inv_w = 1.0 / w
 
-            # Pearson correlation
-            x_mean = np.mean(x)
-            y_mean = np.mean(y)
+    # Pre-calculate squared returns (O(N))
+    # Or calculate on the fly to save memory/passes?
+    # On the fly is better for cache locality in the loop.
 
-            x_dev = x - x_mean
-            y_dev = y - y_mean
+    # Initialization
+    sx = 0.0
+    sy = 0.0
+    sxx = 0.0
+    syy = 0.0
+    sxy = 0.0
 
-            numerator = np.sum(x_dev * y_dev)
-            denominator = np.sqrt(np.sum(x_dev**2) * np.sum(y_dev**2))
+    # Fill sums for i = window (first output)
+    # i = window
+    # x = sq_returns[0 : window-1] -> returns[i-window : i-1]**2
+    # y = sq_returns[1 : window]   -> returns[i-window+1 : i]**2
 
-            if denominator > 1e-10:
-                output[i] = numerator / denominator
-            else:
-                output[i] = 0.0
+    # Loop over k from 0 to window-2
+    for k in range(window - 1):
+        # returns indices relative to start of window (index i-window)
+        # x uses returns[i-window + k]
+        # y uses returns[i-window + k + 1]
+
+        # For initial window (i=window), start is 0
+        r_x = returns[k]
+        r_y = returns[k + 1]
+
+        val_x = r_x * r_x
+        val_y = r_y * r_y
+
+        sx += val_x
+        sy += val_y
+        sxx += val_x * val_x
+        syy += val_y * val_y
+        sxy += val_x * val_y
+
+    # Compute for i = window
+    mx = sx * inv_w
+    my = sy * inv_w
+    var_x = (sxx * inv_w) - (mx * mx)
+    var_y = (syy * inv_w) - (my * my)
+    cov = (sxy * inv_w) - (mx * my)
+
+    if var_x > 1e-12 and var_y > 1e-12:
+        output[window] = cov / np.sqrt(var_x * var_y)
+
+    # Rolling update
+    for i in range(window + 1, n):
+        # Leaving pair from left of window
+        # Previous window: [i-1-window : i-1]
+        # x used returns[i-1-window]
+        # y used returns[i-1-window+1]
+
+        # Indices in 'returns'
+        idx_leaving_x = i - 1 - window
+        idx_leaving_y = i - window
+
+        # Entering pair at right of window
+        # New window: [i-window : i]
+        # x uses returns[i-2]
+        # y uses returns[i-1]
+
+        idx_entering_x = i - 2
+        idx_entering_y = i - 1
+
+        r_lx = returns[idx_leaving_x]
+        r_ly = returns[idx_leaving_y]
+        val_lx = r_lx * r_lx
+        val_ly = r_ly * r_ly
+
+        r_ex = returns[idx_entering_x]
+        r_ey = returns[idx_entering_y]
+        val_ex = r_ex * r_ex
+        val_ey = r_ey * r_ey
+
+        sx = sx - val_lx + val_ex
+        sy = sy - val_ly + val_ey
+
+        sxx = sxx - val_lx*val_lx + val_ex*val_ex
+        syy = syy - val_ly*val_ly + val_ey*val_ey
+
+        sxy = sxy - val_lx*val_ly + val_ex*val_ey
+
+        # Compute
+        mx = sx * inv_w
+        my = sy * inv_w
+        var_x = (sxx * inv_w) - (mx * mx)
+        var_y = (syy * inv_w) - (my * my)
+        cov = (sxy * inv_w) - (mx * my)
+
+        if var_x > 1e-12 and var_y > 1e-12:
+            output[i] = cov / np.sqrt(var_x * var_y)
+        else:
+            output[i] = 0.0
 
     return output
 
@@ -469,29 +552,129 @@ def _numba_volatility_clustering(returns, window=20):
 @jit(nopython=True)
 def _numba_return_autocorrelation(returns, window=20, lag=1):
     """
-    Calculate return autocorrelation at specified lag.
+    Calculate return autocorrelation at specified lag using O(N) online updates.
     Negative autocorrelation often indicates chaotic behavior.
+
+    Effective window size for correlation is (window - lag).
+    x = returns[i-window : i-lag]
+    y = returns[i-window+lag : i] (lagged version)
+
+    Correlation = (E[xy] - E[x]E[y]) / (std(x) * std(y))
+
+    WARNING: Assumes clean input (no NaNs/Infs). NaNs will propagate and poison the rolling statistics.
     """
     n = len(returns)
     output = np.zeros(n, dtype=np.float64)
 
-    for i in range(window + lag, n):
-        # Get returns in window
-        x = returns[i - window : i - lag]
-        y = returns[i - window + lag : i]
+    # Effective window size for correlation calculation
+    w = float(window - lag)
+    if w <= 1:
+        return output
 
-        # Pearson correlation
-        x_mean = np.mean(x)
-        y_mean = np.mean(y)
+    inv_w = 1.0 / w
 
-        x_dev = x - x_mean
-        y_dev = y - y_mean
+    # Initialize running sums for the first valid window
+    # Range of indices involved: [lag, window+lag)
+    # x takes from [0, window-lag)
+    # y takes from [lag, window)
 
-        numerator = np.sum(x_dev * y_dev)
-        denominator = np.sqrt(np.sum(x_dev**2) * np.sum(y_dev**2))
+    sx = 0.0
+    sy = 0.0
+    sxx = 0.0
+    syy = 0.0
+    sxy = 0.0
 
-        if denominator > 1e-10:
-            output[i] = numerator / denominator
+    start_idx = window + lag
+
+    # Initialize for the first calculation point (index = start_idx - 1)
+    # Logic:
+    # At index i = window + lag, we look back.
+    # We need to accumulate sums up to index (window + lag - 1).
+    # Specifically for the window ending at start_idx (exclusive of start_idx).
+
+    # x window: [start_idx - window, start_idx - lag) -> [lag, window)
+    # y window: [start_idx - window + lag, start_idx) -> [2*lag, window + lag)
+    # Wait, simple indexing from the loop:
+    # i = window + lag
+    # x = returns[lag : window]
+    # y = returns[2*lag : window + lag]
+
+    # Let's align with the loop:
+    # Loop starts at i = window + lag
+    # First iteration: i = window + lag
+    # x = returns[i - window : i - lag] -> returns[lag : window]
+    # y = returns[i - window + lag : i] -> returns[2*lag : window + lag]
+
+    # Initial Calculation Loop
+    # We need to fill sums for i = window + lag
+    # x indices: [lag, ..., window-1]
+    # y indices: [2*lag, ..., window+lag-1]
+    # Length is window - lag
+
+    # Actually, let's verify indices.
+    # i = window + lag
+    # x start: i - window = lag
+    # x end: i - lag = window
+    # y start: i - window + lag = 2*lag
+    # y end: i = window + lag
+
+    # So we sum for k in range(window - lag):
+    # x_val = returns[lag + k]
+    # y_val = returns[2*lag + k]
+
+    for k in range(int(w)):
+        val_x = returns[lag + k]
+        val_y = returns[2*lag + k]
+
+        sx += val_x
+        sy += val_y
+        sxx += val_x * val_x
+        syy += val_y * val_y
+        sxy += val_x * val_y
+
+    # Compute first output
+    mx = sx * inv_w
+    my = sy * inv_w
+    var_x = (sxx * inv_w) - (mx * mx)
+    var_y = (syy * inv_w) - (my * my)
+    cov = (sxy * inv_w) - (mx * my)
+
+    if var_x > 1e-12 and var_y > 1e-12:
+        output[window + lag] = cov / np.sqrt(var_x * var_y)
+
+    # Rolling update
+    for i in range(window + lag + 1, n):
+        # Leaving elements
+        # x leaving: returns[i - 1 - window]
+        # y leaving: returns[i - 1 - window + lag]
+
+        # Entering elements
+        # x entering: returns[i - 1 - lag]
+        # y entering: returns[i - 1]
+
+        leaving_x = returns[i - 1 - window]
+        leaving_y = returns[i - 1 - window + lag]
+
+        entering_x = returns[i - 1 - lag]
+        entering_y = returns[i - 1]
+
+        sx = sx - leaving_x + entering_x
+        sy = sy - leaving_y + entering_y
+
+        sxx = sxx - leaving_x*leaving_x + entering_x*entering_x
+        syy = syy - leaving_y*leaving_y + entering_y*entering_y
+
+        sxy = sxy - leaving_x*leaving_y + entering_x*entering_y
+
+        # Compute correlation
+        mx = sx * inv_w
+        my = sy * inv_w
+        var_x = (sxx * inv_w) - (mx * mx)
+        var_y = (syy * inv_w) - (my * my)
+        cov = (sxy * inv_w) - (mx * my)
+
+        if var_x > 1e-12 and var_y > 1e-12:
+            output[i] = cov / np.sqrt(var_x * var_y)
         else:
             output[i] = 0.0
 

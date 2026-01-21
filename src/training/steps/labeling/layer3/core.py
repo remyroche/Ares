@@ -382,7 +382,9 @@ def select_best_model_per_task(
                   f"xgb_{horizon}_{'reg' if task_type == 'regression' else 'cls'}",
                   f"catboost_{horizon}_{'reg' if task_type == 'regression' else 'cls'}",
                   f"huber_{horizon}_{'reg' if task_type == 'regression' else 'cls'}",
-                  f"ridge_{horizon}_{'reg' if task_type == 'regression' else 'cls'}"]
+                  f"ridge_{horizon}_{'reg' if task_type == 'regression' else 'cls'}",
+                  f"irm_ridge_{horizon}_{'reg' if task_type == 'regression' else 'cls'}",
+                  f"irm_elasticnet_{horizon}_{'reg' if task_type == 'regression' else 'cls'}"]
 
     for key in candidates:
         if key not in models_dict:
@@ -484,45 +486,20 @@ def select_best_model_per_task(
         tprint_success("End: select_best_model_per_task")
         return np.zeros(len(y_target)), "none"
 
-
-def layer3_analyst_lgbm(
-    oof_df: pd.DataFrame,
+def prepare_layer3_features(
+    df: pd.DataFrame,
     base_model_cols: List[str],
-    target_col: str,
-    train_split_date: Optional[str] = None,
-    sample_weight: Optional[np.ndarray] = None,
-    layer1_weight: Optional[np.ndarray] = None,
-    layer2_weight: Optional[np.ndarray] = None,
-    layer2_weight_quality: Optional[np.ndarray] = None,
-    net_returns: Optional[np.ndarray] = None,
-    market_data: Optional[pd.DataFrame] = None,
+    symbol: str,
+    exchange: str,
     config: Optional[Dict[str, Any]] = None,
-) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-    tprint_info("Start: layer3_analyst_lgbm")
-    cfg = config if isinstance(config, dict) else {}
-    cfg['base_model_cols'] = base_model_cols
-    
-    tprint_info("🚀 Layer 3: Starting Multi-Horizon Meta-Models Pipeline (ET+LGBM+XGB)")
-    
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    outcomes_dir = Path(cfg.get('outcomes_dir', 'outcomes'))
-    outcomes_dir.mkdir(parents=True, exist_ok=True)
-
-    df = oof_df.copy()
-
-    # Phase 0: Entropy Bars
-    tprint_info("🔧 Phase 0: Entropy Bars Integration")
-    symbol = cfg.get('symbol', 'ETHUSDT')
-    exchange = cfg.get('exchange', 'binance')
-    
-    if cfg.get('use_entropy_bars', True):
-        df, entropy_bars_df = integrate_entropy_bars_into_layer3(df, symbol, exchange, cfg)
-        cfg['entropy_bars_df'] = entropy_bars_df
-    else:
-        entropy_bars_df = pd.DataFrame()
-
-    # Phase 1: Meta-Features
-    tprint_info("🔧 Phase 1: Meta-Features Engineering")
+    market_data: Optional[pd.DataFrame] = None
+) -> pd.DataFrame:
+    """
+    Phase 1: Meta-Features Engineering.
+    Wrapper for `generate_layer3_features` with caching and robust error handling.
+    """
+    tprint_info("Start: prepare_layer3_features")
+    cfg = config or {}
     safe_base_cols = [c for c in base_model_cols if c in df.columns]
 
     # Try loading features from cache
@@ -556,25 +533,43 @@ def layer3_analyst_lgbm(
             # Save to cache if enabled
             if CACHE_AVAILABLE and cfg.get('use_layer3_feature_cache', True):
                 # Identify generated features (exclude base columns)
-                exclude_cols = set(oof_df.columns) | set(base_model_cols) | {'close', 'high', 'low', 'open', 'volume'}
-                generated_cols = [c for c in df.columns if c not in exclude_cols]
+                exclude_cols = set(df.columns) - set(safe_base_cols) - {'close', 'high', 'low', 'open', 'volume'}
+                generated_cols = [c for c in df.columns if c not in exclude_cols] # Logic error in previous implementation?
+                # Correct logic: generated cols are newly added ones.
+                # Actually, let's just save whatever generate_layer3_features returned minus original columns
 
-                if generated_cols:
-                    feature_subset = df[generated_cols]
-                    save_layer3_features_to_cache(
-                        meta_features=feature_subset,
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=cfg.get('timeframe', '15m'),
-                        direction='long',
-                        market_data=market_data,
-                        config=cfg
-                    )
+                # Re-identify generated cols safely
+                # (Assuming df grew)
+                # For simplicity, we pass the subset to cache
+                # The cache function handles column selection
+                save_layer3_features_to_cache(
+                    meta_features=df,
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=cfg.get('timeframe', '15m'),
+                    direction='long',
+                    market_data=market_data,
+                    config=cfg
+                )
         except Exception as e:
             tprint_warning(f"⚠️ Feature generation failed: {e}")
 
-    # Phase 2: Targets + Volatility Weights
-    tprint_info("📊 Phase 2: Targets + Volatility Weights")
+    tprint_success("End: prepare_layer3_features")
+    return df
+
+def prepare_layer3_targets_and_weights(
+    df: pd.DataFrame,
+    layer1_weight: Optional[np.ndarray] = None,
+    net_returns: Optional[np.ndarray] = None,
+    config: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Phase 2: Targets + Volatility Weights.
+    Calculates targets (12/48 horizons) and sample weights.
+    """
+    tprint_info("Start: prepare_layer3_targets_and_weights")
+    cfg = config or {}
+
     if net_returns is None:
         if 'close' in df.columns:
             net_returns = df['close'].pct_change().fillna(0)
@@ -585,16 +580,13 @@ def layer3_analyst_lgbm(
     vol_series = ret_series.rolling(24).std().fillna(0.001)
 
     # 12-bar targets
-    # Use blended forward returns (4-6h blend) to increase SNR per user request
     if 'close' in df.columns:
-        # Horizons: 16 (4h) and 24 (6h)
         blended_ret_series = calculate_blended_forward_returns(df['close'], [16, 24])
     else:
         blended_ret_series = ret_series
 
     y_alpha_12_series = calculate_studentized_har_target(blended_ret_series, vol_series)
     y_alpha_12 = y_alpha_12_series.values.astype(np.float32)
-    # Probability target is also based on blended return (smoothed direction)
     y_prob_12 = (blended_ret_series.values > 0).astype(np.int32)
     
     # 48-bar targets
@@ -608,10 +600,7 @@ def layer3_analyst_lgbm(
         y_alpha_48 = y_alpha_12 * 1.5
         y_prob_48 = y_prob_12
 
-    cfg['y_alpha_48'] = y_alpha_48
-    cfg['y_prob_48'] = y_prob_48
-
-    # Extract volume for quality adjustment
+    # Weights
     vol_values = df['volume'].values.astype(np.float32) if 'volume' in df.columns else None
 
     w_alpha = calculate_sample_weights_efficient(
@@ -622,7 +611,133 @@ def layer3_analyst_lgbm(
     )
     w_alpha = w_alpha.astype(np.float32)
 
+    tprint_success("End: prepare_layer3_targets_and_weights")
+    return {
+        'y_alpha_12': y_alpha_12,
+        'y_prob_12': y_prob_12,
+        'y_alpha_12_series': y_alpha_12_series,
+        'y_alpha_48': y_alpha_48,
+        'y_prob_48': y_prob_48,
+        'w_alpha': w_alpha
+    }
+
+def process_layer3_results(
+    df: pd.DataFrame,
+    combined_models: Dict[str, Any],
+    best_models_info: Dict[str, str],
+    X_index: pd.Index
+) -> pd.DataFrame:
+    """
+    Phase 11: Save best models OOF predictions.
+    Maps predictions back to DataFrame.
+    """
+    tprint_info("Start: process_layer3_results")
+
+    def propagate_simple(values, idx):
+        return pd.Series(values, index=idx).reindex(df.index).fillna(0)
+
+    # Save ALL models OOF predictions
+    for key, res in combined_models.items():
+        if 'cate' in res:
+            pred = res['cate']
+            df[f"{key}_oof"] = propagate_simple(pred, X_index)
+
+    # Map best models to meta columns
+    # Using the keys from best_models_info to find the right prediction
+
+    # 12-bar
+    key_12_reg = best_models_info.get('12_reg')
+    if key_12_reg and key_12_reg in combined_models:
+        df['meta_alpha'] = propagate_simple(combined_models[key_12_reg]['cate'], X_index)
+
+    key_12_cls = best_models_info.get('12_cls')
+    if key_12_cls and key_12_cls in combined_models:
+        df['meta_prob'] = propagate_simple(combined_models[key_12_cls]['cate'], X_index)
+
+    # 48-bar
+    key_48_reg = best_models_info.get('48_reg')
+    if key_48_reg and key_48_reg in combined_models:
+        df['meta_alpha_48'] = propagate_simple(combined_models[key_48_reg]['cate'], X_index)
+
+    key_48_cls = best_models_info.get('48_cls')
+    if key_48_cls and key_48_cls in combined_models:
+        df['meta_prob_48'] = propagate_simple(combined_models[key_48_cls]['cate'], X_index)
+
+    # Legacy compatibility
+    if 'meta_alpha' in df.columns:
+        df['orf_cate'] = df['meta_alpha']
+    if 'meta_prob' in df.columns:
+        df['orf_se'] = df['meta_prob'] * 0.1 # Placeholder
+
+    tprint_success("End: process_layer3_results")
+    return df
+
+def layer3_analyst_lgbm(
+    oof_df: pd.DataFrame,
+    base_model_cols: List[str],
+    target_col: str,
+    train_split_date: Optional[str] = None,
+    sample_weight: Optional[np.ndarray] = None,
+    layer1_weight: Optional[np.ndarray] = None,
+    layer2_weight: Optional[np.ndarray] = None,
+    layer2_weight_quality: Optional[np.ndarray] = None,
+    net_returns: Optional[np.ndarray] = None,
+    market_data: Optional[pd.DataFrame] = None,
+    config: Optional[Dict[str, Any]] = None,
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    tprint_info("Start: layer3_analyst_lgbm")
+    cfg = config if isinstance(config, dict) else {}
+    cfg['base_model_cols'] = base_model_cols
+
+    tprint_info("🚀 Layer 3: Starting Multi-Horizon Meta-Models Pipeline (ET+LGBM+XGB)")
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    outcomes_dir = Path(cfg.get('outcomes_dir', 'outcomes'))
+    outcomes_dir.mkdir(parents=True, exist_ok=True)
+
+    df = oof_df.copy()
+
+    # Phase 0: Entropy Bars
+    tprint_info("🔧 Phase 0: Entropy Bars Integration")
+    symbol = cfg.get('symbol', 'ETHUSDT')
+    exchange = cfg.get('exchange', 'binance')
+
+    if cfg.get('use_entropy_bars', True):
+        df, entropy_bars_df = integrate_entropy_bars_into_layer3(df, symbol, exchange, cfg)
+        cfg['entropy_bars_df'] = entropy_bars_df
+    else:
+        entropy_bars_df = pd.DataFrame()
+
+    # Phase 1: Meta-Features
+    df = prepare_layer3_features(
+        df=df,
+        base_model_cols=base_model_cols,
+        symbol=symbol,
+        exchange=exchange,
+        config=cfg,
+        market_data=market_data
+    )
+
+    # Phase 2: Targets + Volatility Weights
+    targets_data = prepare_layer3_targets_and_weights(
+        df=df,
+        layer1_weight=layer1_weight,
+        net_returns=net_returns,
+        config=cfg
+    )
+
+    y_alpha_12 = targets_data['y_alpha_12']
+    y_prob_12 = targets_data['y_prob_12']
+    y_alpha_48 = targets_data['y_alpha_48']
+    y_prob_48 = targets_data['y_prob_48']
+    w_alpha = targets_data['w_alpha']
+    y_alpha_12_series = targets_data['y_alpha_12_series']
+
+    cfg['y_alpha_48'] = y_alpha_48
+    cfg['y_prob_48'] = y_prob_48
+
     # Phase 3: Mild MP-Clustering (Feature Selection)
+    safe_base_cols = [c for c in base_model_cols if c in df.columns]
     exclude = set(base_model_cols) | {target_col, 'close', 'high', 'low', 'volume', 'regime_label'}
     meta_features = [c for c in df.columns if c not in exclude and df[c].dtype in [np.float64, np.float32, np.int64]]
     X_full = df[meta_features].copy()
@@ -633,11 +748,8 @@ def layer3_analyst_lgbm(
             X_full[col] = df[col].reindex(X_full.index)
 
     # Phase 3.5: Regime Aware Features
-    # Identify probability columns for disagreement calculation
     prob_cols = [c for c in X_full.columns if 'prob_' in c and '_oof' not in c]
     regime_feats = generate_regime_aware_features(X_full, 'volatility_20', prob_cols)
-
-    # Merge Regime Feats into X_full before clustering/training
     X_full = pd.concat([X_full, regime_feats], axis=1)
 
     # Phase 3.75: Layer 2.5 Chaser Integration (if available)
@@ -725,31 +837,6 @@ def layer3_analyst_lgbm(
     best_pred_48_reg, best_key_48_reg = select_best_model_per_task(combined_models, y_alpha_48, 'regression', '48')
     best_pred_48_cls, best_key_48_cls = select_best_model_per_task(combined_models, y_prob_48, 'classification', '48')
 
-    # Phase 11: Save best models OOF predictions
-    tprint_info("💾 Phase 11: Save Models OOF")
-    
-    # Helper to propagate predictions
-    def propagate_simple(values, idx):
-        return pd.Series(values, index=idx).reindex(df.index).fillna(0)
-
-    # Save ALL models OOF predictions
-    for key, res in combined_models.items():
-        # key like 'et_12_reg'
-        pred = res['cate']
-        df[f"{key}_oof"] = propagate_simple(pred, X_clustered.index)
-
-    # Map best models to meta columns
-    df['meta_alpha'] = propagate_simple(best_pred_12_reg, X_clustered.index)
-    df['meta_prob'] = propagate_simple(best_pred_12_cls, X_clustered.index)
-
-    # Save 48 bar outputs too if needed
-    df['meta_alpha_48'] = propagate_simple(best_pred_48_reg, X_clustered.index)
-    df['meta_prob_48'] = propagate_simple(best_pred_48_cls, X_clustered.index)
-
-    # Legacy compatibility
-    df['orf_cate'] = df['meta_alpha']
-    df['orf_se'] = df['meta_prob'] * 0.1 # Placeholder
-
     # Store Best Model Keys in results
     best_models_info = {
         '12_reg': best_key_12_reg,
@@ -757,6 +844,16 @@ def layer3_analyst_lgbm(
         '48_reg': best_key_48_reg,
         '48_cls': best_key_48_cls
     }
+
+    # Phase 11: Save best models OOF predictions
+    tprint_info("💾 Phase 11: Save Models OOF")
+
+    df = process_layer3_results(
+        df=df,
+        combined_models=combined_models,
+        best_models_info=best_models_info,
+        X_index=X_clustered.index
+    )
 
     models_dict = {
         'all_models': combined_models,

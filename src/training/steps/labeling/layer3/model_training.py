@@ -386,7 +386,7 @@ def train_xgboost_model(
 
     # 4. Parameters Aligned with Layer 2 (Boosted Random Forest)
     params = {
-        'n_estimators': 4,
+        'n_estimators': 3,
         'learning_rate': 0.2,
         'max_depth': 5,
         'min_child_weight': 25,

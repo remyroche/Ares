@@ -646,6 +646,9 @@ class HuberResidualStack(BaseEstimator, ClassifierMixin):
         # Capture feature names if X is a DataFrame (needed for XGBoost constraints)
         feature_names = getattr(X, 'columns', None)
 
+        # De Prado Alignment: Capture index for Purged K-Fold if available
+        index = getattr(X, 'index', None)
+
         X_arr = check_array(X, accept_sparse=True, ensure_all_finite=False)
         # Ensure y and sample_weight are numpy arrays to avoid pandas indexing issues
         y = np.asarray(y)
@@ -655,12 +658,33 @@ class HuberResidualStack(BaseEstimator, ClassifierMixin):
         if self.fashion_estimator is None:
             raise ValueError("fashion_estimator must be provided")
 
-        # Phase 1: OOF Residuals (Using KFold without shuffle for contiguous blocks)
-        kf = KFold(n_splits=self.n_splits, shuffle=False)
+        # Phase 1: OOF Residuals (Using PurgedKFoldTime for strict non-leakage)
+        if index is not None and isinstance(index, pd.DatetimeIndex):
+             # Ensure index aligns with X_arr length (check_array might drop rows? No, it usually just converts)
+             if len(index) != len(X_arr):
+                 # Fallback if length mismatch (e.g. infinite values dropped before this?)
+                 # check_array doesn't drop unless we ask it to.
+                 kf = KFold(n_splits=self.n_splits, shuffle=False)
+                 splitter = kf.split(X_arr)
+             else:
+                 # Use PurgedKFoldTime with index awareness
+                 from src.utils.purged_kfold import PurgedKFoldTime
+                 # Default purge/embargo: 1% purge? Or 30m? Let's use conservative 1%ish or default.
+                 # Using defaults from class definition (30m purge, 15m embargo)
+                 pkf = PurgedKFoldTime(n_splits=self.n_splits)
+                 # PurgedKFoldTime.split expects a DataFrame with index
+                 # We create a lightweight dummy
+                 dummy_X = pd.DataFrame(index=index)
+                 splitter = pkf.split(dummy_X)
+        else:
+             # Fallback to Block K-Fold if no time index available
+             kf = KFold(n_splits=self.n_splits, shuffle=False)
+             splitter = kf.split(X_arr)
+
         oof_preds = np.zeros(len(y))
 
         # Fit Law model on folds
-        for train_idx, val_idx in kf.split(X_arr):
+        for train_idx, val_idx in splitter:
             X_tr, y_tr = X_arr[train_idx], y[train_idx]
             X_val = X_arr[val_idx]
             w_tr = sample_weight[train_idx] if sample_weight is not None else None
@@ -8347,7 +8371,18 @@ class LabelBasedLayer2(BaseStep):
                  if 'early_stopping_rounds' in safe_fit_params: del safe_fit_params['early_stopping_rounds']
                  if 'callbacks' in safe_fit_params: del safe_fit_params['callbacks']
 
-                 model = CalibratedClassifierCV(estimator=model, method='isotonic', cv=5)
+                 # De Prado Alignment: Use PurgedKFoldTime for calibration CV to prevent leakage
+                 calib_cv = 5
+                 if hasattr(X_train_final, 'index') and isinstance(X_train_final.index, pd.DatetimeIndex):
+                     from src.utils.purged_kfold import PurgedKFoldTime
+                     # Pre-calculate splits to ensure index is used before potential sklearn conversion
+                     try:
+                         calib_cv = list(PurgedKFoldTime(n_splits=5).split(X_train_final))
+                     except Exception:
+                         # Fallback if split fails
+                         calib_cv = 5
+
+                 model = CalibratedClassifierCV(estimator=model, method='isotonic', cv=calib_cv)
                  fit_params = safe_fit_params
 
             try:

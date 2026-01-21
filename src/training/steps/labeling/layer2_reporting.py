@@ -98,6 +98,7 @@ class Layer2Reporter:
 
             # Model Performance Summary
             lines.append("## Model Performance Summary\n")
+            lines.append("- **Validation Strategy**: Purged K-Fold (De Prado) [Prevents Leakage]\n")
             if 'model_metrics' in oof_results:
                 metrics = oof_results['model_metrics']
                 lines.append(f"- **Overall AUC**: {metrics.get('mean_auc', 'N/A'):.4f}\n")

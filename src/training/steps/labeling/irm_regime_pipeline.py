@@ -231,6 +231,16 @@ class MarketRegimeLabeller:
         labels = pd.Series(index=data.index, data=clusters, name="gmm_regime")
         return labels.reindex(df.index)
 
+    def get_regime_posteriors(self, df: pd.DataFrame, path: Path) -> pd.DataFrame:
+        """Get soft regime probabilities (posteriors)."""
+        setup = joblib.load(path)
+        data = self.prepare_regime_features(df)
+        probs = setup['gmm'].predict_proba(setup['scaler'].transform(data))
+
+        cols = [f"regime_prob_{i}" for i in range(probs.shape[1])]
+        prob_df = pd.DataFrame(probs, index=data.index, columns=cols)
+        return prob_df.reindex(df.index)
+
     def get_env_indices(self, df: pd.DataFrame, path: Path) -> list[np.ndarray]:
         labels = self.get_regime_labels(df, path)
         return build_env_indices_for_index(labels, df.index)

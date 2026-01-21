@@ -526,8 +526,11 @@ class CausalSurpriseDetector:
                 # Softplus to handle negative values gracefully and emphasize positive performance
                 # score = softplus(10*IC) * softplus(5*Lift) * (Prec^0.25)
                 # Adding bias to softplus input to center around 1.0 for neutral
-                ic_score = np.log1p(np.exp(10.0 * ic))
-                lift_score = np.log1p(np.exp(5.0 * lift))
+                # Clip inputs to avoid overflow
+                ic_val = np.clip(10.0 * ic, -20.0, 20.0)
+                lift_val = np.clip(5.0 * lift, -20.0, 20.0)
+                ic_score = np.log1p(np.exp(ic_val))
+                lift_score = np.log1p(np.exp(lift_val))
                 prec_score = precision ** 0.25
 
                 combined_score = ic_score * lift_score * prec_score
@@ -694,22 +697,8 @@ class CausalSurpriseDetector:
             adjusted_zone_score *= float(getattr(self, "zone_score_exposure", 1.0)) * float(exposure_scalar)
             aggregated['zone_score'] = adjusted_zone_score.clip(0.0, self.zone_score_cap)
             
-            # Aggregate Signed Errors for Directionality
-            signed_errors = errors_df.reindex(surprise_df.columns, axis=1).fillna(0)
-            aggregated['mean_signed_error'] = (signed_errors * weight_series).sum(axis=1)
 
-            # Define break_df for total breaks calculation
-            break_df = (surprise_df > self.surprise_threshold).astype(int)
-            aggregated['total_breaks'] = break_df.sum(axis=1)
-            aggregated['has_break'] = (aggregated['total_breaks'] > 0).astype(int)
 
-            zone_levels = self._compute_specialist_zone_levels(surprise_df)
-            zone_scores = self._compute_specialist_zone_scores(zone_levels, surprise_df)
-            combined_zone_score = self._compute_combined_zone_score(zone_scores, zone_levels)
-            adjusted_zone_score = combined_zone_score.reindex(aggregated.index).fillna(0.0)
-            adjusted_zone_score *= float(getattr(self, "zone_score_exposure", 1.0)) * float(exposure_scalar)
-            aggregated['zone_score'] = adjusted_zone_score.clip(0.0, self.zone_score_cap)
-            
             # Surprise Density
             if len(aggregated) > 0:
                 surprise_density = (aggregated['zone_score'] > 0.33).mean()

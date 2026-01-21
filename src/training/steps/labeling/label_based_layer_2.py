@@ -8995,7 +8995,7 @@ class LabelBasedLayer2(BaseStep):
                         learning_rate=0.2,            # Increased from 0.02 (fewer rounds)
                         reg_lambda=8,                 # Reduced from 10
                         reg_alpha=1.5,                # Reduced from 2.0
-                        gamma=0.2,                    # Reduced from 1.0
+                        gamma=0.5,                    # Reduced from 1.0
                         min_child_weight=adaptive_min_child_weight,  # Adaptive
                         monotone_constraints=xgb_constraints,
                         interaction_constraints=valid_interaction_constraints,

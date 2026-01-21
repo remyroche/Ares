@@ -231,6 +231,22 @@ class MarketRegimeLabeller:
         labels = pd.Series(index=data.index, data=clusters, name="gmm_regime")
         return labels.reindex(df.index)
 
+    def get_regime_posteriors(self, df: pd.DataFrame, path: Path) -> pd.DataFrame:
+        """
+        Get soft regime memberships (posterior probabilities).
+        Returns a DataFrame where columns are 'regime_0', 'regime_1', etc.
+        """
+        setup = joblib.load(path)
+        data = self.prepare_regime_features(df)
+        probs = setup['gmm'].predict_proba(setup['scaler'].transform(data))
+
+        cols = [f"regime_{i}" for i in range(probs.shape[1])]
+        df_probs = pd.DataFrame(probs, index=data.index, columns=cols)
+
+        # Reindex to match original df (filling NaN with 0 or equal probability?)
+        # 0 is safer as it implies no knowledge
+        return df_probs.reindex(df.index).fillna(0.0)
+
     def get_env_indices(self, df: pd.DataFrame, path: Path) -> list[np.ndarray]:
         labels = self.get_regime_labels(df, path)
         return build_env_indices_for_index(labels, df.index)
@@ -260,3 +276,16 @@ def get_or_fit_regime_labels(
         labeller.fit_save(df, path)
 
     return labeller.get_regime_labels(df, path)
+
+def get_regime_posteriors_from_path(
+    df: pd.DataFrame,
+    path: Path,
+    n_regimes: int = 4
+) -> pd.DataFrame:
+    """Helper to get posteriors directly."""
+    labeller = MarketRegimeLabeller(n_regimes=n_regimes)
+    # Ensure it's fitted
+    if not path.exists():
+        labeller.fit_save(df, path)
+
+    return labeller.get_regime_posteriors(df, path)

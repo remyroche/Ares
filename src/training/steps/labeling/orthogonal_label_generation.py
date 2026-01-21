@@ -1703,7 +1703,8 @@ def check_label_quality(
 
 def calculate_multifactor_score(
     candidates: List[Dict],
-    probe_features: pd.DataFrame
+    probe_features: pd.DataFrame,
+    regime_posteriors: Optional[pd.DataFrame] = None
 ) -> List[Dict]:
     if not candidates: return []
     scores = []
@@ -1747,6 +1748,47 @@ def calculate_multifactor_score(
                 else:
                     # Mismatch or unaligned array. Fallback to uniform.
                     weights_vals = np.ones(n)
+
+        # ---------------- REGIME-CONDITIONAL METRICS (The "Contract") ----------------
+        min_regime_lift = 0.0
+        max_regime_lift = 0.0
+        regime_dispersion = 0.0
+
+        if regime_posteriors is not None:
+            # Align posteriors
+            aligned_probs = regime_posteriors.reindex(labels.index).fillna(0.0)
+            regime_lifts = []
+
+            # Simple Lift proxy: Abs(Return) when label != 0 vs baseline
+            # Or simpler: weighted mean of absolute returns for events in that regime?
+            # Better: Use the 'lift' metric from probe (Meta-Sharpe - Base-Sharpe) but calculated per regime.
+            # Approximation: Mean(Label * Return) / Volatility per regime
+
+            returns = cand['returns']
+
+            for col in aligned_probs.columns:
+                p_r = aligned_probs[col]
+                # Soft-weighted mask for this regime
+                # Calculate weighted sharpe proxy
+                w_r = weights_vals * p_r.values
+                if w_r.sum() > 5: # Need minimal mass
+                    weighted_ret = (returns * labels).fillna(0) # Strategy return
+                    # Weighted Mean / Weighted Std
+                    mean_r = np.average(weighted_ret, weights=w_r)
+                    var_r = np.average((weighted_ret - mean_r)**2, weights=w_r)
+                    sharpe_r = mean_r / (np.sqrt(var_r) + 1e-9)
+                    regime_lifts.append(sharpe_r)
+
+            if regime_lifts:
+                min_regime_lift = min(regime_lifts)
+                max_regime_lift = max(regime_lifts)
+                regime_dispersion = np.std(regime_lifts)
+            else:
+                # Fallback if no regime alignment
+                min_regime_lift = 0.0
+                max_regime_lift = 0.0
+                regime_dispersion = 0.0
+        # -----------------------------------------------------------------------------
 
         if n > MAX_SAMPLES:
             indices = np.random.RandomState(42).choice(n, MAX_SAMPLES, replace=False)
@@ -1844,6 +1886,10 @@ def calculate_multifactor_score(
             'interventional_contrast': interventional_contrast,
             'overlap_support': overlap_support,
             'path_stability_var': path_stability_var,
+            # Regime-Conditional Metrics
+            'min_regime_lift': min_regime_lift,
+            'max_regime_lift': max_regime_lift,
+            'regime_dispersion': regime_dispersion
         }
         cand['metrics_raw'] = cand_raw_metrics
         raw_metric_log.append({
@@ -1859,21 +1905,39 @@ def calculate_multifactor_score(
 
     for i, cand in enumerate(scores):
         row = df_norm.iloc[i]
+        metrics = cand['metrics_raw']
+
+        # 1. Base Power: IC or F-stat
         power = max(row['ic'], row['f_stat'])
-        raw_sig = df_scores.iloc[i]['significance']
         
-        # Incorporate Causal Integrity into power if available
+        # 2. Causal Integrity Bonus
         ic_ic = row.get('interventional_contrast', 0.0)
         purity_score = (power * 0.7 + ic_ic * 0.3) if not np.isnan(ic_ic) else power
 
+        # 3. Regime Robustness (The Contract)
+        # Reward candidates that work everywhere (min_lift) and penalize dispersion
+        # Or allow Conditional if max_lift is high (but maybe scored lower than Core)
+
+        # Determine Admission Type
+        is_core = (metrics['min_regime_lift'] > 0.05) and (metrics['regime_dispersion'] < 0.5)
+        is_conditional = (metrics['max_regime_lift'] > 0.15) # High peak performance
+
+        cand['classification'] = 'CORE' if is_core else ('CONDITIONAL' if is_conditional else 'WEAK')
+
+        # Improved Ranking Formula
+        # Rank = a*(1-min_p) + b*min_lift - c*dispersion
+        # (Using row values which are normalized 0-1)
+        # Use significance (log n_eff) as proxy for (1-min_p) confidence
+
+        regime_score = row.get('min_regime_lift', 0.0) - 0.5 * row.get('regime_dispersion', 0.0)
+
         final_score = (
-            purity_score *
-            raw_sig *
-            row['stability'] *
-            row['balance'] *
-            row['density'] *
-            (1.0 + row['path_score'])
+            0.4 * purity_score +
+            0.2 * row['significance'] +
+            0.2 * row['stability'] +
+            0.2 * regime_score
         )
+
         cand['score'] = final_score
         cand['power'] = power
 
@@ -3448,53 +3512,15 @@ def generate_multi_horizon_candidates(df: pd.DataFrame) -> List[Dict]:
 def generate_regime_conditioned_candidates(df: pd.DataFrame, ohlcv_candidates: List[Dict], specialist_families: List[str]) -> List[Dict]:
     """
     Level 6: Regime-Conditioned Features.
-    Conditions OHLCV candidates on Specialist states (e.g. Return Shock when Inventory is High).
-    Uses implicit regimes defined by Specialist Weight > 0.5 (High) or < 0.2 (Low? or just 1-Weight).
-    Actually, just multiplying the weights (Soft Conditioning) is effective and simpler.
-    Condition = OHLCV_Weight * Specialist_Weight
-    """
-    candidates = []
     
-    # Pre-calculate specialist weights
-    spec_weights = {}
-    for fam in specialist_families:
-        spec_weights[fam] = get_specialist_event_matrix(df, fam)
-        
-    for cand in ohlcv_candidates:
-        w_ohlcv = cand['weight_vector']
-        if not isinstance(w_ohlcv, pd.Series): continue
-        
-        for fam, w_spec in spec_weights.items():
-            if not isinstance(w_spec, pd.Series): continue
-            
-            # Condition: OHLCV interaction with Specialist Regime
-            # We want to capture: "Shock occurring during High Specialist Activity"
-            # Simply multiplying the weights achieves this 'soft AND' logic.
-            # w_combined = w_ohlcv * w_spec
-            # But we might want to be more specific: "High Inventory" vs "Low Inventory"
-            # For now, let's stick to "Relevance" (High Weight)
-            
-            w_combined = w_ohlcv * w_spec
-            
-            # Filter: Check if we have enough mass
-            if w_combined.sum() > 5.0: # Arbitrary mass threshold, ensure some overlap exists
-                # Normalize?
-                # z_combined = (w_combined - w_combined.mean()) / (w_combined.std() + 1e-9) # No, keep as probability-like mass
-                
-                # We need to turn this into a weight vector acceptable by Layer 2
-                # It is already [0, 1] * [0, 1] -> [0, 1]
-                
-                 events_combined = w_combined[w_combined > 0.1].index # Lower threshold for combined
-                 
-                 if len(events_combined) > 50:
-                     candidates.append({
-                         'family': f'COND_{cand["family"]}_ON_{fam.replace("_SPECIALIST", "")}',
-                         'events': events_combined,
-                         'weight_vector': w_combined,
-                         'params': {'type': 'regime_conditioned', 'parent': cand['family'], 'condition': fam}
-                     })
-                     
-    return candidates
+    [DEPRECATED] Hard-coded conditional families (COND_...) are replaced by
+    Soft Regime Conditioning (Feature Injection) in the main model pipeline.
+    See LabelBasedLayer2 for GMM posterior injection.
+
+    Returns empty list to disable COND_ family generation.
+    """
+    tprint_info("   ⏭️ Skipping Regime-Conditioned Candidates (Replaced by Soft Regime Conditioning)")
+    return []
 
 def validate_candidates_with_causal_graph(candidates: List[Dict], df: pd.DataFrame, target_col: str = 'close', verbose: bool = True) -> List[Dict]:
     """
@@ -4405,7 +4431,7 @@ def _persist_gate_diagnostics(
         diag_path.write_text("".join(summary_lines))
         tprint_success(f"💾 Gate diagnostics report saved to {diag_path}")
 
-def _main_sweep_worker(config, df_full, price, vol_series, X_probe, valid_tpsl_map, param_grids, target_signals_per_day, specialist_predictions, causal_graph, causal_surprise_threshold, tracker):
+def _main_sweep_worker(config, df_full, price, vol_series, X_probe, valid_tpsl_map, param_grids, target_signals_per_day, specialist_predictions, causal_graph, causal_surprise_threshold, tracker, regime_posteriors=None):
     """Worker function for parallel main parameter sweep."""
     try:
         from src.training.steps.labeling.orthogonal_label_generation import (
@@ -4436,7 +4462,8 @@ def _main_sweep_worker(config, df_full, price, vol_series, X_probe, valid_tpsl_m
                 causal_graph=causal_graph,
                 surprise_threshold=causal_surprise_threshold,
                 target_signals_per_day=target_signals_per_day,
-                tracker=tracker
+                tracker=tracker,
+                regime_posteriors=regime_posteriors
             )
         elif param_names:
             kwargs = dict(zip(param_names, params))
@@ -4955,7 +4982,8 @@ def orthogonal_label_generation(
                      df_full,
                      specialist_predictions=specialist_predictions,
                      causal_graph=causal_graph,
-                     surprise_threshold=causal_surprise_threshold
+                     surprise_threshold=causal_surprise_threshold,
+                     regime_posteriors=regime_posteriors
                  )
              else:
                   c_events = gen_instance.generate(price, *central_args)
@@ -5036,9 +5064,17 @@ def orthogonal_label_generation(
     else:
         vol_series = price.pct_change().rolling(96).std().bfill().fillna(0.01)
 
+    # Extract regime posteriors if available for soft conditioning (Before parallel sweep)
+    regime_posteriors = None
+    if 'regime_0' in df_full.columns:
+        regime_cols = [c for c in df_full.columns if c.startswith('regime_')]
+        if regime_cols:
+            regime_posteriors = df_full[regime_cols]
+            tprint_info(f"🔍 Found {len(regime_cols)} regime posterior columns for soft conditioning")
+
     common_args = (df_full, price, vol_series, X_probe, valid_tpsl_map, param_grids, 
                    target_signals_per_day, specialist_predictions, causal_graph, 
-                   causal_surprise_threshold, tracker)
+                   causal_surprise_threshold, tracker, regime_posteriors)
     
     # Run in parallel
     results = Parallel(n_jobs=4, backend='loky')(
@@ -5259,7 +5295,14 @@ def orthogonal_label_generation(
             tprint_warning(f"Composite {comp['family']} failed: {e}")
 
     # 5. Multi-Factor Scoring
-    scored_candidates = calculate_multifactor_score(candidates, X_probe)
+    # Load regime posteriors if available for scoring
+    regime_posteriors = None
+    if 'regime_0' in df_full.columns: # Heuristic check if regime cols were added to df_full
+        regime_cols = [c for c in df_full.columns if c.startswith('regime_')]
+        if regime_cols:
+            regime_posteriors = df_full[regime_cols]
+
+    scored_candidates = calculate_multifactor_score(candidates, X_probe, regime_posteriors)
     
     if not scored_candidates:
         tprint_warning("No candidates passed gates.")
@@ -5932,6 +5975,7 @@ class CausalSurpriseEvents(BaseEventGenerator):
                 causal_graph: Dict[str, List[str]] = None, surprise_threshold: float = 1.25,
                 zone3_boost: float = 3.0, zone2_boost: float = 2.0, exposure_scalar: float = 1.0,
                 tracker: Optional[Any] = None,
+                regime_posteriors: Optional[pd.DataFrame] = None,
                 **params) -> pd.DatetimeIndex:
         
         # Merge params for convenience
@@ -5939,6 +5983,7 @@ class CausalSurpriseEvents(BaseEventGenerator):
                 'specialist_predictions': specialist_predictions,
                 'causal_graph': causal_graph,
                 'surprise_threshold': surprise_threshold,
+                'regime_posteriors': regime_posteriors,
                 **params
         }
         
@@ -5974,7 +6019,7 @@ class CausalSurpriseEvents(BaseEventGenerator):
 
             # Generate surprise events
             tprint_info("   🔍 CausalSurpriseEvents: Computing surprise scores...")
-            surprise_df = self.surprise_detector.aggregate_specialist_surprise()
+            surprise_df = self.surprise_detector.aggregate_specialist_surprise(regime_posteriors=regime_posteriors)
 
             if surprise_df.empty:
                 tprint_warning("   ⚠️ CausalSurpriseEvents: No surprise scores computed")
@@ -5986,7 +6031,7 @@ class CausalSurpriseEvents(BaseEventGenerator):
             self.surprise_detector.adaptive_calibration(target_density, duration_days)
 
             tprint_info("   🎯 CausalSurpriseEvents: Generating causal events...")
-            causal_events = self.surprise_detector.generate_causal_events()
+            causal_events = self.surprise_detector.generate_causal_events(regime_posteriors=regime_posteriors)
 
             if causal_events:
                 event_indices = list(causal_events.keys())

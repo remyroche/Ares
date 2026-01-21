@@ -4431,7 +4431,7 @@ def _persist_gate_diagnostics(
         diag_path.write_text("".join(summary_lines))
         tprint_success(f"💾 Gate diagnostics report saved to {diag_path}")
 
-def _main_sweep_worker(config, df_full, price, vol_series, X_probe, valid_tpsl_map, param_grids, target_signals_per_day, specialist_predictions, causal_graph, causal_surprise_threshold, tracker):
+def _main_sweep_worker(config, df_full, price, vol_series, X_probe, valid_tpsl_map, param_grids, target_signals_per_day, specialist_predictions, causal_graph, causal_surprise_threshold, tracker, regime_posteriors=None):
     """Worker function for parallel main parameter sweep."""
     try:
         from src.training.steps.labeling.orthogonal_label_generation import (
@@ -4462,7 +4462,8 @@ def _main_sweep_worker(config, df_full, price, vol_series, X_probe, valid_tpsl_m
                 causal_graph=causal_graph,
                 surprise_threshold=causal_surprise_threshold,
                 target_signals_per_day=target_signals_per_day,
-                tracker=tracker
+                tracker=tracker,
+                regime_posteriors=regime_posteriors
             )
         elif param_names:
             kwargs = dict(zip(param_names, params))
@@ -4981,7 +4982,8 @@ def orthogonal_label_generation(
                      df_full,
                      specialist_predictions=specialist_predictions,
                      causal_graph=causal_graph,
-                     surprise_threshold=causal_surprise_threshold
+                     surprise_threshold=causal_surprise_threshold,
+                     regime_posteriors=regime_posteriors
                  )
              else:
                   c_events = gen_instance.generate(price, *central_args)
@@ -5062,9 +5064,17 @@ def orthogonal_label_generation(
     else:
         vol_series = price.pct_change().rolling(96).std().bfill().fillna(0.01)
 
+    # Extract regime posteriors if available for soft conditioning (Before parallel sweep)
+    regime_posteriors = None
+    if 'regime_0' in df_full.columns:
+        regime_cols = [c for c in df_full.columns if c.startswith('regime_')]
+        if regime_cols:
+            regime_posteriors = df_full[regime_cols]
+            tprint_info(f"🔍 Found {len(regime_cols)} regime posterior columns for soft conditioning")
+
     common_args = (df_full, price, vol_series, X_probe, valid_tpsl_map, param_grids, 
                    target_signals_per_day, specialist_predictions, causal_graph, 
-                   causal_surprise_threshold, tracker)
+                   causal_surprise_threshold, tracker, regime_posteriors)
     
     # Run in parallel
     results = Parallel(n_jobs=4, backend='loky')(

@@ -41,7 +41,9 @@ os.environ['NUMEXPR_NUM_THREADS'] = '1'
 MODE_LOOKBACK_DAYS: Dict[str, int] = {
     "light": 30,     # 30 days
     "blank": 360,    # 1 year
-    "full": 365 * 3  # 3 years
+    "full": 365 * 3,  # 3 years
+    "small_multi_asset": 180,  # 6 months
+    "full_multi_asset": 365 * 3,  # 3 years
 }
 
 def get_mode_lookback_days(mode: str) -> int:
@@ -580,7 +582,13 @@ Examples:
     # unified training) use the same timeframe as base features.
     parser.add_argument('--regime-timeframe', type=str, default='15m', help='Timeframe used for regime detection/ensemble (default: 15m)')
     parser.add_argument('--direction', type=str, choices=['long', 'short', 'both'], default='long', help='Trading direction')
-    parser.add_argument('--execution-mode', type=str, choices=['full', 'light', 'blank'], default='full', help='Execution mode')
+    parser.add_argument(
+        '--execution-mode',
+        type=str,
+        choices=['full', 'light', 'blank', 'small_multi_asset', 'full_multi_asset'],
+        default='full',
+        help='Execution mode'
+    )
     parser.add_argument(
         '--min-interaction-mi-lift',
         type=float,
@@ -1206,6 +1214,17 @@ async def main():
         # Set execution mode based on global flag
         config['execution_mode'] = 'full' if global_mode else 'blank'
 
+    # Add multi-asset configuration for small/full multi-asset modes
+    if args.execution_mode in ("small_multi_asset", "full_multi_asset"):
+        default_assets = (
+            ["ETH", "BTC", "SOL", "BNB"]
+            if args.execution_mode == "small_multi_asset"
+            else ["ETH", "BTC", "SOL", "BNB", "AVAX", "LINK"]
+        )
+        config['assets'] = default_assets
+        config['multi_asset_mode'] = args.execution_mode
+        config['market_state_instruments'] = default_assets
+
     # Optional: force recomputation of multi-stage labeling HPO (ignore cached params)
     if getattr(args, 'force_hpo', False):
         config['force_hpo'] = True
@@ -1324,13 +1343,20 @@ async def main():
     tprint(f"🔧 CONFIG: Centralized lookback_days={lookback_days} for mode={args.execution_mode}", "INFO")
     tprint("🔒 LEAKAGE GUARD: Use non-zero embargo (gap) and OOF predictions for stacking; avoid joining future-derived columns.", "INFO")
     
-    # Set execution mode globally
+    # Set execution mode globally (preserve requested mode for data loading)
     os.environ["EXECUTION_MODE"] = args.execution_mode
+
+    # Normalize execution mode for HPO adapters
+    normalized_exec_mode = args.execution_mode
+    if args.execution_mode == "small_multi_asset":
+        normalized_exec_mode = "blank"
+    elif args.execution_mode == "full_multi_asset":
+        normalized_exec_mode = "full"
 
     # Set execution mode for HPO optimizations
     from src.utils.ml_common.optimization import set_execution_mode
-    set_execution_mode(args.execution_mode)
-    logger.info(f"🔧 Execution mode set to: {args.execution_mode.upper()}")
+    set_execution_mode(normalized_exec_mode)
+    logger.info(f"🔧 Execution mode set to: {normalized_exec_mode.upper()} (normalized from {args.execution_mode})")
     
     # Handle different execution modes
     try:

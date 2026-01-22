@@ -2054,23 +2054,22 @@ def layer3_analyst_lgbm(
             print(f"     Error in geometry {geometry_id}: {e}")
             pass
 
-    candidate_features.extend(
-        [
-            'ensemble_prob', 'max_base_prob', 'min_base_prob', 'base_prob_range',
-            'logit_prob', 'logit_momentum_5', 'logit_momentum_1',
-            'vol_at_signal', 'candle_shape', 'candle_shape_4',
-            'base_pred_mean', 'base_pred_std', 'base_pred_range',
-            'momentum_agreement', 'momentum_agreement_abs', 'momentum_weighted_agreement', 'trend_consistency_12',
-            'ens_prediction_dispersion', 'ens_confidence_gap', 'ens_uncertainty', 'ens_prediction_range',
-            'ens_avg_divergence', 'ens_max_confidence', 'ens_disagreement_rate', 'ens_snr_internal', 'ens_snr_consensus',
-            'slope_short', 'adx_proxy', 'momentum_short', 'snr',
-            'time_since_last_vol_spike', 'time_since_last_large_candle',
-            'choppiness_index', 'variance_ratio', 'permutation_entropy',
-            'hour', 'day_of_week', 'hour_sin', 'hour_cos', 'is_weekend',
-            'efficiency_ratio',
-            'price_position_in_range',
-        ]
-    )
+    candidate_feature_pool = [
+        'ensemble_prob', 'max_base_prob', 'min_base_prob', 'base_prob_range',
+        'logit_prob', 'logit_momentum_5', 'logit_momentum_1',
+        'vol_at_signal', 'candle_shape', 'candle_shape_4',
+        'base_pred_mean', 'base_pred_std', 'base_pred_range',
+        'momentum_agreement', 'momentum_agreement_abs', 'momentum_weighted_agreement', 'trend_consistency_12',
+        'ens_prediction_dispersion', 'ens_confidence_gap', 'ens_uncertainty', 'ens_prediction_range',
+        'ens_avg_divergence', 'ens_max_confidence', 'ens_disagreement_rate', 'ens_snr_internal', 'ens_snr_consensus',
+        'slope_short', 'adx_proxy', 'momentum_short', 'snr',
+        'time_since_last_vol_spike', 'time_since_last_large_candle',
+        'choppiness_index', 'variance_ratio', 'permutation_entropy',
+        'hour', 'day_of_week', 'hour_sin', 'hour_cos', 'is_weekend',
+        'efficiency_ratio',
+        'price_position_in_range',
+    ]
+    for c in candidate_feature_pool:
         if c in df.columns:
             candidate_features.append(c)
 

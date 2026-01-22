@@ -113,9 +113,38 @@ class RegimeEnsembleTrainingStep(BaseStep):
                 }
             
             tprint(f"✅ Loaded regime probabilities: {regime_probs.shape}", "SUCCESS")
-            
-            # Use regime probabilities as the data input for the component
+
+            # Load Causal Surprise Events (Layer 2 Output) if available
+            # Used to reinforce regime detection with causal signals (max_severity)
+            tprint("📥 Loading Layer 2 Causal Events for feature reinforcement...", "INFO")
+            layer2_events = self._get_artifact(
+                'layer2_events', # or 'events', check logic later
+                artifact_type='data',
+                data_category='features'
+            )
+            # Fallback to search in versioned artifacts by pattern if named differently
+            if layer2_events is None:
+                # Try explicit path from pipeline_state if available or common names
+                pass 
+
+            # Integrate features
             market_data = regime_probs
+            if layer2_events is not None and not layer2_events.empty:
+                tprint(f"   ✅ Found Causal Events: {layer2_events.shape}", "SUCCESS")
+                # Align and merge relevant columns
+                # We want 'max_severity' (Weight) and 'causal_surprise' (Binary)
+                cols_to_use = [c for c in ['max_severity', 'causal_surprise'] if c in layer2_events.columns]
+                if cols_to_use:
+                    aligned_events = layer2_events[cols_to_use].reindex(market_data.index).fillna(0.0) # Fill missing/non-events with 0
+                    market_data = market_data.join(aligned_events)
+                    tprint(f"   🔗 Injected Causal Features: {cols_to_use}", "INFO")
+                else:
+                    tprint("   ⚠️ Events found but missing 'max_severity' column.", "WARNING")
+            else:
+                tprint("   ⚠️ No Causal Events found. Training Regime Ensemble without surprise features.", "WARNING")
+
+            
+            # Use regime probabilities (and surprises) as the data input for the component
 
             tprint(f"📊 Market data shape: {market_data.shape}", "INFO")
             tprint(f"📊 Market data columns: {list(market_data.columns)}", "INFO")

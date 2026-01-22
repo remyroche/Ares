@@ -1,0 +1,1388 @@
+2026-01-22 23:24:38,061 - DataQualityFramework - INFO - ℹ️ ✅ Comprehensive duplicate analyzer integrated
+2026-01-22 23:24:38,062 - DataQualityFramework - INFO - ℹ️ 🔧 Unified Data Quality Framework initialized (singleton)
+[2026-01-22 23:24:38.062] PERFORMANCE: DataQualityFramework initialization took 0.001s
+2026-01-22 23:24:38,062 - System.tprint - INFO - ℹ️ DataQualityFramework initialization took 0.001s
+2026-01-22 23:24:38,732 - ares.registry - INFO - ℹ️ Registered step: data_download
+2026-01-22 23:24:41,368 - System.AdvancedQualityMetrics - INFO - ℹ️ 📊 AdvancedQualityMetrics initialized with tolerant parameters
+[2026-01-22 23:24:41.368] PERFORMANCE: AdvancedQualityMetrics initialization took 0.000s
+2026-01-22 23:24:41,368 - System.tprint - INFO - ℹ️ AdvancedQualityMetrics initialization took 0.000s
+2026-01-22 23:24:41,380 - DataCleaner - INFO - ℹ️ Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+[2026-01-22 23:24:41.380] PERFORMANCE: DataCleaner(klines) initialization took 0.000s
+2026-01-22 23:24:41,380 - System.tprint - INFO - ℹ️ DataCleaner(klines) initialization took 0.000s
+2026-01-22 23:24:41,380 - DataCleaner - INFO - ℹ️ Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+[2026-01-22 23:24:41.380] PERFORMANCE: DataCleaner(klines) initialization took 0.000s
+2026-01-22 23:24:41,380 - System.tprint - INFO - ℹ️ DataCleaner(klines) initialization took 0.000s
+2026-01-22 23:24:41,380 - DataCleanerManager - INFO - ℹ️ 🔧 DataCleanerManager initialized (singleton)
+[2026-01-22 23:24:41.761] DEBUG: 🔧 [features_common.utils] Initializing common utilities module
+[2026-01-22 23:24:41.761] SUCCESS: ✅ [features_common.utils] Math validation utilities loaded
+2026-01-22 23:24:41,762 - System.tprint - INFO - ℹ️ ✅ [features_common.utils] Math validation utilities loaded
+[2026-01-22 23:24:41.761] DEBUG: 🔧 [features_common.utils] Common utilities module initialized
+2026-01-22 23:24:54,400 - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - ℹ️ M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+2026-01-22 23:24:54,447 - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - ℹ️ 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+[2026-01-22 23:24:55.425] DEBUG: 🔧 [transforms] Module initialized with 15 exports
+2026-01-22 23:24:55,428 - src.features_common.backward_compatibility - INFO - ℹ️ Backward compatibility ensured for features_common
+[2026-01-22 23:24:55.432] DEBUG: 🔧 [optimization] Module initialized with 6 exports
+[2026-01-22 23:24:55.434] DEBUG: 🔧 [registry] Module initialized with BaseFeatureRegistry
+[2026-01-22 23:24:55.445] DEBUG: 🚀 [features_common] Enhanced module initialized with 59 exports
+[2026-01-22 23:24:55.445] SUCCESS: ✅ [features_common] All optimizations enabled by default
+2026-01-22 23:24:55,446 - System.tprint - INFO - ℹ️ ✅ [features_common] All optimizations enabled by default
+[2026-01-22 23:24:55.445] INFO: 🔧 [features_common] VectorBT integration available
+2026-01-22 23:24:55,446 - System.tprint - INFO - ℹ️ 🔧 [features_common] VectorBT integration available
+[2026-01-22 23:24:55.447] PERFORMANCE: 📊 [features_common] Performance monitoring enabled
+2026-01-22 23:24:55,447 - System.tprint - INFO - ℹ️ 📊 [features_common] Performance monitoring enabled
+[2026-01-22 23:24:55.447] WARNING: 💾 [features_common] Intelligent caching active
+2026-01-22 23:24:55,447 - System.tprint - WARNING - ⚠️ 💾 [features_common] Intelligent caching active
+2026-01-22 23:24:55,453 - System.DataStreamingManager - INFO - ℹ️ 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+[2026-01-22 23:24:55.454] PERFORMANCE: DataStreamingManager initialization took 0.001s
+2026-01-22 23:24:55,454 - System.tprint - INFO - ℹ️ DataStreamingManager initialization took 0.001s
+[2026-01-22 23:24:55.842] ✅ Custom logger available for MLCommon.ConfidenceMetrics
+2026-01-22 23:24:55,843 - System.tprint - INFO - ℹ️ ✅ Custom logger available for MLCommon.ConfidenceMetrics
+[2026-01-22 23:24:55.845] ✅ Custom logger available for MLCommon.ModelExplanations
+2026-01-22 23:24:55,845 - System.tprint - INFO - ℹ️ ✅ Custom logger available for MLCommon.ModelExplanations
+2026-01-22 23:24:59,234 - MLCommon.ModelExplanations - INFO - ℹ️ LIME library available - LIME explanations enabled
+[2026-01-22 23:24:59.238] ✅ Custom logger available for MLCommon.ModelRegistry
+2026-01-22 23:24:59,238 - System.tprint - INFO - ℹ️ ✅ Custom logger available for MLCommon.ModelRegistry
+[2026-01-22 23:24:59.238] ✅ Custom logger available for MLCommon.ModelExplainability
+2026-01-22 23:24:59,239 - System.tprint - INFO - ℹ️ ✅ Custom logger available for MLCommon.ModelExplainability
+[2026-01-22 23:24:59.523] ✅ Custom logger available for MLCommon.CV
+2026-01-22 23:24:59,523 - System.tprint - INFO - ℹ️ ✅ Custom logger available for MLCommon.CV
+2026-01-22 23:24:59,527 - src.utils.ml_common.validation.enhanced_validation - INFO - ℹ️ ✅ Enhanced Validation initialized
+[2026-01-22 23:24:59.530] ✅ Custom logger available for MLCommon.ValidationUtils
+2026-01-22 23:24:59,530 - System.tprint - INFO - ℹ️ ✅ Custom logger available for MLCommon.ValidationUtils
+[2026-01-22 23:24:59.552] ✅ Custom logger available for MLCommon.HPOUtils
+2026-01-22 23:24:59,552 - System.tprint - INFO - ℹ️ ✅ Custom logger available for MLCommon.HPOUtils
+2026-01-22 23:24:59,851 - src.utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - ℹ️ 📝 Registered custom matrix operation: gpu_condition_number
+2026-01-22 23:24:59,851 - src.utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - ℹ️ 📝 Registered custom matrix operation: gpu_matrix_rank
+2026-01-22 23:24:59,851 - src.utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - ℹ️ 📝 Registered custom matrix operation: matrix_normalize
+2026-01-22 23:24:59,851 - src.utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - ℹ️ 📝 Registered custom matrix operation: extract_matrix_features
+2026-01-22 23:24:59,860 - src.utils.matrix_operations - INFO - ℹ️ ✅ Unified Matrix Operations module initialized
+2026-01-22 23:24:59,860 - src.utils.matrix_operations - INFO - ℹ️ 📦 Version: 1.0.0
+2026-01-22 23:24:59,860 - src.utils.matrix_operations - INFO - ℹ️ 🔧 Features: VectorBT optimizations, GPU acceleration, memory optimization, vectorized processing, batch operations
+2026-01-22 23:24:59,860 - src.utils.matrix_operations - INFO - ℹ️ 🍎 Optimized for: Apple Silicon M1/M2/M3 Macs
+2026-01-22 23:24:59,860 - src.utils.matrix_operations - INFO - ℹ️ 🚀 VectorBT optimizations enabled - expect 2-10x performance improvements
+2026-01-22 23:24:59,860 - src.utils.matrix_operations - INFO - ℹ️ 🎯 VectorBTRollingOptimizer available - enhanced rolling operations
+2026-01-22 23:24:59,860 - src.utils.matrix_operations - INFO - ℹ️ ⚡ UnifiedVectorizationManager available - unified vectorization operations
+2026-01-22 23:24:59,863 - System.ComplementaryLookbackOptimizer - INFO - ℹ️ ✅ Detected VectorBT v0.28.1
+2026-01-22 23:24:59,885 - src.feature_generation.utils.feature_generation_optimization - INFO - ℹ️ ✅ VectorBT available for feature optimization
+2026-01-22 23:24:59,936 - src.feature_generation.core.feature_registry.FeatureRegistry - INFO - ℹ️ FeatureRegistry initialized
+[2026-01-22 23:24:59.936] 🔧 Initializing AutoOptimizationConfig...
+2026-01-22 23:24:59,936 - System.tprint - INFO - ℹ️ 🔧 Initializing AutoOptimizationConfig...
+[2026-01-22 23:24:59.936] 📝 Setting up conservative optimization settings...
+2026-01-22 23:24:59,936 - System.tprint - INFO - ℹ️ 📝 Setting up conservative optimization settings...
+[2026-01-22 23:24:59.936] ✅ Conservative settings configured
+2026-01-22 23:24:59,937 - System.tprint - INFO - ℹ️ ✅ Conservative settings configured
+[2026-01-22 23:24:59.937] 📝 Setting up balanced optimization settings...
+2026-01-22 23:24:59,937 - System.tprint - INFO - ℹ️ 📝 Setting up balanced optimization settings...
+[2026-01-22 23:24:59.937] ✅ Balanced settings configured
+2026-01-22 23:24:59,937 - System.tprint - INFO - ℹ️ ✅ Balanced settings configured
+[2026-01-22 23:24:59.937] 📝 Setting up aggressive optimization settings...
+2026-01-22 23:24:59,938 - System.tprint - INFO - ℹ️ 📝 Setting up aggressive optimization settings...
+[2026-01-22 23:24:59.937] ✅ Aggressive settings configured
+2026-01-22 23:24:59,938 - System.tprint - INFO - ℹ️ ✅ Aggressive settings configured
+[2026-01-22 23:24:59.938] 🎯 AutoOptimizationConfig initialized with balanced strategy
+2026-01-22 23:24:59,938 - System.tprint - INFO - ℹ️ 🎯 AutoOptimizationConfig initialized with balanced strategy
+[2026-01-22 23:24:59.938] ✅ Auto-optimization enabled for FeatureBank (default)
+2026-01-22 23:24:59,938 - System.tprint - INFO - ℹ️ ✅ Auto-optimization enabled for FeatureBank (default)
+2026-01-22 23:24:59,939 - src.feature_generation.utils.memory_pool_optimizer.MemoryPoolOptimizer - INFO - ℹ️ Memory pool optimizer initialized
+2026-01-22 23:24:59,943 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧠 Memory limit set to 8.0 GB (8589934592.0 bytes)
+2026-01-22 23:25:00,012 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧠 M1 Memory Optimizer initialized for M1
+2026-01-22 23:25:00,013 - src.utils.hardware.unified_hardware_manager.UnifiedHardwareManager - INFO - ℹ️ 🔧 Unified Hardware Manager initialized
+2026-01-22 23:25:00,019 - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - INFO - ℹ️ 🔍 Hardware performance monitoring started
+2026-01-22 23:25:00,647 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧠 M1 memory monitoring started
+2026-01-22 23:25:00,648 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 14 objects collected
+2026-01-22 23:25:00,648 - src.utils.hardware.unified_hardware_manager.UnifiedHardwareManager - INFO - ℹ️ ✅ Unified Hardware Manager fully initialized
+2026-01-22 23:25:00,649 - src.utils.hardware.unified_hardware_manager.UnifiedHardwareManager - INFO - ℹ️ 🎯 Optimizing for feature_engineering workload (balanced)
+2026-01-22 23:25:00,659 - src.utils.ml_common.hardware_singleton - INFO - ℹ️ 🔍 Detecting hardware capabilities (one-time detection)...
+2026-01-22 23:25:00,660 - src.utils.ml_common.hardware_singleton - INFO - ℹ️ ✅ Hardware detection complete: {'cpu_cores': 8, 'gpu_available': True, 'gpu_type': 'mps', 'memory_gb': 16.0, 'mps_available': True, 'gpu_memory_gb': None}
+[2026-01-22 23:25:00.660] 🚀 Initializing Unified Vectorization Manager...
+2026-01-22 23:25:00,661 - System.tprint - INFO - ℹ️ 🚀 Initializing Unified Vectorization Manager...
+[2026-01-22 23:25:00.660] 🔄 Initializing optimization components...
+2026-01-22 23:25:00,661 - System.tprint - INFO - ℹ️ 🔄 Initializing optimization components...
+[2026-01-22 23:25:00.660] 🔄 Initializing optimization components...
+2026-01-22 23:25:00,661 - System.tprint - INFO - ℹ️ 🔄 Initializing optimization components...
+[2026-01-22 23:25:00.660] 🔄 Loading VectorBTRollingOptimizer...
+2026-01-22 23:25:00,661 - System.tprint - INFO - ℹ️ 🔄 Loading VectorBTRollingOptimizer...
+[2026-01-22 23:25:00.662] ✅ VectorBTRollingOptimizer loaded
+2026-01-22 23:25:00,662 - System.tprint - INFO - ℹ️ ✅ VectorBTRollingOptimizer loaded
+[2026-01-22 23:25:00.662] 🔄 Loading vectorized backtesting...
+2026-01-22 23:25:00,662 - System.tprint - INFO - ℹ️ 🔄 Loading vectorized backtesting...
+2026-01-22 23:25:00,666 - System.VectorizedBacktestingEngine - INFO - ℹ️ ✅ Vectorized Backtesting Engine initialized successfully
+[2026-01-22 23:25:00.666] ✅ Vectorized backtesting loaded
+2026-01-22 23:25:00,666 - System.tprint - INFO - ℹ️ ✅ Vectorized backtesting loaded
+[2026-01-22 23:25:00.666] 🔄 Loading VectorBT backtesting engine...
+2026-01-22 23:25:00,666 - System.tprint - INFO - ℹ️ 🔄 Loading VectorBT backtesting engine...
+2026-01-22 23:25:00,669 - System.VectorBTBacktestingEngine - INFO - ℹ️ ✅ VectorBT Backtesting Engine initialized successfully
+[2026-01-22 23:25:00.669] ✅ VectorBT backtesting engine loaded
+2026-01-22 23:25:00,670 - System.tprint - INFO - ℹ️ ✅ VectorBT backtesting engine loaded
+[2026-01-22 23:25:00.669] 🔄 Loading VectorBT financial metrics...
+2026-01-22 23:25:00,670 - System.tprint - INFO - ℹ️ 🔄 Loading VectorBT financial metrics...
+2026-01-22 23:25:00,676 - src.utils.ml_common.vectorbt_financial_metrics - INFO - ℹ️ ✅ VectorBT Financial Metrics initialized
+2026-01-22 23:25:00,676 - src.utils.ml_common.vectorbt_financial_metrics - INFO - ℹ️ 📊 Risk-free rate: 2.00%
+2026-01-22 23:25:00,677 - src.utils.ml_common.vectorbt_financial_metrics - INFO - ℹ️ 📊 Annualization factor: 252
+2026-01-22 23:25:00,677 - src.utils.ml_common.vectorbt_financial_metrics - INFO - ℹ️ 📊 Regime analysis: True
+[2026-01-22 23:25:00.678] ✅ VectorBT financial metrics loaded
+2026-01-22 23:25:00,678 - System.tprint - INFO - ℹ️ ✅ VectorBT financial metrics loaded
+[2026-01-22 23:25:00.678] 🔄 Loading VectorBT portfolio optimization...
+2026-01-22 23:25:00,678 - System.tprint - INFO - ℹ️ 🔄 Loading VectorBT portfolio optimization...
+2026-01-22 23:25:00,695 - src.utils.ml_common.vectorbt_memory_manager.VectorBTMemoryManager - INFO - ℹ️ ✅ VectorBT Memory Manager initialized
+2026-01-22 23:25:00,696 - src.utils.ml_common.vectorbt_memory_manager.VectorBTMemoryManager - INFO - ℹ️ 📊 Total system memory: 16.00GB
+2026-01-22 23:25:00,696 - src.utils.ml_common.vectorbt_memory_manager.VectorBTMemoryManager - INFO - ℹ️ 📊 Available memory: 2.75GB
+2026-01-22 23:25:00,697 - src.utils.ml_common.vectorbt_memory_manager.VectorBTMemoryManager - INFO - ℹ️ 📊 Max allocated memory: 8.00GB
+2026-01-22 23:25:00,697 - src.utils.ml_common.vectorbt_performance_monitor.VectorBTPerformanceMonitor - INFO - ℹ️ ✅ VectorBT Performance Monitor initialized
+2026-01-22 23:25:00,697 - src.utils.ml_common.vectorbt_performance_monitor.VectorBTPerformanceMonitor - INFO - ℹ️ 📊 Monitoring enabled: timing=True, memory=True, gpu=True
+2026-01-22 23:25:00,697 - src.utils.ml_common.vectorbt_portfolio_optimization - INFO - ℹ️ ✅ VectorBT Portfolio Optimizer initialized
+2026-01-22 23:25:00,697 - src.utils.ml_common.vectorbt_portfolio_optimization - INFO - ℹ️ 📊 Method: mean_variance
+2026-01-22 23:25:00,697 - src.utils.ml_common.vectorbt_portfolio_optimization - INFO - ℹ️ 📊 Rebalancing: monthly
+2026-01-22 23:25:00,697 - src.utils.ml_common.vectorbt_portfolio_optimization - INFO - ℹ️ 📊 Risk aversion: 1.0
+2026-01-22 23:25:00,698 - src.utils.ml_common.vectorbt_portfolio_optimization - INFO - ℹ️ 📊 Memory manager: 2.75GB available
+[2026-01-22 23:25:00.698] ✅ VectorBT portfolio optimization loaded
+2026-01-22 23:25:00,698 - System.tprint - INFO - ℹ️ ✅ VectorBT portfolio optimization loaded
+[2026-01-22 23:25:00.698] 🔄 Loading matrix cross-validation...
+2026-01-22 23:25:00,698 - System.tprint - INFO - ℹ️ 🔄 Loading matrix cross-validation...
+2026-01-22 23:25:00,700 - src.utils.hardware.m1_memory_optimizer - INFO - ℹ️ 🧠 M1 Memory Optimizer initialized for M1
+2026-01-22 23:25:00,759 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧠 M1 Memory Optimizer initialized for M1
+2026-01-22 23:25:01,697 - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - ⚠️ 🚨 ALERT: cpu_usage (96.0) exceeds threshold (85.0)
+2026-01-22 23:25:02,928 - src.feature_generation.core.vectorbt_batch_processor - INFO - ℹ️ VectorBTBatchProcessor initialized: VectorBT=True, GPU=False, Parallel=True
+2026-01-22 23:25:02,930 - src.feature_generation.utils.unified_vectorization_manager - INFO - ℹ️ UnifiedVectorizationManager initialized: VectorBT=True, GPU=False, Memory=True
+2026-01-22 23:25:02,930 - src.utils.matrix_operations.unified_operations.UnifiedMatrixOperations - INFO - ℹ️ 📊 GPU: False, Memory Opt: False, Parallel: False
+2026-01-22 23:25:02,931 - src.utils.ml_common.matrix_cross_validation - INFO - ℹ️ 🚀 VectorBT configured for cross-validation optimization
+2026-01-22 23:25:02,931 - src.utils.ml_common.matrix_cross_validation - INFO - ℹ️ ✅ Matrix-based cross-validator initialized
+2026-01-22 23:25:02,932 - src.utils.ml_common.matrix_cross_validation - INFO - ℹ️ 📊 Configuration - Splits: 5, GPU: True, VectorBT: True
+[2026-01-22 23:25:02.933] ✅ Matrix cross-validation loaded
+2026-01-22 23:25:02,934 - System.tprint - INFO - ℹ️ ✅ Matrix cross-validation loaded
+[2026-01-22 23:25:02.933] 🔄 Loading feature importance analyzer...
+2026-01-22 23:25:02,934 - System.tprint - INFO - ℹ️ 🔄 Loading feature importance analyzer...
+2026-01-22 23:25:03,017 - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ 🔗 Integrating memory skimming with all ML utilities
+2026-01-22 23:25:03,018 - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ ✅ Successfully imported HPO utilities (direct import)
+2026-01-22 23:25:03,019 - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ ✅ Memory skimming integrated with HPO utilities
+2026-01-22 23:25:03,020 - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ ✅ Successfully imported Unified CV utilities
+2026-01-22 23:25:03,020 - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ ✅ Memory skimming integrated with Unified CV utilities
+2026-01-22 23:25:03,027 - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ ✅ Memory skimming integrated with lookahead protection utilities
+2026-01-22 23:25:03,028 - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ Skipping model evaluation memory integration (deprecated)
+2026-01-22 23:25:03,033 - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ ✅ Successfully imported feature selection utilities
+2026-01-22 23:25:03,033 - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ ✅ Memory skimming integrated with feature selection utilities
+2026-01-22 23:25:03,046 - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ ✅ Successfully imported data quality utilities
+2026-01-22 23:25:03,046 - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ ✅ Memory skimming integrated with data quality utilities
+2026-01-22 23:25:03,047 - src.utils.ml_common.utils.memory_integration - INFO - ℹ️ ✅ Memory skimming integration completed: 6/6 successful
+[2026-01-22 23:25:03.047] ✅ Custom logger available for MLCommon.ThreadGuard
+2026-01-22 23:25:03,048 - System.tprint - INFO - ℹ️ ✅ Custom logger available for MLCommon.ThreadGuard
+[2026-01-22 23:25:03.047] ✅ threadpoolctl available for thread management
+2026-01-22 23:25:03,049 - System.tprint - INFO - ℹ️ ✅ threadpoolctl available for thread management
+[2026-01-22 23:25:03.052] ✅ Custom logger available for MLCommon.BaseSafeguards
+2026-01-22 23:25:03,052 - System.tprint - INFO - ℹ️ ✅ Custom logger available for MLCommon.BaseSafeguards
+[2026-01-22 23:25:03.061] ✅ Scikit-learn available for thresholding functionality
+2026-01-22 23:25:03,061 - System.tprint - INFO - ℹ️ ✅ Scikit-learn available for thresholding functionality
+[2026-01-22 23:25:03.061] ✅ Custom logger available for FeatureSelection.BaseFramework
+2026-01-22 23:25:03,061 - System.tprint - INFO - ℹ️ ✅ Custom logger available for FeatureSelection.BaseFramework
+[2026-01-22 23:25:03.064] ✅ Custom logger available for FeatureSelection.DataValidation
+2026-01-22 23:25:03,064 - System.tprint - INFO - ℹ️ ✅ Custom logger available for FeatureSelection.DataValidation
+[2026-01-22 23:25:03.065] ✅ Vectorization utilities available for feature selection
+2026-01-22 23:25:03,065 - System.tprint - INFO - ℹ️ ✅ Vectorization utilities available for feature selection
+[2026-01-22 23:25:03.065] ✅ Custom logger available for FeatureSelection.SelectionMethods
+2026-01-22 23:25:03,066 - System.tprint - INFO - ℹ️ ✅ Custom logger available for FeatureSelection.SelectionMethods
+[2026-01-22 23:25:03.197] ✅ Custom logger available for FeatureSelection.StabilityAnalysis
+2026-01-22 23:25:03,197 - System.tprint - INFO - ℹ️ ✅ Custom logger available for FeatureSelection.StabilityAnalysis
+[2026-01-22 23:25:03.202] ✅ Custom logger available for FeatureSelection.PerformanceMonitoring
+2026-01-22 23:25:03,202 - System.tprint - INFO - ℹ️ ✅ Custom logger available for FeatureSelection.PerformanceMonitoring
+[2026-01-22 23:25:03.203] ✅ Custom logger available for FeatureSelection.QualityMetrics
+2026-01-22 23:25:03,203 - System.tprint - INFO - ℹ️ ✅ Custom logger available for FeatureSelection.QualityMetrics
+[2026-01-22 23:25:03.203] ✅ Custom logger available for FeatureSelection.TemporalAnalysis
+2026-01-22 23:25:03,204 - System.tprint - INFO - ℹ️ ✅ Custom logger available for FeatureSelection.TemporalAnalysis
+[2026-01-22 23:25:03.207] ✅ Custom logger available for FeatureSelection.CausalAnalysis
+2026-01-22 23:25:03,208 - System.tprint - INFO - ℹ️ ✅ Custom logger available for FeatureSelection.CausalAnalysis
+[2026-01-22 23:25:03.217] ✅ Custom logger available for FeatureSelection.MainFramework
+2026-01-22 23:25:03,217 - System.tprint - INFO - ℹ️ ✅ Custom logger available for FeatureSelection.MainFramework
+[2026-01-22 23:25:03.316] 🔍 FeatureImportanceAnalyzer initialized with methods: ['random_forest', 'lasso', 'mutual_info']
+2026-01-22 23:25:03,316 - System.tprint - INFO - ℹ️ 🔍 FeatureImportanceAnalyzer initialized with methods: ['random_forest', 'lasso', 'mutual_info']
+[2026-01-22 23:25:03.316] ✅ Feature importance analyzer loaded
+2026-01-22 23:25:03,317 - System.tprint - INFO - ℹ️ ✅ Feature importance analyzer loaded
+[2026-01-22 23:25:03.317] 🔄 Loading technical indicators...
+2026-01-22 23:25:03,317 - System.tprint - INFO - ℹ️ 🔄 Loading technical indicators...
+2026-01-22 23:25:03,322 - src.feature_generation.utils.feature_generators - INFO - ℹ️ ✅ TA-Lib available for enhanced technical indicators
+2026-01-22 23:25:03,322 - src.feature_generation.utils.feature_generators - INFO - ℹ️ ✅ ta library available for technical indicator fallbacks
+2026-01-22 23:25:03,322 - src.feature_generation.utils.feature_generators - INFO - ℹ️ Using fallback implementations for feature selection tools
+2026-01-22 23:25:03,357 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧠 M1 Memory Optimizer initialized for M1
+2026-01-22 23:25:03,358 - src.feature_generation.utils.feature_generators.FeatureGenerators - INFO - ℹ️ ✅ Hardware optimization initialized
+2026-01-22 23:25:03,358 - src.feature_generation.utils.feature_generators.FeatureGenerators - INFO - ℹ️ ✅ Matrix operations available for vectorization
+[2026-01-22 23:25:03.359] ✅ Technical indicators loaded
+2026-01-22 23:25:03,359 - System.tprint - INFO - ℹ️ ✅ Technical indicators loaded
+[2026-01-22 23:25:03.359] ℹ️ HMM operations deprecated - using alternative methods
+2026-01-22 23:25:03,360 - System.tprint - INFO - ℹ️ HMM operations deprecated - using alternative methods
+[2026-01-22 23:25:03.360] ✅ Component initialization completed
+2026-01-22 23:25:03,360 - System.tprint - INFO - ℹ️ ✅ Component initialization completed
+[2026-01-22 23:25:03.360] 🔄 Setting up performance tracking...
+2026-01-22 23:25:03,360 - System.tprint - INFO - ℹ️ 🔄 Setting up performance tracking...
+[2026-01-22 23:25:03.360] ✅ Unified Vectorization Manager initialized
+2026-01-22 23:25:03,360 - System.tprint - INFO - ℹ️ ✅ Unified Vectorization Manager initialized
+2026-01-22 23:25:03,360 - src.utils.ml_common.unified_vectorization_manager - INFO - ℹ️ ✅ Unified Vectorization Manager initialized
+2026-01-22 23:25:03,361 - src.feature_generation.utils.feature_generation_optimization.FeatureGenerationOptimizer - INFO - ℹ️ 🚀 Initializing FeatureGenerationOptimizer...
+2026-01-22 23:25:03,362 - src.feature_generation.utils.feature_generation_optimization.FeatureGenerationOptimizer - INFO - ℹ️ 📊 Configuration loaded: cross_validation
+2026-01-22 23:25:03,362 - src.feature_generation.utils.feature_generation_optimization.FeatureGenerationOptimizer - INFO - ℹ️ ✅ FeatureGenerationOptimizer initialized in 0.000s
+2026-01-22 23:25:03,362 - src.feature_generation.utils.feature_generation_optimization.FeatureGenerationOptimizer - INFO - ℹ️ 📊 Min lookback: 5, Max lookback: 252
+2026-01-22 23:25:03,362 - src.feature_generation.utils.feature_generation_optimization.FeatureGenerationOptimizer - INFO - ℹ️ 📊 CV folds: 3, Parallel processing: True
+2026-01-22 23:25:03,363 - src.utils.parallel_processing_optimizer - INFO - ℹ️ 🍎 Detected Apple Silicon - applying M1-specific limits
+2026-01-22 23:25:03,363 - src.utils.parallel_processing_optimizer - INFO - ℹ️ 🔧 Initialized MacM1ParallelOptimizer:
+2026-01-22 23:25:03,363 - src.utils.parallel_processing_optimizer - INFO - ℹ️    Max workers: 4
+2026-01-22 23:25:03,363 - src.utils.parallel_processing_optimizer - INFO - ℹ️    Chunk size: 1000
+2026-01-22 23:25:03,363 - src.utils.parallel_processing_optimizer - INFO - ℹ️    Pool type: Process
+2026-01-22 23:25:03,363 - src.utils.parallel_processing_optimizer - INFO - ℹ️    Memory limit per worker: 4096 MB
+2026-01-22 23:25:03,364 - src.utils.parallel_processing_optimizer - INFO - ℹ️    M1 Mac detected: True
+2026-01-22 23:25:03,365 - src.feature_generation.utils.optimization.lookback_optimizer.LookbackOptimizer - INFO - ℹ️ ✅ Legacy optimization system available
+2026-01-22 23:25:03,365 - src.feature_generation.utils.optimization.lookback_optimizer.LookbackOptimizer - INFO - ℹ️ ✅ LookbackOptimizer initialized
+2026-01-22 23:25:03,365 - src.feature_generation.core.feature_bank.FeatureBank - INFO - ℹ️ ✅ Regular lookback optimization enabled (Analyst mode)
+[2026-01-22 23:25:03.368] ✅ FeatureBank set as global instance
+2026-01-22 23:25:03,368 - System.tprint - INFO - ℹ️ ✅ FeatureBank set as global instance
+[2026-01-22 23:25:03.368] 🔧 Auto-registering feature generators...
+2026-01-22 23:25:03,368 - System.tprint - INFO - ℹ️ 🔧 Auto-registering feature generators...
+[2026-01-22 23:25:03.368] 🔧 Configuring lazy loading for feature generators...
+2026-01-22 23:25:03,368 - System.tprint - INFO - ℹ️ 🔧 Configuring lazy loading for feature generators...
+[2026-01-22 23:25:03.368] ✅ Registered lazy loaders for 16 categories. Generators will be created on demand.
+2026-01-22 23:25:03,369 - System.tprint - INFO - ℹ️ ✅ Registered lazy loaders for 16 categories. Generators will be created on demand.
+2026-01-22 23:25:03,369 - src.feature_generation.core.feature_bank.FeatureBank - INFO - ℹ️ ✅ FeatureBank initialized
+2026-01-22 23:25:03,370 - src.feature_generation.core.feature_bank.FeatureBank - INFO - ℹ️ 📊 Matrix ops: True, GPU: True, Lookback opt: True
+2026-01-22 23:25:03,370 - src.feature_generation - INFO - ℹ️ ✅ Unified Feature Generation System initialized
+2026-01-22 23:25:03,371 - src.feature_generation - INFO - ℹ️ 📦 Version: 2.0.0
+2026-01-22 23:25:03,371 - src.feature_generation - INFO - ℹ️ 🔧 Features: Category-based organization, advanced utilities, optimization
+2026-01-22 23:25:03,371 - src.feature_generation - INFO - ℹ️ 🍎 Optimized for: Apple Silicon M1/M2/M3 Macs
+2026-01-22 23:25:03,371 - src.feature_generation - INFO - ℹ️ 🚀 Advanced utilities available (optimization, analysis, etc.)
+2026-01-22 23:25:03,371 - src.feature_generation - INFO - ℹ️ ⚡ VectorBT optimizations available (advanced volatility, volume, batch processing)
+2026-01-22 23:25:03,372 - MLCommon.HPOUtils - INFO - ℹ️ ✅ VectorBT optimization available
+2026-01-22 23:25:03,375 - MLCommon.HPOUtils - INFO - ℹ️ 🚀 Initializing Enhanced HyperparameterOptimization...
+2026-01-22 23:25:03,376 - MLCommon.HPOUtils.HPOUtils - INFO - ℹ️ ✅ VectorBT Rolling Optimizer initialized
+2026-01-22 23:25:03,376 - MLCommon.HPOUtils.HPOUtils - INFO - ℹ️ ✅ Unified Vectorization Manager initialized
+2026-01-22 23:25:03,377 - MLCommon.HPOUtils - INFO - ℹ️ ⚙️ Configuration - Parallel processing: True
+2026-01-22 23:25:03,377 - MLCommon.HPOUtils - INFO - ℹ️ ⚙️ Configuration - Max workers: 4
+2026-01-22 23:25:03,377 - MLCommon.HPOUtils - INFO - ℹ️ ⚙️ Configuration - Monitoring enabled: True
+2026-01-22 23:25:03,377 - MLCommon.HPOUtils - INFO - ℹ️ 🚀 Configuration - Non-linear optimization: True
+2026-01-22 23:25:03,378 - MLCommon.HPOUtils - INFO - ℹ️ ✅ Enhanced HyperparameterOptimization initialized successfully
+2026-01-22 23:25:03,432 - DataCleaner - INFO - ℹ️ Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+2026-01-22 23:25:03,433 - System.UnifiedDataUtils - INFO - ℹ️ 🚀 Unified Data Utils initialized
+2026-01-22 23:25:03,455 - System.EvaluationUtils - INFO - ℹ️ EvaluationUtils delegating core metric computation to unified_evaluator
+2026-01-22 23:25:03,463 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️ 🔒 Data Leakage Prevention initialized with CRITICAL financial thresholds:
+2026-01-22 23:25:03,464 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️    • Critical leakage threshold: 5.0% (was 25%)
+2026-01-22 23:25:03,465 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️    • Warning leakage threshold: 2.0% (was 10%)
+2026-01-22 23:25:03,466 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️    • Small dataset multiplier: 1.0 (was 1.5)
+2026-01-22 23:25:03,466 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️    • These strict thresholds are ESSENTIAL for financial data integrity
+2026-01-22 23:25:03,466 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️    • Even 1-2% leakage can invalidate backtesting results
+2026-01-22 23:25:03,466 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️    • High model scores (>96%) often indicate undetected temporal leakage
+2026-01-22 23:25:03,473 - src.utils.ml_common.validation.overfitting_monitoring - INFO - ℹ️ ✅ Overfitting Monitoring initialized
+2026-01-22 23:25:03,478 - src.utils.ml_common.validation.hpo_overfitting_prevention - INFO - ℹ️ ✅ HPO with Overfitting Prevention initialized
+2026-01-22 23:25:03,483 - src.utils.ml_common.validation.model_complexity_analysis - INFO - ℹ️ ✅ Model Complexity Analyzer initialized
+2026-01-22 23:25:03,492 - EnhancedReportingSystem.EnhancedReportingSystem - INFO - ℹ️ 📊 Enhanced Reporting System initialized
+2026-01-22 23:25:03,492 - src.utils.ml_common.reporting.validation_reporting_integration - INFO - ℹ️ ✅ Validation Reporting Integrator initialized
+2026-01-22 23:25:03,494 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️ 🔒 Data Leakage Prevention initialized with CRITICAL financial thresholds:
+2026-01-22 23:25:03,495 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️    • Critical leakage threshold: 5.0% (was 25%)
+2026-01-22 23:25:03,495 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️    • Warning leakage threshold: 2.0% (was 10%)
+2026-01-22 23:25:03,495 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️    • Small dataset multiplier: 1.0 (was 1.5)
+2026-01-22 23:25:03,495 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️    • These strict thresholds are ESSENTIAL for financial data integrity
+2026-01-22 23:25:03,495 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️    • Even 1-2% leakage can invalidate backtesting results
+2026-01-22 23:25:03,495 - src.utils.ml_common.validation.data_leakage_prevention - INFO - ℹ️    • High model scores (>96%) often indicate undetected temporal leakage
+2026-01-22 23:25:03,495 - src.utils.ml_common.validation.overfitting_monitoring - INFO - ℹ️ ✅ Overfitting Monitoring initialized
+2026-01-22 23:25:03,495 - src.utils.ml_common.validation.enhanced_validation - INFO - ℹ️ ✅ Enhanced Validation initialized
+2026-01-22 23:25:03,495 - src.utils.ml_common.validation.hpo_overfitting_prevention - INFO - ℹ️ ✅ HPO with Overfitting Prevention initialized
+2026-01-22 23:25:03,495 - src.utils.ml_common.validation.model_complexity_analysis - INFO - ℹ️ ✅ Model Complexity Analyzer initialized
+2026-01-22 23:25:03,495 - src.utils.ml_common.training.universal_validation_integration - INFO - ℹ️ ✅ Universal Validation Integrator initialized with new utilities
+2026-01-22 23:25:03,704 - System.sr_clustering - INFO - ℹ️ Initializing SR Clustering module
+2026-01-22 23:25:03,753 - System.sr_clustering - INFO - ℹ️ ✅ Successfully imported SRBacktestingEngine components
+2026-01-22 23:25:03,761 - System.sr_clustering - INFO - ℹ️ ✅ Successfully imported BacktestingEnhancedClustering components
+2026-01-22 23:25:03,765 - System.sr_clustering - INFO - ℹ️ ✅ Successfully imported WeightOptimizationEngine components
+2026-01-22 23:25:03,768 - System.sr_clustering - INFO - ℹ️ ✅ Successfully imported PredictiveSREngine components
+2026-01-22 23:25:03,776 - System.sr_clustering - INFO - ℹ️ ✅ Successfully imported TradingMLIntegration components
+2026-01-22 23:25:03,777 - System.sr_clustering - INFO - ℹ️ 🎉 SR Clustering module initialization completed successfully
+2026-01-22 23:25:04,003 - root - INFO - ℹ️ ✅ VectorBT compatibility layer loaded successfully
+2026-01-22 23:25:04,013 - sr_error_handlers - INFO - ℹ️ SR Error Handlers module initialized
+2026-01-22 23:25:06,043 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 21649 objects collected
+2026-01-22 23:25:11,627 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 31575 objects collected
+2026-01-22 23:25:17,345 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 28 objects collected
+2026-01-22 23:25:18,137 - DataQualityFramework - INFO - ℹ️ ✅ Comprehensive duplicate analyzer integrated
+2026-01-22 23:25:18,137 - DataQualityFramework - INFO - ℹ️ 🔧 Unified Data Quality Framework initialized (singleton)
+2026-01-22 23:25:18,142 - DataCleaner - INFO - ℹ️ Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+2026-01-22 23:25:18,142 - DataCleaner - INFO - ℹ️ Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+2026-01-22 23:25:18,142 - DataCleanerManager - INFO - ℹ️ 🔧 DataCleanerManager initialized (singleton)
+2026-01-22 23:25:18,145 - System.AdvancedQualityMetrics - INFO - ℹ️ 📊 AdvancedQualityMetrics initialized with tolerant parameters
+2026-01-22 23:25:18,157 - System.DataStreamingManager - INFO - ℹ️ 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+2026-01-22 23:25:18,161 - System.CrossStepValidator - INFO - ℹ️ 🔍 CrossStepValidator initialized with comprehensive consistency rules
+2026-01-22 23:25:18,161 - DataCleaner - INFO - ℹ️ Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+2026-01-22 23:25:18,162 - System.UnifiedDataUtils - INFO - ℹ️ 🚀 Unified Data Utils initialized
+2026-01-22 23:25:18,212 - utils.hardware.m1_gpu_utils.M1GPUManager - INFO - ℹ️ M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+2026-01-22 23:25:18,254 - utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - ℹ️ 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+2026-01-22 23:25:18,316 - utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - ℹ️ 📝 Registered custom matrix operation: gpu_condition_number
+2026-01-22 23:25:18,317 - utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - ℹ️ 📝 Registered custom matrix operation: gpu_matrix_rank
+2026-01-22 23:25:18,317 - utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - ℹ️ 📝 Registered custom matrix operation: matrix_normalize
+2026-01-22 23:25:18,318 - utils.matrix_operations.enhanced_operations.CustomMatrixOperationsRegistry - INFO - ℹ️ 📝 Registered custom matrix operation: extract_matrix_features
+2026-01-22 23:25:18,334 - utils.matrix_operations - INFO - ℹ️ ✅ Unified Matrix Operations module initialized
+2026-01-22 23:25:18,334 - utils.matrix_operations - INFO - ℹ️ 📦 Version: 1.0.0
+2026-01-22 23:25:18,334 - utils.matrix_operations - INFO - ℹ️ 🔧 Features: VectorBT optimizations, GPU acceleration, memory optimization, vectorized processing, batch operations
+2026-01-22 23:25:18,334 - utils.matrix_operations - INFO - ℹ️ 🍎 Optimized for: Apple Silicon M1/M2/M3 Macs
+2026-01-22 23:25:18,334 - utils.matrix_operations - INFO - ℹ️ 🚀 VectorBT optimizations enabled - expect 2-10x performance improvements
+2026-01-22 23:25:18,335 - utils.matrix_operations - INFO - ℹ️ 🎯 VectorBTRollingOptimizer available - enhanced rolling operations
+2026-01-22 23:25:18,335 - utils.matrix_operations - INFO - ℹ️ ⚡ UnifiedVectorizationManager available - unified vectorization operations
+2026-01-22 23:25:18,388 - src.config.regime_ensemble_training.config_manager.RegimeEnsembleTrainingConfigManager - INFO - ℹ️ RegimeEnsembleTrainingConfigManager initialisé
+2026-01-22 23:25:18,388 - src.config.regime_ensemble_training.config_manager.RegimeEnsembleTrainingConfigManager - INFO - ℹ️ Répertoire config: /Users/remyroche/Documents/Ares/src/config/regime_ensemble_training
+2026-01-22 23:25:18,388 - src.config.regime_ensemble_training.config_manager.RegimeEnsembleTrainingConfigManager - INFO - ℹ️ Config personnalisée: None
+2026-01-22 23:25:18,388 - src.config.regime_ensemble_training.config_manager.RegimeEnsembleTrainingConfigManager - INFO - ℹ️ Fallback hardcodé: True
+2026-01-22 23:25:18,389 - ares.registry - INFO - ℹ️ Registered step: regime_ensemble_training
+[2026-01-22 23:25:18.389] ✅ Regime ensemble training step registered SUCCESS
+2026-01-22 23:25:18,389 - System.tprint - INFO - ℹ️ ✅ Regime ensemble training step registered SUCCESS
+2026-01-22 23:25:18,394 - ares.registry - INFO - ℹ️ Registered step: regime_feature_selection
+✅ Mac M1 MPS GPU detected and enabled
+2026-01-22 23:25:18,697 - src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config - INFO - ℹ️ 🔧 Initializing Execution Mode Lookback Configuration
+2026-01-22 23:25:18,698 - src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config - INFO - ℹ️ ✅ Execution Mode Lookback Configuration initialized
+2026-01-22 23:25:18,717 - ares.registry - INFO - ℹ️ Registered step: feature_generation_data_validation_step
+[2026-01-22 23:25:18.718] ✅ Feature generation data validation step registered SUCCESS
+2026-01-22 23:25:18,718 - System.tprint - INFO - ℹ️ ✅ Feature generation data validation step registered SUCCESS
+[2026-01-22 23:25:18.719] 🔧 Loading labeling components...
+2026-01-22 23:25:18,719 - System.tprint - INFO - ℹ️ 🔧 Loading labeling components...
+✅ Using checkpoint-aware Layer 3 implementation
+2026-01-22 23:25:24,962 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 34 objects collected
+2026-01-22 23:25:26,128 - ares.registry - INFO - ℹ️ Registered step: global_meta_labeling_hpo_sample_weighted
+2026-01-22 23:25:26,152 - ares.registry - INFO - ℹ️ Registered step: meta_gated_backtest
+[2026-01-22 23:25:26.153] ✅ Meta-gated backtest step registered SUCCESS
+2026-01-22 23:25:26,153 - System.tprint - INFO - ℹ️ ✅ Meta-gated backtest step registered SUCCESS
+2026-01-22 23:25:26,154 - ares.registry - INFO - ℹ️ Registered step: meta_labeling_hpo_sample_weighted
+2026-01-22 23:25:26,155 - ares.registry - INFO - ℹ️ Registered step: meta_labeling_hpo
+2026-01-22 23:25:26,155 - ares.registry - INFO - ℹ️ Registered step: meta_labeling_sample_weighted
+2026-01-22 23:25:26,155 - ares.registry - INFO - ℹ️ Registered step: meta_labeling_hpo_experiment
+2026-01-22 23:25:26,155 - ares.registry - INFO - ℹ️ Registered step: sr_labeling_xgb
+2026-01-22 23:25:26,155 - ares.registry - INFO - ℹ️ Registered step: global_meta_labeling_hpo_sample_weighted
+2026-01-22 23:25:26,156 - ares.registry - INFO - ℹ️ Registered step: train_specialists_with_gmm
+2026-01-22 23:25:26,157 - ares.registry - INFO - ℹ️ Registered step: label_based_layer_2
+2026-01-22 23:25:26,737 - ares.registry - INFO - ℹ️ Registered step: sr_parameter_optimization
+2026-01-22 23:25:26,738 - ares.registry - INFO - ℹ️ Registered step: regime_clustering
+2026-01-22 23:25:26,738 - ares.registry - INFO - ℹ️ Registered step: regime_ensemble_training
+2026-01-22 23:25:26,738 - ares.registry - INFO - ℹ️ Registered step: sr_clustering
+2026-01-22 23:25:26,738 - ares.registry - INFO - ℹ️ Registered step: sr_detection
+2026-01-22 23:25:26,738 - ares.registry - INFO - ℹ️ Registered step: regime_feature_selection
+2026-01-22 23:25:26,738 - ares.registry - INFO - ℹ️ Registered step: sticky_finite_hmm_regime_discovery
+2026-01-22 23:25:26,738 - ares.registry - INFO - ℹ️ Registered step: enhanced_ml_momentum_persistence_step
+2026-01-22 23:25:26,738 - ares.registry - INFO - ℹ️ Registered step: enhanced_ml_smc_regime_step
+2026-01-22 23:25:26,739 - ares.registry - INFO - ℹ️ Registered step: enhanced_ml_volatility_burst_step
+2026-01-22 23:25:26,740 - ares.registry - INFO - ℹ️ Registered step: enhanced_ml_volume_force_step
+2026-01-22 23:25:26,740 - ares.registry - INFO - ℹ️ Registered step: enhanced_ml_reversion_regime_step
+2026-01-22 23:25:26,740 - ares.registry - INFO - ℹ️ Registered step: enhanced_xgb_macro_regime_step
+2026-01-22 23:25:26,740 - ares.registry - INFO - ℹ️ Registered step: enhanced_ml_liquidity_regime_step
+2026-01-22 23:25:26,741 - ares.registry - INFO - ℹ️ Registered step: enhanced_ml_path_regime_step
+2026-01-22 23:25:26,741 - ares.registry - INFO - ℹ️ Registered step: enhanced_ml_risk_regime_step
+2026-01-22 23:25:26,741 - ares.registry - INFO - ℹ️ Registered step: enhanced_xgb_meso_regime_step
+2026-01-22 23:25:26,741 - ares.registry - INFO - ℹ️ Registered step: enhanced_ml_microstructure_step
+2026-01-22 23:25:26,741 - ares.registry - INFO - ℹ️ Registered step: enhanced_ml_candlestick_step
+2026-01-22 23:25:26,742 - ares.registry - INFO - ℹ️ Registered step: enhanced_ml_spectral_step
+2026-01-22 23:25:26,743 - ares.registry - INFO - ℹ️ Registered step: gmm_based_features
+2026-01-22 23:25:26,743 - ares.registry - INFO - ℹ️ Registered step: feature_generation_meta_labeling_step
+2026-01-22 23:25:26,743 - ares.registry - INFO - ℹ️ Registered step: meta_labeling_hpo_experiment
+[2026-01-22 23:25:26.749] ✅ Custom logger available for MLCommon.ModelTraining
+2026-01-22 23:25:26,749 - System.tprint - INFO - ℹ️ ✅ Custom logger available for MLCommon.ModelTraining
+[2026-01-22 23:25:26.769] ✅ ML Common utilities loaded successfully
+2026-01-22 23:25:26,769 - System.tprint - INFO - ℹ️ ✅ ML Common utilities loaded successfully
+2026-01-22 23:25:26,778 - System.CrossStepValidator - INFO - ℹ️ 🔍 CrossStepValidator initialized with comprehensive consistency rules
+2026-01-22 23:25:26,797 - ares.launcher - INFO - ℹ️ Starting Simplified Ares Launcher...
+2026-01-22 23:25:26,815 - ares.launcher - INFO - ℹ️ Loading all step packages (legacy behavior)
+2026-01-22 23:25:26,832 - ares.registry - INFO - ℹ️ Registered step: feature_generation_gate_feature_step
+[2026-01-22 23:25:26.832] ✅ Feature generation gate feature step registered SUCCESS
+2026-01-22 23:25:26,832 - System.tprint - INFO - ℹ️ ✅ Feature generation gate feature step registered SUCCESS
+[2026-01-22 23:25:27.353] ✅ CMI complementarity components loaded successfully
+2026-01-22 23:25:27,353 - System.tprint - INFO - ℹ️ ✅ CMI complementarity components loaded successfully
+2026-01-22 23:25:27,357 - ares.registry - INFO - ℹ️ Registered step: feature_generation_final_feature_selection_step
+[2026-01-22 23:25:27.358] ✅ Feature generation final feature selection step registered SUCCESS
+2026-01-22 23:25:27,359 - ares.registry - INFO - ℹ️ Registered step: feature_generation_final_validation_step
+[2026-01-22 23:25:27.360] ✅ Feature generation final validation step registered SUCCESS
+2026-01-22 23:25:27,383 - ares.registry - INFO - ℹ️ Registered step: feature_generation_labeling_integration_step
+[2026-01-22 23:25:27.383] ✅ Feature generation labeling integration step registered SUCCESS
+[2026-01-22 23:25:27.395] ⚠️ FeatureSelector not available: No module named 'fastcluster'
+2026-01-22 23:25:27,395 - ares.registry - INFO - ℹ️ Registered step: feature_generation_feature_generation_step
+[2026-01-22 23:25:27.395] ✅ Feature generation step registered SUCCESS
+2026-01-22 23:25:27,401 - ares.registry - INFO - ℹ️ Registered step: feature_generation_period_lookback_optimization_step
+[2026-01-22 23:25:27.401] ✅ Feature generation period lookback optimization step registered SUCCESS
+2026-01-22 23:25:27,403 - ares.registry - INFO - ℹ️ Registered step: feature_generation_feature_selection_step
+[2026-01-22 23:25:27.403] ✅ Feature generation feature selection step registered SUCCESS
+[2026-01-22 23:25:27.413] INFO: ✅ CMI complementarity components loaded successfully
+[2026-01-22 23:25:27.421] INFO: ✅ FeatureSelectionPipeline loaded for 4-stage feature evaluation
+[2026-01-22 23:25:27.421] WARNING: ⚠️ FeatureSelector not available: No module named 'fastcluster'
+2026-01-22 23:25:27,423 - ares.registry - INFO - ℹ️ Registered step: feature_generation_interaction_generation_step
+[2026-01-22 23:25:27.424] ✅ Unified feature generation interaction generation step registered SUCCESS
+2026-01-22 23:25:27,429 - ares.registry - INFO - ℹ️ Registered step: feature_generation_data_validation_step
+2026-01-22 23:25:27,430 - ares.registry - INFO - ℹ️ Registered step: feature_generation_labeling_integration_step
+2026-01-22 23:25:27,430 - ares.registry - INFO - ℹ️ Registered step: feature_generation_feature_generation_step
+2026-01-22 23:25:27,430 - ares.registry - INFO - ℹ️ Registered step: feature_generation_period_lookback_optimization_step
+2026-01-22 23:25:27,430 - ares.registry - INFO - ℹ️ Registered step: feature_generation_feature_selection_step
+2026-01-22 23:25:27,430 - ares.registry - INFO - ℹ️ Registered step: feature_generation_interaction_generation_step
+2026-01-22 23:25:27,430 - ares.registry - INFO - ℹ️ Registered step: regime_aware_feature_interaction_generation_step
+2026-01-22 23:25:27,431 - ares.registry - INFO - ℹ️ Registered step: feature_generation_gate_feature_step
+2026-01-22 23:25:27,431 - ares.registry - INFO - ℹ️ Registered step: feature_generation_final_feature_selection_step
+2026-01-22 23:25:27,431 - ares.registry - INFO - ℹ️ Registered step: feature_generation_final_validation_step
+Pre-training components registry available
+2026-01-22 23:25:28,508 - src.config.analyst_ensemble_training.config_manager.AnalystEnsembleTrainingConfigManager - INFO - ℹ️ AnalystEnsembleTrainingConfigManager initialisé
+2026-01-22 23:25:28,508 - src.config.analyst_ensemble_training.config_manager.AnalystEnsembleTrainingConfigManager - INFO - ℹ️ Répertoire config: /Users/remyroche/Documents/Ares/src/config/analyst_ensemble_training
+2026-01-22 23:25:28,508 - src.config.analyst_ensemble_training.config_manager.AnalystEnsembleTrainingConfigManager - INFO - ℹ️ Config personnalisée: None
+2026-01-22 23:25:28,509 - src.config.analyst_ensemble_training.config_manager.AnalystEnsembleTrainingConfigManager - INFO - ℹ️ Fallback hardcodé: True
+DEBUG: UnifiedTrainingPipeline imported from: /Users/remyroche/Documents/Ares/src/training/steps/models_training/unified_training_pipeline.py
+2026-01-22 23:25:28,617 - ares.registry - INFO - ℹ️ Registered step: unified_models_training
+[2026-01-22 23:25:28.618] ✅ Unified models training step registered SUCCESS
+2026-01-22 23:25:28,619 - ares.registry - INFO - ℹ️ Registered step: analyst_base_training
+[2026-01-22 23:25:28.620] ✅ Analyst base training step registered SUCCESS
+2026-01-22 23:25:28,632 - ares.registry - INFO - ℹ️ Registered step: analyst_ensemble_training
+[2026-01-22 23:25:28.633] ✅ Analyst ensemble training step registered SUCCESS
+[2026-01-22 23:25:28.660] ✅ [TACTICIAN_BASE] Configuration centralisée importée SUCCESS
+2026-01-22 23:25:28,660 - ares.registry - INFO - ℹ️ Registered step: tactician_base_training
+[2026-01-22 23:25:28.660] ✅ Tactician base training step registered SUCCESS
+2026-01-22 23:25:28,662 - ares.registry - INFO - ℹ️ Registered step: tactician_ensemble_training
+[2026-01-22 23:25:28.662] ✅ Tactician ensemble training step registered SUCCESS
+2026-01-22 23:25:28,668 - ares.registry - INFO - ℹ️ Registered step: gate_training_step
+[2026-01-22 23:25:28.669] ✅ Gate training step registered SUCCESS
+2026-01-22 23:25:28,669 - ares.registry - INFO - ℹ️ Registered step: unified_models_training
+2026-01-22 23:25:28,669 - ares.registry - INFO - ℹ️ Registered step: analyst_base_training
+2026-01-22 23:25:28,669 - ares.registry - INFO - ℹ️ Registered step: analyst_ensemble_training
+2026-01-22 23:25:28,670 - ares.registry - INFO - ℹ️ Registered step: tactician_base_training
+2026-01-22 23:25:28,670 - ares.registry - INFO - ℹ️ Registered step: tactician_ensemble_training
+2026-01-22 23:25:28,670 - ares.registry - INFO - ℹ️ Registered step: gate_training_step
+2026-01-22 23:25:28,678 - ares.registry - INFO - ℹ️ Registered step: analyst_base_backtest
+[2026-01-22 23:25:28.679] ✅ Analyst base backtest step registered SUCCESS
+2026-01-22 23:25:28,683 - ares.registry - INFO - ℹ️ Registered step: basic_backtesting_pre
+[2026-01-22 23:25:28.683] ✅ Basic backtesting pre step registered SUCCESS
+2026-01-22 23:25:28,687 - ares.registry - INFO - ℹ️ Registered step: basic_backtesting_post
+[2026-01-22 23:25:28.687] ✅ Basic backtesting post step registered SUCCESS
+2026-01-22 23:25:28,729 - ares.registry - INFO - ℹ️ Registered step: monte_carlo_simulation
+[2026-01-22 23:25:28.729] ✅ Monte Carlo simulation step registered SUCCESS
+2026-01-22 23:25:28,731 - ares.registry - INFO - ℹ️ Registered step: ab_testing
+[2026-01-22 23:25:28.732] ✅ AB testing step registered SUCCESS
+2026-01-22 23:25:28,733 - ares.registry - INFO - ℹ️ Registered step: reporting
+[2026-01-22 23:25:28.734] ✅ Reporting step registered SUCCESS
+[2026-01-22 23:25:28.754] ⚠️  M1 hardware optimization not available warning
+[2026-01-22 23:25:28.754] ✅ VectorBT optimization utilities available success
+2026-01-22 23:25:28,765 - ares.registry - INFO - ℹ️ Registered step: analyst_base_backtest
+[2026-01-22 23:25:28.766] ✅ Analyst base backtest step registered SUCCESS
+2026-01-22 23:25:28,766 - ares.registry - INFO - ℹ️ Registered step: basic_backtesting_pre
+2026-01-22 23:25:28,766 - ares.registry - INFO - ℹ️ Registered step: basic_backtesting_post
+2026-01-22 23:25:28,766 - ares.registry - INFO - ℹ️ Registered step: monte_carlo_simulation
+2026-01-22 23:25:28,767 - ares.registry - INFO - ℹ️ Registered step: ab_testing
+2026-01-22 23:25:28,767 - ares.registry - INFO - ℹ️ Registered step: reporting
+2026-01-22 23:25:28,767 - ares.registry - INFO - ℹ️ Registered step: final_parameters_optimization
+2026-01-22 23:25:28,767 - ares.registry - INFO - ℹ️ Registered step: real_parameters_optimization
+2026-01-22 23:25:28,767 - ares.registry - INFO - ℹ️ Registered step: analyst_base_backtest
+2026-01-22 23:25:28,768 - ares.registry - INFO - ℹ️ Registered step: meta_gated_backtest
+2026-01-22 23:25:28,769 - ares.launcher - INFO - ℹ️ 🧹 Starting cleanup of duplicate files...
+2026-01-22 23:25:28,769 - ares.launcher - INFO - ℹ️ Cleaning directory: logs (keeping 100 youngest files per group)
+2026-01-22 23:25:28,773 - ares.launcher - INFO - ℹ️   Group 'unified.log': 101 files, keeping 100, deleting 1
+2026-01-22 23:25:28,777 - ares.launcher - INFO - ℹ️ Cleaning directory: artifacts (keeping 3 youngest files per group)
+2026-01-22 23:25:28,781 - ares.launcher - INFO - ℹ️ Cleaning directory: outcomes (keeping 3 youngest files per group)
+2026-01-22 23:25:28,783 - ares.launcher - INFO - ℹ️   Group 'hpo_layer1_trials_ETHUSDT_15m.csv': 4 files, keeping 3, deleting 1
+2026-01-22 23:25:28,784 - ares.launcher - INFO - ℹ️ ✅ Cleanup complete: 2 files deleted, 0 files skipped
+2026-01-22 23:25:28,785 - ares.launcher - INFO - ℹ️ Detected positional command: meta_labeling_hpo_sample_weighted
+2026-01-22 23:25:36,992 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 39 objects collected
+2026-01-22 23:25:39,405 - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - ⚠️ 🚨 ALERT: cpu_usage (92.4) exceeds threshold (85.0)
+2026-01-22 23:26:06,763 - src.training.steps.labeling.layer2_checkpoint_manager - INFO - ℹ️ 🔄 Auto-resume: Found checkpoint 'simulation_complete', resuming from 'final_processing'
+🔄 Auto-resume: Configuring pipeline to start from 'final_processing'
+[2026-01-22 23:26:06.771] 🔧 CONFIG: Centralized lookback_days=180 for mode=small_multi_asset INFO
+[2026-01-22 23:26:06.771] 🔒 LEAKAGE GUARD: Use non-zero embargo (gap) and OOF predictions for stacking; avoid joining future-derived columns. INFO
+2026-01-22 23:26:06,774 - src.utils.ml_common.optimization.execution_mode_adapter - INFO - ℹ️ 🔧 Execution mode set to: BLANK
+2026-01-22 23:26:06,775 - ares.launcher - INFO - ℹ️ 🔧 Execution mode set to: BLANK (normalized from small_multi_asset)
+2026-01-22 23:26:06,775 - ares.launcher - INFO - ℹ️ Running single step: meta_labeling_hpo_sample_weighted
+2026-01-22 23:26:06,776 - ares.launcher - INFO - ℹ️ Starting execution of step: meta_labeling_hpo_sample_weighted
+2026-01-22 23:26:06,776 - ares.launcher - INFO - ℹ️ Loading step package for: meta_labeling_hpo_sample_weighted
+[2026-01-22 23:26:06.778] 🛠️ Initialized BaseStep for 'meta_labeling_hpo_sample_weighted'
+[2026-01-22 23:26:06.778] 🚀 Starting execution of step 'meta_labeling_hpo_sample_weighted'
+2026-01-22 23:26:06,778 - ares.step.meta_labeling_hpo_sample_weighted - INFO - ℹ️ Starting execution of meta_labeling_hpo_sample_weighted
+2026-01-22 23:26:06,779 - ares.step.meta_labeling_hpo_sample_weighted - INFO - ℹ️ Execution mode resolved for meta_labeling_hpo_sample_weighted: requested_cli=unspecified → persona=analyst
+[2026-01-22 23:26:06.779] 🎯 Execution mode for 'meta_labeling_hpo_sample_weighted': requested_cli=unspecified → persona=analyst
+[2026-01-22 23:26:06.779] 🔧 Running 'meta_labeling_hpo_sample_weighted' in analyst mode
+[2026-01-22 23:26:06.779] INFO: 🚀 Starting Meta-Labeling HPO Orchestration (Layers 0-5)...
+[2026-01-22 23:26:06.779] INFO: 🔧 Enforcing Pipeline Configuration...
+[2026-01-22 23:26:06.779] INFO:    - Layer 0: Wavelets ENABLED
+[2026-01-22 23:26:06.779] INFO:    - Layer 2: De Prado Causal Framework ENABLED (Full Mode)
+[2026-01-22 23:26:06.779] INFO:    - Layer 1: Sample Weighting ENABLED
+[2026-01-22 23:26:06.779] INFO:    - Event Pipeline Logging: ENABLED
+[2026-01-22 23:26:06.779] INFO: 📥 Loading Market Data...
+[2026-01-22 23:26:06.780] 📥 BASESTEP historical load: symbol=ETHUSDT, exchange=binance, timeframe=15m, execution_mode=None, start_date=None, end_date=None INFO
+2026-01-22 23:26:06,781 - System.KlinesParquetManager - INFO - ℹ️ ✅ KlinesParquetManager initialized with base_dir: historical_data
+[2026-01-22 23:26:06.792] INFO: 📁 Loading from processed directory: 51 files found
+[2026-01-22 23:26:06.792] 📁 BASESTEP probe: 51 files for ETHUSDT 15m (sample: historical_data/binance/ethusdt/processed/ethusdt_15m/year=2021/month=10/3b08e855a9c24b019d7c633963954045-0.parquet ... historical_data/binance/ethusdt/processed/ethusdt_15m/year=2025/month=9/3b08e855a9c24b019d7c633963954045-0.parquet) INFO
+[2026-01-22 23:26:06.793] 📊 load_market_data_or_fail post-historical: type=None, rows=NA INFO
+2026-01-22 23:26:06,793 - System.KlinesParquetManager - INFO - ℹ️ ✅ KlinesParquetManager initialized with base_dir: historical_data
+[2026-01-22 23:26:06.793] 🐛 DEBUG [load_klines]: last_n_days=180, start_time=None, end_time=None INFO
+[2026-01-22 23:26:06.793] INFO: 📅 Loading last 180 days from latest available data
+[2026-01-22 23:26:06.797] INFO: 📁 Loading from processed directory: 51 files found
+[2026-01-22 23:26:06.797] 🐛 DEBUG [KlinesParquetManager]: Loading 51 parquet files INFO
+2026-01-22 23:26:07,529 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (104, 9)
+[2026-01-22 23:26:07.531] 🐛 DEBUG [KlinesParquetManager]: File 1/51: historical_data/binance/ethusdt/processed/ethusdt_15m/year=2021/month=10/3b08e855a9c24b019d7c633963954045-0.parquet - 104 rows, span=(2021-10-30 22:00:00, 2021-10-31 23:45:00) INFO
+2026-01-22 23:26:07,538 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+[2026-01-22 23:26:07.538] 🐛 DEBUG [KlinesParquetManager]: File 2/51: historical_data/binance/ethusdt/processed/ethusdt_15m/year=2021/month=11/3b08e855a9c24b019d7c633963954045-0.parquet - 2880 rows, span=(2021-11-01 00:00:00, 2021-11-30 23:45:00) INFO
+2026-01-22 23:26:07,544 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+[2026-01-22 23:26:07.545] 🐛 DEBUG [KlinesParquetManager]: File 3/51: historical_data/binance/ethusdt/processed/ethusdt_15m/year=2021/month=12/3b08e855a9c24b019d7c633963954045-0.parquet - 2976 rows, span=(2021-12-01 00:00:00, 2021-12-31 23:45:00) INFO
+2026-01-22 23:26:07,550 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+2026-01-22 23:26:07,560 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+2026-01-22 23:26:07,567 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2877, 9)
+2026-01-22 23:26:07,573 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2047, 9)
+2026-01-22 23:26:07,582 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2688, 9)
+2026-01-22 23:26:07,594 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+2026-01-22 23:26:07,612 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+2026-01-22 23:26:07,623 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+2026-01-22 23:26:07,629 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+2026-01-22 23:26:07,640 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+2026-01-22 23:26:07,646 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+2026-01-22 23:26:07,656 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+2026-01-22 23:26:07,668 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+2026-01-22 23:26:07,681 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+2026-01-22 23:26:07,696 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+2026-01-22 23:26:07,709 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+2026-01-22 23:26:07,720 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2688, 9)
+2026-01-22 23:26:07,739 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2363, 9)
+2026-01-22 23:26:07,750 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+2026-01-22 23:26:07,773 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+2026-01-22 23:26:07,786 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+2026-01-22 23:26:07,799 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+2026-01-22 23:26:07,810 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+2026-01-22 23:26:07,844 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+2026-01-22 23:26:07,868 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+2026-01-22 23:26:07,881 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+2026-01-22 23:26:07,889 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+2026-01-22 23:26:07,899 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+2026-01-22 23:26:07,908 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2784, 9)
+2026-01-22 23:26:07,915 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+2026-01-22 23:26:07,921 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+2026-01-22 23:26:07,930 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+2026-01-22 23:26:07,938 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+2026-01-22 23:26:07,942 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+2026-01-22 23:26:07,948 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+2026-01-22 23:26:07,961 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+2026-01-22 23:26:07,966 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+2026-01-22 23:26:07,972 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+2026-01-22 23:26:07,982 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+2026-01-22 23:26:07,989 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (924, 9)
+2026-01-22 23:26:07,996 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2688, 9)
+2026-01-22 23:26:08,003 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+2026-01-22 23:26:08,009 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+2026-01-22 23:26:08,013 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+2026-01-22 23:26:08,016 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+2026-01-22 23:26:08,025 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+[2026-01-22 23:26:08.026] 🐛 DEBUG [KlinesParquetManager]: File 49/51: historical_data/binance/ethusdt/processed/ethusdt_15m/year=2025/month=7/3b08e855a9c24b019d7c633963954045-0.parquet - 2976 rows, span=(2025-07-01 00:00:00, 2025-07-31 23:45:00) INFO
+2026-01-22 23:26:08,033 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2976, 9)
+[2026-01-22 23:26:08.034] 🐛 DEBUG [KlinesParquetManager]: File 50/51: historical_data/binance/ethusdt/processed/ethusdt_15m/year=2025/month=8/3b08e855a9c24b019d7c633963954045-0.parquet - 2976 rows, span=(2025-08-01 00:00:00, 2025-08-31 23:45:00) INFO
+2026-01-22 23:26:08,042 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 3b08e855a9c24b019d7c633963954045-0.parquet -> (2880, 9)
+[2026-01-22 23:26:08.043] 🐛 DEBUG [KlinesParquetManager]: File 51/51: historical_data/binance/ethusdt/processed/ethusdt_15m/year=2025/month=9/3b08e855a9c24b019d7c633963954045-0.parquet - 2880 rows, span=(2025-09-01 00:00:00, 2025-09-30 23:45:00) INFO
+[2026-01-22 23:26:08.043] 🐛 DEBUG [KlinesParquetManager]: Successfully loaded 51 dataframes, combining... INFO
+[2026-01-22 23:26:08.051] 🐛 DEBUG [KlinesParquetManager]: Combined shape before filtering: (142619, 9) INFO
+[2026-01-22 23:26:08.051] 🔧 TIMEZONE: Index timezone: None INFO
+[2026-01-22 23:26:08.070] 🐛 DEBUG [KlinesParquetManager]: Before duplicate removal: 142619 rows INFO
+[2026-01-22 23:26:08.073] 🐛 DEBUG [KlinesParquetManager]: Duplicated timestamps: 0 INFO
+[2026-01-22 23:26:08.073] 🐛 DEBUG [KlinesParquetManager]: Unique timestamps: 142619 INFO
+[2026-01-22 23:26:08.079] 🐛 DEBUG [KlinesParquetManager]: After duplicate removal: 142619 rows INFO
+[2026-01-22 23:26:08.079] 🐛 DEBUG [KlinesParquetManager]: start_time=None, end_time=None INFO
+[2026-01-22 23:26:08.079] 🐛 DEBUG [KlinesParquetManager]: Final combined_df shape: (142619, 9) INFO
+[2026-01-22 23:26:08.079] 🐛 DEBUG [KlinesParquetManager]: Date range: 2021-10-30 22:00:00 to 2025-12-10 14:45:00 INFO
+[2026-01-22 23:26:08.086] INFO: 📊 Combined dataset before time filter: shape=(142619, 9); index_type=DatetimeIndex
+[2026-01-22 23:26:08.089] INFO: 📊 Latest available data (index): 2025-12-10 14:45:00
+[2026-01-22 23:26:08.089] INFO: 📊 Filtering to last 180 days: 2025-06-13 14:45:00 to 2025-12-10 14:45:00
+[2026-01-22 23:26:08.093] SUCCESS: ✅ Loaded 17281 klines records for ETHUSDT 15m (last 180 days)
+2026-01-22 23:26:08,094 - src.utils.kline_parquet - INFO - ℹ️ load_klines executed in 1300.11ms
+[2026-01-22 23:26:08.093] 📊 Fallback load: type=DataFrame, rows=17281, days=180 INFO
+[2026-01-22 23:26:08.095] SUCCESS: ✅ Loaded 17281 bars for ETHUSDT
+[2026-01-22 23:26:08.095] INFO: 📂 Outcomes Directory: outcomes/meta_labeling_hpo_sample_weighted/ETHUSDT_15m_20260122_232608
+[2026-01-22 23:26:08.095] INFO: 🌐 Preparing cross-asset data for Layer 2...
+[2026-01-22 23:26:08.095] 📥 BASESTEP historical load: symbol=BTCUSDT, exchange=binance, timeframe=15m, execution_mode=None, start_date=None, end_date=None INFO
+2026-01-22 23:26:08,096 - System.KlinesParquetManager - INFO - ℹ️ ✅ KlinesParquetManager initialized with base_dir: historical_data
+[2026-01-22 23:26:08.096] INFO: 📁 Loading from processed directory: 1 files found
+[2026-01-22 23:26:08.096] 📁 BASESTEP probe: 1 files for BTCUSDT 15m (sample: historical_data/binance/btcusdt/processed/btcusdt_15m/year=2026/month=1/4233e564171947b89c02bd32b504e881-0.parquet ... historical_data/binance/btcusdt/processed/btcusdt_15m/year=2026/month=1/4233e564171947b89c02bd32b504e881-0.parquet) INFO
+[2026-01-22 23:26:08.096] 📊 load_market_data_or_fail post-historical: type=None, rows=NA INFO
+2026-01-22 23:26:08,096 - System.KlinesParquetManager - INFO - ℹ️ ✅ KlinesParquetManager initialized with base_dir: historical_data
+[2026-01-22 23:26:08.096] 🐛 DEBUG [load_klines]: last_n_days=180, start_time=None, end_time=None INFO
+[2026-01-22 23:26:08.096] INFO: 📅 Loading last 180 days from latest available data
+[2026-01-22 23:26:08.096] INFO: 📁 Loading from processed directory: 1 files found
+[2026-01-22 23:26:08.096] 🐛 DEBUG [KlinesParquetManager]: Loading 1 parquet files INFO
+2026-01-22 23:26:08,100 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 4233e564171947b89c02bd32b504e881-0.parquet -> (788, 9)
+[2026-01-22 23:26:08.101] 🐛 DEBUG [KlinesParquetManager]: File 1/1: historical_data/binance/btcusdt/processed/btcusdt_15m/year=2026/month=1/4233e564171947b89c02bd32b504e881-0.parquet - 788 rows, span=(2026-01-01 00:00:00, 2026-01-10 10:00:00) INFO
+[2026-01-22 23:26:08.101] 🐛 DEBUG [KlinesParquetManager]: Successfully loaded 1 dataframes, combining... INFO
+[2026-01-22 23:26:08.101] 🐛 DEBUG [KlinesParquetManager]: Combined shape before filtering: (788, 9) INFO
+[2026-01-22 23:26:08.101] 🔧 TIMEZONE: Index timezone: None INFO
+[2026-01-22 23:26:08.102] 🐛 DEBUG [KlinesParquetManager]: Before duplicate removal: 788 rows INFO
+[2026-01-22 23:26:08.102] 🐛 DEBUG [KlinesParquetManager]: Duplicated timestamps: 0 INFO
+[2026-01-22 23:26:08.102] 🐛 DEBUG [KlinesParquetManager]: Unique timestamps: 788 INFO
+[2026-01-22 23:26:08.102] 🐛 DEBUG [KlinesParquetManager]: After duplicate removal: 788 rows INFO
+[2026-01-22 23:26:08.102] 🐛 DEBUG [KlinesParquetManager]: start_time=None, end_time=None INFO
+[2026-01-22 23:26:08.102] 🐛 DEBUG [KlinesParquetManager]: Final combined_df shape: (788, 9) INFO
+[2026-01-22 23:26:08.102] 🐛 DEBUG [KlinesParquetManager]: Date range: 2026-01-01 00:00:00 to 2026-01-10 10:00:00 INFO
+[2026-01-22 23:26:08.102] INFO: 📊 Combined dataset before time filter: shape=(788, 9); index_type=DatetimeIndex
+[2026-01-22 23:26:08.104] INFO: 📊 Latest available data (index): 2026-01-10 10:00:00
+[2026-01-22 23:26:08.104] INFO: 📊 Filtering to last 180 days: 2025-07-14 10:00:00 to 2026-01-10 10:00:00
+[2026-01-22 23:26:08.105] SUCCESS: ✅ Loaded 788 klines records for BTCUSDT 15m (last 180 days)
+2026-01-22 23:26:08,105 - src.utils.kline_parquet - INFO - ℹ️ load_klines executed in 8.77ms
+[2026-01-22 23:26:08.105] 📊 Fallback load: type=DataFrame, rows=788, days=180 INFO
+[2026-01-22 23:26:08.105] SUCCESS: ✅ Loaded cross-asset BTC rows=788 source=historical_data
+[2026-01-22 23:26:08.105] 📥 BASESTEP historical load: symbol=SOLUSDT, exchange=binance, timeframe=15m, execution_mode=None, start_date=None, end_date=None INFO
+2026-01-22 23:26:08,106 - System.KlinesParquetManager - INFO - ℹ️ ✅ KlinesParquetManager initialized with base_dir: historical_data
+[2026-01-22 23:26:08.106] INFO: 📁 Loading from processed directory: 1 files found
+[2026-01-22 23:26:08.106] 📁 BASESTEP probe: 1 files for SOLUSDT 15m (sample: historical_data/binance/solusdt/processed/solusdt_15m/year=2026/month=1/48531cc6066d4e3d93845172ec6b9fb5-0.parquet ... historical_data/binance/solusdt/processed/solusdt_15m/year=2026/month=1/48531cc6066d4e3d93845172ec6b9fb5-0.parquet) INFO
+[2026-01-22 23:26:08.106] 📊 load_market_data_or_fail post-historical: type=None, rows=NA INFO
+2026-01-22 23:26:08,106 - System.KlinesParquetManager - INFO - ℹ️ ✅ KlinesParquetManager initialized with base_dir: historical_data
+[2026-01-22 23:26:08.106] 🐛 DEBUG [load_klines]: last_n_days=180, start_time=None, end_time=None INFO
+[2026-01-22 23:26:08.106] INFO: 📅 Loading last 180 days from latest available data
+[2026-01-22 23:26:08.106] INFO: 📁 Loading from processed directory: 1 files found
+[2026-01-22 23:26:08.106] 🐛 DEBUG [KlinesParquetManager]: Loading 1 parquet files INFO
+2026-01-22 23:26:08,110 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: 48531cc6066d4e3d93845172ec6b9fb5-0.parquet -> (964, 9)
+[2026-01-22 23:26:08.111] 🐛 DEBUG [KlinesParquetManager]: File 1/1: historical_data/binance/solusdt/processed/solusdt_15m/year=2026/month=1/48531cc6066d4e3d93845172ec6b9fb5-0.parquet - 964 rows, span=(2026-01-01 00:00:00, 2026-01-11 00:45:00) INFO
+[2026-01-22 23:26:08.111] 🐛 DEBUG [KlinesParquetManager]: Successfully loaded 1 dataframes, combining... INFO
+[2026-01-22 23:26:08.111] 🐛 DEBUG [KlinesParquetManager]: Combined shape before filtering: (964, 9) INFO
+[2026-01-22 23:26:08.111] 🔧 TIMEZONE: Index timezone: None INFO
+[2026-01-22 23:26:08.111] 🐛 DEBUG [KlinesParquetManager]: Before duplicate removal: 964 rows INFO
+[2026-01-22 23:26:08.111] 🐛 DEBUG [KlinesParquetManager]: Duplicated timestamps: 0 INFO
+[2026-01-22 23:26:08.111] 🐛 DEBUG [KlinesParquetManager]: Unique timestamps: 964 INFO
+[2026-01-22 23:26:08.111] 🐛 DEBUG [KlinesParquetManager]: After duplicate removal: 964 rows INFO
+[2026-01-22 23:26:08.111] 🐛 DEBUG [KlinesParquetManager]: start_time=None, end_time=None INFO
+[2026-01-22 23:26:08.111] 🐛 DEBUG [KlinesParquetManager]: Final combined_df shape: (964, 9) INFO
+[2026-01-22 23:26:08.111] 🐛 DEBUG [KlinesParquetManager]: Date range: 2026-01-01 00:00:00 to 2026-01-11 00:45:00 INFO
+[2026-01-22 23:26:08.111] INFO: 📊 Combined dataset before time filter: shape=(964, 9); index_type=DatetimeIndex
+[2026-01-22 23:26:08.112] INFO: 📊 Latest available data (index): 2026-01-11 00:45:00
+[2026-01-22 23:26:08.112] INFO: 📊 Filtering to last 180 days: 2025-07-15 00:45:00 to 2026-01-11 00:45:00
+[2026-01-22 23:26:08.112] SUCCESS: ✅ Loaded 964 klines records for SOLUSDT 15m (last 180 days)
+2026-01-22 23:26:08,112 - src.utils.kline_parquet - INFO - ℹ️ load_klines executed in 6.15ms
+[2026-01-22 23:26:08.112] 📊 Fallback load: type=DataFrame, rows=964, days=180 INFO
+[2026-01-22 23:26:08.112] SUCCESS: ✅ Loaded cross-asset SOL rows=964 source=historical_data
+[2026-01-22 23:26:08.112] 📥 BASESTEP historical load: symbol=BNBUSDT, exchange=binance, timeframe=15m, execution_mode=None, start_date=None, end_date=None INFO
+2026-01-22 23:26:08,113 - System.KlinesParquetManager - INFO - ℹ️ ✅ KlinesParquetManager initialized with base_dir: historical_data
+[2026-01-22 23:26:08.116] INFO: 📁 Loading from processed directory: 37 files found
+[2026-01-22 23:26:08.116] 📁 BASESTEP probe: 37 files for BNBUSDT 15m (sample: historical_data/binance/bnbusdt/processed/bnbusdt_15m/year=2023/month=1/d64358830887461db7cad2fac5b12794-0.parquet ... historical_data/binance/bnbusdt/processed/bnbusdt_15m/year=2026/month=1/d64358830887461db7cad2fac5b12794-0.parquet) INFO
+[2026-01-22 23:26:08.116] 📊 load_market_data_or_fail post-historical: type=None, rows=NA INFO
+2026-01-22 23:26:08,116 - System.KlinesParquetManager - INFO - ℹ️ ✅ KlinesParquetManager initialized with base_dir: historical_data
+[2026-01-22 23:26:08.116] 🐛 DEBUG [load_klines]: last_n_days=180, start_time=None, end_time=None INFO
+[2026-01-22 23:26:08.116] INFO: 📅 Loading last 180 days from latest available data
+[2026-01-22 23:26:08.120] INFO: 📁 Loading from processed directory: 37 files found
+[2026-01-22 23:26:08.120] 🐛 DEBUG [KlinesParquetManager]: Loading 37 parquet files INFO
+2026-01-22 23:26:08,126 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (5539, 16)
+[2026-01-22 23:26:08.127] 🐛 DEBUG [KlinesParquetManager]: File 1/37: historical_data/binance/bnbusdt/processed/bnbusdt_15m/year=2023/month=1/d64358830887461db7cad2fac5b12794-0.parquet - 5539 rows, span=(2023-01-03 19:45:00, 2023-01-31 23:55:00) INFO
+2026-01-22 23:26:08,133 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (6114, 16)
+[2026-01-22 23:26:08.134] 🐛 DEBUG [KlinesParquetManager]: File 2/37: historical_data/binance/bnbusdt/processed/bnbusdt_15m/year=2023/month=10/d64358830887461db7cad2fac5b12794-0.parquet - 6114 rows, span=(2023-10-01 00:00:00, 2023-10-31 23:45:00) INFO
+2026-01-22 23:26:08,143 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (5855, 16)
+[2026-01-22 23:26:08.143] 🐛 DEBUG [KlinesParquetManager]: File 3/37: historical_data/binance/bnbusdt/processed/bnbusdt_15m/year=2023/month=11/d64358830887461db7cad2fac5b12794-0.parquet - 5855 rows, span=(2023-11-01 00:00:00, 2023-11-30 23:50:00) INFO
+2026-01-22 23:26:08,152 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (6164, 16)
+2026-01-22 23:26:08,161 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (5516, 16)
+2026-01-22 23:26:08,172 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (6124, 16)
+2026-01-22 23:26:08,183 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (5903, 16)
+2026-01-22 23:26:08,197 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (6108, 16)
+2026-01-22 23:26:08,210 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (5875, 16)
+2026-01-22 23:26:08,222 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (6118, 16)
+2026-01-22 23:26:08,232 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (6128, 16)
+2026-01-22 23:26:08,243 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (5981, 16)
+2026-01-22 23:26:08,254 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (6049, 16)
+2026-01-22 23:26:08,270 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (6113, 16)
+2026-01-22 23:26:08,280 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (5897, 16)
+2026-01-22 23:26:08,293 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (6112, 16)
+2026-01-22 23:26:08,305 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (5696, 16)
+2026-01-22 23:26:08,316 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (6012, 16)
+2026-01-22 23:26:08,329 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (5871, 16)
+2026-01-22 23:26:08,340 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (6101, 16)
+2026-01-22 23:26:08,346 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (5905, 16)
+2026-01-22 23:26:08,356 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (6082, 16)
+2026-01-22 23:26:08,364 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (6078, 16)
+2026-01-22 23:26:08,375 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (5905, 16)
+2026-01-22 23:26:08,380 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (6118, 16)
+2026-01-22 23:26:08,391 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (6163, 16)
+2026-01-22 23:26:08,400 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (5929, 16)
+2026-01-22 23:26:08,409 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (6084, 16)
+2026-01-22 23:26:08,415 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (5577, 16)
+2026-01-22 23:26:08,426 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (6119, 16)
+2026-01-22 23:26:08,434 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (5901, 16)
+2026-01-22 23:26:08,441 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (6070, 16)
+2026-01-22 23:26:08,450 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (5843, 16)
+2026-01-22 23:26:08,466 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (6013, 16)
+2026-01-22 23:26:08,480 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (6081, 16)
+[2026-01-22 23:26:08.481] 🐛 DEBUG [KlinesParquetManager]: File 35/37: historical_data/binance/bnbusdt/processed/bnbusdt_15m/year=2025/month=8/d64358830887461db7cad2fac5b12794-0.parquet - 6081 rows, span=(2025-08-01 00:00:00, 2025-08-31 23:45:00) INFO
+2026-01-22 23:26:08,505 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (5871, 16)
+[2026-01-22 23:26:08.506] 🐛 DEBUG [KlinesParquetManager]: File 36/37: historical_data/binance/bnbusdt/processed/bnbusdt_15m/year=2025/month=9/d64358830887461db7cad2fac5b12794-0.parquet - 5871 rows, span=(2025-09-01 00:00:00, 2025-09-30 23:55:00) INFO
+2026-01-22 23:26:08,521 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: d64358830887461db7cad2fac5b12794-0.parquet -> (356, 16)
+[2026-01-22 23:26:08.522] 🐛 DEBUG [KlinesParquetManager]: File 37/37: historical_data/binance/bnbusdt/processed/bnbusdt_15m/year=2026/month=1/d64358830887461db7cad2fac5b12794-0.parquet - 356 rows, span=(2026-01-01 00:00:00, 2026-01-02 20:45:00) INFO
+[2026-01-22 23:26:08.522] 🐛 DEBUG [KlinesParquetManager]: Successfully loaded 37 dataframes, combining... INFO
+[2026-01-22 23:26:09.247] 🐛 DEBUG [KlinesParquetManager]: Combined shape before filtering: (215371, 16) INFO
+[2026-01-22 23:26:09.247] 🔧 TIMEZONE: Index timezone: None INFO
+[2026-01-22 23:26:09.316] 🐛 DEBUG [KlinesParquetManager]: Before duplicate removal: 215371 rows INFO
+[2026-01-22 23:26:09.323] 🐛 DEBUG [KlinesParquetManager]: Duplicated timestamps: 0 INFO
+[2026-01-22 23:26:09.323] 🐛 DEBUG [KlinesParquetManager]: Unique timestamps: 215371 INFO
+[2026-01-22 23:26:09.377] 🐛 DEBUG [KlinesParquetManager]: After duplicate removal: 215371 rows INFO
+[2026-01-22 23:26:09.377] 🐛 DEBUG [KlinesParquetManager]: start_time=None, end_time=None INFO
+[2026-01-22 23:26:09.377] 🐛 DEBUG [KlinesParquetManager]: Final combined_df shape: (215371, 16) INFO
+[2026-01-22 23:26:09.378] 🐛 DEBUG [KlinesParquetManager]: Date range: 2023-01-03 19:45:00 to 2026-01-02 20:45:00 INFO
+[2026-01-22 23:26:09.396] INFO: 📊 Combined dataset before time filter: shape=(215371, 16); index_type=DatetimeIndex
+[2026-01-22 23:26:09.398] INFO: 📊 Latest available data (index): 2026-01-02 20:45:00
+[2026-01-22 23:26:09.398] INFO: 📊 Filtering to last 180 days: 2025-07-06 20:45:00 to 2026-01-02 20:45:00
+[2026-01-22 23:26:09.428] SUCCESS: ✅ Loaded 35345 klines records for BNBUSDT 15m (last 180 days)
+2026-01-22 23:26:09,430 - src.utils.kline_parquet - INFO - ℹ️ load_klines executed in 1313.40ms
+[2026-01-22 23:26:09.430] 📊 Fallback load: type=DataFrame, rows=35345, days=180 INFO
+[2026-01-22 23:26:09.430] SUCCESS: ✅ Loaded cross-asset BNB rows=35345 source=historical_data
+[2026-01-22 23:26:09.430] INFO: 🌐 Cross-asset payload ready: ['ETH', 'BTC', 'SOL', 'BNB']
+[2026-01-22 23:26:09.430] INFO: 🔹 Running Layer 0: Kalman Filter & VWAP...
+[2026-01-22 23:26:09.430] INFO: 🌊 Running Causal Denoising (Strictly Causal EWMA)...
+[2026-01-22 23:26:09.932] SUCCESS: ✅ Advanced Denoising complete (Wavelet+Median+Clip).
+2026-01-22 23:26:09,933 - src.utils.ml_common.optimization.execution_mode_adapter - INFO - ℹ️ ⚡ BLANK mode: Reducing HPO trials 50 → 12 (25%)
+2026-01-22 23:26:09,933 - src.utils.ml_common.optimization.execution_mode_adapter - INFO - ℹ️ ⚡ BLANK mode: MAINTAINING CV folds 3 → 5 (critical for variance)
+2026-01-22 23:26:09,934 - src.utils.ml_common.optimization.execution_mode_adapter - INFO - ℹ️ 🔍 BLANK MODE IMPROVEMENT: Each CV fold will have ~20% of data (maintaining variance)
+2026-01-22 23:26:09,934 - src.utils.ml_common.optimization.execution_mode_adapter - INFO - ℹ️ 🔍 VARIANCE PROTECTION: 5-fold CV prevents overfitting and ensures reliable validation
+2026-01-22 23:26:09,936 - src.utils.hardware.unified_hardware_manager.UnifiedHardwareManager - INFO - ℹ️ ✅ Unified Hardware Manager fully initialized
+2026-01-22 23:26:09,936 - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - INFO - ℹ️ 🔧 Switched back to normal thresholds
+2026-01-22 23:26:09,936 - src.utils.hardware.unified_hardware_manager.UnifiedHardwareManager - INFO - ℹ️ 🔧 Switched back to normal thresholds
+2026-01-22 23:26:09,938 - src.utils.matrix_operations.hardware_integration.HardwareOptimizedMatrixProcessor - INFO - ℹ️ ✅ M1 GPU acceleration available
+2026-01-22 23:26:09,939 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧠 Memory limit set to 8.0 GB (8589934592.0 bytes)
+2026-01-22 23:26:09,991 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧠 M1 Memory Optimizer initialized for M1
+2026-01-22 23:26:09,993 - src.utils.matrix_operations.hardware_integration.HardwareOptimizedMatrixProcessor - INFO - ℹ️ ✅ M1 Memory optimizer initialized
+2026-01-22 23:26:09,994 - src.utils.matrix_operations.hardware_integration.HardwareOptimizedMatrixProcessor - INFO - ℹ️ ✅ M1 CPU optimizer initialized
+2026-01-22 23:26:09,995 - src.utils.matrix_operations.hardware_integration.HardwareOptimizedMatrixProcessor - INFO - ℹ️ ✅ Memory monitor initialized
+2026-01-22 23:26:09,996 - src.utils.matrix_operations.hardware_integration.HardwareOptimizedMatrixProcessor - INFO - ℹ️ 🚀 Hardware-Optimized Matrix Processor initialized
+2026-01-22 23:26:10,000 - src.utils.matrix_operations.hardware_integration.HardwareOptimizedMatrixProcessor - INFO - ℹ️ 🖥️ GPU Info: {'is_m1': True, 'm1_generation': 'm1', 'mps_available': True, 'gpu_memory': 'Shared system memory', 'gpu_name': 'Apple Silicon GPU (MPS) - M1', 'compatibility_mode': 'legacy_m1', 'fallback_available': True, 'device': 'mps'}
+2026-01-22 23:26:10,002 - src.utils.matrix_operations.hardware_integration.HardwareOptimizedMatrixProcessor - INFO - ℹ️ 💻 CPU Info: {'is_m1': True, 'm1_generation': 'm1', 'total_cores': 8, 'performance_cores': 4, 'efficiency_cores': 4, 'optimal_workers': 4, 'architecture': 'arm64', 'm1_optimizations_enabled': True, 'legacy_mode': False, 'compatibility_mode': 'auto', 'version': '2.0.0'}
+2026-01-22 23:26:10,004 - src.utils.matrix_operations.hardware_integration.HardwareOptimizedMatrixProcessor - INFO - ℹ️ 🧠 Memory Stats: {'current_mb': 254.921875, 'peak_mb': 254.921875, 'usage_percentage': 3.1124114990234375, 'max_mb': 8192.0, 'is_pressure': False, 'is_critical': False, 'history_count': 4}
+2026-01-22 23:26:10,043 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧠 M1 Memory Optimizer initialized for M1
+2026-01-22 23:26:10,044 - src.utils.matrix_operations.batch_operations - INFO - ℹ️ ✅ Batch matrix processor initialized with M1 optimization
+2026-01-22 23:26:10,045 - BayesianTPEOptimizer - INFO - ℹ️ ✅ Hardware optimization components initialized
+2026-01-22 23:26:10,045 - BayesianTPEOptimizer - INFO - ℹ️ ✅ VectorBT Rolling Optimizer initialized
+2026-01-22 23:26:10,050 - src.feature_generation.utils.unified_vectorization_manager - INFO - ℹ️ ✅ M1 GPU acceleration available: m1
+2026-01-22 23:26:10,054 - BayesianTPEOptimizer - INFO - ℹ️ ✅ Enhanced Unified Vectorization Manager initialized
+2026-01-22 23:26:10,055 - BayesianTPEOptimizer - INFO - ℹ️ 🚀 VectorBT GPU acceleration enabled
+2026-01-22 23:26:10,056 - BayesianTPEOptimizer - INFO - ℹ️ ✅ VectorBT optimization components initialized
+2026-01-22 23:26:10,056 - BayesianTPEOptimizer - INFO - ℹ️ ✅ VectorBT-Optimized BayesianTPEOptimizer initialized
+2026-01-22 23:26:10,056 - BayesianTPEOptimizer - INFO - ℹ️    → Hardware optimization: Enabled
+2026-01-22 23:26:10,056 - BayesianTPEOptimizer - INFO - ℹ️    → VectorBT optimization: Enabled
+2026-01-22 23:26:10,056 - BayesianTPEOptimizer - INFO - ℹ️ 🚀 Starting staged TPE optimization
+2026-01-22 23:26:10,057 - BayesianTPEOptimizer - INFO - ℹ️    Search space: ['kalman_Q', 'kalman_R', 'volume_weight', 'volume_adaptive']
+2026-01-22 23:26:10,057 - BayesianTPEOptimizer - INFO - ℹ️    Stages: Coarse Fine TPE
+2026-01-22 23:26:10,057 - BayesianTPEOptimizer - INFO - ℹ️ 🔍 Stage 1: VectorBT-optimized coarse grid search
+2026-01-22 23:26:10,057 - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - INFO - ℹ️ 🔧 Switched back to normal thresholds
+2026-01-22 23:26:10,057 - src.utils.hardware.unified_hardware_manager.UnifiedHardwareManager - INFO - ℹ️ 🔧 Switched back to normal thresholds
+2026-01-22 23:26:10,059 - BayesianTPEOptimizer - INFO - ℹ️    Generated 250 coarse grid points
+2026-01-22 23:26:10,060 - BayesianTPEOptimizer - INFO - ℹ️ 🔄 Batch evaluating 250 coarse grid points
+2026-01-22 23:26:11,454 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 15255 objects collected
+2026-01-22 23:26:17,224 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 47706 objects collected
+2026-01-22 23:26:43,455 - BayesianTPEOptimizer - INFO - ℹ️    Batch evaluation completed in 33.39s
+2026-01-22 23:26:43,457 - BayesianTPEOptimizer - INFO - ℹ️    Evaluations/sec: 7.5
+2026-01-22 23:26:43,457 - BayesianTPEOptimizer - INFO - ℹ️    Hardware acceleration: Enabled
+2026-01-22 23:26:43,458 - BayesianTPEOptimizer - INFO - ℹ️    Coarse grid: 250 trials, best: 0.7513
+2026-01-22 23:26:43,458 - BayesianTPEOptimizer - INFO - ℹ️    Coarse grid best params: {'kalman_Q': 3.1622776601683795e-05, 'kalman_R': 0.00031622776601683794, 'volume_weight': 0.0, 'volume_adaptive': True}
+2026-01-22 23:26:43,459 - BayesianTPEOptimizer - INFO - ℹ️ 🔍 Stage 2: VectorBT-optimized fine grid search
+2026-01-22 23:26:43,459 - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - INFO - ℹ️ 🔧 Switched to intensive workload thresholds
+2026-01-22 23:26:43,459 - src.utils.hardware.unified_hardware_manager.UnifiedHardwareManager - INFO - ℹ️ 🔧 Switched to intensive workload thresholds
+2026-01-22 23:26:43,460 - BayesianTPEOptimizer - INFO - ℹ️    Generated 250 fine grid points
+2026-01-22 23:26:43,461 - BayesianTPEOptimizer - INFO - ℹ️ 🔄 Batch evaluating 250 fine grid points
+2026-01-22 23:27:10,997 - BayesianTPEOptimizer - INFO - ℹ️    Batch evaluation completed in 27.54s
+2026-01-22 23:27:10,999 - BayesianTPEOptimizer - INFO - ℹ️    Evaluations/sec: 9.1
+2026-01-22 23:27:11,000 - BayesianTPEOptimizer - INFO - ℹ️    Hardware acceleration: Enabled
+2026-01-22 23:27:11,000 - BayesianTPEOptimizer - INFO - ℹ️    Fine grid: 250 trials, best: 0.7346
+2026-01-22 23:27:11,000 - BayesianTPEOptimizer - INFO - ℹ️    Fine grid best params: {'kalman_Q': 0.0005324600975689569, 'kalman_R': 0.020316027766016837, 'volume_weight': 0.15000000000000002, 'volume_adaptive': False}
+2026-01-22 23:27:11,000 - BayesianTPEOptimizer - INFO - ℹ️ 🔍 Stage 2.5: VectorBT adaptive grid refinement
+2026-01-22 23:27:11,000 - BayesianTPEOptimizer - INFO - ℹ️    Skipping adaptive refinement - convergence criteria not met
+2026-01-22 23:27:11,000 - BayesianTPEOptimizer - INFO - ℹ️ ✅ Staged TPE optimization completed in 60.94s
+2026-01-22 23:27:11,000 - BayesianTPEOptimizer - INFO - ℹ️    Best value: 0.7346
+2026-01-22 23:27:11,001 - BayesianTPEOptimizer - INFO - ℹ️    Best params: {'kalman_Q': 0.0005324600975689569, 'kalman_R': 0.020316027766016837, 'volume_weight': 0.15000000000000002, 'volume_adaptive': False}
+2026-01-22 23:27:11,001 - BayesianTPEOptimizer - INFO - ℹ️    Total trials: 500
+[2026-01-22 23:27:11.182] SUCCESS: ✅ Layer 0 Complete
+[2026-01-22 23:27:11.182] WARNING: ⚠️ Layer0 price propagation failed for ETH: 'vwap_weight'
+[2026-01-22 23:27:11.182] WARNING: ⚠️ Layer0 price propagation failed for BTC: 'vwap_weight'
+[2026-01-22 23:27:11.182] WARNING: ⚠️ Layer0 price propagation failed for SOL: 'vwap_weight'
+[2026-01-22 23:27:11.182] WARNING: ⚠️ Layer0 price propagation failed for BNB: 'vwap_weight'
+[2026-01-22 23:27:11.182] INFO: 🔹 Running Layer 1: Weighting Optimization...
+[2026-01-22 23:27:11.183] INFO: ⚙️ Running Layer 1 Weighting Optimization for ETHUSDT 15m...
+2026-01-22 23:27:11,224 - src.training.steps.labeling.unified_price_layer2 - INFO - ℹ️ Loaded Layer0 params: Q=0.0005324600975689, R=0.0203160277660168, vwap_weight=0.4
+2026-01-22 23:27:11,224 - src.training.steps.labeling.unified_price_layer2 - INFO - ℹ️ Enhanced features: hampel_filter=False, adaptive_kalman=False, robust_vwap=False, wavelet=True
+[2026-01-22 23:27:11.224] INFO: ✅ Loaded Layer0 params: Q=0.0005324600975689, R=0.0203160277660168
+2026-01-22 23:27:11,227 - src.training.steps.labeling.unified_price_layer2 - INFO - ℹ️ 📊 Wavelet Denoising SNR: 35.69dB -> 40.29dB (+4.60dB)
+[2026-01-22 23:27:11.369] INFO: ✅ Using Layer0-optimized unified price for Layer1 optimization
+[2026-01-22 23:27:11.380] ⚖️ Computing uniqueness weights for 17281 events... INFO
+[2026-01-22 23:27:11.394] ✅ Uniqueness weights computed. Mean: 1.0000, Min: 0.9943, Max: 23.8636 SUCCESS
+2026-01-22 23:27:11,418 - src.utils.ml_common.optimization.execution_mode_adapter - INFO - ℹ️ Overriding explicit LIGHT execution_mode with global BLANK mode
+2026-01-22 23:27:11,418 - src.utils.ml_common.optimization.execution_mode_adapter - INFO - ℹ️ ⚡ BLANK mode: Reducing HPO trials 20 → 5 (25%)
+2026-01-22 23:27:11,418 - src.utils.ml_common.optimization.execution_mode_adapter - INFO - ℹ️ ⚡ BLANK mode: MAINTAINING CV folds 5 → 5 (critical for variance)
+2026-01-22 23:27:11,418 - src.utils.ml_common.optimization.execution_mode_adapter - INFO - ℹ️ 🔍 BLANK MODE IMPROVEMENT: Each CV fold will have ~20% of data (maintaining variance)
+2026-01-22 23:27:11,418 - src.utils.ml_common.optimization.execution_mode_adapter - INFO - ℹ️ 🔍 VARIANCE PROTECTION: 5-fold CV prevents overfitting and ensures reliable validation
+2026-01-22 23:27:11,419 - src.utils.hardware.unified_hardware_manager.UnifiedHardwareManager - INFO - ℹ️ ✅ Unified Hardware Manager fully initialized
+2026-01-22 23:27:11,419 - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - INFO - ℹ️ 🔧 Switched back to normal thresholds
+2026-01-22 23:27:11,419 - src.utils.hardware.unified_hardware_manager.UnifiedHardwareManager - INFO - ℹ️ 🔧 Switched back to normal thresholds
+2026-01-22 23:27:11,419 - src.utils.matrix_operations.hardware_integration.HardwareOptimizedMatrixProcessor - INFO - ℹ️ ✅ M1 GPU acceleration available
+2026-01-22 23:27:11,419 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧠 Memory limit set to 8.0 GB (8589934592.0 bytes)
+2026-01-22 23:27:11,455 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧠 M1 Memory Optimizer initialized for M1
+2026-01-22 23:27:11,456 - src.utils.matrix_operations.hardware_integration.HardwareOptimizedMatrixProcessor - INFO - ℹ️ ✅ M1 Memory optimizer initialized
+2026-01-22 23:27:11,456 - src.utils.matrix_operations.hardware_integration.HardwareOptimizedMatrixProcessor - INFO - ℹ️ ✅ M1 CPU optimizer initialized
+2026-01-22 23:27:11,456 - src.utils.matrix_operations.hardware_integration.HardwareOptimizedMatrixProcessor - INFO - ℹ️ ✅ Memory monitor initialized
+2026-01-22 23:27:11,456 - src.utils.matrix_operations.hardware_integration.HardwareOptimizedMatrixProcessor - INFO - ℹ️ 🚀 Hardware-Optimized Matrix Processor initialized
+2026-01-22 23:27:11,457 - src.utils.matrix_operations.hardware_integration.HardwareOptimizedMatrixProcessor - INFO - ℹ️ 🖥️ GPU Info: {'is_m1': True, 'm1_generation': 'm1', 'mps_available': True, 'gpu_memory': 'Shared system memory', 'gpu_name': 'Apple Silicon GPU (MPS) - M1', 'compatibility_mode': 'legacy_m1', 'fallback_available': True, 'device': 'mps'}
+2026-01-22 23:27:11,457 - src.utils.matrix_operations.hardware_integration.HardwareOptimizedMatrixProcessor - INFO - ℹ️ 💻 CPU Info: {'is_m1': True, 'm1_generation': 'm1', 'total_cores': 8, 'performance_cores': 4, 'efficiency_cores': 4, 'optimal_workers': 4, 'architecture': 'arm64', 'm1_optimizations_enabled': True, 'legacy_mode': False, 'compatibility_mode': 'auto', 'version': '2.0.0'}
+2026-01-22 23:27:11,457 - src.utils.matrix_operations.hardware_integration.HardwareOptimizedMatrixProcessor - INFO - ℹ️ 🧠 Memory Stats: {'current_mb': 836.15625, 'peak_mb': 836.15625, 'usage_percentage': 10.206985473632812, 'max_mb': 8192.0, 'is_pressure': False, 'is_critical': False, 'history_count': 8}
+2026-01-22 23:27:11,494 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧠 M1 Memory Optimizer initialized for M1
+2026-01-22 23:27:11,495 - src.utils.matrix_operations.batch_operations - INFO - ℹ️ ✅ Batch matrix processor initialized with M1 optimization
+2026-01-22 23:27:11,495 - BayesianTPEOptimizer - INFO - ℹ️ ✅ Hardware optimization components initialized
+2026-01-22 23:27:11,495 - BayesianTPEOptimizer - INFO - ℹ️ ✅ VectorBT Rolling Optimizer initialized
+2026-01-22 23:27:11,495 - src.feature_generation.utils.unified_vectorization_manager - INFO - ℹ️ ✅ M1 GPU acceleration available: m1
+2026-01-22 23:27:11,496 - BayesianTPEOptimizer - INFO - ℹ️ ✅ Enhanced Unified Vectorization Manager initialized
+2026-01-22 23:27:11,496 - BayesianTPEOptimizer - INFO - ℹ️ 🚀 VectorBT GPU acceleration enabled
+2026-01-22 23:27:11,496 - BayesianTPEOptimizer - INFO - ℹ️ ✅ VectorBT optimization components initialized
+2026-01-22 23:27:11,496 - BayesianTPEOptimizer - INFO - ℹ️ ✅ VectorBT-Optimized BayesianTPEOptimizer initialized
+2026-01-22 23:27:11,497 - BayesianTPEOptimizer - INFO - ℹ️    → Hardware optimization: Enabled
+2026-01-22 23:27:11,497 - BayesianTPEOptimizer - INFO - ℹ️    → VectorBT optimization: Enabled
+2026-01-22 23:27:11,497 - BayesianTPEOptimizer - INFO - ℹ️ 🚀 Starting staged TPE optimization
+2026-01-22 23:27:11,497 - BayesianTPEOptimizer - INFO - ℹ️    Search space: ['mag_compression', 'uniq_intensity', 'quality_intensity', 'quality_floor', 'exp_mag', 'exp_learn', 'exp_uniq', 'exp_cross', 'downside_multiplier', 'mag_clip_pct', 'time_decay_halflife']
+2026-01-22 23:27:11,498 - BayesianTPEOptimizer - INFO - ℹ️    Stages:   TPE
+2026-01-22 23:27:11,498 - BayesianTPEOptimizer - INFO - ℹ️ 🔍 Stage 3: TPE optimization (5 trials)
+[2026-01-22 23:27:11.505] WARNING: ⚠️ vol_proxy contains 20 non-finite values; replacing with nan.
+[2026-01-22 23:27:11.510] INFO: 📊 Weights summary — mean: 1.0000, min: 0.0725, max: 943.5194, neg share: 49.41%, neg weight avg: 1.0300
+[2026-01-22 23:27:11.531] INFO: 📊 Weights summary — mean: 1.0000, min: 0.0161, max: 682.2781, neg share: 49.41%, neg weight avg: 1.0620
+[2026-01-22 23:27:11.554] INFO: 📊 Weights summary — mean: 1.0000, min: 0.0150, max: 254.3046, neg share: 49.41%, neg weight avg: 1.0341
+[2026-01-22 23:27:11.576] INFO: 📊 Weights summary — mean: 1.0000, min: 0.0066, max: 620.1287, neg share: 49.41%, neg weight avg: 1.0444
+[2026-01-22 23:27:11.603] INFO: 📊 Weights summary — mean: 1.0000, min: 0.0150, max: 527.1036, neg share: 49.41%, neg weight avg: 0.9988
+2026-01-22 23:27:11,623 - BayesianTPEOptimizer - INFO - ℹ️    TPE: 5 trials, best: -649.5810
+2026-01-22 23:27:11,623 - BayesianTPEOptimizer - INFO - ℹ️    TPE best params: {'mag_compression': 1.0123620356542087, 'uniq_intensity': 2.9014286128198323, 'quality_intensity': 3.6599697090570253, 'quality_floor': 0.37926216630837006, 'exp_mag': 1.0653039046287323, 'exp_learn': 0.23399178050430397, 'exp_uniq': 1.0238303899532655, 'exp_cross': 1.7992642186624028, 'downside_multiplier': 1.2404460046972834, 'mag_clip_pct': 0.9783229031118418, 'time_decay_halflife': 0.041168988591604894}
+2026-01-22 23:27:11,624 - BayesianTPEOptimizer - INFO - ℹ️ ✅ Staged TPE optimization completed in 0.13s
+2026-01-22 23:27:11,624 - BayesianTPEOptimizer - INFO - ℹ️    Best value: -649.5810
+2026-01-22 23:27:11,624 - BayesianTPEOptimizer - INFO - ℹ️    Best params: {'mag_compression': 1.0123620356542087, 'uniq_intensity': 2.9014286128198323, 'quality_intensity': 3.6599697090570253, 'quality_floor': 0.37926216630837006, 'exp_mag': 1.0653039046287323, 'exp_learn': 0.23399178050430397, 'exp_uniq': 1.0238303899532655, 'exp_cross': 1.7992642186624028, 'downside_multiplier': 1.2404460046972834, 'mag_clip_pct': 0.9783229031118418, 'time_decay_halflife': 0.041168988591604894}
+2026-01-22 23:27:11,624 - BayesianTPEOptimizer - INFO - ℹ️    Total trials: 5
+[2026-01-22 23:27:11.624] SUCCESS: ✅ Layer 1 optimization complete. Best score=-649.5810
+[2026-01-22 23:27:11.624] INFO:    Best weighting params: {'mag_compression': 1.0123620356542087, 'learn_slope': 1.0, 'learn_center': 0.5, 'uniq_intensity': 2.9014286128198323, 'quality_intensity': 3.6599697090570253, 'quality_floor': 0.37926216630837006, 'exp_mag': 1.0653039046287323, 'exp_learn': 0.23399178050430397, 'exp_uniq': 1.0238303899532655, 'exp_cross': 1.7992642186624028, 'downside_multiplier': 1.2404460046972834, 'mag_clip_pct': 0.9783229031118418, 'time_decay_halflife': 0.041168988591604894}
+[2026-01-22 23:27:11.674] INFO:    Layer 1 best score components: score=1.8053, MAS=0.7291, WES=0.7416, NWP=0.0181, UOP_penalty=0.0000, VDP_penalty=0.0000, committee_alpha=nan, committee_mag_clip=nan, committee_factor_min=nan, committee_factor_max=nan
+[2026-01-22 23:27:11.936] INFO:    💾 Saved Layer 1 trial metrics to outcomes/hpo_layer1_trials_ETHUSDT_15m_20260122_222711.csv
+[2026-01-22 23:27:11.936] SUCCESS: ✅ Layer 1 Complete
+[2026-01-22 23:27:11.936] INFO: 🔹 Running Layer 2: Causal Labeling (Primary Model)...
+[2026-01-22 23:27:11.937] 🛠️ Initialized BaseStep for 'label_based_layer_2'
+2026-01-22 23:27:11,937 - src.utils.ml_common.optimization.execution_mode_adapter - INFO - ℹ️ BLANK mode: Bootstrap samples 15 → 10 (25%)
+[2026-01-22 23:27:11.937] INFO:    🧠 Initializing Outcome Matrix Cache and Feature Bank...
+[2026-01-22 23:27:11.937] INFO:    ⚡ Pre-computing vectorized base features for 17281 bars...
+[2026-01-22 23:27:12.595] INFO: 🌐 Cross-Asset Layer2: Building panel + market state vector
+[2026-01-22 23:27:12.595] INFO: [PanelDataProcessor] init
+[2026-01-22 23:27:12.595] INFO: [PanelDataProcessor] fit_transform start
+[2026-01-22 23:27:12.595] INFO: [PanelDataProcessor] fit start assets=4
+[2026-01-22 23:27:12.595] SUCCESS: [PanelDataProcessor] fit done columns=20
+[2026-01-22 23:27:12.595] INFO: [PanelDataProcessor] transform_to_panel start assets=4
+[2026-01-22 23:27:12.675] INFO: 🔄 Applying fractional differencing with d=0.4000
+[2026-01-22 23:27:13.356] INFO: 🔄 Applying fractional differencing with d=0.4000
+[2026-01-22 23:27:13.387] INFO: 🔄 Applying fractional differencing with d=0.4000
+[2026-01-22 23:27:13.441] INFO: 🔄 Applying fractional differencing with d=0.4000
+[2026-01-22 23:27:13.463] WARNING: ⚠️ Cross-asset pipeline failed: cannot insert timestamp, already exists
+[2026-01-22 23:27:13.472] INFO: 📊 Converting to dollar bars (target: 96 bars/day)...
+[2026-01-22 23:27:13.472] 📁 File pre-filter: found 52 total files for ETHUSDT 1m INFO
+[2026-01-22 23:27:13.473]   → Start date filter: 2025-05-13 INFO
+[2026-01-22 23:27:13.473]   → End date filter: 2025-12-10 INFO
+2026-01-22 23:27:13,494 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2021_10.parquet -> (1560, 26)
+2026-01-22 23:27:13,533 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2021_11.parquet -> (43200, 26)
+2026-01-22 23:27:13,561 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2021_12.parquet -> (44640, 26)
+2026-01-22 23:27:13,587 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2022_01.parquet -> (44640, 26)
+2026-01-22 23:27:13,616 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2022_02.parquet -> (40320, 26)
+2026-01-22 23:27:13,651 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2022_03.parquet -> (44640, 26)
+2026-01-22 23:27:13,678 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2022_04.parquet -> (43200, 26)
+2026-01-22 23:27:13,709 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2022_05.parquet -> (44640, 26)
+2026-01-22 23:27:13,733 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2022_06.parquet -> (43200, 26)
+2026-01-22 23:27:13,765 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2022_07.parquet -> (44640, 26)
+2026-01-22 23:27:13,792 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2022_08.parquet -> (44640, 26)
+2026-01-22 23:27:13,818 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2022_09.parquet -> (43200, 26)
+2026-01-22 23:27:13,894 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2022_10.parquet -> (44640, 26)
+2026-01-22 23:27:13,930 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2022_11.parquet -> (43200, 26)
+2026-01-22 23:27:13,960 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2022_12.parquet -> (44640, 26)
+2026-01-22 23:27:13,992 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2023_01.parquet -> (44640, 26)
+2026-01-22 23:27:14,022 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2023_02.parquet -> (40320, 26)
+2026-01-22 23:27:14,057 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2023_03.parquet -> (44560, 26)
+2026-01-22 23:27:14,093 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2023_04.parquet -> (43200, 26)
+2026-01-22 23:27:14,205 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2023_05.parquet -> (44640, 26)
+2026-01-22 23:27:14,226 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2023_06.parquet -> (43200, 26)
+2026-01-22 23:27:14,251 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2023_07.parquet -> (44640, 26)
+2026-01-22 23:27:14,277 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2023_08.parquet -> (44640, 26)
+2026-01-22 23:27:14,304 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2023_09.parquet -> (43200, 26)
+2026-01-22 23:27:14,333 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2023_10.parquet -> (44640, 26)
+2026-01-22 23:27:14,361 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2023_11.parquet -> (43200, 26)
+2026-01-22 23:27:14,387 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2023_12.parquet -> (44640, 26)
+2026-01-22 23:27:14,416 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2024_01.parquet -> (44640, 26)
+2026-01-22 23:27:14,439 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2024_02.parquet -> (41760, 26)
+2026-01-22 23:27:14,498 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2024_03.parquet -> (44640, 26)
+2026-01-22 23:27:14,528 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2024_04.parquet -> (43200, 26)
+2026-01-22 23:27:14,557 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2024_05.parquet -> (44640, 26)
+2026-01-22 23:27:14,593 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2024_06.parquet -> (43200, 26)
+2026-01-22 23:27:14,642 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2024_07.parquet -> (44640, 26)
+2026-01-22 23:27:14,694 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2024_08.parquet -> (44640, 26)
+2026-01-22 23:27:14,738 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2024_09.parquet -> (43200, 26)
+2026-01-22 23:27:14,776 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2024_10.parquet -> (44640, 26)
+2026-01-22 23:27:14,827 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2024_11.parquet -> (43200, 26)
+2026-01-22 23:27:14,870 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2024_12.parquet -> (44640, 26)
+2026-01-22 23:27:14,903 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2025_01.parquet -> (44640, 26)
+2026-01-22 23:27:14,934 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2025_02.parquet -> (40320, 26)
+2026-01-22 23:27:14,959 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2025_03.parquet -> (44640, 26)
+2026-01-22 23:27:14,986 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2025_04.parquet -> (43200, 26)
+2026-01-22 23:27:15,021 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2025_05.parquet -> (44640, 26)
+2026-01-22 23:27:15,050 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2025_06.parquet -> (43200, 26)
+2026-01-22 23:27:15,076 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2025_07.parquet -> (44640, 26)
+2026-01-22 23:27:15,104 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2025_08.parquet -> (44640, 26)
+2026-01-22 23:27:15,131 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2025_09.parquet -> (43200, 26)
+2026-01-22 23:27:15,160 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2025_10.parquet -> (44640, 26)
+2026-01-22 23:27:15,961 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 21372 objects collected
+2026-01-22 23:27:16,002 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2025_11.parquet -> (43200, 26)
+2026-01-22 23:27:16,044 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2025_12.parquet -> (44640, 26)
+2026-01-22 23:27:16,069 - System.ParquetUtils - INFO - ℹ️ ✅ Read parquet: ethusdt_1m_2026_01.parquet -> (13684, 11)
+2026-01-22 23:27:16,072 - KlinesParquetManager - INFO - ℹ️ ✅ Combining 52 dataframes for ETHUSDT 1m from 2025-05-13 to 2025-12-10 -> 2206844 records
+2026-01-22 23:27:16,073 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 1/52: 1560 records, index range: 2021-10-30 22:00:00 to 2021-10-31 23:59:00
+2026-01-22 23:27:16,078 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 2/52: 43200 records, index range: 2021-11-01 00:00:00 to 2021-11-30 23:59:00
+2026-01-22 23:27:16,080 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 3/52: 44640 records, index range: 2021-12-01 00:00:00 to 2021-12-31 23:59:00
+2026-01-22 23:27:16,080 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 4/52: 44640 records, index range: 2022-01-01 00:00:00 to 2022-01-31 23:59:00
+2026-01-22 23:27:16,081 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 5/52: 40320 records, index range: 2022-02-01 00:00:00 to 2022-02-28 23:59:00
+2026-01-22 23:27:16,081 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 6/52: 44640 records, index range: 2022-03-01 00:00:00 to 2022-03-31 23:59:00
+2026-01-22 23:27:16,082 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 7/52: 43200 records, index range: 2022-04-01 00:00:00 to 2022-04-30 23:59:00
+2026-01-22 23:27:16,082 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 8/52: 44640 records, index range: 2022-05-01 00:00:00 to 2022-05-31 23:59:00
+2026-01-22 23:27:16,083 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 9/52: 43200 records, index range: 2022-06-01 00:00:00 to 2022-06-30 23:59:00
+2026-01-22 23:27:16,083 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 10/52: 44640 records, index range: 2022-07-01 00:00:00 to 2022-07-31 23:59:00
+2026-01-22 23:27:16,083 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 11/52: 44640 records, index range: 2022-08-01 00:00:00 to 2022-08-31 23:59:00
+2026-01-22 23:27:16,084 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 12/52: 43200 records, index range: 2022-09-01 00:00:00 to 2022-09-30 23:59:00
+2026-01-22 23:27:16,085 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 13/52: 44640 records, index range: 2022-10-01 00:00:00 to 2022-10-31 23:59:00
+2026-01-22 23:27:16,085 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 14/52: 43200 records, index range: 2022-11-01 00:00:00 to 2022-11-30 23:59:00
+2026-01-22 23:27:16,087 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 15/52: 44640 records, index range: 2022-12-01 00:00:00 to 2022-12-31 23:59:00
+2026-01-22 23:27:16,088 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 16/52: 44640 records, index range: 2023-01-01 00:00:00 to 2023-01-31 23:59:00
+2026-01-22 23:27:16,089 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 17/52: 40320 records, index range: 2023-02-01 00:00:00 to 2023-02-28 23:59:00
+2026-01-22 23:27:16,089 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 18/52: 44560 records, index range: 2023-03-01 00:00:00 to 2023-03-31 23:59:00
+2026-01-22 23:27:16,090 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 19/52: 43200 records, index range: 2023-04-01 00:00:00 to 2023-04-30 23:59:00
+2026-01-22 23:27:16,090 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 20/52: 44640 records, index range: 2023-05-01 00:00:00 to 2023-05-31 23:59:00
+2026-01-22 23:27:16,090 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 21/52: 43200 records, index range: 2023-06-01 00:00:00 to 2023-06-30 23:59:00
+2026-01-22 23:27:16,091 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 22/52: 44640 records, index range: 2023-07-01 00:00:00 to 2023-07-31 23:59:00
+2026-01-22 23:27:16,092 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 23/52: 44640 records, index range: 2023-08-01 00:00:00 to 2023-08-31 23:59:00
+2026-01-22 23:27:16,092 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 24/52: 43200 records, index range: 2023-09-01 00:00:00 to 2023-09-30 23:59:00
+2026-01-22 23:27:16,093 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 25/52: 44640 records, index range: 2023-10-01 00:00:00 to 2023-10-31 23:59:00
+2026-01-22 23:27:16,093 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 26/52: 43200 records, index range: 2023-11-01 00:00:00 to 2023-11-30 23:59:00
+2026-01-22 23:27:16,094 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 27/52: 44640 records, index range: 2023-12-01 00:00:00 to 2023-12-31 23:59:00
+2026-01-22 23:27:16,094 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 28/52: 44640 records, index range: 2024-01-01 00:00:00 to 2024-01-31 23:59:00
+2026-01-22 23:27:16,095 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 29/52: 41760 records, index range: 2024-02-01 00:00:00 to 2024-02-29 23:59:00
+2026-01-22 23:27:16,096 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 30/52: 44640 records, index range: 2024-03-01 00:00:00 to 2024-03-31 23:59:00
+2026-01-22 23:27:16,097 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 31/52: 43200 records, index range: 2024-04-01 00:00:00 to 2024-04-30 23:59:00
+2026-01-22 23:27:16,101 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 32/52: 44640 records, index range: 2024-05-01 00:00:00 to 2024-05-31 23:59:00
+2026-01-22 23:27:16,102 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 33/52: 43200 records, index range: 2024-06-01 00:00:00 to 2024-06-30 23:59:00
+2026-01-22 23:27:16,102 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 34/52: 44640 records, index range: 2024-07-01 00:00:00 to 2024-07-31 23:59:00
+2026-01-22 23:27:16,103 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 35/52: 44640 records, index range: 2024-08-01 00:00:00 to 2024-08-31 23:59:00
+2026-01-22 23:27:16,103 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 36/52: 43200 records, index range: 2024-09-01 00:00:00 to 2024-09-30 23:59:00
+2026-01-22 23:27:16,104 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 37/52: 44640 records, index range: 2024-10-01 00:00:00 to 2024-10-31 23:59:00
+2026-01-22 23:27:16,104 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 38/52: 43200 records, index range: 2024-11-01 00:00:00 to 2024-11-30 23:59:00
+2026-01-22 23:27:16,104 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 39/52: 44640 records, index range: 2024-12-01 00:00:00 to 2024-12-31 23:59:00
+2026-01-22 23:27:16,104 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 40/52: 44640 records, index range: 2025-01-01 00:00:00 to 2025-01-31 23:59:00
+2026-01-22 23:27:16,104 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 41/52: 40320 records, index range: 2025-02-01 00:00:00 to 2025-02-28 23:59:00
+2026-01-22 23:27:16,105 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 42/52: 44640 records, index range: 2025-03-01 00:00:00 to 2025-03-31 23:59:00
+2026-01-22 23:27:16,105 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 43/52: 43200 records, index range: 2025-04-01 00:00:00 to 2025-04-30 23:59:00
+2026-01-22 23:27:16,105 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 44/52: 44640 records, index range: 2025-05-01 00:00:00 to 2025-05-31 23:59:00
+2026-01-22 23:27:16,107 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 45/52: 43200 records, index range: 2025-06-01 00:00:00 to 2025-06-30 23:59:00
+2026-01-22 23:27:16,108 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 46/52: 44640 records, index range: 2025-07-01 00:00:00 to 2025-07-31 23:59:00
+2026-01-22 23:27:16,110 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 47/52: 44640 records, index range: 2025-08-01 00:00:00 to 2025-08-31 23:59:00
+2026-01-22 23:27:16,111 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 48/52: 43200 records, index range: 2025-09-01 00:00:00 to 2025-09-30 23:59:00
+2026-01-22 23:27:16,112 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 49/52: 44640 records, index range: 2025-10-01 00:00:00 to 2025-10-31 23:59:00
+2026-01-22 23:27:16,113 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 50/52: 43200 records, index range: 2025-11-01 00:00:00 to 2025-11-30 23:59:00
+2026-01-22 23:27:16,113 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 51/52: 44640 records, index range: 2025-12-01 00:00:00 to 2025-12-31 23:59:00
+2026-01-22 23:27:16,114 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: DataFrame 52/52: 13684 records, index range: 2026-01-01 00:00:00 to 2026-01-10 12:03:00
+2026-01-22 23:27:16,790 - KlinesParquetManager - INFO - ℹ️ 🔧 Reconstructing 'timestamp' column from DatetimeIndex (was 11.3% valid)
+2026-01-22 23:27:17,407 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: About to check for duplicates in 2206844 records
+2026-01-22 23:27:17,409 - KlinesParquetManager - INFO - ℹ️ 🔍 DEBUG: Combined DF date range: 2021-10-30 22:00:00 to 2026-01-10 12:03:00
+2026-01-22 23:27:17,409 - KlinesParquetManager - INFO - ℹ️ ✅ No duplicate timestamps found
+2026-01-22 23:27:18,583 - KlinesParquetManager - INFO - ℹ️ ✅ Data loaded: ETHUSDT 1m from 2025-05-13 to 2025-12-10 -> 2206844 records
+[2026-01-22 23:27:18.701] INFO:    [DollarBars] 'quote_volume' missing or mostly empty (3483/2206844), recalculating from vol*close
+[2026-01-22 23:27:19.158] SUCCESS:    ✅ Dollar bars: 17281 → 132484 samples (avg duration: 16.7 min)
+[2026-01-22 23:27:19.217] INFO: 📊 Using dollar bars: 17281 → 132484 samples
+[2026-01-22 23:27:19.268] INFO: 🔄 Explicit resume requested from: final_processing
+2026-01-22 23:27:19,476 - src.training.steps.labeling.layer2_checkpoint_manager - INFO - ℹ️ ✅ Loaded checkpoint 'simulation_complete' for ETHUSDT (4 keys)
+2026-01-22 23:27:19,476 - src.training.steps.labeling.layer2_checkpoint_manager - INFO - ℹ️ 🗑️ Deleted 0 checkpoints from 'final_processing' onwards for ETHUSDT
+[2026-01-22 23:27:19.476] INFO: 🔄 Resuming Layer 2 from sub-step: final_processing
+2026-01-22 23:27:19,477 - src.training.steps.labeling.layer2_checkpoint_manager - INFO - ℹ️ ✅ Loaded checkpoint 'simulation_complete' for ETHUSDT (4 keys)
+[2026-01-22 23:27:19.476] INFO: Starting Layer 2 Pipeline...
+[2026-01-22 23:27:19.476] INFO: 🔬 Causal Framework Enabled - Using Modern De Prado Approach (Merged)
+[2026-01-22 23:27:19.476] INFO:    ⏭️ Skipping regime generation (resuming from final_processing)
+[2026-01-22 23:27:19.483] INFO: 🚀 Causal Layer 2 Pipeline: Starting modern De Prado framework...
+[2026-01-22 23:27:19.483] INFO:    ⏭️ Skipping causal initialization (resuming from final_processing)
+[2026-01-22 23:27:19.483] INFO:    🔧 Restoring causal components state...
+[2026-01-22 23:27:19.483] INFO: 🔧 Layer 2: Checking Causal Module Availability...
+[2026-01-22 23:27:19.483] INFO: ✅ Layer 2: Causal modules available
+[2026-01-22 23:27:19.483] INFO: 🔍 Layer 2: Validating framework separation...
+[2026-01-22 23:27:19.483] INFO: 🔍 Validating Framework Separation...
+[2026-01-22 23:27:19.483] INFO: 🔬 Using Causal Framework (De Prado 2026)
+[2026-01-22 23:27:19.483] INFO: ✅ Layer 2: Framework separation validated
+[2026-01-22 23:27:19.483] INFO: 🔧 Layer 2: Initializing Causal Framework Components...
+[2026-01-22 23:27:19.483] INFO:    📊 Layer 2: Initializing Causal Discovery...
+[2026-01-22 23:27:19.483] INFO:    🚀 Layer 2: Using Huber Node-wise Causal Discovery (Fast & Robust)...
+[2026-01-22 23:27:19.483] SUCCESS:    ✅ Layer 2: Causal Discovery initialized
+[2026-01-22 23:27:19.483] INFO:    🔧 Layer 2: Initializing Causal Feature Engineering...
+[2026-01-22 23:27:19.483] SUCCESS:    ✅ Layer 2: Causal Feature Engineering initialized
+[2026-01-22 23:27:19.483] INFO:    🎯 Layer 2: Initializing Invariant Risk Minimization...
+[2026-01-22 23:27:19.486] SUCCESS:    ✅ Layer 2: Invariant Risk Minimization initialized
+[2026-01-22 23:27:19.486] INFO:    🎯 Layer 2: Initializing Causal Target Computer...
+[2026-01-22 23:27:19.486] SUCCESS:    ✅ Layer 2: Causal Target Computer initialized
+[2026-01-22 23:27:19.486] INFO:    🚨 Layer 2: Initializing Causal Surprise Detector...
+[2026-01-22 23:27:19.486] SUCCESS:    ✅ Layer 2: Causal Surprise Detector ready
+[2026-01-22 23:27:19.486] SUCCESS: 🎯 Layer 2: All Causal Components Initialized Successfully
+[2026-01-22 23:27:19.486] INFO:    ⏭️ Skipping causal discovery (resuming from final_processing)
+2026-01-22 23:27:20,593 - src.training.steps.labeling.layer2_checkpoint_manager - INFO - ℹ️ ✅ Loaded checkpoint 'causal_graph_saved' for ETHUSDT (3 keys)
+[2026-01-22 23:27:20.594] INFO:    📂 Restored causal graph: 5 variables
+[2026-01-22 23:27:20.594] INFO:    ⏭️ Skipping specialist training (resuming from final_processing)
+2026-01-22 23:27:26,986 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 16371 objects collected
+2026-01-22 23:27:28,664 - src.training.steps.labeling.layer2_checkpoint_manager - INFO - ℹ️ ✅ Loaded checkpoint 'specialist_training' for ETHUSDT (3 keys)
+[2026-01-22 23:27:28.679] INFO:    📂 Restored 13 specialists from 'specialist_training'
+[2026-01-22 23:27:29.313] INFO: 🎯 Step 3: Generating causal surprise events...
+[2026-01-22 23:27:29.313] INFO: 🎯 Layer 2: Generating Causal Surprise Events...
+[2026-01-22 23:27:29.313] INFO: 🏹 Hunter Mode Active: Setting Focal Gamma = 2.0 for Hard Negative Mining
+[2026-01-22 23:27:29.313] INFO:    📝 Layer 2: Registering specialists with surprise detector...
+[2026-01-22 23:27:29.439] INFO: ▶️ register_specialist | specialist_name=str(information_specialist), predictions=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=b592a330), targets=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=0617bf93)[2026-01-22 23:27:29.439] INFO: ▶️ register_specialist | specialist_name=str(inventory_specialist), predictions=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=b8cd7f9d), targets=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=0617bf93)[2026-01-22 23:27:29.441] INFO: ▶️ register_specialist | specialist_name=str(volatility_specialist), predictions=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=2122910e), targets=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=0617bf93)
+[2026-01-22 23:27:29.441] INFO: ▶️ register_specialist | specialist_name=str(volume_specialist), predictions=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=f578a47a), targets=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=0617bf93)
+
+
+[2026-01-22 23:27:29.452] INFO: 📝 Registered specialist: information_specialist[2026-01-22 23:27:29.452] INFO: 📝 Registered specialist: inventory_specialist
+[2026-01-22 23:27:29.453] INFO:    - Samples: 132484
+[2026-01-22 23:27:29.452] INFO: 📝 Registered specialist: volatility_specialist
+[2026-01-22 23:27:29.453] INFO:    - Samples: 132484
+[2026-01-22 23:27:29.453] INFO:    - Global MAD: 0.568425
+[2026-01-22 23:27:29.453] INFO:    - Global MAD: 0.881357
+[2026-01-22 23:27:29.452] INFO: 📝 Registered specialist: volume_specialist
+[2026-01-22 23:27:29.453] INFO:    - Samples: 132484
+[2026-01-22 23:27:29.453] INFO:    - Global MAD: 1.165859
+
+[2026-01-22 23:27:29.454] INFO:    - Samples: 132484
+[2026-01-22 23:27:29.454] INFO:    - Global MAD: 0.710478
+[2026-01-22 23:27:29.454] INFO:    - Mean error: 0.001580
+[2026-01-22 23:27:29.454] INFO:    - Mean error: 0.002777
+[2026-01-22 23:27:29.455] INFO:    - Mean error: 0.000284
+[2026-01-22 23:27:29.455] INFO:    - Mean error: 0.015080
+[2026-01-22 23:27:29.457] INFO:    - Error std: 1.579357
+[2026-01-22 23:27:29.457] SUCCESS: ✅ register_specialist complete. result=dict(len=3)
+[2026-01-22 23:27:29.457] INFO:    - Error std: 0.989762
+[2026-01-22 23:27:29.457] SUCCESS: ✅ register_specialist complete. result=dict(len=3)
+[2026-01-22 23:27:29.459] INFO:    - Error std: 1.004422
+[2026-01-22 23:27:29.460] SUCCESS: ✅ register_specialist complete. result=dict(len=3)
+[2026-01-22 23:27:29.461] INFO:    - Error std: 1.120765
+[2026-01-22 23:27:29.461] SUCCESS: ✅ register_specialist complete. result=dict(len=3)
+[2026-01-22 23:27:29.467] INFO: ▶️ register_specialist | specialist_name=str(cusum_break_specialist), predictions=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=bbd6f4c6), targets=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=0617bf93)
+[2026-01-22 23:27:29.467] INFO: ▶️ register_specialist | specialist_name=str(entropy_specialist), predictions=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=c2c4baf7), targets=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=0617bf93)
+[2026-01-22 23:27:29.468] INFO: ▶️ register_specialist | specialist_name=str(tick_rule_specialist), predictions=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=7d52e07d), targets=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=0617bf93)
+[2026-01-22 23:27:29.470] INFO: ▶️ register_specialist | specialist_name=str(fractal_efficiency_specialist), predictions=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=3ef58e24), targets=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=0617bf93)
+[2026-01-22 23:27:29.475] INFO: 📝 Registered specialist: cusum_break_specialist
+[2026-01-22 23:27:29.475] INFO:    - Samples: 132484
+[2026-01-22 23:27:29.475] INFO:    - Global MAD: 1.102332
+[2026-01-22 23:27:29.475] INFO: 📝 Registered specialist: entropy_specialist
+[2026-01-22 23:27:29.475] INFO:    - Samples: 132484
+[2026-01-22 23:27:29.476] INFO:    - Global MAD: 0.901464
+[2026-01-22 23:27:29.476] INFO: 📝 Registered specialist: tick_rule_specialist
+[2026-01-22 23:27:29.476] INFO:    - Samples: 132484
+[2026-01-22 23:27:29.478] INFO:    - Global MAD: 1.082625[2026-01-22 23:27:29.476] INFO: 📝 Registered specialist: fractal_efficiency_specialist
+[2026-01-22 23:27:29.478] INFO:    - Samples: 132484
+[2026-01-22 23:27:29.478] INFO:    - Mean error: 0.029670
+[2026-01-22 23:27:29.478] INFO:    - Global MAD: 0.801868
+[2026-01-22 23:27:29.478] INFO:    - Mean error: 0.046608
+
+[2026-01-22 23:27:29.479] INFO:    - Error std: 1.279590
+[2026-01-22 23:27:29.479] SUCCESS: ✅ register_specialist complete. result=dict(len=3)
+[2026-01-22 23:27:29.479] INFO:    - Mean error: -0.003361
+[2026-01-22 23:27:29.481] INFO:    - Mean error: 0.005017
+[2026-01-22 23:27:29.481] INFO:    - Error std: 1.364618
+[2026-01-22 23:27:29.481] SUCCESS: ✅ register_specialist complete. result=dict(len=3)
+[2026-01-22 23:27:29.483] INFO:    - Error std: 1.107101
+[2026-01-22 23:27:29.483] SUCCESS: ✅ register_specialist complete. result=dict(len=3)
+[2026-01-22 23:27:29.483] INFO: ▶️ register_specialist | specialist_name=str(liquidity_shock_specialist), predictions=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=8941e71a), targets=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=0617bf93)
+[2026-01-22 23:27:29.485] INFO:    - Error std: 1.296918
+[2026-01-22 23:27:29.485] SUCCESS: ✅ register_specialist complete. result=dict(len=3)
+[2026-01-22 23:27:29.487] INFO: ▶️ register_specialist | specialist_name=str(gap_specialist), predictions=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=aeb87419), targets=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=0617bf93)
+[2026-01-22 23:27:29.495] INFO: ▶️ register_specialist | specialist_name=str(reversal_specialist), predictions=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=867091fc), targets=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=0617bf93)
+[2026-01-22 23:27:29.498] INFO: ▶️ register_specialist | specialist_name=str(trend_specialist), predictions=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=a95cca4f), targets=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=0617bf93)
+[2026-01-22 23:27:29.507] INFO: 📝 Registered specialist: gap_specialist
+[2026-01-22 23:27:29.507] INFO:    - Samples: 132484
+[2026-01-22 23:27:29.507] INFO:    - Global MAD: 0.217338
+[2026-01-22 23:27:29.507] INFO:    - Mean error: 0.000723
+[2026-01-22 23:27:29.507] INFO:    - Error std: 1.005420
+[2026-01-22 23:27:29.507] SUCCESS: ✅ register_specialist complete. result=dict(len=3)
+[2026-01-22 23:27:29.509] INFO: 📝 Registered specialist: reversal_specialist
+[2026-01-22 23:27:29.509] INFO:    - Samples: 132484
+[2026-01-22 23:27:29.509] INFO:    - Global MAD: 0.903357
+[2026-01-22 23:27:29.511] INFO: 📝 Registered specialist: liquidity_shock_specialist
+[2026-01-22 23:27:29.511] INFO:    - Samples: 132484
+[2026-01-22 23:27:29.511] INFO:    - Global MAD: 0.000067
+[2026-01-22 23:27:29.511] INFO:    - Mean error: -0.000574
+[2026-01-22 23:27:29.513] INFO: ▶️ register_specialist | specialist_name=str(volatility_breakout_specialist), predictions=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=d771f65b), targets=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=0617bf93)[2026-01-22 23:27:29.513] INFO:    - Mean error: -0.000000
+
+[2026-01-22 23:27:29.515] INFO:    - Error std: 1.151027
+[2026-01-22 23:27:29.515] SUCCESS: ✅ register_specialist complete. result=dict(len=3)
+[2026-01-22 23:27:29.515] INFO: 📝 Registered specialist: trend_specialist
+[2026-01-22 23:27:29.515] INFO:    - Samples: 132484
+[2026-01-22 23:27:29.515] INFO:    - Global MAD: 0.890544
+[2026-01-22 23:27:29.516] INFO:    - Mean error: -0.014601
+[2026-01-22 23:27:29.516] INFO:    - Error std: 0.000151
+[2026-01-22 23:27:29.516] SUCCESS: ✅ register_specialist complete. result=dict(len=3)
+[2026-01-22 23:27:29.518] INFO:    - Error std: 1.218619
+[2026-01-22 23:27:29.518] SUCCESS: ✅ register_specialist complete. result=dict(len=3)
+[2026-01-22 23:27:29.520] INFO: 📝 Registered specialist: volatility_breakout_specialist
+[2026-01-22 23:27:29.520] INFO:    - Samples: 132484
+[2026-01-22 23:27:29.520] INFO:    - Global MAD: 0.984192
+[2026-01-22 23:27:29.520] INFO:    - Mean error: 0.001365
+[2026-01-22 23:27:29.520] INFO:    - Error std: 0.998031
+[2026-01-22 23:27:29.520] SUCCESS: ✅ register_specialist complete. result=dict(len=3)
+[2026-01-22 23:27:29.521] INFO:       - Specialists registered: 13/13 payloads
+[2026-01-22 23:27:29.521] INFO:    🔍 Layer 2: Computing surprise scores across specialists...
+[2026-01-22 23:27:29.604] INFO:    🧬 Loaded regime posteriors for surprise weighting: 4 regimes
+[2026-01-22 23:27:29.621] INFO: ▶️ set_zone_score_weights | zone3_boost=float(3.0), zone2_boost=float(2.0), exposure_scalar=float(1.0)
+[2026-01-22 23:27:29.621] INFO: 🎚️ Zone score weights updated: zone3=3.00, zone2=2.00, exposure=1.00
+[2026-01-22 23:27:29.621] SUCCESS: ✅ set_zone_score_weights complete.
+[2026-01-22 23:27:29.625] INFO: ▶️ aggregate_specialist_surprise | spectral_reliability=dict(len=0), exposure_scalar=float(1.0), regime_vol=Series(len=132484, name=close, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=ef1ca166), market_data=DataFrame(shape=(132484, 7), cols=7, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=0b2a1142), regime_posteriors=DataFrame(shape=(132484, 4), cols=4, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=442605ba)
+[2026-01-22 23:27:29.625] INFO: 🔄 Aggregating Specialist Surprise (Continuous Framework)...
+[2026-01-22 23:27:29.625] INFO: ▶️ _build_error_frame | specialist_errors=dict(len=13)
+[2026-01-22 23:27:29.648] SUCCESS: ✅ _build_error_frame complete. result=DataFrame(shape=(132484, 13), cols=13, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=e35ac6ea)
+[2026-01-22 23:27:29.651] INFO: ▶️ compute_soft_surprise | errors=DataFrame(shape=(132484, 13), cols=13, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=e35ac6ea), q=float(0.975)
+[2026-01-22 23:27:29.768] SUCCESS: ✅ compute_soft_surprise complete. result=DataFrame(shape=(132484, 13), cols=13, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=70d60ceb)
+[2026-01-22 23:27:29.771] INFO: ▶️ _compute_batch_surprises | errors_df=DataFrame(shape=(132484, 13), cols=13, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=e35ac6ea), method=str(combined), market_data=DataFrame(shape=(132484, 7), cols=7, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=0b2a1142)
+[2026-01-22 23:27:31.308] INFO: ▶️ _compute_rolling_entropy | series=Series(len=132484, name=close, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=9dad7359), window=int(20), bins=int(10)
+2026-01-22 23:27:32,760 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 11092 objects collected
+[2026-01-22 23:27:33.070] SUCCESS: ✅ _compute_rolling_entropy complete. result=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=e8bd0312)
+[2026-01-22 23:27:33.094] SUCCESS: ✅ _compute_batch_surprises complete. result=DataFrame(shape=(132484, 13), cols=13, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=2d933a89)
+[2026-01-22 23:27:33.116] INFO: 📊 Integrated regime volatility weighting (mean factor: 0.958)
+[2026-01-22 23:27:33.118] INFO: ▶️ compute_regime_specific_reliability | regime_posteriors=DataFrame(shape=(132484, 4), cols=4, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=442605ba), market_data=DataFrame(shape=(132484, 7), cols=7, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=0b2a1142)
+[2026-01-22 23:27:33.118] INFO: ▶️ _build_error_frame | specialist_errors=dict(len=13)
+[2026-01-22 23:27:33.134] SUCCESS: ✅ _build_error_frame complete. result=DataFrame(shape=(132484, 13), cols=13, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=e35ac6ea)
+[2026-01-22 23:27:35.782] SUCCESS: ✅ compute_regime_specific_reliability complete. result=DataFrame(shape=(13, 4), cols=4, range=cusum_break_specialist->volume_specialist, hash=cab06d6c)
+[2026-01-22 23:27:35.785] INFO:    🧬 Applying Regime-Conditional Specialist Weighting...
+[2026-01-22 23:27:36.476] INFO:    🧭 Specialist roles: {'weak': 8, 'core': 5} (core_min=0.0385, cond_min=0.1538, core_dispersion_max=0.0769)
+[2026-01-22 23:27:36.838] INFO: ▶️ _compute_specialist_zone_levels | surprise_df=DataFrame(shape=(132484, 13), cols=13, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=2d933a89)
+2026-01-22 23:27:37,764 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧠 M1 Memory pressure at 0.82
+2026-01-22 23:27:41,951 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 10740 objects collected
+[2026-01-22 23:27:46.003] SUCCESS: ✅ _compute_specialist_zone_levels complete. result=DataFrame(shape=(132484, 13), cols=13, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=fae768ec)
+[2026-01-22 23:27:46.017] INFO: ▶️ _compute_specialist_zone_scores | zone_levels=DataFrame(shape=(132484, 13), cols=13, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=fae768ec), weights_df=DataFrame(shape=(132484, 13), cols=13, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=26cf839f)
+[2026-01-22 23:27:46.158] SUCCESS: ✅ _compute_specialist_zone_scores complete. result=DataFrame(shape=(132484, 13), cols=13, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=e4ef84f6)
+[2026-01-22 23:27:46.164] INFO: ▶️ _compute_combined_zone_score | zone_scores=DataFrame(shape=(132484, 13), cols=13, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=e4ef84f6), zone_levels=DataFrame(shape=(132484, 13), cols=13, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=fae768ec)
+[2026-01-22 23:27:46.272] SUCCESS: ✅ _compute_combined_zone_score complete. result=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=e5a2612c)
+[2026-01-22 23:27:46.334] INFO: ▶️ _calibrate_event_probability | scores=Series(len=132484, name=max_surprise, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=1bb87d94)
+[2026-01-22 23:28:18.477] SUCCESS: ✅ _calibrate_event_probability complete. result=Series(len=132484, name=max_surprise, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=1e0780ea)
+[2026-01-22 23:28:18.483] SUCCESS: ✅ Continuous surprise aggregation complete:
+[2026-01-22 23:28:18.483] INFO:    - ZoneScore Mean: 0.0000
+[2026-01-22 23:28:18.483] INFO:    - Event Prob Mean: 0.1625
+[2026-01-22 23:28:18.485] SUCCESS: ✅ aggregate_specialist_surprise complete. result=DataFrame(shape=(132484, 11), cols=11, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=e98dc4d8) events=132484
+[2026-01-22 23:28:18.497] INFO:       - Surprise features computed: 11
+[2026-01-22 23:28:18.497] INFO:       - Samples with surprise data: 132484
+[2026-01-22 23:28:18.497] INFO:    🎯 Layer 2: Generating causal events from surprise scores...
+[2026-01-22 23:28:18.497] INFO:    🔄 Attempting event generation with threshold=0.04...
+[2026-01-22 23:28:18.500] INFO: ▶️ generate_causal_events | event_threshold=float(0.04), min_event_separation=float(0.25), market_data=DataFrame(shape=(132484, 7), cols=7, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=0b2a1142), regime_posteriors=DataFrame(shape=(132484, 4), cols=4, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=442605ba)
+[2026-01-22 23:28:18.500] INFO: 🎯 Generating Causal Surprise Events...
+[2026-01-22 23:28:18.615] INFO:    🧬 Using Data-Driven Regime Thresholding (Mean Mult: 0.84)
+[2026-01-22 23:28:18.615] INFO:    📊 Threshold Check: 3535/132484 bars passed (2.67%)
+[2026-01-22 23:28:18.615] INFO:    📊 Score stats: mean=-0.0001, std=0.0060, max=2.1738
+[2026-01-22 23:28:18.616] INFO:    📊 Threshold stats: mean=-0.0000, min=-0.0000
+[2026-01-22 23:28:18.644] INFO: ▶️ _compute_rolling_entropy | series=Series(len=132484, name=close, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=9dad7359), window=int(100), bins=int(10)
+[2026-01-22 23:28:18.807] SUCCESS: ✅ _compute_rolling_entropy complete. result=Series(len=132484, name=None, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=c0a4d765)
+[2026-01-22 23:28:18.818] INFO:    🛡️ Regime Gating (Entropy×VolSpike): Filtered 481 events (threshold: -4200.6785)
+[2026-01-22 23:28:18.856] INFO:    📊 Events detected: 2221 (Novelty: 2221, Break: 0)
+[2026-01-22 23:28:19.154] SUCCESS: ✅ Generated 2180 causal surprise events (merged from clusters):
+[2026-01-22 23:28:19.154] INFO:    - Event threshold: Adaptive (Quantile 96%)
+[2026-01-22 23:28:19.154] INFO:    - Min separation: 0.25 hours
+[2026-01-22 23:28:19.154] SUCCESS: ✅ generate_causal_events complete. result=dict(len=2180) events=2180
+[2026-01-22 23:28:19.161] SUCCESS:    ✅ Generated 2180 events with threshold=0.04
+[2026-01-22 23:28:19.162] INFO:       - Raw events found: 2180
+[2026-01-22 23:28:19.191] SUCCESS:    ⚖️ Applied Continuous Weighting (Quantile * Z): Mean=0.0010, Max=2.1738
+[2026-01-22 23:28:19.257] SUCCESS:    ✅ Layer 2: Causal surprise events generated:
+[2026-01-22 23:28:19.257] INFO:       - Events: 2180
+[2026-01-22 23:28:19.257] INFO:       - Avg strength: 0.0010
+[2026-01-22 23:28:19.257] INFO:       - Max strength: 2.1738
+[2026-01-22 23:28:19.257] INFO:       - Zone distribution: {1: 2179, 2: 1}
+[2026-01-22 23:28:19.257] INFO:       - Global surprise density: 0.00%
+[2026-01-22 23:28:19.257] INFO:       - Events per day: 1.422976501305482921467
+[2026-01-22 23:28:19.270] INFO: ▶️ compute_reliability_metrics | realized_outcomes=Series(len=132484, name=close, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=d7720a27), binary_labels=Series(len=132484, name=close, range=2021-10-30 22:22:00->2026-01-10 11:53:00, hash=abe4f97c)
+[2026-01-22 23:28:19.270] INFO: 🔬 Computing Advanced Causal Reliability Metrics...
+[2026-01-22 23:28:19.270] INFO: ▶️ _get_events_dataframe
+[2026-01-22 23:28:19.335] SUCCESS: ✅ _get_events_dataframe complete. result=DataFrame(shape=(2180, 15), cols=15, range=2021-10-31 03:02:00->2026-01-06 14:24:00, hash=f995f992)
+[2026-01-22 23:28:19.335] INFO:    📊 Overlap Check: surprises=132484, outcomes=132484, common=132484
+[2026-01-22 23:28:19.379] INFO:    📊 Recall Diagnostics:
+[2026-01-22 23:28:19.379] INFO:       - Total profitable opportunities (labels==1): 22235
+[2026-01-22 23:28:19.379] INFO:       - Surprise-flagged bars: 2180
+[2026-01-22 23:28:19.379] INFO:       - Overlap (captured): 414
+[2026-01-22 23:28:19.392] SUCCESS: ✅ Causal Reliability Metrics computed
+[2026-01-22 23:28:19.392] INFO:    - Detector: F1=0.034, Recall=0.019, Precision=0.190
+[2026-01-22 23:28:19.392] SUCCESS: ✅ compute_reliability_metrics complete. result=dict(len=2)
+[2026-01-22 23:28:19.394] INFO: 
+   🛡️ Detector Reliability:
+[2026-01-22 23:28:19.394] INFO:       • F1 Score: 0.034
+[2026-01-22 23:28:19.394] INFO:       • Recall: 0.019
+[2026-01-22 23:28:19.394] INFO:       • Precision: 0.190
+[2026-01-22 23:28:19.394] INFO:       • Stability: 0.988
+[2026-01-22 23:28:19.394] SUCCESS:    ✅ Causal events generated: 2180 events
+2026-01-22 23:28:22,769 - src.training.steps.labeling.layer2_checkpoint_manager - INFO - ℹ️ Replaced existing checkpoint: checkpoint_event_generation.h5
+2026-01-22 23:28:28,136 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 94 objects collected
+2026-01-22 23:28:29,989 - src.training.steps.labeling.layer2_checkpoint_manager - INFO - ℹ️ ✅ Saved checkpoint 'event_generation' for ETHUSDT (4 keys)
+[2026-01-22 23:28:30.474] INFO:    ⏭️ Skipping causal feature engineering (resuming from final_processing)
+2026-01-22 23:28:33,944 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 577 objects collected
+2026-01-22 23:28:35,391 - src.training.steps.labeling.layer2_checkpoint_manager - INFO - ℹ️ ✅ Loaded checkpoint 'feature_engineering' for ETHUSDT (5 keys)
+[2026-01-22 23:28:35.406] INFO:    📂 Restored engineered features: 583 columns
+[2026-01-22 23:28:35.406] INFO:    ⏭️ Skipping causal targets (resuming from final_processing)
+2026-01-22 23:28:40,497 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 2318 objects collected
+2026-01-22 23:28:43,697 - src.training.steps.labeling.layer2_checkpoint_manager - INFO - ℹ️ ✅ Loaded checkpoint 'causal_targets' for ETHUSDT (8 keys)
+[2026-01-22 23:28:43.698] SUCCESS:    📂 Restored causal targets: 8 target types
+[2026-01-22 23:28:43.698] INFO: 🧠 Step 6: Training causal models with IRM...
+[2026-01-22 23:28:43.698] INFO: 🧠 Training Causal Models with IRM...
+[2026-01-22 23:28:43.748] INFO:    🧠 IRM Environments: Using GMM-derived regime labels
+[2026-01-22 23:28:43.987] INFO:    - Specialist predictions: 13 specialists
+[2026-01-22 23:28:43.987] INFO:    - Prediction keys: ['inventory_specialist', 'volume_specialist', 'volatility_specialist', 'information_specialist', 'cusum_break_specialist']...
+[2026-01-22 23:28:43.987] INFO: >>> Layer 2: Step 2 - Orthogonal Optimization (Regime-Conditional)...
+[2026-01-22 23:28:43.987] INFO:    🌍 Refactoring Enforcement: Forcing Global Mode for Cross-Regime Learning
+[2026-01-22 23:28:44.022] INFO:    🎯 Generated global causal target (HAR-Residualized Innovation)
+2026-01-22 23:28:48,152 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 8382 objects collected
+2026-01-22 23:28:52,251 - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - ⚠️ 🚨 ALERT: cpu_usage (95.6) exceeds threshold (85.0)
+2026-01-22 23:28:58,121 - src.training.steps.labeling.layer2_checkpoint_manager - INFO - ℹ️ ✅ Loaded checkpoint 'raw_candidates_selected' for ETHUSDT (2 keys)
+[2026-01-22 23:28:58.122] INFO: ✅ Found existing raw candidates checkpoint. Skipping regeneration.
+[2026-01-22 23:29:03.847] INFO:    🔄 Reconstructed 774 OutputGeometry objects from checkpoint.
+[2026-01-22 23:29:03.847] INFO: 🔍 Orthogonal Label Generation: Returned 774 global candidates
+[2026-01-22 23:29:03.859] INFO: ✅ Populated orthogonal cache with 774 geometries
+[2026-01-22 23:29:03.870] INFO: 🔄 Resuming from regime checkpoint. Completed: {'Global'}
+[2026-01-22 23:29:03.870] INFO:    Note: Loaded 15 geometries from previous run.
+[2026-01-22 23:29:03.870] INFO: 🔄 Starting Regime-Specific Optimization Loop (Regimes: ['Global'])
+[2026-01-22 23:29:03.870] INFO:    ⏩ Skipping already completed regime: Global
+[2026-01-22 23:29:03.870] INFO: 🏆 Running Global Architectural Model Race (Expert Selection)...
+[2026-01-22 23:29:03.870] INFO:    🏁 Racing 15 family leaders...
+[2026-01-22 23:29:03.870] INFO:    🔄 Regenerating race payload for VOLATILI...
+[2026-01-22 23:29:03.870] INFO:    📐 Building geometry-independent features for 548 events
+[2026-01-22 23:29:03.870] INFO: 🔄 Generating global features for entire dataset...
+[2026-01-22 23:29:03.870] INFO:    📂 Global feature cache miss: 8b147e4ed6d5159d
+[2026-01-22 23:29:03.870] WARNING: ⚠️ Failed to generate denoised prices: 'vwap_weight', using raw prices
+[2026-01-22 23:29:04.574] INFO:    📦 Chunked processing: 132484 rows in 3 chunks
+🔍 Starting MTF feature generation for 50000 rows...
+🚀 Using Numba JIT optimizations for 50000 rows...
+🔧 Reducing feature windows for large dataset (50000 rows)
+📊 Using reduced windows: [10, 20, 50]
+📊 Computing CUSUM & Efficiency features...
+📈 Processing 1 signal columns...
+   Processing signal 1/1: consensus
+2026-01-22 23:29:07,340 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 36834 objects collected
+📊 Computing INFORMATION_SPECIALIST features across multiple timeframes...
+2026-01-22 23:29:40,545 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧹 Moderate cleanup: 50221 objects collected
+✅ Generated INFORMATION_SPECIALIST features for 3 timeframes: [10, 20, 50]
+ Computing multi-timeframe features for windows: [10, 20, 50]
+   Processing window 1/3: w=10
+   ⏱️ Heartbeat: processed 1/3 windows in 40.5s
+   Processing window 3/3: w=50
+2026-01-22 23:30:01,799 - src.training.steps.labeling.mtf_feature_generation - INFO - ℹ️ [MTF] create_meta_features produced 261 columns prior to Layer2 filtering.
+⚡ MTF feature generation completed in 57.13s using Numba JIT (50000 features)
+🧹 Memory cleanup completed
+💾 [MTF Cache] Saved 261 features to cache
+🔍 Starting MTF feature generation for 50000 rows...
+🚀 Using Numba JIT optimizations for 50000 rows...
+🔧 Reducing feature windows for large dataset (50000 rows)
+📊 Using reduced windows: [10, 20, 50]
+📊 Computing CUSUM & Efficiency features...
+📈 Processing 1 signal columns...
+   Processing signal 1/1: consensus
+2026-01-22 23:30:04,906 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧠 M1 Memory pressure at 0.83
+📊 Computing INFORMATION_SPECIALIST features across multiple timeframes...
+✅ Generated INFORMATION_SPECIALIST features for 3 timeframes: [10, 20, 50]
+ Computing multi-timeframe features for windows: [10, 20, 50]
+   Processing window 1/3: w=10
+   ⏱️ Heartbeat: processed 1/3 windows in 41.9s
+   Processing window 3/3: w=50
+2026-01-22 23:30:56,011 - src.training.steps.labeling.mtf_feature_generation - INFO - ℹ️ [MTF] create_meta_features produced 261 columns prior to Layer2 filtering.
+⚡ MTF feature generation completed in 52.54s using Numba JIT (50000 features)
+🧹 Memory cleanup completed
+💾 [MTF Cache] Saved 261 features to cache
+🔍 Starting MTF feature generation for 32484 rows...
+🚀 Using Numba JIT optimizations for 32484 rows...
+🔧 Reducing feature windows for large dataset (32484 rows)
+📊 Using reduced windows: [10, 20, 50]
+📊 Computing CUSUM & Efficiency features...
+📈 Processing 1 signal columns...
+   Processing signal 1/1: consensus
+📊 Computing INFORMATION_SPECIALIST features across multiple timeframes...
+2026-01-22 23:31:30,384 - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - ⚠️ 🚨 ALERT: cpu_usage (99.6) exceeds threshold (85.0)
+✅ Generated INFORMATION_SPECIALIST features for 3 timeframes: [10, 20, 50]
+ Computing multi-timeframe features for windows: [10, 20, 50]
+   Processing window 1/3: w=10
+   ⏱️ Heartbeat: processed 1/3 windows in 38.6s
+2026-01-22 23:32:04,613 - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - ⚠️ 🚨 ALERT: cpu_usage (100.0) exceeds threshold (85.0)
+   Processing window 3/3: w=50
+   ⏱️ Heartbeat: processed 3/3 windows in 74.6s
+2026-01-22 23:32:32,313 - src.training.steps.labeling.mtf_feature_generation - INFO - ℹ️ [MTF] create_meta_features produced 261 columns prior to Layer2 filtering.
+⚡ MTF feature generation completed in 94.07s using Numba JIT (32484 features)
+🧹 Memory cleanup completed
+💾 [MTF Cache] Saved 261 features to cache
+2026-01-22 23:32:41,696 - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - ⚠️ 🚨 ALERT: cpu_usage (99.5) exceeds threshold (85.0)
+[2026-01-22 23:32:41.747] INFO:    📦 Assembled 3 chunks → shape=(132484, 261)
+[2026-01-22 23:32:41.749] INFO:    ➕ Preserving 325 extra features from input (Specialists/Spectral)...
+2026-01-22 23:33:19,756 - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - ⚠️ 🚨 ALERT: cpu_usage (98.0) exceeds threshold (85.0)
+[2026-01-22 23:33:20.601] INFO:    🧹 Applying Causal Denoising Engine...
+[2026-01-22 23:33:20.601] INFO: 🧹 Causal Denoising Engine: Starting denoising...
+[2026-01-22 23:33:24.042] INFO:    ✅ sparse_covariance: 586 features
+2026-01-22 23:33:24,244 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧠 M1 Memory pressure at 0.81
+[2026-01-22 23:33:32.564] SUCCESS: ✅ Causal Denoising: Complete!
+[2026-01-22 23:33:32.564] INFO:    📊 Original features: 586
+[2026-01-22 23:33:32.565] INFO:    📊 Denoised features: 586
+[2026-01-22 23:33:32.565] INFO:    ⏱️  Time: 11.96s
+[2026-01-22 23:33:32.699] INFO:    🧬 Injecting Soft Regime Posteriors...
+[2026-01-22 23:33:34.122] INFO:    ✅ Added 4 regime posterior features
+[2026-01-22 23:33:36.056] SUCCESS: ✅ Global features cached in 272.19s (shape=(132484, 590))
+[2026-01-22 23:33:36.173] INFO:    🧱 Global feature frame: (132484, 590)
+[2026-01-22 23:33:36.173] INFO:    🔁 Aligning 548 events with feature frame (132484, 590)
+[2026-01-22 23:33:37.002] INFO:    ✅ Alignment produced feature frame (548, 590)
+[2026-01-22 23:33:43.720] INFO:    🔗 Aligned feature frame: (548, 590)
+[2026-01-22 23:34:09.857] INFO:    🔁 Aligning 548 events with feature frame (132484, 50)
+[2026-01-22 23:34:10.336] INFO:    ✅ Alignment produced feature frame (548, 50)
+[2026-01-22 23:34:28.808] WARNING:    ⚠️ Target has no variance (1 unique values) - skipping redundancy filter
+[2026-01-22 23:34:28.883] INFO:    🧑‍🏫 Preparing Huber Teacher Outputs...
+[2026-01-22 23:34:28.883] INFO:    🧪 Huber checkpoint: X_train=(383, 640), X_val=(165, 640), y_train=(383,)
+[2026-01-22 23:34:28.917] INFO:    📊 Data Stats: X_NaNs=0, y_mean=0.0000, y_unique=[0]
+[2026-01-22 23:34:28.917] WARNING:    ⚠️ WARNING: Single class target! [0]. Skipping race for this geometry.
+[2026-01-22 23:34:28.917] INFO:    🔄 Regenerating race payload for FLOW_PRE...
+[2026-01-22 23:34:28.919] INFO:    📐 Building geometry-independent features for 1027 events
+[2026-01-22 23:34:28.926] INFO:    ♻️ Using cached global features
+[2026-01-22 23:34:28.926] INFO:    🧱 Global feature frame: (132484, 590)
+[2026-01-22 23:34:28.926] INFO:    🔁 Aligning 1027 events with feature frame (132484, 590)
+[2026-01-22 23:34:47.054] INFO:    ✅ Alignment produced feature frame (1027, 590)
+[2026-01-22 23:35:00.771] INFO:    🔗 Aligned feature frame: (1027, 590)
+2026-01-22 23:35:00,790 - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - ⚠️ 🚨 ALERT: cpu_usage (92.9) exceeds threshold (85.0)
+[2026-01-22 23:35:00.775] INFO:    🔁 Aligning 1027 events with feature frame (132484, 50)
+[2026-01-22 23:35:01.250] INFO:    ✅ Alignment produced feature frame (1027, 50)
+[2026-01-22 23:35:03.886] WARNING:    ⚠️ Target has no variance (1 unique values) - skipping redundancy filter
+[2026-01-22 23:35:03.991] INFO:    🧑‍🏫 Preparing Huber Teacher Outputs...
+[2026-01-22 23:35:03.991] INFO:    🧪 Huber checkpoint: X_train=(718, 640), X_val=(309, 640), y_train=(718,)
+[2026-01-22 23:35:03.996] INFO:    📊 Data Stats: X_NaNs=0, y_mean=0.0000, y_unique=[0]
+[2026-01-22 23:35:03.998] WARNING:    ⚠️ WARNING: Single class target! [0]. Skipping race for this geometry.
+[2026-01-22 23:35:03.998] INFO:    🔄 Regenerating race payload for INVENTOR...
+[2026-01-22 23:35:03.998] INFO:    📐 Building geometry-independent features for 129 events
+[2026-01-22 23:35:04.005] INFO:    ♻️ Using cached global features
+[2026-01-22 23:35:04.005] INFO:    🧱 Global feature frame: (132484, 590)
+[2026-01-22 23:35:04.005] INFO:    🔁 Aligning 129 events with feature frame (132484, 590)
+[2026-01-22 23:35:26.066] INFO:    ✅ Alignment produced feature frame (129, 590)
+[2026-01-22 23:35:38.848] INFO:    🔗 Aligned feature frame: (129, 590)
+[2026-01-22 23:35:38.848] INFO:    🔁 Aligning 129 events with feature frame (132484, 50)
+[2026-01-22 23:35:39.019] INFO:    ✅ Alignment produced feature frame (129, 50)
+2026-01-22 23:35:47,572 - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - ⚠️ 🚨 ALERT: cpu_usage (91.3) exceeds threshold (85.0)
+[2026-01-22 23:35:48.177] WARNING:    ⚠️ Target has no variance (1 unique values) - skipping redundancy filter
+[2026-01-22 23:35:48.270] INFO:    🧑‍🏫 Preparing Huber Teacher Outputs...
+[2026-01-22 23:35:48.270] INFO:    🧪 Huber checkpoint: X_train=(90, 640), X_val=(39, 640), y_train=(90,)
+[2026-01-22 23:35:48.297] INFO:    📊 Data Stats: X_NaNs=0, y_mean=0.0000, y_unique=[0]
+[2026-01-22 23:35:48.297] WARNING:    ⚠️ WARNING: Single class target! [0]. Skipping race for this geometry.
+[2026-01-22 23:35:48.297] INFO:    🔄 Regenerating race payload for MARKET_F...
+[2026-01-22 23:35:48.297] INFO:    📐 Building geometry-independent features for 777 events
+[2026-01-22 23:35:48.301] INFO:    ♻️ Using cached global features
+[2026-01-22 23:35:48.301] INFO:    🧱 Global feature frame: (132484, 590)
+[2026-01-22 23:35:48.301] INFO:    🔁 Aligning 777 events with feature frame (132484, 590)
+[2026-01-22 23:36:26.305] INFO:    ✅ Alignment produced feature frame (777, 590)
+[2026-01-22 23:36:30.164] INFO:    🔗 Aligned feature frame: (777, 590)
+[2026-01-22 23:36:30.166] INFO:    🔁 Aligning 777 events with feature frame (132484, 50)
+[2026-01-22 23:36:30.451] INFO:    ✅ Alignment produced feature frame (777, 50)
+[2026-01-22 23:36:38.723] WARNING:    ⚠️ Target has no variance (1 unique values) - skipping redundancy filter
+[2026-01-22 23:36:38.906] INFO:    🧑‍🏫 Preparing Huber Teacher Outputs...
+[2026-01-22 23:36:38.906] INFO:    🧪 Huber checkpoint: X_train=(543, 640), X_val=(234, 640), y_train=(543,)
+[2026-01-22 23:36:38.912] INFO:    📊 Data Stats: X_NaNs=0, y_mean=0.0000, y_unique=[0]
+[2026-01-22 23:36:38.912] WARNING:    ⚠️ WARNING: Single class target! [0]. Skipping race for this geometry.
+[2026-01-22 23:36:38.912] INFO:    🔄 Regenerating race payload for RELAXATI...
+[2026-01-22 23:36:38.920] INFO:    📐 Building geometry-independent features for 1522 events
+[2026-01-22 23:36:38.937] INFO:    ♻️ Using cached global features
+[2026-01-22 23:36:38.937] INFO:    🧱 Global feature frame: (132484, 590)
+[2026-01-22 23:36:38.938] INFO:    🔁 Aligning 1522 events with feature frame (132484, 590)
+[2026-01-22 23:37:32.928] INFO:    ✅ Alignment produced feature frame (1522, 590)
+[2026-01-22 23:37:39.319] INFO:    🔗 Aligned feature frame: (1522, 590)
+[2026-01-22 23:37:39.322] INFO:    🔁 Aligning 1522 events with feature frame (132484, 50)
+[2026-01-22 23:37:39.679] INFO:    ✅ Alignment produced feature frame (1522, 50)
+[2026-01-22 23:37:51.811] WARNING:    ⚠️ Target has no variance (1 unique values) - skipping redundancy filter
+[2026-01-22 23:37:52.009] INFO:    🧑‍🏫 Preparing Huber Teacher Outputs...
+[2026-01-22 23:37:52.010] INFO:    🧪 Huber checkpoint: X_train=(1065, 640), X_val=(457, 640), y_train=(1065,)
+[2026-01-22 23:37:52.022] INFO:    📊 Data Stats: X_NaNs=0, y_mean=0.0000, y_unique=[0]
+[2026-01-22 23:37:52.022] WARNING:    ⚠️ WARNING: Single class target! [0]. Skipping race for this geometry.
+[2026-01-22 23:37:52.022] INFO:    🔄 Regenerating race payload for RELAXATI...
+[2026-01-22 23:37:52.025] INFO:    📐 Building geometry-independent features for 1210 events
+[2026-01-22 23:37:52.031] INFO:    ♻️ Using cached global features
+[2026-01-22 23:37:52.031] INFO:    🧱 Global feature frame: (132484, 590)
+[2026-01-22 23:37:52.033] INFO:    🔁 Aligning 1210 events with feature frame (132484, 590)
+[2026-01-22 23:38:24.792] INFO:    ✅ Alignment produced feature frame (1210, 590)
+[2026-01-22 23:38:36.974] INFO:    🔗 Aligned feature frame: (1210, 590)
+[2026-01-22 23:38:36.977] INFO:    🔁 Aligning 1210 events with feature frame (132484, 50)
+[2026-01-22 23:38:37.237] INFO:    ✅ Alignment produced feature frame (1210, 50)
+2026-01-22 23:38:44,347 - src.utils.hardware.m1_memory_optimizer.M1MemoryOptimizer - INFO - ℹ️ 🧠 M1 Memory pressure at 0.83
+2026-01-22 23:38:44,375 - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - ⚠️ 🚨 ALERT: cpu_usage (85.3) exceeds threshold (85.0)
+[2026-01-22 23:38:52.833] WARNING:    ⚠️ Target has no variance (1 unique values) - skipping redundancy filter
+[2026-01-22 23:38:53.258] INFO:    🧑‍🏫 Preparing Huber Teacher Outputs...
+[2026-01-22 23:38:53.258] INFO:    🧪 Huber checkpoint: X_train=(847, 640), X_val=(363, 640), y_train=(847,)
+[2026-01-22 23:38:53.285] INFO:    📊 Data Stats: X_NaNs=0, y_mean=0.0000, y_unique=[0]
+[2026-01-22 23:38:53.286] WARNING:    ⚠️ WARNING: Single class target! [0]. Skipping race for this geometry.
+[2026-01-22 23:38:53.286] INFO:    🔄 Regenerating race payload for VOLUME_S...
+[2026-01-22 23:38:53.293] INFO:    📐 Building geometry-independent features for 704 events
+[2026-01-22 23:38:53.307] INFO:    ♻️ Using cached global features
+[2026-01-22 23:38:53.307] INFO:    🧱 Global feature frame: (132484, 590)
+[2026-01-22 23:38:53.307] INFO:    🔁 Aligning 704 events with feature frame (132484, 590)
+2026-01-22 23:40:50,222 - src.utils.hardware.unified_hardware_manager.HardwarePerformanceMonitor - WARNING - ⚠️ 🚨 ALERT: cpu_usage (89.8) exceeds threshold (85.0)
+[2026-01-22 23:42:28.829] INFO:    ✅ Alignment produced feature frame (704, 590)

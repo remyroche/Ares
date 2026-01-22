@@ -306,22 +306,37 @@ class CausalSpecialist:
             # Compute prediction errors
             errors = y - predictions
             
-            # Compute rolling statistics
-            rolling_mean = errors.rolling(window=20, min_periods=5).mean()
-            rolling_std = errors.rolling(window=20, min_periods=5).std()
+            # Detect surprise events using standardized rolling quantile logic
+            # Use 'z_scores' proxy or raw errors. But util expects a series.
+            # Best to use ABSOLUTE ERRORS for magnitude detection
+            abs_errors = errors.abs()
             
-            # Compute z-scores
-            z_scores = np.abs(errors - rolling_mean) / (rolling_std + 1e-8)
+            # Using Detection Util (Standardized)
+            from .detection_utils import detect_rolling_quantile_surprises
             
-            # Detect surprise events
-            surprise_events = z_scores > surprise_threshold
+            # Use window=20 as per original method, or update to standard?
+            # User asked to "Verify if this same approach can be applied... std dev of xx-bar rolling window"
+            # Original code used window=20. We can stick to 20 or bump to 100 for robustness.
+            # Let's use window=100 (more robust) but min_periods=20.
+            details = detect_rolling_quantile_surprises(
+                abs_errors, 
+                window=100, 
+                quantiles=(0.96, 0.98), # Standardized 96/98
+                min_periods=20, 
+                return_details=True
+            )
+            
+            # Surprise event = Level >= 2.0
+            surprise_events = details['level'] >= 2.0
             
             # Store results
             self.surprise_events_ = surprise_events
+            if 'weight' in details:
+                self.surprise_weights_ = details['weight']
             
             if self.verbose:
                 n_surprises = surprise_events.sum()
-                tprint_success(f"   ✅ Surprise detection complete:")
+                tprint_success(f"   ✅ Surprise detection complete (Standardized Quantiles):")
                 tprint_info(f"      - Surprise events: {n_surprises}")
                 tprint_info(f"      - Surprise rate: {n_surprises/len(surprise_events):.2%}")
             
@@ -621,6 +636,12 @@ class CausalSpecialistManager:
                 surprise_df["weighted_surprise"] = (surprise_df * weights).sum(axis=1) / weights.sum()
             else:
                 surprise_df["sum_surprise"] = surprise_df.sum(axis=1)
+            
+            if 'weights' in kwargs:
+                # Use provided weights (continuous severity)
+                # Weighted Sum of Specialist Weights
+                # If aggregation method supports it
+                pass
             
             return surprise_df
             

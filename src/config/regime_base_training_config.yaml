@@ -1,6 +1,10 @@
 # Regime Base Training Configuration
 # Enhanced configurations for regime-specific base model training
 
+# WORKER CONFIGURATION (M1 Optimized)
+specialist_train_workers: 1  # Reduced to 1 (Serial) to prevent M1 OOM
+specialist_registration_workers: 1
+
 # CatBoost (multiclass softprob) Configuration
 catboost:
   task_type: CPU  # or GPU if available
@@ -24,7 +28,7 @@ catboost:
 # ExtraTrees (Extremely Randomized Trees) Configuration
 extratrees:
   n_estimators: [300, 500, 800]  # more trees = stabler OOS
-  max_depth: [None, 10, 15]  # None = fully grown
+  max_depth: [None, 5, 10]  # None = fully grown
   min_samples_split: [5, 10, 20]
   min_samples_leaf: [2, 5, 10]
   max_features: ["sqrt", 0.3, 0.5]

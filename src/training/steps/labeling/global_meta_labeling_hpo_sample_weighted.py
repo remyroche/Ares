@@ -212,6 +212,10 @@ class GlobalMetaLabelingHPOSampleWeightedStep(BaseStep):
             # Create single-asset configuration for underlying step
             primary_asset = assets[0]  # Use first asset as primary
             single_asset_config = self._create_single_asset_config(config, primary_asset)
+
+            # Provide cross-asset context to downstream layers
+            single_asset_config['assets'] = assets
+            single_asset_config['cross_asset_data'] = asset_dataframes
             
             # Inject combined data into configuration
             single_asset_config['market_data'] = combined_data

@@ -38,6 +38,39 @@ class SignalRole(Enum):
     CONTEXT = "context"
 
 
+def _fast_ridge_r2(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_val: np.ndarray,
+    y_val: np.ndarray,
+    alpha: float = 0.7,
+    verbose: bool = False
+) -> float:
+    """Compute ridge R² using a fast closed-form solve with standardization."""
+    try:
+        mean = np.mean(X_train, axis=0)
+        std = np.std(X_train, axis=0)
+        std[std < 1e-9] = 1.0
+        X_train_std = (X_train - mean) / std
+        X_val_std = (X_val - mean) / std
+        
+        # Center y to handle intercept (CRITICAL FIX for negative R2)
+        y_mean = np.mean(y_train)
+        y_train_centered = y_train - y_mean
+        
+        XtX = X_train_std.T @ X_train_std
+        XtX.flat[:: XtX.shape[0] + 1] += alpha
+        coef = np.linalg.solve(XtX, X_train_std.T @ y_train_centered)
+        preds = X_val_std @ coef + y_mean
+        return r2_score(y_val, preds)
+    except Exception as e:
+        if verbose:
+            tprint_warning(f"      ⚠️ Fast ridge solve failed: {e}. Falling back to sklearn Ridge.")
+        model = Ridge(alpha=alpha, solver='auto')
+        model.fit(X_train, y_train)
+        return model.score(X_val, y_val)
+
+
 # Role-specific survival filter thresholds
 # These encode the different economic properties of each signal type
 # Per user specification (2026-01-04)
@@ -1371,16 +1404,15 @@ class CausalQualityAssessor:
                     X_val = X_residual.iloc[val_idx].fillna(0)
                     y_train = y.iloc[train_idx] if hasattr(y, 'iloc') else y[train_idx]
                     y_val = y.iloc[val_idx] if hasattr(y, 'iloc') else y[val_idx]
+                    X_train_np = X_train.to_numpy(dtype=np.float64, copy=False)
+                    X_val_np = X_val.to_numpy(dtype=np.float64, copy=False)
+                    y_train_np = np.asarray(y_train, dtype=np.float64)
+                    y_val_np = np.asarray(y_val, dtype=np.float64)
                     
                     # Ridge for OOS R²
                     if self.verbose:
-                        tprint_info(f"         🏔️ Fitting Ridge (shape={X_train.shape})...")
-                    # Increase alpha for stability in noisy crypto environments
-                    model = Ridge(alpha=0.7, solver='auto')
-                    model.fit(X_train, y_train)
-                    if self.verbose:
-                        tprint_info(f"         ✅ Ridge fitted, scoring...")
-                    r2 = model.score(X_val, y_val)
+                        tprint_info(f"         🏔️ Scoring Fast Ridge (shape={X_train.shape})...")
+                    r2 = _fast_ridge_r2(X_train_np, y_train_np, X_val_np, y_val_np, alpha=0.7, verbose=self.verbose)
                     r2_scores.append(max(0.0, r2))
                     if self.verbose:
                         tprint_info(f"         ✅ R2={r2:.4f}")
@@ -1546,14 +1578,30 @@ class CausalQualityAssessor:
             
             # Use causal target for IC if available (De Prado recommendation)
             y_ic = y_causal if y_causal is not None else y
+            alignment_status = "raw"
             # Align y_ic to X if needed
             if y_causal is not None:
                 common_idx = X.index.intersection(y_ic.index)
                 if len(common_idx) < len(X):
                      # If alignment is poor, fallback to y
                      y_ic = y
+                     alignment_status = "fallback_to_y"
                 else:
                      y_ic = y_ic.loc[X.index]
+                     alignment_status = "aligned_to_X"
+
+            if self.verbose:
+                y_vals = np.asarray(y)
+                y_ic_vals = np.asarray(y_ic)
+                nonfinite_y = np.sum(~np.isfinite(y_vals))
+                nonfinite_y_ic = np.sum(~np.isfinite(y_ic_vals))
+                nan_X = int(np.isnan(X.to_numpy()).sum())
+                tprint_info(
+                    f"   🧪 Integrity inputs: X={X.shape}, y={len(y)}, y_var={np.nanvar(y_vals):.6f}, y_ic_var={np.nanvar(y_ic_vals):.6f}, align={alignment_status}"
+                )
+                tprint_info(
+                    f"   🧪 Non-finite: y={nonfinite_y}, y_ic={nonfinite_y_ic}, X_nan={nan_X}"
+                )
 
             # 1. OOS R-squared with TimeSeriesSplit
             n_splits = 2 if len(y) > 2000 else 3
@@ -1562,9 +1610,12 @@ class CausalQualityAssessor:
             oos_r2_scores = []
             for train_idx, test_idx in tscv.split(X):
                 if len(train_idx) < 10: continue
-                model = Ridge(alpha=1.0, solver=ridge_solver)
-                model.fit(X.iloc[train_idx], y.iloc[train_idx])
-                oos_r2_scores.append(max(0.0, model.score(X.iloc[test_idx], y.iloc[test_idx])))
+                X_train = X.iloc[train_idx].to_numpy(dtype=np.float64, copy=False)
+                X_test = X.iloc[test_idx].to_numpy(dtype=np.float64, copy=False)
+                y_train = y.iloc[train_idx].to_numpy(dtype=np.float64, copy=False)
+                y_test = y.iloc[test_idx].to_numpy(dtype=np.float64, copy=False)
+                oos_r2 = _fast_ridge_r2(X_train, y_train, X_test, y_test, alpha=1.0, verbose=self.verbose)
+                oos_r2_scores.append(max(0.0, oos_r2))
             oos_r2 = np.mean(oos_r2_scores) if oos_r2_scores else 0.0
             
             # 2. Information Coefficient (IC)

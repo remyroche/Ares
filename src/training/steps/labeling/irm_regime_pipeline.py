@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import joblib
+import logging
 from pathlib import Path
 from scipy.optimize import minimize
 from scipy.special import expit
@@ -8,6 +9,9 @@ from sklearn.base import BaseEstimator, RegressorMixin, ClassifierMixin
 from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
+from src.utils.ml_common.gmm_semantic_sorting import GMMSemanticSorter
+
+logger = logging.getLogger(__name__)
 
 
 class IRMLinearModel(BaseEstimator):
@@ -221,7 +225,12 @@ class MarketRegimeLabeller:
     def fit_save(self, df: pd.DataFrame, path: Path) -> None:
         data = self.prepare_regime_features(df)
         scaled = self.scaler.fit_transform(data)
-        self.gmm.fit(scaled)
+        sorter = GMMSemanticSorter(sort_by="first_feature")
+        self.gmm, component_order = sorter.fit_and_sort(self.gmm, scaled)
+        logger.info(
+            "Sorted GMM components by volatility feature (order=%s)",
+            component_order,
+        )
         joblib.dump({'gmm': self.gmm, 'scaler': self.scaler}, path)
 
     def get_regime_labels(self, df: pd.DataFrame, path: Path) -> pd.Series:
@@ -283,9 +292,15 @@ def get_regime_posteriors_from_path(
     n_regimes: int = 4
 ) -> pd.DataFrame:
     """Helper to get posteriors directly."""
+    # Handle directory vs file path
+    if path.is_dir():
+        file_path = path / "layer2_teacher_gmm.pkl"
+    else:
+        file_path = path
+
     labeller = MarketRegimeLabeller(n_regimes=n_regimes)
     # Ensure it's fitted
-    if not path.exists():
-        labeller.fit_save(df, path)
+    if not file_path.exists():
+        labeller.fit_save(df, file_path)
 
-    return labeller.get_regime_posteriors(df, path)
+    return labeller.get_regime_posteriors(df, file_path)

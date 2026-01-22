@@ -27,6 +27,7 @@ from sklearn.mixture import GaussianMixture
 
 from src.training.steps.base_step import BaseStep
 from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
+from src.utils.ml_common.transaction_costs import DEFAULT_TRANSACTION_COST
 
 # --- Pipeline Components ---
 # Layer 0: Feature Engineering
@@ -42,6 +43,18 @@ try:
     LAYER1_AVAILABLE = True
 except ImportError:
     LAYER1_AVAILABLE = False
+
+try:
+    from src.training.steps.labeling.unified_price_layer2 import generate_unified_layer2_price
+    UNIFIED_PRICE_AVAILABLE = True
+except ImportError:
+    UNIFIED_PRICE_AVAILABLE = False
+
+try:
+    from src.training.steps.labeling.generate_weights_per_label import generate_weights_per_label
+    WEIGHTS_AVAILABLE = True
+except ImportError:
+    WEIGHTS_AVAILABLE = False
 
 # Layer 2: Causal Framework & Regime Detection
 try:
@@ -111,6 +124,9 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         config["interventionist_sampling_enabled"] = True 
         config["causal_specialists_enabled"] = True
         config["enable_aedl"] = True # Re-enable AEDL filters
+
+        config.setdefault("layer3_use_enhanced", True)
+        config.setdefault("enable_advanced_feature_selection", True)
         
         tprint_info("   - Layer 1: Sample Weighting ENABLED") 
         config["run_layer1_optimization"] = True
@@ -145,6 +161,50 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         pipeline_results = {}
 
         # ------------------------------------------------------------------
+        # Multi-Asset Setup (Cross-Asset Layer2)
+        # ------------------------------------------------------------------
+        assets = config.get("assets") or []
+        multi_asset_mode = config.get("multi_asset_mode")
+        multi_asset_requested = bool(multi_asset_mode) or len(assets) > 1
+        if len(assets) > 1:
+            tprint_info("🌐 Preparing cross-asset data for Layer 2...")
+            cross_asset_data: Dict[str, pd.DataFrame] = {}
+            primary_symbol = config.get("symbol", "")
+            primary_asset = primary_symbol.replace("USDT", "") if primary_symbol.endswith("USDT") else primary_symbol
+            for asset in assets:
+                if asset == primary_asset:
+                    cross_asset_data[asset] = market_data
+                    continue
+
+                asset_config = config.copy()
+                asset_config["symbol"] = f"{asset}USDT"
+                asset_data, asset_source = self.load_market_data_or_fail(
+                    asset_config,
+                    pipeline_state,
+                    allow_config_override=True,
+                    skip_artifacts=True,
+                )
+                if asset_data is None or asset_data.empty:
+                    raise ValueError(f"Cross-asset load failed for {asset}USDT")
+                cross_asset_data[asset] = asset_data
+                tprint_success(
+                    f"✅ Loaded cross-asset {asset} rows={len(asset_data)} source={asset_source}"
+                )
+
+            config["cross_asset_data"] = cross_asset_data
+            tprint_info(f"🌐 Cross-asset payload ready: {list(cross_asset_data.keys())}")
+        elif multi_asset_requested:
+            tprint_warning(
+                "⚠️ Multi-asset mode requested but assets list missing; cross-asset pipeline skipped."
+            )
+
+        if multi_asset_requested:
+            config.setdefault("enable_cross_asset_validation", True)
+            config.setdefault("enable_cross_asset_invariance", True)
+            config.setdefault("layer3_use_enhanced", True)
+            config.setdefault("enable_advanced_feature_selection", True)
+
+        # ------------------------------------------------------------------
         # Layer 0: Kalman Filter & VWAP
         # ------------------------------------------------------------------
         if LAYER0_AVAILABLE:
@@ -163,6 +223,25 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 config["layer0_params"] = l0_payload.get("best_params", {})
                 pipeline_results["layer0"] = "success"
                 tprint_success("✅ Layer 0 Complete")
+
+                cross_asset_data = config.get("cross_asset_data")
+                if isinstance(cross_asset_data, dict) and cross_asset_data:
+                    if primary_asset in cross_asset_data:
+                        cross_asset_data[primary_asset] = market_data
+                    if UNIFIED_PRICE_AVAILABLE and config.get("propagate_layer0_to_cross_asset", True):
+                        for asset, asset_df in cross_asset_data.items():
+                            if asset_df is None or asset_df.empty:
+                                continue
+                            try:
+                                unified_price = generate_unified_layer2_price(
+                                    asset_df, layer0_params=config.get("layer0_params")
+                                )
+                                asset_df = asset_df.copy()
+                                asset_df["layer0_price"] = unified_price
+                                cross_asset_data[asset] = asset_df
+                            except Exception as e:
+                                tprint_warning(f"⚠️ Layer0 price propagation failed for {asset}: {e}")
+                    config["cross_asset_data"] = cross_asset_data
             except Exception as e:
                 tprint_error(f"❌ Layer 0 Failed: {e}")
                 pipeline_results["layer0"] = "failed"
@@ -209,28 +288,32 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # Instantiate L2 Step
                 # Instantiate L2 Step with config to ensure parameters are passed
                 l2_step = LabelBasedLayer2(step_name="label_based_layer_2", **config)
-                
+
                 # Inject our context to L2 (to share artifacts/logging context)
                 l2_step.outcomes_dir = outcomes_dir
-                
+                if config.get("layer0_params"):
+                    l2_step.layer0_params = config["layer0_params"]
+
                 # We update config with L0/L1 params so L2 can use them
                 l2_config = config.copy()
                 l2_config['outcomes_dir'] = str(outcomes_dir) # Pass explicit path if supported
-                
+
                 # Execute L2
                 # L2.run is async and takes input_data (DataFrame or Dict)
                 # It generates events and labels, typically saved to artifacts.
-                await l2_step.run(market_data)
-                
+                layer2_results = await l2_step.run(market_data)
+
                 pipeline_results["layer2"] = "success"
                 tprint_success("✅ Layer 2 Complete")
                 
                 # Load L2 Results for L3
                 # We assume L2 saves 'events.parquet' and 'labels.parquet' in its artifact dir or outcomes
-                # Search for recent files in outcomes_dir
                 events_files = list(outcomes_dir.glob("*_events.parquet")) + list(outcomes_dir.glob("events*.parquet"))
                 labels_files = list(outcomes_dir.glob("*_labels.parquet")) + list(outcomes_dir.glob("labels*.parquet"))
                 
+                cross_asset_payload = None
+                if isinstance(layer2_results, dict):
+                    cross_asset_payload = layer2_results.get("cross_asset")
                 if not events_files or not labels_files:
                     # Fallback: check standard artifacts dir if not in outcomes
                     tprint_warning("⚠️ L2 output files not found in Outcomes, checking Artifacts...")
@@ -241,6 +324,24 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     events_df = pd.read_parquet(events_files[0])
                     labels_df = pd.read_parquet(labels_files[0])
                     tprint_info(f"   Loaded {len(events_df)} events and {len(labels_df)} labels from L2.")
+
+                cross_asset_features = None
+                if isinstance(cross_asset_payload, dict) and "panel" in cross_asset_payload:
+                    try:
+                        panel = cross_asset_payload["panel"]
+                        if primary_asset:
+                            panel_asset = panel.xs(primary_asset, level="ticker")
+                            panel_asset = panel_asset.drop(
+                                columns=[c for c in panel_asset.columns if c.startswith("y__")],
+                                errors="ignore",
+                            )
+                            cross_asset_features = panel_asset.sort_index()
+                            market_data = market_data.join(
+                                cross_asset_features.reindex(market_data.index).ffill().fillna(0.0),
+                                how="left",
+                            )
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to align cross-asset panel features: {e}")
 
             except Exception as e:
                 tprint_error(f"❌ Layer 2 Failed: {e}")
@@ -277,6 +378,34 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 if not labels_df.empty:
                     common = oof_df.index.intersection(labels_df.index)
                     oof_df = oof_df.loc[common].join(labels_df.loc[common], rsuffix='_lbl')
+
+                if cross_asset_features is not None:
+                    oof_df = oof_df.join(
+                        cross_asset_features.reindex(oof_df.index).ffill().fillna(0.0),
+                        how="left",
+                    )
+
+                layer1_weight = None
+                if WEIGHTS_AVAILABLE and config.get("layer1_params"):
+                    returns_col = None
+                    for candidate in ("ret", "realized_return", "return"):
+                        if candidate in oof_df.columns:
+                            returns_col = candidate
+                            break
+                    if returns_col is not None:
+                        weight_params = dict(config.get("layer1_params", {}))
+                        weight_params.setdefault(
+                            "transaction_cost",
+                            float(config.get("transaction_cost", DEFAULT_TRANSACTION_COST)),
+                        )
+                        weights = generate_weights_per_label(
+                            returns=oof_df[returns_col].fillna(0.0).values,
+                            t_events=oof_df.index,
+                            **weight_params,
+                        )
+                        layer1_weight = pd.Series(weights, index=oof_df.index).fillna(1.0)
+                        oof_df["layer1_weight"] = layer1_weight
+                        tprint_info("   ⚖️ Layer 1 weights injected into Layer 3 inputs")
                 
                 # Define args for L3
                 l3_oof, l3_results = layer3_analyst_lgbm(
@@ -285,7 +414,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     target_col='bin',         # Binary target from L2 labeling
                     train_split_date=config.get("train_split_date", None),
                     market_data=market_data,
-                    config=config
+                    config=config,
+                    layer1_weight=layer1_weight
                 )
                 
                 pipeline_results["layer3"] = "success"

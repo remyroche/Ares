@@ -60,6 +60,16 @@ from src.training.steps.labeling.composite_event_generators import (
 from src.utils.numba_funcs import _numba_return_autocorrelation
 from .de_prado_feature_engine import DePradoFeatureEngine
 from src.training.steps.labeling.feature_engineering_utils import apply_layer2_price_processing
+from .detection_utils import detect_rolling_quantile_surprises
+
+ROLLING_Q_WINDOW = 500
+ROLLING_Q_THRESHOLDS = (0.96, 0.98)
+
+def _quantiles_from_threshold(threshold: float, delta: float = 0.02) -> Tuple[float, float]:
+    return ROLLING_Q_THRESHOLDS
+
+def _quantiles_from_quantile(quantile: float, delta: float = 0.02) -> Tuple[float, float]:
+    return ROLLING_Q_THRESHOLDS
 
 # Import causal framework modules for surprise events
 try:
@@ -268,6 +278,9 @@ GENERATOR_PARAM_NAMES = {
     'InformationSpecialistEvents': ['threshold', 'window'],
     'InventorySpecialistEvents': ['threshold', 'window'],
     'MomentumDecaySpecialistEvents': ['threshold', 'fast_window', 'slow_window'],
+    'FractalEfficiencyEvents': ['threshold', 'window'],
+    'GapSpecialistEvents': ['threshold', 'window'],
+    'LiquidityShockEvents': ['threshold', 'window'],
     'MicrostructureImbalanceEvents': ['threshold', 'window']
 }
 
@@ -280,6 +293,9 @@ DF_REQUIRED_CLASSES = (
     'LiquiditySpecialistEvents',
     'InformationSpecialistEvents',
     'MomentumDecaySpecialistEvents',
+    'FractalEfficiencyEvents',
+    'GapSpecialistEvents',
+    'LiquidityShockEvents',
     'MicrostructureImbalanceEvents',
     'CausalSurpriseEvents',
     'AdaptiveSymmetricCUSUMEvents',
@@ -2778,11 +2794,17 @@ def get_enhanced_parameter_grids(range_specific: bool = False) -> Dict[str, Dict
             'horizons': [16, 24, 48],
         }
     }
-    
+
+    # Add dynamic grids for CROSS_ASSET / MARKET_STATE if they appear
+    # We use a default generic grid for any family that matches the prefix
     return {
         'tpsl_grid': tpsl_grid,
         'horizon_options': horizon_options,
         'family_grids': family_grids,
+        'default_continuous_grid': {
+            'base_params': [(2.0,), (2.5,)], # Standard z-score thresholds
+            'horizons': [16, 24, 48]
+        }
     }
 
 # ==========================================
@@ -2972,26 +2994,131 @@ def get_signal_specific_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_l
     elif family == 'INVENTORY_SPECIALIST':
         price_std = df['close'].rolling(50).std()
         z = ((df['close'] - df['close'].rolling(50).mean()) / (price_std + 1e-9)).abs()
-        intensity = two_tier_weight(z.reindex(events).fillna(0))
+        q1, q2 = _quantiles_from_threshold(2.7)
+        details = detect_rolling_quantile_surprises(
+            z.fillna(0.0),
+            window=ROLLING_Q_WINDOW,
+            quantiles=(q1, q2),
+            return_details=True
+        )
+        intensity = details['weight'].reindex(events).fillna(0.0)
     elif family == 'VOLATILITY_SPECIALIST':
         ret = df['close'].pct_change()
         vol = ret.rolling(20).std()
         vol_change = vol / (vol.shift(1) + 1e-9)
         z = (vol_change - vol_change.rolling(200).mean()) / (vol_change.rolling(200).std() + 1e-9)
-        intensity = two_tier_weight(z.reindex(events).fillna(0))
+        q1, q2 = _quantiles_from_quantile(0.95)
+        details = detect_rolling_quantile_surprises(
+            z.fillna(0.0),
+            window=ROLLING_Q_WINDOW,
+            quantiles=(q1, q2),
+            return_details=True
+        )
+        intensity = details['weight'].reindex(events).fillna(0.0)
     elif family == 'VOLUME_SPECIALIST':
         vol = df['volume']
         z = (vol - vol.rolling(100).mean()) / (vol.rolling(100).std() + 1e-9)
-        intensity = two_tier_weight(z.reindex(events).fillna(0))
+        q1, q2 = _quantiles_from_threshold(2.7)
+        details = detect_rolling_quantile_surprises(
+            z.abs().fillna(0.0),
+            window=ROLLING_Q_WINDOW,
+            quantiles=(q1, q2),
+            return_details=True
+        )
+        intensity = details['weight'].reindex(events).fillna(0.0)
     elif family == 'LIQUIDITY_SPECIALIST':
         impact = df['close'].pct_change().abs() / (df['volume'] + 1e-9)
         z = (impact - impact.rolling(100).mean()) / (impact.rolling(100).std() + 1e-9)
-        intensity = two_tier_weight(z.reindex(events).fillna(0))
+        q1, q2 = _quantiles_from_threshold(2.5)
+        details = detect_rolling_quantile_surprises(
+            z.fillna(0.0),
+            window=ROLLING_Q_WINDOW,
+            quantiles=(q1, q2),
+            return_details=True
+        )
+        intensity = details['weight'].reindex(events).fillna(0.0)
     elif family == 'INFORMATION_SPECIALIST':
         ret = df['close'].pct_change()
         autocorr = ret.rolling(50).corr(ret.shift(1)).abs()
         z = (autocorr - autocorr.rolling(500).mean()) / (autocorr.rolling(500).std() + 1e-9)
-        intensity = two_tier_weight(z.reindex(events).fillna(0))
+        q1, q2 = _quantiles_from_quantile(0.95)
+        details = detect_rolling_quantile_surprises(
+            autocorr.fillna(0.0),
+            window=ROLLING_Q_WINDOW,
+            quantiles=(q1, q2),
+            return_details=True
+        )
+        intensity = details['weight'].reindex(events).fillna(0.0)
+    elif family == 'MOMENTUM_DECAY_SPECIALIST':
+        price = df['close']
+        mom_fast = price.pct_change(10)
+        mom_slow = price.pct_change(50)
+        mom_accel = mom_fast.diff(10)
+        trend_strength = mom_slow.abs().rolling(50).rank(pct=True)
+        accel_vals = mom_accel.fillna(0).values
+        accel_mean = _numba_rolling_mean(accel_vals, 50)
+        accel_std = _numba_rolling_std(accel_vals, 50)
+        accel_z = (mom_accel - accel_mean) / (accel_std + 1e-9)
+        score = accel_z.abs() * trend_strength.fillna(0.0)
+        q1, q2 = _quantiles_from_threshold(2.0)
+        details = detect_rolling_quantile_surprises(
+            score.fillna(0.0),
+            window=max(ROLLING_Q_WINDOW, 50 * 5),
+            quantiles=(q1, q2),
+            return_details=True
+        )
+        intensity = details['weight'].reindex(events).fillna(0.0)
+    elif family == 'FRACTAL_EFFICIENCY':
+        diffs = df['close'].diff().abs()
+        net_change = df['close'].diff(10).abs()
+        path_length = diffs.rolling(10).sum()
+        efficiency = net_change / (path_length + 1e-9)
+        eff_vals = efficiency.fillna(0).values
+        eff_mean = _numba_rolling_mean(eff_vals, 50)
+        eff_std = _numba_rolling_std(eff_vals, 50)
+        eff_z = (eff_vals - eff_mean) / (eff_std + 1e-9)
+        q1, q2 = _quantiles_from_threshold(2.0)
+        details = detect_rolling_quantile_surprises(
+            pd.Series(np.abs(eff_z), index=df.index),
+            window=max(ROLLING_Q_WINDOW, 50 * 5),
+            quantiles=(q1, q2),
+            return_details=True
+        )
+        intensity = details['weight'].reindex(events).fillna(0.0)
+    elif family == 'GAP_SPECIALIST':
+        prev_close = df['close'].shift(1)
+        gap = (df['open'] - prev_close).abs()
+        ret = df['close'].pct_change()
+        vol = ret.rolling(20).std() * prev_close
+        gap_sigma = gap / (vol + 1e-9)
+        gap_vals = gap_sigma.fillna(0.0).values
+        gap_mean = _numba_rolling_mean(gap_vals, 100)
+        gap_std = _numba_rolling_std(gap_vals, 100)
+        gap_z = (gap_vals - gap_mean) / (gap_std + 1e-9)
+        q1, q2 = _quantiles_from_threshold(2.5)
+        details = detect_rolling_quantile_surprises(
+            pd.Series(np.abs(gap_z), index=df.index),
+            window=ROLLING_Q_WINDOW,
+            quantiles=(q1, q2),
+            return_details=True
+        )
+        intensity = details['weight'].reindex(events).fillna(0.0)
+    elif family == 'LIQUIDITY_SHOCK':
+        ret = df['close'].pct_change().abs()
+        dollar_vol = df['volume'] * df['close']
+        illiquidity = ret / (dollar_vol + 1e-9)
+        ill_vals = illiquidity.fillna(0.0).values
+        ill_mean = _numba_rolling_mean(ill_vals, 50)
+        ill_std = _numba_rolling_std(ill_vals, 50)
+        ill_z = (ill_vals - ill_mean) / (ill_std + 1e-9)
+        q1, q2 = _quantiles_from_threshold(2.5)
+        details = detect_rolling_quantile_surprises(
+            pd.Series(np.abs(ill_z), index=df.index),
+            window=ROLLING_Q_WINDOW,
+            quantiles=(q1, q2),
+            return_details=True
+        )
+        intensity = details['weight'].reindex(events).fillna(0.0)
 
     u_w = get_uniqueness_weight(events, df.index)
 
@@ -3021,10 +3148,27 @@ def get_specialist_event_matrix(df: pd.DataFrame, family: str) -> pd.Series:
         ret = df['close'].pct_change()
         autocorr = ret.rolling(50).corr(ret.shift(1)).abs()
         z = (autocorr - autocorr.rolling(500).mean()) / (autocorr.rolling(500).std() + 1e-9)
+    elif family == 'MOMENTUM_DECAY_SPECIALIST':
+        price = df['close']
+        mom_fast = price.pct_change(10)
+        mom_slow = price.pct_change(50)
+        mom_accel = mom_fast.diff(10)
+        trend_strength = mom_slow.abs().rolling(50).rank(pct=True)
+        accel_vals = mom_accel.fillna(0).values
+        accel_mean = _numba_rolling_mean(accel_vals, 50)
+        accel_std = _numba_rolling_std(accel_vals, 50)
+        z = (mom_accel - accel_mean) / (accel_std + 1e-9)
+        z = z.abs() * trend_strength.fillna(0.0)
     
     
-    weights = two_tier_weight(z.fillna(0.0))
-    return pd.Series(weights, index=df.index)
+    q1, q2 = _quantiles_from_threshold(2.7)
+    details = detect_rolling_quantile_surprises(
+        pd.Series(z, index=df.index).fillna(0.0),
+        window=ROLLING_Q_WINDOW,
+        quantiles=(q1, q2),
+        return_details=True
+    )
+    return pd.Series(details['weight'], index=df.index)
 
 def generate_ohlcv_candidates(df: pd.DataFrame) -> List[Dict]:
     """
@@ -4697,6 +4841,37 @@ def select_robust_candidates_quantile(candidates: List[Dict], quantile: float = 
     return selected
 
 
+class ContinuousPredictorEvents(BaseEventGenerator):
+    """
+    Simplified event generator for continuous predictor columns (ms__, ca__, meta__).
+    Used to wrap cross-asset features into the orthogonal race.
+    """
+    def generate(self, df: pd.DataFrame, tracker: Optional[Any] = None, **params) -> pd.DatetimeIndex:
+        predictor_col = params.get('predictor_col')
+        # Use quantiles from params if provided, otherwise default to causal surprise standards
+        q1 = params.get('q1', 0.96)
+        q2 = params.get('q2', 0.98)
+        window = params.get('window', 2000)
+        
+        if not predictor_col or predictor_col not in df.columns:
+            return pd.DatetimeIndex([])
+            
+        # Standardize: Use same rolling quantile mechanism as other causal specialists
+        # to ensure comparable event density and statistical properties.
+        try:
+            details = detect_rolling_quantile_surprises(
+                df[predictor_col].abs(),
+                window=window,
+                quantiles=(q1, q2),
+                return_details=True
+            )
+            # Level 2 = High Surprise, Level 3 = Extreme Surprise.
+            # We return both as events to the orthogonal race.
+            return details[details['level'] >= 2.0].index
+        except Exception as e:
+            tprint_warning(f"ContinuousPredictorEvents failed for {predictor_col}: {e}")
+            return pd.DatetimeIndex([])
+
 def orthogonal_label_generation(
     data: Union[pd.Series, pd.DataFrame],
     volume: Optional[pd.Series] = None,
@@ -4846,6 +5021,17 @@ def orthogonal_label_generation(
             ('MOMENTUM_DECAY_SPECIALIST', MomentumDecaySpecialistEvents()),
         ]
 
+        # --- KEY FIX: Add Cross-Asset / Market State generators if columns exist ---
+        special_prefixes = ('ms__', 'ca__', 'meta__')
+        cross_asset_cols = [c for c in df_full.columns if c.startswith(special_prefixes)]
+        if cross_asset_cols:
+            tprint_info(f"   🌐 Layer 2: Found {len(cross_asset_cols)} cross-asset/special features. Adding to orthogonal race.")
+            for col in cross_asset_cols:
+                family = "CROSS_ASSET_SURPRISE" if col.startswith('ca__') else "MARKET_STATE" if col.startswith('ms__') else "META"
+                gen_name = f"{family}_{col.upper()}"
+                # We use the column name as its own unique family to ensure it gets picked up individually
+                causal_generators.append((gen_name, ContinuousPredictorEvents()))
+        
         for gen_name, gen_class in causal_generators:
             tprint_info(f"      • {gen_name}: {type(gen_class).__name__}")
             base_generators.append((gen_name, gen_class))
@@ -4859,8 +5045,25 @@ def orthogonal_label_generation(
     
     # Build enhanced parameter combinations
     for fam, gen in base_generators:
-        family_config = param_grids['family_grids'].get(fam, {})
-        base_params = family_config.get('base_params', [])
+        # Check for dynamic cross-asset grids
+        if fam.startswith(('CROSS_ASSET_', 'MARKET_STATE_', 'META_')):
+            family_config = param_grids.get('default_continuous_grid', {})
+            # We need to inject the predictor_col into params
+            col_name = fam.split('_', 2)[-1].lower() if '_SURPRISE_' not in fam else fam.split('_', 3)[-1].lower()
+            # Correctly extract column name from gen_name
+            # If gen_name = CROSS_ASSET_SURPRISE_CA__ETHPOS_SURPRISE
+            # Split by '_' and take parts after the family prefix
+            parts = fam.split('_')
+            prefix_len = 3 if parts[1] == 'SURPRISE' else 2
+            col_name = '_'.join(parts[prefix_len:]).lower()
+            
+            base_params = []
+            for bp in family_config.get('base_params', []):
+                # bp = (threshold,) -> want (threshold, predictor_col)
+                base_params.append((bp[0], col_name))
+        else:
+            family_config = param_grids['family_grids'].get(fam, {})
+            base_params = family_config.get('base_params', [])
         
         # Add base parameters only (no variations)
         for params in base_params:
@@ -4976,6 +5179,9 @@ def orthogonal_label_generation(
                       c_events = gen_instance.generate(df_full, **kwargs)
                  else:
                       c_events = gen_instance.generate(df_full, *central_args)
+             elif gen_classname == 'ContinuousPredictorEvents':
+                  # central_args = (threshold, col_name)
+                  c_events = gen_instance.generate(df_full, threshold=central_args[0], predictor_col=central_args[1])
              elif gen_classname == 'CausalSurpriseEvents' or fam.startswith('CAUSAL_') or fam.endswith('_SPECIALIST'):
                  # Causal generators need specialist predictions
                  c_events = gen_instance.generate(
@@ -5544,7 +5750,14 @@ class InventorySpecialistEvents(BaseEventGenerator):
         # This fixes a dimensional error where it previously used return volatility
         price_std = close.rolling(window).std()
         z = (close - close.rolling(window).mean()) / (price_std + 1e-9)
-        return df.index[np.abs(z) > threshold]
+        q1, q2 = _quantiles_from_threshold(threshold)
+        details = detect_rolling_quantile_surprises(
+            z.abs().fillna(0.0),
+            window=ROLLING_Q_WINDOW,
+            quantiles=(q1, q2),
+            return_details=True
+        )
+        return df.index[details['level'] >= 2.0]
 
 class VolumeSpecialistEvents(BaseEventGenerator):
     """
@@ -5615,10 +5828,17 @@ class VolumeSpecialistEvents(BaseEventGenerator):
         vol_z = pd.Series(vol_z_vals, index=df.index)
         divergence = pd.Series(divergence_vals, index=df.index)
         
-        # Trigger on either strong OBI or significant divergence
-        mask = (np.abs(obi_z) > threshold) | ((vol_z > 1.5) & (divergence > threshold * 0.5))
-        
-        return df.index[mask]
+        # Adaptive rolling quantile detection (robust across regimes)
+        score = np.maximum(np.abs(obi_z_vals), np.maximum(divergence_vals, 0.0))
+        score_series = pd.Series(score, index=df.index)
+        q1, q2 = _quantiles_from_threshold(threshold)
+        details = detect_rolling_quantile_surprises(
+            score_series.fillna(0.0),
+            window=ROLLING_Q_WINDOW,
+            quantiles=(q1, q2),
+            return_details=True
+        )
+        return df.index[details['level'] >= 2.0]
 
 class VolatilitySpecialistEvents(BaseEventGenerator):
     """
@@ -5705,9 +5925,16 @@ class VolatilitySpecialistEvents(BaseEventGenerator):
         term_structure = vol_short / (vol_long + 1e-9)
         ts_z = (term_structure - term_structure.rolling(100).mean()) / (term_structure.rolling(100).std() + 1e-9)
         
-        # Combine: primary z-threshold OR term structure inversion
-        combined_mask = (z > z_threshold) | (ts_z > z_threshold * 0.8)
-        events = df.index[combined_mask]
+        # Adaptive rolling quantile detection (robust across regimes)
+        combined_score = np.maximum(z, ts_z)
+        q1, q2 = _quantiles_from_quantile(quantile)
+        details = detect_rolling_quantile_surprises(
+            combined_score.fillna(0.0),
+            window=ROLLING_Q_WINDOW,
+            quantiles=(q1, q2),
+            return_details=True
+        )
+        events = df.index[details['level'] >= 2.0]
         tprint_info(f"VolatilitySpecialist: Generated {len(events)} events")
         
         return events
@@ -5796,23 +6023,16 @@ class LiquiditySpecialistEvents(BaseEventGenerator):
         lambda_z_vals = (kyle_lambda_vals - lambda_mean_vals) / (lambda_std_vals + 1e-9)
         lambda_z = pd.Series(lambda_z_vals, index=df.index)
         
-        # Adaptive threshold: if too strict, use empirical quantiles
-        liq_events = (liq_z > threshold).sum()
-        lambda_events = (lambda_z < -threshold).sum()
-        total_events = liq_events + lambda_events
-        
-        if total_events < len(df) * 0.01:  # Less than 1% events
-            # Relax thresholds based on actual distribution
-            liq_threshold = liq_z.quantile(0.98)
-            lambda_threshold = lambda_z.quantile(0.02)  # Lower values = better liquidity
-            tprint_info(f"LiquiditySpecialist: Relaxed thresholds - liq: {liq_threshold:.3f}, lambda: {lambda_threshold:.3f}")
-        else:
-            liq_threshold = threshold
-            lambda_threshold = -threshold
-        
-        # Event trigger: High liquidity (positive liq_z) OR Low lambda (negative lambda_z)
-        mask = (liq_z > liq_threshold) | (lambda_z < lambda_threshold)
-        events = df.index[mask]
+        # Adaptive rolling quantile detection (robust across regimes)
+        score = np.maximum(liq_z, -lambda_z)
+        q1, q2 = _quantiles_from_threshold(threshold)
+        details = detect_rolling_quantile_surprises(
+            score.fillna(0.0),
+            window=ROLLING_Q_WINDOW,
+            quantiles=(q1, q2),
+            return_details=True
+        )
+        events = df.index[details['level'] >= 2.0]
         tprint_info(f"LiquiditySpecialist: Generated {len(events)} events")
         
         return events
@@ -5853,20 +6073,138 @@ class InformationSpecialistEvents(BaseEventGenerator):
         autocorr_vals = _numba_return_autocorrelation(ret_vals, window, lag=1)
         autocorr = pd.Series(np.abs(autocorr_vals), index=df.index)
         
-        # Dynamic Thresholding using Rolling Quantile
-        # Look for autocorr in the top (1-quantile)% of the last 10*window bars
-        baseline_window = window * 10
-        threshold_series = autocorr.rolling(baseline_window, min_periods=window).quantile(quantile)
+        q1, q2 = _quantiles_from_quantile(quantile)
+        details = detect_rolling_quantile_surprises(
+            autocorr.fillna(0.0),
+            window=ROLLING_Q_WINDOW,
+            quantiles=(q1, q2),
+            return_details=True
+        )
+        return df.index[details['level'] >= 2.0]
+
+class FractalEfficiencyEvents(BaseEventGenerator):
+    """
+    Fractal Efficiency Specialist (Kaufman).
+    Trigger: When market enters a clean trend (High Efficiency).
+    """
+    def generate(self, df: pd.DataFrame, tracker: Optional[Any] = None, **params) -> pd.DatetimeIndex:
+        threshold = params.get('threshold', 2.0)
+        window = params.get('window', 10)
         
-        # Trigger when current PIN/autocorr exceeds the local extreme
-        events = df.index[autocorr > threshold_series]
+        try:
+            events = self._get_fractal_events(df, threshold=threshold, window=window)
+            return events
+        except Exception as e:
+            logger.warning(f"FractalEfficiencyEvents failed: {e}")
+            return pd.DatetimeIndex([])
+
+    def _get_fractal_events(self, df: pd.DataFrame, window=10, threshold=2.0):
+        if 'close' not in df.columns: return pd.DatetimeIndex([])
         
-        # Fallback: if too few events (<50), lower quantile slightly
-        if len(events) < 50:
-            relaxed_threshold = autocorr.rolling(baseline_window, min_periods=window).quantile(0.90)
-            events = df.index[autocorr > relaxed_threshold]
-            
-        return events
+        # Kaufman Efficiency Ratio
+        diffs = df['close'].diff().abs()
+        net_change = df['close'].diff(window).abs()
+        path_length = diffs.rolling(window).sum()
+        efficiency = net_change / (path_length + 1e-9)
+        
+        # Z-score normalization using Numba
+        eff_vals = efficiency.fillna(0).values
+        eff_mean = _numba_rolling_mean(eff_vals, 50)
+        eff_std = _numba_rolling_std(eff_vals, 50)
+        eff_z_vals = (eff_vals - eff_mean) / (eff_std + 1e-9)
+        
+        eff_z_series = pd.Series(eff_z_vals, index=df.index)
+        q1, q2 = _quantiles_from_threshold(threshold)
+        details = detect_rolling_quantile_surprises(
+            eff_z_series.abs().fillna(0.0),
+            window=max(ROLLING_Q_WINDOW, window * 5),
+            quantiles=(q1, q2),
+            return_details=True
+        )
+        return df.index[details['level'] >= 2.0]
+
+class GapSpecialistEvents(BaseEventGenerator):
+    """
+    Exogenous Gap Specialist.
+    Trigger: Significant Opening Gaps.
+    """
+    def generate(self, df: pd.DataFrame, tracker: Optional[Any] = None, **params) -> pd.DatetimeIndex:
+        threshold = params.get('threshold', 2.5) # High Z-score
+        window = params.get('window', 20)
+        
+        try:
+            events = self._get_gap_events(df, threshold=threshold, window=window)
+            return events
+        except Exception as e:
+            logger.warning(f"GapSpecialistEvents failed: {e}")
+            return pd.DatetimeIndex([])
+
+    def _get_gap_events(self, df: pd.DataFrame, threshold=2.5, window=20):
+        if 'open' not in df.columns or 'close' not in df.columns: return pd.DatetimeIndex([])
+        
+        prev_close = df['close'].shift(1)
+        gap = (df['open'] - prev_close).abs()
+        
+        # Normalize by volatility
+        ret = df['close'].pct_change()
+        vol = ret.rolling(20).std() * prev_close
+        gap_sigma = gap / (vol + 1e-9)
+        
+        # Z-score of the gap magnitude using Numba
+        gap_sigma_vals = gap_sigma.fillna(0).values
+        gap_mean = _numba_rolling_mean(gap_sigma_vals, 100)
+        gap_std = _numba_rolling_std(gap_sigma_vals, 100)
+        gap_z_vals = (gap_sigma_vals - gap_mean) / (gap_std + 1e-9)
+        
+        gap_z_series = pd.Series(gap_z_vals, index=df.index)
+        q1, q2 = _quantiles_from_threshold(threshold)
+        details = detect_rolling_quantile_surprises(
+            gap_z_series.abs().fillna(0.0),
+            window=ROLLING_Q_WINDOW,
+            quantiles=(q1, q2),
+            return_details=True
+        )
+        return df.index[details['level'] >= 2.0]
+
+class LiquidityShockEvents(BaseEventGenerator):
+    """
+    Liquidity Shock Specialist (Amihud).
+    Trigger: Sudden evaporation of liquidity (High Price Impact).
+    """
+    def generate(self, df: pd.DataFrame, tracker: Optional[Any] = None, **params) -> pd.DatetimeIndex:
+        threshold = params.get('threshold', 2.5)
+        window = params.get('window', 50)
+        
+        try:
+            events = self._get_shock_events(df, threshold=threshold, window=window)
+            return events
+        except Exception as e:
+            logger.warning(f"LiquidityShockEvents failed: {e}")
+            return pd.DatetimeIndex([])
+
+    def _get_shock_events(self, df: pd.DataFrame, threshold=2.5, window=50):
+        if 'close' not in df.columns or 'volume' not in df.columns: return pd.DatetimeIndex([])
+        
+        # Amihud Illiquidity
+        ret = df['close'].pct_change().abs()
+        dollar_vol = df['volume'] * df['close']
+        illiquidity = ret / (dollar_vol + 1e-9)
+        
+        # Z-score using Numba
+        ill_vals = illiquidity.fillna(0).values
+        ill_mean = _numba_rolling_mean(ill_vals, window)
+        ill_std = _numba_rolling_std(ill_vals, window)
+        ill_z_vals = (ill_vals - ill_mean) / (ill_std + 1e-9)
+        
+        ill_z_series = pd.Series(ill_z_vals, index=df.index)
+        q1, q2 = _quantiles_from_threshold(threshold)
+        details = detect_rolling_quantile_surprises(
+            ill_z_series.abs().fillna(0.0),
+            window=ROLLING_Q_WINDOW,
+            quantiles=(q1, q2),
+            return_details=True
+        )
+        return df.index[details['level'] >= 2.0]
 
 class MomentumDecaySpecialistEvents(BaseEventGenerator):
     """
@@ -5918,13 +6256,16 @@ class MomentumDecaySpecialistEvents(BaseEventGenerator):
         accel_std = _numba_rolling_std(accel_vals, slow_window)
         accel_z = (mom_accel - accel_mean) / (accel_std + 1e-9)
         
-        # 5. Event detection: Strong trend + significant deceleration
-        # For uptrend: mom_slow > 0 and accel_z < -threshold (slowing up)
-        # For downtrend: mom_slow < 0 and accel_z > threshold (slowing down)
-        uptrend_exhaustion = (mom_slow > 0) & (accel_z < -threshold) & is_strong_trend
-        downtrend_exhaustion = (mom_slow < 0) & (accel_z > threshold) & is_strong_trend
-        
-        return df.index[uptrend_exhaustion | downtrend_exhaustion]
+        accel_z_series = pd.Series(accel_z, index=df.index)
+        q1, q2 = _quantiles_from_threshold(threshold)
+        details = detect_rolling_quantile_surprises(
+            accel_z_series.abs().fillna(0.0),
+            window=max(ROLLING_Q_WINDOW, slow_window * 5),
+            quantiles=(q1, q2),
+            return_details=True
+        )
+        event_mask = (details['level'] >= 2.0) & is_strong_trend
+        return df.index[event_mask]
 
 class ImprovedCUSUMEvents(BaseEventGenerator):
     """Refined CUSUM event generator using Efficiency Ratio (ER) for regime adaptation."""
@@ -5939,7 +6280,15 @@ class ImprovedCUSUMEvents(BaseEventGenerator):
             )
             # Combine trend and reversal signals
             combined = (signals['trend_signal'] == 1) | (signals['reversal_signal'] == 1)
-            return signals.index[combined]
+            diff_abs = df['close'].diff().abs().fillna(0.0)
+            q1, q2 = _quantiles_from_threshold(multiplier)
+            details = detect_rolling_quantile_surprises(
+                diff_abs,
+                window=ROLLING_Q_WINDOW,
+                quantiles=(q1, q2),
+                return_details=True
+            )
+            return signals.index[combined & (details['level'] >= 2.0)]
         except Exception as e:
             tprint_warning(f"⚠️ ImprovedCUSUMEvents failed: {e}")
             return pd.DatetimeIndex([])
@@ -5958,7 +6307,15 @@ class AdaptiveSymmetricCUSUMEvents(BaseEventGenerator):
                 vol_window=vol_window
             )
             combined = (signals['trend_signal'] == 1) | (signals['reversal_signal'] == 1)
-            return signals.index[combined]
+            diff_abs = df['close'].diff().abs().fillna(0.0)
+            q1, q2 = _quantiles_from_threshold(multiplier)
+            details = detect_rolling_quantile_surprises(
+                diff_abs,
+                window=ROLLING_Q_WINDOW,
+                quantiles=(q1, q2),
+                return_details=True
+            )
+            return signals.index[combined & (details['level'] >= 2.0)]
         except Exception as e:
             tprint_warning(f"⚠️ AdaptiveSymmetricCUSUMEvents failed: {e}")
             return pd.DatetimeIndex([])
@@ -6049,12 +6406,15 @@ class CausalSurpriseEvents(BaseEventGenerator):
         try:
             if 'close' in df.columns:
                 price = df['close']
-                # Simple volatility-based events
-                returns = price.pct_change()
-                vol = returns.rolling(20).std()
-                vol_threshold = vol.quantile(0.8)
-                events = df.index[vol > vol_threshold]
-                return events[:min(len(events), 500)]  # Limit events - increased for OOF fold sizing
+                returns = price.pct_change().abs()
+                details = detect_rolling_quantile_surprises(
+                    returns.fillna(0.0),
+                    window=ROLLING_Q_WINDOW,
+                    quantiles=ROLLING_Q_THRESHOLDS,
+                    return_details=True
+                )
+                events = df.index[details['level'] >= 2.0]
+                return events[:min(len(events), 500)]
             else:
                 return pd.DatetimeIndex([])
         except Exception:

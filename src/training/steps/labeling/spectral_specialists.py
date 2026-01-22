@@ -135,7 +135,9 @@ class SpectralSpecialists:
             'cusum_break_specialist',
             'entropy_specialist',
             'tick_rule_specialist',
-            'bar_efficiency_specialist',
+            'fractal_efficiency_specialist',
+            'liquidity_shock_specialist',
+            'gap_specialist',
             'trend_specialist',
             'reversal_specialist',
             'volatility_breakout_specialist'
@@ -192,29 +194,43 @@ class SpectralSpecialists:
                 'key_scales': ['d1', 'd2'],
                 'resonance_pairs': [('d1', 'd3')]
             },
-            'bar_efficiency_specialist': {
+            'fractal_efficiency_specialist': {
                 'priority': 8,
-                'description': 'Bar Efficiency (Trend vs Random Walk)',
-                'role': 'Distinguish directional trends from random noise',
+                'description': 'Fractal Efficiency (Kaufman/Hurst)',
+                'role': 'Distinguish directional trends (clean) from random walks (noisy)',
                 'key_scales': ['d2', 'd4'],
                 'resonance_pairs': [('d2', 'd4')]
             },
-            'trend_specialist': {
+            'liquidity_shock_specialist': {
                 'priority': 9,
+                'description': 'Liquidity Shock (Amihud Proxy)',
+                'role': 'Detects structural liquidity failures (Price Ease)',
+                'key_scales': ['d1', 'd2'],
+                'resonance_pairs': [('d1', 'd3')]
+            },
+            'gap_specialist': {
+                'priority': 10,
+                'description': 'Exogenous Shock (Gap)',
+                'role': 'Detects overnight/weekend information injection',
+                'key_scales': ['d1', 'd4'],
+                'resonance_pairs': [('d1', 'd4')]
+            },
+            'trend_specialist': {
+                'priority': 11,
                 'description': 'Trend Persistence (Rolling Returns)',
                 'role': 'Captures directional alpha and trend persistence',
                 'key_scales': ['d3', 'd4'],
                 'resonance_pairs': [('d3', 'd4')]
             },
             'reversal_specialist': {
-                'priority': 10,
+                'priority': 12,
                 'description': 'Mean Reversion (Oscillator)',
                 'role': 'Detects overextended price action and mean-reversion events',
                 'key_scales': ['d1', 'd2'],
                 'resonance_pairs': [('d1', 'd3')]
             },
             'volatility_breakout_specialist': {
-                'priority': 11,
+                'priority': 13,
                 'description': 'Volatility Breakout (HL vs Baseline)',
                 'role': 'Detects unexpected volatility/range expansion vs baseline',
                 'key_scales': ['d2', 'd3'],
@@ -289,7 +305,9 @@ class SpectralSpecialists:
             _add_signal('cusum_break_specialist', self._extract_cusum_break_signal)
             _add_signal('entropy_specialist', self._extract_entropy_signal)
             _add_signal('tick_rule_specialist', self._extract_tick_rule_signal)
-            _add_signal('bar_efficiency_specialist', self._extract_efficiency_signal)
+            _add_signal('fractal_efficiency_specialist', self._extract_fractal_efficiency_signal)
+            _add_signal('liquidity_shock_specialist', self._extract_liquidity_shock_signal)
+            _add_signal('gap_specialist', self._extract_gap_signal)
             _add_signal('trend_specialist', self._extract_trend_signal)
             _add_signal('reversal_specialist', self._extract_reversal_signal)
             _add_signal('volatility_breakout_specialist', self._extract_volatility_breakout_signal)
@@ -879,8 +897,13 @@ class SpectralSpecialists:
                 # We want "Surprise" when ratio is high.
                 # If ratio > 1.0 -> Vol expansion.
                 
+                # KEY CHANGE: Directional Breakout
+                # Range expansion is only a signal if we know WHICH WAY it broke out.
+                direction = np.sign(df['close'].diff())
+                vol_break_signal_raw = breakout_ratio * direction
+                
                 # Normalize
-                vol_break_signal = (breakout_ratio - breakout_ratio.rolling(100).mean()) / (breakout_ratio.rolling(100).std() + 1e-9)
+                vol_break_signal = (vol_break_signal_raw - vol_break_signal_raw.rolling(100).mean()) / (vol_break_signal_raw.rolling(100).std() + 1e-9)
                 
                 return vol_break_signal.fillna(0)
             return None
@@ -927,28 +950,36 @@ class SpectralSpecialists:
             tprint_info("📊 Extracting volume specialist signal")
         try:
             if 'volume' in df.columns and 'close' in df.columns:
-                # 1. Volume Spikes Normalized by Rolling Volatility
-                # Concept: Volume is more significant when volatility is low (breakout)
-                # or when it confirms high volatility moves.
+                # 1. Volume-Weighted Price Efficiency (Informed Flow)
+                # Concept: High volume is only "signal" if it results in efficient price movement.
+                # High volume + Low movement = Churn/Noise (Absorption) -> Filtered out
+                # High volume + High movement = Informed Breakout -> Signal
                 
-                returns = df['close'].pct_change()
-                volatility = returns.rolling(20).std()
+                # Bar Efficiency (Signed: -1.0 to 1.0)
+                # +1.0 = Marubozu Up (Pure Buy Pressure)
+                # -1.0 = Marubozu Down (Pure Sell Pressure)
+                # ~0.0 = Doji (Indecision/Churn)
+                price_range = (df['high'] - df['low'])
+                body = (df['close'] - df['open'])
+                efficiency = body / (price_range + 1e-9)
                 
-                # Relative Volume
+                # Relative Volume (Log-space to dampen extreme outliers)
                 vol_ma = df['volume'].rolling(20).mean()
                 volume_ratio = df['volume'] / (vol_ma + 1e-9)
+                log_volume_ratio = np.log1p(volume_ratio)
                 
-                # Volume-Volatility Interaction
-                # High Volume + High Volatility = Trend Confirmation
-                # High Volume + Low Volatility = Potential Accumulation/Churn
+                # Signal: Efficiency amplified by Volume
+                # Efficient moves on high volume are the strongest causal events
+                volume_signal = efficiency * log_volume_ratio
                 
-                # Signal: Volume Ratio weighted by recent return magnitude
-                volume_signal = np.log(volume_ratio + 1) * np.abs(returns)
-                
-                # Adaptive Volatility Filter (AVF)
-                # Filter out signals during extremely low volatility periods (noise)
-                # unless volume is EXTREMELY high
+                # Adaptive Volatility Filter (AVF) integration
+                returns = df['close'].pct_change()
+                volatility = returns.rolling(20).std()
                 vol_rank = volatility.rolling(100).rank(pct=True)
+                
+                # Allow signal if:
+                # 1. Volatility is healthy (> 10th percentile)
+                # 2. OR Volume is massive (> 3x average) - distinct event
                 avf_mask = (vol_rank > 0.1) | (volume_ratio > 3.0)
                 
                 volume_signal = volume_signal * avf_mask.astype(float)
@@ -957,13 +988,13 @@ class SpectralSpecialists:
                 volume_signal = (volume_signal - volume_signal.rolling(50).mean()) / \
                                (volume_signal.rolling(50).std() + 1e-9)
                 
-                # Add lagged features for momentum detection (simple momentum here)
-                volume_momentum = volume_signal.diff()
-                
-                final_sig = (volume_signal + 0.5 * volume_momentum).fillna(0)
+                # Momentum confirmation (optional but helpful for persistence)
+                # Is the signal separating from its recent average?
+                sig_mom = volume_signal.diff()
+                final_sig = (volume_signal + 0.5 * sig_mom).fillna(0)
                 
                 if self.verbose and final_sig.std() < 1e-6:
-                     tprint_warning(f"      ⚠️ Volume signal low variance: raw_vol_ratio_std={volume_ratio.std():.6f}")
+                     tprint_warning(f"      ⚠️ Volume signal low variance: raw_std={volume_signal.std():.6f}")
                      
                 return final_sig
             
@@ -997,7 +1028,13 @@ class SpectralSpecialists:
                 range_surprise = (hl_range - range_ma) / (range_ma + 1e-9)
                 
                 # Combined Signal: Volatility Expansion + Intraday Range Expansion
-                volatility_signal = vol_change + (range_surprise * realized_vol)
+                # KEY CHANGE: Multiply by direction (sign of returns) to make it predictive
+                # High Vol + Up = Bullish thrust
+                # High Vol + Down = Bearish crash
+                raw_mag = vol_change + (range_surprise * realized_vol)
+                direction = np.sign(returns)
+                
+                volatility_signal = raw_mag * direction
                 
                 # Normalize
                 volatility_signal = (volatility_signal - volatility_signal.rolling(50).mean()) / \
@@ -1294,46 +1331,130 @@ class SpectralSpecialists:
                 tprint_warning(f"      ⚠️ Tick rule signal extraction failed: {e}")
             return None
 
-    def _extract_efficiency_signal(self, df: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.Series]:
+    def _extract_fractal_efficiency_signal(self, df: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.Series]:
         """
-        Extract Bar Efficiency Ratio signal.
-        Distinguishes directional trends (Efficient) from random walks/choppiness (Inefficient).
+        Extract Fractal Efficiency (Kaufman) signal.
+        Measures trend cleanliness/linearity.
+        Logic: Sign(Return) * (Net_Move / Total_Path_Length)
         """
         if self.verbose:
-            tprint_info("📏 Extracting bar efficiency specialist signal")
+            tprint_info("📏 Extracting fractal efficiency specialist signal")
         try:
-            required = ['close', 'open', 'high', 'low']
+            required = ['close']
             if all(c in df.columns for c in required):
-                # Efficiency Ratio (Kaufman-like but per bar/window)
-                # Net Move / Total Path
-                
-                # Using a rolling window approach
+                # Fractal Efficiency Ratio (Kaufman)
+                # Optimized vectorized implementation using Pandas rolling
                 window = 10
-                net_move = (df['close'] - df['close'].shift(window)).abs()
                 
-                # Total Path (Sum of absolute periodic changes)
-                path = df['close'].diff().abs().rolling(window).sum()
+                # Numba-friendly logic simulation via optimized Pandas
+                diffs = df['close'].diff()
+                abs_diffs = diffs.abs()
                 
-                efficiency_ratio = net_move / (path + 1e-9)
+                # Efficiency = |Change(N)| / Sum(|Change(1)|..|Change(N)|)
+                net_change = df['close'].diff(window)
+                path_length = abs_diffs.rolling(window).sum()
                 
-                # We want a signed signal? Or just magnitude of efficiency?
-                # Usually "Surprise" is directional.
-                # If efficiency increases -> Trend forming.
-                # If efficiency drops -> Choppiness.
-                # Let's make it directional relative to trend direction
-                trend_dir = np.sign(df['close'] - df['close'].shift(window))
+                # Avoid division by zero
+                efficiency = net_change.abs() / (path_length + 1e-9)
                 
-                eff_signal_raw = efficiency_ratio * trend_dir
+                # Make Directional: Multiply by sign of the net change
+                # Up Trend Efficient = +ve
+                # Down Trend Efficient = -ve
+                # Choppy/Noise = ~0
+                direction = np.sign(net_change)
+                directional_efficiency = efficiency * direction
                 
-                # Normalize
-                efficiency_signal = (eff_signal_raw - eff_signal_raw.rolling(50).mean()) / (eff_signal_raw.rolling(50).std() + 1e-9)
+                # Normalize (Z-Score)
+                # We want to detect Anomalous Efficiency (Pure Trends)
+                fractal_signal = (directional_efficiency - directional_efficiency.rolling(50).mean()) / \
+                                (directional_efficiency.rolling(50).std() + 1e-9)
                 
-                return efficiency_signal.fillna(0)
+                return fractal_signal.fillna(0)
             
             return None
         except Exception as e:
             if self.verbose:
-                tprint_warning(f"      ⚠️ Efficiency signal extraction failed: {e}")
+                tprint_warning(f"      ⚠️ Fractal efficiency extraction failed: {e}")
+            return None
+
+    def _extract_liquidity_shock_signal(self, df: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.Series]:
+        """
+        Extract Liquidity Shock signal (Amihud Proxy).
+        Measures Price Impact per Unit of Volume.
+        """
+        if self.verbose:
+            tprint_info("💧 Extracting liquidity shock specialist signal")
+        try:
+            required = ['close', 'volume']
+            if all(c in df.columns for c in required):
+                # Amihud Illiquidity: |Return| / (Price * Volume)
+                # We want "Price Ease" -> Directional Impact
+                
+                returns = df['close'].pct_change()
+                
+                # Volume in dollars approx (Volume * Price) or just Volume if FX/Crypto
+                # Using Dollar Volume is safer for comparing across price levels
+                dollar_volume = df['volume'] * df['close']
+                
+                # Illiquidity: How much price moves per dollar traded
+                # High = Illiquid (Fragile)
+                # Low = Liquid (Robust)
+                illiquidity = returns.abs() / (dollar_volume + 1e-9)
+                
+                # We want to detect SHOCKS in illiquidity that coincide with direction
+                # i.e., Price moving easily (thin liquidity) in a direction
+                
+                # Directional Liquidity Shock = Sign(Return) * Illiquidity
+                liq_shock_raw = np.sign(returns) * illiquidity
+                
+                # Log-space handling might be needed if illiquidity spans orders of magnitude?
+                # Usually standardizing rolling window handles it.
+                
+                # Normalize
+                liq_shock_signal = (liq_shock_raw - liq_shock_raw.rolling(50).mean()) / \
+                                  (liq_shock_raw.rolling(50).std() + 1e-9)
+                                  
+                return liq_shock_signal.fillna(0)
+            return None
+        except Exception as e:
+            if self.verbose:
+                tprint_warning(f"      ⚠️ Liquidity shock extraction failed: {e}")
+            return None
+
+    def _extract_gap_signal(self, df: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.Series]:
+        """
+        Extract Exogenous Gap signal.
+        Measures Overnight/Weekend information injection (Open - PrevClose).
+        """
+        if self.verbose:
+            tprint_info("🕳️ Extracting gap specialist signal")
+        try:
+            required = ['open', 'close']
+            if all(c in df.columns for c in required):
+                # Gap = Open - Prev Close
+                prev_close = df['close'].shift(1)
+                gap = df['open'] - prev_close
+                
+                # Normalize by recent volatility (Standardized Gap)
+                # A 1% gap in low vol is huge; in high vol is noise.
+                returns = df['close'].pct_change()
+                volatility = returns.rolling(20).std()
+                
+                # Standardized Gap (Sigma)
+                gap_sigma = gap / (prev_close * volatility + 1e-9) # Gap % / Vol % approx
+                
+                # We can also just z-score the raw gap if we want local context
+                # But Vol-adjusted is more physically meaningful (Exogenous Shock Magnitude)
+                
+                # Let's z-score the sigma to fit the distribution
+                gap_signal = (gap_sigma - gap_sigma.rolling(50).mean()) / \
+                            (gap_sigma.rolling(50).std() + 1e-9)
+                            
+                return gap_signal.fillna(0)
+            return None
+        except Exception as e:
+            if self.verbose:
+                tprint_warning(f"      ⚠️ Gap signal extraction failed: {e}")
             return None
 
 

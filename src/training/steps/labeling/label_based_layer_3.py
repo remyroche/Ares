@@ -32,6 +32,16 @@ except ImportError as e:
         print(f"⚠️ Failed to import standard Layer 3: {e2}")
         layer3_analyst_orf = None
 
+try:
+    from src.training.steps.labeling.label_based_layer_3_enhanced import (
+        layer3_analyst_lgbm as layer3_analyst_enhanced,
+    )
+    LAYER3_ENHANCED_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Failed to import enhanced Layer 3: {e}")
+    layer3_analyst_enhanced = None
+    LAYER3_ENHANCED_AVAILABLE = False
+
 def layer3_analyst_lgbm(
     oof_df: pd.DataFrame,
     base_model_cols: List[str],
@@ -68,6 +78,25 @@ def layer3_analyst_lgbm(
         Tuple of (enhanced DataFrame, models dictionary)
     """
     tprint_info("🔄 Layer 3 Wrapper: Starting execution...")
+
+    cfg = config if isinstance(config, dict) else {}
+    if cfg.get("layer3_use_enhanced") and LAYER3_ENHANCED_AVAILABLE:
+        tprint_info("🧬 Layer 3 Wrapper: Using De Prado-enhanced implementation")
+        result = layer3_analyst_enhanced(
+            oof_df=oof_df,
+            base_model_cols=base_model_cols,
+            target_col=target_col,
+            train_split_date=train_split_date,
+            sample_weight=sample_weight,
+            layer1_weight=layer1_weight,
+            layer2_weight=layer2_weight,
+            layer2_weight_quality=layer2_weight_quality,
+            net_returns=net_returns,
+            market_data=market_data,
+            config=config,
+        )
+        tprint_success("✅ Layer 3 Wrapper: Enhanced execution completed successfully")
+        return result
 
     if layer3_analyst_orf is not None:
         result = layer3_analyst_orf(

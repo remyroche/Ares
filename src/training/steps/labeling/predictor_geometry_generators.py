@@ -195,7 +195,7 @@ class ContinuousPredictorGenerator:
             
             predictors.append(PredictorGeometry(
                 name=f"distance_from_mean_{window}",
-                family="RELAXATION_GEOMETRY",
+                family="MEAN_REVERSION",
                 values=distance,
                 metadata={"window": window, "type": "distance"}
             ))
@@ -205,7 +205,7 @@ class ContinuousPredictorGenerator:
             
             predictors.append(PredictorGeometry(
                 name=f"decay_rate_{window}",
-                family="RELAXATION_GEOMETRY",
+                family="MEAN_REVERSION",
                 values=decay_rate,
                 metadata={"window": window, "type": "decay_rate"}
             ))
@@ -215,7 +215,7 @@ class ContinuousPredictorGenerator:
             
             predictors.append(PredictorGeometry(
                 name=f"relaxation_accel_{window}",
-                family="RELAXATION_GEOMETRY",
+                family="MEAN_REVERSION",
                 values=acceleration,
                 metadata={"window": window, "type": "acceleration"}
             ))

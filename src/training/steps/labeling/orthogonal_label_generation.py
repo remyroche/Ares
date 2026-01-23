@@ -1345,9 +1345,19 @@ def compute_dominance_labels(
     vol_vals = volatility.values[valid_idxs].astype(np.float64)
     vol_vals = np.maximum(vol_vals, 1e-6)
 
+    # Scale volatility by square root of horizon for multi-period targets
+    # Cap the scaling at sqrt(9) = 3 to avoid explosion for long horizons
+    # This ensures 2.0*Vol target is achievable over 'horizon' bars, not just 1 bar
+    if horizon > 1:
+        # Scale factor: sqrt(horizon) capped at 3.0
+        scale_factor = np.sqrt(min(horizon, 9.0))
+        eff_vol_vals = vol_vals * scale_factor
+    else:
+        eff_vol_vals = vol_vals
+
     # Thresholds as 1D arrays for Numba
-    pt_thresh_arr = (vol_vals * pt_mult)
-    sl_thresh_arr = (-vol_vals * sl_mult)
+    pt_thresh_arr = (eff_vol_vals * pt_mult)
+    sl_thresh_arr = (-eff_vol_vals * sl_mult)
 
     # Check if High/Low provided
     if high is not None and low is not None:
@@ -1431,7 +1441,8 @@ def compute_dominance_labels(
         weights = weights / w_mean
 
     # 6. Returns (use win_mask)
-    out_returns = np.where(win_mask, pt_mult * vol_vals, -sl_mult * vol_vals)
+    # Use effective volatility for returns to match the threshold scaling
+    out_returns = np.where(win_mask, pt_mult * eff_vol_vals, -sl_mult * eff_vol_vals)
     timeout_mask = (~any_pt) & (~any_sl)
     out_returns[timeout_mask] = timeout_returns[timeout_mask]
 

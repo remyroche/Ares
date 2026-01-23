@@ -335,7 +335,7 @@ class ContinuousPredictorEvents:
     - Symmetric CUSUM Filter (De Prado)
     
     Families supported:
-    - RELAXATION_GEOMETRY
+    - MEAN_REVERSION
     - MARKET_FRAGILITY
     - SURPRISE_Z_CONTINUOUS
     - FLOW_PRESSURE_CONTINUOUS
@@ -346,7 +346,7 @@ class ContinuousPredictorEvents:
         """Initialize the continuous predictor event generator.
         
         Args:
-            family: Base family name (e.g., 'RELAXATION_GEOMETRY')
+            family: Base family name (e.g., 'MEAN_REVERSION')
             z_threshold: Z-score threshold for event detection (or h for CUSUM)
         """
         self.family = family
@@ -5148,13 +5148,13 @@ class LabelBasedLayer2(BaseStep):
             gen = self.generators.get(family)
             
             # === FALLBACK: Handle compound family names from orthogonal generation ===
-            # E.g., RELAXATION_GEOMETRY_DECAY_RATE_20_POS -> RELAXATION_GEOMETRY
+            # E.g., MEAN_REVERSION_DECAY_RATE_20_POS -> MEAN_REVERSION
             # E.g., COND_OHLCV_VOLATILITY_SPIKE_ON_INVENTORY -> COND_OHLCV
             if gen is None:
                 # Try to extract base family from known compound patterns
                 base_family = None
-                if family.startswith('RELAXATION_GEOMETRY'):
-                    base_family = 'RELAXATION_GEOMETRY'
+                if family.startswith('MEAN_REVERSION'):
+                    base_family = 'MEAN_REVERSION'
                 elif family.startswith('COND_OHLCV'):
                     base_family = 'COND_OHLCV'
                 elif family.startswith('SURPRISE_Z'):
@@ -12268,7 +12268,7 @@ class LabelBasedLayer2(BaseStep):
             "INFORMATION_SPECIALIST": InformationSpecialistEvents(),
             "INVENTORY_SPECIALIST": InventorySpecialistEvents(),
             # Continuous predictor families
-            "RELAXATION_GEOMETRY": ContinuousPredictorEvents('RELAXATION_GEOMETRY'),
+            "MEAN_REVERSION": ContinuousPredictorEvents('MEAN_REVERSION'),
             "MARKET_FRAGILITY": ContinuousPredictorEvents('MARKET_FRAGILITY'),
             "SURPRISE_Z_CONTINUOUS": ContinuousPredictorEvents('SURPRISE_Z_CONTINUOUS'),
             "FLOW_PRESSURE_CONTINUOUS": ContinuousPredictorEvents('FLOW_PRESSURE_CONTINUOUS'),
@@ -12374,11 +12374,11 @@ class LabelBasedLayer2(BaseStep):
                 gen = self.generators.get(family)
                 
                 # === FALLBACK: Handle compound family names from orthogonal generation ===
-                # E.g., RELAXATION_GEOMETRY_DECAY_RATE_20_POS -> RELAXATION_GEOMETRY
+                # E.g., MEAN_REVERSION_DECAY_RATE_20_POS -> MEAN_REVERSION
                 if gen is None:
                     base_family = None
-                    if family.startswith('RELAXATION_GEOMETRY'):
-                        base_family = 'RELAXATION_GEOMETRY'
+                    if family.startswith('MEAN_REVERSION'):
+                        base_family = 'MEAN_REVERSION'
                     elif family.startswith('COND_OHLCV'):
                         base_family = 'COND_OHLCV'
                     elif family.startswith('SURPRISE_Z'):

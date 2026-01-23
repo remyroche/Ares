@@ -61,6 +61,7 @@ from src.utils.numba_funcs import _numba_return_autocorrelation
 from .de_prado_feature_engine import DePradoFeatureEngine
 from src.training.steps.labeling.feature_engineering_utils import apply_layer2_price_processing
 from .detection_utils import detect_rolling_quantile_surprises
+from src.training.steps.labeling.causal_dispersion_engine import CausalDispersionEngine
 
 ROLLING_Q_WINDOW = 500
 ROLLING_Q_THRESHOLDS = (0.96, 0.98)
@@ -281,7 +282,10 @@ GENERATOR_PARAM_NAMES = {
     'FractalEfficiencyEvents': ['threshold', 'window'],
     'GapSpecialistEvents': ['threshold', 'window'],
     'LiquidityShockEvents': ['threshold', 'window'],
-    'MicrostructureImbalanceEvents': ['threshold', 'window']
+    'MicrostructureImbalanceEvents': ['threshold', 'window'],
+    'ExhaustionSpecialistEvents': ['threshold', 'window'],
+    'VolatilityInnovationSpecialistEvents': ['threshold'],
+    'DispersionSpecialistEvents': ['threshold']
 }
 
 # Generators that require the full DataFrame instead of just Series
@@ -303,7 +307,10 @@ DF_REQUIRED_CLASSES = (
     'KalmanRegimeEvents',
     'TradeIntensityEvents',
     'OrderFlowImbalanceEvents',
-    'BarPressureEvents'
+    'BarPressureEvents',
+    'ExhaustionSpecialistEvents',
+    'VolatilityInnovationSpecialistEvents',
+    'DispersionSpecialistEvents'
 )
 
 
@@ -2803,6 +2810,18 @@ def get_enhanced_parameter_grids(range_specific: bool = False) -> Dict[str, Dict
         'MOMENTUM_DECAY_SPECIALIST': {
             'base_params': [(1.5, 10, 50), (2.0, 10, 50), (2.5, 10, 50), (2.0, 5, 30), (2.0, 20, 100)],
             'horizons': [16, 24, 48],
+        },
+        'EXHAUSTION_SPECIALIST': {
+            'base_params': [(1.8, 20), (2.0, 20), (2.5, 20)],
+            'horizons': [16, 24, 48],
+        },
+        'VOLATILITY_INNOVATION_SPECIALIST': {
+            'base_params': [(1.8,), (2.0,), (2.5,)],
+            'horizons': [16, 24, 48],
+        },
+        'DISPERSION_SPECIALIST': {
+            'base_params': [(1.8,), (2.0,), (2.5,)],
+            'horizons': [16, 24, 48],
         }
     }
 
@@ -5030,6 +5049,9 @@ def orthogonal_label_generation(
             ('INFORMATION_SPECIALIST', InformationSpecialistEvents()),
             ('INVENTORY_SPECIALIST', InventorySpecialistEvents()),
             ('MOMENTUM_DECAY_SPECIALIST', MomentumDecaySpecialistEvents()),
+            ('EXHAUSTION_SPECIALIST', ExhaustionSpecialistEvents()),
+            ('VOLATILITY_INNOVATION_SPECIALIST', VolatilityInnovationSpecialistEvents()),
+            ('DISPERSION_SPECIALIST', DispersionSpecialistEvents()),
         ]
 
         # --- KEY FIX: Add Cross-Asset / Market State generators if columns exist ---
@@ -6430,6 +6452,172 @@ class CausalSurpriseEvents(BaseEventGenerator):
                 return pd.DatetimeIndex([])
         except Exception:
             return pd.DatetimeIndex([])
+
+class ExhaustionSpecialistEvents(BaseEventGenerator):
+    """
+    Exhaustion Specialist: Range-Volume Divergence.
+    Metric: Efficiency = (|Close - Open| / (High - Low)) * log(Volume)
+    Surprise: Efficiency_t - EMA(Efficiency_n)
+    Logic: If price moves little on high volume (churn), "work" increases.
+    """
+    def generate(self, df: pd.DataFrame, tracker: Optional[Any] = None, **params) -> pd.DatetimeIndex:
+        threshold = params.get('threshold', 2.0)
+        window = params.get('window', 20)
+
+        try:
+            events = self._get_exhaustion_events(df, threshold, window)
+            return events
+        except Exception as e:
+            tprint_warning(f"ExhaustionSpecialistEvents failed: {e}")
+            return pd.DatetimeIndex([])
+
+    def _get_exhaustion_events(self, df: pd.DataFrame, threshold=2.0, window=20):
+        required = ['close', 'open', 'high', 'low', 'volume']
+        if not all(col in df.columns for col in required): return pd.DatetimeIndex([])
+
+        # Calculate Efficiency (Work)
+        # Avoid division by zero
+        range_hl = (df['high'] - df['low']).replace(0, 1e-9)
+        move_co = (df['close'] - df['open']).abs()
+
+        # Efficiency = (Price Move / Range) * log(Volume)
+        # Note: High Efficiency = Clean move. Low Efficiency = Churn.
+        # User Logic: "If price moves 1% on 1k vol, but 0.1% on 5k vol, work increased."
+        # This implies we are looking for LOW efficiency or Divergence?
+        # User: "The Metric: Efficiency = |C-O|/(H-L) * log(V)"
+        # "Surprise = Efficiency_t - EMA(Efficiency_n)"
+        # "Signals that asset has hit a wall of limit orders" -> This implies Low Efficiency (High Volume, Low Move)?
+        # Or High Work?
+        # Actually, if |C-O| is small and V is high, Efficiency is LOW (if we define it as move per volume).
+        # But if the formula is |C-O|/(H-L) * log(V), then:
+        # If |C-O| is small (doji), efficiency is small.
+        # If V is high, efficiency increases?
+        # Wait, usually Efficiency = PriceChange / Volume.
+        # User formula: Ratio of Body/Range * Log(Vol).
+        # If Body is small (Doji), ratio is small. Even with high Vol, it might be small.
+        # If Body is large (Marubozu), ratio is ~1. High Vol -> High Efficiency.
+        # "Exhaustion" usually means High Volume but No Move (Churn).
+        # So we expect a drop in efficiency? Or a spike in "Innefficiency"?
+
+        # User says: "Exhaustion (Surprise): Don't just feed raw volume. Feed the Residual of Efficiency (Work Done vs. Expected Work)."
+        # "If the price moves 1% on 1,000 units of volume, but then moves only 0.1% on 5,000 units, the 'work' required to move the price has increased 50x."
+        # This implies we want to detect when "Work" (Volume per unit move) is high.
+        # But the Metric provided is "Efficiency".
+        # Let's stick to the metric provided: E = |C-O|/(H-L) * log(V).
+        # And look for Surprise.
+        # If we assume "Exhaustion" is a surprise in this metric.
+
+        efficiency = (move_co / range_hl) * np.log1p(df['volume'])
+
+        # Surprise = E_t - EMA(E_n)
+        ema = efficiency.ewm(span=window).mean()
+        surprise = efficiency - ema
+
+        # We look for large deviations (positive or negative?)
+        # A large POSITIVE surprise means Efficiency increased (Clean move on high volume).
+        # A large NEGATIVE surprise means Efficiency dropped (Churn? or just low volume?).
+        # User says "Exhaustion ... signals asset has hit a wall". This is usually Churn (Low Body, High Range/Volume).
+        # So likely Negative Surprise (Lower than expected efficiency).
+        # But `detect_rolling_quantile_surprises` usually looks for magnitude or positive spikes?
+        # It uses `series > threshold`. If we want negative, we should invert or use abs.
+        # "Surprise" usually implies deviation.
+        # Let's use ABS surprise to capture both Breakouts (High Eff) and Churn (Low Eff).
+
+        surprise_z = (surprise - surprise.rolling(100).mean()) / (surprise.rolling(100).std() + 1e-9)
+
+        q1, q2 = _quantiles_from_threshold(threshold)
+        details = detect_rolling_quantile_surprises(
+            surprise_z.abs().fillna(0.0), # Magnitude of surprise
+            window=ROLLING_Q_WINDOW,
+            quantiles=(q1, q2),
+            return_details=True
+        )
+        return df.index[details['level'] >= 2.0]
+
+class VolatilityInnovationSpecialistEvents(BaseEventGenerator):
+    """
+    Volatility Innovation Specialist: Parkinsons-Residuals.
+    Metric: Parkinsons = sqrt(1 / (4 * ln(2)) * ln(High / Low)^2)
+    Surprise: Vol_Surprise = Parkinsons_t - Kalman(Market_Volatility)
+    Logic: Liquidity Stress / Hidden Volatility.
+    """
+    def generate(self, df: pd.DataFrame, tracker: Optional[Any] = None, **params) -> pd.DatetimeIndex:
+        threshold = params.get('threshold', 2.0)
+
+        try:
+            events = self._get_vol_innovation_events(df, threshold)
+            return events
+        except Exception as e:
+            tprint_warning(f"VolatilityInnovationSpecialistEvents failed: {e}")
+            return pd.DatetimeIndex([])
+
+    def _get_vol_innovation_events(self, df: pd.DataFrame, threshold=2.0):
+        required = ['high', 'low']
+        if not all(col in df.columns for col in required): return pd.DatetimeIndex([])
+
+        # Parkinsons Volatility
+        # sigma = sqrt( 1/(4ln2) * ln(H/L)^2 )
+        const = 1.0 / (4.0 * np.log(2.0))
+        log_hl = np.log(df['high'] / (df['low'] + 1e-9))
+        parkinsons = np.sqrt(const * (log_hl ** 2))
+
+        # Market Volatility Proxy (Kalman Filter of self if market unavailable)
+        # Using _numba_kalman_filter_1d
+        from src.utils.orthogonal_numba import _numba_kalman_filter_1d
+
+        vals = parkinsons.values.astype(np.float64)
+        # Q=1e-5 (process noise), R=0.01 (measurement noise)
+        states, _ = _numba_kalman_filter_1d(vals, 1e-5, 0.01, vals[0], 1.0)
+        expected_vol = pd.Series(states, index=df.index)
+
+        # Surprise (Innovation)
+        # "Spike here indicates market-makers pulling quotes" -> Positive Surprise
+        surprise = parkinsons - expected_vol
+
+        # Normalize
+        surprise_z = (surprise - surprise.rolling(100).mean()) / (surprise.rolling(100).std() + 1e-9)
+
+        q1, q2 = _quantiles_from_threshold(threshold)
+        details = detect_rolling_quantile_surprises(
+            surprise_z.fillna(0.0), # Directional (Positive spikes in volatility)
+            window=ROLLING_Q_WINDOW,
+            quantiles=(q1, q2),
+            return_details=True
+        )
+        return df.index[details['level'] >= 2.0]
+
+class DispersionSpecialistEvents(BaseEventGenerator):
+    """
+    Dispersion Specialist: DMV Factor.
+    Metric: Price distance from Fair Value, normalized by ATR, weighted by Volume.
+    """
+    def generate(self, df: pd.DataFrame, tracker: Optional[Any] = None, **params) -> pd.DatetimeIndex:
+        threshold = params.get('threshold', 2.0)
+
+        try:
+            events = self._get_dispersion_events(df, threshold)
+            return events
+        except Exception as e:
+            tprint_warning(f"DispersionSpecialistEvents failed: {e}")
+            return pd.DatetimeIndex([])
+
+    def _get_dispersion_events(self, df: pd.DataFrame, threshold=2.0):
+        engine = CausalDispersionEngine()
+        dmv_factor = engine.calculate_dmv(df)
+
+        if dmv_factor.empty: return pd.DatetimeIndex([])
+
+        # Normalize DMV
+        dmv_z = (dmv_factor - dmv_factor.rolling(100).mean()) / (dmv_factor.rolling(100).std() + 1e-9)
+
+        q1, q2 = _quantiles_from_threshold(threshold)
+        details = detect_rolling_quantile_surprises(
+            dmv_z.abs().fillna(0.0), # Absolute dispersion
+            window=ROLLING_Q_WINDOW,
+            quantiles=(q1, q2),
+            return_details=True
+        )
+        return df.index[details['level'] >= 2.0]
 
 # Aliases
 CusumEvents = AdaptiveSymmetricCUSUMEvents

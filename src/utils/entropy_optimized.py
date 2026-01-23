@@ -12,6 +12,9 @@ from numba import jit, njit, prange, types
 from numba.typed import Dict as NumbaDict
 import warnings
 
+# Import optimized rolling statistics
+from src.utils.numba_funcs import _numba_rolling_mean, _numba_rolling_std
+
 try:
     from src.utils.tprint import tprint_info, tprint_warning
 except ImportError:
@@ -50,7 +53,7 @@ def rolling_entropy_numba(
     return result
 
 
-@njit(fastmath=True)
+@njit(fastmath=False)
 def shannon_entropy_numba(values: np.ndarray, n_bins: int = 10) -> float:
     """
     Calculate Shannon entropy using Numba.
@@ -290,7 +293,7 @@ def calculate_drift_proxy_numba(
     return drift_proxy
 
 
-@njit(fastmath=True, parallel=True)
+@njit(fastmath=True)
 def calculate_entropy_statistics_numba(
     entropy_values: np.ndarray,
     window: int = 10
@@ -305,27 +308,33 @@ def calculate_entropy_statistics_numba(
     Returns:
         Tuple of (entropy_ma, entropy_std, entropy_zscore)
     """
+    # Use O(N) optimized rolling functions
+    entropy_ma = _numba_rolling_mean(entropy_values, window)
+    entropy_std = _numba_rolling_std(entropy_values, window)
+    
+    # Initialize zscore with 0.0 or NaNs
     n = len(entropy_values)
-    entropy_ma = np.full(n, np.nan)
-    entropy_std = np.full(n, np.nan)
-    entropy_zscore = np.full(n, np.nan)
+    entropy_zscore = np.zeros(n, dtype=np.float64)
     
-    if window >= n:
-        return entropy_ma, entropy_std, entropy_zscore
-    
-    for i in prange(window - 1, n):
-        window_data = entropy_values[i - window + 1:i + 1]
-        ma_val = np.mean(window_data)
-        std_val = np.std(window_data)
+    # Fill initial window with NaNs to match previous behavior
+    if window > 1:
+        # _numba_rolling_* return 0.0/undefined for first window-1
+        # Previous implementation returned NaNs
+        # Note: we can't easily assign NaNs to slices in some Numba versions if not float,
+        # but these are float arrays.
+        entropy_ma[:window-1] = np.nan
+        entropy_std[:window-1] = np.nan
+        entropy_zscore[:window-1] = np.nan
         
-        entropy_ma[i] = ma_val
-        entropy_std[i] = std_val
-        
-        if std_val > 0:
-            entropy_zscore[i] = (entropy_values[i] - ma_val) / std_val
+    # Calculate Z-score
+    # We iterate to handle division by zero safely and NaNs
+    for i in range(window - 1, n):
+        std_val = entropy_std[i]
+        if std_val > 1e-12:
+            entropy_zscore[i] = (entropy_values[i] - entropy_ma[i]) / std_val
         else:
             entropy_zscore[i] = 0.0
-    
+
     return entropy_ma, entropy_std, entropy_zscore
 
 
@@ -370,7 +379,8 @@ def vectorized_entropy_features(
         raise ValueError("Missing 'close' column for entropy calculations")
     
     close_prices = source_data['close'].values
-    timestamps = source_data.index.astype(np.int64) // 10**9  # Convert to seconds
+    # Ensure numpy array for Numba compatibility (fix for Index/RangeIndex)
+    timestamps = source_data.index.astype(np.int64).values // 10**9  # Convert to seconds
     
     if use_numba:
         tprint_info("🚀 Using Numba-optimized entropy feature calculation")
@@ -408,11 +418,14 @@ def vectorized_entropy_features(
         
         # Calculate volatility for staleness adjustment
         # Use simple returns already calculated above
+        # Initial fill with global std (legacy behavior)
         volatility = np.full(len(close_prices), np.std(returns))
         
+        # Calculate rolling volatility using optimized O(N) function
         if len(returns) > volatility_window:
-            for i in range(volatility_window, len(returns)):
-                volatility[i] = np.std(returns[i-volatility_window:i])
+            rolling_vol = _numba_rolling_std(returns, volatility_window)
+            # Overwrite valid rolling window values
+            volatility[volatility_window:] = rolling_vol[volatility_window:]
         
         staleness_seconds, staleness_adjusted_drift = calculate_staleness_features_numba(
             timestamps, last_update_time, volatility

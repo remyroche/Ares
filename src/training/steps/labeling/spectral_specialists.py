@@ -311,6 +311,45 @@ class SpectralSpecialists:
             _add_signal('trend_specialist', self._extract_trend_signal)
             _add_signal('reversal_specialist', self._extract_reversal_signal)
             _add_signal('volatility_breakout_specialist', self._extract_volatility_breakout_signal)
+
+            # Optional: Cross-asset / market-state feature signals (ca__/ms__ prefixes)
+            cross_asset_cfg = configs.get("cross_asset", {})
+            prefixes = tuple(cross_asset_cfg.get("prefixes", ("ca__", "ms__")))
+            max_signals = int(cross_asset_cfg.get("max_signals", 6))
+            cross_asset_cols = [
+                col for col in df.columns if isinstance(col, str) and col.startswith(prefixes)
+            ]
+            cross_asset_added = 0
+            if cross_asset_cols:
+                numeric_cols = [
+                    col
+                    for col in cross_asset_cols
+                    if pd.api.types.is_numeric_dtype(df[col])
+                ]
+                if numeric_cols:
+                    var_rank = df[numeric_cols].var().sort_values(ascending=False)
+                    selected_cols = var_rank.head(max_signals).index.tolist()
+                    for col in selected_cols:
+                        signal = df[col].astype(float).replace([np.inf, -np.inf], np.nan)
+                        if signal.notna().sum() == 0:
+                            continue
+                        mean = signal.mean()
+                        std = signal.std()
+                        normalized = (signal - mean) / (std + 1e-9)
+                        name = f"{col}_specialist"
+                        if name in specialist_signals:
+                            continue
+                        signal_quality = self._validate_signal_quality(normalized, name)
+                        if signal_quality["is_degenerate"]:
+                            tprint_warning(
+                                f"⚠️ {name} signal is degenerate: {signal_quality['issue']}"
+                            )
+                        specialist_signals[name] = normalized
+                        cross_asset_added += 1
+                if self.verbose and cross_asset_added > 0:
+                    tprint_info(
+                        f"   🌐 Added {cross_asset_added} cross-asset specialists from {len(cross_asset_cols)} features"
+                    )
             
             if self.verbose:
                 tprint_success(f"   ✅ Extracted {len(specialist_signals)} specialist signals:")

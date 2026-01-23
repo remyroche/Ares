@@ -2237,6 +2237,7 @@ class LabelBasedLayer2(BaseStep):
         # Denoised price configuration
         self.use_denoised_prices = kwargs.get('use_denoised_prices', True)
         self.layer0_params = None
+        self._denoised_price_cache: Dict[str, pd.Series] = {}
 
         # Model comparison configuration
         self.enable_model_race = kwargs.get('enable_model_race', True)
@@ -4258,6 +4259,41 @@ class LabelBasedLayer2(BaseStep):
         try:
             tprint_info("   📝 Layer 2: Registering specialists with surprise detector...")
 
+            extended_predictions = dict(specialist_predictions or {})
+            cross_asset_cols = [
+                col
+                for col in df.columns
+                if col.startswith(("ca__", "ms__"))
+            ]
+            if cross_asset_cols:
+                limit = 30
+                if isinstance(self._current_config, dict):
+                    limit = int(self._current_config.get("cross_asset_specialist_limit", limit))
+
+                cross_asset_ranked = []
+                for col in cross_asset_cols:
+                    series = df[col]
+                    if not np.issubdtype(series.dtype, np.number):
+                        continue
+                    if series.notna().sum() < max(20, int(len(series) * 0.2)):
+                        continue
+                    variance = float(series.var())
+                    if not np.isfinite(variance) or variance <= 0.0:
+                        continue
+                    cross_asset_ranked.append((col, variance))
+
+                cross_asset_ranked.sort(key=lambda x: x[1], reverse=True)
+                added = 0
+                for col, _ in cross_asset_ranked[:limit]:
+                    if col not in extended_predictions:
+                        extended_predictions[col] = df[col].fillna(0.0)
+                        added += 1
+                if added > 0:
+                    tprint_info(
+                        f"   🔗 Added {added} cross-asset predictors to causal surprise detection"
+                    )
+
+            specialist_predictions = extended_predictions
             payloads = self._prepare_registration_batch(specialist_predictions, df)
             if not payloads:
                 tprint_warning("   ⚠️ No registration payloads available")
@@ -5484,6 +5520,58 @@ class LabelBasedLayer2(BaseStep):
         """Get denoised prices for feature generation."""
         if not self.use_denoised_prices:
             return df['close']
+
+        dataset_key = self._dataset_fingerprint or "adhoc"
+        if dataset_key in self._denoised_price_cache:
+            return self._denoised_price_cache[dataset_key]
+
+        artifact_name = f"layer2_denoised_close_{dataset_key}"
+        if self._dataset_fingerprint:
+            try:
+                if isinstance(self._current_config, dict):
+                    self._current_context.update(
+                        {
+                            "symbol": self._current_config.get("symbol", "UNKNOWN"),
+                            "exchange": self._current_config.get("exchange", "binance"),
+                            "timeframe": self._current_config.get("timeframe", "15m"),
+                            "direction": self._current_config.get("direction", "long"),
+                            "model": "analyst",
+                        }
+                    )
+                should_load = False
+                try:
+                    store = self.artifact_router._get_versioned_store(
+                        self._current_context
+                    )
+                    versions = store.list_versions()
+                    should_load = any(artifact_name in v for v in versions)
+                except Exception:
+                    should_load = False
+
+                if should_load:
+                    cached = self._get_artifact(
+                        artifact_name,
+                        artifact_type="data",
+                        data_category="features",
+                    )
+                    if cached is not None:
+                        if isinstance(cached, pd.Series):
+                            series = cached
+                        elif isinstance(cached, pd.DataFrame):
+                            if "denoised_close" in cached.columns:
+                                series = cached["denoised_close"]
+                            elif "close" in cached.columns:
+                                series = cached["close"]
+                            else:
+                                series = cached.iloc[:, 0]
+                        else:
+                            series = pd.Series(cached)
+                        series = series.reindex(df.index).ffill().fillna(df["close"])
+                        self._denoised_price_cache[dataset_key] = series
+                        tprint_info("✅ Loaded cached denoised prices artifact")
+                        return series
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to load denoised price artifact: {e}")
         
         if self.layer0_params is None:
             try:
@@ -5495,7 +5583,46 @@ class LabelBasedLayer2(BaseStep):
                 return df['close']
         
         try:
-            denoised_price = generate_unified_layer2_price(df, self.layer0_params)
+            defaults = {
+                "kalman_Q": 1e-4,
+                "kalman_R": 0.01,
+                "vwap_weight": 0.4,
+                "vwap_lookback": 50,
+                "wavelet_denoising_enabled": True,
+            }
+            if isinstance(self.layer0_params, dict):
+                for key, value in defaults.items():
+                    self.layer0_params.setdefault(key, value)
+            denoised_price = generate_unified_layer2_price(
+                df,
+                self.layer0_params,
+                wavelet_denoising_enabled=self.layer0_params.get("wavelet_denoising_enabled", True)
+                if isinstance(self.layer0_params, dict)
+                else True,
+            )
+            self._denoised_price_cache[dataset_key] = denoised_price
+            if self._dataset_fingerprint:
+                try:
+                    denoised_df = pd.DataFrame({"denoised_close": denoised_price})
+                    if isinstance(self._current_config, dict):
+                        self._current_context.update(
+                            {
+                                "symbol": self._current_config.get("symbol", "UNKNOWN"),
+                                "exchange": self._current_config.get("exchange", "binance"),
+                                "timeframe": self._current_config.get("timeframe", "15m"),
+                                "direction": self._current_config.get("direction", "long"),
+                                "model": "analyst",
+                            }
+                        )
+                    self._save_artifact(
+                        denoised_df,
+                        artifact_name,
+                        artifact_type="data",
+                        data_category="features",
+                        metadata={"dataset_fingerprint": self._dataset_fingerprint},
+                    )
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to save denoised price artifact: {e}")
             return denoised_price
         except Exception as e:
             tprint_warning(f"⚠️ Failed to generate denoised prices: {e}, using raw prices")
@@ -6237,6 +6364,9 @@ class LabelBasedLayer2(BaseStep):
         elif 'specialist' in spec_name.lower():
             # For signals (z-scores), the "target" is 0 (mean)
             # The signal itself is the deviation/surprise
+            target_series = pd.Series(0, index=df.index)
+        # Case 2b: Cross-Asset / Market State signals (zero-mean surprise)
+        elif spec_name.startswith(('ca__', 'ms__', 'meta__')):
             target_series = pd.Series(0, index=df.index)
         # Case 3: Direct column target
         else:
@@ -10286,8 +10416,8 @@ class LabelBasedLayer2(BaseStep):
                 X_cand = X_cand.tail(500)
                 y_cand = y_cand.tail(500)
             
-            # Fill NaN
-            X_cand = X_cand.fillna(0)
+            # Fill NaN / non-finite values
+            X_cand = X_cand.replace([np.inf, -np.inf], np.nan).fillna(0)
 
             # Scale features using RobustScaler (crucial for Ridge AUC stability)
             from sklearn.preprocessing import RobustScaler
@@ -10297,6 +10427,7 @@ class LabelBasedLayer2(BaseStep):
             if X_cand.empty:
                 return None
             X_cand = pd.DataFrame(scaler.fit_transform(X_cand), index=X_cand.index, columns=X_cand.columns)
+            X_cand = X_cand.replace([np.inf, -np.inf], np.nan).fillna(0)
             
             # Generate probe features using generate_market_state_probe
             probe_cache_key = f"probe_{hash(str(df.shape)) % 10000}"
@@ -11793,9 +11924,17 @@ class LabelBasedLayer2(BaseStep):
 
                         # Prepare Labels 
                         if isinstance(gt.labels, pd.Series):
-                            y_cand = (gt.labels > 0).astype(int)
+                            y_cand = gt.labels.reindex(gt.events)
+                            y_cand = (y_cand > 0).astype(int)
                         else:
                             y_cand = (pd.Series(gt.labels, index=gt.events) > 0).astype(int)
+
+                        y_cand = y_cand.dropna()
+                        if y_cand.nunique() < 2:
+                            tprint_warning(
+                                f"   ⚠️ Skipping race for {gt.uuid[:8]}: single-class labels ({y_cand.unique()})"
+                            )
+                            continue
 
                         # Alignment
                         if not X_cand.index.equals(y_cand.index):
@@ -11823,6 +11962,17 @@ class LabelBasedLayer2(BaseStep):
                     except Exception as e:
                         tprint_warning(f"   ⚠️ Failed to regenerate payload for {gt.family}: {e}")
                         race_payload = None
+                if race_payload:
+                    try:
+                        y_unique = np.unique(pd.Series(race_payload["y_tr"]).dropna())
+                    except Exception:
+                        y_unique = np.array([])
+                    if len(y_unique) < 2:
+                        tprint_warning(
+                            f"   ⚠️ Skipping model race for {gt.family}: single class labels {y_unique}"
+                        )
+                        race_payload = None
+
                 if race_payload:
                     environment_masks = None
                     if self.enable_causal_framework and CAUSAL_MODULES_AVAILABLE and self.irm_enabled:

@@ -909,6 +909,7 @@ class CausalSurpriseDetector:
             # 5b. Regime-Conditional Weighting (The "Contract")
             weight_matrix = None
             regime_reliability = pd.DataFrame()
+
             if regime_posteriors is not None:
                 # Compute Q(s, r) matrix (Passing market_data for IC/Lift)
                 regime_reliability = self.compute_regime_specific_reliability(
@@ -1146,6 +1147,7 @@ class CausalSurpriseDetector:
                 )
 
             self.surprise_events_ = aggregated
+            self.surprise_aggregates_df_ = aggregated.copy()
 
             if self.verbose:
                 tprint_success("✅ Continuous surprise aggregation complete:")
@@ -1487,10 +1489,19 @@ class CausalSurpriseDetector:
                 return result
 
             scores = self.surprise_events_["max_surprise"]
+            target_quantile = 1.0 - float(event_threshold)
+            target_quantile = float(np.clip(target_quantile, 0.5, 0.999))
 
             # --- 1. Regime-Conditional Adaptive Thresholding ---
             # Theta(t) = sum_r( P(r|t) * Theta_r )
-            # Theta_r = 96th percentile of scores weighted by regime probability
+            # Theta_r uses quantile = 1 - event_threshold when event_threshold is a density target.
+            quantile_target = 0.96
+            if 0.0 < event_threshold < 0.5:
+                quantile_target = 1.0 - event_threshold
+            if self.verbose:
+                tprint_info(
+                    f"   📐 Surprise quantile target: {quantile_target:.3f} (event_threshold={event_threshold})"
+                )
 
             if regime_posteriors is not None:
                 aligned_posteriors = (
@@ -1509,7 +1520,7 @@ class CausalSurpriseDetector:
                     base_threshold = (
                         scores.groupby(level=ticker_level, group_keys=False)
                         .rolling(window=2880, min_periods=100)
-                        .quantile(0.96)
+                        .quantile(quantile_target)
                         .reset_index(level=0, drop=True)
                         .reindex(scores.index)
                         .fillna(event_threshold)
@@ -1517,7 +1528,7 @@ class CausalSurpriseDetector:
                 else:
                     base_threshold = (
                         scores.rolling(window=2880, min_periods=100)
-                        .quantile(0.96)
+                        .quantile(quantile_target)
                         .fillna(event_threshold)
                     )
 
@@ -1567,14 +1578,14 @@ class CausalSurpriseDetector:
                     rolling_threshold = (
                         scores.groupby(level=ticker_level, group_keys=False)
                         .rolling(window=2880, min_periods=100)
-                        .quantile(0.96)
+                        .quantile(quantile_target)
                         .reset_index(level=0, drop=True)
                         .reindex(scores.index)
                     )
                 else:
                     rolling_threshold = scores.rolling(
                         window=2880, min_periods=100
-                    ).quantile(0.96)
+                    ).quantile(quantile_target)
                 
                 # NOTE: Removed clip(lower=event_threshold) as it conflicts with normalized scores
                 adaptive_threshold = rolling_threshold.fillna(0.0)  # Use 0 fallback for NaN (early bars)
@@ -1587,7 +1598,10 @@ class CausalSurpriseDetector:
                 passed_count = is_surprised.sum()
                 total_count = len(is_surprised)
                 pct = 100.0 * passed_count / total_count if total_count > 0 else 0
-                tprint_info(f"   📊 Threshold Check: {passed_count}/{total_count} bars passed ({pct:.2f}%)")
+                tprint_info(
+                    f"   📊 Threshold Check: {passed_count}/{total_count} bars passed ({pct:.2f}%) "
+                    f"(target_q={target_quantile:.3f})"
+                )
                 tprint_info(f"   📊 Score stats: mean={scores.mean():.4f}, std={scores.std():.4f}, max={scores.max():.4f}")
                 tprint_info(f"   📊 Threshold stats: mean={adaptive_threshold.mean():.4f}, min={adaptive_threshold.min():.4f}")
 
@@ -1654,6 +1668,12 @@ class CausalSurpriseDetector:
                         tprint_info(
                             f"   🛡️ Regime Gating (Vol Fallback): Filtered {removed} events (< {vol_threshold:.4f})"
                         )
+
+            if isinstance(self.surprise_aggregates_df_, pd.DataFrame) and not self.surprise_aggregates_df_.empty:
+                aligned = self.surprise_aggregates_df_.reindex(scores.index)
+                aligned["causal_surprise"] = is_surprised.astype(int)
+                aligned["adaptive_threshold"] = adaptive_threshold
+                self.surprise_aggregates_df_ = aligned
 
             # --- 2. Regime Break Retention (Fix for "Slow-Moving") ---
             # Max duration: 96 bars (24 hours on 15m) - previously 48

@@ -189,11 +189,11 @@ def generate_unified_layer2_price(df: pd.DataFrame, layer0_params: dict = None, 
     if layer0_params is None:
         layer0_params = load_layer0_params()
     
-    # Extract Layer0-optimized parameters
-    Q = layer0_params['kalman_Q']
-    R = layer0_params['kalman_R']
-    vwap_weight = layer0_params['vwap_weight']
-    vwap_lookback = layer0_params['vwap_lookback']
+    # Extract Layer0-optimized parameters with defaults
+    Q = layer0_params.get('kalman_Q', 1e-4)
+    R = layer0_params.get('kalman_R', 0.01)
+    vwap_weight = layer0_params.get('vwap_weight', 0.4)
+    vwap_lookback = layer0_params.get('vwap_lookback', 50)
     hampel_filter_enabled = layer0_params.get('hampel_filter_enabled', False)
     hampel_window = layer0_params.get('hampel_window', 5)
     hampel_threshold = layer0_params.get('hampel_threshold', 3.0)

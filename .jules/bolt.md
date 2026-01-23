@@ -29,3 +29,9 @@
 **Learning:** The previous implementation of `_numba_streak_persistence` had $O(N \cdot W)$ complexity because it recalculated streaks for the entire window at every step. This led to linear performance degradation as the window size increased (e.g., 0.27s for window=1000 vs 0.04s for window=100).
 
 **Action:** Implemented an $O(N)$ online algorithm using a circular buffer to incrementally track streaks by handling "leaving" and "entering" elements. This reduced execution time for window=1000 from ~0.27s to ~0.003s (a ~90x speedup), making performance independent of window size. Always look for incremental update opportunities in sliding window calculations.
+
+## 2026-01-20 - Entropy Feature Discrepancy & Optimization
+
+**Learning:** A critical logic discrepancy was found where the optimized Numba path calculated entropy on *prices* (non-stationary) while the Pandas fallback used *returns* (stationary). This invalidated the feature definition. Furthermore, `lempel_ziv_complexity_numba` used an $O(N^2)$ algorithm (Kaspar-Schuster) which is prohibitive for large datasets (N>100k).
+
+**Action:** Always verify that optimized implementations (Numba/Cython) receive the same transformed input (e.g., returns) as the reference implementation. For quadratic algorithms like LZ complexity, enforce a `max_lookback` (e.g., 5000) to cap complexity at $O(N \cdot K)$, trading infinite memory for linear performance scaling.

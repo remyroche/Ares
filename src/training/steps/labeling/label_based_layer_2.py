@@ -10217,6 +10217,8 @@ class LabelBasedLayer2(BaseStep):
 
         # Fallback: Accept at least the top 70% (30th percentile) to ensure sufficient candidate volume
         # This relaxes the hard baseline if it becomes too restrictive
+        # Note: percentile(score_array, 30.0) is the value below which 30% of scores fall.
+        # This means 70% are ABOVE it. So accepting scores >= 30th percentile keeps top 70%.
         fallback_threshold = float(np.percentile(score_array, 30.0))
         threshold = min(primary_threshold, fallback_threshold)
         

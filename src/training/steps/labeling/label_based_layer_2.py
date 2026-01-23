@@ -10213,7 +10213,12 @@ class LabelBasedLayer2(BaseStep):
         
         # Determine threshold (percentile or min score)
         percentile_threshold = float(np.percentile(score_array, self.layer2_gate_percentile))
-        threshold = max(self.layer2_gate_min_score, percentile_threshold)
+        primary_threshold = max(self.layer2_gate_min_score, percentile_threshold)
+
+        # Fallback: Accept at least the top 70% (30th percentile) to ensure sufficient candidate volume
+        # This relaxes the hard baseline if it becomes too restrictive
+        fallback_threshold = float(np.percentile(score_array, 30.0))
+        threshold = min(primary_threshold, fallback_threshold)
         
         # Filter candidates
         gated = []

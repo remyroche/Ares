@@ -472,6 +472,10 @@ def run_layer1_optimization(
     # Simple volatility proxy: rolling standard deviation of returns
     close_ret = close_series.pct_change()
     vol_series = close_ret.rolling(20).std().replace([np.inf, -np.inf], np.nan)
+    if vol_series.isna().any():
+        median_vol = float(np.nanmedian(vol_series)) if np.isfinite(np.nanmedian(vol_series)) else 0.0
+        vol_series = vol_series.fillna(median_vol)
+    vol_series = vol_series.ffill().bfill().fillna(0.0)
 
     t_events = returns_series.index
     vol_proxy = vol_series.reindex(t_events).astype(float).values

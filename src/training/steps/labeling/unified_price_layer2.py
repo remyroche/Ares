@@ -171,6 +171,42 @@ def calculate_snr(signal: pd.Series, noise: pd.Series = None) -> float:
     except Exception:
         return 0.0
 
+def _normalize_layer0_params(
+    layer0_params: Optional[Dict[str, float]],
+    df: pd.DataFrame,
+    default_vwap_weight: float = 0.4,
+) -> Dict[str, float]:
+    params: Dict[str, float] = {}
+    if isinstance(layer0_params, dict):
+        params = dict(layer0_params)
+    elif layer0_params is not None:
+        try:
+            params = dict(layer0_params)
+        except Exception:
+            params = {}
+
+    vwap_weight = params.get("vwap_weight", None)
+    if vwap_weight is None:
+        volume_weight = params.get("volume_weight", None)
+        if volume_weight is not None:
+            try:
+                vwap_weight = float(volume_weight) / 3.0
+            except Exception:
+                vwap_weight = default_vwap_weight
+        else:
+            has_volume = "volume" in df.columns and df["volume"].fillna(0).gt(0).any()
+            vwap_weight = default_vwap_weight if has_volume else 0.0
+
+    try:
+        vwap_weight = float(vwap_weight)
+    except Exception:
+        vwap_weight = default_vwap_weight
+
+    params["vwap_weight"] = float(np.clip(vwap_weight, 0.0, 1.0))
+    params.setdefault("vwap_lookback", 50)
+    return params
+
+
 def generate_unified_layer2_price(df: pd.DataFrame, layer0_params: dict = None, wavelet_denoising_enabled: bool = None) -> pd.Series:
     """
     Generate unified Kalman+VWAP composite price for all Layer2 models.
@@ -188,6 +224,7 @@ def generate_unified_layer2_price(df: pd.DataFrame, layer0_params: dict = None, 
     """
     if layer0_params is None:
         layer0_params = load_layer0_params()
+    layer0_params = _normalize_layer0_params(layer0_params, df)
     
     # Extract Layer0-optimized parameters with defaults
     Q = layer0_params.get('kalman_Q', 1e-4)

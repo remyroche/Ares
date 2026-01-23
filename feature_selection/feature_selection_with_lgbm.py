@@ -7,13 +7,14 @@ Implements a 3-stage feature selection pipeline:
 3. 2-step RFE with light then strong LGBM
 """
 
+import importlib
+import importlib.util
 import numpy as np
 import pandas as pd
 from scipy.stats import rankdata
-from scipy.cluster.hierarchy import fcluster
+from scipy.cluster.hierarchy import fcluster, linkage as scipy_linkage
 from sklearn.model_selection import train_test_split
 import lightgbm as lgb
-import fastcluster
 import os
 from datetime import datetime
 from typing import List, Optional, Dict, Any, Union
@@ -57,6 +58,16 @@ class FeatureSelector:
                 "error": "❌",
             }.get(level, "📊")
             print(f"{prefix} FeatureSelector: {message}")
+
+    def _get_linkage_fn(self):
+        if importlib.util.find_spec("fastcluster"):
+            fastcluster = importlib.import_module("fastcluster")
+            return fastcluster.linkage
+        self._log(
+            "fastcluster not available; falling back to scipy linkage (slower).",
+            level="warning",
+        )
+        return scipy_linkage
             
     def select_features(
         self,
@@ -392,7 +403,8 @@ class FeatureSelector:
             condensed_dist = dist[np.triu_indices(dist.shape[0], k=1)]
             
             # Apply hierarchical clustering
-            Z = fastcluster.linkage(condensed_dist, method='average')
+            linkage_fn = self._get_linkage_fn()
+            Z = linkage_fn(condensed_dist, method='average')
             
         except Exception as e:
             self._log(f"Error in clustering: {e}", "warning")
@@ -512,7 +524,8 @@ class FeatureSelector:
             condensed = dist[np.triu_indices(dist.shape[0], k=1)]
 
             # Hierarchical clustering on the selected features only
-            Z = fastcluster.linkage(condensed, method="average")
+            linkage_fn = self._get_linkage_fn()
+            Z = linkage_fn(condensed, method="average")
 
             # Orthogonality-first clustering: use a fixed distance threshold.
             # dist = 1 - |rho|, so a maximum allowed correlation rho_max corresponds

@@ -6477,12 +6477,18 @@ class LabelBasedLayer2(BaseStep):
             'force_hpo',
             'force_recalculation',
             'timestamp',
+            'run_timestamp',
             'run_id',
             'session_id',
             'start_time',
             'enable_checkpoints',
             'verbose',
             'debug',
+            'outcomes_dir',
+            'artifacts_dir',
+            'cross_asset_data',
+            'cross_asset_payload',
+            'market_data',
         }
         
         sanitized = {
@@ -10544,7 +10550,11 @@ class LabelBasedLayer2(BaseStep):
             
             # Validate y_aligned has variance (required for correlation)
             if y_aligned.nunique() <= 1:
-                tprint_warning(f"   ⚠️ Target has no variance ({y_aligned.nunique()} unique values) - skipping redundancy filter")
+                label_counts = y_aligned.value_counts(dropna=True).to_dict()
+                tprint_warning(
+                    f"   ⚠️ Target has no variance ({y_aligned.nunique()} unique values, counts={label_counts}) "
+                    "- skipping redundancy filter"
+                )
                 return X, X.columns.tolist()
                  
             # Compute correlations (ABS) - use X_clean columns
@@ -14109,11 +14119,29 @@ class LabelBasedLayer2(BaseStep):
                 # This fixes "Multiclass objective and metrics don't match" crash
                 unique_labels = np.unique(y_train.dropna())
                 if len(unique_labels) > 2:
-                    tprint_warning(f"   ⚠️ MULTICLASS DETECTED: {gt.uuid} has {len(unique_labels)} unique labels: {unique_labels}")
-                    tprint_info(f"      → Binarizing labels: (y > 0) -> {1, 0}")
+                    label_counts = y_train.value_counts(dropna=True).to_dict()
+                    tprint_warning(
+                        f"   ⚠️ MULTICLASS DETECTED: {gt.uuid} has {len(unique_labels)} unique labels: {unique_labels}"
+                    )
+                    tprint_info(f"      → Label distribution: {label_counts}")
+                    strategy = "long_only"
+                    if isinstance(self.init_config, dict):
+                        strategy = self.init_config.get("multiclass_label_strategy", strategy)
+                    if strategy == "drop_neutral":
+                        mask = y_train != 0
+                        y_train = y_train.loc[mask]
+                        X_train_final = X_train_final.loc[mask]
+                        if w_train is not None:
+                            w_train = w_train[mask.to_numpy()]
+                        tprint_info("      → Dropping neutral labels; binarizing remaining by sign.")
+                    else:
+                        tprint_info("      → Binarizing labels (long-only): (y > 0) -> {1, 0}")
                     y_train = (y_train > 0).astype(int)
                 elif len(unique_labels) == 1:
-                    tprint_warning(f"   ⚠️ SINGLE CLASS: {gt.uuid} has only label {unique_labels[0]}")
+                    label_counts = y_train.value_counts(dropna=True).to_dict()
+                    tprint_warning(
+                        f"   ⚠️ SINGLE CLASS: {gt.uuid} has only label {unique_labels[0]} (counts={label_counts})"
+                    )
                     return gt.uuid, None, f"Single class labels: {unique_labels[0]}"
                 
                 # === DIAGNOSTIC: Low minority sample warning ===

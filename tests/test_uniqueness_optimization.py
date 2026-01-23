@@ -60,7 +60,7 @@ def compute_uniqueness_loop(
 def _make_synthetic_events(
     n_ticks: int = 50_000,
     n_events: int = 10_000,
-    freq: str = "T",
+    freq: str = "min",
 ) -> tuple[pd.Series, pd.DatetimeIndex]:
     """Generate synthetic overlapping events on a regular time grid."""
     market_index = pd.date_range("2020-01-01", periods=n_ticks, freq=freq)

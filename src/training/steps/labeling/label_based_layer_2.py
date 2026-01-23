@@ -2300,7 +2300,7 @@ class LabelBasedLayer2(BaseStep):
         self._max_cache_entries = int(kwargs.get("layer2_max_cache_entries", 6))
 
         # Adaptive gating + probe controls
-        self.layer2_gate_min_score = float(kwargs.get("layer2_gate_min_score", 0.0))
+        self.layer2_gate_min_score = float(kwargs.get("layer2_gate_min_score", 0.02))
         self.layer2_gate_percentile = float(kwargs.get("layer2_gate_percentile", 50.0))
         self.layer2_gate_jaccard_max = float(kwargs.get("layer2_gate_jaccard_max", 0.90))
         self.layer2_gate_min_candidates = int(kwargs.get("layer2_gate_min_candidates", 3))
@@ -4360,7 +4360,7 @@ class LabelBasedLayer2(BaseStep):
                 spectral_reliability=spectral_reliability,
                 exposure_scalar=self.zone_score_exposure,
                 regime_vol=regime_vol_z,
-                market_data=df, # Pass market data for Vol/Entropy/Liquidity Normalization
+                market_data=None, # Disable market_data to prevent look-ahead bias in reliability calculation
                 regime_posteriors=regime_posteriors,
             )
 
@@ -4379,7 +4379,7 @@ class LabelBasedLayer2(BaseStep):
             for thresh in [0.04, 0.01, 0.005, 0.001, 0.0001]:
                 tprint_info(f"   🔄 Attempting event generation with threshold={thresh}...")
                 causal_events = self._surprise_detector.generate_causal_events(
-                    market_data=df,
+                    market_data=None, # Disable market_data to prevent look-ahead bias
                     event_threshold=thresh,
                     regime_posteriors=regime_posteriors,
                 )

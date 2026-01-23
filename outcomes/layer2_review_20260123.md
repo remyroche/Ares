@@ -44,7 +44,21 @@ The pipeline is heavily weighted towards `CAUSAL_SURPRISE`, comprising 35% of th
 4.  **VOLATILITY_SPECIALIST**: 30 models
 5.  **LIQUIDITY_SPECIALIST**: 30 models
 
-## 4. Recommendations
-1.  **Investigate High ICs:** The `CAUSAL_SURPRISE` ICs (~0.48) are suspicious. Verify feature generation timestamps to ensure no look-ahead bias (leakage) has been introduced.
-2.  **Review Gate Thresholds:** With a 100% pass rate, the Geometry Gates may need recalibration to effectively filter weaker signals.
+## 4. Root Cause Analysis (Added 2026-01-23)
+
+### 4.1. Leakage in `CAUSAL_SURPRISE`
+The suspiciously high ICs (0.48) have been traced to look-ahead bias in the `CausalSurpriseDetector`.
+*   **Mechanism:** The `_get_global_events` method in `LabelBasedLayer2` passes the full `market_data` dataframe (including future columns) to `generate_causal_events`.
+*   **Impact:** Inside `CausalSurpriseDetector`, this dataframe is used to calculate `fwd_returns` (forward returns), which are then used to optimize specialist weights (`regime_specific_reliability`) *during feature generation*.
+*   **Result:** The model is effectively "told" which specialists will perform best in the future, artificially inflating performance metrics.
+
+### 4.2. Loose Geometry Gates
+The 100% pass rate is attributed to the default configuration of the gate.
+*   **Mechanism:** `layer2_gate_min_score` defaults to `0.0`.
+*   **Impact:** While a percentile threshold exists, the fallback to 0.0 means that if the percentile logic is bypassed (e.g., due to low candidate count triggering "min candidates" logic), or if the distribution is weak, almost any model can pass.
+*   **Result:** Weak candidates are not being filtered out effectively.
+
+## 5. Recommendations & Actions
+1.  **Fix Leakage:** Modify `LabelBasedLayer2` to stop passing `market_data` to the surprise detector, forcing it to use static or backward-looking weights.
+2.  **Strengthen Gates:** Increase `layer2_gate_min_score` to a non-zero value (e.g., 0.02) to enforce a baseline quality standard.
 3.  **Diversity Check:** While `CAUSAL_SURPRISE` is dominant, ensure that the downstream ensemble (Layer 3) maintains access to orthogonal signals (e.g., `MOMENTUM`, `LIQUIDITY`) to prevent mode collapse.

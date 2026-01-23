@@ -5593,6 +5593,8 @@ class LabelBasedLayer2(BaseStep):
             if isinstance(self.layer0_params, dict):
                 for key, value in defaults.items():
                     self.layer0_params.setdefault(key, value)
+
+            tprint_info("   🔄 Generating denoised prices (Artifact missing)...")
             denoised_price = generate_unified_layer2_price(
                 df,
                 self.layer0_params,

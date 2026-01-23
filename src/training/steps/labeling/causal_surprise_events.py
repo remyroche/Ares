@@ -394,61 +394,44 @@ class CausalSurpriseDetector:
                 # Robust Z-score based surprise using Median Absolute Deviation (MAD)
                 # Surprise = |Y_actual - Y_specialist| / sigma_residual
 
-                # Use MAD for robustness as requested
-                def get_mad(x):
-                    median = np.median(x)
-                    return np.median(np.abs(x - median))
-
+                # Use rolling median for trend, but Global MAD for scale
+                # (Consistent with _compute_batch_surprises to preserve volatility clusters)
                 rolling_median = errors.rolling(
                     self.rolling_window, min_periods=min(self.rolling_window, 20)
                 ).median()
-                rolling_mad = errors.rolling(
-                    self.rolling_window, min_periods=min(self.rolling_window, 20)
-                ).apply(get_mad)
 
-                # Standardize: current error / Rolling MAD (robust sigma)
-                # Apply floor of Global MAD + absolute unit floor (1e-6 for small scale metrics)
+                # Use Global MAD floor for robustness
                 global_mad = self.specialist_metadata_.get(specialist_name, {}).get(
                     "global_mad", 1e-6
                 )
                 sigma_floor = np.maximum(global_mad, 1e-6)
-                surprise_scores = np.abs(errors - rolling_median) / (
-                    np.maximum(rolling_mad, sigma_floor)
-                )
+
+                surprise_scores = np.abs(errors - rolling_median) / sigma_floor
 
             elif method == "magnitude":
                 # Magnitude-based surprise
-                rolling_mad = errors.rolling(
-                    self.rolling_window, min_periods=min(self.rolling_window, 20)
-                ).apply(lambda x: np.median(np.abs(x - np.median(x))))
+                # Use Global MAD scaling
                 global_mad = self.specialist_metadata_.get(specialist_name, {}).get(
                     "global_mad", 1e-6
                 )
                 sigma_floor = np.maximum(global_mad, 1e-6)
-                surprise_scores = np.abs(errors) / (
-                    np.maximum(rolling_mad, sigma_floor)
-                )
+                surprise_scores = np.abs(errors) / sigma_floor
 
             elif method == "combined":
                 # Combined robust z-score and magnitude
                 rolling_median = errors.rolling(
                     self.rolling_window, min_periods=min(self.rolling_window, 20)
                 ).median()
-                rolling_mad = errors.rolling(
-                    self.rolling_window, min_periods=min(self.rolling_window, 20)
-                ).apply(lambda x: np.median(np.abs(x - np.median(x))))
 
                 global_mad = self.specialist_metadata_.get(specialist_name, {}).get(
                     "global_mad", 1e-6
                 )
                 sigma_floor = np.maximum(global_mad, 1e-6)
 
-                zscore_surprise = np.abs(errors - rolling_median) / (
-                    np.maximum(rolling_mad, sigma_floor)
-                )
-                magnitude_surprise = np.abs(errors) / (
-                    np.maximum(rolling_mad, sigma_floor)
-                )
+                # Use Global MAD scaling for both
+                zscore_surprise = np.abs(errors - rolling_median) / sigma_floor
+                magnitude_surprise = np.abs(errors) / sigma_floor
+
                 surprise_scores = 0.6 * zscore_surprise + 0.4 * magnitude_surprise
 
             else:
@@ -1514,23 +1497,20 @@ class CausalSurpriseDetector:
                 # 1. Calculate global rolling quantile baseline
                 # 2. Calculate regime-specific scaling factors based on historical volatility of scores in that regime
 
-                # FIX for MultiIndex (Asset Boundaries)
-                if isinstance(scores.index, pd.MultiIndex):
-                    ticker_level = 'ticker' if 'ticker' in scores.index.names else 1
-                    base_threshold = (
-                        scores.groupby(level=ticker_level, group_keys=False)
-                        .rolling(window=2880, min_periods=100)
-                        .quantile(quantile_target)
-                        .reset_index(level=0, drop=True)
-                        .reindex(scores.index)
-                        .fillna(event_threshold)
+                # Use common detection utils for consistent rolling logic (handles MultiIndex)
+                try:
+                    # We only need the Q1 threshold (target_quantile)
+                    details = detect_rolling_quantile_surprises(
+                        scores,
+                        window=2880,
+                        min_periods=100,
+                        quantiles=(quantile_target, 0.999),
+                        return_details=True
                     )
-                else:
-                    base_threshold = (
-                        scores.rolling(window=2880, min_periods=100)
-                        .quantile(quantile_target)
-                        .fillna(event_threshold)
-                    )
+                    base_threshold = details['q1_threshold'].fillna(event_threshold)
+                except Exception as e:
+                    tprint_warning(f"   ⚠️ Detection utils failed in generation: {e}")
+                    base_threshold = pd.Series(event_threshold, index=scores.index)
 
                 # Determine Score Volatility per Regime
                 regime_score_scales = []
@@ -1571,24 +1551,18 @@ class CausalSurpriseDetector:
                         f"   🧬 Using Data-Driven Regime Thresholding (Mean Mult: {effective_multiplier.mean():.2f})"
                     )
             else:
-                # Fallback: Global Adaptive Threshold
-                # FIX for MultiIndex
-                if isinstance(scores.index, pd.MultiIndex):
-                    ticker_level = 'ticker' if 'ticker' in scores.index.names else 1
-                    rolling_threshold = (
-                        scores.groupby(level=ticker_level, group_keys=False)
-                        .rolling(window=2880, min_periods=100)
-                        .quantile(quantile_target)
-                        .reset_index(level=0, drop=True)
-                        .reindex(scores.index)
+                # Fallback: Global Adaptive Threshold using common utils
+                try:
+                    details = detect_rolling_quantile_surprises(
+                        scores,
+                        window=2880,
+                        min_periods=100,
+                        quantiles=(quantile_target, 0.999),
+                        return_details=True
                     )
-                else:
-                    rolling_threshold = scores.rolling(
-                        window=2880, min_periods=100
-                    ).quantile(quantile_target)
-                
-                # NOTE: Removed clip(lower=event_threshold) as it conflicts with normalized scores
-                adaptive_threshold = rolling_threshold.fillna(0.0)  # Use 0 fallback for NaN (early bars)
+                    adaptive_threshold = details['q1_threshold'].fillna(0.0)
+                except Exception:
+                    adaptive_threshold = pd.Series(0.0, index=scores.index)
 
             # Use adaptive threshold
             is_surprised = scores > adaptive_threshold

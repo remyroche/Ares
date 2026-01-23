@@ -1567,7 +1567,17 @@ def check_label_quality(
             overall_pass = False
             if failure_reason == "PASS": failure_reason = "Sample Balance (<5% non-zero)"
         else:
-            gates_log.append(f"Bal: {pos_rate:.1%} (Samples) [OK]")
+            # Additional check: Ensure presence of both Wins (>0) and Non-Wins (<=0) for binary classification compatibility
+            # Layer 2 treats labels as binary (Profit vs Not Profit), so we need at least some samples of each class
+            # to avoid single-class training failures.
+            n_wins = (labels > 0).sum()
+            n_non_wins = (labels <= 0).sum()
+            if n_wins < 5 or n_non_wins < 5:
+                 gates_log.append(f"Bal: Wins={n_wins}/NonWins={n_non_wins} [FAIL-BINARY]")
+                 overall_pass = False
+                 if failure_reason == "PASS": failure_reason = "Binary Class Imbalance (<5 wins/loss)"
+            else:
+                 gates_log.append(f"Bal: {pos_rate:.1%} (Samples) [OK]")
 
     # 3. Perturbation Stability Gate
     if generator_instance is None:

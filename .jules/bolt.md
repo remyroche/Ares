@@ -35,3 +35,14 @@
 **Learning:** A critical logic discrepancy was found where the optimized Numba path calculated entropy on *prices* (non-stationary) while the Pandas fallback used *returns* (stationary). This invalidated the feature definition. Furthermore, `lempel_ziv_complexity_numba` used an $O(N^2)$ algorithm (Kaspar-Schuster) which is prohibitive for large datasets (N>100k).
 
 **Action:** Always verify that optimized implementations (Numba/Cython) receive the same transformed input (e.g., returns) as the reference implementation. For quadratic algorithms like LZ complexity, enforce a `max_lookback` (e.g., 5000) to cap complexity at $O(N \cdot K)$, trading infinite memory for linear performance scaling.
+
+## 2026-01-23 - Entropy Statistics & Volatility Loop Optimization
+
+**Learning:** `calculate_entropy_statistics_numba` was using a naive sliding window loop recalculating `np.mean` and `np.std` at every step, leading to $O(N \cdot W)$ complexity. Additionally, `vectorized_entropy_features` used a pure Python loop for rolling volatility, which was a massive bottleneck (10s execution time vs <1s optimized).
+Also, `fastmath=True` in Numba functions can break `np.isfinite` checks for NaNs in certain environments, leading to incorrect results (e.g. Entropy=0.0).
+
+**Action:**
+1. Replaced naive window loops with O(N) online rolling statistics (`_numba_rolling_mean`, `_numba_rolling_std`).
+2. Replaced Python loops with Numba-optimized equivalents.
+3. Disabled `fastmath` for functions requiring robust NaN handling (`shannon_entropy_numba`).
+Result: `calculate_entropy_statistics_numba` speedup >700x (2.11s -> 0.003s). Full feature generation speedup ~10x (10s -> 0.8s).

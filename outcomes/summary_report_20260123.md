@@ -19,7 +19,23 @@ Based on `layer2_model_race_20260122_235434.csv`:
 A significant finding is the disconnect between the two validation stages:
 *   **Observation:** Many models have `survival_status: PASSED` but `causal_quality_status: FAILED` or `WEAK`.
 *   **Example:** `FLOW_PRESSURE_CONTINUOUS_FLOW_ACCEL_20_POS` passed survival but failed causal quality.
-*   **Recommendation:** Investigate the `causal_quality_status` logic. If it is too strict, we may be discarding useful signals. If it is accurate, the initial survival gates are generating too many false positives that waste compute in the "Race" phase.
+
+### Investigation of Discrepancy
+The discrepancy arises from the fundamentally different objectives and strictness levels of the two filtering layers:
+
+| Feature | **Survival Gate** (Layer 2 Step 1) | **Causal Quality Check** (Layer 2 Step 3) |
+| :--- | :--- | :--- |
+| **Code Location** | `orthogonal_label_generation.py` | `causal_quality_assessment.py` |
+| **Primary Objective** | **Technical Validity**: Ensure dataset is sufficient for training. | **Economic Validity**: Ensure signal provides unique, stable alpha. |
+| **Correlation Check** | **Weak**: F-Stat p-value < 0.30. Allows very noisy signals. | **Strong**: IC > 0.05 & OOS R² > 0.0. Requires real predictive power. |
+| **Uniqueness Check** | None (Jaccard warning only). | **Strict**: CI Score > 0.015. Requires unique info beyond the Backbone. |
+| **Robustness** | None. | **Strict**: Probabilistic Sharpe Ratio (PSR) > 0.4. |
+| **Sample Quality** | Minimal Rate (>0.1/day) & Balance (>0.05). | Effective N (autocorrelation adjusted). |
+| **Outcome** | `survival_status` | `causal_quality_status` |
+
+**Conclusion:** The system is functioning as designed. The **Survival Gate** is a low-pass filter that admits any technically valid dataset (preventing crashes), while the **Causal Quality Check** is a high-pass filter that demands high-quality, unique alpha. The high failure rate in the second stage indicates that while we are generating many *valid* datasets, many are either **redundant** (fails CI Score) or **non-predictive** (fails IC/PSR).
+
+**Recommendation:** To save compute resources, we could tighten the Survival Gate by introducing a lightweight orthogonality check or raising the F-Stat threshold, closer to the Causal Quality standards.
 
 ## 4. Feature Intelligence
 *   **Meta-Features:** The system is successfully evaluating higher-order features. Families like `META_REINFORCED_COMPOSITE` and `META_EWMA_1D` are appearing in the logs with competitive metrics.

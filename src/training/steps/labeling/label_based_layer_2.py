@@ -13087,6 +13087,43 @@ class LabelBasedLayer2(BaseStep):
             feats['breakout_momentum'] = (current_range - range_avg_shift) / (range_avg_shift + 1e-9)
             feats['range_position'] = (price - roll20_min) / range_avg_safe
 
+        elif family == 'EXHAUSTION_SPECIALIST':
+            # Efficiency = (Price Move / Range) * log(Volume)
+            range_hl = (subset['high'] - subset['low']).replace(0, 1e-9)
+            move_co = (price - subset.get('open', price)).abs()
+            efficiency = (move_co / range_hl) * np.log1p(volume)
+            eff_ema = efficiency.ewm(span=20).mean()
+
+            feats['efficiency_surprise'] = efficiency - eff_ema
+            feats['efficiency_trend'] = eff_ema
+            feats['volume_intensity'] = volume / (volume.rolling(20).mean() + 1e-9)
+
+        elif family == 'VOLATILITY_INNOVATION_SPECIALIST':
+            # Parkinsons Volatility
+            const = 1.0 / (4.0 * np.log(2.0))
+            log_hl = np.log(subset['high'] / (subset['low'] + 1e-9))
+            parkinsons = np.sqrt(const * (log_hl ** 2))
+
+            # Simple Innovation Proxy (diff from mean)
+            feats['vol_innovation'] = parkinsons - parkinsons.rolling(20).mean()
+            feats['parkinsons_level'] = parkinsons
+            feats['vol_regime'] = parkinsons / (parkinsons.rolling(100).mean() + 1e-9)
+
+        elif family == 'DISPERSION_SPECIALIST':
+            # Approximate DMV if engine not available in this context (or use engine)
+            # Since we are in Layer 2, we can re-import engine or implement simplified version
+            try:
+                from src.training.steps.labeling.causal_dispersion_engine import CausalDispersionEngine
+                engine = CausalDispersionEngine()
+                # Recalculate on subset? Better to use pre-calculated global feature if possible.
+                # But here we generate on the fly for the subset.
+                dmv = engine.calculate_dmv(subset)
+                feats['dmv_factor'] = dmv
+                feats['dmv_innovation'] = engine.generate_innovation_feature(dmv)
+            except Exception:
+                feats['dmv_factor'] = 0.0
+                feats['dmv_innovation'] = 0.0
+
         result = feats.fillna(0.0)
 
         # Update cache

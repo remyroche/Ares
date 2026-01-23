@@ -65,9 +65,16 @@ def shannon_entropy_numba(values: np.ndarray, n_bins: int = 10) -> float:
     if len(values) == 0:
         return 0.0
     
+    # Filter non-finite values (NaNs, Infs)
+    valid_mask = np.isfinite(values)
+    clean_values = values[valid_mask]
+
+    if len(clean_values) == 0:
+        return 0.0
+
     # Discretize values
-    min_val = np.min(values)
-    max_val = np.max(values)
+    min_val = np.min(clean_values)
+    max_val = np.max(clean_values)
     
     if max_val == min_val:
         return 0.0
@@ -76,7 +83,7 @@ def shannon_entropy_numba(values: np.ndarray, n_bins: int = 10) -> float:
     if bin_width == 0:
         return 0.0
     
-    bins = np.floor((values - min_val) / bin_width).astype(np.int32)
+    bins = np.floor((clean_values - min_val) / bin_width).astype(np.int32)
     bins = np.clip(bins, 0, n_bins - 1)
     
     # Calculate entropy
@@ -85,7 +92,7 @@ def shannon_entropy_numba(values: np.ndarray, n_bins: int = 10) -> float:
         counts[bin_val] += 1
     
     entropy = 0.0
-    total = len(values)
+    total = len(clean_values)
     
     for count in counts:
         if count > 0:
@@ -96,17 +103,21 @@ def shannon_entropy_numba(values: np.ndarray, n_bins: int = 10) -> float:
 
 
 @njit(fastmath=True)
-def lempel_ziv_complexity_numba(values: np.ndarray, normalize: bool = True) -> np.ndarray:
+def lempel_ziv_complexity_numba(
+    values: np.ndarray,
+    normalize: bool = True,
+    max_lookback: int = 5000
+) -> np.ndarray:
     """
     Calculate Lempel-Ziv (LZ76) complexity for each position in the series.
 
-    Implements O(N^2) single-pass Kaspar-Schuster algorithm (1987) which is
-    significantly faster and more memory efficient than the previous O(N^3)
-    implementation.
+    Implements Kaspar-Schuster algorithm (1987) with lookback limit optimization.
+    The complexity is reduced from O(N^2) to O(N * max_lookback).
     
     Args:
         values: Input time series (converted to binary internally)
         normalize: Whether to normalize by sequence length
+        max_lookback: Maximum history to search for pattern matching (default: 5000)
         
     Returns:
         Array of LZ complexity values (one for each prefix)
@@ -141,8 +152,11 @@ def lempel_ziv_complexity_numba(values: np.ndarray, normalize: bool = True) -> n
         found = False
         target = binary_seq[i : i+l]
         
-        # Search backwards from i-1 down to 0
-        for p in range(i - 1, -1, -1):
+        # Search backwards from i-1 down to start_search
+        # Optimization: Limit lookback to avoid O(N^2) behavior
+        start_search = max(0, i - max_lookback)
+
+        for p in range(i - 1, start_search - 1, -1):
             match = True
             for k in range(l):
                 if binary_seq[p + k] != target[k]:
@@ -361,10 +375,16 @@ def vectorized_entropy_features(
     if use_numba:
         tprint_info("🚀 Using Numba-optimized entropy feature calculation")
         
+        # Calculate simple returns to match Pandas fallback behavior (pct_change)
+        # Pad with 0 at start to maintain length
+        # Simple returns: (p[t] / p[t-1]) - 1
+        returns = np.concatenate((np.array([0.0]), close_prices[1:] / close_prices[:-1] - 1.0))
+
         # 1. Rolling entropy features
         for window in [20, 40, 60, 100]:
             if window < len(close_prices):
-                entropy_values = rolling_entropy_numba(close_prices, window, n_bins)
+                # Pass returns instead of close_prices
+                entropy_values = rolling_entropy_numba(returns, window, n_bins)
                 features[f'entropy_rolling_{window}'] = entropy_values
         
         # 2. Lempel-Ziv complexity
@@ -387,8 +407,7 @@ def vectorized_entropy_features(
         last_update_time = timestamps[-1] if len(timestamps) > 0 else 0
         
         # Calculate volatility for staleness adjustment
-        returns = np.diff(np.log(close_prices))
-        returns = np.concatenate([np.array([0.0]), returns])  # Pad to match length
+        # Use simple returns already calculated above
         volatility = np.full(len(close_prices), np.std(returns))
         
         if len(returns) > volatility_window:

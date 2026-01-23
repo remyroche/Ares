@@ -5516,12 +5516,26 @@ class LabelBasedLayer2(BaseStep):
         
         return self._events_cache[cache_key]
     
+    def _get_dataset_fingerprint(self, df: pd.DataFrame) -> str:
+        """Generate a unique fingerprint for the dataset (index + columns)."""
+        # Use index boundaries and length
+        start = df.index[0].isoformat() if not df.empty else "NaT"
+        end = df.index[-1].isoformat() if not df.empty else "NaT"
+        shape = str(df.shape)
+        # Combine into string
+        fp_str = f"{start}_{end}_{shape}_{self.symbol}"
+        # Hash it
+        return hashlib.md5(fp_str.encode()).hexdigest()
+
     def _get_denoised_prices(self, df: pd.DataFrame) -> pd.Series:
         """Get denoised prices for feature generation."""
         if not self.use_denoised_prices:
             return df['close']
 
-        dataset_key = self._dataset_fingerprint or "adhoc"
+        # Generate fingerprint for this specific dataset
+        dataset_key = self._get_dataset_fingerprint(df)
+        self._dataset_fingerprint = dataset_key  # Update instance state
+
         if dataset_key in self._denoised_price_cache:
             return self._denoised_price_cache[dataset_key]
 

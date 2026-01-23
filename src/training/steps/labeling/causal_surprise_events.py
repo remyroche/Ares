@@ -2097,6 +2097,28 @@ class CausalSurpriseDetector:
                         tprint_warning(
                             "      ⚠️ Zero overlap: Surprise events may not align with ground truth labels"
                         )
+                        if self.verbose:
+                            label_rate = float(labels.mean()) if len(labels) else 0.0
+                            surprise_rate = float(surprise_mask.mean()) if len(surprise_mask) else 0.0
+                            tprint_info(
+                                f"      • Label positive rate: {label_rate:.4f} | Surprise rate: {surprise_rate:.6f}"
+                            )
+                            if "t1" in events_df_aligned.columns:
+                                try:
+                                    event_windows = events_df_aligned.loc[
+                                        events_df_aligned.index.intersection(common_idx)
+                                    ][["t1"]].dropna()
+                                    if not event_windows.empty:
+                                        window_hits = 0
+                                        for start, row in event_windows.iterrows():
+                                            end = row["t1"]
+                                            window_hits += int(labels.loc[start:end].sum() > 0)
+                                        tprint_info(
+                                            "      • Event-window overlap (any positive label within t1): "
+                                            f"{window_hits}/{len(event_windows)}"
+                                        )
+                                except Exception:
+                                    pass
 
                 # 2.3 F1 Score
                 detector_metrics["f1"] = (

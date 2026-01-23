@@ -298,13 +298,17 @@ class PanelDataProcessor:
             passthrough_cols = [
                 col
                 for col in aligned.columns
-                if col not in {price_col, "open", "high", "low", "close", "volume"}
+                if col not in {price_col, "open", "high", "low", "close", "volume", "timestamp", "ticker"}
             ]
             for col in passthrough_cols:
                 if col in base.columns:
                     continue
                 base[col] = aligned[col]
 
+            if "timestamp" in base.columns:
+                base = base.drop(columns=["timestamp"])
+            if "ticker" in base.columns:
+                base = base.drop(columns=["ticker"])
             base["ticker"] = ticker
             base.index.name = "timestamp"
             base = base.reset_index().set_index(["timestamp", "ticker"]).sort_index()

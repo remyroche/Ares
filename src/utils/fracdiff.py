@@ -458,12 +458,20 @@ class AdaptiveFracDiffTransformer(FracDiffTransformer):
             True if stationary, False otherwise
         """
         # Get the window from pre-calculated series
+        # Using .values directly avoids overhead if possible, but slicing index is safer first
         sub_series = candidate_series_d.iloc[start_idx:end_idx].dropna()
 
         if len(sub_series) < 20:
             return False # Not enough data to determine stationarity
 
-        # Run ADF (fast)
+        if self.use_numba and NUMBA_AVAILABLE:
+             # Calculate critical value from threshold
+             crit_val = _get_approx_critical_value(self.adf_threshold)
+             # Use values for Numba
+             t_stat = _numba_adf_aic(sub_series.values, max_lag=self.max_lags or 5)
+             return t_stat < crit_val
+
+        # Fallback to Statsmodels
         try:
             p_val = adfuller(sub_series, maxlag=self.max_lags, autolag='AIC')[1]
             return p_val < self.adf_threshold
@@ -549,3 +557,90 @@ class AdaptiveFracDiffTransformer(FracDiffTransformer):
         adaptive_values = candidate_matrix[np.arange(n), d_indices]
             
         return pd.Series(adaptive_values, index=series.index), d_series
+
+@njit
+def _construct_adf_matrix(series: np.ndarray, lag: int) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Construct design matrix for ADF regression.
+    returns X, y where y is delta_y[lag:] and X contains lag variables.
+    """
+    n = len(series)
+    # diff: out[i] = a[i+1] - a[i]
+    delta_y = series[1:] - series[:-1]
+    y_lag = series[:-1]
+
+    eff_n = n - 1 - lag
+    if eff_n <= 0:
+        return np.zeros((0, 2 + lag)), np.zeros((0,))
+
+    y_target = delta_y[lag:]
+    X = np.ones((eff_n, 2 + lag), dtype=np.float64)
+    X[:, 1] = y_lag[lag:]
+
+    for i in range(lag):
+        X[:, 2 + i] = delta_y[lag - 1 - i : len(delta_y) - 1 - i]
+
+    return X, y_target
+
+@njit
+def _numba_adf_aic(series: np.ndarray, max_lag: int) -> float:
+    """
+    Calculate ADF t-statistic selecting optimal lag via AIC.
+    """
+    best_aic = 1e9
+    best_tstat = 0.0
+
+    # Try lag 0 to max_lag
+    for lag in range(max_lag + 1):
+        X, y = _construct_adf_matrix(series, lag)
+        n = len(y)
+        if n <= 5: continue
+
+        Xt = X.T
+        XtX = Xt @ X
+        Xty = Xt @ y
+
+        try:
+            beta = np.linalg.solve(XtX, Xty)
+        except:
+            continue
+
+        y_pred = X @ beta
+        residuals = y - y_pred
+        p = X.shape[1]
+
+        ssr = np.sum(residuals**2)
+
+        if ssr <= 1e-12:
+            aic = -1e9
+        else:
+            aic = n * np.log(ssr/n) + 2 * p
+
+        if aic < best_aic:
+            best_aic = aic
+            sigma2 = ssr / (n - p)
+            try:
+                inv_XtX = np.linalg.inv(XtX)
+                se_beta = np.sqrt(np.diag(inv_XtX) * sigma2)
+                if se_beta[1] > 1e-12:
+                    best_tstat = beta[1] / se_beta[1]
+                else:
+                    best_tstat = 0.0
+            except:
+                best_tstat = 0.0
+
+    return best_tstat
+
+def _get_approx_critical_value(p_value_threshold: float) -> float:
+    """
+    Return approximate critical value for ADF t-statistic.
+    Based on MacKinnon (1994, 2010) asymptotic values.
+    """
+    if p_value_threshold <= 0.01:
+        return -3.44
+    elif p_value_threshold <= 0.05:
+        return -2.87
+    elif p_value_threshold <= 0.10:
+        return -2.57
+    else:
+        return -2.57 # Default to 10%

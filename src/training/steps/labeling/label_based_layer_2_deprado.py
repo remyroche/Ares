@@ -3129,7 +3129,10 @@ class LabelBasedLayer2(BaseStep):
         """Generate events once for the full dataset and cache them."""
         # Create cache key
         params_str = str(sorted(params.items())) if params else "default"
-        cache_key = f"global_events_{family}_{hashlib.md5(params_str.encode()).hexdigest()[:8]}_{hash(str(df.shape)) % 10000}"
+        # Enhanced cache key to include start/end time to prevent collisions across datasets with same shape
+        df_fingerprint = f"{df.shape}_{df.index[0]}_{df.index[-1]}" if not df.empty else f"{df.shape}"
+        df_hash = hashlib.md5(str(df_fingerprint).encode()).hexdigest()[:8]
+        cache_key = f"global_events_{family}_{hashlib.md5(params_str.encode()).hexdigest()[:8]}_{df_hash}"
 
         if cache_key not in self._global_event_cache:
             tprint_info(f"🔄 Generating global events for {family}...")
@@ -6591,15 +6594,12 @@ class LabelBasedLayer2(BaseStep):
                     ge_aligned = global_events
                     
                     # DEBUG LOGGING FOR TZ MISMATCH
-                    fold_tz_debug = getattr(df_train.index, 'tz', 'NoneType')
-                    ge_tz_debug = getattr(global_events, 'tz', 'NoneType')
-                    tprint_info(f"   🐛 DEBUG {family}: Fold TZ={fold_tz_debug}, Events TZ={ge_tz_debug}, Global Events={len(global_events)}")
+                    fold_tz = getattr(df_train.index, 'tz', None)
+                    ge_tz = getattr(global_events, 'tz', None)
+                    tprint_info(f"   🐛 DEBUG {family}: Fold TZ={fold_tz}, Events TZ={ge_tz}, Global Events={len(global_events)}")
                     
                     try:
                         # Check for TZ mismatch between fold index and generated events
-                        fold_tz = getattr(df_train.index, 'tz', None)
-                        ge_tz = getattr(global_events, 'tz', None)
-                        
                         if fold_tz is not None:
                             if ge_tz is None:
                                 ge_aligned = global_events.tz_localize(fold_tz)
@@ -6608,12 +6608,12 @@ class LabelBasedLayer2(BaseStep):
                         elif ge_tz is not None:
                             ge_aligned = global_events.tz_localize(None)
                     except Exception as e:
-                        tprint_warning(f"   ⚠️ TZ Alignment failed: {e} (Fold TZ: {getattr(df_train.index, 'tz', 'None')}, Events TZ: {getattr(global_events, 'tz', 'None')})")
+                        tprint_warning(f"   ⚠️ TZ Alignment failed: {e} (Fold TZ: {fold_tz}, Events TZ: {ge_tz})")
                         pass # Fallback to original if alignment fails
 
                     fold_train_events = ge_aligned[ge_aligned.isin(df_train.index)]
                     if len(fold_train_events) == 0 and len(global_events) > 0:
-                        # Fallback to intersection
+                        # Fallback 1: Intersection
                         try:
                             tprint_info(f"   ℹ️ Primary 'isin' match failed (0 matches). Attempting intersection fallback...")
                             fold_train_events = ge_aligned.intersection(df_train.index)
@@ -6621,6 +6621,31 @@ class LabelBasedLayer2(BaseStep):
                                 tprint_success(f"   ✅ Intersection fallback recovered {len(fold_train_events)} events.")
                         except Exception as ex:
                             tprint_warning(f"   ⚠️ Intersection fallback failed: {ex}")
+                            pass
+
+                    if len(fold_train_events) == 0 and len(global_events) > 0:
+                        # Fallback 2: Naive Alignment (Convert both to naive UTC)
+                        try:
+                            tprint_info(f"   ℹ️ Intersection match failed (0 matches). Attempting NAIVE fallback...")
+
+                            # Create naive versions
+                            ge_naive = ge_aligned.tz_localize(None) if getattr(ge_aligned, 'tz', None) is not None else ge_aligned
+                            df_naive_idx = df_train.index.tz_localize(None) if getattr(df_train.index, 'tz', None) is not None else df_train.index
+
+                            # Filter using naive
+                            # Find matches in naive space
+                            naive_matches = ge_naive[ge_naive.isin(df_naive_idx)]
+
+                            if len(naive_matches) > 0:
+                                # Reconstruct events in target TZ (df_train TZ)
+                                if fold_tz is not None:
+                                    fold_train_events = naive_matches.tz_localize(fold_tz)
+                                else:
+                                    fold_train_events = naive_matches
+
+                                tprint_success(f"   ✅ Naive fallback recovered {len(fold_train_events)} events.")
+                        except Exception as ex:
+                            tprint_warning(f"   ⚠️ Naive fallback failed: {ex}")
                             pass
                     
                     if len(fold_train_events) == 0 and len(global_events) > 0:

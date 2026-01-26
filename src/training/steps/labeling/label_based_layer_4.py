@@ -1099,7 +1099,11 @@ def integrate_entropy_bars_into_layer4(
             tprint_info("🔄 Layer 4: Calculating Proxy Entropy (Numba Optimized) on base timeframe...")
 
             # Calculate returns on the base dataframe
-            if 'close' in df.columns:
+            if 'vwap' in df.columns:
+                price_col = 'vwap'
+            elif 'VWAP' in df.columns:
+                price_col = 'VWAP'
+            elif 'close' in df.columns:
                 price_col = 'close'
             elif 'Close' in df.columns:
                 price_col = 'Close'
@@ -1197,15 +1201,26 @@ class MetaLearnerFeatures:
         self.config = config or {}
         self.window_sadf = self.config.get('window_sadf', 100)
 
-    def generate(self, df: pd.DataFrame, raw_price_col: str = 'close', **kwargs) -> pd.DataFrame:
+    def generate(self, df: pd.DataFrame, raw_price_col: Optional[str] = None, **kwargs) -> pd.DataFrame:
         """
         Generate structural features.
         """
-        if raw_price_col not in df.columns:
+        # Determine price column if not provided or if default 'close' is overridden by VWAP availability
+        target_col = raw_price_col
+
+        if not target_col or target_col == 'close':
+             if 'vwap' in df.columns:
+                 target_col = 'vwap'
+             elif 'VWAP' in df.columns:
+                 target_col = 'VWAP'
+             else:
+                 target_col = 'close'
+
+        if target_col not in df.columns:
             return pd.DataFrame(index=df.index)
 
         # Calculate returns
-        prices = df[raw_price_col].values.astype(np.float64)
+        prices = df[target_col].values.astype(np.float64)
         returns = np.zeros_like(prices)
         returns[1:] = np.diff(np.log(prices + 1e-9))
 
@@ -1393,7 +1408,7 @@ def train_layer4_simple_multimodel(
         generator = MetaLearnerFeatures(config=config)
         mkt_feats = generator.generate(
             df=oof_df.join(market_data, how='left', rsuffix='_mkt'),
-            raw_price_col='close'
+            raw_price_col=None # Let generate() pick vwap if available
         )
 
         # Generate model performance features

@@ -5013,8 +5013,11 @@ class ContinuousPredictorEvents(BaseEventGenerator):
         # Standardize: Use same rolling quantile mechanism as other causal specialists
         # to ensure comparable event density and statistical properties.
         try:
+            # Cast to float to avoid numpy boolean subtraction errors if column is boolean
+            series = df[predictor_col].abs().astype(float)
+
             details = detect_rolling_quantile_surprises(
-                df[predictor_col].abs(),
+                series,
                 window=window,
                 quantiles=(q1, q2),
                 return_details=True,

@@ -88,6 +88,12 @@ def apply_layer2_price_processing(df: pd.DataFrame,
     Apply de Prado-compliant price processing and "Anti-Explosion" feature generation.
     Optimized with Numba for EWMA and Volatility calculations.
 
+    UPDATED: Shifts most features to use VWAP-based returns if available.
+    Logic:
+    1. Trend, Momentum, Volatility -> Use VWAP (effective_price).
+    2. Residualisation -> VWAP - EMA(VWAP).
+    3. FracDiff -> VWAP(FracDiff(Close)).
+
     Args:
         df: DataFrame with price data.
         price_col: Column name for price.
@@ -114,9 +120,28 @@ def apply_layer2_price_processing(df: pd.DataFrame,
 
     def _apply_single_asset(asset_df: pd.DataFrame) -> pd.DataFrame:
         result = asset_df.copy()
-        price = asset_df[price_col]
 
-        # 1. Log-Returns
+        # --- VWAP Logic ---
+        # Determine effective_price for features (Trend, Momentum, Volatility)
+        if 'vwap' in asset_df.columns:
+            effective_price = asset_df['vwap']
+        elif 'volume' in asset_df.columns and 'close' in asset_df.columns:
+            # Calculate Rolling VWAP (Window 20)
+            # Standard VWAP resets daily, but for features we want rolling
+            v = asset_df['volume']
+            p = asset_df[price_col]
+            pv = p * v
+            roll_pv = pv.rolling(20, min_periods=1).sum()
+            roll_v = v.rolling(20, min_periods=1).sum()
+            effective_price = roll_pv / (roll_v + 1e-9)
+            effective_price = effective_price.fillna(p) # Fallback to close if volume is 0
+        else:
+            effective_price = asset_df[price_col]
+
+        price = effective_price # Used for feature generation
+        raw_close = asset_df[price_col] # Used for FracDiff base
+
+        # 1. Log-Returns (on VWAP)
         # Use 1e-9 to prevent log(0)
         log_price = np.log(price.replace(0, np.nan).ffill())
         # Leave NaNs where they naturally occur (start of series)
@@ -126,7 +151,7 @@ def apply_layer2_price_processing(df: pd.DataFrame,
         # Prepare data for Numba
         log_ret_vals = log_returns.values.astype(np.float64)
 
-        # 2. Vol-Adjusted Returns
+        # 2. Vol-Adjusted Returns (on VWAP returns)
         # Using strictly causal EWMA volatility with Half-Life = 16 bars
         # alpha = 1 - exp(log(0.5)/16) approx 0.042
         alpha_vol = 1.0 - np.exp(np.log(0.5) / 16.0)
@@ -157,14 +182,29 @@ def apply_layer2_price_processing(df: pd.DataFrame,
         result['vol_adjusted_returns'] = vol_adjusted_returns.clip(-10, 10)
 
         # 3. Fractional Differentiation (FracDiff)
+        # Requirement: "if using FracDiff, VWAP is used after FracDiff"
+        # Implementation: FracDiff(Close) -> VWAP(FracDiff)
         try:
-            fracdiff_series = _apply_fracdiff(log_price.ffill(), d=fracdiff_d)
-            result['fracdiff_log_price'] = fracdiff_series
+            # Step A: FracDiff on Raw Close (Log)
+            log_close = np.log(raw_close.replace(0, np.nan).ffill())
+            fd_series = _apply_fracdiff(log_close.ffill(), d=fracdiff_d)
+
+            # Step B: Apply VWAP logic (Volume Weighted Rolling Average)
+            if 'volume' in asset_df.columns:
+                v = asset_df['volume']
+                fd_pv = fd_series * v
+                # Use same window as rolling vol or standard feature window (20)
+                fd_vwap = fd_pv.rolling(20, min_periods=1).sum() / (v.rolling(20, min_periods=1).sum() + 1e-9)
+                result['fracdiff_log_price'] = fd_vwap.fillna(fd_series)
+            else:
+                # Fallback if no volume
+                result['fracdiff_log_price'] = fd_series
+
         except Exception as e:
             tprint_warning(f"   ⚠️ FracDiff failed: {e}. Skipping.")
             result['fracdiff_log_price'] = np.nan
 
-        # 4. Causal Denoising
+        # 4. Causal Denoising (on VWAP returns)
         try:
             # Robust EWMA smoother on vol-adjusted returns with Half-Life = 4 bars
             denoised = _causal_denoise(vol_adjusted_returns.fillna(0).values, halflife=4.0)
@@ -173,7 +213,7 @@ def apply_layer2_price_processing(df: pd.DataFrame,
             tprint_warning(f"   ⚠️ Causal denoising failed: {e}. Skipping.")
             result['causal_denoised_returns'] = vol_adjusted_returns
 
-        # --- Anti-Explosion Feature Set ---
+        # --- Anti-Explosion Feature Set (on VWAP) ---
 
         # A. Primary Set
         # Rolling Volatility
@@ -188,13 +228,13 @@ def apply_layer2_price_processing(df: pd.DataFrame,
         # Use pandas ffill for simplicity or numpy logic
         result['rolling_volatility_50'] = pd.Series(vol_50_vals, index=asset_df.index).ffill()
 
-        # Rolling Momentum (using sum of log returns)
+        # Rolling Momentum (using sum of log returns of VWAP)
         # Optimized: sum(log_returns) over window w is equivalent to log_price.diff(w).
         # This vectorizes the operation (O(1) overhead vs O(W) rolling).
         for w in [10, 20, 50]:
             result[f'rolling_momentum_{w}'] = log_price.diff(w)
 
-        # Skew/Kurtosis (Optimized with Numba)
+        # Skew/Kurtosis (Optimized with Numba on VWAP returns)
         # Use clean log_returns (0-filled) to prevent NaN propagation in online algorithm
         clean_log_ret = result['log_returns'].fillna(0).values.astype(np.float64)
         skew_vals = _numba_rolling_skew(clean_log_ret, 50)
@@ -203,7 +243,7 @@ def apply_layer2_price_processing(df: pd.DataFrame,
         result['rolling_skew_50'] = pd.Series(skew_vals, index=asset_df.index)
         result['rolling_kurtosis_50'] = pd.Series(kurt_vals, index=asset_df.index)
 
-        # Drawdown
+        # Drawdown (on VWAP)
         rolling_max = price.rolling(100, min_periods=1).max()
         result['drawdown_100'] = (price / (rolling_max + 1e-9)) - 1.0
 
@@ -213,6 +253,7 @@ def apply_layer2_price_processing(df: pd.DataFrame,
         result['vol_adj_tail_20'] = vol_adjusted_returns.abs().rolling(20, min_periods=20).max()
 
         # From denoised_*: Trend/persistence (Divergence from raw)
+        # "Residualisation applied before" -> VWAP based residual
         result['denoised_divergence'] = result['causal_denoised_returns'] - vol_adjusted_returns
 
         # From fracdiff_log_price: State/slow features
@@ -223,7 +264,7 @@ def apply_layer2_price_processing(df: pd.DataFrame,
 
         # --- New Features (Audit Request) ---
 
-        # 1. Hurst Exponent (Proxy or Rolling)
+        # 1. Hurst Exponent (Proxy or Rolling) on VWAP
         # Using Numba optimized rolling Hurst on log prices
         try:
             hurst_100 = _numba_rolling_hurst(log_price.ffill().values, window=100)
@@ -231,7 +272,7 @@ def apply_layer2_price_processing(df: pd.DataFrame,
         except Exception as e:
             tprint_warning(f"   ⚠️ Hurst calculation failed: {e}")
 
-        # 2. LZ Complexity
+        # 2. LZ Complexity on VWAP
         try:
             # On log returns (discretized implicitly by algo) or prices?
             # LZ on raw prices captures structure.
@@ -241,7 +282,7 @@ def apply_layer2_price_processing(df: pd.DataFrame,
         except Exception as e:
             tprint_warning(f"   ⚠️ LZ Complexity failed: {e}")
 
-        # 3. Efficiency Ratio
+        # 3. Efficiency Ratio on VWAP returns
         try:
             er_50 = _numba_efficiency_ratio(log_returns.fillna(0).values, window=50)
             result['efficiency_ratio_50'] = pd.Series(er_50, index=asset_df.index).ffill()
@@ -250,7 +291,8 @@ def apply_layer2_price_processing(df: pd.DataFrame,
 
         # 4. Bar Tightness
         # (High - Low) / (High + Low) or similar.
-        # We check if High/Low exist
+        # We KEEP using High/Low if available (Structure).
+        # We can normalize by VWAP though.
         cols_map = {c.lower(): c for c in asset_df.columns}
         if 'high' in cols_map and 'low' in cols_map:
             h = asset_df[cols_map['high']]
@@ -259,7 +301,7 @@ def apply_layer2_price_processing(df: pd.DataFrame,
             # Normalized Range: (H - L) / (H + L)
             # Or relative to close: (H - L) / Close
             # Using (H - L) / (H + L) is scale invariant
-            tightness = (h - l) / (h + l + 1e-9)
+            # tightness = (h - l) / (h + l + 1e-9)
 
             # Invert so higher = tighter?
             # User said "Bar Tightness".
@@ -270,6 +312,8 @@ def apply_layer2_price_processing(df: pd.DataFrame,
             # But we don't have bid/ask.
             # I'll compute Range Ratio and let tree decide.
             # Actually, let's call it 'bar_tightness' = 1 / (range_pct + epsilon) to match "tightness" (high = tight)
+
+            # Using VWAP (effective_price) for normalization denominator is better
             range_pct = (h - l) / (price + 1e-9)
             result['bar_tightness'] = 1.0 / (range_pct + 1e-4) # Cap at 10000
 

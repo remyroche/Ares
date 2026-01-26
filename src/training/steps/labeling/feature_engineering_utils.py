@@ -315,8 +315,8 @@ def apply_layer2_price_processing(df: pd.DataFrame,
         # We perform Causal Residualisation (Detrending) using EMA to avoid lookahead bias.
         # This calculates the deviation of the price (or VWAP) from its own Exponential Moving Average.
         try:
-            # Using span=100 to match drawdown window and capture medium-term trend
-            trend = effective_price.ewm(span=100, adjust=False).mean()
+            # Using span=150 to match drawdown window and capture medium-term trend
+            trend = effective_price.ewm(span=150, adjust=False).mean()
             result['vwap_residual'] = effective_price - trend
         except Exception as e:
             # Fallback or silent fail

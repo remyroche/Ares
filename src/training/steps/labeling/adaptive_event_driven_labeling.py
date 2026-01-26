@@ -362,9 +362,9 @@ class AdaptiveEventDrivenLabeling:
             
             specialist_names = list(self.spectral_specialists.priority_specialists)
             
-            # Collect all phase series for quantile calculation if using quantile approach
-            all_phase_values = []
-            phase_series_by_specialist = {}
+            # Collect all z-score series for global diagnostics
+            all_z_values = []
+            z_scores_by_specialist = {}
             
             for specialist_name in specialist_names:
                 # Check d1-d3 phase relationship (micro leading macro = breakout)
@@ -398,138 +398,123 @@ class AdaptiveEventDrivenLabeling:
                     if phase_series is None or not isinstance(phase_series, np.ndarray):
                         phase_series = np.full_like(self.spectral_components[d1_key], phase_summary, dtype=float)
                     
-                    # Store phase series for quantile calculation
-                    phase_series_by_specialist[specialist_name] = phase_series
-                    all_phase_values.extend(phase_series[~np.isnan(phase_series)].tolist())
-            
-            # Calculate quantile-based threshold if enabled
-            if use_quantile_approach and all_phase_values:
-                # Global diagnostics threshold (overall distribution)
-                quantile_threshold = np.percentile(all_phase_values, 100 - min_coverage_percent)
-                expected_breakouts = len(all_phase_values) * min_coverage_percent / 100
-                actual_above_threshold = np.sum(np.array(all_phase_values) >= quantile_threshold)
-                
-                # Debug: Check if phase values are all identical
-                unique_values = len(set(all_phase_values))
+                    # Calculate Rolling Z-Score of Phase
+                    # Z = (Phase - RollingMean) / RollingStd
+                    phase_s = pd.Series(phase_series)
+                    rolling_mean = phase_s.rolling(window=volatility_window, min_periods=1).mean()
+                    rolling_std = phase_s.rolling(window=volatility_window, min_periods=1).std().fillna(1e-9) # Avoid div/0
+
+                    # Apply small epsilon to std to avoid division by zero
+                    rolling_std = rolling_std.replace(0, 1e-9)
+
+                    z_series = (phase_s - rolling_mean) / rolling_std
+                    z_series_values = z_series.values
+
+                    # Store z-series for thresholding
+                    z_scores_by_specialist[specialist_name] = z_series_values
+                    all_z_values.extend(z_series_values[~np.isnan(z_series_values)].tolist())
+
+            # Calculate global quantile threshold for Z-scores if enabled
+            # Note: We use per-specialist quantiles below, but can compute global stats here
+            global_z_threshold = 2.0 # Default
+            if use_quantile_approach and all_z_values:
+                global_z_threshold = np.percentile(all_z_values, 100 - min_coverage_percent)
                 
                 if self.verbose:
-                    tprint_info(f"   🎯 Using GLOBAL {min_coverage_percent}% quantile approach")
-                    tprint_info(f"      - Total phase values: {len(all_phase_values):,}")
-                    tprint_info(f"      - Expected breakouts: {expected_breakouts:.0f}")
-                    tprint_info(f"      - Quantile threshold: {quantile_threshold:.6f}")
-                    tprint_info(f"      - Values > threshold: {actual_above_threshold}")
-                    tprint_info(f"      - Phase range: [{np.min(all_phase_values):.6f}, {np.max(all_phase_values):.6f}]")
-                    tprint_info(f"      - Phase mean: {np.mean(all_phase_values):.6f}")
-                    tprint_info(f"      - Phase std: {np.std(all_phase_values):.6f}")
-                    tprint_info(f"      🔍 Unique phase values: {unique_values}")
-                    
-                    if unique_values == 1:
-                        tprint_warning(f"      ⚠️ ALL PHASE VALUES ARE IDENTICAL: {all_phase_values[0]:.6f}")
-                    elif unique_values < 10:
-                        tprint_warning(f"      ⚠️ VERY LOW PHASE VARIETY: only {unique_values} unique values")
-                    
-                    # Debug: Check quantile calculation accuracy
-                    if actual_above_threshold < expected_breakouts * 0.5:
-                        tprint_warning(f"      ⚠️ QUANTILE CALCULATION ISSUE!")
-                        tprint_info(f"         - Expected (2%): {expected_breakouts:.0f}")
-                        tprint_info(f"         - Actual: {actual_above_threshold}")
-                        tprint_info(f"         - Ratio: {actual_above_threshold/expected_breakouts:.2%}")
+                    tprint_info(f"   🎯 Global Z-Score Analysis ({min_coverage_percent}% target)")
+                    tprint_info(f"      - Total values: {len(all_z_values):,}")
+                    tprint_info(f"      - Global Z-Threshold: {global_z_threshold:.4f}")
+                    tprint_info(f"      - Z-Score Range: [{np.min(all_z_values):.2f}, {np.max(all_z_values):.2f}]")
+
             else:
-                # Use fixed threshold
-                quantile_threshold = phase_threshold if phase_threshold is not None else 0.1
+                # Fallback fixed Z-threshold (approx 2 sigma)
+                global_z_threshold = 2.0
                 if self.verbose:
-                    tprint_info(f"   📐 Using fixed threshold: {quantile_threshold:.4f}")
+                    tprint_info(f"   📐 Using fixed Z-threshold: {global_z_threshold:.2f}")
             
-            # Process each specialist with calculated threshold
+            # Process each specialist
             for specialist_name in specialist_names:
-                if specialist_name not in phase_series_by_specialist:
+                if specialist_name not in z_scores_by_specialist:
                     continue
                     
-                phase_series = phase_series_by_specialist[specialist_name]
+                z_series = z_scores_by_specialist[specialist_name]
 
-                # Per-specialist quantile threshold to meet minimum coverage
-                specialist_threshold = quantile_threshold
-                if use_quantile_approach:
-                    specialist_values = phase_series[~np.isnan(phase_series)]
-                    if len(specialist_values) > 0:
-                        specialist_threshold = np.percentile(
-                            specialist_values,
-                            100 - min_coverage_percent
-                        )
-                
-                # Get variance info for diagnostics
+                # Retrieve original phase components for diagnostics
                 d1_key = f'{specialist_name}_d1'
                 d3_key = f'{specialist_name}_d3'
-                var_d1 = float(np.var(self.spectral_components[d1_key])) if d1_key in self.spectral_components else 0.0
-                var_d3 = float(np.var(self.spectral_components[d3_key])) if d3_key in self.spectral_components else 0.0
-                phase_summary = float(np.nanmean(phase_series))
-                
-                # Calculate rolling volatility barrier
-                # Using pandas for robustness with NaNs
-                phase_s = pd.Series(phase_series)
-                rolling_mean = phase_s.rolling(window=volatility_window, min_periods=1).mean().values
-                rolling_std = phase_s.rolling(window=volatility_window, min_periods=1).std().fillna(0).values
 
-                # Volatility barrier: Mean + 1.0 * StdDev
-                volatility_barrier = rolling_mean + 1.0 * rolling_std
+                # Calculate basic phase statistics for logging
+                # We need to re-derive phase summary since we are in a new loop
+                # This ensures we don't use stale variables from the previous loop
+                phase_summary = 0.0
+                if d1_key in self.spectral_components and d3_key in self.spectral_components:
+                    d1_coeffs = self.spectral_components[d1_key]
+                    d3_coeffs = self.spectral_components[d3_key]
 
-                # Breakout signal: use per-specialist quantile threshold AND volatility barrier
-                valid_mask = ~np.isnan(phase_series)
-                breakout_mask = np.zeros_like(phase_series, dtype=bool)
+                    # Quick phase check (re-using scalar calculation for speed if possible)
+                    # For logging purposes, simple mean of Z-score is not phase summary.
+                    # We can use the mean of the phase series if we stored it, or re-calc.
+                    # Given Z-scores were derived from phase series, we can try to recover or just skip.
+                    # Let's re-calculate simple phase summary using the detector if needed,
+                    # OR just report Z-score summary. Reporting Z-score mean is more relevant here.
+                    z_mean = float(np.nanmean(z_series))
+                    phase_summary = z_mean # Use Z-mean as the summary metric in this context
+
+                # Per-specialist Z-score threshold
+                specialist_z_threshold = global_z_threshold
+                if use_quantile_approach:
+                    z_values = z_series[~np.isnan(z_series)]
+                    if len(z_values) > 0:
+                        specialist_z_threshold = np.percentile(
+                            z_values,
+                            100 - min_coverage_percent
+                        )
+
+                # Breakout signal: Z-score > Threshold
+                valid_mask = ~np.isnan(z_series)
+                breakout_mask = np.zeros_like(z_series, dtype=bool)
 
                 if np.any(valid_mask):
-                    # Combine quantile threshold with volatility barrier
-                    breakout_mask[valid_mask] = (
-                        (phase_series[valid_mask] >= specialist_threshold) &
-                        (phase_series[valid_mask] >= volatility_barrier[valid_mask])
-                    )
+                    breakout_mask[valid_mask] = z_series[valid_mask] >= specialist_z_threshold
 
                 specialist_breakout_masks[specialist_name] = breakout_mask
+
                 if np.any(valid_mask):
                     phase_coverage = float(np.mean(breakout_mask[valid_mask].astype(float)))
                 else:
                     phase_coverage = 0.0
                 
                 # Debug per-specialist analysis
-                specialist_phase_values = phase_series[~np.isnan(phase_series)]
-                if use_quantile_approach and len(specialist_phase_values) > 0 and self.verbose:
-                    expected_specialist = len(specialist_phase_values) * min_coverage_percent / 100
-                    specialist_above = np.sum(specialist_phase_values >= specialist_threshold)
-                    
-                    # Count how many passed volatility barrier
-                    vol_barrier_values = volatility_barrier[~np.isnan(phase_series)]
-                    passed_volatility = np.sum(specialist_phase_values >= vol_barrier_values)
+                if use_quantile_approach and self.verbose:
+                    z_valid = z_series[~np.isnan(z_series)]
+                    if len(z_valid) > 0:
+                        z_above = np.sum(z_valid >= specialist_z_threshold)
 
-                    tprint_info(f"      🔍 {specialist_name} Analysis:")
-                    tprint_info(f"         - Phase values: {len(specialist_phase_values):,}")
-                    tprint_info(f"         - Expected breakouts: {expected_specialist:.0f}")
-                    tprint_info(f"         - Specialist threshold: {specialist_threshold:.4f}")
-                    tprint_info(f"         - Values >= threshold: {specialist_above}")
-                    tprint_info(f"         - Values >= volatility barrier: {passed_volatility}")
-                    tprint_info(f"         - Phase range: [{np.min(specialist_phase_values):.4f}, {np.max(specialist_phase_values):.4f}]")
-                    tprint_info(f"         - Phase mean: {np.mean(specialist_phase_values):.4f}")
-                    tprint_info(f"         - Phase std: {np.std(specialist_phase_values):.4f}")
-                    tprint_info(f"         - Coverage: {phase_coverage:.2%}")
+                        tprint_info(f"      🔍 {specialist_name} Analysis (Z-Score):")
+                        tprint_info(f"         - Z-Threshold: {specialist_z_threshold:.4f}")
+                        tprint_info(f"         - Breakouts: {z_above} ({phase_coverage:.2%})")
+                        tprint_info(f"         - Z-Range: [{np.min(z_valid):.2f}, {np.max(z_valid):.2f}]")
                 
-                # Store the global threshold
-                actual_threshold = specialist_threshold
+                # Get variance info for diagnostics
+                var_d1 = float(np.var(self.spectral_components.get(d1_key, [])))
+                var_d3 = float(np.var(self.spectral_components.get(d3_key, [])))
                 
                 diagnostics[specialist_name] = {
                     "var_d1": var_d1,
                     "var_d3": var_d3,
-                    "phase_summary": float(phase_summary),
-                    "phase_threshold": actual_threshold,
+                    "z_mean": float(phase_summary),
+                    "z_threshold": float(specialist_z_threshold),
                     "phase_coverage": phase_coverage,
-                    "sample_count": int(len(phase_series)),
+                    "sample_count": int(len(z_series)),
                     "quantile_used": use_quantile_approach,
-                    "min_coverage_percent": min_coverage_percent if use_quantile_approach else None
+                    "min_coverage_percent": min_coverage_percent
                 }
                 
                 if self.verbose:
                     method_str = f"{min_coverage_percent}% quantile" if use_quantile_approach else f"fixed"
                     tprint_info(
                         f"      • {specialist_name}: var(d1)={var_d1:.3e}, var(d3)={var_d3:.3e}, "
-                        f"phase={phase_summary:.3f}, coverage>{actual_threshold:.3f}={phase_coverage:.2%} ({method_str})"
+                        f"z_mean={phase_summary:.3f}, coverage>{specialist_z_threshold:.3f}={phase_coverage:.2%} ({method_str})"
                     )
                 
                 # Only register actual breakouts
@@ -540,22 +525,22 @@ class AdaptiveEventDrivenLabeling:
             if self.verbose and use_quantile_approach:
                 tprint_info(f"      📈 Individual Specialist Coverage:")
                 for specialist_name in specialist_names:
-                    if specialist_name in phase_series_by_specialist:
-                        phase_series = phase_series_by_specialist[specialist_name]
+                    if specialist_name in z_scores_by_specialist:
+                        z_series = z_scores_by_specialist[specialist_name]
                         breakout_mask = specialist_breakout_masks.get(specialist_name)
                         if breakout_mask is None:
-                            valid_mask = ~np.isnan(phase_series)
+                            valid_mask = ~np.isnan(z_series)
                             if np.any(valid_mask):
                                 individual_coverage = float(
-                                    np.mean(phase_series[valid_mask] >= np.percentile(
-                                        phase_series[valid_mask],
+                                    np.mean(z_series[valid_mask] >= np.percentile(
+                                        z_series[valid_mask],
                                         100 - min_coverage_percent
                                     ))
                                 )
                             else:
                                 individual_coverage = 0.0
                         else:
-                            valid_mask = ~np.isnan(phase_series)
+                            valid_mask = ~np.isnan(z_series)
                             if np.any(valid_mask):
                                 individual_coverage = float(
                                     np.mean(breakout_mask[valid_mask].astype(float))

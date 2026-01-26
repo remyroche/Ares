@@ -12,9 +12,9 @@ from typing import Tuple, Optional, Union
 def detect_rolling_quantile_surprises(
     series: pd.Series,
     window: int = 500,
-    quantiles: Tuple[float, float] = (0.96, 0.98),
+    quantiles: Tuple[float, float] = (0.97, 0.99),
     min_periods: Optional[int] = None,
-    fallback_quantiles: Tuple[float, float] = (0.96, 0.98),
+    fallback_quantiles: Tuple[float, float] = (0.97, 0.99),
     return_thresholds: bool = False,
     return_details: bool = False,
     min_coverage: Optional[float] = None

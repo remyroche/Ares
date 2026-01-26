@@ -324,7 +324,7 @@ class CausalSpecialist:
             details = detect_rolling_quantile_surprises(
                 abs_errors, 
                 window=100, 
-                quantiles=(0.96, 0.98), # Standardized 96/98
+                quantiles=(0.97, 0.99), # Standardized 97/99
                 min_periods=20, 
                 return_details=True
             )

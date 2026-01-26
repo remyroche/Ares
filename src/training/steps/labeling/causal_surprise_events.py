@@ -1307,7 +1307,7 @@ class CausalSurpriseDetector:
                 details = detect_rolling_quantile_surprises(
                     series, 
                     window=window, 
-                    quantiles=(0.96, 0.98),
+                    quantiles=(0.97, 0.99),
                     return_details=True
                 )
                 levels = details['level']
@@ -1498,7 +1498,7 @@ class CausalSurpriseDetector:
             # --- 1. Regime-Conditional Adaptive Thresholding ---
             # Theta(t) = sum_r( P(r|t) * Theta_r )
             # Theta_r uses quantile = 1 - event_threshold when event_threshold is a density target.
-            quantile_target = 0.96
+            quantile_target = 0.97
             if 0.0 < event_threshold < 0.5:
                 quantile_target = 1.0 - event_threshold
             if self.verbose:

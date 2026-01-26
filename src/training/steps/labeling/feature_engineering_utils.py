@@ -101,26 +101,62 @@ def _apply_fracdiff(series: pd.Series, d: float = 0.4, threshold: float = 1e-5) 
 def _numba_efficiency_ratio(log_returns: np.ndarray, window: int) -> np.ndarray:
     """
     Calculate Kaufman Efficiency Ratio: Abs(Net Change) / Sum(Abs(Change))
+    Optimized to O(N) using sliding window updates.
     """
     n = len(log_returns)
     out = np.full(n, np.nan)
 
+    if n < window:
+        return out
+
     # Needs absolute returns
     abs_rets = np.abs(log_returns)
 
-    # We can use a sliding window sum approach for efficiency
-    # But simple loop is fine for Numba
+    # Initialize sums for the first window
+    current_net = 0.0
+    current_vol = 0.0
+    nan_count = 0
 
-    for i in range(window, n + 1):
-        # Segment for net change: sum of log returns
-        net_change = np.abs(np.sum(log_returns[i-window:i]))
-        # Segment for volatility: sum of abs log returns
-        volatility = np.sum(abs_rets[i-window:i])
-
-        if volatility > 1e-12:
-            out[i-1] = net_change / volatility
+    # Sum for indices [0, window-1]
+    for k in range(window):
+        val = log_returns[k]
+        if not np.isnan(val):
+            current_net += val
+            current_vol += np.abs(val)
         else:
-            out[i-1] = 0.0 # No volatility = no trend or noise.
+            nan_count += 1
+
+    # Set the first result at index window-1
+    if nan_count == 0 and current_vol > 1e-12:
+        out[window - 1] = np.abs(current_net) / current_vol
+    else:
+        out[window - 1] = 0.0
+
+    # Sliding window loop
+    # We produce outputs for i from window to n-1
+    # i is the index of the entering element
+    for i in range(window, n):
+        leaving = log_returns[i - window]
+        if np.isnan(leaving):
+            nan_count -= 1
+            leaving = 0.0
+
+        entering = log_returns[i]
+        if np.isnan(entering):
+            nan_count += 1
+            entering = 0.0
+
+        current_net += entering - leaving
+        current_vol += np.abs(entering) - np.abs(leaving)
+
+        # Numerical stability fix: current_vol should not be negative due to float errors
+        if current_vol < 0:
+            current_vol = 0.0
+
+        if nan_count == 0 and current_vol > 1e-12:
+            out[i] = np.abs(current_net) / current_vol
+        else:
+            out[i] = 0.0
 
     return out
 

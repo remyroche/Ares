@@ -446,14 +446,8 @@ class AdaptiveEventDrivenLabeling:
                 phase_series = phase_series_by_specialist[specialist_name]
 
                 # Per-specialist quantile threshold to meet minimum coverage
+                # NOTE: Enforcing global quantile + rolling volatility barrier per instructions
                 specialist_threshold = quantile_threshold
-                if use_quantile_approach:
-                    specialist_values = phase_series[~np.isnan(phase_series)]
-                    if len(specialist_values) > 0:
-                        specialist_threshold = np.percentile(
-                            specialist_values,
-                            100 - min_coverage_percent
-                        )
                 
                 # Get variance info for diagnostics
                 d1_key = f'{specialist_name}_d1'
@@ -462,11 +456,30 @@ class AdaptiveEventDrivenLabeling:
                 var_d3 = float(np.var(self.spectral_components[d3_key])) if d3_key in self.spectral_components else 0.0
                 phase_summary = float(np.nanmean(phase_series))
                 
-                # Breakout signal: use global quantile threshold
+                # Breakout signal: use global quantile threshold + rolling volatility barrier
                 valid_mask = ~np.isnan(phase_series)
                 breakout_mask = np.zeros_like(phase_series, dtype=bool)
+
                 if np.any(valid_mask):
-                    breakout_mask[valid_mask] = phase_series[valid_mask] >= specialist_threshold
+                    # Calculate rolling statistics for volatility barrier
+                    # Use pandas for robust NaN handling
+                    phase_s = pd.Series(phase_series)
+                    rolling_mean = phase_s.rolling(window=500, min_periods=1).mean().values
+                    rolling_std = phase_s.rolling(window=500, min_periods=1).std().values
+
+                    # Fill NaNs in rolling stats (start of series)
+                    rolling_mean = np.nan_to_num(rolling_mean, nan=0.0)
+                    rolling_std = np.nan_to_num(rolling_std, nan=0.0)
+
+                    # Volatility barrier: mean + 1.0 * std
+                    volatility_barrier = rolling_mean + 1.0 * rolling_std
+
+                    # Combined condition: > global quantile AND > local volatility barrier
+                    breakout_mask[valid_mask] = (
+                        (phase_series[valid_mask] >= specialist_threshold) &
+                        (phase_series[valid_mask] >= volatility_barrier[valid_mask])
+                    )
+
                 specialist_breakout_masks[specialist_name] = breakout_mask
                 if np.any(valid_mask):
                     phase_coverage = float(np.mean(breakout_mask[valid_mask].astype(float)))

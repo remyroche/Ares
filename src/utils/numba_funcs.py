@@ -1497,3 +1497,67 @@ def _numba_rolling_kurt(x, window):
 
     return out
 
+
+@jit(nopython=True)
+def _numba_rolling_vwap(values, volumes, window):
+    """
+    Calculate rolling VWAP (Volume Weighted Average Price) using Numba.
+    VWAP = Sum(values * volumes) / Sum(volumes) over rolling window.
+    Ignores NaNs in values or volumes (treats them as 0 contribution).
+
+    Optimized to O(N) using incremental updates.
+    """
+    n = len(values)
+    output = np.empty(n, dtype=np.float64)
+    output[:] = np.nan # Initialize with NaNs
+
+    if window <= 0:
+        return output
+
+    # Check if volumes length matches
+    if len(volumes) != n:
+        return output
+
+    sum_pv = 0.0
+    sum_v = 0.0
+
+    for i in range(n):
+        # Add entering
+        v = values[i]
+        vol = volumes[i]
+
+        pv = 0.0
+        v_contrib = 0.0
+
+        if not np.isnan(v) and not np.isnan(vol):
+            pv = v * vol
+            v_contrib = vol
+
+        sum_pv += pv
+        sum_v += v_contrib
+
+        # Remove leaving
+        if i >= window:
+            leaving_idx = i - window
+            l_v = values[leaving_idx]
+            l_vol = volumes[leaving_idx]
+
+            if not np.isnan(l_v) and not np.isnan(l_vol):
+                l_pv = l_v * l_vol
+                l_v_contrib = l_vol
+
+                sum_pv -= l_pv
+                sum_v -= l_v_contrib
+
+            # Numerical stability correction
+            if sum_v < 0:
+                sum_v = 0.0
+            # sum_pv can be negative if values are negative (e.g. diffs), so don't clamp sum_pv
+
+        if i >= window - 1:
+            if sum_v <= 1e-12:
+                output[i] = np.nan
+            else:
+                output[i] = sum_pv / sum_v
+
+    return output

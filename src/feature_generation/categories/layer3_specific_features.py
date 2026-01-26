@@ -25,6 +25,7 @@ from sklearn.decomposition import PCA
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import RobustScaler
 from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
+from src.utils.numba_funcs import _numba_rolling_vwap
 
 from src.feature_generation.categories.ensemble_disagreement import (
     calculate_ensemble_disagreement_features,
@@ -117,10 +118,18 @@ def _compute_anchor_and_drift_features(
     features = pd.DataFrame(index=df.index)
     regime_map = {0: 'Quiet', 1: 'Trending', 2: 'Chaos'}
     
+    # Select effective price (VWAP priority)
+    price_eff = None
+    if 'vwap' in df.columns:
+        price_eff = df['vwap']
+    elif 'VWAP' in df.columns:
+        price_eff = df['VWAP']
+    elif 'close' in df.columns:
+        price_eff = df['close']
+
     # 1. Volatility Anchor/Drift
-    if 'close' in df.columns:
-        close = df['close']
-        ret = np.log(close / close.shift(1)).fillna(0)
+    if price_eff is not None:
+        ret = np.log(price_eff / price_eff.shift(1)).fillna(0)
         
         # Short-term volatility (reactive)
         vol_short = ret.rolling(20, min_periods=5).std().fillna(0)
@@ -141,11 +150,9 @@ def _compute_anchor_and_drift_features(
         features['drift_volatility_z'] = vol_drift_z.clip(-5, 5)
     
     # 2. Trend Strength Anchor/Drift
-    if 'close' in df.columns:
-        close = df['close']
-        
+    if price_eff is not None:
         # Slope normalized by price (% change over 20 bars)
-        slope = close.diff(20) / close.shift(20).replace(0, np.nan)
+        slope = price_eff.diff(20) / price_eff.shift(20).replace(0, np.nan)
         slope = slope.fillna(0)
         
         # Trend strength = absolute slope
@@ -164,12 +171,11 @@ def _compute_anchor_and_drift_features(
         features['trend_direction'] = np.sign(slope)
     
     # 3. Liquidity Anchor/Drift (if volume available)
-    if 'volume' in df.columns and 'close' in df.columns:
-        vol = df['volume'].replace(0, np.nan).fillna(method='ffill').fillna(1)
-        close = df['close']
+    if 'volume' in df.columns and price_eff is not None:
+        vol = df['volume'].replace(0, np.nan).ffill().fillna(1)
         
         # Dollar volume as liquidity proxy
-        dollar_vol = vol * close
+        dollar_vol = vol * price_eff
         
         # Anchor: Slow EWM of dollar volume
         liq_anchor = dollar_vol.ewm(span=200, min_periods=50).mean().fillna(dollar_vol.mean())
@@ -341,29 +347,50 @@ def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     features = pd.DataFrame(index=df.index)
 
-    close = df['close']
-    high = df['high']
-    low = df['low']
+    # Determine effective price (VWAP priority for returns-based features)
+    if 'vwap' in df.columns:
+        price_eff = df['vwap']
+    elif 'VWAP' in df.columns:
+        price_eff = df['VWAP']
+    elif 'close' in df.columns:
+        price_eff = df['close']
+    else:
+        return features # Cannot compute features without price
+
+    # Base series
+    close = df['close'] if 'close' in df.columns else price_eff
+    # Use close for High/Low proxy if not available (rare)
+    high = df['high'] if 'high' in df.columns else price_eff
+    low = df['low'] if 'low' in df.columns else price_eff
 
     # --- Prepare Base Series ---
 
-    # 1. Log Returns (Original)
-    log_ret = np.log(close / close.shift(1))
+    # 1. Log Returns (Using Effective Price)
+    log_ret = np.log(price_eff / price_eff.shift(1))
 
     # 2. FracDiff Series
     try:
+        # FracDiff on Structural Price (Close)
         log_price = np.log(close)
-        frac_diff = _apply_fracdiff(log_price.fillna(method='ffill'), d=0.4)
+        frac_diff = _apply_fracdiff(log_price.ffill(), d=0.4)
+
+        # Apply Rolling VWAP if volume available ("VWAP is used after FracDiff")
+        if 'volume' in df.columns:
+             vol_values = df['volume'].values.astype(np.float64)
+             fd_values = frac_diff.fillna(0).values.astype(np.float64)
+             vwap_fd = _numba_rolling_vwap(fd_values, vol_values, window=20)
+             frac_diff = pd.Series(vwap_fd, index=df.index)
+
         # Fill initial NaNs
         frac_diff = frac_diff.fillna(0.0)
     except Exception as e:
         tprint_warning(f"FracDiff calculation failed: {e}")
         frac_diff = log_ret # Fallback
 
-    # 3. Innovation Series (Z-scored Delta)
+    # 3. Innovation Series (Z-scored Delta on Effective Price)
     # Innovation ≈ ((Xt − Xt-1) − RollingMean(ΔX)) / RollingStd(ΔX)
     try:
-        delta_x = close.diff()
+        delta_x = price_eff.diff()
         rolling_mean = delta_x.rolling(window=20).mean()
         rolling_std = delta_x.rolling(window=20).std()
         innovation = (delta_x - rolling_mean) / (rolling_std + 1e-9)
@@ -421,8 +448,8 @@ def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     atr_short = tr.rolling(window=12).mean()
 
     # Trend Strength Features
-    log_price = np.log(close)
-    features['slope_short'] = log_price.diff(12).abs()
+    log_price_eff = np.log(price_eff)
+    features['slope_short'] = log_price_eff.diff(12).abs()
 
     up_move = high.diff()
     down_move = low.diff()
@@ -436,7 +463,7 @@ def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     features['adx_proxy'] = dx.rolling(window=14).mean()
 
     # Momentum
-    features['momentum_short'] = (close.diff(12) / close.shift(12)).abs()
+    features['momentum_short'] = (price_eff.diff(12) / price_eff.shift(12)).abs()
     features['snr'] = features['momentum_short'].abs() / (rv_short + 1e-8)
 
     # Vol Spike / Large Candle
@@ -478,10 +505,10 @@ def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     var_10 = r_10.rolling(vr_window).var()
     features['variance_ratio'] = var_20 / (2 * var_10 + 1e-8)
 
-    # Permutation Entropy
+    # Permutation Entropy (using effective price for returns-based features)
     pe_window = 50
     pe_dim = 3
-    pe_values = close.to_numpy(dtype=float, copy=False)
+    pe_values = price_eff.to_numpy(dtype=float, copy=False)
     pe_n = len(pe_values)
 
     if pe_n >= pe_window + pe_dim:
@@ -524,8 +551,8 @@ def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # Efficiency Ratio (Kaufman's)
     er_window = 10
-    change = (close - close.shift(er_window)).abs()
-    volatility = close.diff().abs().rolling(er_window).sum()
+    change = (price_eff - price_eff.shift(er_window)).abs()
+    volatility = price_eff.diff().abs().rolling(er_window).sum()
     features['efficiency_ratio'] = change / (volatility + 1e-8)
 
     # -------------------------------------------------------------
@@ -567,14 +594,23 @@ def _compute_cross_tf_momentum_agreement(df: pd.DataFrame) -> pd.DataFrame:
     Strong agreement = stronger directional conviction.
     """
     features = pd.DataFrame(index=df.index)
-    close = df['close']
     
+    # Use effective price
+    if 'vwap' in df.columns:
+        price = df['vwap']
+    elif 'VWAP' in df.columns:
+        price = df['VWAP']
+    elif 'close' in df.columns:
+        price = df['close']
+    else:
+        return features
+
     # Fill NAs to avoid propagation issues temporarily for calculation
-    close_filled = close.ffill().bfill()
+    price_filled = price.ffill().bfill()
 
     # Momentum at different horizons
-    mom_4 = (close_filled / close_filled.shift(4) - 1).fillna(0)      # 1h at 15m
-    mom_12 = (close_filled / close_filled.shift(12) - 1).fillna(0)    # 3h at 15m
+    mom_4 = (price_filled / price_filled.shift(4) - 1).fillna(0)      # 1h at 15m
+    mom_12 = (price_filled / price_filled.shift(12) - 1).fillna(0)    # 3h at 15m
     # Removed 12h and 24h as per user request
     
     # Sign agreement (how many horizons agree on direction)

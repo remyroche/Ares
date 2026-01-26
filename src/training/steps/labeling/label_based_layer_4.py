@@ -1201,11 +1201,26 @@ class MetaLearnerFeatures:
         """
         Generate structural features.
         """
-        if raw_price_col not in df.columns:
-            return pd.DataFrame(index=df.index)
+        # Determine effective price (VWAP priority)
+        price_col_to_use = raw_price_col
+        vwap_col = None
 
-        # Calculate returns
-        prices = df[raw_price_col].values.astype(np.float64)
+        if 'vwap' in df.columns:
+            vwap_col = 'vwap'
+            price_col_to_use = 'vwap'
+        elif 'VWAP' in df.columns:
+            vwap_col = 'VWAP'
+            price_col_to_use = 'VWAP'
+
+        if price_col_to_use not in df.columns and raw_price_col not in df.columns:
+             return pd.DataFrame(index=df.index)
+
+        # Fallback to raw_price_col if vwap not found but raw is there (handled by logic above somewhat)
+        if price_col_to_use not in df.columns:
+            price_col_to_use = raw_price_col
+
+        # Calculate returns (Using VWAP if available)
+        prices = df[price_col_to_use].values.astype(np.float64)
         returns = np.zeros_like(prices)
         returns[1:] = np.diff(np.log(prices + 1e-9))
 
@@ -1234,7 +1249,11 @@ class MetaLearnerFeatures:
 
         # Integrate Anti-Explosion Features
         try:
-            processed = apply_layer2_price_processing(df, price_col=raw_price_col, enable_price_features=True)
+            # Pass vwap_col to utilize VWAP-shifted features
+            processed = apply_layer2_price_processing(df,
+                                                      price_col=raw_price_col,
+                                                      enable_price_features=True,
+                                                      vwap_col=vwap_col)
             # Select new features
             new_cols = [c for c in processed.columns if c not in df.columns]
             if new_cols:

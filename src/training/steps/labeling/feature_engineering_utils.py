@@ -1,11 +1,12 @@
 import numpy as np
 import pandas as pd
 import logging
+from typing import Optional
 from numba import jit
 from src.utils.tprint import tprint_info, tprint_warning, tprint_success
 from src.utils.orthogonal_numba import _numba_apply_fracdiff, _numba_rolling_hurst
 from src.utils.entropy_optimized import lempel_ziv_complexity_numba
-from src.utils.numba_funcs import _numba_ewma, _numba_ewm_std, _numba_rolling_skew, _numba_rolling_kurt
+from src.utils.numba_funcs import _numba_ewma, _numba_ewm_std, _numba_rolling_skew, _numba_rolling_kurt, _numba_rolling_vwap
 
 def _causal_denoise(signal: np.ndarray, halflife: float = 4.0) -> np.ndarray:
     """
@@ -83,7 +84,8 @@ def apply_layer2_price_processing(df: pd.DataFrame,
                                   fracdiff_d: float = 0.4,
                                   wavelet: str = 'db4', # Deprecated
                                   wavelet_level: int = 2, # Deprecated
-                                  enable_price_features: bool = True) -> pd.DataFrame:
+                                  enable_price_features: bool = True,
+                                  vwap_col: Optional[str] = None) -> pd.DataFrame:
     """
     Apply de Prado-compliant price processing and "Anti-Explosion" feature generation.
     Optimized with Numba for EWMA and Volatility calculations.
@@ -94,6 +96,7 @@ def apply_layer2_price_processing(df: pd.DataFrame,
         vol_window: (Deprecated usage) Window for volatility estimation.
         fracdiff_d: Fractional differentiation order (0.3-0.5 typical).
         enable_price_features: Flag to enable/disable processing.
+        vwap_col: Column name for VWAP (if available) to shift returns-based features.
 
     Returns:
         DataFrame with processed price features added.
@@ -114,11 +117,19 @@ def apply_layer2_price_processing(df: pd.DataFrame,
 
     def _apply_single_asset(asset_df: pd.DataFrame) -> pd.DataFrame:
         result = asset_df.copy()
+
+        # Determine effective price for returns-based features
+        if vwap_col and vwap_col in asset_df.columns:
+            # Use VWAP if available (user request: shift returns-based features to VWAP)
+            price_for_returns = asset_df[vwap_col]
+        else:
+            price_for_returns = asset_df[price_col]
+
         price = asset_df[price_col]
 
-        # 1. Log-Returns
+        # 1. Log-Returns (using effective price)
         # Use 1e-9 to prevent log(0)
-        log_price = np.log(price.replace(0, np.nan).ffill())
+        log_price = np.log(price_for_returns.replace(0, np.nan).ffill())
         # Leave NaNs where they naturally occur (start of series)
         log_returns = log_price.diff()
         result['log_returns'] = log_returns.fillna(0) # Fill initial NaN with 0 for downstream safety
@@ -158,8 +169,25 @@ def apply_layer2_price_processing(df: pd.DataFrame,
 
         # 3. Fractional Differentiation (FracDiff)
         try:
-            fracdiff_series = _apply_fracdiff(log_price.ffill(), d=fracdiff_d)
-            result['fracdiff_log_price'] = fracdiff_series
+            # Base FracDiff on Structural Price (Close), but allow switching if user strictly wants all-VWAP.
+            # However, "VWAP is used after FracDiff" implies we perform FracDiff then apply VWAP.
+            # So we perform FracDiff on the base price (Close) to get stationarity,
+            # then weight the stationary series by volume (Rolling VWAP of FracDiff).
+
+            # Note: We use Close price for FracDiff base calculation to capture market structure.
+            log_price_structural = np.log(price.replace(0, np.nan).ffill())
+            fracdiff_series = _apply_fracdiff(log_price_structural.ffill(), d=fracdiff_d)
+
+            # Apply Rolling VWAP to FracDiff if volume is available
+            if 'volume' in asset_df.columns:
+                vol_values = asset_df['volume'].values.astype(np.float64)
+                fd_values = fracdiff_series.values.astype(np.float64)
+                # Use a window consistent with volatility window or slightly longer to smooth
+                vwap_fd = _numba_rolling_vwap(fd_values, vol_values, window=20)
+                result['fracdiff_log_price'] = pd.Series(vwap_fd, index=asset_df.index)
+            else:
+                result['fracdiff_log_price'] = fracdiff_series
+
         except Exception as e:
             tprint_warning(f"   ⚠️ FracDiff failed: {e}. Skipping.")
             result['fracdiff_log_price'] = np.nan

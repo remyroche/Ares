@@ -43,6 +43,13 @@ except ImportError:
     def prange(n):
         return range(n)
 
+# Try to import optimized ADF
+try:
+    from src.utils.adf_optimized import _numba_adf_aic
+    ADF_OPTIMIZED_AVAILABLE = True
+except ImportError:
+    ADF_OPTIMIZED_AVAILABLE = False
+
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
 
 
@@ -445,6 +452,26 @@ class AdaptiveFracDiffTransformer(FracDiffTransformer):
         self.step_size = step_size
         self.d_grid = np.arange(d_lower, d_upper + d_step, d_step)
         
+        # Pre-calculate critical value for ADF if using Numba optimization
+        self.critical_value = -2.86 # Default approx for 5%
+        if self.use_numba and STATSMODELS_AVAILABLE:
+            try:
+                # Use a dummy series to extract critical values from statsmodels
+                # This ensures we match the sample size behavior
+                dummy = np.random.randn(self.window_size)
+                # regression='c' matches default adfuller behavior
+                res = adfuller(dummy, regression='c', autolag=None, maxlag=1)
+                # res[4] is critical values dict: {'1%': -3.44, '5%': -2.86, '10%': -2.57}
+
+                if self.adf_threshold <= 0.01:
+                    self.critical_value = res[4]['1%']
+                elif self.adf_threshold <= 0.05:
+                    self.critical_value = res[4]['5%']
+                else:
+                    self.critical_value = res[4]['10%']
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to determine ADF critical value: {e}")
+
     def _check_window_stationarity(self, candidate_series_d: pd.Series, start_idx: int, end_idx: int) -> bool:
         """
         Check if a window of a series is stationary.
@@ -458,12 +485,28 @@ class AdaptiveFracDiffTransformer(FracDiffTransformer):
             True if stationary, False otherwise
         """
         # Get the window from pre-calculated series
+        # Note: slicing with iloc is reasonably fast, but creating a new Series/Index has overhead.
+        # For max performance we should pass numpy arrays, but we need dropna behavior.
         sub_series = candidate_series_d.iloc[start_idx:end_idx].dropna()
 
-        if len(sub_series) < 20:
+        values = sub_series.values
+        n_samples = len(values)
+
+        if n_samples < 20:
             return False # Not enough data to determine stationarity
 
-        # Run ADF (fast)
+        # Use optimized Numba implementation if available
+        if self.use_numba and ADF_OPTIMIZED_AVAILABLE and NUMBA_AVAILABLE:
+            # Determine maxlag (default in statsmodels is 12*(nobs/100)^{1/4})
+            # We can approximate or use fixed.
+            # Statsmodels logic: int(12. * (nobs / 100.) ** .25)
+            maxlag = int(12. * (n_samples / 100.) ** 0.25)
+            maxlag = min(maxlag, self.max_lags if self.max_lags else 100)
+
+            t_stat = _numba_adf_aic(values, maxlag)
+            return t_stat < self.critical_value
+
+        # Fallback to statsmodels
         try:
             p_val = adfuller(sub_series, maxlag=self.max_lags, autolag='AIC')[1]
             return p_val < self.adf_threshold

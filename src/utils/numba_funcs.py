@@ -1497,3 +1497,77 @@ def _numba_rolling_kurt(x, window):
 
     return out
 
+
+@jit(nopython=True)
+def _numba_generate_dollar_bars_with_vwap(times, opens, highs, lows, closes, vols, qtys, thresholds):
+    """
+    Generate dollar bars with VWAP using Numba JIT.
+    vols: Quote Volumes (dollar value)
+    qtys: Quantity Volumes
+    """
+    n_rows = len(times)
+
+    # Pre-allocate output arrays (max expected size = n_rows)
+    out_times = np.empty_like(times)
+    out_opens = np.zeros(n_rows, dtype=np.float64)
+    out_highs = np.zeros(n_rows, dtype=np.float64)
+    out_lows = np.zeros(n_rows, dtype=np.float64)
+    out_closes = np.zeros(n_rows, dtype=np.float64)
+    out_vols = np.zeros(n_rows, dtype=np.float64)
+    out_vwaps = np.zeros(n_rows, dtype=np.float64)
+
+    count = 0
+    current_vol = 0.0
+    current_qty = 0.0
+    current_open = opens[0]
+    current_high = highs[0]
+    current_low = lows[0]
+
+    for i in range(n_rows):
+        current_vol += vols[i]
+        current_qty += qtys[i]
+        val_high = highs[i]
+        val_low = lows[i]
+
+        if val_high > current_high:
+            current_high = val_high
+        if val_low < current_low:
+            current_low = val_low
+
+        target = thresholds[i]
+        if np.isnan(target) or target <= 0:
+            target = 1000000.0
+
+        if current_vol >= target:
+            out_times[count] = times[i]
+            out_opens[count] = current_open
+            out_highs[count] = current_high
+            out_lows[count] = current_low
+            out_closes[count] = closes[i]
+            out_vols[count] = current_vol
+
+            # VWAP = Sum(Quote Volume) / Sum(Quantity Volume)
+            if current_qty > 0:
+                out_vwaps[count] = current_vol / current_qty
+            else:
+                out_vwaps[count] = closes[i] # Fallback
+
+            count += 1
+
+            # Reset
+            current_vol = 0.0
+            current_qty = 0.0
+            if i + 1 < n_rows:
+                current_open = opens[i + 1]
+                current_high = highs[i + 1]
+                current_low = lows[i + 1]
+
+    return (
+        out_times[:count],
+        out_opens[:count],
+        out_highs[:count],
+        out_lows[:count],
+        out_closes[:count],
+        out_vols[:count],
+        out_vwaps[:count],
+    )

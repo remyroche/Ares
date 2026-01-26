@@ -13558,13 +13558,15 @@ class LabelBasedLayer2(BaseStep):
                         fold_tz = getattr(df_train.index, 'tz', None)
                         ge_tz = getattr(global_events, 'tz', None)
                         
-                        if fold_tz is not None and ge_tz is None:
-                            ge_aligned = global_events.tz_localize(fold_tz)
-                        elif fold_tz is None and ge_tz is not None:
+                        if fold_tz is not None:
+                            if ge_tz is None:
+                                ge_aligned = global_events.tz_localize(fold_tz)
+                            else:
+                                ge_aligned = global_events.tz_convert(fold_tz)
+                        elif ge_tz is not None:
                             ge_aligned = global_events.tz_localize(None)
-                        elif fold_tz is not None and ge_tz is not None and fold_tz != ge_tz:
-                            ge_aligned = global_events.tz_convert(fold_tz)
-                    except Exception:
+                    except Exception as e:
+                        tprint_warning(f"   ⚠️ TZ Alignment failed: {e} (Fold TZ: {getattr(df_train.index, 'tz', 'None')}, Events TZ: {getattr(global_events, 'tz', 'None')})")
                         pass # Fallback to original if alignment fails
 
                     # Align weights if index was modified
@@ -13573,39 +13575,29 @@ class LabelBasedLayer2(BaseStep):
                         global_weights.index = ge_aligned
 
                     fold_train_events = ge_aligned[ge_aligned.isin(df_train.index)]
-                    
+                    if len(fold_train_events) == 0 and len(global_events) > 0:
+                        # Fallback to intersection
+                        try:
+                            tprint_info(f"   ℹ️ Primary 'isin' match failed (0 matches). Attempting intersection fallback...")
+                            fold_train_events = ge_aligned.intersection(df_train.index)
+                            if len(fold_train_events) > 0:
+                                tprint_success(f"   ✅ Intersection fallback recovered {len(fold_train_events)} events.")
+                        except Exception as ex:
+                            tprint_warning(f"   ⚠️ Intersection fallback failed: {ex}")
+                            pass
+
                     # Slice weights if available
                     fold_event_weights = None
                     if global_weights is not None:
                         fold_event_weights = global_weights.reindex(fold_train_events).fillna(1.0)
 
                     if len(fold_train_events) == 0 and len(global_events) > 0:
-                         try:
-                             ge_naive = (
-                                 ge_aligned.tz_localize(None)
-                                 if getattr(ge_aligned, 'tz', None) is not None else pd.DatetimeIndex(ge_aligned)
-                             )
-                             fold_naive = df_train.index.tz_localize(None) if df_train.index.tz is not None else df_train.index
-                             fallback_mask = ge_naive.isin(fold_naive)
-                             if fallback_mask.any():
-                                 fold_train_events = ge_aligned[fallback_mask]
-                                 if global_weights is not None:
-                                     fold_event_weights = global_weights.reindex(fold_train_events).fillna(1.0)
-                         except Exception:
-                             pass
-                         if len(fold_train_events) == 0:
-                             try:
-                                 ge_dt = pd.to_datetime(ge_aligned, utc=True, errors='coerce').tz_convert(None)
-                                 fold_dt = pd.to_datetime(df_train.index, utc=True, errors='coerce').tz_convert(None)
-                                 fallback_mask = ge_dt.isin(fold_dt)
-                                 if fallback_mask.any():
-                                     fold_train_events = ge_aligned[fallback_mask]
-                                     if global_weights is not None:
-                                         fold_event_weights = global_weights.reindex(fold_train_events).fillna(1.0)
-                             except Exception:
-                                 pass
                          # Diagnostic log for debugging if fix fails
-                         tprint_warning(f"   ⚠️ TZ Mismatch persists? Global={len(global_events)} -> Fold=0. Fold Range: {df_train.index[0]} to {df_train.index[-1]}")
+                         fold_start = df_train.index[0] if len(df_train) > 0 else "N/A"
+                         fold_end = df_train.index[-1] if len(df_train) > 0 else "N/A"
+                         evt_start = global_events[0] if len(global_events) > 0 else "N/A"
+                         evt_end = global_events[-1] if len(global_events) > 0 else "N/A"
+                         tprint_warning(f"   ⚠️ TZ/Range Mismatch persists? Matches=0. Fold Range: {fold_start} to {fold_end} | Events Range: {evt_start} to {evt_end} | Global Count: {len(global_events)}")
                 else:
                      fold_train_events = pd.DatetimeIndex([])
                      fold_event_weights = None
@@ -13724,13 +13716,14 @@ class LabelBasedLayer2(BaseStep):
                     try:
                         fold_tz = getattr(test_start_time, 'tz', None)
                         ge_tz = getattr(full_events, 'tz', None)
-                        if fold_tz is not None and ge_tz is None:
-                            ge_aligned = full_events.tz_localize(fold_tz)
-                        elif fold_tz is None and ge_tz is not None:
+
+                        if fold_tz is not None:
+                            if ge_tz is None:
+                                ge_aligned = full_events.tz_localize(fold_tz)
+                            else:
+                                ge_aligned = full_events.tz_convert(fold_tz)
+                        elif ge_tz is not None:
                             ge_aligned = full_events.tz_localize(None)
-                        elif fold_tz is not None and ge_tz is not None:
-                            # Both aware - convert to fold_tz just in case
-                            ge_aligned = full_events.tz_convert(fold_tz)
                     except Exception:
                         pass
                     

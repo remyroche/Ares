@@ -205,24 +205,42 @@ class CausalSurpriseDetector:
             errors = targets - predictions
 
             # Compute Global MAD for this specialist (Robust baseline)
-            median_error = np.median(errors)
-            global_mad = np.median(np.abs(errors - median_error))
+            # Use strict finite filtering to prevent NaN/Inf propagation
+            errors_arr = errors.values.astype(float)
+            finite_mask = np.isfinite(errors_arr)
+            finite_errors = errors_arr[finite_mask]
+
+            if len(finite_errors) > 0:
+                median_error = np.median(finite_errors)
+                global_mad = np.median(np.abs(finite_errors - median_error))
+                # Enforce minimum floor to prevent division by zero
+                if global_mad < 1e-9:
+                    global_mad = 1e-6
+
+                mean_err = np.mean(finite_errors)
+                std_err = np.std(finite_errors)
+            else:
+                tprint_warning(f"   ⚠️ Specialist {specialist_name} has NO finite errors. Defaulting stats.")
+                global_mad = 1.0
+                mean_err = 0.0
+                std_err = 0.0
 
             # Store specialist data
             self.specialist_predictions_[specialist_name] = predictions
             self.specialist_errors_[specialist_name] = errors
             self.specialist_metadata_[specialist_name] = {
-                "global_mad": global_mad,
-                "mean_error": errors.mean(),
-                "std_error": errors.std(),
+                "global_mad": float(global_mad),
+                "mean_error": float(mean_err),
+                "std_error": float(std_err),
             }
 
             if self.verbose:
                 tprint_info(f"📝 Registered specialist: {specialist_name}")
                 tprint_info(f"   - Samples: {len(predictions)}")
+                tprint_info(f"   - Finite Samples: {len(finite_errors)}")
                 tprint_info(f"   - Global MAD: {global_mad:.6f}")
-                tprint_info(f"   - Mean error: {errors.mean():.6f}")
-                tprint_info(f"   - Error std: {errors.std():.6f}")
+                tprint_info(f"   - Mean error: {mean_err:.6f}")
+                tprint_info(f"   - Error std: {std_err:.6f}")
 
             self._log_exit(
                 "register_specialist",
@@ -267,6 +285,9 @@ class CausalSurpriseDetector:
             scores = self.surprise_events_["max_surprise"].values
 
         target_count = max(1, int(target_density * duration_days))
+
+        # Filter NaNs from scores before partitioning
+        scores = scores[np.isfinite(scores)]
 
         if len(scores) <= target_count:
             self.surprise_threshold = 0.01  # Very loose if we have very little data
@@ -396,8 +417,12 @@ class CausalSurpriseDetector:
 
                 # Use MAD for robustness as requested
                 def get_mad(x):
-                    median = np.median(x)
-                    return np.median(np.abs(x - median))
+                    # Robust MAD calculation handling NaNs and Infs
+                    valid = x[np.isfinite(x)]
+                    if len(valid) == 0:
+                        return np.nan
+                    median = np.median(valid)
+                    return np.median(np.abs(valid - median))
 
                 rolling_median = errors.rolling(
                     self.rolling_window, min_periods=min(self.rolling_window, 20)
@@ -420,7 +445,7 @@ class CausalSurpriseDetector:
                 # Magnitude-based surprise
                 rolling_mad = errors.rolling(
                     self.rolling_window, min_periods=min(self.rolling_window, 20)
-                ).apply(lambda x: np.median(np.abs(x - np.median(x))))
+                ).apply(lambda x: np.nanmedian(np.abs(x - np.nanmedian(x))))
                 global_mad = self.specialist_metadata_.get(specialist_name, {}).get(
                     "global_mad", 1e-6
                 )
@@ -436,7 +461,7 @@ class CausalSurpriseDetector:
                 ).median()
                 rolling_mad = errors.rolling(
                     self.rolling_window, min_periods=min(self.rolling_window, 20)
-                ).apply(lambda x: np.median(np.abs(x - np.median(x))))
+                ).apply(lambda x: np.nanmedian(np.abs(x - np.nanmedian(x))))
 
                 global_mad = self.specialist_metadata_.get(specialist_name, {}).get(
                     "global_mad", 1e-6
@@ -2201,7 +2226,7 @@ class CausalSurpriseDetector:
         self._log_call("_calibrate_event_probability", scores=scores)
         median = scores.rolling(2000, min_periods=100).median()
         mad = scores.rolling(2000, min_periods=100).apply(
-            lambda x: np.median(np.abs(x - np.median(x)))
+            lambda x: np.nanmedian(np.abs(x - np.nanmedian(x)))
         )
         z = (scores - median) / (mad + 1e-9)
         # Calibrated to 50% prob at 2 sigma

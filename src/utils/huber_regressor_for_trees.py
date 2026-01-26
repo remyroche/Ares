@@ -210,10 +210,44 @@ def _fit_huber(
             irm_lambda=irm_lambda
         )
         model.fit(X_scaled, y, env_indices=get_vol_env_indices(sample_weight))
+
+        # SIGNAL CHECK: If IRM was too strict and killed all signal, fallback to standard.
+        if np.max(np.abs(model.coef_)) < 1e-9:
+            # ADAPTIVE RELAXATION: Try loosening the invariance constraint before giving up
+            # Only try this if we were using a relatively strict lambda to begin with
+            if irm_lambda >= 0.1:
+                relaxed_lambda = max(1e-4, irm_lambda * 0.1)
+                tprint_info(f"[HuberTeacher] ⚠️ IRM killed signal (lambda={irm_lambda:.2e}). Retrying with looser constraint (lambda={relaxed_lambda:.2e})...")
+
+                try:
+                    model_relaxed = IRMLinearRegressor(
+                        loss_type='huber',
+                        alpha=alpha,
+                        huber_epsilon=epsilon,
+                        max_iter=max_iter,
+                        irm_lambda=relaxed_lambda
+                    )
+                    model_relaxed.fit(X_scaled, y, env_indices=get_vol_env_indices(sample_weight))
+
+                    if np.max(np.abs(model_relaxed.coef_)) > 1e-9:
+                        tprint_info(f"[HuberTeacher] ✅ Relaxed IRM recovered signal (max_coef={np.max(np.abs(model_relaxed.coef_)):.2e}).")
+                        return model_relaxed
+                except Exception as ex_relaxed:
+                    tprint_info(f"[HuberTeacher] Relaxed IRM failed: {ex_relaxed}")
+
+            # If still zero, raise to trigger standard fallback
+            raise ValueError("IRM returned all zero coefficients (signal killed by invariance constraint).")
+
         return model
     except Exception as e:
-        # Fallback to standard Huber if IRM fails
-        tprint_info(f"IRM failed: {e}, falling back to standard Huber")
+        # Fallback to standard Huber if IRM fails or kills signal
+        if "signal killed" in str(e):
+             # This is a specific fallback for when IRM finds no invariant signal
+             # We want to allow the standard Huber to find "average" signal.
+             tprint_info(f"[HuberTeacher] ⚠️ IRM signal killed even after relaxation. Falling back to standard Huber (ignoring invariance).")
+        else:
+             tprint_info(f"IRM failed: {e}, falling back to standard Huber")
+
         model = HuberRegressor(epsilon=epsilon, alpha=alpha, max_iter=max_iter)
         if sample_weight is None:
             model.fit(X_scaled, y)

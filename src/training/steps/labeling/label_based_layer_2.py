@@ -13604,6 +13604,71 @@ class LabelBasedLayer2(BaseStep):
                                          fold_event_weights = global_weights.reindex(fold_train_events).fillna(1.0)
                              except Exception:
                                  pass
+
+                         # Fallback 3: Nearest Neighbor Match (Tolerance 1s) for slight TZ/sampling shifts
+                         if len(fold_train_events) == 0:
+                             try:
+                                 import numpy as np
+                                 # Use naive timestamps for comparison
+                                 ge_naive = pd.to_datetime(ge_aligned, utc=True).tz_convert(None)
+                                 fold_naive = pd.to_datetime(df_train.index, utc=True).tz_convert(None)
+
+                                 # 1. Range Slice (Optimization)
+                                 if len(fold_naive) > 0:
+                                     start_time = fold_naive.min()
+                                     end_time = fold_naive.max()
+                                     range_mask = (ge_naive >= start_time) & (ge_naive <= end_time)
+
+                                     if range_mask.any():
+                                         ge_cand = ge_naive[range_mask]
+                                         ge_aligned_cand = ge_aligned[range_mask]
+
+                                         # 2. Vectorized Nearest Search
+                                         fold_sorted = fold_naive.sort_values()
+                                         # searchsorted returns insertion index
+                                         idx = np.searchsorted(fold_sorted, ge_cand)
+                                         idx = np.clip(idx, 0, len(fold_sorted) - 1)
+
+                                         # Check current and prev for nearest
+                                         nearest_vals = fold_sorted[idx]
+                                         diffs = np.abs(ge_cand - nearest_vals)
+
+                                         idx_prev = np.clip(idx - 1, 0, len(fold_sorted) - 1)
+                                         nearest_vals_prev = fold_sorted[idx_prev]
+                                         diffs_prev = np.abs(ge_cand - nearest_vals_prev)
+
+                                         # Select best match
+                                         use_prev = diffs_prev < diffs
+                                         best_diffs = np.where(use_prev, diffs_prev, diffs)
+                                         best_vals = np.where(use_prev, nearest_vals_prev, nearest_vals)
+
+                                         # 3. Tolerance Check (1s)
+                                         tolerance = pd.Timedelta('1s')
+                                         match_mask = best_diffs < tolerance
+
+                                         if match_mask.any():
+                                             # Recovered events!
+                                             # Use the NEAREST valid timestamps from df_train
+                                             matched_timestamps = pd.DatetimeIndex(best_vals[match_mask])
+
+                                             # Restore TZ if needed
+                                             fold_tz = getattr(df_train.index, 'tz', None)
+                                             if fold_tz is not None:
+                                                 matched_timestamps = matched_timestamps.tz_localize(fold_tz)
+
+                                             fold_train_events = matched_timestamps
+
+                                             # Align weights (using original events to lookup)
+                                             if global_weights is not None:
+                                                 original_matched = ge_aligned_cand[match_mask]
+                                                 fold_event_weights = global_weights.reindex(original_matched).fillna(1.0)
+                                                 # Reassign index to match fold_train_events
+                                                 fold_event_weights.index = fold_train_events
+
+                                             tprint_warning(f"   ⚠️ TZ Mismatch fixed via nearest neighbor (tol=1s). Recovered {len(fold_train_events)} events.")
+                             except Exception as e:
+                                 # tprint_warning(f"Debug: Nearest match failed: {e}")
+                                 pass
                          # Diagnostic log for debugging if fix fails
                          tprint_warning(f"   ⚠️ TZ Mismatch persists? Global={len(global_events)} -> Fold=0. Fold Range: {df_train.index[0]} to {df_train.index[-1]}")
                 else:

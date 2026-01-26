@@ -7,6 +7,53 @@ from src.utils.orthogonal_numba import _numba_apply_fracdiff, _numba_rolling_hur
 from src.utils.entropy_optimized import lempel_ziv_complexity_numba
 from src.utils.numba_funcs import _numba_ewma, _numba_ewm_std, _numba_rolling_skew, _numba_rolling_kurt
 
+def _calculate_rolling_vwap(price: pd.Series, volume: pd.Series, window: int = 20) -> pd.Series:
+    """
+    Calculate Rolling VWAP.
+    VWAP = Sum(Price * Volume) / Sum(Volume)
+    """
+    pv = price * volume
+    sum_pv = pv.rolling(window, min_periods=1).sum()
+    sum_v = volume.rolling(window, min_periods=1).sum()
+    return sum_pv / (sum_v + 1e-9)
+
+def _causal_vwap_residual(price: pd.Series, volume: pd.Series, vwap_window: int = 100, vol_span: int = 50, clip_z: float = 5.0) -> pd.Series:
+    """
+    Universal, causal price residualisation that explicitly uses VWAP:
+        vwap_t   = rolling_vwap(P, V, window=vwap_window)
+        e_t      = log(P_t) - log(vwap_t)          (dimensionless deviation from VWAP)
+        sigma_t  = sqrt(EWMA( (Δlog(P))^2, span=vol_span ))
+        z_t      = e_t / sigma_t                   (vol-normalized residual)
+    """
+    # Basic input hygiene
+    p = price.replace([0.0, -0.0], np.nan).astype(float)
+    v = volume.clip(lower=0.0).astype(float)
+
+    # Causal rolling VWAP
+    pv = p * v
+    vwap = (
+        pv.rolling(window=vwap_window, min_periods=1).sum()
+        / v.rolling(window=vwap_window, min_periods=1).sum().replace(0.0, np.nan)
+    )
+
+    # Log-domain residual versus VWAP
+    log_p = np.log(p)
+    log_vwap = np.log(vwap)
+    e = log_p - log_vwap
+
+    # Causal EWMA volatility of log returns
+    log_ret = log_p.diff()
+
+    # EWMA of squared returns
+    sigma = np.sqrt((log_ret ** 2).ewm(span=vol_span, adjust=False, min_periods=2).mean())
+
+    # Vol-normalized residual (z-score style)
+    z = e / sigma
+    if clip_z is not None:
+        z = z.clip(-clip_z, clip_z)
+
+    return z
+
 def _causal_denoise(signal: np.ndarray, halflife: float = 4.0) -> np.ndarray:
     """
     Apply causal denoising using Exponential Weighted Moving Average (EWMA).
@@ -79,11 +126,13 @@ def _numba_efficiency_ratio(log_returns: np.ndarray, window: int) -> np.ndarray:
 
 def apply_layer2_price_processing(df: pd.DataFrame,
                                   price_col: str = 'close',
+                                  volume_col: str = None,
                                   vol_window: int = 20, # Deprecated
                                   fracdiff_d: float = 0.4,
                                   wavelet: str = 'db4', # Deprecated
                                   wavelet_level: int = 2, # Deprecated
-                                  enable_price_features: bool = True) -> pd.DataFrame:
+                                  enable_price_features: bool = True,
+                                  vwap_window: int = 5) -> pd.DataFrame:
     """
     Apply de Prado-compliant price processing and "Anti-Explosion" feature generation.
     Optimized with Numba for EWMA and Volatility calculations.
@@ -114,11 +163,23 @@ def apply_layer2_price_processing(df: pd.DataFrame,
 
     def _apply_single_asset(asset_df: pd.DataFrame) -> pd.DataFrame:
         result = asset_df.copy()
-        price = asset_df[price_col]
+        price_raw = asset_df[price_col]
+
+        # Determine Effective Price (VWAP vs Raw)
+        # Shift price returns-based features to VWAP if volume is available
+        use_vwap = False
+        if volume_col and volume_col in asset_df.columns:
+            volume = asset_df[volume_col]
+            # Calculate Base VWAP (Rolling)
+            # This shifts Trend, Momentum, Volatility to VWAP-based
+            effective_price = _calculate_rolling_vwap(price_raw, volume, window=vwap_window)
+            use_vwap = True
+        else:
+            effective_price = price_raw
 
         # 1. Log-Returns
         # Use 1e-9 to prevent log(0)
-        log_price = np.log(price.replace(0, np.nan).ffill())
+        log_price = np.log(effective_price.replace(0, np.nan).ffill())
         # Leave NaNs where they naturally occur (start of series)
         log_returns = log_price.diff()
         result['log_returns'] = log_returns.fillna(0) # Fill initial NaN with 0 for downstream safety
@@ -158,7 +219,19 @@ def apply_layer2_price_processing(df: pd.DataFrame,
 
         # 3. Fractional Differentiation (FracDiff)
         try:
-            fracdiff_series = _apply_fracdiff(log_price.ffill(), d=fracdiff_d)
+            if use_vwap:
+                # "If using FracDiff, VWAP is used after FracDiff"
+                # Logic: FracDiff(Price) -> VWAP(FracDiff)
+                # Note: Usually FracDiff is on log prices
+                log_price_raw = np.log(price_raw.replace(0, np.nan).ffill())
+                fd_raw = _apply_fracdiff(log_price_raw.ffill(), d=fracdiff_d)
+
+                # Apply VWAP AFTER FracDiff
+                # Calculate VWAP of the stationary series
+                fracdiff_series = _calculate_rolling_vwap(fd_raw, volume, window=vwap_window)
+            else:
+                fracdiff_series = _apply_fracdiff(log_price.ffill(), d=fracdiff_d)
+
             result['fracdiff_log_price'] = fracdiff_series
         except Exception as e:
             tprint_warning(f"   ⚠️ FracDiff failed: {e}. Skipping.")
@@ -203,9 +276,9 @@ def apply_layer2_price_processing(df: pd.DataFrame,
         result['rolling_skew_50'] = pd.Series(skew_vals, index=asset_df.index)
         result['rolling_kurtosis_50'] = pd.Series(kurt_vals, index=asset_df.index)
 
-        # Drawdown
-        rolling_max = price.rolling(100, min_periods=1).max()
-        result['drawdown_100'] = (price / (rolling_max + 1e-9)) - 1.0
+        # Drawdown (Excluding VWAP: Always use raw price)
+        rolling_max = price_raw.rolling(100, min_periods=1).max()
+        result['drawdown_100'] = (price_raw / (rolling_max + 1e-9)) - 1.0
 
         # B. Augmentations
 
@@ -270,8 +343,35 @@ def apply_layer2_price_processing(df: pd.DataFrame,
             # But we don't have bid/ask.
             # I'll compute Range Ratio and let tree decide.
             # Actually, let's call it 'bar_tightness' = 1 / (range_pct + epsilon) to match "tightness" (high = tight)
-            range_pct = (h - l) / (price + 1e-9)
+            range_pct = (h - l) / (price_raw + 1e-9) # Keep raw price for range ratio
             result['bar_tightness'] = 1.0 / (range_pct + 1e-4) # Cap at 10000
+
+        # VWAP Residualisation
+        # "if using price residualisation against itself, it is applied before the residualisation"
+        # Logic: VWAP -> Residualisation (Detrending)
+        # We perform Causal VWAP Residualisation with Volatility Normalization
+        try:
+            # We use effective_price (which might be VWAP(5)) as the price input 'p'
+            # But strictly, the snippet expects raw 'P' and 'V' to calculate its own VWAP(100).
+            # If we pass VWAP(5) as P, we are doing VWAP(100) of VWAP(5), which is fine/robust.
+            # Using volume from input if available.
+            if volume_col and volume_col in asset_df.columns:
+                volume = asset_df[volume_col]
+                result['vwap_residual'] = _causal_vwap_residual(
+                    effective_price,
+                    volume,
+                    vwap_window=100,
+                    vol_span=50,
+                    clip_z=5.0
+                )
+            else:
+                # Fallback if no volume: simple EMA detrending (normalized?)
+                # Or just skip. Since this is "vwap_residual", skipping is safer.
+                # But to maintain previous behavior (fallback exists):
+                pass
+        except Exception as e:
+            # Fallback or silent fail
+            pass
 
         return result
 

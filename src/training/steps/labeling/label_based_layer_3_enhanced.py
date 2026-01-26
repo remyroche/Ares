@@ -905,7 +905,15 @@ def _compute_global_features_cached(df: pd.DataFrame, net_returns: pd.Series) ->
         
         # Efficiency ratio
         if net_returns is not None:
-            features['efficiency_ratio'] = abs(net_returns.rolling(20).sum()) / net_returns.abs().rolling(20).sum()
+            # Fix for potential 'Rolling object has no attribute abs' error
+            # Decompose calculation to ensure type safety
+            roll_sum = net_returns.rolling(20).sum()
+            abs_roll_sum = roll_sum.abs()
+
+            abs_returns = net_returns.abs()
+            roll_abs_sum = abs_returns.rolling(20).sum()
+
+            features['efficiency_ratio'] = abs_roll_sum / (roll_abs_sum + 1e-8)
         
         return features
     

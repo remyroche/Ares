@@ -800,10 +800,22 @@ class Layer25Chaser:
         elif 'Close' in X.columns:
             price_col = 'Close'
 
+        # Check for volume (for VWAP features)
+        volume_col = None
+        if 'volume' in X.columns:
+            volume_col = 'volume'
+        elif 'Volume' in X.columns:
+            volume_col = 'Volume'
+
         if price_col:
             try:
-                # This generates ~16 features including FracDiff on price
-                processed = apply_layer2_price_processing(X, price_col=price_col, enable_price_features=True)
+                # This generates ~16 features including FracDiff on price (VWAP-based if volume available)
+                processed = apply_layer2_price_processing(
+                    X,
+                    price_col=price_col,
+                    volume_col=volume_col,
+                    enable_price_features=True
+                )
                 # We only want the new features, X might have many columns
                 # processed has X columns + new ones.
                 new_cols = [c for c in processed.columns if c not in X.columns]

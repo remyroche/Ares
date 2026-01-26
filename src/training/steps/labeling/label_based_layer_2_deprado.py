@@ -6564,14 +6564,24 @@ class LabelBasedLayer2(BaseStep):
                         fold_tz = getattr(df_train.index, 'tz', None)
                         ge_tz = getattr(global_events, 'tz', None)
                         
-                        if fold_tz is not None and ge_tz is None:
-                            ge_aligned = global_events.tz_localize(fold_tz)
-                        elif fold_tz is None and ge_tz is not None:
+                        if fold_tz is not None:
+                            if ge_tz is None:
+                                ge_aligned = global_events.tz_localize(fold_tz)
+                            else:
+                                ge_aligned = global_events.tz_convert(fold_tz)
+                        elif ge_tz is not None:
                             ge_aligned = global_events.tz_localize(None)
-                    except Exception:
+                    except Exception as e:
+                        tprint_warning(f"   ⚠️ TZ Alignment failed: {e}")
                         pass # Fallback to original if alignment fails
 
                     fold_train_events = ge_aligned[ge_aligned.isin(df_train.index)]
+                    if len(fold_train_events) == 0 and len(global_events) > 0:
+                        # Fallback to intersection
+                        try:
+                            fold_train_events = ge_aligned.intersection(df_train.index)
+                        except Exception:
+                            pass
                     
                     if len(fold_train_events) == 0 and len(global_events) > 0:
                          # Diagnostic log for debugging if fix fails
@@ -6667,13 +6677,14 @@ class LabelBasedLayer2(BaseStep):
                     try:
                         fold_tz = getattr(test_start_time, 'tz', None)
                         ge_tz = getattr(full_events, 'tz', None)
-                        if fold_tz is not None and ge_tz is None:
-                            ge_aligned = full_events.tz_localize(fold_tz)
-                        elif fold_tz is None and ge_tz is not None:
+
+                        if fold_tz is not None:
+                            if ge_tz is None:
+                                ge_aligned = full_events.tz_localize(fold_tz)
+                            else:
+                                ge_aligned = full_events.tz_convert(fold_tz)
+                        elif ge_tz is not None:
                             ge_aligned = full_events.tz_localize(None)
-                        elif fold_tz is not None and ge_tz is not None:
-                            # Both aware - convert to fold_tz just in case
-                            ge_aligned = full_events.tz_convert(fold_tz)
                     except Exception:
                         pass
                     

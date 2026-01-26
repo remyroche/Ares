@@ -64,7 +64,7 @@ from .detection_utils import detect_rolling_quantile_surprises
 from src.training.steps.labeling.causal_dispersion_engine import CausalDispersionEngine
 
 ROLLING_Q_WINDOW = 500
-ROLLING_Q_THRESHOLDS = (0.96, 0.98)
+ROLLING_Q_THRESHOLDS = (0.97, 0.99)
 
 def _quantiles_from_threshold(threshold: float, delta: float = 0.02) -> Tuple[float, float]:
     from scipy.stats import norm
@@ -3050,7 +3050,7 @@ def get_signal_specific_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_l
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
             return_details=True,
-            min_coverage=0.04
+            min_coverage=0.03
         )
         intensity = details['weight'].reindex(events).fillna(0.0)
     elif family == 'VOLATILITY_SPECIALIST':
@@ -3065,7 +3065,7 @@ def get_signal_specific_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_l
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
             return_details=True,
-            min_coverage=0.04
+            min_coverage=0.03
         )
         intensity = details['weight'].reindex(events).fillna(0.0)
     elif family == 'VOLATILITY_EXPANSION':
@@ -3081,7 +3081,7 @@ def get_signal_specific_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_l
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
             return_details=True,
-            min_coverage=0.04
+            min_coverage=0.03
         )
         intensity = details['weight'].reindex(events).fillna(0.0)
     elif family == 'VOLATILITY_CONTRACTION':
@@ -3097,7 +3097,7 @@ def get_signal_specific_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_l
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
             return_details=True,
-            min_coverage=0.04
+            min_coverage=0.03
         )
         intensity = details['weight'].reindex(events).fillna(0.0)
     elif family == 'VOLUME_SPECIALIST':
@@ -3120,7 +3120,7 @@ def get_signal_specific_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_l
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
             return_details=True,
-            min_coverage=0.04
+            min_coverage=0.03
         )
         intensity = details['weight'].reindex(events).fillna(0.0)
     elif family == 'INFORMATION_SPECIALIST':
@@ -3133,7 +3133,7 @@ def get_signal_specific_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_l
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
             return_details=True,
-            min_coverage=0.04
+            min_coverage=0.03
         )
         intensity = details['weight'].reindex(events).fillna(0.0)
     elif family == 'MOMENTUM_DECAY_SPECIALIST':
@@ -3153,7 +3153,7 @@ def get_signal_specific_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_l
             window=max(ROLLING_Q_WINDOW, 50 * 5),
             quantiles=(q1, q2),
             return_details=True,
-            min_coverage=0.04
+            min_coverage=0.03
         )
         intensity = details['weight'].reindex(events).fillna(0.0)
     elif family == 'FRACTAL_EFFICIENCY':
@@ -3171,7 +3171,7 @@ def get_signal_specific_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_l
             window=max(ROLLING_Q_WINDOW, 50 * 5),
             quantiles=(q1, q2),
             return_details=True,
-            min_coverage=0.04
+            min_coverage=0.03
         )
         intensity = details['weight'].reindex(events).fillna(0.0)
     elif family == 'GAP_SPECIALIST':
@@ -3190,7 +3190,7 @@ def get_signal_specific_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_l
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
             return_details=True,
-            min_coverage=0.04
+            min_coverage=0.03
         )
         intensity = details['weight'].reindex(events).fillna(0.0)
     elif family == 'LIQUIDITY_SHOCK':
@@ -3207,7 +3207,7 @@ def get_signal_specific_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_l
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
             return_details=True,
-            min_coverage=0.04
+            min_coverage=0.03
         )
         intensity = details['weight'].reindex(events).fillna(0.0)
 
@@ -3243,13 +3243,13 @@ def get_signal_specific_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_l
              # Re-run detection on the source column
              # Predictors usually use 'threshold' param. We default to something reasonable.
              # ContinuousPredictorEvents uses q1=0.96, q2=0.98 by default if threshold not enabled.
-             q1, q2 = 0.96, 0.98
+             q1, q2 = 0.97, 0.99
              details = detect_rolling_quantile_surprises(
                 df[target_col].abs(),
                 window=2000, # Matching default in ContinuousPredictorEvents
                 quantiles=(q1, q2),
                 return_details=True,
-                min_coverage=0.04
+                min_coverage=0.03
              )
              intensity = details['weight'].reindex(events).fillna(0.0)
         else:
@@ -5002,8 +5002,8 @@ class ContinuousPredictorEvents(BaseEventGenerator):
                 q1 = float(stats.norm.cdf(threshold))
                 q2 = float(stats.norm.cdf(threshold + 0.5)) # Approximation for higher tier
         else:
-            q1 = params.get('q1', 0.96)
-            q2 = params.get('q2', 0.98)
+            q1 = params.get('q1', 0.97)
+            q2 = params.get('q2', 0.99)
             
         window = params.get('window', 2000)
         
@@ -5018,7 +5018,7 @@ class ContinuousPredictorEvents(BaseEventGenerator):
                 window=window,
                 quantiles=(q1, q2),
                 return_details=True,
-                min_coverage=0.04
+                min_coverage=0.03
             )
             # Level 2 = High Surprise, Level 3 = Extreme Surprise.
             # We return both as events to the orthogonal race.
@@ -6021,7 +6021,7 @@ class VolumeSpecialistEvents(BaseEventGenerator):
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
             return_details=True,
-            min_coverage=0.04  # Enforce ~4% coverage
+            min_coverage=0.03  # Enforce ~4% coverage
         )
         return df.index[details['level'] >= 2.0]
 
@@ -6035,7 +6035,7 @@ class VolatilitySpecialistEvents(BaseEventGenerator):
     """
     def generate(self, df: pd.DataFrame, tracker: Optional[Any] = None, **params) -> pd.DatetimeIndex:
         # Dynamic threshold: top 4% target
-        quantile_threshold = params.get('quantile', 0.96)
+        quantile_threshold = params.get('quantile', 0.97)
         window = params.get('window', 20)
         
         try:
@@ -6049,7 +6049,7 @@ class VolatilitySpecialistEvents(BaseEventGenerator):
                 tracker.log_rejection(f"volatility_exception_{e}", 1)
             return pd.DatetimeIndex([])
 
-    def _get_volatility_causal_events(self, df: pd.DataFrame, window=20, quantile=0.96):
+    def _get_volatility_causal_events(self, df: pd.DataFrame, window=20, quantile=0.97):
         """Detect volatility expansion events using Parkinson range-based vol."""
         if 'close' not in df.columns:
             tprint_warning("VolatilitySpecialist: Missing 'close' column")
@@ -6118,7 +6118,7 @@ class VolatilitySpecialistEvents(BaseEventGenerator):
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
             return_details=True,
-            min_coverage=0.04
+            min_coverage=0.03
         )
         events = df.index[details['level'] >= 2.0]
         tprint_info(f"VolatilitySpecialist: Generated {len(events)} events")
@@ -6139,7 +6139,7 @@ class VolatilityExpansionEvents(BaseEventGenerator):
     Negative z-scores are clamped to 0 (not our signal).
     """
     def generate(self, df: pd.DataFrame, tracker: Optional[Any] = None, **params) -> pd.DatetimeIndex:
-        quantile_threshold = params.get('quantile', 0.96)
+        quantile_threshold = params.get('quantile', 0.97)
         window = params.get('window', 20)
         
         try:
@@ -6153,7 +6153,7 @@ class VolatilityExpansionEvents(BaseEventGenerator):
                 tracker.log_rejection(f"vol_expansion_exception_{e}", 1)
             return pd.DatetimeIndex([])
 
-    def _get_expansion_events(self, df: pd.DataFrame, window=20, quantile=0.96):
+    def _get_expansion_events(self, df: pd.DataFrame, window=20, quantile=0.97):
         """Detect volatility EXPANSION events (z > threshold)."""
         if 'close' not in df.columns:
             return pd.DatetimeIndex([])
@@ -6174,7 +6174,7 @@ class VolatilityExpansionEvents(BaseEventGenerator):
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
             return_details=True,
-            min_coverage=0.04
+            min_coverage=0.03
         )
         events = df.index[details['level'] >= 2.0]
         tprint_info(f"VolatilityExpansion: Generated {len(events)} events (z > 0)")
@@ -6195,7 +6195,7 @@ class VolatilityContractionEvents(BaseEventGenerator):
     Positive z-scores are clamped to 0 (not our signal).
     """
     def generate(self, df: pd.DataFrame, tracker: Optional[Any] = None, **params) -> pd.DatetimeIndex:
-        quantile_threshold = params.get('quantile', 0.96)
+        quantile_threshold = params.get('quantile', 0.97)
         window = params.get('window', 20)
         
         try:
@@ -6209,7 +6209,7 @@ class VolatilityContractionEvents(BaseEventGenerator):
                 tracker.log_rejection(f"vol_contraction_exception_{e}", 1)
             return pd.DatetimeIndex([])
 
-    def _get_contraction_events(self, df: pd.DataFrame, window=20, quantile=0.96):
+    def _get_contraction_events(self, df: pd.DataFrame, window=20, quantile=0.97):
         """Detect volatility CONTRACTION events (z < -threshold)."""
         if 'close' not in df.columns:
             return pd.DatetimeIndex([])
@@ -6231,7 +6231,7 @@ class VolatilityContractionEvents(BaseEventGenerator):
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
             return_details=True,
-            min_coverage=0.04
+            min_coverage=0.03
         )
         events = df.index[details['level'] >= 2.0]
         tprint_info(f"VolatilityContraction: Generated {len(events)} events (z < 0)")
@@ -6330,7 +6330,7 @@ class LiquiditySpecialistEvents(BaseEventGenerator):
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
             return_details=True,
-            min_coverage=0.04
+            min_coverage=0.03
         )
         events = df.index[details['level'] >= 2.0]
         tprint_info(f"LiquiditySpecialist: Generated {len(events)} events")
@@ -6587,7 +6587,7 @@ class ImprovedCUSUMEvents(BaseEventGenerator):
                 window=ROLLING_Q_WINDOW,
                 quantiles=(q1, q2),
                 return_details=True,
-                min_coverage=0.04
+                min_coverage=0.03
             )
             return signals.index[combined & (details['level'] >= 2.0)]
         except Exception as e:
@@ -6615,7 +6615,7 @@ class AdaptiveSymmetricCUSUMEvents(BaseEventGenerator):
                 window=ROLLING_Q_WINDOW,
                 quantiles=(q1, q2),
                 return_details=True,
-                min_coverage=0.04
+                min_coverage=0.03
             )
             return signals.index[combined & (details['level'] >= 2.0)]
         except Exception as e:
@@ -6714,7 +6714,7 @@ class CausalSurpriseEvents(BaseEventGenerator):
                     window=ROLLING_Q_WINDOW,
                     quantiles=ROLLING_Q_THRESHOLDS,
                     return_details=True,
-                    min_coverage=0.04
+                    min_coverage=0.03
                 )
                 events = df.index[details['level'] >= 2.0]
                 return events[:min(len(events), 500)]
@@ -6801,7 +6801,7 @@ class ExhaustionSpecialistEvents(BaseEventGenerator):
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
             return_details=True,
-            min_coverage=0.04
+            min_coverage=0.03
         )
         return df.index[details['level'] >= 2.0]
 
@@ -6854,7 +6854,7 @@ class VolatilityInnovationSpecialistEvents(BaseEventGenerator):
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
             return_details=True,
-            min_coverage=0.04
+            min_coverage=0.03
         )
         return df.index[details['level'] >= 2.0]
 
@@ -6888,7 +6888,7 @@ class DispersionSpecialistEvents(BaseEventGenerator):
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
             return_details=True,
-            min_coverage=0.04
+            min_coverage=0.03
         )
         return df.index[details['level'] >= 2.0]
 

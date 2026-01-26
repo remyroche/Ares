@@ -333,14 +333,14 @@ class AdaptiveEventDrivenLabeling:
         self,
         phase_threshold: float = None,
         use_quantile_approach: bool = True,
-        min_coverage_percent: float = 4.0
+        min_coverage_percent: float = 3.0
     ) -> Dict[str, Any]:
         """
         Identify structural breakouts based on phase lead-lag analysis.
         
         Args:
             phase_threshold: Phase difference threshold for breakout detection (ignored if use_quantile_approach=True)
-            use_quantile_approach: Whether to use 2% quantile approach for guaranteed coverage
+            use_quantile_approach: Whether to use 3% quantile approach for guaranteed coverage
             min_coverage_percent: Minimum percentage of time periods to identify as breakouts
             
         Returns:
@@ -462,11 +462,32 @@ class AdaptiveEventDrivenLabeling:
                 var_d3 = float(np.var(self.spectral_components[d3_key])) if d3_key in self.spectral_components else 0.0
                 phase_summary = float(np.nanmean(phase_series))
                 
-                # Breakout signal: use global quantile threshold
+                # Rolling stats for local adaptation (ensure we use rolling window std dev)
+                rolling_window = 500
+                if len(phase_series) > rolling_window:
+                    p_series = pd.Series(phase_series)
+                    rolling_mean = p_series.rolling(window=rolling_window, min_periods=100).mean().values
+                    rolling_std = p_series.rolling(window=rolling_window, min_periods=100).std().values
+
+                    # Fill NaNs with global stats
+                    global_mean = np.nanmean(phase_series)
+                    global_std = np.nanstd(phase_series)
+                    rolling_mean = np.nan_to_num(rolling_mean, nan=global_mean)
+                    rolling_std = np.nan_to_num(rolling_std, nan=global_std)
+                else:
+                    rolling_mean = np.full_like(phase_series, np.nanmean(phase_series))
+                    rolling_std = np.full_like(phase_series, np.nanstd(phase_series))
+
+                local_threshold = rolling_mean + 1.0 * rolling_std
+
+                # Breakout signal: use global quantile threshold AND local rolling threshold
                 valid_mask = ~np.isnan(phase_series)
                 breakout_mask = np.zeros_like(phase_series, dtype=bool)
                 if np.any(valid_mask):
-                    breakout_mask[valid_mask] = phase_series[valid_mask] >= specialist_threshold
+                    global_check = phase_series[valid_mask] >= specialist_threshold
+                    local_check = phase_series[valid_mask] >= local_threshold[valid_mask]
+                    breakout_mask[valid_mask] = global_check & local_check
+
                 specialist_breakout_masks[specialist_name] = breakout_mask
                 if np.any(valid_mask):
                     phase_coverage = float(np.mean(breakout_mask[valid_mask].astype(float)))
@@ -504,7 +525,7 @@ class AdaptiveEventDrivenLabeling:
                 }
                 
                 if self.verbose:
-                    method_str = f"{min_coverage_percent}% quantile" if use_quantile_approach else f"fixed"
+                    method_str = f"{min_coverage_percent}% quantile + rolling std" if use_quantile_approach else f"fixed"
                     tprint_info(
                         f"      • {specialist_name}: var(d1)={var_d1:.3e}, var(d3)={var_d3:.3e}, "
                         f"phase={phase_summary:.3f}, coverage>{actual_threshold:.3f}={phase_coverage:.2%} ({method_str})"

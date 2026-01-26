@@ -117,10 +117,19 @@ def _compute_anchor_and_drift_features(
     features = pd.DataFrame(index=df.index)
     regime_map = {0: 'Quiet', 1: 'Trending', 2: 'Chaos'}
     
+    # Determine best price source (VWAP preference)
+    price_col = 'close'
+    if 'vwap' in df.columns:
+        price_col = 'vwap'
+        tprint_info("   ⚓ Using VWAP for Anchor/Drift structural features")
+    elif 'vmwap' in df.columns:
+        price_col = 'vmwap'
+        tprint_info("   ⚓ Using VMWAP for Anchor/Drift structural features")
+
     # 1. Volatility Anchor/Drift
-    if 'close' in df.columns:
-        close = df['close']
-        ret = np.log(close / close.shift(1)).fillna(0)
+    if price_col in df.columns:
+        price = df[price_col]
+        ret = np.log(price / price.shift(1)).fillna(0)
         
         # Short-term volatility (reactive)
         vol_short = ret.rolling(20, min_periods=5).std().fillna(0)
@@ -141,11 +150,11 @@ def _compute_anchor_and_drift_features(
         features['drift_volatility_z'] = vol_drift_z.clip(-5, 5)
     
     # 2. Trend Strength Anchor/Drift
-    if 'close' in df.columns:
-        close = df['close']
+    if price_col in df.columns:
+        price = df[price_col]
         
         # Slope normalized by price (% change over 20 bars)
-        slope = close.diff(20) / close.shift(20).replace(0, np.nan)
+        slope = price.diff(20) / price.shift(20).replace(0, np.nan)
         slope = slope.fillna(0)
         
         # Trend strength = absolute slope
@@ -164,12 +173,12 @@ def _compute_anchor_and_drift_features(
         features['trend_direction'] = np.sign(slope)
     
     # 3. Liquidity Anchor/Drift (if volume available)
-    if 'volume' in df.columns and 'close' in df.columns:
+    if 'volume' in df.columns and price_col in df.columns:
         vol = df['volume'].replace(0, np.nan).fillna(method='ffill').fillna(1)
-        close = df['close']
+        price = df[price_col]
         
         # Dollar volume as liquidity proxy
-        dollar_vol = vol * close
+        dollar_vol = vol * price
         
         # Anchor: Slow EWM of dollar volume
         liq_anchor = dollar_vol.ewm(span=200, min_periods=50).mean().fillna(dollar_vol.mean())

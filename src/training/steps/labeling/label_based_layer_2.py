@@ -4958,8 +4958,11 @@ class LabelBasedLayer2(BaseStep):
                     
                     # Also save labels if present in events_df columns
                     labels_cols = ['bin', 'label', 'side', 'ret', 'realized_return']
-                    available_label_cols = [c for c in labels_cols if c in results['events_df'].columns]
+                    event_cols = list(results['events_df'].columns)
+                    available_label_cols = [c for c in labels_cols if c in event_cols]
                     labels_saved = False
+
+                    tprint_info(f"   🔎 Checking for label columns in events_df: {event_cols}")
 
                     if available_label_cols:
                         labels_df = results['events_df'][available_label_cols].copy()
@@ -4967,40 +4970,53 @@ class LabelBasedLayer2(BaseStep):
                         labels_df.to_parquet(labels_parquet_path, index=True)
                         tprint_success(f"💾 Saved labels parquet (L3 compat): {labels_parquet_path}")
                         labels_saved = True
+                    else:
+                        tprint_warning(f"   ⚠️ No label columns found in events_df (expected one of {labels_cols})")
 
                     # Fallback: Check causal_targets if labels not in events_df
-                    if not labels_saved and 'causal_targets' in results and results['causal_targets'] is not None:
-                        targets_df = results['causal_targets']
-                        if not targets_df.empty:
-                            labels_parquet_path = outcomes_target / f"{events_artifact_name}_labels.parquet"
-                            targets_df.to_parquet(labels_parquet_path, index=True)
-                            tprint_success(f"💾 Saved labels parquet (L3 compat) from causal_targets: {labels_parquet_path}")
-                            labels_saved = True
+                    if not labels_saved:
+                        if 'causal_targets' in results and results['causal_targets'] is not None:
+                            targets_df = results['causal_targets']
+                            if not targets_df.empty:
+                                labels_parquet_path = outcomes_target / f"{events_artifact_name}_labels.parquet"
+                                targets_df.to_parquet(labels_parquet_path, index=True)
+                                tprint_success(f"💾 Saved labels parquet (L3 compat) from causal_targets: {labels_parquet_path}")
+                                labels_saved = True
+                            else:
+                                tprint_warning("   ⚠️ Causal targets found but empty")
+                        else:
+                            tprint_info("   ℹ️ Causal targets not present for fallback")
 
                     # Fallback 2: Check oof_labels (Predictions/Targets)
-                    if not labels_saved and 'oof_labels' in results:
-                        oof_lbl = results['oof_labels']
-                        # oof_labels might be Series or array
-                        if hasattr(oof_lbl, 'to_frame'):
-                            labels_df = oof_lbl.to_frame(name='bin')
-                        elif isinstance(oof_lbl, pd.DataFrame):
-                            labels_df = oof_lbl.rename(columns={oof_lbl.columns[0]: 'bin'})
-                        else:
-                            labels_df = pd.DataFrame(oof_lbl, columns=['bin'], index=results['events_df'].index if len(oof_lbl) == len(results['events_df']) else None)
-
-                        # Add ret/side if available
-                        if 'oof_returns' in results:
-                            oof_ret = results['oof_returns']
-                            if hasattr(oof_ret, 'values'):
-                                labels_df['ret'] = oof_ret.values if len(oof_ret) == len(labels_df) else np.nan
+                    if not labels_saved:
+                        if 'oof_labels' in results:
+                            oof_lbl = results['oof_labels']
+                            # oof_labels might be Series or array
+                            if hasattr(oof_lbl, 'to_frame'):
+                                labels_df = oof_lbl.to_frame(name='bin')
+                            elif isinstance(oof_lbl, pd.DataFrame):
+                                labels_df = oof_lbl.rename(columns={oof_lbl.columns[0]: 'bin'})
                             else:
-                                labels_df['ret'] = oof_ret
+                                labels_df = pd.DataFrame(oof_lbl, columns=['bin'], index=results['events_df'].index if len(oof_lbl) == len(results['events_df']) else None)
 
-                        if not labels_df.empty:
-                            labels_parquet_path = outcomes_target / f"{events_artifact_name}_labels.parquet"
-                            labels_df.to_parquet(labels_parquet_path, index=True)
-                            tprint_success(f"💾 Saved labels parquet (L3 compat) from oof_labels: {labels_parquet_path}")
-                            labels_saved = True
+                            # Add ret/side if available
+                            if 'oof_returns' in results:
+                                oof_ret = results['oof_returns']
+                                if hasattr(oof_ret, 'values'):
+                                    labels_df['ret'] = oof_ret.values if len(oof_ret) == len(labels_df) else np.nan
+                                else:
+                                    labels_df['ret'] = oof_ret
+
+                            if not labels_df.empty:
+                                labels_parquet_path = outcomes_target / f"{events_artifact_name}_labels.parquet"
+                                labels_df.to_parquet(labels_parquet_path, index=True)
+                                tprint_success(f"💾 Saved labels parquet (L3 compat) from oof_labels: {labels_parquet_path}")
+                                labels_saved = True
+                        else:
+                            tprint_info("   ℹ️ OOF labels not present for fallback")
+
+                    if not labels_saved:
+                        tprint_warning("   ⚠️ FAILED to save labels parquet (all sources exhausted)")
 
                 except Exception as e_parquet:
                     tprint_warning(f"⚠️ Failed to save parquet for orchestrator: {e_parquet}")

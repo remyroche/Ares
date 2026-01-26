@@ -102,6 +102,7 @@ from joblib import Parallel, delayed
 from src.training.steps.labeling.label_based_layer_3 import layer3_analyst_lgbm
 from src.training.steps.labeling.layer2_validation import validate_geometry_quality, print_validation_report
 from src.training.steps.labeling.focal_loss_utils import get_focal_loss_lgbm, get_focal_loss_xgb, RobustFocalLoss, XGBFocalLoss
+from src.training.steps.labeling.feature_engineering_utils import _calculate_rolling_vwap
 from src.training.steps.labeling.layer2_advanced_logic import (
     vectorized_pct_change_jit,
     rolling_mean_jit,
@@ -2281,8 +2282,15 @@ class LabelBasedLayer2(BaseStep):
 
         tprint_info(f"   ⚡ Pre-computing vectorized base features for {len(df)} bars...")
 
+        # Calculate Effective Price (VWAP if volume available, else Close)
+        if 'volume' in df.columns:
+            # Use window=5 consistent with apply_layer2_price_processing
+            effective_price = _calculate_rolling_vwap(df['close'], df['volume'], window=5)
+        else:
+            effective_price = df['close']
+
         # Prepare data for JIT
-        price = df['close'].values.astype(np.float64)
+        price = effective_price.values.astype(np.float64)
         price_pct = vectorized_pct_change_jit(price)
         price_abs_pct = np.abs(price_pct)
 
@@ -2311,10 +2319,11 @@ class LabelBasedLayer2(BaseStep):
         }, index=df.index)
 
         # Additional expensive rolling max/min for Range families
-        roll20_max = df['close'].rolling(20).max()
-        roll20_min = df['close'].rolling(20).min()
-        roll5_max = df['close'].rolling(5).max()
-        roll5_min = df['close'].rolling(5).min()
+        # Using effective_price for consistency
+        roll20_max = effective_price.rolling(20).max()
+        roll20_min = effective_price.rolling(20).min()
+        roll5_max = effective_price.rolling(5).max()
+        roll5_min = effective_price.rolling(5).min()
 
         base_df['roll20_max'] = roll20_max
         base_df['roll20_min'] = roll20_min
@@ -2807,14 +2816,22 @@ class LabelBasedLayer2(BaseStep):
         volume = df['volume']
         high = df['high']
         low = df['low']
+
+        # Calculate Effective Price (VWAP) if volume available
+        if 'volume' in df.columns:
+            effective_price = _calculate_rolling_vwap(close, volume, window=5)
+        else:
+            effective_price = close
+
         delta_c = close.diff()
+        delta_p = effective_price.diff() # For volume force
         
-        # 1. Tick-Rule Imbalance: sum(V * sign(delta C)) - Order Flow Signal
+        # 1. Tick-Rule Imbalance: sum(V * sign(delta C)) - Order Flow Signal (Keep Close)
         treatments['t_tick_imbalance_10'] = (volume * np.sign(delta_c)).rolling(10).sum().fillna(0)
         treatments['t_tick_imbalance_20'] = (volume * np.sign(delta_c)).rolling(20).sum().fillna(0)
         
-        # 2. Volume Force: log(|delta C|) * log(V) - Price-Volume Interaction
-        treatments['t_volume_force'] = (np.log(delta_c.abs() + 1e-9) * np.log(volume + 1e-9)).fillna(0)
+        # 2. Volume Force: log(|delta P|) * log(V) - Price-Volume Interaction (Use VWAP delta)
+        treatments['t_volume_force'] = (np.log(delta_p.abs() + 1e-9) * np.log(volume + 1e-9)).fillna(0)
         
         # 3. VWAP Z-Score: Deviation from "fair" VWAP price
         vwap = (close * volume).rolling(20).sum() / (volume.rolling(20).sum() + 1e-9)
@@ -2823,25 +2840,25 @@ class LabelBasedLayer2(BaseStep):
         # 4. Range Aggression: (H-L)/V intensity - Volatility per unit volume
         treatments['t_range_aggression'] = ((high - low) / (volume + 1e-9)).fillna(0)
         
-        # 5. Momentum Persistence: Z-score of price streaks (Vectorized)
-        close_values = close.values.astype(np.float64)
+        # 5. Momentum Persistence: Z-score of price streaks (Vectorized, use VWAP)
+        price_values = effective_price.values.astype(np.float64)
         treatments['t_momentum_persistence'] = pd.Series(
-            _numba_streak_persistence(close_values, window=20),
+            _numba_streak_persistence(price_values, window=20),
             index=df.index
         ).fillna(0)
         
-        # 6. Shannon Entropy (Binary path predictability) - 24-bar rolling (Vectorized)
-        returns = df['close'].pct_change().fillna(0).values.astype(np.float64)
+        # 6. Shannon Entropy (Binary path predictability) - 24-bar rolling (Vectorized, use VWAP returns)
+        vwap_returns = effective_price.pct_change().fillna(0).values.astype(np.float64)
         treatments['t_shannon_entropy_24'] = pd.Series(
-            _numba_rolling_entropy(returns, window=24, bins=5),
+            _numba_rolling_entropy(vwap_returns, window=24, bins=5),
             index=df.index
         ).fillna(0)
         
-        # 7. Velocity proxy (first difference of smoothed close)
-        smooth_close = close.ewm(span=10).mean()
-        treatments['t_velocity'] = smooth_close.diff().fillna(0)
+        # 7. Velocity proxy (first difference of smoothed VWAP)
+        smooth_price = effective_price.ewm(span=10).mean()
+        treatments['t_velocity'] = smooth_price.diff().fillna(0)
         
-        # 8. Acceleration proxy (second difference of smoothed close)
+        # 8. Acceleration proxy (second difference of smoothed VWAP)
         treatments['t_acceleration'] = treatments['t_velocity'].diff().fillna(0)
         
         # Normalize to prevent scale issues in DML
@@ -14219,7 +14236,15 @@ class LabelBasedLayer2(BaseStep):
             vol = subset['volatility_1d'].fillna(0.0)
         else:
             vol = pd.Series(0.0, index=subset.index)
-        price = subset['close'].fillna(method='ffill')
+
+        # Calculate Effective Price on full DF (VWAP if volume available) before reindexing
+        # This ensures we capture the trend/momentum of the volume-weighted price
+        if 'volume' in df.columns:
+            effective_price_series = _calculate_rolling_vwap(df['close'], df['volume'], window=5)
+        else:
+            effective_price_series = df['close']
+
+        price = effective_price_series.reindex(events_index).fillna(method='ffill')
         volume = subset.get('volume', pd.Series(0, index=events_index))
 
         # Pre-compute common rolling statistics using JIT-compiled functions for better performance

@@ -4338,6 +4338,31 @@ class LabelBasedLayer2(BaseStep):
             # Logic: learns which combination of ORF models is trustworthy
             meta_results = self._train_causal_gatekeepers(wide_metrics_df, outcomes_df)
             
+            # 7. Generate Causal Gatekeeper Report
+            try:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                report_path = Path("outcomes") / f"causal_gatekeeper_report_{timestamp}.md"
+                with open(report_path, "w") as f:
+                    f.write(f"# Causal Gatekeeper Report ({timestamp})\n\n")
+                    f.write("| Target Outcome | AUC Score | Signal Strength | Notes |\n")
+                    f.write("| :--- | :--- | :--- | :--- |\n")
+
+                    for target, res in meta_results.items():
+                        auc = res.get("auc", 0.0)
+                        status = res.get("status", "Unknown")
+                        note = "Primary Validation" if "TBM" in target else "Secondary Validation"
+                        f.write(f"| {target} | {auc:.4f} | {status} | {note} |\n")
+
+                    f.write("\n\n### Interpretation\n")
+                    f.write("- **Strong Signal (>0.75):** Causal features are highly predictive. Safe to proceed.\n")
+                    f.write("- **Moderate Signal (0.65-0.75):** Use with caution. Requires tight risk management.\n")
+                    f.write("- **Weak/Poor Signal (<0.65):** Causal link is tenuous. Consider strictly limiting exposure.\n")
+
+                tprint_success(f"📝 Causal Gatekeeper Report saved to: {report_path}")
+
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to save Causal Gatekeeper Report: {e}")
+
             results = {
                 "chaser_metrics": chaser_metrics,
                 "wide_metrics_df": wide_metrics_df,
@@ -4401,12 +4426,23 @@ class LabelBasedLayer2(BaseStep):
             preds = model.predict_proba(X_val)[:, 1]
             auc = roc_auc_score(y_val, preds)
             
+            # Interpret Performance
+            if auc < 0.55:
+                status = "🔴 Poor Signal"
+            elif auc < 0.65:
+                status = "🟠 Weak Signal"
+            elif auc < 0.75:
+                status = "🟡 Moderate Signal"
+            else:
+                status = "🟢 Strong Signal"
+
             gatekeeper_results[col] = {
                 "model": model,
                 "auc": auc,
-                "target": col
+                "target": col,
+                "status": status
             }
-            tprint_info(f"   ✅ Gatekeeper {col}: AUC={auc:.4f}")
+            tprint_info(f"   ✅ Gatekeeper {col}: AUC={auc:.4f} -> {status}")
             
         return gatekeeper_results
 

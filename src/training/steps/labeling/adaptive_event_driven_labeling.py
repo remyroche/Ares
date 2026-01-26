@@ -333,7 +333,8 @@ class AdaptiveEventDrivenLabeling:
         self,
         phase_threshold: float = None,
         use_quantile_approach: bool = True,
-        min_coverage_percent: float = 4.0
+        min_coverage_percent: float = 4.0,
+        volatility_window: int = 500
     ) -> Dict[str, Any]:
         """
         Identify structural breakouts based on phase lead-lag analysis.
@@ -342,6 +343,7 @@ class AdaptiveEventDrivenLabeling:
             phase_threshold: Phase difference threshold for breakout detection (ignored if use_quantile_approach=True)
             use_quantile_approach: Whether to use 2% quantile approach for guaranteed coverage
             min_coverage_percent: Minimum percentage of time periods to identify as breakouts
+            volatility_window: Window size for rolling volatility barrier (default: 500)
             
         Returns:
             Dictionary with structural breakout signals
@@ -462,11 +464,26 @@ class AdaptiveEventDrivenLabeling:
                 var_d3 = float(np.var(self.spectral_components[d3_key])) if d3_key in self.spectral_components else 0.0
                 phase_summary = float(np.nanmean(phase_series))
                 
-                # Breakout signal: use global quantile threshold
+                # Calculate rolling volatility barrier
+                # Using pandas for robustness with NaNs
+                phase_s = pd.Series(phase_series)
+                rolling_mean = phase_s.rolling(window=volatility_window, min_periods=1).mean().values
+                rolling_std = phase_s.rolling(window=volatility_window, min_periods=1).std().fillna(0).values
+
+                # Volatility barrier: Mean + 1.0 * StdDev
+                volatility_barrier = rolling_mean + 1.0 * rolling_std
+
+                # Breakout signal: use per-specialist quantile threshold AND volatility barrier
                 valid_mask = ~np.isnan(phase_series)
                 breakout_mask = np.zeros_like(phase_series, dtype=bool)
+
                 if np.any(valid_mask):
-                    breakout_mask[valid_mask] = phase_series[valid_mask] >= specialist_threshold
+                    # Combine quantile threshold with volatility barrier
+                    breakout_mask[valid_mask] = (
+                        (phase_series[valid_mask] >= specialist_threshold) &
+                        (phase_series[valid_mask] >= volatility_barrier[valid_mask])
+                    )
+
                 specialist_breakout_masks[specialist_name] = breakout_mask
                 if np.any(valid_mask):
                     phase_coverage = float(np.mean(breakout_mask[valid_mask].astype(float)))
@@ -479,11 +496,16 @@ class AdaptiveEventDrivenLabeling:
                     expected_specialist = len(specialist_phase_values) * min_coverage_percent / 100
                     specialist_above = np.sum(specialist_phase_values >= specialist_threshold)
                     
+                    # Count how many passed volatility barrier
+                    vol_barrier_values = volatility_barrier[~np.isnan(phase_series)]
+                    passed_volatility = np.sum(specialist_phase_values >= vol_barrier_values)
+
                     tprint_info(f"      🔍 {specialist_name} Analysis:")
                     tprint_info(f"         - Phase values: {len(specialist_phase_values):,}")
                     tprint_info(f"         - Expected breakouts: {expected_specialist:.0f}")
                     tprint_info(f"         - Specialist threshold: {specialist_threshold:.4f}")
                     tprint_info(f"         - Values >= threshold: {specialist_above}")
+                    tprint_info(f"         - Values >= volatility barrier: {passed_volatility}")
                     tprint_info(f"         - Phase range: [{np.min(specialist_phase_values):.4f}, {np.max(specialist_phase_values):.4f}]")
                     tprint_info(f"         - Phase mean: {np.mean(specialist_phase_values):.4f}")
                     tprint_info(f"         - Phase std: {np.std(specialist_phase_values):.4f}")

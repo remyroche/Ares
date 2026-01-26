@@ -210,10 +210,21 @@ def _fit_huber(
             irm_lambda=irm_lambda
         )
         model.fit(X_scaled, y, env_indices=get_vol_env_indices(sample_weight))
+
+        # SIGNAL CHECK: If IRM was too strict and killed all signal, fallback to standard.
+        if np.max(np.abs(model.coef_)) < 1e-9:
+            raise ValueError("IRM returned all zero coefficients (signal killed by invariance constraint).")
+
         return model
     except Exception as e:
-        # Fallback to standard Huber if IRM fails
-        tprint_info(f"IRM failed: {e}, falling back to standard Huber")
+        # Fallback to standard Huber if IRM fails or kills signal
+        if "signal killed" in str(e):
+             # This is a specific fallback for when IRM finds no invariant signal
+             # We want to allow the standard Huber to find "average" signal.
+             pass
+        else:
+             tprint_info(f"IRM failed: {e}, falling back to standard Huber")
+
         model = HuberRegressor(epsilon=epsilon, alpha=alpha, max_iter=max_iter)
         if sample_weight is None:
             model.fit(X_scaled, y)

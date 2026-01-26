@@ -73,7 +73,8 @@ from scipy.stats import spearmanr
 from scipy.cluster.hierarchy import linkage, fcluster
 from scipy.spatial.distance import pdist
 from src.utils.numba_funcs import (
-    _numba_generate_dollar_bars, 
+    _numba_generate_dollar_bars,
+    _numba_generate_dollar_bars_with_vwap,
     _numba_rolling_slope,
     _numba_streak_persistence,
     _numba_rolling_entropy,
@@ -2281,8 +2282,12 @@ class LabelBasedLayer2(BaseStep):
 
         tprint_info(f"   ⚡ Pre-computing vectorized base features for {len(df)} bars...")
 
-        # Prepare data for JIT
-        price = df['close'].values.astype(np.float64)
+        # Prepare data for JIT - Use VWAP if available
+        if 'vwap' in df.columns:
+            price = df['vwap'].values.astype(np.float64)
+        else:
+            price = df['close'].values.astype(np.float64)
+
         price_pct = vectorized_pct_change_jit(price)
         price_abs_pct = np.abs(price_pct)
 
@@ -2726,6 +2731,13 @@ class LabelBasedLayer2(BaseStep):
             lows = df_1m['low'].values
             closes = df_1m['close'].values
             vols = df_1m['quote_volume'].values
+
+            if 'volume' in df_1m.columns:
+                qtys = df_1m['volume'].values
+            else:
+                # Fallback estimate
+                qtys = df_1m['quote_volume'].values / (df_1m['close'].values + 1e-9)
+
             threshold_vals = dynamic_threshold.values
             
             # Build dollar bars using Numba-optimized function
@@ -2735,14 +2747,15 @@ class LabelBasedLayer2(BaseStep):
             lows = np.ascontiguousarray(lows, dtype=np.float64)
             closes = np.ascontiguousarray(closes, dtype=np.float64)
             vols = np.ascontiguousarray(vols, dtype=np.float64)
+            qtys = np.ascontiguousarray(qtys, dtype=np.float64)
             threshold_vals = np.ascontiguousarray(threshold_vals, dtype=np.float64)
             
             # Times array handling (preserve datetime64/int64)
             times_arr = np.ascontiguousarray(times)
             
             # Call Numba function
-            db_times_arr, db_opens_arr, db_highs_arr, db_lows_arr, db_closes_arr, db_vols_arr = \
-                _numba_generate_dollar_bars(times_arr, opens, highs, lows, closes, vols, threshold_vals)
+            db_times_arr, db_opens_arr, db_highs_arr, db_lows_arr, db_closes_arr, db_vols_arr, db_vwaps_arr = \
+                _numba_generate_dollar_bars_with_vwap(times_arr, opens, highs, lows, closes, vols, qtys, threshold_vals)
             
             # Convert back to lists for DataFrame creation (or use arrays directly)
             db_times = db_times_arr
@@ -2751,6 +2764,7 @@ class LabelBasedLayer2(BaseStep):
             db_lows = db_lows_arr
             db_closes = db_closes_arr
             db_vols = db_vols_arr
+            db_vwaps = db_vwaps_arr
             
             # Minimum threshold - dollar bars should produce at least 30% of original sample count
             # to be useful. If too few bars are generated, the data is too sparse for reliable training.
@@ -2761,7 +2775,7 @@ class LabelBasedLayer2(BaseStep):
             
             res_df = pd.DataFrame({
                 'open': db_opens, 'high': db_highs, 'low': db_lows,
-                'close': db_closes, 'volume': db_vols
+                'close': db_closes, 'volume': db_vols, 'vwap': db_vwaps
             }, index=pd.DatetimeIndex(db_times))
             
             res_df['bar_duration'] = res_df.index.to_series().diff().dt.total_seconds().fillna(60.0)
@@ -2803,7 +2817,13 @@ class LabelBasedLayer2(BaseStep):
         tprint_info("   🎯 Generating De Prado-aligned treatments (no specialists)...")
         
         treatments = pd.DataFrame(index=df.index)
-        close = df['close']
+
+        # Use VWAP if available
+        if 'vwap' in df.columns:
+            close = df['vwap']
+        else:
+            close = df['close']
+
         volume = df['volume']
         high = df['high']
         low = df['low']
@@ -14211,7 +14231,13 @@ class LabelBasedLayer2(BaseStep):
             vol = subset['volatility_1d'].fillna(0.0)
         else:
             vol = pd.Series(0.0, index=subset.index)
-        price = subset['close'].fillna(method='ffill')
+
+        # Use VWAP if available, else Close
+        if 'vwap' in subset.columns:
+            price = subset['vwap'].fillna(method='ffill')
+        else:
+            price = subset['close'].fillna(method='ffill')
+
         volume = subset.get('volume', pd.Series(0, index=events_index))
 
         # Pre-compute common rolling statistics using JIT-compiled functions for better performance
@@ -16157,9 +16183,13 @@ class LabelBasedLayer2(BaseStep):
                 try:
                     # Generate probe features for the full dataset once
                     probe_cache_key = f"probe_{hash(str(df.shape)) % 10000}"
+
+                    # Determine price source (VWAP priority)
+                    price_source = df['vwap'] if 'vwap' in df.columns else df['close']
+
                     if probe_cache_key not in self._probe_data_cache:
                         self._probe_data_cache[probe_cache_key] = generate_market_state_probe(
-                            df['close'], df['volume'], regime_labels=self.regime_labels
+                            price_source, df['volume'], regime_labels=self.regime_labels
                         )
                         self._prune_cache(self._probe_data_cache, self._max_cache_entries, "probe data")
 

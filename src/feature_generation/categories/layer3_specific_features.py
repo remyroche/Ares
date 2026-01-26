@@ -32,6 +32,19 @@ from src.feature_generation.categories.ensemble_disagreement import (
 from src.training.steps.labeling.adaptive_hunter_router import AdaptiveHunterRouter
 
 
+def _get_price_col(df: pd.DataFrame) -> str:
+    """Helper to select VWAP if available, else Close."""
+    if 'vwap' in df.columns:
+        return 'vwap'
+    elif 'VWAP' in df.columns:
+        return 'VWAP'
+    elif 'close' in df.columns:
+        return 'close'
+    elif 'Close' in df.columns:
+        return 'Close'
+    return 'close'  # Default fallback
+
+
 def _apply_fracdiff(series: pd.Series, d: float = 0.4, threshold: float = 1e-5) -> pd.Series:
     """
     Apply fractional differentiation using fixed-width window.
@@ -118,9 +131,10 @@ def _compute_anchor_and_drift_features(
     regime_map = {0: 'Quiet', 1: 'Trending', 2: 'Chaos'}
     
     # 1. Volatility Anchor/Drift
-    if 'close' in df.columns:
-        close = df['close']
-        ret = np.log(close / close.shift(1)).fillna(0)
+    price_col = _get_price_col(df)
+    if price_col in df.columns:
+        price = df[price_col]
+        ret = np.log(price / price.shift(1)).fillna(0)
         
         # Short-term volatility (reactive)
         vol_short = ret.rolling(20, min_periods=5).std().fillna(0)
@@ -141,11 +155,11 @@ def _compute_anchor_and_drift_features(
         features['drift_volatility_z'] = vol_drift_z.clip(-5, 5)
     
     # 2. Trend Strength Anchor/Drift
-    if 'close' in df.columns:
-        close = df['close']
+    if price_col in df.columns:
+        price = df[price_col]
         
         # Slope normalized by price (% change over 20 bars)
-        slope = close.diff(20) / close.shift(20).replace(0, np.nan)
+        slope = price.diff(20) / price.shift(20).replace(0, np.nan)
         slope = slope.fillna(0)
         
         # Trend strength = absolute slope
@@ -164,12 +178,12 @@ def _compute_anchor_and_drift_features(
         features['trend_direction'] = np.sign(slope)
     
     # 3. Liquidity Anchor/Drift (if volume available)
-    if 'volume' in df.columns and 'close' in df.columns:
+    if 'volume' in df.columns and price_col in df.columns:
         vol = df['volume'].replace(0, np.nan).fillna(method='ffill').fillna(1)
-        close = df['close']
+        price = df[price_col]
         
         # Dollar volume as liquidity proxy
-        dollar_vol = vol * close
+        dollar_vol = vol * price
         
         # Anchor: Slow EWM of dollar volume
         liq_anchor = dollar_vol.ewm(span=200, min_periods=50).mean().fillna(dollar_vol.mean())
@@ -341,6 +355,10 @@ def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     features = pd.DataFrame(index=df.index)
 
+    # Use VWAP if available (Trend, Momentum, Volatility shift)
+    price_col = _get_price_col(df)
+    price = df[price_col] if price_col in df.columns else df['close']
+
     close = df['close']
     high = df['high']
     low = df['low']
@@ -348,11 +366,11 @@ def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     # --- Prepare Base Series ---
 
     # 1. Log Returns (Original)
-    log_ret = np.log(close / close.shift(1))
+    log_ret = np.log(price / price.shift(1))
 
-    # 2. FracDiff Series
+    # 2. FracDiff Series (using VWAP if available)
     try:
-        log_price = np.log(close)
+        log_price = np.log(price)
         frac_diff = _apply_fracdiff(log_price.fillna(method='ffill'), d=0.4)
         # Fill initial NaNs
         frac_diff = frac_diff.fillna(0.0)
@@ -360,10 +378,10 @@ def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
         tprint_warning(f"FracDiff calculation failed: {e}")
         frac_diff = log_ret # Fallback
 
-    # 3. Innovation Series (Z-scored Delta)
+    # 3. Innovation Series (Z-scored Delta) (using VWAP if available)
     # Innovation ≈ ((Xt − Xt-1) − RollingMean(ΔX)) / RollingStd(ΔX)
     try:
-        delta_x = close.diff()
+        delta_x = price.diff()
         rolling_mean = delta_x.rolling(window=20).mean()
         rolling_std = delta_x.rolling(window=20).std()
         innovation = (delta_x - rolling_mean) / (rolling_std + 1e-9)
@@ -417,11 +435,11 @@ def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     # 1. Original features (based on Price/Returns)
     # Volatility Features
     rv_short = log_ret.rolling(window=12).std() * np.sqrt(12)
-    tr = (high - low) / close
+    tr = (high - low) / price  # Using VWAP if available
     atr_short = tr.rolling(window=12).mean()
 
     # Trend Strength Features
-    log_price = np.log(close)
+    log_price = np.log(price)
     features['slope_short'] = log_price.diff(12).abs()
 
     up_move = high.diff()
@@ -436,7 +454,7 @@ def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     features['adx_proxy'] = dx.rolling(window=14).mean()
 
     # Momentum
-    features['momentum_short'] = (close.diff(12) / close.shift(12)).abs()
+    features['momentum_short'] = (price.diff(12) / price.shift(12)).abs()
     features['snr'] = features['momentum_short'].abs() / (rv_short + 1e-8)
 
     # Vol Spike / Large Candle
@@ -460,8 +478,8 @@ def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     # Standard Regime Features
     chop_window = 20
     tr1 = high - low
-    tr2 = (high - close.shift(1)).abs()
-    tr3 = (low - close.shift(1)).abs()
+    tr2 = (high - price.shift(1)).abs()  # Using VWAP if available
+    tr3 = (low - price.shift(1)).abs()   # Using VWAP if available
     tr_series = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
 
     sum_tr = tr_series.rolling(chop_window).sum()
@@ -481,7 +499,7 @@ def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     # Permutation Entropy
     pe_window = 50
     pe_dim = 3
-    pe_values = close.to_numpy(dtype=float, copy=False)
+    pe_values = price.to_numpy(dtype=float, copy=False)  # Using VWAP if available
     pe_n = len(pe_values)
 
     if pe_n >= pe_window + pe_dim:
@@ -524,8 +542,8 @@ def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # Efficiency Ratio (Kaufman's)
     er_window = 10
-    change = (close - close.shift(er_window)).abs()
-    volatility = close.diff().abs().rolling(er_window).sum()
+    change = (price - price.shift(er_window)).abs()
+    volatility = price.diff().abs().rolling(er_window).sum()
     features['efficiency_ratio'] = change / (volatility + 1e-8)
 
     # -------------------------------------------------------------
@@ -567,14 +585,16 @@ def _compute_cross_tf_momentum_agreement(df: pd.DataFrame) -> pd.DataFrame:
     Strong agreement = stronger directional conviction.
     """
     features = pd.DataFrame(index=df.index)
-    close = df['close']
+
+    price_col = _get_price_col(df)
+    price = df[price_col] if price_col in df.columns else df['close']
     
     # Fill NAs to avoid propagation issues temporarily for calculation
-    close_filled = close.ffill().bfill()
+    price_filled = price.ffill().bfill()
 
     # Momentum at different horizons
-    mom_4 = (close_filled / close_filled.shift(4) - 1).fillna(0)      # 1h at 15m
-    mom_12 = (close_filled / close_filled.shift(12) - 1).fillna(0)    # 3h at 15m
+    mom_4 = (price_filled / price_filled.shift(4) - 1).fillna(0)      # 1h at 15m
+    mom_12 = (price_filled / price_filled.shift(12) - 1).fillna(0)    # 3h at 15m
     # Removed 12h and 24h as per user request
     
     # Sign agreement (how many horizons agree on direction)
@@ -821,11 +841,12 @@ def generate_layer3_features(
     # Volatility Surface / Ratio Features
     # Volatility Ratio (Vol Short / Vol Long) - Coiled Spring Indicator
     try:
-        if 'close' in df_out.columns:
-            close_series = df_out['close']
+        price_col = _get_price_col(df_out)
+        if price_col in df_out.columns:
+            price_series = df_out[price_col]
             # Using 20 and 100 as standard short/long windows
             # Calculate log returns for better volatility estimation
-            log_ret = np.log(close_series / close_series.shift(1)).fillna(0)
+            log_ret = np.log(price_series / price_series.shift(1)).fillna(0)
 
             vol_short = log_ret.rolling(20, min_periods=5).std()
             vol_long = log_ret.rolling(100, min_periods=20).std()
@@ -892,28 +913,28 @@ def generate_layer3_features(
 
     # ENABLED: Cross-Timeframe Momentum Agreement
     try:
-        if all(c in df_out.columns for c in ['close']):
-            mom_feats = _compute_cross_tf_momentum_agreement(df_out)
-            for col in mom_feats.columns:
-                df_out[col] = mom_feats[col]
+        mom_feats = _compute_cross_tf_momentum_agreement(df_out)
+        for col in mom_feats.columns:
+            df_out[col] = mom_feats[col]
     except Exception:
         pass
 
     # 4. Price-Denoised Features (from Layer0)
     try:
-        if 'kalman_price' in df_out.columns and 'close' in df_out.columns:
-            close = df_out['close']
+        price_col = _get_price_col(df_out)
+        if 'kalman_price' in df_out.columns and price_col in df_out.columns:
+            price = df_out[price_col]
             kalman_price = df_out['kalman_price']
             
             # Market stretch: deviation from denoised price
-            df_out['market_stretch'] = np.log((close + 1e-9) / (kalman_price + 1e-9))
+            df_out['market_stretch'] = np.log((price + 1e-9) / (kalman_price + 1e-9))
             
             # Price deviation metrics
-            df_out['price_deviation_abs'] = np.abs(close - kalman_price)
-            df_out['price_deviation_pct'] = (close - kalman_price) / kalman_price
+            df_out['price_deviation_abs'] = np.abs(price - kalman_price)
+            df_out['price_deviation_pct'] = (price - kalman_price) / kalman_price
             
             # Raw vs denoised price ratio
-            df_out['raw_denoised_ratio'] = close / (kalman_price + 1e-8)
+            df_out['raw_denoised_ratio'] = price / (kalman_price + 1e-8)
             
             # Clean up infinities and NaNs
             price_denoised_cols = ['market_stretch', 'price_deviation_abs', 'price_deviation_pct', 'raw_denoised_ratio']
@@ -923,8 +944,9 @@ def generate_layer3_features(
 
     # 5. Kalman Information Features
     try:
-        if 'kalman_price' in df_out.columns and 'close' in df_out.columns:
-            close = df_out['close']
+        price_col = _get_price_col(df_out)
+        if 'kalman_price' in df_out.columns and price_col in df_out.columns:
+            price = df_out[price_col]
             kalman_price = df_out['kalman_price']
             
             # Kalman velocity (rate of change)
@@ -932,8 +954,8 @@ def generate_layer3_features(
             df_out['kalman_acceleration'] = kalman_price.diff().diff()
             
             # Kalman deviation from price
-            df_out['kalman_deviation'] = kalman_price - close
-            df_out['kalman_deviation_pct'] = (kalman_price - close) / close
+            df_out['kalman_deviation'] = kalman_price - price
+            df_out['kalman_deviation_pct'] = (kalman_price - price) / price
             
             # Kalman trend strength (persistent direction)
             df_out['kalman_trend_strength'] = np.sign(kalman_price.diff()).rolling(20).mean().abs()
@@ -941,7 +963,7 @@ def generate_layer3_features(
             # Kalman volatility ratio
             if 'kalman_volatility' in df_out.columns:
                 kalman_vol = df_out['kalman_volatility']
-                price_vol = close.rolling(20).std()
+                price_vol = price.rolling(20).std()
                 df_out['kalman_vol_ratio'] = kalman_vol / (price_vol + 1e-8)
             
             # Clean up infinities and NaNs
@@ -958,12 +980,13 @@ def generate_layer3_features(
 
     # 10. Price Position in Range
     try:
-        if 'close' in df_out.columns:
-            close = df_out['close']
-            roll_max = close.rolling(50).max()
-            roll_min = close.rolling(50).min()
+        price_col = _get_price_col(df_out)
+        if price_col in df_out.columns:
+            price = df_out[price_col]
+            roll_max = price.rolling(50).max()
+            roll_min = price.rolling(50).min()
             range_len = roll_max - roll_min
-            df_out['price_position_in_range'] = (close - roll_min) / (range_len + 1e-8)
+            df_out['price_position_in_range'] = (price - roll_min) / (range_len + 1e-8)
     except Exception:
         pass
 

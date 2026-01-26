@@ -905,7 +905,7 @@ def _compute_global_features_cached(df: pd.DataFrame, net_returns: pd.Series) ->
         
         # Efficiency ratio
         if net_returns is not None:
-            features['efficiency_ratio'] = abs(net_returns.rolling(20).sum()) / net_returns.rolling(20).abs().sum()
+            features['efficiency_ratio'] = abs(net_returns.rolling(20).sum()) / net_returns.abs().rolling(20).sum()
         
         return features
     

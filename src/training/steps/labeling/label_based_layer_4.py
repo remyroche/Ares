@@ -1099,11 +1099,7 @@ def integrate_entropy_bars_into_layer4(
             tprint_info("🔄 Layer 4: Calculating Proxy Entropy (Numba Optimized) on base timeframe...")
 
             # Calculate returns on the base dataframe
-            if 'vwap' in df.columns:
-                price_col = 'vwap'
-            elif 'VWAP' in df.columns:
-                price_col = 'VWAP'
-            elif 'close' in df.columns:
+            if 'close' in df.columns:
                 price_col = 'close'
             elif 'Close' in df.columns:
                 price_col = 'Close'

@@ -6572,20 +6572,28 @@ class LabelBasedLayer2(BaseStep):
                         elif ge_tz is not None:
                             ge_aligned = global_events.tz_localize(None)
                     except Exception as e:
-                        tprint_warning(f"   ⚠️ TZ Alignment failed: {e}")
+                        tprint_warning(f"   ⚠️ TZ Alignment failed: {e} (Fold TZ: {getattr(df_train.index, 'tz', 'None')}, Events TZ: {getattr(global_events, 'tz', 'None')})")
                         pass # Fallback to original if alignment fails
 
                     fold_train_events = ge_aligned[ge_aligned.isin(df_train.index)]
                     if len(fold_train_events) == 0 and len(global_events) > 0:
                         # Fallback to intersection
                         try:
+                            tprint_info(f"   ℹ️ Primary 'isin' match failed (0 matches). Attempting intersection fallback...")
                             fold_train_events = ge_aligned.intersection(df_train.index)
-                        except Exception:
+                            if len(fold_train_events) > 0:
+                                tprint_success(f"   ✅ Intersection fallback recovered {len(fold_train_events)} events.")
+                        except Exception as ex:
+                            tprint_warning(f"   ⚠️ Intersection fallback failed: {ex}")
                             pass
                     
                     if len(fold_train_events) == 0 and len(global_events) > 0:
                          # Diagnostic log for debugging if fix fails
-                         tprint_warning(f"   ⚠️ TZ Mismatch persists? Global={len(global_events)} -> Fold=0. Fold Range: {df_train.index[0]} to {df_train.index[-1]}")
+                         fold_start = df_train.index[0] if len(df_train) > 0 else "N/A"
+                         fold_end = df_train.index[-1] if len(df_train) > 0 else "N/A"
+                         evt_start = global_events[0] if len(global_events) > 0 else "N/A"
+                         evt_end = global_events[-1] if len(global_events) > 0 else "N/A"
+                         tprint_warning(f"   ⚠️ TZ/Range Mismatch persists? Matches=0. Fold Range: {fold_start} to {fold_end} | Events Range: {evt_start} to {evt_end} | Global Count: {len(global_events)}")
                 else:
                      fold_train_events = pd.DatetimeIndex([])
                 

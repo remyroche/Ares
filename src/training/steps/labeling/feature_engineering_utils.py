@@ -95,7 +95,7 @@ def apply_layer2_price_processing(df: pd.DataFrame,
                                   wavelet: str = 'db4', # Deprecated
                                   wavelet_level: int = 2, # Deprecated
                                   enable_price_features: bool = True,
-                                  vwap_window: int = 20) -> pd.DataFrame:
+                                  vwap_window: int = 5) -> pd.DataFrame:
     """
     Apply de Prado-compliant price processing and "Anti-Explosion" feature generation.
     Optimized with Numba for EWMA and Volatility calculations.
@@ -239,9 +239,9 @@ def apply_layer2_price_processing(df: pd.DataFrame,
         result['rolling_skew_50'] = pd.Series(skew_vals, index=asset_df.index)
         result['rolling_kurtosis_50'] = pd.Series(kurt_vals, index=asset_df.index)
 
-        # Drawdown (uses effective_price, i.e. VWAP Drawdown if enabled)
-        rolling_max = effective_price.rolling(100, min_periods=1).max()
-        result['drawdown_100'] = (effective_price / (rolling_max + 1e-9)) - 1.0
+        # Drawdown (Excluding VWAP: Always use raw price)
+        rolling_max = price_raw.rolling(100, min_periods=1).max()
+        result['drawdown_100'] = (price_raw / (rolling_max + 1e-9)) - 1.0
 
         # B. Augmentations
 
@@ -312,7 +312,8 @@ def apply_layer2_price_processing(df: pd.DataFrame,
         # VWAP Residualisation
         # "if using price residualisation against itself, it is applied before the residualisation"
         # Logic: VWAP -> Residualisation (Detrending)
-        # We perform Causal Residualisation (Detrending) using EMA to avoid lookahead bias
+        # We perform Causal Residualisation (Detrending) using EMA to avoid lookahead bias.
+        # This calculates the deviation of the price (or VWAP) from its own Exponential Moving Average.
         try:
             # Using span=100 to match drawdown window and capture medium-term trend
             trend = effective_price.ewm(span=100, adjust=False).mean()

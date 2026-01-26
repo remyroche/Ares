@@ -20,6 +20,7 @@ import time
 # sys.path.insert(0, str(Path(__file__).parent.parent))
 
 logger = logging.getLogger(__name__)
+from src.utils.initialization_guard import init_guard
 
 # Import hardware optimization tools
 try:
@@ -28,7 +29,8 @@ try:
     from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
     HARDWARE_OPTIMIZATION_AVAILABLE = True
 except ImportError as e:
-    logger.warning(f"Hardware optimization tools not available: {e}")
+    if init_guard.mark_initialized("feature_generation.feature_generators.hardware"):
+        logger.warning(f"Hardware optimization tools not available: {e}")
     HARDWARE_OPTIMIZATION_AVAILABLE = False
     # Define fallback classes to prevent NameError
     class M1GPUManager:
@@ -48,28 +50,33 @@ try:
     from src.utils.math_validation import safe_divide, safe_log, safe_sqrt
     SAFE_MATH_AVAILABLE = True
 except ImportError as e:
-    logger.warning(f"Safe math operations not available: {e}")
+    if init_guard.mark_initialized("feature_generation.feature_generators.safe_math"):
+        logger.warning(f"Safe math operations not available: {e}")
     SAFE_MATH_AVAILABLE = False
 
 # Import TA-Lib for enhanced technical indicators
 try:
     import talib  # type: ignore
     TALIB_AVAILABLE = True
-    logger.info("✅ TA-Lib available for enhanced technical indicators")
+    if init_guard.mark_initialized("feature_generation.feature_generators.talib"):
+        logger.info("✅ TA-Lib available for enhanced technical indicators")
 except ImportError:
-    logger.info("TA-Lib not available; attempting ta-based fallbacks before numpy/pandas")
+    if init_guard.mark_initialized("feature_generation.feature_generators.talib"):
+        logger.info("TA-Lib not available; attempting ta-based fallbacks before numpy/pandas")
     TALIB_AVAILABLE = False
 
 try:
     import ta as ta_lib  # type: ignore
     TA_LIB_AVAILABLE = True
-    logger.info("✅ ta library available for technical indicator fallbacks")
+    if init_guard.mark_initialized("feature_generation.feature_generators.ta_lib"):
+        logger.info("✅ ta library available for technical indicator fallbacks")
 except ImportError:
     TA_LIB_AVAILABLE = False
 
 # Feature selection tools - using fallback implementations since optimized versions are not available
 FEATURE_SELECTION_AVAILABLE = False
-logger.info("Using fallback implementations for feature selection tools")
+if init_guard.mark_initialized("feature_generation.feature_generators.fallbacks"):
+    logger.info("Using fallback implementations for feature selection tools")
 
 def fast_correlation_matrix(data):
     """Fallback correlation matrix calculation."""

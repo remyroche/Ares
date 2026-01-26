@@ -1,10 +1,12 @@
 from src.utils.tprint import tprint
+from src.utils.initialization_guard import init_guard
 
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 import functools
 """Core decorators for the Ares project."""
 
-tprint("DEBUG: decorators.py module starting to load...")
+if init_guard.mark_initialized("core.decorators"):
+    tprint("DEBUG: decorators.py module starting to load...")
 
 def handles_errors(*args, **kwargs) -> Callable:
     """Enhanced decorator for handling errors in functions."""
@@ -270,4 +272,5 @@ __all__ = [
     'span_event'
 ]
 
-tprint("DEBUG: decorators.py module loaded successfully!")
+if init_guard.is_initialized("core.decorators"):
+    tprint("DEBUG: decorators.py module loaded successfully!")

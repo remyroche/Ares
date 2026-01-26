@@ -416,30 +416,35 @@ if True:
     ])
 
 # Initialize default feature bank if core is available
+from src.utils.initialization_guard import init_guard
+
 if CORE_AVAILABLE:
     try:
         from .core import _initialize_default_bank
-        _initialize_default_bank()
+        if init_guard.mark_initialized("feature_generation.default_bank"):
+            _initialize_default_bank()
     except Exception as e:
         logger = logging.getLogger(__name__)
-        logger.warning(f"Failed to initialize default feature bank: {e}")
+        if init_guard.is_initialized("feature_generation.default_bank"):
+            logger.warning(f"Failed to initialize default feature bank: {e}")
 
 # Log initialization
 logger = logging.getLogger(__name__)
-logger.info("✅ Unified Feature Generation System initialized")
-logger.info(f"📦 Version: {__version__}")
-logger.info("🔧 Features: Category-based organization, advanced utilities, optimization")
-logger.info("🍎 Optimized for: Apple Silicon M1/M2/M3 Macs")
+if init_guard.mark_initialized("feature_generation.__init__"):
+    logger.info("✅ Unified Feature Generation System initialized")
+    logger.info(f"📦 Version: {__version__}")
+    logger.info("🔧 Features: Category-based organization, advanced utilities, optimization")
+    logger.info("🍎 Optimized for: Apple Silicon M1/M2/M3 Macs")
 
-if True:
-    logger.info("🚀 Advanced utilities available (optimization, analysis, etc.)")
-else:
-    logger.warning("⚠️ Advanced utilities not available - limited functionality")
+    if True:
+        logger.info("🚀 Advanced utilities available (optimization, analysis, etc.)")
+    else:
+        logger.warning("⚠️ Advanced utilities not available - limited functionality")
 
-if True:
-    logger.info("⚡ VectorBT optimizations available (advanced volatility, volume, batch processing)")
-else:
-    logger.warning("⚠️ VectorBT optimizations not available - install vectorbt for enhanced performance")
+    if True:
+        logger.info("⚡ VectorBT optimizations available (advanced volatility, volume, batch processing)")
+    else:
+        logger.warning("⚠️ VectorBT optimizations not available - install vectorbt for enhanced performance")
 
 # LAZY LOADING IMPLEMENTATION
 import warnings

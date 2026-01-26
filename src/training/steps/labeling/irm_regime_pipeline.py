@@ -279,7 +279,14 @@ def get_or_fit_regime_labels(
     refit: bool = False
 ) -> pd.Series:
     labeller = MarketRegimeLabeller(n_regimes=n_regimes)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Robust directory creation: handle cases where a file exists at the parent path
+    parent_dir = path.parent
+    if parent_dir.exists() and not parent_dir.is_dir():
+        logger.warning(f"File exists at directory path {parent_dir}, removing it.")
+        parent_dir.unlink()
+    
+    parent_dir.mkdir(parents=True, exist_ok=True)
 
     if refit or not path.exists():
         labeller.fit_save(df, path)
@@ -301,6 +308,12 @@ def get_regime_posteriors_from_path(
     labeller = MarketRegimeLabeller(n_regimes=n_regimes)
     # Ensure it's fitted
     if not file_path.exists():
+        # Robust directory creation: handle cases where a file exists at the parent path
+        parent_dir = file_path.parent
+        if parent_dir.exists() and not parent_dir.is_dir():
+            logger.warning(f"File exists at directory path {parent_dir}, removing it.")
+            parent_dir.unlink()
+        parent_dir.mkdir(parents=True, exist_ok=True)
         labeller.fit_save(df, file_path)
 
     return labeller.get_regime_posteriors(df, file_path)

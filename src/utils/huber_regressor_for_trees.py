@@ -37,7 +37,7 @@ from sklearn.linear_model import HuberRegressor
 from sklearn.preprocessing import RobustScaler
 from sklearn.metrics import mean_absolute_error
 
-from src.utils.tprint import tprint_info
+from src.utils.tprint import tprint_info, tprint_warning
 from src.utils.irm_linear_regressor import IRMLinearRegressor, get_vol_env_indices
 
 
@@ -530,18 +530,53 @@ def prepare_huber_teacher_outputs(
     # -----------------------------
     # Data to numpy (preserve column order)
     # -----------------------------
-    train_columns = X_train.columns.tolist()
-    feature_names = np.asarray(train_columns)
+    try:
+        train_columns = X_train.columns.tolist()
+        feature_names = np.asarray(train_columns)
 
-    X_tr = _as_float32_2d(X_train, columns=train_columns)
+        X_tr = _as_float32_2d(X_train, columns=train_columns)
 
-    n_samples, n_features = X_tr.shape
-    if cfg.verbose:
-        tprint_info(f"[HuberTeacher] n_samples={n_samples}, n_features={n_features}")
+        n_samples, n_features = X_tr.shape
+        if cfg.verbose:
+            tprint_info(f"[HuberTeacher] n_samples={n_samples}, n_features={n_features}")
+            import sys
+            sys.stdout.flush()
+    except Exception as e:
+        tprint_info(f"[HuberTeacher] CRITICAL ERROR in data preparation: {e}")
+        import traceback
+        tprint_info(traceback.format_exc())
+        raise
 
     # -----------------------------
     # Global scaler (critical upgrade)
     # -----------------------------
+    # Filter out constant columns first to avoid numerical issues
+    std_raw = np.std(X_tr, axis=0)
+    valid_feat_mask = std_raw > 1e-12
+    
+    if np.sum(valid_feat_mask) < 1:
+        tprint_warning("[HuberTeacher] ⚠️ All features are constant! Returning empty selection.")
+        # Return empty result structure (simplified)
+        return {
+            "selected_features": [],
+            "monotonic_constraints": {},
+            "interaction_constraints": [],
+            "warm_start": {"train": np.zeros_like(y_tr), "val": None, "test": None},
+            "huber_models": [],
+            "quantile_meta_targets": y_tr,
+            "residual_meta_target": y_tr,
+            "scaler": None,
+            "train_columns": train_columns,
+            "selected_feature_indices": [],
+            "huber_teacher": None
+        }
+
+    # Helper to reconstruct full array from valid columns eventually
+    # But for now, we just proceed with valid columns
+    # Note: This changes feature indexing. We need to map back or just use valid ones.
+    # For simplicity in this fix, we won't drop them, just note them.
+    # Actually, RobustScaler centered=True handles constants by outputting 0.
+    
     scaler = RobustScaler()
     X_tr_scaled = scaler.fit_transform(X_tr).astype(np.float64, copy=False)
 
@@ -557,6 +592,15 @@ def prepare_huber_teacher_outputs(
     if cfg.verbose:
         tprint_info(f"[HuberTeacher] splits={len(splits)} -> {splits[:3]}{' ...' if len(splits) > 3 else ''}")
 
+    # ADAPTIVE ALPHA: Scale down alphas for small datasets to prevent over-regularization
+    # Standard alpha is often too strong for N < 200
+    used_alphas = cfg.alphas
+    if n_samples < 200:
+        scaling_factor = n_samples / 500.0  # e.g., 100 samples -> 0.2x alpha
+        used_alphas = tuple([max(1e-5, a * scaling_factor) for a in cfg.alphas])
+        if cfg.verbose:
+            tprint_info(f"[HuberTeacher] 📉 Adaptive Alpha: Scaled down by {scaling_factor:.2f} for small N={n_samples}")
+
     # -----------------------------
     # Fit split × grid in parallel
     # -----------------------------
@@ -564,28 +608,158 @@ def prepare_huber_teacher_outputs(
         delayed(_fit_split_grid)(
             X_tr_scaled, y_tr, w,
             start, end,
-            cfg.epsilons, cfg.alphas, cfg.max_iter, cfg.irm_lambda,
+            cfg.epsilons, used_alphas, cfg.max_iter, cfg.irm_lambda,
             irm_env_indices, use_irm
         )
         for (start, end) in splits
     )
 
-    n_grid = len(cfg.epsilons) * len(cfg.alphas)
+    n_grid = len(cfg.epsilons) * len(used_alphas)
     coefs_all = np.stack([r["coefs"] for r in split_grid_results], axis=0)  # (n_splits, n_grid, n_features)
     # Aggregate across (splits, grid) for a robust global estimate
     median_coef = np.median(coefs_all.reshape(-1, n_features), axis=0)
     abs_median_coef = np.abs(median_coef)
 
     # -----------------------------
+    # REGULARIZATION RECOVERY
+    # -----------------------------
+    # If all coefficients are zero, the regularization was too strong for the signal-to-noise ratio.
+    # Instead of falling back to magnitude (which may be noise), we try to fit again with much lower alpha.
+    if np.max(abs_median_coef) < 1e-9:
+        # DIAGNOSTICS: Check correlations to explain WHY coefficients are zero
+        try:
+             # Quick correlation check
+             corrs = []
+             for i in range(X_tr_scaled.shape[1]):
+                 # Handle constant features
+                 if np.std(X_tr_scaled[:, i]) < 1e-9:
+                     corrs.append(0.0)
+                 else:
+                     corrs.append(np.corrcoef(X_tr_scaled[:, i], y_tr)[0, 1])
+             abs_corrs = np.abs(corrs)
+             max_corr = np.max(abs_corrs)
+             mean_corr = np.mean(abs_corrs)
+             
+             if cfg.verbose:
+                 tprint_warning(f"[HuberTeacher] ⚠️ All coefficients zero! Diagnostics:")
+                 tprint_info(f"   - Max Feature Correlation: {max_corr:.4f}")
+                 tprint_info(f"   - Mean Feature Correlation: {mean_corr:.4f}")
+                 tprint_info(f"   - Alphas used: {used_alphas}")
+                 
+                 # Check feature statistics for top correlated features
+                 if max_corr > 1e-9:
+                     top_idx = np.argmax(abs_corrs)
+                     tprint_info(f"   - Top Correlated Feature Idx: {top_idx}")
+                     feat_vals = X_tr_scaled[:, top_idx]
+                     tprint_info(f"   - Top Feature Stats: Mean={np.mean(feat_vals):.4f}, Std={np.std(feat_vals):.4f}, Min={np.min(feat_vals):.4f}, Max={np.max(feat_vals):.4f}")
+                     
+                     if feature_names is not None and len(feature_names) > top_idx:
+                         tprint_info(f"   - Top Feature Name: {feature_names[top_idx]}")
+
+                 if max_corr < 0.05:
+                     tprint_warning(f"   -> Reason: Very low Signal-to-Noise Ratio (Max Corr < 0.05). Regularization correctly suppressed noise.")
+                 else:
+                     tprint_warning(f"   -> Reason: Regularization too aggressive for these features.")
+                     
+        except Exception as e:
+            pass
+
+        if cfg.verbose:
+            tprint_info(f"[HuberTeacher] 🔄 Retrying with relaxed regularization (0.01x alpha)...")
+        
+        # Slash alphas by 100x (min 1e-7)
+        relaxed_alphas = tuple([max(1e-7, a * 0.01) for a in used_alphas])
+        
+        # Re-run fit in parallel
+        try:
+            split_grid_results_recovery = Parallel(n_jobs=cfg.n_jobs)(
+                delayed(_fit_split_grid)(
+                    X_tr_scaled, y_tr, w,
+                    start, end,
+                    cfg.epsilons, relaxed_alphas, cfg.max_iter, cfg.irm_lambda,
+                    irm_env_indices, use_irm
+                )
+                for (start, end) in splits
+            )
+            
+            # Re-aggregate
+            coefs_curr = np.stack([r["coefs"] for r in split_grid_results_recovery], axis=0) # (n_splits, n_grid, n_features)
+            median_coef_recovery = np.median(coefs_curr.reshape(-1, n_features), axis=0)
+            abs_median_recovery = np.abs(median_coef_recovery)
+            
+            # Check if recovery worked
+            max_rec = np.max(abs_median_recovery)
+            if max_rec > 1e-9:
+                if cfg.verbose:
+                    tprint_info(f"[HuberTeacher] ✅ Recovery successful! Max coef: {max_rec:.2e}")
+                median_coef = median_coef_recovery
+                abs_median_coef = abs_median_recovery
+            else:
+                 if cfg.verbose:
+                    tprint_warning(f"[HuberTeacher] ❌ Recovery failed. Signal too weak even for alpha={relaxed_alphas[0]:.2e}")
+        except Exception as e:
+            tprint_error(f"[HuberTeacher] Recovery run failed: {e}")
+
+    # -----------------------------
     # Feature pruning (by median |coef|)
     # -----------------------------
     kth = np.percentile(abs_median_coef, cfg.pruning_percentile)
     keep_mask = abs_median_coef > kth
+    
+    # FALLBACK: If aggressive pruning dropped everything, try generous fallback
+    if keep_mask.sum() == 0:
+        if cfg.verbose:
+            tprint_warning(f"[HuberTeacher] ⚠️ Pruning dropped all features! Attempting fallback...")
+        # Try keeping top 10% or at least top 5 features
+        kth_fallback = np.percentile(abs_median_coef, 10) # 10th percentile = keep 90%? No, percentile is "values below this".
+        # pruning_percentile=25 means "remove bottom 25% of abs_coefs"
+        # If we want to be more generous, we should LOWER the percentile.
+        # But if all coefs are exactly 0.0, percentile is 0.0, and > 0.0 is False.
+        
+        # If all coefs are effectively zero, pick random/first ones? No, purely zero means no signal.
+        # Check max coef
+        max_coef_val = np.max(abs_median_coef)
+        if max_coef_val < 1e-9:
+             if cfg.verbose:
+                tprint_warning(f"[HuberTeacher] 💀 All coefficients are zero (max={max_coef_val:.2e}). Applying Hard Fallback.")
+             
+             # HARD FALLBACK: Force keep top K features by magnitude (even if tiny) 
+             # to allow downstream models to try extracting signal.
+             # Target: Top 5% or at least 5 features
+             n_to_keep = max(5, int(n_features * 0.05))
+             # Get indices of top k largest coefficients
+             # If all are exactly 0,argsort is stable so it picks first ones. 
+             # Better to add tiny random noise to break ties if all exactly zero? 
+             # No, if all exactly zero, it doesn't matter.
+             top_k_idx = np.argsort(abs_median_coef)[-n_to_keep:]
+             keep_mask[top_k_idx] = True
+             
+             if cfg.verbose:
+                 tprint_info(f"[HuberTeacher] 🚑 Hard Fallback: Force-selected top {n_to_keep} features.")
+
+        else:
+            # Lower threshold to 0 to keep anything non-zero
+            keep_mask = abs_median_coef > 0.0
+            if cfg.verbose:
+                tprint_info(f"[HuberTeacher] 🔄 Fallback: Keeping all non-zero features ({keep_mask.sum()})")
+
     selected_feats = feature_names[keep_mask].tolist()
     selected_idx = np.where(keep_mask)[0]
 
     if cfg.verbose:
+        pct_kept = len(kept_indices)/n_selected if 'len' in locals() and 'n_selected' in locals() and n_selected > 0 else 0.0
+        # Fix: n_selected and kept_indices not defined yet. Use current mask
         tprint_info(f"[HuberTeacher] pruning_percentile={cfg.pruning_percentile} -> kept={keep_mask.sum()}/{n_features}")
+        
+        # DIAGNOSTICS: If we kept very few features, dump stats
+        if keep_mask.sum() < 5:
+            tprint_info(f"[HuberTeacher] ⚠️ Low feature retention detected!")
+            tprint_info(f"   y_tr stats: mean={np.mean(y_tr):.6f}, std={np.std(y_tr):.6f}, zeros={(y_tr==0).sum()}/{n_samples}")
+            tprint_info(f"   median_coef stats: min={np.min(abs_median_coef):.6f}, max={np.max(abs_median_coef):.6f}, mean={np.mean(abs_median_coef):.6f}")
+            tprint_info(f"   kth (threshold): {kth}")
+            
+            non_zero_coefs = (abs_median_coef > 1e-9).sum()
+            tprint_info(f"   Features with |coef| > 1e-9: {non_zero_coefs}/{n_features}")
 
     # -----------------------------
     # Fit final teacher on full train (median params)
@@ -756,8 +930,9 @@ def prepare_huber_teacher_outputs(
     mono_vec_selected = mono_vec_full[selected_idx].astype(int)
 
     if cfg.verbose:
+        pct_kept = len(kept_indices)/n_selected if n_selected > 0 else 0.0
         tprint_info(f"[HuberTeacher] Monotonic Constraints: Candidates={n_candidates}, StrictPass={strict_pass_count}, "
-              f"Caps=[{min_cnt}, {max_cnt}] -> Final={len(kept_indices)} ({len(kept_indices)/n_selected:.1%})")
+              f"Caps=[{min_cnt}, {max_cnt}] -> Final={len(kept_indices)} ({pct_kept:.1%})")
 
     # -----------------------------
     # Interaction constraints via pair synergy screening

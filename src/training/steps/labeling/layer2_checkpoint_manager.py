@@ -91,7 +91,16 @@ class Layer2CheckpointManager:
     def _compute_config_hash(self, config: Dict[str, Any]) -> str:
         """Compute a hash of the config for versioning."""
         # Filter to relevant config keys only
-        relevant_keys = ['symbol', 'timeframe', 'execution_mode', 'direction', 'exchange']
+        relevant_keys = [
+            'symbol',
+            'timeframe',
+            'execution_mode',
+            'direction',
+            'exchange',
+            'assets',
+            'multi_asset_mode',
+            'layer2_checkpoint_symbol',
+        ]
         filtered = {k: v for k, v in config.items() if k in relevant_keys}
         config_str = json.dumps(filtered, sort_keys=True, default=str)
         return hashlib.md5(config_str.encode()).hexdigest()[:12]

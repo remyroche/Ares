@@ -333,7 +333,7 @@ class AdaptiveEventDrivenLabeling:
         self,
         phase_threshold: float = None,
         use_quantile_approach: bool = True,
-        min_coverage_percent: float = 2.0
+        min_coverage_percent: float = 4.0
     ) -> Dict[str, Any]:
         """
         Identify structural breakouts based on phase lead-lag analysis.
@@ -356,6 +356,7 @@ class AdaptiveEventDrivenLabeling:
             # Analyze phase lead-lag relationships
             breakout_signals = {}
             diagnostics: Dict[str, Dict[str, Any]] = {}
+            specialist_breakout_masks: Dict[str, np.ndarray] = {}
             
             specialist_names = list(self.spectral_specialists.priority_specialists)
             
@@ -401,10 +402,10 @@ class AdaptiveEventDrivenLabeling:
             
             # Calculate quantile-based threshold if enabled
             if use_quantile_approach and all_phase_values:
-                # Get threshold for top (100 - min_coverage_percent)% values
+                # Global diagnostics threshold (overall distribution)
                 quantile_threshold = np.percentile(all_phase_values, 100 - min_coverage_percent)
                 expected_breakouts = len(all_phase_values) * min_coverage_percent / 100
-                actual_above_threshold = np.sum(np.array(all_phase_values) > quantile_threshold)
+                actual_above_threshold = np.sum(np.array(all_phase_values) >= quantile_threshold)
                 
                 # Debug: Check if phase values are all identical
                 unique_values = len(set(all_phase_values))
@@ -443,6 +444,16 @@ class AdaptiveEventDrivenLabeling:
                     continue
                     
                 phase_series = phase_series_by_specialist[specialist_name]
+
+                # Per-specialist quantile threshold to meet minimum coverage
+                specialist_threshold = quantile_threshold
+                if use_quantile_approach:
+                    specialist_values = phase_series[~np.isnan(phase_series)]
+                    if len(specialist_values) > 0:
+                        specialist_threshold = np.percentile(
+                            specialist_values,
+                            100 - min_coverage_percent
+                        )
                 
                 # Get variance info for diagnostics
                 d1_key = f'{specialist_name}_d1'
@@ -452,27 +463,34 @@ class AdaptiveEventDrivenLabeling:
                 phase_summary = float(np.nanmean(phase_series))
                 
                 # Breakout signal: use global quantile threshold
-                breakout_mask = phase_series > quantile_threshold
-                phase_coverage = float(np.mean(breakout_mask.astype(float))) if len(breakout_mask) else 0.0
+                valid_mask = ~np.isnan(phase_series)
+                breakout_mask = np.zeros_like(phase_series, dtype=bool)
+                if np.any(valid_mask):
+                    breakout_mask[valid_mask] = phase_series[valid_mask] >= specialist_threshold
+                specialist_breakout_masks[specialist_name] = breakout_mask
+                if np.any(valid_mask):
+                    phase_coverage = float(np.mean(breakout_mask[valid_mask].astype(float)))
+                else:
+                    phase_coverage = 0.0
                 
                 # Debug per-specialist analysis
                 specialist_phase_values = phase_series[~np.isnan(phase_series)]
                 if use_quantile_approach and len(specialist_phase_values) > 0 and self.verbose:
                     expected_specialist = len(specialist_phase_values) * min_coverage_percent / 100
-                    specialist_above = np.sum(specialist_phase_values > quantile_threshold)
+                    specialist_above = np.sum(specialist_phase_values >= specialist_threshold)
                     
                     tprint_info(f"      🔍 {specialist_name} Analysis:")
                     tprint_info(f"         - Phase values: {len(specialist_phase_values):,}")
                     tprint_info(f"         - Expected breakouts: {expected_specialist:.0f}")
-                    tprint_info(f"         - Global threshold: {quantile_threshold:.4f}")
-                    tprint_info(f"         - Values > threshold: {specialist_above}")
+                    tprint_info(f"         - Specialist threshold: {specialist_threshold:.4f}")
+                    tprint_info(f"         - Values >= threshold: {specialist_above}")
                     tprint_info(f"         - Phase range: [{np.min(specialist_phase_values):.4f}, {np.max(specialist_phase_values):.4f}]")
                     tprint_info(f"         - Phase mean: {np.mean(specialist_phase_values):.4f}")
                     tprint_info(f"         - Phase std: {np.std(specialist_phase_values):.4f}")
                     tprint_info(f"         - Coverage: {phase_coverage:.2%}")
                 
                 # Store the global threshold
-                actual_threshold = quantile_threshold
+                actual_threshold = specialist_threshold
                 
                 diagnostics[specialist_name] = {
                     "var_d1": var_d1,
@@ -502,8 +520,26 @@ class AdaptiveEventDrivenLabeling:
                 for specialist_name in specialist_names:
                     if specialist_name in phase_series_by_specialist:
                         phase_series = phase_series_by_specialist[specialist_name]
-                        breakout_mask = phase_series > quantile_threshold
-                        individual_coverage = np.mean(breakout_mask.astype(float))
+                        breakout_mask = specialist_breakout_masks.get(specialist_name)
+                        if breakout_mask is None:
+                            valid_mask = ~np.isnan(phase_series)
+                            if np.any(valid_mask):
+                                individual_coverage = float(
+                                    np.mean(phase_series[valid_mask] >= np.percentile(
+                                        phase_series[valid_mask],
+                                        100 - min_coverage_percent
+                                    ))
+                                )
+                            else:
+                                individual_coverage = 0.0
+                        else:
+                            valid_mask = ~np.isnan(phase_series)
+                            if np.any(valid_mask):
+                                individual_coverage = float(
+                                    np.mean(breakout_mask[valid_mask].astype(float))
+                                )
+                            else:
+                                individual_coverage = 0.0
                         tprint_info(f"         - {specialist_name}: {individual_coverage:.2%} coverage")
             
             # Combine breakout signals

@@ -174,6 +174,10 @@ def vectorized_feature_selection(
                 tprint_warning(f"⚠️ Found {y_inf} infinity values in target, replacing with NaN")
             y_array = np.where(np.isinf(y_array), np.nan, y_array)
         
+        # Robust check for NaNs and Infs after potential replacements
+        X_array = np.nan_to_num(X_array, nan=np.nan, posinf=np.nan, neginf=np.nan)
+        y_array = np.nan_to_num(y_array, nan=np.nan, posinf=np.nan, neginf=np.nan)
+        
         # Check for extremely large values
         float64_max = np.finfo(np.float64).max / 1000
         X_large = (np.abs(X_array) > float64_max).sum()
@@ -189,10 +193,11 @@ def vectorized_feature_selection(
                 tprint_warning(f"⚠️ Found {y_large} extremely large values in target, clipping")
             y_array = np.clip(y_array, -float64_max, float64_max)
         
-        # Handle NaN values
-        nan_mask = np.isnan(X_array).any(axis=1) | np.isnan(y_array)
-        X_clean = X_array[~nan_mask]
-        y_clean = y_array[~nan_mask]
+        # Handle NaN values (includes former Infs)
+        # Ensure y_clean is finite for mutual_info_classif and correlation
+        valid_row_mask = ~(np.isnan(X_array).any(axis=1) | np.isnan(y_array))
+        X_clean = X_array[valid_row_mask]
+        y_clean = y_array[valid_row_mask]
         
         if len(X_clean) < 100:
             tprint_warning("⚠️ Too few clean samples for feature selection")

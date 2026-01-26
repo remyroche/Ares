@@ -279,11 +279,25 @@ class SpectralSpecialists:
             specialist_signals = {}
             configs = specialist_configs or {}
             
+            # Pre-compute common rolling statistics to speed up specialists
+            if self.verbose:
+                tprint_info("⚡ Pre-computing rolling statistics...")
+            
+            # Common rolling windows used by multiple specialists
+            rolling_stats = {}
+            if len(df) > 50:
+                rolling_stats['vol_20'] = df['volume'].rolling(20, min_periods=1).mean()
+                rolling_stats['vol_50'] = df['volume'].rolling(50, min_periods=1).mean()
+                rolling_stats['std_50'] = df['close'].rolling(50, min_periods=1).std()
+                rolling_stats['mean_50'] = df['close'].rolling(50, min_periods=1).mean()
+            
             # Helper to safely extract and add signal with validation
             def _add_signal(name, extraction_func):
                 if name in self.priority_specialists:
                     try:
-                        signal = extraction_func(df, configs.get(name, {}))
+                        if self.verbose:
+                            tprint_info(f"   🔄 Extracting {name}...")
+                        signal = extraction_func(df, configs.get(name, {}), rolling_stats)
                         if signal is not None:
                             # Validate signal quality
                             signal_quality = self._validate_signal_quality(signal, name)
@@ -292,7 +306,10 @@ class SpectralSpecialists:
                                 # Still include but with warning
                             specialist_signals[name] = signal
                             if self.verbose:
-                                tprint_info(f"      - {name}: mean={signal_quality['mean']:.6f}, std={signal_quality['std']:.6f}, nan%={signal_quality['nan_pct']:.2f}%")
+                                tprint_info(f"      ✅ {name}: mean={signal_quality['mean']:.6f}, std={signal_quality['std']:.6f}, nan%={signal_quality['nan_pct']:.2f}%")
+                        else:
+                            if self.verbose:
+                                tprint_warning(f"      ⚠️ {name} returned None")
                     except Exception as e:
                         tprint_error(f"❌ {name} extraction failed: {e}")
             
@@ -835,7 +852,7 @@ class SpectralSpecialists:
 
         return diagnostics
 
-    def _extract_trend_signal(self, df: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.Series]:
+    def _extract_trend_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """
         Extract Trend Persistence signal.
         Logic: Rolling return (close - close[-N])
@@ -873,7 +890,7 @@ class SpectralSpecialists:
             if self.verbose: tprint_warning(f"      ⚠️ Trend signal extraction failed: {e}")
             return None
 
-    def _extract_reversal_signal(self, df: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.Series]:
+    def _extract_reversal_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """
         Extract Mean Reversion signal.
         Logic: Stochastic oscillator proxy - (close - rolling_min)/(rolling_max - rolling_min)
@@ -910,7 +927,7 @@ class SpectralSpecialists:
             if self.verbose: tprint_warning(f"      ⚠️ Reversal signal extraction failed: {e}")
             return None
 
-    def _extract_volatility_breakout_signal(self, df: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.Series]:
+    def _extract_volatility_breakout_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """
         Extract Volatility Breakout signal.
         Logic: Rolling High-Low / Baseline.
@@ -950,7 +967,7 @@ class SpectralSpecialists:
             if self.verbose: tprint_warning(f"      ⚠️ Volatility Breakout signal extraction failed: {e}")
             return None
     
-    def _extract_inventory_signal(self, df: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.Series]:
+    def _extract_inventory_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """Extract inventory specialist signal (dealer inventory proxy) with temporal weighting."""
         if self.verbose:
             tprint_info("📈 Extracting inventory specialist signal")
@@ -983,7 +1000,7 @@ class SpectralSpecialists:
                 tprint_warning(f"      ⚠️ Inventory signal extraction failed: {e}")
             return None
     
-    def _extract_volume_signal(self, df: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.Series]:
+    def _extract_volume_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """Extract volume specialist signal with volatility normalization and AVF."""
         if self.verbose:
             tprint_info("📊 Extracting volume specialist signal")
@@ -1044,7 +1061,7 @@ class SpectralSpecialists:
                 tprint_warning(f"      ⚠️ Volume signal extraction failed: {e}")
             return None
     
-    def _extract_volatility_signal(self, df: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.Series]:
+    def _extract_volatility_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """Extract volatility specialist signal focusing on volatility changes."""
         if self.verbose:
             tprint_info("📈 Extracting volatility specialist signal")
@@ -1091,7 +1108,7 @@ class SpectralSpecialists:
                 tprint_warning(f"      ⚠️ Volatility signal extraction failed: {e}")
             return None
     
-    def _extract_information_signal(self, df: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.Series]:
+    def _extract_information_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """
         Extract 'Information' signal using Price Action & Candle Ratios.
         Replaces dead VPIN metric with Microstructure/Price Action features.
@@ -1123,7 +1140,10 @@ class SpectralSpecialists:
                 
                 # 3. Volume Verification
                 # Does volume confirm the move?
-                vol_rel = df['volume'] / (df['volume'].rolling(20).mean() + 1e-9)
+                if rolling_stats and 'vol_20' in rolling_stats:
+                    vol_rel = df['volume'] / (rolling_stats['vol_20'] + 1e-9)
+                else:
+                    vol_rel = df['volume'] / (df['volume'].rolling(20, min_periods=1).mean() + 1e-9)
                 
                 # Combined Price Action Signal
                 # Strong body + Volume = Trend
@@ -1133,8 +1153,11 @@ class SpectralSpecialists:
                 pa_signal = (trend_efficiency * direction * vol_rel) + (wick_balance * vol_rel)
                 
                 # Normalize
-                information_signal = (pa_signal - pa_signal.rolling(50).mean()) / \
-                                  (pa_signal.rolling(50).std() + 1e-9)
+                if rolling_stats and 'mean_50' in rolling_stats and 'std_50' in rolling_stats:
+                    information_signal = (pa_signal - rolling_stats['mean_50']) / (rolling_stats['std_50'] + 1e-9)
+                else:
+                    information_signal = (pa_signal - pa_signal.rolling(50, min_periods=1).mean()) / \
+                                      (pa_signal.rolling(50, min_periods=1).std() + 1e-9)
                 
                 return information_signal.fillna(0)
             
@@ -1261,7 +1284,7 @@ class SpectralSpecialists:
         except Exception:
             return 0.0
 
-    def _extract_cusum_break_signal(self, df: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.Series]:
+    def _extract_cusum_break_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """
         Extract CUSUM structural break signal.
         Detects shifts in the mean of price changes.
@@ -1299,7 +1322,7 @@ class SpectralSpecialists:
                 tprint_warning(f"      ⚠️ CUSUM signal extraction failed: {e}")
             return None
 
-    def _extract_entropy_signal(self, df: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.Series]:
+    def _extract_entropy_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """
         Extract Shannon Entropy signal.
         Measures information content / unpredictability.
@@ -1335,7 +1358,7 @@ class SpectralSpecialists:
                 tprint_warning(f"      ⚠️ Entropy signal extraction failed: {e}")
             return None
 
-    def _extract_tick_rule_signal(self, df: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.Series]:
+    def _extract_tick_rule_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """
         Extract Tick Rule proxy signal (Aggressor Flow).
         Approximates net buy/sell pressure.
@@ -1370,7 +1393,7 @@ class SpectralSpecialists:
                 tprint_warning(f"      ⚠️ Tick rule signal extraction failed: {e}")
             return None
 
-    def _extract_fractal_efficiency_signal(self, df: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.Series]:
+    def _extract_fractal_efficiency_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """
         Extract Fractal Efficiency (Kaufman) signal.
         Measures trend cleanliness/linearity.
@@ -1416,7 +1439,7 @@ class SpectralSpecialists:
                 tprint_warning(f"      ⚠️ Fractal efficiency extraction failed: {e}")
             return None
 
-    def _extract_liquidity_shock_signal(self, df: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.Series]:
+    def _extract_liquidity_shock_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """
         Extract Liquidity Shock signal (Amihud Proxy).
         Measures Price Impact per Unit of Volume.
@@ -1460,7 +1483,7 @@ class SpectralSpecialists:
                 tprint_warning(f"      ⚠️ Liquidity shock extraction failed: {e}")
             return None
 
-    def _extract_gap_signal(self, df: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.Series]:
+    def _extract_gap_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """
         Extract Exogenous Gap signal.
         Measures Overnight/Weekend information injection (Open - PrevClose).

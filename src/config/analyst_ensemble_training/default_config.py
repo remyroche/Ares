@@ -304,10 +304,12 @@ config_data = {
 
 # Configuration des niveaux de logging pour ce module
 import logging
+from src.utils.initialization_guard import init_guard
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-logger.info("✅ Configuration par défaut Analyst Ensemble Training chargée")
+if init_guard.mark_initialized("config.analyst_ensemble_training.default_config"):
+    logger.info("✅ Configuration par défaut Analyst Ensemble Training chargée")
 
 
 def get_default_config():

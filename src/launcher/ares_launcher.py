@@ -51,17 +51,6 @@ def get_mode_lookback_days(mode: str) -> int:
     return MODE_LOOKBACK_DAYS.get(mode, MODE_LOOKBACK_DAYS["light"])
 
 
-FEATURE_GENERATION_STEP_FLAGS = [
-    'feature_generation_data_validation_step',
-    'feature_generation_labeling_integration_step',
-    'feature_generation_feature_generation_step',
-    'feature_generation_period_lookback_optimization_step',
-    'feature_generation_interaction_generation_step',
-    'regime_aware_feature_interaction_generation_step',
-    'feature_generation_final_feature_selection_step',
-    'feature_generation_final_validation_step',
-]
-
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -561,16 +550,6 @@ Examples:
     global_group.add_argument('--global', action='store_true', help='Global multi-asset training mode (full execution)')
     global_group.add_argument('--global-dry', action='store_true', help='Global multi-asset training mode (blank execution)')
 
-
-    # Feature generation step shortcuts
-    feature_group = parser.add_argument_group('Feature generation step shortcuts')
-    for flag in FEATURE_GENERATION_STEP_FLAGS:
-        friendly_name = flag.replace('_', ' ')
-        feature_group.add_argument(
-            f'--{flag}',
-            action='store_true',
-            help=f"Run the '{friendly_name}' step"
-        )
     
     # Common parameters
     parser.add_argument('--symbol', type=str, help='Trading symbol (e.g., ETHUSDT)')
@@ -602,6 +581,20 @@ Examples:
         '--enable-hpo',
         action='store_true',
         help='Enable hyperparameter optimization for compatible steps (e.g., ml_risk_regime_step, unified model training)'
+    )
+
+    # Causal Surprise Sensitivity Controls
+    parser.add_argument(
+        '--causal-surprise-threshold',
+        type=float,
+        default=0.9,
+        help='Z-score threshold for individual specialist surprise detection (default: 0.9)'
+    )
+    parser.add_argument(
+        '--causal-event-threshold',
+        type=float,
+        default=0.04,
+        help='Target event density/quantile for aggregated causal events (default: 0.04)'
     )
 
     # Labeling HPO integration (used by feature_generation_meta_labeling_step)
@@ -1133,32 +1126,6 @@ async def main():
             print("Use --list-steps to see all registered steps")
             return
 
-    # Map feature generation shortcut flags to step execution
-    feature_step_flags = [flag for flag in FEATURE_GENERATION_STEP_FLAGS if getattr(args, flag, False)]
-    if feature_step_flags:
-        logger.info(f"Detected feature generation shortcuts: {feature_step_flags}")
-
-        # Only apply feature generation shortcuts if no other step was specified via positional command
-        # This prevents feature generation steps from interfering with other steps like regime_ensemble_training
-        if args.command:
-            logger.warning(f"⚠️ Ignoring feature generation shortcuts because positional command '{args.command}' was provided")
-        elif args.steps:
-            existing_steps = [s.strip() for s in args.steps.split(',') if s.strip()]
-            combined_steps = existing_steps + feature_step_flags
-            args.steps = ','.join(combined_steps)
-        elif args.step:
-            combined_steps = [args.step] + feature_step_flags
-            args.steps = ','.join(combined_steps)
-            args.step = None
-        else:
-            if len(feature_step_flags) == 1:
-                args.step = feature_step_flags[0]
-            else:
-                args.steps = ','.join(feature_step_flags)
-
-        # Reset shortcut flags to avoid re-processing later
-        for flag in feature_step_flags:
-            setattr(args, flag, False)
 
     # Check if any execution mode is specified
     has_execution_mode = any([
@@ -1182,8 +1149,8 @@ async def main():
     global_mode = getattr(args, 'global', False)
     global_dry_mode = getattr(args, 'global_dry', False)
     
-    if not args.symbol and not (global_mode or global_dry_mode) and has_execution_mode:
-        parser.error("--symbol is required when running execution modes (except for global modes)")
+    if not args.symbol and not (global_mode or global_dry_mode) and has_execution_mode and args.execution_mode not in ("small_multi_asset", "full_multi_asset"):
+        parser.error("--symbol is required when running execution modes (except for global modes and multi-asset modes)")
     
     # For global modes, validate assets list
     if (global_mode or global_dry_mode) and has_execution_mode:
@@ -1224,6 +1191,8 @@ async def main():
         config['assets'] = default_assets
         config['multi_asset_mode'] = args.execution_mode
         config['market_state_instruments'] = default_assets
+        # Set default symbol for compatibility with downstream steps
+        config['symbol'] = f"{default_assets[0]}USDT"
 
     # Optional: force recomputation of multi-stage labeling HPO (ignore cached params)
     if getattr(args, 'force_hpo', False):
@@ -1279,6 +1248,13 @@ async def main():
         config.setdefault('layer2_probe_linear_only_auc', 0.65)
         # Tighter profitability floor for L2 trials
         config.setdefault('layer2_min_pos_rate', 0.10)
+
+    # Causal Surprise Sensitivity
+    if getattr(args, 'causal_surprise_threshold', None) is not None:
+        config['surprise_threshold'] = args.causal_surprise_threshold
+    
+    if getattr(args, 'causal_event_threshold', None) is not None:
+        config['causal_event_threshold'] = args.causal_event_threshold
 
     # Optional interaction-generation configuration
     if getattr(args, 'min_interaction_mi_lift', None) is not None:

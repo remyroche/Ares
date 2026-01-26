@@ -26,6 +26,7 @@ def _lazy_import_klines():
         KLINES_STEP_AVAILABLE = False
 
 # Register steps with the global registry (lazy import to avoid circular dependency)
+from src.utils.initialization_guard import init_guard
 def _register_steps():
     """Register steps with the global registry (called after all modules are loaded)."""
     # Lazy import to ensure BaseStep is fully loaded
@@ -55,4 +56,5 @@ __all__ = ['KlinesDataProcessingPipeline']
 # Register steps after module initialization completes
 # import atexit
 # atexit.register(_register_steps)
-_register_steps()
+if init_guard.mark_initialized("training.steps.data_collection.register_steps"):
+    _register_steps()

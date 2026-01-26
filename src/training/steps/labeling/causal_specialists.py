@@ -134,10 +134,10 @@ class CausalSpecialist:
                     tprint_warning(f"   ⚠️ Skipping {self.name}: parent '{self.causal_parent}' is non-numeric")
                     self.is_fitted_ = False
                     return {"error": "non-numeric parent", "skipped": True}
-                X_train = X[[self.causal_parent]].fillna(0)
+                X_train = X[[self.causal_parent]].replace([np.inf, -np.inf], np.nan).fillna(0)
             else:
                 # Filter to numeric columns only
-                X_train = X.select_dtypes(include=[np.number]).fillna(0)
+                X_train = X.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan).fillna(0)
                 if X_train.empty:
                     tprint_warning(f"   ⚠️ Skipping {self.name}: no numeric columns")
                     self.is_fitted_ = False
@@ -145,7 +145,13 @@ class CausalSpecialist:
             
             # Handle y fillna for numeric only
             if pd.api.types.is_numeric_dtype(y):
-                y_train = y.fillna(y.mean())
+                y_train = y.replace([np.inf, -np.inf], np.nan)
+                if y_train.isna().all():
+                    tprint_warning(f"   ⚠️ Skipping {self.name}: y is all NaN/inf")
+                    self.is_fitted_ = False
+                    return {"error": "y all nan", "skipped": True}
+                y_mean = y_train.mean()
+                y_train = y_train.fillna(y_mean)
             else:
                 tprint_warning(f"   ⚠️ Skipping {self.name}: y is not numeric")
                 self.is_fitted_ = False
@@ -153,6 +159,7 @@ class CausalSpecialist:
             
             # Fit model
             self.model.fit(X_train, y_train)
+            self.is_fitted_ = True
             
             # Generate in-sample predictions
             predictions = self.model.predict(X_train)
@@ -218,11 +225,7 @@ class CausalSpecialist:
             Predictions and optionally confidence scores
         """
         try:
-            if self.model is None:
-                raise ValueError("Model not fitted. Call fit() first.")
-            
-            # Check our own fitted flag first
-            if hasattr(self, 'is_fitted_') and not self.is_fitted_:
+            if self.model is None or (hasattr(self, 'is_fitted_') and not self.is_fitted_):
                 return pd.Series(np.nan, index=X.index)
             
             # Prepare data - handle non-numeric parent columns
@@ -231,9 +234,9 @@ class CausalSpecialist:
                 if parent_col.dtype == 'object' or str(parent_col.dtype) == 'string':
                     # Non-numeric parent, cannot predict
                     return pd.Series(np.nan, index=X.index)
-                X_pred = X[[self.causal_parent]].fillna(0)
+                X_pred = X[[self.causal_parent]].replace([np.inf, -np.inf], np.nan).fillna(0)
             else:
-                X_pred = X.select_dtypes(include=[np.number]).fillna(0)
+                X_pred = X.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan).fillna(0)
                 if X_pred.empty:
                     return pd.Series(np.nan, index=X.index)
             

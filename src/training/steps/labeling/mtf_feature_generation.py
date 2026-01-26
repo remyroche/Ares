@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 # ===== NUMBA-OPTIMIZED FEATURE COMPUTATIONS =====
 
-@njit(parallel=True, fastmath=True)
+@njit(nogil=True, fastmath=True)
 def _compute_candle_geometry_numba(
     open_p: np.ndarray, 
     high: np.ndarray, 
@@ -75,7 +75,7 @@ def _compute_candle_geometry_numba(
     
     return body_to_range, shadow_asymmetry, clv, real_body
 
-@njit(parallel=True, fastmath=True)
+@njit(nogil=True, fastmath=True)
 def _compute_volatility_features_numba(
     log_ret: np.ndarray,
     short_window: int = 20,
@@ -114,7 +114,7 @@ def _compute_volatility_features_numba(
     
     return vol_short, vol_long_mean, vol_long_std, rv_z_short
 
-@njit(parallel=True, fastmath=True)
+@njit(nogil=True, fastmath=True)
 def _compute_wick_to_body_ratio_numba(
     open_p: np.ndarray,
     high: np.ndarray, 
@@ -137,7 +137,7 @@ def _compute_wick_to_body_ratio_numba(
     
     return wb_ratio
 
-@njit(parallel=True, fastmath=True)
+@njit(nogil=True, fastmath=True)
 def _compute_displacement_ratio_numba(
     open_p: np.ndarray,
     high: np.ndarray,
@@ -1308,7 +1308,20 @@ def create_meta_features(
         features[f'info_intensity_w{w}'] = _align_to_features(_norm(info_intensity, f'info_intensity_w{w}'), n_features)
         
         # Information decay: How quickly information dissipates over timeframe
-        info_decay = surprise_magnitude.rolling(w).apply(lambda x: np.exp(-np.arange(len(x)) / len(x)).sum() if len(x) > 0 else 0)
+        decay_weights = np.exp(-np.arange(w) / max(w, 1))
+        decay_weights = decay_weights / decay_weights.sum()
+
+        def _info_decay_window(values, weights=decay_weights):
+            if len(values) == 0:
+                return 0.0
+            values = np.nan_to_num(values, nan=0.0, posinf=0.0, neginf=0.0)
+            local_weights = weights[:len(values)]
+            weight_sum = local_weights.sum()
+            if weight_sum <= 0:
+                return 0.0
+            return float(np.dot(values, local_weights) / weight_sum)
+
+        info_decay = surprise_magnitude.rolling(w, min_periods=1).apply(_info_decay_window, raw=True)
         features[f'info_decay_w{w}'] = _align_to_features(_norm(info_decay, f'info_decay_w{w}'), n_features)
         
         # Cross-timeframe information ratio: Compare current to longer timeframe

@@ -792,8 +792,5 @@ def get_regime_ensemble_config(config_name: str = "default", **overrides) -> Reg
     return manager.get_config(config_name, **overrides)
 
 # Auto-initialisation
-try:
-    _global_config_manager = RegimeEnsembleTrainingConfigManager()
-except Exception as e:
-    # Fallback silencieux en cas d'erreur d'initialisation
-    _global_config_manager = None
+# Auto-initialisation removed in favor of lazy loading via get_regime_ensemble_config_manager()
+# This prevents duplicate initialization logs in multiprocessing environments

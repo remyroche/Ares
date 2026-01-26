@@ -29,6 +29,7 @@ except ImportError:
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 from ..core.vectorbt_feature_generator import VectorBTFeatureGenerator, VECTORBT_AVAILABLE
+from src.utils.initialization_guard import init_guard
 from ..core.vectorbt_optimization_mixin import VectorBTOptimizationMixin
 
 # VectorBT imports for native optimization
@@ -38,7 +39,8 @@ try:
     # from src.utils.vectorbt_compat import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
     from src.utils.vectorbt_compat import scale, rank, zscore, winsorize, clip, quantile, rolling_std, rolling_var
     VECTORBT_AVAILABLE = True  # VectorBT successfully loaded
-    logging.info("✅ VectorBT compatibility layer loaded successfully")
+    if init_guard.mark_initialized("feature_generation.volatility.vectorbt"):
+        logging.debug("✅ VectorBT compatibility layer loaded successfully")
 except ImportError as e:
     VECTORBT_AVAILABLE = False  # VectorBT not available
     vbt = None
@@ -140,7 +142,7 @@ try:
         create_default_enhanced_volatility_generators
     )
     ENHANCED_VECTORBT_AVAILABLE = True  # Enhanced VectorBT successfully loaded
-    logging.info("✅ Enhanced VectorBT volatility generators loaded successfully")
+    logging.debug("✅ Enhanced VectorBT volatility generators loaded successfully")
 except ImportError as e:
     ENHANCED_VECTORBT_AVAILABLE = False  # Enhanced VectorBT not available
     EnhancedVectorBTVolatilityGenerator = None

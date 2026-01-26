@@ -5,38 +5,9 @@ This module registers all market analysis steps for autonomous execution.
 """
 
 from src.training.steps.base_step import step_registry
-from .components.sr_clustering import SRClusteringComponent
-from .components.sr_detection import SRDetectionComponent
-from .components.sr_parameter_optimization import SRParameterOptimizationStep
-from .regime_clustering_step import RegimeClusteringStep
 from .regime_ensemble_training_step import RegimeEnsembleTrainingStep
 from .regime_feature_selector import EnhancedRegimeFeatureSelector
 
-# Optional/Heavy Dependencies
-try:
-    from .sticky_finite_hmm_clustering.sticky_finite_hmm_regime_discovery_step import StickyFiniteHMMRegimeDiscoveryStep
-except Exception:
-    StickyFiniteHMMRegimeDiscoveryStep = None
-
-# Standard Specialists
-try:
-    from .xgb_meso_regime_step import XGBMesoTrendStep
-    from .xgb_macro_regime_step import XGBMacroTrendStep
-    from .ml_risk_regime_step import MLRiskRegimeStepHMM
-    from .ml_smc_regime_step import MLSMCRegimeStep
-    from .ml_path_regime_step import MLPathRegimeStep
-    from .ml_reversion_regime_step import MLMeanReversionRegimeStep
-    from .ml_breakout_bounce_regime_step import MLBreakoutBounceRegimeStep
-    from .ml_liquidity_regime_step import MLLiquidityRegimeStep
-    from .ml_volume_force_step import MLVolumeForceStep
-    from .ml_momentum_persistence_step import MLMomentumPersistenceStep
-    from .ml_volatility_burst_step import MLVolatilityBurstStep
-    from .sr_labeling_xgb_step import SRLabelingXGBStep
-except Exception:
-    XGBMesoTrendStep = XGBMacroTrendStep = MLRiskRegimeStepHMM = MLSMCRegimeStep = \
-    MLPathRegimeStep = MLMeanReversionRegimeStep = MLBreakoutBounceRegimeStep = \
-    MLLiquidityRegimeStep = MLVolumeForceStep = MLMomentumPersistenceStep = \
-    MLVolatilityBurstStep = SRLabelingXGBStep = None
 
 # Enhanced Specialists
 try:
@@ -114,28 +85,6 @@ def register_if_exists(name, step_class):
     if step_class is not None:
         step_registry.register(name, step_class)
 
-# Core steps
-register_if_exists("sr_parameter_optimization", SRParameterOptimizationStep)
-register_if_exists("regime_clustering", RegimeClusteringStep)
-register_if_exists("regime_ensemble_training", RegimeEnsembleTrainingStep)
-register_if_exists("sr_clustering", SRClusteringComponent)
-register_if_exists("sr_detection", SRDetectionComponent)
-register_if_exists("regime_feature_selection", EnhancedRegimeFeatureSelector)
-register_if_exists("sticky_finite_hmm_regime_discovery", StickyFiniteHMMRegimeDiscoveryStep)
-
-# Standard Specialist registration
-register_if_exists("xgb_meso_regime", XGBMesoTrendStep)
-register_if_exists("xgb_macro_regime", XGBMacroTrendStep)
-register_if_exists("ml_risk_regime_step", MLRiskRegimeStepHMM)
-register_if_exists("ml_smc_regime_step", MLSMCRegimeStep)
-register_if_exists("ml_path_regime_step", MLPathRegimeStep)
-register_if_exists("ml_mean_reversion_step", MLMeanReversionRegimeStep)
-register_if_exists("ml_breakout_bounce_regime_step", MLBreakoutBounceRegimeStep)
-register_if_exists("ml_liquidity_regime_step", MLLiquidityRegimeStep)
-register_if_exists("ml_volume_force_step", MLVolumeForceStep)
-register_if_exists("ml_momentum_persistence_step", MLMomentumPersistenceStep)
-register_if_exists("ml_volatility_burst_step", MLVolatilityBurstStep)
-register_if_exists("sr_labeling_xgb", SRLabelingXGBStep)
 
 # Enhanced Specialist registration
 register_if_exists("enhanced_ml_momentum_persistence_step", EnhancedMLMomentumPersistenceStep)

@@ -327,7 +327,7 @@ def get_parabolic_sar(data: pd.DataFrame,
         
         result = pd.DataFrame({
             'psar': psar,
-            'trend': trend
+            'trend': trend,
             'af': af_values
         }, index=data.index)
         
@@ -542,8 +542,11 @@ __all__ = [
     'VECTORBT_VERSION'
 ]
 
-# Module initialization message
-if VECTORBT_AVAILABLE:
-    logger.info(f"VectorBT compatibility layer initialized (version {VECTORBT_VERSION})")
-else:
-    logger.warning("VectorBT compatibility layer initialized - VectorBT not available")
+# Module initialization message (guarded)
+from src.utils.initialization_guard import init_guard
+
+if init_guard.mark_initialized("utils.vectorbt_compat_fixed"):
+    if VECTORBT_AVAILABLE:
+        logger.info(f"VectorBT compatibility layer initialized (version {VECTORBT_VERSION})")
+    else:
+        logger.warning("VectorBT compatibility layer initialized - VectorBT not available")

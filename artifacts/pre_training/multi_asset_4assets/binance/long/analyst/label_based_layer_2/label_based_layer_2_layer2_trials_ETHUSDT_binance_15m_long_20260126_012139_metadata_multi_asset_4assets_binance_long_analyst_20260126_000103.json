@@ -1,0 +1,9 @@
+{
+  "data_type": "list",
+  "artifact_name": "layer2_trials_ETHUSDT_binance_15m_long_20260126_012139",
+  "artifact_type": "metadata",
+  "file_path": "artifacts/pre_training/multi_asset_4assets/binance/long/analyst/label_based_layer_2/label_based_layer_2_layer2_trials_ETHUSDT_binance_15m_long_20260126_012139_multi_asset_4assets_binance_long_analyst_20260126_000103.pkl",
+  "file_size": 310204,
+  "timestamp": "2026-01-26T01:21:39.571710",
+  "compression": "auto"
+}

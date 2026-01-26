@@ -2007,6 +2007,15 @@ class StepRegistry:
         if not issubclass(step_class, BaseStep):
             raise ValueError(f"Step class {step_class} must inherit from BaseStep")
         
+        existing = self._steps.get(step_name)
+        if existing is not None:
+            if existing is step_class:
+                return
+            logging.getLogger("ares.registry").warning(
+                f"Step '{step_name}' already registered with {existing}; skipping {step_class}."
+            )
+            return
+
         self._steps[step_name] = step_class
         logging.getLogger("ares.registry").info(f"Registered step: {step_name}")
     

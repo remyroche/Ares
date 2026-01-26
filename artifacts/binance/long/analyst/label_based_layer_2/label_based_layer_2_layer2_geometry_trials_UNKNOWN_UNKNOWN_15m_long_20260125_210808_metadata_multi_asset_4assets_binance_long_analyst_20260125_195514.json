@@ -1,0 +1,10 @@
+{
+  "row_count": 1,
+  "column_count": 1,
+  "artifact_name": "layer2_geometry_trials_UNKNOWN_UNKNOWN_15m_long_20260125_210808",
+  "artifact_type": "metadata",
+  "file_path": "artifacts/pre_training/multi_asset_4assets/binance/long/analyst/label_based_layer_2/label_based_layer_2_layer2_geometry_trials_UNKNOWN_UNKNOWN_15m_long_20260125_210808_multi_asset_4assets_binance_long_analyst_20260125_195514.parquet",
+  "file_size": 218735,
+  "timestamp": "2026-01-25T21:08:09.003635",
+  "compression": "auto"
+}

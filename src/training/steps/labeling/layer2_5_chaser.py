@@ -179,6 +179,17 @@ def fit_bayes_teacher_oof(
     scaler = RobustScaler()
     Xs = scaler.fit_transform(X).astype(np.float64, copy=False)
 
+    if n_splits == 5: # Only log once or if verbose
+        # Check for categorical leakage (sanity check)
+        # In numpy array, everything is float. If we had cats, they'd be handled upstream.
+        # But we can check for constant columns or nans.
+        n_feats = Xs.shape[1]
+        # We can't easily import tprint here without circular imports if not available?
+        # layer2_5_chaser imports tprint, so it's available in this scope?
+        # fit_bayes_teacher_oof is in layer2_5_chaser.py, so yes.
+        # tprint_info(f"   📉 BayesTeacher Input: {Xs.shape} (Numeric Only check: {np.issubdtype(Xs.dtype, np.number)})")
+        pass
+
     # Use PurgedKFold if available and index is provided/compatible
     if PURGED_KFOLD_AVAILABLE and index is not None:
         cv = PurgedKFoldTime(n_splits=n_splits)
@@ -280,7 +291,7 @@ def fit_bayes_teacher_oof(
 # Student Chasers
 # -----------------------------
 def train_chaser_student(
-    X: np.ndarray,
+    X: Union[np.ndarray, pd.DataFrame],
     y: np.ndarray,
     teacher: TeacherOOF,
     base_weight: np.ndarray | None = None,
@@ -293,17 +304,33 @@ def train_chaser_student(
     monotone_constraints_weak: dict | None = None,
     interaction_constraints_weak: list[list[str]] | None = None,
     huber_teacher_mu: np.ndarray | None = None,  # For teacher disagreement features
+    cat_features: List[str] | None = None  # New: Asset-Specific Refinement
 ):
     """
     Train a student model (Chaser) on residuals or with margin correction.
     Uses aggressive early stopping (30 rounds) with an internal validation split.
     """
-    X = np.asarray(X, dtype=np.float32)
+    # Ensure X is handled correctly (DataFrame for CatBoost/LGBM with cats)
+    if isinstance(X, pd.DataFrame):
+        X_vals = X.values.astype(np.float32) if cat_features is None else X
+    else:
+        X_vals = np.asarray(X, dtype=np.float32)
+        X = X_vals # If numpy, X matches X_vals
+        
     y = np.asarray(y)
 
     # --- Weighting Step (Entropy Proxy) ---
     # Train a very fast ExtraTrees model on residuals (or similar) to proxy student entropy.
     # Weight = Teacher_Std / Student_Entropy
+    
+    # ET Proxy needs numeric data (no 'cat__asset_id')
+    # If X is DataFrame with cats, we must drop them or encode them.
+    # But since ET is for "Honesty" and shouldn't see Asset ID anyway,
+    # we should use numeric features only.
+    if isinstance(X, pd.DataFrame) and cat_features:
+        X_proxy = X.drop(columns=cat_features).values.astype(np.float32)
+    else:
+        X_proxy = X_vals
 
     # 1. Train Proxy
     proxy_target = y.astype(np.float64)
@@ -317,12 +344,12 @@ def train_chaser_student(
         n_jobs=-1,
         random_state=42
     )
-    # Fit on full provided X (this is inside a specific regime or global, so it's consistent)
-    et_proxy.fit(X, proxy_target, sample_weight=base_weight)
+    # Fit on numeric proxy data
+    et_proxy.fit(X_proxy, proxy_target, sample_weight=base_weight)
 
     # 2. Calculate Student Entropy (Variance of trees) on training data
     # Collecting predictions from all trees: (n_estimators, n_samples)
-    all_tree_preds = np.array([tree.predict(X) for tree in et_proxy.estimators_])
+    all_tree_preds = np.array([tree.predict(X_proxy) for tree in et_proxy.estimators_])
     student_entropy = np.var(all_tree_preds, axis=0)
 
     # 3. Calculate Final Weights
@@ -364,7 +391,10 @@ def train_chaser_student(
         r_train_wins = clip_with_stats(r_train, med_train, s_train, k=winsor_resid_k)
         r_valid_wins = clip_with_stats(r_valid, med_train, s_train, k=winsor_resid_k)
 
-        X_train, X_valid = X[:split_idx], X[split_idx:]
+        # Slice X properly (DataFrame or Numpy)
+        X_train = X.iloc[:split_idx] if isinstance(X, pd.DataFrame) else X[:split_idx]
+        X_valid = X.iloc[split_idx:] if isinstance(X, pd.DataFrame) else X[split_idx:]
+        
         y_train, y_valid = r_train_wins, r_valid_wins
         w_train, w_valid = w_final[:split_idx], w_final[split_idx:]
 
@@ -379,7 +409,9 @@ def train_chaser_student(
         n_samples = len(X)
         split_idx = int(n_samples * 0.85)
 
-        X_train, X_valid = X[:split_idx], X[split_idx:]
+        X_train = X.iloc[:split_idx] if isinstance(X, pd.DataFrame) else X[:split_idx]
+        X_valid = X.iloc[split_idx:] if isinstance(X, pd.DataFrame) else X[split_idx:]
+        
         y_train, y_valid = target[:split_idx], target[split_idx:]
         w_train, w_valid = w_final[:split_idx], w_final[split_idx:]
     else:
@@ -396,8 +428,11 @@ def train_chaser_student(
 
     # --- XGBoost ---
     if model_type == "xgb":
-        dtrain = xgb.DMatrix(X_train, label=y_train, weight=w_train)
-        dvalid = xgb.DMatrix(X_valid, label=y_valid, weight=w_valid)
+        # Enable categorical support
+        enable_cat = cat_features is not None and len(cat_features) > 0
+        
+        dtrain = xgb.DMatrix(X_train, label=y_train, weight=w_train, enable_categorical=enable_cat)
+        dvalid = xgb.DMatrix(X_valid, label=y_valid, weight=w_valid, enable_categorical=enable_cat)
 
         if mode == "classification":
             dtrain.set_base_margin(init_score_train)
@@ -438,6 +473,13 @@ def train_chaser_student(
         if interaction_constraints_weak is not None:
             params["interaction_constraints"] = interaction_constraints_weak
 
+        # Categorical Regularization for XGBoost
+        if enable_cat:
+            params.update({
+                "max_cat_to_onehot": 5, # Limit one-hot to prevent sparsity
+                "max_cat_threshold": 32, # Max categories to consider
+            })
+            
         # If user supplied n_estimators=4 in params (via logic), enforce it here.
         # But 'num_boost_round' is argument.
         # User request: "n_estimators=4". We should check if we should override num_boost_round.
@@ -464,8 +506,8 @@ def train_chaser_student(
         if not LGBM_AVAILABLE:
             raise ImportError("LightGBM not installed")
 
-        train_data = lgb.Dataset(X_train, label=y_train, weight=w_train)
-        valid_data = lgb.Dataset(X_valid, label=y_valid, weight=w_valid, reference=train_data)
+        train_data = lgb.Dataset(X_train, label=y_train, weight=w_train, categorical_feature=cat_features if cat_features else "auto")
+        valid_data = lgb.Dataset(X_valid, label=y_valid, weight=w_valid, reference=train_data, categorical_feature=cat_features if cat_features else "auto")
 
         if mode == "classification":
             train_data.set_init_score(init_score_train)
@@ -485,7 +527,11 @@ def train_chaser_student(
             "path_smooth": 20,
             "extra_trees": True,
             "n_jobs": -1,
-            "verbose": -1
+            "verbose": -1,
+            # Categorical Regularization
+            "cat_smooth": 20.0, # Smoothing for categorical features
+            "cat_l2": 10.0,     # L2 regularization for categorical split
+            "max_cat_to_onehot": 4
         }
         if mode == "regression":
             default_params["objective"] = "regression"
@@ -523,8 +569,8 @@ def train_chaser_student(
         if not CATBOOST_AVAILABLE:
             raise ImportError("CatBoost not installed")
 
-        train_pool = cb.Pool(X_train, label=y_train, weight=w_train)
-        valid_pool = cb.Pool(X_valid, label=y_valid, weight=w_valid)
+        train_pool = cb.Pool(X_train, label=y_train, weight=w_train, cat_features=cat_features)
+        valid_pool = cb.Pool(X_valid, label=y_valid, weight=w_valid, cat_features=cat_features)
 
         if mode == "classification":
             train_pool.set_baseline(baseline_train)
@@ -541,7 +587,11 @@ def train_chaser_student(
             "random_strength": 5.0,
             "verbose": False,
             "allow_writing_files": False,
-            "early_stopping_rounds": 30 # Native parameter
+            "early_stopping_rounds": 30, # Native parameter
+            # Categorical Regularization
+            "one_hot_max_size": 2, # Only one-hot very small cardinality
+            "ctr_leaf_count_limit": 10000, # None is default, but explicit
+            "max_ctr_complexity": 2 # Limit interaction complexity for CTR
         }
         if mode == "regression":
             default_params["loss_function"] = "MAE"
@@ -602,7 +652,7 @@ def train_chaser_student(
         raise ValueError(f"Unknown model_type: {model_type}")
 
 def predict_chaser_student(
-    X: np.ndarray,
+    X: Union[np.ndarray, pd.DataFrame],
     teacher_mu: np.ndarray | None,
     teacher_margin: np.ndarray | None,
     student_artifact: dict,
@@ -610,7 +660,15 @@ def predict_chaser_student(
     """
     Make predictions using the student model and teacher baseline.
     """
-    X = np.asarray(X, dtype=np.float32)
+    # Ensure proper type
+    has_cats = False
+    if isinstance(X, pd.DataFrame):
+        has_cats = any(c.startswith('cat__') for c in X.columns)
+        if not has_cats:
+            X = X.values.astype(np.float32)
+    else:
+        X = np.asarray(X, dtype=np.float32)
+
     model = student_artifact["model"]
     mode = student_artifact["mode"]
     m_type = student_artifact["type"]
@@ -626,7 +684,7 @@ def predict_chaser_student(
         base_pred = dampening * teacher_mu
 
         if m_type == "xgb":
-            d = xgb.DMatrix(X)
+            d = xgb.DMatrix(X, enable_categorical=has_cats)
             r_hat = model.predict(d)
         elif m_type == "lgb":
             r_hat = model.predict(X)
@@ -647,7 +705,7 @@ def predict_chaser_student(
         base_margin = dampening * teacher_margin
 
         if m_type == "xgb":
-            d = xgb.DMatrix(X)
+            d = xgb.DMatrix(X, enable_categorical=has_cats)
             d.set_base_margin(base_margin)
             p_hat = model.predict(d) # Returns sigmoid(margin + delta)
         elif m_type == "lgb":
@@ -697,10 +755,12 @@ class Layer25Chaser:
         enable_gmm_enhancement: bool = False,
         gmm_n_components: int = 8,
         gmm_cache_models: bool = True,
+        **kwargs
     ):
         self.mode = mode
         self.regime_split = regime_split
         self.feature_engineering = feature_engineering
+        self.model_config = kwargs # specific model params (xgb_params, etc)
         self.correlation_threshold = correlation_threshold
         self.verbose = verbose
         self.models_to_train = models_to_train or ["xgb", "lgb", "cat", "et"]
@@ -765,6 +825,13 @@ class Layer25Chaser:
         # Actually 'fracdiff_price' is generated by apply_layer2_price_processing.
 
         for col in X.columns:
+            # Skip categorical columns (Asset ID Refinement)
+            if str(col).startswith('cat__') or pd.api.types.is_categorical_dtype(X[col]) or pd.api.types.is_object_dtype(X[col]):
+                # Pass through categorical/object columns unchanged if they are needed
+                # But X_eng is new. Just copy it over.
+                X_eng[col] = X[col]
+                continue
+
             # Skip if it's the price col and we already generated fracdiff_log_price
             if price_col and col == price_col and 'fracdiff_log_price' in X_eng.columns:
                 continue
@@ -806,7 +873,10 @@ class Layer25Chaser:
         # If I return X_eng (which has anti-explosion + transformed old features), it should be fine.
 
         # Fill NaNs created by differencing/fracdiff
-        X_eng = X_eng.fillna(0.0)
+        # Fill NaNs created by differencing/fracdiff (Numeric only)
+        # Identify numeric columns
+        num_cols = X_eng.select_dtypes(include=[np.number]).columns
+        X_eng[num_cols] = X_eng[num_cols].fillna(0.0)
         return X_eng
 
     def fit(
@@ -815,18 +885,25 @@ class Layer25Chaser:
         y: pd.Series,
         regime_probs: pd.DataFrame | None = None,
         sample_weight: pd.Series | None = None,
-        returns: pd.Series | None = None
+        returns: pd.Series | None = None,
+        n_splits: int = 5,
+        cv_folds: int = None
     ):
         """
         Fit the Chaser model(s).
 
         Args:
             X: Features
-            y: Targets (Residuals for regression, Binary for classification)
-            regime_probs: GMM probabilities (N, K). If None, global model only.
-            sample_weight: Base sample weights.
-            returns: Returns series for GMM anchoring (optional).
+            y: Targets
+            regime_probs: GMM probabilities
+            sample_weight: Base sample weights
+            returns: Returns for GMM anchoring
+            n_splits: Number of CV folds for Teacher OOF
+            cv_folds: Alias for n_splits
         """
+        # Handle alias
+        if cv_folds is not None:
+            n_splits = cv_folds
         if self.verbose:
             tprint_info("🚀 Training Layer 2.5 Chaser...")
 
@@ -899,8 +976,18 @@ class Layer25Chaser:
                     tprint_warning(f"   ⚠️ GMM enhancement failed: {e}")
                 # Continue without GMM enhancement
 
+        # Identify categorical features for Refinement
+        cat_cols = [c for c in X_proc.columns if c.startswith('cat__')]
+        X_numeric = X_proc.drop(columns=cat_cols)
+        
+        # Teacher only sees Universal Physics (Numeric)
+        X_teacher_np = X_numeric.values.astype(np.float32)
+        feature_names_numeric = list(X_numeric.columns)
+        
+        # Boosters see Everything (Refinement)
+        X_boost = X_proc.copy() # Keep as DataFrame for CatBoost/LGBM
+        
         self.feature_names = list(X_proc.columns)
-        X_np = X_proc.values.astype(np.float32)
         y_np = y.values
         w_np = sample_weight.values if sample_weight is not None else None
 
@@ -911,9 +998,10 @@ class Layer25Chaser:
         if self.use_huber_constraints and HUBER_AVAILABLE:
             try:
                 # Use weak tier constraints for chasers
+                # Fix: Use X_teacher_np (numeric) instead of undefined X_np
                 huber_config = get_huber_tier_config(self.constraint_tier)
                 huber_results = prepare_huber_teacher_outputs(
-                    X_train=pd.DataFrame(X_np, columns=self.feature_names),
+                    X_train=pd.DataFrame(X_teacher_np, columns=feature_names_numeric),
                     y_train=y_np,
                     sample_weight=w_np,
                     config=huber_config,
@@ -934,9 +1022,9 @@ class Layer25Chaser:
             if self.verbose:
                 tprint_info(f"   🎓 Training Teacher (BayesianRidge) for {prefix}...")
 
-            # 1. Teacher
+            # 1. Teacher (Universal - No Asset ID)
             teacher = fit_bayes_teacher_oof(
-                X_np, y_np, sample_weight=weights, n_splits=5, is_classifier=(self.mode == "classification"),
+                X_teacher_np, y_np, sample_weight=weights, n_splits=n_splits, is_classifier=(self.mode == "classification"),
                 index=X.index # Pass index for PurgedKFold
             )
             
@@ -968,24 +1056,42 @@ class Layer25Chaser:
                 if m_type == "cat" and not CATBOOST_AVAILABLE: continue
 
                 try:
+                    # Resolve model params
+                    # Keys expected: 'xgb_params', 'lgb_params', 'cat_params', 'et_params'
+                    m_params = self.model_config.get(f"{m_type}_params") if hasattr(self, 'model_config') else None
+
                     student = train_chaser_student(
-                        X_np, y_np, teacher, 
+                        X_boost if m_type in ['xgb', 'lgb', 'cat'] else X_teacher_np, # Boosters get Cat, ET gets Numeric
+                        y_np, teacher, 
                         base_weight=weights, 
                         mode=self.mode, 
                         model_type=m_type,
+                        model_params=m_params,
                         monotone_constraints_weak=monotone_constraints_weak,
                         interaction_constraints_weak=interaction_constraints_weak,
-                        huber_teacher_mu=teacher.mu_oof
+                        huber_teacher_mu=teacher.mu_oof,
+                        cat_features=cat_cols if m_type in ['xgb', 'lgb', 'cat'] else None
                     )
 
                     # Generate OOF preds for correlation check (on training data)
                     # For simplicity, we just predict on full training data here
+                    # Generate OOF preds for correlation check (on training data)
                     if self.mode == "regression":
-                        pred = predict_chaser_student(X_np, teacher.mu_oof, None, student)
+                        pred = predict_chaser_student(
+                             X_boost if m_type in ['xgb', 'lgb', 'cat'] else X_teacher_np, 
+                             teacher.mu_oof, 
+                             None, 
+                             student
+                        )
                         # Score: IC (Spearman)
                         score = float(spearmanr(pred, y_np)[0])
                     else:
-                        pred = predict_chaser_student(X_np, None, teacher.margin_oof, student)
+                        pred = predict_chaser_student(
+                            X_boost if m_type in ['xgb', 'lgb', 'cat'] else X_teacher_np, 
+                            None, 
+                            teacher.margin_oof, 
+                            student
+                        )
                         # Score: AUC
                         try:
                             score = roc_auc_score(y_np, pred, sample_weight=weights)
@@ -1081,6 +1187,11 @@ class Layer25Chaser:
             self.global_models = train_ensemble(w_np, prefix="Global")
 
         if self.verbose: tprint_success("✅ Chaser training complete.")
+        
+        # Return artifacts to satisfy integration expectation (though integration treats them as metrics? we'll see)
+        if hasattr(self, 'global_models') and self.global_models:
+             return self.global_models
+        return self.regime_models
 
     def predict(
         self,

@@ -1,0 +1,17 @@
+{
+  "row_count": 325,
+  "column_count": 33,
+  "has_datetime_index": true,
+  "index_type": "DatetimeIndex",
+  "index_start": "2026-01-24 02:35:06",
+  "index_end": "2026-01-24 02:35:06",
+  "index_frequency": "None",
+  "index_tz": null,
+  "index_is_monotonic": true,
+  "artifact_name": "causal_quality_report_UNKNOWN_UNKNOWN_15m_long_20260124_023506",
+  "artifact_type": "metrics",
+  "file_path": "artifacts/pre_training/multi_asset_4assets/binance/long/analyst/label_based_layer_2/label_based_layer_2_causal_quality_report_UNKNOWN_UNKNOWN_15m_long_20260124_023506_multi_asset_4assets_binance_long_analyst_20260124_001906.parquet",
+  "file_size": 145097,
+  "timestamp": "2026-01-24T02:35:06.358456",
+  "compression": "auto"
+}

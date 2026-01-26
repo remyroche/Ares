@@ -98,20 +98,45 @@ class GraphicalLassoFilter:
             if self.verbose:
                 tprint_info(f"🛡️ Graphical Lasso Filter: Validating {sum(len(v) for v in causal_graph.values())} edges...")
 
-            # 1. Standardize
-            scaler = StandardScaler()
-            X_scaled = scaler.fit_transform(df)
-            col_map = {name: i for i, name in enumerate(df.columns)}
+            # 1. Standardize using RobustScaler for financial data
+            from sklearn.preprocessing import RobustScaler
+            
+            # Additional robustness: drop duplicates if any (collinear features break Glasso)
+            df_dedup = df.T.drop_duplicates().T
+            if df_dedup.shape[1] < 2:
+                return causal_graph
+                
+            scaler = RobustScaler()
+            X_scaled = scaler.fit_transform(df_dedup)
+            
+            # Clip extreme values to prevent numerical explosion
+            X_scaled = np.clip(X_scaled, -10, 10)
+            
+            col_map = {name: i for i, name in enumerate(df_dedup.columns)}
 
             # 2. Estimate Precision Matrix (Glasso)
             try:
-                # Max iter increased for convergence
-                model = GraphicalLassoCV(cv=3, n_jobs=-1, assume_centered=True, max_iter=500)
-                model.fit(X_scaled)
+                # Max iter increased for convergence, with error suppression
+                with warnings.catch_warnings(), np.errstate(all='ignore'):
+                    warnings.filterwarnings("ignore", category=ConvergenceWarning)
+                    warnings.filterwarnings("ignore", category=RuntimeWarning)
+                    model = GraphicalLassoCV(
+                        cv=3,
+                        n_jobs=1,
+                        assume_centered=True,
+                        max_iter=2000,
+                        tol=1e-3
+                    )
+                    model.fit(X_scaled)
                 precision_matrix = model.precision_
+                
+                # Validation
+                if not np.isfinite(precision_matrix).all() or np.isnan(precision_matrix).any():
+                    raise RuntimeError("Non-finite precision matrix")
+                    
             except Exception as e:
                 if self.verbose:
-                    tprint_warning(f"   ⚠️ GraphicalLasso failed ({e}), falling back to EmpiricalCovariance")
+                    tprint_warning(f"   ⚠️ GraphicalLasso failed/diverged ({e}), falling back to EmpiricalCovariance")
                 model = EmpiricalCovariance(assume_centered=True)
                 model.fit(X_scaled)
                 precision_matrix = model.precision_

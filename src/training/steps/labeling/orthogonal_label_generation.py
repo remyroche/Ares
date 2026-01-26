@@ -67,10 +67,13 @@ ROLLING_Q_WINDOW = 500
 ROLLING_Q_THRESHOLDS = (0.96, 0.98)
 
 def _quantiles_from_threshold(threshold: float, delta: float = 0.02) -> Tuple[float, float]:
-    return ROLLING_Q_THRESHOLDS
+    from scipy.stats import norm
+    # Convert sigma threshold to quantile (one-sided)
+    q1 = norm.cdf(threshold)
+    return (q1, q1 + delta)
 
 def _quantiles_from_quantile(quantile: float, delta: float = 0.02) -> Tuple[float, float]:
-    return ROLLING_Q_THRESHOLDS
+    return (quantile, quantile + delta)
 
 # Import causal framework modules for surprise events
 try:
@@ -285,7 +288,8 @@ GENERATOR_PARAM_NAMES = {
     'MicrostructureImbalanceEvents': ['threshold', 'window'],
     'ExhaustionSpecialistEvents': ['threshold', 'window'],
     'VolatilityInnovationSpecialistEvents': ['threshold'],
-    'DispersionSpecialistEvents': ['threshold']
+    'DispersionSpecialistEvents': ['threshold'],
+    'ContinuousPredictorEvents': ['threshold', 'predictor_col']
 }
 
 # Generators that require the full DataFrame instead of just Series
@@ -310,7 +314,10 @@ DF_REQUIRED_CLASSES = (
     'BarPressureEvents',
     'ExhaustionSpecialistEvents',
     'VolatilityInnovationSpecialistEvents',
-    'DispersionSpecialistEvents'
+    'DispersionSpecialistEvents',
+    'ContinuousPredictorEvents',
+    'VolatilityExpansionEvents',
+    'VolatilityContractionEvents'
 )
 
 
@@ -1307,16 +1314,21 @@ def compute_dominance_labels(
 
 
     # Map events to integers
-    # Normalize TZ to ensure matching
-    if price.index.tz is not None:
-        price_idx = price.index.tz_localize(None)
-    else:
-        price_idx = price.index
-        
-    if events.tz is not None:
-        events_norm = events.tz_localize(None)
-    else:
-        events_norm = events
+    # Normalize TZ/MultiIndex to ensure matching
+    price_idx = price.index
+    if isinstance(price_idx, pd.MultiIndex):
+        price_idx = price_idx.get_level_values(0)
+    if getattr(price_idx, "tz", None) is not None:
+        price_idx = price_idx.tz_localize(None)
+
+    events_norm = events
+    if isinstance(events_norm, pd.MultiIndex):
+        events_norm = events_norm.get_level_values(0)
+    events_norm = pd.to_datetime(events_norm)
+    if getattr(events_norm, "tz", None) is not None:
+        events_norm = events_norm.tz_localize(None)
+    if not isinstance(events_norm, pd.DatetimeIndex):
+        events_norm = pd.DatetimeIndex(events_norm)
 
     event_idxs = price_idx.get_indexer(events_norm)
     
@@ -1330,6 +1342,10 @@ def compute_dominance_labels(
              logger.warning(f"DEBUG: Price head: {price.index[:3]}")
              logger.warning(f"DEBUG: Events head: {events[:3]}")
          except: pass
+         tprint_warning(
+             "⚠️ Dominance labels: all event indices missing after alignment; "
+             f"events={len(events)}, price_len={len(price_idx)}"
+         )
 
     valid_mask = (event_idxs != -1) & (event_idxs < (n_bars - horizon))
     valid_idxs = event_idxs[valid_mask]
@@ -1345,6 +1361,10 @@ def compute_dominance_labels(
              logger.warning(f"DEBUG: Price[0]: {price.index[0]} type={type(price.index[0])}")
              logger.warning(f"DEBUG: Price[-1]: {price.index[-1]}")
              logger.warning(f"DEBUG: n_bars={n_bars}, horizon={horizon}")
+        tprint_warning(
+            "⚠️ Dominance labels: no valid events after bounds filtering; "
+            f"events={len(events)}, horizon={horizon}"
+        )
         return tuple([pd.Series(dtype=float)] * 6)
 
     # 3. Compute MFE/MAE & Hits (Numba Optimized)
@@ -3029,7 +3049,8 @@ def get_signal_specific_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_l
             z.fillna(0.0),
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
-            return_details=True
+            return_details=True,
+            min_coverage=0.04
         )
         intensity = details['weight'].reindex(events).fillna(0.0)
     elif family == 'VOLATILITY_SPECIALIST':
@@ -3038,11 +3059,45 @@ def get_signal_specific_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_l
         vol_change = vol / (vol.shift(1) + 1e-9)
         z = (vol_change - vol_change.rolling(200).mean()) / (vol_change.rolling(200).std() + 1e-9)
         q1, q2 = _quantiles_from_quantile(0.95)
+        # Use absolute z-scores for the combined specialist (backwards compat)
         details = detect_rolling_quantile_surprises(
-            z.fillna(0.0),
+            z.abs().fillna(0.0),
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
-            return_details=True
+            return_details=True,
+            min_coverage=0.04
+        )
+        intensity = details['weight'].reindex(events).fillna(0.0)
+    elif family == 'VOLATILITY_EXPANSION':
+        # EXPANSION: Only positive z-scores (risk INCREASING)
+        ret = df['close'].pct_change()
+        vol = ret.rolling(20).std()
+        vol_change = vol / (vol.shift(1) + 1e-9)
+        z = (vol_change - vol_change.rolling(200).mean()) / (vol_change.rolling(200).std() + 1e-9)
+        z_expansion = z.clip(lower=0.0)  # Clamp negative to 0
+        q1, q2 = _quantiles_from_quantile(0.95)
+        details = detect_rolling_quantile_surprises(
+            z_expansion.fillna(0.0),
+            window=ROLLING_Q_WINDOW,
+            quantiles=(q1, q2),
+            return_details=True,
+            min_coverage=0.04
+        )
+        intensity = details['weight'].reindex(events).fillna(0.0)
+    elif family == 'VOLATILITY_CONTRACTION':
+        # CONTRACTION: Only negative z-scores (risk DECREASING), flip sign for magnitude
+        ret = df['close'].pct_change()
+        vol = ret.rolling(20).std()
+        vol_change = vol / (vol.shift(1) + 1e-9)
+        z = (vol_change - vol_change.rolling(200).mean()) / (vol_change.rolling(200).std() + 1e-9)
+        z_contraction = (-z).clip(lower=0.0)  # Flip sign, clamp negative to 0
+        q1, q2 = _quantiles_from_quantile(0.95)
+        details = detect_rolling_quantile_surprises(
+            z_contraction.fillna(0.0),
+            window=ROLLING_Q_WINDOW,
+            quantiles=(q1, q2),
+            return_details=True,
+            min_coverage=0.04
         )
         intensity = details['weight'].reindex(events).fillna(0.0)
     elif family == 'VOLUME_SPECIALIST':
@@ -3064,7 +3119,8 @@ def get_signal_specific_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_l
             z.fillna(0.0),
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
-            return_details=True
+            return_details=True,
+            min_coverage=0.04
         )
         intensity = details['weight'].reindex(events).fillna(0.0)
     elif family == 'INFORMATION_SPECIALIST':
@@ -3076,7 +3132,8 @@ def get_signal_specific_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_l
             autocorr.fillna(0.0),
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
-            return_details=True
+            return_details=True,
+            min_coverage=0.04
         )
         intensity = details['weight'].reindex(events).fillna(0.0)
     elif family == 'MOMENTUM_DECAY_SPECIALIST':
@@ -3095,7 +3152,8 @@ def get_signal_specific_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_l
             score.fillna(0.0),
             window=max(ROLLING_Q_WINDOW, 50 * 5),
             quantiles=(q1, q2),
-            return_details=True
+            return_details=True,
+            min_coverage=0.04
         )
         intensity = details['weight'].reindex(events).fillna(0.0)
     elif family == 'FRACTAL_EFFICIENCY':
@@ -3112,7 +3170,8 @@ def get_signal_specific_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_l
             pd.Series(np.abs(eff_z), index=df.index),
             window=max(ROLLING_Q_WINDOW, 50 * 5),
             quantiles=(q1, q2),
-            return_details=True
+            return_details=True,
+            min_coverage=0.04
         )
         intensity = details['weight'].reindex(events).fillna(0.0)
     elif family == 'GAP_SPECIALIST':
@@ -3130,7 +3189,8 @@ def get_signal_specific_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_l
             pd.Series(np.abs(gap_z), index=df.index),
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
-            return_details=True
+            return_details=True,
+            min_coverage=0.04
         )
         intensity = details['weight'].reindex(events).fillna(0.0)
     elif family == 'LIQUIDITY_SHOCK':
@@ -3146,9 +3206,61 @@ def get_signal_specific_weights(df: pd.DataFrame, events: pd.DatetimeIndex, sr_l
             pd.Series(np.abs(ill_z), index=df.index),
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
-            return_details=True
+            return_details=True,
+            min_coverage=0.04
         )
         intensity = details['weight'].reindex(events).fillna(0.0)
+
+    # --- Generic Handler for Predictor/Cross-Asset Families ---
+    elif any(family.startswith(p) for p in ['CROSS_ASSET_', 'MARKET_STATE_', 'META_', 'SURPRISE_Z_', 'FLOW_PRESSURE_', 'MULTI_HORIZON_']):
+        # Attempt to reconstruct the score from column if possible, or fallback to default weights
+        # Logic: Extract column name if present in family name, else use index based on event density?
+        # But 'events' here are just timestamps.
+        
+        # Parse column name from family (similar to generation logic)
+        col_name = None
+        if family.startswith('CROSS_ASSET_SURPRISE_'):
+             col_name = family[len('CROSS_ASSET_SURPRISE_'):].lower()
+             # Handling double underscores or single underscores in loose matching
+             # Logic in orthogonal label gen was: f"{family}_{col.upper()}"
+        elif family.startswith('MARKET_STATE_'):
+             col_name = family[len('MARKET_STATE_'):].lower()
+        elif family.startswith('META_'):
+             col_name = family[len('META_'):].lower()
+             
+        # If we can identify the column in df, we re-run detection to get weights
+        target_col = None
+        if col_name:
+             # Try exact match or match with prefixes
+             # If col_name came from .upper(), we need to check original case in df.
+             # df columns might be lowercase or camelCase.
+             # We try case-insensitive match.
+             candidates = [c for c in df.columns if c.lower() == col_name or c.lower().endswith(col_name)]
+             if candidates:
+                 target_col = candidates[0]
+        
+        if target_col and target_col in df.columns:
+             # Re-run detection on the source column
+             # Predictors usually use 'threshold' param. We default to something reasonable.
+             # ContinuousPredictorEvents uses q1=0.96, q2=0.98 by default if threshold not enabled.
+             q1, q2 = 0.96, 0.98
+             details = detect_rolling_quantile_surprises(
+                df[target_col].abs(),
+                window=2000, # Matching default in ContinuousPredictorEvents
+                quantiles=(q1, q2),
+                return_details=True,
+                min_coverage=0.04
+             )
+             intensity = details['weight'].reindex(events).fillna(0.0)
+        else:
+             # Fallback if column not found: Assign high weight efficiently
+             # If we can't determine level, we might assume Level 2 (Weight=1.0 -> Intensity=0.0 or 1.0?)
+             # Weights are (1 + intensity) * uniqueness.
+             # Level 2 typically gets weight=1.0 (intensity=0.0 in some implementations? No, details['weight'] is usually > 0)
+             # In detect_rolling_quantile_surprises: Level 2 -> weight 1.0, Level 3 -> weight 1.5.
+             # So if we default intensity to 0.0, we get weight 1.0 (Level 2 equivalent).
+             # This is acceptable fallback.
+             pass
 
     u_w = get_uniqueness_weight(events, df.index)
 
@@ -4878,9 +4990,21 @@ class ContinuousPredictorEvents(BaseEventGenerator):
     """
     def generate(self, df: pd.DataFrame, tracker: Optional[Any] = None, **params) -> pd.DatetimeIndex:
         predictor_col = params.get('predictor_col')
-        # Use quantiles from params if provided, otherwise default to causal surprise standards
-        q1 = params.get('q1', 0.96)
-        q2 = params.get('q2', 0.98)
+        
+        # Handle threshold (z-score) vs direct quantiles
+        if 'threshold' in params:
+            threshold = params['threshold']
+            try:
+                q1, q2 = _quantiles_from_threshold(threshold)
+            except NameError:
+                # Fallback implementation if helper not in scope
+                from scipy import stats
+                q1 = float(stats.norm.cdf(threshold))
+                q2 = float(stats.norm.cdf(threshold + 0.5)) # Approximation for higher tier
+        else:
+            q1 = params.get('q1', 0.96)
+            q2 = params.get('q2', 0.98)
+            
         window = params.get('window', 2000)
         
         if not predictor_col or predictor_col not in df.columns:
@@ -4893,7 +5017,8 @@ class ContinuousPredictorEvents(BaseEventGenerator):
                 df[predictor_col].abs(),
                 window=window,
                 quantiles=(q1, q2),
-                return_details=True
+                return_details=True,
+                min_coverage=0.04
             )
             # Level 2 = High Surprise, Level 3 = Extreme Surprise.
             # We return both as events to the orthogonal race.
@@ -5044,7 +5169,9 @@ def orthogonal_label_generation(
         causal_generators = [
             ('CAUSAL_SURPRISE', CausalSurpriseEvents()),
             ('VOLUME_SPECIALIST', VolumeSpecialistEvents()),
-            ('VOLATILITY_SPECIALIST', VolatilitySpecialistEvents()),
+            ('VOLATILITY_SPECIALIST', VolatilitySpecialistEvents()),  # Keep original for backwards compat
+            ('VOLATILITY_EXPANSION', VolatilityExpansionEvents()),    # NEW: Detects risk INCREASING
+            ('VOLATILITY_CONTRACTION', VolatilityContractionEvents()),  # NEW: Detects risk DECREASING
             ('LIQUIDITY_SPECIALIST', LiquiditySpecialistEvents()),
             ('INFORMATION_SPECIALIST', InformationSpecialistEvents()),
             ('INVENTORY_SPECIALIST', InventorySpecialistEvents()),
@@ -5055,15 +5182,30 @@ def orthogonal_label_generation(
         ]
 
         # --- KEY FIX: Add Cross-Asset / Market State generators if columns exist ---
-        special_prefixes = ('ms__', 'ca__', 'meta__')
-        cross_asset_cols = [c for c in df_full.columns if c.startswith(special_prefixes)]
+        # Relaxed check: ca_ or ca__ (single or double underscore)
+        special_prefixes = ('ms_', 'ca_', 'meta_') 
+        # Debug: Print columns to verify availability
+        tprint_info(f"   🔍 Checking DataFrame columns for special prefixes: {special_prefixes}")
+        # tprint_info(f"   📊 Available columns (first 20): {list(df_full.columns)[:20]}")
+        
+        cross_asset_cols = [c for c in df_full.columns if any(c.startswith(p) for p in special_prefixes)]
+        
         if cross_asset_cols:
             tprint_info(f"   🌐 Layer 2: Found {len(cross_asset_cols)} cross-asset/special features. Adding to orthogonal race.")
             for col in cross_asset_cols:
-                family = "CROSS_ASSET_SURPRISE" if col.startswith('ca__') else "MARKET_STATE" if col.startswith('ms__') else "META"
+                # Determine family based on prefix
+                if col.startswith('ca_'):
+                    family = "CROSS_ASSET_SURPRISE"
+                elif col.startswith('ms_'):
+                    family = "MARKET_STATE"
+                else: 
+                    family = "META"
+                
                 gen_name = f"{family}_{col.upper()}"
                 # We use the column name as its own unique family to ensure it gets picked up individually
                 causal_generators.append((gen_name, ContinuousPredictorEvents()))
+        else:
+             tprint_warning(f"   ⚠️ No cross-asset/special columns found matching {special_prefixes}")
         
         for gen_name, gen_class in causal_generators:
             tprint_info(f"      • {gen_name}: {type(gen_class).__name__}")
@@ -5082,13 +5224,15 @@ def orthogonal_label_generation(
         if fam.startswith(('CROSS_ASSET_', 'MARKET_STATE_', 'META_')):
             family_config = param_grids.get('default_continuous_grid', {})
             # We need to inject the predictor_col into params
-            col_name = fam.split('_', 2)[-1].lower() if '_SURPRISE_' not in fam else fam.split('_', 3)[-1].lower()
-            # Correctly extract column name from gen_name
-            # If gen_name = CROSS_ASSET_SURPRISE_CA__ETHPOS_SURPRISE
-            # Split by '_' and take parts after the family prefix
-            parts = fam.split('_')
-            prefix_len = 3 if parts[1] == 'SURPRISE' else 2
-            col_name = '_'.join(parts[prefix_len:]).lower()
+            if fam.startswith('CROSS_ASSET_SURPRISE_'):
+                col_name = fam[len('CROSS_ASSET_SURPRISE_'):].lower()
+            elif fam.startswith('MARKET_STATE_'):
+                col_name = fam[len('MARKET_STATE_'):].lower()
+            elif fam.startswith('META_'):
+                col_name = fam[len('META_'):].lower()
+            else:
+                parts = fam.split('_')
+                col_name = '_'.join(parts[2:]).lower() if len(parts) > 2 else fam.lower()
             
             base_params = []
             for bp in family_config.get('base_params', []):
@@ -5161,6 +5305,14 @@ def orthogonal_label_generation(
     
     # 3. Process Candidates (Generate & Gate)
     candidates = []
+    # Extract regime posteriors early for pruning (soft conditioning)
+    regime_posteriors = None
+    if 'regime_0' in df_full.columns:
+        regime_cols = [c for c in df_full.columns if c.startswith('regime_')]
+        if regime_cols:
+            regime_posteriors = df_full[regime_cols]
+            tprint_info(f"🔍 Found {len(regime_cols)} regime posterior columns for soft conditioning")
+
     # 4. Pruning Phase: Validate TP:SL Grid on Central Parameters
     # -------------------------------------------------------------
     tprint_info("✂️ Starting Pruning Phase: Validating TP:SL configs on central parameters...")
@@ -5304,8 +5456,7 @@ def orthogonal_label_generation(
         vol_series = price.pct_change().rolling(96).std().bfill().fillna(0.01)
 
     # Extract regime posteriors if available for soft conditioning (Before parallel sweep)
-    regime_posteriors = None
-    if 'regime_0' in df_full.columns:
+    if regime_posteriors is None and 'regime_0' in df_full.columns:
         regime_cols = [c for c in df_full.columns if c.startswith('regime_')]
         if regime_cols:
             regime_posteriors = df_full[regime_cols]
@@ -5801,7 +5952,7 @@ class VolumeSpecialistEvents(BaseEventGenerator):
     Order Imbalance captures informed trading direction, not just volume magnitude.
     """
     def generate(self, df: pd.DataFrame, tracker: Optional[Any] = None, **params) -> pd.DatetimeIndex:
-        threshold = params.get('threshold', 2.7)
+        threshold = params.get('threshold', 1.75)  # Tuned for ~4% coverage
         window = params.get('window', 20)
         
         try:
@@ -5869,7 +6020,8 @@ class VolumeSpecialistEvents(BaseEventGenerator):
             score_series.fillna(0.0),
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
-            return_details=True
+            return_details=True,
+            min_coverage=0.04  # Enforce ~4% coverage
         )
         return df.index[details['level'] >= 2.0]
 
@@ -5882,8 +6034,8 @@ class VolatilitySpecialistEvents(BaseEventGenerator):
     Avoids self-referential quantile thresholding that suppressed event counts.
     """
     def generate(self, df: pd.DataFrame, tracker: Optional[Any] = None, **params) -> pd.DatetimeIndex:
-        # Dynamic threshold: top 5% by default, or user specific
-        quantile_threshold = params.get('quantile', 0.95)
+        # Dynamic threshold: top 4% target
+        quantile_threshold = params.get('quantile', 0.96)
         window = params.get('window', 20)
         
         try:
@@ -5897,7 +6049,7 @@ class VolatilitySpecialistEvents(BaseEventGenerator):
                 tracker.log_rejection(f"volatility_exception_{e}", 1)
             return pd.DatetimeIndex([])
 
-    def _get_volatility_causal_events(self, df: pd.DataFrame, window=20, quantile=0.95):
+    def _get_volatility_causal_events(self, df: pd.DataFrame, window=20, quantile=0.96):
         """Detect volatility expansion events using Parkinson range-based vol."""
         if 'close' not in df.columns:
             tprint_warning("VolatilitySpecialist: Missing 'close' column")
@@ -5965,10 +6117,124 @@ class VolatilitySpecialistEvents(BaseEventGenerator):
             combined_score.fillna(0.0),
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
-            return_details=True
+            return_details=True,
+            min_coverage=0.04
         )
         events = df.index[details['level'] >= 2.0]
         tprint_info(f"VolatilitySpecialist: Generated {len(events)} events")
+        
+        return events
+
+
+class VolatilityExpansionEvents(BaseEventGenerator):
+    """
+    Volatility EXPANSION Specialist (z > 0).
+    
+    Causal Role: Predicts INCREASING risk (sigma rising).
+    
+    Trading Implication: Wider stops needed, reduced position sizes,
+    potential breakout opportunities.
+    
+    De Prado Compliance: Directional z-score detecting ONLY expansion.
+    Negative z-scores are clamped to 0 (not our signal).
+    """
+    def generate(self, df: pd.DataFrame, tracker: Optional[Any] = None, **params) -> pd.DatetimeIndex:
+        quantile_threshold = params.get('quantile', 0.96)
+        window = params.get('window', 20)
+        
+        try:
+            events = self._get_expansion_events(df, quantile=quantile_threshold, window=window)
+            if len(events) == 0 and tracker:
+                tracker.log_rejection("vol_expansion_no_events", 1)
+            return events
+        except Exception as e:
+            logger.warning(f"VolatilityExpansionEvents failed: {e}")
+            if tracker:
+                tracker.log_rejection(f"vol_expansion_exception_{e}", 1)
+            return pd.DatetimeIndex([])
+
+    def _get_expansion_events(self, df: pd.DataFrame, window=20, quantile=0.96):
+        """Detect volatility EXPANSION events (z > threshold)."""
+        if 'close' not in df.columns:
+            return pd.DatetimeIndex([])
+        
+        # Compute volatility z-score
+        ret = df['close'].pct_change()
+        vol = ret.rolling(window).std()
+        vol_change = vol / (vol.shift(1) + 1e-9)
+        z = (vol_change - vol_change.rolling(200).mean()) / (vol_change.rolling(200).std() + 1e-9)
+        
+        # CRITICAL: Clamp negative z to 0 - we only care about EXPANSION
+        z_expansion = z.clip(lower=0.0)
+        
+        # Detect events using rolling quantile
+        q1, q2 = _quantiles_from_quantile(quantile)
+        details = detect_rolling_quantile_surprises(
+            z_expansion.fillna(0.0),
+            window=ROLLING_Q_WINDOW,
+            quantiles=(q1, q2),
+            return_details=True,
+            min_coverage=0.04
+        )
+        events = df.index[details['level'] >= 2.0]
+        tprint_info(f"VolatilityExpansion: Generated {len(events)} events (z > 0)")
+        
+        return events
+
+
+class VolatilityContractionEvents(BaseEventGenerator):
+    """
+    Volatility CONTRACTION Specialist (z < 0).
+    
+    Causal Role: Predicts DECREASING risk (sigma falling).
+    
+    Trading Implication: Tighter stops possible, increased position sizes,
+    mean-reversion opportunities as range compresses.
+    
+    De Prado Compliance: Directional z-score detecting ONLY contraction.
+    Positive z-scores are clamped to 0 (not our signal).
+    """
+    def generate(self, df: pd.DataFrame, tracker: Optional[Any] = None, **params) -> pd.DatetimeIndex:
+        quantile_threshold = params.get('quantile', 0.96)
+        window = params.get('window', 20)
+        
+        try:
+            events = self._get_contraction_events(df, quantile=quantile_threshold, window=window)
+            if len(events) == 0 and tracker:
+                tracker.log_rejection("vol_contraction_no_events", 1)
+            return events
+        except Exception as e:
+            logger.warning(f"VolatilityContractionEvents failed: {e}")
+            if tracker:
+                tracker.log_rejection(f"vol_contraction_exception_{e}", 1)
+            return pd.DatetimeIndex([])
+
+    def _get_contraction_events(self, df: pd.DataFrame, window=20, quantile=0.96):
+        """Detect volatility CONTRACTION events (z < -threshold)."""
+        if 'close' not in df.columns:
+            return pd.DatetimeIndex([])
+        
+        # Compute volatility z-score
+        ret = df['close'].pct_change()
+        vol = ret.rolling(window).std()
+        vol_change = vol / (vol.shift(1) + 1e-9)
+        z = (vol_change - vol_change.rolling(200).mean()) / (vol_change.rolling(200).std() + 1e-9)
+        
+        # CRITICAL: Flip sign and clamp to detect CONTRACTION magnitude
+        # If z = -3.0 (contraction), we want z_contraction = 3.0
+        z_contraction = (-z).clip(lower=0.0)
+        
+        # Detect events using rolling quantile
+        q1, q2 = _quantiles_from_quantile(quantile)
+        details = detect_rolling_quantile_surprises(
+            z_contraction.fillna(0.0),
+            window=ROLLING_Q_WINDOW,
+            quantiles=(q1, q2),
+            return_details=True,
+            min_coverage=0.04
+        )
+        events = df.index[details['level'] >= 2.0]
+        tprint_info(f"VolatilityContraction: Generated {len(events)} events (z < 0)")
         
         return events
 
@@ -5982,7 +6248,7 @@ class LiquiditySpecialistEvents(BaseEventGenerator):
     leading to anti-directional consistency (0.34).
     """
     def generate(self, df: pd.DataFrame, tracker: Optional[Any] = None, **params) -> pd.DatetimeIndex:
-        threshold = params.get('threshold', 2.5)
+        threshold = params.get('threshold', 1.75)
         window = params.get('window', 20)
         
         try:
@@ -5996,7 +6262,7 @@ class LiquiditySpecialistEvents(BaseEventGenerator):
                 tracker.log_rejection(f"liquidity_exception_{e}", 1)
             return pd.DatetimeIndex([])
 
-    def _get_liquidity_causal_events(self, df: pd.DataFrame, window=20, threshold=2.5):
+    def _get_liquidity_causal_events(self, df: pd.DataFrame, window=20, threshold=1.75):
         """Detect liquidity IMPROVEMENT events (favorable entry conditions)."""
         if 'volume' not in df.columns or 'close' not in df.columns:
             tprint_warning("LiquiditySpecialist: Missing required columns")
@@ -6063,7 +6329,8 @@ class LiquiditySpecialistEvents(BaseEventGenerator):
             score.fillna(0.0),
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
-            return_details=True
+            return_details=True,
+            min_coverage=0.04
         )
         events = df.index[details['level'] >= 2.0]
         tprint_info(f"LiquiditySpecialist: Generated {len(events)} events")
@@ -6319,7 +6586,8 @@ class ImprovedCUSUMEvents(BaseEventGenerator):
                 diff_abs,
                 window=ROLLING_Q_WINDOW,
                 quantiles=(q1, q2),
-                return_details=True
+                return_details=True,
+                min_coverage=0.04
             )
             return signals.index[combined & (details['level'] >= 2.0)]
         except Exception as e:
@@ -6346,7 +6614,8 @@ class AdaptiveSymmetricCUSUMEvents(BaseEventGenerator):
                 diff_abs,
                 window=ROLLING_Q_WINDOW,
                 quantiles=(q1, q2),
-                return_details=True
+                return_details=True,
+                min_coverage=0.04
             )
             return signals.index[combined & (details['level'] >= 2.0)]
         except Exception as e:
@@ -6444,7 +6713,8 @@ class CausalSurpriseEvents(BaseEventGenerator):
                     returns.fillna(0.0),
                     window=ROLLING_Q_WINDOW,
                     quantiles=ROLLING_Q_THRESHOLDS,
-                    return_details=True
+                    return_details=True,
+                    min_coverage=0.04
                 )
                 events = df.index[details['level'] >= 2.0]
                 return events[:min(len(events), 500)]
@@ -6530,7 +6800,8 @@ class ExhaustionSpecialistEvents(BaseEventGenerator):
             surprise_z.abs().fillna(0.0), # Magnitude of surprise
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
-            return_details=True
+            return_details=True,
+            min_coverage=0.04
         )
         return df.index[details['level'] >= 2.0]
 
@@ -6582,7 +6853,8 @@ class VolatilityInnovationSpecialistEvents(BaseEventGenerator):
             surprise_z.fillna(0.0), # Directional (Positive spikes in volatility)
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
-            return_details=True
+            return_details=True,
+            min_coverage=0.04
         )
         return df.index[details['level'] >= 2.0]
 
@@ -6615,7 +6887,8 @@ class DispersionSpecialistEvents(BaseEventGenerator):
             dmv_z.abs().fillna(0.0), # Absolute dispersion
             window=ROLLING_Q_WINDOW,
             quantiles=(q1, q2),
-            return_details=True
+            return_details=True,
+            min_coverage=0.04
         )
         return df.index[details['level'] >= 2.0]
 

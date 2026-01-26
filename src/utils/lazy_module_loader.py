@@ -7,7 +7,8 @@ circular import issues and improve startup performance.
 
 import importlib
 import logging
-from typing import Any, Dict, Optional, Callable, Union
+import sys
+from typing import Any, Dict, Optional, Callable, Union, List, Tuple
 from functools import wraps
 
 
@@ -83,6 +84,67 @@ def lazy_function(module_name: str, function_name: str, fallback: Optional[Calla
         return func(*args, **kwargs)
     
     return wrapper
+
+
+# PEP 562 Lazy Loading Helpers
+
+def make_lazy_getattr(export_map: Dict[str, str], package: str, logger: Optional[logging.Logger] = None) -> Callable[[str], Any]:
+    """
+    Create a __getattr__ function for PEP 562 lazy loading.
+    
+    Args:
+        export_map: Dictionary mapping attribute names to submodule names (relative or absolute)
+        package: The package name (__name__ of the module calling this)
+        logger: Optional logger for debug messages
+        
+    Returns:
+        A __getattr__ function to be assigned to the module's __getattr__
+    """
+    def __getattr__(name: str) -> Any:
+        if name in export_map:
+            module_name = export_map[name]
+            try:
+                # Import the module
+                module = importlib.import_module(module_name, package=package)
+                
+                # Get the attribute
+                attr = getattr(module, name)
+                
+                # Cache it in the module (sys.modules) to avoid future lookups
+                # We interpret 'package' as the module name if it's the __init__ file
+                current_module = sys.modules.get(package)
+                if current_module:
+                    setattr(current_module, name, attr)
+                
+                if logger:
+                    logger.debug(f"✅ Lazily imported {name} from {module_name}")
+                    
+                return attr
+            except ImportError as e:
+                if logger:
+                    logger.error(f"❌ Failed to lazily import {name} from {module_name}: {e}")
+                raise
+                
+        raise AttributeError(f"module {package!r} has no attribute {name!r}")
+        
+    return __getattr__
+
+
+def make_lazy_dir(export_map: Dict[str, str], current_globals: Dict[str, Any]) -> Callable[[], List[str]]:
+    """
+    Create a __dir__ function for PEP 562 lazy loading support (autocompletion).
+    
+    Args:
+        export_map: Dictionary mapping attribute names to submodule names
+        current_globals: The globals() of the calling module
+        
+    Returns:
+        A __dir__ function
+    """
+    def __dir__() -> List[str]:
+        return sorted(list(current_globals.keys()) + list(export_map.keys()))
+        
+    return __dir__
 
 
 # Common lazy imports for frequently used modules

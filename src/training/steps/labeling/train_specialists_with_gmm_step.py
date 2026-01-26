@@ -931,6 +931,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         if market_data is None or market_data.empty:
             error_msg = "❌ Failed to load market data"
             tprint_error(error_msg)
+            self.cleanup_resources()
             return {"success": False, "error": error_msg}
 
         tprint_success(f"✅ Loaded {len(market_data)} bars from {source}")
@@ -1008,6 +1009,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         if raw_features is None or raw_features.empty:
             error_msg = "❌ No raw features extracted"
             tprint_error(error_msg)
+            self.cleanup_resources()
             return {"success": False, "error": error_msg}
 
         # Step 3: Apply GMM enhancement to raw features (with cache)
@@ -1059,6 +1061,7 @@ class TrainSpecialistsWithGMMStep(BaseStep):
         if selected_features is None or selected_features.empty:
             error_msg = "❌ Feature selection failed"
             tprint_error(error_msg)
+            self.cleanup_resources()
             return {"success": False, "error": error_msg}
         
         tprint_success(f"✅ Selected {len(selected_features.columns)} features from {len(combined_features.columns)} combined features")
@@ -1111,6 +1114,9 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             "selected_features_shape": selected_features.shape,
             "model_results": model_results
         }
+        
+        # Clean up resources to prevent semaphore leaks
+        self.cleanup_resources()
         
         tprint_success("✅ GMM Specialist Training Pipeline Completed Successfully")
         return results
@@ -2963,9 +2969,73 @@ class TrainSpecialistsWithGMMStep(BaseStep):
             if hasattr(specialist, '_temp_dataframes'):
                 specialist._temp_dataframes.clear()
 
+            # Clean up semaphore to prevent resource leaks
+            if self._specialist_semaphore is not None:
+                try:
+                    # asyncio.Semaphore doesn't have explicit close method,
+                    # but we can clear the reference to help GC
+                    self._specialist_semaphore = None
+                except Exception:
+                    pass  # Ignore cleanup errors
+
         except Exception as e:
             # Don't let cleanup failures interrupt training
             tprint_warning(f"⚠️ Memory cleanup warning (non-critical): {e}")
+            pass
+
+    def cleanup_resources(self):
+        """Explicit cleanup method to prevent resource leaks."""
+        try:
+            tprint_info("🧹 Cleaning up specialist training resources...")
+            
+            # Clean up semaphore to prevent resource tracker warnings
+            if hasattr(self, '_specialist_semaphore') and self._specialist_semaphore is not None:
+                self._specialist_semaphore = None
+                tprint_info("✅ Semaphore cleaned up")
+            
+            # Clean up memory pool
+            if hasattr(self, 'memory_pool'):
+                self.memory_pool.clear()
+                tprint_info("✅ Memory pool cleared")
+            
+            # Clean up GMM cache
+            if hasattr(self, 'gmm_model_cache'):
+                self.gmm_model_cache.clear()
+                tprint_info("✅ GMM model cache cleared")
+                
+            # Clean up specialist metrics
+            if hasattr(self, '_specialist_metrics'):
+                self._specialist_metrics.clear()
+                
+            # Clean up specialist outputs
+            if hasattr(self, '_specialist_outputs'):
+                self._specialist_outputs.clear()
+            
+            # Force garbage collection
+            import gc
+            gc.collect()
+            tprint_success("✅ Resource cleanup complete")
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ Resource cleanup warning: {e}")
+
+    def __del__(self):
+        """Destructor to ensure proper cleanup of resources."""
+        try:
+            # Clean up semaphore to prevent resource tracker warnings
+            if hasattr(self, '_specialist_semaphore') and self._specialist_semaphore is not None:
+                self._specialist_semaphore = None
+            
+            # Clean up memory pool
+            if hasattr(self, 'memory_pool'):
+                self.memory_pool.clear()
+            
+            # Clean up GMM cache
+            if hasattr(self, 'gmm_model_cache'):
+                self.gmm_model_cache.clear()
+                
+        except Exception:
+            # Ignore cleanup errors in destructor
             pass
 
     def _combine_specialist_outputs(self, specialist_outputs: Dict[str, pd.DataFrame]) -> pd.DataFrame:

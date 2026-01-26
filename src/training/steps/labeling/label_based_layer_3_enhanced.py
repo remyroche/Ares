@@ -2073,6 +2073,11 @@ def layer3_analyst_lgbm(
         if c in df.columns:
             candidate_features.append(c)
 
+    # NOTE: global_features will be added to meta_features AFTER they are computed below
+    # Initialize meta_features without global_features for now
+    meta_features = list(dict.fromkeys(candidate_features))
+    if not meta_features:
+        meta_features = list(safe_base_cols)
 
     # Clean features
     other_cols = [c for c in meta_features if c not in set(safe_base_cols)]
@@ -2120,6 +2125,9 @@ def layer3_analyst_lgbm(
     
     cache_stats = _feature_cache.get_stats()
     tprint_info(f"🎯 Feature cache stats: {cache_stats['hit_rate']:.2%} hit rate, {cache_stats['cache_size']} cached features")
+    
+    # NOW add global_features to meta_features (they are now defined)
+    meta_features = list(dict.fromkeys(meta_features + global_features))
 
     # ---------------------------------------------------------
     # 2. Geometry Generation & Selection

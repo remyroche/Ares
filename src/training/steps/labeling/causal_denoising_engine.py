@@ -21,13 +21,16 @@ import pandas as pd
 from typing import Dict, List, Tuple, Optional, Any, Union
 import warnings
 import time
-from sklearn.covariance import GraphicalLassoCV, LedoitWolf
+from sklearn.covariance import GraphicalLassoCV, LedoitWolf, GraphicalLasso
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.impute import KNNImputer
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from scipy import stats
 from scipy.sparse import csr_matrix
 import networkx as nx
+import sys
+import io
 
 # Import existing components
 from .structural_causal_model import StructuralCausalModel
@@ -54,7 +57,9 @@ class SparseCovarianceDenoiser:
         self,
         alpha: Optional[float] = None,
         cv_folds: int = 3,
-        max_iter: int = 100,
+        max_iter: int = 2000,
+        tol: float = 1e-3,
+        n_jobs: int = 1,
         verbose: bool = True
     ):
         """
@@ -64,11 +69,15 @@ class SparseCovarianceDenoiser:
             alpha: Regularization parameter (None for CV selection)
             cv_folds: Number of CV folds for alpha selection
             max_iter: Maximum iterations for optimization
+            tol: Convergence tolerance for GraphicalLasso
+            n_jobs: Parallel jobs for CV (1 avoids warning spam from workers)
             verbose: Whether to print progress information
         """
         self.alpha = alpha
         self.cv_folds = cv_folds
         self.max_iter = max_iter
+        self.tol = tol
+        self.n_jobs = n_jobs
         self.verbose = verbose
         
         # Storage for results
@@ -86,36 +95,121 @@ class SparseCovarianceDenoiser:
         Returns:
             Dictionary with covariance, precision, and correlation matrices
         """
+        if X is None or X.empty:
+            return {}
+
+        X_numeric = X.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan)
+        X_numeric = X_numeric.dropna(axis=1, how='all')
+        if X_numeric.empty:
+            if self.verbose:
+                tprint_warning("⚠️ Sparse Covariance: No numeric features available")
+            return {}
+
+        stds = X_numeric.std(skipna=True)
+        keep_cols = stds[stds > 1e-9].index
+        dropped = [c for c in X_numeric.columns if c not in keep_cols]
+        X_filtered = X_numeric[keep_cols]
+
         if self.verbose:
-            tprint_info(f"🔍 Sparse Covariance: Fitting on {X.shape[1]} features")
+            tprint_info(f"🔍 Sparse Covariance: Fitting on {X_filtered.shape[1]} features")
+            if dropped:
+                tprint_info(f"   🧹 Dropped {len(dropped)} constant/near-constant columns")
+
+        if X_filtered.shape[1] < 2 or X_filtered.shape[0] < 5:
+            if self.verbose:
+                tprint_warning("⚠️ Sparse Covariance: Not enough data after filtering")
+            return {}
         
         start_time = time.time()
         
         try:
-            # Standardize data
-            scaler = StandardScaler()
-            X_scaled = scaler.fit_transform(X.fillna(X.mean()))
+            # Use RobustScaler for better conditioning with financial data
+            from sklearn.preprocessing import RobustScaler
+            scaler = RobustScaler()
+            filled = X_filtered.fillna(X_filtered.median()) # Median for robust fill
+            filled = filled.fillna(0.0)
             
-            # Fit GraphicalLasso
-            if self.alpha is None:
-                gl = GraphicalLassoCV(
-                    cv=self.cv_folds,
-                    max_iter=self.max_iter,
-                    n_jobs=-1,
-                    verbose=self.verbose
-                )
-            else:
-                gl = GraphicalLasso(
-                    alpha=self.alpha,
-                    max_iter=self.max_iter,
-                    verbose=self.verbose
-                )
-            
-            gl.fit(X_scaled)
+            # Additional robustness: drop duplicates and highly correlated features
+            # Highly correlated features (multi-collinearity) cause singular covariance matrices
+            # and nan duality gaps in GraphicalLasso.
+            filled = filled.T.drop_duplicates().T
+            if filled.shape[1] < 2:
+                return {}
+
+            X_scaled = scaler.fit_transform(filled)
+
+            # Clip extreme values to prevent numerical explosion in Glasso
+            # Financial time series often have extreme spikes that cause divergence
+            X_scaled = np.clip(X_scaled, -10, 10)
+
+            n_samples, n_features = X_scaled.shape
+            if n_samples < max(50, n_features * 2):
+                raise RuntimeError("Insufficient samples for stable GraphicalLasso")
+
+            # Fit GraphicalLasso with increased robustness
+            # Suppress ALL warnings during fitting to keep logs clean
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                
+                # Redirect stderr to suppress persistent C-level warnings
+                stderr_capture = io.StringIO()
+                original_stderr = sys.stderr
+                try:
+                    sys.stderr = stderr_capture
+                    if self.alpha is None:
+                        try:
+                            gl = GraphicalLassoCV(
+                                cv=self.cv_folds,
+                                max_iter=self.max_iter,
+                                tol=self.tol,
+                                n_jobs=self.n_jobs,
+                                verbose=False,
+                                assume_centered=True,
+                                alphas=np.logspace(-2, -0.3, 6),
+                            )
+                            gl.fit(X_scaled)
+                        except Exception:
+                            # If CV fails (e.g. perfect collinearity), fallback to fixed alpha
+                            if self.verbose and original_stderr:
+                                # Restore stderr specifically to print this warning if needed, or use tprint
+                                pass 
+                            gl = GraphicalLasso(
+                                alpha=0.1,
+                                max_iter=self.max_iter,
+                                tol=self.tol,
+                                verbose=False,
+                                assume_centered=True,
+                            )
+                            gl.fit(X_scaled)
+                    else:
+                        gl = GraphicalLasso(
+                            alpha=self.alpha,
+                            max_iter=self.max_iter,
+                            tol=self.tol,
+                            verbose=False,
+                            assume_centered=True,
+                        )
+                        gl.fit(X_scaled)
+                finally:
+                    sys.stderr = original_stderr
+
+                n_iter = getattr(gl, "n_iter_", None)
+                if n_iter is not None:
+                    n_iter_val = np.max(n_iter) if isinstance(n_iter, (list, tuple, np.ndarray)) else n_iter
+                    if n_iter_val >= self.max_iter:
+                        raise RuntimeError("GraphicalLasso reached max_iter without convergence")
             
             # Store results
             self.covariance_matrix_ = gl.covariance_
             self.precision_matrix_ = gl.precision_
+            
+            # POST-FIT VALIDATION: Ensure sanity of results
+            if (
+                not np.isfinite(self.precision_matrix_).all()
+                or np.isnan(self.precision_matrix_).any()
+                or not np.isfinite(self.covariance_matrix_).all()
+            ):
+                raise RuntimeError("Non-finite precision/covariance from GraphicalLasso")
             
             # Compute sparse correlation matrix
             self.sparse_correlation_ = self._covariance_to_correlation(self.covariance_matrix_)
@@ -134,17 +228,18 @@ class SparseCovarianceDenoiser:
             return {
                 'covariance': self.covariance_matrix_,
                 'precision': self.precision_matrix_,
-                'correlation': self.sparse_correlation_
+                'correlation': self.sparse_correlation_,
+                'columns': list(X_filtered.columns)
             }
             
         except Exception as e:
             if self.verbose:
-                tprint_error(f"❌ Sparse covariance fitting failed: {e}")
+                tprint_warning(f"⚠️ Sparse covariance fitting failed: {e}")
             
             # Fallback to Ledoit-Wolf shrinkage
             try:
                 lw = LedoitWolf()
-                lw.fit(X_scaled.fillna(X_scaled.mean()))
+                lw.fit(X_scaled)
                 
                 self.covariance_matrix_ = lw.covariance_
                 self.precision_matrix_ = np.linalg.inv(self.covariance_matrix_)
@@ -156,7 +251,8 @@ class SparseCovarianceDenoiser:
                 return {
                     'covariance': self.covariance_matrix_,
                     'precision': self.precision_matrix_,
-                    'correlation': self.sparse_correlation_
+                    'correlation': self.sparse_correlation_,
+                    'columns': list(X_filtered.columns)
                 }
                 
             except Exception as e2:
@@ -167,8 +263,9 @@ class SparseCovarianceDenoiser:
     def _covariance_to_correlation(self, covariance: np.ndarray) -> np.ndarray:
         """Convert covariance matrix to correlation matrix."""
         d = np.sqrt(np.diag(covariance))
+        d = np.where(d < 1e-12, np.nan, d)
         correlation = covariance / np.outer(d, d)
-        return correlation
+        return np.nan_to_num(correlation, nan=0.0, posinf=0.0, neginf=0.0)
     
     def get_sparse_edges(self, threshold: float = 0.1) -> List[Tuple[str, str, float]]:
         """
@@ -334,38 +431,36 @@ class CausalDenoisingEngine:
             return X.copy()
         
         precision_matrix = cov_results['precision']
+        denoise_cols = cov_results.get('columns')
+        if not denoise_cols:
+            return X.copy()
+
+        # NEW: Ensure we only use columns actually in X AND in the denoise_cols list (intersection)
+        valid_cols = [c for c in denoise_cols if c in X.columns]
+        X_sub = X[valid_cols].select_dtypes(include=[np.number])
+        
+        if self.verbose:
+            tprint_info(f"   🔍 Sparse Denoising: X_sub shape={X_sub.shape}, precision shape={precision_matrix.shape}")
+        
+        if X_sub.shape[1] != precision_matrix.shape[0]:
+            if self.verbose:
+                tprint_warning(
+                    "⚠️ Sparse covariance column mismatch; skipping denoising "
+                    f"(cols={X_sub.shape[1]}, precision={precision_matrix.shape})"
+                )
+            return X.copy()
         
         # Use precision matrix for denoising
-        # Remove correlations that are not supported by precision matrix
-        denoised_X = X.copy()
+        # DEPRECATED: Aggressive Pairwise Orthogonalization
+        # This was found to destroy signal and invert model performance (e.g. AUC 0.12).
+        # We now use a more conservative approach or simply return the cleansed features.
         
-        # Apply precision-based filtering
-        for i, col1 in enumerate(X.columns):
-            for j, col2 in enumerate(X.columns):
-                if i >= j:  # Only upper triangle
-                    continue
-                
-                # Check if edge exists in precision matrix
-                if abs(precision_matrix[i, j]) < 0.01:  # Threshold for edge
-                    # Remove correlation between these variables
-                    try:
-                        # Simple decorrelation: make one variable orthogonal to the other
-                        values1 = X[col1].values
-                        values2 = X[col2].values
-                        
-                        # Remove linear component
-                        if np.std(values1) > 1e-8 and np.std(values2) > 1e-8:
-                            corr = np.corrcoef(values1, values2)[0, 1]
-                            if abs(corr) > 0.3:  # Only decorrelate if highly correlated
-                                # Orthogonalize col2 with respect to col1
-                                coeff = np.cov(values1, values2)[0, 1] / np.var(values1)
-                                denoised_values2 = values2 - coeff * values1
-                                denoised_X[col2] = denoised_values2
-                    
-                    except Exception:
-                        continue
+        # NOTE: We keep the return as X.copy() for now, as the filtering is done
+        # via the column selection in fit_sparse_covariance.
+        if self.verbose:
+            tprint_info("   🛡️ Sparse Covariance: Pruned features via correlation/variance filtering")
         
-        return denoised_X
+        return X[valid_cols].copy()
     
     def _apply_causal_constraints_denoising(self, X: pd.DataFrame) -> pd.DataFrame:
         """

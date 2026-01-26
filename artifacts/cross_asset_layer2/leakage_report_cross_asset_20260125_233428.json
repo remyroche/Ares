@@ -1,0 +1,27 @@
+{
+  "dataset_tag": "cross_asset",
+  "run_id": "20260125_233428",
+  "panel_shape": [
+    153456,
+    48
+  ],
+  "schema": {
+    "ok": true,
+    "errors": [],
+    "warnings": [
+      "High NaN ratio detected in panel_df"
+    ]
+  },
+  "leakage_warnings": [
+    "Leakage sentinel: raw__ret_zscore corr_future 0.375 > corr_past 0.001",
+    "Leakage sentinel: raw__log_px_zscore corr_future 0.481 > corr_past 0.002",
+    "Leakage sentinel: raw__wavelet_noise corr_future 0.165 > corr_past -0.000",
+    "Timestamp perturbation test: predictability did not collapse"
+  ],
+  "post_feature_leakage_warnings": [
+    "Leakage sentinel: raw__ret_zscore corr_future 0.375 > corr_past 0.001",
+    "Leakage sentinel: raw__log_px_zscore corr_future 0.481 > corr_past 0.002",
+    "Leakage sentinel: raw__wavelet_noise corr_future 0.165 > corr_past -0.000",
+    "Timestamp perturbation test: predictability did not collapse"
+  ]
+}

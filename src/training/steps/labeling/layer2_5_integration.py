@@ -652,6 +652,28 @@ class Layer25Integration:
             
             # Step 3: Prepare feature matrix
             X_non_causal = df[non_causal_features].copy()
+
+            # --- Asset ID Extraction for Refinement ---
+            # If available, extract ticker/asset_id as categorical feature
+            if isinstance(df.index, pd.MultiIndex):
+                idx_names = df.index.names
+                ticker_col = None
+                if 'ticker' in idx_names:
+                    ticker_col = 'ticker'
+                elif 'asset_id' in idx_names:
+                    ticker_col = 'asset_id'
+                
+                if ticker_col:
+                    try:
+                        # Extract and encode as categorical
+                        asset_ids = df.index.get_level_values(ticker_col)
+                        X_non_causal['cat__asset_id'] = asset_ids.astype('category')
+                        if self.verbose:
+                            tprint_info(f"   ✨ Added Asset ID (refinement) feature: cat__asset_id ({len(asset_ids.unique())} unique)")
+                    except Exception as e:
+                        if self.verbose:
+                            tprint_warning(f"   ⚠️ Failed to extract Asset ID: {e}")
+            # ------------------------------------------
             
             # Step 4: Align data
             valid_mask = ~(X_non_causal.isna().any(axis=1) | y_residuals.isna())

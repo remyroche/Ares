@@ -370,7 +370,11 @@ class PanelDataProcessor:
             tprint_warning(f"[PanelDataProcessor] detect_leakage {msg}")
             return [msg]
 
-        numeric_cols = [c for c in panel_df.columns if c.startswith(("raw__", "ca__", "ms__"))]
+        numeric_cols = [
+            c
+            for c in panel_df.select_dtypes(include=[np.number]).columns
+            if c.startswith(("raw__", "ca__", "ms__"))
+        ]
         if not numeric_cols:
             tprint_success(f"[PanelDataProcessor] detect_leakage done warnings={len(warnings)}")
             return warnings
@@ -395,8 +399,10 @@ class PanelDataProcessor:
 
     @staticmethod
     def _resolve_price_column(df: pd.DataFrame) -> Optional[str]:
+        # Only consider numeric columns to avoid strings like 'ETHUSDT'
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
         for col in ("layer0_price", "wavelet_close", "close", "px", "price", "last", "settle"):
-            if col in df.columns:
+            if col in numeric_cols:
                 return col
         return None
 
@@ -418,7 +424,11 @@ class MarketStateVector:
 
     def fit(self, state_instruments: pd.DataFrame) -> "MarketStateVector":
         tprint_info(f"[MarketStateVector] fit start shape={state_instruments.shape}")
-        x = state_instruments.fillna(method="ffill").fillna(0.0)
+        # Only fit on numeric data to safeguard against non-numeric leakage
+        x_numeric = state_instruments.select_dtypes(include=[np.number])
+        if x_numeric.empty:
+            raise ValueError("No numeric data available for MarketStateVector fit")
+        x = x_numeric.fillna(method="ffill").fillna(0.0)
         scaled = self.scaler.fit_transform(x)
         components = self.pca.fit_transform(scaled)
         self.loadings_ = self.pca.components_.copy()

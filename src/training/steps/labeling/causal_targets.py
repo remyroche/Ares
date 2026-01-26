@@ -169,6 +169,9 @@ class CausalTargetComputer:
                 total_inf = sum(inf_counts.values())
                 if self.verbose:
                     tprint_warning(f"⚠️ Found {total_inf} infinity values in {data_name}, replacing with NaN")
+                    top_inf = sorted(inf_counts.items(), key=lambda item: item[1], reverse=True)[:10]
+                    top_inf_str = ", ".join([f"{col}={cnt}" for col, cnt in top_inf])
+                    tprint_info(f"   🔎 Top inf columns: {top_inf_str}")
                 
                 # Replace infinity with NaN
                 for col, count in inf_counts.items():

@@ -14,7 +14,7 @@ from contextlib import contextmanager
 
 # Import from hardware optimization modules
 try:
-    from utils.hardware.enhanced_gpu_manager import (
+    from src.utils.hardware.enhanced_gpu_manager import (
         get_enhanced_gpu_manager, EnhancedM1GPUManager,
         GPUOperationType, GPUMemoryPool, BatchOperationConfig,
         create_gpu_operation, batch_gpu_operations
@@ -25,14 +25,14 @@ except ImportError:
     EnhancedM1GPUManager = None
 
 try:
-    from utils.hardware.m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
+    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager, M1GPUManager
     BASIC_GPU_AVAILABLE = True
 except ImportError:
     BASIC_GPU_AVAILABLE = False
     M1GPUManager = None
 
 try:
-    from utils.matrix_operations.vectorized_core import get_vectorized_processing_core
+    from src.utils.matrix_operations.vectorized_core import get_vectorized_processing_core
     VECTORIZED_CORE_AVAILABLE = True
 except ImportError:
     VECTORIZED_CORE_AVAILABLE = False

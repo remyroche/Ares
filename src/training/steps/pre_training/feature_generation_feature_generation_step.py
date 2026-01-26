@@ -24,10 +24,15 @@ try:
     from feature_selection.feature_selection_with_lgbm import FeatureSelector
     FEATURE_SELECTOR_AVAILABLE = True
     tprint("✅ FeatureSelector loaded from feature_selection.feature_selection_with_lgbm")
-except ImportError as e:
-    FEATURE_SELECTOR_AVAILABLE = False
-    FeatureSelector = None
-    tprint(f"⚠️ FeatureSelector not available: {e}")
+except ImportError:
+    try:
+        from src.feature_selection.feature_selection_with_lgbm import FeatureSelector
+        FEATURE_SELECTOR_AVAILABLE = True
+        tprint("✅ FeatureSelector loaded from src.feature_selection.feature_selection_with_lgbm")
+    except ImportError as e:
+        FEATURE_SELECTOR_AVAILABLE = False
+        FeatureSelector = None
+        tprint(f"⚠️ FeatureSelector not available: {e}")
 
 
 class FeatureGenerationFeatureGenerationStep(BaseStep):

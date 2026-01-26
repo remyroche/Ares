@@ -521,24 +521,27 @@ if UNIFIED_VECTORIZATION_AVAILABLE:
 # Initialize default custom operations
 # Note: Default operations are automatically registered when enhanced_operations module is imported
 
-# Log initialization
+# Log initialization (guarded)
 import logging
+from src.utils.initialization_guard import init_guard
+
 logger = logging.getLogger(__name__)
-logger.info("✅ Unified Matrix Operations module initialized")
-logger.info(f"📦 Version: {__version__}")
-logger.info("🔧 Features: VectorBT optimizations, GPU acceleration, memory optimization, vectorized processing, batch operations")
-logger.info("🍎 Optimized for: Apple Silicon M1/M2/M3 Macs")
-if VECTORBT_AVAILABLE:
-    logger.info("🚀 VectorBT optimizations enabled - expect 2-10x performance improvements")
-else:
-    logger.info("ℹ️ VectorBT not available - using standard implementations")
+if init_guard.mark_initialized("utils.matrix_operations"):
+    logger.info("✅ Unified Matrix Operations module initialized")
+    logger.info(f"📦 Version: {__version__}")
+    logger.info("🔧 Features: VectorBT optimizations, GPU acceleration, memory optimization, vectorized processing, batch operations")
+    logger.info("🍎 Optimized for: Apple Silicon M1/M2/M3 Macs")
+    if VECTORBT_AVAILABLE:
+        logger.info("🚀 VectorBT optimizations enabled - expect 2-10x performance improvements")
+    else:
+        logger.info("ℹ️ VectorBT not available - using standard implementations")
 
-if VECTORBT_ROLLING_AVAILABLE:
-    logger.info("🎯 VectorBTRollingOptimizer available - enhanced rolling operations")
-else:
-    logger.info("ℹ️ VectorBTRollingOptimizer not available")
+    if VECTORBT_ROLLING_AVAILABLE:
+        logger.info("🎯 VectorBTRollingOptimizer available - enhanced rolling operations")
+    else:
+        logger.info("ℹ️ VectorBTRollingOptimizer not available")
 
-if UNIFIED_VECTORIZATION_AVAILABLE:
-    logger.info("⚡ UnifiedVectorizationManager available - unified vectorization operations")
-else:
-    logger.info("ℹ️ UnifiedVectorizationManager not available")
+    if UNIFIED_VECTORIZATION_AVAILABLE:
+        logger.info("⚡ UnifiedVectorizationManager available - unified vectorization operations")
+    else:
+        logger.info("ℹ️ UnifiedVectorizationManager not available")

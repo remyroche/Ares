@@ -91,6 +91,134 @@ def shrink(x, n, prior, k=50):
     w = k / (n + k)
     return (1 - w) * x + w * prior
 
+
+def _compute_anchor_and_drift_features(
+    df: pd.DataFrame, 
+    base_model_cols: List[str]
+) -> Tuple[pd.DataFrame, Dict[int, str]]:
+    """
+    Compute Anchor and Drift features following de Prado's structural analysis.
+    
+    De Prado Framework:
+    - Anchor: Slow-moving structural metrics that define the baseline regime
+    - Drift: Rate of change FROM anchor, measuring regime transition speed
+    
+    These features capture the STRUCTURE of the market state rather than
+    instantaneous signals, enabling the meta-model to condition on structural context.
+    
+    Args:
+        df: DataFrame with market data (must have 'close' column)
+        base_model_cols: List of base model probability columns
+        
+    Returns:
+        features: DataFrame with anchor_* and drift_* columns
+        regime_map: Mapping from cluster ID to regime name
+    """
+    features = pd.DataFrame(index=df.index)
+    regime_map = {0: 'Quiet', 1: 'Trending', 2: 'Chaos'}
+    
+    # 1. Volatility Anchor/Drift
+    if 'close' in df.columns:
+        close = df['close']
+        ret = np.log(close / close.shift(1)).fillna(0)
+        
+        # Short-term volatility (reactive)
+        vol_short = ret.rolling(20, min_periods=5).std().fillna(0)
+        
+        # Anchor: Slow EWM of volatility (structural baseline)
+        vol_anchor = vol_short.ewm(span=200, min_periods=50).mean().fillna(vol_short.mean())
+        
+        # Drift: Relative deviation from anchor
+        vol_drift = (vol_short - vol_anchor) / (vol_anchor + 1e-9)
+        
+        # Z-scored drift for regime detection
+        drift_mean = vol_drift.rolling(100, min_periods=20).mean()
+        drift_std = vol_drift.rolling(100, min_periods=20).std()
+        vol_drift_z = (vol_drift - drift_mean) / (drift_std + 1e-9)
+        
+        features['anchor_volatility'] = vol_anchor
+        features['drift_volatility'] = vol_drift.clip(-5, 5)  # Clip extreme values
+        features['drift_volatility_z'] = vol_drift_z.clip(-5, 5)
+    
+    # 2. Trend Strength Anchor/Drift
+    if 'close' in df.columns:
+        close = df['close']
+        
+        # Slope normalized by price (% change over 20 bars)
+        slope = close.diff(20) / close.shift(20).replace(0, np.nan)
+        slope = slope.fillna(0)
+        
+        # Trend strength = absolute slope
+        trend_strength = slope.abs()
+        
+        # Anchor: Slow EWM of trend strength
+        trend_anchor = trend_strength.ewm(span=200, min_periods=50).mean().fillna(trend_strength.mean())
+        
+        # Drift: Current trend strength relative to anchor
+        trend_drift = (trend_strength - trend_anchor) / (trend_anchor + 1e-9)
+        
+        features['anchor_trend'] = trend_anchor.clip(0, 1)  # Cap at 100% change
+        features['drift_trend'] = trend_drift.clip(-5, 5)
+        
+        # Trend direction (signed slope)
+        features['trend_direction'] = np.sign(slope)
+    
+    # 3. Liquidity Anchor/Drift (if volume available)
+    if 'volume' in df.columns and 'close' in df.columns:
+        vol = df['volume'].replace(0, np.nan).fillna(method='ffill').fillna(1)
+        close = df['close']
+        
+        # Dollar volume as liquidity proxy
+        dollar_vol = vol * close
+        
+        # Anchor: Slow EWM of dollar volume
+        liq_anchor = dollar_vol.ewm(span=200, min_periods=50).mean().fillna(dollar_vol.mean())
+        
+        # Drift: Current liquidity relative to anchor
+        liq_drift = (dollar_vol - liq_anchor) / (liq_anchor + 1e-9)
+        
+        features['anchor_liquidity'] = liq_anchor
+        features['drift_liquidity'] = liq_drift.clip(-5, 5)
+    
+    # 4. Regime Detection using Anchor state
+    features['active_regime'] = 0  # Default: Quiet
+    
+    if 'drift_volatility_z' in features.columns:
+        # High volatility drift = Chaos
+        chaos_mask = features['drift_volatility_z'] > 1.5
+        features.loc[chaos_mask, 'active_regime'] = 2
+        
+        # Low volatility drift = Quiet
+        quiet_mask = features['drift_volatility_z'] < -0.5
+        features.loc[quiet_mask, 'active_regime'] = 0
+        
+        # High trend drift (but not chaos) = Trending
+        if 'drift_trend' in features.columns:
+            trending_mask = (features['drift_trend'] > 0.5) & (~chaos_mask)
+            features.loc[trending_mask, 'active_regime'] = 1
+    
+    # 5. Base Model Anchor/Drift (if base predictions available)
+    valid_cols = [c for c in (base_model_cols or []) if c in df.columns]
+    if valid_cols:
+        # Ensemble probability
+        ens_prob = df[valid_cols].mean(axis=1).fillna(0.5)
+        
+        # Anchor: Slow EWM of ensemble probability
+        prob_anchor = ens_prob.ewm(span=100, min_periods=20).mean().fillna(0.5)
+        
+        # Drift: Current probability relative to anchor
+        prob_drift = ens_prob - prob_anchor
+        
+        features['anchor_probability'] = prob_anchor
+        features['drift_probability'] = prob_drift.clip(-1, 1)
+    
+    # Clean up infinities and NaNs
+    features = features.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    
+    tprint_info(f"⚓ Generated {len(features.columns)} Anchor/Drift features")
+    
+    return features, regime_map
+
 def compute_geometry_features(events_df: pd.DataFrame, window_size: int = 50) -> pd.DataFrame:
     """
     Computes 'Geometry' features based on the path characteristics of PAST trades.
@@ -853,7 +981,6 @@ def generate_layer3_features(
                 # Use the dynamic regime map from the router for absolute consistency with Layer 2
                 df_out['regime_label'] = ad_feats[anchor_regime_cols[0]].map(regime_map)
             
-        # SSFI Pruning is handled in feature_engineering.py during the training phase
     except Exception as e:
         tprint_warning(f"⚠️ Anchor and Drift features failed: {e}")
 

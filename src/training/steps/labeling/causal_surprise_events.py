@@ -1168,6 +1168,9 @@ class CausalSurpriseDetector:
             if self.verbose:
                 tprint_error(f"❌ FAIL FAST: Surprise aggregation failed: {e}")
             raise ValueError(f"Causal surprise aggregation failed: {e}") from e
+        finally:
+            import gc
+            gc.collect()
 
     def _build_error_frame(self) -> pd.DataFrame:
         """

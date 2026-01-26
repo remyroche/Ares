@@ -15,7 +15,7 @@ import multiprocessing as mp
 
 # Import from hardware optimization modules
 try:
-    from utils.hardware.m1_cpu_optimizer import (
+    from src.utils.hardware.m1_cpu_optimizer import (
         get_m1_cpu_optimizer, M1CPUOptimizer,
         optimize_function_for_m1, parallel_map_m1,
         create_m1_optimized_thread_pool, run_cpu_intensive_task
@@ -26,7 +26,7 @@ except ImportError:
     M1CPUOptimizer = None
 
 try:
-    from utils.matrix_operations.vectorized_core import get_vectorized_processing_core
+    from src.utils.matrix_operations.vectorized_core import get_vectorized_processing_core
     VECTORIZED_CORE_AVAILABLE = True
 except ImportError:
     VECTORIZED_CORE_AVAILABLE = False

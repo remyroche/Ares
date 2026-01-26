@@ -98,6 +98,13 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
     def __init__(self, step_name: str = "meta_labeling_hpo_experiment", use_versioned_artifacts: bool = True):
         super().__init__(step_name, use_versioned_artifacts)
+        self._l2_step: Optional[LabelBasedLayer2] = None
+        self._l2_cache_key: Optional[str] = None
+
+    def _build_l2_cache_key(self, market_data: pd.DataFrame, config: Dict[str, Any]) -> str:
+        data_key = f"{market_data.shape}_{market_data.index[0] if len(market_data) else ''}_{market_data.index[-1] if len(market_data) else ''}"
+        config_key = str(sorted((config or {}).items()))
+        return f"{data_key}::{hash(config_key)}"
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -285,9 +292,16 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         if LAYER2_AVAILABLE:
             tprint_info("🔹 Running Layer 2: Causal Labeling (Primary Model)...")
             try:
-                # Instantiate L2 Step
-                # Instantiate L2 Step with config to ensure parameters are passed
-                l2_step = LabelBasedLayer2(step_name="label_based_layer_2", **config)
+                l2_cache_key = self._build_l2_cache_key(market_data, config)
+                if self._l2_step is None or self._l2_cache_key != l2_cache_key:
+                    # Instantiate L2 Step with config to ensure parameters are passed
+                    l2_step = LabelBasedLayer2(step_name="label_based_layer_2", **config)
+                    self._l2_step = l2_step
+                    self._l2_cache_key = l2_cache_key
+                else:
+                    l2_step = self._l2_step
+                    if config.get("force_hpo", False):
+                        l2_step.clear_caches()
 
                 # Inject our context to L2 (to share artifacts/logging context)
                 l2_step.outcomes_dir = outcomes_dir
@@ -314,16 +328,27 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 cross_asset_payload = None
                 if isinstance(layer2_results, dict):
                     cross_asset_payload = layer2_results.get("cross_asset")
-                if not events_files or not labels_files:
-                    # Fallback: check standard artifacts dir if not in outcomes
-                    tprint_warning("⚠️ L2 output files not found in Outcomes, checking Artifacts...")
-                    # Implementation detail: Use what we have. If missing, L3 will fail.
-                    events_df = pd.DataFrame() 
-                    labels_df = pd.DataFrame()
-                else:
+                events_df = pd.DataFrame()
+                labels_df = pd.DataFrame()
+                if events_files:
                     events_df = pd.read_parquet(events_files[0])
+                    tprint_info(f"   Loaded {len(events_df)} events from L2.")
+                else:
+                    tprint_warning("⚠️ L2 events parquet not found in Outcomes. Checking Artifacts...")
+
+                if labels_files:
                     labels_df = pd.read_parquet(labels_files[0])
-                    tprint_info(f"   Loaded {len(events_df)} events and {len(labels_df)} labels from L2.")
+                    tprint_info(f"   Loaded {len(labels_df)} labels from L2.")
+                elif not events_df.empty:
+                    label_cols = ['bin', 'label', 'side', 'ret', 'realized_return']
+                    available_label_cols = [c for c in label_cols if c in events_df.columns]
+                    if available_label_cols:
+                        labels_df = events_df[available_label_cols].copy()
+                        tprint_info(
+                            f"   Derived {len(labels_df)} labels from events_df columns: {available_label_cols}"
+                        )
+                    else:
+                        tprint_warning("⚠️ L2 labels parquet missing and no label columns found in events_df.")
 
                 cross_asset_features = None
                 if isinstance(cross_asset_payload, dict) and "panel" in cross_asset_payload:
@@ -380,10 +405,15 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     oof_df = oof_df.loc[common].join(labels_df.loc[common], rsuffix='_lbl')
 
                 if cross_asset_features is not None:
-                    oof_df = oof_df.join(
-                        cross_asset_features.reindex(oof_df.index).ffill().fillna(0.0),
-                        how="left",
-                    )
+                    ca_features = cross_asset_features.reindex(oof_df.index).ffill().fillna(0.0)
+                    overlap = oof_df.columns.intersection(ca_features.columns)
+                    if len(overlap) > 0:
+                        tprint_info(
+                            f"   ℹ️ Dropping {len(overlap)} overlapping cross-asset columns before join"
+                        )
+                        ca_features = ca_features.drop(columns=overlap, errors="ignore")
+                    if not ca_features.empty:
+                        oof_df = oof_df.join(ca_features, how="left")
 
                 layer1_weight = None
                 if WEIGHTS_AVAILABLE and config.get("layer1_params"):

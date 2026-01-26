@@ -58,6 +58,7 @@ import psutil
 from pathlib import Path
 import hashlib
 from sklearn.linear_model import RidgeClassifier, Lasso, Ridge, HuberRegressor
+from sklearn.metrics import precision_recall_curve, precision_score
 from src.training.steps.labeling.irm_regime_pipeline import (
     IRMLinearClassifier,
     IRMLinearRegressor,
@@ -204,7 +205,7 @@ except Exception:  # pragma: no cover - older joblib versions
         """Fallback broken pool exception."""
 
 # Import tprint for enhanced logging
-from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
+from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug
 from src.training.steps.labeling.causal_quality_assessment import CausalQualityAssessor
 
 # Import optimized functions for performance improvements
@@ -323,6 +324,72 @@ try:
     CONTINUOUS_PREDICTOR_AVAILABLE = True
 except ImportError:
     CONTINUOUS_PREDICTOR_AVAILABLE = False
+
+# Families that should use MAGNITUDE-based labeling (|return| > threshold)
+# instead of direction-based Triple Barrier labels.
+# These families predict move SIZE/INTENSITY, not direction.
+#
+# De Prado Compliance: Magnitude-based is appropriate when the economic question
+# is "how big is the move?" not "which direction?". These families detect
+# market conditions/anomalies that predict ACTIVITY/INTENSITY, not direction.
+#
+# DIRECTIONAL families (use Triple Barrier): TREND, SR_, GAP, BREAKOUT, 
+# MEAN_REVERSION, TRAP, CONTINUATION, REVERSAL, GAP_SPECIALIST, 
+# FRACTAL_EFFICIENCY, INVENTORY_SPECIALIST
+#
+# NOTE: Include common truncations (e.g., FLOW_PRE for FLOW_PRESSURE) since
+# family names may be truncated in uuid generation
+MAGNITUDE_FAMILIES = frozenset({
+    # Activity/Volume families
+    'VOLUME',               # Volume spike events predict activity
+    'VOLUME_S',             # Truncated: VOLUME_SPECIALIST
+    'VOLUME_SPECIALIST',    # Explicit: predicts activity level
+    'LIQUIDITY',            # Liquidity events predict market activity level
+    'LIQUIDI',              # Truncated
+    'LIQUIDITY_SPECIALIST', # Explicit: predicts liquidity level
+    
+    # Volatility/Risk families  
+    'VOLATILITY',               # Volatility events predict move size
+    'VOLATILI',                 # Truncated
+    'VOLATILITY_SPECIALIST',    # Explicit: predicts volatility level
+    'VOLATILITY_EXPANSION',     # Explicit: predicts risk increase
+    'VOLATILITY_CONTRACTION',   # Explicit: predicts risk decrease
+    'VOLATILITY_INNOVATION',    # Explicit: predicts volatility novelty
+    'FRAGILITY',                # Market fragility predicts instability level
+    
+    # Information/Signal families
+    'INFORMATION',              # Information events predict informativeness
+    'INFORMAT',                 # Truncated
+    'INFORMATION_SPECIALIST',   # Explicit: predicts information content
+    'SURPRISE',                 # Surprise events predict shock intensity
+    'CAUSAL',                   # Causal events predict effect intensity
+    
+    # Flow/Pressure families
+    'FLOW_PRESSURE',        # Flow pressure predicts imbalance intensity
+    'FLOW_PRE',             # Truncated: matches FLOW_PRESSURE
+    'FLOW_',                # Prefix match
+    # NOTE: INVENTORY_SPECIALIST uses TBM (directional: long/short pressure)
+    
+    # Momentum/Exhaustion families
+    'MOMENTUM',                     # Momentum exhaustion/decay predicts fade magnitude
+    'MOMENTUM_DECAY',               # Explicit: predicts fade magnitude
+    'MOMENTUM_DECAY_SPECIALIST',    # Explicit: predicts fade magnitude
+    'EXHAUSTION',                   # Exhaustion events predict reversal intensity
+    'EXHAUSTION_SPECIALIST',        # Explicit: predicts exhaustion level
+    
+    # Dispersion/Cross-asset families
+    'DISPERSION',               # Dispersion events predict cross-asset divergence
+    'DISPERSION_SPECIALIST',    # Explicit: predicts dispersion level
+    'CROSS_ASSET',              # Cross-asset events predict correlation activity
+    
+    # Meta/Aggregate families
+    'META_',            # Meta-features predict aggregate activity
+    'META_SUM',         # Explicit: meta summary
+    'MARKET_STATE',     # Market state predicts condition intensity
+    
+    # NOTE: Removed 'SPECIALIST' catch-all - directional specialists like
+    # GAP_SPECIALIST, FRACTAL_EFFICIENCY, INVENTORY_SPECIALIST use Triple Barrier
+})
 
 
 class ContinuousPredictorEvents:
@@ -669,11 +736,12 @@ class HuberResidualStack(BaseEstimator, ClassifierMixin):
     2. Fashion Estimator (ExtraTrees/XGB) on OOF residuals.
     3. Isotonic Calibration on L+T.
     """
-    def __init__(self, huber_params=None, fashion_estimator=None, n_splits=5, random_state=42):
+    def __init__(self, huber_params=None, fashion_estimator=None, n_splits=5, random_state=42, pos_boost=0.0):
         self.huber_params = huber_params if huber_params else {}
         self.fashion_estimator = fashion_estimator
         self.n_splits = n_splits
         self.random_state = random_state
+        self.pos_boost = pos_boost
         self.law_model = None
         self.fashion_model = None
         self.calibrator = None
@@ -687,37 +755,50 @@ class HuberResidualStack(BaseEstimator, ClassifierMixin):
         # De Prado Alignment: Capture index for Purged K-Fold if available
         index = getattr(X, 'index', None)
 
-        X_arr = check_array(X, accept_sparse=True, ensure_all_finite=False)
+        try:
+            X_arr = check_array(X, accept_sparse=True, ensure_all_finite=False)
+        except TypeError:
+            # Backward compatibility for older sklearn versions
+            X_arr = check_array(X, accept_sparse=True, force_all_finite=False)
         # Ensure y and sample_weight are numpy arrays to avoid pandas indexing issues
         y = np.asarray(y)
         if sample_weight is not None:
             sample_weight = np.asarray(sample_weight)
+        else:
+            sample_weight = np.ones(len(y), dtype=np.float64)
+
+        if self.pos_boost and self.pos_boost > 0:
+            sample_weight = sample_weight * (1.0 + self.pos_boost * y)
+            sample_weight = np.maximum(sample_weight, 0.0)
 
         if self.fashion_estimator is None:
             raise ValueError("fashion_estimator must be provided")
 
         # Phase 1: OOF Residuals (Using PurgedKFoldTime for strict non-leakage)
         if index is not None and isinstance(index, pd.DatetimeIndex):
-             # Ensure index aligns with X_arr length (check_array might drop rows? No, it usually just converts)
-             if len(index) != len(X_arr):
-                 # Fallback if length mismatch (e.g. infinite values dropped before this?)
-                 # check_array doesn't drop unless we ask it to.
-                 kf = KFold(n_splits=self.n_splits, shuffle=False)
-                 splitter = kf.split(X_arr)
-             else:
-                 # Use PurgedKFoldTime with index awareness
-                 from src.utils.purged_kfold import PurgedKFoldTime
-                 # Default purge/embargo: 1% purge? Or 30m? Let's use conservative 1%ish or default.
-                 # Using defaults from class definition (30m purge, 15m embargo)
-                 pkf = PurgedKFoldTime(n_splits=self.n_splits)
-                 # PurgedKFoldTime.split expects a DataFrame with index
-                 # We create a lightweight dummy
-                 dummy_X = pd.DataFrame(index=index)
-                 splitter = pkf.split(dummy_X)
+            # Ensure index aligns with X_arr length (check_array might drop rows? No, it usually just converts)
+            if len(index) != len(X_arr):
+                # Fallback if length mismatch (e.g. infinite values dropped before this?)
+                # check_array doesn't drop unless we ask it to.
+                splitter = list(KFold(n_splits=self.n_splits, shuffle=False).split(X_arr))
+            else:
+                # Use PurgedKFoldTime with index awareness
+                from src.utils.purged_kfold import PurgedKFoldTime
+                # Default purge/embargo: 1% purge? Or 30m? Let's use conservative 1%ish or default.
+                # Using defaults from class definition (30m purge, 15m embargo)
+                try:
+                    pkf = PurgedKFoldTime(n_splits=self.n_splits)
+                    # PurgedKFoldTime.split expects a DataFrame with index
+                    # We create a lightweight dummy
+                    dummy_X = pd.DataFrame(index=index)
+                    splitter = list(pkf.split(dummy_X))
+                except Exception:
+                    splitter = list(KFold(n_splits=self.n_splits, shuffle=False).split(X_arr))
         else:
-             # Fallback to Block K-Fold if no time index available
-             kf = KFold(n_splits=self.n_splits, shuffle=False)
-             splitter = kf.split(X_arr)
+            # Fallback to Block K-Fold if no time index available
+            splitter = list(KFold(n_splits=self.n_splits, shuffle=False).split(X_arr))
+        if not splitter:
+            splitter = list(KFold(n_splits=self.n_splits, shuffle=False).split(X_arr))
 
         oof_preds = np.zeros(len(y))
 
@@ -794,7 +875,7 @@ class HuberResidualStack(BaseEstimator, ClassifierMixin):
 
         # 3. Isotonic Calibration using nested OOF
         fashion_oof = np.zeros(len(y))
-        for train_idx, val_idx in kf.split(X_arr):
+        for train_idx, val_idx in splitter:
             # Reconstruct X fold as DataFrame if needed
             X_tr_arr = X_arr[train_idx]
             X_val_arr = X_arr[val_idx]
@@ -816,7 +897,7 @@ class HuberResidualStack(BaseEstimator, ClassifierMixin):
 
         total_oof = oof_preds + fashion_oof
         self.calibrator = IsotonicRegression(out_of_bounds='clip')
-        self.calibrator.fit(total_oof, y)
+        self.calibrator.fit(total_oof, y, sample_weight=sample_weight)
 
         self._is_fitted = True
         if hasattr(self.fashion_model, 'feature_importances_'):
@@ -826,7 +907,11 @@ class HuberResidualStack(BaseEstimator, ClassifierMixin):
 
     def decision_function(self, X):
         check_is_fitted(self, '_is_fitted')
-        X = check_array(X, accept_sparse=True, ensure_all_finite=False)
+        try:
+            X = check_array(X, accept_sparse=True, ensure_all_finite=False)
+        except TypeError:
+            # Backward compatibility for older sklearn versions
+            X = check_array(X, accept_sparse=True, force_all_finite=False)
         law_pred = self.law_model.predict(X)
         fashion_pred = self.fashion_model.predict(X)
         return law_pred + fashion_pred
@@ -1760,26 +1845,58 @@ def _reconstruct_ortho_geometries(raw_candidates: List[Dict[str, Any]]) -> List[
             continue
         if not isinstance(events, pd.DatetimeIndex):
             events = pd.DatetimeIndex(events)
+        if events.tz is not None:
+            events = events.tz_localize(None)
 
         labels = cand.get("labels")
         if isinstance(labels, dict):
             labels_series = pd.Series(labels)
             labels_series.index = pd.to_datetime(labels_series.index)
+            if labels_series.index.tz is not None:
+                labels_series.index = labels_series.index.tz_localize(None)
             labels = labels_series.reindex(events)
         elif isinstance(labels, list):
             labels = pd.Series(labels, index=events)
         elif isinstance(labels, pd.Series):
+            labels = labels.copy()
+            labels.index = pd.to_datetime(labels.index)
+            if labels.index.tz is not None:
+                labels.index = labels.index.tz_localize(None)
             labels = labels.reindex(events)
+
+        if isinstance(labels, pd.Series):
+            total = len(labels)
+            non_na = int(labels.notna().sum())
+            if total > 0 and non_na == 0:
+                tprint_warning(
+                    f"⚠️ Reconstructed labels empty after alignment for {family} ({name}); "
+                    f"events={len(events)}"
+                )
 
         weights = cand.get("weights")
         if isinstance(weights, dict):
             weights_series = pd.Series(weights)
             weights_series.index = pd.to_datetime(weights_series.index)
+            if weights_series.index.tz is not None:
+                weights_series.index = weights_series.index.tz_localize(None)
             weights = weights_series.reindex(events)
         elif isinstance(weights, list):
             weights = pd.Series(weights, index=events)
         elif isinstance(weights, pd.Series):
+            weights = weights.copy()
+            weights.index = pd.to_datetime(weights.index)
+            if weights.index.tz is not None:
+                weights.index = weights.index.tz_localize(None)
             weights = weights.reindex(events)
+
+        if isinstance(weights, pd.Series):
+            total = len(weights)
+            non_na = int(weights.notna().sum())
+            if total > 0 and non_na == 0:
+                tprint_warning(
+                    f"⚠️ Reconstructed weights empty after alignment for {family} ({name}); "
+                    f"events={len(events)}"
+                )
 
         params = cand.get("params", {})
         metrics = cand.get("metrics_raw") or cand.get("metrics") or {}
@@ -2359,6 +2476,7 @@ class LabelBasedLayer2(BaseStep):
         # IRM Parameters
         self.lambda_irm = kwargs.get('lambda_irm', 1.0)
         self.lambda_variance = kwargs.get('lambda_variance', 1.0)
+        self.huber_pos_boost = kwargs.get('huber_pos_boost', 0.5)
         self.focal_alpha = kwargs.get('focal_alpha', 1.0)
         self.focal_gamma = kwargs.get('focal_gamma', 2.0)
         self.focal_gamma_pos = kwargs.get('focal_gamma_pos', 1.0)
@@ -2366,6 +2484,8 @@ class LabelBasedLayer2(BaseStep):
         self.irm_teacher_regimes = kwargs.get('irm_teacher_regimes', 4)
         self.irm_refit_regimes = kwargs.get('irm_refit_regimes', False)
         self.irm_regime_dir = Path(kwargs.get('irm_regime_dir', "artifacts/irm_regimes"))
+        if self.irm_regime_dir.exists() and not self.irm_regime_dir.is_dir():
+            self.irm_regime_dir.unlink()
         self.irm_regime_dir.mkdir(parents=True, exist_ok=True)
         self._irm_regime_labels = None
         self._irm_env_indices = []
@@ -2377,6 +2497,7 @@ class LabelBasedLayer2(BaseStep):
         
         # Causal Surprise Parameters
         self.surprise_threshold = kwargs.get('surprise_threshold', 0.9)  # Lowered from 1.2 for more events (was 1.8 originally)
+        self.causal_event_threshold = kwargs.get('causal_event_threshold', 0.04)
         self.rolling_window = kwargs.get('rolling_window', 20)
         self.min_specialists = kwargs.get('min_specialists', 2)
         self.discovery_max_features = kwargs.get('discovery_max_features', 25)  # Optimized default (was 60)
@@ -3566,6 +3687,7 @@ class LabelBasedLayer2(BaseStep):
                 tprint_info("🚀 AEDL Pipeline: Starting frequency-dependent analysis...")
             
             aedl_start_time = time.time()
+            causal_events_df = getattr(self, "_restored_causal_events_df", None)
             
             # Get causal anchor predictions
             causal_anchor_predictions = self._get_causal_anchor_predictions(n_samples=len(df))
@@ -3605,6 +3727,29 @@ class LabelBasedLayer2(BaseStep):
             # Compile results
             aedl_time = time.time() - aedl_start_time
             
+            if causal_events_df is not None and not causal_events_df.empty:
+                label_cols = {"bin", "label", "side", "ret", "realized_return"}
+                if not label_cols.intersection(causal_events_df.columns):
+                    try:
+                        horizon = int(self._current_config.get("horizon", 48))
+                        pt_mult = float(self._current_config.get("pt_mult", 2.0))
+                        sl_mult = float(self._current_config.get("sl_mult", 1.0))
+                        labels, weights, returns, _, _, _ = self._compute_dominance_labels(
+                            df, causal_events_df, horizon=horizon, pt_mult=pt_mult, sl_mult=sl_mult
+                        )
+                        causal_events_df = causal_events_df.copy()
+                        causal_events_df["bin"] = labels
+                        causal_events_df["label"] = labels
+                        if isinstance(returns, pd.Series):
+                            causal_events_df["ret"] = returns
+                            causal_events_df.setdefault("realized_return", returns)
+                        if "side" not in causal_events_df.columns:
+                            causal_events_df["side"] = np.sign(labels).fillna(0)
+                        if isinstance(weights, pd.Series) and "sample_weight" not in causal_events_df.columns:
+                            causal_events_df["sample_weight"] = weights
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to enrich causal events with labels: {e}")
+
             results = {
                 'aedl_enabled': True,
                 'specialist_signals': aedl_results.get('specialist_signals', {}),
@@ -4375,8 +4520,12 @@ class LabelBasedLayer2(BaseStep):
             tprint_info("   🎯 Layer 2: Generating causal events from surprise scores...")
             # Retry logic with progressively lower thresholds
             causal_events = {}
-            # Start with 0.04 (4% target) as requested
-            for thresh in [0.04, 0.01, 0.005, 0.001, 0.0001]:
+            # Start with user-provided threshold (default 0.04)
+            thresholds = [self.causal_event_threshold, 0.01, 0.005, 0.001, 0.0001]
+            # Ensure unique and sorted descending
+            thresholds = sorted(list(set(thresholds)), reverse=True)
+
+            for thresh in thresholds:
                 tprint_info(f"   🔄 Attempting event generation with threshold={thresh}...")
                 causal_events = self._surprise_detector.generate_causal_events(
                     market_data=None, # Disable market_data to prevent look-ahead bias
@@ -4796,9 +4945,11 @@ class LabelBasedLayer2(BaseStep):
                     # Check if outcomes_dir was injected by the orchestrator
                     outcomes_target = getattr(self, 'outcomes_dir', None)
                     if outcomes_target is None:
-                        outcomes_target = Path("outcomes")
-                    else:
-                        outcomes_target = Path(outcomes_target)
+                        config_outcomes = None
+                        if hasattr(self, '_current_config') and isinstance(self._current_config, dict):
+                            config_outcomes = self._current_config.get('outcomes_dir')
+                        outcomes_target = config_outcomes or Path("outcomes")
+                    outcomes_target = Path(outcomes_target)
                     
                     outcomes_target.mkdir(parents=True, exist_ok=True)
                     events_parquet_path = outcomes_target / f"{events_artifact_name}_events.parquet"
@@ -5360,11 +5511,14 @@ class LabelBasedLayer2(BaseStep):
                     # CHUNKED PROCESSING: Process large DataFrames in chunks to reduce memory pressure
                     chunk_size = 50_000
                     if len(df_features) > chunk_size * 2:
-                        tprint_info(f"   📦 Chunked processing: {len(df_features)} rows in {len(df_features) // chunk_size + 1} chunks")
+                        n_chunks = len(df_features) // chunk_size + 1
+                        tprint_info(f"   📦 Chunked processing: {len(df_features)} rows in {n_chunks} chunks")
                         # === OPT 9: Collect chunks in list, single concat at end ===
                         chunk_list = []
-                        for start in range(0, len(df_features), chunk_size):
+                        for i, start in enumerate(range(0, len(df_features), chunk_size)):
                             end = min(start + chunk_size, len(df_features))
+                            tprint_info(f"      🔹 Processing chunk {i+1}/{n_chunks} (rows {start}-{end})...")
+                            
                             chunk_df = df_features.iloc[start:end].copy()
                             chunk_signals = signals.iloc[start:end].copy()
                             try:
@@ -5379,8 +5533,10 @@ class LabelBasedLayer2(BaseStep):
                                     chunk_X.index = chunk_df.index
                                     
                                 chunk_list.append(chunk_X)
+                                tprint_info(f"      ✅ Chunk {i+1} completed: {chunk_X.shape}")
                             except Exception as chunk_e:
-                                tprint_warning(f"   ⚠️ Chunk {start//chunk_size} failed: {chunk_e}")
+                                tprint_error(f"      ❌ Chunk {i+1} failed: {chunk_e}")
+                            
                             # Cleanup chunk memory
                             del chunk_df, chunk_signals
                             gc.collect()
@@ -5407,12 +5563,44 @@ class LabelBasedLayer2(BaseStep):
                     # Exclude 'close' if it was denoised or modified.
                     exclude_cols = set(X_all.columns) | {'close', 'open', 'high', 'low', 'volume'}
                     extra_cols = [c for c in df.columns if c not in exclude_cols]
+                    cross_asset_extra = [
+                        c
+                        for c in extra_cols
+                        if isinstance(c, str) and c.startswith(("ca__", "ms__", "meta__"))
+                    ]
+                    
+                    # DEBUG: Cross-asset investigation
+                    if len(cross_asset_extra) == 0:
+                        corr_cols = [c for c in df.columns if isinstance(c, str) and c.startswith(('corr_', 'beta_', 'lead_lag_'))]
+                        if corr_cols:
+                            tprint_info(f"   🔍 [Cross-Asset Debug] Found {len(corr_cols)} correlation/beta/lead-lag cols in df")
+                        else:
+                            tprint_info(f"   🔍 [Cross-Asset Debug] No cross-asset prefixes (ca__, ms__, meta__, corr_, beta_, lead_lag_) found")
+                            tprint_info(f"   🔍 [Cross-Asset Debug] Config enable_cross_asset={self._current_config.get('enable_cross_asset', 'not_set')}")
                     
                     if extra_cols:
-                        tprint_info(f"   ➕ Preserving {len(extra_cols)} extra features from input (Specialists/Spectral)...")
+                        tprint_info(
+                            f"   ➕ Preserving {len(extra_cols)} extra features from input "
+                            f"(Specialists/Spectral, cross-asset={len(cross_asset_extra)})..."
+                        )
                         # Align empty rows if any
-                        X_extra = df[extra_cols].reindex(X_all.index).fillna(0.0)
-                        X_all = pd.concat([X_all, X_extra], axis=1)
+                        X_extra = df[extra_cols].reindex(X_all.index)
+                        if not X_extra.empty:
+                            # Sanitize categorical/object columns to avoid fillna category errors
+                            cat_cols = X_extra.select_dtypes(include=['category']).columns
+                            for col in cat_cols:
+                                X_extra[col] = X_extra[col].cat.codes.replace(-1, np.nan)
+
+                            obj_cols = X_extra.select_dtypes(include=['object']).columns
+                            for col in obj_cols:
+                                X_extra[col] = pd.to_numeric(X_extra[col], errors='coerce')
+
+                            numeric_cols = X_extra.select_dtypes(include=[np.number, 'bool']).columns
+                            if len(numeric_cols) > 0:
+                                X_extra = X_extra[numeric_cols].fillna(0.0)
+                                X_all = pd.concat([X_all, X_extra], axis=1)
+                            else:
+                                tprint_info("   ℹ️ No numeric extra features to preserve after sanitization.")
 
                     # --- CAUSAL FEATURE DENOISING ---
                     if getattr(self, 'enable_causal_denoising', False):
@@ -5447,6 +5635,13 @@ class LabelBasedLayer2(BaseStep):
                                 tprint_info(f"   ✅ Added {len(posteriors.columns)} regime posterior features")
                         except Exception as e:
                             tprint_warning(f"   ⚠️ Failed to inject regime posteriors: {e}")
+
+                    non_numeric_cols = X_all.select_dtypes(exclude=[np.number, 'bool']).columns
+                    if len(non_numeric_cols) > 0:
+                        tprint_info(
+                            f"   🧹 Dropping {len(non_numeric_cols)} non-numeric global features to ensure stability"
+                        )
+                        X_all = X_all.drop(columns=non_numeric_cols)
 
                     # Cache the full feature set
                     if not hasattr(self, '_cached_global_features'):
@@ -5531,7 +5726,7 @@ class LabelBasedLayer2(BaseStep):
                 if isinstance(self._current_config, dict):
                     self._current_context.update(
                         {
-                            "symbol": self._current_config.get("symbol", "UNKNOWN"),
+                            "symbol": self._current_config.get('layer2_checkpoint_symbol') or self._current_config.get('symbol', 'UNKNOWN'),
                             "exchange": self._current_config.get("exchange", "binance"),
                             "timeframe": self._current_config.get("timeframe", "15m"),
                             "direction": self._current_config.get("direction", "long"),
@@ -5605,21 +5800,42 @@ class LabelBasedLayer2(BaseStep):
                 try:
                     denoised_df = pd.DataFrame({"denoised_close": denoised_price})
                     if isinstance(self._current_config, dict):
-                        self._current_context.update(
-                            {
-                                "symbol": self._current_config.get("symbol", "UNKNOWN"),
-                                "exchange": self._current_config.get("exchange", "binance"),
-                                "timeframe": self._current_config.get("timeframe", "15m"),
-                                "direction": self._current_config.get("direction", "long"),
-                                "model": "analyst",
-                            }
-                        )
+                        # Check if we're in multi-asset mode
+                        assets = self._current_config.get('assets', [])
+                        if len(assets) > 1:
+                            # Multi-asset mode
+                            self._current_context.update(
+                                {
+                                    "symbol": f"multi_asset_{len(assets)}assets",
+                                    "exchange": self._current_config.get("exchange", "binance"),
+                                    "timeframe": self._current_config.get("timeframe", "15m"),
+                                    "direction": self._current_config.get("direction", "long"),
+                                    "model": "analyst",
+                                    "assets": assets,
+                                    "multi_asset_mode": True,
+                                }
+                            )
+                        else:
+                            # Single asset mode
+                            self._current_context.update(
+                                {
+                                    "symbol": self._current_config.get("symbol", "UNKNOWN"),
+                                    "exchange": self._current_config.get("exchange", "binance"),
+                                    "timeframe": self._current_config.get("timeframe", "15m"),
+                                    "direction": self._current_config.get("direction", "long"),
+                                    "model": "analyst",
+                                }
+                            )
                     self._save_artifact(
                         denoised_df,
                         artifact_name,
                         artifact_type="data",
                         data_category="features",
-                        metadata={"dataset_fingerprint": self._dataset_fingerprint},
+                        metadata={
+                            "dataset_fingerprint": self._dataset_fingerprint,
+                            "assets": self._current_config.get('assets', []),
+                            "multi_asset_mode": len(self._current_config.get('assets', [])) > 1,
+                        },
                     )
                 except Exception as e:
                     tprint_warning(f"⚠️ Failed to save denoised price artifact: {e}")
@@ -5643,11 +5859,203 @@ class LabelBasedLayer2(BaseStep):
             tprint_info(f"✅ Using cached features for {len(events_df)} events (fold {fold_idx})")
         
         return self._feature_cache[cache_key]
+
+    def _resolve_label_side(self, family: str, params: dict) -> str:
+        side = params.get("side") if isinstance(params, dict) else None
+        if side:
+            return side
+        family_upper = (family or "").upper()
+        if family_upper.endswith("_SPECIALIST"):
+            return "both"
+        non_directional_markers = (
+            "VOLATILITY",
+            "VOLUME",
+            "LIQUIDITY",
+            "FRAGILITY",
+            "FLOW_PRESSURE",
+            "SURPRISE",
+            "MARKET_STATE",
+            "CROSS_ASSET",
+            "META_",
+            "DISPERSION",
+            "EXHAUSTION",
+            "INFORMATION",
+            "INVENTORY",
+            "FLOW_PRESSURE",
+            "FLOW_PRE",
+            "FRAGILITY",
+            "MEAN_REVERSION",
+            "MEAN_REV",
+        )
+        if any(marker in family_upper for marker in non_directional_markers):
+            tprint_debug(f"Resolved side for {family} (non-directional marker): both")
+            return "both"
+        tprint_debug(f"Resolved side for {family}: positive (default)")
+        return "positive"
+    
+    def _is_magnitude_family(self, family: str) -> bool:
+        """Check if family should use magnitude-based labeling."""
+        tprint_debug(f"Checking if {family} is a magnitude family.")
+        if not family:
+            tprint_debug(f"{family} is not a magnitude family (empty/None).")
+            return False
+        family_upper = family.upper()
+        is_magnitude = any(marker in family_upper for marker in MAGNITUDE_FAMILIES)
+        tprint_debug(f"{family} is {'a' if is_magnitude else 'not a'} magnitude family.")
+        return is_magnitude
+    
+    def _compute_magnitude_labels(
+        self, 
+        df: pd.DataFrame, 
+        events: pd.DatetimeIndex, 
+        horizon: int = 24,
+        family: str = "",
+        return_continuous: bool = False
+    ) -> Optional[pd.Series]:
+        """
+        Compute magnitude-based labels with family-specific thresholds.
+        
+        This is semantically correct for volatility/intensity families where
+        the question is "how big is the move?" not "which direction?".
+        
+        Args:
+            df: DataFrame with 'close' column
+            events: Event timestamps to label
+            horizon: Forward horizon in bars
+            family: Family name for threshold selection
+            return_continuous: If True, return z-scored magnitudes for regression
+                             If False (default), return binary labels for classification
+            
+        Returns:
+            Binary labels (1 = high magnitude, 0 = low magnitude) for classifiers
+            OR z-scored magnitudes for regression (if return_continuous=True)
+            OR None if failed
+        """
+        if 'close' not in df.columns or events.empty:
+            return None
+        
+        # Family-specific quantile thresholds
+        # Higher quantile = more selective (fewer positives, higher quality signals)
+        # Lower quantile = more inclusive (more positives, broader coverage)
+        FAMILY_QUANTILES = {
+            # High-selectivity families (want rare, extreme events)
+            # Original values +0.20, capped at 0.90
+            'VOLATILITY': 0.85,             # Was 0.65
+            'VOLATILITY_SPECIALIST': 0.85,  # Was 0.65
+            'VOLATILITY_EXPANSION': 0.80,   # Was 0.60
+            'VOLATILITY_CONTRACTION': 0.80, # Was 0.60
+            'FRAGILITY': 0.90,              # Was 0.70
+            
+            # Medium-selectivity families (balanced)
+            # Original values +0.20
+            'VOLUME': 0.75,                 # Was 0.55
+            'VOLUME_SPECIALIST': 0.75,      # Was 0.55
+            'VOLUME_S': 0.75,               # Truncated
+            'LIQUIDITY': 0.75,              # Was 0.55
+            'LIQUIDITY_SPECIALIST': 0.75,   # Was 0.55
+            'LIQUIDI': 0.75,                # Truncated
+            'SURPRISE': 0.75,               # Was 0.55
+            'INFORMATION': 0.75,            # Was 0.55
+            'INFORMATION_SPECIALIST': 0.75, # Was 0.55
+            'INFORMAT': 0.75,               # Truncated
+            
+            # Lower-selectivity families (want broader coverage)
+            # Original values +0.20
+            'MOMENTUM': 0.70,               # Was 0.50
+            'MOMENTUM_DECAY': 0.70,         # Was 0.50
+            'EXHAUSTION': 0.70,             # Was 0.50
+            'EXHAUSTION_SPECIALIST': 0.70,  # Was 0.50
+            'DISPERSION': 0.70,             # Was 0.50
+            'DISPERSION_SPECIALIST': 0.70,  # Was 0.50
+            
+            # Meta/Flow families
+            # Original values +0.20
+            'META_': 0.70,                  # Was 0.50
+            'META_SUM': 0.70,               # Truncated
+            'MARKET_STATE': 0.70,           # Was 0.50
+            'CROSS_ASSET': 0.70,            # Was 0.50
+            'CAUSAL': 0.70,                 # Was 0.50
+            'FLOW_PRESSURE': 0.70,          # Was 0.50
+            'FLOW_PRE': 0.70,               # Truncated
+            'FLOW_': 0.70,                  # Prefix
+        }
+        
+        try:
+            # Compute forward returns
+            forward_returns = df['close'].pct_change(horizon).shift(-horizon)
+            event_returns = forward_returns.reindex(events).dropna()
+            
+            if event_returns.empty or len(event_returns) < 10:
+                return None
+            
+            # Compute absolute returns (magnitudes)
+            abs_returns = event_returns.abs()
+            if abs_returns.nunique() < 2:
+                return None
+            
+            # Get family-specific quantile or default to median
+            family_upper = (family or "").upper()
+            quantile = 0.50  # Default: median
+            for fam_key, q in FAMILY_QUANTILES.items():
+                if fam_key in family_upper:
+                    quantile = q
+                    break
+            
+            if return_continuous:
+                # REGRESSION MODE: Return z-scored magnitudes
+                # Useful for ExtraTrees regression that predicts magnitude intensity
+                mean_mag = abs_returns.mean()
+                std_mag = abs_returns.std()
+                if std_mag < 1e-9:
+                    return None
+                z_magnitudes = (abs_returns - mean_mag) / std_mag
+                # Clip to prevent extreme outliers
+                z_magnitudes = z_magnitudes.clip(-3, 3)
+                return z_magnitudes
+            else:
+                # CLASSIFICATION MODE: Return binary labels
+                threshold = abs_returns.quantile(quantile)
+                labels = (abs_returns > threshold).astype(int)
+                
+                if labels.nunique() < 2:
+                    # Fallback to median if quantile gives single class
+                    threshold = abs_returns.median()
+                    labels = (abs_returns > threshold).astype(int)
+                
+                if labels.nunique() < 2:
+                    return None
+                    
+                return labels
+            
+        except Exception as e:
+            if self.verbose:
+                tprint_warning(f"   ⚠️ Magnitude label computation failed: {e}")
+            return None
     
     def _compute_labels_batch(self, df_train: pd.DataFrame, events: pd.DatetimeIndex, 
                             geometries: List, family: str, fold_idx: int,
                             sr_levels: List = None, event_weights: pd.Series = None) -> Tuple[Dict[str, pd.Series], Dict[str, pd.Series]]:
         """Compute labels and weights for multiple geometries of the same family at once."""
+        def _scale_weights(weights: pd.Series, label: str) -> pd.Series:
+            if not isinstance(weights, pd.Series) or weights.empty:
+                return weights
+            w_min = float(weights.min())
+            w_max = float(weights.max())
+            if not np.isfinite(w_min) or not np.isfinite(w_max):
+                weights = weights.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+                w_min = float(weights.min())
+                w_max = float(weights.max())
+            neg_count = int((weights < 0).sum())
+            if neg_count > 0:
+                neg_pct = neg_count / max(len(weights), 1)
+                tprint_warning(
+                    f"   ⚠️ Negative weights in {label}: min={w_min:.4g}, max={w_max:.4g}, "
+                    f"neg={neg_count} ({neg_pct:.1%})"
+                )
+            if w_max <= w_min + 1e-12:
+                return pd.Series(1.0, index=weights.index)
+            scaled = (weights - w_min) / (w_max - w_min)
+            return scaled * 3.0
         cache_key = self._get_label_batch_cache_key(family, geometries, events)
         if cache_key in self._label_batch_cache:
             cached_labels, cached_base_weights = self._label_batch_cache[cache_key]
@@ -5657,7 +6065,7 @@ class LabelBasedLayer2(BaseStep):
                  final_weights = {}
                  for k, w in cached_base_weights.items():
                      ew = event_weights.reindex(w.index).fillna(1.0)
-                     final_weights[k] = w * ew
+                     final_weights[k] = _scale_weights(w * ew, f"{family}/{k}/event_cache")
                  return cached_labels, final_weights
 
             tprint_info(f"✅ Using cached batch labels for {len(geometries)} {family} geometries (fold {fold_idx})")
@@ -5672,6 +6080,18 @@ class LabelBasedLayer2(BaseStep):
         base_signal_weights = get_signal_specific_weights(
             df_train, events, sr_levels=sr_levels, component_weights=self.signal_weights, family=family
         )
+        if isinstance(base_signal_weights, pd.Series) and (base_signal_weights < 0).any():
+            tprint_warning(
+                f"   ⚠️ Negative base signal weights for family {family}: "
+                f"min={base_signal_weights.min():.4g}, max={base_signal_weights.max():.4g}"
+            )
+            base_signal_weights = base_signal_weights.abs()
+        if isinstance(event_weights, pd.Series) and (event_weights < 0).any():
+            tprint_warning(
+                f"   ⚠️ Negative event weights for family {family}: "
+                f"min={event_weights.min():.4g}, max={event_weights.max():.4g}"
+            )
+            event_weights = event_weights.abs()
 
         # Compute labels for all geometries in this family
         labels_dict = {}
@@ -5680,6 +6100,8 @@ class LabelBasedLayer2(BaseStep):
 
         for gt in geometries:
             try:
+                params = getattr(gt, 'params', {}) or {}
+                side = self._resolve_label_side(family, params)
                 if family.startswith('CAUSAL_') or family.endswith('_SPECIALIST'):
                     # Causal families: use binary barrier labeling (Dominance Labels)
                     # Shorten outcome horizon by 50% for high-conviction causal events if desired, 
@@ -5688,14 +6110,30 @@ class LabelBasedLayer2(BaseStep):
                     pt_mult = gt.params.get('pt_mult', 1.5)
                     sl_mult = gt.params.get('sl_mult', 0.75)
                     
-                    labels, weights, _, _, _, _ = self._compute_dominance_labels(
+                    labels, weights, returns, _, _, _ = self._compute_dominance_labels(
                         df_train, events_df,
                         pt_mult=pt_mult,
                         sl_mult=sl_mult,
                         horizon=horizon
                     )
-                    # Ensure binary
-                    labels = (labels > 0.5).astype(int)
+                    # Ensure binary (side-aware)
+                    if side == 'negative':
+                        labels = (labels < 0).astype(int)
+                    elif side == 'both':
+                        labels = (labels != 0).astype(int)
+                    else:
+                        labels = (labels > 0).astype(int)
+                    
+                    # De Prado-compliant fallback: magnitude split only for non-directional families
+                    if isinstance(labels, pd.Series) and labels.nunique(dropna=True) < 2:
+                        allow_magnitude_split = side == 'both' or (
+                            isinstance(family, str) and "VOLATILITY" in family
+                        )
+                        if allow_magnitude_split and isinstance(returns, pd.Series) and len(returns.dropna()) > 1:
+                            abs_rets = returns.abs().dropna()
+                            if abs_rets.nunique() > 1:
+                                threshold = abs_rets.median()
+                                labels = (returns.abs() > threshold).astype(int)
                     
                     # For CAUSAL_SURPRISE: use soft sample weights from the surprise detector
                     if family == 'CAUSAL_SURPRISE':
@@ -5714,31 +6152,97 @@ class LabelBasedLayer2(BaseStep):
                     sl = gt.params.get('sl_mult', 1.0)
                     horizon = int(gt.params.get('horizon', 24))
                     # Fallback to _compute_dominance_labels for consistency
-                    labels, weights, _, _, _, _ = self._compute_dominance_labels(
+                    labels, weights, returns, _, _, _ = self._compute_dominance_labels(
                         df_train, events_df, 
                         horizon=horizon, 
                         pt_mult=pt, 
                         sl_mult=sl
                     )
 
+                if isinstance(weights, pd.Series) and (weights < 0).any():
+                    tprint_warning(
+                        f"   ⚠️ Negative dominance weights for {gt.uuid}: "
+                        f"min={weights.min():.4g}, max={weights.max():.4g}"
+                    )
+                if isinstance(labels, pd.Series) and labels.nunique(dropna=True) < 2:
+                    label_counts = labels.value_counts(dropna=True).to_dict()
+                    reasons = []
+                    returns_stats = {}
+                    if isinstance(returns, pd.Series) and not returns.empty:
+                        returns_clean = returns.dropna()
+                        if not returns_clean.empty:
+                            pos_rate = float((returns_clean > 0).mean())
+                            neg_rate = float((returns_clean < 0).mean())
+                            zero_rate = float((returns_clean == 0).mean())
+                            returns_stats = {
+                                "n": int(len(returns_clean)),
+                                "nunique": int(returns_clean.nunique(dropna=True)),
+                                "min": float(returns_clean.min()),
+                                "median": float(returns_clean.median()),
+                                "max": float(returns_clean.max()),
+                                "mean": float(returns_clean.mean()),
+                                "pos_rate": pos_rate,
+                                "neg_rate": neg_rate,
+                                "zero_rate": zero_rate,
+                                "abs_median": float(returns_clean.abs().median()),
+                                "abs_nunique": int(returns_clean.abs().nunique(dropna=True)),
+                            }
+                            if returns_stats["nunique"] <= 1:
+                                reasons.append("returns_constant")
+                            if pos_rate in (0.0, 1.0):
+                                reasons.append("returns_one_sided")
+                            if zero_rate > 0.9:
+                                reasons.append("returns_mostly_zero")
+                            if side == "negative" and neg_rate == 0.0:
+                                reasons.append("no_negative_returns_for_short")
+                            if side in (None, "positive") and pos_rate == 0.0:
+                                reasons.append("no_positive_returns_for_long")
+                            if side == "both" and pos_rate in (0.0, 1.0):
+                                reasons.append("no_variation_for_both_side")
+                    tprint_warning(
+                        "   ⚠️ Single-class labels for {uuid} after allowed fallbacks; skipping geometry. "
+                        "Counts={counts} side={side} family={family} params={params} reasons={reasons}".format(
+                            uuid=gt.uuid,
+                            counts=label_counts,
+                            side=side,
+                            family=family,
+                            params=getattr(gt, "params", {}),
+                            reasons=reasons or ["insufficient_label_variation"],
+                        )
+                    )
+                    if returns_stats:
+                        tprint_info(f"      ↳ Returns diagnostics: {returns_stats}")
+                    continue
+
                 labels_dict[gt.uuid] = labels
                 # Use De Prado weights if available (base_signal_weights), otherwise fall back to dominance weights
                 # Combine them? e.g. multiply.
                 if base_signal_weights is not None and not base_signal_weights.empty:
                     # Align weights
-                    aligned_base_w = base_signal_weights.reindex(labels.index).fillna(0.0)
+                    aligned_base_w = base_signal_weights.reindex(labels.index).fillna(0.0).clip(lower=0.0)
                     # For dominance labels, 'weights' is outcome quality.
                     # For signal weights, it is input quality.
                     # Product seems appropriate.
+                    if isinstance(aligned_base_w, pd.Series) and (aligned_base_w < 0).any():
+                        tprint_warning(
+                            f"   ⚠️ Negative aligned base weights for {gt.uuid}: "
+                            f"min={aligned_base_w.min():.4g}, max={aligned_base_w.max():.4g}"
+                        )
                     weights = weights * aligned_base_w
+
+                if isinstance(weights, pd.Series):
+                    weights = _scale_weights(weights, f"{family}/{gt.uuid}/base")
 
                 # Store base weights (before event_weights)
                 base_weights_dict[gt.uuid] = weights
 
                 # Apply explicit event intensity weights if provided (dynamic)
                 if event_weights is not None:
-                     ew = event_weights.reindex(weights.index).fillna(1.0)
-                     final_weights_dict[gt.uuid] = weights * ew
+                     ew = event_weights.reindex(weights.index).fillna(1.0).clip(lower=0.0)
+                     final_weights = weights * ew
+                     final_weights_dict[gt.uuid] = _scale_weights(
+                         final_weights, f"{family}/{gt.uuid}/event"
+                     )
                 else:
                      final_weights_dict[gt.uuid] = weights
 
@@ -6458,9 +6962,22 @@ class LabelBasedLayer2(BaseStep):
         # Handle both dict config and DataFrame inputs
         if df is None or (isinstance(df, pd.DataFrame) and df.empty) or (isinstance(df, dict) and not df):
             return "empty"
-        hash_series = hash_pandas_object(df[['close']] if 'close' in df.columns else df, index=True)
-        digest = hashlib.md5(hash_series.values.tobytes()).hexdigest()
-        return f"{len(df)}_{df.index.min()}_{df.index.max()}_{digest}"
+        
+        # For multi-asset data, include ticker level in fingerprint
+        if isinstance(df.index, pd.MultiIndex) and 'ticker' in df.index.names:
+            # Multi-asset panel data
+            hash_cols = ['close'] if 'close' in df.columns else df.columns[:1]  # Use first available column
+            hash_series = hash_pandas_object(df[hash_cols], index=True)
+            # Include asset information in fingerprint
+            assets = sorted(df.index.get_level_values('ticker').unique())
+            asset_info = f"assets_{len(assets)}_{'_'.join(assets)}"
+            digest = hashlib.md5(hash_series.values.tobytes()).hexdigest()
+            return f"{len(df)}_{df.index.min()}_{df.index.max()}_{asset_info}_{digest}"
+        else:
+            # Single asset data
+            hash_series = hash_pandas_object(df[['close']] if 'close' in df.columns else df, index=True)
+            digest = hashlib.md5(hash_series.values.tobytes()).hexdigest()
+            return f"{len(df)}_{df.index.min()}_{df.index.max()}_{digest}"
 
     def _compute_config_hash(self, config: Dict[str, Any]) -> str:
         """Create a deterministic fingerprint for configuration.
@@ -6671,6 +7188,9 @@ class LabelBasedLayer2(BaseStep):
     ) -> Dict[str, Any]:
         """Run cross-asset feature generation, gating, and validation blocks."""
         tprint_info("🌐 Cross-Asset Layer2: Building panel + market state vector")
+        tprint_info(
+            f"   • assets={sorted(list(cross_asset_data.keys())) if isinstance(cross_asset_data, dict) else 'unknown'}"
+        )
         run_id = config.get("cross_asset_run_id") or datetime.now().strftime("%Y%m%d_%H%M%S")
 
         panel_processor = PanelDataProcessor(
@@ -6685,6 +7205,13 @@ class LabelBasedLayer2(BaseStep):
             fracdiff_tolerance=float(config.get("panel_fracdiff_tolerance", 0.01)),
         )
         panel_df = panel_processor.fit_transform(cross_asset_data)
+        tprint_success(f"   ✅ Panel built: shape={panel_df.shape}, cols={len(panel_df.columns)}")
+        if panel_df.empty:
+            tprint_warning("   ⚠️ Cross-asset panel is empty after fit_transform")
+        else:
+            tprint_info(
+                f"   🧾 Panel columns sample: {list(panel_df.columns[:10])}"
+            )
         schema_result = panel_processor.validate_schema(panel_df)
         leakage_warnings = panel_processor.detect_leakage(panel_df)
 
@@ -6692,9 +7219,13 @@ class LabelBasedLayer2(BaseStep):
             tprint_warning(f"⚠️ Cross-asset schema issues: {schema_result.errors}")
 
         tickers = panel_df.index.get_level_values("ticker").unique().tolist()
+        tprint_info(f"   • Panel tickers: {tickers}")
         state_instruments = config.get("market_state_instruments") or tickers
         state_px = panel_df["raw__px"].unstack("ticker")
         state_px = state_px.loc[:, [t for t in state_instruments if t in state_px.columns]]
+        tprint_info(
+            f"   • Market state instruments: {state_instruments} (cols={len(state_px.columns)})"
+        )
 
         ms_config = MarketStateConfig(
             state_instruments=state_instruments,
@@ -6705,6 +7236,13 @@ class LabelBasedLayer2(BaseStep):
         )
         ms_vector = MarketStateVector(ms_config)
         ms_features = ms_vector.compute_state(state_px)
+        tprint_success(f"   ✅ Market state features: cols={len(ms_features.columns)}")
+        if ms_features is None or ms_features.empty:
+            tprint_warning("   ⚠️ Market state features empty; ms__ columns will be missing")
+        else:
+            tprint_info(
+                f"   🧭 Market state columns sample: {list(ms_features.columns[:10])}"
+            )
         loadings_history = config.get("ms_loadings_history") or []
         if ms_vector.loadings_ is not None:
             loadings_history = list(loadings_history) + [ms_vector.loadings_]
@@ -6720,6 +7258,10 @@ class LabelBasedLayer2(BaseStep):
         ms_panel = ms_features.reindex(panel_df.index.get_level_values("timestamp")).copy()
         ms_panel.index = panel_df.index
         store = store.add_features(ms_panel, prefix="ms__")
+        tprint_info(f"   ✅ Added market state to panel: cols={len(store.data.columns)}")
+        tprint_info(
+            f"   🧾 Panel columns after ms__: {list(store.data.columns[:10])}"
+        )
 
         surprises = CrossAssetSurprises(
             quantiles=config.get("vpin_quantiles"),
@@ -6727,7 +7269,7 @@ class LabelBasedLayer2(BaseStep):
             ect_half_life_bounds=tuple(config.get("ect_half_life_bounds", (1.0, 50.0))),
         )
         try:
-            tprint_info(f"   🌐 Cross-Asset: Running SVD/Feature Gen...")
+            tprint_info("   🌐 Cross-Asset: Running SVD/Feature Gen...")
             ca_features = surprises.fit_transform(store.data, ms_features)
             
             # Debug: Check feature counts
@@ -6737,12 +7279,20 @@ class LabelBasedLayer2(BaseStep):
                 tprint_warning("   ⚠️ Cross-Asset generator returned empty DataFrame.")
                 
             store = store.add_features(ca_features, prefix="ca__")
+            tprint_success(f"   ✅ Added cross-asset surprises: cols={len(store.data.columns)}")
+            tprint_info(
+                f"   🧾 Panel columns after ca__: {list(store.data.columns[:10])}"
+            )
         except Exception as e:
             tprint_warning(f"⚠️ Cross-asset SVD/feature generation failed: {e}. Skipping CA features.")
             # Ensure we don't crash, but CA features will be missing
 
 
         panel_with_features = store.data
+        tprint_info(f"   ✅ Cross-asset panel ready: shape={panel_with_features.shape}")
+        tprint_info(
+            f"   🧾 Final panel columns sample: {list(panel_with_features.columns[:10])}"
+        )
         post_leakage = panel_processor.detect_leakage(panel_with_features)
         numeric_feature_cols = [
             c
@@ -6860,6 +7410,7 @@ class LabelBasedLayer2(BaseStep):
 
         cross_asset_payload = {
             "panel": panel_with_features,
+            "panel_data": panel_with_features,
             "schema": schema_result,
             "leakage_warnings": leakage_warnings,
             "post_feature_leakage_warnings": post_leakage,
@@ -6941,6 +7492,8 @@ class LabelBasedLayer2(BaseStep):
              base_config.update(config)
              config = base_config
 
+        cross_asset_feature_cols = []
+        cross_asset_features = None
         cross_asset_results = None
         cross_asset_data = config.get("cross_asset_data")
         if isinstance(cross_asset_data, dict) and cross_asset_data:
@@ -6949,11 +7502,20 @@ class LabelBasedLayer2(BaseStep):
                 
                 # KEY FIX: Merge Cross-Asset Features into Main DataFrame
                 # If we don't do this, they are "stranded" in the results dict and never enter the race.
-                if cross_asset_results and 'panel_data' in cross_asset_results:
-                    panel_df = cross_asset_results['panel_data']
+                if isinstance(cross_asset_results, dict) and (
+                    'panel_data' in cross_asset_results or 'panel' in cross_asset_results
+                ):
+                    panel_df = cross_asset_results.get('panel_data')
+                    if panel_df is None:
+                        panel_df = cross_asset_results.get('panel')
+                    if panel_df is None:
+                        tprint_warning("   ⚠️ Cross-asset panel missing in results; skipping merge.")
+                        panel_df = None
                     
-                    # Filter for feature columns (ms__, ca__)
-                    feature_cols = [c for c in panel_df.columns if c.startswith(('ms__', 'ca__'))]
+                    # Filter for feature columns (ms__, ca__, meta__)
+                    feature_cols = []
+                    if panel_df is not None:
+                        feature_cols = [c for c in panel_df.columns if c.startswith(('ms__', 'ca__', 'meta__'))]
                     
                     if feature_cols:
                         tprint_info(f"   🔄 Merging {len(feature_cols)} cross-asset features into main dataset...")
@@ -6963,18 +7525,39 @@ class LabelBasedLayer2(BaseStep):
                         try:
                             # If panel is multi-index (timestamp, ticker), slice for current symbol
                             symbol = config.get('symbol', 'UNKNOWN')
+                            assets = config.get('assets') or []
+                            primary_asset = config.get('primary_asset')
+                            if primary_asset is None and symbol.endswith("USDT"):
+                                primary_asset = symbol.replace("USDT", "")
+                            if primary_asset is None:
+                                primary_asset = symbol
+
                             if isinstance(panel_df.index, pd.MultiIndex):
-                                if symbol in panel_df.index.get_level_values('ticker').unique():
-                                    symbol_features = panel_df.xs(symbol, level='ticker')[feature_cols]
+                                tickers = panel_df.index.get_level_values('ticker').unique()
+                                ticker = primary_asset
+                                if ticker not in tickers and assets:
+                                    for asset in assets:
+                                        if asset in tickers:
+                                            ticker = asset
+                                            break
+
+                                if ticker in tickers:
+                                    symbol_features = panel_df.xs(ticker, level='ticker')[feature_cols]
                                     # Align and join
                                     df = df.join(symbol_features, how='left')
-                                    tprint_success(f"   ✅ Merged cross-asset features for {symbol}")
+                                    tprint_success(f"   ✅ Merged cross-asset features for {ticker}")
+                                    cross_asset_feature_cols = feature_cols
+                                    cross_asset_features = df[feature_cols].copy()
                                 else:
-                                    tprint_warning(f"   ⚠️ Symbol {symbol} not found in cross-asset panel. Skipping merge.")
+                                    tprint_warning(
+                                        f"   ⚠️ Ticker {ticker} not found in cross-asset panel. Available: {sorted(tickers)[:5]}"
+                                    )
                             else:
                                 # Assume aligned single-index (unexpected but possible)
                                 df = df.join(panel_df[feature_cols], how='left')
                                 tprint_info("   ℹ️ Merged from single-index panel")
+                                cross_asset_feature_cols = feature_cols
+                                cross_asset_features = df[feature_cols].copy()
                                 
                         except Exception as e:
                             tprint_warning(f"   ⚠️ Failed to merge cross-asset features: {e}")
@@ -6988,6 +7571,12 @@ class LabelBasedLayer2(BaseStep):
             if df_bars is not None and len(df_bars) > 1000:
                 original_len = len(df)
                 df = df_bars
+                if cross_asset_features is not None and cross_asset_feature_cols:
+                    aligned_features = cross_asset_features.sort_index().reindex(df.index, method='ffill').bfill()
+                    aligned_features = aligned_features[cross_asset_feature_cols]
+                    df = df.drop(columns=[c for c in cross_asset_feature_cols if c in df.columns], errors='ignore')
+                    df = df.join(aligned_features, how='left')
+                    tprint_info(f"   🔁 Reattached {len(cross_asset_feature_cols)} cross-asset features after dollar bars")
                 tprint_info(f"📊 Using dollar bars: {original_len} → {len(df)} samples")
             else:
                 tprint_warning("⚠️ Dollar bar conversion failed or insufficient bars, using original 15m data")
@@ -7000,7 +7589,22 @@ class LabelBasedLayer2(BaseStep):
         self._dataset_fingerprint = self._compute_dataset_fingerprint(df)
 
         # --- Checkpoint System: Handle cleanup and resume ---
-        symbol = config.get('symbol') or getattr(self, 'symbol', None) or 'UNKNOWN'
+        checkpoint_symbol = config.get('layer2_checkpoint_symbol')
+        if not checkpoint_symbol:
+            assets = config.get('assets') or []
+            if len(assets) > 1:
+                assets_tag = "_".join(sorted(assets))
+                checkpoint_symbol = f"multi_asset_{assets_tag}"
+            else:
+                checkpoint_symbol = config.get('symbol') or getattr(self, 'symbol', None) or 'UNKNOWN'
+            config['layer2_checkpoint_symbol'] = checkpoint_symbol
+        assets = config.get('assets') or []
+        if len(assets) > 1 and not str(checkpoint_symbol).startswith("multi_asset_"):
+            raise ValueError(
+                "Layer2 multi-asset run requires layer2_checkpoint_symbol to start with 'multi_asset_'. "
+                f"Got: {checkpoint_symbol}"
+            )
+        symbol = checkpoint_symbol
         resume_from = config.get('layer2_resume_from')
         delete_from = config.get('layer2_delete_from')
         self._checkpoints_enabled = not config.get('layer2_disable_checkpoints', False)
@@ -7190,7 +7794,7 @@ class LabelBasedLayer2(BaseStep):
         """
         try:
             tprint_info("🚀 Causal Layer 2 Pipeline: Starting modern De Prado framework...")
-            symbol = self._current_config.get('symbol', 'UNKNOWN')
+            symbol = self._current_config.get('layer2_checkpoint_symbol') or self._current_config.get('symbol', 'UNKNOWN')
             causal_metadata = {}
             
             # 0. Initialize causal components & feature precomputation
@@ -7199,7 +7803,10 @@ class LabelBasedLayer2(BaseStep):
                 tprint_info(f"   ⏭️ Skipping causal initialization (resuming from {resume_from})")
                 # Load from checkpoint if needed
                 if resume_from == 'causal_graph_saved':
-                    checkpoint_data = self._checkpoint_manager.load_checkpoint('causal_discovery', self._current_config.get('symbol', 'UNKNOWN'))
+                    checkpoint_data = self._checkpoint_manager.load_checkpoint(
+                        'causal_discovery',
+                        self._current_config.get('layer2_checkpoint_symbol') or self._current_config.get('symbol', 'UNKNOWN')
+                    )
                     if checkpoint_data and 'df' in checkpoint_data:
                         df = checkpoint_data['df']
                         tprint_info(f"   📂 Restored DataFrame: {df.shape}")
@@ -7215,7 +7822,7 @@ class LabelBasedLayer2(BaseStep):
                 tprint_success("   ✅ Causal components and features initialized")
                 
                 # Save causal_initialization checkpoint
-                symbol = self._current_config.get('symbol', 'UNKNOWN')
+                symbol = self._current_config.get('layer2_checkpoint_symbol') or self._current_config.get('symbol', 'UNKNOWN')
                 if self._checkpoints_enabled:
                     self._checkpoint_manager.save_checkpoint('causal_initialization', {
                         'df': df
@@ -7226,7 +7833,10 @@ class LabelBasedLayer2(BaseStep):
             if resume_from and LAYER2_SUBSTEPS.index(resume_from) > 3:
                 tprint_info(f"   ⏭️ Skipping causal discovery (resuming from {resume_from})")
                 # Load causal graph from checkpoint
-                checkpoint_data = self._checkpoint_manager.load_checkpoint('causal_graph_saved', self._current_config.get('symbol', 'UNKNOWN'))
+                checkpoint_data = self._checkpoint_manager.load_checkpoint(
+                    'causal_graph_saved',
+                    self._current_config.get('layer2_checkpoint_symbol') or self._current_config.get('symbol', 'UNKNOWN')
+                )
                 if checkpoint_data and 'causal_graph' in checkpoint_data:
                     causal_graph = checkpoint_data['causal_graph']
                     self._causal_graph = checkpoint_data['_causal_graph']
@@ -7243,7 +7853,7 @@ class LabelBasedLayer2(BaseStep):
                 tprint_success(f"   ✅ Causal discovery complete: {len(causal_graph)} variables")
                 
                 # Save causal_discovery checkpoint
-                symbol = self._current_config.get('symbol', 'UNKNOWN')
+                symbol = self._current_config.get('layer2_checkpoint_symbol') or self._current_config.get('symbol', 'UNKNOWN')
                 if self._checkpoints_enabled:
                     self._checkpoint_manager.save_checkpoint('causal_discovery', {
                         'df': df,
@@ -7536,6 +8146,7 @@ class LabelBasedLayer2(BaseStep):
                     tprint_error(error_msg)
                     raise RuntimeError(error_msg.strip())
                 tprint_success(f"   ✅ Causal engineering complete: {len(engineered_df.columns)} features")
+                tprint_info("   ⏳ Next: causal target computation can be computationally intensive; please be patient")
                 
                 # Save feature_engineering checkpoint
                 if self._checkpoints_enabled:
@@ -7625,8 +8236,12 @@ class LabelBasedLayer2(BaseStep):
             causal_oof_results = self._run_causal_oof_analytics(
                 engineered_df, causal_events_df, causal_geometries, causal_targets_df
             )
-            if not causal_oof_results:
+            if not causal_oof_results or (
+                isinstance(causal_oof_results, dict) and causal_oof_results.get('error')
+            ):
                 tprint_error("   ❌ Causal OOF analytics failed")
+                if isinstance(causal_oof_results, dict) and causal_oof_results.get('error'):
+                    tprint_warning(f"   ⚠️ Causal OOF analytics error: {causal_oof_results['error']}")
             else:
                 tprint_success("   ✅ Causal OOF analytics complete")
                 
@@ -7836,8 +8451,25 @@ class LabelBasedLayer2(BaseStep):
             # [USER REQUEST] Detailed Regime Reporting
             # Get specialist predictions from stored OOF predictions or regenerate
             specialist_predictions = getattr(self, '_oof_specialist_predictions', None)
-            if specialist_predictions is None:
+            if not specialist_predictions:
+                specialist_predictions = getattr(self, '_causal_specialist_predictions', None)
+            if not specialist_predictions:
                 specialist_predictions = self._get_specialist_predictions(df) if hasattr(self, '_get_specialist_predictions') else {}
+            if 'vol_regime' not in df.columns and hasattr(self, 'regime_labels') and self.regime_labels is not None:
+                df = df.copy()
+                df['vol_regime'] = (
+                    pd.Series(self.regime_labels, index=self.regime_labels.index)
+                    .reindex(df.index)
+                    .fillna("Unknown")
+                )
+            elif 'vol_regime' in df.columns and hasattr(self, 'regime_labels') and self.regime_labels is not None:
+                if df['vol_regime'].isna().all() or (df['vol_regime'] == "Unknown").all():
+                    df = df.copy()
+                    df['vol_regime'] = (
+                        pd.Series(self.regime_labels, index=self.regime_labels.index)
+                        .reindex(df.index)
+                        .fillna("Unknown")
+                    )
             self._report_regime_stats(df, specialist_predictions, meta_results, causal_graph)
             
             return results
@@ -7993,6 +8625,10 @@ class LabelBasedLayer2(BaseStep):
         """
         try:
             tprint_info("🔧 Applying Causal Feature Engineering...")
+
+            if 'log_ret' not in df.columns and 'close' in df.columns:
+                df = df.copy()
+                df['log_ret'] = np.log(df['close']).diff()
             
             # Apply causal engineering
             # Pass the discovered causal_graph to avoid correlation fallback
@@ -8023,7 +8659,34 @@ class LabelBasedLayer2(BaseStep):
         try:
             tprint_info("🧠 Generating Market Regimes with AdaptiveHunterRouter...")
             router = AdaptiveHunterRouter(n_regimes=3)
-            self.regime_labels = router.fit_predict(df)
+            labels = router.fit_predict(df)
+            if isinstance(labels, pd.Series):
+                if not labels.index.equals(df.index):
+                    labels = labels.reindex(df.index)
+            else:
+                labels_arr = np.asarray(labels)
+                if labels_arr.size == 0:
+                    labels = pd.Series("Unknown", index=df.index)
+                else:
+                    if len(labels_arr) != len(df.index):
+                        tprint_warning(
+                            "⚠️ Regime label length mismatch; aligning to df index. "
+                            f"labels={len(labels_arr)}, df={len(df.index)}"
+                        )
+                        if len(labels_arr) < len(df.index):
+                            pad_val = labels_arr[-1] if len(labels_arr) > 0 else "Unknown"
+                            labels_arr = np.pad(
+                                labels_arr,
+                                (0, len(df.index) - len(labels_arr)),
+                                mode='edge'
+                            )
+                        else:
+                            labels_arr = labels_arr[:len(df.index)]
+                    labels = pd.Series(labels_arr, index=df.index)
+            if labels.isna().all():
+                tprint_warning("⚠️ Regime labels are all NaN; defaulting to 'Unknown'.")
+                labels = pd.Series("Unknown", index=df.index)
+            self.regime_labels = labels.fillna("Unknown")
             
             # --- ENHANCED REPORTING ---
             counts = self.regime_labels.value_counts()
@@ -8075,7 +8738,10 @@ class LabelBasedLayer2(BaseStep):
             tprint_info("📊 DE PRADO REGIME & CAUSAL QUALITY REPORT")
             tprint_info("="*60)
             
-            regimes = df['vol_regime'].unique()
+            regime_series = pd.Series(df['vol_regime']).copy().fillna("Unknown")
+            regimes = regime_series.unique()
+            if len(regimes) == 0:
+                regimes = np.array(["Unknown"], dtype=object)
             
             # 1. Regime Distribution
             tprint_info("\n1. Regime Distribution & Specialist Coverage:")
@@ -8083,7 +8749,7 @@ class LabelBasedLayer2(BaseStep):
             tprint_info("-" * 45)
             
             for regime in regimes:
-                mask = df['vol_regime'] == regime
+                mask = regime_series == regime
                 count = mask.sum()
                 
                 # Count total specialist signals in this regime
@@ -8150,7 +8816,7 @@ class LabelBasedLayer2(BaseStep):
             
             # Check for resume state
             resume_from = getattr(self, '_resume_from', None)
-            symbol = self._current_config.get('symbol', 'UNKNOWN')
+            symbol = self._current_config.get('layer2_checkpoint_symbol') or self._current_config.get('symbol', 'UNKNOWN')
             
             # Initialize causal target computer with optimized configuration
             target_computer = CausalTargetComputer(
@@ -8308,6 +8974,9 @@ class LabelBasedLayer2(BaseStep):
                 
                 # Train IRM-aware models using the IRM_LGBMClassifier wrapper
                 irm_models = []
+                irm_skip_empty = 0
+                irm_skip_overlap = 0
+                irm_failures = 0
                 for geom in production_geometries[:5]:  # Limit to top 5 for computational efficiency
                     try:
                         # Get training data for this geometry
@@ -8373,16 +9042,25 @@ class LabelBasedLayer2(BaseStep):
                                     
                                     tprint_info(f"   🧠 IRM Model trained for {geom.uuid[:30]}")
                                 else:
+                                    irm_skip_overlap += 1
                                     tprint_warning(f"      ⚠️ IRM Skipped: Insufficient overlap. Common={len(common_idx)} (X={len(X_geom)}, y={len(y_geom)}, env={len(irm_environments)})")
-                                    
-                                    tprint_info(f"   🧠 IRM Model trained for {geom.uuid[:30]}")
+                        else:
+                            irm_skip_empty += 1
                                     
                     except Exception as e:
+                        irm_failures += 1
                         tprint_warning(f"⚠️ IRM training failed for geometry: {e}")
                 
                 # Store IRM models for later use
                 self._irm_models = irm_models
-                tprint_success(f"✅ IRM Integration: {len(irm_models)} models trained")
+                if len(irm_models) == 0:
+                    tprint_warning(
+                        "⚠️ IRM Integration: 0 models trained "
+                        f"(geometries={len(production_geometries)}, empty={irm_skip_empty}, "
+                        f"overlap={irm_skip_overlap}, failures={irm_failures})"
+                    )
+                else:
+                    tprint_success(f"✅ IRM Integration: {len(irm_models)} models trained")
                 
             except Exception as e:
                 tprint_warning(f"⚠️ IRM integration failed: {e}")
@@ -8587,31 +9265,11 @@ class LabelBasedLayer2(BaseStep):
             except Exception:
                 pass
         
-        # 2. Enrich with thousands of engineered features from MTF module
+        # 2. Enrich with engineered features from MTF module (reuse global cache)
         tprint_info("   🧬 Enriching data with engineered features for causal analysis (Global Context)...")
         try:
-            # Create empty signals DF for initial feature generation
-            signals_empty = pd.DataFrame(index=df_out.index)
-            
-            # Check for volume availability robustly
-            vol_avail = False
-            if 'volume' in df_out.columns or 'Volume' in df_out.columns:
-                vol_avail = True
-                
-            # Use MTF feature generation (create_meta_features is already imported)
-            horizon_bars = None
-            try:
-                if isinstance(self.init_config, dict) and self.init_config.get("horizon") is not None:
-                    horizon_bars = int(self.init_config.get("horizon"))
-            except Exception:
-                horizon_bars = None
-            X_engineered = create_meta_features(
-                df_out,
-                signals_empty,
-                volume_available=vol_avail,
-                horizon_bars=horizon_bars,
-            )
-            
+            X_engineered = self._get_global_features(df_out)
+
             if not X_engineered.empty:
                 # Merge features that are not already in df_out
                 new_cols = [c for c in X_engineered.columns if c not in df_out.columns]
@@ -8622,7 +9280,7 @@ class LabelBasedLayer2(BaseStep):
                     tprint_info("   ℹ️ No new engineered features added (all already present).")
             else:
                 tprint_warning("   ⚠️ MTF feature generation returned empty DataFrame.")
-                
+
         except Exception as e:
             tprint_warning(f"   ⚠️ Failed to enrich data with engineered features: {e}")
             
@@ -8731,7 +9389,7 @@ class LabelBasedLayer2(BaseStep):
         """
         import time
         from sklearn.preprocessing import StandardScaler
-        from sklearn.metrics import average_precision_score
+        from sklearn.metrics import average_precision_score, recall_score
         from scipy.stats import spearmanr
         
         start_time = time.time()
@@ -8740,6 +9398,10 @@ class LabelBasedLayer2(BaseStep):
         # 1. Huber Teacher Preparation (Replacing LASSO/Ridge)
         tprint_info("   🧑‍🏫 Preparing Huber Teacher Outputs...")
         tprint_info(f"   🧪 Huber checkpoint: X_train={X_train.shape}, X_val={X_val.shape}, y_train={y_train.shape}")
+
+        if X_train is None or X_train.shape[1] == 0:
+            tprint_warning("   ⚠️ Empty feature set for Huber teacher; skipping race for this geometry.")
+            return None, "Skipped", {}
         
         # --- DEBUG DATA STATS ---
         try:
@@ -8761,12 +9423,36 @@ class LabelBasedLayer2(BaseStep):
                 tprint_info(f"   📚 De Prado weights: sum={w_sum:.2f}, effective_n={w_eff:.1f}")
             except Exception:
                 pass
+        def _is_continuous_target(target: Optional[pd.Series]) -> bool:
+            if target is None:
+                return False
+            if not isinstance(target, pd.Series):
+                return False
+            target_clean = target.dropna()
+            if target_clean.nunique() <= 2:
+                return False
+            return float(target_clean.var()) > 1e-9
+
+        use_causal_target = _is_continuous_target(y_causal_train)
+        y_huber_train = y_causal_train if use_causal_target else y_train
+        y_huber_val = y_causal_val if use_causal_target else y_val
+
+        if use_causal_target:
+            tprint_info("   🧪 Using continuous causal target for Huber teacher (De Prado compliant)")
+
         try:
             # Pass w_train to Huber as sample_weight
             # User Request 2026-01-14: Tighten Huber pruning (25th percentile) for surgical refinement
+            w_train_huber = w_train
+            huber_pos_boost = getattr(self, 'huber_pos_boost', 0.0)
+            if w_train is not None and huber_pos_boost > 0:
+                w_train_huber = w_train * (1.0 + huber_pos_boost * y_train)
+                w_train_huber = np.maximum(w_train_huber, 0.0)
+                tprint_info(f"   ⚖️ Huber pos_boost active: {huber_pos_boost:.2f}")
+
             huber_outputs = prepare_huber_teacher_outputs(
-                X_train, y_train, X_val=X_val,
-                sample_weight=w_train,
+                X_train, y_huber_train, X_val=X_val,
+                sample_weight=w_train_huber,
                 pruning_percentile=25, corr_threshold=0.65,
                 use_irm=bool(irm_env_indices),
                 irm_env_indices=irm_env_indices,
@@ -8774,6 +9460,9 @@ class LabelBasedLayer2(BaseStep):
             )
 
             selected_features = huber_outputs['selected_features']
+            if not selected_features:
+                tprint_warning("   ⚠️ Huber teacher selected zero features; skipping race for this geometry.")
+                return None, "Skipped", {}
             
             # --- FINAL HUBER COEFFICIENT FILTER ---
             # Surgical refinement: If Titan RFE left noise, Huber coefficients will be near-zero
@@ -8786,18 +9475,35 @@ class LabelBasedLayer2(BaseStep):
                         irm_lambda=self.lambda_irm,
                         huber_epsilon=1.35
                     )
-                    huber.fit(X_train[selected_features].values, y_train, irm_env_indices)
+                    huber.fit(X_train[selected_features].values, y_huber_train, irm_env_indices)
                     coef_series = pd.Series(np.abs(huber.coef_), index=selected_features)
                 else:
                     huber = HuberRegressor(alpha=1.0, epsilon=1.35)
-                    huber.fit(X_train[selected_features], y_train, sample_weight=w_train)
+                    huber.fit(X_train[selected_features], y_huber_train, sample_weight=w_train_huber)
                     coef_series = pd.Series(np.abs(huber.coef_), index=selected_features)
-                # Keep top 40 or features with >10% of max coef
+                # Keep features with >10% of max coef
                 threshold = coef_series.max() * 0.1
                 huber_selected = coef_series[coef_series > threshold].index.tolist()
                 if len(huber_selected) >= 5:
                     tprint_info(f"      🎯 Huber Surgical Filter: {len(selected_features)} -> {len(huber_selected)} features")
                     selected_features = huber_selected
+
+                # Feature budget: target ~50 samples/feature (min 25, max 80). Keep fewer if Huber selects less.
+                n_samples = int(len(y_train))
+                feature_budget = int(np.floor(n_samples / 50.0)) if n_samples > 0 else 0
+                feature_budget = max(25, min(80, feature_budget))
+                if len(selected_features) > feature_budget:
+                    ranked = coef_series.reindex(selected_features).fillna(0.0).sort_values(ascending=False)
+                    selected_features = ranked.head(feature_budget).index.tolist()
+                    tprint_info(
+                        f"      🎯 Huber Feature Budget: samples={n_samples} -> cap={feature_budget} "
+                        f"(kept {len(selected_features)})"
+                    )
+                else:
+                    tprint_info(
+                        f"      🎯 Huber Feature Budget: samples={n_samples} -> cap={feature_budget} "
+                        f"(kept {len(selected_features)})"
+                    )
             except Exception: pass
 
             monotone_constraints_dict = huber_outputs['monotonic_constraints']
@@ -8826,9 +9532,13 @@ class LabelBasedLayer2(BaseStep):
             # 2. Huber Teacher Performance
             if warm_start_val is not None:
                 try:
-                    t_auc = roc_auc_score(y_val, warm_start_val) if len(np.unique(y_val)) > 1 else 0.5
-                    t_pr = average_precision_score(y_val, warm_start_val) if len(np.unique(y_val)) > 1 else 0.0
-                    tprint_info(f"   🎓 Huber Teacher Performance: ROC-AUC={t_auc:.4f}, PR-AUC={t_pr:.4f}")
+                    if use_causal_target and y_huber_val is not None:
+                        t_ic = float(spearmanr(y_huber_val, warm_start_val, nan_policy='omit')[0])
+                        tprint_info(f"   🎓 Huber Teacher Performance (IC): {t_ic:.4f}")
+                    else:
+                        t_auc = roc_auc_score(y_val, warm_start_val) if len(np.unique(y_val)) > 1 else 0.5
+                        t_pr = average_precision_score(y_val, warm_start_val) if len(np.unique(y_val)) > 1 else 0.0
+                        tprint_info(f"   🎓 Huber Teacher Performance: ROC-AUC={t_auc:.4f}, PR-AUC={t_pr:.4f}")
                 except Exception:
                     pass
 
@@ -8884,9 +9594,15 @@ class LabelBasedLayer2(BaseStep):
         else:
             # --- 1. LightGBM ---
             # Instantiate RobustFocalLoss for LGBM
+            focal_gamma_pos = self.focal_gamma_pos if hasattr(self, 'focal_gamma_pos') else 1.0
+            focal_gamma_neg = self.focal_gamma_neg if hasattr(self, 'focal_gamma_neg') else 2.5
+            tprint_info(
+                f"   🎯 FocalLoss objective (LGBM): gamma_pos={focal_gamma_pos}, "
+                f"gamma_neg={focal_gamma_neg}, alpha=auto"
+            )
             focal_lgbm = RobustFocalLoss(
-                gamma_pos=self.focal_gamma_pos if hasattr(self, 'focal_gamma_pos') else 1.0,
-                gamma_neg=self.focal_gamma_neg if hasattr(self, 'focal_gamma_neg') else 2.5,
+                gamma_pos=focal_gamma_pos,
+                gamma_neg=focal_gamma_neg,
                 alpha=None, # Auto-compute
                 verbose=False
             )
@@ -8894,7 +9610,7 @@ class LabelBasedLayer2(BaseStep):
             lgbm_params = LAYER2_PROBE_CONSTANTS.copy()
             lgbm_params.update({
                 'objective': focal_lgbm,
-                'metric': 'auc',
+                'metric': 'average_precision',
                 'path_smooth': 20,
                 'lambda_l2': 10,
                 'extra_trees': True,
@@ -8924,7 +9640,7 @@ class LabelBasedLayer2(BaseStep):
                     'init_score': warm_start_train,
                     'eval_init_score': [warm_start_val] if warm_start_val is not None else None,
                     'eval_set': [(X_val_final, y_val)],
-                    'eval_metric': 'auc',
+                    'eval_metric': 'average_precision',
                     'callbacks': [lgb.early_stopping(30, verbose=False)]
                 }
             })
@@ -8932,9 +9648,13 @@ class LabelBasedLayer2(BaseStep):
             # --- 2. XGBoost ---
             if XGBClassifier is not None:
                 # Instantiate XGBFocalLoss
+                tprint_info(
+                    f"   🎯 FocalLoss objective (XGB): gamma_pos={focal_gamma_pos}, "
+                    f"gamma_neg={focal_gamma_neg}, alpha=auto"
+                )
                 focal_xgb = XGBFocalLoss(
-                    gamma_pos=self.focal_gamma_pos if hasattr(self, 'focal_gamma_pos') else 1.0,
-                    gamma_neg=self.focal_gamma_neg if hasattr(self, 'focal_gamma_neg') else 2.5,
+                    gamma_pos=focal_gamma_pos,
+                    gamma_neg=focal_gamma_neg,
                     alpha=None, # Auto-compute
                     verbose=False
                 )
@@ -8945,7 +9665,7 @@ class LabelBasedLayer2(BaseStep):
                     'reg_lambda': 50, 'min_child_weight': 10, 'gamma': 1.1,
                     'num_parallel_tree': 7,
                     'objective': focal_xgb,
-                    'eval_metric': 'auc',
+                    'eval_metric': 'aucpr',
                     'random_state': 42, 'n_jobs': 2, 'verbosity': 0,
                     'use_label_encoder': False,
                     # scale_pos_weight removed for focal loss
@@ -9022,13 +9742,31 @@ class LabelBasedLayer2(BaseStep):
             model = HuberResidualStack(
                 huber_params=huber_params,
                 fashion_estimator=et_estimator,
-                n_splits=5 # Using 5-fold OOF
+                n_splits=5, # Using 5-fold OOF
+                pos_boost=self.huber_pos_boost
             )
 
             candidates.append({
                 'name': 'ExtraTrees',
                 'model': model,
                 'fit_params': {'environment_masks': environment_masks}
+            })
+
+            et_classifier = ExtraTreesClassifier(
+                n_estimators=500,
+                max_depth=6,
+                min_samples_leaf=10,
+                max_features='sqrt',
+                min_samples_split=20,
+                min_impurity_decrease=0.005,
+                random_state=42,
+                n_jobs=2,
+                class_weight='balanced'
+            )
+            candidates.append({
+                'name': 'ExtraTrees_Cls',
+                'model': et_classifier,
+                'fit_params': {}
             })
 
             # --- 5. XGBoost Stack (Huber-IRM + XGB) ---
@@ -9092,7 +9830,7 @@ class LabelBasedLayer2(BaseStep):
             fit_params = cand['fit_params']
             
             # Wrap in CalibratedClassifierCV if not Stack (Stack already handles calibration)
-            is_stack = name in ['ExtraTrees', 'XGB_Stack']
+            is_stack = name in ['ExtraTrees', 'XGB_Stack', 'ExtraTrees_IRM_Stack']
             if not is_stack:
                  tprint_info(f"   🔧 Wrapping {name} in Isotonic CalibratedClassifierCV...")
                  # Remove warm start params for calibration wrapper safety
@@ -9137,10 +9875,37 @@ class LabelBasedLayer2(BaseStep):
                     preds = model.predict(X_val_final)
                     
                 # Metrics
-                auc_score = roc_auc_score(y_val, preds) if len(np.unique(y_val)) > 1 else 0.5
-                pr_auc = average_precision_score(y_val, preds) if len(np.unique(y_val)) > 1 else 0.0
+                has_labels = len(np.unique(y_val)) > 1
+                auc_score = roc_auc_score(y_val, preds) if has_labels else 0.5
+                raw_auc = auc_score
+                inverted = False
+                if has_labels and auc_score < 0.5:
+                    inv_preds = 1.0 - preds
+                    inv_auc = roc_auc_score(y_val, inv_preds)
+                    if inv_auc > auc_score + 0.02:
+                        preds = inv_preds
+                        auc_score = inv_auc
+                        inverted = True
+                pr_auc = average_precision_score(y_val, preds) if has_labels else 0.0
                 pr_auc_lift = pr_auc - prevalence
                 ic, _ = spearmanr(y_val, preds) if len(np.unique(preds)) > 1 else (0.0, 1.0)
+                # Dynamic Threshold Optimization (Max F1)
+                # Fixed 0.5 threshold fails if calibrated probs are conservative (e.g. < 0.4)
+                if has_labels:
+                    precision, recall__, thresholds = precision_recall_curve(y_val, preds)
+                    # Avoid division by zero
+                    f1_scores = 2 * (precision * recall__) / (precision + recall__ + 1e-9)
+                    best_idx = np.argmax(f1_scores)
+                    best_threshold = thresholds[best_idx] if best_idx < len(thresholds) else 0.5
+                    
+                    # Apply dynamic threshold for hard metrics
+                    hard_preds = preds >= best_threshold
+                    recall = recall_score(y_val, hard_preds)
+                    precision_val = precision_score(y_val, hard_preds)
+                else:
+                    recall = 0.0
+                    precision_val = 0.0
+                    best_threshold = 0.5
                 
                 # Brier Skill Score
                 bss = calculate_brier_skill_score(y_val, preds)
@@ -9155,24 +9920,36 @@ class LabelBasedLayer2(BaseStep):
                 # Feature Stability
                 stability = calculate_feature_attribution_stability(model, X_train_final, y_train)
 
-                # New Winner Score Formula: PR-AUC * BSS
-                effective_score = pr_auc * bss
+                # Recall-first score (align with causal/base model objective)
+                # Favor recall, then PR-AUC lift, then calibration (BSS)
+                effective_score = (0.6 * recall) + (0.3 * max(pr_auc_lift, 0.0)) + (0.1 * bss)
                 
                 race_results[name] = {
                     'auc': auc_score,
+                    'raw_auc': raw_auc,
                     'pr_auc': pr_auc,
                     'pr_auc_lift': pr_auc_lift,
                     'ic': ic,
                     'bss': bss,
+                    'recall': recall,
                     'ece': ece,
                     'dw': dw,
                     'stability': stability,
                     'model': model,
                     'fit_time': fit_duration,
-                    'score': effective_score
+                    'score': effective_score,
+                    'inverted': inverted
                 }
 
-                tprint_info(f"      - {name.ljust(12)}: Score={effective_score:.4f} (PR-AUC={pr_auc:.4f}, BSS={bss:.4f}), ECE={ece:.4f}, DW={dw:.2f}")
+                tprint_info(
+                    f"      - {name.ljust(12)}: Score={effective_score:.4f} "
+                    f"(Recall={recall:.4f}, PR-AUC={pr_auc:.4f}, BSS={bss:.4f}), ECE={ece:.4f}, DW={dw:.2f}"
+                )
+
+                if inverted:
+                    tprint_info(
+                        f"      ↩️ {name} predictions auto-inverted (AUC {raw_auc:.4f} → {auc_score:.4f})"
+                    )
 
                 if effective_score > best_score:
                     best_score = effective_score
@@ -9197,7 +9974,7 @@ class LabelBasedLayer2(BaseStep):
             sorted_results = sorted(race_results.items(), key=lambda x: x[1]['auc'], reverse=True)
             for name, res in sorted_results:
                 tprint_info(f"   {name:<15} | {res['auc']:<8.4f} | {res['pr_auc']:<8.4f} | {res['ic']:<8.4f} | {res['fit_time']:<6.2f}")
-                if res['auc'] < 0.4:
+                if res['auc'] < 0.4 and not res.get('inverted'):
                     tprint_warning(f"      ⚠️ {name} inverted performance (AUC={res['auc']:.4f}). Potential Label/Feature misalignment.")
                 
         # 5. Save OOF Predictions for Winner
@@ -9206,7 +9983,9 @@ class LabelBasedLayer2(BaseStep):
                 import os
                 oof_dir = "outcomes/oof_predictions"
                 os.makedirs(oof_dir, exist_ok=True)
-                oof_path = f"{oof_dir}/{geometry_uuid}_{best_name}_oof.csv"
+                geometry_id = str(geometry_uuid)
+                short_id = geometry_id if len(geometry_id) <= 60 else hashlib.md5(geometry_id.encode()).hexdigest()[:12]
+                oof_path = f"{oof_dir}/{short_id}_{best_name}_oof.csv"
                 pd.DataFrame({
                     'y_true': y_val,
                     'y_pred': best_preds
@@ -9810,6 +10589,35 @@ class LabelBasedLayer2(BaseStep):
             )
         })
 
+        huber_params = {
+            'loss_type': 'huber',
+            'huber_epsilon': 1.10,
+            'alpha': 3.0,
+            'irm_lambda': 10.0,
+            'max_iter': 2000
+        }
+        et_estimator = ExtraTreesRegressor(
+            n_estimators=800,
+            max_depth=6,
+            min_samples_leaf=10,
+            max_features='sqrt',
+            ccp_alpha=0.001,
+            min_samples_split=20,
+            min_impurity_decrease=0.005,
+            random_state=42,
+            n_jobs=1
+        )
+        candidates.append({
+            'name': 'ExtraTrees_IRM_Stack',
+            'model': HuberResidualStack(
+                huber_params=huber_params,
+                fashion_estimator=et_estimator,
+                n_splits=5,
+                pos_boost=self.huber_pos_boost
+            ),
+            'fit_params': {'environment_masks': environment_masks}
+        })
+
         return candidates
 
     def _create_default_environment_masks(self, X_train, y_train):
@@ -10406,6 +11214,8 @@ class LabelBasedLayer2(BaseStep):
             # Drop non-numeric columns
             # FIX: Explicitly select only numeric types to handle string columns like 'vol_regime'
             X_cand = X_cand.select_dtypes(include=[np.number])
+            if X_cand.empty or X_cand.shape[1] == 0:
+                return None
             cols_to_drop = ['symbol', 'exchange', 'timestamp', 'date']
             X_cand = X_cand.drop(columns=[c for c in cols_to_drop if c in X_cand.columns], errors='ignore')
             
@@ -10418,6 +11228,10 @@ class LabelBasedLayer2(BaseStep):
             # Align
             if not X_cand.index.equals(y_cand.index):
                 X_cand = X_cand.reindex(y_cand.index).fillna(0)
+
+            # Require both classes for a meaningful AUC probe
+            if y_cand.nunique() < 2:
+                return None
             
             # Min events check
             if len(X_cand) < 30:
@@ -10471,11 +11285,14 @@ class LabelBasedLayer2(BaseStep):
                 scores = cross_val_score(ridge, X_cand, y_cand, cv=tscv, scoring='roc_auc')
                 return float(np.mean(scores))
             except Exception:
-                # Fallback: fit and predict
-                ridge.fit(X_cand, y_cand)
-                preds = ridge.decision_function(X_cand)
-                from sklearn.metrics import roc_auc_score
-                return roc_auc_score(y_cand, preds)
+                try:
+                    # Fallback: fit and predict
+                    ridge.fit(X_cand, y_cand)
+                    preds = ridge.decision_function(X_cand)
+                    from sklearn.metrics import roc_auc_score
+                    return roc_auc_score(y_cand, preds)
+                except Exception:
+                    return None
                 
         except Exception as e:
             if self.verbose:
@@ -10637,6 +11454,11 @@ class LabelBasedLayer2(BaseStep):
             gated_candidates = gated_candidates[:min(top_k, len(gated_candidates))]
         filter_counts["post_top_k"] = len(gated_candidates)
 
+        if not gated_candidates:
+            tprint_warning(f"⚠️ Adaptive gate removed all candidates for {family}.")
+            tprint_info(f"   🧭 {family} filter funnel: {filter_counts}")
+            return []
+
         tprint_info(f"   🔎 Probing top {len(gated_candidates)} candidates for {family}...")
 
         # =====================================================================
@@ -10651,11 +11473,18 @@ class LabelBasedLayer2(BaseStep):
         stage1_min_auc = 0.45  # Below random = reject
         
         tprint_info(f"   ⚡ Stage 1: Quick Ridge probe on {len(gated_candidates)} candidates...")
+        stage1_none = 0
+        stage1_low = 0
         for cand in gated_candidates:
             auc = self._quick_ridge_probe(cand, df)
-            if auc is not None and auc >= stage1_min_auc:
-                stage1_results.append((cand, auc))
-                cand._stage1_auc = auc  # Store for later
+            if auc is None:
+                stage1_none += 1
+                continue
+            if auc < stage1_min_auc:
+                stage1_low += 1
+                continue
+            stage1_results.append((cand, auc))
+            cand._stage1_auc = auc  # Store for later
         
         # LOG ACTUAL AUC VALUES
         if gated_candidates:
@@ -10663,12 +11492,22 @@ class LabelBasedLayer2(BaseStep):
             if all_aucs:
                 max_auc = max(all_aucs)
                 avg_auc = sum(all_aucs) / len(all_aucs)
-                tprint_info(f"   ✅ Stage 1 complete: {len(stage1_results)}/{len(gated_candidates)} passed (AUC ≥ {stage1_min_auc}). Max AUC: {max_auc:.4f}, Avg AUC: {avg_auc:.4f}")
+                tprint_info(
+                    f"   ✅ Stage 1 complete: {len(stage1_results)}/{len(gated_candidates)} passed "
+                    f"(AUC ≥ {stage1_min_auc}). Max AUC: {max_auc:.4f}, Avg AUC: {avg_auc:.4f}. "
+                    f"None={stage1_none}, Low={stage1_low}"
+                )
             else:
-                tprint_info(f"   ✅ Stage 1 complete: 0/{len(gated_candidates)} passed (AUC ≥ {stage1_min_auc}).")
+                tprint_info(
+                    f"   ✅ Stage 1 complete: 0/{len(gated_candidates)} passed (AUC ≥ {stage1_min_auc}). "
+                    f"None={stage1_none}, Low={stage1_low}"
+                )
         
         if not stage1_results:
-            tprint_warning(f"⚠️ No candidates passed Stage 1 for {family}.")
+            tprint_warning(
+                f"⚠️ No candidates passed Stage 1 for {family}. None={stage1_none}, Low={stage1_low}"
+            )
+            tprint_info(f"   🧭 {family} filter funnel: {filter_counts}")
             return []
         
         # CLUSTER: Group survivors by Jaccard similarity
@@ -10989,8 +11828,9 @@ class LabelBasedLayer2(BaseStep):
                 if selected_feats:
                     X_cand = X_cand[selected_feats]
                 
-                # Drop rows with NaNs to prevent LightGBM crashes
-                valid_mask = ~X_cand.isna().any(axis=1)
+                # Drop rows with NaNs or Infs to prevent model crashes
+                # Using finite check which covers both NaN and Inf
+                valid_mask = np.isfinite(X_cand).all(axis=1) & np.isfinite(y_cand)
                 n_before_nan = len(X_cand)
                 X_cand = X_cand[valid_mask]
                 y_cand = y_cand[valid_mask]
@@ -11156,13 +11996,20 @@ class LabelBasedLayer2(BaseStep):
                     sample_weights_series = pd.Series(sample_weights, index=X_tr.index)
                     X_tr_sub, y_tr_sub, w_tr_sub = self._subsample_probe_data(X_tr, y_tr, sample_weights_series)
                     if self.verbose:
+                        # Ensure weights are finite and non-negative
+                        w_tr_sub = np.nan_to_num(w_tr_sub, nan=1.0, posinf=1.0, neginf=0.0)
+                        w_tr_sub = np.maximum(0.0, w_tr_sub)
                         tprint_info(
                             f"   🧪 Probe weights: min={w_tr_sub.min():.4f}, max={w_tr_sub.max():.4f}, mean={w_tr_sub.mean():.4f}"
                         )
 
+                    # Robust data cleaning for Ridge probe
+                    X_tr_sub = X_tr_sub.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+                    X_val_clean = X_val.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
                     scaler = StandardScaler()
                     X_tr_scaled = scaler.fit_transform(X_tr_sub)
-                    X_val_scaled = scaler.transform(X_val)
+                    X_val_scaled = scaler.transform(X_val_clean)
 
                     ridge = RidgeClassifier(alpha=1.0, class_weight='balanced', random_state=42)
                     ridge_calibrated = CalibratedClassifierCV(ridge, method='sigmoid', cv=3)
@@ -11545,10 +12392,18 @@ class LabelBasedLayer2(BaseStep):
 
         # 1. Generate Global Candidates (Definitions & Events)
         # Check if checkpoint exists first to avoid redundant work
+        checkpoint_symbol = (self._current_config or {}).get('layer2_checkpoint_symbol')
+        if not checkpoint_symbol:
+            checkpoint_symbol = self.symbol
+        if checkpoint_symbol != self.symbol:
+            tprint_warning(
+                f"⚠️ Using checkpoint symbol '{checkpoint_symbol}' (self.symbol={self.symbol}) for candidate restore"
+            )
+
         candidates_ckpt_data = None
         if self.checkpoint_manager:
             try:
-                candidates_ckpt_data = self.checkpoint_manager.load_checkpoint('raw_candidates_selected', self.symbol)
+                candidates_ckpt_data = self.checkpoint_manager.load_checkpoint('raw_candidates_selected', checkpoint_symbol)
             except Exception:
                 pass
 
@@ -11600,7 +12455,7 @@ class LabelBasedLayer2(BaseStep):
                 target_signals_per_day=target_signals_per_day,
                 causal_surprise_threshold=causal_surprise_threshold,
                 checkpoint_manager=self.checkpoint_manager,
-                symbol=self.symbol
+                symbol=checkpoint_symbol
             )
         tprint_info(f"🔍 Orthogonal Label Generation: Returned {len(ortho_geoms) if ortho_geoms else 0} global candidates")
 
@@ -11619,7 +12474,7 @@ class LabelBasedLayer2(BaseStep):
         
         # Checkpoint: Regime Optimization Progress
         import pickle
-        checkpoint_dir = self.checkpoint_manager._get_symbol_dir(self.symbol)
+        checkpoint_dir = self.checkpoint_manager._get_symbol_dir(checkpoint_symbol)
         regime_ckpt_path = checkpoint_dir / "checkpoint_regime_optimization_progress.pkl"
         
         completed_regimes = set()
@@ -11924,6 +12779,8 @@ class LabelBasedLayer2(BaseStep):
             # Now race only the family winners (typically 5-10)
             elite_representatives = list(family_winners.values())
             tprint_info(f"   🏁 Racing {len(elite_representatives)} family leaders...")
+            for i, gt in enumerate(elite_representatives):
+                tprint_info(f"      {i+1}. {gt.family[:25]:<25} ({gt.uuid[:8]})")
             
             for gt in elite_representatives:
                 race_payload = getattr(self, '_probe_data_cache', {}).get(gt.uuid)
@@ -11939,14 +12796,258 @@ class LabelBasedLayer2(BaseStep):
                         cols_to_drop = ['symbol', 'exchange', 'timestamp', 'date', 'regime', 'regime_label']
                         X_cand = X_cand.drop(columns=[c for c in cols_to_drop if c in X_cand.columns], errors='ignore')
 
-                        # Prepare Labels 
-                        if isinstance(gt.labels, pd.Series):
-                            y_cand = gt.labels.reindex(gt.events)
-                            y_cand = (y_cand > 0).astype(int)
+                        # Prepare Labels (side-aware)
+                        params = getattr(gt, "params", {}) or {}
+                        side = self._resolve_label_side(getattr(gt, "family", ""), params)
+
+                        def _binarize_labels(series: pd.Series, side_param: str = "positive", family: str = "") -> pd.Series:
+                            """
+                            De Prado-Compliant Binarization.
+                            
+                            Principles:
+                            1. Natural class distribution should emerge from market dynamics
+                            2. Avoid forced 50/50 balance which creates overfitting
+                            3. If labels are genuinely single-class, REJECT the geometry
+                            
+                            Strategies:
+                            - Strategy 1: Standard side-aware binarization (primary)
+                            - Strategy 2: Magnitude-based for VOLATILITY families ONLY
+                            
+                            Removed (anti-de Prado):
+                            - Ternary-aware split (>= 0) - treats neutral as decision
+                            - Median split - forces artificial 50% balance
+                            """
+                            if series is None or series.empty:
+                                return pd.Series([], dtype=float)
+                            
+                            # Strategy 1: Standard side-aware binarization
+                            if side_param == "negative":
+                                labels = (series < 0).astype(int)
+                            elif side_param == "both":
+                                labels = (series != 0).astype(int)
+                            else:  # positive (default)
+                                labels = (series > 0).astype(int)
+                            
+                            if labels.nunique(dropna=True) >= 2:
+                                return labels
+                            
+                            cleaned = series.dropna()
+                            if len(cleaned) < 2:
+                                return labels
+                            
+                            # Strategy 2: Magnitude-based for VOLATILITY families ONLY
+                            # Volatility events predict SIZE, not direction, so magnitude split is appropriate
+                            family_upper = family.upper() if family else ""
+                            if 'VOLATILITY' in family_upper or side_param == 'both':
+                                abs_vals = cleaned.abs()
+                                if abs_vals.nunique() > 1:
+                                    threshold = abs_vals.median()
+                                    fallback_labels = (abs_vals > threshold).astype(int)
+                                    if fallback_labels.nunique() >= 2:
+                                        tprint_info(
+                                            f"   🔄 {family[:12]}: Using magnitude-based labels "
+                                            f"(|val| > {threshold:.4f})"
+                                        )
+                                        return fallback_labels.reindex(series.index)
+                            
+                            # All strategies failed - return original labels
+                            # Caller SHOULD reject this geometry rather than force labels
+                            # This maintains de Prado compliance: natural class distribution
+                            return labels
+
+                        # Log raw label statistics for debugging
+                        raw_labels = (
+                            gt.labels.reindex(gt.events)
+                            if isinstance(gt.labels, pd.Series)
+                            else pd.Series(gt.labels, index=gt.events)
+                            if gt.labels is not None
+                            else pd.Series(dtype=float)
+                        )
+                        if raw_labels is not None and not raw_labels.empty:
+                            raw_clean = raw_labels.dropna()
+                            if len(raw_clean) > 0:
+                                pos_rate = float((raw_clean > 0).mean())
+                                neg_rate = float((raw_clean < 0).mean())
+                                zero_rate = float((raw_clean == 0).mean())
+                                label_dist = raw_clean.value_counts().to_dict()
+                                tprint_debug(
+                                    f"   📊 {gt.uuid[:8]} raw labels: n={len(raw_clean)} dist={label_dist} "
+                                    f"min={raw_clean.min():.3f} max={raw_clean.max():.3f} side={side} "
+                                    f"pos_rate={pos_rate:.2%} neg_rate={neg_rate:.2%} zero_rate={zero_rate:.2%}"
+                                )
+
+                        # Get family for de Prado compliant binarization
+                        gt_family = getattr(gt, 'family', '') or ''
+                        
+                        # PRIMARY: Magnitude-based labeling for volatility/intensity families
+                        # These families predict move SIZE, not direction, so |return| > threshold is semantically correct
+                        if self._is_magnitude_family(gt_family):
+                            horizon = int(params.get("horizon", 24))
+                            magnitude_labels = self._compute_magnitude_labels(
+                                df, gt.events, horizon, family=gt_family
+                            )
+                            if magnitude_labels is not None and magnitude_labels.nunique() >= 2:
+                                y_cand = magnitude_labels
+                                tprint_info(
+                                    f"   📏 {gt.uuid[:8]}: Using magnitude-based PRIMARY labels "
+                                    f"(n={len(y_cand)}, pos_rate={y_cand.mean():.2%})"
+                                )
+                            else:
+                                # Fallback to standard binarization if magnitude fails
+                                if isinstance(gt.labels, pd.Series):
+                                    y_cand = _binarize_labels(gt.labels.reindex(gt.events), side, gt_family)
+                                else:
+                                    y_cand = _binarize_labels(pd.Series(gt.labels, index=gt.events), side, gt_family)
                         else:
-                            y_cand = (pd.Series(gt.labels, index=gt.events) > 0).astype(int)
+                            # STANDARD: Direction-based binarization for directional families
+                            if isinstance(gt.labels, pd.Series):
+                                y_cand = _binarize_labels(gt.labels.reindex(gt.events), side, gt_family)
+                            else:
+                                y_cand = _binarize_labels(pd.Series(gt.labels, index=gt.events), side, gt_family)
 
                         y_cand = y_cand.dropna()
+                        if y_cand.nunique() < 2:
+                            cand_counts = y_cand.value_counts(dropna=True).to_dict()
+                            event_count = len(gt.events)
+                            non_null = int(y_cand.notna().sum())
+                            weight_stats = {}
+                            if isinstance(getattr(gt, 'weights', None), pd.Series):
+                                w = gt.weights.reindex(gt.events).dropna()
+                                if not w.empty:
+                                    weight_stats = {
+                                        "n": int(len(w)),
+                                        "min": float(w.min()),
+                                        "median": float(w.median()),
+                                        "max": float(w.max()),
+                                        "mean": float(w.mean()),
+                                        "nonzero": int((w != 0).sum())
+                                    }
+                            raw_for_diag = None
+                            if isinstance(gt.labels, pd.Series):
+                                raw_for_diag = gt.labels.reindex(gt.events)
+                            elif gt.labels is not None:
+                                raw_for_diag = pd.Series(gt.labels, index=gt.events)
+
+                            diag_stats = {}
+                            diag_reasons = []
+                            if raw_for_diag is not None and not raw_for_diag.empty:
+                                raw_clean = raw_for_diag.dropna()
+                                if not raw_clean.empty:
+                                    pos_rate = float((raw_clean > 0).mean())
+                                    neg_rate = float((raw_clean < 0).mean())
+                                    zero_rate = float((raw_clean == 0).mean())
+                                    diag_stats = {
+                                        "n": int(len(raw_clean)),
+                                        "nunique": int(raw_clean.nunique(dropna=True)),
+                                        "min": float(raw_clean.min()),
+                                        "median": float(raw_clean.median()),
+                                        "max": float(raw_clean.max()),
+                                        "mean": float(raw_clean.mean()),
+                                        "pos_rate": pos_rate,
+                                        "neg_rate": neg_rate,
+                                        "zero_rate": zero_rate,
+                                        "abs_median": float(raw_clean.abs().median()),
+                                        "abs_nunique": int(raw_clean.abs().nunique(dropna=True)),
+                                    }
+                                    if diag_stats["nunique"] <= 1:
+                                        diag_reasons.append("raw_constant")
+                                    if zero_rate > 0.9:
+                                        diag_reasons.append("raw_mostly_zero")
+                                    if side == "negative" and neg_rate == 0.0:
+                                        diag_reasons.append("no_negative_raw_for_short")
+                                    if side in (None, "positive") and pos_rate == 0.0:
+                                        diag_reasons.append("no_positive_raw_for_long")
+                                    if side == "both" and pos_rate in (0.0, 1.0):
+                                        diag_reasons.append("no_variation_for_both_side")
+
+                            fallback_used = False
+                            try:
+                                horizon = int(params.get("horizon", 24))
+                                pt_mult = params.get("pt_mult", 1.5)
+                                sl_mult = params.get("sl_mult", 0.75)
+                                # FIX: Create proper events_df from gt.events
+                                events_for_fallback = pd.DataFrame(index=gt.events)
+                                fallback_labels, _, fallback_returns, _, _, _ = self._compute_dominance_labels(
+                                    df, events_for_fallback, horizon=horizon, pt_mult=pt_mult, sl_mult=sl_mult
+                                )
+                                y_cand = _binarize_labels(fallback_labels, side, gt_family).dropna()
+                                if isinstance(fallback_labels, pd.Series) and not fallback_labels.empty:
+                                    fb_counts = fallback_labels.value_counts(dropna=True).to_dict()
+                                    tprint_info(
+                                        f"      ↳ Dominance fallback labels: counts={fb_counts} "
+                                        f"min={fallback_labels.min():.4f} max={fallback_labels.max():.4f}"
+                                    )
+                                if isinstance(fallback_returns, pd.Series) and not fallback_returns.empty:
+                                    fr = fallback_returns.dropna()
+                                    if not fr.empty:
+                                        tprint_info(
+                                            "      ↳ Dominance fallback returns: "
+                                            f"n={len(fr)} min={fr.min():.4g} median={fr.median():.4g} "
+                                            f"max={fr.max():.4g} mean={fr.mean():.4g}"
+                                        )
+                                if y_cand.nunique() >= 2:
+                                    fallback_used = True
+                                if y_cand.nunique() < 2 and isinstance(fallback_returns, pd.Series):
+                                    y_cand = _binarize_labels(fallback_returns, side, gt_family).dropna()
+                                    if y_cand.nunique() >= 2:
+                                        fallback_used = True
+                            except Exception as e:
+                                tprint_warning(
+                                    f"   ⚠️ Dominance fallback failed for {gt.uuid[:8]}: {e}"
+                                )
+                            if y_cand.nunique() < 2:
+                                try:
+                                    horizon = int(params.get("horizon", 24))
+                                    returns_series = (
+                                        df["close"].pct_change(horizon).shift(-horizon)
+                                        if "close" in df.columns else None
+                                    )
+                                    if returns_series is not None:
+                                        # FIX: Use gt.events instead of y_cand.index for proper alignment
+                                        returns_series = returns_series.reindex(gt.events).dropna()
+                                    if returns_series is not None and not returns_series.empty and returns_series.nunique() > 1:
+                                        # VOLATILITY families: use magnitude-based labeling
+                                        # Volatility events predict move SIZE, not direction
+                                        family_name = getattr(gt, 'family', '') or ''
+                                        if 'VOLATILITY' in family_name.upper() or side == 'both':
+                                            abs_returns = returns_series.abs()
+                                            if abs_returns.nunique() > 1:
+                                                threshold = abs_returns.median()
+                                                y_cand = (abs_returns > threshold).astype(int)
+                                                tprint_info(
+                                                    f"   ✅ {gt.uuid[:8]}: Using magnitude-based labels "
+                                                    f"(|ret| > {threshold:.4f})"
+                                                )
+                                                fallback_used = True
+                                        else:
+                                            # Use the robust binarization on returns
+                                            y_cand = _binarize_labels(returns_series, side, gt_family)
+                                            if y_cand.nunique() >= 2:
+                                                fallback_used = True
+
+                                except Exception as e:
+                                    tprint_warning(
+                                        f"   ⚠️ Return split fallback failed for {gt.uuid[:8]}: {e}"
+                                    )
+                            if y_cand.nunique() < 2:
+                                tprint_warning(
+                                    f"   ⚠️ Single-class labels for {gt.uuid[:8]} after side-aware binarization "
+                                    "and fallback attempts."
+                                )
+                                tprint_info(
+                                    f"      ↳ Label counts={cand_counts} events={event_count} non_null={non_null} "
+                                    f"weights={weight_stats or 'n/a'}"
+                                )
+                                if diag_stats:
+                                    tprint_info(
+                                        "      ↳ Binarization diagnostics: "
+                                        f"side={side} family={gt_family} params={params} "
+                                        f"stats={diag_stats} reasons={diag_reasons or ['insufficient_variation']}"
+                                    )
+                            elif fallback_used:
+                                tprint_info(
+                                    f"   ✅ {gt.uuid[:8]}: Fallback labeling applied (classes={sorted(y_cand.unique())})"
+                                )
                         if y_cand.nunique() < 2:
                             tprint_warning(
                                 f"   ⚠️ Skipping race for {gt.uuid[:8]}: single-class labels ({y_cand.unique()})"
@@ -12276,26 +13377,27 @@ class LabelBasedLayer2(BaseStep):
             end = (i + 1) * fold_size if i < n_splits - 1 else len(df)
             folds.append((start, end))
     
-        # Causal Specialist Generators - Augment instead of overwrite
+        # Causal Specialist Generators - instantiate only missing ones
         specialist_registry = {
-            "CAUSAL_SURPRISE": CausalSurpriseEvents(),
-            "VOLUME_SPECIALIST": VolumeSpecialistEvents(),
-            "VOLATILITY_SPECIALIST": VolatilitySpecialistEvents(),
-            "LIQUIDITY_SPECIALIST": LiquiditySpecialistEvents(),
-            "INFORMATION_SPECIALIST": InformationSpecialistEvents(),
-            "INVENTORY_SPECIALIST": InventorySpecialistEvents(),
+            "CAUSAL_SURPRISE": CausalSurpriseEvents,
+            "VOLUME_SPECIALIST": VolumeSpecialistEvents,
+            "VOLATILITY_SPECIALIST": VolatilitySpecialistEvents,
+            "LIQUIDITY_SPECIALIST": LiquiditySpecialistEvents,
+            "INFORMATION_SPECIALIST": InformationSpecialistEvents,
+            "INVENTORY_SPECIALIST": InventorySpecialistEvents,
             # Continuous predictor families
-            "MEAN_REVERSION": ContinuousPredictorEvents('MEAN_REVERSION'),
-            "MARKET_FRAGILITY": ContinuousPredictorEvents('MARKET_FRAGILITY'),
-            "SURPRISE_Z_CONTINUOUS": ContinuousPredictorEvents('SURPRISE_Z_CONTINUOUS'),
-            "FLOW_PRESSURE_CONTINUOUS": ContinuousPredictorEvents('FLOW_PRESSURE_CONTINUOUS'),
-            "MULTI_HORIZON_SLOPE": ContinuousPredictorEvents('MULTI_HORIZON_SLOPE'),
+            "MEAN_REVERSION": lambda: ContinuousPredictorEvents('MEAN_REVERSION'),
+            "MARKET_FRAGILITY": lambda: ContinuousPredictorEvents('MARKET_FRAGILITY'),
+            "SURPRISE_Z_CONTINUOUS": lambda: ContinuousPredictorEvents('SURPRISE_Z_CONTINUOUS'),
+            "FLOW_PRESSURE_CONTINUOUS": lambda: ContinuousPredictorEvents('FLOW_PRESSURE_CONTINUOUS'),
+            "MULTI_HORIZON_SLOPE": lambda: ContinuousPredictorEvents('MULTI_HORIZON_SLOPE'),
         }
         
         if not hasattr(self, 'generators') or self.generators is None:
-            self.generators = specialist_registry
-        else:
-            self.generators.update(specialist_registry)
+            self.generators = {}
+        for name, gen_factory in specialist_registry.items():
+            if name not in self.generators:
+                self.generators[name] = gen_factory()
     
         # For OOF, we treat 'production_geometries' as the selected strategy.
         # We retrain the strategy on Train and predict on Test.
@@ -12369,6 +13471,7 @@ class LabelBasedLayer2(BaseStep):
             
             # Train Models on df_train
             trained_models = {}
+            training_status = {}
             tprint_info(f"🚀 Training models for {len(production_geometries)} geometries on fold {i+1}/{n_splits}...")
             
             # Group geometries by family AND generation params for batch processing
@@ -12443,6 +13546,9 @@ class LabelBasedLayer2(BaseStep):
                     global_weights = global_events
                     if hasattr(global_events, 'index'):
                         global_events = pd.DatetimeIndex(global_events.index)
+                if global_events is not None and not isinstance(global_events, pd.DatetimeIndex):
+                    global_events = pd.DatetimeIndex(pd.to_datetime(global_events, errors='coerce'))
+                    global_events = global_events[~global_events.isna()]
 
                 if global_events is not None:
                     # FIX: Robust TZ handling to ensure overlap with fold index
@@ -12456,6 +13562,8 @@ class LabelBasedLayer2(BaseStep):
                             ge_aligned = global_events.tz_localize(fold_tz)
                         elif fold_tz is None and ge_tz is not None:
                             ge_aligned = global_events.tz_localize(None)
+                        elif fold_tz is not None and ge_tz is not None and fold_tz != ge_tz:
+                            ge_aligned = global_events.tz_convert(fold_tz)
                     except Exception:
                         pass # Fallback to original if alignment fails
 
@@ -12472,6 +13580,30 @@ class LabelBasedLayer2(BaseStep):
                         fold_event_weights = global_weights.reindex(fold_train_events).fillna(1.0)
 
                     if len(fold_train_events) == 0 and len(global_events) > 0:
+                         try:
+                             ge_naive = (
+                                 ge_aligned.tz_localize(None)
+                                 if getattr(ge_aligned, 'tz', None) is not None else pd.DatetimeIndex(ge_aligned)
+                             )
+                             fold_naive = df_train.index.tz_localize(None) if df_train.index.tz is not None else df_train.index
+                             fallback_mask = ge_naive.isin(fold_naive)
+                             if fallback_mask.any():
+                                 fold_train_events = ge_aligned[fallback_mask]
+                                 if global_weights is not None:
+                                     fold_event_weights = global_weights.reindex(fold_train_events).fillna(1.0)
+                         except Exception:
+                             pass
+                         if len(fold_train_events) == 0:
+                             try:
+                                 ge_dt = pd.to_datetime(ge_aligned, utc=True, errors='coerce').tz_convert(None)
+                                 fold_dt = pd.to_datetime(df_train.index, utc=True, errors='coerce').tz_convert(None)
+                                 fallback_mask = ge_dt.isin(fold_dt)
+                                 if fallback_mask.any():
+                                     fold_train_events = ge_aligned[fallback_mask]
+                                     if global_weights is not None:
+                                         fold_event_weights = global_weights.reindex(fold_train_events).fillna(1.0)
+                             except Exception:
+                                 pass
                          # Diagnostic log for debugging if fix fails
                          tprint_warning(f"   ⚠️ TZ Mismatch persists? Global={len(global_events)} -> Fold=0. Fold Range: {df_train.index[0]} to {df_train.index[-1]}")
                 else:
@@ -12490,12 +13622,19 @@ class LabelBasedLayer2(BaseStep):
                 if not has_global:
                     if total_fold_events < 5:
                         tprint_warning(f"   ⚠️ Too few train events ({total_fold_events} < 5) for {family}")
+                        for gt in group_geometries:
+                            training_status.setdefault(
+                                gt.uuid,
+                                f"skipped: too few train events ({total_fold_events})"
+                            )
                         continue
                         
                     train_evts_df = pd.DataFrame(index=fold_train_events)
                     X_train = self._build_geometry_independent_event_features(df_train, train_evts_df)
                     if X_train.empty:
                         tprint_warning(f"   ⚠️ No features generated for {family}")
+                        for gt in group_geometries:
+                            training_status.setdefault(gt.uuid, "skipped: empty features")
                         continue
                 
                 # 3. Compute labels and weights for all geometries in this group at once
@@ -12506,6 +13645,12 @@ class LabelBasedLayer2(BaseStep):
                         df_train, fold_train_events, group_geometries, family, i, sr_levels=self.sr_levels,
                         event_weights=fold_event_weights
                     )
+
+                    if not labels_dict:
+                        tprint_warning(f"   ⚠️ No labels generated for {family}")
+                        for gt in group_geometries:
+                            training_status.setdefault(gt.uuid, "skipped: no labels")
+                        continue
                     
                     # Log label stats for first geometry as proxy
                     if labels_dict:
@@ -12540,6 +13685,16 @@ class LabelBasedLayer2(BaseStep):
                         'fold': i,
                         **diagnostics
                     })
+
+                for gt in group_geometries:
+                    if gt.uuid in batch_models:
+                        training_status[gt.uuid] = "trained"
+                    elif gt.uuid not in training_status:
+                        diag = batch_diagnostics.get(gt.uuid, {})
+                        if isinstance(diag, dict) and diag.get("error"):
+                            training_status[gt.uuid] = f"failed: {diag['error']}"
+                        else:
+                            training_status[gt.uuid] = "failed: training error"
     
             # Predict on Test
             # We predict on events that occur in the Test window
@@ -12557,6 +13712,14 @@ class LabelBasedLayer2(BaseStep):
                 
                 # FIX: Robust TZ handling for test slice
                 if full_events is not None:
+                    if isinstance(full_events, pd.Series):
+                        full_events = pd.DatetimeIndex(full_events.index)
+                    elif not isinstance(full_events, pd.DatetimeIndex):
+                        try:
+                            full_events = pd.DatetimeIndex(pd.to_datetime(full_events))
+                        except Exception:
+                            full_events = pd.DatetimeIndex([])
+
                     ge_aligned = full_events
                     try:
                         fold_tz = getattr(test_start_time, 'tz', None)
@@ -12596,7 +13759,8 @@ class LabelBasedLayer2(BaseStep):
             for gt_uuid, evts in test_evts_map.items():
                 model = trained_models.get(gt_uuid)
                 if model is None:
-                    tprint_warning(f"   ⚠️ No model for {gt_uuid[:8]}...")
+                    reason = training_status.get(gt_uuid, "unknown")
+                    tprint_warning(f"   ⚠️ No model for {gt_uuid[:8]} ({reason})")
                     continue
     
                 # Build Features for Test Events (using global features)
@@ -14070,6 +15234,7 @@ class LabelBasedLayer2(BaseStep):
                 # Get labels and weights for this geometry
                 labels = labels_dict.get(gt.uuid)
                 weights = weights_dict.get(gt.uuid)
+                params = getattr(gt, "params", {}) or {}
 
                 if labels is None or len(labels) < 5:
                     return gt.uuid, None, f"Too few valid labels: {len(labels) if labels is not None else 0}"
@@ -14103,14 +15268,28 @@ class LabelBasedLayer2(BaseStep):
                 if weights is not None:
                     w_train = weights.reindex(common_idx).fillna(0.0)
 
-                    # Normalize weights per fold to avoid dominance by extreme events
-                    if len(w_train) > 100:
-                        w_cap = w_train.quantile(0.99)
-                        w_train = w_train.clip(upper=w_cap)
+                    # Remove negative weights (invalid for CatBoost/XGBoost)
+                    neg_count = int((w_train < 0).sum())
+                    if neg_count > 0:
+                        tprint_warning(
+                            f"   ⚠️ Negative sample weights detected for {gt.uuid} ({neg_count}); clipping to 0."
+                        )
+                        w_train = w_train.clip(lower=0.0)
 
-                    w_mean = w_train.mean()
-                    if w_mean > 1e-9:
-                        w_train = w_train / w_mean
+                    if w_train.sum() <= 0:
+                        tprint_warning(
+                            f"   ⚠️ Non-positive sample weights for {gt.uuid}; dropping weights for this fit."
+                        )
+                        w_train = None
+                    else:
+                        # Normalize weights per fold to avoid dominance by extreme events
+                        if len(w_train) > 100:
+                            w_cap = w_train.quantile(0.99)
+                            w_train = w_train.clip(upper=w_cap)
+
+                        w_mean = w_train.mean()
+                        if w_mean > 1e-9:
+                            w_train = w_train / w_mean
                 else:
                     w_train = None
 
@@ -14145,7 +15324,6 @@ class LabelBasedLayer2(BaseStep):
                     horizon_cfg = None
                     if isinstance(self.init_config, dict):
                         horizon_cfg = self.init_config.get("horizon")
-                    params = getattr(gt, "params", {}) or {}
                     tprint_info(
                         f"   📌 Geometry context: uuid={gt.uuid} family={getattr(gt, 'family', 'unknown')} "
                         f"events={len(y_train)} pos_rate={pos_rate:.1%} weight_sum={weight_sum:.2f} "
@@ -14161,19 +15339,37 @@ class LabelBasedLayer2(BaseStep):
                         f"   ⚠️ MULTICLASS DETECTED: {gt.uuid} has {len(unique_labels)} unique labels: {unique_labels}"
                     )
                     tprint_info(f"      → Label distribution: {label_counts}")
-                    strategy = "long_only"
+                    strategy = "side_aware"
                     if isinstance(self.init_config, dict):
                         strategy = self.init_config.get("multiclass_label_strategy", strategy)
+                    side = self._resolve_label_side(getattr(gt, "family", ""), params)
                     if strategy == "drop_neutral":
                         mask = y_train != 0
                         y_train = y_train.loc[mask]
                         X_train_final = X_train_final.loc[mask]
                         if w_train is not None:
-                            w_train = w_train[mask.to_numpy()]
-                        tprint_info("      → Dropping neutral labels; binarizing remaining by sign.")
-                    else:
+                            if isinstance(w_train, pd.Series):
+                                w_train = w_train.loc[mask.index[mask]]
+                            else:
+                                w_train = w_train[mask.to_numpy()]
+                        tprint_info("      → Dropping neutral labels; binarizing remaining by side.")
+                        strategy = "side_aware"
+                    if strategy == "side_aware":
+                        if side == "negative":
+                            tprint_info("      → Binarizing labels (side-aware, short): (y < 0) -> {1, 0}")
+                            y_train = (y_train < 0).astype(int)
+                        elif side == "both":
+                            tprint_info("      → Binarizing labels (side-aware, both): (y != 0) -> {1, 0}")
+                            y_train = (y_train != 0).astype(int)
+                        else:
+                            tprint_info("      → Binarizing labels (side-aware, long): (y > 0) -> {1, 0}")
+                            y_train = (y_train > 0).astype(int)
+                    elif strategy == "long_only":
                         tprint_info("      → Binarizing labels (long-only): (y > 0) -> {1, 0}")
-                    y_train = (y_train > 0).astype(int)
+                        y_train = (y_train > 0).astype(int)
+                    else:
+                        tprint_info("      → Binarizing labels (default long-only): (y > 0) -> {1, 0}")
+                        y_train = (y_train > 0).astype(int)
                 elif len(unique_labels) == 1:
                     label_counts = y_train.value_counts(dropna=True).to_dict()
                     tprint_warning(
@@ -14191,35 +15387,64 @@ class LabelBasedLayer2(BaseStep):
                 focal_params = None
                 best_name = "LGBM_Focal"  # Default winner
 
-                if self.enable_model_race and len(X_train_final) > 30:  # Relaxed from 100 for light mode
+                run_model_race = self.enable_model_race and len(X_train_final) > 30
+                if run_model_race:  # Relaxed from 100 for light mode
                     tprint_info(f"🏁 Running model race for geometry {gt.uuid}...")
 
                     # Split training data for model race (use portion for validation)
                     race_train_size = int(0.7 * len(X_train_final))
+                    # Ensure both classes appear in race split (time-ordered)
+                    if y_train.nunique() > 1:
+                        y_vals = y_train.values
+                        pos_idx = np.where(y_vals == 1)[0]
+                        neg_idx = np.where(y_vals == 0)[0]
+                        if len(pos_idx) > 0 and len(neg_idx) > 0:
+                            min_pos = int(pos_idx.min())
+                            max_pos = int(pos_idx.max())
+                            min_split = min_pos + 1
+                            max_split = max_pos
+                            if min_split < max_split:
+                                race_train_size = min(max(race_train_size, min_split), max_split)
+                            else:
+                                run_model_race = False
+                        else:
+                            run_model_race = False
+
+                    if race_train_size <= 1 or race_train_size >= len(X_train_final):
+                        run_model_race = False
+
                     X_race_train = X_train_final.iloc[:race_train_size]
                     X_race_val = X_train_final.iloc[race_train_size:]
                     y_race_train = y_train.iloc[:race_train_size].astype(int)
                     y_race_val = y_train.iloc[race_train_size:].astype(int)
                     w_race_train = w_train[:race_train_size] if w_train is not None else None
 
-                    # Run model race with environment masks for IRM (if causal framework enabled)
-                    environment_masks = None
-                    if self.enable_causal_framework and CAUSAL_MODULES_AVAILABLE and self.irm_enabled:
-                        environment_masks = self._create_default_environment_masks(X_race_train, y_race_train)
-
-                    best_model, best_name, race_results = self._run_model_race(
-                        X_race_train, y_race_train, X_race_val, y_race_val, w_race_train, environment_masks,
-                        geometry_uuid=gt.uuid
-                    )
-                    if best_model is None:
-                        return gt.uuid, None, "Model race failed (no model selected)"
-
-                    tprint_success(f"🏆 Model race winner: {best_name}")
-                    if isinstance(race_results, dict) and race_results:
-                        tprint_info(
-                            f"   📈 Race metrics ({gt.uuid}): "
-                            + ", ".join(f"{k}={v}" for k, v in list(race_results.items())[:5])
+                    if y_race_train.nunique() < 2 or y_race_val.nunique() < 2:
+                        tprint_warning(
+                            f"   ⚠️ Skipping model race for {gt.uuid}: single-class split "
+                            f"(train={y_race_train.unique()}, val={y_race_val.unique()})."
                         )
+                        run_model_race = False
+
+                    # Run model race with environment masks for IRM (if causal framework enabled)
+                    if run_model_race:
+                        environment_masks = None
+                        if self.enable_causal_framework and CAUSAL_MODULES_AVAILABLE and self.irm_enabled:
+                            environment_masks = self._create_default_environment_masks(X_race_train, y_race_train)
+
+                        best_model, best_name, race_results = self._run_model_race(
+                            X_race_train, y_race_train, X_race_val, y_race_val, w_race_train, environment_masks,
+                            geometry_uuid=gt.uuid
+                        )
+                        if best_model is None:
+                            return gt.uuid, None, "Model race failed (no model selected)"
+
+                        tprint_success(f"🏆 Model race winner: {best_name}")
+                        if isinstance(race_results, dict) and race_results:
+                            tprint_info(
+                                f"   📈 Race metrics ({gt.uuid}): "
+                                + ", ".join(f"{k}={v}" for k, v in list(race_results.items())[:5])
+                            )
 
                     # HPO - run on the winning model (different HPO strategies per model type)
                     if self.enable_focal_hpo and len(X_train_final) > 200:
@@ -14846,8 +16071,33 @@ class LabelBasedLayer2(BaseStep):
             X_all = self._get_global_features(df)
 
             if X_all.empty:
-                tprint_warning("⚠️ Global features cache empty, returning empty feature frame")
-                return pd.DataFrame(index=events_df.index)
+                tprint_warning("⚠️ Global features cache empty, regenerating...")
+                try:
+                    self._global_feature_cache.clear()
+                except Exception:
+                    pass
+                try:
+                    if hasattr(self, '_cached_global_features'):
+                        self._cached_global_features.clear()
+                except Exception:
+                    pass
+                X_all = self._get_global_features(df)
+
+            if X_all.empty:
+                tprint_warning("⚠️ Global features still empty after regeneration, using minimal fallback features")
+                base = pd.DataFrame(index=df.index)
+                if 'close' in df.columns:
+                    base['log_ret'] = np.log(df['close']).diff()
+                    base['ret_1'] = df['close'].pct_change()
+                if 'volatility_1d' in df.columns:
+                    base['volatility_1d'] = df['volatility_1d']
+                elif 'close' in df.columns:
+                    base['volatility_1d'] = df['close'].pct_change().rolling(50).std()
+                if 'volume' in df.columns:
+                    base['volume'] = df['volume']
+                if 'geo_atr_14' in df.columns:
+                    base['geo_atr_14'] = df['geo_atr_14']
+                X_all = base.fillna(0.0)
 
             tprint_info(f"   🧱 Global feature frame: {X_all.shape}")
 
@@ -14885,6 +16135,22 @@ class LabelBasedLayer2(BaseStep):
             X = X.select_dtypes(include=[np.number])
             if X.shape[1] < cols_before:
                 tprint_info(f"   🧹 Dropped {cols_before - X.shape[1]} non-numeric columns (e.g. regime labels)")
+
+            if X.empty:
+                tprint_warning("   ⚠️ Feature frame empty after filtering; using minimal fallback features")
+                base = pd.DataFrame(index=df.index)
+                if 'close' in df.columns:
+                    base['log_ret'] = np.log(df['close']).diff()
+                    base['ret_1'] = df['close'].pct_change()
+                if 'volatility_1d' in df.columns:
+                    base['volatility_1d'] = df['volatility_1d']
+                elif 'close' in df.columns:
+                    base['volatility_1d'] = df['close'].pct_change().rolling(50).std()
+                if 'volume' in df.columns:
+                    base['volume'] = df['volume']
+                if 'geo_atr_14' in df.columns:
+                    base['geo_atr_14'] = df['geo_atr_14']
+                X = self._align_features_efficiently(base.fillna(0.0), events_df.index)
 
             # Drop non-numeric columns that cause LightGBM errors globally
             cols_to_drop = ['symbol', 'exchange', 'timestamp', 'date', 'regime', 'regime_label']

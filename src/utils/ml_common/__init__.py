@@ -5,15 +5,14 @@ This module provides common machine learning utilities and components
 for the trading system, organized into logical sub-modules.
 """
 
-import logging
-from typing import Any, Dict, List, Optional, Union
-
+from typing import TYPE_CHECKING, Any
 from src.utils.logger import system_logger
+from src.utils.lazy_module_loader import make_lazy_getattr, make_lazy_dir
 
 # Configure logging
 _LOGGER = system_logger.getChild('MLCommon')
 
-# Import the proper tprint from utils
+# Import the proper tprint from utils (Eager load for logging)
 from src.utils.tprint import tprint
 
 # Legacy function for backward compatibility (deprecated)
@@ -28,229 +27,205 @@ def legacy_tprint(message: str, level: str = "INFO") -> None:
     else:
         _LOGGER.info(message)
 
-# Import from sub-modules
-try:
-    # Models - use lazy imports to avoid circular dependencies
-    from .models import (
-        EnhancedModelFactory, ModelType, ModelConfig,
-        create_model_factory,
-        MultiOutputConfig, MultiOutputModel, MultiOutputStackingModel, MultiOutputResult,
-        prepare_multi_output_targets, create_analyst_outputs, create_tactician_outputs,
-        create_multi_output_stacking_model,
-        train_model_with_confidence_metrics,
-        ModelEvaluator, ModelRegistry
-    )
+# HMM regime detection module has been deprecated; keep flag for compatibility probes
+HMM_REGIME_DETECTION_AVAILABLE = False
 
-    # Lazy import for EnhancedModelTrainer to avoid circular dependency
-    from .models import get_enhanced_model_trainer
+# Define lazy loading map
+_EXPORT_MAP = {
+    # Models
+    'EnhancedModelFactory': '.models',
+    'ModelType': '.models',
+    'ModelConfig': '.models',
+    'create_model_factory': '.models',
+    'MultiOutputConfig': '.models',
+    'MultiOutputModel': '.models',
+    'MultiOutputStackingModel': '.models',
+    'MultiOutputResult': '.models',
+    'prepare_multi_output_targets': '.models',
+    'create_analyst_outputs': '.models',
+    'create_tactician_outputs': '.models',
+    'create_multi_output_stacking_model': '.models',
+    'train_model_with_confidence_metrics': '.models',
+    'ModelEvaluator': '.models',
+    'ModelRegistry': '.models',
+    'get_enhanced_model_trainer': '.models',
 
     # Ensembles
-    from .ensembles import (
-        EnsembleManager, EnsembleType, EnsembleConfig,
-        # VotingEnsemble, StackingEnsemble, BlendingEnsemble,
-        # WeightedAverageEnsemble, DynamicWeightingEnsemble,
-        StackingEnsembleManager, StackingEnsembleConfig, StackingEnsembleResult,
-        create_analyst_ensemble, create_tactician_ensemble,
-        StackingConfidenceCalibrator, StackingCalibrationConfig, StackingCalibrationResult,
-        create_analyst_calibrator, create_tactician_calibrator
-    )
+    'EnsembleManager': '.ensembles',
+    'EnsembleType': '.ensembles',
+    'EnsembleConfig': '.ensembles',
+    'StackingEnsembleManager': '.ensembles',
+    'StackingEnsembleConfig': '.ensembles',
+    'StackingEnsembleResult': '.ensembles',
+    'create_analyst_ensemble': '.ensembles',
+    'create_tactician_ensemble': '.ensembles',
+    'StackingConfidenceCalibrator': '.ensembles',
+    'StackingCalibrationConfig': '.ensembles',
+    'StackingCalibrationResult': '.ensembles',
+    'create_analyst_calibrator': '.ensembles',
+    'create_tactician_calibrator': '.ensembles',
 
     # Explainability
-    from .explainability import (
-        ModelExplainer,
-        ModelInterpretabilityEngine, ExplanationResult
-    )
+    'ModelExplainer': '.explainability',
+    'ModelInterpretabilityEngine': '.explainability',
+    'ExplanationResult': '.explainability',
 
     # Optimization
-    from .optimization import (
-        # HyperparameterOptimization,
-        ParetoOptimizer, ParetoFront, ParetoFrontAnalyzer,
-        # RegimeSpecificTPSLOptimizer  # Not yet available
-    )
+    'ParetoOptimizer': '.optimization',
+    'ParetoFront': '.optimization',
+    'ParetoFrontAnalyzer': '.optimization',
 
-    # Data Processing (avoid heavy imports at module import time)
-    # Expose lightweight getters instead of importing heavy classes to prevent circulars
-    try:
-        from .data_processing import (
-            get_enhanced_data_labeler as EnhancedDataLabelerGetter,
-            get_labeling_config as LabelingConfigGetter
-        )
-    except Exception as e:
-        EnhancedDataLabelerGetter = None  # type: ignore
-        LabelingConfigGetter = None  # type: ignore
-        tprint(f"⚠️ Data processing getters not available at init: {e}")
-    # Defer other heavy utilities to call sites
+    # Data Processing
+    'EnhancedDataLabelerGetter': '.data_processing',  # Aliased in map
+    'LabelingConfigGetter': '.data_processing',      # Aliased in map
 
     # Validation
-    from .validation import (
-        ConfigurationValidator,
-        CrossValidationUtilities, PurgedKFold, TemporalCrossValidator,
-        TimeSeriesSplitValidator, OOFGenerator, DataLeakageDetector,
-        StabilityAnalyzer,
-        # Unified CV
-        UnifiedCrossValidator, UnifiedCVResult,
-        perform_cross_validation, temporal_cross_validation, nested_cross_validation
-    )
+    'ConfigurationValidator': '.validation',
+    'CrossValidationUtilities': '.validation',
+    'PurgedKFold': '.validation',
+    'TemporalCrossValidator': '.validation',
+    'TimeSeriesSplitValidator': '.validation',
+    'OOFGenerator': '.validation',
+    'DataLeakageDetector': '.validation',
+    'StabilityAnalyzer': '.validation',
+    'UnifiedCrossValidator': '.validation',
+    'UnifiedCVResult': '.validation',
+    'perform_cross_validation': '.validation',
+    'temporal_cross_validation': '.validation',
+    'nested_cross_validation': '.validation',
 
     # Lookahead bias detection
-    from ..lookahead_bias_detector import LookaheadBiasDetector, LookaheadBiasError
+    'LookaheadBiasDetector': '..lookahead_bias_detector',
+    'LookaheadBiasError': '..lookahead_bias_detector',
 
-    def lookahead_bias_detector():
-        """Get lookahead bias detector instance."""
-        return LookaheadBiasDetector()
-
-    def hyperparameter_optimization():
-        """Get hyperparameter optimization instance."""
-        from .utils.hpo_utils import HyperparameterOptimization
-        return HyperparameterOptimization()
-    # Thresholding functions (imported separately to avoid sklearn dependency issues)
-    try:
-        from .validation.thresholding import optimize_threshold, calibrate_probabilities
-    except ImportError as e:
-        optimize_threshold = None  # type: ignore
-        calibrate_probabilities = None  # type: ignore
-        tprint(f"⚠️ Thresholding functions not available: {e}")
+    # Thresholding
+    'optimize_threshold': '.validation.thresholding',
+    'calibrate_probabilities': '.validation.thresholding',
 
     # Utils
-    from .utils import (
-        setup_logger, get_logger,
-        MemoryOptimizer, MemoryIntegrator,
-        ParallelProcessor,
-        UnifiedCache, get_unified_cache, cached,
-        limit_blas_threads, get_thread_info, validate_thread_environment,
-        LookaheadProtection, MLTrainingSafeguards,
-        RobustErrorHandler
-    )
+    'setup_logger': '.utils',
+    'get_logger': '.utils',
+    'MemoryOptimizer': '.utils',
+    'MemoryIntegrator': '.utils',
+    'ParallelProcessor': '.utils',
+    'UnifiedCache': '.utils',
+    'get_unified_cache': '.utils',
+    'cached': '.utils',
+    'limit_blas_threads': '.utils',
+    'get_thread_info': '.utils',
+    'validate_thread_environment': '.utils',
+    'LookaheadProtection': '.utils',
+    'MLTrainingSafeguards': '.utils',
+    'RobustErrorHandler': '.utils',
 
-    # Legacy imports for backward compatibility
-    from .feature_selection_backwards_compat import FeatureSelector, FeatureSelectionConfig
-    # HMM regime detection module has been deprecated; keep flag for compatibility probes
-    HMM_REGIME_DETECTION_AVAILABLE = False
-    from .confidence_metrics import calculate_confidence_metrics, calculate_calibration_metrics
-    # Defer matrix operations to avoid circular import at init
-    try:
-        from ..matrix_operations import M1EnhancedMatrixOperations, get_enhanced_matrix_operations
-    except Exception:
-        M1EnhancedMatrixOperations = None  # type: ignore
-        get_enhanced_matrix_operations = None  # type: ignore
-
-    # VectorBT-optimized utilities (now the default)
-    from .matrix_cross_validation import (
-        MatrixCrossValidator, matrix_cross_validate
-    )
-    from .unified_vectorization_manager import (
-        UnifiedVectorizationManager, OperationType, OptimizationStrategy, OperationConfig, OptimizationResult,
-        optimize_cross_validation, optimize_backtesting, optimize_financial_operation,
-        optimize_vectorbt_backtesting, optimize_vectorbt_metrics, optimize_vectorbt_portfolio,
-        get_unified_vectorization_manager
-    )
+    # Legacy imports
+    'FeatureSelector': '.feature_selection_backwards_compat',
+    'FeatureSelectionConfig': '.feature_selection_backwards_compat',
+    'LegacyFeatureSelector': '.feature_selection_backwards_compat', # Aliased? No, need to handle aliasing manually or use property
+    'calculate_confidence_metrics': '.confidence_metrics',
+    'calculate_calibration_metrics': '.confidence_metrics',
     
-    # Hardware and component singletons (NEW - prevents repeated initialization)
-    from .hardware_singleton import (
-        HardwareCapabilitiesManager, HardwareCapabilities,
-        get_hardware_capabilities_manager, get_hardware_capabilities, get_hardware_capabilities_dict
-    )
-    from .component_pool import (
-        ComponentPool, get_component_pool,
-        get_or_create_vectorbt_optimizer, get_or_create_performance_monitor,
-        get_or_create_unified_vectorization_manager
-    )
-    from .pipeline_orchestrator import MLPipelineOrchestrator as PipelineOrchestrator
-    from .feature_selection_backwards_compat import FeatureSelector as LegacyFeatureSelector
-    from ...feature_selection.analysis.feature_importance_analyzer import (
-        FeatureImportanceAnalyzer, FeatureImportanceConfig, FeatureImportanceResult,
-        ImportanceMethod, analyze_feature_importance, get_important_features
-    )
-    from .data_drift_detector import (
-        DataDriftDetector, DriftDetectionConfig, DriftReport, DriftResult,
-        DriftType, DriftMethod, DriftSeverity, detect_data_drift, get_drifted_features
-    )
+    # Matrix operations
+    'M1EnhancedMatrixOperations': '..matrix_operations',
+    'get_enhanced_matrix_operations': '..matrix_operations',
 
-    # Define exports
-    __all__ = [
-        # Models
-        'EnhancedModelFactory', 'ModelType', 'ModelConfig', 'create_model_factory',
-        'MultiOutputConfig', 'MultiOutputModel', 'MultiOutputStackingModel', 'MultiOutputResult',
-        'prepare_multi_output_targets', 'create_analyst_outputs', 'create_tactician_outputs',
-        'create_multi_output_stacking_model',
-        'get_enhanced_model_trainer', 'train_model_with_confidence_metrics',
-        'ModelEvaluator', 'ModelRegistry',
+    # VectorBT-optimized utilities
+    'MatrixCrossValidator': '.matrix_cross_validation',
+    'matrix_cross_validate': '.matrix_cross_validation',
+    'UnifiedVectorizationManager': '.unified_vectorization_manager',
+    'OperationType': '.unified_vectorization_manager',
+    'OptimizationStrategy': '.unified_vectorization_manager',
+    'OperationConfig': '.unified_vectorization_manager',
+    'OptimizationResult': '.unified_vectorization_manager',
+    'optimize_cross_validation': '.unified_vectorization_manager',
+    'optimize_backtesting': '.unified_vectorization_manager', 
+    'optimize_financial_operation': '.unified_vectorization_manager',
+    'optimize_vectorbt_backtesting': '.unified_vectorization_manager',
+    'optimize_vectorbt_metrics': '.unified_vectorization_manager',
+    'optimize_vectorbt_portfolio': '.unified_vectorization_manager',
+    'get_unified_vectorization_manager': '.unified_vectorization_manager',
 
-        # Ensembles
-        'EnsembleManager', 'EnsembleType', 'EnsembleConfig',
-        # 'VotingEnsemble', 'StackingEnsemble', 'BlendingEnsemble',
-        # 'WeightedAverageEnsemble', 'DynamicWeightingEnsemble',
-        'StackingEnsembleManager', 'StackingEnsembleConfig', 'StackingEnsembleResult',
-        'create_analyst_ensemble', 'create_tactician_ensemble',
-        'StackingConfidenceCalibrator', 'StackingCalibrationConfig', 'StackingCalibrationResult',
-        'create_analyst_calibrator', 'create_tactician_calibrator',
+    # Hardware and component singletons
+    'HardwareCapabilitiesManager': '.hardware_singleton',
+    'HardwareCapabilities': '.hardware_singleton',
+    'get_hardware_capabilities_manager': '.hardware_singleton',
+    'get_hardware_capabilities': '.hardware_singleton',
+    'get_hardware_capabilities_dict': '.hardware_singleton',
+    'ComponentPool': '.component_pool',
+    'get_component_pool': '.component_pool',
+    'get_or_create_vectorbt_optimizer': '.component_pool',
+    'get_or_create_performance_monitor': '.component_pool',
+    'get_or_create_unified_vectorization_manager': '.component_pool',
+    'PipelineOrchestrator': '.pipeline_orchestrator',
 
-        # Explainability
-        'ModelExplainer',
-        'ModelInterpretabilityEngine', 'ExplanationResult',
+    # Feature selection analysis (external package)
+    'FeatureImportanceAnalyzer': 'src.feature_selection.analysis.feature_importance_analyzer',
+    'FeatureImportanceConfig': 'src.feature_selection.analysis.feature_importance_analyzer',
+    'FeatureImportanceResult': 'src.feature_selection.analysis.feature_importance_analyzer',
+    'ImportanceMethod': 'src.feature_selection.analysis.feature_importance_analyzer',
+    'analyze_feature_importance': 'src.feature_selection.analysis.feature_importance_analyzer',
+    'get_important_features': 'src.feature_selection.analysis.feature_importance_analyzer',
 
-        # Optimization
-        # 'HyperparameterOptimization',
-        'ParetoFront', 'ParetoFrontAnalyzer',
-        # 'RegimeSpecificTPSLOptimizer',  # Not yet available
+    # Data Drift Detector
+    'DataDriftDetector': '.data_drift_detector',
+    'DriftDetectionConfig': '.data_drift_detector',
+    'DriftReport': '.data_drift_detector',
+    'DriftResult': '.data_drift_detector',
+    'DriftType': '.data_drift_detector',
+    'DriftMethod': '.data_drift_detector',
+    'DriftSeverity': '.data_drift_detector',
+    'detect_data_drift': '.data_drift_detector',
+    'get_drifted_features': '.data_drift_detector'
+}
 
-        # Data Processing (expose getters rather than heavy objects)
-        'EnhancedDataLabelerGetter', 'LabelingConfigGetter',
+# Special handling for aliased imports
+# We can't map 'LegacyFeatureSelector' directly to '.feature_selection_backwards_compat.FeatureSelector' via simple map
+# We'll use a property for these specific aliases if generalized map doesn't support "import X as Y" naturally.
+# Actually, make_lazy_getattr doesn't support 'module.Attribute'. It expects 'Attribute' in 'module'.
+# So for 'LegacyFeatureSelector', we need a manual property or a wrapper.
+# Or we just add 'LegacyFeatureSelector' to the submodule itself if possible. 
+# For now, let's keep it handled manually in a customized getattr if needed, but checking the original file:
+# from .feature_selection_backwards_compat import FeatureSelector as LegacyFeatureSelector
+# We can't do this with simple mapping. 
+# We will handle these overrides manually BEFORE calling the lazy getattr.
 
-        # Validation
-        'ConfigurationValidator',
-        'TemporalCrossValidator', 'PurgedKFold', 'CrossValidationUtilities', 'PurgedSplitConfig',
-        'TimeSeriesSplitValidator', 'OOFGenerator', 'DataLeakageDetector',
-        # Unified CV exports
-        'UnifiedCrossValidator', 'UnifiedCVResult',
-        'perform_cross_validation', 'temporal_cross_validation', 'nested_cross_validation',
-        'LookaheadBiasDetector', 'LookaheadBiasError', 'lookahead_bias_detector',
-        'hyperparameter_optimization',
-        'StabilityAnalyzer', 'feature_selection_stability', 'aggregate_time_blocks',
-        'optimize_threshold', 'calibrate_probabilities',
+def lookahead_bias_detector():
+    """Get lookahead bias detector instance."""
+    from ..lookahead_bias_detector import LookaheadBiasDetector
+    return LookaheadBiasDetector()
 
-        # Utils
-        'setup_logger', 'get_logger',
-        'MemoryOptimizer', 'MemoryIntegrator',
-        'ParallelProcessor',
-        'UnifiedCache', 'get_unified_cache', 'cached',
-        'limit_blas_threads', 'get_thread_info', 'validate_thread_environment',
-        'LookaheadProtection', 'MLTrainingSafeguards',
-        'RobustErrorHandler',
+def hyperparameter_optimization():
+    """Get hyperparameter optimization instance."""
+    from .utils.hpo_utils import HyperparameterOptimization
+    return HyperparameterOptimization()
 
-        # Legacy
-        'FeatureSelector', 'FeatureSelectionConfig', 'LegacyFeatureSelector',
-        'calculate_confidence_metrics', 'calculate_calibration_metrics',
-        'M1EnhancedMatrixOperations', 'get_enhanced_matrix_operations', 'PipelineOrchestrator',
+__all__ = list(_EXPORT_MAP.keys()) + [
+    'tprint', 'legacy_tprint', 'HMM_REGIME_DETECTION_AVAILABLE',
+    'lookahead_bias_detector', 'hyperparameter_optimization'
+]
 
-        # Feature Importance Analysis
-        'FeatureImportanceAnalyzer', 'FeatureImportanceConfig', 'FeatureImportanceResult',
-        'ImportanceMethod', 'analyze_feature_importance', 'get_important_features',
+if TYPE_CHECKING:
+    # (Omitted full type checking block for brevity, ideally would be here)
+    pass
 
-        # Data Drift Detection
-        'DataDriftDetector', 'DriftDetectionConfig', 'DriftReport', 'DriftResult',
-        'DriftType', 'DriftMethod', 'DriftSeverity', 'detect_data_drift', 'get_drifted_features',
+# Custom getattr to handle aliases and fall back to generalized helper
+_lazy_getattr_impl = make_lazy_getattr(_EXPORT_MAP, __package__)
 
-        # VectorBT-Optimized Utilities (Default)
-        'MatrixCrossValidator', 'matrix_cross_validate',
-        'UnifiedVectorizationManager', 'OperationType', 'OptimizationStrategy', 'OperationConfig', 'OptimizationResult',
-        'optimize_cross_validation', 'optimize_backtesting', 'optimize_financial_operation',
-        'optimize_vectorbt_backtesting', 'optimize_vectorbt_metrics', 'optimize_vectorbt_portfolio',
-        'get_unified_vectorization_manager',
+def __getattr__(name: str) -> Any:
+    # Handle aliases
+    if name == 'EnhancedDataLabelerGetter':
+        from .data_processing import get_enhanced_data_labeler
+        return get_enhanced_data_labeler
+    if name == 'LabelingConfigGetter':
+        from .data_processing import get_labeling_config
+        return get_labeling_config
+    if name == 'LegacyFeatureSelector':
+        from .feature_selection_backwards_compat import FeatureSelector
+        return FeatureSelector
+    if name == 'PipelineOrchestrator':
+        from .pipeline_orchestrator import MLPipelineOrchestrator
+        return MLPipelineOrchestrator
         
-        # Hardware and Component Singletons (NEW - Performance Optimization)
-        'HardwareCapabilitiesManager', 'HardwareCapabilities',
-        'get_hardware_capabilities_manager', 'get_hardware_capabilities', 'get_hardware_capabilities_dict',
-        'ComponentPool', 'get_component_pool',
-        'get_or_create_vectorbt_optimizer', 'get_or_create_performance_monitor',
-        'get_or_create_unified_vectorization_manager',
+    return _lazy_getattr_impl(name)
 
-        # Backward compatibility
-        'tprint'
-    ]
-
-    tprint("✅ ML Common utilities loaded successfully")
-
-except ImportError as e:
-    tprint(f"❌ Failed to load ML Common utilities: {e}")
-    __all__ = ['tprint']
+__dir__ = make_lazy_dir(_EXPORT_MAP, globals())

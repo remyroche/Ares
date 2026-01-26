@@ -19,6 +19,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 logger = logging.getLogger(__name__)
+from src.utils.initialization_guard import init_guard
 
 # Import hardware optimization tools
 try:
@@ -40,7 +41,8 @@ except ImportError as e:
 
 # Feature selection tools - using fallback implementations since optimized versions are not available
 FEATURE_SELECTION_AVAILABLE = False
-logger.info("Using fallback implementations for feature selection tools")
+if init_guard.mark_initialized("feature_generation.enhanced_optimization_system.fallbacks"):
+    logger.info("Using fallback implementations for feature selection tools")
 
 def fast_correlation_matrix(data):
     """Fallback correlation matrix calculation."""
@@ -614,40 +616,10 @@ class EnhancedOptimizationSystem:
         regime_column: Optional[str]
     ) -> Dict[str, Any]:
         """GPU-accelerated optimization using M1 GPU."""
-        self.logger.info(f"🚀 Using
+        self.logger.info(f"🚀 Using M1 GPU optimization for {feature_name}")
 
         try:
             import torch
-
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from src.utils.vectorbt_compat import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from src.utils.vectorbt_compat import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
 
             # Convert data to tensor if possible
             if target_column and target_column in data.columns:

@@ -35,7 +35,8 @@ import pickle
 from dataclasses import dataclass, asdict
 
 from .model_explanations import ModelExplainer, explain_model_with_shap_lime
-from ..models.model_registry import ModelRegistry
+# Defer ModelRegistry import to avoid circular dependency
+# from ..models.model_registry import ModelRegistry
 from src.utils.common_operations import create_fallback_logger, safe_json_dump, safe_json_load
 
 # Enhanced dependency management with fast fail
@@ -102,7 +103,7 @@ class ModelExplainabilityManager:
     """Manager for model explainability integrated with ML commons."""
 
     def __init__(self, config: Optional[Dict[str, Any]] = None,
-                 model_registry: Optional[ModelRegistry] = None):
+                 model_registry: Optional[Any] = None):
         """
         Initialize the model explainability manager.
 
@@ -121,11 +122,18 @@ class ModelExplainabilityManager:
         # Initialize model registry integration
         self.model_registry = model_registry
         if self.model_registry is None:
-            _LOGGER.info("🔧 Initializing default ModelRegistry...")
-            self.model_registry = ModelRegistry(
-                registry_path=self.config.get('registry_path', './model_registry'),
-                config=self.config.get('registry', {})
-            )
+            try:
+                # Defer import to avoid circular dependency
+                from ..models.model_registry import ModelRegistry
+                
+                _LOGGER.info("🔧 Initializing default ModelRegistry...")
+                self.model_registry = ModelRegistry(
+                    registry_path=self.config.get('registry_path', './model_registry'),
+                    config=self.config.get('registry', {})
+                )
+            except ImportError:
+                _LOGGER.warning("⚠️ ModelRegistry could not be imported. Persistence disabled.")
+                self.model_registry = None
 
         # Configuration
         self.enable_auto_explanations = self.config.get('enable_auto_explanations', True)

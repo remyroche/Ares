@@ -216,6 +216,10 @@ class BayesianCausalDiscovery:
             if self.verbose:
                 tprint_error(f"❌ Bayesian causal discovery failed: {e}")
             return {'error': str(e)}
+        finally:
+            # Robust cleanup for M1
+            import gc
+            gc.collect()
     
     def _simple_correlation_graph(self, data: pd.DataFrame) -> Dict[str, List[str]]:
         """Simple correlation-based causal graph as fallback."""

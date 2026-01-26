@@ -1,0 +1,24 @@
+{
+  "close": [
+    "close",
+    "TARGET_RET_1"
+  ],
+  "volume": [
+    "close",
+    "volume",
+    "TARGET_RET_1"
+  ],
+  "log_ret": [
+    "close",
+    "TARGET_RET_1"
+  ],
+  "TARGET_RET_1": [
+    "TARGET_Sharpe",
+    "TARGET_RET_1"
+  ],
+  "TARGET_Sharpe": [
+    "TARGET_Sharpe",
+    "close",
+    "TARGET_RET_1"
+  ]
+}

@@ -137,9 +137,17 @@ def winsorized_zscore_normalize(
                                                    upper_quantile=upper_quantile)
 
     df, was_series = _normalize_input(data)
+    if df.empty:
+        return _restore_output(df.copy(), was_series, data)
 
     # Convert to Polars for efficient rolling operations
-    pl_df = pl.from_pandas(df)
+    try:
+        pl_df = pl.from_pandas(df)
+    except Exception as e:
+        # Fallback to pandas implementation if polars conversion fails
+        return rolling_winsorized_zscore_normalize(data, window=window, ddof=ddof,
+                                                   lower_quantile=lower_quantile,
+                                                   upper_quantile=upper_quantile)
 
     # Process each column
     normalized_cols = []
@@ -186,9 +194,10 @@ def winsorized_zscore_normalize(
                 winsorized.rolling_std(window_size=window, min_periods=1, ddof=ddof).alias('std')
             ])
         )['std']
+        rolling_std_safe = rolling_std.replace(0, None)
 
         # Z-score normalization
-        normalized = (winsorized - rolling_mean) / rolling_std
+        normalized = (winsorized - rolling_mean) / rolling_std_safe
         normalized = normalized.fill_null(0.0).fill_nan(0.0)
         normalized_cols.append(normalized.alias(col))
 

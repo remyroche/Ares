@@ -84,6 +84,16 @@ class IRMLinearRegressor(BaseEstimator, RegressorMixin):
                      the row indices for one 'environment' (e.g. [ [0..100], [101..200] ])
         """
         X, y = check_X_y(X, y)
+        X = np.asarray(X)
+        y = np.asarray(y)
+        
+        # tprint for troubleshooting
+        try:
+            from src.utils.tprint import tprint_detail
+            tprint_detail(f"📉 IRM Fit: X={X.shape} Loss={self.loss_type} Alpha={self.alpha}")
+        except ImportError:
+            pass
+
         n_features = X.shape[1]
 
         # Prepare environment data

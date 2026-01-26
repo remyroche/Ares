@@ -18,7 +18,7 @@ import os
 
 # Import from hardware optimization modules
 try:
-    from utils.hardware.m1_memory_optimizer import (
+    from src.utils.hardware.m1_memory_optimizer import (
         get_m1_memory_optimizer, M1MemoryOptimizer,
         optimize_dataframe_memory, start_m1_memory_monitoring,
         stop_m1_memory_monitoring, get_memory_usage
@@ -29,7 +29,7 @@ except ImportError:
     M1MemoryOptimizer = None
 
 try:
-    from utils.matrix_operations.vectorized_core import get_vectorized_processing_core
+    from src.utils.matrix_operations.vectorized_core import get_vectorized_processing_core
     VECTORIZED_CORE_AVAILABLE = True
 except ImportError:
     VECTORIZED_CORE_AVAILABLE = False

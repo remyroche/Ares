@@ -728,5 +728,8 @@ def get_sr_performance_stats() -> Dict[str, Any]:
     return sr_performance_monitor.get_performance_summary()
 
 
-# Module initialization
-sr_logger.info("SR Error Handlers module initialized")
+# Module initialization (guarded)
+from src.utils.initialization_guard import init_guard
+
+if init_guard.mark_initialized("training.market_analysis.sr_error_handlers"):
+    sr_logger.info("SR Error Handlers module initialized")

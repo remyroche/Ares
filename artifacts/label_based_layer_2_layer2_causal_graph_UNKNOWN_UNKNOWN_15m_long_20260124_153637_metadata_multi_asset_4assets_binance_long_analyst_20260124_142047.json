@@ -1,0 +1,10 @@
+{
+  "row_count": 1,
+  "column_count": 5,
+  "artifact_name": "layer2_causal_graph_UNKNOWN_UNKNOWN_15m_long_20260124_153637",
+  "artifact_type": "metadata",
+  "file_path": "artifacts/pre_training/multi_asset_4assets/binance/long/analyst/label_based_layer_2/label_based_layer_2_layer2_causal_graph_UNKNOWN_UNKNOWN_15m_long_20260124_153637_multi_asset_4assets_binance_long_analyst_20260124_142047.parquet",
+  "file_size": 4965,
+  "timestamp": "2026-01-24T15:36:38.584879",
+  "compression": "auto"
+}

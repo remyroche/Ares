@@ -11,8 +11,10 @@ import numpy as np
 import pandas as pd
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.utils.tprint import tprint
+from src.utils.initialization_guard import init_guard
 
-tprint("🔧 Loading labeling components...")
+if init_guard.mark_initialized("training.labeling.labeling_components"):
+    tprint("🔧 Loading labeling components...")
 
 class RegimeAwareLabeling:
     """Regime-aware triple barrier labeling component."""

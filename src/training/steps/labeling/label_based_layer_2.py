@@ -2417,7 +2417,7 @@ class LabelBasedLayer2(BaseStep):
         self._max_cache_entries = int(kwargs.get("layer2_max_cache_entries", 6))
 
         # Adaptive gating + probe controls
-        self.layer2_gate_min_score = float(kwargs.get("layer2_gate_min_score", 0.02))
+        self.layer2_gate_min_score = float(kwargs.get("layer2_gate_min_score", 0.03))
         self.layer2_gate_percentile = float(kwargs.get("layer2_gate_percentile", 50.0))
         self.layer2_gate_jaccard_max = float(kwargs.get("layer2_gate_jaccard_max", 0.90))
         self.layer2_gate_min_candidates = int(kwargs.get("layer2_gate_min_candidates", 3))
@@ -13991,8 +13991,8 @@ class LabelBasedLayer2(BaseStep):
             # Use reindex for safety
             oof_returns.loc[valid_idx] = ret.reindex(valid_idx).values
 
-        # Memory cleanup before returning
-        self._cleanup_memory()
+        # Memory cleanup before returning - DISABLED to prevent premature assessment clearing
+        # self._cleanup_memory()
 
         # === 5. Fast Fail & Reporting ===
         # Ensure at least some models were trained

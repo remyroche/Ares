@@ -57,7 +57,7 @@ import time
 import psutil
 from pathlib import Path
 import hashlib
-from sklearn.linear_model import RidgeClassifier, Lasso, Ridge, HuberRegressor
+from sklearn.linear_model import RidgeClassifier, Lasso, Ridge, HuberRegressor, SGDClassifier
 from sklearn.metrics import precision_recall_curve, precision_score
 from src.training.steps.labeling.irm_regime_pipeline import (
     IRMLinearClassifier,
@@ -2417,7 +2417,7 @@ class LabelBasedLayer2(BaseStep):
         self._max_cache_entries = int(kwargs.get("layer2_max_cache_entries", 6))
 
         # Adaptive gating + probe controls
-        self.layer2_gate_min_score = float(kwargs.get("layer2_gate_min_score", 0.02))
+        self.layer2_gate_min_score = float(kwargs.get("layer2_gate_min_score", 0.03))
         self.layer2_gate_percentile = float(kwargs.get("layer2_gate_percentile", 50.0))
         self.layer2_gate_jaccard_max = float(kwargs.get("layer2_gate_jaccard_max", 0.90))
         self.layer2_gate_min_candidates = int(kwargs.get("layer2_gate_min_candidates", 3))
@@ -7185,12 +7185,20 @@ class LabelBasedLayer2(BaseStep):
             except Exception as e:
                 tprint_warning(f"Baseline B failed: {e}")
 
-            # C_Teacher (Huber)
+            # C_Teacher (Huber Classifier via SGD)
             try:
-                clf_c = HuberRegressor(epsilon=1.35)
-                clf_c.fit(X_train_full, y_train)
-                preds_c = clf_c.predict(X_test_full)
-                preds_c = np.clip(preds_c, 0, 1)
+                # Use SGDClassifier with modified_huber loss for robust classification
+                # This fixes the issue of using HuberRegressor on binary targets
+                clf_c = SGDClassifier(
+                    loss='modified_huber',
+                    penalty='l2',
+                    alpha=1e-3,
+                    random_state=42,
+                    max_iter=1000,
+                    tol=1e-3
+                )
+                clf_c.fit(X_train_full, (y_train > 0.5).astype(int))
+                preds_c = clf_c.predict_proba(X_test_full)[:, 1]
                 baseline_results['C_Teacher']['preds'].extend(preds_c)
                 baseline_results['C_Teacher']['outcomes'].extend(zip(y_test.values, outcomes_test.values))
             except Exception as e:
@@ -13991,8 +13999,8 @@ class LabelBasedLayer2(BaseStep):
             # Use reindex for safety
             oof_returns.loc[valid_idx] = ret.reindex(valid_idx).values
 
-        # Memory cleanup before returning
-        self._cleanup_memory()
+        # Memory cleanup before returning - DISABLED to prevent premature assessment clearing
+        # self._cleanup_memory()
 
         # === 5. Fast Fail & Reporting ===
         # Ensure at least some models were trained

@@ -710,6 +710,10 @@ class SimpleMultiModelRiskEngine:
         X_pruned = X_full[self.selected_features]
         warm_start_train = huber_outputs['warm_start']['train']
 
+        # --- Invariant Checks: Teacher Output ---
+        assert np.isfinite(warm_start_train).all(), "❌ Teacher warm_start contains NaNs or Infs!"
+        assert len(warm_start_train) == len(y_true), f"❌ Teacher warm_start shape mismatch: {len(warm_start_train)} vs {len(y_true)}"
+
         # Calculate Residuals & Learnability Weights
         residuals = y_true - warm_start_train
         learnability_weights = self._calculate_learnability_weights(X_pruned, residuals, env_indices=env_indices)
@@ -743,21 +747,133 @@ class SimpleMultiModelRiskEngine:
             tprint_info(f"DEBUG: Pruned Features: {self.selected_features[:5]}")
 
         tprint_info(f"✨ Feature pruning: {len(self.selected_features)}/{len(X_full.columns)} features selected")
+
+        # --- Generate OOF Predictions for Weight Optimization ---
+        # To avoid leakage (weights optimized on in-sample predictions), we must generate OOF predictions
+        # for all student models before optimizing weights.
+        tprint_info("🔄 Generating OOF Student Predictions for Weight Optimization...")
+
+        # Initialize OOF arrays
+        oof_preds = {
+            'extratrees': np.zeros(len(y_true)),
+            'lgbm': np.zeros(len(y_true)),
+            'xgboost': np.zeros(len(y_true)),
+            'catboost': np.zeros(len(y_true)),
+            'ridge_alpha1': np.zeros(len(y_true)),
+            'ridge_alpha5': np.zeros(len(y_true)),
+            'ridge_alpha10': np.zeros(len(y_true))
+        }
+
+        # OOF Loop
+        kf_internal = KFold(n_splits=5, shuffle=False)
+
+        for fold_idx, (tr_idx, val_idx) in enumerate(kf_internal.split(X_pruned)):
+            # Slice data
+            X_tr, X_val = X_pruned.iloc[tr_idx], X_pruned.iloc[val_idx]
+            y_tr, _ = y_true.iloc[tr_idx], y_true.iloc[val_idx] # y_val unused in loop
+            ws_tr, ws_val = warm_start_train[tr_idx], warm_start_train[val_idx]
+            # Weights
+            w_tr = combined_weights[tr_idx] if hasattr(combined_weights, 'shape') else combined_weights # Handling if list vs array
+            if hasattr(combined_weights, 'values'):
+                 w_tr = combined_weights.values[tr_idx]
+            elif isinstance(combined_weights, np.ndarray):
+                 w_tr = combined_weights[tr_idx]
+
+            # Residuals for ExtraTrees
+            res_tr = residuals.values[tr_idx] if hasattr(residuals, 'values') else residuals[tr_idx]
+
+            # 1. ExtraTrees OOF
+            et_fold = clone(self.extratrees)
+            et_fold.fit(X_tr, res_tr, sample_weight=w_tr)
+            # Predict residual + add warm start
+            et_pred = et_fold.predict(X_val)
+            assert et_pred.ndim == 1, f"ExtraTrees prediction has wrong shape: {et_pred.shape}"
+            oof_preds['extratrees'][val_idx] = et_pred + ws_val
+
+            # 2. LGBM OOF
+            lgbm_fold = LGBMRegressor(**self.lgbm_params)
+            lgbm_fold.set_params(monotone_constraints=list(monotonic_cst_tuple), interaction_constraints=interaction_cst if interaction_cst else None)
+            lgbm_fold.fit(X_tr, y_tr, sample_weight=w_tr, init_score=ws_tr)
+            # LGBM predict(X) returns residual (sum of trees). Verified by script.
+            # Must add warm start manually.
+            lgbm_pred = lgbm_fold.predict(X_val)
+            assert lgbm_pred.ndim == 1, f"LGBM prediction has wrong shape: {lgbm_pred.shape}"
+            oof_preds['lgbm'][val_idx] = lgbm_pred + ws_val
+
+            # 3. XGBoost OOF
+            xgb_fold = XGBRegressor(**self.xgb_params)
+            try:
+                xgb_fold.set_params(monotone_constraints=monotonic_cst_tuple, interaction_constraints=interaction_cst if interaction_cst else None)
+                xgb_fold.fit(X_tr, y_tr, sample_weight=w_tr, base_margin=ws_tr)
+            except (ValueError, KeyError):
+                xgb_fold.set_params(interaction_constraints=None)
+                xgb_fold.fit(X_tr, y_tr, sample_weight=w_tr, base_margin=ws_tr)
+
+            # XGB predict(X, base_margin=...) returns FULL value. Verified by script.
+            xgb_pred = xgb_fold.predict(X_val, base_margin=ws_val)
+            assert xgb_pred.ndim == 1, f"XGBoost prediction has wrong shape: {xgb_pred.shape}"
+            oof_preds['xgboost'][val_idx] = xgb_pred
+
+            # 4. CatBoost OOF
+            cb_fold = CatBoostRegressor(**self.catboost_params)
+            cb_fold.set_params(monotone_constraints=list(monotonic_cst_tuple))
+            cb_fold.fit(X_tr, y_tr, sample_weight=w_tr, baseline=ws_tr)
+            # CatBoost predict(X) returns residual. Verified by script.
+            # Must add warm start manually.
+            cb_pred = cb_fold.predict(X_val)
+            assert cb_pred.ndim == 1, f"CatBoost prediction has wrong shape: {cb_pred.shape}"
+            oof_preds['catboost'][val_idx] = cb_pred + ws_val
+
+            # 5. Ridge OOF (Full model, no warm start offset usually, unless we changed it. Code below trains on y_true)
+            r1 = clone(self.ridge_alpha1)
+            r1.fit(X_tr, y_tr, sample_weight=w_tr)
+            r1_pred = r1.predict(X_val)
+            assert r1_pred.ndim == 1, f"Ridge (alpha=1) prediction has wrong shape: {r1_pred.shape}"
+            oof_preds['ridge_alpha1'][val_idx] = r1_pred
+
+            r5 = clone(self.ridge_alpha5)
+            r5.fit(X_tr, y_tr, sample_weight=w_tr)
+            r5_pred = r5.predict(X_val)
+            assert r5_pred.ndim == 1, f"Ridge (alpha=5) prediction has wrong shape: {r5_pred.shape}"
+            oof_preds['ridge_alpha5'][val_idx] = r5.predict(X_val)
+
+            r10 = clone(self.ridge_alpha10)
+            r10.fit(X_tr, y_tr, sample_weight=w_tr)
+            r10_pred = r10.predict(X_val)
+            assert r10_pred.ndim == 1, f"Ridge (alpha=10) prediction has wrong shape: {r10_pred.shape}"
+            oof_preds['ridge_alpha10'][val_idx] = r10.predict(X_val)
+
+        # Verify OOF integrity
+        for name, preds in oof_preds.items():
+            assert np.isfinite(preds).all(), f"❌ Model {name} OOF predictions contain NaNs/Infs!"
+
         
+        # --- Dynamic Model Selection & Consensus (using OOF) ---
+        tprint_info("🔍 Analyzing model correlations and selecting top 4 (using OOF)...")
+        selection_results = self._analyze_model_correlations(oof_preds, y_true, abs_returns)
+
+        self.selected_models = selection_results['selected_models']
+        self.optimized_weights = selection_results['optimized_weights']
+
+        # Store analysis results for logging
+        self.model_selection_results = selection_results
+
+        tprint_info(f"✅ Selected models: {self.selected_models}")
+        tprint_info(f"📊 Optimized weights: {self.optimized_weights}")
+
+        # --- Final Fit on Full Data (for Inference) ---
+        tprint_info("🧠 Fitting Final Models on Full Data...")
         base_predictions = {}
         
-        # --- 1. ExtraTrees (Hybrid Residual Learner) ---
-        tprint_info(f"📊 Training ExtraTrees (Student on Residuals + Learnability Weights)...")
-        # For ExtraTrees student, we train on residuals with learnability weights
+        # 1. ExtraTrees (Full)
         self.extratrees.fit(X_pruned, residuals, sample_weight=combined_weights)
-
         et_residual_preds = self.extratrees.predict(X_pruned)
         et_preds = warm_start_train + et_residual_preds
-        base_predictions['extratrees'] = et_preds
-        self.calibrators['extratrees'].fit(et_preds, y_true)
+        base_predictions['extratrees'] = et_preds # Store In-Sample for final calibration if needed, but we should probably use OOF for calibration too?
+        # Using OOF for calibration is better.
+        self.calibrators['extratrees'].fit(oof_preds['extratrees'], y_true)
         
-        # --- 2. LGBM Regressor ---
-        tprint_info("📊 Training LGBM (with constraints & warm start)...")
+        # 2. LGBM (Full)
         self.lgbm_model = LGBMRegressor(**self.lgbm_params)
         self.lgbm_model.set_params(
             monotone_constraints=list(monotonic_cst_tuple),
@@ -768,25 +884,20 @@ class SimpleMultiModelRiskEngine:
             sample_weight=combined_weights,
             init_score=warm_start_train
         )
+        # Note: We store the in-sample prediction just for completeness in base_predictions,
+        # but calibration should use OOF.
         lgbm_raw_preds = self.lgbm_model.predict(X_pruned)
-        # For LGBMRegressor, predict() returns the raw prediction (sum of trees).
-        # If trained with init_score, the trees model the residual.
-        # We must add the init_score (warm_start) manually to get the full prediction.
         lgbm_preds = lgbm_raw_preds + warm_start_train
         base_predictions['lgbm'] = lgbm_preds
-        self.calibrators['lgbm'].fit(lgbm_preds, y_true)
+        self.calibrators['lgbm'].fit(oof_preds['lgbm'], y_true)
 
-        # --- 3. XGB Regressor ---
-        tprint_info("📊 Training XGBoost (with constraints & warm start)...")
+        # 3. XGB Regressor (Full)
         self.xgb_model = XGBRegressor(**self.xgb_params)
-
-        # Try-catch for XGBoost constraints failure
         try:
             self.xgb_model.set_params(
                 monotone_constraints=monotonic_cst_tuple,
                 interaction_constraints=interaction_cst if interaction_cst else None
             )
-
             self.xgb_model.fit(
                 X_pruned, y_true,
                 sample_weight=combined_weights,
@@ -803,64 +914,63 @@ class SimpleMultiModelRiskEngine:
 
         xgb_preds = self.xgb_model.predict(X_pruned, base_margin=warm_start_train)
         base_predictions['xgboost'] = xgb_preds
-        self.calibrators['xgboost'].fit(xgb_preds, y_true)
+        self.calibrators['xgboost'].fit(oof_preds['xgboost'], y_true)
 
-        # --- 4. CatBoost Regressor ---
-        tprint_info("📊 Training CatBoost (with constraints & warm start)...")
+        # 4. CatBoost (Full)
         self.catboost_model = CatBoostRegressor(**self.catboost_params)
-        # Monotonic constraints string format for CatBoost: "1:1,2:-1,3:0" or list
-        # It accepts list.
         self.catboost_model.set_params(monotone_constraints=list(monotonic_cst_tuple))
-
         self.catboost_model.fit(
             X_pruned, y_true,
             sample_weight=combined_weights,
             baseline=warm_start_train
         )
-
         cb_raw_preds = self.catboost_model.predict(X_pruned)
         catboost_preds = warm_start_train + cb_raw_preds
         base_predictions['catboost'] = catboost_preds
-        self.calibrators['catboost'].fit(catboost_preds, y_true)
+        self.calibrators['catboost'].fit(oof_preds['catboost'], y_true)
         
-        # --- 5. Ridge Models ---
-        tprint_info("📊 Training Ridge models (alphas: 1, 5, 10)...")
+        # 5. Ridge Models (Full)
         self.ridge_alpha1.fit(X_pruned, y_true, sample_weight=combined_weights)
         ridge1_preds = self.ridge_alpha1.predict(X_pruned)
         base_predictions['ridge_alpha1'] = ridge1_preds
-        self.calibrators['ridge_alpha1'].fit(ridge1_preds, y_true)
+        self.calibrators['ridge_alpha1'].fit(oof_preds['ridge_alpha1'], y_true)
 
         self.ridge_alpha5.fit(X_pruned, y_true, sample_weight=combined_weights)
         ridge5_preds = self.ridge_alpha5.predict(X_pruned)
         base_predictions['ridge_alpha5'] = ridge5_preds
-        self.calibrators['ridge_alpha5'].fit(ridge5_preds, y_true)
+        self.calibrators['ridge_alpha5'].fit(oof_preds['ridge_alpha5'], y_true)
 
         self.ridge_alpha10.fit(X_pruned, y_true, sample_weight=combined_weights)
         ridge10_preds = self.ridge_alpha10.predict(X_pruned)
         base_predictions['ridge_alpha10'] = ridge10_preds
-        self.calibrators['ridge_alpha10'].fit(ridge10_preds, y_true)
+        self.calibrators['ridge_alpha10'].fit(oof_preds['ridge_alpha10'], y_true)
         
-        # --- Dynamic Model Selection & Consensus ---
-        tprint_info("🔍 Analyzing model correlations and selecting top 4...")
-        selection_results = self._analyze_model_correlations(base_predictions, y_true, abs_returns)
+        # Build consensus with optimized weights (using OOF calibrated preds for metric calculation)
+        # Note: We must calibrate the OOF preds first if we want to report clean metrics
+        # The 'base_predictions' dict now contains IN-SAMPLE predictions from final models.
+        # But for 'consensus_calibrator' fitting, we should strictly use OOF.
 
-        self.selected_models = selection_results['selected_models']
-        self.optimized_weights = selection_results['optimized_weights']
-
-        # Build consensus with optimized weights
-        consensus_raw = np.zeros(len(y_true))
+        # Calibrate OOF preds
+        consensus_oof_raw = np.zeros(len(y_true))
         for model in self.selected_models:
-            consensus_raw += self.optimized_weights[model] * base_predictions[model]
+             # Transform OOF using the calibrator (which was just fitted on OOF)
+             # Wait, Isotonic is prone to overfitting if fitted on same data?
+             # Standard practice: Fit Isotonic on OOF.
+             # So cal_oof = iso.transform(oof) -- this is basically fitting on OOF.
+             # Actually, if we fit on OOF, we are just mapping OOF->Target.
+             # This is fine.
+             cal_oof = self.calibrators[model].transform(oof_preds[model])
+             consensus_oof_raw += self.optimized_weights[model] * cal_oof
+
+        # Calibrate Consensus
+        self.consensus_calibrator.fit(consensus_oof_raw, y_true)
+        consensus_calibrated = self.consensus_calibrator.transform(consensus_oof_raw)
 
         # Store analysis results for logging
         self.model_selection_results = selection_results
 
         tprint_info(f"✅ Selected models: {self.selected_models}")
         tprint_info(f"📊 Optimized weights: {self.optimized_weights}")
-        
-        # Calibrate Consensus
-        self.consensus_calibrator.fit(consensus_raw, y_true)
-        consensus_calibrated = self.consensus_calibrator.transform(consensus_raw)
         
         self.is_fitted = True
         self.final_predictions_ = consensus_calibrated
@@ -958,6 +1068,7 @@ class SimpleMultiModelRiskEngine:
         # Prepare Warm Start for this new data
         X_scaled = pd.DataFrame(self.huber_scaler.transform(X_full), columns=X_full.columns)
         warm_start = self.huber_model.predict(X_scaled)
+        assert np.isfinite(warm_start).all(), "❌ Teacher warm_start contains NaNs or Infs during inference!"
         
         # Select features
         X_pruned = X_full[self.selected_features]
@@ -965,51 +1076,52 @@ class SimpleMultiModelRiskEngine:
         # 1. ExtraTrees
         et_residual_preds = self.extratrees.predict(X_pruned)
         et_preds = warm_start + et_residual_preds
-        et_cal = self.calibrators['extratrees'].transform(et_preds)
         
         # 2. LGBM
         lgbm_raw = self.lgbm_model.predict(X_pruned)
         lgbm_preds = lgbm_raw + warm_start
-        lgbm_cal = self.calibrators['lgbm'].transform(lgbm_preds)
 
         # 3. XGBoost
         xgb_preds = self.xgb_model.predict(X_pruned, base_margin=warm_start)
-        xgb_cal = self.calibrators['xgboost'].transform(xgb_preds)
         
         # 4. CatBoost
         cb_raw = self.catboost_model.predict(X_pruned)
         catboost_preds = cb_raw + warm_start
-        cb_cal = self.calibrators['catboost'].transform(catboost_preds)
 
         # 5. Ridge models
         ridge1_preds = self.ridge_alpha1.predict(X_pruned)
-        ridge1_cal = self.calibrators['ridge_alpha1'].transform(ridge1_preds)
-
         ridge5_preds = self.ridge_alpha5.predict(X_pruned)
-        ridge5_cal = self.calibrators['ridge_alpha5'].transform(ridge5_preds)
-
         ridge10_preds = self.ridge_alpha10.predict(X_pruned)
-        ridge10_cal = self.calibrators['ridge_alpha10'].transform(ridge10_preds)
+
+        # Collect raw predictions into a dictionary for easy access in loop
+        raw_model_preds = {
+            'extratrees': et_preds,
+            'lgbm': lgbm_preds,
+            'xgboost': xgb_preds,
+            'catboost': catboost_preds,
+            'ridge_alpha1': ridge1_preds,
+            'ridge_alpha5': ridge5_preds,
+            'ridge_alpha10': ridge10_preds
+        }
+
+        # Verify integrity
+        for name, preds in raw_model_preds.items():
+             assert np.isfinite(preds).all(), f"❌ Model {name} inference predictions contain NaNs/Infs!"
+             assert preds.ndim == 1, f"❌ Model {name} prediction shape mismatch: {preds.shape}"
 
         # Dynamic consensus with selected models
+        # IMPORTANT: Calibrate predictions BEFORE averaging to match OOF training logic.
+        # The weights were optimized on calibrated OOF predictions.
         consensus = np.zeros(len(X_pruned))
         for model in self.selected_models:
-            if model == 'extratrees':
-                consensus += self.optimized_weights[model] * et_cal
-            elif model == 'lgbm':
-                consensus += self.optimized_weights[model] * lgbm_cal
-            elif model == 'xgboost':
-                consensus += self.optimized_weights[model] * xgb_cal
-            elif model == 'catboost':
-                consensus += self.optimized_weights[model] * cb_cal
-            elif model == 'ridge_alpha1':
-                consensus += self.optimized_weights[model] * ridge1_cal
-            elif model == 'ridge_alpha5':
-                consensus += self.optimized_weights[model] * ridge5_cal
-            elif model == 'ridge_alpha10':
-                consensus += self.optimized_weights[model] * ridge10_cal
+            # Apply calibration (transform)
+            calibrated_pred = self.calibrators[model].transform(raw_model_preds[model])
+            consensus += self.optimized_weights[model] * calibrated_pred
+
+        final_pred = self.consensus_calibrator.transform(consensus)
+        assert np.isfinite(final_pred).all(), "❌ Final calibrated consensus contains NaNs/Infs!"
         
-        return self.consensus_calibrator.transform(consensus)
+        return final_pred
 
 
 def integrate_entropy_bars_into_layer4(

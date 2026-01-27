@@ -14,18 +14,26 @@ The `Label_based_layer_2.py` module uses a **Teacher-Student** (or "Law & Fashio
 ### 1. OOF Generation (Training Phase)
 The goal is to generate unbiased out-of-fold predictions for the combined stack to train the calibrator.
 
-1.  **Teacher OOF**: Generated via K-Fold Cross-Validation of the `HuberRegressor`.
-2.  **Student Training**: The Student is trained on the training folds using the Teacher's OOF predictions as a baseline/offset.
-    *   **LGBM**: Uses `init_score = law_oof`.
-    *   **XGB**: Uses `base_margin = law_oof`.
-    *   **CatBoost**: Uses `baseline = law_oof`.
-    *   **ExtraTrees**: Trains on explicit residuals `y - law_oof`.
-3.  **Student OOF Extraction**: The Student predicts on the validation fold. The code ensures only the **tree contribution** (residual) is extracted:
-    *   **LGBM**: `predict(..., raw_score=True)` (Returns raw logits/trees).
-    *   **XGB**: `predict(..., base_margin=law_oof, output_margin=True)` then subtracts `law_oof`.
-    *   **CatBoost**: `predict(..., prediction_type='RawFormulaVal')` (Returns raw formula value/trees).
-4.  **Total OOF**: `Total = Teacher OOF + Student OOF`.
-5.  **Calibration**: An `IsotonicRegression` model is fitted on `Total OOF` vs `y`.
+1.  **Teacher OOF Generation**:
+    *   Using K-Fold Cross-Validation, `oof_preds` (Teacher OOF) is fully populated.
+    *   For each fold `k`: `oof_preds[val_idx]` comes from a Teacher trained on `train_idx`.
+    *   **Crucial**: This is done *before* Student training to ensure independence.
+
+2.  **Student OOF Generation (Nested)**:
+    *   Iterate through the same K-Fold splits.
+    *   **Training the Student**:
+        *   The Student is trained on `train_idx`.
+        *   **Baseline/Init Score**: It uses `oof_preds[train_idx]`.
+        *   **Why**: `oof_preds[train_idx]` are the "unseen" predictions for the training data (generated when they were validation sets in other folds). This simulates the noise profile of OOF predictions, matching standard stacking practices.
+    *   **Predicting with Student**:
+        *   Predict on `val_idx`.
+        *   **Baseline/Init Score**: It uses `oof_preds[val_idx]` (Law OOF).
+        *   **Extraction**: We extract only the **tree contribution**:
+            *   **LGBM**: `predict(..., raw_score=True)` (Returns raw logits/trees).
+            *   **XGB**: `predict(..., base_margin=law_oof, output_margin=True)` then subtracts `law_oof`.
+            *   **CatBoost**: `predict(..., prediction_type='RawFormulaVal')` (Returns raw formula value/trees).
+3.  **Total OOF**: `Total = Teacher OOF + Student OOF`.
+4.  **Calibration**: An `IsotonicRegression` model is fitted on `Total OOF` vs `y`.
 
 ### 2. Inference (Prediction Phase)
 1.  **Teacher Prediction**: `law_pred = law_model.predict(X)`.
@@ -40,5 +48,6 @@ The goal is to generate unbiased out-of-fold predictions for the combined stack 
         *   *Combination*: `Total = law_pred + fashion_pred`.
 3.  **Final Probability**: `calibrator.predict(Total)`.
 
-## Verification
-Reproduction scripts confirmed that for LGBM and CatBoost, `predict` without the baseline argument (when trained with one) returns only the tree contribution, validating the manual summation logic used in `HuberResidualStack`.
+## Verification Findings
+*   **Score Space Consistency**: Confirmed that `HuberRegressor` outputs (linear scores) are treated as raw margins/logits throughout. LGBM/CatBoost/XGB are correctly configured to add their tree outputs to this baseline.
+*   **Teacher Handling**: Confirmed that `law_oof` is computed via K-Fold first. Student training uses the training-split portion of this OOF vector (`oof_preds[train_idx]`), ensuring the baseline is effectively "out-of-sample" relative to the Teacher, preventing leakage and simulating the inference scenario correctly.

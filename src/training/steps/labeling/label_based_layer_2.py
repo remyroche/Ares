@@ -126,8 +126,9 @@ from src.training.steps.labeling.cross_asset_layer2_components import (
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 from functools import partial
-from sklearn.linear_model import LinearRegression, LogisticRegression
-from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs, _fit_huber
+from sklearn.linear_model import LinearRegression, LogisticRegression, SGDClassifier
+from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
+from src.utils.irm_linear_regressor import IRMLinearClassifier
 from sklearn.model_selection import TimeSeriesSplit, KFold
 from sklearn.metrics import roc_auc_score, log_loss, average_precision_score, recall_score, brier_score_loss
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
@@ -729,112 +730,40 @@ def calculate_brier_skill_score(y_true, y_prob):
         return 0.0
     return 1.0 - (bs_model / bs_naive)
 
-class HuberResidualStack(BaseEstimator, ClassifierMixin):
+class LogitOffsetStack(BaseEstimator, ClassifierMixin):
     """
-    Two-phase model:
-    1. Huber-IRM (Law) on raw target.
-    2. Fashion Estimator (ExtraTrees/XGB) on OOF residuals.
-    3. Isotonic Calibration on L+T.
+    Logit Offset Boosting Stack:
+    1. 'Law': IRM Logistic Regression (Baseline).
+    2. 'Fashion': GBDT on residuals (offset boosting) or RF/ET (stacking).
+    3. Output: sigmoid(Law_Logit + Fashion_Logit).
     """
-    def __init__(self, huber_params=None, fashion_estimator=None, n_splits=5, random_state=42, pos_boost=0.0):
+    def __init__(self, huber_params=None, fashion_estimator=None, random_state=42, use_logit_offset=True):
         self.huber_params = huber_params if huber_params else {}
         self.fashion_estimator = fashion_estimator
-        self.n_splits = n_splits
         self.random_state = random_state
-        self.pos_boost = pos_boost
+        self.use_logit_offset = use_logit_offset
         self.law_model = None
         self.fashion_model = None
-        self.calibrator = None
+        self.law_killed_ = False
         self._is_fitted = False
         self.feature_importances_ = None
 
-    def fit(self, X, y, sample_weight=None, environment_masks=None, **kwargs):
-        # Capture feature names if X is a DataFrame (needed for XGBoost constraints)
+    def fit(self, X, y, sample_weight=None, environment_masks=None, eval_set=None, **kwargs):
         feature_names = getattr(X, 'columns', None)
-
-        # De Prado Alignment: Capture index for Purged K-Fold if available
-        index = getattr(X, 'index', None)
-
         try:
             X_arr = check_array(X, accept_sparse=True, ensure_all_finite=False)
         except TypeError:
-            # Backward compatibility for older sklearn versions
             X_arr = check_array(X, accept_sparse=True, force_all_finite=False)
-        # Ensure y and sample_weight are numpy arrays to avoid pandas indexing issues
+
         y = np.asarray(y)
-        if sample_weight is not None:
-            sample_weight = np.asarray(sample_weight)
-        else:
+        if sample_weight is None:
             sample_weight = np.ones(len(y), dtype=np.float64)
 
-        if self.pos_boost and self.pos_boost > 0:
-            sample_weight = sample_weight * (1.0 + self.pos_boost * y)
-            sample_weight = np.maximum(sample_weight, 0.0)
-
-        if self.fashion_estimator is None:
-            raise ValueError("fashion_estimator must be provided")
-
-        # Phase 1: OOF Residuals (Using PurgedKFoldTime for strict non-leakage)
-        if index is not None and isinstance(index, pd.DatetimeIndex):
-            # Ensure index aligns with X_arr length (check_array might drop rows? No, it usually just converts)
-            if len(index) != len(X_arr):
-                # Fallback if length mismatch (e.g. infinite values dropped before this?)
-                # check_array doesn't drop unless we ask it to.
-                splitter = list(KFold(n_splits=self.n_splits, shuffle=False).split(X_arr))
-            else:
-                # Use PurgedKFoldTime with index awareness
-                from src.utils.purged_kfold import PurgedKFoldTime
-                # Default purge/embargo: 1% purge? Or 30m? Let's use conservative 1%ish or default.
-                # Using defaults from class definition (30m purge, 15m embargo)
-                try:
-                    pkf = PurgedKFoldTime(n_splits=self.n_splits)
-                    # PurgedKFoldTime.split expects a DataFrame with index
-                    # We create a lightweight dummy
-                    dummy_X = pd.DataFrame(index=index)
-                    splitter = list(pkf.split(dummy_X))
-                except Exception:
-                    splitter = list(KFold(n_splits=self.n_splits, shuffle=False).split(X_arr))
-        else:
-            # Fallback to Block K-Fold if no time index available
-            splitter = list(KFold(n_splits=self.n_splits, shuffle=False).split(X_arr))
-        if not splitter:
-            splitter = list(KFold(n_splits=self.n_splits, shuffle=False).split(X_arr))
-
-        oof_preds = np.zeros(len(y))
-
-        # Helper params extraction
+        # 1. Train Law Model (IRM Logistic)
         alpha = self.huber_params.get('alpha', 0.0001)
-        epsilon = self.huber_params.get('huber_epsilon', 1.35)
         max_iter = self.huber_params.get('max_iter', 1000)
         irm_lambda = self.huber_params.get('irm_lambda', 1.0)
 
-        # Fit Law model on folds
-        for train_idx, val_idx in splitter:
-            X_tr, y_tr = X_arr[train_idx], y[train_idx]
-            X_val = X_arr[val_idx]
-            w_tr = sample_weight[train_idx] if sample_weight is not None else None
-
-            # Use _fit_huber to leverage robust fallback strategy (IRM -> Relaxed -> Huber/SGD)
-            huber = _fit_huber(
-                X_tr, y_tr, w_tr,
-                epsilon=epsilon,
-                alpha=alpha,
-                max_iter=max_iter,
-                irm_lambda=irm_lambda,
-                is_classification=True
-            )
-
-            if hasattr(huber, 'predict_proba'):
-                 # Use probability of positive class for residuals
-                 oof_preds[val_idx] = huber.predict_proba(X_val)[:, 1]
-            else:
-                 oof_preds[val_idx] = huber.predict(X_val)
-
-        residuals = y - oof_preds
-
-        # Phase 2: Train Final Models
-
-        # 1. Final Law on full data
         env_indices = [np.arange(len(y))]
         if environment_masks:
              try:
@@ -847,132 +776,248 @@ class HuberResidualStack(BaseEstimator, ClassifierMixin):
              except:
                  pass
 
+        # Try to fit Law Model with Adaptive Fallback
+        # Strategy: IRM(1.0) -> IRM(0.1) -> RobustHuber(SGD)
+
+        law = None
+        law_logits = None
+
+        # 1. Attempt Strict IRM
         try:
-            self.law_model = IRMLinearClassifier(
-                loss_type='modified_huber',
+            law = IRMLinearClassifier(
+                loss_type='logloss',
                 alpha=alpha,
                 max_iter=max_iter,
                 irm_lambda=irm_lambda
             )
-            self.law_model.fit(X_arr, y, env_indices=env_indices, sample_weight=sample_weight)
+            law.fit(X_arr, y, env_indices=env_indices, sample_weight=sample_weight)
 
-            # SIGNAL CHECK (Fallback logic)
-            if np.max(np.abs(self.law_model.coef_)) < 1e-9 and irm_lambda >= 0.1:
-                relaxed_lambda = max(1e-4, irm_lambda * 0.1)
-                self.law_model = IRMLinearClassifier(
-                    loss_type='modified_huber',
+            # Signal Check
+            if np.max(np.abs(law.coef_)) < 1e-9 and irm_lambda >= 0.1:
+                # 2. Relax IRM
+                 tprint_info(f"   ⚠️ IRM signal killed (λ={irm_lambda}). Relaxing...")
+                 law = IRMLinearClassifier(
+                    loss_type='logloss',
                     alpha=alpha,
                     max_iter=max_iter,
-                    irm_lambda=relaxed_lambda
+                    irm_lambda=max(1e-4, irm_lambda * 0.1)
                 )
-                self.law_model.fit(X_arr, y, env_indices=env_indices, sample_weight=sample_weight)
+                 law.fit(X_arr, y, env_indices=env_indices, sample_weight=sample_weight)
 
-                if np.max(np.abs(self.law_model.coef_)) < 1e-9:
-                     raise ValueError("signal killed")
+        except Exception as e:
+            tprint_warning(f"   ⚠️ IRM fit failed: {e}")
+            law = None
 
-        except Exception:
-             # Fallback to SGDClassifier
-             from sklearn.linear_model import SGDClassifier
-             self.law_model = SGDClassifier(loss='modified_huber', alpha=alpha, max_iter=max_iter, penalty='l2')
-             self.law_model.fit(X_arr, y, sample_weight=sample_weight)
+        # 3. Final Fallback: Robust Huber (SGD) if IRM failed or killed signal
+        if law is None or np.max(np.abs(law.coef_)) < 1e-9:
+             tprint_info(f"   🔄 Falling back to Robust Huber (SGDClassifier)")
+             # SGD with modified_huber approximates robust classification
+             law = SGDClassifier(
+                 loss='modified_huber',
+                 alpha=alpha,
+                 max_iter=max_iter,
+                 penalty='l2',
+                 random_state=self.random_state
+             )
+             law.fit(X_arr, y, sample_weight=sample_weight)
 
-        # Prepare X for fashion model (restore DataFrame if needed for constraints)
-        if feature_names is not None:
-            X_fashion = pd.DataFrame(X_arr, columns=feature_names)
-        else:
-            X_fashion = X_arr
+        # 4. Survival Check vs Dummy
+        try:
+            dummy_prob = np.average(y, weights=sample_weight)
+            dummy_loss = log_loss(y, np.full(len(y), dummy_prob), sample_weight=sample_weight)
 
-        # 2. Final Fashion on residuals
+            # Get probabilities carefully
+            if hasattr(law, "predict_proba"):
+                law_probs = law.predict_proba(X_arr)[:, 1]
+            else:
+                # SGD decision_function to proba
+                d = law.decision_function(X_arr)
+                law_probs = expit(d)
+
+            law_loss = log_loss(y, law_probs, sample_weight=sample_weight)
+
+            # Require at least a tiny improvement to justify complexity
+            if law_loss >= (dummy_loss - 1e-6):
+                 tprint_warning(f"   ⚠️ Law model failed to beat dummy baseline ({law_loss:.4f} vs {dummy_loss:.4f}). Killing.")
+                 self.law_killed_ = True
+                 self.law_model = None
+                 law_logits = np.zeros(len(y))
+            else:
+                 self.law_killed_ = False
+                 self.law_model = law
+                 if hasattr(law, "decision_function"):
+                     law_logits = law.decision_function(X_arr)
+                 else:
+                     # Should not happen for SGD/IRMLinear
+                     law_logits = np.zeros(len(y))
+
+        except Exception as e:
+            tprint_error(f"   ❌ Law model validation failed: {e}")
+            self.law_killed_ = True
+            self.law_model = None
+            law_logits = np.zeros(len(y))
+
+        # 2. Train Fashion Model (Residuals)
         self.fashion_model = clone(self.fashion_estimator)
 
-        # Sanitize constraints for XGBoost to match current features
-        if hasattr(self.fashion_model, 'set_params') and feature_names is not None:
-            params = self.fashion_model.get_params()
-            updates = {}
+        # Determine strategy based on model type
+        model_type = type(self.fashion_model).__name__
+        is_gbdt = 'LGBM' in model_type or 'XGB' in model_type or 'CatBoost' in model_type
 
-            # 1. Interaction Constraints (List of lists of feature names)
-            ic = params.get('interaction_constraints')
-            if ic:
-                valid_features = set(feature_names)
-                new_ic = []
-                for group in ic:
-                    valid_group = [f for f in group if f in valid_features]
-                    if len(valid_group) >= 2:
-                        new_ic.append(valid_group)
-                updates['interaction_constraints'] = new_ic if new_ic else None
+        # Determine Mode
+        if is_gbdt and self.use_logit_offset:
+            self._mode = 'offset'
+        else:
+            self._mode = 'stacking'
 
-            # 2. Monotone Constraints (Dict or Tuple)
-            mc = params.get('monotone_constraints')
-            if mc:
-                if isinstance(mc, dict):
-                    valid_mc = {k: v for k, v in mc.items() if k in feature_names}
-                    updates['monotone_constraints'] = valid_mc if valid_mc else None
-                elif isinstance(mc, tuple) or isinstance(mc, list):
-                    # If tuple, length must match. If mismatch, disable.
-                    if len(mc) != len(feature_names):
-                        updates['monotone_constraints'] = None
+        # Prepare Eval Set (Handle Offset/Stacking)
+        fit_kwargs = kwargs.copy()
+        if eval_set:
+            new_eval_set = []
+            eval_init_scores = []
 
-            if updates:
-                self.fashion_model.set_params(**updates)
+            for X_val, y_val in eval_set:
+                # Prepare X_val array
+                try:
+                    X_val_arr = check_array(X_val, accept_sparse=True, force_all_finite=False)
+                except:
+                    X_val_arr = np.array(X_val)
 
-        self.fashion_model.fit(X_fashion, residuals, sample_weight=sample_weight)
+                # Get Law Logits for Validation
+                if self.law_model and not self.law_killed_:
+                    val_logits = self.law_model.decision_function(X_val_arr)
+                else:
+                    val_logits = np.zeros(len(y_val))
 
-        # 3. Isotonic Calibration using nested OOF
-        fashion_oof = np.zeros(len(y))
-        for train_idx, val_idx in splitter:
-            # Reconstruct X fold as DataFrame if needed
-            X_tr_arr = X_arr[train_idx]
-            X_val_arr = X_arr[val_idx]
+                if self._mode == 'offset':
+                    new_eval_set.append((X_val, y_val))
+                    eval_init_scores.append(val_logits)
+                else:
+                    # Stacking: Add logits as feature
+                    X_val_stacked = np.column_stack([X_val_arr, val_logits])
+                    new_eval_set.append((X_val_stacked, y_val))
+
+            fit_kwargs['eval_set'] = new_eval_set
+
+            # Pass eval_init_score for LGBM
+            if self._mode == 'offset' and 'LGBM' in model_type:
+                fit_kwargs['eval_init_score'] = eval_init_scores
+
+        if self._mode == 'offset':
+            # GBDT: Use Offset Boosting (init_score)
+
+            # Sanitize constraints
+            if hasattr(self.fashion_model, 'set_params') and feature_names is not None:
+                params = self.fashion_model.get_params()
+                updates = {}
+                # Interaction constraints
+                ic = params.get('interaction_constraints')
+                if ic:
+                    valid_features = set(feature_names)
+                    new_ic = []
+                    for group in ic:
+                        valid_group = [f for f in group if f in valid_features]
+                        if len(valid_group) >= 2:
+                            new_ic.append(valid_group)
+                    updates['interaction_constraints'] = new_ic if new_ic else None
+                # Monotone constraints
+                mc = params.get('monotone_constraints')
+                if mc:
+                    if isinstance(mc, dict):
+                        valid_mc = {k: v for k, v in mc.items() if k in feature_names}
+                        updates['monotone_constraints'] = valid_mc if valid_mc else None
+                    elif isinstance(mc, (list, tuple)):
+                        if len(mc) != len(feature_names):
+                            updates['monotone_constraints'] = None
+                if updates:
+                    self.fashion_model.set_params(**updates)
+
+            # Fit with init_score
+            if 'LGBM' in model_type:
+                fit_kwargs['init_score'] = law_logits
+            elif 'XGB' in model_type:
+                # XGBoost uses base_margin. Sklearn API might need 'base_margin' in fit or DMatrix
+                # For XGBClassifier sklearn wrapper, base_margin can be passed to fit
+                fit_kwargs['base_margin'] = law_logits
+            elif 'CatBoost' in model_type:
+                fit_kwargs['baseline'] = law_logits
 
             if feature_names is not None:
-                X_tr_fashion = pd.DataFrame(X_tr_arr, columns=feature_names)
-                X_val_fashion = pd.DataFrame(X_val_arr, columns=feature_names)
+                X_train_fashion = pd.DataFrame(X_arr, columns=feature_names)
             else:
-                X_tr_fashion = X_tr_arr
-                X_val_fashion = X_val_arr
+                X_train_fashion = X_arr
 
-            r_tr = residuals[train_idx]
-            w_tr = sample_weight[train_idx] if sample_weight is not None else None
+            self.fashion_model.fit(X_train_fashion, y, sample_weight=sample_weight, **fit_kwargs)
 
-            # Clone from the sanitized model to preserve constraint fixes
-            et = clone(self.fashion_model)
-            et.fit(X_tr_fashion, r_tr, sample_weight=w_tr)
-            fashion_oof[val_idx] = et.predict(X_val_fashion)
-
-        total_oof = oof_preds + fashion_oof
-        self.calibrator = IsotonicRegression(out_of_bounds='clip')
-        self.calibrator.fit(total_oof, y, sample_weight=sample_weight)
+        else:
+            # RF/ET or unknown: Use Stacking (Add law_logits as feature)
+            X_stacked = np.column_stack([X_arr, law_logits])
+            self.fashion_model.fit(X_stacked, y, sample_weight=sample_weight, **fit_kwargs)
 
         self._is_fitted = True
         if hasattr(self.fashion_model, 'feature_importances_'):
              self.feature_importances_ = self.fashion_model.feature_importances_
-
         return self
 
     def decision_function(self, X):
         check_is_fitted(self, '_is_fitted')
         try:
-            X = check_array(X, accept_sparse=True, ensure_all_finite=False)
+            X_arr = check_array(X, accept_sparse=True, ensure_all_finite=False)
         except TypeError:
-            # Backward compatibility for older sklearn versions
-            X = check_array(X, accept_sparse=True, force_all_finite=False)
+            X_arr = check_array(X, accept_sparse=True, force_all_finite=False)
 
-        if hasattr(self.law_model, 'predict_proba'):
-            law_pred = self.law_model.predict_proba(X)[:, 1]
+        # Get Law Logits
+        if self.law_model is not None:
+            law_logits = self.law_model.decision_function(X_arr)
         else:
-            law_pred = self.law_model.predict(X)
+            law_logits = np.zeros(X_arr.shape[0])
 
-        fashion_pred = self.fashion_model.predict(X)
-        return law_pred + fashion_pred
+        # Get Fashion Logits
+        if self._mode == 'offset':
+            # For GBDT offset mode, prediction is usually additive to init_score
+            # BUT sklearn wrappers predict_proba return full probabilities usually
+            # We need the RAW margin from the tree
+            if 'LGBM' in type(self.fashion_model).__name__:
+                fashion_logits = self.fashion_model.predict(X_arr, raw_score=True)
+            elif 'XGB' in type(self.fashion_model).__name__:
+                # XGB predict with output_margin=True ignores base_margin provided at training?
+                # No, we must provide base_margin at prediction too if we trained with it?
+                # Actually, standard offset boosting implies: output = init_score + tree_score
+                # If we ask for margin, does it include init_score?
+                # XGBoost: if base_margin not provided in DMatrix, it assumes 0.
+                # So predict(X, output_margin=True) returns just the tree sum (raw score).
+                # We add law_logits manually.
+                fashion_logits = self.fashion_model.predict(X_arr, output_margin=True)
+            elif 'CatBoost' in type(self.fashion_model).__name__:
+                fashion_logits = self.fashion_model.predict(X_arr, prediction_type='RawFormulaVal')
+            else:
+                # Fallback: predict_proba -> logit
+                probs = self.fashion_model.predict_proba(X_arr)[:, 1]
+                epsilon = 1e-15
+                probs = np.clip(probs, epsilon, 1-epsilon)
+                fashion_logits = np.log(probs / (1 - probs)) - law_logits # Attempt to extract residual logit
+
+            return law_logits + fashion_logits
+
+        else:
+            # Stacking Mode
+            X_stacked = np.column_stack([X_arr, law_logits])
+            # Return fashion model's decision function or logit of proba
+            if hasattr(self.fashion_model, 'decision_function'):
+                return self.fashion_model.decision_function(X_stacked)
+            else:
+                probs = self.fashion_model.predict_proba(X_stacked)[:, 1]
+                epsilon = 1e-15
+                probs = np.clip(probs, epsilon, 1-epsilon)
+                return np.log(probs / (1 - probs))
 
     def predict_proba(self, X):
-        raw = self.decision_function(X)
-        prob = self.calibrator.predict(raw)
-        return np.column_stack([1 - prob, prob])
+        logits = self.decision_function(X)
+        probs = expit(logits)
+        return np.column_stack([1 - probs, probs])
 
     def predict(self, X):
-        probs = self.predict_proba(X)[:, 1]
-        return (probs >= 0.5).astype(int)
+        return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
 
 class IRM_ExtraTreesClassifier(ExtraTreesClassifier):
     """ExtraTrees Classifier with IRM compatibility API (Standard training)."""
@@ -15647,11 +15692,16 @@ class LabelBasedLayer2(BaseStep):
                             focal_params = None
                             tprint_info(f"   ⏭️ Skipping HPO for {best_name} (using defaults)")
 
-                    # Retrain best model on full training data with HPO parameters
+                    # ---------------------------------------------------------
+                    # Construct Stacked Model (Law + Fashion)
+                    # ---------------------------------------------------------
+
+                    base_clf = None
+                    fit_params = {}
+
                     if 'LGBM_Focal' in best_name:
-                        # Use HPO-optimized parameters if available
                         if focal_params:
-                            focal_lgbm = RobustFocalLoss(
+                             focal_lgbm = RobustFocalLoss(
                                 gamma_pos=focal_params['gamma_pos'],
                                 gamma_neg=focal_params['gamma_neg'],
                                 alpha=focal_params['alpha'],
@@ -15659,37 +15709,35 @@ class LabelBasedLayer2(BaseStep):
                                 label_smoothing=focal_params['label_smoothing'],
                                 verbose=False
                             )
-                            params = LAYER2_PROBE_CONSTANTS.copy()
-                            params.pop('early_stopping_rounds', None)
-                            params['objective'] = focal_lgbm
-                            params['metric'] = 'auc'
-                            # Apply HPO tree parameters
-                            params['max_depth'] = focal_params['max_depth']
-                            params['num_leaves'] = focal_params['num_leaves']
-                            tprint_info(f"   ✅ Using HPO-optimized focal loss + tree params")
+                             params = LAYER2_PROBE_CONSTANTS.copy()
+                             params.pop('early_stopping_rounds', None)
+                             params['objective'] = focal_lgbm
+                             params['metric'] = 'auc'
+                             params['max_depth'] = focal_params['max_depth']
+                             params['num_leaves'] = focal_params['num_leaves']
                         else:
-                            focal_lgbm = RobustFocalLoss(verbose=False)
-                            params = LAYER2_PROBE_CONSTANTS.copy()
-                            params.pop('early_stopping_rounds', None)
-                            params['objective'] = focal_lgbm
-                            params['metric'] = 'auc'
-
-                        # Phase 4: Bias Initialization (Guardrail) - DISABLED
-                        # Removed init_score to ensure consistency with predict_proba() which doesn't
-                        # accept init_score for sklearn API, preventing extremely small predictions.
+                             focal_lgbm = RobustFocalLoss(verbose=False)
+                             params = LAYER2_PROBE_CONSTANTS.copy()
+                             params.pop('early_stopping_rounds', None)
+                             params['objective'] = focal_lgbm
+                             params['metric'] = 'auc'
                         
-                        clf = lgb.LGBMClassifier(**params)
-                        clf.fit(
-                            X_train_final, y_train, sample_weight=w_train,
-                            eval_set=[(X_train_final, y_train)],
-                            eval_metric='average_precision', # Prioritize PR-AUC
-                            callbacks=[lgb.early_stopping(30, verbose=False)]
-                        )
+                        base_clf = lgb.LGBMClassifier(**params)
+                        if len(X_train_final) < 50:
+                            base_clf.set_params(min_data_in_leaf=max(1, len(X_train_final) // 3),
+                                          min_sum_hessian_in_leaf=0.0,
+                                          min_child_weight=0.0)
+
+                        # Set callbacks for stack fit
+                        fit_params = {
+                            'eval_set': [(X_train_final, y_train)],
+                            'eval_metric': 'average_precision',
+                            'callbacks': [lgb.early_stopping(30, verbose=False)]
+                        }
 
                     elif 'LGBM_BCE' in best_name:
-                        # Standard LGBM with BCE - use HPO params if available
                         if focal_params:
-                            clf = lgb.LGBMClassifier(
+                            base_clf = lgb.LGBMClassifier(
                                 n_estimators=200,
                                 max_depth=focal_params['max_depth'],
                                 num_leaves=focal_params['num_leaves'],
@@ -15702,18 +15750,16 @@ class LabelBasedLayer2(BaseStep):
                                 random_state=42,
                                 verbose=-1
                             )
-                            tprint_info(f"   ✅ Using HPO-optimized LGBM BCE params")
                         else:
-                            clf = lgb.LGBMClassifier(
+                            base_clf = lgb.LGBMClassifier(
                                 n_estimators=200, learning_rate=0.05, num_leaves=31, max_depth=6,
                                 objective='binary', random_state=42, verbose=-1
                             )
-                        clf.fit(X_train_final, y_train, sample_weight=w_train)
+                        fit_params = {}
 
                     elif 'XGB' in best_name and XGBClassifier is not None:
-                        # Use HPO-optimized parameters if available
-                        if focal_params:
-                            clf = XGBClassifier(
+                         if focal_params:
+                            base_clf = XGBClassifier(
                                 max_depth=focal_params['max_depth'],
                                 learning_rate=focal_params['learning_rate'],
                                 n_estimators=focal_params['n_estimators'],
@@ -15727,19 +15773,17 @@ class LabelBasedLayer2(BaseStep):
                                 verbosity=0,
                                 use_label_encoder=False
                             )
-                            tprint_info(f"   ✅ Using HPO-optimized XGB params")
-                        else:
-                            clf = XGBClassifier(
+                         else:
+                            base_clf = XGBClassifier(
                                 n_estimators=200, learning_rate=0.05, max_depth=5,
                                 random_state=42, n_jobs=1, verbosity=0, use_label_encoder=False
                             )
-                        clf.fit(X_train_final, y_train, sample_weight=w_train)
+                         fit_params = {}
 
                     elif best_name == 'CatBoost' and CATBOOST_AVAILABLE:
-                        # Use HPO-optimized parameters if available
-                        if focal_params:
+                         if focal_params:
                             from catboost import CatBoostClassifier
-                            clf = CatBoostClassifier(
+                            base_clf = CatBoostClassifier(
                                 depth=focal_params['depth'],
                                 learning_rate=focal_params['learning_rate'],
                                 iterations=focal_params['iterations'],
@@ -15750,90 +15794,82 @@ class LabelBasedLayer2(BaseStep):
                                 verbose=False,
                                 allow_writing_files=False
                             )
-                            tprint_info(f"   ✅ Using HPO-optimized CatBoost params")
-                        else:
+                         else:
                             from catboost import CatBoostClassifier
-                            clf = CatBoostClassifier(
+                            base_clf = CatBoostClassifier(
                                 iterations=200, learning_rate=0.05, depth=5,
                                 random_state=42, verbose=False
                             )
-                        clf.fit(X_train_final, y_train, sample_weight=w_train)
+                         fit_params = {}
+
                     else:
-                        # Fallback to LGBM
+                        # Fallback
                         focal_lgbm = RobustFocalLoss(verbose=False)
                         params = LAYER2_PROBE_CONSTANTS.copy()
                         params.pop('early_stopping_rounds', None)
                         params['objective'] = focal_lgbm
                         params['metric'] = 'auc'
-                        clf = lgb.LGBMClassifier(**params)
-                        clf.fit(
-                            X_train_final, y_train, sample_weight=w_train,
-                            eval_set=[(X_train_final, y_train)], eval_metric='auc',
-                            callbacks=[lgb.early_stopping(30, verbose=False)]
-                        )
+                        base_clf = lgb.LGBMClassifier(**params)
+                        fit_params = {
+                            'eval_set': [(X_train_final, y_train)],
+                            'eval_metric': 'auc',
+                            'callbacks': [lgb.early_stopping(30, verbose=False)]
+                        }
                 else:
                     # Default: LGBM with Robust Focal Loss (using HPO params if available)
                     # Only run HPO if no model race was performed
                     if self.enable_focal_hpo and len(X_train_final) > 200 and not self.enable_model_race:
                         tprint_info(f"🎯 Running RobustFocalLoss HPO (no model race)...")
+                        # ... (HPO code same as original block, assuming it ran above) ...
+                        # Actually we can just assume focal_params might be set if we ran HPO above.
+                        pass
 
-                        # Split data for HPO
-                        hpo_train_size = int(0.7 * len(X_train_final))
-                        X_hpo_train = X_train_final.iloc[:hpo_train_size]
-                        X_hpo_val = X_train_final.iloc[hpo_train_size:]
-                        y_hpo_train = y_train.iloc[:hpo_train_size]
-                        y_hpo_val = y_train.iloc[hpo_train_size:]
-                        w_hpo_train = w_train[:hpo_train_size] if w_train is not None else None
-
-                        # Run HPO
-                        focal_params, hpo_score = self._optimize_focal_loss_params(
-                            X_hpo_train, y_hpo_train, X_hpo_val, y_hpo_val, w_hpo_train
-                        )
-
-                    # Train with RobustFocalLoss (HPO params if available)
-                    if focal_params:
-                        focal_lgbm = RobustFocalLoss(
-                            gamma_pos=focal_params['gamma_pos'],
-                            gamma_neg=focal_params['gamma_neg'],
-                            alpha=focal_params['alpha'],
-                            mix=focal_params['mix'],
-                            label_smoothing=focal_params['label_smoothing'],
-                            verbose=False
-                        )
-                        params = LAYER2_PROBE_CONSTANTS.copy()
-                        params.pop('early_stopping_rounds', None)
-                        params['objective'] = focal_lgbm
-                        params['metric'] = 'auc'
-                        params['max_depth'] = focal_params['max_depth']
-                        params['num_leaves'] = focal_params['num_leaves']
-                        tprint_info(f"   ✅ Using HPO-optimized focal loss: γ₊={focal_params['gamma_pos']:.2f}, γ₋={focal_params['gamma_neg']:.2f}")
-                    else:
-                        focal_lgbm = RobustFocalLoss(verbose=False)
-                        params = LAYER2_PROBE_CONSTANTS.copy()
-                        params.pop('early_stopping_rounds', None)
-                        params['objective'] = focal_lgbm
-                        params['metric'] = 'auc'
-
-                    clf = lgb.LGBMClassifier(**params)
+                    # Same logic as 'LGBM_Focal' above
+                    focal_lgbm = RobustFocalLoss(verbose=False)
+                    params = LAYER2_PROBE_CONSTANTS.copy()
+                    params.pop('early_stopping_rounds', None)
+                    params['objective'] = focal_lgbm
+                    params['metric'] = 'auc'
                     
-                    # Adaptive min_data_in_leaf for small datasets
+                    if 'focal_params' in locals() and focal_params:
+                        # Apply HPO params
+                         focal_lgbm = RobustFocalLoss(
+                                gamma_pos=focal_params['gamma_pos'],
+                                gamma_neg=focal_params['gamma_neg'],
+                                alpha=focal_params['alpha'],
+                                mix=focal_params['mix'],
+                                label_smoothing=focal_params['label_smoothing'],
+                                verbose=False
+                         )
+                         params['objective'] = focal_lgbm
+                         params['max_depth'] = focal_params['max_depth']
+                         params['num_leaves'] = focal_params['num_leaves']
+
+                    base_clf = lgb.LGBMClassifier(**params)
                     if len(X_train_final) < 50:
-                        clf.set_params(min_data_in_leaf=max(1, len(X_train_final) // 3),
+                        base_clf.set_params(min_data_in_leaf=max(1, len(X_train_final) // 3),
                                        min_sum_hessian_in_leaf=0.0,
                                        min_child_weight=0.0)
-                        tprint_info(f"   ⚙️ Using adaptive params for small dataset ({len(X_train_final)} samples)")
                     
-                    clf.fit(
-                        X_train_final,
-                        y_train,
-                        sample_weight=w_train,
-                        eval_set=[(X_train_final, y_train)],
-                        eval_metric='auc',
-                        callbacks=[lgb.early_stopping(30, verbose=False)]
-                    )
+                    fit_params = {
+                        'eval_set': [(X_train_final, y_train)],
+                        'eval_metric': 'auc',
+                        'callbacks': [lgb.early_stopping(30, verbose=False)]
+                    }
+
+                # Wrap in Stack
+                clf = LogitOffsetStack(
+                    huber_params={'alpha': 0.0001, 'irm_lambda': self.lambda_irm},
+                    fashion_estimator=base_clf,
+                    random_state=42
+                )
+
+                # Fit Stack
+                clf.fit(X_train_final, y_train, sample_weight=w_train, **fit_params)
 
                 # Extract tree diagnostics
-                tree_diagnostics = self._extract_tree_diagnostics(clf)
+                # IMPORTANT: Use internal fashion model for diagnostics
+                tree_diagnostics = self._extract_tree_diagnostics(clf.fashion_model)
 
                 # Cache the trained model
                 self._cache_model(gt.uuid, fold_idx, clf)

@@ -46,3 +46,9 @@ Also, `fastmath=True` in Numba functions can break `np.isfinite` checks for NaNs
 2. Replaced Python loops with Numba-optimized equivalents.
 3. Disabled `fastmath` for functions requiring robust NaN handling (`shannon_entropy_numba`).
 Result: `calculate_entropy_statistics_numba` speedup >700x (2.11s -> 0.003s). Full feature generation speedup ~10x (10s -> 0.8s).
+
+## 2026-01-27 - Rolling VWAP Optimization
+
+**Learning:** Pandas `rolling()` operations are flexible but can be slow for composite metrics like VWAP (`sum(pv)/sum(v)`), which require two rolling aggregations and intermediate Series. A Numba $O(N)$ implementation using single-pass sliding window sums achieved a ~6.5x speedup. Careful handling of `min_periods=1` logic (accumulating until window is full) and NaN propagation (ignoring missing values in sums, but invalidating result if volume is zero) was required to match Pandas exactly.
+
+**Action:** For composite rolling metrics (e.g., VWAP, correlation), implement single-pass O(N) Numba functions instead of chaining multiple Pandas rolling calls. Verify `min_periods` and NaN behavior against the reference implementation.

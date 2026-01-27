@@ -5,17 +5,26 @@ from numba import jit
 from src.utils.tprint import tprint_info, tprint_warning, tprint_success
 from src.utils.orthogonal_numba import _numba_apply_fracdiff, _numba_rolling_hurst
 from src.utils.entropy_optimized import lempel_ziv_complexity_numba
-from src.utils.numba_funcs import _numba_ewma, _numba_ewm_std, _numba_rolling_skew, _numba_rolling_kurt
+from src.utils.numba_funcs import (
+    _numba_ewma,
+    _numba_ewm_std,
+    _numba_rolling_skew,
+    _numba_rolling_kurt,
+    _numba_rolling_vwap,
+)
 
 def _calculate_rolling_vwap(price: pd.Series, volume: pd.Series, window: int = 20) -> pd.Series:
     """
-    Calculate Rolling VWAP.
+    Calculate Rolling VWAP using optimized Numba implementation.
     VWAP = Sum(Price * Volume) / Sum(Volume)
     """
-    pv = price * volume
-    sum_pv = pv.rolling(window, min_periods=1).sum()
-    sum_v = volume.rolling(window, min_periods=1).sum()
-    return sum_pv / (sum_v + 1e-9)
+    # Optimized Numba implementation
+    price_vals = price.values.astype(np.float64)
+    vol_vals = volume.values.astype(np.float64)
+
+    vwap = _numba_rolling_vwap(price_vals, vol_vals, window)
+
+    return pd.Series(vwap, index=price.index)
 
 def _causal_vwap_residual(price: pd.Series, volume: pd.Series, vwap_window: int = 100, vol_span: int = 50, clip_z: float = 5.0) -> pd.Series:
     """
@@ -30,11 +39,9 @@ def _causal_vwap_residual(price: pd.Series, volume: pd.Series, vwap_window: int 
     v = volume.clip(lower=0.0).astype(float)
 
     # Causal rolling VWAP
-    pv = p * v
-    vwap = (
-        pv.rolling(window=vwap_window, min_periods=1).sum()
-        / v.rolling(window=vwap_window, min_periods=1).sum().replace(0.0, np.nan)
-    )
+    # p and v are already clean float series here
+    vwap_vals = _numba_rolling_vwap(p.values, v.values, window=vwap_window)
+    vwap = pd.Series(vwap_vals, index=p.index)
 
     # Log-domain residual versus VWAP
     log_p = np.log(p)

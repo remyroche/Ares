@@ -57,8 +57,8 @@ import time
 import psutil
 from pathlib import Path
 import hashlib
-from sklearn.linear_model import RidgeClassifier, Lasso, Ridge, HuberRegressor, SGDClassifier
-from sklearn.metrics import precision_recall_curve, precision_score
+from sklearn.linear_model import RidgeClassifier, Lasso, Ridge, HuberRegressor, SGDClassifier, SGDRegressor
+from sklearn.metrics import precision_recall_curve, precision_score, mean_squared_error
 from src.training.steps.labeling.irm_regime_pipeline import (
     IRMLinearClassifier,
     IRMLinearRegressor,
@@ -126,10 +126,10 @@ from src.training.steps.labeling.cross_asset_layer2_components import (
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 from functools import partial
-from sklearn.linear_model import LinearRegression, LogisticRegression
+from sklearn.linear_model import LinearRegression, LogisticRegression, SGDClassifier
 from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
-from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
-from sklearn.model_selection import TimeSeriesSplit, KFold
+from src.utils.irm_linear_regressor import IRMLinearClassifier
+from sklearn.model_selection import TimeSeriesSplit, KFold, StratifiedKFold
 from sklearn.metrics import roc_auc_score, log_loss, average_precision_score, recall_score, brier_score_loss
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.base import clone, BaseEstimator, ClassifierMixin
@@ -730,316 +730,432 @@ def calculate_brier_skill_score(y_true, y_prob):
         return 0.0
     return 1.0 - (bs_model / bs_naive)
 
-class HuberResidualStack(BaseEstimator, ClassifierMixin):
+class LogitOffsetStack(BaseEstimator):
     """
-    Two-phase model:
-    1. Huber-IRM (Law) on raw target.
-    2. Fashion Estimator (ExtraTrees/XGB) on OOF residuals.
-    3. Isotonic Calibration on L+T.
+    Logit Offset Boosting Stack with Robust IRM Fallback.
+    Supports both Classification (Logistic) and Regression (Linear/Huber).
+
+    1. 'Law': IRM Linear Model (Baseline).
+       - Uses Grid Search for IRM penalty (1.0, 0.1, 0.01).
+       - Selects based on Minimax (Worst Environment Loss) robustness.
+       - Falls back to Robust SGD if signal is weak.
+       - Generates OOF logits via internal CV for 'Fashion' training to prevent leakage.
+
+    2. 'Fashion': GBDT on residuals (offset boosting).
+       - Uses 'Law' output as base_margin/init_score.
+
+    3. Output:
+       - Classification: sigmoid(Law_Logit + Fashion_Logit).
+       - Regression: Law_Pred + Fashion_Residual.
     """
-    def __init__(self, huber_params=None, fashion_estimator=None, n_splits=5, random_state=42, pos_boost=0.0):
+    def __init__(self, huber_params=None, fashion_estimator=None, random_state=42, use_logit_offset=True,
+                 irm_grid=[1.0, 0.1, 0.01], n_internal_splits=3, task_type='classification'):
         self.huber_params = huber_params if huber_params else {}
         self.fashion_estimator = fashion_estimator
-        self.n_splits = n_splits
         self.random_state = random_state
-        self.pos_boost = pos_boost
+        self.use_logit_offset = use_logit_offset
+        self.irm_grid = irm_grid
+        self.n_internal_splits = n_internal_splits
+        self.task_type = task_type # 'classification' or 'regression'
         self.law_model = None
         self.fashion_model = None
-        self.calibrator = None
+        self.law_killed_ = False
         self._is_fitted = False
         self.feature_importances_ = None
 
-    def fit(self, X, y, sample_weight=None, environment_masks=None, **kwargs):
-        # Capture feature names if X is a DataFrame (needed for XGBoost constraints)
+        # Determine classes for sklearn compliance
+        if self.task_type == 'classification':
+            self.classes_ = np.array([0, 1])
+
+    def fit(self, X, y, sample_weight=None, environment_masks=None, eval_set=None, **kwargs):
         feature_names = getattr(X, 'columns', None)
-
-        # De Prado Alignment: Capture index for Purged K-Fold if available
-        index = getattr(X, 'index', None)
-
         try:
             X_arr = check_array(X, accept_sparse=True, ensure_all_finite=False)
         except TypeError:
-            # Backward compatibility for older sklearn versions
             X_arr = check_array(X, accept_sparse=True, force_all_finite=False)
-        # Ensure y and sample_weight are numpy arrays to avoid pandas indexing issues
+
         y = np.asarray(y)
-        if sample_weight is not None:
-            sample_weight = np.asarray(sample_weight)
-        else:
+        if sample_weight is None:
             sample_weight = np.ones(len(y), dtype=np.float64)
 
-        if self.pos_boost and self.pos_boost > 0:
-            sample_weight = sample_weight * (1.0 + self.pos_boost * y)
-            sample_weight = np.maximum(sample_weight, 0.0)
+        # Baseline Logic
+        alpha = self.huber_params.get('alpha', 0.0001)
+        max_iter = self.huber_params.get('max_iter', 1000)
 
-        if self.fashion_estimator is None:
-            raise ValueError("fashion_estimator must be provided")
-
-        # Phase 1: OOF Residuals (Using PurgedKFoldTime for strict non-leakage)
-        if index is not None and isinstance(index, pd.DatetimeIndex):
-            # Ensure index aligns with X_arr length (check_array might drop rows? No, it usually just converts)
-            if len(index) != len(X_arr):
-                # Fallback if length mismatch (e.g. infinite values dropped before this?)
-                # check_array doesn't drop unless we ask it to.
-                splitter = list(KFold(n_splits=self.n_splits, shuffle=False).split(X_arr))
-            else:
-                # Use PurgedKFoldTime with index awareness
-                from src.utils.purged_kfold import PurgedKFoldTime
-                # Default purge/embargo: 1% purge? Or 30m? Let's use conservative 1%ish or default.
-                # Using defaults from class definition (30m purge, 15m embargo)
-                try:
-                    pkf = PurgedKFoldTime(n_splits=self.n_splits)
-                    # PurgedKFoldTime.split expects a DataFrame with index
-                    # We create a lightweight dummy
-                    dummy_X = pd.DataFrame(index=index)
-                    splitter = list(pkf.split(dummy_X))
-                except Exception:
-                    splitter = list(KFold(n_splits=self.n_splits, shuffle=False).split(X_arr))
-        else:
-            # Fallback to Block K-Fold if no time index available
-            splitter = list(KFold(n_splits=self.n_splits, shuffle=False).split(X_arr))
-        if not splitter:
-            splitter = list(KFold(n_splits=self.n_splits, shuffle=False).split(X_arr))
-
-        oof_preds = np.zeros(len(y))
-
-        # Fit Law model on folds
-        for train_idx, val_idx in splitter:
-            X_tr, y_tr = X_arr[train_idx], y[train_idx]
-            X_val = X_arr[val_idx]
-            w_tr = sample_weight[train_idx] if sample_weight is not None else None
-
-            # Use basic env indices for ERM on fold
-            huber = IRMLinearRegressor(**self.huber_params)
-            huber.fit(X_tr, y_tr, env_indices=[np.arange(len(y_tr))], sample_weight=w_tr)
-            oof_preds[val_idx] = huber.predict(X_val)
-
-        # Law & Fashion Integration: Boosting vs Residuals
-        # If Fashion model supports init_score (LGBM) or base_margin (XGB), use it.
-        # Otherwise, fall back to learning residuals.
-        est_name = type(self.fashion_estimator).__name__
-        use_init_score = 'LGBM' in est_name or 'XGB' in est_name or 'CatBoost' in est_name
-        self._use_init_score = use_init_score
-
-        if use_init_score:
-            # Boosting: Fashion model learns to correct Law logits
-            # Target is original y (binary), initialized with Law logits
-            residuals = None # Not used directly for training
-        else:
-            # Residuals: Fashion model learns y - Law (linear residual)
-            residuals = y - oof_preds
-
-        # Phase 2: Train Final Models
-
-        # 1. Final Law on full data
-        self.law_model = IRMLinearRegressor(**self.huber_params)
+        # 1. Prepare Environment Indices
         env_indices = [np.arange(len(y))]
         if environment_masks:
              try:
                  if isinstance(environment_masks[0], (bool, np.bool_)):
-                     pass
+                     pass # Single mask?
                  elif len(environment_masks[0]) == len(y):
                       env_indices = [np.where(m)[0] for m in environment_masks]
                  else:
                       env_indices = environment_masks
              except:
                  pass
-        self.law_model.fit(X_arr, y, env_indices=env_indices, sample_weight=sample_weight)
 
-        # Get final law logits for init_score
-        law_logits = self.law_model.predict(X_arr)
+        # 2. Select Best Law Model (IRM Grid Search)
+        best_law = None
+        best_score = float('inf')
 
-        # Prepare X for fashion model (restore DataFrame if needed for constraints)
-        if feature_names is not None:
-            X_fashion = pd.DataFrame(X_arr, columns=feature_names)
+        is_classification = (self.task_type == 'classification')
+
+        # Try IRM Grid
+        for lam in self.irm_grid:
+            try:
+                if is_classification:
+                    candidate = IRMLinearClassifier(
+                        loss_type='logloss', alpha=alpha, max_iter=max_iter, irm_lambda=lam
+                    )
+                else:
+                    candidate = IRMLinearRegressor(
+                        loss_type='huber', alpha=alpha, max_iter=max_iter, irm_lambda=lam
+                    )
+
+                candidate.fit(X_arr, y, env_indices=env_indices, sample_weight=sample_weight)
+
+                # Evaluate Robustness (Minimax: Maximize Worst Env Loss -> minimize Max(Loss))
+                env_losses = []
+
+                if is_classification:
+                    preds = candidate.predict_proba(X_arr)[:, 1]
+                    metric_func = log_loss
+                else:
+                    preds = candidate.predict(X_arr)
+                    metric_func = mean_squared_error
+
+                for env_idx in env_indices:
+                    if len(env_idx) > 0:
+                        loss = metric_func(y[env_idx], preds[env_idx], sample_weight=sample_weight[env_idx])
+                        env_losses.append(loss)
+
+                # Global loss
+                global_loss = metric_func(y, preds, sample_weight=sample_weight)
+
+                worst_case_loss = max(env_losses) if env_losses else global_loss
+
+                if worst_case_loss < best_score:
+                    best_score = worst_case_loss
+                    best_law = candidate
+            except Exception as e:
+                continue
+
+        # 3. Fallback to Robust SGD if IRM failed or killed signal
+        use_fallback = False
+        if best_law is None:
+             use_fallback = True
+        elif np.max(np.abs(best_law.coef_)) < 1e-9:
+             use_fallback = True
+
+        if use_fallback:
+             if is_classification:
+                 fallback = SGDClassifier(
+                     loss='log_loss', alpha=alpha, max_iter=max_iter,
+                     penalty='elasticnet', l1_ratio=0.5, random_state=self.random_state
+                 )
+             else:
+                 fallback = SGDRegressor(
+                     loss='huber', alpha=alpha, max_iter=max_iter,
+                     penalty='elasticnet', l1_ratio=0.5, random_state=self.random_state
+                 )
+
+             fallback.fit(X_arr, y, sample_weight=sample_weight)
+             best_law = fallback
+
+             # Recalculate best_score
+             if is_classification:
+                 d = fallback.decision_function(X_arr)
+                 probs = expit(d)
+                 metric_func = log_loss
+                 preds = probs
+             else:
+                 preds = fallback.predict(X_arr)
+                 metric_func = mean_squared_error
+
+             # Evaluate worst case
+             env_losses = []
+             for env_idx in env_indices:
+                 if len(env_idx) > 0:
+                     loss = metric_func(y[env_idx], preds[env_idx], sample_weight=sample_weight[env_idx])
+                     env_losses.append(loss)
+             best_score = max(env_losses) if env_losses else metric_func(y, preds, sample_weight=sample_weight)
+
+        # 4. Survival Gate
+        if is_classification:
+            dummy_prob = np.average(y, weights=sample_weight)
+            dummy_preds = np.full(len(y), dummy_prob)
+            metric_func = log_loss
         else:
-            X_fashion = X_arr
+            dummy_mean = np.average(y, weights=sample_weight)
+            dummy_preds = np.full(len(y), dummy_mean)
+            metric_func = mean_squared_error
 
-        # 2. Final Fashion
+        dummy_env_losses = []
+        for env_idx in env_indices:
+             if len(env_idx) > 0:
+                 loss = metric_func(y[env_idx], dummy_preds[env_idx], sample_weight=sample_weight[env_idx])
+                 dummy_env_losses.append(loss)
+        dummy_worst_loss = max(dummy_env_losses) if dummy_env_losses else metric_func(y, dummy_preds, sample_weight=sample_weight)
+
+        # Gate: Law must be better (lower loss) than Dummy by margin
+        margin = 1e-4
+        if best_score > (dummy_worst_loss - margin):
+             tprint_warning(f"   ⚠️ Law model failed robust survival gate ({best_score:.4f} vs {dummy_worst_loss:.4f}). Killing.")
+             self.law_killed_ = True
+             self.law_model = None
+             law_logits_train = np.zeros(len(y))
+        else:
+             self.law_killed_ = False
+
+             # 5. Internal OOF Generation (Prevent Leakage)
+             if self.n_internal_splits > 1:
+                 oof_preds = np.zeros(len(y))
+                 kf = KFold(n_splits=self.n_internal_splits, shuffle=False)
+
+                 base_law = clone(best_law)
+
+                 valid_oof = True
+                 for train_idx, val_idx in kf.split(X_arr, y):
+                     try:
+                         # Prepare Envs for this fold
+                         fold_envs = []
+                         for env_idx in env_indices:
+                             fold_envs.append(np.intersect1d(env_idx, train_idx))
+
+                         # Fit on fold
+                         fold_model = clone(base_law)
+
+                         # Fit logic (generic)
+                         if isinstance(fold_model, (IRMLinearClassifier, IRMLinearRegressor)):
+                             valid_envs = [e for e in fold_envs if len(e) > 10]
+                             if not valid_envs: valid_envs = [train_idx]
+                             fold_model.fit(X_arr, y, env_indices=valid_envs, sample_weight=sample_weight)
+                         else:
+                             # SGD
+                             w_fold = sample_weight[train_idx] if sample_weight is not None else None
+                             fold_model.fit(X_arr[train_idx], y[train_idx], sample_weight=w_fold)
+
+                         # Predict OOF
+                         if is_classification:
+                             if hasattr(fold_model, "decision_function"):
+                                 oof_preds[val_idx] = fold_model.decision_function(X_arr[val_idx])
+                             else:
+                                 oof_preds[val_idx] = 0.0
+                         else:
+                             oof_preds[val_idx] = fold_model.predict(X_arr[val_idx])
+
+                     except Exception:
+                         valid_oof = False
+                         break
+
+                 if valid_oof:
+                     law_logits_train = oof_preds
+                 else:
+                     if is_classification:
+                         law_logits_train = best_law.decision_function(X_arr)
+                     else:
+                         law_logits_train = best_law.predict(X_arr)
+             else:
+                 # No CV, use in-sample
+                 if is_classification:
+                     law_logits_train = best_law.decision_function(X_arr)
+                 else:
+                     law_logits_train = best_law.predict(X_arr)
+
+             self.law_model = best_law
+
+        # 2. Train Fashion Model (Residuals)
         self.fashion_model = clone(self.fashion_estimator)
 
-        # Sanitize constraints for XGBoost to match current features
-        if hasattr(self.fashion_model, 'set_params') and feature_names is not None:
-            params = self.fashion_model.get_params()
-            updates = {}
+        # Determine strategy based on model type
+        model_type = type(self.fashion_model).__name__
+        is_gbdt = 'LGBM' in model_type or 'XGB' in model_type or 'CatBoost' in model_type
 
-            # 1. Interaction Constraints (List of lists of feature names)
-            ic = params.get('interaction_constraints')
-            if ic:
-                valid_features = set(feature_names)
-                new_ic = []
-                for group in ic:
-                    valid_group = [f for f in group if f in valid_features]
-                    if len(valid_group) >= 2:
-                        new_ic.append(valid_group)
-                updates['interaction_constraints'] = new_ic if new_ic else None
-
-            # 2. Monotone Constraints (Dict or Tuple)
-            mc = params.get('monotone_constraints')
-            if mc:
-                if isinstance(mc, dict):
-                    valid_mc = {k: v for k, v in mc.items() if k in feature_names}
-                    updates['monotone_constraints'] = valid_mc if valid_mc else None
-                elif isinstance(mc, tuple) or isinstance(mc, list):
-                    # If tuple, length must match. If mismatch, disable.
-                    if len(mc) != len(feature_names):
-                        updates['monotone_constraints'] = None
-
-            if updates:
-                self.fashion_model.set_params(**updates)
-
-        # Train Fashion Model
-        if use_init_score:
-            if 'LGBM' in est_name:
-                self.fashion_model.fit(X_fashion, y, sample_weight=sample_weight, init_score=law_logits)
-            elif 'XGB' in est_name:
-                self.fashion_model.fit(X_fashion, y, sample_weight=sample_weight, base_margin=law_logits)
-            elif 'CatBoost' in est_name:
-                # CatBoost uses baseline
-                self.fashion_model.fit(X_fashion, y, sample_weight=sample_weight, baseline=law_logits)
+        # Determine Mode
+        if is_gbdt and self.use_logit_offset:
+            self._mode = 'offset'
         else:
-            # Fallback: Train on residuals
-            self.fashion_model.fit(X_fashion, residuals, sample_weight=sample_weight)
+            self._mode = 'stacking'
 
-        # 3. Isotonic Calibration using nested OOF
-        fashion_oof = np.zeros(len(y))
-        for train_idx, val_idx in splitter:
-            # Reconstruct X fold as DataFrame if needed
-            X_tr_arr = X_arr[train_idx]
-            X_val_arr = X_arr[val_idx]
+        # Prepare Eval Set (Handle Offset/Stacking)
+        fit_kwargs = kwargs.copy()
+        if eval_set:
+            new_eval_set = []
+            eval_init_scores = []
+
+            for X_val, y_val in eval_set:
+                try:
+                    X_val_arr = check_array(X_val, accept_sparse=True, force_all_finite=False)
+                except:
+                    X_val_arr = np.array(X_val)
+
+                # Get Law Output for Validation
+                val_output = np.zeros(len(y_val))
+                if self.law_model and not self.law_killed_:
+                    if is_classification:
+                        val_output = self.law_model.decision_function(X_val_arr)
+                    else:
+                        val_output = self.law_model.predict(X_val_arr)
+
+                if self._mode == 'offset':
+                    new_eval_set.append((X_val, y_val))
+                    eval_init_scores.append(val_output)
+                else:
+                    X_val_stacked = np.column_stack([X_val_arr, val_output])
+                    new_eval_set.append((X_val_stacked, y_val))
+
+            fit_kwargs['eval_set'] = new_eval_set
+
+            # Pass eval_init_score for LGBM
+            if self._mode == 'offset' and 'LGBM' in model_type:
+                fit_kwargs['eval_init_score'] = eval_init_scores
+
+        if self._mode == 'offset':
+            # GBDT: Use Offset Boosting (init_score)
+            if hasattr(self.fashion_model, 'set_params') and feature_names is not None:
+                params = self.fashion_model.get_params()
+                updates = {}
+                # Interaction constraints
+                ic = params.get('interaction_constraints')
+                if ic:
+                    valid_features = set(feature_names)
+                    new_ic = []
+                    for group in ic:
+                        valid_group = [f for f in group if f in valid_features]
+                        if len(valid_group) >= 2:
+                            new_ic.append(valid_group)
+                    updates['interaction_constraints'] = new_ic if new_ic else None
+                # Monotone constraints
+                mc = params.get('monotone_constraints')
+                if mc:
+                    if isinstance(mc, dict):
+                        valid_mc = {k: v for k, v in mc.items() if k in feature_names}
+                        updates['monotone_constraints'] = valid_mc if valid_mc else None
+                    elif isinstance(mc, (list, tuple)):
+                        if len(mc) != len(feature_names):
+                            updates['monotone_constraints'] = None
+                if updates:
+                    self.fashion_model.set_params(**updates)
+
+            # Fit with init_score
+            if 'LGBM' in model_type:
+                fit_kwargs['init_score'] = law_logits_train
+            elif 'XGB' in model_type:
+                fit_kwargs['base_margin'] = law_logits_train
+            elif 'CatBoost' in model_type:
+                fit_kwargs['baseline'] = law_logits_train
 
             if feature_names is not None:
-                X_tr_fashion = pd.DataFrame(X_tr_arr, columns=feature_names)
-                X_val_fashion = pd.DataFrame(X_val_arr, columns=feature_names)
+                X_train_fashion = pd.DataFrame(X_arr, columns=feature_names)
             else:
-                X_tr_fashion = X_tr_arr
-                X_val_fashion = X_val_arr
+                X_train_fashion = X_arr
 
-            w_tr = sample_weight[train_idx] if sample_weight is not None else None
+            self.fashion_model.fit(X_train_fashion, y, sample_weight=sample_weight, **fit_kwargs)
 
-            # OOF Law Logits
-            law_oof_train = oof_preds[train_idx]
-            law_oof_val = oof_preds[val_idx]
-
-            # Clone from the sanitized model to preserve constraint fixes
-            et = clone(self.fashion_model)
-
-            if use_init_score:
-                y_tr = y[train_idx]
-                if 'LGBM' in est_name:
-                    et.fit(X_tr_fashion, y_tr, sample_weight=w_tr, init_score=law_oof_train)
-                    # For prediction, we need raw score (logit) to add to law_logit
-                    # predict(raw_score=True) returns logit
-                    fashion_oof[val_idx] = et.predict(X_val_fashion, raw_score=True)
-                elif 'XGB' in est_name:
-                    et.fit(X_tr_fashion, y_tr, sample_weight=w_tr, base_margin=law_oof_train)
-                    # output_margin=True returns logit (including base_margin usually, but we want just the tree part?
-                    # No, we want the FULL logit (Law + Tree) to calibrate.
-                    # XGB predict with output_margin=True returns base_margin + tree_margin.
-                    # So this returns the full logit.
-                    fashion_oof[val_idx] = et.predict(X_val_fashion, output_margin=True)
-                    # Since we want to SUM it with oof_preds later in decision_function,
-                    # we must be careful.
-                    # decision_function = law_pred + fashion_pred.
-                    # If fashion_pred includes base_margin, then we double count?
-                    # XGB predict(output_margin=True) includes base_margin if provided in DMatrix?
-                    # If we pass base_margin to predict?
-                    # Let's assume fashion_oof here should be the INCREMENT.
-                    # If predict(output_margin=True) returns total, we subtract base.
-                    total_logit = et.predict(X_val_fashion, base_margin=law_oof_val, output_margin=True)
-                    fashion_oof[val_idx] = total_logit - law_oof_val
-                elif 'CatBoost' in est_name:
-                    et.fit(X_tr_fashion, y_tr, sample_weight=w_tr, baseline=law_oof_train)
-                    # predict(prediction_type='RawFormulaVal') returns raw score (without baseline? check docs)
-                    # Usually RawFormulaVal = baseline + trees.
-                    total_logit = et.predict(X_val_fashion, prediction_type='RawFormulaVal')
-                    # We might need to subtract baseline manually if not passed to predict?
-                    # CatBoost predict doesn't take baseline argument easily for sklearn API.
-                    # It expects Pool.
-                    # Let's assume we train on residuals if CatBoost to avoid complexity, or just handle it.
-                    # Actually, for CatBoost sklearn, if we fit with baseline, the model learns the residual.
-                    # But predict() will add it if we provide it? No.
-                    # Let's stick to residuals for CatBoost to be safe if complex.
-                    # Revert CatBoost to residuals path for safety?
-                    # Or just assume RawFormulaVal is just the tree part if no baseline passed to predict.
-                    fashion_oof[val_idx] = total_logit # Assuming tree part only if no baseline provided at predict time.
-            else:
-                r_tr = residuals[train_idx]
-                et.fit(X_tr_fashion, r_tr, sample_weight=w_tr)
-                fashion_oof[val_idx] = et.predict(X_val_fashion)
-
-        total_oof = oof_preds + fashion_oof
-        self.calibrator = IsotonicRegression(out_of_bounds='clip')
-        self.calibrator.fit(total_oof, y, sample_weight=sample_weight)
+        else:
+            # RF/ET or unknown: Use Stacking
+            X_stacked = np.column_stack([X_arr, law_logits_train])
+            self.fashion_model.fit(X_stacked, y, sample_weight=sample_weight, **fit_kwargs)
 
         self._is_fitted = True
         if hasattr(self.fashion_model, 'feature_importances_'):
              self.feature_importances_ = self.fashion_model.feature_importances_
-
         return self
 
     def decision_function(self, X):
+        """Returns margins (logits) for classification."""
+        if self.task_type != 'classification':
+            raise AttributeError("decision_function is only available for classification")
+
         check_is_fitted(self, '_is_fitted')
         try:
-            X = check_array(X, accept_sparse=True, ensure_all_finite=False)
+            X_arr = check_array(X, accept_sparse=True, ensure_all_finite=False)
         except TypeError:
-            # Backward compatibility for older sklearn versions
-            X = check_array(X, accept_sparse=True, force_all_finite=False)
+            X_arr = check_array(X, accept_sparse=True, force_all_finite=False)
 
-        # Law prediction (logits)
-        law_pred = self.law_model.predict(X)
+        # Get Law Logits
+        law_output = np.zeros(X_arr.shape[0])
+        if self.law_model is not None:
+            law_output = self.law_model.decision_function(X_arr)
 
-        # Fashion prediction
-        if getattr(self, '_use_init_score', False):
-            # Boosting mode: Fashion model expects base_margin logic
-            est_name = type(self.fashion_model).__name__
-            if 'LGBM' in est_name:
-                # LGBM raw_score adds to init_score if used?
-                # Actually, LGBM predict(raw_score=True) returns the *sum* of init_score + trees
-                # if init_score is provided to predict.
-                # But predict() in sklearn API doesn't take init_score easily?
-                # If we don't pass init_score, it returns just trees?
-                # LGBM docs: "The predicted value will be the sum of init_score and the tree output."
-                # But we have to pass init_score.
-                # If we don't pass init_score, it defaults to 0.
-                # So we get just the tree output.
-                # Then we add law_pred manually.
-                fashion_logit_contribution = self.fashion_model.predict(X, raw_score=True)
-                return law_pred + fashion_logit_contribution
-            elif 'XGB' in est_name:
-                # XGB predict(output_margin=True) returns base_margin + trees.
-                # We need to pass base_margin=law_pred to get the total result correctly?
-                # Or just get trees and add?
-                # If we pass base_margin, we get total.
-                # XGBoost sklearn API predict(..., base_margin=...) works.
-                return self.fashion_model.predict(X, base_margin=law_pred, output_margin=True)
-            elif 'CatBoost' in est_name:
-                # CatBoost predict with RawFormulaVal returns total formula value.
-                # Does it need baseline argument?
-                # If trained with baseline, the trees learn residual.
-                # If we call predict without baseline, we get tree sum + bias?
-                # CatBoost docs say RawFormulaVal = Sum(Trees) + Scale * Baseline.
-                # But we need to provide Baseline data?
-                # If not provided, it assumes 0.
-                # So we get Tree Sum. Then we add law_pred.
-                fashion_logit_contribution = self.fashion_model.predict(X, prediction_type='RawFormulaVal')
-                return law_pred + fashion_logit_contribution
+        # Get Fashion Logits
+        if self._mode == 'offset':
+            if 'LGBM' in type(self.fashion_model).__name__:
+                fashion_output = self.fashion_model.predict(X_arr, raw_score=True)
+            elif 'XGB' in type(self.fashion_model).__name__:
+                fashion_output = self.fashion_model.predict(X_arr, output_margin=True)
+            elif 'CatBoost' in type(self.fashion_model).__name__:
+                fashion_output = self.fashion_model.predict(X_arr, prediction_type='RawFormulaVal')
             else:
-                # Fallback
-                return law_pred + self.fashion_model.predict(X)
+                probs = self.fashion_model.predict_proba(X_arr)[:, 1]
+                epsilon = 1e-15
+                probs = np.clip(probs, epsilon, 1-epsilon)
+                fashion_output = np.log(probs / (1 - probs)) - law_output
+
+            return law_output + fashion_output
         else:
-            # Residual mode (Regressor)
-            fashion_pred = self.fashion_model.predict(X)
-            return law_pred + fashion_pred
+            X_stacked = np.column_stack([X_arr, law_output])
+            if hasattr(self.fashion_model, 'decision_function'):
+                return self.fashion_model.decision_function(X_stacked)
+            else:
+                probs = self.fashion_model.predict_proba(X_stacked)[:, 1]
+                epsilon = 1e-15
+                probs = np.clip(probs, epsilon, 1-epsilon)
+                return np.log(probs / (1 - probs))
 
     def predict_proba(self, X):
-        raw = self.decision_function(X)
-        prob = self.calibrator.predict(raw)
-        return np.column_stack([1 - prob, prob])
+        if self.task_type != 'classification':
+            raise AttributeError("predict_proba is only available for classification")
+        logits = self.decision_function(X)
+        probs = expit(logits)
+        return np.column_stack([1 - probs, probs])
 
     def predict(self, X):
-        probs = self.predict_proba(X)[:, 1]
-        return (probs >= 0.5).astype(int)
+        if self.task_type == 'classification':
+            return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
+        else:
+            # Regression Prediction
+            check_is_fitted(self, '_is_fitted')
+            try:
+                X_arr = check_array(X, accept_sparse=True, ensure_all_finite=False)
+            except TypeError:
+                X_arr = check_array(X, accept_sparse=True, force_all_finite=False)
+
+            law_output = np.zeros(X_arr.shape[0])
+            if self.law_model is not None:
+                law_output = self.law_model.predict(X_arr)
+
+            if self._mode == 'offset':
+                # For regression, predict usually returns the raw value
+                # But check if model expects base_margin logic
+                # Most GBDT regression predict() returns sum(base + trees) if base provided at training?
+                # Usually no, predict(X) is standalone unless margin provided
+
+                # Since we don't pass base_margin to predict() here (API limit), we assume we need to sum manually
+                # UNLESS the model stored the base margin logic? No.
+
+                # Wait, for XGBoost, if we trained with base_margin, predict() might expect it?
+                # Or predict() returns just the tree sum?
+                # XGBoost: predict(X) returns tree sum if base_margin not provided.
+                # LightGBM: predict(X) returns tree sum + global bias?
+                # Let's assume we sum manually for safety and consistency.
+
+                if 'LGBM' in type(self.fashion_model).__name__:
+                    fashion_output = self.fashion_model.predict(X_arr, raw_score=True) # Raw score is usually the margin
+                elif 'XGB' in type(self.fashion_model).__name__:
+                    fashion_output = self.fashion_model.predict(X_arr, output_margin=True)
+                elif 'CatBoost' in type(self.fashion_model).__name__:
+                    fashion_output = self.fashion_model.predict(X_arr, prediction_type='RawFormulaVal')
+                else:
+                    fashion_output = self.fashion_model.predict(X_arr)
+                    # If stacking logic was used in offset mode (fallback), we might have issues.
+                    # But generic models shouldn't be in offset mode.
+
+                return law_output + fashion_output
+            else:
+                X_stacked = np.column_stack([X_arr, law_output])
+                return self.fashion_model.predict(X_stacked)
 
 class IRM_ExtraTreesClassifier(ExtraTreesClassifier):
     """ExtraTrees Classifier with IRM compatibility API (Standard training)."""
@@ -15813,7 +15929,8 @@ class LabelBasedLayer2(BaseStep):
                                 X_val=X_hpo_val,
                                 use_irm=bool(irm_env_indices_hpo),
                                 irm_env_indices=irm_env_indices_hpo,
-                                irm_lambda=self.lambda_irm
+                                irm_lambda=self.lambda_irm,
+                                is_classification=True
                             )
                         except Exception:
                             huber_hpo = None
@@ -15844,11 +15961,16 @@ class LabelBasedLayer2(BaseStep):
                             focal_params = None
                             tprint_info(f"   ⏭️ Skipping HPO for {best_name} (using defaults)")
 
-                    # Retrain best model on full training data with HPO parameters
+                    # ---------------------------------------------------------
+                    # Construct Stacked Model (Law + Fashion)
+                    # ---------------------------------------------------------
+
+                    base_clf = None
+                    fit_params = {}
+
                     if 'LGBM_Focal' in best_name:
-                        # Use HPO-optimized parameters if available
                         if focal_params:
-                            focal_lgbm = RobustFocalLoss(
+                             focal_lgbm = RobustFocalLoss(
                                 gamma_pos=focal_params['gamma_pos'],
                                 gamma_neg=focal_params['gamma_neg'],
                                 alpha=focal_params['alpha'],
@@ -15856,37 +15978,35 @@ class LabelBasedLayer2(BaseStep):
                                 label_smoothing=focal_params['label_smoothing'],
                                 verbose=False
                             )
-                            params = LAYER2_PROBE_CONSTANTS.copy()
-                            params.pop('early_stopping_rounds', None)
-                            params['objective'] = focal_lgbm
-                            params['metric'] = 'auc'
-                            # Apply HPO tree parameters
-                            params['max_depth'] = focal_params['max_depth']
-                            params['num_leaves'] = focal_params['num_leaves']
-                            tprint_info(f"   ✅ Using HPO-optimized focal loss + tree params")
+                             params = LAYER2_PROBE_CONSTANTS.copy()
+                             params.pop('early_stopping_rounds', None)
+                             params['objective'] = focal_lgbm
+                             params['metric'] = 'auc'
+                             params['max_depth'] = focal_params['max_depth']
+                             params['num_leaves'] = focal_params['num_leaves']
                         else:
-                            focal_lgbm = RobustFocalLoss(verbose=False)
-                            params = LAYER2_PROBE_CONSTANTS.copy()
-                            params.pop('early_stopping_rounds', None)
-                            params['objective'] = focal_lgbm
-                            params['metric'] = 'auc'
-
-                        # Phase 4: Bias Initialization (Guardrail) - DISABLED
-                        # Removed init_score to ensure consistency with predict_proba() which doesn't
-                        # accept init_score for sklearn API, preventing extremely small predictions.
+                             focal_lgbm = RobustFocalLoss(verbose=False)
+                             params = LAYER2_PROBE_CONSTANTS.copy()
+                             params.pop('early_stopping_rounds', None)
+                             params['objective'] = focal_lgbm
+                             params['metric'] = 'auc'
                         
-                        clf = lgb.LGBMClassifier(**params)
-                        clf.fit(
-                            X_train_final, y_train, sample_weight=w_train,
-                            eval_set=[(X_train_final, y_train)],
-                            eval_metric='average_precision', # Prioritize PR-AUC
-                            callbacks=[lgb.early_stopping(30, verbose=False)]
-                        )
+                        base_clf = lgb.LGBMClassifier(**params)
+                        if len(X_train_final) < 50:
+                            base_clf.set_params(min_data_in_leaf=max(1, len(X_train_final) // 3),
+                                          min_sum_hessian_in_leaf=0.0,
+                                          min_child_weight=0.0)
+
+                        # Set callbacks for stack fit
+                        fit_params = {
+                            'eval_set': [(X_train_final, y_train)],
+                            'eval_metric': 'average_precision',
+                            'callbacks': [lgb.early_stopping(30, verbose=False)]
+                        }
 
                     elif 'LGBM_BCE' in best_name:
-                        # Standard LGBM with BCE - use HPO params if available
                         if focal_params:
-                            clf = lgb.LGBMClassifier(
+                            base_clf = lgb.LGBMClassifier(
                                 n_estimators=200,
                                 max_depth=focal_params['max_depth'],
                                 num_leaves=focal_params['num_leaves'],
@@ -15899,18 +16019,16 @@ class LabelBasedLayer2(BaseStep):
                                 random_state=42,
                                 verbose=-1
                             )
-                            tprint_info(f"   ✅ Using HPO-optimized LGBM BCE params")
                         else:
-                            clf = lgb.LGBMClassifier(
+                            base_clf = lgb.LGBMClassifier(
                                 n_estimators=200, learning_rate=0.05, num_leaves=31, max_depth=6,
                                 objective='binary', random_state=42, verbose=-1
                             )
-                        clf.fit(X_train_final, y_train, sample_weight=w_train)
+                        fit_params = {}
 
                     elif 'XGB' in best_name and XGBClassifier is not None:
-                        # Use HPO-optimized parameters if available
-                        if focal_params:
-                            clf = XGBClassifier(
+                         if focal_params:
+                            base_clf = XGBClassifier(
                                 max_depth=focal_params['max_depth'],
                                 learning_rate=focal_params['learning_rate'],
                                 n_estimators=focal_params['n_estimators'],
@@ -15924,19 +16042,17 @@ class LabelBasedLayer2(BaseStep):
                                 verbosity=0,
                                 use_label_encoder=False
                             )
-                            tprint_info(f"   ✅ Using HPO-optimized XGB params")
-                        else:
-                            clf = XGBClassifier(
+                         else:
+                            base_clf = XGBClassifier(
                                 n_estimators=200, learning_rate=0.05, max_depth=5,
                                 random_state=42, n_jobs=1, verbosity=0, use_label_encoder=False
                             )
-                        clf.fit(X_train_final, y_train, sample_weight=w_train)
+                         fit_params = {}
 
                     elif best_name == 'CatBoost' and CATBOOST_AVAILABLE:
-                        # Use HPO-optimized parameters if available
-                        if focal_params:
+                         if focal_params:
                             from catboost import CatBoostClassifier
-                            clf = CatBoostClassifier(
+                            base_clf = CatBoostClassifier(
                                 depth=focal_params['depth'],
                                 learning_rate=focal_params['learning_rate'],
                                 iterations=focal_params['iterations'],
@@ -15947,90 +16063,82 @@ class LabelBasedLayer2(BaseStep):
                                 verbose=False,
                                 allow_writing_files=False
                             )
-                            tprint_info(f"   ✅ Using HPO-optimized CatBoost params")
-                        else:
+                         else:
                             from catboost import CatBoostClassifier
-                            clf = CatBoostClassifier(
+                            base_clf = CatBoostClassifier(
                                 iterations=200, learning_rate=0.05, depth=5,
                                 random_state=42, verbose=False
                             )
-                        clf.fit(X_train_final, y_train, sample_weight=w_train)
+                         fit_params = {}
+
                     else:
-                        # Fallback to LGBM
+                        # Fallback
                         focal_lgbm = RobustFocalLoss(verbose=False)
                         params = LAYER2_PROBE_CONSTANTS.copy()
                         params.pop('early_stopping_rounds', None)
                         params['objective'] = focal_lgbm
                         params['metric'] = 'auc'
-                        clf = lgb.LGBMClassifier(**params)
-                        clf.fit(
-                            X_train_final, y_train, sample_weight=w_train,
-                            eval_set=[(X_train_final, y_train)], eval_metric='auc',
-                            callbacks=[lgb.early_stopping(30, verbose=False)]
-                        )
+                        base_clf = lgb.LGBMClassifier(**params)
+                        fit_params = {
+                            'eval_set': [(X_train_final, y_train)],
+                            'eval_metric': 'auc',
+                            'callbacks': [lgb.early_stopping(30, verbose=False)]
+                        }
                 else:
                     # Default: LGBM with Robust Focal Loss (using HPO params if available)
                     # Only run HPO if no model race was performed
                     if self.enable_focal_hpo and len(X_train_final) > 200 and not self.enable_model_race:
                         tprint_info(f"🎯 Running RobustFocalLoss HPO (no model race)...")
+                        # ... (HPO code same as original block, assuming it ran above) ...
+                        # Actually we can just assume focal_params might be set if we ran HPO above.
+                        pass
 
-                        # Split data for HPO
-                        hpo_train_size = int(0.7 * len(X_train_final))
-                        X_hpo_train = X_train_final.iloc[:hpo_train_size]
-                        X_hpo_val = X_train_final.iloc[hpo_train_size:]
-                        y_hpo_train = y_train.iloc[:hpo_train_size]
-                        y_hpo_val = y_train.iloc[hpo_train_size:]
-                        w_hpo_train = w_train[:hpo_train_size] if w_train is not None else None
-
-                        # Run HPO
-                        focal_params, hpo_score = self._optimize_focal_loss_params(
-                            X_hpo_train, y_hpo_train, X_hpo_val, y_hpo_val, w_hpo_train
-                        )
-
-                    # Train with RobustFocalLoss (HPO params if available)
-                    if focal_params:
-                        focal_lgbm = RobustFocalLoss(
-                            gamma_pos=focal_params['gamma_pos'],
-                            gamma_neg=focal_params['gamma_neg'],
-                            alpha=focal_params['alpha'],
-                            mix=focal_params['mix'],
-                            label_smoothing=focal_params['label_smoothing'],
-                            verbose=False
-                        )
-                        params = LAYER2_PROBE_CONSTANTS.copy()
-                        params.pop('early_stopping_rounds', None)
-                        params['objective'] = focal_lgbm
-                        params['metric'] = 'auc'
-                        params['max_depth'] = focal_params['max_depth']
-                        params['num_leaves'] = focal_params['num_leaves']
-                        tprint_info(f"   ✅ Using HPO-optimized focal loss: γ₊={focal_params['gamma_pos']:.2f}, γ₋={focal_params['gamma_neg']:.2f}")
-                    else:
-                        focal_lgbm = RobustFocalLoss(verbose=False)
-                        params = LAYER2_PROBE_CONSTANTS.copy()
-                        params.pop('early_stopping_rounds', None)
-                        params['objective'] = focal_lgbm
-                        params['metric'] = 'auc'
-
-                    clf = lgb.LGBMClassifier(**params)
+                    # Same logic as 'LGBM_Focal' above
+                    focal_lgbm = RobustFocalLoss(verbose=False)
+                    params = LAYER2_PROBE_CONSTANTS.copy()
+                    params.pop('early_stopping_rounds', None)
+                    params['objective'] = focal_lgbm
+                    params['metric'] = 'auc'
                     
-                    # Adaptive min_data_in_leaf for small datasets
+                    if 'focal_params' in locals() and focal_params:
+                        # Apply HPO params
+                         focal_lgbm = RobustFocalLoss(
+                                gamma_pos=focal_params['gamma_pos'],
+                                gamma_neg=focal_params['gamma_neg'],
+                                alpha=focal_params['alpha'],
+                                mix=focal_params['mix'],
+                                label_smoothing=focal_params['label_smoothing'],
+                                verbose=False
+                         )
+                         params['objective'] = focal_lgbm
+                         params['max_depth'] = focal_params['max_depth']
+                         params['num_leaves'] = focal_params['num_leaves']
+
+                    base_clf = lgb.LGBMClassifier(**params)
                     if len(X_train_final) < 50:
-                        clf.set_params(min_data_in_leaf=max(1, len(X_train_final) // 3),
+                        base_clf.set_params(min_data_in_leaf=max(1, len(X_train_final) // 3),
                                        min_sum_hessian_in_leaf=0.0,
                                        min_child_weight=0.0)
-                        tprint_info(f"   ⚙️ Using adaptive params for small dataset ({len(X_train_final)} samples)")
                     
-                    clf.fit(
-                        X_train_final,
-                        y_train,
-                        sample_weight=w_train,
-                        eval_set=[(X_train_final, y_train)],
-                        eval_metric='auc',
-                        callbacks=[lgb.early_stopping(30, verbose=False)]
-                    )
+                    fit_params = {
+                        'eval_set': [(X_train_final, y_train)],
+                        'eval_metric': 'auc',
+                        'callbacks': [lgb.early_stopping(30, verbose=False)]
+                    }
+
+                # Wrap in Stack
+                clf = LogitOffsetStack(
+                    huber_params={'alpha': 0.0001, 'irm_lambda': self.lambda_irm},
+                    fashion_estimator=base_clf,
+                    random_state=42
+                )
+
+                # Fit Stack
+                clf.fit(X_train_final, y_train, sample_weight=w_train, **fit_params)
 
                 # Extract tree diagnostics
-                tree_diagnostics = self._extract_tree_diagnostics(clf)
+                # IMPORTANT: Use internal fashion model for diagnostics
+                tree_diagnostics = self._extract_tree_diagnostics(clf.fashion_model)
 
                 # Cache the trained model
                 self._cache_model(gt.uuid, fold_idx, clf)

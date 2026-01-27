@@ -149,8 +149,12 @@ class IRMLinearClassifier(IRMLinearModel, ClassifierMixin):
         self.classes_ = np.array([0, 1])
         return self
 
+    def decision_function(self, X: np.ndarray) -> np.ndarray:
+        """Return raw logits."""
+        return super().predict(X)
+
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        logits = super().predict(X)
+        logits = self.decision_function(X)
         if self.loss_type == 'logloss':
             pos = expit(logits)
         elif self.loss_type == 'modified_huber':

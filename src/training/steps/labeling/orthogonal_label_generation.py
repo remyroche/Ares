@@ -1453,8 +1453,15 @@ def compute_dominance_labels(
     mae_safe = np.maximum(mae, 1e-9)
     ratio = mfe / mae_safe
     magnitude = np.log1p(mfe / transaction_cost)
-    vol_adj = 1.0 / vol_vals
-    weights = ratio * magnitude * vol_adj
+
+    # Updated Weighting (Edge Proxy): w ~ E[|move|] / Cost
+    # Instead of inverse volatility (which penalizes action), reward regimes where
+    # expected move > costs.
+    # eff_vol_vals is volatility scaled to horizon (capped).
+    edge_proxy = eff_vol_vals / max(transaction_cost, 1e-4)
+
+    # Combine: Quality (Ratio/Mag) * Opportunity (Edge)
+    weights = ratio * magnitude * edge_proxy
 
     # Clip and Normalize weights to prevent noise amplification
     # Cap at 99th percentile (approx 3-5 sigma) to handle outliers

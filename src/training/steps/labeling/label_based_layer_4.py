@@ -710,6 +710,10 @@ class SimpleMultiModelRiskEngine:
         X_pruned = X_full[self.selected_features]
         warm_start_train = huber_outputs['warm_start']['train']
 
+        # --- Invariant Checks: Teacher Output ---
+        assert np.isfinite(warm_start_train).all(), "❌ Teacher warm_start contains NaNs or Infs!"
+        assert len(warm_start_train) == len(y_true), f"❌ Teacher warm_start shape mismatch: {len(warm_start_train)} vs {len(y_true)}"
+
         # Calculate Residuals & Learnability Weights
         residuals = y_true - warm_start_train
         learnability_weights = self._calculate_learnability_weights(X_pruned, residuals, env_indices=env_indices)
@@ -782,7 +786,9 @@ class SimpleMultiModelRiskEngine:
             et_fold = clone(self.extratrees)
             et_fold.fit(X_tr, res_tr, sample_weight=w_tr)
             # Predict residual + add warm start
-            oof_preds['extratrees'][val_idx] = et_fold.predict(X_val) + ws_val
+            et_pred = et_fold.predict(X_val)
+            assert et_pred.ndim == 1, f"ExtraTrees prediction has wrong shape: {et_pred.shape}"
+            oof_preds['extratrees'][val_idx] = et_pred + ws_val
 
             # 2. LGBM OOF
             lgbm_fold = LGBMRegressor(**self.lgbm_params)
@@ -790,7 +796,9 @@ class SimpleMultiModelRiskEngine:
             lgbm_fold.fit(X_tr, y_tr, sample_weight=w_tr, init_score=ws_tr)
             # LGBM predict(X) returns residual (sum of trees). Verified by script.
             # Must add warm start manually.
-            oof_preds['lgbm'][val_idx] = lgbm_fold.predict(X_val) + ws_val
+            lgbm_pred = lgbm_fold.predict(X_val)
+            assert lgbm_pred.ndim == 1, f"LGBM prediction has wrong shape: {lgbm_pred.shape}"
+            oof_preds['lgbm'][val_idx] = lgbm_pred + ws_val
 
             # 3. XGBoost OOF
             xgb_fold = XGBRegressor(**self.xgb_params)
@@ -802,7 +810,9 @@ class SimpleMultiModelRiskEngine:
                 xgb_fold.fit(X_tr, y_tr, sample_weight=w_tr, base_margin=ws_tr)
 
             # XGB predict(X, base_margin=...) returns FULL value. Verified by script.
-            oof_preds['xgboost'][val_idx] = xgb_fold.predict(X_val, base_margin=ws_val)
+            xgb_pred = xgb_fold.predict(X_val, base_margin=ws_val)
+            assert xgb_pred.ndim == 1, f"XGBoost prediction has wrong shape: {xgb_pred.shape}"
+            oof_preds['xgboost'][val_idx] = xgb_pred
 
             # 4. CatBoost OOF
             cb_fold = CatBoostRegressor(**self.catboost_params)
@@ -810,20 +820,32 @@ class SimpleMultiModelRiskEngine:
             cb_fold.fit(X_tr, y_tr, sample_weight=w_tr, baseline=ws_tr)
             # CatBoost predict(X) returns residual. Verified by script.
             # Must add warm start manually.
-            oof_preds['catboost'][val_idx] = cb_fold.predict(X_val) + ws_val
+            cb_pred = cb_fold.predict(X_val)
+            assert cb_pred.ndim == 1, f"CatBoost prediction has wrong shape: {cb_pred.shape}"
+            oof_preds['catboost'][val_idx] = cb_pred + ws_val
 
             # 5. Ridge OOF (Full model, no warm start offset usually, unless we changed it. Code below trains on y_true)
             r1 = clone(self.ridge_alpha1)
             r1.fit(X_tr, y_tr, sample_weight=w_tr)
-            oof_preds['ridge_alpha1'][val_idx] = r1.predict(X_val)
+            r1_pred = r1.predict(X_val)
+            assert r1_pred.ndim == 1, f"Ridge (alpha=1) prediction has wrong shape: {r1_pred.shape}"
+            oof_preds['ridge_alpha1'][val_idx] = r1_pred
 
             r5 = clone(self.ridge_alpha5)
             r5.fit(X_tr, y_tr, sample_weight=w_tr)
+            r5_pred = r5.predict(X_val)
+            assert r5_pred.ndim == 1, f"Ridge (alpha=5) prediction has wrong shape: {r5_pred.shape}"
             oof_preds['ridge_alpha5'][val_idx] = r5.predict(X_val)
 
             r10 = clone(self.ridge_alpha10)
             r10.fit(X_tr, y_tr, sample_weight=w_tr)
+            r10_pred = r10.predict(X_val)
+            assert r10_pred.ndim == 1, f"Ridge (alpha=10) prediction has wrong shape: {r10_pred.shape}"
             oof_preds['ridge_alpha10'][val_idx] = r10.predict(X_val)
+
+        # Verify OOF integrity
+        for name, preds in oof_preds.items():
+            assert np.isfinite(preds).all(), f"❌ Model {name} OOF predictions contain NaNs/Infs!"
 
         
         # --- Dynamic Model Selection & Consensus (using OOF) ---
@@ -1046,6 +1068,7 @@ class SimpleMultiModelRiskEngine:
         # Prepare Warm Start for this new data
         X_scaled = pd.DataFrame(self.huber_scaler.transform(X_full), columns=X_full.columns)
         warm_start = self.huber_model.predict(X_scaled)
+        assert np.isfinite(warm_start).all(), "❌ Teacher warm_start contains NaNs or Infs during inference!"
         
         # Select features
         X_pruned = X_full[self.selected_features]
@@ -1081,6 +1104,11 @@ class SimpleMultiModelRiskEngine:
             'ridge_alpha10': ridge10_preds
         }
 
+        # Verify integrity
+        for name, preds in raw_model_preds.items():
+             assert np.isfinite(preds).all(), f"❌ Model {name} inference predictions contain NaNs/Infs!"
+             assert preds.ndim == 1, f"❌ Model {name} prediction shape mismatch: {preds.shape}"
+
         # Dynamic consensus with selected models
         # IMPORTANT: Calibrate predictions BEFORE averaging to match OOF training logic.
         # The weights were optimized on calibrated OOF predictions.
@@ -1089,8 +1117,11 @@ class SimpleMultiModelRiskEngine:
             # Apply calibration (transform)
             calibrated_pred = self.calibrators[model].transform(raw_model_preds[model])
             consensus += self.optimized_weights[model] * calibrated_pred
+
+        final_pred = self.consensus_calibrator.transform(consensus)
+        assert np.isfinite(final_pred).all(), "❌ Final calibrated consensus contains NaNs/Infs!"
         
-        return self.consensus_calibrator.transform(consensus)
+        return final_pred
 
 
 def integrate_entropy_bars_into_layer4(

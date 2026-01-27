@@ -38,7 +38,7 @@ from sklearn.preprocessing import RobustScaler
 from sklearn.metrics import mean_absolute_error
 
 from src.utils.tprint import tprint_info, tprint_warning
-from src.utils.irm_linear_regressor import IRMLinearRegressor, get_vol_env_indices
+from src.utils.irm_linear_regressor import IRMLinearRegressor, IRMLinearClassifier, get_vol_env_indices
 
 
 # -----------------------------
@@ -198,28 +198,61 @@ def _fit_huber(
     epsilon: float,
     alpha: float,
     max_iter: int,
-    irm_lambda: float = 1.0
-) -> Union[HuberRegressor, IRMLinearRegressor]:
-    # Use IRMLinearRegressor
+    irm_lambda: float = 1.0,
+    is_classification: bool = False,
+    verbose: bool = False
+) -> Union[HuberRegressor, IRMLinearRegressor, IRMLinearClassifier]:
+    # -----------------------------
+    # DIAGNOSTICS: Check target type
+    # -----------------------------
+    if verbose:
+        unique_y = np.unique(y)
+        n_unique = len(unique_y)
+        is_binary_data = n_unique <= 2
+        
+        tprint_info(f"[HuberTeacher] Target Analysis: n_samples={len(y)}, unique_values={n_unique}, is_binary_data={is_binary_data}")
+        tprint_info(f"[HuberTeacher] Requested Mode: {'Classification' if is_classification else 'Regression'}")
+
+        if is_classification and not is_binary_data:
+            tprint_warning(f"[HuberTeacher] ⚠️ Warning: Classification mode requested but target appears continuous (unique={n_unique}). Model may fail or produce poor results.")
+        if not is_classification and is_binary_data:
+            tprint_warning(f"[HuberTeacher] ⚠️ Warning: Regression mode requested but target appears binary (unique={n_unique}). Consider using classification.")
+
+    # 1. Try with IRM
     try:
-        model = IRMLinearRegressor(
-            loss_type='huber',
-            alpha=alpha,
-            huber_epsilon=epsilon,
-            max_iter=max_iter,
-            irm_lambda=irm_lambda
-        )
+        if is_classification:
+            model = IRMLinearClassifier(
+                loss_type='modified_huber',
+                alpha=alpha,
+                max_iter=max_iter,
+                irm_lambda=irm_lambda
+            )
+        else:
+            model = IRMLinearRegressor(
+                loss_type='huber',
+                alpha=alpha,
+                huber_epsilon=epsilon,
+                max_iter=max_iter,
+                irm_lambda=irm_lambda
+            )
         model.fit(X_scaled, y, env_indices=get_vol_env_indices(sample_weight))
 
-        # SIGNAL CHECK: If IRM was too strict and killed all signal, fallback to standard.
+        # SIGNAL CHECK
         if np.max(np.abs(model.coef_)) < 1e-9:
-            # ADAPTIVE RELAXATION: Try loosening the invariance constraint before giving up
-            # Only try this if we were using a relatively strict lambda to begin with
+            # 2. ADAPTIVE RELAXATION: Try loosening the invariance constraint
             if irm_lambda >= 0.1:
                 relaxed_lambda = max(1e-4, irm_lambda * 0.1)
-                tprint_info(f"[HuberTeacher] ⚠️ IRM killed signal (lambda={irm_lambda:.2e}). Retrying with looser constraint (lambda={relaxed_lambda:.2e})...")
+                if verbose:
+                    tprint_info(f"[HuberTeacher] ⚠️ IRM killed signal (lambda={irm_lambda:.2e}). Retrying with looser constraint (lambda={relaxed_lambda:.2e})...")
 
-                try:
+                if is_classification:
+                    model_relaxed = IRMLinearClassifier(
+                        loss_type='modified_huber',
+                        alpha=alpha,
+                        max_iter=max_iter,
+                        irm_lambda=relaxed_lambda
+                    )
+                else:
                     model_relaxed = IRMLinearRegressor(
                         loss_type='huber',
                         alpha=alpha,
@@ -227,32 +260,36 @@ def _fit_huber(
                         max_iter=max_iter,
                         irm_lambda=relaxed_lambda
                     )
-                    model_relaxed.fit(X_scaled, y, env_indices=get_vol_env_indices(sample_weight))
+                model_relaxed.fit(X_scaled, y, env_indices=get_vol_env_indices(sample_weight))
 
-                    if np.max(np.abs(model_relaxed.coef_)) > 1e-9:
+                if np.max(np.abs(model_relaxed.coef_)) > 1e-9:
+                    if verbose:
                         tprint_info(f"[HuberTeacher] ✅ Relaxed IRM recovered signal (max_coef={np.max(np.abs(model_relaxed.coef_)):.2e}).")
-                        return model_relaxed
-                except Exception as ex_relaxed:
-                    tprint_info(f"[HuberTeacher] Relaxed IRM failed: {ex_relaxed}")
+                    return model_relaxed
 
-            # If still zero, raise to trigger standard fallback
-            raise ValueError("IRM returned all zero coefficients (signal killed by invariance constraint).")
+            # 3. FINAL FALLBACK: Standard Huber (No IRM)
+            raise ValueError("signal killed")
 
         return model
     except Exception as e:
         # Fallback to standard Huber if IRM fails or kills signal
-        if "signal killed" in str(e):
-             # This is a specific fallback for when IRM finds no invariant signal
-             # We want to allow the standard Huber to find "average" signal.
-             tprint_info(f"[HuberTeacher] ⚠️ IRM signal killed even after relaxation. Falling back to standard Huber (ignoring invariance).")
-        else:
-             tprint_info(f"IRM failed: {e}, falling back to standard Huber")
+        if verbose:
+            if "signal killed" in str(e):
+                 tprint_info(f"[HuberTeacher] ⚠️ IRM signal killed even after relaxation. Final fallback to standard Huber (No IRM).")
+            else:
+                 tprint_info(f"IRM failed: {e}, falling back to standard Huber")
 
-        model = HuberRegressor(epsilon=epsilon, alpha=alpha, max_iter=max_iter)
-        if sample_weight is None:
-            model.fit(X_scaled, y)
-        else:
+        if is_classification:
+            from sklearn.linear_model import SGDClassifier
+            # SGDClassifier with hinge/modified_huber is a good alternative for robust classification
+            model = SGDClassifier(loss='modified_huber', alpha=alpha, max_iter=max_iter, penalty='l2')
             model.fit(X_scaled, y, sample_weight=sample_weight)
+        else:
+            model = HuberRegressor(epsilon=epsilon, alpha=alpha, max_iter=max_iter)
+            if sample_weight is None:
+                model.fit(X_scaled, y)
+            else:
+                model.fit(X_scaled, y, sample_weight=sample_weight)
         return model
 
 
@@ -311,7 +348,8 @@ def _fit_split_grid(
     max_iter: int,
     irm_lambda: float = 1.0,
     irm_env_indices: Optional[List[np.ndarray]] = None,
-    use_irm: bool = False
+    use_irm: bool = False,
+    is_classification: bool = False
 ) -> Dict[str, np.ndarray]:
     X = X_scaled_full[start:end]
     y = y_full[start:end]
@@ -323,9 +361,9 @@ def _fit_split_grid(
     params = []
     for eps in epsilons:
         for a in alphas:
-            m = _fit_huber(X, y, w, eps, a, max_iter, irm_lambda)
+            m = _fit_huber(X, y, w, eps, a, max_iter, irm_lambda, is_classification=is_classification, verbose=False)
             coefs.append(m.coef_.astype(np.float64, copy=False))
-            intercepts.append(float(m.intercept_))
+            intercepts.append(float(getattr(m, 'intercept_', 0.0)))
             params.append((float(eps), float(a)))
 
     return {
@@ -502,7 +540,8 @@ def prepare_huber_teacher_outputs(
     irm_lambda: float = 1.0,
     # New configuration object
     config: Optional[HuberTeacherConfig] = None,
-    tier: str = "stronger"
+    tier: str = "stronger",
+    is_classification: bool = False
 ) -> Dict:
     """
     Produces:
@@ -643,7 +682,7 @@ def prepare_huber_teacher_outputs(
             X_tr_scaled, y_tr, w,
             start, end,
             cfg.epsilons, used_alphas, cfg.max_iter, cfg.irm_lambda,
-            irm_env_indices, use_irm
+            irm_env_indices, use_irm, is_classification=is_classification
         )
         for (start, end) in splits
     )
@@ -711,7 +750,7 @@ def prepare_huber_teacher_outputs(
                     X_tr_scaled, y_tr, w,
                     start, end,
                     cfg.epsilons, relaxed_alphas, cfg.max_iter, cfg.irm_lambda,
-                    irm_env_indices, use_irm
+                    irm_env_indices, use_irm, is_classification=is_classification
                 )
                 for (start, end) in splits
             )
@@ -781,8 +820,6 @@ def prepare_huber_teacher_outputs(
     selected_idx = np.where(keep_mask)[0]
 
     if cfg.verbose:
-        pct_kept = len(kept_indices)/n_selected if 'len' in locals() and 'n_selected' in locals() and n_selected > 0 else 0.0
-        # Fix: n_selected and kept_indices not defined yet. Use current mask
         tprint_info(f"[HuberTeacher] pruning_percentile={cfg.pruning_percentile} -> kept={keep_mask.sum()}/{n_features}")
         
         # DIAGNOSTICS: If we kept very few features, dump stats
@@ -800,8 +837,16 @@ def prepare_huber_teacher_outputs(
     # -----------------------------
     eps0 = _median_choice(cfg.epsilons)
     a0 = _median_choice(cfg.alphas)
-    teacher = _fit_huber(X_tr_scaled, y_tr, w, eps0, a0, cfg.max_iter, cfg.irm_lambda)
-    warm_train = teacher.predict(X_tr_scaled)
+    teacher = _fit_huber(X_tr_scaled, y_tr, w, eps0, a0, cfg.max_iter, cfg.irm_lambda, is_classification=is_classification, verbose=cfg.verbose)
+    
+    if is_classification:
+        # Use predict_proba for warm start probabilities if available
+        if hasattr(teacher, 'predict_proba'):
+            warm_train = teacher.predict_proba(X_tr_scaled)[:, 1]
+        else:
+            warm_train = teacher.predict(X_tr_scaled)
+    else:
+        warm_train = teacher.predict(X_tr_scaled)
 
     # -----------------------------
     # Warm-start preds for val/test with column alignment
@@ -811,6 +856,8 @@ def prepare_huber_teacher_outputs(
             return None
         X = _as_float32_2d(df, columns=train_columns)
         Xs = scaler.transform(X).astype(np.float64, copy=False)
+        if is_classification and hasattr(teacher, 'predict_proba'):
+            return teacher.predict_proba(Xs)[:, 1]
         return teacher.predict(Xs)
 
     warm_val = _predict_df(X_val)

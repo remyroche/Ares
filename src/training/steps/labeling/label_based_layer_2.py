@@ -9529,13 +9529,18 @@ class LabelBasedLayer2(BaseStep):
                 w_train_huber = np.maximum(w_train_huber, 0.0)
                 tprint_info(f"   ⚖️ Huber pos_boost active: {huber_pos_boost:.2f}")
 
+            is_huber_classification = not use_causal_target
+            if is_huber_classification:
+                tprint_info("   🧑‍🏫 Preparing Huber Teacher Classifier (Modified Huber robust classification)...")
+
             huber_outputs = prepare_huber_teacher_outputs(
                 X_train, y_huber_train, X_val=X_val,
                 sample_weight=w_train_huber,
                 pruning_percentile=25, corr_threshold=0.65,
                 use_irm=bool(irm_env_indices),
                 irm_env_indices=irm_env_indices,
-                irm_lambda=self.lambda_irm
+                irm_lambda=self.lambda_irm,
+                is_classification=is_huber_classification
             )
 
             selected_features = huber_outputs['selected_features']
@@ -9548,18 +9553,31 @@ class LabelBasedLayer2(BaseStep):
             # We use a HuberRegressor to get clean coefficients
             try:
                 if irm_env_indices and len(irm_env_indices) > 1:
-                    huber = IRMLinearRegressor(
-                        loss_type='huber',
-                        alpha=1.0,
-                        irm_lambda=self.lambda_irm,
-                        huber_epsilon=1.35
-                    )
+                    if is_huber_classification:
+                        huber = IRMLinearClassifier(
+                            loss_type='modified_huber',
+                            alpha=1.0,
+                            irm_lambda=self.lambda_irm
+                        )
+                    else:
+                        huber = IRMLinearRegressor(
+                            loss_type='huber',
+                            alpha=1.0,
+                            irm_lambda=self.lambda_irm,
+                            huber_epsilon=1.35
+                        )
                     huber.fit(X_train[selected_features].values, y_huber_train, irm_env_indices)
                     coef_series = pd.Series(np.abs(huber.coef_), index=selected_features)
                 else:
-                    huber = HuberRegressor(alpha=1.0, epsilon=1.35)
-                    huber.fit(X_train[selected_features], y_huber_train, sample_weight=w_train_huber)
-                    coef_series = pd.Series(np.abs(huber.coef_), index=selected_features)
+                    if is_huber_classification:
+                        from sklearn.linear_model import SGDClassifier
+                        huber = SGDClassifier(loss='modified_huber', alpha=1.0, penalty='l2')
+                        huber.fit(X_train[selected_features], y_huber_train, sample_weight=w_train_huber)
+                        coef_series = pd.Series(np.abs(huber.coef_[0]), index=selected_features)
+                    else:
+                        huber = HuberRegressor(alpha=1.0, epsilon=1.35)
+                        huber.fit(X_train[selected_features], y_huber_train, sample_weight=w_train_huber)
+                        coef_series = pd.Series(np.abs(huber.coef_), index=selected_features)
                 # Keep features with >10% of max coef
                 threshold = coef_series.max() * 0.1
                 huber_selected = coef_series[coef_series > threshold].index.tolist()

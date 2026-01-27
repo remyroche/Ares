@@ -1,0 +1,10 @@
+{
+  "row_count": 1,
+  "column_count": 2,
+  "artifact_name": "layer2_aedl_results_UNKNOWN_UNKNOWN_15m_long_20260127_014202",
+  "artifact_type": "metadata",
+  "file_path": "artifacts/pre_training/multi_asset_4assets/binance/long/analyst/label_based_layer_2/label_based_layer_2_layer2_aedl_results_UNKNOWN_UNKNOWN_15m_long_20260127_014202_multi_asset_4assets_binance_long_analyst_20260127_002453.parquet",
+  "file_size": 58324,
+  "timestamp": "2026-01-27T01:42:03.434279",
+  "compression": "auto"
+}

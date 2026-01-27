@@ -1,0 +1,10 @@
+{
+  "row_count": 1,
+  "column_count": 5,
+  "artifact_name": "layer2_causal_graph_ETHUSDT_binance_15m_long_20260127_014233",
+  "artifact_type": "metadata",
+  "file_path": "artifacts/pre_training/multi_asset_4assets/binance/long/analyst/label_based_layer_2/label_based_layer_2_layer2_causal_graph_ETHUSDT_binance_15m_long_20260127_014233_multi_asset_4assets_binance_long_analyst_20260127_002453.parquet",
+  "file_size": 4951,
+  "timestamp": "2026-01-27T01:42:33.433599",
+  "compression": "auto"
+}

@@ -1,0 +1,55 @@
+{
+  "dataset_tag": "cross_asset",
+  "run_id": "20260126_230723",
+  "splits": {
+    "loao": {
+      "split_name": "LOAO",
+      "metrics": {
+        "auc_mean": 0.3906302352553682,
+        "brier_mean": 0.26689681931108367
+      },
+      "by_asset": {
+        "BNB": {
+          "auc": 0.5938017796581634,
+          "brier": 0.31758727724433455
+        },
+        "BTC": {
+          "auc": 0.0077518079798118335,
+          "brier": 0.25
+        },
+        "ETH": {
+          "auc": 0.5,
+          "brier": 0.25
+        },
+        "SOL": {
+          "auc": 0.4609673533834976,
+          "brier": 0.25
+        }
+      },
+      "by_sector": {},
+      "artifacts": {
+        "by_asset_csv": "artifacts/cross_asset_layer2/validation_loao_by_asset_cross_asset_20260126_230723.csv"
+      }
+    },
+    "loso": {
+      "split_name": "LOSO",
+      "metrics": {
+        "auc_mean": 0.0,
+        "brier_mean": 0.0
+      },
+      "by_asset": {},
+      "by_sector": {},
+      "artifacts": {}
+    },
+    "synthetic": {
+      "split_name": "SYNTHETIC",
+      "metrics": {
+        "auc": 0.5729776556255965,
+        "brier": 0.24993699742259534
+      },
+      "by_asset": {},
+      "by_sector": {},
+      "artifacts": {}
+    }
+  }
+}

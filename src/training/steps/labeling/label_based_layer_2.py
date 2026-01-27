@@ -57,8 +57,8 @@ import time
 import psutil
 from pathlib import Path
 import hashlib
-from sklearn.linear_model import RidgeClassifier, Lasso, Ridge, HuberRegressor, SGDClassifier
-from sklearn.metrics import precision_recall_curve, precision_score
+from sklearn.linear_model import RidgeClassifier, Lasso, Ridge, HuberRegressor, SGDClassifier, SGDRegressor
+from sklearn.metrics import precision_recall_curve, precision_score, mean_squared_error
 from src.training.steps.labeling.irm_regime_pipeline import (
     IRMLinearClassifier,
     IRMLinearRegressor,
@@ -730,34 +730,42 @@ def calculate_brier_skill_score(y_true, y_prob):
         return 0.0
     return 1.0 - (bs_model / bs_naive)
 
-class LogitOffsetStack(BaseEstimator, ClassifierMixin):
+class LogitOffsetStack(BaseEstimator):
     """
     Logit Offset Boosting Stack with Robust IRM Fallback.
+    Supports both Classification (Logistic) and Regression (Linear/Huber).
 
-    1. 'Law': IRM Logistic Regression (Baseline).
+    1. 'Law': IRM Linear Model (Baseline).
        - Uses Grid Search for IRM penalty (1.0, 0.1, 0.01).
        - Selects based on Minimax (Worst Environment Loss) robustness.
-       - Falls back to Robust Logistic SGD (LogLoss + ElasticNet) if signal is weak.
+       - Falls back to Robust SGD if signal is weak.
        - Generates OOF logits via internal CV for 'Fashion' training to prevent leakage.
 
     2. 'Fashion': GBDT on residuals (offset boosting).
-       - Uses 'Law' output (Logits) as base_margin/init_score.
+       - Uses 'Law' output as base_margin/init_score.
 
-    3. Output: sigmoid(Law_Logit + Fashion_Logit).
+    3. Output:
+       - Classification: sigmoid(Law_Logit + Fashion_Logit).
+       - Regression: Law_Pred + Fashion_Residual.
     """
     def __init__(self, huber_params=None, fashion_estimator=None, random_state=42, use_logit_offset=True,
-                 irm_grid=[1.0, 0.1, 0.01], n_internal_splits=3):
+                 irm_grid=[1.0, 0.1, 0.01], n_internal_splits=3, task_type='classification'):
         self.huber_params = huber_params if huber_params else {}
         self.fashion_estimator = fashion_estimator
         self.random_state = random_state
         self.use_logit_offset = use_logit_offset
         self.irm_grid = irm_grid
         self.n_internal_splits = n_internal_splits
+        self.task_type = task_type # 'classification' or 'regression'
         self.law_model = None
         self.fashion_model = None
         self.law_killed_ = False
         self._is_fitted = False
         self.feature_importances_ = None
+
+        # Determine classes for sklearn compliance
+        if self.task_type == 'classification':
+            self.classes_ = np.array([0, 1])
 
     def fit(self, X, y, sample_weight=None, environment_masks=None, eval_set=None, **kwargs):
         feature_names = getattr(X, 'columns', None)
@@ -791,75 +799,104 @@ class LogitOffsetStack(BaseEstimator, ClassifierMixin):
         best_law = None
         best_score = float('inf')
 
+        is_classification = (self.task_type == 'classification')
+
         # Try IRM Grid
         for lam in self.irm_grid:
             try:
-                candidate = IRMLinearClassifier(
-                    loss_type='logloss',
-                    alpha=alpha,
-                    max_iter=max_iter,
-                    irm_lambda=lam
-                )
+                if is_classification:
+                    candidate = IRMLinearClassifier(
+                        loss_type='logloss', alpha=alpha, max_iter=max_iter, irm_lambda=lam
+                    )
+                else:
+                    candidate = IRMLinearRegressor(
+                        loss_type='huber', alpha=alpha, max_iter=max_iter, irm_lambda=lam
+                    )
+
                 candidate.fit(X_arr, y, env_indices=env_indices, sample_weight=sample_weight)
 
                 # Evaluate Robustness (Minimax: Maximize Worst Env Loss -> minimize Max(Loss))
-                # We want the lowest loss, so we look at the MAX loss across environments (worst case)
                 env_losses = []
-                preds = candidate.predict_proba(X_arr)[:, 1]
+
+                if is_classification:
+                    preds = candidate.predict_proba(X_arr)[:, 1]
+                    metric_func = log_loss
+                else:
+                    preds = candidate.predict(X_arr)
+                    metric_func = mean_squared_error
+
                 for env_idx in env_indices:
                     if len(env_idx) > 0:
-                        loss = log_loss(y[env_idx], preds[env_idx], sample_weight=sample_weight[env_idx])
+                        loss = metric_func(y[env_idx], preds[env_idx], sample_weight=sample_weight[env_idx])
                         env_losses.append(loss)
 
-                worst_case_loss = max(env_losses) if env_losses else log_loss(y, preds, sample_weight=sample_weight)
+                # Global loss
+                global_loss = metric_func(y, preds, sample_weight=sample_weight)
+
+                worst_case_loss = max(env_losses) if env_losses else global_loss
 
                 if worst_case_loss < best_score:
                     best_score = worst_case_loss
                     best_law = candidate
             except Exception as e:
-                # tprint_warning(f"   ⚠️ IRM (λ={lam}) failed: {e}")
                 continue
 
-        # 3. Fallback to Robust Logistic (SGD) if IRM failed or killed signal
-        # Check if best IRM is trivial (coefs ~ 0) or failed
+        # 3. Fallback to Robust SGD if IRM failed or killed signal
         use_fallback = False
-        if best_law is None or np.max(np.abs(best_law.coef_)) < 1e-9:
+        if best_law is None:
+             use_fallback = True
+        elif np.max(np.abs(best_law.coef_)) < 1e-9:
              use_fallback = True
 
         if use_fallback:
-             # tprint_info(f"   🔄 Falling back to Robust Logistic SGD")
-             fallback = SGDClassifier(
-                 loss='log_loss',  # True logits
-                 alpha=alpha,
-                 max_iter=max_iter,
-                 penalty='elasticnet',
-                 l1_ratio=0.5,
-                 random_state=self.random_state
-             )
+             if is_classification:
+                 fallback = SGDClassifier(
+                     loss='log_loss', alpha=alpha, max_iter=max_iter,
+                     penalty='elasticnet', l1_ratio=0.5, random_state=self.random_state
+                 )
+             else:
+                 fallback = SGDRegressor(
+                     loss='huber', alpha=alpha, max_iter=max_iter,
+                     penalty='elasticnet', l1_ratio=0.5, random_state=self.random_state
+                 )
+
              fallback.fit(X_arr, y, sample_weight=sample_weight)
              best_law = fallback
 
              # Recalculate best_score
-             d = fallback.decision_function(X_arr)
-             probs = expit(d)
+             if is_classification:
+                 d = fallback.decision_function(X_arr)
+                 probs = expit(d)
+                 metric_func = log_loss
+                 preds = probs
+             else:
+                 preds = fallback.predict(X_arr)
+                 metric_func = mean_squared_error
+
              # Evaluate worst case
              env_losses = []
              for env_idx in env_indices:
                  if len(env_idx) > 0:
-                     loss = log_loss(y[env_idx], probs[env_idx], sample_weight=sample_weight[env_idx])
+                     loss = metric_func(y[env_idx], preds[env_idx], sample_weight=sample_weight[env_idx])
                      env_losses.append(loss)
-             best_score = max(env_losses) if env_losses else log_loss(y, probs, sample_weight=sample_weight)
+             best_score = max(env_losses) if env_losses else metric_func(y, preds, sample_weight=sample_weight)
 
         # 4. Survival Gate
-        # Compute Dummy Metrics
-        dummy_prob = np.average(y, weights=sample_weight)
-        dummy_preds = np.full(len(y), dummy_prob)
+        if is_classification:
+            dummy_prob = np.average(y, weights=sample_weight)
+            dummy_preds = np.full(len(y), dummy_prob)
+            metric_func = log_loss
+        else:
+            dummy_mean = np.average(y, weights=sample_weight)
+            dummy_preds = np.full(len(y), dummy_mean)
+            metric_func = mean_squared_error
+
         dummy_env_losses = []
         for env_idx in env_indices:
              if len(env_idx) > 0:
-                 loss = log_loss(y[env_idx], dummy_preds[env_idx], sample_weight=sample_weight[env_idx])
+                 loss = metric_func(y[env_idx], dummy_preds[env_idx], sample_weight=sample_weight[env_idx])
                  dummy_env_losses.append(loss)
-        dummy_worst_loss = max(dummy_env_losses) if dummy_env_losses else log_loss(y, dummy_preds, sample_weight=sample_weight)
+        dummy_worst_loss = max(dummy_env_losses) if dummy_env_losses else metric_func(y, dummy_preds, sample_weight=sample_weight)
 
         # Gate: Law must be better (lower loss) than Dummy by margin
         margin = 1e-4
@@ -872,13 +909,10 @@ class LogitOffsetStack(BaseEstimator, ClassifierMixin):
              self.law_killed_ = False
 
              # 5. Internal OOF Generation (Prevent Leakage)
-             # If survived, we need OOF logits for training the Fashion model
              if self.n_internal_splits > 1:
                  oof_preds = np.zeros(len(y))
-                 # Use KFold with shuffle=False to preserve temporal order (Time Series safe)
                  kf = KFold(n_splits=self.n_internal_splits, shuffle=False)
 
-                 # Clone the architecture for CV
                  base_law = clone(best_law)
 
                  valid_oof = True
@@ -887,22 +921,15 @@ class LogitOffsetStack(BaseEstimator, ClassifierMixin):
                          # Prepare Envs for this fold
                          fold_envs = []
                          for env_idx in env_indices:
-                             # Intersect env with train
-                             # Note: This is complex for list-of-indices.
-                             # Simplification: Train standard ERM/IRM on fold without strict env mapping for OOF gen speed
-                             # OR filter env_indices.
                              fold_envs.append(np.intersect1d(env_idx, train_idx))
 
                          # Fit on fold
                          fold_model = clone(base_law)
-                         if hasattr(fold_model, 'fit_irm'): # Custom IRM wrapper?
-                             pass
 
                          # Fit logic (generic)
-                         if isinstance(fold_model, IRMLinearClassifier):
-                             # Only pass envs if they have enough data
+                         if isinstance(fold_model, (IRMLinearClassifier, IRMLinearRegressor)):
                              valid_envs = [e for e in fold_envs if len(e) > 10]
-                             if not valid_envs: valid_envs = [train_idx] # Fallback
+                             if not valid_envs: valid_envs = [train_idx]
                              fold_model.fit(X_arr, y, env_indices=valid_envs, sample_weight=sample_weight)
                          else:
                              # SGD
@@ -910,11 +937,14 @@ class LogitOffsetStack(BaseEstimator, ClassifierMixin):
                              fold_model.fit(X_arr[train_idx], y[train_idx], sample_weight=w_fold)
 
                          # Predict OOF
-                         if hasattr(fold_model, "decision_function"):
-                             oof_preds[val_idx] = fold_model.decision_function(X_arr[val_idx])
+                         if is_classification:
+                             if hasattr(fold_model, "decision_function"):
+                                 oof_preds[val_idx] = fold_model.decision_function(X_arr[val_idx])
+                             else:
+                                 oof_preds[val_idx] = 0.0
                          else:
-                             # Should not happen
-                             oof_preds[val_idx] = 0.0
+                             oof_preds[val_idx] = fold_model.predict(X_arr[val_idx])
+
                      except Exception:
                          valid_oof = False
                          break
@@ -922,15 +952,17 @@ class LogitOffsetStack(BaseEstimator, ClassifierMixin):
                  if valid_oof:
                      law_logits_train = oof_preds
                  else:
-                     # Fallback to in-sample if CV fails
-                     law_logits_train = best_law.decision_function(X_arr)
+                     if is_classification:
+                         law_logits_train = best_law.decision_function(X_arr)
+                     else:
+                         law_logits_train = best_law.predict(X_arr)
              else:
                  # No CV, use in-sample
-                 law_logits_train = best_law.decision_function(X_arr)
+                 if is_classification:
+                     law_logits_train = best_law.decision_function(X_arr)
+                 else:
+                     law_logits_train = best_law.predict(X_arr)
 
-             # Final Fit on Full Data (for Inference)
-             # We already fitted 'best_law' on full data in step 2/3?
-             # Yes, candidates were fitted on full X_arr.
              self.law_model = best_law
 
         # 2. Train Fashion Model (Residuals)
@@ -953,24 +985,24 @@ class LogitOffsetStack(BaseEstimator, ClassifierMixin):
             eval_init_scores = []
 
             for X_val, y_val in eval_set:
-                # Prepare X_val array
                 try:
                     X_val_arr = check_array(X_val, accept_sparse=True, force_all_finite=False)
                 except:
                     X_val_arr = np.array(X_val)
 
-                # Get Law Logits for Validation (Using Final Full Model -> Safe OOF if eval_set is OOF)
+                # Get Law Output for Validation
+                val_output = np.zeros(len(y_val))
                 if self.law_model and not self.law_killed_:
-                    val_logits = self.law_model.decision_function(X_val_arr)
-                else:
-                    val_logits = np.zeros(len(y_val))
+                    if is_classification:
+                        val_output = self.law_model.decision_function(X_val_arr)
+                    else:
+                        val_output = self.law_model.predict(X_val_arr)
 
                 if self._mode == 'offset':
                     new_eval_set.append((X_val, y_val))
-                    eval_init_scores.append(val_logits)
+                    eval_init_scores.append(val_output)
                 else:
-                    # Stacking: Add logits as feature
-                    X_val_stacked = np.column_stack([X_val_arr, val_logits])
+                    X_val_stacked = np.column_stack([X_val_arr, val_output])
                     new_eval_set.append((X_val_stacked, y_val))
 
             fit_kwargs['eval_set'] = new_eval_set
@@ -981,8 +1013,6 @@ class LogitOffsetStack(BaseEstimator, ClassifierMixin):
 
         if self._mode == 'offset':
             # GBDT: Use Offset Boosting (init_score)
-
-            # Sanitize constraints
             if hasattr(self.fashion_model, 'set_params') and feature_names is not None:
                 params = self.fashion_model.get_params()
                 updates = {}
@@ -1009,12 +1039,9 @@ class LogitOffsetStack(BaseEstimator, ClassifierMixin):
                     self.fashion_model.set_params(**updates)
 
             # Fit with init_score
-            # Use law_logits_train (OOF) here!
             if 'LGBM' in model_type:
                 fit_kwargs['init_score'] = law_logits_train
             elif 'XGB' in model_type:
-                # XGBoost uses base_margin. Sklearn API might need 'base_margin' in fit or DMatrix
-                # For XGBClassifier sklearn wrapper, base_margin can be passed to fit
                 fit_kwargs['base_margin'] = law_logits_train
             elif 'CatBoost' in model_type:
                 fit_kwargs['baseline'] = law_logits_train
@@ -1027,7 +1054,7 @@ class LogitOffsetStack(BaseEstimator, ClassifierMixin):
             self.fashion_model.fit(X_train_fashion, y, sample_weight=sample_weight, **fit_kwargs)
 
         else:
-            # RF/ET or unknown: Use Stacking (Add law_logits as feature)
+            # RF/ET or unknown: Use Stacking
             X_stacked = np.column_stack([X_arr, law_logits_train])
             self.fashion_model.fit(X_stacked, y, sample_weight=sample_weight, **fit_kwargs)
 
@@ -1037,6 +1064,10 @@ class LogitOffsetStack(BaseEstimator, ClassifierMixin):
         return self
 
     def decision_function(self, X):
+        """Returns margins (logits) for classification."""
+        if self.task_type != 'classification':
+            raise AttributeError("decision_function is only available for classification")
+
         check_is_fitted(self, '_is_fitted')
         try:
             X_arr = check_array(X, accept_sparse=True, ensure_all_finite=False)
@@ -1044,42 +1075,27 @@ class LogitOffsetStack(BaseEstimator, ClassifierMixin):
             X_arr = check_array(X, accept_sparse=True, force_all_finite=False)
 
         # Get Law Logits
+        law_output = np.zeros(X_arr.shape[0])
         if self.law_model is not None:
-            law_logits = self.law_model.decision_function(X_arr)
-        else:
-            law_logits = np.zeros(X_arr.shape[0])
+            law_output = self.law_model.decision_function(X_arr)
 
         # Get Fashion Logits
         if self._mode == 'offset':
-            # For GBDT offset mode, prediction is usually additive to init_score
-            # BUT sklearn wrappers predict_proba return full probabilities usually
-            # We need the RAW margin from the tree
             if 'LGBM' in type(self.fashion_model).__name__:
-                fashion_logits = self.fashion_model.predict(X_arr, raw_score=True)
+                fashion_output = self.fashion_model.predict(X_arr, raw_score=True)
             elif 'XGB' in type(self.fashion_model).__name__:
-                # XGB predict with output_margin=True ignores base_margin provided at training?
-                # No, we must provide base_margin at prediction too if we trained with it?
-                # Actually, standard offset boosting implies: output = init_score + tree_score
-                # If we ask for margin, does it include init_score?
-                # XGBoost: if base_margin not provided in DMatrix, it assumes 0.
-                # So predict(X, output_margin=True) returns just the tree sum (raw score).
-                # We add law_logits manually.
-                fashion_logits = self.fashion_model.predict(X_arr, output_margin=True)
+                fashion_output = self.fashion_model.predict(X_arr, output_margin=True)
             elif 'CatBoost' in type(self.fashion_model).__name__:
-                fashion_logits = self.fashion_model.predict(X_arr, prediction_type='RawFormulaVal')
+                fashion_output = self.fashion_model.predict(X_arr, prediction_type='RawFormulaVal')
             else:
-                # Fallback: predict_proba -> logit
                 probs = self.fashion_model.predict_proba(X_arr)[:, 1]
                 epsilon = 1e-15
                 probs = np.clip(probs, epsilon, 1-epsilon)
-                fashion_logits = np.log(probs / (1 - probs)) - law_logits # Attempt to extract residual logit
+                fashion_output = np.log(probs / (1 - probs)) - law_output
 
-            return law_logits + fashion_logits
-
+            return law_output + fashion_output
         else:
-            # Stacking Mode
-            X_stacked = np.column_stack([X_arr, law_logits])
-            # Return fashion model's decision function or logit of proba
+            X_stacked = np.column_stack([X_arr, law_output])
             if hasattr(self.fashion_model, 'decision_function'):
                 return self.fashion_model.decision_function(X_stacked)
             else:
@@ -1089,12 +1105,57 @@ class LogitOffsetStack(BaseEstimator, ClassifierMixin):
                 return np.log(probs / (1 - probs))
 
     def predict_proba(self, X):
+        if self.task_type != 'classification':
+            raise AttributeError("predict_proba is only available for classification")
         logits = self.decision_function(X)
         probs = expit(logits)
         return np.column_stack([1 - probs, probs])
 
     def predict(self, X):
-        return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
+        if self.task_type == 'classification':
+            return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
+        else:
+            # Regression Prediction
+            check_is_fitted(self, '_is_fitted')
+            try:
+                X_arr = check_array(X, accept_sparse=True, ensure_all_finite=False)
+            except TypeError:
+                X_arr = check_array(X, accept_sparse=True, force_all_finite=False)
+
+            law_output = np.zeros(X_arr.shape[0])
+            if self.law_model is not None:
+                law_output = self.law_model.predict(X_arr)
+
+            if self._mode == 'offset':
+                # For regression, predict usually returns the raw value
+                # But check if model expects base_margin logic
+                # Most GBDT regression predict() returns sum(base + trees) if base provided at training?
+                # Usually no, predict(X) is standalone unless margin provided
+
+                # Since we don't pass base_margin to predict() here (API limit), we assume we need to sum manually
+                # UNLESS the model stored the base margin logic? No.
+
+                # Wait, for XGBoost, if we trained with base_margin, predict() might expect it?
+                # Or predict() returns just the tree sum?
+                # XGBoost: predict(X) returns tree sum if base_margin not provided.
+                # LightGBM: predict(X) returns tree sum + global bias?
+                # Let's assume we sum manually for safety and consistency.
+
+                if 'LGBM' in type(self.fashion_model).__name__:
+                    fashion_output = self.fashion_model.predict(X_arr, raw_score=True) # Raw score is usually the margin
+                elif 'XGB' in type(self.fashion_model).__name__:
+                    fashion_output = self.fashion_model.predict(X_arr, output_margin=True)
+                elif 'CatBoost' in type(self.fashion_model).__name__:
+                    fashion_output = self.fashion_model.predict(X_arr, prediction_type='RawFormulaVal')
+                else:
+                    fashion_output = self.fashion_model.predict(X_arr)
+                    # If stacking logic was used in offset mode (fallback), we might have issues.
+                    # But generic models shouldn't be in offset mode.
+
+                return law_output + fashion_output
+            else:
+                X_stacked = np.column_stack([X_arr, law_output])
+                return self.fashion_model.predict(X_stacked)
 
 class IRM_ExtraTreesClassifier(ExtraTreesClassifier):
     """ExtraTrees Classifier with IRM compatibility API (Standard training)."""

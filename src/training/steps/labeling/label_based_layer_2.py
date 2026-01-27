@@ -7461,6 +7461,7 @@ class LabelBasedLayer2(BaseStep):
         )
         panel_df = panel_processor.fit_transform(cross_asset_data)
         tprint_success(f"   ✅ Panel built: shape={panel_df.shape}, cols={len(panel_df.columns)}")
+        tprint_info(f"   📋 Panel Columns: {list(panel_df.columns)}")
         if panel_df.empty:
             tprint_warning("   ⚠️ Cross-asset panel is empty after fit_transform")
         else:
@@ -7493,6 +7494,7 @@ class LabelBasedLayer2(BaseStep):
         tprint_info("   ⏳ Generating Market State features...")
         ms_features = ms_vector.compute_state(state_px)
         tprint_success(f"   ✅ Market state features: cols={len(ms_features.columns)}")
+        tprint_info(f"   📋 Market State Features: {list(ms_features.columns)}")
         if ms_features is None or ms_features.empty:
             tprint_warning("   ⚠️ Market state features empty; ms__ columns will be missing")
         else:
@@ -7532,6 +7534,7 @@ class LabelBasedLayer2(BaseStep):
             # Debug: Check feature counts
             if ca_features is not None and not ca_features.empty:
                 tprint_success(f"   ✅ Generated {len(ca_features.columns)} Cross-Asset features (Rows: {len(ca_features)})")
+                tprint_info(f"   📋 Cross-Asset Features: {list(ca_features.columns)}")
             else:
                 tprint_warning("   ⚠️ Cross-Asset generator returned empty DataFrame.")
                 
@@ -7850,6 +7853,16 @@ class LabelBasedLayer2(BaseStep):
                                 
                         except Exception as e:
                             tprint_warning(f"   ⚠️ Failed to merge cross-asset features: {e}")
+
+                        if cross_asset_features is not None:
+                            all_cols = df.columns.tolist()
+                            ca_cols = [c for c in all_cols if c.startswith(('ca__', 'ms__', 'meta__'))]
+                            other_cols = [c for c in all_cols if c not in ca_cols]
+
+                            tprint_info(f"🔍 [Pipeline State] Features after Cross-Asset Merge:")
+                            tprint_info(f"   • Total Features/Events: {len(all_cols)}")
+                            tprint_info(f"   • Cross-Asset ({len(ca_cols)}): {ca_cols}")
+                            tprint_info(f"   • Other/Base ({len(other_cols)}): {other_cols}")
                             
             except Exception as e:
                 tprint_warning(f"⚠️ Cross-asset pipeline failed: {e}")

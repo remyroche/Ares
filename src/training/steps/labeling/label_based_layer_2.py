@@ -7490,6 +7490,7 @@ class LabelBasedLayer2(BaseStep):
             clustering_method=config.get("ms_clustering_method", "gmm"),
         )
         ms_vector = MarketStateVector(ms_config)
+        tprint_info("   ⏳ Generating Market State features...")
         ms_features = ms_vector.compute_state(state_px)
         tprint_success(f"   ✅ Market state features: cols={len(ms_features.columns)}")
         if ms_features is None or ms_features.empty:
@@ -7525,6 +7526,7 @@ class LabelBasedLayer2(BaseStep):
         )
         try:
             tprint_info("   🌐 Cross-Asset: Running SVD/Feature Gen...")
+            tprint_info("   ⏳ Generating Cross-Asset Surprises...")
             ca_features = surprises.fit_transform(store.data, ms_features)
             
             # Debug: Check feature counts
@@ -7538,6 +7540,7 @@ class LabelBasedLayer2(BaseStep):
             tprint_info(
                 f"   🧾 Panel columns after ca__: {list(store.data.columns[:10])}"
             )
+            tprint_info(f"   📋 Cross-Asset Features Generated: {list(ca_features.columns) if ca_features is not None else 'None'}")
         except Exception as e:
             tprint_warning(f"⚠️ Cross-asset SVD/feature generation failed: {e}. Skipping CA features.")
             # Ensure we don't crash, but CA features will be missing
@@ -7548,6 +7551,7 @@ class LabelBasedLayer2(BaseStep):
         tprint_info(
             f"   🧾 Final panel columns sample: {list(panel_with_features.columns[:10])}"
         )
+        tprint_info(f"   📋 ALL Final Panel Features/Events: {list(panel_with_features.columns)}")
         post_leakage = panel_processor.detect_leakage(panel_with_features)
         numeric_feature_cols = [
             c

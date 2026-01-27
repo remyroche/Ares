@@ -1031,6 +1031,58 @@ def _numba_rolling_sum(x: np.ndarray, window: int) -> np.ndarray:
 
 
 @jit(nopython=True)
+def _numba_rolling_vwap(price: np.ndarray, volume: np.ndarray, window: int) -> np.ndarray:
+    """
+    Calculate rolling VWAP using Numba with O(N) complexity.
+    Supports min_periods=1 behavior (accumulating from start).
+    Handles NaNs correctly (matching Pandas behavior: ignoring NaNs in sums).
+    Returns NaN when volume sum is near zero.
+    """
+    n = len(price)
+    out = np.empty(n, dtype=np.float64)
+    out[:] = np.nan
+
+    sum_pv = 0.0
+    sum_v = 0.0
+
+    for i in range(n):
+        p = price[i]
+        v = volume[i]
+
+        # Accumulate Volume (if valid)
+        if not np.isnan(v):
+            sum_v += v
+
+        # Accumulate PV (if valid)
+        pv = p * v
+        if not np.isnan(pv):
+            sum_pv += pv
+
+        # Remove leaving elements
+        if i >= window:
+            p_old = price[i - window]
+            v_old = volume[i - window]
+
+            if not np.isnan(v_old):
+                sum_v -= v_old
+
+            pv_old = p_old * v_old
+            if not np.isnan(pv_old):
+                sum_pv -= pv_old
+
+        # Compute VWAP
+        # Avoid division by zero
+        if sum_v > 1e-9:
+            out[i] = sum_pv / sum_v
+        else:
+            # Undefined VWAP (zero volume).
+            # Return NaN (which downstream logic should handle, e.g. ffill or ignore)
+            out[i] = np.nan
+
+    return out
+
+
+@jit(nopython=True)
 def _numba_rolling_mean(x: np.ndarray, window: int) -> np.ndarray:
     """
     Rolling mean aligned to the right edge of the window.

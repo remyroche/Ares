@@ -127,8 +127,7 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 from functools import partial
 from sklearn.linear_model import LinearRegression, LogisticRegression
-from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
-from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
+from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs, _fit_huber
 from sklearn.model_selection import TimeSeriesSplit, KFold
 from sklearn.metrics import roc_auc_score, log_loss, average_precision_score, recall_score, brier_score_loss
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
@@ -803,23 +802,39 @@ class HuberResidualStack(BaseEstimator, ClassifierMixin):
 
         oof_preds = np.zeros(len(y))
 
+        # Helper params extraction
+        alpha = self.huber_params.get('alpha', 0.0001)
+        epsilon = self.huber_params.get('huber_epsilon', 1.35)
+        max_iter = self.huber_params.get('max_iter', 1000)
+        irm_lambda = self.huber_params.get('irm_lambda', 1.0)
+
         # Fit Law model on folds
         for train_idx, val_idx in splitter:
             X_tr, y_tr = X_arr[train_idx], y[train_idx]
             X_val = X_arr[val_idx]
             w_tr = sample_weight[train_idx] if sample_weight is not None else None
 
-            # Use basic env indices for ERM on fold
-            huber = IRMLinearRegressor(**self.huber_params)
-            huber.fit(X_tr, y_tr, env_indices=[np.arange(len(y_tr))], sample_weight=w_tr)
-            oof_preds[val_idx] = huber.predict(X_val)
+            # Use _fit_huber to leverage robust fallback strategy (IRM -> Relaxed -> Huber/SGD)
+            huber = _fit_huber(
+                X_tr, y_tr, w_tr,
+                epsilon=epsilon,
+                alpha=alpha,
+                max_iter=max_iter,
+                irm_lambda=irm_lambda,
+                is_classification=True
+            )
+
+            if hasattr(huber, 'predict_proba'):
+                 # Use probability of positive class for residuals
+                 oof_preds[val_idx] = huber.predict_proba(X_val)[:, 1]
+            else:
+                 oof_preds[val_idx] = huber.predict(X_val)
 
         residuals = y - oof_preds
 
         # Phase 2: Train Final Models
 
         # 1. Final Law on full data
-        self.law_model = IRMLinearRegressor(**self.huber_params)
         env_indices = [np.arange(len(y))]
         if environment_masks:
              try:
@@ -831,7 +846,35 @@ class HuberResidualStack(BaseEstimator, ClassifierMixin):
                       env_indices = environment_masks
              except:
                  pass
-        self.law_model.fit(X_arr, y, env_indices=env_indices, sample_weight=sample_weight)
+
+        try:
+            self.law_model = IRMLinearClassifier(
+                loss_type='modified_huber',
+                alpha=alpha,
+                max_iter=max_iter,
+                irm_lambda=irm_lambda
+            )
+            self.law_model.fit(X_arr, y, env_indices=env_indices, sample_weight=sample_weight)
+
+            # SIGNAL CHECK (Fallback logic)
+            if np.max(np.abs(self.law_model.coef_)) < 1e-9 and irm_lambda >= 0.1:
+                relaxed_lambda = max(1e-4, irm_lambda * 0.1)
+                self.law_model = IRMLinearClassifier(
+                    loss_type='modified_huber',
+                    alpha=alpha,
+                    max_iter=max_iter,
+                    irm_lambda=relaxed_lambda
+                )
+                self.law_model.fit(X_arr, y, env_indices=env_indices, sample_weight=sample_weight)
+
+                if np.max(np.abs(self.law_model.coef_)) < 1e-9:
+                     raise ValueError("signal killed")
+
+        except Exception:
+             # Fallback to SGDClassifier
+             from sklearn.linear_model import SGDClassifier
+             self.law_model = SGDClassifier(loss='modified_huber', alpha=alpha, max_iter=max_iter, penalty='l2')
+             self.law_model.fit(X_arr, y, sample_weight=sample_weight)
 
         # Prepare X for fashion model (restore DataFrame if needed for constraints)
         if feature_names is not None:
@@ -913,7 +956,12 @@ class HuberResidualStack(BaseEstimator, ClassifierMixin):
         except TypeError:
             # Backward compatibility for older sklearn versions
             X = check_array(X, accept_sparse=True, force_all_finite=False)
-        law_pred = self.law_model.predict(X)
+
+        if hasattr(self.law_model, 'predict_proba'):
+            law_pred = self.law_model.predict_proba(X)[:, 1]
+        else:
+            law_pred = self.law_model.predict(X)
+
         fashion_pred = self.fashion_model.predict(X)
         return law_pred + fashion_pred
 
@@ -15567,7 +15615,8 @@ class LabelBasedLayer2(BaseStep):
                                 X_val=X_hpo_val,
                                 use_irm=bool(irm_env_indices_hpo),
                                 irm_env_indices=irm_env_indices_hpo,
-                                irm_lambda=self.lambda_irm
+                                irm_lambda=self.lambda_irm,
+                                is_classification=True
                             )
                         except Exception:
                             huber_hpo = None

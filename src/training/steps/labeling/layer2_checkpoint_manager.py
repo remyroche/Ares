@@ -194,20 +194,37 @@ class Layer2CheckpointManager:
             with pd.HDFStore(h5_path, mode='w') as store:
                 for key, value in data.items():
                     if isinstance(value, pd.DataFrame):
-                        store.put(key, value, format='table', data_columns=True)
+                        try:
+                            store.put(key, value, format='table', data_columns=True)
+                        except Exception as e:
+                            logger.warning(f"⚠️ Failed to save {key} as HDF5 table (likely too many columns): {e}. Falling back to fixed format.")
+                            store.put(key, value, format='fixed')
                     elif isinstance(value, pd.Series):
-                        store.put(key, value.to_frame(), format='table')
+                        try:
+                            store.put(key, value.to_frame(), format='table')
+                        except Exception as e:
+                            logger.warning(f"⚠️ Failed to save {key} as HDF5 table: {e}. Falling back to fixed format.")
+                            store.put(key, value.to_frame(), format='fixed')
                     elif isinstance(value, np.ndarray):
-                        store.put(key, pd.DataFrame(value), format='table')
+                        try:
+                            store.put(key, pd.DataFrame(value), format='table')
+                        except Exception as e:
+                            logger.warning(f"⚠️ Failed to save {key} as HDF5 table: {e}. Falling back to fixed format.")
+                            store.put(key, pd.DataFrame(value), format='fixed')
                     else:
                         # For everything else, use robust recursive serialization for JSON metadata
                         json_data[key] = self._serialize_for_json(value)
-        except ImportError:
-            # Fallback: Use pickle if tables not available
+        except Exception as e:
+            # Fallback: Use pickle if tables not available or generic failure
+            logger.warning(f"⚠️ HDF5 storage failed: {e}. Falling back to pickle.")
             import pickle
+            # Clean up the partial/failed HDF5 file
+            if h5_path.exists():
+                h5_path.unlink()
+
             with open(h5_path, 'wb') as f:
                 pickle.dump(data, f)
-            logger.warning("PyTables not available, using pickle for checkpoint")
+            logger.warning("Using pickle for checkpoint due to HDF5 failure")
         
         # Save metadata
         metadata = CheckpointMetadata(

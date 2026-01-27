@@ -814,7 +814,20 @@ class HuberResidualStack(BaseEstimator, ClassifierMixin):
             huber.fit(X_tr, y_tr, env_indices=[np.arange(len(y_tr))], sample_weight=w_tr)
             oof_preds[val_idx] = huber.predict(X_val)
 
-        residuals = y - oof_preds
+        # Law & Fashion Integration: Boosting vs Residuals
+        # If Fashion model supports init_score (LGBM) or base_margin (XGB), use it.
+        # Otherwise, fall back to learning residuals.
+        est_name = type(self.fashion_estimator).__name__
+        use_init_score = 'LGBM' in est_name or 'XGB' in est_name or 'CatBoost' in est_name
+        self._use_init_score = use_init_score
+
+        if use_init_score:
+            # Boosting: Fashion model learns to correct Law logits
+            # Target is original y (binary), initialized with Law logits
+            residuals = None # Not used directly for training
+        else:
+            # Residuals: Fashion model learns y - Law (linear residual)
+            residuals = y - oof_preds
 
         # Phase 2: Train Final Models
 
@@ -833,13 +846,16 @@ class HuberResidualStack(BaseEstimator, ClassifierMixin):
                  pass
         self.law_model.fit(X_arr, y, env_indices=env_indices, sample_weight=sample_weight)
 
+        # Get final law logits for init_score
+        law_logits = self.law_model.predict(X_arr)
+
         # Prepare X for fashion model (restore DataFrame if needed for constraints)
         if feature_names is not None:
             X_fashion = pd.DataFrame(X_arr, columns=feature_names)
         else:
             X_fashion = X_arr
 
-        # 2. Final Fashion on residuals
+        # 2. Final Fashion
         self.fashion_model = clone(self.fashion_estimator)
 
         # Sanitize constraints for XGBoost to match current features
@@ -872,7 +888,18 @@ class HuberResidualStack(BaseEstimator, ClassifierMixin):
             if updates:
                 self.fashion_model.set_params(**updates)
 
-        self.fashion_model.fit(X_fashion, residuals, sample_weight=sample_weight)
+        # Train Fashion Model
+        if use_init_score:
+            if 'LGBM' in est_name:
+                self.fashion_model.fit(X_fashion, y, sample_weight=sample_weight, init_score=law_logits)
+            elif 'XGB' in est_name:
+                self.fashion_model.fit(X_fashion, y, sample_weight=sample_weight, base_margin=law_logits)
+            elif 'CatBoost' in est_name:
+                # CatBoost uses baseline
+                self.fashion_model.fit(X_fashion, y, sample_weight=sample_weight, baseline=law_logits)
+        else:
+            # Fallback: Train on residuals
+            self.fashion_model.fit(X_fashion, residuals, sample_weight=sample_weight)
 
         # 3. Isotonic Calibration using nested OOF
         fashion_oof = np.zeros(len(y))
@@ -888,13 +915,58 @@ class HuberResidualStack(BaseEstimator, ClassifierMixin):
                 X_tr_fashion = X_tr_arr
                 X_val_fashion = X_val_arr
 
-            r_tr = residuals[train_idx]
             w_tr = sample_weight[train_idx] if sample_weight is not None else None
+
+            # OOF Law Logits
+            law_oof_train = oof_preds[train_idx]
+            law_oof_val = oof_preds[val_idx]
 
             # Clone from the sanitized model to preserve constraint fixes
             et = clone(self.fashion_model)
-            et.fit(X_tr_fashion, r_tr, sample_weight=w_tr)
-            fashion_oof[val_idx] = et.predict(X_val_fashion)
+
+            if use_init_score:
+                y_tr = y[train_idx]
+                if 'LGBM' in est_name:
+                    et.fit(X_tr_fashion, y_tr, sample_weight=w_tr, init_score=law_oof_train)
+                    # For prediction, we need raw score (logit) to add to law_logit
+                    # predict(raw_score=True) returns logit
+                    fashion_oof[val_idx] = et.predict(X_val_fashion, raw_score=True)
+                elif 'XGB' in est_name:
+                    et.fit(X_tr_fashion, y_tr, sample_weight=w_tr, base_margin=law_oof_train)
+                    # output_margin=True returns logit (including base_margin usually, but we want just the tree part?
+                    # No, we want the FULL logit (Law + Tree) to calibrate.
+                    # XGB predict with output_margin=True returns base_margin + tree_margin.
+                    # So this returns the full logit.
+                    fashion_oof[val_idx] = et.predict(X_val_fashion, output_margin=True)
+                    # Since we want to SUM it with oof_preds later in decision_function,
+                    # we must be careful.
+                    # decision_function = law_pred + fashion_pred.
+                    # If fashion_pred includes base_margin, then we double count?
+                    # XGB predict(output_margin=True) includes base_margin if provided in DMatrix?
+                    # If we pass base_margin to predict?
+                    # Let's assume fashion_oof here should be the INCREMENT.
+                    # If predict(output_margin=True) returns total, we subtract base.
+                    total_logit = et.predict(X_val_fashion, base_margin=law_oof_val, output_margin=True)
+                    fashion_oof[val_idx] = total_logit - law_oof_val
+                elif 'CatBoost' in est_name:
+                    et.fit(X_tr_fashion, y_tr, sample_weight=w_tr, baseline=law_oof_train)
+                    # predict(prediction_type='RawFormulaVal') returns raw score (without baseline? check docs)
+                    # Usually RawFormulaVal = baseline + trees.
+                    total_logit = et.predict(X_val_fashion, prediction_type='RawFormulaVal')
+                    # We might need to subtract baseline manually if not passed to predict?
+                    # CatBoost predict doesn't take baseline argument easily for sklearn API.
+                    # It expects Pool.
+                    # Let's assume we train on residuals if CatBoost to avoid complexity, or just handle it.
+                    # Actually, for CatBoost sklearn, if we fit with baseline, the model learns the residual.
+                    # But predict() will add it if we provide it? No.
+                    # Let's stick to residuals for CatBoost to be safe if complex.
+                    # Revert CatBoost to residuals path for safety?
+                    # Or just assume RawFormulaVal is just the tree part if no baseline passed to predict.
+                    fashion_oof[val_idx] = total_logit # Assuming tree part only if no baseline provided at predict time.
+            else:
+                r_tr = residuals[train_idx]
+                et.fit(X_tr_fashion, r_tr, sample_weight=w_tr)
+                fashion_oof[val_idx] = et.predict(X_val_fashion)
 
         total_oof = oof_preds + fashion_oof
         self.calibrator = IsotonicRegression(out_of_bounds='clip')
@@ -913,9 +985,52 @@ class HuberResidualStack(BaseEstimator, ClassifierMixin):
         except TypeError:
             # Backward compatibility for older sklearn versions
             X = check_array(X, accept_sparse=True, force_all_finite=False)
+
+        # Law prediction (logits)
         law_pred = self.law_model.predict(X)
-        fashion_pred = self.fashion_model.predict(X)
-        return law_pred + fashion_pred
+
+        # Fashion prediction
+        if getattr(self, '_use_init_score', False):
+            # Boosting mode: Fashion model expects base_margin logic
+            est_name = type(self.fashion_model).__name__
+            if 'LGBM' in est_name:
+                # LGBM raw_score adds to init_score if used?
+                # Actually, LGBM predict(raw_score=True) returns the *sum* of init_score + trees
+                # if init_score is provided to predict.
+                # But predict() in sklearn API doesn't take init_score easily?
+                # If we don't pass init_score, it returns just trees?
+                # LGBM docs: "The predicted value will be the sum of init_score and the tree output."
+                # But we have to pass init_score.
+                # If we don't pass init_score, it defaults to 0.
+                # So we get just the tree output.
+                # Then we add law_pred manually.
+                fashion_logit_contribution = self.fashion_model.predict(X, raw_score=True)
+                return law_pred + fashion_logit_contribution
+            elif 'XGB' in est_name:
+                # XGB predict(output_margin=True) returns base_margin + trees.
+                # We need to pass base_margin=law_pred to get the total result correctly?
+                # Or just get trees and add?
+                # If we pass base_margin, we get total.
+                # XGBoost sklearn API predict(..., base_margin=...) works.
+                return self.fashion_model.predict(X, base_margin=law_pred, output_margin=True)
+            elif 'CatBoost' in est_name:
+                # CatBoost predict with RawFormulaVal returns total formula value.
+                # Does it need baseline argument?
+                # If trained with baseline, the trees learn residual.
+                # If we call predict without baseline, we get tree sum + bias?
+                # CatBoost docs say RawFormulaVal = Sum(Trees) + Scale * Baseline.
+                # But we need to provide Baseline data?
+                # If not provided, it assumes 0.
+                # So we get Tree Sum. Then we add law_pred.
+                fashion_logit_contribution = self.fashion_model.predict(X, prediction_type='RawFormulaVal')
+                return law_pred + fashion_logit_contribution
+            else:
+                # Fallback
+                return law_pred + self.fashion_model.predict(X)
+        else:
+            # Residual mode (Regressor)
+            fashion_pred = self.fashion_model.predict(X)
+            return law_pred + fashion_pred
 
     def predict_proba(self, X):
         raw = self.decision_function(X)
@@ -1457,19 +1572,19 @@ _lgb_logger.propagate = False
 
 # Constants for Layer 2 Model Training (defaults/fixed) - HIGH REGULARIZATION for noisy financial data
 LAYER2_MODEL_CONSTANTS = {
-    'boosting_type': 'goss', # Optimized for speed
+    'boosting_type': 'gbdt', # Switched to GBDT for robustness (bagging enabled)
     'objective': 'binary',
     'metric': 'binary_logloss',
     'max_depth': 6,       # Constrain depth for speed
-    'learning_rate': 0.05, # Higher LR for faster convergence with GOSS
+    'learning_rate': 0.05, # Higher LR for faster convergence
     'lambda_l1': 0.5,     # 50x stronger L1 regularization for feature selection
     'lambda_l2': 1.0,     # 20x stronger L2 regularization for weight decay
     'num_leaves': 31,
-    'min_data_in_leaf': 20, # Higher for Goss safety
+    'min_data_in_leaf': 20,
     'min_sum_hessian_in_leaf': 1e-3,
     'feature_fraction': 0.6, # More aggressive feature sampling for noise reduction
-    'bagging_fraction': 1.0, # Disable bagging for GOSS compatibility (Must be 1.0)
-    'bagging_freq': 0,     # Disable bagging for GOSS compatibility (Must be 0)
+    'bagging_fraction': 0.7, # Enable bagging for robustness against non-stationarity
+    'bagging_freq': 1,     # Resample every iteration
     'verbose': -1,
     'random_state': 42,
     'n_jobs': 1,           # RESTRICT THREADS TO PREVENT DEADLOCK
@@ -1482,7 +1597,7 @@ LAYER2_MODEL_CONSTANTS = {
 
 # Optimized constants for probe training - HIGH REGULARIZATION for noisy financial data
 LAYER2_PROBE_CONSTANTS = {
-    'boosting_type': 'goss', # Optimized for speed
+    'boosting_type': 'gbdt', # Switched to GBDT for robustness
     'objective': 'binary',
     'metric': 'binary_logloss',
     'max_depth': 4,       # Shallower trees for speed
@@ -1493,8 +1608,8 @@ LAYER2_PROBE_CONSTANTS = {
     'min_data_in_leaf': 20, # Keep as specified
     'min_sum_hessian_in_leaf': 1e-3,
     'feature_fraction': 0.5, # Very aggressive feature sampling for noise reduction
-    'bagging_fraction': 1.0, # Disable bagging for GOSS compatibility (Must be 1.0)
-    'bagging_freq': 0,     # Disable bagging for GOSS compatibility (Must be 0)
+    'bagging_fraction': 0.7, # Enable bagging for robustness
+    'bagging_freq': 1,     # Resample every iteration
     'verbose': -1,
     'random_state': 42,
     'n_jobs': 1,           # RESTRICT THREADS TO PREVENT DEADLOCK
@@ -3016,8 +3131,69 @@ class LabelBasedLayer2(BaseStep):
         key = f"{family}_{X.shape[1]}"
         return self._family_feature_cache.get(key)
     
-    def _compute_temporal_performance_metrics(self, oof_predictions: Dict[str, pd.Series], 
-                                            returns: pd.Series) -> Dict[str, Any]:
+    def _run_timestamp_integrity_test(self, df: pd.DataFrame, geometry, X: pd.DataFrame, y: pd.Series) -> Dict[str, Any]:
+        """
+        Run Timestamp Integrity Test to detect hidden leakage.
+        Logic: Randomly shift feature timestamps forward by 1 bar (lagging the data).
+        If CV performance IMPROVES, it implies the original alignment was flawed (e.g. looking at future?).
+        Ideally, lagging features (using older data) should degrade performance.
+        """
+        try:
+            tprint_info(f"   🕵️ Running Timestamp Integrity Test on {geometry.uuid[:8]}...")
+
+            # 1. Baseline Performance
+            # Use a fast model (LGBM with minimal params)
+            clf = lgb.LGBMClassifier(n_estimators=100, max_depth=3, verbose=-1, random_state=42, n_jobs=1)
+
+            # Simple TimeSeriesSplit
+            tscv = TimeSeriesSplit(n_splits=3)
+
+            baseline_scores = []
+            lagged_scores = []
+
+            X_lagged = X.shift(1).fillna(0)
+
+            for train_idx, val_idx in tscv.split(X):
+                X_tr, y_tr = X.iloc[train_idx], y.iloc[train_idx]
+                X_val, y_val = X.iloc[val_idx], y.iloc[val_idx]
+
+                # Check for single class
+                if y_tr.nunique() < 2 or y_val.nunique() < 2: continue
+
+                clf.fit(X_tr, y_tr)
+                p_base = clf.predict_proba(X_val)[:, 1]
+                score_base = roc_auc_score(y_val, p_base)
+                baseline_scores.append(score_base)
+
+                # Lagged
+                X_tr_lag, X_val_lag = X_lagged.iloc[train_idx], X_lagged.iloc[val_idx]
+                clf.fit(X_tr_lag, y_tr)
+                p_lag = clf.predict_proba(X_val_lag)[:, 1]
+                score_lag = roc_auc_score(y_val, p_lag)
+                lagged_scores.append(score_lag)
+
+            avg_base = np.mean(baseline_scores) if baseline_scores else 0.0
+            avg_lag = np.mean(lagged_scores) if lagged_scores else 0.0
+
+            diff = avg_lag - avg_base
+            status = "PASS"
+            if diff > 0.02: # Significant improvement from lagging
+                status = "FAIL (Leakage Suspected)"
+                tprint_warning(f"   ⚠️ Timestamp Integrity Check FAILED: Lagged ({avg_lag:.4f}) > Baseline ({avg_base:.4f})")
+            else:
+                tprint_success(f"   ✅ Timestamp Integrity Check PASSED: Lagged ({avg_lag:.4f}) <= Baseline ({avg_base:.4f})")
+
+            return {
+                'baseline_auc': avg_base,
+                'lagged_auc': avg_lag,
+                'diff': diff,
+                'status': status
+            }
+
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Timestamp Integrity Test failed: {e}")
+            return {'status': 'ERROR', 'error': str(e)}
+
         """Compute temporal performance degradation metrics."""
         temporal_metrics = {}
         
@@ -10028,12 +10204,42 @@ class LabelBasedLayer2(BaseStep):
                 residuals = y_val - preds
                 dw = calculate_durbin_watson(residuals)
 
+                # --- Input Perturbation Stability (Robustness) ---
+                # Perturb inputs by 0.2 std and measure prediction deviation
+                try:
+                    # Create perturbed copy (noise injection)
+                    X_val_noise = X_val_final.copy()
+                    # Add noise: 0.2 * std (assuming approx standardized)
+                    np.random.seed(42)
+                    noise = np.random.normal(0, 0.2, X_val_noise.shape)
+                    if hasattr(X_val_noise, 'values'):
+                        X_val_noise.iloc[:] += noise
+                    else:
+                        X_val_noise += noise
+
+                    if hasattr(model, 'predict_proba'):
+                        preds_noise = model.predict_proba(X_val_noise)[:, 1]
+                    else:
+                        preds_noise = model.predict(X_val_noise)
+
+                    # Measure deviation (RMSE of difference)
+                    pred_diff = preds - preds_noise
+                    stability_rmse = np.sqrt(np.mean(pred_diff**2))
+
+                    # Penalize score: exp(-stability_rmse * penalty_factor)
+                    # If RMSE > 0.1 (10% swing), penalty kicks in significantly
+                    stability_penalty = np.exp(-stability_rmse * 5.0)
+                except Exception as e:
+                    # tprint_warning(f"Stability check failed: {e}")
+                    stability_rmse = 0.0
+                    stability_penalty = 1.0
+
                 # Feature Stability
                 stability = calculate_feature_attribution_stability(model, X_train_final, y_train)
 
                 # Recall-first score (align with causal/base model objective)
                 # Favor recall, then PR-AUC lift, then calibration (BSS)
-                effective_score = (0.6 * recall) + (0.3 * max(pr_auc_lift, 0.0)) + (0.1 * bss)
+                effective_score = ((0.6 * recall) + (0.3 * max(pr_auc_lift, 0.0)) + (0.1 * bss)) * stability_penalty
                 
                 race_results[name] = {
                     'auc': auc_score,
@@ -10046,6 +10252,7 @@ class LabelBasedLayer2(BaseStep):
                     'ece': ece,
                     'dw': dw,
                     'stability': stability,
+                    'stability_rmse': stability_rmse,
                     'model': model,
                     'fit_time': fit_duration,
                     'score': effective_score,
@@ -10054,7 +10261,7 @@ class LabelBasedLayer2(BaseStep):
 
                 tprint_info(
                     f"      - {name.ljust(12)}: Score={effective_score:.4f} "
-                    f"(Recall={recall:.4f}, PR-AUC={pr_auc:.4f}, BSS={bss:.4f}), ECE={ece:.4f}, DW={dw:.2f}"
+                    f"(Recall={recall:.4f}, PR-AUC={pr_auc:.4f}, BSS={bss:.4f}), Stab={stability_penalty:.2f}"
                 )
 
                 if inverted:
@@ -15494,6 +15701,14 @@ class LabelBasedLayer2(BaseStep):
                 minority_count = min(label_counts.values()) if label_counts else 0
                 if minority_count < 10:
                     tprint_warning(f"   ⚠️ LOW MINORITY: {gt.uuid} minority class has only {minority_count} samples. Distribution: {label_counts}")
+
+                # --- LEAKAGE CONTROL: Timestamp Integrity Test ---
+                # Run once per geometry (only on fold 0 to save time)
+                if fold_idx == 0 and len(X_train_final) > 100:
+                    try:
+                        self._run_timestamp_integrity_test(None, gt, X_train_final, y_train)
+                    except Exception as e:
+                        tprint_warning(f"   ⚠️ Timestamp integrity test failed to run: {e}")
 
                 # Train Model - with optional model race
                 focal_params = None

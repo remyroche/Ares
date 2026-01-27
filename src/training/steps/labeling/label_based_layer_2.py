@@ -7571,6 +7571,39 @@ class LabelBasedLayer2(BaseStep):
              base_config.update(config)
              config = base_config
 
+        # Convert to dollar bars BEFORE cross-asset generation
+        # This ensures cross-asset features are generated on the final geometry (dollar bars)
+        # preventing data loss during conversion and timezone mismatches during re-merging.
+        if self.use_dollar_bars:
+            df_bars = self._convert_to_dollar_bars(df, config)
+            if df_bars is not None and len(df_bars) > 1000:
+                original_len = len(df)
+                df = df_bars
+                tprint_info(f"📊 Using dollar bars: {original_len} → {len(df)} samples")
+
+                # Update config['cross_asset_data'] with the new dollar-bar primary asset
+                # This ensures the pipeline generates features aligned to the dollar-bar index
+                if isinstance(config.get("cross_asset_data"), dict):
+                    symbol = config.get('symbol', 'ETHUSDT')
+                    # Try to find key for current symbol (e.g. 'ETHUSDT' or 'ETH')
+                    target_key = None
+                    if symbol in config["cross_asset_data"]:
+                        target_key = symbol
+                    else:
+                        # Fallback search
+                        for k in config["cross_asset_data"].keys():
+                            if k in symbol or symbol in k:
+                                target_key = k
+                                break
+
+                    if target_key:
+                        tprint_info(f"   🔄 Updating cross_asset_data[{target_key}] with dollar bars for alignment")
+                        config["cross_asset_data"][target_key] = df
+                    else:
+                        tprint_warning(f"   ⚠️ Could not find symbol {symbol} in cross_asset_data keys {list(config['cross_asset_data'].keys())}")
+            else:
+                tprint_warning("⚠️ Dollar bar conversion failed or insufficient bars, using original 15m data")
+
         cross_asset_feature_cols = []
         cross_asset_features = None
         cross_asset_results = None
@@ -7580,7 +7613,6 @@ class LabelBasedLayer2(BaseStep):
                 cross_asset_results = self._run_cross_asset_pipeline(cross_asset_data, config)
                 
                 # KEY FIX: Merge Cross-Asset Features into Main DataFrame
-                # If we don't do this, they are "stranded" in the results dict and never enter the race.
                 if isinstance(cross_asset_results, dict) and (
                     'panel_data' in cross_asset_results or 'panel' in cross_asset_results
                 ):
@@ -7598,8 +7630,6 @@ class LabelBasedLayer2(BaseStep):
                     
                     if feature_cols:
                         tprint_info(f"   🔄 Merging {len(feature_cols)} cross-asset features into main dataset...")
-                        # Ensure index compatibility (Panel might be multi-index, alignment needed)
-                        # Assumes single-symbol context for 'df' -> We need to slice the panel for this symbol
                         
                         try:
                             # If panel is multi-index (timestamp, ticker), slice for current symbol
@@ -7622,7 +7652,7 @@ class LabelBasedLayer2(BaseStep):
 
                                 if ticker in tickers:
                                     symbol_features = panel_df.xs(ticker, level='ticker')[feature_cols]
-                                    # Align and join
+                                    # Align and join (df is now dollar bars or raw, panel should match if updated)
                                     df = df.join(symbol_features, how='left')
                                     tprint_success(f"   ✅ Merged cross-asset features for {ticker}")
                                     cross_asset_feature_cols = feature_cols
@@ -7643,22 +7673,6 @@ class LabelBasedLayer2(BaseStep):
                             
             except Exception as e:
                 tprint_warning(f"⚠️ Cross-asset pipeline failed: {e}")
-
-        # Convert to dollar bars for proper sample frequency (~15 min avg instead of raw 15m bars)
-        if self.use_dollar_bars:
-            df_bars = self._convert_to_dollar_bars(df, config)
-            if df_bars is not None and len(df_bars) > 1000:
-                original_len = len(df)
-                df = df_bars
-                if cross_asset_features is not None and cross_asset_feature_cols:
-                    aligned_features = cross_asset_features.sort_index().reindex(df.index, method='ffill').bfill()
-                    aligned_features = aligned_features[cross_asset_feature_cols]
-                    df = df.drop(columns=[c for c in cross_asset_feature_cols if c in df.columns], errors='ignore')
-                    df = df.join(aligned_features, how='left')
-                    tprint_info(f"   🔁 Reattached {len(cross_asset_feature_cols)} cross-asset features after dollar bars")
-                tprint_info(f"📊 Using dollar bars: {original_len} → {len(df)} samples")
-            else:
-                tprint_warning("⚠️ Dollar bar conversion failed or insufficient bars, using original 15m data")
         
         # Store config for later use
         self._current_config = config

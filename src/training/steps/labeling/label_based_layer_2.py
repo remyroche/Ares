@@ -7651,7 +7651,27 @@ class LabelBasedLayer2(BaseStep):
                 original_len = len(df)
                 df = df_bars
                 if cross_asset_features is not None and cross_asset_feature_cols:
+                    # Align timezones if needed to prevent reindex failure
+                    ca_idx = cross_asset_features.index
+                    df_idx = df.index
+                    if hasattr(ca_idx, 'tz') and hasattr(df_idx, 'tz') and ca_idx.tz != df_idx.tz:
+                        tprint_info(f"   ⚠️ TZ Mismatch: Cross-Asset {ca_idx.tz} vs Dollar Bar {df_idx.tz}. Aligning...")
+                        if df_idx.tz is None:
+                             # Dollar bars are naive, CA is aware. Localize CA to None.
+                             cross_asset_features.index = ca_idx.tz_localize(None)
+                        else:
+                             # Dollar bars are aware, CA is naive or diff. Convert CA to match.
+                             if ca_idx.tz is None:
+                                 cross_asset_features.index = ca_idx.tz_localize(df_idx.tz)
+                             else:
+                                 cross_asset_features.index = ca_idx.tz_convert(df_idx.tz)
+
                     aligned_features = cross_asset_features.sort_index().reindex(df.index, method='ffill').bfill()
+
+                    # Check for data loss
+                    if aligned_features.isna().all().all():
+                        tprint_warning("   ❌ Cross-asset reindex produced all NaNs! Timestamps likely misaligned.")
+
                     aligned_features = aligned_features[cross_asset_feature_cols]
                     df = df.drop(columns=[c for c in cross_asset_feature_cols if c in df.columns], errors='ignore')
                     df = df.join(aligned_features, how='left')

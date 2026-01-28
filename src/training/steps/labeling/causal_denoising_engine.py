@@ -84,75 +84,188 @@ class SparseCovarianceDenoiser:
         self.precision_matrix_ = None
         self.covariance_matrix_ = None
         self.sparse_correlation_ = None
-        
+
+
+def _drop_duplicate_columns_fast(
+    self,
+    df: pd.DataFrame,
+    sample_rows: int = 4096,
+) -> pd.DataFrame:
+    """
+    Drop *exact* duplicate columns without transposing.
+    Strategy:
+      1) Hash a small row-sample of each column to form candidate duplicate buckets.
+      2) For buckets with collisions, verify exact equality on full columns.
+    """
+    if df is None or df.empty or df.shape[1] < 2:
+        return df
+
+    n = df.shape[0]
+    m = min(sample_rows, n)
+    # deterministic, evenly-spaced sample to preserve time structure
+    idx = np.linspace(0, n - 1, m, dtype=int)
+    sample = df.iloc[idx]
+
+    from pandas.util import hash_pandas_object
+
+    # Hash the sample slice per column to find candidate duplicates
+    buckets: Dict[int, list] = {}
+    for c in sample.columns:
+        # stable-ish fingerprint: sum of row-hashes + dtype name
+        h = int(hash_pandas_object(sample[c], index=False).sum())
+        h = hash((h, str(df[c].dtype)))
+        buckets.setdefault(h, []).append(c)
+
+    keep: list[str] = []
+    kept_set: set[str] = set()
+
+    for cols in buckets.values():
+        if len(cols) == 1:
+            c = cols[0]
+            keep.append(c)
+            kept_set.add(c)
+            continue
+
+        rep = cols[0]
+        rep_vals = df[rep].to_numpy()
+        keep.append(rep)
+        kept_set.add(rep)
+
+        for c in cols[1:]:
+            if c in kept_set:
+                continue
+            vals = df[c].to_numpy()
+            # exact equality incl. NaNs in same locations
+            if not np.array_equal(rep_vals, vals, equal_nan=True):
+                keep.append(c)
+                kept_set.add(c)
+            # else: drop c (exact duplicate)
+
+    # preserve original ordering
+    keep = [c for c in df.columns if c in kept_set]
+    return df[keep]
+
+
+def _drop_near_collinear_columns(
+    self,
+    df: pd.DataFrame,
+    corr_thresh: float = 0.9999,
+) -> pd.DataFrame:
+    """
+    Drop *near-duplicate / collinear* columns based on abs(corr) threshold.
+    Greedy: keep first column, drop subsequent columns highly correlated to it.
+    This is O(p^2) in columns; with p~261 it's trivial.
+    """
+    if df is None or df.empty or df.shape[1] < 2:
+        return df
+
+    X = df.to_numpy()
+    # corrcoef expects finite values; df should already be filled
+    C = np.corrcoef(X, rowvar=False)
+    C = np.nan_to_num(C, nan=0.0, posinf=0.0, neginf=0.0)
+
+    p = C.shape[0]
+    drop_idx: set[int] = set()
+    keep_idx: list[int] = []
+
+    for j in range(p):
+        if j in drop_idx:
+            continue
+        keep_idx.append(j)
+        # drop any later column very correlated to j
+        hits = np.where(np.abs(C[j, j + 1 :]) >= corr_thresh)[0]
+        for h in hits:
+            drop_idx.add(j + 1 + int(h))
+
+    return df.iloc[:, keep_idx]
+
+    
     def fit_sparse_covariance(self, X: pd.DataFrame) -> Dict[str, np.ndarray]:
         """
-        Fit sparse covariance matrix using GraphicalLasso.
-        
-        Args:
-            X: Input feature matrix
-            
-        Returns:
-            Dictionary with covariance, precision, and correlation matrices
+        Fit sparse covariance matrix using GraphicalLasso with robust preprocessing.
+        Drop-in replacement:
+          - avoids df.T.drop_duplicates().T (no transpose / no big copies)
+          - removes exact duplicate columns cheaply + optional near-collinear pruning
+          - fixes column bookkeeping (returns post-pruning columns)
+          - makes LedoitWolf fallback safe even if GraphicalLasso path fails early
         """
         if X is None or X.empty:
             return {}
-
+    
         X_numeric = X.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan)
-        X_numeric = X_numeric.dropna(axis=1, how='all')
+        X_numeric = X_numeric.dropna(axis=1, how="all")
         if X_numeric.empty:
             if self.verbose:
                 tprint_warning("⚠️ Sparse Covariance: No numeric features available")
             return {}
-
+    
         stds = X_numeric.std(skipna=True)
         keep_cols = stds[stds > 1e-9].index
-        dropped = [c for c in X_numeric.columns if c not in keep_cols]
+        dropped_const = [c for c in X_numeric.columns if c not in keep_cols]
         X_filtered = X_numeric[keep_cols]
-
+    
         if self.verbose:
             tprint_info(f"🔍 Sparse Covariance: Fitting on {X_filtered.shape[1]} features")
-            if dropped:
-                tprint_info(f"   🧹 Dropped {len(dropped)} constant/near-constant columns")
-
+            if dropped_const:
+                tprint_info(f"   🧹 Dropped {len(dropped_const)} constant/near-constant columns")
+    
         if X_filtered.shape[1] < 2 or X_filtered.shape[0] < 5:
             if self.verbose:
                 tprint_warning("⚠️ Sparse Covariance: Not enough data after filtering")
             return {}
-        
+    
         start_time = time.time()
-        
+    
+        # Precompute a safe scaled matrix for both main path and fallback
+        X_scaled: np.ndarray | None = None
+        columns_final: list[str] = []
+    
         try:
-            # Use RobustScaler for better conditioning with financial data
             from sklearn.preprocessing import RobustScaler
+    
             scaler = RobustScaler()
-            filled = X_filtered.fillna(X_filtered.median()) # Median for robust fill
+            filled = X_filtered.fillna(X_filtered.median())
             filled = filled.fillna(0.0)
-            
-            # Additional robustness: drop duplicates and highly correlated features
-            # Highly correlated features (multi-collinearity) cause singular covariance matrices
-            # Optimization: Skip T.drop_duplicates().T for large matrices to avoid memory spike/slowdown
-            if filled.shape[0] * filled.shape[1] < 5_000_000:  # Limit to ~5M elements (e.g. 25k x 200)
-                filled = filled.T.drop_duplicates().T
-            if filled.shape[1] < 2:
-                return {}
-
+    
+            # 1) Drop exact duplicate columns (fast, no transpose)
+            before_p = filled.shape[1]
+            filled = self._drop_duplicate_columns_fast(filled)
+            after_dup_p = filled.shape[1]
+    
+            # 2) Scale
             X_scaled = scaler.fit_transform(filled)
-
-            # Clip extreme values to prevent numerical explosion in Glasso
-            # Financial time series often have extreme spikes that cause divergence
             X_scaled = np.clip(X_scaled, -10, 10)
-
+    
             n_samples, n_features = X_scaled.shape
+            if n_features < 2:
+                return {}
+    
+            # 3) Optional: drop near-collinear columns if we are at risk of ill-conditioning
+            # With p~261 this is cheap; do it only if features are moderately large OR you prefer always-on.
+            # Here: enable if n_features >= 50 (tunable) to reduce Glasso singularity risk.
+            if n_features >= 50:
+                filled2 = pd.DataFrame(X_scaled, columns=filled.columns)
+                filled2 = self._drop_near_collinear_columns(filled2, corr_thresh=0.9999)
+                if filled2.shape[1] >= 2 and filled2.shape[1] < n_features:
+                    # update after pruning
+                    filled = filled[filled2.columns]
+                    X_scaled = filled2.to_numpy()
+                    n_samples, n_features = X_scaled.shape
+    
+            columns_final = list(filled.columns)
+    
+            if self.verbose:
+                if after_dup_p < before_p:
+                    tprint_info(f"   🧹 Dropped {before_p - after_dup_p} exact-duplicate columns")
+                if len(columns_final) < after_dup_p:
+                    tprint_info(f"   🧹 Dropped {after_dup_p - len(columns_final)} near-collinear columns")
+    
             if n_samples < max(50, n_features * 2):
                 raise RuntimeError("Insufficient samples for stable GraphicalLasso")
-
+    
             # Fit GraphicalLasso with increased robustness
-            # Suppress ALL warnings during fitting to keep logs clean
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                
-                # Redirect stderr to suppress persistent C-level warnings
                 stderr_capture = io.StringIO()
                 original_stderr = sys.stderr
                 try:
@@ -170,10 +283,6 @@ class SparseCovarianceDenoiser:
                             )
                             gl.fit(X_scaled)
                         except Exception:
-                            # If CV fails (e.g. perfect collinearity), fallback to fixed alpha
-                            if self.verbose and original_stderr:
-                                # Restore stderr specifically to print this warning if needed, or use tprint
-                                pass 
                             gl = GraphicalLasso(
                                 alpha=0.1,
                                 max_iter=self.max_iter,
@@ -193,73 +302,81 @@ class SparseCovarianceDenoiser:
                         gl.fit(X_scaled)
                 finally:
                     sys.stderr = original_stderr
-
+    
                 n_iter = getattr(gl, "n_iter_", None)
                 if n_iter is not None:
                     n_iter_val = np.max(n_iter) if isinstance(n_iter, (list, tuple, np.ndarray)) else n_iter
                     if n_iter_val >= self.max_iter:
                         raise RuntimeError("GraphicalLasso reached max_iter without convergence")
-            
-            # Store results
+    
             self.covariance_matrix_ = gl.covariance_
             self.precision_matrix_ = gl.precision_
-            
-            # POST-FIT VALIDATION: Ensure sanity of results
+    
             if (
                 not np.isfinite(self.precision_matrix_).all()
                 or np.isnan(self.precision_matrix_).any()
                 or not np.isfinite(self.covariance_matrix_).all()
             ):
                 raise RuntimeError("Non-finite precision/covariance from GraphicalLasso")
-            
-            # Compute sparse correlation matrix
+    
             self.sparse_correlation_ = self._covariance_to_correlation(self.covariance_matrix_)
-            
+    
             fitting_time = time.time() - start_time
-            
             if self.verbose:
                 n_nonzero = np.count_nonzero(self.precision_matrix_)
                 total_elements = self.precision_matrix_.size
                 sparsity = 1 - (n_nonzero / total_elements)
-                tprint_success(f"✅ Sparse Covariance: Complete!")
+                tprint_success("✅ Sparse Covariance: Complete!")
                 tprint_info(f"   📊 Sparsity: {sparsity:.3f}")
                 tprint_info(f"   📊 Non-zero elements: {n_nonzero}/{total_elements}")
                 tprint_info(f"   ⏱️  Time: {fitting_time:.2f}s")
-            
+    
             return {
-                'covariance': self.covariance_matrix_,
-                'precision': self.precision_matrix_,
-                'correlation': self.sparse_correlation_,
-                'columns': list(X_filtered.columns)
+                "covariance": self.covariance_matrix_,
+                "precision": self.precision_matrix_,
+                "correlation": self.sparse_correlation_,
+                "columns": columns_final,
             }
-            
+    
         except Exception as e:
             if self.verbose:
                 tprint_warning(f"⚠️ Sparse covariance fitting failed: {e}")
-            
-            # Fallback to Ledoit-Wolf shrinkage
+                tprint_warning("⚠️ Falling back to Ledoit-Wolf shrinkage")
+    
+            # Fallback to Ledoit-Wolf shrinkage (make sure X_scaled exists)
             try:
+                if X_scaled is None:
+                    # Rebuild a minimal safe X_scaled from filtered data
+                    from sklearn.preprocessing import RobustScaler
+    
+                    filled = X_filtered.fillna(X_filtered.median()).fillna(0.0)
+                    filled = self._drop_duplicate_columns_fast(filled)
+                    X_scaled = RobustScaler().fit_transform(filled)
+                    X_scaled = np.clip(X_scaled, -10, 10)
+                    columns_final = list(filled.columns)
+    
                 lw = LedoitWolf()
                 lw.fit(X_scaled)
-                
+    
                 self.covariance_matrix_ = lw.covariance_
                 self.precision_matrix_ = np.linalg.inv(self.covariance_matrix_)
                 self.sparse_correlation_ = self._covariance_to_correlation(self.covariance_matrix_)
-                
+    
                 if self.verbose:
                     tprint_warning("⚠️ Used Ledoit-Wolf fallback")
-                
+    
                 return {
-                    'covariance': self.covariance_matrix_,
-                    'precision': self.precision_matrix_,
-                    'correlation': self.sparse_correlation_,
-                    'columns': list(X_filtered.columns)
+                    "covariance": self.covariance_matrix_,
+                    "precision": self.precision_matrix_,
+                    "correlation": self.sparse_correlation_,
+                    "columns": columns_final,
                 }
-                
+    
             except Exception as e2:
                 if self.verbose:
                     tprint_error(f"❌ Fallback also failed: {e2}")
                 return {}
+
     
     def _covariance_to_correlation(self, covariance: np.ndarray) -> np.ndarray:
         """Convert covariance matrix to correlation matrix."""

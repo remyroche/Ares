@@ -31,6 +31,24 @@ from src.feature_generation.categories.ensemble_disagreement import (
 )
 from src.training.steps.labeling.adaptive_hunter_router import AdaptiveHunterRouter
 
+def _select_vwap_column(df: pd.DataFrame) -> Optional[str]:
+    """Select the most appropriate VWAP column from a dataframe."""
+    vwap_candidates = [c for c in df.columns if 'vwap' in c.lower()]
+    if not vwap_candidates:
+        return None
+
+    preferred = ['vwap', 'VWAP', 'vwap_price', 'robust_vwap', 'robust_vwap_price']
+    for name in preferred:
+        if name in df.columns:
+            return name
+
+    def _window_hint(col: str) -> Tuple[int, int, str]:
+        digits = ''.join(ch for ch in col if ch.isdigit())
+        window = int(digits) if digits else 10**9
+        return (window, len(col), col)
+
+    return sorted(vwap_candidates, key=_window_hint)[0]
+
 
 def _apply_fracdiff(series: pd.Series, d: float = 0.4, threshold: float = 1e-5) -> pd.Series:
     """
@@ -118,10 +136,11 @@ def _compute_anchor_and_drift_features(
     regime_map = {0: 'Quiet', 1: 'Trending', 2: 'Chaos'}
     
     # Determine price source (VWAP preferred for structural features)
-    if 'vwap' in df.columns:
-        price_col = 'vwap'
-        price = df['vwap']
-        tprint_info("   ⚓ Using VWAP for Anchor/Drift calculations")
+    vwap_col = _select_vwap_column(df)
+    if vwap_col is not None:
+        price_col = vwap_col
+        price = df[vwap_col]
+        tprint_info(f"   ⚓ Using VWAP column '{vwap_col}' for Anchor/Drift calculations")
     elif 'close' in df.columns:
         price_col = 'close'
         price = df['close']

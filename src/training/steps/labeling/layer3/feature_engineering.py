@@ -260,7 +260,11 @@ def enhance_layer3_features_optimized(df, market_data, layer1_weight, layer0_par
                 max_lookback=layer0_params.get('robust_max_lookback', 200),
                 volatility_window=layer0_params.get('robust_volatility_window', 20)
             )
-            adaptive_features.append(robust_vwap.reindex(df.index).fillna(method='ffill').astype(np.float32))
+            robust_vwap_series = robust_vwap.reindex(df.index).fillna(method='ffill').astype(np.float32)
+            adaptive_features.append(robust_vwap_series)
+            df['vwap'] = robust_vwap_series
+            if market_data is not None:
+                market_data['vwap'] = robust_vwap.reindex(market_data.index).fillna(method='ffill').astype(np.float32)
             tprint_success("✅ Generated robust VWAP price")
         except Exception as e:
             tprint_warning(f"⚠️ Robust VWAP failed: {e}")

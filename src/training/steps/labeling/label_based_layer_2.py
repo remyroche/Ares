@@ -4973,6 +4973,7 @@ class LabelBasedLayer2(BaseStep):
             keep_cols = variances.index[: self.pre_geometry_gate_feature_cap].tolist()
             Z = Z[keep_cols]
 
+        tprint_info(f"   ✂️ Pruned gate features to shape: {Z.shape}")
         return Z
 
     def _build_causal_gate_state_features(
@@ -5638,6 +5639,9 @@ class LabelBasedLayer2(BaseStep):
         if not conditional_experts and core_experts:
             conditional_experts.append(core_experts.pop(0))
 
+        tprint_info(
+            f"   🧠 Classified gate experts: {len(core_experts)} core, {len(conditional_experts)} conditional"
+        )
         return core_experts, conditional_experts, expert_fold_scores
 
     def _select_specialists_for_gate_a(
@@ -5699,6 +5703,10 @@ class LabelBasedLayer2(BaseStep):
             if keep:
                 final_selected.append(expert)
 
+        tprint_info(
+            f"   🎯 Selected specialists for Gate A: {len(final_selected)}/{len(preds_oof_dict)} "
+            f"(Families: {len(fam_to_experts)})"
+        )
         return {expert: preds_oof_dict[expert] for expert in final_selected}
 
     def _calibrate_expert_predictions(
@@ -5794,6 +5802,7 @@ class LabelBasedLayer2(BaseStep):
 
         features["volatility_level"] = vol
         features["trend_score"] = trend_score
+        tprint_info(f"   🏗️ Built post-race regime features: {features.shape}")
         return features
 
     def _apply_post_race_gate(
@@ -5940,6 +5949,13 @@ class LabelBasedLayer2(BaseStep):
                 "disagreement": disagreement,
             },
             index=index,
+        )
+
+        tprint_info(
+            "   🚪 Post-race gate applied: "
+            f"entropy_mean={entropy.mean():.4f}, "
+            f"disagreement_mean={disagreement.mean():.4f}, "
+            f"top_expert_counts={pd.Series(top_expert).value_counts().head(3).to_dict()}"
         )
 
         self._post_race_gate_model = gate

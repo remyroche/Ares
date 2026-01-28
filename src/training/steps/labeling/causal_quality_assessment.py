@@ -524,7 +524,11 @@ class CausalQualityAssessor:
                     continue
                     
                 if not (min_val <= value <= max_val):
-                    failures.append(f"{metric_name}={value:.4f} not in [{min_val}, {max_val}] - {reason}")
+                    failure_msg = f"{metric_name}={value:.4f} not in [{min_val}, {max_val}]"
+                    failures.append(f"{failure_msg} - {reason}")
+                    # Immediate Triage Log
+                    if self.verbose:
+                         tprint_warning(f"💀 Candidate {family} KILLED by {metric_name}: {value:.4f} (Range: [{min_val}, {max_val}]) | Role: {role}")
         
         return len(failures) == 0, failures
     

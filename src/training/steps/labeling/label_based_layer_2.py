@@ -10317,7 +10317,8 @@ class LabelBasedLayer2(BaseStep):
                      from src.utils.purged_kfold import PurgedKFoldTime
                      # Pre-calculate splits to ensure index is used before potential sklearn conversion
                      try:
-                         calib_cv = list(PurgedKFoldTime(n_splits=5).split(X_train_final))
+                         # Enhanced CV: Purged + Embargoed (1%) to reduce path leakage
+                         calib_cv = list(PurgedKFoldTime(n_splits=5, embargo_pct=0.01).split(X_train_final))
                      except Exception:
                          # Fallback if split fails
                          calib_cv = 5

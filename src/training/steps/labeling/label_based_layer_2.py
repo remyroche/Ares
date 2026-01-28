@@ -98,6 +98,44 @@ except ImportError:
     XGBClassifier = None
     XGBRegressor = None
 from collections import defaultdict, OrderedDict
+
+class HuberResidualStack:
+    """
+    Experimental stacking model that fits a base model (e.g. XGB)
+    and then fits a HuberRegressor on the residuals to correct for outliers.
+    """
+    def __init__(self, base_model, residual_model=None):
+        self.base_model = base_model
+        self.residual_model = residual_model if residual_model else HuberRegressor()
+        self.classes_ = [0, 1] # Dummy for classifiers check
+
+    def fit(self, X, y, sample_weight=None):
+        self.base_model.fit(X, y, sample_weight=sample_weight)
+        # Use predict_proba for classifiers if available? 
+        # But this seems used for regression context (ResidualStack).
+        # Assuming Regression use case as implied by name.
+        if hasattr(self.base_model, "predict"):
+            preds = self.base_model.predict(X)
+        else:
+             # If classifier, use proba of class 1?
+             # For now assume regressor or predict() returns score.
+             preds = self.base_model.predict(X)
+             
+        residuals = y - preds
+        self.residual_model.fit(X, residuals, sample_weight=sample_weight)
+        return self
+
+    def predict(self, X):
+        base_preds = self.base_model.predict(X)
+        res_preds = self.residual_model.predict(X)
+        return base_preds + res_preds
+        
+    def predict_proba(self, X):
+        # Fallback for classifier API compatibility if needed
+        # But really this should output continuous score.
+        score = self.predict(X)
+        # Clip to 0-1 if treated as prob
+        return np.vstack([1-score, score]).T
 from joblib import Parallel, delayed
 from src.training.steps.labeling.label_based_layer_3 import layer3_analyst_lgbm
 from src.training.steps.labeling.layer2_validation import validate_geometry_quality, print_validation_report
@@ -2503,6 +2541,7 @@ class LabelBasedLayer2(BaseStep):
     _model_race_seed_models: Dict[str, Dict[str, Any]] = {}
 
     def _precompute_geometry_base_features(self, df: pd.DataFrame):
+        tprint_info(f"🚀 [DEBUG] Inside _precompute_geometry_base_features with df shape {df.shape}")
         """
         Pre-compute common rolling features for the entire dataset ONCE using JIT.
         """
@@ -5954,9 +5993,10 @@ class LabelBasedLayer2(BaseStep):
                             for col in cat_cols:
                                 X_extra[col] = X_extra[col].cat.codes.replace(-1, np.nan)
 
+                            # Vectorized sanitization for object columns
                             obj_cols = X_extra.select_dtypes(include=['object']).columns
-                            for col in obj_cols:
-                                X_extra[col] = pd.to_numeric(X_extra[col], errors='coerce')
+                            if len(obj_cols) > 0:
+                                X_extra[obj_cols] = X_extra[obj_cols].apply(pd.to_numeric, errors='coerce')
 
                             numeric_cols = X_extra.select_dtypes(include=[np.number, 'bool']).columns
                             if len(numeric_cols) > 0:
@@ -7642,6 +7682,7 @@ class LabelBasedLayer2(BaseStep):
             ect_window=int(config.get("ect_window", 252)),
             ect_half_life_bounds=tuple(config.get("ect_half_life_bounds", (1.0, 50.0))),
         )
+        ca_features = None
         try:
             tprint_info("   🌐 Cross-Asset: Running SVD/Feature Gen...")
             tprint_info("   ⏳ Generating Cross-Asset Surprises...")
@@ -7662,6 +7703,8 @@ class LabelBasedLayer2(BaseStep):
             tprint_info(f"   📋 Cross-Asset Features Generated: {list(ca_features.columns) if ca_features is not None else 'None'}")
         except Exception as e:
             tprint_warning(f"⚠️ Cross-asset SVD/feature generation failed: {e}. Skipping CA features.")
+            import traceback
+            tprint_error(traceback.format_exc())
             # Ensure we don't crash, but CA features will be missing
 
 
@@ -7860,9 +7903,12 @@ class LabelBasedLayer2(BaseStep):
             config = input_data if isinstance(input_data, dict) else {}
 
         # Initialize Outcome Matrix Cache with full data
+        tprint_info("🚀 [DEBUG] Starting Outcome Matrix Cache and Feature Bank...")
         tprint_info("   🧠 Initializing Outcome Matrix Cache and Feature Bank...")
         self.outcome_cache = OutcomeMatrixCache(df)
+        tprint_info("🚀 [DEBUG] Calling _precompute_geometry_base_features...")
         self._precompute_geometry_base_features(df)
+        tprint_info("🚀 [DEBUG] Finished _precompute_geometry_base_features.")
 
         # Merge initialization config into run configuration (init config serves as default)
         if hasattr(self, 'init_config'):
@@ -7874,7 +7920,9 @@ class LabelBasedLayer2(BaseStep):
         # This ensures cross-asset features are generated on the final geometry (dollar bars)
         # preventing data loss during conversion and timezone mismatches during re-merging.
         if self.use_dollar_bars:
+            tprint_info("🚀 [DEBUG] Converting to dollar bars...")
             df_bars = self._convert_to_dollar_bars(df, config)
+            tprint_info("🚀 [DEBUG] Finished converting to dollar bars.")
             if df_bars is not None and len(df_bars) > 1000:
                 original_len = len(df)
                 df = df_bars

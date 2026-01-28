@@ -525,6 +525,8 @@ class BaseStep(ABC):
                 # load the last N days anchored at the most recent available data
                 # using KlinesParquetManager's last_n_days helper. Otherwise, honour
                 # explicit start/end bounds.
+                tprint_info("🚀 [DEBUG] Calling klines_manager.load_klines...")
+                start_load = datetime.now()
                 if start_date is None:
                     market_data = klines_manager.load_klines(
                         symbol=symbol,
@@ -540,6 +542,7 @@ class BaseStep(ABC):
                         start_time=start_dt,
                         end_time=end_dt,
                     )
+                tprint_info(f"🚀 [DEBUG] klines_manager.load_klines returned in {(datetime.now() - start_load).total_seconds():.2f}s")
 
                 tprint_info(
                     f"📊 BASESTEP load result: rows={getattr(market_data, 'shape', ['NA'])[0] if market_data is not None else 'None'} "

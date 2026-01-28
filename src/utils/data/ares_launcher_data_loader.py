@@ -150,6 +150,8 @@ class AresLauncherDataLoader:
             tprint_debug(f"     - columns: {columns}")
 
             # Load data using KlinesParquetManager
+            tprint_info("🚀 [DEBUG] Calling klines_manager.read_data...")
+            start_read = datetime.now()
             data = self.klines_manager.read_data(
                 symbol=symbol,
                 interval=interval,
@@ -158,8 +160,11 @@ class AresLauncherDataLoader:
                 data_type=data_type,
                 columns=columns
             )
+            tprint_info(f"🚀 [DEBUG] klines_manager.read_data returned in {(datetime.now() - start_read).total_seconds():.2f}s")
+            tprint_info(f"🚀 [DEBUG] Data type: {type(data)}")
 
             if data is not None and not len(data) == 0:
+                tprint_info(f"🚀 [DEBUG] Data len: {len(data)}")
                 tprint_success(f"✅ [ARES_DATA_LOADER] Loaded {len(data)} records for {symbol} ({interval})")
                 tprint_info(f"📅 [ARES_DATA_LOADER] Data range: {data.index.min().date()} to {data.index.max().date()}")
                 tprint_debug(f"   → Data shape: {data.shape}")

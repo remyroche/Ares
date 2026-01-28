@@ -412,6 +412,7 @@ class KlinesParquetManager:
                     combined_df.index = pd.to_datetime(time_series[mask])
 
                 tprint_success(f"✅ Loaded {len(combined_df)} klines records for {symbol} {interval} (last {last_n_days} days)")
+                tprint_info("🚀 [DEBUG] KlinesParquetManager.load_klines about to return combined_df (path 1)")
                 return combined_df
             
             # Original behavior: use start_time/end_time filters
@@ -429,6 +430,7 @@ class KlinesParquetManager:
                 return pd.DataFrame()
 
             tprint_success(f"✅ Loaded {len(combined_df)} klines records for {symbol} {interval}")
+            tprint_info("🚀 [DEBUG] KlinesParquetManager.load_klines about to return combined_df (path 2)")
             return combined_df
 
         except Exception as e:

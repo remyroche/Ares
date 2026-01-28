@@ -149,6 +149,7 @@ class DePradoFeatureEngine:
         
         OPTIMIZED: Reuses correlation matrix, caches best clusterer during search.
         """
+        tprint_info("🔍 [DEBUG] Entering _get_onc_clusters...")
         tprint_info("🔍 Finding optimal feature clusters (Multi-criteria ONC)...")
         onc_start = time.time()
 
@@ -186,6 +187,7 @@ class DePradoFeatureEngine:
             feature_sample_matrix = X_subset.T.values
 
             for k in range(2, max_k + 1):
+                if k % 2 == 0: tprint_info(f"   [DEBUG] ONC checking k={k}/{max_k}")
                 try:
                     clusterer = FeatureAgglomeration(n_clusters=k, linkage='average')
                     clusterer.fit(X_subset)
@@ -597,6 +599,7 @@ class DePradoFeatureEngine:
         if not LGBM_AVAILABLE:
             raise ImportError("LightGBM not available")
 
+        tprint_info("🚀 [DEBUG] Starting _compute_lgbm_importance_cv...")
         tprint_info("🚀 Starting MDI OOF & Stability Analysis...")
 
         cv = PurgedKFoldTime(n_splits=5)
@@ -630,6 +633,7 @@ class DePradoFeatureEngine:
             objective = 'binary'
 
         for fold, (train_idx, val_idx) in enumerate(cv.split(X)):
+            tprint_info(f"   [DEBUG] Processing MDI Fold {fold+1}")
             X_train, y_train = X.iloc[train_idx], y.iloc[train_idx]
             X_val, y_val = X.iloc[val_idx], y.iloc[val_idx]
 
@@ -786,6 +790,7 @@ class DePradoFeatureEngine:
             return None
 
     def run_selection(self, X: pd.DataFrame, y: pd.Series, use_entropy_as_king: bool = False) -> List[str]:
+        tprint_info(f"🔍 [DEBUG] Starting run_selection with X shape: {X.shape}")
         # Detect mode if not set
         if self.is_regression is None:
             # Check target type

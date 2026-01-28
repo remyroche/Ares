@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 
+import warnings
+try:
+    from urllib3.exceptions import NotOpenSSLWarning
+    warnings.filterwarnings("ignore", category=NotOpenSSLWarning)
+except ImportError:
+    pass
+
 """
 Simplified Ares Launcher - Autonomous Step Execution
 
@@ -26,6 +33,12 @@ import re
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 from pathlib import Path
+import warnings
+try:
+    from urllib3.exceptions import NotOpenSSLWarning
+    warnings.filterwarnings("ignore", category=NotOpenSSLWarning)
+except ImportError:
+    pass
 
 # ============================================================================
 # CRITICAL: Set BLAS thread limits BEFORE importing NumPy/SciPy

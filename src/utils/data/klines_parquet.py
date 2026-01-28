@@ -1111,6 +1111,7 @@ class KlinesParquetManager:
             final_end_str = end_date.date() if hasattr(end_date, 'date') else str(end_date) if end_date else None
             period_info = f"from {final_start_str} to {final_end_str}" if start_date and end_date else "full period"
             self.logger.info(f"✅ Data loaded: {symbol} {interval} {period_info} -> {len(combined_df)} records")
+            self.logger.info("🚀 [DEBUG] KlinesParquetManager.read_data about to return combined_df")
             
             return combined_df
 

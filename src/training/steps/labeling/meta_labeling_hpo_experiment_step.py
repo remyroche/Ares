@@ -315,7 +315,9 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # Execute L2
                 # L2.run is async and takes input_data (DataFrame or Dict)
                 # It generates events and labels, typically saved to artifacts.
+                tprint_info("🚀 [DEBUG] Orchestrator: Calling l2_step.run()...")
                 layer2_results = await l2_step.run(market_data)
+                tprint_info("🚀 [DEBUG] Orchestrator: l2_step.run() returned.")
 
                 pipeline_results["layer2"] = "success"
                 tprint_success("✅ Layer 2 Complete")

@@ -131,8 +131,9 @@ class SparseCovarianceDenoiser:
             
             # Additional robustness: drop duplicates and highly correlated features
             # Highly correlated features (multi-collinearity) cause singular covariance matrices
-            # and nan duality gaps in GraphicalLasso.
-            filled = filled.T.drop_duplicates().T
+            # Optimization: Skip T.drop_duplicates().T for large matrices to avoid memory spike/slowdown
+            if filled.shape[0] * filled.shape[1] < 5_000_000:  # Limit to ~5M elements (e.g. 25k x 200)
+                filled = filled.T.drop_duplicates().T
             if filled.shape[1] < 2:
                 return {}
 

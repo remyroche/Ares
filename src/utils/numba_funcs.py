@@ -1549,3 +1549,47 @@ def _numba_rolling_kurt(x, window):
 
     return out
 
+
+@jit(nopython=True)
+def _numba_rolling_cov(x: np.ndarray, y: np.ndarray, window: int) -> np.ndarray:
+    """
+    Calculate rolling covariance Cov(x,y) aligned to the right edge of the window.
+    Cov(x,y) = E[xy] - E[x]E[y]
+    """
+    n = len(x)
+    out = np.zeros(n, dtype=np.float64)
+
+    if window <= 0:
+        return out
+    if len(y) != n:
+        return out
+    if window == 1:
+        return out
+
+    sx = 0.0
+    sy = 0.0
+    sxy = 0.0
+    inv_w = 1.0 / window
+
+    for i in range(n):
+        vx = x[i]
+        vy = y[i]
+
+        sx += vx
+        sy += vy
+        sxy += vx * vy
+
+        if i >= window:
+            rx = x[i - window]
+            ry = y[i - window]
+            sx -= rx
+            sy -= ry
+            sxy -= rx * ry
+
+        if i >= window - 1:
+            mx = sx * inv_w
+            my = sy * inv_w
+            cov = (sxy * inv_w) - (mx * my)
+            out[i] = cov
+
+    return out

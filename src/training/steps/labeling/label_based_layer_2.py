@@ -4857,7 +4857,21 @@ class LabelBasedLayer2(BaseStep):
                 verbose=self.verbose,
             )
             tree.fit(Z, preds_for_fitting, y, folds)
+
+            # --- Robust Pruning & Merging ---
+            # 1. Prune experts in leaves (Score gap + Fold consistency)
+            # Default gap=0.1, worst_fold=-0.25, kmax=2
+            tree.prune_experts_in_leaves(
+                Z, preds_for_fitting, y,
+                q=0.9, kmax=2, gap=0.1, worst_fold=-0.25
+            )
+
+            # 2. Structural Pruning (Alpha)
             tree.prune(alpha=self.causal_gate_prune_alpha)
+
+            # 3. Merge similar leaves (Weight distance)
+            tree.merge_similar_leaves(Z, preds_for_fitting, y, eps=0.2)
+
             self._causal_gate_tree = tree
             if not self._causal_gate_feature_cols:
                 self._causal_gate_feature_cols = list(Z.columns)

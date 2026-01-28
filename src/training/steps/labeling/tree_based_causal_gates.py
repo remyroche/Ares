@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 
 import numpy as np
 import pandas as pd
@@ -461,6 +461,27 @@ class StabilityRegimeTree:
             raise ValueError(f"Unknown utility_transform: {self.utility_transform}")
         return y * g
 
+    def _get_fold_metrics(
+        self,
+        idx_mask: np.ndarray,
+        y: np.ndarray,
+        s_oof: np.ndarray,
+    ) -> List[float]:
+        """
+        Compute stability metric per validation fold.
+        """
+        fold_metrics: List[float] = []
+        for val_mask in self.fold_val_masks_:
+            leaf_val_mask = idx_mask & val_mask
+            n_leaf_val = int(leaf_val_mask.sum())
+            if n_leaf_val < self.min_leaf_val_per_fold:
+                fold_metrics.append(np.nan)
+                continue
+
+            u = self._utility(y[leaf_val_mask], s_oof[leaf_val_mask])
+            fold_metrics.append(_safe_sharpe(u))
+        return fold_metrics
+
     def _stability_for_expert_on_mask(
         self,
         idx_mask: np.ndarray,
@@ -471,32 +492,18 @@ class StabilityRegimeTree:
         Stability score for one expert restricted to idx_mask (a leaf).
         Uses only validation sets, intersected via fast boolean AND.
         """
-        fold_metrics: List[float] = []
-        invalid_folds = 0
-        total_val_samples = 0
+        fold_metrics = self._get_fold_metrics(idx_mask, y, s_oof)
+
+        # Check validity constraints (minimum fold coverage)
+        valid_metrics = [m for m in fold_metrics if np.isfinite(m)]
         n_folds = len(self.fold_val_masks_)
         min_valid_folds = int(np.ceil(self.min_valid_fold_frac * n_folds))
+
+        # Stricter: count invalid folds directly
+        invalid_folds = sum(1 for m in fold_metrics if not np.isfinite(m))
         max_invalid_folds = max(0, n_folds - min_valid_folds)
-        min_total_samples = self.min_total_leaf_val_samples
-        if min_total_samples is None:
-            min_total_samples = self.min_leaf_val_per_fold * max(1, min_valid_folds)
-
-        for val_mask in self.fold_val_masks_:
-            leaf_val_mask = idx_mask & val_mask
-            n_leaf_val = int(leaf_val_mask.sum())
-            if n_leaf_val < self.min_leaf_val_per_fold:
-                invalid_folds += 1
-                fold_metrics.append(np.nan)
-                continue
-
-            u = self._utility(y[leaf_val_mask], s_oof[leaf_val_mask])
-            fold_metrics.append(_safe_sharpe(u))
-            total_val_samples += n_leaf_val
 
         if invalid_folds > max_invalid_folds:
-            return -np.inf
-
-        if total_val_samples < min_total_samples:
             return -np.inf
 
         fm = np.array(fold_metrics, dtype=float)
@@ -534,8 +541,14 @@ class StabilityRegimeTree:
         for expert, s in preds_oof.items():
             scores[expert] = self._stability_for_expert_on_mask(idx_mask, y, s)
 
-        best_expert = max(scores, key=scores.get)
-        best_score = float(scores[best_expert])
+        # Fallback if all scores are -inf
+        valid_scores = {k: v for k, v in scores.items() if np.isfinite(v)}
+        if not valid_scores:
+             best_expert = list(scores.keys())[0]
+             best_score = -1.0 # Or -inf
+        else:
+             best_expert = max(valid_scores, key=valid_scores.get)
+             best_score = float(valid_scores[best_expert])
 
         weights = self._make_leaf_weights(scores) if self.soft_weights else {best_expert: 1.0}
 
@@ -778,6 +791,176 @@ class StabilityRegimeTree:
             return left
         return self._find_any_leaf(node.right)
 
+    def prune_experts_in_leaves(
+        self,
+        Z: pd.DataFrame,
+        preds_oof: Dict[str, np.ndarray],
+        y: np.ndarray,
+        q: float = 0.90,
+        kmax: int = 2,
+        gap: float = 0.1,
+        worst_fold: float = -0.25,
+    ) -> None:
+        """
+        Post-hoc filtering of specialists within each leaf.
+
+        Rules:
+        1. Keep expert if Score >= BestScore - gap
+        2. Keep expert if WorstFoldMetric >= worst_fold
+        3. Keep max top-k experts
+        4. Renormalize weights
+        """
+        if self.root_ is None:
+            return
+
+        Z = self._validate_Z(Z)
+        # Re-derive sample assignments
+        leaf_ids = self.predict_leaf_ids(Z)
+
+        # Iterate unique leaves
+        for lid in np.unique(leaf_ids):
+            if lid not in self.leaves_:
+                continue
+
+            leaf = self.leaves_[lid]
+            mask = leaf_ids == lid
+
+            # Recalculate metrics for all experts
+            # (We need fresh fold metrics for the worst_fold check)
+            valid_experts = {}
+            scores = {}
+
+            for expert, s in preds_oof.items():
+                # Check consistency
+                fold_metrics = self._get_fold_metrics(mask, y, s)
+                # Filter NaNs
+                valid_fold_scores = [m for m in fold_metrics if np.isfinite(m)]
+
+                # Rule 1: Validity (>= min folds) - already checked by _stability_for_expert_on_mask?
+                # _stability_for_expert_on_mask returns -inf if invalid.
+                # Let's check explicitly for worst fold.
+                if len(valid_fold_scores) == 0:
+                    continue
+
+                min_fold = min(valid_fold_scores)
+                if min_fold < worst_fold:
+                    continue
+
+                # Get stability score
+                score = self._stability_for_expert_on_mask(mask, y, s)
+                if np.isfinite(score):
+                    valid_experts[expert] = score
+                    scores[expert] = score
+
+            if not valid_experts:
+                # Fallback: keep best original
+                continue
+
+            # Rule 2: Score Gap
+            best_score = max(valid_experts.values())
+            gap_filtered = {e: s for e, s in valid_experts.items() if s >= best_score - gap}
+
+            # Rule 3: Top-K
+            sorted_experts = sorted(gap_filtered.items(), key=lambda kv: kv[1], reverse=True)
+            top_k = sorted_experts[:kmax]
+
+            # Rule 4: Renormalize (Softmax or proportional?)
+            # Usually we use the same weighting logic as _make_leaf_weights
+            final_experts_dict = {e: s for e, s in top_k}
+            new_weights = self._make_leaf_weights(final_experts_dict)
+
+            # Update leaf
+            leaf.expert_weights = new_weights
+            leaf.scores_by_expert = scores # Keep full scores for reference? Or updated?
+            # Update best
+            best_e = top_k[0][0]
+            leaf.expert_best = best_e
+            leaf.score_best = top_k[0][1]
+
+    def merge_similar_leaves(
+        self,
+        Z: pd.DataFrame,
+        preds_oof: Dict[str, np.ndarray],
+        y: np.ndarray,
+        eps: float = 0.2
+    ) -> None:
+        """
+        Merge sibling leaves if their weight vectors are similar (L1 dist < eps).
+        """
+        if self.root_ is None:
+            return
+
+        def _get_leaf_weights_vector(leaf: LeafAssignment, all_experts: List[str]) -> np.ndarray:
+            return np.array([leaf.expert_weights.get(e, 0.0) for e in all_experts])
+
+        def _merge_recursive(node: Optional[Node]) -> Optional[Node]:
+            if node is None or node.is_leaf:
+                return node
+
+            # Recurse first
+            node.left = _merge_recursive(node.left)
+            node.right = _merge_recursive(node.right)
+
+            # Check merge condition
+            if node.left.is_leaf and node.right.is_leaf:
+                l_info = self.leaves_[node.left.leaf_id]
+                r_info = self.leaves_[node.right.leaf_id]
+
+                w_l = _get_leaf_weights_vector(l_info, self.experts_)
+                w_r = _get_leaf_weights_vector(r_info, self.experts_)
+
+                dist = np.sum(np.abs(w_l - w_r))
+
+                if dist < eps:
+                    if self.verbose:
+                        print(f"[RegimeTree] Merging node {node.node_id} (dist={dist:.4f})")
+
+                    # Create merged leaf assignment
+                    # Use NodeStats parent info if available, or approximate
+                    # Better: calculate weighted average of children weights based on n_samples
+                    n_l = l_info.n_samples
+                    n_r = r_info.n_samples
+                    total_n = n_l + n_r
+
+                    merged_weights = {}
+                    for e in self.experts_:
+                        val = (l_info.expert_weights.get(e, 0.0) * n_l +
+                               r_info.expert_weights.get(e, 0.0) * n_r) / max(1, total_n)
+                        if val > 1e-6:
+                            merged_weights[e] = val
+
+                    # Normalize
+                    s_w = sum(merged_weights.values())
+                    if s_w > 0:
+                        merged_weights = {k: v/s_w for k, v in merged_weights.items()}
+
+                    # Estimate score
+                    merged_score = (l_info.score_best * n_l + r_info.score_best * n_r) / max(1, total_n)
+
+                    new_leaf_id = max(self.leaves_.keys()) + 1
+                    best_expert = max(merged_weights, key=merged_weights.get) if merged_weights else l_info.expert_best
+
+                    new_assignment = LeafAssignment(
+                        leaf_id=new_leaf_id,
+                        expert_best=best_expert,
+                        expert_weights=merged_weights,
+                        score_best=merged_score,
+                        scores_by_expert={}, # Merged scores difficult to reconstruct without re-running
+                        n_samples=total_n
+                    )
+                    self.leaves_[new_leaf_id] = new_assignment
+
+                    node.is_leaf = True
+                    node.left = None
+                    node.right = None
+                    node.leaf_id = new_leaf_id
+                    node.feature = None
+                    node.threshold = None
+
+            return node
+
+        self.root_ = _merge_recursive(self.root_)
+
 
 # ============================================================
 # Example usage (toy)
@@ -827,6 +1010,11 @@ if __name__ == "__main__":
         min_stability_gain=0.02,
         verbose=True,
     ).fit(Z=Z, preds_oof=preds_oof, y=y, folds=folds)
+
+    # Prune experts
+    tree.prune_experts_in_leaves(Z, preds_oof, y, kmax=2, gap=0.1, worst_fold=-0.5)
+    # Merge
+    tree.merge_similar_leaves(Z, preds_oof, y, eps=0.2)
 
     routed = tree.route(Z_new=Z, preds_by_expert=preds_oof)
     leaf_ids = tree.predict_leaf_ids(Z)

@@ -36,6 +36,13 @@ except Exception:
     FRACDIFF_AVAILABLE = False
 
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
+from src.utils.numba_funcs import (
+    _numba_rolling_mean,
+    _numba_rolling_std,
+    _numba_rolling_correlation,
+    _numba_rolling_cov,
+    _numba_ewma
+)
 
 NAMESPACE_PREFIXES = ("raw__", "y__", "sa__", "cs__", "ca__", "ms__", "gate__")
 
@@ -434,7 +441,7 @@ class MarketStateVector:
         x_numeric = state_instruments.select_dtypes(include=[np.number])
         if x_numeric.empty:
             raise ValueError("No numeric data available for MarketStateVector fit")
-        x = x_numeric.fillna(method="ffill").fillna(0.0)
+        x = x_numeric.ffill().fillna(0.0)
         scaled = self.scaler.fit_transform(x)
         components = self.pca.fit_transform(scaled)
         self.loadings_ = self.pca.components_.copy()
@@ -452,7 +459,7 @@ class MarketStateVector:
         tprint_info(f"[MarketStateVector] transform start shape={state_instruments.shape}")
         if self.loadings_ is None:
             raise RuntimeError("MarketStateVector not fitted")
-        x = state_instruments.fillna(method="ffill").fillna(0.0)
+        x = state_instruments.ffill().fillna(0.0)
         scaled = self.scaler.transform(x)
         components = self.pca.transform(scaled)
 
@@ -637,42 +644,165 @@ class CrossAssetSurprises:
 
     def _compute_robust_features(self, slice_df: pd.DataFrame, market_returns: pd.Series, window: int = 50) -> pd.DataFrame:
         """
-        Compute robust cross-asset features: Beta, Relative Strength, Lead-Lag.
+        Compute robust cross-asset features: Rolling Beta, Relative Strength, Lead-Lag, Shock.
         market_returns: Series of average market returns (aligned index)
         """
         idx = slice_df.index
         out = pd.DataFrame(index=idx)
         
-        # 0. Asset Returns (using raw__px pct_change if y__ret_1 not avail)
-        if "raw__px" in slice_df.columns:
-            asset_ret = slice_df["raw__px"].pct_change()
+        # 0. Asset Returns (Log Returns preferred for statistical properties)
+        if "raw__log_px" in slice_df.columns:
+            asset_log_px = slice_df["raw__log_px"]
+            asset_ret = asset_log_px.diff()
+        elif "raw__px" in slice_df.columns:
+            asset_ret = np.log(slice_df["raw__px"]).diff()
         elif "close" in slice_df.columns:
-            asset_ret = slice_df["close"].pct_change()
+            asset_ret = np.log(slice_df["close"]).diff()
         else:
             return out # Cannot compute
             
         mkt_ret = market_returns.reindex(idx).fillna(0.0)
         
-        # 1. Rolling Beta (Cov(rp, rm) / Var(rm))
-        cov = asset_ret.rolling(window).cov(mkt_ret)
-        var = mkt_ret.rolling(window).var()
-        out["ca__beta_w50"] = cov / (var + 1e-9)
+        # Fill NaNs for Numba (0.0 assumption for returns is neutral)
+        r_a_vals = asset_ret.fillna(0.0).values.astype(np.float64)
+        r_m_vals = mkt_ret.fillna(0.0).values.astype(np.float64)
         
-        # 2. Rolling Relative Strength (Active Return)
-        active_ret = asset_ret - mkt_ret
-        out["ca__active_ret_w50"] = active_ret.rolling(window).mean()
-        # Z-score of active return
-        std_active = active_ret.rolling(window).std()
-        out["ca__active_ret_z_w50"] = out["ca__active_ret_w50"] / (std_active + 1e-9)
+        # Winsorize Returns (1% tails) for robustness before Beta calculation
+        # Global quantile approximation or per-window? Request implied robustness.
+        # "winsorize returns (e.g., 0.5–1% tails) before beta"
+        # I'll stick to global winsorization as it's efficient and standard for training data.
 
-        # 3. Lead-Lag
-        # Market Leading Asset (Asset Follows)
-        corr_mkt_lead = asset_ret.rolling(window).corr(mkt_ret.shift(1))
-        # Asset Leading Market (Market Follows)
-        corr_asset_lead = mkt_ret.rolling(window).corr(asset_ret.shift(1))
-        
-        out["ca__lead_lag_w50"] = corr_asset_lead - corr_mkt_lead
-        
+        def winsorize_np(arr, lower=0.01, upper=0.99):
+            low_val = np.quantile(arr, lower)
+            high_val = np.quantile(arr, upper)
+            return np.clip(arr, low_val, high_val)
+
+        r_a_win = winsorize_np(r_a_vals)
+        r_m_win = winsorize_np(r_m_vals)
+
+        # --- 1. Rolling Beta (Market Sensitivity) ---
+        # Beta = Cov(r_a, r_m) / Var(r_m)
+
+        def compute_beta_numba(ra, rm, w):
+            cov = _numba_rolling_cov(ra, rm, w)
+            var = _numba_rolling_cov(rm, rm, w) # Cov(m,m) is Var(m)
+            return cov / (var + 1e-9)
+
+        out["ca__beta_short_w24"] = compute_beta_numba(r_a_win, r_m_win, 24)
+        out["ca__beta_long_w96"] = compute_beta_numba(r_a_win, r_m_win, 96)
+        out["ca__beta_shift"] = out["ca__beta_short_w24"] - out["ca__beta_long_w96"]
+
+        # downside_beta_long: beta computed only on bars where market return < 0 over 96 bars
+        # This one remains in Pandas for masking logic simplicity and robustness
+        mask_down = r_m_win < 0
+        r_a_pd_down = pd.Series(np.where(mask_down, r_a_win, np.nan), index=idx)
+        r_m_pd_down = pd.Series(np.where(mask_down, r_m_win, np.nan), index=idx)
+        out["ca__downside_beta_long_w96"] = r_a_pd_down.rolling(96, min_periods=20).cov(r_m_pd_down) / \
+                                            (r_m_pd_down.rolling(96, min_periods=20).var() + 1e-9)
+
+        # --- 2. Relative Strength / Active Return (vs market) ---
+        # active_ret = r_asset - r_mkt
+        active_ret_vals = r_a_vals - r_m_vals
+
+        # active_ret_z: 48 bars
+        active_mean_48 = _numba_rolling_mean(active_ret_vals, 48)
+        active_std_48 = _numba_rolling_std(active_ret_vals, 48)
+        out["ca__active_ret_z_w48"] = active_mean_48 / (active_std_48 + 1e-9)
+
+        # active_ret_trend: EWMA span 48 (alpha = 2/(span+1) = 2/49)
+        alpha = 2.0 / 49.0
+        out["ca__active_ret_trend"] = _numba_ewma(active_ret_vals, alpha, adjust=True)
+
+        # active_ret_mr: (active_ret - EWMA) / rolling_std
+        out["ca__active_ret_mr"] = (active_ret_vals - out["ca__active_ret_trend"]) / (active_std_48 + 1e-9)
+
+        # active_ret_voladj: (r_asset - r_mkt) / (σ_asset_48 + ε)
+        asset_vol_48 = _numba_rolling_std(r_a_vals, 48)
+        out["ca__active_ret_voladj"] = active_ret_vals / (asset_vol_48 + 1e-9)
+
+        # --- 3. Lead-Lag Dynamics ---
+        # Lead-Lag Statistic: corr(asset_t, mkt_{t-lag}) - corr(mkt_t, asset_{t-lag})
+        # Positive => Market Leads (Asset Follows)
+        # Negative => Asset Leads (Market Follows)
+
+        lags = [1, 2, 3, 6, 12]
+        ll_window = 48
+        max_abs_corr = np.zeros(len(idx))
+
+        for lag in lags:
+            # corr(asset_t, mkt_{t-lag})
+            mkt_lagged = np.full_like(r_m_win, 0.0)
+            mkt_lagged[lag:] = r_m_win[:-lag]
+            c1 = _numba_rolling_correlation(r_a_win, mkt_lagged, ll_window)
+
+            # corr(mkt_t, asset_{t-lag})
+            asset_lagged = np.full_like(r_a_win, 0.0)
+            asset_lagged[lag:] = r_a_win[:-lag]
+            c2 = _numba_rolling_correlation(r_m_win, asset_lagged, ll_window)
+
+            diff = c1 - c2
+
+            # Update Max Abs
+            mask_update = np.abs(diff) > np.abs(max_abs_corr)
+            max_abs_corr[mask_update] = diff[mask_update]
+
+        out["ca__lead_lag_w48"] = max_abs_corr
+
+        # lead_lag_sign_persistence: directional stability of the lead-lag signal
+        # Fraction of last 48 bars where sign matched mean sign?
+        # Or simply rolling sum of signs magnitude.
+        # We use: abs(rolling_sum(sign)) / window. If consistent => 1.0.
+        sign_series = np.sign(out["ca__lead_lag_w48"]).values.astype(np.float64)
+        out["ca__lead_lag_sign_persistence"] = np.abs(_numba_rolling_mean(sign_series, 48))
+
+        # --- 4. Shock Features ---
+        # corr_shock = corr_12(asset,mkt) - corr_96(asset,mkt)
+        c12 = _numba_rolling_correlation(r_a_win, r_m_win, 12)
+        c96 = _numba_rolling_correlation(r_a_win, r_m_win, 96)
+        out["ca__corr_shock"] = c12 - c96
+
+        # vol_shock = (σ_asset_12/σ_asset_96) - (σ_mkt_12/σ_mkt_96)
+        std_a_12 = _numba_rolling_std(r_a_win, 12)
+        std_a_96 = _numba_rolling_std(r_a_win, 96)
+        std_m_12 = _numba_rolling_std(r_m_win, 12)
+        std_m_96 = _numba_rolling_std(r_m_win, 96)
+
+        ratio_a = std_a_12 / (std_a_96 + 1e-9)
+        ratio_m = std_m_12 / (std_m_96 + 1e-9)
+        out["ca__vol_shock"] = ratio_a - ratio_m
+
+        # volume_shock = zscore(log(volume), 96)
+        if "raw__volume" in slice_df.columns:
+            vol = slice_df["raw__volume"]
+        elif "volume" in slice_df.columns:
+            vol = slice_df["volume"]
+        else:
+            vol = None
+
+        if vol is not None:
+            # Winsorize/Clean volume (Numpy based)
+            vol_vals = vol.values.astype(np.float64)
+            # Simple ffill using loop or pandas before conversion?
+            # Already have vol as pandas series. Use ffill()
+            vol_clean = vol.ffill().fillna(1.0).values.astype(np.float64)
+
+            # Avoid log(0)
+            vol_clean[vol_clean <= 0] = 1.0
+            log_vol = np.log(vol_clean)
+
+            lv_mean = _numba_rolling_mean(log_vol, 96)
+            lv_std = _numba_rolling_std(log_vol, 96)
+            out["ca__volume_shock"] = (log_vol - lv_mean) / (lv_std + 1e-9)
+
+            # delta_volume_shock over 12
+            # Vectorized diff
+            shock_diff = np.full_like(out["ca__volume_shock"], 0.0)
+            shock_diff[12:] = out["ca__volume_shock"].values[12:] - out["ca__volume_shock"].values[:-12]
+            out["ca__delta_volume_shock_12"] = shock_diff
+        else:
+            out["ca__volume_shock"] = 0.0
+            out["ca__delta_volume_shock_12"] = 0.0
+
         return out.fillna(0.0)
 
     def _ensure_vpin(self, df: pd.DataFrame) -> Optional[pd.Series]:

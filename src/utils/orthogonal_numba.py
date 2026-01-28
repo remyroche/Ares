@@ -48,46 +48,56 @@ def _numba_rolling_hurst(series, window):
     n = len(series)
     output = np.full(n, 0.5)
 
+    if n < window:
+        return output
+
+    # Initialize sums for the first window
+    current_sum = 0.0
+    current_sq = 0.0
+    for j in range(window):
+        val = series[j]
+        current_sum += val
+        current_sq += val * val
+
     for i in range(window, n + 1):
-        # Segment: series[i-window : i]
-        # We need to manually compute mean, cumsum, range, std
+        # Update sums incrementally if shifted
+        if i > window:
+            entering = series[i - 1]
+            leaving = series[i - 1 - window]
+            current_sum += entering - leaving
+            current_sq += entering * entering - leaving * leaving
 
-        # 1. Mean
-        sum_val = 0.0
-        for j in range(i-window, i):
-            sum_val += series[j]
-        mean_val = sum_val / window
+        mean_val = current_sum / window
 
-        # 2. Cumsum of deviations & Range & Std
+        # Calculate Standard Deviation (S)
+        # Var = E[x^2] - (E[x])^2
+        variance_term = (current_sq / window) - (mean_val * mean_val)
+
+        if variance_term < 1e-12:
+            S = 0.0
+        else:
+            S = np.sqrt(variance_term)
+
+        # Range (R) calculation - requires loop over the window
+        # We optimize by avoiding the extra loop for mean/sum calculation
         min_cumdev = 0.0
         max_cumdev = 0.0
         current_cumdev = 0.0
-        sum_sq_diff = 0.0
 
-        # Iterating again for deviations
-        # Optimization: We can do single pass if we didn't need range of cumsum
-        # But we need range of cumsum, so 2 passes usually needed unless we store segment
+        start_idx = i - window
+        end_idx = i
 
-        # Since 'window' can be large (200), better to loop over range
-
-        for j in range(i-window, i):
+        for j in range(start_idx, end_idx):
             val = series[j]
-            dev = val - mean_val
-            current_cumdev += dev
-            if current_cumdev < min_cumdev: min_cumdev = current_cumdev
-            if current_cumdev > max_cumdev: max_cumdev = current_cumdev
+            # Calculate deviation on the fly
+            current_cumdev += (val - mean_val)
 
-            sum_sq_diff += dev * dev
+            if current_cumdev < min_cumdev:
+                min_cumdev = current_cumdev
+            if current_cumdev > max_cumdev:
+                max_cumdev = current_cumdev
 
         R = max_cumdev - min_cumdev
-
-        # Std dev
-        # Using population or sample std? Original code: np.std(segment) -> population std by default in numpy?
-        # No, ddof=0 default in numpy.
-        if sum_sq_diff < 1e-12:
-            S = 0.0
-        else:
-            S = np.sqrt(sum_sq_diff / window)
 
         if S < 1e-9 or R < 1e-9:
             continue
@@ -96,10 +106,12 @@ def _numba_rolling_hurst(series, window):
         H = np.log(rs) / np.log(window)
 
         # Clip
-        if H < 0.0: H = 0.0
-        if H > 1.0: H = 1.0
+        if H < 0.0:
+            H = 0.0
+        if H > 1.0:
+            H = 1.0
 
-        output[i-1] = H
+        output[i - 1] = H
 
     return output
 

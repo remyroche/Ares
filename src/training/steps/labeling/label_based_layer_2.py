@@ -4632,26 +4632,23 @@ class LabelBasedLayer2(BaseStep):
             tprint_error(f"   ❌ Layer 2: Traceback: {traceback.format_exc()}")
             return {}
 
-    def _initialize_causal_specialists(self, df: pd.DataFrame, causal_graph: Dict[str, List[str]]) -> Dict[str, pd.Series]:
+    def _initialize_causal_specialists(self, df: pd.DataFrame, causal_graph: Dict[str, List[str]]) -> Tuple[Dict[str, pd.Series], Dict[str, pd.Series]]:
         """
-        Initialize and train causal specialists as causal parents.
+        Initialize and train causal specialists.
+        Returns:
+            (full_predictions, oof_predictions)
         """
         tprint_info("🧠 Layer 2: Initializing Causal Specialists...")
 
         if not self.causal_specialists_enabled:
             tprint_info("   ⏭️ Layer 2: Causal specialists disabled")
-            return {}
-
-        # Manager is created in this method, so no need to check for existence pre-creation
-        # if self._specialist_manager is None:
-        #    tprint_warning("   ⚠️ Layer 2: Specialist manager not initialized") 
-        #    return {}
+            return {}, {}
 
         try:
             tprint_info("   📊 Layer 2: Analyzing causal graph...")
             if not causal_graph:
                 tprint_warning("   ⚠️ Layer 2: No causal graph available for specialist initialization")
-                return {}
+                return {}, {}
 
             total_relationships = sum(len(parents) for parents in causal_graph.values())
             tprint_info(f"      - Causal relationships: {total_relationships}")
@@ -4670,7 +4667,7 @@ class LabelBasedLayer2(BaseStep):
 
             if len(self._specialist_manager.specialists) == 0:
                 tprint_warning("   ⚠️ Layer 2: No specialists could be created from causal graph")
-                return {}
+                return {}, {}
 
             tprint_info(f"      - Specialists created: {len(self._specialist_manager.specialists)}")
             for specialist in self._specialist_manager.specialists[:3]:  # Show first 3
@@ -4689,11 +4686,15 @@ class LabelBasedLayer2(BaseStep):
 
             if not y_dict:
                 tprint_warning("   ⚠️ Layer 2: No target data available for specialists")
-                return {}
+                return {}, {}
 
-            # Train specialists in parallel
-            tprint_info("   🎓 Layer 2: Training specialists in parallel...")
+            # 1. Generate OOF Predictions (for gating)
+            # We do this BEFORE full training to avoid any state leakage, although we clone inside OOF generator.
             specialists = self._specialist_manager.specialists
+            oof_predictions = self._generate_oof_specialist_predictions(specialists, df, y_dict)
+
+            # 2. Train specialists in parallel (Full Fit for inference)
+            tprint_info("   🎓 Layer 2: Training specialists in parallel (Full Fit)...")
             training_metrics = self._train_specialists_parallel(specialists, df, y_dict)
             self._specialist_manager.manager_metrics_["training_metrics"] = training_metrics
 
@@ -4712,40 +4713,41 @@ class LabelBasedLayer2(BaseStep):
                     tprint_info(f"         • MSE: {metrics.get('mse', 'N/A'):.6f}")
                     tprint_info(f"         • Samples: {metrics.get('n_samples', 'N/A')}")
 
-            # Generate predictions from all specialists
+            # 3. Generate predictions from all specialists (Full predictions)
             tprint_info("   🔮 Layer 2: Generating predictions from specialists in parallel...")
             predictions = self._predict_specialists_parallel(specialists, df)
             tprint_info(f"      - Raw predictions returned: {len(predictions)} entries")
 
             # Extract prediction series (handle tuple format)
-            prediction_series = {}
+            full_prediction_series = {}
             names_to_skip = []
             for name, pred in predictions.items():
                 if isinstance(pred, tuple):
-                    prediction_series[name] = pred[0]  # Predictions
+                    full_prediction_series[name] = pred[0]  # Predictions
                 else:
-                    prediction_series[name] = pred
+                    full_prediction_series[name] = pred
                 # Log if prediction is actually usable
-                if isinstance(prediction_series[name], pd.Series):
-                    non_nan = prediction_series[name].notna().sum()
+                if isinstance(full_prediction_series[name], pd.Series):
+                    non_nan = full_prediction_series[name].notna().sum()
                     if non_nan > 0:
                         tprint_info(f"      - {name}: {non_nan} valid predictions")
                     else:
                         tprint_warning(f"      - {name}: all NaN predictions")
                         names_to_skip.append(name)  # Mark for removal later
 
-            # Remove empty predictions (fix: don't modify dict during iteration)
+            # Remove empty predictions from both dicts
             for name in names_to_skip:
-                del prediction_series[name]
+                full_prediction_series.pop(name, None)
+                oof_predictions.pop(name, None)
 
-            tprint_success(f"✅ Layer 2: Specialists trained and predictions generated: {len(prediction_series)} specialists")
-            return prediction_series
+            tprint_success(f"✅ Layer 2: Specialists trained: {len(full_prediction_series)} full, {len(oof_predictions)} OOF")
+            return full_prediction_series, oof_predictions
 
         except Exception as e:
             tprint_error(f"❌ Layer 2: Specialist initialization failed: {e}")
             import traceback
             tprint_error(f"❌ Layer 2: Traceback: {traceback.format_exc()}")
-            return {}
+            return {}, {}
 
     def _build_causal_gate_state_features(self, df: pd.DataFrame) -> pd.DataFrame:
         numeric_df = df.select_dtypes(include=[np.number]).copy()
@@ -4791,7 +4793,14 @@ class LabelBasedLayer2(BaseStep):
         specialist_predictions: Dict[str, pd.Series],
         fit_tree: bool = False,
         y_series: Optional[pd.Series] = None,
+        oof_predictions: Optional[Dict[str, pd.Series]] = None,
     ) -> Tuple[Dict[str, pd.Series], Optional[pd.DataFrame]]:
+        """
+        Apply causal gating.
+        Args:
+            specialist_predictions: Full predictions for routing/inference.
+            oof_predictions: OOF predictions for tree fitting (required if fit_tree=True).
+        """
         if not self.causal_gate_enabled or not specialist_predictions:
             return specialist_predictions, None
 
@@ -4802,12 +4811,24 @@ class LabelBasedLayer2(BaseStep):
         if Z.empty:
             return specialist_predictions, None
 
-        preds_oof: Dict[str, np.ndarray] = {}
+        # Prepare predictions for inference (routing)
+        preds_for_routing: Dict[str, np.ndarray] = {}
         for name, series in specialist_predictions.items():
             aligned = series.reindex(Z.index).fillna(0.0)
-            preds_oof[name] = aligned.to_numpy(dtype=float)
+            preds_for_routing[name] = aligned.to_numpy(dtype=float)
 
         if fit_tree or self._causal_gate_tree is None:
+            # Use OOF predictions for fitting if available, else warn and fallback
+            preds_for_fitting = {}
+            if oof_predictions:
+                for name, series in oof_predictions.items():
+                    aligned = series.reindex(Z.index).fillna(0.0)
+                    preds_for_fitting[name] = aligned.to_numpy(dtype=float)
+                tprint_info(f"   🌳 Fitting Causal Gate on OOF predictions ({len(preds_for_fitting)} specialists)")
+            else:
+                tprint_warning("   ⚠️ No OOF predictions provided for Causal Gate fitting. Using in-sample predictions (Risk of Overfitting!)")
+                preds_for_fitting = preds_for_routing
+
             if y_series is None:
                 y_series = self._get_causal_gate_target(df)
             y = y_series.reindex(Z.index).fillna(0.0).to_numpy(dtype=float)
@@ -4832,9 +4853,10 @@ class LabelBasedLayer2(BaseStep):
                 soft_weights=True,
                 top_k_weights=self.causal_gate_top_k,
                 min_stability_gain=self.causal_gate_min_gain,
+                min_valid_fold_frac=0.8,  # Enforce 80% fold validity per leaf
                 verbose=self.verbose,
             )
-            tree.fit(Z, preds_oof, y, folds)
+            tree.fit(Z, preds_for_fitting, y, folds)
             tree.prune(alpha=self.causal_gate_prune_alpha)
             self._causal_gate_tree = tree
             if not self._causal_gate_feature_cols:
@@ -4846,15 +4868,16 @@ class LabelBasedLayer2(BaseStep):
 
         if tree.experts_:
             for expert in tree.experts_:
-                if expert not in preds_oof:
-                    preds_oof[expert] = np.zeros(len(Z), dtype=float)
+                if expert not in preds_for_routing:
+                    preds_for_routing[expert] = np.zeros(len(Z), dtype=float)
 
-        gate_outputs = tree.route(Z, preds_oof)
+        # Route using inference predictions (Full fit)
+        gate_outputs = tree.route(Z, preds_for_routing)
         gate_outputs = gate_outputs.reindex(Z.index)
 
         leaf_ids = gate_outputs["leaf_id"].to_numpy()
         gated_predictions: Dict[str, pd.Series] = {}
-        for expert, preds in preds_oof.items():
+        for expert, preds in preds_for_routing.items():
             weights = np.array([tree.leaves_[leaf_id].expert_weights.get(expert, 0.0) for leaf_id in leaf_ids])
             gated_predictions[expert] = pd.Series(preds * weights, index=Z.index)
 
@@ -5001,7 +5024,12 @@ class LabelBasedLayer2(BaseStep):
             tprint_info("   🎯 Layer 2: Generating causal events from surprise scores...")
             # Retry logic with progressively lower thresholds
             causal_events = {}
-            # Start with user-provided threshold (default 0.04)
+            # Start with user-provided threshold (default 0.04).
+            # Note: Values < 0.5 are treated as density targets (quantiles) by CausalSurpriseDetector,
+            # ensuring adaptive thresholding on the gated score distribution.
+            if self.causal_event_threshold < 0.5:
+                tprint_info(f"   🌊 Using Adaptive Density Thresholding (Target: {self.causal_event_threshold:.1%} density)")
+
             thresholds = [self.causal_event_threshold, 0.01, 0.005, 0.001, 0.0001]
             # Ensure unique and sorted descending
             thresholds = sorted(list(set(thresholds)), reverse=True)
@@ -7325,6 +7353,74 @@ class LabelBasedLayer2(BaseStep):
         self._confounder_cache[cache_key] = confounder_df
         return confounder_df
 
+    def _generate_oof_specialist_predictions(
+        self,
+        specialists: List[Any],
+        df: pd.DataFrame,
+        y_dict: Dict[str, pd.Series],
+        n_folds: int = 5
+    ) -> Dict[str, pd.Series]:
+        """
+        Generate Out-Of-Fold predictions for specialists using Purged K-Fold.
+        """
+        tprint_info(f"   🔄 Generating OOF predictions for {len(specialists)} specialists ({n_folds} folds)...")
+
+        try:
+            folds = make_purged_kfold_folds(df.index, n_folds=n_folds, purge=0, embargo=0)
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Failed to generate folds for OOF: {e}")
+            return {}
+
+        # Initialize with NaNs
+        oof_preds_arrays = {spec.name: np.full(len(df), np.nan, dtype=float) for spec in specialists}
+
+        # Iterate folds
+        for fold_idx, (train_idx, val_idx) in enumerate(folds):
+            if len(train_idx) < 100 or len(val_idx) == 0:
+                continue
+
+            # Prepare train/val data slices
+            X_train = df.iloc[train_idx]
+            X_val = df.iloc[val_idx]
+
+            for spec in specialists:
+                y_name = spec.name
+                if y_name not in y_dict:
+                    continue
+
+                y_target = y_dict[y_name]
+                y_train = y_target.iloc[train_idx]
+
+                try:
+                    # Clone specialist to ensure clean state
+                    spec_clone = copy.deepcopy(spec)
+                    spec_clone.fit(X_train, y_train)
+
+                    # Predict on val
+                    preds = spec_clone.predict(X_val)
+
+                    # Handle tuple return (some specialists might return extra info)
+                    if isinstance(preds, tuple):
+                        preds = preds[0]
+
+                    # Store in array
+                    oof_preds_arrays[y_name][val_idx] = preds
+                except Exception:
+                    # Silent fail for individual fold/spec errors to keep moving
+                    pass
+
+        # Convert to Series and fill gaps (e.g. startup) with 0 or forward fill?
+        # Ideally we want raw OOF. Gaps (start of time) can be 0.
+        oof_series_dict = {}
+        for name, arr in oof_preds_arrays.items():
+            s = pd.Series(arr, index=df.index)
+            # Fill NaNs (e.g. from purge or start) with 0.0 to avoid breaking downstream
+            # But maybe ffill is better? No, 0.0 (neutral) is safer for gating if unknown.
+            s = s.fillna(0.0)
+            oof_series_dict[name] = s
+
+        return oof_series_dict
+
     def _train_specialists_parallel(
         self,
         specialists: List[Any],
@@ -8557,13 +8653,15 @@ class LabelBasedLayer2(BaseStep):
                     except Exception as e:
                         tprint_error(f"   ❌ AEDL initialization failed: {e}")
                         tprint_info("   🔄 Falling back to traditional causal specialists...")
-                        specialist_predictions = self._initialize_causal_specialists(df, causal_graph)
+                        specialist_predictions, oof_predictions = self._initialize_causal_specialists(df, causal_graph)
                 else:
                     # Use Graph Edge Specialists
-                    specialist_predictions = self._initialize_causal_specialists(df, causal_graph)
+                    specialist_predictions, oof_predictions = self._initialize_causal_specialists(df, causal_graph)
                     
                 # Store for OOF analytics phase
                 self._causal_specialist_predictions = specialist_predictions
+                self._specialist_oof_predictions = oof_predictions
+
                 if not specialist_predictions:
                     tprint_warning("   ⚠️ No specialist predictions available")
                 else:
@@ -8571,6 +8669,7 @@ class LabelBasedLayer2(BaseStep):
                 
                 # Save specialist_training checkpoint
                 if self._checkpoints_enabled:
+                    # Serialize only full predictions to save space, OOF can be regenerated or stored if critical
                     self._checkpoint_manager.save_checkpoint('specialist_training', {
                         'df': df,
                         'causal_graph': causal_graph,
@@ -8580,10 +8679,12 @@ class LabelBasedLayer2(BaseStep):
             # 2b. Causal Gating: build regime tree + gate specialists
             if specialist_predictions:
                 self._raw_causal_specialist_predictions = specialist_predictions
+                # Use OOF predictions for fitting the gate (Crucial for robust regimes)
                 gated_predictions, gate_outputs = self._apply_causal_gates(
                     df,
                     specialist_predictions,
                     fit_tree=True,
+                    oof_predictions=oof_predictions if 'oof_predictions' in locals() else None
                 )
                 if gate_outputs is not None and not gate_outputs.empty:
                     self._causal_gate_outputs = gate_outputs
@@ -8601,14 +8702,27 @@ class LabelBasedLayer2(BaseStep):
             else:
                 tprint_success(f"   ✅ Causal events generated: {len(causal_events_df)} events")
             
-            # Save event_generation checkpoint
+            # Save event_generation checkpoint (Persist gate diagnostics)
             if self._checkpoints_enabled:
-                self._checkpoint_manager.save_checkpoint('event_generation', {
+                checkpoint_payload = {
                     'df': df,
                     'causal_graph': causal_graph,
                     'specialist_predictions': {k: v.to_dict() if hasattr(v, 'to_dict') else v for k, v in specialist_predictions.items()},
-                    'causal_events_df': causal_events_df
-                }, symbol, self._current_config)
+                    'causal_events_df': causal_events_df,
+                }
+                # Add gate outputs if available
+                if self._causal_gate_outputs is not None:
+                    checkpoint_payload['gate_outputs'] = self._causal_gate_outputs
+
+                # Persist the gate tree object for auditability
+                if self._causal_gate_tree is not None:
+                    try:
+                        # Attempt to pickle the tree; if it fails, we skip it
+                        checkpoint_payload['gate_tree'] = self._causal_gate_tree
+                    except Exception:
+                        pass
+
+                self._checkpoint_manager.save_checkpoint('event_generation', checkpoint_payload, symbol, self._current_config)
 
             # 4. Causal Feature Engineering: Denoise and adjust features using causal relationships
             # Skip if resuming past this step
@@ -8883,6 +8997,9 @@ class LabelBasedLayer2(BaseStep):
                 "causal_targets": causal_targets_df,
                 "framework_type": "modern_de_prado_causal"
             }
+            # Include gate diagnostics
+            if self._causal_gate_outputs is not None:
+                results["gate_outputs"] = self._causal_gate_outputs
 
             # Persist artifacts (Synchronous call)
             # Use defaults from self.kwargs if available, or generic defaults

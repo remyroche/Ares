@@ -5777,9 +5777,13 @@ class LabelBasedLayer2(BaseStep):
             if metric > best_score:
                 best_score = metric
                 best_preds = cand
+                best_name = name
 
         if best_preds is None:
             return np.clip(preds, 0.0, 1.0)
+
+        if np.random.random() < 0.05:  # Sample 5% to avoid spam
+            tprint_info(f"   🔧 Calibrated expert with {best_name} (score={best_score:.4f})")
         return np.clip(best_preds, 0.0, 1.0)
 
     def _build_post_race_regime_features(

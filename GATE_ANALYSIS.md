@@ -1,137 +1,103 @@
-# Causal Gates Analysis and Implementation Plan
+# Causal Gates Analysis and Implementation Plan (Rev 2)
 
 ## Executive Summary
 
-This document provides a review and implementation plan for integrating a "Two Gates" causal architecture into `LabelBasedLayer2`. The goal is to enhance signal quality and stability by filtering unstable regimes early (Gate A) and dynamically routing predictions to the best experts later (Gate B).
+This document provides a detailed technical plan for integrating a "Two Gates" causal architecture into `LabelBasedLayer2`. This architecture enhances signal quality by filtering unstable regimes early (Gate A) and dynamically routing predictions to the best experts later (Gate B).
 
 ### The Two Gates Architecture
 
-1.  **Gate A (Pre-Geometry, "The Bouncer"):** A lightweight, causal filter applied *before* expensive geometry optimization. It uses raw state features and specialist signals to identify and discard "untradeable" or "unstable" regimes, saving compute and improving label quality.
+1.  **Gate A (Pre-Geometry, "The Bouncer"):** A lightweight, causal filter applied *before* geometry optimization. It uses raw state features and OOF specialist signals to identify and discard "unstable" regimes where no reliable expert exists.
 2.  **Gate B (Post-Race, "The Router"):** An expressive Mixture-of-Experts (MoE) router applied *after* model training. It uses the Out-Of-Fold (OOF) predictions of the winning models to dynamically weight and combine them based on the current market regime.
 
 ---
 
-## 1. Component Review: `tree_based_causal_gates.py`
+## 1. Component Enhancements: `tree_based_causal_gates.py`
 
-The `StabilityRegimeTree` class is well-suited for both gates but requires minor enhancement to fully support the "filtering" use case of Gate A.
+The `StabilityRegimeTree` class requires enhancements to support validity filtering (Gate A) and robust routing (Gate B).
 
-### Suitability Analysis
-*   **Gate B (Routing):** `StabilityRegimeTree` is natively designed for this. The `route(Z, preds)` method accepts state features (`Z`) and expert predictions (`preds`), returning a weighted signal, disagreement, and entropy. **Status: Ready.**
-*   **Gate A (Filtering):** The current implementation focuses on *routing* (assigning the best expert). To work as a filter, it needs to output a scalar "stability/suitability score" for the regime itself, rather than just choosing an expert. We can derive this from `LeafAssignment.score_best` (the stability score of the best expert in that leaf). **Status: Needs Enhancement.**
+### Required Methods
 
-### Required Changes
-*   **Add `predict_stability(Z)` method:**
+1.  **`predict_stability(Z)`**: Returns the stability score of the assigned leaf (max stability across experts in that leaf).
     ```python
     def predict_stability(self, Z: pd.DataFrame) -> pd.Series:
-        """
-        Predict the stability score of the assigned regime (leaf) for each sample.
-        Used for Gate A filtering.
-        """
-        leaf_ids = self.predict_leaf_ids(Z)
-        scores = np.zeros(len(leaf_ids))
-        for i, leaf_id in enumerate(leaf_ids):
-            scores[i] = self.leaves_[leaf_id].score_best
-        return pd.Series(scores, index=Z.index)
+        """Returns the 'score_best' of the assigned leaf for each sample."""
+        # ...
     ```
 
----
+2.  **`predict_leaf_valid(Z)`**: Returns a boolean mask indicating if the assigned leaf is structurally valid (sufficient samples, consistent across folds).
+    ```python
+    def predict_leaf_valid(self, Z: pd.DataFrame, min_valid_frac: float = 0.8) -> pd.Series:
+        """Returns True if the assigned leaf meets validity criteria."""
+        # ...
+    ```
 
-## 2. Integration Plan: `label_based_layer_2.py`
+3.  **`prune_experts_in_leaves()`**: Post-fit optimization to remove weak experts from leaves to ensure stability.
 
-### Gate A: Pre-Geometry Filtering
-
-**Objective:** Filter unstable timestamps before Triple Barrier Method (TBM) label generation.
-
-*   **Integration Point:** In `LabelBasedLayer2.execute`, *after* `_run_cross_asset_pipeline` (where specialists are run) and *before* `orthogonal_label_generation`.
-*   **Inputs:**
-    *   `Z` (State Features): `ms__`, `vol_regime`, and other macro features constructed in `_run_cross_asset_pipeline`.
-    *   `S` (Specialist Signals): `_raw_causal_specialist_predictions` (Step 2a outputs).
-*   **Target (`y`):** Proxy for regime stability. A good candidate is **forward volatility-adjusted returns** (e.g., `returns / volatility`) or a binary "tradeable" label (e.g., `abs(ret) > threshold`).
-*   **Mechanism:**
-    1.  Construct `Z` and `S`.
-    2.  Train `StabilityRegimeTree` (Gate A) on a historical window (or load pre-trained).
-    3.  Call `gate_a.predict_stability(Z)`.
-    4.  Create a boolean mask: `stability_mask = scores > threshold`.
-    5.  Pass this mask (or filtered index) to `orthogonal_label_generation` to restrict event generation to stable regimes.
-
-**Code Hook:**
-```python
-# Inside LabelBasedLayer2.execute
-# ... after _run_cross_asset_pipeline ...
-
-if self.causal_gate_enabled:
-    tprint_info("🔒 Running Gate A (Pre-Geometry Filtering)...")
-    # 1. Build State Z
-    Z_gate = self._build_causal_gate_state_features(df)
-
-    # 2. Get Specialist Signals S
-    S_gate = self._raw_causal_specialist_predictions
-
-    # 3. Train/Predict Gate A
-    # (Assuming we use a simplified target like 1-day forward Sharpe proxy)
-    y_target = (df['close'].pct_change().shift(-1) / df['volatility_1d']).fillna(0)
-
-    gate_a = StabilityRegimeTree(max_depth=2, ...)
-    gate_a.fit(Z_gate, S_gate, y_target, folds)
-
-    stability_scores = gate_a.predict_stability(Z_gate)
-    valid_regime_mask = stability_scores > self.gate_a_threshold
-
-    tprint_info(f"   📉 Gate A filtered {len(df) - valid_regime_mask.sum()} unstable timestamps.")
-
-    # 4. Apply to Event Generation
-    # Pass valid_regime_mask to orthogonal_label_generation
-```
-
-### Gate B: Post-Race Routing
-
-**Objective:** Final Mixture-of-Experts routing across trained predictors.
-
-*   **Integration Point:** In `LabelBasedLayer2.execute`, *after* `_train_geometry_batch` (where OOF predictions `individual_geos` are collected) and *before* the final return.
-*   **Inputs:**
-    *   `Z` (State Features): Same `Z` as Gate A (or enhanced).
-    *   `P` (OOF Predictions): `individual_geos` (dict of `uuid` -> `pd.Series`).
-*   **Target (`y`):** Realized returns (or OOF returns computed from consensus).
-*   **Mechanism:**
-    1.  Align `Z` and `P` (OOFs are sparse/event-based, `Z` is continuous; align `Z` to events).
-    2.  Train `StabilityRegimeTree` (Gate B) to maximize stability of the *routed* signal.
-    3.  Call `gate_b.route(Z, P)`.
-    4.  The output `routed_signal` becomes the final `l2_score`.
-    5.  Metrics (`entropy`, `disagreement`) are added to the result payload.
-
-**Code Hook:**
-```python
-# Inside LabelBasedLayer2.execute
-# ... after OOF generation ...
-
-if self.causal_gate_enabled:
-    tprint_info("🔀 Running Gate B (Post-Race Routing)...")
-
-    # 1. Align Z to OOF events
-    Z_routing = Z_gate.reindex(oof_returns.index).fillna(0)
-
-    # 2. Train Gate B
-    gate_b = StabilityRegimeTree(max_depth=3, ...)
-    gate_b.fit(Z_routing, individual_geos, oof_returns, folds)
-
-    # 3. Route
-    routing_results = gate_b.route(Z_routing, individual_geos)
-
-    # 4. Override Score
-    oof_scores = routing_results['signal']
-
-    # 5. Attach Metrics
-    result['gate_metrics'] = routing_results[['entropy', 'disagreement', 'leaf_id']]
-```
+4.  **`merge_similar_leaves()`**: Post-fit optimization to collapse adjacent leaves with similar expert weights, reducing fragmentation.
 
 ---
 
-## 3. Summary of Recommendations
+## 2. Gate A: Pre-Geometry Filtering ("The Bouncer")
 
-1.  **Enhance `StabilityRegimeTree`:** Add `predict_stability(Z)` to expose the best-expert score for filtering.
-2.  **Update `LabelBasedLayer2.execute`:**
-    *   Insert **Gate A** logic before `orthogonal_label_generation` to filter the timeline based on regime stability.
-    *   Insert **Gate B** logic after `_train_geometry_batch` to replace simple averaging with regime-conditional routing.
-3.  **Data Flow:** Ensure `_raw_causal_specialist_predictions` is correctly populated and accessible before Gate A runs.
+**Objective:** Filter unstable timestamps before geometry generation to prevent overfitting to noise.
 
-This design transforms Layer 2 from a static "bagging" ensemble into a dynamic, regime-aware causal pipeline.
+*   **Integration Point:** `LabelBasedLayer2.execute`, *after* `_run_cross_asset_pipeline` (specialists) and *before* `orthogonal_label_generation`.
+*   **Safety Requirement:** Training must avoid circularity. Inputs (`Z` and `S`) must be **Out-Of-Fold (OOF)** or generated via a **rolling window**. Folds must be **purged and time-blocked**.
+
+### Inputs & Target
+*   **Inputs (`Z`):** State features (e.g., `vol_regime`, `ms__*`).
+*   **Inputs (`S`):** OOF Specialist Signals (`_raw_causal_specialist_predictions`).
+*   **Target (`y`):** **"Best-Expert Utility Stability"**.
+    *   Calculate utility for each expert $i$ at time $t$: $u_{i,t} = r_{t+1} \cdot \tanh(s_{i,t})$.
+    *   Select best utility: $u^*_{t} = \max_i(u_{i,t})$.
+    *   Target is the stability of this best utility over a rolling window:
+        $$y_{target} = \frac{\text{RollingMean}(u^*)}{\text{RollingStd}(u^*)}$$
+    *   *Goal:* Train the tree to identify states where *at least one* expert is consistently profitable.
+
+### Implementation Steps
+1.  **Data Prep:** Align `Z` and `S` (OOF). Compute `y_target` causally.
+2.  **Training:** Fit `StabilityRegimeTree` using purged K-folds (`make_purged_kfold_folds`).
+3.  **Optimization:** Call `prune_experts_in_leaves()` and `merge_similar_leaves()`.
+4.  **Prediction:**
+    *   Get validity mask: `valid_mask = gate_a.predict_leaf_valid(Z)`.
+    *   Get stability scores: `scores = gate_a.predict_stability(Z)`.
+    *   Final Filter: `keep_mask = valid_mask & (scores > threshold)`.
+5.  **Application:** Pass `keep_mask` to `orthogonal_label_generation` to restrict event generation.
+
+---
+
+## 3. Gate B: Post-Race Routing ("The Router")
+
+**Objective:** Dynamic Mixture-of-Experts routing for final prediction.
+
+*   **Integration Point:** `LabelBasedLayer2.execute`, *after* `_train_geometry_batch` (OOF aggregation).
+*   **Constraint:** Must handle sparse OOF predictions (different geometries cover different events).
+
+### Alignment Strategy: Intersection Index
+*   **Strict Alignment:** Build the training matrix only on timestamps where **all** candidate experts (or the top K) have predictions.
+    *   `idx = intersection(expert_1.index, expert_2.index, ...)`
+*   **Folds:** Construct **new** purged K-folds based on this aligned event index, *not* the global timeline. Purge size must match event horizon.
+
+### Inputs & Target
+*   **Inputs (`Z`):** State features aligned to the intersection index.
+*   **Inputs (`P`):** OOF predictions of trained models (winners).
+*   **Target (`y`):** Realized returns (aligned).
+
+### Implementation Steps
+1.  **Alignment:** Compute intersection index of `individual_geos`. Align `Z`, `P`, and `y`.
+2.  **Training:** Fit `StabilityRegimeTree` (max_depth=3) on the aligned set using event-specific purged folds.
+3.  **Optimization:** Prune and merge leaves.
+4.  **Routing:** Call `gate_b.route(Z_full, P_full)`.
+    *   Note: For inference (routing), we apply to the full set where data exists. The intersection constraint applies to *training* to ensure valid weight learning.
+5.  **Output:** Use the routed signal as the final Layer 2 score. Attach metrics (`entropy`, `disagreement`).
+
+---
+
+## 4. Summary of Code Changes
+
+### `src/training/steps/labeling/tree_based_causal_gates.py`
+*   Implement `predict_stability`, `predict_leaf_valid`, `prune_experts_in_leaves`, `merge_similar_leaves`.
+
+### `src/training/steps/labeling/label_based_layer_2.py`
+*   **Gate A:** Inject training/filtering logic before event generation. Ensure `_raw_causal_specialist_predictions` are OOF/Rolling. Construct stability target.
+*   **Gate B:** Inject alignment and training logic after OOF generation. Construct aligned folds. Replace simple averaging with `gate_b.route()`.

@@ -434,7 +434,7 @@ class MarketStateVector:
         x_numeric = state_instruments.select_dtypes(include=[np.number])
         if x_numeric.empty:
             raise ValueError("No numeric data available for MarketStateVector fit")
-        x = x_numeric.fillna(method="ffill").fillna(0.0)
+        x = x_numeric.ffill().fillna(0.0)
         scaled = self.scaler.fit_transform(x)
         components = self.pca.fit_transform(scaled)
         self.loadings_ = self.pca.components_.copy()
@@ -452,7 +452,7 @@ class MarketStateVector:
         tprint_info(f"[MarketStateVector] transform start shape={state_instruments.shape}")
         if self.loadings_ is None:
             raise RuntimeError("MarketStateVector not fitted")
-        x = state_instruments.fillna(method="ffill").fillna(0.0)
+        x = state_instruments.ffill().fillna(0.0)
         scaled = self.scaler.transform(x)
         components = self.pca.transform(scaled)
 
@@ -637,42 +637,142 @@ class CrossAssetSurprises:
 
     def _compute_robust_features(self, slice_df: pd.DataFrame, market_returns: pd.Series, window: int = 50) -> pd.DataFrame:
         """
-        Compute robust cross-asset features: Beta, Relative Strength, Lead-Lag.
+        Compute robust cross-asset features: Rolling Beta, Relative Strength, Lead-Lag, Shock.
         market_returns: Series of average market returns (aligned index)
         """
         idx = slice_df.index
         out = pd.DataFrame(index=idx)
         
-        # 0. Asset Returns (using raw__px pct_change if y__ret_1 not avail)
-        if "raw__px" in slice_df.columns:
-            asset_ret = slice_df["raw__px"].pct_change()
+        # 0. Asset Returns (Log Returns preferred for statistical properties)
+        if "raw__log_px" in slice_df.columns:
+            asset_log_px = slice_df["raw__log_px"]
+            asset_ret = asset_log_px.diff()
+        elif "raw__px" in slice_df.columns:
+            asset_ret = np.log(slice_df["raw__px"]).diff()
         elif "close" in slice_df.columns:
-            asset_ret = slice_df["close"].pct_change()
+            asset_ret = np.log(slice_df["close"]).diff()
         else:
             return out # Cannot compute
             
         mkt_ret = market_returns.reindex(idx).fillna(0.0)
         
-        # 1. Rolling Beta (Cov(rp, rm) / Var(rm))
-        cov = asset_ret.rolling(window).cov(mkt_ret)
-        var = mkt_ret.rolling(window).var()
-        out["ca__beta_w50"] = cov / (var + 1e-9)
+        # Winsorize Returns (1% tails) for robustness before Beta calculation
+        lower = asset_ret.quantile(0.01)
+        upper = asset_ret.quantile(0.99)
+        asset_ret_win = asset_ret.clip(lower, upper)
         
-        # 2. Rolling Relative Strength (Active Return)
-        active_ret = asset_ret - mkt_ret
-        out["ca__active_ret_w50"] = active_ret.rolling(window).mean()
-        # Z-score of active return
-        std_active = active_ret.rolling(window).std()
-        out["ca__active_ret_z_w50"] = out["ca__active_ret_w50"] / (std_active + 1e-9)
+        lower_m = mkt_ret.quantile(0.01)
+        upper_m = mkt_ret.quantile(0.99)
+        mkt_ret_win = mkt_ret.clip(lower_m, upper_m)
 
-        # 3. Lead-Lag
-        # Market Leading Asset (Asset Follows)
-        corr_mkt_lead = asset_ret.rolling(window).corr(mkt_ret.shift(1))
-        # Asset Leading Market (Market Follows)
-        corr_asset_lead = mkt_ret.rolling(window).corr(asset_ret.shift(1))
+        # --- 1. Rolling Beta (Market Sensitivity) ---
+        # Beta = Cov(r_a, r_m) / Var(r_m)
+
+        def compute_beta(r_a, r_m, w):
+            cov = r_a.rolling(w).cov(r_m)
+            var = r_m.rolling(w).var()
+            return cov / (var + 1e-9)
+
+        out["ca__beta_short_w24"] = compute_beta(asset_ret_win, mkt_ret_win, 24)
+        out["ca__beta_long_w96"] = compute_beta(asset_ret_win, mkt_ret_win, 96)
+        out["ca__beta_shift"] = out["ca__beta_short_w24"] - out["ca__beta_long_w96"]
+
+        # downside_beta_long: beta computed only on bars where market return < 0 over 96 bars
+        mask_down = mkt_ret_win < 0
+        r_a_down = asset_ret_win.where(mask_down)
+        r_m_down = mkt_ret_win.where(mask_down)
+
+        cov_down = r_a_down.rolling(96, min_periods=20).cov(r_m_down)
+        var_down = r_m_down.rolling(96, min_periods=20).var()
+        out["ca__downside_beta_long_w96"] = cov_down / (var_down + 1e-9)
+
+        # --- 2. Relative Strength / Active Return (vs market) ---
+        # active_ret = r_asset - r_mkt
+        active_ret = asset_ret - mkt_ret
+
+        # active_ret_z: 48 bars
+        active_mean_48 = active_ret.rolling(48).mean()
+        active_std_48 = active_ret.rolling(48).std()
+        out["ca__active_ret_z_w48"] = active_mean_48 / (active_std_48 + 1e-9)
+
+        # active_ret_trend: EWMA span 48
+        out["ca__active_ret_trend"] = active_ret.ewm(span=48).mean()
+
+        # active_ret_mr: (active_ret - EWMA) / rolling_std
+        out["ca__active_ret_mr"] = (active_ret - out["ca__active_ret_trend"]) / (active_std_48 + 1e-9)
+
+        # active_ret_voladj: (r_asset - r_mkt) / (σ_asset_48 + ε)
+        asset_vol_48 = asset_ret.rolling(48).std()
+        out["ca__active_ret_voladj"] = active_ret / (asset_vol_48 + 1e-9)
+
+        # --- 3. Lead-Lag Dynamics ---
+        # Lead-Lag Statistic: corr(asset_t, mkt_{t-lag}) - corr(mkt_t, asset_{t-lag})
+        # Positive => Market Leads (Asset Follows)
+        # Negative => Asset Leads (Market Follows)
+
+        lags = [1, 2, 3, 6, 12]
+        ll_window = 48
+        ll_stats = []
+
+        for lag in lags:
+            c1 = asset_ret_win.rolling(ll_window).corr(mkt_ret_win.shift(lag))
+            c2 = mkt_ret_win.rolling(ll_window).corr(asset_ret_win.shift(lag))
+            diff = c1 - c2
+            ll_stats.append(diff)
+
+        ll_df = pd.concat(ll_stats, axis=1)
+
+        # Aggregate: select value with max(abs)
+        vals = ll_df.values
+        idx_max = np.argmax(np.abs(np.nan_to_num(vals)), axis=1)
+        rows = np.arange(len(vals))
+        out["ca__lead_lag_w48"] = vals[rows, idx_max]
+
+        # lead_lag_sign_persistence: directional stability of the lead-lag signal
+        # Fraction of last 48 bars where sign matched mean sign?
+        # Or simply rolling sum of signs magnitude.
+        # We use: abs(rolling_sum(sign)) / window. If consistent => 1.0.
+        sign_series = np.sign(out["ca__lead_lag_w48"])
+        out["ca__lead_lag_sign_persistence"] = sign_series.rolling(48).mean().abs()
+
+        # --- 4. Shock Features ---
+        # corr_shock = corr_12(asset,mkt) - corr_96(asset,mkt)
+        c12 = asset_ret_win.rolling(12).corr(mkt_ret_win)
+        c96 = asset_ret_win.rolling(96).corr(mkt_ret_win)
+        out["ca__corr_shock"] = c12 - c96
+
+        # vol_shock = (σ_asset_12/σ_asset_96) - (σ_mkt_12/σ_mkt_96)
+        std_a_12 = asset_ret_win.rolling(12).std()
+        std_a_96 = asset_ret_win.rolling(96).std()
+        std_m_12 = mkt_ret_win.rolling(12).std()
+        std_m_96 = mkt_ret_win.rolling(96).std()
         
-        out["ca__lead_lag_w50"] = corr_asset_lead - corr_mkt_lead
+        ratio_a = std_a_12 / (std_a_96 + 1e-9)
+        ratio_m = std_m_12 / (std_m_96 + 1e-9)
+        out["ca__vol_shock"] = ratio_a - ratio_m
         
+        # volume_shock = zscore(log(volume), 96)
+        if "raw__volume" in slice_df.columns:
+            vol = slice_df["raw__volume"]
+        elif "volume" in slice_df.columns:
+            vol = slice_df["volume"]
+        else:
+            vol = None
+
+        if vol is not None:
+            # Winsorize/Clean volume
+            vol_clean = vol.replace(0, np.nan).ffill().fillna(1.0)
+            log_vol = np.log(vol_clean)
+            lv_mean = log_vol.rolling(96).mean()
+            lv_std = log_vol.rolling(96).std()
+            out["ca__volume_shock"] = (log_vol - lv_mean) / (lv_std + 1e-9)
+
+            # delta_volume_shock over 12
+            out["ca__delta_volume_shock_12"] = out["ca__volume_shock"].diff(12)
+        else:
+            out["ca__volume_shock"] = 0.0
+            out["ca__delta_volume_shock_12"] = 0.0
+
         return out.fillna(0.0)
 
     def _ensure_vpin(self, df: pd.DataFrame) -> Optional[pd.Series]:

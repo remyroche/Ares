@@ -368,6 +368,30 @@ try:
 except ImportError:
     CONTINUOUS_PREDICTOR_AVAILABLE = False
 
+# Registry of Specialist Families for Dynamic Discovery
+SPECIALIST_REGISTRY = {
+    "CAUSAL_SURPRISE": CausalSurpriseEvents,
+    "VOLUME_SPECIALIST": VolumeSpecialistEvents,
+    "VOLATILITY_SPECIALIST": VolatilitySpecialistEvents,
+    "LIQUIDITY_SPECIALIST": LiquiditySpecialistEvents,
+    "INFORMATION_SPECIALIST": InformationSpecialistEvents,
+    "INVENTORY_SPECIALIST": InventorySpecialistEvents,
+    "MEAN_REVERSION": lambda: ContinuousPredictorEvents('MEAN_REVERSION'),
+    "MARKET_FRAGILITY": lambda: ContinuousPredictorEvents('MARKET_FRAGILITY'),
+    "SURPRISE_Z_CONTINUOUS": lambda: ContinuousPredictorEvents('SURPRISE_Z_CONTINUOUS'),
+    "FLOW_PRESSURE_CONTINUOUS": lambda: ContinuousPredictorEvents('FLOW_PRESSURE_CONTINUOUS'),
+    "MULTI_HORIZON_SLOPE": lambda: ContinuousPredictorEvents('MULTI_HORIZON_SLOPE'),
+    # Add other known families that might not have explicit classes but are handled
+    "TAIL_RISK": None,
+    "TREND_REGIME": None,
+    "VOL_STATE": None,
+    "RANGE_ATR": None,
+    "SR_CUSUM": None,
+    "EXHAUSTION_SPECIALIST": None,
+    "VOLATILITY_INNOVATION_SPECIALIST": None,
+    "DISPERSION_SPECIALIST": None
+}
+
 # Families that should use MAGNITUDE-based labeling (|return| > threshold)
 # instead of direction-based Triple Barrier labels.
 # These families predict move SIZE/INTENSITY, not direction.
@@ -4747,33 +4771,158 @@ class LabelBasedLayer2(BaseStep):
             tprint_error(f"❌ Layer 2: Traceback: {traceback.format_exc()}")
             return {}
 
+    def _generate_rich_gate_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Generate comprehensive state features for causal gating (A-I + Specialist Features).
+        """
+        tprint_info("   🏗️ Generating rich gate features (Volatility, Liquidity, Trend, etc.)...")
+
+        Z = pd.DataFrame(index=df.index)
+        eps = 1e-9
+
+        # Helper: rolling std
+        def _rstd(s, w): return s.rolling(w).std()
+        # Helper: rolling mean
+        def _rmean(s, w): return s.rolling(w).mean()
+
+        # --- A) Volatility State ---
+        if 'close' in df.columns:
+            close = df['close']
+            ret = close.pct_change().fillna(0)
+
+            # Realized Volatility
+            rv_w24 = _rstd(ret, 24)
+            rv_w48 = _rstd(ret, 48)
+            rv_w96 = _rstd(ret, 96)
+
+            Z['rv_w24'] = rv_w24
+            Z['rv_w48'] = rv_w48
+            Z['rv_w96'] = rv_w96
+
+            # Volatility Shock
+            Z['vol_shock'] = rv_w24 / (rv_w96 + eps)
+            Z['rv_change_w24'] = rv_w24 - rv_w96
+
+            # Tail / Jumpiness
+            Z['absret_mean_w24'] = _rmean(ret.abs(), 24)
+            Z['kurtosis_w96'] = ret.rolling(96).kurt()
+
+            # Range-based Vol (if available)
+            if 'high' in df.columns and 'low' in df.columns:
+                hl_ratio = (df['high'] - df['low']) / (df['low'] + eps)
+                Z['parkinson_proxy'] = _rstd(hl_ratio, 24)
+
+        # --- B) Liquidity / Trading Frictions ---
+        if 'volume' in df.columns and 'close' in df.columns:
+            vol = df['volume']
+            log_vol = np.log(vol + eps)
+            dvol = df['close'] * vol
+
+            # Volume Level & Shock
+            Z['logvol_z_w96'] = (log_vol - _rmean(log_vol, 96)) / (_rstd(log_vol, 96) + eps)
+            Z['volu_ratio'] = _rmean(vol, 12) / (_rmean(vol, 96) + eps)
+
+            # Amihud Illiquidity Proxy
+            Z['amihud_w24'] = _rmean(ret.abs() / (dvol + eps), 24)
+
+            # Spread Proxy (High-Low)
+            if 'high' in df.columns and 'low' in df.columns:
+                hl_spread = (df['high'] - df['low']) / df['close']
+                Z['hl_spread_w24'] = _rmean(hl_spread, 24)
+                Z['hl_spread_shock'] = _rmean(hl_spread, 12) / (_rmean(hl_spread, 96) + eps)
+
+        # --- C) Trend vs Mean Reversion ---
+        if 'close' in df.columns:
+            # Trend Strength
+            ewma_48 = close.ewm(span=48).mean()
+            Z['trend_strength'] = (close - ewma_48) / (rv_w48 + eps)
+
+            # Position in Range
+            if 'high' in df.columns and 'low' in df.columns:
+                roll_low = df['low'].rolling(24).min()
+                roll_high = df['high'].rolling(24).max()
+                Z['pos_in_range_w24'] = (close - roll_low) / (roll_high - roll_low + eps)
+
+            # Autocorrelation
+            Z['r_autocorr_w48'] = ret.rolling(48).apply(lambda x: pd.Series(x).autocorr(lag=1), raw=True)
+
+        # --- F) Vol-Liq Interaction ---
+        if 'vol_shock' in Z.columns and 'logvol_z_w96' in Z.columns:
+            Z['stress_1'] = Z['vol_shock'] * (-Z['logvol_z_w96'])
+
+        # --- G) Calendar State ---
+        if isinstance(df.index, pd.DatetimeIndex):
+            hour = df.index.hour
+            minute = df.index.minute
+            Z['hour_sin'] = np.sin(2 * np.pi * hour / 24)
+            Z['hour_cos'] = np.cos(2 * np.pi * hour / 24)
+
+        # --- H) Data Quality ---
+        # (Assuming mostly clean data, but adding simple outlier flag)
+        if 'rv_w48' in Z.columns:
+            Z['outlier_rate_w48'] = _rmean((ret.abs() > 3 * Z['rv_w48']).astype(float), 48)
+
+        # --- D, E, I) Cross-Asset / Market State / Dispersion ---
+        # Explicitly include 'ms__' (Market State) and 'ca__' (Cross Asset) features
+        special_prefixes = ('ms__', 'ca__', 'meta__', 'disp__')
+        for col in df.columns:
+            if col.startswith(special_prefixes):
+                Z[col] = df[col]
+
+        # --- Specialist Features (Z_spec) ---
+        # Automatically iterate through all specialist families to gather their specific features
+        # Use the global registry keys to ensure dynamic coverage
+        families = list(SPECIALIST_REGISTRY.keys())
+
+        tprint_info(f"   🔍 Collecting specialist features for {len(families)} families...")
+        for family in families:
+            try:
+                # Use default params for feature extraction
+                spec_feats = self._compute_specific_geometry_features(
+                    df, df.index, {'family': family}
+                )
+                if not spec_feats.empty:
+                    # Rename columns to avoid collisions
+                    spec_feats.columns = [f"spec_{family}_{c}" for c in spec_feats.columns]
+                    Z = pd.concat([Z, spec_feats], axis=1)
+            except Exception as e:
+                # Ignore failures for specific families
+                pass
+
+        # Cleanup: Replace Inf, Fill NaNs
+        Z = Z.replace([np.inf, -np.inf], np.nan).fillna(method='ffill').fillna(0.0)
+
+        # Correlation Pruning (Protect Specialists)
+        # Cap at e.g. 150 features
+        if Z.shape[1] > 150:
+            tprint_info(f"   ✂️ Pruning features (current: {Z.shape[1]})...")
+            # Simple correlation drop
+            corr_matrix = Z.corr().abs()
+            upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+            to_drop = [column for column in upper.columns if any(upper[column] > 0.95)]
+
+            # Try to protect specialist features if possible, but drop if highly redundant
+            Z = Z.drop(columns=to_drop)
+            tprint_info(f"   ✅ Features after pruning: {Z.shape[1]}")
+
+        return Z
+
     def _build_causal_gate_state_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        numeric_df = df.select_dtypes(include=[np.number]).copy()
-        if numeric_df.empty:
-            return pd.DataFrame(index=df.index)
+        """
+        Builds the state feature matrix Z for the causal gate.
+        Uses _generate_rich_gate_features for a comprehensive feature set.
+        """
+        Z = self._generate_rich_gate_features(df)
 
-        def _is_gate_feature(col: str) -> bool:
-            return not (
-                col.startswith("label_")
-                or col.startswith("TARGET_")
-                or col.startswith("spec_")
-                or col.startswith("spectral_")
-            )
+        # Align columns if model is already fitted
+        if self._causal_gate_tree is not None and self._causal_gate_feature_cols:
+            # Ensure all expected columns exist (add 0 if missing)
+            for col in self._causal_gate_feature_cols:
+                if col not in Z.columns:
+                    Z[col] = 0.0
+            # Reorder and slice
+            Z = Z[self._causal_gate_feature_cols]
 
-        if self._causal_gate_feature_cols:
-            cols = list(self._causal_gate_feature_cols)
-            Z = numeric_df.reindex(columns=cols)
-        else:
-            candidate_cols = [c for c in self._select_global_probe_features(numeric_df) if _is_gate_feature(c)]
-            if not candidate_cols:
-                variances = numeric_df.var().sort_values(ascending=False)
-                candidate_cols = [c for c in variances.index if _is_gate_feature(c)]
-            candidate_cols = candidate_cols[: max(1, self.causal_gate_feature_limit)]
-            Z = numeric_df[candidate_cols]
-            if not Z.empty:
-                self._causal_gate_feature_cols = list(Z.columns)
-
-        Z = Z.replace([np.inf, -np.inf], np.nan).fillna(0.0)
         return Z
 
     def _get_causal_gate_target(self, df: pd.DataFrame) -> pd.Series:
@@ -4792,25 +4941,47 @@ class LabelBasedLayer2(BaseStep):
         fit_tree: bool = False,
         y_series: Optional[pd.Series] = None,
     ) -> Tuple[Dict[str, pd.Series], Optional[pd.DataFrame]]:
+        """
+        Apply regime-based gating using stability optimization.
+        If fit_tree=True, performs OOF fitting/prediction to generate robust gated signals.
+        Returns (gated_predictions, gate_outputs).
+        """
         if not self.causal_gate_enabled or not specialist_predictions:
             return specialist_predictions, None
 
         if len(specialist_predictions) < max(2, self.min_specialists):
             return specialist_predictions, None
 
+        # Build state features Z
         Z = self._build_causal_gate_state_features(df)
         if Z.empty:
             return specialist_predictions, None
 
-        preds_oof: Dict[str, np.ndarray] = {}
+        # Align specialist predictions
+        preds_oof_dict: Dict[str, np.ndarray] = {}
         for name, series in specialist_predictions.items():
             aligned = series.reindex(Z.index).fillna(0.0)
-            preds_oof[name] = aligned.to_numpy(dtype=float)
+            preds_oof_dict[name] = aligned.to_numpy(dtype=float)
 
-        if fit_tree or self._causal_gate_tree is None:
+        gate_outputs = None
+        gated_predictions = {}
+
+        # Auto-fit if tree is missing (backwards compatibility), but warn about OOF cost
+        if self._causal_gate_tree is None and not fit_tree:
+            tprint_info("   ⚠️ Causal gate not fitted. Triggering auto-fit (expensive OOF)...")
+            fit_tree = True
+
+        if fit_tree:
+            tprint_info("   🌳 Fitting Causal Gate (StabilityRegimeTree) with OOF generation...")
             if y_series is None:
                 y_series = self._get_causal_gate_target(df)
             y = y_series.reindex(Z.index).fillna(0.0).to_numpy(dtype=float)
+
+            # Initialize containers for OOF results
+            oof_gate_outputs_list = []
+            oof_gated_preds_list = defaultdict(list)
+
+            # Generate Folds
             try:
                 folds = make_purged_kfold_folds(
                     Z.index,
@@ -4822,7 +4993,73 @@ class LabelBasedLayer2(BaseStep):
                 tprint_warning(f"   ⚠️ Causal gate fold generation failed: {exc}")
                 return specialist_predictions, None
 
-            tree = StabilityRegimeTree(
+            # OOF Loop
+            for i, (train_idx, val_idx) in enumerate(folds):
+                # Slicing
+                Z_train, Z_val = Z.iloc[train_idx], Z.iloc[val_idx]
+                y_train = y[train_idx]
+                preds_train = {k: v[train_idx] for k, v in preds_oof_dict.items()}
+                preds_val = {k: v[val_idx] for k, v in preds_oof_dict.items()}
+
+                # Fit Tree on Train
+                fold_tree = StabilityRegimeTree(
+                    max_depth=self.causal_gate_max_depth,
+                    min_leaf_samples=self.causal_gate_min_leaf_samples,
+                    min_leaf_val_per_fold=self.causal_gate_min_leaf_val_per_fold,
+                    stability_mode="min_minus_iqr",
+                    disp_penalty=0.5,
+                    utility_transform="tanh",
+                    soft_weights=True,
+                    top_k_weights=self.causal_gate_top_k,
+                    min_stability_gain=self.causal_gate_min_gain,
+                    verbose=False,
+                )
+
+                try:
+                    # Create internal folds for the training set to allow proper stability calculation
+                    # StabilityRegimeTree uses these folds to compute stability score
+                    internal_folds = make_purged_kfold_folds(
+                        Z_train.index,
+                        n_folds=5, # Internal folds
+                        purge=self.causal_gate_purge,
+                        embargo=self.causal_gate_embargo
+                    )
+
+                    fold_tree.fit(Z_train, preds_train, y_train, internal_folds)
+                    fold_tree.prune(alpha=self.causal_gate_prune_alpha)
+
+                    # Predict on Val
+                    val_outputs = fold_tree.route(Z_val, preds_val)
+                    val_outputs.index = Z_val.index
+                    oof_gate_outputs_list.append(val_outputs)
+
+                    # Calculate Gated Predictions
+                    leaf_ids = val_outputs["leaf_id"].to_numpy()
+                    for expert, p_val in preds_val.items():
+                        w_vec = np.array([fold_tree.leaves_[lid].expert_weights.get(expert, 0.0) for lid in leaf_ids])
+                        gated_p = p_val * w_vec
+                        oof_gated_preds_list[expert].append(pd.Series(gated_p, index=Z_val.index))
+
+                except Exception as e:
+                    tprint_warning(f"   ⚠️ Fold {i} gating failed: {e}")
+                    continue
+
+            # Concatenate OOF results
+            if oof_gate_outputs_list:
+                gate_outputs = pd.concat(oof_gate_outputs_list).sort_index()
+                # Reindex to full Z to handle any gaps
+                gate_outputs = gate_outputs.reindex(Z.index)
+
+                for expert, series_list in oof_gated_preds_list.items():
+                    full_series = pd.concat(series_list).sort_index().reindex(Z.index).fillna(0.0)
+                    gated_predictions[expert] = full_series
+            else:
+                tprint_error("   ❌ All gating folds failed. Returning raw predictions.")
+                return specialist_predictions, None
+
+            # Final Fit on Full Data (for persistence/inference)
+            tprint_info("   🌳 Fitting Final Causal Gate on Full Data...")
+            final_tree = StabilityRegimeTree(
                 max_depth=self.causal_gate_max_depth,
                 min_leaf_samples=self.causal_gate_min_leaf_samples,
                 min_leaf_val_per_fold=self.causal_gate_min_leaf_val_per_fold,
@@ -4834,29 +5071,30 @@ class LabelBasedLayer2(BaseStep):
                 min_stability_gain=self.causal_gate_min_gain,
                 verbose=self.verbose,
             )
-            tree.fit(Z, preds_oof, y, folds)
-            tree.prune(alpha=self.causal_gate_prune_alpha)
-            self._causal_gate_tree = tree
-            if not self._causal_gate_feature_cols:
-                self._causal_gate_feature_cols = list(Z.columns)
+            final_tree.fit(Z, preds_oof_dict, y, folds)
+            final_tree.prune(alpha=self.causal_gate_prune_alpha)
+            self._causal_gate_tree = final_tree
+            self._causal_gate_feature_cols = list(Z.columns)
 
-        tree = self._causal_gate_tree
-        if tree is None:
-            return specialist_predictions, None
+        else:
+            # Inference Mode (No fitting)
+            if self._causal_gate_tree is None:
+                return specialist_predictions, None
 
-        if tree.experts_:
+            tree = self._causal_gate_tree
+
+            # Handle missing experts
             for expert in tree.experts_:
-                if expert not in preds_oof:
-                    preds_oof[expert] = np.zeros(len(Z), dtype=float)
+                if expert not in preds_oof_dict:
+                    preds_oof_dict[expert] = np.zeros(len(Z), dtype=float)
 
-        gate_outputs = tree.route(Z, preds_oof)
-        gate_outputs = gate_outputs.reindex(Z.index)
+            gate_outputs = tree.route(Z, preds_oof_dict)
+            gate_outputs = gate_outputs.reindex(Z.index)
 
-        leaf_ids = gate_outputs["leaf_id"].to_numpy()
-        gated_predictions: Dict[str, pd.Series] = {}
-        for expert, preds in preds_oof.items():
-            weights = np.array([tree.leaves_[leaf_id].expert_weights.get(expert, 0.0) for leaf_id in leaf_ids])
-            gated_predictions[expert] = pd.Series(preds * weights, index=Z.index)
+            leaf_ids = gate_outputs["leaf_id"].to_numpy()
+            for expert, preds in preds_oof_dict.items():
+                weights = np.array([tree.leaves_[leaf_id].expert_weights.get(expert, 0.0) for leaf_id in leaf_ids])
+                gated_predictions[expert] = pd.Series(preds * weights, index=Z.index)
 
         return gated_predictions, gate_outputs
 
@@ -8591,6 +8829,13 @@ class LabelBasedLayer2(BaseStep):
                     self._causal_gated_specialist_predictions = gated_predictions
                     specialist_predictions = gated_predictions
                     tprint_info(f"   🔐 Causal gate applied: {len(gated_predictions)} gated specialists")
+
+            # Save causal_gating checkpoint (New)
+            if self._checkpoints_enabled and self._causal_gate_outputs is not None:
+                self._checkpoint_manager.save_checkpoint('causal_gating', {
+                    'gate_outputs': self._causal_gate_outputs,
+                    'gated_predictions': {k: v for k, v in self._causal_gated_specialist_predictions.items()} if self._causal_gated_specialist_predictions else {}
+                }, symbol, self._current_config)
 
             # 3. Causal Surprise Events: Generate events from specialist prediction errors
             tprint_info("🎯 Step 3: Generating causal surprise events...")

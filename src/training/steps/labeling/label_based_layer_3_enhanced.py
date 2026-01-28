@@ -291,14 +291,22 @@ def generate_geometries_adaptive(
     # We expect base_signals to contain multi-window signals.
     
     if base_signals.empty:
-        logger.warning("Empty base_signals passed to generate_geometries_adaptive")
+        tprint_warning("⚠️ Empty base_signals passed to generate_geometries_adaptive")
         return {}
 
     trend_cols = [c for c in base_signals.columns if 'trend_signal' in c]
     rev_cols = [c for c in base_signals.columns if 'reversal_signal' in c]
 
     if not trend_cols or not rev_cols:
+        tprint_warning("⚠️ Missing trend/reversal signals for adaptive geometry generation")
         return {}
+
+    tprint_info(
+        f"🧭 Adaptive geometry inputs: {len(trend_cols)} trend cols, {len(rev_cols)} reversal cols"
+    )
+    tprint_info(f"   ➕ Trend cols sample: {trend_cols[:3]}")
+    tprint_info(f"   ➖ Reversal cols sample: {rev_cols[:3]}")
+    tprint_info(f"   ⚙️ Alphas={trend_ratios}, Activations={activations}")
 
     trend_vec = base_signals[trend_cols].mean(axis=1).values.astype(np.float32)[:, None]
     rev_vec = base_signals[rev_cols].mean(axis=1).values.astype(np.float32)[:, None]
@@ -332,6 +340,7 @@ def generate_geometries_adaptive(
                 'sigma_eff': vol_vec.flatten()
             }
 
+    tprint_success(f"✅ Generated {len(meta_geometries)} adaptive geometries")
     return meta_geometries
 
 @njit(parallel=True)
@@ -1997,6 +2006,19 @@ def layer3_analyst_lgbm(
     tprint_info(f"📊 Input data: {len(df)} rows, {len(base_model_cols)} base features")
     tprint_info(f"🎯 Target column: {target_col}")
 
+    if target_col not in df.columns:
+        fallback_cols = [c for c in ['bin', 'label', 'target', 'y', 'label_bin'] if c in df.columns]
+        if fallback_cols:
+            tprint_warning(
+                f"⚠️ Target column '{target_col}' not found. Falling back to '{fallback_cols[0]}'"
+            )
+            target_col = fallback_cols[0]
+        else:
+            tprint_warning(
+                f"⚠️ Target column '{target_col}' not found. Creating zero-filled fallback target."
+            )
+            df[target_col] = 0.0
+
     # ---------------------------------------------------------
     # 1. Feature Engineering (Shared)
     # ---------------------------------------------------------
@@ -2137,12 +2159,61 @@ def layer3_analyst_lgbm(
     # Look for CUSUM columns in market_data first, then oof_df
     cusum_cols = []
     cusum_df = None
+
+    def _build_cusum_from_alternatives(source_df: pd.DataFrame, source_name: str) -> Optional[pd.DataFrame]:
+        alt_cols = [c for c in source_df.columns if 'cusum' in c.lower()]
+        if not alt_cols:
+            return None
+
+        trend_pos = source_df.get('cusum_trend_pos')
+        trend_neg = source_df.get('cusum_trend_neg')
+        rev_pos = source_df.get('cusum_rev_pos')
+        rev_neg = source_df.get('cusum_rev_neg')
+
+        trend_signal = None
+        reversal_signal = None
+
+        if trend_pos is not None and trend_neg is not None:
+            trend_diff = trend_pos.reindex(df.index).fillna(0) - trend_neg.reindex(df.index).fillna(0)
+            trend_signal = np.sign(trend_diff).astype(np.int8)
+
+        if rev_pos is not None and rev_neg is not None:
+            rev_diff = rev_pos.reindex(df.index).fillna(0) - rev_neg.reindex(df.index).fillna(0)
+            reversal_signal = np.sign(rev_diff).astype(np.int8)
+
+        if trend_signal is None or reversal_signal is None:
+            score_col = next((c for c in alt_cols if 'score' in c.lower()), None)
+            if score_col:
+                score_series = source_df[score_col].reindex(df.index).fillna(0)
+                score_signal = (score_series > score_series.median()).astype(np.int8)
+                if trend_signal is None:
+                    trend_signal = score_signal
+                if reversal_signal is None:
+                    reversal_signal = score_signal * -1
+
+        if trend_signal is None and reversal_signal is None:
+            return None
+
+        tprint_info(
+            f"🧠 Built CUSUM signals from '{source_name}' columns: {alt_cols[:5]}"
+        )
+        return pd.DataFrame(
+            {
+                'trend_signal_24': trend_signal if trend_signal is not None else np.zeros(len(df), dtype=np.int8),
+                'reversal_signal_24': reversal_signal if reversal_signal is not None else np.zeros(len(df), dtype=np.int8),
+            },
+            index=df.index,
+        )
     
     if market_data is not None:
         cusum_cols = [c for c in market_data.columns if 'trend_signal' in c or 'reversal_signal' in c]
         if cusum_cols:
             cusum_df = market_data[cusum_cols].reindex(df.index).fillna(0.0)
             print(f"Found CUSUM signals in market_data: {cusum_cols}")
+        else:
+            cusum_df = _build_cusum_from_alternatives(market_data, "market_data")
+            if cusum_df is not None:
+                cusum_cols = list(cusum_df.columns)
     
     # Fallback to oof_df if not found in market_data
     if not cusum_cols:
@@ -2150,6 +2221,10 @@ def layer3_analyst_lgbm(
         if cusum_cols:
             cusum_df = df[cusum_cols]
             print(f"Found CUSUM signals in oof_df: {cusum_cols}")
+        else:
+            cusum_df = _build_cusum_from_alternatives(df, "oof_df")
+            if cusum_df is not None:
+                cusum_cols = list(cusum_df.columns)
     
     if not cusum_cols or cusum_df is None:
         print("⚠️ No CUSUM signals found in input. Using fallback signals.")

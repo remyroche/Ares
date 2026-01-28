@@ -6,6 +6,8 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from src.utils.tprint import tprint
+
 
 # ============================================================
 # Purged K-Fold (blocked) utilities — de Prado compatible
@@ -31,6 +33,7 @@ def make_purged_kfold_folds(
     Returns:
         list of (train_idx, val_idx)
     """
+    tprint("Calling make_purged_kfold_folds")
     n = len(index)
     if n_folds < 2:
         raise ValueError("n_folds must be >= 2")
@@ -77,6 +80,7 @@ def _safe_sharpe(u: np.ndarray, eps: float = 1e-12) -> float:
     Robust Sharpe proxy: mean(u)/std(u).
     Returns NaN for insufficient samples or near-zero std.
     """
+    tprint("Calling _safe_sharpe")
     u = u[np.isfinite(u)]
     if u.size < 10:
         return np.nan
@@ -106,6 +110,7 @@ def stability_score_from_fold_metrics(
     Returns:
         float stability score; -inf if insufficient metrics.
     """
+    tprint("Calling stability_score_from_fold_metrics")
     fm = np.asarray(fm, dtype=float)
     fm = fm[np.isfinite(fm)]
     if fm.size < 3:
@@ -221,6 +226,7 @@ class StabilityRegimeTree:
         merge_leaf_l1_eps: float = 0.2,
         verbose: bool = False,
     ):
+        tprint("Calling StabilityRegimeTree.__init__")
         self.max_depth = int(max_depth)
         self.min_leaf_samples = int(min_leaf_samples)
         self.min_leaf_val_per_fold = int(min_leaf_val_per_fold)
@@ -264,6 +270,7 @@ class StabilityRegimeTree:
         y: np.ndarray,
         folds: List[Tuple[np.ndarray, np.ndarray]],
     ) -> "StabilityRegimeTree":
+        tprint("Calling StabilityRegimeTree.fit")
         Z = self._validate_Z(Z)
         y = self._validate_y(y, len(Z))
         preds_oof = self._validate_preds(preds_oof, len(Z))
@@ -293,6 +300,7 @@ class StabilityRegimeTree:
         leaf_counter = 0
 
         def build_node(idx_mask: np.ndarray, depth: int) -> Node:
+            tprint("Calling StabilityRegimeTree.fit.build_node")
             nonlocal node_counter, leaf_counter
 
             node_id = node_counter
@@ -364,6 +372,7 @@ class StabilityRegimeTree:
         return self
 
     def predict_leaf_ids(self, Z_new: pd.DataFrame) -> np.ndarray:
+        tprint("Calling StabilityRegimeTree.predict_leaf_ids")
         if self.root_ is None:
             raise RuntimeError("Tree is not fitted.")
         Z_new = self._validate_Z(Z_new)
@@ -388,6 +397,7 @@ class StabilityRegimeTree:
           - 'leaf_id': The regime location.
           - 'entropy': Shannon entropy of expert weights.
         """
+        tprint("Calling StabilityRegimeTree.route")
         if self.root_ is None:
             raise RuntimeError("Tree is not fitted.")
 
@@ -446,6 +456,7 @@ class StabilityRegimeTree:
     # Internal helpers
     # -------------------------
     def _validate_Z(self, Z: pd.DataFrame) -> pd.DataFrame:
+        tprint("Calling StabilityRegimeTree._validate_Z")
         if Z is None or Z.empty:
             raise ValueError("Z is empty.")
         Z = Z.replace([np.inf, -np.inf], np.nan)
@@ -460,6 +471,7 @@ class StabilityRegimeTree:
         return Z
 
     def _validate_y(self, y: np.ndarray, n: int) -> np.ndarray:
+        tprint("Calling StabilityRegimeTree._validate_y")
         y = np.asarray(y, dtype=float)
         if y.ndim != 1 or y.size != n:
             raise ValueError("y must be 1D and aligned with Z.")
@@ -467,6 +479,7 @@ class StabilityRegimeTree:
         return y
 
     def _validate_preds(self, preds: Dict[str, np.ndarray], n: int) -> Dict[str, np.ndarray]:
+        tprint("Calling StabilityRegimeTree._validate_preds")
         if not preds:
             raise ValueError("preds_oof is empty.")
         out: Dict[str, np.ndarray] = {}
@@ -478,6 +491,7 @@ class StabilityRegimeTree:
         return out
 
     def _utility(self, y: np.ndarray, s: np.ndarray) -> np.ndarray:
+        tprint("Calling StabilityRegimeTree._utility")
         if self.utility_transform == "tanh":
             g = np.tanh(s)
         elif self.utility_transform == "clip":
@@ -498,6 +512,7 @@ class StabilityRegimeTree:
         Stability score for one expert restricted to idx_mask (a leaf).
         Uses only validation sets, intersected via fast boolean AND.
         """
+        tprint("Calling StabilityRegimeTree._stability_for_expert_on_mask")
         fold_metrics: List[float] = []
         invalid_folds = 0
         total_val_samples = 0
@@ -539,6 +554,7 @@ class StabilityRegimeTree:
         y: np.ndarray,
         s_oof: np.ndarray,
     ) -> Tuple[float, List[float], float]:
+        tprint("Calling StabilityRegimeTree._stability_with_fold_info")
         fold_metrics: List[float] = []
         total_val_samples = 0
         n_folds = len(self.fold_val_masks_)
@@ -580,6 +596,7 @@ class StabilityRegimeTree:
         Leaf score used in split search:
           max over experts of stability score on this leaf.
         """
+        tprint("Calling StabilityRegimeTree._leaf_score_best_expert")
         best = -np.inf
         for s in preds_oof.values():
             sc = self._stability_for_expert_on_mask(idx_mask, y, s)
@@ -594,6 +611,7 @@ class StabilityRegimeTree:
         y: np.ndarray,
         preds_oof: Dict[str, np.ndarray],
     ) -> LeafAssignment:
+        tprint("Calling StabilityRegimeTree._assign_leaf")
         scores: Dict[str, float] = {}
         fold_scores: Dict[str, List[float]] = {}
         valid_folds: Dict[str, float] = {}
@@ -637,6 +655,7 @@ class StabilityRegimeTree:
         idx_mask: np.ndarray,
         preds_oof: Dict[str, np.ndarray],
     ) -> Dict[str, float]:
+        tprint("Calling StabilityRegimeTree._select_leaf_experts")
         if not scores_by_expert:
             return {}
 
@@ -692,6 +711,7 @@ class StabilityRegimeTree:
           - If gap is small => blend (temp ~ 5).
           - If gap is large => decisive (temp ~ 12).
         """
+        tprint("Calling StabilityRegimeTree._make_leaf_weights")
         items = sorted(scores_by_expert.items(), key=lambda kv: kv[1], reverse=True)
         top = items[: max(1, self.top_k_weights)]
 
@@ -744,6 +764,7 @@ class StabilityRegimeTree:
         return {top[i][0]: float(probs[i]) for i in range(len(top))}
 
     def _prune_leaf_experts(self) -> None:
+        tprint("Calling StabilityRegimeTree._prune_leaf_experts")
         if self._y_cache_ is None or not self._preds_oof_cache_:
             return
         if self._leaf_ids_cache_ is None:
@@ -784,17 +805,21 @@ class StabilityRegimeTree:
             leaf.valid_folds_by_expert = valid_folds
 
     def merge_similar_leaves(self, eps: float = 0.2) -> None:
+        tprint("Calling StabilityRegimeTree.merge_similar_leaves")
         def _l1_distance(a: Dict[str, float], b: Dict[str, float]) -> float:
+            tprint("Calling StabilityRegimeTree.merge_similar_leaves._l1_distance")
             keys = set(a) | set(b)
             return float(sum(abs(a.get(k, 0.0) - b.get(k, 0.0)) for k in keys))
 
         def _merge_weights(a: Dict[str, float], b: Dict[str, float]) -> Dict[str, float]:
+            tprint("Calling StabilityRegimeTree.merge_similar_leaves._merge_weights")
             keys = set(a) | set(b)
             merged = {k: (a.get(k, 0.0) + b.get(k, 0.0)) / 2.0 for k in keys}
             total = sum(merged.values()) or 1.0
             return {k: v / total for k, v in merged.items()}
 
         def _merge_node(node: Optional[Node]) -> Optional[Node]:
+            tprint("Calling StabilityRegimeTree.merge_similar_leaves._merge_node")
             if node is None or node.is_leaf:
                 return node
             node.left = _merge_node(node.left)
@@ -854,6 +879,7 @@ class StabilityRegimeTree:
                  left_score, right_score, parent_best_expert)
         or None if no split meets criteria.
         """
+        tprint("Calling StabilityRegimeTree._find_best_split")
         n_node = int(idx_mask.sum())
         if n_node < 2 * self.min_leaf_samples:
             return None
@@ -936,6 +962,7 @@ class StabilityRegimeTree:
         """
         Traverse a single row to leaf_id.
         """
+        tprint("Calling StabilityRegimeTree._traverse_to_leaf_id")
         while not node.is_leaf:
             if node.feature is None or node.threshold is None:
                 raise RuntimeError("Malformed internal node.")
@@ -961,12 +988,14 @@ class StabilityRegimeTree:
         Rule:
           prune if children_weighted_score <= parent_best_score + alpha
         """
+        tprint("Calling StabilityRegimeTree.prune")
         if self.root_ is None:
             return
         if not isinstance(self.node_stats_, dict):
             raise RuntimeError("node_stats_ must be a dict[node_id -> NodeStats].")
 
         def _make_parent_leaf_assignment(node: Node) -> LeafAssignment:
+            tprint("Calling StabilityRegimeTree.prune._make_parent_leaf_assignment")
             st = self.node_stats_.get(node.node_id)
             if st is None:
                 raise RuntimeError(f"Missing NodeStats for node_id={node.node_id}")
@@ -984,6 +1013,7 @@ class StabilityRegimeTree:
             )
 
         def _prune_recursive(node: Optional[Node]) -> Tuple[Optional[Node], float]:
+            tprint("Calling StabilityRegimeTree.prune._prune_recursive")
             if node is None:
                 return node, -np.inf
 
@@ -1024,6 +1054,7 @@ class StabilityRegimeTree:
         """
         Utility for pruning: find any existing leaf_id beneath node.
         """
+        tprint("Calling StabilityRegimeTree._find_any_leaf")
         if node is None:
             return None
         if node.is_leaf:

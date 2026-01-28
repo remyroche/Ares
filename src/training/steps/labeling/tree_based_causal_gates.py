@@ -152,6 +152,24 @@ class Node:
     right: Optional["Node"] = None
 
 
+@dataclass
+class NodeStats:
+    """
+    Stores stability stats for a region (node) so pruning can be done correctly
+    without recomputing expensive stability metrics.
+
+    parent_best_score: stability score of best expert on the node region
+    children_weighted_score: weighted avg of children best scores
+    n_left/n_right: sample counts
+    parent_best_expert: expert with best stability score on parent region
+    """
+    parent_best_score: float
+    children_weighted_score: float
+    n_left: int
+    n_right: int
+    parent_best_expert: str
+
+
 # ============================================================
 # Stability-Optimized Regime Tree
 # ============================================================
@@ -192,6 +210,8 @@ class StabilityRegimeTree:
         top_k_weights: int = 2,
         weight_temperature: float = 8.0,
         min_stability_gain: float = 0.02,
+        min_valid_fold_frac: float = 0.8,
+        min_total_leaf_val_samples: Optional[int] = None,
         verbose: bool = False,
     ):
         self.max_depth = int(max_depth)
@@ -205,6 +225,10 @@ class StabilityRegimeTree:
         self.top_k_weights = int(top_k_weights)
         self.weight_temperature = float(weight_temperature)
         self.min_stability_gain = float(min_stability_gain)
+        self.min_valid_fold_frac = float(min_valid_fold_frac)
+        self.min_total_leaf_val_samples = (
+            int(min_total_leaf_val_samples) if min_total_leaf_val_samples is not None else None
+        )
         self.verbose = bool(verbose)
 
         self.root_: Optional[Node] = None
@@ -213,6 +237,7 @@ class StabilityRegimeTree:
         self.experts_: List[str] = []
         self.fold_val_masks_: List[np.ndarray] = []
         self.feature_importances_: Dict[str, float] = {}
+        self.node_stats_: Dict[int, NodeStats] = {}
 
     # -------------------------
     # Public API
@@ -290,8 +315,18 @@ class StabilityRegimeTree:
                 )
                 return node
 
-            feat, thr, left_mask, right_mask, gain = best
+            feat, thr, left_mask, right_mask, gain, parent_score, left_score, right_score, parent_expert = best
             self.feature_importances_[feat] += float(gain)
+            n_left = int(left_mask.sum())
+            n_right = int(right_mask.sum())
+            children_weighted = (n_left * left_score + n_right * right_score) / max(1, n_left + n_right)
+            self.node_stats_[node_id] = NodeStats(
+                parent_best_score=float(parent_score),
+                children_weighted_score=float(children_weighted),
+                n_left=n_left,
+                n_right=n_right,
+                parent_best_expert=parent_expert,
+            )
 
             node = Node(
                 node_id=node_id,
@@ -323,11 +358,14 @@ class StabilityRegimeTree:
         self,
         Z_new: pd.DataFrame,
         preds_by_expert: Dict[str, np.ndarray],
-    ) -> np.ndarray:
+    ) -> pd.DataFrame:
         """
         Route and combine expert predictions for new data.
-        If soft_weights=True -> weighted sum per leaf.
-        Else -> hard route to leaf's best expert.
+        Returns a DataFrame with:
+          - 'signal': The weighted average of experts.
+          - 'disagreement': Weighted standard deviation (uncertainty).
+          - 'leaf_id': The regime location.
+          - 'entropy': Shannon entropy of expert weights.
         """
         if self.root_ is None:
             raise RuntimeError("Tree is not fitted.")
@@ -343,19 +381,39 @@ class StabilityRegimeTree:
                 raise ValueError(f"Expert {e} prediction length mismatch: {len(preds_by_expert[e])} != {n}")
 
         leaf_ids = self.predict_leaf_ids(Z_new)
-        out = np.zeros(n, dtype=float)
+        signals = np.zeros(n, dtype=float)
+        disagreements = np.zeros(n, dtype=float)
+        entropies = np.zeros(n, dtype=float)
 
         for i, leaf_id in enumerate(leaf_ids):
             leaf = self.leaves_[leaf_id]
-            if not self.soft_weights:
-                out[i] = float(preds_by_expert[leaf.expert_best][i])
-            else:
-                s = 0.0
-                for e, w in leaf.expert_weights.items():
-                    s += float(w) * float(preds_by_expert[e][i])
-                out[i] = s
+            current_signal = 0.0
+            active_experts = []
 
-        return out
+            for e, w in leaf.expert_weights.items():
+                pred = float(preds_by_expert[e][i])
+                current_signal += w * pred
+                active_experts.append((pred, w))
+
+            signals[i] = current_signal
+
+            weighted_var = 0.0
+            for pred, w in active_experts:
+                weighted_var += w * (pred - current_signal) ** 2
+            disagreements[i] = np.sqrt(max(0.0, weighted_var))
+
+            weights_arr = np.array(list(leaf.expert_weights.values()), dtype=float)
+            entropies[i] = float(-np.sum(weights_arr * np.log(weights_arr + 1e-12)))
+
+        return pd.DataFrame(
+            {
+                "signal": signals,
+                "disagreement": disagreements,
+                "leaf_id": leaf_ids,
+                "entropy": entropies,
+            },
+            index=Z_new.index,
+        )
 
     # -------------------------
     # Internal helpers
@@ -414,16 +472,32 @@ class StabilityRegimeTree:
         Uses only validation sets, intersected via fast boolean AND.
         """
         fold_metrics: List[float] = []
+        invalid_folds = 0
+        total_val_samples = 0
+        n_folds = len(self.fold_val_masks_)
+        min_valid_folds = int(np.ceil(self.min_valid_fold_frac * n_folds))
+        max_invalid_folds = max(0, n_folds - min_valid_folds)
+        min_total_samples = self.min_total_leaf_val_samples
+        if min_total_samples is None:
+            min_total_samples = self.min_leaf_val_per_fold * max(1, min_valid_folds)
 
         for val_mask in self.fold_val_masks_:
             leaf_val_mask = idx_mask & val_mask
             n_leaf_val = int(leaf_val_mask.sum())
             if n_leaf_val < self.min_leaf_val_per_fold:
+                invalid_folds += 1
                 fold_metrics.append(np.nan)
                 continue
 
             u = self._utility(y[leaf_val_mask], s_oof[leaf_val_mask])
             fold_metrics.append(_safe_sharpe(u))
+            total_val_samples += n_leaf_val
+
+        if invalid_folds > max_invalid_folds:
+            return -np.inf
+
+        if total_val_samples < min_total_samples:
+            return -np.inf
 
         fm = np.array(fold_metrics, dtype=float)
         return stability_score_from_fold_metrics(
@@ -476,21 +550,38 @@ class StabilityRegimeTree:
 
     def _make_leaf_weights(self, scores_by_expert: Dict[str, float]) -> Dict[str, float]:
         """
-        Soft weights from stability scores:
-          - select top_k experts
-          - softmax with temperature
+        Dynamic softmax temperature:
+          - Use top_k experts.
+          - Temperature is a deterministic function of the stability gap (top1 - top2).
+          - If gap is small => blend (temp ~ 5).
+          - If gap is large => decisive (temp ~ 12).
         """
         items = sorted(scores_by_expert.items(), key=lambda kv: kv[1], reverse=True)
         top = items[: max(1, self.top_k_weights)]
 
-        scores = np.array([kv[1] for kv in top], dtype=float)
-        if not np.isfinite(scores).any():
+        vals = np.array([kv[1] for kv in top], dtype=float)
+
+        if not np.isfinite(vals).any():
             w = 1.0 / len(top)
             return {k: w for k, _ in top}
 
-        scores = np.nan_to_num(scores, nan=-1e9, posinf=1e9, neginf=-1e9)
-        scores = scores - np.max(scores)
-        probs = np.exp(self.weight_temperature * scores)
+        vals = np.nan_to_num(vals, nan=-1e9, posinf=1e9, neginf=-1e9)
+
+        temp_min, temp_max = 5.0, 12.0
+        if len(vals) >= 2:
+            gap = float(vals[0] - vals[1])
+            g0, g1 = 0.05, 0.25
+            if gap <= g0:
+                temp = temp_min
+            elif gap >= g1:
+                temp = temp_max
+            else:
+                temp = temp_min + (temp_max - temp_min) * ((gap - g0) / (g1 - g0))
+        else:
+            temp = temp_min
+
+        vals = vals - np.max(vals)
+        probs = np.exp(temp * vals)
         probs = probs / (np.sum(probs) + 1e-12)
 
         return {top[i][0]: float(probs[i]) for i in range(len(top))}
@@ -502,10 +593,11 @@ class StabilityRegimeTree:
         col_index: Dict[str, int],
         y: np.ndarray,
         preds_oof: Dict[str, np.ndarray],
-    ) -> Optional[Tuple[str, float, np.ndarray, np.ndarray, float]]:
+    ) -> Optional[Tuple[str, float, np.ndarray, np.ndarray, float, float, float, float, str]]:
         """
         Greedy split: maximize stability gain.
-        Returns (feature, threshold, left_mask, right_mask, gain)
+        Returns (feature, threshold, left_mask, right_mask, gain, parent_score,
+                 left_score, right_score, parent_best_expert)
         or None if no split meets criteria.
         """
         n_node = int(idx_mask.sum())
@@ -515,9 +607,15 @@ class StabilityRegimeTree:
         parent_score = self._leaf_score_best_expert(idx_mask, y, preds_oof)
         if not np.isfinite(parent_score):
             return None
+        parent_best_expert = max(
+            preds_oof.keys(),
+            key=lambda k: self._stability_for_expert_on_mask(idx_mask, y, preds_oof[k]),
+        )
 
         best_gain = -np.inf
         best_split = None
+        best_left_score = -np.inf
+        best_right_score = -np.inf
 
         # Candidate thresholds: quantiles within node's samples (not global)
         qs = np.linspace(0.1, 0.9, self.n_thresholds)
@@ -548,6 +646,8 @@ class StabilityRegimeTree:
                 gain = (left_score + right_score) - parent_score
                 if gain > best_gain:
                     best_gain = float(gain)
+                    best_left_score = float(left_score)
+                    best_right_score = float(right_score)
                     best_split = (feat, float(thr), left_mask, right_mask, best_gain)
 
         if best_split is None:
@@ -564,7 +664,18 @@ class StabilityRegimeTree:
                 f"gain={gain:.4g} | left={int(lm.sum())} right={int(rm.sum())}"
             )
 
-        return best_split
+        feat, thr, left_mask, right_mask, gain = best_split
+        return (
+            feat,
+            thr,
+            left_mask,
+            right_mask,
+            gain,
+            float(parent_score),
+            float(best_left_score),
+            float(best_right_score),
+            str(parent_best_expert),
+        )
 
     def _traverse_to_leaf_id(self, row: np.ndarray, node: Node) -> int:
         """
@@ -585,6 +696,87 @@ class StabilityRegimeTree:
         if node.leaf_id is None:
             raise RuntimeError("Malformed leaf node.")
         return node.leaf_id
+
+    def prune(self, alpha: float = 0.03) -> None:
+        """
+        Cost-complexity-like pruning.
+        Collapse an internal node into a leaf if the split does not improve
+        stability enough to justify complexity.
+
+        Rule:
+          prune if children_weighted_score <= parent_best_score + alpha
+        """
+        if self.root_ is None:
+            return
+        if not isinstance(self.node_stats_, dict):
+            raise RuntimeError("node_stats_ must be a dict[node_id -> NodeStats].")
+
+        def _make_parent_leaf_assignment(node: Node) -> LeafAssignment:
+            st = self.node_stats_.get(node.node_id)
+            if st is None:
+                raise RuntimeError(f"Missing NodeStats for node_id={node.node_id}")
+            best_expert = st.parent_best_expert
+            weights = {best_expert: 1.0} if not self.soft_weights else {best_expert: 1.0}
+
+            new_leaf_id = (max(self.leaves_.keys()) + 1) if self.leaves_ else 0
+            return LeafAssignment(
+                leaf_id=new_leaf_id,
+                expert_best=best_expert,
+                expert_weights=weights,
+                score_best=float(st.parent_best_score),
+                scores_by_expert={best_expert: float(st.parent_best_score)},
+                n_samples=int(st.n_left + st.n_right),
+            )
+
+        def _prune_recursive(node: Optional[Node]) -> Tuple[Optional[Node], float]:
+            if node is None:
+                return node, -np.inf
+
+            if node.is_leaf:
+                leaf_info = self.leaves_[node.leaf_id]  # type: ignore[index]
+                return node, float(leaf_info.score_best)
+
+            node.left, left_score = _prune_recursive(node.left)
+            node.right, right_score = _prune_recursive(node.right)
+
+            st = self.node_stats_.get(node.node_id)
+            if st is None:
+                return node, float((left_score + right_score) / 2.0)
+
+            children_weighted = float(st.children_weighted_score)
+            parent_best = float(st.parent_best_score)
+
+            if children_weighted <= parent_best + float(alpha):
+                if self.verbose:
+                    print(f"[RegimeTree] Pruning node {node.node_id} at depth {node.depth}")
+
+                parent_leaf = _make_parent_leaf_assignment(node)
+                node.is_leaf = True
+                node.feature = None
+                node.threshold = None
+                node.left = None
+                node.right = None
+                node.leaf_id = parent_leaf.leaf_id
+
+                self.leaves_[parent_leaf.leaf_id] = parent_leaf
+                return node, float(parent_leaf.score_best)
+
+            return node, children_weighted
+
+        self.root_, _ = _prune_recursive(self.root_)
+
+    def _find_any_leaf(self, node: Optional[Node]) -> Optional[int]:
+        """
+        Utility for pruning: find any existing leaf_id beneath node.
+        """
+        if node is None:
+            return None
+        if node.is_leaf:
+            return node.leaf_id
+        left = self._find_any_leaf(node.left)
+        if left is not None:
+            return left
+        return self._find_any_leaf(node.right)
 
 
 # ============================================================

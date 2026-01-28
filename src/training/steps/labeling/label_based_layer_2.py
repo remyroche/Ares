@@ -152,6 +152,7 @@ from src.training.steps.labeling.tree_based_causal_gates import (
     StabilityRegimeTree,
     make_purged_kfold_folds,
 )
+from src.models.stacker_lgbm_gate import create_stacker_lgbm_gate
 from src.training.steps.labeling.cross_asset_layer2_components import (
     PanelDataProcessor,
     PanelFeatureStore,
@@ -2790,6 +2791,40 @@ class LabelBasedLayer2(BaseStep):
         self.causal_gate_min_gain = float(kwargs.get('causal_gate_min_gain', 0.02))
         self.causal_gate_prune_alpha = float(kwargs.get('causal_gate_prune_alpha', 0.03))
         self.causal_gate_feature_limit = int(kwargs.get('causal_gate_feature_limit', 25))
+        self.pre_geometry_gate_enabled = kwargs.get('pre_geometry_gate_enabled', True)
+        self.pre_geometry_gate_min_score = float(kwargs.get('pre_geometry_gate_min_score', 0.0))
+        self.pre_geometry_gate_percentile = float(kwargs.get('pre_geometry_gate_percentile', 50.0))
+        pre_geometry_gate_max_entropy = kwargs.get('pre_geometry_gate_max_entropy', None)
+        self.pre_geometry_gate_max_entropy = (
+            float(pre_geometry_gate_max_entropy) if pre_geometry_gate_max_entropy is not None else None
+        )
+        pre_geometry_gate_max_disagreement = kwargs.get('pre_geometry_gate_max_disagreement', None)
+        self.pre_geometry_gate_max_disagreement = (
+            float(pre_geometry_gate_max_disagreement)
+            if pre_geometry_gate_max_disagreement is not None
+            else None
+        )
+        self.pre_geometry_gate_min_events = int(kwargs.get('pre_geometry_gate_min_events', 50))
+        self.pre_geometry_gate_feature_cap = int(kwargs.get('pre_geometry_gate_feature_cap', 80))
+        self.pre_geometry_gate_corr_threshold = float(kwargs.get('pre_geometry_gate_corr_threshold', 0.98))
+        self.pre_geometry_gate_missingness_max = float(kwargs.get('pre_geometry_gate_missingness_max', 0.2))
+        self.pre_geometry_family_gate_enabled = kwargs.get('pre_geometry_family_gate_enabled', True)
+        self.pre_geometry_family_gate_quantile = float(kwargs.get('pre_geometry_family_gate_quantile', 0.6))
+        self.pre_geometry_family_gate_window = int(kwargs.get('pre_geometry_family_gate_window', 500))
+        self.pre_geometry_family_min_keep = float(kwargs.get('pre_geometry_family_min_keep', 0.02))
+        self.pre_geometry_family_max_keep = float(kwargs.get('pre_geometry_family_max_keep', 0.04))
+        self.pre_geometry_gate_max_specialists = int(kwargs.get('pre_geometry_gate_max_specialists', 50))
+        self.pre_geometry_gate_family_k = int(kwargs.get('pre_geometry_gate_family_k', 3))
+        self.pre_geometry_gate_min_keep_per_family = int(kwargs.get('pre_geometry_gate_min_keep_per_family', 2))
+        self.pre_geometry_gate_corr_threshold_family = float(kwargs.get('pre_geometry_gate_corr_threshold_family', 0.9))
+        self.pre_geometry_gate_corr_threshold_global = float(kwargs.get('pre_geometry_gate_corr_threshold_global', 0.95))
+        self.pre_geometry_gate_dir_threshold = float(kwargs.get('pre_geometry_gate_dir_threshold', 0.1))
+        self.pre_geometry_gate_mag_threshold = float(kwargs.get('pre_geometry_gate_mag_threshold', 0.1))
+        self.pre_geometry_gate_mag_weight = float(kwargs.get('pre_geometry_gate_mag_weight', 0.2))
+        self.post_race_gate_weight_half_life = int(kwargs.get('post_race_gate_weight_half_life', 96))
+        self.post_race_gate_enabled = kwargs.get('post_race_gate_enabled', True)
+        self.post_race_gate_min_experts = int(kwargs.get('post_race_gate_min_experts', 2))
+        self.post_race_gate_min_samples = int(kwargs.get('post_race_gate_min_samples', 200))
         
         # IRM Parameters
         self.lambda_irm = kwargs.get('lambda_irm', 1.0)
@@ -2895,6 +2930,13 @@ class LabelBasedLayer2(BaseStep):
         self._causal_gate_feature_cols: Optional[List[str]] = None
         self._causal_gate_outputs: Optional[pd.DataFrame] = None
         self._causal_gated_specialist_predictions: Optional[Dict[str, pd.Series]] = None
+        self._post_race_gate_model = None
+        self._post_race_gate_outputs: Optional[pd.DataFrame] = None
+        self._gate_a_family_gates: Dict[str, Any] = {}
+        self._gate_a_family_masks: Dict[str, pd.Series] = {}
+        self._gate_a_family_probs: Dict[str, pd.Series] = {}
+        self._causal_gate_core_experts: List[str] = []
+        self._causal_gate_core_weights: Dict[str, float] = {}
         self._raw_causal_specialist_predictions: Optional[Dict[str, pd.Series]] = None
         self._family_feature_cache = {} # Shared feature sets per family
         self._dataset_fingerprint = None
@@ -4771,7 +4813,11 @@ class LabelBasedLayer2(BaseStep):
             tprint_error(f"❌ Layer 2: Traceback: {traceback.format_exc()}")
             return {}
 
-    def _generate_rich_gate_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _generate_rich_gate_features(
+        self,
+        df: pd.DataFrame,
+        include_specialist_features: bool = True,
+    ) -> pd.DataFrame:
         """
         Generate comprehensive state features for causal gating (A-I + Specialist Features).
         """
@@ -4844,7 +4890,7 @@ class LabelBasedLayer2(BaseStep):
                 Z['pos_in_range_w24'] = (close - roll_low) / (roll_high - roll_low + eps)
 
             # Autocorrelation
-            Z['r_autocorr_w48'] = ret.rolling(48).apply(lambda x: pd.Series(x).autocorr(lag=1), raw=True)
+            Z['r_autocorr_w48'] = get_serial_correlation(ret, window=48)
 
         # --- F) Vol-Liq Interaction ---
         if 'vol_shock' in Z.columns and 'logvol_z_w96' in Z.columns:
@@ -4869,53 +4915,143 @@ class LabelBasedLayer2(BaseStep):
             if col.startswith(special_prefixes):
                 Z[col] = df[col]
 
-        # --- Specialist Features (Z_spec) ---
-        # Automatically iterate through all specialist families to gather their specific features
-        # Use the global registry keys to ensure dynamic coverage
-        families = list(SPECIALIST_REGISTRY.keys())
+        if include_specialist_features:
+            # --- Specialist Features (Z_spec) ---
+            # Automatically iterate through all specialist families to gather their specific features
+            # Use the global registry keys to ensure dynamic coverage
+            families = list(SPECIALIST_REGISTRY.keys())
 
-        tprint_info(f"   🔍 Collecting specialist features for {len(families)} families...")
-        for family in families:
-            try:
-                # Use default params for feature extraction
-                spec_feats = self._compute_specific_geometry_features(
-                    df, df.index, {'family': family}
-                )
-                if not spec_feats.empty:
-                    # Rename columns to avoid collisions
-                    spec_feats.columns = [f"spec_{family}_{c}" for c in spec_feats.columns]
-                    Z = pd.concat([Z, spec_feats], axis=1)
-            except Exception as e:
-                # Ignore failures for specific families
-                pass
+            tprint_info(f"   🔍 Collecting specialist features for {len(families)} families...")
+            for family in families:
+                try:
+                    # Use default params for feature extraction
+                    spec_feats = self._compute_specific_geometry_features(
+                        df, df.index, {'family': family}
+                    )
+                    if not spec_feats.empty:
+                        # Rename columns to avoid collisions
+                        spec_feats.columns = [f"spec_{family}_{c}" for c in spec_feats.columns]
+                        Z = pd.concat([Z, spec_feats], axis=1)
+                except Exception:
+                    # Ignore failures for specific families
+                    pass
 
         # Cleanup: Replace Inf, Fill NaNs
-        Z = Z.replace([np.inf, -np.inf], np.nan).fillna(method='ffill').fillna(0.0)
-
-        # Correlation Pruning (Protect Specialists)
-        # Cap at e.g. 150 features
-        if Z.shape[1] > 150:
-            tprint_info(f"   ✂️ Pruning features (current: {Z.shape[1]})...")
-            # Simple correlation drop
-            corr_matrix = Z.corr().abs()
-            upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
-            to_drop = [column for column in upper.columns if any(upper[column] > 0.95)]
-
-            # Try to protect specialist features if possible, but drop if highly redundant
-            Z = Z.drop(columns=to_drop)
-            tprint_info(f"   ✅ Features after pruning: {Z.shape[1]}")
+        Z = Z.replace([np.inf, -np.inf], np.nan).ffill().fillna(0.0)
 
         return Z
 
-    def _build_causal_gate_state_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _prune_gate_features(self, Z: pd.DataFrame) -> pd.DataFrame:
+        """Aggressive feature pruning for Gate A state features."""
+        if Z.empty:
+            return Z
+
+        Z = Z.replace([np.inf, -np.inf], np.nan)
+        missing_rate = Z.isna().mean()
+        drop_missing = missing_rate[missing_rate > self.pre_geometry_gate_missingness_max].index.tolist()
+        if drop_missing:
+            Z = Z.drop(columns=drop_missing)
+
+        nunique = Z.nunique(dropna=False)
+        constant_cols = nunique[nunique <= 1].index.tolist()
+        if constant_cols:
+            Z = Z.drop(columns=constant_cols)
+
+        if Z.shape[1] > self.pre_geometry_gate_feature_cap:
+            corr = Z.corr().abs()
+            upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
+            to_drop = [
+                col
+                for col in upper.columns
+                if any(upper[col] > self.pre_geometry_gate_corr_threshold)
+            ]
+            if to_drop:
+                Z = Z.drop(columns=to_drop)
+
+        if Z.shape[1] > self.pre_geometry_gate_feature_cap:
+            variances = Z.var().sort_values(ascending=False)
+            keep_cols = variances.index[: self.pre_geometry_gate_feature_cap].tolist()
+            Z = Z[keep_cols]
+
+        return Z
+
+    def _build_causal_gate_state_features(
+        self,
+        df: pd.DataFrame,
+        specialist_predictions: Optional[Dict[str, pd.Series]] = None,
+    ) -> pd.DataFrame:
         """
         Builds the state feature matrix Z for the causal gate.
         Uses _generate_rich_gate_features for a comprehensive feature set.
         """
-        Z = self._generate_rich_gate_features(df)
+        Z = self._generate_rich_gate_features(df, include_specialist_features=False)
 
-        # Align columns if model is already fitted
-        if self._causal_gate_tree is not None and self._causal_gate_feature_cols:
+        if specialist_predictions:
+            scores_df = pd.DataFrame(
+                {
+                    name: series.reindex(df.index).fillna(0.0)
+                    for name, series in specialist_predictions.items()
+                }
+            )
+            fired_df = (scores_df.abs() > 0).astype(float)
+
+            fam_to_cols: Dict[str, List[str]] = {}
+            for col in scores_df.columns:
+                fam_to_cols.setdefault(self._infer_family_from_registry(col), []).append(col)
+
+            family_frames = []
+            total_fire = pd.Series(0.0, index=df.index)
+            score_abs = scores_df.abs()
+            score_sum = score_abs.sum(axis=1).replace(0.0, 1.0)
+            score_probs = score_abs.div(score_sum, axis=0)
+            global_entropy = (-score_probs * np.log(score_probs + 1e-12)).sum(axis=1)
+
+            for fam, cols in fam_to_cols.items():
+                fam_scores = scores_df[cols]
+                fam_fired = fired_df[cols]
+                fam_fire_count = fam_fired.sum(axis=1)
+                fam_score_median = fam_scores.median(axis=1)
+                fam_score_abs = fam_scores.abs()
+                fam_score_sum = fam_score_abs.sum(axis=1).replace(0.0, 1.0)
+                fam_score_probs = fam_score_abs.div(fam_score_sum, axis=0)
+                fam_score_entropy = (-fam_score_probs * np.log(fam_score_probs + 1e-12)).sum(axis=1)
+
+                family_frames.append(
+                    pd.DataFrame(
+                        {
+                            f"fam_fire_count_{fam}": fam_fire_count,
+                            f"fam_score_median_{fam}": fam_score_median,
+                            f"fam_score_entropy_{fam}": fam_score_entropy,
+                        },
+                        index=df.index,
+                    )
+                )
+                total_fire += fam_fire_count
+
+            if family_frames:
+                Z = pd.concat([Z] + family_frames, axis=1)
+                Z["total_fire_count"] = total_fire
+                Z["global_score_entropy"] = global_entropy
+                Z["n_active_families"] = sum(
+                    1 for fam in fam_to_cols if (fired_df[fam_to_cols[fam]].sum(axis=1) > 0).any()
+                )
+                top_family = (
+                    pd.concat(
+                        [
+                            pd.Series(fired_df[cols].sum(axis=1), name=fam)
+                            for fam, cols in fam_to_cols.items()
+                        ],
+                        axis=1,
+                    )
+                    .idxmax(axis=1)
+                    .fillna("other")
+                )
+                for fam in fam_to_cols:
+                    Z[f"top_family_{fam}"] = (top_family == fam).astype(float)
+
+        if self._causal_gate_tree is None:
+            Z = self._prune_gate_features(Z)
+        elif self._causal_gate_feature_cols:
             # Ensure all expected columns exist (add 0 if missing)
             for col in self._causal_gate_feature_cols:
                 if col not in Z.columns:
@@ -4923,7 +5059,202 @@ class LabelBasedLayer2(BaseStep):
             # Reorder and slice
             Z = Z[self._causal_gate_feature_cols]
 
-        return Z
+        return Z.astype(np.float32, copy=False)
+
+    def _build_gate_a_state_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        Z = self._generate_rich_gate_features(df, include_specialist_features=False)
+        return self._prune_gate_features(Z)
+
+    @staticmethod
+    def _infer_family_from_registry(name: str) -> str:
+        mapping = {
+            "LIQUIDITY_SPECIALIST": "liquidity",
+            "VOLUME_SPECIALIST": "liquidity",
+            "VOLATILITY_SPECIALIST": "vol",
+            "VOLATILITY_INNOVATION_SPECIALIST": "vol",
+            "VOL_STATE": "vol",
+            "DISPERSION_SPECIALIST": "dispersion",
+            "TREND_REGIME": "trend",
+            "MEAN_REVERSION": "trend",
+            "MULTI_HORIZON_SLOPE": "trend",
+            "MARKET_FRAGILITY": "dispersion",
+            "FLOW_PRESSURE_CONTINUOUS": "liquidity",
+            "SURPRISE_Z_CONTINUOUS": "dispersion",
+            "CAUSAL_SURPRISE": "dispersion",
+        }
+        upper = name.upper()
+        if upper in SPECIALIST_REGISTRY:
+            return mapping.get(upper, "other")
+        for key, fam in mapping.items():
+            if upper == key or upper.startswith(key):
+                return fam
+        return "other"
+
+    def _expert_channels(self, name: str, preds: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        preds = np.asarray(preds, dtype=float)
+        if preds.size == 0:
+            return preds, preds, preds
+        if self._is_magnitude_family(name):
+            s_mag = np.tanh(preds)
+            s_dir = np.zeros_like(s_mag)
+        else:
+            if np.nanmin(preds) < 0.0 or np.nanmax(preds) > 1.0:
+                s_dir = np.tanh(preds)
+            else:
+                p = np.clip(preds, 0.0, 1.0)
+                s_dir = 2 * p - 1
+            s_mag = np.abs(s_dir)
+        fired = np.where(
+            self._is_magnitude_family(name),
+            s_mag > self.pre_geometry_gate_mag_threshold,
+            np.abs(s_dir) > self.pre_geometry_gate_dir_threshold,
+        ).astype(float)
+        return s_dir, s_mag, fired
+
+    def _build_family_event_sets(self, specialist_fired: pd.DataFrame) -> Dict[str, pd.Index]:
+        fam_to_cols: Dict[str, List[str]] = {}
+        for col in specialist_fired.columns:
+            fam_to_cols.setdefault(self._infer_family_from_registry(col), []).append(col)
+
+        fam_events: Dict[str, pd.Index] = {}
+        for fam, cols in fam_to_cols.items():
+            fired = specialist_fired[cols].sum(axis=1) > 0
+            fam_events[fam] = specialist_fired.index[fired.values]
+        return fam_events
+
+    def _build_gate_a_X(
+        self,
+        Z_state: pd.DataFrame,
+        specialist_scores: pd.DataFrame,
+        specialist_fired: pd.DataFrame,
+        idx: pd.Index,
+    ) -> pd.DataFrame:
+        return pd.concat(
+            [
+                Z_state.reindex(idx).fillna(0.0),
+                specialist_fired.reindex(idx).fillna(0.0).add_prefix("fire__"),
+                specialist_scores.reindex(idx).fillna(0.0).add_prefix("score__"),
+            ],
+            axis=1,
+        )
+
+    def _make_family_stability_labels(
+        self,
+        returns_fwd: pd.Series,
+        family_score: pd.Series,
+        window: int = 48,
+        thr: float = 0.0,
+    ) -> pd.Series:
+        u = returns_fwd * np.tanh(family_score.clip(-5, 5))
+        mu = u.rolling(window, min_periods=max(10, window // 4)).mean()
+        med = u.rolling(window, min_periods=max(10, window // 4)).median()
+        mad = (u - med).abs().rolling(window, min_periods=max(10, window // 4)).median()
+        stab = mu / (mad + 1e-12)
+        return (stab > thr).astype(int)
+
+    def _build_family_scores(self, specialist_scores: pd.DataFrame) -> Dict[str, pd.Series]:
+        fam_to_cols: Dict[str, List[str]] = {}
+        for col in specialist_scores.columns:
+            fam_to_cols.setdefault(self._infer_family_from_registry(col), []).append(col)
+
+        fam_scores: Dict[str, pd.Series] = {}
+        for fam, cols in fam_to_cols.items():
+            fam_scores[fam] = specialist_scores[cols].median(axis=1)
+        return fam_scores
+
+    def _apply_keep_rate_control(
+        self,
+        proba: pd.Series,
+    ) -> pd.Series:
+        if proba.empty:
+            return proba
+        min_keep = self.pre_geometry_family_min_keep
+        max_keep = self.pre_geometry_family_max_keep
+        target_keep = 0.5 * (min_keep + max_keep)
+
+        rolling = proba.rolling(
+            self.pre_geometry_family_gate_window,
+            min_periods=max(50, self.pre_geometry_family_gate_window // 5),
+        )
+        thr_target = rolling.quantile(1 - target_keep)
+        thr_min = rolling.quantile(1 - min_keep)
+        thr_max = rolling.quantile(1 - max_keep)
+        thr_target = thr_target.fillna(proba.quantile(1 - target_keep))
+        thr_min = thr_min.fillna(proba.quantile(1 - min_keep))
+        thr_max = thr_max.fillna(proba.quantile(1 - max_keep))
+
+        threshold = thr_target.copy()
+        keep_rate = (proba >= threshold).rolling(
+            self.pre_geometry_family_gate_window,
+            min_periods=max(50, self.pre_geometry_family_gate_window // 5),
+        ).mean()
+        threshold = threshold.where(keep_rate >= min_keep, thr_min)
+        threshold = threshold.where(keep_rate <= max_keep, thr_max)
+
+        return proba >= threshold
+
+    def _train_family_gates(
+        self,
+        df: pd.DataFrame,
+        specialist_scores: pd.DataFrame,
+        specialist_fired: pd.DataFrame,
+    ) -> Tuple[Dict[str, Any], Dict[str, pd.Series]]:
+        if not self.pre_geometry_family_gate_enabled:
+            return {}, {}
+
+        Z_state = self._build_gate_a_state_features(df)
+        returns_fwd = df["close"].pct_change().shift(-1).fillna(0.0)
+        fam_events = self._build_family_event_sets(specialist_fired)
+        fam_scores = self._build_family_scores(specialist_scores)
+
+        gates: Dict[str, Any] = {}
+        masks: Dict[str, pd.Series] = {}
+
+        for fam, idx in fam_events.items():
+            if len(idx) < max(200, self.pre_geometry_gate_min_events):
+                continue
+            X = self._build_gate_a_X(Z_state, specialist_scores, specialist_fired, idx)
+            y = self._make_family_stability_labels(
+                returns_fwd.reindex(idx),
+                fam_scores.get(fam, pd.Series(0.0, index=idx)).reindex(idx),
+            )
+            if y.nunique() < 2:
+                continue
+            gate = ExtraTreesClassifier(
+                n_estimators=200,
+                max_depth=3,
+                min_samples_leaf=max(10, int(0.01 * len(X))),
+                random_state=42,
+                n_jobs=-1,
+            )
+            proba = pd.Series(index=idx, dtype=float)
+            try:
+                folds = make_purged_kfold_folds(
+                    idx,
+                    n_folds=min(self.causal_gate_n_folds, 8),
+                    purge=self.causal_gate_purge,
+                    embargo=self.causal_gate_embargo,
+                )
+            except Exception:
+                folds = []
+            if folds:
+                for train_idx, val_idx in folds:
+                    X_train = X.iloc[train_idx]
+                    y_train = y.iloc[train_idx]
+                    X_val = X.iloc[val_idx]
+                    if y_train.nunique() < 2:
+                        continue
+                    gate.fit(X_train, y_train)
+                    proba.iloc[val_idx] = gate.predict_proba(X_val)[:, 1]
+            if proba.isna().any():
+                gate.fit(X, y)
+                proba = proba.fillna(pd.Series(gate.predict_proba(X)[:, 1], index=idx))
+            mask = self._apply_keep_rate_control(proba)
+            gates[fam] = gate
+            masks[fam] = mask
+            self._gate_a_family_probs[fam] = proba
+
+        return gates, masks
 
     def _get_causal_gate_target(self, df: pd.DataFrame) -> pd.Series:
         if "TARGET_RET_1" in df.columns:
@@ -4953,7 +5284,7 @@ class LabelBasedLayer2(BaseStep):
             return specialist_predictions, None
 
         # Build state features Z
-        Z = self._build_causal_gate_state_features(df)
+        Z = self._build_causal_gate_state_features(df, specialist_predictions)
         if Z.empty:
             return specialist_predictions, None
 
@@ -4993,13 +5324,65 @@ class LabelBasedLayer2(BaseStep):
                 tprint_warning(f"   ⚠️ Causal gate fold generation failed: {exc}")
                 return specialist_predictions, None
 
+            preds_oof_dict = self._select_specialists_for_gate_a(preds_oof_dict, y, folds)
+            specialist_predictions = {
+                name: series
+                for name, series in specialist_predictions.items()
+                if name in preds_oof_dict
+            }
+
+            core_experts, conditional_experts, expert_fold_scores = self._classify_gate_experts(
+                preds_oof_dict, y, folds
+            )
+            self._causal_gate_core_experts = core_experts
+            core_weights: Dict[str, float] = {}
+            if core_experts:
+                raw_scores = np.array(
+                    [
+                        np.nanmean(expert_fold_scores.get(expert, [0.0]))
+                        for expert in core_experts
+                    ],
+                    dtype=float,
+                )
+                if np.all(raw_scores <= 0):
+                    raw_scores = np.ones_like(raw_scores)
+                raw_scores = np.clip(raw_scores, 1e-6, None)
+                raw_scores = raw_scores / raw_scores.sum()
+                core_weights = dict(zip(core_experts, raw_scores))
+            self._causal_gate_core_weights = core_weights
+            if len(conditional_experts) < max(2, self.min_specialists):
+                tprint_warning("   ⚠️ Causal gate skipped: insufficient conditional experts after core split.")
+                baseline = np.zeros(len(Z), dtype=float)
+                for expert in core_experts:
+                    baseline += preds_oof_dict[expert] * core_weights.get(expert, 0.0)
+                    gated_predictions[expert] = pd.Series(
+                        preds_oof_dict[expert] * core_weights.get(expert, 0.0),
+                        index=Z.index,
+                    )
+                gate_outputs = pd.DataFrame(
+                    {
+                        "signal": np.zeros(len(Z), dtype=float),
+                        "disagreement": np.zeros(len(Z), dtype=float),
+                        "leaf_id": -1,
+                        "entropy": np.zeros(len(Z), dtype=float),
+                        "best_score": np.zeros(len(Z), dtype=float),
+                        "best_expert": "",
+                        "baseline_signal": baseline,
+                        "final_signal": baseline,
+                        "suitability": expit(np.zeros(len(Z), dtype=float)),
+                        "signed_confidence": np.tanh(baseline),
+                    },
+                    index=Z.index,
+                )
+                return gated_predictions, gate_outputs
+
             # OOF Loop
             for i, (train_idx, val_idx) in enumerate(folds):
                 # Slicing
                 Z_train, Z_val = Z.iloc[train_idx], Z.iloc[val_idx]
                 y_train = y[train_idx]
-                preds_train = {k: v[train_idx] for k, v in preds_oof_dict.items()}
-                preds_val = {k: v[val_idx] for k, v in preds_oof_dict.items()}
+                preds_train = {k: v[train_idx] for k, v in preds_oof_dict.items() if k in conditional_experts}
+                preds_val = {k: v[val_idx] for k, v in preds_oof_dict.items() if k in conditional_experts}
 
                 # Fit Tree on Train
                 fold_tree = StabilityRegimeTree(
@@ -5013,6 +5396,11 @@ class LabelBasedLayer2(BaseStep):
                     top_k_weights=self.causal_gate_top_k,
                     min_stability_gain=self.causal_gate_min_gain,
                     verbose=False,
+                    expert_prune_gap=0.1,
+                    expert_prune_cum_weight=0.9,
+                    expert_prune_worst_fold=-0.25,
+                    expert_prune_corr=0.9,
+                    merge_leaf_l1_eps=0.2,
                 )
 
                 try:
@@ -5025,12 +5413,25 @@ class LabelBasedLayer2(BaseStep):
                         embargo=self.causal_gate_embargo
                     )
 
+                    if len(preds_train) < max(2, self.min_specialists):
+                        tprint_warning("   ⚠️ Insufficient conditional experts for causal gate fold.")
+                        continue
                     fold_tree.fit(Z_train, preds_train, y_train, internal_folds)
                     fold_tree.prune(alpha=self.causal_gate_prune_alpha)
+                    if fold_tree.merge_leaf_l1_eps > 0:
+                        fold_tree.merge_similar_leaves(fold_tree.merge_leaf_l1_eps)
 
                     # Predict on Val
                     val_outputs = fold_tree.route(Z_val, preds_val)
                     val_outputs.index = Z_val.index
+                    if core_experts:
+                        baseline = np.zeros(len(Z_val), dtype=float)
+                        for expert in core_experts:
+                            baseline += preds_oof_dict[expert][val_idx] * core_weights.get(expert, 0.0)
+                        val_outputs["baseline_signal"] = baseline
+                        val_outputs["final_signal"] = val_outputs["signal"] + baseline
+                    val_outputs["suitability"] = expit(val_outputs["best_score"].fillna(0.0))
+                    val_outputs["signed_confidence"] = np.tanh(val_outputs["final_signal"])
                     oof_gate_outputs_list.append(val_outputs)
 
                     # Calculate Gated Predictions
@@ -5039,6 +5440,15 @@ class LabelBasedLayer2(BaseStep):
                         w_vec = np.array([fold_tree.leaves_[lid].expert_weights.get(expert, 0.0) for lid in leaf_ids])
                         gated_p = p_val * w_vec
                         oof_gated_preds_list[expert].append(pd.Series(gated_p, index=Z_val.index))
+
+                    for expert in core_experts:
+                        base_weight = core_weights.get(expert, 0.0)
+                        if base_weight <= 0.0:
+                            continue
+                        p_val = preds_oof_dict[expert][val_idx]
+                        oof_gated_preds_list[expert].append(
+                            pd.Series(p_val * base_weight, index=Z_val.index)
+                        )
 
                 except Exception as e:
                     tprint_warning(f"   ⚠️ Fold {i} gating failed: {e}")
@@ -5070,11 +5480,28 @@ class LabelBasedLayer2(BaseStep):
                 top_k_weights=self.causal_gate_top_k,
                 min_stability_gain=self.causal_gate_min_gain,
                 verbose=self.verbose,
+                expert_prune_gap=0.1,
+                expert_prune_cum_weight=0.9,
+                expert_prune_worst_fold=-0.25,
+                expert_prune_corr=0.9,
+                merge_leaf_l1_eps=0.2,
             )
-            final_tree.fit(Z, preds_oof_dict, y, folds)
+            conditional_preds = {k: v for k, v in preds_oof_dict.items() if k in conditional_experts}
+            if len(conditional_preds) < max(2, self.min_specialists):
+                tprint_warning("   ⚠️ Insufficient conditional experts for final causal gate.")
+                return specialist_predictions, None
+            final_tree.fit(Z, conditional_preds, y, folds)
             final_tree.prune(alpha=self.causal_gate_prune_alpha)
+            if final_tree.merge_leaf_l1_eps > 0:
+                final_tree.merge_similar_leaves(final_tree.merge_leaf_l1_eps)
             self._causal_gate_tree = final_tree
             self._causal_gate_feature_cols = list(Z.columns)
+            leaf_ids_full = final_tree.predict_leaf_ids(Z)
+            leaf_counts = pd.Series(leaf_ids_full).value_counts(normalize=True)
+            if len(final_tree.leaves_) > 10:
+                tprint_warning(f"   ⚠️ Causal gate leaves > 10: {len(final_tree.leaves_)}")
+            if not leaf_counts.empty and (leaf_counts < 0.2).any():
+                tprint_warning("   ⚠️ Causal gate leaves below 20% activity detected.")
 
         else:
             # Inference Mode (No fitting)
@@ -5090,15 +5517,440 @@ class LabelBasedLayer2(BaseStep):
 
             gate_outputs = tree.route(Z, preds_oof_dict)
             gate_outputs = gate_outputs.reindex(Z.index)
+            if self._causal_gate_core_experts:
+                baseline = np.zeros(len(Z), dtype=float)
+                for expert in self._causal_gate_core_experts:
+                    baseline += preds_oof_dict[expert] * self._causal_gate_core_weights.get(expert, 0.0)
+                gate_outputs["baseline_signal"] = baseline
+                gate_outputs["final_signal"] = gate_outputs["signal"] + baseline
+            gate_outputs["suitability"] = expit(gate_outputs["best_score"].fillna(0.0))
+            gate_outputs["signed_confidence"] = np.tanh(gate_outputs["final_signal"])
 
             leaf_ids = gate_outputs["leaf_id"].to_numpy()
             for expert, preds in preds_oof_dict.items():
+                if expert in self._causal_gate_core_experts:
+                    base_weight = self._causal_gate_core_weights.get(expert, 0.0)
+                    gated_predictions[expert] = pd.Series(preds * base_weight, index=Z.index)
+                    continue
                 weights = np.array([tree.leaves_[leaf_id].expert_weights.get(expert, 0.0) for leaf_id in leaf_ids])
                 gated_predictions[expert] = pd.Series(preds * weights, index=Z.index)
 
         return gated_predictions, gate_outputs
 
-    def _generate_causal_surprise_events(self, df: pd.DataFrame, specialist_predictions: Dict[str, pd.Series]) -> pd.DataFrame:
+    def _apply_pre_geometry_gate(
+        self,
+        events_df: pd.DataFrame,
+        gate_outputs: Optional[pd.DataFrame],
+    ) -> pd.DataFrame:
+        """
+        Gate A: filter unstable timestamps before geometry optimization.
+        Uses causal gate outputs (best_score/entropy/disagreement) to prune events.
+        """
+        if (
+            not self.pre_geometry_gate_enabled
+            or events_df is None
+            or events_df.empty
+            or gate_outputs is None
+            or gate_outputs.empty
+        ):
+            return events_df
+
+        aligned = gate_outputs.reindex(events_df.index)
+        if aligned.empty:
+            return events_df
+
+        score_col = "suitability" if "suitability" in aligned.columns else "best_score"
+        if score_col not in aligned.columns:
+            score_col = "signal"
+        scores = aligned[score_col].astype(float)
+        scores = scores.replace([np.inf, -np.inf], np.nan)
+        valid_scores = scores.dropna()
+        if valid_scores.empty or len(valid_scores) < self.pre_geometry_gate_min_events:
+            tprint_warning("   ⚠️ Pre-geometry gate skipped (insufficient gate scores).")
+            return events_df
+
+        min_periods = max(self.pre_geometry_gate_min_events, 50)
+        rolling_threshold = scores.expanding(min_periods=min_periods).quantile(
+            self.pre_geometry_gate_percentile / 100.0
+        )
+        rolling_threshold = rolling_threshold.fillna(
+            np.nanpercentile(valid_scores, self.pre_geometry_gate_percentile)
+        )
+        rolling_threshold = rolling_threshold.clip(lower=self.pre_geometry_gate_min_score)
+        mask = scores >= rolling_threshold
+
+        if self.pre_geometry_gate_max_entropy is not None and "entropy" in aligned.columns:
+            mask &= aligned["entropy"] <= self.pre_geometry_gate_max_entropy
+
+        if self.pre_geometry_gate_max_disagreement is not None and "disagreement" in aligned.columns:
+            mask &= aligned["disagreement"] <= self.pre_geometry_gate_max_disagreement
+
+        filtered = events_df.loc[mask.fillna(False)]
+        if "leaf_id" in aligned.columns:
+            leaf_dist = aligned["leaf_id"].value_counts(normalize=True).to_dict()
+            recent_dist = (
+                aligned["leaf_id"].iloc[-min(200, len(aligned))].value_counts(normalize=True).to_dict()
+            )
+            tprint_info(f"   🧭 Gate A leaf usage: {leaf_dist}")
+            tprint_info(f"   🧭 Gate A recent leaf usage: {recent_dist}")
+        if "entropy" in aligned.columns and "disagreement" in aligned.columns:
+            tprint_info(
+                "   🧪 Gate A diagnostics: "
+                f"entropy_mean={aligned['entropy'].mean():.4f}, "
+                f"disagreement_mean={aligned['disagreement'].mean():.4f}"
+            )
+        tprint_info(
+            "   🧹 Pre-geometry gate filtered events: "
+            f"{len(events_df)} -> {len(filtered)} (metric={score_col})"
+        )
+        return filtered
+
+    def _classify_gate_experts(
+        self,
+        preds_oof_dict: Dict[str, np.ndarray],
+        y: np.ndarray,
+        folds: List[Tuple[np.ndarray, np.ndarray]],
+    ) -> Tuple[List[str], List[str], Dict[str, List[float]]]:
+        expert_fold_scores: Dict[str, List[float]] = {}
+        for expert, preds in preds_oof_dict.items():
+            fold_scores: List[float] = []
+            for _, val_idx in folds:
+                if len(val_idx) < 5:
+                    continue
+                u = y[val_idx] * np.tanh(np.clip(preds[val_idx], -5, 5))
+                score = float(np.mean(u) / (np.std(u) + 1e-12))
+                fold_scores.append(score)
+            expert_fold_scores[expert] = fold_scores
+
+        core_experts: List[str] = []
+        conditional_experts: List[str] = []
+        for expert, scores in expert_fold_scores.items():
+            if not scores:
+                conditional_experts.append(expert)
+                continue
+            min_score = float(np.min(scores))
+            iqr = float(np.subtract(*np.percentile(scores, [75, 25])))
+            if min_score >= 0.0 and iqr <= 0.15:
+                core_experts.append(expert)
+            else:
+                conditional_experts.append(expert)
+
+        if not conditional_experts and core_experts:
+            conditional_experts.append(core_experts.pop(0))
+
+        return core_experts, conditional_experts, expert_fold_scores
+
+    def _select_specialists_for_gate_a(
+        self,
+        preds_oof_dict: Dict[str, np.ndarray],
+        y: np.ndarray,
+        folds: List[Tuple[np.ndarray, np.ndarray]],
+    ) -> Dict[str, np.ndarray]:
+        def stability_score(scores: List[float]) -> float:
+            if not scores:
+                return -np.inf
+            arr = np.array(scores, dtype=float)
+            q75, q25 = np.percentile(arr, 75), np.percentile(arr, 25)
+            return float(np.min(arr) - 0.5 * (q75 - q25))
+
+        fold_scores: Dict[str, List[float]] = {}
+        for expert, preds in preds_oof_dict.items():
+            scores = []
+            for _, val_idx in folds:
+                if len(val_idx) < 5:
+                    continue
+                u = y[val_idx] * np.tanh(np.clip(preds[val_idx], -5, 5))
+                score = float(np.mean(u) / (np.std(u) + 1e-12))
+                scores.append(score)
+            fold_scores[expert] = scores
+
+        fam_to_experts: Dict[str, List[str]] = {}
+        for expert in preds_oof_dict:
+            fam_to_experts.setdefault(self._infer_family_from_registry(expert), []).append(expert)
+
+        selected: List[str] = []
+        for fam, experts in fam_to_experts.items():
+            ranked = sorted(experts, key=lambda e: stability_score(fold_scores.get(e, [])), reverse=True)
+            keep: List[str] = []
+            for expert in ranked:
+                if len(keep) >= self.pre_geometry_gate_family_k:
+                    break
+                if keep:
+                    corr = np.corrcoef(preds_oof_dict[expert], preds_oof_dict[keep[0]])[0, 1]
+                    if np.abs(corr) >= self.pre_geometry_gate_corr_threshold_family:
+                        continue
+                keep.append(expert)
+            if len(keep) < self.pre_geometry_gate_min_keep_per_family and len(ranked) >= self.pre_geometry_gate_min_keep_per_family:
+                keep = ranked[: self.pre_geometry_gate_min_keep_per_family]
+            selected.extend(keep)
+
+        # Global correlation prune
+        final_selected: List[str] = []
+        for expert in selected:
+            if not final_selected:
+                final_selected.append(expert)
+                continue
+            keep = True
+            for kept in final_selected:
+                corr = np.corrcoef(preds_oof_dict[expert], preds_oof_dict[kept])[0, 1]
+                if np.abs(corr) >= self.pre_geometry_gate_corr_threshold_global:
+                    keep = False
+                    break
+            if keep:
+                final_selected.append(expert)
+
+        return {expert: preds_oof_dict[expert] for expert in final_selected}
+
+    def _calibrate_expert_predictions(
+        self,
+        preds: np.ndarray,
+        y: np.ndarray,
+        valid_mask: np.ndarray,
+        base_rate: float,
+    ) -> np.ndarray:
+        preds = np.asarray(preds, dtype=float)
+        if preds.size == 0:
+            return preds
+        y_valid = y[valid_mask]
+        p_valid = preds[valid_mask]
+        if y_valid.size < 10 or np.unique(y_valid).size < 2:
+            return np.clip(preds, 0.0, 1.0)
+
+        candidate_predictions: Dict[str, np.ndarray] = {}
+
+        # ExtraTrees + isotonic calibration
+        try:
+            et = ExtraTreesClassifier(n_estimators=200, max_depth=3, random_state=42, n_jobs=-1)
+            et.fit(p_valid.reshape(-1, 1), y_valid)
+            et_scores = et.predict_proba(preds.reshape(-1, 1))[:, 1]
+            iso = IsotonicRegression(out_of_bounds="clip")
+            iso.fit(et_scores[valid_mask], y_valid)
+            candidate_predictions["extratrees"] = iso.predict(et_scores)
+        except Exception:
+            pass
+
+        # Huber regression
+        try:
+            huber = HuberRegressor(alpha=1.0, epsilon=1.35)
+            huber.fit(p_valid.reshape(-1, 1), y_valid)
+            huber_scores = huber.predict(preds.reshape(-1, 1))
+            candidate_predictions["huber"] = np.clip(huber_scores, 0.0, 1.0)
+        except Exception:
+            pass
+
+        # Ridge regression alpha variants
+        for alpha in (0.5, 1.0):
+            try:
+                ridge = Ridge(alpha=alpha)
+                ridge.fit(p_valid.reshape(-1, 1), y_valid)
+                ridge_scores = ridge.predict(preds.reshape(-1, 1))
+                candidate_predictions[f"ridge_{alpha}"] = np.clip(ridge_scores, 0.0, 1.0)
+            except Exception:
+                continue
+
+        if not candidate_predictions:
+            return np.clip(preds, 0.0, 1.0)
+
+        best_score = -np.inf
+        best_preds = None
+        for name, cand in candidate_predictions.items():
+            cand_valid = cand[valid_mask]
+            if cand_valid.size == 0:
+                continue
+            precision, recall, _ = precision_recall_curve(y_valid, cand_valid)
+            recall_at_prec = 0.0
+            if precision.size > 0:
+                mask = precision >= 0.6
+                if mask.any():
+                    recall_at_prec = float(np.max(recall[mask]))
+            pr_auc = float(average_precision_score(y_valid, cand_valid))
+            brier = float(brier_score_loss(y_valid, cand_valid))
+            metric = pr_auc * (1 - brier) * recall_at_prec
+            if metric > best_score:
+                best_score = metric
+                best_preds = cand
+
+        if best_preds is None:
+            return np.clip(preds, 0.0, 1.0)
+        return np.clip(best_preds, 0.0, 1.0)
+
+    def _build_post_race_regime_features(
+        self,
+        df: pd.DataFrame,
+        index: pd.Index,
+    ) -> pd.DataFrame:
+        """Build lightweight regime features for post-race gating."""
+        features = pd.DataFrame(index=index)
+        if "close" not in df.columns:
+            features["volatility_level"] = 0.0
+            features["trend_score"] = 0.0
+            return features
+
+        returns = df["close"].pct_change().fillna(0.0)
+        vol = returns.rolling(12).std().reindex(index).fillna(0.0)
+        trend = returns.rolling(24).mean().reindex(index).fillna(0.0)
+        vol_long = returns.rolling(48).std().reindex(index).fillna(0.0)
+        trend_score = trend / (vol_long + 1e-9)
+
+        features["volatility_level"] = vol
+        features["trend_score"] = trend_score
+        return features
+
+    def _apply_post_race_gate(
+        self,
+        df: pd.DataFrame,
+        oof_labels: pd.Series,
+        individual_geos: Dict[str, pd.Series],
+    ) -> Optional[pd.DataFrame]:
+        """
+        Gate B: post-race mixture-of-experts routing based on OOF predictions.
+        Returns per-event gate outputs (final score + routing diagnostics).
+        """
+        if not self.post_race_gate_enabled:
+            return None
+
+        if individual_geos is None or len(individual_geos) < self.post_race_gate_min_experts:
+            tprint_warning("   ⚠️ Post-race gate skipped (insufficient experts).")
+            return None
+
+        if oof_labels is None or oof_labels.dropna().shape[0] < self.post_race_gate_min_samples:
+            tprint_warning("   ⚠️ Post-race gate skipped (insufficient labeled samples).")
+            return None
+
+        index = oof_labels.index
+        base_rate = float(oof_labels.mean()) if oof_labels.notna().any() else 0.5
+        base_predictions_full: Dict[str, np.ndarray] = {}
+        present_features: Dict[str, np.ndarray] = {}
+        for name, preds in individual_geos.items():
+            aligned = preds.reindex(index)
+            present = aligned.notna().astype(float).to_numpy(dtype=float)
+            present_features[f"present__{name}"] = present
+            base_predictions_full[name] = aligned.fillna(base_rate).to_numpy(dtype=float)
+
+        present_matrix = np.column_stack(list(present_features.values())) if present_features else np.zeros((len(index), 0))
+        present_count = present_matrix.sum(axis=1) if present_matrix.size else np.zeros(len(index))
+        present_entropy = np.zeros(len(index))
+        if present_matrix.size:
+            present_probs = present_matrix / np.clip(present_count[:, None], 1.0, None)
+            present_entropy = (-present_probs * np.log(present_probs + 1e-12)).sum(axis=1)
+
+        if present_matrix.size and np.all(present_count == present_matrix.shape[1]):
+            tprint_warning("   ⚠️ Post-race gate: all experts present for all events; verify OOF alignment.")
+        if valid_mask.any():
+            for name, preds in base_predictions_full.items():
+                try:
+                    corr = np.corrcoef(preds[valid_mask.to_numpy()], oof_labels[valid_mask].to_numpy())[0, 1]
+                    if np.abs(corr) > 0.95:
+                        tprint_warning(f"   ⚠️ Post-race gate: {name} corr with labels is {corr:.3f}; check OOF alignment.")
+                except Exception:
+                    continue
+
+        prob_matrix_full = np.column_stack(list(base_predictions_full.values()))
+        max_prob = np.max(prob_matrix_full, axis=1)
+        spread = np.ptp(prob_matrix_full, axis=1)
+
+        regime_features_full = self._build_post_race_regime_features(df, index)
+        for key, val in present_features.items():
+            regime_features_full[key] = val
+        regime_features_full["present_count"] = present_count
+        regime_features_full["present_entropy"] = present_entropy
+        regime_features_full["max_prob"] = max_prob
+        regime_features_full["prob_spread"] = spread
+
+        try:
+            folds = make_purged_kfold_folds(
+                index,
+                n_folds=min(self.causal_gate_n_folds, 8),
+                purge=self.causal_gate_purge,
+                embargo=self.causal_gate_embargo,
+            )
+        except Exception:
+            folds = []
+        if folds:
+            core_experts, _, expert_fold_scores = self._classify_gate_experts(
+                base_predictions_full, oof_labels.to_numpy(dtype=float), folds
+            )
+            if core_experts:
+                raw_scores = np.array(
+                    [
+                        np.nanmean(expert_fold_scores.get(expert, [0.0]))
+                        for expert in core_experts
+                    ],
+                    dtype=float,
+                )
+                if np.all(raw_scores <= 0):
+                    raw_scores = np.ones_like(raw_scores)
+                raw_scores = np.clip(raw_scores, 1e-6, None)
+                raw_scores = raw_scores / raw_scores.sum()
+                core_weights = dict(zip(core_experts, raw_scores))
+                core_signal = np.zeros(len(index), dtype=float)
+                for expert in core_experts:
+                    core_signal += base_predictions_full[expert] * core_weights.get(expert, 0.0)
+                regime_features_full["core_signal"] = core_signal
+
+        valid_mask = oof_labels.notna()
+        if valid_mask.sum() < self.post_race_gate_min_samples:
+            tprint_warning("   ⚠️ Post-race gate skipped (insufficient valid labels).")
+            return None
+
+        calibrated_predictions: Dict[str, np.ndarray] = {}
+        for name, preds in base_predictions_full.items():
+            calibrated_predictions[name] = self._calibrate_expert_predictions(
+                preds, oof_labels.to_numpy(dtype=float), valid_mask.to_numpy(), base_rate
+            )
+        base_predictions_fit = {
+            name: preds[valid_mask.to_numpy()]
+            for name, preds in calibrated_predictions.items()
+        }
+        regime_features_fit = regime_features_full.loc[valid_mask]
+        y_fit = oof_labels.loc[valid_mask].to_numpy(dtype=float)
+
+        gate = create_stacker_lgbm_gate()
+        gate.fit(
+            base_predictions=base_predictions_fit,
+            y=y_fit,
+            regime_features=regime_features_fit,
+        )
+
+        outputs = gate.combine_outputs(calibrated_predictions, regime_features_full)
+        weight_matrix = np.column_stack([outputs["weights"][name] for name in gate.expert_names])
+        prob_matrix = np.column_stack([outputs["expert_probabilities"][name] for name in gate.expert_names])
+        if self.post_race_gate_weight_half_life > 0 and len(weight_matrix) > 1:
+            alpha = 1 - np.exp(np.log(0.5) / max(1.0, self.post_race_gate_weight_half_life))
+            smooth_weights = weight_matrix.copy()
+            for i in range(1, len(smooth_weights)):
+                smooth_weights[i] = alpha * smooth_weights[i] + (1 - alpha) * smooth_weights[i - 1]
+            weight_matrix = smooth_weights
+
+        entropy = -np.sum(weight_matrix * np.log(weight_matrix + 1e-12), axis=1)
+        disagreement = np.std(prob_matrix, axis=1)
+        top_expert_idx = np.argmax(weight_matrix, axis=1)
+        top_expert = np.array([gate.expert_names[idx] for idx in top_expert_idx], dtype=object)
+        blended_prob = np.clip(np.sum(weight_matrix * prob_matrix, axis=1), 0.0, 1.0)
+        outputs["raw_probability"] = blended_prob
+        outputs["probability"] = blended_prob
+
+        gate_df = pd.DataFrame(
+            {
+                "final_score": outputs["probability"],
+                "raw_score": outputs["raw_probability"],
+                "top_expert_idx": top_expert_idx,
+                "top_expert": top_expert,
+                "entropy": entropy,
+                "disagreement": disagreement,
+            },
+            index=index,
+        )
+
+        self._post_race_gate_model = gate
+        return gate_df
+
+    def _generate_causal_surprise_events(
+        self,
+        df: pd.DataFrame,
+        specialist_predictions: Dict[str, pd.Series],
+        gate_outputs: Optional[pd.DataFrame] = None,
+    ) -> pd.DataFrame:
         """
         Generate events from causal surprise detection.
         """
@@ -5210,9 +6062,9 @@ class LabelBasedLayer2(BaseStep):
             # Use 1-day rolling volatility and 10-day Z-score normalization
             # This provides the context for "high vol" vs "low vol" regimes
             returns = df['close'].pct_change()
-            vol_short = returns.rolling(window=96).std() # 1 day at 15m
-            vol_long_mean = vol_short.rolling(window=960).mean() # 10 days
-            vol_long_std = vol_short.rolling(window=960).std()
+            vol_short = returns.rolling(window=12).std()
+            vol_long_mean = vol_short.rolling(window=24).mean()
+            vol_long_std = vol_short.rolling(window=48).std()
             regime_vol_z = (vol_short - vol_long_mean) / (vol_long_std + 1e-9)
 
             self._surprise_detector.set_zone_score_weights(
@@ -5323,11 +6175,50 @@ class LabelBasedLayer2(BaseStep):
                     events_df = pd.DataFrame()
                     tprint_warning("   ⚠️ Layer 2: No valid event indices found")
             
+            if specialist_predictions:
+                aligned_scores: Dict[str, pd.Series] = {}
+                aligned_fired: Dict[str, np.ndarray] = {}
+                for name, series in specialist_predictions.items():
+                    aligned = series.reindex(df.index).fillna(0.0)
+                    aligned_scores[name] = aligned
+                    _, _, fired = self._expert_channels(name, aligned.to_numpy(dtype=float))
+                    aligned_fired[name] = fired
+                specialist_scores = pd.DataFrame(aligned_scores)
+                specialist_fired = pd.DataFrame(aligned_fired, index=df.index).fillna(0.0)
+                self._gate_a_family_gates, self._gate_a_family_masks = self._train_family_gates(
+                    df, specialist_scores, specialist_fired
+                )
+                if self._gate_a_family_masks:
+                    family_counts = {}
+                    diagnostics = {}
+                    for fam, mask in self._gate_a_family_masks.items():
+                        family_counts[fam] = int(mask.reindex(events_df.index).fillna(False).sum())
+                        events_df[f"gate_mask_{fam}"] = mask.reindex(events_df.index).fillna(False).astype(int)
+                        prob = self._gate_a_family_probs.get(fam)
+                        if prob is not None:
+                            stats = prob.reindex(events_df.index)
+                            diagnostics[fam] = {
+                                "prob_mean": float(stats.mean()),
+                                "prob_std": float(stats.std()),
+                                "kept": int(mask.sum()),
+                            }
+                    combined = pd.DataFrame(self._gate_a_family_masks).reindex(events_df.index).fillna(False)
+                    if not combined.empty:
+                        events_df = events_df.loc[combined.any(axis=1)]
+                    if family_counts:
+                        tprint_info(f"   🧭 Gate A family event counts: {family_counts}")
+                    if diagnostics:
+                        tprint_info(f"   🧪 Gate A family diagnostics: {diagnostics}")
+
+            # Gate A: Pre-geometry causal filter
+            if gate_outputs is not None and not gate_outputs.empty:
+                events_df = self._apply_pre_geometry_gate(events_df, gate_outputs)
+
             # Compute Reliability Metrics
             try:
                 # Use close prices for continuous outcome evaluation
                 # Calculate forward returns for ground truth
-                forward_returns = df['close'].shift(-48) / df['close'] - 1.0 # 12h returns
+                forward_returns = df['close'].shift(-20) / df['close'] - 1.0
                 
                 # If we have labels (e.g. from OOF or previous run), use them
                 binary_labels = None
@@ -5336,7 +6227,7 @@ class LabelBasedLayer2(BaseStep):
                 elif forward_returns is not None:
                      # Create proxy labels for reliability estimation if missing
                      # Label 1 if return > 1.0 * volatility (significant move)
-                     vol_proxy = df['close'].pct_change().rolling(20).std().shift(-1) * np.sqrt(48)
+                     vol_proxy = df['close'].pct_change().rolling(20).std().shift(-1) * np.sqrt(20)
                      binary_labels = (forward_returns > vol_proxy.fillna(0)).astype(int)
                 
                 reliability_metrics = self._surprise_detector.compute_reliability_metrics(
@@ -8839,7 +9730,11 @@ class LabelBasedLayer2(BaseStep):
 
             # 3. Causal Surprise Events: Generate events from specialist prediction errors
             tprint_info("🎯 Step 3: Generating causal surprise events...")
-            causal_events_df = self._generate_causal_surprise_events(df, specialist_predictions)
+            causal_events_df = self._generate_causal_surprise_events(
+                df,
+                specialist_predictions,
+                gate_outputs=self._causal_gate_outputs,
+            )
             if causal_events_df is None or len(causal_events_df) == 0:
                 tprint_error("   ❌ Layer 2: No causal events generated - FAIL FAST")
                 raise RuntimeError("Aborting Layer 2: No causal events generated")
@@ -14829,13 +15724,22 @@ class LabelBasedLayer2(BaseStep):
                     # But individual_geos is what is passed to Layer 3. 
                     # If we remove here, Layer 3 won't see it, which is good.
 
+        oof_scores_raw = None
+        if self.post_race_gate_enabled:
+            gate_df = self._apply_post_race_gate(df, oof_labels, individual_geos)
+            if gate_df is not None and not gate_df.empty:
+                self._post_race_gate_outputs = gate_df
+                oof_scores_raw = oof_scores.copy()
+                oof_scores = gate_df["final_score"].reindex(oof_scores.index)
+                tprint_info("   🧠 Post-race gate applied: using gated final_score for OOF.")
+
         # Calculate Returns for OOF events (Consensus)
         # We need returns for the union of events generated in Test folds
         # oof_scores index contains all predicted events.
         # We need realized returns for these events.
         # Since we don't know WHICH geometry "won" the max, we use a generic return (e.g. at fixed horizon 120)
         # or we try to reconstruct weighted return.
-        # Simplification: Calculate return at horizon=120 for all events
+        # Simplification: Calculate return at horizon=20 for all events
         oof_returns = pd.Series(np.nan, index=oof_scores.index)
         valid_idx = oof_scores.dropna().index
  
@@ -14844,7 +15748,7 @@ class LabelBasedLayer2(BaseStep):
             # Use compute_realized_returns with default params
             ret, _, _, _, _, _, _, _ = compute_realized_returns(
                 df, pd.DataFrame({'consensus': 1}, index=df.index),
-                profit_threshold=None, stop_threshold=None, horizon=120,
+                profit_threshold=None, stop_threshold=None, horizon=20,
                 transaction_cost=self.transaction_cost
             )
             
@@ -14908,12 +15812,14 @@ class LabelBasedLayer2(BaseStep):
 
         return {
             "l2_score": oof_scores,
+            "l2_score_raw": oof_scores_raw,
             "oof_labels": oof_labels,
             "oof_returns": oof_returns,
             "weights": oof_weights,
             "tree_diagnostics": self._all_tree_stats,
             "individual_geos": individual_geos,
-            "baseline_metrics": baseline_metrics
+            "baseline_metrics": baseline_metrics,
+            "gate_b_outputs": self._post_race_gate_outputs,
         }
     
     def _generate_layer2_report(self, geometries, predictions, tree_stats, timestamp, candidate_metrics=None, baseline_metrics=None):
@@ -15157,8 +16063,8 @@ class LabelBasedLayer2(BaseStep):
             # Volatility regime indicators (vectorized)
             vol_z = roll20_std / (roll100_std + 1e-9)
             feats['vol_regime_zscore'] = vol_z.fillna(0)
-            feats['vol_clustering'] = price_abs_pct.rolling(5).autocorr()
-            feats['vol_mean_reversion'] = -price_pct.rolling(20).autocorr()
+            feats['vol_clustering'] = get_serial_correlation(price_abs_pct, window=5)
+            feats['vol_mean_reversion'] = -get_serial_correlation(price_pct, window=20)
             
         elif family in ['RANGE_ATR', 'SR_CUSUM']:
             # Range expansion and breakout momentum (vectorized)

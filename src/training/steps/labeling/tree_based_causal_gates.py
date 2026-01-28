@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -137,6 +137,8 @@ class LeafAssignment:
     score_best: float
     scores_by_expert: Dict[str, float]
     n_samples: int
+    fold_scores_by_expert: Dict[str, List[float]] = field(default_factory=dict)
+    valid_folds_by_expert: Dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -212,6 +214,11 @@ class StabilityRegimeTree:
         min_stability_gain: float = 0.02,
         min_valid_fold_frac: float = 0.8,
         min_total_leaf_val_samples: Optional[int] = None,
+        expert_prune_gap: float = 0.1,
+        expert_prune_cum_weight: float = 0.9,
+        expert_prune_worst_fold: float = -0.25,
+        expert_prune_corr: float = 0.9,
+        merge_leaf_l1_eps: float = 0.2,
         verbose: bool = False,
     ):
         self.max_depth = int(max_depth)
@@ -229,6 +236,11 @@ class StabilityRegimeTree:
         self.min_total_leaf_val_samples = (
             int(min_total_leaf_val_samples) if min_total_leaf_val_samples is not None else None
         )
+        self.expert_prune_gap = float(expert_prune_gap)
+        self.expert_prune_cum_weight = float(expert_prune_cum_weight)
+        self.expert_prune_worst_fold = float(expert_prune_worst_fold)
+        self.expert_prune_corr = float(expert_prune_corr)
+        self.merge_leaf_l1_eps = float(merge_leaf_l1_eps)
         self.verbose = bool(verbose)
 
         self.root_: Optional[Node] = None
@@ -238,6 +250,9 @@ class StabilityRegimeTree:
         self.fold_val_masks_: List[np.ndarray] = []
         self.feature_importances_: Dict[str, float] = {}
         self.node_stats_: Dict[int, NodeStats] = {}
+        self._preds_oof_cache_: Dict[str, np.ndarray] = {}
+        self._y_cache_: Optional[np.ndarray] = None
+        self._leaf_ids_cache_: Optional[np.ndarray] = None
 
     # -------------------------
     # Public API
@@ -256,6 +271,8 @@ class StabilityRegimeTree:
         self.features_ = list(Z.columns)
         self.experts_ = list(preds_oof.keys())
         self.feature_importances_ = {f: 0.0 for f in self.features_}
+        self._preds_oof_cache_ = preds_oof
+        self._y_cache_ = y
 
         # Precompute fold validation masks once (fast intersections later)
         self.fold_val_masks_ = []
@@ -340,6 +357,10 @@ class StabilityRegimeTree:
             return node
 
         self.root_ = build_node(root_mask, 0)
+        self._leaf_ids_cache_ = self.predict_leaf_ids(Z)
+        self._prune_leaf_experts()
+        if self.merge_leaf_l1_eps > 0:
+            self.merge_similar_leaves(self.merge_leaf_l1_eps)
         return self
 
     def predict_leaf_ids(self, Z_new: pd.DataFrame) -> np.ndarray:
@@ -384,6 +405,8 @@ class StabilityRegimeTree:
         signals = np.zeros(n, dtype=float)
         disagreements = np.zeros(n, dtype=float)
         entropies = np.zeros(n, dtype=float)
+        best_scores = np.zeros(n, dtype=float)
+        best_experts: List[str] = []
 
         for i, leaf_id in enumerate(leaf_ids):
             leaf = self.leaves_[leaf_id]
@@ -404,6 +427,8 @@ class StabilityRegimeTree:
 
             weights_arr = np.array(list(leaf.expert_weights.values()), dtype=float)
             entropies[i] = float(-np.sum(weights_arr * np.log(weights_arr + 1e-12)))
+            best_scores[i] = float(leaf.score_best)
+            best_experts.append(leaf.expert_best)
 
         return pd.DataFrame(
             {
@@ -411,6 +436,8 @@ class StabilityRegimeTree:
                 "disagreement": disagreements,
                 "leaf_id": leaf_ids,
                 "entropy": entropies,
+                "best_score": best_scores,
+                "best_expert": best_experts,
             },
             index=Z_new.index,
         )
@@ -506,6 +533,43 @@ class StabilityRegimeTree:
             disp_penalty=self.disp_penalty,
         )
 
+    def _stability_with_fold_info(
+        self,
+        idx_mask: np.ndarray,
+        y: np.ndarray,
+        s_oof: np.ndarray,
+    ) -> Tuple[float, List[float], float]:
+        fold_metrics: List[float] = []
+        total_val_samples = 0
+        n_folds = len(self.fold_val_masks_)
+        min_valid_folds = int(np.ceil(self.min_valid_fold_frac * n_folds))
+        min_total_samples = self.min_total_leaf_val_samples
+        if min_total_samples is None:
+            min_total_samples = self.min_leaf_val_per_fold * max(1, min_valid_folds)
+
+        valid_folds = 0
+        for val_mask in self.fold_val_masks_:
+            leaf_val_mask = idx_mask & val_mask
+            n_leaf_val = int(leaf_val_mask.sum())
+            if n_leaf_val < self.min_leaf_val_per_fold:
+                continue
+            u = self._utility(y[leaf_val_mask], s_oof[leaf_val_mask])
+            fold_metrics.append(_safe_sharpe(u))
+            total_val_samples += n_leaf_val
+            valid_folds += 1
+
+        valid_frac = valid_folds / max(1, n_folds)
+        if valid_folds < min_valid_folds or total_val_samples < min_total_samples:
+            return -np.inf, fold_metrics, valid_frac
+
+        fm = np.array(fold_metrics, dtype=float)
+        stability = stability_score_from_fold_metrics(
+            fm,
+            mode=self.stability_mode,
+            disp_penalty=self.disp_penalty,
+        )
+        return stability, fold_metrics, valid_frac
+
     def _leaf_score_best_expert(
         self,
         idx_mask: np.ndarray,
@@ -531,13 +595,28 @@ class StabilityRegimeTree:
         preds_oof: Dict[str, np.ndarray],
     ) -> LeafAssignment:
         scores: Dict[str, float] = {}
+        fold_scores: Dict[str, List[float]] = {}
+        valid_folds: Dict[str, float] = {}
         for expert, s in preds_oof.items():
-            scores[expert] = self._stability_for_expert_on_mask(idx_mask, y, s)
+            score, fold_metrics, valid_frac = self._stability_with_fold_info(idx_mask, y, s)
+            scores[expert] = score
+            fold_scores[expert] = fold_metrics
+            valid_folds[expert] = valid_frac
 
         best_expert = max(scores, key=scores.get)
         best_score = float(scores[best_expert])
 
-        weights = self._make_leaf_weights(scores) if self.soft_weights else {best_expert: 1.0}
+        pruned_scores = self._select_leaf_experts(
+            scores,
+            fold_scores,
+            valid_folds,
+            idx_mask,
+            preds_oof,
+        )
+        if not pruned_scores:
+            pruned_scores = {best_expert: best_score}
+
+        weights = self._make_leaf_weights(pruned_scores) if self.soft_weights else {best_expert: 1.0}
 
         return LeafAssignment(
             leaf_id=leaf_id,
@@ -546,7 +625,64 @@ class StabilityRegimeTree:
             score_best=best_score,
             scores_by_expert=scores,
             n_samples=int(idx_mask.sum()),
+            fold_scores_by_expert=fold_scores,
+            valid_folds_by_expert=valid_folds,
         )
+
+    def _select_leaf_experts(
+        self,
+        scores_by_expert: Dict[str, float],
+        fold_scores_by_expert: Dict[str, List[float]],
+        valid_folds_by_expert: Dict[str, float],
+        idx_mask: np.ndarray,
+        preds_oof: Dict[str, np.ndarray],
+    ) -> Dict[str, float]:
+        if not scores_by_expert:
+            return {}
+
+        best_expert = max(scores_by_expert, key=scores_by_expert.get)
+        best_score = scores_by_expert[best_expert]
+        candidates = sorted(scores_by_expert.items(), key=lambda kv: kv[1], reverse=True)
+
+        kept: Dict[str, float] = {}
+
+        def _min_fold_score(expert: str) -> float:
+            folds = fold_scores_by_expert.get(expert, [])
+            return min(folds) if folds else -np.inf
+
+        def _corr(a: np.ndarray, b: np.ndarray) -> float:
+            if a.size < 2 or b.size < 2:
+                return 0.0
+            if np.all(a == a[0]) or np.all(b == b[0]):
+                return 0.0
+            return float(np.corrcoef(a, b)[0, 1])
+
+        for expert, score in candidates:
+            if score < best_score - self.expert_prune_gap:
+                continue
+            if valid_folds_by_expert.get(expert, 0.0) < self.min_valid_fold_frac:
+                continue
+            if _min_fold_score(expert) < self.expert_prune_worst_fold:
+                continue
+            if kept:
+                candidate_vals = preds_oof[expert][idx_mask]
+                skip = False
+                for kept_expert in kept:
+                    kept_vals = preds_oof[kept_expert][idx_mask]
+                    corr = _corr(candidate_vals, kept_vals)
+                    if np.abs(corr) >= self.expert_prune_corr:
+                        skip = True
+                        break
+                if skip:
+                    continue
+            kept[expert] = score
+            if len(kept) >= self.top_k_weights:
+                break
+
+        if not kept:
+            kept[best_expert] = best_score
+
+        return kept
 
     def _make_leaf_weights(self, scores_by_expert: Dict[str, float]) -> Dict[str, float]:
         """
@@ -584,7 +720,125 @@ class StabilityRegimeTree:
         probs = np.exp(temp * vals)
         probs = probs / (np.sum(probs) + 1e-12)
 
+        if self.expert_prune_cum_weight > 0:
+            full_vals = np.array([kv[1] for kv in items], dtype=float)
+            full_vals = np.nan_to_num(full_vals, nan=-1e9, posinf=1e9, neginf=-1e9)
+            full_vals = full_vals - np.max(full_vals)
+            full_probs = np.exp(temp * full_vals)
+            full_probs = full_probs / (np.sum(full_probs) + 1e-12)
+            cumulative = 0.0
+            keep_count = 0
+            for prob in full_probs:
+                cumulative += float(prob)
+                keep_count += 1
+                if cumulative >= self.expert_prune_cum_weight:
+                    break
+            keep_count = max(keep_count, max(1, self.top_k_weights))
+            kept_items = items[:keep_count]
+            renorm = sum(full_probs[:keep_count]) or 1.0
+            return {
+                kept_items[i][0]: float(full_probs[i] / renorm)
+                for i in range(len(kept_items))
+            }
+
         return {top[i][0]: float(probs[i]) for i in range(len(top))}
+
+    def _prune_leaf_experts(self) -> None:
+        if self._y_cache_ is None or not self._preds_oof_cache_:
+            return
+        if self._leaf_ids_cache_ is None:
+            return
+        if len(self._preds_oof_cache_) <= self.top_k_weights:
+            return
+        leaf_ids = self._leaf_ids_cache_
+        for leaf_id, leaf in list(self.leaves_.items()):
+            idx_mask = leaf_ids == leaf_id
+            if not np.any(idx_mask):
+                continue
+            scores: Dict[str, float] = {}
+            fold_scores: Dict[str, List[float]] = {}
+            valid_folds: Dict[str, float] = {}
+            for expert, s in self._preds_oof_cache_.items():
+                score, fold_metrics, valid_frac = self._stability_with_fold_info(
+                    idx_mask, self._y_cache_, s
+                )
+                scores[expert] = score
+                fold_scores[expert] = fold_metrics
+                valid_folds[expert] = valid_frac
+            pruned_scores = self._select_leaf_experts(
+                scores,
+                fold_scores,
+                valid_folds,
+                idx_mask,
+                self._preds_oof_cache_,
+            )
+            if not pruned_scores:
+                continue
+            weights = self._make_leaf_weights(pruned_scores) if self.soft_weights else {leaf.expert_best: 1.0}
+            best_expert = max(weights, key=weights.get)
+            leaf.expert_best = best_expert
+            leaf.score_best = float(scores.get(best_expert, leaf.score_best))
+            leaf.expert_weights = weights
+            leaf.scores_by_expert = scores
+            leaf.fold_scores_by_expert = fold_scores
+            leaf.valid_folds_by_expert = valid_folds
+
+    def merge_similar_leaves(self, eps: float = 0.2) -> None:
+        def _l1_distance(a: Dict[str, float], b: Dict[str, float]) -> float:
+            keys = set(a) | set(b)
+            return float(sum(abs(a.get(k, 0.0) - b.get(k, 0.0)) for k in keys))
+
+        def _merge_weights(a: Dict[str, float], b: Dict[str, float]) -> Dict[str, float]:
+            keys = set(a) | set(b)
+            merged = {k: (a.get(k, 0.0) + b.get(k, 0.0)) / 2.0 for k in keys}
+            total = sum(merged.values()) or 1.0
+            return {k: v / total for k, v in merged.items()}
+
+        def _merge_node(node: Optional[Node]) -> Optional[Node]:
+            if node is None or node.is_leaf:
+                return node
+            node.left = _merge_node(node.left)
+            node.right = _merge_node(node.right)
+            if node.left is None or node.right is None:
+                return node
+            if not node.left.is_leaf or not node.right.is_leaf:
+                return node
+            left_leaf = self.leaves_.get(node.left.leaf_id)
+            right_leaf = self.leaves_.get(node.right.leaf_id)
+            if left_leaf is None or right_leaf is None:
+                return node
+            if _l1_distance(left_leaf.expert_weights, right_leaf.expert_weights) >= eps:
+                return node
+
+            merged_weights = _merge_weights(left_leaf.expert_weights, right_leaf.expert_weights)
+            merged_scores = {**left_leaf.scores_by_expert}
+            for k, v in right_leaf.scores_by_expert.items():
+                merged_scores[k] = (merged_scores.get(k, v) + v) / 2.0
+            best_expert = max(merged_weights, key=merged_weights.get)
+            best_score = max(left_leaf.score_best, right_leaf.score_best)
+            new_leaf_id = (max(self.leaves_.keys()) + 1) if self.leaves_ else 0
+            merged_leaf = LeafAssignment(
+                leaf_id=new_leaf_id,
+                expert_best=best_expert,
+                expert_weights=merged_weights,
+                score_best=float(best_score),
+                scores_by_expert=merged_scores,
+                n_samples=left_leaf.n_samples + right_leaf.n_samples,
+                fold_scores_by_expert={},
+                valid_folds_by_expert={},
+            )
+            self.leaves_[new_leaf_id] = merged_leaf
+            if node.left.leaf_id in self.leaves_:
+                del self.leaves_[node.left.leaf_id]
+            if node.right.leaf_id in self.leaves_:
+                del self.leaves_[node.right.leaf_id]
+            node.is_leaf = True
+            node.left = None
+            node.right = None
+            node.leaf_id = new_leaf_id
+            return node
+
+        self.root_ = _merge_node(self.root_)
 
     def _find_best_split(
         self,
@@ -618,7 +872,8 @@ class StabilityRegimeTree:
         best_right_score = -np.inf
 
         # Candidate thresholds: quantiles within node's samples (not global)
-        qs = np.linspace(0.1, 0.9, self.n_thresholds)
+        adaptive_thresholds = max(3, min(self.n_thresholds, int(np.sqrt(n_node) / 5)))
+        qs = np.linspace(0.1, 0.9, adaptive_thresholds)
 
         for feat in self.features_:
             j = col_index[feat]

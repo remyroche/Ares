@@ -148,6 +148,10 @@ from src.training.steps.labeling.layer2_advanced_logic import (
     rolling_max_min_jit,
     calculate_innovation_jit,
 )
+from src.training.steps.labeling.tree_based_causal_gates import (
+    StabilityRegimeTree,
+    make_purged_kfold_folds,
+)
 from src.training.steps.labeling.cross_asset_layer2_components import (
     PanelDataProcessor,
     PanelFeatureStore,
@@ -2751,6 +2755,17 @@ class LabelBasedLayer2(BaseStep):
         self.interventionist_sampling_enabled = kwargs.get('interventionist_sampling_enabled', True)
         self.causal_targets_enabled = kwargs.get('causal_targets_enabled', True)
         self.causal_specialists_enabled = kwargs.get('causal_specialists_enabled', True)
+        self.causal_gate_enabled = kwargs.get('causal_gate_enabled', True)
+        self.causal_gate_max_depth = int(kwargs.get('causal_gate_max_depth', 2))
+        self.causal_gate_min_leaf_samples = int(kwargs.get('causal_gate_min_leaf_samples', 2000))
+        self.causal_gate_min_leaf_val_per_fold = int(kwargs.get('causal_gate_min_leaf_val_per_fold', 200))
+        self.causal_gate_n_folds = int(kwargs.get('causal_gate_n_folds', 8))
+        self.causal_gate_purge = int(kwargs.get('causal_gate_purge', 0))
+        self.causal_gate_embargo = int(kwargs.get('causal_gate_embargo', 0))
+        self.causal_gate_top_k = int(kwargs.get('causal_gate_top_k', 2))
+        self.causal_gate_min_gain = float(kwargs.get('causal_gate_min_gain', 0.02))
+        self.causal_gate_prune_alpha = float(kwargs.get('causal_gate_prune_alpha', 0.03))
+        self.causal_gate_feature_limit = int(kwargs.get('causal_gate_feature_limit', 25))
         
         # IRM Parameters
         self.lambda_irm = kwargs.get('lambda_irm', 1.0)
@@ -2852,6 +2867,11 @@ class LabelBasedLayer2(BaseStep):
         self._specialist_manager = None
         self._aedl_framework = None
         self._specialist_train_cache = {}
+        self._causal_gate_tree = None
+        self._causal_gate_feature_cols: Optional[List[str]] = None
+        self._causal_gate_outputs: Optional[pd.DataFrame] = None
+        self._causal_gated_specialist_predictions: Optional[Dict[str, pd.Series]] = None
+        self._raw_causal_specialist_predictions: Optional[Dict[str, pd.Series]] = None
         self._family_feature_cache = {} # Shared feature sets per family
         self._dataset_fingerprint = None
         
@@ -4727,6 +4747,119 @@ class LabelBasedLayer2(BaseStep):
             tprint_error(f"❌ Layer 2: Traceback: {traceback.format_exc()}")
             return {}
 
+    def _build_causal_gate_state_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        numeric_df = df.select_dtypes(include=[np.number]).copy()
+        if numeric_df.empty:
+            return pd.DataFrame(index=df.index)
+
+        def _is_gate_feature(col: str) -> bool:
+            return not (
+                col.startswith("label_")
+                or col.startswith("TARGET_")
+                or col.startswith("spec_")
+                or col.startswith("spectral_")
+            )
+
+        if self._causal_gate_feature_cols:
+            cols = list(self._causal_gate_feature_cols)
+            Z = numeric_df.reindex(columns=cols)
+        else:
+            candidate_cols = [c for c in self._select_global_probe_features(numeric_df) if _is_gate_feature(c)]
+            if not candidate_cols:
+                variances = numeric_df.var().sort_values(ascending=False)
+                candidate_cols = [c for c in variances.index if _is_gate_feature(c)]
+            candidate_cols = candidate_cols[: max(1, self.causal_gate_feature_limit)]
+            Z = numeric_df[candidate_cols]
+            if not Z.empty:
+                self._causal_gate_feature_cols = list(Z.columns)
+
+        Z = Z.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        return Z
+
+    def _get_causal_gate_target(self, df: pd.DataFrame) -> pd.Series:
+        if "TARGET_RET_1" in df.columns:
+            y_series = df["TARGET_RET_1"]
+        elif "close" in df.columns:
+            y_series = df["close"].pct_change().shift(-1)
+        else:
+            y_series = pd.Series(0.0, index=df.index)
+        return y_series.fillna(0.0)
+
+    def _apply_causal_gates(
+        self,
+        df: pd.DataFrame,
+        specialist_predictions: Dict[str, pd.Series],
+        fit_tree: bool = False,
+        y_series: Optional[pd.Series] = None,
+    ) -> Tuple[Dict[str, pd.Series], Optional[pd.DataFrame]]:
+        if not self.causal_gate_enabled or not specialist_predictions:
+            return specialist_predictions, None
+
+        if len(specialist_predictions) < max(2, self.min_specialists):
+            return specialist_predictions, None
+
+        Z = self._build_causal_gate_state_features(df)
+        if Z.empty:
+            return specialist_predictions, None
+
+        preds_oof: Dict[str, np.ndarray] = {}
+        for name, series in specialist_predictions.items():
+            aligned = series.reindex(Z.index).fillna(0.0)
+            preds_oof[name] = aligned.to_numpy(dtype=float)
+
+        if fit_tree or self._causal_gate_tree is None:
+            if y_series is None:
+                y_series = self._get_causal_gate_target(df)
+            y = y_series.reindex(Z.index).fillna(0.0).to_numpy(dtype=float)
+            try:
+                folds = make_purged_kfold_folds(
+                    Z.index,
+                    n_folds=self.causal_gate_n_folds,
+                    purge=self.causal_gate_purge,
+                    embargo=self.causal_gate_embargo,
+                )
+            except Exception as exc:
+                tprint_warning(f"   ⚠️ Causal gate fold generation failed: {exc}")
+                return specialist_predictions, None
+
+            tree = StabilityRegimeTree(
+                max_depth=self.causal_gate_max_depth,
+                min_leaf_samples=self.causal_gate_min_leaf_samples,
+                min_leaf_val_per_fold=self.causal_gate_min_leaf_val_per_fold,
+                stability_mode="min_minus_iqr",
+                disp_penalty=0.5,
+                utility_transform="tanh",
+                soft_weights=True,
+                top_k_weights=self.causal_gate_top_k,
+                min_stability_gain=self.causal_gate_min_gain,
+                verbose=self.verbose,
+            )
+            tree.fit(Z, preds_oof, y, folds)
+            tree.prune(alpha=self.causal_gate_prune_alpha)
+            self._causal_gate_tree = tree
+            if not self._causal_gate_feature_cols:
+                self._causal_gate_feature_cols = list(Z.columns)
+
+        tree = self._causal_gate_tree
+        if tree is None:
+            return specialist_predictions, None
+
+        if tree.experts_:
+            for expert in tree.experts_:
+                if expert not in preds_oof:
+                    preds_oof[expert] = np.zeros(len(Z), dtype=float)
+
+        gate_outputs = tree.route(Z, preds_oof)
+        gate_outputs = gate_outputs.reindex(Z.index)
+
+        leaf_ids = gate_outputs["leaf_id"].to_numpy()
+        gated_predictions: Dict[str, pd.Series] = {}
+        for expert, preds in preds_oof.items():
+            weights = np.array([tree.leaves_[leaf_id].expert_weights.get(expert, 0.0) for leaf_id in leaf_ids])
+            gated_predictions[expert] = pd.Series(preds * weights, index=Z.index)
+
+        return gated_predictions, gate_outputs
+
     def _generate_causal_surprise_events(self, df: pd.DataFrame, specialist_predictions: Dict[str, pd.Series]) -> pd.DataFrame:
         """
         Generate events from causal surprise detection.
@@ -5524,8 +5657,11 @@ class LabelBasedLayer2(BaseStep):
                 tprint_info(f"💾 Saved geometry trials artifact: {geometry_trials_artifact_name}")
             
             # Save specialist predictions if available
-            if hasattr(self, '_causal_specialist_predictions') and self._causal_specialist_predictions:
-                specialist_df = pd.DataFrame(self._causal_specialist_predictions)
+            specialist_source = getattr(self, '_causal_gated_specialist_predictions', None)
+            if not specialist_source:
+                specialist_source = getattr(self, '_causal_specialist_predictions', None)
+            if specialist_source:
+                specialist_df = pd.DataFrame(specialist_source)
                 if not specialist_df.empty:
                     specialist_artifact_name = f"layer2_specialist_predictions_{symbol}_{exchange}_{timeframe}_{direction}_{timestamp}"
                     am.save(specialist_df, specialist_artifact_name, artifact_type="data")
@@ -8441,6 +8577,21 @@ class LabelBasedLayer2(BaseStep):
                         'specialist_predictions': {k: v.to_dict() if hasattr(v, 'to_dict') else v for k, v in specialist_predictions.items()}
                     }, symbol, self._current_config)
 
+            # 2b. Causal Gating: build regime tree + gate specialists
+            if specialist_predictions:
+                self._raw_causal_specialist_predictions = specialist_predictions
+                gated_predictions, gate_outputs = self._apply_causal_gates(
+                    df,
+                    specialist_predictions,
+                    fit_tree=True,
+                )
+                if gate_outputs is not None and not gate_outputs.empty:
+                    self._causal_gate_outputs = gate_outputs
+                if gated_predictions:
+                    self._causal_gated_specialist_predictions = gated_predictions
+                    specialist_predictions = gated_predictions
+                    tprint_info(f"   🔐 Causal gate applied: {len(gated_predictions)} gated specialists")
+
             # 3. Causal Surprise Events: Generate events from specialist prediction errors
             tprint_info("🎯 Step 3: Generating causal surprise events...")
             causal_events_df = self._generate_causal_surprise_events(df, specialist_predictions)
@@ -8508,6 +8659,19 @@ class LabelBasedLayer2(BaseStep):
                          col_name = f"spec_{name}"
                          enriched_df[col_name] = series
                          spec_cols.append(col_name)
+
+                gate_cols = []
+                gate_outputs = self._causal_gate_outputs
+                if gate_outputs is None and self._causal_gate_tree is not None and specialist_predictions:
+                    _, gate_outputs = self._apply_causal_gates(df, specialist_predictions, fit_tree=False)
+                    if gate_outputs is not None and not gate_outputs.empty:
+                        self._causal_gate_outputs = gate_outputs
+                if gate_outputs is not None and not gate_outputs.empty:
+                    for col in ["signal", "disagreement", "entropy", "leaf_id"]:
+                        gate_col = f"gate_{col}"
+                        if col in gate_outputs.columns:
+                            enriched_df[gate_col] = gate_outputs[col]
+                            gate_cols.append(gate_col)
                 
                 # Add spectral components (finer-grained) if available from AEDL
                 spectral_cols = []
@@ -8524,7 +8688,10 @@ class LabelBasedLayer2(BaseStep):
                                     enriched_df[col_name] = comp
                                     spectral_cols.append(col_name)
                 
-                tprint_info(f"   📊 Enriched Matrix: {len(df.columns)} base + {len(spec_cols)} spec + {len(spectral_cols)} spectral")
+                tprint_info(
+                    f"   📊 Enriched Matrix: {len(df.columns)} base + {len(spec_cols)} spec + "
+                    f"{len(gate_cols)} gates + {len(spectral_cols)} spectral"
+                )
 
                 # 4b. Augment Causal Graph
                 # Assume OHLCV (Market State) are parents of Specialists/Spectral (Derived State)
@@ -8902,6 +9069,8 @@ class LabelBasedLayer2(BaseStep):
             # Get specialist predictions from stored OOF predictions or regenerate
             specialist_predictions = getattr(self, '_oof_specialist_predictions', None)
             if not specialist_predictions:
+                specialist_predictions = getattr(self, '_causal_gated_specialist_predictions', None)
+            if not specialist_predictions:
                 specialist_predictions = getattr(self, '_causal_specialist_predictions', None)
             if not specialist_predictions:
                 specialist_predictions = self._get_specialist_predictions(df) if hasattr(self, '_get_specialist_predictions') else {}
@@ -8948,6 +9117,14 @@ class LabelBasedLayer2(BaseStep):
                 preds[key] = df[col]
             else:
                 preds[key] = pd.Series(0, index=df.index)
+        self._raw_causal_specialist_predictions = preds
+        if self._causal_gate_tree is not None:
+            gated_preds, gate_outputs = self._apply_causal_gates(df, preds, fit_tree=False)
+            if gate_outputs is not None and not gate_outputs.empty:
+                self._causal_gate_outputs = gate_outputs
+            if gated_preds:
+                self._causal_gated_specialist_predictions = gated_preds
+                return gated_preds
         return preds
 
     def _get_causal_outcomes(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -13856,7 +14033,9 @@ class LabelBasedLayer2(BaseStep):
             return {}
 
         # Store specialist predictions for use by causal generators in _get_global_events
-        self._oof_specialist_predictions = getattr(self, '_causal_specialist_predictions', None)
+        self._oof_specialist_predictions = getattr(self, '_causal_gated_specialist_predictions', None)
+        if not self._oof_specialist_predictions:
+            self._oof_specialist_predictions = getattr(self, '_causal_specialist_predictions', None)
     
         # Initialize global containers
         idx = events_df.index

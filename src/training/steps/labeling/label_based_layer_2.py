@@ -7547,7 +7547,8 @@ class LabelBasedLayer2(BaseStep):
                                 X_all,
                                 causal_graph=graph_to_use,
                                 denoising_methods=methods,
-                                verbose=self.verbose
+                                verbose=self.verbose,
+                                temporal=True
                             )
                         except Exception as e:
                             tprint_warning(f"   ⚠️ Causal denoising failed: {e}")

@@ -837,6 +837,7 @@ class CausalSurpriseDetector:
         regime_vol: Optional[pd.Series] = None,
         market_data: Optional[pd.DataFrame] = None,
         regime_posteriors: Optional[pd.DataFrame] = None,
+        regime_adjustment: str = "normalize",
     ) -> pd.DataFrame:
         """
         Aggregate surprise scores across all specialists.
@@ -844,6 +845,7 @@ class CausalSurpriseDetector:
 
         Args:
             regime_posteriors: DataFrame of regime posterior probabilities (soft regimes)
+            regime_adjustment: 'normalize' (dampen high-vol scores) or 'boost' (amplify high-vol scores).
         """
         self._log_call(
             "aggregate_specialist_surprise",
@@ -852,6 +854,7 @@ class CausalSurpriseDetector:
             regime_vol=regime_vol,
             market_data=market_data,
             regime_posteriors=regime_posteriors,
+            regime_adjustment=regime_adjustment,
         )
         try:
             if self.verbose:
@@ -881,12 +884,30 @@ class CausalSurpriseDetector:
             # Step 4: Integrate regime_vol if provided
             if regime_vol is not None and not regime_vol.empty:
                 regime_vol_aligned = regime_vol.reindex(surprise_df.index).fillna(0.0)
-                regime_weight = 1.0 + 0.5 * np.tanh(regime_vol_aligned)
-                surprise_df = surprise_df.multiply(regime_weight, axis=0)
+
                 if self.verbose:
-                    tprint_info(
-                        f"📊 Integrated regime volatility weighting (mean factor: {regime_weight.mean():.3f})"
-                    )
+                    tprint_info(f"   📊 Regime Vol Stats: Mean={regime_vol_aligned.mean():.4f}, Max={regime_vol_aligned.max():.4f}")
+
+                if regime_adjustment == 'boost':
+                    regime_weight = 1.0 + 0.5 * np.tanh(regime_vol_aligned)
+                    surprise_df = surprise_df.multiply(regime_weight, axis=0)
+                    if self.verbose:
+                        tprint_info(
+                            f"   🚀 Applied Regime Boost (mean factor: {regime_weight.mean():.3f})"
+                        )
+                elif regime_adjustment == 'normalize':
+                    # Dampen high volatility: if vol is high, we expect larger errors, so we divide.
+                    # Factor > 1.0 if vol > 0.
+                    regime_factor = 1.0 + 0.5 * np.tanh(regime_vol_aligned)
+                    surprise_df = surprise_df.divide(regime_factor, axis=0)
+                    if self.verbose:
+                        tprint_info(
+                            f"   📉 Applied Regime Normalization (mean divisor: {regime_factor.mean():.3f})"
+                        )
+                else:
+                    # 'none' or unknown
+                    if self.verbose:
+                        tprint_info(f"   ℹ️ Skipping regime adjustment (mode={regime_adjustment})")
 
             # Step 5: Specialist Weighting (Regime-Conditional vs Global)
 
@@ -1632,6 +1653,21 @@ class CausalSurpriseDetector:
                 )
                 tprint_info(f"   📊 Score stats: mean={scores.mean():.4f}, std={scores.std():.4f}, max={scores.max():.4f}")
                 tprint_info(f"   📊 Threshold stats: mean={adaptive_threshold.mean():.4f}, min={adaptive_threshold.min():.4f}")
+
+                # Add detailed stats for debugging high surprise scores
+                high_score_count = (scores > 3.0).sum()
+                if high_score_count > 0:
+                    tprint_info(f"   📊 Extreme Surprises (Z > 3.0): {high_score_count} events ({100.0 * high_score_count / len(scores):.2f}%)")
+
+                    if not self.specialist_surprises_.empty:
+                        # Find which specialist had max surprise at high score times
+                        high_score_idx = scores[scores > 3.0].index
+                        # Ensure intersection with specialist scores
+                        valid_idx = high_score_idx.intersection(self.specialist_surprises_.index)
+                        if not valid_idx.empty:
+                            # Get specialist names for max values
+                            top_contributors = self.specialist_surprises_.loc[valid_idx].idxmax(axis=1).value_counts().head(3)
+                            tprint_info(f"   🏆 Top Contributors to Extreme Surprises: {top_contributors.to_dict()}")
 
 
             # --- 1b. Regime Gating (Noise Filtering) ---

@@ -455,22 +455,20 @@ class CausalDenoisingEngine:
         self.denoised_features_ = {}
         self.denoising_metadata_ = {}
         
-    def fit_transform(self, X: pd.DataFrame) -> pd.DataFrame:
+    def fit(self, X: pd.DataFrame) -> "CausalDenoisingEngine":
         """
-        Fit denoising models and apply all denoising methods.
+        Fit denoising models (SCM, Sparse Covariance) on input data.
         
         Args:
-            X: Input feature matrix
+            X: Feature matrix
             
         Returns:
-            Denoised feature matrix
+            Self
         """
         if self.verbose:
-            tprint_info("🧹 Causal Denoising Engine: Starting denoising...")
-        
-        start_time = time.time()
-        
-        # Initialize SCM if not provided
+            tprint_info("🧹 Causal Denoising Engine: Fitting models...")
+
+        # 1. Fit SCM (Causal Constraints)
         if self.scm is None and self.causal_graph:
             self.scm = StructuralCausalModel(verbose=False)
             try:
@@ -478,14 +476,39 @@ class CausalDenoisingEngine:
             except Exception as e:
                 if self.verbose:
                     tprint_warning(f"⚠️ Failed to fit SCM: {e}")
+
+        # 2. Fit Sparse Covariance (Feature Selection)
+        if 'sparse_covariance' in self.denoising_methods:
+            self.sparse_denoiser_ = SparseCovarianceDenoiser(verbose=False)
+            try:
+                cov_results = self.sparse_denoiser_.fit_sparse_covariance(X)
+                if cov_results and 'columns' in cov_results:
+                    self.selected_cols_ = cov_results['columns']
+                else:
+                    self.selected_cols_ = list(X.columns)
+            except Exception as e:
+                if self.verbose:
+                    tprint_warning(f"⚠️ Failed to fit Sparse Covariance: {e}")
+                self.selected_cols_ = list(X.columns)
+
+        return self
+
+    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        """
+        Apply learned denoising to new data.
         
-        # Apply denoising methods
+        Args:
+            X: Input feature matrix
+
+        Returns:
+            Denoised feature matrix
+        """
         denoised_dfs = []
         
         for method in self.denoising_methods:
             try:
                 if method == 'sparse_covariance':
-                    denoised_df = self._apply_sparse_covariance_denoising(X)
+                    denoised_df = self._transform_sparse_covariance(X)
                 elif method == 'causal_constraints':
                     denoised_df = self._apply_causal_constraints_denoising(X)
                 elif method == 'graph_filtering':
@@ -495,90 +518,115 @@ class CausalDenoisingEngine:
                 elif method == 'signal_enhancement':
                     denoised_df = self._apply_signal_enhancement(X)
                 else:
-                    if self.verbose:
-                        tprint_warning(f"⚠️ Unknown denoising method: {method}")
                     continue
                 
                 if denoised_df is not None and not denoised_df.empty:
-                    # Add method prefix to column names
                     denoised_df.columns = [f"{method}_{col}" for col in denoised_df.columns]
                     denoised_dfs.append(denoised_df)
                     
-                    if self.verbose:
-                        tprint_info(f"   ✅ {method}: {denoised_df.shape[1]} features")
-                
             except Exception as e:
                 if self.verbose:
-                    tprint_warning(f"⚠️ Failed {method} denoising: {e}")
+                    tprint_warning(f"⚠️ Transform failed for {method}: {e}")
                 continue
         
-        # Combine all denoised features
         if denoised_dfs:
             final_features = pd.concat(denoised_dfs, axis=1)
         else:
             final_features = pd.DataFrame(index=X.index)
-        
-        denoising_time = time.time() - start_time
-        
-        if self.verbose:
-            tprint_success(f"✅ Causal Denoising: Complete!")
-            tprint_info(f"   📊 Original features: {X.shape[1]}")
-            tprint_info(f"   📊 Denoised features: {final_features.shape[1]}")
-            tprint_info(f"   ⏱️  Time: {denoising_time:.2f}s")
-        
+
         self.denoised_features_ = final_features
         return final_features
-    
-    def _apply_sparse_covariance_denoising(self, X: pd.DataFrame) -> pd.DataFrame:
+
+    def fit_transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Fit and transform on the same data."""
+        return self.fit(X).transform(X)
+
+    def fit_transform_temporal(self, X: pd.DataFrame, n_splits: int = 5) -> pd.DataFrame:
         """
-        Apply sparse covariance-based denoising.
+        Fit and transform using expanding window to respect information set constraints.
         
         Args:
             X: Input feature matrix
+            n_splits: Number of expanding window splits
             
         Returns:
-            Denoised features
+            Denoised feature matrix
         """
-        # Initialize sparse denoiser
-        self.sparse_denoiser_ = SparseCovarianceDenoiser(verbose=False)
+        if self.verbose:
+            tprint_info(f"⏳ Temporal Causal Denoising: {n_splits} splits (Expanding Window)")
+
+        n_samples = len(X)
+        if n_samples < 200: # Too small for splits
+             return self.fit_transform(X)
+
+        step_size = n_samples // (n_splits + 1)
+        results_list = []
         
-        # Fit sparse covariance
-        cov_results = self.sparse_denoiser_.fit_sparse_covariance(X)
+        # Initial Window (In-Sample)
+        current_end = step_size
+        X_init = X.iloc[:current_end]
         
-        if not cov_results:
-            return X.copy()
+        # Fit on initial, transform initial
+        # Create separate instance to avoid state pollution
+        engine_init = CausalDenoisingEngine(self.causal_graph, None, self.denoising_methods, verbose=False)
+        res_init = engine_init.fit_transform(X_init)
+        results_list.append(res_init)
         
-        precision_matrix = cov_results['precision']
-        denoise_cols = cov_results.get('columns')
-        if not denoise_cols:
+        # Expanding Windows
+        for i in range(n_splits):
+            next_end = min(current_end + step_size, n_samples)
+            if i == n_splits - 1:
+                next_end = n_samples
+
+            if next_end <= current_end:
+                break
+
+            X_train = X.iloc[:current_end]
+            X_test = X.iloc[current_end:next_end]
+
+            # Fit on Past
+            engine_step = CausalDenoisingEngine(self.causal_graph, None, self.denoising_methods, verbose=False)
+            engine_step.fit(X_train)
+
+            # Transform Future
+            res_test = engine_step.transform(X_test)
+            results_list.append(res_test)
+
+            current_end = next_end
+
+        # Concatenate
+        final_df = pd.concat(results_list, axis=0)
+        
+        # Ensure index alignment (paranoid check)
+        final_df = final_df.reindex(X.index)
+        
+        self.denoised_features_ = final_df
+        return final_df
+
+    def _transform_sparse_covariance(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Apply sparse covariance selection (transform only)."""
+        if not hasattr(self, 'selected_cols_') or not self.selected_cols_:
             return X.copy()
 
-        # NEW: Ensure we only use columns actually in X AND in the denoise_cols list (intersection)
-        valid_cols = [c for c in denoise_cols if c in X.columns]
-        X_sub = X[valid_cols].select_dtypes(include=[np.number])
-        
-        if self.verbose:
-            tprint_info(f"   🔍 Sparse Denoising: X_sub shape={X_sub.shape}, precision shape={precision_matrix.shape}")
-        
-        if X_sub.shape[1] != precision_matrix.shape[0]:
-            if self.verbose:
-                tprint_warning(
-                    "⚠️ Sparse covariance column mismatch; skipping denoising "
-                    f"(cols={X_sub.shape[1]}, precision={precision_matrix.shape})"
-                )
-            return X.copy()
-        
-        # Use precision matrix for denoising
-        # DEPRECATED: Aggressive Pairwise Orthogonalization
-        # This was found to destroy signal and invert model performance (e.g. AUC 0.12).
-        # We now use a more conservative approach or simply return the cleansed features.
-        
-        # NOTE: We keep the return as X.copy() for now, as the filtering is done
-        # via the column selection in fit_sparse_covariance.
-        if self.verbose:
-            tprint_info("   🛡️ Sparse Covariance: Pruned features via correlation/variance filtering")
-        
+        valid_cols = [c for c in self.selected_cols_ if c in X.columns]
         return X[valid_cols].copy()
+
+    def _apply_sparse_covariance_denoising(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Legacy internal method - calls fit_sparse_covariance."""
+        # For backward compatibility within fit_transform if called directly,
+        # but we refactored fit_transform to use fit().transform().
+        # This method is effectively replaced by _transform_sparse_covariance
+        # used inside transform().
+        # We keep it just in case something calls it directly, but it should redirect.
+        if not hasattr(self, 'sparse_denoiser_'):
+             self.sparse_denoiser_ = SparseCovarianceDenoiser(verbose=False)
+             cov_results = self.sparse_denoiser_.fit_sparse_covariance(X)
+             if cov_results:
+                 self.selected_cols_ = cov_results.get('columns', [])
+             else:
+                 self.selected_cols_ = list(X.columns)
+
+        return self._transform_sparse_covariance(X)
     
     def _apply_causal_constraints_denoising(self, X: pd.DataFrame) -> pd.DataFrame:
         """
@@ -861,7 +909,8 @@ def denoise_causal_features(
     X: pd.DataFrame,
     causal_graph: Dict[str, List[str]],
     denoising_methods: List[str] = None,
-    verbose: bool = True
+    verbose: bool = True,
+    temporal: bool = False
 ) -> pd.DataFrame:
     """
     Quick function for causal feature denoising.
@@ -871,6 +920,7 @@ def denoise_causal_features(
         causal_graph: Causal graph from discovery
         denoising_methods: List of denoising methods
         verbose: Whether to print progress information
+        temporal: If True, use expanding window to respect information set constraints.
         
     Returns:
         Denoised feature matrix
@@ -881,4 +931,7 @@ def denoise_causal_features(
         verbose=verbose
     )
     
-    return denoiser.fit_transform(X)
+    if temporal:
+        return denoiser.fit_transform_temporal(X)
+    else:
+        return denoiser.fit_transform(X)

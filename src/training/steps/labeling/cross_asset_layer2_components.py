@@ -41,6 +41,7 @@ from src.utils.numba_funcs import (
     _numba_rolling_std,
     _numba_rolling_correlation,
     _numba_rolling_cov,
+    _numba_rolling_beta,
     _numba_ewma
 )
 
@@ -683,13 +684,8 @@ class CrossAssetSurprises:
         # --- 1. Rolling Beta (Market Sensitivity) ---
         # Beta = Cov(r_a, r_m) / Var(r_m)
 
-        def compute_beta_numba(ra, rm, w):
-            cov = _numba_rolling_cov(ra, rm, w)
-            var = _numba_rolling_cov(rm, rm, w) # Cov(m,m) is Var(m)
-            return cov / (var + 1e-9)
-
-        out["ca__beta_short_w24"] = compute_beta_numba(r_a_win, r_m_win, 24)
-        out["ca__beta_long_w96"] = compute_beta_numba(r_a_win, r_m_win, 96)
+        out["ca__beta_short_w24"] = _numba_rolling_beta(r_a_win, r_m_win, 24)
+        out["ca__beta_long_w96"] = _numba_rolling_beta(r_a_win, r_m_win, 96)
         out["ca__beta_shift"] = out["ca__beta_short_w24"] - out["ca__beta_long_w96"]
 
         # downside_beta_long: beta computed only on bars where market return < 0 over 96 bars

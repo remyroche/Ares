@@ -27,8 +27,11 @@ jobs:
     - name: Set up Poetry
       uses: snok/install-poetry@v1
       with:
-        version: '1.8.2' # Use a specific version for reproducibility
+        version: 'latest' # Use latest version for compatibility with local environment
         virtualenvs-in-project: true
+
+    - name: Configure Poetry
+      run: poetry config installer.max-workers 2
 
     - name: Install TA-Lib C Library
       run: |

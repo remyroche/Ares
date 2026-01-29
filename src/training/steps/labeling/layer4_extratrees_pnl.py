@@ -304,6 +304,18 @@ def generate_layer4_features(
         # Combine data with suffixes to avoid column overlap
         combined_df = df.join(layer3_predictions, how='inner', rsuffix='_l3')
         
+        # Ensure prob_col exists
+        if prob_col not in combined_df.columns:
+            tprint_warning(f"⚠️ Layer 4: Primary probability column '{prob_col}' not found.")
+            # Search for alternatives (e.g. meta_prob_g_fallback, or any meta_prob_*)
+            candidates = [c for c in combined_df.columns if c.startswith('meta_prob')]
+            if candidates:
+                tprint_info(f"   Using '{candidates[0]}' as fallback for '{prob_col}'")
+                combined_df[prob_col] = combined_df[candidates[0]]
+            else:
+                tprint_warning(f"   No probability columns found. Filling '{prob_col}' with 0.5.")
+                combined_df[prob_col] = 0.5
+
         # 1. OOF predictions from layer3
         layer3_prob_cols = [c for c in combined_df.columns if c.startswith('meta_prob_') or c == prob_col]
         

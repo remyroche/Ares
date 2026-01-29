@@ -2260,17 +2260,17 @@ def layer3_analyst_lgbm(
     
     if selected_geoms_df.empty:
         tprint_warning("⚠️ No geometries selected! Using fallback geometry.")
-        selected_ids = ['fallback']
-        # Create fallback geometry
-        if not geometries_dict:
-            geometries_dict['fallback'] = {
+        selected_ids = ['g_fallback']
+        # Create fallback geometry if it doesn't exist
+        if 'g_fallback' not in geometries_dict:
+            geometries_dict['g_fallback'] = {
                 'composite_signal': np.zeros(len(df)),
                 'sigma_eff': vol_s.values,
                 'alpha': 0.5,
                 'activation': 'linear'
             }
         # Ensure fallback geometry has required structure
-        if 'fallback' not in geometries_dict:
+        if 'g_fallback' not in geometries_dict:
             tprint_error("❌ Failed to create fallback geometry")
             return df, {'error': 'No valid geometries available'}
     else:

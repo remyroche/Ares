@@ -2014,8 +2014,10 @@ def layer3_analyst_lgbm(
             )
             target_col = fallback_cols[0]
         else:
+            sample_cols = list(df.columns[:10])
             tprint_warning(
-                f"⚠️ Target column '{target_col}' not found. Creating zero-filled fallback target."
+                f"⚠️ Target column '{target_col}' not found. "
+                f"Creating zero-filled fallback target. Available columns (sample): {sample_cols}"
             )
             df[target_col] = 0.0
 
@@ -2227,7 +2229,11 @@ def layer3_analyst_lgbm(
                 cusum_cols = list(cusum_df.columns)
     
     if not cusum_cols or cusum_df is None:
-        print("⚠️ No CUSUM signals found in input. Using fallback signals.")
+        sample_cols = list(df.columns[:10])
+        print(
+            "⚠️ No CUSUM signals found in input. Using fallback signals. "
+            f"Available columns (sample): {sample_cols}"
+        )
         # Create minimal fallback signals
         cusum_df = pd.DataFrame(index=df.index)
         cusum_df['trend_signal_24'] = np.zeros(len(df))
@@ -2250,46 +2256,62 @@ def layer3_analyst_lgbm(
     
     # Select best geometries using adaptive selection
     y_target = df[target_col].fillna(0)
-    
-    # Use adaptive geometry selection based on probability model objectives
-    selected_geoms_df = select_best_geometries_adaptive(
-        geometries_dict, y_target, X=meta_features,
-        model_type='classifier', objective_func='binary_logloss',
-        top_k=6, n_jobs=1
-    )
-    
-    if selected_geoms_df.empty:
-        tprint_warning("⚠️ No geometries selected! Using fallback geometry.")
-        selected_ids = ['fallback']
-        # Create fallback geometry
-        if not geometries_dict:
+    unique_targets = y_target.nunique(dropna=True)
+    min_rows_for_selection = 5
+
+    if len(df) < min_rows_for_selection or unique_targets < 2:
+        tprint_warning(
+            "⚠️ Skipping adaptive geometry selection due to insufficient target diversity "
+            f"(n={len(df)}, unique_targets={unique_targets}). Using fallback geometry."
+        )
+        selected_ids = [next(iter(geometries_dict.keys()), 'fallback')]
+        if selected_ids[0] == 'fallback' and 'fallback' not in geometries_dict:
             geometries_dict['fallback'] = {
                 'composite_signal': np.zeros(len(df)),
                 'sigma_eff': vol_s.values,
                 'alpha': 0.5,
                 'activation': 'linear'
             }
-        # Ensure fallback geometry has required structure
-        if 'fallback' not in geometries_dict:
-            tprint_error("❌ Failed to create fallback geometry")
-            return df, {'error': 'No valid geometries available'}
     else:
-        selected_ids = selected_geoms_df['id'].values.tolist()
-        tprint_success(f"Selected {len(selected_ids)} geometries: {selected_ids}")
-        
-        # Validate selected geometries exist in dictionary
-        valid_ids = []
-        for gid in selected_ids:
-            if gid in geometries_dict:
-                valid_ids.append(gid)
-            else:
-                tprint_warning(f"⚠️ Geometry {gid} not found in geometries_dict, skipping")
-        
-        if not valid_ids:
-            tprint_error("❌ No valid geometries found after validation")
-            return df, {'error': 'No valid geometries after validation'}
-        
-        selected_ids = valid_ids
+        # Use adaptive geometry selection based on probability model objectives
+        selected_geoms_df = select_best_geometries_adaptive(
+            geometries_dict, y_target, X=meta_features,
+            model_type='classifier', objective_func='binary_logloss',
+            top_k=6, n_jobs=1
+        )
+
+        if selected_geoms_df.empty:
+            tprint_warning("⚠️ No geometries selected! Using fallback geometry.")
+            selected_ids = ['fallback']
+            # Create fallback geometry
+            if not geometries_dict:
+                geometries_dict['fallback'] = {
+                    'composite_signal': np.zeros(len(df)),
+                    'sigma_eff': vol_s.values,
+                    'alpha': 0.5,
+                    'activation': 'linear'
+                }
+            # Ensure fallback geometry has required structure
+            if 'fallback' not in geometries_dict:
+                tprint_error("❌ Failed to create fallback geometry")
+                return df, {'error': 'No valid geometries available'}
+        else:
+            selected_ids = selected_geoms_df['id'].values.tolist()
+            tprint_success(f"Selected {len(selected_ids)} geometries: {selected_ids}")
+
+            # Validate selected geometries exist in dictionary
+            valid_ids = []
+            for gid in selected_ids:
+                if gid in geometries_dict:
+                    valid_ids.append(gid)
+                else:
+                    tprint_warning(f"⚠️ Geometry {gid} not found in geometries_dict, skipping")
+
+            if not valid_ids:
+                tprint_error("❌ No valid geometries found after validation")
+                return df, {'error': 'No valid geometries after validation'}
+
+            selected_ids = valid_ids
     
     # ---------------------------------------------------------
     # 3. Multi-Geometry Meta-Learner Training

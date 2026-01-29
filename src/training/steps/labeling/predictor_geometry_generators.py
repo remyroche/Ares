@@ -36,6 +36,12 @@ except ImportError:
     def tprint_success(msg): print(f"SUCCESS: {msg}")
     def tprint_warning(msg): print(f"WARNING: {msg}")
 
+from src.utils.numba_funcs import (
+    _numba_rolling_mean_nan_safe,
+    _numba_rolling_std_nan_safe,
+    _numba_return_autocorrelation
+)
+
 
 @dataclass
 class PredictorGeometry:
@@ -462,88 +468,149 @@ class ContinuousPredictorGenerator:
         return predictors
 
     def _generate_specialist_surprises(self, df: pd.DataFrame) -> List[PredictorGeometry]:
-        """Generate new causal specialist surprise features."""
+        """Generate new causal specialist surprise features using Numba optimizations."""
         predictors = []
-        close = df['close']
-        volume = df['volume']
-        high = df['high']
-        low = df['low']
-        returns = close.pct_change().fillna(0)
+        close = df['close'].values.astype(np.float64)
+        volume = df['volume'].values.astype(np.float64)
+        high = df['high'].values.astype(np.float64)
+        low = df['low'].values.astype(np.float64)
 
-        # 1. Drift Surprise
-        # mu = rolling_mean(ret.shift(1)), sd = rolling_std(ret.shift(1))
-        # surprise = (ret - mu) / sd
-        window_drift = 30
-        mu_drift = returns.shift(1).rolling(window_drift, min_periods=window_drift).mean()
-        sd_drift = returns.shift(1).rolling(window_drift, min_periods=window_drift).std()
-        drift_surp = (returns - mu_drift) / (sd_drift.replace(0, 1e-12).fillna(1e-12))
+        # Calculate returns
+        # returns = close.pct_change().fillna(0)
+        # Numba friendly returns
+        returns = np.zeros_like(close)
+        returns[1:] = (close[1:] - close[:-1]) / (close[:-1] + 1e-9)
+
+        # Shifted returns for ex-ante calculation
+        # ret_shifted[i] = returns[i-1]
+        ret_shifted = np.roll(returns, 1)
+        ret_shifted[0] = 0.0 # Boundary condition
+
+        # 1. Drift Surprise (Reduced window 30 -> 10)
+        window_drift = 10
+        mu_drift = _numba_rolling_mean_nan_safe(ret_shifted, window_drift)
+        sd_drift = _numba_rolling_std_nan_safe(ret_shifted, window_drift)
+
+        # Avoid div by zero
+        sd_drift = np.where(sd_drift < 1e-12, 1e-12, sd_drift)
+
+        drift_surp = (returns - mu_drift) / sd_drift
+        drift_surp = np.clip(drift_surp, -5, 5)
+        drift_surp = np.nan_to_num(drift_surp, nan=0.0)
 
         predictors.append(PredictorGeometry(
             name=f"drift_surprise_{window_drift}",
             family="SPECIALIST_SURPRISE",
-            values=drift_surp.clip(-5, 5).fillna(0),
+            values=pd.Series(drift_surp, index=df.index),
             metadata={"type": "drift", "window": window_drift}
         ))
 
-        # 2. Vol of Vol Surprise
-        vol_window = 20
-        vov_window = 60
-        vol = returns.shift(1).rolling(vol_window, min_periods=vol_window).std()
-        vov = vol.shift(1).rolling(vov_window, min_periods=vov_window).std()
-        mu_vov = vov.shift(1).rolling(252, min_periods=100).mean()
-        sd_vov = vov.shift(1).rolling(252, min_periods=100).std()
-        vov_surp = (vov - mu_vov) / (sd_vov.replace(0, 1e-12).fillna(1e-12))
+        # 2. Vol of Vol Surprise (Reduced windows 20/60 -> 10/24)
+        vol_window = 10
+        vov_window = 24
+
+        # vol = rolling_std(ret_shifted, vol_window)
+        # Note: shift(1) is already applied to ret_shifted
+        vol = _numba_rolling_std_nan_safe(ret_shifted, vol_window)
+
+        # Shift vol for VoV calculation (causal chain)
+        vol_shifted = np.roll(vol, 1)
+        vol_shifted[0] = 0.0
+
+        vov = _numba_rolling_std_nan_safe(vol_shifted, vov_window)
+
+        # Long term mean/std for VoV surprise normalization
+        # mu = rolling_mean(vov_shifted, 252)
+        vov_shifted = np.roll(vov, 1)
+        vov_shifted[0] = 0.0
+
+        mu_vov = _numba_rolling_mean_nan_safe(vov_shifted, 252)
+        sd_vov = _numba_rolling_std_nan_safe(vov_shifted, 252)
+
+        sd_vov = np.where(sd_vov < 1e-12, 1e-12, sd_vov)
+        vov_surp = (vov - mu_vov) / sd_vov
+        vov_surp = np.clip(vov_surp, -5, 5)
+        vov_surp = np.nan_to_num(vov_surp, nan=0.0)
 
         predictors.append(PredictorGeometry(
             name=f"vol_of_vol_surprise_{vol_window}_{vov_window}",
             family="SPECIALIST_SURPRISE",
-            values=vov_surp.clip(-5, 5).fillna(0),
-            metadata={"type": "vol_of_vol", "vol_window": vol_window, "vov_window": vov_window}
+            values=pd.Series(vov_surp, index=df.index),
+            metadata={"type": "vol_of_vol", "window": vol_window, "vol_window": vol_window, "vov_window": vov_window}
         ))
 
-        # 3. Trend Persistence Surprise
-        trend_window = 60
-        # Rolling autocorrelation of returns
-        ac = returns.shift(1).rolling(trend_window, min_periods=trend_window).apply(
-            lambda x: x.autocorr(lag=1), raw=False
-        )
-        mu_ac = ac.shift(1).rolling(252, min_periods=100).mean()
-        sd_ac = ac.shift(1).rolling(252, min_periods=100).std()
-        trend_surp = (ac - mu_ac) / (sd_ac.replace(0, 1e-12).fillna(1e-12))
+        # 3. Trend Persistence Surprise (Reduced 60 -> 24)
+        trend_window = 24
+        # Rolling autocorrelation of shifted returns
+        # ac = rolling_autocorr(ret_shifted, window)
+        ac = _numba_return_autocorrelation(ret_shifted, trend_window, lag=1)
+
+        ac_shifted = np.roll(ac, 1)
+        ac_shifted[0] = 0.0
+
+        mu_ac = _numba_rolling_mean_nan_safe(ac_shifted, 252)
+        sd_ac = _numba_rolling_std_nan_safe(ac_shifted, 252)
+
+        sd_ac = np.where(sd_ac < 1e-12, 1e-12, sd_ac)
+        trend_surp = (ac - mu_ac) / sd_ac
+        trend_surp = np.clip(trend_surp, -5, 5)
+        trend_surp = np.nan_to_num(trend_surp, nan=0.0)
 
         predictors.append(PredictorGeometry(
             name=f"trend_persistence_surprise_{trend_window}",
             family="SPECIALIST_SURPRISE",
-            values=trend_surp.clip(-5, 5).fillna(0),
+            values=pd.Series(trend_surp, index=df.index),
             metadata={"type": "trend_persistence", "window": trend_window}
         ))
 
-        # 4. Range Surprise (ATR-like)
-        range_window = 20
+        # 4. Range Surprise (Reduced 20 -> 10)
+        range_window = 10
         true_range = (high - low) / (close + 1e-9)
-        atr = true_range.shift(1).rolling(range_window, min_periods=range_window).mean()
-        mu_atr = atr.shift(1).rolling(252, min_periods=100).mean()
-        sd_atr = atr.shift(1).rolling(252, min_periods=100).std()
-        range_surp = (atr - mu_atr) / (sd_atr.replace(0, 1e-12).fillna(1e-12))
+        tr_shifted = np.roll(true_range, 1)
+        tr_shifted[0] = 0.0
+
+        atr = _numba_rolling_mean_nan_safe(tr_shifted, range_window)
+
+        atr_shifted = np.roll(atr, 1)
+        atr_shifted[0] = 0.0
+
+        mu_atr = _numba_rolling_mean_nan_safe(atr_shifted, 252)
+        sd_atr = _numba_rolling_std_nan_safe(atr_shifted, 252)
+
+        sd_atr = np.where(sd_atr < 1e-12, 1e-12, sd_atr)
+        range_surp = (atr - mu_atr) / sd_atr
+        range_surp = np.clip(range_surp, -5, 5)
+        range_surp = np.nan_to_num(range_surp, nan=0.0)
 
         predictors.append(PredictorGeometry(
             name=f"range_surprise_{range_window}",
             family="SPECIALIST_SURPRISE",
-            values=range_surp.clip(-5, 5).fillna(0),
+            values=pd.Series(range_surp, index=df.index),
             metadata={"type": "range", "window": range_window}
         ))
 
-        # 5. Volume Surprise
-        vol_surp_window = 20
-        vol_mu = volume.shift(1).rolling(vol_surp_window, min_periods=vol_surp_window).mean()
-        mu_vol = vol_mu.shift(1).rolling(252, min_periods=100).mean()
-        sd_vol = vol_mu.shift(1).rolling(252, min_periods=100).std()
-        volume_surp = (vol_mu - mu_vol) / (sd_vol.replace(0, 1e-12).fillna(1e-12))
+        # 5. Volume Surprise (Reduced 20 -> 10)
+        vol_surp_window = 10
+        vol_shifted = np.roll(volume, 1)
+        vol_shifted[0] = 0.0
+
+        vol_mu = _numba_rolling_mean_nan_safe(vol_shifted, vol_surp_window)
+
+        vol_mu_shifted = np.roll(vol_mu, 1)
+        vol_mu_shifted[0] = 0.0
+
+        mu_vol = _numba_rolling_mean_nan_safe(vol_mu_shifted, 252)
+        sd_vol = _numba_rolling_std_nan_safe(vol_mu_shifted, 252)
+
+        sd_vol = np.where(sd_vol < 1e-12, 1e-12, sd_vol)
+        volume_surp = (vol_mu - mu_vol) / sd_vol
+        volume_surp = np.clip(volume_surp, -5, 5)
+        volume_surp = np.nan_to_num(volume_surp, nan=0.0)
 
         predictors.append(PredictorGeometry(
             name=f"volume_mean_surprise_{vol_surp_window}",
             family="SPECIALIST_SURPRISE",
-            values=volume_surp.clip(-5, 5).fillna(0),
+            values=pd.Series(volume_surp, index=df.index),
             metadata={"type": "volume", "window": vol_surp_window}
         ))
 

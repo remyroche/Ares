@@ -1593,3 +1593,70 @@ def _numba_rolling_cov(x: np.ndarray, y: np.ndarray, window: int) -> np.ndarray:
             out[i] = cov
 
     return out
+
+
+@jit(nopython=True)
+def _numba_rolling_mean_nan_safe(x, window):
+    """
+    Rolling mean ignoring NaNs.
+    """
+    n = len(x)
+    output = np.zeros(n, dtype=np.float64)
+    output[:] = np.nan
+
+    for i in range(n):
+        start = max(0, i - window + 1)
+        end = i + 1
+
+        sum_val = 0.0
+        count = 0
+
+        for j in range(start, end):
+            val = x[j]
+            if not np.isnan(val):
+                sum_val += val
+                count += 1
+
+        if count > 0:
+            output[i] = sum_val / count
+
+    return output
+
+
+@jit(nopython=True)
+def _numba_rolling_std_nan_safe(x, window):
+    """
+    Rolling std ignoring NaNs.
+    """
+    n = len(x)
+    output = np.zeros(n, dtype=np.float64)
+    output[:] = np.nan
+
+    for i in range(n):
+        start = max(0, i - window + 1)
+        end = i + 1
+
+        # Pass 1: Mean
+        sum_val = 0.0
+        count = 0
+        for j in range(start, end):
+            val = x[j]
+            if not np.isnan(val):
+                sum_val += val
+                count += 1
+
+        if count <= 1:
+            continue
+
+        mean = sum_val / count
+
+        # Pass 2: Variance
+        sum_sq = 0.0
+        for j in range(start, end):
+            val = x[j]
+            if not np.isnan(val):
+                sum_sq += (val - mean) ** 2
+
+        output[i] = np.sqrt(sum_sq / (count - 1))
+
+    return output

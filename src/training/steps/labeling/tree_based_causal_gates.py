@@ -632,20 +632,41 @@ class StabilityRegimeTree:
         best_expert = max(scores, key=scores.get)
 
         # --- ABSTAIN GATING: CROWD OUT WEAK EXPERTS ---
-        # Require a minimum margin for activation proportional to uncertainty.
-        # Margin = Base + c * std(expert_fold_scores)
+        # Require a minimum margin for activation.
+        # Margin is data-driven: max(0.06, 60th percentile of leaf scores)
         if best_expert != "ABSTAIN_SPECIALIST":
-            # Calculate uncertainty-based margin
-            expert_folds = fold_scores.get(best_expert, [])
-            if len(expert_folds) >= 2:
-                # Use standard deviation of fold scores as uncertainty proxy
-                expert_std = np.std(expert_folds)
-                abstain_margin = 0.05 + 0.1 * expert_std
+            # Data-driven margin: q60 within leaf
+            all_scores = [v for k, v in scores.items() if k != "ABSTAIN_SPECIALIST"]
+            if all_scores:
+                delta = np.nanpercentile(all_scores, 60)
             else:
-                abstain_margin = 0.05
+                delta = 0.0
+
+            # Combine with base threshold (slightly increased to 0.06)
+            abstain_margin = max(0.06, delta)
 
             abstain_score = scores.get("ABSTAIN_SPECIALIST", 0.0)
-            if scores[best_expert] < abstain_score + abstain_margin:
+
+            # The best expert must beat abstain + margin
+            # Note: If delta (q60) is high, it means many experts are good, so barrier is higher?
+            # User request: "delta = q^p(m)" where p=60% within leaf.
+            # Interpretation: The margin itself IS the quantile.
+            # So: score[best] > abstain + quantile(scores, 0.60) ??
+            # Or: score[best] > abstain + max(0.06, quantile(scores, 0.60) - abstain)?
+            # Let's interpret "delta = q60" as the margin value.
+            # But q60 is an absolute score.
+            # If q60 is the margin, then score > abstain + q60.
+            # If q60 is e.g. 0.2, and abstain is 0.0, we need > 0.2.
+            # This seems correct: "margin determined by the crowd".
+            # However, usually margin is a delta.
+            # If user means "delta should be the 60th percentile of the SPREAD vs abstain", that's different.
+            # "delta = q^p(m)... e.g. p=60% within each leaf"
+            # Let's assume absolute score quantile is the robust baseline.
+            # So we check if best_score > max(abstain + 0.06, q60_score)
+
+            barrier = max(abstain_score + 0.06, delta)
+
+            if scores[best_expert] < barrier:
                 best_expert = "ABSTAIN_SPECIALIST"
 
         best_score = float(scores[best_expert])

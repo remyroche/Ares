@@ -101,6 +101,9 @@ class ContinuousPredictorGenerator:
         # 5. Market Fragility / Resilience (NEW)
         predictors.extend(self._generate_fragility_resilience(df))
         
+        # 6. Specialist Surprises (Drift, VoV, Trend Persistence, Range, Volume)
+        predictors.extend(self._generate_specialist_surprises(df))
+
         if self.verbose:
             tprint_success(f"   ✅ Generated {len(predictors)} continuous predictors")
         
@@ -456,6 +459,94 @@ class ContinuousPredictorGenerator:
                 metadata={"window": window, "type": "price_impact"}
             ))
         
+        return predictors
+
+    def _generate_specialist_surprises(self, df: pd.DataFrame) -> List[PredictorGeometry]:
+        """Generate new causal specialist surprise features."""
+        predictors = []
+        close = df['close']
+        volume = df['volume']
+        high = df['high']
+        low = df['low']
+        returns = close.pct_change().fillna(0)
+
+        # 1. Drift Surprise
+        # mu = rolling_mean(ret.shift(1)), sd = rolling_std(ret.shift(1))
+        # surprise = (ret - mu) / sd
+        window_drift = 30
+        mu_drift = returns.shift(1).rolling(window_drift, min_periods=window_drift).mean()
+        sd_drift = returns.shift(1).rolling(window_drift, min_periods=window_drift).std()
+        drift_surp = (returns - mu_drift) / (sd_drift.replace(0, 1e-12).fillna(1e-12))
+
+        predictors.append(PredictorGeometry(
+            name=f"drift_surprise_{window_drift}",
+            family="SPECIALIST_SURPRISE",
+            values=drift_surp.clip(-5, 5).fillna(0),
+            metadata={"type": "drift", "window": window_drift}
+        ))
+
+        # 2. Vol of Vol Surprise
+        vol_window = 20
+        vov_window = 60
+        vol = returns.shift(1).rolling(vol_window, min_periods=vol_window).std()
+        vov = vol.shift(1).rolling(vov_window, min_periods=vov_window).std()
+        mu_vov = vov.shift(1).rolling(252, min_periods=100).mean()
+        sd_vov = vov.shift(1).rolling(252, min_periods=100).std()
+        vov_surp = (vov - mu_vov) / (sd_vov.replace(0, 1e-12).fillna(1e-12))
+
+        predictors.append(PredictorGeometry(
+            name=f"vol_of_vol_surprise_{vol_window}_{vov_window}",
+            family="SPECIALIST_SURPRISE",
+            values=vov_surp.clip(-5, 5).fillna(0),
+            metadata={"type": "vol_of_vol", "vol_window": vol_window, "vov_window": vov_window}
+        ))
+
+        # 3. Trend Persistence Surprise
+        trend_window = 60
+        # Rolling autocorrelation of returns
+        ac = returns.shift(1).rolling(trend_window, min_periods=trend_window).apply(
+            lambda x: x.autocorr(lag=1), raw=False
+        )
+        mu_ac = ac.shift(1).rolling(252, min_periods=100).mean()
+        sd_ac = ac.shift(1).rolling(252, min_periods=100).std()
+        trend_surp = (ac - mu_ac) / (sd_ac.replace(0, 1e-12).fillna(1e-12))
+
+        predictors.append(PredictorGeometry(
+            name=f"trend_persistence_surprise_{trend_window}",
+            family="SPECIALIST_SURPRISE",
+            values=trend_surp.clip(-5, 5).fillna(0),
+            metadata={"type": "trend_persistence", "window": trend_window}
+        ))
+
+        # 4. Range Surprise (ATR-like)
+        range_window = 20
+        true_range = (high - low) / (close + 1e-9)
+        atr = true_range.shift(1).rolling(range_window, min_periods=range_window).mean()
+        mu_atr = atr.shift(1).rolling(252, min_periods=100).mean()
+        sd_atr = atr.shift(1).rolling(252, min_periods=100).std()
+        range_surp = (atr - mu_atr) / (sd_atr.replace(0, 1e-12).fillna(1e-12))
+
+        predictors.append(PredictorGeometry(
+            name=f"range_surprise_{range_window}",
+            family="SPECIALIST_SURPRISE",
+            values=range_surp.clip(-5, 5).fillna(0),
+            metadata={"type": "range", "window": range_window}
+        ))
+
+        # 5. Volume Surprise
+        vol_surp_window = 20
+        vol_mu = volume.shift(1).rolling(vol_surp_window, min_periods=vol_surp_window).mean()
+        mu_vol = vol_mu.shift(1).rolling(252, min_periods=100).mean()
+        sd_vol = vol_mu.shift(1).rolling(252, min_periods=100).std()
+        volume_surp = (vol_mu - mu_vol) / (sd_vol.replace(0, 1e-12).fillna(1e-12))
+
+        predictors.append(PredictorGeometry(
+            name=f"volume_mean_surprise_{vol_surp_window}",
+            family="SPECIALIST_SURPRISE",
+            values=volume_surp.clip(-5, 5).fillna(0),
+            metadata={"type": "volume", "window": vol_surp_window}
+        ))
+
         return predictors
 
 

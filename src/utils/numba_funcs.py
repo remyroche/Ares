@@ -1031,6 +1031,62 @@ def _numba_rolling_sum(x: np.ndarray, window: int) -> np.ndarray:
 
 
 @jit(nopython=True)
+def _numba_rolling_beta(x: np.ndarray, m: np.ndarray, window: int) -> np.ndarray:
+    """
+    Calculate rolling Beta = Cov(x, m) / Var(m) aligned to the right edge of the window.
+    Optimized to O(N) single pass.
+    """
+    n = len(x)
+    out = np.zeros(n, dtype=np.float64)
+
+    if window <= 0:
+        return out
+    if len(m) != n:
+        return out
+    if window == 1:
+        return out
+
+    sx = 0.0
+    sm = 0.0
+    sxm = 0.0
+    smm = 0.0
+    inv_w = 1.0 / window
+
+    for i in range(n):
+        vx = x[i]
+        vm = m[i]
+
+        sx += vx
+        sm += vm
+        sxm += vx * vm
+        smm += vm * vm
+
+        if i >= window:
+            rx = x[i - window]
+            rm = m[i - window]
+            sx -= rx
+            sm -= rm
+            sxm -= rx * rm
+            smm -= rm * rm
+
+        if i >= window - 1:
+            mean_x = sx * inv_w
+            mean_m = sm * inv_w
+
+            # Cov(x, m)
+            cov = (sxm * inv_w) - (mean_x * mean_m)
+            # Var(m)
+            var_m = (smm * inv_w) - (mean_m * mean_m)
+
+            if var_m > _EPS:
+                out[i] = cov / var_m
+            else:
+                out[i] = 0.0
+
+    return out
+
+
+@jit(nopython=True)
 def _numba_rolling_vwap(price: np.ndarray, volume: np.ndarray, window: int) -> np.ndarray:
     """
     Calculate rolling VWAP using Numba with O(N) complexity.

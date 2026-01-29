@@ -52,3 +52,9 @@ Result: `calculate_entropy_statistics_numba` speedup >700x (2.11s -> 0.003s). Fu
 **Learning:** Pandas `rolling()` operations are flexible but can be slow for composite metrics like VWAP (`sum(pv)/sum(v)`), which require two rolling aggregations and intermediate Series. A Numba $O(N)$ implementation using single-pass sliding window sums achieved a ~6.5x speedup. Careful handling of `min_periods=1` logic (accumulating until window is full) and NaN propagation (ignoring missing values in sums, but invalidating result if volume is zero) was required to match Pandas exactly.
 
 **Action:** For composite rolling metrics (e.g., VWAP, correlation), implement single-pass O(N) Numba functions instead of chaining multiple Pandas rolling calls. Verify `min_periods` and NaN behavior against the reference implementation.
+
+## 2026-01-29 - Rolling Beta Optimization
+
+**Learning:** Calculating rolling Beta as `Cov(a, m) / Var(m)` using separate optimized functions iterates over the data twice (N$). Fusing these into a single Numba loop (N$) reduces overhead and memory allocation, yielding a ~2x speedup (0.5ms vs 1.0ms for N=100k).
+
+**Action:** For composite rolling metrics (e.g., Beta, Sharpe), fuse component calculations (sums, squares, cross-products) into a single O(N) pass kernel instead of composing multiple pre-optimized functions.

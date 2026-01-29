@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from src.utils.numba_funcs import _numba_streak_persistence
+from src.utils.numba_funcs import _numba_streak_persistence, _numba_rolling_beta
 
 def test_streak_persistence_basic():
     """Test basic streak persistence logic."""
@@ -84,3 +84,35 @@ def test_streak_persistence_alternating():
 
     res = _numba_streak_persistence(close, window=4)
     assert res[4] == 0.0
+
+def test_rolling_beta_basic():
+    """Test basic rolling beta logic."""
+    # Market: [1, 2, 3, 4, 5]
+    # Asset: [2, 4, 6, 8, 10] -> Beta should be 2.0
+
+    m = np.array([1, 2, 3, 4, 5], dtype=float)
+    x = np.array([2, 4, 6, 8, 10], dtype=float)
+
+    # Window 3.
+    # i=2: [1,2,3] vs [2,4,6].
+    # Mean M=2, X=4.
+    # Cov(X,M) = E[XM] - E[X]E[M] = (2+8+18)/3 - 8 = 28/3 - 24/3 = 4/3.
+    # Var(M) = E[M^2] - E[M]^2 = (1+4+9)/3 - 4 = 14/3 - 12/3 = 2/3.
+    # Beta = (4/3) / (2/3) = 2.0.
+
+    res = _numba_rolling_beta(x, m, window=3)
+
+    assert len(res) == 5
+    assert np.isclose(res[2], 2.0)
+    assert np.isclose(res[3], 2.0)
+    assert np.isclose(res[4], 2.0)
+
+def test_rolling_beta_zero_variance():
+    """Test rolling beta with zero market variance."""
+    m = np.array([1, 1, 1, 1, 1], dtype=float)
+    x = np.array([1, 2, 3, 4, 5], dtype=float)
+
+    res = _numba_rolling_beta(x, m, window=3)
+
+    # Variance of M is 0. Beta should be 0 (handled by check).
+    assert np.all(res == 0.0)

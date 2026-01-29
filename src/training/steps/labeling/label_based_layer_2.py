@@ -6380,6 +6380,9 @@ class LabelBasedLayer2(BaseStep):
                     events_df['causal_surprise'] = 1
                     strong_scores = [causal_events[idx]['strength'] for idx in event_indices]
                     events_df['surprise_strength'] = strong_scores
+                    # Add 'side' for Layer 3 compatibility (primary signal direction)
+                    events_df['side'] = np.sign(events_df['surprise_strength']).astype(int)
+
                     events_df['surprise_zone'] = [causal_events[idx]['zone'] for idx in event_indices]
                     events_df['zone_score'] = [causal_events[idx].get('zone_score', 0.0) for idx in event_indices]
                     
@@ -10960,6 +10963,14 @@ class LabelBasedLayer2(BaseStep):
                     df, treatments_df, outcomes, include_cate=True
                 )
                 
+                # --- FIX: Ensure 'bin' target exists for Layer 3 ---
+                if 'bin' not in causal_targets:
+                    # Simple binary target based on returns (outcomes)
+                    # outcomes is pct_change
+                    causal_targets['bin'] = (outcomes > 0).astype(int)
+                    # Also add 'ret' for completeness
+                    causal_targets['ret'] = outcomes
+
                 tprint_success(f"✅ Causal Targets Computed: {len(causal_targets)} target types")
                 return pd.DataFrame(causal_targets)
             else:

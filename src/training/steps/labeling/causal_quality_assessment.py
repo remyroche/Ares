@@ -1556,8 +1556,10 @@ class CausalQualityAssessor:
                 ir_mean = valid_ir.mean()
                 ir_std = valid_ir.std()
                 ir_cv = abs(ir_std / (ir_mean + 1e-9)) if abs(ir_mean) > 1e-6 else 10.0
+                ir_worst = float(valid_ir.min())
             else:
                 ir_cv = 10.0
+                ir_worst = -10.0
             
             consistencies = []
             y_mean_sign = np.sign(y.mean())
@@ -1568,12 +1570,12 @@ class CausalQualityAssessor:
             dir_stab = np.mean(consistencies) if consistencies else 0.0
             
             if self.verbose:
-                tprint_info(f"   ✅ CV_freq: {cv_freq:.4f}, IR_cv: {ir_cv:.4f}, Dir_consistency: {dir_stab:.4f}")
-            return {'CV_freq': cv_freq, 'IR_cv': ir_cv, 'Dir_consistency': dir_stab}
+                tprint_info(f"   ✅ CV_freq: {cv_freq:.4f}, IR_cv: {ir_cv:.4f}, Dir_consistency: {dir_stab:.4f}, IR_worst: {ir_worst:.4f}")
+            return {'CV_freq': cv_freq, 'IR_cv': ir_cv, 'Dir_consistency': dir_stab, 'IR_worst': ir_worst}
         except Exception as e:
             if self.verbose:
                 tprint_error(f"   ❌ Stability failed: {e}")
-            return {'CV_freq': 10.0, 'IR_cv': 10.0, 'Dir_consistency': 0.0}
+            return {'CV_freq': 10.0, 'IR_cv': 10.0, 'Dir_consistency': 0.0, 'IR_worst': -10.0}
 
     def compute_predictive_integrity(self, X: pd.DataFrame, y: pd.Series, y_causal: Optional[pd.Series] = None) -> Dict[str, float]:
         try:
@@ -1783,11 +1785,20 @@ class CausalQualityAssessor:
             tail_risk_raw = 1.0 - metrics.get('DSR', 0.0)
             tail_risk_penalty = min(1.0, tail_risk_raw * 0.3) # Penalty scales with lack of DSR confidence
 
-            # Coefficients (lambda, mu)
+            # Worst Fold Protection (New)
+            # Penalize if worst rolling IR is significantly negative (e.g. < -0.5)
+            # This prevents models with high mean but disastrous drawdowns from passing
+            ir_worst = metrics.get('IR_worst', 0.0)
+            worst_fold_penalty = min(1.0, max(0.0, -0.5 - ir_worst) * 0.5)
+
+            # Coefficients (lambda, mu, gamma)
             lambda_instability = 0.5  # Strong penalty for instability
             mu_tail_risk = 0.3        # Moderate penalty for tail risk
+            gamma_worst_fold = 0.3    # Protection against catastrophic folds
 
-            final_score = raw_score - (lambda_instability * instability_penalty) - (mu_tail_risk * tail_risk_penalty)
+            final_score = raw_score - (lambda_instability * instability_penalty) \
+                                    - (mu_tail_risk * tail_risk_penalty) \
+                                    - (gamma_worst_fold * worst_fold_penalty)
 
             return float(max(0.0, min(1.0, final_score)))
         except Exception: return 0.0

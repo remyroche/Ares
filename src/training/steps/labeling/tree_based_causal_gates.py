@@ -630,6 +630,16 @@ class StabilityRegimeTree:
             valid_folds[expert] = valid_frac
 
         best_expert = max(scores, key=scores.get)
+
+        # --- ABSTAIN GATING: CROWD OUT WEAK EXPERTS ---
+        # Require a minimum margin for activation.
+        # If best active expert is only slightly better than ABSTAIN, force ABSTAIN.
+        ABSTAIN_MARGIN = 0.05
+        if best_expert != "ABSTAIN_SPECIALIST":
+            abstain_score = scores.get("ABSTAIN_SPECIALIST", 0.0)
+            if scores[best_expert] < abstain_score + ABSTAIN_MARGIN:
+                best_expert = "ABSTAIN_SPECIALIST"
+
         best_score = float(scores[best_expert])
 
         pruned_scores = self._select_leaf_experts(

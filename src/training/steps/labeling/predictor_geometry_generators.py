@@ -122,8 +122,9 @@ class ContinuousPredictorGenerator:
         
         for window in [self.short_window, self.long_window]:
             # Return surprise Z-score (Ranking Transformation)
-            ret_mean = returns.rolling(window).mean()
-            ret_std = returns.rolling(window).std()
+            # Use shift(1) to ensure strict ex-ante mean/std (no leakage)
+            ret_mean = returns.rolling(window).mean().shift(1)
+            ret_std = returns.rolling(window).std().shift(1)
             z_raw = (returns - ret_mean) / (ret_std + 1e-9)
             # Clip BEFORE ranking to handle extreme outliers
             z_clipped = z_raw.clip(-4, 4)
@@ -141,9 +142,10 @@ class ContinuousPredictorGenerator:
                 metadata={"window": window, "source": "returns", "transform": "tanh_rank_proxy"}
             ))
             
-            # Volume surprise Z-score  
-            vol_mean = volume.rolling(window).mean()
-            vol_std = volume.rolling(window).std()
+            # Volume surprise Z-score
+            # Use shift(1) to ensure strict ex-ante mean/std
+            vol_mean = volume.rolling(window).mean().shift(1)
+            vol_std = volume.rolling(window).std().shift(1)
             vol_z_raw = (volume - vol_mean) / (vol_std + 1e-9)
             vol_z_clipped = vol_z_raw.clip(-4, 4)
             vol_surprise_z = np.tanh(vol_z_clipped / 2.0).fillna(0)
@@ -157,8 +159,9 @@ class ContinuousPredictorGenerator:
             
             # Volatility surprise Z-score
             vol_realized = returns.rolling(window).std()
-            vol_realized_mean = vol_realized.rolling(window * 2).mean()
-            vol_realized_std = vol_realized.rolling(window * 2).std()
+            # Use shift(1) to ensure strict ex-ante mean/std
+            vol_realized_mean = vol_realized.rolling(window * 2).mean().shift(1)
+            vol_realized_std = vol_realized.rolling(window * 2).std().shift(1)
             vv_z_raw = (vol_realized - vol_realized_mean) / (vol_realized_std + 1e-9)
             vv_z_clipped = vv_z_raw.clip(-4, 4)
             vol_vol_z = np.tanh(vv_z_clipped / 2.0).fillna(0)

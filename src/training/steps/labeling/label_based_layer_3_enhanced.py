@@ -2004,6 +2004,15 @@ def layer3_analyst_lgbm(
     cfg = config if isinstance(config, dict) else {}
     
     tprint_info(f"📊 Input data: {len(df)} rows, {len(base_model_cols)} base features")
+
+    # Fast exit for insufficient data
+    if len(df) < 50:
+        tprint_warning(f"⚠️ Insufficient data for Layer 3 (n={len(df)} < 50). Returning fallback.")
+        fallback_df = df.copy()
+        fallback_df['meta_prob'] = 0.5
+        fallback_df['meta_alpha'] = 0.0
+        return fallback_df, {'error': 'Insufficient data', 'status': 'skipped'}
+
     tprint_info(f"🎯 Target column: {target_col}")
 
     if target_col not in df.columns:

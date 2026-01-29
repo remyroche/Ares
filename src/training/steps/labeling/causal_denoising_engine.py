@@ -541,24 +541,27 @@ class CausalDenoisingEngine:
         """Fit and transform on the same data."""
         return self.fit(X).transform(X)
 
-    def fit_transform_temporal(self, X: pd.DataFrame, n_splits: int = 5) -> pd.DataFrame:
+    def fit_transform_temporal(self, X: pd.DataFrame, n_splits: int = 5, embargo_pct: float = 0.01) -> pd.DataFrame:
         """
         Fit and transform using expanding window to respect information set constraints.
+        Includes embargo to prevent leakage at the train/test boundary.
         
         Args:
             X: Input feature matrix
             n_splits: Number of expanding window splits
+            embargo_pct: Percentage of data to skip between train and test
             
         Returns:
             Denoised feature matrix
         """
         if self.verbose:
-            tprint_info(f"⏳ Temporal Causal Denoising: {n_splits} splits (Expanding Window)")
+            tprint_info(f"⏳ Temporal Causal Denoising: {n_splits} splits (Expanding Window, embargo={embargo_pct:.1%})")
 
         n_samples = len(X)
         if n_samples < 200: # Too small for splits
              return self.fit_transform(X)
 
+        embargo_size = int(n_samples * embargo_pct)
         step_size = n_samples // (n_splits + 1)
         results_list = []
         
@@ -581,10 +584,16 @@ class CausalDenoisingEngine:
             if next_end <= current_end:
                 break
 
-            X_train = X.iloc[:current_end]
+            # Apply Embargo: Train ends 'embargo_size' before test starts
+            train_end = max(100, current_end - embargo_size)
+
+            X_train = X.iloc[:train_end]
             X_test = X.iloc[current_end:next_end]
 
-            # Fit on Past
+            if X_train.empty or X_test.empty:
+                continue
+
+            # Fit on Past (Embargoed)
             engine_step = CausalDenoisingEngine(self.causal_graph, None, self.denoising_methods, verbose=False)
             engine_step.fit(X_train)
 

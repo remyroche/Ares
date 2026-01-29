@@ -1,0 +1,26 @@
+{
+    "gate": "Gate_A",
+    "timestamp": "20260128_231517",
+    "metrics": {
+        "n_before": 10,
+        "n_after": 5,
+        "pass_rate": 0.5,
+        "score_col": "suitability",
+        "avg_score": 0.41000276136841035,
+        "std_score": 0.3066155181039425,
+        "leaf_usage": {
+            "2": 0.5,
+            "1": 0.3,
+            "3": 0.1,
+            "0": 0.1
+        },
+        "recent_leaf_usage": {
+            "2": 0.5,
+            "1": 0.3,
+            "3": 0.1,
+            "0": 0.1
+        },
+        "avg_entropy": 0.611693934308947,
+        "avg_disagreement": 0.24046345374051978
+    }
+}

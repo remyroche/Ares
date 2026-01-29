@@ -6,6 +6,8 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from src.utils.tprint import tprint_info, tprint_success, tprint_warning
+
 
 # ============================================================
 # Purged K-Fold (blocked) utilities — de Prado compatible
@@ -202,7 +204,7 @@ class StabilityRegimeTree:
     def __init__(
         self,
         max_depth: int = 2,
-        min_leaf_samples: int = 2000,
+        min_leaf_samples: float | int = 0.05,
         min_leaf_val_per_fold: int = 200,
         n_thresholds: int = 9,  # deciles by default
         stability_mode: str = "min_minus_iqr",
@@ -222,7 +224,8 @@ class StabilityRegimeTree:
         verbose: bool = False,
     ):
         self.max_depth = int(max_depth)
-        self.min_leaf_samples = int(min_leaf_samples)
+        self.min_leaf_samples = min_leaf_samples
+        self._effective_min_leaf_samples = 0 # Calculated in fit
         self.min_leaf_val_per_fold = int(min_leaf_val_per_fold)
         self.n_thresholds = int(n_thresholds)
         self.stability_mode = str(stability_mode)
@@ -264,9 +267,18 @@ class StabilityRegimeTree:
         y: np.ndarray,
         folds: List[Tuple[np.ndarray, np.ndarray]],
     ) -> "StabilityRegimeTree":
+        tprint_info(f"🌲 [RegimeTree] Starting fit with {len(Z)} samples and {len(preds_oof)} specialists")
         Z = self._validate_Z(Z)
         y = self._validate_y(y, len(Z))
         preds_oof = self._validate_preds(preds_oof, len(Z))
+
+        # Calculate effective min leaf samples if percentage
+        if isinstance(self.min_leaf_samples, float):
+             self._effective_min_leaf_samples = max(1, int(len(Z) * self.min_leaf_samples))
+        else:
+             self._effective_min_leaf_samples = int(self.min_leaf_samples)
+        
+        tprint_info(f"   🌲 Effective min_leaf_samples: {self._effective_min_leaf_samples} ({self.min_leaf_samples})")
 
         self.features_ = list(Z.columns)
         self.experts_ = list(preds_oof.keys())
@@ -300,7 +312,7 @@ class StabilityRegimeTree:
 
             n_node = int(idx_mask.sum())
             # stopping conditions
-            if depth >= self.max_depth or n_node < 2 * self.min_leaf_samples:
+            if depth >= self.max_depth or n_node < 2 * self._effective_min_leaf_samples:
                 leaf_id = leaf_counter
                 leaf_counter += 1
                 node = Node(node_id=node_id, depth=depth, is_leaf=True, leaf_id=leaf_id)
@@ -361,6 +373,7 @@ class StabilityRegimeTree:
         self._prune_leaf_experts()
         if self.merge_leaf_l1_eps > 0:
             self.merge_similar_leaves(self.merge_leaf_l1_eps)
+        tprint_success(f"✅ [RegimeTree] Fit complete: {len(self.leaves_)} leaves, {len(self.features_)} features")
         return self
 
     def predict_leaf_ids(self, Z_new: pd.DataFrame) -> np.ndarray:
@@ -644,6 +657,7 @@ class StabilityRegimeTree:
         best_score = scores_by_expert[best_expert]
         candidates = sorted(scores_by_expert.items(), key=lambda kv: kv[1], reverse=True)
 
+        n_before = len(candidates)
         kept: Dict[str, float] = {}
 
         def _min_fold_score(expert: str) -> float:
@@ -681,6 +695,9 @@ class StabilityRegimeTree:
 
         if not kept:
             kept[best_expert] = best_score
+
+        if self.verbose:
+            tprint_info(f"   ✂️ [RegimeTree] Pruned {n_before} -> {len(kept)} experts (gap={self.expert_prune_gap:.3f})")
 
         return kept
 
@@ -750,6 +767,7 @@ class StabilityRegimeTree:
             return
         if len(self._preds_oof_cache_) <= self.top_k_weights:
             return
+        tprint_info(f"🔍 [RegimeTree] Starting post-fit leaf expert pruning...")
         leaf_ids = self._leaf_ids_cache_
         for leaf_id, leaf in list(self.leaves_.items()):
             idx_mask = leaf_ids == leaf_id
@@ -784,6 +802,9 @@ class StabilityRegimeTree:
             leaf.valid_folds_by_expert = valid_folds
 
     def merge_similar_leaves(self, eps: float = 0.2) -> None:
+        n_before = len(self.leaves_)
+        tprint_info(f"🤝 [RegimeTree] Attempting to merge similar leaves (eps={eps})...")
+
         def _l1_distance(a: Dict[str, float], b: Dict[str, float]) -> float:
             keys = set(a) | set(b)
             return float(sum(abs(a.get(k, 0.0) - b.get(k, 0.0)) for k in keys))
@@ -839,6 +860,9 @@ class StabilityRegimeTree:
             return node
 
         self.root_ = _merge_node(self.root_)
+        n_after = len(self.leaves_)
+        if n_after < n_before:
+            tprint_success(f"🤝 [RegimeTree] Merged leaves: {n_before} -> {n_after}")
 
     def _find_best_split(
         self,

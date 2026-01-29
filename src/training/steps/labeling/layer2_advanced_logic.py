@@ -201,23 +201,46 @@ def rolling_std_jit(arr: np.ndarray, window: int) -> np.ndarray:
 def rolling_mean_jit(arr: np.ndarray, window: int) -> np.ndarray:
     """
     JIT-compiled rolling mean.
-
-    Args:
-        arr: Input array
-        window: Rolling window size
-
-    Returns:
-        Rolling mean array
     """
     n = len(arr)
     rolling_mean = np.full(n, np.nan, dtype=np.float64)
+    if window <= 0 or n < window:
+        return rolling_mean
 
     for i in range(window - 1, n):
         start_idx = i - window + 1
-        window_slice = arr[start_idx:i + 1]
-        rolling_mean[i] = np.mean(window_slice)
+        rolling_mean[i] = np.mean(arr[start_idx:i + 1])
 
     return rolling_mean
+
+@njit
+def rolling_quantile_jit(arr: np.ndarray, window: int, quantile: float) -> np.ndarray:
+    """
+    JIT-compiled rolling quantile.
+    """
+    n = len(arr)
+    res = np.full(n, np.nan, dtype=np.float64)
+    if window <= 0 or n < window:
+        return res
+    
+    for i in range(window - 1, n):
+        # We use np.quantile on slices. Numba handles this well.
+        res[i] = np.quantile(arr[i-window+1:i+1], quantile)
+    return res
+
+@njit
+def expanding_quantile_jit(arr: np.ndarray, min_periods: int, quantile: float) -> np.ndarray:
+    """
+    JIT-compiled expanding quantile.
+    """
+    n = len(arr)
+    res = np.full(n, np.nan, dtype=np.float64)
+    if min_periods <= 0:
+        min_periods = 1
+        
+    for i in range(min_periods - 1, n):
+        res[i] = np.quantile(arr[:i+1], quantile)
+    return res
 
 @njit
 def vectorized_pct_change_jit(arr: np.ndarray) -> np.ndarray:
@@ -797,6 +820,36 @@ def calculate_innovation_jit(arr: np.ndarray, window: int = 20) -> np.ndarray:
 
     d_mean = rolling_mean_jit(delta, window)
     d_std = rolling_std_jit(delta, window)
+
+    for i in range(window - 1, n):
+        if d_std[i] > 1e-12:
+            innov[i] = (delta[i] - d_mean[i]) / d_std[i]
+    return innov
+
+@njit
+def score_experts_on_fold_jit(preds_matrix: np.ndarray, y_val: np.ndarray) -> np.ndarray:
+    """
+    JIT-optimized scoring of multiple experts on a validation fold.
+    """
+    n_val, n_experts = preds_matrix.shape
+    scores = np.zeros(n_experts, dtype=np.float64)
+    if n_val < 5:
+        return scores
+        
+    for i in range(n_experts):
+        # Calculate u = y * tanh(clip(p, -5, 5))
+        # We do it element-wise for Numba speed
+        u = np.zeros(n_val, dtype=np.float64)
+        for k in range(n_val):
+            p = preds_matrix[k, i]
+            if p > 5.0: p = 5.0
+            elif p < -5.0: p = -5.0
+            u[k] = y_val[k] * np.tanh(p)
+            
+        mean_u = np.mean(u)
+        std_u = np.std(u)
+        scores[i] = mean_u / (std_u + 1e-12)
+    return scores
 
     # 3. Z-score
     # d_mean/d_std will be NaN for i < window-1

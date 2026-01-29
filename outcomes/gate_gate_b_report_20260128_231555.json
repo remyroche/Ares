@@ -1,0 +1,17 @@
+{
+    "gate": "Gate_B",
+    "timestamp": "20260128_231555",
+    "metrics": {
+        "n_events": 10,
+        "avg_score": 0.4535408298864742,
+        "avg_entropy": -1.0000889005818408e-12,
+        "avg_disagreement": 0.16391744947346226,
+        "top_expert_distribution": {
+            "geo2": 1.0
+        },
+        "experts_used": [
+            "geo1",
+            "geo2"
+        ]
+    }
+}

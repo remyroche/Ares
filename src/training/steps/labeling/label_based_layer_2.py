@@ -57,6 +57,9 @@ import time
 import psutil
 from pathlib import Path
 import hashlib
+from sklearn.cluster import MiniBatchKMeans, KMeans
+from sklearn.model_selection import KFold, TimeSeriesSplit
+from sklearn.base import clone, BaseEstimator, ClassifierMixin
 from sklearn.linear_model import RidgeClassifier, Lasso, Ridge, HuberRegressor, SGDClassifier, SGDRegressor
 from sklearn.metrics import precision_recall_curve, precision_score, mean_squared_error
 from src.training.steps.labeling.irm_regime_pipeline import (
@@ -103,39 +106,97 @@ class HuberResidualStack:
     """
     Experimental stacking model that fits a base model (e.g. XGB)
     and then fits a HuberRegressor on the residuals to correct for outliers.
+    
+    Enhanced with:
+    - OOF Residual Calculation (prevent leakage)
+    - Positional Bias Boosting
+    - BaseEstimator compatibility
     """
-    def __init__(self, base_model, residual_model=None):
-        self.base_model = base_model
-        self.residual_model = residual_model if residual_model else HuberRegressor()
-        self.classes_ = [0, 1] # Dummy for classifiers check
+    def __init__(
+        self, 
+        base_model=None, 
+        residual_model=None, 
+        fashion_estimator=None, 
+        huber_params=None, 
+        n_splits=5, 
+        pos_boost=0.0
+    ):
+        # Handle dual-naming from different pipeline iterations
+        self.base_model = base_model if base_model is not None else fashion_estimator
+        
+        if residual_model is not None:
+            self.residual_model = residual_model
+        else:
+            # Create HuberRegressor with provided params
+            hp = huber_params if huber_params else {}
+            epsilon = float(hp.get('huber_epsilon', 1.35))
+            alpha = float(hp.get('alpha', 0.0001))
+            max_iter = int(hp.get('max_iter', 2000))
+            
+            # Optional: Map other Huber params if present
+            self.residual_model = HuberRegressor(epsilon=epsilon, alpha=alpha, max_iter=max_iter)
+
+        self.n_splits = n_splits
+        self.pos_boost = pos_boost
+        self.classes_ = [0, 1] 
 
     def fit(self, X, y, sample_weight=None):
+        # 1. Fit base model on full data
         self.base_model.fit(X, y, sample_weight=sample_weight)
-        # Use predict_proba for classifiers if available? 
-        # But this seems used for regression context (ResidualStack).
-        # Assuming Regression use case as implied by name.
-        if hasattr(self.base_model, "predict"):
-            preds = self.base_model.predict(X)
+        
+        # 2. Get OOF residuals to prevent 'base model' overfit from polluting the 'linear' residual model
+        if self.n_splits > 1 and len(X) > self.n_splits * 10:
+            kf = KFold(n_splits=self.n_splits, shuffle=True, random_state=42)
+            oof_residuals = np.zeros(len(y))
+            
+            # Simple conversion for indexing
+            X_np = X.values if hasattr(X, 'values') else X
+            y_np = y.values if hasattr(y, 'values') else y
+            sw_np = sample_weight.values if hasattr(sample_weight, 'values') and sample_weight is not None else (sample_weight if sample_weight is not None else None)
+
+            for train_idx, val_idx in kf.split(X):
+                # Clone base model for OOF pass
+                try:
+                    fold_model = clone(self.base_model)
+                    
+                    # Slicing
+                    X_tr, X_va = X_np[train_idx], X_np[val_idx]
+                    y_tr, y_va = y_np[train_idx], y_np[val_idx]
+                    sw_tr = sw_np[train_idx] if sw_np is not None else None
+                    
+                    # Fit and predict
+                    fold_model.fit(X_tr, y_tr, sample_weight=sw_tr)
+                    va_preds = fold_model.predict(X_va)
+                    oof_residuals[val_idx] = y_va - va_preds
+                except Exception as e:
+                    # Fallback on fold failure
+                    continue
+            
+            # Fit residual model on OOF residuals
+            self.residual_model.fit(X, oof_residuals, sample_weight=sample_weight)
         else:
-             # If classifier, use proba of class 1?
-             # For now assume regressor or predict() returns score.
-             preds = self.base_model.predict(X)
-             
-        residuals = y - preds
-        self.residual_model.fit(X, residuals, sample_weight=sample_weight)
+            # Fallback to in-sample (for very small data)
+            in_preds = self.base_model.predict(X)
+            in_residuals = y - in_preds
+            self.residual_model.fit(X, in_residuals, sample_weight=sample_weight)
+            
         return self
 
     def predict(self, X):
         base_preds = self.base_model.predict(X)
         res_preds = self.residual_model.predict(X)
+        
+        # Apply positional boost if positive
+        if self.pos_boost != 0:
+            res_preds = np.where(res_preds > 0, res_preds * (1.0 + self.pos_boost), res_preds)
+            
         return base_preds + res_preds
         
     def predict_proba(self, X):
-        # Fallback for classifier API compatibility if needed
-        # But really this should output continuous score.
         score = self.predict(X)
-        # Clip to 0-1 if treated as prob
-        return np.vstack([1-score, score]).T
+        # Using a simple sigmoid to map score to probability
+        score_norm = 1.0 / (1.0 + np.exp(-np.clip(score, -20, 20)))
+        return np.vstack([1.0 - score_norm, score_norm]).T
 from joblib import Parallel, delayed
 from src.training.steps.labeling.label_based_layer_3 import layer3_analyst_lgbm
 from src.training.steps.labeling.layer2_validation import validate_geometry_quality, print_validation_report
@@ -147,6 +208,8 @@ from src.training.steps.labeling.layer2_advanced_logic import (
     rolling_std_jit,
     rolling_max_min_jit,
     calculate_innovation_jit,
+    expanding_quantile_jit,
+    score_experts_on_fold_jit,
 )
 from src.training.steps.labeling.tree_based_causal_gates import (
     StabilityRegimeTree,
@@ -2275,6 +2338,7 @@ def get_serial_correlation(series: pd.Series, window: int = 20) -> pd.Series:
     High positive = Trending; Negative = Mean Reverting.
     """
     try:
+        tprint_debug(f"📊 [Metrics] Computing serial correlation (window={window})")
         # Optimized Numba implementation
         corr_vals = _numba_return_autocorrelation(series.values.astype(np.float64), window=window, lag=1)
         result = pd.Series(corr_vals, index=series.index)
@@ -2781,15 +2845,16 @@ class LabelBasedLayer2(BaseStep):
         self.causal_targets_enabled = kwargs.get('causal_targets_enabled', True)
         self.causal_specialists_enabled = kwargs.get('causal_specialists_enabled', True)
         self.causal_gate_enabled = kwargs.get('causal_gate_enabled', True)
-        self.causal_gate_max_depth = int(kwargs.get('causal_gate_max_depth', 2))
-        self.causal_gate_min_leaf_samples = int(kwargs.get('causal_gate_min_leaf_samples', 2000))
+        self.causal_gate_max_depth = int(kwargs.get('causal_gate_max_depth', 3))
+        _mls = kwargs.get('causal_gate_min_leaf_samples', 0.05)
+        self.causal_gate_min_leaf_samples = float(_mls) if isinstance(_mls, float) or (isinstance(_mls, str) and '.' in _mls) else int(_mls)
         self.causal_gate_min_leaf_val_per_fold = int(kwargs.get('causal_gate_min_leaf_val_per_fold', 200))
         self.causal_gate_n_folds = int(kwargs.get('causal_gate_n_folds', 8))
         self.causal_gate_purge = int(kwargs.get('causal_gate_purge', 0))
         self.causal_gate_embargo = int(kwargs.get('causal_gate_embargo', 0))
         self.causal_gate_top_k = int(kwargs.get('causal_gate_top_k', 2))
-        self.causal_gate_min_gain = float(kwargs.get('causal_gate_min_gain', 0.02))
-        self.causal_gate_prune_alpha = float(kwargs.get('causal_gate_prune_alpha', 0.03))
+        self.causal_gate_min_gain = float(kwargs.get('causal_gate_min_gain', 0.002))
+        self.causal_gate_prune_alpha = float(kwargs.get('causal_gate_prune_alpha', 0.005))
         self.causal_gate_feature_limit = int(kwargs.get('causal_gate_feature_limit', 25))
         self.pre_geometry_gate_enabled = kwargs.get('pre_geometry_gate_enabled', True)
         self.pre_geometry_gate_min_score = float(kwargs.get('pre_geometry_gate_min_score', 0.0))
@@ -4354,6 +4419,92 @@ class LabelBasedLayer2(BaseStep):
         except Exception as e:
             tprint_warning(f"⚠️ Failed to save Spectral Chaser report: {e}")
 
+    def _save_gating_report(self, gate_name: str, metrics: Dict[str, Any]):
+        """
+        Save gating metrics to outcomes/ as a timestamped Markdown report.
+        """
+        try:
+            outcomes_dir = Path("outcomes")
+            outcomes_dir.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"gate_{gate_name.lower().replace(' ', '_')}_report_{ts}.md"
+            report_path = outcomes_dir / filename
+            
+            report = [
+                f"# {gate_name} Quality Report",
+                f"- **Timestamp**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                "",
+                "## Summary Metrics",
+            ]
+            
+            for k, v in metrics.items():
+                if isinstance(v, dict):
+                    report.append(f"### {k.replace('_', ' ').title()}")
+                    for sk, sv in v.items():
+                        report.append(f"- **{sk}**: {sv}")
+                    report.append("")
+                else:
+                    report.append(f"- **{k.replace('_', ' ').title()}**: {v}")
+            
+            with open(report_path, "w") as f:
+                f.write("\n".join(report))
+            
+            tprint_success(f"💾 {gate_name} report saved to {report_path}")
+        except Exception as e:
+            tprint_error(f"   ⚠️ Failed to save {gate_name} report: {e}")
+
+    def _save_causal_gating_report(self, tree: StabilityRegimeTree, metrics: Dict[str, Any]):
+        """
+        Save detailed Causal Gating (RegimeTree) results to outcomes/.
+        """
+        try:
+            outcomes_dir = Path("outcomes")
+            outcomes_dir.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"causal_gating_report_{ts}.md"
+            report_path = outcomes_dir / filename
+            
+            report = [
+                "# Causal Gating (RegimeTree) Report",
+                f"- **Timestamp**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                f"- **Leaves**: {len(tree.leaves_)}",
+                f"- **Experts Used**: {', '.join(tree.experts_)}",
+                "",
+                "## Leaf Assignments",
+            ]
+            
+            for leaf_id, assignment in tree.leaves_.items():
+                report.append(f"### Leaf {leaf_id} (n={assignment.n_samples})")
+                report.append(f"- **Best Expert**: `{assignment.expert_best}` (Score: {assignment.score_best:.4f})")
+                report.append("- **Expert Weights**:")
+                for expert, weight in assignment.expert_weights.items():
+                    report.append(f"  - `{expert}`: {weight:.1%}")
+                
+                # Stability details if available
+                if assignment.fold_scores_by_expert:
+                    report.append("- **Stability Metrics (Per Fold)**:")
+                    for expert, folds in assignment.fold_scores_by_expert.items():
+                        valid_folds = [f for f in folds if np.isfinite(f)]
+                        avg_f = np.mean(valid_folds) if valid_folds else 0.0
+                        report.append(f"  - `{expert}`: {avg_f:.4f} avg across {len(valid_folds)} folds")
+                report.append("")
+
+            # Feature Importance
+            if hasattr(tree, "feature_importances_"):
+                report.append("## Feature Importance")
+                sorted_imp = sorted(tree.feature_importances_.items(), key=lambda x: x[1], reverse=True)
+                for feat, imp in sorted_imp[:15]:
+                    if imp > 0:
+                        report.append(f"- **{feat}**: {imp:.4f}")
+                report.append("")
+
+            with open(report_path, "w") as f:
+                f.write("\n".join(report))
+            
+            tprint_success(f"💾 Causal Gating report saved to {report_path}")
+        except Exception as e:
+            tprint_error(f"   ⚠️ Failed to save Causal Gating report: {e}")
+
     def _save_cross_asset_artifacts(
         self,
         payload: Dict[str, Any],
@@ -5199,6 +5350,7 @@ class LabelBasedLayer2(BaseStep):
         specialist_scores: pd.DataFrame,
         specialist_fired: pd.DataFrame,
     ) -> Tuple[Dict[str, Any], Dict[str, pd.Series]]:
+        tprint_info(f"🏗️ [Layer 2] Training Gate A family gates for {len(specialist_fired.columns)} specialists")
         if not self.pre_geometry_family_gate_enabled:
             return {}, {}
 
@@ -5389,7 +5541,7 @@ class LabelBasedLayer2(BaseStep):
                     max_depth=self.causal_gate_max_depth,
                     min_leaf_samples=self.causal_gate_min_leaf_samples,
                     min_leaf_val_per_fold=self.causal_gate_min_leaf_val_per_fold,
-                    stability_mode="min_minus_iqr",
+                    stability_mode="mean_minus_iqr",
                     disp_penalty=0.5,
                     utility_transform="tanh",
                     soft_weights=True,
@@ -5424,12 +5576,16 @@ class LabelBasedLayer2(BaseStep):
                     # Predict on Val
                     val_outputs = fold_tree.route(Z_val, preds_val)
                     val_outputs.index = Z_val.index
+                    # Initialize final_signal with tree signal
+                    val_outputs["final_signal"] = val_outputs["signal"].copy()
+
                     if core_experts:
                         baseline = np.zeros(len(Z_val), dtype=float)
                         for expert in core_experts:
                             baseline += preds_oof_dict[expert][val_idx] * core_weights.get(expert, 0.0)
                         val_outputs["baseline_signal"] = baseline
-                        val_outputs["final_signal"] = val_outputs["signal"] + baseline
+                        val_outputs["final_signal"] += baseline
+
                     val_outputs["suitability"] = expit(val_outputs["best_score"].fillna(0.0))
                     val_outputs["signed_confidence"] = np.tanh(val_outputs["final_signal"])
                     oof_gate_outputs_list.append(val_outputs)
@@ -5473,7 +5629,7 @@ class LabelBasedLayer2(BaseStep):
                 max_depth=self.causal_gate_max_depth,
                 min_leaf_samples=self.causal_gate_min_leaf_samples,
                 min_leaf_val_per_fold=self.causal_gate_min_leaf_val_per_fold,
-                stability_mode="min_minus_iqr",
+                stability_mode="mean_minus_iqr",
                 disp_penalty=0.5,
                 utility_transform="tanh",
                 soft_weights=True,
@@ -5502,6 +5658,15 @@ class LabelBasedLayer2(BaseStep):
                 tprint_warning(f"   ⚠️ Causal gate leaves > 10: {len(final_tree.leaves_)}")
             if not leaf_counts.empty and (leaf_counts < 0.2).any():
                 tprint_warning("   ⚠️ Causal gate leaves below 20% activity detected.")
+
+            # Save Causal Gating Report
+            causal_metrics = {
+                "n_samples": len(Z),
+                "leaf_distribution": leaf_counts.to_dict(),
+                "core_experts": self._causal_gate_core_experts,
+                "conditional_experts": conditional_experts,
+            }
+            self._save_causal_gating_report(final_tree, causal_metrics)
 
         else:
             # Inference Mode (No fitting)
@@ -5555,6 +5720,9 @@ class LabelBasedLayer2(BaseStep):
         ):
             return events_df
 
+        n_before = len(events_df)
+        tprint_info(f"🛡️ [Layer 2] Applying Gate A pre-geometry filter: {n_before} initial events")
+
         aligned = gate_outputs.reindex(events_df.index)
         if aligned.empty:
             return events_df
@@ -5569,12 +5737,36 @@ class LabelBasedLayer2(BaseStep):
             tprint_warning("   ⚠️ Pre-geometry gate skipped (insufficient gate scores).")
             return events_df
 
-        min_periods = max(self.pre_geometry_gate_min_events, 50)
-        rolling_threshold = scores.expanding(min_periods=min_periods).quantile(
-            self.pre_geometry_gate_percentile / 100.0
+        pass_rate = 0.0 # Placeholder, will update after mask
+        score_mean = valid_scores.mean() if not valid_scores.empty else 0.0
+        score_std = valid_scores.std() if not valid_scores.empty else 0.0
+
+        if "leaf_id" in aligned.columns:
+            leaf_dist = aligned["leaf_id"].value_counts(normalize=True).to_dict()
+            recent_dist = (
+                aligned["leaf_id"].iloc[-min(200, len(aligned)) :].value_counts(normalize=True).to_dict()
+            )
+            tprint_info(f"   🧭 Gate A leaf usage: {leaf_dist}")
+            tprint_info(f"   🧭 Gate A recent leaf usage: {recent_dist}")
+
+        if "entropy" in aligned.columns and "disagreement" in aligned.columns:
+            tprint_info(
+                "   🧪 Gate A diagnostics: "
+                f"entropy_mean={aligned['entropy'].mean():.4f}, "
+                f"disagreement_mean={aligned['disagreement'].mean():.4f}"
+            )
+
+        min_periods = min(len(valid_scores), max(self.pre_geometry_gate_min_events, 50))
+        
+        # Performance optimization: Use Numba for expanding quantile
+        scores_arr = valid_scores.values.astype(np.float32)
+        rolling_threshold_arr = expanding_quantile_jit(
+            scores_arr, min_periods, self.pre_geometry_gate_percentile / 100.0
         )
+        
+        rolling_threshold = pd.Series(rolling_threshold_arr, index=valid_scores.index, dtype="float32")
         rolling_threshold = rolling_threshold.fillna(
-            np.nanpercentile(valid_scores, self.pre_geometry_gate_percentile)
+            np.nanpercentile(scores_arr, self.pre_geometry_gate_percentile)
         )
         rolling_threshold = rolling_threshold.clip(lower=self.pre_geometry_gate_min_score)
         mask = scores >= rolling_threshold
@@ -5586,22 +5778,35 @@ class LabelBasedLayer2(BaseStep):
             mask &= aligned["disagreement"] <= self.pre_geometry_gate_max_disagreement
 
         filtered = events_df.loc[mask.fillna(False)]
+        n_after = len(filtered)
+        pass_rate = n_after / n_before if n_before > 0 else 0.0
+        
+        tprint_success(f"🛡️ [Layer 2] Gate A filter complete: {n_after}/{n_before} events kept ({pass_rate:.1%})")
+
+        gating_metrics = {
+            "n_before": n_before,
+            "n_after": n_after,
+            "pass_rate": pass_rate,
+            "score_col": score_col,
+            "avg_score": score_mean,
+            "std_score": score_std,
+        }
+        
         if "leaf_id" in aligned.columns:
-            leaf_dist = aligned["leaf_id"].value_counts(normalize=True).to_dict()
-            recent_dist = (
-                aligned["leaf_id"].iloc[-min(200, len(aligned))].value_counts(normalize=True).to_dict()
-            )
-            tprint_info(f"   🧭 Gate A leaf usage: {leaf_dist}")
-            tprint_info(f"   🧭 Gate A recent leaf usage: {recent_dist}")
+            gating_metrics["leaf_usage"] = leaf_dist
+            gating_metrics["recent_leaf_usage"] = recent_dist
+            
         if "entropy" in aligned.columns and "disagreement" in aligned.columns:
-            tprint_info(
-                "   🧪 Gate A diagnostics: "
-                f"entropy_mean={aligned['entropy'].mean():.4f}, "
-                f"disagreement_mean={aligned['disagreement'].mean():.4f}"
-            )
+            gating_metrics["avg_entropy"] = float(aligned['entropy'].mean())
+            gating_metrics["avg_disagreement"] = float(aligned['disagreement'].mean())
+            
+        self._save_gating_report("Gate_A", gating_metrics)
+
         tprint_info(
-            "   🧹 Pre-geometry gate filtered events: "
-            f"{len(events_df)} -> {len(filtered)} (metric={score_col})"
+            "   🧹 Gate A (Pre-geometry) quality metrics: "
+            f"counts={n_before}->{n_after}, "
+            f"pass_rate={pass_rate:.2%}, "
+            f"metric={score_col}, avg_score={score_mean:.4f} (±{score_std:.4f})"
         )
         return filtered
 
@@ -5611,29 +5816,40 @@ class LabelBasedLayer2(BaseStep):
         y: np.ndarray,
         folds: List[Tuple[np.ndarray, np.ndarray]],
     ) -> Tuple[List[str], List[str], Dict[str, List[float]]]:
-        expert_fold_scores: Dict[str, List[float]] = {}
-        for expert, preds in preds_oof_dict.items():
-            fold_scores: List[float] = []
-            for _, val_idx in folds:
-                if len(val_idx) < 5:
-                    continue
-                u = y[val_idx] * np.tanh(np.clip(preds[val_idx], -5, 5))
-                score = float(np.mean(u) / (np.std(u) + 1e-12))
-                fold_scores.append(score)
-            expert_fold_scores[expert] = fold_scores
+        expert_names = list(preds_oof_dict.keys())
+        if not expert_names:
+            return [], [], {}
+            
+        preds_matrix = np.column_stack([preds_oof_dict[name] for name in expert_names])
+        n_experts = len(expert_names)
+        expert_fold_scores: Dict[str, List[float]] = {name: [] for name in expert_names}
+        
+        for _, val_idx in folds:
+            if len(val_idx) < 5:
+                continue
+            
+            # Performance optimization: Use Numba for bulk expert scoring
+            fold_scores = score_experts_on_fold_jit(preds_matrix[val_idx], y[val_idx])
+            for i, name in enumerate(expert_names):
+                expert_fold_scores[name].append(float(fold_scores[i]))
 
         core_experts: List[str] = []
         conditional_experts: List[str] = []
-        for expert, scores in expert_fold_scores.items():
+        for expert_name, scores in expert_fold_scores.items():
             if not scores:
-                conditional_experts.append(expert)
+                conditional_experts.append(expert_name)
                 continue
-            min_score = float(np.min(scores))
-            iqr = float(np.subtract(*np.percentile(scores, [75, 25])))
+            
+            scores_arr = np.array(scores)
+            min_score = float(np.min(scores_arr))
+            # np.percentile can be slow; for small arrays it's fine but let's be consistent
+            q75, q25 = np.percentile(scores_arr, [75, 25])
+            iqr = float(q75 - q25)
+            
             if min_score >= 0.0 and iqr <= 0.15:
-                core_experts.append(expert)
+                core_experts.append(expert_name)
             else:
-                conditional_experts.append(expert)
+                conditional_experts.append(expert_name)
 
         if not conditional_experts and core_experts:
             conditional_experts.append(core_experts.pop(0))
@@ -5779,22 +5995,34 @@ class LabelBasedLayer2(BaseStep):
         df: pd.DataFrame,
         index: pd.Index,
     ) -> pd.DataFrame:
-        """Build lightweight regime features for post-race gating."""
-        features = pd.DataFrame(index=index)
-        if "close" not in df.columns:
+        """Build lightweight regime features for post-race gating using JIT acceleration."""
+        if "close" not in df.columns or df.empty:
+            features = pd.DataFrame(index=index)
             features["volatility_level"] = 0.0
             features["trend_score"] = 0.0
             return features
 
-        returns = df["close"].pct_change().fillna(0.0)
-        vol = returns.rolling(12).std().reindex(index).fillna(0.0)
-        trend = returns.rolling(24).mean().reindex(index).fillna(0.0)
-        vol_long = returns.rolling(48).std().reindex(index).fillna(0.0)
-        trend_score = trend / (vol_long + 1e-9)
+        close_arr = df["close"].values.astype(np.float64)
+        returns = vectorized_pct_change_jit(close_arr)
+        returns[np.isnan(returns)] = 0.0
 
-        features["volatility_level"] = vol
-        features["trend_score"] = trend_score
-        return features
+        vol_arr = rolling_std_jit(returns, 12)
+        trend_arr = rolling_mean_jit(returns, 24)
+        vol_long_arr = rolling_std_jit(returns, 48)
+        
+        # Trend score calculation
+        trend_score_arr = trend_arr / (vol_long_arr + 1e-9)
+        
+        # Create temporary dataframe for reindexing
+        temp_df = pd.DataFrame(
+            {
+                "volatility_level": vol_arr.astype(np.float32),
+                "trend_score": trend_score_arr.astype(np.float32),
+            },
+            index=df.index,
+        )
+        
+        return temp_df.reindex(index).fillna(0.0)
 
     def _apply_post_race_gate(
         self,
@@ -5808,6 +6036,8 @@ class LabelBasedLayer2(BaseStep):
         """
         if not self.post_race_gate_enabled:
             return None
+        
+        tprint_info(f"🧠 [Layer 2] Training Gate B post-race mixture-of-experts for {len(individual_geos)} geometries")
 
         if individual_geos is None or len(individual_geos) < self.post_race_gate_min_experts:
             tprint_warning("   ⚠️ Post-race gate skipped (insufficient experts).")
@@ -5822,18 +6052,25 @@ class LabelBasedLayer2(BaseStep):
         base_predictions_full: Dict[str, np.ndarray] = {}
         present_features: Dict[str, np.ndarray] = {}
         for name, preds in individual_geos.items():
-            aligned = preds.reindex(index)
-            present = aligned.notna().astype(float).to_numpy(dtype=float)
+            # Optimize: Skip reindex if possible
+            if preds.index.equals(index):
+                aligned = preds
+            else:
+                aligned = preds.reindex(index)
+                
+            present = aligned.notna().values.astype(np.float32)
             present_features[f"present__{name}"] = present
-            base_predictions_full[name] = aligned.fillna(base_rate).to_numpy(dtype=float)
+            base_predictions_full[name] = aligned.fillna(base_rate).values.astype(np.float32)
 
-        present_matrix = np.column_stack(list(present_features.values())) if present_features else np.zeros((len(index), 0))
-        present_count = present_matrix.sum(axis=1) if present_matrix.size else np.zeros(len(index))
-        present_entropy = np.zeros(len(index))
+        present_matrix = np.column_stack(list(present_features.values())) if present_features else np.zeros((len(index), 0), dtype=np.float32)
+        present_count = present_matrix.sum(axis=1) if present_matrix.size else np.zeros(len(index), dtype=np.float32)
+        present_entropy = np.zeros(len(index), dtype=np.float32)
         if present_matrix.size:
-            present_probs = present_matrix / np.clip(present_count[:, None], 1.0, None)
-            present_entropy = (-present_probs * np.log(present_probs + 1e-12)).sum(axis=1)
+            denom = np.clip(present_count[:, None], 1.0, None)
+            present_probs = (present_matrix / denom).astype(np.float32)
+            present_entropy = (-present_probs * np.log(present_probs + 1e-12)).sum(axis=1).astype(np.float32)
 
+        valid_mask = oof_labels.notna()
         if present_matrix.size and np.all(present_count == present_matrix.shape[1]):
             tprint_warning("   ⚠️ Post-race gate: all experts present for all events; verify OOF alignment.")
         if valid_mask.any():
@@ -5845,15 +6082,15 @@ class LabelBasedLayer2(BaseStep):
                 except Exception:
                     continue
 
-        prob_matrix_full = np.column_stack(list(base_predictions_full.values()))
-        max_prob = np.max(prob_matrix_full, axis=1)
-        spread = np.ptp(prob_matrix_full, axis=1)
+        prob_matrix_full = np.column_stack(list(base_predictions_full.values())).astype(np.float32)
+        max_prob = np.max(prob_matrix_full, axis=1).astype(np.float32)
+        spread = np.ptp(prob_matrix_full, axis=1).astype(np.float32)
 
         regime_features_full = self._build_post_race_regime_features(df, index)
         for key, val in present_features.items():
-            regime_features_full[key] = val
-        regime_features_full["present_count"] = present_count
-        regime_features_full["present_entropy"] = present_entropy
+            regime_features_full[key] = val.astype(np.float32)
+        regime_features_full["present_count"] = present_count.astype(np.float32)
+        regime_features_full["present_entropy"] = present_entropy.astype(np.float32)
         regime_features_full["max_prob"] = max_prob
         regime_features_full["prob_spread"] = spread
 
@@ -5888,7 +6125,6 @@ class LabelBasedLayer2(BaseStep):
                     core_signal += base_predictions_full[expert] * core_weights.get(expert, 0.0)
                 regime_features_full["core_signal"] = core_signal
 
-        valid_mask = oof_labels.notna()
         if valid_mask.sum() < self.post_race_gate_min_samples:
             tprint_warning("   ⚠️ Post-race gate skipped (insufficient valid labels).")
             return None
@@ -5941,6 +6177,29 @@ class LabelBasedLayer2(BaseStep):
             },
             index=index,
         )
+
+        # Gate B quality metrics tprint
+        avg_entropy = float(np.mean(entropy))
+        avg_disag = float(np.mean(disagreement))
+        avg_score = float(np.mean(outputs["probability"]))
+        top_expert_dist = gate_df["top_expert"].value_counts(normalize=True).head(5).to_dict()
+
+        gating_metrics = {
+            "n_events": len(gate_df),
+            "avg_score": avg_score,
+            "avg_entropy": avg_entropy,
+            "avg_disagreement": avg_disag,
+            "top_expert_distribution": top_expert_dist,
+            "experts_used": list(base_predictions_full.keys())
+        }
+        self._save_gating_report("Gate_B", gating_metrics)
+
+        tprint_info(
+            "   🧪 Gate B (Post-race) quality metrics: "
+            f"events={len(gate_df)}, avg_score={avg_score:.4f}, "
+            f"avg_entropy={avg_entropy:.4f}, avg_disagreement={avg_disag:.4f}"
+        )
+        tprint_info(f"   🧭 Gate B top expert distribution: {top_expert_dist}")
 
         self._post_race_gate_model = gate
         return gate_df
@@ -7235,6 +7494,8 @@ class LabelBasedLayer2(BaseStep):
                         for c in extra_cols
                         if isinstance(c, str) and c.startswith(("ca__", "ms__", "meta__"))
                     ]
+                    if cross_asset_extra:
+                        tprint_info(f"   🛡️ [Cross-Asset Diagnostic] Preserving {len(cross_asset_extra)} CA features in MTF: {cross_asset_extra[:5]}...")
                     
                     # DEBUG: Cross-asset investigation
                     if len(cross_asset_extra) == 0:
@@ -9221,6 +9482,7 @@ class LabelBasedLayer2(BaseStep):
         cross_asset_results = None
         cross_asset_data = config.get("cross_asset_data")
         if isinstance(cross_asset_data, dict) and cross_asset_data:
+            tprint_info(f"🌐 [Cross-Asset Diagnostic] Starting merge pipeline for {len(cross_asset_data)} assets...")
             try:
                 cross_asset_results = self._run_cross_asset_pipeline(cross_asset_data, config)
                 
@@ -9231,8 +9493,11 @@ class LabelBasedLayer2(BaseStep):
                     panel_df = cross_asset_results.get('panel_data')
                     if panel_df is None:
                         panel_df = cross_asset_results.get('panel')
-                    if panel_df is None:
-                        tprint_warning("   ⚠️ Cross-asset panel missing in results; skipping merge.")
+                    
+                    if panel_df is not None:
+                        tprint_info(f"   📊 [Cross-Asset Diagnostic] Panel retrieved: Shape={panel_df.shape}")
+                    else:
+                        tprint_warning("   ⚠️ [Cross-Asset Diagnostic] Cross-asset panel missing in results; skipping merge.")
                         panel_df = None
                     
                     # Filter for feature columns (ms__, ca__, meta__)
@@ -9266,12 +9531,13 @@ class LabelBasedLayer2(BaseStep):
                                     symbol_features = panel_df.xs(ticker, level='ticker')[feature_cols]
                                     # Align and join (df is now dollar bars or raw, panel should match if updated)
                                     df = df.join(symbol_features, how='left')
-                                    tprint_success(f"   ✅ Merged cross-asset features for {ticker}")
+                                    tprint_success(f"   ✅ [Cross-Asset Diagnostic] Merged {len(feature_cols)} features for ticker '{ticker}'")
                                     cross_asset_feature_cols = feature_cols
                                     cross_asset_features = df[feature_cols].copy()
                                 else:
                                     tprint_warning(
-                                        f"   ⚠️ Ticker {ticker} not found in cross-asset panel. Available: {sorted(tickers)[:5]}"
+                                        f"   ⚠️ [Cross-Asset Diagnostic] Ticker '{ticker}' not found in panel index levels. "
+                                        f"Available tickers: {sorted(tickers)}"
                                     )
                             else:
                                 # Assume aligned single-index (unexpected but possible)

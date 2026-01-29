@@ -29,6 +29,7 @@ LAYER2_SUBSTEPS = [
     'causal_discovery',       # 3: Build causal DAG
     'causal_graph_saved',     # 3.5: Save completed causal graph
     'specialist_training',    # 4: Train AEDL/traditional specialists
+    'causal_gating',          # 4.5: Regime-conditional specialist gating
     'event_generation',       # 5: Generate causal surprise events
     'feature_engineering',    # 6: Apply causal denoising
     'causal_targets',         # 6.5: Compute causal targets

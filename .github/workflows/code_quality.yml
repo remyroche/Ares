@@ -19,17 +19,17 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4 # Action to checkout your repository code
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-        cache: 'poetry'
-
     - name: Set up Poetry
       uses: snok/install-poetry@v1
       with:
         version: '1.8.2' # Use a specific version for reproducibility
         virtualenvs-in-project: true
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'poetry'
 
     - name: Install TA-Lib C Library
       run: |

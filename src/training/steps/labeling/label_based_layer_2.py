@@ -6334,7 +6334,7 @@ class LabelBasedLayer2(BaseStep):
             surprise_df = self._surprise_detector.aggregate_specialist_surprise(
                 spectral_reliability=spectral_reliability,
                 exposure_scalar=self.zone_score_exposure,
-                regime_vol=regime_vol_z,
+                regime_vol=regime_vol_z.shift(1).bfill(),
                 market_data=None, # Disable market_data to prevent look-ahead bias in reliability calculation
                 regime_posteriors=regime_posteriors,
             )
@@ -7547,7 +7547,8 @@ class LabelBasedLayer2(BaseStep):
                                 X_all,
                                 causal_graph=graph_to_use,
                                 denoising_methods=methods,
-                                verbose=self.verbose
+                                verbose=self.verbose,
+                                temporal=True
                             )
                         except Exception as e:
                             tprint_warning(f"   ⚠️ Causal denoising failed: {e}")

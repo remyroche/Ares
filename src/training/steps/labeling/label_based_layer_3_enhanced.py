@@ -139,6 +139,68 @@ class EnsembleModel:
         return np.average(probs, axis=0, weights=self.weights)
 
 # -----------------------------------------------------------
+# Causal Feature Construction (Layer 3)
+# -----------------------------------------------------------
+
+def build_layer3_causal_features(
+    df: pd.DataFrame,
+    lambda_conservative: float = 0.75,
+    eps: float = 1e-8,
+    use_surprise_rank: bool = True,
+) -> pd.DataFrame:
+    """
+    Build composite, decision-ready features for the Chaser.
+
+    Required columns in df:
+    - edge_margin (signal)
+    - path_stability_var (disagreement/variance)
+    - fold_agreement (confidence)
+    - surprise_z (market state)
+    - regime_id (leaf)
+
+    Optional:
+    - surprise_rank (preferred over tanh(surprise_z))
+    """
+    # Defensive copy
+    out = pd.DataFrame(index=df.index)
+
+    # Ensure required columns exist (fill with defaults if missing to prevent crash)
+    edge = df.get('edge_margin', pd.Series(0.0, index=df.index))
+    stab_var = df.get('path_stability_var', pd.Series(0.0, index=df.index))
+    agreement = df.get('fold_agreement', pd.Series(0.5, index=df.index))
+    surprise = df.get('surprise_z', pd.Series(0.0, index=df.index))
+
+    # --- Stability ---
+    out["STABILITY_CONF"] = np.exp(-stab_var)
+    out["CONF_ADJ"] = out["STABILITY_CONF"] * agreement
+
+    # --- Edge x Trust ---
+    out["EDGE_TRUSTED"] = edge / (1.0 + stab_var)
+    out["EDGE_CONSERVATIVE"] = (edge - lambda_conservative * np.sqrt(stab_var))
+
+    # --- Surprise handling ---
+    if use_surprise_rank and "surprise_rank" in df.columns:
+        surprise_factor = df["surprise_rank"].clip(0.0, 1.0)
+    else:
+        # fallback: bounded surprise
+        surprise_factor = np.tanh(surprise)
+
+    out["EDGE_SURPRISE"] = out["EDGE_TRUSTED"] * surprise_factor
+    out["SURPRISE_ALIGNMENT"] = (np.sign(edge) * np.tanh(surprise))
+
+    # --- ABSTAIN-aware features ---
+    out["EDGE_ABOVE_NULL"] = edge / eps # S_abstain approx 0
+    out["TRADE_FEASIBLE"] = (out["EDGE_TRUSTED"] > 0.0).astype(int)
+
+    # --- Regime encoding ---
+    if 'regime_id' in df.columns:
+        out["REGIME_ID"] = df['regime_id']
+    else:
+        out["REGIME_ID"] = 0
+
+    return out
+
+# -----------------------------------------------------------
 # CUSUM Signal Generation
 # -----------------------------------------------------------
 
@@ -2084,8 +2146,7 @@ def layer3_analyst_lgbm(
         'vol_at_signal', 'candle_shape', 'candle_shape_4',
         'base_pred_mean', 'base_pred_std', 'base_pred_range',
         'momentum_agreement', 'momentum_agreement_abs', 'momentum_weighted_agreement', 'trend_consistency_12',
-        'ens_prediction_dispersion', 'ens_confidence_gap', 'ens_uncertainty', 'ens_prediction_range',
-        'ens_avg_divergence', 'ens_max_confidence', 'ens_disagreement_rate', 'ens_snr_internal', 'ens_snr_consensus',
+        # REMOVED old disagreement features: ens_prediction_dispersion, ens_confidence_gap, etc.
         'slope_short', 'adx_proxy', 'momentum_short', 'snr',
         'time_since_last_vol_spike', 'time_since_last_large_candle',
         'choppiness_index', 'variance_ratio', 'permutation_entropy',
@@ -2096,6 +2157,82 @@ def layer3_analyst_lgbm(
     for c in candidate_feature_pool:
         if c in df.columns:
             candidate_features.append(c)
+
+    # --- Inject New Causal Features ---
+    # Map Layer 2 outputs to Causal Features inputs
+    causal_input = pd.DataFrame(index=df.index)
+
+    # 1. Edge Margin (Signal)
+    # Prefer 'signal' from Layer 2 routing, else 'meta_prob' (centered), else 'logit_prob'
+    if 'signal' in df.columns:
+        causal_input['edge_margin'] = df['signal']
+    elif 'meta_prob' in df.columns:
+        causal_input['edge_margin'] = df['meta_prob'] - 0.5
+    else:
+        causal_input['edge_margin'] = 0.0
+
+    # 2. Path Stability Var (Disagreement)
+    # Prefer 'disagreement' from Layer 2, else 'base_pred_std', else 0.1
+    if 'disagreement' in df.columns:
+        causal_input['path_stability_var'] = df['disagreement'] ** 2
+    elif 'base_pred_std' in df.columns:
+        causal_input['path_stability_var'] = df['base_pred_std'] ** 2
+    else:
+        causal_input['path_stability_var'] = 0.01
+
+    # 3. Fold Agreement (Confidence)
+    # If not present, inverse of disagreement or entropy
+    if 'fold_agreement' in df.columns:
+        causal_input['fold_agreement'] = df['fold_agreement']
+    elif 'entropy' in df.columns:
+        # High entropy = Low agreement
+        causal_input['fold_agreement'] = np.exp(-df['entropy'])
+    else:
+        causal_input['fold_agreement'] = 1.0 / (1.0 + causal_input['path_stability_var'])
+
+    # 4. Regime ID
+    if 'leaf_id' in df.columns:
+        causal_input['regime_id'] = df['leaf_id']
+    elif 'regime_id' in df.columns:
+        causal_input['regime_id'] = df['regime_id']
+
+    # 5. Surprise Z
+    # Check for SURPRISE_Z columns or generate
+    surprise_cols = [c for c in df.columns if 'surprise_z' in c]
+    if surprise_cols:
+        causal_input['surprise_z'] = df[surprise_cols[0]]
+    elif market_data is not None and 'close' in market_data.columns:
+        # Quick calculation: Returns Z-score (20 period)
+        closes = market_data['close'].reindex(df.index).ffill()
+        rets = closes.pct_change().fillna(0)
+        # Shifted mean/std for causal safety
+        rmean = rets.rolling(20).mean().shift(1).fillna(0)
+        rstd = rets.rolling(20).std().shift(1).fillna(0.001)
+        causal_input['surprise_z'] = ((rets - rmean) / (rstd + 1e-9)).clip(-4, 4)
+    else:
+        causal_input['surprise_z'] = 0.0
+
+    # Build Features
+    causal_feats_df = build_layer3_causal_features(causal_input)
+
+    # Merge into main DF
+    for col in causal_feats_df.columns:
+        df[col] = causal_feats_df[col]
+        candidate_features.append(col)
+
+    # --- Trade Intensity Index (TII) ---
+    # TII = sigmoid(1.0*EDGE_TRUSTED + 0.6*EDGE_CONSERVATIVE + 0.3*EDGE_SURPRISE + 0.15*SURPRISE_ALIGNMENT + 0.8*CONF_ADJ - 0.1)
+
+    tii_logit = (
+        1.0 * df["EDGE_TRUSTED"] +
+        0.6 * df["EDGE_CONSERVATIVE"] +
+        0.3 * df["EDGE_SURPRISE"] +
+        0.15 * df["SURPRISE_ALIGNMENT"] +
+        0.8 * df["CONF_ADJ"] -
+        0.1
+    )
+    df["TII"] = 1.0 / (1.0 + np.exp(-tii_logit))
+    candidate_features.append("TII")
 
     # NOTE: global_features will be added to meta_features AFTER they are computed below
     # Initialize meta_features without global_features for now

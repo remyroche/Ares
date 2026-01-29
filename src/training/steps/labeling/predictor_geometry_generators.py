@@ -121,41 +121,53 @@ class ContinuousPredictorGenerator:
         volume = df['volume']
         
         for window in [self.short_window, self.long_window]:
-            # Return surprise Z-score
+            # Return surprise Z-score (Ranking Transformation)
             ret_mean = returns.rolling(window).mean()
             ret_std = returns.rolling(window).std()
-            surprise_z = ((returns - ret_mean) / (ret_std + 1e-9)).clip(-5, 5).fillna(0)
+            z_raw = (returns - ret_mean) / (ret_std + 1e-9)
+            # Clip BEFORE ranking to handle extreme outliers
+            z_clipped = z_raw.clip(-4, 4)
+            # Rolling percentile (Rank)
+            # Use pandas rank pct=True on rolling window
+            # Note: rolling().rank() is O(N*W), can be slow.
+            # Fallback: Just use tanh transformation of clipped Z to bound it safely without expensive ranking
+            # tanh(z/2) maps -4..4 to -0.96..0.96 smoothly
+            surprise_z = np.tanh(z_clipped / 2.0).fillna(0)
             
             predictors.append(PredictorGeometry(
                 name=f"return_surprise_z_{window}",
                 family="SURPRISE_Z_CONTINUOUS",
                 values=surprise_z,
-                metadata={"window": window, "source": "returns"}
+                metadata={"window": window, "source": "returns", "transform": "tanh_rank_proxy"}
             ))
             
             # Volume surprise Z-score  
             vol_mean = volume.rolling(window).mean()
             vol_std = volume.rolling(window).std()
-            vol_surprise_z = ((volume - vol_mean) / (vol_std + 1e-9)).clip(-5, 5).fillna(0)
+            vol_z_raw = (volume - vol_mean) / (vol_std + 1e-9)
+            vol_z_clipped = vol_z_raw.clip(-4, 4)
+            vol_surprise_z = np.tanh(vol_z_clipped / 2.0).fillna(0)
             
             predictors.append(PredictorGeometry(
                 name=f"volume_surprise_z_{window}",
                 family="SURPRISE_Z_CONTINUOUS",
                 values=vol_surprise_z,
-                metadata={"window": window, "source": "volume"}
+                metadata={"window": window, "source": "volume", "transform": "tanh_rank_proxy"}
             ))
             
             # Volatility surprise Z-score
             vol_realized = returns.rolling(window).std()
             vol_realized_mean = vol_realized.rolling(window * 2).mean()
             vol_realized_std = vol_realized.rolling(window * 2).std()
-            vol_vol_z = ((vol_realized - vol_realized_mean) / (vol_realized_std + 1e-9)).clip(-5, 5).fillna(0)
+            vv_z_raw = (vol_realized - vol_realized_mean) / (vol_realized_std + 1e-9)
+            vv_z_clipped = vv_z_raw.clip(-4, 4)
+            vol_vol_z = np.tanh(vv_z_clipped / 2.0).fillna(0)
             
             predictors.append(PredictorGeometry(
                 name=f"vol_surprise_z_{window}",
                 family="SURPRISE_Z_CONTINUOUS",
                 values=vol_vol_z,
-                metadata={"window": window, "source": "volatility"}
+                metadata={"window": window, "source": "volatility", "transform": "tanh_rank_proxy"}
             ))
         
         # Log-ratio surprise (alternative formulation)

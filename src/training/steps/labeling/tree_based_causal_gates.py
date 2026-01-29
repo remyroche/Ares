@@ -427,7 +427,10 @@ class StabilityRegimeTree:
             active_experts = []
 
             for e, w in leaf.expert_weights.items():
-                pred = float(preds_by_expert[e][i])
+                if e == "ABSTAIN_SPECIALIST":
+                    pred = 0.0
+                else:
+                    pred = float(preds_by_expert[e][i])
                 current_signal += w * pred
                 active_experts.append((pred, w))
 
@@ -610,6 +613,16 @@ class StabilityRegimeTree:
         scores: Dict[str, float] = {}
         fold_scores: Dict[str, List[float]] = {}
         valid_folds: Dict[str, float] = {}
+
+        # --- DEFENSIVE / ABSTAIN EXPERT ---
+        # Add a virtual "ABSTAIN" expert that predicts 0.0 everywhere.
+        # Its stability score is 0.0 (or slightly negative to penalize inaction).
+        # This handles "Gray Zones" where no active expert has edge.
+        abstain_score = 0.001  # Small positive score to beat pure noise
+        scores["ABSTAIN_SPECIALIST"] = abstain_score
+        fold_scores["ABSTAIN_SPECIALIST"] = [abstain_score] * len(self.fold_val_masks_)
+        valid_folds["ABSTAIN_SPECIALIST"] = 1.0
+
         for expert, s in preds_oof.items():
             score, fold_metrics, valid_frac = self._stability_with_fold_info(idx_mask, y, s)
             scores[expert] = score

@@ -1766,7 +1766,29 @@ class CausalQualityAssessor:
                 1.0 if sparsity <= 2.0 else max(0.0, 1.0 - (sparsity - 2.0) * 0.2)
             ])
             
-            final_score = 0.2 * (val_score + stab_score + integ_score + rob_score + comp_score)
+            # Raw Score (Weighted Average)
+            raw_score = 0.2 * (val_score + stab_score + integ_score + rob_score + comp_score)
+
+            # === NEW: Penalized Scoring (Reframed Robustness Engine) ===
+            # Score = Raw - lambda * instability - mu * tail_risk
+
+            # Instability Proxy: Path_Stability (IR_cv) variance
+            # If IR_cv is high, instability is high.
+            # We use normalized instability: max(0, IR_cv - 1.0) / 10.0 (capped)
+            instability_raw = metrics.get('Path_Stability', metrics.get('IR_cv', 0.0))
+            instability_penalty = min(1.0, max(0.0, instability_raw - 0.5) * 0.2) # Penalty kicks in if IR_cv > 0.5
+
+            # Tail Risk Proxy: 1 - DSR (Deflated Sharpe Ratio)
+            # If DSR is low, tail risk/false discovery risk is high.
+            tail_risk_raw = 1.0 - metrics.get('DSR', 0.0)
+            tail_risk_penalty = min(1.0, tail_risk_raw * 0.3) # Penalty scales with lack of DSR confidence
+
+            # Coefficients (lambda, mu)
+            lambda_instability = 0.5  # Strong penalty for instability
+            mu_tail_risk = 0.3        # Moderate penalty for tail risk
+
+            final_score = raw_score - (lambda_instability * instability_penalty) - (mu_tail_risk * tail_risk_penalty)
+
             return float(max(0.0, min(1.0, final_score)))
         except Exception: return 0.0
 

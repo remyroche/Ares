@@ -27,7 +27,7 @@ jobs:
     - name: Set up Poetry
       uses: snok/install-poetry@v1
       with:
-        version: '1.8.2' # Use a specific version for reproducibility
+        version: 'latest' # Use latest version for compatibility with lock file
         virtualenvs-in-project: true
 
     - name: Install TA-Lib C Library
@@ -39,7 +39,15 @@ jobs:
         make
         sudo make install
     
+    - name: Install Numpy (Build Requirement)
+      run: |
+        poetry env use 3.11
+        poetry run pip install "numpy>=1.24.0"
+
     - name: Install dependencies
+      env:
+        TA_INCLUDE_PATH: /usr/include
+        TA_LIBRARY_PATH: /usr/lib
       run: |
         poetry install --no-root --sync
 

@@ -338,6 +338,16 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 else:
                     tprint_warning("⚠️ L2 events parquet not found in Outcomes. Checking Artifacts...")
 
+                # Fail fast if events are insufficient
+                if events_df.empty or len(events_df) < 50:
+                    msg = f"⚠️ Layer 2 produced too few events ({len(events_df)}). Skipping Layer 3."
+                    tprint_warning(msg)
+                    return {
+                        "success": False,
+                        "error": msg,
+                        "pipeline_status": pipeline_results
+                    }
+
                 if labels_files:
                     labels_df = pd.read_parquet(labels_files[0])
                     tprint_info(f"   Loaded {len(labels_df)} labels from L2.")

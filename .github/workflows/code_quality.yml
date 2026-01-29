@@ -30,6 +30,13 @@ jobs:
         version: '1.8.2' # Use a specific version for reproducibility
         virtualenvs-in-project: true
 
+    - name: Load cached venv
+      id: cached-poetry-dependencies
+      uses: actions/cache@v3
+      with:
+        path: .venv
+        key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
     - name: Install TA-Lib C Library
       run: |
         wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz -O /tmp/ta-lib-0.4.0-src.tar.gz
@@ -41,7 +48,8 @@ jobs:
     
     - name: Install dependencies
       run: |
-        poetry install --no-root --sync
+        poetry config installer.max-workers 2
+        poetry install --no-root --sync -v
 
     - name: Run Linters and Formatters
       run: |

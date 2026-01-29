@@ -388,22 +388,41 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # L3 expects a dataframe with base model predictions/signals and market data features
                 # We merge events with market_data to get features
                 
+                # Debug logging for data structures
+                tprint_info(f"   📊 [L3 PREP] Market Data: {market_data.shape}, Index: {market_data.index.dtype}")
+                tprint_info(f"   📊 [L3 PREP] Events DF: {events_df.shape}, Index: {events_df.index.dtype}")
+                if not labels_df.empty:
+                    tprint_info(f"   📊 [L3 PREP] Labels DF: {labels_df.shape}, Index: {labels_df.index.dtype}")
+
+                # Check for timezone issues
+                md_tz = getattr(market_data.index, 'tz', None)
+                ev_tz = getattr(events_df.index, 'tz', None)
+                if str(md_tz) != str(ev_tz):
+                    tprint_warning(f"   ⚠️ [L3 PREP] Timezone mismatch: Market={md_tz}, Events={ev_tz}")
+
                 # Ensure events are aligned
                 valid_indices = events_df.index.intersection(market_data.index)
-                if len(valid_indices) == 0:
-                     raise ValueError("Events index does not align with Market Data index")
+                tprint_info(f"   🔗 [L3 PREP] Intersection (Market ∩ Events): {len(valid_indices)} events")
+
+                if len(valid_indices) < 50:
+                     msg = f"⚠️ Insufficient aligned events for Layer 3 (Found: {len(valid_indices)}, Required: 50). Skipping L3/L4."
+                     tprint_warning(msg)
+                     pipeline_results["layer3"] = "skipped_insufficient_data"
+                     return {"success": False, "error": msg, "partial_results": pipeline_results}
                 
                 # Construct base OOF DF
                 # We need 'side' (primary signal), 'ret' (target return), 'bin' (label)
                 # events_df usually has these.
                 oof_df = events_df.loc[valid_indices].copy()
                 
-                # Merge basic market features if needed by L3 feature generator
-                # (L3 usually generates its own features or extracts from market_data)
+                # Log columns for debugging target/signal availability
+                tprint_info(f"   📋 [L3 PREP] OOF Columns: {list(oof_df.columns)[:10]}...")
                 
                 # Join with labels if separate
                 if not labels_df.empty:
                     common = oof_df.index.intersection(labels_df.index)
+                    if len(common) < len(oof_df):
+                        tprint_warning(f"   ⚠️ Labels intersection dropped {len(oof_df) - len(common)} events")
                     oof_df = oof_df.loc[common].join(labels_df.loc[common], rsuffix='_lbl')
 
                 if cross_asset_features is not None:

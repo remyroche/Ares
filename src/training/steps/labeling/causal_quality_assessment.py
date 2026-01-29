@@ -1789,7 +1789,7 @@ class CausalQualityAssessor:
             # Penalize if worst rolling IR is significantly negative (e.g. < -0.5)
             # This prevents models with high mean but disastrous drawdowns from passing
             ir_worst = metrics.get('IR_worst', 0.0)
-            worst_fold_penalty = min(1.0, max(0.0, -0.5 - ir_worst) * 0.5)
+            worst_fold_penalty = min(1.0, max(0.0, -0.5 - ir_worst) * 1.0)
 
             # Coefficients (lambda, mu, gamma)
             lambda_instability = 0.5  # Strong penalty for instability

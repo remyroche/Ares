@@ -632,12 +632,20 @@ class StabilityRegimeTree:
         best_expert = max(scores, key=scores.get)
 
         # --- ABSTAIN GATING: CROWD OUT WEAK EXPERTS ---
-        # Require a minimum margin for activation.
-        # If best active expert is only slightly better than ABSTAIN, force ABSTAIN.
-        ABSTAIN_MARGIN = 0.05
+        # Require a minimum margin for activation proportional to uncertainty.
+        # Margin = Base + c * std(expert_fold_scores)
         if best_expert != "ABSTAIN_SPECIALIST":
+            # Calculate uncertainty-based margin
+            expert_folds = fold_scores.get(best_expert, [])
+            if len(expert_folds) >= 2:
+                # Use standard deviation of fold scores as uncertainty proxy
+                expert_std = np.std(expert_folds)
+                abstain_margin = 0.05 + 0.1 * expert_std
+            else:
+                abstain_margin = 0.05
+
             abstain_score = scores.get("ABSTAIN_SPECIALIST", 0.0)
-            if scores[best_expert] < abstain_score + ABSTAIN_MARGIN:
+            if scores[best_expert] < abstain_score + abstain_margin:
                 best_expert = "ABSTAIN_SPECIALIST"
 
         best_score = float(scores[best_expert])

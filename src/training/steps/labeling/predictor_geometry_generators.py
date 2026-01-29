@@ -125,7 +125,11 @@ class ContinuousPredictorGenerator:
             # Use shift(1) to ensure strict ex-ante mean/std (no leakage)
             ret_mean = returns.rolling(window).mean().shift(1)
             ret_std = returns.rolling(window).std().shift(1)
-            z_raw = (returns - ret_mean) / (ret_std + 1e-9)
+
+            # Stabilization: Ensure denominator is not effectively zero
+            ret_std = ret_std.replace(0.0, 1e-9).fillna(1e-9)
+
+            z_raw = (returns - ret_mean) / ret_std
             # Clip BEFORE ranking to handle extreme outliers
             z_clipped = z_raw.clip(-4, 4)
             # Rolling percentile (Rank)
@@ -146,7 +150,11 @@ class ContinuousPredictorGenerator:
             # Use shift(1) to ensure strict ex-ante mean/std
             vol_mean = volume.rolling(window).mean().shift(1)
             vol_std = volume.rolling(window).std().shift(1)
-            vol_z_raw = (volume - vol_mean) / (vol_std + 1e-9)
+
+            # Stabilization
+            vol_std = vol_std.replace(0.0, 1e-9).fillna(1e-9)
+
+            vol_z_raw = (volume - vol_mean) / vol_std
             vol_z_clipped = vol_z_raw.clip(-4, 4)
             vol_surprise_z = np.tanh(vol_z_clipped / 2.0).fillna(0)
             
@@ -162,7 +170,11 @@ class ContinuousPredictorGenerator:
             # Use shift(1) to ensure strict ex-ante mean/std
             vol_realized_mean = vol_realized.rolling(window * 2).mean().shift(1)
             vol_realized_std = vol_realized.rolling(window * 2).std().shift(1)
-            vv_z_raw = (vol_realized - vol_realized_mean) / (vol_realized_std + 1e-9)
+
+            # Stabilization
+            vol_realized_std = vol_realized_std.replace(0.0, 1e-9).fillna(1e-9)
+
+            vv_z_raw = (vol_realized - vol_realized_mean) / vol_realized_std
             vv_z_clipped = vv_z_raw.clip(-4, 4)
             vol_vol_z = np.tanh(vv_z_clipped / 2.0).fillna(0)
             

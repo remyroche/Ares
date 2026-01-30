@@ -20,67 +20,18 @@ except ImportError:
         return decorator
 
 @njit(fastmath=True)
-def _numba_ols_aic(y, X, n_samples):
-    """
-    Perform OLS and return AIC and t-statistic for the second coefficient (gamma).
-    beta = [const, gamma, delta_1, ..., delta_p]
-    """
-    n_params = X.shape[1]
-
-    # beta = (X.T X)^-1 X.T y
-    Xt = X.T
-    XtX = Xt @ X
-    Xty = Xt @ y
-
-    # Use lstsq for stability, or solve for speed
-    # We use solve on normal equations for max speed, assuming full rank
-    try:
-        beta = np.linalg.solve(XtX, Xty)
-    except:
-        return 1e9, 0.0 # Error case
-
-    # Calculate RSS
-    # rss = (y - X beta).T (y - X beta)
-    #     = y.T y - 2 beta.T X.T y + beta.T X.T X beta
-    #     = y.T y - beta.T (2 Xty - XtX beta)
-    # Or just y - pred
-
-    y_pred = X @ beta
-    resid = y - y_pred
-    rss = np.sum(resid * resid)
-
-    if rss <= 0:
-        return 1e9, 0.0
-
-    # AIC = N * log(RSS/N) + 2k
-    # Note: statsmodels uses the provided n_samples (input length) for scaling AIC?
-    # Statsmodels: "nobs = len(y)".
-    # AIC = nobs * log(rss/nobs) + 2*k
-    aic = n_samples * math.log(rss / n_samples) + 2 * n_params
-
-    # Calculate t-stat for gamma (index 1)
-    # Var(beta) = sigma^2 * (X.T X)^-1
-    sigma2 = rss / (n_samples - n_params)
-
-    # We need the (1,1) element of inverse(XtX)
-    # We can compute full inverse
-    try:
-        inv_XtX = np.linalg.inv(XtX)
-        var_gamma = sigma2 * inv_XtX[1, 1]
-        if var_gamma > 0:
-            se_gamma = math.sqrt(var_gamma)
-            t_stat = beta[1] / se_gamma
-        else:
-            t_stat = 0.0
-    except:
-        t_stat = 0.0
-
-    return aic, t_stat
-
-@njit(fastmath=True)
 def _numba_adf_aic(x, maxlag):
     """
     Calculate ADF t-statistic using AIC to select optimal lag.
+
+    Optimized implementation:
+    1. Pre-computes the full design matrix X for the largest lag.
+    2. Computes the full XtX and Xty matrices once (O(N*K^2)).
+    3. Iterates through lags by slicing the pre-computed matrices (O(K^4)).
+
+    This avoids re-allocating and re-filling the design matrix inside the loop,
+    reducing complexity from O(N*K^3) to O(N*K^2 + K^4). Since N (window size)
+    is typically much larger than K (maxlag), this yields significant speedups.
 
     Args:
         x: Input time series (array)
@@ -91,77 +42,103 @@ def _numba_adf_aic(x, maxlag):
     """
     n = len(x)
 
-    # Prepare common data
-    # diff_x = delta y_t
+    # Calculate differences and previous values
     dx = np.diff(x)
-
-    # x_prev = y_{t-1}
     x_prev = x[:-1]
 
-    # Effective sample size for all regressions must be the same for AIC comparison
-    # We must start from index `maxlag`
-    # dx array has length n-1. Indices 0..n-2
-    # We use dx[maxlag:] as target y
-
+    # The target vector y must be fixed for all lag comparisons (AIC requirement).
+    # We start from index `maxlag` in the differenced series.
     start_idx = maxlag
-
-    # Slicing from dx
-    # dx has length N_diff = n - 1
-    # We want dx[t] for t >= maxlag (where t is index in dx)
-    # Target vector y
     y_target = dx[start_idx:]
     effective_n = len(y_target)
 
     if effective_n <= 5:
         return 0.0
 
-    # Pre-allocate design matrix columns
-    # We need to construct X for each lag p in 0..maxlag
-    # X columns: [const, x_prev, dx_lag1, ..., dx_lagp]
-    # All must be aligned to the same y_target
+    # Pre-allocate full design matrix X
+    # Columns: [const, level, lag_1, ..., lag_max]
+    n_cols_total = maxlag + 2
+    X_full = np.zeros((effective_n, n_cols_total), dtype=np.float64)
 
-    # Constant column
-    col_const = np.ones(effective_n, dtype=np.float64)
+    # Fill constant (col 0) and level (col 1)
+    X_full[:, 0] = 1.0
+    X_full[:, 1] = x_prev[start_idx:]
 
-    # Level column: x_prev aligned with y_target
-    # y_target corresponds to dx[i] for i in start_idx..end
-    # dx[i] = x[i+1] - x[i]. It predicts x[i+1] (or rather diff).
-    # The regressor is x[i] (which is x_prev[i])
-    col_level = x_prev[start_idx:]
+    # Fill lag columns (col 2 to maxlag+1)
+    # lag k corresponds to dx[start_idx-k : start_idx-k+effective_n]
+    for k in range(1, maxlag + 1):
+        s_start = start_idx - k
+        s_end = s_start + effective_n
+        X_full[:, 1 + k] = dx[s_start:s_end]
+
+    # Compute full moment matrices once
+    # This is the heavy O(N*K^2) operation
+    XtX_full = X_full.T @ X_full
+    Xty_full = X_full.T @ y_target
+    yy = np.dot(y_target, y_target)
 
     best_aic = 1e15
     best_tstat = 0.0
 
-    # Loop over lags
+    # Iterate over lags p from 0 to maxlag
+    # For a given p, we use the first p+2 columns of X
     for p in range(maxlag + 1):
-        # Construct X
-        n_cols = 2 + p
-        X = np.zeros((effective_n, n_cols), dtype=np.float64)
+        k = p + 2
 
-        X[:, 0] = col_const
-        X[:, 1] = col_level
+        # Check degrees of freedom
+        if effective_n <= k:
+            continue
 
-        # Add lag columns
-        # Lag 1: dx[t-1]. If target is dx[t], we need dx[t-1].
-        # For target index i (in y_target), corresponding global index in dx is `start_idx + i`
-        # We need dx[`start_idx + i - 1`]
-        # ...
-        # Lag k: dx[`start_idx + i - k`]
+        # Slice the pre-computed matrices
+        # In Numba/NumPy, this creates a view (very cheap)
+        XtX = XtX_full[:k, :k]
+        Xty = Xty_full[:k]
 
-        # Vectorized fill
-        for k in range(1, p + 1):
-            # source slice from dx
-            # start: start_idx - k
-            # end: start_idx - k + effective_n
-            s_start = start_idx - k
-            s_end = s_start + effective_n
-            X[:, 1 + k] = dx[s_start:s_end]
+        # Solve OLS: XtX * beta = Xty
+        try:
+            beta = np.linalg.solve(XtX, Xty)
+        except:
+            continue
 
-        aic, t_stat = _numba_ols_aic(y_target, X, effective_n)
+        # Calculate RSS
+        # RSS = (y - Xb)'(y - Xb) = y'y - 2b'X'y + b'X'Xb
+        # Since X'Xb = X'y (normal equations), RSS = y'y - b'X'y
+        rss = yy - np.dot(beta, Xty)
+
+        if rss <= 0:
+            continue
+
+        # Calculate AIC
+        # AIC = n * log(RSS/n) + 2k
+        aic = effective_n * math.log(rss / effective_n) + 2 * k
 
         if aic < best_aic:
             best_aic = aic
-            best_tstat = t_stat
+
+            # Calculate t-statistic for the level coefficient (gamma, index 1)
+            # t = beta[1] / se_gamma
+            # se_gamma = sqrt(sigma^2 * (XtX)^-1[1,1])
+            sigma2 = rss / (effective_n - k)
+
+            # We need the (1,1) element of the inverse of XtX.
+            # We can solve XtX * z = e1, where e1 = [0, 1, 0, ...], then z[1] is inv(XtX)[1,1].
+            # This is O(K^3) but K is small.
+
+            # Construct e1
+            e1 = np.zeros(k)
+            e1[1] = 1.0
+
+            try:
+                z = np.linalg.solve(XtX, e1)
+                inv_XtX_11 = z[1]
+
+                if sigma2 * inv_XtX_11 > 0:
+                    se_gamma = math.sqrt(sigma2 * inv_XtX_11)
+                    best_tstat = beta[1] / se_gamma
+                else:
+                    best_tstat = 0.0
+            except:
+                best_tstat = 0.0
 
     return best_tstat
 

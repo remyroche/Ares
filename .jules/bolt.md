@@ -52,3 +52,9 @@ Result: `calculate_entropy_statistics_numba` speedup >700x (2.11s -> 0.003s). Fu
 **Learning:** Pandas `rolling()` operations are flexible but can be slow for composite metrics like VWAP (`sum(pv)/sum(v)`), which require two rolling aggregations and intermediate Series. A Numba $O(N)$ implementation using single-pass sliding window sums achieved a ~6.5x speedup. Careful handling of `min_periods=1` logic (accumulating until window is full) and NaN propagation (ignoring missing values in sums, but invalidating result if volume is zero) was required to match Pandas exactly.
 
 **Action:** For composite rolling metrics (e.g., VWAP, correlation), implement single-pass O(N) Numba functions instead of chaining multiple Pandas rolling calls. Verify `min_periods` and NaN behavior against the reference implementation.
+
+## 2026-01-30 - ADF Test Optimization
+
+**Learning:** The previous implementation of `_numba_adf_aic` reconstructed the design matrix $X$ and recalculated $(X^T X)$ and $(X^T y)$ inside the lag loop ($p=1 \dots K$). This resulted in $O(N \cdot K^3)$ complexity. By pre-computing the full design matrix for the maximum lag and computing the full moment matrices once ($O(N \cdot K^2)$), then slicing them inside the loop ($O(K^4)$), we achieved >10x speedup for large lags (e.g., 60ms -> 5ms for maxlag=100).
+
+**Action:** When performing iterative regression models (like lag selection), always pre-compute the full design matrix and moment matrices if the models are nested (i.e., model $p$ is a subset of model $p+1$). Slicing pre-computed matrices is virtually free compared to re-computation.

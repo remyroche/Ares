@@ -1598,27 +1598,33 @@ def _numba_rolling_cov(x: np.ndarray, y: np.ndarray, window: int) -> np.ndarray:
 @jit(nopython=True)
 def _numba_rolling_mean_nan_safe(x, window):
     """
-    Rolling mean ignoring NaNs.
+    Rolling mean ignoring NaNs (O(N) optimized).
+    Behaves like min_periods=1.
     """
     n = len(x)
     output = np.zeros(n, dtype=np.float64)
     output[:] = np.nan
 
+    current_sum = 0.0
+    current_count = 0
+
     for i in range(n):
-        start = max(0, i - window + 1)
-        end = i + 1
+        # Enter
+        val = x[i]
+        if not np.isnan(val):
+            current_sum += val
+            current_count += 1
 
-        sum_val = 0.0
-        count = 0
+        # Leave
+        if i >= window:
+            old_val = x[i - window]
+            if not np.isnan(old_val):
+                current_sum -= old_val
+                current_count -= 1
 
-        for j in range(start, end):
-            val = x[j]
-            if not np.isnan(val):
-                sum_val += val
-                count += 1
-
-        if count > 0:
-            output[i] = sum_val / count
+        # Output
+        if current_count > 0:
+            output[i] = current_sum / current_count
 
     return output
 
@@ -1626,37 +1632,52 @@ def _numba_rolling_mean_nan_safe(x, window):
 @jit(nopython=True)
 def _numba_rolling_std_nan_safe(x, window):
     """
-    Rolling std ignoring NaNs.
+    Rolling std ignoring NaNs (O(N) optimized).
     """
     n = len(x)
     output = np.zeros(n, dtype=np.float64)
     output[:] = np.nan
 
+    sum_x = 0.0
+    sum_xx = 0.0
+    count = 0
+
     for i in range(n):
-        start = max(0, i - window + 1)
-        end = i + 1
+        # Enter
+        val = x[i]
+        if not np.isnan(val):
+            sum_x += val
+            sum_xx += val * val
+            count += 1
 
-        # Pass 1: Mean
-        sum_val = 0.0
-        count = 0
-        for j in range(start, end):
-            val = x[j]
-            if not np.isnan(val):
-                sum_val += val
-                count += 1
+        # Leave
+        if i >= window:
+            old_val = x[i - window]
+            if not np.isnan(old_val):
+                sum_x -= old_val
+                sum_xx -= old_val * old_val
+                count -= 1
 
-        if count <= 1:
-            continue
+        # Output
+        if count > 1:
+            # Var = E[x^2] - (E[x])^2
+            # Sample Var = (sum_xx - sum_x^2/count) / (count-1)
 
-        mean = sum_val / count
+            mean = sum_x / count
+            # Use mathematically equivalent form that might be slightly more robust?
+            # var = (sum_xx - count * mean**2) / (count - 1)
+            # Or standard:
+            var = (sum_xx - (mean * sum_x)) / (count - 1)
 
-        # Pass 2: Variance
-        sum_sq = 0.0
-        for j in range(start, end):
-            val = x[j]
-            if not np.isnan(val):
-                sum_sq += (val - mean) ** 2
-
-        output[i] = np.sqrt(sum_sq / (count - 1))
+            if var < 1e-12:
+                output[i] = 0.0
+            else:
+                output[i] = np.sqrt(var)
+        elif count == 1:
+            # Variance undefined for single point, but output as 0.0 or keep NaN?
+            # Pandas returns NaN.
+            # Previous implementation returned NaN (implicitly via initialization and continue).
+            # So we do nothing (output[i] remains NaN).
+            pass
 
     return output

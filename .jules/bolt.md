@@ -52,3 +52,9 @@ Result: `calculate_entropy_statistics_numba` speedup >700x (2.11s -> 0.003s). Fu
 **Learning:** Pandas `rolling()` operations are flexible but can be slow for composite metrics like VWAP (`sum(pv)/sum(v)`), which require two rolling aggregations and intermediate Series. A Numba $O(N)$ implementation using single-pass sliding window sums achieved a ~6.5x speedup. Careful handling of `min_periods=1` logic (accumulating until window is full) and NaN propagation (ignoring missing values in sums, but invalidating result if volume is zero) was required to match Pandas exactly.
 
 **Action:** For composite rolling metrics (e.g., VWAP, correlation), implement single-pass O(N) Numba functions instead of chaining multiple Pandas rolling calls. Verify `min_periods` and NaN behavior against the reference implementation.
+
+## 2026-02-01 - Rolling Statistics Optimization
+
+**Learning:** Naive Numba implementations of rolling mean/std that recalculate over the window ($O(N \cdot W)$) are significantly slower than Pandas (Cython) for large windows (1s vs 0.005s for W=1000). However, implementing an $O(N)$ online algorithm in Numba beats Pandas by ~5x (Mean) to ~18x (Std).
+
+**Action:** Ensure all rolling window functions in Numba use online algorithms (incrementally adding entering/subtracting leaving elements) rather than naive window slicing loops.

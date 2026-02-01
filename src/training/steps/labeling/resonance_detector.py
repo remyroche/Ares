@@ -821,7 +821,7 @@ class ResonanceDetector:
     ) -> np.ndarray:
         """Extract resonance component for RSV calculation."""
         if self.verbose:
-            tprint_info("📊 Extracting resonance component")
+            pass # tprint_info("📊 Extracting resonance component")
         try:
             fast_key = f'{specialist_name}_{fast_scale}'
             slow_key = f'{specialist_name}_{slow_scale}'

@@ -70,13 +70,14 @@ from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint
 from src.utils.fracdiff import FracDiffTransformer
 from src.training.steps.labeling.feature_engineering_utils import apply_layer2_price_processing
 from src.training.steps.labeling.de_prado_feature_engine import DePradoFeatureEngine
+from src.training.steps.labeling.generate_interaction_features_et_rulefit import RuleFitTransformer, LeafGateConfig
 
 # -----------------------------
 # Utilities
 # -----------------------------
 def robust_stats(x: np.ndarray, eps: float = 1e-12) -> Tuple[float, float]:
     """Calculate median and robust sigma (MAD-based)."""
-    x = np.asarray(x, dtype=np.float64)
+    x = np.asarray(x, dtype=np.float32)
     med = np.median(x)
     mad = np.median(np.abs(x - med)) + eps
     sigma = 1.4826 * mad
@@ -102,7 +103,7 @@ def normalize_weights(w: np.ndarray, clip_percentile: float = 0.99) -> np.ndarra
     1. Clip at high percentile to remove extreme outliers.
     2. Normalize to mean 1.0.
     """
-    w = np.asarray(w, dtype=np.float64)
+    w = np.asarray(w, dtype=np.float32)
     # Clip extreme weights to prevent optimizer instability
     if clip_percentile < 1.0:
         limit = np.quantile(w, clip_percentile)
@@ -113,7 +114,7 @@ def normalize_weights(w: np.ndarray, clip_percentile: float = 0.99) -> np.ndarra
 
 def uncertainty_to_chaser_weight(std: np.ndarray, clip=(0.5, 2.0)) -> np.ndarray:
     """Convert prediction uncertainty to sample weights (upweight uncertain samples)."""
-    std = np.maximum(np.asarray(std, dtype=np.float64), 1e-12)
+    std = np.maximum(np.asarray(std, dtype=np.float32), 1e-12)
     med = np.median(std)
     w = np.sqrt(std / (med + 1e-12))
     w = np.clip(w, clip[0], clip[1])
@@ -122,7 +123,7 @@ def uncertainty_to_chaser_weight(std: np.ndarray, clip=(0.5, 2.0)) -> np.ndarray
 def sanity_check_uncertainty(y: np.ndarray, p_teacher_oof: np.ndarray, std_oof: np.ndarray) -> float:
     """Check: higher teacher uncertainty should correlate with larger errors."""
     y = np.asarray(y, dtype=np.int32)
-    p = np.clip(np.asarray(p_teacher_oof, dtype=np.float64), 1e-6, 1 - 1e-6)
+    p = np.clip(np.asarray(p_teacher_oof, dtype=np.float32), 1e-6, 1 - 1e-6)
     ll = -(y * np.log(p) + (1 - y) * np.log(1 - p))  # per-sample logloss
     corr = np.corrcoef(ll, std_oof)[0, 1]
     return float(corr if np.isfinite(corr) else 0.0)
@@ -131,17 +132,181 @@ def combine_weights(base_weight: np.ndarray | None, extra: np.ndarray) -> np.nda
     """Combine base sample weights with extra weights."""
     if base_weight is None:
         return normalize_weights(extra)
-    return normalize_weights(np.asarray(base_weight, dtype=np.float64) * extra)
+    return normalize_weights(np.asarray(base_weight, dtype=np.float32) * extra)
 
 def prob_to_logit(p: np.ndarray, eps: float = 1e-6) -> np.ndarray:
     """Convert probability to log-odds (logit)."""
-    p = np.clip(np.asarray(p, dtype=np.float64), eps, 1.0 - eps)
+    p = np.clip(np.asarray(p, dtype=np.float32), eps, 1.0 - eps)
     return np.log(p / (1.0 - p))
 
 def sigmoid(z: np.ndarray) -> np.ndarray:
     """Sigmoid function."""
-    z = np.asarray(z, dtype=np.float64)
+    z = np.asarray(z, dtype=np.float32)
     return 1.0 / (1.0 + np.exp(-z))
+
+
+def _rolling_pctile(series: pd.Series, window: int) -> pd.Series:
+    """Rolling percentile rank of the latest value (causal)."""
+    def _pctile(arr: np.ndarray) -> float:
+        if arr.size == 0:
+            return np.nan
+        return float(np.sum(arr <= arr[-1]) / arr.size)
+
+    return series.rolling(window, min_periods=max(5, window // 4)).apply(
+        _pctile, raw=True
+    )
+
+# -----------------------------
+# Gate Generation (Local)
+# -----------------------------
+def add_enhanced_gates(
+    df: pd.DataFrame,
+    price_col: str = "close",
+    high_col: str = "high",
+    low_col: str = "low",
+    vol_col: str = "volume",
+    rv_window: int = 24,
+    ema_fast: int = 10,
+    ema_slow: int = 30,
+    z_window: int = 30,
+    volofvol_window: int = 24,
+    atr_window: int = 14,
+    bb_window: int = 20,
+    bb_pctile_window: int = 100,
+    atr_pctile_window: int = 100,
+    release_shift: int = 3,
+    release_range_thresh: float = 1.0,
+    adx_window: int = 14,
+    ma50_slope_window: int = 5,
+) -> pd.DataFrame:
+    """Generate deterministic gates including vol-of-vol and trend persistence."""
+    out = df.copy()
+    
+    # Check if necessary columns exist
+    if price_col not in out.columns:
+        return out
+
+    lr = np.log(out[price_col]).diff()
+    price = out[price_col]
+    
+    # Realized volatility
+    rv = lr.rolling(rv_window, min_periods=rv_window).std()
+    rv_mean = rv.rolling(z_window, min_periods=z_window).mean()
+    rv_std = rv.rolling(z_window, min_periods=z_window).std().replace(0, np.nan)
+    rv_z = (rv - rv_mean) / rv_std
+    
+    # Vol-of-vol (volatility of volatility - fast rising vol)
+    vol_of_vol = rv.rolling(volofvol_window, min_periods=volofvol_window).std()
+    vov_mean = vol_of_vol.rolling(z_window, min_periods=z_window).mean()
+    vov_std = vol_of_vol.rolling(z_window, min_periods=z_window).std().replace(0, np.nan)
+    vov_z = (vol_of_vol - vov_mean) / vov_std
+    
+    # Trend EMAs
+    ema_f = out[price_col].ewm(span=ema_fast, adjust=False).mean()
+    ema_s = out[price_col].ewm(span=ema_slow, adjust=False).mean()
+    trend_strength = (ema_f - ema_s).abs() / out[price_col].replace(0, np.nan)
+    
+    # Trend persistence (slope + low mean reversion)
+    price_diff = out[price_col].diff()
+    slope = price_diff.rolling(ema_fast, min_periods=ema_fast).mean()
+    slope_sign = np.sign(slope)
+    slope_persist = slope_sign.rolling(ema_fast, min_periods=ema_fast).mean().abs()  # Near 1 = persistent
+    
+    # Spread and volume
+    if high_col in out.columns and low_col in out.columns:
+        high = out[high_col]
+        low = out[low_col]
+        spread = (high - low) / price.replace(0, np.nan)
+        range_raw = high - low
+    else:
+        spread = pd.Series(0, index=out.index)
+        range_raw = pd.Series(0, index=out.index)
+
+    if vol_col in out.columns:
+        vol = out[vol_col].replace(0, np.nan)
+        vol_mean = vol.rolling(z_window, min_periods=z_window).mean()
+        vol_std = vol.rolling(z_window, min_periods=z_window).std().replace(0, np.nan)
+        vol_z = (vol - vol_mean) / vol_std
+    else:
+        vol_z = pd.Series(0, index=out.index)
+
+    # ATR + range z-score
+    prev_close = price.shift(1)
+    tr = pd.concat(
+        [
+            (high - low).abs(),
+            (high - prev_close).abs(),
+            (low - prev_close).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+    atr = tr.rolling(atr_window, min_periods=max(2, atr_window // 2)).mean()
+    range_mean = range_raw.rolling(z_window, min_periods=z_window).mean()
+    range_std = range_raw.rolling(z_window, min_periods=z_window).std().replace(0, np.nan)
+    range_z = (range_raw - range_mean) / range_std
+
+    # Bollinger width percentile + ATR percentile
+    bb_mid = price.rolling(bb_window, min_periods=bb_window).mean()
+    bb_std = price.rolling(bb_window, min_periods=bb_window).std()
+    bb_width = (bb_std * 4) / (bb_mid.replace(0, np.nan))
+    bb_width_pctile = _rolling_pctile(bb_width, bb_pctile_window)
+    atr_pctile = _rolling_pctile(atr, atr_pctile_window)
+
+    # Inside bar + NRx gates
+    inside = (high <= high.shift(1)) & (low >= low.shift(1))
+    nr4 = range_raw == range_raw.rolling(4, min_periods=4).min()
+    nr7 = range_raw == range_raw.rolling(7, min_periods=7).min()
+    double_inside = inside & inside.shift(1)
+
+    # MA slope + close above MA
+    ma20 = price.rolling(20, min_periods=20).mean()
+    ma50 = price.rolling(50, min_periods=50).mean()
+    ma50_slope = ma50 - ma50.shift(ma50_slope_window)
+
+    # ADX + DM+
+    up_move = high.diff()
+    down_move = -low.diff()
+    plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+    minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+    plus_di = 100 * pd.Series(plus_dm, index=out.index).rolling(adx_window, min_periods=adx_window).sum() / atr.replace(0, np.nan)
+    minus_di = 100 * pd.Series(minus_dm, index=out.index).rolling(adx_window, min_periods=adx_window).sum() / atr.replace(0, np.nan)
+    dx = (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan) * 100
+    adx = dx.rolling(adx_window, min_periods=adx_window).mean()
+    
+    # Standard gates
+    out["g_highvol"] = (rv_z > 1.0).astype(np.int8)
+    out["g_lowvol"] = (rv_z < -0.5).astype(np.int8)
+    out["g_trend"] = (trend_strength > 0.002).astype(np.int8)
+    out["g_range"] = (1 - out["g_trend"]).astype(np.int8)
+    out["g_illiquid"] = ((spread > 0.0015) | (vol_z < -0.5)).astype(np.int8)
+    out["g_liquid"] = (1 - out["g_illiquid"]).astype(np.int8)
+    out["g_volofvol"] = (vov_z > 1.0).astype(np.int8)  # Vol rising fast
+    out["g_trend_persist"] = (slope_persist > 0.7).astype(np.int8)  # Strong trend persistence
+
+    # Requested gates
+    out["g_squeeze"] = (
+        (bb_width_pctile < 0.10) & (atr_pctile < 0.20)
+    ).astype(np.int8)
+    out["g_release"] = (
+        out["g_squeeze"].shift(release_shift).fillna(0).astype(bool)
+        & (range_z > release_range_thresh)
+    ).astype(np.int8)
+    out["g_nr4"] = nr4.astype(np.int8)
+    out["g_nr7"] = nr7.astype(np.int8)
+    out["g_inside"] = inside.astype(np.int8)
+    out["g_double_inside"] = double_inside.astype(np.int8)
+    out["g_ma50_slope_up"] = (ma50_slope > 0).astype(np.int8)
+    out["g_close_above_ma20"] = (price > ma20).astype(np.int8)
+    out["g_trend_strength"] = ((adx > 20) | (plus_di > minus_di)).astype(np.int8)
+    out["g_range_up"] = (range_z > 1.0).astype(np.int8)
+    out["g_volume_up"] = (vol_z > 1.0).astype(np.int8)
+    out["g_range_volume_up"] = (out["g_range_up"] & out["g_volume_up"]).astype(np.int8)
+    
+    return out
+
+def add_gates_no_funding(df: pd.DataFrame, **kwargs) -> pd.DataFrame:
+    """Wrapper for backward compatibility."""
+    return add_enhanced_gates(df, **kwargs)
 
 # -----------------------------
 # Teacher (BayesianRidge) OOF
@@ -177,7 +342,7 @@ def fit_bayes_teacher_oof(
     y = np.asarray(y)
 
     scaler = RobustScaler()
-    Xs = scaler.fit_transform(X).astype(np.float64, copy=False)
+    Xs = scaler.fit_transform(X).astype(np.float32, copy=False)
 
     if n_splits == 5: # Only log once or if verbose
         # Check for categorical leakage (sanity check)
@@ -198,15 +363,15 @@ def fit_bayes_teacher_oof(
         cv = TimeSeriesSplit(n_splits=n_splits)
         splitter = cv.split(Xs)
 
-    mu_oof = np.full(Xs.shape[0], np.nan, dtype=np.float64)
-    std_oof = np.full(Xs.shape[0], np.nan, dtype=np.float64)
+    mu_oof = np.full(Xs.shape[0], np.nan, dtype=np.float32)
+    std_oof = np.full(Xs.shape[0], np.nan, dtype=np.float32)
 
-    w = None if sample_weight is None else np.asarray(sample_weight, dtype=np.float64)
+    w = None if sample_weight is None else np.asarray(sample_weight, dtype=np.float32)
 
     # Walk-forward CV
     for tr, va in splitter:
         X_tr, X_va = Xs[tr], Xs[va]
-        y_tr = y[tr].astype(np.float64)
+        y_tr = y[tr].astype(np.float32)
 
         # If regression on heavy-tailed targets, winsorize for the teacher
         if not is_classifier:
@@ -240,7 +405,7 @@ def fit_bayes_teacher_oof(
         # Estimate sigma from training residuals
         mu_tr = model.predict(X_tr)
         resid_std = np.std(y_tr - mu_tr)
-        std = np.full(len(mu), resid_std)
+        std = np.full(len(mu), resid_std, dtype=np.float32)
         mu_oof[va] = mu
         std_oof[va] = np.maximum(std, 1e-12)
 
@@ -254,7 +419,7 @@ def fit_bayes_teacher_oof(
 
     # Train final model on full data for production
     final_model = IRMLinearRegressor(loss_type='huber', alpha=1.0, irm_lambda=1.0)
-    y_full = y.astype(np.float64)
+    y_full = y.astype(np.float32)
     if not is_classifier:
         y_full = winsorize(y_full, k=winsor_k)
 
@@ -272,7 +437,7 @@ def fit_bayes_teacher_oof(
         else:
             calib.fit(mu_oof[ok].reshape(-1, 1), y_bin[ok], sample_weight=w[ok])
 
-        p_oof = np.full_like(mu_oof, np.nan)
+        p_oof = np.full_like(mu_oof, np.nan, dtype=np.float32)
         p_oof[ok] = calib.predict_proba(mu_oof[ok].reshape(-1, 1))[:, 1]
 
         # Fill NaNs in p_oof
@@ -333,9 +498,9 @@ def train_chaser_student(
         X_proxy = X_vals
 
     # 1. Train Proxy
-    proxy_target = y.astype(np.float64)
+    proxy_target = y.astype(np.float32)
     if mode == "regression":
-        proxy_target = y.astype(np.float64) - teacher.mu_oof # Residuals for proxy
+        proxy_target = y.astype(np.float32) - teacher.mu_oof # Residuals for proxy
 
     et_proxy = ExtraTreesRegressor(
         n_estimators=100,
@@ -349,8 +514,11 @@ def train_chaser_student(
 
     # 2. Calculate Student Entropy (Variance of trees) on training data
     # Collecting predictions from all trees: (n_estimators, n_samples)
-    all_tree_preds = np.array([tree.predict(X_proxy) for tree in et_proxy.estimators_])
-    student_entropy = np.var(all_tree_preds, axis=0)
+    all_tree_preds = np.array(
+        [tree.predict(X_proxy) for tree in et_proxy.estimators_],
+        dtype=np.float32
+    )
+    student_entropy = np.var(all_tree_preds, axis=0).astype(np.float32)
 
     # 3. Calculate Final Weights
     # w = Teacher_Std / (Student_Entropy + eps)
@@ -375,7 +543,7 @@ def train_chaser_student(
         # Residual target
         # Calculate raw residuals with Dampening
         # r = y - 0.8 * teacher
-        r = y.astype(np.float64) - (dampening * teacher.mu_oof)
+        r = y.astype(np.float32) - (dampening * teacher.mu_oof)
 
         # --- Internal Validation Split ---
         n_samples = len(X)
@@ -403,8 +571,8 @@ def train_chaser_student(
             raise ValueError("For classification mode, teacher.margin_oof must be available.")
         target = y.astype(np.int32)
         # Apply Dampening to base margin
-        init_score = teacher.margin_oof.astype(np.float64) * dampening
-        baseline = teacher.margin_oof.astype(np.float64) * dampening
+        init_score = teacher.margin_oof.astype(np.float32) * dampening
+        baseline = teacher.margin_oof.astype(np.float32) * dampening
 
         n_samples = len(X)
         split_idx = int(n_samples * 0.85)
@@ -755,6 +923,11 @@ class Layer25Chaser:
         enable_gmm_enhancement: bool = False,
         gmm_n_components: int = 8,
         gmm_cache_models: bool = True,
+        # RuleFit parameters
+        enable_rulefit: bool = False,
+        rulefit_base_cols: List[str] = None,
+        rulefit_gate_cols: List[str] = None,
+        rulefit_config: Dict[str, Any] = None,
         **kwargs
     ):
         self.mode = mode
@@ -776,11 +949,19 @@ class Layer25Chaser:
         
         # GMM processor (initialized later)
         self._gmm_processor = None
+        
+        # RuleFit parameters
+        self.enable_rulefit = enable_rulefit
+        self.rulefit_base_cols = rulefit_base_cols
+        self.rulefit_gate_cols = rulefit_gate_cols
+        self.rulefit_config = rulefit_config or {}
+        self.rulefit_transformer = None
 
         self.regime_models: Dict[int, Dict[str, Any]] = {}
         self.global_models: Dict[str, Any] = {}
         self.feature_names: List[str] = []
         self.fracdiff_transformer = FracDiffTransformer()
+
 
     def _engineer_features(self, X: pd.DataFrame) -> pd.DataFrame:
         """
@@ -827,6 +1008,105 @@ class Layer25Chaser:
                 if self.verbose:
                     tprint_warning(f"   ⚠️ Anti-Explosion feature generation failed: {e}")
 
+        # === Add Concept Features (raw) ===
+        if price_col and high_col in X.columns and low_col in X.columns:
+            high = X[high_col]
+            low = X[low_col]
+            open_col = "open" if "open" in X.columns else ("Open" if "Open" in X.columns else None)
+            close = X[price_col]
+            volume = X[volume_col] if volume_col in X.columns else None
+
+            ret_1 = close.pct_change()
+            range_raw = high - low
+            ma20 = close.rolling(20, min_periods=20).mean()
+            ma50 = close.rolling(50, min_periods=50).mean()
+
+            # corr_spread and beta residual (if driver returns exist)
+            driver_ret = None
+            for col in ("driver_ret_1", "bench_ret_1", "market_ret_1"):
+                if col in X.columns:
+                    driver_ret = X[col]
+                    break
+            if driver_ret is not None:
+                corr_20 = ret_1.rolling(20, min_periods=20).corr(driver_ret)
+                corr_50 = ret_1.rolling(50, min_periods=50).corr(driver_ret)
+                X_eng["corr_spread"] = corr_20 - corr_50
+
+                cov_50 = ret_1.rolling(50, min_periods=50).cov(driver_ret)
+                var_50 = driver_ret.rolling(50, min_periods=50).var()
+                beta_50 = cov_50 / (var_50 + 1e-9)
+                X_eng["beta_residual_ret_1"] = ret_1 - beta_50 * driver_ret
+
+            # z(vol_bench_20) if available, else z of realized vol
+            if "vol_bench_20" in X.columns:
+                vol_bench = X["vol_bench_20"]
+            else:
+                vol_bench = ret_1.rolling(20, min_periods=20).std()
+            vol_bench_mean = vol_bench.rolling(100, min_periods=50).mean()
+            vol_bench_std = vol_bench.rolling(100, min_periods=50).std().replace(0, np.nan)
+            X_eng["vol_bench_20_z"] = (vol_bench - vol_bench_mean) / vol_bench_std
+
+            # rank(close/ma_50 - 1)
+            ma50_ratio = close / ma50.replace(0, np.nan) - 1.0
+            X_eng["ma50_ratio_rank"] = _rolling_pctile(ma50_ratio, 100)
+
+            # ATR percentile / z-score (100)
+            prev_close = close.shift(1)
+            tr = pd.concat(
+                [
+                    (high - low).abs(),
+                    (high - prev_close).abs(),
+                    (low - prev_close).abs(),
+                ],
+                axis=1,
+            ).max(axis=1)
+            atr = tr.rolling(14, min_periods=7).mean()
+            X_eng["atr_pctile_100"] = _rolling_pctile(atr, 100)
+            atr_mean = atr.rolling(100, min_periods=50).mean()
+            atr_std = atr.rolling(100, min_periods=50).std().replace(0, np.nan)
+            X_eng["atr_z_100"] = (atr - atr_mean) / atr_std
+
+            # Donchian distance + distance-to-high
+            donchian_high = high.rolling(20, min_periods=20).max()
+            donchian_low = low.rolling(20, min_periods=20).min()
+            donchian_range = (donchian_high - donchian_low).replace(0, np.nan)
+            X_eng["donchian_distance"] = (close - donchian_low) / donchian_range
+            rolling_high = close.rolling(50, min_periods=50).max()
+            X_eng["distance_to_high"] = close / rolling_high.replace(0, np.nan) - 1.0
+
+            # Volume-weighted range (z-scored)
+            if volume is not None:
+                vw_range = range_raw * volume
+                vw_mean = vw_range.rolling(50, min_periods=25).mean()
+                vw_std = vw_range.rolling(50, min_periods=25).std().replace(0, np.nan)
+                X_eng["volume_weighted_range_z"] = (vw_range - vw_mean) / vw_std
+
+            # Signed range + directional volume
+            if open_col is not None:
+                sign = np.sign(close - X[open_col])
+                X_eng["signed_range"] = sign * range_raw
+                if volume is not None:
+                    directional_vol = volume * sign
+                    X_eng["directional_volume"] = directional_vol
+                    X_eng["directional_volume_sum_20"] = directional_vol.rolling(20, min_periods=10).sum()
+
+        # === Add Enhanced Gates ===
+        try:
+             X_gates = add_enhanced_gates(
+                 X, 
+                 price_col=price_col if price_col else "close", 
+                 vol_col=volume_col if volume_col else "volume"
+             )
+             # Extract only the gate columns (starting with g_)
+             gate_cols = [c for c in X_gates.columns if c.startswith('g_') and c not in X.columns]
+             if gate_cols:
+                 X_eng = pd.concat([X_eng, X_gates[gate_cols]], axis=1)
+                 if self.verbose:
+                     tprint_info(f"   🚪 Added {len(gate_cols)} enhanced gate features")
+        except Exception as e:
+            if self.verbose:
+                 tprint_warning(f"   ⚠️ Gate generation failed: {e}")
+
         # 2. Process specific columns for Residualization and FracDiff (if not price)
         # We iterate columns to generate _res and _fd for NON-price columns or just all?
         # The original code did it for ALL columns in X.
@@ -836,37 +1116,38 @@ class Layer25Chaser:
         # maybe skipping 'close' if handled above?
         # Actually 'fracdiff_price' is generated by apply_layer2_price_processing.
 
+        numeric_cols = []
         for col in X.columns:
-            # Skip categorical columns (Asset ID Refinement)
             if str(col).startswith('cat__') or pd.api.types.is_categorical_dtype(X[col]) or pd.api.types.is_object_dtype(X[col]):
-                # Pass through categorical/object columns unchanged if they are needed
-                # But X_eng is new. Just copy it over.
                 X_eng[col] = X[col]
                 continue
-
-            # Skip if it's the price col and we already generated fracdiff_log_price
             if price_col and col == price_col and 'fracdiff_log_price' in X_eng.columns:
                 continue
+            numeric_cols.append(col)
 
-            # 1. FracDiff (Stationary memory)
-            # Use cached optimal d if possible, else find it
+        if numeric_cols:
+            col_data = X[numeric_cols].fillna(0.0)
+            data = col_data.to_numpy(dtype=np.float32, copy=False)
+            t = np.arange(len(col_data), dtype=np.float32)
+            t_centered = t - t.mean()
+            denom = np.sum(t_centered ** 2)
+            if denom > 0:
+                mean_vals = data.mean(axis=0)
+                centered = data - mean_vals
+                slopes = (t_centered @ centered) / denom
+                fitted = np.outer(t, slopes) + mean_vals
+                residuals = data - fitted
+                for idx, col in enumerate(numeric_cols):
+                    X_eng[f"{col}_res"] = residuals[:, idx]
+
+        for col in numeric_cols:
             try:
                 fd_series, _ = self.fracdiff_transformer.fracdiff_series(
-                    X[col], method='binary_search', tolerance=0.1 # Fast search
+                    X[col], method='binary_search', tolerance=0.1
                 )
                 X_eng[f"{col}_fd"] = fd_series
             except Exception:
-                X_eng[f"{col}_fd"] = X[col] # Fallback
-            
-            # 2. Residualized (Detrended)
-            # Linear Model Residualisation: X - LinearTrend(X)
-            lr = LinearRegression()
-            # Handle NaNs in column before fitting
-            col_data = X[col].fillna(0)
-            time_idx = np.arange(len(col_data))
-            lr.fit(time_idx.reshape(-1, 1), col_data.values)
-            fitted = lr.predict(time_idx.reshape(-1, 1))
-            X_eng[f"{col}_res"] = col_data - fitted
+                X_eng[f"{col}_fd"] = X[col]
 
         # Merge original X? No, original returns X_eng which contained only new features?
         # Wait, original X_eng started empty: `X_eng = pd.DataFrame(index=X.index)`
@@ -928,7 +1209,63 @@ class Layer25Chaser:
         else:
             X_proc = X.copy()
 
+        # --- RuleFit Interaction Features (NEW) ---
+        if self.enable_rulefit:
+            if self.verbose:
+                tprint_info("   🧬 Generating RuleFit Interaction Features...")
+            try:
+                # Add deterministic gates if gate_cols not provided or missing
+                if not self.rulefit_gate_cols:
+                    ohlcv_cols = ['close', 'high', 'low', 'volume']
+                    if all(c in X.columns for c in ohlcv_cols):
+                        X_with_gates = add_gates_no_funding(X)
+                        self.rulefit_gate_cols = [c for c in X_with_gates.columns if c.startswith('g_')]
+                        for c in self.rulefit_gate_cols:
+                            X_proc[c] = X_with_gates[c]
+                    else:
+                        if self.verbose:
+                            tprint_warning("   ⚠️ OHLCV columns missing, cannot generate automatic gates for RuleFit.")
+                            
+                if self.rulefit_gate_cols:
+                    if not self.rulefit_base_cols:
+                        self.rulefit_base_cols = X_proc.select_dtypes(include=[np.number]).columns.tolist()
+                        self.rulefit_base_cols = [c for c in self.rulefit_base_cols if c not in self.rulefit_gate_cols]
+                    
+                    rf_cfg = LeafGateConfig(**self.rulefit_config)
+                    self.rulefit_transformer = RuleFitTransformer(
+                        base_cols=self.rulefit_base_cols,
+                        gate_cols=self.rulefit_gate_cols,
+                        config=rf_cfg,
+                        verbose=self.verbose
+                    )
+                    
+                    # Pass sample weights and use binary classification targets
+                    w_for_rulefit = sample_weight.values if sample_weight is not None else None
+                    y_binary = y.astype(int) if self.mode == "classification" else y
+                    
+                    X_interactions = self.rulefit_transformer.fit_transform(
+                        X_proc, y_binary,
+                        sample_weight=w_for_rulefit,
+                        class_weight="balanced" if self.mode == "classification" else None
+                    )
+                    
+                    if not X_interactions.empty:
+                        X_proc = pd.concat([X_proc, X_interactions], axis=1)
+                        if self.verbose:
+                            tprint_success(f"   ✅ Added {X_interactions.shape[1]} interaction features")
+                else:
+                    if self.verbose:
+                        tprint_warning("   ⚠️ No gate columns for RuleFit, skipping interaction generation.")
+                        
+            except Exception as e:
+                if self.verbose:
+                    tprint_error(f"   ❌ RuleFit generation failed: {e}")
+                    import traceback
+                    tprint_info(f"      {traceback.format_exc()}")
+
+
         # --- MDI Feature Selection (De Prado) ---
+
         if self.verbose:
             tprint_info("   🔍 Running De Prado MDI Feature Selection...")
 
@@ -1229,6 +1566,26 @@ class Layer25Chaser:
         else:
             X_proc = X.copy()
 
+        # --- Apply RuleFit Interaction Features (if trained) ---
+        if self.rulefit_transformer is not None:
+            try:
+                # Add gates if they were added during fit
+                if self.rulefit_gate_cols:
+                    missing_gates = [c for c in self.rulefit_gate_cols if c not in X_proc.columns]
+                    if missing_gates:
+                        X_with_gates = add_gates_no_funding(X)
+                        for c in missing_gates:
+                            if c in X_with_gates.columns:
+                                X_proc[c] = X_with_gates[c]
+                
+                X_interactions = self.rulefit_transformer.transform(X_proc)
+                if not X_interactions.empty:
+                    X_proc = pd.concat([X_proc, X_interactions], axis=1)
+            except Exception as e:
+                if self.verbose:
+                    tprint_warning(f"   ⚠️ RuleFit transform failed: {e}")
+
+
         # GMM Enhancement (if enabled and processor available)
         if self.enable_gmm_enhancement and self._gmm_processor is not None:
             try:
@@ -1318,9 +1675,9 @@ class Layer25Chaser:
             return ensemble_mean, preds_dict, confidence
 
         # Initialize outputs
-        final_pred = np.zeros(n_samples)
-        total_weight = np.zeros(n_samples)
-        final_confidence = np.zeros(n_samples)
+        final_pred = np.zeros(n_samples, dtype=np.float32)
+        total_weight = np.zeros(n_samples, dtype=np.float32)
+        final_confidence = np.zeros(n_samples, dtype=np.float32)
         all_individual_preds = {} # {model_name: np.zeros(n_samples)}
 
         # 1. Regime-based Prediction

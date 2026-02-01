@@ -1,0 +1,37 @@
+{
+  "TARGET_RET_1": [
+    "close",
+    "TARGET_Sharpe",
+    "open_std_50",
+    "geo_atr_14",
+    "open_std_20",
+    "Market_Mode_PCA",
+    "volatility_5d",
+    "TARGET_RET_1"
+  ],
+  "TARGET_Sharpe": [
+    "close",
+    "TARGET_Sharpe",
+    "open",
+    "TARGET_RET_1"
+  ],
+  "geo_atr_14": [
+    "Market_Mode_PCA",
+    "close",
+    "open_std_50",
+    "geo_atr_14"
+  ],
+  "Market_Mode_PCA": [
+    "close",
+    "low_std_5",
+    "geo_atr_14",
+    "open_std_50",
+    "volatility_1d",
+    "open",
+    "open_std_20",
+    "volume_std_10",
+    "Market_Mode_PCA",
+    "volatility_5d",
+    "volume_std_5"
+  ]
+}

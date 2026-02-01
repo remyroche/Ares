@@ -42,6 +42,9 @@ class AdaptiveEventDrivenLabeling:
     using wavelet decomposition and cross-scale resonance detection.
     """
     
+    # Class-level configuration constants
+    DEFAULT_COVERAGE_PERCENT = 3.0  # Default coverage percentage for structural breakouts
+    
     def __init__(
         self,
         causal_graph: Dict[str, List[str]] = None,
@@ -173,6 +176,50 @@ class AdaptiveEventDrivenLabeling:
                 if self.verbose:
                     tprint_info("   🔬 Step 4: Causal compression (20 → 4 alpha features)...")
                 
+                # ALIGNMENT FIX: Ensure causal_anchor_predictions matches spectral components shape
+                # 1. Get reference index from spectral components
+                ref_indices = [comp.index for comp in self.spectral_components.values() if hasattr(comp, 'index')]
+                if not ref_indices:
+                     # Fallback to signals
+                    ref_indices = [sig.index for sig in specialist_signals.values() if hasattr(sig, 'index')]
+                
+                if ref_indices:
+                    # Use the first valid index as reference (all should be aligned)
+                    target_index = ref_indices[0]
+                    
+                    # 2. Check alignment
+                    if len(causal_anchor_predictions) != len(target_index):
+                         if self.verbose:
+                             tprint_warning(f"   ⚠️ Aligning anchor ({len(causal_anchor_predictions)}) to specialists ({len(target_index)})")
+                         
+                         # Create Series with ORIGINAL df index to perform safe reindexing
+                         # assumption: causal_anchor_predictions aligns with input df
+                         if len(causal_anchor_predictions) == len(df):
+                             anchor_series = pd.Series(causal_anchor_predictions, index=df.index)
+                             
+                             # Ensure index is unique for reindex to succeed
+                             # If we have multiple assets, we should have already handled this at a higher level,
+                             # but here we must be safe.
+                             if anchor_series.index.has_duplicates:
+                                 anchor_series = anchor_series.loc[~anchor_series.index.duplicated(keep='last')]
+                             
+                             safe_target = target_index
+                             if target_index.has_duplicates:
+                                 safe_target = target_index.drop_duplicates(keep='last')
+                                 
+                             aligned_anchor = anchor_series.reindex(safe_target).fillna(0).values
+                             causal_anchor_predictions = aligned_anchor
+                         else:
+                             # Fallback: simple truncation/padding if we can't match index
+                             # This happens if lengths are totally mismatched
+                             tprint_warning("   ⚠️ Index mismatch prevents safe alignment. Using truncation/padding.")
+                             if len(causal_anchor_predictions) > len(target_index):
+                                 causal_anchor_predictions = causal_anchor_predictions[-len(target_index):]
+                             else:
+                                 new_anc = np.zeros(len(target_index))
+                                 new_anc[:len(causal_anchor_predictions)] = causal_anchor_predictions
+                                 causal_anchor_predictions = new_anc
+
                 alpha_features, self.compression_metrics = \
                     self.compression_engine.compress_spectral_features(
                         self.spectral_components, causal_anchor_predictions
@@ -333,7 +380,7 @@ class AdaptiveEventDrivenLabeling:
         self,
         phase_threshold: float = None,
         use_quantile_approach: bool = True,
-        min_coverage_percent: float = 4.0,
+        min_coverage_percent: float = None,
         volatility_window: int = 500
     ) -> Dict[str, Any]:
         """
@@ -352,6 +399,10 @@ class AdaptiveEventDrivenLabeling:
             if not self.spectral_components:
                 return {'error': 'No spectral components available'}
             
+            # Use default coverage if not specified
+            if min_coverage_percent is None:
+                min_coverage_percent = self.DEFAULT_COVERAGE_PERCENT
+            
             if self.verbose:
                 tprint_info("💥 Identifying structural breakouts...")
             
@@ -360,11 +411,17 @@ class AdaptiveEventDrivenLabeling:
             diagnostics: Dict[str, Dict[str, Any]] = {}
             specialist_breakout_masks: Dict[str, np.ndarray] = {}
             
-            specialist_names = list(self.spectral_specialists.priority_specialists)
-            
             # Collect all z-score series for global diagnostics
             all_z_values = []
             z_scores_by_specialist = {}
+            
+            # Get all available specialist names from spectral components
+            specialist_names = []
+            for key in self.spectral_components.keys():
+                if key.endswith('_d1'):  # Extract base name from d1 component
+                    base_name = key[:-3]  # Remove '_d1' suffix
+                    if base_name not in specialist_names:
+                        specialist_names.append(base_name)
             
             for specialist_name in specialist_names:
                 # Check d1-d3 phase relationship (micro leading macro = breakout)
@@ -578,16 +635,16 @@ class AdaptiveEventDrivenLabeling:
                 tprint_error(f"❌ Structural breakout identification failed: {e}")
             return {'error': str(e)}
     
-    def get_structural_breakouts_2percent(self) -> Dict[str, Any]:
+    def get_structural_breakouts_3percent(self) -> Dict[str, Any]:
         """
-        Convenience method to get structural breakouts with guaranteed 2% coverage.
+        Convenience method to get structural breakouts with guaranteed 3% coverage.
         
         Returns:
-            Dictionary with structural breakout signals using 2% quantile approach
+            Dictionary with structural breakout signals using 3% quantile approach
         """
         return self.get_structural_breakouts(
             use_quantile_approach=True,
-            min_coverage_percent=2.0
+            min_coverage_percent=self.DEFAULT_COVERAGE_PERCENT
         )
     
     def _find_dominant_breakout(self, breakout_signals: Dict[str, np.ndarray]) -> str:

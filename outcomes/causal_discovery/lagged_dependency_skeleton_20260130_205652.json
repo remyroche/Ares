@@ -1,0 +1,104 @@
+{
+  "close": [
+    "close"
+  ],
+  "high_range_10": [
+    "close",
+    "high_range_10",
+    "close_std_10",
+    "volatility_5d",
+    "low_range_10",
+    "open",
+    "TARGET_RET_1",
+    "close_range_10"
+  ],
+  "close_std_10": [
+    "close_range_20",
+    "close_std_10",
+    "high_range_10",
+    "high_std_5",
+    "TARGET_Sharpe",
+    "low_range_10",
+    "open_mean_10",
+    "open",
+    "close_range_10",
+    "volume",
+    "close_std_5"
+  ],
+  "high_std_5": [
+    "close_range_20",
+    "close",
+    "high_range_10",
+    "close_std_10",
+    "high_std_5",
+    "volatility_5d",
+    "low_range_10",
+    "open",
+    "TARGET_RET_1",
+    "close_range_10",
+    "close_std_5"
+  ],
+  "volatility_5d": [
+    "close",
+    "open",
+    "volatility_5d"
+  ],
+  "volatility_1d": [
+    "close",
+    "open"
+  ],
+  "TARGET_Sharpe": [
+    "TARGET_Sharpe",
+    "open",
+    "TARGET_RET_1",
+    "close"
+  ],
+  "low_range_10": [
+    "close_range_20",
+    "close",
+    "close_std_10",
+    "low_range_10",
+    "open_mean_10",
+    "open",
+    "close_range_10"
+  ],
+  "open_mean_10": [
+    "close",
+    "high_range_10",
+    "close_std_10",
+    "low_range_10",
+    "open_mean_10",
+    "open",
+    "TARGET_RET_1",
+    "close_range_10"
+  ],
+  "open": [
+    "close"
+  ],
+  "TARGET_RET_1": [
+    "close",
+    "TARGET_Sharpe",
+    "low_range_10",
+    "TARGET_RET_1",
+    "close_range_10"
+  ],
+  "close_range_10": [
+    "close_range_10",
+    "close_std_10",
+    "open"
+  ],
+  "volume": [
+    "volume",
+    "close_std_10",
+    "open"
+  ],
+  "close_std_5": [
+    "close_std_10",
+    "close",
+    "high_std_5",
+    "TARGET_RET_1",
+    "close_range_10",
+    "volume",
+    "close_std_5"
+  ]
+}

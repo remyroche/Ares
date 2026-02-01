@@ -1,0 +1,112 @@
+{
+  "TARGET_RET_1": [
+    "TARGET_RET_1",
+    "open",
+    "ms__pca_0",
+    "close",
+    "ms__pca_2"
+  ],
+  "open": [
+    "ms__pca_0",
+    "open",
+    "close"
+  ],
+  "ca__active_ret_trend": [
+    "TARGET_RET_1",
+    "open",
+    "ca__active_ret_trend",
+    "ms__pca_1",
+    "ms__pca_0",
+    "close",
+    "ms__pca_2"
+  ],
+  "open_mean_10": [
+    "TARGET_RET_1",
+    "volatility_1d",
+    "ca__active_ret_trend",
+    "ms__pca_0",
+    "open_std_50",
+    "ms__pca_2"
+  ],
+  "ms__pca_3": [
+    "TARGET_RET_1",
+    "ca__active_ret_trend",
+    "ms__pca_3",
+    "ms__pca_0",
+    "close",
+    "ms__pca_2"
+  ],
+  "TARGET_Sharpe": [
+    "TARGET_RET_1",
+    "open",
+    "ca__active_ret_trend",
+    "TARGET_Sharpe",
+    "ms__pca_3",
+    "ms__pca_1",
+    "ms__pca_0",
+    "ms__pca_2"
+  ],
+  "ms__pca_1": [
+    "TARGET_RET_1",
+    "open",
+    "ms__pca_0"
+  ],
+  "volume_std_5": [
+    "TARGET_RET_1",
+    "open",
+    "ms__pca_3",
+    "open_mean_10",
+    "ca__active_ret_trend",
+    "ms__pca_1",
+    "ms__pca_0",
+    "close",
+    "ms__pca_2",
+    "Market_Mode_PCA"
+  ],
+  "ms__pca_0": [
+    "TARGET_RET_1"
+  ],
+  "open_std_50": [
+    "TARGET_RET_1",
+    "volatility_1d",
+    "ca__active_ret_trend",
+    "ms__pca_3",
+    "open",
+    "ms__pca_1",
+    "ms__pca_0",
+    "open_std_50",
+    "Market_Mode_PCA",
+    "ms__pca_2"
+  ],
+  "volume": [
+    "TARGET_RET_1",
+    "open",
+    "ms__pca_3",
+    "open_mean_10",
+    "ca__active_ret_trend",
+    "ms__pca_1",
+    "ms__pca_0",
+    "volume",
+    "close",
+    "ms__pca_2",
+    "Market_Mode_PCA"
+  ],
+  "close": [
+    "TARGET_RET_1",
+    "open",
+    "close",
+    "ms__pca_0"
+  ],
+  "ms__pca_2": [
+    "TARGET_RET_1",
+    "ms__pca_2",
+    "ms__pca_0"
+  ],
+  "Market_Mode_PCA": [
+    "TARGET_RET_1",
+    "ca__active_ret_trend",
+    "ms__pca_0",
+    "close",
+    "ms__pca_2"
+  ]
+}

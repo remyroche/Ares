@@ -68,9 +68,22 @@ class MarketRegimeLabeller:
 
         cols = [f"regime_{i}" for i in range(probs.shape[1])]
         df_probs = pd.DataFrame(probs, index=data.index, columns=cols)
-
         # Reindex to match original df (filling NaN with 0 or equal probability?)
         # 0 is safer as it implies no knowledge
+        if isinstance(df.index, pd.MultiIndex):
+            ts_level = 'timestamp' if 'timestamp' in df.index.names else df.index.names[0]
+            target_ts = pd.to_datetime(df.index.get_level_values(ts_level))
+            df_probs = df_probs.copy()
+            if isinstance(df_probs.index, pd.MultiIndex):
+                df_probs.index = pd.to_datetime(df_probs.index.get_level_values(ts_level))
+            else:
+                df_probs.index = pd.to_datetime(df_probs.index)
+            if df_probs.index.has_duplicates:
+                df_probs = df_probs.loc[~df_probs.index.duplicated(keep="last")]
+            aligned = df_probs.reindex(target_ts).fillna(0.0)
+            aligned.index = df.index
+            return aligned
+
         return df_probs.reindex(df.index).fillna(0.0)
 
     def get_env_indices(self, df: pd.DataFrame, path: Path) -> list[np.ndarray]:

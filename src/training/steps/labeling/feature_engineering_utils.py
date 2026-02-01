@@ -1,3 +1,6 @@
+import os
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import logging
@@ -104,11 +107,11 @@ def _apply_fracdiff(series: pd.Series, d: float = 0.4, threshold: float = 1e-5) 
 
     return pd.Series(result, index=series.index)
 
-@jit(nopython=True)
+@jit(nopython=True, parallel=True)
 def _numba_efficiency_ratio(log_returns: np.ndarray, window: int) -> np.ndarray:
     """
     Calculate Kaufman Efficiency Ratio: Abs(Net Change) / Sum(Abs(Change))
-    Optimized to O(N) using sliding window updates.
+    Optimized to O(N) using sliding window updates with parallel execution.
     """
     n = len(log_returns)
     out = np.full(n, np.nan)
@@ -168,7 +171,7 @@ def _numba_efficiency_ratio(log_returns: np.ndarray, window: int) -> np.ndarray:
     return out
 
 def apply_layer2_price_processing(df: pd.DataFrame,
-                                  price_col: str = 'close',
+                                  price_col: str = None,
                                   volume_col: str = None,
                                   vol_window: int = 20, # Deprecated
                                   fracdiff_d: float = 0.4,
@@ -193,6 +196,8 @@ def apply_layer2_price_processing(df: pd.DataFrame,
     if not enable_price_features:
         return df
 
+    if price_col is None:
+        price_col = 'raw__close' if 'raw__close' in df.columns else 'close'
     if price_col not in df.columns:
         return df
 
@@ -408,13 +413,11 @@ def apply_layer2_price_processing(df: pd.DataFrame,
                     clip_z=5.0
                 )
             else:
-                # Fallback if no volume: simple EMA detrending (normalized?)
-                # Or just skip. Since this is "vwap_residual", skipping is safer.
-                # But to maintain previous behavior (fallback exists):
-                pass
+                # No volume available - set to NaN explicitly to avoid undefined behavior
+                result['vwap_residual'] = np.nan
         except Exception as e:
-            # Fallback or silent fail
-            pass
+            # Set to NaN on failure to ensure column exists
+            result['vwap_residual'] = np.nan
 
         return result
 
@@ -432,3 +435,142 @@ def apply_layer2_price_processing(df: pd.DataFrame,
 
     combined = pd.concat(processed_chunks).sort_index()
     return combined
+
+def add_market_context_features(
+    df: pd.DataFrame,
+    asset_col: str = 'asset_id',
+    timeframe: str | None = None,
+    cache_path: str | Path | None = None,
+    force_recompute: bool = False,
+) -> pd.DataFrame:
+    """
+    Add cross-asset market context features for multi-asset global models.
+    
+    De Prado Principle: Market context features enable the model to learn
+    cross-asset patterns and regime-conditional behavior without leakage.
+    
+    Features Added:
+    - relative_momentum: Asset momentum vs market average momentum
+    - market_momentum: Equal-weighted market momentum
+    - asset_dispersion: Cross-sectional volatility of asset returns
+    - market_breadth: Fraction of assets with positive momentum
+    
+    Args:
+        df: DataFrame with multi-asset data (must have asset_col)
+        asset_col: Column name identifying assets
+        timeframe: Timeframe string (e.g., '15m') - reserved for future 
+                   timeframe-adaptive window sizing, currently unused
+        cache_path: Optional path to cache computed features
+        force_recompute: If True, ignore cache and recompute
+        
+    Returns:
+        DataFrame with market context features added
+    """
+    from src.utils.tprint import tprint_info, tprint_success, tprint_warning
+    
+    if asset_col not in df.columns and not (
+        isinstance(df.index, pd.MultiIndex) and asset_col in df.index.names
+    ):
+        tprint_warning(f"   ⚠️ {asset_col} not found, skipping market context features")
+        return df
+    
+    tprint_info("   🌍 Adding market context features...")
+
+    df = df.copy()
+
+    feature_cols = ['market_momentum', 'relative_momentum', 'asset_dispersion', 'market_breadth']
+
+    cache_path = Path(cache_path) if cache_path else None
+    if cache_path and cache_path.exists() and not force_recompute:
+        try:
+            cached = pd.read_parquet(cache_path)
+            if all(col in cached.columns for col in feature_cols) and len(cached) == len(df):
+                tprint_info(f"   💾 Loaded cached market context features from {cache_path}")
+                for col in feature_cols:
+                    df[col] = cached[col].values
+                return df
+            else:
+                tprint_warning(
+                    "   ⚠️ Cache mismatch detected (shape/index/columns), recomputing market context features"
+                )
+        except Exception as cache_err:
+            tprint_warning(f"   ⚠️ Failed to load cached market context features: {cache_err}. Recomputing...")
+
+    # Determine timestamp grouping
+    ts_groupby_kwargs: dict[str, object] = {"sort": False}
+    ts_level = None
+    ts_series = None
+    if isinstance(df.index, pd.MultiIndex) and 'timestamp' in df.index.names:
+        ts_level = 'timestamp'
+    elif 'timestamp' in df.index.names:
+        ts_level = 'timestamp'
+    elif 'timestamp' in df.columns:
+        ts_series = df['timestamp']
+    elif isinstance(df.index, pd.MultiIndex):
+        ts_level = df.index.names[0]
+    elif isinstance(df.index, pd.DatetimeIndex):
+        ts_level = 0
+    else:
+        tprint_warning("   ⚠️ No timestamp column/index found, skipping market context features")
+        return df
+
+    if ts_level is not None:
+        ts_groupby_kwargs['level'] = ts_level
+    else:
+        ts_groupby_kwargs['by'] = ts_series
+
+    # Initialize new columns with default values
+    df['market_momentum'] = 0.0
+    df['relative_momentum'] = 1.0
+    df['asset_dispersion'] = 0.0
+    df['market_breadth'] = 0.5
+
+    # 1. Market Momentum (Equal-Weighted Mean)
+    if 'rolling_momentum_20' in df.columns:
+        try:
+            grouped_momentum = df.groupby(**ts_groupby_kwargs)['rolling_momentum_20']
+            df['market_momentum'] = grouped_momentum.transform('mean').astype(np.float32).fillna(0.0)
+
+            pos_momentum = (df['rolling_momentum_20'] > 0).astype(np.float32)
+            df['market_breadth'] = (
+                pos_momentum.groupby(**ts_groupby_kwargs)
+                .transform('mean')
+                .astype(np.float32)
+                .fillna(0.5)
+            )
+
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Market momentum calculation failed: {e}")
+
+    # 2. Asset Dispersion (Cross-Sectional Std)
+    if 'raw_returns' in df.columns:
+        try:
+            df['asset_dispersion'] = (
+                df.groupby(**ts_groupby_kwargs)['raw_returns']
+                .transform('std')
+                .astype(np.float32)
+                .fillna(0.0)
+            )
+        except Exception as e:
+             tprint_warning(f"   ⚠️ Asset dispersion calculation failed: {e}")
+
+    # 3. Relative Momentum (Asset / Market)
+    if 'rolling_momentum_20' in df.columns:
+        try:
+            # Vectorized calculation
+            df['relative_momentum'] = df['rolling_momentum_20'] / (df['market_momentum'].abs() + 1e-9)
+            df['relative_momentum'] = df['relative_momentum'].fillna(1.0)
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Relative momentum calculation failed: {e}")
+    
+    if cache_path:
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            df[feature_cols].to_parquet(cache_path)
+            tprint_info(f"   💾 Cached market context features to {cache_path}")
+        except Exception as cache_write_err:
+            tprint_warning(f"   ⚠️ Failed to write market context cache: {cache_write_err}")
+
+    tprint_success("   ✅ Market context features added: market_momentum, relative_momentum, asset_dispersion, market_breadth")
+
+    return df

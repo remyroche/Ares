@@ -1,0 +1,12 @@
+{
+  "volatility_5d": [
+    "open",
+    "close"
+  ],
+  "Market_Mode_PCA": [
+    "TARGET_RET_1",
+    "open",
+    "ms__pca_3",
+    "close"
+  ]
+}

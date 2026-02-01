@@ -1,0 +1,97 @@
+{
+  "volume": [
+    "high_lag_1",
+    "ca__volume_shock",
+    "high_std_5",
+    "TARGET_RET_1",
+    "ms__pca_0",
+    "open_lag_1",
+    "high_range_50",
+    "open_std_5",
+    "volatility_1d",
+    "volume",
+    "TARGET_Sharpe"
+  ],
+  "high_std_5": [
+    "high_lag_1",
+    "TARGET_RET_1",
+    "open_lag_1"
+  ],
+  "high_lag_1": [
+    "open",
+    "close",
+    "TARGET_RET_1",
+    "ms__pca_0"
+  ],
+  "TARGET_RET_1": [
+    "TARGET_RET_1",
+    "ms__pca_0",
+    "high_range_50",
+    "close",
+    "volatility_1d",
+    "open",
+    "Market_Mode_PCA"
+  ],
+  "open_lag_1": [
+    "ca__volume_shock",
+    "ms__pca_0",
+    "close",
+    "open",
+    "Market_Mode_PCA"
+  ],
+  "open_std_5": [
+    "high_std_5",
+    "TARGET_RET_1",
+    "high_range_50",
+    "close",
+    "open_std_5",
+    "open",
+    "Market_Mode_PCA"
+  ],
+  "close": [
+    "open",
+    "TARGET_RET_1",
+    "close"
+  ],
+  "open": [
+    "open",
+    "TARGET_RET_1",
+    "close"
+  ],
+  "open_mean_5": [
+    "high_std_5",
+    "high_lag_1",
+    "TARGET_RET_1",
+    "open_lag_1",
+    "ms__pca_0",
+    "open_std_5",
+    "close",
+    "open"
+  ],
+  "TARGET_Sharpe": [
+    "TARGET_RET_1",
+    "ms__pca_0",
+    "high_range_50",
+    "close",
+    "volatility_1d",
+    "open",
+    "Market_Mode_PCA",
+    "TARGET_Sharpe"
+  ],
+  "open_mean_20": [
+    "high_lag_1",
+    "open_lag_1",
+    "close",
+    "open",
+    "open_mean_20"
+  ],
+  "Market_Mode_PCA": [
+    "ca__volume_shock",
+    "TARGET_RET_1",
+    "open_lag_1",
+    "ms__pca_0",
+    "high_range_50",
+    "close",
+    "open"
+  ]
+}

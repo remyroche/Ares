@@ -32,6 +32,7 @@ from collections import defaultdict
 import os
 import json
 import math
+import time
 from datetime import datetime
 
 # Import tprint functions
@@ -58,6 +59,7 @@ class HuberCausalDiscovery:
                  sign_stability_threshold: float = 0.8,
                  detection_threshold: float = 0.05, # Normalized scale
                  validation_threshold: float = 0.05, # Min OOS correlation
+                 target_variance_threshold: float = 1e-8,
                  n_jobs: int = -1,
                  verbose: bool = True):
         """
@@ -74,6 +76,7 @@ class HuberCausalDiscovery:
             validation_threshold: Minimum Out-of-Sample correlation to accept a split's model.
             n_jobs: Parallel jobs.
             verbose: Logging verbosity.
+            target_variance_threshold: Minimum variance needed for targets/splits.
         """
         self.max_lag = max_lag
         self.n_splits = n_splits
@@ -85,19 +88,39 @@ class HuberCausalDiscovery:
         self.validation_threshold = validation_threshold
         self.n_jobs = n_jobs
         self.verbose = verbose
+        self.target_variance_threshold = target_variance_threshold
+        self.excluded_target_prefixes = (
+            "open", "close", "high", "low", "volume", "raw__volume",
+            "denoised_close", "raw__px", "volatility_"
+        )
 
         # Artifact storage
         self.discovery_artifacts = {}
 
     def _fit_and_validate_split(self, X_train: np.ndarray, y_train: np.ndarray,
                                 X_test: np.ndarray, y_test: np.ndarray,
-                                predictor_names: List[str]) -> Tuple[Dict[str, float], float]:
+                                predictor_names: List[str]) -> Tuple[Dict[str, float], float, Dict[str, Any]]:
         """
         Fit Huber on Train, Validate on Test.
         Returns coefficients and OOS correlation.
         """
+        diagnostics = {
+            "status": "ok",
+            "oos_score": 0.0,
+        }
+
+        y_train_std = float(np.std(y_train)) if len(y_train) else 0.0
+        diagnostics["train_std"] = y_train_std
+
         if len(y_train) < 50:
-            return {}, 0.0 # Too few samples
+            diagnostics["status"] = "train_too_small"
+            return {}, 0.0, diagnostics  # Too few samples
+
+        # Early check for constant target
+        if y_train_std < 1e-9:
+            diagnostics["status"] = "constant_train_target"
+            # Optional: tprint_warning if you want to keep seeing it, but usually this is just noise
+            return {}, 0.0, diagnostics
 
         try:
             # Scale per split to prevent leakage
@@ -113,19 +136,39 @@ class HuberCausalDiscovery:
 
             # Validate on Test
             if len(y_test) > 10:
+                diagnostics["test_std_raw"] = float(np.std(y_test))
                 X_test_scaled = scaler_X.transform(X_test)
                 y_test_scaled = scaler_y.transform(y_test.reshape(-1, 1)).flatten()
 
                 y_pred = model.predict(X_test_scaled)
 
-                # Check OOS correlation
+            # Check OOS correlation
                 # Handle edge cases (constant pred)
-                if np.std(y_pred) < 1e-9 or np.std(y_test_scaled) < 1e-9:
+                pred_std = float(np.std(y_pred))
+                target_std = float(np.std(y_test_scaled))
+                diagnostics["pred_std"] = pred_std
+                diagnostics["target_std"] = target_std
+                if pred_std < 1e-9 or target_std < 1e-9:
                     oos_score = 0.0
+                    diagnostics["status"] = "constant_pred_or_target"
+                    # Only log if verbose AND truly degenerate (reduces noise)
+                    # if self.verbose:
+                    #     tprint_warning(f"         ⚠️ Split validation skipped: pred_std={pred_std:.2e}, target_std={target_std:.2e}")
                 else:
                     oos_score = np.corrcoef(y_test_scaled, y_pred)[0, 1]
+                    diagnostics["oos_score"] = float(oos_score)
+                    if abs(oos_score) < self.validation_threshold:
+                        diagnostics["status"] = "low_oos_corr"
+                    
+                if self.verbose and abs(oos_score) < self.validation_threshold:
+                     tprint_info(f"         📉 Split validation failed: OOS Corr {oos_score:.4f} < {self.validation_threshold}")
+
             else:
                 oos_score = 0.0 # Cannot validate
+                diagnostics["status"] = "test_too_small"
+                diagnostics["target_std"] = 0.0
+                if self.verbose:
+                     tprint_warning(f"         ⚠️ Split validation skipped: Insufficient test samples ({len(y_test)})")
 
             # Extract significant coefs
             coeffs = {}
@@ -133,10 +176,11 @@ class HuberCausalDiscovery:
                 if abs(coef) > self.detection_threshold:
                     coeffs[name] = coef
 
-            return coeffs, oos_score
+            return coeffs, oos_score, diagnostics
 
         except Exception:
-            return {}, 0.0
+            diagnostics["status"] = "exception"
+            return {}, 0.0, diagnostics
 
     def _process_target_variable(self, target_col: str, X_lagged: np.ndarray,
                                  y_target: np.ndarray, predictor_names: List[str]) -> Tuple[str, Dict[str, Any]]:
@@ -145,20 +189,73 @@ class HuberCausalDiscovery:
         tscv = TimeSeriesSplit(n_splits=self.n_splits)
         split_coeffs = []
         valid_splits = 0
+        split_failures = defaultdict(int)
+
+        y_target = np.asarray(y_target, dtype=float)
+        y_nan_rate = float(np.isnan(y_target).mean()) if len(y_target) else 0.0
+        y_std = float(np.nanstd(y_target)) if len(y_target) else 0.0
+        y_var = float(np.nanvar(y_target)) if len(y_target) else 0.0
+        finite_mask = np.isfinite(y_target) & np.isfinite(X_lagged).all(axis=1)
+        cleaned_samples = int(finite_mask.sum())
+        if cleaned_samples < max(50, self.n_splits + 1):
+            return target_col, {
+                'parents': [],
+                'strengths': {},
+                'valid_splits': 0,
+                'diagnostics': {
+                    'split_failures': {'insufficient_clean_samples': self.n_splits},
+                    'target_nan_rate': y_nan_rate,
+                    'target_std': y_std,
+                    'target_var': y_var,
+                    'cleaned_samples': cleaned_samples,
+                },
+            }
+
+        X_lagged = X_lagged[finite_mask]
+        y_target = y_target[finite_mask]
+
+        flat_split_stats = []
 
         # Execute splits
-        for train_index, test_index in tscv.split(X_lagged):
+        for split_idx, (train_index, test_index) in enumerate(tscv.split(X_lagged)):
             X_train, X_test = X_lagged[train_index], X_lagged[test_index]
             y_train, y_test = y_target[train_index], y_target[test_index]
 
-            coeffs, oos_score = self._fit_and_validate_split(
+            test_std = float(np.std(y_test)) if len(y_test) else 0.0
+            if test_std < self.target_variance_threshold:
+                split_failures["test_target_flat"] += 1
+                flat_split_stats.append({
+                    "split": split_idx,
+                    "status": "test_target_flat",
+                    "pred_std": None,
+                    "target_std": test_std,
+                    "train_std": float(np.std(y_train)) if len(y_train) else 0.0,
+                })
+                if self.verbose:
+                    tprint_info(
+                        f"         ⚠️ Split {split_idx} skipped: test target std {test_std:.2e} < {self.target_variance_threshold:.1e}"
+                    )
+                continue
+
+            coeffs, oos_score, diag = self._fit_and_validate_split(
                 X_train, y_train, X_test, y_test, predictor_names
             )
 
             # Only count splits where the model learned something generalizable
-            if oos_score > self.validation_threshold:
+            if abs(oos_score) > self.validation_threshold:
                 split_coeffs.append(coeffs)
                 valid_splits += 1
+            else:
+                status = diag.get("status", "unknown")
+                split_failures[status] += 1
+                if status in {"constant_pred_or_target", "constant_train_target"}:
+                    flat_split_stats.append({
+                        "split": split_idx,
+                        "status": status,
+                        "pred_std": diag.get("pred_std"),
+                        "target_std": diag.get("target_std"),
+                        "train_std": diag.get("train_std"),
+                    })
 
         # Aggregation / Stability Selection
         # Track counts, magnitudes, and signs
@@ -205,7 +302,17 @@ class HuberCausalDiscovery:
         return target_col, {
             'parents': stable_parents,
             'strengths': parent_strengths,
-            'valid_splits': valid_splits
+            'valid_splits': valid_splits,
+            'diagnostics': {
+                'split_failures': dict(split_failures),
+                'flat_split_count': len(flat_split_stats),
+                'flat_split_examples': flat_split_stats[:5],
+                'target_nan_rate': y_nan_rate,
+                'target_std': y_std,
+                'target_var': y_var,
+                'cleaned_samples': cleaned_samples,
+                'is_purely_flat': len(flat_split_stats) == self.n_splits
+            },
         }
 
     def _inject_market_mode(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -253,8 +360,36 @@ class HuberCausalDiscovery:
             tprint_info(f"   🛡️ Stability: >{self.stability_threshold:.0%} freq, >{self.sign_stability_threshold:.0%} sign agree")
 
         # 1. Data Preparation
+        # Clean FIRST to ensure Market Mode and checks work on valid data
+        df_proc = df.replace([np.inf, -np.inf], np.nan)
+        target_cols = [c for c in df_proc.columns if c.startswith('TARGET_')]
+        feature_cols = [c for c in df_proc.columns if c not in target_cols]
+        if feature_cols:
+            df_proc[feature_cols] = df_proc[feature_cols].ffill().bfill()
+        # Drop remaining NaNs (if any purely NaN columns exist)
+        # We don't drop rows yet because we want to see column quality first?
+        # Actually, ffill/bfill preserves length.
+
         # Inject Market Mode to capture confounders
-        df_proc = self._inject_market_mode(df)
+        df_proc = self._inject_market_mode(df_proc)
+        
+        # Check for bad columns AFTER cleaning attempts
+        nan_rates = df_proc.isna().mean()
+        drop_high_nan = nan_rates[nan_rates > 0.1].index.tolist()
+        if drop_high_nan and self.verbose:
+            tprint_warning(f"   ⚠️ Dropping high-NaN columns (after ffill): {drop_high_nan[:5]}")
+        if drop_high_nan:
+            df_proc = df_proc.drop(columns=drop_high_nan)
+            
+        low_var_cols = df_proc.std().fillna(0.0)
+        drop_low_var = low_var_cols[low_var_cols < 1e-9].index.tolist()
+        if drop_low_var and self.verbose:
+            tprint_warning(f"   ⚠️ Dropping low-variance columns: {drop_low_var[:5]}")
+        if drop_low_var:
+            df_proc = df_proc.drop(columns=drop_low_var)
+            
+        # Final cleanup
+        df_proc = df_proc.dropna()
 
         # Create Lagged Features
         # We do NOT scale globally here. We scale inside splits.
@@ -278,18 +413,42 @@ class HuberCausalDiscovery:
             tprint_info(f"   📊 Feature Matrix: {X_matrix.shape} (lags construction)")
 
         # 2. Parallel Node-wise Regression
-        targets = df_proc.columns.tolist()
+        column_stds = df_proc.std()
+        excluded_targets = []
+        targets = []
+        for col in df_proc.columns:
+            col_lower = col.lower()
+            if any(col_lower.startswith(prefix) for prefix in self.excluded_target_prefixes):
+                excluded_targets.append(col)
+                continue
+            if column_stds.get(col, 0.0) < self.target_variance_threshold:
+                excluded_targets.append(col)
+                continue
+            targets.append(col)
 
+        if self.verbose and excluded_targets:
+            tprint_info(f"   ⏭️ Skipping {len(excluded_targets)} flat/core columns as discovery targets")
+
+        if self.verbose:
+            tprint_info(
+                f"   🧵 Running node-wise regressions: targets={len(targets)}, predictors={len(predictor_names)}, "
+                f"samples={X_matrix.shape[0]}, jobs={self.n_jobs}"
+            )
+        discovery_start = time.time()
         results = Parallel(n_jobs=self.n_jobs)(
             delayed(self._process_target_variable)(
                 target, X_matrix, target_data[target].values, predictor_names
             ) for target in targets
         )
+        if self.verbose:
+            elapsed = time.time() - discovery_start
+            tprint_info(f"   ⏱️ Node-wise regressions complete in {elapsed:.1f}s")
 
         # 3. Construct Graph
         causal_graph = {}
         causal_strength = {}
         valid_split_stats = {}
+        diagnostics_by_target = {}
 
         total_edges = 0
 
@@ -317,6 +476,7 @@ class HuberCausalDiscovery:
                 causal_strength[target] = strengths_clean
 
             valid_split_stats[target] = res['valid_splits']
+            diagnostics_by_target[target] = res.get('diagnostics', {})
             total_edges += len(parents_clean)
 
         # 4. Persistence
@@ -326,11 +486,69 @@ class HuberCausalDiscovery:
             tprint_success(f"✅ Huber Discovery Complete: {total_edges} lagged dependency edges found.")
             avg_valid = np.mean(list(valid_split_stats.values())) if valid_split_stats else 0
             tprint_info(f"   ℹ️ Avg Valid Splits: {avg_valid:.1f}/{self.n_splits}")
+            if diagnostics_by_target:
+                failure_counts = defaultdict(int)
+                low_var_targets = []
+                high_nan_targets = []
+                for target, diag in diagnostics_by_target.items():
+                    split_failures = diag.get("split_failures", {})
+                    for key, val in split_failures.items():
+                        failure_counts[key] += int(val)
+                    if diag.get("target_std", 0.0) < 1e-6:
+                        low_var_targets.append(target)
+                    if diag.get("target_nan_rate", 0.0) > 0.1:
+                        high_nan_targets.append(target)
+                if failure_counts:
+                    tprint_info(f"   🧪 Split failure summary: {dict(failure_counts)}")
+                
+                flat_targets = []
+                purely_flat_count = 0
+                
+                for target, diag in diagnostics_by_target.items():
+                    if diag.get("is_purely_flat"):
+                        purely_flat_count += 1
+                        continue
+                        
+                    flat_count = int(diag.get("flat_split_count", 0))
+                    if flat_count:
+                        examples = diag.get("flat_split_examples", [])
+                        pred_stds = [e.get("pred_std") for e in examples if e.get("pred_std") is not None]
+                        tgt_stds = [e.get("target_std") for e in examples if e.get("target_std") is not None]
+                        train_stds = [e.get("train_std") for e in examples if e.get("train_std") is not None]
+                        flat_targets.append((
+                            target,
+                            flat_count,
+                            float(np.mean(pred_stds)) if pred_stds else None,
+                            float(np.mean(tgt_stds)) if tgt_stds else None,
+                            float(np.mean(train_stds)) if train_stds else None,
+                        ))
+                
+                if purely_flat_count > 0:
+                    tprint_info(f"   ⏭️ Skipped {purely_flat_count} targets causing pure flat splits (no variance).")
+
+                if flat_targets:
+                    flat_targets.sort(key=lambda x: x[1], reverse=True)
+                    top_flat = flat_targets[:10]
+                    summary = []
+                    for name, count, pred_std, tgt_std, train_std in top_flat:
+                        if pred_std is None or tgt_std is None or train_std is None:
+                            summary.append(f"{name} ({count}, no-variance)")
+                        else:
+                            summary.append(
+                                f"{name} ({count}, pred_std~{pred_std:.2e}, tgt_std~{tgt_std:.2e}, train_std~{train_std:.2e})"
+                            )
+                    if summary:
+                        tprint_warning(f"   ⚠️ Flat split targets (partial): {summary}")
+                if low_var_targets:
+                    tprint_warning(f"   ⚠️ Low-variance targets: {low_var_targets[:5]}")
+                if high_nan_targets:
+                    tprint_warning(f"   ⚠️ High-NaN targets: {high_nan_targets[:5]}")
 
         return {
             'causal_graph': causal_graph,  # {Child: [Parents]}
             'causal_strength': causal_strength,
-            'valid_split_stats': valid_split_stats
+            'valid_split_stats': valid_split_stats,
+            'diagnostics': diagnostics_by_target,
         }
 
     def save_checkpoints(self, graph: Dict, stats: Dict):

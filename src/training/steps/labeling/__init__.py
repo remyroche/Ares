@@ -55,6 +55,13 @@ from .generate_weights_per_label import (
     generate_weights_per_label,
     compute_horizon_consistency,
     compute_uniqueness,
+    compute_uniqueness_per_asset,
+)
+
+# Multi-asset reporting
+from .multi_asset_reporting import (
+    MultiAssetReporter,
+    add_multi_asset_metrics_to_existing_report,
 )
 
 # Sample weighting utilities (2025-12-11)
@@ -160,7 +167,11 @@ __all__ = [
     "generate_weights_per_label",
     "compute_horizon_consistency",
     "compute_uniqueness",
+    "compute_uniqueness_per_asset",
     "run_layer1_optimization",
+    # Multi-asset reporting
+    "MultiAssetReporter",
+    "add_multi_asset_metrics_to_existing_report",
     # Volatility-scaled labeling functions (2025-12-09)
     "compute_ema_volatility",
     "compute_regime_metrics",

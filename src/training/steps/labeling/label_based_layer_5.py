@@ -48,6 +48,8 @@ class Layer5PositionSizer:
         low_col: str = 'low',
         atr_col: str = 'atr',
         initial_balance: float = 100000.0,
+        asset_id_col: Optional[str] = None,
+        allow_multi_asset: bool = True,
         **kwargs # Accept legacy args to prevent crash, but ignore them
     ):
         self.df = oof_df.copy()
@@ -57,6 +59,59 @@ class Layer5PositionSizer:
         self.low_col = low_col
         self.atr_col = atr_col
         self.initial_balance = initial_balance
+        self.asset_col = None
+        self.multi_asset = False
+        self.asset_sizers: Dict[str, "Layer5PositionSizer"] = {}
+
+        if allow_multi_asset:
+            asset_col = asset_id_col if asset_id_col and asset_id_col in self.df.columns else None
+            if asset_col is None:
+                for candidate in ("asset_id", "asset", "ticker", "symbol"):
+                    if candidate in self.df.columns:
+                        asset_col = candidate
+                        break
+
+            asset_series = None
+            if asset_col:
+                asset_series = self.df[asset_col]
+            elif isinstance(self.df.index, pd.MultiIndex):
+                for candidate in ("asset_id", "asset", "ticker", "symbol"):
+                    if candidate in self.df.index.names:
+                        asset_col = candidate
+                        asset_series = self.df.index.get_level_values(candidate)
+                        self.df[asset_col] = asset_series
+                        break
+
+            if asset_series is not None and asset_series.nunique(dropna=False) > 1:
+                self.asset_col = asset_col
+                self.multi_asset = True
+                tprint_info(f"🧩 Layer5 multi-asset mode detected ({asset_col})")
+
+                for asset, group in self.df.groupby(asset_series, group_keys=False):
+                    group = group.sort_index()
+                    self.asset_sizers[str(asset)] = Layer5PositionSizer(
+                        oof_df=group,
+                        prob_col=prob_col,
+                        price_col=price_col,
+                        high_col=high_col,
+                        low_col=low_col,
+                        atr_col=atr_col,
+                        initial_balance=initial_balance,
+                        asset_id_col=asset_col,
+                        allow_multi_asset=False,
+                        **kwargs,
+                    )
+
+                # Placeholder arrays (not used in multi-asset path)
+                self.prices_close = np.array([], dtype=np.float64)
+                self.prices_high = np.array([], dtype=np.float64)
+                self.prices_low = np.array([], dtype=np.float64)
+                self.atr = np.array([], dtype=np.float64)
+                self.probs = np.array([], dtype=np.float64)
+                self.dampening = np.array([], dtype=np.float64)
+                self.regime_trend = np.array([], dtype=np.float64)
+                self.regime_vol = np.array([], dtype=np.float64)
+                return
 
         # Validate required columns
         required = [prob_col, price_col, high_col, low_col]
@@ -199,31 +254,10 @@ class Layer5PositionSizer:
                 remaining = (len(combinations) - i) / rate
                 tprint_info(f"   Processed {i}/{len(combinations)} ({rate:.1f} iter/s). ETA: {remaining/60:.1f} min")
 
-            # 1. Calc Sizes
-            sizes = apply_position_sizing_numba(
-                self.probs,
-                self.dampening,
-                threshold=params['threshold'],
-                kelly_fraction=params['kelly_fraction'],
-                steepness=params['steepness'],
-                dampening_mult=params.get('dampening_mult', 0.0)
-            )
-
-            # 2. Run Backtest
-            equity, trades = run_atr_backtest_numba(
-                self.prices_close,
-                self.prices_high,
-                self.prices_low,
-                self.atr,
-                sizes,
-                sl_atr_mult=params['sl_atr'],
-                trail_trigger_mult=params['trail_trigger'],
-                trail_dist_mult=params['trail_atr'],
-                initial_balance=self.initial_balance
-            )
-
-            # 3. Compute Metrics
-            metrics = self._compute_metrics(equity, trades, sizes, params)
+            if self.multi_asset:
+                metrics = self._evaluate_params_multi_asset(params)
+            else:
+                metrics = self._evaluate_params(params)
 
             # Combine params and metrics
             row = {**params, **metrics}
@@ -239,6 +273,95 @@ class Layer5PositionSizer:
             results_df = results_df.sort_values('Sharpe', ascending=False)
 
         return results_df
+
+    def _evaluate_params(self, params: Dict[str, float]) -> Dict[str, float]:
+        sizes = apply_position_sizing_numba(
+            self.probs,
+            self.dampening,
+            threshold=params['threshold'],
+            kelly_fraction=params['kelly_fraction'],
+            steepness=params['steepness'],
+            dampening_mult=params.get('dampening_mult', 0.0)
+        )
+
+        equity, trades = run_atr_backtest_numba(
+            self.prices_close,
+            self.prices_high,
+            self.prices_low,
+            self.atr,
+            sizes,
+            sl_atr_mult=params['sl_atr'],
+            trail_trigger_mult=params['trail_trigger'],
+            trail_dist_mult=params['trail_atr'],
+            initial_balance=self.initial_balance
+        )
+
+        return self._compute_metrics(equity, trades, sizes, params)
+
+    def _evaluate_params_multi_asset(self, params: Dict[str, float]) -> Dict[str, float]:
+        metrics_list = []
+        trade_counts = []
+
+        for asset, sizer in self.asset_sizers.items():
+            metrics = sizer._evaluate_params(params)
+            metrics_list.append(metrics)
+            trade_counts.append(metrics.get('Trades', 0))
+
+        return self._aggregate_metrics(metrics_list, trade_counts)
+
+    def _aggregate_metrics(
+        self,
+        metrics_list: List[Dict[str, float]],
+        trade_counts: List[int]
+    ) -> Dict[str, float]:
+        if not metrics_list:
+            return {}
+
+        total_trades = float(sum(trade_counts))
+        asset_count = len(metrics_list)
+        aggregated: Dict[str, float] = {}
+
+        if 'Trades' in metrics_list[0]:
+            aggregated['Trades'] = int(total_trades)
+
+        if 'End Balance' in metrics_list[0]:
+            aggregated['End Balance'] = float(sum(m.get('End Balance', 0.0) for m in metrics_list))
+            aggregated['Total Return'] = (
+                aggregated['End Balance'] / (self.initial_balance * asset_count)
+            ) - 1.0
+
+        rate_keys = [
+            'Win Rate', 'WinRate_HighConf', 'WinRate_HighTrend',
+            'WinRate_LowTrend', 'WinRate_HighVol', 'WinRate_LowVol'
+        ]
+        for key in rate_keys:
+            values = [m.get(key, 0.0) for m in metrics_list]
+            if total_trades > 0:
+                aggregated[key] = float(np.average(values, weights=trade_counts))
+            else:
+                aggregated[key] = float(np.mean(values))
+
+        if 'Avg PnL' in metrics_list[0]:
+            values = [m.get('Avg PnL', 0.0) for m in metrics_list]
+            if total_trades > 0:
+                aggregated['Avg PnL'] = float(np.average(values, weights=trade_counts))
+            else:
+                aggregated['Avg PnL'] = float(np.mean(values))
+
+        mean_keys = ['Sharpe', 'Sortino', 'MaxDD', 'PnL/Day', 'Corr_Conf_Win']
+        for key in mean_keys:
+            if key in metrics_list[0]:
+                aggregated[key] = float(np.mean([m.get(key, 0.0) for m in metrics_list]))
+
+        # Capture any remaining numeric metrics
+        known_keys = set(aggregated.keys()) | set(rate_keys) | {'Avg PnL'} | set(mean_keys)
+        for key in metrics_list[0].keys():
+            if key in known_keys:
+                continue
+            values = [m.get(key, 0.0) for m in metrics_list]
+            aggregated[key] = float(np.mean(values))
+
+        return aggregated
 
     def _compute_metrics(self, equity, trades, sizes, params) -> Dict[str, float]:
         """
@@ -363,6 +486,25 @@ class Layer5PositionSizer:
         Run a single backtest with specific parameters and return detailed results.
         Useful for final evaluation of the best model.
         """
+        if self.multi_asset:
+            asset_results: Dict[str, Any] = {}
+            metrics_list = []
+            trade_counts = []
+
+            for asset, sizer in self.asset_sizers.items():
+                result = sizer.run_backtest_with_params(params)
+                asset_results[asset] = result
+                metrics = result.get('metrics', {})
+                metrics_list.append(metrics)
+                trade_counts.append(metrics.get('Trades', 0))
+
+            aggregated = self._aggregate_metrics(metrics_list, trade_counts)
+            return {
+                'metrics': aggregated,
+                'asset_results': asset_results,
+                'params': params
+            }
+
         sizes = apply_position_sizing_numba(
             self.probs,
             self.dampening,

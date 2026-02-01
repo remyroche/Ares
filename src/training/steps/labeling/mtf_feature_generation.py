@@ -9,9 +9,13 @@ import logging
 import hashlib
 from pandas.util import hash_pandas_object
 
+from src.features_common.transforms.scaling_normalization import winsorized_zscore_normalize
+from src.utils.feature_common.volume_transforms import log1p_zscore_normalize
+from src.utils.feature_common.atr_normalization import atr_normalize, should_use_atr_normalization, calculate_atr
+
 # Global cache to prevent redundant MTF generation
 _MTF_CACHE = {}
-_MAX_MTF_CACHE_SIZE = 3  # Keep only the N most recent entries
+_MAX_MTF_CACHE_SIZE = 20  # Increased for multi-asset support
 
 def clear_mtf_cache():
     """Explicitly clear the MTF feature cache to free memory."""
@@ -21,29 +25,25 @@ def clear_mtf_cache():
         count = len(_MTF_CACHE)
         _MTF_CACHE.clear()
         gc.collect()
-        print(f"🧹 [MTF Cache] Cleared {count} entries") # Use print as logger might not be configured directly here
+        logger.info(f"[MTF Cache] Cleared {count} entries")
 
-try:
-    from scipy.signal import hilbert
-except ImportError:
-    hilbert = None
-
-from src.features_common.transforms.scaling_normalization import winsorized_zscore_normalize
-from src.utils.feature_common.volume_transforms import log1p_zscore_normalize
-from src.utils.feature_common.atr_normalization import atr_normalize, should_use_atr_normalization, calculate_atr
-from src.utils.numba_funcs import jit # assuming it's exported there or use global import
 try:
     from numba import njit, prange
     NUMBA_AVAILABLE = True
 except ImportError:
-    from src.utils.numba_funcs import jit as njit
+    # Minimal mock for njit if numba missing
+    def njit(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    prange = range
     NUMBA_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
 # ===== NUMBA-OPTIMIZED FEATURE COMPUTATIONS =====
 
-@njit(nogil=True, fastmath=True)
+@njit(nogil=True, fastmath=True, parallel=True)
 def _compute_candle_geometry_numba(
     open_p: np.ndarray, 
     high: np.ndarray, 
@@ -52,10 +52,10 @@ def _compute_candle_geometry_numba(
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Numba-optimized candle geometry calculations."""
     n = len(open_p)
-    body_to_range = np.zeros(n)
-    shadow_asymmetry = np.zeros(n)
-    clv = np.zeros(n)
-    real_body = np.zeros(n)
+    body_to_range = np.zeros(n, dtype=np.float32)
+    shadow_asymmetry = np.zeros(n, dtype=np.float32)
+    clv = np.zeros(n, dtype=np.float32)
+    real_body = np.zeros(n, dtype=np.float32)
     
     for i in prange(n):
         candle_range = high[i] - low[i]
@@ -75,7 +75,7 @@ def _compute_candle_geometry_numba(
     
     return body_to_range, shadow_asymmetry, clv, real_body
 
-@njit(nogil=True, fastmath=True)
+@njit(nogil=True, fastmath=True, parallel=True)
 def _compute_volatility_features_numba(
     log_ret: np.ndarray,
     short_window: int = 20,
@@ -83,10 +83,10 @@ def _compute_volatility_features_numba(
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Numba-optimized volatility regime calculations."""
     n = len(log_ret)
-    vol_short = np.zeros(n)
-    vol_long_mean = np.zeros(n)
-    vol_long_std = np.zeros(n)
-    rv_z_short = np.zeros(n)
+    vol_short = np.zeros(n, dtype=np.float32)
+    vol_long_mean = np.zeros(n, dtype=np.float32)
+    vol_long_std = np.zeros(n, dtype=np.float32)
+    rv_z_short = np.zeros(n, dtype=np.float32)
     
     # Compute rolling volatility
     for i in range(short_window - 1, n):
@@ -114,7 +114,199 @@ def _compute_volatility_features_numba(
     
     return vol_short, vol_long_mean, vol_long_std, rv_z_short
 
-@njit(nogil=True, fastmath=True)
+
+@njit(nogil=True, fastmath=True, parallel=True)
+def _rolling_mean_numba(values: np.ndarray, window: int) -> np.ndarray:
+    n = len(values)
+    output = np.full(n, np.nan, dtype=np.float32)
+    if window <= 0: return output
+    for i in prange(n):
+        if i < window - 1: continue
+        start_idx = i - window + 1
+        s = 0.0
+        count = 0
+        for j in range(start_idx, i + 1):
+            v = values[j]
+            if not np.isnan(v):
+                s += v
+                count += 1
+        if count > 0:
+            output[i] = s / count
+    return output
+
+@njit(nogil=True, fastmath=True, parallel=True)
+def _rolling_std_numba(values: np.ndarray, window: int) -> np.ndarray:
+    n = len(values)
+    output = np.full(n, np.nan, dtype=np.float32)
+    if window <= 0: return output
+    for i in prange(n):
+        if i < window - 1: continue
+        start_idx = i - window + 1
+        s = 0.0
+        ss = 0.0
+        count = 0
+        for j in range(start_idx, i + 1):
+            v = values[j]
+            if not np.isnan(v):
+                s += v
+                ss += v*v
+                count += 1
+        if count > 1:
+            mean = s / count
+            var = (ss - count * mean * mean) / (count - 1)
+            if var > 0:
+                output[i] = np.sqrt(var)
+            else:
+                output[i] = 0.0
+    return output
+
+@njit(nogil=True, fastmath=True, parallel=True)
+def _rolling_min_numba(values: np.ndarray, window: int) -> np.ndarray:
+    n = len(values)
+    output = np.full(n, np.nan, dtype=np.float32)
+    if window <= 0: return output
+    for i in prange(n):
+        if i < window - 1: continue
+        start_idx = i - window + 1
+        min_val = np.inf
+        valid = False
+        for j in range(start_idx, i + 1):
+            v = values[j]
+            if not np.isnan(v):
+                if v < min_val:
+                    min_val = v
+                valid = True
+        if valid:
+            output[i] = min_val
+    return output
+
+@njit(nogil=True, fastmath=True, parallel=True)
+def _rolling_max_numba(values: np.ndarray, window: int) -> np.ndarray:
+    n = len(values)
+    output = np.full(n, np.nan, dtype=np.float32)
+    if window <= 0: return output
+    for i in prange(n):
+        if i < window - 1: continue
+        start_idx = i - window + 1
+        max_val = -np.inf
+        valid = False
+        for j in range(start_idx, i + 1):
+            v = values[j]
+            if not np.isnan(v):
+                if v > max_val:
+                    max_val = v
+                valid = True
+        if valid:
+            output[i] = max_val
+    return output
+
+@njit(nogil=True, fastmath=True, parallel=True)
+def _rolling_sum_numba(values: np.ndarray, window: int) -> np.ndarray:
+    n = len(values)
+    output = np.full(n, np.nan, dtype=np.float32)
+    if window <= 0: return output
+    for i in prange(n):
+        if i < window - 1: continue
+        start_idx = i - window + 1
+        s = 0.0
+        count = 0
+        for j in range(start_idx, i + 1):
+            v = values[j]
+            if not np.isnan(v):
+                s += v
+                count += 1
+        if count > 0:
+            output[i] = s
+    return output
+
+@njit(nogil=True, fastmath=True, parallel=True)
+def _rolling_mean_abs_dev_numba(values: np.ndarray, window: int) -> np.ndarray:
+    """Rolling mean absolute deviation from mean (Numba)."""
+    n = len(values)
+    output = np.full(n, np.nan, dtype=np.float32)
+    if window <= 0:
+        return output
+    for i in prange(n):
+        if i < window - 1:
+            continue
+        start_idx = i - window + 1
+        s = 0.0
+        count = 0
+        for j in range(start_idx, i + 1):
+            v = values[j]
+            if not np.isnan(v):
+                s += v
+                count += 1
+        if count == 0:
+            continue
+        mean_val = s / count
+        mad_sum = 0.0
+        for j in range(start_idx, i + 1):
+            v = values[j]
+            if not np.isnan(v):
+                mad_sum += abs(v - mean_val)
+        output[i] = mad_sum / count
+    return output
+
+
+def _rolling_weighted_mean(values: np.ndarray, weights: np.ndarray) -> np.ndarray:
+    """Vectorized weighted rolling mean with NaN-safe weights."""
+    values_arr = np.asarray(values, dtype=float)
+    weight_arr = np.asarray(weights, dtype=float)
+    weight_sum = weight_arr.sum()
+    if weight_sum <= 0:
+        return np.zeros_like(values_arr)
+    weight_arr = weight_arr / weight_sum
+    clean = np.nan_to_num(values_arr, nan=0.0, posinf=0.0, neginf=0.0)
+    mask = np.isfinite(values_arr).astype(float)
+    # Use weights directly (no reversal) for causal convolution where weights[0] applies to values[t]
+    conv = np.convolve(clean * mask, weight_arr, mode="full")[: len(values_arr)]
+    denom = np.convolve(mask, weight_arr, mode="full")[: len(values_arr)]
+    return np.divide(conv, denom, out=np.zeros_like(conv), where=denom > 0)
+
+
+@njit(nogil=True, fastmath=True, parallel=True)
+def _rolling_argmax_numba(values: np.ndarray, window: int) -> np.ndarray:
+    """Rolling argmax index within the window (Numba)."""
+    n = len(values)
+    output = np.full(n, np.nan)
+    if window <= 0:
+        return output
+    for i in prange(n):
+        if i < window - 1:
+            continue
+        start_idx = i - window + 1
+        max_idx = 0
+        max_val = values[start_idx]
+        for j in range(start_idx + 1, i + 1):
+            if values[j] > max_val:
+                max_val = values[j]
+                max_idx = j - start_idx
+        output[i] = max_idx
+    return output
+
+
+@njit(nogil=True, fastmath=True, parallel=True)
+def _rolling_argmin_numba(values: np.ndarray, window: int) -> np.ndarray:
+    """Rolling argmin index within the window (Numba)."""
+    n = len(values)
+    output = np.full(n, np.nan)
+    if window <= 0:
+        return output
+    for i in prange(n):
+        if i < window - 1:
+            continue
+        start_idx = i - window + 1
+        min_idx = 0
+        min_val = values[start_idx]
+        for j in range(start_idx + 1, i + 1):
+            if values[j] < min_val:
+                min_val = values[j]
+                min_idx = j - start_idx
+        output[i] = min_idx
+    return output
+
+@njit(nogil=True, fastmath=True, parallel=True)
 def _compute_wick_to_body_ratio_numba(
     open_p: np.ndarray,
     high: np.ndarray, 
@@ -129,15 +321,20 @@ def _compute_wick_to_body_ratio_numba(
         real_body = abs(close[i] - open_p[i])
         candle_range = high[i] - low[i]
         
-        if candle_range > 1e-9 and real_body > 1e-9:
-            total_wick = candle_range - real_body
-            wb_ratio[i] = total_wick / real_body
+        if candle_range > 1e-9:
+            if real_body > 1e-9:
+                total_wick = candle_range - real_body
+                wb_ratio[i] = total_wick / real_body
+            else:
+                # Doji case: Infinite ratio, cap at high value or proportional to range
+                # Using a proxy: range / epsilon
+                wb_ratio[i] = candle_range * 10000.0 
         else:
             wb_ratio[i] = 0.0
     
     return wb_ratio
 
-@njit(nogil=True, fastmath=True)
+@njit(nogil=True, fastmath=True, parallel=True)
 def _compute_displacement_ratio_numba(
     open_p: np.ndarray,
     high: np.ndarray,
@@ -146,7 +343,7 @@ def _compute_displacement_ratio_numba(
 ) -> np.ndarray:
     """Numba-optimized displacement ratio calculation."""
     n = len(open_p)
-    displacement = np.zeros(n)
+    displacement = np.zeros(n, dtype=np.float32)
     
     for i in prange(n):
         candle_range = high[i] - low[i]
@@ -156,6 +353,53 @@ def _compute_displacement_ratio_numba(
             displacement[i] = 0.0
     
     return displacement
+
+@njit(nogil=True, fastmath=True)
+def _compute_dual_cusum_numba(
+    log_ret_smooth: np.ndarray,
+    residual_ret: np.ndarray,
+    sigma: np.ndarray,
+    er: np.ndarray,
+    k: float,
+    er_min: float
+):
+    n = len(log_ret_smooth)
+    s_trend_pos = np.zeros(n, dtype=np.float32)
+    s_trend_neg = np.zeros(n, dtype=np.float32)
+    s_rev_pos = np.zeros(n, dtype=np.float32)
+    s_rev_neg = np.zeros(n, dtype=np.float32)
+    
+    tp, tn = 0.0, 0.0
+    rp, rn = 0.0, 0.0
+    
+    for t in range(n):
+        if er[t] < er_min:
+            tp, tn = 0.0, 0.0
+            rp, rn = 0.0, 0.0
+        else:
+            cur_h = k * sigma[t]
+            if cur_h <= 1e-9: cur_h = 1e-4
+            
+            # Trend
+            tp = max(0.0, tp + log_ret_smooth[t])
+            tn = min(0.0, tn + log_ret_smooth[t])
+            
+            if tp > cur_h: tp = 0.0
+            if tn < -cur_h: tn = 0.0
+            
+            # Reversal
+            rp = max(0.0, rp + residual_ret[t])
+            rn = min(0.0, rn + residual_ret[t])
+            
+            if rp > cur_h: rp = 0.0
+            if rn < -cur_h: rn = 0.0
+            
+        s_trend_pos[t] = tp
+        s_trend_neg[t] = tn
+        s_rev_pos[t] = rp
+        s_rev_neg[t] = rn
+        
+    return s_trend_pos, s_trend_neg, s_rev_pos, s_rev_neg
 
 class KalmanFilter1D:
     """
@@ -217,7 +461,7 @@ class KalmanFilter1D:
         """
         if NUMBA_AVAILABLE:
             filtered, variances = _numba_kalman_filter(
-                series.values.astype(np.float64),
+                series.values.astype(np.float32),
                 self.Q,
                 self.R,
                 self.x
@@ -235,8 +479,8 @@ class KalmanFilter1D:
 @njit
 def _numba_kalman_filter(data, Q, R, initial_value):
     n = len(data)
-    filtered = np.zeros(n, dtype=np.float64)
-    variances = np.zeros(n, dtype=np.float64)
+    filtered = np.zeros(n, dtype=np.float32)
+    variances = np.zeros(n, dtype=np.float32)
     
     x = initial_value
     P = 1.0
@@ -284,31 +528,6 @@ def _numba_kalman_filter(data, Q, R, initial_value):
             
     return filtered, variances
 
-    def filter_series(self, series: pd.Series) -> Tuple[pd.Series, pd.Series]:
-        """
-        Filter entire time series. (Numba Optimized)
-        """
-        if NUMBA_AVAILABLE:
-            filtered, variances = _numba_kalman_filter(series.values, self.Q, self.R, self.x)
-            return pd.Series(filtered, index=series.index), pd.Series(variances, index=series.index)
-        
-        # Fallback
-        filtered = []
-        variances = []
-
-        for val in series:
-            if pd.isna(val):
-                filtered.append(np.nan)
-                variances.append(np.nan)
-            else:
-                x_filt, P_filt = self.update(val)
-                filtered.append(x_filt)
-                variances.append(P_filt)
-
-        return (
-            pd.Series(filtered, index=series.index),
-            pd.Series(variances, index=series.index)
-        )
 
 def kalman_smooth_trend(prices: pd.Series, Q: float = 1e-5, R: float = 0.01) -> Tuple[pd.Series, pd.Series]:
     """
@@ -386,48 +605,58 @@ def compute_dual_cusum_statistics(
     residual_ret = (log_ret_smooth_series - expected_return).fillna(0.0)
 
     # 6. CUSUM Loop
-    n = len(close)
-    r_arr = log_ret_smooth_series.to_numpy()
-    res_arr = residual_ret.to_numpy()
-    h_arr = h_t.to_numpy()
-    er_arr = ER.to_numpy()
+    if NUMBA_AVAILABLE:
+        r_arr = log_ret_smooth_series.values.astype(np.float32)
+        res_arr = residual_ret.values.astype(np.float32)
+        sigma_arr = sigma.fillna(0.0).values.astype(np.float32)
+        er_arr = ER.fillna(0.0).values.astype(np.float32)
+        
+        S_trend_pos_arr, S_trend_neg_arr, S_rev_pos_arr, S_rev_neg_arr = _compute_dual_cusum_numba(
+            r_arr, res_arr, sigma_arr, er_arr, k, er_min
+        )
+    else:
+        n = len(close)
+        r_arr = log_ret_smooth_series.to_numpy()
+        res_arr = residual_ret.to_numpy()
+        h_arr = h_t.to_numpy()
+        er_arr = ER.to_numpy()
 
-    S_trend_pos_arr = np.zeros(n)
-    S_trend_neg_arr = np.zeros(n)
-    S_rev_pos_arr = np.zeros(n)
-    S_rev_neg_arr = np.zeros(n)
+        S_trend_pos_arr = np.zeros(n)
+        S_trend_neg_arr = np.zeros(n)
+        S_rev_pos_arr = np.zeros(n)
+        S_rev_neg_arr = np.zeros(n)
 
-    S_tp, S_tn = 0.0, 0.0
-    S_rp, S_rn = 0.0, 0.0
+        S_tp, S_tn = 0.0, 0.0
+        S_rp, S_rn = 0.0, 0.0
 
-    for t in range(n):
-        if er_arr[t] < er_min:
-            S_tp, S_tn = 0.0, 0.0
-            S_rp, S_rn = 0.0, 0.0
-        else:
-            cur_h = h_arr[t]
-            if np.isnan(cur_h) or cur_h <= 0:
-                cur_h = 1e-4
+        for t in range(n):
+            if er_arr[t] < er_min:
+                S_tp, S_tn = 0.0, 0.0
+                S_rp, S_rn = 0.0, 0.0
+            else:
+                cur_h = h_arr[t]
+                if np.isnan(cur_h) or cur_h <= 0:
+                    cur_h = 1e-4
 
-            # Trend CUSUM
-            S_tp = max(0.0, S_tp + r_arr[t])
-            S_tn = min(0.0, S_tn + r_arr[t])
+                # Trend CUSUM
+                S_tp = max(0.0, S_tp + r_arr[t])
+                S_tn = min(0.0, S_tn + r_arr[t])
 
-            # Reset if threshold hit (simulating signal generation resets)
-            if S_tp > cur_h: S_tp = 0.0
-            if S_tn < -cur_h: S_tn = 0.0
+                # Reset if threshold hit (simulating signal generation resets)
+                if S_tp > cur_h: S_tp = 0.0
+                if S_tn < -cur_h: S_tn = 0.0
 
-            # Reversal CUSUM
-            S_rp = max(0.0, S_rp + res_arr[t])
-            S_rn = min(0.0, S_rn + res_arr[t])
+                # Reversal CUSUM
+                S_rp = max(0.0, S_rp + res_arr[t])
+                S_rn = min(0.0, S_rn + res_arr[t])
 
-            if S_rp > cur_h: S_rp = 0.0
-            if S_rn < -cur_h: S_rn = 0.0
+                if S_rp > cur_h: S_rp = 0.0
+                if S_rn < -cur_h: S_rn = 0.0
 
-        S_trend_pos_arr[t] = S_tp
-        S_trend_neg_arr[t] = S_tn
-        S_rev_pos_arr[t] = S_rp
-        S_rev_neg_arr[t] = S_rn
+            S_trend_pos_arr[t] = S_tp
+            S_trend_neg_arr[t] = S_tn
+            S_rev_pos_arr[t] = S_rp
+            S_rev_neg_arr[t] = S_rn
 
     return pd.DataFrame({
         'S_trend_pos': S_trend_pos_arr,
@@ -476,12 +705,49 @@ def compute_stochastic(high: pd.Series, low: pd.Series, close: pd.Series, k_peri
     d_percent = k_percent.rolling(window=d_period).mean()
     return k_percent, d_percent
 
+def _rolling_mad_numpy(values: np.ndarray, window: int) -> np.ndarray:
+    """Numpy strided implementation of Rolling MAD."""
+    if window <= 1 or window > len(values):
+        return np.full(len(values), np.nan)
+        
+    # Ensure float type and contiguous memory
+    values = np.ascontiguousarray(values, dtype=np.float64)
+    
+    # Create strided view (N-w+1, w)
+    shape = (len(values) - window + 1, window)
+    strides = (values.strides[0], values.strides[0])
+    
+    try:
+        windows = np.lib.stride_tricks.as_strided(
+            values, shape=shape, strides=strides, writeable=False
+        )
+        
+        # MAD calculation: mean(|x - mean(x)|) per window
+        means = np.mean(windows, axis=1, keepdims=True)
+        mad = np.mean(np.abs(windows - means), axis=1)
+        
+        # Pad beginning
+        return np.concatenate([np.full(window - 1, np.nan), mad])
+    except Exception:
+        # Fallback if striding fails
+        return np.full(len(values), np.nan)
+
 def compute_cci(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 20) -> pd.Series:
     """Compute Commodity Channel Index (CCI)."""
     tp = (high + low + close) / 3
     sma_tp = tp.rolling(window=period).mean()
+    
     # Mean deviation from the moving average
-    mean_dev = tp.rolling(window=period).apply(lambda x: np.mean(np.abs(x - np.mean(x))), raw=True)
+    if NUMBA_AVAILABLE:
+        mean_dev_arr = _rolling_mean_abs_dev_numba(tp.values.astype(np.float32), period)
+        mean_dev = pd.Series(mean_dev_arr, index=tp.index)
+        if len(mean_dev) >= period:
+            mean_dev.iloc[: period - 1] = np.nan
+    else:
+        # Vectorized Numpy Fallback
+        mean_dev_arr = _rolling_mad_numpy(tp.values, period)
+        mean_dev = pd.Series(mean_dev_arr, index=tp.index)
+        
     cci = (tp - sma_tp) / (0.015 * mean_dev + 1e-9)
     return cci
 
@@ -551,11 +817,33 @@ def compute_force_index(close: pd.Series, volume: pd.Series, period: int = 13) -
     return fi.ewm(span=period).mean()
 
 def compute_hurst_proxy(close: pd.Series, window: int = 100) -> pd.Series:
-    """Vectorized Hurst Exponent proxy using Rolling R/S analysis."""
-    roll = close.rolling(window)
-    r = roll.max() - roll.min()
-    s = roll.std()
+    """
+    Vectorized Hurst Exponent proxy using Rolling R/S analysis on Returns.
+    Approximation:
+    R ~ Range of Price (Range of cumulative returns)
+    S ~ Std Dev of Returns
+    """
+    # 1. Log returns
+    ret = np.log(close / close.shift(1)).fillna(0.0)
+    
+    # 2. Rolling stats
+    roll_close = close.rolling(window)
+    roll_ret = ret.rolling(window)
+    
+    # Range of Price (proxy for Range of Cumulative Returns)
+    # Normalized by current price to get percentage range
+    # Or simply: Log Price Range
+    # Let's use (Max - Min) / Mean as percentage range R
+    r = (roll_close.max() - roll_close.min()) / (roll_close.mean() + 1e-9)
+    
+    # Standard Deviation of Returns S
+    s = roll_ret.std()
+    
+    # RS Ratio
+    # If volatility is 0, we have issues, but handled by 1e-9 in normalization usually.
     rs = r / (s + 1e-9)
+    
+    # Hurst = log(RS) / log(N)
     hurst = np.log(rs + 1e-9) / np.log(window)
     return hurst
 
@@ -563,13 +851,6 @@ def compute_parkinson_volatility(high: pd.Series, low: pd.Series, window: int = 
     """Compute Parkinson Volatility."""
     log_hl = np.log(high / (low + 1e-9)) ** 2
     return np.sqrt((1.0 / (4.0 * np.log(2.0))) * log_hl.rolling(window).mean())
-
-def compute_ema_slope(series: pd.Series, window: int = 20) -> pd.Series:
-    """Compute EMA slope (normalized)."""
-    ema = series.ewm(span=window, adjust=False).mean()
-    # Slope as pct change of EMA
-    slope = ema.pct_change()
-    return slope
 
 def compute_donchian_channel(high: pd.Series, low: pd.Series, close: pd.Series, window: int = 20) -> Tuple[pd.Series, pd.Series, pd.Series]:
     """Compute Donchian Channel (Upper, Lower, Position)."""
@@ -593,8 +874,8 @@ def compute_wick_to_body_ratio(open_p: pd.Series, high: pd.Series, low: pd.Serie
     upper_wick = high - max_oc
     body = max_oc - min_oc
     
-    # Handle div/0 for doji candles
-    return upper_wick / (body + 1e-9)
+    # Handle div/0 for doji candles by capping
+    return upper_wick / (body.replace(0, 1e-9))
 
 def compute_relative_volume_stress(volume: pd.Series, window: int = 20) -> pd.Series:
     """
@@ -607,10 +888,10 @@ def compute_relative_volume_stress(volume: pd.Series, window: int = 20) -> pd.Se
 def compute_amihud_illiquidity(open_p: pd.Series, close: pd.Series, volume: pd.Series) -> pd.Series:
     """
     Compute Amihud Illiquidity.
-    abs(log(C/O)) / Volume
+    abs(log(C/O)) / log1p(Volume)
     """
     log_ret = np.log(close / (open_p + 1e-9)).abs()
-    return log_ret / (volume + 1e-9)
+    return log_ret / np.log1p(volume + 1e-9)
 
 def compute_displacement_ratio(open_p: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
     """
@@ -722,11 +1003,54 @@ def compute_yang_zhang_volatility(open_p: pd.Series, high: pd.Series, low: pd.Se
     yz_var = var_o + k * var_c + (1 - k) * rs_var_mean
     return np.sqrt(yz_var)
 
+def _rolling_argmax_numpy(values: np.ndarray, window: int) -> np.ndarray:
+    """Numpy strided implementation of Rolling Argmax."""
+    if window <= 1 or window > len(values):
+        return np.full(len(values), np.nan)
+    values = np.ascontiguousarray(values, dtype=np.float64)
+    shape = (len(values) - window + 1, window)
+    strides = (values.strides[0], values.strides[0])
+    try:
+        windows = np.lib.stride_tricks.as_strided(
+            values, shape=shape, strides=strides, writeable=False
+        )
+        return np.concatenate([np.full(window - 1, np.nan), np.argmax(windows, axis=1)])
+    except Exception:
+        return np.full(len(values), np.nan)
+
+def _rolling_argmin_numpy(values: np.ndarray, window: int) -> np.ndarray:
+    """Numpy strided implementation of Rolling Argmin."""
+    if window <= 1 or window > len(values):
+        return np.full(len(values), np.nan)
+    values = np.ascontiguousarray(values, dtype=np.float64)
+    shape = (len(values) - window + 1, window)
+    strides = (values.strides[0], values.strides[0])
+    try:
+        windows = np.lib.stride_tricks.as_strided(
+            values, shape=shape, strides=strides, writeable=False
+        )
+        return np.concatenate([np.full(window - 1, np.nan), np.argmin(windows, axis=1)])
+    except Exception:
+        return np.full(len(values), np.nan)
+
 def compute_aroon(high: pd.Series, low: pd.Series, window: int = 25) -> pd.Series:
     """Compute Aroon Oscillator."""
     # How many bars since high/low
-    high_idx = high.rolling(window).apply(np.argmax, raw=True)
-    low_idx = low.rolling(window).apply(np.argmin, raw=True)
+    if NUMBA_AVAILABLE:
+        high_idx_arr = _rolling_argmax_numba(high.values.astype(np.float32), window)
+        low_idx_arr = _rolling_argmin_numba(low.values.astype(np.float32), window)
+    else:
+        # Optimized Numpy fallback
+        high_idx_arr = _rolling_argmax_numpy(high.values, window)
+        low_idx_arr = _rolling_argmin_numpy(low.values, window)
+
+    high_idx = pd.Series(high_idx_arr, index=high.index)
+    low_idx = pd.Series(low_idx_arr, index=low.index)
+    
+    # Pad NaN at start
+    if len(high_idx) >= window:
+        high_idx.iloc[: window - 1] = np.nan
+        low_idx.iloc[: window - 1] = np.nan
 
     aroon_up = ((window - (window - 1 - high_idx)) / window) * 100
     aroon_down = ((window - (window - 1 - low_idx)) / window) * 100
@@ -802,14 +1126,15 @@ def compute_hilbert_phase(series: pd.Series) -> pd.Series:
     return phase.fillna(0)
 
 def _align_to_features(arr: Any, n: int) -> np.ndarray:
-    """Helper to align 1D array to feature index length."""
+    """Helper to align 1D array to feature index length. Pads at the BEGINNING (left)."""
     values = np.asarray(arr)
     if len(values) == n:
         return values
     if len(values) > n:
-        return values[:n]
+        return values[-n:] # Take the last n elements
     padded = np.full(n, np.nan, dtype=float)
-    padded[: len(values)] = values
+    # Pad at the beginning (shift values to the right end)
+    padded[-len(values):] = values
     return padded
 
 
@@ -835,27 +1160,43 @@ def create_meta_features(
     try:
         # Hash inputs (df index + close column specific values for speed + config)
         # Using hash_pandas_object on full DF might be slow but 20s vs 1s is worth it.
-        # Let's use index + shape + strict content hash of 'close' to be safe & fast
+        # Include high/low/volume in hash to capture full OHLCV context
         h_idx = hashlib.md5(hash_pandas_object(df.index).values.tobytes()).hexdigest()
-        h_close = "no_close"
-        if 'close' in df.columns:
-            h_close = hashlib.md5(hash_pandas_object(df['close']).values.tobytes()).hexdigest()
+        
+        # Hash key columns content
+        cols_to_hash = []
+        for c in ['close', 'high', 'low', 'open', 'volume', 'Close', 'High', 'Low', 'Open', 'Volume']:
+            if c in df.columns:
+                cols_to_hash.append(c)
+        
+        if cols_to_hash:
+            h_content = hashlib.md5(hash_pandas_object(df[cols_to_hash]).values.tobytes()).hexdigest()
+        else:
+            h_content = "no_ohlcv"
+
+        # Hash signals if present
+        h_signals = "no_signals"
+        if signals is not None and not signals.empty:
+             h_signals = hashlib.md5(hash_pandas_object(signals).values.tobytes()).hexdigest()
         
         # Hash config
-        config_str = f"{len(df)}_{len(signals)}_{windows}_{volume_available}_{include_raw_signals}_{use_kalman}_{horizon_bars}_{downsample_long_horizon}"
-        cache_key = f"{h_idx}_{h_close}_{config_str}"
+        config_str = f"{len(df)}_{windows}_{volume_available}_{include_raw_signals}_{use_kalman}_{horizon_bars}_{downsample_long_horizon}"
+        cache_key = f"{h_idx}_{h_content}_{h_signals}_{config_str}"
         
         if cache_key in _MTF_CACHE:
-            print(f"⚡ [MTF Cache] Returning pre-computed features for {len(df)} rows")
+            logger.info(f"⚡ [MTF Cache] Returning pre-computed features for {len(df)} rows")
             return _MTF_CACHE[cache_key].copy()
             
     except Exception as e:
-        print(f"⚠️ Cache check failed: {e}")
+        logger.warning(f"⚠️ Cache check failed: {e}")
         cache_key = None
     
     # Add progress tracking
-    print(f"🔍 Starting MTF feature generation for {len(df)} rows...")
+    logger.info(f"🔍 Starting MTF feature generation for {len(df)} rows...")
     
+    # Preserve original index for alignment if downsampling occurs
+    input_index = df.index
+
     # Hard-align df and signals to a shared tail window
     len_df = len(df)
     len_sig = len(signals)
@@ -881,11 +1222,12 @@ def create_meta_features(
 
     # Log optimization status
     if NUMBA_AVAILABLE:
-        print(f"🚀 Using Numba JIT optimizations for {len(df)} rows...")
+        logger.info(f"🚀 Using Numba JIT optimizations for {len(df)} rows...")
     else:
-        print(f"⚠️  Numba not available, using pandas fallback for {len(df)} rows...")
+        logger.warning(f"⚠️  Numba not available, using pandas fallback for {len(df)} rows...")
 
     # Downsample for long horizon to reduce rolling window cost
+    is_downsampled = False
     if (
         downsample_long_horizon
         and isinstance(horizon_bars, (int, float))
@@ -904,8 +1246,15 @@ def create_meta_features(
                     "close": "last",
                     "volume": "sum",
                 }
+                # Handle case variants
+                for col in df.columns:
+                    lower_col = col.lower()
+                    if lower_col in agg_map and col not in agg_map:
+                        agg_map[col] = agg_map[lower_col]
+                
                 df = df.resample("60min").agg({col: agg_map.get(col, "last") for col in df.columns}).dropna()
                 signals = signals.resample("60min").last().ffill().reindex(df.index)
+                is_downsampled = True
         except Exception as exc:
             print(f"⚠️  Downsampling skipped due to error: {exc}")
 
@@ -925,13 +1274,18 @@ def create_meta_features(
     if long_horizon:
         print(f"🧭 Long horizon detected ({int(horizon_bars)} bars); disabling heavy feature families")
 
-    # Additional memory optimization: reduce windows for large datasets
-    if len(df) > 10000:
+    # Additional memory optimization: reduce windows for large datasets ONLY if not explicitly provided or if default
+    # If user provided specific windows (not the default list), respect them unless forced.
+    default_windows = [10, 20, 50, 100, 150, 200]
+    if windows == default_windows and len(df) > 10000:
         print(f"🔧 Reducing feature windows for large dataset ({len(df)} rows)")
         windows = [10, 20, 50]  # Reduced windows for memory efficiency
         print(f"📊 Using reduced windows: {windows}")
+    elif windows != default_windows:
+        print(f"📊 Using user-provided windows: {windows}")
     else:
-        windows = [10, 20, 50, 100, 150, 200]  # Full windows for smaller datasets
+        # Default case, small dataset
+        pass
 
     if not NUMBA_AVAILABLE and len(df) > 10000:
         print("⚠️  Numba unavailable for long-horizon run; disabling heavy interactions and limiting windows")
@@ -947,6 +1301,10 @@ def create_meta_features(
             print(f"🧩 Limiting interaction/cross-timeframe features to windows <= 50: {sorted(interaction_windows)}")
 
     enable_tail_risk = not long_horizon
+
+    # Initialize accumulation lists for batch concatenation
+    feature_chunks: List[pd.DataFrame] = []
+    chunk_window_size = 2
 
     def _downcast_float32(frame: pd.DataFrame) -> pd.DataFrame:
         float_cols = frame.select_dtypes(include=['float64']).columns
@@ -1087,11 +1445,22 @@ def create_meta_features(
         vol_avail_check = True
 
     if vol_avail_check and vol_col is not None:
-        volume = pd.to_numeric(df[vol_col], errors='coerce').fillna(method='ffill').fillna(method='bfill').fillna(0.0)
+        volume = pd.to_numeric(df[vol_col], errors='coerce').ffill().bfill().fillna(0.0)
         volume_available = volume.notna().any()
     else:
         volume = pd.Series(1.0, index=df.index, dtype=float)
         volume_available = False
+
+    # Define numpy arrays for Numba usage once, to avoid scope issues
+    if NUMBA_AVAILABLE:
+        # Pre-allocate float32 arrays
+        # Use extracted series directly
+        open_arr = open_p.values.astype(np.float32)
+        high_arr = high.values.astype(np.float32)
+        low_arr = low.values.astype(np.float32)
+        close_arr = close.values.astype(np.float32)
+    else:
+        open_arr = high_arr = low_arr = close_arr = None
 
     # ===== 0. ORTHOGONAL CUSUM & EFFICIENCY FEATURES (NEW) =====
     print("📊 Computing CUSUM & Efficiency features...")
@@ -1156,10 +1525,10 @@ def create_meta_features(
     # Use Numba-optimized calculations if available
     if NUMBA_AVAILABLE:
         # Convert to numpy arrays for Numba processing
-        open_arr = open_p.values.astype(np.float64)
-        high_arr = high.values.astype(np.float64)
-        low_arr = low.values.astype(np.float64)
-        close_arr = close.values.astype(np.float64)
+        open_arr = open_p.values.astype(np.float32)
+        high_arr = high.values.astype(np.float32)
+        low_arr = low.values.astype(np.float32)
+        close_arr = close.values.astype(np.float32)
         
         # Optimized candle geometry calculations
         body_to_range_arr, shadow_asymmetry_arr, clv_arr, real_body_arr = _compute_candle_geometry_numba(
@@ -1187,11 +1556,18 @@ def create_meta_features(
     if NUMBA_AVAILABLE:
         # Optimized volatility calculations
         vol_short_arr, vol_long_mean_arr, vol_long_std_arr, rv_z_short_arr = _compute_volatility_features_numba(
-            log_ret.values.astype(np.float64)
+            log_ret.values.astype(np.float32)
         )
         
         features['rv_z_short'] = _norm(rv_z_short_arr, 'rv_z_short')
-        features['volatility_trend_slope'] = _align_to_features(_norm(np.diff(vol_short_arr, 5), 'volatility_trend_slope'), n_features)
+        
+        # Fix: Compute slope with proper alignment (lag 5 difference)
+        # np.diff is recursive difference, not lag. We need lag difference.
+        vol_slope = np.full(len(vol_short_arr), np.nan, dtype=np.float32)
+        if len(vol_short_arr) > 5:
+            vol_slope[5:] = vol_short_arr[5:] - vol_short_arr[:-5]
+            
+        features['volatility_trend_slope'] = _align_to_features(_norm(vol_slope, 'volatility_trend_slope'), n_features)
     else:
         # Fallback to original pandas calculations
         vol_short_20 = log_ret.rolling(window=20).std()
@@ -1239,6 +1615,10 @@ def create_meta_features(
     # dist_to_proxy = (Price - Proxy) / ATR(14)
     # We use Close for current price
     atr_14_local = atr_14 if 'atr_14' in locals() else (high - low).rolling(14).mean() # Fallback approximation if atr_14 not computed yet
+
+    def _sigmoid(arr, scale=1.0, shift=0.0):
+        z = np.clip((arr - shift) / (scale + 1e-9), -20, 20)
+        return 1.0 / (1.0 + np.exp(-z))
     
     # For Long Squeeze (price drops to proxy): Distance is positive if Price > Proxy
     dist_to_long_proxy = (close - proxy_long) / (atr_14_local + 1e-9)
@@ -1260,6 +1640,15 @@ def create_meta_features(
     # 1.0 = In Zone + High Stress
     liq_risk_long = in_long_liq_zone * high_stress
     features['liquidation_risk_long'] = _align_to_features(_norm(liq_risk_long, 'liquidation_risk_long'), n_features)
+
+    # Soft-encoded liquidation risk (probabilistic zone + stress intensity)
+    zone_distance = (proxy_long - close) / (atr_14_local + 1e-9)
+    long_zone_soft = _sigmoid(zone_distance, scale=1.0)
+    stress_soft = _sigmoid(rvs, scale=0.5, shift=2.0)
+    liq_risk_long_soft = (long_zone_soft * stress_soft).fillna(0.0)
+    features['liquidation_risk_long_soft'] = _align_to_features(
+        _norm(liq_risk_long_soft, 'liquidation_risk_long_soft'), n_features
+    )
 
     # ===== INFORMATION_SPECIALIST FEATURES (MTF) =====
     print("📊 Computing INFORMATION_SPECIALIST features across multiple timeframes...")
@@ -1285,16 +1674,19 @@ def create_meta_features(
         features[f'cumulative_info_impact_w{w}'] = _align_to_features(_norm(cumulative_info_impact, f'cumulative_info_impact_w{w}'), n_features)
         
         # trend_persistence: Trend persistence (information momentum) - MTF version
-        def _trend_persistence_func(returns_window):
-            """Helper function for trend persistence calculation"""
-            if len(returns_window) < 2:
-                return 0.0
-            all_positive = (returns_window > 0).all()
-            all_negative = (returns_window < 0).all()
-            return 1.0 if (all_positive or all_negative) else 0.0
-        
-        trend_persistence = log_ret.rolling(w).apply(_trend_persistence_func)
+        rolling_min = log_ret.rolling(w).min()
+        rolling_max = log_ret.rolling(w).max()
+        trend_persistence = ((rolling_min > 0) | (rolling_max < 0)).astype(float)
         features[f'trend_persistence_w{w}'] = _align_to_features(_norm(trend_persistence, f'trend_persistence_w{w}'), n_features)
+
+        same_sign = (((rolling_min >= 0) & (rolling_max >= 0)) | ((rolling_min <= 0) & (rolling_max <= 0))).astype(float)
+        magnitude_ratio = np.minimum(rolling_max.abs(), rolling_min.abs()) / (
+            np.maximum(rolling_max.abs(), rolling_min.abs()) + 1e-9
+        )
+        trend_persistence_soft = (same_sign * magnitude_ratio).fillna(0.0)
+        features[f'trend_persistence_soft_w{w}'] = _align_to_features(
+            _norm(trend_persistence_soft, f'trend_persistence_soft_w{w}'), n_features
+        )
         
         # info_acceleration: Rate of change of information flow - MTF version
         info_flow = abs(log_ret)
@@ -1311,17 +1703,10 @@ def create_meta_features(
         decay_weights = np.exp(-np.arange(w) / max(w, 1))
         decay_weights = decay_weights / decay_weights.sum()
 
-        def _info_decay_window(values, weights=decay_weights):
-            if len(values) == 0:
-                return 0.0
-            values = np.nan_to_num(values, nan=0.0, posinf=0.0, neginf=0.0)
-            local_weights = weights[:len(values)]
-            weight_sum = local_weights.sum()
-            if weight_sum <= 0:
-                return 0.0
-            return float(np.dot(values, local_weights) / weight_sum)
-
-        info_decay = surprise_magnitude.rolling(w, min_periods=1).apply(_info_decay_window, raw=True)
+        info_decay_arr = _rolling_weighted_mean(
+            surprise_magnitude.to_numpy(dtype=float), decay_weights
+        )
+        info_decay = pd.Series(info_decay_arr, index=surprise_magnitude.index)
         features[f'info_decay_w{w}'] = _align_to_features(_norm(info_decay, f'info_decay_w{w}'), n_features)
         
         # Cross-timeframe information ratio: Compare current to longer timeframe
@@ -1400,28 +1785,47 @@ def create_meta_features(
         window_features: Dict[str, np.ndarray] = {}
         family_start = len(window_features)
         
+        # --- HOISTED ROLLING OBJECTS ---
+        # Compute shared rolling stats once per window to avoid redundant calculations
+        r_high = high.rolling(w)
+        r_low = low.rolling(w)
+        r_close = close.rolling(w)
+        r_ret = log_ret.rolling(w)
+        
+        # Pre-compute common aggregates
+        win_high = r_high.max()
+        win_low = r_low.min()
+        win_close_mean = r_close.mean()
+        win_ret_std = r_ret.std()
+        win_ret_mean = r_ret.mean()
+        
+        # Optional Volume aggregates
+        if volume_available:
+            r_vol = volume.rolling(w)
+            win_vol_mean = r_vol.mean()
+            win_vol_std = r_vol.std()
+            win_vol_sum = r_vol.sum()
+
         # --- 1. PRICE MOMENTUM ---(MTF Virtual Candle) ---
         # Construct virtual candle for window w
         # High = Rolling Max, Low = Rolling Min, Close = Close, Open = Open shifted
         # Open of the virtual candle is the Open of the bar w-1 periods ago
-        win_high = high.rolling(w).max()
-        win_low = low.rolling(w).min()
         win_open = open_p.shift(w - 1)
-        win_close = close
-
+        # win_close is just current close
+        
         win_range = win_high - win_low
-        win_body = (win_close - win_open).abs()
+        win_body = (close - win_open).abs()
 
         # Shadows
         # Upper: High - Max(Open, Close)
-        win_upper = win_high - pd.concat([win_open, win_close], axis=1).max(axis=1)
+        win_upper = win_high - pd.concat([win_open, close], axis=1).max(axis=1)
         # Lower: Min(Open, Close) - Low
-        win_lower = pd.concat([win_open, win_close], axis=1).min(axis=1) - win_low
+        win_lower = pd.concat([win_open, close], axis=1).min(axis=1) - win_low
 
         window_features[f'body_to_range_w{w}'] = _align_to_features(_norm(win_body / (win_range + 1e-9), f'body_to_range_w{w}'), n_features)
         window_features[f'shadow_asymmetry_w{w}'] = _align_to_features(_norm((win_upper - win_lower) / (win_range + 1e-9), f'shadow_asymmetry_w{w}'), n_features)
 
-        win_clv = ((win_close - win_low) - (win_high - win_close)) / (win_range + 1e-9)
+        win_clv = ((close - win_low) - (win_high - close)) / (win_range + 1e-9)
         window_features[f'close_location_value_w{w}'] = _align_to_features(_norm(win_clv, f'close_location_value_w{w}'), n_features)
         _flush_family(window_features, family_start)
 
@@ -1440,7 +1844,8 @@ def create_meta_features(
         window_features[f'parkinson_volatility_w{w}'] = _align_to_features(_norm(park_vol, f'parkinson_volatility_w{w}'), n_features)
 
         # Standard & Z-Score Vol
-        vol_w = log_ret.rolling(w).std()
+        # Use hoisted
+        vol_w = win_ret_std
         window_features[f'volatility_w{w}'] = _align_to_features(_norm(vol_w, f'volatility_w{w}'), n_features)
         vol_z = compute_rolling_zscore(vol_w, window=w)
         window_features[f'volatility_zscore_w{w}'] = _align_to_features(_norm(vol_z, f'volatility_zscore_w{w}'), n_features)
@@ -1497,7 +1902,8 @@ def create_meta_features(
         window_features[f'directional_consistency_w{w}'] = _align_to_features(_norm(dir_consistency.abs(), f'directional_consistency_w{w}'), n_features)
 
         # Trend Duration: Bars since MA slope flip
-        ma_w = close.rolling(w).mean()
+        # Use hoisted mean
+        ma_w = win_close_mean
         ma_slope = ma_w.diff()
         slope_sign_change = np.sign(ma_slope) != np.sign(ma_slope.shift(1))
         window_features[f'trend_duration_w{w}'] = _align_to_features(_norm(compute_bars_since(slope_sign_change), f'trend_duration_w{w}'), n_features)
@@ -1508,9 +1914,8 @@ def create_meta_features(
         window_features[f'momentum_decay_w{w}'] = _align_to_features(_norm(roc / (max_roc + 1e-9), f'momentum_decay_w{w}'), n_features)
 
         # Trend per Vol (Sharpe proxy)
-        ret_mean_w = log_ret.rolling(w).mean()
-        ret_std_w = log_ret.rolling(w).std()
-        sharpe_w = (ret_mean_w / (ret_std_w + 1e-9)).fillna(0)
+        # Use hoisted mean/std
+        sharpe_w = (win_ret_mean / (win_ret_std + 1e-9)).fillna(0)
         window_features[f'trend_per_vol_w{w}'] = _align_to_features(_norm(sharpe_w, f'trend_per_vol_w{w}'), n_features)
 
         # Trend Slope Stability: Mean(Slope) / Std(Slope)
@@ -1631,14 +2036,19 @@ def create_meta_features(
         # --- 8. STRUCTURAL SR ---
         family_start = len(window_features)
         # Touch count: Count close near High/Low of window
-        win_high = high.rolling(w).max()
-        win_low = low.rolling(w).min()
+        # Fix: Use PREVIOUS window peak to avoid look-ahead bias/autocorrelation
+        # Previously used win_high (current window max), which always includes current high.
+        win_high_prev = high.shift(1).rolling(w).max()
+        win_low_prev = low.shift(1).rolling(w).min()
+        
         # Near = within 0.5% range?
-        rng = win_high - win_low
+        rng = win_high - win_low # Use current range for scale context
         thresh = rng * 0.05
-        # Current bar touch?
-        touch_high = (high > (win_high - thresh)).astype(float)
-        touch_low = (low < (win_low + thresh)).astype(float)
+        
+        # Current bar touch of PREVIOUS structure?
+        touch_high = (high > (win_high_prev - thresh)).astype(float)
+        touch_low = (low < (win_low_prev + thresh)).astype(float)
+        
         # Sum touches in window
         window_features[f'touch_count_near_price_w{w}'] = _align_to_features(_norm((touch_high + touch_low).rolling(w).sum(), f'touch_count_near_price_w{w}'), n_features)
 
@@ -1661,9 +2071,10 @@ def create_meta_features(
         # False Break Rate (Proxy)
         # Breakout: High > Rolling Max High (w)
         # False: Breakout AND Close < Rolling Max High (w)
-        roll_high = high.rolling(w).max().shift(1)
-        breakout = high > roll_high
-        failed_break = breakout & (close < roll_high)
+        # Use previous high for breakout level
+        roll_high_prev = win_high_prev # Re-use hoisted/computed prev high
+        breakout = high > roll_high_prev
+        failed_break = breakout & (close < roll_high_prev)
         # Rate in window
         window_features[f'false_break_rate_w{w}'] = _align_to_features(_norm(failed_break.rolling(w).sum() / (breakout.rolling(w).sum() + 1e-9), f'false_break_rate_w{w}'), n_features)
         _flush_family(window_features, family_start)
@@ -1672,8 +2083,8 @@ def create_meta_features(
             # --- 9. TAIL RISK ---
             family_start = len(window_features)
             # Rolling Skew/Kurt
-            window_features[f'rolling_skewness_w{w}'] = _align_to_features(_norm(log_ret.rolling(w).skew(), f'rolling_skewness_w{w}'), n_features)
-            window_features[f'rolling_kurtosis_w{w}'] = _align_to_features(_norm(log_ret.rolling(w).kurt(), f'rolling_kurtosis_w{w}'), n_features)
+            window_features[f'rolling_skewness_w{w}'] = _align_to_features(_norm(r_ret.skew(), f'rolling_skewness_w{w}'), n_features)
+            window_features[f'rolling_kurtosis_w{w}'] = _align_to_features(_norm(r_ret.kurt(), f'rolling_kurtosis_w{w}'), n_features)
 
             # Downside Semivariance
             neg_ret = log_ret.where(log_ret < 0, 0)
@@ -1681,27 +2092,27 @@ def create_meta_features(
             window_features[f'downside_semivariance_w{w}'] = _align_to_features(_norm(downside_var, f'downside_semivariance_w{w}'), n_features)
 
             # Left Tail Var Ratio
-            total_var = log_ret.rolling(w).var()
+            # Use hoisted
+            total_var = r_ret.var()
             window_features[f'left_tail_var_ratio_w{w}'] = _align_to_features(_norm(downside_var / (total_var + 1e-9), f'left_tail_var_ratio_w{w}'), n_features)
 
             # Max Runup (MFE Proxy)
             # Max high relative to close
             # "How high did it go in last w bars?" relative to min in window?
             # Rolling Max - Rolling Min / Rolling Min
-            win_min = low.rolling(w).min()
-            win_max = high.rolling(w).max()
-            window_features[f'max_runup_w{w}'] = _align_to_features(_norm((win_max - win_min) / (win_min + 1e-9), f'max_runup_w{w}'), n_features)
+            # Use hoisted
+            window_features[f'max_runup_w{w}'] = _align_to_features(_norm((win_high - win_low) / (win_low + 1e-9), f'max_runup_w{w}'), n_features)
             # This is effectively max amplitude
 
             # Drawdown Depth (Current price vs Rolling Max)
-            dd_w = (close / close.rolling(w).max()) - 1.0
+            dd_w = (close / win_high) - 1.0
             window_features[f'drawdown_w{w}'] = _align_to_features(_norm(dd_w, f'drawdown_w{w}'), n_features)
 
             # Max Adverse Excursion (MAE) Proxy -> Alias to Drawdown
             window_features[f'max_adverse_excursion_w{w}'] = window_features[f'drawdown_w{w}']
 
             # Tail Event Flag
-            is_tail = log_ret.abs() > (log_ret.rolling(w).std() * 3)
+            is_tail = log_ret.abs() > (win_ret_std * 3)
             window_features[f'tail_event_flag_w{w}'] = _align_to_features(_norm(is_tail.astype(float), f'tail_event_flag_w{w}'), n_features)
             _flush_family(window_features, family_start)
 
@@ -1709,7 +2120,9 @@ def create_meta_features(
         family_start = len(window_features)
         # Bars since breakout
         # Breakout = Close > Rolling High (prev)
-        is_breakout = close > high.shift(1).rolling(w).max()
+        # Use computed previous high
+        win_high_prev = high.shift(1).rolling(w).max()
+        is_breakout = close > win_high_prev
         window_features[f'bars_since_breakout_attempt_w{w}'] = _align_to_features(_norm(compute_bars_since(is_breakout), f'bars_since_breakout_attempt_w{w}'), n_features)
 
         # Bars since trend exhaustion (e.g. RSI > 80 or < 20)

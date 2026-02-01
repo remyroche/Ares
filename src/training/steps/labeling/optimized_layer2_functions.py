@@ -153,8 +153,8 @@ def vectorized_feature_selection(
     """
     try:
         # Convert to numpy arrays for JIT compilation
-        X_array = X.values.astype(np.float64)
-        y_array = y.values.astype(np.float64)
+        X_array = X.values.astype(np.float32)
+        y_array = y.values.astype(np.float32)
         
         # Validate input data for infinity and extreme values
         if verbose:
@@ -179,7 +179,7 @@ def vectorized_feature_selection(
         y_array = np.nan_to_num(y_array, nan=np.nan, posinf=np.nan, neginf=np.nan)
         
         # Check for extremely large values
-        float64_max = np.finfo(np.float64).max / 1000
+        float64_max = np.finfo(np.float32).max / 1000
         X_large = (np.abs(X_array) > float64_max).sum()
         y_large = (np.abs(y_array) > float64_max).sum()
         
@@ -494,8 +494,8 @@ def vectorized_geometry_search(
         horizon_grid = horizon_mesh.flatten()
         
         # Convert to numpy arrays
-        returns_array = returns.values.astype(np.float64)
-        volatilities_array = volatilities.values.astype(np.float64)
+        returns_array = returns.values.astype(np.float32)
+        volatilities_array = volatilities.values.astype(np.float32)
         
         # Validate input data for infinity and extreme values
         if verbose:
@@ -516,7 +516,7 @@ def vectorized_geometry_search(
             volatilities_array = np.where(np.isinf(volatilities_array), np.nan, volatilities_array)
         
         # Check for extremely large values
-        float64_max = np.finfo(np.float64).max / 1000
+        float64_max = np.finfo(np.float32).max / 1000
         returns_large = (np.abs(returns_array) > float64_max).sum()
         vol_large = (np.abs(volatilities_array) > float64_max).sum()
         
@@ -719,7 +719,7 @@ def jit_feature_engineering(
                 continue
                 
             # Get column data
-            data = df[col].values.astype(np.float64)
+            data = df[col].values.astype(np.float32)
             
             # Validate input data for infinity and extreme values
             data_inf = np.isinf(data).sum()
@@ -728,7 +728,7 @@ def jit_feature_engineering(
                 data = np.where(np.isinf(data), np.nan, data)
             
             # Check for extremely large values
-            float64_max = np.finfo(np.float64).max / 1000
+            float64_max = np.finfo(np.float32).max / 1000
             data_large = (np.abs(data) > float64_max).sum()
             if data_large > 0:
                 tprint_warning(f"⚠️ Found {data_large} extremely large values in {col}, clipping")

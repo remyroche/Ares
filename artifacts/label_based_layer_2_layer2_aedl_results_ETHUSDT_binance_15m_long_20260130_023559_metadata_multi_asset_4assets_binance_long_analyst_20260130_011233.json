@@ -1,0 +1,10 @@
+{
+  "row_count": 1,
+  "column_count": 2,
+  "artifact_name": "layer2_aedl_results_ETHUSDT_binance_15m_long_20260130_023559",
+  "artifact_type": "metadata",
+  "file_path": "artifacts/pre_training/multi_asset_4assets/binance/long/analyst/label_based_layer_2/label_based_layer_2_layer2_aedl_results_ETHUSDT_binance_15m_long_20260130_023559_multi_asset_4assets_binance_long_analyst_20260130_011233.parquet",
+  "file_size": 66971,
+  "timestamp": "2026-01-30T02:36:00.309742",
+  "compression": "auto"
+}

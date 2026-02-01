@@ -209,8 +209,8 @@ def calculate_studentized_har_target(
     # --- Step 1: Feature Generation (Variance Components) ---
     if OPTIMIZED_UTILS_AVAILABLE:
         # Fast Numba path
-        vol_values = volatility.values.astype(np.float64)
-        ret_values = returns.values.astype(np.float64)
+        vol_values = volatility.values.astype(np.float32)
+        ret_values = returns.values.astype(np.float32)
 
         # Calculate features (var_d, var_w, var_m) lagged by 1
         # periods = [daily, weekly, monthly]
@@ -406,9 +406,12 @@ def fast_cmi_proxy(
         Tuple of (filtered features, selected indices)
     """
     # Prepare data
-    X_vals = X.values.astype(np.float64)
-    y_vals = y.values.astype(np.float64)
-    base_preds_vals = base_predictions.values.astype(np.float64) if hasattr(base_predictions, 'values') else base_predictions
+    X_vals = X.values.astype(np.float32)
+    y_vals = y.values.astype(np.float32)
+    base_preds_vals = (
+        base_predictions.values.astype(np.float32)
+        if hasattr(base_predictions, 'values') else base_predictions
+    )
 
     n_features = X.shape[1]
 

@@ -835,6 +835,10 @@ class MDA_SHAP_FeatureSelector:
         Returns:
             Dict of cluster importance scores
         """
+        # Memory optimization
+        X_train = X_train.astype(np.float32)
+        X_test = X_test.astype(np.float32)
+        
         # Train baseline model with sample weights
         model = self._create_base_model()
 
@@ -1087,6 +1091,9 @@ class MDA_SHAP_FeatureSelector:
             Filtered feature matrix
         """
         self._log("🔍 Applying pre-filters...")
+        
+        # Enforce float32
+        X = X.astype(np.float32)
 
         try:
             self._prefilter_lgbm_mdi_features = []
@@ -1304,6 +1311,11 @@ class MDA_SHAP_FeatureSelector:
         try:
             if not isinstance(X, pd.DataFrame):
                 X = pd.DataFrame(X)
+            
+            # Use float32 for memory efficiency
+            X = X.astype(np.float32)
+
+            if not isinstance(y, pd.Series):
 
             if not isinstance(y, pd.Series):
                 y = pd.Series(y, index=X.index)

@@ -1,0 +1,123 @@
+{
+  "open_std_20": [
+    "open_std_20",
+    "TARGET_RET_1",
+    "close",
+    "Market_Mode_PCA",
+    "ca__volume_shock",
+    "ca__ect_value",
+    "ms__pca_3",
+    "ms__state_prob_3"
+  ],
+  "ca__lead_lag_w48": [
+    "TARGET_RET_1",
+    "Market_Mode_PCA",
+    "open",
+    "volatility_1d",
+    "ca__lead_lag_w48",
+    "ms__state_prob_3",
+    "ms__pca_3",
+    "ca__beta_short_w24"
+  ],
+  "close": [
+    "TARGET_RET_1",
+    "close",
+    "Market_Mode_PCA",
+    "open",
+    "ms__pca_3",
+    "ms__state_prob_3"
+  ],
+  "volume": [
+    "open_std_20",
+    "TARGET_RET_1",
+    "close",
+    "volume",
+    "Market_Mode_PCA",
+    "open",
+    "volume_mean_50",
+    "ca__ect_value",
+    "ca__lead_lag_w48",
+    "ca__volume_shock",
+    "TARGET_Sharpe",
+    "ca__beta_short_w24",
+    "ms__state_prob_3"
+  ],
+  "open": [
+    "TARGET_RET_1",
+    "close",
+    "Market_Mode_PCA",
+    "open",
+    "ms__pca_3",
+    "ms__state_prob_3"
+  ],
+  "volume_mean_50": [
+    "ms__state_prob_3",
+    "volume_mean_50",
+    "Market_Mode_PCA",
+    "close"
+  ],
+  "volatility_5d": [
+    "volatility_5d"
+  ],
+  "volatility_1d": [
+    "volume_mean_50",
+    "Market_Mode_PCA",
+    "volatility_1d"
+  ],
+  "ca__ect_value": [
+    "TARGET_RET_1",
+    "close",
+    "Market_Mode_PCA",
+    "open",
+    "ca__ect_value",
+    "ca__volume_shock"
+  ],
+  "ms__pca_3": [
+    "ms__pca_3",
+    "ms__state_prob_3",
+    "TARGET_RET_1",
+    "Market_Mode_PCA"
+  ],
+  "TARGET_Sharpe": [
+    "open_std_20",
+    "TARGET_RET_1",
+    "close",
+    "open",
+    "volume_mean_50",
+    "volatility_1d",
+    "ca__ect_value",
+    "ms__pca_3",
+    "ms__state_prob_3",
+    "TARGET_Sharpe"
+  ],
+  "ca__beta_short_w24": [
+    "TARGET_RET_1",
+    "close",
+    "volume",
+    "Market_Mode_PCA",
+    "volatility_1d",
+    "ca__ect_value",
+    "ca__lead_lag_w48",
+    "ms__state_prob_3",
+    "ms__pca_3",
+    "ca__beta_short_w24"
+  ],
+  "ms__state_prob_3": [
+    "ms__state_prob_3",
+    "Market_Mode_PCA"
+  ],
+  "Market_Mode_PCA": [
+    "ca__lead_lag_w48",
+    "close",
+    "Market_Mode_PCA",
+    "open",
+    "volume_mean_50",
+    "volatility_5d",
+    "volatility_1d",
+    "ca__ect_value",
+    "ms__pca_3",
+    "ca__volume_shock",
+    "ca__beta_short_w24",
+    "ms__state_prob_3"
+  ]
+}

@@ -1,0 +1,118 @@
+{
+  "high_lag_1": [
+    "high_lag_1",
+    "kalman_price",
+    "wavelet_noise",
+    "TARGET_RET_1",
+    "wavelet_close",
+    "open",
+    "close",
+    "close_lag_1",
+    "volume"
+  ],
+  "open_mean_10": [
+    "open_mean_10",
+    "kalman_price",
+    "wavelet_noise",
+    "TARGET_RET_1",
+    "wavelet_close",
+    "open",
+    "close",
+    "close_lag_1"
+  ],
+  "kalman_price": [
+    "wavelet_noise",
+    "wavelet_close",
+    "TARGET_RET_1",
+    "kalman_price"
+  ],
+  "high_range_10": [
+    "kalman_price",
+    "wavelet_noise",
+    "TARGET_RET_1",
+    "open",
+    "close"
+  ],
+  "volatility_5d": [
+    "kalman_price",
+    "volatility_5d",
+    "wavelet_noise",
+    "open",
+    "close"
+  ],
+  "wavelet_noise": [
+    "kalman_price",
+    "wavelet_noise",
+    "TARGET_RET_1",
+    "wavelet_close",
+    "open",
+    "close"
+  ],
+  "TARGET_RET_1": [
+    "kalman_price",
+    "wavelet_noise",
+    "TARGET_RET_1",
+    "TARGET_Sharpe",
+    "wavelet_close",
+    "open",
+    "open_mean_20",
+    "close"
+  ],
+  "wavelet_close": [
+    "open_mean_10",
+    "kalman_price",
+    "wavelet_noise",
+    "TARGET_RET_1",
+    "wavelet_close",
+    "open",
+    "open_mean_20",
+    "close",
+    "close_lag_1"
+  ],
+  "TARGET_Sharpe": [
+    "kalman_price",
+    "wavelet_noise",
+    "TARGET_RET_1",
+    "wavelet_close",
+    "TARGET_Sharpe",
+    "open",
+    "open_mean_20",
+    "close"
+  ],
+  "open": [
+    "close",
+    "open"
+  ],
+  "open_mean_20": [
+    "kalman_price",
+    "wavelet_noise",
+    "TARGET_RET_1",
+    "wavelet_close",
+    "open",
+    "open_mean_20",
+    "close"
+  ],
+  "close": [
+    "TARGET_RET_1",
+    "close"
+  ],
+  "close_lag_1": [
+    "wavelet_noise",
+    "wavelet_close"
+  ],
+  "volume": [
+    "high_lag_1",
+    "kalman_price",
+    "TARGET_RET_1",
+    "wavelet_close",
+    "open",
+    "open_mean_20",
+    "close",
+    "volume"
+  ],
+  "volatility_1d": [
+    "close",
+    "volatility_1d",
+    "open"
+  ]
+}

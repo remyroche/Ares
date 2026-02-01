@@ -1,0 +1,21 @@
+{
+  "dataset_tag": "cross_asset",
+  "run_id": "20260131_192646",
+  "panel_shape": [
+    72260,
+    54
+  ],
+  "schema": {
+    "ok": true,
+    "errors": [],
+    "warnings": [
+      "High NaN ratio detected in panel_df"
+    ]
+  },
+  "leakage_warnings": [
+    "Timestamp perturbation test: predictability did not collapse"
+  ],
+  "post_feature_leakage_warnings": [
+    "Timestamp perturbation test: predictability did not collapse"
+  ]
+}

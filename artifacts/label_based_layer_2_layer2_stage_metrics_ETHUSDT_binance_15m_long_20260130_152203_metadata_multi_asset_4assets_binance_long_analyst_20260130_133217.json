@@ -1,0 +1,17 @@
+{
+  "row_count": 21,
+  "column_count": 12,
+  "has_datetime_index": true,
+  "index_type": "DatetimeIndex",
+  "index_start": "2026-01-30 14:33:12.719487",
+  "index_end": "2026-01-30 14:53:51.156004",
+  "index_frequency": "None",
+  "index_tz": null,
+  "index_is_monotonic": true,
+  "artifact_name": "layer2_stage_metrics_ETHUSDT_binance_15m_long_20260130_152203",
+  "artifact_type": "metrics",
+  "file_path": "artifacts/pre_training/multi_asset_4assets/binance/long/analyst/label_based_layer_2/label_based_layer_2_layer2_stage_metrics_ETHUSDT_binance_15m_long_20260130_152203_multi_asset_4assets_binance_long_analyst_20260130_133217.parquet",
+  "file_size": 9293,
+  "timestamp": "2026-01-30T15:22:05.715959",
+  "compression": "auto"
+}

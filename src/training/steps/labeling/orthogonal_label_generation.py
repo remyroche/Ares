@@ -2868,11 +2868,67 @@ def get_enhanced_parameter_grids(range_specific: bool = False) -> Dict[str, Dict
 # 8. Main Pipeline
 # ==========================================
 
+def _safe_duration_days(index: pd.Index, fallback_bars_per_day: int = 96) -> int:
+    if index is None or len(index) == 0:
+        return 1
+    if pd.api.types.is_datetime64_any_dtype(index):
+        try:
+            return max(1, int((index[-1] - index[0]).days) + 1)
+        except Exception:
+            pass
+    try:
+        inferred_type = pd.api.types.infer_dtype(index, skipna=True)
+    except Exception:
+        inferred_type = "unknown"
+    if inferred_type.startswith("mixed"):
+        datetime_mask = np.array(
+            [
+                isinstance(val, (pd.Timestamp, np.datetime64, datetime))
+                for val in index
+            ]
+        )
+        if datetime_mask.any():
+            dt_index = pd.Index(index[datetime_mask])
+            try:
+                dt_index = pd.to_datetime(dt_index, errors="coerce")
+                dt_index = dt_index[~pd.isna(dt_index)]
+            except Exception:
+                pass
+            if len(dt_index) > 1:
+                try:
+                    return max(1, int((dt_index[-1] - dt_index[0]).days) + 1)
+                except Exception:
+                    pass
+    fallback_days = max(1, int(np.ceil(len(index) / fallback_bars_per_day)))
+    return fallback_days
+
 def calibrate_all_cusum_thresholds(df: pd.DataFrame, target_events_per_day: float = 4.0, vol_window: int = 20, atr_window: int = 14, sr_levels: list = None) -> Dict[str, float]:
     thresholds = {}
     if len(df) < 100: return thresholds
 
-    duration_days = (df.index[-1] - df.index[0]).days + 1
+    # Ensure DatetimeIndex
+    if not isinstance(df.index, pd.DatetimeIndex):
+        try:
+            df.index = pd.to_datetime(df.index)
+        except Exception:
+            pass  # Fall through to warning check below
+
+    idx = df.index
+    idx_dtype = getattr(idx, "dtype", "unknown")
+    try:
+        inferred_type = pd.api.types.infer_dtype(idx, skipna=True)
+    except Exception:
+        inferred_type = "unknown"
+
+    if inferred_type.startswith("mixed") or not pd.api.types.is_datetime64_any_dtype(idx):
+        sample = [f"{repr(val)} ({type(val).__name__})" for val in idx[:5]]
+        tprint_warning(
+            "   ⚠️ calibrate_all_cusum_thresholds received non-datetime index: "
+            f"dtype={idx_dtype}, inferred={inferred_type}, sample={sample}"
+        )
+
+    duration_days = _safe_duration_days(idx)
+
     bars_per_day = len(df) / max(1, duration_days)
     target_fraction = target_events_per_day / max(1, bars_per_day)
 
@@ -3732,6 +3788,33 @@ def generate_multi_horizon_candidates(df: pd.DataFrame) -> List[Dict]:
     Events are forward-filled back to the original index.
     """
     candidates = []
+    if df is None or df.empty:
+        return candidates
+
+    if not pd.api.types.is_datetime64_any_dtype(df.index):
+        try:
+            coerced_index = pd.to_datetime(df.index, errors="coerce")
+        except Exception as exc:
+            tprint_warning(
+                "   ⚠️ Multi-horizon resample skipped: failed to coerce index to datetime: "
+                f"{exc}"
+            )
+            return candidates
+
+        valid_mask = ~pd.isna(coerced_index)
+        if not valid_mask.any():
+            tprint_warning(
+                "   ⚠️ Multi-horizon resample skipped: index has no valid datetime labels"
+            )
+            return candidates
+        if not valid_mask.all():
+            tprint_warning(
+                "   ⚠️ Multi-horizon resample dropping invalid datetime labels"
+            )
+        df = df.loc[valid_mask].copy()
+        df.index = pd.DatetimeIndex(coerced_index[valid_mask])
+
+    df = df.sort_index()
     horizons = {'30min': 2, '60min': 4, '4h': 16} # Multiples of 15m
     
     for label, factor in horizons.items():
@@ -4099,24 +4182,48 @@ def generate_synthetic_meta_signals(df: pd.DataFrame, filtered_candidates: List[
             tprint_info(f"   📉 Skipping MP denoising for {n_features} features - using TruncatedSVD directly")
             df_z_denoised = df_z
         else:
-            corr_matrix = df_z.corr()
-            eigenvalues, eigenvectors = np.linalg.eigh(corr_matrix.values)
-            idx = np.argsort(eigenvalues)[::-1]
-            eigenvalues = eigenvalues[idx]
-            eigenvectors = eigenvectors[:, idx]
+            # Remove zero-variance columns to prevent DLASCL errors during eigenvalue decomposition
+            col_stds = df_z.std()
+            valid_cols = col_stds > 1e-10  # Columns with non-zero variance
+            if valid_cols.sum() < n_components + 1:
+                tprint_warning(f"   ⚠️ Too few valid columns ({valid_cols.sum()}) for MP denoising, skipping")
+                df_z_denoised = df_z
+            else:
+                df_z_valid = df_z.loc[:, valid_cols]
+                n_removed = (~valid_cols).sum()
+                if n_removed > 0:
+                    removed_features = df_z.columns[~valid_cols].tolist()
+                    tprint_info(f"   📊 MP Denoising: Removed {n_removed} zero-variance features: {removed_features[:10]}{'...' if len(removed_features) > 10 else ''}")
+                tprint_info(f"   📊 MP Denoising: Using {valid_cols.sum()} / {n_features} columns")
+                
+                corr_matrix = df_z_valid.corr()
+                
+                # Sanitize correlation matrix (replace NaN/inf with 0 for off-diagonal, 1 for diagonal)
+                corr_values = corr_matrix.values
+                np.fill_diagonal(corr_values, 1.0)  # Ensure diagonal is 1.0
+                corr_values = np.nan_to_num(corr_values, nan=0.0, posinf=0.0, neginf=0.0)
+                
+                try:
+                    eigenvalues, eigenvectors = np.linalg.eigh(corr_values)
+                    idx = np.argsort(eigenvalues)[::-1]
+                    eigenvalues = eigenvalues[idx]
+                    eigenvectors = eigenvectors[:, idx]
 
-            T, N = df_z.shape
-            q = T / N
-            mp_evals, _ = marcenko_pastur_distribution(q, sigma=1.0)
-            lambda_max = mp_evals[-1]
-            n_signal = np.sum(eigenvalues > lambda_max)
-            if n_signal < 1: n_signal = 1
+                    T, N = df_z_valid.shape
+                    q = T / N
+                    mp_evals, _ = marcenko_pastur_distribution(q, sigma=1.0)
+                    lambda_max = mp_evals[-1]
+                    n_signal = np.sum(eigenvalues > lambda_max)
+                    if n_signal < 1: n_signal = 1
 
-            tprint_info(f"   🧬 MP Denoising: {n_signal} signal components (q={q:.2f}, λ_max={lambda_max:.2f})")
+                    tprint_info(f"   🧬 MP Denoising: {n_signal} signal components (q={q:.2f}, λ_max={lambda_max:.2f})")
 
-            V_signal = eigenvectors[:, :n_signal]
-            df_z_denoised = df_z @ V_signal @ V_signal.T
-            df_z_denoised = pd.DataFrame(df_z_denoised, index=df_z.index, columns=df_z.columns)
+                    V_signal = eigenvectors[:, :n_signal]
+                    df_z_denoised_valid = df_z_valid @ V_signal @ V_signal.T
+                    df_z_denoised = pd.DataFrame(df_z_denoised_valid, index=df_z.index, columns=df_z_valid.columns)
+                except Exception as e_eig:
+                    tprint_warning(f"   ⚠️ Eigenvalue decomposition failed: {e_eig}, using original data")
+                    df_z_denoised = df_z
 
 
         # --- 2. Subsampling + TruncatedSVD (Fast Randomized PCA) ---
@@ -4828,7 +4935,11 @@ def _main_sweep_worker(config, df_full, price, vol_series, X_probe, valid_tpsl_m
                                 'status': status
                             })
         return candidates, outcomes_log
-    except Exception:
+    except Exception as e:
+        import traceback
+        # Use simple print as tprint might not be pickleable/thread-safe or initialized
+        print(f"⚠️ Worker failed for {config[0]}: {e}")
+        print(traceback.format_exc())
         return [], []
 
 
@@ -5192,13 +5303,16 @@ def orthogonal_label_generation(
         ]
 
         # --- KEY FIX: Add Cross-Asset / Market State generators if columns exist ---
-        # Relaxed check: ca_ or ca__ (single or double underscore)
-        special_prefixes = ('ms_', 'ca_', 'meta_') 
+        # Relaxed check: ca_/ca__ and ms_/ms__ (single or double underscore)
+        special_prefixes = ('ms_', 'ms__', 'ca_', 'ca__', 'meta_', 'meta__') 
         # Debug: Print columns to verify availability
         tprint_info(f"   🔍 Checking DataFrame columns for special prefixes: {special_prefixes}")
         # tprint_info(f"   📊 Available columns (first 20): {list(df_full.columns)[:20]}")
         
         cross_asset_cols = [c for c in df_full.columns if any(c.startswith(p) for p in special_prefixes)]
+        tprint_info(
+            f"   🧾 Cross-asset/special columns: total={len(cross_asset_cols)} sample={cross_asset_cols[:10]}"
+        )
         
         if cross_asset_cols:
             tprint_info(f"   🌐 Layer 2: Found {len(cross_asset_cols)} cross-asset/special features. Adding to orthogonal race.")
@@ -5402,7 +5516,7 @@ def orthogonal_label_generation(
         t_start_fam_prune = time.time()
 
         # Calculate duration for rate check (aligned with check_label_quality)
-        duration_days = max(1, (df_full.index[-1] - df_full.index[0]).days)
+        duration_days = _safe_duration_days(df_full.index)
         min_events_rate = max(50, int(0.1 * duration_days))
 
         # Test TP:SL combinations
@@ -5493,6 +5607,8 @@ def orthogonal_label_generation(
             outcomes_log.extend(sweep_outcomes)
         
     tprint_success(f"🏁 Main Sweep Complete: Generated {len(candidates)} total candidates.")
+    if len(candidates) == 0:
+        tprint_warning("   ⚠️ Main Sweep returned 0 candidates!")
 
     # 7. OHLCV Candidate Generation (New Layer 1.5)
     tprint_info("📊 Generating OHLCV Candidates...")
@@ -5576,6 +5692,7 @@ def orthogonal_label_generation(
     # Combine base candidates for initial filtering (Level 7)
     # Use robust versions to reduce noise downstream
     pre_generated_candidates = robust_ohlcv + robust_continuous + robust_advanced + robust_horizon + robust_regime
+    tprint_info(f"   📊 Pre-generated candidates total: {len(pre_generated_candidates)}")
     
     # 9. Feature Filtering (Level 7) & Smart Selection
     # Filter the final set before Labeling
@@ -5703,6 +5820,7 @@ def orthogonal_label_generation(
             regime_posteriors = df_full[regime_cols]
 
     scored_candidates = calculate_multifactor_score(candidates, X_probe, regime_posteriors)
+    tprint_info(f"   📊 Scored candidates: {len(scored_candidates)} (from {len(candidates)} raw)")
     
     if not scored_candidates:
         tprint_warning("No candidates passed gates.")
@@ -6696,7 +6814,7 @@ class CausalSurpriseEvents(BaseEventGenerator):
 
             # Adaptive Calibration to hit target density
             target_density = params.get('target_signals_per_day', 2.0)
-            duration_days = (df.index[-1] - df.index[0]).days + 1
+            duration_days = _safe_duration_days(df.index)
             self.surprise_detector.adaptive_calibration(target_density, duration_days)
 
             tprint_info("   🎯 CausalSurpriseEvents: Generating causal events...")

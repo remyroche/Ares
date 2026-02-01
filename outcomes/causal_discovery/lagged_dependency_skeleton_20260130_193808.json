@@ -1,0 +1,127 @@
+{
+  "kalman_price": [
+    "wavelet_noise",
+    "TARGET_RET_1",
+    "kalman_price"
+  ],
+  "open_mean_5": [
+    "open_mean_5",
+    "wavelet_noise",
+    "wavelet_close",
+    "close_lag_5"
+  ],
+  "low_std_10": [
+    "kalman_price",
+    "open_mean_5",
+    "low_std_10",
+    "open_std_10",
+    "wavelet_noise",
+    "TARGET_RET_1",
+    "wavelet_close",
+    "high_std_20",
+    "open",
+    "close_lag_5",
+    "close"
+  ],
+  "volatility_5d": [
+    "kalman_price",
+    "open_mean_5",
+    "volatility_5d",
+    "wavelet_noise",
+    "TARGET_RET_1",
+    "wavelet_close",
+    "open",
+    "close_lag_5"
+  ],
+  "open_std_10": [
+    "kalman_price",
+    "open_mean_5",
+    "low_std_10",
+    "volatility_5d",
+    "open_std_10",
+    "wavelet_noise",
+    "TARGET_RET_1",
+    "wavelet_close",
+    "high_std_20",
+    "close_lag_5",
+    "close",
+    "volatility_1d"
+  ],
+  "wavelet_noise": [
+    "open_mean_5",
+    "wavelet_noise",
+    "TARGET_RET_1",
+    "wavelet_close",
+    "close_lag_5"
+  ],
+  "TARGET_RET_1": [
+    "kalman_price",
+    "wavelet_noise",
+    "TARGET_RET_1",
+    "TARGET_Sharpe",
+    "wavelet_close"
+  ],
+  "wavelet_close": [
+    "kalman_price",
+    "open_mean_5",
+    "wavelet_noise",
+    "TARGET_RET_1",
+    "wavelet_close"
+  ],
+  "TARGET_Sharpe": [
+    "kalman_price",
+    "open_mean_5",
+    "wavelet_noise",
+    "TARGET_RET_1",
+    "TARGET_Sharpe",
+    "wavelet_close",
+    "open",
+    "close_lag_5"
+  ],
+  "open": [
+    "close",
+    "open"
+  ],
+  "high_std_20": [
+    "kalman_price",
+    "open_mean_5",
+    "low_std_10",
+    "open_std_10",
+    "wavelet_noise",
+    "TARGET_RET_1",
+    "high_std_20",
+    "open",
+    "close_lag_5"
+  ],
+  "close_lag_5": [
+    "kalman_price",
+    "open_mean_5",
+    "low_std_10",
+    "wavelet_noise",
+    "wavelet_close",
+    "open",
+    "close_lag_5",
+    "close"
+  ],
+  "close": [
+    "TARGET_RET_1",
+    "open",
+    "close"
+  ],
+  "volume": [
+    "wavelet_noise",
+    "TARGET_RET_1",
+    "kalman_price",
+    "volume"
+  ],
+  "volatility_1d": [
+    "kalman_price",
+    "open_mean_5",
+    "wavelet_noise",
+    "TARGET_RET_1",
+    "wavelet_close",
+    "open",
+    "close_lag_5",
+    "volatility_1d"
+  ]
+}

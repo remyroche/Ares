@@ -312,7 +312,7 @@ _lazy_import_quality_utilities()
 try:
     from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
     EXCHANGE_INTERFACE_AVAILABLE = True
-except ImportError as e:  # Allow running without trading stack (use existing klines only)
+except Exception as e:  # Allow running without trading stack (use existing klines only)
     EXCHANGE_INTERFACE_AVAILABLE = False
     ExchangeInterface = None  # type: ignore
     create_exchange_interface = None  # type: ignore
@@ -1538,6 +1538,14 @@ class EnhancedKlinesProcessingPipeline:
                     try:
                         df = pd.read_parquet(pf)
                         if df is not None and not df.empty:
+                            # Normalize timestamp structure before concatenation
+                            # Some files have timestamp as a column, others have it as index only
+                            if 'timestamp' not in df.columns and isinstance(df.index, pd.DatetimeIndex):
+                                df = df.copy()
+                                df['timestamp'] = df.index
+                                # Also ensure timestamp_ms is present for consistency
+                                if 'timestamp_ms' not in df.columns:
+                                    df['timestamp_ms'] = (df.index.view('int64') // 10**6).astype('int64')
                             combined_df_list.append(df)
                     except Exception as e:
                         if self.enable_logging:
@@ -2680,6 +2688,83 @@ class EnhancedKlinesProcessingPipeline:
                     priority=1
                 ))
             return gaps
+
+        # Ensure index is DatetimeIndex and sorted
+        if not isinstance(df.index, pd.DatetimeIndex):
+            if 'timestamp' in df.columns:
+                df = df.set_index('timestamp').sort_index()
+            else:
+                return gaps
+        else:
+            df = df.sort_index()
+
+        # Calculate time differences between consecutive records
+        if len(df) < 2:
+            return gaps
+
+        time_diffs = df.index.to_series().diff().iloc[1:]
+        expected_diff = pd.Timedelta(minutes=interval_minutes)
+        # Allow small tolerance (1 minute for rounding issues)
+        tolerance = pd.Timedelta(minutes=1)
+        
+        # Find gaps larger than expected interval + tolerance
+        gap_mask = time_diffs > (expected_diff + tolerance)
+        
+        for idx in gap_mask[gap_mask].index:
+            idx_pos = df.index.get_loc(idx)
+            if idx_pos > 0:
+                gap_start = df.index[idx_pos - 1] + expected_diff
+                gap_end = idx
+                duration = int((gap_end - gap_start).total_seconds() / 60)
+                
+                if duration > 0 and duration <= max_gap_minutes:
+                    gaps.append(GapInfo(
+                        start_time=gap_start.to_pydatetime() if hasattr(gap_start, 'to_pydatetime') else gap_start,
+                        end_time=gap_end.to_pydatetime() if hasattr(gap_end, 'to_pydatetime') else gap_end,
+                        duration_minutes=duration,
+                        symbol=symbol,
+                        interval=interval,
+                        priority=2 if duration > 60 else 3
+                    ))
+
+        # Check for boundary gaps (start/end of expected range)
+        if expected_start and len(df) > 0:
+            first_ts = df.index.min()
+            if hasattr(first_ts, 'to_pydatetime'):
+                first_ts = first_ts.to_pydatetime()
+            if first_ts.tzinfo:
+                first_ts = first_ts.replace(tzinfo=None)
+            expected_start_naive = expected_start.replace(tzinfo=None) if expected_start.tzinfo else expected_start
+            if first_ts > expected_start_naive + pd.Timedelta(minutes=interval_minutes * 2):
+                duration = int((first_ts - expected_start_naive).total_seconds() / 60)
+                gaps.insert(0, GapInfo(
+                    start_time=expected_start,
+                    end_time=first_ts if not hasattr(first_ts, 'to_pydatetime') else df.index.min().to_pydatetime(),
+                    duration_minutes=duration,
+                    symbol=symbol,
+                    interval=interval,
+                    priority=1
+                ))
+
+        if expected_end and len(df) > 0:
+            last_ts = df.index.max()
+            if hasattr(last_ts, 'to_pydatetime'):
+                last_ts = last_ts.to_pydatetime()
+            if last_ts.tzinfo:
+                last_ts = last_ts.replace(tzinfo=None)
+            expected_end_naive = expected_end.replace(tzinfo=None) if expected_end.tzinfo else expected_end
+            if last_ts < expected_end_naive - pd.Timedelta(minutes=interval_minutes * 2):
+                duration = int((expected_end_naive - last_ts).total_seconds() / 60)
+                gaps.append(GapInfo(
+                    start_time=last_ts if not hasattr(last_ts, 'to_pydatetime') else df.index.max().to_pydatetime(),
+                    end_time=expected_end,
+                    duration_minutes=duration,
+                    symbol=symbol,
+                    interval=interval,
+                    priority=1
+                ))
+
+        return gaps
 
     def _verify_data_quality_vectorized(self, df: pd.DataFrame) -> Dict[str, int]:
         """

@@ -32,6 +32,10 @@ from .utils import (
 from src.trading.integration.unified_model_loader import get_unified_model_loader
 from src.trading.integration.regime_detector import HybridRegimeDetector
 from src.feature_generation.shared.feature_engineer import AnalystFeatureEngineer
+try:
+    from src.trading.model_selection import ModelSelectionResult
+except Exception:
+    ModelSelectionResult = Any  # type: ignore
 
 logger = system_logger.getChild('SignalGenerationPipeline')
 

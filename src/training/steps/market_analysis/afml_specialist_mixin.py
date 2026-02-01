@@ -625,31 +625,52 @@ class AFMLSpecialistMixin:
             start_date = df.index.min() - pd.Timedelta(days=8)
             end_date = df.index.max()
             
-            df_1m = manager.read_data(symbol, "1m", start_date, end_date, data_type="raw")
-            if df_1m is None or df_1m.empty: return None
+            # Determine base timeframe for dollar bar construction
+            base_timeframe = config.get("timeframe", "15m")
+            
+            # Parse interval in minutes
+            try:
+                interval_minutes = pd.Timedelta(base_timeframe).total_seconds() / 60.0
+            except Exception:
+                tprint_warning(f"   ⚠️ Could not parse timeframe '{base_timeframe}', defaulting to 15 minutes")
+                interval_minutes = 15.0
+                base_timeframe = "15m"
+
+            df_source = manager.read_data(symbol, base_timeframe, start_date, end_date, data_type="raw")
+            if df_source is None or df_source.empty: return None
             
             # Ensure 'quote_volume' is present and valid
             # Ensure 'quote_volume' is present and valid (handle mostly empty columns)
-            if 'quote_volume' not in df_1m.columns or df_1m['quote_volume'].count() < 0.5 * len(df_1m):
-                df_1m['quote_volume'] = df_1m['volume'] * df_1m['close']
+            if 'quote_volume' not in df_source.columns or df_source['quote_volume'].count() < 0.5 * len(df_source):
+                df_source['quote_volume'] = df_source['volume'] * df_source['close']
             
-            df_1m['quote_volume'] = df_1m['quote_volume'].fillna(0.0)
+            df_source['quote_volume'] = df_source['quote_volume'].fillna(0.0)
             
-            # Adaptive threshold using 30-day (monthly) rolling mean volume * 15 (for ~96 bars/day = 15 min avg)
-            # Using 30-day rolling mean per user request for stability
-            # 43200 = 30 days * 24 hours * 60 minutes
-            rolling_30d_mean = df_1m['quote_volume'].rolling(window=43200, min_periods=1440).mean()
+            # Adaptive threshold using 30-day (monthly) rolling mean volume
+            # 43200 minutes in 30 days. Adjusted for actual interval.
+            days_window = 30
+            minutes_in_window = days_window * 24 * 60
+            window_size = int(minutes_in_window / interval_minutes)
+            min_periods = int(1440 / interval_minutes)  # 1 day min periods
             
-            # Threshold = rolling mean * 15 (minutes per bar at 96 bars/day)
-            dynamic_threshold = (rolling_30d_mean * 15.0).ffill().bfill().values
+            rolling_30d_mean = df_source['quote_volume'].rolling(window=window_size, min_periods=min_periods).mean()
+            
+            # Threshold Calculation:
+            # Target = 96 bars/day (15m average duration)
+            # Daily Volume ~= Mean_Input_Vol * (1440 / interval_minutes)
+            # Target Bar Vol = Daily Volume / 96
+            # Multiplier = (1440 / interval_minutes) / 96 = 15 / interval_minutes
+            threshold_multiplier = 15.0 / interval_minutes
+            
+            dynamic_threshold = (rolling_30d_mean * threshold_multiplier).ffill().bfill().values
             
             # Vectorized bar generation using Numba
-            vols = df_1m['quote_volume'].values
-            closes = df_1m['close'].values
-            highs = df_1m['high'].values
-            lows = df_1m['low'].values
-            opens = df_1m['open'].values
-            times = df_1m.index.values # datetime64[ns]
+            vols = df_source['quote_volume'].values
+            closes = df_source['close'].values
+            highs = df_source['high'].values
+            lows = df_source['low'].values
+            opens = df_source['open'].values
+            times = df_source.index.values # datetime64[ns]
 
             # Use Numba-optimized generation
             out_times, out_opens, out_highs, out_lows, out_closes, out_vols = _numba_generate_dollar_bars(
@@ -684,21 +705,23 @@ class AFMLSpecialistMixin:
             manager = get_klines_manager(config.get('data_dir', 'historical_data'))
             start_date = df.index.min() - pd.Timedelta(days=8)
             end_date = df.index.max()
-            df_1m = manager.read_data(symbol, "1m", start_date, end_date, data_type="raw")
-            if df_1m is None: return None
+            # Determine base timeframe for range bar construction
+            base_timeframe = config.get("timeframe", "15m")
+            df_source = manager.read_data(symbol, base_timeframe, start_date, end_date, data_type="raw")
+            if df_source is None: return None
 
-            thresholds_1m = delta_p_daily.reindex(df_1m.index, method='ffill').bfill().values
+            thresholds_source = delta_p_daily.reindex(df_source.index, method='ffill').bfill().values
 
-            times = df_1m.index.values
-            opens = df_1m['open'].values
-            highs = df_1m['high'].values
-            lows = df_1m['low'].values
-            closes = df_1m['close'].values
-            vols = df_1m['volume'].values
+            times = df_source.index.values
+            opens = df_source['open'].values
+            highs = df_source['high'].values
+            lows = df_source['low'].values
+            closes = df_source['close'].values
+            vols = df_source['volume'].values
             
             # Use Numba-optimized generation
             out_times, out_opens, out_highs, out_lows, out_closes, out_vols, out_durations = _numba_generate_range_bars(
-                times, opens, highs, lows, closes, vols, thresholds_1m
+                times, opens, highs, lows, closes, vols, thresholds_source
             )
 
             if len(out_times) == 0:

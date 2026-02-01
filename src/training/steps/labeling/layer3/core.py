@@ -32,7 +32,8 @@ from src.training.steps.labeling.irm_regime_pipeline import (
 def generate_regime_aware_features(
     X: pd.DataFrame,
     volatility_col: str = 'volatility_20',
-    prob_cols: Optional[List[str]] = None
+    prob_cols: Optional[List[str]] = None,
+    asset_series: Optional[pd.Series] = None
 ) -> pd.DataFrame:
     """
     Generates Regime-Aware Features.
@@ -47,8 +48,25 @@ def generate_regime_aware_features(
     if volatility_col in X.columns:
         vol = X[volatility_col]
         # Robust Z-Score
-        med = vol.rolling(100, min_periods=20).median()
-        mad = (vol - med).abs().rolling(100, min_periods=20).median()
+        if asset_series is not None:
+            med = (
+                vol.groupby(asset_series)
+                .rolling(100, min_periods=20)
+                .median()
+                .reset_index(level=0, drop=True)
+            )
+            mad = (
+                (vol - med)
+                .abs()
+                .groupby(asset_series)
+                .rolling(100, min_periods=20)
+                .median()
+                .reset_index(level=0, drop=True)
+            )
+        else:
+            med = vol.rolling(100, min_periods=20).median()
+            mad = (vol - med).abs().rolling(100, min_periods=20).median()
+
         z_score = (vol - med) / (mad * 1.4826 + 1e-6)
 
         # Softmax-like probabilities for regimes
@@ -138,6 +156,26 @@ def integrate_entropy_bars_into_layer3(
     # Check cache
     cache_dir = Path(cfg.get('cache_dir', 'cache/entropy_bars'))
     cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # Disable entropy bars for multi-asset / panel-shaped data.
+    # Entropy bars currently assume a single time series per run.
+    asset_col = cfg.get("layer3_asset_id_col") or cfg.get("asset_id_col")
+    asset_series = None
+    if asset_col and asset_col in df.columns:
+        asset_series = df[asset_col]
+    if asset_series is None:
+        for candidate in ("asset_id", "asset", "ticker", "symbol"):
+            if candidate in df.columns:
+                asset_col = candidate
+                asset_series = df[candidate]
+                break
+
+    if asset_series is not None and asset_series.nunique(dropna=False) > 1:
+        tprint_warning(
+            "⚠️ Multi-asset data detected; skipping entropy bars integration for Layer 3. "
+            "Set config['use_entropy_bars']=False to silence this warning."
+        )
+        return df, pd.DataFrame()
 
     # Determine date range from existing data
     if not df.empty and hasattr(df.index, 'min') and hasattr(df.index, 'max'):
@@ -502,9 +540,33 @@ def prepare_layer3_features(
     cfg = config or {}
     safe_base_cols = [c for c in base_model_cols if c in df.columns]
 
+    asset_col = cfg.get("layer3_asset_id_col") or cfg.get("asset_id_col")
+    asset_series = None
+    if asset_col and asset_col in df.columns:
+        asset_series = df[asset_col]
+    if asset_series is None:
+        for candidate in ("asset_id", "asset", "ticker", "symbol"):
+            if candidate in df.columns:
+                asset_col = candidate
+                asset_series = df[candidate]
+                break
+
+    if asset_series is None and isinstance(df.index, pd.MultiIndex):
+        for candidate in ("asset_id", "asset", "ticker", "symbol"):
+            if candidate in df.index.names:
+                asset_col = candidate
+                asset_series = df.index.get_level_values(candidate)
+                df = df.copy()
+                df[candidate] = asset_series
+                break
+
+    multi_asset = bool(asset_series is not None and asset_series.nunique(dropna=False) > 1)
+    if multi_asset:
+        tprint_info(f"   🧩 Multi-asset Layer3 feature prep detected ({asset_col})")
+
     # Try loading features from cache
     features_loaded = False
-    if CACHE_AVAILABLE and should_use_cached_features(cfg, symbol, exchange, cfg.get('timeframe', '15m'), 'long'):
+    if not multi_asset and CACHE_AVAILABLE and should_use_cached_features(cfg, symbol, exchange, cfg.get('timeframe', '15m'), 'long'):
         tprint_info("📦 Checking cache for Layer 3 features...")
         cached_features, _ = load_layer3_features_from_cache(
             symbol=symbol,
@@ -528,10 +590,14 @@ def prepare_layer3_features(
     if not features_loaded:
         try:
             from src.feature_generation.categories.layer3_specific_features import generate_layer3_features
-            df = generate_layer3_features(df, safe_base_cols)
+            if multi_asset and asset_col:
+                grouped = df.groupby(asset_col, group_keys=False)
+                df = grouped.apply(lambda g: generate_layer3_features(g.sort_index(), safe_base_cols))
+            else:
+                df = generate_layer3_features(df, safe_base_cols)
 
             # Save to cache if enabled
-            if CACHE_AVAILABLE and cfg.get('use_layer3_feature_cache', True):
+            if not multi_asset and CACHE_AVAILABLE and cfg.get('use_layer3_feature_cache', True):
                 # Identify generated features (exclude base columns)
                 exclude_cols = set(df.columns) - set(safe_base_cols) - {'close', 'high', 'low', 'open', 'volume'}
                 generated_cols = [c for c in df.columns if c not in exclude_cols] # Logic error in previous implementation?
@@ -555,6 +621,19 @@ def prepare_layer3_features(
             tprint_warning(f"⚠️ Feature generation failed: {e}")
 
     tprint_success("End: prepare_layer3_features")
+
+    if multi_asset and asset_col and cfg.get("layer3_asset_onehot", True):
+        max_assets = cfg.get("layer3_asset_onehot_max")
+        asset_count = asset_series.nunique(dropna=False)
+        if max_assets and asset_count > max_assets:
+            tprint_warning(
+                f"   ⚠️ Skipping Layer3 asset one-hot (assets={asset_count} > max={max_assets})"
+            )
+        else:
+            asset_dummies = pd.get_dummies(df[asset_col].astype(str), prefix="asset")
+            asset_dummies = asset_dummies.astype(np.float32)
+            df = pd.concat([df, asset_dummies], axis=1)
+
     return df
 
 def prepare_layer3_targets_and_weights(
@@ -570,18 +649,60 @@ def prepare_layer3_targets_and_weights(
     tprint_info("Start: prepare_layer3_targets_and_weights")
     cfg = config or {}
 
+    asset_col = cfg.get("layer3_asset_id_col") or cfg.get("asset_id_col")
+    asset_series = None
+    if asset_col and asset_col in df.columns:
+        asset_series = df[asset_col]
+    if asset_series is None:
+        for candidate in ("asset_id", "asset", "ticker", "symbol"):
+            if candidate in df.columns:
+                asset_col = candidate
+                asset_series = df[candidate]
+                break
+
+    if asset_series is None and isinstance(df.index, pd.MultiIndex):
+        for candidate in ("asset_id", "asset", "ticker", "symbol"):
+            if candidate in df.index.names:
+                asset_col = candidate
+                asset_series = df.index.get_level_values(candidate)
+                df = df.copy()
+                df[candidate] = asset_series
+                break
+
+    multi_asset = bool(asset_series is not None and asset_series.nunique(dropna=False) > 1)
+
     if net_returns is None:
         if 'close' in df.columns:
-            net_returns = df['close'].pct_change().fillna(0)
+            if multi_asset and asset_series is not None:
+                ret_series = df.groupby(asset_series)['close'].pct_change().fillna(0)
+            else:
+                ret_series = df['close'].pct_change().fillna(0)
         else:
-            net_returns = pd.Series(0, index=df.index)
-    
-    ret_series = net_returns.reindex(df.index)
-    vol_series = ret_series.rolling(24).std().fillna(0.001)
+            ret_series = pd.Series(0, index=df.index)
+    else:
+        ret_series = net_returns.reindex(df.index) if isinstance(net_returns, pd.Series) else pd.Series(net_returns, index=df.index)
+
+    if multi_asset and asset_series is not None:
+        vol_series = (
+            ret_series.groupby(asset_series)
+            .rolling(24)
+            .std()
+            .reset_index(level=0, drop=True)
+            .fillna(0.001)
+        )
+    else:
+        vol_series = ret_series.rolling(24).std().fillna(0.001)
 
     # 12-bar targets
     if 'close' in df.columns:
-        blended_ret_series = calculate_blended_forward_returns(df['close'], [16, 24])
+        if multi_asset and asset_series is not None:
+            blended_ret_series = (
+                df.groupby(asset_series)['close']
+                .apply(lambda s: calculate_blended_forward_returns(s, [16, 24]))
+                .reset_index(level=0, drop=True)
+            )
+        else:
+            blended_ret_series = calculate_blended_forward_returns(df['close'], [16, 24])
     else:
         blended_ret_series = ret_series
 
@@ -591,8 +712,23 @@ def prepare_layer3_targets_and_weights(
     
     # 48-bar targets
     if 'close' in df.columns:
-        ret_48 = df['close'].shift(-48) / df['close'] - 1
-        vol_48 = ret_series.rolling(48).std().fillna(0.001)
+        if multi_asset and asset_series is not None:
+            ret_48 = (
+                df.groupby(asset_series)['close']
+                .apply(lambda s: s.shift(-48) / s - 1)
+                .reset_index(level=0, drop=True)
+            )
+            vol_48 = (
+                ret_series.groupby(asset_series)
+                .rolling(48)
+                .std()
+                .reset_index(level=0, drop=True)
+                .fillna(0.001)
+            )
+        else:
+            ret_48 = df['close'].shift(-48) / df['close'] - 1
+            vol_48 = ret_series.rolling(48).std().fillna(0.001)
+
         y_alpha_48_series = calculate_studentized_har_target(ret_48.fillna(0), vol_48.fillna(0))
         y_alpha_48 = y_alpha_48_series.values.astype(np.float32)
         y_prob_48 = (ret_48.fillna(0) > 0).astype(np.int32)
@@ -749,7 +885,22 @@ def layer3_analyst_lgbm(
 
     # Phase 3.5: Regime Aware Features
     prob_cols = [c for c in X_full.columns if 'prob_' in c and '_oof' not in c]
-    regime_feats = generate_regime_aware_features(X_full, 'volatility_20', prob_cols)
+    asset_col = cfg.get("layer3_asset_id_col") or cfg.get("asset_id_col")
+    asset_series = None
+    if asset_col and asset_col in df.columns:
+        asset_series = df[asset_col]
+    if asset_series is None:
+        for candidate in ("asset_id", "asset", "ticker", "symbol"):
+            if candidate in df.columns:
+                asset_col = candidate
+                asset_series = df[candidate]
+                break
+    regime_feats = generate_regime_aware_features(
+        X_full,
+        'volatility_20',
+        prob_cols,
+        asset_series=asset_series if asset_series is not None and asset_series.nunique(dropna=False) > 1 else None
+    )
     X_full = pd.concat([X_full, regime_feats], axis=1)
 
     # Phase 3.75: Layer 2.5 Chaser Integration (if available)
@@ -810,7 +961,7 @@ def layer3_analyst_lgbm(
         gmm_dir.mkdir(parents=True, exist_ok=True)
         regime_labels = get_or_fit_regime_labels(
             df,
-            gmm_dir / "layer3_meta_gmm.pkl",
+            gmm_dir / f"layer3_meta_gmm_{symbol}.pkl",
             n_regimes=cfg.get("irm_meta_regimes", 2),
             refit=cfg.get("irm_refit_regimes", False)
         )

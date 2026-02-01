@@ -1,0 +1,109 @@
+{
+  "geo_atr_14": [
+    "geo_atr_14",
+    "volume_lag_2",
+    "volatility_1d",
+    "Market_Mode_PCA",
+    "ca__active_ret_trend"
+  ],
+  "TARGET_RET_1": [
+    "volume_mean_5",
+    "volatility_1d",
+    "open_std_50"
+  ],
+  "volume": [
+    "geo_atr_14",
+    "TARGET_RET_1",
+    "volume",
+    "volume_mean_5",
+    "close",
+    "volume_lag_5",
+    "open",
+    "ca__active_ret_trend",
+    "TARGET_Sharpe"
+  ],
+  "volume_lag_2": [
+    "volume",
+    "Market_Mode_PCA"
+  ],
+  "open_std_50": [
+    "open_std_50"
+  ],
+  "volume_mean_5": [
+    "volume",
+    "volume_lag_2",
+    "Market_Mode_PCA"
+  ],
+  "close": [
+    "TARGET_RET_1",
+    "close",
+    "Market_Mode_PCA",
+    "open"
+  ],
+  "volatility_1d": [
+    "geo_atr_14",
+    "volatility_1d",
+    "Market_Mode_PCA"
+  ],
+  "open_std_10": [
+    "TARGET_RET_1",
+    "open_std_50",
+    "open_std_10",
+    "close",
+    "open",
+    "Market_Mode_PCA",
+    "ca__active_ret_trend"
+  ],
+  "volatility_5d": [
+    "volatility_5d",
+    "Market_Mode_PCA"
+  ],
+  "volume_lag_5": [
+    "volume_mean_5",
+    "volume",
+    "volume_lag_2",
+    "volume_lag_5"
+  ],
+  "open": [
+    "TARGET_RET_1",
+    "close",
+    "Market_Mode_PCA",
+    "open"
+  ],
+  "ca__active_ret_trend": [
+    "open_std_50",
+    "close",
+    "Market_Mode_PCA",
+    "open",
+    "ca__active_ret_trend"
+  ],
+  "TARGET_Sharpe": [
+    "geo_atr_14",
+    "TARGET_RET_1",
+    "volume_lag_2",
+    "open_std_50",
+    "volume_mean_5",
+    "close",
+    "volatility_1d",
+    "open_std_10",
+    "volume_lag_5",
+    "open",
+    "Market_Mode_PCA",
+    "ca__active_ret_trend",
+    "TARGET_Sharpe"
+  ],
+  "Market_Mode_PCA": [
+    "geo_atr_14",
+    "volume",
+    "volume_lag_2",
+    "open_std_50",
+    "volume_mean_5",
+    "close",
+    "volatility_1d",
+    "volatility_5d",
+    "volume_lag_5",
+    "open",
+    "Market_Mode_PCA",
+    "ca__active_ret_trend"
+  ]
+}

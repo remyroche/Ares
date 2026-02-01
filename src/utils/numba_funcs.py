@@ -1,7 +1,7 @@
 import numpy as np
 import math
 
-from src.utils.tprint import tprint_warning
+# tprint_warning import removed - was unused
 
 try:
     from numba import jit
@@ -21,8 +21,11 @@ except ImportError:
 # Small epsilon to prevent division by zero in Numba JIT functions
 _EPS = 1e-12
 
+# Use fastmath where IEEE precision loss is acceptable for finance
+# cache=True stores compiled code between runs
 
-@jit(nopython=True)
+
+@jit(nopython=True, cache=True)
 def _numba_generate_dollar_bars(times, opens, highs, lows, closes, vols, thresholds):
     """
     Generate dollar bars using Numba JIT.
@@ -32,11 +35,11 @@ def _numba_generate_dollar_bars(times, opens, highs, lows, closes, vols, thresho
     # Pre-allocate output arrays (max expected size = n_rows)
     # Note: timestamps are handled as int64 (nanoseconds) in Numba if passed as datetime64[ns]
     out_times = np.empty_like(times)
-    out_opens = np.zeros(n_rows, dtype=np.float64)
-    out_highs = np.zeros(n_rows, dtype=np.float64)
-    out_lows = np.zeros(n_rows, dtype=np.float64)
-    out_closes = np.zeros(n_rows, dtype=np.float64)
-    out_vols = np.zeros(n_rows, dtype=np.float64)
+    out_opens = np.zeros(n_rows, dtype=np.float32)
+    out_highs = np.zeros(n_rows, dtype=np.float32)
+    out_lows = np.zeros(n_rows, dtype=np.float32)
+    out_closes = np.zeros(n_rows, dtype=np.float32)
+    out_vols = np.zeros(n_rows, dtype=np.float32)
 
     count = 0
     current_vol = 0.0
@@ -55,8 +58,10 @@ def _numba_generate_dollar_bars(times, opens, highs, lows, closes, vols, thresho
             current_low = val_low
 
         target = thresholds[i]
+        # Fast fail on invalid threshold - caller must provide valid thresholds
         if np.isnan(target) or target <= 0:
-            target = 1000000.0
+            # Skip this bar - invalid threshold
+            continue
 
         if current_vol >= target:
             out_times[count] = times[i]
@@ -84,7 +89,7 @@ def _numba_generate_dollar_bars(times, opens, highs, lows, closes, vols, thresho
     )
 
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True)
 def _numba_generate_range_bars(times, opens, highs, lows, closes, vols, thresholds):
     """
     Generate range bars using Numba JIT.
@@ -94,11 +99,11 @@ def _numba_generate_range_bars(times, opens, highs, lows, closes, vols, threshol
 
     # Pre-allocate output arrays
     out_times = np.empty_like(times)
-    out_opens = np.zeros(n_rows, dtype=np.float64)
-    out_highs = np.zeros(n_rows, dtype=np.float64)
-    out_lows = np.zeros(n_rows, dtype=np.float64)
-    out_closes = np.zeros(n_rows, dtype=np.float64)
-    out_vols = np.zeros(n_rows, dtype=np.float64)
+    out_opens = np.zeros(n_rows, dtype=np.float32)
+    out_highs = np.zeros(n_rows, dtype=np.float32)
+    out_lows = np.zeros(n_rows, dtype=np.float32)
+    out_closes = np.zeros(n_rows, dtype=np.float32)
+    out_vols = np.zeros(n_rows, dtype=np.float32)
     out_durations = np.zeros(n_rows, dtype=np.float64)  # Duration in seconds + 60.0
 
     count = 0
@@ -122,7 +127,8 @@ def _numba_generate_range_bars(times, opens, highs, lows, closes, vols, threshol
 
         delta_p = thresholds[i]
         if np.isnan(delta_p) or delta_p <= 0:
-            delta_p = p * 0.01
+            # Fallback: 0.5% for volatile crypto, caller should use ATR-based threshold
+            delta_p = p * 0.005
 
         # Check range condition (absolute change from open >= threshold)
         if abs(p - current_open) >= delta_p:
@@ -143,15 +149,16 @@ def _numba_generate_range_bars(times, opens, highs, lows, closes, vols, threshol
             diff_ns = times[i] - times[start_ts_idx]
             # Convert timedelta64 to nanoseconds (int64) in Numba-compatible way
             diff_ns_int = np.int64(diff_ns)
-            out_durations[count] = float(diff_ns_int) / 1e9 + 60.0
+            # Duration in seconds (removed arbitrary +60 offset)
+            out_durations[count] = float(diff_ns_int) / 1e9
 
             count += 1
 
-            # Reset
+            # Reset for next bar
             if i + 1 < n_rows:
-                current_open = p
-                current_high = p
-                current_low = p
+                current_open = opens[i + 1]
+                current_high = highs[i + 1]
+                current_low = lows[i + 1]
                 current_vol = 0.0
                 start_ts_idx = i + 1
 
@@ -166,17 +173,22 @@ def _numba_generate_range_bars(times, opens, highs, lows, closes, vols, threshol
     )
 
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True)
 def _numba_rolling_entropy(x, window, bins=5):
     """
     Calculate rolling Shannon entropy using Numba.
     x: Input array (returns)
     window: Rolling window size
-    bins: Number of histogram bins
+    bins: Number of histogram bins (recommend: int(1 + 3.322 * log(window)) for Sturges rule)
+    
+    Note: Uses natural log (standard information theory). Result in nats (not bits).
     """
     n = len(x)
-    output = np.zeros(n, dtype=np.float64)
+    output = np.zeros(n, dtype=np.float32)
 
+    # Pre-allocate histogram buffer (reuse across iterations)
+    hist = np.zeros(bins, dtype=np.float32)
+    
     # We need at least 'window' elements
     for i in range(window, n):
         # Slice window
@@ -191,7 +203,8 @@ def _numba_rolling_entropy(x, window, bins=5):
             continue
 
         bin_width = (c_max - c_min) / bins
-        hist = np.zeros(bins, dtype=np.float64)
+        # Reset histogram (faster than allocating new array)
+        hist[:] = 0.0
 
         for val in chunk:
             bin_idx = int((val - c_min) / bin_width)
@@ -217,15 +230,18 @@ def _numba_rolling_entropy(x, window, bins=5):
         norm_factor = window * bin_width
         probs = hist / norm_factor
 
-        # Filter > 0
-        probs_valid = probs[probs > 0]
-        ent = -np.sum(probs_valid * np.log10(probs_valid + 1e-9))
-        output[i] = ent
+        # Shannon entropy with natural log (standard information theory)
+        # Filter > 0 to avoid log(0)
+        entropy = 0.0
+        for p in probs:
+            if p > 1e-9:
+                entropy -= p * np.log(p)
+        output[i] = entropy
 
     return output
 
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True)
 def _numba_run_regime_filter(
     log_probs,
     weights_raw,
@@ -243,24 +259,26 @@ def _numba_run_regime_filter(
     """
     n_rows = len(log_probs)
 
+    transition_matrix_f32 = transition_matrix.astype(np.float32)
+
     # Output arrays
     final_weights = np.zeros_like(weights_raw)
-    z_familiars = np.zeros(n_rows, dtype=np.float64)
-    confidences = np.zeros(n_rows, dtype=np.float64)
+    z_familiars = np.zeros(n_rows, dtype=np.float32)
+    confidences = np.zeros(n_rows, dtype=np.float32)
 
     # State validation
     log_lik_ema = log_lik_ema_start
     # Initialize with first observation if no prior
     # Or uniform? Code uses last_weights=None -> weights_blended logic
     # We will track last_weights
-    last_weights = np.zeros(n_regimes, dtype=np.float64)
+    last_weights = np.zeros(n_regimes, dtype=np.float32)
     has_prior = False  # Logic matches: if last_weights is None...
 
     max_entropy = np.log(n_regimes)
     if max_entropy == 0:
         max_entropy = 1e-9
 
-    chaos_onehot = np.zeros(n_regimes, dtype=np.float64)
+    chaos_onehot = np.zeros(n_regimes, dtype=np.float32)
     if chaos_idx >= 0 and chaos_idx < n_regimes:
         chaos_onehot[chaos_idx] = 1.0
 
@@ -287,10 +305,11 @@ def _numba_run_regime_filter(
         # -(z+2)
         val = -(z_score + 2.0)
         sig_val = 1.0 / (1.0 + np.exp(-val))
-        chaos_boost = 0.4 * sig_val
+        chaos_boost = 0.50 * sig_val
 
         # 5. Blend Raw
         weights_blended = (1.0 - chaos_boost) * w_raw + (chaos_boost * chaos_onehot)
+
 
         # 6. Forward Filter (Consistency)
         weights_update = weights_blended  # Default if no prior
@@ -299,7 +318,9 @@ def _numba_run_regime_filter(
             # predicted_weights = dot(last, trans)
             # last [1xD], trans [DxD] -> [1xD]
             # Numba dot support
-            pred_weights = np.dot(last_weights, transition_matrix)
+            # Ensure transition matrix is treated as float32 for dot product if possible, 
+            # but usually output is float64. we cast back.
+            pred_weights = np.dot(last_weights, transition_matrix_f32)
 
             # Update: pred * evidence (Bayesian update)
             raw_updated = pred_weights * weights_blended
@@ -311,8 +332,10 @@ def _numba_run_regime_filter(
                 (1.0 - dynamic_alpha) * norm_updated
             )
 
-        final_weights[i] = weights_update
-        last_weights = weights_update
+        # Enforce float32 to prevent Numba unification error (f32 vs f64)
+        weights_update_f32 = weights_update.astype(np.float32)
+        final_weights[i] = weights_update_f32
+        last_weights = weights_update_f32
         has_prior = True
 
         # 7. Update OOD Stats
@@ -327,7 +350,7 @@ def _numba_run_regime_filter(
     return final_weights, z_familiars, confidences
 
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True, fastmath=True)
 def _numba_rolling_mad(x, window):
     """
     Calculate rolling MAD (Median Absolute Deviation) using Numba.
@@ -336,12 +359,15 @@ def _numba_rolling_mad(x, window):
     First (window-1) elements will be 0.
     """
     n = len(x)
-    output = np.zeros(n, dtype=np.float64)
+    output = np.zeros(n, dtype=np.float32)
 
-    # Needs at least 'window' elements
-    for i in range(window, n + 1):
-        # Slice: ending at i (exclusive) -> window size
-        chunk = x[i - window : i]
+    if n < window:
+        return output
+
+    # Fixed off-by-one: range should be (window-1, n) to output at [window-1:]
+    for i in range(window - 1, n):
+        # Slice: ending at i+1 (exclusive) -> window size
+        chunk = x[i - window + 1 : i + 1]
 
         # 1. Median
         med = np.median(chunk)
@@ -352,12 +378,12 @@ def _numba_rolling_mad(x, window):
         # 3. MAD = median of deviations
         mad = np.median(devs)
 
-        output[i - 1] = mad
+        output[i] = mad
 
     return output
 
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True, fastmath=True)
 def _numba_rolling_median(x, window):
     """
     Calculate rolling Median using Numba.
@@ -365,22 +391,25 @@ def _numba_rolling_median(x, window):
     First (window-1) elements will be 0.
     """
     n = len(x)
-    output = np.zeros(n, dtype=np.float64)
+    output = np.zeros(n, dtype=np.float32)
 
-    # Needs at least 'window' elements
-    for i in range(window, n + 1):
-        # Slice: ending at i (exclusive) -> window size
-        chunk = x[i - window : i]
+    if n < window:
+        return output
+
+    # Fixed off-by-one: range should be (window-1, n) to output at [window-1:]
+    for i in range(window - 1, n):
+        # Slice: ending at i+1 (exclusive) -> window size
+        chunk = x[i - window + 1 : i + 1]
 
         # Median
         med = np.median(chunk)
 
-        output[i - 1] = med
+        output[i] = med
 
     return output
 
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True, fastmath=True)
 def _numba_rolling_slope(y, window):
     """
     Calculate rolling linear regression slope using Numba.
@@ -392,7 +421,7 @@ def _numba_rolling_slope(y, window):
     S_y_new = S_y_old - y_leaving + y_entering
     """
     n = len(y)
-    output = np.zeros(n, dtype=np.float64)
+    output = np.zeros(n, dtype=np.float32)
 
     if n < window:
         return output
@@ -422,7 +451,8 @@ def _numba_rolling_slope(y, window):
         y_entering = y[i]
 
         # Update sums incrementally
-        sum_xy = sum_xy - sum_y + y_leaving + (n_w - 1) * y_entering
+        # Correct formula: S_xy_new = S_xy_old - S_y_old + (W-1)*y_entering
+        sum_xy = sum_xy - sum_y + (n_w - 1) * y_entering
         sum_y = sum_y - y_leaving + y_entering
 
         output[i] = (n_w * sum_xy - sum_x * sum_y) / denom
@@ -430,7 +460,7 @@ def _numba_rolling_slope(y, window):
     return output
 
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True, fastmath=True)
 def _numba_volatility_clustering(returns, window=20):
     """
     Calculate volatility clustering coefficient (GARCH-like behavior).
@@ -442,7 +472,7 @@ def _numba_volatility_clustering(returns, window=20):
     WARNING: Assumes clean input (no NaNs/Infs). NaNs will propagate and poison the rolling statistics.
     """
     n = len(returns)
-    output = np.zeros(n, dtype=np.float64)
+    output = np.zeros(n, dtype=np.float32)
 
     if window <= 1:
         return output
@@ -487,15 +517,15 @@ def _numba_volatility_clustering(returns, window=20):
         syy += val_y * val_y
         sxy += val_x * val_y
 
-    # Compute for i = window
+    # Compute for i = window (aligned to right edge at window-1)
     mx = sx * inv_w
     my = sy * inv_w
     var_x = (sxx * inv_w) - (mx * mx)
     var_y = (syy * inv_w) - (my * my)
     cov = (sxy * inv_w) - (mx * my)
 
-    if var_x > 1e-12 and var_y > 1e-12:
-        output[window] = cov / np.sqrt(var_x * var_y)
+    if var_x > _EPS and var_y > _EPS:
+        output[window - 1] = cov / np.sqrt(var_x * var_y)
 
     # Rolling update
     for i in range(window + 1, n):
@@ -541,15 +571,15 @@ def _numba_volatility_clustering(returns, window=20):
         var_y = (syy * inv_w) - (my * my)
         cov = (sxy * inv_w) - (mx * my)
 
-        if var_x > 1e-12 and var_y > 1e-12:
-            output[i] = cov / np.sqrt(var_x * var_y)
+        if var_x > _EPS and var_y > _EPS:
+            output[i - 1] = cov / np.sqrt(var_x * var_y)
         else:
-            output[i] = 0.0
+            output[i - 1] = 0.0
 
     return output
 
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True, fastmath=True)
 def _numba_return_autocorrelation(returns, window=20, lag=1):
     """
     Calculate return autocorrelation at specified lag using O(N) online updates.
@@ -564,11 +594,11 @@ def _numba_return_autocorrelation(returns, window=20, lag=1):
     WARNING: Assumes clean input (no NaNs/Infs). NaNs will propagate and poison the rolling statistics.
     """
     n = len(returns)
-    output = np.zeros(n, dtype=np.float64)
+    output = np.zeros(n, dtype=np.float32)
 
     # Effective window size for correlation calculation
     w = float(window - lag)
-    if w <= 1:
+    if w <= 1 or n < window + lag:
         return output
 
     inv_w = 1.0 / w
@@ -673,7 +703,7 @@ def _numba_return_autocorrelation(returns, window=20, lag=1):
         var_y = (syy * inv_w) - (my * my)
         cov = (sxy * inv_w) - (mx * my)
 
-        if var_x > 1e-12 and var_y > 1e-12:
+        if var_x > _EPS and var_y > _EPS:
             output[i] = cov / np.sqrt(var_x * var_y)
         else:
             output[i] = 0.0
@@ -681,14 +711,21 @@ def _numba_return_autocorrelation(returns, window=20, lag=1):
     return output
 
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True, fastmath=True)
 def _numba_price_jump_frequency(returns, window=20, threshold=2.0):
     """
     Count large price moves (>threshold std deviations) in rolling window.
     High jump frequency indicates market turbulence/chaos.
+    
+    Args:
+        returns: Return series
+        window: Rolling window size  
+        threshold: Z-score threshold (2.0 = ~95th percentile, 2.5 = ~99th)
+    
+    Note: O(N*W) complexity - consider using rolling stats for O(N).
     """
     n = len(returns)
-    output = np.zeros(n, dtype=np.float64)
+    output = np.zeros(n, dtype=np.float32)
 
     for i in range(window, n):
         # Get returns in window
@@ -715,7 +752,7 @@ def _numba_price_jump_frequency(returns, window=20, threshold=2.0):
     return output
 
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True)
 def _numba_detect_gaps_vectorized(timestamps, expected_interval_minutes):
     """
     Vectorized gap detection using Numba.
@@ -723,21 +760,19 @@ def _numba_detect_gaps_vectorized(timestamps, expected_interval_minutes):
     """
     n = len(timestamps)
     gaps = np.zeros(n, dtype=np.int64)
-    expected_interval_ns = (
-        expected_interval_minutes * 60 * 1_000_000_000
-    )  # Convert to nanoseconds
+    expected_interval_ns = expected_interval_minutes * 60 * 1_000_000_000
 
     for i in range(1, n):
-        time_diff = timestamps[i] - timestamps[i - 1]
-        gap_minutes = time_diff / (60 * 1_000_000_000)
-
-        if gap_minutes > expected_interval_minutes:
-            gaps[i] = int(gap_minutes - expected_interval_minutes)
+        time_diff_ns = timestamps[i] - timestamps[i - 1]
+        
+        if time_diff_ns > expected_interval_ns:
+            gap_minutes = (time_diff_ns - expected_interval_ns) / (60 * 1_000_000_000)
+            gaps[i] = int(gap_minutes)
 
     return gaps
 
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True)
 def _numba_fill_gaps_vectorized(
     timestamps, opens, highs, lows, closes, volumes, gap_indices
 ):
@@ -771,7 +806,7 @@ def _numba_fill_gaps_vectorized(
     )
 
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True)
 def _numba_ohlc_resample_vectorized(
     timestamps,
     opens,
@@ -792,11 +827,11 @@ def _numba_ohlc_resample_vectorized(
 
     # Initialize output arrays
     out_timestamps = np.zeros(n_bars, dtype=np.int64)
-    out_opens = np.zeros(n_bars, dtype=np.float64)
-    out_highs = np.zeros(n_bars, dtype=np.float64)
-    out_lows = np.zeros(n_bars, dtype=np.float64)
-    out_closes = np.zeros(n_bars, dtype=np.float64)
-    out_volumes = np.zeros(n_bars, dtype=np.float64)
+    out_opens = np.zeros(n_bars, dtype=np.float32)
+    out_highs = np.zeros(n_bars, dtype=np.float32)
+    out_lows = np.zeros(n_bars, dtype=np.float32)
+    out_closes = np.zeros(n_bars, dtype=np.float32)
+    out_volumes = np.zeros(n_bars, dtype=np.float32)
 
     # Initialize with NaN
     out_opens[:] = np.nan
@@ -834,11 +869,15 @@ def _numba_ohlc_resample_vectorized(
     return out_timestamps, out_opens, out_highs, out_lows, out_closes, out_volumes
 
 
-@jit(nopython=True)
-def _numba_verify_data_quality(opens, highs, lows, closes, volumes):
+@jit(nopython=True, cache=True, parallel=True)
+def _numba_verify_data_quality(opens, highs, lows, closes, volumes, max_price_change=0.5):
     """
     Vectorized data quality verification using Numba.
     Returns counts of various quality issues.
+    
+    Args:
+        max_price_change: Maximum allowed price change (default 0.5 = 50%)
+                         Adjust for asset class: 0.1 for stocks, 0.5-1.0 for crypto
     """
     n = len(opens)
     ohlc_issues = 0
@@ -862,16 +901,16 @@ def _numba_verify_data_quality(opens, highs, lows, closes, volumes):
         if opens[i] <= 0 or highs[i] <= 0 or lows[i] <= 0 or closes[i] <= 0:
             price_issues += 1
 
-        # Check for extreme price movements ( > 50% in one bar)
+        # Check for extreme price movements
         if i > 0:
             price_change = abs(closes[i] - closes[i - 1]) / closes[i - 1]
-            if price_change > 0.5:
+            if price_change > max_price_change:
                 price_issues += 1
 
     return ohlc_issues, volume_issues, price_issues
 
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True)
 def _numba_streak_persistence(close, window=20):
     """
     Calculate Momentum Persistence (Z-score of price streaks) using Numba.
@@ -881,10 +920,10 @@ def _numba_streak_persistence(close, window=20):
     Optimized to O(N) using incremental updates with a circular buffer.
     """
     n = len(close)
-    output = np.zeros(n, dtype=np.float64)
+    output = np.zeros(n, dtype=np.float32)
 
     # Pre-calculate signs of differences
-    signs = np.zeros(n, dtype=np.float64)
+    signs = np.zeros(n, dtype=np.float32)
     for i in range(1, n):
         d = close[i] - close[i - 1]
         if d > 0:
@@ -897,8 +936,8 @@ def _numba_streak_persistence(close, window=20):
     # State
     # Max streaks is bounded by window size
     capacity = window + 5
-    buf_lens = np.zeros(capacity, dtype=np.float64)
-    buf_signs = np.zeros(capacity, dtype=np.float64)
+    buf_lens = np.zeros(capacity, dtype=np.float32)
+    buf_signs = np.zeros(capacity, dtype=np.float32)
 
     head = 0
     tail = 0
@@ -1003,14 +1042,14 @@ def _numba_streak_persistence(close, window=20):
     return output
 
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True, fastmath=True)
 def _numba_rolling_sum(x: np.ndarray, window: int) -> np.ndarray:
     """
     Rolling sum aligned to the right edge of the window.
     First (window-1) elements are 0.0.
     """
     n = len(x)
-    out = np.zeros(n, dtype=np.float64)
+    out = np.zeros(n, dtype=np.float32)
 
     if window <= 0:
         return out
@@ -1030,7 +1069,7 @@ def _numba_rolling_sum(x: np.ndarray, window: int) -> np.ndarray:
     return out
 
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True, fastmath=True)
 def _numba_rolling_vwap(price: np.ndarray, volume: np.ndarray, window: int) -> np.ndarray:
     """
     Calculate rolling VWAP using Numba with O(N) complexity.
@@ -1039,7 +1078,7 @@ def _numba_rolling_vwap(price: np.ndarray, volume: np.ndarray, window: int) -> n
     Returns NaN when volume sum is near zero.
     """
     n = len(price)
-    out = np.empty(n, dtype=np.float64)
+    out = np.empty(n, dtype=np.float32)
     out[:] = np.nan
 
     sum_pv = 0.0
@@ -1049,26 +1088,19 @@ def _numba_rolling_vwap(price: np.ndarray, volume: np.ndarray, window: int) -> n
         p = price[i]
         v = volume[i]
 
-        # Accumulate Volume (if valid)
-        if not np.isnan(v):
+        # Accumulate Volume and PV (both must be valid)
+        if not np.isnan(p) and not np.isnan(v):
             sum_v += v
+            sum_pv += p * v
 
-        # Accumulate PV (if valid)
-        pv = p * v
-        if not np.isnan(pv):
-            sum_pv += pv
-
-        # Remove leaving elements
+        # Remove leaving elements (both must have been valid)
         if i >= window:
             p_old = price[i - window]
             v_old = volume[i - window]
 
-            if not np.isnan(v_old):
+            if not np.isnan(p_old) and not np.isnan(v_old):
                 sum_v -= v_old
-
-            pv_old = p_old * v_old
-            if not np.isnan(pv_old):
-                sum_pv -= pv_old
+                sum_pv -= p_old * v_old
 
         # Compute VWAP
         # Avoid division by zero
@@ -1082,14 +1114,14 @@ def _numba_rolling_vwap(price: np.ndarray, volume: np.ndarray, window: int) -> n
     return out
 
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True, fastmath=True)
 def _numba_rolling_mean(x: np.ndarray, window: int) -> np.ndarray:
     """
     Rolling mean aligned to the right edge of the window.
     First (window-1) elements are 0.0.
     """
     n = len(x)
-    out = np.zeros(n, dtype=np.float64)
+    out = np.zeros(n, dtype=np.float32)
 
     if window <= 0:
         return out
@@ -1109,14 +1141,14 @@ def _numba_rolling_mean(x: np.ndarray, window: int) -> np.ndarray:
     return out
 
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True, fastmath=True)
 def _numba_rolling_std(x: np.ndarray, window: int) -> np.ndarray:
     """
     Rolling standard deviation aligned to the right edge of the window.
     Uses E[x^2] - (E[x])^2 (fast; fine for typical small windows).
     """
     n = len(x)
-    out = np.zeros(n, dtype=np.float64)
+    out = np.zeros(n, dtype=np.float32)
 
     if window <= 0:
         return out
@@ -1149,7 +1181,7 @@ def _numba_rolling_std(x: np.ndarray, window: int) -> np.ndarray:
     return out
 
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True, fastmath=True)
 def _numba_rolling_correlation(x: np.ndarray, y: np.ndarray, window: int) -> np.ndarray:
     """
     Rolling correlation Corr(x,y) aligned to the right edge of the window.
@@ -1158,7 +1190,7 @@ def _numba_rolling_correlation(x: np.ndarray, y: np.ndarray, window: int) -> np.
     Cov(x,y) = E[xy] - E[x]E[y]
     """
     n = len(x)
-    out = np.zeros(n, dtype=np.float64)
+    out = np.zeros(n, dtype=np.float32)
 
     if window <= 0:
         return out
@@ -1211,14 +1243,14 @@ def _numba_rolling_correlation(x: np.ndarray, y: np.ndarray, window: int) -> np.
     return out
 
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True, fastmath=True)
 def _numba_calculate_continuous_weight(vals, gamma, beta, quantile_threshold):
     """
     Calculate continuous sample weights using Numba.
     Optimized replacement for calculate_continuous_weight.
     """
     n = len(vals)
-    weights = np.zeros(n, dtype=np.float64)
+    weights = np.zeros(n, dtype=np.float32)
 
     # Work on absolute values
     abs_vals = np.abs(vals)
@@ -1278,7 +1310,7 @@ def _numba_calculate_continuous_weight(vals, gamma, beta, quantile_threshold):
 
     return weights
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True, fastmath=True)
 def _numba_ewma(x: np.ndarray, alpha: float, adjust: bool = False) -> np.ndarray:
     """
     Calculate Exponential Weighted Moving Average (EWMA) using Numba.
@@ -1293,7 +1325,7 @@ def _numba_ewma(x: np.ndarray, alpha: float, adjust: bool = False) -> np.ndarray
         EWMA array
     """
     n = len(x)
-    out = np.empty(n, dtype=np.float64)
+    out = np.empty(n, dtype=np.float32)
 
     if n == 0:
         return out
@@ -1357,10 +1389,11 @@ def _numba_ewma(x: np.ndarray, alpha: float, adjust: bool = False) -> np.ndarray
 
     return out
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True, fastmath=True)
 def _numba_ewm_std(x: np.ndarray, alpha: float, adjust: bool = False) -> np.ndarray:
     """
     Calculate Exponential Weighted Moving Standard Deviation using Numba.
+    Single-pass fused implementation for efficiency.
 
     Args:
         x: Input array (1D)
@@ -1371,7 +1404,7 @@ def _numba_ewm_std(x: np.ndarray, alpha: float, adjust: bool = False) -> np.ndar
         EWM Std array
     """
     n = len(x)
-    out = np.empty(n, dtype=np.float64)
+    out = np.empty(n, dtype=np.float32)
 
     if n == 0:
         return out
@@ -1388,27 +1421,56 @@ def _numba_ewm_std(x: np.ndarray, alpha: float, adjust: bool = False) -> np.ndar
         return out
 
     out[:first_valid_idx] = np.nan
-    out[first_valid_idx] = np.nan # Variance is undefined for the first point
+    
+    # Single-pass fused EWMA for x and x^2
+    if adjust:
+        weighted_sum = x[first_valid_idx]
+        weighted_sum2 = x[first_valid_idx] ** 2
+        sum_weights = 1.0
+        out[first_valid_idx] = np.nan  # Variance undefined for first point
 
-    # Re-implementation using Two-Pass approach (E[x] and E[x^2]) is safer for consistency with Pandas
-    # Calculating means
-    ewm_x = _numba_ewma(x, alpha, adjust)
-    x2 = x * x
-    ewm_x2 = _numba_ewma(x2, alpha, adjust)
+        for i in range(first_valid_idx + 1, n):
+            val = x[i]
+            if np.isnan(val):
+                out[i] = out[i - 1] if i > first_valid_idx else np.nan
+            else:
+                if np.isnan(weighted_sum):
+                    weighted_sum = val
+                    weighted_sum2 = val ** 2
+                    sum_weights = 1.0
+                else:
+                    weighted_sum = val + (1.0 - alpha) * weighted_sum
+                    weighted_sum2 = val ** 2 + (1.0 - alpha) * weighted_sum2
+                    sum_weights = 1.0 + (1.0 - alpha) * sum_weights
+                
+                mean = weighted_sum / sum_weights
+                mean2 = weighted_sum2 / sum_weights
+                var = mean2 - mean ** 2
+                out[i] = np.sqrt(max(0.0, var))
+    else:
+        last_val = x[first_valid_idx]
+        last_val2 = x[first_valid_idx] ** 2
+        out[first_valid_idx] = np.nan
 
-    for i in range(n):
-        if np.isnan(ewm_x[i]) or np.isnan(ewm_x2[i]):
-            out[i] = np.nan
-        else:
-            # Var = E[x^2] - (E[x])^2
-            # Numerical noise might cause negative small values
-            v = ewm_x2[i] - ewm_x[i]**2
-            if v < 0:
-                v = 0.0
-            out[i] = np.sqrt(v)
+        for i in range(first_valid_idx + 1, n):
+            val = x[i]
+            if np.isnan(val):
+                out[i] = np.nan
+                last_val = np.nan
+                last_val2 = np.nan
+            else:
+                if np.isnan(last_val):
+                    last_val = val
+                    last_val2 = val ** 2
+                else:
+                    last_val = (1.0 - alpha) * last_val + alpha * val
+                    last_val2 = (1.0 - alpha) * last_val2 + alpha * (val ** 2)
+                
+                var = last_val2 - last_val ** 2
+                out[i] = np.sqrt(max(0.0, var))
 
     return out
-@jit(nopython=True)
+@jit(nopython=True, cache=True, fastmath=True)
 def _numba_rolling_skew(x, window):
     """
     Calculate rolling skewness using Numba with online update algorithm (Sum of Powers).
@@ -1416,7 +1478,7 @@ def _numba_rolling_skew(x, window):
     Assumes clean input (no NaNs), or NaNs will propagate.
     """
     n = len(x)
-    out = np.empty(n, dtype=np.float64)
+    out = np.empty(n, dtype=np.float32)
     out[:] = np.nan
 
     if window < 3:
@@ -1475,7 +1537,7 @@ def _numba_rolling_skew(x, window):
 
     return out
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True, fastmath=True)
 def _numba_rolling_kurt(x, window):
     """
     Calculate rolling kurtosis using Numba with online update algorithm (Sum of Powers).
@@ -1483,7 +1545,7 @@ def _numba_rolling_kurt(x, window):
     Assumes clean input (no NaNs), or NaNs will propagate.
     """
     n = len(x)
-    out = np.empty(n, dtype=np.float64)
+    out = np.empty(n, dtype=np.float32)
     out[:] = np.nan
 
     if window < 4:
@@ -1550,14 +1612,14 @@ def _numba_rolling_kurt(x, window):
     return out
 
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True, fastmath=True)
 def _numba_rolling_cov(x: np.ndarray, y: np.ndarray, window: int) -> np.ndarray:
     """
     Calculate rolling covariance Cov(x,y) aligned to the right edge of the window.
     Cov(x,y) = E[xy] - E[x]E[y]
     """
     n = len(x)
-    out = np.zeros(n, dtype=np.float64)
+    out = np.zeros(n, dtype=np.float32)
 
     if window <= 0:
         return out
@@ -1595,13 +1657,13 @@ def _numba_rolling_cov(x: np.ndarray, y: np.ndarray, window: int) -> np.ndarray:
     return out
 
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True)
 def _numba_rolling_mean_nan_safe(x, window):
     """
     Rolling mean ignoring NaNs.
     """
     n = len(x)
-    output = np.zeros(n, dtype=np.float64)
+    output = np.zeros(n, dtype=np.float32)
     output[:] = np.nan
 
     for i in range(n):
@@ -1623,13 +1685,13 @@ def _numba_rolling_mean_nan_safe(x, window):
     return output
 
 
-@jit(nopython=True)
+@jit(nopython=True, cache=True)
 def _numba_rolling_std_nan_safe(x, window):
     """
     Rolling std ignoring NaNs.
     """
     n = len(x)
-    output = np.zeros(n, dtype=np.float64)
+    output = np.zeros(n, dtype=np.float32)
     output[:] = np.nan
 
     for i in range(n):

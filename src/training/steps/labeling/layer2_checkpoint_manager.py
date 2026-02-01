@@ -77,8 +77,24 @@ class Layer2CheckpointManager:
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
         self._metadata_cache: Dict[str, Dict[str, CheckpointMetadata]] = {}
     
-    def _get_symbol_dir(self, symbol: str) -> Path:
-        """Get or create the checkpoint directory for a symbol."""
+    def _get_symbol_dir(self, symbol: str, config: Optional[Dict[str, Any]] = None) -> Path:
+        """Get or create the checkpoint directory for a symbol.
+        
+        Multi-asset aware: uses multi_asset_{hash} naming when applicable.
+        """
+        # Check if multi-asset mode
+        is_multi_asset = False
+        if config:
+            assets = config.get('assets', [])
+            if assets and len(assets) > 1:
+                is_multi_asset = True
+                # Use sorted asset list for consistent naming
+                asset_str = '_'.join(sorted(assets)[:5])  # Limit to 5 for reasonable filename
+                symbol_dir = self.checkpoint_dir / f"multi_asset_{asset_str}"
+                symbol_dir.mkdir(parents=True, exist_ok=True)
+                return symbol_dir
+        
+        # Single asset mode
         symbol_dir = self.checkpoint_dir / symbol.upper()
         symbol_dir.mkdir(parents=True, exist_ok=True)
         return symbol_dir
@@ -170,7 +186,7 @@ class Layer2CheckpointManager:
         self.validate_checkpoint_data(step, data)
 
         step_idx = self._get_step_index(step)
-        symbol_dir = self._get_symbol_dir(symbol)
+        symbol_dir = self._get_symbol_dir(symbol, config)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         config_hash = self._compute_config_hash(config or {})
         
@@ -196,9 +212,19 @@ class Layer2CheckpointManager:
                 for key, value in data.items():
                     if isinstance(value, pd.DataFrame):
                         try:
-                            store.put(key, value, format='table', data_columns=True)
+                            # Convert object columns to string type (hdf5 doesn't support generic objects)
+                            obj_cols = value.select_dtypes(include=["object"]).columns
+                            if len(obj_cols) > 0:
+                                # Create a copy to avoid modifying the original dataframe
+                                value_to_save = value.copy()
+                                for col in obj_cols:
+                                    value_to_save[col] = value_to_save[col].astype(str)
+                                # Use fixed format for object columns to avoid ObjectAtom issues
+                                store.put(key, value_to_save, format='fixed')
+                            else:
+                                store.put(key, value, format='table', data_columns=None)
                         except Exception as e:
-                            logger.warning(f"⚠️ Failed to save {key} as HDF5 table (likely too many columns): {e}. Falling back to fixed format.")
+                            logger.warning(f"⚠️ Failed to save {key} as HDF5: {e}. Falling back to fixed format.")
                             store.put(key, value, format='fixed')
                     elif isinstance(value, pd.Series):
                         try:
@@ -306,7 +332,8 @@ class Layer2CheckpointManager:
     def load_checkpoint(
         self, 
         step: str, 
-        symbol: str
+        symbol: str,
+        config: Optional[Dict[str, Any]] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Load a checkpoint for a given sub-step.
@@ -318,7 +345,7 @@ class Layer2CheckpointManager:
         Returns:
             Dictionary of checkpoint data, or None if not found
         """
-        symbol_dir = self._get_symbol_dir(symbol)
+        symbol_dir = self._get_symbol_dir(symbol, config)
         checkpoint_base = symbol_dir / f"checkpoint_{step}"
         h5_path = checkpoint_base.with_suffix('.h5')
         meta_path = checkpoint_base.with_suffix('.json')

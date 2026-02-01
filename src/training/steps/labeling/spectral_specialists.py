@@ -32,6 +32,87 @@ except ImportError:
     def tprint_warning(msg): print(f"[WARNING] {msg}")
     def tprint_error(msg): print(f"[ERROR] {msg}")
 
+# Try to import numba for performance optimizations
+try:
+    from numba import njit
+    NUMBA_AVAILABLE = True
+except ImportError:
+    NUMBA_AVAILABLE = False
+    # Dummy decorator if numba not available
+    def njit(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator if not args else decorator(args[0])
+
+# Import bottleneck for optimized rolling operations
+try:
+    import bottleneck as bn
+    HAS_BOTTLENECK = True
+except ImportError:
+    HAS_BOTTLENECK = False
+    tprint_warning("⚠️ bottleneck not available - falling back to pandas (slower)")
+
+# Import scipy for entropy (with guard)
+try:
+    from scipy.stats import entropy as scipy_entropy
+    HAS_SCIPY = True
+except ImportError:
+    HAS_SCIPY = False
+    scipy_entropy = None
+
+
+@njit(cache=True)
+def _rolling_entropy_numba(returns: np.ndarray, window: int, n_bins: int = 10) -> np.ndarray:
+    """Numba-optimized rolling entropy calculation.
+    
+    Args:
+        returns: Array of returns
+        window: Rolling window size
+        n_bins: Number of histogram bins
+        
+    Returns:
+        Array of rolling entropy values
+    """
+    n = len(returns)
+    result = np.full(n, np.nan)
+    
+    for i in range(window, n):
+        window_data = returns[i - window:i]
+        
+        # Remove NaN values
+        valid_data = window_data[~np.isnan(window_data)]
+        if len(valid_data) < window // 2:  # Need at least half the window
+            continue
+            
+        # Compute histogram
+        data_min = np.min(valid_data)
+        data_max = np.max(valid_data)
+        
+        if data_max - data_min < 1e-10:  # Constant data
+            result[i] = 0.0
+            continue
+            
+        # Manual histogram computation
+        bin_edges = np.linspace(data_min, data_max, n_bins + 1)
+        counts = np.zeros(n_bins)
+        
+        for val in valid_data:
+            # Find bin index
+            bin_idx = int((val - data_min) / (data_max - data_min) * (n_bins - 1))
+            bin_idx = min(bin_idx, n_bins - 1)  # Clamp to valid range
+            counts[bin_idx] += 1
+        
+        # Compute Shannon entropy
+        total = np.sum(counts)
+        if total > 0:
+            entropy_val = 0.0
+            for count in counts:
+                if count > 0:
+                    prob = count / total
+                    entropy_val -= prob * np.log(prob + 1e-9)
+            result[i] = entropy_val
+    
+    return result
 
 def _rolling_mad(values: np.ndarray) -> float:
     """Median absolute deviation helper for rolling windows."""
@@ -39,6 +120,84 @@ def _rolling_mad(values: np.ndarray) -> float:
         return np.nan
     median = np.nanmedian(values)
     return float(np.nanmedian(np.abs(values - median)))
+
+
+@njit
+def ewma_numba(arr: np.ndarray, span: int) -> np.ndarray:
+    """Numba-optimized exponential weighted moving average."""
+    alpha = 2.0 / (span + 1.0)
+    result = np.empty_like(arr)
+    result[0] = arr[0]
+    for i in range(1, len(arr)):
+        if np.isnan(arr[i]):
+            result[i] = result[i-1]
+        else:
+            result[i] = alpha * arr[i] + (1.0 - alpha) * result[i-1]
+    return result
+
+
+@njit
+def fast_rolling_entropy_numba(arr: np.ndarray, window: int, bins: int = 10) -> np.ndarray:
+    """Numba-optimized rolling entropy calculation."""
+    n = len(arr)
+    result = np.full(n, np.nan)
+    
+    for i in range(window - 1, n):
+        window_data = arr[i - window + 1:i + 1]
+        
+        # Remove NaN values
+        valid_data = window_data[~np.isnan(window_data)]
+        if len(valid_data) < window // 2:  # Need at least half the window
+            continue
+            
+        # Manual histogram calculation
+        min_val = np.min(valid_data)
+        max_val = np.max(valid_data)
+        
+        if max_val - min_val < 1e-10:  # Constant values
+            result[i] = 0.0
+            continue
+            
+        bin_edges = np.linspace(min_val, max_val, bins + 1)
+        hist = np.zeros(bins)
+        
+        for val in valid_data:
+            bin_idx = int((val - min_val) / (max_val - min_val) * (bins - 1))
+            bin_idx = min(max(bin_idx, 0), bins - 1)
+            hist[bin_idx] += 1
+        
+        # Normalize
+        hist = hist / hist.sum()
+        
+        # Calculate entropy
+        entropy_val = 0.0
+        for h in hist:
+            if h > 1e-10:
+                entropy_val -= h * np.log(h)
+        
+        result[i] = entropy_val
+    
+    return result
+
+
+def safe_rolling_std(series: pd.Series, window: int, min_periods: int = 1) -> pd.Series:
+    """Optimized rolling std using bottleneck if available."""
+    if HAS_BOTTLENECK:
+        arr = series.values
+        result = bn.move_std(arr, window=window, min_count=min_periods)
+        return pd.Series(result, index=series.index)
+    else:
+        return series.rolling(window, min_periods=min_periods).std()
+
+
+def safe_rolling_mean(series: pd.Series, window: int, min_periods: int = 1) -> pd.Series:
+    """Optimized rolling mean using bottleneck if available."""
+    if HAS_BOTTLENECK:
+        arr = series.values
+        result = bn.move_mean(arr, window=window, min_count=min_periods)
+        return pd.Series(result, index=series.index)
+    else:
+        return series.rolling(window, min_periods=min_periods).mean()
 
 
 @dataclass
@@ -140,101 +299,81 @@ class SpectralSpecialists:
             'gap_specialist',
             'trend_specialist',
             'reversal_specialist',
-            'volatility_breakout_specialist'
+            'volatility_breakout_specialist',
+            'cross_asset_specialist'
         ]
         
-        # Specialist descriptions
+        # Specialist descriptions (removed dead key_scales/resonance_pairs fields)
         self.specialist_descriptions = {
             'inventory_specialist': {
                 'priority': 1,
                 'description': 'Dealer exhaustion detection',
-                'role': 'Micro-divergence in 15m wavelet before 4h trend impact',
-                'key_scales': ['d2', 'd3'],  # 15m-1h, 1h-4h
-                'resonance_pairs': [('d1', 'd3'), ('d2', 'd4')]
+                'role': 'Micro-divergence in 15m wavelet before 4h trend impact'
             },
             'volume_specialist': {
                 'priority': 2,
                 'description': 'Micro-surge vs macro-trend resonance',
-                'role': 'Detect volume micro-surge resonating with macro-trend',
-                'key_scales': ['d1', 'd2'],  # 5m-15m, 15m-1h
-                'resonance_pairs': [('d1', 'd3'), ('d2', 'd4')]
+                'role': 'Detect volume micro-surge resonating with macro-trend'
             },
             'volatility_specialist': {
                 'priority': 3,
                 'description': 'Volatility Z-Score and Shock Detection',
-                'role': 'Detects volatility shocks as causal precursors to risk events',
-                'key_scales': ['d1', 'd3'],  # 5m-15m, 1h-4h
-                'resonance_pairs': [('d1', 'd3'), ('d2', 'd4')]
+                'role': 'Detects volatility shocks as causal precursors to risk events'
             },
             'information_specialist': {
                 'priority': 4,
                 'description': 'Price Action and Microstructure Signatures',
-                'role': 'Strongest predictor of permanent price moves via PA info',
-                'key_scales': ['d2', 'd3'],  # 15m-1h, 1h-4h
-                'resonance_pairs': [('d2', 'd4'), ('d1', 'd3')]
+                'role': 'Strongest predictor of permanent price moves via PA info'
             },
             'cusum_break_specialist': {
                 'priority': 5,
                 'description': 'Structural Break Detection (CUSUM)',
-                'role': 'Detect regime shifts where underlying process changes',
-                'key_scales': ['d3', 'd4'],  # 1h-4h, 4h-Daily
-                'resonance_pairs': [('d2', 'd4')]
+                'role': 'Detect regime shifts where underlying process changes'
             },
             'entropy_specialist': {
                 'priority': 6,
                 'description': 'Market Entropy / Unpredictability',
-                'role': 'Measure information content and signal-to-noise breakdown',
-                'key_scales': ['d2', 'd3'],
-                'resonance_pairs': [('d1', 'd3')]
+                'role': 'Measure information content and signal-to-noise breakdown'
             },
             'tick_rule_specialist': {
                 'priority': 7,
                 'description': 'Aggressor Flow Proxy',
-                'role': 'Approximates buy vs sell pressure within bars',
-                'key_scales': ['d1', 'd2'],
-                'resonance_pairs': [('d1', 'd3')]
+                'role': 'Approximates buy vs sell pressure within bars'
             },
             'fractal_efficiency_specialist': {
                 'priority': 8,
                 'description': 'Fractal Efficiency (Kaufman/Hurst)',
-                'role': 'Distinguish directional trends (clean) from random walks (noisy)',
-                'key_scales': ['d2', 'd4'],
-                'resonance_pairs': [('d2', 'd4')]
+                'role': 'Distinguish directional trends (clean) from random walks (noisy)'
             },
             'liquidity_shock_specialist': {
                 'priority': 9,
                 'description': 'Liquidity Shock (Amihud Proxy)',
-                'role': 'Detects structural liquidity failures (Price Ease)',
-                'key_scales': ['d1', 'd2'],
-                'resonance_pairs': [('d1', 'd3')]
+                'role': 'Detects structural liquidity failures (Price Ease)'
             },
             'gap_specialist': {
                 'priority': 10,
                 'description': 'Exogenous Shock (Gap)',
-                'role': 'Detects overnight/weekend information injection',
-                'key_scales': ['d1', 'd4'],
-                'resonance_pairs': [('d1', 'd4')]
+                'role': 'Detects overnight/weekend information injection'
             },
             'trend_specialist': {
                 'priority': 11,
                 'description': 'Trend Persistence (Rolling Returns)',
-                'role': 'Captures directional alpha and trend persistence',
-                'key_scales': ['d3', 'd4'],
-                'resonance_pairs': [('d3', 'd4')]
+                'role': 'Captures directional alpha and trend persistence'
             },
             'reversal_specialist': {
                 'priority': 12,
                 'description': 'Mean Reversion (Oscillator)',
-                'role': 'Detects overextended price action and mean-reversion events',
-                'key_scales': ['d1', 'd2'],
-                'resonance_pairs': [('d1', 'd3')]
+                'role': 'Detects overextended price action and mean-reversion events'
             },
             'volatility_breakout_specialist': {
                 'priority': 13,
                 'description': 'Volatility Breakout (HL vs Baseline)',
-                'role': 'Detects unexpected volatility/range expansion vs baseline',
-                'key_scales': ['d2', 'd3'],
-                'resonance_pairs': [('d2', 'd4')]
+                'role': 'Detects unexpected volatility/range expansion vs baseline'
+            },
+            'cross_asset_specialist': {
+                'priority': 14,
+                'description': 'Cross-Asset Resonance (Beta/Lead-Lag)',
+                'role': 'Detects systemic shocks and lead-lag relationships across assets'
             }
         }
         
@@ -256,40 +395,89 @@ class SpectralSpecialists:
     
     def extract_specialist_signals(
         self,
-        df: pd.DataFrame,
+        df_input: pd.DataFrame,
         specialist_configs: Dict[str, Dict[str, Any]] = None
     ) -> Dict[str, pd.Series]:
         """
         Extract raw specialist signals from market data.
         
         Args:
-            df: Market data with OHLCV and derived features
+            df_input: Market data with OHLCV and derived features
             specialist_configs: Configuration for each specialist
             
         Returns:
             Dictionary of specialist time series
         """
+        df = df_input.copy()
+        
         try:
             if self.verbose:
                 tprint_info("📊 Extracting raw specialist signals...")
             
+            configs = specialist_configs or {}
+            asset_context = configs.get("asset_context", {})
+            asset_col = asset_context.get("asset_id_col")
+            if asset_col is None:
+                for candidate in ("asset_id", "asset", "ticker", "symbol"):
+                    if candidate in df.columns:
+                        asset_col = candidate
+                        break
+            group_by_asset = bool(asset_context.get("group_by_asset", True))
+
+            if asset_col and group_by_asset and df[asset_col].nunique(dropna=False) > 1:
+                if self.verbose:
+                    tprint_info(f"   🧩 Grouping specialist extraction by asset ({asset_col})")
+                return self._extract_signals_by_asset(df, configs, asset_col)
+
+            # Proactively deduplicate incoming dataframe ONLY for single-asset data (or if grouping skipped)
+            # to avoid downstream reindex/join errors
+            if df.index.has_duplicates:
+                num_dups = df.index.duplicated().sum()
+                tprint_warning(f"   ⚠️ Input dataframe contains {num_dups} duplicate timestamps; keeping latest occurrences.")
+                df = df.loc[~df.index.duplicated(keep='last')]
+
             # Early data validation
-            self._validate_input_data(df)
+            df = self._validate_input_data(df)
             
             specialist_signals = {}
-            configs = specialist_configs or {}
             
             # Pre-compute common rolling statistics to speed up specialists
             if self.verbose:
                 tprint_info("⚡ Pre-computing rolling statistics...")
             
-            # Common rolling windows used by multiple specialists
+            # Common rolling windows used by multiple specialists (using bottleneck if available)
             rolling_stats = {}
             if len(df) > 50:
-                rolling_stats['vol_20'] = df['volume'].rolling(20, min_periods=1).mean()
-                rolling_stats['vol_50'] = df['volume'].rolling(50, min_periods=1).mean()
-                rolling_stats['std_50'] = df['close'].rolling(50, min_periods=1).std()
-                rolling_stats['mean_50'] = df['close'].rolling(50, min_periods=1).mean()
+                # Returns statistics
+                returns = df['close'].pct_change()
+                rolling_stats['returns'] = returns
+                
+                # Volatility
+                rolling_stats['volatility_20'] = safe_rolling_std(returns, 20, min_periods=1)
+                rolling_stats['volatility_50'] = safe_rolling_std(returns, 50, min_periods=1)
+                rolling_stats['returns_std_20'] = rolling_stats['volatility_20']  # Alias for backward compatibility
+                rolling_stats['returns_std_50'] = rolling_stats['volatility_50']  # Alias for backward compatibility
+                rolling_stats['returns_std_100'] = safe_rolling_std(returns, 100, min_periods=1)
+                rolling_stats['returns_mean_50'] = safe_rolling_mean(returns, 50, min_periods=1)
+                rolling_stats['returns_mean_100'] = safe_rolling_mean(returns, 100, min_periods=1)
+                
+                # Volume statistics
+                rolling_stats['volume_ma_20'] = safe_rolling_mean(df['volume'], 20, min_periods=1)
+                rolling_stats['volume_ma_50'] = safe_rolling_mean(df['volume'], 50, min_periods=1)
+                rolling_stats['vol_20'] = rolling_stats['volume_ma_20'] # Alias for backward compatibility
+                rolling_stats['vol_50'] = rolling_stats['volume_ma_50'] # Alias for backward compatibility
+                
+                # Price statistics
+                rolling_stats['close_mean_50'] = safe_rolling_mean(df['close'], 50, min_periods=1)
+                rolling_stats['close_std_50'] = safe_rolling_std(df['close'], 50, min_periods=1)
+                rolling_stats['close_mean_100'] = safe_rolling_mean(df['close'], 100, min_periods=1)
+                rolling_stats['close_std_100'] = safe_rolling_std(df['close'], 100, min_periods=1)
+                
+                # Advanced statistics
+                if 'high' in df.columns and 'low' in df.columns:
+                    rolling_stats['hl_range'] = (df['high'] - df['low']) / (df['close'] + 1e-9)
+                
+                rolling_stats['vol_rank'] = rolling_stats['volatility_20'].rolling(100).rank(pct=True)
             
             # Helper to safely extract and add signal with validation
             def _add_signal(name, extraction_func):
@@ -297,7 +485,7 @@ class SpectralSpecialists:
                     try:
                         if self.verbose:
                             tprint_info(f"   🔄 Extracting {name}...")
-                        signal = extraction_func(df, configs.get(name, {}), rolling_stats)
+                        signal = extraction_func(df, rolling_stats)
                         if signal is not None:
                             # Validate signal quality
                             signal_quality = self._validate_signal_quality(signal, name)
@@ -352,7 +540,11 @@ class SpectralSpecialists:
                             continue
                         mean = signal.mean()
                         std = signal.std()
-                        normalized = (signal - mean) / (std + 1e-9)
+                        # Check if feature is already normalized (std ≈ 1.0)
+                        if 0.9 <= std <= 1.1:  # Already normalized
+                            normalized = signal  # Use as-is to preserve natural variance
+                        else:
+                            normalized = (signal - mean) / (std + 1e-9)  # Normalize if needed
                         name = f"{col}_specialist"
                         if name in specialist_signals:
                             continue
@@ -385,33 +577,158 @@ class SpectralSpecialists:
                 tprint_error(f"❌ Specialist signal extraction failed: {e}")
             return {}
 
-    def _validate_input_data(self, df: pd.DataFrame):
+    def _extract_signals_by_asset(
+        self,
+        df: pd.DataFrame,
+        configs: Dict[str, Dict[str, Any]],
+        asset_col: str,
+    ) -> Dict[str, pd.Series]:
+        df_work = df.copy()
+        df_work["_row_order"] = np.arange(len(df_work))
+        aggregated: Dict[str, List[pd.Series]] = {}
+        asset_configs = dict(configs)
+        asset_context = dict(asset_configs.get("asset_context", {}))
+        asset_context["group_by_asset"] = False
+        asset_context["asset_id_col"] = asset_col
+        asset_configs["asset_context"] = asset_context
+        n_assets = df_work[asset_col].nunique(dropna=False)
+
+        for _, asset_df in df_work.groupby(asset_col, sort=False):
+            asset_order = asset_df["_row_order"].to_numpy()
+            asset_df = asset_df.drop(columns=["_row_order"])
+            asset_signals = self.extract_specialist_signals(asset_df, asset_configs)
+            if not asset_signals:
+                continue
+            for name, series in asset_signals.items():
+                series = series.copy()
+                series.index = asset_order
+                aggregated.setdefault(name, []).append(series)
+
+        if not aggregated:
+            return {}
+
+        full_index = pd.Index(range(len(df_work)), name="_row_order")
+        combined_signals: Dict[str, pd.Series] = {}
+        for name, parts in aggregated.items():
+            combined = pd.concat(parts).sort_index()
+            combined = combined.reindex(full_index, fill_value=np.nan)
+            combined.index = df.index
+            combined_signals[name] = combined
+
+        if self.verbose:
+            tprint_info(
+                f"   🧩 Asset-grouped extraction produced {len(combined_signals)} signals across {n_assets} assets"
+            )
+
+        self._last_extracted_specialists = list(combined_signals.keys())
+        return combined_signals
+
+    def _validate_input_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """Validate input dataframe for common issues."""
         if df.empty:
             raise ValueError("Input dataframe is empty")
         
+        # Use a local copy to ensure we don't destructively modify the global reference incorrectly
+        # and so we can return a clean version.
+        df_clean = df.copy()
+
+        # Deduplicate timestamps only when the same asset repeats to avoid cross-asset data loss
+        if df_clean.index.has_duplicates:
+            has_multi_index = isinstance(df_clean.index, pd.MultiIndex)
+            index_names = list(df_clean.index.names) if has_multi_index else [df_clean.index.name]
+
+            # Ensure index levels have names so reset_index columns are well-defined
+            if has_multi_index:
+                updated_names = []
+                for idx, name in enumerate(index_names):
+                    if not name:
+                        name = f"level_{idx}"
+                        df_clean.index = df_clean.index.set_names(name, level=idx)
+                    updated_names.append(name)
+                index_names = updated_names
+            else:
+                if not df_clean.index.name:
+                    df_clean.index = df_clean.index.rename("timestamp")
+                    index_names = ["timestamp"]
+
+            timestamp_name = index_names[0]
+
+            asset_col = None
+            asset_from_index = False
+            for candidate in ("asset_id", "asset", "ticker", "symbol"):
+                if candidate in df_clean.columns:
+                    asset_col = candidate
+                    break
+
+            if asset_col is None and has_multi_index:
+                for candidate in ("asset_id", "asset", "ticker", "symbol"):
+                    if candidate in index_names:
+                        asset_col = candidate
+                        asset_from_index = True
+                        break
+
+            if asset_col is not None:
+                # Multi-Asset Mode: Deduplicate on (timestamp, asset_id)
+                df_reset = df_clean.reset_index()
+                subset = [timestamp_name, asset_col]
+                dup_mask = df_reset.duplicated(subset=subset, keep="last")
+                dup_count = int(dup_mask.sum())
+
+                if dup_count > 0:
+                    sample_pairs = df_reset.loc[dup_mask, subset].head(5).values.tolist()
+                    tprint_warning(
+                        f"⚠️ Input dataframe contains {dup_count} duplicate ({timestamp_name}, {asset_col}) pairs; "
+                        f"keeping latest occurrences. Examples: {sample_pairs}"
+                    )
+                    df_reset.drop_duplicates(subset=subset, keep="last", inplace=True)
+
+                # Restore original index structure
+                if has_multi_index:
+                    df_clean = df_reset.set_index(index_names)
+                else:
+                    df_clean = df_reset.set_index(timestamp_name)
+
+                if not asset_from_index and asset_col in df_clean.columns and df_clean.columns.duplicated().any():
+                    df_clean = df_clean.loc[:, ~df_clean.columns.duplicated()]
+
+            else:
+                # Single-Asset Mode: Deduplicate on index (timestamp)
+                dup_mask = df_clean.index.duplicated(keep="last")
+                dup_count = int(dup_mask.sum())
+
+                if dup_count > 0:
+                    sample_labels = df_clean.index[dup_mask][:5]
+                    tprint_warning(
+                        f"⚠️ Input dataframe contains {dup_count} duplicate timestamps; keeping latest occurrences. "
+                        f"Examples: {list(sample_labels)}"
+                    )
+                    df_clean = df_clean.loc[~dup_mask].copy()
+
         required_cols = ['open', 'high', 'low', 'close', 'volume']
-        missing_cols = [col for col in required_cols if col not in df.columns]
+        missing_cols = [col for col in required_cols if col not in df_clean.columns]
         if missing_cols:
             raise ValueError(f"Missing required columns: {missing_cols}")
         
         # Check for non-finite values
         for col in required_cols:
-            non_finite_count = df[col].isna().sum() + np.isinf(df[col]).sum()
+            non_finite_count = df_clean[col].isna().sum() + np.isinf(df_clean[col]).sum()
             if non_finite_count > 0:
                 tprint_warning(f"⚠️ {col} contains {non_finite_count} non-finite values")
         
         # Check data quality
-        if len(df) < 100:
-            tprint_warning(f"⚠️ Small dataset: {len(df)} rows may cause unreliable signals")
+        if len(df_clean) < 100:
+            tprint_warning(f"⚠️ Small dataset: {len(df_clean)} rows may cause unreliable signals")
         
-        # Check price consistency
-        price_cols = ['open', 'high', 'low', 'close']
-        for i in range(len(df)):
-            if not (df.iloc[i]['low'] <= df.iloc[i]['open'] <= df.iloc[i]['high'] and
-                    df.iloc[i]['low'] <= df.iloc[i]['close'] <= df.iloc[i]['high']):
-                tprint_warning(f"⚠️ Price inconsistency detected at index {i}")
+        # Check price consistency (on first 500 rows to save time)
+        check_head = df_clean.head(500)
+        for i in range(len(check_head)):
+            row = check_head.iloc[i]
+            if not (row['low'] <= row['open'] <= row['high'] and
+                    row['low'] <= row['close'] <= row['high']):
+                tprint_warning(f"⚠️ Price inconsistency detected at index {i} (checked first 500)")
                 break
+        
+        return df_clean
 
     def _validate_signal_quality(self, signal: pd.Series, name: str) -> Dict[str, Any]:
         """Validate signal quality and detect degenerate cases."""
@@ -500,23 +817,41 @@ class SpectralSpecialists:
                 avf_metadata,
             ) = self._apply_adaptive_volatility_filter(name, signal, market_context)
 
-            event_frame = pd.DataFrame(index=signal.index)
-            event_frame["raw_signal"] = signal
-            event_frame["filtered_signal"] = filtered_signal
-            event_frame["surprise"] = surprise
-            event_frame["activation"] = activation_mask.astype(bool)
-            event_frame["vol_floor"] = vol_floor
-            event_frame["direction"] = np.sign(filtered_signal).replace(0, np.nan)
-            event_frame["tbm_label"] = tbm_labels["label"]
-            event_frame["potential_profit_pct"] = tbm_labels["potential_profit_pct"]
-            event_frame["zone_score"] = self._compute_zone_score(
-                event_frame["surprise"], event_frame["tbm_label"]
+            # Pre-allocate arrays for better performance
+            n_samples = len(signal)
+            direction = np.sign(filtered_signal.values)
+            direction[direction == 0] = np.nan
+            
+            tbm_label_values = tbm_labels["label"].values
+            potential_profit_values = tbm_labels["potential_profit_pct"].values
+            
+            # Compute zone score (vectorized)
+            zone_score = self._compute_zone_score(
+                surprise, tbm_labels["label"]
             )
-            event_frame["meta_label"] = np.where(
-                event_frame["activation"] & (event_frame["tbm_label"] != 0),
-                (event_frame["direction"] == event_frame["tbm_label"]).astype(float),
+            
+            # Compute meta_label (vectorized)
+            activation_bool = activation_mask.astype(bool).values
+            tbm_nonzero = tbm_label_values != 0
+            meta_label = np.where(
+                activation_bool & tbm_nonzero,
+                (direction == tbm_label_values).astype(float),
                 np.nan,
             )
+            
+            # Build DataFrame from dict of arrays (faster than incremental column assignment)
+            event_frame = pd.DataFrame({
+                "raw_signal": signal.values,
+                "filtered_signal": filtered_signal.values,
+                "surprise": surprise.values,
+                "activation": activation_bool,
+                "vol_floor": vol_floor.values,
+                "direction": direction,
+                "tbm_label": tbm_label_values,
+                "potential_profit_pct": potential_profit_values,
+                "zone_score": zone_score.values,
+                "meta_label": meta_label,
+            }, index=signal.index)
 
             metrics = self._compute_specialist_metrics(name, event_frame, tbm_labels)
             self._reliability_registry[name] = metrics
@@ -852,7 +1187,7 @@ class SpectralSpecialists:
 
         return diagnostics
 
-    def _extract_trend_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
+    def _extract_trend_signal(self, df: pd.DataFrame, rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """
         Extract Trend Persistence signal.
         Logic: Rolling return (close - close[-N])
@@ -866,31 +1201,37 @@ class SpectralSpecialists:
                 rolling_return = df['close'].pct_change(window)
                 
                 # Normalize by rolling volatility to get Sharpe-like trend strength
-                vol = df['close'].pct_change().rolling(window).std() * np.sqrt(window)
+                if rolling_stats and 'returns_std_20' in rolling_stats:
+                    vol = rolling_stats['returns_std_20'] * np.sqrt(window)
+                else:
+                    vol = df['close'].pct_change().rolling(window).std() * np.sqrt(window)
                 
                 trend_signal = rolling_return / (vol + 1e-9)
                 
                 # Z-Score normalize
-                trend_signal = (trend_signal - trend_signal.rolling(50).mean()) / (trend_signal.rolling(50).std() + 1e-9)
+                if rolling_stats and 'returns_mean_50' in rolling_stats and 'returns_std_50' in rolling_stats:
+                    trend_signal = (trend_signal - rolling_stats['returns_mean_50']) / (rolling_stats['returns_std_50'] + 1e-9)
+                else:
+                    trend_signal = (trend_signal - safe_rolling_mean(trend_signal, 50)) / (safe_rolling_std(trend_signal, 50) + 1e-9)
                 
-                # DIAGNOSTIC LOGGING
+                # DIAGNOSTIC LOGGING (fixed: use rolling_return instead of undefined trend_pressure)
                 if self.verbose and trend_signal is not None:
-                    # Check for effective constant signal
                     sig_std = trend_signal.std()
                     if sig_std < 1e-6:
-                        raw_std = trend_pressure.std()
-                        raw_mean = trend_pressure.mean()
+                        raw_std = rolling_return.std()
+                        raw_mean = rolling_return.mean()
                         if self.verbose:
                             tprint_warning(f"      ⚠️ Trend signal low variance: std={sig_std:.6f} (raw_std={raw_std:.6f}, raw_mean={raw_mean:.6f})")
-                            tprint_warning(f"         Raw Range: [{trend_pressure.min():.4f}, {trend_pressure.max():.4f}]")
+                            tprint_warning(f"         Raw Range: [{rolling_return.min():.4f}, {rolling_return.max():.4f}]")
                 
                 return trend_signal.fillna(0)
             return None
         except Exception as e:
-            if self.verbose: tprint_warning(f"      ⚠️ Trend signal extraction failed: {e}")
+            if self.verbose:
+                tprint_warning(f"      ⚠️ Trend signal extraction failed: {e}")
             return None
 
-    def _extract_reversal_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
+    def _extract_reversal_signal(self, df: pd.DataFrame, rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """
         Extract Mean Reversion signal.
         Logic: Stochastic oscillator proxy - (close - rolling_min)/(rolling_max - rolling_min)
@@ -927,7 +1268,7 @@ class SpectralSpecialists:
             if self.verbose: tprint_warning(f"      ⚠️ Reversal signal extraction failed: {e}")
             return None
 
-    def _extract_volatility_breakout_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
+    def _extract_volatility_breakout_signal(self, df: pd.DataFrame, rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """
         Extract Volatility Breakout signal.
         Logic: Rolling High-Low / Baseline.
@@ -967,7 +1308,7 @@ class SpectralSpecialists:
             if self.verbose: tprint_warning(f"      ⚠️ Volatility Breakout signal extraction failed: {e}")
             return None
     
-    def _extract_inventory_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
+    def _extract_inventory_signal(self, df: pd.DataFrame, rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """Extract inventory specialist signal (dealer inventory proxy) with temporal weighting."""
         if self.verbose:
             tprint_info("📈 Extracting inventory specialist signal")
@@ -982,11 +1323,16 @@ class SpectralSpecialists:
                 inventory_pressure = price_change * vol_norm
                 
                 # Apply temporal weighting (EMA) to emphasize recent inventory accumulation
-                inventory_signal = inventory_pressure.ewm(span=10).mean()
+                # Use Numba-optimized EWMA
+                inventory_signal_raw = ewma_numba(inventory_pressure.fillna(0).values, 10)
+                inventory_signal = pd.Series(inventory_signal_raw, index=df.index)
                 
                 # Normalize by rolling volatility of the signal
-                inventory_signal = (inventory_signal - inventory_signal.rolling(50).mean()) / \
-                                (inventory_signal.rolling(50).std() + 1e-9)
+                if rolling_stats and 'returns_mean_50' in rolling_stats and 'returns_std_50' in rolling_stats:
+                    inventory_signal = (inventory_signal - rolling_stats['returns_mean_50']) / (rolling_stats['returns_std_50'] + 1e-9)
+                else:
+                    inventory_signal = (inventory_signal - safe_rolling_mean(inventory_signal, 50)) / \
+                                    (safe_rolling_std(inventory_signal, 50) + 1e-9)
                 
                 if self.verbose and inventory_signal.std() < 1e-6:
                      tprint_warning(f"      ⚠️ Inventory signal low variance: raw_std={inventory_pressure.std():.6f}")
@@ -1000,12 +1346,13 @@ class SpectralSpecialists:
                 tprint_warning(f"      ⚠️ Inventory signal extraction failed: {e}")
             return None
     
-    def _extract_volume_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
+    def _extract_volume_signal(self, df: pd.DataFrame, rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """Extract volume specialist signal with volatility normalization and AVF."""
         if self.verbose:
             tprint_info("📊 Extracting volume specialist signal")
         try:
-            if 'volume' in df.columns and 'close' in df.columns:
+            required = ['open', 'high', 'low', 'close', 'volume']
+            if all(c in df.columns for c in required):
                 # 1. Volume-Weighted Price Efficiency (Informed Flow)
                 # Concept: High volume is only "signal" if it results in efficient price movement.
                 # High volume + Low movement = Churn/Noise (Absorption) -> Filtered out
@@ -1020,7 +1367,11 @@ class SpectralSpecialists:
                 efficiency = body / (price_range + 1e-9)
                 
                 # Relative Volume (Log-space to dampen extreme outliers)
-                vol_ma = df['volume'].rolling(20).mean()
+                # Use pre-computed volume MA if available
+                if rolling_stats and 'volume_ma_20' in rolling_stats:
+                    vol_ma = rolling_stats['volume_ma_20']
+                else:
+                    vol_ma = df['volume'].rolling(20).mean()
                 volume_ratio = df['volume'] / (vol_ma + 1e-9)
                 log_volume_ratio = np.log1p(volume_ratio)
                 
@@ -1029,8 +1380,13 @@ class SpectralSpecialists:
                 volume_signal = efficiency * log_volume_ratio
                 
                 # Adaptive Volatility Filter (AVF) integration
-                returns = df['close'].pct_change()
-                volatility = returns.rolling(20).std()
+                # Use pre-computed returns and volatility if available
+                if rolling_stats and 'returns' in rolling_stats and 'volatility_20' in rolling_stats:
+                    returns = rolling_stats['returns']
+                    volatility = rolling_stats['volatility_20']
+                else:
+                    returns = df['close'].pct_change()
+                    volatility = returns.rolling(20).std()
                 vol_rank = volatility.rolling(100).rank(pct=True)
                 
                 # Allow signal if:
@@ -1061,7 +1417,7 @@ class SpectralSpecialists:
                 tprint_warning(f"      ⚠️ Volume signal extraction failed: {e}")
             return None
     
-    def _extract_volatility_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
+    def _extract_volatility_signal(self, df: pd.DataFrame, rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """Extract volatility specialist signal focusing on volatility changes."""
         if self.verbose:
             tprint_info("📈 Extracting volatility specialist signal")
@@ -1072,8 +1428,13 @@ class SpectralSpecialists:
                 hl_range = (df['high'] - df['low']) / df['close']
                 
                 # Realized Volatility (Returns based)
-                returns = df['close'].pct_change()
-                realized_vol = returns.rolling(20).std()
+                # Use pre-computed returns and volatility if available
+                if rolling_stats and 'returns' in rolling_stats and 'volatility_20' in rolling_stats:
+                    returns = rolling_stats['returns']
+                    realized_vol = rolling_stats['volatility_20']
+                else:
+                    returns = df['close'].pct_change()
+                    realized_vol = returns.rolling(20).std()
                 
                 # Volatility Change (Delta Vol)
                 # We care about expanding or contracting volatility
@@ -1108,7 +1469,7 @@ class SpectralSpecialists:
                 tprint_warning(f"      ⚠️ Volatility signal extraction failed: {e}")
             return None
     
-    def _extract_information_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
+    def _extract_information_signal(self, df: pd.DataFrame, rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """
         Extract 'Information' signal using Price Action & Candle Ratios.
         Replaces dead VPIN metric with Microstructure/Price Action features.
@@ -1143,7 +1504,7 @@ class SpectralSpecialists:
                 if rolling_stats and 'vol_20' in rolling_stats:
                     vol_rel = df['volume'] / (rolling_stats['vol_20'] + 1e-9)
                 else:
-                    vol_rel = df['volume'] / (df['volume'].rolling(20, min_periods=1).mean() + 1e-9)
+                    vol_rel = df['volume'] / (safe_rolling_mean(df['volume'], 20, min_periods=1) + 1e-9)
                 
                 # Combined Price Action Signal
                 # Strong body + Volume = Trend
@@ -1152,14 +1513,16 @@ class SpectralSpecialists:
                 # Signal is directional: Positive = Bullish Info, Negative = Bearish Info
                 pa_signal = (trend_efficiency * direction * vol_rel) + (wick_balance * vol_rel)
                 
-                # Normalize
-                if rolling_stats and 'mean_50' in rolling_stats and 'std_50' in rolling_stats:
-                    information_signal = (pa_signal - rolling_stats['mean_50']) / (rolling_stats['std_50'] + 1e-9)
-                else:
-                    information_signal = (pa_signal - pa_signal.rolling(50, min_periods=1).mean()) / \
-                                      (pa_signal.rolling(50, min_periods=1).std() + 1e-9)
+                # Clip raw signal to prevent extreme outliers before normalization
+                pa_signal = pa_signal.clip(-10.0, 10.0)
                 
-                return information_signal.fillna(0)
+                # Normalize using pa_signal's own rolling stats (FIXED: was incorrectly using close stats)
+                pa_mean = safe_rolling_mean(pa_signal, 50, min_periods=1)
+                pa_std = safe_rolling_std(pa_signal, 50, min_periods=1).replace(0, 1e-9)
+                information_signal = (pa_signal - pa_mean) / (pa_std + 1e-9)
+                
+                # Final safeguard clip
+                return information_signal.fillna(0).clip(-20.0, 20.0)
             
             return None
             
@@ -1260,8 +1623,7 @@ class SpectralSpecialists:
     
     def _calculate_quality_score(self, signal: pd.Series) -> float:
         """Calculate quality score for a specialist signal."""
-        if self.verbose:
-            tprint_info("⭐ Calculating quality score")
+        # Removed verbose logging to avoid spam when called in loops
         try:
             # Remove NaN and zeros
             clean_signal = signal.dropna()
@@ -1284,7 +1646,7 @@ class SpectralSpecialists:
         except Exception:
             return 0.0
 
-    def _extract_cusum_break_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
+    def _extract_cusum_break_signal(self, df: pd.DataFrame, rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """
         Extract CUSUM structural break signal.
         Detects shifts in the mean of price changes.
@@ -1293,14 +1655,23 @@ class SpectralSpecialists:
             tprint_info("⚡ Extracting CUSUM break specialist signal")
         try:
             if 'close' in df.columns:
-                returns = df['close'].pct_change().dropna()
+                # Use pre-computed returns if available
+                if rolling_stats and 'returns' in rolling_stats:
+                    returns = rolling_stats['returns'].dropna()
+                else:
+                    returns = df['close'].pct_change().dropna()
                 
                 # CUSUM Calculation
                 # S[t] = max(0, S[t-1] + y[t] - k) for positive shift
                 # We use a simplified two-sided cumulative deviation
                 
-                mean_ret = returns.rolling(100).mean()
-                std_ret = returns.rolling(100).std()
+                # Use pre-computed rolling stats if available
+                if rolling_stats and 'close_mean_100' in rolling_stats and 'close_std_100' in rolling_stats:
+                    mean_ret = returns.rolling(100).mean()
+                    std_ret = returns.rolling(100).std()
+                else:
+                    mean_ret = returns.rolling(100).mean()
+                    std_ret = returns.rolling(100).std()
                 
                 # Standardized deviation
                 z = (returns - mean_ret) / (std_ret + 1e-9)
@@ -1322,35 +1693,32 @@ class SpectralSpecialists:
                 tprint_warning(f"      ⚠️ CUSUM signal extraction failed: {e}")
             return None
 
-    def _extract_entropy_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
+    def _extract_entropy_signal(self, df: pd.DataFrame, rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """
-        Extract Shannon Entropy signal.
+        Extract Shannon Entropy signal using Numba-optimized calculation.
         Measures information content / unpredictability.
         """
         if self.verbose:
             tprint_info("🧩 Extracting entropy specialist signal")
         try:
-            from scipy.stats import entropy
-            
             if 'close' in df.columns:
-                # Rolling Entropy on Returns Distribution
-                returns = df['close'].pct_change().dropna()
+                # Use pre-computed returns if available
+                if rolling_stats and 'returns' in rolling_stats:
+                    returns = rolling_stats['returns']
+                else:
+                    returns = df['close'].pct_change()
                 
-                def rolling_entropy(x):
-                    # Discretize into bins
-                    counts, _ = np.histogram(x, bins=10, density=True)
-                    # Compute Shannon entropy
-                    return entropy(counts + 1e-9)
+                # Use Numba-optimized rolling entropy (much faster than pandas apply)
+                window = 50
+                returns_clean = returns.fillna(0).values
+                entropy_sig = fast_rolling_entropy_numba(returns_clean, window=window, bins=10)
+                entropy_series = pd.Series(entropy_sig, index=df.index)
                 
-                # Calculate rolling entropy
-                # Window should be large enough to form a distribution (e.g., 50)
-                entropy_sig = returns.rolling(50).apply(rolling_entropy, raw=True)
-                
-                # Normalize
+                # Normalize using bottleneck if available
                 # High entropy = High unpredictability
-                entropy_signal = (entropy_sig - entropy_sig.rolling(100).mean()) / (entropy_sig.rolling(100).std() + 1e-9)
+                entropy_signal = (entropy_series - safe_rolling_mean(entropy_series, 100)) / (safe_rolling_std(entropy_series, 100) + 1e-9)
                 
-                return entropy_signal.reindex(df.index).fillna(0)
+                return entropy_signal.fillna(0)
             
             return None
         except Exception as e:
@@ -1358,7 +1726,7 @@ class SpectralSpecialists:
                 tprint_warning(f"      ⚠️ Entropy signal extraction failed: {e}")
             return None
 
-    def _extract_tick_rule_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
+    def _extract_tick_rule_signal(self, df: pd.DataFrame, rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """
         Extract Tick Rule proxy signal (Aggressor Flow).
         Approximates net buy/sell pressure.
@@ -1393,11 +1761,11 @@ class SpectralSpecialists:
                 tprint_warning(f"      ⚠️ Tick rule signal extraction failed: {e}")
             return None
 
-    def _extract_fractal_efficiency_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
+    def _extract_fractal_efficiency_signal(self, df: pd.DataFrame, rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """
-        Extract Fractal Efficiency (Kaufman) signal.
+        Extract Fractal Efficiency (Kaufman) signal with volatility regime filtering.
         Measures trend cleanliness/linearity.
-        Logic: Sign(Return) * (Net_Move / Total_Path_Length)
+        Logic: Sign(Return) * (Net_Move / Total_Path_Length) * Vol_Regime_Filter
         """
         if self.verbose:
             tprint_info("📏 Extracting fractal efficiency specialist signal")
@@ -1426,10 +1794,22 @@ class SpectralSpecialists:
                 direction = np.sign(net_change)
                 directional_efficiency = efficiency * direction
                 
+                # ENHANCEMENT: Volatility regime filtering
+                # High efficiency in low vol (consolidation) is not predictive
+                # Weight by volatility rank to focus on meaningful trends
+                if rolling_stats and 'vol_rank' in rolling_stats:
+                    vol_filter = rolling_stats['vol_rank'].fillna(0.5)  # Neutral if missing
+                    # Only keep signals in elevated volatility regimes (>30th percentile)
+                    vol_filter = vol_filter.clip(0.3, 1.0)  # Floor at 0.3
+                    directional_efficiency = directional_efficiency * vol_filter
+                
                 # Normalize (Z-Score)
                 # We want to detect Anomalous Efficiency (Pure Trends)
-                fractal_signal = (directional_efficiency - directional_efficiency.rolling(50).mean()) / \
-                                (directional_efficiency.rolling(50).std() + 1e-9)
+                if rolling_stats and 'returns_mean_50' in rolling_stats and 'returns_std_50' in rolling_stats:
+                    fractal_signal = (directional_efficiency - rolling_stats['returns_mean_50']) / (rolling_stats['returns_std_50'] + 1e-9)
+                else:
+                    fractal_signal = (directional_efficiency - safe_rolling_mean(directional_efficiency, 50)) / \
+                                    (safe_rolling_std(directional_efficiency, 50) + 1e-9)
                 
                 return fractal_signal.fillna(0)
             
@@ -1439,9 +1819,9 @@ class SpectralSpecialists:
                 tprint_warning(f"      ⚠️ Fractal efficiency extraction failed: {e}")
             return None
 
-    def _extract_liquidity_shock_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
+    def _extract_liquidity_shock_signal(self, df: pd.DataFrame, rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """
-        Extract Liquidity Shock signal (Amihud Proxy).
+        Extract Liquidity Shock signal (Amihud Proxy) with log-space normalization.
         Measures Price Impact per Unit of Volume.
         """
         if self.verbose:
@@ -1452,7 +1832,10 @@ class SpectralSpecialists:
                 # Amihud Illiquidity: |Return| / (Price * Volume)
                 # We want "Price Ease" -> Directional Impact
                 
-                returns = df['close'].pct_change()
+                if rolling_stats and 'returns' in rolling_stats:
+                    returns = rolling_stats['returns']
+                else:
+                    returns = df['close'].pct_change()
                 
                 # Volume in dollars approx (Volume * Price) or just Volume if FX/Crypto
                 # Using Dollar Volume is safer for comparing across price levels
@@ -1463,18 +1846,22 @@ class SpectralSpecialists:
                 # Low = Liquid (Robust)
                 illiquidity = returns.abs() / (dollar_volume + 1e-9)
                 
+                # ENHANCEMENT: Log-space normalization for heavy-tailed distribution
+                # Amihud illiquidity is highly skewed (power-law) - log transform prevents outliers
+                illiquidity_log = np.log1p(illiquidity)
+                
                 # We want to detect SHOCKS in illiquidity that coincide with direction
                 # i.e., Price moving easily (thin liquidity) in a direction
                 
-                # Directional Liquidity Shock = Sign(Return) * Illiquidity
-                liq_shock_raw = np.sign(returns) * illiquidity
+                # Directional Liquidity Shock = Sign(Return) * Log(Illiquidity)
+                liq_shock_raw = np.sign(returns) * illiquidity_log
                 
-                # Log-space handling might be needed if illiquidity spans orders of magnitude?
-                # Usually standardizing rolling window handles it.
-                
-                # Normalize
-                liq_shock_signal = (liq_shock_raw - liq_shock_raw.rolling(50).mean()) / \
-                                  (liq_shock_raw.rolling(50).std() + 1e-9)
+                # Normalize in log-space
+                if rolling_stats and 'returns_mean_50' in rolling_stats and 'returns_std_50' in rolling_stats:
+                    liq_shock_signal = (liq_shock_raw - rolling_stats['returns_mean_50']) / (rolling_stats['returns_std_50'] + 1e-9)
+                else:
+                    liq_shock_signal = (liq_shock_raw - safe_rolling_mean(liq_shock_raw, 50)) / \
+                                      (safe_rolling_std(liq_shock_raw, 50) + 1e-9)
                                   
                 return liq_shock_signal.fillna(0)
             return None
@@ -1483,35 +1870,60 @@ class SpectralSpecialists:
                 tprint_warning(f"      ⚠️ Liquidity shock extraction failed: {e}")
             return None
 
-    def _extract_gap_signal(self, df: pd.DataFrame, config: Dict[str, Any], rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
+    def _extract_gap_signal(self, df: pd.DataFrame, rolling_stats: Dict[str, pd.Series] = None) -> Optional[pd.Series]:
         """
         Extract Exogenous Gap signal.
-        Measures Overnight/Weekend information injection (Open - PrevClose).
+        Detects actual gaps in data (time discontinuities or volume bar gaps) combined with price gaps.
+        For volume bars, we detect when bars are unusually far apart in time.
         """
         if self.verbose:
             tprint_info("🕳️ Extracting gap specialist signal")
         try:
             required = ['open', 'close']
             if all(c in df.columns for c in required):
-                # Gap = Open - Prev Close
+                # Detect actual time gaps in the data
+                if isinstance(df.index, pd.DatetimeIndex):
+                    # Calculate time delta between bars
+                    time_deltas = df.index.to_series().diff()
+                    
+                    # Estimate typical bar frequency (median time delta)
+                    typical_delta = time_deltas.median()
+                    
+                    # Detect gaps: time delta > 2x typical (allows for some variance)
+                    # For volume bars, this detects periods of low activity
+                    is_gap = time_deltas > (typical_delta * 2.0)
+                else:
+                    # If no datetime index, assume all bars are continuous
+                    is_gap = pd.Series(False, index=df.index)
+                
+                # Price gap = Open - Prev Close (only meaningful at actual gaps)
                 prev_close = df['close'].shift(1)
-                gap = df['open'] - prev_close
+                price_gap = df['open'] - prev_close
                 
-                # Normalize by recent volatility (Standardized Gap)
-                # A 1% gap in low vol is huge; in high vol is noise.
-                returns = df['close'].pct_change()
-                volatility = returns.rolling(20).std()
+                # Use pre-computed volatility if available
+                if rolling_stats and 'returns' in rolling_stats and 'volatility_20' in rolling_stats:
+                    volatility = rolling_stats['volatility_20']
+                else:
+                    returns = df['close'].pct_change()
+                    volatility = returns.rolling(20).std()
                 
-                # Standardized Gap (Sigma)
-                gap_sigma = gap / (prev_close * volatility + 1e-9) # Gap % / Vol % approx
+                # Standardized price gap (only at actual gaps)
+                # For continuous bars, this will be near zero
+                gap_sigma = price_gap / (prev_close * volatility + 1e-9)
                 
-                # We can also just z-score the raw gap if we want local context
-                # But Vol-adjusted is more physically meaningful (Exogenous Shock Magnitude)
+                # Amplify signal at actual gaps, dampen at continuous bars
+                gap_multiplier = np.where(is_gap, 3.0, 0.3)  # 10x amplification at gaps
+                gap_signal_raw = gap_sigma * gap_multiplier
                 
-                # Let's z-score the sigma to fit the distribution
-                gap_signal = (gap_sigma - gap_sigma.rolling(50).mean()) / \
-                            (gap_sigma.rolling(50).std() + 1e-9)
+                # Z-score normalize
+                gap_signal = (gap_signal_raw - gap_signal_raw.rolling(50).mean()) / \
+                            (gap_signal_raw.rolling(50).std() + 1e-9)
                             
+                if self.verbose:
+                    n_gaps = int(is_gap.sum())
+                    if n_gaps > 0:
+                        tprint_info(f"      ℹ️ Detected {n_gaps} time gaps in data (typical delta: {typical_delta})")
+                    
                 return gap_signal.fillna(0)
             return None
         except Exception as e:

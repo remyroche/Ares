@@ -1,0 +1,22 @@
+{
+  "close_ffd": [
+    "close_ffd",
+    "ca__lead_lag_sign_persistence",
+    "ms__pca_1",
+    "Market_Mode_PCA",
+    "volatility_5d",
+    "volatility_1d"
+  ],
+  "Market_Mode_PCA": [
+    "ca__lead_lag_sign_persistence",
+    "ms__pca_1",
+    "close",
+    "Market_Mode_PCA",
+    "open",
+    "volatility_5d",
+    "volatility_1d",
+    "ms__pca_0",
+    "volume_std_50",
+    "ca__beta_short_w24"
+  ]
+}

@@ -627,18 +627,49 @@ class CausalDiscovery:
             if self.adjacency_matrix_ is None:
                 return strength_matrix
             
+            # Precompute constant columns to reduce spam and wasted work
+            col_stds = np.nanstd(data.values.astype(float), axis=0)
+            constant_mask = np.isnan(col_stds) | (col_stds < 1e-9)
+            if self.verbose and np.any(constant_mask):
+                for idx in np.where(constant_mask)[0]:
+                    edge_count = int(np.sum(self.adjacency_matrix_[idx] == 1))
+                    if edge_count > 0:
+                        tprint_warning(
+                            "      ⚠️ Causal strength: Constant input for "
+                            f"{data.columns[idx]} (skipping {edge_count} edges)"
+                        )
+
             # Use linear regression coefficients as strength estimates
             for i in range(n_vars):
                 for j in range(n_vars):
                     if self.adjacency_matrix_[i, j] == 1:
+                        if constant_mask[i]:
+                            strength_matrix[i, j] = 0.0
+                            continue
                         x = data.iloc[:, i].values
                         y = data.iloc[:, j].values
                         
+                        # Sanitize inputs for DLASCL prevention
+                        valid_mask = np.isfinite(x) & np.isfinite(y)
+                        if not valid_mask.all():
+                             x = x[valid_mask]
+                             y = y[valid_mask]
+                        
+                        if len(x) < 2:
+                             strength_matrix[i, j] = 0.0
+                             continue
+
+                        # Check for constant inputs after masking
+                        if np.std(x) < 1e-9 or np.std(y) < 1e-9:
+                             strength_matrix[i, j] = 0.0 # No variance, no causal effect
+                             continue
+
                         # Simple linear regression
                         try:
                             coeffs = np.polyfit(x, y, 1)
                             strength_matrix[i, j] = abs(coeffs[0])
-                        except:
+                        except Exception as e:
+                            tprint_warning(f"      ⚠️ Causal strength fit failed {data.columns[i]}->{data.columns[j]}: {e}")
                             strength_matrix[i, j] = 0.1  # Default strength
             
             self.causal_strength_ = strength_matrix
@@ -723,6 +754,25 @@ class CausalDiscovery:
             if numeric_data.empty:
                 tprint_error("   ❌ No numeric columns found in data")
                 return None
+
+            constant_mask = (
+                numeric_data.nunique(dropna=False) <= 1
+            ) | (numeric_data.std(axis=0, skipna=True).fillna(0.0) < 1e-9)
+            if constant_mask.any():
+                constant_cols = list(numeric_data.columns[constant_mask])
+                preview = ", ".join(constant_cols[:8])
+                tprint_warning(
+                    f"   ⚠️ Dropping {len(constant_cols)} constant columns before causal discovery"
+                    f"{': ' + preview if preview else ''}"
+                )
+                numeric_data = numeric_data.loc[:, ~constant_mask]
+                if numeric_data.empty:
+                    tprint_error("   ❌ All numeric columns are constant after filtering")
+                    return None
+
+            n_samples, n_vars = numeric_data.shape
+            if self.verbose:
+                tprint_info(f"   📊 Filtered numeric data: {n_samples} samples, {n_vars} variables")
             
             scaler = StandardScaler()
             data_scaled = pd.DataFrame(
@@ -737,7 +787,7 @@ class CausalDiscovery:
             if self.verbose:
                 tprint_info("   🔍 Running PC Algorithm...")
             
-            causal_graph = self.pc_algorithm(data_scaled, list(data.columns))
+            causal_graph = self.pc_algorithm(data_scaled, list(numeric_data.columns))
             
             if not causal_graph:
                 if self.verbose:
@@ -779,7 +829,7 @@ class CausalDiscovery:
                 'adjacency_matrix': oriented_matrix,
                 'causal_strength': strength_matrix,
                 'causal_parents': causal_parents,
-                'variable_names': list(data.columns),
+                'variable_names': list(numeric_data.columns),
                 'significance_level': self.significance_level,
                 'n_variables': n_vars,
                 'n_edges': np.sum(oriented_matrix) // 2,

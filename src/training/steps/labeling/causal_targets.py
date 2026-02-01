@@ -614,21 +614,46 @@ class CausalTargetComputer:
             
             # Predict treatment effects using heterogeneity features
             # This is a simplified CATE estimation (Residual-on-Residual)
-            treatment_effects = outcome_residuals / (treatment_residuals + 1e-8)
-            
-            # Filter extreme values (outliers in ratio)
-            valid_effects = np.abs(treatment_effects) < 10  # Filter extreme values
-            X_valid = heterogeneity_data[valid_effects]
-            effects_valid = treatment_effects[valid_effects]
-            
-            if len(X_valid) > 50: # Ensure enough samples for training
+            cate_min_residual = getattr(self, "cate_min_treatment_residual", 1e-4)
+            cate_effect_clip = getattr(self, "cate_effect_clip", 10.0)
+            cate_min_samples = getattr(self, "cate_min_samples", 50)
+
+            safe_treatment_residuals = treatment_residuals.copy()
+            tiny_mask = np.abs(safe_treatment_residuals) < cate_min_residual
+            if tiny_mask.any():
+                signs = np.sign(safe_treatment_residuals[tiny_mask])
+                signs[signs == 0.0] = 1.0
+                safe_treatment_residuals[tiny_mask] = signs * cate_min_residual
                 if self.verbose:
-                    tprint_info(f"   Fitting {type(cate_model).__name__} for CATE ({len(X_valid)} samples)...")
+                    tprint_info(f"   ⚙️ Stabilized {int(tiny_mask.sum())} near-zero treatment residuals for CATE")
+
+            treatment_effects = outcome_residuals / safe_treatment_residuals
+            finite_mask = np.isfinite(treatment_effects)
+            treatment_effects = np.clip(treatment_effects, -cate_effect_clip, cate_effect_clip)
+
+            if self.verbose:
+                finite_count = int(finite_mask.sum())
+                total = len(treatment_effects)
+                tprint_info(
+                    f"   CATE residual-on-residual stats: finite={finite_count}/{total}, clip={cate_effect_clip}"
+                )
+
+            X_valid = heterogeneity_data[finite_mask]
+            effects_valid = treatment_effects[finite_mask]
+            
+            if len(X_valid) > cate_min_samples: # Ensure enough samples for training
+                if self.verbose:
+                    tprint_info(
+                        f"   Fitting {type(cate_model).__name__} for CATE ({len(X_valid)} samples)..."
+                    )
                 cate_model.fit(X_valid, effects_valid)
                 cate_estimates = cate_model.predict(heterogeneity_data)
             else:
                 if self.verbose:
-                    tprint_warning("   ⚠️ Too few valid effects for CATE model, using constant effect")
+                    tprint_warning(
+                        "   ⚠️ Too few valid effects for CATE model, using constant effect"
+                        f" (valid={len(X_valid)}, required={cate_min_samples})"
+                    )
                 # Fallback to constant effect
                 cate_estimates = np.full(len(heterogeneity_data), self.causal_effects_["causal_effect"])
             

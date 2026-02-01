@@ -1,0 +1,26 @@
+{
+  "TARGET_RET_1": [
+    "close",
+    "TARGET_RET_1"
+  ],
+  "TARGET_Sharpe": [
+    "TARGET_RET_1",
+    "close",
+    "volatility_1d",
+    "open",
+    "close_lag_1",
+    "Market_Mode_PCA",
+    "TARGET_Sharpe"
+  ],
+  "Market_Mode_PCA": [
+    "volume_std_20",
+    "TARGET_RET_1",
+    "Market_Mode_PCA",
+    "volume_range_5",
+    "close",
+    "volume_mean_5",
+    "open",
+    "open_std_10",
+    "volume_range_20"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "volatility_5d": [
+    "volatility_5d",
+    "Market_Mode_PCA"
+  ],
+  "Market_Mode_PCA": [
+    "volume_std_50",
+    "volatility_5d",
+    "volume_std_5",
+    "ca__volume_shock",
+    "ms__pca_3",
+    "volatility_1d",
+    "Market_Mode_PCA",
+    "close"
+  ]
+}

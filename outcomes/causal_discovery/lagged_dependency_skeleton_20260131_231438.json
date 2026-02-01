@@ -1,0 +1,51 @@
+{
+  "sparse_covariance_yang_zhang_volatility_w150": [
+    "sparse_covariance_yang_zhang_volatility_w150",
+    "sparse_covariance_volatility_w150"
+  ],
+  "sparse_covariance_close_location_value_w150": [
+    "sparse_covariance_close_location_value_w150",
+    "sparse_covariance_volatility_trend_slope_w150",
+    "sparse_covariance_sma_ratio_w100_vs_w400",
+    "sparse_covariance_volatility_w150"
+  ],
+  "sparse_covariance_rsi_ratio_w100_vs_w400": [
+    "sparse_covariance_sma_ratio_w100_vs_w400",
+    "sparse_covariance_rsi_ratio_w100_vs_w400"
+  ],
+  "sparse_covariance_sma_ratio_w100_vs_w400": [
+    "sparse_covariance_sma_ratio_w100_vs_w400"
+  ],
+  "sparse_covariance_volatility_trend_slope_w150": [
+    "sparse_covariance_volatility_trend_slope_w150",
+    "sparse_covariance_yang_zhang_volatility_w150"
+  ],
+  "sparse_covariance_volatility_zscore_w150": [
+    "sparse_covariance_volatility_zscore_w150"
+  ],
+  "sparse_covariance_shadow_asymmetry_w150": [
+    "sparse_covariance_volatility_trend_slope_w150",
+    "sparse_covariance_sma_ratio_w100_vs_w400",
+    "sparse_covariance_shadow_asymmetry_w150",
+    "sparse_covariance_volatility_w150"
+  ],
+  "sparse_covariance_body_to_range_w150": [
+    "sparse_covariance_sma_ratio_w100_vs_w400",
+    "sparse_covariance_rsi_ratio_w100_vs_w400",
+    "Market_Mode_PCA",
+    "sparse_covariance_body_to_range_w150",
+    "sparse_covariance_volatility_w150"
+  ],
+  "sparse_covariance_volatility_w150": [
+    "sparse_covariance_yang_zhang_volatility_w150",
+    "sparse_covariance_volatility_w150"
+  ],
+  "Market_Mode_PCA": [
+    "TARGET_Sharpe",
+    "volatility_5d",
+    "volatility_1d",
+    "Market_Mode_PCA",
+    "sparse_covariance_body_to_range_w150",
+    "close"
+  ]
+}

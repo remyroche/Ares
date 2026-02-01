@@ -198,6 +198,65 @@ class GraphicalLassoFilter:
                 tprint_error(f"❌ Graphical Lasso Filter failed: {e}")
             return causal_graph
 
+    def fit_score(self, df: pd.DataFrame) -> Dict[str, float]:
+        """
+        Estimate the connectivity of each feature using Graphical Lasso.
+        Returns a dictionary of {feature: connectivity_score}.
+        Score is the sum of absolute partial correlations with other features.
+        """
+        if df.empty:
+            return {}
+
+        try:
+            if self.verbose:
+                tprint_info(f"🛡️ Graphical Lasso Scoring: Analyzing {len(df.columns)} features...")
+
+            # 1. Standardize
+            from sklearn.preprocessing import RobustScaler
+            
+            # Drop duplicates to prevent singularity
+            df_dedup = df.T.drop_duplicates().T
+            if df_dedup.shape[1] < 2:
+                return {c: 0.0 for c in df.columns}
+                
+            scaler = RobustScaler()
+            X_scaled = scaler.fit_transform(df_dedup)
+            X_scaled = np.clip(X_scaled, -10, 10)
+            
+            # 2. Estimate Precision Matrix
+            try:
+                with warnings.catch_warnings(), np.errstate(all='ignore'):
+                    warnings.filterwarnings("ignore", category=ConvergenceWarning)
+                    warnings.filterwarnings("ignore", category=RuntimeWarning)
+                    model = GraphicalLassoCV(cv=3, n_jobs=1, assume_centered=True, max_iter=2000, tol=1e-3)
+                    model.fit(X_scaled)
+                precision_matrix = model.precision_
+            except Exception as e:
+                if self.verbose:
+                    tprint_warning(f"   ⚠️ GraphicalLasso failed ({e}), using EmpiricalCovariance")
+                model = EmpiricalCovariance(assume_centered=True)
+                model.fit(X_scaled)
+                precision_matrix = model.precision_
+
+            # 3. Partial Correlations
+            d = np.sqrt(np.diag(precision_matrix))
+            partial_corr = precision_matrix / np.outer(d, d)
+            
+            # 4. Compute Scores (Sum of absolute off-diagonal partial correlations)
+            scores = {}
+            for i, col in enumerate(df_dedup.columns):
+                # Sum of abs correlations with others
+                p_vec = np.abs(partial_corr[i, :])
+                p_vec[i] = 0.0 # Zero out self
+                scores[col] = float(np.sum(p_vec))
+                
+            return scores
+
+        except Exception as e:
+            if self.verbose:
+                tprint_error(f"❌ Graphical Lasso Scoing failed: {e}")
+            return {}
+
     def _check_temporal_link(
         self,
         df: pd.DataFrame,

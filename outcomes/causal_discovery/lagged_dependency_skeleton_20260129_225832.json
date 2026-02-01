@@ -1,0 +1,145 @@
+{
+  "sparse_covariance_cci_w20": [
+    "sparse_covariance_cci_w20",
+    "TARGET_Sharpe",
+    "ms__pca_3",
+    "ca__vpin_spill_q90",
+    "ca__vpin_spill_q50",
+    "close",
+    "open",
+    "ms__pca_0",
+    "ms__pca_2",
+    "TARGET_RET_1",
+    "ms__pca_1",
+    "ca__vpin_spill_resid_q50"
+  ],
+  "TARGET_RET_1": [
+    "TARGET_Sharpe",
+    "ms__pca_3",
+    "ca__vpin_spill_q90",
+    "ca__vpin_spill_q50",
+    "close",
+    "open",
+    "ms__pca_0",
+    "ms__pca_2",
+    "TARGET_RET_1",
+    "ms__pca_1",
+    "ca__vpin_spill_resid_q50"
+  ],
+  "sparse_covariance_donchian_width_w50": [
+    "sparse_covariance_atr_14",
+    "volume",
+    "TARGET_RET_1",
+    "sparse_covariance_donchian_width_w50"
+  ],
+  "ca__vpin_spill_q50": [
+    "ms__pca_0",
+    "TARGET_RET_1",
+    "ms__pca_1"
+  ],
+  "volatility_1d": [
+    "ms__pca_0",
+    "TARGET_RET_1",
+    "ms__pca_1"
+  ],
+  "ca__vpin_spill_resid_q50": [
+    "ms__pca_0",
+    "TARGET_RET_1",
+    "ms__pca_1"
+  ],
+  "volatility_5d": [
+    "TARGET_RET_1",
+    "volatility_5d"
+  ],
+  "ms__pca_3": [
+    "ca__vpin_spill_q90",
+    "ms__pca_0",
+    "ms__pca_2",
+    "TARGET_RET_1",
+    "ms__pca_1"
+  ],
+  "ca__vpin_spill_q90": [
+    "ca__vpin_spill_q90",
+    "ms__pca_0",
+    "ms__pca_2",
+    "TARGET_RET_1",
+    "ms__pca_1"
+  ],
+  "close": [
+    "TARGET_RET_1",
+    "open",
+    "close"
+  ],
+  "ms__pca_0": [
+    "ms__pca_3",
+    "ca__vpin_spill_q90",
+    "ca__vpin_spill_q50",
+    "close",
+    "open",
+    "ms__pca_0",
+    "ms__pca_2",
+    "TARGET_RET_1",
+    "ms__pca_1",
+    "ca__vpin_spill_resid_q50"
+  ],
+  "sparse_covariance_atr_14": [
+    "ms__pca_0",
+    "TARGET_RET_1",
+    "ms__pca_1",
+    "sparse_covariance_atr_14"
+  ],
+  "ms__pca_1": [
+    "open",
+    "ca__vpin_spill_q90",
+    "close",
+    "ca__vpin_spill_q50",
+    "ms__pca_3",
+    "ms__pca_0",
+    "ms__pca_2",
+    "TARGET_RET_1",
+    "ms__pca_1",
+    "ca__vpin_spill_resid_q50"
+  ],
+  "volume": [
+    "volume",
+    "open",
+    "ms__pca_3",
+    "ca__vpin_spill_q50",
+    "close",
+    "ca__vpin_spill_q90",
+    "ms__pca_0",
+    "ms__pca_2",
+    "TARGET_RET_1",
+    "ms__pca_1",
+    "ca__vpin_spill_resid_q50"
+  ],
+  "TARGET_Sharpe": [
+    "TARGET_Sharpe",
+    "open",
+    "ms__pca_3",
+    "ca__vpin_spill_q50",
+    "close",
+    "ca__vpin_spill_q90",
+    "ms__pca_0",
+    "ms__pca_2",
+    "TARGET_RET_1",
+    "ms__pca_1",
+    "ca__vpin_spill_resid_q50"
+  ],
+  "open": [
+    "open",
+    "close"
+  ],
+  "sparse_covariance_vol_trend_conflict_w10": [
+    "sparse_covariance_cci_w20",
+    "sparse_covariance_vol_trend_conflict_w10",
+    "TARGET_RET_1"
+  ],
+  "ms__pca_2": [
+    "ca__vpin_spill_q90",
+    "ms__pca_0",
+    "ms__pca_2",
+    "TARGET_RET_1",
+    "ms__pca_1"
+  ]
+}

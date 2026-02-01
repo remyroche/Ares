@@ -150,14 +150,42 @@ class SpectralPCA:
             
             # In-place standardization with NaN handling
             scaler = StandardScaler()
-            scaled_data = scaler.fit_transform(scale_matrix)
+            
+            # Remove zero-variance columns BEFORE scaling to prevent DLASCL errors
+            # (StandardScaler divides by std, causing NaN/inf when std=0)
+            col_stds = np.std(scale_matrix, axis=0)
+            valid_cols = col_stds > 1e-10  # Columns with non-zero variance
+            
+            if not np.any(valid_cols):
+                if self.verbose:
+                    tprint_warning(f"      ⚠️ All columns have zero variance for {specialist_name}")
+                return self._create_dummy_compression(specialist_name), None
+            
+            # Log which columns were removed
+            n_removed = (~valid_cols).sum()
+            if n_removed > 0 and self.verbose:
+                scale_order = ['d1', 'd2', 'd3', 'd4', 's4']
+                removed_cols = [scale_order[i] for i in range(len(valid_cols)) if not valid_cols[i]]
+                tprint_info(f"      📊 {specialist_name}: Removed {n_removed} zero-variance columns: {removed_cols}")
+            
+            # Keep only valid columns
+            scale_matrix_valid = scale_matrix[:, valid_cols]
+            
+            # Fit scaler on valid data
+            scaled_data = scaler.fit_transform(scale_matrix_valid)
             
             # Handle NaN results from scaling (e.g. constant signals)
-            if np.isnan(scaled_data).any():
-                scaled_data = np.nan_to_num(scaled_data, nan=0.0)
+            if np.isnan(scaled_data).any() or np.isinf(scaled_data).any():
+                scaled_data = np.nan_to_num(scaled_data, nan=0.0, posinf=0.0, neginf=0.0)
             
-            # Apply PCA
-            pca = PCA(n_components=self.n_components)
+            # Apply PCA with adjusted components (can't have more components than features)
+            n_components_actual = min(self.n_components, scaled_data.shape[1])
+            if n_components_actual < 1:
+                if self.verbose:
+                    tprint_warning(f"      ⚠️ Not enough features for PCA for {specialist_name}")
+                return self._create_dummy_compression(specialist_name), None
+                
+            pca = PCA(n_components=n_components_actual)
             principal_components = pca.fit_transform(scaled_data)
             
             # Check variance explained
@@ -172,10 +200,17 @@ class SpectralPCA:
                     tprint_warning(f"      ⚠️ Low variance explained for {specialist_name}: {variance_explained:.3f}")
             
             # Create compressed features efficiently
-            compressed_features = {
-                f'{specialist_name}_PC1': principal_components[:, 0],  # Momentum
-                f'{specialist_name}_PC2': principal_components[:, 1]   # Decoupling
-            }
+            # Handle case where we may have fewer components than expected
+            compressed_features = {}
+            if principal_components.shape[1] >= 1:
+                compressed_features[f'{specialist_name}_PC1'] = principal_components[:, 0]  # Momentum
+            else:
+                compressed_features[f'{specialist_name}_PC1'] = np.zeros(principal_components.shape[0])
+            
+            if principal_components.shape[1] >= 2:
+                compressed_features[f'{specialist_name}_PC2'] = principal_components[:, 1]  # Decoupling
+            else:
+                compressed_features[f'{specialist_name}_PC2'] = np.zeros(principal_components.shape[0])
             
             # Store models
             self.pca_models[specialist_name] = pca

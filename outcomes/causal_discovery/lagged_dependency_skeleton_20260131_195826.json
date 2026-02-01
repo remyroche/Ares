@@ -1,0 +1,64 @@
+{
+  "sparse_covariance_rolling_skewness_w100": [
+    "Market_Mode_PCA",
+    "sparse_covariance_left_tail_var_ratio_w100",
+    "sparse_covariance_rolling_skewness_w100",
+    "sparse_covariance_downside_semivariance_w100"
+  ],
+  "sparse_covariance_sma_ratio_w100_vs_w400": [
+    "Market_Mode_PCA",
+    "sparse_covariance_left_tail_var_ratio_w100",
+    "sparse_covariance_sma_ratio_w100_vs_w400"
+  ],
+  "sparse_covariance_rsi_ratio_w100_vs_w400": [
+    "Market_Mode_PCA",
+    "sparse_covariance_sma_ratio_w100_vs_w400",
+    "sparse_covariance_rsi_ratio_w100_vs_w400"
+  ],
+  "sparse_covariance_rolling_kurtosis_w100": [
+    "sparse_covariance_rolling_kurtosis_w100"
+  ],
+  "sparse_covariance_shadow_asymmetry_w150": [
+    "sparse_covariance_shadow_asymmetry_w150"
+  ],
+  "sparse_covariance_drawdown_w100": [
+    "sparse_covariance_drawdown_w100",
+    "sparse_covariance_max_runup_w100",
+    "sparse_covariance_left_tail_var_ratio_w100",
+    "sparse_covariance_vol_ratio_w100_vs_w400",
+    "Market_Mode_PCA",
+    "sparse_covariance_downside_semivariance_w100"
+  ],
+  "sparse_covariance_max_runup_w100": [
+    "Market_Mode_PCA",
+    "sparse_covariance_max_runup_w100"
+  ],
+  "sparse_covariance_left_tail_var_ratio_w100": [
+    "Market_Mode_PCA",
+    "sparse_covariance_left_tail_var_ratio_w100",
+    "sparse_covariance_rolling_skewness_w100",
+    "sparse_covariance_downside_semivariance_w100"
+  ],
+  "sparse_covariance_vol_ratio_w100_vs_w400": [
+    "Market_Mode_PCA",
+    "sparse_covariance_vol_ratio_w100_vs_w400"
+  ],
+  "sparse_covariance_downside_semivariance_w100": [
+    "Market_Mode_PCA",
+    "sparse_covariance_left_tail_var_ratio_w100",
+    "sparse_covariance_rolling_skewness_w100",
+    "sparse_covariance_downside_semivariance_w100"
+  ],
+  "Market_Mode_PCA": [
+    "sparse_covariance_rolling_skewness_w100",
+    "sparse_covariance_sma_ratio_w100_vs_w400",
+    "sparse_covariance_shadow_asymmetry_w150",
+    "sparse_covariance_vol_ratio_w100_vs_w400",
+    "sparse_covariance_drawdown_w100",
+    "sparse_covariance_max_runup_w100",
+    "sparse_covariance_left_tail_var_ratio_w100",
+    "sparse_covariance_rsi_ratio_w100_vs_w400",
+    "Market_Mode_PCA",
+    "sparse_covariance_downside_semivariance_w100"
+  ]
+}

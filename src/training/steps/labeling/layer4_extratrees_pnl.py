@@ -44,7 +44,11 @@ from src.utils.huber_regressor_for_trees import prepare_huber_teacher_outputs
 # Import optimized Numba functions
 from src.utils.layer4_optimized import rolling_sadf_score_numba, rolling_cusum_scores_numba
 
-def calculate_structural_break_scores(df: pd.DataFrame, price_col: str = 'close') -> pd.DataFrame:
+def calculate_structural_break_scores(
+    df: pd.DataFrame,
+    price_col: str = 'close',
+    asset_series: Optional[pd.Series] = None
+) -> pd.DataFrame:
     """
     Calculate structural break scores using SADF and CUSUM filters.
     
@@ -56,6 +60,26 @@ def calculate_structural_break_scores(df: pd.DataFrame, price_col: str = 'close'
         DataFrame with structural break scores
     """
     try:
+        if asset_series is not None:
+            try:
+                if asset_series.nunique(dropna=False) > 1:
+                    result_df = df.copy()
+                    result_df['sadf_score_norm'] = 0.0
+                    result_df['cusum_score_norm'] = 0.0
+                    grouped = df.groupby(asset_series, group_keys=False)
+                    for _asset, group in grouped:
+                        group = group.sort_index()
+                        group_scores = calculate_structural_break_scores(
+                            group,
+                            price_col=price_col,
+                            asset_series=None
+                        )
+                        result_df.loc[group_scores.index, 'sadf_score_norm'] = group_scores['sadf_score_norm']
+                        result_df.loc[group_scores.index, 'cusum_score_norm'] = group_scores['cusum_score_norm']
+                    return result_df
+            except Exception as asset_err:
+                tprint_warning(f"Error calculating structural break scores by asset: {asset_err}")
+
         prices = df[price_col].values
         returns = np.diff(np.log(prices + 1e-8))
         
@@ -123,10 +147,11 @@ def calculate_structural_break_scores(df: pd.DataFrame, price_col: str = 'close'
 
 
 def calculate_past_precision(
-    df: pd.DataFrame, 
+    df: pd.DataFrame,
     target_col: str = 'realized_return',
     prob_col: str = 'meta_prob',
-    window: int = 50
+    window: int = 50,
+    asset_series: Optional[pd.Series] = None
 ) -> pd.Series:
     """
     Calculate past precision (rolling accuracy) in similar market conditions.
@@ -145,12 +170,25 @@ def calculate_past_precision(
         predictions = (df[prob_col] > 0.5).astype(int)
         targets = (df[target_col] > 0).astype(int)
         
-        # Rolling accuracy
-        rolling_correct = predictions.rolling(window).sum()
-        rolling_total = pd.Series(1, index=df.index).rolling(window).sum()
-        
-        past_precision = rolling_correct / rolling_total
-        
+        if asset_series is not None and asset_series.nunique(dropna=False) > 1:
+            work_df = pd.DataFrame({'pred': predictions, 'target': targets}, index=df.index)
+
+            def _calc(group: pd.DataFrame) -> pd.Series:
+                rolling_correct = group['pred'].rolling(window).sum()
+                rolling_total = pd.Series(1, index=group.index).rolling(window).sum()
+                return rolling_correct / rolling_total
+
+            past_precision = (
+                work_df.groupby(asset_series, group_keys=False)
+                .apply(_calc)
+                .reindex(df.index)
+            )
+        else:
+            # Rolling accuracy
+            rolling_correct = predictions.rolling(window).sum()
+            rolling_total = pd.Series(1, index=df.index).rolling(window).sum()
+            past_precision = rolling_correct / rolling_total
+
         return past_precision.fillna(0.5)
         
     except Exception as e:
@@ -162,7 +200,8 @@ def calculate_relative_strength(
     df: pd.DataFrame,
     price_col: str = 'close',
     volume_col: str = 'volume',
-    window: int = 20
+    window: int = 20,
+    asset_series: Optional[pd.Series] = None
 ) -> pd.DataFrame:
     """
     Calculate relative strength metrics (sector-relative performance, VWAP distance).
@@ -177,28 +216,50 @@ def calculate_relative_strength(
         DataFrame with relative strength features
     """
     try:
+        if asset_series is not None and asset_series.nunique(dropna=False) > 1:
+            result_df = df.copy()
+            result_df['vwap_distance'] = 0.0
+            result_df['vwap_ratio'] = 1.0
+            result_df['relative_strength_ma'] = 0.0
+            result_df['relative_strength_short'] = 0.0
+
+            grouped = df.groupby(asset_series, group_keys=False)
+            for _asset, group in grouped:
+                group = group.sort_index()
+                group_res = calculate_relative_strength(
+                    group,
+                    price_col=price_col,
+                    volume_col=volume_col,
+                    window=window,
+                    asset_series=None
+                )
+                result_df.loc[group_res.index, ['vwap_distance', 'vwap_ratio', 'relative_strength_ma', 'relative_strength_short']] = (
+                    group_res[['vwap_distance', 'vwap_ratio', 'relative_strength_ma', 'relative_strength_short']]
+                )
+            return result_df
+
         result_df = df.copy()
-        
+
         # VWAP calculation
         if volume_col in df.columns:
             typical_price = (df['high'] + df['low'] + 2 * df[price_col]) / 4
             vwap = (typical_price * df[volume_col]).rolling(window).sum() / df[volume_col].rolling(window).sum()
-            
+
             # Distance from VWAP
             result_df['vwap_distance'] = (df[price_col] - vwap) / vwap
             result_df['vwap_ratio'] = df[price_col] / (vwap + 1e-8)
         else:
             result_df['vwap_distance'] = 0.0
             result_df['vwap_ratio'] = 1.0
-        
+
         # Relative strength vs moving average
         ma = df[price_col].rolling(window).mean()
         result_df['relative_strength_ma'] = (df[price_col] - ma) / (ma + 1e-8)
-        
+
         # Momentum vs recent average
         short_ma = df[price_col].rolling(window//2).mean()
         result_df['relative_strength_short'] = (df[price_col] - short_ma) / (short_ma + 1e-8)
-        
+
         return result_df
         
     except Exception as e:
@@ -214,7 +275,8 @@ def calculate_relative_strength(
 def calculate_drawdown_state(
     df: pd.DataFrame,
     price_col: str = 'close',
-    window: int = 50
+    window: int = 50,
+    asset_series: Optional[pd.Series] = None
 ) -> pd.DataFrame:
     """
     Calculate drawdown state (peak/trough detection).
@@ -228,31 +290,59 @@ def calculate_drawdown_state(
         DataFrame with drawdown state features
     """
     try:
+        if asset_series is not None and asset_series.nunique(dropna=False) > 1:
+            result_df = df.copy()
+            result_df['drawdown_from_peak'] = 0.0
+            result_df['distance_from_trough'] = 0.0
+            result_df['is_near_peak'] = 0.0
+            result_df['is_near_trough'] = 0.0
+            result_df['drawdown_regime_severe'] = 0.0
+            result_df['drawdown_regime_moderate'] = 0.0
+            result_df['drawdown_regime_mild'] = 0.0
+            result_df['drawdown_regime_none'] = 1.0
+
+            grouped = df.groupby(asset_series, group_keys=False)
+            for _asset, group in grouped:
+                group = group.sort_index()
+                group_res = calculate_drawdown_state(
+                    group,
+                    price_col=price_col,
+                    window=window,
+                    asset_series=None
+                )
+                drawdown_cols = [
+                    'drawdown_from_peak', 'distance_from_trough', 'is_near_peak', 'is_near_trough',
+                    'drawdown_regime_severe', 'drawdown_regime_moderate', 'drawdown_regime_mild',
+                    'drawdown_regime_none'
+                ]
+                result_df.loc[group_res.index, drawdown_cols] = group_res[drawdown_cols]
+            return result_df
+
         result_df = df.copy()
-        
+
         # Calculate rolling peak and trough
         rolling_peak = df[price_col].rolling(window).max()
         rolling_trough = df[price_col].rolling(window).min()
-        
+
         # Current drawdown from peak
         result_df['drawdown_from_peak'] = (df[price_col] - rolling_peak) / rolling_peak
-        
+
         # Distance from trough (recovery potential)
         result_df['distance_from_trough'] = (df[price_col] - rolling_trough) / (rolling_trough + 1e-8)
-        
+
         # Is currently near peak (> 90% of rolling peak)
         result_df['is_near_peak'] = (df[price_col] > 0.9 * rolling_peak).astype(float)
-        
+
         # Is currently near trough (< 110% of rolling trough)
         result_df['is_near_trough'] = (df[price_col] < 1.1 * rolling_trough).astype(float)
-        
+
         # Drawdown regime classification
         drawdown = result_df['drawdown_from_peak']
         result_df['drawdown_regime_severe'] = (drawdown < -0.1).astype(float)  # >10% drawdown
         result_df['drawdown_regime_moderate'] = ((drawdown >= -0.1) & (drawdown < -0.05)).astype(float)  # 5-10% drawdown
         result_df['drawdown_regime_mild'] = ((drawdown >= -0.05) & (drawdown < -0.02)).astype(float)  # 2-5% drawdown
         result_df['drawdown_regime_none'] = (drawdown >= -0.02).astype(float)  # <2% drawdown
-        
+
         return result_df
         
     except Exception as e:
@@ -275,7 +365,10 @@ def generate_layer4_features(
     target_col: str = 'realized_return',
     prob_col: str = 'meta_prob',
     use_raw_returns: bool = True,
-    use_weights: bool = True
+    use_weights: bool = True,
+    asset_id_col: Optional[str] = None,
+    asset_onehot: bool = True,
+    asset_onehot_max: Optional[int] = None
 ) -> pd.DataFrame:
     """
     Generate comprehensive Layer4 features for ExtraTrees model.
@@ -303,6 +396,38 @@ def generate_layer4_features(
 
         # Combine data with suffixes to avoid column overlap
         combined_df = df.join(layer3_predictions, how='inner', rsuffix='_l3')
+
+        asset_col = asset_id_col if asset_id_col and asset_id_col in combined_df.columns else None
+        if asset_col is None:
+            for candidate in ('asset_id', 'asset', 'ticker', 'symbol'):
+                if candidate in combined_df.columns:
+                    asset_col = candidate
+                    break
+
+        asset_series = None
+        if asset_col:
+            asset_series = combined_df[asset_col]
+        elif isinstance(combined_df.index, pd.MultiIndex):
+            for candidate in ('asset_id', 'asset', 'ticker', 'symbol'):
+                if candidate in combined_df.index.names:
+                    asset_col = candidate
+                    asset_series = combined_df.index.get_level_values(candidate)
+                    combined_df[candidate] = asset_series
+                    break
+
+        multi_asset = bool(asset_series is not None and asset_series.nunique(dropna=False) > 1)
+        if multi_asset:
+            tprint_info(f"   🧩 Multi-asset Layer4 feature generation detected ({asset_col})")
+
+        if multi_asset and asset_series is not None and asset_onehot:
+            asset_count = asset_series.nunique(dropna=False)
+            if asset_onehot_max and asset_count > asset_onehot_max:
+                tprint_warning(
+                    f"   ⚠️ Skipping Layer4 asset one-hot (assets={asset_count} > max={asset_onehot_max})"
+                )
+            else:
+                asset_dummies = pd.get_dummies(asset_series.astype(str), prefix="asset").astype(np.float32)
+                combined_df = pd.concat([combined_df, asset_dummies], axis=1)
         
         # 1. OOF predictions from layer3
         layer3_prob_cols = [c for c in combined_df.columns if c.startswith('meta_prob_') or c == prob_col]
@@ -355,16 +480,27 @@ def generate_layer4_features(
             combined_df['avg_prob_product'] = combined_df[prob_col]
         
         # 4. Past Precision
-        past_precision = calculate_past_precision(combined_df, target_col, prob_col)
+        past_precision = calculate_past_precision(
+            combined_df,
+            target_col,
+            prob_col,
+            asset_series=asset_series
+        )
         combined_df['past_precision'] = past_precision
         
         # 5. Structural Break Scores
-        structural_features = calculate_structural_break_scores(combined_df)
+        structural_features = calculate_structural_break_scores(
+            combined_df,
+            asset_series=asset_series
+        )
         combined_df['sadf_score_norm'] = structural_features['sadf_score_norm']
         combined_df['cusum_score_norm'] = structural_features['cusum_score_norm']
         
         # 6. Relative Strength (simplified)
-        relative_strength = calculate_relative_strength(combined_df)
+        relative_strength = calculate_relative_strength(
+            combined_df,
+            asset_series=asset_series
+        )
         # DISABLED: VWAP and relative strength features
         # combined_df['vwap_distance'] = relative_strength['vwap_distance']
         # combined_df['vwap_ratio'] = relative_strength['vwap_ratio']
@@ -373,7 +509,7 @@ def generate_layer4_features(
         
         # 7. Drawdown State (DISABLED)
         # DISABLED: Drawdown features
-        # drawdown_features = calculate_drawdown_state(combined_df)
+        # drawdown_features = calculate_drawdown_state(combined_df, asset_series=asset_series)
         # drawdown_cols = ['drawdown_from_peak', 'distance_from_trough', 'is_near_peak', 'is_near_trough',
         #                 'drawdown_regime_severe', 'drawdown_regime_moderate', 'drawdown_regime_mild', 'drawdown_regime_none']
         # for col in drawdown_cols:
@@ -450,7 +586,15 @@ def train_layer4_extratrees(
     # 1. Generate features
     tprint_info("🔧 Generating Layer4 features...")
     df_features = generate_layer4_features(
-        df, layer3_predictions, target_col, prob_col, use_raw_returns, use_weights
+        df,
+        layer3_predictions,
+        target_col,
+        prob_col,
+        use_raw_returns,
+        use_weights,
+        asset_id_col=cfg.get("layer4_asset_id_col") or cfg.get("asset_id_col"),
+        asset_onehot=cfg.get("layer4_asset_onehot", True),
+        asset_onehot_max=cfg.get("layer4_asset_onehot_max")
     )
     
     # 2. Prepare target variable
@@ -483,6 +627,10 @@ def train_layer4_extratrees(
                                    'disagreement_rate', 'snr_internal', 'snr_consensus']
     )]
     feature_candidates.extend(disagreement_cols)
+
+    # Asset identifiers (one-hot encoded)
+    asset_feature_cols = [c for c in df_aligned.columns if c.startswith('asset_')]
+    feature_candidates.extend(asset_feature_cols)
     
     # Core Layer4 features
     core_features = [

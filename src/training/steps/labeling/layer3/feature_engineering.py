@@ -35,6 +35,19 @@ except ImportError:
 
 from src.training.steps.labeling.feature_engineering_utils import apply_layer2_price_processing
 
+# Import RuleFit for interaction features
+try:
+    from src.training.steps.labeling.generate_interaction_features_et_rulefit import (
+        RuleFitTransformer, LeafGateConfig
+    )
+    # add_enhanced_gates was moved to layer2_5_chaser
+    from src.training.steps.labeling.layer2_5_chaser import add_enhanced_gates
+    RULEFIT_AVAILABLE = True
+except ImportError:
+    RULEFIT_AVAILABLE = False
+    print("⚠️ RuleFit not available, interaction features will be skipped")
+
+
 # Import Unified Cache
 try:
     from src.training.steps.labeling.layer3_feature_cache import (
@@ -130,7 +143,7 @@ def enhance_layer3_features_optimized(df, market_data, layer1_weight, layer0_par
             if OPTIMIZED_AVAILABLE:
                 # _vectorized_rolling_features returns [mean, std, range] for each window
                 # We want window 20 std, so index 1
-                features_20 = _vectorized_rolling_features(close.astype(np.float64), np.array([20], dtype=np.int32))
+                features_20 = _vectorized_rolling_features(close.astype(np.float32), np.array([20], dtype=np.int32))
                 df['fast_volatility'] = features_20[:, 1].astype(np.float32)
             else:
                 df['fast_volatility'] = market_data['close'].rolling(20).std().astype(np.float32)
@@ -210,7 +223,7 @@ def enhance_layer3_features_optimized(df, market_data, layer1_weight, layer0_par
 
         if OPTIMIZED_AVAILABLE:
             # Calculate rolling mean (20) and std (20)
-            feat_20 = _vectorized_rolling_features(unified_vals.astype(np.float64), np.array([20], dtype=np.int32))
+            feat_20 = _vectorized_rolling_features(unified_vals.astype(np.float32), np.array([20], dtype=np.int32))
             # feat_20 col 0 = mean, col 1 = std
             df['unified_price_strength'] = (unified_vals > feat_20[:, 0]).astype(int)
 
@@ -290,7 +303,7 @@ def enhance_layer3_features_optimized(df, market_data, layer1_weight, layer0_par
 
     if OPTIMIZED_AVAILABLE:
         # Rolling mean 50
-        feat_50 = _vectorized_rolling_features(adapt_vals.astype(np.float64), np.array([50], dtype=np.int32))
+        feat_50 = _vectorized_rolling_features(adapt_vals.astype(np.float32), np.array([50], dtype=np.int32))
         df['adaptive_filter_regime'] = (adapt_vals > feat_50[:, 0]).astype(int)
     else:
         df['adaptive_filter_regime'] = (adaptive_combined > adaptive_combined.rolling(50).mean()).astype(int)
@@ -387,7 +400,7 @@ def enhance_layer3_features_optimized(df, market_data, layer1_weight, layer0_par
     
     if OPTIMIZED_AVAILABLE:
         # std 20 and std 100
-        close_vals_d = close_series.values.astype(np.float64)
+        close_vals_d = close_series.values.astype(np.float32)
         feat_noise = _vectorized_rolling_features(close_vals_d, np.array([20, 100], dtype=np.int32))
         # 20: col 1, 100: col 4
         df['price_disorder_score'] = (feat_noise[:, 1] / (feat_noise[:, 4] + EPS)).astype(np.float32)
@@ -426,7 +439,7 @@ def enhance_layer3_features_optimized(df, market_data, layer1_weight, layer0_par
         df['weight_confidence_score'] = (1 - np.abs(w_vals - 1.0)).astype(np.float32)
 
         if OPTIMIZED_AVAILABLE:
-            feat_w_50 = _vectorized_rolling_features(w_vals.astype(np.float64), np.array([50], dtype=np.int32))
+            feat_w_50 = _vectorized_rolling_features(w_vals.astype(np.float32), np.array([50], dtype=np.int32))
             df['weight_regime_indicator'] = (w_vals > feat_w_50[:, 0]).astype(int)
         else:
             df['weight_regime_indicator'] = (layer1_w > layer1_w.rolling(50).mean()).astype(int)
@@ -547,11 +560,57 @@ def apply_layer3_feature_selection(X: pd.DataFrame, y: pd.Series, base_predictio
         pruned_ssfi = _apply_ssfi_pruning(X, y, disagreement_cols)
         X = X.drop(columns=pruned_ssfi)
         tprint_info(f"   📉 SSFI: Removed {len(pruned_ssfi)} uninformative disagreement features.")
+    
+    # 1.5. RuleFit Interaction Features (NEW - before hierarchical filtering)
+    if RULEFIT_AVAILABLE and not fast_mode:
+        try:
+            tprint_info("   🧬 Generating RuleFit Interaction Features...")
+            
+            # Add gates if OHLCV available
+            ohlcv_cols = ['close', 'high', 'low', 'volume']
+            gate_cols = [c for c in X.columns if c.startswith('g_')]
+            
+            if not gate_cols and all(c in X.columns for c in ohlcv_cols):
+                X_with_gates = add_enhanced_gates(X)
+                gate_cols = [c for c in X_with_gates.columns if c.startswith('g_')]
+                for c in gate_cols:
+                    X[c] = X_with_gates[c]
+            
+            if gate_cols:
+                base_cols = X.select_dtypes(include=[np.number]).columns.tolist()
+                base_cols = [c for c in base_cols if c not in gate_cols]
+                
+                # Use smaller config for Layer 3 (it has fewer samples typically)
+                rf_cfg = LeafGateConfig(
+                    n_estimators=100,
+                    max_depth=2,
+                    n_stability_runs=20,  # Faster for Layer 3
+                    stability_threshold=0.5
+                )
+                
+                rulefit = RuleFitTransformer(
+                    base_cols=base_cols,
+                    gate_cols=gate_cols,
+                    config=rf_cfg,
+                    verbose=False
+                )
+                
+                X_interactions = rulefit.fit_transform(X, y, class_weight="balanced")
+                
+                if not X_interactions.empty:
+                    X = pd.concat([X, X_interactions], axis=1)
+                    tprint_success(f"   ✅ Added {X_interactions.shape[1]} RuleFit interaction features")
+            else:
+                tprint_info("   ⚠️ No gate columns for RuleFit, skipping.")
+                
+        except Exception as e:
+            tprint_warning(f"   ⚠️ RuleFit generation failed: {e}")
         
     # 2. Hierarchical Filtering
     # We use the mean of base predictions as a proxy for 'base_predictions' series
     base_avg = base_predictions.mean(axis=1) if isinstance(base_predictions, pd.DataFrame) else base_predictions
     X = hierarchical_feature_filtering(X, y, base_avg, fast_mode)
+
     
     final_cols = list(X.columns)
     removed = set(initial_cols) - set(final_cols)

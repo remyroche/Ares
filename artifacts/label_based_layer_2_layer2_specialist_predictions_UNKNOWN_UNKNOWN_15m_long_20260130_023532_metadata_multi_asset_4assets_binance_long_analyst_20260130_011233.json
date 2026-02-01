@@ -1,0 +1,17 @@
+{
+  "row_count": 132484,
+  "column_count": 5,
+  "has_datetime_index": true,
+  "index_type": "DatetimeIndex",
+  "index_start": "2021-10-30 22:22:00",
+  "index_end": "2026-01-10 11:53:00",
+  "index_frequency": "None",
+  "index_tz": null,
+  "index_is_monotonic": true,
+  "artifact_name": "layer2_specialist_predictions_UNKNOWN_UNKNOWN_15m_long_20260130_023532",
+  "artifact_type": "data",
+  "file_path": "artifacts/pre_training/multi_asset_4assets/binance/long/analyst/label_based_layer_2/label_based_layer_2_layer2_specialist_predictions_UNKNOWN_UNKNOWN_15m_long_20260130_023532_multi_asset_4assets_binance_long_analyst_20260130_011233.parquet",
+  "file_size": 2698989,
+  "timestamp": "2026-01-30T02:35:33.282407",
+  "compression": "auto"
+}

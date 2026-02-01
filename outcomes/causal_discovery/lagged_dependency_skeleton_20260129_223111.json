@@ -1,0 +1,133 @@
+{
+  "ms__pca_2": [
+    "ca__vpin_spill_q90",
+    "ms__pca_2",
+    "TARGET_RET_1",
+    "ms__pca_0",
+    "ms__pca_1",
+    "ms__pca_3"
+  ],
+  "sparse_covariance_cci_w20": [
+    "ca__vpin_spill_q90",
+    "ms__pca_2",
+    "TARGET_RET_1",
+    "sparse_covariance_cci_w20",
+    "TARGET_Sharpe",
+    "ms__pca_0",
+    "ms__pca_1",
+    "ms__pca_3",
+    "close",
+    "open",
+    "ca__vpin_spill_q50"
+  ],
+  "sparse_covariance_vol_trend_conflict_w10": [
+    "sparse_covariance_vol_trend_conflict_w10",
+    "sparse_covariance_cci_w20"
+  ],
+  "ms__pca_3": [
+    "ca__vpin_spill_q90",
+    "ms__pca_2",
+    "TARGET_RET_1",
+    "ms__pca_0",
+    "ms__pca_1"
+  ],
+  "close": [
+    "open",
+    "TARGET_RET_1",
+    "close"
+  ],
+  "TARGET_Sharpe": [
+    "ca__vpin_spill_q90",
+    "TARGET_Sharpe",
+    "TARGET_RET_1",
+    "ms__pca_2",
+    "ms__pca_0",
+    "ms__pca_1",
+    "ms__pca_3",
+    "close",
+    "open",
+    "ca__vpin_spill_q50"
+  ],
+  "sparse_covariance_donchian_width_w50": [
+    "TARGET_RET_1",
+    "sparse_covariance_bars_since_breakout_attempt_w20",
+    "volume",
+    "sparse_covariance_donchian_width_w50"
+  ],
+  "volume": [
+    "TARGET_RET_1",
+    "volume"
+  ],
+  "open": [
+    "open",
+    "close"
+  ],
+  "volatility_1d": [
+    "ms__pca_0",
+    "TARGET_RET_1",
+    "ms__pca_1"
+  ],
+  "TARGET_RET_1": [
+    "ca__vpin_spill_q90",
+    "ms__pca_2",
+    "TARGET_RET_1",
+    "ms__pca_0",
+    "TARGET_Sharpe",
+    "ms__pca_1",
+    "ms__pca_3",
+    "close",
+    "open",
+    "ca__vpin_spill_q50"
+  ],
+  "ms__pca_0": [
+    "ca__vpin_spill_q90",
+    "ms__pca_2",
+    "TARGET_RET_1",
+    "ms__pca_0",
+    "ms__pca_1",
+    "ms__pca_3",
+    "close",
+    "open",
+    "ca__vpin_spill_q50"
+  ],
+  "ms__pca_1": [
+    "ca__vpin_spill_q90",
+    "ms__pca_2",
+    "TARGET_RET_1",
+    "ms__pca_0",
+    "ms__pca_1",
+    "ms__pca_3",
+    "close",
+    "open",
+    "ca__vpin_spill_q50"
+  ],
+  "ca__vpin_spill_q50": [
+    "ca__vpin_spill_q90",
+    "ms__pca_2",
+    "TARGET_RET_1",
+    "ms__pca_0",
+    "ms__pca_1"
+  ],
+  "geo_atr_14": [
+    "geo_atr_14"
+  ],
+  "ca__vpin_spill_q90": [
+    "ca__vpin_spill_q90",
+    "ms__pca_2",
+    "TARGET_RET_1",
+    "ms__pca_0",
+    "ms__pca_1",
+    "ms__pca_3"
+  ],
+  "sparse_covariance_bars_since_breakout_attempt_w20": [
+    "TARGET_RET_1",
+    "sparse_covariance_bars_since_breakout_attempt_w20"
+  ],
+  "sparse_covariance_time_weighted_sr_strength_w50": [
+    "sparse_covariance_time_weighted_sr_strength_w50"
+  ],
+  "volatility_5d": [
+    "TARGET_RET_1",
+    "volatility_5d"
+  ]
+}

@@ -33,7 +33,7 @@ class AdaptiveHunterRouter:
     Uses GMM for clustering and an adaptive forward filter for state estimation.
     """
 
-    def __init__(self, n_regimes: int = 3, base_smoothing: float = 0.85, **kwargs):
+    def __init__(self, n_regimes: int = 3, base_smoothing: float = 0.80, **kwargs):
         self.n_regimes = kwargs.get("n_components", n_regimes)
         self.base_smoothing = base_smoothing
         self.gmm: Optional[GaussianMixture] = None
@@ -90,7 +90,7 @@ class AdaptiveHunterRouter:
         self.gmm = GaussianMixture(
             n_components=self.n_regimes,
             covariance_type='diag', # More stable and faster than 'full'
-            reg_covar=1e-2,         # Increased from 1e-4 for robustness
+            reg_covar=5e-2,         # Increased for additional robustness
             random_state=42,
             max_iter=50,
             n_init=1,             # One good init is enough for 2-5 clusters
@@ -103,9 +103,9 @@ class AdaptiveHunterRouter:
         means = self.gmm.means_
         
         # Calculate percentiles for each feature across all regimes
-        vol_percentiles = np.percentile(means[:, 0], [25, 75])  # Volatility Intensity
-        eff_percentiles = np.percentile(means[:, 1], [25, 75])  # Efficiency Ratio
-        entropy_percentiles = np.percentile(means[:, 3], [25, 75])  # Wavelet Entropy
+        vol_percentiles = np.percentile(means[:, 0], [25, 65])  # Volatility Intensity
+        eff_percentiles = np.percentile(means[:, 1], [35, 75])  # Efficiency Ratio
+        entropy_percentiles = np.percentile(means[:, 3], [25, 65])  # Wavelet Entropy
         
         self.regime_map = {}
         
@@ -114,7 +114,7 @@ class AdaptiveHunterRouter:
             eff = means[i, 1]
             entropy = means[i, 3]
             
-            # Chaos: High volatility (>75th percentile) AND low efficiency (<25th percentile) AND high entropy (>75th percentile)
+            # Chaos: high volatility (>65th percentile), low efficiency (<35th percentile), elevated entropy (>65th percentile)
             if (vol > vol_percentiles[1] and eff < eff_percentiles[0] and entropy > entropy_percentiles[1]):
                 self.regime_map[i] = "Chaos"
             # Quiet: Low volatility (<25th percentile) AND moderate efficiency

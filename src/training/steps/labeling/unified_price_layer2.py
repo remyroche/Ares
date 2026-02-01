@@ -285,42 +285,29 @@ def generate_unified_layer2_price(df: pd.DataFrame, layer0_params: dict = None, 
             except Exception as w_err:
                 logger.warning(f"⚠️ Wavelet denoising failed, skipping: {w_err}")
 
-        # Import KalmanFilter1D from orthogonal_label_generation
-        from .orthogonal_label_generation import KalmanFilter1D, calc_vwap
-        
-        # Choose price generation method based on enabled features
         if adaptive_kalman_enabled:
-            # Use Adaptive Kalman with dynamic noise estimation
-            logger.debug("Using Adaptive Kalman with dynamic noise estimation")
-            # Create temp DF with potentially wavelet-denoised close
-            df_kalman = df.copy()
-            df_kalman['close'] = base_price
-
-            kalman_price = generate_adaptive_kalman_price(
-                df_kalman, Q, R, adaptive_noise_window, adaptive_adaptation_rate
-            )
-        else:
-            # Use standard Kalman filter on potentially wavelet-denoised close
-            kalman_price, kalman_uncertainty = KalmanFilter1D(Q=Q, R=R).filter_series(base_price)
+            logger.warning("Adaptive Kalman requested, but Kalman smoothing is disabled for Layer2 price")
         
-        # Generate VWAP price with enhanced robust method if enabled
-        # Note: VWAP usually uses raw price/volume, but we can use denoised close if preferred.
-        # Standard VWAP uses typical price (H+L+C)/3, but here we likely use Close.
-        # We will stick to using df inputs for VWAP to preserve volume-weighted logic,
-        # but mix it with the Kalman-filtered (and possibly Wavelet-denoised) price.
-
+        # Generate volume-damped price (flatten extrema when volume is below average)
+        
         if robust_vwap_enabled and 'volume' in df.columns:
-            logger.debug("Using Robust VWAP with adaptive window sizing")
+            logger.debug("Using volume-damped price with adaptive window sizing")
+            df_vwap = df[["close", "volume"]].copy()
+            df_vwap["close"] = base_price
             vwap_price = generate_robust_vwap_price(
-                df, vwap_lookback, robust_min_lookback, robust_max_lookback, robust_volatility_window
+                df_vwap, vwap_lookback, robust_min_lookback, robust_max_lookback, robust_volatility_window
             )
         elif vwap_weight > 0 and 'volume' in df.columns:
-            vwap_price = calc_vwap(df['close'], df['volume'], vwap_lookback)
+            df_vwap = df[["close", "volume"]].copy()
+            df_vwap["close"] = base_price
+            vwap_price = generate_robust_vwap_price(
+                df_vwap, vwap_lookback, vwap_lookback, vwap_lookback, robust_volatility_window
+            )
         else:
-            vwap_price = kalman_price
+            vwap_price = base_price
         
         # Composite price with Layer0-optimized weights
-        composite_price = (1 - vwap_weight) * kalman_price + vwap_weight * vwap_price
+        composite_price = (1 - vwap_weight) * base_price + vwap_weight * vwap_price
         
         # Apply Hampel Filter if enabled (outlier removal)
         if hampel_filter_enabled and len(composite_price) > hampel_window:
@@ -492,55 +479,49 @@ def generate_robust_vwap_price(df: pd.DataFrame,
                               max_lookback: int = 200,
                               volatility_window: int = 20) -> pd.Series:
     """
-    Generate Robust Volume-Weighted Average Price with adaptive window sizing.
-    
-    Extends VWAP with adaptive window sizing based on volume volatility profile.
-    More responsive to liquidity changes and volume pattern shifts.
-    
+    Generate volume-damped price smoothing with adaptive window sizing.
+
+    Flattens price extrema when volume is below its recent average by
+    shrinking deviations from a rolling mean proportionally to volume.
+
     Args:
         df: DataFrame with close, volume columns
-        base_lookback: Base VWAP lookback period
+        base_lookback: Base lookback period
         min_lookback: Minimum lookback (for high volatility)
         max_lookback: Maximum lookback (for low volatility)
-        volatility_window: Window for volatility calculation
-        
+        volatility_window: Window for volume volatility calculation
+
     Returns:
-        Robust VWAP price series
+        Volume-damped price series
     """
     try:
         close = df['close']
         volume = df['volume']
-        
-        # Calculate volume volatility profile
+
+        # Estimate volume volatility to adapt smoothing window
         volume_volatility = volume.pct_change().rolling(volatility_window).std()
-        
-        # Adaptive lookback based on volume volatility
-        # High volatility = shorter lookback (more responsive)
-        # Low volatility = longer lookback (smoother)
-        volatility_normalized = volume_volatility / volume_volatility.rolling(100).mean()
-        adaptive_lookback = (
-            min_lookback + 
-            (max_lookback - min_lookback) * (1 - volatility_normalized)
-        ).astype(int)
-        
-        # Ensure lookback doesn't exceed available data
+        baseline_volatility = volume_volatility.rolling(100, min_periods=5).mean()
+        vol_ratio = (volume_volatility / baseline_volatility).replace([np.inf, -np.inf], np.nan)
+        current_vol_ratio = float(vol_ratio.iloc[-1]) if len(vol_ratio) else np.nan
+        if not np.isfinite(current_vol_ratio):
+            current_vol_ratio = 1.0
+
+        adaptive_lookback = int(
+            np.clip(base_lookback / max(current_vol_ratio, 0.5), min_lookback, max_lookback)
+        )
         adaptive_lookback = min(adaptive_lookback, len(df))
-        
-        # Calculate robust VWAP with adaptive lookback
-        pv = close * volume
-        cum_pv = pv.rolling(adaptive_lookback).sum()
-        cum_vol = volume.rolling(adaptive_lookback).sum()
-        robust_vwap = cum_pv / (cum_vol + 1e-9)
-        
-        # Fill initial NaN values with simple VWAP
-        simple_vwap = calc_vwap(close, volume, base_lookback)
-        robust_vwap = robust_vwap.fillna(simple_vwap)
-        
-        return robust_vwap
-        
+
+        price_mean = close.rolling(adaptive_lookback, min_periods=max(2, adaptive_lookback // 3)).mean()
+        volume_mean = volume.rolling(adaptive_lookback, min_periods=max(2, adaptive_lookback // 3)).mean()
+
+        volume_ratio = (volume / (volume_mean + 1e-9)).clip(lower=0.1, upper=1.0)
+        damped_price = price_mean + (close - price_mean) * volume_ratio
+
+        return damped_price.fillna(close)
+
     except Exception as e:
-        logger.error(f"Robust VWAP generation failed: {e}")
-        return calc_vwap(df['close'], df.get('volume', pd.Series(0, index=df.index)), base_lookback)
+        logger.error(f"Volume-damped price generation failed: {e}")
+        return df['close']
 
 class UnifiedPriceMixin:
     """Mixin class for Layer2 generators to use unified price."""

@@ -1,0 +1,111 @@
+{
+  "ca__vpin_spill_q90": [
+    "ca__vpin_spill_q90",
+    "TARGET_RET_1",
+    "ms__pca_1",
+    "ms__pca_0",
+    "ms__pca_3",
+    "ms__pca_2"
+  ],
+  "open": [
+    "open",
+    "close"
+  ],
+  "TARGET_RET_1": [
+    "ca__vpin_spill_q90",
+    "TARGET_RET_1",
+    "open",
+    "TARGET_Sharpe",
+    "ms__pca_1",
+    "ms__pca_0",
+    "ca__vpin_spill_q50",
+    "ms__pca_3",
+    "close",
+    "ms__pca_2"
+  ],
+  "volume": [
+    "volume",
+    "open",
+    "ca__vpin_spill_q90",
+    "TARGET_RET_1",
+    "ms__pca_1",
+    "ms__pca_0",
+    "ca__vpin_spill_q50",
+    "ms__pca_3",
+    "close",
+    "ms__pca_2"
+  ],
+  "ms__pca_1": [
+    "ca__vpin_spill_q90",
+    "TARGET_RET_1",
+    "open",
+    "ms__pca_1",
+    "ms__pca_0",
+    "ca__vpin_spill_q50",
+    "ms__pca_3",
+    "close",
+    "ms__pca_2"
+  ],
+  "TARGET_Sharpe": [
+    "TARGET_RET_1",
+    "open",
+    "ca__vpin_spill_q90",
+    "TARGET_Sharpe",
+    "ms__pca_1",
+    "ms__pca_0",
+    "ca__vpin_spill_q50",
+    "ms__pca_3",
+    "close",
+    "ms__pca_2"
+  ],
+  "geo_atr_14": [
+    "geo_atr_14"
+  ],
+  "ms__pca_0": [
+    "ca__vpin_spill_q90",
+    "TARGET_RET_1",
+    "open",
+    "ms__pca_1",
+    "ms__pca_0",
+    "ca__vpin_spill_q50",
+    "ms__pca_3",
+    "close",
+    "ms__pca_2"
+  ],
+  "ca__vpin_spill_q50": [
+    "ca__vpin_spill_q90",
+    "TARGET_RET_1",
+    "ms__pca_1",
+    "ms__pca_0",
+    "ms__pca_2"
+  ],
+  "volatility_1d": [
+    "TARGET_RET_1",
+    "ms__pca_1",
+    "ms__pca_0"
+  ],
+  "volatility_5d": [
+    "volatility_5d",
+    "TARGET_RET_1"
+  ],
+  "ms__pca_3": [
+    "ca__vpin_spill_q90",
+    "TARGET_RET_1",
+    "ms__pca_1",
+    "ms__pca_0",
+    "ms__pca_2"
+  ],
+  "close": [
+    "TARGET_RET_1",
+    "open",
+    "close"
+  ],
+  "ms__pca_2": [
+    "ca__vpin_spill_q90",
+    "TARGET_RET_1",
+    "ms__pca_1",
+    "ms__pca_0",
+    "ms__pca_3",
+    "ms__pca_2"
+  ]
+}

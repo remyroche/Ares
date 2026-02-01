@@ -71,6 +71,33 @@ class CausalFeatureEngineering:
         self.causal_models_ = {}
         self.causal_adjustments_ = {}
         self.feature_transformations_ = {}
+
+    def _prune_to_data(self, data: pd.DataFrame) -> None:
+        if data is None or data.empty:
+            return
+        available_cols = set(data.columns)
+
+        if self.causal_graph:
+            pruned_graph: Dict[str, List[str]] = {}
+            for target_var, parent_vars in self.causal_graph.items():
+                if target_var not in available_cols:
+                    continue
+                valid_parents = [p for p in parent_vars if p in available_cols]
+                pruned_graph[target_var] = valid_parents
+            self.causal_graph = pruned_graph
+
+        if self.causal_models_:
+            pruned_models: Dict[str, Dict[str, Any]] = {}
+            for target_var, model_info in self.causal_models_.items():
+                if target_var not in available_cols:
+                    continue
+                parents = [p for p in model_info.get('parents', []) if p in available_cols]
+                if not parents:
+                    continue
+                updated_info = dict(model_info)
+                updated_info['parents'] = parents
+                pruned_models[target_var] = updated_info
+            self.causal_models_ = pruned_models
         
     def learn_causal_relationships(self, data: pd.DataFrame) -> Dict[str, Any]:
         """
@@ -109,8 +136,13 @@ class CausalFeatureEngineering:
             
             for target_var, parent_vars in self.causal_graph.items():
                 if target_var not in data.columns:
-                    if self.verbose:
-                        tprint_warning(f"   ⚠️ Target variable {target_var} not in data")
+                    # Downgrade to info if it looks like a target/label variable (expected to be missing in X)
+                    if any(x in target_var.lower() for x in ['target', 'label', 'ret_', 'bin_', 'meta_']):
+                         if self.verbose:
+                             pass # tprint_info(f"      ℹ️ Skipping causal engineering for label/target: {target_var}")
+                    else:
+                        if self.verbose:
+                             tprint_info(f"   ℹ️ Variable {target_var} in graph but not in data (skipping)")
                     continue
                 
                 # Get parent variables that exist in data
@@ -185,11 +217,15 @@ class CausalFeatureEngineering:
         try:
             if self.verbose:
                 tprint_info("🔧 Causal Denoising: Starting denoising process...")
+
+            self._prune_to_data(data)
             
             if not self.causal_models_:
                 if self.verbose:
                     tprint_info("   ⚙️ No causal models available, learning relationships...")
                 self.learn_causal_relationships(data)
+
+            self._prune_to_data(data)
             
             if not self.causal_models_:
                 if self.verbose:
@@ -199,11 +235,20 @@ class CausalFeatureEngineering:
             denoised_data = data.copy()
             features_denoised = 0
             features_failed = 0
-            
+
+            missing_targets = [
+                target_var for target_var in self.causal_models_.keys()
+                if target_var not in data.columns
+            ]
+            if self.verbose and missing_targets:
+                preview = ", ".join(missing_targets[:6])
+                tprint_info(
+                    "   ℹ️ Skipping causal denoising for missing targets: "
+                    f"{preview}{'...' if len(missing_targets) > 6 else ''}"
+                )
+
             for target_var, model_info in self.causal_models_.items():
                 if target_var not in data.columns:
-                    if self.verbose:
-                        tprint_warning(f"   ⚠️ Target {target_var} not in data")
                     continue
                 
                 try:
@@ -262,9 +307,13 @@ class CausalFeatureEngineering:
         try:
             if self.verbose:
                 tprint_info("⚖️ Applying Causal Adjustment...")
+
+            self._prune_to_data(data)
             
             if not self.causal_models_:
                 self.learn_causal_relationships(data)
+
+            self._prune_to_data(data)
             
             adjusted_data = data.copy()
             
@@ -319,6 +368,8 @@ class CausalFeatureEngineering:
         try:
             if self.verbose:
                 tprint_info("🔍 Applying Causal Imputation...")
+
+            self._prune_to_data(data)
             
             if not self.causal_models_:
                 self.learn_causal_relationships(data)
@@ -381,6 +432,8 @@ class CausalFeatureEngineering:
         try:
             if self.verbose:
                 tprint_info("🔄 Applying Causal Feature Transformations...")
+
+            self._prune_to_data(data)
             
             if not self.causal_models_:
                 self.learn_causal_relationships(data)
@@ -470,6 +523,7 @@ class CausalFeatureEngineering:
                 tprint_info("🚀 Starting Causal Feature Engineering Pipeline...")
             
             engineered_data = data.copy()
+            self._prune_to_data(engineered_data)
             metadata = {
                 'original_features': list(data.columns),
                 'applied_steps': [],

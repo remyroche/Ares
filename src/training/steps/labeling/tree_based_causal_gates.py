@@ -1,12 +1,45 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from collections import Counter
+from dataclasses import dataclass, field, asdict
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
+try:
+    from numba import njit  # type: ignore
+except Exception:
+    njit = None
+
 from src.utils.tprint import tprint_info, tprint_success, tprint_warning
+
+
+if njit is not None:
+    @njit
+    def _traverse_rows_numba(
+        X: np.ndarray,
+        feat_idx: np.ndarray,
+        thr: np.ndarray,
+        left: np.ndarray,
+        right: np.ndarray,
+        leaf_id: np.ndarray,
+        is_leaf: np.ndarray,
+    ) -> np.ndarray:
+        n = X.shape[0]
+        out = np.empty(n, dtype=np.int64)
+        for i in range(n):
+            node = 0
+            while not is_leaf[node]:
+                j = feat_idx[node]
+                if X[i, j] <= thr[node]:
+                    node = left[node]
+                else:
+                    node = right[node]
+            out[i] = leaf_id[node]
+        return out
+else:
+    _traverse_rows_numba = None
 
 
 # ============================================================
@@ -141,6 +174,13 @@ class LeafAssignment:
     n_samples: int
     fold_scores_by_expert: Dict[str, List[float]] = field(default_factory=dict)
     valid_folds_by_expert: Dict[str, float] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "LeafAssignment":
+        return cls(**d)
 
 
 @dataclass
@@ -151,9 +191,34 @@ class Node:
     leaf_id: Optional[int] = None
 
     feature: Optional[str] = None
+    feature_idx: Optional[int] = None
     threshold: Optional[float] = None
     left: Optional["Node"] = None
     right: Optional["Node"] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        d = {
+            "node_id": self.node_id,
+            "depth": self.depth,
+            "is_leaf": self.is_leaf,
+            "leaf_id": self.leaf_id,
+            "feature": self.feature,
+            "feature_idx": self.feature_idx,
+            "threshold": self.threshold,
+        }
+        if self.left: d["left"] = self.left.to_dict()
+        if self.right: d["right"] = self.right.to_dict()
+        return d
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "Node":
+        d = dict(d)
+        left_dict = d.pop("left", None)
+        right_dict = d.pop("right", None)
+        node = cls(**d)
+        if left_dict: node.left = cls.from_dict(left_dict)
+        if right_dict: node.right = cls.from_dict(right_dict)
+        return node
 
 
 @dataclass
@@ -172,6 +237,13 @@ class NodeStats:
     n_left: int
     n_right: int
     parent_best_expert: str
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "NodeStats":
+        return cls(**d)
 
 
 # ============================================================
@@ -204,28 +276,41 @@ class StabilityRegimeTree:
     def __init__(
         self,
         max_depth: int = 2,
-        min_leaf_samples: float | int = 0.05,
+        min_leaf_samples: float | int = 0.005,
         min_leaf_val_per_fold: int = 200,
-        n_thresholds: int = 9,  # deciles by default
+        n_thresholds: int = 15,
         stability_mode: str = "min_minus_iqr",
         disp_penalty: float = 0.5,
         utility_transform: str = "tanh",  # tanh / clip / identity
         soft_weights: bool = True,
-        top_k_weights: int = 2,
+        top_k_weights: int = 3,
         weight_temperature: float = 8.0,
         min_stability_gain: float = 0.02,
-        min_valid_fold_frac: float = 0.8,
+        min_valid_fold_frac: float = 0.6,
         min_total_leaf_val_samples: Optional[int] = None,
         expert_prune_gap: float = 0.1,
         expert_prune_cum_weight: float = 0.9,
         expert_prune_worst_fold: float = -0.25,
-        expert_prune_corr: float = 0.9,
+        expert_prune_corr: float = 0.95,
         merge_leaf_l1_eps: float = 0.2,
+        prune_alpha: float = 0.03,
+        child_min_leaf_fraction: float = 0.35,
+        nan_score_floor: float = -1e6,
+        min_gain_relax_parent_abs: float = 0.01,
+        min_gain_relaxed: float = 0.0001,
+        min_asset_leaf_samples: int = 0,
+        zscore_mode: str = "expanding",
+        zscore_window: Optional[int] = None,
+        split_imbalance_penalty: float = 0.01,
+        use_binned_splits: bool = False,
+        n_feature_bins: int = 255,
+        use_numba_inference: bool = True,
         verbose: bool = False,
     ):
         self.max_depth = int(max_depth)
         self.min_leaf_samples = min_leaf_samples
-        self._effective_min_leaf_samples = 0 # Calculated in fit
+        self._effective_min_leaf_samples = 0  # Calculated in fit
+        self._child_min_leaf_samples = 0
         self.min_leaf_val_per_fold = int(min_leaf_val_per_fold)
         self.n_thresholds = int(n_thresholds)
         self.stability_mode = str(stability_mode)
@@ -244,18 +329,43 @@ class StabilityRegimeTree:
         self.expert_prune_worst_fold = float(expert_prune_worst_fold)
         self.expert_prune_corr = float(expert_prune_corr)
         self.merge_leaf_l1_eps = float(merge_leaf_l1_eps)
+        self.prune_alpha = float(prune_alpha)
+        self.child_min_leaf_fraction = float(child_min_leaf_fraction)
+        self.nan_score_floor = float(nan_score_floor)
+        self.min_gain_relax_parent_abs = float(min_gain_relax_parent_abs)
+        self.min_gain_relaxed = float(min_gain_relaxed)
+        self.min_asset_leaf_samples = int(min_asset_leaf_samples)
+        self.zscore_mode = str(zscore_mode)
+        self.zscore_window = int(zscore_window) if zscore_window is not None else None
+        self.split_imbalance_penalty = float(split_imbalance_penalty)
+        self.use_binned_splits = bool(use_binned_splits)
+        self.n_feature_bins = int(n_feature_bins)
+        self.use_numba_inference = bool(use_numba_inference)
         self.verbose = bool(verbose)
+
+        # DEBUG: Check if _find_best_split exists
+        if verbose:
+            has_split = '_find_best_split' in dir(self)
+            tprint_info(f"🐛 [RegimeTree] Debug: has _find_best_split={has_split}")
 
         self.root_: Optional[Node] = None
         self.leaves_: Dict[int, LeafAssignment] = {}
         self.features_: List[str] = []
+        self._feature_to_index_: Dict[str, int] = {}
         self.experts_: List[str] = []
         self.fold_val_masks_: List[np.ndarray] = []
         self.feature_importances_: Dict[str, float] = {}
         self.node_stats_: Dict[int, NodeStats] = {}
         self._preds_oof_cache_: Dict[str, np.ndarray] = {}
+        self._utility_cache_: Dict[str, np.ndarray] = {}
         self._y_cache_: Optional[np.ndarray] = None
         self._leaf_ids_cache_: Optional[np.ndarray] = None
+        self._asset_id_codes_: Optional[np.ndarray] = None
+        self._asset_id_max_: int = 0
+        self._Z_binned_: Optional[np.ndarray] = None
+        self._bin_edges_by_feature_: Dict[str, np.ndarray] = {}
+        self._flat_tree_cache_: Optional[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = None
+        self.split_diagnostics: Counter = Counter()
 
     # -------------------------
     # Public API
@@ -266,6 +376,7 @@ class StabilityRegimeTree:
         preds_oof: Dict[str, np.ndarray],
         y: np.ndarray,
         folds: List[Tuple[np.ndarray, np.ndarray]],
+        asset_ids: Optional[np.ndarray | pd.Series | List[str]] = None,
     ) -> "StabilityRegimeTree":
         tprint_info(f"🌲 [RegimeTree] Starting fit with {len(Z)} samples and {len(preds_oof)} specialists")
         Z = self._validate_Z(Z)
@@ -274,17 +385,36 @@ class StabilityRegimeTree:
 
         # Calculate effective min leaf samples if percentage
         if isinstance(self.min_leaf_samples, float):
-             self._effective_min_leaf_samples = max(1, int(len(Z) * self.min_leaf_samples))
+            self._effective_min_leaf_samples = max(1, int(len(Z) * self.min_leaf_samples))
         else:
-             self._effective_min_leaf_samples = int(self.min_leaf_samples)
-        
-        tprint_info(f"   🌲 Effective min_leaf_samples: {self._effective_min_leaf_samples} ({self.min_leaf_samples})")
+            self._effective_min_leaf_samples = int(self.min_leaf_samples)
+        self._child_min_leaf_samples = max(
+            5,
+            int(max(1, self._effective_min_leaf_samples) * self.child_min_leaf_fraction),
+        )
 
+        tprint_info(
+            "   🌲 Effective min_leaf_samples: "
+            f"{self._effective_min_leaf_samples} ({self.min_leaf_samples}), "
+            f"child_min_leaf_samples: {self._child_min_leaf_samples}"
+        )
+
+        self.split_diagnostics = Counter()
         self.features_ = list(Z.columns)
+        self._feature_to_index_ = {c: j for j, c in enumerate(self.features_)}
         self.experts_ = list(preds_oof.keys())
         self.feature_importances_ = {f: 0.0 for f in self.features_}
         self._preds_oof_cache_ = preds_oof
         self._y_cache_ = y
+        self._utility_cache_ = {k: self._utility(y, s) for k, s in preds_oof.items()}
+
+        if asset_ids is not None:
+            asset_arr = np.asarray(asset_ids)
+            if asset_arr.shape[0] != len(Z):
+                raise ValueError("asset_ids must align with Z length.")
+            asset_codes = pd.Categorical(asset_arr).codes
+            self._asset_id_codes_ = asset_codes
+            self._asset_id_max_ = int(asset_codes.max()) if asset_codes.size else 0
 
         # Precompute fold validation masks once (fast intersections later)
         self.fold_val_masks_ = []
@@ -295,8 +425,26 @@ class StabilityRegimeTree:
             self.fold_val_masks_.append(m)
 
         # Numpy view for fast thresholding
-        Z_np = Z.to_numpy(dtype=float)
-        col_index = {c: j for j, c in enumerate(self.features_)}
+        Z_np = Z.to_numpy(dtype=np.float32, copy=False)
+        col_index = self._feature_to_index_
+
+        self._flat_tree_cache_ = None
+        self._Z_binned_ = None
+        self._bin_edges_by_feature_ = {}
+        if self.use_binned_splits:
+            n_bins = max(16, min(4096, self.n_feature_bins))
+            q = np.linspace(0.0, 100.0, n_bins + 1, dtype=float)[1:-1]
+            Z_binned = np.empty(Z_np.shape, dtype=np.uint16)
+            for feat, j in col_index.items():
+                col = Z_np[:, j]
+                edges = np.unique(np.percentile(col, q))
+                edges = edges[np.isfinite(edges)]
+                self._bin_edges_by_feature_[feat] = edges.astype(np.float32, copy=False)
+                if edges.size == 0:
+                    Z_binned[:, j] = 0
+                else:
+                    Z_binned[:, j] = np.searchsorted(edges, col, side="left").astype(np.uint16, copy=False)
+            self._Z_binned_ = Z_binned
 
         # Root mask: all samples
         root_mask = np.ones(n, dtype=bool)
@@ -312,7 +460,13 @@ class StabilityRegimeTree:
 
             n_node = int(idx_mask.sum())
             # stopping conditions
-            if depth >= self.max_depth or n_node < 2 * self._effective_min_leaf_samples:
+            if depth >= self.max_depth:
+                self._record_split_diag("max_depth_stop")
+            if n_node < self._effective_min_leaf_samples:
+                self._record_split_diag("node_min_samples_stop")
+            if n_node < 2 * self._child_min_leaf_samples:
+                self._record_split_diag("node_child_min_samples_stop")
+            if depth >= self.max_depth or n_node < 2 * self._child_min_leaf_samples:
                 leaf_id = leaf_counter
                 leaf_counter += 1
                 node = Node(node_id=node_id, depth=depth, is_leaf=True, leaf_id=leaf_id)
@@ -362,6 +516,7 @@ class StabilityRegimeTree:
                 depth=depth,
                 is_leaf=False,
                 feature=feat,
+                feature_idx=int(col_index[feat]),
                 threshold=float(thr),
             )
             node.left = build_node(left_mask, depth + 1)
@@ -369,10 +524,23 @@ class StabilityRegimeTree:
             return node
 
         self.root_ = build_node(root_mask, 0)
+        self._flat_tree_cache_ = None
         self._leaf_ids_cache_ = self.predict_leaf_ids(Z)
+        
+        # Post-construction refinements (internalized)
         self._prune_leaf_experts()
+        if self.prune_alpha > 0:
+            self.prune(self.prune_alpha)
         if self.merge_leaf_l1_eps > 0:
             self.merge_similar_leaves(self.merge_leaf_l1_eps)
+        
+        if self.split_diagnostics:
+            tprint_info(
+                "   📈 [RegimeTree] Split diagnostics: "
+                + ", ".join(f"{k}={v}" for k, v in sorted(self.split_diagnostics.items()))
+            )
+        self._log_leaf_summaries()
+
         tprint_success(f"✅ [RegimeTree] Fit complete: {len(self.leaves_)} leaves, {len(self.features_)} features")
         return self
 
@@ -381,12 +549,71 @@ class StabilityRegimeTree:
             raise RuntimeError("Tree is not fitted.")
         Z_new = self._validate_Z(Z_new)
         Z_new = Z_new[self.features_]
-        X = Z_new.to_numpy(dtype=float)
+        X = Z_new.to_numpy(dtype=np.float32, copy=False)
+
+        if (
+            self.use_numba_inference
+            and _traverse_rows_numba is not None
+            and self.root_ is not None
+        ):
+            feat_idx, thr, left, right, leaf_id, is_leaf = self._get_flat_tree_arrays()
+            return _traverse_rows_numba(X, feat_idx, thr, left, right, leaf_id, is_leaf).astype(int, copy=False)
 
         out = np.empty(X.shape[0], dtype=int)
         for i in range(X.shape[0]):
             out[i] = self._traverse_to_leaf_id(X[i], self.root_)
         return out
+
+    def _get_flat_tree_arrays(
+        self,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        if self.root_ is None:
+            raise RuntimeError("Tree is not fitted.")
+        if self._flat_tree_cache_ is not None:
+            return self._flat_tree_cache_
+
+        feat_idx_list: List[int] = []
+        thr_list: List[float] = []
+        left_list: List[int] = []
+        right_list: List[int] = []
+        leaf_list: List[int] = []
+        is_leaf_list: List[bool] = []
+        node_to_arr: Dict[int, int] = {}
+
+        def _add(node: Node) -> int:
+            if node.node_id in node_to_arr:
+                return node_to_arr[node.node_id]
+            idx = len(feat_idx_list)
+            node_to_arr[node.node_id] = idx
+
+            feat_idx_list.append(int(node.feature_idx) if node.feature_idx is not None else -1)
+            thr_list.append(float(node.threshold) if node.threshold is not None else 0.0)
+            left_list.append(-1)
+            right_list.append(-1)
+            leaf_list.append(int(node.leaf_id) if node.leaf_id is not None else -1)
+            is_leaf_list.append(bool(node.is_leaf))
+
+            if not node.is_leaf:
+                if node.left is None or node.right is None:
+                    raise RuntimeError("Malformed tree child pointer.")
+                lidx = _add(node.left)
+                ridx = _add(node.right)
+                left_list[idx] = int(lidx)
+                right_list[idx] = int(ridx)
+
+            return idx
+
+        _add(self.root_)
+
+        feat_idx = np.asarray(feat_idx_list, dtype=np.int64)
+        thr = np.asarray(thr_list, dtype=np.float32)
+        left = np.asarray(left_list, dtype=np.int64)
+        right = np.asarray(right_list, dtype=np.int64)
+        leaf_id = np.asarray(leaf_list, dtype=np.int64)
+        is_leaf = np.asarray(is_leaf_list, dtype=np.bool_)
+
+        self._flat_tree_cache_ = (feat_idx, thr, left, right, leaf_id, is_leaf)
+        return self._flat_tree_cache_
 
     def route(
         self,
@@ -414,6 +641,10 @@ class StabilityRegimeTree:
             if len(preds_by_expert[e]) != n:
                 raise ValueError(f"Expert {e} prediction length mismatch: {len(preds_by_expert[e])} != {n}")
 
+        preds_by_expert_norm: Dict[str, np.ndarray] = {}
+        for e in self.experts_:
+            preds_by_expert_norm[e] = self._normalize_position_scale(preds_by_expert[e])
+
         leaf_ids = self.predict_leaf_ids(Z_new)
         signals = np.zeros(n, dtype=float)
         disagreements = np.zeros(n, dtype=float)
@@ -430,7 +661,7 @@ class StabilityRegimeTree:
                 if e == "ABSTAIN_SPECIALIST":
                     pred = 0.0
                 else:
-                    pred = float(preds_by_expert[e][i])
+                    pred = float(preds_by_expert_norm[e][i])
                 current_signal += w * pred
                 active_experts.append((pred, w))
 
@@ -473,7 +704,46 @@ class StabilityRegimeTree:
         # If you prefer to drop warmup rows, do it outside and keep alignment consistent.
         Z = Z.fillna(0.0)
 
+        Z = Z.astype(float)
+        if self.zscore_mode == "none":
+            Z = Z
+        elif self.zscore_mode == "expanding":
+            means = Z.expanding(min_periods=2).mean()
+            stds = Z.expanding(min_periods=2).std(ddof=0)
+            stds = stds.replace(0.0, 1.0).fillna(1.0)
+            Z = (Z - means) / stds
+        elif self.zscore_mode == "rolling":
+            if self.zscore_window is None or self.zscore_window <= 1:
+                raise ValueError("zscore_window must be provided (>1) when zscore_mode='rolling'.")
+            minp = max(2, int(self.zscore_window // 5))
+            means = Z.rolling(self.zscore_window, min_periods=minp).mean()
+            stds = Z.rolling(self.zscore_window, min_periods=minp).std(ddof=0)
+            stds = stds.replace(0.0, 1.0).fillna(1.0)
+            Z = (Z - means) / stds
+        else:
+            raise ValueError(f"Unknown zscore_mode: {self.zscore_mode}")
+
+        Z = Z.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        Z = Z.clip(lower=-5.0, upper=5.0)
+
         return Z
+
+    @staticmethod
+    def _normalize_position_scale(arr: np.ndarray) -> np.ndarray:
+        x = np.asarray(arr, dtype=float)
+        x = np.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
+
+        if x.size == 0:
+            return x
+
+        xmin = float(np.min(x))
+        xmax = float(np.max(x))
+        if xmin >= 0.0 and xmax <= 1.0:
+            x = 2.0 * x - 1.0
+        else:
+            x = np.tanh(x)
+
+        return np.clip(x, -1.0, 1.0)
 
     def _validate_y(self, y: np.ndarray, n: int) -> np.ndarray:
         y = np.asarray(y, dtype=float)
@@ -490,7 +760,7 @@ class StabilityRegimeTree:
             arr = np.asarray(v, dtype=float)
             if arr.ndim != 1 or arr.size != n:
                 raise ValueError(f"preds_oof[{k}] must be 1D and aligned with Z.")
-            out[k] = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
+            out[k] = self._normalize_position_scale(arr)
         return out
 
     def _utility(self, y: np.ndarray, s: np.ndarray) -> np.ndarray:
@@ -509,6 +779,7 @@ class StabilityRegimeTree:
         idx_mask: np.ndarray,
         y: np.ndarray,
         s_oof: np.ndarray,
+        u_oof: Optional[np.ndarray] = None,
     ) -> float:
         """
         Stability score for one expert restricted to idx_mask (a leaf).
@@ -532,28 +803,38 @@ class StabilityRegimeTree:
                 fold_metrics.append(np.nan)
                 continue
 
-            u = self._utility(y[leaf_val_mask], s_oof[leaf_val_mask])
+            if u_oof is None:
+                u = self._utility(y[leaf_val_mask], s_oof[leaf_val_mask])
+            else:
+                u = u_oof[leaf_val_mask]
             fold_metrics.append(_safe_sharpe(u))
             total_val_samples += n_leaf_val
 
         if invalid_folds > max_invalid_folds:
-            return -np.inf
+            return self.nan_score_floor
 
         if total_val_samples < min_total_samples:
-            return -np.inf
+            return self.nan_score_floor
 
         fm = np.array(fold_metrics, dtype=float)
-        return stability_score_from_fold_metrics(
+        fm = fm[np.isfinite(fm)]
+        if fm.size == 0:
+            return self.nan_score_floor
+        score = stability_score_from_fold_metrics(
             fm,
             mode=self.stability_mode,
             disp_penalty=self.disp_penalty,
         )
+        if not np.isfinite(score):
+            return self.nan_score_floor
+        return score
 
     def _stability_with_fold_info(
         self,
         idx_mask: np.ndarray,
         y: np.ndarray,
         s_oof: np.ndarray,
+        u_oof: Optional[np.ndarray] = None,
     ) -> Tuple[float, List[float], float]:
         fold_metrics: List[float] = []
         total_val_samples = 0
@@ -569,21 +850,30 @@ class StabilityRegimeTree:
             n_leaf_val = int(leaf_val_mask.sum())
             if n_leaf_val < self.min_leaf_val_per_fold:
                 continue
-            u = self._utility(y[leaf_val_mask], s_oof[leaf_val_mask])
+
+            if u_oof is None:
+                u = self._utility(y[leaf_val_mask], s_oof[leaf_val_mask])
+            else:
+                u = u_oof[leaf_val_mask]
             fold_metrics.append(_safe_sharpe(u))
             total_val_samples += n_leaf_val
             valid_folds += 1
 
         valid_frac = valid_folds / max(1, n_folds)
         if valid_folds < min_valid_folds or total_val_samples < min_total_samples:
-            return -np.inf, fold_metrics, valid_frac
+            return self.nan_score_floor, fold_metrics, valid_frac
 
         fm = np.array(fold_metrics, dtype=float)
+        fm = fm[np.isfinite(fm)]
+        if fm.size == 0:
+            return self.nan_score_floor, fold_metrics, valid_frac
         stability = stability_score_from_fold_metrics(
             fm,
             mode=self.stability_mode,
             disp_penalty=self.disp_penalty,
         )
+        if not np.isfinite(stability):
+            stability = self.nan_score_floor
         return stability, fold_metrics, valid_frac
 
     def _leaf_score_best_expert(
@@ -596,9 +886,10 @@ class StabilityRegimeTree:
         Leaf score used in split search:
           max over experts of stability score on this leaf.
         """
-        best = -np.inf
-        for s in preds_oof.values():
-            sc = self._stability_for_expert_on_mask(idx_mask, y, s)
+        best = self.nan_score_floor
+        for expert, s in preds_oof.items():
+            u = self._utility_cache_.get(expert)
+            sc = self._stability_for_expert_on_mask(idx_mask, y, s, u_oof=u)
             if sc > best:
                 best = sc
         return best
@@ -624,7 +915,8 @@ class StabilityRegimeTree:
         valid_folds["ABSTAIN_SPECIALIST"] = 1.0
 
         for expert, s in preds_oof.items():
-            score, fold_metrics, valid_frac = self._stability_with_fold_info(idx_mask, y, s)
+            u = self._utility_cache_.get(expert)
+            score, fold_metrics, valid_frac = self._stability_with_fold_info(idx_mask, y, s, u_oof=u)
             scores[expert] = score
             fold_scores[expert] = fold_metrics
             valid_folds[expert] = valid_frac
@@ -655,7 +947,6 @@ class StabilityRegimeTree:
             # Or: score[best] > abstain + max(0.06, quantile(scores, 0.60) - abstain)?
             # Let's interpret "delta = q60" as the margin value.
             # But q60 is an absolute score.
-            # If q60 is the margin, then score > abstain + q60.
             # If q60 is e.g. 0.2, and abstain is 0.0, we need > 0.2.
             # This seems correct: "margin determined by the crowd".
             # However, usually margin is a delta.
@@ -723,6 +1014,7 @@ class StabilityRegimeTree:
                 return 0.0
             return float(np.corrcoef(a, b)[0, 1])
 
+        n_leaf = int(idx_mask.sum())
         for expert, score in candidates:
             if score < best_score - self.expert_prune_gap:
                 continue
@@ -730,17 +1022,24 @@ class StabilityRegimeTree:
                 continue
             if _min_fold_score(expert) < self.expert_prune_worst_fold:
                 continue
-            if kept:
+            if expert == "ABSTAIN_SPECIALIST":
+                candidate_vals = np.zeros(n_leaf, dtype=float)
+            else:
                 candidate_vals = preds_oof[expert][idx_mask]
-                skip = False
-                for kept_expert in kept:
+
+            skip = False
+            for kept_expert in kept:
+                if kept_expert == "ABSTAIN_SPECIALIST":
+                    kept_vals = np.zeros(n_leaf, dtype=float)
+                else:
                     kept_vals = preds_oof[kept_expert][idx_mask]
-                    corr = _corr(candidate_vals, kept_vals)
-                    if np.abs(corr) >= self.expert_prune_corr:
-                        skip = True
-                        break
-                if skip:
-                    continue
+                
+                corr = _corr(candidate_vals, kept_vals)
+                if np.abs(corr) >= self.expert_prune_corr:
+                    skip = True
+                    break
+            if skip:
+                continue
             kept[expert] = score
             if len(kept) >= self.top_k_weights:
                 break
@@ -828,13 +1127,26 @@ class StabilityRegimeTree:
             scores: Dict[str, float] = {}
             fold_scores: Dict[str, List[float]] = {}
             valid_folds: Dict[str, float] = {}
+            
+            # --- RE-ADD ABSTAIN SPECIALIST ---
+            # Same logic as _assign_leaf: abstain gets a baseline score
+            abstain_score = 0.001 
+            scores["ABSTAIN_SPECIALIST"] = abstain_score
+            fold_scores["ABSTAIN_SPECIALIST"] = [abstain_score] * len(self.fold_val_masks_)
+            valid_folds["ABSTAIN_SPECIALIST"] = 1.0
+
             for expert, s in self._preds_oof_cache_.items():
+                u = self._utility_cache_.get(expert)
                 score, fold_metrics, valid_frac = self._stability_with_fold_info(
-                    idx_mask, self._y_cache_, s
+                    idx_mask,
+                    self._y_cache_,
+                    s,
+                    u_oof=u,
                 )
                 scores[expert] = score
                 fold_scores[expert] = fold_metrics
                 valid_folds[expert] = valid_frac
+
             pruned_scores = self._select_leaf_experts(
                 scores,
                 fold_scores,
@@ -844,6 +1156,7 @@ class StabilityRegimeTree:
             )
             if not pruned_scores:
                 continue
+
             weights = self._make_leaf_weights(pruned_scores) if self.soft_weights else {leaf.expert_best: 1.0}
             best_expert = max(weights, key=weights.get)
             leaf.expert_best = best_expert
@@ -931,15 +1244,22 @@ class StabilityRegimeTree:
         or None if no split meets criteria.
         """
         n_node = int(idx_mask.sum())
-        if n_node < 2 * self.min_leaf_samples:
+        if n_node < 2 * self._child_min_leaf_samples:
+            self._record_split_diag("insufficient_node_samples")
             return None
 
         parent_score = self._leaf_score_best_expert(idx_mask, y, preds_oof)
         if not np.isfinite(parent_score):
+            self._record_split_diag("nonfinite_parent_score")
             return None
         parent_best_expert = max(
             preds_oof.keys(),
-            key=lambda k: self._stability_for_expert_on_mask(idx_mask, y, preds_oof[k]),
+            key=lambda k: self._stability_for_expert_on_mask(
+                idx_mask,
+                y,
+                preds_oof[k],
+                u_oof=self._utility_cache_.get(k),
+            ),
         )
 
         best_gain = -np.inf
@@ -955,9 +1275,31 @@ class StabilityRegimeTree:
             j = col_index[feat]
             x_node = Z_np[idx_mask, j]
             if np.nanstd(x_node) < 1e-12:
+                self._record_split_diag("low_variance_feature")
                 continue
 
-            thresholds = np.unique(np.nanquantile(x_node, qs))
+            if self._Z_binned_ is not None:
+                x_node_b = self._Z_binned_[idx_mask, j]
+                uniq_bins = np.unique(x_node_b)
+                if uniq_bins.size < 2:
+                    self._record_split_diag("low_variance_feature")
+                    continue
+
+                if uniq_bins.size <= adaptive_thresholds:
+                    candidate_bins = uniq_bins[:-1]
+                else:
+                    grid = np.linspace(0, uniq_bins.size - 2, adaptive_thresholds, dtype=int)
+                    candidate_bins = uniq_bins[grid]
+
+                edges = self._bin_edges_by_feature_.get(feat)
+                if edges is not None and edges.size:
+                    ks = candidate_bins.astype(int)
+                    ks = ks[ks < edges.size]
+                    thresholds = np.unique(edges[ks]) if ks.size else np.unique(np.nanquantile(x_node, qs))
+                else:
+                    thresholds = np.unique(np.nanquantile(x_node, qs))
+            else:
+                thresholds = np.unique(np.nanquantile(x_node, qs))
             # Evaluate each threshold
             x_full = Z_np[:, j]
             for thr in thresholds:
@@ -965,16 +1307,47 @@ class StabilityRegimeTree:
                 left_mask = idx_mask & cond
                 right_mask = idx_mask & ~cond
 
-                if int(left_mask.sum()) < self.min_leaf_samples or int(right_mask.sum()) < self.min_leaf_samples:
+                if self._asset_id_codes_ is not None and self.min_asset_leaf_samples > 0:
+                    parent_assets = np.unique(self._asset_id_codes_[idx_mask])
+                    parent_assets = parent_assets[parent_assets >= 0]
+                    if parent_assets.size:
+                        left_counts = np.bincount(
+                            self._asset_id_codes_[left_mask],
+                            minlength=self._asset_id_max_ + 1,
+                        )
+                        right_counts = np.bincount(
+                            self._asset_id_codes_[right_mask],
+                            minlength=self._asset_id_max_ + 1,
+                        )
+                        if np.any(left_counts[parent_assets] < self.min_asset_leaf_samples) or np.any(
+                            right_counts[parent_assets] < self.min_asset_leaf_samples
+                        ):
+                            self._record_split_diag("child_min_asset_samples_block")
+                            continue
+
+                if int(left_mask.sum()) < self._child_min_leaf_samples or int(right_mask.sum()) < self._child_min_leaf_samples:
+                    self._record_split_diag("child_min_samples_block")
                     continue
 
                 left_score = self._leaf_score_best_expert(left_mask, y, preds_oof)
                 right_score = self._leaf_score_best_expert(right_mask, y, preds_oof)
 
                 if not np.isfinite(left_score) or not np.isfinite(right_score):
+                    self._record_split_diag("nonfinite_child_score")
                     continue
 
-                gain = (left_score + right_score) - parent_score
+                n_left = int(left_mask.sum())
+                n_right = int(right_mask.sum())
+                weighted_child = (n_left * left_score + n_right * right_score) / max(1, n_node)
+
+                p = n_left / max(1, n_node)
+                if p <= 0.0 or p >= 1.0:
+                    imbalance = 1.0
+                else:
+                    split_entropy = -p * np.log(p) - (1.0 - p) * np.log(1.0 - p)
+                    imbalance = 1.0 - (split_entropy / np.log(2.0))
+
+                gain = weighted_child - parent_score - self.split_imbalance_penalty * imbalance
                 if gain > best_gain:
                     best_gain = float(gain)
                     best_left_score = float(left_score)
@@ -982,10 +1355,44 @@ class StabilityRegimeTree:
                     best_split = (feat, float(thr), left_mask, right_mask, best_gain)
 
         if best_split is None:
+            self._record_split_diag("no_valid_split")
             return None
 
+        adaptive_min_gain = self.min_stability_gain
+        if abs(parent_score) < self.min_gain_relax_parent_abs:
+            adaptive_min_gain = min(adaptive_min_gain, self.min_gain_relaxed)
+
         # Minimum gain pruning (avoid micro-splits from noise)
-        if best_gain < self.min_stability_gain:
+        if best_gain < adaptive_min_gain:
+            self._record_split_diag("gain_below_min")
+            feat, thr, lm, rm, _ = best_split
+            if self.verbose:
+                tprint_info(
+                    "   ⚠️ [RegimeTree] Best split below gain threshold: "
+                    f"{feat} <= {thr:.4f} | gain={best_gain:.6f} < {adaptive_min_gain:.6f}, "
+                    f"parent={parent_score:.6f}, left={best_left_score:.6f} (n={int(lm.sum())}), "
+                    f"right={best_right_score:.6f} (n={int(rm.sum())})"
+                )
+            
+            # --- DEBUG: Inspect why the split was invalid (check fold distribution) ---
+            if self.verbose:
+                if best_left_score <= self.nan_score_floor + 1.0 or best_right_score <= self.nan_score_floor + 1.0:
+                    tprint_info("   🕵️ [RegimeTree] Debugging invalid split fold distribution:")
+
+                    for label, mask in [("Left", lm), ("Right", rm)]:
+                        is_invalid = (best_left_score <= self.nan_score_floor + 1.0) if label == "Left" else (best_right_score <= self.nan_score_floor + 1.0)
+                        if is_invalid:
+                            counts = []
+                            valid_cnt = 0
+                            for val_mask in self.fold_val_masks_:
+                                c = int((mask & val_mask).sum())
+                                counts.append(c)
+                                if c >= self.min_leaf_val_per_fold:
+                                    valid_cnt += 1
+                            tprint_info(
+                                f"      • {label} child ({int(mask.sum())} samples): Valid folds={valid_cnt}/{len(self.fold_val_masks_)} "
+                                f"(req {int(np.ceil(self.min_valid_fold_frac * len(self.fold_val_masks_)))}), Counts={counts}"
+                            )
             return None
 
         if self.verbose:
@@ -1008,6 +1415,42 @@ class StabilityRegimeTree:
             str(parent_best_expert),
         )
 
+    def _record_split_diag(self, key: str) -> None:
+        if self.split_diagnostics is None:
+            self.split_diagnostics = Counter()
+        self.split_diagnostics[key] += 1
+
+    def _log_leaf_summaries(self) -> None:
+        if not self.leaves_:
+            return
+        tprint_info("   🌿 [RegimeTree] Leaf summaries:")
+        for leaf_id in sorted(self.leaves_):
+            leaf = self.leaves_[leaf_id]
+            weights = leaf.expert_weights or {}
+            top_weights = sorted(weights.items(), key=lambda kv: kv[1], reverse=True)[:3]
+            weight_str = ", ".join(f"{k}:{v:.2f}" for k, v in top_weights)
+            probs = np.array([v for v in weights.values() if v > 0], dtype=float)
+            if probs.size:
+                entropy = float(-(probs * np.log(probs + 1e-12)).sum())
+            else:
+                entropy = 0.0
+            scores = leaf.scores_by_expert or {}
+            if scores:
+                sorted_scores = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+                best_score = sorted_scores[0][1]
+                third_score = sorted_scores[2][1] if len(sorted_scores) > 2 else sorted_scores[-1][1]
+                score_spread = float(best_score - third_score)
+            else:
+                score_spread = 0.0
+            tprint_info(
+                f"      • Leaf {leaf_id}: n={leaf.n_samples}, best={leaf.expert_best}, "
+                f"score={leaf.score_best:.4f}, weights=[{weight_str}], H={entropy:.3f}, "
+                f"Δscore_top3={score_spread:.5f}"
+            )
+
+    def get_split_diagnostics(self) -> Dict[str, int]:
+        return dict(self.split_diagnostics or {})
+
     def _traverse_to_leaf_id(self, row: np.ndarray, node: Node) -> int:
         """
         Traverse a single row to leaf_id.
@@ -1016,7 +1459,10 @@ class StabilityRegimeTree:
             if node.feature is None or node.threshold is None:
                 raise RuntimeError("Malformed internal node.")
 
-            j = self.features_.index(node.feature)
+            if node.feature_idx is not None:
+                j = int(node.feature_idx)
+            else:
+                j = int(self._feature_to_index_.get(node.feature, self.features_.index(node.feature)))
             if row[j] <= node.threshold:
                 node = node.left  # type: ignore[assignment]
             else:
@@ -1108,6 +1554,65 @@ class StabilityRegimeTree:
         if left is not None:
             return left
         return self._find_any_leaf(node.right)
+
+    # -------------------------
+    # Serialization
+    # -------------------------
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize tree for checkpointing."""
+        return {
+            "params": {
+                "max_depth": self.max_depth,
+                "min_leaf_samples": self.min_leaf_samples,
+                "min_leaf_val_per_fold": self.min_leaf_val_per_fold,
+                "n_thresholds": self.n_thresholds,
+                "stability_mode": self.stability_mode,
+                "disp_penalty": self.disp_penalty,
+                "utility_transform": self.utility_transform,
+                "soft_weights": self.soft_weights,
+                "top_k_weights": self.top_k_weights,
+                "weight_temperature": self.weight_temperature,
+                "min_stability_gain": self.min_stability_gain,
+                "min_valid_fold_frac": self.min_valid_fold_frac,
+                "expert_prune_gap": self.expert_prune_gap,
+                "expert_prune_cum_weight": self.expert_prune_cum_weight,
+                "expert_prune_worst_fold": self.expert_prune_worst_fold,
+                "expert_prune_corr": self.expert_prune_corr,
+                "min_gain_relax_parent_abs": self.min_gain_relax_parent_abs,
+                "min_gain_relaxed": self.min_gain_relaxed,
+                "min_asset_leaf_samples": self.min_asset_leaf_samples,
+                "zscore_mode": self.zscore_mode,
+                "zscore_window": self.zscore_window,
+                "split_imbalance_penalty": self.split_imbalance_penalty,
+                "use_binned_splits": self.use_binned_splits,
+                "n_feature_bins": self.n_feature_bins,
+                "use_numba_inference": self.use_numba_inference,
+                "verbose": self.verbose,
+            },
+            "_effective_min_leaf_samples": self._effective_min_leaf_samples,
+            "root": self.root_.to_dict() if self.root_ else None,
+            "leaves": {str(k): v.to_dict() for k, v in self.leaves_.items()},
+            "features": self.features_,
+            "experts": self.experts_,
+            "feature_importances": self.feature_importances_,
+            "node_stats": {str(k): v.to_dict() for k, v in self.node_stats_.items()},
+        }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "StabilityRegimeTree":
+        """Deserialize tree from checkpoint data."""
+        tree = cls(**d["params"])
+        tree._effective_min_leaf_samples = d.get("_effective_min_leaf_samples", 0)
+        if d.get("root"):
+            tree.root_ = Node.from_dict(d["root"])
+        if "leaves" in d:
+            tree.leaves_ = {int(k): LeafAssignment.from_dict(v) for k, v in d["leaves"].items()}
+        tree.features_ = d.get("features", [])
+        tree.experts_ = d.get("experts", [])
+        tree.feature_importances_ = d.get("feature_importances", {})
+        if "node_stats" in d:
+            tree.node_stats_ = {int(k): NodeStats.from_dict(v) for k, v in d["node_stats"].items()}
+        return tree
 
 
 # ============================================================

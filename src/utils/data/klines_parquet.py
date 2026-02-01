@@ -1407,7 +1407,17 @@ class KlinesParquetManager:
                     if overwrite:
                         try:
                             if output_path.is_dir():
-                                shutil.rmtree(output_path)
+                                # Only remove partitions that will be rewritten to avoid
+                                # deleting all historical data during incremental updates.
+                                partitions = df_with_partitions[["year", "month"]].drop_duplicates()
+                                for row in partitions.itertuples(index=False):
+                                    year = getattr(row, "year", None)
+                                    month = getattr(row, "month", None)
+                                    if pd.isna(year) or pd.isna(month):
+                                        continue
+                                    partition_path = output_path / f"year={int(year)}" / f"month={int(month)}"
+                                    if partition_path.exists():
+                                        shutil.rmtree(partition_path)
                             else:
                                 output_path.unlink()
                         except Exception as e:

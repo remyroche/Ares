@@ -28,5 +28,5 @@ step_registry.register("ab_testing", ABTestingStep)
 step_registry.register("reporting", ReportingStep)
 step_registry.register("final_parameters_optimization", FinalParametersOptimizer)
 step_registry.register("real_parameters_optimization", RealParametersOptimizer)
-step_registry.register("analyst_base_backtest", AnalystBaseBacktestStep)
+# Note: analyst_base_backtest is already registered by its own module, skipping here
 step_registry.register("meta_gated_backtest", MetaGatedBacktestStep)

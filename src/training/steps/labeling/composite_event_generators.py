@@ -15,6 +15,8 @@ import pandas as pd
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 import logging
+from src.utils.numba_funcs import _numba_rolling_mean, _numba_rolling_std
+from src.utils.tprint import tprint_warning
 
 logger = logging.getLogger(__name__)
 
@@ -403,6 +405,85 @@ class BarPressureEvents:
         return df.index[mask]
 
 
+class CrossAssetEventGenerator:
+    """
+    Generate events based on Cross-Asset features (ca__*).
+    
+    Logic:
+    1. Computes Rolling Z-Score for each feature (window=300).
+    2. Identifies events exceeding the global 3% quantile (97th percentile) of Z-scores.
+    
+    Triggers:
+    1. Lead-Lag: Market leads asset significantly (predictive signal).
+    2. Beta Dislocation: Short-term beta diverges from long-term beta.
+    3. Shocks: Volatility or Volume shocks relative to market.
+    """
+    
+    def __init__(self, window: int = 300, quantile_threshold: float = 0.97):
+        self.window = window
+        self.quantile_threshold = quantile_threshold
+        self.feature_map = {
+            'lead_lag': 'ca__lead_lag_w48',
+            'beta_spread': 'ca__beta_shift', 
+            'vol_shock': 'ca__vol_shock',
+            'volume_shock': 'ca__volume_shock'
+        }
+    
+    def _compute_rolling_z(self, series: pd.Series) -> pd.Series:
+        """Compute rolling Z-score using Numba for performance."""
+        # Convert to numpy and handle NaNs (fill with 0 or ffill to prevent sum poisoning)
+        # For cross-asset features, 0 is often a safe neutral value (no correlation, no shock)
+        values = series.fillna(0.0).values.astype(np.float64)
+        
+        # Calculate Rolling Mean and Std using Numba optimized kernels
+        # Note: These kernels are O(N) and much faster than pandas rolling for large windows
+        mu = _numba_rolling_mean(values, self.window)
+        sigma = _numba_rolling_std(values, self.window)
+        
+        # Compute Z-Score
+        # Avoid division by zero
+        z_scores = np.zeros_like(values)
+        mask = sigma > 1e-9
+        z_scores[mask] = (values[mask] - mu[mask]) / sigma[mask]
+        
+        return pd.Series(z_scores, index=series.index)
+
+    def generate(self, df: pd.DataFrame) -> pd.DatetimeIndex:
+        """Generate cross-asset events."""
+        events = pd.DatetimeIndex([])
+        
+        for name, col in self.feature_map.items():
+            if col not in df.columns:
+                continue
+                
+            # 1. Compute Rolling Z-Score
+            raw_series = df[col]
+            # For lead_lag, we only care about positive values (Market Leads)? 
+            # Or simplified: just look for distributional anomalies in the feature.
+            # Lead-Lag is directional. Beta spread is signed. Shocks are positive.
+            # Z-score normalizes them all.
+            z_scores = self._compute_rolling_z(raw_series)
+            
+            # 2. Determine Global Threshold (3% quantile)
+            # Use absolute Z-scores for two-sided outliers (or one-sided if naturally positive)
+            abs_z = z_scores.abs()
+            
+            # Global 3% threshold (97th percentile)
+            # If we assume normality, this is ~2.17. But we use empirical.
+            # If not enough data, default to 2.0
+            if len(abs_z) > 100:
+                threshold = abs_z.quantile(self.quantile_threshold)
+            else:
+                threshold = 2.0
+                
+            # 3. Trigger Events
+            mask = abs_z > threshold
+            if mask.any():
+                events = events.union(df.index[mask])
+                
+        return events
+
+
 # Factory function for easy registration
 def get_microstructure_generators() -> Dict[str, Any]:
     """Return dictionary of microstructure proxy generators."""
@@ -410,6 +491,7 @@ def get_microstructure_generators() -> Dict[str, Any]:
         'TRADE_INTENSITY': TradeIntensityEvents(threshold=2.0, window=20),
         'ORDER_FLOW_IMBALANCE': OrderFlowImbalanceEvents(threshold=2.0, window=20),
         'BAR_PRESSURE': BarPressureEvents(threshold=2.0, window=20),
+        'CROSS_ASSET_SPECIALIST': CrossAssetEventGenerator(),
     }
 
 

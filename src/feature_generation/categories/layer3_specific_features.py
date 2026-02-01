@@ -698,25 +698,25 @@ def generate_layer3_features(
     try:
         if 'trend_regime' in df_out.columns:
             tr = df_out['trend_regime'].astype(str).str.lower()
-            df_out['trend_regime_is_high'] = (tr == 'high').astype(float)
-            df_out['trend_regime_is_low'] = (tr == 'low').astype(float)
+            df_out['trend_regime_is_high'] = (tr == 'high').astype(np.float32)
+            df_out['trend_regime_is_low'] = (tr == 'low').astype(np.float32)
         if 'vol_regime' in df_out.columns:
             vr = df_out['vol_regime'].astype(str).str.lower()
-            df_out['vol_regime_is_high'] = (vr == 'high').astype(float)
-            df_out['vol_regime_is_low'] = (vr == 'low').astype(float)
+            df_out['vol_regime_is_high'] = (vr == 'high').astype(np.float32)
+            df_out['vol_regime_is_low'] = (vr == 'low').astype(np.float32)
     except Exception:
         pass
 
     try:
         if 'volatility_1d' in df_out.columns:
-            vol1d = pd.to_numeric(df_out['volatility_1d'], errors='coerce').astype(float)
+            vol1d = pd.to_numeric(df_out['volatility_1d'], errors='coerce').astype(np.float32)
             q33 = float(vol1d.quantile(0.33)) if vol1d.notna().any() else float('nan')
             q67 = float(vol1d.quantile(0.67)) if vol1d.notna().any() else float('nan')
             if np.isfinite(q33) and np.isfinite(q67) and q67 > q33:
                 # DISABLED: Volatility buckets
-                # df_out['vol_bucket_low'] = (vol1d <= q33).astype(float)
-                # df_out['vol_bucket_mid'] = ((vol1d > q33) & (vol1d <= q67)).astype(float)
-                # df_out['vol_bucket_high'] = (vol1d > q67).astype(float)
+                # df_out['vol_bucket_low'] = (vol1d <= q33).astype(np.float32)
+                # df_out['vol_bucket_mid'] = ((vol1d > q33) & (vol1d <= q67)).astype(np.float32)
+                # df_out['vol_bucket_high'] = (vol1d > q67).astype(np.float32)
                 pass
     except Exception:
         pass
@@ -734,14 +734,14 @@ def generate_layer3_features(
             if df_out['regime_label'].dtype == object or isinstance(df_out['regime_label'].iloc[0], str):
                 dummies = pd.get_dummies(df_out['regime_label'], prefix='regime_is')
                 for col in dummies.columns:
-                    df_out[col] = dummies[col].astype(float)
+                    df_out[col] = dummies[col].astype(np.float32)
             else:
                 # Assuming Int (0,1,2)
                 # Map 0->Quiet, 1->Trending, 2->Chaos (Standard Map)
                 # Or just OHE the ints
                 dummies = pd.get_dummies(df_out['regime_label'], prefix='regime_id')
                 for col in dummies.columns:
-                    df_out[col] = dummies[col].astype(float)
+                    df_out[col] = dummies[col].astype(np.float32)
                     
         # Also clean up old regime columns if they exist but aren't useful raw
         # (We keep them for now as they might include probability columns)
@@ -798,17 +798,17 @@ def generate_layer3_features(
     try:
         valid_base_cols = [c for c in (base_model_cols or []) if c in df_out.columns]
         if valid_base_cols:
-            df_out[valid_base_cols] = df_out[valid_base_cols].astype(float).fillna(0.5)
+            df_out[valid_base_cols] = df_out[valid_base_cols].astype(np.float32).fillna(0.5)
 
-            prob_dict = {str(c): df_out[c].astype(float).values for c in valid_base_cols}
-            pred_dict = {str(c): (df_out[c].astype(float).values - 0.5) for c in valid_base_cols}
+            prob_dict = {str(c): df_out[c].astype(np.float32).values for c in valid_base_cols}
+            pred_dict = {str(c): (df_out[c].astype(np.float32).values - 0.5) for c in valid_base_cols}
 
             var_dict = {}
             for c in valid_base_cols:
                 var_col = f"{c}_var"
                 if var_col in df_out.columns:
                     try:
-                        var_dict[str(c)] = pd.to_numeric(df_out[var_col], errors="coerce").astype(float).values
+                        var_dict[str(c)] = pd.to_numeric(df_out[var_col], errors="coerce").astype(np.float32).values
                     except Exception:
                         pass
 

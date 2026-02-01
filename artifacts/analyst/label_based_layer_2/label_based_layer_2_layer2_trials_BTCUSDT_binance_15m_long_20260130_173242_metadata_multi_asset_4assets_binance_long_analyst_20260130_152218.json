@@ -1,0 +1,9 @@
+{
+  "data_type": "list",
+  "artifact_name": "layer2_trials_BTCUSDT_binance_15m_long_20260130_173242",
+  "artifact_type": "metadata",
+  "file_path": "artifacts/pre_training/multi_asset_4assets/binance/long/analyst/label_based_layer_2/label_based_layer_2_layer2_trials_BTCUSDT_binance_15m_long_20260130_173242_multi_asset_4assets_binance_long_analyst_20260130_152218.pkl",
+  "file_size": 309831,
+  "timestamp": "2026-01-30T17:32:45.096372",
+  "compression": "auto"
+}

@@ -928,6 +928,7 @@ def compute_multi_triple_barrier_outcomes_vectorized(
     ewma_min_periods: int = 20,
     confidence_clip: float = 3.0,
     timeout_confidence: float = 0.25,
+    label_return_column: str = "close",
 ) -> List[Dict[str, pd.Series]]:
     """
     Compute triple-barrier outcomes for multiple configurations using vectorized operations.
@@ -964,10 +965,11 @@ def compute_multi_triple_barrier_outcomes_vectorized(
     kalman_price = market_data[kalman_price_col]
     kalman_vol = market_data[kalman_vol_col]
 
-    if "close" not in market_data.columns:
+    return_col = label_return_column if label_return_column in market_data.columns else "close"
+    if return_col not in market_data.columns:
         raise ValueError("market_data must include a 'close' column")
     ewma_sigma = _compute_ewma_sigma_of_log_returns(
-        close=market_data["close"],
+        close=market_data[return_col],
         span=int(ewma_span),
         min_periods=int(ewma_min_periods),
     )
@@ -1080,6 +1082,7 @@ def compute_multi_triple_barrier_outcomes_vectorized(
                 stop_threshold=stop_threshold,
                 horizon=config.horizon,
                 transaction_cost=transaction_cost,
+                close_prices_arr=chunk_data[return_col].values if return_col in chunk_data.columns else None,
             )
 
             # Confidence: margin beyond threshold at touch (0 for timeouts).
@@ -1170,6 +1173,7 @@ def compute_multi_triple_barrier_outcomes(
     kalman_vol_col: str = 'kalman_volatility',
     transaction_cost: float = DEFAULT_TRANSACTION_COST,
     direction: Optional[str] = None,
+    **kwargs
 ) -> List[Dict[str, pd.Series]]:
     """
     Legacy wrapper for backward compatibility.
@@ -1184,6 +1188,7 @@ def compute_multi_triple_barrier_outcomes(
         transaction_cost=transaction_cost,
         chunk_size=2000,
         direction=direction,
+        **kwargs
     )
 
 
@@ -1191,16 +1196,24 @@ def compute_kalman_multi_triple_barrier_sample_weights(
     tb_results: List[Dict[str, pd.Series]],
     kalman_volatility: pd.Series,
     economic_floor_multiplier: float = 0.25,
-    normalize_weights: bool = True
+    normalize_weights: bool = True,
+    use_per_asset_uniqueness: bool = False,
+    asset_col: str = 'asset_id',
+    market_data: Optional[pd.DataFrame] = None,
 ) -> pd.Series:
     """
     Compute sample weights by averaging absolute returns across configurations.
+    
+    Optionally incorporates per-asset uniqueness weighting for multi-asset training.
 
     Args:
         tb_results: List of triple barrier result dictionaries
         kalman_volatility: Kalman volatility series for economic floor
         economic_floor_multiplier: Multiplier for economic floor (relative to mean volatility)
         normalize_weights: Whether to normalize weights to mean=1
+        use_per_asset_uniqueness: If True, compute uniqueness per asset (not globally)
+        asset_col: Column name for asset identifier (default: 'asset_id')
+        market_data: Full market DataFrame with asset_col for per-asset uniqueness
 
     Returns:
         Series of sample weights indexed by event timestamps
@@ -1244,6 +1257,46 @@ def compute_kalman_multi_triple_barrier_sample_weights(
     mean_volatility = kalman_volatility.loc[common_index].mean()
     economic_floor = economic_floor_multiplier * mean_volatility
     weights = np.maximum(weights, economic_floor)
+    
+    # Apply per-asset uniqueness weighting if requested (multi-asset training)
+    if use_per_asset_uniqueness and market_data is not None and asset_col in market_data.columns:
+        try:
+            from src.training.steps.labeling.generate_weights_per_label import compute_uniqueness_per_asset
+            
+            # Build t1 series for uniqueness calculation
+            # Assume events are indexed by start time, need to compute end times
+            # For now, use a simple horizon-based approach
+            # This is a placeholder - actual implementation should use real event end times
+            horizon_estimate = 12  # bars
+            t1_series = pd.Series(
+                common_index + pd.Timedelta(hours=horizon_estimate * 0.25),  # Assuming 15min bars
+                index=common_index
+            )
+            
+            # Add asset information to t1 series
+            if asset_col in market_data.columns:
+                asset_info = market_data.loc[common_index, asset_col] if common_index.isin(market_data.index).all() else None
+                if asset_info is not None:
+                    # Create DataFrame with t1 and asset_col
+                    t1_df = pd.DataFrame({
+                        't1': t1_series,
+                        asset_col: asset_info
+                    })
+                    
+                    # Compute per-asset uniqueness
+                    uniqueness_weights = compute_uniqueness_per_asset(
+                        t1=t1_df['t1'],
+                        asset_col=asset_col,
+                        events_index=common_index,
+                        market_index=market_data
+                    )
+                    
+                    # Multiply magnitude weights by uniqueness weights
+                    weights = weights * uniqueness_weights.reindex(common_index).fillna(1.0).values
+        except Exception as e:
+            # Fallback to magnitude-only weights if uniqueness fails
+            import warnings
+            warnings.warn(f"Per-asset uniqueness weighting failed: {e}. Using magnitude-only weights.")
 
     # Optional normalization
     if normalize_weights:
@@ -1267,6 +1320,7 @@ def kalman_multi_triple_barrier_labels(
     return_detailed_results: bool = False,
     use_confidence_weighted_voting: bool = True,
     timeout_downweight_factor: float = 0.25,
+    label_return_column: str = "close",
 ) -> Union[Tuple[pd.Series, pd.Series], Tuple[pd.Series, pd.Series, Dict]]:
     """
     Generate labels using Kalman-smoothed multi-triple-barrier approach.
@@ -1354,7 +1408,8 @@ def kalman_multi_triple_barrier_labels(
         market_data=market_data,
         primary_signals=primary_signals,
         configs=configs,
-        transaction_cost=transaction_cost
+        transaction_cost=transaction_cost,
+        label_return_column=label_return_column,
     )
 
     # Step 4: Compute sample weights by averaging absolute returns

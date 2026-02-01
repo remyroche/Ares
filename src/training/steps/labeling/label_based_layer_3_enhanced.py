@@ -48,12 +48,7 @@ from src.feature_generation.categories.layer3_specific_features import generate_
 from src.training.steps.labeling.generate_weights_per_label import (
     finalize_sample_weights,
 )
-from src.training.steps.labeling.lgbm_feature_selection import lgbm_feature_selection_pipeline
-# Import new feature selection utilities
-from src.training.steps.labeling.conditional_mutual_information import ConditionalMutualInformationSelector, cmi_feature_selection
 from src.training.steps.labeling.de_prado_feature_engine import DePradoFeatureEngine, de_prado_feature_selection
-from src.training.steps.labeling.regime_leaf_feature_extractor import extract_regime_leaf_onehot_features
-from src.training.steps.labeling.short_nn_sequence_template import generate_nn_sequence_embeddings
 
 from src.utils.purged_kfold import PurgedKFoldTime
 

@@ -1,9 +1,0 @@
-{
-  "data_type": "list",
-  "artifact_name": "layer2_trials_UNKNOWN_UNKNOWN_15m_long_20260129_004714",
-  "artifact_type": "metadata",
-  "file_path": "artifacts/pre_training/multi_asset_4assets/binance/long/analyst/label_based_layer_2/label_based_layer_2_layer2_trials_UNKNOWN_UNKNOWN_15m_long_20260129_004714_multi_asset_4assets_binance_long_analyst_20260129_000045.pkl",
-  "file_size": 305295,
-  "timestamp": "2026-01-29T00:47:14.708027",
-  "compression": "auto"
-}

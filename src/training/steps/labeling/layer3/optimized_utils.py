@@ -67,7 +67,7 @@ def numba_rolling_ols_3factor(y: np.ndarray, x1: np.ndarray, x2: np.ndarray, x3:
         y_hat: Predicted values (N,)
     """
     n = len(y)
-    y_hat = np.zeros(n, dtype=np.float64)
+    y_hat = np.zeros(n, dtype=np.float32)
 
     # We need at least 'window' samples
     if n < window:
@@ -75,7 +75,7 @@ def numba_rolling_ols_3factor(y: np.ndarray, x1: np.ndarray, x2: np.ndarray, x3:
 
     # Pre-allocate X matrix for the window (window x 4)
     # [1, x1, x2, x3]
-    X_window = np.ones((window, 4), dtype=np.float64)
+    X_window = np.ones((window, 4), dtype=np.float32)
 
     for i in range(window, n):
         # Fill window data
@@ -153,7 +153,7 @@ def numba_conditional_correlation(
         Array of conditional correlation scores
     """
     n_selected = len(top_indices)
-    scores = np.zeros(n_selected, dtype=np.float64)
+    scores = np.zeros(n_selected, dtype=np.float32)
 
     # Calculate target residual once
     res_y = y_val - base_preds
@@ -195,7 +195,7 @@ def numba_calculate_har_features(volatility: np.ndarray, periods: np.ndarray) ->
     """
     n = len(volatility)
     variance = volatility ** 2
-    output = np.zeros((n, 3), dtype=np.float64)
+    output = np.zeros((n, 3), dtype=np.float32)
 
     for j in range(3):
         p = periods[j]

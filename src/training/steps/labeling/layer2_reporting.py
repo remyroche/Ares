@@ -221,6 +221,9 @@ class Layer2Reporter:
                     'model': model_name,
                     'auc': metrics.get('auc', 'N/A'),
                     'pr_auc': metrics.get('pr_auc', 'N/A'),
+                    'bss': metrics.get('bss', 'N/A'),
+                    'dir_consistency': metrics.get('dir_consistency', 'N/A'),
+                    'stability': metrics.get('stability', 'N/A'),
                     'recall_at_40': metrics.get('recall_at_40', 'N/A'),
                     'precision_at_40': metrics.get('precision_at_40', 'N/A'),
                     'log_loss': metrics.get('log_loss', 'N/A'),
@@ -250,13 +253,15 @@ class Layer2Reporter:
 
             # Model comparison table
             lines.append("## Model Comparison\n")
-            lines.append("| Model | AUC | PR-AUC | Recall@40 | Precision@40 | LogLoss | Time(s) |\n")
-            lines.append("|-------|-----|--------|----------|--------------|---------|----------|\n")
+            lines.append("| Model | AUC | PR-AUC | BSS | DirCons | Stability | Recall@40 | Precision@40 | LogLoss | Time(s) |\n")
+            lines.append("|-------|-----|--------|-----|---------|-----------|-----------|--------------|---------|----------|\n")
             for _, row in model_df.iterrows():
                 time_str = f"{row['training_time']:.2f}" if row['training_time'] != 'N/A' else 'N/A'
-                lines.append(f"| {row['model']} | {row['auc']:.4f} | {row['pr_auc']:.4f} | "
-                           f"{row['recall_at_40']:.3f} | {row['precision_at_40']:.3f} | "
-                           f"{row['log_loss']:.4f} | {time_str} |\n")
+                lines.append(
+                    f"| {row['model']} | {row['auc']:.4f} | {row['pr_auc']:.4f} | {row['bss']:.4f} | "
+                    f"{row['dir_consistency']:.4f} | {row['stability']:.4f} | {row['recall_at_40']:.3f} | "
+                    f"{row['precision_at_40']:.3f} | {row['log_loss']:.4f} | {time_str} |\n"
+                )
 
             report_path = self.outcomes_dir / f"layer2_model_race_{self.ts}.md"
             report_path.write_text("".join(lines))

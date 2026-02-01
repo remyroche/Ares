@@ -100,7 +100,7 @@ class StructuralCausalModel:
         for target, parents in causal_graph.items():
             if target not in data.columns:
                 if self.verbose:
-                    tprint_warning(f"⚠️ Target '{target}' not in data, skipping")
+                    tprint_info(f"   ℹ️ Target '{target}' not in data, skipping causal node")
                 continue
             
             # Get parent variables

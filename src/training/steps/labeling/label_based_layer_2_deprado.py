@@ -3983,10 +3983,13 @@ class LabelBasedLayer2(BaseStep):
             tprint_info("🔍 Step 1: Running causal discovery...")
             causal_graph = self._run_causal_discovery(df)
             if not causal_graph:
-                error_msg = "   ❌ Causal discovery failed; aborting Layer 2 causal pipeline"
-                tprint_error(error_msg)
-                raise RuntimeError(error_msg.strip())
-            tprint_success(f"   ✅ Causal discovery complete: {len(causal_graph)} variables")
+                tprint_warning(
+                    "   ⚠️ Causal discovery produced no graph; continuing with empty causal graph"
+                )
+                causal_metadata["causal_discovery_status"] = "empty_graph"
+            else:
+                tprint_success(f"   ✅ Causal discovery complete: {len(causal_graph)} variables")
+                causal_metadata["causal_discovery_status"] = "ok"
 
             # 2. Causal Specialists: Create and train specialists
             tprint_info("🧠 Step 2: Initializing causal specialists...")

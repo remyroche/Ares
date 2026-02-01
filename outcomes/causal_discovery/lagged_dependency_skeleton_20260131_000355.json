@@ -1,0 +1,73 @@
+{
+  "open_mean_5": [
+    "open_mean_5",
+    "open",
+    "close"
+  ],
+  "low_range_10": [
+    "low_range_10",
+    "open",
+    "close",
+    "close_range_10"
+  ],
+  "low_std_5": [
+    "close_std_5",
+    "open",
+    "close",
+    "low_std_5"
+  ],
+  "volatility_1d": [
+    "open"
+  ],
+  "close_std_5": [
+    "low_std_5",
+    "close_std_5",
+    "close",
+    "volatility_1d",
+    "high_std_5",
+    "open",
+    "volume"
+  ],
+  "TARGET_Sharpe": [
+    "close",
+    "open",
+    "TARGET_Sharpe",
+    "TARGET_RET_1"
+  ],
+  "TARGET_RET_1": [
+    "TARGET_Sharpe",
+    "TARGET_RET_1"
+  ],
+  "volatility_5d": [
+    "open",
+    "close"
+  ],
+  "low_range_20": [
+    "close_range_20",
+    "TARGET_RET_1",
+    "low_range_20",
+    "close",
+    "open"
+  ],
+  "close": [
+    "close"
+  ],
+  "close_range_10": [
+    "close_range_10"
+  ],
+  "high_std_5": [
+    "close_std_5",
+    "TARGET_RET_1",
+    "close",
+    "high_std_5",
+    "open"
+  ],
+  "open": [
+    "close"
+  ],
+  "volume": [
+    "high_std_5",
+    "close_std_5",
+    "volume"
+  ]
+}

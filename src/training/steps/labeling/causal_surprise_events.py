@@ -12,9 +12,14 @@ Key Features:
 """
 
 import hashlib
+from datetime import datetime
 import numpy as np
 import pandas as pd
-from src.utils.numba_funcs import _numba_rolling_mad, _numba_rolling_entropy
+from src.utils.numba_funcs import (
+    _numba_rolling_mad,
+    _numba_rolling_median,
+    _numba_rolling_entropy,
+)
 from typing import Dict, Optional, Any
 from scipy import stats
 from .detection_utils import detect_rolling_quantile_surprises
@@ -61,20 +66,30 @@ def _hash_pandas(obj: Any, sample_size: int = 1000) -> str:
         return "na"
 
 
+def _safe_index_range(index: pd.Index) -> str:
+    if index.empty:
+        return "None->None"
+    try:
+        idx_min = index.min()
+        idx_max = index.max()
+    except TypeError:
+        idx_min = index.astype(str).min()
+        idx_max = index.astype(str).max()
+    return f"{idx_min}->{idx_max}"
+
+
 def _summarize_obj(obj: Any) -> str:
     if isinstance(obj, pd.DataFrame):
-        idx_min = obj.index.min() if not obj.empty else None
-        idx_max = obj.index.max() if not obj.empty else None
+        idx_range = _safe_index_range(obj.index)
         return (
             f"DataFrame(shape={obj.shape}, cols={len(obj.columns)}, "
-            f"range={idx_min}->{idx_max}, hash={_hash_pandas(obj)})"
+            f"range={idx_range}, hash={_hash_pandas(obj)})"
         )
     if isinstance(obj, pd.Series):
-        idx_min = obj.index.min() if not obj.empty else None
-        idx_max = obj.index.max() if not obj.empty else None
+        idx_range = _safe_index_range(obj.index)
         return (
             f"Series(len={len(obj)}, name={obj.name}, "
-            f"range={idx_min}->{idx_max}, hash={_hash_pandas(obj)})"
+            f"range={idx_range}, hash={_hash_pandas(obj)})"
         )
     if isinstance(obj, np.ndarray):
         return f"ndarray(shape={obj.shape}, dtype={obj.dtype})"
@@ -135,6 +150,14 @@ class CausalSurpriseDetector:
         )
         self.zone2_ratio_boost = float(
             self.zone_score_config.get("zone2_ratio_boost", 0.2)
+        )
+
+        # Global quantile floors to prevent threshold collapse
+        self.global_quantile_floor = float(
+            self.zone_score_config.get("global_quantile_floor", 0.97)
+        )
+        self.global_quantile_extreme = float(
+            self.zone_score_config.get("global_quantile_extreme", 0.995)
         )
 
         # Core vs conditional specialist contract
@@ -200,6 +223,91 @@ class CausalSurpriseDetector:
         try:
             if len(predictions) != len(targets):
                 raise ValueError("Predictions and targets must have same length")
+            
+            # CRITICAL: Reject pure integer indices early to prevent mixed-type aggregation
+            # Time-series pipelines require DatetimeIndex for proper temporal alignment
+            pred_is_integer = pd.api.types.is_integer_dtype(predictions.index)
+            pred_is_datetime = pd.api.types.is_datetime64_any_dtype(predictions.index)
+            
+            if pred_is_integer and not pred_is_datetime:
+                # Attempt to coerce RangeIndex using existing reference timeline if available
+                reference_index = getattr(self, "reference_index_", None)
+                if reference_index is None or not pd.api.types.is_datetime64_any_dtype(reference_index):
+                    tprint_warning(
+                        f"   ⚠️ Specialist {specialist_name} has integer index and no reference available. "
+                        "Skipping to prevent aggregation errors (DatetimeIndex required)."
+                    )
+                    return
+                try:
+                    positions = predictions.index.to_numpy(dtype=int, copy=False)
+                    if positions.min() < 0 or positions.max() >= len(reference_index):
+                        tprint_warning(
+                            f"   ⚠️ Specialist {specialist_name} integer index exceeds reference bounds. Skipping."
+                        )
+                        return
+                    predictions = pd.Series(
+                        predictions.values,
+                        index=reference_index[positions],
+                        name=predictions.name,
+                    )
+                    targets = targets.reindex(predictions.index).dropna()
+                    predictions = predictions.reindex(targets.index)
+                except Exception as exc:
+                    tprint_warning(
+                        f"   ⚠️ Specialist {specialist_name} index coercion failed: {exc}. Skipping."
+                    )
+                    return
+
+            reference_index = getattr(self, "reference_index_", None)
+
+            def _align_to_reference(
+                series: pd.Series, label: str
+            ) -> Optional[pd.Series]:
+                if reference_index is None:
+                    return series
+                if series.index.equals(reference_index):
+                    return series
+                ref_is_datetime = pd.api.types.is_datetime64_any_dtype(reference_index)
+                series_index = series.index
+                series_is_integer = pd.api.types.is_integer_dtype(series_index)
+                series_is_datetime = pd.api.types.is_datetime64_any_dtype(series_index)
+
+                if ref_is_datetime and series_is_integer:
+                    positions = series_index.to_numpy(dtype=int, copy=False)
+                    if positions.min() < 0 or positions.max() >= len(reference_index):
+                        tprint_warning(
+                            f"   ⚠️ Specialist {specialist_name} {label} index exceeds reference bounds. Skipping."
+                        )
+                        return None
+                    return pd.Series(
+                        series.values,
+                        index=reference_index[positions],
+                        name=series.name,
+                    )
+                if ref_is_datetime and not series_is_datetime:
+                    parsed_index = pd.to_datetime(series_index, errors="coerce")
+                    if parsed_index.isna().all():
+                        tprint_warning(
+                            f"   ⚠️ Specialist {specialist_name} {label} index could not be coerced to datetime. Skipping."
+                        )
+                        return None
+                    series = pd.Series(series.values, index=parsed_index, name=series.name)
+                return series.reindex(reference_index)
+
+            if reference_index is not None:
+                predictions = _align_to_reference(predictions, "predictions")
+                targets = _align_to_reference(targets, "targets")
+                if predictions is None or targets is None:
+                    return
+
+                aligned = pd.concat([predictions, targets], axis=1).dropna()
+                if aligned.empty:
+                    tprint_warning(
+                        f"   ⚠️ Specialist {specialist_name} alignment produced empty data. Skipping."
+                    )
+                    return
+                predictions = aligned.iloc[:, 0]
+                targets = aligned.iloc[:, 1]
 
             # Compute prediction errors
             errors = targets - predictions
@@ -224,6 +332,43 @@ class CausalSurpriseDetector:
                 global_mad = 1.0
                 mean_err = 0.0
                 std_err = 0.0
+                q_floor_val = 1.0
+                q_extreme_val = 1.0
+            abs_errors = np.abs(finite_errors) if len(finite_errors) > 0 else np.array([1.0])
+            q_floor_val = float(np.quantile(abs_errors, self.global_quantile_floor))
+            q_extreme_val = float(np.quantile(abs_errors, self.global_quantile_extreme))
+
+            # Enforce Index Consistency
+            # If this is not the first specialist, check if index type matches
+            if self.specialist_predictions_:
+                first_spec = next(iter(self.specialist_predictions_))
+                ref_index = self.specialist_predictions_[first_spec].index
+                
+                # Check for incompatible types (e.g. Int64 vs Datetime)
+                is_ref_int = pd.api.types.is_integer_dtype(ref_index)
+                is_ref_datetime = pd.api.types.is_datetime64_any_dtype(ref_index)
+                is_curr_int = pd.api.types.is_integer_dtype(predictions.index)
+                is_curr_datetime = pd.api.types.is_datetime64_any_dtype(predictions.index)
+                
+                # Block if types are incompatible
+                type_mismatch = (is_ref_int != is_curr_int) or (is_ref_datetime != is_curr_datetime)
+                if type_mismatch:
+                    if is_ref_datetime and not is_curr_datetime:
+                        predictions = predictions.reindex(ref_index).dropna()
+                        targets = targets.reindex(predictions.index).dropna()
+                        predictions = predictions.reindex(targets.index)
+                    else:
+                        ref_type = 'Int' if is_ref_int else ('Datetime' if is_ref_datetime else 'Other')
+                        curr_type = 'Int' if is_curr_int else ('Datetime' if is_curr_datetime else 'Other')
+                        tprint_warning(
+                            f"   ⚠️ Specialist {specialist_name} index type mismatch "
+                            f"(Ref: {ref_type}, Curr: {curr_type}). "
+                            "Skipping registration to prevent aggregation errors."
+                        )
+                        return
+
+            if getattr(self, "reference_index_", None) is None:
+                self.reference_index_ = predictions.index
 
             # Store specialist data
             self.specialist_predictions_[specialist_name] = predictions
@@ -232,6 +377,8 @@ class CausalSurpriseDetector:
                 "global_mad": float(global_mad),
                 "mean_error": float(mean_err),
                 "std_error": float(std_err),
+                "q_floor_val": float(max(q_floor_val, 1e-9)),
+                "q_extreme_val": float(max(q_extreme_val, q_floor_val + 1e-9)),
             }
 
             if self.verbose:
@@ -410,27 +557,36 @@ class CausalSurpriseDetector:
                 raise ValueError(f"Specialist {specialist_name} not registered")
 
             errors = self.specialist_errors_[specialist_name]
+            window = self.rolling_window
+            min_periods = min(window, 20)
+
+            def _rolling_median_mad(series: pd.Series) -> Tuple[pd.Series, pd.Series]:
+                values = series.to_numpy(dtype=float)
+                median_arr = _numba_rolling_median(values, window)
+                mad_arr = _numba_rolling_mad(values, window)
+                median_series = pd.Series(median_arr, index=series.index)
+                mad_series = pd.Series(mad_arr, index=series.index)
+
+                lead = min(window - 1, len(series))
+                if lead > 0:
+                    lead_series = series.iloc[:lead]
+                    median_series.iloc[:lead] = lead_series.expanding(
+                        min_periods=min_periods
+                    ).median()
+                    mad_series.iloc[:lead] = lead_series.expanding(
+                        min_periods=min_periods
+                    ).apply(
+                        lambda x: np.nanmedian(np.abs(x - np.nanmedian(x))), raw=True
+                    )
+                return median_series, mad_series
 
             if method == "zscore" or method == "robust_zscore":
                 # Robust Z-score based surprise using Median Absolute Deviation (MAD)
                 # Surprise = |Y_actual - Y_specialist| / sigma_residual
 
-                # Use MAD for robustness as requested
-                def get_mad(x):
-                    # Robust MAD calculation handling NaNs and Infs
-                    valid = x[np.isfinite(x)]
-                    if len(valid) == 0:
-                        return 0.0 # Return 0.0 instead of NaN to avoid propagation issues
-                    median = np.median(valid)
-                    return np.median(np.abs(valid - median))
-
-                rolling_median = errors.rolling(
-                    self.rolling_window, min_periods=min(self.rolling_window, 20)
-                ).median().fillna(0.0)
-
-                rolling_mad = errors.rolling(
-                    self.rolling_window, min_periods=min(self.rolling_window, 20)
-                ).apply(get_mad).fillna(0.0)
+                rolling_median, rolling_mad = _rolling_median_mad(errors)
+                rolling_median = rolling_median.fillna(0.0)
+                rolling_mad = rolling_mad.fillna(0.0)
 
                 # Standardize: current error / Rolling MAD (robust sigma)
                 # Apply floor of Global MAD + absolute unit floor (1e-6 for small scale metrics)
@@ -454,9 +610,7 @@ class CausalSurpriseDetector:
 
             elif method == "magnitude":
                 # Magnitude-based surprise
-                rolling_mad = errors.rolling(
-                    self.rolling_window, min_periods=min(self.rolling_window, 20)
-                ).apply(lambda x: np.nanmedian(np.abs(x - np.nanmedian(x))))
+                _, rolling_mad = _rolling_median_mad(errors)
                 global_mad = self.specialist_metadata_.get(specialist_name, {}).get(
                     "global_mad", 1e-6
                 )
@@ -467,12 +621,7 @@ class CausalSurpriseDetector:
 
             elif method == "combined":
                 # Combined robust z-score and magnitude
-                rolling_median = errors.rolling(
-                    self.rolling_window, min_periods=min(self.rolling_window, 20)
-                ).median()
-                rolling_mad = errors.rolling(
-                    self.rolling_window, min_periods=min(self.rolling_window, 20)
-                ).apply(lambda x: np.nanmedian(np.abs(x - np.nanmedian(x))))
+                rolling_median, rolling_mad = _rolling_median_mad(errors)
 
                 global_mad = self.specialist_metadata_.get(specialist_name, {}).get(
                     "global_mad", 1e-6
@@ -528,33 +677,40 @@ class CausalSurpriseDetector:
             break_indicators = np.zeros(n_samples)
 
             if method == "chow":
-                # Simplified Chow test for structural breaks
-                for i in range(
-                    self.structural_break_window,
-                    n_samples - self.structural_break_window,
-                ):
-                    # Split data at potential break point
-                    errors_before = errors[i - self.structural_break_window : i]
-                    errors_after = errors[i : i + self.structural_break_window]
+                window = self.structural_break_window
+                errors_series = pd.Series(errors)
+                if n_samples >= 2 * window and window > 0:
+                    mean_before = (
+                        errors_series.rolling(window=window, min_periods=window)
+                        .mean()
+                        .shift(1)
+                    )
+                    var_before = (
+                        errors_series.rolling(window=window, min_periods=window)
+                        .var()
+                        .shift(1)
+                    )
+                    mean_after = (
+                        errors_series[::-1]
+                        .rolling(window=window, min_periods=window)
+                        .mean()[::-1]
+                    )
+                    var_after = (
+                        errors_series[::-1]
+                        .rolling(window=window, min_periods=window)
+                        .var()[::-1]
+                    )
 
-                    if len(errors_before) > 10 and len(errors_after) > 10:
-                        # Compare means and variances
-                        mean_before, var_before = np.mean(errors_before), np.var(
-                            errors_before
-                        )
-                        mean_after, var_after = np.mean(errors_after), np.var(
-                            errors_after
-                        )
-
-                        # Simple break test statistic
-                        mean_diff = abs(mean_before - mean_after)
-                        var_ratio = max(var_before, var_after) / (
-                            min(var_before, var_after) + 1e-8
-                        )
-
-                        # Break if significant difference
-                        if mean_diff > 2 * np.sqrt(var_before) or var_ratio > 3:
-                            break_indicators[i] = 1
+                    mean_diff = (mean_before - mean_after).abs()
+                    var_ratio = (
+                        np.maximum(var_before, var_after)
+                        / (np.minimum(var_before, var_after) + 1e-8)
+                    )
+                    break_mask = (mean_diff > 2 * np.sqrt(var_before)) | (var_ratio > 3)
+                    break_mask = break_mask.fillna(False)
+                    break_mask.iloc[:window] = False
+                    break_mask.iloc[n_samples - window :] = False
+                    break_indicators = break_mask.astype(int).to_numpy()
 
             elif method == "cusum":
                 # CUSUM-based break detection
@@ -737,9 +893,36 @@ class CausalSurpriseDetector:
         # Ensure errors_df is float
         errors_df = errors_df.astype(float)
 
-        common_idx = errors_df.index.intersection(regime_posteriors.index)
+        posteriors_aligned = regime_posteriors.copy()
+        reference_index = getattr(self, "reference_index_", None)
+        if reference_index is not None and not posteriors_aligned.empty:
+            try:
+                if (
+                    pd.api.types.is_integer_dtype(posteriors_aligned.index)
+                    and pd.api.types.is_datetime64_any_dtype(reference_index)
+                ):
+                    positions = posteriors_aligned.index.to_numpy(dtype=int, copy=False)
+                    if positions.min() >= 0 and positions.max() < len(reference_index):
+                        posteriors_aligned = posteriors_aligned.copy()
+                        posteriors_aligned.index = reference_index[positions]
+            except Exception as exc:
+                tprint_warning(
+                    f"   ⚠️ Failed to normalize regime posterior index: {exc}"
+                )
 
-        if len(common_idx) < 50:
+        if (
+            not posteriors_aligned.index.equals(errors_df.index)
+            and pd.api.types.is_datetime64_any_dtype(errors_df.index)
+            and not pd.api.types.is_datetime64_any_dtype(posteriors_aligned.index)
+        ):
+            parsed_index = pd.to_datetime(posteriors_aligned.index, errors="coerce")
+            if not parsed_index.isna().all():
+                posteriors_aligned = posteriors_aligned.copy()
+                posteriors_aligned.index = parsed_index
+
+        posteriors_aligned = posteriors_aligned.reindex(errors_df.index)
+        valid_rows = posteriors_aligned.notna().any(axis=1)
+        if int(valid_rows.sum()) < 50:
             result = pd.DataFrame()
             self._log_exit(
                 "compute_regime_specific_reliability",
@@ -747,16 +930,24 @@ class CausalSurpriseDetector:
                 extra="insufficient_overlap",
             )
             return result
+        if self.verbose and int(valid_rows.sum()) < len(posteriors_aligned):
+            tprint_warning(
+                "   ⚠️ Regime posteriors partially aligned to error frame: "
+                f"valid_rows={int(valid_rows.sum())}, total_rows={len(posteriors_aligned)}"
+            )
 
-        errors_aligned = errors_df.loc[common_idx]
-        posteriors_aligned = regime_posteriors.loc[common_idx]
+        errors_aligned = errors_df.loc[valid_rows]
+        posteriors_aligned = posteriors_aligned.loc[valid_rows]
+        posteriors_aligned = posteriors_aligned.fillna(
+            1.0 / max(1, posteriors_aligned.shape[1])
+        )
         errors_matrix = errors_aligned.values
 
         # Calculate forward returns if market data available
         fwd_returns = None
         if market_data is not None and "close" in market_data.columns:
             # Align market data first
-            mkt_aligned = market_data.reindex(common_idx).ffill()
+            mkt_aligned = market_data.reindex(errors_aligned.index).ffill()
             # Use horizon consistent with typical events (e.g. 24 bars)
             fwd_returns = mkt_aligned["close"].pct_change(24).shift(-24).fillna(0.0)
 
@@ -1185,14 +1376,12 @@ class CausalSurpriseDetector:
                         1.2, 0.8, n_regimes
                     )  # Low Vol -> Boost Prob, High Vol -> Dampen Prob (Noise)
 
-                    weighted_prob = pd.Series(0.0, index=aggregated.index)
-                    for k in range(n_regimes):
-                        regime_col = aligned_posteriors.columns[k]
-                        weighted_prob += aligned_posteriors[regime_col] * (
-                            base_prob * regime_factors[k]
-                        )
-
-                    aggregated["event_probability"] = weighted_prob.clip(0.0, 1.0)
+                    regime_weight = aligned_posteriors.mul(regime_factors, axis=1).sum(
+                        axis=1
+                    )
+                    aggregated["event_probability"] = (
+                        base_prob * regime_weight
+                    ).clip(0.0, 1.0)
                 except Exception as e:
                     tprint_warning(f"   ⚠️ Probability calibration failed: {e}")
                     aggregated["event_probability"] = self._calibrate_event_probability(
@@ -1239,8 +1428,119 @@ class CausalSurpriseDetector:
             self._log_exit("_build_error_frame", result=result)
             return result
 
-        errors_df = pd.DataFrame(self.specialist_errors_)
-        errors_df = errors_df.sort_index()
+        reference_index = getattr(self, "reference_index_", None)
+        if reference_index is not None:
+            aligned_errors = {}
+            for spec_name, series in self.specialist_errors_.items():
+                aligned = series
+                if not series.index.equals(reference_index):
+                    if len(series) == len(reference_index):
+                        aligned = pd.Series(
+                            series.to_numpy(copy=False),
+                            index=reference_index,
+                            name=series.name,
+                        )
+                    else:
+                        try:
+                            aligned = series.reindex(reference_index)
+                        except Exception as exc:
+                            tprint_warning(
+                                f"   ⚠️ Failed to align specialist {spec_name} to reference index: {exc}"
+                            )
+                aligned_errors[spec_name] = aligned
+            errors_df = pd.DataFrame(aligned_errors, index=reference_index)
+        else:
+            errors_df = pd.DataFrame(self.specialist_errors_)
+
+        reference_index = getattr(self, "reference_index_", None)
+        if reference_index is not None and not errors_df.empty:
+            normalized_index = []
+            changed = False
+            ref_len = len(reference_index)
+            for idx_val in errors_df.index:
+                if isinstance(idx_val, (int, np.integer)) and 0 <= idx_val < ref_len:
+                    normalized_index.append(reference_index[idx_val])
+                    changed = True
+                else:
+                    normalized_index.append(idx_val)
+            if changed:
+                if self.verbose:
+                    tprint_info(
+                        "   ℹ️ Normalized error frame index using reference_index (converted int positions to timestamps)"
+                    )
+                errors_df.index = pd.Index(normalized_index)
+
+        if not errors_df.empty and not pd.api.types.is_datetime64_any_dtype(errors_df.index):
+            coerced_index = []
+            for idx_val in errors_df.index:
+                if isinstance(idx_val, (pd.Timestamp, np.datetime64, datetime)):
+                    coerced_index.append(pd.Timestamp(idx_val))
+                elif isinstance(idx_val, (int, np.integer)):
+                    if reference_index is not None and 0 <= int(idx_val) < len(reference_index):
+                        coerced_index.append(reference_index[int(idx_val)])
+                    else:
+                        coerced_index.append(pd.NaT)
+                else:
+                    try:
+                        parsed = pd.to_datetime(idx_val, errors="coerce")
+                    except Exception:
+                        parsed = pd.NaT
+                    coerced_index.append(parsed)
+
+            coerced_index = pd.DatetimeIndex(coerced_index)
+            valid_mask = ~coerced_index.isna()
+            if valid_mask.any():
+                if self.verbose:
+                    invalid_mask = ~valid_mask
+                    invalid_labels = list(errors_df.index[invalid_mask])
+                    sample_invalid = ", ".join(
+                        [repr(label) for label in invalid_labels[:5]]
+                    )
+                    tprint_warning(
+                        "   ⚠️ Coerced error frame index to datetime and dropped "
+                        f"{invalid_mask.sum()} invalid labels"
+                        + (f" (sample: {sample_invalid})" if invalid_labels else "")
+                    )
+                errors_df = errors_df.loc[valid_mask]
+                errors_df.index = coerced_index[valid_mask]
+
+        if self.verbose and not errors_df.empty:
+            idx = errors_df.index
+            idx_dtype = getattr(idx, "dtype", "unknown")
+            try:
+                inferred_type = pd.api.types.infer_dtype(idx, skipna=True)
+            except Exception:
+                inferred_type = "unknown"
+            sample_values = list(idx[:5])
+            sample_types = [f"{repr(val)} ({type(val).__name__})" for val in sample_values]
+            tprint_info(
+                "   🧪 Error frame index diagnostics: "
+                f"dtype={idx_dtype}, inferred={inferred_type}, sample={sample_types}"
+            )
+
+        try:
+            errors_df = errors_df.sort_index()
+        except TypeError as e:
+            tprint_warning(f"   ⚠️ Index sort failed (likely mixed types): {e}")
+            if self.verbose:
+                mixed_types = sorted({type(val).__name__ for val in errors_df.index[:20]})
+                tprint_warning(
+                    "   ⚠️ Mixed index types detected: "
+                    f"{mixed_types}; sample={list(errors_df.index[:5])}"
+                )
+
+        if errors_df.index.has_duplicates:
+            if self.verbose:
+                dup_count = int(errors_df.index.duplicated().sum())
+                tprint_warning(
+                    f"   ⚠️ Error frame index has {dup_count} duplicate labels; deduplicating."
+                )
+            if pd.api.types.is_datetime64_any_dtype(errors_df.index):
+                errors_df = errors_df.groupby(level=0).mean()
+            else:
+                errors_df = errors_df.loc[
+                    ~errors_df.index.duplicated(keep="first")
+                ]
 
         # Drop rows that are completely empty
         errors_df = errors_df.dropna(how="all")
@@ -1279,31 +1579,27 @@ class CausalSurpriseDetector:
                 if len(values) == 0:
                     mads_dict[col] = 1.0
                     continue
-                    
+
                 median = values.median()
                 mad = (values - median).abs().median()
                 # Apply metadata floor if available
                 meta = self.specialist_metadata_.get(col, {})
                 floor = max(meta.get("global_mad", 1e-6), 1e-6)
                 mads_dict[col] = max(mad, floor)
-            
-            # Broadcast global MADs to dataframe shape
-            rolling_mad = pd.DataFrame(
-                {col: [val]*len(errors_df) for col, val in mads_dict.items()}, 
-                index=errors_df.index
-            )
+
+            rolling_mad = pd.Series(mads_dict).reindex(errors_df.columns).fillna(1.0)
         except Exception as e:
             tprint_warning(f"   ⚠️ Global MAD calculation failed: {e}")
-            rolling_mad = pd.DataFrame(1.0, index=errors_df.index, columns=errors_df.columns)
+            rolling_mad = pd.Series(1.0, index=errors_df.columns)
 
         # 2. Compute Raw Surprise
         if method == "zscore" or method == "robust_zscore":
-            surprise_df = (errors_df - rolling_median).abs() / rolling_mad
+            surprise_df = (errors_df - rolling_median).abs().div(rolling_mad, axis=1)
         elif method == "magnitude":
-            surprise_df = errors_df.abs() / rolling_mad
+            surprise_df = errors_df.abs().div(rolling_mad, axis=1)
         elif method == "combined":
-            zscore_surprise = (errors_df - rolling_median).abs() / rolling_mad
-            magnitude_surprise = errors_df.abs() / rolling_mad
+            zscore_surprise = (errors_df - rolling_median).abs().div(rolling_mad, axis=1)
+            magnitude_surprise = errors_df.abs().div(rolling_mad, axis=1)
             surprise_df = 0.6 * zscore_surprise + 0.4 * magnitude_surprise
         else:
             raise ValueError(f"Unknown surprise method: {method}")
@@ -1354,29 +1650,70 @@ class CausalSurpriseDetector:
             self._log_exit("_compute_specialist_zone_levels", result=result)
             return result
 
-        zone_levels = {}
-        zone_weights = {} # Store continuous weights
+        zone_weights = {}
         window = 500
-        
-        for col in surprise_df.columns:
-            series = surprise_df[col]
-            try:
-                details = detect_rolling_quantile_surprises(
-                    series, 
-                    window=window, 
-                    quantiles=(0.96, 0.98),
-                    return_details=True
-                )
-                levels = details['level']
-                weights = details['weight']
-            except Exception as e:
-                tprint_warning(f"   ⚠️ Detection util failed for {col}: {e}")
-                levels = pd.Series(1.0, index=series.index)
-                weights = pd.Series(0.0, index=series.index)
-            
-            zone_levels[col] = levels
-            zone_weights[col] = weights
-            
+        min_periods = min(window, 100)
+
+        if isinstance(surprise_df.index, pd.MultiIndex):
+            zone_levels = {}
+            for col in surprise_df.columns:
+                series = surprise_df[col]
+                meta = self.specialist_metadata_.get(col, {})
+                q_floor_val = float(meta.get("q_floor_val", 0.0))
+                q_extreme_val = float(meta.get("q_extreme_val", q_floor_val))
+                try:
+                    details = detect_rolling_quantile_surprises(
+                        series,
+                        window=window,
+                        quantiles=(0.96, 0.98),
+                        return_details=True,
+                    )
+                    levels = details["level"]
+                    weights = details["weight"]
+                except Exception as e:
+                    tprint_warning(f"   ⚠️ Detection util failed for {col}: {e}")
+                    levels = pd.Series(1.0, index=series.index)
+                    weights = pd.Series(0.0, index=series.index)
+
+                if q_floor_val > 0:
+                    levels = levels.mask(series >= q_floor_val, 2.0)
+                    if q_extreme_val > q_floor_val:
+                        levels = levels.mask(series >= q_extreme_val, 3.0)
+                    weights = pd.concat(
+                        [weights, series.abs().div(q_floor_val)], axis=1
+                    ).max(axis=1).fillna(0.0)
+
+                zone_levels[col] = levels
+                zone_weights[col] = weights
+        else:
+            q1 = surprise_df.rolling(window=window, min_periods=min_periods).quantile(0.96)
+            q2 = surprise_df.rolling(window=window, min_periods=min_periods).quantile(0.98)
+            q1 = q1.bfill().ffill().clip(lower=1e-6)
+            q2 = q2.bfill().ffill()
+            q2 = q2.where(q2 > q1 + 1e-6, q1 + 1e-6)
+
+            floor_series = pd.Series(
+                {
+                    col: self.specialist_metadata_.get(col, {}).get("q_floor_val", 0.0)
+                    for col in surprise_df.columns
+                }
+            ).reindex(surprise_df.columns).fillna(0.0)
+            extreme_series = pd.Series(
+                {
+                    col: self.specialist_metadata_.get(col, {}).get("q_extreme_val", 0.0)
+                    for col in surprise_df.columns
+                }
+            ).reindex(surprise_df.columns).fillna(0.0)
+
+            q1 = q1.clip(lower=floor_series, axis=1)
+            q2 = q2.clip(lower=extreme_series, axis=1)
+            q2 = q2.where(q2 > q1 + 1e-6, q1 + 1e-6)
+
+            zone_levels = pd.DataFrame(1.0, index=surprise_df.index, columns=surprise_df.columns)
+            zone_levels = zone_levels.mask(surprise_df >= q1, 2.0)
+            zone_levels = zone_levels.mask(surprise_df >= q2, 3.0)
+            zone_weights = surprise_df.abs().div(q1, axis=1).fillna(0.0)
+
         self.zone_weights_ = pd.DataFrame(zone_weights, index=surprise_df.index)
         result = pd.DataFrame(zone_levels, index=surprise_df.index)
         self._log_exit("_compute_specialist_zone_levels", result=result)
@@ -1549,6 +1886,16 @@ class CausalSurpriseDetector:
                 return result
 
             scores = self.surprise_events_["max_surprise"]
+            if scores.index.has_duplicates:
+                if self.verbose:
+                    dup_count = int(scores.index.duplicated().sum())
+                    tprint_warning(
+                        f"   ⚠️ Surprise index has {dup_count} duplicate labels; dropping duplicates before event generation."
+                    )
+                self.surprise_events_ = self.surprise_events_.loc[
+                    ~self.surprise_events_.index.duplicated(keep="first")
+                ]
+                scores = self.surprise_events_["max_surprise"]
             target_quantile = 1.0 - float(event_threshold)
             target_quantile = float(np.clip(target_quantile, 0.5, 0.999))
 
@@ -1615,12 +1962,9 @@ class CausalSurpriseDetector:
                 ]
 
                 # Blend multipliers: Multiplier(t) = sum_r( P(r|t) * Multiplier_r )
-                effective_multiplier = pd.Series(0.0, index=scores.index)
-                for k in range(n_regimes):
-                    col = aligned_posteriors.columns[k]
-                    effective_multiplier += (
-                        aligned_posteriors[col] * regime_multipliers[k]
-                    )
+                effective_multiplier = aligned_posteriors.mul(
+                    regime_multipliers, axis=1
+                ).sum(axis=1)
 
                 adaptive_threshold = base_threshold * effective_multiplier
                 # NOTE: Removed clip(lower=event_threshold) as it conflicts with normalized scores
@@ -1779,13 +2123,54 @@ class CausalSurpriseDetector:
                     f"   📊 Events detected: {surprise_mask.sum()} (Novelty: {novelty_count}, Break: {break_count})"
                 )
 
-            event_candidates = self.surprise_events_[surprise_mask].index
+            event_candidates = list(self.surprise_events_[surprise_mask].index)
+            event_positions = scores.index.get_indexer(event_candidates)
+            valid_mask = event_positions >= 0
+            if not np.all(valid_mask):
+                event_candidates = [
+                    evt for evt, ok in zip(event_candidates, valid_mask) if ok
+                ]
+                event_positions = event_positions[valid_mask]
+            if len(event_candidates) > 1:
+                sort_order = np.argsort(event_positions)
+                event_positions = event_positions[sort_order]
+                event_candidates = self.surprise_events_[surprise_mask].index
+
+            if self.verbose:
+                idx_dtype = getattr(event_candidates, "dtype", "unknown")
+                try:
+                    inferred_type = pd.api.types.infer_dtype(event_candidates, skipna=True)
+                except Exception:
+                    inferred_type = "unknown"
+                sample_values = list(event_candidates[:5])
+                sample_types = [f"{repr(val)} ({type(val).__name__})" for val in sample_values]
+                tprint_info(
+                    "   🧪 Event candidate index diagnostics: "
+                    f"dtype={idx_dtype}, inferred={inferred_type}, sample={sample_types}"
+                )
 
             # --- 3. Clustering & Min Separation ---
             # Aggregate close events into clusters
             cluster_events = []
 
-            cached_events = list(event_candidates)
+            def _coerce_candidate(evt, evt_pos):
+                if isinstance(evt, pd.Timestamp):
+                    return evt
+                if isinstance(evt, (np.datetime64, datetime)):
+                    return pd.Timestamp(evt)
+                if isinstance(evt, (int, np.integer)):
+                    if reference_index is not None and 0 <= int(evt) < len(reference_index):
+                        return reference_index[int(evt)]
+                    if 0 <= evt_pos < len(scores.index):
+                        return scores.index[evt_pos]
+                return evt
+
+            cached_events = []
+            normalized_positions = []
+            for evt, pos in zip(event_candidates, event_positions):
+                coerced = _coerce_candidate(evt, int(pos) if pos >= 0 else -1)
+                cached_events.append(coerced)
+                normalized_positions.append(int(pos))
 
             if not cached_events:
                 tprint_warning("   ⚠️ No events passed thresholds")
@@ -1798,13 +2183,39 @@ class CausalSurpriseDetector:
                 return result
 
             # Simple clustering: if within window, add to current cluster, else start new
+            index_is_datetime = pd.api.types.is_datetime64_any_dtype(scores.index)
+            bar_hours = float(getattr(self, "bar_duration_hours_", 1.0) or 1.0)
             current_cluster_start = cached_events[0]
+            current_cluster_pos = int(normalized_positions[0]) if normalized_positions else 0
             current_cluster_count = 1
             current_cluster_max_score = scores.loc[current_cluster_start]
 
             for i in range(1, len(cached_events)):
                 evt_time = cached_events[i]
-                time_diff = (evt_time - current_cluster_start).total_seconds() / 3600.0
+                evt_pos = int(normalized_positions[i]) if i < len(normalized_positions) else -1
+                use_position_fallback = False
+                try:
+                    if index_is_datetime and isinstance(evt_time, pd.Timestamp) and isinstance(current_cluster_start, pd.Timestamp):
+                        time_diff = (evt_time - current_cluster_start).total_seconds() / 3600.0
+                    else:
+                        raise TypeError("non-datetime index")
+                except Exception as exc:
+                    use_position_fallback = True
+                    if evt_pos >= 0 and current_cluster_pos >= 0:
+                        time_diff = (evt_pos - current_cluster_pos) * bar_hours
+                        if self.verbose:
+                            tprint_info(
+                                "   ℹ️ Falling back to positional clustering distance: "
+                                f"pos_diff={evt_pos - current_cluster_pos}, hours={time_diff:.2f}"
+                            )
+                    else:
+                        if self.verbose:
+                            tprint_error(
+                                "   ❌ Cluster time-diff failed with no positional fallback: "
+                                f"evt_time={repr(evt_time)} ({type(evt_time).__name__}), "
+                                f"start={repr(current_cluster_start)} ({type(current_cluster_start).__name__}), error={exc}"
+                            )
+                        raise
 
                 if time_diff < min_event_separation:
                     # Within cluster
@@ -1824,6 +2235,7 @@ class CausalSurpriseDetector:
                     )
                     # Start new
                     current_cluster_start = evt_time
+                    current_cluster_pos = evt_pos if evt_pos >= 0 else current_cluster_pos
                     current_cluster_count = 1
                     current_cluster_max_score = scores.loc[evt_time]
 
@@ -1868,7 +2280,11 @@ class CausalSurpriseDetector:
                     "specialist_count": len(self.specialist_errors_),
                     "source": "specialist_prediction_errors",
                     "sigma_method": "rolling_mad_normalized",
-                    "event_id": f"causal_surprise_{event_time.isoformat()}",
+                    "event_id": (
+                        f"causal_surprise_{event_time.isoformat()}"
+                        if isinstance(event_time, pd.Timestamp)
+                        else f"causal_surprise_{event_time}"
+                    ),
                 }
 
             self.surprise_events_ = causal_events
@@ -2020,11 +2436,46 @@ class CausalSurpriseDetector:
                     binary_labels, index=realized_outcomes.index[: len(binary_labels)]
                 )
 
-            common_idx = self.specialist_surprises_.index.intersection(
-                realized_outcomes.index
-            )
+            surprises = self.specialist_surprises_
+            zones = self.specialist_zone_levels_
+            outcomes = realized_outcomes
+            labels = binary_labels
+
+            if surprises.index.has_duplicates:
+                if self.verbose:
+                    dup_count = int(surprises.index.duplicated().sum())
+                    tprint_warning(
+                        f"   ⚠️ Specialist surprises index has {dup_count} duplicate labels; aggregating duplicates by mean."
+                    )
+                surprises = surprises.groupby(level=0).mean()
+
+            if zones is not None and zones.index.has_duplicates:
+                if self.verbose:
+                    dup_count = int(zones.index.duplicated().sum())
+                    tprint_warning(
+                        f"   ⚠️ Zone levels index has {dup_count} duplicate labels; aggregating duplicates by mean."
+                    )
+                zones = zones.groupby(level=0).mean()
+
+            if outcomes.index.has_duplicates:
+                if self.verbose:
+                    dup_count = int(outcomes.index.duplicated().sum())
+                    tprint_warning(
+                        f"   ⚠️ Outcomes index has {dup_count} duplicate labels; aggregating duplicates by mean."
+                    )
+                outcomes = outcomes.groupby(level=0).mean()
+
+            if labels is not None and labels.index.has_duplicates:
+                if self.verbose:
+                    dup_count = int(labels.index.duplicated().sum())
+                    tprint_warning(
+                        f"   ⚠️ Labels index has {dup_count} duplicate labels; aggregating duplicates by mean."
+                    )
+                labels = labels.groupby(level=0).mean()
+
+            common_idx = surprises.index.intersection(outcomes.index)
             if binary_labels is not None:
-                common_idx = common_idx.intersection(binary_labels.index)
+                common_idx = common_idx.intersection(labels.index)
             
             # DIAGNOSTIC: Check common_idx size
             if self.verbose:
@@ -2036,12 +2487,10 @@ class CausalSurpriseDetector:
                 self._log_exit("compute_reliability_metrics", result=result, extra="no_overlap")
                 return result
 
-            surprises = self.specialist_surprises_.reindex(common_idx)
-            zones = self.specialist_zone_levels_.reindex(common_idx)
-            outcomes = realized_outcomes.reindex(common_idx)
-            labels = (
-                binary_labels.reindex(common_idx) if binary_labels is not None else None
-            )
+            surprises = surprises.reindex(common_idx)
+            zones = zones.reindex(common_idx)
+            outcomes = outcomes.reindex(common_idx)
+            labels = labels.reindex(common_idx) if labels is not None else None
 
             specialist_metrics = {}
 
@@ -2271,11 +2720,23 @@ class CausalSurpriseDetector:
         P(Event) = Sigmoid( (Score - Median) / MAD )
         """
         self._log_call("_calibrate_event_probability", scores=scores)
-        median = scores.rolling(2000, min_periods=100).median()
-        mad = scores.rolling(2000, min_periods=100).apply(
-            lambda x: np.nanmedian(np.abs(x - np.nanmedian(x)))
-        )
-        z = (scores - median) / (mad + 1e-9)
+        window = 2000
+        min_periods = 100
+        values = scores.to_numpy(dtype=float)
+        med_arr = _numba_rolling_median(values, window)
+        mad_arr = _numba_rolling_mad(values, window)
+        median = pd.Series(med_arr, index=scores.index)
+        mad = pd.Series(mad_arr, index=scores.index)
+
+        lead = min(window - 1, len(scores))
+        if lead > 0:
+            lead_scores = scores.iloc[:lead]
+            median.iloc[:lead] = lead_scores.expanding(min_periods=min_periods).median()
+            mad.iloc[:lead] = lead_scores.expanding(min_periods=min_periods).apply(
+                lambda x: np.nanmedian(np.abs(x - np.nanmedian(x))), raw=True
+            )
+
+        z = (scores - median) / (mad.replace(0.0, np.nan) + 1e-9)
         # Calibrated to 50% prob at 2 sigma
         calibrated = 1.0 / (1.0 + np.exp(-(z - 2.0)))
         self._log_exit("_calibrate_event_probability", result=calibrated)

@@ -106,6 +106,104 @@ def compute_uniqueness(
     """
     return compute_uniqueness_weights(t1, events_index, market_index)
 
+def compute_uniqueness_per_asset(
+    t1: pd.Series,
+    asset_col: str = 'asset_id',
+    events_index: Optional[pd.DatetimeIndex] = None,
+    market_index: Optional[pd.DataFrame] = None,
+) -> pd.Series:
+    """
+    Compute uniqueness weights per asset (not across assets).
+    
+    In multi-asset training, events from different assets should NOT compete
+    for uniqueness. An ETH event concurrent with a BTC event should not be
+    downweighted - only ETH events concurrent with other ETH events should be.
+    
+    Args:
+        t1: Series with event end times (values), indexed by event start times.
+            Must have asset_col in the index or as a column in a DataFrame.
+        asset_col: Column name identifying assets (default: 'asset_id')
+        events_index: Optional index of events if t1 is not indexed by time.
+        market_index: Optional DataFrame with full market index per asset.
+                     Must have asset_col column if provided.
+    
+    Returns:
+        Series of uniqueness weights aligned with t1.index.
+    
+    Example:
+        >>> t1 = pd.Series(end_times, index=start_times)
+        >>> t1['asset_id'] = ['ETH', 'ETH', 'BTC', 'ETH', 'BTC']
+        >>> weights = compute_uniqueness_per_asset(t1, asset_col='asset_id')
+    """
+    from src.utils.tprint import tprint_info, tprint_success
+    
+    tprint_info(f"⚖️ Computing per-asset uniqueness weights for {len(t1)} events...")
+    
+    if len(t1) == 0:
+        tprint_warning("⚠️ No events provided for weighting. Returning empty weights.")
+        return pd.Series(dtype=float)
+    
+    # Determine how to access asset information
+    if isinstance(t1, pd.DataFrame) and asset_col in t1.columns:
+        # t1 is a DataFrame with asset_col
+        asset_series = t1[asset_col]
+        t1_values = t1.iloc[:, 0] if len(t1.columns) > 0 else t1.index
+    elif isinstance(t1.index, pd.MultiIndex) and asset_col in t1.index.names:
+        # MultiIndex with asset_col
+        asset_series = t1.index.get_level_values(asset_col)
+        t1_values = t1
+    elif hasattr(t1, asset_col):
+        # Series with asset_col attribute
+        asset_series = getattr(t1, asset_col)
+        t1_values = t1
+    else:
+        tprint_warning(f"⚠️ Cannot find {asset_col} in t1. Falling back to global uniqueness.")
+        return compute_uniqueness_weights(t1, events_index, market_index)
+    
+    # Group by asset and compute uniqueness per asset
+    weights_list = []
+    assets = asset_series.unique()
+    
+    for asset in assets:
+        # Get events for this asset
+        asset_mask = asset_series == asset
+        asset_t1 = t1[asset_mask] if isinstance(t1, pd.Series) else t1_values[asset_mask]
+        
+        # Get market index for this asset if provided
+        asset_market_index = None
+        if market_index is not None:
+            if isinstance(market_index, pd.DataFrame) and asset_col in market_index.columns:
+                asset_market_index = market_index[market_index[asset_col] == asset].index
+            elif isinstance(market_index, pd.DatetimeIndex):
+                asset_market_index = market_index
+        
+        # Compute uniqueness for this asset's events only
+        if len(asset_t1) > 0:
+            asset_weights = compute_uniqueness_weights(
+                asset_t1,
+                events_index=asset_t1.index if events_index is None else events_index[asset_mask],
+                market_index=asset_market_index
+            )
+            weights_list.append(asset_weights)
+    
+    # Combine weights from all assets
+    if not weights_list:
+        tprint_warning("⚠️ No valid asset weights computed. Returning uniform weights.")
+        return pd.Series(1.0, index=t1.index, dtype=float)
+    
+    combined_weights = pd.concat(weights_list).sort_index()
+    
+    # Ensure alignment with original index
+    final_weights = combined_weights.reindex(t1.index).fillna(1.0)
+    
+    tprint_success(
+        f"✅ Per-asset uniqueness weights computed for {len(assets)} assets. "
+        f"Mean: {final_weights.mean():.4f}, Min: {final_weights.min():.4f}, Max: {final_weights.max():.4f}"
+    )
+    
+    return final_weights
+
+
 def compute_uniqueness_weights(
     t1: pd.Series,
     events_index: Optional[pd.DatetimeIndex] = None,

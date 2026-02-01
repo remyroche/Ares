@@ -1,0 +1,22 @@
+{
+  "symbol": "ETHUSDT",
+  "exchange": "15m",
+  "interval": "processed",
+  "batch_id": "batch_001_20260131_190639",
+  "start_time": "2023-01-01T00:00:00",
+  "end_time": "2026-01-10T12:00:00",
+  "record_count": 106124,
+  "file_size_bytes": 3896516,
+  "compression_ratio": 84.17386492574074,
+  "created_at": "2026-01-31T19:06:39.921587",
+  "data_quality_score": 0.0,
+  "gaps_detected": 0,
+  "gaps_filled": 0,
+  "resampled_intervals": [],
+  "additional_metadata": {
+    "optimization_applied": true,
+    "compression_used": "zstd",
+    "row_group_size": 50000,
+    "dictionary_encoding": true,
+    "compression_stats": {
+      "original_size_bytes": 

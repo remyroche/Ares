@@ -1599,23 +1599,28 @@ def _numba_rolling_cov(x: np.ndarray, y: np.ndarray, window: int) -> np.ndarray:
 def _numba_rolling_mean_nan_safe(x, window):
     """
     Rolling mean ignoring NaNs.
+    Optimized to O(N) using online updates.
     """
     n = len(x)
     output = np.zeros(n, dtype=np.float64)
     output[:] = np.nan
 
+    sum_val = 0.0
+    count = 0
+
     for i in range(n):
-        start = max(0, i - window + 1)
-        end = i + 1
+        # Entering element
+        entering = x[i]
+        if not np.isnan(entering):
+            sum_val += entering
+            count += 1
 
-        sum_val = 0.0
-        count = 0
-
-        for j in range(start, end):
-            val = x[j]
-            if not np.isnan(val):
-                sum_val += val
-                count += 1
+        # Leaving element
+        if i >= window:
+            leaving = x[i - window]
+            if not np.isnan(leaving):
+                sum_val -= leaving
+                count -= 1
 
         if count > 0:
             output[i] = sum_val / count
@@ -1627,36 +1632,40 @@ def _numba_rolling_mean_nan_safe(x, window):
 def _numba_rolling_std_nan_safe(x, window):
     """
     Rolling std ignoring NaNs.
+    Optimized to O(N) using online updates of sum and sum_sq.
     """
     n = len(x)
     output = np.zeros(n, dtype=np.float64)
     output[:] = np.nan
 
+    sum_val = 0.0
+    sum_sq = 0.0
+    count = 0
+
     for i in range(n):
-        start = max(0, i - window + 1)
-        end = i + 1
+        # Entering element
+        entering = x[i]
+        if not np.isnan(entering):
+            sum_val += entering
+            sum_sq += entering * entering
+            count += 1
 
-        # Pass 1: Mean
-        sum_val = 0.0
-        count = 0
-        for j in range(start, end):
-            val = x[j]
-            if not np.isnan(val):
-                sum_val += val
-                count += 1
+        # Leaving element
+        if i >= window:
+            leaving = x[i - window]
+            if not np.isnan(leaving):
+                sum_val -= leaving
+                sum_sq -= leaving * leaving
+                count -= 1
 
-        if count <= 1:
-            continue
+        if count > 1:
+            # Variance calculation using E[X^2] - (E[X])^2
+            # Var = (sum_sq - sum_val^2/n) / (n-1)
+            numerator = sum_sq - (sum_val * sum_val / count)
+            if numerator < 0:
+                numerator = 0.0
 
-        mean = sum_val / count
-
-        # Pass 2: Variance
-        sum_sq = 0.0
-        for j in range(start, end):
-            val = x[j]
-            if not np.isnan(val):
-                sum_sq += (val - mean) ** 2
-
-        output[i] = np.sqrt(sum_sq / (count - 1))
+            var = numerator / (count - 1)
+            output[i] = np.sqrt(var)
 
     return output

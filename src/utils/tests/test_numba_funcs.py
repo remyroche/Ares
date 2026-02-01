@@ -1,6 +1,10 @@
 import numpy as np
 import pytest
-from src.utils.numba_funcs import _numba_streak_persistence
+from src.utils.numba_funcs import (
+    _numba_streak_persistence,
+    _numba_rolling_mean_nan_safe,
+    _numba_rolling_std_nan_safe
+)
 
 def test_streak_persistence_basic():
     """Test basic streak persistence logic."""
@@ -84,3 +88,87 @@ def test_streak_persistence_alternating():
 
     res = _numba_streak_persistence(close, window=4)
     assert res[4] == 0.0
+
+def test_rolling_mean_nan_safe_basic():
+    """Test rolling mean with NaNs and basic values."""
+    data = np.array([1.0, 2.0, np.nan, 4.0, 5.0])
+    window = 3
+
+    # Expected behavior:
+    # i=0: [1] -> 1
+    # i=1: [1, 2] -> 1.5
+    # i=2: [1, 2, nan] -> 1.5
+    # i=3: [2, nan, 4] -> 3
+    # i=4: [nan, 4, 5] -> 4.5
+
+    res = _numba_rolling_mean_nan_safe(data, window)
+
+    expected = np.array([1.0, 1.5, 1.5, 3.0, 4.5])
+    np.testing.assert_allclose(res, expected)
+
+def test_rolling_mean_nan_safe_all_nans():
+    """Test rolling mean with all NaNs."""
+    data = np.full(10, np.nan)
+    window = 3
+
+    res = _numba_rolling_mean_nan_safe(data, window)
+
+    assert np.all(np.isnan(res))
+
+def test_rolling_std_nan_safe_basic():
+    """Test rolling std with NaNs."""
+    data = np.array([1.0, 2.0, 3.0, np.nan, 5.0, 7.0])
+    window = 3
+
+    # i=0: [1] -> count=1 -> NaN (std requires count > 1)
+    # i=1: [1, 2] -> std=0.7071
+    # i=2: [1, 2, 3] -> std=1.0
+    # i=3: [2, 3, nan] -> std=0.7071
+    # i=4: [3, nan, 5] -> std=1.4142
+    # i=5: [nan, 5, 7] -> std=1.4142
+
+    res = _numba_rolling_std_nan_safe(data, window)
+
+    assert np.isnan(res[0])
+    assert np.isclose(res[1], np.std([1, 2], ddof=1))
+    assert np.isclose(res[2], np.std([1, 2, 3], ddof=1))
+    assert np.isclose(res[3], np.std([2, 3], ddof=1))
+    assert np.isclose(res[4], np.std([3, 5], ddof=1))
+    assert np.isclose(res[5], np.std([5, 7], ddof=1))
+
+def test_rolling_std_nan_safe_insufficient_data():
+    """Test rolling std returns NaN when insufficient valid data."""
+    data = np.array([1.0, np.nan, np.nan, 4.0])
+    window = 3
+
+    # i=0: [1] -> count=1 -> NaN
+    # i=1: [1, nan] -> count=1 -> NaN
+    # i=2: [1, nan, nan] -> count=1 -> NaN
+    # i=3: [nan, nan, 4] -> count=1 -> NaN
+
+    res = _numba_rolling_std_nan_safe(data, window)
+
+    assert np.all(np.isnan(res))
+
+def test_rolling_funcs_grow_window():
+    """Test correctness of growing window at the start."""
+    data = np.ones(5)
+    window = 5
+
+    res_mean = _numba_rolling_mean_nan_safe(data, window)
+    res_std = _numba_rolling_std_nan_safe(data, window)
+
+    assert np.all(res_mean == 1.0)
+    assert np.isnan(res_std[0])
+    assert np.all(res_std[1:] == 0.0)
+
+def test_rolling_funcs_window_larger_than_data():
+    """Test window larger than data length."""
+    data = np.array([1.0, 2.0, 3.0])
+    window = 10
+
+    res_mean = _numba_rolling_mean_nan_safe(data, window)
+    # Should behave like expanding
+    assert np.isclose(res_mean[0], 1.0)
+    assert np.isclose(res_mean[1], 1.5)
+    assert np.isclose(res_mean[2], 2.0)

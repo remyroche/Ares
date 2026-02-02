@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from src.utils.numba_funcs import _numba_streak_persistence
+from src.utils.numba_funcs import _numba_streak_persistence, _numba_generate_range_bars, _numba_ewma
 
 def test_streak_persistence_basic():
     """Test basic streak persistence logic."""
@@ -84,3 +84,32 @@ def test_streak_persistence_alternating():
 
     res = _numba_streak_persistence(close, window=4)
     assert res[4] == 0.0
+
+def test_range_bars_float32():
+    """Verify that _numba_generate_range_bars outputs float32 durations."""
+    n = 100
+    times = np.arange(n, dtype=np.int64) * 1_000_000_000  # Seconds as ns
+    opens = np.random.randn(n).astype(np.float32)
+    highs = opens + 1
+    lows = opens - 1
+    closes = opens + 0.1
+    vols = np.ones(n, dtype=np.float32)
+    thresholds = np.ones(n, dtype=np.float32) * 0.1
+
+    result = _numba_generate_range_bars(times, opens, highs, lows, closes, vols, thresholds)
+
+    # Unpack
+    out_durations = result[6]
+
+    assert out_durations.dtype == np.float32, f"Expected float32, got {out_durations.dtype}"
+
+def test_ewma_float32():
+    """Verify _numba_ewma execution with float32."""
+    x = np.random.randn(100).astype(np.float32)
+    alpha = 0.5 # Python float (double)
+
+    # Run with adjust=True (uses sum_weights)
+    out = _numba_ewma(x, alpha, adjust=True)
+
+    assert out.dtype == np.float32, f"Expected float32 output, got {out.dtype}"
+    assert np.all(np.isfinite(out) | np.isnan(out))

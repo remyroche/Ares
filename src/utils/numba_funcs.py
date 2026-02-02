@@ -104,7 +104,7 @@ def _numba_generate_range_bars(times, opens, highs, lows, closes, vols, threshol
     out_lows = np.zeros(n_rows, dtype=np.float32)
     out_closes = np.zeros(n_rows, dtype=np.float32)
     out_vols = np.zeros(n_rows, dtype=np.float32)
-    out_durations = np.zeros(n_rows, dtype=np.float64)  # Duration in seconds + 60.0
+    out_durations = np.zeros(n_rows, dtype=np.float32)  # Duration in seconds
 
     count = 0
 
@@ -1290,7 +1290,7 @@ def _numba_calculate_continuous_weight(vals, gamma, beta, quantile_threshold):
             # Sigmoid: 1 / (1 + exp(-beta * (val - 2.0)))
             # Use math.exp for scalar speed
             z = val
-            sig = 1.0 / (1.0 + math.exp(-beta * (z - 2.0)))
+            sig = 1.0 / (1.0 + math.exp(-beta * (z - np.float32(2.0))))
 
             if pct_rank > quantile_threshold:
                 weights[orig_idx] = (pct_rank ** gamma) * sig
@@ -1355,7 +1355,7 @@ def _numba_ewma(x: np.ndarray, alpha: float, adjust: bool = False) -> np.ndarray
         # out[t] = weighted_sum[t] / sum_weights[t]
 
         weighted_sum = x[first_valid_idx]
-        sum_weights = 1.0
+        sum_weights = np.float32(1.0)
         out[first_valid_idx] = weighted_sum / sum_weights
 
         for i in range(first_valid_idx + 1, n):
@@ -1365,8 +1365,8 @@ def _numba_ewma(x: np.ndarray, alpha: float, adjust: bool = False) -> np.ndarray
                 # Simplification: if NaN encountered, result becomes NaN for that step.
                 weighted_sum = np.nan
             else:
-                weighted_sum = val + (1.0 - alpha) * weighted_sum
-                sum_weights = 1.0 + (1.0 - alpha) * sum_weights
+                weighted_sum = val + (np.float32(1.0) - alpha) * weighted_sum
+                sum_weights = np.float32(1.0) + (np.float32(1.0) - alpha) * sum_weights
                 out[i] = weighted_sum / sum_weights
     else:
         # With adjust=False: y[t] = (1-alpha)*y[t-1] + alpha*x[t]

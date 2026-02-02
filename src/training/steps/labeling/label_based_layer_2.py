@@ -9816,6 +9816,8 @@ class LabelBasedLayer2(BaseStep):
         preselect_start = time.time()
         
         # 1. Base numeric filtering
+        tprint_info("      - Step 1: Converting to numeric and handling infinities...")
+        step1_start = time.time()
         # OPTIMIZED: Use numpy for inf replacement to avoid slow dataframe.replace()
         numeric_df = df.select_dtypes(include=[np.number]).copy()
         if not numeric_df.empty:
@@ -9828,12 +9830,15 @@ class LabelBasedLayer2(BaseStep):
                 numeric_df = numeric_df.replace([np.inf, -np.inf], np.nan)
 
             numeric_df = numeric_df.dropna(axis=1, how='all')
+        tprint_info(f"      - Step 1 done in {time.time() - step1_start:.2f}s. Shape: {numeric_df.shape}")
 
         if numeric_df.empty:
             return numeric_df
 
         agg_cols = [col for col in numeric_df.columns if col.startswith("AGG_SUM_4_")]
         if agg_cols and self.verbose:
+            tprint_info("      - Step 2: Checking constant AGG_SUM_4 columns...")
+            step2_start = time.time()
             constant_agg = []
             # OPTIMIZED: Batch std check to avoid calling nunique() on thousands of columns
             stds = numeric_df[agg_cols].std()
@@ -9855,6 +9860,7 @@ class LabelBasedLayer2(BaseStep):
                     "   ⚠️ AGG_SUM_4 features are constant before discovery: "
                     f"{len(constant_agg)} columns; {preview}"
                 )
+            tprint_info(f"      - Step 2 done in {time.time() - step2_start:.2f}s")
 
         # Prefer denoised_close if variance is acceptable (>1e-6), else fall back to close variants
         MIN_PRICE_VAR = 1e-6
@@ -9943,6 +9949,8 @@ class LabelBasedLayer2(BaseStep):
         multi_asset_series = asset_group_series
 
         if multi_asset_series is not None:
+            tprint_info("      - Step 3: Pivoting multi-asset columns...")
+            step3_start = time.time()
             base_cols = [col for col in ("close", "volume", "TARGET_RET_1", "volatility_1d") if col in numeric_df.columns]
             if base_cols:
                 assets = sorted(multi_asset_series.dropna().astype(str).unique().tolist())
@@ -9960,6 +9968,7 @@ class LabelBasedLayer2(BaseStep):
                         numeric_df[col_name] = new_col
 
                 numeric_df = numeric_df.drop(columns=base_cols).fillna(0.0)
+            tprint_info(f"      - Step 3 done in {time.time() - step3_start:.2f}s")
 
         def _apply_groupwise_series(series: pd.Series, compute_fn) -> pd.Series:
             if series is None or len(series) == 0:

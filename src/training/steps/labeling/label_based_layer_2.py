@@ -9847,18 +9847,43 @@ class LabelBasedLayer2(BaseStep):
         # 1. Base numeric filtering
         tprint_info("      - Step 1: Converting to numeric and handling infinities...")
         step1_start = time.time()
-        # OPTIMIZED: Use numpy for inf replacement to avoid slow dataframe.replace()
-        numeric_df = df.select_dtypes(include=[np.number]).copy()
-        if not numeric_df.empty:
-            vals = numeric_df.values
-            # Only use fast path if compatible dtype
-            if np.issubdtype(vals.dtype, np.floating):
-                vals[np.isinf(vals)] = np.nan
-                numeric_df = pd.DataFrame(vals, index=numeric_df.index, columns=numeric_df.columns)
-            else:
-                numeric_df = numeric_df.replace([np.inf, -np.inf], np.nan)
 
+        # Diagnostic logging for large datasets
+        try:
+            if hasattr(df, 'shape'):
+                tprint_info(f"        -> Input shape: {df.shape}")
+            import sys
+            sys.stdout.flush()
+        except: pass
+
+        # Optimized Selection Strategy:
+        # 1. Get column names first (cheap)
+        # 2. Convert directly to float32 numpy array (avoids intermediate double-allocation)
+        # 3. Handle infinities in-place on the array (very fast)
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+
+        if len(numeric_cols) > 0:
+            tprint_info(f"        -> Found {len(numeric_cols)} numeric columns. Materializing array (float32)...")
+            try:
+                import sys
+                sys.stdout.flush()
+            except: pass
+
+            # Use float32 to reduce memory (50% of float64) and CPU overhead during consolidation
+            # copy=True ensures we have a writable array that owns its data and is consolidated
+            vals = df[numeric_cols].to_numpy(dtype=np.float32, copy=True)
+
+            # Handle infinities in-place (very fast on float32)
+            vals[np.isinf(vals)] = np.nan
+
+            tprint_info("        -> Reconstructing DataFrame...")
+            numeric_df = pd.DataFrame(vals, index=df.index, columns=numeric_cols)
+
+            # Drop empty columns
             numeric_df = numeric_df.dropna(axis=1, how='all')
+        else:
+            numeric_df = pd.DataFrame(index=df.index)
+
         tprint_info(f"      - Step 1 done in {time.time() - step1_start:.2f}s. Shape: {numeric_df.shape}")
 
         if numeric_df.empty:

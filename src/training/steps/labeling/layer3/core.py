@@ -157,10 +157,11 @@ def integrate_entropy_bars_into_layer3(
     cache_dir = Path(cfg.get('cache_dir', 'cache/entropy_bars'))
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    # Disable entropy bars for multi-asset / panel-shaped data.
-    # Entropy bars currently assume a single time series per run.
     asset_col = cfg.get("layer3_asset_id_col") or cfg.get("asset_id_col")
     asset_series = None
+    asset_index_level = None
+    time_index_level = None
+
     if asset_col and asset_col in df.columns:
         asset_series = df[asset_col]
     if asset_series is None:
@@ -169,26 +170,154 @@ def integrate_entropy_bars_into_layer3(
                 asset_col = candidate
                 asset_series = df[candidate]
                 break
+    if asset_series is None and isinstance(df.index, pd.MultiIndex):
+        for candidate in ("asset_id", "asset", "ticker", "symbol"):
+            if candidate in df.index.names:
+                asset_index_level = candidate
+                asset_col = candidate
+                asset_series = df.index.get_level_values(candidate)
+                break
+        if asset_series is None:
+            for i, level in enumerate(df.index.names):
+                level_vals = df.index.get_level_values(i)
+                if not pd.api.types.is_datetime64_any_dtype(level_vals):
+                    asset_index_level = level
+                    asset_col = level
+                    asset_series = level_vals
+                    break
+    if isinstance(df.index, pd.MultiIndex):
+        for level in df.index.names:
+            level_vals = df.index.get_level_values(level)
+            if pd.api.types.is_datetime64_any_dtype(level_vals):
+                time_index_level = level
+                break
 
-    if asset_series is not None and asset_series.nunique(dropna=False) > 1:
-        tprint_warning(
-            "⚠️ Multi-asset data detected; skipping entropy bars integration for Layer 3. "
-            "Set config['use_entropy_bars']=False to silence this warning."
+    multi_asset = asset_series is not None and asset_series.nunique(dropna=False) > 1
+
+    def _get_time_index(input_df: pd.DataFrame) -> pd.Index:
+        if isinstance(input_df.index, pd.MultiIndex) and time_index_level is not None:
+            return input_df.index.get_level_values(time_index_level)
+        return input_df.index
+
+    def _get_date_range(input_df: pd.DataFrame) -> Tuple[str, str]:
+        time_index = _get_time_index(input_df)
+        if not input_df.empty and hasattr(time_index, 'min') and hasattr(time_index, 'max'):
+            start_dt_local = time_index.min()
+            end_dt_local = time_index.max()
+            return (
+                start_dt_local.strftime('%Y-%m-%d'),
+                end_dt_local.strftime('%Y-%m-%d'),
+            )
+        end_date_local = datetime.now().strftime('%Y-%m-%d')
+        start_date_local = (datetime.now() - pd.Timedelta(days=30)).strftime('%Y-%m-%d')
+        return start_date_local, end_date_local
+
+    def _load_or_generate_entropy(
+        asset_symbol: str,
+        asset_df: pd.DataFrame
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        start_date_local, end_date_local = _get_date_range(asset_df)
+        cache_key = (
+            f"{asset_symbol}_{exchange}_{start_date_local}_{end_date_local}_"
+            f"{cfg.get('entropy_target_minutes', 15)}"
         )
-        return df, pd.DataFrame()
+        cache_file = cache_dir / f"entropy_features_{cache_key}.parquet"
+        bars_cache_file = cache_dir / f"entropy_bars_{cache_key}.parquet"
+
+        if cache_file.exists() and bars_cache_file.exists() and not cfg.get('force_refresh', False):
+            try:
+                tprint_info(f"♻️ Loading entropy features from cache: {cache_file}")
+                entropy_features_local = pd.read_parquet(cache_file)
+                entropy_bars_local = pd.read_parquet(bars_cache_file)
+                return entropy_features_local, entropy_bars_local
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to load entropy cache: {e}. Regenerating...")
+
+        tprint_info("🔧 Fetching 1-minute data for entropy bar generation")
+        min_data = fetch_1min_data_for_entropy_bars(
+            symbol=asset_symbol,
+            exchange=exchange,
+            start_date=start_date_local,
+            end_date=end_date_local,
+            data_dir=cfg.get('data_dir', 'historical_data')
+        )
+
+        if min_data is None or min_data.empty:
+            raise RuntimeError("No 1-minute data available for entropy bars.")
+
+        tprint_info("🔄 Generating entropy bars from 1-minute data")
+        entropy_bars_local = generate_entropy_bars_from_ohlcv(
+            ohlcv_data=min_data,
+            n_bins=cfg.get('entropy_bins', 10),
+            window_size=cfg.get('entropy_window', 100),
+            target_minutes=cfg.get('entropy_target_minutes', 15),
+            symbol=asset_symbol,
+            exchange=exchange
+        )
+
+        if entropy_bars_local.empty:
+            raise RuntimeError("Failed to generate entropy bars.")
+
+        tprint_info("🎯 Calculating specialized entropy features")
+        specialist_prices = asset_df['close'] if 'close' in asset_df.columns else None
+        entropy_features_local = calculate_specialized_entropy_features(
+            entropy_bars=entropy_bars_local,
+            base_model_updates=asset_df,
+            specialist_prices=specialist_prices,
+            volatility_window=cfg.get('volatility_window', 20)
+        )
+
+        try:
+            entropy_features_local.to_parquet(cache_file)
+            entropy_bars_local.to_parquet(bars_cache_file)
+            tprint_success(f"💾 Saved entropy bars cache: {cache_file}")
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to save entropy cache: {e}")
+
+        return entropy_features_local, entropy_bars_local
+
+    if multi_asset:
+        tprint_info("🔀 Multi-asset data detected; generating per-asset entropy bars.")
+        enhanced_groups = []
+        entropy_bars_groups = []
+        entropy_ohlcv_cols = [
+            'open', 'high', 'low', 'close', 'volume', 'n_minutes', 'entropy_contribution'
+        ]
+
+        if asset_index_level:
+            grouped = df.groupby(level=asset_index_level, sort=False)
+        else:
+            grouped = df.groupby(asset_col, sort=False)
+
+        for asset_id, asset_df in grouped:
+            asset_df_sorted = asset_df.sort_index()
+            asset_symbol = str(asset_id)
+
+            entropy_features, entropy_bars = _load_or_generate_entropy(asset_symbol, asset_df_sorted)
+
+            time_index = _get_time_index(asset_df_sorted)
+            aligned_features = entropy_features.reindex(time_index, method='ffill').fillna(0)
+            aligned_bars = entropy_bars.reindex(time_index, method='ffill')
+
+            for col in aligned_features.columns:
+                asset_df_sorted[col] = aligned_features[col].to_numpy()
+
+            for col in entropy_ohlcv_cols:
+                if col in aligned_bars.columns:
+                    asset_df_sorted[f'entropy_{col}'] = aligned_bars[col].to_numpy()
+
+            entropy_bars_asset = entropy_bars.copy()
+            entropy_bars_asset[asset_col] = asset_id
+            entropy_bars_groups.append(entropy_bars_asset)
+            enhanced_groups.append(asset_df_sorted)
+
+        enhanced_df = pd.concat(enhanced_groups).sort_index()
+        entropy_bars_df = pd.concat(entropy_bars_groups).sort_index()
+        tprint_success("End: integrate_entropy_bars_into_layer3")
+        return enhanced_df, entropy_bars_df
 
     # Determine date range from existing data
-    if not df.empty and hasattr(df.index, 'min') and hasattr(df.index, 'max'):
-        start_date = df.index.min().strftime('%Y-%m-%d')
-        end_date = df.index.max().strftime('%Y-%m-%d')
-        start_dt = df.index.min()
-        end_dt = df.index.max()
-    else:
-        # Default to last 30 days if no date range available
-        end_date = datetime.now().strftime('%Y-%m-%d')
-        start_date = (datetime.now() - pd.Timedelta(days=30)).strftime('%Y-%m-%d')
-        start_dt = datetime.now() - pd.Timedelta(days=30)
-        end_dt = datetime.now()
+    start_date, end_date = _get_date_range(df)
 
     # Cache key based on symbol, exchange, dates and params
     cache_key = f"{symbol}_{exchange}_{start_date}_{end_date}_{cfg.get('entropy_target_minutes', 15)}"

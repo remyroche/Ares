@@ -13,6 +13,18 @@ import pandas as pd
 from typing import Union, Optional, Dict, Tuple
 import warnings
 
+# Try to import numba
+try:
+    from numba import jit
+    NUMBA_AVAILABLE = True
+except ImportError:
+    NUMBA_AVAILABLE = False
+    # Fallback decorator
+    def jit(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
 # Import tprint functions
 try:
     from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
@@ -23,13 +35,105 @@ except ImportError:
     def tprint_warning(msg): print(f"[WARNING] {msg}")
     def tprint_error(msg): print(f"[ERROR] {msg}")
 
+@jit(nopython=True, fastmath=True, cache=True)
+def _compute_residuals_numba(
+    y_actual: np.ndarray,
+    y_anchor: np.ndarray,
+    min_residual_threshold: float,
+    max_residual_threshold: float,
+    clip_residuals: bool
+) -> np.ndarray:
+    """
+    Numba-optimized residual computation.
+    Single-pass (mostly) logic for validation, subtraction and clipping.
+    Operates on float32/64 arrays.
+    """
+    n = len(y_actual)
+    # Ensure we use float32 for output to save memory, assuming inputs are compatible
+    out = np.empty(n, dtype=np.float32)
+
+    # Constants
+    FLOAT_LIMIT = 1e30 # Safe limit below max float32
+
+    # Stats accumulators for pass 1
+    sum_val = 0.0
+    sum_sq = 0.0
+
+    # Pass 1: Compute raw residuals, handling Inf/NaN/Clipping
+    for i in range(n):
+        act = y_actual[i]
+        anc = y_anchor[i]
+
+        # Check validity (NaN or Inf)
+        # Note: In Numba, np.isnan/isinf work on scalars
+        act_invalid = np.isnan(act) or np.isinf(act)
+        anc_invalid = np.isnan(anc) or np.isinf(anc)
+
+        if act_invalid or anc_invalid:
+            # If either is missing/invalid, we cannot compute a valid residual.
+            # Standard logic is to treat as 0 (neutral).
+            res = 0.0
+        else:
+            # Clip extreme inputs to prevent overflow
+            if act > FLOAT_LIMIT: act = FLOAT_LIMIT
+            elif act < -FLOAT_LIMIT: act = -FLOAT_LIMIT
+
+            if anc > FLOAT_LIMIT: anc = FLOAT_LIMIT
+            elif anc < -FLOAT_LIMIT: anc = -FLOAT_LIMIT
+
+            res = act - anc
+
+            # Tiny residual check (set to 0 if too small)
+            # if abs(res) < min_residual_threshold: res = 0.0
+            # Kept separate to match original logic flow or do here?
+            # Original does it at the end. We'll do it here for efficiency.
+            if res > 0 and res < min_residual_threshold:
+                res = 0.0
+            elif res < 0 and res > -min_residual_threshold:
+                res = 0.0
+
+        out[i] = res
+        sum_val += res
+        sum_sq += res * res
+
+    if not clip_residuals:
+        return out
+
+    # Calculate stats for clipping
+    mean = sum_val / n
+    var = (sum_sq / n) - (mean * mean)
+    std = np.sqrt(var) if var > 0 else 0.0
+
+    if std == 0:
+        return out
+
+    # Determine clip value
+    # Original logic: min(max_threshold * std, 3 * std)
+    # If max_threshold is typically 10, then 3*std is the bound.
+    limit_mult = 3.0
+    if max_residual_threshold < 3.0:
+        limit_mult = max_residual_threshold
+
+    clip_val = limit_mult * std
+
+    # Pass 2: Clip residuals
+    for i in range(n):
+        val = out[i]
+        if val > clip_val:
+            out[i] = clip_val
+        elif val < -clip_val:
+            out[i] = -clip_val
+
+    return out
+
 def compute_causal_residuals(
     y_actual: Union[pd.Series, np.ndarray],
     y_causal_anchor: Union[pd.Series, np.ndarray],
     min_residual_threshold: float = 1e-8,
     max_residual_threshold: float = 10.0,
     clip_residuals: bool = True,
-    verbose: bool = True
+    verbose: bool = True,
+    use_robust_stats: bool = False
 ) -> pd.Series:
     """
     Compute causal residuals for Chaser targeting.
@@ -39,112 +143,124 @@ def compute_causal_residuals(
     Args:
         y_actual: Actual returns/targets
         y_causal_anchor: Causal Anchor predictions
-        min_residual_threshold: Minimum residual threshold (prevents tiny values)
-        max_residual_threshold: Maximum residual threshold (prevents outliers)
+        min_residual_threshold: Minimum residual threshold
+        max_residual_threshold: Maximum residual threshold multiplier (std devs)
         clip_residuals: Whether to clip extreme residuals
         verbose: Whether to print statistics
+        use_robust_stats: (Unused in fast path) Reserved for future robust scaling
         
     Returns:
         Causal residuals (unexplained alpha)
     """
     try:
-        # Convert to Series if needed
-        if isinstance(y_actual, np.ndarray):
-            y_actual = pd.Series(y_actual)
-        if isinstance(y_causal_anchor, np.ndarray):
-            y_causal_anchor = pd.Series(y_causal_anchor)
+        # --- Alignment Handling ---
+        # Determine if we need to align indices
+        has_index_actual = isinstance(y_actual, (pd.Series, pd.DataFrame))
+        has_index_anchor = isinstance(y_causal_anchor, (pd.Series, pd.DataFrame))
         
-        # Validate input data for infinity and extreme values
-        if verbose:
-            tprint_info("🔍 Validating input data...")
+        result_index = None
         
-        # Check for infinity values
-        y_actual_inf = np.isinf(y_actual).sum()
-        y_anchor_inf = np.isinf(y_causal_anchor).sum()
-        
-        if y_actual_inf > 0:
-            if verbose:
-                tprint_warning(f"⚠️ Found {y_actual_inf} infinity values in y_actual, replacing with NaN")
-            y_actual = y_actual.replace([np.inf, -np.inf], np.nan)
-        
-        if y_anchor_inf > 0:
-            if verbose:
-                tprint_warning(f"⚠️ Found {y_anchor_inf} infinity values in y_causal_anchor, replacing with NaN")
-            y_causal_anchor = y_causal_anchor.replace([np.inf, -np.inf], np.nan)
-        
-        # Check for extremely large values (close to float64 limits)
-        float64_max = np.finfo(np.float64).max / 1000  # Use 1/1000 of max as safety margin
-        y_actual_large = (np.abs(y_actual) > float64_max).sum()
-        y_anchor_large = (np.abs(y_causal_anchor) > float64_max).sum()
-        
-        if y_actual_large > 0:
-            if verbose:
-                tprint_warning(f"⚠️ Found {y_actual_large} extremely large values in y_actual, clipping")
-            y_actual = y_actual.clip(lower=-float64_max, upper=float64_max)
-        
-        if y_anchor_large > 0:
-            if verbose:
-                tprint_warning(f"⚠️ Found {y_anchor_large} extremely large values in y_causal_anchor, clipping")
-            y_causal_anchor = y_causal_anchor.clip(lower=-float64_max, upper=float64_max)
-        
-        # Align indices
-        if len(y_actual) != len(y_causal_anchor):
-            if isinstance(y_actual, pd.Series) and isinstance(y_causal_anchor, pd.Series):
+        if has_index_actual and has_index_anchor:
+            # Both have index -> Align safely
+            if len(y_actual) != len(y_causal_anchor) or not y_actual.index.equals(y_causal_anchor.index):
+                if verbose: tprint_info("🔄 Aligning input Series by index...")
                 y_actual, y_causal_anchor = y_actual.align(y_causal_anchor, join='inner')
-            else:
-                raise ValueError("Length mismatch between actual and anchor predictions")
+            result_index = y_actual.index
+
+        elif has_index_actual:
+            # Only actual has index -> Assume positional, verify length
+            if len(y_actual) != len(y_causal_anchor):
+                raise ValueError(f"Length mismatch: y_actual ({len(y_actual)}) vs y_anchor ({len(y_causal_anchor)})")
+            result_index = y_actual.index
+
+        elif has_index_anchor:
+            # Only anchor has index -> Assume positional
+            if len(y_actual) != len(y_causal_anchor):
+                raise ValueError(f"Length mismatch: y_actual ({len(y_actual)}) vs y_anchor ({len(y_causal_anchor)})")
+            # Usually we want the target's index, but if missing, maybe use anchor's?
+            result_index = y_causal_anchor.index
+        else:
+            # Neither has index
+            if len(y_actual) != len(y_causal_anchor):
+                raise ValueError(f"Length mismatch: {len(y_actual)} vs {len(y_causal_anchor)}")
         
-        # Handle NaN values before computation
-        if y_actual.isna().any() or y_causal_anchor.isna().any():
-            if verbose:
-                tprint_warning(f"⚠️ Found NaN values, will handle after residual computation")
+        # --- Data Extraction & Conversion ---
+        # Convert to numpy arrays (float32 for speed/memory)
+        # Using values attribute if available, else standard casting
+        vals_actual = y_actual.values if has_index_actual else y_actual
+        vals_anchor = y_causal_anchor.values if has_index_anchor else y_causal_anchor
         
-        # Compute residuals
-        residuals = y_actual - y_causal_anchor
+        # Ensure contiguous float32 array for Numba
+        vals_actual = np.ascontiguousarray(vals_actual, dtype=np.float32)
+        vals_anchor = np.ascontiguousarray(vals_anchor, dtype=np.float32)
         
-        # Handle NaN values
-        nan_mask = residuals.isna()
-        if nan_mask.any():
-            if verbose:
-                tprint_warning(f"⚠️ Found {nan_mask.sum()} NaN residuals, setting to 0")
-            residuals = residuals.fillna(0)
-        
-        # Optional clipping to prevent extreme values
-        if clip_residuals:
-            residual_std = residuals.std()
-            if residual_std > 0:
-                # Clip at ±3 standard deviations or max_threshold
-                clip_value = min(max_residual_threshold * residual_std, 3 * residual_std)
-                residuals_clipped = residuals.clip(lower=-clip_value, upper=clip_value)
-                
-                if verbose:
-                    n_clipped = ((residuals != residuals_clipped).sum())
-                    if n_clipped > 0:
-                        tprint_info(f"📊 Clipped {n_clipped} extreme residuals (±{clip_value:.6f})")
-                
-                residuals = residuals_clipped
-        
-        # Filter tiny residuals (optional)
-        tiny_mask = np.abs(residuals) < min_residual_threshold
-        if tiny_mask.any() and verbose:
-            tprint_info(f"📊 Found {tiny_mask.sum()} tiny residuals (< {min_residual_threshold})")
-        
+        # --- Computation ---
+        if NUMBA_AVAILABLE:
+            residuals_arr = _compute_residuals_numba(
+                vals_actual,
+                vals_anchor,
+                min_residual_threshold,
+                max_residual_threshold,
+                clip_residuals
+            )
+        else:
+            # Fallback logic (vectorized numpy)
+            if verbose: tprint_warning("Numba not available, using NumPy fallback")
+
+            # Replace Inf with NaN
+            vals_actual[np.isinf(vals_actual)] = np.nan
+            vals_anchor[np.isinf(vals_anchor)] = np.nan
+
+            # Clip Inputs
+            limit = 1e30
+            vals_actual = np.clip(vals_actual, -limit, limit)
+            vals_anchor = np.clip(vals_anchor, -limit, limit)
+
+            # Compute
+            residuals_arr = vals_actual - vals_anchor
+
+            # Handle NaN -> 0
+            residuals_arr[np.isnan(residuals_arr)] = 0.0
+
+            # Clip Residuals
+            if clip_residuals:
+                std = np.std(residuals_arr)
+                if std > 0:
+                    clip_val = min(max_residual_threshold * std, 3 * std)
+                    residuals_arr = np.clip(residuals_arr, -clip_val, clip_val)
+
+            # Tiny threshold
+            residuals_arr[np.abs(residuals_arr) < min_residual_threshold] = 0.0
+
+        # --- Output Wrapping ---
+        if result_index is not None:
+            residuals = pd.Series(residuals_arr, index=result_index, name='residuals')
+        else:
+            residuals = pd.Series(residuals_arr, name='residuals')
+
+        # --- Logging ---
         if verbose:
             tprint_success("✅ Causal residuals computed:")
             tprint_info(f"   - Samples: {len(residuals)}")
             tprint_info(f"   - Mean: {residuals.mean():.6f}")
             tprint_info(f"   - Std: {residuals.std():.6f}")
-            tprint_info(f"   - Min: {residuals.min():.6f}")
-            tprint_info(f"   - Max: {residuals.max():.6f}")
-            tprint_info(f"   - Positive ratio: {(residuals > 0).mean():.2%}")
             
-            # Correlation analysis
-            if len(y_actual) > 10:
-                correlation = np.corrcoef(y_actual, y_causal_anchor)[0, 1]
-                tprint_info(f"   - Actual vs Anchor correlation: {correlation:.4f}")
+            # Only compute costly correlation if needed
+            if len(residuals) > 100:
+                # Use numpy for correlation to stay fast
+                # Need to handle potential NaNs in input for correlation if we want accuracy,
+                # but our residuals are clean. y_actual might have NaNs (replaced by 0 or ignored).
+                # _compute_residuals_numba doesn't fix y_actual in place, so vals_actual might have Infs/NaNs?
+                # Actually, vals_actual was converted to float32. Inf/NaNs are still there.
                 
-                residual_correlation = np.corrcoef(residuals, y_actual)[0, 1]
-                tprint_info(f"   - Residual vs Actual correlation: {residual_correlation:.4f}")
+                # Safe correlation
+                mask = np.isfinite(vals_actual) & np.isfinite(vals_anchor)
+                if mask.sum() > 10:
+                    corr = np.corrcoef(vals_actual[mask], vals_anchor[mask])[0, 1]
+                    tprint_info(f"   - Actual vs Anchor correlation: {corr:.4f}")
+
+                    res_corr = np.corrcoef(residuals_arr[mask], vals_actual[mask])[0, 1]
+                    tprint_info(f"   - Residual vs Actual correlation: {res_corr:.4f}")
         
         return residuals
         
@@ -161,46 +277,53 @@ def analyze_residual_quality(
 ) -> Dict[str, float]:
     """
     Analyze the quality of causal residuals.
-    
-    Args:
-        y_actual: Actual returns
-        y_causal_anchor: Causal Anchor predictions
-        residuals: Pre-computed residuals (optional)
-        verbose: Whether to print analysis
-        
-    Returns:
-        Dictionary with quality metrics
     """
     try:
-        # Compute residuals if not provided
         if residuals is None:
             residuals = compute_causal_residuals(y_actual, y_causal_anchor, verbose=False)
         
-        # Basic statistics
-        residual_mean = residuals.mean()
-        residual_std = residuals.std()
-        residual_skew = residuals.skew()
-        residual_kurt = residuals.kurtosis()
+        # Ensure we work with numpy arrays for stats
+        res_vals = residuals.values.astype(np.float32)
+        act_vals = y_actual.values if hasattr(y_actual, 'values') else y_actual
+        anc_vals = y_causal_anchor.values if hasattr(y_causal_anchor, 'values') else y_causal_anchor
+
+        # Mask for valid data
+        mask = np.isfinite(act_vals) & np.isfinite(anc_vals) & np.isfinite(res_vals)
         
-        # Correlation analysis
-        actual_anchor_corr = np.corrcoef(y_actual, y_causal_anchor)[0, 1]
-        residual_actual_corr = np.corrcoef(residuals, y_actual)[0, 1]
-        residual_anchor_corr = np.corrcoef(residuals, y_causal_anchor)[0, 1]
+        if mask.sum() < 2:
+            return {}
+
+        res_clean = res_vals[mask]
+        act_clean = act_vals[mask]
+        anc_clean = anc_vals[mask]
+
+        # Stats
+        residual_mean = float(np.mean(res_clean))
+        residual_std = float(np.std(res_clean))
+
+        # Use pandas for skew/kurt as it's convenient and not performance critical here
+        res_series = pd.Series(res_clean)
+        residual_skew = res_series.skew()
+        residual_kurt = res_series.kurt() # Use .kurt() per pandas 3.0 standards
         
-        # Signal quality metrics
+        # Correlations
+        actual_anchor_corr = np.corrcoef(act_clean, anc_clean)[0, 1]
+        residual_actual_corr = np.corrcoef(res_clean, act_clean)[0, 1]
+        residual_anchor_corr = np.corrcoef(res_clean, anc_clean)[0, 1]
+
+        # Signal Quality
+        # Signal-to-Noise: Mean is usually bias (bad). We want predictable volatility?
+        # Standard definition: Mean / Std.
         signal_to_noise = abs(residual_mean) / residual_std if residual_std > 0 else 0
         predictability = abs(residual_actual_corr)
         
-        # Anchor effectiveness
+        # Explained Variance
         anchor_explained_variance = actual_anchor_corr ** 2
-        residual_variance_ratio = 1 - anchor_explained_variance
         
-        # Quality score (higher is better)
-        # Combines: low correlation with anchor (orthogonal), 
-        # high correlation with actual (predictable),
-        # reasonable signal-to-noise
-        orthogonality = 1 - abs(residual_anchor_corr)
-        quality_score = orthogonality * predictability * min(signal_to_noise, 1.0)
+        # Orthogonality (Target: 1.0)
+        orthogonality = 1.0 - abs(residual_anchor_corr)
+
+        quality_score = orthogonality * predictability
         
         metrics = {
             'residual_mean': residual_mean,
@@ -213,21 +336,15 @@ def analyze_residual_quality(
             'signal_to_noise': signal_to_noise,
             'predictability': predictability,
             'anchor_explained_variance': anchor_explained_variance,
-            'residual_variance_ratio': residual_variance_ratio,
             'orthogonality': orthogonality,
             'quality_score': quality_score
         }
         
         if verbose:
             tprint_info("📊 Residual Quality Analysis:")
-            tprint_info(f"   - Residual mean: {residual_mean:.6f}")
             tprint_info(f"   - Residual std: {residual_std:.6f}")
-            tprint_info(f"   - Signal-to-noise: {signal_to_noise:.4f}")
-            tprint_info(f"   - Predictability: {predictability:.4f}")
             tprint_info(f"   - Orthogonality: {orthogonality:.4f}")
             tprint_info(f"   - Quality score: {quality_score:.4f}")
-            tprint_info(f"   - Anchor explained variance: {anchor_explained_variance:.2%}")
-            tprint_info(f"   - Residual variance ratio: {residual_variance_ratio:.2%}")
         
         return metrics
         
@@ -246,17 +363,6 @@ def validate_residual_targets(
 ) -> Dict[str, bool]:
     """
     Validate that residuals are suitable for Chaser training.
-    
-    Args:
-        residuals: Causal residuals
-        min_samples: Minimum number of samples
-        min_variance: Minimum variance threshold
-        max_skewness: Maximum acceptable skewness
-        max_kurtosis: Maximum acceptable kurtosis
-        verbose: Whether to print validation results
-        
-    Returns:
-        Dictionary with validation results
     """
     try:
         validation_results = {}
@@ -270,7 +376,8 @@ def validate_residual_targets(
         
         # Distribution checks
         residual_skew = residuals.skew()
-        residual_kurt = residuals.kurtosis()
+        residual_kurt = residuals.kurt() # Updated to .kurt()
+
         validation_results['reasonable_skewness'] = abs(residual_skew) <= max_skewness
         validation_results['reasonable_kurtosis'] = abs(residual_kurt) <= max_kurtosis
         
@@ -282,11 +389,6 @@ def validate_residual_targets(
             for check, passed in validation_results.items():
                 status = "✅" if passed else "❌"
                 tprint_info(f"   {status} {check}: {passed}")
-            
-            if not validation_results['valid_for_training']:
-                tprint_warning("⚠️ Residuals may not be suitable for Chaser training")
-            else:
-                tprint_success("✅ Residuals validated for Chaser training")
         
         return validation_results
         
@@ -294,11 +396,6 @@ def validate_residual_targets(
         if verbose:
             tprint_error(f"❌ Residual validation failed: {e}")
         raise
-
-# Convenience functions
-def quick_residuals(y_actual, y_causal_anchor, **kwargs):
-    """Quick residual computation with defaults."""
-    return compute_causal_residuals(y_actual, y_causal_anchor, **kwargs)
 
 def residual_pipeline(
     y_actual: Union[pd.Series, np.ndarray],
@@ -309,16 +406,6 @@ def residual_pipeline(
 ) -> Tuple[pd.Series, Optional[Dict[str, float]], Optional[Dict[str, bool]]]:
     """
     Complete residual pipeline: compute, analyze, and validate.
-    
-    Args:
-        y_actual: Actual returns
-        y_causal_anchor: Causal Anchor predictions
-        validate: Whether to validate residuals
-        analyze: Whether to analyze quality
-        **kwargs: Additional parameters
-        
-    Returns:
-        Tuple of (residuals, quality_metrics, validation_results)
     """
     # Compute residuals
     residuals = compute_causal_residuals(y_actual, y_causal_anchor, **kwargs)

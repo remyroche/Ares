@@ -75,7 +75,7 @@ def calculate_entropy_numba(X_values, bin_edges):
         Array of entropy values for each feature
     """
     n_samples, n_features = X_values.shape
-    entropies = np.zeros(n_features, dtype=np.float64)
+    entropies = np.zeros(n_features, dtype=np.float32)
     n_edges = bin_edges.shape[0]
     
     for idx in prange(n_features):
@@ -99,7 +99,7 @@ def calculate_entropy_numba(X_values, bin_edges):
             entropies[idx] = 0.0
             continue
             
-        probs = valid_counts.astype(np.float64) / n_samples
+        probs = valid_counts.astype(np.float32) / n_samples
         entropies[idx] = -np.sum(probs * np.log(probs + 1e-12))
         
     return entropies
@@ -119,7 +119,7 @@ def spearman_corr_numba(X_ranked, y_ranked):
         Array of correlation coefficients
     """
     n_samples, n_features = X_ranked.shape
-    ics = np.zeros(n_features, dtype=np.float64)
+    ics = np.zeros(n_features, dtype=np.float32)
     
     y_mean = np.mean(y_ranked)
     y_centered = y_ranked - y_mean
@@ -155,15 +155,15 @@ def calculate_cv_ratio_numba(values, labels):
     n_clusters = np.max(labels) + 1
     
     # Global Mean (Centroid of all features)
-    global_mean = np.zeros(n_samples, dtype=np.float64)
+    global_mean = np.zeros(n_samples, dtype=np.float32)
     for i in range(n_features):
         for j in range(n_samples):
             global_mean[j] += values[i, j]
     global_mean /= n_features
     
     # Cluster Means
-    cluster_counts = np.zeros(n_clusters, dtype=np.float64)
-    cluster_sums = np.zeros((n_clusters, n_samples), dtype=np.float64)
+    cluster_counts = np.zeros(n_clusters, dtype=np.float32)
+    cluster_sums = np.zeros((n_clusters, n_samples), dtype=np.float32)
     
     for i in range(n_features):
         c_idx = labels[i]

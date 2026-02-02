@@ -1722,3 +1722,20 @@ def _numba_rolling_std_nan_safe(x, window):
         output[i] = np.sqrt(sum_sq / (count - 1))
 
     return output
+
+
+@jit(nopython=True, cache=True)
+def _numba_shift(arr, num, fill_value=np.nan):
+    """
+    Shift array by num positions. Positive num shifts right (lag).
+    """
+    result = np.empty_like(arr)
+    if num > 0:
+        result[:num] = fill_value
+        result[num:] = arr[:-num]
+    elif num < 0:
+        result[num:] = fill_value
+        result[:num] = arr[-num:]
+    else:
+        result[:] = arr
+    return result

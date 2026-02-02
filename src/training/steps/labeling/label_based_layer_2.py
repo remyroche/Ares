@@ -9529,16 +9529,38 @@ class LabelBasedLayer2(BaseStep):
         tprint_info("   📊 Layer 2: Running smart feature pre-selection (Gain + Split + Root Zone)...")
         preselect_start = time.time()
         
-        # 1. Base numeric filtering
-        numeric_df = df.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan).dropna(axis=1, how='all')
+        # 1. Base numeric filtering (Optimized for memory/speed)
+        # Avoid full-dataframe replace which is memory intensive
+        numeric_df = df.select_dtypes(include=[np.number])
+
+        # In-place column-wise replacement of infinity to save memory/cpu
+        # Only touch columns that actually have infs
+        cols_with_inf = 0
+        for col in numeric_df.columns:
+            if np.isinf(numeric_df[col].values).any():
+                numeric_df[col] = numeric_df[col].replace([np.inf, -np.inf], np.nan)
+                cols_with_inf += 1
+
+        if self.verbose and cols_with_inf > 0:
+             tprint_info(f"   ℹ️ Replaced infinities in {cols_with_inf} columns")
+
+        numeric_df = numeric_df.dropna(axis=1, how='all')
+
         if numeric_df.empty:
             return numeric_df
 
         agg_cols = [col for col in numeric_df.columns if col.startswith("AGG_SUM_4_")]
         if agg_cols and self.verbose:
+            tprint_info(f"   ℹ️ Checking {len(agg_cols)} AGG_SUM_4 columns for constants...")
             constant_agg = []
             for col in agg_cols:
                 series = numeric_df[col]
+
+                # Optimization: Check std first to avoid expensive nunique on varying data
+                # If std > 0 (and not NaN), it definitely has variation
+                if series.std() > 1e-12:
+                     continue
+
                 nunique = series.nunique(dropna=False)
                 if nunique <= 1:
                     nonzero_rate = float((series.fillna(0.0) != 0.0).mean())
@@ -9855,7 +9877,6 @@ class LabelBasedLayer2(BaseStep):
         # Skip expensive MI filtering if requested
         if self.skip_mi_filtering:
             tprint_info("   ⚡ Skipping MI filtering (disabled for performance)")
-        else:
         
         from sklearn.metrics import mutual_info_score
         
@@ -9864,10 +9885,15 @@ class LabelBasedLayer2(BaseStep):
         
         target_series = numeric_df[target_name]
         valid_mask = target_series.notna()
-        X_clean = numeric_df[valid_mask].fillna(0).replace([np.inf, -np.inf], 0)
-        y_clean = target_series[valid_mask]
         
-        if len(X_clean) > self.mi_min_samples:
+        if not self.skip_mi_filtering:
+            X_clean = numeric_df[valid_mask].fillna(0).replace([np.inf, -np.inf], 0)
+            y_clean = target_series[valid_mask]
+        else:
+            X_clean = pd.DataFrame()
+            y_clean = pd.Series()
+
+        if not self.skip_mi_filtering and len(X_clean) > self.mi_min_samples:
             n_bins = self.mi_n_bins  # Use optimized parameter 
             
             # --- 1. Define Regimes (Proxies) ---

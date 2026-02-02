@@ -56,23 +56,30 @@ def _robust_stats_numba(x: np.ndarray, eps: float = 1e-12) -> Tuple[float, float
     if n == 0:
         return 0.0, 1.0
     
-    # Median via partial sort
-    sorted_x = np.sort(x)
+    # Median via partition (O(N))
+    k = n // 2
+    # Ensure we don't modify original x
+    work_x = x.copy()
+    part_x = np.partition(work_x, k)
+
     if n % 2 == 0:
-        med = (sorted_x[n // 2 - 1] + sorted_x[n // 2]) * np.float32(0.5)
+        med2 = part_x[k]
+        # Max of left side is the (k-1)-th element
+        med1 = np.max(part_x[:k])
+        med = (med1 + med2) * np.float32(0.5)
     else:
-        med = sorted_x[n // 2]
+        med = part_x[k]
     
     # MAD
-    abs_dev = np.empty(n, dtype=np.float32)
-    for i in range(n):
-        abs_dev[i] = abs(x[i] - med)
-    abs_dev.sort()
+    abs_dev = np.abs(x - med).astype(np.float32)
+    part_dev = np.partition(abs_dev, k)
     
     if n % 2 == 0:
-        mad = (abs_dev[n // 2 - 1] + abs_dev[n // 2]) * np.float32(0.5)
+        mad2 = part_dev[k]
+        mad1 = np.max(part_dev[:k])
+        mad = (mad1 + mad2) * np.float32(0.5)
     else:
-        mad = abs_dev[n // 2]
+        mad = part_dev[k]
     
     sigma = np.float32(1.4826) * (mad + np.float32(eps))
     return med, sigma
@@ -1103,6 +1110,19 @@ class RuleFitTransformer(BaseEstimator, TransformerMixin):
     - Parallel stability runs
     - MinHash-accelerated Jaccard deduplication
     - Numba-accelerated core operations
+
+    .. warning::
+        **Look-ahead Bias Risk**: The initial rule generation (ExtraTrees fitting) is performed on the
+        entire input dataset `X`. While stability selection uses temporal splits to validate the
+        rules, the rules themselves are candidates generated using potentially future information
+        (if `fit` is called with the full dataset). For strict walk-forward validity, rules should
+        be generated on a growing window or purge-k-fold basis, though this is computationally expensive.
+
+    .. note::
+        **Cross-Asset usage**: The built-in winsorization is global. If `X` contains multiple assets
+        with significantly different volatility regimes that haven't been normalized (e.g. z-scored per asset),
+        global winsorization might be suboptimal. Ensure inputs are normalized cross-sectionally or per-asset
+        before passing to this transformer.
     """
     def __init__(
         self,
@@ -1124,6 +1144,7 @@ class RuleFitTransformer(BaseEstimator, TransformerMixin):
         self.node_depths_: np.ndarray | None = None
         self.feature_names_: List[str] = []
         self.n_original_features_: int = 0
+        self.base_rules_kept_idx_: np.ndarray | None = None
         self.gated_kept_idx_: np.ndarray | None = None
         self._fitted: bool = False
         self._is_classifier: bool = False
@@ -1173,14 +1194,25 @@ class RuleFitTransformer(BaseEstimator, TransformerMixin):
             sample_weight = np.asarray(sample_weight, dtype=np.float32).copy()
         
         # Handle class imbalance ONLY for classification
-        if self._is_classifier and class_weight == "balanced":
-            classes, counts = np.unique(y_arr.astype(int), return_counts=True)
-            if len(classes) == 2 and counts.min() > 0:
-                ratio = counts.max() / counts.min()
-                minority_class = classes[np.argmin(counts)]
-                # Use sqrt(ratio) for balanced weighting
-                sample_weight[y_arr.astype(int) == minority_class] *= np.sqrt(ratio)
+        # We use sqrt(ratio) for balanced weighting (softer than standard inverse)
+        # If class_weight is 'balanced', we apply this manual weighting and set sklearn_class_weight to None
+        sklearn_class_weight_param = None
         
+        if self._is_classifier:
+            if isinstance(class_weight, dict):
+                sklearn_class_weight_param = class_weight
+            elif class_weight == "balanced":
+                # Manual sqrt balancing
+                sklearn_class_weight_param = None
+                classes, counts = np.unique(y_arr.astype(int), return_counts=True)
+                if len(classes) == 2 and counts.min() > 0:
+                    ratio = counts.max() / counts.min()
+                    minority_class = classes[np.argmin(counts)]
+                    # Use sqrt(ratio) for balanced weighting
+                    sample_weight[y_arr.astype(int) == minority_class] *= np.sqrt(ratio)
+            else:
+                sklearn_class_weight_param = None
+
         # Apply temporal decay if configured (recent samples weighted higher)
         if cfg.temporal_decay_half_life is not None:
             temporal_weights = _compute_temporal_decay_weights(
@@ -1208,14 +1240,6 @@ class RuleFitTransformer(BaseEstimator, TransformerMixin):
             print(f"  Fitting ExtraTrees ({cfg.n_estimators} trees, max_depth={cfg.max_depth}, {task})...")
         
         if self._is_classifier:
-            # Determine class_weight parameter for sklearn
-            if isinstance(class_weight, dict):
-                sklearn_class_weight = class_weight
-            elif class_weight == "balanced":
-                sklearn_class_weight = "balanced"
-            else:
-                sklearn_class_weight = None
-            
             self.forest_ = ExtraTreesClassifier(
                 n_estimators=cfg.n_estimators,
                 max_depth=cfg.max_depth,
@@ -1225,7 +1249,7 @@ class RuleFitTransformer(BaseEstimator, TransformerMixin):
                 n_jobs=-1,
                 min_impurity_decrease=1e-4,
                 random_state=cfg.random_state,
-                class_weight=sklearn_class_weight
+                class_weight=sklearn_class_weight_param
             )
         else:
             self.forest_ = ExtraTreesRegressor(
@@ -1258,10 +1282,11 @@ class RuleFitTransformer(BaseEstimator, TransformerMixin):
             print(f"  Extracted {X_rules.shape[1]} rules (after support filtering)")
         
         # Deduplicate rules using MinHash-accelerated Jaccard
-        X_rules, node_depths, _ = clean_redundant_rules(
+        X_rules, node_depths, kept_indices = clean_redundant_rules(
             X_rules, y_wins, node_depths,
             jaccard_threshold=cfg.overlap_threshold
         )
+        self.base_rules_kept_idx_ = kept_indices
         
         if self.verbose:
             print(f"  After deduplication: {X_rules.shape[1]} rules")
@@ -1402,6 +1427,11 @@ class RuleFitTransformer(BaseEstimator, TransformerMixin):
         self._fitted = True
         
         n_selected = self.stable_mask_.sum()
+
+        # Clear extractor cache to free memory
+        if self.rule_extractor_ is not None:
+            self.rule_extractor_.clear_cache()
+
         if self.verbose:
             print(f"RuleFitTransformer: Fitted. Selected {n_selected} stable features.")
         
@@ -1421,6 +1451,10 @@ class RuleFitTransformer(BaseEstimator, TransformerMixin):
         # Get rules (aligned to fit-time specs)
         X_rules = self.rule_extractor_.transform(self.forest_, X_base)
         
+        # Apply base rule deduplication filter
+        if self.base_rules_kept_idx_ is not None:
+            X_rules = X_rules[:, self.base_rules_kept_idx_]
+
         # Gate the rules
         n_gates = G.shape[1]
         gated_blocks = []

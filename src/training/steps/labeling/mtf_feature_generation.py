@@ -251,8 +251,8 @@ def _rolling_mean_abs_dev_numba(values: np.ndarray, window: int) -> np.ndarray:
 
 def _rolling_weighted_mean(values: np.ndarray, weights: np.ndarray) -> np.ndarray:
     """Vectorized weighted rolling mean with NaN-safe weights."""
-    values_arr = np.asarray(values, dtype=float)
-    weight_arr = np.asarray(weights, dtype=float)
+    values_arr = np.asarray(values, dtype=np.float32)
+    weight_arr = np.asarray(weights, dtype=np.float32)
     weight_sum = weight_arr.sum()
     if weight_sum <= 0:
         return np.zeros_like(values_arr)
@@ -269,7 +269,7 @@ def _rolling_weighted_mean(values: np.ndarray, weights: np.ndarray) -> np.ndarra
 def _rolling_argmax_numba(values: np.ndarray, window: int) -> np.ndarray:
     """Rolling argmax index within the window (Numba)."""
     n = len(values)
-    output = np.full(n, np.nan)
+    output = np.full(n, np.nan, dtype=np.float32)
     if window <= 0:
         return output
     for i in prange(n):
@@ -290,7 +290,7 @@ def _rolling_argmax_numba(values: np.ndarray, window: int) -> np.ndarray:
 def _rolling_argmin_numba(values: np.ndarray, window: int) -> np.ndarray:
     """Rolling argmin index within the window (Numba)."""
     n = len(values)
-    output = np.full(n, np.nan)
+    output = np.full(n, np.nan, dtype=np.float32)
     if window <= 0:
         return output
     for i in prange(n):
@@ -315,7 +315,7 @@ def _compute_wick_to_body_ratio_numba(
 ) -> np.ndarray:
     """Numba-optimized wick-to-body ratio calculation."""
     n = len(open_p)
-    wb_ratio = np.zeros(n)
+    wb_ratio = np.zeros(n, dtype=np.float32)
     
     for i in prange(n):
         real_body = abs(close[i] - open_p[i])
@@ -621,10 +621,10 @@ def compute_dual_cusum_statistics(
         h_arr = h_t.to_numpy()
         er_arr = ER.to_numpy()
 
-        S_trend_pos_arr = np.zeros(n)
-        S_trend_neg_arr = np.zeros(n)
-        S_rev_pos_arr = np.zeros(n)
-        S_rev_neg_arr = np.zeros(n)
+        S_trend_pos_arr = np.zeros(n, dtype=np.float32)
+        S_trend_neg_arr = np.zeros(n, dtype=np.float32)
+        S_rev_pos_arr = np.zeros(n, dtype=np.float32)
+        S_rev_neg_arr = np.zeros(n, dtype=np.float32)
 
         S_tp, S_tn = 0.0, 0.0
         S_rp, S_rn = 0.0, 0.0
@@ -711,7 +711,7 @@ def _rolling_mad_numpy(values: np.ndarray, window: int) -> np.ndarray:
         return np.full(len(values), np.nan)
         
     # Ensure float type and contiguous memory
-    values = np.ascontiguousarray(values, dtype=np.float64)
+    values = np.ascontiguousarray(values, dtype=np.float32)
     
     # Create strided view (N-w+1, w)
     shape = (len(values) - window + 1, window)
@@ -1007,7 +1007,7 @@ def _rolling_argmax_numpy(values: np.ndarray, window: int) -> np.ndarray:
     """Numpy strided implementation of Rolling Argmax."""
     if window <= 1 or window > len(values):
         return np.full(len(values), np.nan)
-    values = np.ascontiguousarray(values, dtype=np.float64)
+    values = np.ascontiguousarray(values, dtype=np.float32)
     shape = (len(values) - window + 1, window)
     strides = (values.strides[0], values.strides[0])
     try:
@@ -1022,7 +1022,7 @@ def _rolling_argmin_numpy(values: np.ndarray, window: int) -> np.ndarray:
     """Numpy strided implementation of Rolling Argmin."""
     if window <= 1 or window > len(values):
         return np.full(len(values), np.nan)
-    values = np.ascontiguousarray(values, dtype=np.float64)
+    values = np.ascontiguousarray(values, dtype=np.float32)
     shape = (len(values) - window + 1, window)
     strides = (values.strides[0], values.strides[0])
     try:
@@ -1127,12 +1127,12 @@ def compute_hilbert_phase(series: pd.Series) -> pd.Series:
 
 def _align_to_features(arr: Any, n: int) -> np.ndarray:
     """Helper to align 1D array to feature index length. Pads at the BEGINNING (left)."""
-    values = np.asarray(arr)
+    values = np.asarray(arr, dtype=np.float32)
     if len(values) == n:
         return values
     if len(values) > n:
         return values[-n:] # Take the last n elements
-    padded = np.full(n, np.nan, dtype=float)
+    padded = np.full(n, np.nan, dtype=np.float32)
     # Pad at the beginning (shift values to the right end)
     padded[-len(values):] = values
     return padded
@@ -1365,7 +1365,7 @@ def create_meta_features(
         ]
 
         if 'volume' in name_lower and not any(x in name_lower for x in exclude_keywords):
-             return log1p_zscore_normalize(series, window=600).fillna(0).to_numpy()
+             return log1p_zscore_normalize(series, window=600).fillna(0).to_numpy(dtype=np.float32)
 
         if should_use_atr_normalization(name):
              if any(x in name_lower for x in ['position', 'ratio', 'score', 'percent', 'pct', 'oscillator', 'index', 'flag', 'count']):
@@ -1391,9 +1391,9 @@ def create_meta_features(
                  _low = df[_low_col] if _low_col else close
                  _close = df[_close_col] if _close_col else close
                  
-                 return atr_normalize(series, _high, _low, _close, window=14).fillna(0).to_numpy()
+                 return atr_normalize(series, _high, _low, _close, window=14).fillna(0).to_numpy(dtype=np.float32)
 
-        return winsorized_zscore_normalize(series, window=600).fillna(0).to_numpy()
+        return winsorized_zscore_normalize(series, window=600).fillna(0).to_numpy(dtype=np.float32)
 
     # Handle prefixed high/low columns
     high_col = None
@@ -1448,7 +1448,7 @@ def create_meta_features(
         volume = pd.to_numeric(df[vol_col], errors='coerce').ffill().bfill().fillna(0.0)
         volume_available = volume.notna().any()
     else:
-        volume = pd.Series(1.0, index=df.index, dtype=float)
+        volume = pd.Series(1.0, index=df.index, dtype='float32')
         volume_available = False
 
     # Define numpy arrays for Numba usage once, to avoid scope issues
@@ -1485,7 +1485,7 @@ def create_meta_features(
 
     # Geometry-Specific Lag Features from Signals
     signal_cols = [c for c in signals.columns if 'signal' in c.lower() or 'consensus' in c.lower()]
-    abs_signal_sum = pd.Series(0.0, index=df.index)
+    abs_signal_sum = pd.Series(0.0, index=df.index, dtype='float32')
 
     # Use the log_ret already computed above
     vol_short_local = log_ret.rolling(window=20).std()
@@ -2204,6 +2204,9 @@ def create_meta_features(
     features['returns_1h'] = _align_to_features(_norm(close_1h.pct_change(), 'returns_1h'), n_features)
     close_4h = close.rolling(16).mean()
     features['returns_4h'] = _align_to_features(_norm(close_4h.pct_change(), 'returns_4h'), n_features)
+
+    # Final enforcement of float32
+    features = _downcast_float32(features)
 
     try:
         logger.info(f"[MTF] create_meta_features produced {int(len(features.columns))} columns prior to Layer2 filtering.")

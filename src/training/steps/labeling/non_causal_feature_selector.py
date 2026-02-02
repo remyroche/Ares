@@ -11,6 +11,7 @@ Key Features:
 4. Technical Indicator Prioritization
 """
 
+import re
 import numpy as np
 import pandas as pd
 from typing import List, Dict, Set, Optional, Tuple, Any, Union
@@ -79,6 +80,52 @@ class NonCausalFeatureSelector:
         self.non_causal_features_ = None
         self.feature_scores_ = None
         
+        # Compile regex patterns
+        self._compile_patterns()
+
+    def _compile_patterns(self):
+        """Compile regex patterns for faster matching."""
+        # Technical patterns
+        if self.technical_feature_patterns:
+            self.tech_pattern_regex = re.compile(
+                '|'.join(re.escape(p) for p in self.technical_feature_patterns),
+                re.IGNORECASE
+            )
+        else:
+            self.tech_pattern_regex = None
+
+        # Exclusion patterns
+        if self.exclude_patterns:
+            self.exclude_pattern_regex = re.compile(
+                '|'.join(re.escape(p) for p in self.exclude_patterns),
+                re.IGNORECASE
+            )
+        else:
+            self.exclude_pattern_regex = None
+
+    def _is_causal_match(self, feature: str, parent: str, feature_tokens: Optional[List[str]] = None) -> bool:
+        """
+        Check if a feature is causally related to a parent using strict matching.
+
+        Args:
+            feature: Feature name to check
+            parent: Causal parent name
+            feature_tokens: Optional pre-computed feature tokens
+
+        Returns:
+            True if causally related
+        """
+        if feature == parent:
+            return True
+
+        # Check if parent is a token in the feature (e.g. 'volume' in 'BTC_volume')
+        if feature_tokens is None:
+            # We split by common separators
+            feature_tokens = re.split(r'[_.]', feature.lower())
+
+        parent_lower = parent.lower()
+        return parent_lower in feature_tokens
+
     def identify_causal_parents(self, feature_names: Optional[List[str]] = None) -> Set[str]:
         """
         Identify causal parents from the causal graph or PC results.
@@ -104,6 +151,7 @@ class NonCausalFeatureSelector:
             
             # Method 2: From PC algorithm results
             elif self.pc_algorithm_results is not None:
+                # First try to get explicit names from graph structure
                 if 'graph' in self.pc_algorithm_results:
                     graph = self.pc_algorithm_results['graph']
                     for node, edges in graph.items():
@@ -111,6 +159,14 @@ class NonCausalFeatureSelector:
                             causal_parents.update(edges['parents'])
                         if 'children' in edges:
                             causal_parents.update(edges['children'])
+
+                    # If we don't have feature_names but graph has keys, try to use them
+                    if not feature_names and graph:
+                        potential_names = list(graph.keys())
+                        if potential_names and isinstance(potential_names[0], str):
+                            if self.verbose:
+                                tprint_info("   - Using graph keys as feature names")
+                            feature_names = potential_names
                 
                 if 'causal_strength' in self.pc_algorithm_results:
                     strength_matrix = self.pc_algorithm_results['causal_strength']
@@ -119,7 +175,12 @@ class NonCausalFeatureSelector:
 
                     if feature_names:
                         count_added = 0
-                        for i, j in zip(strong_edges[0], strong_edges[1]):
+                        # Check compatibility
+                        if len(feature_names) != len(strength_matrix):
+                            if self.verbose:
+                                tprint_warning(f"   ⚠️ Feature names count ({len(feature_names)}) != matrix size ({len(strength_matrix)}). Using safe bounds.")
+
+                        for i, j in zip(*strong_edges):
                             if i < len(strength_matrix) and j < len(strength_matrix):
                                 # Add the parent (source)
                                 if i < len(feature_names):
@@ -128,14 +189,14 @@ class NonCausalFeatureSelector:
                         if self.verbose:
                             tprint_info(f"   - Added {count_added} parents from PC strength matrix")
                     elif self.verbose and len(strong_edges[0]) > 0:
-                         tprint_warning("   ⚠️ PC algorithm results present but no feature names provided for mapping indices.")
+                         tprint_warning("   ⚠️ PC algorithm results present but no feature names available for mapping indices. Skipping matrix.")
             
             # Method 3: Default causal parents (common in financial systems)
             else:
                 default_causal_parents = {
                     'volume', 'volatility', 'liquidity', 'inventory',
                     'global_liquidity', 'market_impact', 'spread',
-                    'depth', 'order_flow_imbalance'
+                    'depth', 'order_flow_imbalance', 'market_cap', 'sector'
                 }
                 causal_parents.update(default_causal_parents)
                 
@@ -186,27 +247,31 @@ class NonCausalFeatureSelector:
             non_causal_features = []
             excluded_count = 0
             
-            # Pre-compute lower case sets for faster lookup
-            causal_parents_lower = {cp.lower() for cp in self.causal_parents_}
-            exclude_patterns_lower = [p.lower() for p in self.exclude_patterns]
+            # Cache causal parents for faster access
+            # We treat them as potential tokens
+            causal_parents_list = list(self.causal_parents_)
 
             for feature in all_features:
-                feature_lower = feature.lower()
                 is_causal = False
                 
-                # Check 1: Exact or substring match in identified causal parents
-                # Optimization: check exact match first (O(1))
+                # Check 1: Causal parents match (strict token matching)
+                # Optimization: check exact match first
                 if feature in self.causal_parents_:
                     is_causal = True
                 else:
-                    # Check substring match against causal parents
-                    # This is O(M) where M is number of causal parents
-                    if any(cp in feature_lower for cp in causal_parents_lower):
-                        is_causal = True
+                    # Pre-compute tokens once per feature
+                    feature_tokens = re.split(r'[_.]', feature.lower())
+
+                    # Check if any causal parent matches using token logic
+                    # This prevents "ad" matching "spread"
+                    for parent in causal_parents_list:
+                        if self._is_causal_match(feature, parent, feature_tokens):
+                            is_causal = True
+                            break
                 
-                # Check 2: Exclusion patterns (if not already excluded)
-                if not is_causal:
-                    if any(p in feature_lower for p in exclude_patterns_lower):
+                # Check 2: Exclusion patterns (regex)
+                if not is_causal and self.exclude_pattern_regex:
+                    if self.exclude_pattern_regex.search(feature):
                         is_causal = True
                 
                 if is_causal:
@@ -252,16 +317,12 @@ class NonCausalFeatureSelector:
             # Score features based on technical patterns and importance
             feature_scores = {}
             
-            # Pre-process patterns
-            patterns_lower = [p.lower() for p in self.technical_feature_patterns]
-
             for feature in non_causal_features:
                 score = 0.0
-                feature_lower = feature.lower()
                 
-                # Technical pattern matching
+                # Technical pattern matching (using regex)
                 # Boost score if it matches any technical pattern
-                if any(p in feature_lower for p in patterns_lower):
+                if self.tech_pattern_regex and self.tech_pattern_regex.search(feature):
                     score += 1.0
                 
                 # Feature importance bonus

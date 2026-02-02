@@ -30,7 +30,7 @@ import statsmodels.api as sm
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.calibration import IsotonicRegression
 from sklearn.metrics import brier_score_loss, log_loss
-from sklearn.model_selection import KFold, cross_val_predict
+from sklearn.model_selection import KFold, GroupKFold, cross_val_predict
 from sklearn.base import clone
 from sklearn.linear_model import Ridge
 from scipy.optimize import minimize
@@ -93,6 +93,88 @@ def downcast_float(df: pd.DataFrame) -> pd.DataFrame:
         # Use simple astype
         df[float_cols] = df[float_cols].astype(np.float32)
     return df
+
+ASSET_COLUMN_CANDIDATES = ('asset_id', 'asset', 'ticker', 'symbol')
+
+def _resolve_asset_series(df: pd.DataFrame, asset_col: Optional[str] = None) -> Tuple[Optional[str], Optional[pd.Series]]:
+    if asset_col and asset_col in df.columns:
+        return asset_col, df[asset_col]
+
+    for candidate in ASSET_COLUMN_CANDIDATES:
+        if candidate in df.columns:
+            return candidate, df[candidate]
+
+    if isinstance(df.index, pd.MultiIndex):
+        for candidate in ASSET_COLUMN_CANDIDATES:
+            if candidate in df.index.names:
+                series = pd.Series(df.index.get_level_values(candidate), index=df.index, name=candidate)
+                return candidate, series
+
+    return None, None
+
+def _is_multi_asset(asset_series: Optional[pd.Series]) -> bool:
+    if asset_series is None:
+        return False
+    return asset_series.nunique(dropna=False) > 1
+
+def _normalize_entropy_symbol(asset_value: Any, cfg: Dict[str, Any], fallback_symbol: str) -> str:
+    if isinstance(asset_value, str):
+        asset_value = asset_value.strip()
+        if asset_value.upper().endswith("USDT") or "/" in asset_value:
+            return asset_value
+        quote_currency = cfg.get('quote_currency', 'USDT')
+        return f"{asset_value}{quote_currency}"
+    return fallback_symbol
+
+def _build_asset_features(asset_series: Optional[pd.Series], cfg: Dict[str, Any]) -> pd.DataFrame:
+    if asset_series is None:
+        return pd.DataFrame()
+
+    series = asset_series.astype(str).fillna('UNKNOWN')
+    features = {}
+    asset_codes, asset_values = pd.factorize(series, sort=True)
+    if cfg.get('asset_id_numeric', True):
+        features['asset_id_numeric'] = asset_codes.astype(np.float32)
+
+    features_df = pd.DataFrame(features, index=series.index)
+
+    if cfg.get('asset_onehot', True):
+        asset_count = series.nunique(dropna=False)
+        asset_onehot_max = cfg.get('asset_onehot_max', 20)
+        if asset_count <= asset_onehot_max:
+            asset_dummies = pd.get_dummies(series, prefix="asset").astype(np.float32)
+            features_df = pd.concat([features_df, asset_dummies], axis=1)
+        else:
+            tprint_warning(
+                f"⚠️ Layer 4: Skipping asset one-hot (assets={asset_count} > max={asset_onehot_max})"
+            )
+
+    return features_df
+
+def _build_cv_splitter(
+    n_splits: int,
+    asset_series: Optional[pd.Series]
+) -> Tuple[Any, Optional[pd.Series]]:
+    if asset_series is not None and asset_series.nunique(dropna=False) > 1:
+        unique_assets = asset_series.dropna().unique()
+        split_count = min(n_splits, len(unique_assets))
+        if split_count >= 2:
+            return GroupKFold(n_splits=split_count), asset_series
+    return KFold(n_splits=n_splits, shuffle=False), None
+
+def _get_time_group(df: pd.DataFrame) -> pd.Series:
+    if isinstance(df.index, pd.MultiIndex):
+        for name in df.index.names:
+            level = df.index.get_level_values(name)
+            if isinstance(level, pd.DatetimeIndex):
+                return pd.Series(level, index=df.index)
+        return pd.Series(df.index.get_level_values(0), index=df.index)
+
+    for candidate in ('timestamp', 'time', 'date'):
+        if candidate in df.columns:
+            return df[candidate]
+
+    return pd.Series(df.index, index=df.index)
 
 class SimpleMultiModelRiskEngine:
     """
@@ -535,8 +617,14 @@ class SimpleMultiModelRiskEngine:
         
         return dict(zip(selected_models, optimized_weights))
 
-    def train(self, df: pd.DataFrame, market_features: pd.DataFrame,
-              y_true: pd.Series, abs_returns: pd.Series) -> Dict[str, Any]:
+    def train(
+        self,
+        df: pd.DataFrame,
+        market_features: pd.DataFrame,
+        y_true: pd.Series,
+        abs_returns: pd.Series,
+        asset_series: Optional[pd.Series] = None
+    ) -> Dict[str, Any]:
         """
         Train risk engine using Layer 3 probability features, entropy features, and market context.
         Uses Huber Regressor for Teacher output generation (constraints, pruning, warm start).
@@ -586,14 +674,20 @@ class SimpleMultiModelRiskEngine:
                 # Construct simple CV splits for OOF generation
                 n_samples = len(X_full)
                 n_splits = 5
-                fold_size = n_samples // n_splits
                 cv_splits = []
-                for k in range(n_splits):
-                    val_start = k * fold_size
-                    val_end = (k + 1) * fold_size if k < n_splits - 1 else n_samples
-                    val_idx = np.arange(val_start, val_end)
-                    train_idx = np.concatenate([np.arange(0, val_start), np.arange(val_end, n_samples)])
-                    cv_splits.append((train_idx, val_idx))
+                if asset_series is not None and asset_series.nunique(dropna=False) > 1:
+                    aligned_assets = asset_series.reindex(X_full.index)
+                    splitter, groups = _build_cv_splitter(n_splits, aligned_assets)
+                    for train_idx, val_idx in splitter.split(X_full, groups=groups):
+                        cv_splits.append((train_idx, val_idx))
+                else:
+                    fold_size = n_samples // n_splits
+                    for k in range(n_splits):
+                        val_start = k * fold_size
+                        val_end = (k + 1) * fold_size if k < n_splits - 1 else n_samples
+                        val_idx = np.arange(val_start, val_end)
+                        train_idx = np.concatenate([np.arange(0, val_start), np.arange(val_end, n_samples)])
+                        cv_splits.append((train_idx, val_idx))
 
                 # 3. Train Chasers & Get OOF
                 self.stable_chaser, self.aggressive_chaser, oof_stable, oof_agg = train_dual_chaser_audit(
@@ -765,9 +859,10 @@ class SimpleMultiModelRiskEngine:
         }
 
         # OOF Loop
-        kf_internal = KFold(n_splits=5, shuffle=False)
+        aligned_assets = asset_series.reindex(X_pruned.index) if asset_series is not None else None
+        kf_internal, groups_internal = _build_cv_splitter(5, aligned_assets)
 
-        for fold_idx, (tr_idx, val_idx) in enumerate(kf_internal.split(X_pruned)):
+        for fold_idx, (tr_idx, val_idx) in enumerate(kf_internal.split(X_pruned, groups=groups_internal)):
             # Slice data
             X_tr, X_val = X_pruned.iloc[tr_idx], X_pruned.iloc[val_idx]
             y_tr, _ = y_true.iloc[tr_idx], y_true.iloc[val_idx] # y_val unused in loop
@@ -1300,6 +1395,42 @@ def integrate_entropy_bars_into_layer4(
         return df, pd.DataFrame()
 
 
+def integrate_entropy_bars_multi_asset(
+    df: pd.DataFrame,
+    asset_series: pd.Series,
+    exchange: str,
+    config: Optional[Dict[str, Any]] = None
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    cfg = config or {}
+    enhanced_parts = []
+    entropy_parts = []
+    fallback_symbol = cfg.get('symbol', 'ETHUSDT')
+
+    for asset_value in asset_series.dropna().unique():
+        symbol = _normalize_entropy_symbol(asset_value, cfg, fallback_symbol)
+        asset_mask = asset_series == asset_value
+        asset_df = df.loc[asset_mask]
+        enhanced_df, entropy_bars_df = integrate_entropy_bars_into_layer4(
+            asset_df,
+            symbol=symbol,
+            exchange=exchange,
+            config=cfg
+        )
+        enhanced_parts.append(enhanced_df)
+        if entropy_bars_df is not None and not entropy_bars_df.empty:
+            entropy_bars_df = entropy_bars_df.copy()
+            entropy_bars_df['asset_id'] = asset_value
+            entropy_parts.append(entropy_bars_df)
+
+    if not enhanced_parts:
+        return df, pd.DataFrame()
+
+    combined_enhanced = pd.concat(enhanced_parts, axis=0)
+    combined_enhanced = combined_enhanced.reindex(df.index)
+    combined_entropy = pd.concat(entropy_parts, axis=0) if entropy_parts else pd.DataFrame()
+    return combined_enhanced, combined_entropy
+
+
 class MetaLearnerFeatures:
     """
     Generates structural market features for Layer 4 meta-learning.
@@ -1309,7 +1440,7 @@ class MetaLearnerFeatures:
         self.config = config or {}
         self.window_sadf = self.config.get('window_sadf', 100)
 
-    def generate(self, df: pd.DataFrame, raw_price_col: str = 'close', **kwargs) -> pd.DataFrame:
+    def _generate_single(self, df: pd.DataFrame, raw_price_col: str) -> pd.DataFrame:
         """
         Generate structural features.
         """
@@ -1357,6 +1488,32 @@ class MetaLearnerFeatures:
 
         return features
 
+    def generate(
+        self,
+        df: pd.DataFrame,
+        raw_price_col: str = 'close',
+        asset_series: Optional[pd.Series] = None,
+        **kwargs
+    ) -> pd.DataFrame:
+        """
+        Generate structural features, with optional per-asset handling.
+        """
+        if asset_series is None or asset_series.nunique(dropna=False) <= 1:
+            return self._generate_single(df, raw_price_col)
+
+        feature_parts = []
+        for asset_value in asset_series.dropna().unique():
+            mask = asset_series == asset_value
+            sub_df = df.loc[mask]
+            feats = self._generate_single(sub_df, raw_price_col)
+            feature_parts.append(feats)
+
+        if not feature_parts:
+            return pd.DataFrame(index=df.index)
+
+        combined = pd.concat(feature_parts, axis=0)
+        return combined.reindex(df.index)
+
 
 class ModelPerformanceFeatures:
     """
@@ -1374,7 +1531,7 @@ class ModelPerformanceFeatures:
         self.risk_embargo = self.config.get('perf_risk_embargo', 2)
         self.dd_scaling = self.config.get('perf_dd_scaling', 0.1) # 'c' in tanh(dd/c)
 
-    def generate(self, df: pd.DataFrame, pred_col: str, target_col: str) -> pd.DataFrame:
+    def _generate_single(self, df: pd.DataFrame, pred_col: str, target_col: str) -> pd.DataFrame:
         if pred_col not in df.columns or target_col not in df.columns:
             return pd.DataFrame(index=df.index)
 
@@ -1420,6 +1577,29 @@ class ModelPerformanceFeatures:
 
         return features
 
+    def generate(
+        self,
+        df: pd.DataFrame,
+        pred_col: str,
+        target_col: str,
+        asset_series: Optional[pd.Series] = None
+    ) -> pd.DataFrame:
+        if asset_series is None or asset_series.nunique(dropna=False) <= 1:
+            return self._generate_single(df, pred_col, target_col)
+
+        feature_parts = []
+        for asset_value in asset_series.dropna().unique():
+            mask = asset_series == asset_value
+            sub_df = df.loc[mask]
+            feats = self._generate_single(sub_df, pred_col, target_col)
+            feature_parts.append(feats)
+
+        if not feature_parts:
+            return pd.DataFrame(index=df.index)
+
+        combined = pd.concat(feature_parts, axis=0)
+        return combined.reindex(df.index)
+
 
 def train_layer4_simple_multimodel(
     oof_df: pd.DataFrame,
@@ -1437,8 +1617,21 @@ def train_layer4_simple_multimodel(
     cfg = config or {}
     symbol = cfg.get('symbol', 'ETHUSDT')
     exchange = cfg.get('exchange', 'binance')
-    
+    asset_col_hint = cfg.get('asset_id_col')
+
     tprint_info(f"🚀 Starting Layer 4 Training (Checkpoint Aware) for {symbol}...")
+
+    asset_col, asset_series = _resolve_asset_series(oof_df, asset_col_hint)
+    if asset_series is None:
+        asset_col, asset_series = _resolve_asset_series(market_data, asset_col_hint)
+    if asset_series is not None:
+        asset_series = asset_series.reindex(oof_df.index)
+        if asset_col and asset_col not in oof_df.columns:
+            oof_df = oof_df.copy()
+            oof_df[asset_col] = asset_series
+    multi_asset = _is_multi_asset(asset_series)
+    if multi_asset:
+        tprint_info(f"🧩 Layer 4: Multi-asset mode detected ({asset_series.nunique(dropna=False)} assets).")
     
     # Initialize Checkpoint Manager
     manager = get_layer4_checkpoint_manager(symbol)
@@ -1464,7 +1657,15 @@ def train_layer4_simple_multimodel(
 
         # Integrate entropy bars if enabled
         if cfg.get('use_entropy_bars', True):
-            oof_df, entropy_bars_df = integrate_entropy_bars_into_layer4(oof_df, symbol, exchange, cfg)
+            if multi_asset and asset_series is not None:
+                oof_df, entropy_bars_df = integrate_entropy_bars_multi_asset(
+                    oof_df,
+                    asset_series=asset_series,
+                    exchange=exchange,
+                    config=cfg
+                )
+            else:
+                oof_df, entropy_bars_df = integrate_entropy_bars_into_layer4(oof_df, symbol, exchange, cfg)
             cfg['entropy_bars_df'] = entropy_bars_df
         else:
             tprint_info("⏭️ Layer 4: Skipping entropy bars (disabled in config)")
@@ -1482,6 +1683,13 @@ def train_layer4_simple_multimodel(
             oof_df = data.get('meta_df', oof_df)
             entropy_bars_df = data.get('entropy_bars_df', pd.DataFrame())
             market_data = data.get('market_data', market_data)
+            asset_col, asset_series = _resolve_asset_series(oof_df, asset_col_hint)
+            if asset_series is not None:
+                asset_series = asset_series.reindex(oof_df.index)
+                if asset_col and asset_col not in oof_df.columns:
+                    oof_df = oof_df.copy()
+                    oof_df[asset_col] = asset_series
+            multi_asset = _is_multi_asset(asset_series)
 
     # --- Step 1: Confidence Filtering ---
     step_name = 'confidence_filtering'
@@ -1489,12 +1697,42 @@ def train_layer4_simple_multimodel(
         tprint_info(f"📍 Executing {step_name}...")
         # Currently a pass-through (or logic could be added here)
         filtered_df = oof_df
+        if multi_asset and cfg.get('cross_asset_top_k'):
+            rank_col = cfg.get('cross_asset_rank_col')
+            if rank_col is None:
+                rank_col = 'meta_prob' if 'meta_prob' in filtered_df.columns else None
+            if rank_col and rank_col in filtered_df.columns:
+                time_group = _get_time_group(filtered_df)
+                ranks = filtered_df[rank_col].groupby(time_group).rank(method='first', ascending=False)
+                keep_mask = ranks <= cfg.get('cross_asset_top_k')
+                filter_mode = cfg.get('cross_asset_filter_mode', 'drop')
+                if filter_mode == 'zero':
+                    filtered_df = filtered_df.copy()
+                    filtered_df.loc[~keep_mask, rank_col] = cfg.get('cross_asset_zero_value', 0.5)
+                else:
+                    filtered_df = filtered_df.loc[keep_mask]
+                tprint_info(
+                    f"✅ Layer 4: Applied cross-asset top-k filter ({cfg.get('cross_asset_top_k')}) on {rank_col}."
+                )
+            else:
+                tprint_warning("⚠️ Layer 4: cross_asset_top_k set but rank column missing. Skipping filter.")
+        if filtered_df is not oof_df:
+            oof_df = filtered_df
+            market_data = market_data.reindex(oof_df.index)
+            if asset_series is not None:
+                asset_series = asset_series.reindex(oof_df.index)
         manager.save_checkpoint(step_name, {'filtered_meta_df': filtered_df}, symbol, cfg)
     else:
         tprint_info(f"⏭️ Resuming past {step_name}...")
         data = manager.load_checkpoint(step_name, symbol)
         if data:
             oof_df = data.get('filtered_meta_df', oof_df)
+            asset_col, asset_series = _resolve_asset_series(oof_df, asset_col_hint)
+            if asset_series is not None:
+                asset_series = asset_series.reindex(oof_df.index)
+            multi_asset = _is_multi_asset(asset_series)
+            if not market_data.empty:
+                market_data = market_data.reindex(oof_df.index)
 
     # --- Step 2: Feature Engineering ---
     step_name = 'feature_engineering'
@@ -1505,7 +1743,8 @@ def train_layer4_simple_multimodel(
         generator = MetaLearnerFeatures(config=config)
         mkt_feats = generator.generate(
             df=oof_df.join(market_data, how='left', rsuffix='_mkt'),
-            raw_price_col='close'
+            raw_price_col='close',
+            asset_series=asset_series
         )
 
         # Generate model performance features
@@ -1516,12 +1755,17 @@ def train_layer4_simple_multimodel(
             perf_feats = perf_generator.generate(
                 df=oof_df,
                 pred_col=pred_col,
-                target_col=target_col
+                target_col=target_col,
+                asset_series=asset_series
             )
             market_features = pd.concat([mkt_feats, perf_feats], axis=1)
         else:
             tprint_warning("⚠️ Layer 4: 'meta_prob' not found, skipping performance features.")
             market_features = mkt_feats
+
+        asset_features = _build_asset_features(asset_series, cfg)
+        if not asset_features.empty:
+            market_features = pd.concat([market_features, asset_features], axis=1)
 
         manager.save_checkpoint(step_name, {'market_features': market_features}, symbol, cfg)
     else:
@@ -1538,7 +1782,7 @@ def train_layer4_simple_multimodel(
         y_binary = (oof_df[target_col] > 0).astype(int)
         abs_returns = oof_df[target_col].abs()
 
-        kf = KFold(n_splits=n_folds, shuffle=False)
+        kf, kf_groups = _build_cv_splitter(n_folds, asset_series)
         oof_bet_sizes = np.zeros(len(oof_df))
 
         # 1. CV Loop for OOF predictions
@@ -1546,12 +1790,13 @@ def train_layer4_simple_multimodel(
         # We use a temp engine for CV to not dirty the final engine state
         cv_engine = SimpleMultiModelRiskEngine()
 
-        for train_idx, val_idx in kf.split(oof_df):
+        for train_idx, val_idx in kf.split(oof_df, groups=kf_groups):
             cv_engine.train(
                 df=oof_df.iloc[train_idx],
                 market_features=market_features.iloc[train_idx],
                 y_true=y_binary.iloc[train_idx],
-                abs_returns=abs_returns.iloc[train_idx]
+                abs_returns=abs_returns.iloc[train_idx],
+                asset_series=asset_series.iloc[train_idx] if asset_series is not None else None
             )
             oof_bet_sizes[val_idx] = cv_engine.predict_bet_size(
                 df=oof_df.iloc[val_idx],
@@ -1560,7 +1805,13 @@ def train_layer4_simple_multimodel(
 
         # 2. Final Fit on full data
         tprint_info("🧠 Training Final Gate Model...")
-        final_metrics = engine.train(oof_df, market_features, y_binary, abs_returns)
+        final_metrics = engine.train(
+            oof_df,
+            market_features,
+            y_binary,
+            abs_returns,
+            asset_series=asset_series
+        )
 
         # Save state
         # Note: gate_models usually expects a dict of models, here we pass the engine state
@@ -1608,6 +1859,8 @@ def train_layer4_simple_multimodel(
         if not entropy_bars_df.empty:
             final_metrics['entropy_bars_count'] = len(entropy_bars_df)
             final_metrics['entropy_features_count'] = len([col for col in oof_df_out.columns if col.startswith(('staleness_', 'drift_', 'lz_', 'trend_', 'entropy_', 'proxy_entropy'))])
+        if multi_asset and asset_series is not None:
+            final_metrics['asset_count'] = int(asset_series.nunique(dropna=False))
 
         manager.save_checkpoint(step_name, {
             'final_predictions': oof_df_out,

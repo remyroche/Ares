@@ -9545,15 +9545,33 @@ class LabelBasedLayer2(BaseStep):
         tprint_info("   📊 Layer 2: Running smart feature pre-selection (Gain + Split + Root Zone)...")
         preselect_start = time.time()
         
-        # 1. Base numeric filtering
-        numeric_df = df.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan).dropna(axis=1, how='all')
+        # 1. Base numeric filtering (Optimized)
+        numeric_df = df.select_dtypes(include=[np.number]).copy()
+
+        # In-place replace of infs using numpy for speed
+        vals = numeric_df.values
+        is_inf = np.isinf(vals)
+        if is_inf.any():
+            vals[is_inf] = np.nan
+            # Reconstruct DataFrame (safe fallback)
+            numeric_df = pd.DataFrame(vals, index=numeric_df.index, columns=numeric_df.columns)
+
+        numeric_df = numeric_df.dropna(axis=1, how='all')
+
         if numeric_df.empty:
             return numeric_df
 
         agg_cols = [col for col in numeric_df.columns if col.startswith("AGG_SUM_4_")]
         if agg_cols and self.verbose:
             constant_agg = []
-            for col in agg_cols:
+
+            # Optimized: Pre-filter using std() to avoid expensive nunique() on all columns
+            subset = numeric_df[agg_cols]
+            stds = subset.std(skipna=True)
+            # Candidates: low std OR NaN std (insufficient data or all constant/NaN)
+            candidates = stds[(stds < 1e-12) | (stds.isna())].index.tolist()
+
+            for col in candidates:
                 series = numeric_df[col]
                 nunique = series.nunique(dropna=False)
                 if nunique <= 1:

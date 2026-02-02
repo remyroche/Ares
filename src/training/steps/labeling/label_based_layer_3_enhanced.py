@@ -207,7 +207,32 @@ def compute_cusum_signals_multi_window(
 ) -> pd.DataFrame:
     """
     Computes Trend and Reversal CUSUM signals across multiple windows.
+    Supports Multi-Asset Data via groupby.
     """
+    # Detect asset column
+    asset_col = None
+    if 'asset_id' in market_data.columns:
+        asset_col = 'asset_id'
+    elif 'symbol' in market_data.columns:
+        asset_col = 'symbol'
+
+    if asset_col:
+        # Multi-asset mode: Group by asset and apply single-asset logic
+        def _apply_cusum_single(sub_df):
+            return _compute_cusum_single_asset(sub_df, windows, k, alpha)
+
+        return market_data.groupby(asset_col, group_keys=False).apply(_apply_cusum_single)
+    else:
+        # Single asset mode
+        return _compute_cusum_single_asset(market_data, windows, k, alpha)
+
+def _compute_cusum_single_asset(
+    market_data: pd.DataFrame,
+    windows: List[int],
+    k: float,
+    alpha: float
+) -> pd.DataFrame:
+    """Internal function for single-asset CUSUM computation."""
     df = pd.DataFrame(index=market_data.index)
 
     close = market_data['close']
@@ -215,9 +240,6 @@ def compute_cusum_signals_multi_window(
     r = np.log(close / close.shift(1)).fillna(0.0)
 
     # Pre-compute Volatility and ER for dynamic thresholds
-    # We use a base window for vol normalization, e.g., 20 or the window itself?
-    # The prompt implies window-specific calculations: "sigma_t,w"
-
     for w in windows:
         # 1. Volatility (sigma_t,w)
         sigma = r.rolling(window=w).std().fillna(0.0)
@@ -240,14 +262,6 @@ def compute_cusum_signals_multi_window(
         h = k * sigma * (1.0 + alpha * (1.0 - er)) * liq_mod
 
         # 5. Trend CUSUM
-        # S_t+ = max(0, S_{t-1} + r_t)
-        # S_t- = min(0, S_{t-1} + r_t)
-        # We normalize by h for the signal
-
-        # Vectorized CUSUM is hard in pandas, use numba or loop.
-        # For simplicity and speed in python, we can use a helper or simple loop.
-        # Given the requirements, a loop is safest for correctness.
-
         r_vals = r.values
         h_vals = h.values
         n = len(r_vals)
@@ -931,14 +945,22 @@ _feature_cache = FeatureCache()
 def _compute_global_features_cached(df: pd.DataFrame, net_returns: pd.Series) -> pd.DataFrame:
     """
     Compute global features with caching to avoid recomputation.
+    Supports Multi-Asset Data via groupby on asset_id/symbol.
     """
     cache_key = f"global_features_{hash(str(df.columns.tolist()))}_{len(df)}"
     
+    # Detect asset column
+    asset_col = None
+    if 'asset_id' in df.columns:
+        asset_col = 'asset_id'
+    elif 'symbol' in df.columns:
+        asset_col = 'symbol'
+
     def compute_features():
         """Internal function to compute all global features."""
         features = pd.DataFrame(index=df.index)
         
-        # Ensemble statistics
+        # Ensemble statistics (row-wise, no leakage issues)
         base_cols = [c for c in df.columns if c.startswith('meta_prob_g_') or c in 
                     ['ensemble_prob', 'max_base_prob', 'min_base_prob', 'base_prob_range']]
         if base_cols and any(c in df.columns for c in base_cols):
@@ -948,15 +970,22 @@ def _compute_global_features_cached(df: pd.DataFrame, net_returns: pd.Series) ->
                 features['base_pred_std'] = df[available_cols].std(axis=1)
                 features['base_pred_range'] = df[available_cols].max(axis=1) - df[available_cols].min(axis=1)
         
-        # Momentum and trend features
+        # Momentum and trend features (Rolling - requires groupby for multi-asset)
         if 'logit_prob' in df.columns:
-            features['logit_momentum_5'] = df['logit_prob'].rolling(5).mean()
-            features['logit_momentum_1'] = df['logit_prob'].diff(1)
+            if asset_col:
+                features['logit_momentum_5'] = df.groupby(asset_col)['logit_prob'].rolling(5).mean().reset_index(level=0, drop=True)
+                features['logit_momentum_1'] = df.groupby(asset_col)['logit_prob'].diff(1)
+            else:
+                features['logit_momentum_5'] = df['logit_prob'].rolling(5).mean()
+                features['logit_momentum_1'] = df['logit_prob'].diff(1)
         
         # Volatility features
         if 'volatility_1d' in df.columns:
             features['vol_at_signal'] = df['volatility_1d']
-            features['volatility_risk_ratio'] = df['volatility_1d'] / df['volatility_1d'].rolling(50).mean()
+            if asset_col:
+                features['volatility_risk_ratio'] = df['volatility_1d'] / df.groupby(asset_col)['volatility_1d'].rolling(50).mean().reset_index(level=0, drop=True)
+            else:
+                features['volatility_risk_ratio'] = df['volatility_1d'] / df['volatility_1d'].rolling(50).mean()
         
         # Time features
         if hasattr(df.index, 'hour'):
@@ -965,13 +994,23 @@ def _compute_global_features_cached(df: pd.DataFrame, net_returns: pd.Series) ->
             features['hour_cos'] = np.cos(2 * np.pi * df.index.hour / 24)
             features['is_weekend'] = (df.index.dayofweek >= 5).astype(int)
         
-        # Market microstructure features
+        # Market microstructure features (row-wise)
         if all(col in df.columns for col in ['volume', 'close', 'open', 'high', 'low']):
             features['candle_shape'] = (df['close'] - df['open']) / (df['high'] - df['low'] + 1e-8)
         
-        # Efficiency ratio
+        # Efficiency ratio (Rolling - requires groupby for multi-asset)
         if net_returns is not None:
-            features['efficiency_ratio'] = abs(net_returns.rolling(20).sum()) / net_returns.abs().rolling(20).sum()
+            # Temporary dataframe for calculation
+            temp_df = pd.DataFrame({'ret': net_returns})
+            if asset_col:
+                temp_df[asset_col] = df[asset_col]
+
+                def _calc_er(sub_s):
+                    return abs(sub_s.rolling(20).sum()) / sub_s.abs().rolling(20).sum()
+
+                features['efficiency_ratio'] = temp_df.groupby(asset_col)['ret'].apply(_calc_er).reset_index(level=0, drop=True)
+            else:
+                features['efficiency_ratio'] = abs(net_returns.rolling(20).sum()) / net_returns.abs().rolling(20).sum()
         
         return features
     
@@ -2060,6 +2099,28 @@ def layer3_analyst_lgbm(
     df = oof_df.copy()
     cfg = config if isinstance(config, dict) else {}
     
+    # Preserve asset_id or symbol if present in market_data or oof_df
+    # This is crucial for multi-asset groupby operations later
+    asset_col = None
+
+    # Check oof_df first
+    if 'asset_id' in oof_df.columns:
+        asset_col = 'asset_id'
+    elif 'symbol' in oof_df.columns:
+        asset_col = 'symbol'
+
+    # Check market_data if not found in oof_df
+    if not asset_col and market_data is not None:
+        if 'asset_id' in market_data.columns:
+            df['asset_id'] = market_data['asset_id'].reindex(df.index)
+            asset_col = 'asset_id'
+        elif 'symbol' in market_data.columns:
+            df['symbol'] = market_data['symbol'].reindex(df.index)
+            asset_col = 'symbol'
+
+    if asset_col:
+        tprint_info(f"   🌐 Multi-asset mode detected: '{asset_col}' column found")
+
     tprint_info(f"📊 Input data: {len(df)} rows, {len(base_model_cols)} base features")
     tprint_info(f"🎯 Target column: {target_col}")
 
@@ -2248,7 +2309,12 @@ def layer3_analyst_lgbm(
     if net_returns is None:
         # Attempt to calculate or raise
         if 'close' in df.columns:
-            net_returns = np.log(df['close'] / df['close'].shift(1)).fillna(0)
+            if asset_col:
+                net_returns = df.groupby(asset_col)['close'].apply(lambda x: np.log(x / x.shift(1))).fillna(0)
+                # Need to align index back to df
+                net_returns = net_returns.reset_index(level=0, drop=True).reindex(df.index)
+            else:
+                net_returns = np.log(df['close'] / df['close'].shift(1)).fillna(0)
         else:
              # Fallback: look for a returns column
              ret_col = next((c for c in df.columns if 'return' in c), None)
@@ -2264,10 +2330,19 @@ def layer3_analyst_lgbm(
 
     # Volatility needed for Alpha Target and Weighting
     if 'volatility_1d' in df.columns:
-        vol_series = df['volatility_1d'].replace(0, np.nan).ffill().fillna(0.001)
+        # Ensure proper filling per asset if possible
+        if asset_col:
+             # We use groupby ffill to avoid leaking across assets
+             vol_series = df.groupby(asset_col)['volatility_1d'].apply(lambda x: x.replace(0, np.nan).ffill().fillna(0.001))
+             vol_series = vol_series.reset_index(level=0, drop=True).reindex(df.index)
+        else:
+             vol_series = df['volatility_1d'].replace(0, np.nan).ffill().fillna(0.001)
     else:
         # Simple fallback
-        vol_series = net_returns.rolling(24).std().fillna(0.001)
+        if asset_col:
+             vol_series = ret_series.groupby(df[asset_col]).rolling(24).std().reset_index(level=0, drop=True).fillna(0.001).reindex(df.index)
+        else:
+             vol_series = net_returns.rolling(24).std().fillna(0.001)
 
     # 1. Generate Global Features (Cached)
     tprint_info("📊 Computing global features with caching...")

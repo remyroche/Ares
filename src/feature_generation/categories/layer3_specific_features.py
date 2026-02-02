@@ -140,11 +140,11 @@ def _compute_anchor_and_drift_features(
     if vwap_col is not None:
         price_col = vwap_col
         price = df[vwap_col]
-        tprint_info(f"   ⚓ Using VWAP column '{vwap_col}' for Anchor/Drift calculations")
+        # tprint_info(f"   ⚓ Using VWAP column '{vwap_col}' for Anchor/Drift calculations")
     elif 'close' in df.columns:
         price_col = 'close'
         price = df['close']
-        tprint_info("   ⚓ Using Close Price for Anchor/Drift calculations (VWAP not found)")
+        # tprint_info("   ⚓ Using Close Price for Anchor/Drift calculations (VWAP not found)")
     else:
         price_col = None
         price = None
@@ -243,7 +243,7 @@ def _compute_anchor_and_drift_features(
     # Clean up infinities and NaNs
     features = features.replace([np.inf, -np.inf], np.nan).fillna(0.0)
     
-    tprint_info(f"⚓ Generated {len(features.columns)} Anchor/Drift features")
+    # tprint_info(f"⚓ Generated {len(features.columns)} Anchor/Drift features")
     
     return features, regime_map
 
@@ -676,21 +676,46 @@ def generate_layer3_features(
     These features are derived from base model probabilities, market data,
     and regime/structure analysis.
 
-    Includes:
-    - Ensemble Probability (arithmetic mean)
-    - Logit Probability & Momentum
-    - Volume at Signal (ratio vs 50-bar rolling mean)
-    - Candle Shape (current & 4-bar aggregate)
-    - Regime/Structure features (Volatility, Trend, Complexity, etc.)
-    - Cross-Timeframe Momentum Agreement
-    - Base Model OOF Predictions
+    Supports Multi-Asset Data by grouping by 'asset_id' or 'symbol' if present.
+    """
+    # Check for asset identifier
+    asset_col = None
+    if 'asset_id' in df.columns:
+        asset_col = 'asset_id'
+    elif 'symbol' in df.columns:
+        asset_col = 'symbol'
 
-    Args:
-        df: DataFrame containing base model columns and market data ('volume', 'high', 'low', 'close')
-        base_model_cols: List of column names for base model probabilities
+    if asset_col:
+        # Group by asset and apply feature generation per asset to prevent leakage
+        tprint_info(f"   🔄 Detected multi-asset data ({asset_col}), generating features per asset...")
 
-    Returns:
-        DataFrame with added feature columns.
+        # Define wrapper to call single-asset logic
+        def _apply_per_asset(sub_df):
+            return _generate_layer3_features_single_asset(sub_df, base_model_cols)
+
+        # Groupby and apply
+        # group_keys=False to avoid modifying the index structure if it's not a MultiIndex already
+        result = df.groupby(asset_col, group_keys=False).apply(_apply_per_asset)
+
+        # Restore original order just in case, if index allows
+        if result.index.equals(df.index):
+            return result
+        else:
+            try:
+                return result.reindex(df.index)
+            except Exception:
+                # If reindex fails (e.g. non-unique index), return as is but warn
+                # tprint_warning("⚠️ Could not restore index order in generate_layer3_features")
+                return result
+    else:
+        return _generate_layer3_features_single_asset(df, base_model_cols)
+
+def _generate_layer3_features_single_asset(
+    df: pd.DataFrame,
+    base_model_cols: List[str],
+) -> pd.DataFrame:
+    """
+    Internal function to generate Layer 3 features for a single asset (or already grouped data).
     """
     # Create a copy to avoid SettingWithCopy warnings if df is a slice
     df_out = df.copy()
@@ -714,9 +739,6 @@ def generate_layer3_features(
             q67 = float(vol1d.quantile(0.67)) if vol1d.notna().any() else float('nan')
             if np.isfinite(q33) and np.isfinite(q67) and q67 > q33:
                 # DISABLED: Volatility buckets
-                # df_out['vol_bucket_low'] = (vol1d <= q33).astype(np.float32)
-                # df_out['vol_bucket_mid'] = ((vol1d > q33) & (vol1d <= q67)).astype(np.float32)
-                # df_out['vol_bucket_high'] = (vol1d > q67).astype(np.float32)
                 pass
     except Exception:
         pass
@@ -737,46 +759,17 @@ def generate_layer3_features(
                     df_out[col] = dummies[col].astype(np.float32)
             else:
                 # Assuming Int (0,1,2)
-                # Map 0->Quiet, 1->Trending, 2->Chaos (Standard Map)
-                # Or just OHE the ints
                 dummies = pd.get_dummies(df_out['regime_label'], prefix='regime_id')
                 for col in dummies.columns:
                     df_out[col] = dummies[col].astype(np.float32)
-                    
-        # Also clean up old regime columns if they exist but aren't useful raw
-        # (We keep them for now as they might include probability columns)
 
     except Exception as e:
          tprint_warning(f"⚠️ Regime alignment failed: {e}")
 
-    # 1. Ensemble Probability
-    # Use existing if provided (e.g. from ensemble_disagreement), else calculate fallback
+    # 1. Ensemble Probability (and Disagreement)
     valid_cols = [c for c in (base_model_cols or []) if c in df_out.columns]
 
-    # DISABLED: Ensemble probability and related features
-    # if 'ensemble_prob' not in df_out.columns:
-    #     if valid_cols:
-    #         df_out['ensemble_prob'] = df_out[valid_cols].mean(axis=1)
-    #     else:
-    #         df_out['ensemble_prob'] = 0.5
-    
-    # DISABLED: Base model confidence extremes
-    # if valid_cols:
-    #     df_out['max_base_prob'] = df_out[valid_cols].max(axis=1)
-    #     df_out['min_base_prob'] = df_out[valid_cols].min(axis=1)
-    #     df_out['base_prob_range'] = df_out['max_base_prob'] - df_out['min_base_prob']
-    # else:
-    #     df_out['max_base_prob'] = 0.5
-    #     df_out['min_base_prob'] = 0.5
-    #     df_out['base_prob_range'] = 0.0
-
-    # DISABLED: Base model predictions as numerical features
-    # for col in base_model_cols:
-    #     if col in df_out.columns and col != 'ensemble_prob':
-    #         df_out[f"base_pred_{col}"] = pd.to_numeric(df_out[col], errors='coerce').fillna(0.5)
-
     # ENABLED: Ensemble Disagreement Features (ens_*)
-    # Enhanced disagreement features for meta model following de Prado principles
     disagree_feature_names = [
         "prediction_dispersion",      # Variance of predictions across models
         "confidence_gap",            # Margin between top predictions
@@ -847,7 +840,6 @@ def generate_layer3_features(
     df_out[disagree_cols] = df_out[disagree_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
     # Volatility Surface / Ratio Features
-    # Volatility Ratio (Vol Short / Vol Long) - Coiled Spring Indicator
     try:
         if 'close' in df_out.columns:
             close_series = df_out['close']
@@ -869,49 +861,6 @@ def generate_layer3_features(
             df_out['volatility_diff_norm'] = df_out['volatility_diff_norm'].fillna(0.0)
     except Exception as e:
         tprint_warning(f"⚠️ Volatility Ratio feature calculation failed: {e}")
-
-    # DISABLED: Logit Probability & Momentum
-    # eps = 0.005
-    # clipped_prob = df_out['ensemble_prob'].clip(eps, 1.0 - eps)
-    # df_out['logit_prob'] = np.log(clipped_prob / (1.0 - clipped_prob))
-    # df_out['logit_momentum_5'] = df_out['logit_prob'] - df_out['logit_prob'].shift(5)
-    # df_out['logit_momentum_1'] = df_out['logit_prob'] - df_out['logit_prob'].shift(1)
-
-    # DISABLED: Volume at Signal
-    # if 'volume' in df_out.columns:
-    #     vol = df_out['volume'].replace(0, np.nan)
-    #     avg_vol = vol.rolling(window=50, min_periods=1).mean()
-    #     # Ratio: volume / avg_vol
-    #     df_out['vol_at_signal'] = vol / (avg_vol + 1e-8)
-    #     # Fill NaNs/Infs
-    #     df_out['vol_at_signal'] = df_out['vol_at_signal'].replace([np.inf, -np.inf], np.nan).fillna(1.0)
-    # else:
-    #     df_out['vol_at_signal'] = 1.0
-
-    # 3b. Payoff Asymmetry (Volatility vs Cost) - REMOVED
-    # volatility_risk_ratio feature has been removed as requested
-    # if 'volatility_1d' in df_out.columns:
-    #     vol_1d = pd.to_numeric(df_out['volatility_1d'], errors='coerce').astype(float)
-    #     df_out['volatility_risk_ratio'] = vol_1d / 0.003
-    #     df_out['volatility_risk_ratio'] = df_out['volatility_risk_ratio'].replace([np.inf, -np.inf], np.nan).fillna(1.0)
-    # else:
-    #     df_out['volatility_risk_ratio'] = 1.0
-
-    # DISABLED: Candle Shape
-    # required_price_cols = ['high', 'low', 'close']
-    # if all(c in df_out.columns for c in required_price_cols):
-    #     high = df_out['high']
-    #     low = df_out['low']
-    #     close = df_out['close'].replace(0, np.nan)
-    #     df_out['candle_shape'] = (high - low) / close
-    #     roll_high = high.rolling(window=4, min_periods=1).max()
-    #     roll_low = low.rolling(window=4, min_periods=1).min()
-    #     df_out['candle_shape_4'] = (roll_high - roll_low) / close
-    #     for c in ['candle_shape', 'candle_shape_4']:
-    #         df_out[c] = df_out[c].replace([np.inf, -np.inf], np.nan).fillna(0.0)
-    # else:
-    #     df_out['candle_shape'] = 0.0
-    #     df_out['candle_shape_4'] = 0.0
 
     # ENABLED: Regime Features (from GateModel logic)
     regime_feats = _compute_gate_regime_features(df_out)
@@ -978,12 +927,6 @@ def generate_layer3_features(
     except Exception:
         pass
 
-    # DISABLED: Regime Interaction Terms
-    # try:
-    #     pass  # Regime interaction terms disabled
-    # except Exception:
-    #     pass
-
     # 10. Price Position in Range
     try:
         if 'close' in df_out.columns:
@@ -997,7 +940,7 @@ def generate_layer3_features(
 
     # 11. [DE PRADO 2026] Anchor and Drift Features
     try:
-        tprint_info("⚓ Generating Anchor and Drift Features...")
+        # tprint_info("⚓ Generating Anchor and Drift Features...")
         ad_feats, regime_map = _compute_anchor_and_drift_features(df_out, base_model_cols)
         for col in ad_feats.columns:
             df_out[col] = ad_feats[col]

@@ -14,6 +14,7 @@ from src.utils.numba_funcs import (
     _numba_rolling_skew,
     _numba_rolling_kurt,
     _numba_rolling_vwap,
+    _numba_price_jump_frequency,
 )
 
 def _calculate_rolling_vwap(price: pd.Series, volume: pd.Series, window: int = 20) -> pd.Series:
@@ -393,6 +394,45 @@ def apply_layer2_price_processing(df: pd.DataFrame,
             # Actually, let's call it 'bar_tightness' = 1 / (range_pct + epsilon) to match "tightness" (high = tight)
             range_pct = (h - l) / (price_raw + 1e-9) # Keep raw price for range ratio
             result['bar_tightness'] = 1.0 / (range_pct + 1e-4) # Cap at 10000
+
+            # --- Layer 4 Audit Specifics ---
+            # Wickiness: |Close - Open| / (High - Low)
+            # Rolling mean over 20 bars
+            if 'open' in cols_map and 'close' in cols_map:
+                o = asset_df[cols_map['open']]
+                c = asset_df[cols_map['close']]
+                wickiness = (c - o).abs() / ((h - l) + 1e-9)
+                result['wickiness_20'] = wickiness.rolling(20, min_periods=5).mean()
+
+            # Range per Volume: (High - Low) / Volume
+            # Rolling mean over 20 bars
+            if volume_col and volume_col in asset_df.columns:
+                v = asset_df[volume_col]
+                rpv = (h - l) / (v + 1e-9)
+                result['range_per_vol_20'] = rpv.rolling(20, min_periods=5).mean()
+
+        # 5. Volume Dry-up (V / EMA(V) low)
+        if volume_col and volume_col in asset_df.columns:
+            v = asset_df[volume_col]
+            # Use Numba-optimized EMA (or pandas for simplicity here inside single asset loop)
+            # alpha for 20-bar span: alpha = 2/(20+1) ~ 0.095
+            v_ema = v.ewm(span=20, adjust=False).mean()
+            result['vol_dry_up_20'] = v / (v_ema + 1e-9)
+
+        # 6. Large-Move Frequency (P(|r| > 2*vol))
+        try:
+            # Using Numba function: _numba_price_jump_frequency(returns, window=20, threshold=2.0)
+            # log_ret_vals is float64 numpy array
+            lmf_20 = _numba_price_jump_frequency(log_ret_vals, window=20, threshold=2.0)
+            result['large_move_freq_20'] = pd.Series(lmf_20, index=asset_df.index).ffill()
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Large-move frequency failed: {e}")
+
+        # 7. Jumpiness (max(|r|)/vol)
+        # Explicit calculation: rolling max of abs returns divided by current volatility
+        # Using 20-period rolling max to match window
+        max_abs_ret = log_returns.abs().rolling(20, min_periods=5).max()
+        result['jumpiness_20'] = max_abs_ret / (vol + 1e-9)
 
         # VWAP Residualisation
         # "if using price residualisation against itself, it is applied before the residualisation"

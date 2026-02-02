@@ -9,6 +9,25 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import roc_auc_score, average_precision_score
 
+try:
+    from numba import jit, prange
+    NUMBA_AVAILABLE = True
+except ImportError:
+    # Dummy jit decorator
+    def jit(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    NUMBA_AVAILABLE = False
+    prange = range
+
+# Try importing optimized uniqueness calculation
+try:
+    from src.utils.orthogonal_numba import _numba_get_uniqueness, _numba_build_indicator_matrix
+    ORTHOGONAL_NUMBA_AVAILABLE = True
+except ImportError:
+    ORTHOGONAL_NUMBA_AVAILABLE = False
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -63,6 +82,7 @@ class Event:
     direction: int         # +1 / -1
     returns_path: np.array # Cumulative returns relative to entry
     sigma: float           # Volatility at entry
+    asset_id: Optional[int] = None # Cross-asset support
 
 @dataclass
 class LearnabilityMetrics:
@@ -138,73 +158,197 @@ class TradingFocalLoss:
 
 # --- 3. Vectorization & Pre-computation ---
 
+@jit(nopython=True, nogil=True)
+def _numba_calculate_event_metrics(
+    returns_path_flat: np.ndarray,
+    path_offsets: np.ndarray,
+    sigmas: np.ndarray,
+    horizons: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Numba-optimized calculation of path metrics for multiple horizons.
+
+    Args:
+        returns_path_flat: Flattened array of all event return paths.
+        path_offsets: Start index for each event in returns_path_flat.
+        sigmas: Volatility for each event.
+        horizons: Array of horizons to check.
+
+    Returns:
+        Tuple of (mae_matrix, mfe_matrix, duration_matrix)
+        Shape: (n_events, n_horizons)
+    """
+    n_events = len(path_offsets) - 1
+    n_horizons = len(horizons)
+
+    mae_out = np.zeros((n_events, n_horizons), dtype=np.float32)
+    mfe_out = np.zeros((n_events, n_horizons), dtype=np.float32)
+    durations_out = np.zeros((n_events, n_horizons), dtype=np.int32)
+
+    for i in range(n_events):
+        start = path_offsets[i]
+        end = path_offsets[i+1]
+        path_len = end - start
+        
+        sigma = sigmas[i]
+        if sigma < 1e-9: sigma = 1e-9
+        
+        curr_min = 0.0
+        curr_max = 0.0
+
+        # Process path step by step
+        for k in range(path_len):
+            val = returns_path_flat[start + k]
+            if val < curr_min: curr_min = val
+            if val > curr_max: curr_max = val
+
+            # Check if this step matches any horizon
+            # Assuming horizons are sorted, we can check efficiently
+            # Steps are 0-based index k corresponds to duration k+1
+
+            for h_idx in range(n_horizons):
+                h = horizons[h_idx]
+                if k == h - 1:
+                    # Reached horizon h
+                    mae_out[i, h_idx] = -curr_min / sigma
+                    mfe_out[i, h_idx] = curr_max / sigma
+                    durations_out[i, h_idx] = k + 1
+
+        # Fill remaining horizons if path ended early
+        for h_idx in range(n_horizons):
+            h = horizons[h_idx]
+            if path_len < h:
+                # Path shorter than horizon, use final values
+                mae_out[i, h_idx] = -curr_min / sigma
+                mfe_out[i, h_idx] = curr_max / sigma
+                durations_out[i, h_idx] = path_len
+
+    return mae_out, mfe_out, durations_out
+
 def events_to_dataframe(events: List[Event], horizons: Optional[List[int]] = None) -> pd.DataFrame:
     """
     Converts events to DataFrame and pre-calculates path metrics for multiple horizons.
-    Vectorized for performance.
-
-    Args:
-        events: List of Event objects.
-        horizons: List of horizons to calculate metrics for (e.g. [24, 48, 120]).
-                  If None, defaults to [8, 12, 16, 20, 30, 40].
+    Vectorized for performance using Numba.
     """
+    if not events:
+        return pd.DataFrame()
+
     if horizons is None:
         horizons = [8, 12, 16, 20, 30, 40]
 
-    data = []
-    for e in events:
-        full_path = e.returns_path * e.direction
-        max_len = len(full_path)
-        
-        # FIX: Use REAL duration from exit_idx - entry_idx, not truncated path length
-        real_duration_bars = e.exit_idx - e.entry_idx
-        
-        row = {
-            'id': e.id,
-            'entry_idx': e.entry_idx,
-            'exit_idx': e.exit_idx,
-            'direction': e.direction,  # FIX: Add direction for dedup
-            'duration_bars': real_duration_bars,  # FIX: Real holding time
-            'sigma': e.sigma,
-        }
+    horizons = sorted(horizons)
+    horizons_arr = np.array(horizons, dtype=np.int32)
 
-        for h in horizons:
-            # Slice path to horizon
-            # Note: returns_path is 0-based from entry
-            limit = min(max_len, h)
-            path = full_path[:limit]
+    # Pre-allocate arrays
+    n_events = len(events)
 
-            # Duration for THIS horizon (capped at horizon or actual path)
-            duration_h = max(1, limit)
+    ids = np.empty(n_events, dtype=object) # Use object for flexibility or int
+    entry_idxs = np.empty(n_events, dtype=np.int32)
+    exit_idxs = np.empty(n_events, dtype=np.int32)
+    directions = np.empty(n_events, dtype=np.int32)
+    sigmas = np.empty(n_events, dtype=np.float32)
+    asset_ids = np.empty(n_events, dtype=object) # Can be None
 
-            raw_mae = -np.min(path) if len(path) > 0 else 0.0
-            raw_mfe = np.max(path) if len(path) > 0 else 0.0
+    # Flatten paths for Numba
+    # Since paths are numpy arrays, we can concatenate them efficiently
+    paths = []
 
-            # Standard normalization
-            norm_mae = raw_mae / e.sigma
-            norm_mfe = raw_mfe / e.sigma
+    for i, e in enumerate(events):
+        ids[i] = e.id
+        entry_idxs[i] = e.entry_idx
+        exit_idxs[i] = e.exit_idx
+        directions[i] = e.direction
+        sigmas[i] = e.sigma
+        asset_ids[i] = e.asset_id
 
-            # Time-scaled normalization (Condition on Holding Time)
-            # Assuming volatility scales with sqrt(t)
-            sqrt_t = np.sqrt(duration_h)
-            time_scaled_mae = raw_mae / (e.sigma * sqrt_t)
-            time_scaled_mfe = raw_mfe / (e.sigma * sqrt_t)
+        # Apply direction to path here so Numba only deals with raw values
+        paths.append(e.returns_path * e.direction)
 
-            row[f'norm_mae_{h}'] = norm_mae
-            row[f'norm_mfe_{h}'] = norm_mfe
-            row[f'time_scaled_mae_{h}'] = time_scaled_mae
-            row[f'time_scaled_mfe_{h}'] = time_scaled_mfe
+    # Create flattened path array and offsets
+    path_lens = np.array([len(p) for p in paths], dtype=np.int32)
+    path_offsets = np.concatenate([[0], np.cumsum(path_lens)])
 
-            # Legacy fields (map to max horizon)
-            if h == max(horizons):
-                row['norm_mae'] = norm_mae
-                row['norm_mfe'] = norm_mfe
-                row['duration'] = real_duration_bars  # FIX: Use real duration here too
-                row['time_scaled_mae'] = time_scaled_mae
-                row['time_scaled_mfe'] = time_scaled_mfe
+    if len(paths) > 0:
+        returns_path_flat = np.concatenate(paths).astype(np.float32)
+    else:
+        returns_path_flat = np.array([], dtype=np.float32)
 
-        data.append(row)
-    
+    # Numba Calculation with Fallback
+    if NUMBA_AVAILABLE and len(returns_path_flat) > 0:
+        mae_mat, mfe_mat, dur_mat = _numba_calculate_event_metrics(
+            returns_path_flat, path_offsets, sigmas, horizons_arr
+        )
+    else:
+        # Fallback: Python iteration
+        mae_mat = np.zeros((n_events, len(horizons)), dtype=np.float32)
+        mfe_mat = np.zeros((n_events, len(horizons)), dtype=np.float32)
+        dur_mat = np.zeros((n_events, len(horizons)), dtype=np.int32)
+
+        for i, path in enumerate(paths):
+            path_len = len(path)
+            sigma = sigmas[i]
+            if sigma < 1e-9: sigma = 1e-9
+
+            curr_min = 0.0
+            curr_max = 0.0
+
+            # Simple simulation
+            for k in range(path_len):
+                val = path[k]
+                curr_min = min(curr_min, val)
+                curr_max = max(curr_max, val)
+
+                # Check horizons
+                for h_idx, h in enumerate(horizons):
+                    if k == h - 1:
+                        mae_mat[i, h_idx] = -curr_min / sigma
+                        mfe_mat[i, h_idx] = curr_max / sigma
+                        dur_mat[i, h_idx] = k + 1
+
+            # Fill remaining
+            for h_idx, h in enumerate(horizons):
+                if path_len < h:
+                    mae_mat[i, h_idx] = -curr_min / sigma
+                    mfe_mat[i, h_idx] = curr_max / sigma
+                    dur_mat[i, h_idx] = path_len
+
+    # Construct DataFrame
+    data = {
+        'id': ids,
+        'entry_idx': entry_idxs,
+        'exit_idx': exit_idxs,
+        'direction': directions,
+        'sigma': sigmas,
+        'duration_bars': exit_idxs - entry_idxs,
+    }
+
+    if asset_ids[0] is not None:
+        data['asset_id'] = asset_ids
+
+    # Add horizon columns
+    for h_idx, h in enumerate(horizons):
+        norm_mae = mae_mat[:, h_idx]
+        norm_mfe = mfe_mat[:, h_idx]
+        duration_h = dur_mat[:, h_idx]
+
+        # Time-scaled normalization
+        sqrt_t = np.sqrt(np.maximum(1, duration_h))
+        time_scaled_mae = norm_mae / sqrt_t
+        time_scaled_mfe = norm_mfe / sqrt_t
+
+        data[f'norm_mae_{h}'] = norm_mae
+        data[f'norm_mfe_{h}'] = norm_mfe
+        data[f'time_scaled_mae_{h}'] = time_scaled_mae
+        data[f'time_scaled_mfe_{h}'] = time_scaled_mfe
+
+        # Legacy fields map to max horizon
+        if h == horizons[-1]:
+            data['norm_mae'] = norm_mae
+            data['norm_mfe'] = norm_mfe
+            data['duration'] = exit_idxs - entry_idxs # Use real duration
+            data['time_scaled_mae'] = time_scaled_mae
+            data['time_scaled_mfe'] = time_scaled_mfe
+
     df = pd.DataFrame(data)
     if not df.empty:
         df.set_index('id', inplace=True)
@@ -229,7 +373,7 @@ def calculate_separation_metrics(y_true: np.ndarray, y_prob: np.ndarray) -> Tupl
         ks_stat = ks_result.statistic
 
     # Entropy
-    # Clip probabilities for safety
+    # Clip probabilities for safety (Log safety)
     p = np.clip(y_prob, 1e-9, 1.0 - 1e-9)
     # Binary entropy per sample
     ent_samples = -(p * np.log(p) + (1.0 - p) * np.log(1.0 - p))
@@ -240,33 +384,88 @@ def calculate_separation_metrics(y_true: np.ndarray, y_prob: np.ndarray) -> Tupl
     # Normalized entropy (0 to 1, where 1 is total uncertainty)
     norm_ent = avg_ent / max_ent
 
-    # We want Entropy REDUCTION (i.e., lower is better).
-    # Let's return the raw normalized entropy for now, diagnostics will interpret it.
+    return ks_stat, float(norm_ent)
 
-    return ks_stat, norm_ent
+@jit(nopython=True, nogil=True)
+def _numba_indicator_matrix_global(
+    entry_indices: np.ndarray,
+    exit_indices: np.ndarray,
+    max_idx: int
+) -> np.ndarray:
+    """
+    Builds concurrency array for global indices (concatenated or single asset).
+    This handles the case where assets are concatenated linearly.
+    """
+    indicator = np.zeros(max_idx + 1, dtype=np.float32)
+    n_events = len(entry_indices)
+
+    # Use diff array for O(N + T) complexity instead of O(N*W)
+    diff = np.zeros(max_idx + 2, dtype=np.float32)
+
+    for i in range(n_events):
+        start = entry_indices[i]
+        end = exit_indices[i]
+        if start < 0 or start > max_idx: continue
+        if end > max_idx: end = max_idx
+        if end <= start: continue
+
+        diff[start] += 1
+        diff[end] -= 1
+
+    current = 0.0
+    for t in range(max_idx + 1):
+        current += diff[t]
+        indicator[t] = current
+
+    return indicator
 
 def get_average_uniqueness(selected_indices, all_events_df) -> float:
     """
     Calculates average uniqueness using time-weighted concurrency.
-    Uses coordinate compression on absolute entry/exit indices to avoid
-    building huge arrays when there are gaps in timestamps.
+    Supports multi-asset if asset_id is present, or assumes concatenated global indices.
     """
-    if not selected_indices:
+    # Fix bug: ambiguous boolean check for Index
+    if len(selected_indices) == 0:
         return 0.0
         
     subset = all_events_df.loc[list(selected_indices)]
     if subset.empty or 'entry_idx' not in subset or 'exit_idx' not in subset:
         return 0.0
     
-    starts = subset['entry_idx'].astype(int).to_numpy()
-    ends = subset['exit_idx'].astype(int).to_numpy()
-    valid = ends > starts
-    if not np.any(valid):
+    # Determine processing mode
+    has_asset_id = 'asset_id' in subset.columns and subset['asset_id'].notna().any()
+    
+    if has_asset_id:
+        # Compute uniqueness per asset and average
+        uniqueness_scores = []
+        for asset, group in subset.groupby('asset_id'):
+            u = _compute_uniqueness_single_series(group)
+            uniqueness_scores.append(u)
+        return float(np.mean(uniqueness_scores)) if uniqueness_scores else 0.0
+    else:
+        # Global uniqueness (assuming concatenated indices)
+        return _compute_uniqueness_single_series(subset)
+
+def _compute_uniqueness_single_series(df_subset: pd.DataFrame) -> float:
+    """Helper to compute uniqueness on a single index series."""
+    starts = df_subset['entry_idx'].astype(np.int32).values
+    ends = df_subset['exit_idx'].astype(np.int32).values
+
+    if len(starts) == 0:
         return 0.0
+
+    max_idx = int(ends.max())
     
-    starts = starts[valid]
-    ends = ends[valid]
-    
+    if NUMBA_AVAILABLE:
+        # Build concurrency curve
+        concurrency = _numba_indicator_matrix_global(starts, ends, max_idx)
+        return _numba_variable_uniqueness(starts, ends, concurrency)
+    else:
+        # Python fallback using coordinate compression
+        # This is the original logic moved to a helper
+        return _python_variable_uniqueness(starts, ends)
+
+def _python_variable_uniqueness(starts, ends):
     # Coordinate compression over all boundary points
     boundaries = np.unique(np.concatenate([starts, ends]))
     if len(boundaries) < 2:
@@ -298,6 +497,30 @@ def get_average_uniqueness(selected_indices, all_events_df) -> float:
         event_scores.append(np.average(inv_conc, weights=weights))
     
     return float(np.mean(event_scores)) if event_scores else 0.0
+
+@jit(nopython=True, nogil=True)
+def _numba_variable_uniqueness(starts, ends, concurrency):
+    n_events = len(starts)
+    total_uniq = 0.0
+
+    for i in range(n_events):
+        s = starts[i]
+        e = ends[i]
+        if e <= s: continue
+
+        # Average (1/c) over [s, e)
+        sum_inv_c = 0.0
+        count = 0
+        for t in range(s, e):
+            c = concurrency[t]
+            if c > 0:
+                sum_inv_c += 1.0 / c
+            count += 1
+
+        if count > 0:
+            total_uniq += sum_inv_c / count
+
+    return total_uniq / n_events if n_events > 0 else 0.0
 
 
 def filter_informative_features(features_df: pd.DataFrame, event_ids: pd.Index, variance_threshold: float = 1e-12) -> Optional[pd.DataFrame]:
@@ -332,9 +555,7 @@ def run_logistic_probe(
     min_samples: int = 15
 ) -> Optional[Tuple[np.ndarray, Dict[str, float]]]:
     """
-    Fit a regularized logistic regression as a lightweight probe to detect
-    linear separability when LightGBM cannot train.
-    Returns predictions over the full dataset and diagnostic metrics.
+    Fit a regularized logistic regression as a lightweight probe.
     """
     if X is None or X.empty or len(X) < (min_samples * 3):
         return None
@@ -347,6 +568,9 @@ def run_logistic_probe(
     if n_pos < min_samples or n_neg < min_samples:
         return None
     
+    # Float32 conversion for memory/speed
+    X = X.astype(np.float32)
+
     split_idx = int(len(X) * 0.8)
     if split_idx < min_samples or (len(X) - split_idx) < max(8, min_samples // 2):
         return None
@@ -370,7 +594,8 @@ def run_logistic_probe(
             penalty='l2',
             solver='lbfgs',
             max_iter=500,
-            class_weight='balanced'
+            class_weight='balanced',
+            n_jobs=1
         )
         clf.fit(X_train_scaled, y_train)
     except Exception:
@@ -409,36 +634,87 @@ def run_logistic_probe(
     
     return preds_full_prob, metrics
 
+@jit(nopython=True, nogil=True)
+def _numba_deduplicate_events(
+    indices: np.ndarray,
+    entry_idxs: np.ndarray,
+    directions: np.ndarray,
+    asset_ids: np.ndarray,
+    min_gap: int
+) -> List[int]:
+    """
+    Greedy deduplication logic in Numba.
+    indices: original DataFrame indices to return
+    """
+    n = len(entry_idxs)
+    keep_list = []
+
+    # State tracking
+    last_asset = -999 # Assuming asset_ids are ints. If None, we treat as 0.
+    last_entry_dir_pos = -999999
+    last_entry_dir_neg = -999999
+
+    for i in range(n):
+        curr_asset = asset_ids[i]
+        curr_entry = entry_idxs[i]
+        curr_dir = directions[i]
+
+        if curr_asset != last_asset:
+            # Reset state for new asset
+            last_asset = curr_asset
+            last_entry_dir_pos = -999999
+            last_entry_dir_neg = -999999
+
+        # Check gap
+        if curr_dir >= 0: # Long or Neutral
+            if curr_entry - last_entry_dir_pos >= min_gap:
+                keep_list.append(indices[i])
+                last_entry_dir_pos = curr_entry
+        else: # Short
+            if curr_entry - last_entry_dir_neg >= min_gap:
+                keep_list.append(indices[i])
+                last_entry_dir_neg = curr_entry
+
+    return keep_list
 
 def deduplicate_events(
     events_df: pd.DataFrame,
     min_gap_bars: int = 4  # Minimum bars between events with same direction
 ) -> pd.DataFrame:
     """
-    Remove redundant events from CUSUM bursts.
-    Events within min_gap_bars of each other with the same direction are 
-    likely from the same CUSUM regime and should be deduplicated to 
-    reduce artificial overlap in uniqueness calculation.
-    
-    Returns a subset of events_df with reduced concurrency.
+    Remove redundant events from CUSUM bursts using Numba.
     """
     if events_df.empty or 'direction' not in events_df.columns:
         return events_df
     
-    # Sort by entry_idx to process chronologically
-    df = events_df.sort_values('entry_idx').copy()
+    # Prepare data for Numba
+    # Sort by asset_id (if exists) and entry_idx
+    sort_cols = ['entry_idx']
+    if 'asset_id' in events_df.columns:
+        sort_cols = ['asset_id', 'entry_idx']
+
+    df_sorted = events_df.sort_values(sort_cols)
     
-    keep_indices = []
-    last_entry_by_dir = {1: -float('inf'), -1: -float('inf')}
+    indices = df_sorted.index.values
+    entry_idxs = df_sorted['entry_idx'].values.astype(np.int32)
+    directions = df_sorted['direction'].values.astype(np.int32)
     
-    for idx, row in df.iterrows():
-        entry = row['entry_idx']
-        direction = row.get('direction', 0)
+    if 'asset_id' in df_sorted.columns:
+        # Ensure asset_id is integer
+        # If string/object, encode it
+        if not pd.api.types.is_integer_dtype(df_sorted['asset_id']):
+            asset_ids = df_sorted['asset_id'].astype('category').cat.codes.values.astype(np.int32)
+        else:
+            asset_ids = df_sorted['asset_id'].fillna(-1).values.astype(np.int32)
+    else:
+        asset_ids = np.zeros(len(df_sorted), dtype=np.int32)
         
-        # Only keep if far enough from last event in same direction
-        if entry - last_entry_by_dir.get(direction, -float('inf')) >= min_gap_bars:
-            keep_indices.append(idx)
-            last_entry_by_dir[direction] = entry
+    # Call Numba
+    if NUMBA_AVAILABLE:
+        keep_indices = _numba_deduplicate_events(indices, entry_idxs, directions, asset_ids, min_gap_bars)
+    else:
+        # Fallback to slow Python loop if Numba fails to load
+        return _deduplicate_events_python(events_df, min_gap_bars)
     
     result = events_df.loc[keep_indices]
     
@@ -446,6 +722,19 @@ def deduplicate_events(
         logger.info(f"Event dedup: {len(events_df)} → {len(result)} events (min_gap={min_gap_bars} bars)")
     
     return result
+
+def _deduplicate_events_python(events_df, min_gap_bars):
+    # Legacy logic
+    df = events_df.sort_values('entry_idx').copy()
+    keep_indices = []
+    last_entry_by_dir = {1: -float('inf'), -1: -float('inf')}
+    for idx, row in df.iterrows():
+        entry = row['entry_idx']
+        direction = row.get('direction', 0)
+        if entry - last_entry_by_dir.get(direction, -float('inf')) >= min_gap_bars:
+            keep_indices.append(idx)
+            last_entry_by_dir[direction] = entry
+    return events_df.loc[keep_indices]
 
 def jaccard_similarity(set_a: Set, set_b: Set) -> float:
     if not set_a and not set_b: return 1.0
@@ -559,14 +848,6 @@ def compute_learnability_metrics(
 ) -> LearnabilityMetrics:
     """
     Compute comprehensive learnability metrics for a geometry.
-    
-    Combines:
-    1. Feature importance magnitude - higher = features matter
-    2. Temporal stability - AUC in early vs late splits should be consistent
-    3. Temporal consistency - IC-IR style (mean / std) across time
-    4. Minimum survivor count - ensure enough samples for learning
-    
-    Returns LearnabilityMetrics with composite score.
     """
     metrics = LearnabilityMetrics()
     metrics.n_survivors = len(survivor_ids)
@@ -599,7 +880,6 @@ def compute_learnability_metrics(
     X_early, X_late = X.iloc[:split_idx], X.iloc[split_idx:]
     y_early, y_late = y.iloc[:split_idx], y.iloc[split_idx:]
     
-    # Check class diversity in both splits
     if len(np.unique(y_early)) < 2 or len(np.unique(y_late)) < 2:
         return metrics
     
@@ -619,7 +899,6 @@ def compute_learnability_metrics(
         return metrics
     
     try:
-        # Train weak learner
         train_data = lgb.Dataset(X_train, label=y_train)
         
         params = {
@@ -629,7 +908,7 @@ def compute_learnability_metrics(
             'num_leaves': 15,
             'learning_rate': 0.05,
             'verbose': -1,
-            'verbosity': -1,  # SILENCE WARNINGS
+            'verbosity': -1,
             'min_child_samples': 10,
             'reg_lambda': 1.0,
             'reg_alpha': 0.5,
@@ -644,11 +923,9 @@ def compute_learnability_metrics(
             valid_sets=[lgb.Dataset(X_val, label=y_val)],
         )
         
-        # 1. Feature importance magnitude
         importances = model.feature_importance(importance_type='gain')
         metrics.feature_importance_sum = float(np.sum(importances))
         
-        # 2. AUC on early validation
         preds_early = model.predict(X_val)
         try:
             auc_early = roc_auc_score(y_val, preds_early)
@@ -656,7 +933,6 @@ def compute_learnability_metrics(
         except Exception:
             metrics.auc_early = 0.5
         
-        # 3. AUC on late split (out-of-time validation)
         preds_late = model.predict(X_late)
         try:
             auc_late = roc_auc_score(y_late, preds_late)
@@ -664,30 +940,19 @@ def compute_learnability_metrics(
         except Exception:
             metrics.auc_late = 0.5
         
-        # 4. Temporal stability: penalize large drops between early and late
         metrics.auc_stability = abs(metrics.auc_early - metrics.auc_late)
         
-        # 5. Temporal consistency: IC-IR style
-        # If both AUC lifts are positive and stable, high consistency
         lift_early = metrics.auc_early - 0.5
         lift_late = metrics.auc_late - 0.5
         mean_lift = (lift_early + lift_late) / 2.0
         std_lift = np.std([lift_early, lift_late]) + 0.01
         metrics.temporal_consistency = mean_lift / std_lift
         
-        # 6. Composite learnability score
-        # Components:
-        # - Feature importance (normalized, capped)
-        # - AUC lift (mean of early and late)
-        # - Stability bonus (low difference = bonus)
-        # - Temporal consistency
-        
-        importance_score = min(1.0, metrics.feature_importance_sum / 1000.0)  # Normalize
-        auc_lift_score = (mean_lift + 0.5) * 2.0  # Scale to [0, 2] roughly
-        stability_bonus = max(0, 0.2 - metrics.auc_stability)  # Bonus if stable
+        importance_score = min(1.0, metrics.feature_importance_sum / 1000.0)
+        auc_lift_score = (mean_lift + 0.5) * 2.0
+        stability_bonus = max(0, 0.2 - metrics.auc_stability)
         consistency_score = max(0, metrics.temporal_consistency)
         
-        # Weighted combination
         metrics.composite_score = (
             0.25 * importance_score +
             0.35 * auc_lift_score +
@@ -710,29 +975,20 @@ def run_diagnostics_gates(
     fold_metrics: dict,
     geometry: Geometry,
     features_df: Optional[pd.DataFrame] = None,
-    # Tunable Thresholds (relaxed defaults for robustness)
     default_min_survival: float = 0.005,
     tail_min_survival: float = 0.005,
     min_uniqueness: float = 0.15,
-    min_survivors_absolute: int = 50,         # Minimum absolute survivor count
-    min_learnability_score: float = 0.15,     # Minimum composite learnability
-    max_temporal_instability: float = 0.20,   # Max AUC difference between early/late (relaxed from 0.15)
+    min_survivors_absolute: int = 50,
+    min_learnability_score: float = 0.15,
+    max_temporal_instability: float = 0.20,
 ) -> GateDiagnostics:
     """
     Enhanced diagnostics with learnability-based gating.
-    
-    Gates:
-    1. Survival Rate - minimum percentage of events surviving
-    2. Uniqueness - minimum average uniqueness (independent samples)
-    3. Absolute Survivors - minimum count for learning
-    4. Learnability Score - composite of feature importance + temporal stability
-    5. Temporal Stability - AUC shouldn't drop significantly in late period
     """
     reasons = []
     is_passing = True
     learnability = None
     
-    # 1. Survival Rate Gate
     current_min_survival = tail_min_survival if geometry.is_tail else default_min_survival
     rate = len(survivor_ids) / len(events_df) if len(events_df) > 0 else 0.0
     
@@ -740,19 +996,16 @@ def run_diagnostics_gates(
         is_passing = False
         reasons.append(f"Low Survival ({rate:.2%} < {current_min_survival:.2%})")
         
-    # 2. Uniqueness Gate - ensures independent samples for learning
     avg_u = get_average_uniqueness(survivor_ids, events_df)
     if avg_u < min_uniqueness:
         is_passing = False
         reasons.append(f"Low Uniqueness ({avg_u:.2f} < {min_uniqueness})")
     
-    # 3. Absolute Survivors Gate - ensures enough samples
     n_survivors = len(survivor_ids)
     if n_survivors < min_survivors_absolute:
         is_passing = False
         reasons.append(f"Too Few Survivors ({n_survivors} < {min_survivors_absolute})")
     
-    # 4 & 5. Learnability Gates - feature importance + temporal stability
     if features_df is not None and not features_df.empty:
         learnability = compute_learnability_metrics(
             survivor_ids=set(survivor_ids),
@@ -761,17 +1014,14 @@ def run_diagnostics_gates(
             min_survivors_absolute=min_survivors_absolute,
         )
         
-        # Gate on composite learnability score
         if learnability.composite_score < min_learnability_score:
             is_passing = False
             reasons.append(f"Low Learnability ({learnability.composite_score:.3f} < {min_learnability_score})")
         
-        # Gate on temporal stability (penalize regime-dependent geometries)
         if learnability.auc_stability > max_temporal_instability:
             is_passing = False
             reasons.append(f"Temporal Instability ({learnability.auc_stability:.3f} > {max_temporal_instability})")
     
-    # Legacy metrics from fold_metrics (for backward compatibility)
     avg_auc = 0.0
     avg_pr_lift = 0.0
     ks_stat = 0.0
@@ -812,19 +1062,12 @@ def train_model_for_geometry(
     survivor_ids: Set[int],
     all_event_ids: List[int],
     features_df: pd.DataFrame,
-    min_positive_samples: int = 25,  # Minimum positives needed
-    min_informative_features: int = 3,  # Minimum features with variance
-    variance_threshold: float = 1e-6  # Drop columns with var < this
+    min_positive_samples: int = 25,
+    min_informative_features: int = 3,
+    variance_threshold: float = 1e-6
 ) -> Tuple[Any, np.ndarray, Dict[str, float]]:
     """
     Trains a Weak Learner (max depth = 3) using TradingFocalLoss.
-    Target: 1 if event is in survivor_ids, 0 otherwise.
-    Returns: model, predictions, separation_metrics
-    
-    Pre-training checks:
-    - Drops features with variance < threshold
-    - Requires minimum positive samples in training set
-    - Requires minimum informative features
     """
     default_metrics = {'auc': 0.5, 'ks': 0.0, 'entropy': 1.0}
     
@@ -837,7 +1080,6 @@ def train_model_for_geometry(
     X = features_df.loc[all_event_ids].copy()
     y = target.loc[all_event_ids]
     
-    # PRE-CHECK 1: Drop low-variance features
     variances = X.var()
     informative_cols = variances[variances >= variance_threshold].index.tolist()
     
@@ -847,16 +1089,13 @@ def train_model_for_geometry(
     
     X = X[informative_cols]
     
-    # Validation split for metrics (80/20)
     split_idx = int(len(X) * 0.8)
     X_train, X_val = X.iloc[:split_idx], X.iloc[split_idx:]
     y_train, y_val = y.iloc[:split_idx], y.iloc[split_idx:]
 
-    # PRE-CHECK 2: Minimum class diversity
     if len(np.unique(y_train)) < 2:
         return None, np.zeros(len(all_event_ids)), default_metrics
     
-    # PRE-CHECK 3: Minimum positive AND negative samples
     n_positives = int(y_train.sum())
     n_negatives = len(y_train) - n_positives
     if n_positives < min_positive_samples:
@@ -866,8 +1105,6 @@ def train_model_for_geometry(
         logger.info(f"Model skipped: only {n_negatives} negative samples (need {min_positive_samples})")
         return None, np.zeros(len(all_event_ids)), default_metrics
     
-    # PRE-CHECK 4: Check variance in TRAINING split (not full data)
-    # This catches cases where features are informative overall but constant in train
     train_variances = X_train.var()
     informative_train_cols = train_variances[train_variances > 1e-6].index.tolist()
     
@@ -875,15 +1112,10 @@ def train_model_for_geometry(
         logger.info(f"Model skipped: only {len(informative_train_cols)} train-informative features (need {min_informative_features})")
         return None, np.zeros(len(all_event_ids)), default_metrics
     
-    # Keep only columns with variance in train split
     X_train = X_train[informative_train_cols]
     X_val = X_val[informative_train_cols]
     X = X[informative_train_cols]
     
-    # PRE-CHECK 5: Removed covariance check (Fix 19)
-    # LightGBM handles collinear features well; removing strict condition number check.
-
-
     train_data = lgb.Dataset(X_train, label=y_train)
     val_data = lgb.Dataset(X_val, label=y_val, reference=train_data)
     
@@ -898,11 +1130,11 @@ def train_model_for_geometry(
 
     params = {
         'objective': focal_loss, 
-        'metric': ['auc', 'average_precision'], # Monitor AUC and PR-AUC (De Prado)
-        'max_depth': 3, # Weak Learner Constraint
+        'metric': ['auc', 'average_precision'],
+        'max_depth': 3,
         'verbose': -1,
-        'verbosity': -1, # SILENCE WARNINGS
-        'num_leaves': 7, # 2^3 - 1
+        'verbosity': -1,
+        'num_leaves': 7,
         'learning_rate': 0.05
     }
     
@@ -913,43 +1145,30 @@ def train_model_for_geometry(
         num_boost_round=100,
         callbacks=[
             lgb.early_stopping(20, verbose=False),
-            lgb.log_evaluation(period=0) # Disable print
+            lgb.log_evaluation(period=0)
         ]
     )
     
-    # Predict on Validation set for metrics
     preds_val_raw = model.predict(X_val)
     preds_val_prob = 1.0 / (1.0 + np.exp(-preds_val_raw))
 
-    # Predict on Full set for pruning correlation
     preds_full_raw = model.predict(X)
     preds_full_prob = 1.0 / (1.0 + np.exp(-preds_full_raw))
 
-    # AUC Lift (Validation)
-    # Baseline is naive prevalence
     prevalence = y_val.mean()
     try:
-        from sklearn.metrics import roc_auc_score, average_precision_score
         auc_val = roc_auc_score(y_val, preds_val_prob)
-        
-        # Note: AUC < 0.5 indicates either:
-        # 1. Random noise dominating weak signal (most common with shallow trees)
-        # 2. Temporal regime shift between train/val
-        # We use ABSOLUTE lift to measure discriminative power, but do NOT flip predictions
-        # because "inverse signal" in this context is just noise, not real.
         if auc_val < 0.5:
             logger.debug(f"Model shows anti-correlation AUC={auc_val:.3f} (likely noise, not inverse signal)")
         
-        auc_lift = abs(auc_val - 0.5)  # Absolute lift measures discriminative power
+        auc_lift = abs(auc_val - 0.5)
 
-        # De Prado: PR-AUC is more informative for imbalanced classes
         pr_val = average_precision_score(y_val, preds_val_prob)
-        pr_lift = pr_val - prevalence  # Can be negative if model is worse than random
+        pr_lift = pr_val - prevalence
     except:
         auc_lift = 0.0
         pr_lift = 0.0
 
-    # Metrics
     ks_stat, ent = calculate_separation_metrics(y_val.values, preds_val_prob)
 
     metrics = {

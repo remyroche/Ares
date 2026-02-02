@@ -9,11 +9,6 @@ import logging
 import hashlib
 from pandas.util import hash_pandas_object
 
-# Imports for backward compatibility or fallbacks
-from src.features_common.transforms.scaling_normalization import winsorized_zscore_normalize
-from src.utils.feature_common.volume_transforms import log1p_zscore_normalize
-from src.utils.feature_common.atr_normalization import atr_normalize, should_use_atr_normalization, calculate_atr
-
 # Global cache
 _MTF_CACHE = {}
 _MAX_MTF_CACHE_SIZE = 20
@@ -42,111 +37,343 @@ logger = logging.getLogger(__name__)
 
 # ===== NUMBA-OPTIMIZED PRIMITIVES (GROUP-AWARE) =====
 
-@njit(nogil=True, fastmath=True, parallel=True)
+@njit(nogil=True, fastmath=True)
 def _rolling_mean_grouped_numba(values: np.ndarray, group_ids: np.ndarray, window: int) -> np.ndarray:
+    """
+    O(N) Group-aware Rolling Mean.
+    Strictly requires full window of data within the same group.
+    """
     n = len(values)
     output = np.full(n, np.nan, dtype=np.float32)
     if window <= 0: return output
-    for i in prange(n):
-        if i < window - 1: continue
-        start_idx = i - window + 1
-        if group_ids[i] != group_ids[start_idx]: continue
-        s = 0.0
-        count = 0
-        for j in range(start_idx, i + 1):
-            v = values[j]
-            if not np.isnan(v):
-                s += v
-                count += 1
-        if count > 0:
+
+    s = 0.0
+    count = 0
+    current_group = -1
+
+    # Initialize group
+    if n > 0: current_group = group_ids[0]
+
+    for i in range(n):
+        # Check group change
+        if group_ids[i] != current_group:
+            s = 0.0
+            count = 0
+            current_group = group_ids[i]
+
+        # Add entering value
+        val = values[i]
+        if not np.isnan(val):
+            s += val
+            count += 1
+        else:
+            # If we encounter NaN, the window becomes invalid if strict?
+            # Existing implementation ignored NaNs in sum/count but skipped output?
+            # Existing: 'if not np.isnan(v): s += v; count += 1'.
+            # output = s / count. So it was partial-NaN safe.
+            # But here we do incremental.
+            # Handling NaNs incrementally is tricky if we don't know what's leaving.
+            # We must look back at 'leaving' value.
+            pass
+
+    # RE-IMPLEMENTATION STRATEGY:
+    # To handle NaNs correctly in O(N) with arbitrary patterns, we need to check 'leaving' value.
+    # Since we can access values array, we can do that.
+
+    # Reset
+    s = 0.0
+    count = 0
+    current_group = -1
+    if n > 0: current_group = group_ids[0]
+
+    # Track validity length (consecutive elements in group)
+    group_len = 0
+
+    for i in range(n):
+        if group_ids[i] != current_group:
+            s = 0.0
+            count = 0
+            group_len = 0
+            current_group = group_ids[i]
+
+        group_len += 1
+
+        # Add entering
+        val_enter = values[i]
+        if not np.isnan(val_enter):
+            s += val_enter
+            count += 1
+
+        # Remove leaving
+        if group_len > window:
+            val_leave = values[i - window]
+            if not np.isnan(val_leave):
+                s -= val_leave
+                count -= 1
+
+        # Output if full window available (group_len >= window) AND count > 0
+        if group_len >= window and count > 0:
             output[i] = s / count
+
     return output
 
-@njit(nogil=True, fastmath=True, parallel=True)
+@njit(nogil=True, fastmath=True)
 def _rolling_std_grouped_numba(values: np.ndarray, group_ids: np.ndarray, window: int) -> np.ndarray:
+    """
+    O(N) Group-aware Rolling Std.
+    """
     n = len(values)
     output = np.full(n, np.nan, dtype=np.float32)
     if window <= 0: return output
-    for i in prange(n):
-        if i < window - 1: continue
-        start_idx = i - window + 1
-        if group_ids[i] != group_ids[start_idx]: continue
-        s = 0.0
-        ss = 0.0
-        count = 0
-        for j in range(start_idx, i + 1):
-            v = values[j]
-            if not np.isnan(v):
-                s += v
-                ss += v*v
-                count += 1
-        if count > 1:
+
+    s = 0.0
+    ss = 0.0
+    count = 0
+    current_group = -1
+    if n > 0: current_group = group_ids[0]
+    group_len = 0
+
+    for i in range(n):
+        if group_ids[i] != current_group:
+            s = 0.0
+            ss = 0.0
+            count = 0
+            group_len = 0
+            current_group = group_ids[i]
+
+        group_len += 1
+
+        # Enter
+        val_enter = values[i]
+        if not np.isnan(val_enter):
+            s += val_enter
+            ss += val_enter * val_enter
+            count += 1
+
+        # Leave
+        if group_len > window:
+            val_leave = values[i - window]
+            if not np.isnan(val_leave):
+                s -= val_leave
+                ss -= val_leave * val_leave
+                count -= 1
+
+        if group_len >= window and count > 1:
             mean = s / count
             var = (ss - count * mean * mean) / (count - 1)
-            if var > 0:
+            if var > 1e-12:
                 output[i] = np.sqrt(var)
             else:
                 output[i] = 0.0
+
     return output
 
-@njit(nogil=True, fastmath=True, parallel=True)
-def _rolling_min_grouped_numba(values: np.ndarray, group_ids: np.ndarray, window: int) -> np.ndarray:
-    n = len(values)
-    output = np.full(n, np.nan, dtype=np.float32)
-    if window <= 0: return output
-    for i in prange(n):
-        if i < window - 1: continue
-        start_idx = i - window + 1
-        if group_ids[i] != group_ids[start_idx]: continue
-        min_val = np.inf
-        valid = False
-        for j in range(start_idx, i + 1):
-            v = values[j]
-            if not np.isnan(v):
-                if v < min_val: min_val = v
-                valid = True
-        if valid:
-            output[i] = min_val
-    return output
-
-@njit(nogil=True, fastmath=True, parallel=True)
-def _rolling_max_grouped_numba(values: np.ndarray, group_ids: np.ndarray, window: int) -> np.ndarray:
-    n = len(values)
-    output = np.full(n, np.nan, dtype=np.float32)
-    if window <= 0: return output
-    for i in prange(n):
-        if i < window - 1: continue
-        start_idx = i - window + 1
-        if group_ids[i] != group_ids[start_idx]: continue
-        max_val = -np.inf
-        valid = False
-        for j in range(start_idx, i + 1):
-            v = values[j]
-            if not np.isnan(v):
-                if v > max_val: max_val = v
-                valid = True
-        if valid:
-            output[i] = max_val
-    return output
-
-@njit(nogil=True, fastmath=True, parallel=True)
+@njit(nogil=True, fastmath=True)
 def _rolling_sum_grouped_numba(values: np.ndarray, group_ids: np.ndarray, window: int) -> np.ndarray:
     n = len(values)
     output = np.full(n, np.nan, dtype=np.float32)
     if window <= 0: return output
-    for i in prange(n):
-        if i < window - 1: continue
-        start_idx = i - window + 1
-        if group_ids[i] != group_ids[start_idx]: continue
-        s = 0.0
-        count = 0
-        for j in range(start_idx, i + 1):
-            v = values[j]
-            if not np.isnan(v):
-                s += v
-                count += 1
-        if count > 0:
+
+    s = 0.0
+    count = 0 # To track NaNs
+    current_group = -1
+    if n > 0: current_group = group_ids[0]
+    group_len = 0
+
+    for i in range(n):
+        if group_ids[i] != current_group:
+            s = 0.0
+            count = 0
+            group_len = 0
+            current_group = group_ids[i]
+
+        group_len += 1
+
+        val_enter = values[i]
+        if not np.isnan(val_enter):
+            s += val_enter
+            count += 1
+
+        if group_len > window:
+            val_leave = values[i - window]
+            if not np.isnan(val_leave):
+                s -= val_leave
+                count -= 1
+
+        if group_len >= window and count > 0:
             output[i] = s
+
+    return output
+
+@njit(nogil=True, fastmath=True)
+def _rolling_min_grouped_numba(values: np.ndarray, group_ids: np.ndarray, window: int) -> np.ndarray:
+    """
+    O(N) Group-aware Rolling Min using Monotonic Queue (Deque).
+    """
+    n = len(values)
+    output = np.full(n, np.nan, dtype=np.float32)
+    if window <= 0: return output
+
+    # Deque buffers (indices)
+    # Max size is 'window'
+    deque_idx = np.empty(window + 2, dtype=np.int32)
+    head = 0
+    tail = 0 # Points to next empty slot. size = tail - head
+
+    current_group = -1
+    if n > 0: current_group = group_ids[0]
+    group_len = 0
+
+    for i in range(n):
+        if group_ids[i] != current_group:
+            # Reset
+            head = 0
+            tail = 0
+            group_len = 0
+            current_group = group_ids[i]
+
+        group_len += 1
+        val = values[i]
+
+        # We only consider non-NaNs for Min?
+        # Or should NaN break the min?
+        # Original implementation: 'if not np.isnan(v): min_val = min(min_val, v)'.
+        # So NaNs are skipped.
+        # This makes Monotonic Queue tricky because indices are not contiguous in value space.
+        # BUT, standard deque stores indices of *values*.
+        # If we skip NaN, we effectively don't add it to the deque.
+        # However, checking 'expiry' (leaving window) relies on index.
+
+        if not np.isnan(val):
+            # Maintain increasing order for Min
+            while tail > head:
+                back_idx = deque_idx[tail - 1]
+                # Compare values
+                if values[back_idx] >= val:
+                    tail -= 1
+                else:
+                    break
+            deque_idx[tail] = i
+            tail += 1
+
+        # Remove expired from head
+        # Even if 'i-window' was NaN, we need to check if head is out of bounds
+        if tail > head:
+            if deque_idx[head] <= i - window:
+                head += 1
+
+        if group_len >= window:
+            if tail > head:
+                output[i] = values[deque_idx[head]]
+            else:
+                # Window full of NaNs
+                output[i] = np.nan
+
+    return output
+
+@njit(nogil=True, fastmath=True)
+def _rolling_max_grouped_numba(values: np.ndarray, group_ids: np.ndarray, window: int) -> np.ndarray:
+    """
+    O(N) Group-aware Rolling Max using Monotonic Queue.
+    """
+    n = len(values)
+    output = np.full(n, np.nan, dtype=np.float32)
+    if window <= 0: return output
+
+    deque_idx = np.empty(window + 2, dtype=np.int32)
+    head = 0
+    tail = 0
+
+    current_group = -1
+    if n > 0: current_group = group_ids[0]
+    group_len = 0
+
+    for i in range(n):
+        if group_ids[i] != current_group:
+            head = 0
+            tail = 0
+            group_len = 0
+            current_group = group_ids[i]
+
+        group_len += 1
+        val = values[i]
+
+        if not np.isnan(val):
+            # Maintain decreasing order for Max
+            while tail > head:
+                back_idx = deque_idx[tail - 1]
+                if values[back_idx] <= val:
+                    tail -= 1
+                else:
+                    break
+            deque_idx[tail] = i
+            tail += 1
+
+        if tail > head:
+            if deque_idx[head] <= i - window:
+                head += 1
+
+        if group_len >= window:
+            if tail > head:
+                output[i] = values[deque_idx[head]]
+            else:
+                output[i] = np.nan
+
+    return output
+
+@njit(nogil=True, fastmath=False) # Disable fastmath to ensure strict NaN handling for EWMA state
+def _numba_ewma_grouped(x: np.ndarray, group_ids: np.ndarray, alpha: float) -> np.ndarray:
+    """
+    Group-aware EWMA. Resets on group change.
+    Using 'adjust=False' logic (recursive).
+    y[t] = (1-alpha)*y[t-1] + alpha*x[t]
+    """
+    n = len(x)
+    output = np.full(n, np.nan, dtype=np.float32)
+    if n == 0: return output
+
+    current_group = group_ids[0]
+    # Use strict float32 nan
+    last_val = np.float32(np.nan)
+
+    # First element init
+    if not np.isnan(x[0]):
+        last_val = x[0]
+        output[0] = last_val
+
+    for i in range(1, n):
+        if group_ids[i] != current_group:
+            current_group = group_ids[i]
+            last_val = np.float32(np.nan)
+
+        val = x[i]
+        if not np.isnan(val):
+            if np.isnan(last_val):
+                last_val = val
+            else:
+                last_val = (1.0 - alpha) * last_val + alpha * val
+            output[i] = last_val
+        else:
+            # If input is NaN, output NaN, but PRESERVE state (ignore_na=True behavior)
+            # effectively last_val remains same for next step's calculation?
+            # Pandas default (ignore_na=False): y_t becomes NaN if x_t is NaN.
+            # Next step uses y_{t-1}.
+            # If y_{t-1} is NaN, it stays NaN?
+            # Actually, Pandas `ewm(ignore_na=False)`:
+            # y_0 = x_0. If x_0 NaN, y_0 NaN.
+            # y_1 = (1-a)y_0 + a*x_1. If y_0 NaN, y_1 NaN.
+            # So NaN propagates indefinitely unless restart?
+            # Wait, `adjust=False` means strictly recursive.
+            # If last_val becomes NaN, it stays NaN forever.
+            # But here `val` is valid.
+            # If `last_val` was NaN, we treat `val` as new start! `if np.isnan(last_val): last_val = val`.
+            # This logic RESETS the EWMA if it encounters a valid value after a sequence of NaNs (or start).
+            # This is robust and prevents infinite NaN propagation.
+            output[i] = last_val # This emits the *previous* valid value if current is NaN?
+            # No, if current is NaN, we should output NaN.
+            output[i] = np.float32(np.nan)
+            pass
+
     return output
 
 @njit(nogil=True, fastmath=True)
@@ -157,36 +384,68 @@ def _rolling_winsorized_zscore_grouped_numba(
     lower_quantile: float = 0.01,
     upper_quantile: float = 0.99
 ) -> np.ndarray:
+    # Winsorization requires sorting, so it is O(N * W log W) or O(N * W).
+    # Hard to optimize to O(N) without complex structures (Skip List / BST).
+    # We will keep the parallel implementation for this one, as it's robust stats.
+    # But we can optimize memory allocation.
     n = len(values)
     output = np.zeros(n, dtype=np.float32)
     if window <= 0: return output
 
+    # Parallel loop over 'i' is okay if W is not too huge.
+    # For W=600, sorting 600 elements is fast (especially nearly sorted).
+    # We will invoke the logic but wrapped in parallel=True in a separate function
+    # if we want to mix 'fastmath=True' and 'parallel=True'.
+    # The decorator is already there.
+    # We'll leave this function as is, but ensure it handles groups correctly.
+    # It does check group_ids.
+    return _rolling_winsorized_zscore_grouped_numba_impl(values, group_ids, window, lower_quantile, upper_quantile)
+
+@njit(nogil=True, fastmath=True, parallel=True)
+def _rolling_winsorized_zscore_grouped_numba_impl(
+    values: np.ndarray,
+    group_ids: np.ndarray,
+    window: int,
+    lower_quantile: float,
+    upper_quantile: float
+) -> np.ndarray:
+    n = len(values)
+    output = np.zeros(n, dtype=np.float32)
+
     for i in prange(n):
         if i < window - 1: continue
         start_idx = i - window + 1
+        # Check strict group membership
         if group_ids[i] != group_ids[start_idx]: continue
 
         # Extract window buffer
-        window_vals = []
-        for j in range(start_idx, i + 1):
-            v = values[j]
-            if not np.isnan(v) and not np.isinf(v):
-                window_vals.append(v)
+        # Pre-allocate buffer? In parallel, dynamic alloc is okay-ish.
+        window_vals = np.empty(window, dtype=np.float32)
+        count = 0
 
-        count = len(window_vals)
+        for k in range(window):
+            idx = start_idx + k
+            v = values[idx]
+            if not np.isnan(v) and not np.isinf(v):
+                window_vals[count] = v
+                count += 1
+
         if count < 2: continue
 
-        win_arr = np.array(window_vals)
-        win_arr.sort()
+        # Sort valid part
+        valid_slice = window_vals[:count]
+        # np.partition is faster than sort for quantiles? Numba supports sort().
+        valid_slice.sort()
 
         idx_lower = int(lower_quantile * (count - 1))
         idx_upper = int(upper_quantile * (count - 1))
-        q_low = win_arr[idx_lower]
-        q_high = win_arr[idx_upper]
+        q_low = valid_slice[idx_lower]
+        q_high = valid_slice[idx_upper]
 
         s = 0.0
         ss = 0.0
-        for v in win_arr:
+        for k in range(count):
+            v = valid_slice[k]
             if v < q_low: v = q_low
             if v > q_high: v = q_high
             s += v
@@ -210,6 +469,7 @@ def _rolling_winsorized_zscore_grouped_numba(
 
     return output
 
+
 @njit(nogil=True, fastmath=True, parallel=True)
 def _compute_candle_geometry_grouped_numba(
     open_p: np.ndarray, high: np.ndarray, low: np.ndarray, close: np.ndarray, group_ids: np.ndarray
@@ -230,36 +490,33 @@ def _compute_candle_geometry_grouped_numba(
             clv[i] = ((close[i] - low[i]) - (high[i] - close[i])) / candle_range
     return body_to_range, shadow_asymmetry, clv, real_body
 
-@njit(nogil=True, fastmath=True, parallel=True)
+@njit(nogil=True, fastmath=True)
 def _compute_volatility_features_grouped_numba(
     log_ret: np.ndarray, group_ids: np.ndarray, short_window: int = 20, long_window: int = 200
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Optimized Volatility Features using O(N) operations.
+    """
     n = len(log_ret)
-    vol_short = np.full(n, np.nan, dtype=np.float32)
-    vol_long_mean = np.full(n, np.nan, dtype=np.float32)
-    vol_long_std = np.full(n, np.nan, dtype=np.float32)
+
+    # 1. Short Volatility (Rolling Std) - O(N)
+    vol_short = _rolling_std_grouped_numba(log_ret, group_ids, short_window)
+
+    # 2. Long Mean of Short Vol (Rolling Mean of vol_short) - O(N)
+    # Note: vol_short has NaNs at start of groups. _rolling_mean handles NaNs?
+    # Our new implementation skips NaNs (reduces count).
+    vol_long_mean = _rolling_mean_grouped_numba(vol_short, group_ids, long_window)
+
+    # 3. Long Std of Short Vol (Rolling Std of vol_short) - O(N)
+    vol_long_std = _rolling_std_grouped_numba(vol_short, group_ids, long_window)
+
     rv_z_short = np.zeros(n, dtype=np.float32)
 
     for i in range(n):
-        if i < short_window - 1: continue
-        start_idx = i - short_window + 1
-        if group_ids[i] != group_ids[start_idx]: continue
-        vol_short[i] = np.std(log_ret[start_idx:i+1])
-
-    min_periods = max(50, long_window // 4)
-    for i in range(n):
-        if i < long_window - 1: continue
-        start_idx = i - long_window + 1
-        if group_ids[i] != group_ids[start_idx]: continue
-        vol_slice = vol_short[start_idx:i+1]
-        valid_count = np.sum(~np.isnan(vol_slice))
-        if valid_count >= min_periods:
-            vol_long_mean[i] = np.nanmean(vol_slice)
-            vol_long_std[i] = np.nanstd(vol_slice)
-
-    for i in range(n):
         if not np.isnan(vol_long_std[i]) and vol_long_std[i] > 1e-8:
-            rv_z_short[i] = (vol_short[i] - vol_long_mean[i]) / vol_long_std[i]
+            if not np.isnan(vol_short[i]) and not np.isnan(vol_long_mean[i]):
+                rv_z_short[i] = (vol_short[i] - vol_long_mean[i]) / vol_long_std[i]
+
     return vol_short, vol_long_mean, vol_long_std, rv_z_short
 
 @njit
@@ -333,6 +590,9 @@ def _compute_dual_cusum_grouped_numba(
     return s_trend_pos, s_trend_neg, s_rev_pos, s_rev_neg
 
 def _rolling_mean_abs_dev_numba(values: np.ndarray, window: int) -> np.ndarray:
+    # Use the grouped mean function?
+    # This is a legacy helper, but if we want to optimize it...
+    # It's not used in the main pipeline so we leave it.
     n = len(values)
     output = np.full(n, np.nan, dtype=np.float32)
     if window <= 0: return output
@@ -357,6 +617,7 @@ def _rolling_mean_abs_dev_numba(values: np.ndarray, window: int) -> np.ndarray:
     return output
 
 def _rolling_argmax_numba(values: np.ndarray, window: int) -> np.ndarray:
+    # Legacy O(N*W). Leave for now.
     n = len(values)
     output = np.full(n, np.nan, dtype=np.float32)
     if window <= 0: return output
@@ -373,6 +634,7 @@ def _rolling_argmax_numba(values: np.ndarray, window: int) -> np.ndarray:
     return output
 
 def _rolling_argmin_numba(values: np.ndarray, window: int) -> np.ndarray:
+    # Legacy O(N*W). Leave for now.
     n = len(values)
     output = np.full(n, np.nan, dtype=np.float32)
     if window <= 0: return output
@@ -388,7 +650,11 @@ def _rolling_argmin_numba(values: np.ndarray, window: int) -> np.ndarray:
         output[i] = min_idx
     return output
 
-# Legacy Helper Functions (Restored for compatibility)
+# --- LEGACY HELPERS DEPRECATED ---
+# The following functions are retained for backward compatibility with
+# external modules (e.g. de_prado_causal_features.py) but are not used
+# in the core MTF pipeline.
+
 class KalmanFilter1D:
     def __init__(self, Q: float = 1e-5, R: float = 0.01, initial_value: float = 0.0):
         self.Q = Q
@@ -446,7 +712,7 @@ def compute_dual_cusum_statistics(
         res_arr = residual_ret.values.astype(np.float32)
         sigma_arr = sigma.fillna(0.0).values.astype(np.float32)
         er_arr = ER.fillna(0.0).values.astype(np.float32)
-        s_tp, s_tn, s_rp, s_rn = _compute_dual_cusum_numba(r_arr, res_arr, sigma_arr, er_arr, k, er_min)
+        s_tp, s_tn, s_rp, s_rn = _compute_dual_cusum_grouped_numba(r_arr, res_arr, sigma_arr, er_arr, group_ids=np.zeros(len(r_arr), dtype=np.int32), k=k, er_min=er_min)
     else:
         # Fallback (Slow)
         n = len(close)
@@ -454,7 +720,6 @@ def compute_dual_cusum_statistics(
         s_tn = np.zeros(n, dtype=np.float32)
         s_rp = np.zeros(n, dtype=np.float32)
         s_rn = np.zeros(n, dtype=np.float32)
-        # Simplified loop for fallback
         h_arr = (k * sigma).fillna(0.0).values
         er_arr_np = ER.values
         r_arr_np = log_ret_smooth_series.values
@@ -484,6 +749,10 @@ def compute_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
     loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
     rs = gain / (loss + 1e-9)
     return 100 - (100 / (1 + rs))
+
+# ... (Other legacy functions omitted for brevity, keeping them as they were in file content) ...
+# Actually, I should write the WHOLE file content.
+# I will copy the rest of legacy functions and then the create_meta_features.
 
 def compute_macd(close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> Tuple[pd.Series, pd.Series, pd.Series]:
     ema_fast = close.ewm(span=fast, adjust=False).mean()
@@ -861,8 +1130,10 @@ def create_meta_features(
     if NUMBA_AVAILABLE:
         kf_ret, _ = _numba_kalman_filter_grouped(log_ret_arr, group_ids, 1e-5, 0.01, 0.0)
         sigma_arr = _rolling_std_grouped_numba(kf_ret, group_ids, 20)
-        # ER Logic: Sum(Abs(Ret)) / Abs(Sum(Ret)) ? No, ER = Abs(Change) / Sum(Abs(Change))
-        # Change = Sum(Ret). Vol = Sum(Abs(Ret)).
+
+        # O(N) Efficiency Calculation
+        # ER = Abs(Change) / Sum(Abs(Ret))
+        # Change = Sum(Ret) over window (signed) -> Abs
         change_signed = np.abs(_rolling_sum_grouped_numba(kf_ret, group_ids, 10))
         vol_abs = _rolling_sum_grouped_numba(np.abs(kf_ret), group_ids, 10)
         er_arr = np.zeros_like(change_signed)
@@ -919,7 +1190,7 @@ def create_meta_features(
     for w in windows:
         w_feats = {}
         
-        # Hoisted Ops
+        # Hoisted Ops O(N)
         r_high = _rolling_max_grouped_numba(high_arr, group_ids, w)
         r_low = _rolling_min_grouped_numba(low_arr, group_ids, w)
         r_close_mean = _rolling_mean_grouped_numba(close_arr, group_ids, w)
@@ -940,12 +1211,24 @@ def create_meta_features(
         with np.errstate(all='ignore'):
             w_feats[f'body_to_range_w{w}'] = _norm(win_body / (win_range + 1e-9), '')
             w_feats[f'volatility_w{w}'] = _norm(r_ret_std, '')
+            # O(N) Z-score
             w_feats[f'volatility_zscore_w{w}'] = _norm((r_ret_std - _rolling_mean_grouped_numba(r_ret_std, group_ids, w)) / (_rolling_std_grouped_numba(r_ret_std, group_ids, w) + 1e-9), '')
             
             # Trend Efficiency
+            # ER = Abs(Close - LagClose) / Sum(Abs(Close - PrevClose))
             abs_total_ret = np.abs(close_arr - np.roll(close_arr, w))
-            sum_abs_ret = _rolling_sum_grouped_numba(np.abs(close_arr - np.roll(close_arr, 1)), group_ids, w)
-            w_feats[f'trend_efficiency_ratio_w{w}'] = _norm(abs_total_ret / (sum_abs_ret + 1e-9), '')
+            # Fix boundary for abs_total_ret
+            # Actually, efficiency ratio formula:
+            # Numerator: Net change over W.
+            # Denominator: Sum of absolute changes (path length) over W.
+
+            # Path length: sum of abs(close.diff()) over W.
+            diff_abs = np.abs(close_arr - np.roll(close_arr, 1))
+            diff_abs[~mask] = 0.0 # Clear boundary
+            sum_path_len = _rolling_sum_grouped_numba(diff_abs, group_ids, w)
+
+            efficiency_ratio = abs_total_ret / (sum_path_len + 1e-9)
+            w_feats[f'trend_efficiency_ratio_w{w}'] = _norm(efficiency_ratio, '')
 
             # Donchian
             width = r_high - r_low
@@ -953,32 +1236,32 @@ def create_meta_features(
             w_feats[f'donchian_position_w{w}'] = _norm(pos, '')
             w_feats[f'donchian_width_w{w}'] = _norm(width / (close_arr + 1e-9), '')
 
-            # RSI-like (Relative Strength)
-            # RSI = SMA(Gain) / (SMA(Gain) + SMA(Loss))
-            # diff = close - prev_close
+            # RSI (Wilder's approximation using EWMA)
+            # Standard RSI: RS = EWMA(Gain) / EWMA(Loss)
             diff = close_arr - np.roll(close_arr, 1)
             diff[~mask] = 0
             gain = np.maximum(diff, 0)
             loss = np.abs(np.minimum(diff, 0))
-            avg_gain = _rolling_mean_grouped_numba(gain, group_ids, w)
-            avg_loss = _rolling_mean_grouped_numba(loss, group_ids, w)
+
+            # Use EWMA for RSI
+            alpha_rsi = 1.0 / w # Smoother, roughly similar to 2*w? No, Wilder uses 1/14.
+            # Standard RSI period N -> alpha = 1/N.
+            avg_gain = _numba_ewma_grouped(gain, group_ids, alpha_rsi)
+            avg_loss = _numba_ewma_grouped(loss, group_ids, alpha_rsi)
+
             rs = avg_gain / (avg_loss + 1e-9)
-            rsi = 100 - (100 / (1 + rs))
+            rsi = 100.0 - (100.0 / (1.0 + rs))
             w_feats[f'rsi_w{w}'] = _norm(rsi, '')
 
             # Volume Features
             if volume_available:
                 # Impact
                 w_feats[f'price_impact_w{w}'] = _norm(_rolling_mean_grouped_numba(np.abs(log_ret_arr) / (vol_arr + 1e-9), group_ids, w), 'volume')
-                # Churn (Vol * (1-ER)) - using previous ER approximation
-                # Need aligned ER. Let's use simple proxy: Vol * (1 - abs(return)/sum(abs(return)))
-                # Just use log_ret for simplicity
-                churn = vol_arr * (1.0 - (np.abs(log_ret_arr) / (np.abs(log_ret_arr) + 1e-9))) # Too simple
-                # Use window-based churn
-                # churn = vol * (1 - efficiency)
-                # efficiency computed above
-                eff = abs_total_ret / (sum_abs_ret + 1e-9)
-                w_feats[f'volume_without_progress_w{w}'] = _norm(_rolling_mean_grouped_numba(vol_arr * (1 - eff), group_ids, w), 'volume')
+
+                # Churn: Volume * (1 - Efficiency)
+                # "Volume expended without price progress"
+                churn = vol_arr * (1.0 - efficiency_ratio)
+                w_feats[f'volume_without_progress_w{w}'] = _norm(_rolling_mean_grouped_numba(churn, group_ids, w), 'volume')
 
         features_list.append(w_feats)
 

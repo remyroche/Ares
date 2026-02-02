@@ -9922,6 +9922,7 @@ class LabelBasedLayer2(BaseStep):
             
             # --- 2. Calculate Scores (Global vs Regimes) ---
             # Global
+            tprint_info(f"      - Computing Global Correlations on {len(X_clean)} samples...")
             global_corrs = np.abs(vectorized_spearman(X_clean.values, y_clean.values))
             
             final_scores = global_corrs.copy()
@@ -9930,7 +9931,9 @@ class LabelBasedLayer2(BaseStep):
             
             # Regimes
             for r_name, r_mask in regime_masks.items():
-                if np.sum(r_mask) > 20:
+                n_samples = np.sum(r_mask)
+                if n_samples > 20:
+                    tprint_info(f"      - Processing Regime: {r_name} ({n_samples} samples)...")
                     # Filter data
                     X_r = X_clean[r_mask].values
                     y_r = y_clean[r_mask].values
@@ -9946,6 +9949,7 @@ class LabelBasedLayer2(BaseStep):
             feature_origins = dict(zip(X_clean.columns, final_origins))
 
             # --- 3. Noise Baseline ---
+            tprint_info(f"      - Calculating Noise Baseline (Shuffle)...")
             # Shuffle Y globally
             y_shuffled = np.random.permutation(y_clean.values)
             noise_corrs = np.abs(vectorized_spearman(X_clean.values, y_shuffled))

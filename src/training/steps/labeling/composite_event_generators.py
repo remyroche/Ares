@@ -20,10 +20,296 @@ from src.utils.numba_funcs import (
     _numba_rolling_std,
     _numba_rolling_mean_nan_safe,
     _numba_rolling_std_nan_safe,
-    _numba_shift
+    _numba_shift,
+    _numba_rolling_vwap
 )
 
 logger = logging.getLogger(__name__)
+
+
+def compute_microstructure_signals(df: pd.DataFrame, freq: Optional[str] = None) -> pd.DataFrame:
+    """
+    Compute all base signals needed for composites from OHLCV data.
+    Supports multi-asset data via 'asset_id' column grouping.
+
+    Optimized for performance (float32, Numba) and causal safety (rolling rank).
+
+    Args:
+        df: DataFrame with OHLCV columns (and optional 'asset_id')
+        freq: Optional frequency string (e.g., '15min'). If None, inferred or default.
+
+    Returns:
+        DataFrame with base signals as columns
+    """
+    if 'asset_id' in df.columns:
+        # Group by asset_id and apply logic to ensure isolation
+        results = []
+        # sort=False preserves order of appearance of groups,
+        # but output of apply/concat might be grouped by asset.
+        # We reindex at the end to match input df order.
+        for _, group in df.groupby('asset_id', sort=False):
+            res = _compute_signals_single_asset(group, freq)
+            results.append(res)
+
+        if not results:
+            return pd.DataFrame(index=df.index)
+
+        final_df = pd.concat(results)
+        # Realign to original index (critical for time-series integrity if input wasn't sorted by asset)
+        return final_df.reindex(df.index).fillna(0.0)
+    else:
+        return _compute_signals_single_asset(df, freq)
+
+
+def _compute_signals_single_asset(df: pd.DataFrame, freq: Optional[str] = None) -> pd.DataFrame:
+    """
+    Compute signals for a single asset (no grouping).
+    """
+    signals = pd.DataFrame(index=df.index)
+
+    # Ensure required columns exist
+    close = df.get('close', df.get('Close', pd.Series(dtype=np.float32)))
+    high = df.get('high', df.get('High', pd.Series(dtype=np.float32)))
+    low = df.get('low', df.get('Low', pd.Series(dtype=np.float32)))
+    volume = df.get('volume', df.get('Volume'))
+
+    if close.empty:
+        return signals
+
+    # Convert to float32 for performance
+    close_vals = close.values.astype(np.float32)
+    high_vals = high.values.astype(np.float32) if not high.empty else close_vals
+    low_vals = low.values.astype(np.float32) if not low.empty else close_vals
+
+    if volume is not None:
+        vol_vals = volume.values.astype(np.float32)
+    else:
+        vol_vals = None
+
+    # === 1. Return-based signals ===
+    # Use pandas for pct_change (efficient C impl) but cast to float32
+    # Replace infs with nan to avoid explosion in rolling stats
+    returns = close.pct_change().replace([np.inf, -np.inf], np.nan).fillna(0).astype(np.float32)
+    returns_vals = returns.values
+
+    # Optimized rolling std using Numba
+    # Returns are 0-filled, so standard _numba_rolling_std is fine
+    returns_std = _numba_rolling_std(returns_vals, 20)
+
+    # Avoid div by zero
+    signals['return_shock'] = np.abs(returns_vals) / (returns_std + 1e-9)
+
+    # === 2. Volume-based signals ===
+    if vol_vals is not None:
+        # Use nan-safe functions instead of pre-filling with 0 (which skews stats)
+        vol_mean = _numba_rolling_mean_nan_safe(vol_vals, 20)
+        vol_std = _numba_rolling_std_nan_safe(vol_vals, 20)
+
+        # Handle possible NaNs in output of rolling functions (e.g. all NaNs in window)
+        vol_mean = np.nan_to_num(vol_mean, nan=0.0)
+        vol_std = np.nan_to_num(vol_std, nan=0.0)
+
+        # For signal calculation, fill vol_vals NaNs with 0 temporarily if needed,
+        # but ideally we propagate NaNs or handle them.
+        vol_vals_clean = np.nan_to_num(vol_vals, nan=0.0)
+
+        signals['volume_spike'] = (vol_vals_clean - vol_mean) / (vol_std + 1e-9)
+
+        # Trade intensity: Volume / True Range (proxy for order book activity)
+        # TR = max(H-L, |H-Cp|, |L-Cp|)
+        # Simple TR approximation for speed: High - Low (intraday)
+        # Full TR requires shift.
+
+        # Fix cyclic shift bug using _numba_shift
+        prev_close = _numba_shift(close_vals, 1, fill_value=np.nan)
+        if len(prev_close) > 0 and np.isnan(prev_close[0]):
+            prev_close[0] = close_vals[0] # Pad first with current close (approximation)
+
+        tr1 = high_vals - low_vals
+        tr2 = np.abs(high_vals - prev_close)
+        tr3 = np.abs(low_vals - prev_close)
+
+        # Handle potential NaNs from shift (though padded above)
+        tr2 = np.nan_to_num(tr2, nan=0.0)
+        tr3 = np.nan_to_num(tr3, nan=0.0)
+
+        tr = np.maximum(tr1, np.maximum(tr2, tr3))
+
+        intensity = vol_vals_clean / (tr + 1e-9)
+
+        # Rolling Z-score of intensity
+        # Use nan-safe here too just in case
+        int_mean = _numba_rolling_mean_nan_safe(intensity, 20)
+        int_std = _numba_rolling_std_nan_safe(intensity, 20)
+
+        int_mean = np.nan_to_num(int_mean, nan=0.0)
+        int_std = np.nan_to_num(int_std, nan=0.0)
+
+        signals['trade_intensity'] = (intensity - int_mean) / (int_std + 1e-9)
+
+        # === VWAP & Displacement ===
+        # Calculate Rolling VWAP (20 bars)
+        vwap_20 = _numba_rolling_vwap(close_vals, vol_vals, 20)
+
+        # Handle start of series NaNs
+        vwap_20 = np.nan_to_num(vwap_20, nan=close_vals)
+
+        # VWAP Displacement (Relative distance from VWAP)
+        # Normalized by volatility to make it cross-asset comparable
+        signals['vwap_displacement'] = (close_vals - vwap_20) / (vwap_20 + 1e-9)
+        signals['vwap_z'] = signals['vwap_displacement'] / (returns_std + 1e-9)
+
+    else:
+        signals['volume_spike'] = 0.0
+        signals['trade_intensity'] = 0.0
+        signals['vwap_displacement'] = 0.0
+        signals['vwap_z'] = 0.0
+
+    # === 3. Flow Imbalance (OHLCV proxy for order flow) ===
+    # High close relative to range suggests buying pressure
+    bar_range = (high_vals - low_vals)
+    # Close Position: (C - L) / (H - L)
+    # Handle zero range
+    denom = bar_range + 1e-9
+    close_position = (close_vals - low_vals) / denom
+
+    # Clip to [0, 1] to handle data errors
+    close_position = np.clip(close_position, 0.0, 1.0)
+
+    signals['flow_imbalance'] = (close_position - 0.5) * 2  # Normalized to [-1, 1]
+
+    # Order flow imbalance using volume-weighted bar position
+    if vol_vals is not None:
+        # vol_vals_clean already defined above
+        volume_weighted_position = close_position * vol_vals_clean
+        vwp_mean = _numba_rolling_mean_nan_safe(volume_weighted_position, 20)
+        vwp_std = _numba_rolling_std_nan_safe(volume_weighted_position, 20)
+
+        vwp_mean = np.nan_to_num(vwp_mean, nan=0.0)
+        vwp_std = np.nan_to_num(vwp_std, nan=0.0)
+
+        signals['order_flow_imbalance'] = (volume_weighted_position - vwp_mean) / (vwp_std + 1e-9)
+
+        # Bar Pressure: (Close - Open) / Range * (Vol / Vol_MA)
+        open_vals = df.get('open', df.get('Open', close)).values.astype(np.float32)
+        direction = (close_vals - open_vals) / (bar_range + 1e-9)
+
+        # Volume relative to mean
+        vol_mean_20 = _numba_rolling_mean_nan_safe(vol_vals_clean, 20)
+        vol_norm = vol_vals_clean / (vol_mean_20 + 1e-9)
+
+        pressure = direction * vol_norm
+
+        # Z-score of pressure
+        pressure_mean = _numba_rolling_mean_nan_safe(pressure, 20)
+        pressure_std = _numba_rolling_std_nan_safe(pressure, 20)
+
+        pressure_mean = np.nan_to_num(pressure_mean, nan=0.0)
+        pressure_std = np.nan_to_num(pressure_std, nan=0.0)
+
+        signals['bar_pressure'] = (pressure - pressure_mean) / (pressure_std + 1e-9)
+
+    else:
+        signals['order_flow_imbalance'] = signals['flow_imbalance']
+        signals['bar_pressure'] = 0.0
+
+    # === 4. Volatility-based signals ===
+    # Infer frequency scaling
+    if freq is None and isinstance(df.index, pd.DatetimeIndex):
+        inferred = pd.infer_freq(df.index)
+        freq = inferred if inferred else '15min' # Default fallback
+
+    # Estimate bars per year
+    # Standard: 15m -> 96/day -> 252 days -> 24192
+    # Simple heuristic mapping
+    bars_per_year = 252 * 96 # Default 15m
+    if freq:
+        if 'h' in freq.lower():
+            bars_per_year = 252 * 24 # Hourly
+        elif 'd' in freq.lower():
+            bars_per_year = 252 # Daily
+        elif 'm' in freq.lower():
+            try:
+                mins = int(''.join(filter(str.isdigit, freq)))
+                bars_per_year = 252 * (1440 / max(1, mins))
+            except:
+                pass
+
+    annualization = np.sqrt(bars_per_year)
+
+    # Realized Volatility (Annualized)
+    realized_vol = returns_std * annualization
+
+    # Parkinson Volatility (Range-based)
+    if not high.empty and not low.empty:
+        # ln(H/L)
+        log_hl = np.log(high_vals / (low_vals + 1e-9))
+        log_hl_sq = log_hl ** 2
+        # Rolling mean of squared log range over 20 bars
+        rolling_log_hl_sq = _numba_rolling_mean(log_hl_sq, 20)
+        # Parkinson Vol = sqrt( mean / (4 ln 2) )
+        # Note: Standard Parkinson uses Sum over N.
+        # Sigma = sqrt( 1/(4 N ln 2) * Sum(ln(H/L)^2) )
+        # Here rolling_log_hl_sq is Mean = Sum/N.
+        # So Sigma = sqrt( Mean / (4 ln 2) )
+        parkinson_vol = np.sqrt(rolling_log_hl_sq / (4 * np.log(2)))
+
+        signals['parkinson_vol'] = parkinson_vol
+
+        # Vol Efficiency: Parkinson / Close-to-Close
+        # > 1 means range is expanding more than closes (choppy/volatile intraday)
+        # < 1 means gaps/trends without range overlap? Or just low efficiency?
+        # Actually usually Parkinson is efficient estimator of Close-to-Close. Ratio should be ~1.
+        signals['vol_efficiency'] = parkinson_vol / (returns_std + 1e-9)
+    else:
+        signals['parkinson_vol'] = realized_vol # Fallback
+        signals['vol_efficiency'] = 1.0
+
+    # Volatility Regime: Rolling Rank (Fix Look-ahead Bias)
+    # Replacing global rank(pct=True) with rolling rank
+    realized_vol_series = pd.Series(realized_vol, index=df.index)
+    signals['volatility_regime'] = realized_vol_series.rolling(window=2000, min_periods=200).rank(pct=True).fillna(0.5)
+
+    # Volatility Spike (Z-score of realized vol)
+    # Using longer window for regime baseline (50)
+    rv_mean = _numba_rolling_mean(realized_vol, 50)
+    rv_std = _numba_rolling_std(realized_vol, 50)
+    signals['volatility_spike'] = (realized_vol - rv_mean) / (rv_std + 1e-9)
+
+    # === 5. Trend-based signals ===
+    # MACD-like trend proxy
+    ema_fast = close.ewm(span=8).mean().values.astype(np.float32)
+    ema_slow = close.ewm(span=21).mean().values.astype(np.float32)
+    trend = ema_fast - ema_slow
+
+    # Normalize trend by price volatility
+    close_std_50 = _numba_rolling_std(close_vals, 50)
+    trend_normalized = trend / (close_std_50 + 1e-9)
+
+    # Trend Strength: Rolling Rank (Fix Look-ahead Bias)
+    trend_norm_series = pd.Series(np.abs(trend_normalized), index=df.index)
+    signals['trend_strength'] = trend_norm_series.rolling(window=2000, min_periods=200).rank(pct=True).fillna(0.5)
+
+    signals['trend_direction'] = np.sign(trend)
+
+    # === 6. RSI ===
+    # Use Pandas EWM for efficiency
+    delta = close.diff()
+    up = delta.clip(lower=0)
+    down = -1 * delta.clip(upper=0)
+
+    # Wilder's Smoothing (alpha = 1/14)
+    # ewm(com=13) equivalent to alpha=1/14
+    ma_up = up.ewm(com=13, adjust=False, min_periods=14).mean()
+    ma_down = down.ewm(com=13, adjust=False, min_periods=14).mean()
+
+    rsi = 100 - (100 / (1 + ma_up / (ma_down + 1e-9)))
+    signals['rsi'] = rsi.fillna(50).astype(np.float32)
+
+    # RSI Extreme: distance from 50, normalized to 0-1
+    signals['rsi_extreme'] = (np.abs(signals['rsi'] - 50) / 50.0)
+
+    return signals.fillna(0.0)
 
 
 @dataclass
@@ -113,183 +399,9 @@ class CompositeEventGenerator:
     def compute_base_signals(self, df: pd.DataFrame, freq: Optional[str] = None) -> pd.DataFrame:
         """
         Compute all base signals needed for composites from OHLCV data.
-        
-        Optimized for performance (float32, Numba) and causal safety (rolling rank).
-
-        Args:
-            df: DataFrame with OHLCV columns
-            freq: Optional frequency string (e.g., '15min'). If None, inferred or default.
-            
-        Returns:
-            DataFrame with base signals as columns
+        Delegates to the module-level function for consistent logic.
         """
-        signals = pd.DataFrame(index=df.index)
-        
-        # Ensure required columns exist
-        close = df.get('close', df.get('Close', pd.Series(dtype=np.float32)))
-        high = df.get('high', df.get('High', pd.Series(dtype=np.float32)))
-        low = df.get('low', df.get('Low', pd.Series(dtype=np.float32)))
-        volume = df.get('volume', df.get('Volume'))
-        
-        if close.empty:
-            return signals
-
-        # Convert to float32 for performance
-        close_vals = close.values.astype(np.float32)
-        high_vals = high.values.astype(np.float32) if not high.empty else close_vals
-        low_vals = low.values.astype(np.float32) if not low.empty else close_vals
-
-        if volume is not None:
-            vol_vals = volume.values.astype(np.float32)
-        else:
-            vol_vals = None
-        
-        # === 1. Return-based signals ===
-        # Use pandas for pct_change (efficient C impl) but cast to float32
-        returns = close.pct_change().fillna(0).astype(np.float32)
-        returns_vals = returns.values
-        
-        # Optimized rolling std using Numba
-        # Returns are 0-filled, so standard _numba_rolling_std is fine
-        returns_std = _numba_rolling_std(returns_vals, 20)
-        
-        # Avoid div by zero
-        signals['return_shock'] = np.abs(returns_vals) / (returns_std + 1e-9)
-
-        # === 2. Volume-based signals ===
-        if vol_vals is not None:
-            # Use nan-safe functions instead of pre-filling with 0 (which skews stats)
-            vol_mean = _numba_rolling_mean_nan_safe(vol_vals, 20)
-            vol_std = _numba_rolling_std_nan_safe(vol_vals, 20)
-
-            # Handle possible NaNs in output of rolling functions (e.g. all NaNs in window)
-            vol_mean = np.nan_to_num(vol_mean, nan=0.0)
-            vol_std = np.nan_to_num(vol_std, nan=0.0)
-
-            # For signal calculation, fill vol_vals NaNs with 0 temporarily if needed,
-            # but ideally we propagate NaNs or handle them.
-            # Original code filled with 0.
-            vol_vals_clean = np.nan_to_num(vol_vals, nan=0.0)
-
-            signals['volume_spike'] = (vol_vals_clean - vol_mean) / (vol_std + 1e-9)
-
-            # Trade intensity: Volume / True Range (proxy for order book activity)
-            # TR = max(H-L, |H-Cp|, |L-Cp|)
-            # Simple TR approximation for speed: High - Low (intraday)
-            # Full TR requires shift.
-
-            # Fix cyclic shift bug using _numba_shift
-            prev_close = _numba_shift(close_vals, 1, fill_value=np.nan)
-            if len(prev_close) > 0:
-                prev_close[0] = close_vals[0] # Pad first with current close (approximation)
-
-            tr1 = high_vals - low_vals
-            tr2 = np.abs(high_vals - prev_close)
-            tr3 = np.abs(low_vals - prev_close)
-
-            # Handle potential NaNs from shift (though padded above)
-            tr2 = np.nan_to_num(tr2, nan=0.0)
-            tr3 = np.nan_to_num(tr3, nan=0.0)
-
-            tr = np.maximum(tr1, np.maximum(tr2, tr3))
-
-            intensity = vol_vals_clean / (tr + 1e-9)
-
-            # Rolling Z-score of intensity
-            # Use nan-safe here too just in case
-            int_mean = _numba_rolling_mean_nan_safe(intensity, 20)
-            int_std = _numba_rolling_std_nan_safe(intensity, 20)
-
-            int_mean = np.nan_to_num(int_mean, nan=0.0)
-            int_std = np.nan_to_num(int_std, nan=0.0)
-
-            signals['trade_intensity'] = (intensity - int_mean) / (int_std + 1e-9)
-        else:
-            signals['volume_spike'] = 0.0
-            signals['trade_intensity'] = 0.0
-        
-        # === 3. Flow Imbalance (OHLCV proxy for order flow) ===
-        # High close relative to range suggests buying pressure
-        bar_range = (high_vals - low_vals)
-        # Close Position: (C - L) / (H - L)
-        # Handle zero range
-        denom = bar_range + 1e-9
-        close_position = (close_vals - low_vals) / denom
-
-        # Clip to [0, 1] to handle data errors
-        close_position = np.clip(close_position, 0.0, 1.0)
-
-        signals['flow_imbalance'] = (close_position - 0.5) * 2  # Normalized to [-1, 1]
-        
-        # Order flow imbalance using volume-weighted bar position
-        if vol_vals is not None:
-            # vol_vals_clean already defined above
-            volume_weighted_position = close_position * vol_vals_clean
-            vwp_mean = _numba_rolling_mean_nan_safe(volume_weighted_position, 20)
-            vwp_std = _numba_rolling_std_nan_safe(volume_weighted_position, 20)
-
-            vwp_mean = np.nan_to_num(vwp_mean, nan=0.0)
-            vwp_std = np.nan_to_num(vwp_std, nan=0.0)
-
-            signals['order_flow_imbalance'] = (volume_weighted_position - vwp_mean) / (vwp_std + 1e-9)
-        else:
-            signals['order_flow_imbalance'] = signals['flow_imbalance']
-        
-        # === 4. Volatility-based signals ===
-        # Infer frequency scaling
-        if freq is None and isinstance(df.index, pd.DatetimeIndex):
-            inferred = pd.infer_freq(df.index)
-            freq = inferred if inferred else '15min' # Default fallback
-
-        # Estimate bars per year
-        # Standard: 15m -> 96/day -> 252 days -> 24192
-        # Simple heuristic mapping
-        bars_per_year = 252 * 96 # Default 15m
-        if freq:
-            if 'h' in freq.lower():
-                bars_per_year = 252 * 24 # Hourly
-            elif 'd' in freq.lower():
-                bars_per_year = 252 # Daily
-            elif 'm' in freq.lower():
-                try:
-                    mins = int(''.join(filter(str.isdigit, freq)))
-                    bars_per_year = 252 * (1440 / max(1, mins))
-                except:
-                    pass
-
-        annualization = np.sqrt(bars_per_year)
-
-        # Realized Volatility (Annualized)
-        realized_vol = returns_std * annualization
-
-        # Volatility Regime: Rolling Rank (Fix Look-ahead Bias)
-        # Replacing global rank(pct=True) with rolling rank
-        realized_vol_series = pd.Series(realized_vol, index=df.index)
-        signals['volatility_regime'] = realized_vol_series.rolling(window=2000, min_periods=200).rank(pct=True).fillna(0.5)
-
-        # Volatility Spike (Z-score of realized vol)
-        # Using longer window for regime baseline (50)
-        rv_mean = _numba_rolling_mean(realized_vol, 50)
-        rv_std = _numba_rolling_std(realized_vol, 50)
-        signals['volatility_spike'] = (realized_vol - rv_mean) / (rv_std + 1e-9)
-        
-        # === 5. Trend-based signals ===
-        # MACD-like trend proxy
-        ema_fast = close.ewm(span=8).mean().values.astype(np.float32)
-        ema_slow = close.ewm(span=21).mean().values.astype(np.float32)
-        trend = ema_fast - ema_slow
-        
-        # Normalize trend by price volatility
-        close_std_50 = _numba_rolling_std(close_vals, 50)
-        trend_normalized = trend / (close_std_50 + 1e-9)
-
-        # Trend Strength: Rolling Rank (Fix Look-ahead Bias)
-        trend_norm_series = pd.Series(np.abs(trend_normalized), index=df.index)
-        signals['trend_strength'] = trend_norm_series.rolling(window=2000, min_periods=200).rank(pct=True).fillna(0.5)
-
-        signals['trend_direction'] = np.sign(trend)
-
-        return signals.fillna(0.0)
+        return compute_microstructure_signals(df, freq)
     
     def generate_composite_events(
         self, 
@@ -405,52 +517,17 @@ class TradeIntensityEvents:
         self.window = window
     
     def generate(self, df: pd.DataFrame) -> pd.DatetimeIndex:
-        """Generate trade intensity events."""
-        close = df.get('close', df.get('Close'))
-        high = df.get('high', df.get('High'))
-        low = df.get('low', df.get('Low'))
-        volume = df.get('volume', df.get('Volume'))
-        
-        if any(x is None for x in [close, high, low, volume]):
-            return pd.DatetimeIndex([])
-        
-        # Use Numba-optimized path if possible, but keep simple for now to match interface
-        # Cast to float32
-        close_vals = close.values.astype(np.float32)
-        high_vals = high.values.astype(np.float32)
-        low_vals = low.values.astype(np.float32)
-        vol_vals = volume.values.astype(np.float32)
+        """Generate trade intensity events using centralized logic."""
+        # Use existing signal if available to avoid re-computation
+        if 'trade_intensity' in df.columns:
+            signal = df['trade_intensity']
+        else:
+            signals = compute_microstructure_signals(df)
+            if 'trade_intensity' not in signals.columns:
+                return pd.DatetimeIndex([])
+            signal = signals['trade_intensity']
 
-        # True Range Approximation
-        # Fix cyclic shift bug
-        prev_close = _numba_shift(close_vals, 1, fill_value=np.nan)
-        if len(prev_close) > 0:
-            prev_close[0] = close_vals[0]
-
-        tr1 = high_vals - low_vals
-        tr2 = np.abs(high_vals - prev_close)
-        tr3 = np.abs(low_vals - prev_close)
-
-        # Handle potential NaNs
-        tr2 = np.nan_to_num(tr2, nan=0.0)
-        tr3 = np.nan_to_num(tr3, nan=0.0)
-
-        tr = np.maximum(tr1, np.maximum(tr2, tr3))
-        
-        # Trade intensity
-        intensity = vol_vals / (tr + 1e-9)
-        
-        # Z-score using Numba Nan-Safe
-        intensity_mean = _numba_rolling_mean_nan_safe(intensity, self.window)
-        intensity_std = _numba_rolling_std_nan_safe(intensity, self.window)
-
-        intensity_mean = np.nan_to_num(intensity_mean, nan=0.0)
-        intensity_std = np.nan_to_num(intensity_std, nan=0.0)
-
-        intensity_z = (intensity - intensity_mean) / (intensity_std + 1e-9)
-        
-        # Events
-        mask = np.abs(intensity_z) >= self.threshold
+        mask = np.abs(signal) >= self.threshold
         return df.index[mask]
 
 
@@ -467,44 +544,17 @@ class OrderFlowImbalanceEvents:
         self.window = window
     
     def generate(self, df: pd.DataFrame) -> pd.DatetimeIndex:
-        """Generate order flow imbalance events."""
-        close = df.get('close', df.get('Close'))
-        high = df.get('high', df.get('High'))
-        low = df.get('low', df.get('Low'))
-        volume = df.get('volume', df.get('Volume'))
-        
-        if any(x is None for x in [close, high, low]):
-            return pd.DatetimeIndex([])
-        
-        close_vals = close.values.astype(np.float32)
-        high_vals = high.values.astype(np.float32)
-        low_vals = low.values.astype(np.float32)
-
-        # Bar position: 0 = low, 1 = high
-        bar_range = (high_vals - low_vals)
-        close_position = (close_vals - low_vals) / (bar_range + 1e-9)
-        
-        # Clip to [0, 1]
-        close_position = np.clip(close_position, 0.0, 1.0)
-
-        # Volume-weighted position for stronger signal
-        if volume is not None:
-            vol_vals = volume.values.astype(np.float32)
-            flow = (close_position - 0.5) * vol_vals
+        """Generate order flow imbalance events using centralized logic."""
+        # Use existing signal if available to avoid re-computation
+        if 'order_flow_imbalance' in df.columns:
+            signal = df['order_flow_imbalance']
         else:
-            flow = close_position - 0.5
-        
-        # Z-score
-        flow_mean = _numba_rolling_mean_nan_safe(flow, self.window)
-        flow_std = _numba_rolling_std_nan_safe(flow, self.window)
+            signals = compute_microstructure_signals(df)
+            if 'order_flow_imbalance' not in signals.columns:
+                return pd.DatetimeIndex([])
+            signal = signals['order_flow_imbalance']
 
-        flow_mean = np.nan_to_num(flow_mean, nan=0.0)
-        flow_std = np.nan_to_num(flow_std, nan=0.0)
-
-        flow_z = (flow - flow_mean) / (flow_std + 1e-9)
-        
-        # Events: extreme buying or selling pressure
-        mask = np.abs(flow_z) >= self.threshold
+        mask = np.abs(signal) >= self.threshold
         return df.index[mask]
 
 
@@ -521,44 +571,17 @@ class BarPressureEvents:
         self.window = window
     
     def generate(self, df: pd.DataFrame) -> pd.DatetimeIndex:
-        """Generate bar pressure events."""
-        close = df.get('close', df.get('Close'))
-        open_ = df.get('open', df.get('Open'))
-        high = df.get('high', df.get('High'))
-        low = df.get('low', df.get('Low'))
-        volume = df.get('volume', df.get('Volume'))
-        
-        if any(x is None for x in [close, open_, high, low]):
-            return pd.DatetimeIndex([])
-        
-        close_vals = close.values.astype(np.float32)
-        open_vals = open_.values.astype(np.float32)
-        high_vals = high.values.astype(np.float32)
-        low_vals = low.values.astype(np.float32)
-
-        # Directional pressure: (close - open) / range
-        bar_range = (high_vals - low_vals)
-        direction = (close_vals - open_vals) / (bar_range + 1e-9)
-        
-        # Volume-weighted for significance
-        if volume is not None:
-            vol_vals = volume.values.astype(np.float32)
-            vol_mean = _numba_rolling_mean_nan_safe(vol_vals, self.window)
-            vol_normalized = vol_vals / (vol_mean + 1e-9)
-            pressure = direction * vol_normalized
+        """Generate bar pressure events using centralized logic."""
+        # Use existing signal if available to avoid re-computation
+        if 'bar_pressure' in df.columns:
+            signal = df['bar_pressure']
         else:
-            pressure = direction
-        
-        # Z-score
-        pressure_mean = _numba_rolling_mean_nan_safe(pressure, self.window)
-        pressure_std = _numba_rolling_std_nan_safe(pressure, self.window)
+            signals = compute_microstructure_signals(df)
+            if 'bar_pressure' not in signals.columns:
+                return pd.DatetimeIndex([])
+            signal = signals['bar_pressure']
 
-        pressure_mean = np.nan_to_num(pressure_mean, nan=0.0)
-        pressure_std = np.nan_to_num(pressure_std, nan=0.0)
-
-        pressure_z = (pressure - pressure_mean) / (pressure_std + 1e-9)
-        
-        mask = np.abs(pressure_z) >= self.threshold
+        mask = np.abs(signal) >= self.threshold
         return df.index[mask]
 
 
@@ -617,9 +640,15 @@ class CrossAssetEventGenerator:
                 # logger.warning(f"Feature {col} not found in DataFrame")
                 continue
                 
-            # 1. Compute Rolling Z-Score
             raw_series = df[col]
-            z_scores = self._compute_rolling_z(raw_series)
+
+            # Handle multi-asset grouping
+            if 'asset_id' in df.columns:
+                z_scores = raw_series.groupby(df['asset_id'], group_keys=False).apply(
+                    lambda x: self._compute_rolling_z(x)
+                )
+            else:
+                z_scores = self._compute_rolling_z(raw_series)
             
             # 2. Trigger Events using Fixed Threshold (No Look-ahead)
             abs_z = z_scores.abs()

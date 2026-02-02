@@ -175,12 +175,6 @@ class UnifiedPriceMixin:
         
         return unified_price
 
-VOLUME_FAMILIES = {'VOLUME_SPECIALIST', 'MICROSTRUCTURE_IMBALANCE'}
-VOLATILITY_FAMILIES = {'VOLATILITY_SPECIALIST', 'VOLATILITY_CRUSH'}
-FAMILY_MIN_EVENT_RATE = {
-    'VOLUME_SPECIALIST': 2.5,
-    'MICROSTRUCTURE_IMBALANCE': 2.0,
-}
 CONDITIONAL_MI_THRESHOLD = 0.015
 
 def _should_use_range_specific_optimization() -> bool:
@@ -221,28 +215,6 @@ FAMILY_MIN_EVENT_RATE = {
     'MICROSTRUCTURE_IMBALANCE': 2.0,
 }
 
-FIXED_GRID = [
-    # --- 1.5-3% Target Range Specific Grid (de Prado Framework) ---
-    # ADDED: TBM 32 and Trend Model 150
-    {'id': 'TBM_16', 'pt': 2.0, 'sl': 1.0, 'horizon': 16}, # 4h
-    {'id': 'TBM_24', 'pt': 2.0, 'sl': 1.0, 'horizon': 24}, # 6h
-    {'id': 'TBM_32', 'pt': 2.0, 'sl': 1.0, 'horizon': 32},
-    {'id': 'Trend_150', 'pt': 4.0, 'sl': 1.5, 'horizon': 150},
-    
-    # --- Ratio 1.5 ---
-    {'id': '1.5:1', 'pt': 2.25, 'sl': 1.5},
-    {'id': '3:2',   'pt': 3.75, 'sl': 2.5},
-
-    # --- Ratio 2.0 ---
-    {'id': '2:1',   'pt': 3.00, 'sl': 1.5},
-    {'id': '4:2',   'pt': 5.00, 'sl': 2.5},
-
-    # --- Ratio 3.0 ---
-    {'id': '3:1',   'pt': 4.50, 'sl': 1.5},
-
-    # --- Ratio 4.0 ---
-    {'id': '4:1',   'pt': 6.00, 'sl': 1.5},
-]
 # 1.5-3% Target Range Specific Grid (de Prado Framework)
 MEDIUM_TERM_GRID = [
     # --- 1.5% Target (Low End)
@@ -4625,8 +4597,9 @@ def get_inventory_specialist_events(df: pd.DataFrame, threshold: float = 2.0, wi
 def _safe_to_markdown(df: pd.DataFrame) -> str:
     """Fallback for to_markdown() if tabulate is missing."""
     try:
+        import tabulate
         return df.to_markdown()
-    except Exception:
+    except (ImportError, Exception):
         cols = df.columns
         res = [" | " + " | ".join(map(str, cols)) + " | "]
         res.append(" | " + " | ".join(["---"] * len(cols)) + " | ")
@@ -5553,6 +5526,10 @@ def orthogonal_label_generation(
     # Ensure columns exist
     final_cols = [c for c in essential_cols if c in df_full.columns]
     df_worker = df_full[final_cols].copy(deep=False)
+
+    # Optimize memory: cast float64 to float32 for workers
+    for col in df_worker.select_dtypes(include=['float64']).columns:
+        df_worker[col] = df_worker[col].astype(np.float32)
 
     common_args = (df_worker, price, vol_series, X_probe, valid_tpsl_map, param_grids,
                    target_signals_per_day, specialist_predictions, causal_graph, 

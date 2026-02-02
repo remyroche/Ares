@@ -1126,6 +1126,14 @@ def create_meta_features(
     # --- BASE FEATURES ---
     features_list.append({'log_ret': _norm(log_ret_arr, 'log_ret')})
     
+    # Round-number distance (Normalized)
+    dist_round_1 = np.abs(close_arr - np.round(close_arr))
+    dist_round_01 = np.abs(close_arr - np.round(close_arr, 1))
+    features_list.append({
+        'dist_round_1': _norm(dist_round_1, 'dist_round_1'),
+        'dist_round_01': _norm(dist_round_01, 'dist_round_01')
+    })
+
     # --- CUSUM / EFFICIENCY ---
     if NUMBA_AVAILABLE:
         kf_ret, _ = _numba_kalman_filter_grouped(log_ret_arr, group_ids, 1e-5, 0.01, 0.0)
@@ -1231,10 +1239,10 @@ def create_meta_features(
             w_feats[f'trend_efficiency_ratio_w{w}'] = _norm(efficiency_ratio, '')
 
             # Donchian
-            width = r_high - r_low
-            pos = (close_arr - r_low) / (width + 1e-9)
+            donchian_width = r_high - r_low
+            pos = (close_arr - r_low) / (donchian_width + 1e-9)
             w_feats[f'donchian_position_w{w}'] = _norm(pos, '')
-            w_feats[f'donchian_width_w{w}'] = _norm(width / (close_arr + 1e-9), '')
+            w_feats[f'donchian_width_w{w}'] = _norm(donchian_width / (close_arr + 1e-9), '')
 
             # RSI (Wilder's approximation using EWMA)
             # Standard RSI: RS = EWMA(Gain) / EWMA(Loss)
@@ -1262,6 +1270,69 @@ def create_meta_features(
                 # "Volume expended without price progress"
                 churn = vol_arr * (1.0 - efficiency_ratio)
                 w_feats[f'volume_without_progress_w{w}'] = _norm(_rolling_mean_grouped_numba(churn, group_ids, w), 'volume')
+
+            # --- Advanced Momentum & Microstructure ---
+            # Volatility-normalized momentum
+            # ret / vol (using r_ret_std as vol)
+            w_feats[f'vol_norm_momentum_w{w}'] = _norm(log_ret_arr / (r_ret_std + 1e-9), '')
+
+            # Trend Acceleration (Change in slope/trend)
+            # Proxy: Change in smoothed return
+            trend = _rolling_mean_grouped_numba(log_ret_arr, group_ids, w)
+            trend_prev = np.roll(trend, w)
+            trend_mask = np.ones_like(trend, dtype=bool)
+            trend_mask[:w] = False
+            trend_mask[w:] = (group_ids[w:] == group_ids[:-w])
+            trend_accel = trend - trend_prev
+            trend_accel[~trend_mask] = 0.0
+            w_feats[f'trend_acceleration_w{w}'] = _norm(trend_accel, '')
+
+            # Price-Volume Divergence (PVD)
+            # zscore(slope_price) - zscore(slope_vol)
+            # Proxy slope: (val - val_lag) / lag
+            slope_price = close_arr - np.roll(close_arr, w)
+            slope_vol = vol_arr - np.roll(vol_arr, w)
+            # Masking handled by _norm usually, but better to be safe?
+            # _norm handles winsorization.
+            w_feats[f'pvd_w{w}'] = _norm(slope_price, '') - _norm(slope_vol, '')
+
+            # CLV Momentum
+            # EMA(CLV) -> Rolling Mean(CLV)
+            w_feats[f'clv_mom_w{w}'] = _norm(_rolling_mean_grouped_numba(clv, group_ids, w), '')
+
+            # Squeeze Ratio
+            # BB Width / Volatility (ATR proxy)
+            # BB Width = 4 * std(price) / mean(price)
+            # We need r_close_std (std of price, not returns)
+            r_close_std = _rolling_std_grouped_numba(close_arr, group_ids, w)
+            bb_width = (4 * r_close_std) / (r_close_mean + 1e-9)
+            # ATR proxy = r_ret_std * close_arr (approximate daily move in price terms) or just use normalized BB width.
+            # Squeeze is usually BB Width / Keltner Width (ATR).
+            # Here we approximate: BB Width / (Vol_Return)
+            # Normalized BB Width is already width / price.
+            # Vol_Return is sigma.
+            # So Squeeze ~ BB_Width_Norm / Vol_Return.
+            w_feats[f'squeeze_ratio_w{w}'] = _norm(bb_width / (r_ret_std + 1e-9), '')
+
+            # Signed Volume Pressure
+            # Sum(Sign(Ret)*Vol) / Sum(Vol)
+            signed_vol = np.sign(log_ret_arr) * vol_arr
+            sum_signed_vol = _rolling_sum_grouped_numba(signed_vol, group_ids, w)
+            sum_vol = _rolling_sum_grouped_numba(vol_arr, group_ids, w)
+            w_feats[f'signed_vol_pressure_w{w}'] = _norm(sum_signed_vol / (sum_vol + 1e-9), '')
+
+            # Volume-Weighted Momentum (VWAP Momentum)
+            # Sum(Ret*Vol) / Sum(Vol)
+            ret_vol = log_ret_arr * vol_arr
+            sum_ret_vol = _rolling_sum_grouped_numba(ret_vol, group_ids, w)
+            w_feats[f'vwap_momentum_w{w}'] = _norm(sum_ret_vol / (sum_vol + 1e-9), '')
+
+            # ATR Contraction Ratio
+            # Vol(Short) / Vol(Long)
+            # We need long volatility. We can use v_long_std from base features (computed earlier).
+            # v_long_std is typically window=200.
+            # Only valid if we have access to it here. `v_long_std` is defined outside loop.
+            w_feats[f'atr_contraction_ratio_w{w}'] = _norm(r_ret_std / (v_long_s + 1e-9), '')
 
         features_list.append(w_feats)
 

@@ -1009,7 +1009,11 @@ class Layer25Chaser:
                     tprint_warning(f"   ⚠️ Anti-Explosion feature generation failed: {e}")
 
         # === Add Concept Features (raw) ===
-        if price_col and high_col in X.columns and low_col in X.columns:
+        # Detect High/Low columns
+        high_col = next((c for c in ['high', 'High'] if c in X.columns), None)
+        low_col = next((c for c in ['low', 'Low'] if c in X.columns), None)
+
+        if price_col and high_col and low_col:
             high = X[high_col]
             low = X[low_col]
             open_col = "open" if "open" in X.columns else ("Open" if "Open" in X.columns else None)
@@ -1089,6 +1093,75 @@ class Layer25Chaser:
                     directional_vol = volume * sign
                     X_eng["directional_volume"] = directional_vol
                     X_eng["directional_volume_sum_20"] = directional_vol.rolling(20, min_periods=10).sum()
+                    # Signed Volume Pressure
+                    vol_sum_20 = volume.rolling(20, min_periods=10).sum().replace(0, np.nan)
+                    X_eng["signed_vol_pressure"] = X_eng["directional_volume_sum_20"] / vol_sum_20
+
+            # Round-number distance (Assuming normalized by tick size 1 or 0.1 since tick_size unknown)
+            # dist_1 = abs(C - round(C, 0))
+            X_eng["dist_round_1"] = (close - close.round(0)).abs()
+            # dist_2 = abs(C - round(C, 1))
+            X_eng["dist_round_01"] = (close - close.round(1)).abs()
+
+            # Volatility-normalized momentum
+            # ret / vol
+            vol_for_norm = X_eng["vol_bench_20_z"] if "vol_bench_20_z" in X_eng.columns else ret_1.rolling(20).std()
+            X_eng["vol_norm_momentum"] = ret_1 / (vol_for_norm.replace(0, np.nan))
+
+            # Trend acceleration (diff of slope)
+            # using slope from add_enhanced_gates if available, or compute here
+            slope_fast = close.diff().rolling(10, min_periods=10).mean() # ema_fast in gates is 10
+            X_eng["trend_acceleration"] = slope_fast.diff()
+
+            # Price-Volume Divergence (PVD)
+            # pvdN=zscore(slopeprice)−zscore(slopevolume)
+            # We use 20 period rolling slope (diff)
+            slope_price = close.diff(5).rolling(20, min_periods=20).mean()
+            slope_price_mean = slope_price.rolling(50, min_periods=50).mean()
+            slope_price_std = slope_price.rolling(50, min_periods=50).std().replace(0, np.nan)
+            z_slope_price = (slope_price - slope_price_mean) / slope_price_std
+
+            if volume is not None:
+                slope_vol = volume.diff(5).rolling(20, min_periods=20).mean()
+                slope_vol_mean = slope_vol.rolling(50, min_periods=50).mean()
+                slope_vol_std = slope_vol.rolling(50, min_periods=50).std().replace(0, np.nan)
+                z_slope_vol = (slope_vol - slope_vol_mean) / slope_vol_std
+                X_eng["pvd_20"] = z_slope_price - z_slope_vol
+            else:
+                X_eng["pvd_20"] = 0.0
+
+            # Close Location Value (CLV) Momentum
+            # CLV = ((C-L) - (H-C)) / (H-L)
+            clv = ((close - low) - (high - close)) / (range_raw.replace(0, np.nan))
+            X_eng["clv_mom_10"] = clv.ewm(span=10, adjust=False).mean()
+
+            # Squeeze Ratio (Crypto)
+            # ATR Contraction: Short ATR / Long ATR
+            atr_long = tr.rolling(100, min_periods=50).mean()
+            X_eng["atr_contraction_ratio"] = atr / (atr_long.replace(0, np.nan))
+
+            # Squeeze Score (BB Width / ATR) or similar
+            # bb_width already computed in gates, but locally here:
+            bb_mid_local = close.rolling(20).mean()
+            bb_std_local = close.rolling(20).std()
+            bb_width_local = (4 * bb_std_local) / bb_mid_local.replace(0, np.nan)
+            # Ratio of BB width to volatility (ATR normalized by price approx?)
+            # Just BB Width / (ATR/Price)
+            atr_norm = atr / close
+            X_eng["squeeze_ratio"] = bb_width_local / (atr_norm.replace(0, np.nan))
+
+            # Volume-Weighted Momentum
+            # Sum(Ret * Vol) / Sum(Vol)
+            if volume is not None:
+                ret_vol = ret_1 * volume
+                X_eng["vwap_momentum_20"] = ret_vol.rolling(20, min_periods=10).sum() / vol_sum_20
+
+            # Donchian Breakout/Momentum
+            # donchian_distance already exists.
+            # "pressing into new territory" -> close to 1 or 0.
+            # We can add a feature |distance - 0.5| * 2 -> 0 to 1
+            X_eng["donchian_breakout_intensity"] = (X_eng["donchian_distance"] - 0.5).abs() * 2.0
+
 
         # === Add Enhanced Gates ===
         try:

@@ -13,7 +13,7 @@ Key Features:
 
 import numpy as np
 import pandas as pd
-from typing import List, Dict, Set, Optional, Tuple, Any
+from typing import List, Dict, Set, Optional, Tuple, Any, Union
 import warnings
 
 # Import tprint functions
@@ -63,24 +63,15 @@ class NonCausalFeatureSelector:
         self.max_features = max_features
         
         # Default technical feature patterns
-        self.technical_feature_patterns = technical_feature_patterns or [
-            'rsi', 'macd', 'bollinger', 'bb_', 'sma', 'ema', 'wma',
-            'stoch', 'williams', 'cci', 'adx', 'atr', 'obv',
-            'momentum', 'rate_of_change', 'roc', 'tsi',
-            'volume_ratio', 'volume_weighted', 'vwap',
-            'price_position', 'price_range', 'price_momentum',
-            'volatility_ratio', 'volatility_rank', 'volatility_regime',
-            'trend_strength', 'trend_direction', 'trend_consistency',
-            'microstructure', 'order_flow', 'bid_ask', 'spread',
-            'depth', 'imbalance', 'pressure', 'flow'
-        ]
+        self.technical_feature_patterns = technical_feature_patterns or create_technical_feature_patterns()
         
-        # Default exclusion patterns (causal parents)
+        # Default exclusion patterns (causal parents + leakage)
         self.exclude_patterns = exclude_patterns or [
             'inventory', 'liquidity', 'global_liquidity',
             'market_impact', 'structural', 'causal_',
             'volume_price_impact', 'volatility_price_impact',
-            'liquidity_friction', 'execution_cost'
+            'liquidity_friction', 'execution_cost',
+            'target_', 'label_', 'future_', 'bin_', 'ret_'
         ]
         
         # Cache for results
@@ -88,10 +79,13 @@ class NonCausalFeatureSelector:
         self.non_causal_features_ = None
         self.feature_scores_ = None
         
-    def identify_causal_parents(self) -> Set[str]:
+    def identify_causal_parents(self, feature_names: Optional[List[str]] = None) -> Set[str]:
         """
         Identify causal parents from the causal graph or PC results.
         
+        Args:
+            feature_names: Optional list of feature names to map indices from PC results
+
         Returns:
             Set of causal parent feature names
         """
@@ -122,10 +116,19 @@ class NonCausalFeatureSelector:
                     strength_matrix = self.pc_algorithm_results['causal_strength']
                     # Find strong causal relationships
                     strong_edges = np.where(np.abs(strength_matrix) > 0.1)
-                    for i, j in zip(strong_edges[0], strong_edges[1]):
-                        if i < len(strength_matrix) and j < len(strength_matrix):
-                            # This would need feature names mapping
-                            pass
+
+                    if feature_names:
+                        count_added = 0
+                        for i, j in zip(strong_edges[0], strong_edges[1]):
+                            if i < len(strength_matrix) and j < len(strength_matrix):
+                                # Add the parent (source)
+                                if i < len(feature_names):
+                                    causal_parents.add(feature_names[i])
+                                    count_added += 1
+                        if self.verbose:
+                            tprint_info(f"   - Added {count_added} parents from PC strength matrix")
+                    elif self.verbose and len(strong_edges[0]) > 0:
+                         tprint_warning("   ⚠️ PC algorithm results present but no feature names provided for mapping indices.")
             
             # Method 3: Default causal parents (common in financial systems)
             else:
@@ -143,8 +146,13 @@ class NonCausalFeatureSelector:
             
             if self.verbose:
                 tprint_success(f"✅ Identified {len(causal_parents)} causal parents:")
-                for parent in sorted(causal_parents):
+                # Show sample if too many
+                sorted_parents = sorted(causal_parents)
+                display_limit = 10
+                for parent in sorted_parents[:display_limit]:
                     tprint_info(f"   - {parent}")
+                if len(sorted_parents) > display_limit:
+                    tprint_info(f"   - ... and {len(sorted_parents) - display_limit} more")
             
             return causal_parents
             
@@ -171,39 +179,40 @@ class NonCausalFeatureSelector:
                 tprint_info("🔍 Filtering causal features...")
             
             # Identify causal parents if not done yet
+            # Pass all_features to help with mapping if needed
             if self.causal_parents_ is None:
-                self.identify_causal_parents()
+                self.identify_causal_parents(feature_names=all_features)
             
             non_causal_features = []
             excluded_count = 0
             
+            # Pre-compute lower case sets for faster lookup
+            causal_parents_lower = {cp.lower() for cp in self.causal_parents_}
+            exclude_patterns_lower = [p.lower() for p in self.exclude_patterns]
+
             for feature in all_features:
-                # Check if feature matches any causal parent pattern
+                feature_lower = feature.lower()
                 is_causal = False
                 
-                # Direct match
+                # Check 1: Exact or substring match in identified causal parents
+                # Optimization: check exact match first (O(1))
                 if feature in self.causal_parents_:
                     is_causal = True
-                
-                # Pattern match
                 else:
-                    feature_lower = feature.lower()
-                    for causal_parent in self.causal_parents_:
-                        if causal_parent.lower() in feature_lower:
-                            is_causal = True
-                            break
+                    # Check substring match against causal parents
+                    # This is O(M) where M is number of causal parents
+                    if any(cp in feature_lower for cp in causal_parents_lower):
+                        is_causal = True
                 
-                # Exclusion pattern match
+                # Check 2: Exclusion patterns (if not already excluded)
                 if not is_causal:
-                    for pattern in self.exclude_patterns:
-                        if pattern.lower() in feature.lower():
-                            is_causal = True
-                            break
+                    if any(p in feature_lower for p in exclude_patterns_lower):
+                        is_causal = True
                 
                 if is_causal:
                     excluded_count += 1
                     if self.verbose and excluded_count <= 10:  # Show first 10
-                        tprint_info(f"   ❌ Excluded (causal): {feature}")
+                        tprint_info(f"   ❌ Excluded (causal/pattern): {feature}")
                 else:
                     non_causal_features.append(feature)
             
@@ -243,21 +252,25 @@ class NonCausalFeatureSelector:
             # Score features based on technical patterns and importance
             feature_scores = {}
             
+            # Pre-process patterns
+            patterns_lower = [p.lower() for p in self.technical_feature_patterns]
+
             for feature in non_causal_features:
                 score = 0.0
                 feature_lower = feature.lower()
                 
                 # Technical pattern matching
-                for pattern in self.technical_feature_patterns:
-                    if pattern in feature_lower:
-                        score += 1.0
-                        break  # Only count once per feature
+                # Boost score if it matches any technical pattern
+                if any(p in feature_lower for p in patterns_lower):
+                    score += 1.0
                 
                 # Feature importance bonus
                 if feature_importance and feature in feature_importance:
                     importance = feature_importance[feature]
-                    if importance > self.min_feature_importance:
-                        score += importance
+                    # Simple validation to avoid bad values
+                    if isinstance(importance, (int, float)) and not np.isnan(importance):
+                         if importance > self.min_feature_importance:
+                            score += importance
                 
                 feature_scores[feature] = score
             

@@ -141,7 +141,7 @@ def stability_score_from_fold_metrics(
     Returns:
         float stability score; -inf if insufficient metrics.
     """
-    fm = np.asarray(fm, dtype=float)
+    fm = np.asarray(fm, dtype=np.float32)
     fm = fm[np.isfinite(fm)]
     if fm.size < 3:
         return -np.inf
@@ -433,7 +433,7 @@ class StabilityRegimeTree:
         self._bin_edges_by_feature_ = {}
         if self.use_binned_splits:
             n_bins = max(16, min(4096, self.n_feature_bins))
-            q = np.linspace(0.0, 100.0, n_bins + 1, dtype=float)[1:-1]
+            q = np.linspace(0.0, 100.0, n_bins + 1, dtype=np.float32)[1:-1]
             Z_binned = np.empty(Z_np.shape, dtype=np.uint16)
             for feat, j in col_index.items():
                 col = Z_np[:, j]
@@ -646,10 +646,10 @@ class StabilityRegimeTree:
             preds_by_expert_norm[e] = self._normalize_position_scale(preds_by_expert[e])
 
         leaf_ids = self.predict_leaf_ids(Z_new)
-        signals = np.zeros(n, dtype=float)
-        disagreements = np.zeros(n, dtype=float)
-        entropies = np.zeros(n, dtype=float)
-        best_scores = np.zeros(n, dtype=float)
+        signals = np.zeros(n, dtype=np.float32)
+        disagreements = np.zeros(n, dtype=np.float32)
+        entropies = np.zeros(n, dtype=np.float32)
+        best_scores = np.zeros(n, dtype=np.float32)
         best_experts: List[str] = []
 
         for i, leaf_id in enumerate(leaf_ids):
@@ -672,7 +672,7 @@ class StabilityRegimeTree:
                 weighted_var += w * (pred - current_signal) ** 2
             disagreements[i] = np.sqrt(max(0.0, weighted_var))
 
-            weights_arr = np.array(list(leaf.expert_weights.values()), dtype=float)
+            weights_arr = np.array(list(leaf.expert_weights.values()), dtype=np.float32)
             entropies[i] = float(-np.sum(weights_arr * np.log(weights_arr + 1e-12)))
             best_scores[i] = float(leaf.score_best)
             best_experts.append(leaf.expert_best)
@@ -704,7 +704,7 @@ class StabilityRegimeTree:
         # If you prefer to drop warmup rows, do it outside and keep alignment consistent.
         Z = Z.fillna(0.0)
 
-        Z = Z.astype(float)
+        Z = Z.astype(np.float32)
         if self.zscore_mode == "none":
             Z = Z
         elif self.zscore_mode == "expanding":
@@ -726,11 +726,11 @@ class StabilityRegimeTree:
         Z = Z.replace([np.inf, -np.inf], np.nan).fillna(0.0)
         Z = Z.clip(lower=-5.0, upper=5.0)
 
-        return Z
+        return Z.astype(np.float32)
 
     @staticmethod
     def _normalize_position_scale(arr: np.ndarray) -> np.ndarray:
-        x = np.asarray(arr, dtype=float)
+        x = np.asarray(arr, dtype=np.float32)
         x = np.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
 
         if x.size == 0:
@@ -746,7 +746,7 @@ class StabilityRegimeTree:
         return np.clip(x, -1.0, 1.0)
 
     def _validate_y(self, y: np.ndarray, n: int) -> np.ndarray:
-        y = np.asarray(y, dtype=float)
+        y = np.asarray(y, dtype=np.float32)
         if y.ndim != 1 or y.size != n:
             raise ValueError("y must be 1D and aligned with Z.")
         y = np.nan_to_num(y, nan=0.0, posinf=0.0, neginf=0.0)
@@ -757,7 +757,7 @@ class StabilityRegimeTree:
             raise ValueError("preds_oof is empty.")
         out: Dict[str, np.ndarray] = {}
         for k, v in preds.items():
-            arr = np.asarray(v, dtype=float)
+            arr = np.asarray(v, dtype=np.float32)
             if arr.ndim != 1 or arr.size != n:
                 raise ValueError(f"preds_oof[{k}] must be 1D and aligned with Z.")
             out[k] = self._normalize_position_scale(arr)
@@ -816,7 +816,7 @@ class StabilityRegimeTree:
         if total_val_samples < min_total_samples:
             return self.nan_score_floor
 
-        fm = np.array(fold_metrics, dtype=float)
+        fm = np.array(fold_metrics, dtype=np.float32)
         fm = fm[np.isfinite(fm)]
         if fm.size == 0:
             return self.nan_score_floor
@@ -863,7 +863,7 @@ class StabilityRegimeTree:
         if valid_folds < min_valid_folds or total_val_samples < min_total_samples:
             return self.nan_score_floor, fold_metrics, valid_frac
 
-        fm = np.array(fold_metrics, dtype=float)
+        fm = np.array(fold_metrics, dtype=np.float32)
         fm = fm[np.isfinite(fm)]
         if fm.size == 0:
             return self.nan_score_floor, fold_metrics, valid_frac
@@ -1023,14 +1023,14 @@ class StabilityRegimeTree:
             if _min_fold_score(expert) < self.expert_prune_worst_fold:
                 continue
             if expert == "ABSTAIN_SPECIALIST":
-                candidate_vals = np.zeros(n_leaf, dtype=float)
+                candidate_vals = np.zeros(n_leaf, dtype=np.float32)
             else:
                 candidate_vals = preds_oof[expert][idx_mask]
 
             skip = False
             for kept_expert in kept:
                 if kept_expert == "ABSTAIN_SPECIALIST":
-                    kept_vals = np.zeros(n_leaf, dtype=float)
+                    kept_vals = np.zeros(n_leaf, dtype=np.float32)
                 else:
                     kept_vals = preds_oof[kept_expert][idx_mask]
                 
@@ -1063,7 +1063,7 @@ class StabilityRegimeTree:
         items = sorted(scores_by_expert.items(), key=lambda kv: kv[1], reverse=True)
         top = items[: max(1, self.top_k_weights)]
 
-        vals = np.array([kv[1] for kv in top], dtype=float)
+        vals = np.array([kv[1] for kv in top], dtype=np.float32)
 
         if not np.isfinite(vals).any():
             w = 1.0 / len(top)
@@ -1089,7 +1089,7 @@ class StabilityRegimeTree:
         probs = probs / (np.sum(probs) + 1e-12)
 
         if self.expert_prune_cum_weight > 0:
-            full_vals = np.array([kv[1] for kv in items], dtype=float)
+            full_vals = np.array([kv[1] for kv in items], dtype=np.float32)
             full_vals = np.nan_to_num(full_vals, nan=-1e9, posinf=1e9, neginf=-1e9)
             full_vals = full_vals - np.max(full_vals)
             full_probs = np.exp(temp * full_vals)
@@ -1269,7 +1269,7 @@ class StabilityRegimeTree:
 
         # Candidate thresholds: quantiles within node's samples (not global)
         adaptive_thresholds = max(3, min(self.n_thresholds, int(np.sqrt(n_node) / 5)))
-        qs = np.linspace(0.1, 0.9, adaptive_thresholds)
+        qs = np.linspace(0.1, 0.9, adaptive_thresholds, dtype=np.float32)
 
         for feat in self.features_:
             j = col_index[feat]
@@ -1429,7 +1429,7 @@ class StabilityRegimeTree:
             weights = leaf.expert_weights or {}
             top_weights = sorted(weights.items(), key=lambda kv: kv[1], reverse=True)[:3]
             weight_str = ", ".join(f"{k}:{v:.2f}" for k, v in top_weights)
-            probs = np.array([v for v in weights.values() if v > 0], dtype=float)
+            probs = np.array([v for v in weights.values() if v > 0], dtype=np.float32)
             if probs.size:
                 entropy = float(-(probs * np.log(probs + 1e-12)).sum())
             else:

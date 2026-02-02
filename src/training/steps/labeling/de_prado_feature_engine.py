@@ -145,8 +145,8 @@ class DePradoFeatureEngine:
         ranks = rankdata(s.values, method='average')
         norm = (ranks - 1) / (len(s) - 1 + 1e-9)
         if invert:
-            return pd.Series(1.0 - norm, index=s.index)
-        return pd.Series(norm, index=s.index)
+            return pd.Series(1.0 - norm, index=s.index, dtype=np.float32)
+        return pd.Series(norm, index=s.index, dtype=np.float32)
 
     def _get_onc_clusters(self, X: pd.DataFrame, global_corr: pd.DataFrame) -> pd.Series:
         """
@@ -282,7 +282,7 @@ class DePradoFeatureEngine:
     def _get_tree_hierarchy_numba(self, model, feature_names: List[str]) -> pd.Series:
         """Calculates Mean First Split Depth using Numba."""
         n_features = len(feature_names)
-        depth_sums = np.zeros(n_features, dtype=np.float64)
+        depth_sums = np.zeros(n_features, dtype=np.float32)
         depth_counts = np.zeros(n_features, dtype=np.int64)
         max_depth_overall = 0
         
@@ -311,7 +311,7 @@ class DePradoFeatureEngine:
         mean_depths = {}
         for i, name in enumerate(feature_names):
             if depth_counts[i] > 0:
-                mean_depths[name] = depth_sums[i] / depth_counts[i]
+                mean_depths[name] = depth_sums[i] / np.float32(depth_counts[i])
             else:
                 mean_depths[name] = max_depth_overall
                 
@@ -327,8 +327,8 @@ class DePradoFeatureEngine:
         n_samples_val = X_val.shape[0]
         
         # Add shadow column
-        shadow_train = np.random.normal(0, 1, size=(n_samples_train, 1))
-        shadow_val = np.random.normal(0, 1, size=(n_samples_val, 1))
+        shadow_train = np.random.normal(0, 1, size=(n_samples_train, 1)).astype(np.float32)
+        shadow_val = np.random.normal(0, 1, size=(n_samples_val, 1)).astype(np.float32)
         
         X_train_shadow = np.hstack([X_train, shadow_train])
         X_val_shadow = np.hstack([X_val, shadow_val])
@@ -368,7 +368,7 @@ class DePradoFeatureEngine:
         else:
             imp_norm = np.zeros_like(imp_log)
             
-        fold_imp = pd.Series(imp_norm, index=feature_names)
+        fold_imp = pd.Series(imp_norm, index=feature_names, dtype=np.float32)
         
         # OOF Preds
         if is_regression:
@@ -416,7 +416,7 @@ class DePradoFeatureEngine:
         
         fold_stats = []
         fold_feature_ics = []
-        oof_preds_accum = pd.Series(np.nan, index=X.index)
+        oof_preds_accum = pd.Series(np.nan, index=X.index, dtype=np.float32)
         
         for fold_imp, feat_ics, (val_idx, preds) in results:
             fold_stats.append(fold_imp)
@@ -424,15 +424,15 @@ class DePradoFeatureEngine:
             oof_preds_accum.iloc[val_idx] = preds
             
         # Aggregation
-        imp_df = pd.DataFrame(fold_stats).fillna(0.0)
-        ic_df = pd.DataFrame(fold_feature_ics).fillna(0.0)
+        imp_df = pd.DataFrame(fold_stats).fillna(0.0).astype(np.float32)
+        ic_df = pd.DataFrame(fold_feature_ics).fillna(0.0).astype(np.float32)
         
         # Deflated MDI
         mean_imp = imp_df.mean()
         std_imp = imp_df.std()
         n_folds = len(imp_df)
         deflated_imp = mean_imp - (std_imp / np.sqrt(n_folds))
-        deflated_imp = deflated_imp.clip(lower=0)
+        deflated_imp = deflated_imp.clip(lower=0).astype(np.float32)
         
         # Stability
         median_gain = imp_df.median()
@@ -494,7 +494,7 @@ class DePradoFeatureEngine:
         else:
             X_corr_input = X
 
-        global_corr = X_corr_input.corr().fillna(0)
+        global_corr = X_corr_input.corr().fillna(0).astype(np.float32)
         
         # Regime-Aware Correlation (Conservative)
         if self.use_regime_clustering:
@@ -545,7 +545,7 @@ class DePradoFeatureEngine:
                 n_jobs=-1
             )
             est.fit(X, y)
-            gain = pd.Series(est.feature_importances_, index=X.columns)
+            gain = pd.Series(est.feature_importances_, index=X.columns, dtype=np.float32)
             
         # 4. Hierarchy (Numba Optimized)
         tprint_info("🌳 Analysis: Structure & Entropy...")
@@ -569,7 +569,7 @@ class DePradoFeatureEngine:
             
         # Calculate edges
         q_vals = np.linspace(0, 100, n_bins + 1)
-        bin_edges = np.percentile(subs, q_vals, axis=0) # (n_bins+1, n_features)
+        bin_edges = np.percentile(subs, q_vals, axis=0).astype(np.float32) # (n_bins+1, n_features)
         
         ent_vals = calculate_entropy_numba(X_np, bin_edges)
         ent_series = pd.Series(ent_vals, index=X.columns)

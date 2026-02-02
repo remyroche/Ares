@@ -9868,23 +9868,19 @@ class LabelBasedLayer2(BaseStep):
         # Checks for signal survival in 3 key regimes: High Volatility, Strong Trend, Low Liquidity.
         # Max-pooling strategy: A feature is kept if it predicts well in ANY regime or globally.
         
-        # Skip expensive MI filtering if requested
-        if self.skip_mi_filtering:
-            tprint_info("   ⚡ Skipping MI filtering (disabled for performance)")
-        else:
-            from sklearn.metrics import mutual_info_score
+        # --- MULTI-REGIME VECTORIZED SPEARMAN FILTER (Optimized) ---
+        tprint_info("   📊 Calculating Multi-Regime Conditional Spearman (Vol, Trend, Liq) - Vectorized...")
+        mi_start = time.time()
 
-            tprint_info(f"   📊 Calculating Multi-Regime Conditional MI (Vol, Trend, Liq) - Optimized: bins={self.mi_n_bins}, min_samples={self.mi_min_samples}...")
-            mi_start = time.time()
+        from scipy.stats import rankdata
         
         target_series = numeric_df[target_name]
         valid_mask = target_series.notna()
-        X_clean = numeric_df[valid_mask].fillna(0).replace([np.inf, -np.inf], 0)
-        y_clean = target_series[valid_mask]
-        
+        # Enforce float32 for performance as requested
+        X_clean = numeric_df[valid_mask].fillna(0).replace([np.inf, -np.inf], 0).astype(np.float32)
+        y_clean = target_series[valid_mask].astype(np.float32)
+
         if len(X_clean) > self.mi_min_samples:
-            n_bins = self.mi_n_bins  # Use optimized parameter 
-            
             # --- 1. Define Regimes (Proxies) ---
             regime_masks = {}
             
@@ -9893,179 +9889,112 @@ class LabelBasedLayer2(BaseStep):
                 vol = X_clean['volatility_1d']
             else:
                 # Proxy if missing
-                close_col = X_clean['close'] if 'close' in X_clean.columns else X_clean.iloc[:, 0] # Fallback
+                close_col = X_clean['close'] if 'close' in X_clean.columns else X_clean.iloc[:, 0]
                 vol = close_col.pct_change().rolling(96).std().fillna(0)
             
             vol_thr = vol.quantile(0.75)
             regime_masks['HIGH_VOL'] = (vol >= vol_thr).values
             
             # B) Strong Trend (Momentum)
-            # Proxy: Absolute value of rolling mean returns (magnitude of trend)
             if 'close' in X_clean.columns:
                 ret_roll = X_clean['close'].pct_change().rolling(24).mean().abs().fillna(0)
                 trend_thr = ret_roll.quantile(0.75)
                 regime_masks['STRONG_TREND'] = (ret_roll >= trend_thr).values
             
             # C) Low Liquidity (Friction)
-            # Proxy: Amihud (AbsRet / DollarVol)
             if 'close' in X_clean.columns and 'volume' in X_clean.columns:
-                # Avoid div by zero
                 dvol = (X_clean['close'] * X_clean['volume']).replace(0, 1)
                 amihud = (X_clean['close'].pct_change().abs() / dvol).fillna(0)
-                # Low liquidity = High Amihud
                 liq_thr = amihud.quantile(0.75)
                 regime_masks['LOW_LIQ'] = (amihud >= liq_thr).values
-            
-            # --- 2. Pre-bin target ---
-            try:
-                y_bins = pd.qcut(y_clean, n_bins, labels=False, duplicates='drop')
-            except ValueError:
-                y_bins = pd.cut(y_clean, n_bins, labels=False)
-            y_bins = pd.Series(y_bins).fillna(-1).values
-            
-            # --- 3. Calculate Scores (Global vs Regimes) ---
-            # Use cheap proxy (correlation) or expensive MI calculation
-            if self.use_cheap_mi_proxy:
-                # Cheap proxy: Use absolute correlation as MI proxy (much faster)
-                def calc_proxy_score(x_series, y_series):
-                    if len(x_series) < 5 or len(y_series) < 5:
-                        return 0.0
-                    try:
-                        corr = np.corrcoef(x_series, y_series)[0, 1]
-                        return abs(corr) if not np.isnan(corr) else 0.0
-                    except:
-                        return 0.0
-                
-                if self.verbose:
-                    tprint_info("   ⚡ Using cheap correlation proxy for MI calculation...")
-            else:
-                # Original MI calculation with Miller-Madow bias correction
-                def calc_corrected_mi(x, y):
-                    n_samples = len(x)
-                    if n_samples < 5: return 0.0
-                    
-                    # Naive (Plugin) MI
-                    mi_naive = mutual_info_score(x, y)
-                    
-                    # Miller-Madow Correction for MI
-                    # Under null of independence, E[MI] ~ (Rx-1)*(Ry-1)/(2N)
-                    rx = len(np.unique(x))
-                    ry = len(np.unique(y))
-                    correction = (rx - 1) * (ry - 1) / (2 * n_samples)
-                    
-                    return max(0.0, mi_naive - correction)
 
-            mi_scores = {}
-            feature_origins = {} 
-            
-            for col in X_clean.columns:
-                if self.use_cheap_mi_proxy:
-                    # Use correlation proxy (no binning needed)
-                    x_vals = X_clean[col].fillna(0).values
-                    y_vals = y_clean.values
-                    
-                    # Global score
-                    score = calc_proxy_score(x_vals, y_vals)
-                    origin = "GLOBAL"
-                    
-                    # Check regimes
-                    for r_name, r_mask in regime_masks.items():
-                        if np.sum(r_mask) > 20:
-                            x_r = x_vals[r_mask]
-                            y_r = y_vals[r_mask]
-                            proxy_r = calc_proxy_score(x_r, y_r)
-                            
-                            if proxy_r > score:
-                                score = proxy_r
-                                origin = r_name
-                else:
-                    # Original MI calculation with binning
-                    try:
-                        feat_bins = pd.qcut(X_clean[col], n_bins, labels=False, duplicates='drop')
-                    except ValueError:
-                        feat_bins = pd.cut(X_clean[col], n_bins, labels=False)
-                    feat_bins = pd.Series(feat_bins).fillna(-1).values
-                    
-                    # Global MI (Corrected)
-                    score = calc_corrected_mi(feat_bins, y_bins)
-                    origin = "GLOBAL"
-                    
-                    # Check Conditional Regimes
-                    for r_name, r_mask in regime_masks.items():
-                        if np.sum(r_mask) > 20: # Min samples check
-                            f_r = feat_bins[r_mask]
-                            y_r = y_bins[r_mask]
-                            # Regime MI (Corrected)
-                            mi_r = calc_corrected_mi(f_r, y_r)
-                            
-                            if mi_r > score:
-                                score = mi_r
-                                origin = r_name
+            # --- 2. Vectorized Spearman Correlation ---
+            def vectorized_spearman(X_arr, y_arr):
+                # X_arr: (n, k), y_arr: (n,)
+                n = len(y_arr)
+                if n < 5: return np.zeros(X_arr.shape[1], dtype=np.float32)
                 
-                mi_scores[col] = score
-                feature_origins[col] = origin
+                # Ranks (average method)
+                # Apply along axis 0 for X (columns)
+                Xr = np.apply_along_axis(rankdata, 0, X_arr, method="average").astype(np.float32)
+                yr = rankdata(y_arr, method="average").astype(np.float32)
+                
+                # Center
+                Xr_c = Xr - Xr.mean(axis=0, keepdims=True)
+                yr_c = yr - yr.mean()
+                
+                # Correlation: (Xr_c . yr_c) / sqrt(sum(Xr_c^2) * sum(yr_c^2))
+                # Numerator: (k, n) @ (n,) -> (k,)
+                # Note: Xr_c is (n, k), so Xr_c.T is (k, n)
+                num = Xr_c.T @ yr_c
+                
+                # Denominator
+                # sum_sq_X: (k,)
+                sum_sq_X = np.sum(Xr_c**2, axis=0)
+                sum_sq_y = np.sum(yr_c**2)
+                
+                den = np.sqrt(sum_sq_X * sum_sq_y)
 
-            # --- 4. Calculate Noise Baseline ---
-            if self.use_cheap_mi_proxy:
-                # Use correlation proxy for noise baseline
-                y_shuffled = np.random.permutation(y_clean)
-                noise_scores = []
-                sample_cols = np.random.choice(X_clean.columns, size=min(20, len(X_clean.columns)), replace=False)
-                for col in sample_cols:
-                    x_vals = X_clean[col].fillna(0).values
-                    noise_scores.append(calc_proxy_score(x_vals, y_shuffled))
-                
-                noise_mean = np.mean(noise_scores)
-                threshold = 1.2 * noise_mean  # Same multiplier as MI
-                
-                if self.verbose:
-                    tprint_info(f"      - Proxy Statistics: Floor={noise_mean:.5f} | Threshold={threshold:.5f}")
-            else:
-                # Original MI noise baseline
-                y_bins_shuffled = np.random.permutation(y_bins)
-                noise_mis = []
-                sample_cols = np.random.choice(X_clean.columns, size=min(20, len(X_clean.columns)), replace=False)
-                for col in sample_cols:
-                     try:
-                        feat_bins = pd.qcut(X_clean[col], n_bins, labels=False, duplicates='drop')
-                     except ValueError:
-                        feat_bins = pd.cut(X_clean[col], n_bins, labels=False)
-                     feat_bins = pd.Series(feat_bins).fillna(-1).values
-                     # Apply same correction to noise estimate
-                     noise_mis.append(calc_corrected_mi(feat_bins, y_bins_shuffled))
-                
-                mi_noise_mean = np.mean(noise_mis)
-                threshold = 1.2 * mi_noise_mean
-                
-                if self.verbose:
-                    tprint_info(f"      - MI Statistics (B-Corrected): Floor={mi_noise_mean:.5f} | Threshold={threshold:.5f}") 
+                # Avoid division by zero
+                rho = np.divide(num, den, out=np.zeros_like(num), where=den > 1e-9)
+                return np.abs(rho)
+
+            # Global Scores
+            tprint_info("      ⚡ Computing global Spearman scores...")
+            final_scores = vectorized_spearman(X_clean.values, y_clean.values)
+            feature_origins = {col: "GLOBAL" for col in X_clean.columns}
             
-            essential = [target_name, 'TARGET_RET_1', 'close', 'volume', 'log_ret']
-            to_drop_noise = [
-                col for col, score in mi_scores.items()
-                if score <= threshold 
-                and col not in essential
-            ]
+            # Regime Scores
+            for r_name, r_mask in regime_masks.items():
+                mask_sum = np.sum(r_mask)
+                if mask_sum > 20:
+                    X_r = X_clean.values[r_mask]
+                    y_r = y_clean.values[r_mask]
+
+                    r_scores = vectorized_spearman(X_r, y_r)
+
+                    # Max-Pooling
+                    improved_idx = np.where(r_scores > final_scores)[0]
+                    if len(improved_idx) > 0:
+                        final_scores[improved_idx] = r_scores[improved_idx]
+                        for idx in improved_idx:
+                            feature_origins[X_clean.columns[idx]] = r_name
+
+            # --- 3. Noise Baseline ---
+            # Shuffle y to destroy relationship
+            y_shuffled = np.random.permutation(y_clean.values)
+            noise_scores = vectorized_spearman(X_clean.values, y_shuffled)
+            noise_mean = np.mean(noise_scores)
+
+            threshold = 1.2 * noise_mean
             
             if self.verbose:
-                method = "Proxy" if self.use_cheap_mi_proxy else "MI"
-                tprint_info(f"      - {method} Statistics: Floor={noise_mean:.5f} | Threshold={threshold:.5f}")
-                # Log rescue counts by regime
-                rescue_counts = defaultdict(int)
-                for c in mi_scores:
-                    if c not in to_drop_noise and feature_origins.get(c) != "GLOBAL":
-                        rescue_counts[feature_origins[c]] += 1
-                
-                if rescue_counts:
-                     tprint_info(f"      - 🛡️ Regime Rescues: {dict(rescue_counts)}")
+                 tprint_info(f"      - Spearman Stats: Floor={noise_mean:.5f} | Threshold={threshold:.5f}")
+                 rescue_counts = defaultdict(int)
+                 for i, col in enumerate(X_clean.columns):
+                     if final_scores[i] > threshold and feature_origins[col] != "GLOBAL":
+                         rescue_counts[feature_origins[col]] += 1
+                 if rescue_counts:
+                      tprint_info(f"      - 🛡️ Regime Rescues: {dict(rescue_counts)}")
+
+            # --- 4. Filtering ---
+            # Identify columns to drop
+            to_drop_indices = np.where(final_scores <= threshold)[0]
+            to_drop_cols = X_clean.columns[to_drop_indices]
+
+            # Protect essential columns
+            essential = [target_name, 'TARGET_RET_1', 'close', 'volume', 'log_ret']
+            to_drop_noise = [c for c in to_drop_cols if c not in essential]
 
             if to_drop_noise:
-                tprint_info(f"   📉 Pruning {len(to_drop_noise)} low-MI features (Score <= {mi_threshold:.5f})...")
+                tprint_info(f"   📉 Pruning {len(to_drop_noise)} low-correlation features (Score <= {threshold:.5f})...")
                 numeric_df = numeric_df.drop(columns=to_drop_noise)
+
             if self.verbose:
-                tprint_info(f"   ✅ MI filtering complete in {time.time() - mi_start:.1f}s")
+                tprint_info(f"   ✅ Spearman filtering complete in {time.time() - mi_start:.1f}s")
+
         else:
-            tprint_warning("   ⚠️ Insufficient data for MI calculation, skipping filter.")
+            tprint_warning("   ⚠️ Insufficient data for Correlation calculation, skipping filter.")
 
         # 2. High Multi-collinearity Pruning (Quadratic reduction)
         if len(numeric_df.columns) > 40:

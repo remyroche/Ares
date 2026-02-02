@@ -9852,24 +9852,43 @@ class LabelBasedLayer2(BaseStep):
         # Checks for signal survival in 3 key regimes: High Volatility, Strong Trend, Low Liquidity.
         # Max-pooling strategy: A feature is kept if it predicts well in ANY regime or globally.
         
-        # Skip expensive MI filtering if requested
-        if self.skip_mi_filtering:
-            tprint_info("   ⚡ Skipping MI filtering (disabled for performance)")
-        else:
-        
-        from sklearn.metrics import mutual_info_score
-        
-        tprint_info(f"   📊 Calculating Multi-Regime Conditional MI (Vol, Trend, Liq) - Optimized: bins={self.mi_n_bins}, min_samples={self.mi_min_samples}...")
+        from scipy.stats import rankdata
+
+        tprint_info(f"   📊 Calculating Multi-Regime Spearman Correlation - Optimized...")
         mi_start = time.time()
         
         target_series = numeric_df[target_name]
         valid_mask = target_series.notna()
         X_clean = numeric_df[valid_mask].fillna(0).replace([np.inf, -np.inf], 0)
         y_clean = target_series[valid_mask]
+
+        def vectorized_spearman(X, y):
+            # X: (n_samples, n_features), y: (n_samples,)
+            X = X.astype(np.float32)
+            y = y.astype(np.float32)
+
+            # Use method="average" for tie handling
+            Xr = np.apply_along_axis(rankdata, 0, X, method="average").astype(np.float32)
+            yr = rankdata(y, method="average").astype(np.float32)
+
+            # Pearson corr between each feature rank and target rank
+            Xr -= Xr.mean(axis=0, keepdims=True)
+            yrc = yr - yr.mean()
+
+            # Denominator: sqrt(sum(Xr^2) * sum(yr^2))
+            Xr_sq_sum = (Xr**2).sum(axis=0)
+            yr_sq_sum = (yrc**2).sum()
+
+            den = np.sqrt(Xr_sq_sum * yr_sq_sum)
+
+            # Numerator: Xr.T @ yrc -> (n_features,)
+            num = Xr.T @ yrc
+
+            # Handle zero denominator
+            rho = np.divide(num, den, out=np.zeros_like(num), where=den!=0)
+            return rho
         
         if len(X_clean) > self.mi_min_samples:
-            n_bins = self.mi_n_bins  # Use optimized parameter 
-            
             # --- 1. Define Regimes (Proxies) ---
             regime_masks = {}
             
@@ -9901,129 +9920,37 @@ class LabelBasedLayer2(BaseStep):
                 liq_thr = amihud.quantile(0.75)
                 regime_masks['LOW_LIQ'] = (amihud >= liq_thr).values
             
-            # --- 2. Pre-bin target ---
-            try:
-                y_bins = pd.qcut(y_clean, n_bins, labels=False, duplicates='drop')
-            except ValueError:
-                y_bins = pd.cut(y_clean, n_bins, labels=False)
-            y_bins = pd.Series(y_bins).fillna(-1).values
+            # --- 2. Calculate Scores (Global vs Regimes) ---
+            # Global
+            global_corrs = np.abs(vectorized_spearman(X_clean.values, y_clean.values))
             
-            # --- 3. Calculate Scores (Global vs Regimes) ---
-            # Use cheap proxy (correlation) or expensive MI calculation
-            if self.use_cheap_mi_proxy:
-                # Cheap proxy: Use absolute correlation as MI proxy (much faster)
-                def calc_proxy_score(x_series, y_series):
-                    if len(x_series) < 5 or len(y_series) < 5:
-                        return 0.0
-                    try:
-                        corr = np.corrcoef(x_series, y_series)[0, 1]
-                        return abs(corr) if not np.isnan(corr) else 0.0
-                    except:
-                        return 0.0
-                
-                if self.verbose:
-                    tprint_info("   ⚡ Using cheap correlation proxy for MI calculation...")
-            else:
-                # Original MI calculation with Miller-Madow bias correction
-                def calc_corrected_mi(x, y):
-                    n_samples = len(x)
-                    if n_samples < 5: return 0.0
-                    
-                    # Naive (Plugin) MI
-                    mi_naive = mutual_info_score(x, y)
-                    
-                    # Miller-Madow Correction for MI
-                    # Under null of independence, E[MI] ~ (Rx-1)*(Ry-1)/(2N)
-                    rx = len(np.unique(x))
-                    ry = len(np.unique(y))
-                    correction = (rx - 1) * (ry - 1) / (2 * n_samples)
-                    
-                    return max(0.0, mi_naive - correction)
-
-            mi_scores = {}
-            feature_origins = {} 
+            final_scores = global_corrs.copy()
+            # Initialize origins with GLOBAL
+            final_origins = np.array(["GLOBAL"] * len(X_clean.columns), dtype=object)
             
-            for col in X_clean.columns:
-                if self.use_cheap_mi_proxy:
-                    # Use correlation proxy (no binning needed)
-                    x_vals = X_clean[col].fillna(0).values
-                    y_vals = y_clean.values
+            # Regimes
+            for r_name, r_mask in regime_masks.items():
+                if np.sum(r_mask) > 20:
+                    # Filter data
+                    X_r = X_clean[r_mask].values
+                    y_r = y_clean[r_mask].values
                     
-                    # Global score
-                    score = calc_proxy_score(x_vals, y_vals)
-                    origin = "GLOBAL"
+                    regime_corrs = np.abs(vectorized_spearman(X_r, y_r))
                     
-                    # Check regimes
-                    for r_name, r_mask in regime_masks.items():
-                        if np.sum(r_mask) > 20:
-                            x_r = x_vals[r_mask]
-                            y_r = y_vals[r_mask]
-                            proxy_r = calc_proxy_score(x_r, y_r)
-                            
-                            if proxy_r > score:
-                                score = proxy_r
-                                origin = r_name
-                else:
-                    # Original MI calculation with binning
-                    try:
-                        feat_bins = pd.qcut(X_clean[col], n_bins, labels=False, duplicates='drop')
-                    except ValueError:
-                        feat_bins = pd.cut(X_clean[col], n_bins, labels=False)
-                    feat_bins = pd.Series(feat_bins).fillna(-1).values
-                    
-                    # Global MI (Corrected)
-                    score = calc_corrected_mi(feat_bins, y_bins)
-                    origin = "GLOBAL"
-                    
-                    # Check Conditional Regimes
-                    for r_name, r_mask in regime_masks.items():
-                        if np.sum(r_mask) > 20: # Min samples check
-                            f_r = feat_bins[r_mask]
-                            y_r = y_bins[r_mask]
-                            # Regime MI (Corrected)
-                            mi_r = calc_corrected_mi(f_r, y_r)
-                            
-                            if mi_r > score:
-                                score = mi_r
-                                origin = r_name
-                
-                mi_scores[col] = score
-                feature_origins[col] = origin
+                    # Update max
+                    better_mask = regime_corrs > final_scores
+                    final_scores[better_mask] = regime_corrs[better_mask]
+                    final_origins[better_mask] = r_name
 
-            # --- 4. Calculate Noise Baseline ---
-            if self.use_cheap_mi_proxy:
-                # Use correlation proxy for noise baseline
-                y_shuffled = np.random.permutation(y_clean)
-                noise_scores = []
-                sample_cols = np.random.choice(X_clean.columns, size=min(20, len(X_clean.columns)), replace=False)
-                for col in sample_cols:
-                    x_vals = X_clean[col].fillna(0).values
-                    noise_scores.append(calc_proxy_score(x_vals, y_shuffled))
-                
-                noise_mean = np.mean(noise_scores)
-                threshold = 1.2 * noise_mean  # Same multiplier as MI
-                
-                if self.verbose:
-                    tprint_info(f"      - Proxy Statistics: Floor={noise_mean:.5f} | Threshold={threshold:.5f}")
-            else:
-                # Original MI noise baseline
-                y_bins_shuffled = np.random.permutation(y_bins)
-                noise_mis = []
-                sample_cols = np.random.choice(X_clean.columns, size=min(20, len(X_clean.columns)), replace=False)
-                for col in sample_cols:
-                     try:
-                        feat_bins = pd.qcut(X_clean[col], n_bins, labels=False, duplicates='drop')
-                     except ValueError:
-                        feat_bins = pd.cut(X_clean[col], n_bins, labels=False)
-                     feat_bins = pd.Series(feat_bins).fillna(-1).values
-                     # Apply same correction to noise estimate
-                     noise_mis.append(calc_corrected_mi(feat_bins, y_bins_shuffled))
-                
-                mi_noise_mean = np.mean(noise_mis)
-                threshold = 1.2 * mi_noise_mean
-                
-                if self.verbose:
-                    tprint_info(f"      - MI Statistics (B-Corrected): Floor={mi_noise_mean:.5f} | Threshold={threshold:.5f}") 
+            mi_scores = dict(zip(X_clean.columns, final_scores))
+            feature_origins = dict(zip(X_clean.columns, final_origins))
+
+            # --- 3. Noise Baseline ---
+            # Shuffle Y globally
+            y_shuffled = np.random.permutation(y_clean.values)
+            noise_corrs = np.abs(vectorized_spearman(X_clean.values, y_shuffled))
+            noise_mean = np.mean(noise_corrs)
+            threshold = 1.2 * noise_mean
             
             essential = [target_name, 'TARGET_RET_1', 'close', 'volume', 'log_ret']
             to_drop_noise = [
@@ -10033,8 +9960,8 @@ class LabelBasedLayer2(BaseStep):
             ]
             
             if self.verbose:
-                method = "Proxy" if self.use_cheap_mi_proxy else "MI"
-                tprint_info(f"      - {method} Statistics: Floor={noise_mean:.5f} | Threshold={threshold:.5f}")
+                tprint_info(f"      - Spearman Statistics: Floor={noise_mean:.5f} | Threshold={threshold:.5f}")
+
                 # Log rescue counts by regime
                 rescue_counts = defaultdict(int)
                 for c in mi_scores:
@@ -10045,12 +9972,13 @@ class LabelBasedLayer2(BaseStep):
                      tprint_info(f"      - 🛡️ Regime Rescues: {dict(rescue_counts)}")
 
             if to_drop_noise:
-                tprint_info(f"   📉 Pruning {len(to_drop_noise)} low-MI features (Score <= {mi_threshold:.5f})...")
+                tprint_info(f"   📉 Pruning {len(to_drop_noise)} low-correlation features (Score <= {threshold:.5f})...")
                 numeric_df = numeric_df.drop(columns=to_drop_noise)
+
             if self.verbose:
-                tprint_info(f"   ✅ MI filtering complete in {time.time() - mi_start:.1f}s")
+                tprint_info(f"   ✅ Correlation filtering complete in {time.time() - mi_start:.1f}s")
         else:
-            tprint_warning("   ⚠️ Insufficient data for MI calculation, skipping filter.")
+            tprint_warning("   ⚠️ Insufficient data for Correlation calculation, skipping filter.")
 
         # 2. High Multi-collinearity Pruning (Quadratic reduction)
         if len(numeric_df.columns) > 40:

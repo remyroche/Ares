@@ -4,9 +4,7 @@ from dataclasses import dataclass, field, replace
 from typing import List, Dict, Set, Tuple, Optional, Any
 import logging
 import lightgbm as lgb
-from scipy.stats import ks_2samp, entropy
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
+from scipy.stats import ks_2samp
 from sklearn.metrics import roc_auc_score, average_precision_score
 
 try:
@@ -20,13 +18,6 @@ except ImportError:
         return decorator
     NUMBA_AVAILABLE = False
     prange = range
-
-# Try importing optimized uniqueness calculation
-try:
-    from src.utils.orthogonal_numba import _numba_get_uniqueness, _numba_build_indicator_matrix
-    ORTHOGONAL_NUMBA_AVAILABLE = True
-except ImportError:
-    ORTHOGONAL_NUMBA_AVAILABLE = False
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -322,8 +313,9 @@ def events_to_dataframe(events: List[Event], horizons: Optional[List[int]] = Non
         'duration_bars': exit_idxs - entry_idxs,
     }
 
+    # Safe handling of asset_id
     if asset_ids[0] is not None:
-        data['asset_id'] = asset_ids
+         data['asset_id'] = asset_ids
 
     # Add horizon columns
     for h_idx, h in enumerate(horizons):
@@ -399,12 +391,14 @@ def _numba_indicator_matrix_global(
     indicator = np.zeros(max_idx + 1, dtype=np.float32)
     n_events = len(entry_indices)
 
-    # Use diff array for O(N + T) complexity instead of O(N*W)
+    # Use diff array for O(N + T) complexity
     diff = np.zeros(max_idx + 2, dtype=np.float32)
 
     for i in range(n_events):
         start = entry_indices[i]
         end = exit_indices[i]
+
+        # Bounds check
         if start < 0 or start > max_idx: continue
         if end > max_idx: end = max_idx
         if end <= start: continue
@@ -500,139 +494,55 @@ def _python_variable_uniqueness(starts, ends):
 
 @jit(nopython=True, nogil=True)
 def _numba_variable_uniqueness(starts, ends, concurrency):
+    """
+    Optimized O(N) uniqueness calculation using prefix sums of inverse concurrency.
+    Original O(N*W) implementation replaced.
+    """
     n_events = len(starts)
     total_uniq = 0.0
 
+    # 1. Compute 1/concurrency
+    # concurrency size is max_idx + 1
+    # inv_c will have same size
+    n_ticks = len(concurrency)
+    inv_c = np.zeros(n_ticks, dtype=np.float32)
+
+    for t in range(n_ticks):
+        c = concurrency[t]
+        if c > 0:
+            inv_c[t] = 1.0 / c
+        else:
+            inv_c[t] = 0.0
+
+    # 2. Compute prefix sum of 1/concurrency
+    # prefix_inv[t] = sum(inv_c[0]...inv_c[t-1])
+    # prefix_inv[0] = 0
+    # Use float64 for accumulator to prevent precision loss on large datasets
+    prefix_inv = np.zeros(n_ticks + 1, dtype=np.float64)
+    current_sum = 0.0
+    for t in range(n_ticks):
+        current_sum += inv_c[t]
+        prefix_inv[t+1] = current_sum
+
+    # 3. Calculate mean uniqueness for each event in O(1)
     for i in range(n_events):
         s = starts[i]
         e = ends[i]
         if e <= s: continue
 
-        # Average (1/c) over [s, e)
-        sum_inv_c = 0.0
-        count = 0
-        for t in range(s, e):
-            c = concurrency[t]
-            if c > 0:
-                sum_inv_c += 1.0 / c
-            count += 1
+        # Clamp indices to valid range for safety
+        if s >= n_ticks: s = n_ticks
+        if e >= n_ticks: e = n_ticks # e is exclusive, so max index in prefix_inv is n_ticks (prefix_inv has n_ticks+1 elements)
+
+        # Sum of inv_c from s to e-1 is prefix_inv[e] - prefix_inv[s]
+        sum_inv_c = prefix_inv[e] - prefix_inv[s]
+        count = e - s
 
         if count > 0:
             total_uniq += sum_inv_c / count
 
     return total_uniq / n_events if n_events > 0 else 0.0
 
-
-def filter_informative_features(features_df: pd.DataFrame, event_ids: pd.Index, variance_threshold: float = 1e-12) -> Optional[pd.DataFrame]:
-    """
-    Aligns the feature matrix to the deduplicated events and removes columns
-    with variance below the specified threshold.
-    """
-    if features_df is None or features_df.empty:
-        return None
-    
-    aligned = features_df.reindex(event_ids)
-    if aligned.isnull().any().any():
-        aligned = aligned.fillna(0.0)
-    
-    variances = aligned.var()
-    keep_cols = variances[variances > variance_threshold].index.tolist()
-    
-    if not keep_cols:
-        logger.warning("All feature columns became constant after deduplication.")
-        return None
-    
-    dropped = len(aligned.columns) - len(keep_cols)
-    if dropped > 0:
-        logger.info(f"Dropped {dropped} near-constant feature columns after dedup ({len(keep_cols)} remaining).")
-    
-    return aligned[keep_cols]
-
-
-def run_logistic_probe(
-    X: pd.DataFrame,
-    y: pd.Series,
-    min_samples: int = 15
-) -> Optional[Tuple[np.ndarray, Dict[str, float]]]:
-    """
-    Fit a regularized logistic regression as a lightweight probe.
-    """
-    if X is None or X.empty or len(X) < (min_samples * 3):
-        return None
-    
-    if len(np.unique(y)) < 2:
-        return None
-    
-    n_pos = int(y.sum())
-    n_neg = len(y) - n_pos
-    if n_pos < min_samples or n_neg < min_samples:
-        return None
-    
-    # Float32 conversion for memory/speed
-    X = X.astype(np.float32)
-
-    split_idx = int(len(X) * 0.8)
-    if split_idx < min_samples or (len(X) - split_idx) < max(8, min_samples // 2):
-        return None
-    
-    X_train, X_val = X.iloc[:split_idx], X.iloc[split_idx:]
-    y_train, y_val = y.iloc[:split_idx], y.iloc[split_idx:]
-    
-    if len(np.unique(y_val)) < 2:
-        return None
-    
-    scaler = StandardScaler()
-    try:
-        X_train_scaled = scaler.fit_transform(X_train)
-        X_val_scaled = scaler.transform(X_val)
-        X_full_scaled = scaler.transform(X)
-    except Exception:
-        return None
-    
-    try:
-        clf = LogisticRegression(
-            penalty='l2',
-            solver='lbfgs',
-            max_iter=500,
-            class_weight='balanced',
-            n_jobs=1
-        )
-        clf.fit(X_train_scaled, y_train)
-    except Exception:
-        return None
-    
-    try:
-        val_probs = clf.predict_proba(X_val_scaled)[:, 1]
-    except Exception:
-        return None
-    
-    try:
-        auc_val = roc_auc_score(y_val, val_probs)
-        auc_lift = abs(auc_val - 0.5)
-    except Exception:
-        auc_lift = 0.0
-    
-    try:
-        pr_val = average_precision_score(y_val, val_probs)
-        pr_lift = pr_val - y_val.mean()
-    except Exception:
-        pr_lift = 0.0
-    
-    ks_stat, ent = calculate_separation_metrics(y_val.to_numpy(), val_probs)
-    
-    try:
-        preds_full_prob = clf.predict_proba(X_full_scaled)[:, 1]
-    except Exception:
-        preds_full_prob = np.full(len(X), 0.5, dtype=float)
-    
-    metrics = {
-        'auc_lift': auc_lift,
-        'pr_lift': pr_lift,
-        'ks_stat': ks_stat,
-        'entropy': ent
-    }
-    
-    return preds_full_prob, metrics
 
 @jit(nopython=True, nogil=True)
 def _numba_deduplicate_events(

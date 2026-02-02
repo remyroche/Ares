@@ -10247,7 +10247,7 @@ class LabelBasedLayer2(BaseStep):
             noise_scores = vectorized_spearman(X_clean.values, y_shuffled)
             noise_mean = np.mean(noise_scores)
 
-            threshold = 1.2 * noise_mean
+            threshold = 1.1 * noise_mean
             
             if self.verbose:
                  tprint_info(f"      - Spearman Stats: Floor={noise_mean:.5f} | Threshold={threshold:.5f}")

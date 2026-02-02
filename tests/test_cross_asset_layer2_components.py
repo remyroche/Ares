@@ -67,7 +67,8 @@ class TestCrossAssetLayer2Components(unittest.TestCase):
             "max_corr_pass": False,
         }
         gate_engine = GatingEngine()
-        gate_df = gate_engine.evaluate(panel_slice, portfolio_state, GatingConfig())
+        # Set persistence_bars=1 to ensure immediate failure triggering
+        gate_df = gate_engine.evaluate(panel_slice, portfolio_state, GatingConfig(persistence_bars=1))
         self.assertIn("gate__reason_codes", gate_df.columns)
         self.assertIn("ect_inactive", gate_df.loc["AAA", "gate__reason_codes"])
         self.assertIn("entropy", gate_df.loc["AAA", "gate__reason_codes"])

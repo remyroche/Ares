@@ -7816,6 +7816,35 @@ class LabelBasedLayer2(BaseStep):
                         df['timestamp'] = df.index
                     df = df.set_index(['timestamp', 'asset_id'], drop=False).sort_index()
 
+            # If df is already a DataFrame (pre-combined), we might have missed residualization
+            if multi_asset_requested and isinstance(df, pd.DataFrame) and 'asset_id' in df.columns:
+                if 'residual_return' not in df.columns:
+                    tprint_info("   🧠 Multi-asset DataFrame provided but missing residual_return. Applying market residualization...")
+                    try:
+                        from src.training.steps.labeling.global_meta_labeling_hpo_sample_weighted import (
+                            GlobalMetaLabelingHPOSampleWeightedStep,
+                        )
+                        combiner = GlobalMetaLabelingHPOSampleWeightedStep("global_meta_labeling_hpo_sample_weighted")
+                        assets = sorted(df['asset_id'].unique().astype(str).tolist())
+
+                        # Ensure timestamp column for pivot if not present
+                        df_for_resid = df
+                        if 'timestamp' not in df_for_resid.columns:
+                            df_for_resid = df.copy()
+                            if isinstance(df.index, pd.MultiIndex) and 'timestamp' in df.index.names:
+                                df_for_resid['timestamp'] = df.index.get_level_values('timestamp')
+                            else:
+                                df_for_resid['timestamp'] = df.index
+
+                        df = combiner._market_residualize_returns_vectorized(df_for_resid, assets, config)
+
+                        # Update config to use residual return
+                        config['label_return_column'] = 'residual_return'
+                        config['use_market_residual_labels'] = True
+                        tprint_success("   ✅ Market residualization applied successfully.")
+                    except Exception as e:
+                        tprint_warning(f"   ⚠️ Market residualization failed: {e}. Falling back to raw returns.")
+
             symbol = config.get('symbol', 'ETHUSDT')
             exchange = config.get('exchange', 'binance')
             timeframe = config.get('timeframe', '15m')
@@ -21220,6 +21249,16 @@ class LabelBasedLayer2(BaseStep):
                 except Exception as e:
                     tprint_warning(f"Probe feature alignment failed: {e}")
             
+            # PRESERVE asset_id: Encode it as int if present to survive numeric filtering
+            # This is critical for multi-asset cross-validation grouping
+            if 'asset_id' in X.columns and not pd.api.types.is_numeric_dtype(X['asset_id']):
+                try:
+                    # Use pandas categorical codes
+                    X['asset_id'] = X['asset_id'].astype('category').cat.codes
+                    tprint_info(f"   🆔 Encoded asset_id to numeric for preservation (unique={X['asset_id'].nunique()})")
+                except Exception as e_enc:
+                    tprint_warning(f"   ⚠️ Failed to encode asset_id: {e_enc}")
+
             # CRITICAL FIX: Remove any non-numeric columns (e.g., regime labels 'Trending', 'Chaos')
             # that might have leaked into the features. RidgeClassifier/LightGBM will fail on strings.
             cols_before = X.shape[1]

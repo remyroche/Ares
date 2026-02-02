@@ -9816,19 +9816,42 @@ class LabelBasedLayer2(BaseStep):
         preselect_start = time.time()
         
         # 1. Base numeric filtering
-        numeric_df = df.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan).dropna(axis=1, how='all')
+        tprint_info("      - Step 1: Converting to numeric and handling infinities...")
+        step1_start = time.time()
+        # OPTIMIZED: Use numpy for inf replacement to avoid slow dataframe.replace()
+        numeric_df = df.select_dtypes(include=[np.number]).copy()
+        if not numeric_df.empty:
+            vals = numeric_df.values
+            # Only use fast path if compatible dtype
+            if np.issubdtype(vals.dtype, np.floating):
+                vals[np.isinf(vals)] = np.nan
+                numeric_df = pd.DataFrame(vals, index=numeric_df.index, columns=numeric_df.columns)
+            else:
+                numeric_df = numeric_df.replace([np.inf, -np.inf], np.nan)
+
+            numeric_df = numeric_df.dropna(axis=1, how='all')
+        tprint_info(f"      - Step 1 done in {time.time() - step1_start:.2f}s. Shape: {numeric_df.shape}")
+
         if numeric_df.empty:
             return numeric_df
 
         agg_cols = [col for col in numeric_df.columns if col.startswith("AGG_SUM_4_")]
         if agg_cols and self.verbose:
+            tprint_info("      - Step 2: Checking constant AGG_SUM_4 columns...")
+            step2_start = time.time()
             constant_agg = []
-            for col in agg_cols:
-                series = numeric_df[col]
-                nunique = series.nunique(dropna=False)
-                if nunique <= 1:
-                    nonzero_rate = float((series.fillna(0.0) != 0.0).mean())
-                    constant_agg.append((col, nunique, nonzero_rate))
+            # OPTIMIZED: Batch std check to avoid calling nunique() on thousands of columns
+            stds = numeric_df[agg_cols].std()
+            # Only check nunique if std is very small (potentially constant)
+            candidates = stds[stds < 1e-12].index
+
+            if len(candidates) > 0:
+                for col in candidates:
+                    series = numeric_df[col]
+                    nunique = series.nunique(dropna=False)
+                    if nunique <= 1:
+                        nonzero_rate = float((series.fillna(0.0) != 0.0).mean())
+                        constant_agg.append((col, nunique, nonzero_rate))
             if constant_agg:
                 preview = ", ".join(
                     f"{name}(nonzero={rate:.3f})" for name, _, rate in constant_agg[:6]
@@ -9837,6 +9860,7 @@ class LabelBasedLayer2(BaseStep):
                     "   ⚠️ AGG_SUM_4 features are constant before discovery: "
                     f"{len(constant_agg)} columns; {preview}"
                 )
+            tprint_info(f"      - Step 2 done in {time.time() - step2_start:.2f}s")
 
         # Prefer denoised_close if variance is acceptable (>1e-6), else fall back to close variants
         MIN_PRICE_VAR = 1e-6
@@ -9925,15 +9949,26 @@ class LabelBasedLayer2(BaseStep):
         multi_asset_series = asset_group_series
 
         if multi_asset_series is not None:
+            tprint_info("      - Step 3: Pivoting multi-asset columns...")
+            step3_start = time.time()
             base_cols = [col for col in ("close", "volume", "TARGET_RET_1", "volatility_1d") if col in numeric_df.columns]
             if base_cols:
                 assets = sorted(multi_asset_series.dropna().astype(str).unique().tolist())
+                # OPTIMIZED: Pre-compute masks to avoid recomputing in inner loop
+                asset_masks = {asset: (multi_asset_series.astype(str) == asset).values for asset in assets}
+
                 for col in base_cols:
+                    col_data = numeric_df[col].values
                     for asset in assets:
-                        mask = (multi_asset_series.astype(str) == asset)
+                        mask = asset_masks[asset]
                         col_name = f"{asset}_{col}"
-                        numeric_df[col_name] = np.where(mask, numeric_df[col], np.nan)
+                        # Use numpy directly for speed
+                        new_col = np.full_like(col_data, np.nan)
+                        new_col[mask] = col_data[mask]
+                        numeric_df[col_name] = new_col
+
                 numeric_df = numeric_df.drop(columns=base_cols).fillna(0.0)
+            tprint_info(f"      - Step 3 done in {time.time() - step3_start:.2f}s")
 
         def _apply_groupwise_series(series: pd.Series, compute_fn) -> pd.Series:
             if series is None or len(series) == 0:

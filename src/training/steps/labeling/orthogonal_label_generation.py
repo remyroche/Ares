@@ -15,7 +15,7 @@ from scipy.spatial.distance import pdist
 from sklearn.feature_selection import f_classif, mutual_info_classif, f_regression, mutual_info_regression
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.decomposition import PCA, SparsePCA
+from sklearn.decomposition import TruncatedSVD
 from joblib import Parallel, delayed
 from dataclasses import dataclass
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error, tprint_success
@@ -52,7 +52,6 @@ from src.utils.orthogonal_numba import (
     _numba_create_tree_targets
 )
 from src.training.steps.labeling.composite_event_generators import (
-    get_microstructure_generators,
     TradeIntensityEvents,
     OrderFlowImbalanceEvents,
     BarPressureEvents,
@@ -289,11 +288,13 @@ GENERATOR_PARAM_NAMES = {
     'ExhaustionSpecialistEvents': ['threshold', 'window'],
     'VolatilityInnovationSpecialistEvents': ['threshold'],
     'DispersionSpecialistEvents': ['threshold'],
-    'ContinuousPredictorEvents': ['threshold', 'predictor_col']
+    'ContinuousPredictorEvents': ['threshold', 'predictor_col'],
+    'OrderBlockEvents': ['lookback', 'min_move_pct', 'volume_threshold']
 }
 
 # Generators that require the full DataFrame instead of just Series
 DF_REQUIRED_CLASSES = (
+    'OrderBlockEvents',
     'InventorySpecialistEvents',
     'VolumeSpecialistEvents',
     'VolatilitySpecialistEvents',
@@ -1646,10 +1647,16 @@ def check_label_quality(
             gates_log.append("Jaccard: 0.50 (Fallback) [OK]")
     else:
         try:
-            df_noisy = df.copy()
+            # Optimization: Shallow copy frame, deep copy only modified columns
+            df_noisy = df.copy(deep=False)
             noise = np.random.normal(1.0, 0.0001, size=len(df))
-            for col in ['close', 'high', 'low', 'open']:
-                if col in df_noisy.columns: df_noisy[col] *= noise
+
+            # Identify OHLC columns present
+            ohlc_cols = [c for c in ['close', 'high', 'low', 'open'] if c in df_noisy.columns]
+
+            # Deep copy and modify only OHLC
+            for col in ohlc_cols:
+                df_noisy[col] = df_noisy[col].values * noise
             
             gen = generator_instance
             if gen.__class__.__name__ in DF_REQUIRED_CLASSES:
@@ -2123,11 +2130,9 @@ def run_lgbm_probe(X, y, w, returns) -> Dict[str, float]:
         
         # Copy params to avoid mutation issues
         fold_params = params.copy()
-        # Remove objective from params if we pass fobj is safer, but if train() rejects fobj kwarg,
-        # we must either pass it as 'objective' key in params or rely on legacy behavior.
-        # It seems the installed LightGBM version might be wrapped or older.
-        # Let's try passing it via params['objective']
-        fold_params['objective'] = fobj
+        # Remove default objective from params since we provide fobj explicitly
+        if 'objective' in fold_params:
+            del fold_params['objective']
         
         # Also ensure metric is set (auc)
         
@@ -2143,7 +2148,7 @@ def run_lgbm_probe(X, y, w, returns) -> Dict[str, float]:
             fold_params, 
             dtrain, 
             valid_sets=[dvalid],
-            # fobj=fobj, # Removed to fix TypeError
+            fobj=fobj,
             callbacks=[lgb.early_stopping(5, verbose=False)] # Tighter early stopping
         )
 
@@ -2252,90 +2257,6 @@ def run_lgbm_probe(X, y, w, returns) -> Dict[str, float]:
         'std_error': float(std_error)
     }
 
-def adaptive_threshold_calculator(
-    generator: "BaseEventGenerator",
-    data: Union[pd.Series, pd.DataFrame],
-    target_signals_per_day: float = 7.5,
-    max_iterations: int = 20,
-    tolerance: float = 0.2
-) -> pd.DatetimeIndex:
-    """
-    Iteratively adjust thresholds to achieve target signal rate.
-    """
-    # Calculate data duration and target signal count
-    if isinstance(data, pd.Series):
-        index = data.index
-    else:
-        index = data.index
-    
-    duration_days = (index[-1] - index[0]).days
-    if duration_days < 1:
-        duration_days = 1
-    
-    target_signals = int(target_signals_per_day * duration_days)
-    min_target = int(target_signals * (1 - tolerance))
-    max_target = int(target_signals * (1 + tolerance))
-    
-    # Start with default parameters (need to be passed in)
-    # This is a simplified version - in practice, you'd pass the specific params
-    events = generator.generate(data)
-    
-    if len(events) == 0:
-        return events
-    
-    # Iterative adjustment
-    iteration = 0
-    current_events = events
-    
-    while iteration < max_iterations:
-        current_count = len(current_events)
-        
-        # Check if within tolerance
-        if min_target <= current_count <= max_target:
-            break
-        
-        # Calculate adjustment factor
-        if current_count > max_target:  # Too many signals
-            factor = 1.2 + (current_count - max_target) / max_target * 0.3
-        else:  # Too few signals
-            factor = 0.8 - (min_target - current_count) / min_target * 0.3
-        
-        factor = max(0.5, min(2.0, factor))  # Bound the factor
-        
-        # Adjust parameters if generator supports it
-        # Panic mode for extremely low signals
-        if current_count < min_target * 0.1:
-             factor = 0.5 # Aggressive relaxation
-             logger.info(f"Panic relaxation: Rate is {current_count}/{min_target} (target). Slashed params by 50%.")
-        
-        # Adjust parameters if generator supports it
-        if hasattr(generator, '_adjust_z_threshold'):
-            current_params = generator._adjust_z_threshold(current_params, factor)
-            # Re-generate with new params to check progress within loop
-            try:
-                # We need to call generate again. 
-                # generator is an instance of BaseEventGenerator (or subclass)
-                # We need to handle the positional args issue if relevant, but here we just use **current_params
-                # But wait, generate() might need positional args if they were passed...
-                # The prompt said "generator.generate(data)" at line 661. 
-                # We should use the same call structure.
-                # Actually, check line 839: "events = self.generate(data, *args, **current_params)"
-                # This function 'adaptive_threshold_calculator' is a standalone function at module level?
-                # No, look at line 635. Yes it is.
-                # But wait, BaseEventGenerator.generate_adaptive calls self.generate.
-                # 'adaptive_threshold_calculator' seems to be an older standalone function?
-                # Actually, 'BaseEventGenerator.generate_adaptive' is the one used in the main loop!
-                # Line 1823 calls `gen.generate_adaptive`.
-                # So I should update `BaseEventGenerator.generate_adaptive` NOT the standalone function if it's unused.
-                # Let's check if `adaptive_threshold_calculator` is used.
-                pass
-            except Exception as e:
-                logger.warning(f"Optimization step failed: {e}")
-                break
-        
-        iteration += 1
-    
-    return current_events
 
 # ==========================================
 # 5. Signal Generators
@@ -2671,24 +2592,37 @@ def final_diversity_filter(
         I_dense = None
         n_events_per_geo = None
 
-    # Calculate returns series for each geometry (Sparse cache)
+    # Calculate returns series for each geometry (Vectorized)
+    # Pre-calculate forward returns for all unique horizons
+    unique_horizons = {geo.params.get('horizon', 120) if geo.params else 120 for geo in geometries}
+
+    forward_returns_map = {}
+    for h in unique_horizons:
+        # returns[h] = (price.shift(-h) - price) / price
+        fwd_price = price.shift(-h)
+        forward_returns_map[h] = (fwd_price - price) / (price + 1e-9)
+
     returns_series = {}
     for geo in geometries:
         if len(geo.events) > 0:
-            # Calculate returns from event entry to horizon
-            returns_list = []
-            for event_time in geo.events:
-                if event_time in price.index:
-                    event_idx = price.index.get_loc(event_time)
-                    horizon = min(120, len(price) - event_idx - 1)  # Use horizon from params or default
-                    if horizon > 0:
-                        start_price = price.iloc[event_idx]
-                        end_price = price.iloc[min(event_idx + horizon, len(price) - 1)]
-                        ret = (end_price - start_price) / start_price
-                        returns_list.append(ret)
-            
-            if returns_list:
-                returns_series[geo.name] = pd.Series(returns_list, index=geo.events[:len(returns_list)])
+            h = geo.params.get('horizon', 120) if geo.params else 120
+            # Look up returns for event timestamps
+            if h in forward_returns_map:
+                fwd_ret = forward_returns_map[h]
+                # Intersection with valid index
+                # Ensure geo.events is Index for intersection
+                if not isinstance(geo.events, pd.Index):
+                    geo_idx = pd.Index(geo.events)
+                else:
+                    geo_idx = geo.events
+
+                valid_events = geo_idx.intersection(fwd_ret.index)
+                if not valid_events.empty:
+                    s = fwd_ret.loc[valid_events]
+                    # Drop NaNs (end of series)
+                    s = s.dropna()
+                    if not s.empty:
+                        returns_series[geo.name] = s
     
     # Diversity filtering
     # Group by family
@@ -2848,6 +2782,10 @@ def get_enhanced_parameter_grids(range_specific: bool = False) -> Dict[str, Dict
         },
         'DISPERSION_SPECIALIST': {
             'base_params': [(1.8,), (2.0,), (2.5,)],
+            'horizons': [16, 24, 48],
+        },
+        'ORDER_BLOCKS': {
+            'base_params': [(20, 0.5, 2.0), (30, 0.5, 2.0), (20, 0.7, 2.5)],
             'horizons': [16, 24, 48],
         }
     }
@@ -4834,6 +4772,8 @@ def _persist_gate_diagnostics(
 def _main_sweep_worker(config, df_full, price, vol_series, X_probe, valid_tpsl_map, param_grids, target_signals_per_day, specialist_predictions, causal_graph, causal_surprise_threshold, tracker, regime_posteriors=None):
     """Worker function for parallel main parameter sweep."""
     try:
+        # Move imports to top or use here if circular
+        # Using local import to ensure pickle safety if module not fully loaded in worker
         from src.training.steps.labeling.orthogonal_label_generation import (
             compute_dominance_labels, check_label_quality, 
             GENERATOR_PARAM_NAMES, DF_REQUIRED_CLASSES
@@ -4951,7 +4891,6 @@ def _score_single_candidate_worker(cand, df_full, price, vol_series, X_probe, tr
             return cand, None
 
         # Compute TBM Labels
-        # Import inside worker to ensure availability in subprocess
         from src.training.steps.labeling.orthogonal_label_generation import compute_dominance_labels, check_label_quality
         
         labels, weights, returns, mfe, mae, vol = compute_dominance_labels(
@@ -5231,6 +5170,21 @@ def orthogonal_label_generation(
     # Update X_probe based on (possibly sampled) price/volume
     X_probe = generate_probe_features(price, volume)
 
+    # Integrate Low-Volatility Regime Features
+    try:
+        low_vol_engine = LowVolRegimeFeatures(verbose=False)
+        # Use df_full (which might be subsampled)
+        lv_features = low_vol_engine.generate_all_features(df_full)
+
+        # Align index and concat
+        lv_features = lv_features.reindex(X_probe.index).fillna(0.0)
+        X_probe = pd.concat([X_probe, lv_features], axis=1)
+        tprint_info(f"   ➕ Integrated {len(lv_features.columns)} Low-Vol Regime features")
+    except Exception as e:
+        tprint_warning(f"   ⚠️ Failed to generate Low-Vol Regime features: {e}")
+
+    # Optimize memory usage
+    X_probe = X_probe.astype(np.float32)
 
     # 2. Check for 1.5-3% range optimization configuration
     use_range_specific = _should_use_range_specific_optimization()
@@ -5300,6 +5254,7 @@ def orthogonal_label_generation(
             ('EXHAUSTION_SPECIALIST', ExhaustionSpecialistEvents()),
             ('VOLATILITY_INNOVATION_SPECIALIST', VolatilityInnovationSpecialistEvents()),
             ('DISPERSION_SPECIALIST', DispersionSpecialistEvents()),
+            ('ORDER_BLOCKS', OrderBlockEvents()),
         ]
 
         # --- KEY FIX: Add Cross-Asset / Market State generators if columns exist ---
@@ -5586,7 +5541,20 @@ def orthogonal_label_generation(
             regime_posteriors = df_full[regime_cols]
             tprint_info(f"🔍 Found {len(regime_cols)} regime posterior columns for soft conditioning")
 
-    common_args = (df_full, price, vol_series, X_probe, valid_tpsl_map, param_grids, 
+    # Create lightweight dataframe for workers to reduce pickling overhead
+    special_prefixes = ('ms_', 'ms__', 'ca_', 'ca__', 'meta_', 'meta__')
+    essential_cols = set(['open', 'high', 'low', 'close', 'volume', 'volatility_1d', 'TARGET_RET_1'])
+    if regime_posteriors is not None:
+        essential_cols.update(regime_posteriors.columns)
+
+    # Add cross asset and predictor columns
+    essential_cols.update([c for c in df_full.columns if any(c.startswith(p) for p in special_prefixes)])
+
+    # Ensure columns exist
+    final_cols = [c for c in essential_cols if c in df_full.columns]
+    df_worker = df_full[final_cols].copy(deep=False)
+
+    common_args = (df_worker, price, vol_series, X_probe, valid_tpsl_map, param_grids,
                    target_signals_per_day, specialist_predictions, causal_graph, 
                    causal_surprise_threshold, tracker, regime_posteriors)
     
@@ -5668,12 +5636,12 @@ def orthogonal_label_generation(
     # Define transaction cost for scoring
     tx_cost = 0.003
 
-    # Score candidates
-    scored_ohlcv = score_candidates(ohlcv_candidates, df_full, price, X_probe, outcomes_log, tx_cost)
-    scored_continuous = score_candidates(continuous_candidates, df_full, price, X_probe, outcomes_log, tx_cost)
-    scored_advanced = score_candidates(advanced_candidates, df_full, price, X_probe, outcomes_log, tx_cost)
-    scored_horizon = score_candidates(horizon_candidates, df_full, price, X_probe, outcomes_log, tx_cost)
-    scored_regime = score_candidates(regime_candidates, df_full, price, X_probe, outcomes_log, tx_cost)
+    # Score candidates (Use df_worker for efficiency)
+    scored_ohlcv = score_candidates(ohlcv_candidates, df_worker, price, X_probe, outcomes_log, tx_cost)
+    scored_continuous = score_candidates(continuous_candidates, df_worker, price, X_probe, outcomes_log, tx_cost)
+    scored_advanced = score_candidates(advanced_candidates, df_worker, price, X_probe, outcomes_log, tx_cost)
+    scored_horizon = score_candidates(horizon_candidates, df_worker, price, X_probe, outcomes_log, tx_cost)
+    scored_regime = score_candidates(regime_candidates, df_worker, price, X_probe, outcomes_log, tx_cost)
 
     # Filter robust candidates (Per-Family Quantile)
     # Score = 1.0 - min_p (F-Stat). Keep Top 50%.
@@ -7113,39 +7081,3 @@ def apply_triple_barrier_multi(df: pd.DataFrame, events: pd.DatetimeIndex,
 
     return out
 
-def create_meta_learning_dataset_dualTBM(df: pd.DataFrame, base_features: pd.DataFrame,
-                                         pt_sl=(2.0, 1.0), tbm_horizons=[12,48]):
-    meta_df = base_features.copy()
-
-    # Directional price labels for multiple horizons
-    if 'price_dual_cusum' in base_features.columns:
-        price_events = base_features.index[base_features['price_dual_cusum']==1]
-        # Normalize timezones
-        if df.index.tz != price_events.tz:
-             if price_events.tz is None: price_events = price_events.tz_localize(df.index.tz)
-             else: price_events = price_events.tz_convert(df.index.tz)
-
-        tbm_labels = apply_triple_barrier_multi(df, price_events, pt_sl=pt_sl, horizons=tbm_horizons)
-        meta_df = pd.concat([meta_df, tbm_labels], axis=1)
-
-    # Contextual labels
-    context_map = {
-        'volatility_cusum': 'volatility_1d',
-        'liquidity_cusum': 'liq_stress',
-        'volume_cusum': 'volume',
-        'tailrisk_cusum': 'tail_metric',
-        'trend_regime_cusum': 'trend',
-        'vol_state_cusum': 'vol_state'
-    }
-
-    for col, series_col in context_map.items():
-        if col in base_features.columns and series_col in df.columns:
-            events = base_features.index[base_features[col]==1]
-            if df.index.tz != events.tz:
-                 if events.tz is None: events = events.tz_localize(df.index.tz)
-                 else: events = events.tz_convert(df.index.tz)
-
-            lbl = apply_persistence_label(df, events, series_col=series_col, horizon=48, threshold=0.0)
-            meta_df[f'{col}_label'] = lbl
-
-    return meta_df

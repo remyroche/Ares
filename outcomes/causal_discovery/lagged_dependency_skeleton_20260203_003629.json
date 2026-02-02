@@ -1,0 +1,92 @@
+{
+  "geo_atr_14": [
+    "BTC_volatility_1d",
+    "open_std_50",
+    "geo_atr_14",
+    "volume_mean_50",
+    "volume_range_10",
+    "volatility_5d",
+    "volume_std_20",
+    "volume_mean_20",
+    "volume_range_20",
+    "volume_std_10",
+    "close_lag_1"
+  ],
+  "SOL_close": [
+    "SOL_close"
+  ],
+  "BTC_volume": [
+    "BTC_volume",
+    "BTC_volatility_1d",
+    "close_lag_2",
+    "geo_atr_14",
+    "open_std_50",
+    "volume_std_5",
+    "volatility_5d",
+    "volume_std_20",
+    "volume_range_5",
+    "volume_range_20",
+    "volume_std_10",
+    "close_lag_1",
+    "close_lag_5",
+    "open",
+    "volume_mean_5",
+    "close_range_50"
+  ],
+  "SOL_volume": [
+    "SOL_volume",
+    "SOL_close"
+  ],
+  "BTC_TARGET_RET_1": [
+    "close_lag_2",
+    "BTC_volatility_1d",
+    "volume_range_50",
+    "volume_std_5",
+    "volume_mean_50",
+    "close_lag_10",
+    "volatility_5d",
+    "volume_range_10",
+    "volume_mean_20",
+    "BTC_TARGET_RET_1",
+    "volume_range_5",
+    "volume_std_20",
+    "volume_std_10",
+    "TARGET_Sharpe",
+    "close_lag_5",
+    "open"
+  ],
+  "SOL_TARGET_RET_1": [
+    "SOL_TARGET_RET_1"
+  ],
+  "BTC_volatility_1d": [
+    "BTC_volatility_1d",
+    "volume_mean_50",
+    "close_range_50"
+  ],
+  "SOL_volatility_1d": [
+    "SOL_volatility_1d"
+  ],
+  "TARGET_Sharpe": [
+    "BTC_TARGET_RET_1",
+    "TARGET_Sharpe"
+  ],
+  "Market_Mode_PCA": [
+    "BTC_volume",
+    "BTC_volatility_1d",
+    "volume_mean_10",
+    "open_std_50",
+    "volume_range_50",
+    "volume_std_5",
+    "volume_mean_50",
+    "volume_range_10",
+    "volatility_5d",
+    "Market_Mode_PCA",
+    "volume_mean_20",
+    "volume_std_20",
+    "volume_std_50",
+    "volume_range_20",
+    "volume_std_10",
+    "volume_mean_5",
+    "close_range_50"
+  ]
+}

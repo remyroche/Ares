@@ -2895,7 +2895,7 @@ class LabelBasedLayer2(BaseStep):
                 roll20_volume_mean = pd.Series(0.0, index=group.index)
                 roll10_volume_mean = pd.Series(0.0, index=group.index)
 
-            return pd.DataFrame({
+            res = pd.DataFrame({
                 'effective_price': effective_price,
                 'roll5_sum': roll5_sum,
                 'roll10_sum': roll10_sum,
@@ -2913,19 +2913,36 @@ class LabelBasedLayer2(BaseStep):
                 'roll20_volume_mean': roll20_volume_mean,
                 'roll10_volume_mean': roll10_volume_mean
             }, index=group.index)
+            if '_tmp_row_id' in group.columns:
+                res['_tmp_row_id'] = group['_tmp_row_id']
+            return res
 
         # Multi-asset handling
         if 'asset_id' in df.columns:
             # Group by asset_id and apply logic
+            # Handle duplicate indices by using a temporary row ID
+            df = df.copy()
+            df['_tmp_row_id'] = np.arange(len(df))
             chunks = []
+            
+            # Fix ambiguity: if asset_id is in both index and columns, use the column series explicitly
+            if 'asset_id' in df.index.names:
+                grouper = df['asset_id']
+            else:
+                grouper = 'asset_id'
+                
             # sort=False to preserve order of groups if possible, but we reindex anyway
-            for _, group in df.groupby('asset_id', sort=False):
+            for _, group in df.groupby(grouper, sort=False):
                 chunks.append(_compute_single_group(group))
 
             if chunks:
                 base_df = pd.concat(chunks)
-                # Realign to original index to ensure order matches df
-                base_df = base_df.reindex(df.index)
+                # Realign to original index using integer position to handle non-unique indices
+                if '_tmp_row_id' in base_df.columns:
+                    base_df = base_df.sort_values('_tmp_row_id').drop(columns=['_tmp_row_id'])
+                else:
+                    # Fallback if somehow missing
+                    base_df = base_df.reindex(df.index)
             else:
                 base_df = pd.DataFrame(index=df.index)
         else:
@@ -3508,20 +3525,20 @@ class LabelBasedLayer2(BaseStep):
             threshold_multiplier = 15.0 / interval_minutes
 
             if total_days < 35:
-                global_mean_vol = df_source['quote_volume'].mean()
-                dynamic_threshold = pd.Series(global_mean_vol * threshold_multiplier, index=df_source.index)
+                global_median_vol = df_source['quote_volume'].median()
+                dynamic_threshold = pd.Series(global_median_vol * threshold_multiplier, index=df_source.index)
                 tprint_info(
-                    f"   📊 [DollarBars] {log_label} short history ({total_days:.1f} days) → global threshold {global_mean_vol * threshold_multiplier:.2f}"
+                    f"   📊 [DollarBars] {log_label} short history ({total_days:.1f} days) → global median threshold {global_median_vol * threshold_multiplier:.2f}"
                 )
             else:
                 days_window = 30
                 minutes_in_window = days_window * 24 * 60
                 window_size = int(minutes_in_window / interval_minutes)
                 min_periods = int(1440 / interval_minutes)
-                rolling_30d_mean = df_source['quote_volume'].rolling(window=window_size, min_periods=min_periods).mean()
-                dynamic_threshold = rolling_30d_mean * threshold_multiplier
+                rolling_30d_median = df_source['quote_volume'].rolling(window=window_size, min_periods=min_periods).median()
+                dynamic_threshold = rolling_30d_median * threshold_multiplier
 
-            global_fallback = df_source['quote_volume'].mean() * threshold_multiplier
+            global_fallback = df_source['quote_volume'].median() * threshold_multiplier
             dynamic_threshold = dynamic_threshold.fillna(global_fallback)
 
             times = src_timestamps.values
@@ -5624,6 +5641,33 @@ class LabelBasedLayer2(BaseStep):
         Z = pd.DataFrame(index=df.index)
         eps = 1e-9
 
+        def _assign_series(name: str, values: Any) -> None:
+            if values is None:
+                return
+            if isinstance(values, pd.Series):
+                if len(values) == len(Z):
+                    if values.index.equals(Z.index):
+                        Z[name] = values.to_numpy()
+                        return
+                    try:
+                        Z[name] = values.reindex(Z.index).to_numpy()
+                        return
+                    except Exception:
+                        Z[name] = values.to_numpy()
+                        return
+            Z[name] = values
+
+        def _assign_frame(frame: pd.DataFrame) -> None:
+            if frame is None or frame.empty:
+                return
+            if len(frame) != len(Z):
+                try:
+                    frame = frame.reindex(Z.index)
+                except Exception:
+                    return
+            for col in frame.columns:
+                _assign_series(col, frame[col])
+
         asset_group = None
         asset_series = None
         asset_level = None
@@ -5663,22 +5707,22 @@ class LabelBasedLayer2(BaseStep):
             rv_w48 = _rstd(ret, 48)
             rv_w96 = _rstd(ret, 96)
 
-            Z['rv_w24'] = rv_w24
-            Z['rv_w48'] = rv_w48
-            Z['rv_w96'] = rv_w96
+            _assign_series('rv_w24', rv_w24)
+            _assign_series('rv_w48', rv_w48)
+            _assign_series('rv_w96', rv_w96)
 
             # Volatility Shock
-            Z['vol_shock'] = rv_w24 / (rv_w96 + eps)
-            Z['rv_change_w24'] = rv_w24 - rv_w96
+            _assign_series('vol_shock', rv_w24 / (rv_w96 + eps))
+            _assign_series('rv_change_w24', rv_w24 - rv_w96)
 
             # Tail / Jumpiness
-            Z['absret_mean_w24'] = _rmean(ret.abs(), 24)
-            Z['kurtosis_w96'] = ret.rolling(96).kurt()
+            _assign_series('absret_mean_w24', _rmean(ret.abs(), 24))
+            _assign_series('kurtosis_w96', ret.rolling(96).kurt())
 
             # Range-based Vol (if available)
             if 'high' in df.columns and 'low' in df.columns:
                 hl_ratio = (df['high'] - df['low']) / (df['low'] + eps)
-                Z['parkinson_proxy'] = _rstd(hl_ratio, 24)
+                _assign_series('parkinson_proxy', _rstd(hl_ratio, 24))
 
         # --- B) Liquidity / Trading Frictions ---
         if 'volume' in df.columns and 'close' in df.columns:
@@ -5687,17 +5731,17 @@ class LabelBasedLayer2(BaseStep):
             dvol = df['close'] * vol
 
             # Volume Level & Shock
-            Z['logvol_z_w96'] = (log_vol - _rmean(log_vol, 96)) / (_rstd(log_vol, 96) + eps)
-            Z['volu_ratio'] = _rmean(vol, 12) / (_rmean(vol, 96) + eps)
+            _assign_series('logvol_z_w96', (log_vol - _rmean(log_vol, 96)) / (_rstd(log_vol, 96) + eps))
+            _assign_series('volu_ratio', _rmean(vol, 12) / (_rmean(vol, 96) + eps))
 
             # Amihud Illiquidity Proxy
-            Z['amihud_w24'] = _rmean(ret.abs() / (dvol + eps), 24)
+            _assign_series('amihud_w24', _rmean(ret.abs() / (dvol + eps), 24))
 
             # Spread Proxy (High-Low)
             if 'high' in df.columns and 'low' in df.columns:
                 hl_spread = (df['high'] - df['low']) / df['close']
-                Z['hl_spread_w24'] = _rmean(hl_spread, 24)
-                Z['hl_spread_shock'] = _rmean(hl_spread, 12) / (_rmean(hl_spread, 96) + eps)
+                _assign_series('hl_spread_w24', _rmean(hl_spread, 24))
+                _assign_series('hl_spread_shock', _rmean(hl_spread, 12) / (_rmean(hl_spread, 96) + eps))
 
         # --- C) Trend vs Mean Reversion ---
         if 'close' in df.columns:
@@ -5706,7 +5750,7 @@ class LabelBasedLayer2(BaseStep):
                 ewma_48 = close.ewm(span=48).mean()
             else:
                 ewma_48 = close.groupby(asset_group).ewm(span=48).mean().reset_index(level=0, drop=True)
-            Z['trend_strength'] = (close - ewma_48) / (rv_w48 + eps)
+            _assign_series('trend_strength', (close - ewma_48) / (rv_w48 + eps))
 
             # Position in Range
             if 'high' in df.columns and 'low' in df.columns:
@@ -5716,13 +5760,14 @@ class LabelBasedLayer2(BaseStep):
                 else:
                     roll_low = df['low'].groupby(asset_group).rolling(24).min().reset_index(level=0, drop=True)
                     roll_high = df['high'].groupby(asset_group).rolling(24).max().reset_index(level=0, drop=True)
-                Z['pos_in_range_w24'] = (close - roll_low) / (roll_high - roll_low + eps)
+                _assign_series('pos_in_range_w24', (close - roll_low) / (roll_high - roll_low + eps))
 
             # Autocorrelation
             if asset_group is None:
-                Z['r_autocorr_w48'] = get_serial_correlation(ret, window=48)
+                _assign_series('r_autocorr_w48', get_serial_correlation(ret, window=48))
             else:
-                Z['r_autocorr_w48'] = (
+                _assign_series(
+                    'r_autocorr_w48',
                     ret.groupby(asset_group)
                     .apply(lambda s: get_serial_correlation(s, window=48))
                     .reset_index(level=0, drop=True)
@@ -5730,7 +5775,7 @@ class LabelBasedLayer2(BaseStep):
 
         # --- F) Vol-Liq Interaction ---
         if 'vol_shock' in Z.columns and 'logvol_z_w96' in Z.columns:
-            Z['stress_1'] = Z['vol_shock'] * (-Z['logvol_z_w96'])
+            _assign_series('stress_1', Z['vol_shock'] * (-Z['logvol_z_w96']))
 
         # --- G) Calendar State ---
         if isinstance(df.index, pd.DatetimeIndex):
@@ -5746,30 +5791,30 @@ class LabelBasedLayer2(BaseStep):
             minute = None
 
         if hour is not None and minute is not None:
-            Z['hour_sin'] = np.sin(2 * np.pi * hour / 24)
-            Z['hour_cos'] = np.cos(2 * np.pi * hour / 24)
+            _assign_series('hour_sin', np.sin(2 * np.pi * hour / 24))
+            _assign_series('hour_cos', np.cos(2 * np.pi * hour / 24))
 
         # --- H) Data Quality ---
         # (Assuming mostly clean data, but adding simple outlier flag)
         if 'rv_w48' in Z.columns:
-            Z['outlier_rate_w48'] = _rmean((ret.abs() > 3 * Z['rv_w48']).astype(float), 48)
+            _assign_series('outlier_rate_w48', _rmean((ret.abs() > 3 * Z['rv_w48']).astype(float), 48))
 
         # --- D, E, I) Cross-Asset / Market State / Dispersion ---
         # Explicitly include 'ms__' (Market State) and 'ca__' (Cross Asset) features
         special_prefixes = ('ms__', 'ca__', 'meta__', 'disp__')
         for col in df.columns:
             if col.startswith(special_prefixes):
-                Z[col] = df[col]
+                _assign_series(col, df[col])
 
         # --- Asset Identity Features (Multi-Asset Gating) ---
         if asset_series is not None:
             asset_codes = pd.Series(pd.Categorical(asset_series).codes, index=df.index)
-            Z['asset_id_code'] = asset_codes.astype(float)
+            _assign_series('asset_id_code', asset_codes.astype(float))
             top_assets = asset_series.value_counts().head(self.causal_gate_asset_onehot_max).index.tolist()
             for asset in top_assets:
-                Z[f"asset_{asset}"] = (asset_series == asset).astype(float)
+                _assign_series(f"asset_{asset}", (asset_series == asset).astype(float))
             if asset_series.nunique() > len(top_assets):
-                Z['asset_other'] = (~asset_series.isin(top_assets)).astype(float)
+                _assign_series('asset_other', (~asset_series.isin(top_assets)).astype(float))
 
         if include_specialist_features:
             # --- Specialist Features (Z_spec) ---
@@ -5787,7 +5832,7 @@ class LabelBasedLayer2(BaseStep):
                     if not spec_feats.empty:
                         # Rename columns to avoid collisions
                         spec_feats.columns = [f"spec_{family}_{c}" for c in spec_feats.columns]
-                        Z = pd.concat([Z, spec_feats], axis=1)
+                        _assign_frame(spec_feats)
                 except Exception:
                     # Ignore failures for specific families
                     pass
@@ -8767,7 +8812,13 @@ class LabelBasedLayer2(BaseStep):
                 # Create a copy of df using raw close for processing
                 df_features = df.copy()
                 if denoised_close is not None:
-                    df_features['denoised_close'] = denoised_close
+                    try:
+                        if isinstance(denoised_close, pd.Series) and len(denoised_close) == len(df_features):
+                            df_features['denoised_close'] = denoised_close.to_numpy()
+                        else:
+                            df_features['denoised_close'] = denoised_close
+                    except Exception:
+                        df_features['denoised_close'] = np.asarray(denoised_close)
                 
                 # Use MTF feature generation with denoised prices
                 signals = pd.DataFrame({'consensus': 1.0}, index=df_features.index)
@@ -8800,6 +8851,13 @@ class LabelBasedLayer2(BaseStep):
                         # Use temporary integer position to restore original order safely
                         # (pd.reindex fails with "cannot reindex on an axis with duplicate labels" here)
                         df_features = df_features.copy()
+                        
+                        # CRITICAL: If index is not unique, we must deduplicate now or concat will fail later
+                        if not df_features.index.is_unique:
+                            tprint_warning(f"   ⚠️ Non-unique index detected in df_features ({len(df_features)} rows). Deduplicating...")
+                            df_features = df_features[~df_features.index.duplicated(keep='first')]
+                            tprint_info(f"   ✅ Deduplicated: {len(df_features)} rows remaining")
+                        
                         df_features['_tmp_order'] = np.arange(len(df_features))
 
                         chunk_dfs = []
@@ -8807,24 +8865,64 @@ class LabelBasedLayer2(BaseStep):
                         grouper = df_features.groupby(level=asset_col) if asset_col in df_features.index.names else df_features.groupby(asset_col)
                         
                         for asset_name, asset_df in grouper:
-                            # Align signals for this asset
-                            asset_signals = signals.loc[asset_df.index]
+                            if self.verbose:
+                                tprint_info(f"   [Debug] Processing features for asset: {asset_name} (rows={len(asset_df)})")
+                            
+                            # Align signals for this asset correctly!
+                            # Previous signals.loc[asset_df.index] on MultiIndex signals vs DatetimeIndex asset_df
+                            # caused massive expansion (selecting all assets for each timestamp).
+                            if isinstance(signals.index, pd.MultiIndex) and asset_col in signals.index.names:
+                                asset_signals = signals.xs(asset_name, level=asset_col, axis=0)
+                            else:
+                                # Fallback or single-asset case
+                                asset_signals = signals.loc[asset_df.index]
                             
                             # Generate for single asset
+                            # if self.verbose:
+                            #     tprint_info(f"   [Debug] BEFORE Create Meta Features Call for {asset_name}") 
+                            
                             asset_X = create_meta_features(
                                 asset_df,
                                 asset_signals,
                                 volume_available=volume_available,
                                 horizon_bars=horizon_bars,
                             )
+                            # if self.verbose:
+                            #     tprint_info(f"   [Debug] AFTER Create Meta Features Call for {asset_name}")
+                            # Attach order for restoration
                             # Attach order for restoration
                             asset_X['_tmp_order'] = asset_df['_tmp_order']
+                            
+                            # CRITICAL: Attach asset_id to index to ensure uniqueness immediately
+                            # This prevents "non-unique multi-index" errors during concatenation of later steps.
+                            asset_X[asset_col] = asset_name
+                            asset_X.set_index(asset_col, append=True, inplace=True)
+                            
                             chunk_dfs.append(asset_X)
+                            
+                            if self.verbose:
+                                tprint_info(f"   [Debug] Finished features for asset: {asset_name}")
+                            
+                            # Memory Cleanup
+                            del asset_df
+                            del asset_signals
+                            # asset_X is kept in chunk_dfs, but we can't delete it yet.
+                            gc.collect()
                         
                         if chunk_dfs:
                             X_all = pd.concat(chunk_dfs, axis=0)
                             # Restore original order using sort, then drop helper
                             X_all = X_all.sort_values('_tmp_order').drop(columns=['_tmp_order'])
+                            
+                            # CRITICAL FIX: Ensure index levels match df_features
+                            if len(X_all) == len(df_features):
+                                # Direct assignment is safe because we sorted by _tmp_order which came from df_features
+                                X_all.index = df_features.index
+                            else:
+                                tprint_warning(f"   ⚠️ Shape Mismatch: X_all={len(X_all)}, df_features={len(df_features)}")
+                                # If mismatch, we rely on the constructed index, which is at least unique per row
+                                pass
+
                         else:
                             X_all = pd.DataFrame(index=df_features.index)
                     else:
@@ -8867,13 +8965,13 @@ class LabelBasedLayer2(BaseStep):
                         )
                         # Align empty rows if any
                         X_extra = df[extra_cols].copy()
-                        if X_extra.index.duplicated().any():
-                            dup_count = int(X_extra.index.duplicated().sum())
-                            tprint_warning(
-                                f"   ⚠️ Extra feature frame has {dup_count} duplicate index entries; keeping last occurrence"
-                            )
-                            X_extra = X_extra[~X_extra.index.duplicated(keep='last')]
-                        X_extra = X_extra.reindex(X_all.index)
+                        # Do NOT drop duplicates or reindex strictly if lengths match.
+                        # Multi-asset frames often have duplicate timestamp indices.
+                        if len(X_extra) == len(X_all):
+                            # Assume alignment if lengths match (derived from same df)
+                            X_extra.index = X_all.index
+                        else:
+                             X_extra = X_extra.reindex(X_all.index)
                         if not X_extra.empty:
                             # Sanitize categorical/object columns to avoid fillna category errors
                             cat_cols = X_extra.select_dtypes(include=['category']).columns
@@ -8887,8 +8985,16 @@ class LabelBasedLayer2(BaseStep):
 
                             numeric_cols = X_extra.select_dtypes(include=[np.number, 'bool']).columns
                             if len(numeric_cols) > 0:
-                                X_extra = X_extra[numeric_cols].fillna(0.0)
-                                X_all = pd.concat([X_all, X_extra], axis=1)
+                                X_extra = X_extra[numeric_cols].fillna(0.0).replace([np.inf, -np.inf], 0.0)
+                                
+                                # CRITICAL: avoid pd.concat(axis=1) on non-unique multi-index
+                                # If lengths match, direct assignment is safer and faster
+                                if len(X_all) == len(X_extra):
+                                    for col in X_extra.columns:
+                                        X_all[col] = X_extra[col].values
+                                else:
+                                    # Fallback to concat if shapes diverged for some reason
+                                    X_all = pd.concat([X_all, X_extra], axis=1)
                             else:
                                 tprint_info("   ℹ️ No numeric extra features to preserve after sanitization.")
 
@@ -8917,6 +9023,22 @@ class LabelBasedLayer2(BaseStep):
                                 tprint_warning("   ⚠️ No features left after exclusions; skipping causal denoising")
                                 X_all = X_skip if not X_skip.empty else X_all
                             else:
+                                # CRITICAL: Sanitize inputs to prevent LAPACK "Parameter 4 illegal value" errors
+                                # This usually happens when linear models receive NaNs or extreme values.
+                                X_denoise_input = X_denoise_input.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+                                
+                                # Filter out columns with near-zero variance (prevents singular matrices in LAPACK)
+                                variances = X_denoise_input.var()
+                                zero_var_cols = variances[variances <= 1e-12].index
+                                if not zero_var_cols.empty:
+                                    tprint_info(f"   📉 Removing {len(zero_var_cols)} constant columns before denoising...")
+                                    X_denoise_input = X_denoise_input.drop(columns=zero_var_cols)
+                                
+                                if X_denoise_input.empty:
+                                     tprint_warning("   ⚠️ No features left after constant removal; skipping denoising")
+                                     X_all = X_all_orig
+                                     raise ValueError("Empty input after constant removal")
+
                                 pre_var = X_denoise_input.var().replace([np.inf, -np.inf], np.nan)
                                 pre_median_var = float(pre_var.median()) if not pre_var.empty else 0.0
                                 # Use available causal graph or fallback to sparse covariance
@@ -9858,12 +9980,29 @@ class LabelBasedLayer2(BaseStep):
 
         # Optimized Selection Strategy:
         # 1. Get column names first (cheap) - Using list comprehension avoids DataFrame allocation
-        # 2. Convert directly to float32 numpy array (avoids intermediate double-allocation)
-        # 3. Handle infinities in-place on the array (very fast)
-        numeric_cols = [c for c, t in df.dtypes.items() if np.issubdtype(t, np.number)]
+        # 2. Coerce non-numeric columns to numeric to avoid dropping valid numeric data stored as object
+        # 3. Convert directly to float32 numpy array (avoids intermediate double-allocation)
+        # 4. Handle infinities in-place on the array (very fast)
+        numeric_cols = [
+            c
+            for c, t in df.dtypes.items()
+            if np.issubdtype(t, np.number) or pd.api.types.is_bool_dtype(t)
+        ]
+        non_numeric_cols = [c for c in df.columns if c not in numeric_cols]
 
-        if len(numeric_cols) > 0:
-            tprint_info(f"        -> Found {len(numeric_cols)} numeric columns. Materializing array (float32)...")
+        if len(numeric_cols) > 0 or len(non_numeric_cols) > 0:
+            if len(non_numeric_cols) > 0:
+                tprint_info(
+                    f"        -> Found {len(numeric_cols)} numeric columns; coercing {len(non_numeric_cols)} non-numeric columns..."
+                )
+                coerced_df = df[non_numeric_cols].apply(pd.to_numeric, errors='coerce')
+                numeric_df_raw = pd.concat([df[numeric_cols], coerced_df], axis=1)
+                numeric_df_raw = numeric_df_raw[df.columns]
+            else:
+                tprint_info(f"        -> Found {len(numeric_cols)} numeric columns. Materializing array (float32)...")
+                numeric_df_raw = df[numeric_cols]
+
+            tprint_info("        -> Materializing array (float32)...")
             try:
                 import sys
                 sys.stdout.flush()
@@ -9871,13 +10010,13 @@ class LabelBasedLayer2(BaseStep):
 
             # Use float32 to reduce memory (50% of float64) and CPU overhead during consolidation
             # copy=True ensures we have a writable array that owns its data and is consolidated
-            vals = df[numeric_cols].to_numpy(dtype=np.float32, copy=True)
+            vals = numeric_df_raw.to_numpy(dtype=np.float32, copy=True)
 
             # Handle infinities in-place (very fast on float32)
             vals[np.isinf(vals)] = np.nan
 
             tprint_info("        -> Reconstructing DataFrame...")
-            numeric_df = pd.DataFrame(vals, index=df.index, columns=numeric_cols)
+            numeric_df = pd.DataFrame(vals, index=df.index, columns=numeric_df_raw.columns)
 
             # Drop empty columns
             numeric_df = numeric_df.dropna(axis=1, how='all')
@@ -9915,6 +10054,8 @@ class LabelBasedLayer2(BaseStep):
                     f"{len(constant_agg)} columns; {preview}"
                 )
             tprint_info(f"      - Step 2 done in {time.time() - step2_start:.2f}s")
+        else:
+            tprint_info("      - Step 2 skipped (no AGG_SUM_4 cols)")
 
         # Prefer denoised_close if variance is acceptable (>1e-6), else fall back to close variants
         MIN_PRICE_VAR = 1e-6
@@ -9940,6 +10081,8 @@ class LabelBasedLayer2(BaseStep):
             if self.verbose and price_col_chosen != "close":
                 tprint_info(f"   📈 Discovery price source: '{price_col_chosen}' (var={price_series_chosen.var(skipna=True):.6f})")
             numeric_df["close"] = price_series_chosen
+        
+        tprint_info("      [Debug] Price column selection done.")
 
         volume_candidates = []
         for col in ("raw__volume", "volume"):
@@ -9953,6 +10096,8 @@ class LabelBasedLayer2(BaseStep):
             if self.verbose and vol_col != "volume":
                 tprint_warning(f"   ⚠️ Discovery volume source switched to '{vol_col}' (var={vol_var:.6f})")
             numeric_df["volume"] = volume_series
+        
+        tprint_info("      [Debug] Volume column selection done.")
 
         price_ref = numeric_df["close"] if "close" in numeric_df.columns else (df["close"] if "close" in df.columns else None)
         discovery_horizon = max(1, int(getattr(self, "discovery_target_horizon", 1)))
@@ -9973,6 +10118,8 @@ class LabelBasedLayer2(BaseStep):
         if 'volatility_5d' not in numeric_df.columns and price_ref is not None:
              # Proxy 5-day vol using 15m bars (approx 480 bars)
              numeric_df['volatility_5d'] = price_ref.pct_change().rolling(480).std()
+        
+        tprint_info("      [Debug] Volatility features done.")
 
         if 'TARGET_RET_1' not in numeric_df.columns and price_ref is not None:
             numeric_df['TARGET_RET_1'] = price_ref.pct_change(periods=discovery_horizon).shift(-discovery_horizon)
@@ -9989,10 +10136,16 @@ class LabelBasedLayer2(BaseStep):
                     asset_group_series = pd.Series(df.index.get_level_values(cand), index=df.index)
                     break
         if asset_group_series is not None:
-            try:
-                asset_group_series = asset_group_series.loc[numeric_df.index]
-            except KeyError:
-                asset_group_series = None
+            # Optimization: Only reindex if the index is actually different. 
+            # numeric_df has the same index as df, and asset_group_series was created from df.
+            # This avoids expensive .loc calls on huge/duplicate indices which can cause hangs.
+            if len(asset_group_series) != len(numeric_df) or not asset_group_series.index.equals(numeric_df.index):
+                try:
+                    asset_group_series = asset_group_series.loc[numeric_df.index]
+                except KeyError:
+                    asset_group_series = None
+        
+        tprint_info(f"      [Debug] Asset group extraction done. Series found: {asset_group_series is not None}")
         multi_asset_asset_count = 0
         if asset_group_series is not None:
             unique_assets = asset_group_series.dropna().unique()
@@ -10079,6 +10232,7 @@ class LabelBasedLayer2(BaseStep):
                 get_optimal_d, frac_diff_ffd, get_rolling_cusum_stats, 
                 get_rolling_chow_stat, get_rolling_entropy, get_lempel_ziv_complexity
             )
+            tprint_info("      [Debug] advanced_transformations imported.")
             
             if self.verbose:
                 tprint_info("   🧬 Applying Advanced Feature Transformations (AFD, Structural, Entropic)...")
@@ -10231,7 +10385,19 @@ class LabelBasedLayer2(BaseStep):
              log_close = np.log(df['close']).replace([np.inf, -np.inf], np.nan)
              fwd_ret = log_close.diff(periods=discovery_horizon).shift(-discovery_horizon)
              idxr = pd.api.indexers.FixedForwardWindowIndexer(window_size=discovery_sharpe_window)
-             numeric_df[target_name] = (fwd_ret.rolling(window=idxr).mean() / (fwd_ret.rolling(window=idxr).std() + 1e-9)).fillna(0)
+             target_series = (fwd_ret.rolling(window=idxr).mean() / (fwd_ret.rolling(window=idxr).std() + 1e-9)).fillna(0)
+             if len(target_series) == len(numeric_df):
+                 numeric_df[target_name] = target_series.to_numpy()
+             else:
+                 if len(target_series) > len(numeric_df):
+                     target_series = target_series.iloc[-len(numeric_df):]
+                 else:
+                     pad = len(numeric_df) - len(target_series)
+                     target_series = pd.Series(
+                         np.pad(target_series.to_numpy(), (pad, 0), mode='constant'),
+                         index=numeric_df.index
+                     )
+                 numeric_df[target_name] = target_series.to_numpy()
 
         # 1. Prune near-zero variance and near-zero correlation with target
         # --- MULTI-REGIME BINNED CONDITIONAL MI FILTER (Advanced) ---
@@ -11664,6 +11830,49 @@ class LabelBasedLayer2(BaseStep):
         cross_asset_features = None
         cross_asset_results = None
         cross_asset_data = config.get("cross_asset_data")
+        
+        # FIX: Auto-load cross-asset data if not provided (Autonomous Mode)
+        if not cross_asset_data:
+            assets = config.get("assets")
+            if assets and isinstance(assets, (list, str)):
+                if isinstance(assets, str):
+                    assets = assets.split(',')
+                # Filter out current symbol to avoid duplication if handled elsewhere, or keep it.
+                # Usually we want all assets for the panel.
+                tprint_info(f"   🔄 [Autonomous] Auto-loading data for {len(assets)} assets: {assets}")
+                cross_asset_data = {}
+                from src.utils.data.ares_launcher_data_loader import load_data_with_ares_mode
+                
+                for asset in assets:
+                    asset = asset.strip()
+                    if not asset: continue
+                    try:
+                        # Use same params as main load
+                        asset_df = load_data_with_ares_mode(
+                            symbol=asset,
+                            interval=config.get('timeframe', '15m'),
+                            mode=config.get('execution_mode', 'light'),
+                            data_type='processed' # Try processed first
+                        )
+                        if asset_df is not None and not asset_df.empty:
+                             cross_asset_data[asset] = asset_df
+                        else:
+                             # Try raw fallback
+                             asset_df = load_data_with_ares_mode(
+                                symbol=asset,
+                                interval=config.get('timeframe', '15m'),
+                                mode=config.get('execution_mode', 'light'),
+                                data_type='raw'
+                            )
+                             if asset_df is not None and not asset_df.empty:
+                                 cross_asset_data[asset] = asset_df
+                                 
+                    except Exception as e:
+                        tprint_warning(f"   ⚠️ Failed to auto-load asset {asset}: {e}")
+                
+                if cross_asset_data:
+                    tprint_success(f"   ✅ Auto-loaded {len(cross_asset_data)} cross-asset dataframes")
+        
         if isinstance(cross_asset_data, dict) and cross_asset_data:
             tprint_info(f"🌐 [Cross-Asset Diagnostic] Starting merge pipeline for {len(cross_asset_data)} assets...")
             try:
@@ -11728,28 +11937,46 @@ class LabelBasedLayer2(BaseStep):
                                 
                                 # Prepare df for merge
                                 df_to_merge = df.copy()
-                                if 'timestamp' in df_to_merge.columns:
-                                    if isinstance(df_to_merge.index, pd.MultiIndex):
-                                        if 'timestamp' in df_to_merge.index.names:
-                                            df_to_merge = df_to_merge.drop(columns=['timestamp'])
-                                    elif df_to_merge.index.name == 'timestamp':
-                                        df_to_merge = df_to_merge.drop(columns=['timestamp'])
-                                if 'asset_id' not in df_to_merge.columns and 'asset_id' in df_to_merge.index.names:
-                                    df_to_merge = df_to_merge.reset_index()
                                 
+                                # FIX: Resolving ambiguity (asset_id in index AND column)
+                                if isinstance(df_to_merge.index, pd.MultiIndex):
+                                    levels_to_drop = [n for n in df_to_merge.index.names if n in df_to_merge.columns]
+                                    if levels_to_drop:
+                                        df_to_merge = df_to_merge.droplevel(levels_to_drop)
+                                    df_to_merge = df_to_merge.reset_index()
+                                elif df_to_merge.index.name:
+                                    if df_to_merge.index.name in df_to_merge.columns:
+                                        df_to_merge = df_to_merge.reset_index(drop=True)
+                                    else:
+                                        df_to_merge = df_to_merge.reset_index()
+                                else:
+                                    # Fallback for RangeIndex or processed
+                                    pass
+
                                 # Prepare panel for merge
                                 panel_to_merge = panel_df[feature_cols].copy()
-                                if 'timestamp' in panel_to_merge.columns:
-                                    if isinstance(panel_to_merge.index, pd.MultiIndex):
-                                        if 'timestamp' in panel_to_merge.index.names:
-                                            panel_to_merge = panel_to_merge.drop(columns=['timestamp'])
-                                    elif panel_to_merge.index.name == 'timestamp':
-                                        panel_to_merge = panel_to_merge.drop(columns=['timestamp'])
-                                if 'ticker' in panel_to_merge.index.names:
-                                    panel_to_merge = panel_to_merge.reset_index()
-                                    # Rename ticker to asset_id for join
-                                    if 'ticker' in panel_to_merge.columns:
-                                        panel_to_merge = panel_to_merge.rename(columns={'ticker': 'asset_id'})
+                                # Ensure keys are columns safely
+                                if isinstance(panel_to_merge.index, pd.MultiIndex):
+                                    # Safe reset
+                                    levels_to_reset = [n for n in panel_to_merge.index.names if n and n not in panel_to_merge.columns]
+                                    if levels_to_reset:
+                                        panel_to_merge = panel_to_merge.reset_index(level=levels_to_reset)
+                                    
+                                    # Handle renaming if needed
+                                    if 'ticker' in panel_to_merge.columns and 'asset_id' not in panel_to_merge.columns:
+                                        panel_to_merge.rename(columns={'ticker': 'asset_id'}, inplace=True)
+                                else:
+                                     # Handle single index (timestamp)
+                                     if panel_to_merge.index.name != 'timestamp':
+                                         panel_to_merge.index.name = 'timestamp'
+                                     panel_to_merge = panel_to_merge.reset_index()
+                                     
+                                     # If asset_id missing in panel (single asset case?), might need to infer or it fails merge.
+                                     # But global model implies multi-asset panel.
+                                
+                                # Rename ticker to asset_id for join (if it persisted)
+                                if 'ticker' in panel_to_merge.columns and 'asset_id' not in panel_to_merge.columns:
+                                    panel_to_merge = panel_to_merge.rename(columns={'ticker': 'asset_id'})
 
                                 # Ensure we have common keys
                                 merge_keys = ['timestamp', 'asset_id']
@@ -11770,6 +11997,10 @@ class LabelBasedLayer2(BaseStep):
 
                                     df = merged_result
                                     tprint_success(f"   ✅ [Cross-Asset Diagnostic] Merged features for {df['asset_id'].nunique()} assets")
+                                    
+                                    # DEBUG: Check columns immediately after merge
+                                    ms_cols = [c for c in df.columns if str(c).startswith('ms__')]
+                                    tprint_info(f"   🔎 [Cross-Asset Trace] Post-Merge df columns: {len(df.columns)}, ms__ count: {len(ms_cols)}")
                                     
                                     cross_asset_feature_cols = feature_cols
                                     cross_asset_features = df[feature_cols].copy()
@@ -13867,6 +14098,10 @@ class LabelBasedLayer2(BaseStep):
         return df
 
     def f_precompute_geometry_base_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        # DEBUG: Check input columns
+        ms_cols = [c for c in df.columns if str(c).startswith('ms__')]
+        tprint_info(f"   🔎 [Cross-Asset Trace] f_precompute input df columns: {len(df.columns)}, ms__ count: {len(ms_cols)}")
+        
         # Restore basic precomputation
         df_out = df.copy()
         

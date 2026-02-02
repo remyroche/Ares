@@ -852,10 +852,12 @@ class MarketStateVector:
         self.scaler = StandardScaler()
         
         # Use IncrementalPCA if configured (for streaming/large datasets)
-        if config.use_incremental_pca:
-            self.pca = IncrementalPCA(n_components=config.n_components)
-        else:
-            self.pca = PCA(n_components=config.n_components, random_state=42)
+        # Note: n_components will be adjusted in fit() if necessary
+        self.pca_params = {
+            'n_components': config.n_components,
+            'random_state': 42
+        }
+        self.pca = None
         
         self.cluster_model: Optional[Any] = None
         self.loadings_: Optional[np.ndarray] = None
@@ -870,6 +872,16 @@ class MarketStateVector:
             raise ValueError("No numeric data available for MarketStateVector fit")
         x = x_numeric.ffill().fillna(0.0).astype(np.float32)
         scaled = self.scaler.fit_transform(x)
+        
+        # Dynamically adjust n_components to handle cases with few assets/features
+        n_samples, n_features = scaled.shape
+        effective_n_components = min(self.config.n_components, n_features, n_samples)
+        
+        if self.config.use_incremental_pca:
+            self.pca = IncrementalPCA(n_components=effective_n_components)
+        else:
+            self.pca = PCA(n_components=effective_n_components, random_state=42)
+            
         components = self.pca.fit_transform(scaled)
         self.loadings_ = self.pca.components_.copy()
 
@@ -904,7 +916,8 @@ class MarketStateVector:
         components = self.pca.transform(scaled)
 
         result = pd.DataFrame(index=state_instruments.index)
-        for i in range(self.config.n_components):
+        n_fitted_components = components.shape[1]
+        for i in range(n_fitted_components):
             result[f"ms__pca_{i}"] = components[:, i].astype(np.float32)
 
         if hasattr(self.cluster_model, "predict_proba"):

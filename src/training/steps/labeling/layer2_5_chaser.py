@@ -22,18 +22,20 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Any, Union, Tuple
-import copy
-import logging
-import gc
+
+try:
+    from numba import njit, prange
+    NUMBA_AVAILABLE = True
+except Exception:
+    NUMBA_AVAILABLE = False
 
 from sklearn.preprocessing import RobustScaler
-from sklearn.linear_model import LinearRegression, LogisticRegression, BayesianRidge
+from sklearn.linear_model import LogisticRegression, BayesianRidge
 from sklearn.model_selection import TimeSeriesSplit
-from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor
+from sklearn.ensemble import ExtraTreesRegressor
 from src.utils.irm_linear_regressor import IRMLinearRegressor, get_vol_env_indices
-from sklearn.base import clone
 from sklearn.metrics import roc_auc_score
 from scipy.stats import spearmanr
 
@@ -75,9 +77,58 @@ from src.training.steps.labeling.generate_interaction_features_et_rulefit import
 # -----------------------------
 # Utilities
 # -----------------------------
+if NUMBA_AVAILABLE:
+    @njit(fastmath=True)
+    def _robust_stats_numba(x: np.ndarray, eps: float = 1e-12) -> Tuple[float, float]:
+        n = x.shape[0]
+        if n == 0:
+            return 0.0, 0.0
+        xs = np.sort(x)
+        mid = n // 2
+        if n % 2 == 0:
+            med = 0.5 * (xs[mid - 1] + xs[mid])
+        else:
+            med = xs[mid]
+
+        dev = np.abs(x - med)
+        ds = np.sort(dev)
+        if n % 2 == 0:
+            mad = 0.5 * (ds[mid - 1] + ds[mid])
+        else:
+            mad = ds[mid]
+        mad = mad + eps
+        sigma = 1.4826 * mad
+        return float(med), float(sigma)
+
+    @njit(fastmath=True, parallel=True)
+    def _rolling_pctile_last_numba(arr: np.ndarray, window: int, min_periods: int) -> np.ndarray:
+        n = arr.shape[0]
+        out = np.empty(n, dtype=np.float32)
+        for i in prange(n):
+            if i + 1 < min_periods:
+                out[i] = np.nan
+                continue
+            start = i - window + 1
+            if start < 0:
+                start = 0
+            w = arr[start : i + 1]
+            if w.size < min_periods:
+                out[i] = np.nan
+                continue
+            last = w[w.size - 1]
+            cnt = 0
+            for j in range(w.size):
+                if w[j] <= last:
+                    cnt += 1
+            out[i] = cnt / w.size
+        return out
+
+
 def robust_stats(x: np.ndarray, eps: float = 1e-12) -> Tuple[float, float]:
     """Calculate median and robust sigma (MAD-based)."""
     x = np.asarray(x, dtype=np.float32)
+    if NUMBA_AVAILABLE:
+        return _robust_stats_numba(x, eps)
     med = np.median(x)
     mad = np.median(np.abs(x - med)) + eps
     sigma = 1.4826 * mad
@@ -142,19 +193,36 @@ def prob_to_logit(p: np.ndarray, eps: float = 1e-6) -> np.ndarray:
 def sigmoid(z: np.ndarray) -> np.ndarray:
     """Sigmoid function."""
     z = np.asarray(z, dtype=np.float32)
+    z = np.clip(z, -50.0, 50.0)
     return 1.0 / (1.0 + np.exp(-z))
 
 
 def _rolling_pctile(series: pd.Series, window: int) -> pd.Series:
     """Rolling percentile rank of the latest value (causal)."""
+    min_periods = max(5, window // 4)
+    if NUMBA_AVAILABLE:
+        arr = series.to_numpy(dtype=np.float32, copy=False)
+        out = _rolling_pctile_last_numba(arr, int(window), int(min_periods))
+        return pd.Series(out, index=series.index)
+
     def _pctile(arr: np.ndarray) -> float:
         if arr.size == 0:
             return np.nan
         return float(np.sum(arr <= arr[-1]) / arr.size)
 
-    return series.rolling(window, min_periods=max(5, window // 4)).apply(
-        _pctile, raw=True
-    )
+    return series.rolling(window, min_periods=min_periods).apply(_pctile, raw=True)
+
+
+def _groupby_rolling_z(
+    s: pd.Series,
+    group: pd.Series,
+    window: int,
+    min_periods: int,
+) -> pd.Series:
+    mean = s.groupby(group, sort=False).rolling(window, min_periods=min_periods).mean().reset_index(level=0, drop=True)
+    std = s.groupby(group, sort=False).rolling(window, min_periods=min_periods).std().reset_index(level=0, drop=True)
+    std = std.replace(0, np.nan)
+    return (s - mean) / std
 
 # -----------------------------
 # Gate Generation (Local)
@@ -178,6 +246,8 @@ def add_enhanced_gates(
     release_range_thresh: float = 1.0,
     adx_window: int = 14,
     ma50_slope_window: int = 5,
+    use_percentile_thresholds: bool = True,
+    asset_id_col: str = "cat__asset_id",
 ) -> pd.DataFrame:
     """Generate deterministic gates including vol-of-vol and trend persistence."""
     out = df.copy()
@@ -188,12 +258,17 @@ def add_enhanced_gates(
 
     lr = np.log(out[price_col]).diff()
     price = out[price_col]
+
+    asset_id = out[asset_id_col] if asset_id_col in out.columns else None
     
     # Realized volatility
     rv = lr.rolling(rv_window, min_periods=rv_window).std()
-    rv_mean = rv.rolling(z_window, min_periods=z_window).mean()
-    rv_std = rv.rolling(z_window, min_periods=z_window).std().replace(0, np.nan)
-    rv_z = (rv - rv_mean) / rv_std
+    if asset_id is not None:
+        rv_z = _groupby_rolling_z(rv, asset_id, z_window, z_window)
+    else:
+        rv_mean = rv.rolling(z_window, min_periods=z_window).mean()
+        rv_std = rv.rolling(z_window, min_periods=z_window).std().replace(0, np.nan)
+        rv_z = (rv - rv_mean) / rv_std
     
     # Vol-of-vol (volatility of volatility - fast rising vol)
     vol_of_vol = rv.rolling(volofvol_window, min_periods=volofvol_window).std()
@@ -212,8 +287,10 @@ def add_enhanced_gates(
     slope_sign = np.sign(slope)
     slope_persist = slope_sign.rolling(ema_fast, min_periods=ema_fast).mean().abs()  # Near 1 = persistent
     
+    has_hl = high_col in out.columns and low_col in out.columns
+
     # Spread and volume
-    if high_col in out.columns and low_col in out.columns:
+    if has_hl:
         high = out[high_col]
         low = out[low_col]
         spread = (high - low) / price.replace(0, np.nan)
@@ -224,39 +301,52 @@ def add_enhanced_gates(
 
     if vol_col in out.columns:
         vol = out[vol_col].replace(0, np.nan)
-        vol_mean = vol.rolling(z_window, min_periods=z_window).mean()
-        vol_std = vol.rolling(z_window, min_periods=z_window).std().replace(0, np.nan)
-        vol_z = (vol - vol_mean) / vol_std
+        if asset_id is not None:
+            vol_z = _groupby_rolling_z(vol, asset_id, z_window, z_window)
+        else:
+            vol_mean = vol.rolling(z_window, min_periods=z_window).mean()
+            vol_std = vol.rolling(z_window, min_periods=z_window).std().replace(0, np.nan)
+            vol_z = (vol - vol_mean) / vol_std
     else:
         vol_z = pd.Series(0, index=out.index)
 
     # ATR + range z-score
-    prev_close = price.shift(1)
-    tr = pd.concat(
-        [
-            (high - low).abs(),
-            (high - prev_close).abs(),
-            (low - prev_close).abs(),
-        ],
-        axis=1,
-    ).max(axis=1)
-    atr = tr.rolling(atr_window, min_periods=max(2, atr_window // 2)).mean()
-    range_mean = range_raw.rolling(z_window, min_periods=z_window).mean()
-    range_std = range_raw.rolling(z_window, min_periods=z_window).std().replace(0, np.nan)
-    range_z = (range_raw - range_mean) / range_std
+    if has_hl:
+        prev_close = price.shift(1)
+        tr = pd.concat(
+            [
+                (high - low).abs(),
+                (high - prev_close).abs(),
+                (low - prev_close).abs(),
+            ],
+            axis=1,
+        ).max(axis=1)
+        atr = tr.rolling(atr_window, min_periods=max(2, atr_window // 2)).mean()
+        range_mean = range_raw.rolling(z_window, min_periods=z_window).mean()
+        range_std = range_raw.rolling(z_window, min_periods=z_window).std().replace(0, np.nan)
+        range_z = (range_raw - range_mean) / range_std
 
-    # Bollinger width percentile + ATR percentile
-    bb_mid = price.rolling(bb_window, min_periods=bb_window).mean()
-    bb_std = price.rolling(bb_window, min_periods=bb_window).std()
-    bb_width = (bb_std * 4) / (bb_mid.replace(0, np.nan))
-    bb_width_pctile = _rolling_pctile(bb_width, bb_pctile_window)
-    atr_pctile = _rolling_pctile(atr, atr_pctile_window)
+        # Bollinger width percentile + ATR percentile
+        bb_mid = price.rolling(bb_window, min_periods=bb_window).mean()
+        bb_std = price.rolling(bb_window, min_periods=bb_window).std()
+        bb_width = (bb_std * 4) / (bb_mid.replace(0, np.nan))
+        bb_width_pctile = _rolling_pctile(bb_width, bb_pctile_window)
+        atr_pctile = _rolling_pctile(atr, atr_pctile_window)
 
-    # Inside bar + NRx gates
-    inside = (high <= high.shift(1)) & (low >= low.shift(1))
-    nr4 = range_raw == range_raw.rolling(4, min_periods=4).min()
-    nr7 = range_raw == range_raw.rolling(7, min_periods=7).min()
-    double_inside = inside & inside.shift(1)
+        # Inside bar + NRx gates
+        inside = (high <= high.shift(1)) & (low >= low.shift(1))
+        nr4 = range_raw == range_raw.rolling(4, min_periods=4).min()
+        nr7 = range_raw == range_raw.rolling(7, min_periods=7).min()
+        double_inside = inside & inside.shift(1)
+    else:
+        atr = pd.Series(np.nan, index=out.index)
+        range_z = pd.Series(0.0, index=out.index)
+        bb_width_pctile = pd.Series(np.nan, index=out.index)
+        atr_pctile = pd.Series(np.nan, index=out.index)
+        inside = pd.Series(False, index=out.index)
+        nr4 = pd.Series(False, index=out.index)
+        nr7 = pd.Series(False, index=out.index)
+        double_inside = pd.Series(False, index=out.index)
 
     # MA slope + close above MA
     ma20 = price.rolling(20, min_periods=20).mean()
@@ -264,21 +354,34 @@ def add_enhanced_gates(
     ma50_slope = ma50 - ma50.shift(ma50_slope_window)
 
     # ADX + DM+
-    up_move = high.diff()
-    down_move = -low.diff()
-    plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
-    minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
-    plus_di = 100 * pd.Series(plus_dm, index=out.index).rolling(adx_window, min_periods=adx_window).sum() / atr.replace(0, np.nan)
-    minus_di = 100 * pd.Series(minus_dm, index=out.index).rolling(adx_window, min_periods=adx_window).sum() / atr.replace(0, np.nan)
-    dx = (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan) * 100
-    adx = dx.rolling(adx_window, min_periods=adx_window).mean()
+    if has_hl:
+        up_move = high.diff()
+        down_move = -low.diff()
+        plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+        minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+        plus_di = 100 * pd.Series(plus_dm, index=out.index).rolling(adx_window, min_periods=adx_window).sum() / atr.replace(0, np.nan)
+        minus_di = 100 * pd.Series(minus_dm, index=out.index).rolling(adx_window, min_periods=adx_window).sum() / atr.replace(0, np.nan)
+        dx = (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan) * 100
+        adx = dx.rolling(adx_window, min_periods=adx_window).mean()
+    else:
+        plus_di = pd.Series(np.nan, index=out.index)
+        minus_di = pd.Series(np.nan, index=out.index)
+        adx = pd.Series(np.nan, index=out.index)
     
     # Standard gates
     out["g_highvol"] = (rv_z > 1.0).astype(np.int8)
     out["g_lowvol"] = (rv_z < -0.5).astype(np.int8)
-    out["g_trend"] = (trend_strength > 0.002).astype(np.int8)
+
+    if use_percentile_thresholds:
+        trend_pct = _rolling_pctile(trend_strength.fillna(0.0), max(bb_pctile_window, 100))
+        spread_pct = _rolling_pctile(spread.fillna(0.0), max(bb_pctile_window, 100))
+        out["g_trend"] = (trend_pct > 0.80).astype(np.int8)
+        out["g_illiquid"] = ((spread_pct > 0.90) | (vol_z < -0.5)).astype(np.int8)
+    else:
+        out["g_trend"] = (trend_strength > 0.002).astype(np.int8)
+        out["g_illiquid"] = ((spread > 0.0015) | (vol_z < -0.5)).astype(np.int8)
+
     out["g_range"] = (1 - out["g_trend"]).astype(np.int8)
-    out["g_illiquid"] = ((spread > 0.0015) | (vol_z < -0.5)).astype(np.int8)
     out["g_liquid"] = (1 - out["g_illiquid"]).astype(np.int8)
     out["g_volofvol"] = (vov_z > 1.0).astype(np.int8)  # Vol rising fast
     out["g_trend_persist"] = (slope_persist > 0.7).astype(np.int8)  # Strong trend persistence
@@ -469,7 +572,8 @@ def train_chaser_student(
     monotone_constraints_weak: dict | None = None,
     interaction_constraints_weak: list[list[str]] | None = None,
     huber_teacher_mu: np.ndarray | None = None,  # For teacher disagreement features
-    cat_features: List[str] | None = None  # New: Asset-Specific Refinement
+    cat_features: List[str] | None = None,  # New: Asset-Specific Refinement
+    dampening: float = 0.8,
 ):
     """
     Train a student model (Chaser) on residuals or with margin correction.
@@ -513,12 +617,25 @@ def train_chaser_student(
     et_proxy.fit(X_proxy, proxy_target, sample_weight=base_weight)
 
     # 2. Calculate Student Entropy (Variance of trees) on training data
-    # Collecting predictions from all trees: (n_estimators, n_samples)
-    all_tree_preds = np.array(
-        [tree.predict(X_proxy) for tree in et_proxy.estimators_],
-        dtype=np.float32
-    )
-    student_entropy = np.var(all_tree_preds, axis=0).astype(np.float32)
+    # Streaming variance across a subset of trees to avoid allocating (n_trees, n_samples).
+    ests = et_proxy.estimators_
+    if len(ests) > 25:
+        ests = ests[:25]
+    mean = None
+    m2 = None
+    n = 0
+    for tree in ests:
+        pred = tree.predict(X_proxy).astype(np.float32, copy=False)
+        n += 1
+        if mean is None:
+            mean = pred
+            m2 = np.zeros_like(pred)
+        else:
+            delta = pred - mean
+            mean = mean + delta / n
+            delta2 = pred - mean
+            m2 = m2 + delta * delta2
+    student_entropy = (m2 / max(n - 1, 1)).astype(np.float32, copy=False)
 
     # 3. Calculate Final Weights
     # w = Teacher_Std / (Student_Entropy + eps)
@@ -536,14 +653,11 @@ def train_chaser_student(
     init_score = None
     baseline = None
 
-    # Dampening Factor
-    dampening = 0.8
-
     if mode == "regression":
         # Residual target
         # Calculate raw residuals with Dampening
         # r = y - 0.8 * teacher
-        r = y.astype(np.float32) - (dampening * teacher.mu_oof)
+        r = y.astype(np.float32) - (float(dampening) * teacher.mu_oof)
 
         # --- Internal Validation Split ---
         n_samples = len(X)
@@ -571,8 +685,8 @@ def train_chaser_student(
             raise ValueError("For classification mode, teacher.margin_oof must be available.")
         target = y.astype(np.int32)
         # Apply Dampening to base margin
-        init_score = teacher.margin_oof.astype(np.float32) * dampening
-        baseline = teacher.margin_oof.astype(np.float32) * dampening
+        init_score = teacher.margin_oof.astype(np.float32) * float(dampening)
+        baseline = teacher.margin_oof.astype(np.float32) * float(dampening)
 
         n_samples = len(X)
         split_idx = int(n_samples * 0.85)
@@ -634,7 +748,6 @@ def train_chaser_student(
 
         # Add weak constraints if available (apply to both regression and classification)
         if monotone_constraints_weak is not None:
-            feature_names = [f"f{i}" for i in range(X.shape[1])]
             mono_tuple = tuple(monotone_constraints_weak.get(f"f{i}", 0) for i in range(X.shape[1]))
             params["monotone_constraints"] = mono_tuple
             
@@ -667,7 +780,7 @@ def train_chaser_student(
             early_stopping_rounds=None, # Usually RF doesn't need early stopping if rounds are fixed/low.
             verbose_eval=False
         )
-        return {"model": bst, "mode": mode, "type": "xgb", "params": params, "dampening": dampening}
+        return {"model": bst, "mode": mode, "type": "xgb", "params": params, "dampening": float(dampening), "cat_features": cat_features}
 
     # --- LightGBM ---
     elif model_type == "lgb":
@@ -730,7 +843,7 @@ def train_chaser_student(
             valid_names=["train", "valid"],
             callbacks=callbacks
         )
-        return {"model": bst, "mode": mode, "type": "lgb", "params": params}
+        return {"model": bst, "mode": mode, "type": "lgb", "params": params, "cat_features": cat_features, "dampening": float(dampening)}
 
     # --- CatBoost ---
     elif model_type == "cat":
@@ -776,7 +889,7 @@ def train_chaser_student(
 
         model = cb.CatBoost(params)
         model.fit(train_pool, eval_set=valid_pool)
-        return {"model": model, "mode": mode, "type": "cat", "params": params}
+        return {"model": model, "mode": mode, "type": "cat", "params": params, "cat_features": cat_features, "dampening": float(dampening)}
 
     # --- ExtraTrees ---
     elif model_type == "et":
@@ -800,7 +913,7 @@ def train_chaser_student(
             if model_params:
                 et_model.set_params(**model_params)
 
-            et_model.fit(X, res_target, sample_weight=w_final)
+            et_model.fit(X_proxy, res_target, sample_weight=w_final)
             return {"model": et_model, "mode": mode, "type": "et", "subtype": "residual_prob"}
         else:
             # Regression on residuals
@@ -813,7 +926,7 @@ def train_chaser_student(
             )
             if model_params:
                 et_model.set_params(**model_params)
-            et_model.fit(X, target_full, sample_weight=w_final)
+            et_model.fit(X_proxy, target_full, sample_weight=w_final)
             return {"model": et_model, "mode": mode, "type": "et"}
 
     else:
@@ -829,9 +942,10 @@ def predict_chaser_student(
     Make predictions using the student model and teacher baseline.
     """
     # Ensure proper type
+    cat_features = student_artifact.get("cat_features")
     has_cats = False
     if isinstance(X, pd.DataFrame):
-        has_cats = any(c.startswith('cat__') for c in X.columns)
+        has_cats = bool(cat_features) or any(c.startswith('cat__') for c in X.columns)
         if not has_cats:
             X = X.values.astype(np.float32)
     else:
@@ -928,6 +1042,7 @@ class Layer25Chaser:
         rulefit_base_cols: List[str] = None,
         rulefit_gate_cols: List[str] = None,
         rulefit_config: Dict[str, Any] = None,
+        dampening: float = 0.8,
         **kwargs
     ):
         self.mode = mode
@@ -957,9 +1072,14 @@ class Layer25Chaser:
         self.rulefit_config = rulefit_config or {}
         self.rulefit_transformer = None
 
+        self.dampening = float(dampening)
+
         self.regime_models: Dict[int, Dict[str, Any]] = {}
         self.global_models: Dict[str, Any] = {}
         self.feature_names: List[str] = []
+        self.teacher_feature_names: List[str] = []
+        self.booster_feature_names: List[str] = []
+        self.cat_cols: List[str] = []
         self.fracdiff_transformer = FracDiffTransformer()
 
 
@@ -1001,7 +1121,8 @@ class Layer25Chaser:
                 # processed has X columns + new ones.
                 new_cols = [c for c in processed.columns if c not in X.columns]
                 if new_cols:
-                    X_eng = pd.concat([X_eng, processed[new_cols]], axis=1)
+                    for c in new_cols:
+                        X_eng[c] = processed[c].astype(np.float32, copy=False) if pd.api.types.is_numeric_dtype(processed[c]) else processed[c]
                     if self.verbose:
                         tprint_info(f"   ✨ Added {len(new_cols)} Anti-Explosion features")
             except Exception as e:
@@ -1099,14 +1220,14 @@ class Layer25Chaser:
 
             # Round-number distance (Assuming normalized by tick size 1 or 0.1 since tick_size unknown)
             # dist_1 = abs(C - round(C, 0))
-            X_eng["dist_round_1"] = (close - close.round(0)).abs()
+            X_eng["dist_round_1"] = ((close - close.round(0)).abs() / close.replace(0, np.nan)).fillna(0.0)
             # dist_2 = abs(C - round(C, 1))
-            X_eng["dist_round_01"] = (close - close.round(1)).abs()
+            X_eng["dist_round_01"] = ((close - close.round(1)).abs() / close.replace(0, np.nan)).fillna(0.0)
 
             # Volatility-normalized momentum
             # ret / vol
-            vol_for_norm = X_eng["vol_bench_20_z"] if "vol_bench_20_z" in X_eng.columns else ret_1.rolling(20).std()
-            X_eng["vol_norm_momentum"] = ret_1 / (vol_for_norm.replace(0, np.nan))
+            vol_for_norm = ret_1.rolling(20, min_periods=10).std()
+            X_eng["vol_norm_momentum"] = (ret_1 / (vol_for_norm.replace(0, np.nan))).fillna(0.0)
 
             # Trend acceleration (diff of slope)
             # using slope from add_enhanced_gates if available, or compute here
@@ -1173,7 +1294,8 @@ class Layer25Chaser:
              # Extract only the gate columns (starting with g_)
              gate_cols = [c for c in X_gates.columns if c.startswith('g_') and c not in X.columns]
              if gate_cols:
-                 X_eng = pd.concat([X_eng, X_gates[gate_cols]], axis=1)
+                 for c in gate_cols:
+                     X_eng[c] = X_gates[c].astype(np.int8, copy=False)
                  if self.verbose:
                      tprint_info(f"   🚪 Added {len(gate_cols)} enhanced gate features")
         except Exception as e:
@@ -1289,15 +1411,19 @@ class Layer25Chaser:
             try:
                 # Add deterministic gates if gate_cols not provided or missing
                 if not self.rulefit_gate_cols:
-                    ohlcv_cols = ['close', 'high', 'low', 'volume']
-                    if all(c in X.columns for c in ohlcv_cols):
-                        X_with_gates = add_gates_no_funding(X)
-                        self.rulefit_gate_cols = [c for c in X_with_gates.columns if c.startswith('g_')]
-                        for c in self.rulefit_gate_cols:
-                            X_proc[c] = X_with_gates[c]
+                    existing_gates = [c for c in X_proc.columns if c.startswith('g_')]
+                    if existing_gates:
+                        self.rulefit_gate_cols = existing_gates
                     else:
-                        if self.verbose:
-                            tprint_warning("   ⚠️ OHLCV columns missing, cannot generate automatic gates for RuleFit.")
+                        ohlcv_cols = ['close', 'high', 'low', 'volume']
+                        if all(c in X.columns for c in ohlcv_cols):
+                            X_with_gates = add_gates_no_funding(X)
+                            self.rulefit_gate_cols = [c for c in X_with_gates.columns if c.startswith('g_')]
+                            for c in self.rulefit_gate_cols:
+                                X_proc[c] = X_with_gates[c]
+                        else:
+                            if self.verbose:
+                                tprint_warning("   ⚠️ OHLCV columns missing, cannot generate automatic gates for RuleFit.")
                             
                 if self.rulefit_gate_cols:
                     if not self.rulefit_base_cols:
@@ -1353,12 +1479,18 @@ class Layer25Chaser:
                 is_regression=(self.mode == "regression")
             )
 
+            cat_cols_pre = [c for c in X_proc.columns if c.startswith('cat__')]
+            cat_df_pre = X_proc[cat_cols_pre].copy() if cat_cols_pre else None
+            X_for_select = X_proc.drop(columns=cat_cols_pre) if cat_cols_pre else X_proc
+
             # Run selection
-            selected_features = selector.run_selection(X_proc, y)
+            selected_numeric = selector.run_selection(X_for_select, y)
 
             # Apply selection
             n_orig = X_proc.shape[1]
-            X_proc = X_proc[selected_features]
+            X_proc = X_for_select[selected_numeric]
+            if cat_df_pre is not None:
+                X_proc = pd.concat([X_proc, cat_df_pre.loc[X_proc.index]], axis=1)
             n_new = X_proc.shape[1]
 
             if self.verbose:
@@ -1400,17 +1532,20 @@ class Layer25Chaser:
 
         # Identify categorical features for Refinement
         cat_cols = [c for c in X_proc.columns if c.startswith('cat__')]
-        X_numeric = X_proc.drop(columns=cat_cols)
+        self.cat_cols = cat_cols
+        X_numeric = X_proc.drop(columns=cat_cols) if cat_cols else X_proc
         
         # Teacher only sees Universal Physics (Numeric)
+        self.teacher_feature_names = list(X_numeric.columns)
         X_teacher_np = X_numeric.values.astype(np.float32)
         feature_names_numeric = list(X_numeric.columns)
         
         # Boosters see Everything (Refinement)
-        X_boost = X_proc.copy() # Keep as DataFrame for CatBoost/LGBM
-        
+        X_boost = X_proc.copy()
+
         self.feature_names = list(X_proc.columns)
-        y_np = y.values
+        self.booster_feature_names = list(X_boost.columns)
+        y_np = y.values.astype(np.int32) if self.mode == "classification" else y.values.astype(np.float32)
         w_np = sample_weight.values if sample_weight is not None else None
 
         # Get weak constraints from Huber if available
@@ -1492,7 +1627,8 @@ class Layer25Chaser:
                         monotone_constraints_weak=monotone_constraints_weak,
                         interaction_constraints_weak=interaction_constraints_weak,
                         huber_teacher_mu=teacher.mu_oof,
-                        cat_features=cat_cols if m_type in ['xgb', 'lgb', 'cat'] else None
+                        cat_features=cat_cols if m_type in ['xgb', 'lgb', 'cat'] else None,
+                        dampening=self.dampening
                     )
 
                     # Generate OOF preds for correlation check (on training data)
@@ -1682,28 +1818,31 @@ class Layer25Chaser:
 
         # Ensure we use the selected features from training
         if hasattr(self, 'feature_names') and self.feature_names:
-            # Check if features are missing
             missing = [f for f in self.feature_names if f not in X_proc.columns]
             if missing:
-                # If we engineer features correctly, this shouldn't happen unless input X is different schema
-                # Just fill 0 for safety or raise warning
                 if self.verbose:
                     tprint_warning(f"   ⚠️ Missing {len(missing)} features in predict. Filling 0.")
                 for m in missing:
                     X_proc[m] = 0.0
-
             X_proc = X_proc[self.feature_names]
 
-        X_np = X_proc.values.astype(np.float32)
+        X_boost_df = X_proc
+        X_teacher_df = X_proc.drop(columns=self.cat_cols) if self.cat_cols else X_proc
+        if self.teacher_feature_names:
+            for m in self.teacher_feature_names:
+                if m not in X_teacher_df.columns:
+                    X_teacher_df[m] = 0.0
+            X_teacher_df = X_teacher_df[self.teacher_feature_names]
+        X_teacher_np = X_teacher_df.values.astype(np.float32)
         n_samples = len(X)
 
         # Helper to predict with an ensemble
-        def predict_ensemble(ensemble, x_data):
+        def predict_ensemble(ensemble, x_teacher_np, x_boost_df):
             teacher = ensemble["teacher"]
             students = ensemble["students"]
 
             # 1. Teacher Prediction
-            teacher_X = teacher.scaler.transform(x_data)
+            teacher_X = teacher.scaler.transform(x_teacher_np)
             teacher_mu = teacher.model.predict(teacher_X)
 
             teacher_margin = None
@@ -1724,7 +1863,9 @@ class Layer25Chaser:
             preds_list = []
 
             for name, student in students.items():
-                p = predict_chaser_student(x_data, teacher_mu, teacher_margin, student)
+                s_type = student.get("type")
+                x_in = x_boost_df if s_type in ["xgb", "lgb", "cat"] else x_teacher_np
+                p = predict_chaser_student(x_in, teacher_mu, teacher_margin, student)
                 preds_dict[name] = p
                 preds_list.append(p)
 
@@ -1732,7 +1873,7 @@ class Layer25Chaser:
             if not preds_list:
                 # Fallback to teacher
                 baseline = sigmoid(teacher_margin) if self.mode == "classification" else teacher_mu
-                return baseline, {}, np.zeros(len(x_data))
+                return baseline, {}, np.zeros(len(x_teacher_np))
 
             ensemble_mean = np.mean(preds_list, axis=0)
 
@@ -1743,7 +1884,7 @@ class Layer25Chaser:
                 ensemble_std = np.std(preds_list, axis=0)
                 confidence = 1.0 / (1.0 + ensemble_std)
             else:
-                confidence = np.ones(len(x_data)) # Single model = full confidence (relative to self)
+                confidence = np.ones(len(x_teacher_np)) # Single model = full confidence (relative to self)
 
             return ensemble_mean, preds_dict, confidence
 
@@ -1762,7 +1903,7 @@ class Layer25Chaser:
                     mask = prob_k > 0.001
 
                     if np.any(mask):
-                        pred_k, ind_k, conf_k = predict_ensemble(ensemble, X_np[mask])
+                        pred_k, ind_k, conf_k = predict_ensemble(ensemble, X_teacher_np[mask], X_boost_df.iloc[mask])
 
                         # Accumulate weighted average
                         final_pred[mask] += pred_k * prob_k[mask]
@@ -1786,7 +1927,7 @@ class Layer25Chaser:
             # Fill gaps with global or 0
             if not np.all(nonzero):
                 if self.global_models:
-                    g_pred, g_ind, g_conf = predict_ensemble(self.global_models, X_np[~nonzero])
+                    g_pred, g_ind, g_conf = predict_ensemble(self.global_models, X_teacher_np[~nonzero], X_boost_df.iloc[~nonzero])
                     final_pred[~nonzero] = g_pred
                     final_confidence[~nonzero] = g_conf
                     if return_individual:
@@ -1798,7 +1939,7 @@ class Layer25Chaser:
 
         # 2. Global Prediction
         elif self.global_models:
-            final_pred, ind_preds, final_confidence = predict_ensemble(self.global_models, X_np)
+            final_pred, ind_preds, final_confidence = predict_ensemble(self.global_models, X_teacher_np, X_boost_df)
             if return_individual:
                 for m_name, m_pred in ind_preds.items():
                     all_individual_preds[f"global_{m_name}"] = m_pred

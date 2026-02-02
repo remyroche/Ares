@@ -3,6 +3,7 @@ Multi-Timeframe Feature Generation Module.
 Extracted and enhanced from feature_generation_meta_labeling_step.py.
 """
 from typing import Any, Dict, List, Optional, Union, Tuple
+import os
 import pandas as pd
 import numpy as np
 import logging
@@ -26,12 +27,21 @@ try:
     from numba import njit, prange
     NUMBA_AVAILABLE = True
 except ImportError:
+    NUMBA_AVAILABLE = False
+
+# Allow explicit opt-out for stability/debugging.
+if os.getenv("ARES_DISABLE_NUMBA_MTF", "0") == "1":
+    NUMBA_AVAILABLE = False
+
+if not NUMBA_AVAILABLE:
+    # Overwrite with dummy decorators if disabled or not found
     def njit(*args, **kwargs):
         def decorator(func):
             return func
         return decorator
     prange = range
-    NUMBA_AVAILABLE = False
+
+logger = logging.getLogger(__name__)
 
 logger = logging.getLogger(__name__)
 
@@ -401,7 +411,7 @@ def _rolling_winsorized_zscore_grouped_numba(
     # It does check group_ids.
     return _rolling_winsorized_zscore_grouped_numba_impl(values, group_ids, window, lower_quantile, upper_quantile)
 
-@njit(nogil=True, fastmath=True, parallel=True)
+@njit(nogil=True, fastmath=True)
 def _rolling_winsorized_zscore_grouped_numba_impl(
     values: np.ndarray,
     group_ids: np.ndarray,
@@ -470,7 +480,7 @@ def _rolling_winsorized_zscore_grouped_numba_impl(
     return output
 
 
-@njit(nogil=True, fastmath=True, parallel=True)
+@njit(nogil=True, fastmath=True)
 def _compute_candle_geometry_grouped_numba(
     open_p: np.ndarray, high: np.ndarray, low: np.ndarray, close: np.ndarray, group_ids: np.ndarray
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -1041,9 +1051,11 @@ def create_meta_features(
 ) -> pd.DataFrame:
     import time
     import gc
+    # print(f"DEBUG: Entered create_meta_features for {len(df)} rows", flush=True) # REMOVED
     start_time = time.time()
     
     # --- CACHE CHECK ---
+    # print("DEBUG: Starting cache check", flush=True) # REMOVED
     try:
         h_idx = hashlib.md5(hash_pandas_object(df.index).values.tobytes()).hexdigest()
         cols_to_hash = [c for c in ['close', 'high', 'low', 'open', 'volume', 'Close', 'High', 'Low', 'Open', 'Volume'] if c in df.columns]
@@ -1062,8 +1074,13 @@ def create_meta_features(
     except Exception as e:
         logger.warning(f"⚠️ Cache check failed: {e}")
         cache_key = None
-
-    logger.info(f"🔍 Starting MTF feature generation for {len(df)} rows...")
+    
+    # print(f"DEBUG: Cache check done. Key: {cache_key}", flush=True) # REMOVED
+    logger.info(f"🔍 Starting MTF feature generation for {len(df)} rows. Hash: {cache_key}")
+    if asset_id_col:
+        logger.info(f"   [Debug] MTF: Asset ID col: {asset_id_col}")
+    else:
+        logger.info("   [Debug] MTF: No Asset ID col")
     
     # 1. Alignment and Indexing
     len_df = len(df)
@@ -1124,6 +1141,7 @@ def create_meta_features(
     features_list = []
     
     # --- BASE FEATURES ---
+    logger.info("   [NumbaDebug] Calling _norm (rolling_winsorized_zscore) for log_ret_arr")
     features_list.append({'log_ret': _norm(log_ret_arr, 'log_ret')})
     
     # Round-number distance (Normalized)
@@ -1136,7 +1154,9 @@ def create_meta_features(
 
     # --- CUSUM / EFFICIENCY ---
     if NUMBA_AVAILABLE:
+        logger.info("   [NumbaDebug] Calling _numba_kalman_filter_grouped")
         kf_ret, _ = _numba_kalman_filter_grouped(log_ret_arr, group_ids, 1e-5, 0.01, 0.0)
+        logger.info("   [NumbaDebug] Calling _rolling_std_grouped_numba (sigma_arr)")
         sigma_arr = _rolling_std_grouped_numba(kf_ret, group_ids, 20)
 
         # O(N) Efficiency Calculation
@@ -1151,6 +1171,7 @@ def create_meta_features(
         exp_ret = _rolling_mean_grouped_numba(kf_ret, group_ids, 20)
         resid_ret = np.nan_to_num(kf_ret - exp_ret)
 
+        logger.info("   [NumbaDebug] Calling _compute_dual_cusum_grouped_numba")
         s_tp, s_tn, s_rp, s_rn = _compute_dual_cusum_grouped_numba(kf_ret, resid_ret, sigma_arr, er_arr, group_ids, 0.12, 0.2)
         features_list.append({
             'cusum_trend_pos': _norm(s_tp, 'cusum_trend_pos'),
@@ -1162,6 +1183,7 @@ def create_meta_features(
         })
 
     # --- GEOMETRY ---
+    logger.info("   [NumbaDebug] Calling _compute_candle_geometry_grouped_numba")
     body_range, shadow_asym, clv, _ = _compute_candle_geometry_grouped_numba(open_arr, high_arr, low_arr, close_arr, group_ids)
     features_list.append({
         'body_to_range': _norm(body_range, 'body_to_range'),
@@ -1170,6 +1192,7 @@ def create_meta_features(
     })
 
     # --- VOLATILITY ---
+    logger.info("   [NumbaDebug] Calling _compute_volatility_features_grouped_numba")
     v_short, v_long_m, v_long_s, v_z = _compute_volatility_features_grouped_numba(log_ret_arr, group_ids)
     v_slope = v_short - np.roll(v_short, 5) # Simple diff
     # Mask slope boundary
@@ -1196,9 +1219,11 @@ def create_meta_features(
 
     # --- MULTI-TIMEFRAME LOOP ---
     for w in windows:
+        logger.info(f"   [NumbaDebug] Starting MTF loop for window {w}")
         w_feats = {}
         
         # Hoisted Ops O(N)
+        logger.info(f"   [NumbaDebug] Calling _rolling_max/min/mean/std for window {w}")
         r_high = _rolling_max_grouped_numba(high_arr, group_ids, w)
         r_low = _rolling_min_grouped_numba(low_arr, group_ids, w)
         r_close_mean = _rolling_mean_grouped_numba(close_arr, group_ids, w)

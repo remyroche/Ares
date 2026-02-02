@@ -1,0 +1,19 @@
+{
+  "dataset_tag": "cross_asset",
+  "run_id": "20260203_002002",
+  "panel_shape": [
+    24604,
+    49
+  ],
+  "schema": {
+    "ok": true,
+    "errors": [],
+    "warnings": []
+  },
+  "leakage_warnings": [
+    "Timestamp perturbation test: predictability did not collapse"
+  ],
+  "post_feature_leakage_warnings": [
+    "Timestamp perturbation test: predictability did not collapse"
+  ]
+}

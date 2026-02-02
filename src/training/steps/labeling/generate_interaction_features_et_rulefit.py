@@ -59,7 +59,7 @@ def _robust_stats_numba(x: np.ndarray, eps: float = 1e-12) -> Tuple[float, float
     # Median via partial sort
     sorted_x = np.sort(x)
     if n % 2 == 0:
-        med = (sorted_x[n // 2 - 1] + sorted_x[n // 2]) / 2.0
+        med = (sorted_x[n // 2 - 1] + sorted_x[n // 2]) * np.float32(0.5)
     else:
         med = sorted_x[n // 2]
     
@@ -70,11 +70,11 @@ def _robust_stats_numba(x: np.ndarray, eps: float = 1e-12) -> Tuple[float, float
     abs_dev.sort()
     
     if n % 2 == 0:
-        mad = (abs_dev[n // 2 - 1] + abs_dev[n // 2]) / 2.0
+        mad = (abs_dev[n // 2 - 1] + abs_dev[n // 2]) * np.float32(0.5)
     else:
         mad = abs_dev[n // 2]
     
-    sigma = 1.4826 * (mad + eps)
+    sigma = np.float32(1.4826) * (mad + np.float32(eps))
     return med, sigma
 
 
@@ -82,8 +82,9 @@ def _robust_stats_numba(x: np.ndarray, eps: float = 1e-12) -> Tuple[float, float
 def _winsorize_numba(x: np.ndarray, k: float = 4.0) -> np.ndarray:
     """Numba-accelerated winsorization."""
     med, sigma = _robust_stats_numba(x)
-    lo = med - k * sigma
-    hi = med + k * sigma
+    k_f32 = np.float32(k)
+    lo = med - k_f32 * sigma
+    hi = med + k_f32 * sigma
     out = np.empty_like(x)
     for i in range(len(x)):
         if x[i] < lo:
@@ -103,9 +104,9 @@ def _weighted_corr_numba(y_hat: np.ndarray, y: np.ndarray, w: np.ndarray) -> flo
         return 0.0
     
     # Weighted means
-    w_sum = 0.0
-    y_wsum = 0.0
-    yh_wsum = 0.0
+    w_sum = np.float32(0.0)
+    y_wsum = np.float32(0.0)
+    yh_wsum = np.float32(0.0)
     for i in range(n):
         w_sum += w[i]
         y_wsum += w[i] * y[i]
@@ -118,9 +119,9 @@ def _weighted_corr_numba(y_hat: np.ndarray, y: np.ndarray, w: np.ndarray) -> flo
     yh_m = yh_wsum / w_sum
     
     # Weighted covariance and variances
-    cov = 0.0
-    var_y = 0.0
-    var_yh = 0.0
+    cov = np.float32(0.0)
+    var_y = np.float32(0.0)
+    var_yh = np.float32(0.0)
     for i in range(n):
         y_c = y[i] - y_m
         yh_c = y_hat[i] - yh_m
@@ -182,8 +183,8 @@ def _compute_rule_ics_vectorized(
 ) -> np.ndarray:
     """Vectorized IC computation for all rules using CSC sparse format."""
     rule_ics = np.zeros(n_rules, dtype=np.float32)
-    y_mean = np.mean(y)
-    y_std = np.std(y)
+    y_mean = np.float32(np.mean(y))
+    y_std = np.float32(np.std(y))
     
     if y_std < 1e-12:
         return rule_ics
@@ -200,8 +201,8 @@ def _compute_rule_ics_vectorized(
             continue
         
         # Column mean and std
-        col_mean = col_sum / n_samples
-        col_var = col_mean * (1.0 - col_mean)
+        col_mean = np.float32(col_sum) / np.float32(n_samples)
+        col_var = col_mean * (np.float32(1.0) - col_mean)
         
         if col_var < 1e-12:
             rule_ics[j] = -1.0
@@ -210,14 +211,13 @@ def _compute_rule_ics_vectorized(
         col_std = np.sqrt(col_var)
         
         # Correlation: sum of y_centered where col=1, adjusted
-        y_sum_where_1 = 0.0
+        y_sum_where_1 = np.float32(0.0)
         for idx in range(start, end):
             row = indices[idx]
             y_sum_where_1 += y_centered[row]
         
         # Correlation formula for binary column
-        cov = (y_sum_where_1 / n_samples) - col_mean * 0.0  # y is centered
-        cov = y_sum_where_1 / n_samples
+        cov = y_sum_where_1 / np.float32(n_samples)
         corr = cov / (col_std * y_std)
         rule_ics[j] = abs(corr) if np.isfinite(corr) else -1.0
     
@@ -275,11 +275,18 @@ def _proximal_gradient_step(
     p = len(beta)
     beta_new = np.empty(p, dtype=np.float32)
     
+    # Cast constants to float32
+    step_size = np.float32(step_size)
+    l1_ratio = np.float32(l1_ratio)
+    alpha = np.float32(alpha)
+    one = np.float32(1.0)
+
     for j in range(p):
         # Gradient step
         z = beta[j] - step_size * grad[j]
         # L2 shrinkage
-        l2_factor = 1.0 / (1.0 + step_size * (1 - l1_ratio) * alpha * depth_penalties[j])
+        l2_denom = one + step_size * (one - l1_ratio) * alpha * depth_penalties[j]
+        l2_factor = one / l2_denom
         z = z * l2_factor
         # L1 soft thresholding
         lam = step_size * l1_ratio * alpha * depth_penalties[j]
@@ -314,10 +321,11 @@ def _compute_temporal_decay_weights(
     if decay_type == "exponential":
         # Exponential decay: w = exp(lambda * t) where lambda = ln(2) / half_life
         lam = np.log(2) / decay_half_life
-        weights = np.exp(lam * (t - 1))  # Normalize so most recent = 1
+        lam_f32 = np.float32(lam)
+        weights = np.exp(lam_f32 * (t - np.float32(1.0)))  # Normalize so most recent = 1
     else:  # linear
         # Linear decay from (1 - decay_half_life) to 1
-        weights = 1 - decay_half_life + decay_half_life * t
+        weights = np.float32(1.0) - np.float32(decay_half_life) + np.float32(decay_half_life) * t
     
     # Normalize so weights sum to n_samples (preserves effective sample size interpretation)
     weights = weights * (n_samples / weights.sum())
@@ -754,7 +762,7 @@ def _proximal_gradient_optimize(
     
     # Step size (use 1/L where L is Lipschitz constant estimate)
     # For correlation objective, L ~ 1/y_std
-    step_size = 0.1 * y_std
+    step_size = np.float32(0.1) * y_std
     
     for iteration in range(max_iter):
         # Compute prediction and gradient of -IC
@@ -764,7 +772,7 @@ def _proximal_gradient_optimize(
         yh_var = np.sum(w * yh_centered**2)
         
         if yh_var < 1e-12:
-            yh_std = 1e-6
+            yh_std = np.float32(1e-6)
         else:
             yh_std = np.sqrt(yh_var)
         
@@ -791,10 +799,10 @@ def _proximal_gradient_optimize(
         else:
             # Pure numpy fallback
             z = beta - step_size * grad
-            l2_factor = 1.0 / (1.0 + step_size * (1 - l1_ratio) * alpha * depth_penalties)
+            l2_factor = np.float32(1.0) / (np.float32(1.0) + step_size * (np.float32(1.0) - l1_ratio) * alpha * depth_penalties)
             z = z * l2_factor
             lam = step_size * l1_ratio * alpha * depth_penalties
-            beta_new = np.sign(z) * np.maximum(np.abs(z) - lam, 0)
+            beta_new = np.sign(z) * np.maximum(np.abs(z) - lam, np.float32(0.0))
         
         # Check convergence
         diff = np.max(np.abs(beta_new - beta))

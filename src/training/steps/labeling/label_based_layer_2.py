@@ -9857,10 +9857,10 @@ class LabelBasedLayer2(BaseStep):
         except: pass
 
         # Optimized Selection Strategy:
-        # 1. Get column names first (cheap)
+        # 1. Get column names first (cheap) - Using list comprehension avoids DataFrame allocation
         # 2. Convert directly to float32 numpy array (avoids intermediate double-allocation)
         # 3. Handle infinities in-place on the array (very fast)
-        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        numeric_cols = [c for c, t in df.dtypes.items() if np.issubdtype(t, np.number)]
 
         if len(numeric_cols) > 0:
             tprint_info(f"        -> Found {len(numeric_cols)} numeric columns. Materializing array (float32)...")
@@ -20442,13 +20442,27 @@ class LabelBasedLayer2(BaseStep):
 
                 # === SAFEGUARD: Remove constant, all-NaN, or infinite features ===
                 # This prevents LightGBM "num_features() > 0" errors
-                valid_cols = []
-                for col in X_train_final.columns:
-                    col_data = X_train_final[col]
-                    # Check: not all NaN, has variance, no infinities
-                    if col_data.notna().any() and col_data.std() > 1e-10 and not np.isinf(col_data).any():
-                        valid_cols.append(col)
-                
+                # OPTIMIZED: Vectorized check for performance
+                try:
+                    # Calculate std and validity on the full matrix (vectorized)
+                    # X_train_final is already float32, so this is efficient
+                    stds = X_train_final.std()
+                    is_valid = (X_train_final.count() > 0) & (stds > 1e-10)
+
+                    # Check for infinities (only if needed, usually std check handles it but not always)
+                    # std of inf is nan or inf
+                    is_finite = ~np.isinf(stds) & ~np.isnan(stds)
+
+                    valid_mask = is_valid & is_finite
+                    valid_cols = X_train_final.columns[valid_mask].tolist()
+                except Exception:
+                    # Fallback to iterative if vectorized fails (e.g. memory)
+                    valid_cols = []
+                    for col in X_train_final.columns:
+                        col_data = X_train_final[col]
+                        if col_data.notna().any() and col_data.std() > 1e-10 and not np.isinf(col_data).any():
+                            valid_cols.append(col)
+
                 if len(valid_cols) < len(X_train_final.columns):
                     n_removed = len(X_train_final.columns) - len(valid_cols)
                     X_train_final = X_train_final[valid_cols]
@@ -21158,7 +21172,7 @@ class LabelBasedLayer2(BaseStep):
                 merged = merged.loc[:, ~merged.columns.duplicated(keep='last')]
 
             # Fill numeric NaNs only to reduce temporary allocations
-            numeric_cols = merged.select_dtypes(include=[np.number]).columns
+            numeric_cols = [c for c, t in merged.dtypes.items() if np.issubdtype(t, np.number)]
             if len(numeric_cols) > 0:
                 merged[numeric_cols] = merged[numeric_cols].fillna(0.0)
 
@@ -21287,7 +21301,8 @@ class LabelBasedLayer2(BaseStep):
             # CRITICAL FIX: Remove any non-numeric columns (e.g., regime labels 'Trending', 'Chaos')
             # that might have leaked into the features. RidgeClassifier/LightGBM will fail on strings.
             cols_before = X.shape[1]
-            X = X.select_dtypes(include=[np.number])
+            numeric_cols = [c for c, t in X.dtypes.items() if np.issubdtype(t, np.number)]
+            X = X[numeric_cols]
             if X.shape[1] < cols_before:
                 tprint_info(f"   🧹 Dropped {cols_before - X.shape[1]} non-numeric columns (e.g. regime labels)")
 

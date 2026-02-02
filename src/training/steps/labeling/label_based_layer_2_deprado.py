@@ -3555,8 +3555,17 @@ class LabelBasedLayer2(BaseStep):
         """
         tprint_info("   📊 Layer 2: Running smart feature pre-selection (Gain + Split + Root Zone)...")
         
-        # 1. Base numeric filtering
-        numeric_df = df.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan).dropna(axis=1, how='all')
+        # 1. Base numeric filtering - Optimized to avoid intermediate copies
+        numeric_cols = [c for c, t in df.dtypes.items() if np.issubdtype(t, np.number)]
+        if not numeric_cols:
+            return pd.DataFrame(index=df.index)
+
+        # Use numpy for efficient replacement
+        vals = df[numeric_cols].to_numpy(dtype=np.float32, copy=True)
+        vals[np.isinf(vals)] = np.nan
+
+        numeric_df = pd.DataFrame(vals, index=df.index, columns=numeric_cols)
+        numeric_df = numeric_df.dropna(axis=1, how='all')
         if numeric_df.empty:
             return numeric_df
 
@@ -7465,13 +7474,27 @@ class LabelBasedLayer2(BaseStep):
 
                 # === SAFEGUARD: Remove constant, all-NaN, or infinite features ===
                 # This prevents LightGBM "num_features() > 0" errors
-                valid_cols = []
-                for col in X_train_final.columns:
-                    col_data = X_train_final[col]
-                    # Check: not all NaN, has variance, no infinities
-                    if col_data.notna().any() and col_data.std() > 1e-10 and not np.isinf(col_data).any():
-                        valid_cols.append(col)
-                
+                # OPTIMIZED: Vectorized check for performance
+                try:
+                    # Calculate std and validity on the full matrix (vectorized)
+                    # X_train_final is already float32, so this is efficient
+                    stds = X_train_final.std()
+                    is_valid = (X_train_final.count() > 0) & (stds > 1e-10)
+
+                    # Check for infinities (only if needed, usually std check handles it but not always)
+                    # std of inf is nan or inf
+                    is_finite = ~np.isinf(stds) & ~np.isnan(stds)
+
+                    valid_mask = is_valid & is_finite
+                    valid_cols = X_train_final.columns[valid_mask].tolist()
+                except Exception:
+                    # Fallback to iterative if vectorized fails
+                    valid_cols = []
+                    for col in X_train_final.columns:
+                        col_data = X_train_final[col]
+                        if col_data.notna().any() and col_data.std() > 1e-10 and not np.isinf(col_data).any():
+                            valid_cols.append(col)
+
                 if len(valid_cols) < len(X_train_final.columns):
                     n_removed = len(X_train_final.columns) - len(valid_cols)
                     X_train_final = X_train_final[valid_cols]

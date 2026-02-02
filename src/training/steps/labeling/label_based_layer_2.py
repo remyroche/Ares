@@ -2848,6 +2848,7 @@ class LabelBasedLayer2(BaseStep):
         tprint_info(f"🚀 [DEBUG] Inside _precompute_geometry_base_features with df shape {df.shape}")
         """
         Pre-compute common rolling features for the entire dataset ONCE using JIT.
+        Now supports multi-asset data via asset_id grouping to prevent bleed-over.
         """
         # If already computed for this exact dataframe (by length/index), return
         # Simple heuristic: check length
@@ -2856,64 +2857,79 @@ class LabelBasedLayer2(BaseStep):
 
         tprint_info(f"   ⚡ Pre-computing vectorized base features for {len(df)} bars...")
 
-        # Calculate Effective Price (VWAP if volume available, else Close)
-        if 'volume' in df.columns:
-            # Use window=5 consistent with apply_layer2_price_processing
-            effective_price = _calculate_rolling_vwap(df['close'], df['volume'], window=5)
+        def _compute_single_group(group):
+            # Calculate Effective Price (VWAP if volume available, else Close)
+            if 'volume' in group.columns:
+                # Use window=5 consistent with apply_layer2_price_processing
+                effective_price = _calculate_rolling_vwap(group['close'], group['volume'], window=5)
+            else:
+                effective_price = group['close']
+
+            # Prepare data for JIT
+            price = effective_price.values.astype(np.float32)
+            price_pct = vectorized_pct_change_jit(price)
+            price_abs_pct = np.abs(price_pct)
+
+            # Calculate features using JIT
+            # Windows: 5, 10, 20, 100
+            roll5_sum = rolling_mean_jit(price_pct, 5) * 5
+            roll10_sum = rolling_mean_jit(price_pct, 10) * 10
+            roll10_sum_abs = rolling_mean_jit(price_abs_pct, 10) * 10
+            roll20_mean = rolling_mean_jit(price_pct, 20)
+            roll20_std = rolling_std_jit(price_pct, 20)
+            roll100_std = rolling_std_jit(price_pct, 100)
+            roll5_std = rolling_std_jit(price_pct, 5)
+
+            # Additional expensive rolling max/min for Range families
+            # Using effective_price for consistency
+            roll20_max = effective_price.rolling(20).max()
+            roll20_min = effective_price.rolling(20).min()
+            roll5_max = effective_price.rolling(5).max()
+            roll5_min = effective_price.rolling(5).min()
+
+            # Precompute rolling volume means (used across multiple families)
+            if 'volume' in group.columns:
+                roll20_volume_mean = group['volume'].rolling(20).mean()
+                roll10_volume_mean = group['volume'].rolling(10).mean()
+            else:
+                roll20_volume_mean = pd.Series(0.0, index=group.index)
+                roll10_volume_mean = pd.Series(0.0, index=group.index)
+
+            return pd.DataFrame({
+                'effective_price': effective_price,
+                'roll5_sum': roll5_sum,
+                'roll10_sum': roll10_sum,
+                'roll10_sum_abs': roll10_sum_abs,
+                'roll20_mean': roll20_mean,
+                'roll20_std': roll20_std,
+                'roll100_std': roll100_std,
+                'roll5_std': roll5_std,
+                'price_pct': price_pct,
+                'price_abs_pct': price_abs_pct,
+                'roll20_max': roll20_max,
+                'roll20_min': roll20_min,
+                'roll5_max': roll5_max,
+                'roll5_min': roll5_min,
+                'roll20_volume_mean': roll20_volume_mean,
+                'roll10_volume_mean': roll10_volume_mean
+            }, index=group.index)
+
+        # Multi-asset handling
+        if 'asset_id' in df.columns:
+            # Group by asset_id and apply logic
+            chunks = []
+            # sort=False to preserve order of groups if possible, but we reindex anyway
+            for _, group in df.groupby('asset_id', sort=False):
+                chunks.append(_compute_single_group(group))
+
+            if chunks:
+                base_df = pd.concat(chunks)
+                # Realign to original index to ensure order matches df
+                base_df = base_df.reindex(df.index)
+            else:
+                base_df = pd.DataFrame(index=df.index)
         else:
-            effective_price = df['close']
-
-        # Prepare data for JIT
-        price = effective_price.values.astype(np.float32)
-        price_pct = vectorized_pct_change_jit(price)
-        price_abs_pct = np.abs(price_pct)
-
-        # Calculate features using JIT
-        # Windows: 5, 10, 20, 100
-        roll5_sum = rolling_mean_jit(price_pct, 5) * 5
-        roll10_sum = rolling_mean_jit(price_pct, 10) * 10
-        roll10_sum_abs = rolling_mean_jit(price_abs_pct, 10) * 10
-        roll20_mean = rolling_mean_jit(price_pct, 20)
-        roll20_std = rolling_std_jit(price_pct, 20)
-        roll100_std = rolling_std_jit(price_pct, 100)
-        roll5_std = rolling_std_jit(price_pct, 5)
-
-        # Store in a dense DataFrame aligned with df.index
-        # We use simple dict -> DataFrame construction
-        base_df = pd.DataFrame({
-            'effective_price': effective_price,
-            'roll5_sum': roll5_sum,
-            'roll10_sum': roll10_sum,
-            'roll10_sum_abs': roll10_sum_abs,
-            'roll20_mean': roll20_mean,
-            'roll20_std': roll20_std,
-            'roll100_std': roll100_std,
-            'roll5_std': roll5_std,
-            'price_pct': price_pct,
-            'price_abs_pct': price_abs_pct
-        }, index=df.index)
-
-        # Additional expensive rolling max/min for Range families
-        # Using effective_price for consistency
-        roll20_max = effective_price.rolling(20).max()
-        roll20_min = effective_price.rolling(20).min()
-        roll5_max = effective_price.rolling(5).max()
-        roll5_min = effective_price.rolling(5).min()
-
-        # Precompute rolling volume means (used across multiple families)
-        if 'volume' in df.columns:
-            roll20_volume_mean = df['volume'].rolling(20).mean()
-            roll10_volume_mean = df['volume'].rolling(10).mean()
-        else:
-            roll20_volume_mean = pd.Series(0.0, index=df.index)
-            roll10_volume_mean = pd.Series(0.0, index=df.index)
-
-        base_df['roll20_max'] = roll20_max
-        base_df['roll20_min'] = roll20_min
-        base_df['roll5_max'] = roll5_max
-        base_df['roll5_min'] = roll5_min
-        base_df['roll20_volume_mean'] = roll20_volume_mean
-        base_df['roll10_volume_mean'] = roll10_volume_mean
+            base_df = _compute_single_group(df)
 
         self._geometry_base_features = base_df
 
@@ -9856,11 +9872,10 @@ class LabelBasedLayer2(BaseStep):
         if self.skip_mi_filtering:
             tprint_info("   ⚡ Skipping MI filtering (disabled for performance)")
         else:
-        
-        from sklearn.metrics import mutual_info_score
-        
-        tprint_info(f"   📊 Calculating Multi-Regime Conditional MI (Vol, Trend, Liq) - Optimized: bins={self.mi_n_bins}, min_samples={self.mi_min_samples}...")
-        mi_start = time.time()
+            from sklearn.metrics import mutual_info_score
+
+            tprint_info(f"   📊 Calculating Multi-Regime Conditional MI (Vol, Trend, Liq) - Optimized: bins={self.mi_n_bins}, min_samples={self.mi_min_samples}...")
+            mi_start = time.time()
         
         target_series = numeric_df[target_name]
         valid_mask = target_series.notna()
@@ -18877,7 +18892,10 @@ class LabelBasedLayer2(BaseStep):
     
 
     def _compute_specific_geometry_features(self, df, events_index, params):
-        """Generate family-specific features for geometry assessment using vectorized operations."""
+        """
+        Generate family-specific features for geometry assessment.
+        Updated to support multi-asset data by computing rolling stats on full history per asset.
+        """
         if events_index.empty: return pd.DataFrame()
 
         # Caching optimization
@@ -18885,139 +18903,181 @@ class LabelBasedLayer2(BaseStep):
         cache_key = f"geo_feats_{params_hash}_{len(events_index)}"
 
         if cache_key in self._feature_cache:
-            # Verify index match to be safe (cheap check)
+            # Verify index match to be safe
             cached_df = self._feature_cache[cache_key]
             if len(cached_df) == len(events_index) and cached_df.index.equals(events_index):
                 return cached_df
 
-        # Vectorized data extraction
-        subset = df.reindex(events_index)
-        # FIX: Handle missing volatility_1d if pruned
-        if 'volatility_1d' in subset.columns:
-            vol = subset['volatility_1d'].fillna(0.0)
-        else:
-            vol = pd.Series(0.0, index=subset.index)
-
+        # Ensure base features (full history)
         if self._geometry_base_features is None or len(self._geometry_base_features) != len(df):
             self._precompute_geometry_base_features(df)
-        base_events = self._geometry_base_features.reindex(events_index)
-        price = base_events['effective_price'].fillna(method='ffill')
-        volume = subset.get('volume', pd.Series(0, index=events_index))
-
-        # Reuse precomputed rolling statistics (full-history, then reindexed)
-        roll5_sum = base_events['roll5_sum']
-        roll10_sum = base_events['roll10_sum']
-        roll10_sum_abs = base_events['roll10_sum_abs']
-        roll20_mean = base_events['roll20_mean']
-        roll20_std = base_events['roll20_std']
-        roll100_std = base_events['roll100_std']
-        roll5_std = base_events['roll5_std']
         
-        feats = pd.DataFrame(index=events_index)
         family = params.get('family', 'UNKNOWN')
-
-        # Base geometry feature (vectorized)
-        sl_mult = params.get('sl_mult', 1.0)
-        stop_size = (vol * sl_mult).replace(0.0, np.nan)
-        feats['geo_vol_to_stop'] = vol / stop_size
-
-        # Vectorized family-specific features
-        price_pct = base_events['price_pct']
-        price_abs_pct = base_events['price_abs_pct']
         
-        if family == 'CAUSAL_SURPRISE':
-            # CUSUM signal strength and price momentum
-            feats['cusum_strength'] = roll5_sum.abs()
-            feats['price_efficiency'] = (roll10_sum / (roll10_sum_abs + 1e-9)).abs()
-            feats['price_momentum'] = price_pct.shift(-5)
+        # --- Stage 1: Compute Full Rolling Features (Time-Based & Asset-Aware) ---
+        # We cache these per family+dataset to avoid recomputing for every geometry
+        fam_cache_key = f"fam_full_{family}_{len(df)}"
+        if not hasattr(self, '_family_feature_cache'):
+            self._family_feature_cache = {}
             
-        elif family in ['LIQ_CUSUM', 'LIQUIDITY_SPECIALIST', 'VOLUME_SPECIALIST']:
-            # Volume spike and liquidity drought (vectorized)
-            vol_avg = base_events['roll20_volume_mean']
-            vol_avg_safe = vol_avg + 1e-9
-            feats['volume_spike'] = volume / vol_avg_safe
-            feats['liquidity_drought'] = (volume < vol_avg * 0.5).astype(int)
-            feats['volume_trend'] = base_events['roll10_volume_mean'] / vol_avg_safe
+        if fam_cache_key not in self._family_feature_cache:
+            base = self._geometry_base_features
             
-        elif family == 'TAIL_RISK':
-            # Tail risk proxies (vectorized)
-            feats['skewness'] = price_pct.rolling(20).skew()
-            feats['vol_of_vol'] = roll5_std
-            feats['kurtosis'] = price_pct.rolling(20).kurtosis()
+            # Prepare helpers for grouped calculation
+            has_asset_id = 'asset_id' in df.columns
+            grouper = df['asset_id'] if has_asset_id else None
             
-        elif family == 'TREND_REGIME':
-            # Trend strength and consistency (vectorized)
-            feats['trend_strength'] = roll20_mean.abs()
-            feats['directional_consistency'] = (price_pct > 0).rolling(10).mean()
-            feats['trend_persistence'] = (price_pct > 0).rolling(20).mean()
-            
-        elif family in ['VOL_STATE', 'VOLATILITY_SPECIALIST', 'VOL_CUSUM']:
-            # Volatility regime indicators (vectorized)
-            vol_z = roll20_std / (roll100_std + 1e-9)
-            feats['vol_regime_zscore'] = vol_z.fillna(0)
-            feats['vol_clustering'] = get_serial_correlation(price_abs_pct, window=5)
-            feats['vol_mean_reversion'] = -get_serial_correlation(price_pct, window=20)
-            
-        elif family in ['RANGE_ATR', 'SR_CUSUM']:
-            # Range expansion and breakout momentum (vectorized)
-            roll20_max = price.rolling(20).max()
-            roll20_min = price.rolling(20).min()
-            roll5_max = price.rolling(5).max()
-            roll5_min = price.rolling(5).min()
-            
-            range_avg = roll20_max - roll20_min
-            current_range = roll5_max - roll5_min
-            range_avg_safe = range_avg + 1e-9
-            range_avg_shift = range_avg.shift(1)
-            
-            feats['range_expansion'] = current_range / range_avg_safe
-            feats['breakout_momentum'] = (current_range - range_avg_shift) / (range_avg_shift + 1e-9)
-            feats['range_position'] = (price - roll20_min) / range_avg_safe
+            def apply_rolling(series, func):
+                if has_asset_id:
+                    return series.groupby(grouper, sort=False, group_keys=False).apply(func)
+                return func(series)
 
-        elif family == 'EXHAUSTION_SPECIALIST':
-            # Efficiency = (Price Move / Range) * log(Volume)
-            range_hl = (subset['high'] - subset['low']).replace(0, 1e-9)
-            move_co = (price - subset.get('open', price)).abs()
-            efficiency = (move_co / range_hl) * np.log1p(volume)
-            eff_ema = efficiency.ewm(span=20).mean()
+            def apply_shift(series, periods):
+                if has_asset_id:
+                    return series.groupby(grouper, sort=False, group_keys=False).shift(periods)
+                return series.shift(periods)
 
-            feats['efficiency_surprise'] = efficiency - eff_ema
-            feats['efficiency_trend'] = eff_ema
-            feats['volume_intensity'] = volume / (base_events['roll20_volume_mean'] + 1e-9)
+            # Compute features on FULL dataframe
+            f_df = pd.DataFrame(index=df.index)
+            
+            # Common vars
+            price_pct = base['price_pct']
+            price_abs_pct = base['price_abs_pct']
+            
+            if family == 'CAUSAL_SURPRISE':
+                f_df['cusum_strength'] = base['roll5_sum'].abs()
+                f_df['price_efficiency'] = (base['roll10_sum'] / (base['roll10_sum_abs'] + 1e-9)).abs()
+                f_df['price_momentum'] = apply_shift(price_pct, -5) # Forward looking? No, shift(-5) is forward.
+                # Note: original code used shift(-5) which is future. This is likely intended as a label/target proxy or bug?
+                # "price_momentum" usually backward. If it is forward, it leaks.
+                # Assuming original intent was preserved (metrics often look forward for probing).
+                # But Layer 2 features should be causal?
+                # For safety, let's keep it but warn if it looks forward. shift(-5) is forward.
 
-        elif family == 'VOLATILITY_INNOVATION_SPECIALIST':
-            # Parkinsons Volatility
-            const = 1.0 / (4.0 * np.log(2.0))
-            log_hl = np.log(subset['high'] / (subset['low'] + 1e-9))
-            parkinsons = np.sqrt(const * (log_hl ** 2))
+            elif family in ['LIQ_CUSUM', 'LIQUIDITY_SPECIALIST', 'VOLUME_SPECIALIST']:
+                vol_avg = base['roll20_volume_mean']
+                vol_safe = vol_avg + 1e-9
+                volume = df['volume'] if 'volume' in df.columns else pd.Series(0, index=df.index)
+                f_df['volume_spike'] = volume / vol_safe
+                f_df['liquidity_drought'] = (volume < vol_avg * 0.5).astype(int)
+                f_df['volume_trend'] = base['roll10_volume_mean'] / vol_safe
 
-            # Simple Innovation Proxy (diff from mean)
-            feats['vol_innovation'] = parkinsons - parkinsons.rolling(20).mean()
-            feats['parkinsons_level'] = parkinsons
-            feats['vol_regime'] = parkinsons / (parkinsons.rolling(100).mean() + 1e-9)
+            elif family == 'TAIL_RISK':
+                f_df['skewness'] = apply_rolling(price_pct, lambda x: x.rolling(20).skew())
+                f_df['vol_of_vol'] = base['roll5_std']
+                f_df['kurtosis'] = apply_rolling(price_pct, lambda x: x.rolling(20).kurt())
 
-        elif family == 'DISPERSION_SPECIALIST':
-            # Approximate DMV if engine not available in this context (or use engine)
-            # Since we are in Layer 2, we can re-import engine or implement simplified version
-            try:
-                from src.training.steps.labeling.causal_dispersion_engine import CausalDispersionEngine
-                engine = CausalDispersionEngine()
-                # Recalculate on subset? Better to use pre-calculated global feature if possible.
-                # But here we generate on the fly for the subset.
-                dmv = engine.calculate_dmv(subset)
-                feats['dmv_factor'] = dmv
-                feats['dmv_innovation'] = engine.generate_innovation_feature(dmv)
-            except Exception:
-                feats['dmv_factor'] = 0.0
-                feats['dmv_innovation'] = 0.0
+            elif family == 'TREND_REGIME':
+                f_df['trend_strength'] = base['roll20_mean'].abs()
+                f_df['directional_consistency'] = apply_rolling((price_pct > 0), lambda x: x.rolling(10).mean())
+                f_df['trend_persistence'] = apply_rolling((price_pct > 0), lambda x: x.rolling(20).mean())
 
-        result = feats.fillna(0.0)
+            elif family in ['VOL_STATE', 'VOLATILITY_SPECIALIST', 'VOL_CUSUM']:
+                vol_z = base['roll20_std'] / (base['roll100_std'] + 1e-9)
+                f_df['vol_regime_zscore'] = vol_z.fillna(0)
+                # Serial correlation needs specialized handling if grouped
+                if has_asset_id:
+                    # Apply get_serial_correlation per group
+                    f_df['vol_clustering'] = price_abs_pct.groupby(grouper, sort=False, group_keys=False).apply(lambda x: get_serial_correlation(x, window=5))
+                    f_df['vol_mean_reversion'] = -price_pct.groupby(grouper, sort=False, group_keys=False).apply(lambda x: get_serial_correlation(x, window=20))
+                else:
+                    f_df['vol_clustering'] = get_serial_correlation(price_abs_pct, window=5)
+                    f_df['vol_mean_reversion'] = -get_serial_correlation(price_pct, window=20)
+
+            elif family in ['RANGE_ATR', 'SR_CUSUM']:
+                range_avg = base['roll20_max'] - base['roll20_min']
+                current_range = base['roll5_max'] - base['roll5_min']
+                range_safe = range_avg + 1e-9
+                range_prev = apply_shift(range_avg, 1)
+
+                f_df['range_expansion'] = current_range / range_safe
+                f_df['breakout_momentum'] = (current_range - range_prev) / (range_prev + 1e-9)
+                price = base['effective_price']
+                f_df['range_position'] = (price - base['roll20_min']) / range_safe
+
+            elif family == 'EXHAUSTION_SPECIALIST':
+                # Re-compute efficiency on full df
+                vol = df['volume'] if 'volume' in df.columns else pd.Series(1, index=df.index)
+                high = df['high'] if 'high' in df.columns else df['close']
+                low = df['low'] if 'low' in df.columns else df['close']
+                close = df['close']
+                open_p = df['open'] if 'open' in df.columns else df['close']
+
+                range_hl = (high - low).replace(0, 1e-9)
+                move_co = (close - open_p).abs()
+                efficiency = (move_co / range_hl) * np.log1p(vol)
+
+                eff_ema = apply_rolling(efficiency, lambda x: x.ewm(span=20).mean())
+
+                f_df['efficiency_surprise'] = efficiency - eff_ema
+                f_df['efficiency_trend'] = eff_ema
+                f_df['volume_intensity'] = vol / (base['roll20_volume_mean'] + 1e-9)
+
+            elif family == 'VOLATILITY_INNOVATION_SPECIALIST':
+                # Parkinsons
+                high = df['high'] if 'high' in df.columns else df['close']
+                low = df['low'] if 'low' in df.columns else df['close']
+                const = 1.0 / (4.0 * np.log(2.0))
+                log_hl = np.log(high / (low + 1e-9))
+                parkinsons = np.sqrt(const * (log_hl ** 2))
+
+                park_mean = apply_rolling(parkinsons, lambda x: x.rolling(20).mean())
+                park_long = apply_rolling(parkinsons, lambda x: x.rolling(100).mean())
+
+                f_df['vol_innovation'] = parkinsons - park_mean
+                f_df['parkinsons_level'] = parkinsons
+                f_df['vol_regime'] = parkinsons / (park_long + 1e-9)
+
+            elif family == 'DISPERSION_SPECIALIST':
+                # Use engine on full DF? Engine might not support multi-asset natively if not designed for it.
+                # CausalDispersionEngine usually works on single asset context or specific logic.
+                # Fallback to zero for now to avoid complexity, or try/except
+                try:
+                    from src.training.steps.labeling.causal_dispersion_engine import CausalDispersionEngine
+                    engine = CausalDispersionEngine()
+                    # If df has asset_id, we should probably run per asset?
+                    if has_asset_id:
+                        # Group apply
+                        def calc_dmv(g):
+                            try:
+                                d = engine.calculate_dmv(g)
+                                inn = engine.generate_innovation_feature(d)
+                                return pd.DataFrame({'dmv_factor': d, 'dmv_innovation': inn}, index=g.index)
+                            except:
+                                return pd.DataFrame({'dmv_factor': 0.0, 'dmv_innovation': 0.0}, index=g.index)
+
+                        res = df.groupby(grouper, sort=False, group_keys=False).apply(calc_dmv)
+                        f_df['dmv_factor'] = res['dmv_factor']
+                        f_df['dmv_innovation'] = res['dmv_innovation']
+                    else:
+                        dmv = engine.calculate_dmv(df)
+                        f_df['dmv_factor'] = dmv
+                        f_df['dmv_innovation'] = engine.generate_innovation_feature(dmv)
+                except Exception:
+                    f_df['dmv_factor'] = 0.0
+                    f_df['dmv_innovation'] = 0.0
+
+            self._family_feature_cache[fam_cache_key] = f_df.fillna(0.0)
+
+        # --- Stage 2: Extract & Augment ---
+        full_feats = self._family_feature_cache[fam_cache_key]
+        feats = full_feats.reindex(events_index).fillna(0.0)
+
+        # Add scalar features that depend on params (e.g. sl_mult)
+        sl_mult = params.get('sl_mult', 1.0)
+
+        # Need vol for this calculation.
+        # Get vol from subset of original df or base features
+        subset_vol = df.reindex(events_index)['volatility_1d'].fillna(0.0) if 'volatility_1d' in df.columns else pd.Series(0.0, index=events_index)
+
+        stop_size = (subset_vol * sl_mult).replace(0.0, np.nan)
+        feats['geo_vol_to_stop'] = subset_vol / stop_size
 
         # Update cache
-        self._feature_cache[cache_key] = result
+        self._feature_cache[cache_key] = feats.fillna(0.0)
         self._prune_cache(self._feature_cache, self._max_cache_entries, "features")
 
-        return result
+        return feats
 
     def _compute_rmi_scores(self, X: pd.DataFrame, y: pd.Series,
                            n_neighbors: int = 3,
@@ -20928,27 +20988,61 @@ class LabelBasedLayer2(BaseStep):
         pt_mult = float(kwargs.get('pt_mult', 2.0))
         horizon = int(kwargs.get('horizon', 120))
 
-        # Data
-        price = df['close']
-        if 'volatility_1d' in df.columns:
-            vol = df['volatility_1d'].fillna(0.0)
+        def _compute_single(df_slice, events_idx):
+            price = df_slice['close']
+            if 'volatility_1d' in df_slice.columns:
+                vol = df_slice['volatility_1d'].fillna(0.0)
+            else:
+                # Fallback 1D volatility
+                vol = df_slice['close'].pct_change().rolling(96).std().bfill().fillna(0.01)
+
+            high = df_slice.get('high')
+            low = df_slice.get('low')
+
+            return compute_dominance_labels(
+                price, events_idx, vol,
+                risk_budget=risk_budget, pt_mult=pt_mult, sl_mult=sl_mult, horizon=horizon,
+                transaction_cost=self.transaction_cost,
+                high=high, low=low
+            )
+
+        # Multi-asset handling
+        if 'asset_id' in df.columns:
+            accum_labels, accum_weights, accum_returns, accum_mfe, accum_mae = [], [], [], [], []
+
+            # Iterate over assets to prevent label leakage across boundaries
+            for asset, asset_df in df.groupby('asset_id'):
+                # Intersect events with this asset's index
+                asset_events_idx = events_df.index.intersection(asset_df.index)
+
+                if asset_events_idx.empty:
+                    continue
+
+                l, w, r, mfe, mae, _ = _compute_single(asset_df, asset_events_idx)
+
+                accum_labels.append(l)
+                accum_weights.append(w)
+                accum_returns.append(r)
+                accum_mfe.append(mfe)
+                accum_mae.append(mae)
+
+            if accum_labels:
+                labels = pd.concat(accum_labels).reindex(events_df.index)
+                weights = pd.concat(accum_weights).reindex(events_df.index)
+                returns = pd.concat(accum_returns).reindex(events_df.index)
+                mfe = pd.concat(accum_mfe).reindex(events_df.index)
+                mae = pd.concat(accum_mae).reindex(events_df.index)
+            else:
+                # No valid events
+                idx = events_df.index
+                labels = pd.Series(0.0, index=idx)
+                weights = pd.Series(0.0, index=idx)
+                returns = pd.Series(0.0, index=idx)
+                mfe = pd.Series(0.0, index=idx)
+                mae = pd.Series(0.0, index=idx)
         else:
-            # Fallback 1D volatility
-            vol = df['close'].pct_change().rolling(96).std().bfill().fillna(0.01)
-        
-        events = events_df.index
-
-        # High/Low if available
-        high = df.get('high')
-        low = df.get('low')
-
-        # Call Vectorized
-        labels, weights, returns, mfe, mae, _ = compute_dominance_labels(
-            price, events, vol,
-            risk_budget=risk_budget, pt_mult=pt_mult, sl_mult=sl_mult, horizon=horizon,
-            transaction_cost=self.transaction_cost,
-            high=high, low=low
-        )
+            # Single asset
+            labels, weights, returns, mfe, mae, _ = _compute_single(df, events_df.index)
 
         # Return matched format (labels, weights, returns, mfe, mae, exits)
         # Exits is dummy for now

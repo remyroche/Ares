@@ -7618,120 +7618,6 @@ class LabelBasedLayer2(BaseStep):
         self._specialist_manager = None
         self._surprise_detector = None
 
-    def _is_multi_asset_request(self, config: Dict[str, Any], df: Any) -> bool:
-        assets = config.get("assets") or []
-        exec_mode = str(config.get("execution_mode", "")).lower()
-        multi_asset_mode = config.get("multi_asset_mode")
-        if isinstance(df, dict) and df:
-            return True
-        return bool(
-            len(assets) > 1
-            or exec_mode in ("small_multi_asset", "full_multi_asset")
-            or multi_asset_mode in ("small_multi_asset", "full_multi_asset", "global", "global_dry", True)
-        )
-
-    @staticmethod
-    def _normalize_asset_key(asset: str) -> str:
-        if asset is None:
-            return ""
-        asset_str = str(asset)
-        upper = asset_str.upper()
-        if upper.endswith("USDT"):
-            return asset_str[:-4]
-        if upper.endswith("USD"):
-            return asset_str[:-3]
-        return asset_str
-
-    @staticmethod
-    def _ensure_datetime_index(df: pd.DataFrame) -> pd.DataFrame:
-        if df is None or df.empty:
-            return df
-        if isinstance(df.index, pd.DatetimeIndex):
-            return df
-        df = df.copy()
-        if "timestamp" in df.columns:
-            df.index = pd.to_datetime(df["timestamp"])
-            df = df.drop(columns=["timestamp"])
-            return df
-        if isinstance(df.index, pd.MultiIndex):
-            ts_level = "timestamp" if "timestamp" in df.index.names else df.index.names[0]
-            df.index = pd.to_datetime(df.index.get_level_values(ts_level))
-            return df
-        df.index = pd.to_datetime(df.index)
-        return df
-
-    def _combine_multi_asset_data(
-        self,
-        asset_frames: Dict[str, pd.DataFrame],
-        config: Dict[str, Any],
-    ) -> Tuple[pd.DataFrame, List[str]]:
-        from src.training.steps.labeling.global_meta_labeling_hpo_sample_weighted import (
-            GlobalMetaLabelingHPOSampleWeightedStep,
-        )
-
-        normalized_frames: Dict[str, pd.DataFrame] = {}
-        for asset_key, asset_df in asset_frames.items():
-            if asset_df is None or asset_df.empty:
-                continue
-            normalized_key = self._normalize_asset_key(asset_key)
-            normalized_frames[normalized_key] = self._ensure_datetime_index(asset_df)
-
-        assets = sorted(normalized_frames.keys())
-        if not assets:
-            raise ValueError("No valid asset dataframes available for multi-asset combination.")
-
-        combiner = GlobalMetaLabelingHPOSampleWeightedStep("global_meta_labeling_hpo_sample_weighted")
-        combined_df = combiner._combine_asset_data(
-            normalized_frames,
-            assets,
-            config,
-            timeframe=config.get("timeframe"),
-        )
-        return combined_df, assets
-
-    def _verify_cross_asset_payload(
-        self,
-        df: pd.DataFrame,
-        config: Dict[str, Any],
-        cross_asset_data: Dict[str, pd.DataFrame],
-    ) -> None:
-        asset_series, asset_key, _asset_from_index = self._get_asset_identity_series(df)
-        if asset_series is None:
-            raise ValueError(
-                "Multi-asset mode requires asset identity in the main dataset "
-                "(asset_id column or MultiIndex level)."
-            )
-        if not isinstance(cross_asset_data, dict) or not cross_asset_data:
-            raise ValueError("cross_asset_data must be a non-empty dict keyed by asset identifiers.")
-
-        tprint_info(
-            f"✅ Verified asset identity ({asset_key or 'asset_id'}) and cross_asset_data keys: "
-            f"{sorted(list(cross_asset_data.keys()))}"
-        )
-
-        for asset_key_name, asset_df in cross_asset_data.items():
-            if asset_df is None or not isinstance(asset_df, pd.DataFrame):
-                raise ValueError(f"cross_asset_data[{asset_key_name}] must be a DataFrame.")
-            normalized_df = self._ensure_datetime_index(asset_df)
-            if not isinstance(normalized_df.index, pd.DatetimeIndex):
-                raise ValueError(
-                    f"cross_asset_data[{asset_key_name}] index must be datetime or convertible."
-                )
-            cross_asset_data[asset_key_name] = normalized_df
-
-        config["cross_asset_data"] = cross_asset_data
-
-    @staticmethod
-    def _ensure_asset_one_hot(df: pd.DataFrame) -> pd.DataFrame:
-        if df is None or df.empty or "asset_id" not in df.columns:
-            return df
-        asset_series = df["asset_id"].astype(str)
-        existing_prefix = [c for c in df.columns if c.startswith("asset_")]
-        if existing_prefix:
-            return df
-        one_hot = pd.get_dummies(asset_series, prefix="asset", dtype=float)
-        return pd.concat([df, one_hot], axis=1)
-
     async def execute(self, df: pd.DataFrame, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute the Layer 2 labeling pipeline with 1.5-3% range optimization.
@@ -7748,26 +7634,15 @@ class LabelBasedLayer2(BaseStep):
         start_time = time.time()
         
         try:
-            multi_asset_requested = self._is_multi_asset_request(config, df)
-
             # Check if market data is valid
             if df is None or len(df) == 0:
                 # Extract required parameters from config to attempt reload if df is missing
                 symbol = config.get('symbol', 'ETHUSDT')
                 exchange = config.get('exchange', 'binance')
                 timeframe = config.get('timeframe', '15m')
-
+                
                 try:
-                    if multi_asset_requested:
-                        assets = config.get("assets") or []
-                        df = await self._load_multi_asset_price_data(
-                            assets,
-                            exchange=exchange,
-                            timeframe=timeframe,
-                            config=config,
-                        )
-                    else:
-                        df = await self._load_price_data(symbol, exchange, timeframe)
+                    df = await self._load_price_data(symbol, exchange, timeframe)
                 except Exception as e:
                     tprint_error(f"❌ Failed to load data: {e}")
                     return {
@@ -7781,52 +7656,11 @@ class LabelBasedLayer2(BaseStep):
             if df is None or len(df) == 0:
                  raise ValueError("No market data provided or could be loaded")
 
-            asset_frames = df if isinstance(df, dict) else None
-            if asset_frames is not None:
-                combined_df, assets = self._combine_multi_asset_data(asset_frames, config)
-                df = combined_df
-                config["assets"] = assets
-                config["multi_asset_mode"] = config.get("multi_asset_mode") or True
-                config["cross_asset_data"] = {
-                    self._normalize_asset_key(k): v for k, v in asset_frames.items()
-                }
-
-            if multi_asset_requested:
-                cross_asset_data = config.get("cross_asset_data")
-                if not isinstance(cross_asset_data, dict) or not cross_asset_data:
-                    if isinstance(df, pd.DataFrame) and "asset_id" in df.columns:
-                        assets = sorted(df["asset_id"].dropna().astype(str).unique().tolist())
-                        cross_asset_data = {asset: df[df["asset_id"] == asset].copy() for asset in assets}
-                        config["cross_asset_data"] = cross_asset_data
-                        config["assets"] = assets
-
-                if isinstance(cross_asset_data, dict):
-                    self._verify_cross_asset_payload(df, config, cross_asset_data)
-
-                if isinstance(df.index, pd.MultiIndex) and "asset_id" in df.index.names and "asset_id" not in df.columns:
-                    df = df.copy()
-                    df["asset_id"] = df.index.get_level_values("asset_id")
-
-                df = self._ensure_asset_one_hot(df)
-                if 'asset_id' in df.columns and not (
-                    isinstance(df.index, pd.MultiIndex) and 'asset_id' in df.index.names
-                ):
-                    df = df.copy()
-                    if 'timestamp' not in df.columns:
-                        df['timestamp'] = df.index
-                    df = df.set_index(['timestamp', 'asset_id'], drop=False).sort_index()
-
             symbol = config.get('symbol', 'ETHUSDT')
             exchange = config.get('exchange', 'binance')
             timeframe = config.get('timeframe', '15m')
             direction = config.get('direction', 'long')
-
-            if multi_asset_requested:
-                assets = config.get("assets") or []
-                asset_tag = "_".join(sorted(assets)) if assets else "multi_asset"
-                symbol = f"multi_asset_{asset_tag}"
-                config["symbol"] = symbol
-
+            
             tprint_info(f"🚀 Starting Layer 2 labeling for {symbol}/{exchange}/{timeframe} ({direction})")
             
             # Set signal weights from config if provided
@@ -7937,51 +7771,6 @@ class LabelBasedLayer2(BaseStep):
         except Exception as e:
             tprint_error(f"Failed to load price data: {e}")
             raise
-
-    async def _load_multi_asset_price_data(
-        self,
-        assets: List[str],
-        exchange: str,
-        timeframe: str,
-        config: Dict[str, Any],
-    ) -> Dict[str, pd.DataFrame]:
-        """Load price data for multiple assets using BaseStep's data loading."""
-        if not assets:
-            raise ValueError("Multi-asset execution requires a non-empty assets list.")
-
-        all_market_data: Dict[str, pd.DataFrame] = {}
-        pipeline_state: Dict[str, Any] = {}
-
-        for asset in assets:
-            asset_name = self._normalize_asset_key(asset)
-            symbol = asset if str(asset).upper().endswith("USDT") else f"{asset}USDT"
-            asset_config = config.copy()
-            asset_config["symbol"] = symbol
-            asset_config["exchange"] = exchange
-            asset_config["timeframe"] = timeframe
-
-            tprint_info(f"🔄 Loading real market data for {symbol}/{exchange}/{timeframe}")
-            market_data, source = self.load_market_data_or_fail(
-                asset_config,
-                pipeline_state,
-                allow_config_override=True,
-            )
-            if market_data is None or not isinstance(market_data, pd.DataFrame) or market_data.empty:
-                tprint_warning(f"⚠️ Failed to load {symbol} ({source})")
-                continue
-
-            required_cols = ['open', 'high', 'low', 'close', 'volume']
-            missing_cols = [col for col in required_cols if col not in market_data.columns]
-            if missing_cols:
-                raise ValueError(f"Missing required columns for {symbol}: {missing_cols}")
-
-            all_market_data[asset_name] = market_data
-            tprint_info(f"✅ Loaded {asset_name}: {len(market_data)} rows from {source}")
-
-        if not all_market_data:
-            raise ValueError("Failed to load market data for all requested assets.")
-
-        return all_market_data
     
     def _process_raw_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """Basic processing for raw price data."""
@@ -8537,80 +8326,21 @@ class LabelBasedLayer2(BaseStep):
 
                 # For causal generators, inject stored specialist predictions and regime posteriors
                 try:
-                    asset_series, asset_key, asset_from_index = self._get_asset_identity_series(df)
-                    has_multi_asset = asset_series is not None and asset_series.nunique(dropna=True) > 1
-
-                    if has_multi_asset:
-                        events_chunks = []
-                        weighted_chunks = []
-                        if asset_from_index and isinstance(df.index, pd.MultiIndex) and asset_key in df.index.names:
-                            grouped = df.groupby(level=asset_key, sort=False)
-                        else:
-                            grouped = df.groupby(asset_key, sort=False)
-
-                        for asset_value, asset_df in grouped:
-                            asset_label = self._normalize_asset_key(asset_value)
-                            asset_df = asset_df.copy()
-                            if asset_from_index and isinstance(asset_df.index, pd.MultiIndex):
-                                asset_df = asset_df.droplevel(asset_key)
-                            if family.startswith('CAUSAL_') or family.endswith('_SPECIALIST'):
-                                specialist_preds = getattr(self, '_oof_specialist_predictions', None)
-                                events = gen.generate(
-                                    asset_df,
-                                    specialist_predictions=specialist_preds,
-                                    tracker=tracker,
-                                    regime_posteriors=regime_posteriors,
-                                    **gen_params
-                                )
-                            else:
-                                events = gen.generate(
-                                    asset_df,
-                                    tracker=tracker,
-                                    regime_posteriors=regime_posteriors,
-                                    **gen_params
-                                )
-
-                            if events is None or len(events) == 0:
-                                continue
-                            if isinstance(events, pd.Series):
-                                tuples = [(ts, asset_label) for ts in events.index]
-                                weighted_chunks.append(pd.Series(events.values, index=pd.MultiIndex.from_tuples(tuples)))
-                            else:
-                                event_idx = pd.DatetimeIndex(events)
-                                events_chunks.extend([(ts, asset_label) for ts in event_idx])
-
-                        if weighted_chunks:
-                            events = pd.concat(weighted_chunks)
-                        else:
-                            events = pd.MultiIndex.from_tuples(sorted(set(events_chunks)))
-
-                        tracker.generated_events = len(events) if events is not None else 0
-                        self._global_event_cache[cache_key] = events
-                        tprint_success(
-                            f"✅ Global events cached for {family} (multi-asset): {len(events)} events in {time.time() - start_time:.2f}s"
+                    if family.startswith('CAUSAL_') or family.endswith('_SPECIALIST'):
+                        specialist_preds = getattr(self, '_oof_specialist_predictions', None)
+                        events = gen.generate(
+                            df,
+                            specialist_predictions=specialist_preds,
+                            tracker=tracker,
+                            regime_posteriors=regime_posteriors,
+                            **gen_params
                         )
-                        events = self._global_event_cache[cache_key]
                     else:
-                        if family.startswith('CAUSAL_') or family.endswith('_SPECIALIST'):
-                            specialist_preds = getattr(self, '_oof_specialist_predictions', None)
-                            events = gen.generate(
-                                df,
-                                specialist_predictions=specialist_preds,
-                                tracker=tracker,
-                                regime_posteriors=regime_posteriors,
-                                **gen_params
-                            )
-                        else:
-                            events = gen.generate(
-                                df,
-                                tracker=tracker,
-                                regime_posteriors=regime_posteriors,
-                                **gen_params
-                            )
+                        events = gen.generate(df, tracker=tracker, **gen_params)
 
-                        tracker.generated_events = len(events) if events is not None else 0
-                        self._global_event_cache[cache_key] = events
-                        tprint_success(f"✅ Global events cached for {family}: {len(events)} events in {time.time() - start_time:.2f}s")
+                    tracker.generated_events = len(events) if events is not None else 0
+                    self._global_event_cache[cache_key] = events
+                    tprint_success(f"✅ Global events cached for {family}: {len(events)} events in {time.time() - start_time:.2f}s")
                 except Exception as e:
                     tprint_error(f"❌ Generator {family} failed: {e}")
                     tracker.log_rejection("generator_exception", 1)
@@ -9924,17 +9654,6 @@ class LabelBasedLayer2(BaseStep):
                 multi_asset_asset_count = 0
         multi_asset_series = asset_group_series
 
-        if multi_asset_series is not None:
-            base_cols = [col for col in ("close", "volume", "TARGET_RET_1", "volatility_1d") if col in numeric_df.columns]
-            if base_cols:
-                assets = sorted(multi_asset_series.dropna().astype(str).unique().tolist())
-                for col in base_cols:
-                    for asset in assets:
-                        mask = (multi_asset_series.astype(str) == asset)
-                        col_name = f"{asset}_{col}"
-                        numeric_df[col_name] = np.where(mask, numeric_df[col], np.nan)
-                numeric_df = numeric_df.drop(columns=base_cols).fillna(0.0)
-
         def _apply_groupwise_series(series: pd.Series, compute_fn) -> pd.Series:
             if series is None or len(series) == 0:
                 return pd.Series(dtype=float)
@@ -10537,15 +10256,11 @@ class LabelBasedLayer2(BaseStep):
         hashed = hash_pandas_object(series, index=True)
         return hashlib.md5(hashed.values.tobytes()).hexdigest()
 
-    def _hash_datetime_index(self, index: pd.Index) -> str:
+    def _hash_datetime_index(self, index: pd.DatetimeIndex) -> str:
         if index is None or len(index) == 0:
             return "empty"
-        try:
-            hashed = hash_pandas_object(index, index=True)
-            return hashlib.md5(hashed.values.tobytes()).hexdigest()
-        except Exception:
-            values = np.asarray(index)
-            return hashlib.md5(values.tobytes()).hexdigest()
+        values = index.view('i8')
+        return hashlib.md5(values.tobytes()).hexdigest()
 
     def _coerce_prediction_index(
         self,
@@ -10972,14 +10687,13 @@ class LabelBasedLayer2(BaseStep):
         if df is None or (isinstance(df, pd.DataFrame) and df.empty) or (isinstance(df, dict) and not df):
             return "empty"
         
-        # For multi-asset data, include ticker/asset_id level in fingerprint
-        if isinstance(df.index, pd.MultiIndex) and ('ticker' in df.index.names or 'asset_id' in df.index.names):
+        # For multi-asset data, include ticker level in fingerprint
+        if isinstance(df.index, pd.MultiIndex) and 'ticker' in df.index.names:
             # Multi-asset panel data
             hash_cols = ['close'] if 'close' in df.columns else df.columns[:1]  # Use first available column
             hash_series = hash_pandas_object(df[hash_cols], index=True)
             # Include asset information in fingerprint
-            asset_level = 'ticker' if 'ticker' in df.index.names else 'asset_id'
-            assets = sorted(df.index.get_level_values(asset_level).astype(str).unique())
+            assets = sorted(df.index.get_level_values('ticker').unique())
             asset_info = f"assets_{len(assets)}_{'_'.join(assets)}"
             digest = hashlib.md5(hash_series.values.tobytes()).hexdigest()
             return f"{len(df)}_{df.index.min()}_{df.index.max()}_{asset_info}_{digest}"
@@ -11069,27 +10783,19 @@ class LabelBasedLayer2(BaseStep):
             gen_params = self._extract_gen_params(best_geo)
             global_events = self._get_global_events(df, best_geo.family, gen_params)
             if global_events is None: continue
-            events_index = global_events
-            events_times = global_events
-            if isinstance(global_events, pd.MultiIndex):
-                events_times = global_events.get_level_values(0)
 
             # Align events
-            train_events = events_index[events_index.isin(df.index[train_mask])]
+            train_events = global_events[global_events.isin(df.index[train_mask])]
             test_indices = df.index[test_start:test_end]
             # Timezone handling
             try:
-                if isinstance(events_times, pd.DatetimeIndex) and events_times.tz is not None and test_indices.tz is None:
-                    test_indices = test_indices.tz_localize(events_times.tz)
-                elif isinstance(events_times, pd.DatetimeIndex) and events_times.tz is None and test_indices.tz is not None:
+                if global_events.tz is not None and test_indices.tz is None:
+                    test_indices = test_indices.tz_localize(global_events.tz)
+                elif global_events.tz is None and test_indices.tz is not None:
                     test_indices = test_indices.tz_localize(None)
             except: pass
 
-            if isinstance(events_index, pd.MultiIndex):
-                test_times = test_indices.get_level_values(0) if isinstance(test_indices, pd.MultiIndex) else test_indices
-                test_events = events_index[events_times.isin(test_times)]
-            else:
-                test_events = events_index[(events_index >= test_indices[0]) & (events_index <= test_indices[-1])]
+            test_events = global_events[(global_events >= test_indices[0]) & (global_events <= test_indices[-1])]
 
             if len(train_events) < 10 or len(test_events) < 1: continue
 
@@ -13468,10 +13174,6 @@ class LabelBasedLayer2(BaseStep):
                                 for col in vol_cols:
                                     environment_masks[col] = irm_environments[col].astype(bool).values
 
-                            asset_env_cols = [col for col in irm_environments.columns if col.startswith("asset_env_")]
-                            for col in asset_env_cols:
-                                environment_masks[col] = irm_environments[col].astype(bool).values
-
                             if not environment_masks:
                                 irm_skip_empty += 1
                                 tprint_warning(f"      ⚠️ IRM Skipped (Geom {i}): no environment masks available")
@@ -13737,11 +13439,6 @@ class LabelBasedLayer2(BaseStep):
                 custom_features['trend_regime_down'] = (price_trend < -0.01).astype(int)
                 custom_features['trend_regime_flat'] = ((price_trend >= -0.01) & (price_trend <= 0.01)).astype(int)
                 custom_features['trend_regime_up'] = (price_trend > 0.01).astype(int)
-
-            asset_series, _, _ = self._get_asset_identity_series(df)
-            if asset_series is not None and asset_series.nunique(dropna=True) > 1:
-                for asset in sorted(asset_series.dropna().astype(str).unique()):
-                    custom_features[f"asset_env_{asset}"] = (asset_series.astype(str) == asset).astype(int)
             
             return custom_features.fillna(0)
             
@@ -13940,10 +13637,7 @@ class LabelBasedLayer2(BaseStep):
             if g is None:
                 continue
             if g.events is not None and len(g.events) > 0:
-                if isinstance(g.events, pd.Series):
-                    all_indices.extend(g.events.index)
-                else:
-                    all_indices.extend(g.events)
+                all_indices.extend(g.events)
 
         # Fallback: pull cached family events if geometries lost their indices
         if not all_indices:
@@ -13962,21 +13656,7 @@ class LabelBasedLayer2(BaseStep):
         if not all_indices:
             return pd.DataFrame()
 
-        asset_series, asset_key, _ = self._get_asset_identity_series(df)
-        is_multi_asset = asset_series is not None and asset_series.nunique(dropna=True) > 1
-        has_tuple_index = any(isinstance(idx, tuple) and len(idx) >= 2 for idx in all_indices)
-
-        if is_multi_asset:
-            if not has_tuple_index:
-                tprint_warning(
-                    "   ⚠️ Union events missing asset identifiers in multi-asset mode; "
-                    "skipping to prevent cross-asset leakage."
-                )
-                return pd.DataFrame()
-            event_tuples = [idx for idx in all_indices if isinstance(idx, tuple) and len(idx) >= 2]
-            unique_indices = pd.MultiIndex.from_tuples(sorted(set(event_tuples)))
-        else:
-            unique_indices = pd.DatetimeIndex(sorted(list(set(all_indices))))
+        unique_indices = pd.DatetimeIndex(sorted(list(set(all_indices))))
         available_cols = [c for c in ['trend_regime', 'vol_regime', 'volatility_1d'] if c in df.columns]
 
         # Align indices safely: log and drop any timestamps missing from df.index
@@ -15712,13 +15392,6 @@ class LabelBasedLayer2(BaseStep):
                 for regime in sorted(aligned.dropna().unique()):
                     env_masks[f"gmm_regime_{int(regime)}"] = (aligned == regime).values
                 env_masks["regime_id"] = aligned.fillna(-1).astype(int).values
-                if env_masks:
-                    return env_masks
-
-            asset_cols = [c for c in X_train.columns if c.startswith("asset_")]
-            if asset_cols:
-                for col in asset_cols:
-                    env_masks[col] = X_train[col].astype(bool).values
                 if env_masks:
                     return env_masks
 
@@ -21314,31 +20987,17 @@ class LabelBasedLayer2(BaseStep):
         sl_mult = float(kwargs.get('sl_mult', 1.0))
         pt_mult = float(kwargs.get('pt_mult', 2.0))
         horizon = int(kwargs.get('horizon', 120))
-        use_residual = bool(
-            kwargs.get("use_market_residual_labels")
-            or (self._current_config.get("use_market_residual_labels") if isinstance(self._current_config, dict) else False)
-        )
-        label_return_column = kwargs.get("label_return_column")
-        if use_residual and not label_return_column and isinstance(self._current_config, dict):
-            label_return_column = self._current_config.get("label_return_column")
-
-        def _resolve_price_inputs(df_slice: pd.DataFrame) -> Tuple[pd.Series, pd.Series, Optional[pd.Series], Optional[pd.Series]]:
-            if label_return_column and label_return_column in df_slice.columns:
-                residual_ret = df_slice[label_return_column].fillna(0.0)
-                pseudo_price = (1.0 + residual_ret).cumprod()
-                return pseudo_price, residual_ret, None, None
-            close = df_slice['close']
-            raw_ret = close.pct_change().fillna(0.0)
-            high = df_slice.get('high')
-            low = df_slice.get('low')
-            return close, raw_ret, high, low
 
         def _compute_single(df_slice, events_idx):
-            price, ret_series, high, low = _resolve_price_inputs(df_slice)
-            if 'volatility_1d' in df_slice.columns and not label_return_column:
+            price = df_slice['close']
+            if 'volatility_1d' in df_slice.columns:
                 vol = df_slice['volatility_1d'].fillna(0.0)
             else:
-                vol = ret_series.rolling(96).std().bfill().fillna(0.01)
+                # Fallback 1D volatility
+                vol = df_slice['close'].pct_change().rolling(96).std().bfill().fillna(0.01)
+
+            high = df_slice.get('high')
+            low = df_slice.get('low')
 
             return compute_dominance_labels(
                 price, events_idx, vol,

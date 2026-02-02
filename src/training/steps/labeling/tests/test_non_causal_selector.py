@@ -135,6 +135,55 @@ def test_feature_importance_boost():
     prioritized = selector.prioritize_technical_features(features, feature_importance=importance)
     assert prioritized == ['important_random']
 
+def test_pc_algorithm_missing_names_inference():
+    """Test inference of names from graph keys when feature_names are missing."""
+    pc_results = {
+        'graph': {'A': {'parents': []}, 'B': {'parents': ['A']}},
+        'causal_strength': np.array([[0, 1], [0, 0]])
+    }
+    selector = NonCausalFeatureSelector(pc_algorithm_results=pc_results, verbose=False)
+    parents = selector.identify_causal_parents() # No feature_names passed
+    assert 'A' in parents
+
+def test_pc_algorithm_dimension_mismatch_safety():
+    """Test safety bounds when dimensions mismatch."""
+    pc_results = {
+        'causal_strength': np.array([[0, 1, 0], [0, 0, 1], [0, 0, 0]]) # 3x3
+    }
+    feature_names = ['X', 'Y'] # Only 2 names
+    selector = NonCausalFeatureSelector(pc_algorithm_results=pc_results, verbose=False)
+    parents = selector.identify_causal_parents(feature_names=feature_names)
+    assert 'X' in parents
+    assert 'Y' in parents
+
+def test_token_matching_logic():
+    """Test robust token matching logic (avoid substring false positives)."""
+    # 'ad' is Accumulation/Distribution
+    causal_graph = {'target': ['ad', 'volume']}
+    selector = NonCausalFeatureSelector(causal_graph=causal_graph, verbose=False)
+
+    features = [
+        'spread',          # Should NOT match 'ad'
+        'ad',              # Should match 'ad'
+        'ad_ratio',        # Should match 'ad' (token)
+        'my_ad_indicator', # Should match 'ad' (token)
+        'volume',          # Should match 'volume'
+        'BTC_volume',      # Should match 'volume' (token)
+        'ETH_volume_rsi',  # Should match 'volume' (token)
+        'random_feature'   # Should NOT match
+    ]
+
+    filtered = selector.filter_causal_features(features)
+
+    assert 'spread' in filtered
+    assert 'ad' not in filtered
+    assert 'ad_ratio' not in filtered
+    assert 'my_ad_indicator' not in filtered
+    assert 'volume' not in filtered
+    assert 'BTC_volume' not in filtered
+    assert 'ETH_volume_rsi' not in filtered
+    assert 'random_feature' in filtered
+
 if __name__ == "__main__":
     # verification run
     try:
@@ -144,6 +193,9 @@ if __name__ == "__main__":
         test_leakage_exclusion()
         test_technical_prioritization()
         test_feature_importance_boost()
+        test_pc_algorithm_missing_names_inference()
+        test_pc_algorithm_dimension_mismatch_safety()
+        test_token_matching_logic()
         print("All tests passed!")
     except Exception as e:
         print(f"Test failed: {e}")

@@ -260,6 +260,29 @@ def _estimate_jaccard_minhash(sig1: np.ndarray, sig2: np.ndarray) -> float:
 
 
 @njit(cache=True)
+def _numba_sorted_intersection_size(a: np.ndarray, b: np.ndarray) -> int:
+    """Compute size of intersection of two sorted arrays in O(N+M)."""
+    i = 0
+    j = 0
+    count = 0
+    na = len(a)
+    nb = len(b)
+
+    while i < na and j < nb:
+        if a[i] < b[j]:
+            i += 1
+        elif a[i] > b[j]:
+            j += 1
+        else:
+            # Match found
+            count += 1
+            i += 1
+            j += 1
+
+    return count
+
+
+@njit(cache=True)
 def _soft_threshold(x: float, lam: float) -> float:
     """Soft thresholding operator for proximal gradient."""
     if x > lam:
@@ -626,8 +649,9 @@ def clean_redundant_rules(
     if n_rules <= 1:
         return R_sparse, depths, np.arange(n_rules)
     
-    # Convert to CSC for efficient column-wise access
+    # Convert to CSC for efficient column-wise access and ensure sorted indices
     R_csc = R_sparse.tocsc()
+    R_csc.sort_indices()
     y_arr = np.ascontiguousarray(y, dtype=np.float32)
     
     # Vectorized IC computation using Numba
@@ -705,8 +729,12 @@ def clean_redundant_rules(
             existing_indices = kept_col_data[j]
             existing_sum = len(existing_indices)
             
-            # Set intersection via sorted merge
-            intersection = len(np.intersect1d(current_indices, existing_indices, assume_unique=True))
+            # Set intersection via sorted merge (O(N) with Numba)
+            if NUMBA_AVAILABLE:
+                intersection = _numba_sorted_intersection_size(current_indices, existing_indices)
+            else:
+                intersection = len(np.intersect1d(current_indices, existing_indices, assume_unique=True))
+
             union = current_sum + existing_sum - intersection
             
             if union > 0:
@@ -724,6 +752,9 @@ def clean_redundant_rules(
     if len(kept_indices) == 0:
         return sparse.csr_matrix((n_samples, 0), dtype=np.int8), np.array([]), kept_indices
     
+    # Sort indices to preserve original column grouping (crucial for Group Lasso)
+    kept_indices.sort()
+
     R_cleaned = R_csc[:, kept_indices].tocsr()
     depths_cleaned = depths[kept_indices]
     
@@ -837,7 +868,8 @@ def _single_stability_run(
     use_temporal_split: bool,
     use_proximal_gradient: bool = True,
     proximal_max_iter: int = 100,
-    proximal_tol: float = 1e-6
+    proximal_tol: float = 1e-6,
+    purge_ratio: float = 0.0
 ) -> np.ndarray:
     """Single stability selection run (for parallel execution)."""
     rng = np.random.default_rng(random_state + run_idx)
@@ -848,9 +880,40 @@ def _single_stability_run(
     
     if use_temporal_split:
         # TEMPORAL split: train on earlier samples, validate on later
+        # Apply purge gap between train and val to prevent leakage
         idx_sorted = np.sort(idx)
-        cut = int(len(idx_sorted) * (1 - val_ratio))
-        idx_tr, idx_va = idx_sorted[:cut], idx_sorted[cut:]
+        n_sub = len(idx_sorted)
+        n_val = int(n_sub * val_ratio)
+        n_train = n_sub - n_val
+
+        # Calculate purge gap in terms of indices (approximate time if samples are uniform)
+        # We purge from the end of training set
+        purge_size = int(n * purge_ratio)
+
+        # Split point
+        split_idx = n_train
+
+        # Training set: up to split_idx
+        idx_tr = idx_sorted[:split_idx]
+
+        # Validation set: from split_idx onwards, BUT must be after (last_train_idx + purge_size)
+        if len(idx_tr) > 0:
+            last_train_time = idx_tr[-1]
+            min_val_time = last_train_time + purge_size
+
+            # Filter validation indices to respect purge
+            idx_va_candidates = idx_sorted[split_idx:]
+            idx_va = idx_va_candidates[idx_va_candidates > min_val_time]
+
+            if len(idx_va) == 0:
+                # Fallback: if purge consumes all val, take last few samples anyway or shrink purge
+                # Here we just take the last 10% of candidates if empty to ensure OOS is not empty
+                if len(idx_va_candidates) > 0:
+                     idx_va = idx_va_candidates[-max(1, len(idx_va_candidates)//10):]
+                else:
+                     idx_va = idx_sorted[-1:] # Minimal fallback
+        else:
+            idx_va = idx_sorted[split_idx:]
     else:
         # Random split
         rng.shuffle(idx)
@@ -915,7 +978,8 @@ def stability_selection_oos(
     n_jobs: int = -1,
     use_proximal_gradient: bool = True,
     proximal_max_iter: int = 100,
-    proximal_tol: float = 1e-6
+    proximal_tol: float = 1e-6,
+    purge_ratio: float = 0.0
 ) -> np.ndarray:
     """
     Stability selection with OOS validation, temporal splits, early stopping, and parallelization.
@@ -941,6 +1005,7 @@ def stability_selection_oos(
         use_proximal_gradient: Use proximal gradient for proper L1 handling
         proximal_max_iter: Max iterations for proximal gradient
         proximal_tol: Convergence tolerance for proximal gradient
+        purge_ratio: Ratio of samples to purge between train and val (temporal only)
     
     Returns:
         Boolean mask of stable features
@@ -978,7 +1043,7 @@ def stability_selection_oos(
                         i, X, y, depth_penalties, subsample_ratio, val_ratio,
                         l1_ratio, alpha, sample_weight, random_state,
                         gate_groups, lam_group, use_temporal_split,
-                        use_proximal_gradient, proximal_max_iter, proximal_tol
+                        use_proximal_gradient, proximal_max_iter, proximal_tol, purge_ratio
                     )
                     for i in range(run_idx, batch_end)
                 )
@@ -991,7 +1056,7 @@ def stability_selection_oos(
                         i, X, y, depth_penalties, subsample_ratio, val_ratio,
                         l1_ratio, alpha, sample_weight, random_state,
                         gate_groups, lam_group, use_temporal_split,
-                        use_proximal_gradient, proximal_max_iter, proximal_tol
+                        use_proximal_gradient, proximal_max_iter, proximal_tol, purge_ratio
                     )
                     counts += sel
         else:
@@ -1001,7 +1066,7 @@ def stability_selection_oos(
                     i, X, y, depth_penalties, subsample_ratio, val_ratio,
                     l1_ratio, alpha, sample_weight, random_state,
                     gate_groups, lam_group, use_temporal_split,
-                    use_proximal_gradient, proximal_max_iter, proximal_tol
+                    use_proximal_gradient, proximal_max_iter, proximal_tol, purge_ratio
                 )
                 counts += sel
         
@@ -1080,6 +1145,9 @@ class LeafGateConfig:
     # Target processing (4.5σ for fat-tailed financial returns)
     winsorize_k: float = 4.5
     
+    # Purging (prevent leakage at train/val boundary)
+    purge_pct: float = 0.01
+
     def __post_init__(self):
         """Validate configuration parameters."""
         assert 0 < self.min_support < 1, f"min_support must be in (0, 1), got {self.min_support}"
@@ -1091,6 +1159,7 @@ class LeafGateConfig:
         assert 0 < self.stability_subsample <= 1, f"stability_subsample must be in (0, 1], got {self.stability_subsample}"
         assert 0 < self.stability_threshold < 1, f"stability_threshold must be in (0, 1), got {self.stability_threshold}"
         assert self.winsorize_k > 0, f"winsorize_k must be > 0, got {self.winsorize_k}"
+        assert 0 <= self.purge_pct < 0.5, f"purge_pct must be in [0, 0.5), got {self.purge_pct}"
         if self.temporal_decay_half_life is not None:
             assert 0 < self.temporal_decay_half_life <= 1, f"temporal_decay_half_life must be in (0, 1], got {self.temporal_decay_half_life}"
         assert self.temporal_decay_type in ("exponential", "linear"), f"temporal_decay_type must be 'exponential' or 'linear'"
@@ -1154,7 +1223,8 @@ class RuleFitTransformer(BaseEstimator, TransformerMixin):
         X: pd.DataFrame,
         y: pd.Series,
         sample_weight: np.ndarray | None = None,
-        class_weight: str | Dict | None = "balanced"
+        class_weight: str | Dict | None = "balanced",
+        groups: pd.Series | np.ndarray | None = None
     ) -> "RuleFitTransformer":
         """
         Fit RuleFit with stability selection.
@@ -1164,6 +1234,7 @@ class RuleFitTransformer(BaseEstimator, TransformerMixin):
             y: Target (binary or continuous)
             sample_weight: Sample weights
             class_weight: Class weight handling for imbalance (str, dict, or None)
+            groups: Group labels for cross-asset processing (e.g. asset_id)
         """
         cfg = self.config
         n = len(X)
@@ -1180,12 +1251,27 @@ class RuleFitTransformer(BaseEstimator, TransformerMixin):
         n_unique = len(np.unique(y_arr[np.isfinite(y_arr)]))
         self._is_classifier = n_unique <= 2
         
-        # Winsorize input features to prevent outliers affecting splits
-        for i in range(X_base_val.shape[1]):
-            X_base_val[:, i] = winsorize(X_base_val[:, i], k=cfg.winsorize_k)
-        
-        # Winsorize target
-        y_wins = winsorize(y_arr, k=cfg.winsorize_k)
+        # Winsorize input features (grouped or global)
+        if groups is not None:
+            g_arr = np.asarray(groups)
+            unique_groups = np.unique(g_arr)
+            y_wins = np.empty_like(y_arr)
+
+            for grp in unique_groups:
+                mask = g_arr == grp
+                # Features
+                for i in range(X_base_val.shape[1]):
+                    X_base_val[mask, i] = winsorize(X_base_val[mask, i], k=cfg.winsorize_k)
+                # Target
+                y_wins[mask] = winsorize(y_arr[mask], k=cfg.winsorize_k)
+
+            if self.verbose:
+                print(f"  Applied per-group winsorization (groups={len(unique_groups)})")
+        else:
+            # Global
+            for i in range(X_base_val.shape[1]):
+                X_base_val[:, i] = winsorize(X_base_val[:, i], k=cfg.winsorize_k)
+            y_wins = winsorize(y_arr, k=cfg.winsorize_k)
         
         # Initialize sample weights
         if sample_weight is None:
@@ -1304,7 +1390,7 @@ class RuleFitTransformer(BaseEstimator, TransformerMixin):
             gated_depths.append(node_depths + 1)  # Gating adds complexity
         
         # Combine gated rules and clean them too
-        X_gated_all = sparse.hstack(gated_blocks, format="csr")
+        X_gated_all = sparse.hstack(gated_blocks, format="csr", dtype=np.float32)
         gated_depths_all = np.concatenate(gated_depths)
         
         if self.verbose:
@@ -1322,9 +1408,14 @@ class RuleFitTransformer(BaseEstimator, TransformerMixin):
         
         # Combine: base + gates + rules + cleaned_gated_rules
         X_base_sp = sparse.csr_matrix(X_scaled, dtype=np.float32)
-        G_sp = sparse.csr_matrix(G)
+        G_sp = sparse.csr_matrix(G, dtype=np.float32)
         
-        Phi = sparse.hstack([X_base_sp, G_sp, X_rules, X_gated_cleaned], format="csr")
+        # Ensure float32 for final matrix to save memory
+        Phi = sparse.hstack(
+            [X_base_sp, G_sp, X_rules, X_gated_cleaned],
+            format="csr",
+            dtype=np.float32
+        )
         
         # Compute depth penalties (exponential or linear based on config)
         base_depths = np.zeros(X_scaled.shape[1])
@@ -1385,7 +1476,8 @@ class RuleFitTransformer(BaseEstimator, TransformerMixin):
             n_jobs=cfg.n_jobs,
             use_proximal_gradient=cfg.use_proximal_gradient,
             proximal_max_iter=cfg.proximal_max_iter,
-            proximal_tol=cfg.proximal_tol
+            proximal_tol=cfg.proximal_tol,
+            purge_ratio=cfg.purge_pct
         )
         
         self.node_depths_ = all_depths
@@ -1465,14 +1557,18 @@ class RuleFitTransformer(BaseEstimator, TransformerMixin):
         
         # Combine
         X_base_sp = sparse.csr_matrix(X_base, dtype=np.float32)
-        G_sp = sparse.csr_matrix(G)
-        X_gated_all = sparse.hstack(gated_blocks, format="csr")
+        G_sp = sparse.csr_matrix(G, dtype=np.float32)
+        X_gated_all = sparse.hstack(gated_blocks, format="csr", dtype=np.float32)
         if self.gated_kept_idx_ is not None:
             X_gated = X_gated_all[:, self.gated_kept_idx_]
         else:
             X_gated = X_gated_all
         
-        Phi = sparse.hstack([X_base_sp, G_sp, X_rules, X_gated], format="csr")
+        Phi = sparse.hstack(
+            [X_base_sp, G_sp, X_rules, X_gated],
+            format="csr",
+            dtype=np.float32
+        )
         
         # Apply selection
         if Phi.shape[1] != len(self.stable_mask_):

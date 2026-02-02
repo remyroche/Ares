@@ -9990,31 +9990,51 @@ class LabelBasedLayer2(BaseStep):
                 mi_scores[col] = score
                 feature_origins[col] = origin
 
-            # --- 4. Calculate Noise Baseline (Corrected) ---
-            y_bins_shuffled = np.random.permutation(y_bins)
-            noise_mis = []
-            sample_cols = np.random.choice(X_clean.columns, size=min(20, len(X_clean.columns)), replace=False)
-            for col in sample_cols:
-                 try:
-                    feat_bins = pd.qcut(X_clean[col], n_bins, labels=False, duplicates='drop')
-                 except ValueError:
-                    feat_bins = pd.cut(X_clean[col], n_bins, labels=False)
-                 feat_bins = pd.Series(feat_bins).fillna(-1).values
-                 # Apply same correction to noise estimate
-                 noise_mis.append(calc_corrected_mi(feat_bins, y_bins_shuffled))
-            
-            mi_noise_mean = np.mean(noise_mis)
-            mi_threshold = 1.2 * mi_noise_mean 
+            # --- 4. Calculate Noise Baseline ---
+            if self.use_cheap_mi_proxy:
+                # Use correlation proxy for noise baseline
+                y_shuffled = np.random.permutation(y_clean)
+                noise_scores = []
+                sample_cols = np.random.choice(X_clean.columns, size=min(20, len(X_clean.columns)), replace=False)
+                for col in sample_cols:
+                    x_vals = X_clean[col].fillna(0).values
+                    noise_scores.append(calc_proxy_score(x_vals, y_shuffled))
+                
+                noise_mean = np.mean(noise_scores)
+                threshold = 1.2 * noise_mean  # Same multiplier as MI
+                
+                if self.verbose:
+                    tprint_info(f"      - Proxy Statistics: Floor={noise_mean:.5f} | Threshold={threshold:.5f}")
+            else:
+                # Original MI noise baseline
+                y_bins_shuffled = np.random.permutation(y_bins)
+                noise_mis = []
+                sample_cols = np.random.choice(X_clean.columns, size=min(20, len(X_clean.columns)), replace=False)
+                for col in sample_cols:
+                     try:
+                        feat_bins = pd.qcut(X_clean[col], n_bins, labels=False, duplicates='drop')
+                     except ValueError:
+                        feat_bins = pd.cut(X_clean[col], n_bins, labels=False)
+                     feat_bins = pd.Series(feat_bins).fillna(-1).values
+                     # Apply same correction to noise estimate
+                     noise_mis.append(calc_corrected_mi(feat_bins, y_bins_shuffled))
+                
+                mi_noise_mean = np.mean(noise_mis)
+                threshold = 1.2 * mi_noise_mean
+                
+                if self.verbose:
+                    tprint_info(f"      - MI Statistics (B-Corrected): Floor={mi_noise_mean:.5f} | Threshold={threshold:.5f}") 
             
             essential = [target_name, 'TARGET_RET_1', 'close', 'volume', 'log_ret']
             to_drop_noise = [
                 col for col, score in mi_scores.items()
-                if score <= mi_threshold 
+                if score <= threshold 
                 and col not in essential
             ]
             
             if self.verbose:
-                tprint_info(f"      - MI Statistics (B-Corrected): Floor={mi_noise_mean:.5f} | Threshold={mi_threshold:.5f}")
+                method = "Proxy" if self.use_cheap_mi_proxy else "MI"
+                tprint_info(f"      - {method} Statistics: Floor={noise_mean:.5f} | Threshold={threshold:.5f}")
                 # Log rescue counts by regime
                 rescue_counts = defaultdict(int)
                 for c in mi_scores:

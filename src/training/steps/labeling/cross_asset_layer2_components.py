@@ -1011,80 +1011,80 @@ class CrossAssetSurprises:
         tprint_success("[CrossAssetSurprises] fit done")
         return self
 
-        def transform(self, panel_df: pd.DataFrame, state_df: pd.DataFrame) -> pd.DataFrame:
-            """Transform panel data with cross-asset features.
-            
-            Uses proper cache invalidation to avoid stale market returns.
-            """
-            tprint_info(f"[CrossAssetSurprises] transform start panel_shape={panel_df.shape}")
-            results = []
-            tickers = panel_df.index.get_level_values("ticker").unique()
-            
-            # Compute market returns once with proper cache invalidation
-            market_returns = self._get_market_returns(panel_df)
-            
-            # Pre-compute state_df reindex once (avoid repeated reindex)
-            state_df_aligned = state_df.reindex(panel_df.index.get_level_values("timestamp").unique())
-            
-            for ticker in tickers:
-                slice_df = panel_df.xs(ticker, level="ticker")
-                vpin = self._ensure_vpin(slice_df)
-                features = state_df_aligned.reindex(slice_df.index).replace([np.inf, -np.inf], np.nan).fillna(0.0)
-                if vpin is None:
-                    continue
-                X = sm.add_constant(features, has_constant="add") if STATSMODELS_AVAILABLE else features
-                out = pd.DataFrame(index=slice_df.index)
-                for q in self.quantiles:
-                    col = f"ca__vpin_spill_q{int(q * 100)}"
-                    resid_col = f"ca__vpin_spill_resid_q{int(q * 100)}"
-                    pred = None
-                    model_or_baseline = self._vpin_models.get(ticker, {}).get(q)
-                    if model_or_baseline is not None:
-                        if isinstance(model_or_baseline, float):
-                            # It's a baseline value
-                            pred = np.full(len(out), model_or_baseline, dtype=np.float32)
-                        else:
-                            # It's a fitted model
-                            pred = model_or_baseline.predict(X).astype(np.float32)
-                    if pred is None:
-                        pred = np.full(len(out), np.nan, dtype=np.float32)
+    def transform(self, panel_df: pd.DataFrame, state_df: pd.DataFrame) -> pd.DataFrame:
+        """Transform panel data with cross-asset features.
 
-                    pred_series = pd.Series(pred, index=out.index, dtype=np.float32)
-                    out[col] = pred_series
+        Uses proper cache invalidation to avoid stale market returns.
+        """
+        tprint_info(f"[CrossAssetSurprises] transform start panel_shape={panel_df.shape}")
+        results = []
+        tickers = panel_df.index.get_level_values("ticker").unique()
 
-                    resid_values = (vpin.values - pred_series.values).astype(np.float32)
+        # Compute market returns once with proper cache invalidation
+        market_returns = self._get_market_returns(panel_df)
+
+        # Pre-compute state_df reindex once (avoid repeated reindex)
+        state_df_aligned = state_df.reindex(panel_df.index.get_level_values("timestamp").unique())
+
+        for ticker in tickers:
+            slice_df = panel_df.xs(ticker, level="ticker")
+            vpin = self._ensure_vpin(slice_df)
+            features = state_df_aligned.reindex(slice_df.index).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+            if vpin is None:
+                continue
+            X = sm.add_constant(features, has_constant="add") if STATSMODELS_AVAILABLE else features
+            out = pd.DataFrame(index=slice_df.index)
+            for q in self.quantiles:
+                col = f"ca__vpin_spill_q{int(q * 100)}"
+                resid_col = f"ca__vpin_spill_resid_q{int(q * 100)}"
+                pred = None
+                model_or_baseline = self._vpin_models.get(ticker, {}).get(q)
+                if model_or_baseline is not None:
+                    if isinstance(model_or_baseline, float):
+                        # It's a baseline value
+                        pred = np.full(len(out), model_or_baseline, dtype=np.float32)
+                    else:
+                        # It's a fitted model
+                        pred = model_or_baseline.predict(X).astype(np.float32)
+                if pred is None:
+                    pred = np.full(len(out), np.nan, dtype=np.float32)
+
+                pred_series = pd.Series(pred, index=out.index, dtype=np.float32)
+                out[col] = pred_series
+
+                resid_values = (vpin.values - pred_series.values).astype(np.float32)
+                resid_std = float(np.nanstd(resid_values)) if len(resid_values) else 0.0
+
+                if resid_std < 1e-6:
+                    # Fallback 1: center VPIN around its mean to recover variance
+                    centered = (vpin.values - np.nanmean(vpin.values)).astype(np.float32)
+                    resid_values = centered
                     resid_std = float(np.nanstd(resid_values)) if len(resid_values) else 0.0
 
-                    if resid_std < 1e-6:
-                        # Fallback 1: center VPIN around its mean to recover variance
-                        centered = (vpin.values - np.nanmean(vpin.values)).astype(np.float32)
-                        resid_values = centered
-                        resid_std = float(np.nanstd(resid_values)) if len(resid_values) else 0.0
+                if resid_std < 1e-6:
+                    # Fallback 2: use first-difference of VPIN as residual proxy
+                    diff_series = vpin.diff().fillna(0.0).astype(np.float32)
+                    resid_values = diff_series.values
 
-                    if resid_std < 1e-6:
-                        # Fallback 2: use first-difference of VPIN as residual proxy
-                        diff_series = vpin.diff().fillna(0.0).astype(np.float32)
-                        resid_values = diff_series.values
+                resid_values = np.nan_to_num(resid_values, nan=0.0, posinf=0.0, neginf=0.0)
+                out[resid_col] = resid_values
 
-                    resid_values = np.nan_to_num(resid_values, nan=0.0, posinf=0.0, neginf=0.0)
-                    out[resid_col] = resid_values
+            # Compute robust cross-asset features
+            robust = self._compute_robust_features(slice_df, market_returns)
+            out = pd.concat([out, robust], axis=1)
 
-                # Compute robust cross-asset features
-                robust = self._compute_robust_features(slice_df, market_returns)
-                out = pd.concat([out, robust], axis=1)
+            ect = self._compute_ect_features(slice_df, state_df_aligned)
+            out = pd.concat([out, ect], axis=1)
+            out["ticker"] = ticker
+            out = out.reset_index().set_index(["timestamp", "ticker"])
+            results.append(out)
 
-                ect = self._compute_ect_features(slice_df, state_df_aligned)
-                out = pd.concat([out, ect], axis=1)
-                out["ticker"] = ticker
-                out = out.reset_index().set_index(["timestamp", "ticker"])
-                results.append(out)
-
-            if not results:
-                tprint_success("[CrossAssetSurprises] transform done empty")
-                return pd.DataFrame(index=panel_df.index)
-            combined = pd.concat(results).reindex(panel_df.index)
-            tprint_success(f"[CrossAssetSurprises] transform done shape={combined.shape}")
-            return combined
+        if not results:
+            tprint_success("[CrossAssetSurprises] transform done empty")
+            return pd.DataFrame(index=panel_df.index)
+        combined = pd.concat(results).reindex(panel_df.index)
+        tprint_success(f"[CrossAssetSurprises] transform done shape={combined.shape}")
+        return combined
     
     def _get_market_returns(self, panel_df: pd.DataFrame) -> pd.Series:
         """Get market returns with proper cache invalidation."""

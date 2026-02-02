@@ -34,8 +34,6 @@ try:
 except ImportError:
     LGBM_AVAILABLE = False
 
-EPS = 1e-12
-
 class DePradoFeatureEngine:
     """
     Complete Feature Selection Engine integrating:
@@ -133,20 +131,31 @@ class DePradoFeatureEngine:
         # Note: Class-level cache removed as requested to avoid leaks
         self._cache_hits = 0
 
-    @lru_cache(maxsize=32)
-    def _get_corr_cached(self, features_tuple):
-        # Placeholder for potential cached correlation logic if needed
-        pass
-
     def _rank_normalize(self, s: pd.Series, invert: bool = False) -> pd.Series:
         """Rank (Percentile) Normalization."""
         if s.empty: return s
+
+        # Handle NaNs: Mask them, rank valid, then fill
+        vals = s.values
+        mask = np.isnan(vals)
+
+        if mask.all():
+            return pd.Series(0.5, index=s.index, dtype=np.float32)
+
         # Scipy rankdata is faster
-        ranks = rankdata(s.values, method='average')
-        norm = (ranks - 1) / (len(s) - 1 + 1e-9)
+        # Rank only valid values
+        valid_vals = vals[~mask]
+        ranks = rankdata(valid_vals, method='average')
+        norm_valid = (ranks - 1) / (len(valid_vals) - 1 + 1e-9)
+
+        # Reconstruct
+        out = np.full_like(vals, 0.5, dtype=np.float32) # Default 0.5 for NaNs
+        out[~mask] = norm_valid
+
         if invert:
-            return pd.Series(1.0 - norm, index=s.index, dtype=np.float32)
-        return pd.Series(norm, index=s.index, dtype=np.float32)
+            out = 1.0 - out
+
+        return pd.Series(out, index=s.index, dtype=np.float32)
 
     def _get_onc_clusters(self, X: pd.DataFrame, global_corr: pd.DataFrame) -> pd.Series:
         """
@@ -322,13 +331,14 @@ class DePradoFeatureEngine:
         X_train, y_train = X_np[train_idx], y_np[train_idx]
         X_val, y_val = X_np[val_idx], y_np[val_idx]
         
-        # Shadow Feature
+        # Shadow Feature: Use multiple shadows for robustness
         n_samples_train = X_train.shape[0]
         n_samples_val = X_val.shape[0]
+        n_shadows = 5
         
-        # Add shadow column
-        shadow_train = np.random.normal(0, 1, size=(n_samples_train, 1)).astype(np.float32)
-        shadow_val = np.random.normal(0, 1, size=(n_samples_val, 1)).astype(np.float32)
+        # Add shadow columns
+        shadow_train = np.random.normal(0, 1, size=(n_samples_train, n_shadows)).astype(np.float32)
+        shadow_val = np.random.normal(0, 1, size=(n_samples_val, n_shadows)).astype(np.float32)
         
         X_train_shadow = np.hstack([X_train, shadow_train])
         X_val_shadow = np.hstack([X_val, shadow_val])
@@ -353,12 +363,14 @@ class DePradoFeatureEngine:
         
         # Importance
         imp_raw = model.feature_importances_
-        shadow_idx = X_train_shadow.shape[1] - 1
-        shadow_imp = imp_raw[shadow_idx]
+        # Identify shadow importances (last n_shadows features)
+        shadow_imps = imp_raw[-n_shadows:]
+        # Use max shadow importance as threshold (Conservative)
+        shadow_threshold = np.max(shadow_imps)
         
         # Zero out features worse than shadow
-        imp_adj = imp_raw[:-1].copy() # Exclude shadow itself
-        imp_adj[imp_adj <= shadow_imp] = 0
+        imp_adj = imp_raw[:-n_shadows].copy() # Exclude shadows
+        imp_adj[imp_adj <= shadow_threshold] = 0
         
         # Normalize
         imp_log = np.log1p(imp_adj)
@@ -377,12 +389,15 @@ class DePradoFeatureEngine:
             preds = model.predict_proba(X_val_shadow)[:, 1]
         else:
             preds = model.predict(X_val_shadow)
+
+        preds = preds.astype(np.float32)
             
         # Feature ICs (Numba Optimized Spearman)
         try:
-            # Rank transform for Spearman
-            X_val_ranked = np.apply_along_axis(rankdata, 0, X_val)
-            y_val_ranked = rankdata(y_val)
+            # Rank transform for Spearman (Optimized)
+            # scipy.stats.rankdata with axis=0 is much faster than apply_along_axis
+            X_val_ranked = rankdata(X_val, axis=0).astype(np.float32)
+            y_val_ranked = rankdata(y_val).astype(np.float32)
             
             ics = spearman_corr_numba(X_val_ranked, y_val_ranked)
             feat_ics = dict(zip(feature_names, ics))
@@ -472,7 +487,7 @@ class DePradoFeatureEngine:
             'topk_freq': topk_freq
         }
 
-    def run_selection(self, X: pd.DataFrame, y: pd.Series, use_entropy_as_king: bool = False) -> List[str]:
+    def run_selection(self, X: pd.DataFrame, y: pd.Series, groups: Optional[pd.Series] = None, use_entropy_as_king: bool = False) -> List[str]:
         tprint_info(f"🚀 Starting De Prado Feature Selection Engine (Faster & Robust)...")
         
         # 0. Setup
@@ -509,18 +524,37 @@ class DePradoFeatureEngine:
             # Cannot do rolling on random sample.
             # If we used X full:
             if len(X) == len(X_corr_input):
-                roll_vol = mean_feat.rolling(20).std()
+                if groups is not None:
+                    # Group-aware rolling
+                    roll_vol = mean_feat.groupby(groups).rolling(20).std().reset_index(0, drop=True)
+                    # Realign to X index if needed
+                    if not roll_vol.index.equals(mean_feat.index):
+                        roll_vol = roll_vol.reindex(mean_feat.index)
+                else:
+                    roll_vol = mean_feat.rolling(20).std()
+
                 median_vol = roll_vol.median()
                 mask_high = roll_vol > median_vol
                 
                 if mask_high.sum() > 100:
                     corr_high = X[mask_high].corr().fillna(0)
                     corr_low = X[~mask_high].corr().fillna(0)
-                    # Conservative: Max distance (Min correlation) -> Features must be correlated in BOTH regimes
-                    # Dist = 1 - abs(corr). Max Dist = 1 - min(abs(corr))
-                    # So effective correlation is min(abs(corr_high), abs(corr_low)) * sign?
-                    # Simpler: Average correlation
-                    global_corr = (corr_high + corr_low) / 2
+
+                    # Conservative Merge: shrinkage towards zero
+                    # We keep the correlation only if it's stable across regimes.
+                    c_h = corr_high.values
+                    c_l = corr_low.values
+
+                    # Sign agreement mask
+                    sign_agree = np.sign(c_h) == np.sign(c_l)
+
+                    # Min magnitude (if disagree, 0 is min magnitude effectively)
+                    min_mag = np.minimum(np.abs(c_h), np.abs(c_l))
+
+                    # If signs agree, use sign * min_mag. If not, use 0.
+                    final_vals = np.where(sign_agree, np.sign(c_h) * min_mag, 0.0)
+
+                    global_corr = pd.DataFrame(final_vals, index=global_corr.index, columns=global_corr.columns)
         
         if self.use_denoising:
             tprint_info("   🧹 Denoising Correlation Matrix (Marchenko-Pastur)...")
@@ -578,9 +612,18 @@ class DePradoFeatureEngine:
         score_ic_raw = lgbm_res.get('directional_ic', X.corrwith(y).fillna(0))
         # Turnover Penalty
         if self.use_turnover_penalty:
-            # Approx turnover: mean abs diff
-            # Vectorized on numpy
-            diffs = np.diff(X_np, axis=0)
+            # Calculate turnover (Mean Absolute Difference)
+            # Normalize features first to make turnover comparable (Z-score)
+            # Note: We use global mean/std. For huge data this creates a copy, but necessary for fair comparison.
+            X_std = (X - X.mean()) / (X.std() + 1e-9)
+
+            if groups is not None:
+                # Group-aware differencing
+                diffs = X_std.groupby(groups).diff().fillna(0).values
+            else:
+                # Global differencing
+                diffs = X_std.diff().fillna(0).values
+
             turnover = np.mean(np.abs(diffs), axis=0)
             turnover_series = pd.Series(turnover, index=X.columns)
             score_turnover = self._rank_normalize(turnover_series, invert=True) # Low turnover -> High score
@@ -659,7 +702,7 @@ class DePradoFeatureEngine:
         if self.selected_features_ is None: raise ValueError("Run selection first")
         return self.selected_features_.copy()
 
-def de_prado_feature_selection(X, y, **kwargs):
+def de_prado_feature_selection(X, y, groups=None, **kwargs):
     engine = DePradoFeatureEngine(**kwargs)
-    selected = engine.run_selection(X, y)
+    selected = engine.run_selection(X, y, groups=groups)
     return X[selected], engine

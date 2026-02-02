@@ -451,11 +451,75 @@ def _numba_rolling_slope(y, window):
         y_entering = y[i]
 
         # Update sums incrementally
-        # Correct formula: S_xy_new = S_xy_old - S_y_old + (W-1)*y_entering
-        sum_xy = sum_xy - sum_y + (n_w - 1) * y_entering
+        # Correct formula: S_xy_new = S_xy_old - S_y_old + y_leaving + (W-1)*y_entering
+        sum_xy = sum_xy - sum_y + y_leaving + (n_w - 1) * y_entering
         sum_y = sum_y - y_leaving + y_entering
 
         output[i] = (n_w * sum_xy - sum_x * sum_y) / denom
+
+    return output
+
+
+@jit(nopython=True, cache=True, fastmath=True)
+def _numba_rolling_rsquared(y, window):
+    """
+    Calculate rolling R-squared of linear regression y on x (x=0..window-1).
+    R^2 = (N*sum(xy) - sum(x)*sum(y))^2 / ((N*sum(x^2) - (sum(x))^2) * (N*sum(y^2) - (sum(y))^2))
+    """
+    n = len(y)
+    output = np.zeros(n, dtype=np.float32)
+
+    if n < window:
+        return output
+
+    # Pre-calculate common terms for x = range(window)
+    n_w = float(window)
+    sum_x = (n_w * (n_w - 1.0)) / 2.0
+    sum_x2 = (n_w * (n_w - 1.0) * (2.0 * n_w - 1.0)) / 6.0
+    denom_x = n_w * sum_x2 - sum_x**2
+
+    if denom_x <= _EPS:
+        return output
+
+    # Initialize first window
+    sum_y = 0.0
+    sum_y2 = 0.0
+    sum_xy = 0.0
+    for j in range(window):
+        val = y[j]
+        sum_y += val
+        sum_y2 += val * val
+        sum_xy += j * val
+
+    denom_y = n_w * sum_y2 - sum_y**2
+    numerator = n_w * sum_xy - sum_x * sum_y
+
+    if denom_y > _EPS:
+        output[window - 1] = (numerator * numerator) / (denom_x * denom_y)
+    else:
+        # If denom_y is zero, variance of y is zero.
+        # R2 is undefined or 0. If variance is zero, perfect fit?
+        # If y is constant, slope is 0. R2 is usually 0 or undefined.
+        output[window - 1] = 0.0
+
+    # Loop for remaining windows
+    for i in range(window, n):
+        y_leaving = y[i - window]
+        y_entering = y[i]
+
+        # Update sums incrementally
+        # S_xy_new = S_xy_old - S_y_old + y_leaving + (W-1)*y_entering
+        sum_xy = sum_xy - sum_y + y_leaving + (n_w - 1) * y_entering
+        sum_y = sum_y - y_leaving + y_entering
+        sum_y2 = sum_y2 - y_leaving*y_leaving + y_entering*y_entering
+
+        denom_y = n_w * sum_y2 - sum_y**2
+        numerator = n_w * sum_xy - sum_x * sum_y
+
+        if denom_y > _EPS:
+            output[i] = (numerator * numerator) / (denom_x * denom_y)
+        else:
+            output[i] = 0.0
 
     return output
 

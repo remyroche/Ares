@@ -30,6 +30,7 @@ from src.feature_generation.categories.ensemble_disagreement import (
     calculate_ensemble_disagreement_features,
 )
 from src.training.steps.labeling.adaptive_hunter_router import AdaptiveHunterRouter
+from src.utils.numba_funcs import _numba_rolling_slope, _numba_rolling_rsquared
 
 def _select_vwap_column(df: pd.DataFrame) -> Optional[str]:
     """Select the most appropriate VWAP column from a dataframe."""
@@ -194,7 +195,7 @@ def _compute_anchor_and_drift_features(
     
     # 3. Liquidity Anchor/Drift (if volume available)
     if 'volume' in df.columns and price is not None:
-        vol = df['volume'].replace(0, np.nan).fillna(method='ffill').fillna(1)
+        vol = df['volume'].replace(0, np.nan).ffill().fillna(1)
         
         # Dollar volume as liquidity proxy (using VWAP if available is more accurate)
         dollar_vol = vol * price
@@ -381,7 +382,7 @@ def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     # 2. FracDiff Series
     try:
         log_price = np.log(close)
-        frac_diff = _apply_fracdiff(log_price.fillna(method='ffill'), d=0.4)
+        frac_diff = _apply_fracdiff(log_price.ffill(), d=0.4)
         # Fill initial NaNs
         frac_diff = frac_diff.fillna(0.0)
     except Exception as e:
@@ -462,6 +463,11 @@ def _compute_gate_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     minus_di = pd.Series(minus_dm, index=df.index).rolling(window=14).sum() / (tr_smooth + 1e-8)
     dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di + 1e-8)
     features['adx_proxy'] = dx.rolling(window=14).mean()
+
+    # Expose ADX/DI features
+    features['plus_di'] = plus_di
+    features['minus_di'] = minus_di
+    features['adx'] = features['adx_proxy']
 
     # Momentum
     features['momentum_short'] = (close.diff(12) / close.shift(12)).abs()
@@ -625,6 +631,85 @@ def _compute_cross_tf_momentum_agreement(df: pd.DataFrame) -> pd.DataFrame:
 
     return features
 
+
+
+def _compute_round_number_features(df: pd.DataFrame) -> pd.DataFrame:
+    features = pd.DataFrame(index=df.index)
+    if 'close' not in df.columns:
+        return features
+
+    close = df['close']
+
+    # Infer tick size from price data (min absolute non-zero difference)
+    # Heuristic: use a sample of differences to find min step
+    diffs = close.diff().abs()
+    valid_diffs = diffs[diffs > 1e-9]
+
+    if len(valid_diffs) > 0:
+        # Use quantile to avoid outlier micro-noise, or min?
+        # Usually min is the tick size, but sometimes floating point noise exists.
+        # We take the mode of small diffs? Or simply min.
+        # Given floating point, we might see 0.0099999.
+        # Let's take the 1st percentile of valid diffs as a robust tick proxy
+        raw_tick = valid_diffs.quantile(0.01)
+        # Round to nearest power of 10-ish?
+        # For safety, just use raw_tick bounded.
+        tick_size = max(float(raw_tick), 1e-8)
+    else:
+        tick_size = 1.0
+
+    # dist_1 = abs(C - round(C, 0)) / tick_size
+    # round(C, 0) is nearest integer.
+    dist_1 = (close - close.round(0)).abs() / tick_size
+
+    # dist_2 = abs(C - round(C, 1)) / tick_size
+    dist_2 = (close - close.round(1)).abs() / tick_size
+
+    features['dist_1'] = dist_1
+    features['dist_2'] = dist_2
+
+    # Clustering index: % closes near round numbers
+    # "Near" threshold. e.g. < 4 ticks.
+    threshold_ticks = 4.0
+    is_near = ((dist_1 < threshold_ticks) | (dist_2 < threshold_ticks)).astype(float)
+
+    # Rolling mean (e.g. 24 bars)
+    features['clustering_index'] = is_near.rolling(24).mean()
+
+    # Barrier proximity: Quantized cluster distance
+    # min(dist_1, dist_2) quantized into bins of 10 ticks
+    min_dist = np.minimum(dist_1, dist_2)
+    features['barrier_proximity'] = np.floor(min_dist / 10.0)
+
+    return features
+
+
+def _compute_trend_features(df: pd.DataFrame) -> pd.DataFrame:
+    features = pd.DataFrame(index=df.index)
+    if 'close' not in df.columns:
+        return features
+
+    # Use log close for robust trend calculation
+    log_close = np.log(df['close'].replace(0, np.nan).ffill())
+    log_close_vals = log_close.values.astype(np.float32)
+
+    # Different horizons
+    windows = [24, 48, 96]
+
+    for w in windows:
+        # Slope
+        slope = _numba_rolling_slope(log_close_vals, w)
+        features[f'trend_slope_{w}'] = slope
+
+        # R-squared
+        r2 = _numba_rolling_rsquared(log_close_vals, w)
+        features[f'trend_rsquared_{w}'] = r2
+
+    # Aliases for standard names if needed (e.g. just 'slope')
+    features['slope'] = features['trend_slope_24']
+    features['rsquared'] = features['trend_rsquared_24']
+
+    return features
 
 
 def _apply_ssfi_pruning(X: pd.DataFrame, y: pd.Series, disagreement_cols: List[str]) -> List[str]:
@@ -954,5 +1039,21 @@ def _generate_layer3_features_single_asset(
             
     except Exception as e:
         tprint_warning(f"⚠️ Anchor and Drift features failed: {e}")
+
+    # 12. Round Number & Barrier Features
+    try:
+        round_feats = _compute_round_number_features(df_out)
+        for col in round_feats.columns:
+            df_out[col] = round_feats[col]
+    except Exception as e:
+        tprint_warning(f"⚠️ Round number features failed: {e}")
+
+    # 13. Trend & R-Squared Features
+    try:
+        trend_feats = _compute_trend_features(df_out)
+        for col in trend_feats.columns:
+            df_out[col] = trend_feats[col]
+    except Exception as e:
+        tprint_warning(f"⚠️ Trend features failed: {e}")
 
     return df_out

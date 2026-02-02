@@ -52,3 +52,9 @@ Result: `calculate_entropy_statistics_numba` speedup >700x (2.11s -> 0.003s). Fu
 **Learning:** Pandas `rolling()` operations are flexible but can be slow for composite metrics like VWAP (`sum(pv)/sum(v)`), which require two rolling aggregations and intermediate Series. A Numba $O(N)$ implementation using single-pass sliding window sums achieved a ~6.5x speedup. Careful handling of `min_periods=1` logic (accumulating until window is full) and NaN propagation (ignoring missing values in sums, but invalidating result if volume is zero) was required to match Pandas exactly.
 
 **Action:** For composite rolling metrics (e.g., VWAP, correlation), implement single-pass O(N) Numba functions instead of chaining multiple Pandas rolling calls. Verify `min_periods` and NaN behavior against the reference implementation.
+
+## 2026-02-02 - Rolling Price Jump Frequency Optimization
+
+**Learning:** `_numba_price_jump_frequency` was O(N*W) because it recalculated mean and std for the window at every step using `np.mean` and `np.std`. Even with JIT, this is inefficient. Replacing these with incremental O(1) updates (using Welford's or sum/sq_sum tracking) reduced complexity to O(N * (W/k))—we still iterate to count jumps, but the expensive mean/std calculation is gone. This achieved a ~2.7x speedup for typical window sizes.
+
+**Action:** When implementing rolling features that require window statistics (mean, std) for thresholding, always maintain these statistics incrementally (O(1)) rather than recalculating them (O(W)), even if the subsequent logic (like counting outliers) requires iterating the window. Every O(W) reduction inside the main loop counts.

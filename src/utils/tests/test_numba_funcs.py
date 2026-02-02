@@ -1,6 +1,12 @@
 import numpy as np
 import pytest
-from src.utils.numba_funcs import _numba_streak_persistence, _numba_generate_range_bars, _numba_ewma
+from src.utils.numba_funcs import (
+    _numba_streak_persistence,
+    _numba_generate_range_bars,
+    _numba_ewma,
+    _numba_price_jump_frequency,
+)
+
 
 def test_streak_persistence_basic():
     """Test basic streak persistence logic."""
@@ -113,3 +119,32 @@ def test_ewma_float32():
 
     assert out.dtype == np.float32, f"Expected float32 output, got {out.dtype}"
     assert np.all(np.isfinite(out) | np.isnan(out))
+
+
+def test_price_jump_frequency():
+    """Test price jump frequency calculation."""
+    # Create a deterministic pattern
+    # Window 5. Threshold 1.0.
+    # [1, 2, 3, 4, 5] -> Mean 3, Std sqrt(2) ~ 1.414.
+    # Z-scores:
+    # 1: |1-3|/1.414 = 2/1.414 = 1.41 > 1.0 (Jump)
+    # 2: |2-3|/1.414 = 1/1.414 = 0.707 < 1.0
+    # 3: |3-3| = 0 < 1.0
+    # 4: 0.707 < 1.0
+    # 5: 1.41 > 1.0 (Jump)
+    # Count = 2. Freq = 2/5 = 0.4.
+
+    returns = np.array([1, 2, 3, 4, 5, 100], dtype=np.float32)
+    # Window 5 at index 5 (0..5 exclusive? No, range(window, n) starts at index window (5).
+    # Returns at index 5 uses returns[0:5].
+    # So expected output at index 5 is 0.4.
+
+    res = _numba_price_jump_frequency(returns, window=5, threshold=1.0)
+
+    assert np.isclose(res[5], 0.4), f"Expected 0.4, got {res[5]}"
+
+    # Check zero variance case
+    # [1, 1, 1, 1, 1] -> Std 0 -> Output 0
+    returns_const = np.ones(10, dtype=np.float32)
+    res_const = _numba_price_jump_frequency(returns_const, window=5, threshold=1.0)
+    assert np.all(res_const == 0.0)

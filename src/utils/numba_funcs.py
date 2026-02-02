@@ -716,38 +716,67 @@ def _numba_price_jump_frequency(returns, window=20, threshold=2.0):
     """
     Count large price moves (>threshold std deviations) in rolling window.
     High jump frequency indicates market turbulence/chaos.
-    
+
     Args:
         returns: Return series
-        window: Rolling window size  
+        window: Rolling window size
         threshold: Z-score threshold (2.0 = ~95th percentile, 2.5 = ~99th)
-    
-    Note: O(N*W) complexity - consider using rolling stats for O(N).
+
+    Note: Optimized to O(N * W/k) by updating rolling mean/std incrementally O(N).
+          Counting still requires O(W), but total cost is significantly reduced.
     """
     n = len(returns)
     output = np.zeros(n, dtype=np.float32)
 
+    if n < window:
+        return output
+
+    # Initialize sums for the first window
+    sum_val = 0.0
+    sum_sq = 0.0
+
+    # Pre-fill for first window
+    # range(window) goes 0..window-1
+    for i in range(window):
+        val = returns[i]
+        sum_val += val
+        sum_sq += val * val
+
+    inv_w = 1.0 / window
+
     for i in range(window, n):
-        # Get returns in window
-        window_returns = returns[i - window : i]
+        if i > window:
+            # Update sums incrementally for window [i-window : i]
+            # Previous window was [i-window-1 : i-1]
+            # Leaving: i - window - 1
+            # Entering: i - 1
+            leaving = returns[i - window - 1]
+            entering = returns[i - 1]
+            sum_val = sum_val - leaving + entering
+            sum_sq = sum_sq - leaving * leaving + entering * entering
 
-        # Calculate rolling mean and std
-        mean_ret = np.mean(window_returns)
-        std_ret = np.std(window_returns)
+        # Compute Mean/Std using Numba fastmath
+        mean = sum_val * inv_w
+        var = (sum_sq * inv_w) - (mean * mean)
 
-        if std_ret < 1e-10:
+        if var < 1e-10:
             output[i] = 0.0
             continue
 
-        # Count jumps > threshold std deviations
+        std = np.sqrt(var)
+        limit = threshold * std
+
+        # Count jumps
         jump_count = 0
-        for ret in window_returns:
-            z_score = abs(ret - mean_ret) / std_ret
-            if z_score > threshold:
+        start_idx = i - window
+
+        for k in range(start_idx, i):
+            val = returns[k]
+            diff = val - mean
+            if diff > limit or diff < -limit:
                 jump_count += 1
 
-        # Normalize by window length
-        output[i] = float(jump_count) / window
+        output[i] = float(jump_count) * inv_w
 
     return output
 

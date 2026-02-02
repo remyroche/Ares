@@ -15,8 +15,13 @@ import pandas as pd
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 import logging
-from src.utils.numba_funcs import _numba_rolling_mean, _numba_rolling_std
-from src.utils.tprint import tprint_warning
+from src.utils.numba_funcs import (
+    _numba_rolling_mean,
+    _numba_rolling_std,
+    _numba_rolling_mean_nan_safe,
+    _numba_rolling_std_nan_safe,
+    _numba_shift
+)
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +129,6 @@ class CompositeEventGenerator:
         close = df.get('close', df.get('Close', pd.Series(dtype=np.float32)))
         high = df.get('high', df.get('High', pd.Series(dtype=np.float32)))
         low = df.get('low', df.get('Low', pd.Series(dtype=np.float32)))
-        open_ = df.get('open', df.get('Open', pd.Series(dtype=np.float32)))
         volume = df.get('volume', df.get('Volume'))
         
         if close.empty:
@@ -146,7 +150,7 @@ class CompositeEventGenerator:
         returns_vals = returns.values
         
         # Optimized rolling std using Numba
-        # Pre-fill NaNs with 0 to be safe for Numba (returns already 0-filled)
+        # Returns are 0-filled, so standard _numba_rolling_std is fine
         returns_std = _numba_rolling_std(returns_vals, 20)
         
         # Avoid div by zero
@@ -154,29 +158,51 @@ class CompositeEventGenerator:
 
         # === 2. Volume-based signals ===
         if vol_vals is not None:
-            # Handle potential NaNs in volume (fill with 0)
+            # Use nan-safe functions instead of pre-filling with 0 (which skews stats)
+            vol_mean = _numba_rolling_mean_nan_safe(vol_vals, 20)
+            vol_std = _numba_rolling_std_nan_safe(vol_vals, 20)
+
+            # Handle possible NaNs in output of rolling functions (e.g. all NaNs in window)
+            vol_mean = np.nan_to_num(vol_mean, nan=0.0)
+            vol_std = np.nan_to_num(vol_std, nan=0.0)
+
+            # For signal calculation, fill vol_vals NaNs with 0 temporarily if needed,
+            # but ideally we propagate NaNs or handle them.
+            # Original code filled with 0.
             vol_vals_clean = np.nan_to_num(vol_vals, nan=0.0)
-            vol_mean = _numba_rolling_mean(vol_vals_clean, 20)
-            vol_std = _numba_rolling_std(vol_vals_clean, 20)
+
             signals['volume_spike'] = (vol_vals_clean - vol_mean) / (vol_std + 1e-9)
 
             # Trade intensity: Volume / True Range (proxy for order book activity)
             # TR = max(H-L, |H-Cp|, |L-Cp|)
             # Simple TR approximation for speed: High - Low (intraday)
             # Full TR requires shift.
-            prev_close = np.roll(close_vals, 1)
-            prev_close[0] = close_vals[0] # Pad first
+
+            # Fix cyclic shift bug using _numba_shift
+            prev_close = _numba_shift(close_vals, 1, fill_value=np.nan)
+            if len(prev_close) > 0:
+                prev_close[0] = close_vals[0] # Pad first with current close (approximation)
 
             tr1 = high_vals - low_vals
             tr2 = np.abs(high_vals - prev_close)
             tr3 = np.abs(low_vals - prev_close)
+
+            # Handle potential NaNs from shift (though padded above)
+            tr2 = np.nan_to_num(tr2, nan=0.0)
+            tr3 = np.nan_to_num(tr3, nan=0.0)
+
             tr = np.maximum(tr1, np.maximum(tr2, tr3))
 
             intensity = vol_vals_clean / (tr + 1e-9)
 
             # Rolling Z-score of intensity
-            int_mean = _numba_rolling_mean(intensity, 20)
-            int_std = _numba_rolling_std(intensity, 20)
+            # Use nan-safe here too just in case
+            int_mean = _numba_rolling_mean_nan_safe(intensity, 20)
+            int_std = _numba_rolling_std_nan_safe(intensity, 20)
+
+            int_mean = np.nan_to_num(int_mean, nan=0.0)
+            int_std = np.nan_to_num(int_std, nan=0.0)
+
             signals['trade_intensity'] = (intensity - int_mean) / (int_std + 1e-9)
         else:
             signals['volume_spike'] = 0.0
@@ -189,13 +215,22 @@ class CompositeEventGenerator:
         # Handle zero range
         denom = bar_range + 1e-9
         close_position = (close_vals - low_vals) / denom
+
+        # Clip to [0, 1] to handle data errors
+        close_position = np.clip(close_position, 0.0, 1.0)
+
         signals['flow_imbalance'] = (close_position - 0.5) * 2  # Normalized to [-1, 1]
         
         # Order flow imbalance using volume-weighted bar position
         if vol_vals is not None:
+            # vol_vals_clean already defined above
             volume_weighted_position = close_position * vol_vals_clean
-            vwp_mean = _numba_rolling_mean(volume_weighted_position, 20)
-            vwp_std = _numba_rolling_std(volume_weighted_position, 20)
+            vwp_mean = _numba_rolling_mean_nan_safe(volume_weighted_position, 20)
+            vwp_std = _numba_rolling_std_nan_safe(volume_weighted_position, 20)
+
+            vwp_mean = np.nan_to_num(vwp_mean, nan=0.0)
+            vwp_std = np.nan_to_num(vwp_std, nan=0.0)
+
             signals['order_flow_imbalance'] = (volume_weighted_position - vwp_mean) / (vwp_std + 1e-9)
         else:
             signals['order_flow_imbalance'] = signals['flow_imbalance']
@@ -387,19 +422,31 @@ class TradeIntensityEvents:
         vol_vals = volume.values.astype(np.float32)
 
         # True Range Approximation
-        prev_close = np.roll(close_vals, 1)
-        prev_close[0] = close_vals[0]
+        # Fix cyclic shift bug
+        prev_close = _numba_shift(close_vals, 1, fill_value=np.nan)
+        if len(prev_close) > 0:
+            prev_close[0] = close_vals[0]
 
-        tr = np.maximum(high_vals - low_vals,
-                        np.maximum(np.abs(high_vals - prev_close),
-                                   np.abs(low_vals - prev_close)))
+        tr1 = high_vals - low_vals
+        tr2 = np.abs(high_vals - prev_close)
+        tr3 = np.abs(low_vals - prev_close)
+
+        # Handle potential NaNs
+        tr2 = np.nan_to_num(tr2, nan=0.0)
+        tr3 = np.nan_to_num(tr3, nan=0.0)
+
+        tr = np.maximum(tr1, np.maximum(tr2, tr3))
         
         # Trade intensity
         intensity = vol_vals / (tr + 1e-9)
         
-        # Z-score using Numba
-        intensity_mean = _numba_rolling_mean(intensity, self.window)
-        intensity_std = _numba_rolling_std(intensity, self.window)
+        # Z-score using Numba Nan-Safe
+        intensity_mean = _numba_rolling_mean_nan_safe(intensity, self.window)
+        intensity_std = _numba_rolling_std_nan_safe(intensity, self.window)
+
+        intensity_mean = np.nan_to_num(intensity_mean, nan=0.0)
+        intensity_std = np.nan_to_num(intensity_std, nan=0.0)
+
         intensity_z = (intensity - intensity_mean) / (intensity_std + 1e-9)
         
         # Events
@@ -437,6 +484,9 @@ class OrderFlowImbalanceEvents:
         bar_range = (high_vals - low_vals)
         close_position = (close_vals - low_vals) / (bar_range + 1e-9)
         
+        # Clip to [0, 1]
+        close_position = np.clip(close_position, 0.0, 1.0)
+
         # Volume-weighted position for stronger signal
         if volume is not None:
             vol_vals = volume.values.astype(np.float32)
@@ -445,8 +495,12 @@ class OrderFlowImbalanceEvents:
             flow = close_position - 0.5
         
         # Z-score
-        flow_mean = _numba_rolling_mean(flow, self.window)
-        flow_std = _numba_rolling_std(flow, self.window)
+        flow_mean = _numba_rolling_mean_nan_safe(flow, self.window)
+        flow_std = _numba_rolling_std_nan_safe(flow, self.window)
+
+        flow_mean = np.nan_to_num(flow_mean, nan=0.0)
+        flow_std = np.nan_to_num(flow_std, nan=0.0)
+
         flow_z = (flow - flow_mean) / (flow_std + 1e-9)
         
         # Events: extreme buying or selling pressure
@@ -489,15 +543,19 @@ class BarPressureEvents:
         # Volume-weighted for significance
         if volume is not None:
             vol_vals = volume.values.astype(np.float32)
-            vol_mean = _numba_rolling_mean(vol_vals, self.window)
+            vol_mean = _numba_rolling_mean_nan_safe(vol_vals, self.window)
             vol_normalized = vol_vals / (vol_mean + 1e-9)
             pressure = direction * vol_normalized
         else:
             pressure = direction
         
         # Z-score
-        pressure_mean = _numba_rolling_mean(pressure, self.window)
-        pressure_std = _numba_rolling_std(pressure, self.window)
+        pressure_mean = _numba_rolling_mean_nan_safe(pressure, self.window)
+        pressure_std = _numba_rolling_std_nan_safe(pressure, self.window)
+
+        pressure_mean = np.nan_to_num(pressure_mean, nan=0.0)
+        pressure_std = np.nan_to_num(pressure_std, nan=0.0)
+
         pressure_z = (pressure - pressure_mean) / (pressure_std + 1e-9)
         
         mask = np.abs(pressure_z) >= self.threshold
@@ -555,6 +613,8 @@ class CrossAssetEventGenerator:
         
         for name, col in self.feature_map.items():
             if col not in df.columns:
+                # Log warning?
+                # logger.warning(f"Feature {col} not found in DataFrame")
                 continue
                 
             # 1. Compute Rolling Z-Score

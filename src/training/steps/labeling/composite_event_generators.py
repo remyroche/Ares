@@ -105,12 +105,15 @@ class CompositeEventGenerator:
             ),
         ]
     
-    def compute_base_signals(self, df: pd.DataFrame) -> pd.DataFrame:
+    def compute_base_signals(self, df: pd.DataFrame, freq: Optional[str] = None) -> pd.DataFrame:
         """
         Compute all base signals needed for composites from OHLCV data.
         
+        Optimized for performance (float32, Numba) and causal safety (rolling rank).
+
         Args:
             df: DataFrame with OHLCV columns
+            freq: Optional frequency string (e.g., '15min'). If None, inferred or default.
             
         Returns:
             DataFrame with base signals as columns
@@ -118,64 +121,140 @@ class CompositeEventGenerator:
         signals = pd.DataFrame(index=df.index)
         
         # Ensure required columns exist
-        close = df.get('close', df.get('Close', pd.Series(dtype=float)))
-        high = df.get('high', df.get('High', pd.Series(dtype=float)))
-        low = df.get('low', df.get('Low', pd.Series(dtype=float)))
-        open_ = df.get('open', df.get('Open', pd.Series(dtype=float)))
-        volume = df.get('volume', df.get('Volume', pd.Series(1, index=df.index)))
+        close = df.get('close', df.get('Close', pd.Series(dtype=np.float32)))
+        high = df.get('high', df.get('High', pd.Series(dtype=np.float32)))
+        low = df.get('low', df.get('Low', pd.Series(dtype=np.float32)))
+        open_ = df.get('open', df.get('Open', pd.Series(dtype=np.float32)))
+        volume = df.get('volume', df.get('Volume'))
         
         if close.empty:
             return signals
+
+        # Convert to float32 for performance
+        close_vals = close.values.astype(np.float32)
+        high_vals = high.values.astype(np.float32) if not high.empty else close_vals
+        low_vals = low.values.astype(np.float32) if not low.empty else close_vals
+
+        if volume is not None:
+            vol_vals = volume.values.astype(np.float32)
+        else:
+            vol_vals = None
         
         # === 1. Return-based signals ===
-        returns = close.pct_change().fillna(0)
-        returns_std = returns.rolling(20).std().fillna(returns.std())
-        signals['return_shock'] = (returns.abs() / (returns_std + 1e-9)).fillna(0)
+        # Use pandas for pct_change (efficient C impl) but cast to float32
+        returns = close.pct_change().fillna(0).astype(np.float32)
+        returns_vals = returns.values
         
+        # Optimized rolling std using Numba
+        # Pre-fill NaNs with 0 to be safe for Numba (returns already 0-filled)
+        returns_std = _numba_rolling_std(returns_vals, 20)
+        
+        # Avoid div by zero
+        signals['return_shock'] = np.abs(returns_vals) / (returns_std + 1e-9)
+
         # === 2. Volume-based signals ===
-        vol_mean = volume.rolling(20).mean().fillna(volume.mean())
-        vol_std = volume.rolling(20).std().fillna(volume.std())
-        signals['volume_spike'] = ((volume - vol_mean) / (vol_std + 1e-9)).fillna(0)
-        
-        # Trade intensity: Volume / True Range (proxy for order book activity)
-        tr = pd.concat([
-            high - low,
-            (high - close.shift(1)).abs(),
-            (low - close.shift(1)).abs()
-        ], axis=1).max(axis=1)
-        signals['trade_intensity'] = (volume / (tr + 1e-9)).fillna(0)
-        intensity_mean = signals['trade_intensity'].rolling(20).mean()
-        intensity_std = signals['trade_intensity'].rolling(20).std()
-        signals['trade_intensity'] = ((signals['trade_intensity'] - intensity_mean) / (intensity_std + 1e-9)).fillna(0)
+        if vol_vals is not None:
+            # Handle potential NaNs in volume (fill with 0)
+            vol_vals_clean = np.nan_to_num(vol_vals, nan=0.0)
+            vol_mean = _numba_rolling_mean(vol_vals_clean, 20)
+            vol_std = _numba_rolling_std(vol_vals_clean, 20)
+            signals['volume_spike'] = (vol_vals_clean - vol_mean) / (vol_std + 1e-9)
+
+            # Trade intensity: Volume / True Range (proxy for order book activity)
+            # TR = max(H-L, |H-Cp|, |L-Cp|)
+            # Simple TR approximation for speed: High - Low (intraday)
+            # Full TR requires shift.
+            prev_close = np.roll(close_vals, 1)
+            prev_close[0] = close_vals[0] # Pad first
+
+            tr1 = high_vals - low_vals
+            tr2 = np.abs(high_vals - prev_close)
+            tr3 = np.abs(low_vals - prev_close)
+            tr = np.maximum(tr1, np.maximum(tr2, tr3))
+
+            intensity = vol_vals_clean / (tr + 1e-9)
+
+            # Rolling Z-score of intensity
+            int_mean = _numba_rolling_mean(intensity, 20)
+            int_std = _numba_rolling_std(intensity, 20)
+            signals['trade_intensity'] = (intensity - int_mean) / (int_std + 1e-9)
+        else:
+            signals['volume_spike'] = 0.0
+            signals['trade_intensity'] = 0.0
         
         # === 3. Flow Imbalance (OHLCV proxy for order flow) ===
         # High close relative to range suggests buying pressure
-        bar_range = (high - low)
-        close_position = (close - low) / (bar_range + 1e-9)  # 0 = closed at low, 1 = closed at high
+        bar_range = (high_vals - low_vals)
+        # Close Position: (C - L) / (H - L)
+        # Handle zero range
+        denom = bar_range + 1e-9
+        close_position = (close_vals - low_vals) / denom
         signals['flow_imbalance'] = (close_position - 0.5) * 2  # Normalized to [-1, 1]
         
         # Order flow imbalance using volume-weighted bar position
-        volume_weighted_position = close_position * volume
-        vwp_mean = volume_weighted_position.rolling(20).mean()
-        vwp_std = volume_weighted_position.rolling(20).std()
-        signals['order_flow_imbalance'] = ((volume_weighted_position - vwp_mean) / (vwp_std + 1e-9)).fillna(0)
+        if vol_vals is not None:
+            volume_weighted_position = close_position * vol_vals_clean
+            vwp_mean = _numba_rolling_mean(volume_weighted_position, 20)
+            vwp_std = _numba_rolling_std(volume_weighted_position, 20)
+            signals['order_flow_imbalance'] = (volume_weighted_position - vwp_mean) / (vwp_std + 1e-9)
+        else:
+            signals['order_flow_imbalance'] = signals['flow_imbalance']
         
         # === 4. Volatility-based signals ===
-        realized_vol = returns.rolling(20).std() * np.sqrt(252 * 24 * 4)  # Annualized for 15m bars
-        vol_of_vol = realized_vol.rolling(20).std()
-        signals['volatility_regime'] = realized_vol.rank(pct=True).fillna(0.5)  # 0=low vol, 1=high vol
-        signals['volatility_spike'] = ((realized_vol - realized_vol.rolling(50).mean()) / 
-                                        (realized_vol.rolling(50).std() + 1e-9)).fillna(0)
+        # Infer frequency scaling
+        if freq is None and isinstance(df.index, pd.DatetimeIndex):
+            inferred = pd.infer_freq(df.index)
+            freq = inferred if inferred else '15min' # Default fallback
+
+        # Estimate bars per year
+        # Standard: 15m -> 96/day -> 252 days -> 24192
+        # Simple heuristic mapping
+        bars_per_year = 252 * 96 # Default 15m
+        if freq:
+            if 'h' in freq.lower():
+                bars_per_year = 252 * 24 # Hourly
+            elif 'd' in freq.lower():
+                bars_per_year = 252 # Daily
+            elif 'm' in freq.lower():
+                try:
+                    mins = int(''.join(filter(str.isdigit, freq)))
+                    bars_per_year = 252 * (1440 / max(1, mins))
+                except:
+                    pass
+
+        annualization = np.sqrt(bars_per_year)
+
+        # Realized Volatility (Annualized)
+        realized_vol = returns_std * annualization
+
+        # Volatility Regime: Rolling Rank (Fix Look-ahead Bias)
+        # Replacing global rank(pct=True) with rolling rank
+        realized_vol_series = pd.Series(realized_vol, index=df.index)
+        signals['volatility_regime'] = realized_vol_series.rolling(window=2000, min_periods=200).rank(pct=True).fillna(0.5)
+
+        # Volatility Spike (Z-score of realized vol)
+        # Using longer window for regime baseline (50)
+        rv_mean = _numba_rolling_mean(realized_vol, 50)
+        rv_std = _numba_rolling_std(realized_vol, 50)
+        signals['volatility_spike'] = (realized_vol - rv_mean) / (rv_std + 1e-9)
         
         # === 5. Trend-based signals ===
-        ema_fast = close.ewm(span=8).mean()
-        ema_slow = close.ewm(span=21).mean()
+        # MACD-like trend proxy
+        ema_fast = close.ewm(span=8).mean().values.astype(np.float32)
+        ema_slow = close.ewm(span=21).mean().values.astype(np.float32)
         trend = ema_fast - ema_slow
-        trend_normalized = trend / (close.rolling(50).std() + 1e-9)
-        signals['trend_strength'] = trend_normalized.abs().rank(pct=True).fillna(0.5)
-        signals['trend_direction'] = np.sign(trend).fillna(0)
         
-        return signals
+        # Normalize trend by price volatility
+        close_std_50 = _numba_rolling_std(close_vals, 50)
+        trend_normalized = trend / (close_std_50 + 1e-9)
+
+        # Trend Strength: Rolling Rank (Fix Look-ahead Bias)
+        trend_norm_series = pd.Series(np.abs(trend_normalized), index=df.index)
+        signals['trend_strength'] = trend_norm_series.rolling(window=2000, min_periods=200).rank(pct=True).fillna(0.5)
+
+        signals['trend_direction'] = np.sign(trend)
+
+        return signals.fillna(0.0)
     
     def generate_composite_events(
         self, 
@@ -300,23 +379,31 @@ class TradeIntensityEvents:
         if any(x is None for x in [close, high, low, volume]):
             return pd.DatetimeIndex([])
         
-        # True Range
-        tr = pd.concat([
-            high - low,
-            (high - close.shift(1)).abs(),
-            (low - close.shift(1)).abs()
-        ], axis=1).max(axis=1)
+        # Use Numba-optimized path if possible, but keep simple for now to match interface
+        # Cast to float32
+        close_vals = close.values.astype(np.float32)
+        high_vals = high.values.astype(np.float32)
+        low_vals = low.values.astype(np.float32)
+        vol_vals = volume.values.astype(np.float32)
+
+        # True Range Approximation
+        prev_close = np.roll(close_vals, 1)
+        prev_close[0] = close_vals[0]
+
+        tr = np.maximum(high_vals - low_vals,
+                        np.maximum(np.abs(high_vals - prev_close),
+                                   np.abs(low_vals - prev_close)))
         
         # Trade intensity
-        intensity = volume / (tr + 1e-9)
+        intensity = vol_vals / (tr + 1e-9)
         
-        # Z-score
-        intensity_mean = intensity.rolling(self.window).mean()
-        intensity_std = intensity.rolling(self.window).std()
+        # Z-score using Numba
+        intensity_mean = _numba_rolling_mean(intensity, self.window)
+        intensity_std = _numba_rolling_std(intensity, self.window)
         intensity_z = (intensity - intensity_mean) / (intensity_std + 1e-9)
         
         # Events
-        mask = intensity_z.abs() >= self.threshold
+        mask = np.abs(intensity_z) >= self.threshold
         return df.index[mask]
 
 
@@ -342,23 +429,28 @@ class OrderFlowImbalanceEvents:
         if any(x is None for x in [close, high, low]):
             return pd.DatetimeIndex([])
         
+        close_vals = close.values.astype(np.float32)
+        high_vals = high.values.astype(np.float32)
+        low_vals = low.values.astype(np.float32)
+
         # Bar position: 0 = low, 1 = high
-        bar_range = (high - low)
-        close_position = (close - low) / (bar_range + 1e-9)
+        bar_range = (high_vals - low_vals)
+        close_position = (close_vals - low_vals) / (bar_range + 1e-9)
         
         # Volume-weighted position for stronger signal
         if volume is not None:
-            flow = (close_position - 0.5) * volume
+            vol_vals = volume.values.astype(np.float32)
+            flow = (close_position - 0.5) * vol_vals
         else:
             flow = close_position - 0.5
         
         # Z-score
-        flow_mean = flow.rolling(self.window).mean()
-        flow_std = flow.rolling(self.window).std()
+        flow_mean = _numba_rolling_mean(flow, self.window)
+        flow_std = _numba_rolling_std(flow, self.window)
         flow_z = (flow - flow_mean) / (flow_std + 1e-9)
         
         # Events: extreme buying or selling pressure
-        mask = flow_z.abs() >= self.threshold
+        mask = np.abs(flow_z) >= self.threshold
         return df.index[mask]
 
 
@@ -385,23 +477,30 @@ class BarPressureEvents:
         if any(x is None for x in [close, open_, high, low]):
             return pd.DatetimeIndex([])
         
+        close_vals = close.values.astype(np.float32)
+        open_vals = open_.values.astype(np.float32)
+        high_vals = high.values.astype(np.float32)
+        low_vals = low.values.astype(np.float32)
+
         # Directional pressure: (close - open) / range
-        bar_range = (high - low)
-        direction = (close - open_) / (bar_range + 1e-9)
+        bar_range = (high_vals - low_vals)
+        direction = (close_vals - open_vals) / (bar_range + 1e-9)
         
         # Volume-weighted for significance
         if volume is not None:
-            vol_normalized = volume / volume.rolling(self.window).mean()
+            vol_vals = volume.values.astype(np.float32)
+            vol_mean = _numba_rolling_mean(vol_vals, self.window)
+            vol_normalized = vol_vals / (vol_mean + 1e-9)
             pressure = direction * vol_normalized
         else:
             pressure = direction
         
         # Z-score
-        pressure_mean = pressure.rolling(self.window).mean()
-        pressure_std = pressure.rolling(self.window).std()
+        pressure_mean = _numba_rolling_mean(pressure, self.window)
+        pressure_std = _numba_rolling_std(pressure, self.window)
         pressure_z = (pressure - pressure_mean) / (pressure_std + 1e-9)
         
-        mask = pressure_z.abs() >= self.threshold
+        mask = np.abs(pressure_z) >= self.threshold
         return df.index[mask]
 
 
@@ -411,7 +510,7 @@ class CrossAssetEventGenerator:
     
     Logic:
     1. Computes Rolling Z-Score for each feature (window=300).
-    2. Identifies events exceeding the global 3% quantile (97th percentile) of Z-scores.
+    2. Identifies events exceeding a fixed threshold (e.g. 2.2 sigma).
     
     Triggers:
     1. Lead-Lag: Market leads asset significantly (predictive signal).
@@ -419,9 +518,14 @@ class CrossAssetEventGenerator:
     3. Shocks: Volatility or Volume shocks relative to market.
     """
     
-    def __init__(self, window: int = 300, quantile_threshold: float = 0.97):
+    def __init__(self, window: int = 300, quantile_threshold: float = 2.2):
         self.window = window
-        self.quantile_threshold = quantile_threshold
+        # Renamed for clarity, though keeping name argument compatible if possible
+        # Interpreting quantile_threshold as Z-score threshold now if > 1.0
+        # If < 1.0, it was a quantile. 0.97 quantile is approx 1.88 sigma (one-sided) or 2.17 (two-sided normal).
+        # We enforce a fixed threshold to avoid look-ahead bias.
+        self.threshold_sigma = quantile_threshold if quantile_threshold > 1.0 else 2.2
+
         self.feature_map = {
             'lead_lag': 'ca__lead_lag_w48',
             'beta_spread': 'ca__beta_shift', 
@@ -431,17 +535,14 @@ class CrossAssetEventGenerator:
     
     def _compute_rolling_z(self, series: pd.Series) -> pd.Series:
         """Compute rolling Z-score using Numba for performance."""
-        # Convert to numpy and handle NaNs (fill with 0 or ffill to prevent sum poisoning)
-        # For cross-asset features, 0 is often a safe neutral value (no correlation, no shock)
-        values = series.fillna(0.0).values.astype(np.float64)
+        # Convert to numpy float32 and handle NaNs
+        values = series.fillna(0.0).values.astype(np.float32)
         
         # Calculate Rolling Mean and Std using Numba optimized kernels
-        # Note: These kernels are O(N) and much faster than pandas rolling for large windows
         mu = _numba_rolling_mean(values, self.window)
         sigma = _numba_rolling_std(values, self.window)
         
         # Compute Z-Score
-        # Avoid division by zero
         z_scores = np.zeros_like(values)
         mask = sigma > 1e-9
         z_scores[mask] = (values[mask] - mu[mask]) / sigma[mask]
@@ -458,26 +559,12 @@ class CrossAssetEventGenerator:
                 
             # 1. Compute Rolling Z-Score
             raw_series = df[col]
-            # For lead_lag, we only care about positive values (Market Leads)? 
-            # Or simplified: just look for distributional anomalies in the feature.
-            # Lead-Lag is directional. Beta spread is signed. Shocks are positive.
-            # Z-score normalizes them all.
             z_scores = self._compute_rolling_z(raw_series)
             
-            # 2. Determine Global Threshold (3% quantile)
-            # Use absolute Z-scores for two-sided outliers (or one-sided if naturally positive)
+            # 2. Trigger Events using Fixed Threshold (No Look-ahead)
             abs_z = z_scores.abs()
+            mask = abs_z > self.threshold_sigma
             
-            # Global 3% threshold (97th percentile)
-            # If we assume normality, this is ~2.17. But we use empirical.
-            # If not enough data, default to 2.0
-            if len(abs_z) > 100:
-                threshold = abs_z.quantile(self.quantile_threshold)
-            else:
-                threshold = 2.0
-                
-            # 3. Trigger Events
-            mask = abs_z > threshold
             if mask.any():
                 events = events.union(df.index[mask])
                 

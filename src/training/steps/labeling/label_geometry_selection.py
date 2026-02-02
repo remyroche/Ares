@@ -8,6 +8,7 @@ from scipy.stats import ks_2samp, entropy
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import roc_auc_score, average_precision_score
+from src.utils.numba_funcs import jit, NUMBA_AVAILABLE
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -141,71 +142,122 @@ class TradingFocalLoss:
 def events_to_dataframe(events: List[Event], horizons: Optional[List[int]] = None) -> pd.DataFrame:
     """
     Converts events to DataFrame and pre-calculates path metrics for multiple horizons.
-    Vectorized for performance.
+    Optimized for performance using dictionary of lists instead of list of dictionaries.
 
     Args:
         events: List of Event objects.
         horizons: List of horizons to calculate metrics for (e.g. [24, 48, 120]).
                   If None, defaults to [8, 12, 16, 20, 30, 40].
     """
+    if not events:
+        return pd.DataFrame()
+
     if horizons is None:
         horizons = [8, 12, 16, 20, 30, 40]
 
-    data = []
+    # Pre-allocate lists
+    ids = []
+    entries = []
+    exits = []
+    directions = []
+    durations = []
+    sigmas = []
+
+    # Horizon specific lists
+    horizon_cols = {h: {
+        'norm_mae': [],
+        'norm_mfe': [],
+        'time_scaled_mae': [],
+        'time_scaled_mfe': []
+    } for h in horizons}
+
+    max_h = max(horizons) if horizons else None
+    legacy_norm_mae = []
+    legacy_norm_mfe = []
+    legacy_ts_mae = []
+    legacy_ts_mfe = []
+    legacy_duration = []
+
     for e in events:
         full_path = e.returns_path * e.direction
         max_len = len(full_path)
         
         # FIX: Use REAL duration from exit_idx - entry_idx, not truncated path length
-        real_duration_bars = e.exit_idx - e.entry_idx
+        # Ensure integer math
+        real_duration_bars = int(e.exit_idx - e.entry_idx)
         
-        row = {
-            'id': e.id,
-            'entry_idx': e.entry_idx,
-            'exit_idx': e.exit_idx,
-            'direction': e.direction,  # FIX: Add direction for dedup
-            'duration_bars': real_duration_bars,  # FIX: Real holding time
-            'sigma': e.sigma,
-        }
+        ids.append(e.id)
+        entries.append(e.entry_idx)
+        exits.append(e.exit_idx)
+        directions.append(e.direction)
+        durations.append(real_duration_bars)
+        sigmas.append(e.sigma)
 
         for h in horizons:
-            # Slice path to horizon
-            # Note: returns_path is 0-based from entry
             limit = min(max_len, h)
-            path = full_path[:limit]
 
-            # Duration for THIS horizon (capped at horizon or actual path)
+            if limit > 0:
+                # Numpy slice view
+                path_view = full_path[:limit]
+                # Inlined min/max for speed
+                raw_mae = -np.min(path_view)
+                raw_mfe = np.max(path_view)
+            else:
+                raw_mae = 0.0
+                raw_mfe = 0.0
+
             duration_h = max(1, limit)
 
-            raw_mae = -np.min(path) if len(path) > 0 else 0.0
-            raw_mfe = np.max(path) if len(path) > 0 else 0.0
+            # Avoid division by zero
+            safe_sigma = e.sigma if e.sigma > 1e-12 else 1e-9
 
             # Standard normalization
-            norm_mae = raw_mae / e.sigma
-            norm_mfe = raw_mfe / e.sigma
+            norm_mae = raw_mae / safe_sigma
+            norm_mfe = raw_mfe / safe_sigma
 
-            # Time-scaled normalization (Condition on Holding Time)
-            # Assuming volatility scales with sqrt(t)
+            # Time-scaled normalization
             sqrt_t = np.sqrt(duration_h)
-            time_scaled_mae = raw_mae / (e.sigma * sqrt_t)
-            time_scaled_mfe = raw_mfe / (e.sigma * sqrt_t)
+            time_scaled_mae = raw_mae / (safe_sigma * sqrt_t)
+            time_scaled_mfe = raw_mfe / (safe_sigma * sqrt_t)
 
-            row[f'norm_mae_{h}'] = norm_mae
-            row[f'norm_mfe_{h}'] = norm_mfe
-            row[f'time_scaled_mae_{h}'] = time_scaled_mae
-            row[f'time_scaled_mfe_{h}'] = time_scaled_mfe
+            cols = horizon_cols[h]
+            cols['norm_mae'].append(norm_mae)
+            cols['norm_mfe'].append(norm_mfe)
+            cols['time_scaled_mae'].append(time_scaled_mae)
+            cols['time_scaled_mfe'].append(time_scaled_mfe)
 
-            # Legacy fields (map to max horizon)
-            if h == max(horizons):
-                row['norm_mae'] = norm_mae
-                row['norm_mfe'] = norm_mfe
-                row['duration'] = real_duration_bars  # FIX: Use real duration here too
-                row['time_scaled_mae'] = time_scaled_mae
-                row['time_scaled_mfe'] = time_scaled_mfe
+            if h == max_h:
+                legacy_norm_mae.append(norm_mae)
+                legacy_norm_mfe.append(norm_mfe)
+                legacy_ts_mae.append(time_scaled_mae)
+                legacy_ts_mfe.append(time_scaled_mfe)
+                legacy_duration.append(real_duration_bars)
 
-        data.append(row)
+    # Construct DataFrame from dict of lists
+    data_dict = {
+        'id': ids,
+        'entry_idx': entries,
+        'exit_idx': exits,
+        'direction': directions,
+        'duration_bars': durations,
+        'sigma': sigmas
+    }
+
+    for h in horizons:
+        cols = horizon_cols[h]
+        data_dict[f'norm_mae_{h}'] = cols['norm_mae']
+        data_dict[f'norm_mfe_{h}'] = cols['norm_mfe']
+        data_dict[f'time_scaled_mae_{h}'] = cols['time_scaled_mae']
+        data_dict[f'time_scaled_mfe_{h}'] = cols['time_scaled_mfe']
     
-    df = pd.DataFrame(data)
+    # Legacy columns
+    data_dict['norm_mae'] = legacy_norm_mae
+    data_dict['norm_mfe'] = legacy_norm_mfe
+    data_dict['duration'] = legacy_duration
+    data_dict['time_scaled_mae'] = legacy_ts_mae
+    data_dict['time_scaled_mfe'] = legacy_ts_mfe
+
+    df = pd.DataFrame(data_dict)
     if not df.empty:
         df.set_index('id', inplace=True)
     return df
@@ -245,6 +297,41 @@ def calculate_separation_metrics(y_true: np.ndarray, y_prob: np.ndarray) -> Tupl
 
     return ks_stat, norm_ent
 
+@jit(nopython=True, cache=True)
+def _numba_uniqueness_loop(
+    start_indices: np.ndarray,
+    end_indices: np.ndarray,
+    concurrency: np.ndarray,
+    interval_lengths: np.ndarray
+) -> float:
+    total_score = 0.0
+    count = 0
+    n_events = len(start_indices)
+
+    for i in range(n_events):
+        s = start_indices[i]
+        e = end_indices[i]
+
+        sum_w = 0.0
+        sum_val = 0.0
+
+        # Iterate over the intervals covered by this event
+        for k in range(s, e):
+            c = concurrency[k]
+            # Avoid division by zero, though concurrency should be >= 1 for active events
+            if c > 0:
+                l = interval_lengths[k]
+                sum_w += l
+                sum_val += (1.0 / c) * l
+
+        if sum_w > 0:
+            total_score += sum_val / sum_w
+            count += 1
+
+    if count == 0:
+        return 0.0
+    return total_score / count
+
 def get_average_uniqueness(selected_indices, all_events_df) -> float:
     """
     Calculates average uniqueness using time-weighted concurrency.
@@ -272,6 +359,29 @@ def get_average_uniqueness(selected_indices, all_events_df) -> float:
     if len(boundaries) < 2:
         return 0.0
     
+    if NUMBA_AVAILABLE:
+        try:
+            # Map to indices using binary search
+            start_indices = np.searchsorted(boundaries, starts)
+            end_indices = np.searchsorted(boundaries, ends)
+
+            n_boundaries = len(boundaries)
+            diff = np.zeros(n_boundaries, dtype=np.float64)
+
+            # Fast accumulation
+            np.add.at(diff, start_indices, 1.0)
+            np.add.at(diff, end_indices, -1.0)
+
+            concurrency = np.cumsum(diff)[:-1]
+            interval_lengths = np.diff(boundaries).astype(np.float64)
+
+            return _numba_uniqueness_loop(start_indices, end_indices, concurrency, interval_lengths)
+        except Exception as e:
+            logger.warning(f"Numba uniqueness calc failed, falling back: {e}")
+            # Fallback below
+            pass
+
+    # Legacy / Fallback
     boundary_to_pos = {val: idx for idx, val in enumerate(boundaries)}
     diff = np.zeros(len(boundaries), dtype=float)
     
@@ -362,7 +472,8 @@ def run_logistic_probe(
         X_train_scaled = scaler.fit_transform(X_train)
         X_val_scaled = scaler.transform(X_val)
         X_full_scaled = scaler.transform(X)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Logistic probe scaling failed: {e}")
         return None
     
     try:
@@ -373,12 +484,14 @@ def run_logistic_probe(
             class_weight='balanced'
         )
         clf.fit(X_train_scaled, y_train)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Logistic probe fitting failed: {e}")
         return None
     
     try:
         val_probs = clf.predict_proba(X_val_scaled)[:, 1]
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Logistic probe prediction failed: {e}")
         return None
     
     try:
@@ -410,6 +523,51 @@ def run_logistic_probe(
     return preds_full_prob, metrics
 
 
+@jit(nopython=True, cache=True)
+def _numba_deduplicate_events(
+    entries: np.ndarray,
+    directions: np.ndarray,
+    min_gap_bars: int
+) -> np.ndarray:
+    n = len(entries)
+    keep_mask = np.ones(n, dtype=np.bool_)
+
+    # Track last accepted entry index for each direction
+    # Initialize with a value far in the past
+    last_entry_pos = -1e9  # For direction 1
+    last_entry_neg = -1e9  # For direction -1
+    last_entry_zero = -1e9 # For direction 0
+
+    for i in range(n):
+        entry = entries[i]
+        d = directions[i]
+
+        should_keep = True
+
+        if d == 1:
+            if entry - last_entry_pos < min_gap_bars:
+                should_keep = False
+            else:
+                last_entry_pos = entry
+        elif d == -1:
+            if entry - last_entry_neg < min_gap_bars:
+                should_keep = False
+            else:
+                last_entry_neg = entry
+        elif d == 0:
+            if entry - last_entry_zero < min_gap_bars:
+                should_keep = False
+            else:
+                last_entry_zero = entry
+        else:
+            # Fallback for unexpected directions: keep them
+            pass
+
+        keep_mask[i] = should_keep
+
+    return keep_mask
+
+
 def deduplicate_events(
     events_df: pd.DataFrame,
     min_gap_bars: int = 4  # Minimum bars between events with same direction
@@ -428,10 +586,29 @@ def deduplicate_events(
     # Sort by entry_idx to process chronologically
     df = events_df.sort_values('entry_idx').copy()
     
+    if NUMBA_AVAILABLE:
+        try:
+            entries = df['entry_idx'].values.astype(np.float64)
+            directions = df['direction'].values.astype(np.int32)
+            mask = _numba_deduplicate_events(entries, directions, min_gap_bars)
+            result = df[mask]
+        except Exception as e:
+            logger.warning(f"Numba deduplication failed, falling back to Python: {e}")
+            # Fallback
+            result = _python_deduplicate_events(df, min_gap_bars, events_df)
+    else:
+        result = _python_deduplicate_events(df, min_gap_bars, events_df)
+
+    if len(result) < len(events_df):
+        logger.info(f"Event dedup: {len(events_df)} → {len(result)} events (min_gap={min_gap_bars} bars)")
+
+    return result
+
+def _python_deduplicate_events(sorted_df: pd.DataFrame, min_gap_bars: int, original_df: pd.DataFrame) -> pd.DataFrame:
     keep_indices = []
     last_entry_by_dir = {1: -float('inf'), -1: -float('inf')}
     
-    for idx, row in df.iterrows():
+    for idx, row in sorted_df.iterrows():
         entry = row['entry_idx']
         direction = row.get('direction', 0)
         
@@ -440,19 +617,7 @@ def deduplicate_events(
             keep_indices.append(idx)
             last_entry_by_dir[direction] = entry
     
-    result = events_df.loc[keep_indices]
-    
-    if len(result) < len(events_df):
-        logger.info(f"Event dedup: {len(events_df)} → {len(result)} events (min_gap={min_gap_bars} bars)")
-    
-    return result
-
-def jaccard_similarity(set_a: Set, set_b: Set) -> float:
-    if not set_a and not set_b: return 1.0
-    intersection = len(set_a.intersection(set_b))
-    union = len(set_a.union(set_b))
-    return intersection / union if union > 0 else 0.0
-
+    return original_df.loc[keep_indices]
 
 # --- 4.5 Geometry Pre-Filtering Functions ---
 
@@ -500,27 +665,6 @@ def apply_hard_constraints(
         valid.append(g)
     
     return valid
-
-
-def parameter_diversity_penalty(new_geom: Geometry, selected_geoms: List[Geometry]) -> bool:
-    """
-    Check if new geometry is too similar to already selected ones in parameter space.
-    Returns True if geometry should be rejected due to similarity.
-    """
-    for sel_geom in selected_geoms:
-        # Check parameter similarity
-        sl_diff = abs(new_geom.sl_quantile - sel_geom.sl_quantile)
-        alpha_diff = abs(new_geom.alpha - sel_geom.alpha) / 2.0  # Normalized
-        beta_diff = abs(new_geom.beta - sel_geom.beta) / 2.0    # Normalized
-        ratio_diff = abs(new_geom.min_ratio - sel_geom.min_ratio) / 3.0  # Normalized
-        horizon_diff = abs(new_geom.horizon - sel_geom.horizon) / 24.0   # Normalized
-        
-        # If all parameters are very similar, reject
-        if (sl_diff < 0.1 and alpha_diff < 0.3 and beta_diff < 0.3 and 
-            ratio_diff < 0.2 and horizon_diff < 0.2):
-            return True
-    
-    return False
 
 
 def deduplicate_by_distance(
@@ -880,6 +1024,11 @@ def train_model_for_geometry(
     X_val = X_val[informative_train_cols]
     X = X[informative_train_cols]
     
+    # Cast to float32 for LightGBM efficiency
+    X_train = X_train.astype(np.float32)
+    X_val = X_val.astype(np.float32)
+    X = X.astype(np.float32)
+
     # PRE-CHECK 5: Removed covariance check (Fix 19)
     # LightGBM handles collinear features well; removing strict condition number check.
 

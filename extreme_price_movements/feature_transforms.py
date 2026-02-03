@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import extreme_price_movements.fast_funcs as ff
 
 class CausalFeatureTransformer:
     def __init__(self, winsor_qt=0.02, roll_window=24*30):
@@ -27,8 +28,8 @@ class CausalFeatureTransformer:
         # User said "winsorisation (top 2%)".
         # Let's use rolling quantile.
 
-        lower = out.rolling(self.roll_window, min_periods=24).quantile(self.winsor_qt)
-        upper = out.rolling(self.roll_window, min_periods=24).quantile(1 - self.winsor_qt)
+        lower = ff.numba_rolling_quantile(out, self.roll_window, self.winsor_qt)
+        upper = ff.numba_rolling_quantile(out, self.roll_window, 1 - self.winsor_qt)
 
         # Forward fill limits to handle gaps
         lower = lower.ffill()
@@ -40,8 +41,8 @@ class CausalFeatureTransformer:
         out = out.clip(lower=lower, upper=upper, axis=0)
 
         # 3. Causal Z-Score (Rolling Mean/Std)
-        mu = out.rolling(self.roll_window, min_periods=24).mean()
-        sigma = out.rolling(self.roll_window, min_periods=24).std(ddof=0)
+        mu = ff.numba_rolling_mean(out, self.roll_window)
+        sigma = ff.numba_rolling_std(out, self.roll_window)
 
         z = (out - mu) / (sigma + 1e-12)
 
@@ -52,9 +53,21 @@ class CausalFeatureTransformer:
 def log_winsor_zscore_rolling(series: pd.Series, window: int = 720, qt: float = 0.02) -> pd.Series:
     """Helper for single series causal transform"""
     x = np.arcsinh(series)
-    lo = x.rolling(window, min_periods=24).quantile(qt)
-    hi = x.rolling(window, min_periods=24).quantile(1-qt)
+    x_df = x.to_frame()
+
+    lo_df = ff.numba_rolling_quantile(x_df, window, qt)
+    hi_df = ff.numba_rolling_quantile(x_df, window, 1-qt)
+
+    lo = lo_df[lo_df.columns[0]]
+    hi = hi_df[hi_df.columns[0]]
+
     x = x.clip(lower=lo, upper=hi)
-    mu = x.rolling(window, min_periods=24).mean()
-    sd = x.rolling(window, min_periods=24).std()
+
+    x_df = x.to_frame()
+    mu_df = ff.numba_rolling_mean(x_df, window)
+    sd_df = ff.numba_rolling_std(x_df, window)
+
+    mu = mu_df[mu_df.columns[0]]
+    sd = sd_df[sd_df.columns[0]]
+
     return (x - mu) / (sd + 1e-12)

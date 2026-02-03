@@ -11,14 +11,22 @@ from src.utils.numba_funcs import (
     _numba_rolling_kurt,
     _numba_rolling_skew,
     _numba_rolling_slope,
-    _numba_rolling_rsquared
+    _numba_rolling_rsquared,
+    _numba_rolling_median,
+    _numba_rolling_sum,
+    _numba_rolling_correlation
 )
 
 def apply_to_frame(df: pd.DataFrame, func, *args) -> pd.DataFrame:
     """
     Applies a Numba 1D function to each column of a DataFrame.
     Returns a DataFrame with float32 dtype.
+    Handles pd.Series by converting to DataFrame and returning Series.
     """
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
     out = pd.DataFrame(index=df.index, columns=df.columns, dtype=np.float32)
     # We iterate over columns.
     for col in df.columns:
@@ -27,6 +35,35 @@ def apply_to_frame(df: pd.DataFrame, func, *args) -> pd.DataFrame:
         # Apply function
         res = func(vals, *args)
         out[col] = res
+
+    if is_series:
+        return out[out.columns[0]]
+
+    return out
+
+def apply_to_frame_binary(df1: pd.DataFrame, df2: pd.DataFrame, func, *args) -> pd.DataFrame:
+    """
+    Applies a function taking two arrays (col1, col2) -> out_array.
+    Assumes df1 and df2 have same columns and index.
+    Handles pd.Series inputs.
+    """
+    is_series1 = isinstance(df1, pd.Series)
+    is_series2 = isinstance(df2, pd.Series)
+
+    if is_series1:
+        df1 = df1.to_frame()
+    if is_series2:
+        df2 = df2.to_frame()
+
+    out = pd.DataFrame(index=df1.index, columns=df1.columns, dtype=np.float32)
+    for col in df1.columns:
+        if col in df2.columns:
+            v1 = df1[col].to_numpy(dtype=np.float32)
+            v2 = df2[col].to_numpy(dtype=np.float32)
+            out[col] = func(v1, v2, *args)
+
+    if is_series1:
+        return out[out.columns[0]]
 
     return out
 
@@ -160,16 +197,18 @@ def simulate_trade_numba(
 
             # Check Trailing Update (High)
             if curr_h > highest_high:
-                profit_dist = curr_h - entry_px
-                req_start_dist = k_ts * atr * entry_px
+                highest_high = curr_h
 
-                is_active = trailing_active or (profit_dist >= req_start_dist)
+            # Update Trailing State
+            profit_dist = highest_high - entry_px
+            if profit_dist >= k_ts * atr * entry_px:
+                trailing_active = True
 
-                if is_active:
-                    trail_dist_px = k_td * atr * entry_px
-                    new_sl = curr_h - trail_dist_px
-                    if new_sl > sl_px:
-                        trail_would_trigger = True
+            if trailing_active:
+                trail_dist_px = k_td * atr * entry_px
+                new_sl = curr_h - trail_dist_px
+                if new_sl > sl_px:
+                    trail_would_trigger = True
 
             if stop_hit and trail_would_trigger:
                 return 0.0, i, 2 # Ambiguous
@@ -237,3 +276,162 @@ def simulate_trade_numba(
         ret = (entry_px / last_c) - 1.0
 
     return ret, n-1, 3 # Time Exit
+
+# --- NEW KERNELS & WRAPPERS ---
+
+@jit(nopython=True, cache=True)
+def _numba_rolling_max(x, window):
+    n = len(x)
+    out = np.full(n, np.nan, dtype=np.float32)
+    for i in range(n):
+        start = max(0, i - window + 1)
+        end = i + 1
+        valid = False
+        m = -np.inf
+        for j in range(start, end):
+            val = x[j]
+            if not np.isnan(val):
+                if val > m:
+                    m = val
+                valid = True
+        if valid:
+            out[i] = m
+    return out
+
+@jit(nopython=True, cache=True)
+def _numba_rolling_min(x, window):
+    n = len(x)
+    out = np.full(n, np.nan, dtype=np.float32)
+    for i in range(n):
+        start = max(0, i - window + 1)
+        end = i + 1
+        valid = False
+        m = np.inf
+        for j in range(start, end):
+            val = x[j]
+            if not np.isnan(val):
+                if val < m:
+                    m = val
+                valid = True
+        if valid:
+            out[i] = m
+    return out
+
+@jit(nopython=True, cache=True)
+def _numba_rolling_quantile(x, window, q):
+    n = len(x)
+    out = np.full(n, np.nan, dtype=np.float32)
+
+    for i in range(n):
+        start = max(0, i - window + 1)
+        end = i + 1
+
+        # Count valid
+        count = 0
+        for j in range(start, end):
+            if not np.isnan(x[j]):
+                count += 1
+
+        if count == 0:
+            continue
+
+        # Collect
+        buf = np.empty(count, dtype=np.float32)
+        idx = 0
+        for j in range(start, end):
+            val = x[j]
+            if not np.isnan(val):
+                buf[idx] = val
+                idx += 1
+
+        # Sort
+        buf.sort()
+
+        # Linear Interpolation
+        v_idx = q * (count - 1)
+        i_lower = int(np.floor(v_idx))
+        i_upper = int(np.ceil(v_idx))
+        fraction = v_idx - i_lower
+
+        if i_lower == i_upper:
+            out[i] = buf[i_lower]
+        else:
+            out[i] = buf[i_lower] + (buf[i_upper] - buf[i_lower]) * fraction
+
+    return out
+
+@jit(nopython=True, cache=True)
+def _numba_pct_change(x, n_shift):
+    l = len(x)
+    out = np.full(l, np.nan, dtype=np.float32)
+    for i in range(n_shift, l):
+        prev = x[i - n_shift]
+        curr = x[i]
+        if prev != 0 and not np.isnan(prev) and not np.isnan(curr):
+            out[i] = (curr - prev) / prev
+    return out
+
+def numba_grouped_rolling_mean(df: pd.DataFrame, group_series: pd.Series, window: int) -> pd.DataFrame:
+    """
+    Vectorized grouped rolling mean.
+    """
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
+    out = pd.DataFrame(index=df.index, columns=df.columns, dtype=np.float32)
+    out[:] = np.nan
+
+    # Ensure group series is aligned and numpy-ready
+    groups_arr = group_series.reindex(df.index).to_numpy()
+    unique_groups = np.unique(groups_arr)
+
+    for col in df.columns:
+        vals = df[col].to_numpy(dtype=np.float32)
+        res_col = np.full_like(vals, np.nan)
+
+        for g in unique_groups:
+            if np.isnan(g):
+                continue
+            mask = (groups_arr == g)
+            subset = vals[mask]
+
+            # Use rolling mean on the subset
+            rolled = _numba_rolling_mean_nan_safe(subset, window)
+
+            res_col[mask] = rolled
+
+        out[col] = res_col
+
+    if is_series:
+        return out[out.columns[0]]
+
+    return out
+
+# Wrappers
+def numba_rolling_max(df, n):
+    return apply_to_frame(df, _numba_rolling_max, n)
+
+def numba_rolling_min(df, n):
+    return apply_to_frame(df, _numba_rolling_min, n)
+
+def numba_rolling_sum(df, n):
+    return apply_to_frame(df, _numba_rolling_sum, n)
+
+def numba_rolling_median(df, n):
+    return apply_to_frame(df, _numba_rolling_median, n)
+
+def numba_rolling_quantile(df, n, q):
+    return apply_to_frame(df, _numba_rolling_quantile, n, q)
+
+def numba_pct_change(df, n):
+    return apply_to_frame(df, _numba_pct_change, n)
+
+def numba_rolling_corr(df1, df2, n):
+    return apply_to_frame_binary(df1, df2, _numba_rolling_correlation, n)
+
+def numba_rolling_mean(df, n):
+    return apply_to_frame(df, _numba_rolling_mean_nan_safe, n)
+
+def numba_rolling_std(df, n):
+    return apply_to_frame(df, _numba_rolling_std_nan_safe, n)

@@ -45,14 +45,22 @@ def compute_market_features(panel, basket_syms, trend_sma_hours=24*14):
     mkt_low   = l[basket].mean(axis=1)
     mkt_vol   = v[basket].mean(axis=1)
 
-    mkt_ret24h = mkt_close.pct_change(24)
-    mkt_ret6h  = mkt_close.pct_change(6)
+    mkt_ret24h_df = ff.numba_pct_change(mkt_close.to_frame(), 24)
+    mkt_ret24h = mkt_ret24h_df[mkt_ret24h_df.columns[0]]
 
-    sma = mkt_close.rolling(trend_sma_hours).mean()
+    mkt_ret6h_df  = ff.numba_pct_change(mkt_close.to_frame(), 6)
+    mkt_ret6h = mkt_ret6h_df[mkt_ret6h_df.columns[0]]
+
+    sma_df = ff.numba_rolling_mean(mkt_close.to_frame(), trend_sma_hours)
+    sma = sma_df[sma_df.columns[0]]
+
     mkt_trend = (mkt_close / (sma + 1e-12) - 1.0)
 
-    mkt_ret1h = mkt_close.pct_change()
-    mkt_rv = mkt_ret1h.rolling(24).std(ddof=0)
+    mkt_ret1h_df = ff.numba_pct_change(mkt_close.to_frame(), 1)
+    mkt_ret1h = mkt_ret1h_df[mkt_ret1h_df.columns[0]]
+
+    mkt_rv_df = ff.numba_rolling_std(mkt_ret1h.to_frame(), 24)
+    mkt_rv = mkt_rv_df[mkt_rv_df.columns[0]]
 
     mkt_df = pd.DataFrame({
         "mkt_close": mkt_close,
@@ -68,7 +76,9 @@ def compute_market_features(panel, basket_syms, trend_sma_hours=24*14):
 
 def add_regime_gates(mkt_df: pd.DataFrame, gate_vol_lookback_hours: int, gate_trend_thr: float):
     df = mkt_df.copy()
-    df["mkt_rv_med"] = df["mkt_rv"].rolling(gate_vol_lookback_hours).median()
+    rv_med_df = ff.numba_rolling_median(df[["mkt_rv"]], gate_vol_lookback_hours)
+    df["mkt_rv_med"] = rv_med_df["mkt_rv"]
+
     df["G_VOL"] = (df["mkt_rv"] > df["mkt_rv_med"]).astype(int)
     df["G_TREND"] = (df["mkt_ret24h"].abs() > gate_trend_thr).astype(int)
     df["mkt_rv_ratio"] = df["mkt_rv"] / (df["mkt_rv_med"] + 1e-12)
@@ -80,9 +90,13 @@ def compute_funding_proxy(panel, mkt_df):
     l = panel["low"]
     v = panel["volume"]
 
-    c_ma = c.rolling(24).mean()
+    c_ma = ff.numba_rolling_mean(c, 24)
     dist = (c / (c_ma + 1e-12)) - 1.0
-    mkt_dist = (mkt_df["mkt_close"] / (mkt_df["mkt_close"].rolling(24).mean() + 1e-12)) - 1.0
+
+    mkt_close_df = mkt_df[["mkt_close"]]
+    mkt_ma_df = ff.numba_rolling_mean(mkt_close_df, 24)
+    mkt_dist = (mkt_df["mkt_close"] / (mkt_ma_df["mkt_close"] + 1e-12)) - 1.0
+
     relative_premium = dist.sub(mkt_dist, axis=0)
 
     candle_pos = (c - l) / ((h - l) + 1e-9)
@@ -118,10 +132,11 @@ def compute_features_hourly(panel, mkt_gates, cfg):
 
     feats = {}
     # Ret calc
-    feats["ret1h"]   = c.pct_change().astype(np.float32)
-    feats["ret6h"]   = c.pct_change(6).astype(np.float32)
+    feats["ret1h"] = ff.numba_pct_change(c, 1).astype(np.float32)
+    feats["ret6h"] = ff.numba_pct_change(c, 6).astype(np.float32)
+
     for H in [12,16,20,24,28]:
-        feats[f"ret{H}h"] = c.pct_change(H).astype(np.float32)
+        feats[f"ret{H}h"] = ff.numba_pct_change(c, H).astype(np.float32)
 
     feats["range_pct"] = ((h - l) / (c + 1e-12)).astype(np.float32)
     feats["gap_pct"]   = ((o - c.shift(1)) / (c.shift(1) + 1e-12)).astype(np.float32)
@@ -133,7 +148,6 @@ def compute_features_hourly(panel, mkt_gates, cfg):
     feats["rsi_base"] = rsi_base
     feats["rsi_slope_base"] = rsi_base.diff(cfg["rsi_slope_n"]).astype(np.float32)
 
-    # feats["rv_24h"] = feats["ret1h"].rolling(24).std(ddof=0)
     feats["rv_24h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 24)
 
     feats["qv"] = (c * v).astype(np.float32)
@@ -157,7 +171,12 @@ def compute_features_hourly(panel, mkt_gates, cfg):
     feats["vol_price_spread"] = (v / ((h - l) + 1e-12)).astype(np.float32)
 
     prev_close = c.shift(1)
-    tr = pd.concat([(h - l), (h - prev_close).abs(), (l - prev_close).abs()], axis=0).groupby(level=0).max()
+
+    tr_1 = (h - l)
+    tr_2 = (h - prev_close).abs()
+    tr_3 = (l - prev_close).abs()
+    tr = np.maximum(tr_1, np.maximum(tr_2, tr_3))
+
     atr_tr = ff.apply_to_frame(tr, ff._numba_ewma, 1.0/cfg["atr_n"], False)
     feats["atr_expansion"] = (tr / (atr_tr + 1e-12)).astype(np.float32)
 
@@ -165,8 +184,8 @@ def compute_features_hourly(panel, mkt_gates, cfg):
     feats["trend_pct_base"] = ((c / (sma_base + 1e-12)) - 1.0).astype(np.float32)
 
     hod = pd.Series(v.index.hour, index=v.index)
-    feats["rvol_hod_base"] = v / (v.groupby(hod).transform(lambda s: s.rolling(cfg["rvol_days"]*24, min_periods=24).mean()) + 1e-12)
-    feats["rvol_hod_base"] = feats["rvol_hod_base"].astype(np.float32)
+    rvol_denom = ff.numba_grouped_rolling_mean(v, hod, int(cfg["rvol_days"]*24))
+    feats["rvol_hod_base"] = (v / (rvol_denom + 1e-12)).astype(np.float32)
 
     feats["funding_proxy"] = compute_funding_proxy(panel, mkt_gates)
 
@@ -241,11 +260,11 @@ def compute_features_hourly(panel, mkt_gates, cfg):
     ema_vr = ema(vr, 24)
     feats["vol_range_shock"] = (vr / (ema_vr + 1e-12)).astype(np.float32)
 
-    v_max = v.rolling(24).max()
+    v_max = ff.numba_rolling_max(v, 24)
     feats["climax_decay"] = (v_max / (v + 1e-12)).astype(np.float32)
 
-    cum_sv = signed_vol.rolling(24).sum()
-    feats["cumulative_delta_stall"] = c.rolling(24).corr(cum_sv).fillna(0).astype(np.float32)
+    cum_sv = ff.numba_rolling_sum(signed_vol, 24)
+    feats["cumulative_delta_stall"] = ff.numba_rolling_corr(c, cum_sv, 24).fillna(0).astype(np.float32)
 
     feats["vol_expansion_ratio"] = (atr_ema_f / (atr_ema_s + 1e-12)).astype(np.float32)
 

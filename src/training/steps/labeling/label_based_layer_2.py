@@ -1986,28 +1986,29 @@ _lgb_logger = logging.getLogger("lightgbm")
 _lgb_logger.setLevel(logging.ERROR)
 _lgb_logger.propagate = False
 
-# Constants for Layer 2 Model Training (defaults/fixed) - HIGH REGULARIZATION for noisy financial data
+# Constants for Layer 2 Model Training (defaults/fixed) - EXTREME REGULARIZATION for Path Stability
+# "WEAK" status often implies overfitting to specific folds/paths. We increase regularization.
 LAYER2_MODEL_CONSTANTS = {
     'boosting_type': 'gbdt', # Switched to GBDT for robustness (bagging enabled)
     'objective': 'binary',
     'metric': 'binary_logloss',
-    'max_depth': 6,       # Constrain depth for speed
-    'learning_rate': 0.05, # Higher LR for faster convergence
-    'lambda_l1': 0.5,     # 50x stronger L1 regularization for feature selection
-    'lambda_l2': 1.0,     # 20x stronger L2 regularization for weight decay
-    'num_leaves': 31,
-    'min_data_in_leaf': 20,
+    'max_depth': 4,       # Reduced from 6 to 4 to prevent overfitting (Shallower Trees)
+    'learning_rate': 0.03, # Lower LR for stability
+    'lambda_l1': 2.0,     # Stronger L1 regularization for feature selection
+    'lambda_l2': 5.0,     # Stronger L2 regularization for weight decay
+    'num_leaves': 15,     # Reduced from 31 (2^4 - 1)
+    'min_data_in_leaf': 100, # Increased from 20 to 100 to enforce broad generalization
     'min_sum_hessian_in_leaf': 1e-3,
-    'feature_fraction': 0.6, # More aggressive feature sampling for noise reduction
-    'bagging_fraction': 0.7, # Enable bagging for robustness against non-stationarity
+    'feature_fraction': 0.5, # Aggressive feature bagging
+    'bagging_fraction': 0.6, # Aggressive row bagging
     'bagging_freq': 1,     # Resample every iteration
     'verbose': -1,
     'random_state': 42,
     'n_jobs': 1,           # RESTRICT THREADS TO PREVENT DEADLOCK
     'is_unbalance': False,
     'scale_pos_weight': 1,
-    'min_gain_to_split': 0.01,  # Higher threshold to prevent noise splits
-    'min_child_weight': 0.0001,
+    'min_gain_to_split': 0.05,  # High threshold to prevent noise splits
+    'min_child_weight': 0.01,
     'early_stopping_rounds': 50,  # Add early stopping for production models
 }
 
@@ -2016,23 +2017,23 @@ LAYER2_PROBE_CONSTANTS = {
     'boosting_type': 'gbdt', # Switched to GBDT for robustness
     'objective': 'binary',
     'metric': 'binary_logloss',
-    'max_depth': 4,       # Shallower trees for speed
-    'learning_rate': 0.1, # Higher LR for faster convergence
-    'lambda_l1': 0.3,     # 60x stronger L1 regularization for feature selection
-    'lambda_l2': 0.5,     # 50x stronger L2 regularization for weight decay
-    'num_leaves': 16,     # Fewer leaves
-    'min_data_in_leaf': 20, # Keep as specified
+    'max_depth': 3,       # Very shallow for probes (prevent overfitting to noise)
+    'learning_rate': 0.05,
+    'lambda_l1': 1.0,     # Strong L1
+    'lambda_l2': 2.0,     # Strong L2
+    'num_leaves': 7,      # 2^3 - 1
+    'min_data_in_leaf': 100, # Enforce stability
     'min_sum_hessian_in_leaf': 1e-3,
-    'feature_fraction': 0.5, # Very aggressive feature sampling for noise reduction
-    'bagging_fraction': 0.7, # Enable bagging for robustness
+    'feature_fraction': 0.5,
+    'bagging_fraction': 0.6,
     'bagging_freq': 1,     # Resample every iteration
     'verbose': -1,
     'random_state': 42,
     'n_jobs': 1,           # RESTRICT THREADS TO PREVENT DEADLOCK
     'is_unbalance': False,
     'scale_pos_weight': 1,
-    'min_gain_to_split': 0.02,  # Even higher threshold to prevent noise splits
-    'min_child_weight': 0.001,  # Lower for speed
+    'min_gain_to_split': 0.05,
+    'min_child_weight': 0.01,
     # NOTE: early_stopping_rounds removed - not compatible with sklearn API, use callbacks instead
 }
 
@@ -2598,6 +2599,16 @@ def generate_market_state_probe(price: pd.Series, volume: pd.Series,
     std_20 = price.rolling(20).std()
     df['bollinger_width'] = (sma_20 + 2 * std_20) - (sma_20 - 2 * std_20)
     df['bollinger_pct_b'] = (price - (sma_20 - 2 * std_20)) / (df['bollinger_width'] + 1e-9)
+
+    # --- Barrier & Compression (Breakout-Aware) ---
+    # Detect coiling/compression which often precedes specialist activation
+    atr_long = high_low_proxy.rolling(100).mean() + 1e-9
+    df['atr_compression'] = df['atr'] / atr_long  # < 1.0 means compressed
+
+    recent_high = price.rolling(20).max()
+    recent_low = price.rolling(20).min()
+    df['dist_to_high_z'] = (price - recent_high) / (df['atr'] + 1e-9) # Normalized distance to resistance
+    df['dist_to_low_z'] = (price - recent_low) / (df['atr'] + 1e-9)   # Normalized distance to support
     
     # --- Momentum/trend ---
     df['momentum'] = price.pct_change(10)

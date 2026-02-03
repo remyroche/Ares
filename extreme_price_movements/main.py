@@ -17,10 +17,6 @@ from extreme_price_movements.training import select_best_horizon, compute_p_exha
 from extreme_price_movements.risk import TrailingStop
 from extreme_price_movements.optimization_utils import filter_low_variance_assets
 
-TRAINED_MODELS = {
-    "ts_trained": None, "bundle": None, "risk_params": None
-}
-
 def reconcile_state(ex, state):
     tprint("Reconciling state...")
     return True
@@ -42,7 +38,7 @@ def train_daily(ts_sig, margin_symbols, cfg, store, ex):
         if not df.empty: dfs[s] = df[df.index <= ts_sig].tail(24*90)
     if not dfs:
         tprint("Training failed: No data.")
-        return
+        return None
     with Timer("Training Pipeline"):
         panel = to_panel(dfs)
         mkt_df = compute_market_features(panel, cfg["market_basket"])
@@ -52,12 +48,17 @@ def train_daily(ts_sig, margin_symbols, cfg, store, ex):
         trained_bundle = select_best_horizon(panel, feats, mkt_gates, cfg, train_syms, ts_sig, p_exh_hist)
         alpha_models = trained_bundle["alpha_models"]
         best_risk = optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts_sig, p_exh_hist, alpha_models)
-        TRAINED_MODELS["ts_trained"] = ts_sig
-        TRAINED_MODELS["bundle"] = trained_bundle
-        TRAINED_MODELS["risk_params"] = best_risk
-    tprint("DAILY TRAINING COMPLETE")
 
-def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger):
+        # Return state dict
+        new_state = {
+            "ts_trained": ts_sig,
+            "bundle": trained_bundle,
+            "risk_params": best_risk
+        }
+    tprint("DAILY TRAINING COMPLETE")
+    return new_state
+
+def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger, model_state):
     run_id = str(uuid.uuid4())
     tprint(f"HOURLY EXEC Start: {ts_sig} RunID={run_id}")
     candidates_pool = select_live_candidates(margin_symbols, cfg["market_basket"], pct=0.05)
@@ -84,12 +85,15 @@ def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger):
         mkt_gates = add_regime_gates(mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
         feats = compute_features_hourly(panel, mkt_gates, cfg)
 
-    bundle = TRAINED_MODELS["bundle"]
-    if not bundle: return
+    if not model_state or not model_state.get("bundle"):
+        tprint("No trained models available. Skipping execution.")
+        return
+
+    bundle = model_state["bundle"]
     alpha_models = bundle["alpha_models"]
     meta_models = bundle["meta_models"]
 
-    risk_conf = TRAINED_MODELS["risk_params"] # granular_risk dict inside
+    risk_conf = model_state.get("risk_params")
     granular_risk = risk_conf.get("granular_risk", {}) if risk_conf else {}
 
     o = panel["open"]; h = panel["high"]; l = panel["low"]; c = panel["close"]
@@ -232,29 +236,58 @@ def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger):
     tprint("HOURLY EXEC COMPLETE")
 
 def run_live_cycle():
+    # Maintain state in function scope (for live loop)
+    # But usually this script restarts?
+    # For robust persistent state, we need to save/load from disk (pickle).
+    # But for this refactor, we just keep it in memory for the process life.
+
+    # Initialize state
+    model_state = {
+        "ts_trained": None,
+        "bundle": None,
+        "risk_params": None
+    }
+
     cfg = CFG.copy()
     state = StateManager()
     logger = MetricsLogger()
-    ts_sig = get_ts_sig()
-    last_ts = state.get_last_ts_sig()
-    tprint(f"Current ts_sig: {ts_sig}")
-    if last_ts and ts_sig <= last_ts: tprint(f"Already processed {ts_sig}. Waiting..."); return
-    ex = make_spot_exchange()
-    reconcile_state(ex, state)
-    with Timer("Margin universe refresh"): mu = refresh_margin_universe_daily(None, quote="USDT")
-    store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
-    last_train = TRAINED_MODELS["ts_trained"]
-    need_train = False
-    if last_train is None: need_train = True
-    else:
-        if ts_sig.floor("D") > last_train.floor("D"): need_train = True
-    if need_train: train_daily(ts_sig, mu.symbols, cfg, store, ex)
-    execute_hourly(ts_sig, mu.symbols, cfg, store, ex, state, logger)
 
-if __name__ == "__main__":
+    # Start loop
     while True:
-        try: run_live_cycle()
+        try:
+            ts_sig = get_ts_sig()
+            last_ts = state.get_last_ts_sig()
+            tprint(f"Current ts_sig: {ts_sig}")
+
+            if last_ts and ts_sig <= last_ts:
+                tprint(f"Already processed {ts_sig}. Waiting...")
+                time.sleep(60)
+                continue
+
+            ex = make_spot_exchange()
+            reconcile_state(ex, state)
+            with Timer("Margin universe refresh"): mu = refresh_margin_universe_daily(None, quote="USDT")
+            store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+
+            last_train = model_state["ts_trained"]
+            need_train = False
+            if last_train is None: need_train = True
+            else:
+                if ts_sig.floor("D") > last_train.floor("D"): need_train = True
+
+            if need_train:
+                new_state = train_daily(ts_sig, mu.symbols, cfg, store, ex)
+                if new_state:
+                    model_state = new_state
+
+            execute_hourly(ts_sig, mu.symbols, cfg, store, ex, state, logger, model_state)
+
         except Exception as e:
             tprint(f"CRITICAL ERROR: {e}")
             import traceback; traceback.print_exc()
-        tprint("Sleeping 60s..."); time.sleep(60)
+
+        tprint("Sleeping 60s...")
+        time.sleep(60)
+
+if __name__ == "__main__":
+    run_live_cycle()

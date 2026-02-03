@@ -2,6 +2,7 @@ import time
 import sys
 import pandas as pd
 import numpy as np
+import uuid
 
 from extreme_price_movements.config import CFG
 from extreme_price_movements.utils import tprint, Timer
@@ -16,14 +17,22 @@ from extreme_price_movements.training import select_best_horizon, compute_p_exha
 from extreme_price_movements.risk import TrailingStop
 from extreme_price_movements.models import map_pred_to_score
 
+def reconcile_state(ex, state):
+    # Stub: Check open orders vs state["pending_orders"]
+    # Check open positions on exchange vs state["positions"]
+    # Log discrepancies
+    tprint("Reconciling state...")
+    return True
+
 def run_live_cycle():
+    run_id = str(uuid.uuid4())
     cfg = CFG
     state = StateManager()
     logger = MetricsLogger()
 
-    tprint("BOOT: Extreme Price Movements (Live/Paper)")
+    tprint(f"BOOT: Extreme Price Movements (Live/Paper) RunID={run_id}")
 
-    # 1. Time Check
+    # 1. Time Check & Idempotency
     ts_sig = get_ts_sig()
     last_ts = state.get_last_ts_sig()
 
@@ -34,6 +43,9 @@ def run_live_cycle():
 
     # 2. Data Fetch
     ex = make_spot_exchange()
+
+    reconcile_state(ex, state)
+
     with Timer("Margin universe refresh"):
         mu = refresh_margin_universe_daily(None, quote="USDT")
     margin_symbols = mu.symbols
@@ -88,10 +100,7 @@ def run_live_cycle():
     # 4. Model Training (Daily)
     tprint("Model Selection / Training...")
 
-    # Generate Exhaustion History for training weighting
-    # This is expensive but necessary for correct weighting
     p_exh_hist = generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_sig, cfg["train_lookback_hours"], syms)
-
     p_exh_now = compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts_sig, syms)
 
     best_mr = select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts_sig, p_exh_hist, model_kind="mr")
@@ -147,7 +156,6 @@ def run_live_cycle():
     # 6. Candidate Selection & Entry
     top, bot = select_trade_candidates_hourly(feats, ts_sig, syms, cfg["trade_extreme_pct"], cfg["trade_extreme_min"], cfg["trade_extreme_max"], cfg["trade_deviation_metric"])
     candidates = list(set(top) | set(bot))
-
     candidates = [s for s in candidates if s not in state.get_positions()]
 
     if candidates:
@@ -155,10 +163,6 @@ def run_live_cycle():
             tprint("Missing gates")
             return
         mrk = mkt_gates.loc[ts_sig]
-
-        # We need Lag 1 of p_exh.
-        # p_exh_hist contains history up to ts_sig.
-        # Lag 1 is at ts_sig - 1h.
         ts_lag = ts_sig - pd.Timedelta(hours=1)
 
         rows = []
@@ -192,7 +196,18 @@ def run_live_cycle():
             pred_mr = model_mr.predict(Xpred)
             pred_tf, disp_tf = model_tf.predict(Xpred)
 
-            score_raw = pred_tf - pred_mr
+            score_regime = pred_tf - pred_mr
+
+            trend_df = feats.get("trend_pct")
+            score_raw_list = []
+            for i, sym in enumerate(Xint["symbol"]):
+                trend_val = 0.0
+                if trend_df is not None and sym in trend_df.columns:
+                    trend_val = float(trend_df.loc[ts_sig, sym])
+                trend_dir = np.sign(trend_val) if trend_val != 0 else 1.0
+                score_raw_list.append(score_regime[i] * trend_dir)
+
+            score_raw = np.array(score_raw_list)
 
             res = pd.DataFrame({"symbol": Xint["symbol"], "score": score_raw})
 
@@ -220,18 +235,20 @@ def run_live_cycle():
                     "entry_px": entry_px,
                     "entry_ts": ts_sig.isoformat(),
                     "score": float(score),
-                    "risk_state": ts_risk.to_dict()
+                    "risk_state": ts_risk.to_dict(),
+                    "run_id": run_id
                 }
                 state.set_position(sym, pos)
                 tprint(f"ENTRY {side} {sym} @ {entry_px} (score={score:.4f})")
-                logger.log(ts_sig, {"event": "entry", "symbol": sym, "side": side, "score": score})
+                logger.log(ts_sig, {"event": "entry", "symbol": sym, "side": side, "score": score, "run_id": run_id})
 
     state.set_last_ts_sig(ts_sig)
 
     metrics = {
         "n_candidates": len(candidates),
         "data_health_issues": data_health_issues,
-        "n_positions": len(state.get_positions())
+        "n_positions": len(state.get_positions()),
+        "run_id": run_id
     }
     logger.log(ts_sig, metrics)
     tprint("Cycle Complete.")

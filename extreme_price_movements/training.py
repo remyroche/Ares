@@ -127,26 +127,7 @@ def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms):
     return out.reindex(syms).fillna(0.0)
 
 def generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, syms):
-    """
-    Generates historical exhaustion probabilities for a window ending at ts_end.
-    Since models need retraining (rolling window), we approximate by training once
-    on an older window and predicting forward, or stepping?
-    Stepping is slow.
-    Approximation: Train on [ts_end - lookback*2, ts_end - lookback] ?
-    Or just train on [ts_end - lookback, ts_end] (leakage if predicting past?)
-
-    For proper causality of input feature (p_exh_lag1) for MR model training:
-    We need p_exh at time t, generated using info < t.
-
-    We can train ONE model using data up to ts_end - lookback_hours,
-    and predict for [ts_end - lookback_hours, ts_end].
-    This simulates an "expanding window" or "static model" for that period.
-    It's a reasonable approximation for weighting features.
-    """
-
     train_end = ts_end - pd.Timedelta(hours=lookback_hours)
-    # Train model up to train_end
-    # Using a separate lookback for training data
     train_len = cfg["exh_train_lookback_hours"]
 
     X, y, cols = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, train_end, train_len, syms)
@@ -157,18 +138,14 @@ def generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_end, lookback_h
     model = ExhaustionModel(C=cfg["exh_C"], l1_ratio=cfg["exh_l1_ratio"])
     model.fit(X, y)
 
-    # Predict for the window [train_end, ts_end]
-    # We construct X for all timestamps in this window
     t_idx = pd.date_range(train_end, ts_end, freq='h', tz="UTC")
     t_idx = t_idx[t_idx.isin(panel["close"].index)]
 
-    # Bulk prediction
     valid_syms = [s for s in syms if s in panel["close"].columns]
 
     X_parts = []
     for k in cfg["exh_feature_keys"]:
         if k in feats:
-            # slice time
             X_parts.append(feats[k].loc[t_idx, valid_syms].stack(dropna=False).rename(k))
 
     Xp = pd.concat(X_parts, axis=1)
@@ -208,6 +185,7 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
         return None, None, None, None
 
     metric_df = feats[metric].loc[t_idx, [s for s in syms if s in feats[metric].columns]]
+    trend_df = feats.get("trend_pct", pd.DataFrame()) # Need trend_pct for labeling
 
     rows = []
     for t in t_idx:
@@ -230,12 +208,31 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
 
         px_entry = panel["open"].loc[t_entry, candidates]
         px_exit = c.loc[t_exit, candidates]
-        y = (px_exit / (px_entry + 1e-12) - 1.0)
+        y_raw = (px_exit / (px_entry + 1e-12) - 1.0)
 
         for sym in candidates:
-            if pd.isna(y.get(sym)): continue
+            if pd.isna(y_raw.get(sym)): continue
 
-            rec = {"symbol": sym, "ts": t, "y": y[sym]}
+            # --- SEPARATE ALPHA TARGETS ---
+            # Calculate Trend Direction
+            trend_val = 0.0
+            if sym in trend_df.columns:
+                trend_val = trend_df.loc[t, sym]
+            trend_dir = np.sign(trend_val) if trend_val != 0 else 1.0
+
+            # Label transformation
+            if model_kind == "mr":
+                # Predict Reversion Strength (Return opposing trend)
+                # y_mr = raw_return * -sign(trend)
+                # If Trend Up (+1), price Drops (-2%), y_mr = -0.02 * -1 = +0.02 (Strong Reversion)
+                y_target = y_raw[sym] * -trend_dir
+            else:
+                # Predict Continuation Strength (Return aligned with trend)
+                # y_tf = raw_return * sign(trend)
+                # If Trend Up (+1), price Rises (+2%), y_tf = +0.02 * 1 = +0.02 (Strong Continuation)
+                y_target = y_raw[sym] * trend_dir
+
+            rec = {"symbol": sym, "ts": t, "y": y_target}
 
             t_lag = t - pd.Timedelta(hours=1)
             p_val = 0.0
@@ -263,13 +260,11 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
 
     df = pd.DataFrame(rows).dropna()
 
-    # Compute Weights BEFORE dropping raw columns
     if model_kind == "mr":
         weights = compute_mr_weights(df, cfg)
     else:
         weights = compute_tf_weights(df, cfg)
 
-    # Apply interactions and drop raw
     df = apply_interaction_toggles(df, cfg["causal_cols"], ["G_VOL", "G_TREND"], drop_raw=cfg["drop_raw_causal"])
 
     y_out = df.pop("y").values.astype(np.float32)
@@ -283,47 +278,17 @@ def select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, mode
     best_res = None
 
     for H in horizons:
+        tprint(f"Training {model_kind} H={H}")
         X, y, cols, w = build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, H, model_kind)
 
         if X is None or len(y) < cfg["min_train_samples"]:
             continue
 
-        # Purged Validation
-        # H is the gap we need to purge.
-        # We split by time index? But X is a cross-section merged.
-        # We assume X is sorted by time (it is constructed that way).
-        # We find the index where timestamp crosses the split point.
-        # Since we dropped ts from X, we approximate by row count.
-        # Rows are roughly uniform per hour.
-
         n = len(X)
         split_idx = int(n * 0.8)
 
-        # Purge gap:
-        # We need to drop samples in [split_idx, split_idx + gap_rows] ?
-        # Actually, samples in X_train end at T_split. Their labels rely on [T_split, T_split+H].
-        # Samples in X_val start at T_val. Their input relies on [T_val-Lookback, T_val].
-        # For simple OOF correctness (leakage of label to input):
-        # Y_train uses future. X_val uses past.
-        # If Y_train(t) overlaps with X_val(t'), we have problem?
-        # Only if t + H > t'.
-        # So we need t' > t + H.
-        # So X_val should start at Time(X_train_last) + H.
-
-        # Since we don't have timestamps in X/y anymore, we assume they are ordered.
-        # We need to discard `H` hours worth of samples between train and val.
-        # Approximate `rows_per_hour`?
-        # It varies.
-        # Safer: We can't do exact purging without TS.
-        # BUT, build_hourly_training_set_and_weights could return indices or TS.
-        # For now, I'll use a safe buffer of 5% of data? or just skip 1000 rows.
-        # Config has `trade_extreme_pct` (5%) * `fetch_symbols` (350) ~= 17 rows/hour.
-        # H=24. 24 * 17 = 400 rows.
-        # I'll purge 500 rows.
-
         purge_rows = 500
         if split_idx + purge_rows >= n:
-            # Not enough data for validation
             continue
 
         X_train = X.iloc[:split_idx]
@@ -344,6 +309,7 @@ def select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, mode
             preds, disp = model.predict(X_val)
             loss = np.mean((y_val - preds)**2)
 
+        tprint(f"  H={H} Loss={loss:.6f}")
         if loss < best_loss:
             best_loss = loss
             if model_kind == "mr":
@@ -359,8 +325,5 @@ def select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, mode
                 "feat_cols": cols,
                 "loss": loss
             }
-
-    if best_res is None:
-        return None
 
     return best_res

@@ -12,13 +12,13 @@ class StateManager:
 
     def _load(self) -> Dict[str, Any]:
         if not os.path.exists(self.filepath):
-            return {"last_ts_sig": None, "positions": {}}
+            return {"last_ts_sig": None, "positions": {}, "run_id": None, "pending_orders": []}
         try:
             with open(self.filepath, "r") as f:
                 data = json.load(f)
             return data
         except json.JSONDecodeError:
-            return {"last_ts_sig": None, "positions": {}}
+            return {"last_ts_sig": None, "positions": {}, "run_id": None, "pending_orders": []}
 
     def save(self):
         # Atomic write
@@ -54,4 +54,15 @@ class StateManager:
         if "positions" not in self.state:
             self.state["positions"] = {}
         self.state["positions"][symbol] = data
+        self.save()
+
+    def set_run_id(self, run_id: str):
+        self.state["run_id"] = run_id
+        self.save()
+
+    def get_pending_orders(self):
+        return self.state.get("pending_orders", [])
+
+    def set_pending_orders(self, orders: list):
+        self.state["pending_orders"] = orders
         self.save()

@@ -8,7 +8,6 @@ from extreme_price_movements.training import (
     compute_p_exhaustion_at_t,
     select_best_horizon,
     apply_interaction_toggles,
-    # select_best_horizon likely needs to be updated to return MRModel/TFModel
 )
 
 def entry_price_next_hour_open(panel_open, ts_entry, symbol):
@@ -19,21 +18,15 @@ def entry_price_next_hour_open(panel_open, ts_entry, symbol):
         return np.nan
 
 def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side, cfg, max_hold_hours):
-    """
-    Simulates trade using TrailingStop (vol-adjusted).
-    """
     if np.isnan(entry_px) or entry_px <= 0:
         return 0.0, ts_entry, "no_entry"
 
-    # Get ATR at entry time (ts_sig = ts_entry - 1h)
     ts_sig = ts_entry - pd.Timedelta(hours=1)
     if ts_sig not in feats_s.index:
-        # Fallback if missing data?
-        atr = 0.02 # default 2%
+        atr = 0.02
     else:
-        atr = float(feats_s.loc[ts_sig]) # feats_s is atr_pct series
+        atr = float(feats_s.loc[ts_sig])
 
-    # Trailing Stop Manager
     ts_manager = TrailingStop(
         entry_px=entry_px,
         side=side,
@@ -55,6 +48,8 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
 
         stopped, exit_px, reason = ts_manager.update(hh, ll, cc)
         if stopped:
+            if reason == "ambiguous_neutral":
+                return 0.0, ts, reason
             if side == "long":
                 return (exit_px / entry_px) - 1.0, ts, reason
             else:
@@ -91,15 +86,12 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
     fee_rt = cfg["fee_bps"] / 1e4
     borrow_hourly = (cfg["borrow_apr"] / 365.0) / 24.0
 
-    # exhaustion history
     p_exh_hist = pd.DataFrame(index=idx, columns=symbols_all, dtype=np.float32)
 
-    # fitted state (retrained daily)
     best_mr = None
     best_tf = None
     last_train_day = None
 
-    # warmup start
     warm = max(cfg["train_lookback_hours"], cfg["exh_train_lookback_hours"]) + max(cfg["label_horizons_hours"]) + 48
     start_ts = idx.min() + pd.Timedelta(hours=warm)
     start_ts = idx[idx.get_indexer([start_ts], method="backfill")[0]]
@@ -111,15 +103,13 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
         if ts_entry not in idx:
             break
 
-        # (A) exhaustion sensor first (p_exh_out)
         p_exh_ts = compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, symbols_all)
         p_exh_hist.loc[ts, symbols_all] = p_exh_ts.values.astype(np.float32)
 
-        # (B) daily retrain + horizon select (1)
         ts_day = ts.floor("D")
         if last_train_day is None or ts_day != last_train_day:
             tprint(f"TRAIN day-roll: {ts_day}")
-            # Ensure training.py returns new model instances
+            # Pass full p_exh_hist
             best_mr = select_best_horizon(panel, feats, mkt_gates, cfg, symbols_all, ts, p_exh_hist, model_kind="mr")
             best_tf = select_best_horizon(panel, feats, mkt_gates, cfg, symbols_all, ts, p_exh_hist, model_kind="tf")
             last_train_day = ts_day
@@ -131,11 +121,6 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
         model_mr = best_mr["model"]; feat_cols = best_mr["feat_cols"]
         model_tf = best_tf["model"]
 
-        # RuleCleaner/Stability were internal to MRModel/TFModel now, hopefully?
-        # If select_best_horizon returns our new classes, they have internal logic.
-        # But we need to make sure we construct X properly.
-
-        # (C) hourly candidate selection
         top_syms, bot_syms = select_trade_candidates_hourly(
             feats=feats, ts=ts, syms=symbols_all,
             pct=cfg["trade_extreme_pct"], min_n=cfg["trade_extreme_min"], max_n=cfg["trade_extreme_max"],
@@ -151,7 +136,6 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
             continue
         mrk = mkt_gates.loc[ts]
 
-        # build prediction frame
         t_exh_lag = ts - pd.Timedelta(hours=1)
         p_lag = (p_exh_hist.loc[t_exh_lag, trade_syms] if t_exh_lag in p_exh_hist.index else pd.Series(index=trade_syms, data=np.nan)).astype(np.float32)
         p_out = p_exh_ts.reindex(trade_syms).astype(np.float32)
@@ -161,10 +145,7 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
             try:
                 rows.append({
                     "symbol": sym,
-                    # Base features need to match what models expect
-                    # Assuming feat_cols are consistent
                     **{k: float(feats[k].loc[ts, sym]) for k in feat_cols if k in feats},
-                    # Add market/gates/exh
                     "mkt_ret24h": float(mrk["mkt_ret24h"]),
                     "mkt_ret6h": float(mrk["mkt_ret6h"]),
                     "mkt_trend": float(mrk["mkt_trend"]),
@@ -181,13 +162,11 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
              eq_curve.append((ts, equity))
              continue
 
-        Xdf = pd.DataFrame(rows).dropna(subset=["p_exh_lag1"]) # p_exh_out not needed for prediction, only for weighting?
-        # Actually p_exh_out is current hour prediction.
+        Xdf = pd.DataFrame(rows).dropna(subset=["p_exh_lag1"])
         if Xdf.empty:
             eq_curve.append((ts, equity))
             continue
 
-        # interactionize
         Xint = apply_interaction_toggles(
             Xdf,
             causal_cols=cfg["causal_cols"],
@@ -195,37 +174,37 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
             drop_raw=cfg["drop_raw_causal"]
         )
 
-        # align columns
         for col in feat_cols:
             if col not in Xint.columns:
-                Xint[col] = 0.0 # or nan
+                Xint[col] = 0.0
 
-        # New Model Prediction
-        # Assuming model_mr is MRModel instance
         Xpred = Xint[feat_cols].fillna(0.0).astype(np.float32)
 
         pred_mr = model_mr.predict(Xpred)
         pred_tf, disp_tf = model_tf.predict(Xpred)
 
-        # SCORE = TF - MR
-        # TF is continuation (same sign as trend?), MR is reversion (opposite sign?)
-        # Wait, targets are returns.
-        # If trend is UP:
-        # TF predicts +ve return (Continuation).
-        # MR predicts -ve return (Reversion).
-        # Score = +ve - (-ve) = Large +ve (Long).
-        # If trend is DOWN:
-        # TF predicts -ve return.
-        # MR predicts +ve return.
-        # Score = -ve - (+ve) = Large -ve (Short).
-        # This logic holds.
+        # --- NEW SCORE LOGIC ---
+        # Score_Regime = TF (Continuation) - MR (Reversion)
+        # Positive = Net Continuation. Negative = Net Reversion.
+        score_regime = pred_tf - pred_mr
 
-        score_raw = pred_tf - pred_mr
+        # Calculate Trend Direction at TS
+        trend_df = feats.get("trend_pct")
 
-        # Long/Short selection based on thresholds
-        # score_map is likely tanh.
-        # But here we threshold on raw diff?
-        # User: "Backtest the thresholds above/below which we should open short/long"
+        score_raw = []
+        for i, sym in enumerate(Xint["symbol"]):
+            trend_val = 0.0
+            if trend_df is not None and sym in trend_df.columns:
+                trend_val = float(trend_df.loc[ts, sym])
+            trend_dir = np.sign(trend_val) if trend_val != 0 else 1.0
+
+            # Score Raw (Directional) = Regime * Trend
+            # If Regime > 0 (Cont) and Trend > 0 (Up) -> Score > 0 (Long)
+            # If Regime < 0 (Rev) and Trend > 0 (Up) -> Score < 0 (Short)
+            s_raw = score_regime[i] * trend_dir
+            score_raw.append(s_raw)
+
+        score_raw = np.array(score_raw)
 
         syms_pred = Xint["symbol"].tolist()
         res = pd.DataFrame({
@@ -241,10 +220,6 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
 
         picks = []
         for _, row in longs.iterrows():
-            # Normalized score for sizing
-            # user: "score = TF - MR (both of which are normalised)"
-            # They are likely small returns (e.g. 0.01).
-            # map_pred_to_score scales them up.
             s = map_pred_to_score(row["score"], cfg["score_map"], cfg["score_scale"])
             picks.append((row["symbol"], "long", s, row["score"]))
 
@@ -268,7 +243,7 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
 
             rr, exit_ts, why = simulate_trade_hourly(
                 o_s=o[sym], h_s=h[sym], l_s=l[sym], c_s=c[sym],
-                feats_s=feats["atr_pct"].loc[:, sym], # pass atr series
+                feats_s=feats["atr_pct"].loc[:, sym],
                 entry_ts=ts_entry,
                 entry_px=entry_px,
                 side=side,

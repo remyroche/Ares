@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import ccxt
 import glob
+import shutil
 from datetime import timezone
 
 from extreme_price_movements.utils import tprint
@@ -96,21 +97,19 @@ class PartitionedOHLCVStore:
                 pd.DatetimeIndex([], tz="UTC", name="ts")
             )
 
-        # Read parquet dataset
         try:
+            # Reads all partitions and merges
             df = pd.read_parquet(sym_dir)
             if "ts" in df.columns:
                 df["ts"] = pd.to_datetime(df["ts"], utc=True)
                 df = df.set_index("ts")
             elif df.index.name == "ts":
-                pass # already index
+                pass
 
             df = df.sort_index()
-            # deduplicate
             df = df[~df.index.duplicated(keep="last")]
             return self._downcast(df)
         except Exception:
-            # Empty dir or read error
             return pd.DataFrame(columns=["open","high","low","close","volume"]).set_index(
                 pd.DatetimeIndex([], tz="UTC", name="ts")
             )
@@ -119,6 +118,7 @@ class PartitionedOHLCVStore:
         """
         Saves df by partitioning by year/month.
         Appends by writing unique filenames based on timestamp range.
+        Checks for partition fragmentation and compacts if needed.
         """
         if df.empty:
             return
@@ -126,77 +126,79 @@ class PartitionedOHLCVStore:
         df = self._downcast(df)
         df_reset = df.reset_index().rename(columns={"index": "ts"})
         if "ts" not in df_reset.columns:
-             # handle case where index was not named
              df_reset = df.reset_index()
              if df_reset.columns[0] != "ts":
                   df_reset.rename(columns={df_reset.columns[0]: "ts"}, inplace=True)
+
+        # Enforce UTC and Schema
+        df_reset["ts"] = pd.to_datetime(df_reset["ts"], utc=True)
+        for c in ["open","high","low","close","volume"]:
+            if c in df_reset.columns:
+                df_reset[c] = df_reset[c].astype(np.float32)
 
         df_reset["year"] = df_reset["ts"].dt.year
         df_reset["month"] = df_reset["ts"].dt.month
 
         sym_dir = self._get_symbol_dir(symbol)
-        os.makedirs(sym_dir, exist_ok=True)
 
-        # We use partition_cols for pyarrow dataset structure
-        # but to ensure we don't overwrite if we are appending small chunks,
-        # we might rely on unique filenames.
-        # However, pandas.to_parquet with partition_cols writes files like part.0.parquet
-        # inside the folders. If we call it again, it might overwrite or create part.1.parquet?
-        # Actually standard to_parquet(..., partition_cols=...) usually writes a hive dataset.
-        # Appending to a hive dataset is tricky with plain pandas.
-        # Recommendation from user: "write partitioned dataset... then 'append' means 'write new partitions'"
-        # But if we have new data for an existing month, we need to handle it.
-        # For simplicity and robustness, and since we update incrementally:
-        # We can just write the new data as a new file in the partition if we name it uniquely.
-        # OR, since the user said "append chunks instead of rewriting",
-        # let's assume we are appending strictly new time ranges.
-
-        # Strategy: write to dataset using pyarrow with existing_data_behavior='overwrite_or_ignore'
-        # is not directly supported in pandas `to_parquet`.
-        # User suggested: "row-group appended" or "partitioned by year/month".
-
-        # Let's try writing with a unique filename based on min_max ts to avoid collisions.
-        # But `to_parquet` with `partition_cols` creates directory structure automatically
-        # and manages filenames (usually UUIDs or hashes if not specified).
-
-        # To avoid complexity, we will rely on pandas `to_parquet` appending capability if available (not really),
-        # OR we write to a temporary dataset and then move files? No.
-
-        # Simple approach for "Append":
-        # Since we fetch *new* data (incremental), it likely falls into new hours/days.
-        # If it falls into an existing partition (year/month), we want to add to it.
-        # If we just write to `sym_dir` with `partition_cols=['year', 'month']`,
-        # pandas/pyarrow usually generates unique filenames if we don't specify one?
-        # Actually it might clear the directory? No, `to_parquet` on a directory...
-        # Pandas `to_parquet` with `partition_cols` works best when writing the whole dataset.
-
-        # Alternative: We load existing, concat, and rewrite?
-        # User said "ensure that we append the chunks instead of rewriting".
-        # This implies we should NOT load everything and rewrite.
-
-        # So we should write ONLY the new data.
-        # df_reset contains only the FRESH data (if we passed fresh data).
-        # We generate a unique filename for this batch.
-
-        # We can manually partition.
         for (year, month), group in df_reset.groupby(["year", "month"]):
             part_dir = os.path.join(sym_dir, f"year={year}", f"month={month:02d}")
             os.makedirs(part_dir, exist_ok=True)
 
-            # unique filename using timestamp range
-            ts_min = group["ts"].min().value // 10**9
-            ts_max = group["ts"].max().value // 10**9
+            # unique filename
+            ts_min = int(group["ts"].min().value // 10**9)
+            ts_max = int(group["ts"].max().value // 10**9)
             fname = f"part-{ts_min}-{ts_max}.parquet"
             fpath = os.path.join(part_dir, fname)
 
-            # Drop partition cols before writing
             write_df = group.drop(columns=["year", "month"])
             write_df.to_parquet(fpath, index=False)
 
+            # Compaction Check
+            files = [f for f in os.listdir(part_dir) if f.endswith(".parquet")]
+            if len(files) > 10:
+                tprint(f"Compacting {symbol} {year}-{month} ({len(files)} files)...")
+                self.compact_partition(symbol, year, month)
+
+    def compact_partition(self, symbol: str, year: int, month: int):
+        sym_dir = self._get_symbol_dir(symbol)
+        part_dir = os.path.join(sym_dir, f"year={year}", f"month={month:02d}")
+
+        if not os.path.exists(part_dir):
+            return
+
+        files = glob.glob(os.path.join(part_dir, "*.parquet"))
+        if not files:
+            return
+
+        try:
+            dfs = []
+            for f in files:
+                dfs.append(pd.read_parquet(f))
+
+            merged = pd.concat(dfs)
+            # Schema enforcement
+            if "ts" in merged.columns:
+                merged["ts"] = pd.to_datetime(merged["ts"], utc=True)
+                merged = merged.sort_values("ts").drop_duplicates("ts", keep="last")
+
+            # Write single file
+            ts_min = int(merged["ts"].min().value // 10**9)
+            ts_max = int(merged["ts"].max().value // 10**9)
+            new_fname = f"compact-{ts_min}-{ts_max}.parquet"
+            new_fpath = os.path.join(part_dir, new_fname)
+
+            merged.to_parquet(new_fpath, index=False)
+
+            # Delete old files
+            for f in files:
+                if f != new_fpath:
+                    os.remove(f)
+
+        except Exception as e:
+            tprint(f"Error compacting {symbol} {year}-{month}: {e}")
+
     def update_symbol(self, exchange, symbol: str, since_ms: int) -> pd.DataFrame:
-        # Load existing to find last TS (we still need to know where to start)
-        # But we only need the last timestamp, which we can get efficiently?
-        # For now, let's load everything (memory might be an issue if HUGE, but for 1h candles 4 years it's fine ~35k rows)
         existing = self.load(symbol)
 
         if existing.empty:
@@ -214,10 +216,8 @@ class PartitionedOHLCVStore:
 
         if fresh is not None and not fresh.empty:
             fresh = self._downcast(fresh)
-            # Save ONLY the fresh data
             self.save_partitioned(symbol, fresh)
 
-            # Return merged view
             merged = pd.concat([existing, fresh]).sort_index()
             merged = merged[~merged.index.duplicated(keep="last")]
             return merged
@@ -231,11 +231,10 @@ def check_data_health(df: pd.DataFrame, timeframe="1h") -> dict:
     start = df.index.min()
     end = df.index.max()
 
-    # Expected frequency
     if timeframe == "1h":
         freq = "h"
     else:
-        freq = timeframe # simplified
+        freq = timeframe
 
     full_idx = pd.date_range(start, end, freq=freq, tz="UTC")
     expected_rows = len(full_idx)
@@ -244,12 +243,6 @@ def check_data_health(df: pd.DataFrame, timeframe="1h") -> dict:
     missing = full_idx.difference(df.index)
     missing_count = len(missing)
     completeness = actual_rows / expected_rows if expected_rows > 0 else 0.0
-
-    gaps = []
-    if missing_count > 0:
-        # grouping consecutive missing timestamps
-        # naive approach: just list first and last
-        pass
 
     return {
         "status": "ok" if missing_count == 0 else "gaps",
@@ -270,10 +263,4 @@ def to_panel(dfs_by_symbol: dict[str, pd.DataFrame]):
         panel[k] = pd.concat([df[k].rename(sym) for sym, df in dfs_by_symbol.items()], axis=1).sort_index()
     return panel
 
-def downcast_panel_float32(panel: dict[str, pd.DataFrame]):
-    for k in panel:
-        panel[k] = panel[k].astype(np.float32)
-    return panel
-
-# Alias for compatibility if needed, but we should use PartitionedOHLCVStore
 OHLCVStore = PartitionedOHLCVStore

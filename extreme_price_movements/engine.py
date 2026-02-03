@@ -88,8 +88,8 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
 
     p_exh_hist = pd.DataFrame(index=idx, columns=symbols_all, dtype=np.float32)
 
-    best_mr = None
-    best_tf = None
+    alpha_models = None
+    meta_models = None
     last_train_day = None
 
     warm = max(cfg["train_lookback_hours"], cfg["exh_train_lookback_hours"]) + max(cfg["label_horizons_hours"]) + 48
@@ -109,18 +109,16 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
         ts_day = ts.floor("D")
         if last_train_day is None or ts_day != last_train_day:
             tprint(f"TRAIN day-roll: {ts_day}")
-            # Pass full p_exh_hist
-            best_mr = select_best_horizon(panel, feats, mkt_gates, cfg, symbols_all, ts, p_exh_hist, model_kind="mr")
-            best_tf = select_best_horizon(panel, feats, mkt_gates, cfg, symbols_all, ts, p_exh_hist, model_kind="tf")
+            bundle = select_best_horizon(panel, feats, mkt_gates, cfg, symbols_all, ts, p_exh_hist)
+            alpha_models = bundle["alpha_models"]
+            meta_models = bundle["meta_models"]
             last_train_day = ts_day
 
-        if best_mr is None or best_tf is None:
+        if not alpha_models:
             eq_curve.append((ts, equity))
             continue
 
-        model_mr = best_mr["model"]; feat_cols = best_mr["feat_cols"]
-        model_tf = best_tf["model"]
-
+        # Selection
         top_syms, bot_syms = select_trade_candidates_hourly(
             feats=feats, ts=ts, syms=symbols_all,
             pct=cfg["trade_extreme_pct"], min_n=cfg["trade_extreme_min"], max_n=cfg["trade_extreme_max"],
@@ -137,24 +135,66 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
         mrk = mkt_gates.loc[ts]
 
         t_exh_lag = ts - pd.Timedelta(hours=1)
-        p_lag = (p_exh_hist.loc[t_exh_lag, trade_syms] if t_exh_lag in p_exh_hist.index else pd.Series(index=trade_syms, data=np.nan)).astype(np.float32)
-        p_out = p_exh_ts.reindex(trade_syms).astype(np.float32)
 
+        # Build Rows
         rows = []
+        trend_df = feats.get("trend_pct")
+
         for sym in trade_syms:
             try:
-                rows.append({
+                # Trend Dir
+                t_val = 0.0
+                if trend_df is not None and sym in trend_df.columns:
+                    t_val = float(trend_df.loc[ts, sym])
+                direction = "up" if t_val > 0 else "down"
+
+                # Get Models
+                m_bundle = alpha_models.get(direction)
+                if not m_bundle or not m_bundle["mr"] or not m_bundle["tf"]: continue
+
+                model_mr = m_bundle["mr"]["model"]
+                model_tf = m_bundle["tf"]["model"]
+                feat_cols = m_bundle["mr"]["feat_cols"]
+                meta_model = meta_models.get(direction) # Could be None
+
+                p_lag = 0.5
+                if t_exh_lag in p_exh_hist.index and sym in p_exh_hist.columns:
+                    p_lag = float(p_exh_hist.loc[t_exh_lag, sym])
+                p_out = 0.0
+                if sym in p_exh_ts.index: p_out = float(p_exh_ts[sym])
+
+                rec = {
                     "symbol": sym,
-                    **{k: float(feats[k].loc[ts, sym]) for k in feat_cols if k in feats},
+                    "direction": direction,
+                    "model_mr": model_mr,
+                    "model_tf": model_tf,
+                    "meta_model": meta_model,
+                    "feat_cols": feat_cols,
                     "mkt_ret24h": float(mrk["mkt_ret24h"]),
                     "mkt_ret6h": float(mrk["mkt_ret6h"]),
                     "mkt_trend": float(mrk["mkt_trend"]),
                     "mkt_rv": float(mrk["mkt_rv"]),
                     "G_VOL": int(mrk["G_VOL"]),
                     "G_TREND": int(mrk["G_TREND"]),
-                    "p_exh_lag1": float(p_lag.loc[sym]) if pd.notna(p_lag.loc[sym]) else np.nan,
-                    "p_exh_out": float(p_out.loc[sym]) if pd.notna(p_out.loc[sym]) else np.nan,
-                })
+                    "p_exh_lag1": p_lag,
+                    "p_exh_out": p_out
+                }
+
+                # Feats
+                for k in feat_cols:
+                    if k in feats:
+                        rec[k] = float(feats[k].loc[ts, sym])
+
+                # Feats for Meta (Vol etc)
+                # MetaModel needs specific names.
+                # X passed to MetaModel is constructed from features.
+                # We need to ensure we have them in `rec` or lookup.
+                if "a_rv24" in feats: rec["a_rv24"] = float(feats["a_rv24"].loc[ts, sym])
+                if "a_volz" in feats: rec["a_volz"] = float(feats["a_volz"].loc[ts, sym])
+                if "a_rsi" in feats: rec["a_rsi"] = float(feats["a_rsi"].loc[ts, sym])
+                if "dist_ema_fast" in feats: rec["dist_ema_fast"] = float(feats["dist_ema_fast"].loc[ts, sym])
+
+                rows.append(rec)
             except Exception:
                 continue
 
@@ -162,84 +202,81 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
              eq_curve.append((ts, equity))
              continue
 
-        Xdf = pd.DataFrame(rows).dropna(subset=["p_exh_lag1"])
-        if Xdf.empty:
-            eq_curve.append((ts, equity))
-            continue
+        df_all = pd.DataFrame(rows)
+        score_raw_list = []
 
-        Xint = apply_interaction_toggles(
-            Xdf,
-            causal_cols=cfg["causal_cols"],
-            gate_cols=["G_VOL","G_TREND"],
-            drop_raw=cfg["drop_raw_causal"]
-        )
+        # Group by direction
+        for d, grp in df_all.groupby("direction"):
+            first = grp.iloc[0]
+            model_mr = first["model_mr"]
+            model_tf = first["model_tf"]
+            meta_model = first["meta_model"]
+            fcols = first["feat_cols"]
 
-        for col in feat_cols:
-            if col not in Xint.columns:
-                Xint[col] = 0.0
+            Xint = apply_interaction_toggles(grp, cfg["causal_cols"], ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
 
-        Xpred = Xint[feat_cols].fillna(0.0).astype(np.float32)
+            for c in fcols:
+                if c not in Xint.columns: Xint[c] = 0.0
+            Xpred = Xint[fcols].fillna(0.0).astype(np.float32)
 
-        pred_mr = model_mr.predict(Xpred)
-        pred_tf, disp_tf = model_tf.predict(Xpred)
+            p_mr = model_mr.predict(Xpred)
+            p_tf = model_tf.predict(Xpred)
 
-        # --- NEW SCORE LOGIC ---
-        # Score_Regime = TF (Continuation) - MR (Reversion)
-        # Positive = Net Continuation. Negative = Net Reversion.
-        score_regime = pred_tf - pred_mr
+            # Meta Model Scoring
+            if meta_model:
+                X_meta = meta_model.prepare_meta_features(p_tf, p_mr, grp)
+                score = meta_model.predict(X_meta)
+            else:
+                score = p_tf - p_mr
 
-        # Calculate Trend Direction at TS
-        trend_df = feats.get("trend_pct")
+            # Trend direction scaling
+            # Meta Model output is "Position". If it learned correctly, it handles sign.
+            # But let's verify if MetaModel logic assumes directional return.
+            # If we trained Meta on Y = Return, then Output = E[Return].
+            # If Trend Up, Y_TF predicts +ve. Y_MR predicts -ve (reversion).
+            # If Price continues Up, Return > 0.
+            # So Score > 0 -> Long.
+            # If MetaModel is present, we use its output directly.
+            # If not, use (TF - MR) * sign.
 
-        score_raw = []
-        for i, sym in enumerate(Xint["symbol"]):
-            trend_val = 0.0
-            if trend_df is not None and sym in trend_df.columns:
-                trend_val = float(trend_df.loc[ts, sym])
-            trend_dir = np.sign(trend_val) if trend_val != 0 else 1.0
+            if not meta_model:
+                sign = 1.0 if d == "up" else -1.0
+                score = score * sign
 
-            # Score Raw (Directional) = Regime * Trend
-            # If Regime > 0 (Cont) and Trend > 0 (Up) -> Score > 0 (Long)
-            # If Regime < 0 (Rev) and Trend > 0 (Up) -> Score < 0 (Short)
-            s_raw = score_regime[i] * trend_dir
-            score_raw.append(s_raw)
+            for i, idx in enumerate(grp.index):
+                score_raw_list.append((grp.loc[idx, "symbol"], score[i]))
 
-        score_raw = np.array(score_raw)
+        # Sorting
+        score_raw_list.sort(key=lambda x: x[1], reverse=True)
 
-        syms_pred = Xint["symbol"].tolist()
-        res = pd.DataFrame({
-            "symbol": syms_pred,
-            "score": score_raw,
-            "pred_tf": pred_tf,
-            "pred_mr": pred_mr,
-            "disp_tf": disp_tf
-        })
+        longs = [x for x in score_raw_list if x[1] > cfg["thr_long"]]
+        shorts = [x for x in score_raw_list if x[1] < cfg["thr_short"]]
 
-        longs = res[res["score"] > cfg["thr_long"]].sort_values("score", ascending=False).head(cfg["k_long"])
-        shorts = res[res["score"] < cfg["thr_short"]].sort_values("score", ascending=True).head(cfg["k_short"])
+        # Sizing
+        # Share capacity based on relative scores (Req 9)
+        # We pick top K.
+        # Then weight by abs(score) / sum(abs(scores)).
 
-        picks = []
-        for _, row in longs.iterrows():
-            s = map_pred_to_score(row["score"], cfg["score_map"], cfg["score_scale"])
-            picks.append((row["symbol"], "long", s, row["score"]))
+        picks_long = longs[:cfg["k_long"]]
+        picks_short = sorted(shorts, key=lambda x: x[1])[:cfg["k_short"]]
 
-        for _, row in shorts.iterrows():
-            s = map_pred_to_score(-row["score"], cfg["score_map"], cfg["score_scale"])
-            picks.append((row["symbol"], "short", s, row["score"]))
+        final_orders = []
+        for s, sc in picks_long: final_orders.append((s, "long", sc))
+        for s, sc in picks_short: final_orders.append((s, "short", sc))
 
-        total_score = sum(p[2] for p in picks)
-        if total_score <= 0:
+        total_wt = sum(abs(x[2]) for x in final_orders)
+        if total_wt == 0:
             eq_curve.append((ts, equity))
             continue
 
         gross_cap = float(cfg["wallet_gross_cap"])
-        weights = [(sym, side, gross_cap * (score / total_score), raw_score) for sym, side, score, raw_score in picks]
 
         pnl = 0.0
-        for sym, side, w, raw_score in weights:
+        for sym, side, raw_score in final_orders:
+            w = gross_cap * (abs(raw_score) / total_wt)
+
             entry_px = entry_price_next_hour_open(o, ts_entry, sym)
-            if np.isnan(entry_px) or entry_px <= 0:
-                continue
+            if np.isnan(entry_px) or entry_px <= 0: continue
 
             rr, exit_ts, why = simulate_trade_hourly(
                 o_s=o[sym], h_s=h[sym], l_s=l[sym], c_s=c[sym],
@@ -258,16 +295,11 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
             pnl += w * rr
             trades.append({
                 "ts_sig": ts,
-                "entry_ts": ts_entry,
-                "exit_ts": exit_ts,
                 "symbol": sym,
                 "side": side,
                 "weight": w,
                 "score_raw": raw_score,
                 "ret": float(rr),
-                "pnl_contrib": float(w * rr),
-                "exit_reason": why,
-                "disp_tf": float(res.loc[res["symbol"]==sym, "disp_tf"].values[0])
             })
 
         equity *= (1.0 + pnl)

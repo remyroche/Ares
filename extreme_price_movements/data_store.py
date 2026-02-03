@@ -90,7 +90,11 @@ class PartitionedOHLCVStore:
                 out[col] = pd.to_numeric(out[col], errors="coerce").astype(np.float32)
         return out
 
-    def load(self, symbol: str) -> pd.DataFrame:
+    def load(self, symbol: str, columns=None) -> pd.DataFrame:
+        """
+        Load data for symbol.
+        columns: list of columns to read (optimization).
+        """
         sym_dir = self._get_symbol_dir(symbol)
         if not os.path.exists(sym_dir):
             return pd.DataFrame(columns=["open","high","low","close","volume"]).set_index(
@@ -98,8 +102,20 @@ class PartitionedOHLCVStore:
             )
 
         try:
-            # Reads all partitions and merges
-            df = pd.read_parquet(sym_dir)
+            # columns must include index 'ts' if we want to set it?
+            # read_parquet can read specific columns.
+            # But the index might not be in columns if it's saved as index?
+            # When saving, we reset index.
+            # So 'ts' is a column.
+
+            read_cols = None
+            if columns:
+                read_cols = list(columns)
+                if "ts" not in read_cols:
+                    read_cols.append("ts")
+
+            df = pd.read_parquet(sym_dir, columns=read_cols)
+
             if "ts" in df.columns:
                 df["ts"] = pd.to_datetime(df["ts"], utc=True)
                 df = df.set_index("ts")
@@ -115,11 +131,6 @@ class PartitionedOHLCVStore:
             )
 
     def save_partitioned(self, symbol: str, df: pd.DataFrame):
-        """
-        Saves df by partitioning by year/month.
-        Appends by writing unique filenames based on timestamp range.
-        Checks for partition fragmentation and compacts if needed.
-        """
         if df.empty:
             return
 
@@ -130,7 +141,6 @@ class PartitionedOHLCVStore:
              if df_reset.columns[0] != "ts":
                   df_reset.rename(columns={df_reset.columns[0]: "ts"}, inplace=True)
 
-        # Enforce UTC and Schema
         df_reset["ts"] = pd.to_datetime(df_reset["ts"], utc=True)
         for c in ["open","high","low","close","volume"]:
             if c in df_reset.columns:
@@ -145,7 +155,6 @@ class PartitionedOHLCVStore:
             part_dir = os.path.join(sym_dir, f"year={year}", f"month={month:02d}")
             os.makedirs(part_dir, exist_ok=True)
 
-            # unique filename
             ts_min = int(group["ts"].min().value // 10**9)
             ts_max = int(group["ts"].max().value // 10**9)
             fname = f"part-{ts_min}-{ts_max}.parquet"
@@ -154,10 +163,10 @@ class PartitionedOHLCVStore:
             write_df = group.drop(columns=["year", "month"])
             write_df.to_parquet(fpath, index=False)
 
-            # Compaction Check
             files = [f for f in os.listdir(part_dir) if f.endswith(".parquet")]
             if len(files) > 10:
-                tprint(f"Compacting {symbol} {year}-{month} ({len(files)} files)...")
+                # Compaction deferred or async?
+                # For safety, synchronous here but only per partition write.
                 self.compact_partition(symbol, year, month)
 
     def compact_partition(self, symbol: str, year: int, month: int):
@@ -177,12 +186,10 @@ class PartitionedOHLCVStore:
                 dfs.append(pd.read_parquet(f))
 
             merged = pd.concat(dfs)
-            # Schema enforcement
             if "ts" in merged.columns:
                 merged["ts"] = pd.to_datetime(merged["ts"], utc=True)
                 merged = merged.sort_values("ts").drop_duplicates("ts", keep="last")
 
-            # Write single file
             ts_min = int(merged["ts"].min().value // 10**9)
             ts_max = int(merged["ts"].max().value // 10**9)
             new_fname = f"compact-{ts_min}-{ts_max}.parquet"
@@ -190,7 +197,6 @@ class PartitionedOHLCVStore:
 
             merged.to_parquet(new_fpath, index=False)
 
-            # Delete old files
             for f in files:
                 if f != new_fpath:
                     os.remove(f)
@@ -199,17 +205,25 @@ class PartitionedOHLCVStore:
             tprint(f"Error compacting {symbol} {year}-{month}: {e}")
 
     def update_symbol(self, exchange, symbol: str, since_ms: int) -> pd.DataFrame:
-        existing = self.load(symbol)
+        # Load existing (full to check tail)
+        # Optimization: We just need max index.
+        # But we don't have metadata store.
+        # loading 'ts' column only is fast.
+        existing_idx = self.load(symbol, columns=["ts"]).index
 
-        if existing.empty:
+        if existing_idx.empty:
             start_ms = since_ms
         else:
-            last_ts = existing.index.max()
+            last_ts = existing_idx.max()
             start_ms = int(last_ts.value // 10**6) + 1
 
         now_ms = int(pd.Timestamp.utcnow().value // 10**6)
         if start_ms >= now_ms:
-            return existing
+            # Need to return full data for features?
+            # update_symbol implies returning the dataset.
+            # If we just checked index, we haven't loaded data.
+            # We should load full data if caller expects it.
+            return self.load(symbol)
 
         tprint(f"FETCH incr: {symbol} from {pd.to_datetime(start_ms, unit='ms', utc=True)}")
         fresh = fetch_ohlcv_all_7d_chunks(exchange, symbol, start_ms, timeframe=self.timeframe, limit=1000)
@@ -218,11 +232,10 @@ class PartitionedOHLCVStore:
             fresh = self._downcast(fresh)
             self.save_partitioned(symbol, fresh)
 
-            merged = pd.concat([existing, fresh]).sort_index()
-            merged = merged[~merged.index.duplicated(keep="last")]
-            return merged
+            # Reload full to return merged
+            return self.load(symbol)
 
-        return existing
+        return self.load(symbol)
 
 def check_data_health(df: pd.DataFrame, timeframe="1h") -> dict:
     if df.empty:

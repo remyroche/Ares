@@ -48,19 +48,14 @@ def build_fetch_universe(margin_symbols: list[str], market_basket: list[str], M:
     """
     try:
         tickers = fetch_24h_tickers()
-        # Map symbol "BTCUSDT" -> volume
-        # We need to match "BTC/USDT" to "BTCUSDT"
         vol_map = {}
         for t in tickers:
             s = t["symbol"]
-            v = float(t["quoteVolume"]) # Use quote volume (USDT)
+            v = float(t["quoteVolume"])
             vol_map[s] = v
 
-        # Filter margin symbols and sort
         scored = []
         for s in margin_symbols:
-            # s is "BTC/USDT"
-            # api s is "BTCUSDT"
             api_s = s.replace("/", "")
             vol = vol_map.get(api_s, 0.0)
             scored.append((vol, s))
@@ -69,7 +64,6 @@ def build_fetch_universe(margin_symbols: list[str], market_basket: list[str], M:
 
         top_m = [x[1] for x in scored[:M]]
 
-        # Ensure basket is present
         final = sorted(set(top_m).union(set(market_basket)))
         tprint(f"Universe selected: {len(final)} symbols (Top {M} by vol + basket)")
         return final
@@ -77,3 +71,44 @@ def build_fetch_universe(margin_symbols: list[str], market_basket: list[str], M:
     except Exception as e:
         tprint(f"Error fetching tickers for universe selection: {e}. Fallback to alphabet.")
         return sorted(list(set(margin_symbols[:M]).union(set(market_basket))))
+
+def select_live_candidates(margin_symbols: list[str], market_basket: list[str], pct: float = 0.05):
+    """
+    Selects candidates based on 24h price change (Top Gainers/Losers).
+    Returns list of symbols to fetch for 1h analysis.
+    """
+    try:
+        tickers = fetch_24h_tickers()
+        # Map symbol -> priceChangePercent
+        change_map = {}
+        for t in tickers:
+            s = t["symbol"]
+            chg = float(t["priceChangePercent"])
+            change_map[s] = chg
+
+        # Filter for margin symbols
+        valid = []
+        for s in margin_symbols:
+            api_s = s.replace("/", "")
+            if api_s in change_map:
+                valid.append((change_map[api_s], s))
+
+        if not valid:
+            return market_basket
+
+        # Sort by change
+        valid.sort(key=lambda x: x[0]) # Ascending
+
+        n = len(valid)
+        k = max(5, int(n * pct))
+
+        top_losers = [x[1] for x in valid[:k]]
+        top_gainers = [x[1] for x in valid[-k:]]
+
+        candidates = set(top_losers + top_gainers + market_basket)
+        tprint(f"Live Candidates: {len(candidates)} (Top/Bot {k} + Basket)")
+        return sorted(list(candidates))
+
+    except Exception as e:
+        tprint(f"Error selecting live candidates: {e}. Fallback to basket.")
+        return market_basket

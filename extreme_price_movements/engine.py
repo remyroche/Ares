@@ -9,13 +9,7 @@ from extreme_price_movements.training import (
     select_best_horizon,
     apply_interaction_toggles,
 )
-
-def entry_price_next_hour_open(panel_open, ts_entry, symbol):
-    try:
-        px = panel_open.loc[ts_entry, symbol]
-        return float(px) if pd.notna(px) and px > 0 else np.nan
-    except Exception:
-        return np.nan
+from extreme_price_movements.candidates import select_trade_candidates_hourly, entry_price_next_hour_open
 
 def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side, cfg, max_hold_hours):
     if np.isnan(entry_px) or entry_px <= 0:
@@ -61,19 +55,6 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
         return (last_close / entry_px) - 1.0, last_ts, "time_exit"
     else:
         return (entry_px / last_close) - 1.0, last_ts, "time_exit"
-
-def select_trade_candidates_hourly(feats, ts, syms, pct=0.05, min_n=10, max_n=60, metric="dist_ema_fast"):
-    if ts not in feats[metric].index:
-        return [], []
-    s = feats[metric].loc[ts, syms].dropna()
-    if s.empty:
-        return [], []
-    n = len(s)
-    k = max(min_n, int(n * pct))
-    k = min(k, max_n)
-    top = s.sort_values(ascending=False).head(k).index.tolist()
-    bot = s.sort_values(ascending=True).head(k).index.tolist()
-    return top, bot
 
 def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
     o, h, l, c = panel["open"], panel["high"], panel["low"], panel["close"]
@@ -323,3 +304,97 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
         "n_trades": int(len(trades_df)) if not trades_df.empty else 0,
     }
     return eq, trades_df, stats
+
+def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config, cfg, p_exh_cand, current_positions_syms):
+    """
+    Pure function: Generates target orders based on current data and models.
+    """
+    if ts_sig not in mkt_gates.index:
+        return []
+
+    # 1. Candidate Selection
+    top, bot = select_trade_candidates_hourly(feats, ts_sig, list(feats["close"].columns), cfg["trade_extreme_pct"], cfg["trade_extreme_min"], cfg["trade_extreme_max"], cfg["trade_deviation_metric"])
+    candidates = list(set(top) | set(bot))
+    candidates = [s for s in candidates if s not in current_positions_syms]
+
+    if not candidates:
+        return []
+
+    mrk = mkt_gates.loc[ts_sig]
+    ts_lag = ts_sig - pd.Timedelta(hours=1)
+    trend_df = feats.get("trend_pct")
+
+    alpha_models = model_bundle["alpha_models"]
+    meta_models = model_bundle["meta_models"]
+
+    rows = []
+    for sym in candidates:
+        try:
+            t_val = 0.0
+            if trend_df is not None and sym in trend_df.columns: t_val = float(trend_df.loc[ts_sig, sym])
+            direction = "up" if t_val > 0 else "down"
+            m_bundle = alpha_models.get(direction)
+            if not m_bundle or not m_bundle["mr"] or not m_bundle["tf"]: continue
+            model_mr = m_bundle["mr"]["model"]; model_tf = m_bundle["tf"]["model"]; feat_cols = m_bundle["mr"]["feat_cols"]; meta_model = meta_models.get(direction)
+            p_lag = 0.5
+            if ts_lag in p_exh_cand.index and sym in p_exh_cand.columns: p_lag = float(p_exh_cand.loc[ts_lag, sym])
+            rec = {
+                "symbol": sym, "direction": direction, "model_mr": model_mr, "model_tf": model_tf, "meta_model": meta_model, "feat_cols": feat_cols,
+                "mkt_ret24h": float(mrk["mkt_ret24h"]), "mkt_ret6h": float(mrk["mkt_ret6h"]), "mkt_trend": float(mrk["mkt_trend"]), "mkt_rv": float(mrk["mkt_rv"]),
+                "G_VOL": int(mrk["G_VOL"]), "G_TREND": int(mrk["G_TREND"]), "p_exh_lag1": p_lag
+            }
+            for k in feat_cols:
+                if k in feats: rec[k] = float(feats[k].loc[ts_sig, sym])
+            # Meta Feats
+            for mk in ["a_rv24", "a_volz", "a_rsi", "dist_ema_fast", "atr_slope", "dist_vwap_norm", "mom_accel"]:
+                if mk in feats: rec[mk] = float(feats[mk].loc[ts_sig, sym])
+
+            rows.append(rec)
+        except Exception: continue
+
+    df_all = pd.DataFrame(rows)
+    score_raw_list = []
+    if not df_all.empty:
+        for d, grp in df_all.groupby("direction"):
+            first = grp.iloc[0]
+            model_mr = first["model_mr"]; model_tf = first["model_tf"]; meta_model = first["meta_model"]; fcols = first["feat_cols"]
+            Xint = apply_interaction_toggles(grp, cfg["causal_cols"], ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
+            for c in fcols:
+                if c not in Xint.columns: Xint[c] = 0.0
+            Xpred = Xint[fcols].fillna(0.0).astype(np.float32)
+            p_mr = model_mr.predict(Xpred)
+            p_tf = model_tf.predict(Xpred)
+
+            if meta_model:
+                X_meta = meta_model.prepare_meta_features(p_tf, p_mr, grp)
+                score = meta_model.predict(X_meta)
+            else:
+                score = p_tf - p_mr
+                sign = 1.0 if d == "up" else -1.0
+                score = score * sign
+
+            for i, idx in enumerate(grp.index):
+                sym = grp.loc[idx, "symbol"]
+                s_score = score[i]
+                dom = "mr" if p_mr[i] > p_tf[i] else "tf"
+                score_raw_list.append((sym, s_score, dom))
+
+    score_raw_list.sort(key=lambda x: x[1], reverse=True)
+    longs = [x for x in score_raw_list if x[1] > cfg["thr_long"]][:cfg["k_long"]]
+    shorts = sorted([x for x in score_raw_list if x[1] < cfg["thr_short"]], key=lambda x: x[1])[:cfg["k_short"]]
+
+    final_orders = []
+    for s, sc, dom in longs: final_orders.append({"symbol": s, "side": "long", "score": sc, "dom": dom})
+    for s, sc, dom in shorts: final_orders.append({"symbol": s, "side": "short", "score": sc, "dom": dom})
+
+    # Allocation
+    total_wt = sum(abs(x["score"]) for x in final_orders)
+    orders_out = []
+    if total_wt > 0:
+        gross_cap = float(cfg["wallet_gross_cap"])
+        for ord in final_orders:
+            w_alloc = gross_cap * (abs(ord["score"]) / total_wt)
+            ord["weight"] = w_alloc
+            orders_out.append(ord)
+
+    return orders_out

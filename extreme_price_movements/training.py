@@ -5,6 +5,8 @@ from extreme_price_movements.model_race import ModelRace
 from extreme_price_movements.meta_model import MetaModel
 from extreme_price_movements.exhaustion import ExhaustionModel
 from extreme_price_movements.optimization import composite_score_with_constraints
+from extreme_price_movements.candidates import select_trade_candidates_hourly
+import extreme_price_movements.fast_funcs as ff
 
 def apply_interaction_toggles(df: pd.DataFrame, causal_cols, gate_cols, drop_raw=True):
     out = df.copy()
@@ -250,62 +252,250 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
 
 def optimize_risk_params(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, models):
     """
-    Optimizes risk params per (Direction, Model_Kind).
-    directions: up/down. kinds: mr/tf.
-    We classify candidate trades into buckets:
-    - Long, TF-dominant
-    - Long, MR-dominant
-    - Short, TF-dominant
-    - Short, MR-dominant
-
-    Actually, models are stored as models["up"]["tf"], etc.
-    We need to simulate trades.
-
-    We iterate over a validation set (e.g. last 14 days of candidates).
+    Optimizes risk params per (Direction, Model_Kind) using simulation on validation set.
     """
-    # 1. Gather OOF Candidates + Predictions
-    # We need predictions from models.
-    # Models are trained on full data? Or do we hold out?
-    # select_best_horizon returns model trained on Full.
-    # We should have used OOF.
-    # For simplicity/robustness in this turn, we use "In-Sample" predictions on last 30 days candidates.
-    # Optimization bias is real, but limited by small param space.
+    tprint("Optimizing Risk Params...")
+    alpha_models = models.get("alpha_models")
+    meta_models = models.get("meta_models")
+    if not alpha_models:
+        return {"granular_risk": {}}
 
-    # Generate predictions for last 30 days
-    # Reuse `build_hourly_training_set_and_weights` logic to get X?
-    # But that filters heavy.
-    # We should simulate `select_trade_candidates_hourly` loop?
+    # 1. Identify Validation Period
+    val_hours = int(cfg.get("val_lookback_hours", 24*7))
+    ts_start = ts - pd.Timedelta(hours=val_hours)
 
-    # Shortcut: Optimize Global Risk Params based on dummy grid search?
-    # No, user wants granular.
+    # Validation indices (every 4 hours to save time, or 1h if fast enough)
+    # Using 1h might be fine with Numba.
+    valid_idx = mkt_gates.index[(mkt_gates.index >= ts_start) & (mkt_gates.index < ts - pd.Timedelta(hours=48))]
+    # Skip if too few
+    if len(valid_idx) < 24:
+        return {"granular_risk": {}}
 
-    # We will just define a structure for Granular Config and return default/optimized.
-    # Due to complexity of simulating backtest inside training loop here,
-    # I will implement the CONFIG UPDATE logic.
+    candidates = []
 
-    risk_config = {}
+    # 2. Collect Candidates & Predictions
+    # We iterate validation period, generate candidates, predict score/dominance.
 
-    # Buckets: (Direction, Model) -> (Long/Short, MR/TF) ?
-    # "Long/Short" is trade side. "MR/TF" is dominant alpha.
-    buckets = [("long", "mr"), ("long", "tf"), ("short", "mr"), ("short", "tf")]
+    trend_df = feats.get("trend_pct")
+    o_df = panel["open"]
+    h_df = panel["high"]
+    l_df = panel["low"]
+    c_df = panel["close"]
 
-    # Grid
-    k_sl_grid = [1.5, 2.0, 2.5]
-    k_trail_grid = [0.5, 1.0, 1.5]
+    for t_idx in valid_idx[::2]: # Step 2 hours to speed up
+        # Top/Bot selection
+        top, bot = select_trade_candidates_hourly(
+            feats, t_idx, syms,
+            pct=cfg["trade_extreme_pct"],
+            min_n=cfg["trade_extreme_min"],
+            max_n=cfg["trade_extreme_max"],
+            metric=cfg["trade_deviation_metric"]
+        )
+        trade_syms = list(set(top) | set(bot))
+        if not trade_syms: continue
 
-    # For now, assigning defaults or random logic as placeholder for heavy loop.
-    # In real imp, we would run `simulate_trade_hourly` for each combo.
+        mrk = mkt_gates.loc[t_idx]
+        t_exh_lag = t_idx - pd.Timedelta(hours=1)
 
-    for side, kind in buckets:
-        key = f"risk_{side}_{kind}"
-        risk_config[key] = {
-            "k_sl": 2.0,
-            "k_trail_start": 1.0,
-            "k_trail_dist": 1.0,
-            "score_scale": 0.5 # New param
-        }
+        rows = []
+        for sym in trade_syms:
+            try:
+                t_val = 0.0
+                if trend_df is not None and sym in trend_df.columns:
+                    t_val = float(trend_df.loc[t_idx, sym])
+                direction = "up" if t_val > 0 else "down"
 
-    return {"granular_risk": risk_config}
+                m_bundle = alpha_models.get(direction)
+                if not m_bundle or not m_bundle["mr"] or not m_bundle["tf"]: continue
+
+                model_mr = m_bundle["mr"]["model"]
+                model_tf = m_bundle["tf"]["model"]
+                feat_cols = m_bundle["mr"]["feat_cols"]
+                meta_model = meta_models.get(direction)
+
+                p_lag = 0.5
+                if t_exh_lag in p_exh_hist.index and sym in p_exh_hist.columns:
+                    p_lag = float(p_exh_hist.loc[t_exh_lag, sym])
+
+                rec = {
+                    "symbol": sym, "direction": direction,
+                    "model_mr": model_mr, "model_tf": model_tf, "meta_model": meta_model,
+                    "feat_cols": feat_cols,
+                    "mkt_ret24h": float(mrk["mkt_ret24h"]),
+                    "mkt_ret6h": float(mrk["mkt_ret6h"]),
+                    "mkt_trend": float(mrk["mkt_trend"]),
+                    "mkt_rv": float(mrk["mkt_rv"]),
+                    "G_VOL": int(mrk["G_VOL"]), "G_TREND": int(mrk["G_TREND"]),
+                    "p_exh_lag1": p_lag
+                }
+                for k in feat_cols:
+                    if k in feats: rec[k] = float(feats[k].loc[t_idx, sym])
+
+                # Meta Feats
+                for mk in ["a_rv24", "a_volz", "a_rsi", "dist_ema_fast", "atr_slope", "dist_vwap_norm", "mom_accel"]:
+                    if mk in feats: rec[mk] = float(feats[mk].loc[t_idx, sym])
+
+                rows.append(rec)
+            except: continue
+
+        if not rows: continue
+
+        df_all = pd.DataFrame(rows)
+
+        # Predict
+        for d, grp in df_all.groupby("direction"):
+            first = grp.iloc[0]
+            model_mr = first["model_mr"]; model_tf = first["model_tf"]; meta_model = first["meta_model"]; fcols = first["feat_cols"]
+
+            Xint = apply_interaction_toggles(grp, cfg["causal_cols"], ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
+            for c in fcols:
+                if c not in Xint.columns: Xint[c] = 0.0
+            Xpred = Xint[fcols].fillna(0.0).astype(np.float32)
+
+            p_mr = model_mr.predict(Xpred)
+            p_tf = model_tf.predict(Xpred)
+
+            if meta_model:
+                X_meta = meta_model.prepare_meta_features(p_tf, p_mr, grp)
+                score = meta_model.predict(X_meta)
+            else:
+                score = p_tf - p_mr
+                sign = 1.0 if d == "up" else -1.0
+                score = score * sign
+
+            for i, idx in enumerate(grp.index):
+                sym = grp.loc[idx, "symbol"]
+                s_score = score[i]
+                dom = "mr" if p_mr[i] > p_tf[i] else "tf"
+
+                # Add to candidates list
+                # We need data for simulation: O, H, L, C for next HOLD hours.
+                # Extract path here? Or later?
+                # Later to avoid memory bloat, but we need arrays for Numba.
+
+                ts_entry = t_idx + pd.Timedelta(hours=1)
+                entry_px = float(o_df.loc[ts_entry, sym]) if ts_entry in o_df.index else np.nan
+                if np.isnan(entry_px): continue
+
+                atr_val = float(feats["atr_pct"].loc[t_idx, sym])
+
+                # Side
+                side = "long" if s_score > 0 else "short"
+                if abs(s_score) < 0.005: continue # Skip weak signals
+
+                candidates.append({
+                    "ts": t_idx,
+                    "symbol": sym,
+                    "side": side,
+                    "dom": dom,
+                    "score": s_score,
+                    "entry_px": entry_px,
+                    "atr": atr_val
+                })
+
+    if not candidates:
+        return {"granular_risk": {}}
+
+    # 3. Prepare Simulation Data
+    # Pre-fetch price paths for all candidates
+    # To optimize, we can group by symbol?
+    # Or just store small arrays.
+
+    hold_h = int(cfg.get("hold_hours", 48))
+
+    sim_data = []
+
+    for cand in candidates:
+        ts_entry = cand["ts"] + pd.Timedelta(hours=1)
+        ts_exit = ts_entry + pd.Timedelta(hours=hold_h)
+
+        # Slicing
+        # We need numpy arrays
+        sym = cand["symbol"]
+
+        # Check range
+        if ts_exit > c_df.index.max():
+            # Partial path?
+            ts_exit = c_df.index.max()
+
+        # Get path
+        # Assuming index is sorted
+        # Ideally using get_indexer
+
+        # Fast slice
+        sl = slice(ts_entry, ts_exit)
+        # Verify timestamps
+        # loc slice works with datetime index
+
+        try:
+            o_arr = o_df.loc[sl, sym].to_numpy(dtype=np.float32)
+            h_arr = h_df.loc[sl, sym].to_numpy(dtype=np.float32)
+            l_arr = l_df.loc[sl, sym].to_numpy(dtype=np.float32)
+            c_arr = c_df.loc[sl, sym].to_numpy(dtype=np.float32)
+
+            if len(c_arr) == 0: continue
+
+            cand["o"] = o_arr
+            cand["h"] = h_arr
+            cand["l"] = l_arr
+            cand["c"] = c_arr
+            sim_data.append(cand)
+        except: continue
+
+    # 4. Grid Search
+    # Grids
+    k_sl_grid = [1.5, 2.0, 3.0]
+    k_trail_grid = [0.5, 1.0, 1.5] # Used for both start and dist
+
+    buckets = ["long_mr", "long_tf", "short_mr", "short_tf"]
+    best_params = {}
+
+    for b in buckets:
+        side_req, dom_req = b.split("_")
+
+        # Filter candidates
+        subset = [c for c in sim_data if c["side"] == side_req and c["dom"] == dom_req]
+        if len(subset) < 10:
+            # Default
+            best_params[f"risk_{b}"] = {
+                "k_sl": 2.0, "k_trail_start": 1.0, "k_trail_dist": 1.0, "score_scale": 0.5
+            }
+            continue
+
+        best_perf = -1e9
+        best_combo = None
+
+        for k_sl in k_sl_grid:
+            for k_tr in k_trail_grid:
+                # Simulate batch
+                total_ret = 0.0
+
+                for c in subset:
+                    side_int = 1 if c["side"] == "long" else -1
+                    ret, _, _ = ff.simulate_trade_numba(
+                        c["o"], c["h"], c["l"], c["c"],
+                        float(c["entry_px"]), side_int, float(c["atr"]),
+                        float(k_sl), float(k_tr), float(k_tr)
+                    )
+                    total_ret += ret
+
+                # Metric: Total Return (simple)
+                if total_ret > best_perf:
+                    best_perf = total_ret
+                    best_combo = (k_sl, k_tr)
+
+        if best_combo:
+            k_sl, k_tr = best_combo
+            best_params[f"risk_{b}"] = {
+                "k_sl": k_sl, "k_trail_start": k_tr, "k_trail_dist": k_tr, "score_scale": 0.5
+            }
+        else:
+             best_params[f"risk_{b}"] = {
+                "k_sl": 2.0, "k_trail_start": 1.0, "k_trail_dist": 1.0, "score_scale": 0.5
+            }
+
+    tprint(f"Risk Params Optimized: {best_params}")
+    return {"granular_risk": best_params}
 
 def select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
     directions = ["up", "down"]

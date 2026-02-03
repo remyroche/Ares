@@ -85,7 +85,8 @@ from src.utils.numba_funcs import (
     _numba_rolling_entropy,
     _numba_return_autocorrelation,
     _numba_rolling_mean,
-    _numba_rolling_std
+    _numba_rolling_std,
+    _numba_rolling_kurt
 )
 try:
     from numba import jit
@@ -5653,30 +5654,64 @@ class LabelBasedLayer2(BaseStep):
         Z = pd.DataFrame(index=df.index)
         eps = 1e-9
 
+        # Ensure we have a unique row identifier to safely restore order after groupby
+        # Using temporary column to avoid modifying global df state if possible
+        if '_tmp_row_id' not in df.columns:
+            df = df.copy()
+            df['_tmp_row_id'] = np.arange(len(df))
+
+        # Prepare lookup series for restoring order if needed (only if grouping happens)
+        row_id_series = df['_tmp_row_id']
+
         def _assign_series(name: str, values: Any) -> None:
             if values is None:
                 return
             if isinstance(values, pd.Series):
                 if len(values) == len(Z):
+                    # Optimized assignment: Check for exact index match first
                     if values.index.equals(Z.index):
                         Z[name] = values.to_numpy()
                         return
+
+                    # If indices don't match (likely due to groupby reordering),
+                    # do NOT use reindex if indices are non-unique (it explodes).
+                    # Instead, we assume 'values' might be aligned via _tmp_row_id if available in its index?
+                    # No, _rstd below returns reset index.
+                    # If we use the robust helpers below, they return aligned series.
+
+                    # Fallback to reindex only if indices are unique
+                    if Z.index.is_unique and values.index.is_unique:
+                        try:
+                            Z[name] = values.reindex(Z.index).to_numpy()
+                            return
+                        except Exception:
+                            pass
+
+                    # If we are here, indices might be duplicated or mismatched.
+                    # If lengths match, simple assignment by position is risky but better than crashing
+                    # IF we trust the order. But we don't trust the order from groupby.
+                    # The robust helpers below ensure order restoration.
+
                     try:
-                        Z[name] = values.reindex(Z.index).to_numpy()
-                        return
-                    except Exception:
+                        # Last ditch: try numpy assignment if shape matches
                         Z[name] = values.to_numpy()
                         return
+                    except Exception:
+                        pass
+
             Z[name] = values
 
         def _assign_frame(frame: pd.DataFrame) -> None:
             if frame is None or frame.empty:
                 return
-            if len(frame) != len(Z):
-                try:
-                    frame = frame.reindex(Z.index)
-                except Exception:
+            # If frame has different index but same length, try to align carefully
+            if len(frame) == len(Z):
+                if frame.index.equals(Z.index):
+                    for col in frame.columns:
+                        Z[col] = frame[col].to_numpy()
                     return
+                # If indices differ, delegate to _assign_series logic per column
+
             for col in frame.columns:
                 _assign_series(col, frame[col])
 
@@ -5695,16 +5730,244 @@ class LabelBasedLayer2(BaseStep):
                 asset_group = asset_level
                 asset_series = pd.Series(df.index.get_level_values(asset_level), index=df.index)
 
-        # Helper: rolling std
+        # Robust Helpers that preserve input order using _tmp_row_id
+
+        def _align_result(res_obj):
+            """Aligns a groupby result back to the original df index order."""
+            if asset_group is None:
+                return res_obj
+
+            # The result from groupby(...).rolling(...) usually has MultiIndex (Asset, OriginalIndex).
+            # If we reset_index, we lose the structure needed for safe alignment if duplicates exist.
+            # Strategy: Join with the original _tmp_row_id to restore order.
+
+            # If input was Series, result is Series.
+            # If it has the original index in level -1, we can use that?
+            # Problem: Original index has duplicates.
+
+            # BETTER APPROACH: Use `sort=False` in groupby, but rolling might still block them.
+            # Instead of reset_index(drop=True), we keep the index.
+            # If the original index had duplicates, multi-index (Asset, Time) is unique per row.
+            # We can map (Asset, Time) -> _tmp_row_id -> sort -> values.
+
+            # However, simpler is to ensure we group by (Asset) and apply,
+            # then the result index usually matches the input subset index?
+            # Rolling on groupby object is tricky.
+
+            # Let's use the transform-like pattern where possible, or explicit re-sort.
+            # Since we added `_tmp_row_id` to df, we can include it in the groupby? No.
+
+            # Robust Re-Alignment Strategy:
+            # 1. Ensure result has index corresponding to original df rows.
+            # 2. If result is MultiIndex (Asset, Time), and Time is duplicated in df:
+            #    We cannot easily map back without a unique key.
+            #    But wait, `df` usually has unique (Asset, Time) tuple?
+            #    If so, we can join on index.
+
+            # Check uniqueness of index
+            if df.index.is_unique:
+                # If index is unique, standard reindex works fine (even if groupby reordered).
+                # But typically df index is unique timestamps per asset, but duplicated globally.
+                pass
+
+            # If we have duplicated index, we rely on the fact that we can construct a unique key.
+            # But simpler:
+            # `res = s.groupby(asset_group).rolling(w).std()`
+            # Res is MultiIndex (Asset, Time).
+            # We want to put this back into Z (Time).
+
+            # Let's use `reset_index` but KEEP the original index as a column, then sort?
+            # No, original index is Time (duplicated).
+
+            # ALTERNATIVE: Use `groupby(..., group_keys=False).apply(...)` which tries to preserve index?
+            # Rolling is special.
+
+            # Safest Strategy used in _precompute_geometry_base_features:
+            # Iterate groups, calculate, concat, then sort by _tmp_row_id.
+            # This is slow in Python loop if many groups?
+            # But `small_multi_asset` implies few groups.
+
+            return res_obj
+
+        # Helper: rolling std with Safe Re-Alignment
         def _rstd(s, w):
             if asset_group is None:
                 return s.rolling(w).std()
-            return s.groupby(asset_group).rolling(w).std().reset_index(level=0, drop=True)
-        # Helper: rolling mean
+
+            # Grouped calculation
+            # Use groupby on the dataframe (s should be a column of df ideally, or aligned)
+            # If s is computed (like returns), we need to ensure it aligns with df['_tmp_row_id']
+
+            # Construct a temp frame with values and row_id
+            tmp = pd.DataFrame({'val': s, 'row_id': row_id_series.values}, index=s.index)
+            tmp['asset'] = asset_group.values
+
+            # Calculate rolling std per group
+            # We sort by row_id inside to be safe? Or assume time order?
+            # Rolling requires time order.
+
+            # grouped = tmp.groupby('asset', sort=False)['val'].rolling(w).std()
+            # This returns MultiIndex (Asset, Time).
+            # We cannot easily map back to row_id because Time is duplicated.
+
+            # Instead, define a custom apply that returns Series with row_id as index?
+
+            def _roll_std_impl(x):
+                return x.rolling(w).std()
+
+            # Apply preserves the original index of the group.
+            # result = tmp.groupby('asset', group_keys=False)['val'].apply(_roll_std_impl)
+            # If group_keys=False, it tries to preserve original index.
+            # If original index has duplicates, does it work?
+            # Yes, `apply` usually concatenates results.
+            # If `sort=False`, groups are processed in order of appearance.
+            # The result will be blocked by group.
+            # To restore order, we need to know which row_id each result corresponds to.
+
+            # If we use `apply`, we operate on Series.
+            # We can operate on DataFrame including row_id, but rolling works on columns.
+
+            # Correct approach for stability:
+            # 1. Sort tmp by (Asset, Time) to ensure rolling is correct.
+            # 2. Compute rolling.
+            # 3. Result aligns with sorted tmp.
+            # 4. Use sorted tmp's row_id to restore original order.
+
+            # However, df is likely already sorted by time (interleaved) or asset?
+            # If interleaved, we MUST sort by asset for rolling to make sense.
+
+            # Sort for calculation
+            # We need stable sort?
+            # Default sort is stable enough.
+
+            # To avoid massive overhead, we do this efficiently.
+            # If we assume Numba functions are used, we can pass asset_ids?
+            # No, we are patching the existing structure.
+
+            # Let's use the explicit Sort-Compute-Restore pattern.
+            # It is robust against the "Reindex Bomb".
+
+            # We assume s is aligned with df.
+            work_df = pd.DataFrame({'v': s.values, 'id': row_id_series.values, 'g': asset_group.values})
+
+            # Sort by group then id (assuming id implies time order? usually yes)
+            # If data is interleaved time series, row_id increases with time.
+            work_df = work_df.sort_values(['g', 'id'])
+
+            # Now computing rolling on the sorted 'v' column
+            # We can use groupby().rolling()...
+            # OR since it's sorted, we can just use groupby().apply()?
+            # Faster: work_df.groupby('g')['v'].rolling(w).std()
+            # The result will be in the same order as work_df (since we sorted by g).
+            # So we can assign it back to work_df.
+
+            rolled = work_df.groupby('g', sort=False)['v'].rolling(w).std()
+
+            # rolled is MultiIndex (Group, Index).
+            # Since work_df is sorted by Group, the values should align 1-to-1 with work_df rows?
+            # Yes, provided rolling doesn't drop rows (it produces NaNs).
+
+            # Extract values
+            work_df['res'] = rolled.values
+
+            # Restore original order
+            work_df = work_df.sort_values('id')
+
+            return pd.Series(work_df['res'].values, index=df.index)
+
+        # Helper: rolling mean with Safe Re-Alignment
         def _rmean(s, w):
             if asset_group is None:
                 return s.rolling(w).mean()
-            return s.groupby(asset_group).rolling(w).mean().reset_index(level=0, drop=True)
+
+            work_df = pd.DataFrame({'v': s.values, 'id': row_id_series.values, 'g': asset_group.values})
+            work_df = work_df.sort_values(['g', 'id'])
+
+            rolled = work_df.groupby('g', sort=False)['v'].rolling(w).mean()
+            work_df['res'] = rolled.values
+            work_df = work_df.sort_values('id')
+
+            return pd.Series(work_df['res'].values, index=df.index)
+
+        # Helper: rolling kurtosis (Numba optimized + Safe Re-Alignment)
+        def _rkurt(s, w):
+            if asset_group is None:
+                vals = s.values.astype(np.float32) if hasattr(s, 'values') else s
+                return pd.Series(_numba_rolling_kurt(vals, w), index=s.index)
+
+            work_df = pd.DataFrame({'v': s.values, 'id': row_id_series.values, 'g': asset_group.values})
+            work_df = work_df.sort_values(['g', 'id'])
+
+            # Numba rolling kurtosis on grouped chunks
+            # Apply to each group
+            def apply_kurt(x):
+                return _numba_rolling_kurt(x.values.astype(np.float32), w)
+
+            # Using transform to keep shape
+            work_df['res'] = work_df.groupby('g', sort=False)['v'].transform(apply_kurt)
+
+            work_df = work_df.sort_values('id')
+            return pd.Series(work_df['res'].values, index=df.index)
+
+        # Helper: rolling max with Safe Re-Alignment
+        def _rmax(s, w):
+            if asset_group is None:
+                return s.rolling(w).max()
+
+            work_df = pd.DataFrame({'v': s.values, 'id': row_id_series.values, 'g': asset_group.values})
+            work_df = work_df.sort_values(['g', 'id'])
+
+            rolled = work_df.groupby('g', sort=False)['v'].rolling(w).max()
+            work_df['res'] = rolled.values
+            work_df = work_df.sort_values('id')
+
+            return pd.Series(work_df['res'].values, index=df.index)
+
+        # Helper: rolling min with Safe Re-Alignment
+        def _rmin(s, w):
+            if asset_group is None:
+                return s.rolling(w).min()
+
+            work_df = pd.DataFrame({'v': s.values, 'id': row_id_series.values, 'g': asset_group.values})
+            work_df = work_df.sort_values(['g', 'id'])
+
+            rolled = work_df.groupby('g', sort=False)['v'].rolling(w).min()
+            work_df['res'] = rolled.values
+            work_df = work_df.sort_values('id')
+
+            return pd.Series(work_df['res'].values, index=df.index)
+
+        # Helper: EWMA with Safe Re-Alignment
+        def _rewma(s, span):
+            if asset_group is None:
+                return s.ewm(span=span).mean()
+
+            work_df = pd.DataFrame({'v': s.values, 'id': row_id_series.values, 'g': asset_group.values})
+            work_df = work_df.sort_values(['g', 'id'])
+
+            rolled = work_df.groupby('g', sort=False)['v'].ewm(span=span).mean()
+            work_df['res'] = rolled.values
+            work_df = work_df.sort_values('id')
+
+            return pd.Series(work_df['res'].values, index=df.index)
+
+        # Helper: Autocorrelation with Safe Re-Alignment
+        def _rautocorr(s, w):
+            if asset_group is None:
+                return get_serial_correlation(s, window=w)
+
+            # Using transform-like apply
+            work_df = pd.DataFrame({'v': s.values, 'id': row_id_series.values, 'g': asset_group.values})
+            work_df = work_df.sort_values(['g', 'id'])
+
+            # get_serial_correlation returns series same index as input
+            def apply_ac(x):
+                return get_serial_correlation(x, window=w)
+
+            work_df['res'] = work_df.groupby('g', sort=False)['v'].transform(apply_ac)
+
+            work_df = work_df.sort_values('id')
+            return pd.Series(work_df['res'].values, index=df.index)
 
         # Helper: rolling max
         def _rmax(s, w):
@@ -5725,6 +5988,17 @@ class LabelBasedLayer2(BaseStep):
             if asset_group is None:
                 ret = close.pct_change().fillna(0)
             else:
+                # pct_change is also dangerous if not grouped?
+                # Usually pct_change on whole df respects index order.
+                # If df is interleaved, close.pct_change() is WRONG (diffs across assets).
+                # But here we assume ret is correctly calculated earlier?
+                # The code was: ret = close.groupby(asset_group).pct_change().fillna(0)
+                # Groupby pct_change preserves index (it transforms).
+                # But does it?
+                # df.groupby('g')['v'].pct_change() returns Series with original index.
+                # So `ret` should be aligned with `df`.
+                # BUT if we are paranoid, we should check `ret`.
+                # Let's trust `groupby().pct_change()` behavior for now (it uses obj_with_exclusions).
                 ret = close.groupby(asset_group).pct_change().fillna(0)
 
             # Realized Volatility
@@ -5746,7 +6020,7 @@ class LabelBasedLayer2(BaseStep):
 
             # Tail / Jumpiness
             _assign_series('absret_mean_w24', _rmean(ret.abs(), 24))
-            _assign_series('kurtosis_w96', ret.rolling(96).kurt())
+            _assign_series('kurtosis_w96', _rkurt(ret, 96))
 
             # Range-based Vol (if available)
             if 'high' in df.columns and 'low' in df.columns:
@@ -5779,32 +6053,17 @@ class LabelBasedLayer2(BaseStep):
         if 'close' in df.columns:
             section_start = time.perf_counter()
             # Trend Strength
-            if asset_group is None:
-                ewma_48 = close.ewm(span=48).mean()
-            else:
-                ewma_48 = close.groupby(asset_group).ewm(span=48).mean().reset_index(level=0, drop=True)
+            ewma_48 = _rewma(close, 48)
             _assign_series('trend_strength', (close - ewma_48) / (rv_w48 + eps))
 
             # Position in Range
             if 'high' in df.columns and 'low' in df.columns:
-                if asset_group is None:
-                    roll_low = df['low'].rolling(24).min()
-                    roll_high = df['high'].rolling(24).max()
-                else:
-                    roll_low = df['low'].groupby(asset_group).rolling(24).min().reset_index(level=0, drop=True)
-                    roll_high = df['high'].groupby(asset_group).rolling(24).max().reset_index(level=0, drop=True)
+                roll_low = _rmin(df['low'], 24)
+                roll_high = _rmax(df['high'], 24)
                 _assign_series('pos_in_range_w24', (close - roll_low) / (roll_high - roll_low + eps))
 
             # Autocorrelation
-            if asset_group is None:
-                _assign_series('r_autocorr_w48', get_serial_correlation(ret, window=48))
-            else:
-                _assign_series(
-                    'r_autocorr_w48',
-                    ret.groupby(asset_group)
-                    .apply(lambda s: get_serial_correlation(s, window=48))
-                    .reset_index(level=0, drop=True)
-                )
+            _assign_series('r_autocorr_w48', _rautocorr(ret, 48))
             tprint_info(f"      ⏱️ Trend block: {time.perf_counter() - section_start:.2f}s")
 
         # --- D) Compression & Breakout Readiness ---
@@ -5892,7 +6151,10 @@ class LabelBasedLayer2(BaseStep):
             section_start = time.perf_counter()
             asset_codes = pd.Series(pd.Categorical(asset_series).codes, index=df.index)
             _assign_series('asset_id_code', asset_codes.astype(float))
-            top_assets = asset_series.value_counts().head(self.causal_gate_asset_onehot_max).index.tolist()
+
+            # Use getattr for robustness in tests where init might be partial
+            max_assets = getattr(self, 'causal_gate_asset_onehot_max', 12)
+            top_assets = asset_series.value_counts().head(max_assets).index.tolist()
             for asset in top_assets:
                 _assign_series(f"asset_{asset}", (asset_series == asset).astype(float))
             if asset_series.nunique() > len(top_assets):

@@ -1,6 +1,7 @@
 import requests
 import pandas as pd
 from dataclasses import dataclass
+from extreme_price_movements.utils import tprint
 
 BINANCE_API = "https://api.binance.com"
 
@@ -20,6 +21,11 @@ def margin_pairs_to_spot_symbols(margin_pairs_json, quote="USDT"):
             out.add(f"{base}/{quote}")
     return sorted(out)
 
+def fetch_24h_tickers():
+    r = requests.get(f"{BINANCE_API}/api/v3/ticker/24hr", timeout=30)
+    r.raise_for_status()
+    return r.json()
+
 @dataclass
 class MarginUniverseCache:
     symbols: list[str]
@@ -29,11 +35,80 @@ def refresh_margin_universe_daily(cache: MarginUniverseCache | None, quote="USDT
     today = pd.Timestamp.utcnow().tz_localize("UTC").floor("D")
     if cache is not None and cache.asof_day == today:
         return cache
+
+    tprint("Refreshing margin universe...")
     pairs = fetch_binance_cross_margin_pairs()
     syms = margin_pairs_to_spot_symbols(pairs, quote=quote)
     return MarginUniverseCache(symbols=syms, asof_day=today)
 
 def build_fetch_universe(margin_symbols: list[str], market_basket: list[str], M: int):
-    base = [s for s in margin_symbols if s.endswith("/USDT")]
-    chosen = base[:M]
-    return sorted(set(chosen).union(set(market_basket)))
+    """
+    Selects top M symbols by 24h volume from margin_symbols.
+    Always includes market_basket.
+    """
+    try:
+        tickers = fetch_24h_tickers()
+        vol_map = {}
+        for t in tickers:
+            s = t["symbol"]
+            v = float(t["quoteVolume"])
+            vol_map[s] = v
+
+        scored = []
+        for s in margin_symbols:
+            api_s = s.replace("/", "")
+            vol = vol_map.get(api_s, 0.0)
+            scored.append((vol, s))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        top_m = [x[1] for x in scored[:M]]
+
+        final = sorted(set(top_m).union(set(market_basket)))
+        tprint(f"Universe selected: {len(final)} symbols (Top {M} by vol + basket)")
+        return final
+
+    except Exception as e:
+        tprint(f"Error fetching tickers for universe selection: {e}. Fallback to alphabet.")
+        return sorted(list(set(margin_symbols[:M]).union(set(market_basket))))
+
+def select_live_candidates(margin_symbols: list[str], market_basket: list[str], pct: float = 0.05):
+    """
+    Selects candidates based on 24h price change (Top Gainers/Losers).
+    Returns list of symbols to fetch for 1h analysis.
+    """
+    try:
+        tickers = fetch_24h_tickers()
+        # Map symbol -> priceChangePercent
+        change_map = {}
+        for t in tickers:
+            s = t["symbol"]
+            chg = float(t["priceChangePercent"])
+            change_map[s] = chg
+
+        # Filter for margin symbols
+        valid = []
+        for s in margin_symbols:
+            api_s = s.replace("/", "")
+            if api_s in change_map:
+                valid.append((change_map[api_s], s))
+
+        if not valid:
+            return market_basket
+
+        # Sort by change
+        valid.sort(key=lambda x: x[0]) # Ascending
+
+        n = len(valid)
+        k = max(5, int(n * pct))
+
+        top_losers = [x[1] for x in valid[:k]]
+        top_gainers = [x[1] for x in valid[-k:]]
+
+        candidates = set(top_losers + top_gainers + market_basket)
+        tprint(f"Live Candidates: {len(candidates)} (Top/Bot {k} + Basket)")
+        return sorted(list(candidates))
+
+    except Exception as e:
+        tprint(f"Error selecting live candidates: {e}. Fallback to basket.")
+        return market_basket

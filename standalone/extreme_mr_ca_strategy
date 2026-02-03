@@ -1,51 +1,18 @@
 """
-FULL UNIFIED SCRIPT (latest changes integrated)
+FULL UNIFIED SCRIPT (edited per requirements)
 
-Binance Spot (hourly) + Margin-universe filter + ElasticNet regression signal -> trades
----------------------------------------------------------------------------
-Key features implemented:
+Binance Spot (hourly) + daily margin-universe filter + MR/TF ElasticNet regression blend
++ RuleCleaner (corr > 0.8) + Hourly Peak Exhaustion model (trained hourly)
 
-1) Universe limited to assets available on Binance CROSS MARGIN market:
-   - Uses GET https://api.binance.com/sapi/v1/margin/allPairs
-   - Filters to USDT-quoted margin pairs only.
-
-2) Execution realism:
-   - Entry is ALWAYS the next-hour open (first hour of next day). NO VWAP, NO “VWAP or better”.
-   - Signal computed at end-of-day (last hour).
-
-3) Label definition:
-   - Regression target y = future return over cfg["label_horizon_hours"] from next-day entry close.
-
-4) Training set focus:
-   - Train ONLY on extreme movers each day:
-       top/bottom cfg["train_extreme_pct"] of returns,
-       with min cfg["train_extreme_min"] and max cfg["train_extreme_max"] per side.
-
-5) Binary Interaction Toggle strategy:
-   - Regime gates computed from coarse market features:
-       G_VOL   = 1 if mkt_rv > rolling median(mkt_rv)
-       G_TREND = 1 if abs(mkt_ret24h) > threshold
-   - Interaction expansion for causal features:
-       feature_G_VOL_0, feature_G_VOL_1
-       feature_G_TREND_0, feature_G_TREND_1
-   - Optionally drops raw causal features to force regime-specific paths.
-
-6) Candidate gating & sizing:
-   - Long candidates: pred >= thr_long
-   - Short candidates: pred <= thr_short
-   - Sizing capped: gross exposure <= 25% wallet (cfg["wallet_gross_cap"])
-   - Allocation proportional to score(pred) (tanh or relu mapping).
-
-7) Trade lifecycle:
-   - Enter positions (next-hour open)
-   - Monitor TP/SL on hourly bars; exit on TP/SL or hold timeout.
-
-8) Automatic Stability / Coefficient Persistence integrated into gating:
-   - Tracks coefficient persistence over rolling windows.
-   - Uses persistence in TWO ways:
-     (A) Feature gating: unstable interaction features are zeroed out in X before prediction.
-     (B) Exposure scaling: daily gross wallet cap is scaled by stability_score in [0,1].
-         (Optional) No-trade if stability_score < cfg["min_model_stability_to_trade"].
+Key requirements implemented:
+(1,9) Keep trend monitoring vs mean reversion and long vs short logic (MR + TF + regime mixing).
+(2) No leakage / lookahead: strict training windows and feature/label alignment.
+(3) No VWAP entry: entry always next-hour open.
+(4) Monitor hourly during trading: TP/SL on hourly bars (backtest sim + live loop stub).
+(5) margin_spot_symbols refreshed daily (hook in main loop).
+(6) RuleCleaner: drop features corr > 0.8 using ElasticNet coef magnitude priority.
+(7) API limit: OHLCV fetch is forced into 7-day chunks.
+(8) Peak exhaustion score model trained hourly on same feature space; used to filter/downweight trades.
 
 Dependencies:
   pip install ccxt pandas numpy requests scikit-learn
@@ -59,9 +26,11 @@ import pandas as pd
 import ccxt
 
 from collections import deque
+from dataclasses import dataclass
+
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import ElasticNet
+from sklearn.linear_model import ElasticNet, LogisticRegression
 
 
 # =========================
@@ -88,9 +57,26 @@ def margin_pairs_to_spot_symbols(margin_pairs_json, quote="USDT"):
             out.add(f"{base}/{quote}")
     return sorted(out)
 
+@dataclass
+class MarginUniverseCache:
+    symbols: list
+    asof_day: pd.Timestamp
+
+def refresh_margin_universe_daily(cache: MarginUniverseCache | None, quote="USDT") -> MarginUniverseCache:
+    """
+    (5) Refresh margin_spot_symbols daily.
+    Call this once per day in live, and at least once at startup.
+    """
+    today = pd.Timestamp.utcnow().tz_localize("UTC").floor("D")
+    if cache is not None and cache.asof_day == today:
+        return cache
+    pairs = fetch_binance_cross_margin_pairs()
+    syms = margin_pairs_to_spot_symbols(pairs, quote=quote)
+    return MarginUniverseCache(symbols=syms, asof_day=today)
+
 
 # =========================
-# Data fetch (hourly spot)
+# Data fetch (hourly spot) — forced 7-day chunks
 # =========================
 
 def make_spot_exchange():
@@ -98,24 +84,69 @@ def make_spot_exchange():
     ex.load_markets()
     return ex
 
-def fetch_ohlcv_all(exchange, symbol, since_ms, timeframe="1h", limit=1000):
+def _fetch_ohlcv_paged(exchange, symbol, since_ms, until_ms, timeframe="1h", limit=1000):
+    """
+    Fetch with ccxt paging but bounded by [since_ms, until_ms).
+    """
     out = []
     since = since_ms
     while True:
         batch = exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=since, limit=limit)
         if not batch:
             break
-        out.extend(batch)
+        for row in batch:
+            ts = row[0]
+            if ts < since_ms:
+                continue
+            if ts >= until_ms:
+                # stop once we crossed until_ms
+                break
+            out.append(row)
+
         last = batch[-1][0]
+        if last >= until_ms - 1:
+            break
         since = last + 1
+
         if len(batch) < limit:
             break
         time.sleep(exchange.rateLimit / 1000)
+
+    if not out:
+        return pd.DataFrame(columns=["ts","open","high","low","close","volume"]).set_index(
+            pd.DatetimeIndex([], tz="UTC", name="ts")
+        )
 
     df = pd.DataFrame(out, columns=["ts","open","high","low","close","volume"])
     df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True)
     df = df.drop_duplicates("ts").set_index("ts").sort_index()
     return df
+
+def fetch_ohlcv_all_7d_chunks(exchange, symbol, since_ms, timeframe="1h", limit=1000):
+    """
+    (7) API limit: split fetches into 7-day chunks (hard enforced).
+    """
+    chunk_ms = int(pd.Timedelta(days=7).total_seconds() * 1000)
+    now_ms = int(pd.Timestamp.utcnow().value // 10**6)
+
+    dfs = []
+    start = since_ms
+    while start < now_ms:
+        end = min(start + chunk_ms, now_ms)
+        df = _fetch_ohlcv_paged(exchange, symbol, start, end, timeframe=timeframe, limit=limit)
+        if len(df):
+            dfs.append(df)
+        start = end
+        time.sleep(exchange.rateLimit / 1000)
+
+    if not dfs:
+        return pd.DataFrame(columns=["open","high","low","close","volume"]).set_index(
+            pd.DatetimeIndex([], tz="UTC", name="ts")
+        )
+
+    out = pd.concat(dfs).sort_index()
+    out = out[~out.index.duplicated(keep="last")]
+    return out
 
 def to_panel(dfs_by_symbol):
     keys = ["open","high","low","close","volume"]
@@ -126,7 +157,7 @@ def to_panel(dfs_by_symbol):
 
 
 # =========================
-# Feature engineering (hourly)
+# Feature engineering (hourly) — strictly causal
 # =========================
 
 def zscore(x: pd.DataFrame, n: int):
@@ -171,14 +202,13 @@ def compute_features_hourly(panel, cfg):
     feats["trend_pct"] = (c / (sma + 1e-12)) - 1.0
 
     feats["rv_24h"] = feats["ret1h"].rolling(24).std(ddof=0)
-
     feats["body_pct"] = (c - o).abs() / (c + 1e-12)
 
     return feats
 
 
 # =========================
-# Coarse market features (BTC, ETH, AVAX, SOL, XRP)
+# Coarse market features (basket)
 # =========================
 
 def compute_market_features(panel_close, feats_ret1h, basket_syms, trend_sma_hours):
@@ -192,6 +222,7 @@ def compute_market_features(panel_close, feats_ret1h, basket_syms, trend_sma_hou
     sma = panel_close[basket].rolling(trend_sma_hours).mean()
     mkt_trend = (panel_close[basket] / (sma + 1e-12) - 1.0).mean(axis=1)
 
+    # realized vol on mean basket ret1h
     mkt_rv = feats_ret1h[basket].mean(axis=1).rolling(24).std(ddof=0)
 
     return pd.DataFrame({
@@ -200,11 +231,6 @@ def compute_market_features(panel_close, feats_ret1h, basket_syms, trend_sma_hou
         "mkt_trend": mkt_trend,
         "mkt_rv": mkt_rv
     })
-
-
-# =========================
-# Regime gates + interactions
-# =========================
 
 def add_regime_gates(mkt_df: pd.DataFrame, cfg):
     df = mkt_df.copy()
@@ -225,7 +251,55 @@ def apply_interaction_toggles(df: pd.DataFrame, causal_cols, gate_cols, drop_raw
 
 
 # =========================
-# Extreme mover selection for training
+# RuleCleaner (corr > 0.8, prioritize by ElasticNet coef magnitude)
+# =========================
+
+class RuleCleaner:
+    """
+    (6) Drop features with abs(corr) > threshold, keeping the one with larger |coef|.
+    Fit after the model is fit (so we have coefs), but applied before prediction/training storage.
+    """
+    def __init__(self, corr_thr=0.8):
+        self.corr_thr = float(corr_thr)
+        self.keep_cols_ = None
+
+    def fit(self, X_df: pd.DataFrame, coef_by_col: dict):
+        cols = list(X_df.columns)
+        if len(cols) <= 1:
+            self.keep_cols_ = cols
+            return self
+
+        corr = X_df.corr().abs()
+        np.fill_diagonal(corr.values, 0.0)
+
+        # order cols by descending |coef|, so we keep strong ones first
+        strength = pd.Series({c: abs(float(coef_by_col.get(c, 0.0))) for c in cols})
+        ordered = strength.sort_values(ascending=False).index.tolist()
+
+        keep = []
+        dropped = set()
+
+        for c in ordered:
+            if c in dropped:
+                continue
+            keep.append(c)
+            # drop all highly correlated with c
+            high = corr.index[corr[c] > self.corr_thr].tolist()
+            for h in high:
+                dropped.add(h)
+
+        self.keep_cols_ = keep
+        return self
+
+    def transform(self, X_df: pd.DataFrame) -> pd.DataFrame:
+        if self.keep_cols_ is None:
+            return X_df
+        existing = [c for c in self.keep_cols_ if c in X_df.columns]
+        return X_df[existing].copy()
+
+
+# =========================
+# Extreme mover selection for training (MR)
 # =========================
 
 def select_extreme_movers(ret_series: pd.Series, pct: float = 0.05, min_n: int = 5, max_n: int = 20):
@@ -258,7 +332,7 @@ def select_extreme_movers(ret_series: pd.Series, pct: float = 0.05, min_n: int =
 
 
 # =========================
-# Execution: NEXT-HOUR OPEN (conservative)
+# Execution: NEXT-HOUR OPEN (no VWAP)
 # =========================
 
 def entry_price_next_hour_open(panel_open, ts_entry, symbol):
@@ -270,7 +344,7 @@ def entry_price_next_hour_open(panel_open, ts_entry, symbol):
 
 
 # =========================
-# TP/SL simulation on hourly bars
+# TP/SL simulation on hourly bars (hourly monitoring)
 # =========================
 
 def simulate_trade_hourly(o_s, h_s, l_s, c_s, entry_ts, entry_px, side, tp, sl, max_hold_hours):
@@ -298,7 +372,6 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, entry_ts, entry_px, side, tp, sl, 
             hit_tp = hh >= tp_px
             hit_sl = ll <= sl_px
             if hit_tp and hit_sl:
-                # conservative within-hour ambiguity
                 return (sl_px / entry_px) - 1.0, ts, "sl_same_hour"
             if hit_tp:
                 return (tp_px / entry_px) - 1.0, ts, "tp"
@@ -323,7 +396,7 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, entry_ts, entry_px, side, tp, sl, 
 
 
 # =========================
-# Regression model: ElasticNet predicts future return
+# Models
 # =========================
 
 def make_elasticnet_reg(alpha=1e-3, l1_ratio=0.2):
@@ -338,6 +411,22 @@ def make_elasticnet_reg(alpha=1e-3, l1_ratio=0.2):
         ))
     ])
 
+def make_exhaustion_model(C=1.0, l1_ratio=0.3):
+    """
+    (8) Hourly Peak exhaustion score model: logistic regression with elastic-net penalty.
+    """
+    return Pipeline([
+        ("scaler", StandardScaler(with_mean=True, with_std=True)),
+        ("clf", LogisticRegression(
+            penalty="elasticnet",
+            solver="saga",
+            l1_ratio=float(l1_ratio),
+            C=float(C),
+            max_iter=2000,
+            random_state=42
+        ))
+    ])
+
 def map_pred_to_score(pred_ret, mode="tanh", scale=10.0):
     x = pred_ret * scale
     if mode == "tanh":
@@ -346,22 +435,20 @@ def map_pred_to_score(pred_ret, mode="tanh", scale=10.0):
         return float(max(0.0, x))          # unbounded
     raise ValueError("mode must be 'tanh' or 'relu'")
 
+def mix_predictions(mr_pred, tf_pred, G_VOL, G_TREND, cfg):
+    w_mr = cfg["mix_base_mr"] + cfg["mix_add_mr_on_vol"] * int(G_VOL)
+    w_tf = cfg["mix_base_tf"] + cfg["mix_add_tf_on_trend"] * int(G_TREND)
+    s = w_mr + w_tf
+    if s <= 0:
+        return mr_pred
+    return (w_mr/s) * mr_pred + (w_tf/s) * tf_pred
+
 
 # =========================
-# Coefficient Persistence Tracker (for gating)
+# Coefficient Persistence Tracker
 # =========================
 
 class CoefPersistence:
-    """
-    Tracks coefficient persistence over the last `window` fits.
-    Provides per-feature:
-      - nonzero_rate
-      - sign_consistency
-      - mean_coef
-    Used for:
-      (A) Zeroing unstable features in X at prediction time
-      (B) Scaling total exposure by an overall stability score
-    """
     def __init__(self, window=60, nonzero_eps=1e-10):
         self.window = int(window)
         self.nonzero_eps = float(nonzero_eps)
@@ -374,7 +461,6 @@ class CoefPersistence:
         if self.feature_names is None:
             self.feature_names = list(feat_cols)
         else:
-            # if feature set changes, reset (keep it strict)
             if list(feat_cols) != self.feature_names:
                 self.feature_names = list(feat_cols)
                 self.coef_hist.clear()
@@ -383,7 +469,7 @@ class CoefPersistence:
     def stats(self):
         if self.feature_names is None or len(self.coef_hist) < 2:
             return pd.DataFrame(columns=["feature","nonzero_rate","sign_consistency","mean_coef"])
-        W = np.vstack(self.coef_hist)  # shape [T, F]
+        W = np.vstack(self.coef_hist)
         nz = (np.abs(W) > self.nonzero_eps).astype(int)
         nonzero_rate = nz.mean(axis=0)
 
@@ -391,29 +477,23 @@ class CoefPersistence:
         neg = (W < -self.nonzero_eps).sum(axis=0)
         denom = (pos + neg).astype(float) + 1e-12
         sign_consistency = np.maximum(pos, neg) / denom
-
         mean_coef = W.mean(axis=0)
 
-        df = pd.DataFrame({
+        return pd.DataFrame({
             "feature": self.feature_names,
             "nonzero_rate": nonzero_rate,
             "sign_consistency": sign_consistency,
             "mean_coef": mean_coef
         })
-        return df
 
     def stable_feature_mask(self, min_nonzero_rate=0.3, min_sign_consistency=0.7):
         df = self.stats()
         if df.empty:
             return None
         stable = (df["nonzero_rate"] >= min_nonzero_rate) & (df["sign_consistency"] >= min_sign_consistency)
-        return stable.values  # boolean array aligned to feature order
+        return stable.values
 
     def model_stability_score(self, min_nonzero_rate=0.3, min_sign_consistency=0.7):
-        """
-        Overall stability score in [0,1]:
-        fraction of features meeting stability thresholds.
-        """
         df = self.stats()
         if df.empty:
             return 0.0
@@ -422,10 +502,14 @@ class CoefPersistence:
 
 
 # =========================
-# Build daily samples (regression) with extreme movers + gates + interactions
+# Sample builders (daily decision points)
 # =========================
 
 def build_daily_samples_regression_with_gates(panel, feats, mkt_df_with_gates, cfg, universe_syms):
+    """
+    MR samples: train only on extreme movers by ret24h at ts_sig (end of day d).
+    Label uses return from ts_entry close to ts_entry + horizon close (strictly future).
+    """
     c = panel["close"]
     days = pd.Index(sorted(set(c.index.floor("D"))))
     rows = []
@@ -439,18 +523,17 @@ def build_daily_samples_regression_with_gates(panel, feats, mkt_df_with_gates, c
         mask_d = (c.index.floor("D") == d)
         if not mask_d.any():
             continue
-        ts_sig = c.index[mask_d][-1]
+        ts_sig = c.index[mask_d][-1]  # end-of-day hour
 
         mask_next = (c.index.floor("D") == d_next)
         if not mask_next.any():
             continue
-        ts_entry = c.index[mask_next][0]
+        ts_entry = c.index[mask_next][0]  # first hour next day (entry hour)
 
         ts_exit = ts_entry + pd.Timedelta(hours=cfg["label_horizon_hours"])
         if ts_exit not in c.index:
             continue
 
-        # universe by daily quote volume
         if d not in qv_day.index:
             continue
         qv = qv_day.loc[d].dropna().sort_values(ascending=False)
@@ -462,7 +545,6 @@ def build_daily_samples_regression_with_gates(panel, feats, mkt_df_with_gates, c
             continue
         mkt_row = mkt_df_with_gates.loc[ts_sig]
 
-        # train on extreme movers only
         top_syms, bot_syms = select_extreme_movers(
             ret_series=feats["ret24h"].loc[ts_sig, uni],
             pct=cfg["train_extreme_pct"],
@@ -473,7 +555,7 @@ def build_daily_samples_regression_with_gates(panel, feats, mkt_df_with_gates, c
         if not extreme_syms:
             continue
 
-        # breadth features over the whole universe
+        # breadth features
         uni_ret24 = feats["ret24h"].loc[ts_sig, uni].dropna()
         if len(uni_ret24) == 0:
             continue
@@ -486,13 +568,13 @@ def build_daily_samples_regression_with_gates(panel, feats, mkt_df_with_gates, c
             if sym not in c.columns:
                 continue
 
+            # features at ts_sig only (causal)
             try:
                 x = {
                     "day": d,
                     "ts_sig": ts_sig,
                     "symbol": sym,
 
-                    # asset causal features
                     "a_ret24h": float(feats["ret24h"].loc[ts_sig, sym]),
                     "a_ret6h":  float(feats["ret6h"].loc[ts_sig, sym]),
                     "a_atr":    float(feats["atr_pct"].loc[ts_sig, sym]),
@@ -504,17 +586,14 @@ def build_daily_samples_regression_with_gates(panel, feats, mkt_df_with_gates, c
                     "a_gap":    float(feats["gap_pct"].loc[ts_sig, sym]),
                     "a_body":   float(feats["body_pct"].loc[ts_sig, sym]),
 
-                    # coarse market features
                     "mkt_ret24h": float(mkt_row["mkt_ret24h"]),
                     "mkt_ret6h":  float(mkt_row["mkt_ret6h"]),
                     "mkt_trend":  float(mkt_row["mkt_trend"]),
                     "mkt_rv":     float(mkt_row["mkt_rv"]),
 
-                    # gates
                     "G_VOL": int(mkt_row["G_VOL"]),
                     "G_TREND": int(mkt_row["G_TREND"]),
 
-                    # breadth
                     "u_breadth_pos": breadth_pos,
                     "u_breadth_neg": breadth_neg,
                     "u_mom":         uni_mom,
@@ -523,6 +602,7 @@ def build_daily_samples_regression_with_gates(panel, feats, mkt_df_with_gates, c
             except Exception:
                 continue
 
+            # label strictly future: from ts_entry close to ts_exit close
             c0 = c.loc[ts_entry, sym]
             c1 = c.loc[ts_exit, sym]
             if pd.isna(c0) or pd.isna(c1) or c0 <= 0:
@@ -549,14 +629,8 @@ def build_daily_samples_regression_with_gates(panel, feats, mkt_df_with_gates, c
 
 def build_daily_samples_trend_follow(panel, feats, mkt_df_with_gates, cfg, universe_syms):
     """
-    Trend-follow training set:
-      - Still daily decision points (ts_sig = last hour of day d)
-      - But we train on assets that are already trending (not just extreme movers).
-    Selection logic (simple + robust):
-      - Take top/bottom quantile by a_trend (trend_pct) each day, with min/max per side.
-      - This gives the model enough 'continuation' examples.
-
-    Label y is same regression target: future return over label_horizon_hours from next-day entry close.
+    TF samples: select strong trenders by trend_pct at ts_sig.
+    Label is identical and strictly future.
     """
     c = panel["close"]
     days = pd.Index(sorted(set(c.index.floor("D"))))
@@ -582,7 +656,6 @@ def build_daily_samples_trend_follow(panel, feats, mkt_df_with_gates, cfg, unive
         if ts_exit not in c.index:
             continue
 
-        # universe by daily quote volume
         if d not in qv_day.index:
             continue
         qv = qv_day.loc[d].dropna().sort_values(ascending=False)
@@ -594,25 +667,20 @@ def build_daily_samples_trend_follow(panel, feats, mkt_df_with_gates, cfg, unive
             continue
         mkt_row = mkt_df_with_gates.loc[ts_sig]
 
-        # Trend-follow focus: select strong trenders by trend_pct at ts_sig
         trend_ser = feats["trend_pct"].loc[ts_sig, uni].dropna()
         if len(trend_ser) == 0:
             continue
 
-        # top and bottom trenders (continuation candidates)
         pos = trend_ser.sort_values(ascending=False)
         neg = trend_ser.sort_values(ascending=True)
 
         k = max(cfg["tf_train_min"], int(len(trend_ser) * cfg["tf_train_pct"]))
         k = min(k, cfg["tf_train_max"])
 
-        top_syms = pos.head(k).index.tolist()
-        bot_syms = neg.head(k).index.tolist()
-        train_syms = set(top_syms) | set(bot_syms)
+        train_syms = set(pos.head(k).index.tolist()) | set(neg.head(k).index.tolist())
         if not train_syms:
             continue
 
-        # breadth over whole universe at ts_sig
         uni_ret24 = feats["ret24h"].loc[ts_sig, uni].dropna()
         if len(uni_ret24) == 0:
             continue
@@ -630,7 +698,6 @@ def build_daily_samples_trend_follow(panel, feats, mkt_df_with_gates, cfg, unive
                     "ts_sig": ts_sig,
                     "symbol": sym,
 
-                    # asset features (same as MR builder)
                     "a_ret24h": float(feats["ret24h"].loc[ts_sig, sym]),
                     "a_ret6h":  float(feats["ret6h"].loc[ts_sig, sym]),
                     "a_atr":    float(feats["atr_pct"].loc[ts_sig, sym]),
@@ -642,17 +709,14 @@ def build_daily_samples_trend_follow(panel, feats, mkt_df_with_gates, cfg, unive
                     "a_gap":    float(feats["gap_pct"].loc[ts_sig, sym]),
                     "a_body":   float(feats["body_pct"].loc[ts_sig, sym]),
 
-                    # market features
                     "mkt_ret24h": float(mkt_row["mkt_ret24h"]),
                     "mkt_ret6h":  float(mkt_row["mkt_ret6h"]),
                     "mkt_trend":  float(mkt_row["mkt_trend"]),
                     "mkt_rv":     float(mkt_row["mkt_rv"]),
 
-                    # gates
                     "G_VOL": int(mkt_row["G_VOL"]),
                     "G_TREND": int(mkt_row["G_TREND"]),
 
-                    # breadth
                     "u_breadth_pos": breadth_pos,
                     "u_breadth_neg": breadth_neg,
                     "u_mom":         uni_mom,
@@ -684,63 +748,153 @@ def build_daily_samples_trend_follow(panel, feats, mkt_df_with_gates, cfg, unive
     df = df.dropna(subset=feat_cols + ["y"])
     return df, feat_cols
 
-def mix_predictions(mr_pred, tf_pred, G_VOL, G_TREND, cfg):
-    """
-    Regime-based mixture:
-      - In high vol (G_VOL=1), emphasize mean reversion
-      - In strong push (G_TREND=1), emphasize trend follow
-    We compute weights and return blended prediction.
 
-    cfg knobs:
-      - mix_base_mr, mix_base_tf
-      - mix_add_mr_on_vol
-      - mix_add_tf_on_trend
-    """
-    w_mr = cfg["mix_base_mr"] + cfg["mix_add_mr_on_vol"] * int(G_VOL)
-    w_tf = cfg["mix_base_tf"] + cfg["mix_add_tf_on_trend"] * int(G_TREND)
+# =========================
+# (8) Peak Exhaustion dataset (hourly) + model
+# =========================
 
-    s = w_mr + w_tf
-    if s <= 0:
-        return mr_pred  # fallback
-    w_mr /= s
-    w_tf /= s
-    return w_mr * mr_pred + w_tf * tf_pred
+def build_hourly_exhaustion_samples(panel, feats, mkt_df_with_gates, cfg, universe_syms):
+    """
+    Hourly samples, trained on same feature set as daily models (interactionized).
+    Target: "exhaustion" binary event after ts:
+      - If price moves further in the current direction by small amount but then reverses
+        by >= exh_reversal_thr within exh_horizon_hours.
+
+    This is intentionally simple and causal:
+      X at time t uses only <= t information,
+      y uses (t+1 ... t+h) future bars.
+    """
+    o, h, l, c = panel["open"], panel["high"], panel["low"], panel["close"]
+    idx = c.index
+    rows = []
+
+    # choose tradable universe intersection
+    syms = [s for s in universe_syms if s in c.columns]
+    if not syms:
+        return pd.DataFrame(), []
+
+    # Build a raw (pre-interaction) frame per (t, sym)
+    # We sample once per hour, but only for symbols with enough data.
+    for t in idx:
+        # need market gates at t
+        if t not in mkt_df_with_gates.index:
+            continue
+
+        # need future horizon available
+        t_end = t + pd.Timedelta(hours=cfg["exh_horizon_hours"])
+        if t_end not in idx:
+            continue
+
+        mkt_row = mkt_df_with_gates.loc[t]
+
+        for sym in syms:
+            px = c.loc[t, sym]
+            if pd.isna(px) or px <= 0:
+                continue
+
+            # direction proxy: sign of ret24h at t
+            r24 = feats["ret24h"].loc[t, sym]
+            if pd.isna(r24) or r24 == 0:
+                continue
+            direction = 1 if r24 > 0 else -1
+
+            # future path
+            win = c.loc[t:t_end, sym].dropna()
+            if len(win) < 2:
+                continue
+
+            # exhaustion definition:
+            # after t, does it reverse against direction by >= threshold from the max favorable excursion?
+            if direction > 0:
+                peak = win.max()
+                drawdown = (win.min() / peak) - 1.0  # negative
+                y = int(drawdown <= -cfg["exh_reversal_thr"])
+            else:
+                trough = win.min()
+                drawup = (win.max() / trough) - 1.0  # positive
+                y = int(drawup >= cfg["exh_reversal_thr"])
+
+            try:
+                x = {
+                    "ts": t,
+                    "symbol": sym,
+
+                    "a_ret24h": float(feats["ret24h"].loc[t, sym]),
+                    "a_ret6h":  float(feats["ret6h"].loc[t, sym]),
+                    "a_atr":    float(feats["atr_pct"].loc[t, sym]),
+                    "a_rsi":    float(feats["rsi"].loc[t, sym]),
+                    "a_volz":   float(feats["vol_z"].loc[t, sym]),
+                    "a_trend":  float(feats["trend_pct"].loc[t, sym]),
+                    "a_rv24":   float(feats["rv_24h"].loc[t, sym]),
+                    "a_range":  float(feats["range_pct"].loc[t, sym]),
+                    "a_gap":    float(feats["gap_pct"].loc[t, sym]),
+                    "a_body":   float(feats["body_pct"].loc[t, sym]),
+
+                    "mkt_ret24h": float(mkt_row["mkt_ret24h"]),
+                    "mkt_ret6h":  float(mkt_row["mkt_ret6h"]),
+                    "mkt_trend":  float(mkt_row["mkt_trend"]),
+                    "mkt_rv":     float(mkt_row["mkt_rv"]),
+
+                    "G_VOL": int(mkt_row["G_VOL"]),
+                    "G_TREND": int(mkt_row["G_TREND"]),
+
+                    "y_exh": int(y),
+                }
+            except Exception:
+                continue
+
+            rows.append(x)
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df, []
+
+    # interactionize the same way (so it is "on the same datasets"/feature logic)
+    gate_cols = ["G_VOL", "G_TREND"]
+    df = apply_interaction_toggles(
+        df,
+        causal_cols=cfg["causal_cols"],
+        gate_cols=gate_cols,
+        drop_raw=cfg["drop_raw_causal"]
+    )
+
+    feat_cols = [c for c in df.columns if c not in ("ts","symbol","y_exh")]
+    df = df.dropna(subset=feat_cols + ["y_exh"])
+    return df, feat_cols
 
 
 # =========================
-# Backtest (last 3 years) using regression outputs -> thresholds -> wallet cap -> TP/SL
-# + Stability gating (feature mask + exposure scaling)
+# Backtest (3y) — MR/TF + RuleCleaner + Exhaustion model
 # =========================
 
 def backtest_last_3y(panel, feats, mkt_df_with_gates, cfg, margin_symbols):
-    o, h, l, c, v = panel["open"], panel["high"], panel["low"], panel["close"], panel["volume"]
+    o, h, l, c = panel["open"], panel["high"], panel["low"], panel["close"]
 
-    # keep only data symbols that are in the margin universe
+    # enforce margin universe overlap
     symbols = sorted(set(c.columns).intersection(set(margin_symbols)))
     if not symbols:
         raise ValueError("No overlap between fetched OHLCV symbols and margin-market symbols.")
 
-    # build daily samples (extreme movers only) with gates+interactions
-   # MR samples (extreme movers) + TF samples (trend movers)
-   samples_mr, feat_cols_mr = build_daily_samples_regression_with_gates(
-       panel, feats, mkt_df_with_gates, cfg, universe_syms=symbols
-   )
-   samples_tf, feat_cols_tf = build_daily_samples_trend_follow(
-       panel, feats, mkt_df_with_gates, cfg, universe_syms=symbols
-   )
-   
-   if samples_mr.empty or samples_tf.empty:
-       raise ValueError("Samples missing (MR or TF). Adjust universe/history or selection criteria.")
-   
-   # Require same feature set to keep model mixing simple (recommended)
-   if feat_cols_mr != feat_cols_tf:
-       raise ValueError("Feature columns differ between MR and TF sample builders. Keep them aligned.")
-   feat_cols = feat_cols_mr
+    # build daily samples for MR and TF
+    samples_mr, feat_cols_mr = build_daily_samples_regression_with_gates(panel, feats, mkt_df_with_gates, cfg, universe_syms=symbols)
+    samples_tf, feat_cols_tf = build_daily_samples_trend_follow(panel, feats, mkt_df_with_gates, cfg, universe_syms=symbols)
+    if samples_mr.empty or samples_tf.empty:
+        raise ValueError("Samples missing (MR or TF). Adjust universe/history or selection criteria.")
+    if feat_cols_mr != feat_cols_tf:
+        raise ValueError("Feature columns differ between MR and TF sample builders. Keep them aligned.")
+    feat_cols = feat_cols_mr
 
+    # build hourly exhaustion samples once (for backtest). live will retrain hourly rolling.
+    exh_df, exh_feat_cols = build_hourly_exhaustion_samples(panel, feats, mkt_df_with_gates, cfg, universe_syms=symbols)
+    if exh_df.empty:
+        # allow backtest to run without it, but you asked to add it; so hard fail if you prefer:
+        raise ValueError("Exhaustion sample set is empty. Increase history/universe or relax exhaustion params.")
+    if exh_feat_cols != feat_cols:
+        # keep identical feature space to reduce mismatch risk
+        raise ValueError("Exhaustion feature columns differ from daily model features. Keep them aligned.")
 
     last_day = c.index.floor("D").max()
     start_day = last_day - pd.Timedelta(days=365*3)
-
     days = pd.Index(sorted(set(c.index.floor("D"))))
     days = days[days >= start_day]
 
@@ -750,10 +904,13 @@ def backtest_last_3y(panel, feats, mkt_df_with_gates, cfg, margin_symbols):
 
     daily_borrow = cfg["borrow_apr"] / 365.0
     fee_rt = cfg["fee_bps"] / 1e4
-   
-   coef_persist_mr = CoefPersistence(window=cfg["coef_persist_window"])
-   coef_persist_tf = CoefPersistence(window=cfg["coef_persist_window"])
 
+    coef_persist_mr = CoefPersistence(window=cfg["coef_persist_window"])
+    coef_persist_tf = CoefPersistence(window=cfg["coef_persist_window"])
+
+    # RuleCleaners per model (fit daily, from train window)
+    cleaner_mr = RuleCleaner(corr_thr=cfg["ruleclean_corr_thr"])
+    cleaner_tf = RuleCleaner(corr_thr=cfg["ruleclean_corr_thr"])
 
     for di in range(len(days) - 2):
         d = days[di]
@@ -762,195 +919,204 @@ def backtest_last_3y(panel, feats, mkt_df_with_gates, cfg, margin_symbols):
         # signal ts = last hour of day d
         mask_d = (c.index.floor("D") == d)
         if not mask_d.any():
+            eq_curve.append((d_next, equity))
             continue
         ts_sig = c.index[mask_d][-1]
 
         # entry ts = first hour of next day
         mask_next = (c.index.floor("D") == d_next)
         if not mask_next.any():
+            eq_curve.append((d_next, equity))
             continue
         ts_entry = c.index[mask_next][0]
 
-        # rolling training window
+        # rolling training window (STRICTLY past)
         train_start = d - pd.Timedelta(days=cfg["train_days"])
         train_end   = d - pd.Timedelta(days=1)
-        train = samples[(samples["day"] >= train_start) & (samples["day"] <= train_end)]
-        if len(train) < cfg["min_train_samples"]:
+
+        train_mr = samples_mr[(samples_mr["day"] >= train_start) & (samples_mr["day"] <= train_end)]
+        train_tf = samples_tf[(samples_tf["day"] >= train_start) & (samples_tf["day"] <= train_end)]
+        if len(train_mr) < cfg["min_train_samples_mr"] or len(train_tf) < cfg["min_train_samples_tf"]:
+            eq_curve.append((d_next, equity))
             continue
 
-        # fit model
-         # --- Train MR model ---
-         train_mr = samples_mr[(samples_mr["day"] >= train_start) & (samples_mr["day"] <= train_end)]
-         if len(train_mr) < cfg["min_train_samples_mr"]:
-             continue
-         
-         model_mr = make_elasticnet_reg(alpha=cfg["alpha_mr"], l1_ratio=cfg["l1_ratio_mr"])
-         Xtr_mr = train_mr[feat_cols].values
-         ytr_mr = train_mr["y"].values.astype(float)
-         model_mr.fit(Xtr_mr, ytr_mr)
-         coef_persist_mr.update(model_mr, feat_cols)
-         
-         stable_mask_mr = coef_persist_mr.stable_feature_mask(
-             min_nonzero_rate=cfg["min_feat_nonzero_rate"],
-             min_sign_consistency=cfg["min_feat_sign_consistency"]
-         )
-         stability_mr = coef_persist_mr.model_stability_score(
-             min_nonzero_rate=cfg["min_feat_nonzero_rate"],
-             min_sign_consistency=cfg["min_feat_sign_consistency"]
-         )
-         
-         # --- Train TF model ---
-         train_tf = samples_tf[(samples_tf["day"] >= train_start) & (samples_tf["day"] <= train_end)]
-         if len(train_tf) < cfg["min_train_samples_tf"]:
-             continue
-         
-         model_tf = make_elasticnet_reg(alpha=cfg["alpha_tf"], l1_ratio=cfg["l1_ratio_tf"])
-         Xtr_tf = train_tf[feat_cols].values
-         ytr_tf = train_tf["y"].values.astype(float)
-         model_tf.fit(Xtr_tf, ytr_tf)
-         coef_persist_tf.update(model_tf, feat_cols)
-         
-         stable_mask_tf = coef_persist_tf.stable_feature_mask(
-             min_nonzero_rate=cfg["min_feat_nonzero_rate"],
-             min_sign_consistency=cfg["min_feat_sign_consistency"]
-         )
-         stability_tf = coef_persist_tf.model_stability_score(
-             min_nonzero_rate=cfg["min_feat_nonzero_rate"],
-             min_sign_consistency=cfg["min_feat_sign_consistency"]
-         )
+        # --- Train MR model ---
+        model_mr = make_elasticnet_reg(alpha=cfg["alpha_mr"], l1_ratio=cfg["l1_ratio_mr"])
+        Xtr_mr_df = train_mr[feat_cols].copy()
+        ytr_mr = train_mr["y"].values.astype(float)
+        model_mr.fit(Xtr_mr_df.values, ytr_mr)
+        coef_persist_mr.update(model_mr, feat_cols)
 
+        # (6) RuleCleaner fit for MR (use trained coefs)
+        mr_coefs = dict(zip(feat_cols, model_mr.named_steps["reg"].coef_.ravel().tolist()))
+        cleaner_mr.fit(Xtr_mr_df, mr_coefs)
+        Xtr_mr_df = cleaner_mr.transform(Xtr_mr_df)
 
-        # update coefficient persistence tracker
-        coef_persist.update(model, feat_cols)
-
-        # compute stability stats and stable feature mask
-        stable_mask = coef_persist.stable_feature_mask(
+        stable_mask_mr = coef_persist_mr.stable_feature_mask(
+            min_nonzero_rate=cfg["min_feat_nonzero_rate"],
+            min_sign_consistency=cfg["min_feat_sign_consistency"]
+        )
+        stability_mr = coef_persist_mr.model_stability_score(
             min_nonzero_rate=cfg["min_feat_nonzero_rate"],
             min_sign_consistency=cfg["min_feat_sign_consistency"]
         )
 
-        stability_score = coef_persist.model_stability_score(
+        # --- Train TF model ---
+        model_tf = make_elasticnet_reg(alpha=cfg["alpha_tf"], l1_ratio=cfg["l1_ratio_tf"])
+        Xtr_tf_df = train_tf[feat_cols].copy()
+        ytr_tf = train_tf["y"].values.astype(float)
+        model_tf.fit(Xtr_tf_df.values, ytr_tf)
+        coef_persist_tf.update(model_tf, feat_cols)
+
+        tf_coefs = dict(zip(feat_cols, model_tf.named_steps["reg"].coef_.ravel().tolist()))
+        cleaner_tf.fit(Xtr_tf_df, tf_coefs)
+        Xtr_tf_df = cleaner_tf.transform(Xtr_tf_df)
+
+        stable_mask_tf = coef_persist_tf.stable_feature_mask(
+            min_nonzero_rate=cfg["min_feat_nonzero_rate"],
+            min_sign_consistency=cfg["min_feat_sign_consistency"]
+        )
+        stability_tf = coef_persist_tf.model_stability_score(
             min_nonzero_rate=cfg["min_feat_nonzero_rate"],
             min_sign_consistency=cfg["min_feat_sign_consistency"]
         )
 
-      # Skip trading if BOTH models are too unstable
-      if (stability_mr < cfg["min_model_stability_to_trade"]) and (stability_tf < cfg["min_model_stability_to_trade"]):
-          eq_curve.append((d_next, equity))
-          continue
-      
-      # Effective cap uses regime-blended stability:
-      # When vol gate is on, rely more on MR stability; when trend gate is on, rely more on TF stability.
-      # Use today's market gate from any row (same across symbols for the day)
-      G_VOL_day = int(today["G_VOL"].iloc[0])
-      G_TREND_day = int(today["G_TREND"].iloc[0])
-      
-      # same mixture weights used for predictions but applied to stability
-      w_mr = cfg["mix_base_mr"] + cfg["mix_add_mr_on_vol"] * G_VOL_day
-      w_tf = cfg["mix_base_tf"] + cfg["mix_add_tf_on_trend"] * G_TREND_day
-      s = w_mr + w_tf
-      if s <= 0:
-          blended_stability = stability_mr
-      else:
-          blended_stability = (w_mr/s) * stability_mr + (w_tf/s) * stability_tf
-      
-      target = max(cfg["target_model_stability"], 1e-6)
-      stability_scale = min(1.0, max(0.0, blended_stability / target))
-      effective_gross_cap = cfg["wallet_gross_cap"] * stability_scale
+        # (8) Train hourly exhaustion model at ts_sig using rolling hourly window ending at ts_sig
+        exh_end = ts_sig
+        exh_start = exh_end - pd.Timedelta(hours=cfg["exh_train_lookback_hours"])
+        exh_train = exh_df[(exh_df["ts"] >= exh_start) & (exh_df["ts"] <= exh_end)]
+        if len(exh_train) < cfg["min_exh_samples"]:
+            eq_curve.append((d_next, equity))
+            continue
 
+        exh_model = make_exhaustion_model(C=cfg["exh_C"], l1_ratio=cfg["exh_l1_ratio"])
+        X_exh = exh_train[feat_cols].values
+        y_exh = exh_train["y_exh"].values.astype(int)
+        # guard: need both classes
+        if len(np.unique(y_exh)) < 2:
+            eq_curve.append((d_next, equity))
+            continue
+        exh_model.fit(X_exh, y_exh)
 
-        # today's candidate rows: NOTE samples include only extreme movers (by construction)
-         today_mr = samples_mr[samples_mr["day"] == d].copy()
-         today_tf = samples_tf[samples_tf["day"] == d].copy()
-         if today_mr.empty or today_tf.empty:
-             eq_curve.append((d_next, equity))
-             continue
-         
-         # Align by symbol (inner join) so we can blend per-asset.
-         today = pd.merge(
-             today_mr[["symbol","G_VOL","G_TREND"] + feat_cols],
-             today_tf[["symbol"] + feat_cols],
-             on="symbol",
-             suffixes=("_mr", "_tf"),
-             how="inner"
-         )
-         if today.empty:
-             eq_curve.append((d_next, equity))
-             continue
-         
-         # Predict MR
-         X_mr = today[[c + "_mr" for c in feat_cols]].values.copy()
-         if stable_mask_mr is not None:
-             X_mr[:, ~stable_mask_mr] = 0.0
-         pred_mr = model_mr.predict(X_mr)
-         
-         # Predict TF
-         X_tf = today[[c + "_tf" for c in feat_cols]].values.copy()
-         if stable_mask_tf is not None:
-             X_tf[:, ~stable_mask_tf] = 0.0
-         pred_tf = model_tf.predict(X_tf)
-         
-         # Blend per row using regime gates
-         today["pred_mr"] = pred_mr
-         today["pred_tf"] = pred_tf
-         today["pred"] = [
-             mix_predictions(mr, tf, gv, gt, cfg)
-             for mr, tf, gv, gt in zip(pred_mr, pred_tf, today["G_VOL"].values, today["G_TREND"].values)
-         ]
+        # Skip trading if BOTH models too unstable
+        if (stability_mr < cfg["min_model_stability_to_trade"]) and (stability_tf < cfg["min_model_stability_to_trade"]):
+            eq_curve.append((d_next, equity))
+            continue
 
+        # today's candidate rows (by construction, MR and TF sets differ; we inner-join per-symbol)
+        today_mr = samples_mr[samples_mr["day"] == d].copy()
+        today_tf = samples_tf[samples_tf["day"] == d].copy()
+        if today_mr.empty or today_tf.empty:
+            eq_curve.append((d_next, equity))
+            continue
+
+        today = pd.merge(
+            today_mr[["symbol","G_VOL","G_TREND"] + feat_cols],
+            today_tf[["symbol"] + feat_cols],
+            on="symbol",
+            suffixes=("_mr", "_tf"),
+            how="inner"
+        )
+        if today.empty:
+            eq_curve.append((d_next, equity))
+            continue
+
+        # compute blended stability -> effective gross cap
+        G_VOL_day = int(today["G_VOL"].iloc[0])
+        G_TREND_day = int(today["G_TREND"].iloc[0])
+
+        w_mr = cfg["mix_base_mr"] + cfg["mix_add_mr_on_vol"] * G_VOL_day
+        w_tf = cfg["mix_base_tf"] + cfg["mix_add_tf_on_trend"] * G_TREND_day
+        s = w_mr + w_tf
+        blended_stability = stability_mr if s <= 0 else (w_mr/s)*stability_mr + (w_tf/s)*stability_tf
+
+        target = max(cfg["target_model_stability"], 1e-6)
+        stability_scale = min(1.0, max(0.0, blended_stability / target))
+        effective_gross_cap = cfg["wallet_gross_cap"] * stability_scale
+
+        # Predict MR (apply RuleCleaner columns + persistence mask)
+        X_mr_df = today[[c + "_mr" for c in feat_cols]].copy()
+        X_mr_df.columns = feat_cols
+        X_mr_df = cleaner_mr.transform(X_mr_df)
+        X_mr = X_mr_df.values.copy()
+        if stable_mask_mr is not None:
+            # stable_mask aligns to full feat_cols; but cleaner reduced columns
+            kept = list(X_mr_df.columns)
+            kept_idx = [feat_cols.index(k) for k in kept]
+            mask_kept = stable_mask_mr[kept_idx]
+            X_mr[:, ~mask_kept] = 0.0
+        pred_mr = model_mr.predict(X_mr)
+
+        # Predict TF
+        X_tf_df = today[[c + "_tf" for c in feat_cols]].copy()
+        X_tf_df.columns = feat_cols
+        X_tf_df = cleaner_tf.transform(X_tf_df)
+        X_tf = X_tf_df.values.copy()
+        if stable_mask_tf is not None:
+            kept = list(X_tf_df.columns)
+            kept_idx = [feat_cols.index(k) for k in kept]
+            mask_kept = stable_mask_tf[kept_idx]
+            X_tf[:, ~mask_kept] = 0.0
+        pred_tf = model_tf.predict(X_tf)
+
+        # Blend per row using gates
+        today["pred_mr"] = pred_mr
+        today["pred_tf"] = pred_tf
+        today["pred"] = [
+            mix_predictions(mr, tf, gv, gt, cfg)
+            for mr, tf, gv, gt in zip(pred_mr, pred_tf, today["G_VOL"].values, today["G_TREND"].values)
+        ]
+
+        # (8) Peak exhaustion probability at ts_sig, per symbol (same feature space, using MR view)
+        # Use MR view features at ts_sig as the "current state"
+        X_exh_today = today[[c + "_mr" for c in feat_cols]].copy()
+        X_exh_today.columns = feat_cols
+        p_exh = exh_model.predict_proba(X_exh_today.values)[:, 1]
+        today["p_exhaust"] = p_exh
+
+        # Apply exhaustion as filter / down-weight:
+        # - block trades if p_exhaust >= exh_block_thr
+        # - else down-weight score by (1 - p_exhaust)^exh_pow
+        today["exh_ok"] = (today["p_exhaust"] < cfg["exh_block_thr"]).astype(int)
+        today = today[today["exh_ok"] == 1]
+        if today.empty:
+            eq_curve.append((d_next, equity))
+            continue
 
         # candidate gating via predicted return thresholds
         long_df  = today[today["pred"] >= cfg["thr_long"]].copy()
         short_df = today[today["pred"] <= cfg["thr_short"]].copy()
 
-        # optional secondary gate (e.g., volz)
-        if cfg.get("min_volz") is not None:
-            # the raw volz feature name may have been dropped if included in causal_cols and drop_raw_causal=True
-            # we keep "a_volz" in causal_cols by default; with drop_raw, "a_volz" disappears.
-            # For this filter, include a_volz in "non_causal_keep_cols" OR remove this filter.
-            # Here: if a_volz exists, apply it; otherwise skip.
-            if "a_volz" in today.columns:
-                long_df  = long_df[long_df["a_volz"] >= cfg["min_volz"]]
-                short_df = short_df[short_df["a_volz"] >= cfg["min_volz"]]
-
-        # compute scores & cap K
+        # compute scores & cap K (exhaustion down-weight)
         if not long_df.empty:
-            long_df["score"] = long_df["pred"].apply(lambda x: map_pred_to_score(x, cfg["score_map"], cfg["score_scale"]))
+            long_df["score_raw"] = long_df["pred"].apply(lambda x: map_pred_to_score(x, cfg["score_map"], cfg["score_scale"]))
+            long_df["score"] = long_df["score_raw"] * ((1.0 - long_df["p_exhaust"]) ** cfg["exh_score_pow"])
             long_df = long_df.sort_values("score", ascending=False).head(cfg["k_long"])
         if not short_df.empty:
-            short_df["score"] = (-short_df["pred"]).apply(lambda x: map_pred_to_score(x, cfg["score_map"], cfg["score_scale"]))
+            short_df["score_raw"] = (-short_df["pred"]).apply(lambda x: map_pred_to_score(x, cfg["score_map"], cfg["score_scale"]))
+            short_df["score"] = short_df["score_raw"] * ((1.0 - short_df["p_exhaust"]) ** cfg["exh_score_pow"])
             short_df = short_df.sort_values("score", ascending=False).head(cfg["k_short"])
 
         if long_df.empty and short_df.empty:
             eq_curve.append((d_next, equity))
             continue
 
-        # pool all picks
         picks = []
         for _, r in long_df.iterrows():
-            picks.append((r["symbol"], "long", float(r["score"]), float(r["pred"])))
+            picks.append((r["symbol"], "long", float(r["score"]), float(r["pred"]), float(r["p_exhaust"])))
         for _, r in short_df.iterrows():
-            picks.append((r["symbol"], "short", float(r["score"]), float(r["pred"])))
+            picks.append((r["symbol"], "short", float(r["score"]), float(r["pred"]), float(r["p_exhaust"])))
 
         total_score = sum(p[2] for p in picks)
         if total_score <= 0:
             eq_curve.append((d_next, equity))
             continue
 
-        # exposure scaling by stability score (automatic coefficient persistence gating)
-        # - base gross cap is 0.25 wallet
-        # - effective cap = wallet_gross_cap * clip(stability_score / target_stability, 0..1)
-        target_stability = max(cfg["target_model_stability"], 1e-6)
-        stability_scale = min(1.0, max(0.0, stability_score / target_stability))
-        effective_gross_cap = cfg["wallet_gross_cap"] * stability_scale
-
-        # normalize weights across both sides, capped by effective gross cap
-        weights = [(sym, side, effective_gross_cap * (score / total_score), pred) for sym, side, score, pred in picks]
+        # normalize weights, capped by effective gross cap
+        weights = [(sym, side, effective_gross_cap * (score / total_score), pred, pexh) for sym, side, score, pred, pexh in picks]
 
         pnl = 0.0
-
-        for sym, side, w, pred in weights:
-            # entry at next-hour open only
+        for sym, side, w, pred, pexh in weights:
             entry_px = entry_price_next_hour_open(o, ts_entry, sym)
             if np.isnan(entry_px) or entry_px <= 0:
                 continue
@@ -965,11 +1131,8 @@ def backtest_last_3y(panel, feats, mkt_df_with_gates, cfg, margin_symbols):
                 max_hold_hours=cfg["hold_hours"]
             )
 
-            # borrow cost proxy for shorts
             if side == "short":
                 rr -= daily_borrow * (cfg["hold_hours"] / 24.0)
-
-            # fees: entry + exit
             rr -= 2.0 * fee_rt
 
             pnl += w * rr
@@ -983,12 +1146,14 @@ def backtest_last_3y(panel, feats, mkt_df_with_gates, cfg, margin_symbols):
                 "side": side,
                 "weight": w,
                 "pred_return": pred,
-                "score": map_pred_to_score(pred if side == "long" else -pred, cfg["score_map"], cfg["score_scale"]),
+                "p_exhaust": pexh,
                 "ret": rr,
                 "pnl_contrib": w * rr,
                 "entry_px": entry_px,
                 "exit_reason": why,
-                "model_stability": stability_score,
+                "stability_mr": stability_mr,
+                "stability_tf": stability_tf,
+                "blended_stability": blended_stability,
                 "effective_gross_cap": effective_gross_cap
             })
 
@@ -998,7 +1163,6 @@ def backtest_last_3y(panel, feats, mkt_df_with_gates, cfg, margin_symbols):
     eq = pd.Series({d: e for d, e in eq_curve}).sort_index()
     trades_df = pd.DataFrame(trades)
 
-    # Summary stats on daily equity points
     if len(eq) > 2:
         dr = eq.pct_change().dropna()
         ann = 365.0
@@ -1008,7 +1172,6 @@ def backtest_last_3y(panel, feats, mkt_df_with_gates, cfg, margin_symbols):
     else:
         sharpe = np.nan; cagr = np.nan; max_dd = np.nan
 
-    # coefficient persistence summary
     coef_summary_mr = coef_persist_mr.stats().sort_values(["nonzero_rate","sign_consistency"], ascending=False)
     coef_summary_tf = coef_persist_tf.stats().sort_values(["nonzero_rate","sign_consistency"], ascending=False)
 
@@ -1023,46 +1186,28 @@ def backtest_last_3y(panel, feats, mkt_df_with_gates, cfg, margin_symbols):
     return eq, trades_df, stats, coef_summary_mr, coef_summary_tf
 
 
-# --- TF training selection ---
-"tf_train_pct": 0.05,
-"tf_train_min": 5,
-"tf_train_max": 20,
-
-# --- Two-model hyperparams / train minimums ---
-"alpha_mr": 5e-4,
-"l1_ratio_mr": 0.30,
-"min_train_samples_mr": 1500,
-
-"alpha_tf": 5e-4,
-"l1_ratio_tf": 0.30,
-"min_train_samples_tf": 1500,
-
-# --- Mixture weights (regime-based) ---
-"mix_base_mr": 1.0,
-"mix_base_tf": 1.0,
-"mix_add_mr_on_vol": 1.0,     # when G_VOL=1 -> more MR
-"mix_add_tf_on_trend": 1.0,   # when G_TREND=1 -> more TF
-
-
 # =========================
 # MAIN: wiring example
 # =========================
 
 if __name__ == "__main__":
-    # ---- Config ----
     cfg = {
         # data/universe
-        "universe_topN": 200,              # daily universe size by quote-volume within margin symbols
+        "universe_topN": 200,
 
-        # label/training
+        # label/training (daily MR/TF)
         "label_horizon_hours": 24,
         "train_days": 180,
-        "min_train_samples": 2500,         # with extreme-only sampling, keep feasible; raise with larger universe
 
-        # extreme mover training filter
+        # MR extreme mover filter
         "train_extreme_pct": 0.05,
         "train_extreme_min": 5,
         "train_extreme_max": 20,
+
+        # TF selection
+        "tf_train_pct": 0.05,
+        "tf_train_min": 5,
+        "tf_train_max": 20,
 
         # gates
         "gate_vol_lookback_hours": 24*14,
@@ -1072,37 +1217,49 @@ if __name__ == "__main__":
         "causal_cols": ["a_ret24h","a_rsi","a_volz","a_atr","a_trend","a_rv24"],
         "drop_raw_causal": True,
 
-        # model (ElasticNet regression)
-        "alpha": 5e-4,
-        "l1_ratio": 0.30,
+        # MR/TF hyperparams
+        "alpha_mr": 5e-4,
+        "l1_ratio_mr": 0.30,
+        "min_train_samples_mr": 1500,
 
-        # candidate gating thresholds on predicted return (optimize later)
+        "alpha_tf": 5e-4,
+        "l1_ratio_tf": 0.30,
+        "min_train_samples_tf": 1500,
+
+        # mixture weights
+        "mix_base_mr": 1.0,
+        "mix_base_tf": 1.0,
+        "mix_add_mr_on_vol": 1.0,
+        "mix_add_tf_on_trend": 1.0,
+
+        # candidate thresholds
         "thr_long":  0.010,
         "thr_short": -0.010,
 
-        # selection cap per side
+        # selection cap
         "k_long": 12,
         "k_short": 12,
 
-        # sizing / wallet cap
+        # sizing
         "wallet_gross_cap": 0.25,
         "score_map": "tanh",
         "score_scale": 15.0,
 
         # stability gating
-        "coef_persist_window": 60,           # fits to consider for persistence
+        "coef_persist_window": 60,
         "min_feat_nonzero_rate": 0.30,
         "min_feat_sign_consistency": 0.70,
-        "min_model_stability_to_trade": 0.15, # skip if too unstable
-        "target_model_stability": 0.40,       # scale exposure up to full cap when stability >= target
+        "min_model_stability_to_trade": 0.15,
+        "target_model_stability": 0.40,
 
-        # risk mgmt / execution costs
+        # (6) RuleCleaner
+        "ruleclean_corr_thr": 0.80,
+
+        # risk mgmt / costs
         "tp": 0.06,
         "sl": 0.04,
         "hold_hours": 48,
         "fee_bps": 10.0,
-
-        # shorts (spot margin proxy)
         "borrow_apr": 0.20,
 
         # features
@@ -1110,32 +1267,41 @@ if __name__ == "__main__":
         "rsi_n": 14,
         "volz_n": 24*7,
         "trend_sma_n": 24*14,
+
+        # (8) exhaustion model
+        "exh_horizon_hours": 24,
+        "exh_reversal_thr": 0.04,
+        "exh_train_lookback_hours": 24*30,  # train on last 30 days of hours
+        "min_exh_samples": 5000,
+        "exh_C": 1.0,
+        "exh_l1_ratio": 0.30,
+        "exh_block_thr": 0.70,      # block trades when p(exhaust) too high
+        "exh_score_pow": 1.5,       # score *= (1-p)^pow
     }
 
     market_basket = ["BTC/USDT","ETH/USDT","AVAX/USDT","SOL/USDT","XRP/USDT"]
 
-    # ---- Exchange + Margin universe ----
     ex = make_spot_exchange()
-    margin_pairs = fetch_binance_cross_margin_pairs()
-    margin_symbols = margin_pairs_to_spot_symbols(margin_pairs, quote="USDT")
 
-    # ---- Choose a manageable subset to download (prototype) ----
-    # IMPORTANT: To expand, add caching (parquet) and incremental updates.
+    # (5) refresh margin universe daily (here: once at startup; live should call daily)
+    mu_cache = refresh_margin_universe_daily(None, quote="USDT")
+    margin_symbols = mu_cache.symbols
+
+    # choose subset to download (prototype)
     M = 350
     syms = [s for s in margin_symbols if s.endswith("/USDT")][:M]
     for s in market_basket:
         if s in margin_symbols and s not in syms:
             syms.append(s)
 
-    # ---- Fetch hourly OHLCV (need > 3y + warmup) ----
+    # fetch hourly OHLCV (>3y + warmup) using (7) 7-day chunks
     since = (pd.Timestamp.utcnow().tz_localize("UTC") - pd.Timedelta(days=365*4)).floor("D")
     since_ms = int(since.value // 10**6)
 
     dfs = {}
     for s in syms:
         try:
-            df = fetch_ohlcv_all(ex, s, since_ms, timeframe="1h", limit=1000)
-            # require enough history
+            df = fetch_ohlcv_all_7d_chunks(ex, s, since_ms, timeframe="1h", limit=1000)
             if len(df) >= 24 * 365 * 2:
                 dfs[s] = df
         except Exception:
@@ -1151,15 +1317,12 @@ if __name__ == "__main__":
     for k in panel:
         panel[k] = panel[k][common].dropna(how="all")
 
-    # ---- Compute features ----
     feats = compute_features_hourly(panel, cfg)
 
-    # ---- Market features + gates ----
     mkt_df = compute_market_features(panel["close"], feats["ret1h"], market_basket, trend_sma_hours=24*14)
     mkt_df = add_regime_gates(mkt_df, cfg)
 
-    # ---- Run backtest ----
-    eq, trades, stats, coef_summary = backtest_last_3y(panel, feats, mkt_df, cfg, margin_symbols)
+    eq, trades, stats, coef_summary_mr, coef_summary_tf = backtest_last_3y(panel, feats, mkt_df, cfg, margin_symbols)
 
     print("\nSTATS:", stats)
     print("Equity last:", float(eq.iloc[-1]) if len(eq) else None)
@@ -1170,8 +1333,28 @@ if __name__ == "__main__":
     else:
         print("(no trades)")
 
-    print("\nTOP COEFFICIENT PERSISTENCE FEATURES:")
-    if not coef_summary.empty:
-        print(coef_summary.head(30).to_string(index=False))
-    else:
-        print("(no coef summary; insufficient fits)")
+    print("\nTOP COEF PERSISTENCE (MR):")
+    if not coef_summary_mr.empty:
+        print(coef_summary_mr.head(20).to_string(index=False))
+
+    print("\nTOP COEF PERSISTENCE (TF):")
+    if not coef_summary_tf.empty:
+        print(coef_summary_tf.head(20).to_string(index=False))
+
+
+"""
+(4) Live hourly monitoring stub (optional):
+- Compute signal at end-of-day hour (ts_sig).
+- Enter at next-hour open (ts_entry).
+- Monitor hourly: check TP/SL each hour using latest OHLCV.
+- (5) Refresh margin_symbols daily by calling refresh_margin_universe_daily().
+- (8) Retrain exhaustion model hourly on rolling lookback; retrain MR/TF daily.
+
+You can implement live as:
+while True:
+  now = utcnow()
+  mu_cache = refresh_margin_universe_daily(mu_cache)
+  if now is end-of-day hour: train daily MR/TF + generate orders for next hour
+  if now is every hour: update exhaustion model + monitor open positions
+  sleep until next hour boundary
+"""

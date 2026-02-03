@@ -5,7 +5,10 @@ Implements De Prado's approach to sample-weighted loss functions:
 1. Absolute Return Weighting: Weight samples by |r| for PnL focus
 2. Enhanced Weighted Log-Loss: Custom loss for big moves emphasis
 3. Financial Loss Functions: PnL-oriented loss calculations
+<<<<<<< HEAD
 4. Asymmetric / Downside Losses: Penalize adverse outcomes more heavily
+=======
+>>>>>>> origin/codex/analyze-process-improvement-for-stuck-execution
 
 These losses force models to be accurate on high-impact moves while allowing
 flexibility on small, noisy trades.
@@ -27,7 +30,11 @@ except ImportError:
     def tprint_success(msg): print(f"[SUCCESS] {msg}")
     def tprint_warning(msg): print(f"[WARNING] {msg}")
     def tprint_error(msg): print(f"[ERROR] {msg}")
+<<<<<<< HEAD
 
+=======
+    def tprint_error(msg): print(f"[ERROR] {msg}")
+>>>>>>> origin/codex/analyze-process-improvement-for-stuck-execution
 from .invariant_risk_minimization import FinancialIRM, IRMLossFunction, apply_irm_training, quick_irm_evaluation
 
 def compute_absolute_return_weights(
@@ -129,6 +136,7 @@ def compute_pnl_weighted_loss(
     
     return np.mean(weighted_loss)
 
+<<<<<<< HEAD
 # ===== Asymmetric / Downside Losses =====
 
 class AsymmetricHuberLoss(nn.Module):
@@ -210,6 +218,8 @@ class DownsideMSELoss(nn.Module):
 
 # ===== Existing Losses =====
 
+=======
+>>>>>>> origin/codex/analyze-process-improvement-for-stuck-execution
 class WeightedLogLoss(nn.Module):
     """
     PyTorch implementation of weighted log loss with absolute return weighting.
@@ -763,3 +773,7 @@ def evaluate_model_invariance(
             'error': str(e),
             'environments': []
         }
+<<<<<<< HEAD
+=======
+
+>>>>>>> origin/codex/analyze-process-improvement-for-stuck-execution

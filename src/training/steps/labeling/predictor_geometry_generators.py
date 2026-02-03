@@ -136,7 +136,7 @@ class ContinuousPredictorGenerator:
             ret_std = returns.rolling(window).std().shift(1)
 
             # Stabilization: Ensure denominator is not effectively zero
-            # DYNAMIC FLOORING: Instead of 1e-9, use a robust floor to prevent Z-score explosion
+# DYNAMIC FLOORING: Instead of 1e-9, use a robust floor to prevent Z-score explosion
             # in low-vol regimes (e.g. 10% quantile of historical std or a hard floor like 5bps)
             # Using rolling min of std as a dynamic proxy for "regime floor"
             ret_std_floor = ret_std.rolling(window * 10, min_periods=1).min().fillna(0.0005) # 5bps floor default
@@ -155,8 +155,7 @@ class ContinuousPredictorGenerator:
                 values=surprise_z,
                 metadata={"window": window, "source": "returns", "transform": "tanh_rank_proxy"}
             ))
-
-            # Liquidity-Gated Surprise (New Variant)
+# Liquidity-Gated Surprise (New Variant)
             # Reduces exposure when volume is low relative to recent history
             # "Don't trust the surprise if nobody is trading"
             rel_vol = (volume / volume.rolling(window).mean().shift(1)).fillna(0).clip(0, 2)

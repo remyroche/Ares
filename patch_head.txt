@@ -1,45 +1,3 @@
-<<<<<<< HEAD
-=======
-<<<<<<< SEARCH
-    best_pred_12_reg, best_key_12_reg = select_best_model_per_task(combined_models, y_alpha_12, 'regression', '12')
-    best_pred_12_cls, best_key_12_cls = select_best_model_per_task(combined_models, y_prob_12, 'classification', '12')
-    best_pred_48_reg, best_key_48_reg = select_best_model_per_task(combined_models, y_alpha_48, 'regression', '48')
-    best_pred_48_cls, best_key_48_cls = select_best_model_per_task(combined_models, y_prob_48, 'classification', '48')
-
-    # Phase 11: Save best models OOF predictions
-    tprint_info("💾 Phase 11: Save Models OOF")
-
-    # Helper to propagate predictions
-    def propagate_simple(values, idx):
-        return pd.Series(values, index=idx).reindex(df.index).fillna(0)
-
-    # Save ALL models OOF predictions
-    for key, res in combined_models.items():
-        # key like 'et_12_reg'
-        pred = res['cate']
-        df[f"{key}_oof"] = propagate_simple(pred, X_clustered.index)
-
-    # Map best models to meta columns
-    df['meta_alpha'] = propagate_simple(best_pred_12_reg, X_clustered.index)
-    df['meta_prob'] = propagate_simple(best_pred_12_cls, X_clustered.index)
-
-    # Save 48 bar outputs too if needed
-    df['meta_alpha_48'] = propagate_simple(best_pred_48_reg, X_clustered.index)
-    df['meta_prob_48'] = propagate_simple(best_pred_48_cls, X_clustered.index)
-
-    # Legacy compatibility
-    df['orf_cate'] = df['meta_alpha']
-    df['orf_se'] = df['meta_prob'] * 0.1 # Placeholder
-
-    # Store Best Model Keys in results
-    best_models_info = {
-        '12_reg': best_key_12_reg,
-        '12_cls': best_key_12_cls,
-        '48_reg': best_key_48_reg,
-        '48_cls': best_key_48_cls
-    }
-=======
->>>>>>> origin/codex/analyze-process-improvement-for-stuck-execution
     # Phase 9: Select best models
     tprint_info("🏆 Phase 9: Select Best Models (Tree vs Linear Race)")
 
@@ -48,7 +6,6 @@
         best_s = float('inf')
         best_k, best_p = None, None
         for k in candidates:
-<<<<<<< HEAD
             if k not in combined_models:
                 continue
             res = combined_models[k]
@@ -56,22 +13,11 @@
             valid = ~np.isnan(target) & ~np.isnan(pred)
             if not valid.any():
                 continue
-=======
-            if k not in combined_models: continue
-            res = combined_models[k]
-            pred = res['cate']
-            valid = ~np.isnan(target) & ~np.isnan(pred)
-            if not valid.any(): continue
->>>>>>> origin/codex/analyze-process-improvement-for-stuck-execution
 
             if task == 'regression':
                 s = mean_squared_error(target[valid], pred[valid])
             else:
-<<<<<<< HEAD
                 s = brier_score_loss((target[valid] > 0).astype(int), pred[valid])
-=======
-                s = brier_score_loss((target[valid]>0).astype(int), pred[valid])
->>>>>>> origin/codex/analyze-process-improvement-for-stuck-execution
 
             if s < best_s:
                 best_s = s
@@ -80,7 +26,6 @@
         return best_p, best_k
 
     # 1. 12 Regression
-<<<<<<< HEAD
     best_tree_12_reg_p, best_tree_12_reg_k = select_metric_winner(
         ['et_12_reg', 'lgbm_12_reg', 'xgb_12_reg'], y_alpha_12, 'regression'
     )
@@ -111,34 +56,14 @@
     best_lin_48_cls_p, best_lin_48_cls_k = select_metric_winner(
         ['irm_linear_48_cls'], y_prob_48, 'classification'
     )
-=======
-    best_tree_12_reg_p, best_tree_12_reg_k = select_metric_winner(['et_12_reg', 'lgbm_12_reg', 'xgb_12_reg'], y_alpha_12, 'regression')
-    best_lin_12_reg_p, best_lin_12_reg_k = select_metric_winner(['irm_linear_12_reg'], y_alpha_12, 'regression')
-
-    # 2. 12 Classification
-    best_tree_12_cls_p, best_tree_12_cls_k = select_metric_winner(['et_12_cls', 'lgbm_12_cls', 'xgb_12_cls'], y_prob_12, 'classification')
-    best_lin_12_cls_p, best_lin_12_cls_k = select_metric_winner(['irm_linear_12_cls'], y_prob_12, 'classification')
-
-    # 3. 48 Regression
-    best_tree_48_reg_p, best_tree_48_reg_k = select_metric_winner(['et_48_reg', 'lgbm_48_reg', 'xgb_48_reg'], y_alpha_48, 'regression')
-    best_lin_48_reg_p, best_lin_48_reg_k = select_metric_winner(['irm_linear_48_reg'], y_alpha_48, 'regression')
-
-    # 4. 48 Classification
-    best_tree_48_cls_p, best_tree_48_cls_k = select_metric_winner(['et_48_cls', 'lgbm_48_cls', 'xgb_48_cls'], y_prob_48, 'classification')
-    best_lin_48_cls_p, best_lin_48_cls_k = select_metric_winner(['irm_linear_48_cls'], y_prob_48, 'classification')
->>>>>>> origin/codex/analyze-process-improvement-for-stuck-execution
 
     # Phase 11: Save best models OOF predictions
     tprint_info("💾 Phase 11: Save Models OOF & Spreads")
 
     # Helper to propagate predictions
     def propagate_simple(values, idx):
-<<<<<<< HEAD
         if values is None:
             return pd.Series(0, index=df.index)
-=======
-        if values is None: return pd.Series(0, index=df.index)
->>>>>>> origin/codex/analyze-process-improvement-for-stuck-execution
         return pd.Series(values, index=idx).reindex(df.index).fillna(0)
 
     # Save ALL models OOF predictions
@@ -196,7 +121,3 @@
         '48_cls_tree': best_tree_48_cls_k,
         '48_cls_lin': best_lin_48_cls_k
     }
-<<<<<<< HEAD
-=======
->>>>>>> REPLACE
->>>>>>> origin/codex/analyze-process-improvement-for-stuck-execution

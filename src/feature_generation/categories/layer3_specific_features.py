@@ -15,8 +15,6 @@ import math
 import itertools
 from scipy.stats import entropy
 from typing import List, Dict, Tuple, Optional, Any
-<<<<<<< HEAD
-=======
 from src.utils.causal_refiner_utils import (
     cluster_specialists_by_correlation,
     denoise_covariance,
@@ -26,16 +24,12 @@ from src.utils.causal_refiner_utils import (
 from sklearn.decomposition import PCA
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import RobustScaler
->>>>>>> origin/codex/analyze-process-improvement-for-stuck-execution
 from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
 
 from src.feature_generation.categories.ensemble_disagreement import (
     calculate_ensemble_disagreement_features,
 )
-<<<<<<< HEAD
-=======
 from src.training.steps.labeling.adaptive_hunter_router import AdaptiveHunterRouter
->>>>>>> origin/codex/analyze-process-improvement-for-stuck-execution
 from src.utils.numba_funcs import _numba_rolling_slope, _numba_rolling_rsquared
 
 def _select_vwap_column(df: pd.DataFrame) -> Optional[str]:

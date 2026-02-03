@@ -86,7 +86,8 @@ from src.utils.numba_funcs import (
     _numba_return_autocorrelation,
     _numba_rolling_mean,
     _numba_rolling_std,
-    _numba_rolling_kurt)
+    _numba_rolling_kurt
+)
 try:
     from numba import jit
     NUMBA_AVAILABLE = True
@@ -1999,14 +2000,16 @@ LAYER2_MODEL_CONSTANTS = {
     'min_data_in_leaf': 20,
     'min_sum_hessian_in_leaf': 1e-3,
     'feature_fraction': 0.6, # More aggressive feature sampling for noise reduction
-    'bagging_fraction': 0.7, # Enable bagging for robustness against non-stationarity    'bagging_freq': 1,     # Resample every iteration
+    'bagging_fraction': 0.7, # Enable bagging for robustness against non-stationarity
+    'bagging_freq': 1,     # Resample every iteration
     'verbose': -1,
     'random_state': 42,
     'n_jobs': 1,           # RESTRICT THREADS TO PREVENT DEADLOCK
     'is_unbalance': False,
     'scale_pos_weight': 1,
     'min_gain_to_split': 0.01,  # Higher threshold to prevent noise splits
-    'min_child_weight': 0.0001,    'early_stopping_rounds': 50,  # Add early stopping for production models
+    'min_child_weight': 0.0001,
+    'early_stopping_rounds': 50,  # Add early stopping for production models
 }
 
 # Optimized constants for probe training - HIGH REGULARIZATION for noisy financial data
@@ -2022,14 +2025,16 @@ LAYER2_PROBE_CONSTANTS = {
     'min_data_in_leaf': 20, # Keep as specified
     'min_sum_hessian_in_leaf': 1e-3,
     'feature_fraction': 0.5, # Very aggressive feature sampling for noise reduction
-    'bagging_fraction': 0.7, # Enable bagging for robustness    'bagging_freq': 1,     # Resample every iteration
+    'bagging_fraction': 0.7, # Enable bagging for robustness
+    'bagging_freq': 1,     # Resample every iteration
     'verbose': -1,
     'random_state': 42,
     'n_jobs': 1,           # RESTRICT THREADS TO PREVENT DEADLOCK
     'is_unbalance': False,
     'scale_pos_weight': 1,
     'min_gain_to_split': 0.02,  # Even higher threshold to prevent noise splits
-    'min_child_weight': 0.001,  # Lower for speed    # NOTE: early_stopping_rounds removed - not compatible with sklearn API, use callbacks instead
+    'min_child_weight': 0.001,  # Lower for speed
+    # NOTE: early_stopping_rounds removed - not compatible with sklearn API, use callbacks instead
 }
 
 class RobustFocalLoss:
@@ -5638,8 +5643,2343 @@ class LabelBasedLayer2(BaseStep):
         Z = pd.DataFrame(index=df.index)
         eps = 1e-9
 
+        # Ensure we have a unique row identifier to safely restore order after groupby operations.
+        if '_tmp_row_id' not in df.columns:
+            df = df.copy()
+            df['_tmp_row_id'] = np.arange(len(df))
+        row_id_series = df['_tmp_row_id']
+
+        def _assign_series(name: str, values: Any) -> None:
+            if values is None:
+                return
+            if isinstance(values, pd.Series):
+                if len(values) == len(Z):
+                    if values.index.equals(Z.index):
+                        Z[name] = values.to_numpy()
+                        return
+                    if Z.index.is_unique and values.index.is_unique:
+                        try:
+                            Z[name] = values.reindex(Z.index).to_numpy()
+                            return
+                        except Exception:
+                            pass
+                    try:
+                        Z[name] = values.to_numpy()
+                        return
+                    except Exception:
+                        pass
+            Z[name] = values
+
+        def _assign_frame(frame: pd.DataFrame) -> None:
+            if frame is None or frame.empty:
+                return
+            if len(frame) == len(Z) and frame.index.equals(Z.index):
+                for col in frame.columns:
+                    Z[col] = frame[col].to_numpy()
+                return
+            for col in frame.columns:
+                _assign_series(col, frame[col])
+
+        def _assign_series_at_index(name: str, values: Any, index: pd.Index) -> None:
+            if values is None:
+                return
+            if isinstance(values, pd.Series):
+                if values.index.equals(index):
+                    values = values.to_numpy()
+                elif index.is_unique and values.index.is_unique:
+                    try:
+                        values = values.reindex(index).to_numpy()
+                    except Exception:
+                        values = values.to_numpy()
+                else:
+                    values = values.to_numpy()
+            Z.loc[index, name] = values
+
+        asset_group = None
+        asset_series = None
+        asset_level = None
+        if 'asset_id' in df.columns:
+            asset_group = df['asset_id']
+            asset_series = df['asset_id']
+        elif isinstance(df.index, pd.MultiIndex):
+            if 'asset_id' in df.index.names:
+                asset_level = 'asset_id'
+            elif 'ticker' in df.index.names:
+                asset_level = 'ticker'
+            if asset_level is not None:
+                asset_group = asset_level
+                asset_series = pd.Series(df.index.get_level_values(asset_level), index=df.index)
+
+        # Helper: rolling std with safe alignment
+        def _rstd(s, w):
+            if asset_series is None:
+                return s.rolling(w).std()
+            work_df = pd.DataFrame({'v': s.values, 'id': row_id_series.values, 'g': asset_series.values})
+            work_df = work_df.sort_values(['g', 'id'])
+            rolled = work_df.groupby('g', sort=False)['v'].rolling(w).std()
+            work_df['res'] = rolled.values
+            work_df = work_df.sort_values('id')
+            return pd.Series(work_df['res'].values, index=df.index)
+
+        # Helper: rolling mean with safe alignment
+        def _rmean(s, w):
+            if asset_series is None:
+                return s.rolling(w).mean()
+            work_df = pd.DataFrame({'v': s.values, 'id': row_id_series.values, 'g': asset_series.values})
+            work_df = work_df.sort_values(['g', 'id'])
+            rolled = work_df.groupby('g', sort=False)['v'].rolling(w).mean()
+            work_df['res'] = rolled.values
+            work_df = work_df.sort_values('id')
+            return pd.Series(work_df['res'].values, index=df.index)
+
+        # Helper: rolling kurtosis with safe alignment
+        def _rkurt(s, w):
+            if asset_series is None:
+                vals = s.values.astype(np.float32)
+                return pd.Series(_numba_rolling_kurt(vals, w), index=s.index)
+            work_df = pd.DataFrame({'v': s.values, 'id': row_id_series.values, 'g': asset_series.values})
+            work_df = work_df.sort_values(['g', 'id'])
+
+            def _apply_kurt(x):
+                return _numba_rolling_kurt(x.values.astype(np.float32), w)
+
+            work_df['res'] = work_df.groupby('g', sort=False)['v'].transform(_apply_kurt)
+            work_df = work_df.sort_values('id')
+            return pd.Series(work_df['res'].values, index=df.index)
+
+        # --- A-C, F, H) Rolling Blocks (chunk per asset if multi-asset) ---
+        if asset_group is not None:
+            assets = pd.Index(asset_series.unique())
+            tprint_info(f"   🧩 Chunking rolling computations per asset (n={len(assets)})")
+            for asset in assets:
+                asset_start = time.perf_counter()
+                tprint_info(f"      ▶️ Asset chunk start: {asset}")
+                asset_mask = asset_series == asset
+                df_asset = df.loc[asset_mask]
+                asset_index = df_asset.index
+
+                close = df_asset['close'] if 'close' in df_asset.columns else None
+                ret = close.pct_change().fillna(0) if close is not None else None
+
+                if close is not None:
+                    section_start = time.perf_counter()
+                    tprint_info(f"         ⏱️ Volatility block start: {asset}")
+                    rv_w24 = ret.rolling(24).std()
+                    rv_w48 = ret.rolling(48).std()
+                    rv_w96 = ret.rolling(96).std()
+
+                    _assign_series_at_index('rv_w24', rv_w24, asset_index)
+                    _assign_series_at_index('rv_w48', rv_w48, asset_index)
+                    _assign_series_at_index('rv_w96', rv_w96, asset_index)
+                    _assign_series_at_index('vol_shock', rv_w24 / (rv_w96 + eps), asset_index)
+                    _assign_series_at_index('rv_change_w24', rv_w24 - rv_w96, asset_index)
+                    _assign_series_at_index('absret_mean_w24', ret.abs().rolling(24).mean(), asset_index)
+                    kurt_vals = _numba_rolling_kurt(ret.values.astype(np.float32), 96)
+                    _assign_series_at_index('kurtosis_w96', pd.Series(kurt_vals, index=ret.index), asset_index)
+                    if 'high' in df_asset.columns and 'low' in df_asset.columns:
+                        hl_ratio = (df_asset['high'] - df_asset['low']) / (df_asset['low'] + eps)
+                        _assign_series_at_index('parkinson_proxy', hl_ratio.rolling(24).std(), asset_index)
+                    tprint_info(
+                        f"         ⏱️ Volatility block end: {asset} "
+                        f"({time.perf_counter() - section_start:.2f}s)"
+                    )
+
+                if 'volume' in df_asset.columns and close is not None:
+                    section_start = time.perf_counter()
+                    tprint_info(f"         ⏱️ Liquidity block start: {asset}")
+                    vol = df_asset['volume']
+                    log_vol = np.log(vol + eps)
+                    dvol = close * vol
+
+                    _assign_series_at_index(
+                        'logvol_z_w96',
+                        (log_vol - log_vol.rolling(96).mean()) / (log_vol.rolling(96).std() + eps),
+                        asset_index,
+                    )
+                    _assign_series_at_index(
+                        'volu_ratio',
+                        vol.rolling(12).mean() / (vol.rolling(96).mean() + eps),
+                        asset_index,
+                    )
+                    _assign_series_at_index('amihud_w24', (ret.abs() / (dvol + eps)).rolling(24).mean(), asset_index)
+                    if 'high' in df_asset.columns and 'low' in df_asset.columns:
+                        hl_spread = (df_asset['high'] - df_asset['low']) / close
+                        _assign_series_at_index('hl_spread_w24', hl_spread.rolling(24).mean(), asset_index)
+                        _assign_series_at_index(
+                            'hl_spread_shock',
+                            hl_spread.rolling(12).mean() / (hl_spread.rolling(96).mean() + eps),
+                            asset_index,
+                        )
+                    tprint_info(
+                        f"         ⏱️ Liquidity block end: {asset} "
+                        f"({time.perf_counter() - section_start:.2f}s)"
+                    )
+
+                if close is not None:
+                    section_start = time.perf_counter()
+                    tprint_info(f"         ⏱️ Trend block start: {asset}")
+                    ewma_48 = close.ewm(span=48).mean()
+                    rv_w48_local = Z.loc[asset_index, 'rv_w48']
+                    _assign_series_at_index('trend_strength', (close - ewma_48) / (rv_w48_local + eps), asset_index)
+
+                    if 'high' in df_asset.columns and 'low' in df_asset.columns:
+                        roll_low = df_asset['low'].rolling(24).min()
+                        roll_high = df_asset['high'].rolling(24).max()
+                        _assign_series_at_index(
+                            'pos_in_range_w24',
+                            (close - roll_low) / (roll_high - roll_low + eps),
+                            asset_index,
+                        )
+
+                    _assign_series_at_index('r_autocorr_w48', get_serial_correlation(ret, window=48), asset_index)
+                    tprint_info(
+                        f"         ⏱️ Trend block end: {asset} "
+                        f"({time.perf_counter() - section_start:.2f}s)"
+                    )
+
+                if close is not None:
+                    section_start = time.perf_counter()
+                    tprint_info(f"         ⏱️ Interaction block start: {asset}")
+                    vol_shock = Z.loc[asset_index, 'vol_shock']
+                    logvol = Z.loc[asset_index, 'logvol_z_w96']
+                    _assign_series_at_index('stress_1', vol_shock * (-logvol), asset_index)
+                    tprint_info(
+                        f"         ⏱️ Interaction block end: {asset} "
+                        f"({time.perf_counter() - section_start:.2f}s)"
+                    )
+
+                if close is not None:
+                    section_start = time.perf_counter()
+                    tprint_info(f"         ⏱️ Quality block start: {asset}")
+                    rv_w48_local = Z.loc[asset_index, 'rv_w48']
+                    _assign_series_at_index(
+                        'outlier_rate_w48',
+                        (ret.abs() > 3 * rv_w48_local).astype(float).rolling(48).mean(),
+                        asset_index,
+                    )
+                    tprint_info(
+                        f"         ⏱️ Quality block end: {asset} "
+                        f"({time.perf_counter() - section_start:.2f}s)"
+                    )
+
+                tprint_info(
+                    f"      ✅ Asset chunk end: {asset} ({time.perf_counter() - asset_start:.2f}s)"
+                )
+        else:
+            # --- A) Volatility State ---
+            if 'close' in df.columns:
+                section_start = time.perf_counter()
+                tprint_info("      ⏱️ Volatility block start")
+                close = df['close']
+                ret = close.pct_change().fillna(0)
+
+                rv_w24 = _rstd(ret, 24)
+                rv_w48 = _rstd(ret, 48)
+                rv_w96 = _rstd(ret, 96)
+
+                _assign_series('rv_w24', rv_w24)
+                _assign_series('rv_w48', rv_w48)
+                _assign_series('rv_w96', rv_w96)
+
+                _assign_series('vol_shock', rv_w24 / (rv_w96 + eps))
+                _assign_series('rv_change_w24', rv_w24 - rv_w96)
+
+                _assign_series('absret_mean_w24', _rmean(ret.abs(), 24))
+                _assign_series('kurtosis_w96', _rkurt(ret, 96))
+
+                if 'high' in df.columns and 'low' in df.columns:
+                    hl_ratio = (df['high'] - df['low']) / (df['low'] + eps)
+                    _assign_series('parkinson_proxy', _rstd(hl_ratio, 24))
+                tprint_info(f"      ⏱️ Volatility block end: {time.perf_counter() - section_start:.2f}s")
+
+            # --- B) Liquidity / Trading Frictions ---
+            if 'volume' in df.columns and 'close' in df.columns:
+                section_start = time.perf_counter()
+                tprint_info("      ⏱️ Liquidity block start")
+                vol = df['volume']
+                log_vol = np.log(vol + eps)
+                dvol = df['close'] * vol
+
+                _assign_series('logvol_z_w96', (log_vol - _rmean(log_vol, 96)) / (_rstd(log_vol, 96) + eps))
+                _assign_series('volu_ratio', _rmean(vol, 12) / (_rmean(vol, 96) + eps))
+
+                _assign_series('amihud_w24', _rmean(ret.abs() / (dvol + eps), 24))
+
+                if 'high' in df.columns and 'low' in df.columns:
+                    hl_spread = (df['high'] - df['low']) / df['close']
+                    _assign_series('hl_spread_w24', _rmean(hl_spread, 24))
+                    _assign_series('hl_spread_shock', _rmean(hl_spread, 12) / (_rmean(hl_spread, 96) + eps))
+                tprint_info(f"      ⏱️ Liquidity block end: {time.perf_counter() - section_start:.2f}s")
+
+            # --- C) Trend vs Mean Reversion ---
+            if 'close' in df.columns:
+                section_start = time.perf_counter()
+                tprint_info("      ⏱️ Trend block start")
+                ewma_48 = close.ewm(span=48).mean()
+                _assign_series('trend_strength', (close - ewma_48) / (rv_w48 + eps))
+
+                if 'high' in df.columns and 'low' in df.columns:
+                    roll_low = df['low'].rolling(24).min()
+                    roll_high = df['high'].rolling(24).max()
+                    _assign_series('pos_in_range_w24', (close - roll_low) / (roll_high - roll_low + eps))
+
+                _assign_series('r_autocorr_w48', get_serial_correlation(ret, window=48))
+                tprint_info(f"      ⏱️ Trend block end: {time.perf_counter() - section_start:.2f}s")
+
+            # --- F) Vol-Liq Interaction ---
+            if 'vol_shock' in Z.columns and 'logvol_z_w96' in Z.columns:
+                section_start = time.perf_counter()
+                tprint_info("      ⏱️ Interaction block start")
+                _assign_series('stress_1', Z['vol_shock'] * (-Z['logvol_z_w96']))
+                tprint_info(f"      ⏱️ Interaction block end: {time.perf_counter() - section_start:.2f}s")
+
+        # --- G) Calendar State ---
+        if isinstance(df.index, pd.DatetimeIndex):
+            hour = df.index.hour
+            minute = df.index.minute
+        elif isinstance(df.index, pd.MultiIndex):
+            ts_level = 'timestamp' if 'timestamp' in df.index.names else df.index.names[0]
+            ts_index = df.index.get_level_values(ts_level)
+            hour = ts_index.hour
+            minute = ts_index.minute
+        else:
+            hour = None
+            minute = None
+
+        if hour is not None and minute is not None:
+            section_start = time.perf_counter()
+            _assign_series('hour_sin', np.sin(2 * np.pi * hour / 24))
+            _assign_series('hour_cos', np.cos(2 * np.pi * hour / 24))
+            tprint_info(f"      ⏱️ Calendar block: {time.perf_counter() - section_start:.2f}s")
+
+        # --- H) Data Quality ---
+        # (Assuming mostly clean data, but adding simple outlier flag)
+        if asset_group is None and 'rv_w48' in Z.columns:
+            section_start = time.perf_counter()
+            tprint_info("      ⏱️ Quality block start")
+            _assign_series('outlier_rate_w48', _rmean((ret.abs() > 3 * Z['rv_w48']).astype(float), 48))
+            tprint_info(f"      ⏱️ Quality block end: {time.perf_counter() - section_start:.2f}s")
+
+        # --- D, E, I) Cross-Asset / Market State / Dispersion ---
+        # Explicitly include 'ms__' (Market State) and 'ca__' (Cross Asset) features
+        special_prefixes = ('ms__', 'ca__', 'meta__', 'disp__')
+        tprint_info("      ⏱️ Cross-asset block start")
+        section_start = time.perf_counter()
+        for col in df.columns:
+            if col.startswith(special_prefixes):
+                _assign_series(col, df[col])
+        tprint_info(f"      ⏱️ Cross-asset block end: {time.perf_counter() - section_start:.2f}s")
+
+        # --- Asset Identity Features (Multi-Asset Gating) ---
+        if asset_series is not None:
+            section_start = time.perf_counter()
+            asset_codes = pd.Series(pd.Categorical(asset_series).codes, index=df.index)
+            _assign_series('asset_id_code', asset_codes.astype(float))
+            top_assets = asset_series.value_counts().head(self.causal_gate_asset_onehot_max).index.tolist()
+            for asset in top_assets:
+                _assign_series(f"asset_{asset}", (asset_series == asset).astype(float))
+            if asset_series.nunique() > len(top_assets):
+                _assign_series('asset_other', (~asset_series.isin(top_assets)).astype(float))
+            tprint_info(f"      ⏱️ Asset identity block: {time.perf_counter() - section_start:.2f}s")
+
+        if include_specialist_features:
+            # --- Specialist Features (Z_spec) ---
+            # Automatically iterate through all specialist families to gather their specific features
+            # Use the global registry keys to ensure dynamic coverage
+            families = list(SPECIALIST_REGISTRY.keys())
+            active_families = None
+            if hasattr(self, 'production_geometries') and self.production_geometries:
+                active_families = sorted(
+                    {
+                        getattr(geo, 'family', None)
+                        for geo in self.production_geometries
+                        if getattr(geo, 'family', None) in SPECIALIST_REGISTRY
+                    }
+                )
+            elif hasattr(self, 'selected_geometries') and self.selected_geometries:
+                active_families = sorted(
+                    {
+                        getattr(geo, 'family', None)
+                        for geo in self.selected_geometries
+                        if getattr(geo, 'family', None) in SPECIALIST_REGISTRY
+                    }
+                )
+            if active_families:
+                tprint_info(
+                    f"   🧩 Limiting specialist features to active families "
+                    f"({len(active_families)}/{len(families)})"
+                )
+                families = active_families
+
+            tprint_info(f"   🔍 Collecting specialist features for {len(families)} families...")
+            for family in families:
+                try:
+                    # Use default params for feature extraction
+                    fam_start = time.perf_counter()
+                    fam_cache_key = f"fam_full_{family}_{len(df)}"
+                    spec_feats = None
+                    if hasattr(self, '_family_feature_cache') and fam_cache_key in self._family_feature_cache:
+                        spec_feats = self._family_feature_cache[fam_cache_key]
+                        tprint_info(f"      💾 Using cached full-history features for {family}")
+                    else:
+                        spec_feats = self._compute_specific_geometry_features(
+                            df, df.index, {'family': family}
+                        )
+                    if not spec_feats.empty:
+                        # Rename columns to avoid collisions
+                        spec_feats.columns = [f"spec_{family}_{c}" for c in spec_feats.columns]
+                        _assign_frame(spec_feats)
+                    tprint_info(
+                        f"      ⏱️ Specialist {family}: {time.perf_counter() - fam_start:.2f}s "
+                        f"(cols={getattr(spec_feats, 'shape', (0, 0))[1]})"
+                    )
+                except Exception:
+                    # Ignore failures for specific families
+                    pass
+
+        # Cleanup: Replace Inf, Fill NaNs
+        cleanup_start = time.perf_counter()
+        Z = Z.replace([np.inf, -np.inf], np.nan).ffill().fillna(0.0)
+        tprint_info(f"      ⏱️ Cleanup block: {time.perf_counter() - cleanup_start:.2f}s")
+
+        tprint_info(f"   ✅ Rich gate features complete in {time.perf_counter() - gate_start:.2f}s (cols={Z.shape[1]})")
+
+        return Z
+
+    def _prune_gate_features(self, Z: pd.DataFrame) -> pd.DataFrame:
+        """Aggressive feature pruning for Gate A state features."""
+        if Z.empty:
+            return Z
+
+        Z = Z.replace([np.inf, -np.inf], np.nan)
+        missing_rate = Z.isna().mean()
+        drop_missing = missing_rate[missing_rate > self.pre_geometry_gate_missingness_max].index.tolist()
+        if drop_missing:
+            Z = Z.drop(columns=drop_missing)
+
+        nunique = Z.nunique(dropna=False)
+        constant_cols = nunique[nunique <= 1].index.tolist()
+        if constant_cols:
+            Z = Z.drop(columns=constant_cols)
+
+        if Z.shape[1] > self.pre_geometry_gate_feature_cap:
+            corr = Z.corr().abs()
+            upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
+            to_drop = [
+                col
+                for col in upper.columns
+                if any(upper[col] > self.pre_geometry_gate_corr_threshold)
+            ]
+            if to_drop:
+                Z = Z.drop(columns=to_drop)
+
+        if Z.shape[1] > self.pre_geometry_gate_feature_cap:
+            variances = Z.var().sort_values(ascending=False)
+            keep_cols = variances.index[: self.pre_geometry_gate_feature_cap].tolist()
+            Z = Z[keep_cols]
+
+        return Z
+
+    def _build_causal_gate_state_features(
+        self,
+        df: pd.DataFrame,
+        specialist_predictions: Optional[Dict[str, pd.Series]] = None,
+    ) -> pd.DataFrame:
+        """
+        Builds the state feature matrix Z for the causal gate.
+        Uses _generate_rich_gate_features for a comprehensive feature set.
+        """
+        Z = self._generate_rich_gate_features(df, include_specialist_features=False)
+
+        if specialist_predictions:
+            scores_df = pd.DataFrame(
+                {
+                    name: series.reindex(df.index).fillna(0.0)
+                    for name, series in specialist_predictions.items()
+                }
+            )
+            fired_df = (scores_df.abs() > 0).astype(float)
+
+            fam_to_cols: Dict[str, List[str]] = {}
+            for col in scores_df.columns:
+                fam_to_cols.setdefault(self._infer_family_from_registry(col), []).append(col)
+
+            family_frames = []
+            total_fire = pd.Series(0.0, index=df.index)
+            score_abs = scores_df.abs()
+            score_sum = score_abs.sum(axis=1).replace(0.0, 1.0)
+            score_probs = score_abs.div(score_sum, axis=0)
+            global_entropy = (-score_probs * np.log(score_probs + 1e-12)).sum(axis=1)
+
+            for fam, cols in fam_to_cols.items():
+                fam_scores = scores_df[cols]
+                fam_fired = fired_df[cols]
+                fam_fire_count = fam_fired.sum(axis=1)
+                fam_score_median = fam_scores.median(axis=1)
+                fam_score_abs = fam_scores.abs()
+                fam_score_sum = fam_score_abs.sum(axis=1).replace(0.0, 1.0)
+                fam_score_probs = fam_score_abs.div(fam_score_sum, axis=0)
+                fam_score_entropy = (-fam_score_probs * np.log(fam_score_probs + 1e-12)).sum(axis=1)
+
+                family_frames.append(
+                    pd.DataFrame(
+                        {
+                            f"fam_fire_count_{fam}": fam_fire_count,
+                            f"fam_score_median_{fam}": fam_score_median,
+                            f"fam_score_entropy_{fam}": fam_score_entropy,
+                        },
+                        index=df.index,
+                    )
+                )
+                total_fire += fam_fire_count
+
+            if family_frames:
+                Z = pd.concat([Z] + family_frames, axis=1)
+                Z["total_fire_count"] = total_fire
+                Z["global_score_entropy"] = global_entropy
+                Z["n_active_families"] = sum(
+                    1 for fam in fam_to_cols if (fired_df[fam_to_cols[fam]].sum(axis=1) > 0).any()
+                )
+                top_family = (
+                    pd.concat(
+                        [
+                            pd.Series(fired_df[cols].sum(axis=1), name=fam)
+                            for fam, cols in fam_to_cols.items()
+                        ],
+                        axis=1,
+                    )
+                    .idxmax(axis=1)
+                    .fillna("other")
+                )
+                for fam in fam_to_cols:
+                    Z[f"top_family_{fam}"] = (top_family == fam).astype(float)
+
+        if self._causal_gate_tree is None:
+            Z = self._prune_gate_features(Z)
+        elif self._causal_gate_feature_cols:
+            # Ensure all expected columns exist (add 0 if missing)
+            for col in self._causal_gate_feature_cols:
+                if col not in Z.columns:
+                    Z[col] = 0.0
+            # Reorder and slice
+            Z = Z[self._causal_gate_feature_cols]
+
+        return Z.astype(np.float32, copy=False)
+
+    def _build_gate_a_state_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        Z = self._generate_rich_gate_features(df, include_specialist_features=False)
+        return self._prune_gate_features(Z)
+
+    @staticmethod
+    def _infer_family_from_registry(name: str) -> str:
+        mapping = {
+            "LIQUIDITY_SPECIALIST": "liquidity",
+            "VOLUME_SPECIALIST": "liquidity",
+            "VOLATILITY_SPECIALIST": "vol",
+            "VOLATILITY_INNOVATION_SPECIALIST": "vol",
+            "VOL_STATE": "vol",
+            "DISPERSION_SPECIALIST": "dispersion",
+            "TREND_REGIME": "trend",
+            "MEAN_REVERSION": "trend",
+            "MULTI_HORIZON_SLOPE": "trend",
+            "MARKET_FRAGILITY": "dispersion",
+            "FLOW_PRESSURE_CONTINUOUS": "liquidity",
+            "SURPRISE_Z_CONTINUOUS": "dispersion",
+            "CAUSAL_SURPRISE": "dispersion",
+        }
+        upper = name.upper()
+        if upper in SPECIALIST_REGISTRY:
+            return mapping.get(upper, "other")
+        for key, fam in mapping.items():
+            if upper == key or upper.startswith(key):
+                return fam
+        return "other"
+
+    def _expert_channels(self, name: str, preds: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        preds = np.asarray(preds, dtype=float)
+        if preds.size == 0:
+            return preds, preds, preds
+        if self._is_magnitude_family(name):
+            s_mag = np.tanh(preds)
+            s_dir = np.zeros_like(s_mag)
+        else:
+            if np.nanmin(preds) < 0.0 or np.nanmax(preds) > 1.0:
+                s_dir = np.tanh(preds)
+            else:
+                p = np.clip(preds, 0.0, 1.0)
+                s_dir = 2 * p - 1
+            s_mag = np.abs(s_dir)
+        fired = np.where(
+            self._is_magnitude_family(name),
+            s_mag > self.pre_geometry_gate_mag_threshold,
+            np.abs(s_dir) > self.pre_geometry_gate_dir_threshold,
+        ).astype(float)
+        return s_dir, s_mag, fired
+
+    def _build_family_event_sets(self, specialist_fired: pd.DataFrame) -> Dict[str, pd.Index]:
+        fam_to_cols: Dict[str, List[str]] = {}
+        for col in specialist_fired.columns:
+            fam_to_cols.setdefault(self._infer_family_from_registry(col), []).append(col)
+
+        fam_events: Dict[str, pd.Index] = {}
+        for fam, cols in fam_to_cols.items():
+            fired = specialist_fired[cols].sum(axis=1) > 0
+            fam_events[fam] = specialist_fired.index[fired.values]
+        return fam_events
+
+    def _build_gate_a_X(
+        self,
+        Z_state: pd.DataFrame,
+        specialist_scores: pd.DataFrame,
+        specialist_fired: pd.DataFrame,
+        idx: pd.Index,
+    ) -> pd.DataFrame:
+        return pd.concat(
+            [
+                Z_state.reindex(idx).fillna(0.0),
+                specialist_fired.reindex(idx).fillna(0.0).add_prefix("fire__"),
+                specialist_scores.reindex(idx).fillna(0.0).add_prefix("score__"),
+            ],
+            axis=1,
+        )
+
+    def _make_family_stability_labels(
+        self,
+        returns_fwd: pd.Series,
+        family_score: pd.Series,
+        window: int = 48,
+        thr: float = 0.0,
+    ) -> pd.Series:
+        u = returns_fwd * np.tanh(family_score.clip(-5, 5))
+        mu = u.rolling(window, min_periods=max(10, window // 4)).mean()
+        med = u.rolling(window, min_periods=max(10, window // 4)).median()
+        mad = (u - med).abs().rolling(window, min_periods=max(10, window // 4)).median()
+        stab = mu / (mad + 1e-12)
+        return (stab > thr).astype(int)
+
+    def _build_family_scores(self, specialist_scores: pd.DataFrame) -> Dict[str, pd.Series]:
+        fam_to_cols: Dict[str, List[str]] = {}
+        for col in specialist_scores.columns:
+            fam_to_cols.setdefault(self._infer_family_from_registry(col), []).append(col)
+
+        fam_scores: Dict[str, pd.Series] = {}
+        for fam, cols in fam_to_cols.items():
+            fam_scores[fam] = specialist_scores[cols].median(axis=1)
+        return fam_scores
+
+    def _apply_keep_rate_control(
+        self,
+        proba: pd.Series,
+    ) -> pd.Series:
+        if proba.empty:
+            return proba
+        min_keep = self.pre_geometry_family_min_keep
+        max_keep = self.pre_geometry_family_max_keep
+        target_keep = 0.5 * (min_keep + max_keep)
+
+        rolling = proba.rolling(
+            self.pre_geometry_family_gate_window,
+            min_periods=max(50, self.pre_geometry_family_gate_window // 5),
+        )
+        thr_target = rolling.quantile(1 - target_keep)
+        thr_min = rolling.quantile(1 - min_keep)
+        thr_max = rolling.quantile(1 - max_keep)
+        thr_target = thr_target.fillna(proba.quantile(1 - target_keep))
+        thr_min = thr_min.fillna(proba.quantile(1 - min_keep))
+        thr_max = thr_max.fillna(proba.quantile(1 - max_keep))
+
+        threshold = thr_target.copy()
+        keep_rate = (proba >= threshold).rolling(
+            self.pre_geometry_family_gate_window,
+            min_periods=max(50, self.pre_geometry_family_gate_window // 5),
+        ).mean()
+        threshold = threshold.where(keep_rate >= min_keep, thr_min)
+        threshold = threshold.where(keep_rate <= max_keep, thr_max)
+
+        return proba >= threshold
+
+    def _train_family_gates(
+        self,
+        df: pd.DataFrame,
+        specialist_scores: pd.DataFrame,
+        specialist_fired: pd.DataFrame,
+    ) -> Tuple[Dict[str, Any], Dict[str, pd.Series]]:
+        tprint_info(f"🏗️ [Layer 2] Training Gate A family gates for {len(specialist_fired.columns)} specialists")
+        if not self.pre_geometry_family_gate_enabled:
+            return {}, {}
+
+        Z_state = self._build_gate_a_state_features(df)
+        returns_fwd = df["close"].pct_change().shift(-1).fillna(0.0)
+        fam_events = self._build_family_event_sets(specialist_fired)
+        fam_scores = self._build_family_scores(specialist_scores)
+
+        gates: Dict[str, Any] = {}
+        masks: Dict[str, pd.Series] = {}
+
+        for fam, idx in fam_events.items():
+            if len(idx) < max(200, self.pre_geometry_gate_min_events):
+                continue
+            X = self._build_gate_a_X(Z_state, specialist_scores, specialist_fired, idx)
+            y = self._make_family_stability_labels(
+                returns_fwd.reindex(idx),
+                fam_scores.get(fam, pd.Series(0.0, index=idx)).reindex(idx),
+            )
+            if y.nunique() < 2:
+                continue
+            gate = ExtraTreesClassifier(
+                n_estimators=200,
+                max_depth=3,
+                min_samples_leaf=max(10, int(0.01 * len(X))),
+                random_state=42,
+                n_jobs=-1,
+            )
+            proba = pd.Series(index=idx, dtype=float)
+            try:
+                # Detect asset groups for multi-asset mode
+                asset_groups = None
+                if 'asset_id' in df.columns:
+                    asset_groups = df['asset_id'].reindex(idx)
+                elif isinstance(df.index, pd.MultiIndex) and 'asset_id' in df.index.names:
+                    asset_groups = df.index.get_level_values('asset_id').to_series().reindex(idx)
+
+                folds = make_purged_group_kfold_folds(
+                    idx,
+                    groups=asset_groups,
+                    n_folds=min(self.causal_gate_n_folds, 8),
+                    purge=self.causal_gate_purge,
+                    embargo=0
+                )
+            except Exception:
+                folds = []
+            if folds:
+                for train_idx, val_idx in folds:
+                    X_train = X.iloc[train_idx]
+                    y_train = y.iloc[train_idx]
+                    X_val = X.iloc[val_idx]
+                    if y_train.nunique() < 2:
+                        continue
+                    gate.fit(X_train, y_train)
+                    proba.iloc[val_idx] = gate.predict_proba(X_val)[:, 1]
+            if proba.isna().any():
+                gate.fit(X, y)
+                proba = proba.fillna(pd.Series(gate.predict_proba(X)[:, 1], index=idx))
+            mask = self._apply_keep_rate_control(proba)
+            gates[fam] = gate
+            masks[fam] = mask
+            self._gate_a_family_probs[fam] = proba
+
+        return gates, masks
+
+    def _get_causal_gate_target(self, df: pd.DataFrame) -> pd.Series:
+        if "TARGET_RET_1" in df.columns:
+            y_series = df["TARGET_RET_1"]
+        elif "close" in df.columns:
+            y_series = df["close"].pct_change().shift(-1)
+        else:
+            y_series = pd.Series(0.0, index=df.index)
+        return y_series.fillna(0.0)
+
+    def _apply_causal_gates(
+        self,
+        df: pd.DataFrame,
+        specialist_predictions: Dict[str, pd.Series],
+        fit_tree: bool = False,
+        y_series: Optional[pd.Series] = None,
+    ) -> Tuple[Dict[str, pd.Series], Optional[pd.DataFrame]]:
+        """
+        Apply regime-based gating using stability optimization.
+        If fit_tree=True, performs OOF fitting/prediction to generate robust gated signals.
+        Returns (gated_predictions, gate_outputs).
+        """
+        if not self.causal_gate_enabled or not specialist_predictions:
+            return specialist_predictions, None
+
+        if len(specialist_predictions) < max(2, self.min_specialists):
+            return specialist_predictions, None
+
+        # Build state features Z
+        Z = self._build_causal_gate_state_features(df, specialist_predictions)
+        if Z.empty:
+            return specialist_predictions, None
+        if len(Z) == len(df) and not Z.index.equals(df.index):
+            Z = Z.copy()
+            Z.index = df.index
+
+        # Align specialist predictions
+        preds_oof_dict: Dict[str, np.ndarray] = {}
+        for name, series in specialist_predictions.items():
+            aligned = series.reindex(Z.index).fillna(0.0)
+            preds_oof_dict[name] = aligned.to_numpy(dtype=float)
+
+        gate_outputs = None
+        gated_predictions = {}
+
+        # Auto-fit if tree is missing (backwards compatibility), but warn about OOF cost
+        if self._causal_gate_tree is None and not fit_tree:
+            tprint_info("   ⚠️ Causal gate not fitted. Triggering auto-fit (expensive OOF)...")
+            fit_tree = True
+
+        asset_ids = None
+        if 'asset_id' in df.columns:
+            asset_ids = df['asset_id']
+        elif isinstance(Z.index, pd.MultiIndex):
+            if 'asset_id' in Z.index.names:
+                asset_ids = Z.index.get_level_values('asset_id')
+            elif 'ticker' in Z.index.names:
+                asset_ids = Z.index.get_level_values('ticker')
+
+        if fit_tree:
+            tprint_info("   🌳 Fitting Causal Gate (StabilityRegimeTree) with OOF generation...")
+            if y_series is None:
+                y_series = self._get_causal_gate_target(df)
+            y = y_series.reindex(Z.index).fillna(0.0).to_numpy(dtype=float)
+
+            # Initialize containers for OOF results
+            oof_gate_outputs_list = []
+            oof_gated_preds_list = defaultdict(list)
+
+            # Generate Folds
+            try:
+                # Detect asset groups
+                asset_groups = None
+                if asset_ids is not None:
+                    asset_groups = pd.Series(asset_ids, index=Z.index)
+
+                folds = make_purged_group_kfold_folds(
+                    Z.index,
+                    groups=asset_groups,
+                    n_folds=self.causal_gate_n_folds,
+                    purge=self.causal_gate_purge,
+                    embargo=self.causal_gate_embargo,
+                )
+            except Exception as exc:
+                tprint_warning(f"   ⚠️ Causal gate fold generation failed: {exc}")
+                return specialist_predictions, None
+
+            preds_oof_dict = self._select_specialists_for_gate_a(preds_oof_dict, y, folds)
+            specialist_predictions = {
+                name: series
+                for name, series in specialist_predictions.items()
+                if name in preds_oof_dict
+            }
+
+            core_experts, conditional_experts, expert_fold_scores = self._classify_gate_experts(
+                preds_oof_dict, y, folds
+            )
+            self._causal_gate_core_experts = core_experts
+            core_weights: Dict[str, float] = {}
+            if core_experts:
+                raw_scores = np.array(
+                    [
+                        np.nanmean(expert_fold_scores.get(expert, [0.0]))
+                        for expert in core_experts
+                    ],
+                    dtype=float,
+                )
+                if np.all(raw_scores <= 0):
+                    raw_scores = np.ones_like(raw_scores)
+                raw_scores = np.clip(raw_scores, 1e-6, None)
+                raw_scores = raw_scores / raw_scores.sum()
+                core_weights = dict(zip(core_experts, raw_scores))
+            self._causal_gate_core_weights = core_weights
+            if len(conditional_experts) < max(2, self.min_specialists):
+                tprint_warning("   ⚠️ Causal gate skipped: insufficient conditional experts after core split.")
+                baseline = np.zeros(len(Z), dtype=float)
+                for expert in core_experts:
+                    baseline += preds_oof_dict[expert] * core_weights.get(expert, 0.0)
+                    gated_predictions[expert] = pd.Series(
+                        preds_oof_dict[expert] * core_weights.get(expert, 0.0),
+                        index=Z.index,
+                    )
+                gate_outputs = pd.DataFrame(
+                    {
+                        "signal": np.zeros(len(Z), dtype=float),
+                        "disagreement": np.zeros(len(Z), dtype=float),
+                        "leaf_id": -1,
+                        "entropy": np.zeros(len(Z), dtype=float),
+                        "best_score": np.zeros(len(Z), dtype=float),
+                        "best_expert": "",
+                        "baseline_signal": baseline,
+                        "final_signal": baseline,
+                        "suitability": expit(np.zeros(len(Z), dtype=float)),
+                        "signed_confidence": np.tanh(baseline),
+                    },
+                    index=Z.index,
+                )
+                return gated_predictions, gate_outputs
+
+            # Parallel OOF Loop
+            def _fit_fold(i, train_idx, val_idx):
+                # Slicing
+                Z_train, Z_val = Z.iloc[train_idx], Z.iloc[val_idx]
+                y_train = y[train_idx]
+                preds_train = {k: v[train_idx] for k, v in preds_oof_dict.items() if k in conditional_experts}
+                preds_val = {k: v[val_idx] for k, v in preds_oof_dict.items() if k in conditional_experts}
+                asset_ids_train = None
+                if asset_ids is not None:
+                    asset_ids_train = np.asarray(asset_ids)[train_idx]
+
+                # Fit Tree on Train
+                fold_tree = StabilityRegimeTree(
+                    max_depth=self.causal_gate_max_depth,
+                    min_leaf_samples=self.causal_gate_min_leaf_samples,
+                    min_leaf_val_per_fold=self.causal_gate_min_leaf_val_per_fold,
+                    stability_mode="mean_minus_iqr",
+                    disp_penalty=0.5,
+                    utility_transform="tanh",
+                    soft_weights=True,
+                    top_k_weights=self.causal_gate_top_k,
+                    min_stability_gain=self.causal_gate_min_gain,
+                    min_valid_fold_frac=self.causal_gate_min_valid_fold_frac,
+                    verbose=False,
+                    expert_prune_gap=0.1,
+                    expert_prune_cum_weight=0.9,
+                    expert_prune_worst_fold=-0.25,
+                    expert_prune_corr=0.9,
+                    merge_leaf_l1_eps=self.causal_gate_merge_leaf_l1_eps,
+                    child_min_leaf_fraction=self.causal_gate_child_min_leaf_fraction,
+                    min_asset_leaf_samples=self.causal_gate_min_asset_leaf_samples,
+                    min_gain_relaxed=self.causal_gate_min_gain_relaxed,
+                )
+
+                try:
+                    # Create internal folds for the training set to allow proper stability calculation
+                    # Detect asset groups for internal folds
+                    internal_asset_groups = None
+                    if asset_ids_train is not None:
+                        internal_asset_groups = pd.Series(asset_ids_train, index=Z_train.index)
+
+                    internal_folds = make_purged_group_kfold_folds(
+                        Z_train.index,
+                        groups=internal_asset_groups,
+                        n_folds=5, # Internal folds
+                        purge=self.causal_gate_purge,
+                        embargo=self.causal_gate_embargo
+                    )
+
+                    if len(preds_train) < max(2, self.min_specialists):
+                        return None
+
+                    fold_tree.fit(
+                        Z_train,
+                        preds_train,
+                        y_train,
+                        internal_folds,
+                        asset_ids=asset_ids_train,
+                    )
+
+                    # Predict on Val
+                    val_outputs = fold_tree.route(Z_val, preds_val)
+                    val_outputs.index = Z_val.index
+                    val_outputs["final_signal"] = val_outputs["signal"].copy()
+
+                    if core_experts:
+                        baseline = np.zeros(len(Z_val), dtype=float)
+                        for expert in core_experts:
+                            baseline += preds_oof_dict[expert][val_idx] * core_weights.get(expert, 0.0)
+                        val_outputs["baseline_signal"] = baseline
+                        val_outputs["final_signal"] += baseline
+
+                    val_outputs["suitability"] = expit(val_outputs["best_score"].fillna(0.0))
+                    val_outputs["signed_confidence"] = np.tanh(val_outputs["final_signal"])
+
+                    # Calculate Gated Predictions
+                    gated_preds_fold = defaultdict(list)
+                    leaf_ids = val_outputs["leaf_id"].to_numpy()
+
+                    for expert, p_val in preds_val.items():
+                        w_vec = np.array([fold_tree.leaves_[lid].expert_weights.get(expert, 0.0) for lid in leaf_ids])
+                        gated_preds_fold[expert] = pd.Series(p_val * w_vec, index=Z_val.index)
+
+                    for expert in core_experts:
+                        base_weight = core_weights.get(expert, 0.0)
+                        if base_weight > 0.0:
+                            p_val = preds_oof_dict[expert][val_idx]
+                            gated_preds_fold[expert] = pd.Series(p_val * base_weight, index=Z_val.index)
+
+                    return val_outputs, gated_preds_fold
+
+                except Exception as e:
+                    tprint_warning(f"   ⚠️ Fold {i} gating failed: {e}")
+                    return None
+
+            # Execute Parallel Loop
+            n_jobs = getattr(self, 'n_jobs', 4)
+            tprint_info(f"   🚀 Running {len(folds)} gating folds in parallel (n_jobs={n_jobs})...")
+
+            results = Parallel(n_jobs=n_jobs)(
+                delayed(_fit_fold)(i, train_idx, val_idx)
+                for i, (train_idx, val_idx) in enumerate(folds)
+            )
+
+            # Process Results
+            for res in results:
+                if res is None:
+                    continue
+
+                val_outputs, gated_preds_fold = res
+                oof_gate_outputs_list.append(val_outputs)
+
+                for expert, series in gated_preds_fold.items():
+                    oof_gated_preds_list[expert].append(series)
+
+            # Concatenate OOF results
+            if oof_gate_outputs_list:
+                gate_outputs = pd.concat(oof_gate_outputs_list)
+                # Reindex to full Z to handle any gaps
+                gate_outputs = gate_outputs.reindex(Z.index)
+
+                for expert, series_list in oof_gated_preds_list.items():
+                    full_series = pd.concat(series_list).reindex(Z.index).fillna(0.0)
+                    gated_predictions[expert] = full_series
+            else:
+                tprint_error("   ❌ All gating folds failed. Returning raw predictions.")
+                return specialist_predictions, None
+
+            # Final Fit on Full Data (for persistence/inference)
+            tprint_info("   🌳 Fitting Final Causal Gate on Full Data...")
+            final_tree = StabilityRegimeTree(
+                max_depth=self.causal_gate_max_depth,
+                min_leaf_samples=self.causal_gate_min_leaf_samples,
+                min_leaf_val_per_fold=self.causal_gate_min_leaf_val_per_fold,
+                stability_mode="mean_minus_iqr",
+                disp_penalty=0.5,
+                utility_transform="tanh",
+                soft_weights=True,
+                top_k_weights=self.causal_gate_top_k,
+                min_stability_gain=self.causal_gate_min_gain,
+                min_valid_fold_frac=self.causal_gate_min_valid_fold_frac,
+                verbose=self.verbose,
+                expert_prune_gap=0.1,
+                expert_prune_cum_weight=0.9,
+                expert_prune_worst_fold=-0.25,
+                expert_prune_corr=0.9,
+                merge_leaf_l1_eps=self.causal_gate_merge_leaf_l1_eps,
+                child_min_leaf_fraction=self.causal_gate_child_min_leaf_fraction,
+                min_asset_leaf_samples=self.causal_gate_min_asset_leaf_samples,
+                min_gain_relaxed=self.causal_gate_min_gain_relaxed,
+            )
+            conditional_preds = {k: v for k, v in preds_oof_dict.items() if k in conditional_experts}
+            if len(conditional_preds) < max(2, self.min_specialists):
+                tprint_warning("   ⚠️ Insufficient conditional experts for final causal gate.")
+                return specialist_predictions, None
+            final_tree.fit(Z, conditional_preds, y, folds, asset_ids=asset_ids)
+            self._causal_gate_tree = final_tree
+            self._causal_gate_feature_cols = list(Z.columns)
+            split_diag = final_tree.get_split_diagnostics()
+            if split_diag:
+                top_reasons = sorted(split_diag.items(), key=lambda kv: kv[1], reverse=True)[:5]
+                tprint_info(
+                    "   📊 Split guardrail counts: "
+                    + ", ".join(f"{k}={v}" for k, v in top_reasons)
+                )
+            leaf_ids_full = final_tree.predict_leaf_ids(Z)
+            leaf_counts = pd.Series(leaf_ids_full).value_counts(normalize=True)
+            if len(final_tree.leaves_) > 10:
+                tprint_warning(f"   ⚠️ Causal gate leaves > 10: {len(final_tree.leaves_)}")
+            if len(final_tree.leaves_) <= 1:
+                feature_var = Z.var().sort_values(ascending=False)
+                tprint_warning("   ⚠️ Causal gate produced a single leaf; check feature variance and thresholds.")
+                tprint_info(
+                    f"   🧪 Gate config: min_leaf_samples={self.causal_gate_min_leaf_samples}, "
+                    f"min_leaf_val_per_fold={self.causal_gate_min_leaf_val_per_fold}, "
+                    f"min_stability_gain={self.causal_gate_min_gain}"
+                )
+                tprint_info(f"   🧪 Top feature variances: {feature_var.head(5).to_dict()}")
+            if not leaf_counts.empty and (leaf_counts < 0.2).any():
+                tprint_warning("   ⚠️ Causal gate leaves below 20% activity detected.")
+
+            # Save Causal Gating Report
+            causal_metrics = {
+                "n_samples": len(Z),
+                "leaf_distribution": leaf_counts.to_dict(),
+                "core_experts": self._causal_gate_core_experts,
+                "conditional_experts": conditional_experts,
+            }
+            self._save_causal_gating_report(final_tree, causal_metrics)
+
+        else:
+            # Inference Mode (No fitting)
+            if self._causal_gate_tree is None:
+                return specialist_predictions, None
+
+            tree = self._causal_gate_tree
+
+            # Handle missing experts
+            for expert in tree.experts_:
+                if expert not in preds_oof_dict:
+                    preds_oof_dict[expert] = np.zeros(len(Z), dtype=float)
+
+            gate_outputs = tree.route(Z, preds_oof_dict)
+            if gate_outputs.index.has_duplicates:
+                dup_count = int(gate_outputs.index.duplicated().sum())
+                tprint_warning(
+                    f"   ⚠️ Gate outputs index had {dup_count} duplicates; keeping last occurrence before reindex."
+                )
+                gate_outputs = gate_outputs.loc[~gate_outputs.index.duplicated(keep="last")]
+
+            gate_outputs = gate_outputs.reindex(Z.index)
+            if self._causal_gate_core_experts:
+                baseline = np.zeros(len(Z), dtype=float)
+                for expert in self._causal_gate_core_experts:
+                    baseline += preds_oof_dict[expert] * self._causal_gate_core_weights.get(expert, 0.0)
+                gate_outputs["baseline_signal"] = baseline
+                gate_outputs["final_signal"] = gate_outputs["signal"] + baseline
+            gate_outputs["suitability"] = expit(gate_outputs["best_score"].fillna(0.0))
+            gate_outputs["signed_confidence"] = np.tanh(gate_outputs["final_signal"])
+
+            leaf_ids = gate_outputs["leaf_id"].to_numpy()
+            for expert, preds in preds_oof_dict.items():
+                if expert in self._causal_gate_core_experts:
+                    base_weight = self._causal_gate_core_weights.get(expert, 0.0)
+                    gated_predictions[expert] = pd.Series(preds * base_weight, index=Z.index)
+                    continue
+                weights = np.array([tree.leaves_[leaf_id].expert_weights.get(expert, 0.0) for leaf_id in leaf_ids])
+                gated_predictions[expert] = pd.Series(preds * weights, index=Z.index)
+
+        return gated_predictions, gate_outputs
+
+    def _apply_pre_geometry_gate(
+        self,
+        events_df: pd.DataFrame,
+        gate_outputs: Optional[pd.DataFrame],
+    ) -> pd.DataFrame:
+        """
+        Gate A: filter unstable timestamps before geometry optimization.
+        Uses causal gate outputs (best_score/entropy/disagreement) to prune events.
+        """
+        if (
+            not self.pre_geometry_gate_enabled
+            or events_df is None
+            or events_df.empty
+            or gate_outputs is None
+            or gate_outputs.empty
+        ):
+            return events_df
+
+        if events_df.index.has_duplicates:
+            dup_count = int(events_df.index.duplicated().sum())
+            tprint_warning(
+                f"   ⚠️ Events dataframe has {dup_count} duplicate timestamps; keeping last occurrence before Gate A."
+            )
+            events_df = events_df.loc[~events_df.index.duplicated(keep="last")]
+
+        if gate_outputs.index.has_duplicates:
+            dup_count = int(gate_outputs.index.duplicated().sum())
+            tprint_warning(
+                f"   ⚠️ Gate outputs had {dup_count} duplicate timestamps; keeping last occurrence before Gate A."
+            )
+            gate_outputs = gate_outputs.loc[~gate_outputs.index.duplicated(keep="last")]
+
+        if len(events_df) < max(5, int(self.pre_geometry_gate_min_events)):
+            tprint_info(
+                f"   ℹ️ Pre-geometry gate skipped: only {len(events_df)} events (< {self.pre_geometry_gate_min_events})."
+            )
+            return events_df
+
+        n_before = len(events_df)
+        tprint_info(f"🛡️ [Layer 2] Applying Gate A pre-geometry filter: {n_before} initial events")
+
+        aligned = gate_outputs.reindex(events_df.index)
+        if aligned.empty:
+            return events_df
+
+        score_col = "suitability" if "suitability" in aligned.columns else "best_score"
+        if score_col not in aligned.columns:
+            score_col = "signal"
+        scores = aligned[score_col].astype(float)
+        scores = scores.replace([np.inf, -np.inf], np.nan)
+        valid_scores = scores.dropna()
+        if valid_scores.empty or len(valid_scores) < self.pre_geometry_gate_min_events:
+            tprint_warning("   ⚠️ Pre-geometry gate skipped (insufficient gate scores).")
+            return events_df
+
+        pass_rate = 0.0 # Placeholder, will update after mask
+        score_mean = valid_scores.mean() if not valid_scores.empty else 0.0
+        score_std = valid_scores.std() if not valid_scores.empty else 0.0
+
+        if "leaf_id" in aligned.columns:
+            leaf_dist = aligned["leaf_id"].value_counts(normalize=True).to_dict()
+            recent_dist = (
+                aligned["leaf_id"].iloc[-min(200, len(aligned)) :].value_counts(normalize=True).to_dict()
+            )
+            tprint_info(f"   🧭 Gate A leaf usage: {leaf_dist}")
+            tprint_info(f"   🧭 Gate A recent leaf usage: {recent_dist}")
+
+        if "entropy" in aligned.columns and "disagreement" in aligned.columns:
+            tprint_info(
+                "   🧪 Gate A diagnostics: "
+                f"entropy_mean={aligned['entropy'].mean():.4f}, "
+                f"disagreement_mean={aligned['disagreement'].mean():.4f}"
+            )
+
+        min_periods = min(len(valid_scores), max(self.pre_geometry_gate_min_events, 50))
+
+        # Performance optimization: Use Numba for expanding quantile
+        scores_arr = valid_scores.values.astype(np.float32)
+        rolling_threshold_arr = expanding_quantile_jit(
+            scores_arr, min_periods, self.pre_geometry_gate_percentile / 100.0
+        )
+
+        rolling_threshold = pd.Series(rolling_threshold_arr, index=valid_scores.index, dtype="float32")
+        rolling_threshold = rolling_threshold.fillna(
+            np.nanpercentile(scores_arr, self.pre_geometry_gate_percentile)
+        )
+        rolling_threshold = rolling_threshold.clip(lower=self.pre_geometry_gate_min_score)
+        mask = scores >= rolling_threshold
+
+        if self.pre_geometry_gate_max_entropy is not None and "entropy" in aligned.columns:
+            mask &= aligned["entropy"] <= self.pre_geometry_gate_max_entropy
+
+        if self.pre_geometry_gate_max_disagreement is not None and "disagreement" in aligned.columns:
+            mask &= aligned["disagreement"] <= self.pre_geometry_gate_max_disagreement
+
+        filtered = events_df.loc[mask.fillna(False)]
+        n_after = len(filtered)
+        pass_rate = n_after / n_before if n_before > 0 else 0.0
+
+        if n_after == 0:
+            tprint_warning("   ⚠️ Pre-geometry gate removed all events; keeping originals for safety.")
+            return events_df
+
+        tprint_info(
+            f"   🧮 Pre-geometry gate kept {n_after}/{n_before} events ({pass_rate:.2%}) "
+            f"using percentile={self.pre_geometry_gate_percentile:.1f}"
+        )
+
+        gating_metrics = {
+            "n_before": n_before,
+            "n_after": n_after,
+            "pass_rate": pass_rate,
+            "score_col": score_col,
+            "avg_score": score_mean,
+            "std_score": score_std,
+        }
+
+        if "leaf_id" in aligned.columns:
+            gating_metrics["leaf_usage"] = leaf_dist
+            gating_metrics["recent_leaf_usage"] = recent_dist
+
+        if "entropy" in aligned.columns and "disagreement" in aligned.columns:
+            gating_metrics["avg_entropy"] = float(aligned['entropy'].mean())
+            gating_metrics["avg_disagreement"] = float(aligned['disagreement'].mean())
+
+        self._save_gating_report("Gate_A", gating_metrics)
+
+        tprint_info(
+            "   🧹 Gate A (Pre-geometry) quality metrics: "
+            f"counts={n_before}->{n_after}, "
+            f"pass_rate={pass_rate:.2%}, "
+            f"metric={score_col}, avg_score={score_mean:.4f} (±{score_std:.4f})"
+        )
+        return filtered
+
+    def _classify_gate_experts(
+        self,
+        preds_oof_dict: Dict[str, np.ndarray],
+        y: np.ndarray,
+        folds: List[Tuple[np.ndarray, np.ndarray]],
+    ) -> Tuple[List[str], List[str], Dict[str, List[float]]]:
+        expert_names = list(preds_oof_dict.keys())
+        if not expert_names:
+            return [], [], {}
+
+        preds_matrix = np.column_stack([preds_oof_dict[name] for name in expert_names])
+        n_experts = len(expert_names)
+        expert_fold_scores: Dict[str, List[float]] = {name: [] for name in expert_names}
+
+        for _, val_idx in folds:
+            if len(val_idx) < 5:
+                continue
+
+            # Performance optimization: Use Numba for bulk expert scoring
+            fold_scores = score_experts_on_fold_jit(preds_matrix[val_idx], y[val_idx])
+            for i, name in enumerate(expert_names):
+                expert_fold_scores[name].append(float(fold_scores[i]))
+
+        core_experts: List[str] = []
+        conditional_experts: List[str] = []
+        for expert_name, scores in expert_fold_scores.items():
+            if not scores:
+                conditional_experts.append(expert_name)
+                continue
+
+            scores_arr = np.array(scores)
+            min_score = float(np.min(scores_arr))
+            # np.percentile can be slow; for small arrays it's fine but let's be consistent
+            q75, q25 = np.percentile(scores_arr, [75, 25])
+            iqr = float(q75 - q25)
+
+            if min_score >= 0.0 and iqr <= 0.15:
+                core_experts.append(expert_name)
+            else:
+                conditional_experts.append(expert_name)
+
+        if not conditional_experts and core_experts:
+            conditional_experts.append(core_experts.pop(0))
+
+        return core_experts, conditional_experts, expert_fold_scores
+
+    def _select_specialists_for_gate_a(
+        self,
+        preds_oof_dict: Dict[str, np.ndarray],
+        y: np.ndarray,
+        folds: List[Tuple[np.ndarray, np.ndarray]],
+    ) -> Dict[str, np.ndarray]:
+        def stability_score(scores: List[float]) -> float:
+            if not scores:
+                return -np.inf
+            arr = np.array(scores, dtype=float)
+            q75, q25 = np.percentile(arr, 75), np.percentile(arr, 25)
+            return float(np.min(arr) - 0.5 * (q75 - q25))
+
+        fold_scores: Dict[str, List[float]] = {}
+        for expert, preds in preds_oof_dict.items():
+            scores = []
+            for _, val_idx in folds:
+                if len(val_idx) < 5:
+                    continue
+                u = y[val_idx] * np.tanh(np.clip(preds[val_idx], -5, 5))
+                score = float(np.mean(u) / (np.std(u) + 1e-12))
+                scores.append(score)
+            fold_scores[expert] = scores
+
+        fam_to_experts: Dict[str, List[str]] = {}
+        for expert in preds_oof_dict:
+            fam_to_experts.setdefault(self._infer_family_from_registry(expert), []).append(expert)
+
+        selected: List[str] = []
+        for fam, experts in fam_to_experts.items():
+            ranked = sorted(experts, key=lambda e: stability_score(fold_scores.get(e, [])), reverse=True)
+            keep: List[str] = []
+            for expert in ranked:
+                if len(keep) >= self.pre_geometry_gate_family_k:
+                    break
+                if keep:
+                    corr = np.corrcoef(preds_oof_dict[expert], preds_oof_dict[keep[0]])[0, 1]
+                    if np.abs(corr) >= self.pre_geometry_gate_corr_threshold_family:
+                        continue
+                keep.append(expert)
+            if len(keep) < self.pre_geometry_gate_min_keep_per_family and len(ranked) >= self.pre_geometry_gate_min_keep_per_family:
+                keep = ranked[: self.pre_geometry_gate_min_keep_per_family]
+            selected.extend(keep)
+
+        # Global correlation prune
+        final_selected: List[str] = []
+        for expert in selected:
+            if not final_selected:
+                final_selected.append(expert)
+                continue
+            keep = True
+            for kept in final_selected:
+                corr = np.corrcoef(preds_oof_dict[expert], preds_oof_dict[kept])[0, 1]
+                if np.abs(corr) >= self.pre_geometry_gate_corr_threshold_global:
+                    keep = False
+                    break
+            if keep:
+                final_selected.append(expert)
+
+        return {expert: preds_oof_dict[expert] for expert in final_selected}
+
+    def _calibrate_expert_predictions(
+        self,
+        preds: np.ndarray,
+        y: np.ndarray,
+        valid_mask: np.ndarray,
+        base_rate: float,
+    ) -> np.ndarray:
+        preds = np.asarray(preds, dtype=float)
+        if preds.size == 0:
+            return preds
+        y_valid = y[valid_mask]
+        p_valid = preds[valid_mask]
+        if y_valid.size < 10 or np.unique(y_valid).size < 2:
+            return np.clip(preds, 0.0, 1.0)
+
+        candidate_predictions: Dict[str, np.ndarray] = {}
+
+        # ExtraTrees + isotonic calibration
+        try:
+            et = ExtraTreesClassifier(n_estimators=200, max_depth=3, random_state=42, n_jobs=-1)
+            et.fit(p_valid.reshape(-1, 1), y_valid)
+            et_scores = et.predict_proba(preds.reshape(-1, 1))[:, 1]
+            iso = IsotonicRegression(out_of_bounds="clip")
+            iso.fit(et_scores[valid_mask], y_valid)
+            candidate_predictions["extratrees"] = iso.predict(et_scores)
+        except Exception:
+            pass
+
+        # Huber regression
+        try:
+            huber = HuberRegressor(alpha=1.0, epsilon=1.35)
+            huber.fit(p_valid.reshape(-1, 1), y_valid)
+            huber_scores = huber.predict(preds.reshape(-1, 1))
+            candidate_predictions["huber"] = np.clip(huber_scores, 0.0, 1.0)
+        except Exception:
+            pass
+
+        # Ridge regression alpha variants
+        for alpha in (0.5, 1.0):
+            try:
+                ridge = Ridge(alpha=alpha)
+                ridge.fit(p_valid.reshape(-1, 1), y_valid)
+                ridge_scores = ridge.predict(preds.reshape(-1, 1))
+                candidate_predictions[f"ridge_{alpha}"] = np.clip(ridge_scores, 0.0, 1.0)
+            except Exception:
+                continue
+
+        if not candidate_predictions:
+            return np.clip(preds, 0.0, 1.0)
+
+        best_score = -np.inf
+        best_preds = None
+        for name, cand in candidate_predictions.items():
+            cand_valid = cand[valid_mask]
+            if cand_valid.size == 0:
+                continue
+            precision, recall, _ = precision_recall_curve(y_valid, cand_valid)
+            recall_at_prec = 0.0
+            if precision.size > 0:
+                mask = precision >= 0.6
+                if mask.any():
+                    recall_at_prec = float(np.max(recall[mask]))
+            pr_auc = float(average_precision_score(y_valid, cand_valid))
+            brier = float(brier_score_loss(y_valid, cand_valid))
+            metric = pr_auc * (1 - brier) * recall_at_prec
+            if metric > best_score:
+                best_score = metric
+                best_preds = cand
+
+        if best_preds is None:
+            return np.clip(preds, 0.0, 1.0)
+        return np.clip(best_preds, 0.0, 1.0)
+
+    def _build_post_race_regime_features(
+        self,
+        df: pd.DataFrame,
+        index: pd.Index,
+    ) -> pd.DataFrame:
+        """Build lightweight regime features for post-race gating using JIT acceleration."""
+        if "close" not in df.columns or df.empty:
+            features = pd.DataFrame(index=index)
+            features["volatility_level"] = 0.0
+            features["trend_score"] = 0.0
+            return features
+
+        close_arr = df["close"].values.astype(np.float64)
+        returns = vectorized_pct_change_jit(close_arr)
+        returns[np.isnan(returns)] = 0.0
+
+        vol_arr = rolling_std_jit(returns, 12)
+        trend_arr = rolling_mean_jit(returns, 24)
+        vol_long_arr = rolling_std_jit(returns, 48)
+
+        # Trend score calculation
+        trend_score_arr = trend_arr / (vol_long_arr + 1e-9)
+
+        # Create temporary dataframe for reindexing
+        temp_df = pd.DataFrame(
+            {
+                "volatility_level": vol_arr.astype(np.float32),
+                "trend_score": trend_score_arr.astype(np.float32),
+            },
+            index=df.index,
+        )
+
+        return temp_df.reindex(index).fillna(0.0)
+
+    def _apply_post_race_gate(
+        self,
+        df: pd.DataFrame,
+        oof_labels: pd.Series,
+        individual_geos: Dict[str, pd.Series],
+    ) -> Optional[pd.DataFrame]:
+        """
+        Gate B: post-race mixture-of-experts routing based on OOF predictions.
+        Returns per-event gate outputs (final score + routing diagnostics).
+        """
+        if not self.post_race_gate_enabled:
+            return None
+
+        tprint_info(f"🧠 [Layer 2] Training Gate B post-race mixture-of-experts for {len(individual_geos)} geometries")
+
+        if individual_geos is None or len(individual_geos) < self.post_race_gate_min_experts:
+            tprint_warning("   ⚠️ Post-race gate skipped (insufficient experts).")
+            return None
+
+        if oof_labels is None or oof_labels.dropna().shape[0] < self.post_race_gate_min_samples:
+            tprint_warning("   ⚠️ Post-race gate skipped (insufficient labeled samples).")
+            return None
+
+        index = oof_labels.index
+        base_rate = float(oof_labels.mean()) if oof_labels.notna().any() else 0.5
+        base_predictions_full: Dict[str, np.ndarray] = {}
+        present_features: Dict[str, np.ndarray] = {}
+        for name, preds in individual_geos.items():
+            # Optimize: Skip reindex if possible
+            if preds.index.equals(index):
+                aligned = preds
+            else:
+                aligned = preds.reindex(index)
+
+            present = aligned.notna().values.astype(np.float32)
+            present_features[f"present__{name}"] = present
+            base_predictions_full[name] = aligned.fillna(base_rate).values.astype(np.float32)
+
+        present_matrix = np.column_stack(list(present_features.values())) if present_features else np.zeros((len(index), 0), dtype=np.float32)
+        present_count = present_matrix.sum(axis=1) if present_matrix.size else np.zeros(len(index), dtype=np.float32)
+        present_entropy = np.zeros(len(index), dtype=np.float32)
+        if present_matrix.size:
+            denom = np.clip(present_count[:, None], 1.0, None)
+            present_probs = (present_matrix / denom).astype(np.float32)
+            present_entropy = (-present_probs * np.log(present_probs + 1e-12)).sum(axis=1).astype(np.float32)
+
+        valid_mask = oof_labels.notna()
+        if present_matrix.size and np.all(present_count == present_matrix.shape[1]):
+            tprint_warning("   ⚠️ Post-race gate: all experts present for all events; verify OOF alignment.")
+        if valid_mask.any():
+            for name, preds in base_predictions_full.items():
+                try:
+                    corr = np.corrcoef(preds[valid_mask.to_numpy()], oof_labels[valid_mask].to_numpy())[0, 1]
+                    if np.abs(corr) > 0.95:
+                        tprint_warning(f"   ⚠️ Post-race gate: {name} corr with labels is {corr:.3f}; check OOF alignment.")
+                except Exception:
+                    continue
+
+        prob_matrix_full = np.column_stack(list(base_predictions_full.values())).astype(np.float32)
+        max_prob = np.max(prob_matrix_full, axis=1).astype(np.float32)
+        spread = np.ptp(prob_matrix_full, axis=1).astype(np.float32)
+
+        regime_features_full = self._build_post_race_regime_features(df, index)
+        for key, val in present_features.items():
+            regime_features_full[key] = val.astype(np.float32)
+        regime_features_full["present_count"] = present_count.astype(np.float32)
+        regime_features_full["present_entropy"] = present_entropy.astype(np.float32)
+        regime_features_full["max_prob"] = max_prob
+        regime_features_full["prob_spread"] = spread
+
+        try:
+            # Detect asset groups
+            asset_groups = None
+            if 'asset_id' in df.columns:
+                asset_groups = df['asset_id'].reindex(index)
+            elif isinstance(df.index, pd.MultiIndex) and 'asset_id' in df.index.names:
+                asset_groups = df.index.get_level_values('asset_id').to_series().reindex(index)
+
+            folds = make_purged_group_kfold_folds(
+                index,
+                groups=asset_groups,
+                n_folds=min(self.causal_gate_n_folds, 8),
+                purge=self.causal_gate_purge,
+                embargo=0
+            )
+        except Exception:
+            folds = []
+        if folds:
+            core_experts, _, expert_fold_scores = self._classify_gate_experts(
+                base_predictions_full, oof_labels.to_numpy(dtype=float), folds
+            )
+            if core_experts:
+                raw_scores = np.array(
+                    [
+                        np.nanmean(expert_fold_scores.get(expert, [0.0]))
+                        for expert in core_experts
+                    ],
+                    dtype=float,
+                )
+                if np.all(raw_scores <= 0):
+                    raw_scores = np.ones_like(raw_scores)
+                raw_scores = np.clip(raw_scores, 1e-6, None)
+                raw_scores = raw_scores / raw_scores.sum()
+                core_weights = dict(zip(core_experts, raw_scores))
+                core_signal = np.zeros(len(index), dtype=float)
+                for expert in core_experts:
+                    core_signal += base_predictions_full[expert] * core_weights.get(expert, 0.0)
+                regime_features_full["core_signal"] = core_signal
+
+        if valid_mask.sum() < self.post_race_gate_min_samples:
+            tprint_warning("   ⚠️ Post-race gate skipped (insufficient valid labels).")
+            return None
+
+        calibrated_predictions: Dict[str, np.ndarray] = {}
+        for name, preds in base_predictions_full.items():
+            calibrated_predictions[name] = self._calibrate_expert_predictions(
+                preds, oof_labels.to_numpy(dtype=float), valid_mask.to_numpy(), base_rate
+            )
+        base_predictions_fit = {
+            name: preds[valid_mask.to_numpy()]
+            for name, preds in calibrated_predictions.items()
+        }
+        regime_features_fit = regime_features_full.loc[valid_mask]
+        y_fit = oof_labels.loc[valid_mask].to_numpy(dtype=float)
+
+        gate = create_stacker_lgbm_gate()
+        gate.fit(
+            base_predictions=base_predictions_fit,
+            y=y_fit,
+            regime_features=regime_features_fit,
+        )
+
+        outputs = gate.combine_outputs(calibrated_predictions, regime_features_full)
+        weight_matrix = np.column_stack([outputs["weights"][name] for name in gate.expert_names])
+        prob_matrix = np.column_stack([outputs["expert_probabilities"][name] for name in gate.expert_names])
+        if self.post_race_gate_weight_half_life > 0 and len(weight_matrix) > 1:
+            alpha = 1 - np.exp(np.log(0.5) / max(1.0, self.post_race_gate_weight_half_life))
+            smooth_weights = weight_matrix.copy()
+            for i in range(1, len(smooth_weights)):
+                smooth_weights[i] = alpha * smooth_weights[i] + (1 - alpha) * smooth_weights[i - 1]
+            weight_matrix = smooth_weights
+
+        entropy = -np.sum(weight_matrix * np.log(weight_matrix + 1e-12), axis=1)
+        disagreement = np.std(prob_matrix, axis=1)
+        top_expert_idx = np.argmax(weight_matrix, axis=1)
+        top_expert = np.array([gate.expert_names[idx] for idx in top_expert_idx], dtype=object)
+        blended_prob = np.clip(np.sum(weight_matrix * prob_matrix, axis=1), 0.0, 1.0)
+        outputs["raw_probability"] = blended_prob
+        outputs["probability"] = blended_prob
+
+        gate_df = pd.DataFrame(
+            {
+                "final_score": outputs["probability"],
+                "raw_score": outputs["raw_probability"],
+                "top_expert_idx": top_expert_idx,
+                "top_expert": top_expert,
+                "entropy": entropy,
+                "disagreement": disagreement,
+            },
+            index=index,
+        )
+
+        # Gate B quality metrics tprint
+        avg_entropy = float(np.mean(entropy))
+        avg_disag = float(np.mean(disagreement))
+        avg_score = float(np.mean(outputs["probability"]))
+        top_expert_dist = gate_df["top_expert"].value_counts(normalize=True).head(5).to_dict()
+
+        gating_metrics = {
+            "n_events": len(gate_df),
+            "avg_score": avg_score,
+            "avg_entropy": avg_entropy,
+            "avg_disagreement": avg_disag,
+            "top_expert_distribution": top_expert_dist,
+            "experts_used": list(base_predictions_full.keys())
+        }
+        self._save_gating_report("Gate_B", gating_metrics)
+
+        tprint_info(
+            "   🧪 Gate B (Post-race) quality metrics: "
+            f"events={len(gate_df)}, avg_score={avg_score:.4f}, "
+            f"avg_entropy={avg_entropy:.4f}, avg_disagreement={avg_disag:.4f}"
+        )
+        tprint_info(f"   🧭 Gate B top expert distribution: {top_expert_dist}")
+
+        self._post_race_gate_model = gate
+        return gate_df
+
+    def _generate_causal_surprise_events(
+        self,
+        df: pd.DataFrame,
+        specialist_predictions: Dict[str, pd.Series],
+        gate_outputs: Optional[pd.DataFrame] = None,
+    ) -> pd.DataFrame:
+        """
+        Generate events from causal surprise detection.
+        """
+        tprint_info("🎯 Layer 2: Generating Causal Surprise Events...")
+
+        if not self.causal_surprise_enabled:
+            tprint_info("   ⏭️ Layer 2: Causal surprise events disabled")
+            return pd.DataFrame()
+
+        # --- HUNTER MODE ACTIVATION (Hard Negative Mining) ---
+        # Explicitly requested by user to optimize PR-AUC
+        if hasattr(self, '_irm_system') and self._irm_system:
+             tprint_info("🏹 Hunter Mode Active: Setting Focal Gamma = 2.0 for Hard Negative Mining")
+             self._irm_system.focal_gamma = 2.0
+             self._irm_system.focal_gamma_pos = 2.0 # Ensure positive class gamma is also set
 
 
+        if self._surprise_detector is None:
+            tprint_warning("   ⚠️ Layer 2: Surprise detector not initialized")
+            return pd.DataFrame()
+
+        try:
+            if df.index.has_duplicates:
+                dup_count = int(df.index.duplicated().sum())
+                original_index = df.index
+                reference_index, asset_key = self._build_reference_index(df)
+                if reference_index.is_unique:
+                    df = df.copy()
+                    df.index = reference_index
+                    if self.verbose:
+                        context = f" via asset column '{asset_key}'" if asset_key else ""
+                        tprint_info(
+                            f"   🌐 Layer 2: Promoted index to MultiIndex{context} to preserve per-asset rows"
+                        )
+                else:
+                    tprint_warning(
+                        f"   ⚠️ Layer 2: Input index has {dup_count} duplicate labels; "
+                        "deduplicating by keeping the last occurrence before surprise aggregation."
+                    )
+                    df = df.loc[~df.index.duplicated(keep="last")].copy()
+                    reference_index = df.index
+                original_index = original_index if 'original_index' in locals() else df.index
+            else:
+                original_index = df.index
+                reference_index = df.index
+
+            tprint_info("   📝 Layer 2: Registering specialists with surprise detector...")
+
+            # Ensure detector uses the reference index to prevent mixed-type aggregation
+            self._surprise_detector.reference_index_ = reference_index
+
+            extended_predictions = dict(specialist_predictions or {})
+            # Ensure each specialist signal has a unique, aligned index
+            deduped_predictions = {}
+            for name, series in extended_predictions.items():
+                if series is None:
+                    continue
+                ser = pd.Series(series)
+                ser = self._coerce_series_to_reference_index(ser, original_index, reference_index)
+                if ser.index.has_duplicates:
+                    dup_count = int(ser.index.duplicated().sum())
+                    tprint_warning(
+                        f"   ⚠️ Specialist {name} index had {dup_count} duplicates; "
+                        "keeping the last occurrence before registration."
+                    )
+                    ser = ser.loc[~ser.index.duplicated(keep="last")]
+                deduped_predictions[name] = ser
+
+            extended_predictions = deduped_predictions
+            cross_asset_cols = [
+                col
+                for col in df.columns
+                if col.startswith(("ca__", "ms__"))
+            ]
+            if cross_asset_cols:
+                limit = 30
+                if isinstance(self._current_config, dict):
+                    limit = int(self._current_config.get("cross_asset_specialist_limit", limit))
+
+                cross_asset_ranked = []
+                for col in cross_asset_cols:
+                    series = df[col]
+                    if not np.issubdtype(series.dtype, np.number):
+                        continue
+                    if series.notna().sum() < max(20, int(len(series) * 0.2)):
+                        continue
+                    variance = float(series.var())
+                    if not np.isfinite(variance) or variance <= 0.0:
+                        continue
+                    cross_asset_ranked.append((col, variance))
+
+                cross_asset_ranked.sort(key=lambda x: x[1], reverse=True)
+                added = 0
+                for col, _ in cross_asset_ranked[:limit]:
+                    if col not in extended_predictions:
+                        # Robust Normalization (Median/IQR) to center ~0 and scale ~1
+                        raw = df[col]
+                        median = raw.median()
+                        q25 = raw.quantile(0.25)
+                        q75 = raw.quantile(0.75)
+                        iqr = q75 - q25
+                        if iqr > 1e-9:
+                            normalized = (raw - median) / (iqr * 0.7413) # 0.7413 to match sigma for normal dist
+                        else:
+                            # Fallback to Z-score if IQR is 0
+                            std = raw.std()
+                            if std > 1e-9:
+                                normalized = (raw - raw.mean()) / std
+                            else:
+                                normalized = raw - raw.mean() # Just center
+
+                        normalized = normalized.reindex(df.index)
+                        extended_predictions[col] = normalized.fillna(0.0)
+                        added += 1
+                if added > 0:
+                    tprint_info(
+                        f"   🔗 Added {added} cross-asset predictors to causal surprise detection"
+                    )
+
+            specialist_predictions = extended_predictions
+            payloads = self._prepare_registration_batch(specialist_predictions, df)
+            if not payloads:
+                tprint_warning("   ⚠️ No registration payloads available")
+                return self._generate_fallback_events(df)
+
+            registered_count = self._register_specialists_batch(payloads)
+            tprint_info(f"      - Specialists registered: {registered_count}/{len(payloads)} payloads")
+
+            if len(self._surprise_detector.specialist_errors_) == 0:
+                tprint_warning("   ⚠️ Layer 2: No specialists successfully registered")
+                return self._generate_fallback_events(df)
+
+            # Aggregate surprise scores
+            tprint_info("   🔍 Layer 2: Computing surprise scores across specialists...")
+            regime_posteriors = None
+            if self.irm_enabled and hasattr(self, "irm_regime_dir"):
+                try:
+                    if (
+                        hasattr(self, "_cached_regime_posteriors")
+                        and self._cached_regime_posteriors is not None
+                    ):
+                        regime_posteriors = self._cached_regime_posteriors
+                    else:
+                        regime_posteriors = get_regime_posteriors_from_path(
+                            df, self.irm_regime_dir
+                        )
+                        self._cached_regime_posteriors = regime_posteriors
+                    if (
+                        self.verbose
+                        and regime_posteriors is not None
+                        and not regime_posteriors.empty
+                    ):
+                        tprint_info(
+                            "   🧬 Loaded regime posteriors for surprise weighting: "
+                            f"{regime_posteriors.shape[1]} regimes"
+                        )
+                except Exception as e:
+                    if self.verbose:
+                        tprint_warning(
+                            f"   ⚠️ Could not load regime posteriors for surprise weighting: {e}"
+                        )
+            surprise_df = pd.DataFrame()
+            spectral_reliability = None
+            if getattr(self, "_aedl_framework", None):
+                try:
+                    spectral_reliability = self._aedl_framework.spectral_specialists.get_reliability_report()
+                except Exception as e:
+                    if self.verbose:
+                        tprint_warning(f"   ⚠️ Failed to retrieve spectral reliability: {e}")
+
+            # Calculate Regime Volatility for Adaptive Thresholds
+            regime_vol_ser = None
+            if 'close' in df.columns:
+                try:
+                    returns = df['close'].pct_change()
+                    vol_short = returns.rolling(window=12).std()
+                    vol_long_mean = vol_short.rolling(window=24).mean()
+                    vol_long_std = vol_short.rolling(window=48).std()
+                    regime_vol_z = (vol_short - vol_long_mean) / (vol_long_std + 1e-9)
+                    regime_vol_ser = regime_vol_z.shift(1).bfill()
+                except Exception as e:
+                    if self.verbose:
+                        tprint_warning(f"   ⚠️ Failed to calculate regime volatility: {e}")
+
+            self._surprise_detector.set_zone_score_weights(
+                zone3_boost=self.zone3_specialist_boost,
+                zone2_boost=self.zone2_specialist_boost,
+                exposure_scalar=self.zone_score_exposure
+            )
+
+            # Define helper for duration estimation
+            def _estimate_duration_days(index) -> float:
+                if len(index) < 2:
+                    return 0.0
+                try:
+                    # Handle both DatetimeIndex and numeric index (though usually it's Datetime for this pipeline)
+                    if hasattr(index, 'max') and hasattr(index, 'min'):
+                        start = index.min()
+                        end = index.max()
+                        if hasattr(end, 'timestamp') and hasattr(start, 'timestamp'):
+                             return (end - start).total_seconds() / 86400.0
+                    return 0.0
+                except Exception:
+                    return 0.0
+
+            # Bind method to instance if not present (monkey-patch for this scope or add properly)
+            # Since we can't easily add a method to the class dynamically in this tool,
+            # we will call the local function instead of self._estimate_duration_days
+            # But the user asked to fix the AttributeError, implying I should add it to the class if possible
+            # or change the call site. Changing the call site is safer here.
+
+            surprise_df = self._surprise_detector.aggregate_specialist_surprise(
+                spectral_reliability=spectral_reliability,
+                exposure_scalar=self.zone_score_exposure,
+                regime_vol=regime_vol_ser,
+                market_data=None, # Disable market_data to prevent look-ahead bias in reliability calculation
+                regime_posteriors=regime_posteriors,
+            )
+
+            target_density = float(self._current_config.get("target_signals_per_day", 2.0))
+            duration_days = _estimate_duration_days(surprise_df.index)
+            if duration_days is not None:
+                try:
+                    self._surprise_detector.adaptive_calibration(target_density, duration_days)
+                except Exception as exc:
+                    if self.verbose:
+                        tprint_warning(f"   ⚠️ Adaptive calibration skipped: {exc}")
+
+            if surprise_df.empty:
+                tprint_error("   ❌ Layer 2: No surprise scores computed - FAIL FAST (no fallback)")
+                raise ValueError("Causal surprise computation returned empty DataFrame. Check specialist registration and data.")
+
+            tprint_info(f"      - Surprise features computed: {len(surprise_df.columns)}")
+            tprint_info(f"      - Samples with surprise data: {len(surprise_df)}")
+
+            # Generate events
+            tprint_info("   🎯 Layer 2: Generating causal events from surprise scores...")
+            # Retry logic with progressively lower thresholds
+            causal_events = {}
+            # Start with calibrated threshold while keeping historical fallbacks
+            calibrated_thresh = getattr(self._surprise_detector, "surprise_threshold", None)
+            thresholds = [calibrated_thresh, self.causal_event_threshold, 0.01, 0.005, 0.001, 0.0001]
+            thresholds = [t for t in thresholds if t is not None]
+            thresholds = sorted(list(set(thresholds)), reverse=True)
+
+            horizon_bars = int(self._current_config.get("horizon", 48) or 48)
+
+            def _infer_bar_duration_hours(df) -> float:
+                try:
+                    if len(df) < 2:
+                        return 1.0
+                    if not pd.api.types.is_datetime64_any_dtype(df.index):
+                        return 1.0
+
+                    # Computediffs
+                    diffs = df.index[1:] - df.index[:-1]
+                    if len(diffs) == 0:
+                        return 1.0
+
+                    # Use median for robustness
+                    total_seconds = diffs.total_seconds() if hasattr(diffs, 'total_seconds') else [d.total_seconds() for d in diffs]
+                    median_seconds = np.median(total_seconds)
+                    return median_seconds / 3600.0
+                except Exception:
+                    return 1.0
+
+            bar_hours = _infer_bar_duration_hours(df)
+            self._surprise_detector.bar_duration_hours_ = bar_hours
+            if np.isfinite(bar_hours) and bar_hours > 0:
+                # Use 1/8 of horizon for min separation (e.g., 6 hours for 48-hour horizon)
+                # This allows ~8 events per horizon period instead of 1
+                min_event_separation = max(bar_hours * max(horizon_bars // 8, 1), bar_hours * 4)
+            else:
+                min_event_separation = 4.0  # Default 4 hours for reasonable event density
+
+            for thresh in thresholds:
+                tprint_info(f"   🔄 Attempting event generation with threshold={thresh}...")
+                causal_events = self._surprise_detector.generate_causal_events(
+                    market_data=None, # Disable market_data to prevent look-ahead bias
+                    event_threshold=thresh,
+                    min_event_separation=min_event_separation,
+                    regime_posteriors=regime_posteriors,
+                )
+                if causal_events and len(causal_events) > 0:
+                     tprint_success(f"   ✅ Generated {len(causal_events)} events with threshold={thresh}")
+                     break
+
+            events_df = pd.DataFrame()
+
+                # Create events DataFrame
+            if causal_events:
+                event_indices = list(causal_events.keys())
+                tprint_info(f"      - Raw events found: {len(event_indices)}")
+
+                if len(event_indices) > 0:
+                    events_df = df.loc[event_indices].copy()
+
+                    # Add causal event metadata
+                    events_df['causal_surprise'] = 1
+                    strong_scores = [causal_events[idx]['strength'] for idx in event_indices]
+                    events_df['surprise_strength'] = strong_scores
+                    events_df['surprise_zone'] = [causal_events[idx]['zone'] for idx in event_indices]
+                    events_df['zone_score'] = [causal_events[idx].get('zone_score', 0.0) for idx in event_indices]
+
+                    # --- USER REQUEST: Continuous Weighting ---
+                    # Weight = QuantileRank * StdDeviationFromNormal (Z-score)
+                    # surprise_strength IS the Z-score (or equivalent magnitude)
+                    z_scores = pd.Series(strong_scores, index=events_df.index).fillna(0.0)
+                    q_rank = z_scores.rank(pct=True).fillna(0.5)
+
+                    # Weight proportional to Quantile * Z
+                    # Clip Z to avoid extreme outliers needed? Maybe clip at 6.0
+                    z_clipped = z_scores.clip(upper=6.0)
+                    continuous_weight = q_rank * z_clipped
+
+                    events_df['weight'] = continuous_weight
+                    events_df['weight_vector'] = continuous_weight # Legacy compatibility
+
+                    tprint_success(f"   ⚖️ Applied Continuous Weighting (Quantile * Z): Mean={continuous_weight.mean():.4f}, Max={continuous_weight.max():.4f}")
+                    events_df['surprise_consensus'] = [causal_events[idx]['consensus'] for idx in event_indices]
+
+                    # Inject Continuous Features (for Spectral Chaser & Meta-Learner)
+                    if hasattr(self._surprise_detector, 'specialist_soft_surprise_'):
+                        soft_surprises = self._surprise_detector.specialist_soft_surprise_
+                        # Inject per-specialist soft surprise
+                        for col in soft_surprises.columns:
+                            events_df[f"surprise_{col}"] = soft_surprises[col].reindex(event_indices).values
+
+                        # Inject global state derivatives
+                        z_score = pd.Series([causal_events[idx].get('zone_score', 0.0) for idx in event_indices], index=event_indices)
+                        events_df['zone_score_sq'] = (z_score ** 2).values
+                        events_df['zone_score_change'] = z_score.diff().fillna(0).values
+
+                    # Show statistics
+                    avg_strength = events_df['surprise_strength'].mean()
+                    avg_consensus = events_df['surprise_consensus'].mean()
+                    max_strength = events_df['surprise_strength'].max()
+
+                    # Zone distribution
+                    zone_counts = events_df['surprise_zone'].value_counts().to_dict()
+
+                    tprint_success("   ✅ Layer 2: Causal surprise events generated:")
+                    tprint_info(f"      - Events: {len(causal_events)}")
+                    tprint_info(f"      - Avg strength: {avg_strength:.4f}")
+                    tprint_info(f"      - Max strength: {max_strength:.4f}")
+                    tprint_info(f"      - Zone distribution: {zone_counts}")
+
+                    if hasattr(self._surprise_detector, 'surprise_density_'):
+                        tprint_info(f"      - Global surprise density: {self._surprise_detector.surprise_density_:.2%}")
+
+                    # Use safe duration calculation (handles mixed index types)
+                    duration_days_info = _estimate_duration_days(df.index)
+                    if duration_days_info > 0:
+                        events_per_day = len(causal_events) / duration_days_info
+                        tprint_info(f"      - Events per day: {events_per_day:.4f}")
+                    else:
+                        tprint_info(f"      - Events per day: N/A (duration estimation failed)")
+                else:
+                    events_df = pd.DataFrame()
+                    tprint_warning("   ⚠️ Layer 2: No valid event indices found")
+
+            if specialist_predictions:
+                aligned_scores: Dict[str, pd.Series] = {}
+                aligned_fired: Dict[str, np.ndarray] = {}
+                for name, series in specialist_predictions.items():
+                    aligned = series.reindex(df.index).fillna(0.0)
+                    aligned_scores[name] = aligned
+                    _, _, fired = self._expert_channels(name, aligned.to_numpy(dtype=float))
+                    aligned_fired[name] = fired
+                specialist_scores = pd.DataFrame(aligned_scores)
+                specialist_fired = pd.DataFrame(aligned_fired, index=df.index).fillna(0.0)
+                self._gate_a_family_gates, self._gate_a_family_masks = self._train_family_gates(
+                    df, specialist_scores, specialist_fired
+                )
+                if self._gate_a_family_masks:
+                    gate_a_min_required = max(5, int(self.pre_geometry_gate_min_events))
+                    if len(events_df) < gate_a_min_required:
+                        tprint_info(
+                            f"   ℹ️ Gate A skipped: only {len(events_df)} events (< {gate_a_min_required})."
+                        )
+                    else:
+                        family_counts = {}
+                        diagnostics = {}
+                        for fam, mask in self._gate_a_family_masks.items():
+                            reindexed = mask.reindex(events_df.index).fillna(False)
+                            family_counts[fam] = int(reindexed.sum())
+                            events_df[f"gate_mask_{fam}"] = reindexed.astype(int)
+                            prob = self._gate_a_family_probs.get(fam)
+                            if prob is not None:
+                                stats = prob.reindex(events_df.index)
+                                diagnostics[fam] = {
+                                    "prob_mean": float(stats.mean()),
+                                    "prob_std": float(stats.std()),
+                                    "kept": int(reindexed.sum()),
+                                }
+
+                        combined = pd.DataFrame(index=events_df.index)
+                        for fam, mask in self._gate_a_family_masks.items():
+                            combined[fam] = mask.reindex(events_df.index).fillna(False).to_numpy(dtype=bool)
+
+                        if combined.empty:
+                            tprint_warning("   ⚠️ Gate A masks produced no aligned columns; skipping filter.")
+                        else:
+                            filtered_mask = combined.any(axis=1)
+                            n_events_before = len(events_df)
+                            n_events_after = int(filtered_mask.sum())
+
+                            if n_events_after == 0 and n_events_before > 0:
+                                tprint_warning(
+                                    f"   ⚠️ Gate A would filter ALL {n_events_before} events to 0. "
+                                    "Skipping Gate A filtering to preserve causal events."
+                                )
+                                tprint_info(
+                                    f"   ℹ️ Gate A mask coverage: {family_counts}"
+                                )
+                            else:
+                                events_df = events_df.loc[filtered_mask]
+                                if n_events_before > n_events_after:
+                                    tprint_info(
+                                        f"   🔒 Gate A filtered events: {n_events_before} -> {n_events_after} "
+                                        f"({n_events_after / max(n_events_before, 1):.2%} pass rate)"
+                                    )
+
+                        if family_counts:
+                            tprint_info(f"   🧭 Gate A family event counts: {family_counts}")
+                        if diagnostics:
+                            tprint_info(f"   🧪 Gate A family diagnostics: {diagnostics}")
+
+            # Gate A: Pre-geometry causal filter
+            if gate_outputs is not None and not gate_outputs.empty:
+                events_df = self._apply_pre_geometry_gate(events_df, gate_outputs)
+
+            # Compute Reliability Metrics
+            try:
+                # Use close prices for continuous outcome evaluation
+                # Calculate forward returns for ground truth
+                forward_returns = df['close'].shift(-20) / df['close'] - 1.0
+
+                # If we have labels (e.g. from OOF or previous run), use them
+                binary_labels = None
+                if 'target_class' in df.columns:
+                    binary_labels = df['target_class']
+                elif forward_returns is not None:
+                     # Create proxy labels for reliability estimation if missing
+                     # Label 1 if return > 1.0 * volatility (significant move)
+                     vol_proxy = df['close'].pct_change().rolling(20).std().shift(-1) * np.sqrt(20)
+                     binary_labels = (forward_returns > vol_proxy.fillna(0)).astype(int)
+
+                reliability_metrics = self._surprise_detector.compute_reliability_metrics(
+                    realized_outcomes=forward_returns.fillna(0),
+                    binary_labels=binary_labels
+                )
+
+                if reliability_metrics:
+                    # Log Specialist Reliability
+                    spec_metrics = reliability_metrics.get('specialists', {})
+                    if spec_metrics:
+                        tprint_info("\n   📊 Specialist Reliability (Composite Score):")
+                        sorted_specs = sorted(spec_metrics.items(), key=lambda x: x[1]['composite_reliability'], reverse=True)
+                        for name, m in sorted_specs:
+                            tprint_info(f"      • {name}: {m['composite_reliability']:.3f} (PrecZ2: {m['z2_precision']:.2f}, Resp: {m['responsiveness']:.2f})")
+
+                    # Log Detector Reliability
+                    det_metrics = reliability_metrics.get('detector', {})
+                    if det_metrics:
+                        tprint_info("\n   🛡️ Detector Reliability:")
+                        tprint_info(f"      • F1 Score: {det_metrics.get('f1', 0.0):.3f}")
+                        tprint_info(f"      • Recall: {det_metrics.get('recall', 0.0):.3f}")
+                        tprint_info(f"      • Precision: {det_metrics.get('precision', 0.0):.3f}")
+                        tprint_info(f"      • Stability: {det_metrics.get('stability_index', 0.0):.3f}")
+
+                    if spec_metrics and det_metrics:
+                        try:
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            outcomes_dir = Path("outcomes")
+                            outcomes_dir.mkdir(exist_ok=True)
+
+                            # 1. Save Markdown Report
+                            report_path = outcomes_dir / f"causal_reliability_report_{timestamp}.md"
+                            with open(report_path, "w") as f:
+                                f.write(f"# Causal Reliability Report ({timestamp})\n\n")
+
+                                f.write("## 🛡️ Detector Reliability\n")
+                                f.write(f"- **F1 Score**: {det_metrics.get('f1', 0.0):.3f}\n")
+                                f.write(f"- **Recall**: {det_metrics.get('recall', 0.0):.3f}\n")
+                                f.write(f"- **Precision**: {det_metrics.get('precision', 0.0):.3f}\n")
+                                f.write(f"- **Stability Index**: {det_metrics.get('stability_index', 0.0):.3f}\n")
+                                f.write(f"- **Surprise Density**: {det_metrics.get('filtered_event_density', 0.0):.2%}\n\n")
+
+                                f.write("## 📊 Specialist Reliability\n")
+                                f.write("| Specialist | Reliability Score | Responsiveness | Precision (Zone 2) | Marginal Value |\n")
+                                f.write("|:---|---:|---:|---:|---:|\n")
+                                for name, m in sorted_specs:
+                                    f.write(f"| {name} | {m['composite_reliability']:.3f} | {m['responsiveness']:.3f} | {m['z2_precision']:.3f} | {m.get('marginal_value', 0):.4f} |\n")
+
+                            tprint_success(f"   📝 Saved reliability report to: {report_path}")
+
+                            # 2. Save CSV Data for Analysis
+                            csv_path = outcomes_dir / f"specialist_reliability_{timestamp}.csv"
+                            spec_df = pd.DataFrame.from_dict(spec_metrics, orient='index')
+                            spec_df.index.name = 'specialist'
+                            spec_df.to_csv(csv_path)
+                            tprint_success(f"   💾 Saved specialist metrics to: {csv_path}")
+
+                        except Exception as e:
+                            tprint_error(f"   ❌ Failed to save reliability reports: {e}")
+
+            except Exception as e:
+                tprint_error(f"   ❌ Reliability computation wrapper failed: {e}")
+
+            # Final fallback check - FAIL FAST instead of using fallback
+            if events_df.empty:
+                tprint_error("   ❌ Layer 2: No causal events generated - FAIL FAST (no fallback)")
+                raise ValueError("No causal events generated. Check causal discovery and specialist outputs.")
+
+            return events_df
+
+        except ValueError as e:
+            # Re-raise explicit ValueErrors (like "No causal events generated") for FAIL FAST
+            tprint_error(f"❌ Layer 2: Causal surprise event generation FAIL FAST: {e}")
+            raise
+        except Exception as e:
+            tprint_error(f"❌ Layer 2: Unexpected error in causal surprise event generation: {e}")
+            import traceback
+            tprint_error(f"❌ Layer 2: Traceback: {traceback.format_exc()}")
+            raise
+
+
+    def _generate_fallback_events(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Generate volatility-based fallback events when causal modes fail."""
+        try:
+            price_col = 'close'
+            for candidate in ("close", "raw__close", "raw__px"):
+                if candidate in df.columns:
+                    price_col = candidate
+                    break
+
+            if price_col not in df.columns:
+                tprint_warning("   ⚠️ Fallback events: no price column available")
+                return pd.DataFrame()
+
+            price_series = pd.to_numeric(df[price_col], errors='coerce')
+            volatility = price_series.pct_change().rolling(20, min_periods=10).std()
+            threshold = volatility.quantile(0.80)
+            event_mask = volatility > threshold
+
+            if event_mask.sum() == 0:
+                tprint_warning("   ⚠️ Fallback events: no points exceeded volatility threshold")
+                return pd.DataFrame()
+
+            events_df = df.loc[event_mask].copy()
+            events_df['fallback_event'] = 1
+            events_df['fallback_vol_threshold'] = threshold
+            tprint_info(f"   📊 Fallback events generated: {len(events_df)} rows (volatility quantile={threshold:.6f})")
+            return events_df
+
+        except Exception as exc:
+            tprint_error(f"   ❌ Fallback event generation failed: {exc}")
+            return pd.DataFrame()
+
+
+
+        # Causal framework configuration
+        self.enable_causal_framework = kwargs.get('enable_causal_framework', True)
+        self.causal_discovery_enabled = kwargs.get('causal_discovery_enabled', True)
+        self.irm_enabled = kwargs.get('irm_enabled', True)
+        self.causal_targets_enabled = kwargs.get('causal_targets_enabled', True)
+        self.causal_specialists_enabled = kwargs.get('causal_specialists_enabled', True)
+        self.causal_surprise_events = kwargs.get('causal_surprise_events', True)
+
+        # IRM configuration
+        self.lambda_irm = kwargs.get('lambda_irm', 1.0)
+        self.lambda_variance = kwargs.get('lambda_variance', 1.0)
+        self.focal_alpha = kwargs.get('focal_alpha', 1.0)
+        self.focal_gamma_pos = kwargs.get('focal_gamma_pos', 1.0)
+        self.focal_gamma_neg = kwargs.get('focal_gamma_neg', 2.5)
+
+        # Initialize causal components
+        self._causal_discovery = None
+        self._causal_engineering = None
+        self._irm_system = None
+        self._causal_targets = None
+        self._specialist_manager = None
+        self._surprise_detector = None
+
+    def _is_multi_asset_request(self, config: Dict[str, Any], df: Any) -> bool:
+        assets = config.get("assets") or []
+        exec_mode = str(config.get("execution_mode", "")).lower()
+        multi_asset_mode = config.get("multi_asset_mode")
+        if isinstance(df, dict) and df:
+            return True
+        return bool(
+            len(assets) > 1
+            or exec_mode in ("small_multi_asset", "full_multi_asset")
+            or multi_asset_mode in ("small_multi_asset", "full_multi_asset", "global", "global_dry", True)
+        )
+
+    @staticmethod
+    def _normalize_asset_key(asset: str) -> str:
+        if asset is None:
+            return ""
+        asset_str = str(asset)
+        upper = asset_str.upper()
+        if upper.endswith("USDT"):
+            return asset_str[:-4]
+        if upper.endswith("USD"):
+            return asset_str[:-3]
+        return asset_str
+
+    @staticmethod
+    def _ensure_datetime_index(df: pd.DataFrame) -> pd.DataFrame:
+        if df is None or df.empty:
+            return df
+        if isinstance(df.index, pd.DatetimeIndex):
+            return df
+        df = df.copy()
+        if "timestamp" in df.columns:
+            df.index = pd.to_datetime(df["timestamp"])
+            df = df.drop(columns=["timestamp"])
+            return df
+        if isinstance(df.index, pd.MultiIndex):
+            ts_level = "timestamp" if "timestamp" in df.index.names else df.index.names[0]
+            df.index = pd.to_datetime(df.index.get_level_values(ts_level))
+            return df
+        df.index = pd.to_datetime(df.index)
+        return df
+
+    def _combine_multi_asset_data(
+        self,
+        asset_frames: Dict[str, pd.DataFrame],
+        config: Dict[str, Any],
+    ) -> Tuple[pd.DataFrame, List[str]]:
+        from src.training.steps.labeling.global_meta_labeling_hpo_sample_weighted import (
+            GlobalMetaLabelingHPOSampleWeightedStep,
+        )
+
+        normalized_frames: Dict[str, pd.DataFrame] = {}
+        for asset_key, asset_df in asset_frames.items():
+            if asset_df is None or asset_df.empty:
+                continue
+            normalized_key = self._normalize_asset_key(asset_key)
+            normalized_frames[normalized_key] = self._ensure_datetime_index(asset_df)
+
+        assets = sorted(normalized_frames.keys())
+        if not assets:
+            raise ValueError("No valid asset dataframes available for multi-asset combination.")
+
+        combiner = GlobalMetaLabelingHPOSampleWeightedStep("global_meta_labeling_hpo_sample_weighted")
+        combined_df = combiner._combine_asset_data(
+            normalized_frames,
+            assets,
+            config,
+            timeframe=config.get("timeframe"),
+        )
+        return combined_df, assets
+
+    def _verify_cross_asset_payload(
+        self,
+        df: pd.DataFrame,
+        config: Dict[str, Any],
+        cross_asset_data: Dict[str, pd.DataFrame],
+    ) -> None:
+        asset_series, asset_key, _asset_from_index = self._get_asset_identity_series(df)
+        if asset_series is None:
+            raise ValueError(
+                "Multi-asset mode requires asset identity in the main dataset "
+                "(asset_id column or MultiIndex level)."
+            )
+        if not isinstance(cross_asset_data, dict) or not cross_asset_data:
+            raise ValueError("cross_asset_data must be a non-empty dict keyed by asset identifiers.")
+
+        tprint_info(
+            f"✅ Verified asset identity ({asset_key or 'asset_id'}) and cross_asset_data keys: "
+            f"{sorted(list(cross_asset_data.keys()))}"
+        )
+
+        for asset_key_name, asset_df in cross_asset_data.items():
+            if asset_df is None or not isinstance(asset_df, pd.DataFrame):
+                raise ValueError(f"cross_asset_data[{asset_key_name}] must be a DataFrame.")
+            normalized_df = self._ensure_datetime_index(asset_df)
+            if not isinstance(normalized_df.index, pd.DatetimeIndex):
+                raise ValueError(
+                    f"cross_asset_data[{asset_key_name}] index must be datetime or convertible."
+                )
+            cross_asset_data[asset_key_name] = normalized_df
+
+        config["cross_asset_data"] = cross_asset_data
+
+    @staticmethod
+    def _ensure_asset_one_hot(df: pd.DataFrame) -> pd.DataFrame:
+        if df is None or df.empty or "asset_id" not in df.columns:
+            return df
+        asset_series = df["asset_id"].astype(str)
+        existing_prefix = [c for c in df.columns if c.startswith("asset_")]
+        if existing_prefix:
+            return df
+        one_hot = pd.get_dummies(asset_series, prefix="asset", dtype=float)
+        return pd.concat([df, one_hot], axis=1)
 
     async def execute(self, df: pd.DataFrame, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -19821,8 +22161,7 @@ class LabelBasedLayer2(BaseStep):
         return selected_tier2
 
 
-
-
 def register_label_based_layer_2_step() -> None:
+    """Register the label-based layer 2 step in the registry."""
     from src.training.steps.base_step import step_registry
     step_registry.register("label_based_layer_2", LabelBasedLayer2)

@@ -136,17 +136,16 @@ class ContinuousPredictorGenerator:
             ret_std = returns.rolling(window).std().shift(1)
 
             # Stabilization: Ensure denominator is not effectively zero
-# DYNAMIC FLOORING: Instead of 1e-9, use a robust floor to prevent Z-score explosion
-            # in low-vol regimes (e.g. 10% quantile of historical std or a hard floor like 5bps)
-            # Using rolling min of std as a dynamic proxy for "regime floor"
-            ret_std_floor = ret_std.rolling(window * 10, min_periods=1).min().fillna(0.0005) # 5bps floor default
-            ret_std_robust = np.maximum(ret_std, ret_std_floor).fillna(0.0005)
+            ret_std = ret_std.replace(0.0, 1e-9).fillna(1e-9)
 
-            z_raw = (returns - ret_mean) / ret_std_robust
+            z_raw = (returns - ret_mean) / ret_std
             # Clip BEFORE ranking to handle extreme outliers
             z_clipped = z_raw.clip(-4, 4)
-
-            # Exposure Shaping: tanh(z/2) for nonlinear saturation
+            # Rolling percentile (Rank)
+            # Use pandas rank pct=True on rolling window
+            # Note: rolling().rank() is O(N*W), can be slow.
+            # Fallback: Just use tanh transformation of clipped Z to bound it safely without expensive ranking
+            # tanh(z/2) maps -4..4 to -0.96..0.96 smoothly
             surprise_z = np.tanh(z_clipped / 2.0).fillna(0)
             
             predictors.append(PredictorGeometry(
@@ -154,18 +153,6 @@ class ContinuousPredictorGenerator:
                 family="SURPRISE_Z_CONTINUOUS",
                 values=surprise_z,
                 metadata={"window": window, "source": "returns", "transform": "tanh_rank_proxy"}
-            ))
-# Liquidity-Gated Surprise (New Variant)
-            # Reduces exposure when volume is low relative to recent history
-            # "Don't trust the surprise if nobody is trading"
-            rel_vol = (volume / volume.rolling(window).mean().shift(1)).fillna(0).clip(0, 2)
-            liquidity_gate = np.tanh(rel_vol) # 0..1 scale
-
-            predictors.append(PredictorGeometry(
-                name=f"return_surprise_z_{window}_liq_gated",
-                family="SURPRISE_Z_CONTINUOUS",
-                values=surprise_z * liquidity_gate,
-                metadata={"window": window, "source": "returns", "transform": "tanh_liq_gated"}
             ))
             
             # Volume surprise Z-score

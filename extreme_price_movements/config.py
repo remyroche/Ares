@@ -4,7 +4,7 @@ CFG = {
     "data_root": "data",
     "timeframe": "1h",
     "fetch_years": 4,
-    "fetch_symbols_M": 350,
+    "fetch_symbols_M": 300, # Updated to 300
 
     # market basket
     "market_basket": ["BTC/USDT","ETH/USDT","AVAX/USDT","SOL/USDT","XRP/USDT"],
@@ -24,7 +24,7 @@ CFG = {
     "trade_extreme_pct": 0.05,
     "trade_extreme_min": 10,
     "trade_extreme_max": 80,
-    "trade_deviation_metric": "dist_ema_fast",  # you can switch to ret1h or ret1h_z
+    "trade_deviation_metric": "dist_ema_fast",
 
     # gates
     "gate_vol_lookback_hours": 24 * 14,
@@ -41,8 +41,6 @@ CFG = {
     "rvol_days": 14,
 
     # adaptive window selection buckets (4)
-    # mkt_rv_ratio = mkt_rv / rolling_median(mkt_rv)
-    # high vol => fast windows; low vol => slow windows
     "rv_ratio_fast_thr": 1.20,
     "rv_ratio_slow_thr": 0.80,
 
@@ -61,12 +59,14 @@ CFG = {
     "min_feat_sign_consistency": 0.70,
     "min_model_stability_to_trade": 0.15,
 
-    # causal cols for interaction toggles INCLUDE exhaustion lag1 + funding proxy
+    # causal cols for interaction toggles
     "drop_raw_causal": True,
     "causal_cols": [
         "a_ret24h","a_rsi","a_volz","a_atr","a_trend","a_rv24",
         "p_exh_lag1",
         "a_funding_proxy",
+        "flow_ratio", "churn", "slope", "trend_snr",
+        "vol_asym", "skew", "efficiency", "fvg"
     ],
 
     # thresholds / picks
@@ -102,7 +102,7 @@ CFG = {
     "exh_feature_keys": [
         "ret1h", "ret6h", "ret12h", "ret16h", "ret20h", "ret24h", "ret28h",
         "ret1h_z",
-        "vol_z24", "rvol_hod_base", # corrected name
+        "vol_z24", "rvol_hod_base",
         "range_pct", "atr_expansion",
         "wick_body_ratio", "body_pct",
         "dist_ema_fast", "dist_ema_slow",
@@ -110,7 +110,8 @@ CFG = {
         "vol_price_spread",
         "rsi", "rsi_slope",
         "a_funding_proxy",
-        "sin_hod", "cos_hod", "sin_dow", "cos_dow"
+        "sin_hod", "cos_hod", "sin_dow", "cos_dow",
+        "efficiency", "v_power", "skew", "fvg"
     ],
 
     # Model Params (Lasso selection)

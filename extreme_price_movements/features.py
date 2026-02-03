@@ -30,9 +30,8 @@ def atr_percent(high: pd.DataFrame, low: pd.DataFrame, close: pd.DataFrame, n: i
     return atr / (close + 1e-12)
 
 def time_sin_cos(index: pd.DatetimeIndex):
-    # (3) time encoding: hour-of-day + day-of-week
     hod = index.hour.to_numpy()
-    dow = index.dayofweek.to_numpy() # 0=Mon, 6=Sun
+    dow = index.dayofweek.to_numpy()
     sin_hod = np.sin(2*np.pi*hod/24.0)
     cos_hod = np.cos(2*np.pi*hod/24.0)
     sin_dow = np.sin(2*np.pi*dow/7.0)
@@ -47,7 +46,6 @@ def compute_market_features(panel, basket_syms, trend_sma_hours=24*14):
 
     basket = [s for s in basket_syms if s in c.columns]
     if not basket:
-        # fallback to all if basket missing? Or raise?
         basket = list(c.columns)
 
     mkt_close = c[basket].mean(axis=1)
@@ -81,28 +79,19 @@ def add_regime_gates(mkt_df: pd.DataFrame, gate_vol_lookback_hours: int, gate_tr
     df["mkt_rv_med"] = df["mkt_rv"].rolling(gate_vol_lookback_hours).median()
     df["G_VOL"] = (df["mkt_rv"] > df["mkt_rv_med"]).astype(int)
     df["G_TREND"] = (df["mkt_ret24h"].abs() > gate_trend_thr).astype(int)
-
-    # volatility ratio used for adaptive window selection
     df["mkt_rv_ratio"] = df["mkt_rv"] / (df["mkt_rv_med"] + 1e-12)
     return df
 
 def compute_funding_proxy(panel, mkt_df):
-    """
-    Funding proxy computed vectorized.
-    Uses per-symbol OHLCV wide matrices and market composite OHLCV from mkt_df.
-    """
     c = panel["close"]
     h = panel["high"]
     l = panel["low"]
     v = panel["volume"]
 
-    # 1) relative premium vs market (distance from 24h mean, standardized by subtraction)
     dist = (c / (c.rolling(24).mean() + 1e-12)) - 1.0
     mkt_dist = (mkt_df["mkt_close"] / (mkt_df["mkt_close"].rolling(24).mean() + 1e-12)) - 1.0
-    # Broadcast mkt_dist
     relative_premium = dist.sub(mkt_dist, axis=0)
 
-    # 2) buying intensity: candle position * vol z
     candle_pos = (c - l) / ((h - l) + 1e-9)
     vol_mu = v.rolling(24).mean()
     vol_sd = v.rolling(24).std(ddof=0)
@@ -112,27 +101,19 @@ def compute_funding_proxy(panel, mkt_df):
     return (relative_premium + (0.5 * intensity)).astype(np.float32)
 
 def compute_features_hourly(panel, mkt_gates, cfg):
-    """
-    Vectorized wide-matrix features.
-    """
     tprint("Features: compute base matrices")
     o, h, l, c, v = panel["open"], panel["high"], panel["low"], panel["close"], panel["volume"]
-
-    # Ensure UTC
     c.index = ensure_utc(pd.DataFrame(index=c.index)).index
 
     feats = {}
-    # returns
     feats["ret1h"]   = c.pct_change()
     feats["ret6h"]   = c.pct_change(6)
     for H in [12,16,20,24,28]:
         feats[f"ret{H}h"] = c.pct_change(H)
 
-    # range/gap
     feats["range_pct"] = (h - l) / (c + 1e-12)
     feats["gap_pct"]   = (o - c.shift(1)) / (c.shift(1) + 1e-12)
 
-    # base ATR/RSI etc
     atr_base = atr_percent(h, l, c, n=cfg["atr_n"])
     feats["atr_pct_base"] = atr_base
 
@@ -140,25 +121,20 @@ def compute_features_hourly(panel, mkt_gates, cfg):
     feats["rsi_base"] = rsi_base
     feats["rsi_slope_base"] = rsi_base.diff(cfg["rsi_slope_n"])
 
-    # volatility
     feats["rv_24h"] = feats["ret1h"].rolling(24).std(ddof=0)
 
-    # volume features
     feats["qv"] = (c * v)
     feats["vol_z24_base"] = zscore_rolling(v, 24)
     feats["vol_z_base"]   = zscore_rolling(v, cfg["volz_n"])
 
-    # EMA distances
     ema_fast_base = ema(c, cfg["ema_fast"])
     ema_slow_base = ema(c, cfg["ema_slow"])
     feats["dist_ema_fast_base"] = (c / (ema_fast_base + 1e-12) - 1.0) / (atr_base + 1e-12)
     feats["dist_ema_slow_base"] = (c / (ema_slow_base + 1e-12) - 1.0) / (atr_base + 1e-12)
 
-    # ROC divergence + z-score
     feats["roc_div"] = feats["ret1h"] - feats["ret6h"]
     feats["ret1h_z"] = feats["ret1h"] / (feats["rv_24h"] + 1e-12)
 
-    # candle anatomy
     body = (c - o).abs()
     upper_wick = (h - c.where(c >= o, o)).clip(lower=0)
     lower_wick = (c.where(c <= o, o) - l).clip(lower=0)
@@ -167,32 +143,84 @@ def compute_features_hourly(panel, mkt_gates, cfg):
 
     feats["vol_price_spread"] = v / ((h - l) + 1e-12)
 
-    # ATR expansion
     prev_close = c.shift(1)
     tr = pd.concat([(h - l), (h - prev_close).abs(), (l - prev_close).abs()], axis=0).groupby(level=0).max()
     atr_tr = tr.ewm(alpha=1/cfg["atr_n"], adjust=False).mean()
     feats["atr_expansion"] = tr / (atr_tr + 1e-12)
 
-    # trend pct (SMA)
     sma_base = c.rolling(cfg["trend_sma_n"]).mean()
     feats["trend_pct_base"] = (c / (sma_base + 1e-12)) - 1.0
 
-    # RVOL (hour-of-day) - skip complex transform if fast mode needed, but here we do it
     hod = pd.Series(v.index.hour, index=v.index)
-    # Using groupby transform for RVOL
     feats["rvol_hod_base"] = v / (v.groupby(hod).transform(lambda s: s.rolling(cfg["rvol_days"]*24, min_periods=24).mean()) + 1e-12)
 
-    # funding proxy
     feats["funding_proxy"] = compute_funding_proxy(panel, mkt_gates)
 
-    # time sin/cos (broadcast)
     sin_hod, cos_hod, sin_dow, cos_dow = time_sin_cos(c.index)
     feats["sin_hod"] = pd.DataFrame(np.repeat(sin_hod[:,None], c.shape[1], axis=1), index=c.index, columns=c.columns).astype(np.float32)
     feats["cos_hod"] = pd.DataFrame(np.repeat(cos_hod[:,None], c.shape[1], axis=1), index=c.index, columns=c.columns).astype(np.float32)
     feats["sin_dow"] = pd.DataFrame(np.repeat(sin_dow[:,None], c.shape[1], axis=1), index=c.index, columns=c.columns).astype(np.float32)
     feats["cos_dow"] = pd.DataFrame(np.repeat(cos_dow[:,None], c.shape[1], axis=1), index=c.index, columns=c.columns).astype(np.float32)
 
-    # Adaptive windows
+    # --- NEW FEATURES ---
+    # 1. Signed Volume & Flow Persistence
+    signed_vol = v * np.sign(c - o)
+    sv_abs = signed_vol.abs()
+    ewma_sv_fast = signed_vol.ewm(span=6, adjust=False).mean()
+    ewma_sv_slow = sv_abs.ewm(span=24, adjust=False).mean()
+    feats["flow_persistence"] = ewma_sv_fast / (ewma_sv_slow + 1e-12)
+    feats["flow_ratio"] = feats["flow_persistence"] # Same definition? "EWMA(signed_vol, 6) / EWMA(abs(signed_vol), 24)" - Yes.
+
+    # 2. Efficiency
+    eff = (c - o).abs() / ((h - l) + 1e-9)
+    feats["efficiency"] = eff.rolling(12).mean() # EWMA of efficiency 6-12h. Using rolling mean as proxy.
+
+    # 3. Skew (Cross-Sectional)
+    # This returns a Series (indexed by time). We broadcast it.
+    skew_ser = feats["ret1h"].skew(axis=1)
+    feats["skew"] = pd.DataFrame(np.repeat(skew_ser.values[:,None], c.shape[1], axis=1), index=c.index, columns=c.columns).astype(np.float32)
+
+    # 4. Up/Down Vol
+    # EWMA(ret_1h[ret>0]^2)
+    r = feats["ret1h"]
+    r2 = r**2
+    up_sq = r2.where(r > 0, 0.0)
+    dn_sq = r2.where(r < 0, 0.0)
+    up_vol = up_sq.ewm(span=24, adjust=False).mean()
+    dn_vol = dn_sq.ewm(span=24, adjust=False).mean()
+    feats["up_vol"] = up_vol
+    feats["dn_vol"] = dn_vol
+    feats["vol_asym"] = up_vol - dn_vol
+
+    # 5. Fair Value Gaps (FVG)
+    # Bullish FVG: Low[i-2] > High[i] (Gap between wicks)
+    # Bearish FVG: High[i-2] < Low[i]
+    # We quantify the size of the gap.
+    # Shift 2
+    l_prev2 = l.shift(2)
+    h_prev2 = h.shift(2)
+
+    fvg_bull = (l_prev2 - h).clip(lower=0) / (c + 1e-12)
+    fvg_bear = (l - h_prev2).clip(lower=0) / (c + 1e-12) # Gap down
+
+    feats["fvg"] = fvg_bull - fvg_bear # Net FVG
+
+    # 6. Churn
+    feats["churn"] = v / ((c - o).abs() + 1e-12)
+
+    # 7. Slope (EMA diff / ATR)
+    feats["slope"] = (ema_fast_base - ema_slow_base) / (atr_base + 1e-12)
+
+    # 8. Trend SNR
+    feats["trend_snr"] = feats["ret1h"].ewm(span=6, adjust=False).mean().abs() / (feats["ret1h"].rolling(24).std() + 1e-12)
+
+    # 9. V-Power
+    feats["v_power"] = v / (c.diff().abs() + 1e-12)
+
+    # 10. Signed Vol (Raw)
+    feats["signed_vol"] = signed_vol
+
+    # Adaptive Windows
     rv_ratio = mkt_gates["mkt_rv_ratio"].reindex(c.index).astype(np.float32)
     def pick_by_rv(fast_df, base_df, slow_df):
         rr = pd.DataFrame(np.repeat(rv_ratio.to_numpy()[:,None], base_df.shape[1], axis=1),
@@ -202,47 +230,36 @@ def compute_features_hourly(panel, mkt_gates, cfg):
         out = out.where(~(rr < cfg["rv_ratio_slow_thr"]), slow_df)
         return out.astype(np.float32)
 
-    # rsi variants
     rsi_fast = rsi(c, max(2, int(cfg["rsi_n"] * 0.5)))
     rsi_slow = rsi(c, int(cfg["rsi_n"] * 2))
     feats["rsi"] = pick_by_rv(rsi_fast, rsi_base, rsi_slow)
 
-    # atr variants
     atr_fast = atr_percent(h, l, c, max(2, int(cfg["atr_n"] * 0.5)))
     atr_slow = atr_percent(h, l, c, int(cfg["atr_n"] * 2))
     feats["atr_pct"] = pick_by_rv(atr_fast, atr_base, atr_slow)
 
-    # vol_z variants
     volz_fast = zscore_rolling(v, max(24, int(cfg["volz_n"] * 0.5)))
     volz_slow = zscore_rolling(v, int(cfg["volz_n"] * 2))
     feats["vol_z"] = pick_by_rv(volz_fast, feats["vol_z_base"], volz_slow)
 
-    # trend variants
     sma_fast = c.rolling(max(24, int(cfg["trend_sma_n"] * 0.5))).mean()
     sma_slow = c.rolling(int(cfg["trend_sma_n"] * 2)).mean()
     trend_fast = (c / (sma_fast + 1e-12)) - 1.0
     trend_slow = (c / (sma_slow + 1e-12)) - 1.0
     feats["trend_pct"] = pick_by_rv(trend_fast, feats["trend_pct_base"], trend_slow)
 
-    # EMA distance variants
     ema_fast_f = ema(c, max(4, int(cfg["ema_fast"] * 0.5)))
     ema_fast_s = ema(c, int(cfg["ema_fast"] * 2))
     dist_fast_f = (c / (ema_fast_f + 1e-12) - 1.0) / (feats["atr_pct"] + 1e-12)
     dist_fast_s = (c / (ema_fast_s + 1e-12) - 1.0) / (feats["atr_pct"] + 1e-12)
     feats["dist_ema_fast"] = pick_by_rv(dist_fast_f, feats["dist_ema_fast_base"], dist_fast_s)
 
-    # Keep aliases
     feats["vol_z24"] = feats["vol_z24_base"]
     feats["rsi_slope"] = feats["rsi"].diff(cfg["rsi_slope_n"])
     feats["a_funding_proxy"] = feats["funding_proxy"]
 
-    # --- APPLY CAUSAL TRANSFORMS ---
-    # Apply to all features that are not naturally bounded or need normalization
-    # Excluding sin/cos (already -1 to 1)
-    # Excluding maybe categorical? (gates are in mkt_gates)
-
     tprint("Features: Applying Causal Transforms (Log + Winsor + ZScore)")
-    transformer = CausalFeatureTransformer(winsor_qt=0.02, roll_window=24*30) # 30 days window
+    transformer = CausalFeatureTransformer(winsor_qt=0.02, roll_window=24*30)
 
     skip_transform = ["sin_hod", "cos_hod", "sin_dow", "cos_dow"]
 
@@ -250,9 +267,6 @@ def compute_features_hourly(panel, mkt_gates, cfg):
         if k in skip_transform:
             feats[k] = feats[k].astype(np.float32)
             continue
-
-        # Apply transform
-        # We assume feats[k] is a DataFrame (time x symbol)
         try:
             feats[k] = transformer.transform(feats[k])
         except Exception as e:

@@ -1832,3 +1832,91 @@ def _numba_shift(arr, num, fill_value=np.nan):
     else:
         result[:] = arr
     return result
+
+@jit(nopython=True, cache=True)
+def _numba_rolling_shannon_entropy(x, window, bins=10):
+    """
+    Calculate rolling Discrete Shannon Entropy using Numba.
+    Matches the logic of ShannonEntropyGenerator:
+    1. Discretize window into 'bins' uniform bins (based on window min/max).
+    2. Calculate probabilities of each bin.
+    3. Sum -p * log2(p).
+
+    Args:
+        x: Input array (returns). Assumed to be float.
+        window: Rolling window size.
+        bins: Number of discretization bins.
+
+    Returns:
+        Array of entropy values. First 'window-1' values are NaN.
+    """
+    n = len(x)
+    output = np.full(n, np.nan, dtype=np.float32)
+
+    # Re-use histogram buffer
+    hist = np.zeros(bins, dtype=np.int32)
+
+    for i in range(window, n):
+        # Window slice: [i - window + 1 : i + 1]
+        start_idx = i - window + 1
+        end_idx = i + 1
+
+        # Check bounds (redundant given loop range, but safe)
+        if start_idx < 0:
+            continue
+
+        # Manually finding min/max and filtering checks
+        # Avoid creating slice copy if possible, but slicing is efficient in Numba
+
+        c_min = np.inf
+        c_max = -np.inf
+        valid_count = 0
+
+        # First pass: find min/max and count valid
+        # Iterate over the window
+        for k in range(start_idx, end_idx):
+            val = x[k]
+            if np.isfinite(val):
+                if val < c_min:
+                    c_min = val
+                if val > c_max:
+                    c_max = val
+                valid_count += 1
+
+        if valid_count <= 1 or c_min == c_max:
+            output[i] = 0.0
+            continue
+
+        # Reset histogram
+        hist[:] = 0
+
+        # Second pass: binning
+        width = (c_max - c_min) / bins
+
+        for k in range(start_idx, end_idx):
+            val = x[k]
+            if np.isfinite(val):
+                if width == 0:
+                    idx = 0
+                else:
+                    idx = int((val - c_min) / width)
+                    if idx >= bins:
+                        idx = bins - 1
+                    if idx < 0:
+                        idx = 0
+
+                hist[idx] += 1
+
+        # Calculate entropy
+        entropy = 0.0
+        inv_count = 1.0 / valid_count
+
+        for k in range(bins):
+            count = hist[k]
+            if count > 0:
+                p = count * inv_count
+                entropy -= p * np.log2(p)
+
+        output[i] = entropy
+
+    return output

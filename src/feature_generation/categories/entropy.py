@@ -70,6 +70,12 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# Numba imports
+try:
+    from src.utils.numba_funcs import _numba_rolling_shannon_entropy
+except ImportError:
+    _numba_rolling_shannon_entropy = None
+
 # Import VectorBT optimization utilities
 try:
     from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
@@ -828,9 +834,21 @@ class ShannonEntropyGenerator(BaseEntropyGenerator):
             return pd.Series(np.full(len(close), np.nan), index=data.index)
 
         # Calculate returns
-        returns = np.diff(close) / close[:-1]
+        # Handle division by zero/invalid values
+        with np.errstate(divide='ignore', invalid='ignore'):
+            returns = np.diff(close) / close[:-1]
+
         returns = np.concatenate([[np.nan], returns])
 
+        # Ensure float64 consistency for Numba
+        returns = returns.astype(np.float64)
+
+        # OPTIMIZED: Use Numba if available
+        if _numba_rolling_shannon_entropy is not None:
+            shannon_entropy = _numba_rolling_shannon_entropy(returns, self.window, self.q_bins)
+            return pd.Series(shannon_entropy, index=data.index)
+
+        # Fallback to Python loop
         # Calculate Shannon entropy
         shannon_entropy = np.full(len(close), np.nan)
         for i in range(self.window, len(close)):

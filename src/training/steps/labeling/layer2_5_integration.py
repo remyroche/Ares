@@ -14,12 +14,24 @@ Structural Baseline  Non-Linear Alpha        Final Decisions
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple, Optional, Any, Union
+<<<<<<< /Users/remyroche/Documents/Ares/src/training/steps/labeling/layer2_5_integration.py
 import warnings
 import logging
+=======
+>>>>>>> /Users/remyroche/.windsurf/worktrees/Ares/Ares-2f77aff8/src/training/steps/labeling/layer2_5_integration.py
 import time
 import json
 from datetime import datetime
+<<<<<<< /Users/remyroche/Documents/Ares/src/training/steps/labeling/layer2_5_integration.py
 from sklearn.metrics import mean_squared_error
+=======
+from functools import lru_cache
+from pathlib import Path
+from sklearn.model_selection import GroupKFold
+from scipy import stats
+from numba import njit, prange
+import joblib
+>>>>>>> /Users/remyroche/.windsurf/worktrees/Ares/Ares-2f77aff8/src/training/steps/labeling/layer2_5_integration.py
 
 # Import Layer 2.5 components
 from .layer2_5_chaser import Layer25Chaser, create_chaser
@@ -361,6 +373,7 @@ class HyperparameterOptimizer:
             tprint_info(f"Completed objective_function")
             return -val_score  # Minimize negative score
 
+<<<<<<< /Users/remyroche/Documents/Ares/src/training/steps/labeling/layer2_5_integration.py
         except Exception as e:
             print(f"Optimization iteration failed: {e}")
             return 1000.0  # High penalty for failures
@@ -457,6 +470,20 @@ class HyperparameterOptimizer:
 
         tprint_info(f"Completed optimize")
         return self.best_params, result
+=======
+@njit(fastmath=True)
+def _exponential_decay_weights(n_samples: int, decay_rate: float) -> np.ndarray:
+    """Fast exponential decay weight calculation."""
+    weights = np.empty(n_samples, dtype=np.float32)
+    for i in range(n_samples):
+        weights[i] = np.exp(-decay_rate * (n_samples - 1 - i))
+    return weights
+
+
+# ============================================================================
+# Main Integration Class
+# ============================================================================
+>>>>>>> /Users/remyroche/.windsurf/worktrees/Ares/Ares-2f77aff8/src/training/steps/labeling/layer2_5_integration.py
 
 class Layer25Integration:
     """
@@ -473,9 +500,17 @@ class Layer25Integration:
         conflict_detector_params: Optional[Dict] = None,
         enable_residual_analysis: bool = True,
         enable_conflict_detection: bool = True,
+<<<<<<< /Users/remyroche/Documents/Ares/src/training/steps/labeling/layer2_5_integration.py
         enable_logging: bool = True,
         log_file: Optional[str] = None,
         verbose: bool = True
+=======
+        verbose: bool = True,
+        use_float32: bool = True,
+        batch_size: int = 10000,
+        enable_memory_profiling: bool = False,
+        transaction_cost_bps: float = 5.0
+>>>>>>> /Users/remyroche/.windsurf/worktrees/Ares/Ares-2f77aff8/src/training/steps/labeling/layer2_5_integration.py
     ):
         """
         Initialize Layer 2.5 Integration.
@@ -494,10 +529,17 @@ class Layer25Integration:
         self.verbose = verbose
         self.enable_residual_analysis = enable_residual_analysis
         self.enable_conflict_detection = enable_conflict_detection
+<<<<<<< /Users/remyroche/Documents/Ares/src/training/steps/labeling/layer2_5_integration.py
         self.enable_logging = enable_logging
 
         # Initialize logger
         self.logger = Layer25Logger(log_file=log_file) if enable_logging else None
+=======
+        self.use_float32 = use_float32
+        self.batch_size = batch_size
+        self.enable_memory_profiling = enable_memory_profiling
+        self.transaction_cost_bps = transaction_cost_bps
+>>>>>>> /Users/remyroche/.windsurf/worktrees/Ares/Ares-2f77aff8/src/training/steps/labeling/layer2_5_integration.py
 
         # Initialize components
         self.chaser = None
@@ -519,6 +561,17 @@ class Layer25Integration:
         self.residual_analysis = None
         self.feature_selection_results = None
         self.conflict_statistics = None
+<<<<<<< /Users/remyroche/Documents/Ares/src/training/steps/labeling/layer2_5_integration.py
+=======
+        
+        # Performance tracking
+        self.start_time = time.time()
+        self.memory_checkpoints = []
+        
+        # Asset encoding persistence
+        self.asset_encoder = None
+        self.asset_mapping = {}
+>>>>>>> /Users/remyroche/.windsurf/worktrees/Ares/Ares-2f77aff8/src/training/steps/labeling/layer2_5_integration.py
 
         # Log pipeline start
         self._log_pipeline_start()
@@ -583,6 +636,7 @@ class Layer25Integration:
         if self.verbose:
             tprint_success("✅ Feature selector initialized")
 
+<<<<<<< /Users/remyroche/Documents/Ares/src/training/steps/labeling/layer2_5_integration.py
         tprint_info(f"Completed setup_feature_selector")
     def setup_conflict_detector(self, **kwargs):
         """Setup the conflict detector."""
@@ -596,6 +650,86 @@ class Layer25Integration:
             tprint_success("✅ Conflict detector initialized")
 
         tprint_info(f"Completed setup_conflict_detector")
+=======
+    def setup_conflict_detector(self, regime_id: Optional[int] = None, **kwargs):
+        """Setup the conflict detector with regime-aware and cost-aware thresholds."""
+        detector_config = {**kwargs}
+        detector_config.update(self.conflict_detector_params)
+        
+        # FINANCIAL LOGIC: Adjust thresholds based on transaction costs
+        if 'direction_threshold' in detector_config:
+            # Widen threshold to account for transaction costs
+            cost_adjustment = self.transaction_cost_bps / 10000.0  # bps to decimal
+            detector_config['direction_threshold'] += cost_adjustment
+        
+        # FINANCIAL LOGIC: Regime-aware threshold adjustment
+        if regime_id is not None:
+            # Tighter thresholds in trending regimes, looser in mean-reverting
+            if regime_id in [0, 1]:  # Trending regimes (example)
+                detector_config['confidence_threshold'] = detector_config.get('confidence_threshold', 0.6) * 0.9
+            elif regime_id in [2, 3]:  # Mean-reverting regimes
+                detector_config['confidence_threshold'] = detector_config.get('confidence_threshold', 0.6) * 1.1
+        
+        self._conflict_detector = ConflictDetector(**detector_config)
+        
+        if self.verbose:
+            tprint_success(f"✅ Conflict detector configured (cost_bps={self.transaction_cost_bps}, regime={regime_id})")
+
+    # ========================================================================
+    # Data Preparation with Financial Logic Improvements
+    # ========================================================================
+    
+    def _memory_checkpoint(self, label: str):
+        """Track memory usage at key points."""
+        if not self.enable_memory_profiling:
+            return
+        
+        try:
+            import psutil
+            process = psutil.Process()
+            mem_mb = process.memory_info().rss / 1024**2
+            self.memory_checkpoints.append({'label': label, 'memory_mb': mem_mb, 'time': time.time()})
+        except ImportError:
+            pass  # psutil not available
+    
+    def _detect_asset_column(self, df: pd.DataFrame) -> Optional[str]:
+        """Unified asset column detection for cross-asset learning."""
+        # Try MultiIndex first
+        if isinstance(df.index, pd.MultiIndex):
+            for name in ['ticker', 'asset_id', 'symbol']:
+                if name in df.index.names:
+                    return name
+        
+        # Try regular columns
+        for name in ['ticker', 'asset_id', 'symbol', 'asset']:
+            if name in df.columns:
+                return name
+        
+        return None
+    
+    def _extract_asset_features(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, Optional[str]]:
+        """Extract and encode asset features for cross-asset learning."""
+        asset_col = self._detect_asset_column(df)
+        
+        if asset_col is None:
+            return df, None
+        
+        # Get asset IDs
+        if isinstance(df.index, pd.MultiIndex):
+            asset_ids = df.index.get_level_values(asset_col)
+        else:
+            asset_ids = df[asset_col]
+        
+        # Create categorical encoding
+        df_out = df.copy()
+        df_out['cat__asset_id'] = asset_ids.astype('category')
+        
+        # Store mapping for persistence
+        self.asset_mapping = {i: cat for i, cat in enumerate(asset_ids.cat.categories)}
+        
+        return df_out, 'cat__asset_id'
+    
+>>>>>>> /Users/remyroche/.windsurf/worktrees/Ares/Ares-2f77aff8/src/training/steps/labeling/layer2_5_integration.py
     def prepare_training_data(
         self,
         df: pd.DataFrame,
@@ -619,6 +753,23 @@ class Layer25Integration:
         """
         tprint_info(f"Starting prepare_training_data")
         try:
+<<<<<<< /Users/remyroche/Documents/Ares/src/training/steps/labeling/layer2_5_integration.py
+=======
+            self._memory_checkpoint('prepare_training_data_start')
+            
+            # INPUT VALIDATION
+            assert target_col in df.columns, f"Target column '{target_col}' not found in DataFrame"
+            assert len(df) > 100, f"Insufficient samples for Layer 2.5: {len(df)} < 100"
+            assert len(df) == len(causal_anchor_prediction), \
+                f"Length mismatch: df={len(df)}, anchor={len(causal_anchor_prediction)}"
+            assert not df[target_col].isna().all(), "Target column is all NaN"
+            
+            if isinstance(causal_anchor_prediction, pd.Series):
+                causal_anchor_prediction = causal_anchor_prediction.values
+            assert np.isfinite(causal_anchor_prediction).all(), \
+                "Causal anchor contains inf/nan"
+            
+>>>>>>> /Users/remyroche/.windsurf/worktrees/Ares/Ares-2f77aff8/src/training/steps/labeling/layer2_5_integration.py
             if self.verbose:
                 tprint_info("🔧 Preparing Layer 2.5 training data...")
             
@@ -628,7 +779,41 @@ class Layer25Integration:
                 y_actual, causal_anchor_prediction, verbose=self.verbose
             )
             
+<<<<<<< /Users/remyroche/Documents/Ares/src/training/steps/labeling/layer2_5_integration.py
             # Step 2: Select non-causal features
+=======
+            # FINANCIAL LOGIC: Residual stationarity validation
+            if self.enable_residual_analysis:
+                residual_clean = y_residuals[np.isfinite(y_residuals)]
+                if len(residual_clean) > 50:
+                    adf_result = stats.adfuller(residual_clean, maxlag=20)
+                    if adf_result[1] > 0.05:
+                        tprint_warning(
+                            f"⚠️ Residuals non-stationary (ADF p={adf_result[1]:.3f}) - "
+                            "causal anchor may be incomplete"
+                        )
+            
+            # Step 2: CROSS-ASSET: Extract asset ID BEFORE feature selection (IMPROVED)
+            df_work, asset_feature_name = self._extract_asset_features(df)
+            
+            if asset_feature_name:
+                all_feature_cols = list(all_feature_cols) + [asset_feature_name]
+                if self.verbose:
+                    n_assets = df_work[asset_feature_name].nunique()
+                    tprint_info(f"   ✨ Added Asset ID feature: {asset_feature_name} ({n_assets} unique assets)")
+            
+            # FINANCIAL LOGIC: Regime-aware feature engineering
+            if 'regime_id' in df_work.columns:
+                df_work['cat__regime_id'] = df_work['regime_id'].astype('category')
+                all_feature_cols = list(all_feature_cols) + ['cat__regime_id']
+                if self.verbose:
+                    tprint_info(
+                        f"   ✨ Added Regime ID feature: cat__regime_id "
+                        f"({df_work['regime_id'].nunique()} regimes)"
+                    )
+            
+            # Step 3: Select non-causal features
+>>>>>>> /Users/remyroche/.windsurf/worktrees/Ares/Ares-2f77aff8/src/training/steps/labeling/layer2_5_integration.py
             if self.feature_selector is None:
                 # Default feature selection
                 if causal_parent_cols is None:
@@ -650,6 +835,7 @@ class Layer25Integration:
                 if self.verbose:
                     tprint_info(f"   - Feature selector: {len(non_causal_features)} features selected")
             
+<<<<<<< /Users/remyroche/Documents/Ares/src/training/steps/labeling/layer2_5_integration.py
             # Step 3: Prepare feature matrix
             X_non_causal = df[non_causal_features].copy()
 
@@ -679,11 +865,58 @@ class Layer25Integration:
             valid_mask = ~(X_non_causal.isna().any(axis=1) | y_residuals.isna())
             X_clean = X_non_causal[valid_mask]
             y_clean = y_residuals[valid_mask]
+=======
+            # Convert to float32
+            if self.use_float32:
+                y_clean = y_clean.astype(np.float32)
+            
+            # FINANCIAL LOGIC: Temporal decay for sample weighting (OPTIMIZED with Numba)
+            sample_weights = None
+            if apply_temporal_decay:
+                n_samples = len(y_clean)
+                # Use Numba-optimized exponential decay
+                sample_weights = _exponential_decay_weights(n_samples, decay_rate)
+                if self.verbose:
+                    tprint_info(
+                        f"   - Applied temporal decay (rate={decay_rate:.3f}): "
+                        f"recent/old weight ratio = {sample_weights[-1]/sample_weights[0]:.2f}x"
+                    )
+            
+            # Memory efficiency - free intermediate data
+            del df_work, X_non_causal, y_residuals_series
+            self._memory_checkpoint('prepare_training_data_end')
+>>>>>>> /Users/remyroche/.windsurf/worktrees/Ares/Ares-2f77aff8/src/training/steps/labeling/layer2_5_integration.py
             
             # Store for reference
             self.training_features = non_causal_features
             self.training_residuals = y_clean
             
+<<<<<<< /Users/remyroche/Documents/Ares/src/training/steps/labeling/layer2_5_integration.py
+=======
+            # FINANCIAL LOGIC: Per-asset residual analysis (cross-asset learning)
+            if self.enable_residual_analysis:
+                self.residual_analysis = {
+                    'residual_mean': float(y_clean.mean()),
+                    'residual_std': float(y_clean.std()),
+                    'residual_skew': float(y_clean.skew()),
+                    'sample_count': len(y_clean),
+                    'stationarity_pvalue': adf_result[1] if 'adf_result' in locals() else None
+                }
+                
+                # Per-asset statistics (IMPROVED: use asset_feature_name)
+                asset_col_name = self._detect_asset_column(X_clean)
+                if asset_col_name and asset_col_name in X_clean.columns:
+                    self.residual_analysis['per_asset'] = {}
+                    for asset in X_clean[asset_col_name].cat.categories:
+                        asset_mask = X_clean[asset_col_name] == asset
+                        if asset_mask.sum() > 0:
+                            self.residual_analysis['per_asset'][str(asset)] = {
+                                'mean': float(y_clean[asset_mask].mean()),
+                                'std': float(y_clean[asset_mask].std()),
+                                'count': int(asset_mask.sum())
+                            }
+            
+>>>>>>> /Users/remyroche/.windsurf/worktrees/Ares/Ares-2f77aff8/src/training/steps/labeling/layer2_5_integration.py
             if self.verbose:
                 tprint_success("✅ Training data prepared:")
                 tprint_info(f"   - Samples: {len(X_clean)}")
@@ -699,7 +932,21 @@ class Layer25Integration:
                 tprint_error(f"❌ Training data preparation failed: {e}")
             raise
 
+<<<<<<< /Users/remyroche/Documents/Ares/src/training/steps/labeling/layer2_5_integration.py
         tprint_info(f"Completed prepare_training_data")
+=======
+    # ========================================================================
+    # Training with Cross-Asset Support
+    # ========================================================================
+    
+    @lru_cache(maxsize=1)
+    def _get_cached_cv_strategy(self, has_asset_id: bool, n_folds: int):
+        """Cache CV strategy to avoid recreation."""
+        if has_asset_id:
+            return GroupKFold(n_splits=n_folds)
+        return n_folds
+    
+>>>>>>> /Users/remyroche/.windsurf/worktrees/Ares/Ares-2f77aff8/src/training/steps/labeling/layer2_5_integration.py
     def train_chaser(
         self,
         X_non_causal: pd.DataFrame,
@@ -721,6 +968,7 @@ class Layer25Integration:
         """
         tprint_info(f"Starting train_chaser")
         try:
+<<<<<<< /Users/remyroche/Documents/Ares/src/training/steps/labeling/layer2_5_integration.py
             if self.logger:
                 self.logger.log_training_start(len(X_non_causal), len(X_non_causal.columns))
 
@@ -729,6 +977,27 @@ class Layer25Integration:
 
             if self.chaser is None:
                 self.setup_chaser()
+=======
+            self._memory_checkpoint('train_chaser_start')
+            
+            if self.verbose:
+                tprint_info("🚀 Training Layer 2.5 Chaser...")
+
+            # CROSS-ASSET: Use GroupKFold if asset_id available (IMPROVED)
+            asset_col = self._detect_asset_column(X_non_causal)
+            cv = cv_folds
+            
+            if asset_col and asset_col in X_non_causal.columns:
+                groups = X_non_causal[asset_col].cat.codes.values
+                cv = self._get_cached_cv_strategy(True, cv_folds)
+                if self.verbose:
+                    tprint_info(
+                        f"   - Using GroupKFold for cross-asset validation "
+                        f"({len(np.unique(groups))} assets)"
+                    )
+                kwargs['cv'] = cv
+                kwargs['groups'] = groups
+>>>>>>> /Users/remyroche/.windsurf/worktrees/Ares/Ares-2f77aff8/src/training/steps/labeling/layer2_5_integration.py
 
             # Train the Chaser
             training_metrics = self.chaser.fit(
@@ -736,6 +1005,7 @@ class Layer25Integration:
             )
 
             self.chaser_metrics = training_metrics
+            self._memory_checkpoint('train_chaser_end')
 
             # Analyze residuals if enabled
             if self.enable_residual_analysis:
@@ -857,7 +1127,80 @@ class Layer25Integration:
                 tprint_error(f"❌ Prediction with conflict detection failed: {e}")
             raise
 
+<<<<<<< /Users/remyroche/Documents/Ares/src/training/steps/labeling/layer2_5_integration.py
         tprint_info(f"Completed predict_with_conflict_detection")
+=======
+    def _predict_batch(
+        self,
+        X_non_causal: pd.DataFrame,
+        causal_anchor_prediction: Union[pd.Series, np.ndarray],
+        return_conflicts: bool
+    ) -> Dict[str, np.ndarray]:
+        """Batch prediction for large datasets."""
+        if self.verbose:
+            tprint_info(f"   - Using batch prediction (batch_size={self.batch_size})")
+        
+        n_samples = len(X_non_causal)
+        n_batches = (n_samples + self.batch_size - 1) // self.batch_size
+        
+        batch_results = []
+        for i in range(n_batches):
+            start_idx = i * self.batch_size
+            end_idx = min((i + 1) * self.batch_size, n_samples)
+            
+            X_batch = X_non_causal.iloc[start_idx:end_idx]
+            anchor_batch = causal_anchor_prediction[start_idx:end_idx]
+            
+            batch_result = self.predict_with_conflict_detection(
+                X_batch, anchor_batch, return_conflicts, use_batch=False
+            )
+            batch_results.append(batch_result)
+        
+        # Merge batch results
+        merged = {}
+        for key in batch_results[0].keys():
+            if key == 'individual_predictions':
+                # Merge individual predictions
+                merged[key] = {}
+                for model_name in batch_results[0][key].keys():
+                    merged[key][model_name] = np.concatenate([
+                        br[key][model_name] for br in batch_results
+                    ])
+            else:
+                # Concatenate arrays
+                merged[key] = np.concatenate([br[key] for br in batch_results])
+        
+        return merged
+
+    # ========================================================================
+    # Meta-Learner Feature Engineering (Fixed Bugs)
+    # ========================================================================
+    
+    @lru_cache(maxsize=128)
+    def _compute_conflict_features_cached(self, conflict_tuple: tuple) -> Dict[str, np.ndarray]:
+        """Cache conflict feature computation for repeated predictions."""
+        high_conflicts = np.array(conflict_tuple)
+        
+        # Conflict degree
+        window_size = min(5, len(high_conflicts))
+        conflict_series = pd.Series(high_conflicts)
+        conflict_degree = conflict_series.rolling(
+            window=window_size, center=True, min_periods=1
+        ).mean().values.astype(np.float32)
+        
+        # Conflict isolation (Numba-optimized)
+        conflict_indices = np.where(high_conflicts)[0]
+        if len(conflict_indices) > 0:
+            conflict_isolation = _compute_isolation_numba(conflict_indices, len(high_conflicts))
+        else:
+            conflict_isolation = np.zeros(len(high_conflicts), dtype=np.float32)
+        
+        return {
+            'conflict_degree': conflict_degree,
+            'conflict_isolation': conflict_isolation
+        }
+    
+>>>>>>> /Users/remyroche/.windsurf/worktrees/Ares/Ares-2f77aff8/src/training/steps/labeling/layer2_5_integration.py
     def get_meta_learner_features(
         self,
         prediction_results: Dict[str, np.ndarray]
@@ -923,9 +1266,17 @@ class Layer25Integration:
                 meta_features['direction_conflict'] = prediction_results['direction_conflict'].astype(int)
                 meta_features['magnitude_conflict'] = prediction_results['magnitude_conflict'].astype(int)
 
+<<<<<<< /Users/remyroche/Documents/Ares/src/training/steps/labeling/layer2_5_integration.py
                 # Conflict network features
                 meta_features['conflict_degree'] = self._calculate_conflict_degree(prediction_results)
                 meta_features['conflict_isolation'] = self._calculate_conflict_isolation(prediction_results)
+=======
+                # Conflict network features (CACHED for performance)
+                conflict_tuple = tuple(prediction_results['high_conflict'].astype(bool))
+                cached_features = self._compute_conflict_features_cached(conflict_tuple)
+                meta_dict['conflict_degree'] = cached_features['conflict_degree']
+                meta_dict['conflict_isolation'] = cached_features['conflict_isolation']
+>>>>>>> /Users/remyroche/.windsurf/worktrees/Ares/Ares-2f77aff8/src/training/steps/labeling/layer2_5_integration.py
 
                 # Conflict momentum (rolling conflict rate)
                 window_size = min(20, n_samples)
@@ -962,8 +1313,16 @@ class Layer25Integration:
                     meta_features['chaser_confidence'] * meta_features['conflict_intensity']
                 )
 
+<<<<<<< /Users/remyroche/Documents/Ares/src/training/steps/labeling/layer2_5_integration.py
             # Temporal features (if we have time series data)
             if hasattr(prediction_results, 'index') and hasattr(prediction_results['index'], 'is_monotonic_increasing'):
+=======
+            # Convert to DataFrame (single construction for performance)
+            meta_features = pd.DataFrame(meta_dict, dtype=np.float32 if self.use_float32 else np.float64)
+            
+            # Temporal features (FIXED: check meta_features, not prediction_results)
+            if hasattr(meta_features.index, 'is_monotonic_increasing'):
+>>>>>>> /Users/remyroche/.windsurf/worktrees/Ares/Ares-2f77aff8/src/training/steps/labeling/layer2_5_integration.py
                 meta_features['prediction_momentum'] = (
                     meta_features['chaser_prediction'] - meta_features['chaser_prediction'].shift(1)
                 ).fillna(0)
@@ -1012,6 +1371,7 @@ class Layer25Integration:
         isolation_scores = np.zeros(len(high_conflicts))
         conflict_indices = np.where(conflict_mask)[0]
 
+<<<<<<< /Users/remyroche/Documents/Ares/src/training/steps/labeling/layer2_5_integration.py
         for i, idx in enumerate(conflict_indices):
             distances = np.abs(conflict_indices - idx)
             distances[i] = np.inf  # Don't count distance to self
@@ -1027,15 +1387,30 @@ class Layer25Integration:
     def _calculate_prediction_stability(self, prediction_results):
         """Calculate prediction stability over time."""
         tprint_info(f"Starting _calculate_prediction_stability")
+=======
+    def _calculate_prediction_stability(self, prediction_results: Dict) -> np.ndarray:
+        """Calculate prediction stability over time (OPTIMIZED: use Numba)."""
+>>>>>>> /Users/remyroche/.windsurf/worktrees/Ares/Ares-2f77aff8/src/training/steps/labeling/layer2_5_integration.py
         chaser_pred = prediction_results['chaser_prediction']
 
         if len(chaser_pred) < 10:
             tprint_info(f"Completed _calculate_prediction_stability")
             return np.ones(len(chaser_pred)) * 0.5  # Neutral stability
 
+<<<<<<< /Users/remyroche/Documents/Ares/src/training/steps/labeling/layer2_5_integration.py
         # Rolling standard deviation as instability measure
         window_size = min(20, len(chaser_pred))
         rolling_std = pd.Series(chaser_pred).rolling(window=window_size).std()
+=======
+        # Use Numba-optimized rolling std (from existing utils if available)
+        window_size = min(20, len(chaser_pred))
+        try:
+            from src.utils.common_numba import rolling_std_numba
+            rolling_std = rolling_std_numba(chaser_pred.astype(np.float32), window_size)
+        except ImportError:
+            # Fallback to local Numba implementation
+            rolling_std = _rolling_std_numba(chaser_pred.astype(np.float32), window_size)
+>>>>>>> /Users/remyroche/.windsurf/worktrees/Ares/Ares-2f77aff8/src/training/steps/labeling/layer2_5_integration.py
 
         # Convert to stability score (1 = stable, 0 = unstable)
         stability = 1.0 - (rolling_std / (rolling_std.max() + 1e-8))
@@ -1043,6 +1418,48 @@ class Layer25Integration:
 
         tprint_info(f"Completed _calculate_prediction_stability")
         return stability.values
+    
+    def save(self, path: str):
+        """Persist integration state for production deployment."""
+        state = {
+            'chaser': self._chaser,
+            'conflict_detector': self._conflict_detector,
+            'feature_selector': self._feature_selector,
+            'training_features': self.training_features,
+            'asset_mapping': self.asset_mapping,
+            'chaser_params': self.chaser_params,
+            'use_float32': self.use_float32,
+            'transaction_cost_bps': self.transaction_cost_bps,
+            'residual_analysis': self.residual_analysis,
+            'version': '2.0_refactored'
+        }
+        joblib.dump(state, path, compress=3)
+        if self.verbose:
+            tprint_success(f"✅ Saved Layer 2.5 integration to {path}")
+    
+    @classmethod
+    def load(cls, path: str, verbose: bool = True) -> 'Layer25Integration':
+        """Load persisted integration from disk."""
+        state = joblib.load(path)
+        
+        instance = cls(
+            chaser_params=state.get('chaser_params', {}),
+            verbose=verbose,
+            use_float32=state.get('use_float32', True),
+            transaction_cost_bps=state.get('transaction_cost_bps', 5.0)
+        )
+        
+        instance._chaser = state.get('chaser')
+        instance._conflict_detector = state.get('conflict_detector')
+        instance._feature_selector = state.get('feature_selector')
+        instance.training_features = state.get('training_features')
+        instance.asset_mapping = state.get('asset_mapping', {})
+        instance.residual_analysis = state.get('residual_analysis')
+        
+        if verbose:
+            tprint_success(f"✅ Loaded Layer 2.5 integration from {path} (version: {state.get('version', 'unknown')})")
+        
+        return instance
     
     def get_integration_summary(self) -> Dict[str, Any]:
         """
@@ -1065,7 +1482,15 @@ class Layer25Integration:
             'performance_metrics': self.chaser_metrics or {},
             'conflict_statistics': self.conflict_statistics or {},
             'residual_analysis': self.residual_analysis or {},
+<<<<<<< /Users/remyroche/Documents/Ares/src/training/steps/labeling/layer2_5_integration.py
             'feature_selection': self.feature_selection_results or {}
+=======
+            'feature_selection': self.feature_selection_results or {},
+            'runtime_seconds': time.time() - self.start_time,
+            'memory_profile': self.memory_checkpoints if self.enable_memory_profiling else [],
+            'asset_count': len(self.asset_mapping),
+            'transaction_cost_bps': self.transaction_cost_bps
+>>>>>>> /Users/remyroche/.windsurf/worktrees/Ares/Ares-2f77aff8/src/training/steps/labeling/layer2_5_integration.py
         }
         
         # Save report automatically

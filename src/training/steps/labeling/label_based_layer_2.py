@@ -5637,6 +5637,7 @@ class LabelBasedLayer2(BaseStep):
         Generate comprehensive state features for causal gating (A-I + Specialist Features).
         """
         tprint_info("   🏗️ Generating rich gate features (Volatility, Liquidity, Trend, etc.)...")
+        gate_start = time.perf_counter()
 
         Z = pd.DataFrame(index=df.index)
         eps = 1e-9
@@ -5696,6 +5697,7 @@ class LabelBasedLayer2(BaseStep):
 
         # --- A) Volatility State ---
         if 'close' in df.columns:
+            section_start = time.perf_counter()
             close = df['close']
             if asset_group is None:
                 ret = close.pct_change().fillna(0)
@@ -5723,9 +5725,11 @@ class LabelBasedLayer2(BaseStep):
             if 'high' in df.columns and 'low' in df.columns:
                 hl_ratio = (df['high'] - df['low']) / (df['low'] + eps)
                 _assign_series('parkinson_proxy', _rstd(hl_ratio, 24))
+            tprint_info(f"      ⏱️ Volatility block: {time.perf_counter() - section_start:.2f}s")
 
         # --- B) Liquidity / Trading Frictions ---
         if 'volume' in df.columns and 'close' in df.columns:
+            section_start = time.perf_counter()
             vol = df['volume']
             log_vol = np.log(vol + eps)
             dvol = df['close'] * vol
@@ -5742,9 +5746,11 @@ class LabelBasedLayer2(BaseStep):
                 hl_spread = (df['high'] - df['low']) / df['close']
                 _assign_series('hl_spread_w24', _rmean(hl_spread, 24))
                 _assign_series('hl_spread_shock', _rmean(hl_spread, 12) / (_rmean(hl_spread, 96) + eps))
+            tprint_info(f"      ⏱️ Liquidity block: {time.perf_counter() - section_start:.2f}s")
 
         # --- C) Trend vs Mean Reversion ---
         if 'close' in df.columns:
+            section_start = time.perf_counter()
             # Trend Strength
             if asset_group is None:
                 ewma_48 = close.ewm(span=48).mean()
@@ -5772,10 +5778,13 @@ class LabelBasedLayer2(BaseStep):
                     .apply(lambda s: get_serial_correlation(s, window=48))
                     .reset_index(level=0, drop=True)
                 )
+            tprint_info(f"      ⏱️ Trend block: {time.perf_counter() - section_start:.2f}s")
 
         # --- F) Vol-Liq Interaction ---
         if 'vol_shock' in Z.columns and 'logvol_z_w96' in Z.columns:
+            section_start = time.perf_counter()
             _assign_series('stress_1', Z['vol_shock'] * (-Z['logvol_z_w96']))
+            tprint_info(f"      ⏱️ Interaction block: {time.perf_counter() - section_start:.2f}s")
 
         # --- G) Calendar State ---
         if isinstance(df.index, pd.DatetimeIndex):
@@ -5791,23 +5800,30 @@ class LabelBasedLayer2(BaseStep):
             minute = None
 
         if hour is not None and minute is not None:
+            section_start = time.perf_counter()
             _assign_series('hour_sin', np.sin(2 * np.pi * hour / 24))
             _assign_series('hour_cos', np.cos(2 * np.pi * hour / 24))
+            tprint_info(f"      ⏱️ Calendar block: {time.perf_counter() - section_start:.2f}s")
 
         # --- H) Data Quality ---
         # (Assuming mostly clean data, but adding simple outlier flag)
         if 'rv_w48' in Z.columns:
+            section_start = time.perf_counter()
             _assign_series('outlier_rate_w48', _rmean((ret.abs() > 3 * Z['rv_w48']).astype(float), 48))
+            tprint_info(f"      ⏱️ Quality block: {time.perf_counter() - section_start:.2f}s")
 
         # --- D, E, I) Cross-Asset / Market State / Dispersion ---
         # Explicitly include 'ms__' (Market State) and 'ca__' (Cross Asset) features
         special_prefixes = ('ms__', 'ca__', 'meta__', 'disp__')
+        section_start = time.perf_counter()
         for col in df.columns:
             if col.startswith(special_prefixes):
                 _assign_series(col, df[col])
+        tprint_info(f"      ⏱️ Cross-asset block: {time.perf_counter() - section_start:.2f}s")
 
         # --- Asset Identity Features (Multi-Asset Gating) ---
         if asset_series is not None:
+            section_start = time.perf_counter()
             asset_codes = pd.Series(pd.Categorical(asset_series).codes, index=df.index)
             _assign_series('asset_id_code', asset_codes.astype(float))
             top_assets = asset_series.value_counts().head(self.causal_gate_asset_onehot_max).index.tolist()
@@ -5815,6 +5831,7 @@ class LabelBasedLayer2(BaseStep):
                 _assign_series(f"asset_{asset}", (asset_series == asset).astype(float))
             if asset_series.nunique() > len(top_assets):
                 _assign_series('asset_other', (~asset_series.isin(top_assets)).astype(float))
+            tprint_info(f"      ⏱️ Asset identity block: {time.perf_counter() - section_start:.2f}s")
 
         if include_specialist_features:
             # --- Specialist Features (Z_spec) ---
@@ -5826,6 +5843,7 @@ class LabelBasedLayer2(BaseStep):
             for family in families:
                 try:
                     # Use default params for feature extraction
+                    fam_start = time.perf_counter()
                     spec_feats = self._compute_specific_geometry_features(
                         df, df.index, {'family': family}
                     )
@@ -5833,12 +5851,20 @@ class LabelBasedLayer2(BaseStep):
                         # Rename columns to avoid collisions
                         spec_feats.columns = [f"spec_{family}_{c}" for c in spec_feats.columns]
                         _assign_frame(spec_feats)
+                    tprint_info(
+                        f"      ⏱️ Specialist {family}: {time.perf_counter() - fam_start:.2f}s "
+                        f"(cols={getattr(spec_feats, 'shape', (0, 0))[1]})"
+                    )
                 except Exception:
                     # Ignore failures for specific families
                     pass
 
         # Cleanup: Replace Inf, Fill NaNs
+        cleanup_start = time.perf_counter()
         Z = Z.replace([np.inf, -np.inf], np.nan).ffill().fillna(0.0)
+        tprint_info(f"      ⏱️ Cleanup block: {time.perf_counter() - cleanup_start:.2f}s")
+
+        tprint_info(f"   ✅ Rich gate features complete in {time.perf_counter() - gate_start:.2f}s (cols={Z.shape[1]})")
 
         return Z
 

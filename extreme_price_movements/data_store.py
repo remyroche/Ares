@@ -79,4 +79,72 @@ class OHLCVStore:
         return os.path.join(self.ohlcv_dir, f"{safe}.parquet")
 
     def _downcast(self, df: pd.DataFrame) -> pd.DataFrame:
-        if d
+        if df.empty:
+            return df
+        out = df.copy()
+        for col in ["open","high","low","close","volume"]:
+            if col in out.columns:
+                out[col] = pd.to_numeric(out[col], errors="coerce").astype(np.float32)
+        return out
+
+    def load(self, symbol: str) -> pd.DataFrame:
+        path = self._sym_path(symbol)
+        if not os.path.exists(path):
+            return pd.DataFrame(columns=["open","high","low","close","volume"]).set_index(
+                pd.DatetimeIndex([], tz="UTC", name="ts")
+            )
+        df = pd.read_parquet(path)
+        if "ts" in df.columns:
+            df["ts"] = pd.to_datetime(df["ts"], utc=True)
+            df = df.set_index("ts")
+        df = df.sort_index()
+        return self._downcast(df)
+
+    def save(self, symbol: str, df: pd.DataFrame) -> None:
+        if df.empty:
+            return
+        df = df.sort_index()
+        df = self._downcast(df)
+        out = df.reset_index()
+        if out.columns[0] != "ts":
+            out = out.rename(columns={out.columns[0]: "ts"})
+        out.to_parquet(self._sym_path(symbol), index=False)
+
+    def update_symbol(self, exchange, symbol: str, since_ms: int) -> pd.DataFrame:
+        existing = self.load(symbol)
+        if existing.empty:
+            tprint(f"FETCH init: {symbol}")
+            fresh = fetch_ohlcv_all_7d_chunks(exchange, symbol, since_ms, timeframe=self.timeframe, limit=1000)
+            fresh = self._downcast(fresh)
+            self.save(symbol, fresh)
+            return fresh
+
+        last_ts = existing.index.max()
+        next_ts = last_ts + pd.Timedelta(hours=1)
+        next_ms = int(next_ts.value // 10**6)
+        now_ms = int(pd.Timestamp.utcnow().value // 10**6)
+        if next_ms >= now_ms:
+            return existing
+
+        tprint(f"FETCH incr: {symbol} from {next_ts}")
+        fresh = fetch_ohlcv_all_7d_chunks(exchange, symbol, next_ms, timeframe=self.timeframe, limit=1000)
+        if fresh is None or fresh.empty:
+            return existing
+
+        fresh = self._downcast(fresh)
+        merged = pd.concat([existing, fresh]).sort_index()
+        merged = merged[~merged.index.duplicated(keep="last")]
+        self.save(symbol, merged)
+        return merged
+
+def to_panel(dfs_by_symbol: dict[str, pd.DataFrame]):
+    keys = ["open","high","low","close","volume"]
+    panel = {}
+    for k in keys:
+        panel[k] = pd.concat([df[k].rename(sym) for sym, df in dfs_by_symbol.items()], axis=1).sort_index()
+    return panel
+
+def downcast_panel_float32(panel: dict[str, pd.DataFrame]):
+    for k in panel:
+        panel[k] = panel[k].astype(np.float32)
+    return panel

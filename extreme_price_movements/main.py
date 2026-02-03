@@ -9,7 +9,8 @@ from extreme_price_movements.utils import tprint, Timer
 from extreme_price_movements.universe import refresh_margin_universe_daily, build_fetch_universe, select_live_candidates
 from extreme_price_movements.data_store import make_spot_exchange, PartitionedOHLCVStore, to_panel, check_data_health
 from extreme_price_movements.features import compute_market_features, add_regime_gates, compute_features_hourly
-from extreme_price_movements.engine import select_trade_candidates_hourly, entry_price_next_hour_open
+from extreme_price_movements.engine import generate_hourly_signals
+from extreme_price_movements.candidates import select_trade_candidates_hourly, entry_price_next_hour_open
 from extreme_price_movements.time_utils import get_ts_sig, floor_to_hour, now_utc
 from extreme_price_movements.state import StateManager
 from extreme_price_movements.metrics import MetricsLogger
@@ -114,139 +115,80 @@ def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger, model_
             state.set_position(sym, pos)
 
     p_exh_cand = generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_sig, 24, list(dfs.keys()))
-    top, bot = select_trade_candidates_hourly(feats, ts_sig, list(dfs.keys()), cfg["trade_extreme_pct"], cfg["trade_extreme_min"], cfg["trade_extreme_max"], cfg["trade_deviation_metric"])
-    candidates = list(set(top) | set(bot))
-    candidates = [s for s in candidates if s not in state.get_positions()]
 
-    if candidates and ts_sig in mkt_gates.index:
-        mrk = mkt_gates.loc[ts_sig]
-        ts_lag = ts_sig - pd.Timedelta(hours=1)
-        trend_df = feats.get("trend_pct")
+    target_orders = generate_hourly_signals(
+        ts_sig, feats, mkt_gates, bundle, risk_conf, cfg, p_exh_cand, active_syms
+    )
 
-        rows = []
-        for sym in candidates:
-            try:
-                t_val = 0.0
-                if trend_df is not None and sym in trend_df.columns: t_val = float(trend_df.loc[ts_sig, sym])
-                direction = "up" if t_val > 0 else "down"
-                m_bundle = alpha_models.get(direction)
-                if not m_bundle or not m_bundle["mr"] or not m_bundle["tf"]: continue
-                model_mr = m_bundle["mr"]["model"]; model_tf = m_bundle["tf"]["model"]; feat_cols = m_bundle["mr"]["feat_cols"]; meta_model = meta_models.get(direction)
-                p_lag = 0.5
-                if ts_lag in p_exh_cand.index and sym in p_exh_cand.columns: p_lag = float(p_exh_cand.loc[ts_lag, sym])
-                rec = {
-                    "symbol": sym, "direction": direction, "model_mr": model_mr, "model_tf": model_tf, "meta_model": meta_model, "feat_cols": feat_cols,
-                    "mkt_ret24h": float(mrk["mkt_ret24h"]), "mkt_ret6h": float(mrk["mkt_ret6h"]), "mkt_trend": float(mrk["mkt_trend"]), "mkt_rv": float(mrk["mkt_rv"]),
-                    "G_VOL": int(mrk["G_VOL"]), "G_TREND": int(mrk["G_TREND"]), "p_exh_lag1": p_lag
-                }
-                for k in feat_cols:
-                    if k in feats: rec[k] = float(feats[k].loc[ts_sig, sym])
-                # Meta Feats
-                for mk in ["a_rv24", "a_volz", "a_rsi", "dist_ema_fast", "atr_slope", "dist_vwap_norm", "mom_accel"]:
-                    if mk in feats: rec[mk] = float(feats[mk].loc[ts_sig, sym])
+    if target_orders:
+        for order in target_orders:
+            sym = order["symbol"]
+            side = order["side"]
+            score = order["score"]
+            dom = order["dom"]
+            w_alloc = order["weight"]
 
-                rows.append(rec)
-            except Exception: continue
+            if sym not in c.columns: continue
+            atr = float(feats["atr_pct"].loc[ts_sig, sym])
+            entry_px = float(c.loc[ts_sig, sym])
 
-        df_all = pd.DataFrame(rows)
-        score_raw_list = []
-        if not df_all.empty:
-            for d, grp in df_all.groupby("direction"):
-                first = grp.iloc[0]
-                model_mr = first["model_mr"]; model_tf = first["model_tf"]; meta_model = first["meta_model"]; fcols = first["feat_cols"]
-                Xint = apply_interaction_toggles(grp, cfg["causal_cols"], ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
-                for c in fcols:
-                    if c not in Xint.columns: Xint[c] = 0.0
-                Xpred = Xint[fcols].fillna(0.0).astype(np.float32)
-                p_mr = model_mr.predict(Xpred)
-                p_tf = model_tf.predict(Xpred)
+            # Risk Params Lookup
+            # Key: risk_{side}_{dom}
+            risk_key = f"risk_{side}_{dom}"
+            rp = granular_risk.get(risk_key, {})
 
-                if meta_model:
-                    X_meta = meta_model.prepare_meta_features(p_tf, p_mr, grp)
-                    score = meta_model.predict(X_meta)
-                else:
-                    score = p_tf - p_mr
-                    sign = 1.0 if d == "up" else -1.0
-                    score = score * sign
+            # Apply Score Confidence scaling
+            k_sl = rp.get("k_sl", cfg["risk_k_sl"])
+            k_ts = rp.get("k_trail_start", cfg["risk_k_trail_start"])
+            k_td = rp.get("k_trail_dist", cfg["risk_k_trail_dist"])
+            sc_scale = rp.get("score_scale", 0.0)
 
-                # Identify dominance for risk selection
-                # Dominant: MR if p_mr > p_tf ?
-                # Meta Model blends them.
-                # If Meta Model, we use its output.
-                # Risk Bucket: Side + Dominant Model.
-                # Heuristic: Compare raw probs p_mr vs p_tf.
+            # Adjust
+            adj = (1.0 + sc_scale * abs(score))
+            k_sl_adj = k_sl * adj
 
-                for i, idx in enumerate(grp.index):
-                    sym = grp.loc[idx, "symbol"]
-                    s_score = score[i]
-                    dom = "mr" if p_mr[i] > p_tf[i] else "tf"
-                    score_raw_list.append((sym, s_score, dom))
-
-        score_raw_list.sort(key=lambda x: x[1], reverse=True)
-        longs = [x for x in score_raw_list if x[1] > cfg["thr_long"]][:cfg["k_long"]]
-        shorts = sorted([x for x in score_raw_list if x[1] < cfg["thr_short"]], key=lambda x: x[1])[:cfg["k_short"]]
-
-        final_orders = []
-        for s, sc, dom in longs: final_orders.append((s, "long", sc, dom))
-        for s, sc, dom in shorts: final_orders.append((s, "short", sc, dom))
-
-        total_wt = sum(abs(x[2]) for x in final_orders)
-        if total_wt > 0:
-            gross_cap = float(cfg["wallet_gross_cap"])
-            for sym, side, score, dom in final_orders:
-                w_alloc = gross_cap * (abs(score) / total_wt)
-                atr = float(feats["atr_pct"].loc[ts_sig, sym])
-                entry_px = float(c.loc[ts_sig, sym])
-
-                # Risk Params Lookup
-                # Key: risk_{side}_{dom}
-                risk_key = f"risk_{side}_{dom}"
-                rp = granular_risk.get(risk_key, {})
-
-                # Apply Score Confidence scaling
-                # k_sl_adj = k_sl * (1 + score_scale * abs(score))
-                # Base defaults
-                k_sl = rp.get("k_sl", cfg["risk_k_sl"])
-                k_ts = rp.get("k_trail_start", cfg["risk_k_trail_start"])
-                k_td = rp.get("k_trail_dist", cfg["risk_k_trail_dist"])
-                sc_scale = rp.get("score_scale", 0.0)
-
-                # Adjust
-                adj = (1.0 + sc_scale * abs(score))
-                # Adjusting SL distance: Higher confidence -> Tighter SL? Or Wider?
-                # "adjust values by confidence". Usually higher confidence -> larger position (already done).
-                # Maybe tighter stop? Or wider to give room?
-                # Let's assume wider stop for high conf?
-                k_sl_adj = k_sl * adj
-
-                ts_risk = TrailingStop(
-                    entry_px=entry_px, side=side, atr_val=atr,
-                    k_sl=k_sl_adj, k_trail_start=k_ts, k_trail_dist=k_td
-                )
-                pos = {
-                    "symbol": sym, "side": side, "entry_px": entry_px, "entry_ts": ts_sig.isoformat(),
-                    "score": float(score), "weight": float(w_alloc), "risk_state": ts_risk.to_dict(), "run_id": run_id
-                }
-                state.set_position(sym, pos)
-                tprint(f"ENTRY {side} {sym} @ {entry_px} (score={score:.4f}, w={w_alloc:.4f}, dom={dom})")
-                logger.log(ts_sig, {"event": "entry", "symbol": sym, "side": side, "score": score, "weight": w_alloc, "dom": dom})
+            ts_risk = TrailingStop(
+                entry_px=entry_px, side=side, atr_val=atr,
+                k_sl=k_sl_adj, k_trail_start=k_ts, k_trail_dist=k_td
+            )
+            pos = {
+                "symbol": sym, "side": side, "entry_px": entry_px, "entry_ts": ts_sig.isoformat(),
+                "score": float(score), "weight": float(w_alloc), "risk_state": ts_risk.to_dict(), "run_id": run_id
+            }
+            state.set_position(sym, pos)
+            tprint(f"ENTRY {side} {sym} @ {entry_px} (score={score:.4f}, w={w_alloc:.4f}, dom={dom})")
+            logger.log(ts_sig, {"event": "entry", "symbol": sym, "side": side, "score": score, "weight": w_alloc, "dom": dom})
 
     state.set_last_ts_sig(ts_sig)
-    logger.log(ts_sig, {"n_candidates": len(candidates), "run_id": run_id})
+    n_orders = len(target_orders) if target_orders else 0
+    logger.log(ts_sig, {"n_orders": n_orders, "run_id": run_id})
     tprint("HOURLY EXEC COMPLETE")
 
-def run_live_cycle():
+def run_live_cycle(initial_model_state=None):
     # Maintain state in function scope (for live loop)
     # But usually this script restarts?
     # For robust persistent state, we need to save/load from disk (pickle).
     # But for this refactor, we just keep it in memory for the process life.
 
     # Initialize state
-    model_state = {
-        "ts_trained": None,
-        "bundle": None,
-        "risk_params": None
-    }
+    if initial_model_state:
+        model_state = initial_model_state
+    else:
+        model_state = {
+            "ts_trained": None,
+            "bundle": None,
+            "risk_params": None
+        }
+        # Try load from default file
+        import os
+        import pickle
+        if os.path.exists("model_state.pkl"):
+            try:
+                with open("model_state.pkl", "rb") as f:
+                    model_state = pickle.load(f)
+                tprint("Loaded model state from model_state.pkl")
+            except Exception as e:
+                tprint(f"Failed to load model state: {e}")
 
     cfg = CFG.copy()
     state = StateManager()

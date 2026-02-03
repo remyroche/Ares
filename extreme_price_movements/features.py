@@ -45,6 +45,8 @@ def compute_market_features(panel, basket_syms, trend_sma_hours=24*14):
     mkt_low   = l[basket].mean(axis=1)
     mkt_vol   = v[basket].mean(axis=1)
 
+    # Note: numba_pct_change calculates (x[t] - x[t-N]) / x[t-N].
+    # This uses information up to time t, so it is safe for predicting returns from t onwards.
     mkt_ret24h_df = ff.numba_pct_change(mkt_close.to_frame(), 24)
     mkt_ret24h = mkt_ret24h_df[mkt_ret24h_df.columns[0]]
 
@@ -72,16 +74,25 @@ def compute_market_features(panel, basket_syms, trend_sma_hours=24*14):
         "mkt_trend":  mkt_trend,
         "mkt_rv":     mkt_rv
     })
-    return mkt_df
+    # Explicit float32 downcast to reduce memory and ensure consistency
+    return mkt_df.astype(np.float32)
 
 def add_regime_gates(mkt_df: pd.DataFrame, gate_vol_lookback_hours: int, gate_trend_thr: float):
     df = mkt_df.copy()
+    # No look-ahead bias: Rolling median uses window ending at t.
     rv_med_df = ff.numba_rolling_median(df[["mkt_rv"]], gate_vol_lookback_hours)
     df["mkt_rv_med"] = rv_med_df["mkt_rv"]
 
-    df["G_VOL"] = (df["mkt_rv"] > df["mkt_rv_med"]).astype(int)
-    df["G_TREND"] = (df["mkt_ret24h"].abs() > gate_trend_thr).astype(int)
+    # Gates are calculated at time t using information up to t.
+    df["G_VOL"] = (df["mkt_rv"] > df["mkt_rv_med"]).astype(np.int32)
+    df["G_TREND"] = (df["mkt_ret24h"].abs() > gate_trend_thr).astype(np.int32)
     df["mkt_rv_ratio"] = df["mkt_rv"] / (df["mkt_rv_med"] + 1e-12)
+
+    # Ensure float columns are float32
+    float_cols = ["mkt_rv_med", "mkt_rv_ratio"]
+    for c in float_cols:
+        df[c] = df[c].astype(np.float32)
+
     return df
 
 def compute_funding_proxy(panel, mkt_df):

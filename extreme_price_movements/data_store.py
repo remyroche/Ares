@@ -1,5 +1,6 @@
 import os
 import time
+import json
 import numpy as np
 import pandas as pd
 import ccxt
@@ -7,13 +8,14 @@ import glob
 import shutil
 from datetime import timezone
 
-from extreme_price_movements.utils import tprint
+from extreme_price_movements.utils import tprint, retry_with_backoff
 
 def make_spot_exchange():
     ex = ccxt.binance({"enableRateLimit": True})
     ex.load_markets()
     return ex
 
+@retry_with_backoff(retries=3, backoff_in_seconds=2)
 def _fetch_ohlcv_paged(exchange, symbol, since_ms, until_ms, timeframe="1h", limit=1000):
     out = []
     since = since_ms
@@ -80,6 +82,28 @@ class PartitionedOHLCVStore:
     def _get_symbol_dir(self, symbol: str) -> str:
         safe_sym = symbol.replace("/", "_")
         return os.path.join(self.ohlcv_dir, f"symbol={safe_sym}")
+
+    def _get_meta_path(self, symbol: str) -> str:
+        safe_sym = symbol.replace("/", "_")
+        return os.path.join(self.ohlcv_dir, f"{safe_sym}.meta.json")
+
+    def _read_meta(self, symbol: str) -> dict:
+        path = self._get_meta_path(symbol)
+        if os.path.exists(path):
+            try:
+                with open(path, "r") as f:
+                    return json.load(f)
+            except Exception:
+                return {}
+        return {}
+
+    def _write_meta(self, symbol: str, meta: dict):
+        path = self._get_meta_path(symbol)
+        try:
+            with open(path, "w") as f:
+                json.dump(meta, f)
+        except Exception as e:
+            tprint(f"Error writing meta for {symbol}: {e}")
 
     def _downcast(self, df: pd.DataFrame) -> pd.DataFrame:
         if df.empty:
@@ -205,24 +229,29 @@ class PartitionedOHLCVStore:
             tprint(f"Error compacting {symbol} {year}-{month}: {e}")
 
     def update_symbol(self, exchange, symbol: str, since_ms: int) -> pd.DataFrame:
-        # Load existing (full to check tail)
-        # Optimization: We just need max index.
-        # But we don't have metadata store.
-        # loading 'ts' column only is fast.
-        existing_idx = self.load(symbol, columns=["ts"]).index
+        # Check metadata first to avoid IO
+        meta = self._read_meta(symbol)
+        last_ts_ms = meta.get("last_ts_ms", 0)
 
-        if existing_idx.empty:
-            start_ms = since_ms
+        if last_ts_ms > 0:
+            start_ms = last_ts_ms + 1
         else:
-            last_ts = existing_idx.max()
-            start_ms = int(last_ts.value // 10**6) + 1
+            # Fallback to load index if no meta
+            existing_idx = self.load(symbol, columns=["ts"]).index
+            if not existing_idx.empty:
+                last_ts = existing_idx.max()
+                start_ms = int(last_ts.value // 10**6) + 1
+            else:
+                start_ms = since_ms
 
         now_ms = int(pd.Timestamp.utcnow().value // 10**6)
+
+        # If freshness check passes (e.g. data is recent enough)
+        # Note: 'recent enough' depends on timeframe. For 1h, if start_ms is in current hour?
+        # But we want to fetch if there is new data.
+        # If start_ms >= now_ms, implies we have data up to now.
+
         if start_ms >= now_ms:
-            # Need to return full data for features?
-            # update_symbol implies returning the dataset.
-            # If we just checked index, we haven't loaded data.
-            # We should load full data if caller expects it.
             return self.load(symbol)
 
         tprint(f"FETCH incr: {symbol} from {pd.to_datetime(start_ms, unit='ms', utc=True)}")
@@ -231,6 +260,13 @@ class PartitionedOHLCVStore:
         if fresh is not None and not fresh.empty:
             fresh = self._downcast(fresh)
             self.save_partitioned(symbol, fresh)
+
+            # Update metadata
+            new_last = fresh.index.max()
+            new_last_ms = int(new_last.value // 10**6)
+            # Ensure we don't regress if fresh is older? Should not happen with logic above.
+            if new_last_ms > last_ts_ms:
+                self._write_meta(symbol, {"last_ts_ms": new_last_ms})
 
             # Reload full to return merged
             return self.load(symbol)

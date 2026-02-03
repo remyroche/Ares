@@ -547,6 +547,165 @@ def build_daily_samples_regression_with_gates(panel, feats, mkt_df_with_gates, c
     df = df.dropna(subset=feat_cols + ["y"])
     return df, feat_cols
 
+def build_daily_samples_trend_follow(panel, feats, mkt_df_with_gates, cfg, universe_syms):
+    """
+    Trend-follow training set:
+      - Still daily decision points (ts_sig = last hour of day d)
+      - But we train on assets that are already trending (not just extreme movers).
+    Selection logic (simple + robust):
+      - Take top/bottom quantile by a_trend (trend_pct) each day, with min/max per side.
+      - This gives the model enough 'continuation' examples.
+
+    Label y is same regression target: future return over label_horizon_hours from next-day entry close.
+    """
+    c = panel["close"]
+    days = pd.Index(sorted(set(c.index.floor("D"))))
+    rows = []
+
+    qv_day = feats["qv"].groupby(feats["qv"].index.floor("D")).sum()
+
+    for di in range(len(days) - 2):
+        d = days[di]
+        d_next = days[di + 1]
+
+        mask_d = (c.index.floor("D") == d)
+        if not mask_d.any():
+            continue
+        ts_sig = c.index[mask_d][-1]
+
+        mask_next = (c.index.floor("D") == d_next)
+        if not mask_next.any():
+            continue
+        ts_entry = c.index[mask_next][0]
+
+        ts_exit = ts_entry + pd.Timedelta(hours=cfg["label_horizon_hours"])
+        if ts_exit not in c.index:
+            continue
+
+        # universe by daily quote volume
+        if d not in qv_day.index:
+            continue
+        qv = qv_day.loc[d].dropna().sort_values(ascending=False)
+        uni = [s for s in qv.head(cfg["universe_topN"]).index if s in universe_syms]
+        if not uni:
+            continue
+
+        if ts_sig not in mkt_df_with_gates.index:
+            continue
+        mkt_row = mkt_df_with_gates.loc[ts_sig]
+
+        # Trend-follow focus: select strong trenders by trend_pct at ts_sig
+        trend_ser = feats["trend_pct"].loc[ts_sig, uni].dropna()
+        if len(trend_ser) == 0:
+            continue
+
+        # top and bottom trenders (continuation candidates)
+        pos = trend_ser.sort_values(ascending=False)
+        neg = trend_ser.sort_values(ascending=True)
+
+        k = max(cfg["tf_train_min"], int(len(trend_ser) * cfg["tf_train_pct"]))
+        k = min(k, cfg["tf_train_max"])
+
+        top_syms = pos.head(k).index.tolist()
+        bot_syms = neg.head(k).index.tolist()
+        train_syms = set(top_syms) | set(bot_syms)
+        if not train_syms:
+            continue
+
+        # breadth over whole universe at ts_sig
+        uni_ret24 = feats["ret24h"].loc[ts_sig, uni].dropna()
+        if len(uni_ret24) == 0:
+            continue
+        breadth_pos = float((uni_ret24 > 0).mean())
+        breadth_neg = float((uni_ret24 < 0).mean())
+        uni_mom     = float(uni_ret24.mean())
+        uni_disp    = float(uni_ret24.std(ddof=0))
+
+        for sym in train_syms:
+            if sym not in c.columns:
+                continue
+            try:
+                x = {
+                    "day": d,
+                    "ts_sig": ts_sig,
+                    "symbol": sym,
+
+                    # asset features (same as MR builder)
+                    "a_ret24h": float(feats["ret24h"].loc[ts_sig, sym]),
+                    "a_ret6h":  float(feats["ret6h"].loc[ts_sig, sym]),
+                    "a_atr":    float(feats["atr_pct"].loc[ts_sig, sym]),
+                    "a_rsi":    float(feats["rsi"].loc[ts_sig, sym]),
+                    "a_volz":   float(feats["vol_z"].loc[ts_sig, sym]),
+                    "a_trend":  float(feats["trend_pct"].loc[ts_sig, sym]),
+                    "a_rv24":   float(feats["rv_24h"].loc[ts_sig, sym]),
+                    "a_range":  float(feats["range_pct"].loc[ts_sig, sym]),
+                    "a_gap":    float(feats["gap_pct"].loc[ts_sig, sym]),
+                    "a_body":   float(feats["body_pct"].loc[ts_sig, sym]),
+
+                    # market features
+                    "mkt_ret24h": float(mkt_row["mkt_ret24h"]),
+                    "mkt_ret6h":  float(mkt_row["mkt_ret6h"]),
+                    "mkt_trend":  float(mkt_row["mkt_trend"]),
+                    "mkt_rv":     float(mkt_row["mkt_rv"]),
+
+                    # gates
+                    "G_VOL": int(mkt_row["G_VOL"]),
+                    "G_TREND": int(mkt_row["G_TREND"]),
+
+                    # breadth
+                    "u_breadth_pos": breadth_pos,
+                    "u_breadth_neg": breadth_neg,
+                    "u_mom":         uni_mom,
+                    "u_disp":        uni_disp,
+                }
+            except Exception:
+                continue
+
+            c0 = c.loc[ts_entry, sym]
+            c1 = c.loc[ts_exit, sym]
+            if pd.isna(c0) or pd.isna(c1) or c0 <= 0:
+                continue
+            x["y"] = float((c1 / c0) - 1.0)
+            rows.append(x)
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df, []
+
+    gate_cols = ["G_VOL", "G_TREND"]
+    df = apply_interaction_toggles(
+        df,
+        causal_cols=cfg["causal_cols"],
+        gate_cols=gate_cols,
+        drop_raw=cfg["drop_raw_causal"]
+    )
+
+    feat_cols = [c for c in df.columns if c not in ("day","ts_sig","symbol","y")]
+    df = df.dropna(subset=feat_cols + ["y"])
+    return df, feat_cols
+
+def mix_predictions(mr_pred, tf_pred, G_VOL, G_TREND, cfg):
+    """
+    Regime-based mixture:
+      - In high vol (G_VOL=1), emphasize mean reversion
+      - In strong push (G_TREND=1), emphasize trend follow
+    We compute weights and return blended prediction.
+
+    cfg knobs:
+      - mix_base_mr, mix_base_tf
+      - mix_add_mr_on_vol
+      - mix_add_tf_on_trend
+    """
+    w_mr = cfg["mix_base_mr"] + cfg["mix_add_mr_on_vol"] * int(G_VOL)
+    w_tf = cfg["mix_base_tf"] + cfg["mix_add_tf_on_trend"] * int(G_TREND)
+
+    s = w_mr + w_tf
+    if s <= 0:
+        return mr_pred  # fallback
+    w_mr /= s
+    w_tf /= s
+    return w_mr * mr_pred + w_tf * tf_pred
+
 
 # =========================
 # Backtest (last 3 years) using regression outputs -> thresholds -> wallet cap -> TP/SL
@@ -562,11 +721,22 @@ def backtest_last_3y(panel, feats, mkt_df_with_gates, cfg, margin_symbols):
         raise ValueError("No overlap between fetched OHLCV symbols and margin-market symbols.")
 
     # build daily samples (extreme movers only) with gates+interactions
-    samples, feat_cols = build_daily_samples_regression_with_gates(
-        panel, feats, mkt_df_with_gates, cfg, universe_syms=symbols
-    )
-    if samples.empty:
-        raise ValueError("No samples built (check history length, universe size, or extreme-mover criteria).")
+   # MR samples (extreme movers) + TF samples (trend movers)
+   samples_mr, feat_cols_mr = build_daily_samples_regression_with_gates(
+       panel, feats, mkt_df_with_gates, cfg, universe_syms=symbols
+   )
+   samples_tf, feat_cols_tf = build_daily_samples_trend_follow(
+       panel, feats, mkt_df_with_gates, cfg, universe_syms=symbols
+   )
+   
+   if samples_mr.empty or samples_tf.empty:
+       raise ValueError("Samples missing (MR or TF). Adjust universe/history or selection criteria.")
+   
+   # Require same feature set to keep model mixing simple (recommended)
+   if feat_cols_mr != feat_cols_tf:
+       raise ValueError("Feature columns differ between MR and TF sample builders. Keep them aligned.")
+   feat_cols = feat_cols_mr
+
 
     last_day = c.index.floor("D").max()
     start_day = last_day - pd.Timedelta(days=365*3)
@@ -580,8 +750,10 @@ def backtest_last_3y(panel, feats, mkt_df_with_gates, cfg, margin_symbols):
 
     daily_borrow = cfg["borrow_apr"] / 365.0
     fee_rt = cfg["fee_bps"] / 1e4
+   
+   coef_persist_mr = CoefPersistence(window=cfg["coef_persist_window"])
+   coef_persist_tf = CoefPersistence(window=cfg["coef_persist_window"])
 
-    coef_persist = CoefPersistence(window=cfg["coef_persist_window"])
 
     for di in range(len(days) - 2):
         d = days[di]
@@ -607,10 +779,46 @@ def backtest_last_3y(panel, feats, mkt_df_with_gates, cfg, margin_symbols):
             continue
 
         # fit model
-        model = make_elasticnet_reg(alpha=cfg["alpha"], l1_ratio=cfg["l1_ratio"])
-        Xtr = train[feat_cols].values
-        ytr = train["y"].values.astype(float)
-        model.fit(Xtr, ytr)
+         # --- Train MR model ---
+         train_mr = samples_mr[(samples_mr["day"] >= train_start) & (samples_mr["day"] <= train_end)]
+         if len(train_mr) < cfg["min_train_samples_mr"]:
+             continue
+         
+         model_mr = make_elasticnet_reg(alpha=cfg["alpha_mr"], l1_ratio=cfg["l1_ratio_mr"])
+         Xtr_mr = train_mr[feat_cols].values
+         ytr_mr = train_mr["y"].values.astype(float)
+         model_mr.fit(Xtr_mr, ytr_mr)
+         coef_persist_mr.update(model_mr, feat_cols)
+         
+         stable_mask_mr = coef_persist_mr.stable_feature_mask(
+             min_nonzero_rate=cfg["min_feat_nonzero_rate"],
+             min_sign_consistency=cfg["min_feat_sign_consistency"]
+         )
+         stability_mr = coef_persist_mr.model_stability_score(
+             min_nonzero_rate=cfg["min_feat_nonzero_rate"],
+             min_sign_consistency=cfg["min_feat_sign_consistency"]
+         )
+         
+         # --- Train TF model ---
+         train_tf = samples_tf[(samples_tf["day"] >= train_start) & (samples_tf["day"] <= train_end)]
+         if len(train_tf) < cfg["min_train_samples_tf"]:
+             continue
+         
+         model_tf = make_elasticnet_reg(alpha=cfg["alpha_tf"], l1_ratio=cfg["l1_ratio_tf"])
+         Xtr_tf = train_tf[feat_cols].values
+         ytr_tf = train_tf["y"].values.astype(float)
+         model_tf.fit(Xtr_tf, ytr_tf)
+         coef_persist_tf.update(model_tf, feat_cols)
+         
+         stable_mask_tf = coef_persist_tf.stable_feature_mask(
+             min_nonzero_rate=cfg["min_feat_nonzero_rate"],
+             min_sign_consistency=cfg["min_feat_sign_consistency"]
+         )
+         stability_tf = coef_persist_tf.model_stability_score(
+             min_nonzero_rate=cfg["min_feat_nonzero_rate"],
+             min_sign_consistency=cfg["min_feat_sign_consistency"]
+         )
+
 
         # update coefficient persistence tracker
         coef_persist.update(model, feat_cols)
@@ -626,23 +834,70 @@ def backtest_last_3y(panel, feats, mkt_df_with_gates, cfg, margin_symbols):
             min_sign_consistency=cfg["min_feat_sign_consistency"]
         )
 
-        # if model too unstable, optionally skip trading day
-        if stability_score < cfg["min_model_stability_to_trade"]:
-            eq_curve.append((d_next, equity))
-            continue
+      # Skip trading if BOTH models are too unstable
+      if (stability_mr < cfg["min_model_stability_to_trade"]) and (stability_tf < cfg["min_model_stability_to_trade"]):
+          eq_curve.append((d_next, equity))
+          continue
+      
+      # Effective cap uses regime-blended stability:
+      # When vol gate is on, rely more on MR stability; when trend gate is on, rely more on TF stability.
+      # Use today's market gate from any row (same across symbols for the day)
+      G_VOL_day = int(today["G_VOL"].iloc[0])
+      G_TREND_day = int(today["G_TREND"].iloc[0])
+      
+      # same mixture weights used for predictions but applied to stability
+      w_mr = cfg["mix_base_mr"] + cfg["mix_add_mr_on_vol"] * G_VOL_day
+      w_tf = cfg["mix_base_tf"] + cfg["mix_add_tf_on_trend"] * G_TREND_day
+      s = w_mr + w_tf
+      if s <= 0:
+          blended_stability = stability_mr
+      else:
+          blended_stability = (w_mr/s) * stability_mr + (w_tf/s) * stability_tf
+      
+      target = max(cfg["target_model_stability"], 1e-6)
+      stability_scale = min(1.0, max(0.0, blended_stability / target))
+      effective_gross_cap = cfg["wallet_gross_cap"] * stability_scale
+
 
         # today's candidate rows: NOTE samples include only extreme movers (by construction)
-        today = samples[samples["day"] == d].copy()
-        if today.empty:
-            eq_curve.append((d_next, equity))
-            continue
+         today_mr = samples_mr[samples_mr["day"] == d].copy()
+         today_tf = samples_tf[samples_tf["day"] == d].copy()
+         if today_mr.empty or today_tf.empty:
+             eq_curve.append((d_next, equity))
+             continue
+         
+         # Align by symbol (inner join) so we can blend per-asset.
+         today = pd.merge(
+             today_mr[["symbol","G_VOL","G_TREND"] + feat_cols],
+             today_tf[["symbol"] + feat_cols],
+             on="symbol",
+             suffixes=("_mr", "_tf"),
+             how="inner"
+         )
+         if today.empty:
+             eq_curve.append((d_next, equity))
+             continue
+         
+         # Predict MR
+         X_mr = today[[c + "_mr" for c in feat_cols]].values.copy()
+         if stable_mask_mr is not None:
+             X_mr[:, ~stable_mask_mr] = 0.0
+         pred_mr = model_mr.predict(X_mr)
+         
+         # Predict TF
+         X_tf = today[[c + "_tf" for c in feat_cols]].values.copy()
+         if stable_mask_tf is not None:
+             X_tf[:, ~stable_mask_tf] = 0.0
+         pred_tf = model_tf.predict(X_tf)
+         
+         # Blend per row using regime gates
+         today["pred_mr"] = pred_mr
+         today["pred_tf"] = pred_tf
+         today["pred"] = [
+             mix_predictions(mr, tf, gv, gt, cfg)
+             for mr, tf, gv, gt in zip(pred_mr, pred_tf, today["G_VOL"].values, today["G_TREND"].values)
+         ]
 
-        # apply feature stability gating: zero-out unstable features before prediction
-        X = today[feat_cols].values.copy()
-        if stable_mask is not None:
-            X[:, ~stable_mask] = 0.0
-
-        today["pred"] = model.predict(X)
 
         # candidate gating via predicted return thresholds
         long_df  = today[today["pred"] >= cfg["thr_long"]].copy()
@@ -754,7 +1009,8 @@ def backtest_last_3y(panel, feats, mkt_df_with_gates, cfg, margin_symbols):
         sharpe = np.nan; cagr = np.nan; max_dd = np.nan
 
     # coefficient persistence summary
-    coef_summary = coef_persist.stats().sort_values(["nonzero_rate","sign_consistency"], ascending=False)
+    coef_summary_mr = coef_persist_mr.stats().sort_values(["nonzero_rate","sign_consistency"], ascending=False)
+    coef_summary_tf = coef_persist_tf.stats().sort_values(["nonzero_rate","sign_consistency"], ascending=False)
 
     stats = {
         "total_return": float(eq.iloc[-1] - 1.0) if len(eq) else np.nan,
@@ -764,7 +1020,28 @@ def backtest_last_3y(panel, feats, mkt_df_with_gates, cfg, margin_symbols):
         "n_trades": int(len(trades_df)) if not trades_df.empty else 0,
     }
 
-    return eq, trades_df, stats, coef_summary
+    return eq, trades_df, stats, coef_summary_mr, coef_summary_tf
+
+
+# --- TF training selection ---
+"tf_train_pct": 0.05,
+"tf_train_min": 5,
+"tf_train_max": 20,
+
+# --- Two-model hyperparams / train minimums ---
+"alpha_mr": 5e-4,
+"l1_ratio_mr": 0.30,
+"min_train_samples_mr": 1500,
+
+"alpha_tf": 5e-4,
+"l1_ratio_tf": 0.30,
+"min_train_samples_tf": 1500,
+
+# --- Mixture weights (regime-based) ---
+"mix_base_mr": 1.0,
+"mix_base_tf": 1.0,
+"mix_add_mr_on_vol": 1.0,     # when G_VOL=1 -> more MR
+"mix_add_tf_on_trend": 1.0,   # when G_TREND=1 -> more TF
 
 
 # =========================

@@ -18,6 +18,7 @@ def calculate_selection_score(y_true, y_prob, y_returns):
     """
     S_model = (AUC - 0.5) * BSS * IC
     """
+    tprint(f"Entering function: calculate_selection_score in model_race.py")
     # 1. AUC (Ranking)
     # y_true must be binary.
     try:
@@ -54,6 +55,7 @@ def calculate_selection_score(y_true, y_prob, y_returns):
 
 class ModelRace(BaseEstimator, ClassifierMixin):
     def __init__(self, kind="mr", n_splits=3):
+        tprint(f"Entering function: __init__ in model_race.py")
         self.kind = kind
         self.n_splits = n_splits
         self.best_model = None
@@ -61,6 +63,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         self.metrics = {}
 
     def _get_candidates(self):
+        tprint(f"Entering function: _get_candidates in model_race.py")
         candidates = {}
 
         # 1. Baseline
@@ -121,6 +124,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         sample_weight: weights for training
         returns: continuous returns for IC calculation (validation)
         """
+        tprint(f"Entering function: fit in model_race.py")
         candidates = self._get_candidates()
         tscv = TimeSeriesSplit(n_splits=self.n_splits)
 
@@ -197,10 +201,12 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         return self
 
     def predict_proba(self, X):
+        tprint(f"Entering function: predict_proba in model_race.py")
         if self.best_model is None:
             raise ValueError("ModelRace not fitted")
         return self.best_model.predict_proba(X)
 
     def predict(self, X):
         # Return probability class 1
+        tprint(f"Entering function: predict in model_race.py")
         return self.predict_proba(X)[:, 1]

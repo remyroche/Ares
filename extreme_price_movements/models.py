@@ -2,8 +2,10 @@ import numpy as np
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import ElasticNet, LogisticRegression
+from .utils import tprint
 
 def make_elasticnet_reg(alpha=1e-3, l1_ratio=0.2):
+    tprint(f"Entering function: make_elasticnet_reg in models.py")
     return Pipeline([
         ("scaler", StandardScaler(with_mean=True, with_std=True)),
         ("reg", ElasticNet(
@@ -16,6 +18,7 @@ def make_elasticnet_reg(alpha=1e-3, l1_ratio=0.2):
     ])
 
 def make_exhaustion_model(C=1.0, l1_ratio=0.3):
+    tprint(f"Entering function: make_exhaustion_model in models.py")
     return Pipeline([
         ("scaler", StandardScaler(with_mean=True, with_std=True)),
         ("clf", LogisticRegression(
@@ -29,6 +32,7 @@ def make_exhaustion_model(C=1.0, l1_ratio=0.3):
     ])
 
 def map_pred_to_score(pred_ret, mode="tanh", scale=10.0):
+    tprint(f"Entering function: map_pred_to_score in models.py")
     x = float(pred_ret) * float(scale)
     if mode == "tanh":
         return float(np.tanh(max(0.0, x)))

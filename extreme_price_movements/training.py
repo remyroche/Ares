@@ -9,6 +9,7 @@ from extreme_price_movements.candidates import select_trade_candidates_hourly
 import extreme_price_movements.fast_funcs as ff
 
 def apply_interaction_toggles(df: pd.DataFrame, causal_cols, gate_cols, drop_raw=True):
+    tprint(f"Entering function: apply_interaction_toggles in training.py")
     out = df.copy()
     for g in gate_cols:
         if g not in out.columns:
@@ -22,6 +23,7 @@ def apply_interaction_toggles(df: pd.DataFrame, causal_cols, gate_cols, drop_raw
     return out
 
 def compute_weights_logic(df, cfg, model_kind):
+    tprint(f"Entering function: compute_weights_logic in training.py")
     from extreme_price_movements.model_mr import compute_mr_weights
     from extreme_price_movements.model_tf import compute_tf_weights
     if model_kind == "mr": return compute_mr_weights(df, cfg)
@@ -29,6 +31,7 @@ def compute_weights_logic(df, cfg, model_kind):
 
 def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, syms, trend_filter=None):
     # (Same as before)
+    tprint(f"Entering function: build_exhaustion_Xy in training.py")
     c = panel["close"]
     idx = c.index
     H = int(cfg["exh_horizon_hours"])
@@ -80,6 +83,7 @@ def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, sy
 
 def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms, models=None):
     # (Same as before)
+    tprint(f"Entering function: compute_p_exhaustion_at_t in training.py")
     t_index = pd.DatetimeIndex([ts], tz="UTC")
     valid_syms = [s for s in syms if s in panel["close"].columns]
     trend_vals = feats["trend_pct"].loc[ts, valid_syms]
@@ -117,6 +121,7 @@ def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms, models=Non
     return out_probs.fillna(0.0)
 
 def _build_pred_X(feats, mkt_gates, cfg, ts, syms):
+    tprint(f"Entering function: _build_pred_X in training.py")
     t_index = pd.DatetimeIndex([ts], tz="UTC")
     X_parts = []
     for k in cfg["exh_feature_keys"]:
@@ -131,6 +136,7 @@ def _build_pred_X(feats, mkt_gates, cfg, ts, syms):
 
 def generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, syms):
     # (Same as before)
+    tprint(f"Entering function: generate_exhaustion_history in training.py")
     train_end = ts_end - pd.Timedelta(hours=lookback_hours)
     train_len = cfg["exh_train_lookback_hours"]
     X_up, y_up, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, train_end, train_len, syms, trend_filter="up")
@@ -161,6 +167,7 @@ def generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_end, lookback_h
     return res_df
 
 def _build_pred_X_window(feats, mkt_gates, cfg, t_idx, syms):
+    tprint(f"Entering function: _build_pred_X_window in training.py")
     X_parts = []
     for k in cfg["exh_feature_keys"]:
         if k in feats:
@@ -174,6 +181,7 @@ def _build_pred_X_window(feats, mkt_gates, cfg, t_idx, syms):
 
 def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts_end, p_exh_hist, H, model_kind, trend_filter=None):
     # (Same as before)
+    tprint(f"Entering function: build_hourly_training_set_and_weights in training.py")
     c = panel["close"]
     idx = c.index
     ts_start = ts_end - pd.Timedelta(hours=int(cfg["train_lookback_hours"]))
@@ -498,6 +506,7 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, mod
     return {"granular_risk": best_params}
 
 def select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
+    tprint(f"Entering function: select_best_horizon in training.py")
     directions = ["up", "down"]
     kinds = ["mr", "tf"]
     final_models = {}

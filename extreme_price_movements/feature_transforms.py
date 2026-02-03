@@ -1,9 +1,11 @@
 import numpy as np
 import pandas as pd
 import extreme_price_movements.fast_funcs as ff
+from .utils import tprint
 
 class CausalFeatureTransformer:
     def __init__(self, winsor_qt=0.02, roll_window=24*30):
+        tprint(f"Entering function: __init__ in feature_transforms.py")
         self.winsor_qt = winsor_qt
         self.roll_window = roll_window
 
@@ -13,6 +15,7 @@ class CausalFeatureTransformer:
         df: DataFrame (time x features) or (time x symbols) for a single feature?
         Usually features are wide panels (time x symbols) per feature key.
         """
+        tprint(f"Entering function: transform in feature_transforms.py")
         # 1. Log transform (signed log for negative values handling)
         # Using arcsinh is safer for 0 and negative values than log.
         # But if user insists on log, maybe log1p? Arcsinh is standard for this.
@@ -52,6 +55,7 @@ class CausalFeatureTransformer:
 
 def log_winsor_zscore_rolling(series: pd.Series, window: int = 720, qt: float = 0.02) -> pd.Series:
     """Helper for single series causal transform"""
+    tprint(f"Entering function: log_winsor_zscore_rolling in feature_transforms.py")
     x = np.arcsinh(series)
     x_df = x.to_frame()
 

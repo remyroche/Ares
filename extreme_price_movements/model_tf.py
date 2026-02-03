@@ -11,6 +11,7 @@ def compute_tf_weights(df: pd.DataFrame, cfg: dict) -> np.ndarray:
     w_tf = 1 + a*(1 - p_exh_lag1) + b*clip(|trend_pct|) + c*G_TREND
     Downweight high vol.
     """
+    tprint(f"Entering function: compute_tf_weights in model_tf.py")
     a = 2.0
     b = 1.0
     c = 1.0
@@ -30,12 +31,14 @@ def compute_tf_weights(df: pd.DataFrame, cfg: dict) -> np.ndarray:
 
 class TFModel:
     def __init__(self, lasso_alpha=0.001):
+        tprint(f"Entering function: __init__ in model_tf.py")
         self.lasso_alpha = lasso_alpha
         self.models = []
         self.selected_features = None
 
     def fit(self, X: pd.DataFrame, y: np.ndarray, sample_weight: np.ndarray = None):
         # 1. Lasso Selection
+        tprint(f"Entering function: fit in model_tf.py")
         scaler = StandardScaler()
         X_scaled = pd.DataFrame(scaler.fit_transform(X), columns=X.columns, index=X.index)
 
@@ -74,6 +77,7 @@ class TFModel:
         """
         Returns (trimmed_median_preds, dispersion_metric)
         """
+        tprint(f"Entering function: predict in model_tf.py")
         if not self.models or self.selected_features is None:
             raise ValueError("TF Model not fitted")
 

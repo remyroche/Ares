@@ -8,6 +8,7 @@ from extreme_price_movements.utils import tprint
 
 class ExhaustionModel:
     def __init__(self, C=1.0, l1_ratio=0.3, cv_splits=5):
+        tprint(f"Entering function: __init__ in exhaustion.py")
         self.C = C
         self.l1_ratio = l1_ratio
         self.cv_splits = cv_splits
@@ -15,6 +16,7 @@ class ExhaustionModel:
         self.metrics = {}
 
     def _make_base_estimator(self):
+        tprint(f"Entering function: _make_base_estimator in exhaustion.py")
         return LogisticRegression(
             penalty="elasticnet",
             solver="saga",
@@ -29,6 +31,7 @@ class ExhaustionModel:
         """
         Fits the model with Platt Scaling calibration using TimeSeriesSplit.
         """
+        tprint(f"Entering function: fit in exhaustion.py")
         base_clf = self._make_base_estimator()
 
         # Use CalibratedClassifierCV with TimeSeriesSplit
@@ -52,6 +55,7 @@ class ExhaustionModel:
         return self
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        tprint(f"Entering function: predict_proba in exhaustion.py")
         if self.model is None:
             raise ValueError("Model not fitted")
         return self.model.predict_proba(X)[:, 1]
@@ -61,6 +65,7 @@ class ExhaustionModel:
         Computes OOF probabilities manually to get accurate performance metrics.
         Returns: (oof_probs, metrics)
         """
+        tprint(f"Entering function: compute_oof_predictions in exhaustion.py")
         tscv = TimeSeriesSplit(n_splits=self.cv_splits)
         oof_preds = np.full(len(y), np.nan)
 

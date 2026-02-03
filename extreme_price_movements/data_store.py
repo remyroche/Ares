@@ -11,12 +11,14 @@ from datetime import timezone
 from extreme_price_movements.utils import tprint, retry_with_backoff
 
 def make_spot_exchange():
+    tprint(f"Entering function: make_spot_exchange in data_store.py")
     ex = ccxt.binance({"enableRateLimit": True})
     ex.load_markets()
     return ex
 
 @retry_with_backoff(retries=3, backoff_in_seconds=2)
 def _fetch_ohlcv_paged(exchange, symbol, since_ms, until_ms, timeframe="1h", limit=1000):
+    tprint(f"Entering function: _fetch_ohlcv_paged in data_store.py")
     out = []
     since = since_ms
     while True:
@@ -50,6 +52,7 @@ def _fetch_ohlcv_paged(exchange, symbol, since_ms, until_ms, timeframe="1h", lim
     return df
 
 def fetch_ohlcv_all_7d_chunks(exchange, symbol, since_ms, timeframe="1h", limit=1000):
+    tprint(f"Entering function: fetch_ohlcv_all_7d_chunks in data_store.py")
     chunk_ms = int(pd.Timedelta(days=7).total_seconds() * 1000)
     now_ms = int(pd.Timestamp.utcnow().value // 10**6)
 
@@ -74,20 +77,24 @@ def fetch_ohlcv_all_7d_chunks(exchange, symbol, since_ms, timeframe="1h", limit=
 
 class PartitionedOHLCVStore:
     def __init__(self, root_dir="data", timeframe="1h"):
+        tprint(f"Entering function: __init__ in data_store.py")
         self.root_dir = root_dir
         self.timeframe = timeframe
         self.ohlcv_dir = os.path.join(root_dir, "ohlcv")
         os.makedirs(self.ohlcv_dir, exist_ok=True)
 
     def _get_symbol_dir(self, symbol: str) -> str:
+        tprint(f"Entering function: _get_symbol_dir in data_store.py")
         safe_sym = symbol.replace("/", "_")
         return os.path.join(self.ohlcv_dir, f"symbol={safe_sym}")
 
     def _get_meta_path(self, symbol: str) -> str:
+        tprint(f"Entering function: _get_meta_path in data_store.py")
         safe_sym = symbol.replace("/", "_")
         return os.path.join(self.ohlcv_dir, f"{safe_sym}.meta.json")
 
     def _read_meta(self, symbol: str) -> dict:
+        tprint(f"Entering function: _read_meta in data_store.py")
         path = self._get_meta_path(symbol)
         if os.path.exists(path):
             try:
@@ -98,6 +105,7 @@ class PartitionedOHLCVStore:
         return {}
 
     def _write_meta(self, symbol: str, meta: dict):
+        tprint(f"Entering function: _write_meta in data_store.py")
         path = self._get_meta_path(symbol)
         try:
             with open(path, "w") as f:
@@ -106,6 +114,7 @@ class PartitionedOHLCVStore:
             tprint(f"Error writing meta for {symbol}: {e}")
 
     def _downcast(self, df: pd.DataFrame) -> pd.DataFrame:
+        tprint(f"Entering function: _downcast in data_store.py")
         if df.empty:
             return df
         out = df.copy()
@@ -119,6 +128,7 @@ class PartitionedOHLCVStore:
         Load data for symbol.
         columns: list of columns to read (optimization).
         """
+        tprint(f"Entering function: load in data_store.py")
         sym_dir = self._get_symbol_dir(symbol)
         if not os.path.exists(sym_dir):
             return pd.DataFrame(columns=["open","high","low","close","volume"]).set_index(
@@ -155,6 +165,7 @@ class PartitionedOHLCVStore:
             )
 
     def save_partitioned(self, symbol: str, df: pd.DataFrame):
+        tprint(f"Entering function: save_partitioned in data_store.py")
         if df.empty:
             return
 
@@ -194,6 +205,7 @@ class PartitionedOHLCVStore:
                 self.compact_partition(symbol, year, month)
 
     def compact_partition(self, symbol: str, year: int, month: int):
+        tprint(f"Entering function: compact_partition in data_store.py")
         sym_dir = self._get_symbol_dir(symbol)
         part_dir = os.path.join(sym_dir, f"year={year}", f"month={month:02d}")
 
@@ -230,6 +242,7 @@ class PartitionedOHLCVStore:
 
     def update_symbol(self, exchange, symbol: str, since_ms: int) -> pd.DataFrame:
         # Check metadata first to avoid IO
+        tprint(f"Entering function: update_symbol in data_store.py")
         meta = self._read_meta(symbol)
         last_ts_ms = meta.get("last_ts_ms", 0)
 
@@ -274,6 +287,7 @@ class PartitionedOHLCVStore:
         return self.load(symbol)
 
 def check_data_health(df: pd.DataFrame, timeframe="1h") -> dict:
+    tprint(f"Entering function: check_data_health in data_store.py")
     if df.empty:
         return {"status": "empty", "completeness": 0.0, "missing_count": 0}
 
@@ -306,6 +320,7 @@ def check_data_health(df: pd.DataFrame, timeframe="1h") -> dict:
     }
 
 def to_panel(dfs_by_symbol: dict[str, pd.DataFrame]):
+    tprint(f"Entering function: to_panel in data_store.py")
     keys = ["open","high","low","close","volume"]
     panel = {}
     for k in keys:

@@ -1,4 +1,5 @@
 import numpy as np
+from .utils import tprint
 
 class TrailingStop:
     def __init__(
@@ -11,6 +12,7 @@ class TrailingStop:
         k_trail_dist: float = 1.0,
         score_conf: float = 0.0 # New param
     ):
+        tprint(f"Entering function: __init__ in risk.py")
         self.entry_px = entry_px
         self.side = side
         self.atr = atr_val
@@ -42,6 +44,7 @@ class TrailingStop:
         self.trailing_active = False
 
     def update(self, current_high: float, current_low: float, current_close: float):
+        tprint(f"Entering function: update in risk.py")
         if self.side == "long":
             stop_hit = current_low <= self.sl_px
             trail_would_trigger = False
@@ -117,9 +120,11 @@ class TrailingStop:
         return False, None, None
 
     def get_sl_px(self):
+        tprint(f"Entering function: get_sl_px in risk.py")
         return self.sl_px
 
     def to_dict(self):
+        tprint(f"Entering function: to_dict in risk.py")
         return {
             "entry_px": self.entry_px,
             "side": self.side,
@@ -135,6 +140,7 @@ class TrailingStop:
 
     @classmethod
     def from_dict(cls, d):
+        tprint(f"Entering function: from_dict in risk.py")
         obj = cls(
             entry_px=d["entry_px"],
             side=d["side"],

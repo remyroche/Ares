@@ -5706,6 +5706,18 @@ class LabelBasedLayer2(BaseStep):
                 return s.rolling(w).mean()
             return s.groupby(asset_group).rolling(w).mean().reset_index(level=0, drop=True)
 
+        # Helper: rolling max
+        def _rmax(s, w):
+            if asset_group is None:
+                return s.rolling(w).max()
+            return s.groupby(asset_group).rolling(w).max().reset_index(level=0, drop=True)
+
+        # Helper: rolling min
+        def _rmin(s, w):
+            if asset_group is None:
+                return s.rolling(w).min()
+            return s.groupby(asset_group).rolling(w).min().reset_index(level=0, drop=True)
+
         # --- A) Volatility State ---
         if 'close' in df.columns:
             section_start = time.perf_counter()
@@ -5727,6 +5739,10 @@ class LabelBasedLayer2(BaseStep):
             # Volatility Shock
             _assign_series('vol_shock', rv_w24 / (rv_w96 + eps))
             _assign_series('rv_change_w24', rv_w24 - rv_w96)
+
+            # Vol-of-Vol (Variance Risk Premium Proxy)
+            # Differentiates "information shock" vs "noise break"
+            _assign_series('vol_of_vol', _rstd(rv_w24, 20))
 
             # Tail / Jumpiness
             _assign_series('absret_mean_w24', _rmean(ret.abs(), 24))
@@ -5790,6 +5806,45 @@ class LabelBasedLayer2(BaseStep):
                     .reset_index(level=0, drop=True)
                 )
             tprint_info(f"      ⏱️ Trend block: {time.perf_counter() - section_start:.2f}s")
+
+        # --- D) Compression & Breakout Readiness ---
+        if 'high' in df.columns and 'low' in df.columns and 'close' in df.columns:
+            section_start = time.perf_counter()
+            high, low, close = df['high'], df['low'], df['close']
+            tr = high - low # Simple TR
+            atr_short = _rmean(tr, 14)
+            atr_long = _rmean(tr, 100)
+
+            # ATR Compression (< 1.0 means compressed)
+            _assign_series('atr_compression', atr_short / (atr_long + eps))
+
+            # BB Width (Coiling metric)
+            sma_20 = _rmean(close, 20)
+            std_20 = _rstd(close, 20)
+            bb_width = (4 * std_20) / (sma_20 + eps)
+            _assign_series('bb_width', bb_width)
+
+            # Range Contraction
+            range_100 = _rmean(tr, 100)
+            _assign_series('range_contraction', tr / (range_100 + eps))
+
+            tprint_info(f"      ⏱️ Compression block: {time.perf_counter() - section_start:.2f}s")
+
+        # --- E) Barrier Pressure ---
+        if 'high' in df.columns and 'low' in df.columns:
+            section_start = time.perf_counter()
+            roll_high_20 = _rmax(df['high'], 20)
+            roll_low_20 = _rmin(df['low'], 20)
+            # Re-compute ATR if needed (or assume D ran)
+            tr = df['high'] - df['low']
+            atr_20 = _rmean(tr, 20)
+
+            # Distance to barriers normalized by ATR (Pressure)
+            # Small distance + high ATR = imminent breakout
+            _assign_series('dist_to_high_z', (df['close'] - roll_high_20) / (atr_20 + eps))
+            _assign_series('dist_to_low_z', (df['close'] - roll_low_20) / (atr_20 + eps))
+
+            tprint_info(f"      ⏱️ Barrier block: {time.perf_counter() - section_start:.2f}s")
 
         # --- F) Vol-Liq Interaction ---
         if 'vol_shock' in Z.columns and 'logvol_z_w96' in Z.columns:

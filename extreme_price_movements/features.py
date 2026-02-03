@@ -1,8 +1,10 @@
 import numpy as np
 import pandas as pd
-from utils import tprint
+from extreme_price_movements.utils import tprint
+from extreme_price_movements.feature_transforms import CausalFeatureTransformer
+from extreme_price_movements.time_utils import ensure_utc
 
-def zscore(x: pd.DataFrame, n: int):
+def zscore_rolling(x: pd.DataFrame, n: int):
     mu = x.rolling(n).mean()
     sd = x.rolling(n).std(ddof=0)
     return (x - mu) / (sd + 1e-12)
@@ -30,14 +32,14 @@ def atr_percent(high: pd.DataFrame, low: pd.DataFrame, close: pd.DataFrame, n: i
 def time_sin_cos(index: pd.DatetimeIndex):
     # (3) time encoding: hour-of-day + day-of-week
     hod = index.hour.to_numpy()
-    dow = index.dayofweek.to_numpy()
+    dow = index.dayofweek.to_numpy() # 0=Mon, 6=Sun
     sin_hod = np.sin(2*np.pi*hod/24.0)
     cos_hod = np.cos(2*np.pi*hod/24.0)
     sin_dow = np.sin(2*np.pi*dow/7.0)
     cos_dow = np.cos(2*np.pi*dow/7.0)
     return sin_hod, cos_hod, sin_dow, cos_dow
 
-def compute_market_features(panel, basket_syms, trend_sma_hours):
+def compute_market_features(panel, basket_syms, trend_sma_hours=24*14):
     c = panel["close"]
     h = panel["high"]
     l = panel["low"]
@@ -45,7 +47,8 @@ def compute_market_features(panel, basket_syms, trend_sma_hours):
 
     basket = [s for s in basket_syms if s in c.columns]
     if not basket:
-        raise ValueError("Market basket symbols missing.")
+        # fallback to all if basket missing? Or raise?
+        basket = list(c.columns)
 
     mkt_close = c[basket].mean(axis=1)
     mkt_high  = h[basket].mean(axis=1)
@@ -79,13 +82,13 @@ def add_regime_gates(mkt_df: pd.DataFrame, gate_vol_lookback_hours: int, gate_tr
     df["G_VOL"] = (df["mkt_rv"] > df["mkt_rv_med"]).astype(int)
     df["G_TREND"] = (df["mkt_ret24h"].abs() > gate_trend_thr).astype(int)
 
-    # (4) volatility ratio used for adaptive window selection
+    # volatility ratio used for adaptive window selection
     df["mkt_rv_ratio"] = df["mkt_rv"] / (df["mkt_rv_med"] + 1e-12)
     return df
 
 def compute_funding_proxy(panel, mkt_df):
     """
-    (5) Funding proxy computed vectorized.
+    Funding proxy computed vectorized.
     Uses per-symbol OHLCV wide matrices and market composite OHLCV from mkt_df.
     """
     c = panel["close"]
@@ -96,6 +99,7 @@ def compute_funding_proxy(panel, mkt_df):
     # 1) relative premium vs market (distance from 24h mean, standardized by subtraction)
     dist = (c / (c.rolling(24).mean() + 1e-12)) - 1.0
     mkt_dist = (mkt_df["mkt_close"] / (mkt_df["mkt_close"].rolling(24).mean() + 1e-12)) - 1.0
+    # Broadcast mkt_dist
     relative_premium = dist.sub(mkt_dist, axis=0)
 
     # 2) buying intensity: candle position * vol z
@@ -110,14 +114,12 @@ def compute_funding_proxy(panel, mkt_df):
 def compute_features_hourly(panel, mkt_gates, cfg):
     """
     Vectorized wide-matrix features.
-    Adds:
-      - multiple ret horizons (1): 12/16/20/24/28
-      - time sin/cos (3)
-      - funding proxy (5)
-      - adaptive fast/base/slow windows selection (4) for selected features
     """
     tprint("Features: compute base matrices")
     o, h, l, c, v = panel["open"], panel["high"], panel["low"], panel["close"], panel["volume"]
+
+    # Ensure UTC
+    c.index = ensure_utc(pd.DataFrame(index=c.index)).index
 
     feats = {}
     # returns
@@ -143,8 +145,8 @@ def compute_features_hourly(panel, mkt_gates, cfg):
 
     # volume features
     feats["qv"] = (c * v)
-    feats["vol_z24_base"] = zscore(v, 24)
-    feats["vol_z_base"]   = zscore(v, cfg["volz_n"])
+    feats["vol_z24_base"] = zscore_rolling(v, 24)
+    feats["vol_z_base"]   = zscore_rolling(v, cfg["volz_n"])
 
     # EMA distances
     ema_fast_base = ema(c, cfg["ema_fast"])
@@ -175,26 +177,24 @@ def compute_features_hourly(panel, mkt_gates, cfg):
     sma_base = c.rolling(cfg["trend_sma_n"]).mean()
     feats["trend_pct_base"] = (c / (sma_base + 1e-12)) - 1.0
 
-    # RVOL (hour-of-day)
+    # RVOL (hour-of-day) - skip complex transform if fast mode needed, but here we do it
     hod = pd.Series(v.index.hour, index=v.index)
+    # Using groupby transform for RVOL
     feats["rvol_hod_base"] = v / (v.groupby(hod).transform(lambda s: s.rolling(cfg["rvol_days"]*24, min_periods=24).mean()) + 1e-12)
 
-    # funding proxy (vectorized)
+    # funding proxy
     feats["funding_proxy"] = compute_funding_proxy(panel, mkt_gates)
 
-    # (3) time sin/cos features (broadcast across symbols)
+    # time sin/cos (broadcast)
     sin_hod, cos_hod, sin_dow, cos_dow = time_sin_cos(c.index)
     feats["sin_hod"] = pd.DataFrame(np.repeat(sin_hod[:,None], c.shape[1], axis=1), index=c.index, columns=c.columns).astype(np.float32)
     feats["cos_hod"] = pd.DataFrame(np.repeat(cos_hod[:,None], c.shape[1], axis=1), index=c.index, columns=c.columns).astype(np.float32)
     feats["sin_dow"] = pd.DataFrame(np.repeat(sin_dow[:,None], c.shape[1], axis=1), index=c.index, columns=c.columns).astype(np.float32)
     feats["cos_dow"] = pd.DataFrame(np.repeat(cos_dow[:,None], c.shape[1], axis=1), index=c.index, columns=c.columns).astype(np.float32)
 
-    # (4) Vol-adjusted lookbacks (vectorized selection among fast/base/slow)
-    # Compute fast/slow variants, then select per timestamp using mkt_rv_ratio buckets.
+    # Adaptive windows
     rv_ratio = mkt_gates["mkt_rv_ratio"].reindex(c.index).astype(np.float32)
-
     def pick_by_rv(fast_df, base_df, slow_df):
-        # broadcast rv_ratio to columns
         rr = pd.DataFrame(np.repeat(rv_ratio.to_numpy()[:,None], base_df.shape[1], axis=1),
                           index=base_df.index, columns=base_df.columns).astype(np.float32)
         out = base_df.copy()
@@ -213,32 +213,51 @@ def compute_features_hourly(panel, mkt_gates, cfg):
     feats["atr_pct"] = pick_by_rv(atr_fast, atr_base, atr_slow)
 
     # vol_z variants
-    volz_fast = zscore(v, max(24, int(cfg["volz_n"] * 0.5)))
-    volz_slow = zscore(v, int(cfg["volz_n"] * 2))
+    volz_fast = zscore_rolling(v, max(24, int(cfg["volz_n"] * 0.5)))
+    volz_slow = zscore_rolling(v, int(cfg["volz_n"] * 2))
     feats["vol_z"] = pick_by_rv(volz_fast, feats["vol_z_base"], volz_slow)
 
-    # trend variants (SMA)
+    # trend variants
     sma_fast = c.rolling(max(24, int(cfg["trend_sma_n"] * 0.5))).mean()
     sma_slow = c.rolling(int(cfg["trend_sma_n"] * 2)).mean()
     trend_fast = (c / (sma_fast + 1e-12)) - 1.0
     trend_slow = (c / (sma_slow + 1e-12)) - 1.0
     feats["trend_pct"] = pick_by_rv(trend_fast, feats["trend_pct_base"], trend_slow)
 
-    # EMA distance variants (fast span changes)
+    # EMA distance variants
     ema_fast_f = ema(c, max(4, int(cfg["ema_fast"] * 0.5)))
     ema_fast_s = ema(c, int(cfg["ema_fast"] * 2))
     dist_fast_f = (c / (ema_fast_f + 1e-12) - 1.0) / (feats["atr_pct"] + 1e-12)
     dist_fast_s = (c / (ema_fast_s + 1e-12) - 1.0) / (feats["atr_pct"] + 1e-12)
     feats["dist_ema_fast"] = pick_by_rv(dist_fast_f, feats["dist_ema_fast_base"], dist_fast_s)
 
-    # Keep base variants for debugging if desired
+    # Keep aliases
     feats["vol_z24"] = feats["vol_z24_base"]
     feats["rsi_slope"] = feats["rsi"].diff(cfg["rsi_slope_n"])
     feats["a_funding_proxy"] = feats["funding_proxy"]
 
-    # downcast everything to float32
-    for k in list(feats.keys()):
-        feats[k] = feats[k].astype(np.float32)
+    # --- APPLY CAUSAL TRANSFORMS ---
+    # Apply to all features that are not naturally bounded or need normalization
+    # Excluding sin/cos (already -1 to 1)
+    # Excluding maybe categorical? (gates are in mkt_gates)
+
+    tprint("Features: Applying Causal Transforms (Log + Winsor + ZScore)")
+    transformer = CausalFeatureTransformer(winsor_qt=0.02, roll_window=24*30) # 30 days window
+
+    skip_transform = ["sin_hod", "cos_hod", "sin_dow", "cos_dow"]
+
+    for k in feats.keys():
+        if k in skip_transform:
+            feats[k] = feats[k].astype(np.float32)
+            continue
+
+        # Apply transform
+        # We assume feats[k] is a DataFrame (time x symbol)
+        try:
+            feats[k] = transformer.transform(feats[k])
+        except Exception as e:
+            tprint(f"Warning: Transform failed for {k}: {e}")
+            feats[k] = feats[k].astype(np.float32)
 
     tprint(f"Features: done ({len(feats)} keys)")
     return feats

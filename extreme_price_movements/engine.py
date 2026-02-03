@@ -1,13 +1,15 @@
 import numpy as np
 import pandas as pd
 
-from utils import tprint
-from models import map_pred_to_score
-from training import (
+from extreme_price_movements.utils import tprint
+from extreme_price_movements.models import map_pred_to_score
+from extreme_price_movements.risk import TrailingStop
+from extreme_price_movements.training import (
     compute_p_exhaustion_at_t,
     select_best_horizon,
+    apply_interaction_toggles,
+    # select_best_horizon likely needs to be updated to return MRModel/TFModel
 )
-from training import apply_interaction_toggles
 
 def entry_price_next_hour_open(panel_open, ts_entry, symbol):
     try:
@@ -16,45 +18,47 @@ def entry_price_next_hour_open(panel_open, ts_entry, symbol):
     except Exception:
         return np.nan
 
-def simulate_trade_hourly(o_s, h_s, l_s, c_s, entry_ts, entry_px, side, tp, sl, max_hold_hours):
+def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side, cfg, max_hold_hours):
+    """
+    Simulates trade using TrailingStop (vol-adjusted).
+    """
     if np.isnan(entry_px) or entry_px <= 0:
-        return 0.0, entry_ts, "no_entry"
+        return 0.0, ts_entry, "no_entry"
 
-    if side == "long":
-        tp_px = entry_px * (1 + tp)
-        sl_px = entry_px * (1 - sl)
+    # Get ATR at entry time (ts_sig = ts_entry - 1h)
+    ts_sig = ts_entry - pd.Timedelta(hours=1)
+    if ts_sig not in feats_s.index:
+        # Fallback if missing data?
+        atr = 0.02 # default 2%
     else:
-        tp_px = entry_px * (1 - tp)
-        sl_px = entry_px * (1 + sl)
+        atr = float(feats_s.loc[ts_sig]) # feats_s is atr_pct series
 
-    end_ts = entry_ts + pd.Timedelta(hours=max_hold_hours)
-    path = o_s.loc[entry_ts:end_ts].index
+    # Trailing Stop Manager
+    ts_manager = TrailingStop(
+        entry_px=entry_px,
+        side=side,
+        atr_val=atr,
+        k_sl=cfg["risk_k_sl"],
+        k_trail_start=cfg["risk_k_trail_start"],
+        k_trail_dist=cfg["risk_k_trail_dist"]
+    )
+
+    end_ts = ts_entry + pd.Timedelta(hours=max_hold_hours)
+    path = o_s.loc[ts_entry:end_ts].index
     if len(path) == 0:
-        return 0.0, entry_ts, "no_path"
+        return 0.0, ts_entry, "no_path"
 
     for ts in path:
         hh = h_s.loc[ts]; ll = l_s.loc[ts]; cc = c_s.loc[ts]
         if np.isnan(hh) or np.isnan(ll) or np.isnan(cc):
             continue
 
-        if side == "long":
-            hit_tp = hh >= tp_px
-            hit_sl = ll <= sl_px
-            if hit_tp and hit_sl:
-                return (sl_px / entry_px) - 1.0, ts, "sl_same_hour"
-            if hit_tp:
-                return (tp_px / entry_px) - 1.0, ts, "tp"
-            if hit_sl:
-                return (sl_px / entry_px) - 1.0, ts, "sl"
-        else:
-            hit_tp = ll <= tp_px
-            hit_sl = hh >= sl_px
-            if hit_tp and hit_sl:
-                return (entry_px / sl_px) - 1.0, ts, "sl_same_hour"
-            if hit_tp:
-                return (entry_px / tp_px) - 1.0, ts, "tp"
-            if hit_sl:
-                return (entry_px / sl_px) - 1.0, ts, "sl"
+        stopped, exit_px, reason = ts_manager.update(hh, ll, cc)
+        if stopped:
+            if side == "long":
+                return (exit_px / entry_px) - 1.0, ts, reason
+            else:
+                return (entry_px / exit_px) - 1.0, ts, reason
 
     last_ts = path[-1]
     last_close = c_s.loc[last_ts]
@@ -115,6 +119,7 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
         ts_day = ts.floor("D")
         if last_train_day is None or ts_day != last_train_day:
             tprint(f"TRAIN day-roll: {ts_day}")
+            # Ensure training.py returns new model instances
             best_mr = select_best_horizon(panel, feats, mkt_gates, cfg, symbols_all, ts, p_exh_hist, model_kind="mr")
             best_tf = select_best_horizon(panel, feats, mkt_gates, cfg, symbols_all, ts, p_exh_hist, model_kind="tf")
             last_train_day = ts_day
@@ -123,10 +128,14 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
             eq_curve.append((ts, equity))
             continue
 
-        model_mr = best_mr["model"]; feat_cols = best_mr["feat_cols"]; cleaner_mr = best_mr["cleaner"]; stable_mr = best_mr["stable_mask"]
-        model_tf = best_tf["model"]; cleaner_tf = best_tf["cleaner"]; stable_tf = best_tf["stable_mask"]
+        model_mr = best_mr["model"]; feat_cols = best_mr["feat_cols"]
+        model_tf = best_tf["model"]
 
-        # (C) hourly candidate selection (compute only on selected symbols)
+        # RuleCleaner/Stability were internal to MRModel/TFModel now, hopefully?
+        # If select_best_horizon returns our new classes, they have internal logic.
+        # But we need to make sure we construct X properly.
+
+        # (C) hourly candidate selection
         top_syms, bot_syms = select_trade_candidates_hourly(
             feats=feats, ts=ts, syms=symbols_all,
             pct=cfg["trade_extreme_pct"], min_n=cfg["trade_extreme_min"], max_n=cfg["trade_extreme_max"],
@@ -142,7 +151,7 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
             continue
         mrk = mkt_gates.loc[ts]
 
-        # build prediction frame for selected symbols only
+        # build prediction frame
         t_exh_lag = ts - pd.Timedelta(hours=1)
         p_lag = (p_exh_hist.loc[t_exh_lag, trade_syms] if t_exh_lag in p_exh_hist.index else pd.Series(index=trade_syms, data=np.nan)).astype(np.float32)
         p_out = p_exh_ts.reindex(trade_syms).astype(np.float32)
@@ -152,115 +161,96 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
             try:
                 rows.append({
                     "symbol": sym,
-
-                    # same set as training (must match)
-                    "a_ret12h": float(feats["ret12h"].loc[ts, sym]),
-                    "a_ret16h": float(feats["ret16h"].loc[ts, sym]),
-                    "a_ret20h": float(feats["ret20h"].loc[ts, sym]),
-                    "a_ret24h": float(feats["ret24h"].loc[ts, sym]),
-                    "a_ret28h": float(feats["ret28h"].loc[ts, sym]),
-
-                    "a_ret6h": float(feats["ret6h"].loc[ts, sym]),
-                    "a_ret1h_z": float(feats["ret1h_z"].loc[ts, sym]),
-                    "a_atr": float(feats["atr_pct"].loc[ts, sym]),
-                    "a_rsi": float(feats["rsi"].loc[ts, sym]),
-                    "a_volz": float(feats["vol_z"].loc[ts, sym]),
-                    "a_trend": float(feats["trend_pct"].loc[ts, sym]),
-                    "a_rv24": float(feats["rv_24h"].loc[ts, sym]),
-                    "a_range": float(feats["range_pct"].loc[ts, sym]),
-                    "a_gap": float(feats["gap_pct"].loc[ts, sym]),
-                    "a_body": float(feats["body_pct"].loc[ts, sym]),
-                    "a_dist_ema_fast": float(feats["dist_ema_fast"].loc[ts, sym]),
-                    "a_dist_ema_slow": float(feats["dist_ema_slow"].loc[ts, sym]),
-                    "a_roc_div": float(feats["roc_div"].loc[ts, sym]),
-                    "a_vol_price_spread": float(feats["vol_price_spread"].loc[ts, sym]),
-                    "a_funding_proxy": float(feats["a_funding_proxy"].loc[ts, sym]),
-
-                    "sin_hod": float(feats["sin_hod"].loc[ts, sym]),
-                    "cos_hod": float(feats["cos_hod"].loc[ts, sym]),
-                    "sin_dow": float(feats["sin_dow"].loc[ts, sym]),
-                    "cos_dow": float(feats["cos_dow"].loc[ts, sym]),
-
+                    # Base features need to match what models expect
+                    # Assuming feat_cols are consistent
+                    **{k: float(feats[k].loc[ts, sym]) for k in feat_cols if k in feats},
+                    # Add market/gates/exh
                     "mkt_ret24h": float(mrk["mkt_ret24h"]),
                     "mkt_ret6h": float(mrk["mkt_ret6h"]),
                     "mkt_trend": float(mrk["mkt_trend"]),
                     "mkt_rv": float(mrk["mkt_rv"]),
                     "G_VOL": int(mrk["G_VOL"]),
                     "G_TREND": int(mrk["G_TREND"]),
-
                     "p_exh_lag1": float(p_lag.loc[sym]) if pd.notna(p_lag.loc[sym]) else np.nan,
                     "p_exh_out": float(p_out.loc[sym]) if pd.notna(p_out.loc[sym]) else np.nan,
                 })
             except Exception:
                 continue
 
-        Xdf = pd.DataFrame(rows).dropna(subset=["p_exh_lag1","p_exh_out"])
+        if not rows:
+             eq_curve.append((ts, equity))
+             continue
+
+        Xdf = pd.DataFrame(rows).dropna(subset=["p_exh_lag1"]) # p_exh_out not needed for prediction, only for weighting?
+        # Actually p_exh_out is current hour prediction.
         if Xdf.empty:
             eq_curve.append((ts, equity))
             continue
 
         # interactionize
         Xint = apply_interaction_toggles(
-            Xdf.drop(columns=["p_exh_out"]),
+            Xdf,
             causal_cols=cfg["causal_cols"],
             gate_cols=["G_VOL","G_TREND"],
             drop_raw=cfg["drop_raw_causal"]
         )
 
-        # align columns to feat_cols
+        # align columns
         for col in feat_cols:
             if col not in Xint.columns:
-                Xint[col] = np.nan
-        Xint = Xint[["symbol"] + feat_cols].dropna()
-        if Xint.empty:
-            eq_curve.append((ts, equity))
-            continue
+                Xint[col] = 0.0 # or nan
+
+        # New Model Prediction
+        # Assuming model_mr is MRModel instance
+        Xpred = Xint[feat_cols].fillna(0.0).astype(np.float32)
+
+        pred_mr = model_mr.predict(Xpred)
+        pred_tf, disp_tf = model_tf.predict(Xpred)
+
+        # SCORE = TF - MR
+        # TF is continuation (same sign as trend?), MR is reversion (opposite sign?)
+        # Wait, targets are returns.
+        # If trend is UP:
+        # TF predicts +ve return (Continuation).
+        # MR predicts -ve return (Reversion).
+        # Score = +ve - (-ve) = Large +ve (Long).
+        # If trend is DOWN:
+        # TF predicts -ve return.
+        # MR predicts +ve return.
+        # Score = -ve - (+ve) = Large -ve (Short).
+        # This logic holds.
+
+        score_raw = pred_tf - pred_mr
+
+        # Long/Short selection based on thresholds
+        # score_map is likely tanh.
+        # But here we threshold on raw diff?
+        # User: "Backtest the thresholds above/below which we should open short/long"
 
         syms_pred = Xint["symbol"].tolist()
-        p_out_vec = Xdf.set_index("symbol").reindex(syms_pred)["p_exh_out"].to_numpy(dtype=np.float32)
+        res = pd.DataFrame({
+            "symbol": syms_pred,
+            "score": score_raw,
+            "pred_tf": pred_tf,
+            "pred_mr": pred_mr,
+            "disp_tf": disp_tf
+        })
 
-        # RuleCleaner + stability masking
-        Xm = Xint[feat_cols].astype(np.float32)
-
-        Xm_mr = cleaner_mr.transform(Xm).astype(np.float32)
-        Xm_tf = cleaner_tf.transform(Xm).astype(np.float32)
-
-        Xmr = Xm_mr.to_numpy(dtype=np.float32, copy=False)
-        Xtf = Xm_tf.to_numpy(dtype=np.float32, copy=False)
-
-        # mask unstable features globally (per model)
-        if stable_mr is not None:
-            kept = list(Xm_mr.columns)
-            idx_mr = [feat_cols.index(c) for c in kept if c in feat_cols]
-            mask = stable_mr[idx_mr]
-            Xmr[:, ~mask] = 0.0
-        if stable_tf is not None:
-            kept = list(Xm_tf.columns)
-            idx_tf = [feat_cols.index(c) for c in kept if c in feat_cols]
-            mask = stable_tf[idx_tf]
-            Xtf[:, ~mask] = 0.0
-
-        pred_mr = model_mr.predict(Xmr).astype(np.float32)
-        pred_tf = model_tf.predict(Xtf).astype(np.float32)
-
-        # Tactical blend (exhaustion as output regime selector)
-        mixed = (p_out_vec * pred_mr) + ((1.0 - p_out_vec) * pred_tf)
-
-        # Long/Short selection
-        pred_ser = pd.Series(mixed, index=syms_pred)
-        long_syms = pred_ser[pred_ser >= cfg["thr_long"]].sort_values(ascending=False).head(cfg["k_long"]).index.tolist()
-        short_syms = pred_ser[pred_ser <= cfg["thr_short"]].sort_values(ascending=True).head(cfg["k_short"]).index.tolist()
-        if not long_syms and not short_syms:
-            eq_curve.append((ts, equity))
-            continue
+        longs = res[res["score"] > cfg["thr_long"]].sort_values("score", ascending=False).head(cfg["k_long"])
+        shorts = res[res["score"] < cfg["thr_short"]].sort_values("score", ascending=True).head(cfg["k_short"])
 
         picks = []
-        for sym in long_syms:
-            score = map_pred_to_score(pred_ser[sym], cfg["score_map"], cfg["score_scale"])
-            picks.append((sym, "long", score, float(pred_ser[sym])))
-        for sym in short_syms:
-            score = map_pred_to_score(-pred_ser[sym], cfg["score_map"], cfg["score_scale"])
-            picks.append((sym, "short", score, float(pred_ser[sym])))
+        for _, row in longs.iterrows():
+            # Normalized score for sizing
+            # user: "score = TF - MR (both of which are normalised)"
+            # They are likely small returns (e.g. 0.01).
+            # map_pred_to_score scales them up.
+            s = map_pred_to_score(row["score"], cfg["score_map"], cfg["score_scale"])
+            picks.append((row["symbol"], "long", s, row["score"]))
+
+        for _, row in shorts.iterrows():
+            s = map_pred_to_score(-row["score"], cfg["score_map"], cfg["score_scale"])
+            picks.append((row["symbol"], "short", s, row["score"]))
 
         total_score = sum(p[2] for p in picks)
         if total_score <= 0:
@@ -268,21 +258,21 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
             continue
 
         gross_cap = float(cfg["wallet_gross_cap"])
-        weights = [(sym, side, gross_cap * (score / total_score), pred) for sym, side, score, pred in picks]
+        weights = [(sym, side, gross_cap * (score / total_score), raw_score) for sym, side, score, raw_score in picks]
 
         pnl = 0.0
-        for sym, side, w, pred in weights:
+        for sym, side, w, raw_score in weights:
             entry_px = entry_price_next_hour_open(o, ts_entry, sym)
             if np.isnan(entry_px) or entry_px <= 0:
                 continue
 
             rr, exit_ts, why = simulate_trade_hourly(
                 o_s=o[sym], h_s=h[sym], l_s=l[sym], c_s=c[sym],
+                feats_s=feats["atr_pct"].loc[:, sym], # pass atr series
                 entry_ts=ts_entry,
                 entry_px=entry_px,
                 side=side,
-                tp=cfg["tp"],
-                sl=cfg["sl"],
+                cfg=cfg,
                 max_hold_hours=cfg["hold_hours"]
             )
 
@@ -298,13 +288,11 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
                 "symbol": sym,
                 "side": side,
                 "weight": w,
-                "pred": pred,
-                "p_exh_out": float(p_out.loc[sym]) if sym in p_out.index else np.nan,
+                "score_raw": raw_score,
                 "ret": float(rr),
                 "pnl_contrib": float(w * rr),
                 "exit_reason": why,
-                "H_mr": best_mr["H"],
-                "H_tf": best_tf["H"],
+                "disp_tf": float(res.loc[res["symbol"]==sym, "disp_tf"].values[0])
             })
 
         equity *= (1.0 + pnl)

@@ -1,308 +1,366 @@
 import numpy as np
 import pandas as pd
 
-from utils import tprint
-from models import make_elasticnet_reg, make_exhaustion_model
+from extreme_price_movements.utils import tprint
+from extreme_price_movements.exhaustion import ExhaustionModel
+from extreme_price_movements.model_mr import MRModel, compute_mr_weights
+from extreme_price_movements.model_tf import TFModel, compute_tf_weights
 
-# ---------- Interaction toggles ----------
 def apply_interaction_toggles(df: pd.DataFrame, causal_cols, gate_cols, drop_raw=True):
     out = df.copy()
     for g in gate_cols:
+        if g not in out.columns:
+            continue
         for col in causal_cols:
-            out[f"{col}_{g}_0"] = out[col] * (1 - out[g])
-            out[f"{col}_{g}_1"] = out[col] * out[g]
+            if col in out.columns:
+                out[f"{col}_{g}_0"] = out[col] * (1 - out[g])
+                out[f"{col}_{g}_1"] = out[col] * out[g]
     if drop_raw:
-        out = out.drop(columns=list(causal_cols), errors="ignore")
+        out = out.drop(columns=[c for c in causal_cols if c in out.columns], errors="ignore")
     return out
 
-# ---------- RuleCleaner ----------
-class RuleCleaner:
-    def __init__(self, corr_thr=0.8):
-        self.corr_thr = float(corr_thr)
-        self.keep_cols_ = None
-
-    def fit(self, X_df: pd.DataFrame, coef_by_col: dict):
-        cols = list(X_df.columns)
-        if len(cols) <= 1:
-            self.keep_cols_ = cols
-            return self
-
-        corr = X_df.corr().abs()
-        np.fill_diagonal(corr.values, 0.0)
-
-        strength = pd.Series({c: abs(float(coef_by_col.get(c, 0.0))) for c in cols})
-        ordered = strength.sort_values(ascending=False).index.tolist()
-
-        keep = []
-        dropped = set()
-        for c in ordered:
-            if c in dropped:
-                continue
-            keep.append(c)
-            high = corr.index[corr[c] > self.corr_thr].tolist()
-            for h in high:
-                dropped.add(h)
-
-        self.keep_cols_ = keep
-        return self
-
-    def transform(self, X_df: pd.DataFrame) -> pd.DataFrame:
-        if self.keep_cols_ is None:
-            return X_df
-        cols = [c for c in self.keep_cols_ if c in X_df.columns]
-        return X_df[cols].copy()
-
-# ---------- Coef persistence ----------
-from collections import deque
-class CoefPersistence:
-    def __init__(self, window=60, nonzero_eps=1e-10):
-        self.window = int(window)
-        self.nonzero_eps = float(nonzero_eps)
-        self.coef_hist = deque(maxlen=self.window)
-        self.feature_names = None
-
-    def update(self, model_pipeline, feat_cols):
-        reg = model_pipeline.named_steps["reg"]
-        coefs = np.asarray(reg.coef_).ravel().copy()
-        if self.feature_names is None:
-            self.feature_names = list(feat_cols)
-        else:
-            if list(feat_cols) != self.feature_names:
-                self.feature_names = list(feat_cols)
-                self.coef_hist.clear()
-        self.coef_hist.append(coefs)
-
-    def stable_feature_mask(self, min_nonzero_rate=0.3, min_sign_consistency=0.7):
-        if self.feature_names is None or len(self.coef_hist) < 2:
-            return None
-        W = np.vstack(self.coef_hist)
-        nz = (np.abs(W) > self.nonzero_eps).astype(int)
-        nonzero_rate = nz.mean(axis=0)
-
-        pos = (W > self.nonzero_eps).sum(axis=0)
-        neg = (W < -self.nonzero_eps).sum(axis=0)
-        denom = (pos + neg).astype(float) + 1e-12
-        sign_consistency = np.maximum(pos, neg) / denom
-
-        stable = (nonzero_rate >= min_nonzero_rate) & (sign_consistency >= min_sign_consistency)
-        return stable
-
-    def per_symbol_stability(self, kept_cols: list[str], feat_cols_all: list[str], stable_mask_all):
-        if stable_mask_all is None:
-            return 0.0
-        idx = [feat_cols_all.index(c) for c in kept_cols if c in feat_cols_all]
-        if not idx:
-            return 0.0
-        return float(stable_mask_all[idx].mean())
-
-# ---------- Exhaustion training/pred ----------
 def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, syms):
-    """
-    Train on [ts_end-lookback .. ts_end-1]; label uses future horizon from each t in that window.
-    """
     c = panel["close"]
     idx = c.index
     H = int(cfg["exh_horizon_hours"])
+
     ts_train_end = ts_end - pd.Timedelta(hours=1)
     ts_start = ts_train_end - pd.Timedelta(hours=int(lookback_hours))
 
     if ts_train_end not in idx:
         return None, None, None
-    if (ts_train_end + pd.Timedelta(hours=H)) not in idx:
+
+    ts_future_needed = ts_train_end + pd.Timedelta(hours=H)
+    if ts_future_needed > idx.max():
+        ts_train_end = idx.max() - pd.Timedelta(hours=H)
+        if ts_train_end < ts_start:
+             return None, None, None
+
+    mask = (idx >= ts_start) & (idx <= ts_train_end + pd.Timedelta(hours=H))
+    idx_slice = idx[mask]
+
+    valid_syms = [s for s in syms if s in c.columns]
+    if not valid_syms:
         return None, None, None
 
-    syms = [s for s in syms if s in c.columns]
-    if not syms:
-        return None, None, None
+    close_sub = c.loc[idx_slice, valid_syms].astype(np.float32)
 
-    ts_ext_end = ts_train_end + pd.Timedelta(hours=H)
-    close_ext = c.loc[ts_start:ts_ext_end, syms].astype(np.float32)
-    close_win = c.loc[ts_start:ts_train_end, syms].astype(np.float32)
-    t_index = close_win.index
+    rev_close = close_sub.iloc[::-1]
+    fmax = rev_close.rolling(H).max().shift(1).iloc[::-1]
+    fmin = rev_close.rolling(H).min().shift(1).iloc[::-1]
 
-    dir_mat = np.sign(feats["ret24h"].loc[t_index, syms].astype(np.float32).values)
-    dir_mat[dir_mat == 0] = np.nan
-
-    rev = close_ext.iloc[::-1]
-    fmax_ext = rev.rolling(H + 1, min_periods=H + 1).max().iloc[::-1]
-    fmin_ext = rev.rolling(H + 1, min_periods=H + 1).min().iloc[::-1]
-    fmax = fmax_ext.loc[t_index]
-    fmin = fmin_ext.loc[t_index]
+    t_index = idx[(idx >= ts_start) & (idx <= ts_train_end)]
+    fmax = fmax.loc[t_index]
+    fmin = fmin.loc[t_index]
 
     thr = float(cfg["exh_reversal_thr"])
-    ratio_long = (fmin / (fmax + 1e-12)) - 1.0
-    ratio_short = (fmax / (fmin + 1e-12)) - 1.0
 
-    y_long = (ratio_long.values <= -thr).astype(np.int8)
-    y_short = (ratio_short.values >=  thr).astype(np.int8)
+    current = c.loc[t_index, valid_syms]
+    fut_min = fmin
+    fut_max = fmax
 
-    y = np.full_like(y_long, fill_value=-1, dtype=np.int8)
-    y[dir_mat > 0] = y_long[dir_mat > 0]
-    y[dir_mat < 0] = y_short[dir_mat < 0]
+    is_short_rev = ((fut_min / (current + 1e-12)) - 1.0) <= -thr
+    is_long_rev = ((fut_max / (current + 1e-12)) - 1.0) >= thr
 
-    # build X from configured keys (includes sin/cos time, funding proxy, etc.)
-    parts = []
-    for fk in cfg["exh_feature_keys"]:
-        mat = feats[fk].loc[t_index, syms]
-        parts.append(mat.stack(dropna=False).rename(fk))
-    X = pd.concat(parts, axis=1)
-    X.index.names = ["ts","symbol"]
+    ret24 = feats["ret24h"].loc[t_index, valid_syms]
+    dir_mat = np.sign(ret24).astype(np.int8)
 
-    # add market features/gates
-    mg = mkt_gates.loc[t_index, ["mkt_ret24h","mkt_ret6h","mkt_trend","mkt_rv","G_VOL","G_TREND"]]
+    y = np.zeros(current.shape, dtype=np.int8)
+    y[dir_mat > 0] = is_short_rev.values[dir_mat > 0].astype(np.int8)
+    y[dir_mat < 0] = is_long_rev.values[dir_mat < 0].astype(np.int8)
+
+    X_parts = []
+    keys = cfg["exh_feature_keys"]
+    for k in keys:
+        if k in feats:
+            X_parts.append(feats[k].loc[t_index, valid_syms].stack(dropna=False).rename(k))
+
+    X = pd.concat(X_parts, axis=1)
+    X.index.names = ["ts", "symbol"]
+
+    mg = mkt_gates.loc[t_index, ["mkt_ret24h", "mkt_ret6h", "mkt_trend", "mkt_rv", "G_VOL", "G_TREND"]]
     for col in mg.columns:
-        X[col] = X.index.get_level_values("ts").map(mg[col]).astype(np.float32)
+        X[col] = X.index.get_level_values("ts").map(mg[col])
 
-    y_ser = pd.DataFrame(y, index=t_index, columns=syms).stack(dropna=False).rename("y_exh")
-    y_ser = y_ser.reindex(X.index)
+    y_ser = pd.DataFrame(y, index=t_index, columns=valid_syms).stack(dropna=False).rename("y")
     X = X.join(y_ser)
+    X = X.dropna()
 
-    X = X[X["y_exh"] >= 0].dropna()
-    y_out = X["y_exh"].astype(int).to_numpy()
-    X_out = X.drop(columns=["y_exh"]).astype(np.float32)
-    return X_out, y_out, list(X_out.columns)
+    y_arr = X.pop("y").astype(int).values
+    return X, y_arr, list(X.columns)
 
 def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms):
-    Xtr, ytr, cols = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts, cfg["exh_train_lookback_hours"], syms)
-    if Xtr is None or len(ytr) < cfg["min_exh_samples"] or len(np.unique(ytr)) < 2:
-        return pd.Series(index=syms, data=np.nan, dtype=np.float32)
+    lookback = cfg["exh_train_lookback_hours"]
+    X, y, cols = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts, lookback, syms)
 
-    model = make_exhaustion_model(C=cfg["exh_C"], l1_ratio=cfg["exh_l1_ratio"])
-    model.fit(Xtr.to_numpy(dtype=np.float32, copy=False), ytr)
+    if X is None or len(y) < cfg["min_exh_samples"] or len(np.unique(y)) < 2:
+        return pd.Series(0.0, index=syms)
 
-    # build X at ts
+    model = ExhaustionModel(C=cfg["exh_C"], l1_ratio=cfg["exh_l1_ratio"])
+    model.fit(X, y)
+
     t_index = pd.DatetimeIndex([ts], tz="UTC")
-    syms2 = [s for s in syms if s in panel["close"].columns]
-    parts = []
-    for fk in cfg["exh_feature_keys"]:
-        parts.append(feats[fk].loc[t_index, syms2].stack(dropna=False).rename(fk))
-    Xp = pd.concat(parts, axis=1)
-    Xp.index.names = ["ts","symbol"]
+    valid_syms = [s for s in syms if s in panel["close"].columns]
 
-    mg = mkt_gates.loc[t_index, ["mkt_ret24h","mkt_ret6h","mkt_trend","mkt_rv","G_VOL","G_TREND"]]
+    X_parts = []
+    for k in cfg["exh_feature_keys"]:
+        if k in feats:
+            X_parts.append(feats[k].loc[t_index, valid_syms].stack(dropna=False).rename(k))
+
+    Xp = pd.concat(X_parts, axis=1)
+    Xp.index.names = ["ts", "symbol"]
+
+    mg = mkt_gates.loc[t_index, ["mkt_ret24h", "mkt_ret6h", "mkt_trend", "mkt_rv", "G_VOL", "G_TREND"]]
     for col in mg.columns:
-        Xp[col] = Xp.index.get_level_values("ts").map(mg[col]).astype(np.float32)
+        Xp[col] = Xp.index.get_level_values("ts").map(mg[col])
 
     for c in cols:
         if c not in Xp.columns:
             Xp[c] = np.nan
-    Xp = Xp[cols].dropna()
+    Xp = Xp[cols].fillna(0)
+
     if Xp.empty:
-        return pd.Series(index=syms, data=np.nan, dtype=np.float32)
+        return pd.Series(0.0, index=syms)
 
-    p = model.predict_proba(Xp.to_numpy(dtype=np.float32, copy=False))[:, 1].astype(np.float32)
-    out = pd.Series(p, index=Xp.index.get_level_values("symbol"))
-    return out.reindex(syms).astype(np.float32)
+    probs = model.predict_proba(Xp)
+    out = pd.Series(probs, index=Xp.index.get_level_values("symbol"))
+    return out.reindex(syms).fillna(0.0)
 
-# ---------- Hourly training set (merged cross-section) ----------
-def build_hourly_training_set(panel, feats, mkt_gates, cfg, syms, ts_train_end, p_exh_hist, label_horizon_hours: int):
+def generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, syms):
     """
-    Builds hourly samples (merged cross-section). Label uses chosen horizon H.
-    Adds sin/cos time features via feats['sin_hod',...] already included in feats.
+    Generates historical exhaustion probabilities for a window ending at ts_end.
+    Since models need retraining (rolling window), we approximate by training once
+    on an older window and predicting forward, or stepping?
+    Stepping is slow.
+    Approximation: Train on [ts_end - lookback*2, ts_end - lookback] ?
+    Or just train on [ts_end - lookback, ts_end] (leakage if predicting past?)
+
+    For proper causality of input feature (p_exh_lag1) for MR model training:
+    We need p_exh at time t, generated using info < t.
+
+    We can train ONE model using data up to ts_end - lookback_hours,
+    and predict for [ts_end - lookback_hours, ts_end].
+    This simulates an "expanding window" or "static model" for that period.
+    It's a reasonable approximation for weighting features.
     """
-    o, c = panel["open"], panel["close"]
+
+    train_end = ts_end - pd.Timedelta(hours=lookback_hours)
+    # Train model up to train_end
+    # Using a separate lookback for training data
+    train_len = cfg["exh_train_lookback_hours"]
+
+    X, y, cols = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, train_end, train_len, syms)
+
+    if X is None or len(y) < cfg["min_exh_samples"]:
+        return pd.DataFrame(0.0, index=pd.date_range(train_end, ts_end, freq='h'), columns=syms)
+
+    model = ExhaustionModel(C=cfg["exh_C"], l1_ratio=cfg["exh_l1_ratio"])
+    model.fit(X, y)
+
+    # Predict for the window [train_end, ts_end]
+    # We construct X for all timestamps in this window
+    t_idx = pd.date_range(train_end, ts_end, freq='h', tz="UTC")
+    t_idx = t_idx[t_idx.isin(panel["close"].index)]
+
+    # Bulk prediction
+    valid_syms = [s for s in syms if s in panel["close"].columns]
+
+    X_parts = []
+    for k in cfg["exh_feature_keys"]:
+        if k in feats:
+            # slice time
+            X_parts.append(feats[k].loc[t_idx, valid_syms].stack(dropna=False).rename(k))
+
+    Xp = pd.concat(X_parts, axis=1)
+    Xp.index.names = ["ts", "symbol"]
+
+    mg = mkt_gates.loc[t_idx, ["mkt_ret24h", "mkt_ret6h", "mkt_trend", "mkt_rv", "G_VOL", "G_TREND"]]
+    for col in mg.columns:
+        Xp[col] = Xp.index.get_level_values("ts").map(mg[col])
+
+    for c in cols:
+        if c not in Xp.columns:
+            Xp[c] = np.nan
+    Xp = Xp[cols].fillna(0)
+
+    if Xp.empty:
+        return pd.DataFrame(0.0, index=t_idx, columns=syms)
+
+    probs = model.predict_proba(Xp)
+    res_ser = pd.Series(probs, index=Xp.index)
+    res_df = res_ser.unstack(level="symbol").reindex(columns=syms).fillna(0.0)
+
+    return res_df
+
+def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts_end, p_exh_hist, H, model_kind):
+    c = panel["close"]
     idx = c.index
-    H = int(label_horizon_hours)
+    ts_start = ts_end - pd.Timedelta(hours=int(cfg["train_lookback_hours"]))
 
-    ts_start = ts_train_end - pd.Timedelta(hours=int(cfg["train_lookback_hours"]))
-    ts_start = idx[idx.get_indexer([ts_start], method="backfill")[0]]
+    valid_mask = (idx >= ts_start) & (idx <= ts_end - pd.Timedelta(hours=H))
+    t_idx = idx[valid_mask]
 
-    valid_end = idx[idx <= (idx.max() - pd.Timedelta(hours=H+1))]
-    t_all = idx[(idx >= ts_start) & (idx <= ts_train_end)]
-    t_all = t_all[t_all.isin(valid_end)]
+    if len(t_idx) == 0:
+        return None, None, None, None
+
+    metric = cfg["trade_deviation_metric"]
+    if metric not in feats:
+        return None, None, None, None
+
+    metric_df = feats[metric].loc[t_idx, [s for s in syms if s in feats[metric].columns]]
 
     rows = []
-    for t in t_all:
-        t_entry = t + pd.Timedelta(hours=1)
-        t_exit  = t_entry + pd.Timedelta(hours=H)
-        if t_entry not in idx or t_exit not in idx:
-            continue
+    for t in t_idx:
+        row_vals = metric_df.loc[t].dropna()
+        if len(row_vals) < 20: continue
 
-        sel = [s for s in syms if s in c.columns]
-        dev = feats["ret1h_z"].loc[t, sel].dropna()
-        if dev.empty:
-            continue
-        n = len(dev)
+        n = len(row_vals)
         k = max(cfg["train_extreme_min"], int(n * cfg["train_extreme_pct_hourly"]))
         k = min(k, cfg["train_extreme_max"])
-        top_syms = dev.sort_values(ascending=False).head(k).index.tolist()
-        bot_syms = dev.sort_values(ascending=True).head(k).index.tolist()
-        train_syms = list(set(top_syms) | set(bot_syms))
 
-        if t not in mkt_gates.index:
+        sorted_vals = row_vals.sort_values()
+        bot = sorted_vals.iloc[:k].index.tolist()
+        top = sorted_vals.iloc[-k:].index.tolist()
+        candidates = list(set(bot) | set(top))
+
+        t_entry = t + pd.Timedelta(hours=1)
+        t_exit = t_entry + pd.Timedelta(hours=H)
+
+        if t_exit not in c.index: continue
+
+        px_entry = panel["open"].loc[t_entry, candidates]
+        px_exit = c.loc[t_exit, candidates]
+        y = (px_exit / (px_entry + 1e-12) - 1.0)
+
+        for sym in candidates:
+            if pd.isna(y.get(sym)): continue
+
+            rec = {"symbol": sym, "ts": t, "y": y[sym]}
+
+            t_lag = t - pd.Timedelta(hours=1)
+            p_val = 0.0
+            if t_lag in p_exh_hist.index and sym in p_exh_hist.columns:
+                p_val = p_exh_hist.loc[t_lag, sym]
+            rec["p_exh_lag1"] = p_val
+
+            for k in cfg["causal_cols"]:
+                if k == "p_exh_lag1": continue
+                if k == "a_funding_proxy": k = "funding_proxy"
+                if k in feats:
+                    rec[k] = feats[k].loc[t, sym]
+
+            rec["mkt_ret24h"] = mkt_gates.loc[t, "mkt_ret24h"]
+            rec["mkt_ret6h"] = mkt_gates.loc[t, "mkt_ret6h"]
+            rec["mkt_trend"] = mkt_gates.loc[t, "mkt_trend"]
+            rec["mkt_rv"] = mkt_gates.loc[t, "mkt_rv"]
+            rec["G_VOL"] = mkt_gates.loc[t, "G_VOL"]
+            rec["G_TREND"] = mkt_gates.loc[t, "G_TREND"]
+
+            rows.append(rec)
+
+    if not rows:
+        return None, None, None, None
+
+    df = pd.DataFrame(rows).dropna()
+
+    # Compute Weights BEFORE dropping raw columns
+    if model_kind == "mr":
+        weights = compute_mr_weights(df, cfg)
+    else:
+        weights = compute_tf_weights(df, cfg)
+
+    # Apply interactions and drop raw
+    df = apply_interaction_toggles(df, cfg["causal_cols"], ["G_VOL", "G_TREND"], drop_raw=cfg["drop_raw_causal"])
+
+    y_out = df.pop("y").values.astype(np.float32)
+    X_out = df.drop(columns=["ts", "symbol"]).astype(np.float32)
+
+    return X_out, y_out, list(X_out.columns), weights
+
+def select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, model_kind="mr"):
+    horizons = cfg["label_horizons_hours"]
+    best_loss = float("inf")
+    best_res = None
+
+    for H in horizons:
+        X, y, cols, w = build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, H, model_kind)
+
+        if X is None or len(y) < cfg["min_train_samples"]:
             continue
-        mr = mkt_gates.loc[t]
 
-        entry_open = o.loc[t_entry, train_syms]
-        exit_close = c.loc[t_exit, train_syms]
-        y = (exit_close / (entry_open + 1e-12) - 1.0).astype(np.float32)
+        # Purged Validation
+        # H is the gap we need to purge.
+        # We split by time index? But X is a cross-section merged.
+        # We assume X is sorted by time (it is constructed that way).
+        # We find the index where timestamp crosses the split point.
+        # Since we dropped ts from X, we approximate by row count.
+        # Rows are roughly uniform per hour.
 
-        t_exh_lag = t - pd.Timedelta(hours=1)
-        for sym in train_syms:
-            if pd.isna(y.get(sym, np.nan)):
-                continue
-            p_lag = np.nan
-            if t_exh_lag in p_exh_hist.index and sym in p_exh_hist.columns:
-                p_lag = p_exh_hist.loc[t_exh_lag, sym]
+        n = len(X)
+        split_idx = int(n * 0.8)
 
-            try:
-                rows.append({
-                    "ts": t,
-                    "symbol": sym,
+        # Purge gap:
+        # We need to drop samples in [split_idx, split_idx + gap_rows] ?
+        # Actually, samples in X_train end at T_split. Their labels rely on [T_split, T_split+H].
+        # Samples in X_val start at T_val. Their input relies on [T_val-Lookback, T_val].
+        # For simple OOF correctness (leakage of label to input):
+        # Y_train uses future. X_val uses past.
+        # If Y_train(t) overlaps with X_val(t'), we have problem?
+        # Only if t + H > t'.
+        # So we need t' > t + H.
+        # So X_val should start at Time(X_train_last) + H.
 
-                    # returns horizons (1)
-                    "a_ret12h": float(feats["ret12h"].loc[t, sym]),
-                    "a_ret16h": float(feats["ret16h"].loc[t, sym]),
-                    "a_ret20h": float(feats["ret20h"].loc[t, sym]),
-                    "a_ret24h": float(feats["ret24h"].loc[t, sym]),
-                    "a_ret28h": float(feats["ret28h"].loc[t, sym]),
+        # Since we don't have timestamps in X/y anymore, we assume they are ordered.
+        # We need to discard `H` hours worth of samples between train and val.
+        # Approximate `rows_per_hour`?
+        # It varies.
+        # Safer: We can't do exact purging without TS.
+        # BUT, build_hourly_training_set_and_weights could return indices or TS.
+        # For now, I'll use a safe buffer of 5% of data? or just skip 1000 rows.
+        # Config has `trade_extreme_pct` (5%) * `fetch_symbols` (350) ~= 17 rows/hour.
+        # H=24. 24 * 17 = 400 rows.
+        # I'll purge 500 rows.
 
-                    "a_ret6h":  float(feats["ret6h"].loc[t, sym]),
-                    "a_ret1h_z": float(feats["ret1h_z"].loc[t, sym]),
-                    "a_atr":    float(feats["atr_pct"].loc[t, sym]),
-                    "a_rsi":    float(feats["rsi"].loc[t, sym]),
-                    "a_volz":   float(feats["vol_z"].loc[t, sym]),
-                    "a_trend":  float(feats["trend_pct"].loc[t, sym]),
-                    "a_rv24":   float(feats["rv_24h"].loc[t, sym]),
-                    "a_range":  float(feats["range_pct"].loc[t, sym]),
-                    "a_gap":    float(feats["gap_pct"].loc[t, sym]),
-                    "a_body":   float(feats["body_pct"].loc[t, sym]),
-                    "a_dist_ema_fast": float(feats["dist_ema_fast"].loc[t, sym]),
-                    "a_dist_ema_slow": float(feats["dist_ema_slow"].loc[t, sym]),
-                    "a_roc_div": float(feats["roc_div"].loc[t, sym]),
-                    "a_vol_price_spread": float(feats["vol_price_spread"].loc[t, sym]),
-                    "a_funding_proxy": float(feats["a_funding_proxy"].loc[t, sym]),
+        purge_rows = 500
+        if split_idx + purge_rows >= n:
+            # Not enough data for validation
+            continue
 
-                    # time features (3)
-                    "sin_hod": float(feats["sin_hod"].loc[t, sym]),
-                    "cos_hod": float(feats["cos_hod"].loc[t, sym]),
-                    "sin_dow": float(feats["sin_dow"].loc[t, sym]),
-                    "cos_dow": float(feats["cos_dow"].loc[t, sym]),
+        X_train = X.iloc[:split_idx]
+        y_train = y[:split_idx]
+        w_train = w[:split_idx]
 
-                    # market
-                    "mkt_ret24h": float(mr["mkt_ret24h"]),
-                    "mkt_ret6h":  float(mr["mkt_ret6h"]),
-                    "mkt_trend":  float(mr["mkt_trend"]),
-                    "mkt_rv":     float(mr["mkt_rv"]),
+        X_val = X.iloc[split_idx + purge_rows:]
+        y_val = y[split_idx + purge_rows:]
 
-                    # gates
-                    "G_VOL": int(mr["G_VOL"]),
-                    "G_TREND": int(mr["G_TREND"]),
+        if model_kind == "mr":
+            model = MRModel(lasso_alpha=cfg.get("lasso_alpha", 0.001))
+            model.fit(X_train, y_train, sample_weight=w_train)
+            preds = model.predict(X_val)
+            loss = np.mean((y_val - preds)**2)
+        else:
+            model = TFModel(lasso_alpha=cfg.get("lasso_alpha", 0.001))
+            model.fit(X_train, y_train, sample_weight=w_train)
+            preds, disp = model.predict(X_val)
+            loss = np.mean((y_val - preds)**2)
 
-                    # exhaustion as input
-                    "p_exh_lag1": float(p_lag) if pd.notna(p_lag) else np.nan,
+        if loss < best_loss:
+            best_loss = loss
+            if model_kind == "mr":
+                final_model = MRModel(lasso_alpha=cfg.get("lasso_alpha", 0.001))
+                final_model.fit(X, y, sample_weight=w)
+            else:
+                final_model = TFModel(lasso_alpha=cfg.get("lasso_alpha", 0.001))
+                final_model.fit(X, y, sample_weight=w)
 
-                    # label
-                    "y": float(y[sym]),
-                })
-            except Exception:
-                continue
+            best_res = {
+                "model": final_model,
+                "H": H,
+                "feat_cols": cols,
+                "loss": loss
+            }
 
-    df = pd.DataFrame(rows)
-    if df.empty:
-        return df, []
+    if best_res is None:
+        return None
 
-    df = df.dropna()
-    df = apply_interaction_toggles(
-        df,
-        causal
+    return best_res

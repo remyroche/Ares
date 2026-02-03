@@ -85,6 +85,11 @@ CFG = {
     "fee_bps": 10.0,
     "borrow_apr": 0.20,
 
+    # New Risk Params (Trailing Stop)
+    "risk_k_sl": 2.0,           # stop distance in ATR multiples
+    "risk_k_trail_start": 1.0,  # profit distance to start trailing
+    "risk_k_trail_dist": 1.0,   # trailing distance
+
     # Exhaustion model (hourly sensor)
     "exh_horizon_hours": 24,
     "exh_reversal_thr": 0.04,
@@ -97,12 +102,17 @@ CFG = {
     "exh_feature_keys": [
         "ret1h", "ret6h", "ret12h", "ret16h", "ret20h", "ret24h", "ret28h",
         "ret1h_z",
-        "vol_z24", "rvol_hod",
+        "vol_z24", "rvol_hod_base", # corrected name
         "range_pct", "atr_expansion",
         "wick_body_ratio", "body_pct",
         "dist_ema_fast", "dist_ema_slow",
         "roc_div",
         "vol_price_spread",
         "rsi", "rsi_slope",
-        "a_funding_proxy",  # allow sensor to see “perp-like pressure” proxy
-        "
+        "a_funding_proxy",
+        "sin_hod", "cos_hod", "sin_dow", "cos_dow"
+    ],
+
+    # Model Params (Lasso selection)
+    "lasso_alpha": 0.001,
+}

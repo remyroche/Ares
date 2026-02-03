@@ -200,63 +200,35 @@ def compute_features_hourly(panel, mkt_gates, cfg):
 
     # --- NEW REQUESTED FEATURES ---
 
-    # 1. ATR Slope (Meta)
-    # (EMA_fast(ATR) - EMA_slow(ATR)) / EMA_slow(ATR)
-    # atr_base is EMA(ATR, 14).
-    # We compute fast/slow of atr_base.
     atr_ema_f = atr_base.ewm(span=6, adjust=False).mean()
     atr_ema_s = atr_base.ewm(span=24, adjust=False).mean()
     feats["atr_slope"] = (atr_ema_f - atr_ema_s) / (atr_ema_s + 1e-12)
 
-    # 2. Dist VWAP Norm (Meta)
-    # Rolling VWAP 24h
-    # VWAP = Sum(P*V) / Sum(V)
     pv = c * v
     sum_pv = pv.rolling(24).sum()
     sum_v = v.rolling(24).sum()
     vwap_24 = sum_pv / (sum_v + 1e-12)
-    # Normalized by ATR
     feats["dist_vwap_norm"] = (c - vwap_24) / (atr_base + 1e-12)
 
-    # 3. Momentum Accel (Meta)
-    # Diff of Returns
     feats["momentum_accel"] = feats["ret1h"].diff()
 
-    # 4. RVOL Z-Score (Log Vol)
-    # (log(V) - mu(logV)) / sigma(logV)
     log_v = np.log(v + 1.0)
     mu_lv = log_v.rolling(cfg["volz_n"]).mean()
     sd_lv = log_v.rolling(cfg["volz_n"]).std(ddof=0)
     feats["rvol_z"] = (log_v - mu_lv) / (sd_lv + 1e-12)
 
-    # 5. VolRangeShock
-    # V * |r| / EMA(V * |r|)
     vr = v * feats["ret1h"].abs()
     ema_vr = vr.ewm(span=24, adjust=False).mean()
     feats["vol_range_shock"] = vr / (ema_vr + 1e-12)
 
-    # 6. ClimaxDecay
-    # Max(V, k) / V_current. (Inverse of prompt formula to avoid < 1 if V is denominator?)
-    # Prompt: (Vt-k)/Vt where Vt-k = max. So Max / Current.
-    # Max in last 24h?
     v_max = v.rolling(24).max()
     feats["climax_decay"] = v_max / (v + 1e-12)
 
-    # 7. Cumulative Delta Stall
-    # Correlation(Close, CumulativeSignedVol) over 24h
-    cum_sv = signed_vol.rolling(24).sum() # Windowed accumulation
-    # rolling correlation
+    cum_sv = signed_vol.rolling(24).sum()
     feats["cumulative_delta_stall"] = c.rolling(24).corr(cum_sv).fillna(0)
-    # Divergence if corr drops. Stall might be 1 - corr? Or just corr.
-    # "Stall" usually means they disagree.
 
-    # 8. Vol Expansion Ratio
-    # ATR_short / ATR_long
     feats["vol_expansion_ratio"] = atr_ema_f / (atr_ema_s + 1e-12)
 
-    # 9. Vol Compression Flag (VolCom)
-    # Sigma_short / Sigma_mid
-    # rolling std returns
     sig_s = feats["ret1h"].rolling(6).std()
     sig_m = feats["ret1h"].rolling(18).std()
     feats["vol_compression"] = sig_s / (sig_m + 1e-12)
@@ -316,3 +288,50 @@ def compute_features_hourly(panel, mkt_gates, cfg):
 
     tprint(f"Features: done ({len(feats)} keys)")
     return feats
+
+class StatefulFeatureCalculator:
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.buffer_panel = None
+        # Max lookback: need enough for rolling windows.
+        # trend_sma_n = 24*14 ~ 336
+        # rvol_days = 14 * 24 = 336
+        # train_lookback = 24*30 = 720
+        # Safe buffer: 24*45
+        self.max_lookback = 24 * 45
+
+    def update(self, new_panel):
+        """
+        Updates the internal buffer with new_panel (which might be just 1 row or a chunk)
+        and returns the features corresponding to the *new* rows only (or the whole buffer features if needed).
+        Currently we return the *last* row features if new_panel is 1 row.
+        """
+        if self.buffer_panel is None:
+            self.buffer_panel = new_panel
+        else:
+            # Append per column
+            for k in self.buffer_panel:
+                if k in new_panel:
+                    combined = pd.concat([self.buffer_panel[k], new_panel[k]])
+                    combined = combined[~combined.index.duplicated(keep='last')]
+                    combined = combined.sort_index()
+                    if len(combined) > self.max_lookback:
+                        combined = combined.iloc[-self.max_lookback:]
+                    self.buffer_panel[k] = combined
+
+        # Compute features on the buffer
+        # This is not O(1), it's O(buffer_size).
+        # But buffer_size (1000) << full history (24000).
+
+        mkt_df = compute_market_features(self.buffer_panel, self.cfg["market_basket"])
+        mkt_gates = add_regime_gates(mkt_df, self.cfg["gate_vol_lookback_hours"], self.cfg["gate_trend_thr"])
+
+        # We only need features for the new timestamps.
+        # compute_features_hourly transforms everything.
+        # We can optimize compute_features_hourly to take start_idx?
+        # But rolling needs previous data.
+        # So we compute all, then slice.
+
+        feats = compute_features_hourly(self.buffer_panel, mkt_gates, self.cfg)
+
+        return feats, mkt_gates

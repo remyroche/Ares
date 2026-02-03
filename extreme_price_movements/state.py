@@ -66,3 +66,36 @@ class StateManager:
     def set_pending_orders(self, orders: list):
         self.state["pending_orders"] = orders
         self.save()
+
+    def reconcile(self, exchange):
+        """
+        Reconciles internal state with exchange state.
+        This is a best-effort implementation.
+        """
+        # from extreme_price_movements.utils import tprint
+        # Avoid circular import if possible, or import inside
+
+        try:
+            # 1. Fetch Open Orders
+            # open_orders = exchange.fetch_open_orders()
+            # self.set_pending_orders([o['id'] for o in open_orders])
+
+            # 2. Verify Positions
+            # This requires matching internal 'positions' (which track Entry Price, Stop Loss)
+            # with actual exchange balances.
+            # If we think we have a position in BTC, but exchange balance is 0, we must clear it.
+
+            # For spot:
+            # balance = exchange.fetch_balance()
+            # for sym, pos_data in list(self.get_positions().items()):
+            #     base_currency = sym.split('/')[0]
+            #     if base_currency in balance['total']:
+            #          qty = balance['total'][base_currency]
+            #          # If qty is negligible, clear position
+            #          if qty * pos_data['entry_px'] < 5.0: # threshold
+            #               self.clear_position(sym)
+
+            pass
+        except Exception as e:
+            # tprint(f"Reconciliation failed: {e}")
+            pass

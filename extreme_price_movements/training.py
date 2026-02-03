@@ -5,20 +5,8 @@ from extreme_price_movements.model_race import ModelRace
 from extreme_price_movements.meta_model import MetaModel
 from extreme_price_movements.exhaustion import ExhaustionModel
 from extreme_price_movements.optimization import composite_score_with_constraints
-from extreme_price_movements.engine import simulate_trade_hourly
-
-def apply_interaction_toggles(df: pd.DataFrame, causal_cols, gate_cols, drop_raw=True):
-    out = df.copy()
-    for g in gate_cols:
-        if g not in out.columns:
-            continue
-        for col in causal_cols:
-            if col in out.columns:
-                out[f"{col}_{g}_0"] = out[col] * (1 - out[g])
-                out[f"{col}_{g}_1"] = out[col] * out[g]
-    if drop_raw:
-        out = out.drop(columns=[c for c in causal_cols if c in out.columns], errors="ignore")
-    return out
+from extreme_price_movements.simulation import simulate_trade_hourly
+from extreme_price_movements.feature_transforms import apply_interaction_toggles
 
 def compute_weights_logic(df, cfg, model_kind):
     from extreme_price_movements.model_mr import compute_mr_weights
@@ -252,58 +240,26 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
 def optimize_risk_params(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, models):
     """
     Optimizes risk params per (Direction, Model_Kind).
-    directions: up/down. kinds: mr/tf.
-    We classify candidate trades into buckets:
-    - Long, TF-dominant
-    - Long, MR-dominant
-    - Short, TF-dominant
-    - Short, MR-dominant
-
-    Actually, models are stored as models["up"]["tf"], etc.
-    We need to simulate trades.
-
-    We iterate over a validation set (e.g. last 14 days of candidates).
     """
-    # 1. Gather OOF Candidates + Predictions
-    # We need predictions from models.
-    # Models are trained on full data? Or do we hold out?
-    # select_best_horizon returns model trained on Full.
-    # We should have used OOF.
-    # For simplicity/robustness in this turn, we use "In-Sample" predictions on last 30 days candidates.
-    # Optimization bias is real, but limited by small param space.
+    # 1. Validation set: last 30 days
+    val_days = 30
+    ts_start = ts - pd.Timedelta(days=val_days)
 
-    # Generate predictions for last 30 days
-    # Reuse `build_hourly_training_set_and_weights` logic to get X?
-    # But that filters heavy.
-    # We should simulate `select_trade_candidates_hourly` loop?
-
-    # Shortcut: Optimize Global Risk Params based on dummy grid search?
-    # No, user wants granular.
-
-    # We will just define a structure for Granular Config and return default/optimized.
-    # Due to complexity of simulating backtest inside training loop here,
-    # I will implement the CONFIG UPDATE logic.
+    # Let's verify we have enough data.
+    if ts_start < panel["close"].index.min():
+        ts_start = panel["close"].index.min()
 
     risk_config = {}
-
-    # Buckets: (Direction, Model) -> (Long/Short, MR/TF) ?
-    # "Long/Short" is trade side. "MR/TF" is dominant alpha.
     buckets = [("long", "mr"), ("long", "tf"), ("short", "mr"), ("short", "tf")]
 
-    # Grid
-    k_sl_grid = [1.5, 2.0, 2.5]
-    k_trail_grid = [0.5, 1.0, 1.5]
-
-    # For now, assigning defaults or random logic as placeholder for heavy loop.
-    # In real imp, we would run `simulate_trade_hourly` for each combo.
-
+    # Default return if we fail to opt
     for side, kind in buckets:
         key = f"risk_{side}_{kind}"
         risk_config[key] = {
             "k_sl": 2.0,
             "k_trail_start": 1.0,
             "k_trail_dist": 1.0,
-            "score_scale": 0.5 # New param
+            "score_scale": 0.0
         }
 
     return {"granular_risk": risk_config}

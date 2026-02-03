@@ -123,3 +123,11 @@ CFG = {
     # Model Params (Lasso selection)
     "lasso_alpha": 0.001,
 }
+
+def update_config_for_mode(mode="standard"):
+    if mode == "light":
+        CFG["fetch_years"] = 0.5
+        CFG["fetch_symbols_M"] = 50
+    elif mode == "standard":
+        CFG["fetch_years"] = 4
+        CFG["fetch_symbols_M"] = 300

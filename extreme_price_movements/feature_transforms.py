@@ -58,3 +58,16 @@ def log_winsor_zscore_rolling(series: pd.Series, window: int = 720, qt: float = 
     mu = x.rolling(window, min_periods=24).mean()
     sd = x.rolling(window, min_periods=24).std()
     return (x - mu) / (sd + 1e-12)
+
+def apply_interaction_toggles(df: pd.DataFrame, causal_cols, gate_cols, drop_raw=True):
+    out = df.copy()
+    for g in gate_cols:
+        if g not in out.columns:
+            continue
+        for col in causal_cols:
+            if col in out.columns:
+                out[f"{col}_{g}_0"] = out[col] * (1 - out[g])
+                out[f"{col}_{g}_1"] = out[col] * out[g]
+    if drop_raw:
+        out = out.drop(columns=[c for c in causal_cols if c in out.columns], errors="ignore")
+    return out

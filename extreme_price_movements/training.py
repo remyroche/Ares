@@ -5,7 +5,6 @@ from extreme_price_movements.model_race import ModelRace
 from extreme_price_movements.meta_model import MetaModel
 from extreme_price_movements.exhaustion import ExhaustionModel
 from extreme_price_movements.optimization import composite_score_with_constraints
-from extreme_price_movements.engine import simulate_trade_hourly
 
 def apply_interaction_toggles(df: pd.DataFrame, causal_cols, gate_cols, drop_raw=True):
     out = df.copy()

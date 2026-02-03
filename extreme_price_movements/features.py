@@ -3,31 +3,23 @@ import pandas as pd
 from extreme_price_movements.utils import tprint
 from extreme_price_movements.feature_transforms import CausalFeatureTransformer
 from extreme_price_movements.time_utils import ensure_utc
+import extreme_price_movements.fast_funcs as ff
 
 def zscore_rolling(x: pd.DataFrame, n: int):
-    mu = x.rolling(n).mean()
-    sd = x.rolling(n).std(ddof=0)
-    return (x - mu) / (sd + 1e-12)
+    # Use Numba implementation
+    return ff.numba_zscore(x, n)
 
 def rsi(close: pd.DataFrame, n: int):
-    delta = close.diff()
-    up = delta.clip(lower=0)
-    dn = (-delta).clip(lower=0)
-    rs = up.ewm(alpha=1/n, adjust=False).mean() / (dn.ewm(alpha=1/n, adjust=False).mean() + 1e-12)
-    return 100 - (100 / (1 + rs))
+    # Use Numba implementation
+    return ff.numba_rsi(close, n)
 
 def ema(x: pd.DataFrame, span: int):
-    return x.ewm(span=span, adjust=False).mean()
+    alpha = 2.0 / (span + 1.0)
+    return ff.apply_to_frame(x, ff._numba_ewma, alpha, False)
 
 def atr_percent(high: pd.DataFrame, low: pd.DataFrame, close: pd.DataFrame, n: int):
-    prev_close = close.shift(1)
-    tr = pd.concat([
-        (high - low),
-        (high - prev_close).abs(),
-        (low - prev_close).abs()
-    ], axis=0).groupby(level=0).max()
-    atr = tr.ewm(alpha=1/n, adjust=False).mean()
-    return atr / (close + 1e-12)
+    # Use Numba implementation
+    return ff.numba_atr(high, low, close, n)
 
 def time_sin_cos(index: pd.DatetimeIndex):
     hod = index.hour.to_numpy()
@@ -88,14 +80,13 @@ def compute_funding_proxy(panel, mkt_df):
     l = panel["low"]
     v = panel["volume"]
 
-    dist = (c / (c.rolling(24).mean() + 1e-12)) - 1.0
+    c_ma = c.rolling(24).mean()
+    dist = (c / (c_ma + 1e-12)) - 1.0
     mkt_dist = (mkt_df["mkt_close"] / (mkt_df["mkt_close"].rolling(24).mean() + 1e-12)) - 1.0
     relative_premium = dist.sub(mkt_dist, axis=0)
 
     candle_pos = (c - l) / ((h - l) + 1e-9)
-    vol_mu = v.rolling(24).mean()
-    vol_sd = v.rolling(24).std(ddof=0)
-    vol_z = (v - vol_mu) / (vol_sd + 1e-12)
+    vol_z = zscore_rolling(v, 24) # Uses numba now
     intensity = (candle_pos - 0.5) * vol_z
 
     return (relative_premium + (0.5 * intensity)).astype(np.float32)
@@ -103,56 +94,79 @@ def compute_funding_proxy(panel, mkt_df):
 def compute_features_hourly(panel, mkt_gates, cfg):
     tprint("Features: compute base matrices")
     o, h, l, c, v = panel["open"], panel["high"], panel["low"], panel["close"], panel["volume"]
-    c.index = ensure_utc(pd.DataFrame(index=c.index)).index
+
+    # Ensure all have same UTC index
+    new_idx = ensure_utc(pd.DataFrame(index=c.index)).index
+    o.index = new_idx
+    h.index = new_idx
+    l.index = new_idx
+    c.index = new_idx
+    v.index = new_idx
+
+    # Align mkt_gates index to UTC
+    if len(mkt_gates) == len(c):
+        mkt_gates.index = new_idx
+    else:
+        mkt_gates = mkt_gates.reindex(new_idx)
+
+    # Enforce float32 inputs
+    o = o.astype(np.float32)
+    h = h.astype(np.float32)
+    l = l.astype(np.float32)
+    c = c.astype(np.float32)
+    v = v.astype(np.float32)
 
     feats = {}
-    feats["ret1h"]   = c.pct_change()
-    feats["ret6h"]   = c.pct_change(6)
+    # Ret calc
+    feats["ret1h"]   = c.pct_change().astype(np.float32)
+    feats["ret6h"]   = c.pct_change(6).astype(np.float32)
     for H in [12,16,20,24,28]:
-        feats[f"ret{H}h"] = c.pct_change(H)
+        feats[f"ret{H}h"] = c.pct_change(H).astype(np.float32)
 
-    feats["range_pct"] = (h - l) / (c + 1e-12)
-    feats["gap_pct"]   = (o - c.shift(1)) / (c.shift(1) + 1e-12)
+    feats["range_pct"] = ((h - l) / (c + 1e-12)).astype(np.float32)
+    feats["gap_pct"]   = ((o - c.shift(1)) / (c.shift(1) + 1e-12)).astype(np.float32)
 
-    atr_base = atr_percent(h, l, c, n=cfg["atr_n"])
+    atr_base = atr_percent(h, l, c, n=cfg["atr_n"]) # Uses Numba
     feats["atr_pct_base"] = atr_base
 
-    rsi_base = rsi(c, n=cfg["rsi_n"])
+    rsi_base = rsi(c, n=cfg["rsi_n"]) # Uses Numba
     feats["rsi_base"] = rsi_base
-    feats["rsi_slope_base"] = rsi_base.diff(cfg["rsi_slope_n"])
+    feats["rsi_slope_base"] = rsi_base.diff(cfg["rsi_slope_n"]).astype(np.float32)
 
-    feats["rv_24h"] = feats["ret1h"].rolling(24).std(ddof=0)
+    # feats["rv_24h"] = feats["ret1h"].rolling(24).std(ddof=0)
+    feats["rv_24h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 24)
 
-    feats["qv"] = (c * v)
-    feats["vol_z24_base"] = zscore_rolling(v, 24)
-    feats["vol_z_base"]   = zscore_rolling(v, cfg["volz_n"])
+    feats["qv"] = (c * v).astype(np.float32)
+    feats["vol_z24_base"] = zscore_rolling(v, 24) # Uses Numba
+    feats["vol_z_base"]   = zscore_rolling(v, cfg["volz_n"]) # Uses Numba
 
-    ema_fast_base = ema(c, cfg["ema_fast"])
-    ema_slow_base = ema(c, cfg["ema_slow"])
-    feats["dist_ema_fast_base"] = (c / (ema_fast_base + 1e-12) - 1.0) / (atr_base + 1e-12)
-    feats["dist_ema_slow_base"] = (c / (ema_slow_base + 1e-12) - 1.0) / (atr_base + 1e-12)
+    ema_fast_base = ema(c, cfg["ema_fast"]) # Uses Numba
+    ema_slow_base = ema(c, cfg["ema_slow"]) # Uses Numba
+    feats["dist_ema_fast_base"] = ((c / (ema_fast_base + 1e-12) - 1.0) / (atr_base + 1e-12)).astype(np.float32)
+    feats["dist_ema_slow_base"] = ((c / (ema_slow_base + 1e-12) - 1.0) / (atr_base + 1e-12)).astype(np.float32)
 
-    feats["roc_div"] = feats["ret1h"] - feats["ret6h"]
-    feats["ret1h_z"] = feats["ret1h"] / (feats["rv_24h"] + 1e-12)
+    feats["roc_div"] = (feats["ret1h"] - feats["ret6h"]).astype(np.float32)
+    feats["ret1h_z"] = (feats["ret1h"] / (feats["rv_24h"] + 1e-12)).astype(np.float32)
 
     body = (c - o).abs()
     upper_wick = (h - c.where(c >= o, o)).clip(lower=0)
     lower_wick = (c.where(c <= o, o) - l).clip(lower=0)
-    feats["body_pct"] = body / (c + 1e-12)
-    feats["wick_body_ratio"] = (upper_wick + lower_wick) / (body + 1e-12)
+    feats["body_pct"] = (body / (c + 1e-12)).astype(np.float32)
+    feats["wick_body_ratio"] = ((upper_wick + lower_wick) / (body + 1e-12)).astype(np.float32)
 
-    feats["vol_price_spread"] = v / ((h - l) + 1e-12)
+    feats["vol_price_spread"] = (v / ((h - l) + 1e-12)).astype(np.float32)
 
     prev_close = c.shift(1)
     tr = pd.concat([(h - l), (h - prev_close).abs(), (l - prev_close).abs()], axis=0).groupby(level=0).max()
-    atr_tr = tr.ewm(alpha=1/cfg["atr_n"], adjust=False).mean()
-    feats["atr_expansion"] = tr / (atr_tr + 1e-12)
+    atr_tr = ff.apply_to_frame(tr, ff._numba_ewma, 1.0/cfg["atr_n"], False)
+    feats["atr_expansion"] = (tr / (atr_tr + 1e-12)).astype(np.float32)
 
-    sma_base = c.rolling(cfg["trend_sma_n"]).mean()
-    feats["trend_pct_base"] = (c / (sma_base + 1e-12)) - 1.0
+    sma_base = ff.apply_to_frame(c, ff._numba_rolling_mean_nan_safe, cfg["trend_sma_n"])
+    feats["trend_pct_base"] = ((c / (sma_base + 1e-12)) - 1.0).astype(np.float32)
 
     hod = pd.Series(v.index.hour, index=v.index)
     feats["rvol_hod_base"] = v / (v.groupby(hod).transform(lambda s: s.rolling(cfg["rvol_days"]*24, min_periods=24).mean()) + 1e-12)
+    feats["rvol_hod_base"] = feats["rvol_hod_base"].astype(np.float32)
 
     feats["funding_proxy"] = compute_funding_proxy(panel, mkt_gates)
 
@@ -165,13 +179,14 @@ def compute_features_hourly(panel, mkt_gates, cfg):
     # --- EXISTING EXTRA FEATURES ---
     signed_vol = v * np.sign(c - o)
     sv_abs = signed_vol.abs()
-    ewma_sv_fast = signed_vol.ewm(span=6, adjust=False).mean()
-    ewma_sv_slow = sv_abs.ewm(span=24, adjust=False).mean()
-    feats["flow_persistence"] = ewma_sv_fast / (ewma_sv_slow + 1e-12)
+    ewma_sv_fast = ema(signed_vol, 6)
+    ewma_sv_slow = ema(sv_abs, 24)
+
+    feats["flow_persistence"] = (ewma_sv_fast / (ewma_sv_slow + 1e-12)).astype(np.float32)
     feats["flow_ratio"] = feats["flow_persistence"]
 
     eff = (c - o).abs() / ((h - l) + 1e-9)
-    feats["efficiency"] = eff.rolling(12).mean()
+    feats["efficiency"] = ff.apply_to_frame(eff, ff._numba_rolling_mean_nan_safe, 12)
 
     skew_ser = feats["ret1h"].skew(axis=1)
     feats["skew"] = pd.DataFrame(np.repeat(skew_ser.values[:,None], c.shape[1], axis=1), index=c.index, columns=c.columns).astype(np.float32)
@@ -180,88 +195,64 @@ def compute_features_hourly(panel, mkt_gates, cfg):
     r2 = r**2
     up_sq = r2.where(r > 0, 0.0)
     dn_sq = r2.where(r < 0, 0.0)
-    up_vol = up_sq.ewm(span=24, adjust=False).mean()
-    dn_vol = dn_sq.ewm(span=24, adjust=False).mean()
+    up_vol = ema(up_sq, 24)
+    dn_vol = ema(dn_sq, 24)
     feats["up_vol"] = up_vol
     feats["dn_vol"] = dn_vol
-    feats["vol_asym"] = up_vol - dn_vol
+    feats["vol_asym"] = (up_vol - dn_vol).astype(np.float32)
 
     l_prev2 = l.shift(2)
     h_prev2 = h.shift(2)
     fvg_bull = (l_prev2 - h).clip(lower=0) / (c + 1e-12)
     fvg_bear = (l - h_prev2).clip(lower=0) / (c + 1e-12)
-    feats["fvg"] = fvg_bull - fvg_bear
+    feats["fvg"] = (fvg_bull - fvg_bear).astype(np.float32)
 
-    feats["churn"] = v / ((c - o).abs() + 1e-12)
-    feats["slope"] = (ema_fast_base - ema_slow_base) / (atr_base + 1e-12)
-    feats["trend_snr"] = feats["ret1h"].ewm(span=6, adjust=False).mean().abs() / (feats["ret1h"].rolling(24).std() + 1e-12)
-    feats["v_power"] = v / (c.diff().abs() + 1e-12)
-    feats["signed_vol"] = signed_vol
+    feats["churn"] = (v / ((c - o).abs() + 1e-12)).astype(np.float32)
+    feats["slope"] = ((ema_fast_base - ema_slow_base) / (atr_base + 1e-12)).astype(np.float32)
+    t_snr_num = ema(feats["ret1h"], 6).abs()
+    t_snr_den = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 24)
+    feats["trend_snr"] = (t_snr_num / (t_snr_den + 1e-12)).astype(np.float32)
+
+    feats["v_power"] = (v / (c.diff().abs() + 1e-12)).astype(np.float32)
+    feats["signed_vol"] = signed_vol.astype(np.float32)
 
     # --- NEW REQUESTED FEATURES ---
 
-    # 1. ATR Slope (Meta)
-    # (EMA_fast(ATR) - EMA_slow(ATR)) / EMA_slow(ATR)
-    # atr_base is EMA(ATR, 14).
-    # We compute fast/slow of atr_base.
-    atr_ema_f = atr_base.ewm(span=6, adjust=False).mean()
-    atr_ema_s = atr_base.ewm(span=24, adjust=False).mean()
-    feats["atr_slope"] = (atr_ema_f - atr_ema_s) / (atr_ema_s + 1e-12)
+    atr_ema_f = ema(atr_base, 6)
+    atr_ema_s = ema(atr_base, 24)
+    feats["atr_slope"] = ((atr_ema_f - atr_ema_s) / (atr_ema_s + 1e-12)).astype(np.float32)
 
-    # 2. Dist VWAP Norm (Meta)
-    # Rolling VWAP 24h
-    # VWAP = Sum(P*V) / Sum(V)
-    pv = c * v
-    sum_pv = pv.rolling(24).sum()
-    sum_v = v.rolling(24).sum()
-    vwap_24 = sum_pv / (sum_v + 1e-12)
-    # Normalized by ATR
-    feats["dist_vwap_norm"] = (c - vwap_24) / (atr_base + 1e-12)
+    vwap_24 = pd.DataFrame(index=c.index, columns=c.columns, dtype=np.float32)
+    for col in c.columns:
+        p_arr = c[col].to_numpy(dtype=np.float32)
+        v_arr = v[col].to_numpy(dtype=np.float32)
+        vwap_24[col] = ff._numba_rolling_vwap(p_arr, v_arr, 24)
 
-    # 3. Momentum Accel (Meta)
-    # Diff of Returns
-    feats["momentum_accel"] = feats["ret1h"].diff()
+    feats["dist_vwap_norm"] = ((c - vwap_24) / (atr_base + 1e-12)).astype(np.float32)
 
-    # 4. RVOL Z-Score (Log Vol)
-    # (log(V) - mu(logV)) / sigma(logV)
+    feats["momentum_accel"] = feats["ret1h"].diff().astype(np.float32)
+
     log_v = np.log(v + 1.0)
-    mu_lv = log_v.rolling(cfg["volz_n"]).mean()
-    sd_lv = log_v.rolling(cfg["volz_n"]).std(ddof=0)
-    feats["rvol_z"] = (log_v - mu_lv) / (sd_lv + 1e-12)
+    mu_lv = ff.apply_to_frame(log_v, ff._numba_rolling_mean_nan_safe, cfg["volz_n"])
+    sd_lv = ff.apply_to_frame(log_v, ff._numba_rolling_std_nan_safe, cfg["volz_n"])
+    feats["rvol_z"] = ((log_v - mu_lv) / (sd_lv + 1e-12)).astype(np.float32)
 
-    # 5. VolRangeShock
-    # V * |r| / EMA(V * |r|)
     vr = v * feats["ret1h"].abs()
-    ema_vr = vr.ewm(span=24, adjust=False).mean()
-    feats["vol_range_shock"] = vr / (ema_vr + 1e-12)
+    ema_vr = ema(vr, 24)
+    feats["vol_range_shock"] = (vr / (ema_vr + 1e-12)).astype(np.float32)
 
-    # 6. ClimaxDecay
-    # Max(V, k) / V_current. (Inverse of prompt formula to avoid < 1 if V is denominator?)
-    # Prompt: (Vt-k)/Vt where Vt-k = max. So Max / Current.
-    # Max in last 24h?
     v_max = v.rolling(24).max()
-    feats["climax_decay"] = v_max / (v + 1e-12)
+    feats["climax_decay"] = (v_max / (v + 1e-12)).astype(np.float32)
 
-    # 7. Cumulative Delta Stall
-    # Correlation(Close, CumulativeSignedVol) over 24h
-    cum_sv = signed_vol.rolling(24).sum() # Windowed accumulation
-    # rolling correlation
-    feats["cumulative_delta_stall"] = c.rolling(24).corr(cum_sv).fillna(0)
-    # Divergence if corr drops. Stall might be 1 - corr? Or just corr.
-    # "Stall" usually means they disagree.
+    cum_sv = signed_vol.rolling(24).sum()
+    feats["cumulative_delta_stall"] = c.rolling(24).corr(cum_sv).fillna(0).astype(np.float32)
 
-    # 8. Vol Expansion Ratio
-    # ATR_short / ATR_long
-    feats["vol_expansion_ratio"] = atr_ema_f / (atr_ema_s + 1e-12)
+    feats["vol_expansion_ratio"] = (atr_ema_f / (atr_ema_s + 1e-12)).astype(np.float32)
 
-    # 9. Vol Compression Flag (VolCom)
-    # Sigma_short / Sigma_mid
-    # rolling std returns
-    sig_s = feats["ret1h"].rolling(6).std()
-    sig_m = feats["ret1h"].rolling(18).std()
-    feats["vol_compression"] = sig_s / (sig_m + 1e-12)
+    sig_s = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 6)
+    sig_m = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 18)
+    feats["vol_compression"] = (sig_s / (sig_m + 1e-12)).astype(np.float32)
 
-    # Adaptive Windows
     rv_ratio = mkt_gates["mkt_rv_ratio"].reindex(c.index).astype(np.float32)
     def pick_by_rv(fast_df, base_df, slow_df):
         rr = pd.DataFrame(np.repeat(rv_ratio.to_numpy()[:,None], base_df.shape[1], axis=1),
@@ -283,8 +274,8 @@ def compute_features_hourly(panel, mkt_gates, cfg):
     volz_slow = zscore_rolling(v, int(cfg["volz_n"] * 2))
     feats["vol_z"] = pick_by_rv(volz_fast, feats["vol_z_base"], volz_slow)
 
-    sma_fast = c.rolling(max(24, int(cfg["trend_sma_n"] * 0.5))).mean()
-    sma_slow = c.rolling(int(cfg["trend_sma_n"] * 2)).mean()
+    sma_fast = ff.apply_to_frame(c, ff._numba_rolling_mean_nan_safe, max(24, int(cfg["trend_sma_n"] * 0.5)))
+    sma_slow = ff.apply_to_frame(c, ff._numba_rolling_mean_nan_safe, int(cfg["trend_sma_n"] * 2))
     trend_fast = (c / (sma_fast + 1e-12)) - 1.0
     trend_slow = (c / (sma_slow + 1e-12)) - 1.0
     feats["trend_pct"] = pick_by_rv(trend_fast, feats["trend_pct_base"], trend_slow)
@@ -296,7 +287,7 @@ def compute_features_hourly(panel, mkt_gates, cfg):
     feats["dist_ema_fast"] = pick_by_rv(dist_fast_f, feats["dist_ema_fast_base"], dist_fast_s)
 
     feats["vol_z24"] = feats["vol_z24_base"]
-    feats["rsi_slope"] = feats["rsi"].diff(cfg["rsi_slope_n"])
+    feats["rsi_slope"] = feats["rsi"].diff(cfg["rsi_slope_n"]).astype(np.float32)
     feats["a_funding_proxy"] = feats["funding_proxy"]
 
     tprint("Features: Applying Causal Transforms (Log + Winsor + ZScore)")

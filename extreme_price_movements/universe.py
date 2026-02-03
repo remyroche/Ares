@@ -6,11 +6,13 @@ from extreme_price_movements.utils import tprint
 BINANCE_API = "https://api.binance.com"
 
 def fetch_binance_cross_margin_pairs():
+    tprint(f"Entering function: fetch_binance_cross_margin_pairs in universe.py")
     r = requests.get(f"{BINANCE_API}/sapi/v1/margin/allPairs", timeout=30)
     r.raise_for_status()
     return r.json()
 
 def margin_pairs_to_spot_symbols(margin_pairs_json, quote="USDT"):
+    tprint(f"Entering function: margin_pairs_to_spot_symbols in universe.py")
     out = set()
     for row in margin_pairs_json:
         s = row.get("symbol", "")
@@ -22,6 +24,7 @@ def margin_pairs_to_spot_symbols(margin_pairs_json, quote="USDT"):
     return sorted(out)
 
 def fetch_24h_tickers():
+    tprint(f"Entering function: fetch_24h_tickers in universe.py")
     r = requests.get(f"{BINANCE_API}/api/v3/ticker/24hr", timeout=30)
     r.raise_for_status()
     return r.json()
@@ -32,6 +35,7 @@ class MarginUniverseCache:
     asof_day: pd.Timestamp
 
 def refresh_margin_universe_daily(cache: MarginUniverseCache | None, quote="USDT") -> MarginUniverseCache:
+    tprint(f"Entering function: refresh_margin_universe_daily in universe.py")
     today = pd.Timestamp.utcnow().tz_localize("UTC").floor("D")
     if cache is not None and cache.asof_day == today:
         return cache
@@ -46,6 +50,7 @@ def build_fetch_universe(margin_symbols: list[str], market_basket: list[str], M:
     Selects top M symbols by 24h volume from margin_symbols.
     Always includes market_basket.
     """
+    tprint(f"Entering function: build_fetch_universe in universe.py")
     try:
         tickers = fetch_24h_tickers()
         vol_map = {}
@@ -77,6 +82,7 @@ def select_live_candidates(margin_symbols: list[str], market_basket: list[str], 
     Selects candidates based on 24h price change (Top Gainers/Losers).
     Returns list of symbols to fetch for 1h analysis.
     """
+    tprint(f"Entering function: select_live_candidates in universe.py")
     try:
         tickers = fetch_24h_tickers()
         # Map symbol -> priceChangePercent

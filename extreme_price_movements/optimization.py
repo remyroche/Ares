@@ -1,4 +1,5 @@
 import numpy as np
+from .utils import tprint
 
 EPS = 1e-12
 
@@ -19,6 +20,7 @@ def apply_hard_constraints(raw_pos,
     target_vol: if not None and vol is provided, scale position by target_vol / vol
     vol_floor: avoid division blow-ups when vol ~ 0
     """
+    tprint(f"Entering function: apply_hard_constraints in optimization.py")
     pos = np.asarray(raw_pos, dtype=float).copy()
 
     # Hard volatility targeting (risk scaling)
@@ -38,15 +40,18 @@ def pnl_series(returns, position, cost_per_turnover=0.0):
     """
     PnL_t = position_t * return_t - cost * |position_t - position_{t-1}|
     """
+    tprint(f"Entering function: pnl_series in optimization.py")
     r = np.asarray(returns, dtype=float)
     p = np.asarray(position, dtype=float)
     turnover = np.abs(np.diff(p, prepend=p[0]))
     return p * r - cost_per_turnover * turnover
 
 def total_pnl(pnl):
+    tprint(f"Entering function: total_pnl in optimization.py")
     return float(np.nansum(pnl))
 
 def sortino_ratio(pnl, annualization_factor=252):
+    tprint(f"Entering function: sortino_ratio in optimization.py")
     x = np.asarray(pnl, dtype=float)
     x = x[np.isfinite(x)]
     if x.size == 0:
@@ -57,6 +62,7 @@ def sortino_ratio(pnl, annualization_factor=252):
     return float((mu / dd) * np.sqrt(annualization_factor))
 
 def max_drawdown(pnl):
+    tprint(f"Entering function: max_drawdown in optimization.py")
     x = np.asarray(pnl, dtype=float)
     x = np.where(np.isfinite(x), x, 0.0)
     equity = np.cumsum(x)
@@ -68,6 +74,7 @@ def robust_zscore(value, baseline_values):
     """
     Robust scaling: (value - median) / IQR
     """
+    tprint(f"Entering function: robust_zscore in optimization.py")
     b = np.asarray(baseline_values, dtype=float)
     b = b[np.isfinite(b)]
     if b.size < 4:
@@ -110,6 +117,7 @@ def composite_score_with_constraints(
 
     If baselines are None, uses raw metrics (less recommended).
     """
+    tprint(f"Entering function: composite_score_with_constraints in optimization.py")
     pos = apply_hard_constraints(
         raw_position, vol=vol, p_max=p_max, target_vol=target_vol, vol_floor=vol_floor
     )

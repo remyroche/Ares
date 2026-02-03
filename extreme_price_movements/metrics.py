@@ -2,6 +2,7 @@ import os
 import sys
 import pandas as pd
 from datetime import datetime, timezone
+from .utils import tprint
 
 def tprint(msg: str):
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
@@ -10,10 +11,12 @@ def tprint(msg: str):
 
 class MetricsLogger:
     def __init__(self, log_dir="logs"):
+        tprint(f"Entering function: __init__ in metrics.py")
         self.log_dir = log_dir
         os.makedirs(self.log_dir, exist_ok=True)
 
     def _get_log_path(self, ts: pd.Timestamp) -> str:
+        tprint(f"Entering function: _get_log_path in metrics.py")
         date_str = ts.strftime("%Y-%m-%d")
         return os.path.join(self.log_dir, f"metrics_{date_str}.csv")
 
@@ -22,6 +25,7 @@ class MetricsLogger:
         Logs metrics to a CSV file partitioned by day of ts_sig.
         data: dictionary of metrics
         """
+        tprint(f"Entering function: log in metrics.py")
         # Ensure ts_sig is in data
         row = data.copy()
         row["ts_sig"] = ts_sig.isoformat()

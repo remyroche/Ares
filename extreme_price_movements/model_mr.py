@@ -7,10 +7,12 @@ from extreme_price_movements.utils import tprint
 
 class RuleCleaner:
     def __init__(self, corr_thr=0.8):
+        tprint(f"Entering function: __init__ in model_mr.py")
         self.corr_thr = float(corr_thr)
         self.keep_cols_ = None
 
     def fit(self, X_df: pd.DataFrame, coef_by_col: dict):
+        tprint(f"Entering function: fit in model_mr.py")
         cols = list(X_df.columns)
         if len(cols) <= 1:
             self.keep_cols_ = cols
@@ -39,6 +41,7 @@ class RuleCleaner:
         return self
 
     def transform(self, X_df: pd.DataFrame) -> pd.DataFrame:
+        tprint(f"Entering function: transform in model_mr.py")
         if self.keep_cols_ is None:
             return X_df
         cols = [c for c in self.keep_cols_ if c in X_df.columns]
@@ -50,6 +53,7 @@ def compute_mr_weights(df: pd.DataFrame, cfg: dict) -> np.ndarray:
     w_mr = 1 + a * p_exh_lag1 + b * clip(|ret1h_z|,0,zmax) + c * clip(vol_z24,0,vmax)
     Optionally downweight strong trend.
     """
+    tprint(f"Entering function: compute_mr_weights in model_mr.py")
     # defaults
     a = 2.0  # weight for exhaustion
     b = 0.5  # weight for return deviation
@@ -74,6 +78,7 @@ def compute_mr_weights(df: pd.DataFrame, cfg: dict) -> np.ndarray:
 
 class MRModel:
     def __init__(self, lasso_alpha=0.001, huber_epsilon=1.35, rule_clean_corr=0.8):
+        tprint(f"Entering function: __init__ in model_mr.py")
         self.lasso_alpha = lasso_alpha
         self.huber_epsilon = huber_epsilon
         self.rule_clean_corr = rule_clean_corr
@@ -83,6 +88,7 @@ class MRModel:
 
     def fit(self, X: pd.DataFrame, y: np.ndarray, sample_weight: np.ndarray = None):
         # 1. Lasso Selection
+        tprint(f"Entering function: fit in model_mr.py")
         scaler = StandardScaler()
         X_scaled = pd.DataFrame(scaler.fit_transform(X), columns=X.columns, index=X.index)
 
@@ -116,6 +122,7 @@ class MRModel:
         return self
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
+        tprint(f"Entering function: predict in model_mr.py")
         if self.model is None or self.selected_features is None:
             raise ValueError("MR Model not fitted")
 

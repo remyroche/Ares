@@ -16,6 +16,7 @@ from src.utils.numba_funcs import (
     _numba_rolling_sum,
     _numba_rolling_correlation
 )
+from .utils import tprint
 
 def apply_to_frame(df: pd.DataFrame, func, *args) -> pd.DataFrame:
     """
@@ -23,6 +24,7 @@ def apply_to_frame(df: pd.DataFrame, func, *args) -> pd.DataFrame:
     Returns a DataFrame with float32 dtype.
     Handles pd.Series by converting to DataFrame and returning Series.
     """
+    tprint(f"Entering function: apply_to_frame in fast_funcs.py")
     is_series = isinstance(df, pd.Series)
     if is_series:
         df = df.to_frame()
@@ -47,6 +49,7 @@ def apply_to_frame_binary(df1: pd.DataFrame, df2: pd.DataFrame, func, *args) -> 
     Assumes df1 and df2 have same columns and index.
     Handles pd.Series inputs.
     """
+    tprint(f"Entering function: apply_to_frame_binary in fast_funcs.py")
     is_series1 = isinstance(df1, pd.Series)
     is_series2 = isinstance(df2, pd.Series)
 
@@ -102,6 +105,7 @@ def numba_rsi_kernel(close, n):
     return out
 
 def numba_rsi(close_df, n):
+    tprint(f"Entering function: numba_rsi in fast_funcs.py")
     return apply_to_frame(close_df, numba_rsi_kernel, n)
 
 @jit(nopython=True, cache=True)
@@ -137,6 +141,7 @@ def numba_atr_kernel(high, low, close, n):
 
 def numba_atr(high_df, low_df, close_df, n):
     # This requires synchronized iteration over 3 dataframes.
+    tprint(f"Entering function: numba_atr in fast_funcs.py")
     out = pd.DataFrame(index=close_df.index, columns=close_df.columns, dtype=np.float32)
     cols = close_df.columns
     for c in cols:
@@ -150,6 +155,7 @@ def numba_atr(high_df, low_df, close_df, n):
 def numba_zscore(df, n):
     # (x - mean) / std
     # Using nan_safe versions
+    tprint(f"Entering function: numba_zscore in fast_funcs.py")
     mu = apply_to_frame(df, _numba_rolling_mean_nan_safe, n)
     sd = apply_to_frame(df, _numba_rolling_std_nan_safe, n)
 
@@ -375,6 +381,7 @@ def numba_grouped_rolling_mean(df: pd.DataFrame, group_series: pd.Series, window
     """
     Vectorized grouped rolling mean.
     """
+    tprint(f"Entering function: numba_grouped_rolling_mean in fast_funcs.py")
     is_series = isinstance(df, pd.Series)
     if is_series:
         df = df.to_frame()
@@ -410,28 +417,37 @@ def numba_grouped_rolling_mean(df: pd.DataFrame, group_series: pd.Series, window
 
 # Wrappers
 def numba_rolling_max(df, n):
+    tprint(f"Entering function: numba_rolling_max in fast_funcs.py")
     return apply_to_frame(df, _numba_rolling_max, n)
 
 def numba_rolling_min(df, n):
+    tprint(f"Entering function: numba_rolling_min in fast_funcs.py")
     return apply_to_frame(df, _numba_rolling_min, n)
 
 def numba_rolling_sum(df, n):
+    tprint(f"Entering function: numba_rolling_sum in fast_funcs.py")
     return apply_to_frame(df, _numba_rolling_sum, n)
 
 def numba_rolling_median(df, n):
+    tprint(f"Entering function: numba_rolling_median in fast_funcs.py")
     return apply_to_frame(df, _numba_rolling_median, n)
 
 def numba_rolling_quantile(df, n, q):
+    tprint(f"Entering function: numba_rolling_quantile in fast_funcs.py")
     return apply_to_frame(df, _numba_rolling_quantile, n, q)
 
 def numba_pct_change(df, n):
+    tprint(f"Entering function: numba_pct_change in fast_funcs.py")
     return apply_to_frame(df, _numba_pct_change, n)
 
 def numba_rolling_corr(df1, df2, n):
+    tprint(f"Entering function: numba_rolling_corr in fast_funcs.py")
     return apply_to_frame_binary(df1, df2, _numba_rolling_correlation, n)
 
 def numba_rolling_mean(df, n):
+    tprint(f"Entering function: numba_rolling_mean in fast_funcs.py")
     return apply_to_frame(df, _numba_rolling_mean_nan_safe, n)
 
 def numba_rolling_std(df, n):
+    tprint(f"Entering function: numba_rolling_std in fast_funcs.py")
     return apply_to_frame(df, _numba_rolling_std_nan_safe, n)

@@ -5,9 +5,12 @@ import random
 import pandas as pd
 
 def retry_with_backoff(retries=3, backoff_in_seconds=1):
+    tprint(f"Entering function: retry_with_backoff in utils.py")
     def decorator(func):
+        tprint(f"Entering function: decorator in utils.py")
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
+            tprint(f"Entering function: wrapper in utils.py")
             x = 0
             while True:
                 try:
@@ -30,12 +33,15 @@ def tprint(msg: str):
 
 class Timer:
     def __init__(self, label: str):
+        tprint(f"Entering function: __init__ in utils.py")
         self.label = label
         self.t0 = None
     def __enter__(self):
+        tprint(f"Entering function: __enter__ in utils.py")
         self.t0 = time.time()
         tprint(f"START: {self.label}")
         return self
     def __exit__(self, exc_type, exc, tb):
+        tprint(f"Entering function: __exit__ in utils.py")
         dt = time.time() - self.t0
         tprint(f"END: {self.label} ({dt:.2f}s)")

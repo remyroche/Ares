@@ -7,21 +7,26 @@ import extreme_price_movements.fast_funcs as ff
 
 def zscore_rolling(x: pd.DataFrame, n: int):
     # Use Numba implementation
+    tprint(f"Entering function: zscore_rolling in features.py")
     return ff.numba_zscore(x, n)
 
 def rsi(close: pd.DataFrame, n: int):
     # Use Numba implementation
+    tprint(f"Entering function: rsi in features.py")
     return ff.numba_rsi(close, n)
 
 def ema(x: pd.DataFrame, span: int):
+    tprint(f"Entering function: ema in features.py")
     alpha = 2.0 / (span + 1.0)
     return ff.apply_to_frame(x, ff._numba_ewma, alpha, False)
 
 def atr_percent(high: pd.DataFrame, low: pd.DataFrame, close: pd.DataFrame, n: int):
     # Use Numba implementation
+    tprint(f"Entering function: atr_percent in features.py")
     return ff.numba_atr(high, low, close, n)
 
 def time_sin_cos(index: pd.DatetimeIndex):
+    tprint(f"Entering function: time_sin_cos in features.py")
     hod = index.hour.to_numpy()
     dow = index.dayofweek.to_numpy()
     sin_hod = np.sin(2*np.pi*hod/24.0)
@@ -31,6 +36,7 @@ def time_sin_cos(index: pd.DatetimeIndex):
     return sin_hod, cos_hod, sin_dow, cos_dow
 
 def compute_market_features(panel, basket_syms, trend_sma_hours=24*14):
+    tprint(f"Entering function: compute_market_features in features.py")
     c = panel["close"]
     h = panel["high"]
     l = panel["low"]
@@ -78,6 +84,7 @@ def compute_market_features(panel, basket_syms, trend_sma_hours=24*14):
     return mkt_df.astype(np.float32)
 
 def add_regime_gates(mkt_df: pd.DataFrame, gate_vol_lookback_hours: int, gate_trend_thr: float):
+    tprint(f"Entering function: add_regime_gates in features.py")
     df = mkt_df.copy()
     # No look-ahead bias: Rolling median uses window ending at t.
     rv_med_df = ff.numba_rolling_median(df[["mkt_rv"]], gate_vol_lookback_hours)
@@ -96,6 +103,7 @@ def add_regime_gates(mkt_df: pd.DataFrame, gate_vol_lookback_hours: int, gate_tr
     return df
 
 def compute_funding_proxy(panel, mkt_df):
+    tprint(f"Entering function: compute_funding_proxy in features.py")
     c = panel["close"]
     h = panel["high"]
     l = panel["low"]
@@ -285,6 +293,7 @@ def compute_features_hourly(panel, mkt_gates, cfg):
 
     rv_ratio = mkt_gates["mkt_rv_ratio"].reindex(c.index).astype(np.float32)
     def pick_by_rv(fast_df, base_df, slow_df):
+        tprint(f"Entering function: pick_by_rv in features.py")
         rr = pd.DataFrame(np.repeat(rv_ratio.to_numpy()[:,None], base_df.shape[1], axis=1),
                           index=base_df.index, columns=base_df.columns).astype(np.float32)
         out = base_df.copy()

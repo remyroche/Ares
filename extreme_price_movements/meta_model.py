@@ -7,6 +7,7 @@ from extreme_price_movements.feature_transforms import CausalFeatureTransformer
 
 class MetaModel:
     def __init__(self):
+        tprint(f"Entering function: __init__ in meta_model.py")
         self.model = LinearRegression()
         # Updated feature names to include new requested features
         self.feature_names = [
@@ -23,6 +24,7 @@ class MetaModel:
         Applies logit to predictions.
         Applies CausalTransform to other features.
         """
+        tprint(f"Entering function: prepare_meta_features in meta_model.py")
         meta_data = pd.DataFrame(index=feats_df.index)
 
         eps = 1e-4
@@ -68,8 +70,10 @@ class MetaModel:
         return meta_data[self.feature_names].fillna(0.0)
 
     def fit(self, X_meta, y):
+        tprint(f"Entering function: fit in meta_model.py")
         self.model.fit(X_meta, y)
         return self
 
     def predict(self, X_meta):
+        tprint(f"Entering function: predict in meta_model.py")
         return self.model.predict(X_meta)

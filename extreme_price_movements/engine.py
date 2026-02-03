@@ -12,6 +12,7 @@ from extreme_price_movements.training import (
 from extreme_price_movements.candidates import select_trade_candidates_hourly, entry_price_next_hour_open
 
 def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side, cfg, max_hold_hours):
+    tprint(f"Entering function: simulate_trade_hourly in engine.py")
     if np.isnan(entry_px) or entry_px <= 0:
         return 0.0, ts_entry, "no_entry"
 
@@ -57,6 +58,7 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
         return (entry_px / last_close) - 1.0, last_ts, "time_exit"
 
 def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
+    tprint(f"Entering function: hourly_engine_backtest in engine.py")
     o, h, l, c = panel["open"], panel["high"], panel["low"], panel["close"]
     idx = c.index
 
@@ -309,6 +311,7 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
     """
     Pure function: Generates target orders based on current data and models.
     """
+    tprint(f"Entering function: generate_hourly_signals in engine.py")
     if ts_sig not in mkt_gates.index:
         return []
 

@@ -60,6 +60,7 @@ def train_daily(ts_sig, margin_symbols, cfg, store, ex):
     return new_state
 
 def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger, model_state):
+    tprint(f"Entering function: execute_hourly in main.py")
     run_id = str(uuid.uuid4())
     tprint(f"HOURLY EXEC Start: {ts_sig} RunID={run_id}")
     candidates_pool = select_live_candidates(margin_symbols, cfg["market_basket"], pct=0.05)
@@ -171,6 +172,7 @@ def run_live_cycle(initial_model_state=None):
     # But for this refactor, we just keep it in memory for the process life.
 
     # Initialize state
+    tprint(f"Entering function: run_live_cycle in main.py")
     if initial_model_state:
         model_state = initial_model_state
     else:

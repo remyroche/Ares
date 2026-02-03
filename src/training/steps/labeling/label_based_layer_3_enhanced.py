@@ -973,7 +973,7 @@ def _compute_global_features_cached(df: pd.DataFrame, net_returns: pd.Series) ->
         # Momentum and trend features (Rolling - requires groupby for multi-asset)
         if 'logit_prob' in df.columns:
             if asset_col:
-                features['logit_momentum_5'] = df.groupby(asset_col)['logit_prob'].transform(lambda x: x.rolling(5).mean())
+                features['logit_momentum_5'] = df.groupby(asset_col)['logit_prob'].rolling(5).mean().reset_index(level=0, drop=True)
                 features['logit_momentum_1'] = df.groupby(asset_col)['logit_prob'].diff(1)
             else:
                 features['logit_momentum_5'] = df['logit_prob'].rolling(5).mean()
@@ -1008,7 +1008,7 @@ def _compute_global_features_cached(df: pd.DataFrame, net_returns: pd.Series) ->
                 def _calc_er(sub_s):
                     return abs(sub_s.rolling(20).sum()) / sub_s.abs().rolling(20).sum()
 
-                features['efficiency_ratio'] = temp_df.groupby(asset_col)['ret'].transform(_calc_er)
+                features['efficiency_ratio'] = temp_df.groupby(asset_col)['ret'].apply(_calc_er).reset_index(level=0, drop=True)
             else:
                 features['efficiency_ratio'] = abs(net_returns.rolling(20).sum()) / net_returns.abs().rolling(20).sum()
         

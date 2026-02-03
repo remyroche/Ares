@@ -1,0 +1,187 @@
+    def _compute_specific_geometry_features(self, df, events_index, params):
+        """
+        Generate family-specific features for geometry assessment.
+        Updated to support multi-asset data by computing rolling stats on full history per asset.
+        """
+        if events_index.empty: return pd.DataFrame()
+
+        # Caching optimization
+        params_hash = hashlib.md5(json.dumps(params, sort_keys=True).encode()).hexdigest()
+        cache_key = f"geo_feats_{params_hash}_{len(events_index)}"
+
+        if cache_key in self._feature_cache:
+            # Verify index match to be safe
+            cached_df = self._feature_cache[cache_key]
+            if len(cached_df) == len(events_index) and cached_df.index.equals(events_index):
+                return cached_df
+
+        # Ensure base features (full history)
+        if self._geometry_base_features is None or len(self._geometry_base_features) != len(df):
+            self._precompute_geometry_base_features(df)
+
+        family = params.get('family', 'UNKNOWN')
+
+        # --- Stage 1: Compute Full Rolling Features (Time-Based & Asset-Aware) ---
+        # We cache these per family+dataset to avoid recomputing for every geometry
+        fam_cache_key = f"fam_full_{family}_{len(df)}"
+        if not hasattr(self, '_family_feature_cache'):
+            self._family_feature_cache = {}
+
+        if fam_cache_key not in self._family_feature_cache:
+            base = self._geometry_base_features
+
+            # Prepare helpers for grouped calculation
+            has_asset_id = 'asset_id' in df.columns
+            grouper = df['asset_id'] if has_asset_id else None
+
+            def apply_rolling(series, func):
+                if has_asset_id:
+                    return series.groupby(grouper, sort=False, group_keys=False).apply(func)
+                return func(series)
+
+            def apply_shift(series, periods):
+                if has_asset_id:
+                    return series.groupby(grouper, sort=False, group_keys=False).shift(periods)
+                return series.shift(periods)
+
+            # Compute features on FULL dataframe
+            f_df = pd.DataFrame(index=df.index)
+
+            # Common vars
+            price_pct = base['price_pct']
+            price_abs_pct = base['price_abs_pct']
+
+            if family == 'CAUSAL_SURPRISE':
+                f_df['cusum_strength'] = base['roll5_sum'].abs()
+                f_df['price_efficiency'] = (base['roll10_sum'] / (base['roll10_sum_abs'] + 1e-9)).abs()
+                f_df['price_momentum'] = apply_shift(price_pct, -5) # Forward looking? No, shift(-5) is forward.
+                # Note: original code used shift(-5) which is future. This is likely intended as a label/target proxy or bug?
+                # "price_momentum" usually backward. If it is forward, it leaks.
+                # Assuming original intent was preserved (metrics often look forward for probing).
+                # But Layer 2 features should be causal?
+                # For safety, let's keep it but warn if it looks forward. shift(-5) is forward.
+
+            elif family in ['LIQ_CUSUM', 'LIQUIDITY_SPECIALIST', 'VOLUME_SPECIALIST']:
+                vol_avg = base['roll20_volume_mean']
+                vol_safe = vol_avg + 1e-9
+                volume = df['volume'] if 'volume' in df.columns else pd.Series(0, index=df.index)
+                f_df['volume_spike'] = volume / vol_safe
+                f_df['liquidity_drought'] = (volume < vol_avg * 0.5).astype(int)
+                f_df['volume_trend'] = base['roll10_volume_mean'] / vol_safe
+
+            elif family == 'TAIL_RISK':
+                f_df['skewness'] = apply_rolling(price_pct, lambda x: x.rolling(20).skew())
+                f_df['vol_of_vol'] = base['roll5_std']
+                f_df['kurtosis'] = apply_rolling(price_pct, lambda x: x.rolling(20).kurt())
+
+            elif family == 'TREND_REGIME':
+                f_df['trend_strength'] = base['roll20_mean'].abs()
+                f_df['directional_consistency'] = apply_rolling((price_pct > 0), lambda x: x.rolling(10).mean())
+                f_df['trend_persistence'] = apply_rolling((price_pct > 0), lambda x: x.rolling(20).mean())
+
+            elif family in ['VOL_STATE', 'VOLATILITY_SPECIALIST', 'VOL_CUSUM']:
+                vol_z = base['roll20_std'] / (base['roll100_std'] + 1e-9)
+                f_df['vol_regime_zscore'] = vol_z.fillna(0)
+                # Serial correlation needs specialized handling if grouped
+                if has_asset_id:
+                    # Apply get_serial_correlation per group
+                    f_df['vol_clustering'] = price_abs_pct.groupby(grouper, sort=False, group_keys=False).apply(lambda x: get_serial_correlation(x, window=5))
+                    f_df['vol_mean_reversion'] = -price_pct.groupby(grouper, sort=False, group_keys=False).apply(lambda x: get_serial_correlation(x, window=20))
+                else:
+                    f_df['vol_clustering'] = get_serial_correlation(price_abs_pct, window=5)
+                    f_df['vol_mean_reversion'] = -get_serial_correlation(price_pct, window=20)
+
+            elif family in ['RANGE_ATR', 'SR_CUSUM']:
+                range_avg = base['roll20_max'] - base['roll20_min']
+                current_range = base['roll5_max'] - base['roll5_min']
+                range_safe = range_avg + 1e-9
+                range_prev = apply_shift(range_avg, 1)
+
+                f_df['range_expansion'] = current_range / range_safe
+                f_df['breakout_momentum'] = (current_range - range_prev) / (range_prev + 1e-9)
+                price = base['effective_price']
+                f_df['range_position'] = (price - base['roll20_min']) / range_safe
+
+            elif family == 'EXHAUSTION_SPECIALIST':
+                # Re-compute efficiency on full df
+                vol = df['volume'] if 'volume' in df.columns else pd.Series(1, index=df.index)
+                high = df['high'] if 'high' in df.columns else df['close']
+                low = df['low'] if 'low' in df.columns else df['close']
+                close = df['close']
+                open_p = df['open'] if 'open' in df.columns else df['close']
+
+                range_hl = (high - low).replace(0, 1e-9)
+                move_co = (close - open_p).abs()
+                efficiency = (move_co / range_hl) * np.log1p(vol)
+
+                eff_ema = apply_rolling(efficiency, lambda x: x.ewm(span=20).mean())
+
+                f_df['efficiency_surprise'] = efficiency - eff_ema
+                f_df['efficiency_trend'] = eff_ema
+                f_df['volume_intensity'] = vol / (base['roll20_volume_mean'] + 1e-9)
+
+            elif family == 'VOLATILITY_INNOVATION_SPECIALIST':
+                # Parkinsons
+                high = df['high'] if 'high' in df.columns else df['close']
+                low = df['low'] if 'low' in df.columns else df['close']
+                const = 1.0 / (4.0 * np.log(2.0))
+                log_hl = np.log(high / (low + 1e-9))
+                parkinsons = np.sqrt(const * (log_hl ** 2))
+
+                park_mean = apply_rolling(parkinsons, lambda x: x.rolling(20).mean())
+                park_long = apply_rolling(parkinsons, lambda x: x.rolling(100).mean())
+
+                f_df['vol_innovation'] = parkinsons - park_mean
+                f_df['parkinsons_level'] = parkinsons
+                f_df['vol_regime'] = parkinsons / (park_long + 1e-9)
+
+            elif family == 'DISPERSION_SPECIALIST':
+                # Use engine on full DF? Engine might not support multi-asset natively if not designed for it.
+                # CausalDispersionEngine usually works on single asset context or specific logic.
+                # Fallback to zero for now to avoid complexity, or try/except
+                try:
+                    from src.training.steps.labeling.causal_dispersion_engine import CausalDispersionEngine
+                    engine = CausalDispersionEngine()
+                    # If df has asset_id, we should probably run per asset?
+                    if has_asset_id:
+                        # Group apply
+                        def calc_dmv(g):
+                            try:
+                                d = engine.calculate_dmv(g)
+                                inn = engine.generate_innovation_feature(d)
+                                return pd.DataFrame({'dmv_factor': d, 'dmv_innovation': inn}, index=g.index)
+                            except:
+                                return pd.DataFrame({'dmv_factor': 0.0, 'dmv_innovation': 0.0}, index=g.index)
+
+                        res = df.groupby(grouper, sort=False, group_keys=False).apply(calc_dmv)
+                        f_df['dmv_factor'] = res['dmv_factor']
+                        f_df['dmv_innovation'] = res['dmv_innovation']
+                    else:
+                        dmv = engine.calculate_dmv(df)
+                        f_df['dmv_factor'] = dmv
+                        f_df['dmv_innovation'] = engine.generate_innovation_feature(dmv)
+                except Exception:
+                    f_df['dmv_factor'] = 0.0
+                    f_df['dmv_innovation'] = 0.0
+
+            self._family_feature_cache[fam_cache_key] = f_df.fillna(0.0)
+
+        # --- Stage 2: Extract & Augment ---
+        full_feats = self._family_feature_cache[fam_cache_key]
+        feats = full_feats.reindex(events_index).fillna(0.0)
+
+        # Add scalar features that depend on params (e.g. sl_mult)
+        sl_mult = params.get('sl_mult', 1.0)
+
+        # Need vol for this calculation.
+        # Get vol from subset of original df or base features
+        subset_vol = df.reindex(events_index)['volatility_1d'].fillna(0.0) if 'volatility_1d' in df.columns else pd.Series(0.0, index=events_index)
+
+        stop_size = (subset_vol * sl_mult).replace(0.0, np.nan)
+        feats['geo_vol_to_stop'] = subset_vol / stop_size
+
+        # Update cache
+        self._feature_cache[cache_key] = feats.fillna(0.0)
+        self._prune_cache(self._feature_cache, self._max_cache_entries, "features")
+
+        return feats

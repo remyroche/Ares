@@ -15,8 +15,6 @@ import math
 import itertools
 from scipy.stats import entropy
 from typing import List, Dict, Tuple, Optional, Any
-<<<<<<< HEAD
-=======
 from src.utils.causal_refiner_utils import (
     cluster_specialists_by_correlation,
     denoise_covariance,
@@ -26,16 +24,12 @@ from src.utils.causal_refiner_utils import (
 from sklearn.decomposition import PCA
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import RobustScaler
->>>>>>> origin/codex/analyze-process-improvement-for-stuck-execution
 from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
 
 from src.feature_generation.categories.ensemble_disagreement import (
     calculate_ensemble_disagreement_features,
 )
-<<<<<<< HEAD
-=======
 from src.training.steps.labeling.adaptive_hunter_router import AdaptiveHunterRouter
->>>>>>> origin/codex/analyze-process-improvement-for-stuck-execution
 from src.utils.numba_funcs import _numba_rolling_slope, _numba_rolling_rsquared
 
 def _select_vwap_column(df: pd.DataFrame) -> Optional[str]:
@@ -118,30 +112,30 @@ def shrink(x, n, prior, k=50):
 
 
 def _compute_anchor_and_drift_features(
-    df: pd.DataFrame, 
+    df: pd.DataFrame,
     base_model_cols: List[str]
 ) -> Tuple[pd.DataFrame, Dict[int, str]]:
     """
     Compute Anchor and Drift features following de Prado's structural analysis.
-    
+
     De Prado Framework:
     - Anchor: Slow-moving structural metrics that define the baseline regime
     - Drift: Rate of change FROM anchor, measuring regime transition speed
-    
+
     These features capture the STRUCTURE of the market state rather than
     instantaneous signals, enabling the meta-model to condition on structural context.
-    
+
     Args:
         df: DataFrame with market data (must have 'close' column)
         base_model_cols: List of base model probability columns
-        
+
     Returns:
         features: DataFrame with anchor_* and drift_* columns
         regime_map: Mapping from cluster ID to regime name
     """
     features = pd.DataFrame(index=df.index)
     regime_map = {0: 'Quiet', 1: 'Trending', 2: 'Chaos'}
-    
+
     # Determine price source (VWAP preferred for structural features)
     vwap_col = _select_vwap_column(df)
     if vwap_col is not None:
@@ -159,99 +153,99 @@ def _compute_anchor_and_drift_features(
     # 1. Volatility Anchor/Drift
     if price is not None:
         ret = np.log(price / price.shift(1)).fillna(0)
-        
+
         # Short-term volatility (reactive)
         vol_short = ret.rolling(20, min_periods=5).std().fillna(0)
-        
+
         # Anchor: Slow EWM of volatility (structural baseline)
         vol_anchor = vol_short.ewm(span=200, min_periods=50).mean().fillna(vol_short.mean())
-        
+
         # Drift: Relative deviation from anchor
         vol_drift = (vol_short - vol_anchor) / (vol_anchor + 1e-9)
-        
+
         # Z-scored drift for regime detection
         drift_mean = vol_drift.rolling(100, min_periods=20).mean()
         drift_std = vol_drift.rolling(100, min_periods=20).std()
         vol_drift_z = (vol_drift - drift_mean) / (drift_std + 1e-9)
-        
+
         features['anchor_volatility'] = vol_anchor
         features['drift_volatility'] = vol_drift.clip(-5, 5)  # Clip extreme values
         features['drift_volatility_z'] = vol_drift_z.clip(-5, 5)
-    
+
     # 2. Trend Strength Anchor/Drift
     if price is not None:
         # Slope normalized by price (% change over 20 bars)
         slope = price.diff(20) / price.shift(20).replace(0, np.nan)
         slope = slope.fillna(0)
-        
+
         # Trend strength = absolute slope
         trend_strength = slope.abs()
-        
+
         # Anchor: Slow EWM of trend strength
         trend_anchor = trend_strength.ewm(span=200, min_periods=50).mean().fillna(trend_strength.mean())
-        
+
         # Drift: Current trend strength relative to anchor
         trend_drift = (trend_strength - trend_anchor) / (trend_anchor + 1e-9)
-        
+
         features['anchor_trend'] = trend_anchor.clip(0, 1)  # Cap at 100% change
         features['drift_trend'] = trend_drift.clip(-5, 5)
-        
+
         # Trend direction (signed slope)
         features['trend_direction'] = np.sign(slope)
-    
+
     # 3. Liquidity Anchor/Drift (if volume available)
     if 'volume' in df.columns and price is not None:
         vol = df['volume'].replace(0, np.nan).ffill().fillna(1)
-        
+
         # Dollar volume as liquidity proxy (using VWAP if available is more accurate)
         dollar_vol = vol * price
-        
+
         # Anchor: Slow EWM of dollar volume
         liq_anchor = dollar_vol.ewm(span=200, min_periods=50).mean().fillna(dollar_vol.mean())
-        
+
         # Drift: Current liquidity relative to anchor
         liq_drift = (dollar_vol - liq_anchor) / (liq_anchor + 1e-9)
-        
+
         features['anchor_liquidity'] = liq_anchor
         features['drift_liquidity'] = liq_drift.clip(-5, 5)
-    
+
     # 4. Regime Detection using Anchor state
     features['active_regime'] = 0  # Default: Quiet
-    
+
     if 'drift_volatility_z' in features.columns:
         # High volatility drift = Chaos
         chaos_mask = features['drift_volatility_z'] > 1.5
         features.loc[chaos_mask, 'active_regime'] = 2
-        
+
         # Low volatility drift = Quiet
         quiet_mask = features['drift_volatility_z'] < -0.5
         features.loc[quiet_mask, 'active_regime'] = 0
-        
+
         # High trend drift (but not chaos) = Trending
         if 'drift_trend' in features.columns:
             trending_mask = (features['drift_trend'] > 0.5) & (~chaos_mask)
             features.loc[trending_mask, 'active_regime'] = 1
-    
+
     # 5. Base Model Anchor/Drift (if base predictions available)
     valid_cols = [c for c in (base_model_cols or []) if c in df.columns]
     if valid_cols:
         # Ensemble probability
         ens_prob = df[valid_cols].mean(axis=1).fillna(0.5)
-        
+
         # Anchor: Slow EWM of ensemble probability
         prob_anchor = ens_prob.ewm(span=100, min_periods=20).mean().fillna(0.5)
-        
+
         # Drift: Current probability relative to anchor
         prob_drift = ens_prob - prob_anchor
-        
+
         features['anchor_probability'] = prob_anchor
         features['drift_probability'] = prob_drift.clip(-1, 1)
-    
+
     # Clean up infinities and NaNs
     features = features.replace([np.inf, -np.inf], np.nan).fillna(0.0)
-    
+
     # tprint_info(f"⚓ Generated {len(features.columns)} Anchor/Drift features")
-    
+
     return features, regime_map
 
 def compute_geometry_features(events_df: pd.DataFrame, window_size: int = 50) -> pd.DataFrame:
@@ -608,7 +602,7 @@ def _compute_cross_tf_momentum_agreement(df: pd.DataFrame) -> pd.DataFrame:
     """
     features = pd.DataFrame(index=df.index)
     close = df['close']
-    
+
     # Fill NAs to avoid propagation issues temporarily for calculation
     close_filled = close.ffill().bfill()
 
@@ -616,13 +610,13 @@ def _compute_cross_tf_momentum_agreement(df: pd.DataFrame) -> pd.DataFrame:
     mom_4 = (close_filled / close_filled.shift(4) - 1).fillna(0)      # 1h at 15m
     mom_12 = (close_filled / close_filled.shift(12) - 1).fillna(0)    # 3h at 15m
     # Removed 12h and 24h as per user request
-    
+
     # Sign agreement (how many horizons agree on direction)
     signs = pd.concat([
         np.sign(mom_4),
         np.sign(mom_12)
     ], axis=1)
-    
+
     # Calculate agreement [-1, 1]
     features['momentum_agreement'] = signs.mean(axis=1)
     features['momentum_agreement_abs'] = features['momentum_agreement'].abs()
@@ -726,36 +720,36 @@ def _apply_ssfi_pruning(X: pd.DataFrame, y: pd.Series, disagreement_cols: List[s
     import lightgbm as lgb
     from sklearn.metrics import roc_auc_score
     from sklearn.model_selection import TimeSeriesSplit
-    
+
     pruned_cols = []
     tprint_info(f"🛡️ Running SSFI Pruning on {len(disagreement_cols)} disagreement features...")
-    
+
     for col in disagreement_cols:
         if col not in X.columns: continue
-        
+
         # Single feature importance test
         tscv = TimeSeriesSplit(n_splits=3)
         scores = []
-        
+
         for train_idx, val_idx in tscv.split(X):
             X_train, X_val = X[col].iloc[train_idx].values.reshape(-1, 1), X[col].iloc[val_idx].values.reshape(-1, 1)
             y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
-            
+
             if len(np.unique(y_train)) < 2: continue
-            
+
             model = lgb.LGBMClassifier(n_estimators=50, max_depth=2, random_state=42, verbose=-1)
             model.fit(X_train, y_train)
             preds = model.predict_proba(X_val)[:, 1]
             scores.append(roc_auc_score(y_val, preds))
-            
+
         avg_auc = np.mean(scores) if scores else 0.5
-        
+
         if avg_auc > 0.51: # Small threshold above random
             tprint_info(f"   ✅ Keeping {col} (SSFI AUC: {avg_auc:.4f})")
         else:
             tprint_info(f"   🗑️  Pruning {col} (SSFI AUC: {avg_auc:.4f})")
             pruned_cols.append(col)
-            
+
     return pruned_cols
 
 def generate_layer3_features(
@@ -840,7 +834,7 @@ def _generate_layer3_features_single_asset(
         for col in ['prob_Quiet', 'prob_Trending', 'prob_Chaos']:
             if col in df_out.columns:
                 df_out[f"regime_{col}"] = df_out[col].fillna(0.0)
-        
+
         # One-Hot Encode Regime Label if present
         if 'regime_label' in df_out.columns:
             # Check if likely categorical strings or ints
@@ -972,17 +966,17 @@ def _generate_layer3_features_single_asset(
         if 'kalman_price' in df_out.columns and 'close' in df_out.columns:
             close = df_out['close']
             kalman_price = df_out['kalman_price']
-            
+
             # Market stretch: deviation from denoised price
             df_out['market_stretch'] = np.log((close + 1e-9) / (kalman_price + 1e-9))
-            
+
             # Price deviation metrics
             df_out['price_deviation_abs'] = np.abs(close - kalman_price)
             df_out['price_deviation_pct'] = (close - kalman_price) / kalman_price
-            
+
             # Raw vs denoised price ratio
             df_out['raw_denoised_ratio'] = close / (kalman_price + 1e-8)
-            
+
             # Clean up infinities and NaNs
             price_denoised_cols = ['market_stretch', 'price_deviation_abs', 'price_deviation_pct', 'raw_denoised_ratio']
             df_out[price_denoised_cols] = df_out[price_denoised_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
@@ -994,24 +988,24 @@ def _generate_layer3_features_single_asset(
         if 'kalman_price' in df_out.columns and 'close' in df_out.columns:
             close = df_out['close']
             kalman_price = df_out['kalman_price']
-            
+
             # Kalman velocity (rate of change)
             df_out['kalman_velocity'] = kalman_price.diff()
             df_out['kalman_acceleration'] = kalman_price.diff().diff()
-            
+
             # Kalman deviation from price
             df_out['kalman_deviation'] = kalman_price - close
             df_out['kalman_deviation_pct'] = (kalman_price - close) / close
-            
+
             # Kalman trend strength (persistent direction)
             df_out['kalman_trend_strength'] = np.sign(kalman_price.diff()).rolling(20).mean().abs()
-            
+
             # Kalman volatility ratio
             if 'kalman_volatility' in df_out.columns:
                 kalman_vol = df_out['kalman_volatility']
                 price_vol = close.rolling(20).std()
                 df_out['kalman_vol_ratio'] = kalman_vol / (price_vol + 1e-8)
-            
+
             # Clean up infinities and NaNs
             kalman_cols = [c for c in df_out.columns if c.startswith('kalman_')]
             df_out[kalman_cols] = df_out[kalman_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0)
@@ -1035,14 +1029,14 @@ def _generate_layer3_features_single_asset(
         ad_feats, regime_map = _compute_anchor_and_drift_features(df_out, base_model_cols)
         for col in ad_feats.columns:
             df_out[col] = ad_feats[col]
-            
+
         # Use the first anchor's active regime as the global regime label if not present
         if 'regime_label' not in df_out.columns:
             anchor_regime_cols = [c for c in ad_feats.columns if 'active_regime' in c]
             if anchor_regime_cols:
                 # Use the dynamic regime map from the router for absolute consistency with Layer 2
                 df_out['regime_label'] = ad_feats[anchor_regime_cols[0]].map(regime_map)
-            
+
     except Exception as e:
         tprint_warning(f"⚠️ Anchor and Drift features failed: {e}")
 

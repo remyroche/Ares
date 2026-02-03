@@ -162,26 +162,20 @@ def compute_features_hourly(panel, mkt_gates, cfg):
     feats["sin_dow"] = pd.DataFrame(np.repeat(sin_dow[:,None], c.shape[1], axis=1), index=c.index, columns=c.columns).astype(np.float32)
     feats["cos_dow"] = pd.DataFrame(np.repeat(cos_dow[:,None], c.shape[1], axis=1), index=c.index, columns=c.columns).astype(np.float32)
 
-    # --- NEW FEATURES ---
-    # 1. Signed Volume & Flow Persistence
+    # --- EXISTING EXTRA FEATURES ---
     signed_vol = v * np.sign(c - o)
     sv_abs = signed_vol.abs()
     ewma_sv_fast = signed_vol.ewm(span=6, adjust=False).mean()
     ewma_sv_slow = sv_abs.ewm(span=24, adjust=False).mean()
     feats["flow_persistence"] = ewma_sv_fast / (ewma_sv_slow + 1e-12)
-    feats["flow_ratio"] = feats["flow_persistence"] # Same definition? "EWMA(signed_vol, 6) / EWMA(abs(signed_vol), 24)" - Yes.
+    feats["flow_ratio"] = feats["flow_persistence"]
 
-    # 2. Efficiency
     eff = (c - o).abs() / ((h - l) + 1e-9)
-    feats["efficiency"] = eff.rolling(12).mean() # EWMA of efficiency 6-12h. Using rolling mean as proxy.
+    feats["efficiency"] = eff.rolling(12).mean()
 
-    # 3. Skew (Cross-Sectional)
-    # This returns a Series (indexed by time). We broadcast it.
     skew_ser = feats["ret1h"].skew(axis=1)
     feats["skew"] = pd.DataFrame(np.repeat(skew_ser.values[:,None], c.shape[1], axis=1), index=c.index, columns=c.columns).astype(np.float32)
 
-    # 4. Up/Down Vol
-    # EWMA(ret_1h[ret>0]^2)
     r = feats["ret1h"]
     r2 = r**2
     up_sq = r2.where(r > 0, 0.0)
@@ -192,33 +186,80 @@ def compute_features_hourly(panel, mkt_gates, cfg):
     feats["dn_vol"] = dn_vol
     feats["vol_asym"] = up_vol - dn_vol
 
-    # 5. Fair Value Gaps (FVG)
-    # Bullish FVG: Low[i-2] > High[i] (Gap between wicks)
-    # Bearish FVG: High[i-2] < Low[i]
-    # We quantify the size of the gap.
-    # Shift 2
     l_prev2 = l.shift(2)
     h_prev2 = h.shift(2)
-
     fvg_bull = (l_prev2 - h).clip(lower=0) / (c + 1e-12)
-    fvg_bear = (l - h_prev2).clip(lower=0) / (c + 1e-12) # Gap down
+    fvg_bear = (l - h_prev2).clip(lower=0) / (c + 1e-12)
+    feats["fvg"] = fvg_bull - fvg_bear
 
-    feats["fvg"] = fvg_bull - fvg_bear # Net FVG
-
-    # 6. Churn
     feats["churn"] = v / ((c - o).abs() + 1e-12)
-
-    # 7. Slope (EMA diff / ATR)
     feats["slope"] = (ema_fast_base - ema_slow_base) / (atr_base + 1e-12)
-
-    # 8. Trend SNR
     feats["trend_snr"] = feats["ret1h"].ewm(span=6, adjust=False).mean().abs() / (feats["ret1h"].rolling(24).std() + 1e-12)
-
-    # 9. V-Power
     feats["v_power"] = v / (c.diff().abs() + 1e-12)
-
-    # 10. Signed Vol (Raw)
     feats["signed_vol"] = signed_vol
+
+    # --- NEW REQUESTED FEATURES ---
+
+    # 1. ATR Slope (Meta)
+    # (EMA_fast(ATR) - EMA_slow(ATR)) / EMA_slow(ATR)
+    # atr_base is EMA(ATR, 14).
+    # We compute fast/slow of atr_base.
+    atr_ema_f = atr_base.ewm(span=6, adjust=False).mean()
+    atr_ema_s = atr_base.ewm(span=24, adjust=False).mean()
+    feats["atr_slope"] = (atr_ema_f - atr_ema_s) / (atr_ema_s + 1e-12)
+
+    # 2. Dist VWAP Norm (Meta)
+    # Rolling VWAP 24h
+    # VWAP = Sum(P*V) / Sum(V)
+    pv = c * v
+    sum_pv = pv.rolling(24).sum()
+    sum_v = v.rolling(24).sum()
+    vwap_24 = sum_pv / (sum_v + 1e-12)
+    # Normalized by ATR
+    feats["dist_vwap_norm"] = (c - vwap_24) / (atr_base + 1e-12)
+
+    # 3. Momentum Accel (Meta)
+    # Diff of Returns
+    feats["momentum_accel"] = feats["ret1h"].diff()
+
+    # 4. RVOL Z-Score (Log Vol)
+    # (log(V) - mu(logV)) / sigma(logV)
+    log_v = np.log(v + 1.0)
+    mu_lv = log_v.rolling(cfg["volz_n"]).mean()
+    sd_lv = log_v.rolling(cfg["volz_n"]).std(ddof=0)
+    feats["rvol_z"] = (log_v - mu_lv) / (sd_lv + 1e-12)
+
+    # 5. VolRangeShock
+    # V * |r| / EMA(V * |r|)
+    vr = v * feats["ret1h"].abs()
+    ema_vr = vr.ewm(span=24, adjust=False).mean()
+    feats["vol_range_shock"] = vr / (ema_vr + 1e-12)
+
+    # 6. ClimaxDecay
+    # Max(V, k) / V_current. (Inverse of prompt formula to avoid < 1 if V is denominator?)
+    # Prompt: (Vt-k)/Vt where Vt-k = max. So Max / Current.
+    # Max in last 24h?
+    v_max = v.rolling(24).max()
+    feats["climax_decay"] = v_max / (v + 1e-12)
+
+    # 7. Cumulative Delta Stall
+    # Correlation(Close, CumulativeSignedVol) over 24h
+    cum_sv = signed_vol.rolling(24).sum() # Windowed accumulation
+    # rolling correlation
+    feats["cumulative_delta_stall"] = c.rolling(24).corr(cum_sv).fillna(0)
+    # Divergence if corr drops. Stall might be 1 - corr? Or just corr.
+    # "Stall" usually means they disagree.
+
+    # 8. Vol Expansion Ratio
+    # ATR_short / ATR_long
+    feats["vol_expansion_ratio"] = atr_ema_f / (atr_ema_s + 1e-12)
+
+    # 9. Vol Compression Flag (VolCom)
+    # Sigma_short / Sigma_mid
+    # rolling std returns
+    sig_s = feats["ret1h"].rolling(6).std()
+    sig_m = feats["ret1h"].rolling(18).std()
+    feats["vol_compression"] = sig_s / (sig_m + 1e-12)
 
     # Adaptive Windows
     rv_ratio = mkt_gates["mkt_rv_ratio"].reindex(c.index).astype(np.float32)

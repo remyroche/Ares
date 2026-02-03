@@ -4,7 +4,7 @@ CFG = {
     "data_root": "data",
     "timeframe": "1h",
     "fetch_years": 4,
-    "fetch_symbols_M": 300, # Updated to 300
+    "fetch_symbols_M": 300,
 
     # market basket
     "market_basket": ["BTC/USDT","ETH/USDT","AVAX/USDT","SOL/USDT","XRP/USDT"],
@@ -60,13 +60,17 @@ CFG = {
     "min_model_stability_to_trade": 0.15,
 
     # causal cols for interaction toggles
+    # Added new meta features here to ensure they are carried over
     "drop_raw_causal": True,
     "causal_cols": [
         "a_ret24h","a_rsi","a_volz","a_atr","a_trend","a_rv24",
         "p_exh_lag1",
         "a_funding_proxy",
         "flow_ratio", "churn", "slope", "trend_snr",
-        "vol_asym", "skew", "efficiency", "fvg"
+        "vol_asym", "skew", "efficiency", "fvg",
+        "rvol_z", "vol_range_shock", "climax_decay",
+        "cumulative_delta_stall", "vol_expansion_ratio", "vol_compression",
+        "atr_slope", "dist_vwap_norm", "momentum_accel"
     ],
 
     # thresholds / picks
@@ -111,7 +115,9 @@ CFG = {
         "rsi", "rsi_slope",
         "a_funding_proxy",
         "sin_hod", "cos_hod", "sin_dow", "cos_dow",
-        "efficiency", "v_power", "skew", "fvg"
+        "efficiency", "v_power", "skew", "fvg",
+        "rvol_z", "vol_range_shock", "climax_decay",
+        "cumulative_delta_stall", "vol_expansion_ratio", "vol_compression"
     ],
 
     # Model Params (Lasso selection)

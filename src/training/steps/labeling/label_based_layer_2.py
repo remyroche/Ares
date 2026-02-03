@@ -85,7 +85,8 @@ from src.utils.numba_funcs import (
     _numba_rolling_entropy,
     _numba_return_autocorrelation,
     _numba_rolling_mean,
-    _numba_rolling_std
+    _numba_rolling_std,
+    _numba_rolling_kurt
 )
 try:
     from numba import jit
@@ -5695,6 +5696,16 @@ class LabelBasedLayer2(BaseStep):
                 return s.rolling(w).mean()
             return s.groupby(asset_group).rolling(w).mean().reset_index(level=0, drop=True)
 
+        # Helper: rolling kurtosis (Numba optimized)
+        def _rkurt(s, w):
+            if asset_group is None:
+                vals = s.values.astype(np.float32) if hasattr(s, 'values') else s
+                return pd.Series(_numba_rolling_kurt(vals, w), index=s.index)
+            # Grouped apply for multi-asset
+            return s.groupby(asset_group).apply(
+                lambda x: pd.Series(_numba_rolling_kurt(x.values.astype(np.float32), w), index=x.index)
+            ).reset_index(level=0, drop=True)
+
         # --- A) Volatility State ---
         if 'close' in df.columns:
             section_start = time.perf_counter()
@@ -5719,7 +5730,7 @@ class LabelBasedLayer2(BaseStep):
 
             # Tail / Jumpiness
             _assign_series('absret_mean_w24', _rmean(ret.abs(), 24))
-            _assign_series('kurtosis_w96', ret.rolling(96).kurt())
+            _assign_series('kurtosis_w96', _rkurt(ret, 96))
 
             # Range-based Vol (if available)
             if 'high' in df.columns and 'low' in df.columns:

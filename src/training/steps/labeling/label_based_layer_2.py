@@ -85,7 +85,8 @@ from src.utils.numba_funcs import (
     _numba_rolling_entropy,
     _numba_return_autocorrelation,
     _numba_rolling_mean,
-    _numba_rolling_std
+    _numba_rolling_std,
+    _numba_rolling_kurt
 )
 try:
     from numba import jit
@@ -5642,6 +5643,12 @@ class LabelBasedLayer2(BaseStep):
         Z = pd.DataFrame(index=df.index)
         eps = 1e-9
 
+        # Ensure we have a unique row identifier to safely restore order after groupby operations.
+        if '_tmp_row_id' not in df.columns:
+            df = df.copy()
+            df['_tmp_row_id'] = np.arange(len(df))
+        row_id_series = df['_tmp_row_id']
+
         def _assign_series(name: str, values: Any) -> None:
             if values is None:
                 return
@@ -5650,24 +5657,43 @@ class LabelBasedLayer2(BaseStep):
                     if values.index.equals(Z.index):
                         Z[name] = values.to_numpy()
                         return
+                    if Z.index.is_unique and values.index.is_unique:
+                        try:
+                            Z[name] = values.reindex(Z.index).to_numpy()
+                            return
+                        except Exception:
+                            pass
                     try:
-                        Z[name] = values.reindex(Z.index).to_numpy()
-                        return
-                    except Exception:
                         Z[name] = values.to_numpy()
                         return
+                    except Exception:
+                        pass
             Z[name] = values
 
         def _assign_frame(frame: pd.DataFrame) -> None:
             if frame is None or frame.empty:
                 return
-            if len(frame) != len(Z):
-                try:
-                    frame = frame.reindex(Z.index)
-                except Exception:
-                    return
+            if len(frame) == len(Z) and frame.index.equals(Z.index):
+                for col in frame.columns:
+                    Z[col] = frame[col].to_numpy()
+                return
             for col in frame.columns:
                 _assign_series(col, frame[col])
+
+        def _assign_series_at_index(name: str, values: Any, index: pd.Index) -> None:
+            if values is None:
+                return
+            if isinstance(values, pd.Series):
+                if values.index.equals(index):
+                    values = values.to_numpy()
+                elif index.is_unique and values.index.is_unique:
+                    try:
+                        values = values.reindex(index).to_numpy()
+                    except Exception:
+                        values = values.to_numpy()
+                else:
+                    values = values.to_numpy()
+            Z.loc[index, name] = values
 
         asset_group = None
         asset_series = None
@@ -5684,107 +5710,228 @@ class LabelBasedLayer2(BaseStep):
                 asset_group = asset_level
                 asset_series = pd.Series(df.index.get_level_values(asset_level), index=df.index)
 
-        # Helper: rolling std
+        # Helper: rolling std with safe alignment
         def _rstd(s, w):
-            if asset_group is None:
+            if asset_series is None:
                 return s.rolling(w).std()
-            return s.groupby(asset_group).rolling(w).std().reset_index(level=0, drop=True)
-        # Helper: rolling mean
+            work_df = pd.DataFrame({'v': s.values, 'id': row_id_series.values, 'g': asset_series.values})
+            work_df = work_df.sort_values(['g', 'id'])
+            rolled = work_df.groupby('g', sort=False)['v'].rolling(w).std()
+            work_df['res'] = rolled.values
+            work_df = work_df.sort_values('id')
+            return pd.Series(work_df['res'].values, index=df.index)
+
+        # Helper: rolling mean with safe alignment
         def _rmean(s, w):
-            if asset_group is None:
+            if asset_series is None:
                 return s.rolling(w).mean()
-            return s.groupby(asset_group).rolling(w).mean().reset_index(level=0, drop=True)
+            work_df = pd.DataFrame({'v': s.values, 'id': row_id_series.values, 'g': asset_series.values})
+            work_df = work_df.sort_values(['g', 'id'])
+            rolled = work_df.groupby('g', sort=False)['v'].rolling(w).mean()
+            work_df['res'] = rolled.values
+            work_df = work_df.sort_values('id')
+            return pd.Series(work_df['res'].values, index=df.index)
 
-        # --- A) Volatility State ---
-        if 'close' in df.columns:
-            section_start = time.perf_counter()
-            close = df['close']
-            if asset_group is None:
+        # Helper: rolling kurtosis with safe alignment
+        def _rkurt(s, w):
+            if asset_series is None:
+                vals = s.values.astype(np.float32)
+                return pd.Series(_numba_rolling_kurt(vals, w), index=s.index)
+            work_df = pd.DataFrame({'v': s.values, 'id': row_id_series.values, 'g': asset_series.values})
+            work_df = work_df.sort_values(['g', 'id'])
+
+            def _apply_kurt(x):
+                return _numba_rolling_kurt(x.values.astype(np.float32), w)
+
+            work_df['res'] = work_df.groupby('g', sort=False)['v'].transform(_apply_kurt)
+            work_df = work_df.sort_values('id')
+            return pd.Series(work_df['res'].values, index=df.index)
+
+        # --- A-C, F, H) Rolling Blocks (chunk per asset if multi-asset) ---
+        if asset_group is not None:
+            assets = pd.Index(asset_series.unique())
+            tprint_info(f"   🧩 Chunking rolling computations per asset (n={len(assets)})")
+            for asset in assets:
+                asset_start = time.perf_counter()
+                tprint_info(f"      ▶️ Asset chunk start: {asset}")
+                asset_mask = asset_series == asset
+                df_asset = df.loc[asset_mask]
+                asset_index = df_asset.index
+
+                close = df_asset['close'] if 'close' in df_asset.columns else None
+                ret = close.pct_change().fillna(0) if close is not None else None
+
+                if close is not None:
+                    section_start = time.perf_counter()
+                    tprint_info(f"         ⏱️ Volatility block start: {asset}")
+                    rv_w24 = ret.rolling(24).std()
+                    rv_w48 = ret.rolling(48).std()
+                    rv_w96 = ret.rolling(96).std()
+
+                    _assign_series_at_index('rv_w24', rv_w24, asset_index)
+                    _assign_series_at_index('rv_w48', rv_w48, asset_index)
+                    _assign_series_at_index('rv_w96', rv_w96, asset_index)
+                    _assign_series_at_index('vol_shock', rv_w24 / (rv_w96 + eps), asset_index)
+                    _assign_series_at_index('rv_change_w24', rv_w24 - rv_w96, asset_index)
+                    _assign_series_at_index('absret_mean_w24', ret.abs().rolling(24).mean(), asset_index)
+                    kurt_vals = _numba_rolling_kurt(ret.values.astype(np.float32), 96)
+                    _assign_series_at_index('kurtosis_w96', pd.Series(kurt_vals, index=ret.index), asset_index)
+                    if 'high' in df_asset.columns and 'low' in df_asset.columns:
+                        hl_ratio = (df_asset['high'] - df_asset['low']) / (df_asset['low'] + eps)
+                        _assign_series_at_index('parkinson_proxy', hl_ratio.rolling(24).std(), asset_index)
+                    tprint_info(
+                        f"         ⏱️ Volatility block end: {asset} "
+                        f"({time.perf_counter() - section_start:.2f}s)"
+                    )
+
+                if 'volume' in df_asset.columns and close is not None:
+                    section_start = time.perf_counter()
+                    tprint_info(f"         ⏱️ Liquidity block start: {asset}")
+                    vol = df_asset['volume']
+                    log_vol = np.log(vol + eps)
+                    dvol = close * vol
+
+                    _assign_series_at_index(
+                        'logvol_z_w96',
+                        (log_vol - log_vol.rolling(96).mean()) / (log_vol.rolling(96).std() + eps),
+                        asset_index,
+                    )
+                    _assign_series_at_index(
+                        'volu_ratio',
+                        vol.rolling(12).mean() / (vol.rolling(96).mean() + eps),
+                        asset_index,
+                    )
+                    _assign_series_at_index('amihud_w24', (ret.abs() / (dvol + eps)).rolling(24).mean(), asset_index)
+                    if 'high' in df_asset.columns and 'low' in df_asset.columns:
+                        hl_spread = (df_asset['high'] - df_asset['low']) / close
+                        _assign_series_at_index('hl_spread_w24', hl_spread.rolling(24).mean(), asset_index)
+                        _assign_series_at_index(
+                            'hl_spread_shock',
+                            hl_spread.rolling(12).mean() / (hl_spread.rolling(96).mean() + eps),
+                            asset_index,
+                        )
+                    tprint_info(
+                        f"         ⏱️ Liquidity block end: {asset} "
+                        f"({time.perf_counter() - section_start:.2f}s)"
+                    )
+
+                if close is not None:
+                    section_start = time.perf_counter()
+                    tprint_info(f"         ⏱️ Trend block start: {asset}")
+                    ewma_48 = close.ewm(span=48).mean()
+                    rv_w48_local = Z.loc[asset_index, 'rv_w48']
+                    _assign_series_at_index('trend_strength', (close - ewma_48) / (rv_w48_local + eps), asset_index)
+
+                    if 'high' in df_asset.columns and 'low' in df_asset.columns:
+                        roll_low = df_asset['low'].rolling(24).min()
+                        roll_high = df_asset['high'].rolling(24).max()
+                        _assign_series_at_index(
+                            'pos_in_range_w24',
+                            (close - roll_low) / (roll_high - roll_low + eps),
+                            asset_index,
+                        )
+
+                    _assign_series_at_index('r_autocorr_w48', get_serial_correlation(ret, window=48), asset_index)
+                    tprint_info(
+                        f"         ⏱️ Trend block end: {asset} "
+                        f"({time.perf_counter() - section_start:.2f}s)"
+                    )
+
+                if close is not None:
+                    section_start = time.perf_counter()
+                    tprint_info(f"         ⏱️ Interaction block start: {asset}")
+                    vol_shock = Z.loc[asset_index, 'vol_shock']
+                    logvol = Z.loc[asset_index, 'logvol_z_w96']
+                    _assign_series_at_index('stress_1', vol_shock * (-logvol), asset_index)
+                    tprint_info(
+                        f"         ⏱️ Interaction block end: {asset} "
+                        f"({time.perf_counter() - section_start:.2f}s)"
+                    )
+
+                if close is not None:
+                    section_start = time.perf_counter()
+                    tprint_info(f"         ⏱️ Quality block start: {asset}")
+                    rv_w48_local = Z.loc[asset_index, 'rv_w48']
+                    _assign_series_at_index(
+                        'outlier_rate_w48',
+                        (ret.abs() > 3 * rv_w48_local).astype(float).rolling(48).mean(),
+                        asset_index,
+                    )
+                    tprint_info(
+                        f"         ⏱️ Quality block end: {asset} "
+                        f"({time.perf_counter() - section_start:.2f}s)"
+                    )
+
+                tprint_info(
+                    f"      ✅ Asset chunk end: {asset} ({time.perf_counter() - asset_start:.2f}s)"
+                )
+        else:
+            # --- A) Volatility State ---
+            if 'close' in df.columns:
+                section_start = time.perf_counter()
+                tprint_info("      ⏱️ Volatility block start")
+                close = df['close']
                 ret = close.pct_change().fillna(0)
-            else:
-                ret = close.groupby(asset_group).pct_change().fillna(0)
 
-            # Realized Volatility
-            rv_w24 = _rstd(ret, 24)
-            rv_w48 = _rstd(ret, 48)
-            rv_w96 = _rstd(ret, 96)
+                rv_w24 = _rstd(ret, 24)
+                rv_w48 = _rstd(ret, 48)
+                rv_w96 = _rstd(ret, 96)
 
-            _assign_series('rv_w24', rv_w24)
-            _assign_series('rv_w48', rv_w48)
-            _assign_series('rv_w96', rv_w96)
+                _assign_series('rv_w24', rv_w24)
+                _assign_series('rv_w48', rv_w48)
+                _assign_series('rv_w96', rv_w96)
 
-            # Volatility Shock
-            _assign_series('vol_shock', rv_w24 / (rv_w96 + eps))
-            _assign_series('rv_change_w24', rv_w24 - rv_w96)
+                _assign_series('vol_shock', rv_w24 / (rv_w96 + eps))
+                _assign_series('rv_change_w24', rv_w24 - rv_w96)
 
-            # Tail / Jumpiness
-            _assign_series('absret_mean_w24', _rmean(ret.abs(), 24))
-            _assign_series('kurtosis_w96', ret.rolling(96).kurt())
+                _assign_series('absret_mean_w24', _rmean(ret.abs(), 24))
+                _assign_series('kurtosis_w96', _rkurt(ret, 96))
 
-            # Range-based Vol (if available)
-            if 'high' in df.columns and 'low' in df.columns:
-                hl_ratio = (df['high'] - df['low']) / (df['low'] + eps)
-                _assign_series('parkinson_proxy', _rstd(hl_ratio, 24))
-            tprint_info(f"      ⏱️ Volatility block: {time.perf_counter() - section_start:.2f}s")
+                if 'high' in df.columns and 'low' in df.columns:
+                    hl_ratio = (df['high'] - df['low']) / (df['low'] + eps)
+                    _assign_series('parkinson_proxy', _rstd(hl_ratio, 24))
+                tprint_info(f"      ⏱️ Volatility block end: {time.perf_counter() - section_start:.2f}s")
 
-        # --- B) Liquidity / Trading Frictions ---
-        if 'volume' in df.columns and 'close' in df.columns:
-            section_start = time.perf_counter()
-            vol = df['volume']
-            log_vol = np.log(vol + eps)
-            dvol = df['close'] * vol
+            # --- B) Liquidity / Trading Frictions ---
+            if 'volume' in df.columns and 'close' in df.columns:
+                section_start = time.perf_counter()
+                tprint_info("      ⏱️ Liquidity block start")
+                vol = df['volume']
+                log_vol = np.log(vol + eps)
+                dvol = df['close'] * vol
 
-            # Volume Level & Shock
-            _assign_series('logvol_z_w96', (log_vol - _rmean(log_vol, 96)) / (_rstd(log_vol, 96) + eps))
-            _assign_series('volu_ratio', _rmean(vol, 12) / (_rmean(vol, 96) + eps))
+                _assign_series('logvol_z_w96', (log_vol - _rmean(log_vol, 96)) / (_rstd(log_vol, 96) + eps))
+                _assign_series('volu_ratio', _rmean(vol, 12) / (_rmean(vol, 96) + eps))
 
-            # Amihud Illiquidity Proxy
-            _assign_series('amihud_w24', _rmean(ret.abs() / (dvol + eps), 24))
+                _assign_series('amihud_w24', _rmean(ret.abs() / (dvol + eps), 24))
 
-            # Spread Proxy (High-Low)
-            if 'high' in df.columns and 'low' in df.columns:
-                hl_spread = (df['high'] - df['low']) / df['close']
-                _assign_series('hl_spread_w24', _rmean(hl_spread, 24))
-                _assign_series('hl_spread_shock', _rmean(hl_spread, 12) / (_rmean(hl_spread, 96) + eps))
-            tprint_info(f"      ⏱️ Liquidity block: {time.perf_counter() - section_start:.2f}s")
+                if 'high' in df.columns and 'low' in df.columns:
+                    hl_spread = (df['high'] - df['low']) / df['close']
+                    _assign_series('hl_spread_w24', _rmean(hl_spread, 24))
+                    _assign_series('hl_spread_shock', _rmean(hl_spread, 12) / (_rmean(hl_spread, 96) + eps))
+                tprint_info(f"      ⏱️ Liquidity block end: {time.perf_counter() - section_start:.2f}s")
 
-        # --- C) Trend vs Mean Reversion ---
-        if 'close' in df.columns:
-            section_start = time.perf_counter()
-            # Trend Strength
-            if asset_group is None:
+            # --- C) Trend vs Mean Reversion ---
+            if 'close' in df.columns:
+                section_start = time.perf_counter()
+                tprint_info("      ⏱️ Trend block start")
                 ewma_48 = close.ewm(span=48).mean()
-            else:
-                ewma_48 = close.groupby(asset_group).ewm(span=48).mean().reset_index(level=0, drop=True)
-            _assign_series('trend_strength', (close - ewma_48) / (rv_w48 + eps))
+                _assign_series('trend_strength', (close - ewma_48) / (rv_w48 + eps))
 
-            # Position in Range
-            if 'high' in df.columns and 'low' in df.columns:
-                if asset_group is None:
+                if 'high' in df.columns and 'low' in df.columns:
                     roll_low = df['low'].rolling(24).min()
                     roll_high = df['high'].rolling(24).max()
-                else:
-                    roll_low = df['low'].groupby(asset_group).rolling(24).min().reset_index(level=0, drop=True)
-                    roll_high = df['high'].groupby(asset_group).rolling(24).max().reset_index(level=0, drop=True)
-                _assign_series('pos_in_range_w24', (close - roll_low) / (roll_high - roll_low + eps))
+                    _assign_series('pos_in_range_w24', (close - roll_low) / (roll_high - roll_low + eps))
 
-            # Autocorrelation
-            if asset_group is None:
                 _assign_series('r_autocorr_w48', get_serial_correlation(ret, window=48))
-            else:
-                _assign_series(
-                    'r_autocorr_w48',
-                    ret.groupby(asset_group)
-                    .apply(lambda s: get_serial_correlation(s, window=48))
-                    .reset_index(level=0, drop=True)
-                )
-            tprint_info(f"      ⏱️ Trend block: {time.perf_counter() - section_start:.2f}s")
+                tprint_info(f"      ⏱️ Trend block end: {time.perf_counter() - section_start:.2f}s")
 
-        # --- F) Vol-Liq Interaction ---
-        if 'vol_shock' in Z.columns and 'logvol_z_w96' in Z.columns:
-            section_start = time.perf_counter()
-            _assign_series('stress_1', Z['vol_shock'] * (-Z['logvol_z_w96']))
-            tprint_info(f"      ⏱️ Interaction block: {time.perf_counter() - section_start:.2f}s")
+            # --- F) Vol-Liq Interaction ---
+            if 'vol_shock' in Z.columns and 'logvol_z_w96' in Z.columns:
+                section_start = time.perf_counter()
+                tprint_info("      ⏱️ Interaction block start")
+                _assign_series('stress_1', Z['vol_shock'] * (-Z['logvol_z_w96']))
+                tprint_info(f"      ⏱️ Interaction block end: {time.perf_counter() - section_start:.2f}s")
 
         # --- G) Calendar State ---
         if isinstance(df.index, pd.DatetimeIndex):
@@ -5807,19 +5954,21 @@ class LabelBasedLayer2(BaseStep):
 
         # --- H) Data Quality ---
         # (Assuming mostly clean data, but adding simple outlier flag)
-        if 'rv_w48' in Z.columns:
+        if asset_group is None and 'rv_w48' in Z.columns:
             section_start = time.perf_counter()
+            tprint_info("      ⏱️ Quality block start")
             _assign_series('outlier_rate_w48', _rmean((ret.abs() > 3 * Z['rv_w48']).astype(float), 48))
-            tprint_info(f"      ⏱️ Quality block: {time.perf_counter() - section_start:.2f}s")
+            tprint_info(f"      ⏱️ Quality block end: {time.perf_counter() - section_start:.2f}s")
 
         # --- D, E, I) Cross-Asset / Market State / Dispersion ---
         # Explicitly include 'ms__' (Market State) and 'ca__' (Cross Asset) features
         special_prefixes = ('ms__', 'ca__', 'meta__', 'disp__')
+        tprint_info("      ⏱️ Cross-asset block start")
         section_start = time.perf_counter()
         for col in df.columns:
             if col.startswith(special_prefixes):
                 _assign_series(col, df[col])
-        tprint_info(f"      ⏱️ Cross-asset block: {time.perf_counter() - section_start:.2f}s")
+        tprint_info(f"      ⏱️ Cross-asset block end: {time.perf_counter() - section_start:.2f}s")
 
         # --- Asset Identity Features (Multi-Asset Gating) ---
         if asset_series is not None:
@@ -5838,15 +5987,44 @@ class LabelBasedLayer2(BaseStep):
             # Automatically iterate through all specialist families to gather their specific features
             # Use the global registry keys to ensure dynamic coverage
             families = list(SPECIALIST_REGISTRY.keys())
+            active_families = None
+            if hasattr(self, 'production_geometries') and self.production_geometries:
+                active_families = sorted(
+                    {
+                        getattr(geo, 'family', None)
+                        for geo in self.production_geometries
+                        if getattr(geo, 'family', None) in SPECIALIST_REGISTRY
+                    }
+                )
+            elif hasattr(self, 'selected_geometries') and self.selected_geometries:
+                active_families = sorted(
+                    {
+                        getattr(geo, 'family', None)
+                        for geo in self.selected_geometries
+                        if getattr(geo, 'family', None) in SPECIALIST_REGISTRY
+                    }
+                )
+            if active_families:
+                tprint_info(
+                    f"   🧩 Limiting specialist features to active families "
+                    f"({len(active_families)}/{len(families)})"
+                )
+                families = active_families
 
             tprint_info(f"   🔍 Collecting specialist features for {len(families)} families...")
             for family in families:
                 try:
                     # Use default params for feature extraction
                     fam_start = time.perf_counter()
-                    spec_feats = self._compute_specific_geometry_features(
-                        df, df.index, {'family': family}
-                    )
+                    fam_cache_key = f"fam_full_{family}_{len(df)}"
+                    spec_feats = None
+                    if hasattr(self, '_family_feature_cache') and fam_cache_key in self._family_feature_cache:
+                        spec_feats = self._family_feature_cache[fam_cache_key]
+                        tprint_info(f"      💾 Using cached full-history features for {family}")
+                    else:
+                        spec_feats = self._compute_specific_geometry_features(
+                            df, df.index, {'family': family}
+                        )
                     if not spec_feats.empty:
                         # Rename columns to avoid collisions
                         spec_feats.columns = [f"spec_{family}_{c}" for c in spec_feats.columns]
@@ -19502,7 +19680,11 @@ class LabelBasedLayer2(BaseStep):
         Generate family-specific features for geometry assessment.
         Updated to support multi-asset data by computing rolling stats on full history per asset.
         """
-        if events_index.empty: return pd.DataFrame()
+        if events_index.empty:
+            return pd.DataFrame()
+
+        start_time = time.perf_counter()
+        tprint_info("   🧪 Computing specific geometry features...")
 
         # Caching optimization
         params_hash = hashlib.md5(json.dumps(params, sort_keys=True).encode()).hexdigest()
@@ -19512,6 +19694,11 @@ class LabelBasedLayer2(BaseStep):
             # Verify index match to be safe
             cached_df = self._feature_cache[cache_key]
             if len(cached_df) == len(events_index) and cached_df.index.equals(events_index):
+                tprint_info("   🧪 Geometry features cache hit.")
+                tprint_info(
+                    f"   🧪 Geometry features returned from cache in "
+                    f"{time.perf_counter() - start_time:.2f}s"
+                )
                 return cached_df
 
         # Ensure base features (full history)
@@ -19519,6 +19706,7 @@ class LabelBasedLayer2(BaseStep):
             self._precompute_geometry_base_features(df)
         
         family = params.get('family', 'UNKNOWN')
+        tprint_info(f"   🧪 Geometry family: {family}")
         
         # --- Stage 1: Compute Full Rolling Features (Time-Based & Asset-Aware) ---
         # We cache these per family+dataset to avoid recomputing for every geometry
@@ -19527,21 +19715,33 @@ class LabelBasedLayer2(BaseStep):
             self._family_feature_cache = {}
             
         if fam_cache_key not in self._family_feature_cache:
+            tprint_info(f"   🧪 Building full-history features for family={family}")
             base = self._geometry_base_features
             
             # Prepare helpers for grouped calculation
             has_asset_id = 'asset_id' in df.columns
             grouper = df['asset_id'] if has_asset_id else None
             
-            def apply_rolling(series, func):
-                if has_asset_id:
-                    return series.groupby(grouper, sort=False, group_keys=False).apply(func)
-                return func(series)
+            def apply_rolling(series, func, label: str = ""):
+                if not has_asset_id:
+                    return func(series)
+                out = pd.Series(index=series.index, dtype=float)
+                for asset, idx in grouper.groupby(grouper, sort=False).groups.items():
+                    res = func(series.loc[idx])
+                    out.loc[idx] = res.values
+                if label:
+                    tprint_info(f"      ⏱️ Rolling computed: {label}")
+                return out
 
-            def apply_shift(series, periods):
-                if has_asset_id:
-                    return series.groupby(grouper, sort=False, group_keys=False).shift(periods)
-                return series.shift(periods)
+            def apply_shift(series, periods, label: str = ""):
+                if not has_asset_id:
+                    return series.shift(periods)
+                out = pd.Series(index=series.index, dtype=float)
+                for asset, idx in grouper.groupby(grouper, sort=False).groups.items():
+                    out.loc[idx] = series.loc[idx].shift(periods).values
+                if label:
+                    tprint_info(f"      ⏱️ Shift computed: {label}")
+                return out
 
             # Compute features on FULL dataframe
             f_df = pd.DataFrame(index=df.index)
@@ -19553,7 +19753,7 @@ class LabelBasedLayer2(BaseStep):
             if family == 'CAUSAL_SURPRISE':
                 f_df['cusum_strength'] = base['roll5_sum'].abs()
                 f_df['price_efficiency'] = (base['roll10_sum'] / (base['roll10_sum_abs'] + 1e-9)).abs()
-                f_df['price_momentum'] = apply_shift(price_pct, -5) # Forward looking? No, shift(-5) is forward.
+                f_df['price_momentum'] = apply_shift(price_pct, -5, label="price_momentum")
                 # Note: original code used shift(-5) which is future. This is likely intended as a label/target proxy or bug?
                 # "price_momentum" usually backward. If it is forward, it leaks.
                 # Assuming original intent was preserved (metrics often look forward for probing).
@@ -19569,23 +19769,52 @@ class LabelBasedLayer2(BaseStep):
                 f_df['volume_trend'] = base['roll10_volume_mean'] / vol_safe
 
             elif family == 'TAIL_RISK':
-                f_df['skewness'] = apply_rolling(price_pct, lambda x: x.rolling(20).skew())
                 f_df['vol_of_vol'] = base['roll5_std']
-                f_df['kurtosis'] = apply_rolling(price_pct, lambda x: x.rolling(20).kurt())
+                if has_asset_id:
+                    skew_vals = pd.Series(index=df.index, dtype=float)
+                    kurt_vals = pd.Series(index=df.index, dtype=float)
+                    for asset, idx in grouper.groupby(grouper, sort=False).groups.items():
+                        asset_series = price_pct.loc[idx]
+                        skew_vals.loc[idx] = asset_series.rolling(20).skew().values
+                        kurt_vals.loc[idx] = asset_series.rolling(20).kurt().values
+                    f_df['skewness'] = skew_vals
+                    f_df['kurtosis'] = kurt_vals
+                else:
+                    f_df['skewness'] = apply_rolling(price_pct, lambda x: x.rolling(20).skew(), label="skewness_w20")
+                    f_df['kurtosis'] = apply_rolling(price_pct, lambda x: x.rolling(20).kurt(), label="kurtosis_w20")
 
             elif family == 'TREND_REGIME':
                 f_df['trend_strength'] = base['roll20_mean'].abs()
-                f_df['directional_consistency'] = apply_rolling((price_pct > 0), lambda x: x.rolling(10).mean())
-                f_df['trend_persistence'] = apply_rolling((price_pct > 0), lambda x: x.rolling(20).mean())
+                trend_mask = (price_pct > 0)
+                if has_asset_id:
+                    dir_consistency = pd.Series(index=df.index, dtype=float)
+                    trend_persist = pd.Series(index=df.index, dtype=float)
+                    for asset, idx in grouper.groupby(grouper, sort=False).groups.items():
+                        asset_trend = trend_mask.loc[idx]
+                        dir_consistency.loc[idx] = asset_trend.rolling(10).mean().values
+                        trend_persist.loc[idx] = asset_trend.rolling(20).mean().values
+                    f_df['directional_consistency'] = dir_consistency
+                    f_df['trend_persistence'] = trend_persist
+                else:
+                    f_df['directional_consistency'] = apply_rolling(
+                        trend_mask, lambda x: x.rolling(10).mean(), label="directional_consistency_w10"
+                    )
+                    f_df['trend_persistence'] = apply_rolling(
+                        trend_mask, lambda x: x.rolling(20).mean(), label="trend_persistence_w20"
+                    )
 
             elif family in ['VOL_STATE', 'VOLATILITY_SPECIALIST', 'VOL_CUSUM']:
                 vol_z = base['roll20_std'] / (base['roll100_std'] + 1e-9)
                 f_df['vol_regime_zscore'] = vol_z.fillna(0)
                 # Serial correlation needs specialized handling if grouped
                 if has_asset_id:
-                    # Apply get_serial_correlation per group
-                    f_df['vol_clustering'] = price_abs_pct.groupby(grouper, sort=False, group_keys=False).apply(lambda x: get_serial_correlation(x, window=5))
-                    f_df['vol_mean_reversion'] = -price_pct.groupby(grouper, sort=False, group_keys=False).apply(lambda x: get_serial_correlation(x, window=20))
+                    vol_cluster = pd.Series(index=df.index, dtype=float)
+                    vol_mr = pd.Series(index=df.index, dtype=float)
+                    for asset, idx in grouper.groupby(grouper, sort=False).groups.items():
+                        vol_cluster.loc[idx] = get_serial_correlation(price_abs_pct.loc[idx], window=5).values
+                        vol_mr.loc[idx] = -get_serial_correlation(price_pct.loc[idx], window=20).values
+                    f_df['vol_clustering'] = vol_cluster
+                    f_df['vol_mean_reversion'] = vol_mr
                 else:
                     f_df['vol_clustering'] = get_serial_correlation(price_abs_pct, window=5)
                     f_df['vol_mean_reversion'] = -get_serial_correlation(price_pct, window=20)
@@ -19613,7 +19842,7 @@ class LabelBasedLayer2(BaseStep):
                 move_co = (close - open_p).abs()
                 efficiency = (move_co / range_hl) * np.log1p(vol)
 
-                eff_ema = apply_rolling(efficiency, lambda x: x.ewm(span=20).mean())
+                eff_ema = apply_rolling(efficiency, lambda x: x.ewm(span=20).mean(), label="efficiency_ema20")
 
                 f_df['efficiency_surprise'] = efficiency - eff_ema
                 f_df['efficiency_trend'] = eff_ema
@@ -19627,8 +19856,8 @@ class LabelBasedLayer2(BaseStep):
                 log_hl = np.log(high / (low + 1e-9))
                 parkinsons = np.sqrt(const * (log_hl ** 2))
 
-                park_mean = apply_rolling(parkinsons, lambda x: x.rolling(20).mean())
-                park_long = apply_rolling(parkinsons, lambda x: x.rolling(100).mean())
+                park_mean = apply_rolling(parkinsons, lambda x: x.rolling(20).mean(), label="parkinson_mean20")
+                park_long = apply_rolling(parkinsons, lambda x: x.rolling(100).mean(), label="parkinson_mean100")
 
                 f_df['vol_innovation'] = parkinsons - park_mean
                 f_df['parkinsons_level'] = parkinsons
@@ -19644,17 +19873,20 @@ class LabelBasedLayer2(BaseStep):
                     # If df has asset_id, we should probably run per asset?
                     if has_asset_id:
                         # Group apply
-                        def calc_dmv(g):
+                        dmv_factor = pd.Series(index=df.index, dtype=float)
+                        dmv_innov = pd.Series(index=df.index, dtype=float)
+                        for asset, idx in grouper.groupby(grouper, sort=False).groups.items():
+                            g = df.loc[idx]
                             try:
                                 d = engine.calculate_dmv(g)
                                 inn = engine.generate_innovation_feature(d)
-                                return pd.DataFrame({'dmv_factor': d, 'dmv_innovation': inn}, index=g.index)
-                            except:
-                                return pd.DataFrame({'dmv_factor': 0.0, 'dmv_innovation': 0.0}, index=g.index)
-
-                        res = df.groupby(grouper, sort=False, group_keys=False).apply(calc_dmv)
-                        f_df['dmv_factor'] = res['dmv_factor']
-                        f_df['dmv_innovation'] = res['dmv_innovation']
+                                dmv_factor.loc[idx] = d
+                                dmv_innov.loc[idx] = inn
+                            except Exception:
+                                dmv_factor.loc[idx] = 0.0
+                                dmv_innov.loc[idx] = 0.0
+                        f_df['dmv_factor'] = dmv_factor
+                        f_df['dmv_innovation'] = dmv_innov
                     else:
                         dmv = engine.calculate_dmv(df)
                         f_df['dmv_factor'] = dmv
@@ -19664,6 +19896,7 @@ class LabelBasedLayer2(BaseStep):
                     f_df['dmv_innovation'] = 0.0
 
             self._family_feature_cache[fam_cache_key] = f_df.fillna(0.0)
+            tprint_info(f"   🧪 Cached full-history features for family={family}")
 
         # --- Stage 2: Extract & Augment ---
         full_feats = self._family_feature_cache[fam_cache_key]
@@ -19683,6 +19916,10 @@ class LabelBasedLayer2(BaseStep):
         self._feature_cache[cache_key] = feats.fillna(0.0)
         self._prune_cache(self._feature_cache, self._max_cache_entries, "features")
 
+        tprint_info(
+            f"   🧪 Geometry features ready for family={family} in "
+            f"{time.perf_counter() - start_time:.2f}s"
+        )
         return feats
 
     def _compute_rmi_scores(self, X: pd.DataFrame, y: pd.Series,

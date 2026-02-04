@@ -418,99 +418,104 @@ def numba_grouped_rolling_mean(df: pd.DataFrame, group_series: pd.Series, window
 @jit(nopython=True, cache=True)
 def _numba_peak_label(close, atr, horizon, near_k, rev_k, is_uptrend):
     """
-    Computes "Peak Proximity" label:
-    1 if Price is near forward Max/Min AND a significant reversal follows.
+    Computes "Peak Proximity" label with strict causal ATR logic.
+    1 if:
+      - Price at t is within near_k * ATR[t] of the forward peak P (in [t+1, t+H]).
+      - A significant reversal of size rev_k * ATR[t] occurs AFTER P within the horizon.
+
+    is_uptrend=True: looking for a Top (Peak).
+    is_uptrend=False: looking for a Bottom (Trough).
     """
     n = len(close)
     out = np.zeros(n, dtype=np.float32) # Using float32 for compatibility with pipeline
 
+    # We iterate up to n - horizon to ensure we have full lookahead
+    # Last H bars will be 0 (unlabeled)
     for i in range(n - horizon):
         curr_p = close[i]
         curr_atr = atr[i]
 
-        # If ATR is NaN or 0, fallback to price pct (heuristic)
-        # But we assume caller handles this or provides valid ATR
-        if np.isnan(curr_atr) or curr_atr <= 0:
-            limit_dist = rev_k * curr_p * 0.01 # Fallback 1% scale?
-            # Better to assume inputs are valid or skip
+        # Valid ATR check
+        if np.isnan(curr_atr) or curr_atr <= 0 or np.isnan(curr_p):
             continue
-        else:
-            limit_dist = rev_k * curr_atr
-            near_dist = near_k * curr_atr
 
-        if np.isnan(curr_p): continue
+        limit_dist = rev_k * curr_atr
+        near_dist = near_k * curr_atr
 
-        if is_uptrend: # Looking for Peak
-            # Find Forward Max
+        # Define search window: (i+1, i+1+horizon)
+        start_search = i + 1
+        end_search = min(n, i + 1 + horizon)
+
+        if start_search >= end_search:
+            continue
+
+        if is_uptrend: # Looking for Peak (Top)
+            # 1. Find Forward Max (Peak)
             fwd_max = -np.inf
             idx_max = -1
 
-            # Look ahead H steps
-            # Range: i+1 to i+1+horizon
-            # Check bounds
-            end_search = min(n, i + 1 + horizon)
-
-            for j in range(i + 1, end_search):
+            for j in range(start_search, end_search):
                 val = close[j]
-                if not np.isnan(val) and val > fwd_max:
-                    fwd_max = val
-                    idx_max = j
+                if not np.isnan(val):
+                    if val > fwd_max:
+                        fwd_max = val
+                        idx_max = j
 
             if idx_max == -1: continue
 
-            # Condition 1: Near Peak
+            # 2. Check Peak Proximity
             if curr_p < (fwd_max - near_dist):
                 continue
 
-            # Condition 2: Reversal Follows (Drawdown from Max)
-            # Search after peak until end of horizon
-            # If peak is at end, we can't confirm reversal.
+            # 3. Check Reversal AFTER Peak
+            # We need a drawdown from fwd_max of size limit_dist
+            # The drawdown must happen in [idx_max + 1, end_search)
+            # If peak is the last bar (idx_max == end_search-1), no reversal can be checked
             if idx_max >= end_search - 1:
                 continue
 
-            fwd_min_after = np.inf
+            reversal_confirmed = False
             for j in range(idx_max + 1, end_search):
                 val = close[j]
-                if not np.isnan(val) and val < fwd_min_after:
-                    fwd_min_after = val
+                if not np.isnan(val):
+                    if val <= (fwd_max - limit_dist):
+                        reversal_confirmed = True
+                        break
 
-            if fwd_min_after == np.inf: continue
-
-            if fwd_min_after <= (fwd_max - limit_dist):
+            if reversal_confirmed:
                 out[i] = 1.0
 
-        else: # Looking for Trough
-            # Find Forward Min
+        else: # Looking for Trough (Bottom)
+            # 1. Find Forward Min (Trough)
             fwd_min = np.inf
             idx_min = -1
 
-            end_search = min(n, i + 1 + horizon)
-
-            for j in range(i + 1, end_search):
+            for j in range(start_search, end_search):
                 val = close[j]
-                if not np.isnan(val) and val < fwd_min:
-                    fwd_min = val
-                    idx_min = j
+                if not np.isnan(val):
+                    if val < fwd_min:
+                        fwd_min = val
+                        idx_min = j
 
             if idx_min == -1: continue
 
-            # Condition 1: Near Trough
+            # 2. Check Trough Proximity
             if curr_p > (fwd_min + near_dist):
                 continue
 
-            # Condition 2: Rally Follows
+            # 3. Check Rally AFTER Trough
             if idx_min >= end_search - 1:
                 continue
 
-            fwd_max_after = -np.inf
+            reversal_confirmed = False
             for j in range(idx_min + 1, end_search):
                 val = close[j]
-                if not np.isnan(val) and val > fwd_max_after:
-                    fwd_max_after = val
+                if not np.isnan(val):
+                    if val >= (fwd_min + limit_dist):
+                        reversal_confirmed = True
+                        break
 
-            if fwd_max_after == -np.inf: continue
-
-            if fwd_max_after >= (fwd_min + limit_dist):
+            if reversal_confirmed:
                 out[i] = 1.0
 
     return out

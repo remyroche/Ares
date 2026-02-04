@@ -82,20 +82,20 @@ def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, sy
     X_parts = []
     for k in cfg["exh_feature_keys"]:
         if k in feats:
-            X_parts.append(feats[k].loc[t_index, valid_syms].stack(dropna=False).rename(k))
+            X_parts.append(feats[k].loc[t_index, valid_syms].stack(future_stack=True).rename(k))
     X = pd.concat(X_parts, axis=1)
     X.index.names = ["ts", "symbol"]
     if trend_filter:
-        trend_vals = feats["trend_pct"].loc[t_index, valid_syms].stack(dropna=False)
+        trend_vals = feats["trend_pct"].loc[t_index, valid_syms].stack(future_stack=True)
         common_idx = X.index.intersection(trend_vals.index)
         X = X.loc[common_idx]; trend_vals = trend_vals.loc[common_idx]
         if trend_filter == "up": keep = trend_vals > 0
         else: keep = trend_vals <= 0
         X = X[keep]
-        y_ser = pd.DataFrame(y, index=t_index, columns=valid_syms).stack(dropna=False).rename("y").reindex(X.index)
+        y_ser = pd.DataFrame(y, index=t_index, columns=valid_syms).stack(future_stack=True).rename("y").reindex(X.index)
         y_arr = y_ser.values.astype(int)
     else:
-        y_ser = pd.DataFrame(y, index=t_index, columns=valid_syms).stack(dropna=False).rename("y")
+        y_ser = pd.DataFrame(y, index=t_index, columns=valid_syms).stack(future_stack=True).rename("y")
         X = X.join(y_ser).dropna()
         y_arr = X.pop("y").astype(int).values
     mg = mkt_gates.loc[t_index, ["mkt_ret24h", "mkt_ret6h", "mkt_trend", "mkt_rv", "G_VOL", "G_TREND"]]
@@ -148,7 +148,7 @@ def _build_pred_X(feats, mkt_gates, cfg, ts, syms):
     X_parts = []
     for k in cfg["exh_feature_keys"]:
         if k in feats:
-            X_parts.append(feats[k].loc[t_index, syms].stack(dropna=False).rename(k))
+            X_parts.append(feats[k].loc[t_index, syms].stack(future_stack=True).rename(k))
     Xp = pd.concat(X_parts, axis=1)
     Xp.index.names = ["ts", "symbol"]
     mg = mkt_gates.loc[t_index, ["mkt_ret24h", "mkt_ret6h", "mkt_trend", "mkt_rv", "G_VOL", "G_TREND"]]
@@ -182,7 +182,7 @@ def generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_end, lookback_h
     p_dn = 0.0
     if model_dn:
         p_dn = model_dn.predict_proba(Xp)
-    trend_vals = feats["trend_pct"].loc[t_idx, valid_syms].stack(dropna=False).reindex(Xp.index).fillna(0)
+    trend_vals = feats["trend_pct"].loc[t_idx, valid_syms].stack(future_stack=True).reindex(Xp.index).fillna(0)
     p_final = np.where(trend_vals > 0, p_up, p_dn)
     res_ser = pd.Series(p_final, index=Xp.index)
     res_df = res_ser.unstack(level="symbol").reindex(columns=syms).fillna(0.0)
@@ -193,7 +193,7 @@ def _build_pred_X_window(feats, mkt_gates, cfg, t_idx, syms):
     X_parts = []
     for k in cfg["exh_feature_keys"]:
         if k in feats:
-            X_parts.append(feats[k].loc[t_idx, syms].stack(dropna=False).rename(k))
+            X_parts.append(feats[k].loc[t_idx, syms].stack(future_stack=True).rename(k))
     Xp = pd.concat(X_parts, axis=1)
     Xp.index.names = ["ts", "symbol"]
     mg = mkt_gates.loc[t_idx, ["mkt_ret24h", "mkt_ret6h", "mkt_trend", "mkt_rv", "G_VOL", "G_TREND"]]

@@ -1758,27 +1758,36 @@ def _numba_rolling_cov(x: np.ndarray, y: np.ndarray, window: int) -> np.ndarray:
 @jit(nopython=True, cache=True)
 def _numba_rolling_mean_nan_safe(x, window):
     """
-    Rolling mean ignoring NaNs.
+    Rolling mean ignoring NaNs (O(N) online algorithm).
     """
     n = len(x)
-    output = np.zeros(n, dtype=np.float32)
-    output[:] = np.nan
+    output = np.full(n, np.nan, dtype=np.float32)
+
+    if window <= 0:
+        return output
+
+    current_sum = 0.0
+    current_count = 0
 
     for i in range(n):
-        start = max(0, i - window + 1)
-        end = i + 1
+        # Entering element
+        val_in = x[i]
+        if not np.isnan(val_in):
+            current_sum += val_in
+            current_count += 1
 
-        sum_val = 0.0
-        count = 0
+        # Leaving element
+        # Window size W means we look at [i-W+1, i].
+        # So we drop element at i-W.
+        if i >= window:
+            val_out = x[i - window]
+            if not np.isnan(val_out):
+                current_sum -= val_out
+                current_count -= 1
 
-        for j in range(start, end):
-            val = x[j]
-            if not np.isnan(val):
-                sum_val += val
-                count += 1
-
-        if count > 0:
-            output[i] = sum_val / count
+        # Output logic
+        if current_count > 0:
+            output[i] = current_sum / current_count
 
     return output
 
@@ -1786,38 +1795,45 @@ def _numba_rolling_mean_nan_safe(x, window):
 @jit(nopython=True, cache=True)
 def _numba_rolling_std_nan_safe(x, window):
     """
-    Rolling std ignoring NaNs.
+    Rolling std ignoring NaNs (O(N) online algorithm).
+    Uses sample standard deviation (denom=count-1).
     """
     n = len(x)
-    output = np.zeros(n, dtype=np.float32)
-    output[:] = np.nan
+    output = np.full(n, np.nan, dtype=np.float32)
+
+    if window <= 0:
+        return output
+
+    sum_val = 0.0
+    sum_sq = 0.0
+    count = 0
 
     for i in range(n):
-        start = max(0, i - window + 1)
-        end = i + 1
+        # Entering
+        val_in = x[i]
+        if not np.isnan(val_in):
+            sum_val += val_in
+            sum_sq += val_in * val_in
+            count += 1
 
-        # Pass 1: Mean
-        sum_val = 0.0
-        count = 0
-        for j in range(start, end):
-            val = x[j]
-            if not np.isnan(val):
-                sum_val += val
-                count += 1
+        # Leaving
+        if i >= window:
+            val_out = x[i - window]
+            if not np.isnan(val_out):
+                sum_val -= val_out
+                sum_sq -= val_out * val_out
+                count -= 1
 
-        if count <= 1:
-            continue
+        # Output logic
+        if count > 1:
+            # Var = (SumSq - (Sum^2)/N) / (N-1)
+            var_num = sum_sq - (sum_val * sum_val) / count
 
-        mean = sum_val / count
-
-        # Pass 2: Variance
-        sum_sq = 0.0
-        for j in range(start, end):
-            val = x[j]
-            if not np.isnan(val):
-                sum_sq += (val - mean) ** 2
-
-        output[i] = np.sqrt(sum_sq / (count - 1))
+            # Floating point noise can make var_num slightly negative
+            if var_num < 1e-12:
+                output[i] = 0.0
+            else:
+                output[i] = np.sqrt(var_num / (count - 1))
 
     return output
 

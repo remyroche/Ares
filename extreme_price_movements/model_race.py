@@ -45,6 +45,8 @@ def calculate_selection_score(y_true, y_prob, y_returns):
     # Combined Score
     selection_score = (auc - 0.5) * max(0, bss) * max(0, ic)
 
+    tprint(f"Selection Score: {selection_score:.4f} (AUC={auc:.4f}, BSS={bss:.4f}, IC={ic:.4f}, Brier={bs_actual:.4f})")
+
     return {
         "Selection_Score": selection_score,
         "AUC": auc,
@@ -125,6 +127,12 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         returns: continuous returns for IC calculation (validation)
         """
         tprint(f"Entering function: fit in model_race.py")
+        tprint(f"X.shape: {X.shape}, y.shape: {y.shape}")
+        if sample_weight is not None:
+            tprint(f"sample_weight.shape: {sample_weight.shape}")
+        else:
+            tprint("sample_weight is None")
+
         candidates = self._get_candidates()
         tscv = TimeSeriesSplit(n_splits=self.n_splits)
 
@@ -143,9 +151,17 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             scores = []
 
             try:
+                split_idx = 0
                 for train_idx, val_idx in tscv.split(X):
+                    split_idx += 1
+                    tprint(f"  Fold {split_idx}/{self.n_splits}: train={len(train_idx)}, val={len(val_idx)}")
+
                     X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
                     y_tr, y_val = y[train_idx], y[val_idx]
+
+                    tprint(f"    Train class dist: sum={y_tr.sum()}, mean={y_tr.mean():.4f}")
+                    tprint(f"    Val class dist: sum={y_val.sum()}, mean={y_val.mean():.4f}")
+
                     w_tr = sample_weight[train_idx] if sample_weight is not None else None
                     ret_val = returns[val_idx]
 
@@ -163,18 +179,23 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     # It supports sample_weight if the underlying estimator does.
                     # All our candidates do.
                     calibrated_model.fit(X_tr, y_tr, sample_weight=w_tr)
+                    tprint(f"    Model fitted.")
 
                     probs = calibrated_model.predict_proba(X_val)[:, 1]
+                    tprint(f"    Prediction complete. Shape: {probs.shape}")
 
                     metrics = calculate_selection_score(y_val, probs, ret_val)
+                    tprint(f"    Fold Score: {metrics['Selection_Score']:.4f}")
                     scores.append(metrics["Selection_Score"])
 
                 avg_score = np.nanmean(scores)
                 results[name] = avg_score
-                tprint(f"  {name} Score: {avg_score:.4f}")
+                tprint(f"  {name} Average Score: {avg_score:.4f}")
 
             except Exception as e:
+                import traceback
                 tprint(f"  {name} Failed: {e}")
+                tprint(traceback.format_exc())
                 results[name] = -float("inf")
 
         if not results:
@@ -202,6 +223,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
     def predict_proba(self, X):
         tprint(f"Entering function: predict_proba in model_race.py")
+        tprint(f"Predicting on X shape: {X.shape}")
         if self.best_model is None:
             raise ValueError("ModelRace not fitted")
         return self.best_model.predict_proba(X)

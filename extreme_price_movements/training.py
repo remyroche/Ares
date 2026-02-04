@@ -7,6 +7,7 @@ from extreme_price_movements.exhaustion import ExhaustionModel
 from extreme_price_movements.optimization import composite_score_with_constraints
 from extreme_price_movements.candidates import select_trade_candidates_hourly
 import extreme_price_movements.fast_funcs as ff
+from extreme_price_movements.labeling import compute_triple_barrier_labels
 
 def apply_interaction_toggles(df: pd.DataFrame, causal_cols, gate_cols, drop_raw=True):
     tprint(f"Entering function: apply_interaction_toggles in training.py")
@@ -254,10 +255,40 @@ def _build_pred_X_window(feats, mkt_gates, cfg, t_idx, syms):
     return Xp.fillna(0)
 
 def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts_end, p_exh_hist, H, model_kind, trend_filter=None):
-    # (Same as before)
+    # Modified to use Triple Barrier
     tprint(f"Entering function: build_hourly_training_set_and_weights in training.py")
     c = panel["close"]
     idx = c.index
+
+    # 1. Compute Triple Barrier Labels for the whole panel (or relevant window)
+    # Optimization: Calculate only for needed window to save memory/time
+    # Actually, triple barrier is fast with Numba.
+
+    # We need labels aligned to `t` (decision time).
+    # Triple barrier at `t` uses path from `t` (or `t+1` if execution delay).
+    # The `compute_triple_barrier_labels` uses the provided arrays.
+    # If we pass `panel`, it iterates.
+
+    # Let's subset panel to relevant history + horizon to speed up?
+    # Or just run on full panel if small enough (90 days).
+    # Assuming 90 days hourly ~ 2000 rows. Fast.
+
+    tp = cfg.get("tp", 0.05)
+    sl = cfg.get("sl", 0.025)
+
+    # Ensure panel is float32
+    # Create subset for labeling to avoid whole history if huge
+    ts_start_label = ts_end - pd.Timedelta(hours=int(cfg["train_lookback_hours"])) - pd.Timedelta(hours=H*2)
+    # Mask for labeling
+    # We need future data for labeling up to ts_end.
+    # Training set goes up to ts_end - H.
+
+    # Actually, we can just run on the whole panel provided to this function.
+    # `train_daily` passes 90 days.
+
+    tb_labels, tb_returns = compute_triple_barrier_labels(panel, tp, sl, H)
+
+    # Now proceed with candidate selection
     ts_start = ts_end - pd.Timedelta(hours=int(cfg["train_lookback_hours"]))
     valid_mask = (idx >= ts_start) & (idx <= ts_end - pd.Timedelta(hours=H+8))
     t_idx = idx[valid_mask]
@@ -265,6 +296,7 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
     t_idx_sel = t_idx[t_idx.hour % 4 == 0]
     metric = cfg["trade_deviation_metric"]
     rows = []
+
     for t in t_idx_sel:
         if t not in feats[metric].index: continue
         row_vals = feats[metric].loc[t, syms].dropna()
@@ -278,37 +310,84 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
         bot = sorted_ret.iloc[:k].index.tolist()
         top = sorted_ret.iloc[-k:].index.tolist()
         final_candidates = list(set(candidates_idx) & (set(bot) | set(top)))
+
+        # t is signal time. Entry is usually t+1h (execution).
+        # Triple barrier was computed on the series.
+        # If we use `closes[i]` as entry in TB, and signal is at `t` (close of bar t),
+        # then TB outcome at `t` represents trade entered at `closes[t]`.
+        # This matches "Signal at Close, Enter at Close".
+        # If execution is `opens[t+1]`, we should ideally align TB logic.
+        # Our TB logic uses `opens[i]` as entry if passed `opens`?
+        # `compute_triple_barrier_labels` uses `opens` as entry if logic inside uses `opens[i]`.
+        # Wait, my implementation used `opens[i]` as entry price.
+        # And it scans `i+1` onwards.
+        # So TB outcome at index `i` corresponds to entering at `Open[i]`.
+        # But we want to enter at `Open[t+1]`.
+        # So we should look at TB label at index `t+1`?
+        # Let's check:
+        # Signal at `t`. Execution at `t+1`.
+        # We want the outcome of trade entering at `Open[t+1]`.
+        # My TB function at index `k` computes outcome for entry at `Open[k]`.
+        # So we should take `tb_labels.loc[t + 1h]`.
+
         t_entry = t + pd.Timedelta(hours=1)
-        t_exit = t_entry + pd.Timedelta(hours=H)
-        if t_exit not in c.index: continue
-        px_entry = panel["open"].loc[t_entry, final_candidates]
-        px_exit = c.loc[t_exit, final_candidates]
-        y_raw = (px_exit / (px_entry + 1e-12) - 1.0)
-        t_w_end = t_entry + pd.Timedelta(hours=8)
-        if t_w_end > c.index.max(): continue
-        p_slice_h = panel["high"].loc[t_entry:t_w_end, final_candidates]
-        p_slice_l = panel["low"].loc[t_entry:t_w_end, final_candidates]
-        p_slice_c = panel["close"].loc[t_entry:t_w_end, final_candidates]
+        if t_entry not in tb_labels.index: continue
+
+        # Also need MAE for weighting (optional, can keep or approximate)
+        # We can use the simple TB return for target.
+        # But `weight` used MAE.
+        # Let's approximate weight using `ret_vals` and `target_ret` magnitude.
+
         for sym in final_candidates:
-            if pd.isna(y_raw.get(sym)): continue
+            if sym not in tb_labels.columns: continue
+
+            # TB Outcome
+            lbl = tb_labels.loc[t_entry, sym] # 1, -1, 0
+            ret = tb_returns.loc[t_entry, sym] # Realized return
+
+            # Filter trend
             trend_val = 0.0
             if "trend_pct" in feats: trend_val = feats["trend_pct"].loc[t, sym]
             trend_dir = np.sign(trend_val) if trend_val != 0 else 1.0
+
             if trend_filter == "up" and trend_dir <= 0: continue
             if trend_filter == "down" and trend_dir > 0: continue
-            if model_kind == "mr": target_ret = y_raw[sym] * -trend_dir
-            else: target_ret = y_raw[sym] * trend_dir
-            y_bin = 1 if target_ret > 0 else 0
+
+            # Target Return depends on Model Kind (MR vs TF)
+            # MR: bets against trend?
+            # If Model is MR, and Trend is UP, we want to SHORT.
+            # If TB label is -1 (Down), that's a WIN for Short.
+            # If TB label is 1 (Up), that's a LOSS for Short.
+
+            # Standardizing `y_bin`: 1 if profitable trade, 0 else.
+            # Standardizing `y_ret`: return of the trade.
+
+            # MR Trade Direction: -trend_dir
+            # TF Trade Direction: trend_dir
+
+            trade_dir = 1 if model_kind == "tf" else -1
+            # If trend_dir is 1 (Up):
+            # TF -> Long (1). MR -> Short (-1).
+
+            # TB Return `ret` is signed (Long return).
+            # If we go Long, PnL = ret.
+            # If we go Short, PnL = -ret.
+
+            pnl = ret * trade_dir * trend_dir
+
+            y_bin = 1 if pnl > 0 else 0
+
+            # Weighting
+            # Simplified weighting: log(1 + abs(24h_ret)) * log(1 + abs(pnl)/risk?)
+            # Or just use pnl magnitude
             pa = abs(ret_vals[sym])
             w1 = np.log(1 + pa)
-            entry = px_entry[sym]
-            avg_price = p_slice_c[sym].mean()
-            if y_raw[sym] > 0: mae = entry - p_slice_l[sym].min()
-            else: mae = p_slice_h[sym].max() - entry
-            mae = max(0.0, mae)
-            w2 = np.log(1 + (avg_price / (mae + 0.001)))
+            # w2 based on efficiency?
+            w2 = 1.0 # simplified
             weight = w1 * w2
-            rec = {"symbol": sym, "ts": t, "y_bin": y_bin, "y_ret": target_ret, "w": weight}
+
+            rec = {"symbol": sym, "ts": t, "y_bin": y_bin, "y_ret": pnl, "w": weight}
+
             t_lag = t - pd.Timedelta(hours=1)
             p_val = 0.0
             if t_lag in p_exh_hist.index and sym in p_exh_hist.columns:

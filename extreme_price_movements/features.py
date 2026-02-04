@@ -23,7 +23,23 @@ def ema(x: pd.DataFrame, span: int):
 def atr_percent(high: pd.DataFrame, low: pd.DataFrame, close: pd.DataFrame, n: int):
     # Use Numba implementation
     tprint(f"Entering function: atr_percent in features.py")
-    return ff.numba_atr(high, low, close, n)
+    # CHANGED: Use no_norm version because inputs are Log Frac Diff (stationary)
+    return ff.numba_atr_no_norm(high, low, close, n)
+
+def _transform_price(df):
+    # Log -> EWMA(5) -> FracDiff(0.4, 96)
+    tprint("Transforming Prices: Log -> EWMA(5) -> FracDiff(0.4, 96)")
+    df_log = np.log(df + 1e-9)
+    df_den = ff.apply_to_frame(df_log, ff._numba_ewma, 2.0/6.0, False)
+    df_fd = ff.numba_frac_diff(df_den, 0.4, 96)
+    return df_fd
+
+def _transform_volume(df):
+    # Log -> EWMA(5)
+    tprint("Transforming Volume: Log -> EWMA(5)")
+    df_log = np.log(df + 1.0)
+    df_den = ff.apply_to_frame(df_log, ff._numba_ewma, 2.0/6.0, False)
+    return df_den
 
 def time_sin_cos(index: pd.DatetimeIndex):
     tprint(f"Entering function: time_sin_cos in features.py")
@@ -46,26 +62,32 @@ def compute_market_features(panel, basket_syms, trend_sma_hours=24*14):
     if not basket:
         basket = list(c.columns)
 
-    mkt_close = c[basket].mean(axis=1)
-    mkt_high  = h[basket].mean(axis=1)
-    mkt_low   = l[basket].mean(axis=1)
-    mkt_vol   = v[basket].mean(axis=1)
+    mkt_close_raw = c[basket].mean(axis=1)
+    mkt_high_raw  = h[basket].mean(axis=1)
+    mkt_low_raw   = l[basket].mean(axis=1)
+    mkt_vol_raw   = v[basket].mean(axis=1)
 
-    # Note: numba_pct_change calculates (x[t] - x[t-N]) / x[t-N].
-    # This uses information up to time t, so it is safe for predicting returns from t onwards.
-    mkt_ret24h_df = ff.numba_pct_change(mkt_close.to_frame(), 24)
+    # Transform
+    mkt_close = _transform_price(mkt_close_raw.to_frame(name="c"))["c"]
+    mkt_high  = _transform_price(mkt_high_raw.to_frame(name="h"))["h"]
+    mkt_low   = _transform_price(mkt_low_raw.to_frame(name="l"))["l"]
+    mkt_vol   = _transform_volume(mkt_vol_raw.to_frame(name="v"))["v"]
+
+    # mkt_ret24h: Rolling Sum of FracDiff (approx log return)
+    mkt_ret24h_df = ff.numba_rolling_sum(mkt_close.to_frame(), 24)
     mkt_ret24h = mkt_ret24h_df[mkt_ret24h_df.columns[0]]
 
-    mkt_ret6h_df  = ff.numba_pct_change(mkt_close.to_frame(), 6)
+    mkt_ret6h_df  = ff.numba_rolling_sum(mkt_close.to_frame(), 6)
     mkt_ret6h = mkt_ret6h_df[mkt_ret6h_df.columns[0]]
 
     sma_df = ff.numba_rolling_mean(mkt_close.to_frame(), trend_sma_hours)
     sma = sma_df[sma_df.columns[0]]
 
-    mkt_trend = (mkt_close / (sma + 1e-12) - 1.0)
+    # Difference logic
+    mkt_trend = (mkt_close - sma)
 
-    mkt_ret1h_df = ff.numba_pct_change(mkt_close.to_frame(), 1)
-    mkt_ret1h = mkt_ret1h_df[mkt_ret1h_df.columns[0]]
+    # ret1h is just the FracDiff value
+    mkt_ret1h = mkt_close
 
     mkt_rv_df = ff.numba_rolling_std(mkt_ret1h.to_frame(), 24)
     mkt_rv = mkt_rv_df[mkt_rv_df.columns[0]]
@@ -80,7 +102,6 @@ def compute_market_features(panel, basket_syms, trend_sma_hours=24*14):
         "mkt_trend":  mkt_trend,
         "mkt_rv":     mkt_rv
     })
-    # Explicit float32 downcast to reduce memory and ensure consistency
     return mkt_df.astype(np.float32)
 
 def add_regime_gates(mkt_df: pd.DataFrame, gate_vol_lookback_hours: int, gate_trend_thr: float):
@@ -102,81 +123,91 @@ def add_regime_gates(mkt_df: pd.DataFrame, gate_vol_lookback_hours: int, gate_tr
 
     return df
 
-def compute_funding_proxy(panel, mkt_df):
+def compute_funding_proxy(c, h, l, v, mkt_df):
+    # Changed signature to accept transformed arrays
     tprint(f"Entering function: compute_funding_proxy in features.py")
-    c = panel["close"]
-    h = panel["high"]
-    l = panel["low"]
-    v = panel["volume"]
 
     c_ma = ff.numba_rolling_mean(c, 24)
-    dist = (c / (c_ma + 1e-12)) - 1.0
+    dist = (c - c_ma)
 
     mkt_close_df = mkt_df[["mkt_close"]]
     mkt_ma_df = ff.numba_rolling_mean(mkt_close_df, 24)
-    mkt_dist = (mkt_df["mkt_close"] / (mkt_ma_df["mkt_close"] + 1e-12)) - 1.0
+    mkt_dist = (mkt_df["mkt_close"] - mkt_ma_df["mkt_close"])
 
     relative_premium = dist.sub(mkt_dist, axis=0)
 
+    # h, l are log-levels (stationary). h-l is range.
     candle_pos = (c - l) / ((h - l) + 1e-9)
-    vol_z = zscore_rolling(v, 24) # Uses numba now
+    vol_z = zscore_rolling(v, 24)
     intensity = (candle_pos - 0.5) * vol_z
 
     return (relative_premium + (0.5 * intensity)).astype(np.float32)
 
 def compute_features_hourly(panel, mkt_gates, cfg):
     tprint("Features: compute base matrices")
-    o, h, l, c, v = panel["open"], panel["high"], panel["low"], panel["close"], panel["volume"]
+    o_raw, h_raw, l_raw, c_raw, v_raw = panel["open"], panel["high"], panel["low"], panel["close"], panel["volume"]
 
     # Ensure all have same UTC index
-    new_idx = ensure_utc(pd.DataFrame(index=c.index)).index
-    o.index = new_idx
-    h.index = new_idx
-    l.index = new_idx
-    c.index = new_idx
-    v.index = new_idx
+    new_idx = ensure_utc(pd.DataFrame(index=c_raw.index)).index
+    o_raw.index = new_idx
+    h_raw.index = new_idx
+    l_raw.index = new_idx
+    c_raw.index = new_idx
+    v_raw.index = new_idx
 
     # Align mkt_gates index to UTC
-    if len(mkt_gates) == len(c):
+    if len(mkt_gates) == len(c_raw):
         mkt_gates.index = new_idx
     else:
         mkt_gates = mkt_gates.reindex(new_idx)
 
     # Enforce float32 inputs
-    o = o.astype(np.float32)
-    h = h.astype(np.float32)
-    l = l.astype(np.float32)
-    c = c.astype(np.float32)
-    v = v.astype(np.float32)
+    o_raw = o_raw.astype(np.float32)
+    h_raw = h_raw.astype(np.float32)
+    l_raw = l_raw.astype(np.float32)
+    c_raw = c_raw.astype(np.float32)
+    v_raw = v_raw.astype(np.float32)
+
+    # TRANSFORM
+    o = _transform_price(o_raw)
+    h = _transform_price(h_raw)
+    l = _transform_price(l_raw)
+    c = _transform_price(c_raw)
+    v = _transform_volume(v_raw)
 
     feats = {}
-    # Ret calc
-    feats["ret1h"] = ff.numba_pct_change(c, 1).astype(np.float32)
-    feats["ret6h"] = ff.numba_pct_change(c, 6).astype(np.float32)
+    # Ret calc: FracDiff IS the return
+    feats["ret1h"] = c
+    feats["ret6h"] = ff.numba_rolling_sum(c, 6)
 
     for H in [12,16,20,24,28]:
-        feats[f"ret{H}h"] = ff.numba_pct_change(c, H).astype(np.float32)
+        feats[f"ret{H}h"] = ff.numba_rolling_sum(c, H)
 
-    feats["range_pct"] = ((h - l) / (c + 1e-12)).astype(np.float32)
-    feats["gap_pct"]   = ((o - c.shift(1)) / (c.shift(1) + 1e-12)).astype(np.float32)
+    feats["range_pct"] = (h - l) # Log Diff
+    feats["gap_pct"]   = (o - c.shift(1)) # Log Diff
 
-    atr_base = atr_percent(h, l, c, n=cfg["atr_n"]) # Uses Numba
+    atr_base = atr_percent(h, l, c, n=cfg["atr_n"]) # Uses No-Norm
     feats["atr_pct_base"] = atr_base
 
-    rsi_base = rsi(c, n=cfg["rsi_n"]) # Uses Numba
+    rsi_base = rsi(c, n=cfg["rsi_n"]) # Uses No-Norm (Delta based)
     feats["rsi_base"] = rsi_base
     feats["rsi_slope_base"] = rsi_base.diff(cfg["rsi_slope_n"]).astype(np.float32)
 
     feats["rv_24h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 24)
 
+    # qv: c is log-level stationary. v is log-level stationary.
+    # qv was Price * Volume. Now?
+    # Maybe Sum(c * v)? No.
+    # Let's keep qv as product of stationary series (Interaction).
     feats["qv"] = (c * v).astype(np.float32)
-    feats["vol_z24_base"] = zscore_rolling(v, 24) # Uses Numba
-    feats["vol_z_base"]   = zscore_rolling(v, cfg["volz_n"]) # Uses Numba
+    feats["vol_z24_base"] = zscore_rolling(v, 24)
+    feats["vol_z_base"]   = zscore_rolling(v, cfg["volz_n"])
 
-    ema_fast_base = ema(c, cfg["ema_fast"]) # Uses Numba
-    ema_slow_base = ema(c, cfg["ema_slow"]) # Uses Numba
-    feats["dist_ema_fast_base"] = ((c / (ema_fast_base + 1e-12) - 1.0) / (atr_base + 1e-12)).astype(np.float32)
-    feats["dist_ema_slow_base"] = ((c / (ema_slow_base + 1e-12) - 1.0) / (atr_base + 1e-12)).astype(np.float32)
+    ema_fast_base = ema(c, cfg["ema_fast"])
+    ema_slow_base = ema(c, cfg["ema_slow"])
+    # Difference instead of Ratio
+    feats["dist_ema_fast_base"] = ((c - ema_fast_base) / (atr_base + 1e-12)).astype(np.float32)
+    feats["dist_ema_slow_base"] = ((c - ema_slow_base) / (atr_base + 1e-12)).astype(np.float32)
 
     feats["roc_div"] = (feats["ret1h"] - feats["ret6h"]).astype(np.float32)
     feats["ret1h_z"] = (feats["ret1h"] / (feats["rv_24h"] + 1e-12)).astype(np.float32)
@@ -184,7 +215,8 @@ def compute_features_hourly(panel, mkt_gates, cfg):
     body = (c - o).abs()
     upper_wick = (h - c.where(c >= o, o)).clip(lower=0)
     lower_wick = (c.where(c <= o, o) - l).clip(lower=0)
-    feats["body_pct"] = (body / (c + 1e-12)).astype(np.float32)
+    # body_pct was body / c. Now body is already log diff.
+    feats["body_pct"] = body.astype(np.float32)
     feats["wick_body_ratio"] = ((upper_wick + lower_wick) / (body + 1e-12)).astype(np.float32)
 
     feats["vol_price_spread"] = (v / ((h - l) + 1e-12)).astype(np.float32)
@@ -200,13 +232,14 @@ def compute_features_hourly(panel, mkt_gates, cfg):
     feats["atr_expansion"] = (tr / (atr_tr + 1e-12)).astype(np.float32)
 
     sma_base = ff.apply_to_frame(c, ff._numba_rolling_mean_nan_safe, cfg["trend_sma_n"])
-    feats["trend_pct_base"] = ((c / (sma_base + 1e-12)) - 1.0).astype(np.float32)
+    # Difference logic
+    feats["trend_pct_base"] = (c - sma_base).astype(np.float32)
 
     hod = pd.Series(v.index.hour, index=v.index)
     rvol_denom = ff.numba_grouped_rolling_mean(v, hod, int(cfg["rvol_days"]*24))
     feats["rvol_hod_base"] = (v / (rvol_denom + 1e-12)).astype(np.float32)
 
-    feats["funding_proxy"] = compute_funding_proxy(panel, mkt_gates)
+    feats["funding_proxy"] = compute_funding_proxy(c, h, l, v, mkt_gates)
 
     sin_hod, cos_hod, sin_dow, cos_dow = time_sin_cos(c.index)
     feats["sin_hod"] = pd.DataFrame(np.repeat(sin_hod[:,None], c.shape[1], axis=1), index=c.index, columns=c.columns).astype(np.float32)
@@ -251,7 +284,11 @@ def compute_features_hourly(panel, mkt_gates, cfg):
     t_snr_den = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 24)
     feats["trend_snr"] = (t_snr_num / (t_snr_den + 1e-12)).astype(np.float32)
 
-    feats["v_power"] = (v / (c.diff().abs() + 1e-12)).astype(np.float32)
+    # c.diff() on stationary series is Acceleration.
+    # v_power was v / abs(price_change).
+    # Now c IS price change (approx).
+    # So v / abs(c)
+    feats["v_power"] = (v / (c.abs() + 1e-12)).astype(np.float32)
     feats["signed_vol"] = signed_vol.astype(np.float32)
 
     # --- NEW REQUESTED FEATURES ---
@@ -270,7 +307,9 @@ def compute_features_hourly(panel, mkt_gates, cfg):
 
     feats["momentum_accel"] = feats["ret1h"].diff().astype(np.float32)
 
-    log_v = np.log(v + 1.0)
+    # v is already log-transformed and smoothed.
+    # So we don't log it again.
+    log_v = v
     mu_lv = ff.apply_to_frame(log_v, ff._numba_rolling_mean_nan_safe, cfg["volz_n"])
     sd_lv = ff.apply_to_frame(log_v, ff._numba_rolling_std_nan_safe, cfg["volz_n"])
     feats["rvol_z"] = ((log_v - mu_lv) / (sd_lv + 1e-12)).astype(np.float32)
@@ -315,14 +354,14 @@ def compute_features_hourly(panel, mkt_gates, cfg):
 
     sma_fast = ff.apply_to_frame(c, ff._numba_rolling_mean_nan_safe, max(24, int(cfg["trend_sma_n"] * 0.5)))
     sma_slow = ff.apply_to_frame(c, ff._numba_rolling_mean_nan_safe, int(cfg["trend_sma_n"] * 2))
-    trend_fast = (c / (sma_fast + 1e-12)) - 1.0
-    trend_slow = (c / (sma_slow + 1e-12)) - 1.0
+    trend_fast = (c - sma_fast)
+    trend_slow = (c - sma_slow)
     feats["trend_pct"] = pick_by_rv(trend_fast, feats["trend_pct_base"], trend_slow)
 
     ema_fast_f = ema(c, max(4, int(cfg["ema_fast"] * 0.5)))
     ema_fast_s = ema(c, int(cfg["ema_fast"] * 2))
-    dist_fast_f = (c / (ema_fast_f + 1e-12) - 1.0) / (feats["atr_pct"] + 1e-12)
-    dist_fast_s = (c / (ema_fast_s + 1e-12) - 1.0) / (feats["atr_pct"] + 1e-12)
+    dist_fast_f = (c - ema_fast_f) / (feats["atr_pct"] + 1e-12)
+    dist_fast_s = (c - ema_fast_s) / (feats["atr_pct"] + 1e-12)
     feats["dist_ema_fast"] = pick_by_rv(dist_fast_f, feats["dist_ema_fast_base"], dist_fast_s)
 
     feats["vol_z24"] = feats["vol_z24_base"]

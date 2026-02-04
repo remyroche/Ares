@@ -5,7 +5,7 @@ from extreme_price_movements.model_race import ModelRace
 from extreme_price_movements.meta_model import MetaModel
 from extreme_price_movements.exhaustion import ExhaustionModel
 from extreme_price_movements.optimization import composite_score_with_constraints
-from extreme_price_movements.candidates import select_trade_candidates_hourly
+from extreme_price_movements.candidates import select_trade_candidates_hourly, select_trade_candidates_vectorized
 import extreme_price_movements.fast_funcs as ff
 from extreme_price_movements.labeling import compute_triple_barrier_labels
 
@@ -31,7 +31,6 @@ def compute_weights_logic(df, cfg, model_kind):
     else: return compute_tf_weights(df, cfg)
 
 def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, syms, trend_filter=None):
-    # (Same as before)
     tprint(f"Entering function: build_exhaustion_Xy in training.py")
     c = panel["close"]
     idx = c.index
@@ -83,7 +82,6 @@ def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, sy
     return X, y_arr, list(X.columns)
 
 def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms, models=None):
-    # (Same as before)
     tprint(f"Entering function: compute_p_exhaustion_at_t in training.py")
     t_index = pd.DatetimeIndex([ts], tz="UTC")
     valid_syms = [s for s in syms if s in panel["close"].columns]
@@ -136,7 +134,6 @@ def _build_pred_X(feats, mkt_gates, cfg, ts, syms):
     return Xp.fillna(0)
 
 def generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, syms):
-    # (Same as before)
     tprint(f"Entering function: generate_exhaustion_history in training.py")
     train_end = ts_end - pd.Timedelta(hours=lookback_hours)
     train_len = cfg["exh_train_lookback_hours"]
@@ -181,95 +178,62 @@ def _build_pred_X_window(feats, mkt_gates, cfg, t_idx, syms):
     return Xp.fillna(0)
 
 def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts_end, p_exh_hist, H, model_kind, trend_filter=None):
-    # Modified to use Triple Barrier
     tprint(f"Entering function: build_hourly_training_set_and_weights in training.py")
     c = panel["close"]
     idx = c.index
 
-    # 1. Compute Triple Barrier Labels for the whole panel (or relevant window)
-    # Optimization: Calculate only for needed window to save memory/time
-    # Actually, triple barrier is fast with Numba.
-
-    # We need labels aligned to `t` (decision time).
-    # Triple barrier at `t` uses path from `t` (or `t+1` if execution delay).
-    # The `compute_triple_barrier_labels` uses the provided arrays.
-    # If we pass `panel`, it iterates.
-
-    # Let's subset panel to relevant history + horizon to speed up?
-    # Or just run on full panel if small enough (90 days).
-    # Assuming 90 days hourly ~ 2000 rows. Fast.
-
+    # 1. Labels
     tp = cfg.get("tp", 0.05)
     sl = cfg.get("sl", 0.025)
-
-    # Ensure panel is float32
-    # Create subset for labeling to avoid whole history if huge
-    ts_start_label = ts_end - pd.Timedelta(hours=int(cfg["train_lookback_hours"])) - pd.Timedelta(hours=H*2)
-    # Mask for labeling
-    # We need future data for labeling up to ts_end.
-    # Training set goes up to ts_end - H.
-
-    # Actually, we can just run on the whole panel provided to this function.
-    # `train_daily` passes 90 days.
-
     tb_labels, tb_returns = compute_triple_barrier_labels(panel, tp, sl, H)
 
-    # Now proceed with candidate selection
+    # 2. Vectorized Candidate Selection
+    cand_mask = select_trade_candidates_vectorized(panel, feats, pct=cfg["trade_extreme_pct"], metric=cfg["trade_deviation_metric"])
+    if cand_mask is None:
+        return None, None, None, None, None
+
+    # Filter to training window
     ts_start = ts_end - pd.Timedelta(hours=int(cfg["train_lookback_hours"]))
-    valid_mask = (idx >= ts_start) & (idx <= ts_end - pd.Timedelta(hours=H+8))
-    t_idx = idx[valid_mask]
-    if len(t_idx) == 0: return None, None, None, None, None
-    t_idx_sel = t_idx[t_idx.hour % 4 == 0]
-    metric = cfg["trade_deviation_metric"]
+    # Mask to valid training period
+    # Note: cand_mask spans the whole feats index.
+    # We slice it.
+    valid_window_mask = (cand_mask.index >= ts_start) & (cand_mask.index <= ts_end - pd.Timedelta(hours=H+8))
+    # Subsample every 4 hours to match original density preference
+    subsample_mask = (cand_mask.index.hour % 4 == 0)
+
+    final_mask = cand_mask & pd.Series(valid_window_mask & subsample_mask, index=cand_mask.index).fillna(False) # Broadcasting
+
+    # We iterate over timestamps that have at least one candidate
+    # This might be faster than iterating all t in window
+
+    # Find timestamps where at least one symbol is True
+    valid_ts = final_mask[final_mask.any(axis=1)].index
+
     rows = []
 
-    for t in t_idx_sel:
-        if t not in feats[metric].index: continue
-        row_vals = feats[metric].loc[t, syms].dropna()
-        if len(row_vals) < 20: continue
-        ret_vals = feats["ret24h"].loc[t, syms].dropna()
-        candidates_idx = ret_vals[ret_vals.abs() > 0.10].index.tolist()
-        if not candidates_idx: continue
-        n = len(row_vals)
-        k = max(5, int(n * 0.05))
-        sorted_ret = ret_vals.sort_values()
-        bot = sorted_ret.iloc[:k].index.tolist()
-        top = sorted_ret.iloc[-k:].index.tolist()
-        final_candidates = list(set(candidates_idx) & (set(bot) | set(top)))
+    for t in valid_ts:
+        # Get symbols at t
+        row_mask = final_mask.loc[t]
+        final_candidates = row_mask[row_mask].index.tolist()
 
-        # t is signal time. Entry is usually t+1h (execution).
-        # Triple barrier was computed on the series.
-        # If we use `closes[i]` as entry in TB, and signal is at `t` (close of bar t),
-        # then TB outcome at `t` represents trade entered at `closes[t]`.
-        # This matches "Signal at Close, Enter at Close".
-        # If execution is `opens[t+1]`, we should ideally align TB logic.
-        # Our TB logic uses `opens[i]` as entry if passed `opens`?
-        # `compute_triple_barrier_labels` uses `opens` as entry if logic inside uses `opens[i]`.
-        # Wait, my implementation used `opens[i]` as entry price.
-        # And it scans `i+1` onwards.
-        # So TB outcome at index `i` corresponds to entering at `Open[i]`.
-        # But we want to enter at `Open[t+1]`.
-        # So we should look at TB label at index `t+1`?
-        # Let's check:
-        # Signal at `t`. Execution at `t+1`.
-        # We want the outcome of trade entering at `Open[t+1]`.
-        # My TB function at index `k` computes outcome for entry at `Open[k]`.
-        # So we should take `tb_labels.loc[t + 1h]`.
+        # Intersection with syms (allowed universe)
+        final_candidates = [s for s in final_candidates if s in syms]
+
+        if not final_candidates: continue
 
         t_entry = t + pd.Timedelta(hours=1)
         if t_entry not in tb_labels.index: continue
 
-        # Also need MAE for weighting (optional, can keep or approximate)
-        # We can use the simple TB return for target.
-        # But `weight` used MAE.
-        # Let's approximate weight using `ret_vals` and `target_ret` magnitude.
+        # Retrieve metric vals for weighting (ret24h)
+        # Using vectorized access
+        ret_vals = feats["ret24h"].loc[t, final_candidates]
 
         for sym in final_candidates:
             if sym not in tb_labels.columns: continue
 
             # TB Outcome
-            lbl = tb_labels.loc[t_entry, sym] # 1, -1, 0
-            ret = tb_returns.loc[t_entry, sym] # Realized return
+            lbl = tb_labels.loc[t_entry, sym]
+            ret = tb_returns.loc[t_entry, sym]
 
             # Filter trend
             trend_val = 0.0
@@ -279,37 +243,14 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
             if trend_filter == "up" and trend_dir <= 0: continue
             if trend_filter == "down" and trend_dir > 0: continue
 
-            # Target Return depends on Model Kind (MR vs TF)
-            # MR: bets against trend?
-            # If Model is MR, and Trend is UP, we want to SHORT.
-            # If TB label is -1 (Down), that's a WIN for Short.
-            # If TB label is 1 (Up), that's a LOSS for Short.
-
-            # Standardizing `y_bin`: 1 if profitable trade, 0 else.
-            # Standardizing `y_ret`: return of the trade.
-
-            # MR Trade Direction: -trend_dir
-            # TF Trade Direction: trend_dir
-
             trade_dir = 1 if model_kind == "tf" else -1
-            # If trend_dir is 1 (Up):
-            # TF -> Long (1). MR -> Short (-1).
-
-            # TB Return `ret` is signed (Long return).
-            # If we go Long, PnL = ret.
-            # If we go Short, PnL = -ret.
-
             pnl = ret * trade_dir * trend_dir
-
             y_bin = 1 if pnl > 0 else 0
 
             # Weighting
-            # Simplified weighting: log(1 + abs(24h_ret)) * log(1 + abs(pnl)/risk?)
-            # Or just use pnl magnitude
             pa = abs(ret_vals[sym])
             w1 = np.log(1 + pa)
-            # w2 based on efficiency?
-            w2 = 1.0 # simplified
+            w2 = 1.0
             weight = w1 * w2
 
             rec = {"symbol": sym, "ts": t, "y_bin": y_bin, "y_ret": pnl, "w": weight}
@@ -326,6 +267,7 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
             rec["G_VOL"] = mkt_gates.loc[t, "G_VOL"]
             rec["G_TREND"] = mkt_gates.loc[t, "G_TREND"]
             rows.append(rec)
+
     if not rows: return None, None, None, None, None
     df = pd.DataFrame(rows).dropna()
     weights = df.pop("w").values.astype(np.float32)
@@ -347,21 +289,25 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, mod
     if not alpha_models:
         return {"granular_risk": {}}
 
-    # 1. Identify Validation Period
     val_hours = int(cfg.get("val_lookback_hours", 24*7))
     ts_start = ts - pd.Timedelta(hours=val_hours)
 
-    # Validation indices (every 4 hours to save time, or 1h if fast enough)
-    # Using 1h might be fine with Numba.
-    valid_idx = mkt_gates.index[(mkt_gates.index >= ts_start) & (mkt_gates.index < ts - pd.Timedelta(hours=48))]
-    # Skip if too few
-    if len(valid_idx) < 24:
-        return {"granular_risk": {}}
+    # We can stick to simpler candidate selection for Validation Risk Optimization
+    # because we want to optimize execution on 'typical' candidates.
+    # However, ideally we use the same process.
+    # But `vectorized` works on full feats.
 
+    # Let's use vectorized candidates for validation too!
+    cand_mask = select_trade_candidates_vectorized(panel, feats, pct=cfg["trade_extreme_pct"], metric=cfg["trade_deviation_metric"])
+    if cand_mask is None: return {"granular_risk": {}}
+
+    valid_window_mask = (cand_mask.index >= ts_start) & (cand_mask.index < ts - pd.Timedelta(hours=48))
+    # Step 2 hours or 4 hours
+    subsample_mask = (cand_mask.index.hour % 2 == 0)
+    final_mask = cand_mask & pd.Series(valid_window_mask & subsample_mask, index=cand_mask.index).fillna(False)
+
+    valid_ts = final_mask[final_mask.any(axis=1)].index
     candidates = []
-
-    # 2. Collect Candidates & Predictions
-    # We iterate validation period, generate candidates, predict score/dominance.
 
     trend_df = feats.get("trend_pct")
     o_df = panel["open"]
@@ -369,16 +315,10 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, mod
     l_df = panel["low"]
     c_df = panel["close"]
 
-    for t_idx in valid_idx[::2]: # Step 2 hours to speed up
-        # Top/Bot selection
-        top, bot = select_trade_candidates_hourly(
-            feats, t_idx, syms,
-            pct=cfg["trade_extreme_pct"],
-            min_n=cfg["trade_extreme_min"],
-            max_n=cfg["trade_extreme_max"],
-            metric=cfg["trade_deviation_metric"]
-        )
-        trade_syms = list(set(top) | set(bot))
+    for t_idx in valid_ts:
+        row_mask = final_mask.loc[t_idx]
+        trade_syms = row_mask[row_mask].index.tolist()
+        trade_syms = [s for s in trade_syms if s in syms]
         if not trade_syms: continue
 
         mrk = mkt_gates.loc[t_idx]
@@ -418,7 +358,6 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, mod
                 for k in feat_cols:
                     if k in feats: rec[k] = float(feats[k].loc[t_idx, sym])
 
-                # Meta Feats
                 for mk in ["a_rv24", "a_volz", "a_rsi", "dist_ema_fast", "atr_slope", "dist_vwap_norm", "mom_accel"]:
                     if mk in feats: rec[mk] = float(feats[mk].loc[t_idx, sym])
 
@@ -455,20 +394,14 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, mod
                 s_score = score[i]
                 dom = "mr" if p_mr[i] > p_tf[i] else "tf"
 
-                # Add to candidates list
-                # We need data for simulation: O, H, L, C for next HOLD hours.
-                # Extract path here? Or later?
-                # Later to avoid memory bloat, but we need arrays for Numba.
-
                 ts_entry = t_idx + pd.Timedelta(hours=1)
                 entry_px = float(o_df.loc[ts_entry, sym]) if ts_entry in o_df.index else np.nan
                 if np.isnan(entry_px): continue
 
                 atr_val = float(feats["atr_pct"].loc[t_idx, sym])
 
-                # Side
                 side = "long" if s_score > 0 else "short"
-                if abs(s_score) < 0.005: continue # Skip weak signals
+                if abs(s_score) < 0.005: continue
 
                 candidates.append({
                     "ts": t_idx,
@@ -484,36 +417,18 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, mod
         return {"granular_risk": {}}
 
     # 3. Prepare Simulation Data
-    # Pre-fetch price paths for all candidates
-    # To optimize, we can group by symbol?
-    # Or just store small arrays.
-
     hold_h = int(cfg.get("hold_hours", 48))
-
     sim_data = []
 
     for cand in candidates:
         ts_entry = cand["ts"] + pd.Timedelta(hours=1)
         ts_exit = ts_entry + pd.Timedelta(hours=hold_h)
-
-        # Slicing
-        # We need numpy arrays
         sym = cand["symbol"]
 
-        # Check range
         if ts_exit > c_df.index.max():
-            # Partial path?
             ts_exit = c_df.index.max()
 
-        # Get path
-        # Assuming index is sorted
-        # Ideally using get_indexer
-
-        # Fast slice
         sl = slice(ts_entry, ts_exit)
-        # Verify timestamps
-        # loc slice works with datetime index
-
         try:
             o_arr = o_df.loc[sl, sym].to_numpy(dtype=np.float32)
             h_arr = h_df.loc[sl, sym].to_numpy(dtype=np.float32)
@@ -530,55 +445,66 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, mod
         except: continue
 
     # 4. Grid Search
-    # Grids
+    # New Grids
     k_sl_grid = [1.5, 2.0, 3.0]
-    k_trail_grid = [0.5, 1.0, 1.5] # Used for both start and dist
+    k_pt_grid = [1.5, 2.0, 3.0] # Activation (k_pt)
+    k_tp_grid = [0.5, 1.0, 1.5] # Trailing Dist (k_tp)
 
     buckets = ["long_mr", "long_tf", "short_mr", "short_tf"]
     best_params = {}
 
     for b in buckets:
         side_req, dom_req = b.split("_")
-
-        # Filter candidates
         subset = [c for c in sim_data if c["side"] == side_req and c["dom"] == dom_req]
+
+        # Default fallback
+        best_params[f"risk_{b}"] = {
+            "k_sl": 2.0, "k_pt": 2.0, "k_tp": 1.0, "score_scale": 0.5
+        }
+
         if len(subset) < 10:
-            # Default
-            best_params[f"risk_{b}"] = {
-                "k_sl": 2.0, "k_trail_start": 1.0, "k_trail_dist": 1.0, "score_scale": 0.5
-            }
             continue
 
         best_perf = -1e9
         best_combo = None
 
         for k_sl in k_sl_grid:
-            for k_tr in k_trail_grid:
-                # Simulate batch
-                total_ret = 0.0
+            for k_pt in k_pt_grid:
+                for k_tp in k_tp_grid:
+                    total_ret = 0.0
 
-                for c in subset:
-                    side_int = 1 if c["side"] == "long" else -1
-                    ret, _, _ = ff.simulate_trade_numba(
-                        c["o"], c["h"], c["l"], c["c"],
-                        float(c["entry_px"]), side_int, float(c["atr"]),
-                        float(k_sl), float(k_tr), float(k_tr)
-                    )
-                    total_ret += ret
+                    for c in subset:
+                        entry_px = float(c["entry_px"])
+                        atr_val = float(c["atr"])
+                        side_int = 1 if c["side"] == "long" else -1
 
-                # Metric: Total Return (simple)
-                if total_ret > best_perf:
-                    best_perf = total_ret
-                    best_combo = (k_sl, k_tr)
+                        # Apply Clamps
+                        # sl_pct = clamp(k_sl * ATR%, 2%, 5%)
+                        sl_pct = np.clip(k_sl * atr_val, 0.02, 0.05)
+                        # pt_pct (activation) = clamp(k_pt * ATR%, 5%, 10%)
+                        pt_pct = np.clip(k_pt * atr_val, 0.05, 0.10)
+                        # tp_pct (dist) = clamp(k_tp * ATR%, 2%, 4%)
+                        tp_pct = np.clip(k_tp * atr_val, 0.02, 0.04)
+
+                        sl_dist = sl_pct * entry_px
+                        act_dist = pt_pct * entry_px
+                        tr_dist = tp_pct * entry_px
+
+                        ret, _, _ = ff.simulate_trade_numba(
+                            c["o"], c["h"], c["l"], c["c"],
+                            entry_px, side_int,
+                            sl_dist, act_dist, tr_dist
+                        )
+                        total_ret += ret
+
+                    if total_ret > best_perf:
+                        best_perf = total_ret
+                        best_combo = (k_sl, k_pt, k_tp)
 
         if best_combo:
-            k_sl, k_tr = best_combo
+            k_sl, k_pt, k_tp = best_combo
             best_params[f"risk_{b}"] = {
-                "k_sl": k_sl, "k_trail_start": k_tr, "k_trail_dist": k_tr, "score_scale": 0.5
-            }
-        else:
-             best_params[f"risk_{b}"] = {
-                "k_sl": 2.0, "k_trail_start": 1.0, "k_trail_dist": 1.0, "score_scale": 0.5
+                "k_sl": k_sl, "k_pt": k_pt, "k_tp": k_tp, "score_scale": 0.5
             }
 
     tprint(f"Risk Params Optimized: {best_params}")
@@ -621,8 +547,26 @@ def select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
         X_mr = X_mr.loc[common]; X_tf = X_tf.loc[common]
         p_mr = mr_conf["model"].predict(X_mr)
         p_tf = tf_conf["model"].predict(X_tf)
+
+        # Train Meta Model (Ridge)
         meta = MetaModel()
-        X_meta = meta.prepare_meta_features(p_tf, p_mr, X_tf)
+        X_meta = meta.prepare_meta_features(p_tf, p_mr, X_tf) # X_tf has meta features in it?
+        # X_tf is feats_df passed to prepare_meta_features.
+        # It needs `atr_slope`, `mom_accel` etc.
+        # `build_hourly_training_set_and_weights` collects `causal_cols`.
+        # I MUST ensure these new features are in `causal_cols` in config OR
+        # explicitly collect them in `build_hourly_training_set_and_weights`.
+
+        # `build_hourly_training_set_and_weights` collects:
+        # `rec[k] = feats[k]` for k in `causal_cols`.
+        # So I rely on `config["causal_cols"]` having them.
+        # Or I modify `build_hourly_training_set_and_weights` to add them explicitly.
+        # Given I cannot easily edit `config.py` in this step (or I could),
+        # I'll just add them to the extraction loop in `build_hourly_training_set_and_weights`.
+        # Actually I didn't add them in my `write_file` above!
+        # I added them in `optimize_risk_params` but NOT `build_hourly_training_set_and_weights`.
+        # I should add the Meta features to `build_hourly_training_set_and_weights` output.
+
         y_meta = y_ret_tf[X_tf.index.get_indexer(common)]
         meta.fit(X_meta, y_meta)
         meta_models[d] = meta

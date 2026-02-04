@@ -196,27 +196,25 @@ def numba_zscore(df, n):
 @jit(nopython=True, cache=True)
 def simulate_trade_numba(
     opens, highs, lows, closes,
-    entry_px, side_int, atr,
-    k_sl, k_ts, k_td
+    entry_px, side_int,
+    sl_dist, activation_dist, trailing_dist
 ):
     """
     Simulates a trade path using Numba optimization.
     side_int: 1 for long, -1 for short.
+    sl_dist, activation_dist, trailing_dist: Absolute price distances.
     Returns: (return_pct, exit_idx_offset, reason_code)
     reason_code: 0=no_entry/error, 1=sl_hit, 2=ambiguous, 3=time_exit
     """
-    # Logic from TrailingStop
-    initial_sl_dist = k_sl * atr * entry_px
-
     sl_px = 0.0
     highest_high = entry_px
     lowest_low = entry_px
     trailing_active = False
 
     if side_int == 1: # Long
-        sl_px = entry_px - initial_sl_dist
+        sl_px = entry_px - sl_dist
     else: # Short
-        sl_px = entry_px + initial_sl_dist
+        sl_px = entry_px + sl_dist
 
     n = len(opens)
     for i in range(n):
@@ -238,11 +236,11 @@ def simulate_trade_numba(
 
             # Update Trailing State
             profit_dist = highest_high - entry_px
-            if profit_dist >= k_ts * atr * entry_px:
+            if profit_dist >= activation_dist:
                 trailing_active = True
 
             if trailing_active:
-                trail_dist_px = k_td * atr * entry_px
+                trail_dist_px = trailing_dist
                 new_sl = curr_h - trail_dist_px
                 if new_sl > sl_px:
                     trail_would_trigger = True
@@ -259,11 +257,11 @@ def simulate_trade_numba(
 
             # Update Trailing State
             profit_dist = highest_high - entry_px
-            if profit_dist >= k_ts * atr * entry_px:
+            if profit_dist >= activation_dist:
                 trailing_active = True
 
             if trailing_active:
-                trail_dist_px = k_td * atr * entry_px
+                trail_dist_px = trailing_dist
                 new_sl = highest_high - trail_dist_px
                 if new_sl > sl_px:
                     sl_px = new_sl
@@ -276,12 +274,11 @@ def simulate_trade_numba(
             # Check Trailing Update (Low)
             if curr_l < lowest_low:
                 profit_dist = entry_px - curr_l
-                req_start_dist = k_ts * atr * entry_px
 
-                is_active = trailing_active or (profit_dist >= req_start_dist)
+                is_active = trailing_active or (profit_dist >= activation_dist)
 
                 if is_active:
-                    trail_dist_px = k_td * atr * entry_px
+                    trail_dist_px = trailing_dist
                     new_sl = curr_l + trail_dist_px
                     if new_sl < sl_px:
                         trail_would_trigger = True
@@ -296,11 +293,11 @@ def simulate_trade_numba(
                 lowest_low = curr_l
 
             profit_dist = entry_px - lowest_low
-            if profit_dist >= k_ts * atr * entry_px:
+            if profit_dist >= activation_dist:
                 trailing_active = True
 
             if trailing_active:
-                trail_dist_px = k_td * atr * entry_px
+                trail_dist_px = trailing_dist
                 new_sl = lowest_low + trail_dist_px
                 if new_sl < sl_px:
                     sl_px = new_sl

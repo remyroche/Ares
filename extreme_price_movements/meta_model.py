@@ -1,10 +1,12 @@
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import Ridge
+from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.model_selection import TimeSeriesSplit
 from scipy.special import logit
 from extreme_price_movements.utils import tprint
 from extreme_price_movements.feature_transforms import CausalFeatureTransformer
+from extreme_price_movements.feature_selection_extreme_events import mdi_feature_selection_v3
 
 class MetaModel:
     def __init__(self):
@@ -17,6 +19,7 @@ class MetaModel:
             "atr_slope", "dist_vwap_norm", "mom_accel"
         ]
         self.transformer = CausalFeatureTransformer(winsor_qt=0.02, roll_window=24*30)
+        self.selected_features = None
 
     def prepare_meta_features(self, preds_tf, preds_mr, feats_df):
         """
@@ -76,12 +79,37 @@ class MetaModel:
     def fit(self, X_meta, y):
         tprint(f"Entering function: fit in meta_model.py")
 
+        # 1. Feature Selection
+        n_samples = len(X_meta)
+        n_select = min(20, max(1, n_samples // 100))
+        tprint(f"MetaModel: Running MDI selection. Target={n_select}")
+
+        base_selector = ExtraTreesRegressor(
+            n_estimators=500, # Increased per v3
+            max_depth=None,   # Let v3 suggest depth
+            min_samples_leaf=20,
+            max_features='sqrt',
+            n_jobs=-1,
+            random_state=42
+        )
+
+        sel_res = mdi_feature_selection_v3(
+            X=X_meta,
+            y=y,
+            base_model=base_selector,
+            analysis_n_estimators=500
+        )
+
+        self.selected_features = sel_res.selected_features[:n_select]
+        tprint(f"MetaModel: Selected {len(self.selected_features)} features.")
+        X_sel = X_meta[self.selected_features]
+
         alphas = [0.1, 0.3, 0.6, 1.0, 3.0]
         tscv = TimeSeriesSplit(n_splits=3)
 
         results = []
 
-        X_arr = X_meta.values
+        X_arr = X_sel.values
         y_arr = y
 
         for alpha in alphas:
@@ -128,10 +156,20 @@ class MetaModel:
 
         # Refit on full data
         self.model = Ridge(alpha=best_alpha)
-        self.model.fit(X_meta, y)
+        self.model.fit(X_sel, y)
 
         return self
 
     def predict(self, X_meta):
         tprint(f"Entering function: predict in meta_model.py")
+        if self.selected_features is None:
+             # If fit not called? or loaded model without selected_features?
+             # Fallback to all if not set (legacy support?)
+             # Or assume we must have them.
+             # If X_meta has all cols, we can try to use them all, but if model trained on subset it will fail.
+             # If model trained on subset, we must subset.
+             pass
+        else:
+             X_meta = X_meta[self.selected_features]
+
         return self.model.predict(X_meta)

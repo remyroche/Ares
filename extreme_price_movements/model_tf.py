@@ -2,8 +2,10 @@ import numpy as np
 import pandas as pd
 from sklearn.pipeline import Pipeline
 from sklearn.linear_model import Lasso, ElasticNet
+from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.preprocessing import StandardScaler
 from extreme_price_movements.utils import tprint
+from extreme_price_movements.feature_selection_extreme_events import mdi_feature_selection_v3
 
 def compute_tf_weights(df: pd.DataFrame, cfg: dict) -> np.ndarray:
     """
@@ -37,24 +39,33 @@ class TFModel:
         self.selected_features = None
 
     def fit(self, X: pd.DataFrame, y: np.ndarray, sample_weight: np.ndarray = None):
-        # 1. Lasso Selection
+        # 1. Feature Selection (MDI)
         tprint(f"Entering function: fit in model_tf.py")
-        scaler = StandardScaler()
-        X_scaled = pd.DataFrame(scaler.fit_transform(X), columns=X.columns, index=X.index)
 
-        lasso = Lasso(alpha=self.lasso_alpha, random_state=42)
-        lasso.fit(X_scaled, y)
+        n_samples = len(X)
+        n_select = min(60, max(1, n_samples // 100))
+        tprint(f"TFModel: Running MDI feature selection. Target features={n_select}")
 
-        coefs = dict(zip(X.columns, lasso.coef_))
-        selected = [c for c, v in coefs.items() if abs(v) > 1e-5]
+        base_selector = ExtraTreesRegressor(
+            n_estimators=500, # Increased per v3 request
+            max_depth=None,   # Let v3 suggest depth
+            min_samples_leaf=50,
+            max_features='sqrt',
+            n_jobs=-1,
+            random_state=42
+        )
 
-        if not selected:
-            tprint("TF Model: Lasso dropped all features. Using top 5 by correlation.")
-            corrs = X.corrwith(pd.Series(y, index=X.index)).abs().sort_values(ascending=False)
-            selected = corrs.head(5).index.tolist()
+        sel_res = mdi_feature_selection_v3(
+            X=X,
+            y=y,
+            base_model=base_selector,
+            sample_weight=sample_weight,
+            analysis_n_estimators=500
+        )
 
-        self.selected_features = selected
-        X_sel = X[selected]
+        self.selected_features = sel_res.selected_features[:n_select]
+        tprint(f"TFModel: Selected {len(self.selected_features)} features.")
+        X_sel = X[self.selected_features]
 
         # 2. Train Ensemble
         # 15 models: varying alpha and l1_ratio

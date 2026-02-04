@@ -2,8 +2,10 @@ import numpy as np
 import pandas as pd
 from sklearn.pipeline import Pipeline
 from sklearn.linear_model import Lasso, HuberRegressor
+from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.preprocessing import StandardScaler
 from extreme_price_movements.utils import tprint
+from extreme_price_movements.feature_selection_extreme_events import mdi_feature_selection_v3
 
 class RuleCleaner:
     def __init__(self, corr_thr=0.8):
@@ -87,38 +89,42 @@ class MRModel:
         self.selected_features = None
 
     def fit(self, X: pd.DataFrame, y: np.ndarray, sample_weight: np.ndarray = None):
-        # 1. Lasso Selection
+        # 1. Feature Selection (MDI)
         tprint(f"Entering function: fit in model_mr.py")
-        scaler = StandardScaler()
-        X_scaled = pd.DataFrame(scaler.fit_transform(X), columns=X.columns, index=X.index)
 
-        lasso = Lasso(alpha=self.lasso_alpha, random_state=42)
-        lasso.fit(X_scaled, y) # Lasso doesn't support sample_weight usually? It does in sklearn > 0.23
+        n_samples = len(X)
+        n_select = min(60, max(1, n_samples // 100))
+        tprint(f"MRModel: Running MDI feature selection. Target features={n_select}")
 
-        # Get coefs
-        coefs = dict(zip(X.columns, lasso.coef_))
-        selected = [c for c, v in coefs.items() if abs(v) > 1e-5]
+        base_selector = ExtraTreesRegressor(
+            n_estimators=500, # Increased per v3
+            max_depth=None,   # Let v3 suggest depth
+            min_samples_leaf=50,
+            max_features='sqrt',
+            n_jobs=-1,
+            random_state=42
+        )
 
-        if not selected:
-            tprint("MR Model: Lasso dropped all features. Using top 5 by correlation.")
-            corrs = X.corrwith(pd.Series(y, index=X.index)).abs().sort_values(ascending=False)
-            selected = corrs.head(5).index.tolist()
-            coefs = {c: 1.0 for c in selected}
+        sel_res = mdi_feature_selection_v3(
+            X=X,
+            y=y,
+            base_model=base_selector,
+            sample_weight=sample_weight,
+            analysis_n_estimators=500
+        )
 
-        # 2. RuleCleaner
-        self.cleaner = RuleCleaner(corr_thr=self.rule_clean_corr)
-        self.cleaner.fit(X[selected], coefs)
-        final_cols = self.cleaner.keep_cols_
-        self.selected_features = final_cols
+        self.selected_features = sel_res.selected_features[:n_select]
+        tprint(f"MRModel: Selected {len(self.selected_features)} features.")
+        X_sel = X[self.selected_features]
 
-        # 3. Huber Regressor
+        # 2. Huber Regressor
         # Scale again? Pipeline handles it.
         self.model = Pipeline([
             ("scaler", StandardScaler()),
             ("reg", HuberRegressor(epsilon=self.huber_epsilon, max_iter=200))
         ])
 
-        self.model.fit(X[final_cols], y, reg__sample_weight=sample_weight)
+        self.model.fit(X_sel, y, reg__sample_weight=sample_weight)
         return self
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:

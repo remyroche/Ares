@@ -28,6 +28,7 @@ class MetaModel:
         Applies CausalTransform to other features.
         """
         tprint(f"Entering function: prepare_meta_features in meta_model.py")
+        tprint(f"prepare_meta_features: Input feats_df shape: {feats_df.shape}")
         meta_data = pd.DataFrame(index=feats_df.index)
 
         eps = 1e-4
@@ -36,6 +37,7 @@ class MetaModel:
 
         meta_data["pred_tf_logit"] = logit(p_tf)
         meta_data["pred_mr_logit"] = logit(p_mr)
+        tprint("prepare_meta_features: Logit transformation complete.")
 
         # Mapping
         meta_data["realized_vol"] = feats_df.get("a_rv24", 0.0)
@@ -48,6 +50,7 @@ class MetaModel:
         meta_data["dist_vwap_norm"] = feats_df.get("dist_vwap_norm", 0.0)
         meta_data["mom_accel"] = feats_df.get("momentum_accel", 0.0)
 
+        tprint(f"prepare_meta_features: Returning meta_data with shape: {meta_data[self.feature_names].shape}")
         return meta_data[self.feature_names].fillna(0.0)
 
     def _calc_metrics(self, y_true, y_pred):
@@ -78,6 +81,7 @@ class MetaModel:
 
     def fit(self, X_meta, y):
         tprint(f"Entering function: fit in meta_model.py")
+        tprint(f"fit: Starting with X_meta shape: {X_meta.shape}, y shape: {y.shape}")
 
         # 1. Feature Selection
         n_samples = len(X_meta)
@@ -113,6 +117,7 @@ class MetaModel:
         y_arr = y
 
         for alpha in alphas:
+            tprint(f"fit: Evaluating alpha={alpha}")
             scores = {"pnl": [], "sortino": [], "maxdd": []}
 
             for train_idx, val_idx in tscv.split(X_arr):
@@ -140,6 +145,8 @@ class MetaModel:
                 "maxdd": avg_dd
             })
 
+        tprint("fit: Grid search results computed. Calculating best alpha.")
+
         # Pareto Selection
         # Score = 0.6 * Rank(PnL) + 0.3 * Rank(Sortino) + 0.1 * Rank(-MaxDD)
         res_df = pd.DataFrame(results)
@@ -162,6 +169,7 @@ class MetaModel:
 
     def predict(self, X_meta):
         tprint(f"Entering function: predict in meta_model.py")
+        tprint(f"predict: Input X_meta shape: {X_meta.shape}")
         if self.selected_features is None:
              # If fit not called? or loaded model without selected_features?
              # Fallback to all if not set (legacy support?)
@@ -172,4 +180,5 @@ class MetaModel:
         else:
              X_meta = X_meta[self.selected_features]
 
+        tprint("predict: Generating predictions.")
         return self.model.predict(X_meta)

@@ -12,6 +12,7 @@ import pandas as pd
 from sklearn.base import clone
 from sklearn.preprocessing import QuantileTransformer
 from sklearn.utils import check_random_state
+from .utils import tprint
 
 # ======================================================================================
 # Purged + Embargoed CV (time series)
@@ -152,9 +153,16 @@ def mdi_feature_selection_v3(
     pre_dedupe_threshold: float = 0.98,
     random_state: int = 0,
     sample_weight: Optional[Union[pd.Series, np.ndarray]] = None,
+    end_features: Optional[int] = None,
 ) -> MDISelectionResult:
     if not isinstance(X, pd.DataFrame):
         raise TypeError("X must be a pandas DataFrame.")
+
+    # Determine end_features if not provided
+    if end_features is None:
+        n_samples_full = len(X)
+        end_features = min(60, max(1, n_samples_full // 100))
+        tprint(f"MDI: end_features not provided. Auto-setting to {end_features} based on sample size {n_samples_full}")
 
     rng = check_random_state(random_state)
 
@@ -168,10 +176,11 @@ def mdi_feature_selection_v3(
 
     feature_names_full = list(X.columns)
 
-    splits = purged_embargoed_splits(X_np_full.shape[0], n_splits, purge=purge)
+    # Initial Splits for Dedupe
+    splits_full = purged_embargoed_splits(X_np_full.shape[0], n_splits, purge=purge)
 
     # 1. Anchored Pre-Dedupe (Train Window 0)
-    train_idx0, _ = splits[0]
+    train_idx0, _ = splits_full[0]
     X_tr0 = X_np_full[train_idx0]
 
     # Quantile Transform for Robust Pearson
@@ -193,65 +202,130 @@ def mdi_feature_selection_v3(
         keep_mask[redundant] = False
 
     kept_features = [feature_names_full[i] for i in range(len(keep_mask)) if keep_mask[i]]
-    X_np = X_np_full[:, keep_mask]
-    p_reduced = X_np.shape[1]
+    kept_features_indices = [i for i, kept in enumerate(keep_mask) if kept]
 
-    # Suggest depth based on REDUCED dimensionality
-    depth = suggest_depth(p_reduced, X_np.shape[0])
+    tprint(f"MDI: Starting with {len(kept_features)} features after dedupe (target: {end_features}).")
 
-    # 2. Stability Analysis CV
-    folds_data = defaultdict(list)
+    current_features = kept_features
 
-    for train_idx, _ in splits:
-        m = clone(base_model)
-        # Update params
-        if hasattr(m, "set_params"):
-            params = {}
-            if "max_depth" in m.get_params():
-                params["max_depth"] = depth
-            if "n_estimators" in m.get_params():
-                params["n_estimators"] = analysis_n_estimators
-            if "min_samples_leaf" in m.get_params():
-                params["min_samples_leaf"] = min_samples_leaf
-            if "min_impurity_decrease" in m.get_params():
-                params["min_impurity_decrease"] = min_impurity_decrease
-            if "random_state" in m.get_params():
-                params["random_state"] = random_state
-            m.set_params(**params)
+    # RFE Loop
+    metrics_df_sorted = pd.DataFrame() # To hold final result
 
-        sw_tr = sw_np[train_idx] if sw_np is not None else None
-        m.fit(X_np[train_idx], y_np[train_idx], sample_weight=sw_tr)
+    while True:
+        p = len(current_features)
+        K = end_features
 
-        # C-level raw importance
-        folds_data['share'].append(m.feature_importances_)
+        # Check termination condition
+        # We run the evaluation even if p <= K to get the final metrics for the survivors
+        # But if we just finished a round and reached K, we stop?
+        # Actually, the loop condition "while p > K" is usually used, but we need metrics for the final set.
+        # So we run evaluation, THEN drop. If we are already <= K, we don't drop, just break after eval.
 
-        # Fast extra metrics
-        freq, mdi_d, mdi_c, _ = extract_extra_mdi_metrics_fast(m, p_reduced)
-        folds_data['freq'].append(freq)
-        folds_data['mdi_depth'].append(mdi_d)
-        folds_data['mdi_cov'].append(mdi_c)
+        # Subsampling Logic
+        n_star = max(30000, 300 * p, 2000 * K)
+        N = len(X)
+        subsample_pct = min(1.0, n_star / N)
 
-    # 3. Aggregation
-    agg = {}
-    for metric, values in folds_data.items():
-        arr = np.vstack(values)
-        mu = arr.mean(axis=0)
-        sd = arr.std(axis=0)
-        hit = (arr > 0).mean(axis=0)
-        cv = sd / (mu + 1e-12)
-        agg[f"{metric}_mu"] = mu
-        agg[f"{metric}_stab"] = mu * (hit / (cv + 1e-12))
+        # Subsample Data
+        if subsample_pct < 1.0:
+            n_sub = int(N * subsample_pct)
+            # Sample indices without replacement and sort to preserve time order
+            indices_sub = np.sort(rng.choice(N, n_sub, replace=False))
 
-    metrics_df = pd.DataFrame(agg, index=kept_features)
+            X_curr_np = X_np_full[indices_sub][:, [feature_names_full.index(f) for f in current_features]]
+            y_curr_np = y_np[indices_sub]
+            sw_curr_np = sw_np[indices_sub] if sw_np is not None else None
 
-    # Final Ranking
-    metrics_df['composite_rank'] = (
-        metrics_df['share_stab'].rank(ascending=False) * 0.5 +
-        metrics_df['mdi_depth_stab'].rank(ascending=False) * 0.3 +
-        metrics_df['mdi_cov_stab'].rank(ascending=False) * 0.2
-    ).rank()
+            # Recalculate splits for the smaller dataset
+            # Note: purged_embargoed_splits logic assumes contiguous time, but with sorted random subsample
+            # we approximate it. It's the best we can do for subsampled RFE on time series without contiguous blocks.
+            splits_curr = purged_embargoed_splits(n_sub, n_splits, purge=purge)
+        else:
+            X_curr_np = X_np_full[:, [feature_names_full.index(f) for f in current_features]]
+            y_curr_np = y_np
+            sw_curr_np = sw_np
+            splits_curr = splits_full # Can reuse if N didn't change (only first iter potentially)
 
-    metrics_df_sorted = metrics_df.sort_values('composite_rank')
+        # Suggest depth based on CURRENT p
+        depth = suggest_depth(p, X_curr_np.shape[0])
+
+        # 2. Stability Analysis CV
+        folds_data = defaultdict(list)
+
+        for train_idx, _ in splits_curr:
+            m = clone(base_model)
+            # Update params
+            if hasattr(m, "set_params"):
+                params = {}
+                if "max_depth" in m.get_params():
+                    params["max_depth"] = depth
+                if "n_estimators" in m.get_params():
+                    params["n_estimators"] = analysis_n_estimators
+                if "min_samples_leaf" in m.get_params():
+                    params["min_samples_leaf"] = min_samples_leaf
+                if "min_impurity_decrease" in m.get_params():
+                    params["min_impurity_decrease"] = min_impurity_decrease
+                if "random_state" in m.get_params():
+                    params["random_state"] = random_state
+                m.set_params(**params)
+
+            sw_tr = sw_curr_np[train_idx] if sw_curr_np is not None else None
+            m.fit(X_curr_np[train_idx], y_curr_np[train_idx], sample_weight=sw_tr)
+
+            # C-level raw importance
+            folds_data['share'].append(m.feature_importances_)
+
+            # Fast extra metrics
+            freq, mdi_d, mdi_c, _ = extract_extra_mdi_metrics_fast(m, p)
+            folds_data['freq'].append(freq)
+            folds_data['mdi_depth'].append(mdi_d)
+            folds_data['mdi_cov'].append(mdi_c)
+
+        # 3. Aggregation
+        agg = {}
+        for metric, values in folds_data.items():
+            arr = np.vstack(values)
+            mu = arr.mean(axis=0)
+            sd = arr.std(axis=0)
+            hit = (arr > 0).mean(axis=0)
+            cv = sd / (mu + 1e-12)
+            agg[f"{metric}_mu"] = mu
+            agg[f"{metric}_stab"] = mu * (hit / (cv + 1e-12))
+
+        metrics_df = pd.DataFrame(agg, index=current_features)
+
+        # Final Ranking
+        metrics_df['composite_rank'] = (
+            metrics_df['share_stab'].rank(ascending=False) * 0.5 +
+            metrics_df['mdi_depth_stab'].rank(ascending=False) * 0.3 +
+            metrics_df['mdi_cov_stab'].rank(ascending=False) * 0.2
+        ).rank()
+
+        metrics_df_sorted = metrics_df.sort_values('composite_rank')
+
+        # If we reached the target, we are done
+        if p <= end_features:
+            tprint(f"MDI RFE: Reached target {p} features. Stopping.")
+            break
+
+        # Determine how many to drop
+        remove_features = p - end_features
+        n_drop = int(remove_features / 4) + 5
+        n_drop = min(n_drop, remove_features)
+
+        tprint(f"MDI RFE: p={p}, dropping {n_drop} features. (Next p={p-n_drop})")
+
+        # Drop
+        # metrics_df_sorted is sorted by rank ascending (1 is best? No, rank() default is ascending, so lowest value is 1.0)
+        # Wait, how is composite_rank calculated?
+        # share_stab.rank(ascending=False): Higher share -> Lower rank number (1 is best).
+        # So low 'composite_rank' is GOOD.
+        # We want to drop the ones with HIGH 'composite_rank' (worst).
+        # tail(n_drop)
+
+        survivors = metrics_df_sorted.index[:-n_drop].tolist()
+        current_features = survivors
+
     selected = metrics_df_sorted.index.tolist()
 
     return MDISelectionResult(metrics_df_sorted, selected, kept_features)
@@ -272,6 +346,7 @@ if __name__ == "__main__":
     w_dummy = np.random.uniform(0.5, 1.5, n_rows)
 
     model = ExtraTreesClassifier(n_jobs=-1)
-    res = mdi_feature_selection_v3(X_dummy, y_dummy, model, n_splits=5, min_samples_leaf=20, sample_weight=w_dummy)
+    res = mdi_feature_selection_v3(X_dummy, y_dummy, model, n_splits=5, min_samples_leaf=20, sample_weight=w_dummy, end_features=10)
     print(f"Top Features: {res.selected_features[:5]}")
+    print(f"Total Selected: {len(res.selected_features)}")
     print(f"Kept after dedupe: {len(res.kept_after_dedupe)}")

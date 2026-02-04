@@ -60,8 +60,11 @@ def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, sy
         c_full = panel["close"].loc[common_idx]
         a_full = atr_full.loc[common_idx]
 
-        l_short = ff.compute_peak_labels(c_full, a_full, H, near_k, rev_k, True)
-        l_long = ff.compute_peak_labels(c_full, a_full, H, near_k, rev_k, False)
+        max_near = float(cfg.get("exh_near_dist_cap_pct", 0.02))
+        min_rev = float(cfg.get("exh_rev_dist_floor_pct", 0.005))
+
+        l_short = ff.compute_peak_labels(c_full, a_full, H, near_k, rev_k, True, max_near, min_rev)
+        l_long = ff.compute_peak_labels(c_full, a_full, H, near_k, rev_k, False, max_near, min_rev)
 
         is_short_rev = l_short.reindex(index=t_index, columns=valid_syms).fillna(0) > 0.5
         is_long_rev = l_long.reindex(index=t_index, columns=valid_syms).fillna(0) > 0.5

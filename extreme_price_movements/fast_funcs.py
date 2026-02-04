@@ -416,7 +416,7 @@ def numba_grouped_rolling_mean(df: pd.DataFrame, group_series: pd.Series, window
     return out
 
 @jit(nopython=True, cache=True)
-def _numba_peak_label(close, atr, horizon, near_k, rev_k, is_uptrend):
+def _numba_peak_label(close, atr, horizon, near_k, rev_k, is_uptrend, max_near_pct, min_rev_pct):
     """
     Computes "Peak Proximity" label with strict causal ATR logic.
     1 if:
@@ -439,8 +439,16 @@ def _numba_peak_label(close, atr, horizon, near_k, rev_k, is_uptrend):
         if np.isnan(curr_atr) or curr_atr <= 0 or np.isnan(curr_p):
             continue
 
-        limit_dist = rev_k * curr_atr
-        near_dist = near_k * curr_atr
+        # Calculate base distances
+        raw_limit = rev_k * curr_atr
+        raw_near = near_k * curr_atr
+
+        # Apply Clipping
+        # near_dist = min(ATR-based, Cap)
+        near_dist = min(raw_near, max_near_pct * curr_p)
+
+        # limit_dist = max(ATR-based, Floor)
+        limit_dist = max(raw_limit, min_rev_pct * curr_p)
 
         # Define search window: (i+1, i+1+horizon)
         start_search = i + 1
@@ -557,10 +565,10 @@ def numba_rolling_std(df, n):
     tprint(f"Entering function: numba_rolling_std in fast_funcs.py")
     return apply_to_frame(df, _numba_rolling_std_nan_safe, n)
 
-def compute_peak_labels(close_df, atr_df, horizon, near_k, rev_k, is_uptrend):
+def compute_peak_labels(close_df, atr_df, horizon, near_k, rev_k, is_uptrend, max_near_pct=0.02, min_rev_pct=0.005):
     tprint(f"Entering function: compute_peak_labels in fast_funcs.py")
     return apply_to_frame_binary(
         close_df, atr_df,
         _numba_peak_label,
-        horizon, near_k, rev_k, is_uptrend
+        horizon, near_k, rev_k, is_uptrend, max_near_pct, min_rev_pct
     )

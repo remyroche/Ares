@@ -25,30 +25,45 @@ def reconcile_state(ex, state):
 def train_daily(ts_sig, margin_symbols, cfg, store, ex):
     tprint("DAILY TRAINING START")
     syms_all = build_fetch_universe(margin_symbols, cfg["market_basket"], cfg["fetch_symbols_M"])
+    tprint(f"Fetch universe size: {len(syms_all)}")
     with Timer("Training Data Fetch"):
         since = (ts_sig - pd.Timedelta(days=365)).floor("D")
         since_ms = int(since.value // 10**6)
+        count_upd = 0
         for s in syms_all:
-            try: store.update_symbol(ex, s, since_ms)
+            try:
+                store.update_symbol(ex, s, since_ms)
+                count_upd += 1
             except Exception: pass
+        tprint(f"Updated {count_upd}/{len(syms_all)} symbols")
+
     train_syms = filter_low_variance_assets(store, syms_all, lookback_days=30, threshold_pct=0.40)
+    tprint(f"Training universe size (after variance filter): {len(train_syms)}")
     train_syms = sorted(list(set(train_syms).union(set(cfg["market_basket"]))))
     dfs = {}
     for s in train_syms:
         df = store.load(s)
         if not df.empty: dfs[s] = df[df.index <= ts_sig].tail(24*90)
+
+    tprint(f"Loaded data for {len(dfs)}/{len(train_syms)} symbols")
     if not dfs:
         tprint("Training failed: No data.")
         return None
     with Timer("Training Pipeline"):
         panel = to_panel(dfs)
         mkt_df = compute_market_features(panel, cfg["market_basket"])
+        tprint("Market features computed")
         mkt_gates = add_regime_gates(mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
+        tprint("Regime gates added")
         feats = compute_features_hourly(panel, mkt_gates, cfg)
+        tprint("Hourly features computed")
         p_exh_hist = generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_sig, cfg["train_lookback_hours"], train_syms)
+        tprint("Exhaustion history generated")
         trained_bundle = select_best_horizon(panel, feats, mkt_gates, cfg, train_syms, ts_sig, p_exh_hist)
+        tprint("Best horizon selected / Models trained")
         alpha_models = trained_bundle["alpha_models"]
         best_risk = optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts_sig, p_exh_hist, alpha_models)
+        tprint("Risk params optimized")
 
         # Return state dict
         new_state = {
@@ -64,9 +79,11 @@ def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger, model_
     run_id = str(uuid.uuid4())
     tprint(f"HOURLY EXEC Start: {ts_sig} RunID={run_id}")
     candidates_pool = select_live_candidates(margin_symbols, cfg["market_basket"], pct=0.05)
+    tprint(f"Candidates selected: {len(candidates_pool)}")
 
     current_positions = state.get_positions()
     active_syms = list(current_positions.keys())
+    tprint(f"Active positions: {len(active_syms)}")
     # Ensure active symbols fetched
     fetch_syms = sorted(list(set(candidates_pool + active_syms)))
 
@@ -74,18 +91,25 @@ def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger, model_
     since = (ts_sig - pd.Timedelta(days=90)).floor("D")
     since_ms = int(since.value // 10**6)
     with Timer("Candidate Data Fetch"):
+        count_fetch = 0
         for s in fetch_syms:
             try:
                 df = store.update_symbol(ex, s, since_ms)
-                if not df.empty and df.index.max() >= ts_sig: dfs[s] = df[df.index <= ts_sig].tail(24*90)
+                if not df.empty and df.index.max() >= ts_sig:
+                    dfs[s] = df[df.index <= ts_sig].tail(24*90)
+                    count_fetch += 1
             except Exception: pass
-    if not dfs: return
+        tprint(f"Fetched data for {count_fetch}/{len(fetch_syms)} symbols")
+    if not dfs:
+        tprint("No data available for execution. Exiting.")
+        return
 
     with Timer("Feature Gen (Candidates)"):
         panel = to_panel(dfs)
         mkt_df = compute_market_features(panel, cfg["market_basket"])
         mkt_gates = add_regime_gates(mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
         feats = compute_features_hourly(panel, mkt_gates, cfg)
+        tprint("Features generated")
 
     if not model_state or not model_state.get("bundle"):
         tprint("No trained models available. Skipping execution.")
@@ -99,8 +123,11 @@ def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger, model_
     granular_risk = risk_conf.get("granular_risk", {}) if risk_conf else {}
 
     o = panel["open"]; h = panel["high"]; l = panel["low"]; c = panel["close"]
+    exits_count = 0
     for sym in active_syms:
-        if sym not in c.columns or ts_sig not in c.index: continue
+        if sym not in c.columns or ts_sig not in c.index:
+            tprint(f"Warning: {sym} not in data/index for position update")
+            continue
         pos = current_positions[sym]
         ts_risk = TrailingStop.from_dict(pos["risk_state"])
         curr_h = float(h.loc[ts_sig, sym]); curr_l = float(l.loc[ts_sig, sym]); curr_c = float(c.loc[ts_sig, sym])
@@ -111,15 +138,20 @@ def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger, model_
             else: ret = (exit_px / entry_px - 1.0) if side == "long" else (entry_px / exit_px - 1.0)
             logger.log(ts_sig, {"event": "exit", "symbol": sym, "return": ret, "reason": reason})
             state.clear_position(sym)
+            tprint(f"EXIT {sym} ({reason}): ret={ret:.4%}")
+            exits_count += 1
         else:
             pos["risk_state"] = ts_risk.to_dict()
             state.set_position(sym, pos)
 
+    tprint(f"Position updates complete. Exits: {exits_count}")
     p_exh_cand = generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_sig, 24, list(dfs.keys()))
+    tprint("Exhaustion history for candidates generated")
 
     target_orders = generate_hourly_signals(
         ts_sig, feats, mkt_gates, bundle, risk_conf, cfg, p_exh_cand, active_syms
     )
+    tprint(f"Generated {len(target_orders) if target_orders else 0} signals")
 
     if target_orders:
         for order in target_orders:

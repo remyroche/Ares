@@ -58,3 +58,11 @@ Result: `calculate_entropy_statistics_numba` speedup >700x (2.11s -> 0.003s). Fu
 **Learning:** `_numba_price_jump_frequency` was O(N*W) because it recalculated mean and std for the window at every step using `np.mean` and `np.std`. Even with JIT, this is inefficient. Replacing these with incremental O(1) updates (using Welford's or sum/sq_sum tracking) reduced complexity to O(N * (W/k))—we still iterate to count jumps, but the expensive mean/std calculation is gone. This achieved a ~2.7x speedup for typical window sizes.
 
 **Action:** When implementing rolling features that require window statistics (mean, std) for thresholding, always maintain these statistics incrementally (O(1)) rather than recalculating them (O(W)), even if the subsequent logic (like counting outliers) requires iterating the window. Every O(W) reduction inside the main loop counts.
+
+## 2026-02-04 - Rolling Mean/Std Nan-Safe Optimization
+
+**Learning:** Naive sliding window implementations for "nan-safe" rolling statistics ($O(N \cdot W)$) are extremely slow for large windows.
+- `_numba_rolling_mean_nan_safe`: Was scanning the window for every element to skip NaNs. Optimized to $O(N)$ by tracking `sum` and `count` incrementally. Speedup: ~10x (2.8s -> 0.28s for N=1M, W=1000).
+- `_numba_rolling_std_nan_safe`: Was doing TWO passes over the window (Mean then Variance). Optimized to $O(N)$ using online variance update (tracking `sum`, `sum_sq`, `count`). Speedup: ~230x (4.25s -> 0.018s).
+
+**Action:** Always prefer $O(N)$ incremental updates for rolling statistics, even when handling NaNs requires conditional logic. The speedup is massive for W > 100.

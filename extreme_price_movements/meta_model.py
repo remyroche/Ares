@@ -25,7 +25,6 @@ class MetaModel:
         Combines with feats_df (which should contain the meta features).
         """
         tprint(f"Entering function: prepare_meta_features in meta_model.py")
-        tprint(f"prepare_meta_features: Input feats_df shape: {feats_df.shape}")
         meta_data = pd.DataFrame(index=feats_df.index)
 
         eps = 1e-4
@@ -34,7 +33,6 @@ class MetaModel:
 
         meta_data["pred_tf_logit"] = logit(p_tf)
         meta_data["pred_mr_logit"] = logit(p_mr)
-        tprint("prepare_meta_features: Logit transformation complete.")
 
         # Merge with feats_df
         # feats_df should only contain the requested keys
@@ -48,8 +46,6 @@ class MetaModel:
 
         # Ensure only valid numeric cols
         return meta_data.fillna(0.0)
-        tprint(f"prepare_meta_features: Returning meta_data with shape: {meta_data[self.feature_names].shape}")
-        return meta_data[self.feature_names].fillna(0.0)
 
     def _calc_metrics(self, y_true, y_pred):
         # PnL (Assumes y_pred is signal strength * direction, y_true is returns)
@@ -75,7 +71,6 @@ class MetaModel:
 
     def fit(self, X_meta, y):
         tprint(f"Entering function: fit in meta_model.py")
-        tprint(f"fit: Starting with X_meta shape: {X_meta.shape}, y shape: {y.shape}")
 
         # 1. Feature Selection
         n_samples = len(X_meta)
@@ -111,7 +106,6 @@ class MetaModel:
         y_arr = y
 
         for alpha in alphas:
-            tprint(f"fit: Evaluating alpha={alpha}")
             scores = {"pnl": [], "sortino": [], "maxdd": []}
 
             for train_idx, val_idx in tscv.split(X_arr):
@@ -139,8 +133,6 @@ class MetaModel:
                 "maxdd": avg_dd
             })
 
-        tprint("fit: Grid search results computed. Calculating best alpha.")
-
         # Pareto Selection
         # Score = 0.6 * Rank(PnL) + 0.3 * Rank(Sortino) + 0.1 * Rank(-MaxDD)
         res_df = pd.DataFrame(results)
@@ -163,7 +155,6 @@ class MetaModel:
 
     def predict(self, X_meta):
         tprint(f"Entering function: predict in meta_model.py")
-        tprint(f"predict: Input X_meta shape: {X_meta.shape}")
         if self.selected_features is None:
              pass
         else:
@@ -171,5 +162,4 @@ class MetaModel:
              cols = [c for c in self.selected_features if c in X_meta.columns]
              X_meta = X_meta[cols]
 
-        tprint("predict: Generating predictions.")
         return self.model.predict(X_meta)

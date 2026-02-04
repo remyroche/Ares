@@ -42,17 +42,11 @@ class TrailingStop:
             self.lowest_low = entry_px
 
         self.trailing_active = False
-        tprint(f"Initialized TrailingStop: side={side}, entry={entry_px}, atr={atr_val}, k_sl={k_sl}, sl_px={self.sl_px}")
 
     def update(self, current_high: float, current_low: float, current_close: float):
         tprint(f"Entering function: update in risk.py")
-        tprint(f"Update called: high={current_high}, low={current_low}, close={current_close}, current_sl={self.sl_px}, active={self.trailing_active}")
-
         if self.side == "long":
             stop_hit = current_low <= self.sl_px
-            if stop_hit:
-                tprint(f"Long stop hit check: {current_low} <= {self.sl_px}")
-
             trail_would_trigger = False
 
             if current_high > self.highest_high:
@@ -60,48 +54,35 @@ class TrailingStop:
                 req_start_dist = self.k_trail_start * self.atr * self.entry_px
                 is_active = self.trailing_active or (profit_dist >= req_start_dist)
 
-                if not self.trailing_active and is_active:
-                    tprint(f"Trailing activation check passed: profit_dist={profit_dist} >= {req_start_dist}")
-
                 if is_active:
                     trail_dist_px = self.k_trail_dist * self.atr * self.entry_px
                     new_sl = current_high - trail_dist_px
                     if new_sl > self.sl_px:
-                        tprint(f"Trail trigger check: new_sl={new_sl} > current_sl={self.sl_px}")
                         trail_would_trigger = True
 
             if stop_hit and trail_would_trigger:
-                tprint("Ambiguous outcome: Stop hit AND Trail trigger in same bar. Returning ambiguous_neutral.")
                 return True, self.entry_px, "ambiguous_neutral"
 
             if stop_hit:
-                tprint(f"Stop hit confirmed. Returning sl_hit at {self.sl_px}")
                 return True, self.sl_px, "sl_hit"
 
             if current_high > self.highest_high:
-                tprint(f"New highest high: {current_high}")
                 self.highest_high = current_high
 
             profit_dist = self.highest_high - self.entry_px
             req_start_dist = self.k_trail_start * self.atr * self.entry_px
 
             if profit_dist >= req_start_dist:
-                if not self.trailing_active:
-                    tprint("Trailing active set to True.")
                 self.trailing_active = True
 
             if self.trailing_active:
                 trail_dist_px = self.k_trail_dist * self.atr * self.entry_px
                 new_sl = self.highest_high - trail_dist_px
                 if new_sl > self.sl_px:
-                    tprint(f"Updating SL from {self.sl_px} to {new_sl}")
                     self.sl_px = new_sl
 
         else: # short
             stop_hit = current_high >= self.sl_px
-            if stop_hit:
-                tprint(f"Short stop hit check: {current_high} >= {self.sl_px}")
-
             trail_would_trigger = False
 
             if current_low < self.lowest_low:
@@ -109,41 +90,31 @@ class TrailingStop:
                 req_start_dist = self.k_trail_start * self.atr * self.entry_px
                 is_active = self.trailing_active or (profit_dist >= req_start_dist)
 
-                if not self.trailing_active and is_active:
-                    tprint(f"Trailing activation check passed: profit_dist={profit_dist} >= {req_start_dist}")
-
                 if is_active:
                     trail_dist_px = self.k_trail_dist * self.atr * self.entry_px
                     new_sl = current_low + trail_dist_px
                     if new_sl < self.sl_px:
-                        tprint(f"Trail trigger check: new_sl={new_sl} < current_sl={self.sl_px}")
                         trail_would_trigger = True
 
             if stop_hit and trail_would_trigger:
-                tprint("Ambiguous outcome: Stop hit AND Trail trigger in same bar. Returning ambiguous_neutral.")
                 return True, self.entry_px, "ambiguous_neutral"
 
             if stop_hit:
-                tprint(f"Stop hit confirmed. Returning sl_hit at {self.sl_px}")
                 return True, self.sl_px, "sl_hit"
 
             if current_low < self.lowest_low:
-                tprint(f"New lowest low: {current_low}")
                 self.lowest_low = current_low
 
             profit_dist = self.entry_px - self.lowest_low
             req_start_dist = self.k_trail_start * self.atr * self.entry_px
 
             if profit_dist >= req_start_dist:
-                if not self.trailing_active:
-                    tprint("Trailing active set to True.")
                 self.trailing_active = True
 
             if self.trailing_active:
                 trail_dist_px = self.k_trail_dist * self.atr * self.entry_px
                 new_sl = self.lowest_low + trail_dist_px
                 if new_sl < self.sl_px:
-                    tprint(f"Updating SL from {self.sl_px} to {new_sl}")
                     self.sl_px = new_sl
 
         return False, None, None

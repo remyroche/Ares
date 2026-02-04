@@ -137,7 +137,6 @@ def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, sy
     return X, y_arr, w_arr, list(X.columns)
 
 def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms, models=None):
-    # Unchanged except we should ensure we pass correct config for keys
     tprint(f"Entering function: compute_p_exhaustion_at_t in training.py")
     t_index = pd.DatetimeIndex([ts], tz="UTC")
     valid_syms = [s for s in syms if s in panel["close"].columns]
@@ -157,13 +156,6 @@ def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms, models=Non
         if model_up:
             Xp = _build_pred_X(feats, mkt_gates, cfg, ts, up_syms, feature_key="exh_feature_keys")
             if not Xp.empty:
-                # Align cols
-                # model_up.fit used cols from X. Xp must match.
-                # Assuming order is deterministic from config list.
-                # However, if some feats missing, alignment might break?
-                # Best to reindex to model features if available?
-                # ExhaustionModel relies on sklearn, which expects array.
-                # Xp is DataFrame.
                 probs = model_up.predict_proba(Xp)
                 probs = np.clip(probs * 2.0, 0.0, 1.0)
                 out_probs.loc[up_syms] = probs
@@ -188,7 +180,6 @@ def _build_pred_X(feats, mkt_gates, cfg, ts, syms, feature_key="exh_feature_keys
     X_parts = []
 
     keys = cfg.get(feature_key, [])
-    # For TF/MR we use causal_cols or specific lists
 
     for k in keys:
         if k in feats:
@@ -203,7 +194,6 @@ def _build_pred_X(feats, mkt_gates, cfg, ts, syms, feature_key="exh_feature_keys
     return Xp.fillna(0)
 
 def generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, syms):
-    # Same logic, just ensuring build_exhaustion_Xy uses new keys
     tprint(f"Entering function: generate_exhaustion_history in training.py")
     train_end = ts_end - pd.Timedelta(hours=lookback_hours)
     train_len = cfg["exh_train_lookback_hours"]
@@ -282,11 +272,9 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
     valid_ts = final_mask[final_mask.any(axis=1)].index
     rows = []
 
-    # Determine features to collect
     if feature_key:
         feat_keys = cfg.get(feature_key, [])
     else:
-        # Fallback to causal_cols if not specified (legacy)
         feat_keys = cfg.get("causal_cols", [])
 
     for t in valid_ts:
@@ -341,12 +329,9 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
             rec["p_exh_lag1"] = p_val
 
             for k in feat_keys:
-                if k == "p_exh_lag1": continue # Already added
+                if k == "p_exh_lag1": continue
                 if k in feats:
                     rec[k] = feats[k].loc[t, sym]
-
-            # Add Meta Features if needed (or ensure they are in feat_keys)
-            # Currently feat_keys handles it.
 
             rec["G_VOL"] = mkt_gates.loc[t, "G_VOL"]
             rec["G_TREND"] = mkt_gates.loc[t, "G_TREND"]
@@ -354,34 +339,42 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
 
     if not rows: return None, None, None, None, None
     df = pd.DataFrame(rows).dropna()
+
+    # Store indices (ts, symbol) to allow re-linking for meta model if needed
+    # (Actually we return X_out without index info usually, but we set index=df.index which is RangeIndex)
+    # If we want to join later, we might need a MultiIndex.
+    # But `select_best_horizon` trains Meta by predicting on X_mr/X_tf.
+    # X_mr/X_tf logic: if we return df with metadata, we can align.
+
     weights = df.pop("w").values.astype(np.float32)
     weights = np.clip(weights, 0.1, 10.0)
-
-    # Interaction toggles?
-    # If using specific features, maybe skip toggles or apply them on specific ones?
-    # User said: "create a flag... MR model will include MR features + global... but not TF features"
-    # This implies we select features.
-    # `apply_interaction_toggles` expands features.
-    # If we pass specific keys, we might still want G_VOL interaction.
-    # Let's keep toggles for now on whatever features are passed.
 
     df = apply_interaction_toggles(df, feat_keys, ["G_VOL", "G_TREND"], drop_raw=cfg["drop_raw_causal"])
     y_bin = df.pop("y_bin").values.astype(int)
     y_ret = df.pop("y_ret").values.astype(np.float32)
-    X_out = df.drop(columns=["ts", "symbol"]).astype(np.float32)
+
+    # Save metadata for return if needed?
+    # For now, just drop
+    meta_cols = ["ts", "symbol"]
+    # We will need these for Spike Model alignment later, so let's keep them in a separate DF if we want.
+    # But function signature returns X_out, y...
+    # I'll return `df` but with meta cols dropped.
+
+    # IMPORTANT: We need to pass Spike Features to Meta Model.
+    # If this function is called for TF/MR, it only gathers TF/MR features.
+    # The Meta model needs to gather ITS OWN features for the SAME rows.
+    # We should probably have a `build_meta_training_set` helper or modify this to return metadata.
+
+    X_out = df.drop(columns=["ts", "symbol"], errors="ignore").astype(np.float32)
     X_out.index = df.index
-    return X_out, y_bin, y_ret, list(X_out.columns), weights
+
+    # Return df_meta (ts, symbol) as extra return?
+    df_meta = df[meta_cols] if "ts" in df.columns else pd.DataFrame(index=df.index)
+
+    return X_out, y_bin, y_ret, list(X_out.columns), weights, df_meta
 
 def train_spike_anatomy_model(panel, feats, mkt_gates, cfg, syms, ts_end):
-    """
-    Trains a GMM on Spike Anatomy features to classify regime.
-    """
     tprint(f"Entering function: train_spike_anatomy_model in training.py")
-
-    # Collect data (unsupervised)
-    # Using same candidate logic or broader?
-    # User: "classify the kind of 16-28h spike you're in"
-    # So we should train on candidates that ARE spikes (top/bot).
     cand_mask = select_trade_candidates_vectorized(panel, feats, pct=cfg["trade_extreme_pct"], metric=cfg["trade_deviation_metric"])
     if cand_mask is None: return None
 
@@ -411,8 +404,6 @@ def train_spike_anatomy_model(panel, feats, mkt_gates, cfg, syms, ts_end):
     df = pd.DataFrame(rows).dropna()
     if df.empty: return None
 
-    # Train GMM
-    # 4 components: Grind, Spike, Chop, Collapse?
     gmm = GaussianMixture(n_components=4, random_state=42)
     gmm.fit(df)
 
@@ -424,7 +415,6 @@ def select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
     kinds = ["mr", "tf"]
     final_models = {}
 
-    # Train Spike Anatomy Model
     spike_model = train_spike_anatomy_model(panel, feats, mkt_gates, cfg, syms, ts)
 
     for d in directions:
@@ -432,13 +422,11 @@ def select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
         for k in kinds:
             best_ic = -1.0; best_m = None
             horizons = cfg["label_horizons_hours"]
-
-            # Select feature set based on model kind
             feat_key = "tf_feature_keys" if k == "tf" else "mr_feature_keys"
 
             for H in horizons:
                 tprint(f"Selecting {d} {k} H={H}...")
-                X, y, y_ret, cols, w = build_hourly_training_set_and_weights(
+                X, y, y_ret, cols, w, _ = build_hourly_training_set_and_weights(
                     panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, H, k,
                     trend_filter=d, feature_key=feat_key
                 )
@@ -460,71 +448,88 @@ def select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
             meta_models[d] = None; continue
 
         H_mr = mr_conf["H"]
-        X_mr, _, _, _, _ = build_hourly_training_set_and_weights(
+        X_mr, _, _, _, _, meta_idx_mr = build_hourly_training_set_and_weights(
             panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, H_mr, "mr",
             trend_filter=d, feature_key="mr_feature_keys"
         )
         H_tf = tf_conf["H"]
-        X_tf, y_tf, y_ret_tf, cols_tf, _ = build_hourly_training_set_and_weights(
+        X_tf, y_tf, y_ret_tf, cols_tf, _, meta_idx_tf = build_hourly_training_set_and_weights(
             panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, H_tf, "tf",
             trend_filter=d, feature_key="tf_feature_keys"
         )
 
+        # We need to align MR and TF predictions on the same events.
+        # But H_mr and H_tf might differ, so "events" might imply different horizons?
+        # But "ts" is the signal time. If signal times match, we can blend.
+        # We align by (ts, symbol).
+
+        # Create MultiIndex for alignment
+        X_mr.index = pd.MultiIndex.from_frame(meta_idx_mr)
+        X_tf.index = pd.MultiIndex.from_frame(meta_idx_tf)
+        y_tf_indexed = pd.Series(y_ret_tf, index=X_tf.index) # Target for meta is TF return?
+
         common = X_mr.index.intersection(X_tf.index)
         if len(common) < 100: meta_models[d] = None; continue
-        X_mr = X_mr.loc[common]; X_tf = X_tf.loc[common]
+
+        X_mr = X_mr.loc[common]
+        X_tf = X_tf.loc[common]
+        y_meta = y_tf_indexed.loc[common].values
 
         p_mr = mr_conf["model"].predict(X_mr)
         p_tf = tf_conf["model"].predict(X_tf)
 
         # Build Meta Features
-        # We need to construct X_meta.
-        # Previously done inside MetaModel using feats_df (X_tf might not have all cols).
-        # We should build full meta feature set here.
-        # Need to re-gather "meta_feature_keys".
+        # 1. Base Meta Features (from config)
+        meta_feat_keys = cfg.get("meta_feature_keys", [])
 
-        # Helper to gather raw meta features
-        meta_keys = cfg.get("meta_feature_keys", [])
-        # We need to fetch these for the `common` timestamps/symbols.
-        # X_tf index is sequential RangeIndex or Int64Index?
-        # X_out index is RangeIndex, but we dropped ts/symbol cols.
-        # build_hourly_training_set_and_weights returns X with RangeIndex.
-        # We lost the mapping back to (ts, symbol) unless we stored it?
-        # Actually `build_hourly_training_set_and_weights` output has index=df.index which is RangeIndex.
-        # We need to preserve (ts, symbol) to fetch meta features.
-        # But `build_hourly_training_set_and_weights` drops them.
+        # We need to fetch these values for the `common` (ts, symbol) pairs.
+        # Efficient way: `_build_pred_X` but for specific list of indices?
+        # Or construct a dataframe from `feats` using loop.
 
-        # I need to modify `build_hourly_training_set_and_weights` to return index info or include it?
-        # Or simpler: Gather meta features inside `build_hourly_training_set_and_weights` if needed?
-        # But meta model is trained AFTER.
+        meta_rows = []
+        spike_rows = []
+        spike_keys = cfg.get("spike_feature_keys", [])
 
-        # Workaround:
-        # In `build_hourly_training_set_and_weights`, return `df` (with ts, symbol) instead of just X?
-        # Or reconstruct.
-        # Let's modify `build_hourly_training_set_and_weights` to return metadata index.
-        pass # To be fixed below
+        # Iterate common index to fetch features
+        # This is slow if loop. Vectorized fetch preferred.
+        # feats[k] is (Time x Symbol).
+        # We can stack feats[k] to get (Time, Symbol) -> Value.
+        # Then reindex.
 
-        # For now, let's assume we can fetch features.
-        # Actually `MetaModel.prepare_meta_features` takes `feats_df`.
-        # `X_tf` contains TF features.
-        # If `meta_feature_keys` are in `tf_feature_keys`, they are there.
-        # But they are likely disjoint.
+        # Prepare Stacked Feats for Meta Keys
+        stacked_meta = {}
+        for k in meta_feat_keys:
+            if k in feats:
+                stacked_meta[k] = feats[k].stack()
 
-        # I will modify `build_hourly_training_set_and_weights` to optionally return metadata.
-        # Actually, `MetaModel` needs a redesign if we want to support flexible features.
-        # But `MetaModel` currently has hardcoded list.
-        # I should update `MetaModel` to use `cfg["meta_feature_keys"]`.
+        df_meta_feats = pd.DataFrame(stacked_meta) # Index (Time, Symbol)
+        # Reindex to common
+        df_meta_feats = df_meta_feats.reindex(common).fillna(0.0)
 
-        # Let's finish `training.py` update first.
+        # 2. Spike Probabilities
+        if spike_model:
+            # We need inputs for spike model for these common events
+            stacked_spike = {}
+            for k in spike_keys:
+                if k in feats:
+                    stacked_spike[k] = feats[k].stack()
+            df_spike_in = pd.DataFrame(stacked_spike).reindex(common).fillna(0.0)
 
-        # ... (meta model training logic placeholder) ...
-        # I will leave the old meta training call for a moment and fix `MetaModel` class.
+            if not df_spike_in.empty:
+                probs = spike_model.predict_proba(df_spike_in)
+                # Add probs as features
+                for i in range(probs.shape[1]):
+                    df_meta_feats[f"spike_prob_{i}"] = probs[:, i]
+            else:
+                 # fill 0
+                 for i in range(4): df_meta_feats[f"spike_prob_{i}"] = 0.0
 
+        # Train Meta Model
         meta = MetaModel()
-        # X_meta = meta.prepare_meta_features(...)
-        # Need data.
+        X_meta_final = meta.prepare_meta_features(p_tf, p_mr, df_meta_feats)
 
-        meta_models[d] = meta # Placeholder
+        meta.fit(X_meta_final, y_meta)
+        meta_models[d] = meta
 
     exh_models = {}
     lookback = cfg["exh_train_lookback_hours"]

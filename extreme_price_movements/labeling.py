@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 from numba import jit
 from .fast_funcs import simulate_trade_numba
-from .utils import tprint
 
 @jit(nopython=True, cache=True)
 def _numba_triple_barrier(
@@ -68,11 +67,6 @@ def _numba_trailing_atr_labeling(
     # simulate_trade_numba returns realized return.
 
     returns = np.zeros(n, dtype=np.float32)
-    tprint(f"Starting compute_triple_barrier_labels with tp={tp}, sl={sl}, horizon={horizon_hours}")
-    # Extract arrays
-    # Ensure sorted by time
-    # panel is usually dict of DataFrames or a Panel-like object (MultiIndex DF?)
-    # In training.py: panel["close"], etc. So panel is a dict of DFs.
 
     # We iterate until n-1
     for i in range(n - 1):
@@ -177,14 +171,6 @@ def compute_triple_barrier_labels(panel: pd.DataFrame, tp: float, sl: float, hor
     out_labels = pd.DataFrame(0, index=c.index, columns=assets, dtype=np.int8)
     out_returns = pd.DataFrame(0.0, index=c.index, columns=assets, dtype=np.float32)
     for asset in assets:
-    tprint(f"Processing {len(assets)} assets.")
-    times = c.index.view(np.int64) # Nanoseconds
-
-    out_labels = pd.DataFrame(0, index=c.index, columns=assets, dtype=np.int8)
-    out_returns = pd.DataFrame(0.0, index=c.index, columns=assets, dtype=np.float32)
-
-    for i, asset in enumerate(assets):
-        tprint(f"[{i+1}/{len(assets)}] Processing asset: {asset}")
         c_arr = c[asset].to_numpy(dtype=np.float32)
         h_arr = h[asset].to_numpy(dtype=np.float32)
         l_arr = l[asset].to_numpy(dtype=np.float32)
@@ -241,5 +227,4 @@ def compute_trailing_atr_labels(
         out_labels[asset] = lbs
         out_returns[asset] = rets
 
-    tprint("Finished compute_triple_barrier_labels.")
     return out_labels, out_returns

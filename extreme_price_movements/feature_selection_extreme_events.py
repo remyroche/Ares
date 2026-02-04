@@ -13,6 +13,8 @@ from sklearn.base import clone
 from sklearn.preprocessing import QuantileTransformer
 from sklearn.utils import check_random_state
 
+from extreme_price_movements.utils import tprint
+
 # ======================================================================================
 # Purged + Embargoed CV (time series)
 # ======================================================================================
@@ -140,7 +142,7 @@ class MDISelectionResult:
     selected_features: List[str]
     kept_after_dedupe: List[str]
 
-def mdi_feature_selection_v3(
+def _mdi_feature_selection_core(
     X: pd.DataFrame,
     y: Union[pd.Series, np.ndarray],
     base_model,
@@ -155,6 +157,8 @@ def mdi_feature_selection_v3(
 ) -> MDISelectionResult:
     if not isinstance(X, pd.DataFrame):
         raise TypeError("X must be a pandas DataFrame.")
+
+    # Note: X should already be subsampled and feature-selected if called from RFE
 
     rng = check_random_state(random_state)
 
@@ -256,6 +260,127 @@ def mdi_feature_selection_v3(
 
     return MDISelectionResult(metrics_df_sorted, selected, kept_features)
 
+
+def mdi_feature_selection_v3(
+    X: pd.DataFrame,
+    y: Union[pd.Series, np.ndarray],
+    base_model,
+    n_splits: int = 6,
+    purge: int = 5,
+    min_samples_leaf: int = 50,
+    min_impurity_decrease: float = 1e-4,
+    analysis_n_estimators: int = 500, # Higher for 150-feature stability
+    pre_dedupe_threshold: float = 0.98,
+    random_state: int = 0,
+    sample_weight: Optional[Union[pd.Series, np.ndarray]] = None,
+    end_features: int = 50,
+) -> MDISelectionResult:
+
+    tprint(f"Starting RFE MDI Selection. Init features: {X.shape[1]}, Target: {end_features}")
+
+    rng = check_random_state(random_state)
+    n_samples = len(X)
+    current_features = list(X.columns)
+
+    # Prepare data access
+    # We use integer indexing to ensure alignment between X, y, and sample_weight
+    y_vals = y.values if hasattr(y, 'values') else np.asarray(y)
+    sw_vals = None
+    if sample_weight is not None:
+        sw_vals = sample_weight.values if hasattr(sample_weight, 'values') else np.asarray(sample_weight)
+
+    last_result = None
+
+    while True:
+        p = len(current_features)
+
+        # Check termination condition
+        if p <= end_features:
+            tprint(f"RFE Target Reached: {p} <= {end_features}")
+            break
+
+        # RFE Step Calculation
+        remove_total = p - end_features
+        # "At each round, we remove (remove_features / 4 + 5) features"
+        # Interpreting remove_features as the remaining excess (p - end_features)
+        step_remove = int(remove_total / 4) + 5
+        target_k = max(end_features, p - step_remove)
+
+        tprint(f"RFE Round: p={p}, target={target_k}, removing approx {step_remove}")
+
+        # Subsampling Logic
+        # n* = max(30000, 300p, 2000K)
+        # K = features you hope to keep (end_features)
+        n_star = max(30000, 300 * p, 2000 * end_features)
+        subsample_pct = min(1.0, n_star / n_samples)
+
+        tprint(f"Subsampling: n_star={n_star}, N={n_samples}, pct={subsample_pct:.2%}")
+
+        if subsample_pct < 1.0:
+            sample_size = int(n_star) # or int(n_samples * subsample_pct) which is min(N, n_star)
+            # Random sample of indices
+            indices = rng.choice(n_samples, size=sample_size, replace=False)
+            # Sort indices to preserve temporal order for Purged CV
+            indices.sort()
+
+            X_curr = X.iloc[indices][current_features]
+            y_curr = y_vals[indices]
+            sw_curr = sw_vals[indices] if sw_vals is not None else None
+        else:
+            X_curr = X[current_features]
+            y_curr = y_vals
+            sw_curr = sw_vals
+
+        # Run Core MDI Pass
+        result = _mdi_feature_selection_core(
+            X_curr, y_curr, base_model,
+            n_splits=n_splits,
+            purge=purge,
+            min_samples_leaf=min_samples_leaf,
+            min_impurity_decrease=min_impurity_decrease,
+            analysis_n_estimators=analysis_n_estimators,
+            pre_dedupe_threshold=pre_dedupe_threshold,
+            random_state=random_state,
+            sample_weight=sw_curr
+        )
+
+        last_result = result
+        ranked = result.selected_features
+
+        # Dedup might have removed features already
+        n_surviving = len(ranked)
+        tprint(f"  Post-dedupe features: {n_surviving}")
+
+        if n_surviving <= end_features:
+            tprint(f"  Dedupe reduced count to {n_surviving} <= {end_features}. RFE Complete.")
+            current_features = ranked
+            break
+
+        # Prune bottom features if we still have more than target_k
+        if n_surviving > target_k:
+            current_features = ranked[:target_k]
+        else:
+            # We are below target_k (due to dedupe), but above end_features
+            tprint(f"  Dedupe dropped more than step size. Keeping all {n_surviving} survivors.")
+            current_features = ranked
+
+    # If loop broke immediately (init <= end), run single pass if last_result is None
+    if last_result is None:
+        tprint("Initial features <= end_features. Running single pass on full data.")
+        last_result = _mdi_feature_selection_core(
+            X[current_features], y_vals, base_model,
+            n_splits=n_splits,
+            purge=purge,
+            min_samples_leaf=min_samples_leaf,
+            min_impurity_decrease=min_impurity_decrease,
+            analysis_n_estimators=analysis_n_estimators,
+            pre_dedupe_threshold=pre_dedupe_threshold,
+            random_state=random_state,
+            sample_weight=sw_vals
+        )
+
+    return last_result
+
 # Backwards compatibility alias if needed, or update call sites
 mdi_feature_selection_leakage_safe = mdi_feature_selection_v3
 
@@ -272,6 +397,13 @@ if __name__ == "__main__":
     w_dummy = np.random.uniform(0.5, 1.5, n_rows)
 
     model = ExtraTreesClassifier(n_jobs=-1)
-    res = mdi_feature_selection_v3(X_dummy, y_dummy, model, n_splits=5, min_samples_leaf=20, sample_weight=w_dummy)
+    # Test RFE with target 20
+    res = mdi_feature_selection_v3(
+        X_dummy, y_dummy, model,
+        n_splits=5, min_samples_leaf=20,
+        sample_weight=w_dummy,
+        end_features=20
+    )
     print(f"Top Features: {res.selected_features[:5]}")
-    print(f"Kept after dedupe: {len(res.kept_after_dedupe)}")
+    print(f"Total Selected: {len(res.selected_features)}")
+    print(f"Kept after dedupe (last pass): {len(res.kept_after_dedupe)}")

@@ -6,9 +6,38 @@ import pandas as pd
 import ccxt
 import glob
 import shutil
+import fcntl
 from datetime import timezone
 
 from extreme_price_movements.utils import tprint, retry_with_backoff
+
+class FileLock:
+    """
+    Simple file-based lock using fcntl for Unix-like systems.
+    """
+    def __init__(self, lock_file):
+        self.lock_file = lock_file
+        self.handle = None
+
+    def __enter__(self):
+        try:
+            self.handle = open(self.lock_file, 'w')
+            # Blocking exclusive lock
+            fcntl.flock(self.handle, fcntl.LOCK_EX)
+        except Exception as e:
+            tprint(f"Error acquiring lock {self.lock_file}: {e}")
+            if self.handle:
+                self.handle.close()
+            raise
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self.handle:
+            try:
+                fcntl.flock(self.handle, fcntl.LOCK_UN)
+                self.handle.close()
+            except Exception as e:
+                tprint(f"Error releasing lock {self.lock_file}: {e}")
 
 def make_spot_exchange():
     tprint(f"Entering function: make_spot_exchange in data_store.py")
@@ -123,10 +152,13 @@ class PartitionedOHLCVStore:
                 out[col] = pd.to_numeric(out[col], errors="coerce").astype(np.float32)
         return out
 
-    def load(self, symbol: str, columns=None) -> pd.DataFrame:
+    def load(self, symbol: str, columns=None, start_ts=None, end_ts=None, fill_gaps=False) -> pd.DataFrame:
         """
         Load data for symbol.
         columns: list of columns to read (optimization).
+        start_ts: Optional[pd.Timestamp] - inclusive start
+        end_ts: Optional[pd.Timestamp] - inclusive end
+        fill_gaps: bool - fill missing data with ffill logic
         """
         tprint(f"Entering function: load in data_store.py")
         sym_dir = self._get_symbol_dir(symbol)
@@ -136,19 +168,58 @@ class PartitionedOHLCVStore:
             )
 
         try:
-            # columns must include index 'ts' if we want to set it?
-            # read_parquet can read specific columns.
-            # But the index might not be in columns if it's saved as index?
-            # When saving, we reset index.
-            # So 'ts' is a column.
+            # 1. Gather all parquet files
+            all_files = []
+            for root, dirs, files in os.walk(sym_dir):
+                for f in files:
+                    if f.endswith(".parquet"):
+                        all_files.append(os.path.join(root, f))
 
+            if not all_files:
+                return pd.DataFrame(columns=["open","high","low","close","volume"]).set_index(
+                    pd.DatetimeIndex([], tz="UTC", name="ts")
+                )
+
+            # 2. Filter files by time range if provided
+            files_to_read = all_files
+            if start_ts is not None or end_ts is not None:
+                files_to_read = []
+                # Timestamps in filename are in seconds
+                s_ts_sec = int(start_ts.timestamp()) if start_ts else 0
+                e_ts_sec = int(end_ts.timestamp()) if end_ts else 2**63 - 1 # arbitrarily large
+
+                for fpath in all_files:
+                    fname = os.path.basename(fpath)
+                    try:
+                        base = fname.replace(".parquet", "")
+                        parts = base.split("-")
+                        if len(parts) >= 3:
+                            f_min = int(parts[-2])
+                            f_max = int(parts[-1])
+
+                            # Check overlap: file range [f_min, f_max] overlaps with [s_ts_sec, e_ts_sec]
+                            # if f_min <= e_ts_sec AND f_max >= s_ts_sec
+                            if f_min <= e_ts_sec and f_max >= s_ts_sec:
+                                files_to_read.append(fpath)
+                        else:
+                            # If naming convention fails, include it to be safe
+                            files_to_read.append(fpath)
+                    except Exception:
+                        files_to_read.append(fpath)
+
+            if not files_to_read:
+                return pd.DataFrame(columns=["open","high","low","close","volume"]).set_index(
+                    pd.DatetimeIndex([], tz="UTC", name="ts")
+                )
+
+            # 3. Read filtered files
             read_cols = None
             if columns:
                 read_cols = list(columns)
                 if "ts" not in read_cols:
                     read_cols.append("ts")
 
-            df = pd.read_parquet(sym_dir, columns=read_cols)
+            df = pd.read_parquet(files_to_read, columns=read_cols)
 
             if "ts" in df.columns:
                 df["ts"] = pd.to_datetime(df["ts"], utc=True)
@@ -158,8 +229,47 @@ class PartitionedOHLCVStore:
 
             df = df.sort_index()
             df = df[~df.index.duplicated(keep="last")]
+
+            # 4. Final slice to exact range
+            if start_ts is not None:
+                df = df[df.index >= start_ts]
+            if end_ts is not None:
+                df = df[df.index <= end_ts]
+
+            # 5. Gap Filling
+            if fill_gaps and not df.empty:
+                start_range = df.index.min()
+                end_range = df.index.max()
+
+                # Determine frequency from self.timeframe if possible
+                freq_map = {
+                    "1h": "h",
+                    "15m": "15min",
+                    "5m": "5min",
+                    "1d": "D"
+                }
+                freq = freq_map.get(self.timeframe, "h") # Default to hour
+
+                full_idx = pd.date_range(start_range, end_range, freq=freq, tz="UTC")
+
+                if len(full_idx) > len(df):
+                    df = df.reindex(full_idx)
+
+                    if "close" in df.columns:
+                        df["close"] = df["close"].ffill()
+
+                    # Open/High/Low missing -> use previous close (now current close due to ffill)
+                    if "close" in df.columns:
+                        for col in ["open", "high", "low"]:
+                            if col in df.columns:
+                                df[col] = df[col].fillna(df["close"])
+
+                    if "volume" in df.columns:
+                        df["volume"] = df["volume"].fillna(0)
+
             return self._downcast(df)
-        except Exception:
+        except Exception as e:
+            tprint(f"Error loading {symbol}: {e}")
             return pd.DataFrame(columns=["open","high","low","close","volume"]).set_index(
                 pd.DatetimeIndex([], tz="UTC", name="ts")
             )
@@ -168,6 +278,9 @@ class PartitionedOHLCVStore:
         tprint(f"Entering function: save_partitioned in data_store.py")
         if df.empty:
             return
+
+        # Ensure clean input
+        df = df[~df.index.duplicated(keep="last")]
 
         df = self._downcast(df)
         df_reset = df.reset_index().rename(columns={"index": "ts"})
@@ -200,8 +313,6 @@ class PartitionedOHLCVStore:
 
             files = [f for f in os.listdir(part_dir) if f.endswith(".parquet")]
             if len(files) > 10:
-                # Compaction deferred or async?
-                # For safety, synchronous here but only per partition write.
                 self.compact_partition(symbol, year, month)
 
     def compact_partition(self, symbol: str, year: int, month: int):
@@ -230,61 +341,78 @@ class PartitionedOHLCVStore:
             ts_max = int(merged["ts"].max().value // 10**9)
             new_fname = f"compact-{ts_min}-{ts_max}.parquet"
             new_fpath = os.path.join(part_dir, new_fname)
+            temp_fpath = new_fpath + ".tmp"
 
-            merged.to_parquet(new_fpath, index=False)
+            # Atomic write pattern
+            merged.to_parquet(temp_fpath, index=False)
+            os.replace(temp_fpath, new_fpath)
 
             for f in files:
                 if f != new_fpath:
-                    os.remove(f)
+                    try:
+                        os.remove(f)
+                    except OSError:
+                        pass # race condition if already deleted
 
         except Exception as e:
             tprint(f"Error compacting {symbol} {year}-{month}: {e}")
 
     def update_symbol(self, exchange, symbol: str, since_ms: int) -> pd.DataFrame:
-        # Check metadata first to avoid IO
         tprint(f"Entering function: update_symbol in data_store.py")
-        meta = self._read_meta(symbol)
-        last_ts_ms = meta.get("last_ts_ms", 0)
+        # Ensure locking
+        sym_dir = self._get_symbol_dir(symbol)
+        os.makedirs(sym_dir, exist_ok=True)
+        lock_path = os.path.join(sym_dir, ".lock")
 
-        if last_ts_ms > 0:
-            start_ms = last_ts_ms + 1
-        else:
-            # Fallback to load index if no meta
-            existing_idx = self.load(symbol, columns=["ts"]).index
-            if not existing_idx.empty:
-                last_ts = existing_idx.max()
-                start_ms = int(last_ts.value // 10**6) + 1
+        with FileLock(lock_path):
+            # Check metadata first to avoid IO
+            meta = self._read_meta(symbol)
+            last_ts_ms = meta.get("last_ts_ms", 0)
+
+            if last_ts_ms > 0:
+                # Use strict overlap to prevent gaps: start from the last known timestamp
+                # Deduplication in save_partitioned/load handles the overlap
+                start_ms = last_ts_ms
             else:
-                start_ms = since_ms
+                existing_idx = self.load(symbol, columns=["ts"]).index
+                if not existing_idx.empty:
+                    last_ts = existing_idx.max()
+                    start_ms = int(last_ts.value // 10**6)
+                else:
+                    start_ms = since_ms
 
-        now_ms = int(pd.Timestamp.utcnow().value // 10**6)
+            now_ms = int(pd.Timestamp.utcnow().value // 10**6)
 
-        # If freshness check passes (e.g. data is recent enough)
-        # Note: 'recent enough' depends on timeframe. For 1h, if start_ms is in current hour?
-        # But we want to fetch if there is new data.
-        # If start_ms >= now_ms, implies we have data up to now.
+            if start_ms >= now_ms:
+                return self.load(symbol)
 
-        if start_ms >= now_ms:
+            tprint(f"FETCH incr: {symbol} from {pd.to_datetime(start_ms, unit='ms', utc=True)}")
+            fresh = fetch_ohlcv_all_7d_chunks(exchange, symbol, start_ms, timeframe=self.timeframe, limit=1000)
+
+            if fresh is not None and not fresh.empty:
+                fresh = self._downcast(fresh)
+
+                # Perform strict deduplication on new batch just in case
+                fresh = fresh[~fresh.index.duplicated(keep="last")]
+
+                # Check data health on the new batch + slightly overlapping tail of old?
+                # Just checking new batch for now to avoid overhead
+                health = check_data_health(fresh, timeframe=self.timeframe)
+                if health["status"] != "ok":
+                    tprint(f"WARNING: Data gaps detected for {symbol} in fetched batch: {health}")
+
+                self.save_partitioned(symbol, fresh)
+
+                # Update metadata
+                new_last = fresh.index.max()
+                new_last_ms = int(new_last.value // 10**6)
+                if new_last_ms > last_ts_ms:
+                    self._write_meta(symbol, {"last_ts_ms": new_last_ms})
+
+                # Reload full to return merged
+                return self.load(symbol)
+
             return self.load(symbol)
-
-        tprint(f"FETCH incr: {symbol} from {pd.to_datetime(start_ms, unit='ms', utc=True)}")
-        fresh = fetch_ohlcv_all_7d_chunks(exchange, symbol, start_ms, timeframe=self.timeframe, limit=1000)
-
-        if fresh is not None and not fresh.empty:
-            fresh = self._downcast(fresh)
-            self.save_partitioned(symbol, fresh)
-
-            # Update metadata
-            new_last = fresh.index.max()
-            new_last_ms = int(new_last.value // 10**6)
-            # Ensure we don't regress if fresh is older? Should not happen with logic above.
-            if new_last_ms > last_ts_ms:
-                self._write_meta(symbol, {"last_ts_ms": new_last_ms})
-
-            # Reload full to return merged
-            return self.load(symbol)
-
-        return self.load(symbol)
 
 def check_data_health(df: pd.DataFrame, timeframe="1h") -> dict:
     tprint(f"Entering function: check_data_health in data_store.py")

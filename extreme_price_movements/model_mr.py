@@ -40,6 +40,7 @@ class RuleCleaner:
                 dropped.add(h)
 
         self.keep_cols_ = keep
+        tprint(f"RuleCleaner: kept {len(self.keep_cols_)}/{len(cols)} columns.")
         return self
 
     def transform(self, X_df: pd.DataFrame) -> pd.DataFrame:
@@ -76,6 +77,7 @@ def compute_mr_weights(df: pd.DataFrame, cfg: dict) -> np.ndarray:
     # Clip and normalize
     w = w.clip(0.25, 4.0)
     w = w * (len(w) / w.sum())
+    tprint(f"MR Weights: min={w.min():.4f}, mean={w.mean():.4f}, max={w.max():.4f}")
     return w.to_numpy(dtype=np.float32)
 
 class MRModel:
@@ -92,6 +94,7 @@ class MRModel:
         # 1. Feature Selection (MDI)
         tprint(f"Entering function: fit in model_mr.py")
 
+        tprint(f"MRModel.fit: Input X shape: {X.shape}, y shape: {y.shape}")
         n_samples = len(X)
         n_select = min(60, max(1, n_samples // 100))
         tprint(f"MRModel: Running MDI feature selection. Target features={n_select}")
@@ -125,10 +128,12 @@ class MRModel:
         ])
 
         self.model.fit(X_sel, y, reg__sample_weight=sample_weight)
+        tprint("MRModel.fit: HuberRegressor fit complete.")
         return self
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         tprint(f"Entering function: predict in model_mr.py")
+        tprint(f"MRModel.predict: predicting for {len(X)} samples.")
         if self.model is None or self.selected_features is None:
             raise ValueError("MR Model not fitted")
 

@@ -18,7 +18,10 @@ def filter_low_variance_assets(store, syms, lookback_days=30, threshold_pct=0.40
     # Assuming standard load is fast enough for metadata or we rely on full load.
     # With `load(columns=['close'])` it should be faster.
 
-    for s in syms:
+    for i, s in enumerate(syms):
+        if i % 10 == 0:
+            tprint(f"Processing variance for symbol {i+1}/{len(syms)}: {s}")
+
         try:
             # We assume load handles caching or is fast enough for 300 symbols.
             # If partitions are year/month, it reads all months.
@@ -46,7 +49,7 @@ def filter_low_variance_assets(store, syms, lookback_days=30, threshold_pct=0.40
             variances.append((var, s))
 
         except Exception as e:
-            # tprint(f"Error checking variance {s}: {e}")
+            tprint(f"Error checking variance {s}: {e}")
             pass
 
     if not variances:
@@ -58,4 +61,5 @@ def filter_low_variance_assets(store, syms, lookback_days=30, threshold_pct=0.40
     top_syms = [x[1] for x in variances[:n_keep]]
 
     tprint(f"Variance Filter: Kept {len(top_syms)}/{len(syms)} symbols.")
+    tprint(f"Top symbols: {top_syms[:20]}...")
     return sorted(top_syms)

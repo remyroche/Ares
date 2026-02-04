@@ -14,6 +14,7 @@ from extreme_price_movements.candidates import select_trade_candidates_hourly, e
 def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side, cfg, max_hold_hours):
     tprint(f"Entering function: simulate_trade_hourly in engine.py")
     if np.isnan(entry_px) or entry_px <= 0:
+        tprint(f"Invalid entry px for {ts_entry}: {entry_px}")
         return 0.0, ts_entry, "no_entry"
 
     ts_sig = ts_entry - pd.Timedelta(hours=1)
@@ -34,6 +35,7 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
     end_ts = ts_entry + pd.Timedelta(hours=max_hold_hours)
     path = o_s.loc[ts_entry:end_ts].index
     if len(path) == 0:
+        tprint(f"No path found for {ts_entry} (hold {max_hold_hours}h)")
         return 0.0, ts_entry, "no_path"
 
     for ts in path:
@@ -44,18 +46,27 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
         stopped, exit_px, reason = ts_manager.update(hh, ll, cc)
         if stopped:
             if reason == "ambiguous_neutral":
+                tprint(f"Exit trade: {ts} {reason} ret=0.0")
                 return 0.0, ts, reason
             if side == "long":
-                return (exit_px / entry_px) - 1.0, ts, reason
+                ret = (exit_px / entry_px) - 1.0
+                tprint(f"Exit trade: {ts} {reason} ret={ret:.4f}")
+                return ret, ts, reason
             else:
-                return (entry_px / exit_px) - 1.0, ts, reason
+                ret = (entry_px / exit_px) - 1.0
+                tprint(f"Exit trade: {ts} {reason} ret={ret:.4f}")
+                return ret, ts, reason
 
     last_ts = path[-1]
     last_close = c_s.loc[last_ts]
     if side == "long":
-        return (last_close / entry_px) - 1.0, last_ts, "time_exit"
+        ret = (last_close / entry_px) - 1.0
+        tprint(f"Exit trade: {last_ts} time_exit ret={ret:.4f}")
+        return ret, last_ts, "time_exit"
     else:
-        return (entry_px / last_close) - 1.0, last_ts, "time_exit"
+        ret = (entry_px / last_close) - 1.0
+        tprint(f"Exit trade: {last_ts} time_exit ret={ret:.4f}")
+        return ret, last_ts, "time_exit"
 
 def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
     tprint(f"Entering function: hourly_engine_backtest in engine.py")
@@ -82,6 +93,7 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
     tprint(f"Engine: start_ts={start_ts}  idx={len(idx)}  symbols={len(symbols_all)}")
 
     for ts in idx[idx >= start_ts]:
+        tprint(f"Processing Backtest Step: {ts}")
         ts_entry = ts + pd.Timedelta(hours=1)
         if ts_entry not in idx:
             break
@@ -108,6 +120,7 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
             metric=cfg["trade_deviation_metric"]
         )
         trade_syms = list(set(top_syms) | set(bot_syms))
+        tprint(f"Candidates found: top={len(top_syms)} bot={len(bot_syms)} trade={len(trade_syms)}")
         if not trade_syms:
             eq_curve.append((ts, equity))
             continue
@@ -185,11 +198,13 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
              eq_curve.append((ts, equity))
              continue
 
+        tprint(f"Constructed {len(rows)} feature rows for prediction.")
         df_all = pd.DataFrame(rows)
         score_raw_list = []
 
         # Group by direction
         for d, grp in df_all.groupby("direction"):
+            tprint(f"Predicting for direction {d}: {len(grp)} symbols")
             first = grp.iloc[0]
             model_mr = first["model_mr"]
             model_tf = first["model_tf"]
@@ -234,6 +249,7 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
 
         longs = [x for x in score_raw_list if x[1] > cfg["thr_long"]]
         shorts = [x for x in score_raw_list if x[1] < cfg["thr_short"]]
+        tprint(f"Selected: {len(longs)} longs, {len(shorts)} shorts")
 
         # Sizing
         # Share capacity based on relative scores (Req 9)
@@ -257,6 +273,7 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
         pnl = 0.0
         for sym, side, raw_score in final_orders:
             w = gross_cap * (abs(raw_score) / total_wt)
+            tprint(f"Executing trade for {sym} {side} score={raw_score:.4f}")
 
             entry_px = entry_price_next_hour_open(o, ts_entry, sym)
             if np.isnan(entry_px) or entry_px <= 0: continue
@@ -287,6 +304,7 @@ def hourly_engine_backtest(panel, feats, mkt_gates, cfg, symbols_all):
 
         equity *= (1.0 + pnl)
         eq_curve.append((ts, equity))
+        tprint(f"Step {ts} complete. Equity: {equity:.4f}")
 
     eq = pd.Series({t: e for t, e in eq_curve}).sort_index()
     trades_df = pd.DataFrame(trades)
@@ -312,6 +330,7 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
     Pure function: Generates target orders based on current data and models.
     """
     tprint(f"Entering function: generate_hourly_signals in engine.py")
+    tprint(f"Generating signals for {ts_sig}")
     if ts_sig not in mkt_gates.index:
         return []
 
@@ -319,6 +338,7 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
     top, bot = select_trade_candidates_hourly(feats, ts_sig, list(feats["close"].columns), cfg["trade_extreme_pct"], cfg["trade_extreme_min"], cfg["trade_extreme_max"], cfg["trade_deviation_metric"])
     candidates = list(set(top) | set(bot))
     candidates = [s for s in candidates if s not in current_positions_syms]
+    tprint(f"Candidates: {len(candidates)}")
 
     if not candidates:
         return []
@@ -355,10 +375,12 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
             rows.append(rec)
         except Exception: continue
 
+    tprint(f"Feature rows: {len(rows)}")
     df_all = pd.DataFrame(rows)
     score_raw_list = []
     if not df_all.empty:
         for d, grp in df_all.groupby("direction"):
+            tprint(f"Prediction loop for direction {d}: {len(grp)} items")
             first = grp.iloc[0]
             model_mr = first["model_mr"]; model_tf = first["model_tf"]; meta_model = first["meta_model"]; fcols = first["feat_cols"]
             Xint = apply_interaction_toggles(grp, cfg["causal_cols"], ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
@@ -400,4 +422,5 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
             ord["weight"] = w_alloc
             orders_out.append(ord)
 
+    tprint(f"Generated {len(orders_out)} orders")
     return orders_out

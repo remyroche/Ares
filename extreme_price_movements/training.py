@@ -46,7 +46,9 @@ def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, sy
     t_index = idx[(idx >= ts_start) & (idx <= ts_train_end)]
     current = c.loc[t_index, valid_syms]
 
-    if cfg.get("exh_label_type", "simple") == "peak":
+    label_type = cfg.get("exh_label_type", "simple")
+    tprint(f"Exhaustion Label Type: {label_type}")
+    if label_type == "peak":
         use_atr = cfg.get("exh_use_atr", True)
         if use_atr and "atr_pct" in feats:
              atr_full = feats["atr_pct"] * panel["close"]
@@ -130,6 +132,9 @@ def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, sy
         y_arr = X.pop("y").astype(int).values
         w_arr = X.pop("w").astype(np.float32).values
 
+    tprint(f"Exhaustion X shape: {X.shape}, y shape: {y_arr.shape}")
+    tprint(f"Exhaustion class dist: {np.bincount(y_arr)}")
+
     mg = mkt_gates.loc[t_index, ["mkt_ret24h", "mkt_ret6h", "mkt_trend", "mkt_rv", "G_VOL", "G_TREND"]]
     for col in mg.columns:
         X[col] = X.index.get_level_values("ts").map(mg[col])
@@ -143,16 +148,21 @@ def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms, models=Non
     trend_vals = feats["trend_pct"].loc[ts, valid_syms]
     up_syms = trend_vals[trend_vals > 0].index.tolist()
     dn_syms = trend_vals[trend_vals <= 0].index.tolist()
+    tprint(f"compute_p_exhaustion_at_t: {len(up_syms)} up, {len(dn_syms)} down")
+
     out_probs = pd.Series(index=syms, dtype=float).fillna(0.0)
     lookback = cfg["exh_train_lookback_hours"]
     if up_syms:
         if models and "up" in models: model_up = models["up"]
         else:
+            tprint("Training UP model...")
             X, y, w, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts, lookback, valid_syms, trend_filter="up")
             if X is not None and len(y) > 100:
                 model_up = ExhaustionModel(C=cfg["exh_C"], l1_ratio=cfg["exh_l1_ratio"])
                 model_up.fit(X, y, sample_weight=w)
-            else: model_up = None
+            else:
+                tprint("Not enough data for UP model.")
+                model_up = None
         if model_up:
             Xp = _build_pred_X(feats, mkt_gates, cfg, ts, up_syms, feature_key="exh_feature_keys")
             if not Xp.empty:
@@ -162,11 +172,14 @@ def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms, models=Non
     if dn_syms:
         if models and "down" in models: model_dn = models["down"]
         else:
+            tprint("Training DOWN model...")
             X, y, w, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts, lookback, valid_syms, trend_filter="down")
             if X is not None and len(y) > 100:
                 model_dn = ExhaustionModel(C=cfg["exh_C"], l1_ratio=cfg["exh_l1_ratio"])
                 model_dn.fit(X, y, sample_weight=w)
-            else: model_dn = None
+            else:
+                tprint("Not enough data for DOWN model.")
+                model_dn = None
         if model_dn:
             Xp = _build_pred_X(feats, mkt_gates, cfg, ts, dn_syms, feature_key="exh_feature_keys")
             if not Xp.empty:
@@ -197,11 +210,13 @@ def generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_end, lookback_h
     tprint(f"Entering function: generate_exhaustion_history in training.py")
     train_end = ts_end - pd.Timedelta(hours=lookback_hours)
     train_len = cfg["exh_train_lookback_hours"]
+    tprint("Generating UP history...")
     X_up, y_up, w_up, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, train_end, train_len, syms, trend_filter="up")
     model_up = None
     if X_up is not None and len(y_up) > 100:
         model_up = ExhaustionModel(C=cfg["exh_C"], l1_ratio=cfg["exh_l1_ratio"])
         model_up.fit(X_up, y_up, sample_weight=w_up)
+    tprint("Generating DOWN history...")
     X_dn, y_dn, w_dn, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, train_end, train_len, syms, trend_filter="down")
     model_dn = None
     if X_dn is not None and len(y_dn) > 100:
@@ -261,7 +276,9 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
 
     cand_mask = select_trade_candidates_vectorized(panel, feats, pct=cfg["trade_extreme_pct"], metric=cfg["trade_deviation_metric"])
     if cand_mask is None:
+        tprint("No candidates mask returned.")
         return None, None, None, None, None
+    tprint(f"Candidates found: {cand_mask.sum().sum()}")
 
     ts_start = ts_end - pd.Timedelta(hours=int(cfg["train_lookback_hours"]))
     valid_window_mask = (cand_mask.index >= ts_start) & (cand_mask.index <= ts_end - pd.Timedelta(hours=H+8))
@@ -270,6 +287,7 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
     final_mask = cand_mask & pd.Series(valid_window_mask & subsample_mask, index=cand_mask.index).fillna(False)
 
     valid_ts = final_mask[final_mask.any(axis=1)].index
+    tprint(f"Processing {len(valid_ts)} valid timestamps...")
     rows = []
 
     if feature_key:
@@ -337,7 +355,10 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
             rec["G_TREND"] = mkt_gates.loc[t, "G_TREND"]
             rows.append(rec)
 
-    if not rows: return None, None, None, None, None
+    if not rows:
+        tprint("No rows generated for training set.")
+        return None, None, None, None, None
+    tprint(f"Final training set size: {len(rows)}")
     df = pd.DataFrame(rows).dropna()
 
     # Store indices (ts, symbol) to allow re-linking for meta model if needed
@@ -383,6 +404,7 @@ def train_spike_anatomy_model(panel, feats, mkt_gates, cfg, syms, ts_end):
     final_mask = cand_mask & pd.Series(mask, index=cand_mask.index).fillna(False)
 
     valid_ts = final_mask[final_mask.any(axis=1)].index
+    tprint(f"Spike Anatomy valid timestamps: {len(valid_ts)}")
 
     rows = []
     keys = cfg.get("spike_feature_keys", [])
@@ -402,8 +424,10 @@ def train_spike_anatomy_model(panel, feats, mkt_gates, cfg, syms, ts_end):
     if not rows: return None
 
     df = pd.DataFrame(rows).dropna()
+    tprint(f"Spike Anatomy dataset shape: {df.shape}")
     if df.empty: return None
 
+    tprint("Fitting Spike Anatomy GMM...")
     gmm = GaussianMixture(n_components=4, random_state=42)
     gmm.fit(df)
 
@@ -431,13 +455,17 @@ def select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
                     trend_filter=d, feature_key=feat_key
                 )
 
-                if X is None or len(y) < cfg["min_train_samples"] // 4: continue
+                if X is None or len(y) < cfg["min_train_samples"] // 4:
+                    tprint(f"Insufficient data for {d} {k} H={H}")
+                    continue
                 race = ModelRace(kind=k, n_splits=3)
                 race.fit(X, y, sample_weight=w, returns=y_ret)
                 score = race.metrics.get(race.best_model_name, -1.0)
+                tprint(f"Score for {d} {k} H={H}: {score:.4f}")
                 if score > best_ic:
                     best_ic = score
                     best_m = {"model": race, "H": H, "feat_cols": cols}
+            tprint(f"Best score for {d} {k}: {best_ic:.4f}")
             final_models[d][k] = best_m
 
     meta_models = {}
@@ -469,7 +497,10 @@ def select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
         y_tf_indexed = pd.Series(y_ret_tf, index=X_tf.index) # Target for meta is TF return?
 
         common = X_mr.index.intersection(X_tf.index)
-        if len(common) < 100: meta_models[d] = None; continue
+        tprint(f"Meta alignment common size for {d}: {len(common)}")
+        if len(common) < 100:
+             tprint(f"Insufficient common events for Meta {d}")
+             meta_models[d] = None; continue
 
         X_mr = X_mr.loc[common]
         X_tf = X_tf.loc[common]

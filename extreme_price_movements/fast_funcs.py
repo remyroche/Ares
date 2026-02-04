@@ -139,6 +139,37 @@ def numba_atr_kernel(high, low, close, n):
 
     return out
 
+@jit(nopython=True, cache=True)
+def numba_atr_no_norm_kernel(high, low, close, n):
+    """
+    ATR using EWM smoothing, without normalization by close.
+    """
+    sz = len(close)
+    tr = np.empty(sz, dtype=np.float32)
+    tr[0] = high[0] - low[0]
+
+    for i in range(1, sz):
+        h = high[i]; l = low[i]; pc = close[i-1]
+        v1 = h - l
+        v2 = abs(h - pc)
+        v3 = abs(l - pc)
+        tr[i] = max(v1, max(v2, v3))
+
+    atr = _numba_ewma(tr, 1.0/n, adjust=False)
+    return atr
+
+def numba_atr_no_norm(high_df, low_df, close_df, n):
+    tprint(f"Entering function: numba_atr_no_norm in fast_funcs.py")
+    out = pd.DataFrame(index=close_df.index, columns=close_df.columns, dtype=np.float32)
+    cols = close_df.columns
+    for c in cols:
+        h = high_df[c].to_numpy(dtype=np.float32)
+        l = low_df[c].to_numpy(dtype=np.float32)
+        cl = close_df[c].to_numpy(dtype=np.float32)
+        res = numba_atr_no_norm_kernel(h, l, cl, n)
+        out[c] = res
+    return out
+
 def numba_atr(high_df, low_df, close_df, n):
     # This requires synchronized iteration over 3 dataframes.
     tprint(f"Entering function: numba_atr in fast_funcs.py")
@@ -451,3 +482,41 @@ def numba_rolling_mean(df, n):
 def numba_rolling_std(df, n):
     tprint(f"Entering function: numba_rolling_std in fast_funcs.py")
     return apply_to_frame(df, _numba_rolling_std_nan_safe, n)
+
+@jit(nopython=True, cache=True)
+def _numba_frac_diff_kernel(x, d, window):
+    # Fixed Width Window Frac Diff
+    # w_k = -w_{k-1} * (d - k + 1) / k
+    # w_0 = 1
+
+    n = len(x)
+    out = np.full(n, np.nan, dtype=np.float32)
+
+    # Precompute weights
+    weights = np.empty(window, dtype=np.float32)
+    w = 1.0
+    weights[0] = w
+    for k in range(1, window):
+        w = -w * (d - k + 1) / k
+        weights[k] = w
+
+    # Convolve
+    # x_tilde_t = sum(w_k * x_{t-k})
+
+    for i in range(window - 1, n):
+        val = 0.0
+        valid = True
+        for k in range(window):
+            if np.isnan(x[i-k]):
+                valid = False
+                break
+            val += weights[k] * x[i-k]
+
+        if valid:
+            out[i] = val
+
+    return out
+
+def numba_frac_diff(df, d, window):
+    tprint(f"Entering function: numba_frac_diff in fast_funcs.py")
+    return apply_to_frame(df, _numba_frac_diff_kernel, d, window)

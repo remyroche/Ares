@@ -10,7 +10,7 @@ CFG = {
     "market_basket": ["BTC/USDT","ETH/USDT","AVAX/USDT","SOL/USDT","XRP/USDT"],
 
     # training horizons to compare (1)
-    "label_horizons_hours": [12, 16, 20, 24, 28],
+    "label_horizons_hours": [8],
     "train_lookback_hours": 24 * 30,   # 30d
     "val_lookback_hours": 24 * 7,      # 7d validation (time-split, no leakage)
     "min_train_samples": 8000,
@@ -83,9 +83,9 @@ CFG = {
     "wallet_gross_cap": 0.25,
     "score_map": "tanh",
     "score_scale": 15.0,
-    "tp": 0.06,
-    "sl": 0.04,
-    "hold_hours": 48,
+    "tp": 0.05,
+    "sl": 0.025,
+    "hold_hours": 8,
     "fee_bps": 10.0,
     "borrow_apr": 0.20,
 
@@ -95,7 +95,7 @@ CFG = {
     "risk_k_trail_dist": 1.0,   # trailing distance
 
     # Exhaustion model (hourly sensor)
-    "exh_horizon_hours": 24,
+    "exh_horizon_hours": 8,
     "exh_reversal_thr": 0.04,
     "exh_train_lookback_hours": 24 * 14,
     "min_exh_samples": 6000,

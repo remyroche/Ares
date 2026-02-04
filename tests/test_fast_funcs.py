@@ -76,5 +76,53 @@ class TestFastFuncs(unittest.TestCase):
         self.assertIsInstance(res_g, pd.Series)
         self.assertEqual(res_g.to_numpy()[2], 2.0)
 
+    def test_frac_diff(self):
+        # Test Frac Diff with d=1 (should differencing)
+        # Note: Fixed Window Frac Diff implementation
+        # w_0 = 1, w_1 = -1, w_2 = 0... for d=1?
+        # Let's check coefficients:
+        # w_0 = 1
+        # w_1 = -1 * (1 - 1 + 1)/1 = -1
+        # w_2 = -(-1) * (1 - 2 + 1)/2 = 1 * 0 = 0.
+        # So d=1 implies w=[1, -1, 0, 0...].
+        # So y[t] = x[t] - x[t-1].
+
+        data = np.array([1, 2, 4, 7, 11], dtype=np.float32)
+        df = pd.DataFrame({'a': data})
+
+        # Window needs to be at least 2 for d=1 to have effect
+        res = ff.numba_frac_diff(df, d=1.0, window=3)
+        res_arr = res['a'].to_numpy()
+
+        # Valid from index = window - 1 = 2
+        # i=2: x[2] - x[1] = 4 - 2 = 2.
+        self.assertAlmostEqual(res_arr[2], 2.0)
+        # i=3: x[3] - x[2] = 7 - 4 = 3.
+        self.assertAlmostEqual(res_arr[3], 3.0)
+
+    def test_atr_no_norm(self):
+        h = np.array([10, 12, 11], dtype=np.float32)
+        l = np.array([8, 9, 10], dtype=np.float32)
+        c = np.array([9, 11, 10], dtype=np.float32)
+        # TR[0] = 10-8 = 2.
+        # TR[1] = max(12-9, |12-9|, |9-9|) = 3.
+        # TR[2] = max(11-10, |11-11|, |10-11|) = 1.
+
+        # ATR EWM(n=2). alpha=1/2 = 0.5. adjust=False.
+        # ATR[0] = TR[0] = 2.
+        # ATR[1] = (1-0.5)*2 + 0.5*3 = 1 + 1.5 = 2.5.
+        # ATR[2] = (1-0.5)*2.5 + 0.5*1 = 1.25 + 0.5 = 1.75.
+
+        hf = pd.DataFrame({'a': h})
+        lf = pd.DataFrame({'a': l})
+        cf = pd.DataFrame({'a': c})
+
+        res = ff.numba_atr_no_norm(hf, lf, cf, n=2)
+        res_arr = res['a'].to_numpy()
+
+        self.assertAlmostEqual(res_arr[0], 2.0)
+        self.assertAlmostEqual(res_arr[1], 2.5)
+        self.assertAlmostEqual(res_arr[2], 1.75)
+
 if __name__ == '__main__':
     unittest.main()

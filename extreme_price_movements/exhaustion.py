@@ -6,7 +6,7 @@ from sklearn.model_selection import TimeSeriesSplit
 from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.metrics import brier_score_loss, roc_auc_score
 from extreme_price_movements.utils import tprint
-from extreme_price_movements.feature_selection_extreme_events import mdi_feature_selection_leakage_safe
+from extreme_price_movements.feature_selection_extreme_events import mdi_feature_selection_v3
 
 class ExhaustionModel:
     def __init__(self, C=1.0, l1_ratio=0.3, cv_splits=5):
@@ -45,8 +45,8 @@ class ExhaustionModel:
         tprint(f"ExhaustionModel: Running feature selection. Target features={n_select}")
 
         base_selector = ExtraTreesClassifier(
-            n_estimators=100,
-            max_depth=4,
+            n_estimators=500, # Increased per v3 request
+            max_depth=None,   # Let v3 suggest depth
             min_samples_leaf=50,
             max_features='sqrt',
             n_jobs=-1,
@@ -54,17 +54,15 @@ class ExhaustionModel:
             class_weight="balanced"
         )
 
-        sel_res = mdi_feature_selection_leakage_safe(
+        sel_res = mdi_feature_selection_v3(
             X=X,
             y=y,
             base_model=base_selector,
-            n_splits=self.cv_splits, # Use same splits as CV
-            top_n_precluster=n_select,
-            keep_top_per_cluster=1,
-            use_quantile_transform_for_corr=True
+            n_splits=self.cv_splits,
+            analysis_n_estimators=500, # Increased
         )
 
-        self.selected_features = sel_res.selected_features
+        self.selected_features = sel_res.selected_features[:n_select]
         tprint(f"ExhaustionModel: Selected {len(self.selected_features)} features.")
 
         X_sel = X[self.selected_features]
@@ -92,8 +90,6 @@ class ExhaustionModel:
             raise ValueError("Model not fitted")
 
         if self.selected_features is not None:
-             # Ensure we have the columns (handle missing safely? or assume caller provides same schema)
-             # Usually schema is consistent.
              X = X[self.selected_features]
 
         return self.model.predict_proba(X)[:, 1]

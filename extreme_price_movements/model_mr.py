@@ -5,7 +5,7 @@ from sklearn.linear_model import Lasso, HuberRegressor
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.preprocessing import StandardScaler
 from extreme_price_movements.utils import tprint
-from extreme_price_movements.feature_selection_extreme_events import mdi_feature_selection_leakage_safe
+from extreme_price_movements.feature_selection_extreme_events import mdi_feature_selection_v3
 
 class RuleCleaner:
     def __init__(self, corr_thr=0.8):
@@ -97,25 +97,23 @@ class MRModel:
         tprint(f"MRModel: Running MDI feature selection. Target features={n_select}")
 
         base_selector = ExtraTreesRegressor(
-            n_estimators=100,
-            max_depth=4,
+            n_estimators=500, # Increased per v3
+            max_depth=None,   # Let v3 suggest depth
             min_samples_leaf=50,
             max_features='sqrt',
             n_jobs=-1,
             random_state=42
         )
 
-        sel_res = mdi_feature_selection_leakage_safe(
+        sel_res = mdi_feature_selection_v3(
             X=X,
             y=y,
             base_model=base_selector,
             sample_weight=sample_weight,
-            top_n_precluster=n_select,
-            keep_top_per_cluster=1,
-            use_quantile_transform_for_corr=True
+            analysis_n_estimators=500
         )
 
-        self.selected_features = sel_res.selected_features
+        self.selected_features = sel_res.selected_features[:n_select]
         tprint(f"MRModel: Selected {len(self.selected_features)} features.")
         X_sel = X[self.selected_features]
 

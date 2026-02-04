@@ -6,7 +6,7 @@ from sklearn.model_selection import TimeSeriesSplit
 from scipy.special import logit
 from extreme_price_movements.utils import tprint
 from extreme_price_movements.feature_transforms import CausalFeatureTransformer
-from extreme_price_movements.feature_selection_extreme_events import mdi_feature_selection_leakage_safe
+from extreme_price_movements.feature_selection_extreme_events import mdi_feature_selection_v3
 
 class MetaModel:
     def __init__(self):
@@ -85,24 +85,22 @@ class MetaModel:
         tprint(f"MetaModel: Running MDI selection. Target={n_select}")
 
         base_selector = ExtraTreesRegressor(
-            n_estimators=100,
-            max_depth=4,
+            n_estimators=500, # Increased per v3
+            max_depth=None,   # Let v3 suggest depth
             min_samples_leaf=20,
             max_features='sqrt',
             n_jobs=-1,
             random_state=42
         )
 
-        sel_res = mdi_feature_selection_leakage_safe(
+        sel_res = mdi_feature_selection_v3(
             X=X_meta,
             y=y,
             base_model=base_selector,
-            top_n_precluster=n_select,
-            keep_top_per_cluster=1,
-            use_quantile_transform_for_corr=True
+            analysis_n_estimators=500
         )
 
-        self.selected_features = sel_res.selected_features
+        self.selected_features = sel_res.selected_features[:n_select]
         tprint(f"MetaModel: Selected {len(self.selected_features)} features.")
         X_sel = X_meta[self.selected_features]
 

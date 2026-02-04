@@ -1,9 +1,16 @@
 import numpy as np
 import pandas as pd
+import hashlib
+from joblib import Memory
 from extreme_price_movements.utils import tprint
 from extreme_price_movements.feature_transforms import CausalFeatureTransformer
 from extreme_price_movements.time_utils import ensure_utc
+from extreme_price_movements.frac_diff_adaptive import find_min_ffd, frac_diff_ffd
+from extreme_price_movements.validation import validate_panel
 import extreme_price_movements.fast_funcs as ff
+
+# Initialize joblib cache
+_cache = Memory("./cache/features", verbose=0)
 
 def zscore_rolling(x: pd.DataFrame, n: int):
     return ff.numba_zscore(x, n)
@@ -18,13 +25,34 @@ def ema(x: pd.DataFrame, span: int):
 def atr_percent(high: pd.DataFrame, low: pd.DataFrame, close: pd.DataFrame, n: int):
     return ff.numba_atr_no_norm(high, low, close, n)
 
+@_cache.cache
 def _transform_price(df):
-    tprint("Transforming Prices: Log -> EWMA(5) -> FracDiff(0.4, 96)")
+    tprint("Transforming Prices: Log -> EWMA(5) -> Adaptive FracDiff")
     df_log = np.log(df + 1e-9)
     df_den = ff.apply_to_frame(df_log, ff._numba_ewma_nan_safe, 2.0/6.0, False)
-    df_fd = ff.numba_frac_diff(df_den, 0.4, 96)
+    
+    # Apply adaptive FFD per column
+    df_fd = pd.DataFrame(index=df.index, columns=df.columns, dtype=np.float32)
+    total_cols = len(df_den.columns)
+    for i, col in enumerate(df_den.columns):
+        if (i+1) % 5 == 0 or (i+1) == total_cols:
+             tprint(f"Adaptive FFD: processing {i+1}/{total_cols} - {col}")
+        
+        series = df_den[col].dropna()
+        if len(series) < 100:
+            # Fallback to fixed d=0.4 for short series
+            d_opt = 0.4
+        else:
+            # Find minimal d for stationarity
+            d_opt, _, _ = find_min_ffd(series, d_range=(0.0, 1.0), step=0.1)
+        
+        # Apply FFD
+        df_fd[col] = frac_diff_ffd(df_den[col], d_opt, thres=1e-5)
+    
+    tprint(f"Adaptive FFD: d range [{df_fd.min().min():.3f}, {df_fd.max().max():.3f}]")
     return df_fd
 
+@_cache.cache
 def _transform_volume(df):
     tprint("Transforming Volume: Log -> EWMA(5)")
     df_log = np.log(df + 1.0)
@@ -120,8 +148,46 @@ def compute_funding_proxy(c, h, l, v, mkt_df):
 
     return (relative_premium + (0.5 * intensity)).astype(np.float32)
 
+def _hash_panel(panel):
+    """Create hash of panel data for cache key."""
+    h = hashlib.md5()
+    for key in sorted(panel.keys()):
+        h.update(key.encode())
+        h.update(panel[key].values.tobytes())
+    return h.hexdigest()
+
+def _hash_mkt_gates(mkt_gates):
+    """Create hash of market gates for cache key."""
+    return hashlib.md5(mkt_gates.values.tobytes()).hexdigest()
+
+@_cache.cache
+def _compute_features_cached(panel_hash, mkt_gates_hash, cfg_tuple, panel, mkt_gates):
+    """Cached implementation of feature computation."""
+    return _compute_features_impl(panel, mkt_gates, dict(cfg_tuple))
+
 def compute_features_hourly(panel, mkt_gates, cfg):
+    """
+    Compute features with caching to avoid recomputation.
+    Uses hash-based cache key for panel and mkt_gates.
+    """
+    # Create cache keys
+    panel_hash = _hash_panel(panel)
+    mkt_gates_hash = _hash_mkt_gates(mkt_gates)
+    cfg_tuple = tuple(sorted(cfg.items()))
+    
+    # Call cached implementation
+    return _compute_features_cached(panel_hash, mkt_gates_hash, cfg_tuple, panel, mkt_gates)
+
+def _compute_features_impl(panel, mkt_gates, cfg):
     tprint("Features: compute base matrices")
+    
+    # Validate panel data quality
+    validation_results = validate_panel(panel, raise_on_error=False, verbose=False)
+    if not validation_results['valid']:
+        tprint(f"WARNING: Panel validation failed with {len(validation_results['errors'])} errors")
+        for error in validation_results['errors'][:3]:  # Show first 3 errors
+            tprint(f"  - {error}")
+    
     o_raw, h_raw, l_raw, c_raw, v_raw = panel["open"], panel["high"], panel["low"], panel["close"], panel["volume"]
 
     new_idx = ensure_utc(pd.DataFrame(index=c_raw.index)).index
@@ -533,6 +599,7 @@ def compute_features_hourly(panel, mkt_gates, cfg):
     skip_transform = ["sin_hod", "cos_hod", "sin_dow", "cos_dow"]
 
     for k in feats.keys():
+        tprint(f"Generating feature: {k}")
         if k in skip_transform:
             feats[k] = feats[k].astype(np.float32)
             continue
@@ -540,6 +607,8 @@ def compute_features_hourly(panel, mkt_gates, cfg):
             feats[k] = transformer.transform(feats[k])
         except Exception as e:
             tprint(f"Warning: Transform failed for {k}: {e}")
+            import traceback
+            traceback.print_exc()
             feats[k] = feats[k].astype(np.float32)
 
     tprint(f"Features: done ({len(feats)} keys)")

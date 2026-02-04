@@ -263,3 +263,8 @@ outcomes/risk_regime_analysis_*.csv
 /versioned_artifacts/
 versioned_artifacts/layer2_checkpoints/
 versioned_artifacts/layer2_checkpoints/
+
+# =============================================================================
+# FEATURES
+# =============================================================================
+/data/features/

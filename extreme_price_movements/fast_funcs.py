@@ -2,7 +2,13 @@ import numpy as np
 import pandas as pd
 from numba import jit
 
-# Import optimized kernels from the main codebase
+# TODO: DECOUPLE src dependencies for standalone module
+# These functions should be implemented locally or vendored into this module
+# Currently used: _numba_rolling_mean_nan_safe, _numba_rolling_std_nan_safe, 
+#                 _numba_rolling_median, _numba_rolling_correlation
+# Unused imports: _numba_ewma, _numba_rolling_vwap, _numba_rolling_kurt,
+#                 _numba_rolling_skew, _numba_rolling_slope, _numba_rolling_rsquared,
+#                 _numba_rolling_sum (have local _numba_rolling_sum_nan_safe)
 from src.utils.numba_funcs import (
     _numba_rolling_mean_nan_safe,
     _numba_rolling_std_nan_safe,
@@ -206,8 +212,8 @@ def apply_to_frame(df: pd.DataFrame, func, *args) -> pd.DataFrame:
     # We iterate over columns.
     total_cols = len(df.columns)
     for i, col in enumerate(df.columns):
-        if i % 100 == 0:
-            tprint(f"apply_to_frame progress: {i}/{total_cols} columns processed")
+        # if i % 100 == 0:
+        #     tprint(f"apply_to_frame progress: {i}/{total_cols} columns processed")
         # Convert to numpy float32 array
         vals = df[col].to_numpy(dtype=np.float32)
         # Apply function
@@ -237,8 +243,8 @@ def apply_to_frame_binary(df1: pd.DataFrame, df2: pd.DataFrame, func, *args) -> 
     out = pd.DataFrame(index=df1.index, columns=df1.columns, dtype=np.float32)
     total_cols = len(df1.columns)
     for i, col in enumerate(df1.columns):
-        if i % 100 == 0:
-            tprint(f"apply_to_frame_binary progress: {i}/{total_cols} columns processed")
+        # if i % 100 == 0:
+        #     tprint(f"apply_to_frame_binary progress: {i}/{total_cols} columns processed")
         if col in df2.columns:
             v1 = df1[col].to_numpy(dtype=np.float32)
             v2 = df2[col].to_numpy(dtype=np.float32)
@@ -695,7 +701,7 @@ def numba_rolling_median(df, n):
     return apply_to_frame(df, _numba_rolling_median, n)
 
 def numba_rolling_quantile(df, n, q):
-    tprint(f"Entering function: numba_rolling_quantile in fast_funcs.py")
+    # tprint(f"Entering function: numba_rolling_quantile in fast_funcs.py")
     return apply_to_frame(df, _numba_rolling_quantile, n, q)
 
 def numba_pct_change(df, n):
@@ -707,11 +713,11 @@ def numba_rolling_corr(df1, df2, n):
     return apply_to_frame_binary(df1, df2, _numba_rolling_correlation, n)
 
 def numba_rolling_mean(df, n):
-    tprint(f"Entering function: numba_rolling_mean in fast_funcs.py")
+    # tprint(f"Entering function: numba_rolling_mean in fast_funcs.py")
     return apply_to_frame(df, _numba_rolling_mean_nan_safe, n)
 
 def numba_rolling_std(df, n):
-    tprint(f"Entering function: numba_rolling_std in fast_funcs.py")
+    # tprint(f"Entering function: numba_rolling_std in fast_funcs.py")
     return apply_to_frame(df, _numba_rolling_std_nan_safe, n)
 
 def compute_peak_labels_and_weights(close_df, atr_df, horizon, near_k, rev_k, is_uptrend, max_near_pct=0.02, min_rev_pct=0.005):

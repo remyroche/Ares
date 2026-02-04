@@ -13,6 +13,7 @@ from sklearn.base import clone
 from sklearn.preprocessing import QuantileTransformer
 from sklearn.utils import check_random_state
 from .utils import tprint
+from .sequential_bootstrap import get_ind_matrix, seq_bootstrap
 
 # ======================================================================================
 # Purged + Embargoed CV (time series)

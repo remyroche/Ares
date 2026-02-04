@@ -51,6 +51,7 @@ class TFModel:
         self.lasso_alpha = lasso_alpha
         self.models = []
         self.selected_features = None
+        self.last_dispersion = None  # Store dispersion from last prediction
 
     def fit(self, X: pd.DataFrame, y: np.ndarray, sample_weight: np.ndarray = None):
         # 1. Feature Selection (MDI)
@@ -104,9 +105,10 @@ class TFModel:
 
         return self
 
-    def predict(self, X: pd.DataFrame) -> tuple[np.ndarray, float]:
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
         """
-        Returns (trimmed_median_preds, dispersion_metric)
+        Returns trimmed mean predictions across ensemble.
+        Dispersion metric stored in self.last_dispersion attribute.
         """
         tprint(f"Entering function: predict in model_tf.py. X shape: {X.shape}")
         if not self.models or self.selected_features is None:
@@ -120,29 +122,18 @@ class TFModel:
 
         preds_mat = np.array(preds_mat) # (n_models, n_samples)
 
-        # Trimmed Median (remove top/bottom 2 models?)
-        # Or simple median. User said "trimmed median".
-        # Let's sort along axis 0 and take mean of center 50%?
-        # Or just median. Median is robust.
-        # "trimmed mean" is common. "trimmed median" is redundant unless we mean mean of truncated set.
-        # I'll implement trimmed mean of the middle 50% (IQR range).
-
         # Sort along models
         preds_sorted = np.sort(preds_mat, axis=0)
         n_models = len(self.models) # 15
         lower = int(n_models * 0.25)
         upper = int(n_models * 0.75)
 
-        # Take mean of middle slice
+        # Take mean of middle slice (trimmed mean)
         trimmed_preds = preds_sorted[lower:upper, :].mean(axis=0)
 
-        # Dispersion = IQR
+        # Compute dispersion = IQR (stored for diagnostics)
         iqr = preds_sorted[upper, :] - preds_sorted[lower, :]
-        dispersion = np.mean(iqr) # Scalar metric for the batch?
-        # Or per-sample dispersion? The user said "tf_dispersion = IQR(preds) (very useful diagnostic + potential gating)"
-        # This implies we might want to return per-sample dispersion or just log it.
-        # But prediction usually returns 1D array.
-        # I'll return the predictions and the MEAN dispersion of this batch as a diagnostic.
+        self.last_dispersion = np.mean(iqr)
 
-        tprint(f"TFModel prediction stats: mean_pred={trimmed_preds.mean():.4f}, mean_dispersion={dispersion:.4f}")
-        return trimmed_preds, dispersion
+        tprint(f"TFModel prediction: mean_pred={trimmed_preds.mean():.4f}, dispersion={self.last_dispersion:.4f}")
+        return trimmed_preds

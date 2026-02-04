@@ -2,11 +2,11 @@ import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.model_selection import TimeSeriesSplit
 from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.metrics import brier_score_loss, roc_auc_score
 from extreme_price_movements.utils import tprint
 from extreme_price_movements.feature_selection_extreme_events import mdi_feature_selection_v3
+from extreme_price_movements.purged_cv import PurgedKFold
 
 class ExhaustionModel:
     def __init__(self, C=1.0, l1_ratio=0.3, cv_splits=5):
@@ -30,10 +30,15 @@ class ExhaustionModel:
             class_weight="balanced" # Helpful for imbalance? User didn't specify but good practice.
         )
 
-    def fit(self, X: pd.DataFrame, y: np.ndarray):
+    def fit(self, X: pd.DataFrame, y: np.ndarray, sample_weight: np.ndarray = None):
         """
         Fits the model with Platt Scaling calibration using TimeSeriesSplit.
         Includes MDI Feature Selection (Leakage Safe).
+        
+        Args:
+            X: Feature matrix
+            y: Binary labels
+            sample_weight: Optional sample weights for training
         """
         tprint(f"Entering function: fit in exhaustion.py")
 
@@ -60,6 +65,7 @@ class ExhaustionModel:
             base_model=base_selector,
             n_splits=self.cv_splits,
             analysis_n_estimators=500, # Increased
+            sample_weight=sample_weight  # Pass weights to feature selection
         )
 
         self.selected_features = sel_res.selected_features[:n_select]
@@ -70,9 +76,8 @@ class ExhaustionModel:
         # 2. Calibration
         base_clf = self._make_base_estimator()
 
-        # Use CalibratedClassifierCV with TimeSeriesSplit
-        # method='sigmoid' is Platt scaling.
-        tscv = TimeSeriesSplit(n_splits=self.cv_splits)
+        # Use CalibratedClassifierCV with PurgedKFold (De Prado)
+        tscv = PurgedKFold(n_splits=self.cv_splits, purge=5, embargo=2)
 
         self.model = CalibratedClassifierCV(
             estimator=base_clf,
@@ -80,7 +85,7 @@ class ExhaustionModel:
             cv=tscv
         )
 
-        self.model.fit(X_sel, y)
+        self.model.fit(X_sel, y, sample_weight=sample_weight)
 
         return self
 
@@ -105,7 +110,7 @@ class ExhaustionModel:
         if self.selected_features is not None:
             X = X[self.selected_features]
 
-        tscv = TimeSeriesSplit(n_splits=self.cv_splits)
+        tscv = PurgedKFold(n_splits=self.cv_splits, purge=5, embargo=2)
         oof_preds = np.full(len(y), np.nan)
 
         briers = []
@@ -118,8 +123,8 @@ class ExhaustionModel:
             X_train, X_test = X_arr[train_idx], X_arr[test_idx]
             y_train, y_test = y[train_idx], y[test_idx]
 
-            # Inner CV for calibration on the training set
-            inner_cv = TimeSeriesSplit(n_splits=3)
+            # Inner CV for calibration on the training set (Purged)
+            inner_cv = PurgedKFold(n_splits=3, purge=3, embargo=1)
             clf = CalibratedClassifierCV(
                 estimator=self._make_base_estimator(),
                 method='sigmoid',

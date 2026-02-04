@@ -7,11 +7,19 @@ BINANCE_API = "https://api.binance.com"
 
 def fetch_binance_cross_margin_pairs():
     tprint(f"Entering function: fetch_binance_cross_margin_pairs in universe.py")
-    r = requests.get(f"{BINANCE_API}/sapi/v1/margin/allPairs", timeout=30)
+    # Use public exchangeInfo endpoint instead of SAPI
+    r = requests.get(f"{BINANCE_API}/api/v3/exchangeInfo", timeout=30)
     r.raise_for_status()
     data = r.json()
-    tprint(f"Fetched {len(data)} cross margin pairs.")
-    return data
+    
+    # Filter for margin permitted symbols
+    margin_pairs = []
+    for s in data.get("symbols", []):
+         if s.get("isMarginTradingAllowed", False):
+             margin_pairs.append(s)
+             
+    tprint(f"Fetched {len(margin_pairs)} cross margin pairs from exchangeInfo.")
+    return margin_pairs
 
 def margin_pairs_to_spot_symbols(margin_pairs_json, quote="USDT"):
     tprint(f"Entering function: margin_pairs_to_spot_symbols in universe.py")
@@ -43,7 +51,7 @@ class MarginUniverseCache:
 
 def refresh_margin_universe_daily(cache: MarginUniverseCache | None, quote="USDT") -> MarginUniverseCache:
     tprint(f"Entering function: refresh_margin_universe_daily in universe.py")
-    today = pd.Timestamp.utcnow().tz_localize("UTC").floor("D")
+    today = pd.Timestamp.utcnow().floor("D")
     if cache is not None and cache.asof_day == today:
         tprint("Using cached margin universe for today.")
         return cache

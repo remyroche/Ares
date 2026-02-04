@@ -7,48 +7,6 @@ from sklearn.preprocessing import StandardScaler
 from extreme_price_movements.utils import tprint
 from extreme_price_movements.feature_selection_extreme_events import mdi_feature_selection_v3
 
-class RuleCleaner:
-    def __init__(self, corr_thr=0.8):
-        tprint(f"Entering function: __init__ in model_mr.py")
-        self.corr_thr = float(corr_thr)
-        self.keep_cols_ = None
-
-    def fit(self, X_df: pd.DataFrame, coef_by_col: dict):
-        tprint(f"Entering function: fit in model_mr.py")
-        cols = list(X_df.columns)
-        if len(cols) <= 1:
-            self.keep_cols_ = cols
-            return self
-
-        corr = X_df.corr().abs()
-        # Ensure we have a writable array
-        corr_vals = corr.to_numpy(copy=True)
-        np.fill_diagonal(corr_vals, 0.0)
-        corr = pd.DataFrame(corr_vals, index=corr.index, columns=corr.columns)
-
-        strength = pd.Series({c: abs(float(coef_by_col.get(c, 0.0))) for c in cols})
-        ordered = strength.sort_values(ascending=False).index.tolist()
-
-        keep = []
-        dropped = set()
-        for c in ordered:
-            if c in dropped:
-                continue
-            keep.append(c)
-            high = corr.index[corr[c] > self.corr_thr].tolist()
-            for h in high:
-                dropped.add(h)
-
-        self.keep_cols_ = keep
-        tprint(f"RuleCleaner: kept {len(self.keep_cols_)}/{len(cols)} columns.")
-        return self
-
-    def transform(self, X_df: pd.DataFrame) -> pd.DataFrame:
-        tprint(f"Entering function: transform in model_mr.py")
-        if self.keep_cols_ is None:
-            return X_df
-        cols = [c for c in self.keep_cols_ if c in X_df.columns]
-        return X_df[cols].copy()
 
 def compute_mr_weights(df: pd.DataFrame, cfg: dict) -> np.ndarray:
     """
@@ -81,13 +39,11 @@ def compute_mr_weights(df: pd.DataFrame, cfg: dict) -> np.ndarray:
     return w.to_numpy(dtype=np.float32)
 
 class MRModel:
-    def __init__(self, lasso_alpha=0.001, huber_epsilon=1.35, rule_clean_corr=0.8):
+    def __init__(self, lasso_alpha=0.001, huber_epsilon=1.35):
         tprint(f"Entering function: __init__ in model_mr.py")
         self.lasso_alpha = lasso_alpha
         self.huber_epsilon = huber_epsilon
-        self.rule_clean_corr = rule_clean_corr
         self.model = None
-        self.cleaner = None
         self.selected_features = None
 
     def fit(self, X: pd.DataFrame, y: np.ndarray, sample_weight: np.ndarray = None):

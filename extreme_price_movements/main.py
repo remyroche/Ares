@@ -7,7 +7,7 @@ import uuid
 from extreme_price_movements.config import CFG
 from extreme_price_movements.utils import tprint, Timer
 from extreme_price_movements.universe import refresh_margin_universe_daily, build_fetch_universe, select_live_candidates
-from extreme_price_movements.data_store import make_spot_exchange, PartitionedOHLCVStore, to_panel, check_data_health
+from extreme_price_movements.data_store import make_spot_exchange, PartitionedOHLCVStore, to_panel, check_data_health, save_features, load_features
 from extreme_price_movements.features import compute_market_features, add_regime_gates, compute_features_hourly
 from extreme_price_movements.engine import generate_hourly_signals
 from extreme_price_movements.candidates import select_trade_candidates_hourly, entry_price_next_hour_open
@@ -26,16 +26,16 @@ def train_daily(ts_sig, margin_symbols, cfg, store, ex):
     tprint("DAILY TRAINING START")
     syms_all = build_fetch_universe(margin_symbols, cfg["market_basket"], cfg["fetch_symbols_M"])
     tprint(f"Fetch universe size: {len(syms_all)}")
-    with Timer("Training Data Fetch"):
-        since = (ts_sig - pd.Timedelta(days=365)).floor("D")
-        since_ms = int(since.value // 10**6)
-        count_upd = 0
-        for s in syms_all:
-            try:
-                store.update_symbol(ex, s, since_ms)
-                count_upd += 1
-            except Exception: pass
-        tprint(f"Updated {count_upd}/{len(syms_all)} symbols")
+    # with Timer("Training Data Fetch"):
+    #     since = (ts_sig - pd.Timedelta(days=365)).floor("D")
+    #     since_ms = int(since.value // 10**6)
+    #     count_upd = 0
+    #     for s in syms_all:
+    #         try:
+    #             store.update_symbol(ex, s, since_ms)
+    #             count_upd += 1
+    #         except Exception: pass
+    #     tprint(f"Updated {count_upd}/{len(syms_all)} symbols")
 
     train_syms = filter_low_variance_assets(store, syms_all, lookback_days=30, threshold_pct=0.40)
     tprint(f"Training universe size (after variance filter): {len(train_syms)}")
@@ -55,8 +55,16 @@ def train_daily(ts_sig, margin_symbols, cfg, store, ex):
         tprint("Market features computed")
         mkt_gates = add_regime_gates(mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
         tprint("Regime gates added")
-        feats = compute_features_hourly(panel, mkt_gates, cfg)
-        tprint("Hourly features computed")
+        tprint("Regime gates added")
+        
+        # Try load features
+        feats = load_features(ts_sig, cfg["data_root"])
+        if feats is None:
+            feats = compute_features_hourly(panel, mkt_gates, cfg)
+            tprint("Hourly features computed")
+            save_features(feats, ts_sig, cfg["data_root"])
+        else:
+            tprint("Loaded features from disk.")
         p_exh_hist = generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_sig, cfg["train_lookback_hours"], train_syms)
         tprint("Exhaustion history generated")
         trained_bundle = select_best_horizon(panel, feats, mkt_gates, cfg, train_syms, ts_sig, p_exh_hist)

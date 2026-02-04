@@ -7,17 +7,12 @@ import pandas as pd
 def retry_with_backoff(retries=3, backoff_in_seconds=1):
     tprint(f"Entering function: retry_with_backoff in utils.py")
     def decorator(func):
-        tprint(f"Entering function: decorator in utils.py")
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            tprint(f"Entering function: wrapper in utils.py")
             x = 0
             while True:
                 try:
-                    tprint(f"Attempting {func.__name__} (attempt {x + 1})...")
-                    result = func(*args, **kwargs)
-                    tprint(f"{func.__name__} succeeded on attempt {x + 1}.")
-                    return result
+                    return func(*args, **kwargs)
                 except Exception as e:
                     if x == retries:
                         tprint(f"Max retries reached for {func.__name__}. Raising exception.")

@@ -33,16 +33,3 @@ def make_exhaustion_model(C=1.0, l1_ratio=0.3):
         ))
     ])
 
-def map_pred_to_score(pred_ret, mode="tanh", scale=10.0):
-    tprint(f"Entering function: map_pred_to_score in models.py")
-    tprint(f"map_pred_to_score input: pred_ret={pred_ret}, mode={mode}, scale={scale}")
-    x = float(pred_ret) * float(scale)
-    if mode == "tanh":
-        res = float(np.tanh(max(0.0, x)))
-        tprint(f"map_pred_to_score result (tanh): {res}")
-        return res
-    if mode == "relu":
-        res = float(max(0.0, x))
-        tprint(f"map_pred_to_score result (relu): {res}")
-        return res
-    raise ValueError("mode must be 'tanh' or 'relu'")

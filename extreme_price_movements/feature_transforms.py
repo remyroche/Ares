@@ -15,7 +15,7 @@ class CausalFeatureTransformer:
         df: DataFrame (time x features) or (time x symbols) for a single feature?
         Usually features are wide panels (time x symbols) per feature key.
         """
-        tprint(f"Entering function: transform in feature_transforms.py")
+        # tprint(f"Entering function: transform in feature_transforms.py")
         # 1. Log transform (signed log for negative values handling)
         # Using arcsinh is safer for 0 and negative values than log.
         # But if user insists on log, maybe log1p? Arcsinh is standard for this.

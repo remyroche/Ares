@@ -2,18 +2,17 @@ import numpy as np
 import pandas as pd
 from sklearn.linear_model import Ridge
 from sklearn.ensemble import ExtraTreesRegressor
-from sklearn.model_selection import TimeSeriesSplit
 from scipy.special import logit
 from extreme_price_movements.utils import tprint
 from extreme_price_movements.feature_transforms import CausalFeatureTransformer
 from extreme_price_movements.feature_selection_extreme_events import mdi_feature_selection_v3
+from extreme_price_movements.purged_cv import PurgedKFold
 from extreme_price_movements.config import CFG
 
 class MetaModel:
     def __init__(self):
         tprint(f"Entering function: __init__ in meta_model.py")
         self.model = Ridge(alpha=1.0)
-        # Use config keys
         self.feature_names = CFG.get("meta_feature_keys", [])
         self.transformer = CausalFeatureTransformer(winsor_qt=0.02, roll_window=24*30)
         self.selected_features = None
@@ -78,8 +77,8 @@ class MetaModel:
         tprint(f"MetaModel: Running MDI selection. Target={n_select}")
 
         base_selector = ExtraTreesRegressor(
-            n_estimators=500, # Increased per v3
-            max_depth=None,   # Let v3 suggest depth
+            n_estimators=500,
+            max_depth=None,
             min_samples_leaf=20,
             max_features='sqrt',
             n_jobs=-1,
@@ -98,7 +97,7 @@ class MetaModel:
         X_sel = X_meta[self.selected_features]
 
         alphas = [0.1, 0.3, 0.6, 1.0, 3.0]
-        tscv = TimeSeriesSplit(n_splits=3)
+        pkf = PurgedKFold(n_splits=3, purge=5, embargo=2)
 
         results = []
 
@@ -108,7 +107,7 @@ class MetaModel:
         for alpha in alphas:
             scores = {"pnl": [], "sortino": [], "maxdd": []}
 
-            for train_idx, val_idx in tscv.split(X_arr):
+            for train_idx, val_idx in pkf.split(X_arr):
                 X_train, X_val = X_arr[train_idx], X_arr[val_idx]
                 y_train, y_val = y_arr[train_idx], y_arr[val_idx]
 
@@ -134,11 +133,10 @@ class MetaModel:
             })
 
         # Pareto Selection
-        # Score = 0.6 * Rank(PnL) + 0.3 * Rank(Sortino) + 0.1 * Rank(-MaxDD)
         res_df = pd.DataFrame(results)
         res_df["r_pnl"] = res_df["pnl"].rank(pct=True)
         res_df["r_sort"] = res_df["sortino"].rank(pct=True)
-        res_df["r_dd"] = (-res_df["maxdd"]).rank(pct=True) # Minimize DD -> Maximize -DD
+        res_df["r_dd"] = (-res_df["maxdd"]).rank(pct=True)
 
         res_df["score"] = 0.6 * res_df["r_pnl"] + 0.3 * res_df["r_sort"] + 0.1 * res_df["r_dd"]
 

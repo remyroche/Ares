@@ -6,13 +6,13 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
-from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import roc_auc_score, brier_score_loss
 from scipy.stats import spearmanr
 from catboost import CatBoostClassifier
 from xgboost import XGBClassifier
 import joblib
 from extreme_price_movements.utils import tprint
+from extreme_price_movements.purged_cv import PurgedKFold
 
 def calculate_selection_score(y_true, y_prob, y_returns):
     """
@@ -126,7 +126,8 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         """
         tprint(f"Entering function: fit in model_race.py")
         candidates = self._get_candidates()
-        tscv = TimeSeriesSplit(n_splits=self.n_splits)
+        # Use PurgedKFold to prevent leakage (De Prado)
+        tscv = PurgedKFold(n_splits=self.n_splits, purge=5, embargo=2)
 
         results = {}
 

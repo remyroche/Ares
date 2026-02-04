@@ -41,8 +41,8 @@ def main():
         tprint(f"Fetching data since {since}...")
         for i, s in enumerate(syms_all):
             try:
+                tprint(f"Downloading {i+1}/{len(syms_all)}: {s}...")
                 store.update_symbol(ex, s, since_ms)
-                if i % 10 == 0: tprint(f"Fetched {i}/{len(syms_all)}")
             except Exception as e:
                 tprint(f"Error fetching {s}: {e}")
         tprint("Download Complete.")

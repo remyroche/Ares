@@ -104,7 +104,7 @@ CFG = {
     "tp": 0.05,
     "sl": 0.025,
     "hold_hours": 8,
-    "fee_bps": 10.0,
+    "fee_bps": 25.0,
     "borrow_apr": 0.20,
 
     # New Risk Params (Trailing Stop)

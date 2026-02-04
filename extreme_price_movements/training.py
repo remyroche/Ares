@@ -4,10 +4,10 @@ from extreme_price_movements.utils import tprint
 from extreme_price_movements.model_race import ModelRace
 from extreme_price_movements.meta_model import MetaModel
 from extreme_price_movements.exhaustion import ExhaustionModel
-from extreme_price_movements.optimization import composite_score_with_constraints
 from extreme_price_movements.candidates import select_trade_candidates_hourly, select_trade_candidates_vectorized
 import extreme_price_movements.fast_funcs as ff
-from extreme_price_movements.labeling import compute_triple_barrier_labels, compute_trailing_atr_labels
+from extreme_price_movements.labeling import compute_trailing_atr_labels
+from extreme_price_movements.sample_weights import build_label_time_ranges, compute_sample_weights_with_uniqueness
 from sklearn.mixture import GaussianMixture
 
 def apply_interaction_toggles(df: pd.DataFrame, causal_cols, gate_cols, drop_raw=True):
@@ -87,18 +87,18 @@ def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, sy
         is_short_rev = ((fmin / (current + 1e-12)) - 1.0) <= -thr
         is_long_rev = ((fmax / (current + 1e-12)) - 1.0) >= thr
     ret24 = feats["ret24h"].loc[t_index, valid_syms]
-    dir_mat = np.sign(ret24).astype(np.int8)
+    dir_mat = np.sign(ret24).fillna(0).astype(np.int8)
     y = np.zeros(current.shape, dtype=np.int8)
     w = np.ones(current.shape, dtype=np.float32)
 
     mask_up = (dir_mat > 0)
-    if mask_up.any():
+    if mask_up.values.any():
         y[mask_up] = is_short_rev.values[mask_up].astype(np.int8)
         if cfg.get("exh_label_type") == "peak":
              w[mask_up] = w_short_s.values[mask_up].astype(np.float32)
 
     mask_dn = (dir_mat < 0)
-    if mask_dn.any():
+    if mask_dn.values.any():
         y[mask_dn] = is_long_rev.values[mask_dn].astype(np.int8)
         if cfg.get("exh_label_type") == "peak":
              w[mask_dn] = w_long_s.values[mask_dn].astype(np.float32)
@@ -125,6 +125,9 @@ def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, sy
         X = X[keep]
         y_ser = pd.DataFrame(y, index=t_index, columns=valid_syms).stack(future_stack=True).rename("y").reindex(X.index)
         y_arr = y_ser.values.astype(int)
+        
+        w_ser = pd.DataFrame(w, index=t_index, columns=valid_syms).stack(future_stack=True).rename("w").reindex(X.index)
+        w_arr = w_ser.values.astype(np.float32)
     else:
         y_df = pd.DataFrame(y, index=t_index, columns=valid_syms).stack(future_stack=True).rename("y")
         w_df = pd.DataFrame(w, index=t_index, columns=valid_syms).stack(future_stack=True).rename("w")
@@ -346,10 +349,16 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
                 p_val = p_exh_hist.loc[t_lag, sym]
             rec["p_exh_lag1"] = p_val
 
+            missing_features = []
             for k in feat_keys:
                 if k == "p_exh_lag1": continue
                 if k in feats:
                     rec[k] = feats[k].loc[t, sym]
+                else:
+                    missing_features.append(k)
+            
+            if missing_features and len(missing_features) < 5:  # Log if few features missing
+                tprint(f"WARNING: Missing features for {sym} at {t}: {missing_features}")
 
             rec["G_VOL"] = mkt_gates.loc[t, "G_VOL"]
             rec["G_TREND"] = mkt_gates.loc[t, "G_TREND"]
@@ -357,18 +366,29 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
 
     if not rows:
         tprint("No rows generated for training set.")
-        return None, None, None, None, None
+        return None, None, None, None, None, None
     tprint(f"Final training set size: {len(rows)}")
     df = pd.DataFrame(rows).dropna()
 
-    # Store indices (ts, symbol) to allow re-linking for meta model if needed
-    # (Actually we return X_out without index info usually, but we set index=df.index which is RangeIndex)
-    # If we want to join later, we might need a MultiIndex.
-    # But `select_best_horizon` trains Meta by predicting on X_mr/X_tf.
-    # X_mr/X_tf logic: if we return df with metadata, we can align.
-
-    weights = df.pop("w").values.astype(np.float32)
-    weights = np.clip(weights, 0.1, 10.0)
+    # Build label time ranges for uniqueness weighting
+    entry_times = df["ts"].values
+    exit_times = entry_times + pd.Timedelta(hours=H)  # H is the horizon
+    label_times = build_label_time_ranges(
+        pd.DatetimeIndex(entry_times),
+        pd.DatetimeIndex(exit_times)
+    )
+    
+    # Compute sample weights with uniqueness (AFML Chapter 4)
+    base_weights = df["w"].values
+    returns = df["y_ret"].values
+    weights = compute_sample_weights_with_uniqueness(
+        label_times=label_times,
+        returns=returns,
+        base_weights=base_weights
+    )
+    
+    tprint(f"Applied uniqueness weighting: mean={weights.mean():.3f}, std={weights.std():.3f}")
+    df.drop(columns=["w"], inplace=True)
 
     df = apply_interaction_toggles(df, feat_keys, ["G_VOL", "G_TREND"], drop_raw=cfg["drop_raw_causal"])
     y_bin = df.pop("y_bin").values.astype(int)
@@ -573,3 +593,14 @@ def select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
         else: exh_models[d] = None
 
     return {"alpha_models": final_models, "exh_models": exh_models, "meta_models": meta_models, "spike_model": spike_model}
+
+def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_hist, alpha_models):
+    tprint("Entering function: optimize_risk_params in training.py")
+    tprint("optimize_risk_params not implemented, returning default config risk params.")
+    # Return a minimal risk dict based on config defaults
+    return {
+        "k_sl": cfg.get("risk_k_sl", 2.0),
+        "k_trail_start": cfg.get("risk_k_trail_start", 1.0),
+        "k_trail_dist": cfg.get("risk_k_trail_dist", 0.5),
+        "granular_risk": {}
+    }

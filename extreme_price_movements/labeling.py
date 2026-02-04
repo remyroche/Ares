@@ -3,54 +3,6 @@ import pandas as pd
 from numba import jit
 from .fast_funcs import simulate_trade_numba
 
-@jit(nopython=True, cache=True)
-def _numba_triple_barrier(
-    times, opens, highs, lows, closes,
-    tp, sl, horizon_hours
-):
-    """
-    Vectorized Triple Barrier Method (Fixed Barriers).
-    Kept for legacy/compatibility.
-    """
-    n = len(closes)
-    labels = np.zeros(n, dtype=np.int8)
-    returns = np.zeros(n, dtype=np.float32)
-    exit_idxs = np.full(n, -1, dtype=np.int64)
-    horizon_ns = horizon_hours * 3600 * 1_000_000_000
-
-    for i in range(n):
-        entry_p = closes[i]
-        if entry_p <= 0: continue
-        entry_ts = times[i]
-        cutoff_ts = entry_ts + horizon_ns
-        barrier_up = entry_p * (1.0 + tp)
-        barrier_dn = entry_p * (1.0 - sl)
-        found = False
-
-        for j in range(i + 1, n):
-            ts = times[j]
-            if ts > cutoff_ts:
-                exit_idxs[i] = j - 1
-                pass
-            h = highs[j]
-            l = lows[j]
-            hit_sl = l <= barrier_dn
-            hit_tp = h >= barrier_up
-
-            if hit_sl and hit_tp:
-                labels[i] = -1; returns[i] = -sl; exit_idxs[i] = j; found = True; break
-            elif hit_sl:
-                labels[i] = -1; returns[i] = -sl; exit_idxs[i] = j; found = True; break
-            elif hit_tp:
-                labels[i] = 1; returns[i] = tp; exit_idxs[i] = j; found = True; break
-
-            if ts >= cutoff_ts:
-                labels[i] = 0; returns[i] = (closes[j] / entry_p) - 1.0; exit_idxs[i] = j; found = True; break
-
-        if not found:
-            labels[i] = 0; returns[i] = (closes[n-1] / entry_p) - 1.0; exit_idxs[i] = n - 1
-
-    return labels, returns, exit_idxs
 
 @jit(nopython=True, cache=True)
 def _numba_trailing_atr_labeling(
@@ -160,25 +112,6 @@ def _numba_trailing_atr_labeling(
 
     return labels, returns
 
-def compute_triple_barrier_labels(panel: pd.DataFrame, tp: float, sl: float, horizon_hours: int):
-    # Legacy wrapper
-    c = panel["close"]
-    h = panel["high"]
-    l = panel["low"]
-    o = panel["open"]
-    assets = c.columns
-    times = c.index.view(np.int64)
-    out_labels = pd.DataFrame(0, index=c.index, columns=assets, dtype=np.int8)
-    out_returns = pd.DataFrame(0.0, index=c.index, columns=assets, dtype=np.float32)
-    for asset in assets:
-        c_arr = c[asset].to_numpy(dtype=np.float32)
-        h_arr = h[asset].to_numpy(dtype=np.float32)
-        l_arr = l[asset].to_numpy(dtype=np.float32)
-        o_arr = o[asset].to_numpy(dtype=np.float32)
-        lbs, rets, _ = _numba_triple_barrier(times, o_arr, h_arr, l_arr, c_arr, tp, sl, horizon_hours)
-        out_labels[asset] = lbs
-        out_returns[asset] = rets
-    return out_labels, out_returns
 
 def compute_trailing_atr_labels(
     panel: pd.DataFrame,

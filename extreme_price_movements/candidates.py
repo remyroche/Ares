@@ -27,6 +27,7 @@ def entry_price_next_hour_open(panel_open, ts_entry, symbol):
 def select_trade_candidates_vectorized(panel, feats, pct=0.05, metric="ret24h"):
     """
     Vectorized candidate selection with time expansion and volatility filtering.
+    Optimized using argpartition for faster top-K selection.
 
     1. Identify Top/Worst pct% performers based on 'metric' (e.g., ret24h).
     2. Expand candidates to t-12, t-8, t-4, t+4, t+8, t+12, t+16.
@@ -37,22 +38,38 @@ def select_trade_candidates_vectorized(panel, feats, pct=0.05, metric="ret24h"):
     """
     tprint(f"Entering function: select_trade_candidates_vectorized in candidates.py")
 
-    # 1. Base Selection
+    # 1. Base Selection using argpartition (faster than full rank)
     if metric not in feats:
         tprint(f"Warning: Metric {metric} not found in feats.")
         return None
 
     df_metric = feats[metric]
-    # Rank across columns (axis=1)
-    # pct=True returns 0.0 to 1.0
-    ranks = df_metric.rank(axis=1, pct=True)
-
-    # Top 5% and Bottom 5%
-    # Top: rank > 1 - pct
-    # Bot: rank < pct
-    top_mask = ranks > (1.0 - pct)
-    bot_mask = ranks < pct
-    base_mask = top_mask | bot_mask
+    n_cols = df_metric.shape[1]
+    k = max(1, int(n_cols * pct))
+    
+    # Use argpartition for top-K and bottom-K (O(n) vs O(n log n) for sorting)
+    base_mask = pd.DataFrame(False, index=df_metric.index, columns=df_metric.columns)
+    
+    for idx in df_metric.index:
+        row = df_metric.loc[idx].values
+        valid_mask = ~np.isnan(row)
+        
+        if valid_mask.sum() < k:
+            continue
+        
+        valid_vals = row[valid_mask]
+        valid_cols = df_metric.columns[valid_mask]
+        
+        # Top K indices
+        if len(valid_vals) > k:
+            top_k_idx = np.argpartition(valid_vals, -k)[-k:]
+            bot_k_idx = np.argpartition(valid_vals, k)[:k]
+            
+            top_cols = valid_cols[top_k_idx]
+            bot_cols = valid_cols[bot_k_idx]
+            
+            base_mask.loc[idx, top_cols] = True
+            base_mask.loc[idx, bot_cols] = True
 
     # 2. Time Expansion
     # Offsets: t-12, t-8, t-4, t+4, t+8, t+12, t+16

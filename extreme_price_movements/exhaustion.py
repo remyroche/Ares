@@ -3,8 +3,10 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.model_selection import TimeSeriesSplit
+from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.metrics import brier_score_loss, roc_auc_score
 from extreme_price_movements.utils import tprint
+from extreme_price_movements.feature_selection_extreme_events import mdi_feature_selection_leakage_safe
 
 class ExhaustionModel:
     def __init__(self, C=1.0, l1_ratio=0.3, cv_splits=5):
@@ -14,6 +16,7 @@ class ExhaustionModel:
         self.cv_splits = cv_splits
         self.model = None
         self.metrics = {}
+        self.selected_features = None
 
     def _make_base_estimator(self):
         tprint(f"Entering function: _make_base_estimator in exhaustion.py")
@@ -30,12 +33,46 @@ class ExhaustionModel:
     def fit(self, X: pd.DataFrame, y: np.ndarray):
         """
         Fits the model with Platt Scaling calibration using TimeSeriesSplit.
+        Includes MDI Feature Selection (Leakage Safe).
         """
         tprint(f"Entering function: fit in exhaustion.py")
+
+        # 1. Feature Selection
+        n_samples = len(X)
+        # Max cap 40, or n/100
+        n_select = min(40, max(1, n_samples // 100))
+
+        tprint(f"ExhaustionModel: Running feature selection. Target features={n_select}")
+
+        base_selector = ExtraTreesClassifier(
+            n_estimators=100,
+            max_depth=4,
+            min_samples_leaf=50,
+            max_features='sqrt',
+            n_jobs=-1,
+            random_state=42,
+            class_weight="balanced"
+        )
+
+        sel_res = mdi_feature_selection_leakage_safe(
+            X=X,
+            y=y,
+            base_model=base_selector,
+            n_splits=self.cv_splits, # Use same splits as CV
+            top_n_precluster=n_select,
+            keep_top_per_cluster=1,
+            use_quantile_transform_for_corr=True
+        )
+
+        self.selected_features = sel_res.selected_features
+        tprint(f"ExhaustionModel: Selected {len(self.selected_features)} features.")
+
+        X_sel = X[self.selected_features]
+
+        # 2. Calibration
         base_clf = self._make_base_estimator()
 
         # Use CalibratedClassifierCV with TimeSeriesSplit
-        # cv=TimeSeriesSplit(n_splits=self.cv_splits)
         # method='sigmoid' is Platt scaling.
         tscv = TimeSeriesSplit(n_splits=self.cv_splits)
 
@@ -45,12 +82,7 @@ class ExhaustionModel:
             cv=tscv
         )
 
-        self.model.fit(X, y)
-
-        # Compute metrics on the "latest" fold approximation or just fit metrics?
-        # User wants "Brier, AUC".
-        # Usually we want OOF metrics.
-        # But CalibratedClassifierCV refits on the whole data at the end (ensemble of calibrated models).
+        self.model.fit(X_sel, y)
 
         return self
 
@@ -58,6 +90,12 @@ class ExhaustionModel:
         tprint(f"Entering function: predict_proba in exhaustion.py")
         if self.model is None:
             raise ValueError("Model not fitted")
+
+        if self.selected_features is not None:
+             # Ensure we have the columns (handle missing safely? or assume caller provides same schema)
+             # Usually schema is consistent.
+             X = X[self.selected_features]
+
         return self.model.predict_proba(X)[:, 1]
 
     def compute_oof_predictions(self, X: pd.DataFrame, y: np.ndarray) -> tuple[np.ndarray, dict]:
@@ -66,6 +104,11 @@ class ExhaustionModel:
         Returns: (oof_probs, metrics)
         """
         tprint(f"Entering function: compute_oof_predictions in exhaustion.py")
+
+        # Apply selection if available
+        if self.selected_features is not None:
+            X = X[self.selected_features]
+
         tscv = TimeSeriesSplit(n_splits=self.cv_splits)
         oof_preds = np.full(len(y), np.nan)
 
@@ -78,12 +121,6 @@ class ExhaustionModel:
         for train_idx, test_idx in tscv.split(X_arr):
             X_train, X_test = X_arr[train_idx], X_arr[test_idx]
             y_train, y_test = y[train_idx], y[test_idx]
-
-            # Use base estimator inside calibration for this fold?
-            # Or just train base estimator and calibrator on train?
-            # CalibratedClassifierCV does internal CV if we pass an integer,
-            # but if we passed 'prefit' we need to split manually.
-            # Here we want to train a calibrated model on X_train and predict on X_test.
 
             # Inner CV for calibration on the training set
             inner_cv = TimeSeriesSplit(n_splits=3)

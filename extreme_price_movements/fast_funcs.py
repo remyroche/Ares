@@ -18,180 +18,60 @@ from src.utils.numba_funcs import (
 )
 from .utils import tprint
 
-def apply_to_frame(df: pd.DataFrame, func, *args) -> pd.DataFrame:
-    """
-    Applies a Numba 1D function to each column of a DataFrame.
-    Returns a DataFrame with float32 dtype.
-    Handles pd.Series by converting to DataFrame and returning Series.
-    """
-    tprint(f"Entering function: apply_to_frame in fast_funcs.py")
-    is_series = isinstance(df, pd.Series)
-    if is_series:
-        df = df.to_frame()
-
-    out = pd.DataFrame(index=df.index, columns=df.columns, dtype=np.float32)
-    # We iterate over columns.
-    for col in df.columns:
-        # Convert to numpy float32 array
-        vals = df[col].to_numpy(dtype=np.float32)
-        # Apply function
-        res = func(vals, *args)
-        out[col] = res
-
-    if is_series:
-        return out[out.columns[0]]
-
-    return out
-
-def apply_to_frame_binary(df1: pd.DataFrame, df2: pd.DataFrame, func, *args) -> pd.DataFrame:
-    """
-    Applies a function taking two arrays (col1, col2) -> out_array.
-    Assumes df1 and df2 have same columns and index.
-    Handles pd.Series inputs.
-    """
-    tprint(f"Entering function: apply_to_frame_binary in fast_funcs.py")
-    is_series1 = isinstance(df1, pd.Series)
-    is_series2 = isinstance(df2, pd.Series)
-
-    if is_series1:
-        df1 = df1.to_frame()
-    if is_series2:
-        df2 = df2.to_frame()
-
-    out = pd.DataFrame(index=df1.index, columns=df1.columns, dtype=np.float32)
-    for col in df1.columns:
-        if col in df2.columns:
-            v1 = df1[col].to_numpy(dtype=np.float32)
-            v2 = df2[col].to_numpy(dtype=np.float32)
-            out[col] = func(v1, v2, *args)
-
-    if is_series1:
-        return out[out.columns[0]]
-
-    return out
-
 @jit(nopython=True, cache=True)
-def numba_rsi_kernel(close, n):
-    """
-    RSI = 100 - 100 / (1 + RS)
-    RS = Average Gain / Average Loss
-    """
-    delta = np.empty_like(close)
-    delta[0] = np.nan
-    delta[1:] = close[1:] - close[:-1]
+def _numba_ewma_nan_safe(x, alpha, adjust=False):
+    n = len(x)
+    out = np.full(n, np.nan, dtype=np.float32)
 
-    up = np.maximum(delta, 0.0)
-    dn = np.maximum(-delta, 0.0)
+    # Find first valid
+    first_valid = -1
+    for i in range(n):
+        if not np.isnan(x[i]):
+            first_valid = i
+            break
 
-    # EWMA with alpha = 1/n, adjust=False
-    alpha = 1.0 / n
+    if first_valid == -1:
+        return out
 
-    avg_up = _numba_ewma(up, alpha, adjust=False)
-    avg_dn = _numba_ewma(dn, alpha, adjust=False)
+    # Initialize
+    out[first_valid] = x[first_valid]
 
-    out = np.empty_like(close)
-    for i in range(len(close)):
-        if np.isnan(avg_dn[i]) or avg_dn[i] == 0:
-            if np.isnan(avg_up[i]):
-                out[i] = np.nan
-            elif avg_up[i] == 0:
-                 out[i] = 50.0 # No move
-            else:
-                 out[i] = 100.0 # Only up moves
+    for i in range(first_valid + 1, n):
+        val = x[i]
+        if np.isnan(val):
+            out[i] = out[i-1]
         else:
-            rs = avg_up[i] / avg_dn[i]
-            out[i] = 100.0 - (100.0 / (1.0 + rs))
-
-    return out
-
-def numba_rsi(close_df, n):
-    tprint(f"Entering function: numba_rsi in fast_funcs.py")
-    return apply_to_frame(close_df, numba_rsi_kernel, n)
-
-@jit(nopython=True, cache=True)
-def numba_atr_kernel(high, low, close, n):
-    """
-    ATR using EWM smoothing.
-    TR = max(h-l, abs(h-prev_c), abs(l-prev_c))
-    """
-    sz = len(close)
-    tr = np.empty(sz, dtype=np.float32)
-    tr[0] = high[0] - low[0] # First TR is High - Low
-
-    for i in range(1, sz):
-        h = high[i]; l = low[i]; pc = close[i-1]
-        v1 = h - l
-        v2 = abs(h - pc)
-        v3 = abs(l - pc)
-        tr[i] = max(v1, max(v2, v3))
-
-    # ATR is EWM of TR
-    atr = _numba_ewma(tr, 1.0/n, adjust=False)
-
-    # Return ATR percent: ATR / Close
-    out = np.empty(sz, dtype=np.float32)
-    for i in range(sz):
-        c = close[i]
-        if c == 0 or np.isnan(c):
-             out[i] = np.nan
-        else:
-             out[i] = atr[i] / c
+            out[i] = (1.0 - alpha) * out[i-1] + alpha * val
 
     return out
 
 @jit(nopython=True, cache=True)
-def numba_atr_no_norm_kernel(high, low, close, n):
-    """
-    ATR using EWM smoothing, without normalization by close.
-    """
-    sz = len(close)
-    tr = np.empty(sz, dtype=np.float32)
-    tr[0] = high[0] - low[0]
+def _numba_rolling_sum_nan_safe(x, window):
+    n = len(x)
+    output = np.full(n, np.nan, dtype=np.float32)
 
-    for i in range(1, sz):
-        h = high[i]; l = low[i]; pc = close[i-1]
-        v1 = h - l
-        v2 = abs(h - pc)
-        v3 = abs(l - pc)
-        tr[i] = max(v1, max(v2, v3))
+    if window <= 0: return output
 
-    atr = _numba_ewma(tr, 1.0/n, adjust=False)
-    return atr
+    current_sum = 0.0
+    current_count = 0
 
-def numba_atr_no_norm(high_df, low_df, close_df, n):
-    tprint(f"Entering function: numba_atr_no_norm in fast_funcs.py")
-    out = pd.DataFrame(index=close_df.index, columns=close_df.columns, dtype=np.float32)
-    cols = close_df.columns
-    for c in cols:
-        h = high_df[c].to_numpy(dtype=np.float32)
-        l = low_df[c].to_numpy(dtype=np.float32)
-        cl = close_df[c].to_numpy(dtype=np.float32)
-        res = numba_atr_no_norm_kernel(h, l, cl, n)
-        out[c] = res
-    return out
+    for i in range(n):
+        val_in = x[i]
+        if not np.isnan(val_in):
+            current_sum += val_in
+            current_count += 1
 
-def numba_atr(high_df, low_df, close_df, n):
-    # This requires synchronized iteration over 3 dataframes.
-    tprint(f"Entering function: numba_atr in fast_funcs.py")
-    out = pd.DataFrame(index=close_df.index, columns=close_df.columns, dtype=np.float32)
-    cols = close_df.columns
-    for c in cols:
-        h = high_df[c].to_numpy(dtype=np.float32)
-        l = low_df[c].to_numpy(dtype=np.float32)
-        cl = close_df[c].to_numpy(dtype=np.float32)
-        res = numba_atr_kernel(h, l, cl, n)
-        out[c] = res
-    return out
+        if i >= window:
+            val_out = x[i - window]
+            if not np.isnan(val_out):
+                current_sum -= val_out
+                current_count -= 1
 
-def numba_zscore(df, n):
-    # (x - mean) / std
-    # Using nan_safe versions
-    tprint(f"Entering function: numba_zscore in fast_funcs.py")
-    mu = apply_to_frame(df, _numba_rolling_mean_nan_safe, n)
-    sd = apply_to_frame(df, _numba_rolling_std_nan_safe, n)
+        # Require at least 1 valid value to report sum
+        if current_count > 0:
+            output[i] = current_sum
 
-    # Vectorized pandas operation for final step is fine/fast
-    return (df - mu) / (sd + 1e-12)
+    return output
 
 @jit(nopython=True, cache=True)
 def simulate_trade_numba(
@@ -310,6 +190,181 @@ def simulate_trade_numba(
         ret = (entry_px / last_c) - 1.0
 
     return ret, n-1, 3 # Time Exit
+
+def apply_to_frame(df: pd.DataFrame, func, *args) -> pd.DataFrame:
+    """
+    Applies a Numba 1D function to each column of a DataFrame.
+    Returns a DataFrame with float32 dtype.
+    Handles pd.Series by converting to DataFrame and returning Series.
+    """
+    # tprint(f"Entering function: apply_to_frame in fast_funcs.py")
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
+    out = pd.DataFrame(index=df.index, columns=df.columns, dtype=np.float32)
+    # We iterate over columns.
+    for col in df.columns:
+        # Convert to numpy float32 array
+        vals = df[col].to_numpy(dtype=np.float32)
+        # Apply function
+        res = func(vals, *args)
+        out[col] = res
+
+    if is_series:
+        return out[out.columns[0]]
+
+    return out
+
+def apply_to_frame_binary(df1: pd.DataFrame, df2: pd.DataFrame, func, *args) -> pd.DataFrame:
+    """
+    Applies a function taking two arrays (col1, col2) -> out_array.
+    Assumes df1 and df2 have same columns and index.
+    Handles pd.Series inputs.
+    """
+    tprint(f"Entering function: apply_to_frame_binary in fast_funcs.py")
+    is_series1 = isinstance(df1, pd.Series)
+    is_series2 = isinstance(df2, pd.Series)
+
+    if is_series1:
+        df1 = df1.to_frame()
+    if is_series2:
+        df2 = df2.to_frame()
+
+    out = pd.DataFrame(index=df1.index, columns=df1.columns, dtype=np.float32)
+    for col in df1.columns:
+        if col in df2.columns:
+            v1 = df1[col].to_numpy(dtype=np.float32)
+            v2 = df2[col].to_numpy(dtype=np.float32)
+            out[col] = func(v1, v2, *args)
+
+    if is_series1:
+        return out[out.columns[0]]
+
+    return out
+
+@jit(nopython=True, cache=True)
+def numba_rsi_kernel(close, n):
+    """
+    RSI = 100 - 100 / (1 + RS)
+    RS = Average Gain / Average Loss
+    """
+    delta = np.empty_like(close)
+    delta[0] = np.nan
+    delta[1:] = close[1:] - close[:-1]
+
+    up = np.maximum(delta, 0.0)
+    dn = np.maximum(-delta, 0.0)
+
+    # EWMA with alpha = 1/n, adjust=False
+    alpha = 1.0 / n
+
+    avg_up = _numba_ewma_nan_safe(up, alpha, adjust=False)
+    avg_dn = _numba_ewma_nan_safe(dn, alpha, adjust=False)
+
+    out = np.empty_like(close)
+    for i in range(len(close)):
+        if np.isnan(avg_dn[i]) or avg_dn[i] == 0:
+            if np.isnan(avg_up[i]):
+                out[i] = np.nan
+            elif avg_up[i] == 0:
+                 out[i] = 50.0 # No move
+            else:
+                 out[i] = 100.0 # Only up moves
+        else:
+            rs = avg_up[i] / avg_dn[i]
+            out[i] = 100.0 - (100.0 / (1.0 + rs))
+
+    return out
+
+def numba_rsi(close_df, n):
+    tprint(f"Entering function: numba_rsi in fast_funcs.py")
+    return apply_to_frame(close_df, numba_rsi_kernel, n)
+
+@jit(nopython=True, cache=True)
+def numba_atr_kernel(high, low, close, n):
+    """
+    ATR using EWM smoothing.
+    TR = max(h-l, abs(h-prev_c), abs(l-prev_c))
+    """
+    sz = len(close)
+    tr = np.empty(sz, dtype=np.float32)
+    tr[0] = high[0] - low[0] # First TR is High - Low
+
+    for i in range(1, sz):
+        h = high[i]; l = low[i]; pc = close[i-1]
+        v1 = h - l
+        v2 = abs(h - pc)
+        v3 = abs(l - pc)
+        tr[i] = max(v1, max(v2, v3))
+
+    # ATR is EWM of TR
+    atr = _numba_ewma_nan_safe(tr, 1.0/n, adjust=False)
+
+    # Return ATR percent: ATR / Close
+    out = np.empty(sz, dtype=np.float32)
+    for i in range(sz):
+        c = close[i]
+        if c == 0 or np.isnan(c):
+             out[i] = np.nan
+        else:
+             out[i] = atr[i] / c
+
+    return out
+
+@jit(nopython=True, cache=True)
+def numba_atr_no_norm_kernel(high, low, close, n):
+    """
+    ATR using EWM smoothing, without normalization by close.
+    """
+    sz = len(close)
+    tr = np.empty(sz, dtype=np.float32)
+    tr[0] = high[0] - low[0]
+
+    for i in range(1, sz):
+        h = high[i]; l = low[i]; pc = close[i-1]
+        v1 = h - l
+        v2 = abs(h - pc)
+        v3 = abs(l - pc)
+        tr[i] = max(v1, max(v2, v3))
+
+    atr = _numba_ewma_nan_safe(tr, 1.0/n, adjust=False)
+    return atr
+
+def numba_atr_no_norm(high_df, low_df, close_df, n):
+    # tprint(f"Entering function: numba_atr_no_norm in fast_funcs.py")
+    out = pd.DataFrame(index=close_df.index, columns=close_df.columns, dtype=np.float32)
+    cols = close_df.columns
+    for c in cols:
+        h = high_df[c].to_numpy(dtype=np.float32)
+        l = low_df[c].to_numpy(dtype=np.float32)
+        cl = close_df[c].to_numpy(dtype=np.float32)
+        res = numba_atr_no_norm_kernel(h, l, cl, n)
+        out[c] = res
+    return out
+
+def numba_atr(high_df, low_df, close_df, n):
+    # This requires synchronized iteration over 3 dataframes.
+    tprint(f"Entering function: numba_atr in fast_funcs.py")
+    out = pd.DataFrame(index=close_df.index, columns=close_df.columns, dtype=np.float32)
+    cols = close_df.columns
+    for c in cols:
+        h = high_df[c].to_numpy(dtype=np.float32)
+        l = low_df[c].to_numpy(dtype=np.float32)
+        cl = close_df[c].to_numpy(dtype=np.float32)
+        res = numba_atr_kernel(h, l, cl, n)
+        out[c] = res
+    return out
+
+def numba_zscore(df, n):
+    # (x - mean) / std
+    # Using nan_safe versions
+    # tprint(f"Entering function: numba_zscore in fast_funcs.py")
+    mu = apply_to_frame(df, _numba_rolling_mean_nan_safe, n)
+    sd = apply_to_frame(df, _numba_rolling_std_nan_safe, n)
+
+    # Vectorized pandas operation for final step is fine/fast
+    return (df - mu) / (sd + 1e-12)
 
 # --- NEW KERNELS & WRAPPERS ---
 
@@ -617,7 +672,8 @@ def numba_rolling_min(df, n):
 
 def numba_rolling_sum(df, n):
     tprint(f"Entering function: numba_rolling_sum in fast_funcs.py")
-    return apply_to_frame(df, _numba_rolling_sum, n)
+    # CHANGED: Use NaN-safe version
+    return apply_to_frame(df, _numba_rolling_sum_nan_safe, n)
 
 def numba_rolling_median(df, n):
     tprint(f"Entering function: numba_rolling_median in fast_funcs.py")

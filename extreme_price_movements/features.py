@@ -7,22 +7,23 @@ import extreme_price_movements.fast_funcs as ff
 
 def zscore_rolling(x: pd.DataFrame, n: int):
     # Use Numba implementation
-    tprint(f"Entering function: zscore_rolling in features.py")
+    # tprint(f"Entering function: zscore_rolling in features.py")
     return ff.numba_zscore(x, n)
 
 def rsi(close: pd.DataFrame, n: int):
     # Use Numba implementation
-    tprint(f"Entering function: rsi in features.py")
+    # tprint(f"Entering function: rsi in features.py")
     return ff.numba_rsi(close, n)
 
 def ema(x: pd.DataFrame, span: int):
-    tprint(f"Entering function: ema in features.py")
+    # tprint(f"Entering function: ema in features.py")
     alpha = 2.0 / (span + 1.0)
-    return ff.apply_to_frame(x, ff._numba_ewma, alpha, False)
+    # Use NaN-safe EWMA
+    return ff.apply_to_frame(x, ff._numba_ewma_nan_safe, alpha, False)
 
 def atr_percent(high: pd.DataFrame, low: pd.DataFrame, close: pd.DataFrame, n: int):
     # Use Numba implementation
-    tprint(f"Entering function: atr_percent in features.py")
+    # tprint(f"Entering function: atr_percent in features.py")
     # CHANGED: Use no_norm version because inputs are Log Frac Diff (stationary)
     return ff.numba_atr_no_norm(high, low, close, n)
 
@@ -30,7 +31,8 @@ def _transform_price(df):
     # Log -> EWMA(5) -> FracDiff(0.4, 96)
     tprint("Transforming Prices: Log -> EWMA(5) -> FracDiff(0.4, 96)")
     df_log = np.log(df + 1e-9)
-    df_den = ff.apply_to_frame(df_log, ff._numba_ewma, 2.0/6.0, False)
+    # Use NaN-safe EWMA
+    df_den = ff.apply_to_frame(df_log, ff._numba_ewma_nan_safe, 2.0/6.0, False)
     df_fd = ff.numba_frac_diff(df_den, 0.4, 96)
     return df_fd
 
@@ -38,11 +40,12 @@ def _transform_volume(df):
     # Log -> EWMA(5)
     tprint("Transforming Volume: Log -> EWMA(5)")
     df_log = np.log(df + 1.0)
-    df_den = ff.apply_to_frame(df_log, ff._numba_ewma, 2.0/6.0, False)
+    # Use NaN-safe EWMA
+    df_den = ff.apply_to_frame(df_log, ff._numba_ewma_nan_safe, 2.0/6.0, False)
     return df_den
 
 def time_sin_cos(index: pd.DatetimeIndex):
-    tprint(f"Entering function: time_sin_cos in features.py")
+    # tprint(f"Entering function: time_sin_cos in features.py")
     hod = index.hour.to_numpy()
     dow = index.dayofweek.to_numpy()
     sin_hod = np.sin(2*np.pi*hod/24.0)
@@ -125,7 +128,7 @@ def add_regime_gates(mkt_df: pd.DataFrame, gate_vol_lookback_hours: int, gate_tr
 
 def compute_funding_proxy(c, h, l, v, mkt_df):
     # Changed signature to accept transformed arrays
-    tprint(f"Entering function: compute_funding_proxy in features.py")
+    # tprint(f"Entering function: compute_funding_proxy in features.py")
 
     c_ma = ff.numba_rolling_mean(c, 24)
     dist = (c - c_ma)
@@ -175,12 +178,17 @@ def compute_features_hourly(panel, mkt_gates, cfg):
     c = _transform_price(c_raw)
     v = _transform_volume(v_raw)
 
+    # Debug: Check transformation
+    tprint(f"Transformed C stats: mean={c.mean().mean()}, nan={c.isna().mean().mean()}")
+    tprint(f"Transformed V stats: mean={v.mean().mean()}, nan={v.isna().mean().mean()}")
+
     feats = {}
     # Ret calc: FracDiff IS the return
     feats["ret1h"] = c
     feats["ret6h"] = ff.numba_rolling_sum(c, 6)
 
-    for H in [12,16,20,24,28]:
+    # Pre-calc returns for usage
+    for H in [2, 3, 4, 12, 16, 20, 24, 28]:
         feats[f"ret{H}h"] = ff.numba_rolling_sum(c, H)
 
     feats["range_pct"] = (h - l) # Log Diff
@@ -194,11 +202,11 @@ def compute_features_hourly(panel, mkt_gates, cfg):
     feats["rsi_slope_base"] = rsi_base.diff(cfg["rsi_slope_n"]).astype(np.float32)
 
     feats["rv_24h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 24)
+    # New RV windows for features
+    feats["rv_6h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 6)
+    feats["rv_12h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 12)
 
     # qv: c is log-level stationary. v is log-level stationary.
-    # qv was Price * Volume. Now?
-    # Maybe Sum(c * v)? No.
-    # Let's keep qv as product of stationary series (Interaction).
     feats["qv"] = (c * v).astype(np.float32)
     feats["vol_z24_base"] = zscore_rolling(v, 24)
     feats["vol_z_base"]   = zscore_rolling(v, cfg["volz_n"])
@@ -215,24 +223,21 @@ def compute_features_hourly(panel, mkt_gates, cfg):
     body = (c - o).abs()
     upper_wick = (h - c.where(c >= o, o)).clip(lower=0)
     lower_wick = (c.where(c <= o, o) - l).clip(lower=0)
-    # body_pct was body / c. Now body is already log diff.
     feats["body_pct"] = body.astype(np.float32)
     feats["wick_body_ratio"] = ((upper_wick + lower_wick) / (body + 1e-12)).astype(np.float32)
 
     feats["vol_price_spread"] = (v / ((h - l) + 1e-12)).astype(np.float32)
 
     prev_close = c.shift(1)
-
     tr_1 = (h - l)
     tr_2 = (h - prev_close).abs()
     tr_3 = (l - prev_close).abs()
     tr = np.maximum(tr_1, np.maximum(tr_2, tr_3))
-
-    atr_tr = ff.apply_to_frame(tr, ff._numba_ewma, 1.0/cfg["atr_n"], False)
+    # Use NaN-safe EWMA
+    atr_tr = ff.apply_to_frame(tr, ff._numba_ewma_nan_safe, 1.0/cfg["atr_n"], False)
     feats["atr_expansion"] = (tr / (atr_tr + 1e-12)).astype(np.float32)
 
     sma_base = ff.apply_to_frame(c, ff._numba_rolling_mean_nan_safe, cfg["trend_sma_n"])
-    # Difference logic
     feats["trend_pct_base"] = (c - sma_base).astype(np.float32)
 
     hod = pd.Series(v.index.hour, index=v.index)
@@ -247,7 +252,6 @@ def compute_features_hourly(panel, mkt_gates, cfg):
     feats["sin_dow"] = pd.DataFrame(np.repeat(sin_dow[:,None], c.shape[1], axis=1), index=c.index, columns=c.columns).astype(np.float32)
     feats["cos_dow"] = pd.DataFrame(np.repeat(cos_dow[:,None], c.shape[1], axis=1), index=c.index, columns=c.columns).astype(np.float32)
 
-    # --- EXISTING EXTRA FEATURES ---
     signed_vol = v * np.sign(c - o)
     sv_abs = signed_vol.abs()
     ewma_sv_fast = ema(signed_vol, 6)
@@ -266,11 +270,19 @@ def compute_features_hourly(panel, mkt_gates, cfg):
     r2 = r**2
     up_sq = r2.where(r > 0, 0.0)
     dn_sq = r2.where(r < 0, 0.0)
+    # Vol Asym windows 6, 24
     up_vol = ema(up_sq, 24)
     dn_vol = ema(dn_sq, 24)
     feats["up_vol"] = up_vol
     feats["dn_vol"] = dn_vol
     feats["vol_asym"] = (up_vol - dn_vol).astype(np.float32)
+
+    # Added 6h versions
+    up_vol_6 = ema(up_sq, 6)
+    dn_vol_6 = ema(dn_sq, 6)
+    feats["up_vol_6"] = up_vol_6
+    feats["dn_vol_6"] = dn_vol_6
+    feats["vol_asym_6"] = (up_vol_6 - dn_vol_6).astype(np.float32)
 
     l_prev2 = l.shift(2)
     h_prev2 = h.shift(2)
@@ -280,18 +292,13 @@ def compute_features_hourly(panel, mkt_gates, cfg):
 
     feats["churn"] = (v / ((c - o).abs() + 1e-12)).astype(np.float32)
     feats["slope"] = ((ema_fast_base - ema_slow_base) / (atr_base + 1e-12)).astype(np.float32)
+
     t_snr_num = ema(feats["ret1h"], 6).abs()
     t_snr_den = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 24)
     feats["trend_snr"] = (t_snr_num / (t_snr_den + 1e-12)).astype(np.float32)
 
-    # c.diff() on stationary series is Acceleration.
-    # v_power was v / abs(price_change).
-    # Now c IS price change (approx).
-    # So v / abs(c)
     feats["v_power"] = (v / (c.abs() + 1e-12)).astype(np.float32)
     feats["signed_vol"] = signed_vol.astype(np.float32)
-
-    # --- NEW REQUESTED FEATURES ---
 
     atr_ema_f = ema(atr_base, 6)
     atr_ema_s = ema(atr_base, 24)
@@ -307,8 +314,6 @@ def compute_features_hourly(panel, mkt_gates, cfg):
 
     feats["momentum_accel"] = feats["ret1h"].diff().astype(np.float32)
 
-    # v is already log-transformed and smoothed.
-    # So we don't log it again.
     log_v = v
     mu_lv = ff.apply_to_frame(log_v, ff._numba_rolling_mean_nan_safe, cfg["volz_n"])
     sd_lv = ff.apply_to_frame(log_v, ff._numba_rolling_std_nan_safe, cfg["volz_n"])
@@ -323,6 +328,9 @@ def compute_features_hourly(panel, mkt_gates, cfg):
 
     cum_sv = ff.numba_rolling_sum(signed_vol, 24)
     feats["cumulative_delta_stall"] = ff.numba_rolling_corr(c, cum_sv, 24).fillna(0).astype(np.float32)
+    # Alias to delta_stall_6?
+    cum_sv_6 = ff.numba_rolling_sum(signed_vol, 6)
+    feats["delta_stall_6"] = ff.numba_rolling_corr(c, cum_sv_6, 6).fillna(0).astype(np.float32)
 
     feats["vol_expansion_ratio"] = (atr_ema_f / (atr_ema_s + 1e-12)).astype(np.float32)
 
@@ -332,7 +340,7 @@ def compute_features_hourly(panel, mkt_gates, cfg):
 
     rv_ratio = mkt_gates["mkt_rv_ratio"].reindex(c.index).astype(np.float32)
     def pick_by_rv(fast_df, base_df, slow_df):
-        tprint(f"Entering function: pick_by_rv in features.py")
+        # tprint(f"Entering function: pick_by_rv in features.py")
         rr = pd.DataFrame(np.repeat(rv_ratio.to_numpy()[:,None], base_df.shape[1], axis=1),
                           index=base_df.index, columns=base_df.columns).astype(np.float32)
         out = base_df.copy()
@@ -367,6 +375,154 @@ def compute_features_hourly(panel, mkt_gates, cfg):
     feats["vol_z24"] = feats["vol_z24_base"]
     feats["rsi_slope"] = feats["rsi"].diff(cfg["rsi_slope_n"]).astype(np.float32)
     feats["a_funding_proxy"] = feats["funding_proxy"]
+
+    # --- New Helper Features for Models ---
+    dir_s = np.sign(feats["ret1h"])
+    dir_s[dir_s == 0] = 1 # fallback
+
+    atr = feats["atr_pct"] + 1e-12
+    rv6 = feats["rv_6h"] + 1e-12
+    rv12 = feats["rv_12h"] + 1e-12
+
+    for k in [2, 4, 6, 12, 24]:
+        rmax = ff.numba_rolling_max(c, k)
+        rmin = ff.numba_rolling_min(c, k)
+
+        rmax_s = rmax.shift(1)
+        rmin_s = rmin.shift(1)
+
+        donch = dir_s * (c - rmax_s)
+        donch = donch.where(dir_s > 0, -1 * (c - rmin_s))
+
+        feats[f"donch_dist_{k}"] = (donch / atr).clip(lower=0).astype(np.float32)
+
+        pb_raw = dir_s * (c - rmax)
+        pb_raw = pb_raw.where(dir_s > 0, -1 * (c - rmin))
+        feats[f"pullback_{k}"] = (pb_raw / atr).astype(np.float32)
+
+    # tprint(f"Debug: donch_dist_12 raw stats: min={feats['donch_dist_12'].min().min()}, max={feats['donch_dist_12'].max().max()}, nan={feats['donch_dist_12'].isna().mean().mean()}")
+
+    feats["excess_6h"] = (feats["ret1h"].abs() / rv6).astype(np.float32)
+    feats["excess_12h"] = (feats["ret1h"].abs() / rv12).astype(np.float32)
+
+    for k in [2, 4]:
+        feats[f"ft_{k}"] = (feats[f"ret{k}h"] / (feats["ret1h"].abs() + 1e-12)).astype(np.float32)
+        feats[f"failure_{k}"] = (-1 * feats[f"ft_{k}"]).clip(lower=0).astype(np.float32)
+
+    clv_raw = ((c - l) / ((h - l) + 1e-9)) * 2 - 1
+    feats["clv"] = clv_raw.astype(np.float32)
+    feats["clv_mean_2"] = ff.apply_to_frame(feats["clv"], ff._numba_rolling_mean_nan_safe, 2).astype(np.float32)
+    feats["clv_mean_4"] = ff.apply_to_frame(feats["clv"], ff._numba_rolling_mean_nan_safe, 4).astype(np.float32)
+
+    for k in [3, 6]:
+        v_sum = ff.numba_rolling_sum(v, k)
+        ret_k_abs = feats[f"ret{k if k in [6] else 1}h"].abs()
+        if k == 3:
+            ret_k_abs = ff.numba_rolling_sum(c, 3).abs()
+
+        feats[f"evr_{k}"] = (v_sum / (ret_k_abs + 1e-12)).astype(np.float32)
+
+    feats["progress"] = (feats["ret1h"].abs() / (v + 1e-12)).astype(np.float32)
+    feats["speed"] = (feats["ret1h"].abs() / atr).astype(np.float32)
+
+    tail_denom = feats["up_vol_6"] + feats["dn_vol_6"] + 1e-12
+    tail_ratio = feats["dn_vol_6"] / tail_denom
+    tail_ratio = tail_ratio.where(dir_s > 0, feats["up_vol_6"] / tail_denom)
+    feats["tail_against"] = tail_ratio.astype(np.float32)
+
+    feats["asym_ratio"] = (feats["vol_asym_6"] / tail_denom).astype(np.float32)
+
+    o_entry = o.shift(3)
+    h_max_4 = ff.numba_rolling_max(h, 4)
+    l_min_4 = ff.numba_rolling_min(l, 4)
+
+    mfe_long = h_max_4 - o_entry
+    mae_long = o_entry - l_min_4
+
+    mfe = mfe_long.where(dir_s > 0, o_entry - l_min_4)
+    mae = mae_long.where(dir_s > 0, h_max_4 - o_entry)
+
+    feats["mfe_4h"] = (mfe / atr).astype(np.float32)
+    feats["mae_4h"] = (mae / atr).astype(np.float32)
+
+    cur_pnl = (c - o_entry) * dir_s
+    gb = (mfe - cur_pnl) / (mfe + 1e-12)
+    feats["giveback"] = gb.clip(0, 1).astype(np.float32)
+
+    # --- COMPOSITE / INTERACTION FEATURES ---
+
+    feats["thrust_decay_4"] = (feats["ret1h"].abs() / (feats["ret4h"].abs() + 1e-12)).astype(np.float32)
+    feats["decel_4"] = (feats["momentum_accel"].abs() / rv6).astype(np.float32)
+    feats["ft_drop"] = (feats["ft_2"] - feats["ft_4"]).astype(np.float32)
+
+    feats["ext_excess"] = (feats["donch_dist_12"] * feats["excess_6h"]).astype(np.float32)
+    feats["ext_atrExp"] = (feats["donch_dist_12"] * np.log(feats["atr_expansion"] + 1e-12)).astype(np.float32)
+    feats["comp_to_exp"] = ((1.0 / (feats["vol_compression"] + 1e-12)) * feats["atr_expansion"]).astype(np.float32)
+
+    feats["evr6_x_volz"] = (feats["evr_6"] * (feats["vol_z24"] + 1.0)).astype(np.float32)
+    feats["stall_x_flow"] = (feats["delta_stall_6"] * feats["flow_persistence"]).astype(np.float32)
+    feats["prog_def"] = (feats["excess_6h"] / (feats["progress"] + 1e-12)).astype(np.float32)
+
+    feats["clv_collapse"] = (feats["clv_mean_2"] - feats["clv_mean_4"]).astype(np.float32)
+    feats["clv_pullback"] = ((1.0 - feats["clv_mean_4"]) * feats["pullback_4"].abs()).astype(np.float32)
+
+    feats["coh"] = (dir_s * (feats["ret1h"] + feats["ret2h"] + feats["ret4h"])) / rv6
+    feats["align"] = (dir_s * np.sign(feats["slope"])).astype(np.float32)
+    feats["retest_quality"] = ((1.0 - feats["pullback_2"].abs()) * feats["clv_mean_2"]).astype(np.float32)
+    feats["pb_accel"] = ((feats["pullback_2"] - feats["pullback_4"]) / atr).astype(np.float32)
+    feats["rv_ratio_6_24"] = (rv6 / (feats["rv_24h"] + 1e-12)).astype(np.float32)
+    feats["excess_coh"] = (feats["excess_6h"] * feats["coh"]).astype(np.float32)
+    feats["asym_ft"] = (feats["ft_2"] * feats["asym_ratio"] * dir_s).astype(np.float32)
+    feats["dist_stack"] = (feats["dist_ema_fast"] + feats["dist_vwap_norm"] + feats["trend_pct"]).astype(np.float32)
+    feats["tf_bias"] = (feats["coh"] * (1.0 / (1.0 + feats["donch_dist_12"]))).astype(np.float32)
+
+    feats["shock_rel"] = feats["excess_6h"]
+    feats["resid_strength"] = feats["excess_6h"]
+    feats["evr_slope"] = (feats["evr_3"] - feats["evr_6"]).astype(np.float32)
+    feats["stall_ext"] = (feats["delta_stall_6"] * feats["donch_dist_12"]).astype(np.float32)
+
+    # GATES
+    feats["G_EXH_STALL_EXT"] = (feats["donch_dist_12"] * (1.0 - feats["delta_stall_6"])).astype(np.float32)
+    feats["G_EXH_EFFORT"] = (feats["evr_6"] * (feats["vol_z24"] + 1.0) / (feats["progress"] + 1e-12)).astype(np.float32)
+    feats["G_EXH_BLOWOFF"] = (feats["donch_dist_12"] * feats["excess_6h"]).astype(np.float32)
+    feats["G_EXH_GIVEBACK"] = (feats["giveback"] * (1.0 + feats["donch_dist_12"])).astype(np.float32)
+    feats["G_EXH_REJECT"] = ((1.0 - feats["clv_mean_4"]) * feats["pullback_4"].abs()).astype(np.float32)
+    feats["G_EXH_TAIL_FAIL"] = (feats["tail_against"] * (feats["ft_2"] - feats["ft_4"]).clip(lower=0)).astype(np.float32)
+
+    ft2_pos = feats["ft_2"].clip(lower=0)
+    clv4_pos = feats["clv_mean_4"].clip(lower=0)
+    pb2_inv = (1.0 - feats["pullback_2"].abs().clip(0,1))
+
+    feats["G_TF_ACCEPT"] = (ft2_pos * clv4_pos).astype(np.float32)
+    feats["G_TF_ACCEPT2"] = (ft2_pos * clv4_pos * pb2_inv).astype(np.float32)
+
+    fail_sum = (feats["failure_2"] + feats["failure_4"])
+    clv_inv = (1.0 - feats["clv_mean_4"])
+    pb_avg = (feats["pullback_2"].abs() + feats["pullback_4"].abs()) / 2.0
+    feats["G_MR_REJECT"] = (fail_sum * clv_inv * pb_avg).astype(np.float32)
+
+    feats["G_MR_OVEREXT"] = (feats["donch_dist_12"] * (1.0 - ft2_pos)).astype(np.float32)
+    feats["G_MR_SPIKE"] = (feats["speed"] * feats["excess_6h"] * clv_inv).astype(np.float32)
+
+    ret_rat = (feats["ret4h"].abs() / (feats["ret1h"].abs() + 1e-12))
+    feats["G_TF_GRIND"] = (ret_rat * feats["clv_mean_4"] * pb2_inv).astype(np.float32)
+    feats["G_MR_TAIL"] = (feats["tail_against"] * (1.0 + feats["donch_dist_6"])).astype(np.float32)
+
+    ft4_pos = feats["ft_4"].clip(lower=0)
+    pb4_inv = (1.0 - feats["pullback_4"].abs().clip(0,1))
+    feats["G_TF_RETEST_OK"] = (ft4_pos * clv4_pos * pb4_inv).astype(np.float32)
+
+    feats["G_META_EXH"] = (feats["G_EXH_BLOWOFF"] + feats["G_EXH_EFFORT"] + feats["G_EXH_STALL_EXT"] + feats["G_EXH_GIVEBACK"]).astype(np.float32)
+    feats["G_META_TF_QUAL"] = (feats["G_TF_ACCEPT2"] * (1.0 - feats["G_META_EXH"].clip(0,1))).astype(np.float32)
+    feats["G_META_MR_QUAL"] = (feats["G_MR_REJECT"] * (1.0 - feats["G_EXH_BLOWOFF"].clip(0,1))).astype(np.float32)
+
+    ambig_term = (1.0 - np.maximum(feats["G_TF_ACCEPT2"], feats["G_MR_REJECT"]))
+    feats["G_META_AMBIG"] = (ambig_term * feats["rv_ratio_6_24"]).astype(np.float32)
+
+    feats["spike_score"] = (feats["speed"] * feats["excess_6h"]).astype(np.float32)
+    feats["grind_score"] = (ret_rat * feats["clv_mean_4"]).astype(np.float32)
+    coh_norm = feats["coh"].clip(0,1)
+    feats["chop_score"] = (feats["rv_ratio_6_24"] * (1.0 - coh_norm)).astype(np.float32)
 
     tprint("Features: Applying Causal Transforms (Log + Winsor + ZScore)")
     transformer = CausalFeatureTransformer(winsor_qt=0.02, roll_window=24*30)

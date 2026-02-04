@@ -60,7 +60,7 @@ CFG = {
     "min_model_stability_to_trade": 0.15,
 
     # causal cols for interaction toggles
-    # Added new meta features here to ensure they are carried over
+    # Added new features for TF/MR/Meta
     "drop_raw_causal": True,
     "causal_cols": [
         "a_ret24h","a_rsi","a_volz","a_atr","a_trend","a_rv24",
@@ -70,7 +70,20 @@ CFG = {
         "vol_asym", "skew", "efficiency", "fvg",
         "rvol_z", "vol_range_shock", "climax_decay",
         "cumulative_delta_stall", "vol_expansion_ratio", "vol_compression",
-        "atr_slope", "dist_vwap_norm", "momentum_accel"
+        "atr_slope", "dist_vwap_norm", "momentum_accel",
+        # New Feature Candidates
+        "thrust_decay_4", "decel_4", "ft_drop", "ext_excess", "ext_atrExp",
+        "comp_to_exp", "evr6_x_volz", "stall_x_flow", "prog_def",
+        "clv_collapse", "clv_pullback", "coh", "align", "retest_quality",
+        "pb_accel", "rv_ratio_6_24", "excess_coh", "asym_ft", "dist_stack",
+        "tf_bias", "shock_rel", "resid_strength", "evr_slope", "stall_ext",
+        "spike_score", "grind_score", "chop_score",
+        # Gates as continuous features
+        "G_EXH_STALL_EXT", "G_EXH_EFFORT", "G_EXH_BLOWOFF", "G_EXH_GIVEBACK",
+        "G_EXH_REJECT", "G_EXH_TAIL_FAIL",
+        "G_TF_ACCEPT", "G_TF_ACCEPT2", "G_MR_REJECT", "G_MR_OVEREXT",
+        "G_MR_SPIKE", "G_TF_GRIND", "G_MR_TAIL", "G_TF_RETEST_OK",
+        "G_META_EXH", "G_META_TF_QUAL", "G_META_MR_QUAL", "G_META_AMBIG"
     ],
 
     # thresholds / picks
@@ -131,7 +144,18 @@ CFG = {
         "sin_hod", "cos_hod", "sin_dow", "cos_dow",
         "efficiency", "v_power", "skew", "fvg",
         "rvol_z", "vol_range_shock", "climax_decay",
-        "cumulative_delta_stall", "vol_expansion_ratio", "vol_compression"
+        "cumulative_delta_stall", "vol_expansion_ratio", "vol_compression",
+        # New Specialist Features
+        "giveback", "mfe_4h", "mae_4h",
+        "evr_3", "evr_6", "delta_stall_6", "progress",
+        "excess_6h", "excess_12h", "clv", "clv_mean_4",
+        "speed", "up_vol_6", "dn_vol_6", "vol_asym_6", "asym_ratio",
+        "thrust_decay_4", "decel_4", "ft_drop",
+        "ext_excess", "ext_atrExp", "comp_to_exp",
+        "evr6_x_volz", "stall_x_flow", "prog_def",
+        "clv_collapse", "clv_pullback",
+        "G_EXH_STALL_EXT", "G_EXH_EFFORT", "G_EXH_BLOWOFF",
+        "G_EXH_GIVEBACK", "G_EXH_REJECT", "G_EXH_TAIL_FAIL"
     ],
 
     # Model Params (Lasso selection)

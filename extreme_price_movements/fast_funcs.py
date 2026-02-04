@@ -446,6 +446,169 @@ def numba_grouped_rolling_mean(df: pd.DataFrame, group_series: pd.Series, window
 
     return out
 
+@jit(nopython=True, cache=True)
+def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend, max_near_pct, min_rev_pct):
+    """
+    Computes "Peak Proximity" label and sample weights.
+    Returns: (labels, weights)
+
+    Weight = log(1 + Y / (X^2 * ATR))
+    X: Proximity (abs diff price to peak)
+    Y: Reversal size (abs diff peak to subsequent extremum)
+    ATR: Rolling ATR at t
+
+    If label=0, weight=1.0.
+    """
+    n = len(close)
+    labels = np.zeros(n, dtype=np.float32)
+    weights = np.ones(n, dtype=np.float32)
+
+    # We iterate up to n - horizon to ensure we have full lookahead
+    # Last H bars will be 0 (unlabeled)
+    for i in range(n - horizon):
+        curr_p = close[i]
+        curr_atr = atr[i]
+
+        # Valid ATR check
+        if np.isnan(curr_atr) or curr_atr <= 0 or np.isnan(curr_p):
+            continue
+
+        # Calculate base distances
+        raw_limit = rev_k * curr_atr
+        raw_near = near_k * curr_atr
+
+        # Apply Clipping
+        # near_dist = min(ATR-based, Cap)
+        near_dist = min(raw_near, max_near_pct * curr_p)
+
+        # limit_dist = max(ATR-based, Floor)
+        limit_dist = max(raw_limit, min_rev_pct * curr_p)
+
+        # Define search window: (i+1, i+1+horizon)
+        start_search = i + 1
+        end_search = min(n, i + 1 + horizon)
+
+        if start_search >= end_search:
+            continue
+
+        if is_uptrend: # Looking for Peak (Top)
+            # 1. Find Forward Max (Peak)
+            fwd_max = -np.inf
+            idx_max = -1
+
+            for j in range(start_search, end_search):
+                val = close[j]
+                if not np.isnan(val):
+                    if val > fwd_max:
+                        fwd_max = val
+                        idx_max = j
+
+            if idx_max == -1: continue
+
+            # 2. Check Peak Proximity
+            if curr_p < (fwd_max - near_dist):
+                continue
+
+            # 3. Check Reversal AFTER Peak
+            # We need a drawdown from fwd_max of size limit_dist
+            # The drawdown must happen in [idx_max + 1, end_search)
+            # If peak is the last bar (idx_max == end_search-1), no reversal can be checked
+            if idx_max >= end_search - 1:
+                continue
+
+            # Find Max Reversal (Min Price after Peak)
+            fwd_min_after = np.inf
+
+            for j in range(idx_max + 1, end_search):
+                val = close[j]
+                if not np.isnan(val):
+                    if val < fwd_min_after:
+                        fwd_min_after = val
+
+            if fwd_min_after == np.inf: continue
+
+            # Check if reversal is big enough
+            reversal_size = fwd_max - fwd_min_after
+            if reversal_size >= limit_dist:
+                labels[i] = 1.0
+
+                # Weight Calculation
+                # X = distance to peak = fwd_max - curr_p
+                # Y = reversal size = reversal_size
+                # ATR = curr_atr
+                # W = log(1 + Y / (X^2 * ATR)) -> No, user said Y/(X^2 * ATR)
+                # Wait, units.
+                # Y is price diff. X is price diff. ATR is price diff.
+                # X^2 is price^2.
+                # Y / (X^2 * ATR) -> price / (price^3) = 1/price^2.
+                # This seems dimensionally weird if not normalized?
+                # User: "Ensure Y is defined in price units OR drop ATR normalisation if Y is already in ATR units"
+                # If X, Y, ATR are all price units:
+                # X ~ 100. X^2 ~ 10000. ATR ~ 100.
+                # Y ~ 200.
+                # Y / (X^2 * ATR) ~ 200 / (10000 * 100) ~ small.
+                # Maybe user meant X in ATR units?
+                # "timing X² matters more"
+                # If X is small (near 0), X^2 is very small. Denom small -> Weight huge.
+                # If X is in price units (e.g. 1.0), X^2 = 1.0.
+                # Let's assume user wants raw values but we should protect against div/0.
+
+                X_val = fwd_max - curr_p
+                Y_val = reversal_size
+
+                # Protect X=0
+                X_safe = max(X_val, 1e-4)
+
+                term = Y_val / ((X_safe**2) * curr_atr)
+                weights[i] = np.log1p(term)
+
+        else: # Looking for Trough (Bottom)
+            # 1. Find Forward Min (Trough)
+            fwd_min = np.inf
+            idx_min = -1
+
+            for j in range(start_search, end_search):
+                val = close[j]
+                if not np.isnan(val):
+                    if val < fwd_min:
+                        fwd_min = val
+                        idx_min = j
+
+            if idx_min == -1: continue
+
+            # 2. Check Trough Proximity
+            if curr_p > (fwd_min + near_dist):
+                continue
+
+            # 3. Check Rally AFTER Trough
+            if idx_min >= end_search - 1:
+                continue
+
+            # Find Max Reversal (Max Price after Trough)
+            fwd_max_after = -np.inf
+            for j in range(idx_min + 1, end_search):
+                val = close[j]
+                if not np.isnan(val):
+                    if val > fwd_max_after:
+                        fwd_max_after = val
+
+            if fwd_max_after == -np.inf: continue
+
+            reversal_size = fwd_max_after - fwd_min
+            if reversal_size >= limit_dist:
+                labels[i] = 1.0
+
+                # Weight Calculation
+                # X = distance to trough = curr_p - fwd_min
+                X_val = curr_p - fwd_min
+                Y_val = reversal_size
+
+                X_safe = max(X_val, 1e-4)
+                term = Y_val / ((X_safe**2) * curr_atr)
+                weights[i] = np.log1p(term)
+
+    return labels, weights
+
 # Wrappers
 def numba_rolling_max(df, n):
     tprint(f"Entering function: numba_rolling_max in fast_funcs.py")
@@ -483,6 +646,36 @@ def numba_rolling_std(df, n):
     tprint(f"Entering function: numba_rolling_std in fast_funcs.py")
     return apply_to_frame(df, _numba_rolling_std_nan_safe, n)
 
+def compute_peak_labels_and_weights(close_df, atr_df, horizon, near_k, rev_k, is_uptrend, max_near_pct=0.02, min_rev_pct=0.005):
+    tprint(f"Entering function: compute_peak_labels_and_weights in fast_funcs.py")
+
+    # We need a custom apply because we return TWO frames (labels, weights)
+    # The existing apply_to_frame_binary returns one.
+    # We'll implement a custom loop here since it's cleaner than modifying the generic helper.
+
+    cols = close_df.columns
+    idx = close_df.index
+
+    l_out = pd.DataFrame(index=idx, columns=cols, dtype=np.float32)
+    w_out = pd.DataFrame(index=idx, columns=cols, dtype=np.float32)
+
+    for c in cols:
+        if c not in atr_df.columns: continue
+
+        c_arr = close_df[c].to_numpy(dtype=np.float32)
+        a_arr = atr_df[c].to_numpy(dtype=np.float32)
+
+        l_arr, w_arr = _numba_peak_label_and_weight(
+            c_arr, a_arr,
+            horizon, near_k, rev_k, is_uptrend,
+            max_near_pct, min_rev_pct
+        )
+
+        l_out[c] = l_arr
+        w_out[c] = w_arr
+
+    return l_out, w_out
+  
 @jit(nopython=True, cache=True)
 def _numba_frac_diff_kernel(x, d, window):
     # Fixed Width Window Frac Diff

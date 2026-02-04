@@ -43,44 +43,118 @@ def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, sy
     idx_slice = idx[mask]
     valid_syms = [s for s in syms if s in c.columns]
     if not valid_syms: return None, None, None
-    close_sub = c.loc[idx_slice, valid_syms].astype(np.float32)
-    rev_close = close_sub.iloc[::-1]
-    fmax = rev_close.rolling(H).max().shift(1).iloc[::-1]
-    fmin = rev_close.rolling(H).min().shift(1).iloc[::-1]
     t_index = idx[(idx >= ts_start) & (idx <= ts_train_end)]
-    fmax = fmax.loc[t_index]; fmin = fmin.loc[t_index]
-    thr = float(cfg["exh_reversal_thr"])
     current = c.loc[t_index, valid_syms]
-    is_short_rev = ((fmin / (current + 1e-12)) - 1.0) <= -thr
-    is_long_rev = ((fmax / (current + 1e-12)) - 1.0) >= thr
+
+    if cfg.get("exh_label_type", "simple") == "peak":
+        use_atr = cfg.get("exh_use_atr", True)
+        if use_atr and "atr_pct" in feats:
+             atr_full = feats["atr_pct"] * panel["close"]
+             near_k = float(cfg.get("exh_atr_near_k", 0.5))
+             rev_k = float(cfg.get("exh_atr_rev_k", 2.0))
+        else:
+             atr_full = panel["close"]
+             near_k = float(cfg.get("exh_near_thr", 0.01))
+             rev_k = float(cfg.get("exh_rev_thr_pct", 0.04))
+
+        common_idx = panel["close"].index.intersection(atr_full.index)
+        c_full = panel["close"].loc[common_idx]
+        a_full = atr_full.loc[common_idx]
+
+        max_near = float(cfg.get("exh_near_dist_cap_pct", 0.02))
+        min_rev = float(cfg.get("exh_rev_dist_floor_pct", 0.005))
+
+        l_short, w_short = ff.compute_peak_labels_and_weights(c_full, a_full, H, near_k, rev_k, True, max_near, min_rev)
+        l_long, w_long = ff.compute_peak_labels_and_weights(c_full, a_full, H, near_k, rev_k, False, max_near, min_rev)
+
+        l_short_s = l_short.reindex(index=t_index, columns=valid_syms)
+        l_long_s = l_long.reindex(index=t_index, columns=valid_syms)
+        w_short_s = w_short.reindex(index=t_index, columns=valid_syms)
+        w_long_s = w_long.reindex(index=t_index, columns=valid_syms)
+
+        is_short_rev = l_short_s.fillna(0) > 0.5
+        is_long_rev = l_long_s.fillna(0) > 0.5
+
+        # We need to store weights for later use.
+        # But build_exhaustion_Xy returns X, y, cols. It doesn't return weights yet.
+        # However, the user asked to "add sample weights".
+        # build_exhaustion_Xy is called by compute_p_exhaustion_at_t, which fits the model.
+        # We need to update build_exhaustion_Xy signature to return weights or handle them.
+    else:
+        close_sub = c.loc[idx_slice, valid_syms].astype(np.float32)
+        rev_close = close_sub.iloc[::-1]
+        fmax = rev_close.rolling(H).max().shift(1).iloc[::-1]
+        fmin = rev_close.rolling(H).min().shift(1).iloc[::-1]
+        fmax = fmax.loc[t_index]; fmin = fmin.loc[t_index]
+        thr = float(cfg["exh_reversal_thr"])
+        is_short_rev = ((fmin / (current + 1e-12)) - 1.0) <= -thr
+        is_long_rev = ((fmax / (current + 1e-12)) - 1.0) >= thr
     ret24 = feats["ret24h"].loc[t_index, valid_syms]
     dir_mat = np.sign(ret24).astype(np.int8)
     y = np.zeros(current.shape, dtype=np.int8)
-    y[dir_mat > 0] = is_short_rev.values[dir_mat > 0].astype(np.int8)
-    y[dir_mat < 0] = is_long_rev.values[dir_mat < 0].astype(np.int8)
+    w = np.ones(current.shape, dtype=np.float32)
+
+    # Assign labels and weights
+    # For uptrend (dir_mat > 0), use short reversal labels/weights
+    mask_up = (dir_mat > 0)
+    if mask_up.any():
+        # Align index/columns
+        # is_short_rev is a DataFrame aligned with current
+        # w_short_s is a DataFrame aligned with current
+        y[mask_up] = is_short_rev.values[mask_up].astype(np.int8)
+        if cfg.get("exh_label_type") == "peak":
+             w[mask_up] = w_short_s.values[mask_up].astype(np.float32)
+
+    mask_dn = (dir_mat < 0)
+    if mask_dn.any():
+        y[mask_dn] = is_long_rev.values[mask_dn].astype(np.int8)
+        if cfg.get("exh_label_type") == "peak":
+             w[mask_dn] = w_long_s.values[mask_dn].astype(np.float32)
+
+    # Winsorize Weights (Top 80% kept -> Clip top 20%)
+    # Winsorize only if we have weights > 1
+    if cfg.get("exh_label_type") == "peak":
+        # Global winsorization or per-batch? Global over the passed slice is fine.
+        w_flat = w.flatten()
+        q_high = np.nanquantile(w_flat, 0.80)
+        # Wait, "Winsorise the top 80%" usually means clamp outliers.
+        # User: "Winsorise the top 80%" -> probably means "Winsorize at 80th percentile" (clamp top 20%).
+        # Or keep 80%? Usually top 1-5% are outliers. 20% is aggressive but user requested it.
+        # If weights are mostly 1.0 (negatives), then quantile 0.8 might be 1.0.
+        # We should only winsorize the boosted weights (w > 1).
+
+        mask_boosted = w > 1.0
+        if mask_boosted.sum() > 10:
+             boosted_vals = w[mask_boosted]
+             cap = np.quantile(boosted_vals, 0.80)
+             w[w > cap] = cap
     X_parts = []
     for k in cfg["exh_feature_keys"]:
         if k in feats:
-            X_parts.append(feats[k].loc[t_index, valid_syms].stack(dropna=False).rename(k))
+            X_parts.append(feats[k].loc[t_index, valid_syms].stack(future_stack=True).rename(k))
     X = pd.concat(X_parts, axis=1)
     X.index.names = ["ts", "symbol"]
     if trend_filter:
-        trend_vals = feats["trend_pct"].loc[t_index, valid_syms].stack(dropna=False)
+        trend_vals = feats["trend_pct"].loc[t_index, valid_syms].stack(future_stack=True)
         common_idx = X.index.intersection(trend_vals.index)
         X = X.loc[common_idx]; trend_vals = trend_vals.loc[common_idx]
         if trend_filter == "up": keep = trend_vals > 0
         else: keep = trend_vals <= 0
         X = X[keep]
-        y_ser = pd.DataFrame(y, index=t_index, columns=valid_syms).stack(dropna=False).rename("y").reindex(X.index)
+        y_ser = pd.DataFrame(y, index=t_index, columns=valid_syms).stack(future_stack=True).rename("y").reindex(X.index)
         y_arr = y_ser.values.astype(int)
     else:
-        y_ser = pd.DataFrame(y, index=t_index, columns=valid_syms).stack(dropna=False).rename("y")
-        X = X.join(y_ser).dropna()
+        y_df = pd.DataFrame(y, index=t_index, columns=valid_syms).stack(future_stack=True).rename("y")
+        w_df = pd.DataFrame(w, index=t_index, columns=valid_syms).stack(future_stack=True).rename("w")
+        X = X.join(y_df).join(w_df).dropna()
         y_arr = X.pop("y").astype(int).values
+        w_arr = X.pop("w").astype(np.float32).values
+
     mg = mkt_gates.loc[t_index, ["mkt_ret24h", "mkt_ret6h", "mkt_trend", "mkt_rv", "G_VOL", "G_TREND"]]
     for col in mg.columns:
         X[col] = X.index.get_level_values("ts").map(mg[col])
-    return X, y_arr, list(X.columns)
+
+    return X, y_arr, w_arr, list(X.columns)
 
 def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms, models=None):
     # (Same as before)
@@ -95,10 +169,10 @@ def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms, models=Non
     if up_syms:
         if models and "up" in models: model_up = models["up"]
         else:
-            X, y, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts, lookback, valid_syms, trend_filter="up")
+            X, y, w, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts, lookback, valid_syms, trend_filter="up")
             if X is not None and len(y) > 100:
                 model_up = ExhaustionModel(C=cfg["exh_C"], l1_ratio=cfg["exh_l1_ratio"])
-                model_up.fit(X, y)
+                model_up.fit(X, y, sample_weight=w)
             else: model_up = None
         if model_up:
             Xp = _build_pred_X(feats, mkt_gates, cfg, ts, up_syms)
@@ -109,10 +183,10 @@ def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms, models=Non
     if dn_syms:
         if models and "down" in models: model_dn = models["down"]
         else:
-            X, y, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts, lookback, valid_syms, trend_filter="down")
+            X, y, w, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts, lookback, valid_syms, trend_filter="down")
             if X is not None and len(y) > 100:
                 model_dn = ExhaustionModel(C=cfg["exh_C"], l1_ratio=cfg["exh_l1_ratio"])
-                model_dn.fit(X, y)
+                model_dn.fit(X, y, sample_weight=w)
             else: model_dn = None
         if model_dn:
             Xp = _build_pred_X(feats, mkt_gates, cfg, ts, dn_syms)
@@ -127,7 +201,7 @@ def _build_pred_X(feats, mkt_gates, cfg, ts, syms):
     X_parts = []
     for k in cfg["exh_feature_keys"]:
         if k in feats:
-            X_parts.append(feats[k].loc[t_index, syms].stack(dropna=False).rename(k))
+            X_parts.append(feats[k].loc[t_index, syms].stack(future_stack=True).rename(k))
     Xp = pd.concat(X_parts, axis=1)
     Xp.index.names = ["ts", "symbol"]
     mg = mkt_gates.loc[t_index, ["mkt_ret24h", "mkt_ret6h", "mkt_trend", "mkt_rv", "G_VOL", "G_TREND"]]
@@ -140,16 +214,16 @@ def generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_end, lookback_h
     tprint(f"Entering function: generate_exhaustion_history in training.py")
     train_end = ts_end - pd.Timedelta(hours=lookback_hours)
     train_len = cfg["exh_train_lookback_hours"]
-    X_up, y_up, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, train_end, train_len, syms, trend_filter="up")
+    X_up, y_up, w_up, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, train_end, train_len, syms, trend_filter="up")
     model_up = None
     if X_up is not None and len(y_up) > 100:
         model_up = ExhaustionModel(C=cfg["exh_C"], l1_ratio=cfg["exh_l1_ratio"])
-        model_up.fit(X_up, y_up)
-    X_dn, y_dn, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, train_end, train_len, syms, trend_filter="down")
+        model_up.fit(X_up, y_up, sample_weight=w_up)
+    X_dn, y_dn, w_dn, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, train_end, train_len, syms, trend_filter="down")
     model_dn = None
     if X_dn is not None and len(y_dn) > 100:
         model_dn = ExhaustionModel(C=cfg["exh_C"], l1_ratio=cfg["exh_l1_ratio"])
-        model_dn.fit(X_dn, y_dn)
+        model_dn.fit(X_dn, y_dn, sample_weight=w_dn)
     t_idx = pd.date_range(train_end, ts_end, freq='h', tz="UTC")
     t_idx = t_idx[t_idx.isin(panel["close"].index)]
     valid_syms = [s for s in syms if s in panel["close"].columns]
@@ -161,7 +235,7 @@ def generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_end, lookback_h
     p_dn = 0.0
     if model_dn:
         p_dn = model_dn.predict_proba(Xp)
-    trend_vals = feats["trend_pct"].loc[t_idx, valid_syms].stack(dropna=False).reindex(Xp.index).fillna(0)
+    trend_vals = feats["trend_pct"].loc[t_idx, valid_syms].stack(future_stack=True).reindex(Xp.index).fillna(0)
     p_final = np.where(trend_vals > 0, p_up, p_dn)
     res_ser = pd.Series(p_final, index=Xp.index)
     res_df = res_ser.unstack(level="symbol").reindex(columns=syms).fillna(0.0)
@@ -172,7 +246,7 @@ def _build_pred_X_window(feats, mkt_gates, cfg, t_idx, syms):
     X_parts = []
     for k in cfg["exh_feature_keys"]:
         if k in feats:
-            X_parts.append(feats[k].loc[t_idx, syms].stack(dropna=False).rename(k))
+            X_parts.append(feats[k].loc[t_idx, syms].stack(future_stack=True).rename(k))
     Xp = pd.concat(X_parts, axis=1)
     Xp.index.names = ["ts", "symbol"]
     mg = mkt_gates.loc[t_idx, ["mkt_ret24h", "mkt_ret6h", "mkt_trend", "mkt_rv", "G_VOL", "G_TREND"]]
@@ -630,10 +704,10 @@ def select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
     exh_models = {}
     lookback = cfg["exh_train_lookback_hours"]
     for d in directions:
-        X, y, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts, lookback, syms, trend_filter=d)
+        X, y, w, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts, lookback, syms, trend_filter=d)
         if X is not None and len(y) > 100:
             m = ExhaustionModel(C=cfg["exh_C"], l1_ratio=cfg["exh_l1_ratio"])
-            m.fit(X, y)
+            m.fit(X, y, sample_weight=w)
             exh_models[d] = m
         else: exh_models[d] = None
     return {"alpha_models": final_models, "exh_models": exh_models, "meta_models": meta_models}

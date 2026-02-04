@@ -1328,10 +1328,15 @@ def _numba_rolling_correlation(x: np.ndarray, y: np.ndarray, window: int) -> np.
             vary = (syy * inv_w) - (my * my)
             cov = (sxy * inv_w) - (mx * my)
 
-            if varx <= _EPS or vary <= _EPS:
+            # Robust check for zero/NaN variance
+            if np.isnan(varx) or np.isnan(vary) or varx <= _EPS or vary <= _EPS:
                 out[i] = 0.0
             else:
-                out[i] = cov / np.sqrt(varx * vary)
+                denom = np.sqrt(varx * vary)
+                if denom <= _EPS:
+                    out[i] = 0.0
+                else:
+                    out[i] = cov / denom
 
     return out
 

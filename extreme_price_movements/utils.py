@@ -14,9 +14,13 @@ def retry_with_backoff(retries=3, backoff_in_seconds=1):
             x = 0
             while True:
                 try:
-                    return func(*args, **kwargs)
+                    tprint(f"Attempting {func.__name__} (attempt {x + 1})...")
+                    result = func(*args, **kwargs)
+                    tprint(f"{func.__name__} succeeded on attempt {x + 1}.")
+                    return result
                 except Exception as e:
                     if x == retries:
+                        tprint(f"Max retries reached for {func.__name__}. Raising exception.")
                         raise e
                     sleep = (backoff_in_seconds * 2 ** x +
                              random.uniform(0, 1))
@@ -27,7 +31,7 @@ def retry_with_backoff(retries=3, backoff_in_seconds=1):
     return decorator
 
 def tprint(msg: str):
-    ts = pd.Timestamp.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    ts = pd.Timestamp.now('UTC').strftime("%Y-%m-%d %H:%M:%S")
     sys.stdout.write(f"[{ts} UTC] {msg}\n")
     sys.stdout.flush()
 

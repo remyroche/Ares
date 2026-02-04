@@ -416,18 +416,21 @@ def numba_grouped_rolling_mean(df: pd.DataFrame, group_series: pd.Series, window
     return out
 
 @jit(nopython=True, cache=True)
-def _numba_peak_label(close, atr, horizon, near_k, rev_k, is_uptrend, max_near_pct, min_rev_pct):
+def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend, max_near_pct, min_rev_pct):
     """
-    Computes "Peak Proximity" label with strict causal ATR logic.
-    1 if:
-      - Price at t is within near_k * ATR[t] of the forward peak P (in [t+1, t+H]).
-      - A significant reversal of size rev_k * ATR[t] occurs AFTER P within the horizon.
+    Computes "Peak Proximity" label and sample weights.
+    Returns: (labels, weights)
 
-    is_uptrend=True: looking for a Top (Peak).
-    is_uptrend=False: looking for a Bottom (Trough).
+    Weight = log(1 + Y / (X^2 * ATR))
+    X: Proximity (abs diff price to peak)
+    Y: Reversal size (abs diff peak to subsequent extremum)
+    ATR: Rolling ATR at t
+
+    If label=0, weight=1.0.
     """
     n = len(close)
-    out = np.zeros(n, dtype=np.float32) # Using float32 for compatibility with pipeline
+    labels = np.zeros(n, dtype=np.float32)
+    weights = np.ones(n, dtype=np.float32)
 
     # We iterate up to n - horizon to ensure we have full lookahead
     # Last H bars will be 0 (unlabeled)
@@ -482,16 +485,51 @@ def _numba_peak_label(close, atr, horizon, near_k, rev_k, is_uptrend, max_near_p
             if idx_max >= end_search - 1:
                 continue
 
-            reversal_confirmed = False
+            # Find Max Reversal (Min Price after Peak)
+            fwd_min_after = np.inf
+
             for j in range(idx_max + 1, end_search):
                 val = close[j]
                 if not np.isnan(val):
-                    if val <= (fwd_max - limit_dist):
-                        reversal_confirmed = True
-                        break
+                    if val < fwd_min_after:
+                        fwd_min_after = val
 
-            if reversal_confirmed:
-                out[i] = 1.0
+            if fwd_min_after == np.inf: continue
+
+            # Check if reversal is big enough
+            reversal_size = fwd_max - fwd_min_after
+            if reversal_size >= limit_dist:
+                labels[i] = 1.0
+
+                # Weight Calculation
+                # X = distance to peak = fwd_max - curr_p
+                # Y = reversal size = reversal_size
+                # ATR = curr_atr
+                # W = log(1 + Y / (X^2 * ATR)) -> No, user said Y/(X^2 * ATR)
+                # Wait, units.
+                # Y is price diff. X is price diff. ATR is price diff.
+                # X^2 is price^2.
+                # Y / (X^2 * ATR) -> price / (price^3) = 1/price^2.
+                # This seems dimensionally weird if not normalized?
+                # User: "Ensure Y is defined in price units OR drop ATR normalisation if Y is already in ATR units"
+                # If X, Y, ATR are all price units:
+                # X ~ 100. X^2 ~ 10000. ATR ~ 100.
+                # Y ~ 200.
+                # Y / (X^2 * ATR) ~ 200 / (10000 * 100) ~ small.
+                # Maybe user meant X in ATR units?
+                # "timing X² matters more"
+                # If X is small (near 0), X^2 is very small. Denom small -> Weight huge.
+                # If X is in price units (e.g. 1.0), X^2 = 1.0.
+                # Let's assume user wants raw values but we should protect against div/0.
+
+                X_val = fwd_max - curr_p
+                Y_val = reversal_size
+
+                # Protect X=0
+                X_safe = max(X_val, 1e-4)
+
+                term = Y_val / ((X_safe**2) * curr_atr)
+                weights[i] = np.log1p(term)
 
         else: # Looking for Trough (Bottom)
             # 1. Find Forward Min (Trough)
@@ -515,18 +553,30 @@ def _numba_peak_label(close, atr, horizon, near_k, rev_k, is_uptrend, max_near_p
             if idx_min >= end_search - 1:
                 continue
 
-            reversal_confirmed = False
+            # Find Max Reversal (Max Price after Trough)
+            fwd_max_after = -np.inf
             for j in range(idx_min + 1, end_search):
                 val = close[j]
                 if not np.isnan(val):
-                    if val >= (fwd_min + limit_dist):
-                        reversal_confirmed = True
-                        break
+                    if val > fwd_max_after:
+                        fwd_max_after = val
 
-            if reversal_confirmed:
-                out[i] = 1.0
+            if fwd_max_after == -np.inf: continue
 
-    return out
+            reversal_size = fwd_max_after - fwd_min
+            if reversal_size >= limit_dist:
+                labels[i] = 1.0
+
+                # Weight Calculation
+                # X = distance to trough = curr_p - fwd_min
+                X_val = curr_p - fwd_min
+                Y_val = reversal_size
+
+                X_safe = max(X_val, 1e-4)
+                term = Y_val / ((X_safe**2) * curr_atr)
+                weights[i] = np.log1p(term)
+
+    return labels, weights
 
 # Wrappers
 def numba_rolling_max(df, n):
@@ -565,10 +615,32 @@ def numba_rolling_std(df, n):
     tprint(f"Entering function: numba_rolling_std in fast_funcs.py")
     return apply_to_frame(df, _numba_rolling_std_nan_safe, n)
 
-def compute_peak_labels(close_df, atr_df, horizon, near_k, rev_k, is_uptrend, max_near_pct=0.02, min_rev_pct=0.005):
-    tprint(f"Entering function: compute_peak_labels in fast_funcs.py")
-    return apply_to_frame_binary(
-        close_df, atr_df,
-        _numba_peak_label,
-        horizon, near_k, rev_k, is_uptrend, max_near_pct, min_rev_pct
-    )
+def compute_peak_labels_and_weights(close_df, atr_df, horizon, near_k, rev_k, is_uptrend, max_near_pct=0.02, min_rev_pct=0.005):
+    tprint(f"Entering function: compute_peak_labels_and_weights in fast_funcs.py")
+
+    # We need a custom apply because we return TWO frames (labels, weights)
+    # The existing apply_to_frame_binary returns one.
+    # We'll implement a custom loop here since it's cleaner than modifying the generic helper.
+
+    cols = close_df.columns
+    idx = close_df.index
+
+    l_out = pd.DataFrame(index=idx, columns=cols, dtype=np.float32)
+    w_out = pd.DataFrame(index=idx, columns=cols, dtype=np.float32)
+
+    for c in cols:
+        if c not in atr_df.columns: continue
+
+        c_arr = close_df[c].to_numpy(dtype=np.float32)
+        a_arr = atr_df[c].to_numpy(dtype=np.float32)
+
+        l_arr, w_arr = _numba_peak_label_and_weight(
+            c_arr, a_arr,
+            horizon, near_k, rev_k, is_uptrend,
+            max_near_pct, min_rev_pct
+        )
+
+        l_out[c] = l_arr
+        w_out[c] = w_arr
+
+    return l_out, w_out

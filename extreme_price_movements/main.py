@@ -25,6 +25,7 @@ def reconcile_state(ex, state):
 def train_daily(ts_sig, margin_symbols, cfg, store, ex):
     tprint("DAILY TRAINING START")
     syms_all = build_fetch_universe(margin_symbols, cfg["market_basket"], cfg["fetch_symbols_M"])
+    tprint(f"Symbols to fetch for training: {len(syms_all)}")
     with Timer("Training Data Fetch"):
         since = (ts_sig - pd.Timedelta(days=365)).floor("D")
         since_ms = int(since.value // 10**6)
@@ -33,21 +34,29 @@ def train_daily(ts_sig, margin_symbols, cfg, store, ex):
             except Exception: pass
     train_syms = filter_low_variance_assets(store, syms_all, lookback_days=30, threshold_pct=0.40)
     train_syms = sorted(list(set(train_syms).union(set(cfg["market_basket"]))))
+    tprint(f"Training symbols after filtering: {len(train_syms)}")
     dfs = {}
     for s in train_syms:
         df = store.load(s)
         if not df.empty: dfs[s] = df[df.index <= ts_sig].tail(24*90)
+    tprint(f"Loaded {len(dfs)} training DataFrames.")
     if not dfs:
         tprint("Training failed: No data.")
         return None
     with Timer("Training Pipeline"):
         panel = to_panel(dfs)
+        tprint("Computing market features...")
         mkt_df = compute_market_features(panel, cfg["market_basket"])
+        tprint("Adding regime gates...")
         mkt_gates = add_regime_gates(mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
+        tprint("Computing hourly features...")
         feats = compute_features_hourly(panel, mkt_gates, cfg)
+        tprint("Generating exhaustion history...")
         p_exh_hist = generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_sig, cfg["train_lookback_hours"], train_syms)
+        tprint("Selecting best horizon...")
         trained_bundle = select_best_horizon(panel, feats, mkt_gates, cfg, train_syms, ts_sig, p_exh_hist)
         alpha_models = trained_bundle["alpha_models"]
+        tprint("Optimizing risk params...")
         best_risk = optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts_sig, p_exh_hist, alpha_models)
 
         # Return state dict
@@ -64,11 +73,13 @@ def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger, model_
     run_id = str(uuid.uuid4())
     tprint(f"HOURLY EXEC Start: {ts_sig} RunID={run_id}")
     candidates_pool = select_live_candidates(margin_symbols, cfg["market_basket"], pct=0.05)
+    tprint(f"Live candidates: {len(candidates_pool)}")
 
     current_positions = state.get_positions()
     active_syms = list(current_positions.keys())
     # Ensure active symbols fetched
     fetch_syms = sorted(list(set(candidates_pool + active_syms)))
+    tprint(f"Total symbols to fetch: {len(fetch_syms)}")
 
     dfs = {}
     since = (ts_sig - pd.Timedelta(days=90)).floor("D")
@@ -79,12 +90,16 @@ def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger, model_
                 df = store.update_symbol(ex, s, since_ms)
                 if not df.empty and df.index.max() >= ts_sig: dfs[s] = df[df.index <= ts_sig].tail(24*90)
             except Exception: pass
+    tprint(f"Loaded {len(dfs)} candidate DataFrames.")
     if not dfs: return
 
     with Timer("Feature Gen (Candidates)"):
         panel = to_panel(dfs)
+        tprint("Computing market features (candidates)...")
         mkt_df = compute_market_features(panel, cfg["market_basket"])
+        tprint("Adding regime gates (candidates)...")
         mkt_gates = add_regime_gates(mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
+        tprint("Computing hourly features (candidates)...")
         feats = compute_features_hourly(panel, mkt_gates, cfg)
 
     if not model_state or not model_state.get("bundle"):
@@ -98,6 +113,7 @@ def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger, model_
     risk_conf = model_state.get("risk_params")
     granular_risk = risk_conf.get("granular_risk", {}) if risk_conf else {}
 
+    tprint("Checking active positions...")
     o = panel["open"]; h = panel["high"]; l = panel["low"]; c = panel["close"]
     for sym in active_syms:
         if sym not in c.columns or ts_sig not in c.index: continue
@@ -115,8 +131,10 @@ def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger, model_
             pos["risk_state"] = ts_risk.to_dict()
             state.set_position(sym, pos)
 
+    tprint("Generating exhaustion history (candidates)...")
     p_exh_cand = generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_sig, 24, list(dfs.keys()))
 
+    tprint("Generating hourly signals...")
     target_orders = generate_hourly_signals(
         ts_sig, feats, mkt_gates, bundle, risk_conf, cfg, p_exh_cand, active_syms
     )

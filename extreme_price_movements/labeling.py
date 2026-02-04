@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from numba import jit
+from .utils import tprint
 
 @jit(nopython=True, cache=True)
 def _numba_triple_barrier(
@@ -157,6 +158,7 @@ def compute_triple_barrier_labels(
     Wrapper for Numba triple barrier.
     Expects panel with open, high, low, close.
     """
+    tprint(f"Starting compute_triple_barrier_labels with tp={tp}, sl={sl}, horizon={horizon_hours}")
     # Extract arrays
     # Ensure sorted by time
     # panel is usually dict of DataFrames or a Panel-like object (MultiIndex DF?)
@@ -171,12 +173,14 @@ def compute_triple_barrier_labels(
 
     # Ensure they have same index/columns
     assets = c.columns
+    tprint(f"Processing {len(assets)} assets.")
     times = c.index.view(np.int64) # Nanoseconds
 
     out_labels = pd.DataFrame(0, index=c.index, columns=assets, dtype=np.int8)
     out_returns = pd.DataFrame(0.0, index=c.index, columns=assets, dtype=np.float32)
 
-    for asset in assets:
+    for i, asset in enumerate(assets):
+        tprint(f"[{i+1}/{len(assets)}] Processing asset: {asset}")
         c_arr = c[asset].to_numpy(dtype=np.float32)
         h_arr = h[asset].to_numpy(dtype=np.float32)
         l_arr = l[asset].to_numpy(dtype=np.float32)
@@ -199,4 +203,5 @@ def compute_triple_barrier_labels(
         out_labels[asset] = lbs
         out_returns[asset] = rets
 
+    tprint("Finished compute_triple_barrier_labels.")
     return out_labels, out_returns

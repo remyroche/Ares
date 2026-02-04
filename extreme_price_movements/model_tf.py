@@ -24,11 +24,25 @@ def compute_tf_weights(df: pd.DataFrame, cfg: dict) -> np.ndarray:
     g_trend = df.get("G_TREND", 0.0)
     g_vol = df.get("G_VOL", 0.0)
 
+    try:
+        # Diagnostic logging for weights inputs
+        p_exh_mean = p_exh.mean() if hasattr(p_exh, "mean") else p_exh
+        trend_mean = trend.mean() if hasattr(trend, "mean") else trend
+        tprint(f"TF Weights inputs: p_exh mean={p_exh_mean:.4f}, trend mean={trend_mean:.4f}")
+    except Exception as e:
+        tprint(f"TF Weights inputs logging failed: {e}")
+
     w = 1.0 + (a * (1.0 - p_exh)) + (b * trend) + (c * g_trend)
     w *= (1.0 - 0.3 * g_vol)
 
     w = w.clip(0.25, 4.0)
     w = w * (len(w) / w.sum())
+
+    try:
+        tprint(f"Computed TF weights: min={w.min():.4f}, max={w.max():.4f}, mean={w.mean():.4f}")
+    except Exception as e:
+        tprint(f"TF Weights output logging failed: {e}")
+
     return w.to_numpy(dtype=np.float32)
 
 class TFModel:
@@ -40,7 +54,7 @@ class TFModel:
 
     def fit(self, X: pd.DataFrame, y: np.ndarray, sample_weight: np.ndarray = None):
         # 1. Feature Selection (MDI)
-        tprint(f"Entering function: fit in model_tf.py")
+        tprint(f"Entering function: fit in model_tf.py. X shape: {X.shape}, y shape: {y.shape}")
 
         n_samples = len(X)
         n_select = min(60, max(1, n_samples // 100))
@@ -65,6 +79,9 @@ class TFModel:
 
         self.selected_features = sel_res.selected_features[:n_select]
         tprint(f"TFModel: Selected {len(self.selected_features)} features.")
+        if len(self.selected_features) > 0:
+             tprint(f"Top features: {self.selected_features[:5]}")
+
         X_sel = X[self.selected_features]
 
         # 2. Train Ensemble
@@ -72,6 +89,7 @@ class TFModel:
         alphas = np.logspace(-4, -2, 5) # 1e-4 to 1e-2
         l1_ratios = [0.1, 0.5, 0.9]
 
+        tprint("TFModel: Starting training of 15 ElasticNet models...")
         self.models = []
         for alpha in alphas:
             for l1 in l1_ratios:
@@ -82,13 +100,15 @@ class TFModel:
                 pipe.fit(X_sel, y, reg__sample_weight=sample_weight)
                 self.models.append(pipe)
 
+        tprint(f"TFModel: Finished training {len(self.models)} models.")
+
         return self
 
     def predict(self, X: pd.DataFrame) -> tuple[np.ndarray, float]:
         """
         Returns (trimmed_median_preds, dispersion_metric)
         """
-        tprint(f"Entering function: predict in model_tf.py")
+        tprint(f"Entering function: predict in model_tf.py. X shape: {X.shape}")
         if not self.models or self.selected_features is None:
             raise ValueError("TF Model not fitted")
 
@@ -124,4 +144,5 @@ class TFModel:
         # But prediction usually returns 1D array.
         # I'll return the predictions and the MEAN dispersion of this batch as a diagnostic.
 
+        tprint(f"TFModel prediction stats: mean_pred={trimmed_preds.mean():.4f}, mean_dispersion={dispersion:.4f}")
         return trimmed_preds, dispersion

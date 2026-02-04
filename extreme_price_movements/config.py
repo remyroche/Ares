@@ -97,6 +97,15 @@ CFG = {
     # Exhaustion model (hourly sensor)
     "exh_horizon_hours": 24,
     "exh_reversal_thr": 0.04,
+
+    # Peak Targeting Labeling (Option A/B)
+    "exh_label_type": "peak",    # "simple" or "peak"
+    "exh_use_atr": True,         # Use ATR-based thresholds
+    "exh_atr_rev_k": 2.0,        # Reversal size in ATRs (e.g., drop 2.0 ATR from peak)
+    "exh_atr_near_k": 1.0,       # Proximity to peak in ATRs (e.g., within 1.0 ATR of peak)
+    "exh_near_thr": 0.01,        # Fallback % proximity if ATR not used
+    "exh_rev_thr_pct": 0.04,     # Fallback % reversal if ATR not used
+
     "exh_train_lookback_hours": 24 * 14,
     "min_exh_samples": 6000,
     "exh_C": 1.0,

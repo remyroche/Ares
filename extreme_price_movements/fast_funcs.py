@@ -415,6 +415,106 @@ def numba_grouped_rolling_mean(df: pd.DataFrame, group_series: pd.Series, window
 
     return out
 
+@jit(nopython=True, cache=True)
+def _numba_peak_label(close, atr, horizon, near_k, rev_k, is_uptrend):
+    """
+    Computes "Peak Proximity" label:
+    1 if Price is near forward Max/Min AND a significant reversal follows.
+    """
+    n = len(close)
+    out = np.zeros(n, dtype=np.float32) # Using float32 for compatibility with pipeline
+
+    for i in range(n - horizon):
+        curr_p = close[i]
+        curr_atr = atr[i]
+
+        # If ATR is NaN or 0, fallback to price pct (heuristic)
+        # But we assume caller handles this or provides valid ATR
+        if np.isnan(curr_atr) or curr_atr <= 0:
+            limit_dist = rev_k * curr_p * 0.01 # Fallback 1% scale?
+            # Better to assume inputs are valid or skip
+            continue
+        else:
+            limit_dist = rev_k * curr_atr
+            near_dist = near_k * curr_atr
+
+        if np.isnan(curr_p): continue
+
+        if is_uptrend: # Looking for Peak
+            # Find Forward Max
+            fwd_max = -np.inf
+            idx_max = -1
+
+            # Look ahead H steps
+            # Range: i+1 to i+1+horizon
+            # Check bounds
+            end_search = min(n, i + 1 + horizon)
+
+            for j in range(i + 1, end_search):
+                val = close[j]
+                if not np.isnan(val) and val > fwd_max:
+                    fwd_max = val
+                    idx_max = j
+
+            if idx_max == -1: continue
+
+            # Condition 1: Near Peak
+            if curr_p < (fwd_max - near_dist):
+                continue
+
+            # Condition 2: Reversal Follows (Drawdown from Max)
+            # Search after peak until end of horizon
+            # If peak is at end, we can't confirm reversal.
+            if idx_max >= end_search - 1:
+                continue
+
+            fwd_min_after = np.inf
+            for j in range(idx_max + 1, end_search):
+                val = close[j]
+                if not np.isnan(val) and val < fwd_min_after:
+                    fwd_min_after = val
+
+            if fwd_min_after == np.inf: continue
+
+            if fwd_min_after <= (fwd_max - limit_dist):
+                out[i] = 1.0
+
+        else: # Looking for Trough
+            # Find Forward Min
+            fwd_min = np.inf
+            idx_min = -1
+
+            end_search = min(n, i + 1 + horizon)
+
+            for j in range(i + 1, end_search):
+                val = close[j]
+                if not np.isnan(val) and val < fwd_min:
+                    fwd_min = val
+                    idx_min = j
+
+            if idx_min == -1: continue
+
+            # Condition 1: Near Trough
+            if curr_p > (fwd_min + near_dist):
+                continue
+
+            # Condition 2: Rally Follows
+            if idx_min >= end_search - 1:
+                continue
+
+            fwd_max_after = -np.inf
+            for j in range(idx_min + 1, end_search):
+                val = close[j]
+                if not np.isnan(val) and val > fwd_max_after:
+                    fwd_max_after = val
+
+            if fwd_max_after == -np.inf: continue
+
+            if fwd_max_after >= (fwd_min + limit_dist):
+                out[i] = 1.0
+
+    return out
+
 # Wrappers
 def numba_rolling_max(df, n):
     tprint(f"Entering function: numba_rolling_max in fast_funcs.py")
@@ -451,3 +551,11 @@ def numba_rolling_mean(df, n):
 def numba_rolling_std(df, n):
     tprint(f"Entering function: numba_rolling_std in fast_funcs.py")
     return apply_to_frame(df, _numba_rolling_std_nan_safe, n)
+
+def compute_peak_labels(close_df, atr_df, horizon, near_k, rev_k, is_uptrend):
+    tprint(f"Entering function: compute_peak_labels in fast_funcs.py")
+    return apply_to_frame_binary(
+        close_df, atr_df,
+        _numba_peak_label,
+        horizon, near_k, rev_k, is_uptrend
+    )

@@ -42,16 +42,38 @@ def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, sy
     idx_slice = idx[mask]
     valid_syms = [s for s in syms if s in c.columns]
     if not valid_syms: return None, None, None
-    close_sub = c.loc[idx_slice, valid_syms].astype(np.float32)
-    rev_close = close_sub.iloc[::-1]
-    fmax = rev_close.rolling(H).max().shift(1).iloc[::-1]
-    fmin = rev_close.rolling(H).min().shift(1).iloc[::-1]
     t_index = idx[(idx >= ts_start) & (idx <= ts_train_end)]
-    fmax = fmax.loc[t_index]; fmin = fmin.loc[t_index]
-    thr = float(cfg["exh_reversal_thr"])
     current = c.loc[t_index, valid_syms]
-    is_short_rev = ((fmin / (current + 1e-12)) - 1.0) <= -thr
-    is_long_rev = ((fmax / (current + 1e-12)) - 1.0) >= thr
+
+    if cfg.get("exh_label_type", "simple") == "peak":
+        use_atr = cfg.get("exh_use_atr", True)
+        if use_atr and "atr_pct" in feats:
+             atr_full = feats["atr_pct"] * panel["close"]
+             near_k = float(cfg.get("exh_atr_near_k", 0.5))
+             rev_k = float(cfg.get("exh_atr_rev_k", 2.0))
+        else:
+             atr_full = panel["close"]
+             near_k = float(cfg.get("exh_near_thr", 0.01))
+             rev_k = float(cfg.get("exh_rev_thr_pct", 0.04))
+
+        common_idx = panel["close"].index.intersection(atr_full.index)
+        c_full = panel["close"].loc[common_idx]
+        a_full = atr_full.loc[common_idx]
+
+        l_short = ff.compute_peak_labels(c_full, a_full, H, near_k, rev_k, True)
+        l_long = ff.compute_peak_labels(c_full, a_full, H, near_k, rev_k, False)
+
+        is_short_rev = l_short.reindex(index=t_index, columns=valid_syms).fillna(0) > 0.5
+        is_long_rev = l_long.reindex(index=t_index, columns=valid_syms).fillna(0) > 0.5
+    else:
+        close_sub = c.loc[idx_slice, valid_syms].astype(np.float32)
+        rev_close = close_sub.iloc[::-1]
+        fmax = rev_close.rolling(H).max().shift(1).iloc[::-1]
+        fmin = rev_close.rolling(H).min().shift(1).iloc[::-1]
+        fmax = fmax.loc[t_index]; fmin = fmin.loc[t_index]
+        thr = float(cfg["exh_reversal_thr"])
+        is_short_rev = ((fmin / (current + 1e-12)) - 1.0) <= -thr
+        is_long_rev = ((fmax / (current + 1e-12)) - 1.0) >= thr
     ret24 = feats["ret24h"].loc[t_index, valid_syms]
     dir_mat = np.sign(ret24).astype(np.int8)
     y = np.zeros(current.shape, dtype=np.int8)

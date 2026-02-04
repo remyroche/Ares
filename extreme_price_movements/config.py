@@ -83,7 +83,12 @@ CFG = {
         "G_EXH_REJECT", "G_EXH_TAIL_FAIL",
         "G_TF_ACCEPT", "G_TF_ACCEPT2", "G_MR_REJECT", "G_MR_OVEREXT",
         "G_MR_SPIKE", "G_TF_GRIND", "G_MR_TAIL", "G_TF_RETEST_OK",
-        "G_META_EXH", "G_META_TF_QUAL", "G_META_MR_QUAL", "G_META_AMBIG"
+        "G_META_EXH", "G_META_TF_QUAL", "G_META_MR_QUAL", "G_META_AMBIG",
+        # New Model Features
+        "overext", "overext_weak", "effort_gate", "tail_fail", "reject", "blowoff_risk",
+        "S", "impulse_ratio_24", "impulse_ratio_12", "coherence_24", "accel",
+        "tf_tape", "mr_tape", "accept", "retest_accept", "tf_qual", "mr_qual",
+        "retrace_12", "ambig", "stage_tf", "stage_blowoff", "stage_mr", "exh_qual"
     ],
 
     # thresholds / picks
@@ -131,31 +136,37 @@ CFG = {
 
     # which features go into exhaustion ML (plus sin/cos time features) (3)
     "exh_feature_keys": [
-        "ret1h", "ret6h", "ret12h", "ret16h", "ret20h", "ret24h", "ret28h",
-        "ret1h_z",
-        "vol_z24", "rvol_hod_base",
-        "range_pct", "atr_expansion",
-        "wick_body_ratio", "body_pct",
-        "dist_ema_fast", "dist_ema_slow",
-        "roc_div",
-        "vol_price_spread",
-        "rsi", "rsi_slope",
-        "a_funding_proxy",
-        "sin_hod", "cos_hod", "sin_dow", "cos_dow",
-        "efficiency", "v_power", "skew", "fvg",
-        "rvol_z", "vol_range_shock", "climax_decay",
-        "cumulative_delta_stall", "vol_expansion_ratio", "vol_compression",
-        # New Specialist Features
-        "giveback", "mfe_4h", "mae_4h",
-        "evr_3", "evr_6", "delta_stall_6", "progress",
-        "excess_6h", "excess_12h", "clv", "clv_mean_4",
-        "speed", "up_vol_6", "dn_vol_6", "vol_asym_6", "asym_ratio",
-        "thrust_decay_4", "decel_4", "ft_drop",
-        "ext_excess", "ext_atrExp", "comp_to_exp",
-        "evr6_x_volz", "stall_x_flow", "prog_def",
-        "clv_collapse", "clv_pullback",
-        "G_EXH_STALL_EXT", "G_EXH_EFFORT", "G_EXH_BLOWOFF",
-        "G_EXH_GIVEBACK", "G_EXH_REJECT", "G_EXH_TAIL_FAIL"
+        "DON12", "EX6", "overext", "overext_weak", "effort_gate", "stall_ext", "tail_fail",
+        "reject", "blowoff_risk",
+        "clv_mean_4", "pullback_2", "pullback_4", "giveback", "evr_6", "progress",
+        "delta_stall_6", "tail_against"
+    ],
+
+    # Spike / Regime Head
+    "spike_feature_keys": [
+        "S", "impulse_ratio_24", "impulse_ratio_12", "coherence_24", "accel",
+        "tf_tape", "mr_tape", "mkt_rv_ratio"
+    ],
+
+    # TF Head (Specifics + Global)
+    "tf_feature_keys": [
+        "accept", "retest_accept", "tf_qual", "coherence_24", "impulse_ratio_24",
+        "tf_tape", "clv_mean_4", "pullback_2", "pullback_4", "ft_2", "ft_4"
+    ],
+
+    # MR Head (Specifics + Global)
+    "mr_feature_keys": [
+        "reject", "overext", "overext_weak", "mr_qual", "retrace_12",
+        "impulse_ratio_24", "coherence_24", "mr_tape",
+        "clv_mean_4", "pullback_2", "pullback_4", "ft_2", "ft_4"
+    ],
+
+    # Meta Learner
+    "meta_feature_keys": [
+        "ambig", "stage_tf", "stage_blowoff", "stage_mr", "exh_qual",
+        "accept", "reject", "rv_ratio_6_24",
+        "excess_6h", "donch_dist_12", "clv_mean_4", "evr_6", "delta_stall_6",
+        "ft_2", "asym_ratio", "mfe_4h", "mae_4h", "giveback"
     ],
 
     # Model Params (Lasso selection)

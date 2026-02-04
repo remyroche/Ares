@@ -7,7 +7,8 @@ from extreme_price_movements.exhaustion import ExhaustionModel
 from extreme_price_movements.optimization import composite_score_with_constraints
 from extreme_price_movements.candidates import select_trade_candidates_hourly, select_trade_candidates_vectorized
 import extreme_price_movements.fast_funcs as ff
-from extreme_price_movements.labeling import compute_triple_barrier_labels
+from extreme_price_movements.labeling import compute_triple_barrier_labels, compute_trailing_atr_labels
+from sklearn.mixture import GaussianMixture
 
 def apply_interaction_toggles(df: pd.DataFrame, causal_cols, gate_cols, drop_raw=True):
     tprint(f"Entering function: apply_interaction_toggles in training.py")
@@ -74,11 +75,6 @@ def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, sy
         is_short_rev = l_short_s.fillna(0) > 0.5
         is_long_rev = l_long_s.fillna(0) > 0.5
 
-        # We need to store weights for later use.
-        # But build_exhaustion_Xy returns X, y, cols. It doesn't return weights yet.
-        # However, the user asked to "add sample weights".
-        # build_exhaustion_Xy is called by compute_p_exhaustion_at_t, which fits the model.
-        # We need to update build_exhaustion_Xy signature to return weights or handle them.
     else:
         close_sub = c.loc[idx_slice, valid_syms].astype(np.float32)
         rev_close = close_sub.iloc[::-1]
@@ -93,13 +89,8 @@ def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, sy
     y = np.zeros(current.shape, dtype=np.int8)
     w = np.ones(current.shape, dtype=np.float32)
 
-    # Assign labels and weights
-    # For uptrend (dir_mat > 0), use short reversal labels/weights
     mask_up = (dir_mat > 0)
     if mask_up.any():
-        # Align index/columns
-        # is_short_rev is a DataFrame aligned with current
-        # w_short_s is a DataFrame aligned with current
         y[mask_up] = is_short_rev.values[mask_up].astype(np.int8)
         if cfg.get("exh_label_type") == "peak":
              w[mask_up] = w_short_s.values[mask_up].astype(np.float32)
@@ -110,25 +101,15 @@ def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, sy
         if cfg.get("exh_label_type") == "peak":
              w[mask_dn] = w_long_s.values[mask_dn].astype(np.float32)
 
-    # Winsorize Weights (Top 80% kept -> Clip top 20%)
-    # Winsorize only if we have weights > 1
     if cfg.get("exh_label_type") == "peak":
-        # Global winsorization or per-batch? Global over the passed slice is fine.
-        w_flat = w.flatten()
-        q_high = np.nanquantile(w_flat, 0.80)
-        # Wait, "Winsorise the top 80%" usually means clamp outliers.
-        # User: "Winsorise the top 80%" -> probably means "Winsorize at 80th percentile" (clamp top 20%).
-        # Or keep 80%? Usually top 1-5% are outliers. 20% is aggressive but user requested it.
-        # If weights are mostly 1.0 (negatives), then quantile 0.8 might be 1.0.
-        # We should only winsorize the boosted weights (w > 1).
-
         mask_boosted = w > 1.0
         if mask_boosted.sum() > 10:
              boosted_vals = w[mask_boosted]
              cap = np.quantile(boosted_vals, 0.80)
              w[w > cap] = cap
     X_parts = []
-    for k in cfg["exh_feature_keys"]:
+    # Exhaustion features are specific now
+    for k in cfg.get("exh_feature_keys", cfg.get("exh_feature_keys_legacy", [])):
         if k in feats:
             X_parts.append(feats[k].loc[t_index, valid_syms].stack(future_stack=True).rename(k))
     X = pd.concat(X_parts, axis=1)
@@ -173,7 +154,7 @@ def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms, models=Non
                 model_up.fit(X, y, sample_weight=w)
             else: model_up = None
         if model_up:
-            Xp = _build_pred_X(feats, mkt_gates, cfg, ts, up_syms)
+            Xp = _build_pred_X(feats, mkt_gates, cfg, ts, up_syms, feature_key="exh_feature_keys")
             if not Xp.empty:
                 probs = model_up.predict_proba(Xp)
                 probs = np.clip(probs * 2.0, 0.0, 1.0)
@@ -187,19 +168,24 @@ def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms, models=Non
                 model_dn.fit(X, y, sample_weight=w)
             else: model_dn = None
         if model_dn:
-            Xp = _build_pred_X(feats, mkt_gates, cfg, ts, dn_syms)
+            Xp = _build_pred_X(feats, mkt_gates, cfg, ts, dn_syms, feature_key="exh_feature_keys")
             if not Xp.empty:
                 probs = model_dn.predict_proba(Xp)
                 out_probs.loc[dn_syms] = probs
     return out_probs.fillna(0.0)
 
-def _build_pred_X(feats, mkt_gates, cfg, ts, syms):
+def _build_pred_X(feats, mkt_gates, cfg, ts, syms, feature_key="exh_feature_keys"):
     tprint(f"Entering function: _build_pred_X in training.py")
     t_index = pd.DatetimeIndex([ts], tz="UTC")
     X_parts = []
-    for k in cfg["exh_feature_keys"]:
+
+    keys = cfg.get(feature_key, [])
+
+    for k in keys:
         if k in feats:
             X_parts.append(feats[k].loc[t_index, syms].stack(future_stack=True).rename(k))
+    if not X_parts: return pd.DataFrame()
+
     Xp = pd.concat(X_parts, axis=1)
     Xp.index.names = ["ts", "symbol"]
     mg = mkt_gates.loc[t_index, ["mkt_ret24h", "mkt_ret6h", "mkt_trend", "mkt_rv", "G_VOL", "G_TREND"]]
@@ -224,7 +210,7 @@ def generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_end, lookback_h
     t_idx = pd.date_range(train_end, ts_end, freq='h', tz="UTC")
     t_idx = t_idx[t_idx.isin(panel["close"].index)]
     valid_syms = [s for s in syms if s in panel["close"].columns]
-    Xp = _build_pred_X_window(feats, mkt_gates, cfg, t_idx, valid_syms)
+    Xp = _build_pred_X_window(feats, mkt_gates, cfg, t_idx, valid_syms, feature_key="exh_feature_keys")
     p_up = 0.0
     if model_up:
         p_up = model_up.predict_proba(Xp)
@@ -238,10 +224,11 @@ def generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_end, lookback_h
     res_df = res_ser.unstack(level="symbol").reindex(columns=syms).fillna(0.0)
     return res_df
 
-def _build_pred_X_window(feats, mkt_gates, cfg, t_idx, syms):
+def _build_pred_X_window(feats, mkt_gates, cfg, t_idx, syms, feature_key="exh_feature_keys"):
     tprint(f"Entering function: _build_pred_X_window in training.py")
     X_parts = []
-    for k in cfg["exh_feature_keys"]:
+    keys = cfg.get(feature_key, [])
+    for k in keys:
         if k in feats:
             X_parts.append(feats[k].loc[t_idx, syms].stack(future_stack=True).rename(k))
     Xp = pd.concat(X_parts, axis=1)
@@ -251,46 +238,48 @@ def _build_pred_X_window(feats, mkt_gates, cfg, t_idx, syms):
         Xp[col] = Xp.index.get_level_values("ts").map(mg[col])
     return Xp.fillna(0)
 
-def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts_end, p_exh_hist, H, model_kind, trend_filter=None):
+def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts_end, p_exh_hist, H, model_kind, trend_filter=None, feature_key=None):
     tprint(f"Entering function: build_hourly_training_set_and_weights in training.py")
     c = panel["close"]
     idx = c.index
 
-    # 1. Labels
-    tp = cfg.get("tp", 0.05)
-    sl = cfg.get("sl", 0.025)
-    tb_labels, tb_returns = compute_triple_barrier_labels(panel, tp, sl, H)
+    k_sl = cfg.get("train_k_sl", 2.0)
+    k_pt = cfg.get("train_k_pt", 2.0)
+    k_tp = cfg.get("train_k_tp", 1.0)
 
-    # 2. Vectorized Candidate Selection
+    if "atr_pct" in feats:
+        atr_df = feats["atr_pct"]
+    else:
+        tprint("Warning: atr_pct not found, using default 1% ATR for labeling")
+        atr_df = pd.DataFrame(0.01, index=c.index, columns=c.columns)
+
+    tb_labels, tb_returns = compute_trailing_atr_labels(
+        panel, atr_df,
+        k_sl=k_sl, k_pt=k_pt, k_tp=k_tp,
+        horizon_hours=H
+    )
+
     cand_mask = select_trade_candidates_vectorized(panel, feats, pct=cfg["trade_extreme_pct"], metric=cfg["trade_deviation_metric"])
     if cand_mask is None:
         return None, None, None, None, None
 
-    # Filter to training window
     ts_start = ts_end - pd.Timedelta(hours=int(cfg["train_lookback_hours"]))
-    # Mask to valid training period
-    # Note: cand_mask spans the whole feats index.
-    # We slice it.
     valid_window_mask = (cand_mask.index >= ts_start) & (cand_mask.index <= ts_end - pd.Timedelta(hours=H+8))
-    # Subsample every 4 hours to match original density preference
     subsample_mask = (cand_mask.index.hour % 4 == 0)
 
-    final_mask = cand_mask & pd.Series(valid_window_mask & subsample_mask, index=cand_mask.index).fillna(False) # Broadcasting
+    final_mask = cand_mask & pd.Series(valid_window_mask & subsample_mask, index=cand_mask.index).fillna(False)
 
-    # We iterate over timestamps that have at least one candidate
-    # This might be faster than iterating all t in window
-
-    # Find timestamps where at least one symbol is True
     valid_ts = final_mask[final_mask.any(axis=1)].index
-
     rows = []
 
+    if feature_key:
+        feat_keys = cfg.get(feature_key, [])
+    else:
+        feat_keys = cfg.get("causal_cols", [])
+
     for t in valid_ts:
-        # Get symbols at t
         row_mask = final_mask.loc[t]
         final_candidates = row_mask[row_mask].index.tolist()
-
-        # Intersection with syms (allowed universe)
         final_candidates = [s for s in final_candidates if s in syms]
 
         if not final_candidates: continue
@@ -298,8 +287,6 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
         t_entry = t + pd.Timedelta(hours=1)
         if t_entry not in tb_labels.index: continue
 
-        # Retrieve metric vals for weighting (ret24h)
-        # Using vectorized access
         ret_vals = feats["ret24h"].loc[t, final_candidates]
 
         for sym in final_candidates:
@@ -309,7 +296,6 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
             lbl = tb_labels.loc[t_entry, sym]
             ret = tb_returns.loc[t_entry, sym]
 
-            # Filter trend
             trend_val = 0.0
             if "trend_pct" in feats: trend_val = feats["trend_pct"].loc[t, sym]
             trend_dir = np.sign(trend_val) if trend_val != 0 else 1.0
@@ -317,11 +303,17 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
             if trend_filter == "up" and trend_dir <= 0: continue
             if trend_filter == "down" and trend_dir > 0: continue
 
-            trade_dir = 1 if model_kind == "tf" else -1
-            pnl = ret * trade_dir * trend_dir
+            trade_dir = 1 # Default Long
+            if model_kind == "tf":
+                if trend_dir > 0: trade_dir = 1
+                else: trade_dir = -1
+            elif model_kind == "mr":
+                if trend_dir > 0: trade_dir = -1
+                else: trade_dir = 1
+
+            pnl = ret * trade_dir
             y_bin = 1 if pnl > 0 else 0
 
-            # Weighting
             pa = abs(ret_vals[sym])
             w1 = np.log(1 + pa)
             w2 = 1.0
@@ -329,274 +321,116 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
 
             rec = {"symbol": sym, "ts": t, "y_bin": y_bin, "y_ret": pnl, "w": weight}
 
+            # Collect Features
             t_lag = t - pd.Timedelta(hours=1)
             p_val = 0.0
             if t_lag in p_exh_hist.index and sym in p_exh_hist.columns:
                 p_val = p_exh_hist.loc[t_lag, sym]
             rec["p_exh_lag1"] = p_val
-            for k in cfg["causal_cols"]:
+
+            for k in feat_keys:
                 if k == "p_exh_lag1": continue
-                if k == "a_funding_proxy": k = "funding_proxy"
-                if k in feats: rec[k] = feats[k].loc[t, sym]
+                if k in feats:
+                    rec[k] = feats[k].loc[t, sym]
+
             rec["G_VOL"] = mkt_gates.loc[t, "G_VOL"]
             rec["G_TREND"] = mkt_gates.loc[t, "G_TREND"]
             rows.append(rec)
 
     if not rows: return None, None, None, None, None
     df = pd.DataFrame(rows).dropna()
+
+    # Store indices (ts, symbol) to allow re-linking for meta model if needed
+    # (Actually we return X_out without index info usually, but we set index=df.index which is RangeIndex)
+    # If we want to join later, we might need a MultiIndex.
+    # But `select_best_horizon` trains Meta by predicting on X_mr/X_tf.
+    # X_mr/X_tf logic: if we return df with metadata, we can align.
+
     weights = df.pop("w").values.astype(np.float32)
     weights = np.clip(weights, 0.1, 10.0)
-    df = apply_interaction_toggles(df, cfg["causal_cols"], ["G_VOL", "G_TREND"], drop_raw=cfg["drop_raw_causal"])
+
+    df = apply_interaction_toggles(df, feat_keys, ["G_VOL", "G_TREND"], drop_raw=cfg["drop_raw_causal"])
     y_bin = df.pop("y_bin").values.astype(int)
     y_ret = df.pop("y_ret").values.astype(np.float32)
-    X_out = df.drop(columns=["ts", "symbol"]).astype(np.float32)
+
+    # Save metadata for return if needed?
+    # For now, just drop
+    meta_cols = ["ts", "symbol"]
+    # We will need these for Spike Model alignment later, so let's keep them in a separate DF if we want.
+    # But function signature returns X_out, y...
+    # I'll return `df` but with meta cols dropped.
+
+    # IMPORTANT: We need to pass Spike Features to Meta Model.
+    # If this function is called for TF/MR, it only gathers TF/MR features.
+    # The Meta model needs to gather ITS OWN features for the SAME rows.
+    # We should probably have a `build_meta_training_set` helper or modify this to return metadata.
+
+    X_out = df.drop(columns=["ts", "symbol"], errors="ignore").astype(np.float32)
     X_out.index = df.index
-    return X_out, y_bin, y_ret, list(X_out.columns), weights
 
-def optimize_risk_params(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, models):
-    """
-    Optimizes risk params per (Direction, Model_Kind) using simulation on validation set.
-    """
-    tprint("Optimizing Risk Params...")
-    alpha_models = models.get("alpha_models")
-    meta_models = models.get("meta_models")
-    if not alpha_models:
-        return {"granular_risk": {}}
+    # Return df_meta (ts, symbol) as extra return?
+    df_meta = df[meta_cols] if "ts" in df.columns else pd.DataFrame(index=df.index)
 
-    val_hours = int(cfg.get("val_lookback_hours", 24*7))
-    ts_start = ts - pd.Timedelta(hours=val_hours)
+    return X_out, y_bin, y_ret, list(X_out.columns), weights, df_meta
 
-    # We can stick to simpler candidate selection for Validation Risk Optimization
-    # because we want to optimize execution on 'typical' candidates.
-    # However, ideally we use the same process.
-    # But `vectorized` works on full feats.
-
-    # Let's use vectorized candidates for validation too!
+def train_spike_anatomy_model(panel, feats, mkt_gates, cfg, syms, ts_end):
+    tprint(f"Entering function: train_spike_anatomy_model in training.py")
     cand_mask = select_trade_candidates_vectorized(panel, feats, pct=cfg["trade_extreme_pct"], metric=cfg["trade_deviation_metric"])
-    if cand_mask is None: return {"granular_risk": {}}
+    if cand_mask is None: return None
 
-    valid_window_mask = (cand_mask.index >= ts_start) & (cand_mask.index < ts - pd.Timedelta(hours=48))
-    # Step 2 hours or 4 hours
-    subsample_mask = (cand_mask.index.hour % 2 == 0)
-    final_mask = cand_mask & pd.Series(valid_window_mask & subsample_mask, index=cand_mask.index).fillna(False)
+    ts_start = ts_end - pd.Timedelta(hours=int(cfg["train_lookback_hours"]))
+    mask = (cand_mask.index >= ts_start) & (cand_mask.index <= ts_end)
+    final_mask = cand_mask & pd.Series(mask, index=cand_mask.index).fillna(False)
 
     valid_ts = final_mask[final_mask.any(axis=1)].index
-    candidates = []
 
-    trend_df = feats.get("trend_pct")
-    o_df = panel["open"]
-    h_df = panel["high"]
-    l_df = panel["low"]
-    c_df = panel["close"]
+    rows = []
+    keys = cfg.get("spike_feature_keys", [])
 
-    for t_idx in valid_ts:
-        row_mask = final_mask.loc[t_idx]
-        trade_syms = row_mask[row_mask].index.tolist()
-        trade_syms = [s for s in trade_syms if s in syms]
-        if not trade_syms: continue
+    for t in valid_ts:
+        row_mask = final_mask.loc[t]
+        cands = row_mask[row_mask].index.tolist()
+        cands = [s for s in cands if s in syms]
 
-        mrk = mkt_gates.loc[t_idx]
-        t_exh_lag = t_idx - pd.Timedelta(hours=1)
+        for sym in cands:
+            rec = {}
+            for k in keys:
+                if k in feats:
+                    rec[k] = feats[k].loc[t, sym]
+            rows.append(rec)
 
-        rows = []
-        for sym in trade_syms:
-            try:
-                t_val = 0.0
-                if trend_df is not None and sym in trend_df.columns:
-                    t_val = float(trend_df.loc[t_idx, sym])
-                direction = "up" if t_val > 0 else "down"
+    if not rows: return None
 
-                m_bundle = alpha_models.get(direction)
-                if not m_bundle or not m_bundle["mr"] or not m_bundle["tf"]: continue
+    df = pd.DataFrame(rows).dropna()
+    if df.empty: return None
 
-                model_mr = m_bundle["mr"]["model"]
-                model_tf = m_bundle["tf"]["model"]
-                feat_cols = m_bundle["mr"]["feat_cols"]
-                meta_model = meta_models.get(direction)
+    gmm = GaussianMixture(n_components=4, random_state=42)
+    gmm.fit(df)
 
-                p_lag = 0.5
-                if t_exh_lag in p_exh_hist.index and sym in p_exh_hist.columns:
-                    p_lag = float(p_exh_hist.loc[t_exh_lag, sym])
-
-                rec = {
-                    "symbol": sym, "direction": direction,
-                    "model_mr": model_mr, "model_tf": model_tf, "meta_model": meta_model,
-                    "feat_cols": feat_cols,
-                    "mkt_ret24h": float(mrk["mkt_ret24h"]),
-                    "mkt_ret6h": float(mrk["mkt_ret6h"]),
-                    "mkt_trend": float(mrk["mkt_trend"]),
-                    "mkt_rv": float(mrk["mkt_rv"]),
-                    "G_VOL": int(mrk["G_VOL"]), "G_TREND": int(mrk["G_TREND"]),
-                    "p_exh_lag1": p_lag
-                }
-                for k in feat_cols:
-                    if k in feats: rec[k] = float(feats[k].loc[t_idx, sym])
-
-                for mk in ["a_rv24", "a_volz", "a_rsi", "dist_ema_fast", "atr_slope", "dist_vwap_norm", "mom_accel"]:
-                    if mk in feats: rec[mk] = float(feats[mk].loc[t_idx, sym])
-
-                rows.append(rec)
-            except: continue
-
-        if not rows: continue
-
-        df_all = pd.DataFrame(rows)
-
-        # Predict
-        for d, grp in df_all.groupby("direction"):
-            first = grp.iloc[0]
-            model_mr = first["model_mr"]; model_tf = first["model_tf"]; meta_model = first["meta_model"]; fcols = first["feat_cols"]
-
-            Xint = apply_interaction_toggles(grp, cfg["causal_cols"], ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
-            for c in fcols:
-                if c not in Xint.columns: Xint[c] = 0.0
-            Xpred = Xint[fcols].fillna(0.0).astype(np.float32)
-
-            p_mr = model_mr.predict(Xpred)
-            p_tf = model_tf.predict(Xpred)
-
-            if meta_model:
-                X_meta = meta_model.prepare_meta_features(p_tf, p_mr, grp)
-                score = meta_model.predict(X_meta)
-            else:
-                score = p_tf - p_mr
-                sign = 1.0 if d == "up" else -1.0
-                score = score * sign
-
-            for i, idx in enumerate(grp.index):
-                sym = grp.loc[idx, "symbol"]
-                s_score = score[i]
-                dom = "mr" if p_mr[i] > p_tf[i] else "tf"
-
-                ts_entry = t_idx + pd.Timedelta(hours=1)
-                entry_px = float(o_df.loc[ts_entry, sym]) if ts_entry in o_df.index else np.nan
-                if np.isnan(entry_px): continue
-
-                atr_val = float(feats["atr_pct"].loc[t_idx, sym])
-
-                side = "long" if s_score > 0 else "short"
-                if abs(s_score) < 0.005: continue
-
-                candidates.append({
-                    "ts": t_idx,
-                    "symbol": sym,
-                    "side": side,
-                    "dom": dom,
-                    "score": s_score,
-                    "entry_px": entry_px,
-                    "atr": atr_val
-                })
-
-    if not candidates:
-        return {"granular_risk": {}}
-
-    # 3. Prepare Simulation Data
-    hold_h = int(cfg.get("hold_hours", 48))
-    sim_data = []
-
-    for cand in candidates:
-        ts_entry = cand["ts"] + pd.Timedelta(hours=1)
-        ts_exit = ts_entry + pd.Timedelta(hours=hold_h)
-        sym = cand["symbol"]
-
-        if ts_exit > c_df.index.max():
-            ts_exit = c_df.index.max()
-
-        sl = slice(ts_entry, ts_exit)
-        try:
-            o_arr = o_df.loc[sl, sym].to_numpy(dtype=np.float32)
-            h_arr = h_df.loc[sl, sym].to_numpy(dtype=np.float32)
-            l_arr = l_df.loc[sl, sym].to_numpy(dtype=np.float32)
-            c_arr = c_df.loc[sl, sym].to_numpy(dtype=np.float32)
-
-            if len(c_arr) == 0: continue
-
-            cand["o"] = o_arr
-            cand["h"] = h_arr
-            cand["l"] = l_arr
-            cand["c"] = c_arr
-            sim_data.append(cand)
-        except: continue
-
-    # 4. Grid Search
-    # New Grids
-    k_sl_grid = [1.5, 2.0, 3.0]
-    k_pt_grid = [1.5, 2.0, 3.0] # Activation (k_pt)
-    k_tp_grid = [0.5, 1.0, 1.5] # Trailing Dist (k_tp)
-
-    buckets = ["long_mr", "long_tf", "short_mr", "short_tf"]
-    best_params = {}
-
-    for b in buckets:
-        side_req, dom_req = b.split("_")
-        subset = [c for c in sim_data if c["side"] == side_req and c["dom"] == dom_req]
-
-        # Default fallback
-        best_params[f"risk_{b}"] = {
-            "k_sl": 2.0, "k_pt": 2.0, "k_tp": 1.0, "score_scale": 0.5
-        }
-
-        if len(subset) < 10:
-            continue
-
-        best_perf = -1e9
-        best_combo = None
-
-        for k_sl in k_sl_grid:
-            for k_pt in k_pt_grid:
-                for k_tp in k_tp_grid:
-                    total_ret = 0.0
-
-                    for c in subset:
-                        entry_px = float(c["entry_px"])
-                        atr_val = float(c["atr"])
-                        side_int = 1 if c["side"] == "long" else -1
-
-                        # Apply Clamps
-                        # sl_pct = clamp(k_sl * ATR%, 2%, 5%)
-                        sl_pct = np.clip(k_sl * atr_val, 0.02, 0.05)
-                        # pt_pct (activation) = clamp(k_pt * ATR%, 5%, 10%)
-                        pt_pct = np.clip(k_pt * atr_val, 0.05, 0.10)
-                        # tp_pct (dist) = clamp(k_tp * ATR%, 2%, 4%)
-                        tp_pct = np.clip(k_tp * atr_val, 0.02, 0.04)
-
-                        sl_dist = sl_pct * entry_px
-                        act_dist = pt_pct * entry_px
-                        tr_dist = tp_pct * entry_px
-
-                        ret, _, _ = ff.simulate_trade_numba(
-                            c["o"], c["h"], c["l"], c["c"],
-                            entry_px, side_int,
-                            sl_dist, act_dist, tr_dist
-                        )
-                        total_ret += ret
-
-                    if total_ret > best_perf:
-                        best_perf = total_ret
-                        best_combo = (k_sl, k_pt, k_tp)
-
-        if best_combo:
-            k_sl, k_pt, k_tp = best_combo
-            best_params[f"risk_{b}"] = {
-                "k_sl": k_sl, "k_pt": k_pt, "k_tp": k_tp, "score_scale": 0.5
-            }
-
-    tprint(f"Risk Params Optimized: {best_params}")
-    return {"granular_risk": best_params}
+    return gmm
 
 def select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
     tprint(f"Entering function: select_best_horizon in training.py")
     directions = ["up", "down"]
     kinds = ["mr", "tf"]
     final_models = {}
+
+    spike_model = train_spike_anatomy_model(panel, feats, mkt_gates, cfg, syms, ts)
+
     for d in directions:
         final_models[d] = {}
         for k in kinds:
             best_ic = -1.0; best_m = None
             horizons = cfg["label_horizons_hours"]
+            feat_key = "tf_feature_keys" if k == "tf" else "mr_feature_keys"
+
             for H in horizons:
                 tprint(f"Selecting {d} {k} H={H}...")
-                X, y, y_ret, cols, w = build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, H, k, trend_filter=d)
+                X, y, y_ret, cols, w, _ = build_hourly_training_set_and_weights(
+                    panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, H, k,
+                    trend_filter=d, feature_key=feat_key
+                )
+
                 if X is None or len(y) < cfg["min_train_samples"] // 4: continue
                 race = ModelRace(kind=k, n_splits=3)
                 race.fit(X, y, sample_weight=w, returns=y_ret)
@@ -612,37 +446,89 @@ def select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
         tf_conf = final_models[d]["tf"]
         if not mr_conf or not tf_conf:
             meta_models[d] = None; continue
+
         H_mr = mr_conf["H"]
-        X_mr, _, _, _, _ = build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, H_mr, "mr", trend_filter=d)
+        X_mr, _, _, _, _, meta_idx_mr = build_hourly_training_set_and_weights(
+            panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, H_mr, "mr",
+            trend_filter=d, feature_key="mr_feature_keys"
+        )
         H_tf = tf_conf["H"]
-        X_tf, y_tf, y_ret_tf, cols_tf, _ = build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, H_tf, "tf", trend_filter=d)
+        X_tf, y_tf, y_ret_tf, cols_tf, _, meta_idx_tf = build_hourly_training_set_and_weights(
+            panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, H_tf, "tf",
+            trend_filter=d, feature_key="tf_feature_keys"
+        )
+
+        # We need to align MR and TF predictions on the same events.
+        # But H_mr and H_tf might differ, so "events" might imply different horizons?
+        # But "ts" is the signal time. If signal times match, we can blend.
+        # We align by (ts, symbol).
+
+        # Create MultiIndex for alignment
+        X_mr.index = pd.MultiIndex.from_frame(meta_idx_mr)
+        X_tf.index = pd.MultiIndex.from_frame(meta_idx_tf)
+        y_tf_indexed = pd.Series(y_ret_tf, index=X_tf.index) # Target for meta is TF return?
+
         common = X_mr.index.intersection(X_tf.index)
         if len(common) < 100: meta_models[d] = None; continue
-        X_mr = X_mr.loc[common]; X_tf = X_tf.loc[common]
+
+        X_mr = X_mr.loc[common]
+        X_tf = X_tf.loc[common]
+        y_meta = y_tf_indexed.loc[common].values
+
         p_mr = mr_conf["model"].predict(X_mr)
         p_tf = tf_conf["model"].predict(X_tf)
 
-        # Train Meta Model (Ridge)
+        # Build Meta Features
+        # 1. Base Meta Features (from config)
+        meta_feat_keys = cfg.get("meta_feature_keys", [])
+
+        # We need to fetch these values for the `common` (ts, symbol) pairs.
+        # Efficient way: `_build_pred_X` but for specific list of indices?
+        # Or construct a dataframe from `feats` using loop.
+
+        meta_rows = []
+        spike_rows = []
+        spike_keys = cfg.get("spike_feature_keys", [])
+
+        # Iterate common index to fetch features
+        # This is slow if loop. Vectorized fetch preferred.
+        # feats[k] is (Time x Symbol).
+        # We can stack feats[k] to get (Time, Symbol) -> Value.
+        # Then reindex.
+
+        # Prepare Stacked Feats for Meta Keys
+        stacked_meta = {}
+        for k in meta_feat_keys:
+            if k in feats:
+                stacked_meta[k] = feats[k].stack()
+
+        df_meta_feats = pd.DataFrame(stacked_meta) # Index (Time, Symbol)
+        # Reindex to common
+        df_meta_feats = df_meta_feats.reindex(common).fillna(0.0)
+
+        # 2. Spike Probabilities
+        if spike_model:
+            # We need inputs for spike model for these common events
+            stacked_spike = {}
+            for k in spike_keys:
+                if k in feats:
+                    stacked_spike[k] = feats[k].stack()
+            df_spike_in = pd.DataFrame(stacked_spike).reindex(common).fillna(0.0)
+
+            if not df_spike_in.empty:
+                probs = spike_model.predict_proba(df_spike_in)
+                # Add probs as features
+                for i in range(probs.shape[1]):
+                    df_meta_feats[f"spike_prob_{i}"] = probs[:, i]
+            else:
+                 # fill 0
+                 for i in range(4): df_meta_feats[f"spike_prob_{i}"] = 0.0
+
+        # Train Meta Model
         meta = MetaModel()
-        X_meta = meta.prepare_meta_features(p_tf, p_mr, X_tf) # X_tf has meta features in it?
-        # X_tf is feats_df passed to prepare_meta_features.
-        # It needs `atr_slope`, `mom_accel` etc.
-        # `build_hourly_training_set_and_weights` collects `causal_cols`.
-        # I MUST ensure these new features are in `causal_cols` in config OR
-        # explicitly collect them in `build_hourly_training_set_and_weights`.
+        X_meta_final = meta.prepare_meta_features(p_tf, p_mr, df_meta_feats)
 
-        # `build_hourly_training_set_and_weights` collects:
-        # `rec[k] = feats[k]` for k in `causal_cols`.
-        # So I rely on `config["causal_cols"]` having them.
-        # Or I modify `build_hourly_training_set_and_weights` to add them explicitly.
-        # Given I cannot easily edit `config.py` in this step (or I could),
-        # I'll just add them to the extraction loop in `build_hourly_training_set_and_weights`.
-        # Actually I didn't add them in my `write_file` above!
-        # I added them in `optimize_risk_params` but NOT `build_hourly_training_set_and_weights`.
-        # I should add the Meta features to `build_hourly_training_set_and_weights` output.
-
-        y_meta = y_ret_tf[X_tf.index.get_indexer(common)]
-        meta.fit(X_meta, y_meta)
+        meta.fit(X_meta_final, y_meta)
         meta_models[d] = meta
 
     exh_models = {}
@@ -654,4 +540,5 @@ def select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
             m.fit(X, y, sample_weight=w)
             exh_models[d] = m
         else: exh_models[d] = None
-    return {"alpha_models": final_models, "exh_models": exh_models, "meta_models": meta_models}
+
+    return {"alpha_models": final_models, "exh_models": exh_models, "meta_models": meta_models, "spike_model": spike_model}

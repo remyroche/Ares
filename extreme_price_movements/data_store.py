@@ -21,11 +21,9 @@ class FileLock:
 
     def __enter__(self):
         try:
-            tprint(f"Acquiring lock {self.lock_file}...")
             self.handle = open(self.lock_file, 'w')
             # Blocking exclusive lock
             fcntl.flock(self.handle, fcntl.LOCK_EX)
-            tprint(f"Lock acquired {self.lock_file}.")
         except Exception as e:
             tprint(f"Error acquiring lock {self.lock_file}: {e}")
             if self.handle:
@@ -36,7 +34,6 @@ class FileLock:
     def __exit__(self, exc_type, exc_value, traceback):
         if self.handle:
             try:
-                tprint(f"Releasing lock {self.lock_file}...")
                 fcntl.flock(self.handle, fcntl.LOCK_UN)
                 self.handle.close()
             except Exception as e:
@@ -54,13 +51,9 @@ def _fetch_ohlcv_paged(exchange, symbol, since_ms, until_ms, timeframe="1h", lim
     out = []
     since = since_ms
     while True:
-        tprint(f"Fetching batch for {symbol} since {since}...")
         batch = exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=since, limit=limit)
         if not batch:
-            tprint("Empty batch received, stopping.")
             break
-
-        tprint(f"Received batch of {len(batch)} rows.")
         for row in batch:
             ts = row[0]
             if ts < since_ms:
@@ -71,18 +64,12 @@ def _fetch_ohlcv_paged(exchange, symbol, since_ms, until_ms, timeframe="1h", lim
 
         last = batch[-1][0]
         if last >= until_ms - 1:
-            tprint(f"Reached end time {until_ms} (last={last}).")
             break
         since = last + 1
         if len(batch) < limit:
-            tprint(f"Batch size {len(batch)} < limit {limit}, assuming done.")
             break
+        time.sleep(exchange.rateLimit / 1000)
 
-        sleep_sec = exchange.rateLimit / 1000
-        tprint(f"Sleeping for {sleep_sec:.3f}s...")
-        time.sleep(sleep_sec)
-
-    tprint(f"Total rows collected: {len(out)}")
     if not out:
         return pd.DataFrame(columns=["ts","open","high","low","close","volume"]).set_index(
             pd.DatetimeIndex([], tz="UTC", name="ts")
@@ -95,7 +82,6 @@ def _fetch_ohlcv_paged(exchange, symbol, since_ms, until_ms, timeframe="1h", lim
 
 def fetch_ohlcv_all_7d_chunks(exchange, symbol, since_ms, timeframe="1h", limit=1000):
     tprint(f"Entering function: fetch_ohlcv_all_7d_chunks in data_store.py")
-    tprint(f"Starting 7d chunks fetch for {symbol} from {since_ms}...")
     chunk_ms = int(pd.Timedelta(days=7).total_seconds() * 1000)
     now_ms = int(pd.Timestamp.utcnow().value // 10**6)
 
@@ -103,14 +89,12 @@ def fetch_ohlcv_all_7d_chunks(exchange, symbol, since_ms, timeframe="1h", limit=
     start = since_ms
     while start < now_ms:
         end = min(start + chunk_ms, now_ms)
-        tprint(f"Fetching chunk {start} to {end}...")
         df = _fetch_ohlcv_paged(exchange, symbol, start, end, timeframe=timeframe, limit=limit)
         if len(df):
             dfs.append(df)
         start = end
         time.sleep(exchange.rateLimit / 1000)
 
-    tprint(f"Collected {len(dfs)} chunks.")
     if not dfs:
         return pd.DataFrame(columns=["open","high","low","close","volume"]).set_index(
             pd.DatetimeIndex([], tz="UTC", name="ts")
@@ -177,9 +161,7 @@ class PartitionedOHLCVStore:
         """
         tprint(f"Entering function: load in data_store.py")
         sym_dir = self._get_symbol_dir(symbol)
-        tprint(f"Loading {symbol} from {sym_dir}...")
         if not os.path.exists(sym_dir):
-            tprint(f"Symbol directory does not exist: {sym_dir}")
             return pd.DataFrame(columns=["open","high","low","close","volume"]).set_index(
                 pd.DatetimeIndex([], tz="UTC", name="ts")
             )
@@ -191,8 +173,6 @@ class PartitionedOHLCVStore:
                 for f in files:
                     if f.endswith(".parquet"):
                         all_files.append(os.path.join(root, f))
-
-            tprint(f"Found {len(all_files)} parquet files.")
 
             if not all_files:
                 return pd.DataFrame(columns=["open","high","low","close","volume"]).set_index(
@@ -228,8 +208,6 @@ class PartitionedOHLCVStore:
                     except Exception:
                         files_to_read.append(fpath)
 
-            tprint(f"Filtered to {len(files_to_read)} files for range [{start_ts}, {end_ts}].")
-
             if not files_to_read:
                 return pd.DataFrame(columns=["open","high","low","close","volume"]).set_index(
                     pd.DatetimeIndex([], tz="UTC", name="ts")
@@ -242,7 +220,6 @@ class PartitionedOHLCVStore:
                 if "ts" not in read_cols:
                     read_cols.append("ts")
 
-            tprint("Reading parquet files...")
             df = pd.read_parquet(files_to_read, columns=read_cols)
 
             if "ts" in df.columns:
@@ -260,7 +237,6 @@ class PartitionedOHLCVStore:
             if end_ts is not None:
                 df = df[df.index <= end_ts]
 
-            tprint(f"Loaded DataFrame shape: {df.shape}")
             return self._downcast(df)
         except Exception as e:
             tprint(f"Error loading {symbol}: {e}")
@@ -270,7 +246,6 @@ class PartitionedOHLCVStore:
 
     def save_partitioned(self, symbol: str, df: pd.DataFrame):
         tprint(f"Entering function: save_partitioned in data_store.py")
-        tprint(f"Saving partitioned {symbol} with input shape {df.shape}")
         if df.empty:
             return
 
@@ -292,7 +267,6 @@ class PartitionedOHLCVStore:
         sym_dir = self._get_symbol_dir(symbol)
 
         for (year, month), group in df_reset.groupby(["year", "month"]):
-            tprint(f"Writing partition {year}-{month} with {len(group)} rows...")
             part_dir = os.path.join(sym_dir, f"year={year}", f"month={month:02d}")
             os.makedirs(part_dir, exist_ok=True)
 
@@ -312,7 +286,6 @@ class PartitionedOHLCVStore:
 
     def compact_partition(self, symbol: str, year: int, month: int):
         tprint(f"Entering function: compact_partition in data_store.py")
-        tprint(f"Compacting {symbol} partition {year}-{month}...")
         sym_dir = self._get_symbol_dir(symbol)
         part_dir = os.path.join(sym_dir, f"year={year}", f"month={month:02d}")
 
@@ -320,7 +293,6 @@ class PartitionedOHLCVStore:
             return
 
         files = glob.glob(os.path.join(part_dir, "*.parquet"))
-        tprint(f"Found {len(files)} files to compact.")
         if not files:
             return
 
@@ -343,7 +315,6 @@ class PartitionedOHLCVStore:
             # Atomic write pattern
             merged.to_parquet(temp_fpath, index=False)
             os.replace(temp_fpath, new_fpath)
-            tprint(f"Compacted to {new_fpath}")
 
             for f in files:
                 if f != new_fpath:
@@ -366,7 +337,6 @@ class PartitionedOHLCVStore:
             # Check metadata first to avoid IO
             meta = self._read_meta(symbol)
             last_ts_ms = meta.get("last_ts_ms", 0)
-            tprint(f"Meta last_ts_ms for {symbol}: {last_ts_ms}")
 
             if last_ts_ms > 0:
                 start_ms = last_ts_ms + 1
@@ -374,7 +344,6 @@ class PartitionedOHLCVStore:
                 # Fallback to load index if no meta
                 # Here load() without args is fine, but we might want to check just the last file?
                 # For simplicity, keep as is, but maybe optimize load(columns=['ts'])
-                tprint("No meta last_ts_ms, checking existing data index...")
                 existing_idx = self.load(symbol, columns=["ts"]).index
                 if not existing_idx.empty:
                     last_ts = existing_idx.max()
@@ -382,18 +351,13 @@ class PartitionedOHLCVStore:
                 else:
                     start_ms = since_ms
 
-            tprint(f"Calculated start_ms: {start_ms}")
-
             now_ms = int(pd.Timestamp.utcnow().value // 10**6)
 
             if start_ms >= now_ms:
-                tprint("Data is up to date.")
                 return self.load(symbol)
 
             tprint(f"FETCH incr: {symbol} from {pd.to_datetime(start_ms, unit='ms', utc=True)}")
             fresh = fetch_ohlcv_all_7d_chunks(exchange, symbol, start_ms, timeframe=self.timeframe, limit=1000)
-
-            tprint(f"Fresh data fetch result: {fresh.shape if fresh is not None else 'None'}")
 
             if fresh is not None and not fresh.empty:
                 fresh = self._downcast(fresh)
@@ -403,7 +367,6 @@ class PartitionedOHLCVStore:
                 new_last = fresh.index.max()
                 new_last_ms = int(new_last.value // 10**6)
                 if new_last_ms > last_ts_ms:
-                    tprint(f"Updating meta last_ts_ms to {new_last_ms}")
                     self._write_meta(symbol, {"last_ts_ms": new_last_ms})
 
                 # Reload full to return merged

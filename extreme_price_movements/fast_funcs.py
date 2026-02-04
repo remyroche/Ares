@@ -31,7 +31,9 @@ def apply_to_frame(df: pd.DataFrame, func, *args) -> pd.DataFrame:
 
     out = pd.DataFrame(index=df.index, columns=df.columns, dtype=np.float32)
     # We iterate over columns.
-    for col in df.columns:
+    for i, col in enumerate(df.columns):
+        if (i + 1) % 100 == 0:
+            tprint(f"apply_to_frame: Processing column {i + 1}/{len(df.columns)}")
         # Convert to numpy float32 array
         vals = df[col].to_numpy(dtype=np.float32)
         # Apply function
@@ -59,7 +61,9 @@ def apply_to_frame_binary(df1: pd.DataFrame, df2: pd.DataFrame, func, *args) -> 
         df2 = df2.to_frame()
 
     out = pd.DataFrame(index=df1.index, columns=df1.columns, dtype=np.float32)
-    for col in df1.columns:
+    for i, col in enumerate(df1.columns):
+        if (i + 1) % 100 == 0:
+            tprint(f"apply_to_frame_binary: Processing column {i + 1}/{len(df1.columns)}")
         if col in df2.columns:
             v1 = df1[col].to_numpy(dtype=np.float32)
             v2 = df2[col].to_numpy(dtype=np.float32)
@@ -162,7 +166,9 @@ def numba_atr_no_norm(high_df, low_df, close_df, n):
     tprint(f"Entering function: numba_atr_no_norm in fast_funcs.py")
     out = pd.DataFrame(index=close_df.index, columns=close_df.columns, dtype=np.float32)
     cols = close_df.columns
-    for c in cols:
+    for i, c in enumerate(cols):
+        if (i + 1) % 100 == 0:
+            tprint(f"numba_atr_no_norm: Processing column {i + 1}/{len(cols)}")
         h = high_df[c].to_numpy(dtype=np.float32)
         l = low_df[c].to_numpy(dtype=np.float32)
         cl = close_df[c].to_numpy(dtype=np.float32)
@@ -175,7 +181,9 @@ def numba_atr(high_df, low_df, close_df, n):
     tprint(f"Entering function: numba_atr in fast_funcs.py")
     out = pd.DataFrame(index=close_df.index, columns=close_df.columns, dtype=np.float32)
     cols = close_df.columns
-    for c in cols:
+    for i, c in enumerate(cols):
+        if (i + 1) % 100 == 0:
+            tprint(f"numba_atr: Processing column {i + 1}/{len(cols)}")
         h = high_df[c].to_numpy(dtype=np.float32)
         l = low_df[c].to_numpy(dtype=np.float32)
         cl = close_df[c].to_numpy(dtype=np.float32)
@@ -421,7 +429,9 @@ def numba_grouped_rolling_mean(df: pd.DataFrame, group_series: pd.Series, window
     groups_arr = group_series.reindex(df.index).to_numpy()
     unique_groups = np.unique(groups_arr)
 
-    for col in df.columns:
+    for i, col in enumerate(df.columns):
+        if (i + 1) % 100 == 0:
+            tprint(f"numba_grouped_rolling_mean: Processing column {i + 1}/{len(df.columns)}")
         vals = df[col].to_numpy(dtype=np.float32)
         res_col = np.full_like(vals, np.nan)
 
@@ -656,7 +666,9 @@ def compute_peak_labels_and_weights(close_df, atr_df, horizon, near_k, rev_k, is
     l_out = pd.DataFrame(index=idx, columns=cols, dtype=np.float32)
     w_out = pd.DataFrame(index=idx, columns=cols, dtype=np.float32)
 
-    for c in cols:
+    for i, c in enumerate(cols):
+        if (i + 1) % 100 == 0:
+            tprint(f"compute_peak_labels_and_weights: Processing column {i + 1}/{len(cols)}")
         if c not in atr_df.columns: continue
 
         c_arr = close_df[c].to_numpy(dtype=np.float32)

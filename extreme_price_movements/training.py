@@ -166,7 +166,7 @@ def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms, models=Non
             else:
                 tprint("Not enough data for UP model.")
                 model_up = None
-        if model_up:
+        if model_up and model_up.model:
             Xp = _build_pred_X(feats, mkt_gates, cfg, ts, up_syms, feature_key="exh_feature_keys")
             if not Xp.empty:
                 probs = model_up.predict_proba(Xp)
@@ -183,7 +183,7 @@ def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms, models=Non
             else:
                 tprint("Not enough data for DOWN model.")
                 model_dn = None
-        if model_dn:
+        if model_dn and model_dn.model:
             Xp = _build_pred_X(feats, mkt_gates, cfg, ts, dn_syms, feature_key="exh_feature_keys")
             if not Xp.empty:
                 probs = model_dn.predict_proba(Xp)
@@ -230,11 +230,11 @@ def generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_end, lookback_h
     valid_syms = [s for s in syms if s in panel["close"].columns]
     Xp = _build_pred_X_window(feats, mkt_gates, cfg, t_idx, valid_syms, feature_key="exh_feature_keys")
     p_up = 0.0
-    if model_up:
+    if model_up and model_up.model:
         p_up = model_up.predict_proba(Xp)
         p_up = np.clip(p_up * 2.0, 0.0, 1.0)
     p_dn = 0.0
-    if model_dn:
+    if model_dn and model_dn.model:
         p_dn = model_dn.predict_proba(Xp)
     trend_vals = feats["trend_pct"].loc[t_idx, valid_syms].stack(future_stack=True).reindex(Xp.index).fillna(0)
     p_final = np.where(trend_vals > 0, p_up, p_dn)

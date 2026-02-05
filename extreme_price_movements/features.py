@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import hashlib
 from joblib import Memory
-from extreme_price_movements.utils import tprint
+from extreme_price_movements.utils import tprint, check_inf_nan
 from extreme_price_movements.feature_transforms import CausalFeatureTransformer
 from extreme_price_movements.time_utils import ensure_utc
 from extreme_price_movements.frac_diff_adaptive import find_min_ffd, frac_diff_ffd
@@ -604,12 +604,17 @@ def _compute_features_impl(panel, mkt_gates, cfg):
             feats[k] = feats[k].astype(np.float32)
             continue
         try:
-            feats[k] = transformer.transform(feats[k])
+            feats[k] = transformer.transform(feats[k], name=k)
         except Exception as e:
             tprint(f"Warning: Transform failed for {k}: {e}")
             import traceback
             traceback.print_exc()
             feats[k] = feats[k].astype(np.float32)
+
+    # Final check for Inf/NaN
+    tprint("Features: performing final Inf/NaN check")
+    for k, v in feats.items():
+        check_inf_nan(v, k)
 
     tprint(f"Features: done ({len(feats)} keys)")
     return feats

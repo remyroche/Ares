@@ -3,6 +3,7 @@ import time
 import functools
 import random
 import pandas as pd
+import numpy as np
 
 def retry_with_backoff(retries=3, backoff_in_seconds=1):
     tprint(f"Entering function: retry_with_backoff in utils.py")
@@ -44,3 +45,30 @@ class Timer:
         tprint(f"Entering function: __exit__ in utils.py")
         dt = time.time() - self.t0
         tprint(f"END: {self.label} ({dt:.2f}s)")
+
+def check_inf_nan(df: pd.DataFrame, name: str):
+    if df is None: return
+
+    # Ensure we are working with numpy/pandas
+    vals = df.values
+    is_inf = np.isinf(vals)
+    is_nan = np.isnan(vals)
+
+    if is_inf.any() or is_nan.any():
+        mask = is_inf | is_nan
+        # Rows with any inf/nan
+        row_mask = mask.any(axis=1)
+        affected_rows = df.index[row_mask]
+
+        # Columns with any inf/nan
+        col_mask = mask.any(axis=0)
+        affected_cols = df.columns[col_mask]
+
+        if len(affected_rows) > 0:
+            row_range = f"{affected_rows[0]} to {affected_rows[-1]}"
+        else:
+            row_range = "None"
+
+        col_list = list(affected_cols)
+
+        tprint(f"Inf/NaN detected in {name}: Rows [{row_range}], Cols {col_list}")

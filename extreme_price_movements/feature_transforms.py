@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import extreme_price_movements.fast_funcs as ff
-from .utils import tprint
+from .utils import tprint, check_inf_nan
 
 class CausalFeatureTransformer:
     def __init__(self, winsor_qt=0.02, roll_window=24*30):
@@ -9,7 +9,7 @@ class CausalFeatureTransformer:
         self.winsor_qt = winsor_qt
         self.roll_window = roll_window
 
-    def transform(self, df: pd.DataFrame) -> pd.DataFrame:
+    def transform(self, df: pd.DataFrame, name: str = "unknown") -> pd.DataFrame:
         """
         Applies Log + Causal Winsorization + Causal Z-Score.
         df: DataFrame (time x features) or (time x symbols) for a single feature?
@@ -50,7 +50,9 @@ class CausalFeatureTransformer:
 
         # Fill initial NaNs with 0 or drop?
         # We keep them as NaNs, let downstream handle.
-        return z.astype(np.float32)
+        z = z.astype(np.float32)
+        check_inf_nan(z, name)
+        return z
 
 def log_winsor_zscore_rolling(series: pd.Series, window: int = 720, qt: float = 0.02) -> pd.Series:
     """Helper for single series causal transform"""

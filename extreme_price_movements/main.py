@@ -45,12 +45,16 @@ def generate_features_daily(ts_sig, margin_symbols, cfg, store, ex):
     load_syms = sorted(list(set(missing_syms).union(set(cfg["market_basket"]))))
 
     dfs = {}
+
+    # Use fetch_years to determine loading window, but ensure at least 90 days for feature safety
+    lookback_days = max(90, int(cfg["fetch_years"] * 365))
+
     with Timer("Feature Data Fetch"):
         for s in load_syms:
             df = store.load(s)
             if not df.empty:
-                # Load enough history for features (90 days should cover it)
-                dfs[s] = df[df.index <= ts_sig].tail(24*90)
+                # Load history based on config
+                dfs[s] = df[df.index <= ts_sig].tail(24*lookback_days)
 
     if not dfs:
         tprint("No data available for feature generation.")
@@ -180,6 +184,16 @@ def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger, model_
     fetch_syms = sorted(list(set(candidates_pool + active_syms)))
 
     dfs = {}
+
+    # Execution typically only needs enough for feature calculation (90d is safe)
+    # But to respect "light" vs full consistency, we can use the same logic if feasible.
+    # However, for live execution, fetching 3 years of data every hour is wasteful and slow.
+    # We will stick to a safe 90 days for execution as it doesn't affect model training depth.
+    # Wait, the user said "model training, etc". Execution is "running" the model.
+    # Ideally execution state is minimal. Let's keep 90 days or `fetch_years` if smaller?
+    # No, features might break if window is too small. 90 days is a safe lower bound.
+    # Let's keep 90 days for execution speed, as it's not training.
+
     since = (ts_sig - pd.Timedelta(days=90)).floor("D")
     since_ms = int(since.value // 10**6)
     with Timer("Candidate Data Fetch"):

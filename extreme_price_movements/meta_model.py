@@ -72,7 +72,7 @@ class MetaModel:
 
         # 1. Feature Selection
         n_samples = len(X_meta)
-        n_select = min(20, max(1, n_samples // 100))
+        n_select = min(30, max(1, n_samples // 100))
         tprint(f"MetaModel: Running MDI selection. Target={n_select}")
 
         sel_res = mdi_feature_selection_v3(

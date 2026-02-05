@@ -6,7 +6,7 @@ from extreme_price_movements.meta_model import MetaModel
 from extreme_price_movements.exhaustion import ExhaustionModel
 from extreme_price_movements.candidates import select_trade_candidates_hourly, select_trade_candidates_vectorized
 import extreme_price_movements.fast_funcs as ff
-from extreme_price_movements.labeling import compute_trailing_atr_labels
+from extreme_price_movements.labeling import compute_trailing_atr_labels, compute_triple_barrier_labels
 from extreme_price_movements.sample_weights import build_label_time_ranges, compute_sample_weights_with_uniqueness
 from sklearn.mixture import GaussianMixture
 
@@ -256,26 +256,37 @@ def _build_pred_X_window(feats, mkt_gates, cfg, t_idx, syms, feature_key="exh_fe
         Xp[col] = Xp.index.get_level_values("ts").map(mg[col])
     return Xp.fillna(0)
 
-def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts_end, p_exh_hist, H, model_kind, trend_filter=None, feature_key=None):
+def build_hourly_training_set_and_weights(
+    panel, feats, mkt_gates, cfg, syms, ts_end, p_exh_hist, H, model_kind,
+    trend_filter=None, feature_key=None,
+    label_method="atr", fixed_tp=0.05, fixed_sl=0.025, side="long"
+):
     tprint(f"Entering function: build_hourly_training_set_and_weights in training.py")
     c = panel["close"]
     idx = c.index
 
-    k_sl = cfg.get("train_k_sl", 2.0)
-    k_pt = cfg.get("train_k_pt", 2.0)
-    k_tp = cfg.get("train_k_tp", 1.0)
-
-    if "atr_pct" in feats:
-        atr_df = feats["atr_pct"]
+    if label_method == "triple_barrier":
+        tprint(f"Labeling: Triple Barrier (TP={fixed_tp}, SL={fixed_sl}, Side={side})")
+        tb_labels, tb_returns = compute_triple_barrier_labels(
+            panel, fixed_tp, fixed_sl, H, side=side
+        )
     else:
-        tprint("Warning: atr_pct not found, using default 1% ATR for labeling")
-        atr_df = pd.DataFrame(0.01, index=c.index, columns=c.columns)
+        # Default ATR logic
+        k_sl = cfg.get("train_k_sl", 2.0)
+        k_pt = cfg.get("train_k_pt", 2.0)
+        k_tp = cfg.get("train_k_tp", 1.0)
 
-    tb_labels, tb_returns = compute_trailing_atr_labels(
-        panel, atr_df,
-        k_sl=k_sl, k_pt=k_pt, k_tp=k_tp,
-        horizon_hours=H
-    )
+        if "atr_pct" in feats:
+            atr_df = feats["atr_pct"]
+        else:
+            tprint("Warning: atr_pct not found, using default 1% ATR for labeling")
+            atr_df = pd.DataFrame(0.01, index=c.index, columns=c.columns)
+
+        tb_labels, tb_returns = compute_trailing_atr_labels(
+            panel, atr_df,
+            k_sl=k_sl, k_pt=k_pt, k_tp=k_tp,
+            horizon_hours=H
+        )
 
     cand_mask = select_trade_candidates_vectorized(panel, feats, pct=cfg["trade_extreme_pct"], metric=cfg["trade_deviation_metric"])
     if cand_mask is None:
@@ -324,15 +335,24 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
             if trend_filter == "up" and trend_dir <= 0: continue
             if trend_filter == "down" and trend_dir > 0: continue
 
-            trade_dir = 1 # Default Long
-            if model_kind == "tf":
-                if trend_dir > 0: trade_dir = 1
-                else: trade_dir = -1
-            elif model_kind == "mr":
-                if trend_dir > 0: trade_dir = -1
-                else: trade_dir = 1
+            # If label_method is triple_barrier, `ret` already reflects the PnL of the specific side.
+            # If label_method is atr (legacy), `ret` is simulated Long return, so we flip for Short strategies.
 
-            pnl = ret * trade_dir
+            pnl = 0.0
+            if label_method == "triple_barrier":
+                pnl = ret
+                # Note: `ret` from `compute_triple_barrier_labels` for Short is (Entry/Exit - 1).
+                # So positive `ret` means profit.
+            else:
+                trade_dir = 1 # Default Long
+                if model_kind == "tf":
+                    if trend_dir > 0: trade_dir = 1
+                    else: trade_dir = -1
+                elif model_kind == "mr":
+                    if trend_dir > 0: trade_dir = -1
+                    else: trade_dir = 1
+                pnl = ret * trade_dir
+
             y_bin = 1 if pnl > 0 else 0
 
             pa = abs(ret_vals[sym])
@@ -394,22 +414,9 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
     y_bin = df.pop("y_bin").values.astype(int)
     y_ret = df.pop("y_ret").values.astype(np.float32)
 
-    # Save metadata for return if needed?
-    # For now, just drop
-    meta_cols = ["ts", "symbol"]
-    # We will need these for Spike Model alignment later, so let's keep them in a separate DF if we want.
-    # But function signature returns X_out, y...
-    # I'll return `df` but with meta cols dropped.
-
-    # IMPORTANT: We need to pass Spike Features to Meta Model.
-    # If this function is called for TF/MR, it only gathers TF/MR features.
-    # The Meta model needs to gather ITS OWN features for the SAME rows.
-    # We should probably have a `build_meta_training_set` helper or modify this to return metadata.
-
     X_out = df.drop(columns=["ts", "symbol"], errors="ignore").astype(np.float32)
     X_out.index = df.index
 
-    # Return df_meta (ts, symbol) as extra return?
     df_meta = df[meta_cols] if "ts" in df.columns else pd.DataFrame(index=df.index)
 
     return X_out, y_bin, y_ret, list(X_out.columns), weights, df_meta
@@ -457,7 +464,6 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
         datasets["spike_anatomy"] = spike_df
 
     # 2. Alpha Models (MR/TF)
-    # Refactored for explicit Long/Short and MR/TF pairings
     trade_sides = ["long", "short"]
     kinds = ["mr", "tf"]
     horizons = cfg["label_horizons_hours"]
@@ -465,11 +471,6 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
     for side in trade_sides:
         for k in kinds:
             # Determine Candidate Filter based on Strategy
-            # Long MR: Worst (ret < 0) -> buy dip
-            # Long TF: Best (ret > 0) -> buy breakout
-            # Short MR: Best (ret > 0) -> sell pump
-            # Short TF: Worst (ret < 0) -> sell crash
-
             cand_filter = "unknown"
             if side == "long":
                 if k == "mr": cand_filter = "worst" # ret < 0
@@ -478,33 +479,24 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
                 if k == "mr": cand_filter = "best"  # ret > 0
                 else: cand_filter = "worst"         # ret < 0
 
-            # Map cand_filter to trend_filter used in build func
-            # build function expects "up" (positive trend) or "down" (negative trend)
-            # "best" -> "up", "worst" -> "down"
             trend_filter = "up" if cand_filter == "best" else "down"
 
             feat_key = "tf_feature_keys" if k == "tf" else "mr_feature_keys"
 
+            # Fixed Barrier Params based on user requirement
+            # Long: TP=5%, SL=2.5%
+            # Short: TP=5%, SL=2.5% (Target -5%, Stop +2.5%)
+            fixed_tp = 0.05
+            fixed_sl = 0.025
+
             for H in horizons:
                 tprint(f"Generating labels for {side} {k} ({cand_filter}) H={H}...")
 
-                # We need to ensure we label the correct SIDE outcome.
-                # build_hourly_training_set_and_weights currently assumes:
-                # if model_kind == "tf": if trend>0 -> trade Long. if trend<0 -> trade Short.
-                # if model_kind == "mr": if trend>0 -> trade Short. if trend<0 -> trade Long.
-
-                # Let's verify if this matches our matrix.
-                # Long TF (best, trend>0): kind="tf", trend>0 -> trade Long. Match.
-                # Short TF (worst, trend<0): kind="tf", trend<0 -> trade Short. Match.
-                # Long MR (worst, trend<0): kind="mr", trend<0 -> trade Long. Match.
-                # Short MR (best, trend>0): kind="mr", trend>0 -> trade Short. Match.
-
-                # So the existing logic in build_hourly_training_set_and_weights works correctly
-                # provided we pass the correct trend_filter ("up" for best, "down" for worst).
-
                 X, y, y_ret, cols, w, meta_idx = build_hourly_training_set_and_weights(
                     panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, H, k,
-                    trend_filter=trend_filter, feature_key=feat_key
+                    trend_filter=trend_filter, feature_key=feat_key,
+                    label_method="triple_barrier",
+                    fixed_tp=fixed_tp, fixed_sl=fixed_sl, side=side
                 )
 
                 if X is not None:
@@ -512,23 +504,6 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
                     df_out["__y_bin__"] = y
                     df_out["__y_ret__"] = y_ret
                     df_out["__w__"] = w
-
-                    # Add spike probs if available (for MetaModel usage later)
-                    if spike_df is not None and meta_idx is not None:
-                        # Attempt to merge spike probs
-                        # meta_idx has ts, symbol. spike_df has ts, symbol implicitly if we saved it?
-                        # No, spike_df is just the training data for GMM.
-                        # We need PREDICTIONS (probs) for the current rows.
-                        # This requires running GMM prediction.
-                        # Can we do it here?
-                        # Yes, we have `train_spike_anatomy_model` returning a DataFrame, not model.
-                        # Wait, `generate_label_datasets` calls `train_spike_anatomy_model` which returns DF.
-                        # It doesn't return the fitted model.
-                        # So we can't predict here unless we fit it.
-                        # Refactoring limitation: We can't easily add spike probs here without fitting GMM.
-                        # We will skip adding spike probs to parquet for now and rely on MetaModel fitting to generate them if possible,
-                        # or accept they are missing in this iteration.
-                        pass
 
                     if meta_idx is not None:
                         df_out["__ts__"] = meta_idx["ts"]
@@ -538,6 +513,7 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
 
     # 3. Exhaustion Models
     lookback = cfg["exh_train_lookback_hours"]
+    directions = ["up", "down"]
     for d in directions:
         tprint(f"Generating exhaustion training set for {d}...")
         X, y, w, cols = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts, lookback, syms, trend_filter=d)

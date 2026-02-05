@@ -7,13 +7,13 @@ from extreme_price_movements.config import CFG
 from extreme_price_movements.utils import tprint, Timer
 from extreme_price_movements.data_store import make_spot_exchange, PartitionedOHLCVStore
 from extreme_price_movements.universe import refresh_margin_universe_daily, build_fetch_universe
-from extreme_price_movements.main import train_daily, run_live_cycle
+from extreme_price_movements.main import train_daily, run_live_cycle, generate_features_daily
 from extreme_price_movements.time_utils import get_ts_sig
 
 def main():
     parser = argparse.ArgumentParser(description="Extreme Price Movements Pipeline")
     parser.add_argument("--light", action="store_true", help="Run in light mode (less data)")
-    parser.add_argument("--mode", choices=["download", "train", "run"], required=True, help="Pipeline mode")
+    parser.add_argument("--mode", choices=["download", "feature_generation", "train", "run"], required=True, help="Pipeline mode")
     parser.add_argument("--state-file", default="model_state.pkl", help="Path to persist model state")
 
     args = parser.parse_args()
@@ -46,6 +46,14 @@ def main():
             except Exception as e:
                 tprint(f"Error fetching {s}: {e}")
         tprint("Download Complete.")
+
+    elif args.mode == "feature_generation":
+        tprint("Starting Feature Generation...")
+        with Timer("Margin Universe"):
+            mu = refresh_margin_universe_daily(None, quote="USDT")
+
+        ts_sig = get_ts_sig()
+        generate_features_daily(ts_sig, mu.symbols, CFG, store, ex)
 
     elif args.mode == "train":
         tprint("Starting Training...")

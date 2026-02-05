@@ -509,3 +509,11 @@ def to_panel(dfs_by_symbol: dict[str, pd.DataFrame]):
     return panel
 
 OHLCVStore = PartitionedOHLCVStore
+
+def get_feature_path(root_dir: str, ts: pd.Timestamp, symbol: str) -> str:
+    """
+    Returns the expected file path for a symbol's features at a given timestamp.
+    """
+    ts_str = ts.strftime("%Y%m%d_%H%M%S")
+    safe_sym = symbol.replace("/", "_")
+    return os.path.join(root_dir, "features", ts_str, f"symbol={safe_sym}.parquet")

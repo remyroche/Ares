@@ -356,6 +356,13 @@ class PartitionedOHLCVStore:
 def save_features(feats: dict, ts: pd.Timestamp, root_dir: str):
     """
     Save generated features to disk (Per-Symbol).
+
+    Each symbol is saved as a separate Parquet file with the naming convention:
+    symbol={safe_symbol}.parquet
+
+    The original symbol name is preserved in the '__symbol__' column to ensure
+    correct restoration of special characters (e.g. slashes) upon loading.
+
     feats: dict of DataFrames (feature_name -> DataFrame(index=t, cols=syms))
     """
     ts_str = ts.strftime("%Y%m%d_%H%M%S")
@@ -379,6 +386,9 @@ def save_features(feats: dict, ts: pd.Timestamp, root_dir: str):
             sym_data = {k: feats[k][sym] for k in feats if hasattr(feats[k], "columns") and sym in feats[k].columns}
             df_sym = pd.DataFrame(sym_data)
             
+            # Persist original symbol name to handle slashes/renaming
+            df_sym["__symbol__"] = sym
+
             # Save
             safe_sym = sym.replace("/", "_")
             fname = f"symbol={safe_sym}.parquet"
@@ -397,6 +407,11 @@ def save_features(feats: dict, ts: pd.Timestamp, root_dir: str):
 def load_features(ts: pd.Timestamp, root_dir: str) -> dict:
     """
     Load features from disk if they exist for this timestamp.
+
+    Expects files matching 'symbol=*.parquet'. Restores the original symbol name
+    from the '__symbol__' column if present, enabling support for symbols with
+    special characters (e.g. 'BTC/USDT').
+
     Returns: dict of DataFrames (feature_name -> DataFrame(index=t, cols=syms)) or None.
     """
     ts_str = ts.strftime("%Y%m%d_%H%M%S")
@@ -421,7 +436,17 @@ def load_features(ts: pd.Timestamp, root_dir: str) -> dict:
             # fname is symbol=XYZ.parquet
             sym = fname.replace("symbol=", "").replace(".parquet", "")
             df = pd.read_parquet(fpath)
-            loaded_dfs[sym] = df
+
+            if "__symbol__" in df.columns:
+                if not df.empty:
+                    real_sym = str(df["__symbol__"].iloc[0])
+                    df = df.drop(columns=["__symbol__"])
+                    loaded_dfs[real_sym] = df
+                else:
+                    df = df.drop(columns=["__symbol__"])
+                    loaded_dfs[sym] = df
+            else:
+                loaded_dfs[sym] = df
         except Exception as e:
             tprint(f"Error loading {fpath}: {e}")
             

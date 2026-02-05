@@ -235,6 +235,15 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["rv_6h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 6)
     feats["rv_12h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 12)
 
+    # New Filter Features (Range & Vol Z-score)
+    h_24 = ff.apply_to_frame(h, ff._numba_rolling_max, 24)
+    l_24 = ff.apply_to_frame(l, ff._numba_rolling_min, 24)
+    feats["range_24h_pct"] = ((h_24 - l_24) / (c + 1e-12)).astype(np.float32)
+
+    # Volatility Z-score (rv_24h is base volatility)
+    # Using 30d lookback for Z-score baseline
+    feats["volatility_zscore"] = zscore_rolling(feats["rv_24h"], 24 * 30)
+
     feats["qv"] = (c * v).astype(np.float32)
     feats["vol_z24_base"] = zscore_rolling(v, 24)
     feats["vol_z_base"]   = zscore_rolling(v, cfg["volz_n"])
@@ -616,7 +625,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     tprint("Features: Applying Causal Transforms (Log + Winsor + ZScore)")
     transformer = CausalFeatureTransformer(winsor_qt=0.02, roll_window=24*30)
 
-    skip_transform = ["sin_hod", "cos_hod", "sin_dow", "cos_dow"]
+    skip_transform = ["sin_hod", "cos_hod", "sin_dow", "cos_dow", "range_24h_pct", "volatility_zscore"]
 
     for k in feats.keys():
         tprint(f"Generating feature: {k}")

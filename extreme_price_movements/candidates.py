@@ -14,7 +14,21 @@ def select_trade_candidates_hourly(feats, ts, syms, pct=0.05, min_n=10, max_n=60
     k = min(k, max_n)
     top = s.sort_values(ascending=False).head(k).index.tolist()
     bot = s.sort_values(ascending=True).head(k).index.tolist()
-    return top, bot
+
+    # Apply Filters (Abs Range > 10% & Vol Z > 1.6)
+    def apply_filters(candidates):
+        filtered = []
+        for sym in candidates:
+            try:
+                r24 = feats["range_24h_pct"].loc[ts, sym]
+                vz = feats["volatility_zscore"].loc[ts, sym]
+                if r24 > 0.10 and vz > 1.6:
+                    filtered.append(sym)
+            except KeyError:
+                continue
+        return filtered
+
+    return apply_filters(top), apply_filters(bot)
 
 def entry_price_next_hour_open(panel_open, ts_entry, symbol):
     tprint(f"Entering function: entry_price_next_hour_open in candidates.py")
@@ -71,43 +85,40 @@ def select_trade_candidates_vectorized(panel, feats, pct=0.05, metric="ret24h"):
             base_mask.loc[idx, top_cols] = True
             base_mask.loc[idx, bot_cols] = True
 
-    # 2. Time Expansion
+    # 2. Volatility & Event Filters (Apply BEFORE Expansion)
+    # This ensures we select events where conditions were met AT THE TIME of the event.
+
+    # Filter 2: 24h High/Low range > 10%
+    if "range_24h_pct" in feats:
+        vol_metric = feats["range_24h_pct"]
+        vol_mask = vol_metric > 0.10
+    else:
+        # Fallback if feature missing (legacy)
+        c = panel["close"]
+        h = panel["high"]
+        l = panel["low"]
+        roll_h = h.rolling(24).max()
+        roll_l = l.rolling(24).min()
+        vol_metric = (roll_h - roll_l) / (c + 1e-12)
+        vol_mask = vol_metric > 0.10
+
+    # Filter 3: Volatility Z-score > 1.6
+    if "volatility_zscore" in feats:
+        event_mask = feats["volatility_zscore"] > 1.6
+    else:
+        event_mask = pd.DataFrame(True, index=vol_mask.index, columns=vol_mask.columns)
+
+    # Combine Filters into Base Mask
+    base_mask = base_mask & vol_mask & event_mask
+
+    # 3. Time Expansion
     # Offsets: t-12, t-8, t-4, t+4, t+8, t+12, t+16
-    # Shift(k): Moves value at t to t+k.
-    # We want if t is True, then t-12 is True. -> Shift(-12)
-    # If t is True, then t+4 is True. -> Shift(4)
     offsets = [-12, -8, -4, 4, 8, 12, 16]
 
     expanded_mask = base_mask.copy()
     for off in offsets:
         # Shift mask
-        # Note: 'freq' argument in shift?
-        # feats index is usually hourly DateTimeIndex.
-        # shift(4) shifts by 4 periods (hours).
         shifted = base_mask.shift(off)
         expanded_mask = expanded_mask | shifted.fillna(False)
 
-    # 3. Volatility Filter
-    # (Max(H, 12h) - Min(L, 12h)) / Close >= 0.08
-    # Use raw prices from panel
-    c = panel["close"]
-    h = panel["high"]
-    l = panel["low"]
-
-    # Rolling 12h Max/Min
-    # Assuming hourly data
-    roll_h = h.rolling(12).max()
-    roll_l = l.rolling(12).min()
-
-    # Diff relative to Close? Or Low? Or Min?
-    # User: "price difference is less than 8%".
-    # Standard: (H - L) / L or (H - L) / C.
-    # Using C for robustness.
-    vol_metric = (roll_h - roll_l) / (c + 1e-12)
-
-    vol_mask = vol_metric >= 0.08
-
-    # Final Mask
-    final_mask = expanded_mask & vol_mask
-
-    return final_mask
+    return expanded_mask

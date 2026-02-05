@@ -7,7 +7,6 @@ at train/test boundaries.
 from typing import Generator, Tuple
 import numpy as np
 from sklearn.model_selection import BaseCrossValidator
-from .feature_selection_extreme_events import purged_embargoed_splits
 
 
 class PurgedKFold(BaseCrossValidator):
@@ -19,8 +18,8 @@ class PurgedKFold(BaseCrossValidator):
     
     Args:
         n_splits: Number of folds
-        purge: Number of samples to purge at train/test boundary
-        embargo: Number of samples to embargo after test set
+        purge: Number of samples to purge at train/test boundary (in index units)
+        embargo: Number of samples to embargo after test set (in index units)
         min_train_size: Minimum training set size (optional)
     """
     
@@ -60,23 +59,33 @@ class PurgedKFold(BaseCrossValidator):
         Yields:
             train_idx, test_idx: Arrays of indices
         """
-        # Get number of samples
         if hasattr(X, 'shape'):
             n_samples = X.shape[0]
         else:
             n_samples = len(X)
         
-        # Use existing purged_embargoed_splits function
-        splits = purged_embargoed_splits(
-            n_samples=n_samples,
-            n_splits=self.n_splits,
-            purge=self.purge,
-            embargo=self.embargo,
-            min_train_size=self.min_train_size
-        )
+        fold_sizes = np.full(self.n_splits, n_samples // self.n_splits, dtype=np.int32)
+        fold_sizes[: n_samples % self.n_splits] += 1
         
-        for train_idx, test_idx in splits:
-            yield train_idx, test_idx
+        start = 0
+        for i in range(self.n_splits):
+            val_start = start
+            val_end = start + fold_sizes[i]
+            start = val_end
+
+            # Note: This implementation is Walk-Forward (past data only).
+            # It does not include future data (post-test), so 'embargo' is unused here
+            # but kept in __init__ for API compatibility/future extension.
+            val_idx = np.arange(val_start, val_end, dtype=np.int32)
+            train_end = max(0, val_start - self.purge)
+            train_idx = np.arange(0, train_end, dtype=np.int32)
+
+            if train_idx.size == 0:
+                continue
+            if self.min_train_size is not None and train_idx.size < self.min_train_size:
+                continue
+
+            yield train_idx, val_idx
     
     def __repr__(self):
         return (
@@ -100,8 +109,8 @@ class CombinatorialPurgedKFold(BaseCrossValidator):
     Args:
         n_splits: Number of folds
         n_test_splits: Number of consecutive folds to use as test set
-        purge: Number of samples to purge at boundaries
-        embargo: Number of samples to embargo after test set
+        purge: Number of samples to purge at boundaries (in index units)
+        embargo: Number of samples to embargo after test set (in index units)
     """
     
     def __init__(
@@ -148,42 +157,29 @@ class CombinatorialPurgedKFold(BaseCrossValidator):
         else:
             n_samples = len(X)
         
-        indices = np.arange(n_samples)
-        
-        # Calculate fold sizes
-        fold_sizes = np.full(self.n_splits, n_samples // self.n_splits, dtype=int)
+        # Calculate fold sizes (vectorized)
+        fold_sizes = np.full(self.n_splits, n_samples // self.n_splits, dtype=np.int32)
         fold_sizes[:n_samples % self.n_splits] += 1
         
         # Create fold boundaries
-        fold_bounds = [0]
-        for size in fold_sizes:
-            fold_bounds.append(fold_bounds[-1] + size)
+        fold_bounds = np.r_[0, fold_sizes.cumsum()]  # shape (n_splits+1,)
         
         # Generate all possible test set positions
         for test_start_fold in range(self.n_splits - self.n_test_splits + 1):
             test_end_fold = test_start_fold + self.n_test_splits
             
             # Test set indices
-            test_start_idx = fold_bounds[test_start_fold]
-            test_end_idx = fold_bounds[test_end_fold]
-            test_idx = indices[test_start_idx:test_end_idx]
+            test_start_idx = int(fold_bounds[test_start_fold])
+            test_end_idx = int(fold_bounds[test_end_fold])
             
-            # Training set: all except test set, with purging and embargo
-            train_idx = []
+            pre_end = max(0, test_start_idx - self.purge)
+            post_start = min(n_samples, test_end_idx + self.embargo)
             
-            # Add pre-test training data (with purging)
-            if test_start_fold > 0:
-                train_end = max(0, test_start_idx - self.purge)
-                train_idx.extend(indices[:train_end])
+            test_idx = np.arange(test_start_idx, test_end_idx, dtype=np.int32)
+            # Use np.r_ to efficiently build train indices without lists
+            train_idx = np.r_[0:pre_end, post_start:n_samples].astype(np.int32, copy=False)
             
-            # Add post-test training data (with embargo)
-            if test_end_fold < self.n_splits:
-                train_start = min(n_samples, test_end_idx + self.embargo)
-                train_idx.extend(indices[train_start:])
-            
-            train_idx = np.array(train_idx)
-            
-            if len(train_idx) > 0 and len(test_idx) > 0:
+            if train_idx.size > 0 and test_idx.size > 0:
                 yield train_idx, test_idx
 
 
@@ -193,7 +189,8 @@ def cv_score_with_purging(
     y,
     cv_splitter,
     sample_weight=None,
-    scoring_func=None
+    scoring_func=None,
+    predict_method="predict"
 ):
     """
     Cross-validation scoring with purged folds.
@@ -207,42 +204,51 @@ def cv_score_with_purging(
         cv_splitter: PurgedKFold or CombinatorialPurgedKFold instance
         sample_weight: Optional sample weights
         scoring_func: Scoring function (default: accuracy for classifiers)
+        predict_method: Method to call on estimator (predict, predict_proba, decision_function)
         
     Returns:
         Array of CV scores
     """
     from sklearn.metrics import accuracy_score, r2_score
-    from sklearn.base import is_classifier
+    from sklearn.base import is_classifier, clone
     
     if scoring_func is None:
         scoring_func = accuracy_score if is_classifier(model) else r2_score
     
     scores = []
     
+    # Pre-check accessor types to avoid repeated checks inside loop
+    is_pandas_X = hasattr(X, "iloc")
+    is_pandas_y = hasattr(y, "iloc")
+    is_pandas_w = sample_weight is not None and hasattr(sample_weight, "iloc")
+
     for train_idx, test_idx in cv_splitter.split(X):
-        # Handle DataFrame/Series
-        if hasattr(X, 'iloc'):
+        est = clone(model)
+
+        # Handle X
+        if is_pandas_X:
             X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
         else:
             X_train, X_test = X[train_idx], X[test_idx]
         
-        if hasattr(y, 'iloc'):
+        # Handle y
+        if is_pandas_y:
             y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
         else:
             y_train, y_test = y[train_idx], y[test_idx]
         
         # Handle sample weights
         if sample_weight is not None:
-            if hasattr(sample_weight, 'iloc'):
+            if is_pandas_w:
                 w_train = sample_weight.iloc[train_idx]
             else:
                 w_train = sample_weight[train_idx]
-            model.fit(X_train, y_train, sample_weight=w_train)
+            est.fit(X_train, y_train, sample_weight=w_train)
         else:
-            model.fit(X_train, y_train)
+            est.fit(X_train, y_train)
         
         # Predict and score
-        y_pred = model.predict(X_test)
+        y_pred = getattr(est, predict_method)(X_test)
         score = scoring_func(y_test, y_pred)
         scores.append(score)
     

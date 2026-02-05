@@ -47,7 +47,12 @@ class Timer:
         tprint(f"END: {self.label} ({dt:.2f}s)")
 
 def check_inf_nan(df: pd.DataFrame, name: str):
-    if df is None: return
+    if df is None:
+        return
+
+    if df.empty:
+        tprint(f"DataFrame {name} is empty.")
+        return
 
     # Ensure we are working with numpy/pandas
     vals = df.values
@@ -72,3 +77,14 @@ def check_inf_nan(df: pd.DataFrame, name: str):
         col_list = list(affected_cols)
 
         tprint(f"Inf/NaN detected in {name}: Rows [{row_range}], Cols {col_list}")
+
+    # Check for low variation (std < 1e-9)
+    # Using numpy std along axis 0, ignoring NaNs to avoid issues with previous check
+    try:
+        stds = np.nanstd(vals, axis=0)
+        low_var_mask = stds < 1e-9
+        if low_var_mask.any():
+            low_var_cols = df.columns[low_var_mask].tolist()
+            tprint(f"Low variation detected in {name}: Cols {low_var_cols} (std < 1e-9)")
+    except Exception as e:
+        tprint(f"Error checking variation in {name}: {e}")

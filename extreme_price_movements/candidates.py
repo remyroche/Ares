@@ -14,7 +14,21 @@ def select_trade_candidates_hourly(feats, ts, syms, pct=0.05, min_n=10, max_n=60
     k = min(k, max_n)
     top = s.sort_values(ascending=False).head(k).index.tolist()
     bot = s.sort_values(ascending=True).head(k).index.tolist()
-    return top, bot
+
+    # Apply Filters (Abs Range > 10% & Vol Z > 1.6)
+    def apply_filters(candidates):
+        filtered = []
+        for sym in candidates:
+            try:
+                r24 = feats["range_24h_pct"].loc[ts, sym]
+                vz = feats["volatility_zscore"].loc[ts, sym]
+                if r24 > 0.10 and vz > 1.6:
+                    filtered.append(sym)
+            except KeyError:
+                continue
+        return filtered
+
+    return apply_filters(top), apply_filters(bot)
 
 def entry_price_next_hour_open(panel_open, ts_entry, symbol):
     tprint(f"Entering function: entry_price_next_hour_open in candidates.py")
@@ -88,26 +102,33 @@ def select_trade_candidates_vectorized(panel, feats, pct=0.05, metric="ret24h"):
         expanded_mask = expanded_mask | shifted.fillna(False)
 
     # 3. Volatility Filter
-    # (Max(H, 12h) - Min(L, 12h)) / Close >= 0.08
-    # Use raw prices from panel
-    c = panel["close"]
-    h = panel["high"]
-    l = panel["low"]
+    # Use features directly (calculated in features.py now)
+    # Filter 2: 24h High/Low range > 10%
+    if "range_24h_pct" in feats:
+        vol_metric = feats["range_24h_pct"]
+        vol_mask = vol_metric > 0.10
+    else:
+        # Fallback if feature missing (legacy)
+        c = panel["close"]
+        h = panel["high"]
+        l = panel["low"]
+        roll_h = h.rolling(24).max()
+        roll_l = l.rolling(24).min()
+        vol_metric = (roll_h - roll_l) / (c + 1e-12)
+        vol_mask = vol_metric > 0.10
 
-    # Rolling 12h Max/Min
-    # Assuming hourly data
-    roll_h = h.rolling(12).max()
-    roll_l = l.rolling(12).min()
-
-    # Diff relative to Close? Or Low? Or Min?
-    # User: "price difference is less than 8%".
-    # Standard: (H - L) / L or (H - L) / C.
-    # Using C for robustness.
-    vol_metric = (roll_h - roll_l) / (c + 1e-12)
-
-    vol_mask = vol_metric >= 0.08
+    # Filter 3: Volatility Z-score > 1.6
+    if "volatility_zscore" in feats:
+        event_mask = feats["volatility_zscore"] > 1.6
+    else:
+        # Fallback using on-the-fly calc?
+        # Just allow all if missing to avoid crash, or strict?
+        # Strict logic: must be an event.
+        # But for backward compat, maybe skip if missing.
+        # Given we just added it, it should be there.
+        event_mask = pd.DataFrame(True, index=vol_mask.index, columns=vol_mask.columns)
 
     # Final Mask
-    final_mask = expanded_mask & vol_mask
+    final_mask = expanded_mask & vol_mask & event_mask
 
     return final_mask

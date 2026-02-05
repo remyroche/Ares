@@ -560,7 +560,7 @@ def train_models_from_artifacts(datasets, cfg):
     if "spike_anatomy" in datasets:
         tprint("Training Spike Model...")
         df_spike = datasets["spike_anatomy"]
-        gmm = GaussianMixture(n_components=4, random_state=42)
+        gmm = GaussianMixture(n_components=4, covariance_type='diag', random_state=42)
         gmm.fit(df_spike)
         spike_model = gmm
 

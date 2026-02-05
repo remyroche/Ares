@@ -378,13 +378,21 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
         pd.DatetimeIndex(exit_times)
     )
     
+    # Extract time grid from panel for accurate uniqueness (Improvement #3)
+    # This ensures we measure uniqueness on the actual price bars, not just event boundaries.
+    ts_min = label_times["t_start"].min()
+    ts_max = label_times["t_end"].max()
+    full_idx = panel["close"].index
+    time_grid = full_idx[(full_idx >= ts_min) & (full_idx <= ts_max)]
+
     # Compute sample weights with uniqueness (AFML Chapter 4)
     base_weights = df["w"].values
     returns = df["y_ret"].values
     weights = compute_sample_weights_with_uniqueness(
         label_times=label_times,
         returns=returns,
-        base_weights=base_weights
+        base_weights=base_weights,
+        time_grid=time_grid
     )
     
     tprint(f"Applied uniqueness weighting: mean={weights.mean():.3f}, std={weights.std():.3f}")

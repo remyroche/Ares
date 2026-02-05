@@ -85,24 +85,9 @@ def select_trade_candidates_vectorized(panel, feats, pct=0.05, metric="ret24h"):
             base_mask.loc[idx, top_cols] = True
             base_mask.loc[idx, bot_cols] = True
 
-    # 2. Time Expansion
-    # Offsets: t-12, t-8, t-4, t+4, t+8, t+12, t+16
-    # Shift(k): Moves value at t to t+k.
-    # We want if t is True, then t-12 is True. -> Shift(-12)
-    # If t is True, then t+4 is True. -> Shift(4)
-    offsets = [-12, -8, -4, 4, 8, 12, 16]
+    # 2. Volatility & Event Filters (Apply BEFORE Expansion)
+    # This ensures we select events where conditions were met AT THE TIME of the event.
 
-    expanded_mask = base_mask.copy()
-    for off in offsets:
-        # Shift mask
-        # Note: 'freq' argument in shift?
-        # feats index is usually hourly DateTimeIndex.
-        # shift(4) shifts by 4 periods (hours).
-        shifted = base_mask.shift(off)
-        expanded_mask = expanded_mask | shifted.fillna(False)
-
-    # 3. Volatility Filter
-    # Use features directly (calculated in features.py now)
     # Filter 2: 24h High/Low range > 10%
     if "range_24h_pct" in feats:
         vol_metric = feats["range_24h_pct"]
@@ -121,14 +106,19 @@ def select_trade_candidates_vectorized(panel, feats, pct=0.05, metric="ret24h"):
     if "volatility_zscore" in feats:
         event_mask = feats["volatility_zscore"] > 1.6
     else:
-        # Fallback using on-the-fly calc?
-        # Just allow all if missing to avoid crash, or strict?
-        # Strict logic: must be an event.
-        # But for backward compat, maybe skip if missing.
-        # Given we just added it, it should be there.
         event_mask = pd.DataFrame(True, index=vol_mask.index, columns=vol_mask.columns)
 
-    # Final Mask
-    final_mask = expanded_mask & vol_mask & event_mask
+    # Combine Filters into Base Mask
+    base_mask = base_mask & vol_mask & event_mask
 
-    return final_mask
+    # 3. Time Expansion
+    # Offsets: t-12, t-8, t-4, t+4, t+8, t+12, t+16
+    offsets = [-12, -8, -4, 4, 8, 12, 16]
+
+    expanded_mask = base_mask.copy()
+    for off in offsets:
+        # Shift mask
+        shifted = base_mask.shift(off)
+        expanded_mask = expanded_mask | shifted.fillna(False)
+
+    return expanded_mask

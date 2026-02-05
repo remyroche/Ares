@@ -236,8 +236,8 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["rv_12h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 12)
 
     # New Filter Features (Range & Vol Z-score)
-    h_24 = ff.numba_rolling_max(h, 24)
-    l_24 = ff.numba_rolling_min(l, 24)
+    h_24 = ff.apply_to_frame(h, ff._numba_rolling_max, 24)
+    l_24 = ff.apply_to_frame(l, ff._numba_rolling_min, 24)
     feats["range_24h_pct"] = ((h_24 - l_24) / (c + 1e-12)).astype(np.float32)
 
     # Volatility Z-score (rv_24h is base volatility)

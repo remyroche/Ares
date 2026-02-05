@@ -289,7 +289,14 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     eff = (c - o).abs() / ((h - l) + 1e-9)
     feats["efficiency"] = ff.apply_to_frame(eff, ff._numba_rolling_mean_nan_safe, 12)
 
-    skew_ser = feats["ret1h"].skew(axis=1)
+    # Use Pearson Mode Skewness Proxy: 3 * (Mean - Median) / Std
+    # More stable for small N (works for N>=2) and cheaper.
+    r1 = feats["ret1h"]
+    cs_mean = r1.mean(axis=1)
+    cs_median = r1.median(axis=1)
+    cs_std = r1.std(axis=1)
+
+    skew_ser = 3.0 * (cs_mean - cs_median) / (cs_std + 1e-6)
     feats["skew"] = pd.DataFrame(np.repeat(skew_ser.values[:,None], c.shape[1], axis=1), index=c.index, columns=c.columns).astype(np.float32)
 
     r = feats["ret1h"]
@@ -361,12 +368,13 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     sig_m = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 18)
     feats["vol_compression"] = (sig_s / (sig_m + 1e-12)).astype(np.float32)
 
-    rv_ratio = mkt_gates["mkt_rv_ratio"].reindex(c.index).astype(np.float32)
+    rv_ratio_s = mkt_gates["mkt_rv_ratio"].reindex(c.index).astype(np.float32)
+    rv_ratio = pd.DataFrame(np.repeat(rv_ratio_s.to_numpy()[:,None], c.shape[1], axis=1),
+                            index=c.index, columns=c.columns).astype(np.float32)
     feats["mkt_rv_ratio"] = rv_ratio
 
     def pick_by_rv(fast_df, base_df, slow_df):
-        rr = pd.DataFrame(np.repeat(rv_ratio.to_numpy()[:,None], base_df.shape[1], axis=1),
-                          index=base_df.index, columns=base_df.columns).astype(np.float32)
+        rr = rv_ratio
         out = base_df.copy()
         out = out.where(~(rr > cfg["rv_ratio_fast_thr"]), fast_df)
         out = out.where(~(rr < cfg["rv_ratio_slow_thr"]), slow_df)
@@ -495,8 +503,13 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["S"] = (dir_s * s_max).astype(np.float32)
 
     feats["coherence_24"] = (dir_s * (feats["ret6h"] + feats["ret12h"] + feats["ret24h"]) / (feats["rv_24h"] + 1e-12)).astype(np.float32)
-    turb = mkt_gates["mkt_rv_ratio"].reindex(c.index).astype(np.float32)
-    mkt_ret6h_s = mkt_gates["mkt_ret6h"].reindex(c.index).astype(np.float32)
+
+    turb = rv_ratio # Already broadcasted
+
+    mkt_ret6h_raw = mkt_gates["mkt_ret6h"].reindex(c.index).astype(np.float32)
+    mkt_ret6h_s = pd.DataFrame(np.repeat(mkt_ret6h_raw.to_numpy()[:,None], c.shape[1], axis=1),
+                               index=c.index, columns=c.columns).astype(np.float32)
+
     tape_align = (dir_s * mkt_ret6h_s)
     feats["tf_tape"] = (tape_align.clip(lower=0) / (1.0 + turb)).astype(np.float32)
     feats["mr_tape"] = ((-tape_align).clip(lower=0) / (1.0 + turb)).astype(np.float32)

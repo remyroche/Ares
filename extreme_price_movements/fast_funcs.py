@@ -28,6 +28,7 @@ from .utils import tprint
 def _numba_ewma_nan_safe(x, alpha, adjust=False):
     n = len(x)
     out = np.full(n, np.nan, dtype=np.float32)
+    one = np.float32(1.0)
 
     # Find first valid
     first_valid = -1
@@ -47,7 +48,7 @@ def _numba_ewma_nan_safe(x, alpha, adjust=False):
         if np.isnan(val):
             out[i] = out[i-1]
         else:
-            out[i] = (1.0 - alpha) * out[i-1] + alpha * val
+            out[i] = (one - alpha) * out[i-1] + alpha * val
 
     return out
 
@@ -58,7 +59,7 @@ def _numba_rolling_sum_nan_safe(x, window):
 
     if window <= 0: return output
 
-    current_sum = 0.0
+    current_sum = np.float32(0.0)
     current_count = 0
 
     for i in range(n):
@@ -92,7 +93,11 @@ def simulate_trade_numba(
     Returns: (return_pct, exit_idx_offset, reason_code)
     reason_code: 0=no_entry/error, 1=sl_hit, 2=ambiguous, 3=time_exit
     """
-    sl_px = 0.0
+    # Use float32 constants
+    one = np.float32(1.0)
+    zero = np.float32(0.0)
+
+    sl_px = zero
     highest_high = entry_px
     lowest_low = entry_px
     trailing_active = False
@@ -106,96 +111,115 @@ def simulate_trade_numba(
     for i in range(n):
         curr_h = highs[i]
         curr_l = lows[i]
-        curr_c = closes[i]
 
         if np.isnan(curr_h) or np.isnan(curr_l):
             continue
 
         if side_int == 1: # Long
-            # Check Stop
-            stop_hit = curr_l <= sl_px
-            trail_would_trigger = False
-
-            # Check Trailing Update (High)
+            # 1. Update Extrema
             if curr_h > highest_high:
                 highest_high = curr_h
 
-            # Update Trailing State
-            profit_dist = highest_high - entry_px
-            if profit_dist >= activation_dist:
-                trailing_active = True
+            # 2. Check Activation
+            if not trailing_active:
+                if (highest_high - entry_px) >= activation_dist:
+                    trailing_active = True
+
+            # 3. Check Hits
+            stop_hit = curr_l <= sl_px
+            trail_moved = False
+            new_sl_val = sl_px
 
             if trailing_active:
-                trail_dist_px = trailing_dist
-                new_sl = curr_h - trail_dist_px
-                if new_sl > sl_px:
-                    trail_would_trigger = True
+                # Trailing stop based on Highest High
+                potential_new_sl = highest_high - trailing_dist
+                if potential_new_sl > sl_px:
+                    trail_moved = True
+                    new_sl_val = potential_new_sl
 
-            if stop_hit and trail_would_trigger:
-                return 0.0, i, 2 # Ambiguous
+            # Ambiguity Check: Hit Fixed Stop AND Trailing Stop moved UP in same bar
+            # (implying we might have hit fixed stop before trailing moved, or trailing moved then we hit it?)
+            # Conservative: If ambiguous, return special code.
+            if stop_hit and trail_moved:
+                return zero, i, 2 # Ambiguous
 
             if stop_hit:
-                return (sl_px / entry_px) - 1.0, i, 1 # SL Hit
+                return (sl_px / entry_px) - one, i, 1 # SL Hit (Fixed)
 
-            # Update High
-            if curr_h > highest_high:
-                highest_high = curr_h
-
-            # Update Trailing State
-            profit_dist = highest_high - entry_px
-            if profit_dist >= activation_dist:
-                trailing_active = True
-
-            if trailing_active:
-                trail_dist_px = trailing_dist
-                new_sl = highest_high - trail_dist_px
-                if new_sl > sl_px:
-                    sl_px = new_sl
+            # Update SL for next bar (or if we decide to exit intrabar on trailing?)
+            # Original code exits on 'stop_hit' which is against 'sl_px' (Start of Bar).
+            # It updates 'sl_px' at end.
+            # So effectively, trailing stop applies from NEXT bar.
+            if trail_moved:
+                sl_px = new_sl_val
 
         else: # Short
-            # Check Stop
-            stop_hit = curr_h >= sl_px
-            trail_would_trigger = False
-
-            # Check Trailing Update (Low)
-            if curr_l < lowest_low:
-                profit_dist = entry_px - curr_l
-
-                is_active = trailing_active or (profit_dist >= activation_dist)
-
-                if is_active:
-                    trail_dist_px = trailing_dist
-                    new_sl = curr_l + trail_dist_px
-                    if new_sl < sl_px:
-                        trail_would_trigger = True
-
-            if stop_hit and trail_would_trigger:
-                return 0.0, i, 2 # Ambiguous
-
-            if stop_hit:
-                return (entry_px / sl_px) - 1.0, i, 1 # SL Hit
-
+            # 1. Update Extrema
             if curr_l < lowest_low:
                 lowest_low = curr_l
 
-            profit_dist = entry_px - lowest_low
-            if profit_dist >= activation_dist:
-                trailing_active = True
+            # 2. Check Activation
+            if not trailing_active:
+                if (entry_px - lowest_low) >= activation_dist:
+                    trailing_active = True
+
+            # 3. Check Hits
+            stop_hit = curr_h >= sl_px
+            trail_moved = False
+            new_sl_val = sl_px
 
             if trailing_active:
-                trail_dist_px = trailing_dist
-                new_sl = lowest_low + trail_dist_px
-                if new_sl < sl_px:
-                    sl_px = new_sl
+                potential_new_sl = lowest_low + trailing_dist
+                if potential_new_sl < sl_px:
+                    trail_moved = True
+                    new_sl_val = potential_new_sl
+
+            if stop_hit and trail_moved:
+                return zero, i, 2 # Ambiguous
+
+            if stop_hit:
+                return (entry_px / sl_px) - one, i, 1 # SL Hit
+
+            if trail_moved:
+                sl_px = new_sl_val
 
     # Time Exit
     last_c = closes[n-1]
     if side_int == 1:
-        ret = (last_c / entry_px) - 1.0
+        ret = (last_c / entry_px) - one
     else:
-        ret = (entry_px / last_c) - 1.0
+        ret = (entry_px / last_c) - one
 
     return ret, n-1, 3 # Time Exit
+
+def apply_to_matrix(df: pd.DataFrame, func, *args) -> pd.DataFrame:
+    """
+    Applies a Numba 1D function to each column of a DataFrame.
+    Returns a DataFrame with float32 dtype.
+    Handles pd.Series by converting to DataFrame and returning Series.
+    Optimized to use 2D numpy array iteration to avoid Pandas overhead per column.
+    """
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
+    # Convert to numpy float32 array (copy=False if possible)
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    n_rows, n_cols = mat.shape
+
+    # Allocate output array
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    # Apply function to each column
+    for j in range(n_cols):
+        out[:, j] = func(mat[:, j], *args)
+
+    res_df = pd.DataFrame(out, index=df.index, columns=df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+
+    return res_df
 
 def apply_to_frame(df: pd.DataFrame, func, *args) -> pd.DataFrame:
     """
@@ -204,34 +228,14 @@ def apply_to_frame(df: pd.DataFrame, func, *args) -> pd.DataFrame:
     Handles pd.Series by converting to DataFrame and returning Series.
     """
     # tprint(f"Entering function: apply_to_frame in fast_funcs.py")
-    is_series = isinstance(df, pd.Series)
-    if is_series:
-        df = df.to_frame()
+    return apply_to_matrix(df, func, *args)
 
-    out = pd.DataFrame(index=df.index, columns=df.columns, dtype=np.float32)
-    # We iterate over columns.
-    total_cols = len(df.columns)
-    for i, col in enumerate(df.columns):
-        # if i % 100 == 0:
-        #     tprint(f"apply_to_frame progress: {i}/{total_cols} columns processed")
-        # Convert to numpy float32 array
-        vals = df[col].to_numpy(dtype=np.float32)
-        # Apply function
-        res = func(vals, *args)
-        out[col] = res
-
-    if is_series:
-        return out[out.columns[0]]
-
-    return out
-
-def apply_to_frame_binary(df1: pd.DataFrame, df2: pd.DataFrame, func, *args) -> pd.DataFrame:
+def apply_to_matrix_binary(df1: pd.DataFrame, df2: pd.DataFrame, func, *args) -> pd.DataFrame:
     """
     Applies a function taking two arrays (col1, col2) -> out_array.
     Assumes df1 and df2 have same columns and index.
     Handles pd.Series inputs.
     """
-    tprint(f"Entering function: apply_to_frame_binary in fast_funcs.py")
     is_series1 = isinstance(df1, pd.Series)
     is_series2 = isinstance(df2, pd.Series)
 
@@ -240,20 +244,54 @@ def apply_to_frame_binary(df1: pd.DataFrame, df2: pd.DataFrame, func, *args) -> 
     if is_series2:
         df2 = df2.to_frame()
 
-    out = pd.DataFrame(index=df1.index, columns=df1.columns, dtype=np.float32)
-    total_cols = len(df1.columns)
-    for i, col in enumerate(df1.columns):
-        # if i % 100 == 0:
-        #     tprint(f"apply_to_frame_binary progress: {i}/{total_cols} columns processed")
-        if col in df2.columns:
-            v1 = df1[col].to_numpy(dtype=np.float32)
-            v2 = df2[col].to_numpy(dtype=np.float32)
-            out[col] = func(v1, v2, *args)
+    # Check if columns match exactly for fast path
+    if df1.columns.equals(df2.columns):
+        m1 = df1.to_numpy(dtype=np.float32, copy=False)
+        m2 = df2.to_numpy(dtype=np.float32, copy=False)
+        n_rows, n_cols = m1.shape
+        out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+        for j in range(n_cols):
+            out[:, j] = func(m1[:, j], m2[:, j], *args)
+
+        res_df = pd.DataFrame(out, index=df1.index, columns=df1.columns)
+        if is_series1: return res_df[res_df.columns[0]]
+        return res_df
+
+    # Fallback / Intersection path
+    common = df1.columns.intersection(df2.columns)
+    if len(common) == 0:
+        out_df = pd.DataFrame(index=df1.index, columns=df1.columns, dtype=np.float32)
+        out_df[:] = np.nan
+        if is_series1: return out_df[out_df.columns[0]]
+        return out_df
+
+    m1 = df1[common].to_numpy(dtype=np.float32, copy=False)
+    m2 = df2[common].to_numpy(dtype=np.float32, copy=False)
+
+    n_rows, n_cols = m1.shape
+    out_mat = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in range(n_cols):
+        out_mat[:, j] = func(m1[:, j], m2[:, j], *args)
+
+    # Construct result with full columns (NaNs where missing)
+    res_common = pd.DataFrame(out_mat, index=df1.index, columns=common)
+    out_df = res_common.reindex(columns=df1.columns) # NaNs for others
 
     if is_series1:
-        return out[out.columns[0]]
+        return out_df[out_df.columns[0]]
 
-    return out
+    return out_df
+
+def apply_to_frame_binary(df1: pd.DataFrame, df2: pd.DataFrame, func, *args) -> pd.DataFrame:
+    """
+    Applies a function taking two arrays (col1, col2) -> out_array.
+    Assumes df1 and df2 have same columns and index.
+    Handles pd.Series inputs.
+    """
+    tprint(f"Entering function: apply_to_frame_binary in fast_funcs.py")
+    return apply_to_matrix_binary(df1, df2, func, *args)
 
 @jit(nopython=True, cache=True)
 def numba_rsi_kernel(close, n):
@@ -269,23 +307,27 @@ def numba_rsi_kernel(close, n):
     dn = np.maximum(-delta, 0.0)
 
     # EWMA with alpha = 1/n, adjust=False
-    alpha = 1.0 / n
+    alpha = np.float32(1.0) / n
 
     avg_up = _numba_ewma_nan_safe(up, alpha, adjust=False)
     avg_dn = _numba_ewma_nan_safe(dn, alpha, adjust=False)
 
     out = np.empty_like(close)
+    c100 = np.float32(100.0)
+    c50 = np.float32(50.0)
+    c1 = np.float32(1.0)
+
     for i in range(len(close)):
         if np.isnan(avg_dn[i]) or avg_dn[i] == 0:
             if np.isnan(avg_up[i]):
                 out[i] = np.nan
             elif avg_up[i] == 0:
-                 out[i] = 50.0 # No move
+                 out[i] = c50 # No move
             else:
-                 out[i] = 100.0 # Only up moves
+                 out[i] = c100 # Only up moves
         else:
             rs = avg_up[i] / avg_dn[i]
-            out[i] = 100.0 - (100.0 / (1.0 + rs))
+            out[i] = c100 - (c100 / (c1 + rs))
 
     return out
 
@@ -311,7 +353,7 @@ def numba_atr_kernel(high, low, close, n):
         tr[i] = max(v1, max(v2, v3))
 
     # ATR is EWM of TR
-    atr = _numba_ewma_nan_safe(tr, 1.0/n, adjust=False)
+    atr = _numba_ewma_nan_safe(tr, np.float32(1.0)/n, adjust=False)
 
     # Return ATR percent: ATR / Close
     out = np.empty(sz, dtype=np.float32)
@@ -340,7 +382,7 @@ def numba_atr_no_norm_kernel(high, low, close, n):
         v3 = abs(l - pc)
         tr[i] = max(v1, max(v2, v3))
 
-    atr = _numba_ewma_nan_safe(tr, 1.0/n, adjust=False)
+    atr = _numba_ewma_nan_safe(tr, np.float32(1.0)/n, adjust=False)
     return atr
 
 def numba_atr_no_norm(high_df, low_df, close_df, n):
@@ -382,7 +424,7 @@ def numba_zscore(df, n):
     sd = apply_to_frame(df, _numba_rolling_std_nan_safe, n)
 
     # Vectorized pandas operation for final step is fine/fast
-    return (df - mu) / (sd + 1e-12)
+    return (df - mu) / (sd + np.float32(1e-12))
 
 # --- NEW KERNELS & WRAPPERS ---
 
@@ -394,7 +436,8 @@ def _numba_rolling_max(x, window):
     # Deque stores indices of potential max candidates
     # Invariant: elements in deque are in decreasing order of value at those indices
     # We maintain a deque of indices
-    deque_indices = np.empty(n, dtype=np.int32)
+    # OPTIMIZATION: Use circular buffer of size 'window' instead of 'n' to save memory
+    deque_indices = np.empty(window, dtype=np.int32)
     front = 0
     back = -1
 
@@ -403,14 +446,18 @@ def _numba_rolling_max(x, window):
 
         # 1. Clean deque from front: remove indices that are out of window
         lower_bound = i - window + 1
-        while front <= back and deque_indices[front] < lower_bound:
-            front += 1
+        while front <= back:
+            idx = deque_indices[front % window]
+            if idx < lower_bound:
+                front += 1
+            else:
+                break
 
         # 2. Add current element if it is valid (not NaN)
         if not np.isnan(val):
             # Maintain decreasing property: remove elements from back that are smaller than val
             while front <= back:
-                idx = deque_indices[back]
+                idx = deque_indices[back % window]
                 # x[idx] is guaranteed to be valid because we only add valid indices
                 if x[idx] <= val:
                     back -= 1
@@ -419,11 +466,11 @@ def _numba_rolling_max(x, window):
 
             # Push current index
             back += 1
-            deque_indices[back] = i
+            deque_indices[back % window] = i
 
         # 3. Report max
         if front <= back:
-            out[i] = x[deque_indices[front]]
+            out[i] = x[deque_indices[front % window]]
 
     return out
 
@@ -434,7 +481,8 @@ def _numba_rolling_min(x, window):
 
     # Deque stores indices of potential min candidates
     # Invariant: elements in deque are in increasing order of value at those indices
-    deque_indices = np.empty(n, dtype=np.int32)
+    # OPTIMIZATION: Use circular buffer of size 'window' instead of 'n' to save memory
+    deque_indices = np.empty(window, dtype=np.int32)
     front = 0
     back = -1
 
@@ -443,14 +491,18 @@ def _numba_rolling_min(x, window):
 
         # 1. Clean deque from front: remove indices that are out of window
         lower_bound = i - window + 1
-        while front <= back and deque_indices[front] < lower_bound:
-            front += 1
+        while front <= back:
+            idx = deque_indices[front % window]
+            if idx < lower_bound:
+                front += 1
+            else:
+                break
 
         # 2. Add current element if it is valid (not NaN)
         if not np.isnan(val):
             # Maintain increasing property: remove elements from back that are larger than val
             while front <= back:
-                idx = deque_indices[back]
+                idx = deque_indices[back % window]
                 if x[idx] >= val:
                     back -= 1
                 else:
@@ -458,11 +510,11 @@ def _numba_rolling_min(x, window):
 
             # Push current index
             back += 1
-            deque_indices[back] = i
+            deque_indices[back % window] = i
 
         # 3. Report min
         if front <= back:
-            out[i] = x[deque_indices[front]]
+            out[i] = x[deque_indices[front % window]]
 
     return out
 
@@ -518,10 +570,13 @@ def _numba_rolling_quantile(x, window, q):
     return out
 
 @jit(nopython=True, cache=True)
-def _numba_rolling_quantile_dual_1d(x, window, q1, q2):
+def _numba_rolling_quantile_dual_1d(x, window, q1, q2, out1, out2):
     n = len(x)
-    out1 = np.full(n, np.nan, dtype=np.float32)
-    out2 = np.full(n, np.nan, dtype=np.float32)
+    # out1, out2 passed in to avoid allocation
+
+    # Initialize with NaN
+    out1[:] = np.nan
+    out2[:] = np.nan
 
     # Pre-allocate buffer
     buf = np.empty(window, dtype=np.float32)
@@ -555,10 +610,9 @@ def _numba_rolling_quantile_dual_1d(x, window, q1, q2):
         frac2 = v_idx2 - i_lower2
 
         # Optimization: Sequential Partitioning
-        # Assume q1 <= q2 usually. If not, swap logic, but here explicit indices work.
-        # We handle q2 (larger index) first.
+        # We assume q1 <= q2, so i_upper1 <= i_upper2.
+        # Logic handles generic case.
 
-        # Ensure we partition at the larger index first to keep smaller elements gathered
         if i_upper2 >= i_upper1:
             # Partition at Upper 2
             part2 = np.partition(valid_buf, i_upper2)
@@ -571,24 +625,11 @@ def _numba_rolling_quantile_dual_1d(x, window, q1, q2):
 
             out2[i] = val_lower2 + (val_upper2 - val_lower2) * frac2
 
-            # Now solve for Q1 using the left side of partition
-            # The elements for Q1 are guaranteed to be in part2[:i_upper2] (inclusive of boundary logic?)
-            # Actually, part2[:i_upper2] has length i_upper2.
-            # If i_upper1 < i_upper2, index i_upper1 is valid in this slice.
-            # If i_upper1 == i_upper2, we already have it.
-
             if i_upper1 < i_upper2:
-                # Partition left side at Upper 1
-                # Note: np.partition returns copy usually, so recursive partition is safe
-                left_slice = part2[:i_upper2+1] # Include i_upper2 just in case? No, partition boundary.
-                # partition(k) puts k-th element at k. Smaller at 0..k-1.
-                # So part2[:i_upper2] contains strictly elements < val_upper2?
-                # No, <=.
-                # But indices 0..i_upper2-1 are there.
-                # We need index i_upper1.
-
-                # Careful: We need to partition the SUBSET.
-                part1 = np.partition(part2[:i_upper2+1], i_upper1)
+                # Partition again for Q1.
+                # Avoid slicing part2 which might incur copy.
+                # Instead, partition part2 (which is valid_buf reordered).
+                part1 = np.partition(part2, i_upper1)
                 val_upper1 = part1[i_upper1]
 
                 if i_lower1 == i_upper1:
@@ -599,19 +640,14 @@ def _numba_rolling_quantile_dual_1d(x, window, q1, q2):
                 out1[i] = val_lower1 + (val_upper1 - val_lower1) * frac1
 
             else:
-                # i_upper1 == i_upper2
-                # We already computed values
-                out1[i] = out2[i] # If indices same and fracs same?
-                # If indices same, values are same. Frac might differ?
-                # q1 != q2 but indices collided (small window).
-                # i_lower/upper are same. Frac depends on q.
-                # Recompute with values we have.
+                # i_upper1 == i_upper2 (Collision)
+                # Recompute using values we already found, but use frac1
                 val_upper1 = val_upper2
                 val_lower1 = val_lower2
                 out1[i] = val_lower1 + (val_upper1 - val_lower1) * frac1
 
         else:
-            # q1 > q2 (Unlikely but handle it: Partition Q1 first)
+            # q1 > q2 (Unlikely path)
             part1 = np.partition(valid_buf, i_upper1)
             val_upper1 = part1[i_upper1]
 
@@ -622,7 +658,7 @@ def _numba_rolling_quantile_dual_1d(x, window, q1, q2):
             out1[i] = val_lower1 + (val_upper1 - val_lower1) * frac1
 
             if i_upper2 < i_upper1:
-                part2 = np.partition(part1[:i_upper1+1], i_upper2)
+                part2 = np.partition(part1, i_upper2)
                 val_upper2 = part2[i_upper2]
                 if i_lower2 == i_upper2:
                     val_lower2 = val_upper2
@@ -634,6 +670,7 @@ def _numba_rolling_quantile_dual_1d(x, window, q1, q2):
                 val_lower2 = val_lower1
                 out2[i] = val_lower2 + (val_upper2 - val_lower2) * frac2
 
+    # Return not strictly needed as in-place, but good for consistency/checking
     return out1, out2
 
 @jit(nopython=True, parallel=True, cache=True)
@@ -643,9 +680,8 @@ def _numba_rolling_quantile_dual_parallel(mat, window, q1, q2):
     out2 = np.empty((n_rows, n_cols), dtype=np.float32)
 
     for j in prange(n_cols):
-        col_res1, col_res2 = _numba_rolling_quantile_dual_1d(mat[:, j], window, q1, q2)
-        out1[:, j] = col_res1
-        out2[:, j] = col_res2
+        # Pass slices to write in-place, avoiding internal allocation
+        _numba_rolling_quantile_dual_1d(mat[:, j], window, q1, q2, out1[:, j], out2[:, j])
 
     return out1, out2
 
@@ -663,43 +699,53 @@ def _numba_pct_change(x, n_shift):
 def numba_grouped_rolling_mean(df: pd.DataFrame, group_series: pd.Series, window: int) -> pd.DataFrame:
     """
     Vectorized grouped rolling mean.
+    Optimized to use pre-computed indices per group to avoid repeated masking.
     """
     tprint(f"Entering function: numba_grouped_rolling_mean in fast_funcs.py")
     is_series = isinstance(df, pd.Series)
     if is_series:
         df = df.to_frame()
 
-    out = pd.DataFrame(index=df.index, columns=df.columns, dtype=np.float32)
-    out[:] = np.nan
-
-    # Ensure group series is aligned and numpy-ready
+    # Align groups
     groups_arr = group_series.reindex(df.index).to_numpy()
+
+    # Pre-compute indices for each group to avoid repeated O(N) scanning
     unique_groups = np.unique(groups_arr)
+    # Filter NaNs from keys
+    unique_groups = unique_groups[~np.isnan(unique_groups)]
 
-    total_cols = len(df.columns)
-    for i, col in enumerate(df.columns):
-        if i % 100 == 0:
-            tprint(f"numba_grouped_rolling_mean progress: {i}/{total_cols} columns processed")
-        vals = df[col].to_numpy(dtype=np.float32)
-        res_col = np.full_like(vals, np.nan)
+    group_indices = {}
+    for g in unique_groups:
+        group_indices[g] = np.where(groups_arr == g)[0]
 
+    # Use Matrix approach
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    n_rows, n_cols = mat.shape
+    out_mat = np.full((n_rows, n_cols), np.nan, dtype=np.float32)
+
+    # Helper function to process groups? No, loop is fine.
+    # Iterating columns
+    for j in range(n_cols):
+        col_vals = mat[:, j]
         for g in unique_groups:
-            if np.isnan(g):
-                continue
-            mask = (groups_arr == g)
-            subset = vals[mask]
+            indices = group_indices[g]
+            if len(indices) == 0: continue
 
-            # Use rolling mean on the subset
+            # Extract subset (copy)
+            subset = col_vals[indices]
+
+            # Apply rolling
             rolled = _numba_rolling_mean_nan_safe(subset, window)
 
-            res_col[mask] = rolled
+            # Write back
+            out_mat[indices, j] = rolled
 
-        out[col] = res_col
+    res_df = pd.DataFrame(out_mat, index=df.index, columns=df.columns)
 
     if is_series:
-        return out[out.columns[0]]
+        return res_df[res_df.columns[0]]
 
-    return out
+    return res_df
 
 @jit(nopython=True, cache=True)
 def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend, max_near_pct, min_rev_pct):
@@ -956,7 +1002,7 @@ def compute_peak_labels_and_weights(close_df, atr_df, horizon, near_k, rev_k, is
     return l_out, w_out
   
 @jit(nopython=True, cache=True)
-def _numba_frac_diff_kernel(x, d, window):
+def _numba_frac_diff_kernel(x, d, window, thres):
     # Fixed Width Window Frac Diff
     # w_k = -w_{k-1} * (d - k + 1) / k
     # w_0 = 1
@@ -966,19 +1012,24 @@ def _numba_frac_diff_kernel(x, d, window):
 
     # Precompute weights
     weights = np.empty(window, dtype=np.float32)
-    w = 1.0
+    w = np.float32(1.0)
     weights[0] = w
+    effective_k = 1
+
     for k in range(1, window):
         w = -w * (d - k + 1) / k
         weights[k] = w
+        effective_k = k + 1
+        if abs(w) < thres:
+            break
 
     # Convolve
     # x_tilde_t = sum(w_k * x_{t-k})
 
-    for i in range(window - 1, n):
-        val = 0.0
+    for i in range(effective_k - 1, n):
+        val = np.float32(0.0)
         valid = True
-        for k in range(window):
+        for k in range(effective_k):
             if np.isnan(x[i-k]):
                 valid = False
                 break
@@ -989,6 +1040,6 @@ def _numba_frac_diff_kernel(x, d, window):
 
     return out
 
-def numba_frac_diff(df, d, window):
+def numba_frac_diff(df, d, window, thres=1e-5):
     tprint(f"Entering function: numba_frac_diff in fast_funcs.py")
-    return apply_to_frame(df, _numba_frac_diff_kernel, d, window)
+    return apply_to_matrix(df, _numba_frac_diff_kernel, d, window, thres)

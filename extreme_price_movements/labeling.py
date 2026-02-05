@@ -163,11 +163,11 @@ def compute_trailing_atr_labels(
     return out_labels, out_returns
 
 @jit(nopython=True, cache=True)
-def _numba_triple_barrier(times, highs, lows, closes, tp, sl, horizon, side):
+def _numba_triple_barrier(times, highs, lows, closes, tp_arr, sl_arr, horizon, side):
     """
     Vectorized Triple Barrier Method.
-    tp: Take Profit (relative, >0)
-    sl: Stop Loss (relative, >0)
+    tp_arr: Take Profit array (relative, >0)
+    sl_arr: Stop Loss array (relative, >0)
     horizon: max holding period in hours (or units matching times if adjusted)
     times: int64 (nanoseconds)
     side: 1 for Long, -1 for Short
@@ -185,6 +185,13 @@ def _numba_triple_barrier(times, highs, lows, closes, tp, sl, horizon, side):
         cutoff_t = entry_t + limit_ns
 
         if np.isnan(entry_p) or entry_p <= 0:
+            continue
+
+        # Get barrier sizes for this entry
+        tp = tp_arr[i]
+        sl = sl_arr[i]
+
+        if np.isnan(tp) or np.isnan(sl):
             continue
 
         if side == 1:
@@ -257,6 +264,8 @@ def _numba_triple_barrier(times, highs, lows, closes, tp, sl, horizon, side):
 def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long"):
     """
     Computes triple barrier labels for a panel.
+    tp: Scalar float OR DataFrame/Series matching panel dimensions.
+    sl: Scalar float OR DataFrame/Series matching panel dimensions.
     side: "long" or "short"
     """
     c = panel["close"]
@@ -271,12 +280,37 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long"):
 
     side_int = 1 if side == "long" else -1
 
+    # Prepare TP/SL as dataframes if they are scalars
+    if np.isscalar(tp):
+        tp_df = pd.DataFrame(tp, index=c.index, columns=assets)
+    else:
+        tp_df = tp
+
+    if np.isscalar(sl):
+        sl_df = pd.DataFrame(sl, index=c.index, columns=assets)
+    else:
+        sl_df = sl
+
     for asset in assets:
         c_arr = c[asset].to_numpy(dtype=np.float32)
         h_arr = h[asset].to_numpy(dtype=np.float32)
         l_arr = l[asset].to_numpy(dtype=np.float32)
 
-        lbs, rets, _ = _numba_triple_barrier(times, h_arr, l_arr, c_arr, tp, sl, horizon, side_int)
+        # Extract TP/SL arrays for this asset
+        # Handle case where tp_df might not have the column (if passed as partial df)
+        # Assuming alignment for now
+        if asset in tp_df.columns:
+            tp_arr = tp_df[asset].to_numpy(dtype=np.float32)
+        else:
+             # Fallback or error? defaulting to NaN effectively skips
+             tp_arr = np.full(len(c_arr), np.nan, dtype=np.float32)
+
+        if asset in sl_df.columns:
+            sl_arr = sl_df[asset].to_numpy(dtype=np.float32)
+        else:
+            sl_arr = np.full(len(c_arr), np.nan, dtype=np.float32)
+
+        lbs, rets, _ = _numba_triple_barrier(times, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int)
 
         out_labels[asset] = lbs
         out_returns[asset] = rets

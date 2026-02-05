@@ -14,8 +14,8 @@ class TestTripleBarrier(unittest.TestCase):
         lows = np.array([100, 102, 106, 100], dtype=np.float32)
         times = np.array([0, 3600*1e9, 2*3600*1e9, 3*3600*1e9], dtype=np.int64) # Hourly
 
-        tp = 0.05
-        sl = 0.02
+        tp = np.full(4, 0.05, dtype=np.float32)
+        sl = np.full(4, 0.02, dtype=np.float32)
         horizon = 5 # Sufficient
         side = 1 # Long
 
@@ -62,8 +62,8 @@ class TestTripleBarrier(unittest.TestCase):
         lows = closes.copy()
         times = np.array([0, 3600*1e9, 2*3600*1e9, 3*3600*1e9], dtype=np.int64)
 
-        tp = 0.05
-        sl = 0.02
+        tp = np.full(4, 0.05, dtype=np.float32)
+        sl = np.full(4, 0.02, dtype=np.float32)
         horizon = 5
         side = -1 # Short
 
@@ -114,6 +114,45 @@ class TestTripleBarrier(unittest.TestCase):
         labels_s, rets_s = compute_triple_barrier_labels(panel, 0.05, 0.05, 5, side="short")
         self.assertEqual(labels_s.iloc[0, 0], -1)
         self.assertAlmostEqual(rets_s.iloc[0, 0], -0.05)
+
+    def test_dynamic_barrier(self):
+        # Test array input to wrapper
+        dates = pd.date_range("2021-01-01", periods=10, freq="1h")
+        df = pd.DataFrame({
+            "close": np.linspace(100, 110, 10, dtype=np.float32),
+            "high": np.linspace(100, 110, 10, dtype=np.float32),
+            "low": np.linspace(100, 110, 10, dtype=np.float32),
+        }, index=dates)
+
+        # Variable TP/SL
+        # First 5: tp=0.01 (hit immediately)
+        # Last 5: tp=0.20 (not hit)
+        tp_arr = np.concatenate([np.full(5, 0.01), np.full(5, 0.20)])
+        sl_arr = np.full(10, 0.05)
+
+        panel = {
+            "close": pd.DataFrame({"A": df["close"]}),
+            "high": pd.DataFrame({"A": df["high"]}),
+            "low": pd.DataFrame({"A": df["low"]}),
+            "open": pd.DataFrame({"A": df["close"]}), # dummy
+        }
+
+        # We need to construct DataFrames for TP/SL
+        tp_df = pd.DataFrame({"A": tp_arr}, index=dates)
+        sl_df = pd.DataFrame({"A": sl_arr}, index=dates)
+
+        labels, rets = compute_triple_barrier_labels(panel, tp_df, sl_df, 5)
+
+        # First one should be TP
+        self.assertEqual(labels.iloc[0, 0], 1)
+        self.assertAlmostEqual(rets.iloc[0, 0], 0.01)
+
+        # Check an index where TP is large
+        # Index 6. Entry ~106. TP 20% -> 127. Close goes to 110.
+        # Time exit.
+        # But lookahead limit is 5.
+        # 6+5=11 > 10. So it goes to end.
+        self.assertEqual(labels.iloc[6, 0], 0)
 
 if __name__ == '__main__':
     unittest.main()

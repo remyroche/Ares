@@ -31,6 +31,33 @@ def compute_weights_logic(df, cfg, model_kind):
     if model_kind == "mr": return compute_mr_weights(df, cfg)
     else: return compute_tf_weights(df, cfg)
 
+def scaled_atr_pct(
+    atr_pct: float,
+    z: float,
+    atr_base_pct: float,
+    *,
+    z_max: float = 3.0,
+    lo: float = 0.03,
+    hi: float = 0.06,
+    eps: float = 1e-12,
+):
+    """
+    ATR-informed, shock-scaled, bounded barrier percent.
+    Vectorized using NumPy.
+    """
+    # 1) Shock control
+    shock = np.clip(z, 0.0, z_max)
+
+    # 2) Dynamic multiplier 'a' so that:
+    #    atr_base_pct * (1 + a*z_max) ≈ hi
+    a = (hi / np.maximum(atr_base_pct, eps) - 1.0) / z_max
+
+    # 3) Multiplicative scaling
+    raw = atr_pct * (1.0 + a * shock)
+
+    # 4) Enforce cross-asset low/high targets
+    return np.clip(raw, lo, hi)
+
 def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, syms, trend_filter=None):
     tprint(f"Entering function: build_exhaustion_Xy in training.py")
     c = panel["close"]
@@ -266,10 +293,61 @@ def build_hourly_training_set_and_weights(
     idx = c.index
 
     if label_method == "triple_barrier":
-        tprint(f"Labeling: Triple Barrier (TP={fixed_tp}, SL={fixed_sl}, Side={side})")
-        tb_labels, tb_returns = compute_triple_barrier_labels(
-            panel, fixed_tp, fixed_sl, H, side=side
-        )
+        # Dynamic Barrier Logic
+        if "atr_pct" in feats:
+            atr_pct = feats["atr_pct"]
+
+            # Compute Rolling Baseline (e.g. 30 days)
+            # We need to compute this on the fly if not available.
+            # Using simple rolling median for robustness.
+            # Assuming aligned index.
+            window_size = 24 * 30
+
+            # Since feats are dict of DataFrames, we can process atr_pct
+            tprint("Computing dynamic barriers...")
+            atr_base = atr_pct.rolling(window_size, min_periods=24).median()
+            atr_std = atr_pct.rolling(window_size, min_periods=24).std()
+
+            # Z-score: (atr_pct - base) / std
+            # Avoid div/0
+            z_score = (atr_pct - atr_base) / (atr_std + 1e-12)
+
+            # Compute Barrier
+            # Convert to numpy for vectorization
+            # We need to handle DataFrames. scaled_atr_pct accepts scalars or arrays.
+            # We can pass DataFrames directly if numpy universal functions are used.
+            # However, numpy clip/maximum on dataframes might return DFs or be slow.
+            # Let's use .values
+
+            b_pct_vals = scaled_atr_pct(
+                atr_pct.values,
+                z_score.values,
+                atr_base.values,
+                z_max=3.0,
+                lo=0.03,
+                hi=0.06
+            )
+
+            # Reconstruct DataFrame
+            barrier_pct = pd.DataFrame(b_pct_vals, index=atr_pct.index, columns=atr_pct.columns)
+
+            # TP = Barrier
+            tp_df = barrier_pct
+            # SL = 0.5 * Barrier
+            sl_df = 0.5 * barrier_pct
+
+            tprint(f"Labeling: Dynamic Triple Barrier (Mean TP={tp_df.mean().mean():.4f}, Side={side})")
+
+            tb_labels, tb_returns = compute_triple_barrier_labels(
+                panel, tp_df, sl_df, H, side=side
+            )
+        else:
+            tprint("Warning: atr_pct not found for dynamic barriers. Falling back to fixed.")
+            tprint(f"Labeling: Fixed Triple Barrier (TP={fixed_tp}, SL={fixed_sl}, Side={side})")
+            tb_labels, tb_returns = compute_triple_barrier_labels(
+                panel, fixed_tp, fixed_sl, H, side=side
+            )
+
     else:
         # Default ATR logic
         k_sl = cfg.get("train_k_sl", 2.0)
@@ -483,9 +561,9 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
 
             feat_key = "tf_feature_keys" if k == "tf" else "mr_feature_keys"
 
-            # Fixed Barrier Params based on user requirement
-            # Long: TP=5%, SL=2.5%
-            # Short: TP=5%, SL=2.5% (Target -5%, Stop +2.5%)
+            # Dynamic Barriers will be computed inside build_hourly_training_set_and_weights
+            # We don't need to pass fixed params if we use atr-based logic.
+            # But we keep fixed defaults just in case.
             fixed_tp = 0.05
             fixed_sl = 0.025
 

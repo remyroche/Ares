@@ -99,7 +99,7 @@ def build_fetch_universe(margin_symbols: list[str], market_basket: list[str], M:
         tprint(f"Error fetching tickers for universe selection: {e}. Fallback to alphabet.")
         return sorted(list(set(margin_symbols[:M]).union(set(market_basket))))
 
-def get_training_universe(margin_symbols, cfg, store):
+def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
     """
     Standardized training universe selection:
     1. Fetch Universe (Top M by volume)
@@ -114,7 +114,7 @@ def get_training_universe(margin_symbols, cfg, store):
         margin_symbols = mu.symbols
 
     syms_all = build_fetch_universe(margin_symbols, cfg["market_basket"], cfg["fetch_symbols_M"])
-    train_syms = filter_low_variance_assets(store, syms_all, lookback_days=30, threshold_pct=0.40)
+    train_syms = filter_low_variance_assets(store, syms_all, lookback_days=30, threshold_pct=0.40, ts_sig=ts_sig)
     train_syms = sorted(list(set(train_syms).union(set(cfg["market_basket"]))))
     return train_syms
 

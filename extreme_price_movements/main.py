@@ -26,7 +26,7 @@ def reconcile_state(ex, state):
 
 def generate_features_daily(ts_sig, margin_symbols, cfg, store, ex):
     tprint("DAILY FEATURE GENERATION START")
-    train_syms = get_training_universe(margin_symbols, cfg, store)
+    train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=ts_sig)
     tprint(f"Target universe size: {len(train_syms)}")
 
     missing_syms = []

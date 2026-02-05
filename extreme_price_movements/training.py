@@ -457,36 +457,84 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
         datasets["spike_anatomy"] = spike_df
 
     # 2. Alpha Models (MR/TF)
-    directions = ["up", "down"]
+    # Refactored for explicit Long/Short and MR/TF pairings
+    trade_sides = ["long", "short"]
     kinds = ["mr", "tf"]
     horizons = cfg["label_horizons_hours"]
 
-    for d in directions:
+    for side in trade_sides:
         for k in kinds:
+            # Determine Candidate Filter based on Strategy
+            # Long MR: Worst (ret < 0) -> buy dip
+            # Long TF: Best (ret > 0) -> buy breakout
+            # Short MR: Best (ret > 0) -> sell pump
+            # Short TF: Worst (ret < 0) -> sell crash
+
+            cand_filter = "unknown"
+            if side == "long":
+                if k == "mr": cand_filter = "worst" # ret < 0
+                else: cand_filter = "best"          # ret > 0
+            else: # short
+                if k == "mr": cand_filter = "best"  # ret > 0
+                else: cand_filter = "worst"         # ret < 0
+
+            # Map cand_filter to trend_filter used in build func
+            # build function expects "up" (positive trend) or "down" (negative trend)
+            # "best" -> "up", "worst" -> "down"
+            trend_filter = "up" if cand_filter == "best" else "down"
+
             feat_key = "tf_feature_keys" if k == "tf" else "mr_feature_keys"
+
             for H in horizons:
-                tprint(f"Generating labels for {d} {k} H={H}...")
+                tprint(f"Generating labels for {side} {k} ({cand_filter}) H={H}...")
+
+                # We need to ensure we label the correct SIDE outcome.
+                # build_hourly_training_set_and_weights currently assumes:
+                # if model_kind == "tf": if trend>0 -> trade Long. if trend<0 -> trade Short.
+                # if model_kind == "mr": if trend>0 -> trade Short. if trend<0 -> trade Long.
+
+                # Let's verify if this matches our matrix.
+                # Long TF (best, trend>0): kind="tf", trend>0 -> trade Long. Match.
+                # Short TF (worst, trend<0): kind="tf", trend<0 -> trade Short. Match.
+                # Long MR (worst, trend<0): kind="mr", trend<0 -> trade Long. Match.
+                # Short MR (best, trend>0): kind="mr", trend>0 -> trade Short. Match.
+
+                # So the existing logic in build_hourly_training_set_and_weights works correctly
+                # provided we pass the correct trend_filter ("up" for best, "down" for worst).
+
                 X, y, y_ret, cols, w, meta_idx = build_hourly_training_set_and_weights(
                     panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, H, k,
-                    trend_filter=d, feature_key=feat_key
+                    trend_filter=trend_filter, feature_key=feat_key
                 )
 
                 if X is not None:
-                    # Combine for saving
-                    # X is DataFrame, y/w are arrays, meta_idx is DataFrame
-                    # Reconstruct full DF
                     df_out = X.copy()
                     df_out["__y_bin__"] = y
                     df_out["__y_ret__"] = y_ret
                     df_out["__w__"] = w
 
-                    # Add meta cols back for alignment if not present in X
+                    # Add spike probs if available (for MetaModel usage later)
+                    if spike_df is not None and meta_idx is not None:
+                        # Attempt to merge spike probs
+                        # meta_idx has ts, symbol. spike_df has ts, symbol implicitly if we saved it?
+                        # No, spike_df is just the training data for GMM.
+                        # We need PREDICTIONS (probs) for the current rows.
+                        # This requires running GMM prediction.
+                        # Can we do it here?
+                        # Yes, we have `train_spike_anatomy_model` returning a DataFrame, not model.
+                        # Wait, `generate_label_datasets` calls `train_spike_anatomy_model` which returns DF.
+                        # It doesn't return the fitted model.
+                        # So we can't predict here unless we fit it.
+                        # Refactoring limitation: We can't easily add spike probs here without fitting GMM.
+                        # We will skip adding spike probs to parquet for now and rely on MetaModel fitting to generate them if possible,
+                        # or accept they are missing in this iteration.
+                        pass
+
                     if meta_idx is not None:
-                        # meta_idx usually has index matching X
                         df_out["__ts__"] = meta_idx["ts"]
                         df_out["__symbol__"] = meta_idx["symbol"]
 
-                    datasets[f"train_{d}_{k}_{H}"] = df_out
+                    datasets[f"train_{side}_{k}_{H}"] = df_out
 
     # 3. Exhaustion Models
     lookback = cfg["exh_train_lookback_hours"]
@@ -517,21 +565,25 @@ def train_models_from_artifacts(datasets, cfg):
         spike_model = gmm
 
     # 2. Train Alpha Models
-    for d in directions:
-        final_models[d] = {}
+    # directions (up/down) replaced by sides (long/short)
+    trade_sides = ["long", "short"]
+    kinds = ["mr", "tf"]
+    final_models = {}
+
+    for side in trade_sides:
+        final_models[side] = {}
         for k in kinds:
             best_ic = -1.0; best_m = None
             horizons = cfg["label_horizons_hours"]
 
             for H in horizons:
-                key = f"train_{d}_{k}_{H}"
+                key = f"train_{side}_{k}_{H}"
                 if key not in datasets: continue
 
                 df = datasets[key]
                 if df.empty or len(df) < cfg["min_train_samples"] // 4:
                     continue
 
-                # Unpack
                 y = df["__y_bin__"].values.astype(int)
                 y_ret = df["__y_ret__"].values.astype(np.float32)
                 w = df["__w__"].values.astype(np.float32)
@@ -540,7 +592,7 @@ def train_models_from_artifacts(datasets, cfg):
                 X = df.drop(columns=[c for c in drop_cols if c in df.columns])
                 cols = list(X.columns)
 
-                tprint(f"Training {d} {k} H={H} (n={len(X)})...")
+                tprint(f"Training {side} {k} H={H} (n={len(X)})...")
                 race = ModelRace(kind=k, n_splits=3)
                 race.fit(X, y, sample_weight=w, returns=y_ret)
                 score = race.metrics.get(race.best_model_name, -1.0)
@@ -549,24 +601,24 @@ def train_models_from_artifacts(datasets, cfg):
                     best_ic = score
                     best_m = {"model": race, "H": H, "feat_cols": cols}
 
-            final_models[d][k] = best_m
+            final_models[side][k] = best_m
 
-    # 3. Train Meta Models (Requires Alignment)
+    # 3. Train Meta Models
     meta_models = {}
-    for d in directions:
-        mr_conf = final_models[d]["mr"]
-        tf_conf = final_models[d]["tf"]
+    for side in trade_sides:
+        mr_conf = final_models[side]["mr"]
+        tf_conf = final_models[side]["tf"]
         if not mr_conf or not tf_conf:
-            meta_models[d] = None; continue
+            meta_models[side] = None; continue
 
         H_mr = mr_conf["H"]
         H_tf = tf_conf["H"]
 
-        key_mr = f"train_{d}_mr_{H_mr}"
-        key_tf = f"train_{d}_tf_{H_tf}"
+        key_mr = f"train_{side}_mr_{H_mr}"
+        key_tf = f"train_{side}_tf_{H_tf}"
 
         if key_mr not in datasets or key_tf not in datasets:
-            meta_models[d] = None; continue
+            meta_models[side] = None; continue
 
         df_mr = datasets[key_mr]
         df_tf = datasets[key_tf]

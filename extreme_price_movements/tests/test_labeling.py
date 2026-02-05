@@ -20,7 +20,7 @@ class TestTripleBarrier(unittest.TestCase):
         sl = 0.02
         horizon = 5 # Sufficient
 
-        lbs, rets, idxs = _numba_triple_barrier(times, opens, highs, lows, closes, tp, sl, horizon)
+        lbs, rets, idxs = _numba_triple_barrier(times, highs, lows, closes, tp, sl, horizon)
 
         # Test bar 0
         self.assertEqual(lbs[0], 1) # TP
@@ -35,7 +35,7 @@ class TestTripleBarrier(unittest.TestCase):
         highs = closes.copy()
         lows = closes.copy()
 
-        lbs, rets, idxs = _numba_triple_barrier(times, opens, highs, lows, closes, tp, sl, horizon)
+        lbs, rets, idxs = _numba_triple_barrier(times, highs, lows, closes, tp, sl, horizon)
 
         self.assertEqual(lbs[0], -1) # SL
         self.assertAlmostEqual(rets[0], -0.02)
@@ -54,7 +54,7 @@ class TestTripleBarrier(unittest.TestCase):
         lows = closes.copy()
         horizon = 2
 
-        lbs, rets, idxs = _numba_triple_barrier(times, opens, highs, lows, closes, tp, sl, horizon)
+        lbs, rets, idxs = _numba_triple_barrier(times, highs, lows, closes, tp, sl, horizon)
 
         self.assertEqual(lbs[0], 0) # Time
         # Return at idx 2 (102) from 100 -> 0.02

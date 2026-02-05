@@ -12,7 +12,9 @@ import numpy as np
 import pandas as pd
 from sklearn.base import clone
 from sklearn.ensemble import ExtraTreesRegressor
-from sklearn.preprocessing import QuantileTransformer
+from sklearn.linear_model import ElasticNet
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import QuantileTransformer, StandardScaler
 from sklearn.utils import check_random_state
 from .utils import tprint, check_inf_nan, clean_dataset
 from .sequential_bootstrap import get_ind_matrix, seq_bootstrap
@@ -193,6 +195,112 @@ def extract_extra_mdi_metrics_fast(
 # Main Production Pipeline
 # ======================================================================================
 
+def linear_prescreen_enet_3x(
+    X: pd.DataFrame,
+    y: np.ndarray,
+    n_select: int,
+    l1_ratio: float = 0.6,
+    alpha_lo: float = 1e-6,
+    alpha_hi: float = 1e1,
+    max_iter: int = 5000,
+    max_steps: int = 25,
+    tol_frac: float = 0.15,
+    random_state: int = 42,
+) -> list[str]:
+    """
+    Drop-in ElasticNet pre-screen that targets keep-count ~= 3 * n_select.
+
+    Returns a list of feature names to keep (exactly target_keep if possible,
+    otherwise the closest solution trimmed by |coef|).
+
+    Notes:
+    - Uses signed log transform on y: sign(y) * log1p(|y|)
+    - Standardizes X before ElasticNet (required for meaningful L1/L2 penalties)
+    - Searches alpha on a log scale to hit the target sparsity
+    """
+    if X is None or X.empty:
+        return []
+    p = X.shape[1]
+    target_keep = int(np.clip(3 * int(n_select), 1, p))
+
+    y = np.asarray(y)
+    y_t = np.sign(y) * np.log1p(np.abs(y))
+
+    def fit_abscoef(alpha: float) -> np.ndarray:
+        pipe = Pipeline([
+            ("scaler", StandardScaler(with_mean=True, with_std=True)),
+            ("enet", ElasticNet(
+                alpha=alpha,
+                l1_ratio=l1_ratio,
+                max_iter=max_iter,
+                random_state=random_state
+            ))
+        ])
+        pipe.fit(X, y_t)
+        return np.abs(pipe.named_steps["enet"].coef_)
+
+    # Count "selected" coefficients; pre-screen is ranking-based, so threshold is just for guidance.
+    def nnz(abscoef: np.ndarray) -> int:
+        return int(np.sum(abscoef > 1e-12))
+
+    # Bracket alphas so that:
+    # - alpha_lo keeps >= target_keep
+    # - alpha_hi keeps <= target_keep (if possible)
+    abs_lo = fit_abscoef(alpha_lo)
+    n_lo = nnz(abs_lo)
+
+    # If even very small alpha yields too few selected, fall back to top-|coef|
+    if n_lo <= target_keep:
+        idx = np.argsort(abs_lo)[::-1][:target_keep]
+        return X.columns[idx].tolist()
+
+    abs_hi = fit_abscoef(alpha_hi)
+    n_hi = nnz(abs_hi)
+
+    # Increase alpha_hi until we get <= target_keep (or give up)
+    grow = 0
+    while n_hi > target_keep and alpha_hi < 1e6 and grow < 20:
+        alpha_hi *= 10.0
+        abs_hi = fit_abscoef(alpha_hi)
+        n_hi = nnz(abs_hi)
+        grow += 1
+
+    # If we can't sparsify enough, just take top-|coef| from the strongest-regularized fit we have
+    if n_hi > target_keep:
+        idx = np.argsort(abs_hi)[::-1][:target_keep]
+        return X.columns[idx].tolist()
+
+    # Binary search on log10(alpha)
+    lo, hi = np.log10(alpha_lo), np.log10(alpha_hi)
+    best_abs = abs_hi
+    best_n = n_hi
+    best_gap = abs(best_n - target_keep)
+
+    for _ in range(max_steps):
+        mid = (lo + hi) / 2.0
+        alpha_mid = 10 ** mid
+        abs_mid = fit_abscoef(alpha_mid)
+        n_mid = nnz(abs_mid)
+
+        gap = abs(n_mid - target_keep)
+        if gap < best_gap:
+            best_gap, best_abs, best_n = gap, abs_mid, n_mid
+
+        # Close enough
+        if gap <= max(1, int(target_keep * tol_frac)):
+            best_abs, best_n = abs_mid, n_mid
+            break
+
+        # Too many kept => alpha too small => increase alpha
+        if n_mid > target_keep:
+            lo = mid
+        else:
+            hi = mid
+
+    # Enforce exact keep-count by coefficient magnitude
+    idx = np.argsort(best_abs)[::-1][:target_keep]
+    return X.columns[idx].tolist()
+
 def suggest_depth(p: int, n_samples: int) -> int:
     # Interaction target: log2(p) * 0.8
     # Ensure p > 0 to avoid log2(0)
@@ -268,6 +376,9 @@ def mdi_feature_selection_v3(
         n_dropped = (~finite_rows).sum()
         tprint(f"MDI: Found non-finite values after float32 conversion (likely overflow). Dropping {n_dropped} rows.")
         X_np_full = X_np_full[finite_rows]
+
+        # Sync X dataframe
+        X = X.iloc[finite_rows]
 
         if hasattr(y, 'values'): y_vals = y.values
         else: y_vals = np.asarray(y)
@@ -364,6 +475,17 @@ def mdi_feature_selection_v3(
     tprint(f"MDI: Starting with {len(kept_features)} features after dedupe (target: {end_features}).")
 
     current_features = kept_features
+
+    if len(current_features) > 3 * end_features:
+        tprint(f"MDI: Running Linear ElasticNet prescreen on {len(current_features)} features...")
+        prescreened_features = linear_prescreen_enet_3x(
+            X[current_features],
+            y_np,
+            n_select=end_features
+        )
+        tprint(f"MDI: ElasticNet prescreen reduced features from {len(current_features)} to {len(prescreened_features)}")
+        current_features = prescreened_features
+
     metrics_df_sorted = pd.DataFrame()
 
     # Cache supported params once

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 from collections import defaultdict
 
+from numba import jit
 import numpy as np
 import pandas as pd
 from sklearn.base import clone
@@ -41,8 +42,14 @@ def purged_embargoed_splits(
         start = val_end
 
         val_idx = indices[val_start:val_end]
-        train_end = max(0, val_start - purge)
-        train_idx = indices[:train_end]
+
+        train_end_1 = max(0, val_start - purge)
+        train_idx_1 = indices[:train_end_1]
+
+        train_start_2 = val_end + embargo
+        train_idx_2 = indices[train_start_2:]
+
+        train_idx = np.concatenate([train_idx_1, train_idx_2])
 
         if len(train_idx) == 0:
             continue
@@ -62,6 +69,53 @@ def purged_embargoed_splits(
 # ======================================================================================
 # Fast MDI Metrics
 # ======================================================================================
+
+@jit(nopython=True, cache=True)
+def _numba_compute_mdi_metrics_tree(
+    children_left, children_right, feature, weighted_n_node_samples,
+    impurity, gains, root_n, depth_discount, eps,
+    freq, mdi_depth, mdi_cov
+):
+    # Stack: (node_idx, depth)
+    # We use a simple list as stack. Numba supports list of tuples if typed,
+    # but separate lists are safer/easier in older Numba versions.
+    # Actually, Numba handles list of tuples well in nopython mode now.
+
+    stack_nodes = [0]
+    stack_depths = [0]
+
+    # Pre-allocate sizes? List append is supported.
+
+    while len(stack_nodes) > 0:
+        u = stack_nodes.pop()
+        d = stack_depths.pop()
+
+        # Leaf check: children_left[u] == -1
+        if u == -1 or children_left[u] == -1:
+            continue
+
+        f = feature[u]
+        if f < 0: continue
+
+        delta = gains[u]
+        node_n = weighted_n_node_samples[u]
+        cov = node_n / (root_n + eps)
+
+        freq[f] += 1.0
+        # Cast to match array types if needed, but += handles it
+        mdi_depth[f] += (depth_discount ** d) * delta
+        mdi_cov[f] += cov * delta / (node_n + eps)
+
+        # Push children (Right first for DFS left-first traversal order)
+        # Right
+        r = children_right[u]
+        stack_nodes.append(r)
+        stack_depths.append(d + 1)
+
+        # Left
+        l = children_left[u]
+        stack_nodes.append(l)
+        stack_depths.append(d + 1)
 
 def extract_extra_mdi_metrics_fast(
     fitted_forest,
@@ -96,27 +150,35 @@ def extract_extra_mdi_metrics_fast(
         )
 
         root_n = weighted_n[0] if n_nodes else 0.0
-        stack = [(0, 0)] # (node, depth)
 
-        while stack:
-            u, d = stack.pop()
-            if u == -1 or not is_split[u]: continue
+        if not compute_median:
+            _numba_compute_mdi_metrics_tree(
+                left, right, features, weighted_n, impurity, gains,
+                root_n, depth_discount, eps,
+                freq, mdi_depth, mdi_cov
+            )
+        else:
+            stack = [(0, 0)] # (node, depth)
 
-            f = features[u]
-            if f < 0: continue # Guard for robust leaf identification
+            while stack:
+                u, d = stack.pop()
+                if u == -1 or not is_split[u]: continue
 
-            delta, node_n = gains[u], weighted_n[u]
-            cov = node_n / (root_n + eps)
+                f = features[u]
+                if f < 0: continue # Guard for robust leaf identification
 
-            freq[f] += 1.0
-            mdi_depth[f] += np.float32((depth_discount ** d) * delta)
-            mdi_cov[f] += np.float32(cov * (delta / (node_n + eps)))
+                delta, node_n = gains[u], weighted_n[u]
+                cov = node_n / (root_n + eps)
 
-            if compute_median:
-                gains_by_feature[f].append(float(delta))
+                freq[f] += 1.0
+                mdi_depth[f] += np.float32((depth_discount ** d) * delta)
+                mdi_cov[f] += np.float32(cov * (delta / (node_n + eps)))
 
-            stack.append((left[u], d + 1))
-            stack.append((right[u], d + 1))
+                if compute_median:
+                    gains_by_feature[f].append(float(delta))
+
+                stack.append((left[u], d + 1))
+                stack.append((right[u], d + 1))
 
     median_gain = np.zeros(n_features, dtype=np.float32)
     if compute_median:
@@ -190,79 +252,100 @@ def mdi_feature_selection_v3(
         X_np_full = np.ascontiguousarray(X.values, dtype=np.float32) # will produce infs
 
     # SAFETY CHECK: Conversion to float32 might have introduced Inf/NaN (overflow)
-    if not np.isfinite(X_np_full).all():
-        tprint("MDI: Found non-finite values after float32 conversion (likely overflow). Cleaning numpy array...")
-        mask_bad = ~np.isfinite(X_np_full).all(axis=1)
-        if mask_bad.any():
-            tprint(f"Dropping {mask_bad.sum()} additional rows due to float32 overflow.")
-            X_np_full = X_np_full[~mask_bad]
+    finite_rows = np.isfinite(X_np_full).all(axis=1)
+    if not finite_rows.all():
+        n_dropped = (~finite_rows).sum()
+        tprint(f"MDI: Found non-finite values after float32 conversion (likely overflow). Dropping {n_dropped} rows.")
+        X_np_full = X_np_full[finite_rows]
 
-            # Align y and sw
-            if hasattr(y, 'values'): y_vals = y.values
-            else: y_vals = np.asarray(y)
-            y_np = y_vals[~mask_bad]
+        if hasattr(y, 'values'): y_vals = y.values
+        else: y_vals = np.asarray(y)
+        y_np = y_vals[finite_rows]
 
-            if sample_weight is not None:
-                if hasattr(sample_weight, 'values'): sw_vals = sample_weight.values
-                else: sw_vals = np.asarray(sample_weight)
-                sw_np = sw_vals[~mask_bad]
-            else:
-                sw_np = None
-
-            # Note: We do NOT update X (DataFrame) or feature_names_full (Columns).
-            # This logic assumes we iterate feature indices, which are columns.
-            # Removing ROWS from numpy array is safe.
+        if sample_weight is not None:
+            if hasattr(sample_weight, 'values'): sw_vals = sample_weight.values
+            else: sw_vals = np.asarray(sample_weight)
+            sw_np = sw_vals[finite_rows]
         else:
-            # Should not happen if all() is false
-            y_np = y.values if hasattr(y, 'values') else np.asarray(y)
             sw_np = None
-            if sample_weight is not None:
-                sw_np = sample_weight.to_numpy() if isinstance(sample_weight, pd.Series) else np.asarray(sample_weight)
     else:
         y_np = y.values if hasattr(y, 'values') else np.asarray(y)
         sw_np = None
         if sample_weight is not None:
             sw_np = sample_weight.to_numpy() if isinstance(sample_weight, pd.Series) else np.asarray(sample_weight)
 
+    # Update N after potentially dropping rows
+    N = X_np_full.shape[0]
+
     feature_names_full = list(X.columns)
+    name_to_idx = {name: i for i, name in enumerate(feature_names_full)}
 
     # Check if empty again
-    if X_np_full.shape[0] < 5:
+    if N < 5:
         tprint("MDI: Too few samples after cleaning. Returning empty result.")
         return MDISelectionResult(pd.DataFrame(), [], [])
 
     # Initial Splits for Dedupe
     try:
-        splits_full = purged_embargoed_splits(X_np_full.shape[0], n_splits, purge=purge)
+        splits_full = purged_embargoed_splits(N, n_splits, purge=purge)
     except ValueError as e:
         tprint(f"MDI: Split generation failed: {e}")
         return MDISelectionResult(pd.DataFrame(), [], [])
 
     # 1. Anchored Pre-Dedupe (Train Window 0)
     train_idx0, _ = splits_full[0]
-    X_tr0 = X_np_full[train_idx0]
 
-    # Quantile Transform for Robust Pearson
-    # subsample=min(len(X_tr0), 100000) inside QT is default
-    qt = QuantileTransformer(n_quantiles=min(len(X_tr0), 1000), output_distribution='normal', random_state=random_state)
-    try:
-        X_tr0_qt = qt.fit_transform(X_tr0)
-    except Exception as e:
-        tprint(f"MDI: QuantileTransformer failed: {e}")
-        return MDISelectionResult(pd.DataFrame(), [], [])
+    # Only run dedupe if we have data
+    if len(train_idx0) > 0:
+        X_tr0 = X_np_full[train_idx0]
 
-    corr_p = np.corrcoef(X_tr0_qt, rowvar=False)
-    # Fix for scalar result if single feature
-    if corr_p.ndim == 0:
-        corr_p = corr_p.reshape(1, 1)
+        # Quantile Transform for Robust Pearson
+        # Optimize: Limit quantiles and subsample
+        qt_subsample = min(len(X_tr0), 100000)
+        qt_quantiles = min(len(X_tr0), 256)
+        qt = QuantileTransformer(n_quantiles=qt_quantiles, output_distribution='normal', random_state=random_state, subsample=qt_subsample)
+        try:
+            X_tr0_qt = qt.fit_transform(X_tr0)
+        except Exception as e:
+            tprint(f"MDI: QuantileTransformer failed: {e}")
+            return MDISelectionResult(pd.DataFrame(), [], [])
 
-    # Greedy Dedupe
-    keep_mask = np.ones(len(feature_names_full), dtype=bool)
-    for i in range(len(feature_names_full)):
-        if not keep_mask[i]: continue
-        redundant = np.abs(corr_p[i]) >= pre_dedupe_threshold
-        redundant[:i+1] = False
-        keep_mask[redundant] = False
+        # Greedy Streaming Dedupe without full matrix
+        x_mean = X_tr0_qt.mean(axis=0)
+        x_std = X_tr0_qt.std(axis=0)
+        x_std[x_std == 0] = 1.0
+        X_z = (X_tr0_qt - x_mean) / x_std
+
+        n_tr0 = X_z.shape[0]
+        keep_mask = np.ones(len(feature_names_full), dtype=bool)
+        CHUNK_SIZE = 1000
+
+        for i in range(len(feature_names_full)):
+            if not keep_mask[i]: continue
+
+            # Candidates j > i
+            candidates = np.where(keep_mask)[0]
+            candidates = candidates[candidates > i]
+
+            if len(candidates) == 0:
+                continue
+
+            v_i = X_z[:, i]
+
+            for k in range(0, len(candidates), CHUNK_SIZE):
+                chunk_indices = candidates[k:k+CHUNK_SIZE]
+                chunk_data = X_z[:, chunk_indices]
+
+                # Dot product (correlation)
+                corrs = v_i @ chunk_data / n_tr0
+
+                redundant_local = np.abs(corrs) >= pre_dedupe_threshold
+
+                if redundant_local.any():
+                    drop_indices = chunk_indices[redundant_local]
+                    keep_mask[drop_indices] = False
+    else:
+        keep_mask = np.ones(len(feature_names_full), dtype=bool)
 
     kept_features = [feature_names_full[i] for i in range(len(keep_mask)) if keep_mask[i]]
     kept_features_indices = [i for i, kept in enumerate(keep_mask) if kept]
@@ -270,100 +353,105 @@ def mdi_feature_selection_v3(
     tprint(f"MDI: Starting with {len(kept_features)} features after dedupe (target: {end_features}).")
 
     current_features = kept_features
+    metrics_df_sorted = pd.DataFrame()
 
-    # RFE Loop
-    metrics_df_sorted = pd.DataFrame() # To hold final result
+    # Cache supported params once
+    base_params = base_model.get_params() if hasattr(base_model, 'get_params') else {}
+    supported_params = set(base_params.keys())
 
     while True:
         p = len(current_features)
-        K = end_features
-
-        # Check termination condition
-        # We run the evaluation even if p <= K to get the final metrics for the survivors
-        # But if we just finished a round and reached K, we stop?
-        # Actually, the loop condition "while p > K" is usually used, but we need metrics for the final set.
-        # So we run evaluation, THEN drop. If we are already <= K, we don't drop, just break after eval.
 
         # Subsampling Logic
-        n_star = max(30000, 300 * p, 2000 * K)
-        N = len(X)
-        subsample_pct = min(1.0, n_star / N)
+        n_star = max(30000, 300 * p, 2000 * end_features)
 
-        # Subsample Data
-        if subsample_pct < 1.0:
-            n_sub = int(N * subsample_pct)
-            # Sample indices without replacement and sort to preserve time order
-            indices_sub = np.sort(rng.choice(N, n_sub, replace=False))
+        if n_star < N:
+             # Systematic sampling
+             indices_sub = np.linspace(0, N-1, n_star, dtype=int)
 
-            # Map features indices
-            feat_indices = [feature_names_full.index(f) for f in current_features]
-            X_curr_np = X_np_full[indices_sub][:, feat_indices]
-            y_curr_np = y_np[indices_sub]
-            sw_curr_np = sw_np[indices_sub] if sw_np is not None else None
+             feat_indices = [name_to_idx[f] for f in current_features]
+             X_curr_np = X_np_full[indices_sub][:, feat_indices]
+             y_curr_np = y_np[indices_sub]
+             sw_curr_np = sw_np[indices_sub] if sw_np is not None else None
 
-            # Recalculate splits for the smaller dataset
-            # Note: purged_embargoed_splits logic assumes contiguous time, but with sorted random subsample
-            # we approximate it. It's the best we can do for subsampled RFE on time series without contiguous blocks.
-            try:
-                splits_curr = purged_embargoed_splits(n_sub, n_splits, purge=purge)
-            except ValueError:
-                 splits_curr = [] # Should be handled by loop skipping
+             try:
+                 splits_curr = purged_embargoed_splits(len(indices_sub), n_splits, purge=purge)
+             except ValueError:
+                 splits_curr = []
         else:
-            feat_indices = [feature_names_full.index(f) for f in current_features]
+            feat_indices = [name_to_idx[f] for f in current_features]
             X_curr_np = X_np_full[:, feat_indices]
             y_curr_np = y_np
             sw_curr_np = sw_np
-            splits_curr = splits_full # Can reuse if N didn't change (only first iter potentially)
+            splits_curr = splits_full
 
         if not splits_curr:
              tprint("MDI: No splits for current subsample. Breaking.")
              break
 
-        # Suggest depth based on CURRENT p
         depth = suggest_depth(p, X_curr_np.shape[0])
 
-        # 2. Stability Analysis CV
-        folds_data = defaultdict(list)
+        # Streaming Aggregation
+        sums = {k: np.zeros(p, dtype=np.float64) for k in ['share', 'freq', 'mdi_depth', 'mdi_cov']}
+        sq_sums = {k: np.zeros(p, dtype=np.float64) for k in ['share', 'freq', 'mdi_depth', 'mdi_cov']}
+        counts = {k: 0 for k in ['share', 'freq', 'mdi_depth', 'mdi_cov']}
+        pos_counts = {k: np.zeros(p, dtype=np.float64) for k in ['share', 'freq', 'mdi_depth', 'mdi_cov']}
+
+        valid_folds = 0
 
         for train_idx, _ in splits_curr:
             m = clone(base_model)
-            # Update params
-            if hasattr(m, "set_params"):
-                params = {}
-                if "max_depth" in m.get_params():
-                    params["max_depth"] = depth
-                if "n_estimators" in m.get_params():
-                    params["n_estimators"] = analysis_n_estimators
-                if "min_samples_leaf" in m.get_params():
-                    params["min_samples_leaf"] = min_samples_leaf
-                if "min_impurity_decrease" in m.get_params():
-                    params["min_impurity_decrease"] = min_impurity_decrease
-                if "random_state" in m.get_params():
-                    params["random_state"] = random_state
-                m.set_params(**params)
+            params = {}
+            if "max_depth" in supported_params: params["max_depth"] = depth
+            if "n_estimators" in supported_params: params["n_estimators"] = analysis_n_estimators
+            if "min_samples_leaf" in supported_params: params["min_samples_leaf"] = min_samples_leaf
+            if "min_impurity_decrease" in supported_params: params["min_impurity_decrease"] = min_impurity_decrease
+            if "random_state" in supported_params: params["random_state"] = random_state
+            m.set_params(**params)
 
             sw_tr = sw_curr_np[train_idx] if sw_curr_np is not None else None
             m.fit(X_curr_np[train_idx], y_curr_np[train_idx], sample_weight=sw_tr)
 
             # C-level raw importance
-            folds_data['share'].append(m.feature_importances_)
+            # folds_data['share'].append(m.feature_importances_)
+            share = m.feature_importances_.astype(np.float64)
 
             # Fast extra metrics
             freq, mdi_d, mdi_c, _ = extract_extra_mdi_metrics_fast(m, p)
-            folds_data['freq'].append(freq)
-            folds_data['mdi_depth'].append(mdi_d)
-            folds_data['mdi_cov'].append(mdi_c)
+            # Ensure float64
+            freq = freq.astype(np.float64)
+            mdi_d = mdi_d.astype(np.float64)
+            mdi_c = mdi_c.astype(np.float64)
+
+            vals = {'share': share, 'freq': freq, 'mdi_depth': mdi_d, 'mdi_cov': mdi_c}
+
+            for k in vals:
+                v = vals[k]
+                sums[k] += v
+                sq_sums[k] += v*v
+                pos_counts[k] += (v > 0).astype(np.float64)
+                counts[k] += 1
+
+            valid_folds += 1
+
+        if valid_folds == 0:
+            break
 
         # 3. Aggregation
         agg = {}
-        for metric, values in folds_data.items():
-            arr = np.vstack(values)
-            mu = arr.mean(axis=0)
-            sd = arr.std(axis=0)
-            hit = (arr > 0).mean(axis=0)
+        for metric in sums:
+            n = counts[metric]
+            mu = sums[metric] / n
+            var = (sq_sums[metric] / n) - (mu * mu)
+            sd = np.sqrt(np.maximum(var, 0))
+            hit = pos_counts[metric] / n
+
             cv = sd / (mu + 1e-12)
-            agg[f"{metric}_mu"] = mu
-            agg[f"{metric}_stab"] = mu * (hit / (cv + 1e-12))
+            stab = mu * (hit / (cv + 1e-12))
+
+            # Use float32
+            agg[f"{metric}_mu"] = mu.astype(np.float32)
+            agg[f"{metric}_stab"] = stab.astype(np.float32)
 
         metrics_df = pd.DataFrame(agg, index=current_features)
 

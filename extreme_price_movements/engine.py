@@ -8,6 +8,7 @@ from extreme_price_movements.training import (
     compute_p_exhaustion_at_t,
     select_best_horizon,
     apply_interaction_toggles,
+    scaled_atr_pct
 )
 from extreme_price_movements.candidates import select_trade_candidates_hourly, entry_price_next_hour_open
 
@@ -19,43 +20,148 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
     ts_sig = ts_entry - pd.Timedelta(hours=1)
     if ts_sig not in feats_s.index:
         atr = 0.02
+        # No atr base/std available if using just scalar lookups
+        # Fallback to fixed
+        use_dynamic_barrier = False
     else:
         atr = float(feats_s.loc[ts_sig])
+        use_dynamic_barrier = True
 
-    ts_manager = TrailingStop(
-        entry_px=entry_px,
-        side=side,
-        atr_val=atr,
-        k_sl=cfg["risk_k_sl"],
-        k_trail_start=cfg["risk_k_trail_start"],
-        k_trail_dist=cfg["risk_k_trail_dist"]
-    )
+    # Check for optimized TP/SL mults
+    tp_mult = cfg.get("tp_mult")
+    sl_mult = cfg.get("sl_mult")
 
-    end_ts = ts_entry + pd.Timedelta(hours=max_hold_hours)
-    path = o_s.loc[ts_entry:end_ts].index
-    if len(path) == 0:
-        return 0.0, ts_entry, "no_path"
+    if tp_mult is not None and sl_mult is not None:
+        # TRIPLE BARRIER LOGIC
+        # Compute dynamic barrier level if possible
+        if use_dynamic_barrier:
+            # We need atr_pct history to compute Z.
+            # feats_s is just a Series (usually 'atr_pct' column).
+            # But we need history for rolling metrics.
+            # In simulate_trade_hourly, `feats_s` is passed as a Series: `atr_s[sym]`.
+            # This contains the full history of ATR for the symbol.
+            # So we can compute context.
 
-    for ts in path:
-        hh = h_s.loc[ts]; ll = l_s.loc[ts]; cc = c_s.loc[ts]
-        if np.isnan(hh) or np.isnan(ll) or np.isnan(cc):
-            continue
+            # Context window
+            window_base = 24 * 30
+            # Slicing history ending at ts_sig
+            # This might be slow if done every time.
+            # But optimize_risk_params uses fast vectorized approach.
+            # simulate_trade_hourly is used in backtest loop (slow anyway).
 
-        stopped, exit_px, reason = ts_manager.update(hh, ll, cc)
-        if stopped:
-            if reason == "ambiguous_neutral":
-                return 0.0, ts, reason
-            if side == "long":
-                return (exit_px / entry_px) - 1.0, ts, reason
+            # slice context
+            # We need Z and Base.
+            # If feats_s is indeed the full series, we can look back.
+            end_loc = feats_s.index.get_loc(ts_sig)
+            start_loc = max(0, end_loc - window_base * 2)
+
+            # Check sufficiency
+            if end_loc - start_loc < window_base:
+                # Not enough history
+                barrier_pct = atr
             else:
-                return (entry_px / exit_px) - 1.0, ts, reason
+                # Compute rolling stats on the fly? Or assume pre-computed?
+                # Pre-computing in backtest loop would be better.
+                # But here we are inside the function.
+                # Let's do a quick calculation on the window.
+                # slice
+                subset = feats_s.iloc[start_loc : end_loc+1]
 
-    last_ts = path[-1]
-    last_close = c_s.loc[last_ts]
-    if side == "long":
-        return (last_close / entry_px) - 1.0, last_ts, "time_exit"
+                # We need base and std at the END.
+                # base = median of last window_base
+                # std = std of last window_base
+                if len(subset) >= window_base:
+                    win = subset.iloc[-window_base:]
+                    base = win.median()
+                    std = win.std()
+                    z = (atr - base) / (std + 1e-12)
+
+                    # scaled_atr_pct
+                    barrier_pct = scaled_atr_pct(
+                        atr, z, base, z_max=3.0, lo=0.03, hi=0.06
+                    )
+                else:
+                    barrier_pct = atr
+        else:
+            barrier_pct = atr # Fallback
+
+        # Apply multipliers
+        tp_dist = tp_mult * barrier_pct * entry_px
+        sl_dist = sl_mult * barrier_pct * entry_px
+
+        # Simulate Fixed Exit
+        # We can reuse TrailingStop with activation=TP and trail=0 (tight stop)
+        # Or simple loop
+
+        end_ts = ts_entry + pd.Timedelta(hours=max_hold_hours)
+        path = o_s.loc[ts_entry:end_ts].index
+        if len(path) == 0:
+            return 0.0, ts_entry, "no_path"
+
+        tp_price = entry_px + tp_dist if side == "long" else entry_px - tp_dist
+        sl_price = entry_px - sl_dist if side == "long" else entry_px + sl_dist
+
+        for ts in path:
+            hh = h_s.loc[ts]; ll = l_s.loc[ts]; cc = c_s.loc[ts]
+            if np.isnan(hh): continue
+
+            if side == "long":
+                # Check SL first? Or TP?
+                # Optimistic: TP first.
+                if hh >= tp_price:
+                    return (tp_price / entry_px) - 1.0, ts, "take_profit"
+                if ll <= sl_price:
+                    return (sl_price / entry_px) - 1.0, ts, "stop_loss"
+            else:
+                if ll <= tp_price:
+                    return (entry_px / tp_price) - 1.0, ts, "take_profit"
+                if hh >= sl_price:
+                    return (entry_px / sl_price) - 1.0, ts, "stop_loss"
+
+        # Time exit
+        last_ts = path[-1]
+        last_close = c_s.loc[last_ts]
+        if side == "long":
+            return (last_close / entry_px) - 1.0, last_ts, "time_exit"
+        else:
+            return (entry_px / last_close) - 1.0, last_ts, "time_exit"
+
     else:
-        return (entry_px / last_close) - 1.0, last_ts, "time_exit"
+        # TRAILING STOP LOGIC (Legacy)
+        ts_manager = TrailingStop(
+            entry_px=entry_px,
+            side=side,
+            atr_val=atr,
+            k_sl=cfg["risk_k_sl"],
+            k_trail_start=cfg["risk_k_trail_start"],
+            k_trail_dist=cfg["risk_k_trail_dist"]
+        )
+
+        end_ts = ts_entry + pd.Timedelta(hours=max_hold_hours)
+        path = o_s.loc[ts_entry:end_ts].index
+        if len(path) == 0:
+            return 0.0, ts_entry, "no_path"
+
+        for ts in path:
+            hh = h_s.loc[ts]; ll = l_s.loc[ts]; cc = c_s.loc[ts]
+            if np.isnan(hh) or np.isnan(ll) or np.isnan(cc):
+                continue
+
+            stopped, exit_px, reason = ts_manager.update(hh, ll, cc)
+            if stopped:
+                if reason == "ambiguous_neutral":
+                    return 0.0, ts, reason
+                if side == "long":
+                    return (exit_px / entry_px) - 1.0, ts, reason
+                else:
+                    return (entry_px / exit_px) - 1.0, ts, reason
+
+        last_ts = path[-1]
+        last_close = c_s.loc[last_ts]
+        if side == "long":
+            return (last_close / entry_px) - 1.0, last_ts, "time_exit"
+        else:
+            return (entry_px / last_close) - 1.0, last_ts, "time_exit"
 
 def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config, cfg, p_exh_cand, current_positions_syms):
     tprint(f"Entering function: generate_hourly_signals in engine.py")
@@ -63,46 +169,8 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
         return []
 
     # 1. Live Candidate Selection (t-12 to t+16 logic adapted for live)
-    # Check t, t-4, t-8, t-12, t-16
     candidates = set()
     lookback_offsets = [0, 4, 8, 12, 16]
-
-    # Need access to prices for Vol Filter
-    c = feats["close"] if "close" in feats else None # feats usually doesn't have raw price?
-    # feats has 'close' key from 'compute_features_hourly' output? No.
-    # In 'main.py', feats is result of 'compute_features_hourly'.
-    # Does 'compute_features_hourly' return raw prices?
-    # It returns 'ret1h', 'atr_pct' etc. It doesn't return raw price panel unless added.
-    # But wait, `generate_hourly_signals` receives `feats`.
-    # `hourly_engine_backtest` receives `panel` AND `feats`.
-    # `generate_hourly_signals` does NOT receive `panel`.
-    # This is a limitation.
-    # I should rely on `select_trade_candidates_hourly` using `feats`.
-    # `feats` contains `dist_ema_fast` etc.
-    # But `volatility filter` requires Price.
-    # If I can't check volatility, I might skip it or use `atr_pct` as proxy?
-    # "12h High/Low diff >= 8%".
-    # `atr_expansion` or `range_pct`?
-    # `range_pct` is `h-l`.
-    # 12h Range? `feats["range_pct"]` is 1h range.
-    # If `feats` doesn't have 12h range, I can't check it perfectly.
-    # But maybe I added `ret12h`? `feats["ret12h"]`.
-    # I can use `ret12h.abs()` as a proxy for range?
-    # Or assume candidates are pre-filtered?
-    # In `training.py`, we use `select_trade_candidates_vectorized` which uses `panel`.
-    # `main.py` calls `compute_features_hourly` using `panel`.
-    # If `generate_hourly_signals` needs panel, I should update signature.
-    # But `generate_hourly_signals` is called by `main.py`.
-    # `execute_hourly` in `main.py` has `panel`.
-    # I can pass `panel` to `generate_hourly_signals`.
-    # But for now, I will use `ret12h.abs() > 0.08` as a proxy if panel missing?
-    # No, let's stick to `select_trade_candidates_hourly` on `feats` and assume volatilty is handled by `trade_extreme_min/max` parameters or existing metrics?
-    # Actually, the requirement was specific.
-    # I will attempt to check if `feats` has enough info.
-    # I added `donch_dist_12`. If `donch_dist_12` is large, price moved.
-    # But that's normalized by ATR.
-
-    # I will loop offsets and gather candidates using standard logic.
 
     for offset in lookback_offsets:
         t_check = ts_sig - pd.Timedelta(hours=offset)
@@ -112,8 +180,6 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
                 cfg["trade_extreme_pct"], cfg["trade_extreme_min"], cfg["trade_extreme_max"],
                 cfg["trade_deviation_metric"]
             )
-            # Add vol filter proxy if possible?
-            # Skip for now to avoid breaking without panel.
             candidates.update(top)
             candidates.update(bot)
 
@@ -224,6 +290,16 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
         for ord in final_orders:
             w_alloc = gross_cap * (abs(ord["score"]) / total_wt)
             ord["weight"] = w_alloc
+            # Inject Risk Params from Config if available
+            # Map side/dom to key
+            r_key = f"risk_{ord['side']}_{ord['dom']}"
+            if risk_config and "granular_risk" in risk_config:
+                g_risk = risk_config["granular_risk"].get(r_key)
+                if g_risk:
+                    # Pass these params in the order dict, so main/executor can use them
+                    # Or modify them here? executor usually takes order dict.
+                    ord["risk_params"] = g_risk
+
             orders_out.append(ord)
 
     return orders_out

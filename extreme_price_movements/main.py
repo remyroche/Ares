@@ -258,19 +258,79 @@ def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger, model_
             entry_px = float(c.loc[ts_sig, sym])
 
             # Risk Params Lookup
-            # Key: risk_{side}_{dom}
-            risk_key = f"risk_{side}_{dom}"
-            rp = granular_risk.get(risk_key, {})
+            # Already injected by generate_hourly_signals into order['risk_params']
+            # But let's double check or use defaults
+            g_risk = order.get("risk_params", {})
 
-            # Apply Score Confidence scaling
-            k_sl = rp.get("k_sl", cfg["risk_k_sl"])
-            k_ts = rp.get("k_trail_start", cfg["risk_k_trail_start"])
-            k_td = rp.get("k_trail_dist", cfg["risk_k_trail_dist"])
-            sc_scale = rp.get("score_scale", 0.0)
+            # Check if Triple Barrier Params are present
+            tp_mult = g_risk.get("tp_mult")
+            sl_mult = g_risk.get("sl_mult")
 
-            # Adjust
+            # Apply Score Confidence scaling to SL?
+            # Standard logic: k_sl adj = k_sl * (1 + score_scale * abs(score))
+            # If using fixed TP/SL mults, do we scale them?
+            # Probably scaled SL multiplier is good.
+
+            k_sl = g_risk.get("k_sl", cfg["risk_k_sl"])
+            sc_scale = g_risk.get("score_scale", 0.0) # usually 0 in defaults
             adj = (1.0 + sc_scale * abs(score))
-            k_sl_adj = k_sl * adj
+
+            # Config for TrailingStop
+            # If tp_mult is present, we use it for activation (approx) or specialized logic?
+            # TrailingStop class currently handles k_sl, k_trail_start...
+            # We need to enhance TrailingStop or use a different class if we want fixed barriers.
+            # But TrailingStop is serialized.
+            # Let's map TP/SL mult to TrailingStop params if possible.
+            # TP -> Activation? If we want fixed exit at TP, we can set activation=TP and trail_dist=tiny.
+            # Then once activated, stop jumps to Price - tiny ~ Price. Next tick exit.
+
+            if tp_mult and sl_mult:
+                # Use dynamic barrier logic
+                # We need ATR stats history for dynamic scaling?
+                # simulate_trade_hourly computes it.
+                # Here we are in live execution.
+                # We need to compute the barrier level NOW.
+
+                # To compute dynamic barrier, we need rolling Z.
+                # We have `feats`. `feats["atr_pct"]` is the series.
+                # We can compute it here.
+                from extreme_price_movements.training import scaled_atr_pct
+
+                atr_series = feats["atr_pct"][sym]
+                # Slice history
+                if len(atr_series) > 30*24:
+                    win = atr_series.iloc[-(30*24):]
+                    base = win.median()
+                    std = win.std()
+                    z = (atr - base) / (std + 1e-12)
+                    barrier_pct = scaled_atr_pct(atr, z, base, z_max=3.0, lo=0.03, hi=0.06)
+                else:
+                    barrier_pct = atr # Fallback
+
+                # Convert to k factors relative to CURRENT ATR?
+                # barrier_pct is absolute percent.
+                # TrailingStop expects k factors relative to `atr_val` passed to it.
+                # k_effective = barrier_pct / atr
+
+                k_barrier = barrier_pct / (atr + 1e-12)
+
+                # TP distance = tp_mult * barrier_pct
+                # SL distance = sl_mult * barrier_pct
+
+                # Map to TrailingStop:
+                # k_sl = sl_mult * k_barrier
+                # k_trail_start = tp_mult * k_barrier
+                # k_trail_dist = 0.001 (tight)
+
+                k_sl_adj = sl_mult * k_barrier * adj # scaling SL
+                k_ts = tp_mult * k_barrier
+                k_td = 0.001
+
+            else:
+                # Legacy Trailing Logic
+                k_sl_adj = k_sl * adj
+                k_ts = g_risk.get("k_trail_start", cfg["risk_k_trail_start"])
+                k_td = g_risk.get("k_trail_dist", cfg["risk_k_trail_dist"])
 
             ts_risk = TrailingStop(
                 entry_px=entry_px, side=side, atr_val=atr,

@@ -31,8 +31,7 @@ class CausalFeatureTransformer:
         # User said "winsorisation (top 2%)".
         # Let's use rolling quantile.
 
-        lower = ff.numba_rolling_quantile(out, self.roll_window, self.winsor_qt)
-        upper = ff.numba_rolling_quantile(out, self.roll_window, 1 - self.winsor_qt)
+        lower, upper = ff.numba_rolling_quantile_dual(out, self.roll_window, self.winsor_qt, 1 - self.winsor_qt)
 
         # Forward fill limits to handle gaps
         lower = lower.ffill()
@@ -59,8 +58,7 @@ def log_winsor_zscore_rolling(series: pd.Series, window: int = 720, qt: float = 
     x = np.arcsinh(series)
     x_df = x.to_frame()
 
-    lo_df = ff.numba_rolling_quantile(x_df, window, qt)
-    hi_df = ff.numba_rolling_quantile(x_df, window, 1-qt)
+    lo_df, hi_df = ff.numba_rolling_quantile_dual(x_df, window, qt, 1-qt)
 
     lo = lo_df[lo_df.columns[0]]
     hi = hi_df[hi_df.columns[0]]

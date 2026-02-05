@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from numba import jit
+from numba import jit, prange
 
 # TODO: DECOUPLE src dependencies for standalone module
 # These functions should be implemented locally or vendored into this module
@@ -468,6 +468,77 @@ def _numba_rolling_quantile(x, window, q):
     return out
 
 @jit(nopython=True, cache=True)
+def _numba_rolling_quantile_dual_1d(x, window, q1, q2):
+    n = len(x)
+    out1 = np.full(n, np.nan, dtype=np.float32)
+    out2 = np.full(n, np.nan, dtype=np.float32)
+
+    for i in range(n):
+        start = max(0, i - window + 1)
+        end = i + 1
+
+        # Count valid
+        count = 0
+        for j in range(start, end):
+            if not np.isnan(x[j]):
+                count += 1
+
+        if count == 0:
+            continue
+
+        # Collect
+        buf = np.empty(count, dtype=np.float32)
+        idx = 0
+        for j in range(start, end):
+            val = x[j]
+            if not np.isnan(val):
+                buf[idx] = val
+                idx += 1
+
+        # Sort once
+        buf.sort()
+
+        # Helper logic for interpolation (inlined)
+        # q1
+        v_idx1 = q1 * (count - 1)
+        i_lower1 = int(np.floor(v_idx1))
+        i_upper1 = int(np.ceil(v_idx1))
+        frac1 = v_idx1 - i_lower1
+
+        if i_lower1 == i_upper1:
+            val1 = buf[i_lower1]
+        else:
+            val1 = buf[i_lower1] + (buf[i_upper1] - buf[i_lower1]) * frac1
+        out1[i] = val1
+
+        # q2
+        v_idx2 = q2 * (count - 1)
+        i_lower2 = int(np.floor(v_idx2))
+        i_upper2 = int(np.ceil(v_idx2))
+        frac2 = v_idx2 - i_lower2
+
+        if i_lower2 == i_upper2:
+            val2 = buf[i_lower2]
+        else:
+            val2 = buf[i_lower2] + (buf[i_upper2] - buf[i_lower2]) * frac2
+        out2[i] = val2
+
+    return out1, out2
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_quantile_dual_parallel(mat, window, q1, q2):
+    n_rows, n_cols = mat.shape
+    out1 = np.empty((n_rows, n_cols), dtype=np.float32)
+    out2 = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        col_res1, col_res2 = _numba_rolling_quantile_dual_1d(mat[:, j], window, q1, q2)
+        out1[:, j] = col_res1
+        out2[:, j] = col_res2
+
+    return out1, out2
+
+@jit(nopython=True, cache=True)
 def _numba_pct_change(x, n_shift):
     l = len(x)
     out = np.full(l, np.nan, dtype=np.float32)
@@ -703,6 +774,26 @@ def numba_rolling_median(df, n):
 def numba_rolling_quantile(df, n, q):
     # tprint(f"Entering function: numba_rolling_quantile in fast_funcs.py")
     return apply_to_frame(df, _numba_rolling_quantile, n, q)
+
+def numba_rolling_quantile_dual(df, n, q1, q2):
+    # tprint(f"Entering function: numba_rolling_quantile_dual in fast_funcs.py")
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
+    # Convert to 2D numpy array (float32)
+    # We assume uniform float32 data as per features.py
+    mat = df.to_numpy(dtype=np.float32)
+
+    res1, res2 = _numba_rolling_quantile_dual_parallel(mat, n, q1, q2)
+
+    out1 = pd.DataFrame(res1, index=df.index, columns=df.columns)
+    out2 = pd.DataFrame(res2, index=df.index, columns=df.columns)
+
+    if is_series:
+        return out1[out1.columns[0]], out2[out2.columns[0]]
+
+    return out1, out2
 
 def numba_pct_change(df, n):
     tprint(f"Entering function: numba_pct_change in fast_funcs.py")

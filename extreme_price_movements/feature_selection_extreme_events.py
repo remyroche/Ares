@@ -12,7 +12,7 @@ import pandas as pd
 from sklearn.base import clone
 from sklearn.preprocessing import QuantileTransformer
 from sklearn.utils import check_random_state
-from .utils import tprint
+from .utils import tprint, check_inf_nan
 from .sequential_bootstrap import get_ind_matrix, seq_bootstrap
 
 # ======================================================================================
@@ -158,6 +158,56 @@ def mdi_feature_selection_v3(
 ) -> MDISelectionResult:
     if not isinstance(X, pd.DataFrame):
         raise TypeError("X must be a pandas DataFrame.")
+
+    # Start by cleaning NaN/Inf values
+    check_inf_nan(X, "X_raw")
+
+    cols_to_drop = []
+    bad_rows_mask = np.zeros(len(X), dtype=bool)
+
+    for col in X.columns:
+        vals = X[col].values
+        is_nan = pd.isna(vals)
+        is_inf = np.isinf(vals)
+        is_bad = is_nan | is_inf
+
+        if is_bad.all():
+            tprint(f"Feature {col}: ALL values are NaN/Inf. Removing column.")
+            cols_to_drop.append(col)
+        elif is_bad.any():
+            bad_indices = np.where(is_bad)[0]
+            bad_labels = X.index[bad_indices]
+            start_lbl, end_lbl = bad_labels[0], bad_labels[-1]
+
+            reason = "Inf"
+            if is_nan[bad_indices].any():
+                reason = "NaN" if not is_inf[bad_indices].any() else "NaN/Inf"
+
+            tprint(f"Feature {col}: Removing {len(bad_indices)} rows (Range: {start_lbl} to {end_lbl}). Reason: {reason}")
+            bad_rows_mask |= is_bad
+
+    if cols_to_drop:
+        X = X.drop(columns=cols_to_drop)
+
+    if bad_rows_mask.any():
+        tprint(f"Dropping {bad_rows_mask.sum()} rows due to NaN/Inf values.")
+        X = X[~bad_rows_mask]
+
+        # Align y
+        if hasattr(y, 'shape') and y.shape[0] == len(bad_rows_mask):
+            if isinstance(y, (pd.Series, pd.DataFrame)):
+                y = y.iloc[~bad_rows_mask]
+            else:
+                y = y[~bad_rows_mask]
+
+        # Align sample_weight
+        if sample_weight is not None:
+             sw_len = len(sample_weight)
+             if sw_len == len(bad_rows_mask):
+                 if isinstance(sample_weight, (pd.Series, pd.DataFrame)):
+                     sample_weight = sample_weight.iloc[~bad_rows_mask]
+                 else:
+                     sample_weight = np.asarray(sample_weight)[~bad_rows_mask]
 
     # Determine end_features if not provided
     if end_features is None:

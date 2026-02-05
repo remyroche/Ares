@@ -4,14 +4,12 @@ import pandas as pd
 from extreme_price_movements.labeling import _numba_triple_barrier, compute_triple_barrier_labels
 
 class TestTripleBarrier(unittest.TestCase):
-    def test_numba_triple_barrier(self):
+    def test_numba_triple_barrier_long(self):
         # Create a simple price path
         # 100, 102, 106 (TP), 100
         # TP=0.05 (105). SL=0.02 (98).
-        # i=0 (100). Next bars: 102, 106. 106 >= 105. TP hit at idx 2.
 
         closes = np.array([100, 102, 106, 100], dtype=np.float32)
-        opens = np.array([100, 102, 106, 100], dtype=np.float32)
         highs = np.array([100, 102, 106, 100], dtype=np.float32)
         lows = np.array([100, 102, 106, 100], dtype=np.float32)
         times = np.array([0, 3600*1e9, 2*3600*1e9, 3*3600*1e9], dtype=np.int64) # Hourly
@@ -19,8 +17,9 @@ class TestTripleBarrier(unittest.TestCase):
         tp = 0.05
         sl = 0.02
         horizon = 5 # Sufficient
+        side = 1 # Long
 
-        lbs, rets, idxs = _numba_triple_barrier(times, highs, lows, closes, tp, sl, horizon)
+        lbs, rets, idxs = _numba_triple_barrier(times, highs, lows, closes, tp, sl, horizon, side)
 
         # Test bar 0
         self.assertEqual(lbs[0], 1) # TP
@@ -31,34 +30,61 @@ class TestTripleBarrier(unittest.TestCase):
         # 100, 99, 97 (SL), 100
         # SL=0.02 (98). 97 <= 98. SL hit.
         closes = np.array([100, 99, 97, 100], dtype=np.float32)
-        opens = closes.copy()
         highs = closes.copy()
         lows = closes.copy()
 
-        lbs, rets, idxs = _numba_triple_barrier(times, highs, lows, closes, tp, sl, horizon)
+        lbs, rets, idxs = _numba_triple_barrier(times, highs, lows, closes, tp, sl, horizon, side)
 
         self.assertEqual(lbs[0], -1) # SL
         self.assertAlmostEqual(rets[0], -0.02)
         self.assertEqual(idxs[0], 2)
 
         # Test Time Exit
-        # 100, 101, 101, 101
-        # Horizon = 2 hours.
-        # t=0. horizon = 2h. cutoff = t+2h.
-        # Bar 0 (0h). Bar 1 (1h). Bar 2 (2h). Bar 3 (3h).
-        # At bar 2 (2h), time >= cutoff. Exit.
-
         closes = np.array([100, 101, 102, 101], dtype=np.float32) # No TP (105)
-        opens = closes.copy()
         highs = closes.copy()
         lows = closes.copy()
         horizon = 2
 
-        lbs, rets, idxs = _numba_triple_barrier(times, highs, lows, closes, tp, sl, horizon)
+        lbs, rets, idxs = _numba_triple_barrier(times, highs, lows, closes, tp, sl, horizon, side)
 
         self.assertEqual(lbs[0], 0) # Time
-        # Return at idx 2 (102) from 100 -> 0.02
         self.assertAlmostEqual(rets[0], 0.02)
+        self.assertEqual(idxs[0], 2)
+
+    def test_numba_triple_barrier_short(self):
+        # Short Side
+        # TP=0.05. Entry=100. TP Price = 95. SL Price = 102.
+
+        # Test TP
+        # 100, 98, 94 (TP), 96
+        closes = np.array([100, 98, 94, 96], dtype=np.float32)
+        highs = closes.copy()
+        lows = closes.copy()
+        times = np.array([0, 3600*1e9, 2*3600*1e9, 3*3600*1e9], dtype=np.int64)
+
+        tp = 0.05
+        sl = 0.02
+        horizon = 5
+        side = -1 # Short
+
+        lbs, rets, idxs = _numba_triple_barrier(times, highs, lows, closes, tp, sl, horizon, side)
+
+        # At bar 2: Low is 94 <= 95. TP hit.
+        self.assertEqual(lbs[0], 1) # TP (Profit)
+        self.assertAlmostEqual(rets[0], 0.05)
+        self.assertEqual(idxs[0], 2)
+
+        # Test SL
+        # 100, 101, 103 (SL), 100
+        # SL Price = 102. High 103 >= 102. SL hit.
+        closes = np.array([100, 101, 103, 100], dtype=np.float32)
+        highs = closes.copy()
+        lows = closes.copy()
+
+        lbs, rets, idxs = _numba_triple_barrier(times, highs, lows, closes, tp, sl, horizon, side)
+
+        self.assertEqual(lbs[0], -1) # SL (Loss)
+        self.assertAlmostEqual(rets[0], -0.02)
         self.assertEqual(idxs[0], 2)
 
     def test_wrapper(self):
@@ -76,11 +102,18 @@ class TestTripleBarrier(unittest.TestCase):
             "low": pd.DataFrame({"A": df["low"]}),
         }
 
+        # Default Long
         labels, rets = compute_triple_barrier_labels(panel, 0.05, 0.05, 5)
-
-        # 100 -> 105 is +5%. Should hit TP around index 5.
         self.assertEqual(labels.iloc[0, 0], 1)
         self.assertAlmostEqual(rets.iloc[0, 0], 0.05)
+
+        # Short
+        # 100 -> 110. Short hits SL (Price increase).
+        # SL = 0.05. Entry=100. SL Price = 105.
+        # Hit at 105.55 (index 5).
+        labels_s, rets_s = compute_triple_barrier_labels(panel, 0.05, 0.05, 5, side="short")
+        self.assertEqual(labels_s.iloc[0, 0], -1)
+        self.assertAlmostEqual(rets_s.iloc[0, 0], -0.05)
 
 if __name__ == '__main__':
     unittest.main()

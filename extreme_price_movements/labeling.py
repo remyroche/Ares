@@ -163,13 +163,14 @@ def compute_trailing_atr_labels(
     return out_labels, out_returns
 
 @jit(nopython=True, cache=True)
-def _numba_triple_barrier(times, highs, lows, closes, tp, sl, horizon):
+def _numba_triple_barrier(times, highs, lows, closes, tp, sl, horizon, side):
     """
     Vectorized Triple Barrier Method.
     tp: Take Profit (relative, >0)
     sl: Stop Loss (relative, >0)
     horizon: max holding period in hours (or units matching times if adjusted)
     times: int64 (nanoseconds)
+    side: 1 for Long, -1 for Short
     """
     n = len(closes)
     labels = np.zeros(n, dtype=np.int8)
@@ -186,8 +187,12 @@ def _numba_triple_barrier(times, highs, lows, closes, tp, sl, horizon):
         if np.isnan(entry_p) or entry_p <= 0:
             continue
 
-        tp_price = entry_p * (1.0 + tp)
-        sl_price = entry_p * (1.0 - sl)
+        if side == 1:
+            tp_price = entry_p * (1.0 + tp)
+            sl_price = entry_p * (1.0 - sl)
+        else: # Short
+            tp_price = entry_p * (1.0 - tp)
+            sl_price = entry_p * (1.0 + sl)
 
         # Iterate forward
         exit_found = False
@@ -197,43 +202,66 @@ def _numba_triple_barrier(times, highs, lows, closes, tp, sl, horizon):
             if times[j] >= cutoff_t:
                 # Time Exit at Close of j (the bar where we realize time is up)
                 labels[i] = 0
-                returns[i] = (closes[j] / entry_p) - 1.0
+                if side == 1:
+                    returns[i] = (closes[j] / entry_p) - 1.0
+                else:
+                    returns[i] = (entry_p / closes[j]) - 1.0
                 exit_idxs[i] = j
                 exit_found = True
                 break
 
-            # Check High (TP)
-            if highs[j] >= tp_price:
-                labels[i] = 1
-                returns[i] = tp
-                exit_idxs[i] = j
-                exit_found = True
-                break
+            if side == 1: # Long
+                # Check High (TP)
+                if highs[j] >= tp_price:
+                    labels[i] = 1
+                    returns[i] = tp
+                    exit_idxs[i] = j
+                    exit_found = True
+                    break
 
-            # Check Low (SL)
-            if lows[j] <= sl_price:
-                labels[i] = -1
-                returns[i] = -sl
-                exit_idxs[i] = j
-                exit_found = True
-                break
+                # Check Low (SL)
+                if lows[j] <= sl_price:
+                    labels[i] = -1
+                    returns[i] = -sl
+                    exit_idxs[i] = j
+                    exit_found = True
+                    break
+            else: # Short
+                # Check Low (TP)
+                if lows[j] <= tp_price:
+                    labels[i] = 1
+                    returns[i] = tp
+                    exit_idxs[i] = j
+                    exit_found = True
+                    break
+
+                # Check High (SL)
+                if highs[j] >= sl_price:
+                    labels[i] = -1
+                    returns[i] = -sl
+                    exit_idxs[i] = j
+                    exit_found = True
+                    break
 
         if not exit_found:
             # End of data
             labels[i] = 0
-            returns[i] = (closes[n-1] / entry_p) - 1.0
+            if side == 1:
+                returns[i] = (closes[n-1] / entry_p) - 1.0
+            else:
+                returns[i] = (entry_p / closes[n-1]) - 1.0
             exit_idxs[i] = n - 1
 
     return labels, returns, exit_idxs
 
-def compute_triple_barrier_labels(panel, tp, sl, horizon):
+def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long"):
     """
     Computes triple barrier labels for a panel.
+    side: "long" or "short"
     """
     c = panel["close"]
     h = panel["high"]
     l = panel["low"]
-    o = panel["open"]
 
     assets = c.columns
     times = c.index.view(np.int64)
@@ -241,12 +269,14 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon):
     out_labels = pd.DataFrame(0, index=c.index, columns=assets, dtype=np.int8)
     out_returns = pd.DataFrame(0.0, index=c.index, columns=assets, dtype=np.float32)
 
+    side_int = 1 if side == "long" else -1
+
     for asset in assets:
         c_arr = c[asset].to_numpy(dtype=np.float32)
         h_arr = h[asset].to_numpy(dtype=np.float32)
         l_arr = l[asset].to_numpy(dtype=np.float32)
 
-        lbs, rets, _ = _numba_triple_barrier(times, h_arr, l_arr, c_arr, tp, sl, horizon)
+        lbs, rets, _ = _numba_triple_barrier(times, h_arr, l_arr, c_arr, tp, sl, horizon, side_int)
 
         out_labels[asset] = lbs
         out_returns[asset] = rets

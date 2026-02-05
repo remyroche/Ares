@@ -1162,7 +1162,7 @@ def _numba_rolling_sum(x: np.ndarray, window: int) -> np.ndarray:
     return out
 
 
-@jit(nopython=True, cache=True, fastmath=True)
+@jit(nopython=True, cache=True)
 def _numba_rolling_vwap(price: np.ndarray, volume: np.ndarray, window: int) -> np.ndarray:
     """
     Calculate rolling VWAP using Numba with O(N) complexity.
@@ -1274,13 +1274,11 @@ def _numba_rolling_std(x: np.ndarray, window: int) -> np.ndarray:
     return out
 
 
-@jit(nopython=True, cache=True, fastmath=True)
+@jit(nopython=True, cache=True)
 def _numba_rolling_correlation(x: np.ndarray, y: np.ndarray, window: int) -> np.ndarray:
     """
     Rolling correlation Corr(x,y) aligned to the right edge of the window.
-
-    Corr = Cov(x,y) / (Std(x)*Std(y))
-    Cov(x,y) = E[xy] - E[x]E[y]
+    NaN-safe O(N) implementation.
     """
     n = len(x)
     out = np.zeros(n, dtype=np.float32)
@@ -1288,10 +1286,8 @@ def _numba_rolling_correlation(x: np.ndarray, y: np.ndarray, window: int) -> np.
     if window <= 0:
         return out
     if len(y) != n:
-        # In nopython mode, avoid raising; caller should ensure matching lengths.
         return out
     if window == 1:
-        # Correlation over a single point is undefined; return 0s (consistent with other kernels)
         return out
 
     sx = 0.0
@@ -1299,44 +1295,53 @@ def _numba_rolling_correlation(x: np.ndarray, y: np.ndarray, window: int) -> np.
     sxx = 0.0
     syy = 0.0
     sxy = 0.0
-    inv_w = 1.0 / window
+    count = 0
 
     for i in range(n):
         vx = x[i]
         vy = y[i]
 
-        sx += vx
-        sy += vy
-        sxx += vx * vx
-        syy += vy * vy
-        sxy += vx * vy
+        # Entering
+        if not (np.isnan(vx) or np.isnan(vy)):
+            sx += vx
+            sy += vy
+            sxx += vx * vx
+            syy += vy * vy
+            sxy += vx * vy
+            count += 1
 
+        # Leaving
         if i >= window:
             rx = x[i - window]
             ry = y[i - window]
-            sx -= rx
-            sy -= ry
-            sxx -= rx * rx
-            syy -= ry * ry
-            sxy -= rx * ry
+            if not (np.isnan(rx) or np.isnan(ry)):
+                sx -= rx
+                sy -= ry
+                sxx -= rx * rx
+                syy -= ry * ry
+                sxy -= rx * ry
+                count -= 1
 
         if i >= window - 1:
-            mx = sx * inv_w
-            my = sy * inv_w
-
-            varx = (sxx * inv_w) - (mx * mx)
-            vary = (syy * inv_w) - (my * my)
-            cov = (sxy * inv_w) - (mx * my)
-
-            # Robust check for zero/NaN variance
-            if np.isnan(varx) or np.isnan(vary) or varx <= _EPS or vary <= _EPS:
+            if count < 2:
                 out[i] = 0.0
             else:
-                denom = np.sqrt(varx * vary)
-                if denom <= _EPS:
+                inv_c = 1.0 / count
+                mx = sx * inv_c
+                my = sy * inv_c
+
+                varx = (sxx * inv_c) - (mx * mx)
+                vary = (syy * inv_c) - (my * my)
+                cov = (sxy * inv_c) - (mx * my)
+
+                if varx <= _EPS or vary <= _EPS:
                     out[i] = 0.0
                 else:
-                    out[i] = cov / denom
+                    denom = np.sqrt(varx * vary)
+                    if denom <= _EPS:
+                        out[i] = 0.0
+                    else:
+                        out[i] = cov / denom
 
     return out
 

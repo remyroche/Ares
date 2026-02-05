@@ -3,7 +3,7 @@ CFG = {
     # persistence / fetch
     "data_root": "data",
     "timeframe": "1h",
-    "fetch_years": 4,
+    "fetch_years": 3,
     "fetch_symbols_M": 300,
 
     # market basket

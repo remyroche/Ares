@@ -19,10 +19,13 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex):
 
     # Load Data & Features
     dfs = {}
+
+    lookback_days = max(90, int(cfg["fetch_years"] * 365))
+
     with Timer("Data Load"):
         for s in train_syms:
             df = store.load(s)
-            if not df.empty: dfs[s] = df[df.index <= ts_sig].tail(24*90)
+            if not df.empty: dfs[s] = df[df.index <= ts_sig].tail(24*lookback_days)
 
     if not dfs:
         tprint("No data available.")
@@ -69,9 +72,12 @@ def run_risk_optimization_step(ts_sig, margin_symbols, cfg, store, state_file):
     # Need Data for optimization (simulation)
     train_syms = get_training_universe(margin_symbols, cfg, store)
     dfs = {}
+
+    lookback_days = max(90, int(cfg["fetch_years"] * 365))
+
     for s in train_syms:
         df = store.load(s)
-        if not df.empty: dfs[s] = df[df.index <= ts_sig].tail(24*90)
+        if not df.empty: dfs[s] = df[df.index <= ts_sig].tail(24*lookback_days)
 
     if not dfs: return
 
@@ -113,10 +119,13 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
     # Load Data
     train_syms = get_training_universe(margin_symbols, cfg, store)
     dfs = {}
+
+    lookback_days = max(90, int(cfg["fetch_years"] * 365))
+
     with Timer("Backtest Data Load"):
         for s in train_syms:
             df = store.load(s)
-            if not df.empty: dfs[s] = df[df.index <= ts_sig].tail(24*90) # enough for features
+            if not df.empty: dfs[s] = df[df.index <= ts_sig].tail(24*lookback_days) # enough for features
 
     if not dfs: return
 

@@ -72,3 +72,13 @@ Result: `calculate_entropy_statistics_numba` speedup >700x (2.11s -> 0.003s). Fu
 **Learning:** `_numba_rolling_max` and `min` were implemented using a naive $O(N \cdot W)$ sliding window loop. This scales linearly with window size and is very slow for large windows (e.g. 463x slower for W=5000). Replacing this with a monotonic deque implementation reduces complexity to amortized $O(N)$, resulting in constant time execution regardless of window size.
 
 **Action:** Always use monotonic deques for rolling min/max operations instead of naive iteration over the window.
+
+## 2026-02-05 - Rolling Quantile Partitioning vs Sorting
+
+**Learning:** For rolling quantile (and median) calculations in Numba where $O(N)$ online update algorithms (like Two Heaps) are complex to implement correctly with NaNs:
+-   `Reuse Buffer + Sort` (sorting the window buffer every step) is $O(N \cdot W \log W)$. It is slow for large W.
+-   `Reuse Buffer + Partition` (using `np.partition` for finding kth element) is $O(N \cdot W)$ for each quantile.
+-   Even though `np.partition` creates a copy in Numba (currently), it outperformed Allocation+Sort by ~4.5x for W=1000.
+-   Reusing the buffer for collection avoids $N$ allocations, which is a massive win for GC and speed.
+
+**Action:** Use `np.partition` instead of `sort` for rolling quantile calculations if exact sorted order isn't required (only k-th element). Ensure to reuse the collection buffer to minimize allocation overhead.

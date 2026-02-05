@@ -471,6 +471,9 @@ def _numba_rolling_quantile(x, window, q):
     n = len(x)
     out = np.full(n, np.nan, dtype=np.float32)
 
+    # Pre-allocate buffer to avoid N allocations
+    buf = np.empty(window, dtype=np.float32)
+
     for i in range(n):
         start = max(0, i - window + 1)
         end = i + 1
@@ -478,23 +481,16 @@ def _numba_rolling_quantile(x, window, q):
         # Count valid
         count = 0
         for j in range(start, end):
-            if not np.isnan(x[j]):
+            val = x[j]
+            if not np.isnan(val):
+                buf[count] = val
                 count += 1
 
         if count == 0:
             continue
 
-        # Collect
-        buf = np.empty(count, dtype=np.float32)
-        idx = 0
-        for j in range(start, end):
-            val = x[j]
-            if not np.isnan(val):
-                buf[idx] = val
-                idx += 1
-
-        # Sort
-        buf.sort()
+        # Use valid slice
+        valid_buf = buf[:count]
 
         # Linear Interpolation
         v_idx = q * (count - 1)
@@ -502,10 +498,22 @@ def _numba_rolling_quantile(x, window, q):
         i_upper = int(np.ceil(v_idx))
         fraction = v_idx - i_lower
 
+        # Optimization: Use np.partition instead of sort
+        # O(W) instead of O(W log W)
+
+        # Partition at i_upper puts the correct element at i_upper
+        # and all smaller/equal elements to the left.
+        # This allows finding i_lower (which is <= i_upper) efficiently.
+        part = np.partition(valid_buf, i_upper)
+        val_upper = part[i_upper]
+
         if i_lower == i_upper:
-            out[i] = buf[i_lower]
+            out[i] = val_upper
         else:
-            out[i] = buf[i_lower] + (buf[i_upper] - buf[i_lower]) * fraction
+            # i_lower is in part[:i_upper]
+            # Since partitioned, we just need the max of the left side
+            val_lower = np.max(part[:i_upper])
+            out[i] = val_lower + (val_upper - val_lower) * fraction
 
     return out
 
@@ -515,6 +523,9 @@ def _numba_rolling_quantile_dual_1d(x, window, q1, q2):
     out1 = np.full(n, np.nan, dtype=np.float32)
     out2 = np.full(n, np.nan, dtype=np.float32)
 
+    # Pre-allocate buffer
+    buf = np.empty(window, dtype=np.float32)
+
     for i in range(n):
         start = max(0, i - window + 1)
         end = i + 1
@@ -522,48 +533,106 @@ def _numba_rolling_quantile_dual_1d(x, window, q1, q2):
         # Count valid
         count = 0
         for j in range(start, end):
-            if not np.isnan(x[j]):
+            val = x[j]
+            if not np.isnan(val):
+                buf[count] = val
                 count += 1
 
         if count == 0:
             continue
 
-        # Collect
-        buf = np.empty(count, dtype=np.float32)
-        idx = 0
-        for j in range(start, end):
-            val = x[j]
-            if not np.isnan(val):
-                buf[idx] = val
-                idx += 1
+        valid_buf = buf[:count]
 
-        # Sort once
-        buf.sort()
-
-        # Helper logic for interpolation (inlined)
-        # q1
+        # Calculate Indices
         v_idx1 = q1 * (count - 1)
         i_lower1 = int(np.floor(v_idx1))
         i_upper1 = int(np.ceil(v_idx1))
         frac1 = v_idx1 - i_lower1
 
-        if i_lower1 == i_upper1:
-            val1 = buf[i_lower1]
-        else:
-            val1 = buf[i_lower1] + (buf[i_upper1] - buf[i_lower1]) * frac1
-        out1[i] = val1
-
-        # q2
         v_idx2 = q2 * (count - 1)
         i_lower2 = int(np.floor(v_idx2))
         i_upper2 = int(np.ceil(v_idx2))
         frac2 = v_idx2 - i_lower2
 
-        if i_lower2 == i_upper2:
-            val2 = buf[i_lower2]
+        # Optimization: Sequential Partitioning
+        # Assume q1 <= q2 usually. If not, swap logic, but here explicit indices work.
+        # We handle q2 (larger index) first.
+
+        # Ensure we partition at the larger index first to keep smaller elements gathered
+        if i_upper2 >= i_upper1:
+            # Partition at Upper 2
+            part2 = np.partition(valid_buf, i_upper2)
+            val_upper2 = part2[i_upper2]
+
+            if i_lower2 == i_upper2:
+                val_lower2 = val_upper2
+            else:
+                val_lower2 = np.max(part2[:i_upper2])
+
+            out2[i] = val_lower2 + (val_upper2 - val_lower2) * frac2
+
+            # Now solve for Q1 using the left side of partition
+            # The elements for Q1 are guaranteed to be in part2[:i_upper2] (inclusive of boundary logic?)
+            # Actually, part2[:i_upper2] has length i_upper2.
+            # If i_upper1 < i_upper2, index i_upper1 is valid in this slice.
+            # If i_upper1 == i_upper2, we already have it.
+
+            if i_upper1 < i_upper2:
+                # Partition left side at Upper 1
+                # Note: np.partition returns copy usually, so recursive partition is safe
+                left_slice = part2[:i_upper2+1] # Include i_upper2 just in case? No, partition boundary.
+                # partition(k) puts k-th element at k. Smaller at 0..k-1.
+                # So part2[:i_upper2] contains strictly elements < val_upper2?
+                # No, <=.
+                # But indices 0..i_upper2-1 are there.
+                # We need index i_upper1.
+
+                # Careful: We need to partition the SUBSET.
+                part1 = np.partition(part2[:i_upper2+1], i_upper1)
+                val_upper1 = part1[i_upper1]
+
+                if i_lower1 == i_upper1:
+                    val_lower1 = val_upper1
+                else:
+                    val_lower1 = np.max(part1[:i_upper1])
+
+                out1[i] = val_lower1 + (val_upper1 - val_lower1) * frac1
+
+            else:
+                # i_upper1 == i_upper2
+                # We already computed values
+                out1[i] = out2[i] # If indices same and fracs same?
+                # If indices same, values are same. Frac might differ?
+                # q1 != q2 but indices collided (small window).
+                # i_lower/upper are same. Frac depends on q.
+                # Recompute with values we have.
+                val_upper1 = val_upper2
+                val_lower1 = val_lower2
+                out1[i] = val_lower1 + (val_upper1 - val_lower1) * frac1
+
         else:
-            val2 = buf[i_lower2] + (buf[i_upper2] - buf[i_lower2]) * frac2
-        out2[i] = val2
+            # q1 > q2 (Unlikely but handle it: Partition Q1 first)
+            part1 = np.partition(valid_buf, i_upper1)
+            val_upper1 = part1[i_upper1]
+
+            if i_lower1 == i_upper1:
+                val_lower1 = val_upper1
+            else:
+                val_lower1 = np.max(part1[:i_upper1])
+            out1[i] = val_lower1 + (val_upper1 - val_lower1) * frac1
+
+            if i_upper2 < i_upper1:
+                part2 = np.partition(part1[:i_upper1+1], i_upper2)
+                val_upper2 = part2[i_upper2]
+                if i_lower2 == i_upper2:
+                    val_lower2 = val_upper2
+                else:
+                    val_lower2 = np.max(part2[:i_upper2])
+                out2[i] = val_lower2 + (val_upper2 - val_lower2) * frac2
+            else:
+                val_upper2 = val_upper1
+                val_lower2 = val_lower1
+                out2[i] = val_lower2 + (val_upper2 - val_lower2) * frac2
 
     return out1, out2
 

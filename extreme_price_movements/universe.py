@@ -2,6 +2,7 @@ import requests
 import pandas as pd
 from dataclasses import dataclass
 from extreme_price_movements.utils import tprint
+from extreme_price_movements.optimization_utils import filter_low_variance_assets
 
 BINANCE_API = "https://api.binance.com"
 
@@ -97,6 +98,25 @@ def build_fetch_universe(margin_symbols: list[str], market_basket: list[str], M:
     except Exception as e:
         tprint(f"Error fetching tickers for universe selection: {e}. Fallback to alphabet.")
         return sorted(list(set(margin_symbols[:M]).union(set(market_basket))))
+
+def get_training_universe(margin_symbols, cfg, store):
+    """
+    Standardized training universe selection:
+    1. Fetch Universe (Top M by volume)
+    2. Variance Filter (Top N% by volatility)
+    3. Union with Market Basket
+    """
+    if margin_symbols is None:
+        # Fallback if not provided, refresh locally?
+        # Ideally should be passed.
+        # We will refresh it here if None
+        mu = refresh_margin_universe_daily(None, quote="USDT")
+        margin_symbols = mu.symbols
+
+    syms_all = build_fetch_universe(margin_symbols, cfg["market_basket"], cfg["fetch_symbols_M"])
+    train_syms = filter_low_variance_assets(store, syms_all, lookback_days=30, threshold_pct=0.40)
+    train_syms = sorted(list(set(train_syms).union(set(cfg["market_basket"]))))
+    return train_syms
 
 def select_live_candidates(margin_symbols: list[str], market_basket: list[str], pct: float = 0.05):
     """

@@ -1,84 +1,168 @@
 import time
 import sys
+import os
 import pandas as pd
 import numpy as np
 import uuid
 
 from extreme_price_movements.config import CFG
 from extreme_price_movements.utils import tprint, Timer
-from extreme_price_movements.universe import refresh_margin_universe_daily, build_fetch_universe, select_live_candidates
-from extreme_price_movements.data_store import make_spot_exchange, PartitionedOHLCVStore, to_panel, check_data_health, save_features, load_features
+from extreme_price_movements.universe import refresh_margin_universe_daily, build_fetch_universe, select_live_candidates, get_training_universe
+from extreme_price_movements.data_store import make_spot_exchange, PartitionedOHLCVStore, to_panel, check_data_health, save_features, load_features, get_feature_path, load_artifact_df
 from extreme_price_movements.features import compute_market_features, add_regime_gates, compute_features_hourly
 from extreme_price_movements.engine import generate_hourly_signals
 from extreme_price_movements.candidates import select_trade_candidates_hourly, entry_price_next_hour_open
 from extreme_price_movements.time_utils import get_ts_sig, floor_to_hour, now_utc
 from extreme_price_movements.state import StateManager
 from extreme_price_movements.metrics import MetricsLogger
-from extreme_price_movements.training import select_best_horizon, compute_p_exhaustion_at_t, apply_interaction_toggles, generate_exhaustion_history, optimize_risk_params
+from extreme_price_movements.training import select_best_horizon, compute_p_exhaustion_at_t, apply_interaction_toggles, generate_exhaustion_history, optimize_risk_params, train_models_from_artifacts
 from extreme_price_movements.risk import TrailingStop
 from extreme_price_movements.optimization_utils import filter_low_variance_assets
+from extreme_price_movements.pipeline_steps import run_label_generation_step_v2, run_risk_optimization_step, run_backtest_step
 
 def reconcile_state(ex, state):
     tprint("Reconciling state...")
     return True
 
-def train_daily(ts_sig, margin_symbols, cfg, store, ex):
-    tprint("DAILY TRAINING START")
-    syms_all = build_fetch_universe(margin_symbols, cfg["market_basket"], cfg["fetch_symbols_M"])
-    tprint(f"Fetch universe size: {len(syms_all)}")
-    # with Timer("Training Data Fetch"):
-    #     since = (ts_sig - pd.Timedelta(days=365)).floor("D")
-    #     since_ms = int(since.value // 10**6)
-    #     count_upd = 0
-    #     for s in syms_all:
-    #         try:
-    #             store.update_symbol(ex, s, since_ms)
-    #             count_upd += 1
-    #         except Exception: pass
-    #     tprint(f"Updated {count_upd}/{len(syms_all)} symbols")
+def generate_features_daily(ts_sig, margin_symbols, cfg, store, ex):
+    tprint("DAILY FEATURE GENERATION START")
+    train_syms = get_training_universe(margin_symbols, cfg, store)
+    tprint(f"Target universe size: {len(train_syms)}")
 
-    train_syms = filter_low_variance_assets(store, syms_all, lookback_days=30, threshold_pct=0.40)
-    tprint(f"Training universe size (after variance filter): {len(train_syms)}")
-    train_syms = sorted(list(set(train_syms).union(set(cfg["market_basket"]))))
-    dfs = {}
+    missing_syms = []
     for s in train_syms:
-        df = store.load(s)
-        if not df.empty: dfs[s] = df[df.index <= ts_sig].tail(24*90)
+        fpath = get_feature_path(cfg["data_root"], ts_sig, s)
+        if not os.path.exists(fpath):
+            missing_syms.append(s)
 
-    tprint(f"Loaded data for {len(dfs)}/{len(train_syms)} symbols")
+    if not missing_syms:
+        tprint("All features already generated.")
+        return
+
+    tprint(f"Generating features for {len(missing_syms)} missing symbols...")
+
+    # We must load market basket to compute market features
+    load_syms = sorted(list(set(missing_syms).union(set(cfg["market_basket"]))))
+
+    dfs = {}
+    with Timer("Feature Data Fetch"):
+        for s in load_syms:
+            df = store.load(s)
+            if not df.empty:
+                # Load enough history for features (90 days should cover it)
+                dfs[s] = df[df.index <= ts_sig].tail(24*90)
+
     if not dfs:
-        tprint("Training failed: No data.")
-        return None
-    with Timer("Training Pipeline"):
+        tprint("No data available for feature generation.")
+        return
+
+    with Timer("Feature Computation"):
         panel = to_panel(dfs)
         mkt_df = compute_market_features(panel, cfg["market_basket"])
-        tprint("Market features computed")
+        tprint("Market features computed (generation)")
         mkt_gates = add_regime_gates(mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
-        tprint("Regime gates added")
-        tprint("Regime gates added")
-        
-        # Try load features
-        feats = load_features(ts_sig, cfg["data_root"])
-        if feats is None:
-            feats = compute_features_hourly(panel, mkt_gates, cfg)
-            tprint("Hourly features computed")
-            save_features(feats, ts_sig, cfg["data_root"])
-        else:
-            tprint("Loaded features from disk.")
-        p_exh_hist = generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_sig, cfg["train_lookback_hours"], train_syms)
-        tprint("Exhaustion history generated")
-        trained_bundle = select_best_horizon(panel, feats, mkt_gates, cfg, train_syms, ts_sig, p_exh_hist)
-        tprint("Best horizon selected / Models trained")
-        alpha_models = trained_bundle["alpha_models"]
-        best_risk = optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts_sig, p_exh_hist, alpha_models)
-        tprint("Risk params optimized")
 
-        # Return state dict
+        feats = compute_features_hourly(panel, mkt_gates, cfg)
+        tprint("Hourly features computed (generation)")
+
+        # Filter to save only missing symbols
+        feats_to_save = {}
+
+        # Check available columns in features
+        # feats is Dict[FeatName -> DataFrame]
+
+        # Just to be safe, check one known feature like 'ret1h'
+        if "ret1h" in feats:
+            available_cols = feats["ret1h"].columns
+            valid_missing = [s for s in missing_syms if s in available_cols]
+        else:
+            # Fallback if structure is different
+            valid_missing = missing_syms
+
+        if not valid_missing:
+            tprint("No valid missing symbols found in computed features.")
+            return
+
+        for k, v in feats.items():
+            if isinstance(v, pd.DataFrame):
+                # Select only the columns for missing symbols
+                cols = [c for c in valid_missing if c in v.columns]
+                if cols:
+                    feats_to_save[k] = v[cols]
+            else:
+                pass
+
+        if feats_to_save:
+            save_features(feats_to_save, ts_sig, cfg["data_root"])
+        else:
+            tprint("No features to save.")
+
+    tprint("DAILY FEATURE GENERATION COMPLETE")
+
+def train_daily(ts_sig, margin_symbols, cfg, store, ex):
+    tprint("DAILY TRAINING START")
+
+    # In the new split, train_daily only trains models from artifacts.
+    # It assumes labels are generated.
+
+    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    datasets = {}
+
+    # 1. Load Datasets from artifacts
+    # We need to know which keys to look for.
+    # We can glob or just try standard keys.
+    tprint("Loading label datasets from artifacts...")
+
+    # Spike
+    df_spike = load_artifact_df(cfg["data_root"], run_id, "labels", "spike_anatomy")
+    if df_spike is not None: datasets["spike_anatomy"] = df_spike
+
+    # Alpha models
+    directions = ["up", "down"]
+    kinds = ["mr", "tf"]
+    horizons = cfg["label_horizons_hours"]
+
+    found_count = 0
+    for d in directions:
+        for k in kinds:
+            for H in horizons:
+                name = f"train_{d}_{k}_{H}"
+                df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
+                if df is not None:
+                    datasets[name] = df
+                    found_count += 1
+
+    # Exhaustion
+    for d in directions:
+        name = f"exh_{d}"
+        df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
+        if df is not None: datasets[name] = df
+
+    if not found_count:
+        tprint("ERROR: No label datasets found. Run 'labels' mode first.")
+        return None
+
+    with Timer("Model Training"):
+        trained_bundle = train_models_from_artifacts(datasets, cfg)
+        tprint("Models trained.")
+
+        # Note: Risk optimization is now separate step.
+        # But for backward compat, we should return a state that has 'risk_params' if we don't run risk step?
+        # If we return None for risk, execute_hourly might fail.
+        # We will initialize with default risk params here, and 'risk' step will update them.
+        default_risk = {
+            "k_sl": cfg.get("risk_k_sl", 2.0),
+            "k_trail_start": cfg.get("risk_k_trail_start", 1.0),
+            "k_trail_dist": cfg.get("risk_k_trail_dist", 0.5),
+            "granular_risk": {}
+        }
+
         new_state = {
             "ts_trained": ts_sig,
             "bundle": trained_bundle,
-            "risk_params": best_risk
+            "risk_params": default_risk
         }
+
     tprint("DAILY TRAINING COMPLETE")
     return new_state
 

@@ -509,3 +509,32 @@ def to_panel(dfs_by_symbol: dict[str, pd.DataFrame]):
     return panel
 
 OHLCVStore = PartitionedOHLCVStore
+
+def get_feature_path(root_dir: str, ts: pd.Timestamp, symbol: str) -> str:
+    """
+    Returns the expected file path for a symbol's features at a given timestamp.
+    """
+    ts_str = ts.strftime("%Y%m%d_%H%M%S")
+    safe_sym = symbol.replace("/", "_")
+    return os.path.join(root_dir, "features", ts_str, f"symbol={safe_sym}.parquet")
+
+def save_artifact_df(df: pd.DataFrame, root_dir: str, run_id: str, category: str, name: str):
+    """
+    Save a DataFrame as an artifact for a specific run.
+    Path: root_dir/artifacts/{run_id}/{category}/{name}.parquet
+    """
+    out_dir = os.path.join(root_dir, "artifacts", run_id, category)
+    os.makedirs(out_dir, exist_ok=True)
+    fpath = os.path.join(out_dir, f"{name}.parquet")
+    tprint(f"Saving artifact: {fpath}")
+    df.to_parquet(fpath)
+
+def load_artifact_df(root_dir: str, run_id: str, category: str, name: str) -> pd.DataFrame:
+    """
+    Load an artifact DataFrame. Returns None if not found.
+    """
+    fpath = os.path.join(root_dir, "artifacts", run_id, category, f"{name}.parquet")
+    if os.path.exists(fpath):
+        tprint(f"Loading artifact: {fpath}")
+        return pd.read_parquet(fpath)
+    return None

@@ -144,8 +144,9 @@ CFG = {
 
     # Spike / Regime Head
     "spike_feature_keys": [
-        "S", "impulse_ratio_24", "impulse_ratio_12", "coherence_24", "accel",
-        "tf_tape", "mr_tape", "mkt_rv_ratio"
+        "S", "impulse_ratio_12", "impulse_ratio_24", "coherence_24", "accel",
+        "tf_minus_mr", "mkt_rv_ratio", "wick_ratio", "body_ratio", "rvol_z",
+        "retrace_12", "donch_dist_12"
     ],
 
     # TF Head (Specifics + Global)

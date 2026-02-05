@@ -111,9 +111,19 @@ class MetaModel:
                 X_train, X_val = X_arr[train_idx], X_arr[val_idx]
                 y_train, y_val = y_arr[train_idx], y_arr[val_idx]
 
+                # Log transformation for fitting
+                # Use log1p(abs(y)) * sign(y) if negative returns exist?
+                # Trade returns can be negative. log1p requires x > -1.
+                # Since returns are small (e.g. -0.05 to +0.05), log1p is fine.
+                # But wait, max loss is -1.0.
+                # If returns < -1.0, log1p fails.
+                # Assuming returns are > -1.0.
+                y_train_log = np.log1p(y_train)
+
                 m = Ridge(alpha=alpha)
-                m.fit(X_train, y_train)
-                preds = m.predict(X_val)
+                m.fit(X_train, y_train_log)
+                preds_log = m.predict(X_val)
+                preds = np.expm1(preds_log)
 
                 p, s, d = self._calc_metrics(y_val, preds)
                 scores["pnl"].append(p)
@@ -147,7 +157,7 @@ class MetaModel:
 
         # Refit on full data
         self.model = Ridge(alpha=best_alpha)
-        self.model.fit(X_sel, y)
+        self.model.fit(X_sel, np.log1p(y))
 
         return self
 
@@ -160,4 +170,5 @@ class MetaModel:
              cols = [c for c in self.selected_features if c in X_meta.columns]
              X_meta = X_meta[cols]
 
-        return self.model.predict(X_meta)
+        preds_log = self.model.predict(X_meta)
+        return np.expm1(preds_log)

@@ -253,6 +253,10 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["body_pct"] = body.astype(np.float32)
     feats["wick_body_ratio"] = ((upper_wick + lower_wick) / (body + 1e-12)).astype(np.float32)
 
+    # New Spike Features
+    max_oc = np.maximum(o, c)
+    feats["wick_ratio"] = ((h - max_oc) / ((h - l) + 1e-12)).astype(np.float32)
+
     feats["vol_price_spread"] = (v / ((h - l) + 1e-12)).astype(np.float32)
 
     prev_close = c.shift(1)
@@ -513,6 +517,9 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     tape_align = (dir_s * mkt_ret6h_s)
     feats["tf_tape"] = (tape_align.clip(lower=0) / (1.0 + turb)).astype(np.float32)
     feats["mr_tape"] = ((-tape_align).clip(lower=0) / (1.0 + turb)).astype(np.float32)
+
+    feats["tf_minus_mr"] = (feats["tf_tape"] - feats["mr_tape"]).astype(np.float32)
+    feats["body_ratio"] = feats["efficiency"]
 
     # Define vars explicitly used in gates and other features
     ft2_pos = feats["ft_2"].clip(lower=0)

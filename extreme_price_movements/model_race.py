@@ -7,7 +7,7 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import roc_auc_score, brier_score_loss
-from scipy.stats import spearmanr
+from scipy.stats import rankdata
 from catboost import CatBoostClassifier
 from xgboost import XGBClassifier
 import joblib
@@ -17,10 +17,11 @@ from extreme_price_movements.purged_cv import PurgedKFold
 def calculate_selection_score(y_true, y_prob, y_returns):
     """
     S_model = (AUC - 0.5) * BSS * IC
+    Optimized:
+    - Brier reference calculated analytically (O(1) from mean).
+    - Spearman correlation via rank transformation + Pearson (O(N)).
     """
-    tprint(f"Entering function: calculate_selection_score in model_race.py")
     # 1. AUC (Ranking)
-    # y_true must be binary.
     try:
         if len(np.unique(y_true)) > 1:
             auc = roc_auc_score(y_true, y_prob)
@@ -30,17 +31,28 @@ def calculate_selection_score(y_true, y_prob, y_returns):
         auc = 0.5
 
     # 2. Brier Skill Score (Calibration)
+    # BS = mean((p - y)^2)
+    # Reference: p = mean(y) constant
+    # BS_ref = mean((mean(y) - y)^2) = var(y)
     bs_actual = brier_score_loss(y_true, y_prob)
-    # Reference: predicting the mean hit rate of the validation set
     mean_val = np.mean(y_true)
-    bs_ref = brier_score_loss(y_true, np.full_like(y_true, mean_val))
-    bss = 1 - (bs_actual / (bs_ref + 1e-12))
+    bs_ref = np.mean((y_true - mean_val) ** 2)
+
+    bss = 1.0 - (bs_actual / (bs_ref + 1e-12))
 
     # 3. Information Coefficient (Magnitude)
     # Spearman correlation between predicted prob and ACTUAL CONTINUOUS RETURN
-    # y_returns should be the realized return (signed or not depending on context)
-    # y_prob correlates with strength of move?
-    ic, _ = spearmanr(y_prob, y_returns)
+    # Optimized: rankdata + corrcoef
+    # Handle constant inputs to avoid NaNs
+    if np.std(y_prob) < 1e-9 or np.std(y_returns) < 1e-9:
+        ic = 0.0
+    else:
+        rank_prob = rankdata(y_prob)
+        rank_ret = rankdata(y_returns)
+        # np.corrcoef returns 2x2 matrix
+        ic = np.corrcoef(rank_prob, rank_ret)[0, 1]
+        if np.isnan(ic):
+            ic = 0.0
 
     # Combined Score
     selection_score = (auc - 0.5) * max(0, bss) * max(0, ic)
@@ -62,9 +74,14 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         self.best_model_name = None
         self.metrics = {}
 
-    def _get_candidates(self):
-        tprint(f"Entering function: _get_candidates in model_race.py")
+    def _get_candidates(self, race_mode=True):
+        tprint(f"Entering function: _get_candidates in model_race.py (race_mode={race_mode})")
         candidates = {}
+
+        # Scaling factors for race vs final
+        n_est_et = 200 if race_mode else 1000
+        n_iter_cb = 300 if race_mode else 1000
+        n_est_xgb = 2 if race_mode else 10 # 2*150=300 vs 10*150=1500 trees
 
         # 1. Baseline
         # LogisticRegression (ElasticNet)
@@ -74,7 +91,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
         # 2. ExtraTrees
         candidates["extratrees"] = ExtraTreesClassifier(
-            n_estimators=1000,
+            n_estimators=n_est_et,
             max_depth=7,
             min_samples_leaf=50,
             max_features=0.5,
@@ -86,7 +103,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
         # 3. CatBoost
         candidates["catboost"] = CatBoostClassifier(
-            iterations=1000,
+            iterations=n_iter_cb,
             learning_rate=0.02,
             l2_leaf_reg=20,
             depth=5,
@@ -102,7 +119,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
         # 4. XGBoost
         candidates["xgboost"] = XGBClassifier(
-            n_estimators=10,
+            n_estimators=n_est_xgb,
             num_parallel_tree=150,
             max_depth=6,
             gamma=4,
@@ -125,47 +142,65 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         returns: continuous returns for IC calculation (validation)
         """
         tprint(f"Entering function: fit in model_race.py")
-        candidates = self._get_candidates()
-        # Use PurgedKFold to prevent leakage (De Prado)
-        tscv = PurgedKFold(n_splits=self.n_splits, purge=5, embargo=2)
 
-        results = {}
-
-        # We need returns for validation scoring.
-        # If returns is None, we can't calc IC properly.
-        # Assuming caller passes returns aligned with y.
+        # 0. Preparation
         if returns is None:
-            # Fallback? IC using y (binary)? No, IC needs continuous.
-            # We'll use y as proxy if needed, but warning.
             returns = y
+
+        # Optimize: Convert to numpy once if possible (and suitable for all models)
+        # ExtraTrees/XGBoost prefer numpy. CatBoost handles both but numpy is fine if no categorical features.
+        # We assume numeric features here.
+        X_np = X
+        use_numpy = False
+        if hasattr(X, "iloc"):
+            try:
+                # Use float32 to save memory and match FastFuncs usage
+                X_np = X.to_numpy(dtype=np.float32, copy=False)
+                use_numpy = True
+            except (ValueError, TypeError):
+                # Fallback if conversion fails (e.g. mixed types)
+                use_numpy = False
+
+        # Cache CV splits
+        tscv = PurgedKFold(n_splits=self.n_splits, purge=5, embargo=2)
+        cached_splits = list(tscv.split(X))
+
+        # 1. The Race
+        candidates = self._get_candidates(race_mode=True)
+        results = {}
 
         for name, model in candidates.items():
             tprint(f"Race: Training {name}...")
             scores = []
 
             try:
-                for train_idx, val_idx in tscv.split(X):
-                    X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
-                    y_tr, y_val = y[train_idx], y[val_idx]
-                    w_tr = sample_weight[train_idx] if sample_weight is not None else None
-                    ret_val = returns[val_idx]
+                for train_idx, val_idx in cached_splits:
+                    # Slicing optimization
+                    if use_numpy:
+                        X_tr, X_val = X_np[train_idx], X_np[val_idx]
+                    else:
+                        X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
 
-                    # Calibrated Wrapper
-                    # method='isotonic' needs samples. 'sigmoid' is safer for small data.
-                    # User code used 'isotonic' with cv=3.
-                    # We use inner CV for calibration.
-                    calibrated_model = CalibratedClassifierCV(
-                        estimator=model,
-                        method='isotonic',
-                        cv=3
-                    )
+                    # Handle y, weight, returns (numpy arrays assumed if passed from training.py)
+                    # If they are series, convert or use iloc.
+                    # Assuming they are numpy arrays as per training.py usage, but let's be safe.
+                    def safe_slice(arr, idx):
+                        if hasattr(arr, "iloc"): return arr.iloc[idx]
+                        return arr[idx]
 
-                    # Handling sample_weight in CalibratedClassifierCV.fit
-                    # It supports sample_weight if the underlying estimator does.
+                    y_tr = safe_slice(y, train_idx)
+                    y_val = safe_slice(y, val_idx)
+                    w_tr = safe_slice(sample_weight, train_idx) if sample_weight is not None else None
+                    ret_val = safe_slice(returns, val_idx)
+
+                    # SKIP CALIBRATION during race
+                    # Fit base model directly
+                    model.fit(X_tr, y_tr, sample_weight=w_tr)
+
+                    # Predict proba
+                    # Some models (like LogReg) might not have predict_proba?
                     # All our candidates do.
-                    calibrated_model.fit(X_tr, y_tr, sample_weight=w_tr)
-
-                    probs = calibrated_model.predict_proba(X_val)[:, 1]
+                    probs = model.predict_proba(X_val)[:, 1]
 
                     metrics = calculate_selection_score(y_val, probs, ret_val)
                     scores.append(metrics["Selection_Score"])
@@ -186,12 +221,16 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         self.metrics = results
         tprint(f"Race Winner: {best_name} (Score={results[best_name]:.4f})")
 
-        # Retrain best on full data
-        tprint(f"Retraining {best_name} on full data...")
-        final_base = candidates[best_name]
+        # 2. Final Retraining & Calibration
+        tprint(f"Retraining {best_name} on full data (full config)...")
+        # Get FULL config
+        final_candidates = self._get_candidates(race_mode=False)
+        final_base = final_candidates[best_name]
 
-        # Final Calibration on full data?
-        # Use CV=3 again?
+        # Calibrate on full data
+        # We wrap the full model in CalibratedClassifierCV(cv=3)
+        # This will internally perform 3-fold CV on the full dataset to train 3 calibrated classifiers
+        # and average them.
         self.best_model = CalibratedClassifierCV(
             estimator=final_base,
             method='isotonic',

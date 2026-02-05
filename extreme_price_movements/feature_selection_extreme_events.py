@@ -11,6 +11,7 @@ from numba import jit
 import numpy as np
 import pandas as pd
 from sklearn.base import clone
+from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.preprocessing import QuantileTransformer
 from sklearn.utils import check_random_state
 from .utils import tprint, check_inf_nan, clean_dataset
@@ -210,7 +211,7 @@ class MDISelectionResult:
 def mdi_feature_selection_v3(
     X: pd.DataFrame,
     y: Union[pd.Series, np.ndarray],
-    base_model,
+    base_model=None,
     n_splits: int = 6,
     purge: int = 5,
     min_samples_leaf: int = 50,
@@ -237,6 +238,16 @@ def mdi_feature_selection_v3(
         n_samples_full = len(X)
         end_features = min(60, max(1, n_samples_full // 100))
         tprint(f"MDI: end_features not provided. Auto-setting to {end_features} based on sample size {n_samples_full}")
+
+    if base_model is None:
+        base_model = ExtraTreesRegressor(
+            n_estimators=500,
+            max_depth=None,
+            min_samples_leaf=20,
+            max_features='sqrt',
+            n_jobs=-1,
+            random_state=42
+        )
 
     rng = check_random_state(random_state)
 

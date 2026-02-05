@@ -8,12 +8,13 @@ from extreme_price_movements.utils import tprint, Timer
 from extreme_price_movements.data_store import make_spot_exchange, PartitionedOHLCVStore
 from extreme_price_movements.universe import refresh_margin_universe_daily, build_fetch_universe
 from extreme_price_movements.main import train_daily, run_live_cycle, generate_features_daily
+from extreme_price_movements.pipeline_steps import run_label_generation_step_v2, run_risk_optimization_step, run_backtest_step
 from extreme_price_movements.time_utils import get_ts_sig
 
 def main():
     parser = argparse.ArgumentParser(description="Extreme Price Movements Pipeline")
     parser.add_argument("--light", action="store_true", help="Run in light mode (less data)")
-    parser.add_argument("--mode", choices=["download", "feature_generation", "train", "run"], required=True, help="Pipeline mode")
+    parser.add_argument("--mode", choices=["download", "feature_generation", "labels", "train", "risk", "backtest", "run"], required=True, help="Pipeline mode")
     parser.add_argument("--state-file", default="model_state.pkl", help="Path to persist model state")
 
     args = parser.parse_args()
@@ -55,6 +56,14 @@ def main():
         ts_sig = get_ts_sig()
         generate_features_daily(ts_sig, mu.symbols, CFG, store, ex)
 
+    elif args.mode == "labels":
+        tprint("Starting Label Generation...")
+        with Timer("Margin Universe"):
+            mu = refresh_margin_universe_daily(None, quote="USDT")
+
+        ts_sig = get_ts_sig()
+        run_label_generation_step_v2(ts_sig, mu.symbols, CFG, store, ex)
+
     elif args.mode == "train":
         tprint("Starting Training...")
         with Timer("Margin Universe"):
@@ -69,6 +78,22 @@ def main():
             tprint(f"Model state saved to {args.state_file}")
         else:
             tprint("Training failed or produced no state.")
+
+    elif args.mode == "risk":
+        tprint("Starting Risk Optimization...")
+        with Timer("Margin Universe"):
+            mu = refresh_margin_universe_daily(None, quote="USDT")
+
+        ts_sig = get_ts_sig()
+        run_risk_optimization_step(ts_sig, mu.symbols, CFG, store, args.state_file)
+
+    elif args.mode == "backtest":
+        tprint("Starting Backtest...")
+        with Timer("Margin Universe"):
+            mu = refresh_margin_universe_daily(None, quote="USDT")
+
+        ts_sig = get_ts_sig()
+        run_backtest_step(ts_sig, mu.symbols, CFG, store, args.state_file)
 
     elif args.mode == "run":
         tprint("Starting Live Cycle...")

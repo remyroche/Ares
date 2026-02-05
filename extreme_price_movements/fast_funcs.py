@@ -992,3 +992,80 @@ def _numba_frac_diff_kernel(x, d, window):
 def numba_frac_diff(df, d, window):
     tprint(f"Entering function: numba_frac_diff in fast_funcs.py")
     return apply_to_frame(df, _numba_frac_diff_kernel, d, window)
+
+@jit(nopython=True, cache=True)
+def _numba_rolling_zscore_nan_safe(x, window):
+    n = len(x)
+    output = np.full(n, np.nan, dtype=np.float32)
+
+    if window <= 1:
+        return output
+
+    # Use float64 for accumulators to prevent catastrophic cancellation
+    sum_val = np.float64(0.0)
+    sum_sq = np.float64(0.0)
+    count = 0
+
+    for i in range(n):
+        # Entering
+        val_in = x[i]
+        if not np.isnan(val_in):
+            # Cast input to float64 for accumulation
+            v64 = np.float64(val_in)
+            sum_val += v64
+            sum_sq += v64 * v64
+            count += 1
+
+        # Leaving
+        if i >= window:
+            val_out = x[i - window]
+            if not np.isnan(val_out):
+                v64 = np.float64(val_out)
+                sum_val -= v64
+                sum_sq -= v64 * v64
+                count -= 1
+
+        # Output logic
+        if count > 1:
+            mean = sum_val / count
+            var_num = sum_sq - (sum_val * sum_val) / count
+
+            # Use max(0, var_num) to avoid negative due to float precision
+            var_num = max(0.0, var_num)
+
+            std = np.sqrt(var_num / (count - 1))
+
+            if not np.isnan(val_in):
+                output[i] = (val_in - mean) / (std + 1e-12)
+            else:
+                output[i] = np.nan
+        else:
+             output[i] = np.nan
+
+    return output
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_zscore_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_zscore_nan_safe(mat[:, j], window)
+
+    return out
+
+def numba_rolling_zscore_parallel(df, window):
+    # tprint(f"Entering function: numba_rolling_zscore_parallel in fast_funcs.py")
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
+    mat = df.to_numpy(dtype=np.float32)
+    res = _numba_rolling_zscore_parallel(mat, window)
+
+    out = pd.DataFrame(res, index=df.index, columns=df.columns)
+
+    if is_series:
+        return out[out.columns[0]]
+
+    return out

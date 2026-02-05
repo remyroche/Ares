@@ -378,6 +378,7 @@ def save_features(feats: dict, ts: pd.Timestamp, root_dir: str):
             # Resulting DF index=Time, Columns=FeatureNames
             sym_data = {k: feats[k][sym] for k in feats if hasattr(feats[k], "columns") and sym in feats[k].columns}
             df_sym = pd.DataFrame(sym_data)
+            df_sym["__symbol__"] = sym
             
             # Save
             safe_sym = sym.replace("/", "_")
@@ -418,9 +419,17 @@ def load_features(ts: pd.Timestamp, root_dir: str) -> dict:
     for fpath in files:
         try:
             fname = os.path.basename(fpath)
-            # fname is symbol=XYZ.parquet
-            sym = fname.replace("symbol=", "").replace(".parquet", "")
             df = pd.read_parquet(fpath)
+
+            if "__symbol__" in df.columns and not df.empty:
+                sym = df["__symbol__"].iloc[0]
+                df = df.drop(columns=["__symbol__"])
+            else:
+                # Fallback to filename parsing
+                sym = fname.replace("symbol=", "").replace(".parquet", "")
+                if "__symbol__" in df.columns:
+                    df = df.drop(columns=["__symbol__"])
+
             loaded_dfs[sym] = df
         except Exception as e:
             tprint(f"Error loading {fpath}: {e}")

@@ -4,7 +4,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.metrics import brier_score_loss, roc_auc_score
-from extreme_price_movements.utils import tprint
+from extreme_price_movements.utils import tprint, clean_dataset
 from extreme_price_movements.feature_selection_extreme_events import mdi_feature_selection_v3
 from extreme_price_movements.purged_cv import PurgedKFold
 
@@ -42,6 +42,15 @@ class ExhaustionModel:
         """
         tprint(f"Entering function: fit in exhaustion.py")
 
+        # Clean Dataset BEFORE feature selection to ensure consistency
+        # This prevents mdi from selecting features on a cleaned set, while this model fits on dirty set.
+        X, y, sample_weight = clean_dataset(X, y, sample_weight, name="X_exh")
+
+        if X.empty:
+            tprint("ExhaustionModel: X is empty after cleaning. Cannot fit.")
+            # self.model remains None.
+            return self
+
         # 1. Feature Selection
         n_samples = len(X)
         # Max cap 40, or n/100
@@ -59,6 +68,8 @@ class ExhaustionModel:
             class_weight="balanced"
         )
 
+        # Note: mdi_feature_selection_v3 also calls clean_dataset, but since we already cleaned X,
+        # it should be a no-op (or catch anything we missed).
         sel_res = mdi_feature_selection_v3(
             X=X,
             y=y,
@@ -68,9 +79,16 @@ class ExhaustionModel:
             sample_weight=sample_weight  # Pass weights to feature selection
         )
 
+        # Check if selection returned empty features?
+        if not sel_res.selected_features:
+            tprint("ExhaustionModel: No features selected. Cannot fit.")
+            return self
+
         self.selected_features = sel_res.selected_features[:n_select]
         tprint(f"ExhaustionModel: Selected {len(self.selected_features)} features.")
 
+        # Re-slice X based on selection.
+        # Since X is already cleaned (same rows as mdi saw), this is safe.
         X_sel = X[self.selected_features]
 
         # 2. Calibration
@@ -95,6 +113,13 @@ class ExhaustionModel:
             raise ValueError("Model not fitted")
 
         if self.selected_features is not None:
+             # Handle missing columns gracefully? No, model expects features.
+             # Ensure columns exist.
+             missing = [c for c in self.selected_features if c not in X.columns]
+             if missing:
+                 tprint(f"Warning: {len(missing)} selected features missing in prediction X. Filling with 0.")
+                 for c in missing:
+                     X[c] = 0.0 # Or NaN? Model might fail. 0 is safer for sparse/standardized.
              X = X[self.selected_features]
 
         return self.model.predict_proba(X)[:, 1]
@@ -105,6 +130,10 @@ class ExhaustionModel:
         Returns: (oof_probs, metrics)
         """
         tprint(f"Entering function: compute_oof_predictions in exhaustion.py")
+
+        # Should we clean X here too? Ideally yes, but this is usually called after fit with same data?
+        # If passed new data, it might need cleaning.
+        # Let's assume caller handles it or just select features.
 
         # Apply selection if available
         if self.selected_features is not None:

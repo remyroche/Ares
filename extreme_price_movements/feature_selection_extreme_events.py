@@ -12,7 +12,7 @@ import pandas as pd
 from sklearn.base import clone
 from sklearn.preprocessing import QuantileTransformer
 from sklearn.utils import check_random_state
-from .utils import tprint, check_inf_nan
+from .utils import tprint, check_inf_nan, clean_dataset
 from .sequential_bootstrap import get_ind_matrix, seq_bootstrap
 
 # ======================================================================================
@@ -52,6 +52,9 @@ def purged_embargoed_splits(
         splits.append((train_idx, val_idx))
 
     if not splits:
+        # Warning instead of Error? No, CV fails without splits.
+        # But for MDI, maybe we can just return what we have or fail gracefully.
+        # For now, keep raising error but caller should handle it.
         raise ValueError("No valid splits produced (check min_train_size / purge).")
     return splits
 
@@ -159,55 +162,13 @@ def mdi_feature_selection_v3(
     if not isinstance(X, pd.DataFrame):
         raise TypeError("X must be a pandas DataFrame.")
 
-    # Start by cleaning NaN/Inf values
-    check_inf_nan(X, "X_raw")
+    # Robust Cleaning using shared utility
+    # This aligns y and sample_weight if rows are dropped.
+    X, y, sample_weight = clean_dataset(X, y, sample_weight, name="X_mdi")
 
-    cols_to_drop = []
-    bad_rows_mask = np.zeros(len(X), dtype=bool)
-
-    for col in X.columns:
-        vals = X[col].values
-        is_nan = pd.isna(vals)
-        is_inf = np.isinf(vals)
-        is_bad = is_nan | is_inf
-
-        if is_bad.all():
-            tprint(f"Feature {col}: ALL values are NaN/Inf. Removing column.")
-            cols_to_drop.append(col)
-        elif is_bad.any():
-            bad_indices = np.where(is_bad)[0]
-            bad_labels = X.index[bad_indices]
-            start_lbl, end_lbl = bad_labels[0], bad_labels[-1]
-
-            reason = "Inf"
-            if is_nan[bad_indices].any():
-                reason = "NaN" if not is_inf[bad_indices].any() else "NaN/Inf"
-
-            tprint(f"Feature {col}: Removing {len(bad_indices)} rows (Range: {start_lbl} to {end_lbl}). Reason: {reason}")
-            bad_rows_mask |= is_bad
-
-    if cols_to_drop:
-        X = X.drop(columns=cols_to_drop)
-
-    if bad_rows_mask.any():
-        tprint(f"Dropping {bad_rows_mask.sum()} rows due to NaN/Inf values.")
-        X = X[~bad_rows_mask]
-
-        # Align y
-        if hasattr(y, 'shape') and y.shape[0] == len(bad_rows_mask):
-            if isinstance(y, (pd.Series, pd.DataFrame)):
-                y = y.iloc[~bad_rows_mask]
-            else:
-                y = y[~bad_rows_mask]
-
-        # Align sample_weight
-        if sample_weight is not None:
-             sw_len = len(sample_weight)
-             if sw_len == len(bad_rows_mask):
-                 if isinstance(sample_weight, (pd.Series, pd.DataFrame)):
-                     sample_weight = sample_weight.iloc[~bad_rows_mask]
-                 else:
-                     sample_weight = np.asarray(sample_weight)[~bad_rows_mask]
+    if X.empty:
+        tprint("MDI: X became empty after cleaning. Returning empty result.")
+        return MDISelectionResult(pd.DataFrame(), [], [])
 
     # Determine end_features if not provided
     if end_features is None:
@@ -218,17 +179,64 @@ def mdi_feature_selection_v3(
     rng = check_random_state(random_state)
 
     # Fast initial conversion
-    X_np_full = np.ascontiguousarray(X.values, dtype=np.float32)
-    y_np = y.values if hasattr(y, 'values') else np.asarray(y)
+    # Ensure we catch overflow here too
+    try:
+        X_np_full = np.ascontiguousarray(X.values, dtype=np.float32)
+    except Exception as e:
+        tprint(f"MDI: Error converting X to float32: {e}")
+        # Fallback to float64 but ExtraTrees might be slower or it might be needed for precision
+        # But if it failed, likely string/object. clean_dataset should have caught it.
+        # If valid float64 > float32 max, it converts to inf.
+        X_np_full = np.ascontiguousarray(X.values, dtype=np.float32) # will produce infs
 
-    sw_np = None
-    if sample_weight is not None:
-        sw_np = sample_weight.to_numpy() if isinstance(sample_weight, pd.Series) else np.asarray(sample_weight)
+    # SAFETY CHECK: Conversion to float32 might have introduced Inf/NaN (overflow)
+    if not np.isfinite(X_np_full).all():
+        tprint("MDI: Found non-finite values after float32 conversion (likely overflow). Cleaning numpy array...")
+        mask_bad = ~np.isfinite(X_np_full).all(axis=1)
+        if mask_bad.any():
+            tprint(f"Dropping {mask_bad.sum()} additional rows due to float32 overflow.")
+            X_np_full = X_np_full[~mask_bad]
+
+            # Align y and sw
+            if hasattr(y, 'values'): y_vals = y.values
+            else: y_vals = np.asarray(y)
+            y_np = y_vals[~mask_bad]
+
+            if sample_weight is not None:
+                if hasattr(sample_weight, 'values'): sw_vals = sample_weight.values
+                else: sw_vals = np.asarray(sample_weight)
+                sw_np = sw_vals[~mask_bad]
+            else:
+                sw_np = None
+
+            # Note: We do NOT update X (DataFrame) or feature_names_full (Columns).
+            # This logic assumes we iterate feature indices, which are columns.
+            # Removing ROWS from numpy array is safe.
+        else:
+            # Should not happen if all() is false
+            y_np = y.values if hasattr(y, 'values') else np.asarray(y)
+            sw_np = None
+            if sample_weight is not None:
+                sw_np = sample_weight.to_numpy() if isinstance(sample_weight, pd.Series) else np.asarray(sample_weight)
+    else:
+        y_np = y.values if hasattr(y, 'values') else np.asarray(y)
+        sw_np = None
+        if sample_weight is not None:
+            sw_np = sample_weight.to_numpy() if isinstance(sample_weight, pd.Series) else np.asarray(sample_weight)
 
     feature_names_full = list(X.columns)
 
+    # Check if empty again
+    if X_np_full.shape[0] < 5:
+        tprint("MDI: Too few samples after cleaning. Returning empty result.")
+        return MDISelectionResult(pd.DataFrame(), [], [])
+
     # Initial Splits for Dedupe
-    splits_full = purged_embargoed_splits(X_np_full.shape[0], n_splits, purge=purge)
+    try:
+        splits_full = purged_embargoed_splits(X_np_full.shape[0], n_splits, purge=purge)
+    except ValueError as e:
+        tprint(f"MDI: Split generation failed: {e}")
+        return MDISelectionResult(pd.DataFrame(), [], [])
 
     # 1. Anchored Pre-Dedupe (Train Window 0)
     train_idx0, _ = splits_full[0]
@@ -237,7 +245,11 @@ def mdi_feature_selection_v3(
     # Quantile Transform for Robust Pearson
     # subsample=min(len(X_tr0), 100000) inside QT is default
     qt = QuantileTransformer(n_quantiles=min(len(X_tr0), 1000), output_distribution='normal', random_state=random_state)
-    X_tr0_qt = qt.fit_transform(X_tr0)
+    try:
+        X_tr0_qt = qt.fit_transform(X_tr0)
+    except Exception as e:
+        tprint(f"MDI: QuantileTransformer failed: {e}")
+        return MDISelectionResult(pd.DataFrame(), [], [])
 
     corr_p = np.corrcoef(X_tr0_qt, rowvar=False)
     # Fix for scalar result if single feature
@@ -283,19 +295,29 @@ def mdi_feature_selection_v3(
             # Sample indices without replacement and sort to preserve time order
             indices_sub = np.sort(rng.choice(N, n_sub, replace=False))
 
-            X_curr_np = X_np_full[indices_sub][:, [feature_names_full.index(f) for f in current_features]]
+            # Map features indices
+            feat_indices = [feature_names_full.index(f) for f in current_features]
+            X_curr_np = X_np_full[indices_sub][:, feat_indices]
             y_curr_np = y_np[indices_sub]
             sw_curr_np = sw_np[indices_sub] if sw_np is not None else None
 
             # Recalculate splits for the smaller dataset
             # Note: purged_embargoed_splits logic assumes contiguous time, but with sorted random subsample
             # we approximate it. It's the best we can do for subsampled RFE on time series without contiguous blocks.
-            splits_curr = purged_embargoed_splits(n_sub, n_splits, purge=purge)
+            try:
+                splits_curr = purged_embargoed_splits(n_sub, n_splits, purge=purge)
+            except ValueError:
+                 splits_curr = [] # Should be handled by loop skipping
         else:
-            X_curr_np = X_np_full[:, [feature_names_full.index(f) for f in current_features]]
+            feat_indices = [feature_names_full.index(f) for f in current_features]
+            X_curr_np = X_np_full[:, feat_indices]
             y_curr_np = y_np
             sw_curr_np = sw_np
             splits_curr = splits_full # Can reuse if N didn't change (only first iter potentially)
+
+        if not splits_curr:
+             tprint("MDI: No splits for current subsample. Breaking.")
+             break
 
         # Suggest depth based on CURRENT p
         depth = suggest_depth(p, X_curr_np.shape[0])
@@ -366,14 +388,6 @@ def mdi_feature_selection_v3(
 
         tprint(f"MDI RFE: p={p}, dropping {n_drop} features. (Next p={p-n_drop})")
 
-        # Drop
-        # metrics_df_sorted is sorted by rank ascending (1 is best? No, rank() default is ascending, so lowest value is 1.0)
-        # Wait, how is composite_rank calculated?
-        # share_stab.rank(ascending=False): Higher share -> Lower rank number (1 is best).
-        # So low 'composite_rank' is GOOD.
-        # We want to drop the ones with HIGH 'composite_rank' (worst).
-        # tail(n_drop)
-
         survivors = metrics_df_sorted.index[:-n_drop].tolist()
         current_features = survivors
 
@@ -383,21 +397,3 @@ def mdi_feature_selection_v3(
 
 # Backwards compatibility alias if needed, or update call sites
 mdi_feature_selection_leakage_safe = mdi_feature_selection_v3
-
-# Example usage check:
-if __name__ == "__main__":
-    from sklearn.ensemble import ExtraTreesClassifier
-    # p=150, n=50k
-    n_rows, n_feats = 1000, 150
-    X_dummy = pd.DataFrame(np.random.randn(n_rows, n_feats), columns=[f"f{i}" for i in range(n_feats)])
-    # Correlated feature
-    X_dummy["f1"] = X_dummy["f0"] * 0.99 + np.random.randn(n_rows)*0.01
-
-    y_dummy = pd.Series((X_dummy['f1'] + X_dummy['f2'] > 0).astype(int))
-    w_dummy = np.random.uniform(0.5, 1.5, n_rows)
-
-    model = ExtraTreesClassifier(n_jobs=-1)
-    res = mdi_feature_selection_v3(X_dummy, y_dummy, model, n_splits=5, min_samples_leaf=20, sample_weight=w_dummy, end_features=10)
-    print(f"Top Features: {res.selected_features[:5]}")
-    print(f"Total Selected: {len(res.selected_features)}")
-    print(f"Kept after dedupe: {len(res.kept_after_dedupe)}")

@@ -14,7 +14,7 @@ from extreme_price_movements.risk import TrailingStop
 
 def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex):
     tprint("STEP: LABEL GENERATION START")
-    train_syms = get_training_universe(margin_symbols, cfg, store)
+    train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=ts_sig)
     tprint(f"Universe: {len(train_syms)} symbols")
 
     # Load Data & Features
@@ -70,7 +70,7 @@ def run_risk_optimization_step(ts_sig, margin_symbols, cfg, store, state_file):
         return
 
     # Need Data for optimization (simulation)
-    train_syms = get_training_universe(margin_symbols, cfg, store)
+    train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=ts_sig)
     dfs = {}
 
     lookback_days = max(90, int(cfg["fetch_years"] * 365))
@@ -117,7 +117,7 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
         model_state = pickle.load(f)
 
     # Load Data
-    train_syms = get_training_universe(margin_symbols, cfg, store)
+    train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=ts_sig)
     dfs = {}
 
     lookback_days = max(90, int(cfg["fetch_years"] * 365))

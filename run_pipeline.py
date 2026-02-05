@@ -11,6 +11,56 @@ from extreme_price_movements.main import train_daily, run_live_cycle, generate_f
 from extreme_price_movements.pipeline_steps import run_label_generation_step_v2, run_risk_optimization_step, run_backtest_step
 from extreme_price_movements.time_utils import get_ts_sig
 
+def validate_downloaded_data(store, symbol):
+    safe_sym = symbol.replace("/", "_")
+    sym_dir = os.path.join(store.ohlcv_dir, f"symbol={safe_sym}")
+
+    if not os.path.isdir(sym_dir):
+        tprint(f"WARNING: No data directory for {symbol} (Validation skipped)")
+        return
+
+    files = []
+    for root, _, filenames in os.walk(sym_dir):
+        for f in filenames:
+            if f.endswith(".parquet"):
+                files.append(os.path.join(root, f))
+
+    if not files:
+        tprint(f"WARNING: No parquet files found for {symbol}")
+        return
+
+    total_rows = 0
+    required_cols = ["open", "high", "low", "close", "volume"]
+    files_checked = 0
+
+    for fpath in files:
+        try:
+            df = pd.read_parquet(fpath)
+        except Exception as e:
+            raise RuntimeError(f"Failed to read {fpath}: {e}")
+
+        # 1. Check columns
+        if not all(col in df.columns for col in required_cols):
+            missing = list(set(required_cols) - set(df.columns))
+            raise ValueError(f"Missing columns {missing} in {fpath}")
+
+        # 2. Check not empty
+        if df.empty:
+            raise ValueError(f"File is empty: {fpath}")
+
+        # 3. Verify 10 random rows
+        n_sample = min(10, len(df))
+        sample = df.sample(n=n_sample)
+
+        # Check for NaNs in required columns
+        if sample[required_cols].isnull().any().any():
+             raise ValueError(f"Found NaNs in sample of {fpath}")
+
+        total_rows += len(df)
+        files_checked += 1
+
+    tprint(f"Validated {symbol}: {files_checked} files, {total_rows} rows. OK.")
+
 def main():
     parser = argparse.ArgumentParser(description="Extreme Price Movements Pipeline")
     parser.add_argument("--light", action="store_true", help="Run in light mode (less data)")
@@ -44,6 +94,7 @@ def main():
             try:
                 tprint(f"Downloading {i+1}/{len(syms_all)}: {s}...")
                 store.update_symbol(ex, s, since_ms)
+                validate_downloaded_data(store, s)
             except Exception as e:
                 tprint(f"Error fetching {s}: {e}")
         tprint("Download Complete.")

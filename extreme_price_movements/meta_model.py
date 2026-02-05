@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import Ridge
-from sklearn.ensemble import ExtraTreesRegressor
 from scipy.special import logit
 from extreme_price_movements.utils import tprint
 from extreme_price_movements.feature_transforms import CausalFeatureTransformer
@@ -76,23 +75,14 @@ class MetaModel:
         n_select = min(20, max(1, n_samples // 100))
         tprint(f"MetaModel: Running MDI selection. Target={n_select}")
 
-        base_selector = ExtraTreesRegressor(
-            n_estimators=500,
-            max_depth=None,
-            min_samples_leaf=20,
-            max_features='sqrt',
-            n_jobs=-1,
-            random_state=42
-        )
-
         sel_res = mdi_feature_selection_v3(
             X=X_meta,
             y=y,
-            base_model=base_selector,
-            analysis_n_estimators=500
+            analysis_n_estimators=500,
+            end_features=n_select
         )
 
-        self.selected_features = sel_res.selected_features[:n_select]
+        self.selected_features = sel_res.selected_features
         tprint(f"MetaModel: Selected {len(self.selected_features)} features.")
         X_sel = X_meta[self.selected_features]
 

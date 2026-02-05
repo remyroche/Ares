@@ -6,9 +6,15 @@ from extreme_price_movements.meta_model import MetaModel
 from extreme_price_movements.exhaustion import ExhaustionModel
 from extreme_price_movements.candidates import select_trade_candidates_hourly, select_trade_candidates_vectorized
 import extreme_price_movements.fast_funcs as ff
-from extreme_price_movements.labeling import compute_trailing_atr_labels
+from extreme_price_movements.labeling import compute_trailing_atr_labels, compute_triple_barrier_labels
 from extreme_price_movements.sample_weights import build_label_time_ranges, compute_sample_weights_with_uniqueness
 from sklearn.mixture import GaussianMixture
+from extreme_price_movements.optimise_tpsl_ratio import (
+    run_tp_sl_selection_fast,
+    calibrate_atr_base_pct,
+    compute_vol_z_log_mad,
+    PurgedKFold,
+)
 
 def apply_interaction_toggles(df: pd.DataFrame, causal_cols, gate_cols, drop_raw=True):
     tprint(f"Entering function: apply_interaction_toggles in training.py")
@@ -30,6 +36,33 @@ def compute_weights_logic(df, cfg, model_kind):
     from extreme_price_movements.model_tf import compute_tf_weights
     if model_kind == "mr": return compute_mr_weights(df, cfg)
     else: return compute_tf_weights(df, cfg)
+
+def scaled_atr_pct(
+    atr_pct: float,
+    z: float,
+    atr_base_pct: float,
+    *,
+    z_max: float = 3.0,
+    lo: float = 0.03,
+    hi: float = 0.06,
+    eps: float = 1e-12,
+):
+    """
+    ATR-informed, shock-scaled, bounded barrier percent.
+    Vectorized using NumPy.
+    """
+    # 1) Shock control
+    shock = np.clip(z, 0.0, z_max)
+
+    # 2) Dynamic multiplier 'a' so that:
+    #    atr_base_pct * (1 + a*z_max) ≈ hi
+    a = (hi / np.maximum(atr_base_pct, eps) - 1.0) / z_max
+
+    # 3) Multiplicative scaling
+    raw = atr_pct * (1.0 + a * shock)
+
+    # 4) Enforce cross-asset low/high targets
+    return np.clip(raw, lo, hi)
 
 def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, syms, trend_filter=None):
     tprint(f"Entering function: build_exhaustion_Xy in training.py")
@@ -256,26 +289,83 @@ def _build_pred_X_window(feats, mkt_gates, cfg, t_idx, syms, feature_key="exh_fe
         Xp[col] = Xp.index.get_level_values("ts").map(mg[col])
     return Xp.fillna(0)
 
-def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts_end, p_exh_hist, H, model_kind, trend_filter=None, feature_key=None):
+def build_hourly_training_set_and_weights(
+    panel, feats, mkt_gates, cfg, syms, ts_end, p_exh_hist, H, model_kind,
+    trend_filter=None, feature_key=None,
+    label_method="atr", fixed_tp=0.05, fixed_sl=0.025, side="long"
+):
     tprint(f"Entering function: build_hourly_training_set_and_weights in training.py")
     c = panel["close"]
     idx = c.index
 
-    k_sl = cfg.get("train_k_sl", 2.0)
-    k_pt = cfg.get("train_k_pt", 2.0)
-    k_tp = cfg.get("train_k_tp", 1.0)
+    if label_method == "triple_barrier":
+        # Dynamic Barrier Logic
+        if "atr_pct" in feats:
+            atr_pct = feats["atr_pct"]
 
-    if "atr_pct" in feats:
-        atr_df = feats["atr_pct"]
+            # Compute Rolling Baseline (e.g. 30 days)
+            # We need to compute this on the fly if not available.
+            # Using simple rolling median for robustness.
+            # Assuming aligned index.
+            window_size = 24 * 30
+
+            # Since feats are dict of DataFrames, we can process atr_pct
+            tprint("Computing dynamic barriers...")
+            atr_base = atr_pct.rolling(window_size, min_periods=24).median()
+            atr_std = atr_pct.rolling(window_size, min_periods=24).std()
+
+            # Z-score: (atr_pct - base) / std
+            # Avoid div/0
+            z_score = (atr_pct - atr_base) / (atr_std + 1e-12)
+
+            # Compute Barrier
+            # Convert to numpy for vectorization
+            b_pct_vals = scaled_atr_pct(
+                atr_pct.values,
+                z_score.values,
+                atr_base.values,
+                z_max=3.0,
+                lo=0.03,
+                hi=0.06
+            )
+
+            # Reconstruct DataFrame
+            barrier_pct = pd.DataFrame(b_pct_vals, index=atr_pct.index, columns=atr_pct.columns)
+
+            # TP = Barrier
+            tp_df = barrier_pct
+            # SL = 0.5 * Barrier
+            sl_df = 0.5 * barrier_pct
+
+            tprint(f"Labeling: Dynamic Triple Barrier (Mean TP={tp_df.mean().mean():.4f}, Side={side})")
+
+            tb_labels, tb_returns = compute_triple_barrier_labels(
+                panel, tp_df, sl_df, H, side=side
+            )
+        else:
+            tprint("Warning: atr_pct not found for dynamic barriers. Falling back to fixed.")
+            tprint(f"Labeling: Fixed Triple Barrier (TP={fixed_tp}, SL={fixed_sl}, Side={side})")
+            tb_labels, tb_returns = compute_triple_barrier_labels(
+                panel, fixed_tp, fixed_sl, H, side=side
+            )
+
     else:
-        tprint("Warning: atr_pct not found, using default 1% ATR for labeling")
-        atr_df = pd.DataFrame(0.01, index=c.index, columns=c.columns)
+        # Default ATR logic
+        k_sl = cfg.get("train_k_sl", 2.0)
+        k_pt = cfg.get("train_k_pt", 2.0)
+        k_tp = cfg.get("train_k_tp", 1.0)
 
-    tb_labels, tb_returns = compute_trailing_atr_labels(
-        panel, atr_df,
-        k_sl=k_sl, k_pt=k_pt, k_tp=k_tp,
-        horizon_hours=H
-    )
+        if "atr_pct" in feats:
+            atr_df = feats["atr_pct"]
+        else:
+            tprint("Warning: atr_pct not found, using default 1% ATR for labeling")
+            atr_df = pd.DataFrame(0.01, index=c.index, columns=c.columns)
+
+        tb_labels, tb_returns = compute_trailing_atr_labels(
+            panel, atr_df,
+            k_sl=k_sl, k_pt=k_pt, k_tp=k_tp,
+            horizon_hours=H
+        )
 
     cand_mask = select_trade_candidates_vectorized(panel, feats, pct=cfg["trade_extreme_pct"], metric=cfg["trade_deviation_metric"])
     if cand_mask is None:
@@ -324,15 +414,24 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
             if trend_filter == "up" and trend_dir <= 0: continue
             if trend_filter == "down" and trend_dir > 0: continue
 
-            trade_dir = 1 # Default Long
-            if model_kind == "tf":
-                if trend_dir > 0: trade_dir = 1
-                else: trade_dir = -1
-            elif model_kind == "mr":
-                if trend_dir > 0: trade_dir = -1
-                else: trade_dir = 1
+            # If label_method is triple_barrier, `ret` already reflects the PnL of the specific side.
+            # If label_method is atr (legacy), `ret` is simulated Long return, so we flip for Short strategies.
 
-            pnl = ret * trade_dir
+            pnl = 0.0
+            if label_method == "triple_barrier":
+                pnl = ret
+                # Note: `ret` from `compute_triple_barrier_labels` for Short is (Entry/Exit - 1).
+                # So positive `ret` means profit.
+            else:
+                trade_dir = 1 # Default Long
+                if model_kind == "tf":
+                    if trend_dir > 0: trade_dir = 1
+                    else: trade_dir = -1
+                elif model_kind == "mr":
+                    if trend_dir > 0: trade_dir = -1
+                    else: trade_dir = 1
+                pnl = ret * trade_dir
+
             y_bin = 1 if pnl > 0 else 0
 
             pa = abs(ret_vals[sym])
@@ -402,22 +501,9 @@ def build_hourly_training_set_and_weights(panel, feats, mkt_gates, cfg, syms, ts
     y_bin = df.pop("y_bin").values.astype(int)
     y_ret = df.pop("y_ret").values.astype(np.float32)
 
-    # Save metadata for return if needed?
-    # For now, just drop
-    meta_cols = ["ts", "symbol"]
-    # We will need these for Spike Model alignment later, so let's keep them in a separate DF if we want.
-    # But function signature returns X_out, y...
-    # I'll return `df` but with meta cols dropped.
-
-    # IMPORTANT: We need to pass Spike Features to Meta Model.
-    # If this function is called for TF/MR, it only gathers TF/MR features.
-    # The Meta model needs to gather ITS OWN features for the SAME rows.
-    # We should probably have a `build_meta_training_set` helper or modify this to return metadata.
-
     X_out = df.drop(columns=["ts", "symbol"], errors="ignore").astype(np.float32)
     X_out.index = df.index
 
-    # Return df_meta (ts, symbol) as extra return?
     df_meta = df[meta_cols] if "ts" in df.columns else pd.DataFrame(index=df.index)
 
     return X_out, y_bin, y_ret, list(X_out.columns), weights, df_meta
@@ -465,7 +551,6 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
         datasets["spike_anatomy"] = spike_df
 
     # 2. Alpha Models (MR/TF)
-    # Refactored for explicit Long/Short and MR/TF pairings
     trade_sides = ["long", "short"]
     kinds = ["mr", "tf"]
     horizons = cfg["label_horizons_hours"]
@@ -473,11 +558,6 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
     for side in trade_sides:
         for k in kinds:
             # Determine Candidate Filter based on Strategy
-            # Long MR: Worst (ret < 0) -> buy dip
-            # Long TF: Best (ret > 0) -> buy breakout
-            # Short MR: Best (ret > 0) -> sell pump
-            # Short TF: Worst (ret < 0) -> sell crash
-
             cand_filter = "unknown"
             if side == "long":
                 if k == "mr": cand_filter = "worst" # ret < 0
@@ -486,33 +566,24 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
                 if k == "mr": cand_filter = "best"  # ret > 0
                 else: cand_filter = "worst"         # ret < 0
 
-            # Map cand_filter to trend_filter used in build func
-            # build function expects "up" (positive trend) or "down" (negative trend)
-            # "best" -> "up", "worst" -> "down"
             trend_filter = "up" if cand_filter == "best" else "down"
 
             feat_key = "tf_feature_keys" if k == "tf" else "mr_feature_keys"
 
+            # Dynamic Barriers will be computed inside build_hourly_training_set_and_weights
+            # We don't need to pass fixed params if we use atr-based logic.
+            # But we keep fixed defaults just in case.
+            fixed_tp = 0.05
+            fixed_sl = 0.025
+
             for H in horizons:
                 tprint(f"Generating labels for {side} {k} ({cand_filter}) H={H}...")
 
-                # We need to ensure we label the correct SIDE outcome.
-                # build_hourly_training_set_and_weights currently assumes:
-                # if model_kind == "tf": if trend>0 -> trade Long. if trend<0 -> trade Short.
-                # if model_kind == "mr": if trend>0 -> trade Short. if trend<0 -> trade Long.
-
-                # Let's verify if this matches our matrix.
-                # Long TF (best, trend>0): kind="tf", trend>0 -> trade Long. Match.
-                # Short TF (worst, trend<0): kind="tf", trend<0 -> trade Short. Match.
-                # Long MR (worst, trend<0): kind="mr", trend<0 -> trade Long. Match.
-                # Short MR (best, trend>0): kind="mr", trend>0 -> trade Short. Match.
-
-                # So the existing logic in build_hourly_training_set_and_weights works correctly
-                # provided we pass the correct trend_filter ("up" for best, "down" for worst).
-
                 X, y, y_ret, cols, w, meta_idx = build_hourly_training_set_and_weights(
                     panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, H, k,
-                    trend_filter=trend_filter, feature_key=feat_key
+                    trend_filter=trend_filter, feature_key=feat_key,
+                    label_method="triple_barrier",
+                    fixed_tp=fixed_tp, fixed_sl=fixed_sl, side=side
                 )
 
                 if X is not None:
@@ -520,23 +591,6 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
                     df_out["__y_bin__"] = y
                     df_out["__y_ret__"] = y_ret
                     df_out["__w__"] = w
-
-                    # Add spike probs if available (for MetaModel usage later)
-                    if spike_df is not None and meta_idx is not None:
-                        # Attempt to merge spike probs
-                        # meta_idx has ts, symbol. spike_df has ts, symbol implicitly if we saved it?
-                        # No, spike_df is just the training data for GMM.
-                        # We need PREDICTIONS (probs) for the current rows.
-                        # This requires running GMM prediction.
-                        # Can we do it here?
-                        # Yes, we have `train_spike_anatomy_model` returning a DataFrame, not model.
-                        # Wait, `generate_label_datasets` calls `train_spike_anatomy_model` which returns DF.
-                        # It doesn't return the fitted model.
-                        # So we can't predict here unless we fit it.
-                        # Refactoring limitation: We can't easily add spike probs here without fitting GMM.
-                        # We will skip adding spike probs to parquet for now and rely on MetaModel fitting to generate them if possible,
-                        # or accept they are missing in this iteration.
-                        pass
 
                     if meta_idx is not None:
                         df_out["__ts__"] = meta_idx["ts"]
@@ -546,6 +600,7 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
 
     # 3. Exhaustion Models
     lookback = cfg["exh_train_lookback_hours"]
+    directions = ["up", "down"]
     for d in directions:
         tprint(f"Generating exhaustion training set for {d}...")
         X, y, w, cols = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts, lookback, syms, trend_filter=d)
@@ -724,120 +779,273 @@ def select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
     return train_models_from_artifacts(datasets, cfg)
 
 def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_hist, alpha_models):
-    tprint("Entering function: optimize_risk_params in training.py")
+    tprint("Entering function: optimize_risk_params in training.py (High Throughput Selection)")
 
-    # We simulate trades on the training set (or a validation slice)
-    # using current alpha models and a grid of risk parameters.
+    granular_risk = {}
 
-    # Grid
-    grid_sl = [1.5, 2.0, 2.5, 3.0]
-    grid_ts = [0.5, 1.0, 1.5]
-    grid_td = [0.3, 0.5, 0.8]
+    # 1. Prepare shared price data
+    # We need to process all candidates from the training history.
+    # We can reuse select_trade_candidates_vectorized logic but we want ALL potential signals.
+    # Or just use the signals that were actually generated by the strategy logic?
+    # The selection script expects X (features) and prices.
 
-    best_score = -999.0
+    # Extract panel data
+    open_df = panel["open"]
+    high_df = panel["high"]
+    low_df = panel["low"]
+    close_df = panel["close"]
+
+    # ATR stats
+    if "atr_pct" not in feats:
+        tprint("ATR pct missing, skipping optimization")
+        return cfg
+
+    atr_pct_df = feats["atr_pct"]
+    window_base = 24 * 30
+
+    tprint("Computing ATR baselines for optimization...")
+    atr_base_df = atr_pct_df.rolling(window_base, min_periods=24).median().fillna(method='bfill')
+    # Using the fast numpy functions if possible, but pandas is easier for alignment here
+    # For Z, we need a robust one.
+    # Let's use the one from fast_funcs if available or re-implement simple robust Z.
+    atr_std_df = atr_pct_df.rolling(window_base, min_periods=24).std().fillna(method='bfill')
+    z_df = (atr_pct_df - atr_base_df) / (atr_std_df + 1e-12)
+
+    # 2. Iterate over strategies (buckets)
+    trade_sides = ["long", "short"]
+    kinds = ["mr", "tf"]
+
+    # We need to gather events for each bucket.
+    # This is non-trivial because `optimize_risk_params` is usually called on a small simulation window.
+    # But `run_tp_sl_selection_fast` is designed for training time selection on historical data.
+    # Assuming `ts` is the end of training.
+
+    # We will scan the last N days (e.g. 90 or 180) for candidates.
+    lookback_days = 90
+    ts_start = ts - pd.Timedelta(days=lookback_days)
+
+    # Select candidates
+    cand_mask = select_trade_candidates_vectorized(panel, feats, pct=cfg["trade_extreme_pct"], metric=cfg["trade_deviation_metric"])
+    if cand_mask is None:
+        tprint("No candidates found.")
+        return cfg
+
+    mask = (cand_mask.index >= ts_start) & (cand_mask.index <= ts)
+    final_mask = cand_mask & pd.Series(mask, index=cand_mask.index).fillna(False)
+
+    valid_ts = final_mask[final_mask.any(axis=1)].index
+
+    # Pre-fetch numpy arrays for the full period (aligned)
+    # We need a unified index and columns
+    # Let's align everything to `close_df`
+
+    # Flatten everything to 1D arrays of events?
+    # run_tp_sl_selection_fast takes 1D arrays for open, high, etc?
+    # No, it takes full arrays and event indices.
+    # BUT, if we have multiple assets, we can concatenate them?
+    # Or run per asset? No, pooled.
+    # To pool, we can concatenate all asset time series end-to-end, and adjust event indices.
+    # That's one way.
+    # Or simply: run_tp_sl_selection_fast expects single instrument arrays.
+    # "Assumptions: Single instrument arrays, time-aligned."
+    # So we cannot pass the whole panel directly.
+    # We must flatten the panel into a long format (Time, Symbol) -> single timeline?
+    # No, time-alignment breaks if we concatenate.
+    # Effectively, we treat the dataset as one long series of (t, asset) observations.
+    # We can concatenate the columns of the panel into one giant 1D array.
+    # And compute event indices relative to this giant array.
+    # Yes, that works if we insert NaNs or gaps between assets to prevent window crossover.
+    # Or just careful indexing.
+    # Let's concatenate with a small buffer of NaNs between assets.
+
+    tprint("Flattening panel data for pooled optimization...")
+
+    assets = close_df.columns
+    # Collect arrays
+    big_open = []
+    big_high = []
+    big_low = []
+    big_close = []
+    big_atr = []
+    big_z = []
+    big_atr_base = []
+    big_X = [] # Features
+
+    asset_offsets = {}
+    current_offset = 0
+    buffer_size = 100 # larger than horizon
+
+    # We need features too.
+    # Let's pick a standard set of features for X
+    feat_keys = cfg.get("causal_cols", [])
+    if not feat_keys:
+        # Fallback
+        feat_keys = ["trend_pct", "vol_pct", "ret24h"]
+
+    for sym in assets:
+        if sym not in atr_pct_df.columns: continue
+
+        # Get data chunks
+        o = open_df[sym].values.astype(np.float32)
+        h = high_df[sym].values.astype(np.float32)
+        l = low_df[sym].values.astype(np.float32)
+        c = close_df[sym].values.astype(np.float32)
+
+        a = atr_pct_df[sym].values.astype(np.float32)
+        b = atr_base_df[sym].values.astype(np.float32)
+        z_v = z_df[sym].values.astype(np.float32)
+
+        # Features
+        # Gather into (T, F)
+        x_list = []
+        for k in feat_keys:
+            if k in feats:
+                x_list.append(feats[k][sym].values.astype(np.float32))
+            else:
+                x_list.append(np.zeros(len(c), dtype=np.float32))
+        x_arr = np.stack(x_list, axis=1)
+
+        # Append
+        big_open.append(o)
+        big_high.append(h)
+        big_low.append(l)
+        big_close.append(c)
+        big_atr.append(a)
+        big_atr_base.append(b)
+        big_z.append(z_v)
+        big_X.append(x_arr)
+
+        asset_offsets[sym] = current_offset
+        current_offset += len(c) + buffer_size
+
+        # Add buffer
+        nan_buf = np.full(buffer_size, np.nan, dtype=np.float32)
+        nan_buf_x = np.full((buffer_size, len(feat_keys)), np.nan, dtype=np.float32)
+
+        big_open.append(nan_buf)
+        big_high.append(nan_buf)
+        big_low.append(nan_buf)
+        big_close.append(nan_buf)
+        big_atr.append(nan_buf)
+        big_atr_base.append(nan_buf)
+        big_z.append(nan_buf)
+        big_X.append(nan_buf_x)
+
+    # Concatenate
+    full_open = np.concatenate(big_open)
+    full_high = np.concatenate(big_high)
+    full_low = np.concatenate(big_low)
+    full_close = np.concatenate(big_close)
+    full_atr = np.concatenate(big_atr)
+    full_atr_base = np.concatenate(big_atr_base)
+    full_z = np.concatenate(big_z)
+    full_X = np.concatenate(big_X, axis=0)
+
+    # Now iterate strategies and collect event indices
+    for side in trade_sides:
+        for k in kinds:
+            # Filter logic
+            cand_filter = "unknown"
+            if side == "long":
+                if k == "mr": cand_filter = "worst"
+                else: cand_filter = "best"
+            else:
+                if k == "mr": cand_filter = "best"
+                else: cand_filter = "worst"
+
+            trend_filter = "up" if cand_filter == "best" else "down"
+
+            # Collect indices
+            indices = []
+
+            # Iterate valid timestamps
+            for t in valid_ts:
+                # Get candidates at t
+                row = final_mask.loc[t]
+                cands = row[row].index.intersection(assets)
+
+                # Check trend
+                trend_vals = feats["trend_pct"].loc[t, cands]
+
+                for sym in cands:
+                    tv = trend_vals[sym]
+                    tdir = np.sign(tv) if tv != 0 else 1.0
+
+                    if trend_filter == "up" and tdir <= 0: continue
+                    if trend_filter == "down" and tdir > 0: continue
+
+                    # Found a candidate
+                    # Get index in full arrays
+                    # t is timestamp. We need integer index in the asset array.
+                    # Assuming all assets have same index 'idx' (from panel)
+                    # We can map t to integer index in panel
+
+                    # idx is sorted? Yes.
+                    # Find integer location
+                    try:
+                        time_idx = idx.get_loc(t)
+                    except KeyError:
+                        continue
+
+                    flat_idx = asset_offsets[sym] + time_idx
+                    indices.append(flat_idx)
+
+            indices = np.array(indices, dtype=np.int32)
+            tprint(f"Bucket {side} {k} ({cand_filter}): {len(indices)} events")
+
+            if len(indices) < 50:
+                tprint("Not enough events, using defaults.")
+                granular_risk[f"risk_{side}_{k}"] = {
+                    "k_sl": cfg["risk_k_sl"],
+                    "k_trail_start": cfg["risk_k_trail_start"],
+                    "k_trail_dist": cfg["risk_k_trail_dist"],
+                    # "tp_mult": ... we store optimized params
+                }
+                continue
+
+            # Run optimization
+            # Note: run_tp_sl_selection_fast selects tp_mult and sl_mult for TRIPLE BARRIER.
+            # But the system might use Trailing ATR logic at execution time?
+            # If we switch to Triple Barrier execution, we use these.
+            # If we use Trailing ATR, we map them: k_sl = sl_mult (approx).
+            # The prompt implies we want to find optimal "TP:SL ratio" and levels.
+
+            summary = run_tp_sl_selection_fast(
+                X=full_X,
+                open_=full_open,
+                high=full_high,
+                low=full_low,
+                close=full_close,
+                atr_pct=full_atr,
+                z=full_z,
+                atr_base_pct=full_atr_base,
+                event_idx=indices,
+                horizon=24, # Fixed horizon for now
+                max_events=2000, # Cap for speed
+                tp_mult_grid=[0.5, 1.0, 1.5, 2.0, 2.5, 3.0], # Wider grid
+                sl_mult_grid=[0.5, 1.0, 1.5, 2.0, 2.5],
+                entry_mode="next_open"
+            )
+
+            tprint(f"Optimized {side} {k}: TP_mult={summary.final_tp_mult:.2f}, SL_mult={summary.final_sl_mult:.2f}")
+
+            # Store in granular risk
+            # We map these to the config keys used by Triple Barrier execution
+            granular_risk[f"risk_{side}_{k}"] = {
+                "tp_mult": summary.final_tp_mult,
+                "sl_mult": summary.final_sl_mult,
+                # Fallback keys for legacy
+                "k_sl": 2.0,
+                "k_trail_start": 2.0,
+                "k_trail_dist": 1.0
+            }
+
+    # Best params for default (not really used if granular is active)
     best_params = {
         "k_sl": cfg["risk_k_sl"],
         "k_trail_start": cfg["risk_k_trail_start"],
-        "k_trail_dist": cfg["risk_k_trail_dist"]
-    }
-
-    # This optimization can be very slow if done naively.
-    # We will do a simplified version: pick a subsample of signals and simulate.
-
-    from extreme_price_movements.engine import generate_hourly_signals, simulate_trade_hourly
-
-    # Generate signals for the last 30 days of training data
-    start_sim = ts - pd.Timedelta(days=30)
-    end_sim = ts - pd.Timedelta(hours=24) # Leave room for hold
-
-    valid_times = [t for t in feats["ret1h"].index if t >= start_sim and t <= end_sim]
-    # Downsample
-    valid_times = valid_times[::4]
-
-    signals = []
-    # Pre-compute signals (expensive part)
-    # We need a dummy risk config for signal generation (it doesn't use it for generation, only allocation?)
-    # generate_hourly_signals uses risk_conf to maybe scale things?
-    # Actually generate_hourly_signals returns target orders.
-    # We just need the raw scores/directions.
-
-    # Note: generating signals requires models.
-    model_bundle = {"alpha_models": alpha_models, "meta_models": {}, "spike_model": None}
-    # We might miss meta/spike models here if not passed.
-    # But alpha_models is what we have.
-
-    # HACK: If we don't have meta models, we use raw diff.
-    # See generate_hourly_signals implementation.
-
-    tprint(f"Generating signals for risk optimization ({len(valid_times)} steps)...")
-    for t in valid_times:
-        orders = generate_hourly_signals(t, feats, mkt_gates, model_bundle, {}, cfg, p_exh_hist, [])
-        for o in orders:
-            o["ts"] = t
-            signals.append(o)
-
-    if not signals:
-        tprint("No signals generated for risk optim. Using defaults.")
-        return best_params
-
-    tprint(f"Generated {len(signals)} signals. optimizing risk grid...")
-
-    # Cache price data
-    o_s = panel["open"]
-    h_s = panel["high"]
-    l_s = panel["low"]
-    c_s = panel["close"]
-    atr_s = feats["atr_pct"]
-
-    for k_sl in grid_sl:
-        for k_ts in grid_ts:
-            for k_td in grid_td:
-
-                temp_cfg = cfg.copy()
-                temp_cfg["risk_k_sl"] = k_sl
-                temp_cfg["risk_k_trail_start"] = k_ts
-                temp_cfg["risk_k_trail_dist"] = k_td
-
-                total_ret = 0.0
-                count = 0
-
-                for sig in signals:
-                    sym = sig["symbol"]
-                    entry_ts = sig["ts"] + pd.Timedelta(hours=1)
-                    if entry_ts not in o_s.index: continue
-
-                    entry_px = c_s.loc[sig["ts"], sym] # approximate entry at close of signal candle? or open of next?
-                    # simulate_trade_hourly uses entry_px passed to it.
-                    # Usually we enter at Open of next candle.
-                    if entry_ts in o_s.index:
-                        entry_px = o_s.loc[entry_ts, sym]
-
-                    ret, _, _ = simulate_trade_hourly(
-                        o_s[sym], h_s[sym], l_s[sym], c_s[sym], atr_s[sym],
-                        entry_ts, entry_px, sig["side"], temp_cfg, max_hold_hours=24
-                    )
-
-                    total_ret += ret
-                    count += 1
-
-                avg_ret = total_ret / count if count > 0 else 0
-                if avg_ret > best_score:
-                    best_score = avg_ret
-                    best_params = {"k_sl": k_sl, "k_trail_start": k_ts, "k_trail_dist": k_td}
-
-    tprint(f"Risk Optimization Complete. Best Score: {best_score:.4f} Params: {best_params}")
-
-    # Create granular buckets (placeholder for now, can be expanded)
-    granular_risk = {}
-    directions = ["long", "short"]
-    doms = ["mr", "tf"]
-    for d in directions:
-        for dom in doms:
-            granular_risk[f"risk_{d}_{dom}"] = best_params
-
-    return {
-        "k_sl": best_params["k_sl"],
-        "k_trail_start": best_params["k_trail_start"],
-        "k_trail_dist": best_params["k_trail_dist"],
+        "k_trail_dist": cfg["risk_k_trail_dist"],
         "granular_risk": granular_risk
     }
+
+    return best_params

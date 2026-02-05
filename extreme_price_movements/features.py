@@ -289,9 +289,14 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     eff = (c - o).abs() / ((h - l) + 1e-9)
     feats["efficiency"] = ff.apply_to_frame(eff, ff._numba_rolling_mean_nan_safe, 12)
 
-    # Note: skew() requires >=3 valid observations for unbiased estimator.
-    # During warmup, if valid symbols < 3, this will return NaN.
-    skew_ser = feats["ret1h"].skew(axis=1)
+    # Use Pearson Mode Skewness Proxy: 3 * (Mean - Median) / Std
+    # More stable for small N (works for N>=2) and cheaper.
+    r1 = feats["ret1h"]
+    cs_mean = r1.mean(axis=1)
+    cs_median = r1.median(axis=1)
+    cs_std = r1.std(axis=1)
+
+    skew_ser = 3.0 * (cs_mean - cs_median) / (cs_std + 1e-6)
     feats["skew"] = pd.DataFrame(np.repeat(skew_ser.values[:,None], c.shape[1], axis=1), index=c.index, columns=c.columns).astype(np.float32)
 
     r = feats["ret1h"]

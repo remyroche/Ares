@@ -325,10 +325,15 @@ def mdi_feature_selection_v3(
     min_samples_leaf: int = 50,
     min_impurity_decrease: float = 1e-4,
     analysis_n_estimators: int = 500, # Higher for 150-feature stability
-    pre_dedupe_threshold: float = 0.98,
+
+    pre_dedupe_threshold: float = 0.95, # Relaxed from 0.98 to 0.95 per plan
     random_state: int = 0,
     sample_weight: Optional[Union[pd.Series, np.ndarray]] = None,
     end_features: Optional[int] = None,
+    cumulative_cap: float = 0.98,
+    min_share: float = 0.001, # Threshold for noise
+    min_features: int = 5,    # Hard floor
+    max_features_pct: float = 0.5, # Hard ceiling (fraction of input)
 ) -> MDISelectionResult:
     if not isinstance(X, pd.DataFrame):
         raise TypeError("X must be a pandas DataFrame.")
@@ -345,7 +350,12 @@ def mdi_feature_selection_v3(
     if end_features is None:
         n_samples_full = len(X)
         end_features = min(60, max(1, n_samples_full // 100))
-        tprint(f"MDI: end_features not provided. Auto-setting to {end_features} based on sample size {n_samples_full}")
+        # Ensure we target at least the floor
+        end_features = max(end_features, min_features)
+        tprint(f"MDI: end_features not provided. Auto-setting to {end_features} based on sample size {n_samples_full} and min_features {min_features}")
+    elif end_features < min_features:
+        tprint(f"MDI: end_features {end_features} < min_features {min_features}. Boosting end_features.")
+        end_features = min_features
 
     if base_model is None:
         base_model = ExtraTreesRegressor(
@@ -584,6 +594,7 @@ def mdi_feature_selection_v3(
 
             # Use float32
             agg[f"{metric}_mu"] = mu.astype(np.float32)
+            agg[f"{metric}_std"] = sd.astype(np.float32) # Added for Effective Importance
             agg[f"{metric}_stab"] = stab.astype(np.float32)
 
         metrics_df = pd.DataFrame(agg, index=current_features)
@@ -612,7 +623,120 @@ def mdi_feature_selection_v3(
         survivors = metrics_df_sorted.index[:-n_drop].tolist()
         current_features = survivors
 
-    selected = metrics_df_sorted.index.tolist()
+    # --- Post-Loop Cumulative Cap for Noise Tail Removal ---
+    # Even if RFE stopped at end_features (or if we just ran once),
+    # we apply the cumulative cap to ensure we don't keep weak noise.
+    
+    # --- Post-Loop Advanced Cumulative Cap ---
+    # metric_df_sorted is ordered by composite_rank (best to worst).
+    
+    # 1. Compute Effective Importance (Penalize Instability)
+    # share_eff = max(0, mu - 0.5 * std)
+    # We estimate std from stability score: stab = mu * (hit / cv). 
+    # But we have 'share_mu' and 'share_stab'.
+    # Actually, we calculated:
+    # cv = sd / mu
+    # stab = mu * (hit / cv) = mu * hit * mu / sd = (mu^2 * hit) / sd?
+    # No, we need original sd.
+    # We don't have raw sd in the dataframe, but we can approximate or just use share_mu for now
+    # if we didn't save sd. 
+    # Wait, we constructed agg with separate columns? 
+    # "agg[f'{metric}_mu']" and "agg[f'{metric}_stab']".
+    # We did not save sigma directly in the dataframe construction earlier in the code.
+    # Let's verify `metrics_df` creation block (lines 589-590).
+    # It only has _mu and _stab.
+    # We can reconstruct sd from stab if hit is known (hit not saved).
+    # OR we just rely on composite_rank which uses stability.
+    
+    # User requested: "share_eff = metrics_df['share_mu'] - z * metrics_df['share_std']"
+    # To support this, I should have saved share_std.
+    # Since I cannot easily change the loop (it's inside the function above), 
+    # I will modify the Aggregation step (lines 574-590) to include `_std`. 
+    # BUT I am in `multi_replace`, I can't easily jump back up.
+    # Workaround: Use `share_stab` as a proxy for robust importance.
+    # `share_stab` IS stability-weighted importance.
+    # let's use `share_mu` for mass, but rely on `composite_rank` for ordering?
+    # User explicitly asked for "Effective Importance" formula.
+    # I will assume I can edit the aggregation block in a separate chunk.
+    # YES, I will add a chunk to save `_std` first.
+    
+    # --- Post-Loop Advanced Cumulative Cap ---
+    # metric_df_sorted is ordered by composite_rank (best to worst).
+    
+    # 1. Compute Effective Importance (Penalize Instability)
+    # share_eff = max(0, mu - 0.5 * std)
+    z = 0.5
+    share_mu = metrics_df_sorted['share_mu'].values.astype(np.float64)
+    share_std = metrics_df_sorted['share_std'].values.astype(np.float64)
+    
+    share_eff = np.maximum(0.0, share_mu - z * share_std)
+    
+    # 2. Normalize Effective Importance
+    total_eff = np.sum(share_eff)
+    if total_eff > 1e-12:
+        share_norm = share_eff / total_eff
+    else:
+        # Fallback: if effective importance is zero (all noisy), use straight mu
+        tprint("MDI: Effective importance is zero (high noise). Falling back to share_mu.")
+        share_norm = share_mu / (np.sum(share_mu) + 1e-12)
+
+    # 3. Cumulative Cutoff
+    cumsum = np.cumsum(share_norm)
+    
+    # 4. Find Cutoff Index (Inclusive)
+    # searchsorted returns first index i where cumsum[i] >= cap.
+    # We want to include this index i because it's the one that crosses the threshold.
+    cutoff_idx = np.searchsorted(cumsum, cumulative_cap)
+    
+    # Clip to valid range
+    cutoff_idx = min(cutoff_idx, len(metrics_df_sorted) - 1)
+    
+    # Selected Count Candidates
+    # +1 because slice is exclusive [0 : cutoff_idx+1] includes index cutoff_idx
+    n_selected_cap = cutoff_idx + 1
+
+    # 5. Apply Hard Guardrails
+    n_total = len(metrics_df_sorted)
+    n_max_hard = int(n_total * max_features_pct)
+    # Ensure max is at least min if possible
+    n_max_hard = max(n_max_hard, min_features)
+    n_max_hard = min(n_max_hard, n_total) # Cap at physical limit
+    
+    n_min_hard = min(min_features, n_total) # Can't select more than we have
+    
+    # Enforce constraints order: Min -> Cap -> Max
+    # "At least min_features" (unless total is smaller)
+    # "At most max_features"
+    # Actually, if we set max < min, we have a conflict.
+    # Logic: Prioritize Min floor (sanity) over Max ceiling? 
+    # Usually Max ceiling is for performance/noise control. Min floor is for signal capture.
+    # If Max Pct is tiny (e.g. 10%), but we need 5 features, we should take 5.
+    
+    # Effective count
+    n_final = max(n_selected_cap, n_min_hard)
+    n_final = min(n_final, n_max_hard) 
+    # If n_max_hard < n_min_hard (e.g. max=1, min=2 due to rounding), 
+    # the above line would force it down to 1.
+    # But we did `n_max_hard = max(n_max_hard, min_features)` above.
+    # So n_max_hard >= min_features (unless n_total is small).
+    # Correct.
+    
+    # 6. Apply Tail Filter (Optional but recommended)
+    # Instead of breaking EARLY, we just count how many of the TOP N_FINAL actually pass min_share?
+    # User issue: "result: you may end up selecting far less than 98% mass"
+    # Logic: We stick to the Rank order. We just select Top N_FINAL.
+    # We do NOT filter out items within the Top N_FINAL that have low share, 
+    # because they might be high-stability (composite rank).
+    # If a feature is Rank #3 but has small share, we Keep it.
+    
+    selected_by_cap = metrics_df_sorted.index[:n_final].tolist()
+    
+    tprint(f"MDI Cap: Selected {n_final} features (Cap {cumulative_cap:.0%}, Eff. Mass {cumsum[min(n_final-1, len(cumsum)-1)]:.3f}). Constraints: {n_min_hard} <= N <= {n_max_hard}")
+    
+    # tprint(f"MDI Cap: Selected {n_final} features (Cap {cumulative_cap:.0%}, Eff. Mass {cumsum[min(n_final-1, len(cumsum)-1)]:.3f}). Constraints: {n_min_hard} <= N <= {n_max_hard}")
+    pass # Logging handled above
+    
+    selected = selected_by_cap
 
     return MDISelectionResult(metrics_df_sorted, selected, kept_features)
 

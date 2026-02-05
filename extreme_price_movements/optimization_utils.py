@@ -35,7 +35,10 @@ def filter_low_variance_assets(store, syms, lookback_days=30, threshold_pct=0.40
 
             rets = r[1:] / r[:-1] - 1.0
             var = float(np.var(rets, ddof=1)) if rets.size > 1 else 0.0
-            variances.append((var, s))
+            
+            # Filter strictly constant assets (or near constant)
+            if var > 1e-18:
+                variances.append((var, s))
 
         except Exception as e:
             # tprint(f"Error checking variance {s}: {e}")

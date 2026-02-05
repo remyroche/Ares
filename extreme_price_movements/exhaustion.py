@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import ExtraTreesClassifier
@@ -7,6 +8,28 @@ from sklearn.metrics import brier_score_loss, roc_auc_score
 from extreme_price_movements.utils import tprint, clean_dataset
 from extreme_price_movements.feature_selection_extreme_events import mdi_feature_selection_v3
 from extreme_price_movements.purged_cv import PurgedKFold
+
+
+class ScaledLogisticRegression(LogisticRegression):
+    """
+    Wrapper to apply StandardScaler internally, ensuring sample_weight 
+    is correctly passed to fit (bypassing Pipeline limitations with CalibratedClassifierCV).
+    """
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.scaler = StandardScaler()
+
+    def fit(self, X, y, sample_weight=None):
+        X_scaled = self.scaler.fit_transform(X)
+        return super().fit(X_scaled, y, sample_weight=sample_weight)
+
+    def predict(self, X):
+        X_scaled = self.scaler.transform(X)
+        return super().predict(X_scaled)
+        
+    def predict_proba(self, X):
+        X_scaled = self.scaler.transform(X)
+        return super().predict_proba(X_scaled)
 
 class ExhaustionModel:
     def __init__(self, C=1.0, l1_ratio=0.3, cv_splits=5):
@@ -20,14 +43,14 @@ class ExhaustionModel:
 
     def _make_base_estimator(self):
         tprint(f"Entering function: _make_base_estimator in exhaustion.py")
-        return LogisticRegression(
+        return ScaledLogisticRegression(
             penalty="elasticnet",
             solver="saga",
             l1_ratio=self.l1_ratio,
             C=self.C,
             max_iter=2000,
             random_state=42,
-            class_weight="balanced" # Helpful for imbalance? User didn't specify but good practice.
+            class_weight="balanced" 
         )
 
     def fit(self, X: pd.DataFrame, y: np.ndarray, sample_weight: np.ndarray = None):
@@ -75,8 +98,13 @@ class ExhaustionModel:
             y=y,
             base_model=base_selector,
             n_splits=self.cv_splits,
-            analysis_n_estimators=500, # Increased
-            sample_weight=sample_weight  # Pass weights to feature selection
+            analysis_n_estimators=500,
+            sample_weight=sample_weight,
+            end_features=n_select,
+            cumulative_cap=0.98,
+            min_share=0.001,
+            min_features=5,
+            max_features_pct=0.5
         )
 
         # Check if selection returned empty features?
@@ -91,19 +119,31 @@ class ExhaustionModel:
         # Since X is already cleaned (same rows as mdi saw), this is safe.
         X_sel = X[self.selected_features]
 
-        # 2. Calibration
+        # 2. Calibration — ensure float64 for sklearn compatibility
+        if sample_weight is not None:
+            sample_weight = sample_weight.astype(np.float64)
+        X_sel = X_sel.astype(np.float64)
+
         base_clf = self._make_base_estimator()
 
-        # Use CalibratedClassifierCV with PurgedKFold (De Prado)
-        tscv = PurgedKFold(n_splits=self.cv_splits, purge=5, embargo=2)
-
-        self.model = CalibratedClassifierCV(
-            estimator=base_clf,
-            method='sigmoid',
-            cv=tscv
-        )
-
-        self.model.fit(X_sel, y, sample_weight=sample_weight)
+        # Adapt cv_splits to minority class size to avoid sklearn ValueError
+        # CalibratedClassifierCV needs at least n_splits examples per class
+        min_class_count = min(np.bincount(y.astype(int)))
+        if min_class_count < 2:
+            tprint(f"ExhaustionModel: Minority class has only {min_class_count} samples. Fitting base model without calibration.")
+            self.model = base_clf
+            self.model.fit(X_sel, y, sample_weight=sample_weight)
+        else:
+            effective_splits = min(self.cv_splits, min_class_count)
+            if effective_splits < self.cv_splits:
+                tprint(f"ExhaustionModel: Reducing CV splits {self.cv_splits} -> {effective_splits} (minority class={min_class_count})")
+            tscv = PurgedKFold(n_splits=effective_splits, purge=5, embargo=2)
+            self.model = CalibratedClassifierCV(
+                estimator=base_clf,
+                method='sigmoid',
+                cv=tscv
+            )
+            self.model.fit(X_sel, y, sample_weight=sample_weight)
 
         return self
 

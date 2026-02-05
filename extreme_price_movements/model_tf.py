@@ -71,11 +71,15 @@ class TFModel:
         )
 
         sel_res = mdi_feature_selection_v3(
-            X=X,
-            y=y,
+            X, y,
             base_model=base_selector,
             sample_weight=sample_weight,
-            analysis_n_estimators=500
+            analysis_n_estimators=500,
+            end_features=n_select,
+            cumulative_cap=0.98,
+            min_share=0.001,
+            min_features=5,
+            max_features_pct=0.8
         )
 
         self.selected_features = sel_res.selected_features[:n_select]

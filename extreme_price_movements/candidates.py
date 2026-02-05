@@ -52,7 +52,7 @@ def select_trade_candidates_vectorized(panel, feats, pct=0.05, metric="ret24h"):
     """
     tprint(f"Entering function: select_trade_candidates_vectorized in candidates.py")
 
-    # 1. Base Selection using argpartition (faster than full rank)
+    # 1. Base Selection — fully vectorized rank-based top/bottom K
     if metric not in feats:
         tprint(f"Warning: Metric {metric} not found in feats.")
         return None
@@ -60,30 +60,23 @@ def select_trade_candidates_vectorized(panel, feats, pct=0.05, metric="ret24h"):
     df_metric = feats[metric]
     n_cols = df_metric.shape[1]
     k = max(1, int(n_cols * pct))
-    
-    # Use argpartition for top-K and bottom-K (O(n) vs O(n log n) for sorting)
-    base_mask = pd.DataFrame(False, index=df_metric.index, columns=df_metric.columns)
-    
-    for idx in df_metric.index:
-        row = df_metric.loc[idx].values
-        valid_mask = ~np.isnan(row)
-        
-        if valid_mask.sum() < k:
-            continue
-        
-        valid_vals = row[valid_mask]
-        valid_cols = df_metric.columns[valid_mask]
-        
-        # Top K indices
-        if len(valid_vals) > k:
-            top_k_idx = np.argpartition(valid_vals, -k)[-k:]
-            bot_k_idx = np.argpartition(valid_vals, k)[:k]
-            
-            top_cols = valid_cols[top_k_idx]
-            bot_cols = valid_cols[bot_k_idx]
-            
-            base_mask.loc[idx, top_cols] = True
-            base_mask.loc[idx, bot_cols] = True
+
+    # Rank each row (ascending): rank 1 = smallest, rank n = largest
+    # method='first' avoids ties; pct=False gives integer ranks
+    ranks = df_metric.rank(axis=1, method='first', na_option='keep')
+    valid_counts = df_metric.notna().sum(axis=1)
+
+    # Top K: rank > (valid_count - k);  Bottom K: rank <= k
+    # Broadcast valid_counts as a column vector
+    vc = valid_counts.values[:, np.newaxis]
+    r = ranks.values
+    base_mask_arr = (r > (vc - k)) | (r <= k)
+    # Mask out NaN positions
+    base_mask_arr = base_mask_arr & df_metric.notna().values
+    # Mask out rows with too few valid values
+    base_mask_arr[valid_counts.values < k, :] = False
+
+    base_mask = pd.DataFrame(base_mask_arr, index=df_metric.index, columns=df_metric.columns)
 
     # 2. Volatility & Event Filters (Apply BEFORE Expansion)
     # This ensures we select events where conditions were met AT THE TIME of the event.

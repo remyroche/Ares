@@ -200,34 +200,34 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
     rows = []
     for sym in candidates:
         try:
-            t_val = 0.0
-            if trend_df is not None and sym in trend_df.columns: t_val = float(trend_df.loc[ts_sig, sym])
-            direction = "up" if t_val > 0 else "down"
-            m_bundle = alpha_models.get(direction)
-            if not m_bundle or not m_bundle["mr"] or not m_bundle["tf"]: continue
-
-            model_mr = m_bundle["mr"]["model"]
-            model_tf = m_bundle["tf"]["model"]
-            fcols_mr = m_bundle["mr"]["feat_cols"]
-            fcols_tf = m_bundle["tf"]["feat_cols"]
-
-            meta_model = meta_models.get(direction)
             p_lag = 0.5
             if ts_lag in p_exh_cand.index and sym in p_exh_cand.columns: p_lag = float(p_exh_cand.loc[ts_lag, sym])
 
-            rec = {
-                "symbol": sym, "direction": direction, "model_mr": model_mr, "model_tf": model_tf, "meta_model": meta_model,
-                "feat_cols_mr": fcols_mr, "feat_cols_tf": fcols_tf,
-                "mkt_ret24h": float(mrk["mkt_ret24h"]), "mkt_ret6h": float(mrk["mkt_ret6h"]), "mkt_trend": float(mrk["mkt_trend"]), "mkt_rv": float(mrk["mkt_rv"]),
-                "G_VOL": int(mrk["G_VOL"]), "G_TREND": int(mrk["G_TREND"]), "p_exh_lag1": p_lag
-            }
+            # Evaluate BOTH long and short models for every candidate
+            for side_key in ["long", "short"]:
+                m_bundle = alpha_models.get(side_key)
+                if not m_bundle or not m_bundle.get("mr") or not m_bundle.get("tf"): continue
 
-            all_keys = set(fcols_mr) | set(fcols_tf) | set(cfg.get("spike_feature_keys", [])) | set(cfg.get("meta_feature_keys", []))
+                model_mr = m_bundle["mr"]["model"]
+                model_tf = m_bundle["tf"]["model"]
+                fcols_mr = m_bundle["mr"]["feat_cols"]
+                fcols_tf = m_bundle["tf"]["feat_cols"]
 
-            for k in all_keys:
-                if k in feats: rec[k] = float(feats[k].loc[ts_sig, sym])
+                meta_model = meta_models.get(side_key)
 
-            rows.append(rec)
+                rec = {
+                    "symbol": sym, "side_key": side_key, "model_mr": model_mr, "model_tf": model_tf, "meta_model": meta_model,
+                    "feat_cols_mr": fcols_mr, "feat_cols_tf": fcols_tf,
+                    "mkt_ret24h": float(mrk["mkt_ret24h"]), "mkt_ret6h": float(mrk["mkt_ret6h"]), "mkt_trend": float(mrk["mkt_trend"]), "mkt_rv": float(mrk["mkt_rv"]),
+                    "G_VOL": int(mrk["G_VOL"]), "G_TREND": int(mrk["G_TREND"]), "p_exh_lag1": p_lag
+                }
+
+                all_keys = set(fcols_mr) | set(fcols_tf) | set(cfg.get("spike_feature_keys", [])) | set(cfg.get("meta_feature_keys", []))
+
+                for k in all_keys:
+                    if k in feats and sym in feats[k].columns: rec[k] = float(feats[k].loc[ts_sig, sym])
+
+                rows.append(rec)
         except Exception: continue
 
     df_all = pd.DataFrame(rows)
@@ -236,9 +236,20 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
         # Spike Inference
         spike_keys = cfg.get("spike_feature_keys", [])
         if spike_model:
-            X_spike = df_all[spike_keys].fillna(0.0)
-            if not X_spike.empty:
+            # spike_model can be a dict {"gmm", "scaler", "columns"} or a raw GMM
+            if isinstance(spike_model, dict):
+                gmm = spike_model["gmm"]
+                scaler = spike_model.get("scaler")
+                spike_cols = spike_model.get("columns", spike_keys)
+                available_cols = [c for c in spike_cols if c in df_all.columns]
+                X_spike = df_all[available_cols].fillna(0.0).values
+                if scaler is not None:
+                    X_spike = scaler.transform(X_spike)
+                probs = gmm.predict_proba(X_spike)
+            else:
+                X_spike = df_all[spike_keys].fillna(0.0)
                 probs = spike_model.predict_proba(X_spike)
+            if probs is not None:
                 for i in range(probs.shape[1]):
                     df_all[f"spike_prob_{i}"] = probs[:, i]
             else:
@@ -246,37 +257,67 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
         else:
              for i in range(4): df_all[f"spike_prob_{i}"] = 0.0
 
-        for d, grp in df_all.groupby("direction"):
+        for side_key, grp in df_all.groupby("side_key"):
             first = grp.iloc[0]
             model_mr = first["model_mr"]; model_tf = first["model_tf"]; meta_model = first["meta_model"]
             fcols_mr = first["feat_cols_mr"]
             fcols_tf = first["feat_cols_tf"]
 
+            # Apply interaction toggles (same as training), then select trained feature columns
             keys_mr = cfg.get("mr_feature_keys", cfg["causal_cols"])
             grp_mr = apply_interaction_toggles(grp.copy(), keys_mr, ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
-            p_mr = model_mr.predict(grp_mr.fillna(0.0))
+            mr_avail = [c for c in fcols_mr if c in grp_mr.columns]
+            mr_missing = [c for c in fcols_mr if c not in grp_mr.columns]
+            X_mr_pred = grp_mr[mr_avail].fillna(0.0).astype(np.float32)
+            for c in mr_missing:
+                X_mr_pred[c] = 0.0
+            X_mr_pred = X_mr_pred[fcols_mr]
+            p_mr = model_mr.predict(X_mr_pred)
 
             keys_tf = cfg.get("tf_feature_keys", cfg["causal_cols"])
             grp_tf = apply_interaction_toggles(grp.copy(), keys_tf, ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
-            p_tf = model_tf.predict(grp_tf.fillna(0.0))
+            tf_avail = [c for c in fcols_tf if c in grp_tf.columns]
+            tf_missing = [c for c in fcols_tf if c not in grp_tf.columns]
+            X_tf_pred = grp_tf[tf_avail].fillna(0.0).astype(np.float32)
+            for c in tf_missing:
+                X_tf_pred[c] = 0.0
+            X_tf_pred = X_tf_pred[fcols_tf]
+            p_tf = model_tf.predict(X_tf_pred)
 
             if meta_model:
-                X_meta = meta_model.prepare_meta_features(p_tf, p_mr, grp)
+                # Apply interaction toggles to get the same features as training
+                numeric_cols = grp.select_dtypes(include=[np.number]).columns.tolist()
+                grp_numeric = grp[numeric_cols].copy()
+                # Apply toggles with all causal cols (union of MR + TF keys)
+                all_causal = list(set(cfg.get("mr_feature_keys", [])) | set(cfg.get("tf_feature_keys", [])))
+                grp_toggled = apply_interaction_toggles(grp_numeric, all_causal, ["G_VOL", "G_TREND"], drop_raw=False)
+                X_meta = meta_model.prepare_meta_features(p_tf, p_mr, grp_toggled)
+                # Ensure all selected features exist, fill missing with 0
+                if meta_model.selected_features:
+                    for c in meta_model.selected_features:
+                        if c not in X_meta.columns:
+                            X_meta[c] = 0.0
                 score = meta_model.predict(X_meta)
             else:
                 score = p_tf - p_mr
-                sign = 1.0 if d == "up" else -1.0
-                score = score * sign
 
             for i, idx in enumerate(grp.index):
                 sym = grp.loc[idx, "symbol"]
-                s_score = score[i]
+                s_score = float(score[i])
                 dom = "mr" if p_mr[i] > p_tf[i] else "tf"
-                score_raw_list.append((sym, s_score, dom))
+                # Long models: positive score = go long; Short models: positive score = go short
+                score_raw_list.append((sym, side_key, s_score, dom))
 
-    score_raw_list.sort(key=lambda x: x[1], reverse=True)
-    longs = [x for x in score_raw_list if x[1] > cfg["thr_long"]][:cfg["k_long"]]
-    shorts = sorted([x for x in score_raw_list if x[1] < cfg["thr_short"]], key=lambda x: x[1])[:cfg["k_short"]]
+    # Separate long and short signals
+    long_signals = [(sym, sc, dom) for sym, sk, sc, dom in score_raw_list if sk == "long"]
+    short_signals = [(sym, sc, dom) for sym, sk, sc, dom in score_raw_list if sk == "short"]
+
+    # For longs: highest scores win; for shorts: highest scores win (model predicts short conviction)
+    long_signals.sort(key=lambda x: x[1], reverse=True)
+    short_signals.sort(key=lambda x: x[1], reverse=True)
+
+    longs = [x for x in long_signals if x[1] > cfg["thr_long"]][:cfg["k_long"]]
+    shorts = [x for x in short_signals if x[1] > cfg["thr_long"]][:cfg["k_short"]]  # Same threshold: positive = conviction
 
     final_orders = []
     for s, sc, dom in longs: final_orders.append({"symbol": s, "side": "long", "score": sc, "dom": dom})

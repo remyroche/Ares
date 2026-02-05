@@ -26,9 +26,10 @@ def atr_percent(high: pd.DataFrame, low: pd.DataFrame, close: pd.DataFrame, n: i
     return ff.numba_atr_no_norm(high, low, close, n)
 
 @_cache.cache
-def _transform_price(df):
-    tprint("Transforming Prices: Log -> EWMA(5) -> Adaptive FracDiff")
-    df_log = np.log(df + 1e-9)
+def _transform_price(df, _label=""):
+    tprint(f"Transforming Prices ({_label}): Log -> EWMA(5) -> Adaptive FracDiff [{df.shape[1]} cols]")
+    # Safe Log: Clip input to be at least 1e-9 to avoid log(0) or log(neg)
+    df_log = np.log(np.maximum(df, 1e-9))
     df_den = ff.apply_to_frame(df_log, ff._numba_ewma_nan_safe, 2.0/6.0, False)
     
     # Apply adaptive FFD per column
@@ -36,7 +37,7 @@ def _transform_price(df):
     total_cols = len(df_den.columns)
     for i, col in enumerate(df_den.columns):
         if (i+1) % 5 == 0 or (i+1) == total_cols:
-             tprint(f"Adaptive FFD: processing {i+1}/{total_cols} - {col}")
+             tprint(f"Adaptive FFD ({_label}): {i+1}/{total_cols} - {col}")
         
         series = df_den[col].dropna()
         if len(series) < 100:
@@ -49,7 +50,7 @@ def _transform_price(df):
         # Apply FFD
         df_fd[col] = frac_diff_ffd(df_den[col], d_opt, thres=1e-5)
     
-    tprint(f"Adaptive FFD: d range [{df_fd.min().min():.3f}, {df_fd.max().max():.3f}]")
+    tprint(f"Adaptive FFD ({_label}): d range [{df_fd.min().min():.3f}, {df_fd.max().max():.3f}]")
     return df_fd
 
 @_cache.cache
@@ -123,7 +124,15 @@ def add_regime_gates(mkt_df: pd.DataFrame, gate_vol_lookback_hours: int, gate_tr
     df["mkt_rv_med"] = rv_med_df["mkt_rv"]
 
     df["G_VOL"] = (df["mkt_rv"] > df["mkt_rv_med"]).astype(np.int32)
-    df["G_TREND"] = (df["mkt_ret24h"].abs() > gate_trend_thr).astype(np.int32)
+    
+    # Dynamic Trend Threshold (Vol-Adjusted) to ensure variation
+    # Fixed 0.02 is too high for low-vol regimes.
+    # Use 1.5 * Daily Volatility (approx 1.5 sigma move)
+    daily_vol = df["mkt_rv"] * np.sqrt(24)
+    # Use dynamic threshold but floor it at small value to avoid noise in 0 vol
+    dyn_thr = np.maximum(daily_vol * 1.5, 0.005) 
+    
+    df["G_TREND"] = (df["mkt_ret24h"].abs() > dyn_thr).astype(np.int32)
     df["mkt_rv_ratio"] = df["mkt_rv"] / (df["mkt_rv_med"] + 1e-12)
 
     float_cols = ["mkt_rv_med", "mkt_rv_ratio"]
@@ -181,6 +190,11 @@ def compute_features_hourly(panel, mkt_gates, cfg):
 def _compute_features_impl(panel, mkt_gates, cfg):
     tprint("Features: compute base matrices")
     
+    # Check inputs
+    # Check inputs (removing debug checks to reduce spam)
+    # for k, v in panel.items():
+    #     check_inf_nan(v, f"input_panel_{k}")
+    
     # Validate panel data quality
     validation_results = validate_panel(panel, raise_on_error=False, verbose=False)
     if not validation_results['valid']:
@@ -208,10 +222,10 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     c_raw = c_raw.astype(np.float32)
     v_raw = v_raw.astype(np.float32)
 
-    o = _transform_price(o_raw)
-    h = _transform_price(h_raw)
-    l = _transform_price(l_raw)
-    c = _transform_price(c_raw)
+    o = _transform_price(o_raw, _label="open")
+    h = _transform_price(h_raw, _label="high")
+    l = _transform_price(l_raw, _label="low")
+    c = _transform_price(c_raw, _label="close")
     v = _transform_volume(v_raw)
 
     feats = {}
@@ -238,7 +252,9 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     # New Filter Features (Range & Vol Z-score)
     h_24 = ff.apply_to_frame(h, ff._numba_rolling_max, 24)
     l_24 = ff.apply_to_frame(l, ff._numba_rolling_min, 24)
-    feats["range_24h_pct"] = ((h_24 - l_24) / (c + 1e-12)).astype(np.float32)
+    # range_24h_pct is max_h - min_l. inputs are log-FFD, so diff is %-ish.
+    # Do NOT divide by c (FFD) as it crosses 0.
+    feats["range_24h_pct"] = (h_24 - l_24).astype(np.float32)
 
     # Volatility Z-score (rv_24h is base volatility)
     # Using 30d lookback for Z-score baseline
@@ -254,7 +270,9 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["dist_ema_slow_base"] = ((c - ema_slow_base) / (atr_base + 1e-12)).astype(np.float32)
 
     feats["roc_div"] = (feats["ret1h"] - feats["ret6h"]).astype(np.float32)
-    feats["ret1h_z"] = (feats["ret1h"] / (feats["rv_24h"] + 1e-12)).astype(np.float32)
+    # ret1h_z: if rv_24h is 0 (constant trend), this explodes. Cap it.
+    z_raw = feats["ret1h"] / (feats["rv_24h"] + 1e-9)
+    feats["ret1h_z"] = z_raw.fillna(0).clip(-50, 50).astype(np.float32)
 
     body = (c - o).abs()
     upper_wick = (h - c.where(c >= o, o)).clip(lower=0)
@@ -330,8 +348,9 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     l_prev2 = l.shift(2)
     h_prev2 = h.shift(2)
-    fvg_bull = (l_prev2 - h).clip(lower=0) / (c + 1e-12)
-    fvg_bear = (l - h_prev2).clip(lower=0) / (c + 1e-12)
+    # FVG uses log-FFD prices, so diff is already relative. Do not divide by c.
+    fvg_bull = (l_prev2 - h).clip(lower=0) 
+    fvg_bear = (l - h_prev2).clip(lower=0)
     feats["fvg"] = (fvg_bull - fvg_bear).astype(np.float32)
 
     feats["churn"] = (v / ((c - o).abs() + 1e-12)).astype(np.float32)
@@ -341,7 +360,9 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     t_snr_den = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 24)
     feats["trend_snr"] = (t_snr_num / (t_snr_den + 1e-12)).astype(np.float32)
 
-    feats["v_power"] = (v / (c.abs() + 1e-12)).astype(np.float32)
+    # v_power: Volume / Abs Price Change? Normalizing by c.abs() (FFD) is unstable if c~0.
+    # Normalize by ATR base instead.
+    feats["v_power"] = (v / (atr_base + 1e-9)).astype(np.float32)
     feats["signed_vol"] = signed_vol.astype(np.float32)
 
     atr_ema_f = ema(atr_base, 6)
@@ -371,6 +392,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["climax_decay"] = (v_max / (v + 1e-12)).astype(np.float32)
 
     cum_sv = ff.numba_rolling_sum(signed_vol, 24)
+    # Correlation uses internal robust logic, but fillna(0) is good
     feats["cumulative_delta_stall"] = ff.numba_rolling_corr(c, cum_sv, 24).fillna(0).astype(np.float32)
     cum_sv_6 = ff.numba_rolling_sum(signed_vol, 6)
     feats["delta_stall_6"] = ff.numba_rolling_corr(c, cum_sv_6, 6).fillna(0).astype(np.float32)
@@ -451,10 +473,11 @@ def _compute_features_impl(panel, mkt_gates, cfg):
         feats[f"ft_{k}"] = (feats[f"ret{k}h"] / (feats["ret1h"].abs() + 1e-12)).astype(np.float32)
         feats[f"failure_{k}"] = (-1 * feats[f"ft_{k}"]).clip(lower=0).astype(np.float32)
 
-    clv_raw = ((2 * c - h - l) / ((h - l) + 1e-9))
+    # clv: (2c - h - l) / (h - l). h-l can be 0.
+    clv_raw = ((2 * c - h - l) / ((h - l) + 1e-9)).fillna(0)
     feats["clv"] = clv_raw.astype(np.float32)
-    feats["clv_mean_2"] = ff.apply_to_frame(feats["clv"], ff._numba_rolling_mean_nan_safe, 2).astype(np.float32)
-    feats["clv_mean_4"] = ff.apply_to_frame(feats["clv"], ff._numba_rolling_mean_nan_safe, 4).astype(np.float32)
+    feats["clv_mean_2"] = ff.apply_to_frame(feats["clv"], ff._numba_rolling_mean_nan_safe, 2).fillna(0).astype(np.float32)
+    feats["clv_mean_4"] = ff.apply_to_frame(feats["clv"], ff._numba_rolling_mean_nan_safe, 4).fillna(0).astype(np.float32)
 
     for k in [3, 6]:
         v_sum = ff.numba_rolling_sum(v, k)
@@ -494,20 +517,20 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     # --- COMPOSITE / INTERACTION FEATURES ---
 
     # 1/ Exhaustion
-    feats["overext"] = (feats["donch_dist_12"] * feats["excess_6h"]).astype(np.float32)
-    feats["overext_weak"] = (feats["donch_dist_12"] * (1.0 - feats["clv_mean_4"].clip(lower=0))).astype(np.float32)
-    feats["effort_gate"] = (feats["evr_6"] * (feats["vol_z24"] + 1.0) / (feats["progress"] + 1e-12)).astype(np.float32)
-    feats["stall_ext"] = (feats["donch_dist_12"] * (1.0 - feats["delta_stall_6"])).astype(np.float32)
-    feats["tail_fail"] = (feats["tail_against"] * (feats["ft_2"] - feats["ft_4"]).clip(lower=0)).astype(np.float32)
+    feats["overext"] = (feats["donch_dist_12"] * feats["excess_6h"]).fillna(0).astype(np.float32)
+    feats["overext_weak"] = (feats["donch_dist_12"] * (1.0 - feats["clv_mean_4"].clip(lower=0))).fillna(0).astype(np.float32)
+    feats["effort_gate"] = (feats["evr_6"] * (feats["vol_z24"] + 1.0) / (feats["progress"] + 1e-12)).fillna(0).astype(np.float32)
+    feats["stall_ext"] = (feats["donch_dist_12"] * (1.0 - feats["delta_stall_6"])).fillna(0).astype(np.float32)
+    feats["tail_fail"] = (feats["tail_against"] * (feats["ft_2"] - feats["ft_4"]).clip(lower=0)).fillna(0).astype(np.float32)
 
     pb_avg = (feats["pullback_2"] + feats["pullback_4"]) / 2.0
     fail_term = (feats["failure_2"] + 0.5 * feats["failure_4"])
-    feats["reject"] = ((1.0 - feats["clv_mean_4"].clip(lower=0)) * pb_avg * fail_term).astype(np.float32)
+    feats["reject"] = ((1.0 - feats["clv_mean_4"].clip(lower=0)) * pb_avg * fail_term).fillna(0).astype(np.float32)
 
-    feats["impulse_ratio_24"] = (feats["ret1h"].abs() / (feats["ret24h"].abs() + 1e-12)).astype(np.float32)
-    feats["impulse_ratio_12"] = (feats["ret1h"].abs() / (feats["ret12h"].abs() + 1e-12)).astype(np.float32)
+    feats["impulse_ratio_24"] = (feats["ret1h"].abs() / (feats["ret24h"].abs() + 1e-12)).fillna(0).astype(np.float32)
+    feats["impulse_ratio_12"] = (feats["ret1h"].abs() / (feats["ret12h"].abs() + 1e-12)).fillna(0).astype(np.float32)
     feats["accel"] = (feats["ret1h"] - feats["ret1h"].shift(1)).abs() / (feats["rv_6h"] + 1e-12)
-    feats["blowoff_risk"] = (feats["impulse_ratio_24"] * feats["accel"] * feats["donch_dist_12"]).astype(np.float32)
+    feats["blowoff_risk"] = (feats["impulse_ratio_24"] * feats["accel"] * feats["donch_dist_12"]).fillna(0).astype(np.float32)
 
     # 2/ Spike Anatomy / Regime
     s_max = feats["ret16h"].abs()
@@ -563,17 +586,17 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     # Actually I haven't defined GATES section yet in this rewritten version!
 
     # Let's define the GATES first as they are features too
-    feats["G_EXH_STALL_EXT"] = (feats["donch_dist_12"] * (1.0 - feats["delta_stall_6"])).astype(np.float32)
-    feats["G_EXH_EFFORT"] = (feats["evr_6"] * (feats["vol_z24"] + 1.0) / (feats["progress"] + 1e-12)).astype(np.float32)
-    feats["G_EXH_BLOWOFF"] = (feats["donch_dist_12"] * feats["excess_6h"]).astype(np.float32)
-    feats["G_EXH_GIVEBACK"] = (feats["giveback"] * (1.0 + feats["donch_dist_12"])).astype(np.float32)
-    feats["G_EXH_REJECT"] = ((1.0 - feats["clv_mean_4"]) * feats["pullback_4"].abs()).astype(np.float32)
-    feats["G_EXH_TAIL_FAIL"] = (feats["tail_against"] * (feats["ft_2"] - feats["ft_4"]).clip(lower=0)).astype(np.float32)
+    feats["G_EXH_STALL_EXT"] = (feats["donch_dist_12"] * (1.0 - feats["delta_stall_6"])).fillna(0).astype(np.float32)
+    feats["G_EXH_EFFORT"] = (feats["evr_6"] * (feats["vol_z24"] + 1.0) / (feats["progress"] + 1e-12)).fillna(0).astype(np.float32)
+    feats["G_EXH_BLOWOFF"] = (feats["donch_dist_12"] * feats["excess_6h"]).fillna(0).astype(np.float32)
+    feats["G_EXH_GIVEBACK"] = (feats["giveback"] * (1.0 + feats["donch_dist_12"])).fillna(0).astype(np.float32)
+    feats["G_EXH_REJECT"] = ((1.0 - feats["clv_mean_4"]) * feats["pullback_4"].abs()).fillna(0).astype(np.float32)
+    feats["G_EXH_TAIL_FAIL"] = (feats["tail_against"] * (feats["ft_2"] - feats["ft_4"]).clip(lower=0)).fillna(0).astype(np.float32)
     feats["G_TF_ACCEPT"] = (ft2_pos * clv4_pos).astype(np.float32)
     feats["G_TF_ACCEPT2"] = accept2 # Defined above
-    feats["G_MR_REJECT"] = (fail_sum * clv_inv * pb_avg_abs).astype(np.float32)
-    feats["G_MR_OVEREXT"] = (feats["donch_dist_12"] * (1.0 - ft2_pos)).astype(np.float32)
-    feats["G_MR_SPIKE"] = (feats["speed"] * feats["excess_6h"] * clv_inv).astype(np.float32)
+    feats["G_MR_REJECT"] = (fail_sum * clv_inv * pb_avg_abs).fillna(0).astype(np.float32)
+    feats["G_MR_OVEREXT"] = (feats["donch_dist_12"] * (1.0 - ft2_pos)).fillna(0).astype(np.float32)
+    feats["G_MR_SPIKE"] = (feats["speed"] * feats["excess_6h"] * clv_inv).fillna(0).astype(np.float32)
     feats["G_TF_GRIND"] = (ret_rat * feats["clv_mean_4"] * pb2_inv).astype(np.float32)
     feats["G_MR_TAIL"] = (feats["tail_against"] * (1.0 + feats["donch_dist_6"])).astype(np.float32)
     feats["G_TF_RETEST_OK"] = (ft4_pos * clv4_pos * pb4_inv).astype(np.float32)
@@ -610,17 +633,19 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["shock_rel"] = feats["excess_6h"]
     feats["resid_strength"] = feats["excess_6h"]
     feats["evr_slope"] = (feats["evr_3"] - feats["evr_6"]).astype(np.float32)
-    feats["stall_ext"] = (feats["delta_stall_6"] * feats["donch_dist_12"]).astype(np.float32)
+    feats["stall_ext_corr"] = (feats["delta_stall_6"] * feats["donch_dist_12"]).astype(np.float32)
 
     feats["G_META_EXH"] = (feats["G_EXH_BLOWOFF"] + feats["G_EXH_EFFORT"] + feats["G_EXH_STALL_EXT"] + feats["G_EXH_GIVEBACK"]).astype(np.float32)
     feats["G_META_TF_QUAL"] = (feats["G_TF_ACCEPT2"] * (1.0 - feats["G_META_EXH"].clip(0,1))).astype(np.float32)
     feats["G_META_MR_QUAL"] = (feats["G_MR_REJECT"] * (1.0 - feats["G_EXH_BLOWOFF"].clip(0,1))).astype(np.float32)
     feats["G_META_AMBIG"] = (ambig_term * feats["rv_ratio_6_24"]).astype(np.float32)
 
-    feats["spike_score"] = (feats["speed"] * feats["excess_6h"]).astype(np.float32)
-    feats["grind_score"] = (ret_rat * feats["clv_mean_4"]).astype(np.float32)
-    coh_norm = feats["coh"].clip(0,1)
-    feats["chop_score"] = (feats["rv_ratio_6_24"] * (1.0 - coh_norm)).astype(np.float32)
+    # Robust Score Calculation with clipping to prevent Inf/Overflow
+    # We clip components to avoid exploding values when denominators are near zero
+    feats["spike_score"] = (feats["speed"].clip(0, 100) * feats["excess_6h"].clip(0, 100)).fillna(0).astype(np.float32)
+    feats["grind_score"] = (ret_rat.clip(0, 100) * feats["clv_mean_4"]).fillna(0).astype(np.float32)
+    coh_norm = feats["coh"].clip(0,1).fillna(0)
+    feats["chop_score"] = (feats["rv_ratio_6_24"].clip(0, 100) * (1.0 - coh_norm)).fillna(0).astype(np.float32)
 
     tprint("Features: Applying Causal Transforms (Log + Winsor + ZScore)")
     transformer = CausalFeatureTransformer(winsor_qt=0.02, roll_window=24*30)

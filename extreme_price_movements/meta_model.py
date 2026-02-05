@@ -11,7 +11,7 @@ from extreme_price_movements.config import CFG
 class MetaModel:
     def __init__(self):
         tprint(f"Entering function: __init__ in meta_model.py")
-        self.model = Ridge(alpha=1.0)
+        self.model = Ridge(alpha=1.0, fit_intercept=False)
         self.feature_names = CFG.get("meta_feature_keys", [])
         self.transformer = CausalFeatureTransformer(winsor_qt=0.02, roll_window=24*30)
         self.selected_features = None
@@ -79,7 +79,11 @@ class MetaModel:
             X=X_meta,
             y=y,
             analysis_n_estimators=500,
-            end_features=n_select
+            end_features=n_select,
+            cumulative_cap=0.98,
+            min_share=0.001,
+            min_features=5,
+            max_features_pct=0.5
         )
 
         self.selected_features = sel_res.selected_features
@@ -110,7 +114,7 @@ class MetaModel:
                 # Assuming returns are > -1.0.
                 y_train_log = np.log1p(y_train)
 
-                m = Ridge(alpha=alpha)
+                m = Ridge(alpha=alpha, fit_intercept=False)
                 m.fit(X_train, y_train_log)
                 preds_log = m.predict(X_val)
                 preds = np.expm1(preds_log)
@@ -146,7 +150,7 @@ class MetaModel:
         tprint(f"MetaModel Grid Search: Best Alpha={best_alpha}, Score={best_row['score']:.4f}")
 
         # Refit on full data
-        self.model = Ridge(alpha=best_alpha)
+        self.model = Ridge(alpha=best_alpha, fit_intercept=False)
         self.model.fit(X_sel, np.log1p(y))
 
         return self

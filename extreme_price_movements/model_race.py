@@ -14,6 +14,27 @@ import joblib
 from extreme_price_movements.utils import tprint
 from extreme_price_movements.purged_cv import PurgedKFold
 
+class ScaledLogisticRegression(LogisticRegression):
+    """
+    Wrapper to apply StandardScaler internally, ensuring sample_weight 
+    is correctly passed to fit (bypassing Pipeline limitations with CalibratedClassifierCV).
+    """
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.scaler = StandardScaler()
+
+    def fit(self, X, y, sample_weight=None):
+        X_scaled = self.scaler.fit_transform(X)
+        return super().fit(X_scaled, y, sample_weight=sample_weight)
+
+    def predict(self, X):
+        X_scaled = self.scaler.transform(X)
+        return super().predict(X_scaled)
+        
+    def predict_proba(self, X):
+        X_scaled = self.scaler.transform(X)
+        return super().predict_proba(X_scaled)
+
 def calculate_selection_score(y_true, y_prob, y_returns):
     """
     S_model = (AUC - 0.5) * BSS * IC
@@ -54,8 +75,12 @@ def calculate_selection_score(y_true, y_prob, y_returns):
         if np.isnan(ic):
             ic = 0.0
 
-    # Combined Score
-    selection_score = (auc - 0.5) * max(0, bss) * max(0, ic)
+    # Combined Score: weighted sum (more forgiving than triple product)
+    # AUC is primary (0-1 range centered at 0.5), IC adds magnitude signal
+    auc_contrib = max(0, auc - 0.5)  # 0 to 0.5
+    ic_contrib = max(0, ic)           # 0 to 1
+    bss_contrib = max(0, bss)         # 0 to 1
+    selection_score = 0.6 * auc_contrib + 0.3 * ic_contrib + 0.1 * bss_contrib
 
     return {
         "Selection_Score": selection_score,
@@ -84,8 +109,8 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         n_est_xgb = 2 if race_mode else 10 # 2*150=300 vs 10*150=1500 trees
 
         # 1. Baseline
-        # LogisticRegression (ElasticNet)
-        candidates["elasticnet"] = LogisticRegression(
+        # ScaledLogisticRegression (Solves Pipeline+SampleWeight issue)
+        candidates["elasticnet"] = ScaledLogisticRegression(
             penalty="elasticnet", solver="saga", l1_ratio=0.5, C=1.0, max_iter=2000, random_state=42
         )
 
@@ -142,6 +167,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         returns: continuous returns for IC calculation (validation)
         """
         tprint(f"Entering function: fit in model_race.py")
+        self.oof_probs = None  # Will store OOF predictions from best model
 
         # 0. Preparation
         if returns is None:
@@ -169,49 +195,54 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         candidates = self._get_candidates(race_mode=True)
         results = {}
 
+        def safe_slice(arr, idx):
+            if hasattr(arr, "iloc"): return arr.iloc[idx]
+            return arr[idx]
+
+        # Store per-model detailed metrics for reporting
+        detailed_metrics = {}
+
         for name, model in candidates.items():
             tprint(f"Race: Training {name}...")
-            scores = []
+            fold_scores = []
+            fold_aucs = []
+            fold_ics = []
+            fold_bss = []
 
             try:
-                for train_idx, val_idx in cached_splits:
-                    # Slicing optimization
+                for fold_i, (train_idx, val_idx) in enumerate(cached_splits):
                     if use_numpy:
                         X_tr, X_val = X_np[train_idx], X_np[val_idx]
                     else:
                         X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
-
-                    # Handle y, weight, returns (numpy arrays assumed if passed from training.py)
-                    # If they are series, convert or use iloc.
-                    # Assuming they are numpy arrays as per training.py usage, but let's be safe.
-                    def safe_slice(arr, idx):
-                        if hasattr(arr, "iloc"): return arr.iloc[idx]
-                        return arr[idx]
 
                     y_tr = safe_slice(y, train_idx)
                     y_val = safe_slice(y, val_idx)
                     w_tr = safe_slice(sample_weight, train_idx) if sample_weight is not None else None
                     ret_val = safe_slice(returns, val_idx)
 
-                    # SKIP CALIBRATION during race
-                    # Fit base model directly
                     model.fit(X_tr, y_tr, sample_weight=w_tr)
-
-                    # Predict proba
-                    # Some models (like LogReg) might not have predict_proba?
-                    # All our candidates do.
                     probs = model.predict_proba(X_val)[:, 1]
 
                     metrics = calculate_selection_score(y_val, probs, ret_val)
-                    scores.append(metrics["Selection_Score"])
+                    fold_scores.append(metrics["Selection_Score"])
+                    fold_aucs.append(metrics["AUC"])
+                    fold_ics.append(metrics["IC"])
+                    fold_bss.append(metrics["BSS"])
 
-                avg_score = np.nanmean(scores)
+                avg_score = np.nanmean(fold_scores)
+                avg_auc = np.nanmean(fold_aucs)
+                avg_ic = np.nanmean(fold_ics)
+                avg_bss_val = np.nanmean(fold_bss)
                 results[name] = avg_score
-                tprint(f"  {name} Score: {avg_score:.4f}")
+                detailed_metrics[name] = {"score": avg_score, "AUC": avg_auc, "IC": avg_ic, "BSS": avg_bss_val}
+                tprint(f"  {name}: Score={avg_score:.4f}  AUC={avg_auc:.4f}  IC={avg_ic:.4f}  BSS={avg_bss_val:.4f}")
 
             except Exception as e:
                 tprint(f"  {name} Failed: {e}")
                 results[name] = -float("inf")
+
+        self.detailed_metrics = detailed_metrics
 
         if not results:
             raise ValueError("All models failed in race")
@@ -219,18 +250,36 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         best_name = max(results, key=results.get)
         self.best_model_name = best_name
         self.metrics = results
-        tprint(f"Race Winner: {best_name} (Score={results[best_name]:.4f})")
+        if best_name in detailed_metrics:
+            dm = detailed_metrics[best_name]
+            tprint(f"Race Winner: {best_name} (Score={dm['score']:.4f}, AUC={dm['AUC']:.4f}, IC={dm['IC']:.4f}, BSS={dm['BSS']:.4f})")
+        else:
+            tprint(f"Race Winner: {best_name} (Score={results[best_name]:.4f})")
 
-        # 2. Final Retraining & Calibration
+        # 2. Generate OOF predictions with best model (for meta model)
+        tprint(f"Generating OOF predictions with {best_name}...")
+        oof_probs = np.full(len(y), np.nan, dtype=np.float32)
+        oof_candidates = self._get_candidates(race_mode=True)
+        oof_model = oof_candidates[best_name]
+        for train_idx, val_idx in cached_splits:
+            if use_numpy:
+                X_tr, X_val = X_np[train_idx], X_np[val_idx]
+            else:
+                X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
+            y_tr = safe_slice(y, train_idx)
+            w_tr = safe_slice(sample_weight, train_idx) if sample_weight is not None else None
+            oof_model.fit(X_tr, y_tr, sample_weight=w_tr)
+            oof_probs[val_idx] = oof_model.predict_proba(X_val)[:, 1]
+        # Fill any remaining NaN with 0.5 (neutral)
+        oof_probs = np.nan_to_num(oof_probs, nan=0.5)
+        self.oof_probs = oof_probs
+        tprint(f"OOF predictions: mean={np.mean(oof_probs):.4f}, std={np.std(oof_probs):.4f}")
+
+        # 3. Final Retraining & Calibration
         tprint(f"Retraining {best_name} on full data (full config)...")
-        # Get FULL config
         final_candidates = self._get_candidates(race_mode=False)
         final_base = final_candidates[best_name]
 
-        # Calibrate on full data
-        # We wrap the full model in CalibratedClassifierCV(cv=3)
-        # This will internally perform 3-fold CV on the full dataset to train 3 calibrated classifiers
-        # and average them.
         self.best_model = CalibratedClassifierCV(
             estimator=final_base,
             method='isotonic',

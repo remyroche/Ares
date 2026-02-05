@@ -122,22 +122,22 @@ def train_daily(ts_sig, margin_symbols, cfg, store, ex):
     if df_spike is not None: datasets["spike_anatomy"] = df_spike
 
     # Alpha models
-    directions = ["up", "down"]
+    trade_sides = ["long", "short"]
     kinds = ["mr", "tf"]
     horizons = cfg["label_horizons_hours"]
 
     found_count = 0
-    for d in directions:
+    for side in trade_sides:
         for k in kinds:
             for H in horizons:
-                name = f"train_{d}_{k}_{H}"
+                name = f"train_{side}_{k}_{H}"
                 df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
                 if df is not None:
                     datasets[name] = df
                     found_count += 1
 
     # Exhaustion
-    for d in directions:
+    for d in ["up", "down"]:
         name = f"exh_{d}"
         df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
         if df is not None: datasets[name] = df

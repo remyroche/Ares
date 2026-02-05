@@ -1,4 +1,19 @@
 # Central config. Keep it deterministic and explicit.
+
+NEUTRAL_FEATURES = [
+    "rsi", "vol_z", "atr_pct", "mkt_rv_ratio", "skew", 
+    "trend_snr", "efficiency", "vol_asym", "momentum_accel",
+    "dist_stack", "stage_blowoff", "exh_qual", "volatility_zscore"
+]
+
+NEW_FEATURES = [
+    "thrust_decay_4", "decel_4", "ft_drop", "ext_excess", "ext_atrExp",
+    "comp_to_exp", "evr6_x_volz", "stall_x_flow", "prog_def",
+    "clv_collapse", "clv_pullback", "coh", "align", "retest_quality",
+    "pb_accel", "rv_ratio_6_24", "excess_coh", "asym_ft", 
+    "tf_bias", "shock_rel", "resid_strength", "evr_slope", "stall_ext"
+]
+
 CFG = {
     # persistence / fetch
     "data_root": "data",
@@ -11,11 +26,12 @@ CFG = {
 
     # training horizons to compare (1)
     "label_horizons_hours": [8],
-    "train_lookback_hours": 24 * 30,   # 30d
+    "train_lookback_hours": 24 * 365 * 3,   # 3 years
     "val_lookback_hours": 24 * 7,      # 7d validation (time-split, no leakage)
     "min_train_samples": 8000,
 
     # per-hour cross-sectional training selection
+    "variance_filter_pct": 1.0, # User requested to keep all non-constant features
     "train_extreme_pct_hourly": 0.05,
     "train_extreme_min": 10,
     "train_extreme_max": 80,
@@ -107,27 +123,34 @@ CFG = {
     "fee_bps": 25.0,
     "borrow_apr": 0.20,
 
-    # New Risk Params (Trailing Stop)
+    # OOS holdout for backtest
+    "oos_holdout_days": 30,     # Exclude last N days from training for OOS backtest
+
+    # Triple Barrier Risk Params (used in backtest & live)
+    "tp_mult": 1.0,             # TP = tp_mult * barrier_pct
+    "sl_mult": 0.5,             # SL = sl_mult * barrier_pct
+
+    # Legacy Risk Params (Trailing Stop fallback)
     "risk_k_sl": 2.0,           # stop distance in ATR multiples
     "risk_k_trail_start": 1.0,  # profit distance to start trailing
     "risk_k_trail_dist": 1.0,   # trailing distance
 
     # Exhaustion model (hourly sensor)
     "exh_horizon_hours": 8,
-    "exh_reversal_thr": 0.04,
+    "exh_reversal_thr": 0.03,    # Relaxed from 0.04 to capture more reversals
 
     # Peak Targeting Labeling (Option A/B)
     "exh_label_type": "peak",    # "simple" or "peak"
     "exh_use_atr": True,         # Use ATR-based thresholds
-    "exh_atr_rev_k": 2.0,        # Reversal size in ATRs (e.g., drop 2.0 ATR from peak)
-    "exh_atr_near_k": 1.0,       # Proximity to peak in ATRs (e.g., within 1.0 ATR of peak)
+    "exh_atr_rev_k": 1.5,        # Reversal size in ATRs (relaxed from 2.0)
+    "exh_atr_near_k": 1.5,       # Proximity to peak in ATRs (relaxed from 1.0)
 
     # Clipping for Peak Targeting
     "exh_near_dist_cap_pct": 0.02, # Max proximity distance (2%)
     "exh_rev_dist_floor_pct": 0.005, # Min reversal distance (0.5%) - User asked for 5% but using 0.5% as safe default
 
-    "exh_near_thr": 0.01,        # Fallback % proximity if ATR not used
-    "exh_rev_thr_pct": 0.04,     # Fallback % reversal if ATR not used
+    "exh_near_thr": 0.015,       # Fallback % proximity
+    "exh_rev_thr_pct": 0.03,     # Fallback % reversal (3%)
 
     "exh_train_lookback_hours": 24 * 14,
     "min_exh_samples": 6000,
@@ -136,7 +159,7 @@ CFG = {
 
     # which features go into exhaustion ML (plus sin/cos time features) (3)
     "exh_feature_keys": [
-        "DON12", "EX6", "overext", "overext_weak", "effort_gate", "stall_ext", "tail_fail",
+        "donch_dist_12", "excess_6h", "overext", "overext_weak", "effort_gate", "stall_ext", "tail_fail",
         "reject", "blowoff_risk",
         "clv_mean_4", "pullback_2", "pullback_4", "giveback", "evr_6", "progress",
         "delta_stall_6", "tail_against"
@@ -153,14 +176,14 @@ CFG = {
     "tf_feature_keys": [
         "accept", "retest_accept", "tf_qual", "coherence_24", "impulse_ratio_24",
         "tf_tape", "clv_mean_4", "pullback_2", "pullback_4", "ft_2", "ft_4"
-    ],
+    ] + NEUTRAL_FEATURES + NEW_FEATURES,
 
     # MR Head (Specifics + Global)
     "mr_feature_keys": [
         "reject", "overext", "overext_weak", "mr_qual", "retrace_12",
         "impulse_ratio_24", "coherence_24", "mr_tape",
         "clv_mean_4", "pullback_2", "pullback_4", "ft_2", "ft_4"
-    ],
+    ] + NEUTRAL_FEATURES + NEW_FEATURES,
 
     # Meta Learner
     "meta_feature_keys": [
@@ -170,6 +193,4 @@ CFG = {
         "ft_2", "asym_ratio", "mfe_4h", "mae_4h", "giveback"
     ],
 
-    # Model Params (Lasso selection)
-    "lasso_alpha": 0.001,
 }

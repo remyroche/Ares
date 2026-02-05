@@ -114,7 +114,7 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
         margin_symbols = mu.symbols
 
     syms_all = build_fetch_universe(margin_symbols, cfg["market_basket"], cfg["fetch_symbols_M"])
-    train_syms = filter_low_variance_assets(store, syms_all, lookback_days=30, threshold_pct=0.40, ts_sig=ts_sig)
+    train_syms = filter_low_variance_assets(store, syms_all, lookback_days=30, threshold_pct=cfg["variance_filter_pct"], ts_sig=ts_sig)
     train_syms = sorted(list(set(train_syms).union(set(cfg["market_basket"]))))
     return train_syms
 

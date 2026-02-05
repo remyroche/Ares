@@ -376,17 +376,28 @@ def save_features(feats: dict, ts: pd.Timestamp, root_dir: str):
     first_key = list(feats.keys())[0]
     symbols = feats[first_key].columns
     
+    # Pre-extract numpy arrays + index once (avoids repeated pandas overhead)
+    feat_keys = [k for k in feats if hasattr(feats[k], "columns")]
+    feat_arrays = {}  # key -> (numpy_array, col_list)
+    for k in feat_keys:
+        df = feats[k]
+        feat_arrays[k] = (df.values, list(df.columns))
+    time_index = feats[first_key].index
+    
     count = 0
     total = len(symbols)
     
     for i, sym in enumerate(symbols):
         try:
-            # Extract this symbol's column from all feature DFs
-            # Resulting DF index=Time, Columns=FeatureNames
-            sym_data = {k: feats[k][sym] for k in feats if hasattr(feats[k], "columns") and sym in feats[k].columns}
-            df_sym = pd.DataFrame(sym_data)
+            # Fast numpy column extraction
+            parts = {}
+            for k in feat_keys:
+                arr, cols = feat_arrays[k]
+                if sym in cols:
+                    j = cols.index(sym)
+                    parts[k] = arr[:, j]
             
-            # Persist original symbol name to handle slashes/renaming
+            df_sym = pd.DataFrame(parts, index=time_index)
             df_sym["__symbol__"] = sym
 
             # Save
@@ -446,7 +457,10 @@ def load_features(ts: pd.Timestamp, root_dir: str) -> dict:
                     df = df.drop(columns=["__symbol__"])
                     loaded_dfs[sym] = df
             else:
-                loaded_dfs[sym] = df
+                # Legacy files without __symbol__: restore slash from underscore
+                # e.g. BTC_USDT -> BTC/USDT (first underscore only)
+                real_sym = sym.replace("_", "/", 1)
+                loaded_dfs[real_sym] = df
         except Exception as e:
             tprint(f"Error loading {fpath}: {e}")
             

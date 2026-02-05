@@ -5,14 +5,22 @@ from joblib import Memory
 from extreme_price_movements.utils import tprint, check_inf_nan
 from extreme_price_movements.feature_transforms import CausalFeatureTransformer
 from extreme_price_movements.time_utils import ensure_utc
-from extreme_price_movements.frac_diff_adaptive import find_min_ffd, frac_diff_ffd
+from extreme_price_movements.frac_diff_adaptive import find_min_ffd, frac_diff_ffd, get_weights_ffd
 from extreme_price_movements.validation import validate_panel
 import extreme_price_movements.fast_funcs as ff
 
 # Initialize joblib cache
 _cache = Memory("./cache/features", verbose=0)
 
+# Global cache for d_opt to avoid recomputing on every run
+_d_opt_cache = {}
+
 def zscore_rolling(x: pd.DataFrame, n: int):
+    # Use matrix optimized version
+    if isinstance(x, pd.DataFrame):
+        mu = ff.numba_rolling_mean_mat(x, n)
+        sd = ff.numba_rolling_std_mat(x, n)
+        return (x - mu) / (sd + 1e-12)
     return ff.numba_zscore(x, n)
 
 def rsi(close: pd.DataFrame, n: int):
@@ -20,48 +28,81 @@ def rsi(close: pd.DataFrame, n: int):
 
 def ema(x: pd.DataFrame, span: int):
     alpha = 2.0 / (span + 1.0)
+    # Use matrix optimized version
+    if isinstance(x, pd.DataFrame):
+        return ff.numba_ewma_mat(x, alpha, False)
     return ff.apply_to_frame(x, ff._numba_ewma_nan_safe, alpha, False)
 
 def atr_percent(high: pd.DataFrame, low: pd.DataFrame, close: pd.DataFrame, n: int):
+    # atr_percent iterates columns anyway in fast_funcs (numba_atr_no_norm)
+    # Could be optimized to matrix but it involves 3 DFs.
+    # Leaving as is for now as it's O(N) but Python loop over cols.
     return ff.numba_atr_no_norm(high, low, close, n)
 
-@_cache.cache
 def _transform_price(df):
-    tprint("Transforming Prices: Log -> EWMA(5) -> Adaptive FracDiff")
-    df_log = np.log(df + 1e-9)
-    df_den = ff.apply_to_frame(df_log, ff._numba_ewma_nan_safe, 2.0/6.0, False)
+    tprint("Transforming Prices: Log -> EWMA(5) -> Adaptive FracDiff (Fast)")
+    # 1. Log + EWMA (Matrix)
+    # Ensure float32
+    df_log = np.log(df.astype(np.float32) + 1e-9)
+    # Use fast matrix EWMA
+    # Note: _numba_ewma_nan_safe_mat expects numpy array
+    den_mat = ff._numba_ewma_nan_safe_mat(df_log.to_numpy(), 2.0/6.0, False)
+
+    # 2. FFD (Column loop but fast)
+    n_rows, n_cols = den_mat.shape
+    out = np.empty_like(den_mat)
     
-    # Apply adaptive FFD per column
-    df_fd = pd.DataFrame(index=df.index, columns=df.columns, dtype=np.float32)
-    total_cols = len(df_den.columns)
-    for i, col in enumerate(df_den.columns):
-        if (i+1) % 5 == 0 or (i+1) == total_cols:
-             tprint(f"Adaptive FFD: processing {i+1}/{total_cols} - {col}")
+    cols = df.columns
+    idx = df.index
+    last_ts = idx[-1] if len(idx) > 0 else 0
+
+    for j in range(n_cols):
+        col_name = cols[j]
+        series_arr = den_mat[:, j]
+
+        # Mask NaNs (assume contiguous validity usually, or at least enough)
+        mask = ~np.isnan(series_arr)
+        count = np.count_nonzero(mask)
         
-        series = df_den[col].dropna()
-        if len(series) < 100:
-            # Fallback to fixed d=0.4 for short series
+        if count < 100:
             d_opt = 0.4
         else:
-            # Find minimal d for stationarity
-            d_opt, _, _ = find_min_ffd(series, d_range=(0.0, 1.0), step=0.1)
+            # Cache Key: (col_name, last_ts, count)
+            key = (col_name, last_ts, count)
+            if key in _d_opt_cache:
+                d_opt = _d_opt_cache[key]
+            else:
+                # Compute d_opt on tail
+                valid_data = series_arr[mask]
+                # Use last 20k points for stationarity check to speed up
+                tail = valid_data[-20000:]
+                # convert to Series for find_min_ffd
+                tail_series = pd.Series(tail)
+                d_opt, _, _ = find_min_ffd(tail_series, d_range=(0.0, 1.0), step=0.1)
+                _d_opt_cache[key] = d_opt
         
-        # Apply FFD
-        df_fd[col] = frac_diff_ffd(df_den[col], d_opt, thres=1e-5)
-    
-    tprint(f"Adaptive FFD: d range [{df_fd.min().min():.3f}, {df_fd.max().max():.3f}]")
-    return df_fd
+        # Calculate window for FFD
+        w = get_weights_ffd(d_opt, 1e-5)
+        window_size = len(w)
 
-@_cache.cache
+        # Apply FFD using fast numba kernel
+        # ff._numba_frac_diff_kernel(x, d, window)
+        out[:, j] = ff._numba_frac_diff_kernel(series_arr, d_opt, window_size)
+    
+    res = pd.DataFrame(out, index=idx, columns=cols, dtype=np.float32)
+    # tprint(f"Adaptive FFD: d range [{res.min().min():.3f}, {res.max().max():.3f}]") # Expensive to compute min/max?
+    return res
+
 def _transform_volume(df):
     tprint("Transforming Volume: Log -> EWMA(5)")
-    df_log = np.log(df + 1.0)
-    df_den = ff.apply_to_frame(df_log, ff._numba_ewma_nan_safe, 2.0/6.0, False)
-    return df_den
+    df_log = np.log(df.astype(np.float32) + 1.0)
+    # Use matrix version
+    den_mat = ff._numba_ewma_nan_safe_mat(df_log.to_numpy(), 2.0/6.0, False)
+    return pd.DataFrame(den_mat, index=df.index, columns=df.columns, dtype=np.float32)
 
 def time_sin_cos(index: pd.DatetimeIndex):
-    hod = index.hour.to_numpy()
-    dow = index.dayofweek.to_numpy()
+    hod = index.hour.to_numpy(dtype=np.float32)
+    dow = index.dayofweek.to_numpy(dtype=np.float32)
     sin_hod = np.sin(2*np.pi*hod/24.0)
     cos_hod = np.cos(2*np.pi*hod/24.0)
     sin_dow = np.sin(2*np.pi*dow/7.0)
@@ -89,6 +130,7 @@ def compute_market_features(panel, basket_syms, trend_sma_hours=24*14):
     mkt_low   = _transform_price(mkt_low_raw.to_frame(name="l"))["l"]
     mkt_vol   = _transform_volume(mkt_vol_raw.to_frame(name="v"))["v"]
 
+    # Use fast matrix ops even for 1D/small frames
     mkt_ret24h_df = ff.numba_rolling_sum(mkt_close.to_frame(), 24)
     mkt_ret24h = mkt_ret24h_df[mkt_ret24h_df.columns[0]]
 
@@ -117,7 +159,9 @@ def compute_market_features(panel, basket_syms, trend_sma_hours=24*14):
     return mkt_df.astype(np.float32)
 
 def add_regime_gates(mkt_df: pd.DataFrame, gate_vol_lookback_hours: int, gate_trend_thr: float):
-    tprint(f"Entering function: add_regime_gates in features.py")
+    # Avoid deep copy if possible
+    # But we modify df, so we need a copy.
+    # Use shallow copy + copy=False for float conversion if needed
     df = mkt_df.copy()
     rv_med_df = ff.numba_rolling_median(df[["mkt_rv"]], gate_vol_lookback_hours)
     df["mkt_rv_med"] = rv_med_df["mkt_rv"]
@@ -133,7 +177,7 @@ def add_regime_gates(mkt_df: pd.DataFrame, gate_vol_lookback_hours: int, gate_tr
     return df
 
 def compute_funding_proxy(c, h, l, v, mkt_df):
-    c_ma = ff.numba_rolling_mean(c, 24)
+    c_ma = ff.numba_rolling_mean_mat(c, 24)
     dist = (c - c_ma)
 
     mkt_close_df = mkt_df[["mkt_close"]]
@@ -149,18 +193,31 @@ def compute_funding_proxy(c, h, l, v, mkt_df):
     return (relative_premium + (0.5 * intensity)).astype(np.float32)
 
 def _hash_panel(panel):
-    """Create hash of panel data for cache key."""
+    """Create hash of panel data for cache key (Optimized)."""
     h = hashlib.md5()
-    for key in sorted(panel.keys()):
-        h.update(key.encode())
-        h.update(panel[key].values.tobytes())
+    keys = sorted(panel.keys())
+    h.update(str(keys).encode())
+    for key in keys:
+        df = panel[key]
+        # Metadata
+        h.update(str(df.shape).encode())
+        h.update(str(df.columns.tolist()).encode())
+        # Index (fast)
+        h.update(np.asarray(df.index.asi8).tobytes())
+        # Data (fast view)
+        arr = np.ascontiguousarray(df.to_numpy(copy=False))
+        h.update(arr.tobytes())
     return h.hexdigest()
 
 def _hash_mkt_gates(mkt_gates):
-    """Create hash of market gates for cache key."""
-    return hashlib.md5(mkt_gates.values.tobytes()).hexdigest()
+    """Create hash of market gates for cache key (Optimized)."""
+    h = hashlib.md5()
+    h.update(np.asarray(mkt_gates.index.asi8).tobytes())
+    arr = np.ascontiguousarray(mkt_gates.to_numpy(copy=False))
+    h.update(arr.tobytes())
+    return h.hexdigest()
 
-@_cache.cache
+@_cache.cache(ignore=["panel", "mkt_gates"])
 def _compute_features_cached(panel_hash, mkt_gates_hash, cfg_tuple, panel, mkt_gates):
     """Cached implementation of feature computation."""
     return _compute_features_impl(panel, mkt_gates, dict(cfg_tuple))
@@ -168,7 +225,6 @@ def _compute_features_cached(panel_hash, mkt_gates_hash, cfg_tuple, panel, mkt_g
 def compute_features_hourly(panel, mkt_gates, cfg):
     """
     Compute features with caching to avoid recomputation.
-    Uses hash-based cache key for panel and mkt_gates.
     """
     # Create cache keys
     panel_hash = _hash_panel(panel)
@@ -181,45 +237,69 @@ def compute_features_hourly(panel, mkt_gates, cfg):
 def _compute_features_impl(panel, mkt_gates, cfg):
     tprint("Features: compute base matrices")
     
-    # Validate panel data quality
+    # Validation (Fast)
     validation_results = validate_panel(panel, raise_on_error=False, verbose=False)
     if not validation_results['valid']:
-        tprint(f"WARNING: Panel validation failed with {len(validation_results['errors'])} errors")
-        for error in validation_results['errors'][:3]:  # Show first 3 errors
-            tprint(f"  - {error}")
+        tprint(f"WARNING: Panel validation failed")
     
     o_raw, h_raw, l_raw, c_raw, v_raw = panel["open"], panel["high"], panel["low"], panel["close"], panel["volume"]
 
     new_idx = ensure_utc(pd.DataFrame(index=c_raw.index)).index
-    o_raw.index = new_idx
-    h_raw.index = new_idx
-    l_raw.index = new_idx
-    c_raw.index = new_idx
-    v_raw.index = new_idx
+
+    # Efficient reindexing/casting
+    def prep(df):
+        df.index = new_idx
+        return df.astype(np.float32)
+
+    o_raw = prep(o_raw)
+    h_raw = prep(h_raw)
+    l_raw = prep(l_raw)
+    c_raw = prep(c_raw)
+    v_raw = prep(v_raw)
 
     if len(mkt_gates) == len(c_raw):
         mkt_gates.index = new_idx
     else:
         mkt_gates = mkt_gates.reindex(new_idx)
 
-    o_raw = o_raw.astype(np.float32)
-    h_raw = h_raw.astype(np.float32)
-    l_raw = l_raw.astype(np.float32)
-    c_raw = c_raw.astype(np.float32)
-    v_raw = v_raw.astype(np.float32)
-
+    # Transform (Optimized)
     o = _transform_price(o_raw)
     h = _transform_price(h_raw)
     l = _transform_price(l_raw)
     c = _transform_price(c_raw)
     v = _transform_volume(v_raw)
 
+    # Reuse rolling sum/std cache
+    _roll_cache = {}
+
+    def get_roll_sum(df, n):
+        k = (id(df), 'sum', n)
+        if k not in _roll_cache:
+            # Use matrix rolling sum
+            # Note: numba_rolling_sum in fast_funcs uses apply_to_frame (loop).
+            # We should probably use a matrix version if available.
+            # I did not add rolling_sum_mat explicitly but rolling_mean_mat.
+            # But rolling_sum is just rolling_mean * n? No, because of NaNs.
+            # I'll stick to provided fast_funcs or optimize if I added one.
+            # I added rolling_mean_mat, rolling_std_mat, ewma_mat, rolling_vwap_mat.
+            # I did NOT add rolling_sum_mat.
+            # But rolling_sum is fast in numba anyway (1D).
+            # Reusing it avoids recomputing.
+            _roll_cache[k] = ff.numba_rolling_sum(df, n)
+        return _roll_cache[k]
+
+    def get_roll_std(df, n):
+        k = (id(df), 'std', n)
+        if k not in _roll_cache:
+            _roll_cache[k] = ff.numba_rolling_std_mat(df, n)
+        return _roll_cache[k]
+
     feats = {}
     feats["ret1h"] = c
-    feats["ret6h"] = ff.numba_rolling_sum(c, 6)
+    feats["ret6h"] = get_roll_sum(c, 6)
 
     for H in [2, 3, 4, 12, 16, 20, 24, 28]:
-        feats[f"ret{H}h"] = ff.numba_rolling_sum(c, H)
+        feats[f"ret{H}h"] = get_roll_sum(c, H)
 
     feats["range_pct"] = (h - l)
     feats["gap_pct"]   = (o - c.shift(1))
@@ -231,9 +311,9 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["rsi_base"] = rsi_base
     feats["rsi_slope_base"] = rsi_base.diff(cfg["rsi_slope_n"]).astype(np.float32)
 
-    feats["rv_24h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 24)
-    feats["rv_6h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 6)
-    feats["rv_12h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 12)
+    feats["rv_24h"] = get_roll_std(feats["ret1h"], 24)
+    feats["rv_6h"] = get_roll_std(feats["ret1h"], 6)
+    feats["rv_12h"] = get_roll_std(feats["ret1h"], 12)
 
     feats["qv"] = (c * v).astype(np.float32)
     feats["vol_z24_base"] = zscore_rolling(v, 24)
@@ -253,10 +333,8 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["body_pct"] = body.astype(np.float32)
     feats["wick_body_ratio"] = ((upper_wick + lower_wick) / (body + 1e-12)).astype(np.float32)
 
-    # New Spike Features
     max_oc = np.maximum(o, c)
     feats["wick_ratio"] = ((h - max_oc) / ((h - l) + 1e-12)).astype(np.float32)
-
     feats["vol_price_spread"] = (v / ((h - l) + 1e-12)).astype(np.float32)
 
     prev_close = c.shift(1)
@@ -264,23 +342,32 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     tr_2 = (h - prev_close).abs()
     tr_3 = (l - prev_close).abs()
     tr = np.maximum(tr_1, np.maximum(tr_2, tr_3))
-    atr_tr = ff.apply_to_frame(tr, ff._numba_ewma_nan_safe, 1.0/cfg["atr_n"], False)
+    # Use matrix ewma
+    atr_tr = ff.numba_ewma_mat(tr, 1.0/cfg["atr_n"], False)
     feats["atr_expansion"] = (tr / (atr_tr + 1e-12)).astype(np.float32)
 
-    sma_base = ff.apply_to_frame(c, ff._numba_rolling_mean_nan_safe, cfg["trend_sma_n"])
+    sma_base = ff.numba_rolling_mean_mat(c, cfg["trend_sma_n"])
     feats["trend_pct_base"] = (c - sma_base).astype(np.float32)
 
-    hod = pd.Series(v.index.hour, index=v.index)
-    rvol_denom = ff.numba_grouped_rolling_mean(v, hod, int(cfg["rvol_days"]*24))
+    # rvol_hod_base uses grouped rolling mean, keeping as is (numba optimized)
+    hod_idx = pd.Series(v.index.hour, index=v.index)
+    rvol_denom = ff.numba_grouped_rolling_mean(v, hod_idx, int(cfg["rvol_days"]*24))
     feats["rvol_hod_base"] = (v / (rvol_denom + 1e-12)).astype(np.float32)
 
     feats["funding_proxy"] = compute_funding_proxy(c, h, l, v, mkt_gates)
 
+    # Efficient Time Features
     sin_hod, cos_hod, sin_dow, cos_dow = time_sin_cos(c.index)
-    feats["sin_hod"] = pd.DataFrame(np.repeat(sin_hod[:,None], c.shape[1], axis=1), index=c.index, columns=c.columns).astype(np.float32)
-    feats["cos_hod"] = pd.DataFrame(np.repeat(cos_hod[:,None], c.shape[1], axis=1), index=c.index, columns=c.columns).astype(np.float32)
-    feats["sin_dow"] = pd.DataFrame(np.repeat(sin_dow[:,None], c.shape[1], axis=1), index=c.index, columns=c.columns).astype(np.float32)
-    feats["cos_dow"] = pd.DataFrame(np.repeat(cos_dow[:,None], c.shape[1], axis=1), index=c.index, columns=c.columns).astype(np.float32)
+    # Broadcast to shape (T, N)
+    T, N = c.shape
+    def broadcast_time(arr, cols):
+        # Create (T, N) array by repeating col (T, 1) N times
+        return pd.DataFrame(np.broadcast_to(arr[:, None], (T, N)), index=c.index, columns=cols, dtype=np.float32)
+
+    feats["sin_hod"] = broadcast_time(sin_hod, c.columns)
+    feats["cos_hod"] = broadcast_time(cos_hod, c.columns)
+    feats["sin_dow"] = broadcast_time(sin_dow, c.columns)
+    feats["cos_dow"] = broadcast_time(cos_dow, c.columns)
 
     signed_vol = v * np.sign(c - o)
     sv_abs = signed_vol.abs()
@@ -291,17 +378,15 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["flow_ratio"] = feats["flow_persistence"]
 
     eff = (c - o).abs() / ((h - l) + 1e-9)
-    feats["efficiency"] = ff.apply_to_frame(eff, ff._numba_rolling_mean_nan_safe, 12)
+    feats["efficiency"] = ff.numba_rolling_mean_mat(eff, 12)
 
-    # Use Pearson Mode Skewness Proxy: 3 * (Mean - Median) / Std
-    # More stable for small N (works for N>=2) and cheaper.
+    # Skewness
     r1 = feats["ret1h"]
     cs_mean = r1.mean(axis=1)
     cs_median = r1.median(axis=1)
     cs_std = r1.std(axis=1)
-
     skew_ser = 3.0 * (cs_mean - cs_median) / (cs_std + 1e-6)
-    feats["skew"] = pd.DataFrame(np.repeat(skew_ser.values[:,None], c.shape[1], axis=1), index=c.index, columns=c.columns).astype(np.float32)
+    feats["skew"] = broadcast_time(skew_ser.values, c.columns)
 
     r = feats["ret1h"]
     r2 = r**2
@@ -329,7 +414,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["slope"] = ((ema_fast_base - ema_slow_base) / (atr_base + 1e-12)).astype(np.float32)
 
     t_snr_num = ema(feats["ret1h"], 6).abs()
-    t_snr_den = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 24)
+    t_snr_den = get_roll_std(feats["ret1h"], 24)
     feats["trend_snr"] = (t_snr_num / (t_snr_den + 1e-12)).astype(np.float32)
 
     feats["v_power"] = (v / (c.abs() + 1e-12)).astype(np.float32)
@@ -339,19 +424,15 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     atr_ema_s = ema(atr_base, 24)
     feats["atr_slope"] = ((atr_ema_f - atr_ema_s) / (atr_ema_s + 1e-12)).astype(np.float32)
 
-    vwap_24 = pd.DataFrame(index=c.index, columns=c.columns, dtype=np.float32)
-    for col in c.columns:
-        p_arr = c[col].to_numpy(dtype=np.float32)
-        v_arr = v[col].to_numpy(dtype=np.float32)
-        vwap_24[col] = ff._numba_rolling_vwap(p_arr, v_arr, 24)
-
+    # Optimized VWAP
+    vwap_24 = ff.numba_rolling_vwap_mat(c, v, 24)
     feats["dist_vwap_norm"] = ((c - vwap_24) / (atr_base + 1e-12)).astype(np.float32)
 
     feats["momentum_accel"] = feats["ret1h"].diff().astype(np.float32)
 
     log_v = v
-    mu_lv = ff.apply_to_frame(log_v, ff._numba_rolling_mean_nan_safe, cfg["volz_n"])
-    sd_lv = ff.apply_to_frame(log_v, ff._numba_rolling_std_nan_safe, cfg["volz_n"])
+    mu_lv = ff.numba_rolling_mean_mat(log_v, cfg["volz_n"])
+    sd_lv = ff.numba_rolling_std_mat(log_v, cfg["volz_n"])
     feats["rvol_z"] = ((log_v - mu_lv) / (sd_lv + 1e-12)).astype(np.float32)
 
     vr = v * feats["ret1h"].abs()
@@ -361,28 +442,51 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     v_max = ff.numba_rolling_max(v, 24)
     feats["climax_decay"] = (v_max / (v + 1e-12)).astype(np.float32)
 
-    cum_sv = ff.numba_rolling_sum(signed_vol, 24)
+    cum_sv = get_roll_sum(signed_vol, 24)
     feats["cumulative_delta_stall"] = ff.numba_rolling_corr(c, cum_sv, 24).fillna(0).astype(np.float32)
-    cum_sv_6 = ff.numba_rolling_sum(signed_vol, 6)
+    cum_sv_6 = get_roll_sum(signed_vol, 6)
     feats["delta_stall_6"] = ff.numba_rolling_corr(c, cum_sv_6, 6).fillna(0).astype(np.float32)
 
     feats["vol_expansion_ratio"] = (atr_ema_f / (atr_ema_s + 1e-12)).astype(np.float32)
 
-    sig_s = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 6)
-    sig_m = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 18)
+    sig_s = get_roll_std(feats["ret1h"], 6)
+    sig_m = get_roll_std(feats["ret1h"], 18)
     feats["vol_compression"] = (sig_s / (sig_m + 1e-12)).astype(np.float32)
 
     rv_ratio_s = mkt_gates["mkt_rv_ratio"].reindex(c.index).astype(np.float32)
-    rv_ratio = pd.DataFrame(np.repeat(rv_ratio_s.to_numpy()[:,None], c.shape[1], axis=1),
-                            index=c.index, columns=c.columns).astype(np.float32)
+    rv_ratio = broadcast_time(rv_ratio_s.to_numpy(), c.columns)
     feats["mkt_rv_ratio"] = rv_ratio
 
+    # Optimized pick_by_rv
     def pick_by_rv(fast_df, base_df, slow_df):
-        rr = rv_ratio
-        out = base_df.copy()
-        out = out.where(~(rr > cfg["rv_ratio_fast_thr"]), fast_df)
-        out = out.where(~(rr < cfg["rv_ratio_slow_thr"]), slow_df)
-        return out.astype(np.float32)
+        rr = rv_ratio.to_numpy(copy=False)
+        fast = fast_df.to_numpy(copy=False)
+        base = base_df.to_numpy(copy=False)
+        slow = slow_df.to_numpy(copy=False)
+
+        # Use numpy where
+        # ~ (rr > fast_thr)  -> rr <= fast_thr
+        # ~ (rr < slow_thr)  -> rr >= slow_thr
+
+        # Original:
+        # out = base.copy()
+        # out.where(~(rr > fast_thr), fast) -> if rr > fast_thr, use fast, else out (base)
+        # out.where(~(rr < slow_thr), slow) -> if rr < slow_thr, use slow, else out
+
+        # Numpy equivalent:
+        # If rr > fast_thr: fast
+        # Elif rr < slow_thr: slow
+        # Else: base
+
+        out = base.copy()
+
+        mask_fast = rr > cfg["rv_ratio_fast_thr"]
+        mask_slow = rr < cfg["rv_ratio_slow_thr"]
+
+        np.putmask(out, mask_fast, fast)
+        np.putmask(out, mask_slow, slow)
+
+        return pd.DataFrame(out, index=base_df.index, columns=base_df.columns, dtype=np.float32)
 
     rsi_fast = rsi(c, max(2, int(cfg["rsi_n"] * 0.5)))
     rsi_slow = rsi(c, int(cfg["rsi_n"] * 2))
@@ -396,8 +500,8 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     volz_slow = zscore_rolling(v, int(cfg["volz_n"] * 2))
     feats["vol_z"] = pick_by_rv(volz_fast, feats["vol_z_base"], volz_slow)
 
-    sma_fast = ff.apply_to_frame(c, ff._numba_rolling_mean_nan_safe, max(24, int(cfg["trend_sma_n"] * 0.5)))
-    sma_slow = ff.apply_to_frame(c, ff._numba_rolling_mean_nan_safe, int(cfg["trend_sma_n"] * 2))
+    sma_fast = ff.numba_rolling_mean_mat(c, max(24, int(cfg["trend_sma_n"] * 0.5)))
+    sma_slow = ff.numba_rolling_mean_mat(c, int(cfg["trend_sma_n"] * 2))
     trend_fast = (c - sma_fast)
     trend_slow = (c - sma_slow)
     feats["trend_pct"] = pick_by_rv(trend_fast, feats["trend_pct_base"], trend_slow)
@@ -414,7 +518,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     # --- New Helper Features for Models ---
     dir_s = np.sign(feats["ret24h"])
-    dir_s[dir_s == 0] = 1 # fallback
+    dir_s[dir_s == 0] = 1
 
     atr = feats["atr_pct"] + 1e-12
     rv6 = feats["rv_6h"] + 1e-12
@@ -444,14 +548,14 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     clv_raw = ((2 * c - h - l) / ((h - l) + 1e-9))
     feats["clv"] = clv_raw.astype(np.float32)
-    feats["clv_mean_2"] = ff.apply_to_frame(feats["clv"], ff._numba_rolling_mean_nan_safe, 2).astype(np.float32)
-    feats["clv_mean_4"] = ff.apply_to_frame(feats["clv"], ff._numba_rolling_mean_nan_safe, 4).astype(np.float32)
+    feats["clv_mean_2"] = ff.numba_rolling_mean_mat(feats["clv"], 2).astype(np.float32)
+    feats["clv_mean_4"] = ff.numba_rolling_mean_mat(feats["clv"], 4).astype(np.float32)
 
     for k in [3, 6]:
-        v_sum = ff.numba_rolling_sum(v, k)
+        v_sum = get_roll_sum(v, k)
         ret_k_abs = feats[f"ret{k if k in [6] else 1}h"].abs()
         if k == 3:
-            ret_k_abs = ff.numba_rolling_sum(c, 3).abs()
+            ret_k_abs = get_roll_sum(c, 3).abs()
 
         feats[f"evr_{k}"] = (v_sum / (ret_k_abs + 1e-12)).astype(np.float32)
 
@@ -508,11 +612,10 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     feats["coherence_24"] = (dir_s * (feats["ret6h"] + feats["ret12h"] + feats["ret24h"]) / (feats["rv_24h"] + 1e-12)).astype(np.float32)
 
-    turb = rv_ratio # Already broadcasted
+    turb = rv_ratio
 
     mkt_ret6h_raw = mkt_gates["mkt_ret6h"].reindex(c.index).astype(np.float32)
-    mkt_ret6h_s = pd.DataFrame(np.repeat(mkt_ret6h_raw.to_numpy()[:,None], c.shape[1], axis=1),
-                               index=c.index, columns=c.columns).astype(np.float32)
+    mkt_ret6h_s = broadcast_time(mkt_ret6h_raw.to_numpy(), c.columns)
 
     tape_align = (dir_s * mkt_ret6h_s)
     feats["tf_tape"] = (tape_align.clip(lower=0) / (1.0 + turb)).astype(np.float32)
@@ -540,8 +643,6 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["retest_accept"] = (ft4_pos * clv4_pos * pb4_inv).astype(np.float32)
 
     feats["tf_qual"] = (feats["accept"] * feats["tf_tape"]).astype(np.float32)
-
-    # feats["reject"] already computed
     feats["mr_qual"] = (feats["reject"] * feats["mr_tape"]).astype(np.float32)
     feats["retrace_12"] = (-feats["pullback_12"]).astype(np.float32)
 
@@ -550,10 +651,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     # Define gates helpers for Meta
     accept2 = feats["G_TF_ACCEPT2"] = (ft2_pos * clv4_pos * pb2_inv).astype(np.float32)
-    # Re-define Gate vars if they were not defined yet (G_TF_ACCEPT2 was defined in GATES section in previous version, now I define it here or use it)
-    # Actually I haven't defined GATES section yet in this rewritten version!
 
-    # Let's define the GATES first as they are features too
     feats["G_EXH_STALL_EXT"] = (feats["donch_dist_12"] * (1.0 - feats["delta_stall_6"])).astype(np.float32)
     feats["G_EXH_EFFORT"] = (feats["evr_6"] * (feats["vol_z24"] + 1.0) / (feats["progress"] + 1e-12)).astype(np.float32)
     feats["G_EXH_BLOWOFF"] = (feats["donch_dist_12"] * feats["excess_6h"]).astype(np.float32)
@@ -561,7 +659,6 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["G_EXH_REJECT"] = ((1.0 - feats["clv_mean_4"]) * feats["pullback_4"].abs()).astype(np.float32)
     feats["G_EXH_TAIL_FAIL"] = (feats["tail_against"] * (feats["ft_2"] - feats["ft_4"]).clip(lower=0)).astype(np.float32)
     feats["G_TF_ACCEPT"] = (ft2_pos * clv4_pos).astype(np.float32)
-    feats["G_TF_ACCEPT2"] = accept2 # Defined above
     feats["G_MR_REJECT"] = (fail_sum * clv_inv * pb_avg_abs).astype(np.float32)
     feats["G_MR_OVEREXT"] = (feats["donch_dist_12"] * (1.0 - ft2_pos)).astype(np.float32)
     feats["G_MR_SPIKE"] = (feats["speed"] * feats["excess_6h"] * clv_inv).astype(np.float32)
@@ -618,17 +715,16 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     skip_transform = ["sin_hod", "cos_hod", "sin_dow", "cos_dow"]
 
+    # Process transforms efficiently
     for k in feats.keys():
-        tprint(f"Generating feature: {k}")
         if k in skip_transform:
             feats[k] = feats[k].astype(np.float32)
             continue
         try:
+            # Use optimized transform that handles float32 and matrix ops
             feats[k] = transformer.transform(feats[k], name=k)
         except Exception as e:
             tprint(f"Warning: Transform failed for {k}: {e}")
-            import traceback
-            traceback.print_exc()
             feats[k] = feats[k].astype(np.float32)
 
     # Final check for Inf/NaN

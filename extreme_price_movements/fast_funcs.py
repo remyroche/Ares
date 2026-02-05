@@ -992,3 +992,62 @@ def _numba_frac_diff_kernel(x, d, window):
 def numba_frac_diff(df, d, window):
     tprint(f"Entering function: numba_frac_diff in fast_funcs.py")
     return apply_to_frame(df, _numba_frac_diff_kernel, d, window)
+
+# --- MATRIX OPTIMIZATIONS (Parallelized) ---
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_vwap_mat(price_mat, vol_mat, window):
+    n_rows, n_cols = price_mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_vwap(price_mat[:, j], vol_mat[:, j], window)
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_ewma_nan_safe_mat(mat, alpha, adjust=False):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = _numba_ewma_nan_safe(mat[:, j], alpha, adjust)
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_mean_mat(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_mean_nan_safe(mat[:, j], window)
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_std_mat(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_std_nan_safe(mat[:, j], window)
+    return out
+
+def numba_rolling_vwap_mat(price_df, vol_df, window):
+    # tprint(f"Entering function: numba_rolling_vwap_mat in fast_funcs.py")
+    p_mat = price_df.to_numpy(dtype=np.float32)
+    v_mat = vol_df.to_numpy(dtype=np.float32)
+    res = _numba_rolling_vwap_mat(p_mat, v_mat, window)
+    return pd.DataFrame(res, index=price_df.index, columns=price_df.columns, dtype=np.float32)
+
+def numba_ewma_mat(df, alpha, adjust=False):
+    # tprint(f"Entering function: numba_ewma_mat in fast_funcs.py")
+    mat = df.to_numpy(dtype=np.float32)
+    res = _numba_ewma_nan_safe_mat(mat, alpha, adjust)
+    return pd.DataFrame(res, index=df.index, columns=df.columns, dtype=np.float32)
+
+def numba_rolling_mean_mat(df, window):
+    # tprint(f"Entering function: numba_rolling_mean_mat in fast_funcs.py")
+    mat = df.to_numpy(dtype=np.float32)
+    res = _numba_rolling_mean_mat(mat, window)
+    return pd.DataFrame(res, index=df.index, columns=df.columns, dtype=np.float32)
+
+def numba_rolling_std_mat(df, window):
+    # tprint(f"Entering function: numba_rolling_std_mat in fast_funcs.py")
+    mat = df.to_numpy(dtype=np.float32)
+    res = _numba_rolling_std_mat(mat, window)
+    return pd.DataFrame(res, index=df.index, columns=df.columns, dtype=np.float32)

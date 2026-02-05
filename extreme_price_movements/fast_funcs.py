@@ -1043,3 +1043,148 @@ def _numba_frac_diff_kernel(x, d, window, thres):
 def numba_frac_diff(df, d, window, thres=1e-5):
     tprint(f"Entering function: numba_frac_diff in fast_funcs.py")
     return apply_to_matrix(df, _numba_frac_diff_kernel, d, window, thres)
+
+@jit(nopython=True, cache=True)
+def _numba_rolling_zscore_nan_safe_1d(x, window, eps=1e-12):
+    n = len(x)
+    output = np.full(n, np.nan, dtype=np.float32)
+
+    if window <= 0:
+        return output
+
+    sum_val = 0.0
+    sum_sq = 0.0
+    count = 0
+
+    for i in range(n):
+        # Entering
+        val_in = x[i]
+        if not np.isnan(val_in):
+            sum_val += val_in
+            sum_sq += val_in * val_in
+            count += 1
+
+        # Leaving
+        if i >= window:
+            val_out = x[i - window]
+            if not np.isnan(val_out):
+                sum_val -= val_out
+                sum_sq -= val_out * val_out
+                count -= 1
+
+        # Output logic
+        if count > 1:
+            mean = sum_val / count
+            # Var = (SumSq - (Sum^2)/N) / (N-1)
+            var_num = sum_sq - (sum_val * sum_val) / count
+
+            if var_num < 0: var_num = 0.0
+
+            std = np.sqrt(var_num / (count - 1))
+
+            if not np.isnan(val_in):
+                 output[i] = (val_in - mean) / (std + eps)
+            else:
+                 output[i] = np.nan
+
+        elif count == 1:
+             # Std is undefined (0 or NaN) for N=1 depending on definition.
+             output[i] = np.nan
+        else:
+             output[i] = np.nan
+
+    return output
+
+@jit(nopython=True, cache=True)
+def _numba_causal_clip_with_ffill_1d(x, lo, hi):
+    n = len(x)
+    out = np.empty(n, dtype=np.float32)
+
+    last_lo = np.nan
+    last_hi = np.nan
+
+    for i in range(n):
+        # Update limits if valid
+        l = lo[i]
+        h = hi[i]
+
+        if not np.isnan(l):
+            last_lo = l
+
+        if not np.isnan(h):
+            last_hi = h
+
+        val = x[i]
+        if np.isnan(val):
+            out[i] = np.nan
+            continue
+
+        res = val
+
+        # Apply limits if we have them (current or carried forward)
+        if not np.isnan(last_lo):
+            if res < last_lo: res = last_lo
+
+        if not np.isnan(last_hi):
+            if res > last_hi: res = last_hi
+
+        out[i] = res
+
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_zscore_parallel(mat, window, eps=1e-12):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_zscore_nan_safe_1d(mat[:, j], window, eps)
+
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_causal_clip_parallel(mat, lo_mat, hi_mat):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = _numba_causal_clip_with_ffill_1d(mat[:, j], lo_mat[:, j], hi_mat[:, j])
+
+    return out
+
+def numba_rolling_zscore_fused(df, window, eps=1e-12):
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+
+    res = _numba_rolling_zscore_parallel(mat, window, eps)
+
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+
+    return res_df
+
+def numba_causal_clip(df, lo, hi):
+    # lo, hi should be same shape as df
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+        lo = lo.to_frame()
+        hi = hi.to_frame()
+
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    lo_mat = lo.to_numpy(dtype=np.float32, copy=False)
+    hi_mat = hi.to_numpy(dtype=np.float32, copy=False)
+
+    res = _numba_causal_clip_parallel(mat, lo_mat, hi_mat)
+
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+
+    return res_df

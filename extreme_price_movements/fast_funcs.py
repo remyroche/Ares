@@ -390,38 +390,80 @@ def numba_zscore(df, n):
 def _numba_rolling_max(x, window):
     n = len(x)
     out = np.full(n, np.nan, dtype=np.float32)
+
+    # Deque stores indices of potential max candidates
+    # Invariant: elements in deque are in decreasing order of value at those indices
+    # We maintain a deque of indices
+    deque_indices = np.empty(n, dtype=np.int32)
+    front = 0
+    back = -1
+
     for i in range(n):
-        start = max(0, i - window + 1)
-        end = i + 1
-        valid = False
-        m = -np.inf
-        for j in range(start, end):
-            val = x[j]
-            if not np.isnan(val):
-                if val > m:
-                    m = val
-                valid = True
-        if valid:
-            out[i] = m
+        val = x[i]
+
+        # 1. Clean deque from front: remove indices that are out of window
+        lower_bound = i - window + 1
+        while front <= back and deque_indices[front] < lower_bound:
+            front += 1
+
+        # 2. Add current element if it is valid (not NaN)
+        if not np.isnan(val):
+            # Maintain decreasing property: remove elements from back that are smaller than val
+            while front <= back:
+                idx = deque_indices[back]
+                # x[idx] is guaranteed to be valid because we only add valid indices
+                if x[idx] <= val:
+                    back -= 1
+                else:
+                    break
+
+            # Push current index
+            back += 1
+            deque_indices[back] = i
+
+        # 3. Report max
+        if front <= back:
+            out[i] = x[deque_indices[front]]
+
     return out
 
 @jit(nopython=True, cache=True)
 def _numba_rolling_min(x, window):
     n = len(x)
     out = np.full(n, np.nan, dtype=np.float32)
+
+    # Deque stores indices of potential min candidates
+    # Invariant: elements in deque are in increasing order of value at those indices
+    deque_indices = np.empty(n, dtype=np.int32)
+    front = 0
+    back = -1
+
     for i in range(n):
-        start = max(0, i - window + 1)
-        end = i + 1
-        valid = False
-        m = np.inf
-        for j in range(start, end):
-            val = x[j]
-            if not np.isnan(val):
-                if val < m:
-                    m = val
-                valid = True
-        if valid:
-            out[i] = m
+        val = x[i]
+
+        # 1. Clean deque from front: remove indices that are out of window
+        lower_bound = i - window + 1
+        while front <= back and deque_indices[front] < lower_bound:
+            front += 1
+
+        # 2. Add current element if it is valid (not NaN)
+        if not np.isnan(val):
+            # Maintain increasing property: remove elements from back that are larger than val
+            while front <= back:
+                idx = deque_indices[back]
+                if x[idx] >= val:
+                    back -= 1
+                else:
+                    break
+
+            # Push current index
+            back += 1
+            deque_indices[back] = i
+
+        # 3. Report min
+        if front <= back:
+            out[i] = x[deque_indices[front]]
+
     return out
 
 @jit(nopython=True, cache=True)

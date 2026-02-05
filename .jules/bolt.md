@@ -66,3 +66,9 @@ Result: `calculate_entropy_statistics_numba` speedup >700x (2.11s -> 0.003s). Fu
 - `_numba_rolling_std_nan_safe`: Was doing TWO passes over the window (Mean then Variance). Optimized to $O(N)$ using online variance update (tracking `sum`, `sum_sq`, `count`). Speedup: ~230x (4.25s -> 0.018s).
 
 **Action:** Always prefer $O(N)$ incremental updates for rolling statistics, even when handling NaNs requires conditional logic. The speedup is massive for W > 100.
+
+## 2026-02-05 - Rolling Min/Max Optimization
+
+**Learning:** `_numba_rolling_max` and `min` were implemented using a naive $O(N \cdot W)$ sliding window loop. This scales linearly with window size and is very slow for large windows (e.g. 463x slower for W=5000). Replacing this with a monotonic deque implementation reduces complexity to amortized $O(N)$, resulting in constant time execution regardless of window size.
+
+**Action:** Always use monotonic deques for rolling min/max operations instead of naive iteration over the window.

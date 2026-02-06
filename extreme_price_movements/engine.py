@@ -179,22 +179,29 @@ def _robust_norm(val, center, scale, eps=1e-12):
     return (float(val) - float(center)) / (float(scale) + eps)
 
 
-def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand, current_positions_syms):
+def _bucket_mode_from_side_dom(side, dom):
+    if dom == "tf":
+        return "best" if side == "long" else "worst"
+    return "worst" if side == "long" else "best"
+
+
+def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand, current_positions_syms, tradeable_candidates=None):
     if ts_sig not in mkt_gates.index:
         return pd.DataFrame()
 
-    candidates = set()
-    lookback_offsets = [0, 4, 8, 12, 16]
-    for offset in lookback_offsets:
-        t_check = ts_sig - pd.Timedelta(hours=offset)
-        if t_check in feats["ret24h"].index:
-            top, bot = select_trade_candidates_hourly(
-                feats, t_check, list(feats["ret24h"].columns),
-                cfg["trade_extreme_pct"], cfg["trade_extreme_min"], cfg["trade_extreme_max"],
-                cfg["trade_deviation_metric"]
-            )
-            candidates.update(top)
-            candidates.update(bot)
+    candidates = set(tradeable_candidates or [])
+    if not candidates:
+        lookback_offsets = [0, 4, 8, 12, 16]
+        for offset in lookback_offsets:
+            t_check = ts_sig - pd.Timedelta(hours=offset)
+            if t_check in feats["ret24h"].index:
+                top, bot = select_trade_candidates_hourly(
+                    feats, t_check, list(feats["ret24h"].columns),
+                    cfg["trade_extreme_pct"], cfg["trade_extreme_min"], cfg["trade_extreme_max"],
+                    cfg["trade_deviation_metric"]
+                )
+                candidates.update(top)
+                candidates.update(bot)
 
     candidates = [s for s in candidates if s not in current_positions_syms]
     if not candidates:
@@ -309,7 +316,7 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
 
     return pd.DataFrame(score_rows)
 
-def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config, cfg, p_exh_cand, current_positions_syms):
+def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config, cfg, p_exh_cand, current_positions_syms, tradeable_candidates=None):
     tprint(f"Entering function: generate_hourly_signals in engine.py")
     if ts_sig not in mkt_gates.index:
         return []
@@ -328,7 +335,7 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
     size_q50 = signal_params.get("size_q50")
     size_q90 = signal_params.get("size_q90")
 
-    sc_df = _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand, current_positions_syms)
+    sc_df = _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand, current_positions_syms, tradeable_candidates=tradeable_candidates)
     if sc_df.empty:
         return []
 
@@ -363,11 +370,16 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
             net_score = net_tf
             dom = "tf"
 
-        if net_score >= thr_long:
-            final_orders.append({"symbol": sym, "side": "long", "score": net_score, "dom": dom})
+        long_mode = _bucket_mode_from_side_dom("long", dom)
+        short_mode = _bucket_mode_from_side_dom("short", dom)
+        dom_thr_long = float(signal_params.get(f"thr_{dom}_{long_mode}", thr_long))
+        dom_thr_short = float(signal_params.get(f"thr_{dom}_{short_mode}", thr_short))
+
+        if net_score >= dom_thr_long:
+            final_orders.append({"symbol": sym, "side": "long", "score": net_score, "dom": dom, "mode": long_mode})
             abs_scores.append(abs(net_score))
-        elif net_score <= thr_short:
-            final_orders.append({"symbol": sym, "side": "short", "score": net_score, "dom": dom})
+        elif net_score <= dom_thr_short:
+            final_orders.append({"symbol": sym, "side": "short", "score": net_score, "dom": dom, "mode": short_mode})
             abs_scores.append(abs(net_score))
 
     if not final_orders:
@@ -399,11 +411,17 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
 
     for ord, w_alloc in zip(final_orders, raw_w):
         ord["weight"] = float(w_alloc * scale)
-        r_key = f"risk_{ord['side']}_{ord['dom']}"
+        mode = ord.get("mode") or _bucket_mode_from_side_dom(ord.get("side"), ord.get("dom"))
+        r_keys = [
+            f"risk_{ord['dom']}_{mode}",
+            f"risk_{ord['side']}_{ord['dom']}",
+        ]
         if risk_config and "granular_risk" in risk_config:
-            g_risk = risk_config["granular_risk"].get(r_key)
-            if g_risk:
-                ord["risk_params"] = g_risk
+            for r_key in r_keys:
+                g_risk = risk_config["granular_risk"].get(r_key)
+                if g_risk:
+                    ord["risk_params"] = g_risk
+                    break
         orders_out.append(ord)
 
     return orders_out

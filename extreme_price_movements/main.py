@@ -11,7 +11,7 @@ from extreme_price_movements.universe import refresh_margin_universe_daily, buil
 from extreme_price_movements.data_store import make_spot_exchange, PartitionedOHLCVStore, to_panel, check_data_health, save_features, load_features, get_feature_path, load_artifact_df
 from extreme_price_movements.features import compute_market_features, add_regime_gates, compute_features_hourly
 from extreme_price_movements.engine import generate_hourly_signals
-from extreme_price_movements.candidates import select_trade_candidates_hourly, entry_price_next_hour_open
+from extreme_price_movements.candidates import select_trade_candidates_hourly, entry_price_next_hour_open, detect_extreme_movement_candidates
 from extreme_price_movements.time_utils import get_ts_sig, floor_to_hour, now_utc
 from extreme_price_movements.state import StateManager
 from extreme_price_movements.metrics import MetricsLogger
@@ -23,6 +23,56 @@ from extreme_price_movements.pipeline_steps import run_label_generation_step_v2,
 def reconcile_state(ex, state):
     tprint("Reconciling state...")
     return True
+
+def _get_tradeable_basket(state, ts_sig):
+    basket = state.state.get("tradeable_basket", {})
+    valid = {}
+    for sym, expiry in basket.items():
+        try:
+            if pd.Timestamp(expiry) >= ts_sig:
+                valid[sym] = expiry
+        except Exception:
+            continue
+    state.state["tradeable_basket"] = valid
+    return set(valid.keys())
+
+
+def _update_tradeable_basket(state, ts_sig, symbols, ttl_hours):
+    basket = state.state.get("tradeable_basket", {})
+    expiry = (ts_sig + pd.Timedelta(hours=int(ttl_hours))).isoformat()
+    for sym in symbols:
+        basket[sym] = expiry
+    state.state["tradeable_basket"] = basket
+    state.save()
+
+
+def _monitor_active_positions_5m(ex, state, logger):
+    now_ts = now_utc()
+    positions = state.get_positions()
+    for sym, pos in positions.items():
+        last_check = pos.get("last_5m_check_ts")
+        if last_check and (now_ts - pd.Timestamp(last_check)) < pd.Timedelta(minutes=5):
+            continue
+        try:
+            ticker = ex.fetch_ticker(sym)
+            px = float(ticker.get("last") or ticker.get("close") or np.nan)
+            if not np.isfinite(px) or px <= 0:
+                continue
+            ts_risk = TrailingStop.from_dict(pos["risk_state"])
+            stopped, exit_px, reason = ts_risk.update(px, px, px)
+            if stopped:
+                entry_px = pos["entry_px"]
+                side = pos["side"]
+                ret = (exit_px / entry_px - 1.0) if side == "long" else (entry_px / exit_px - 1.0)
+                logger.log(now_ts, {"event": "exit", "symbol": sym, "return": ret, "reason": f"5m_{reason}"})
+                state.clear_position(sym)
+            else:
+                pos["risk_state"] = ts_risk.to_dict()
+                pos["last_5m_check_ts"] = now_ts.isoformat()
+                state.set_position(sym, pos)
+        except Exception:
+            continue
+
 
 def generate_features_daily(ts_sig, margin_symbols, cfg, store, ex):
     tprint("DAILY FEATURE GENERATION START")
@@ -217,6 +267,20 @@ def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger, model_
         feats = compute_features_hourly(panel, mkt_gates, cfg)
         tprint("Features generated")
 
+    move_syms = detect_extreme_movement_candidates(
+        panel, feats, ts_sig,
+        event_window_hours=cfg.get("inference_event_window_hours", 12),
+        move_threshold=cfg.get("inference_event_threshold", 0.07),
+        perf_pct=cfg.get("inference_perf_pct", 0.10),
+        draw_window_hours=cfg.get("inference_draw_window_hours", 8),
+        sign_consistency_min=cfg.get("inference_sign_consistency_min", 0.80),
+    )
+    if move_syms:
+        _update_tradeable_basket(state, ts_sig, move_syms, cfg.get("inference_basket_ttl_hours", 24))
+
+    tradeable_basket = _get_tradeable_basket(state, ts_sig)
+    tradeable_basket.update(active_syms)
+
     if not model_state or not model_state.get("bundle"):
         tprint("No trained models available. Skipping execution.")
         return
@@ -255,7 +319,8 @@ def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger, model_
     tprint("Exhaustion history for candidates generated")
 
     target_orders = generate_hourly_signals(
-        ts_sig, feats, mkt_gates, bundle, risk_conf, cfg, p_exh_cand, active_syms
+        ts_sig, feats, mkt_gates, bundle, risk_conf, cfg, p_exh_cand, active_syms,
+        tradeable_candidates=sorted(tradeable_basket)
     )
     tprint(f"Generated {len(target_orders) if target_orders else 0} signals")
 
@@ -423,6 +488,7 @@ def run_live_cycle(initial_model_state=None):
                     model_state = new_state
 
             execute_hourly(ts_sig, mu.symbols, cfg, store, ex, state, logger, model_state)
+            _monitor_active_positions_5m(ex, state, logger)
 
         except Exception as e:
             tprint(f"CRITICAL ERROR: {e}")

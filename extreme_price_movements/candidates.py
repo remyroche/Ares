@@ -115,3 +115,101 @@ def select_trade_candidates_vectorized(panel, feats, pct=0.05, metric="ret24h"):
         expanded_mask = expanded_mask | shifted.fillna(False)
 
     return expanded_mask
+
+def detect_extreme_movement_candidates(
+    panel,
+    feats,
+    ts,
+    event_window_hours=12,
+    move_threshold=0.07,
+    perf_pct=0.10,
+    draw_window_hours=8,
+    sign_consistency_min=0.80,
+):
+    """Select top/worst performers gated by signed draw-extreme magnitude and sign consistency."""
+    c = panel["close"]
+    h = panel["high"]
+    l = panel["low"]
+    if ts not in c.index:
+        return []
+
+    ts_loc = c.index.get_loc(ts)
+    start_draw = max(0, ts_loc - int(draw_window_hours) + 1)
+    hs = h.iloc[start_draw:ts_loc + 1]
+    ls = l.iloc[start_draw:ts_loc + 1]
+    cs = c.iloc[start_draw:ts_loc + 1]
+    if hs.empty or ls.empty or cs.empty:
+        return []
+
+    close_t = c.loc[ts]
+    local_low = ls.min(axis=0)
+    local_high = hs.max(axis=0)
+
+    if ts_loc < int(draw_window_hours):
+        ret_w = close_t / (c.iloc[0] + 1e-12) - 1.0
+    else:
+        ret_w = close_t / (c.iloc[ts_loc - int(draw_window_hours)] + 1e-12) - 1.0
+
+    up_draw = (close_t - local_low) / (close_t.abs() + 1e-12)
+    dn_draw = (local_high - close_t) / (close_t.abs() + 1e-12)
+    draw_extreme = pd.Series(np.where(ret_w >= 0, up_draw, dn_draw), index=close_t.index, dtype=np.float64)
+    signed_draw_extreme = draw_extreme * np.sign(ret_w).replace(0, np.nan)
+
+    # Agreement is measured only on bars between current bar and the local extremum:
+    # - up move: local low -> current
+    # - down move: local high -> current
+    sign_consistency = pd.Series(index=close_t.index, dtype=np.float64)
+    dir_sign = np.sign(ret_w)
+
+    for sym in close_t.index:
+        d = dir_sign.get(sym, 0.0)
+        if not np.isfinite(d) or d == 0:
+            sign_consistency.loc[sym] = 0.0
+            continue
+
+        window_close = cs[sym]
+        if d > 0:
+            ext_ts = ls[sym].idxmin()
+        else:
+            ext_ts = hs[sym].idxmax()
+
+        try:
+            start_pos = window_close.index.get_loc(ext_ts)
+        except Exception:
+            sign_consistency.loc[sym] = 0.0
+            continue
+
+        segment = window_close.iloc[start_pos:]
+        if len(segment) < 2:
+            sign_consistency.loc[sym] = 0.0
+            continue
+
+        seg_rets = segment.pct_change().dropna()
+        if seg_rets.empty:
+            sign_consistency.loc[sym] = 0.0
+            continue
+
+        seg_sign = np.sign(seg_rets)
+        valid = seg_sign != 0
+        if valid.sum() == 0:
+            sign_consistency.loc[sym] = 0.0
+            continue
+
+        agree_rate = (seg_sign[valid] == d).mean()
+        sign_consistency.loc[sym] = float(agree_rate)
+
+    event_mask = (signed_draw_extreme.abs() >= move_threshold) & (sign_consistency >= sign_consistency_min)
+    event_syms = set(event_mask[event_mask].index.tolist())
+    if not event_syms:
+        return []
+
+    perf_h = max(1, min(int(event_window_hours), len(feats.get("ret1h", c).index)))
+    perf_key = f"ret{perf_h}h"
+    perf = feats[perf_key].loc[ts].dropna() if perf_key in feats else feats.get("ret1h", c).loc[ts].dropna()
+    if perf.empty:
+        return []
+
+    k = max(1, int(np.ceil(len(perf) * perf_pct)))
+    top = set(perf.nlargest(k).index.tolist())
+    bot = set(perf.nsmallest(k).index.tolist())
+    return sorted((top | bot) & event_syms)

@@ -25,6 +25,11 @@ def ema(x: pd.DataFrame, span: int):
 def atr_percent(high: pd.DataFrame, low: pd.DataFrame, close: pd.DataFrame, n: int):
     return ff.numba_atr_no_norm(high, low, close, n)
 
+def rolling_mad(df: pd.DataFrame, window: int):
+    med = ff.numba_rolling_median(df, window)
+    mad = ff.numba_rolling_median((df - med).abs(), window)
+    return mad.astype(np.float32)
+
 @_cache.cache
 def _transform_price(df, _label=""):
     tprint(f"Transforming Prices ({_label}): Log -> EWMA(5) -> Adaptive FracDiff [{df.shape[1]} cols]")
@@ -232,7 +237,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["ret1h"] = c
     feats["ret6h"] = ff.numba_rolling_sum(c, 6)
 
-    for H in [2, 3, 4, 12, 16, 20, 24, 28]:
+    for H in [2, 3, 4, 5, 10, 12, 16, 20, 24, 28]:
         feats[f"ret{H}h"] = ff.numba_rolling_sum(c, H)
 
     feats["range_pct"] = (h - l)
@@ -432,6 +437,31 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     volz_fast = zscore_rolling(v, max(24, int(cfg["volz_n"] * 0.5)))
     volz_slow = zscore_rolling(v, int(cfg["volz_n"] * 2))
     feats["vol_z"] = pick_by_rv(volz_fast, feats["vol_z_base"], volz_slow)
+
+    # Earlier trend detection / volatility-of-volatility composites
+    vov_fast = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 20)
+    vov_slow = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 60)
+    q25_20, q75_20 = ff.numba_rolling_quantile_dual(vov_fast, 20, 0.25, 0.75)
+    feats["vov_iqr_20"] = (q75_20 - q25_20).astype(np.float32)
+    feats["vov_mad_20"] = rolling_mad(vov_fast, 20)
+    feats["vov_mad_60"] = rolling_mad(vov_fast, 60)
+    feats["vov_ratio"] = (feats["vov_mad_20"] / (feats["vov_mad_60"] + 1e-12)).astype(np.float32)
+    feats["vov_fast_slow_ratio"] = (vov_fast / (vov_slow + 1e-12)).astype(np.float32)
+    relu_vov_z = feats["vol_z"].clip(lower=0)
+    feats["vov_interaction"] = (feats["vol_z"] * relu_vov_z).astype(np.float32)
+
+    feats["accel_5h"] = (feats["ret5h"] - (feats["ret10h"] / 2.0)).astype(np.float32)
+    feats["dlog_vol_5h"] = (v - v.shift(5)).astype(np.float32)
+    max_bar = ff.numba_rolling_max(feats["ret1h"].abs(), 5)
+    sign_max_bar = np.sign(ff.numba_rolling_sum(feats["ret1h"], 5))
+    feats["signed_max_bar_ret_5h"] = (sign_max_bar * max_bar).astype(np.float32)
+    q90_dx = ff.numba_rolling_quantile(feats["ret1h"].abs(), 24 * 30, 0.90)
+    feats["jump_rate_10h"] = ff.apply_to_frame((feats["ret1h"].abs() > q90_dx).astype(np.float32), ff._numba_rolling_mean_nan_safe, 10).astype(np.float32)
+    vol_mu_30d = ff.apply_to_frame(v, ff._numba_rolling_mean_nan_safe, 24 * 30)
+    vol_sd_30d = ff.apply_to_frame(v, ff._numba_rolling_std_nan_safe, 24 * 30)
+    feats["volu_z"] = ((v - vol_mu_30d) / (vol_sd_30d + 1e-12)).astype(np.float32)
+    feats["vol_z_30_calm"] = ff.numba_rolling_robust_zscore(np.log(feats["atr_pct_base"] + 1e-9), window=24 * 30, quantile=0.45).astype(np.float32)
+    feats["volume_price_corr_10h"] = ff.numba_rolling_corr(feats["ret1h"].abs(), v, 10).fillna(0).astype(np.float32)
 
     sma_fast = ff.apply_to_frame(c, ff._numba_rolling_mean_nan_safe, max(24, int(cfg["trend_sma_n"] * 0.5)))
     sma_slow = ff.apply_to_frame(c, ff._numba_rolling_mean_nan_safe, int(cfg["trend_sma_n"] * 2))
@@ -634,6 +664,28 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["G_META_MR_QUAL"] = (feats["reject"] * (1.0 - feats["overext"].clip(0,1))).astype(np.float32)
     feats["G_META_AMBIG"] = (ambig_term * feats["rv_ratio_6_24"]).astype(np.float32)
 
+    ret_w = feats["ret10h"]
+    local_low = ff.numba_rolling_min(l, 10)
+    local_high = ff.numba_rolling_max(h, 10)
+    draw_num = np.where((ret_w > 0).to_numpy(), (c - local_low).to_numpy(), (c - local_high).to_numpy())
+    feats["draw_sym_10h"] = (np.sign(ret_w) * pd.DataFrame(draw_num, index=c.index, columns=c.columns) / (c + 1e-12)).astype(np.float32)
+    feats["draw_extreme_10h"] = feats["draw_sym_10h"].abs().astype(np.float32)
+
+    hi_24_prev = ff.numba_rolling_max(h.shift(1), 24)
+    lo_24_prev = ff.numba_rolling_min(l.shift(1), 24)
+    up_break = c - hi_24_prev
+    dn_break = c - lo_24_prev
+    choose_up = (up_break.abs() >= dn_break.abs())
+    feats["breakout_24h"] = np.where(choose_up, up_break, dn_break).astype(np.float32) / (c + 1e-12)
+    feats["breakout_24h"] = feats["breakout_24h"].astype(np.float32)
+
+    abs_net_score = feats["accept"] + feats["reject"]
+    feats["meta_abs_net_x_breakout"] = (abs_net_score * feats["breakout_24h"].abs()).astype(np.float32)
+    feats["meta_abs_net_x_drawext"] = (abs_net_score * feats["draw_extreme_10h"]).astype(np.float32)
+    feats["meta_abs_net_x_vov_ratio"] = (abs_net_score * (feats["vov_ratio"] - 1.0).clip(lower=0)).astype(np.float32)
+    feats["meta_alignment"] = (np.sign(feats["accept"] - feats["reject"]) * np.sign(feats["ret5h"])).astype(np.float32)
+    feats["meta_signal_x_accel"] = ((feats["accept"] - feats["reject"]) * feats["accel_5h"]).astype(np.float32)
+
     # Robust Score Calculation with clipping to prevent Inf/Overflow
     # We clip components to avoid exploding values when denominators are near zero
     feats["spike_score"] = (feats["speed"].clip(0, 100) * feats["excess_6h"].clip(0, 100)).fillna(0).astype(np.float32)
@@ -644,7 +696,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     tprint("Features: Applying Causal Transforms (Log + Winsor + ZScore)")
     transformer = CausalFeatureTransformer(winsor_qt=0.02, roll_window=24*30)
 
-    skip_transform = ["sin_hod", "cos_hod", "sin_dow", "cos_dow", "range_24h_pct", "volatility_zscore"]
+    skip_transform = ["sin_hod", "cos_hod", "sin_dow", "cos_dow", "range_24h_pct", "volatility_zscore", "breakout_24h", "draw_sym_10h", "draw_extreme_10h"]
 
     for k in feats.keys():
         tprint(f"Generating feature: {k}")

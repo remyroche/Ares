@@ -8,7 +8,7 @@ from extreme_price_movements.data_store import load_features, save_features, sav
 from extreme_price_movements.training import generate_label_datasets, generate_exhaustion_history, optimize_risk_params, train_models_from_artifacts
 from extreme_price_movements.features import compute_market_features, add_regime_gates, compute_features_hourly
 from extreme_price_movements.universe import get_training_universe
-from extreme_price_movements.engine import simulate_trade_hourly, generate_hourly_signals
+from extreme_price_movements.engine import simulate_trade_hourly, generate_hourly_signals, _build_side_score_df
 from extreme_price_movements.metrics import MetricsLogger
 from extreme_price_movements.risk import TrailingStop
 
@@ -225,6 +225,10 @@ def run_risk_optimization_step(ts_sig, margin_symbols, cfg, store, state_file):
     alpha_models = bundle["alpha_models"]
     best_risk = optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts_sig, p_exh_hist, alpha_models)
 
+    prev_risk = state.get("risk_params", {}) if isinstance(state.get("risk_params"), dict) else {}
+    if isinstance(prev_risk, dict) and "signal_params" in prev_risk and isinstance(best_risk, dict):
+        best_risk["signal_params"] = prev_risk["signal_params"]
+
     state["risk_params"] = best_risk
     with open(state_file, "wb") as f:
         pickle.dump(state, f)
@@ -241,115 +245,230 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
     with open(state_file, "rb") as f:
         model_state = pickle.load(f)
 
-    # Load Data
     train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=ts_sig)
     dfs = {}
-
     lookback_days = max(90, int(cfg["fetch_years"] * 365))
 
     with Timer("Backtest Data Load"):
         for s in train_syms:
             df = store.load(s)
-            if not df.empty: dfs[s] = df[df.index <= ts_sig].tail(24*lookback_days) # enough for features
+            if not df.empty:
+                dfs[s] = df[df.index <= ts_sig].tail(24 * lookback_days)
 
-    if not dfs: return
+    if not dfs:
+        return
 
     panel = to_panel(dfs)
     mkt_df = compute_market_features(panel, cfg["market_basket"])
     mkt_gates = add_regime_gates(mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
     feats = load_features(ts_sig, cfg["data_root"])
 
-    # Load Exhaustion
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     from extreme_price_movements.data_store import load_artifact_df
     p_exh_hist = load_artifact_df(cfg["data_root"], run_id, "labels", "exhaustion_history")
     if p_exh_hist is None:
         p_exh_hist = generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_sig, cfg["train_lookback_hours"], train_syms)
 
-    # Backtest Loop (use OOS holdout window)
     test_days = cfg.get("oos_holdout_days", 14)
     start_ts = ts_sig - pd.Timedelta(days=test_days)
-    end_ts = ts_sig - pd.Timedelta(hours=24) # Leave holding room
-
+    end_ts = ts_sig - pd.Timedelta(hours=24)
     valid_ts = [t for t in feats["ret1h"].index if t >= start_ts and t <= end_ts]
-
     tprint(f"Running backtest over {len(valid_ts)} hours...")
+    if len(valid_ts) < 48:
+        tprint("Not enough timestamps for backtest optimization.")
+        return
 
-    trades = []
-
-    # Cache price data
-    o_s = panel["open"]
-    h_s = panel["high"]
-    l_s = panel["low"]
-    c_s = panel["close"]
+    o_s = panel["open"]; h_s = panel["high"]; l_s = panel["low"]; c_s = panel["close"]
     atr_s = feats["atr_pct"]
-
-    risk_conf = model_state.get("risk_params", {})
+    risk_conf = model_state.get("risk_params", {}) or {}
     bundle = model_state.get("bundle")
 
-    # Fees
     fee_bps = cfg.get("fee_bps", 25.0)
     fee_rate = fee_bps / 10000.0
 
-    for t in valid_ts:
-        orders = generate_hourly_signals(t, feats, mkt_gates, bundle, risk_conf, cfg, p_exh_hist, [])
-        for order in orders:
-            sym = order["symbol"]
-            side = order["side"]
-            score = order["score"]
-            dom = order["dom"]
+    def rank01(x: np.ndarray, higher_is_better: bool = True) -> np.ndarray:
+        x = np.asarray(x, dtype=np.float64)
+        order = np.argsort(x)
+        ranks = np.empty_like(order, dtype=np.float64)
+        ranks[order] = np.arange(1, x.size + 1, dtype=np.float64)
+        pct = (ranks - 1.0) / max(1.0, x.size - 1.0)
+        return pct if higher_is_better else (1.0 - pct)
 
-            entry_ts = t + pd.Timedelta(hours=1)
-            if entry_ts not in o_s.index: continue
+    def pnl_sortino_dd_utility(pnls, sortinos, max_dds, w_pnl=0.65, w_sortino=0.25, w_dd=0.10):
+        return w_pnl * rank01(pnls, True) + w_sortino * rank01(sortinos, True) + w_dd * rank01(max_dds, True)
 
-            entry_px = float(o_s.loc[entry_ts, sym])
+    def compute_metrics(trades):
+        if not trades:
+            return 0.0, 0.0, 0.0
+        rets = np.array([x["pnl"] for x in trades], dtype=np.float64)
+        pnl = float(np.sum(rets))
+        neg = rets[rets < 0]
+        sortino = float(np.mean(rets) / (np.std(neg) + 1e-12)) if neg.size > 0 else float(np.mean(rets) / 1e-12)
+        eq = np.cumsum(rets)
+        peak = np.maximum.accumulate(eq)
+        dd = eq - peak
+        max_dd = float(np.min(dd)) if dd.size else 0.0
+        return pnl, sortino, max_dd
 
-            # Risk logic from execute_hourly
-            risk_key = f"risk_{side}_{dom}"
-            granular = risk_conf.get("granular_risk", {})
-            rp = granular.get(risk_key, {})
+    def run_slice(ts_list, signal_params):
+        trades = []
+        local_risk = dict(risk_conf)
+        local_risk["signal_params"] = signal_params
 
-            k_sl = rp.get("k_sl", cfg["risk_k_sl"])
-            k_ts = rp.get("k_trail_start", cfg["risk_k_trail_start"])
-            k_td = rp.get("k_trail_dist", cfg["risk_k_trail_dist"])
-            sc_scale = rp.get("score_scale", 0.0)
+        for t in ts_list:
+            orders = generate_hourly_signals(t, feats, mkt_gates, bundle, local_risk, cfg, p_exh_hist, [])
+            for order in orders:
+                sym = order["symbol"]
+                side = order["side"]
+                score = float(order["score"])
+                dom = order["dom"]
+                weight = float(order.get("weight", 0.0))
 
-            adj = (1.0 + sc_scale * abs(score))
-            k_sl_adj = k_sl * adj
+                entry_ts = t + pd.Timedelta(hours=1)
+                if entry_ts not in o_s.index or sym not in o_s.columns:
+                    continue
+                entry_px = float(o_s.loc[entry_ts, sym])
 
-            temp_cfg = cfg.copy()
-            temp_cfg["risk_k_sl"] = k_sl_adj
-            temp_cfg["risk_k_trail_start"] = k_ts
-            temp_cfg["risk_k_trail_dist"] = k_td
+                risk_key = f"risk_{side}_{dom}"
+                granular = local_risk.get("granular_risk", {})
+                rp = granular.get(risk_key, {})
 
-            ret, exit_ts, reason = simulate_trade_hourly(
-                o_s[sym], h_s[sym], l_s[sym], c_s[sym], atr_s[sym],
-                entry_ts, entry_px, side, temp_cfg, max_hold_hours=24
-            )
+                k_sl = rp.get("k_sl", cfg["risk_k_sl"])
+                k_ts = rp.get("k_trail_start", cfg["risk_k_trail_start"])
+                k_td = rp.get("k_trail_dist", cfg["risk_k_trail_dist"])
+                sc_scale = rp.get("score_scale", 0.0)
+                adj = (1.0 + sc_scale * abs(score))
 
-            # Apply fees (approximate)
-            net_ret = ret - (2.0 * fee_rate)
+                temp_cfg = cfg.copy()
+                temp_cfg["risk_k_sl"] = k_sl * adj
+                temp_cfg["risk_k_trail_start"] = k_ts
+                temp_cfg["risk_k_trail_dist"] = k_td
 
-            trades.append({
-                "entry_ts": entry_ts, "symbol": sym, "side": side,
-                "ret": net_ret, "gross_ret": ret, "exit_ts": exit_ts, "reason": reason
-            })
+                ret, exit_ts, reason = simulate_trade_hourly(
+                    o_s[sym], h_s[sym], l_s[sym], c_s[sym], atr_s[sym],
+                    entry_ts, entry_px, side, temp_cfg, max_hold_hours=24
+                )
+                net_ret = ret - (2.0 * fee_rate)
+                pnl = net_ret * weight
+                trades.append({
+                    "entry_ts": entry_ts, "symbol": sym, "side": side, "dom": dom,
+                    "score": score, "weight": weight, "ret": net_ret, "pnl": pnl,
+                    "gross_ret": ret, "exit_ts": exit_ts, "reason": reason
+                })
+        return trades
 
-    if trades:
-        df_res = pd.DataFrame(trades)
-        win_rate = (df_res["ret"] > 0).mean()
-        avg_ret = df_res["ret"].mean()
-        total_ret = df_res["ret"].sum()
+    split = max(24, int(len(valid_ts) * 0.6))
+    train_ts = valid_ts[:split]
+    test_ts = valid_ts[split:]
 
-        tprint(f"Backtest Result: Trades={len(df_res)}, WinRate={win_rate:.2%}, AvgRet={avg_ret:.4%}, Total={total_ret:.4f}")
+    raw_train = run_slice(train_ts, {
+        "thr_long": -1e9, "thr_short": 1e9,
+        "k_long": cfg.get("k_long", 10), "k_short": cfg.get("k_short", 10),
+        "size_min": 0.03, "size_max": 0.15, "size_k": 2.0, "size_x0": 0.5, "size_zcap": 4.0,
+    })
+    train_abs = np.array([abs(t["score"]) for t in raw_train], dtype=np.float64)
+    q50 = float(np.quantile(train_abs, 0.5)) if train_abs.size else 0.0
+    q90 = float(np.quantile(train_abs, 0.9)) if train_abs.size else max(q50 + 1e-6, 1e-3)
 
-        # Save results
+    # Calibrate long/short meta-score comparability on train only.
+    side_frames = []
+    for t in train_ts:
+        s_df = _build_side_score_df(t, feats, mkt_gates, bundle, cfg, p_exh_hist, [])
+        if not s_df.empty:
+            side_frames.append(s_df)
+
+    if side_frames:
+        side_all = pd.concat(side_frames, ignore_index=True)
+
+        def _center_scale(arr):
+            v = np.asarray(arr, dtype=np.float64)
+            if v.size == 0:
+                return 0.0, 1.0
+            c = float(np.quantile(v, 0.5))
+            s = float(np.quantile(v, 0.9) - np.quantile(v, 0.5))
+            return c, max(s, 1e-6)
+
+        lmr = side_all[side_all["side_key"] == "long"]["score_mr"].values
+        smr = side_all[side_all["side_key"] == "short"]["score_mr"].values
+        ltf = side_all[side_all["side_key"] == "long"]["score_tf"].values
+        stf = side_all[side_all["side_key"] == "short"]["score_tf"].values
+
+        lmr_c, lmr_s = _center_scale(lmr)
+        smr_c, smr_s = _center_scale(smr)
+        ltf_c, ltf_s = _center_scale(ltf)
+        stf_c, stf_s = _center_scale(stf)
+
+        score_scale_params = {
+            "long_mr_center": lmr_c, "long_mr_scale": lmr_s,
+            "short_mr_center": smr_c, "short_mr_scale": smr_s,
+            "long_tf_center": ltf_c, "long_tf_scale": ltf_s,
+            "short_tf_center": stf_c, "short_tf_scale": stf_s,
+        }
+    else:
+        score_scale_params = {}
+
+    thr_long_grid = [0.00, 0.01, 0.02, 0.03]
+    thr_short_grid = [0.00, 0.01, 0.02, 0.03]
+    x0_grid = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+    k_grid = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0]
+
+    combos = []
+    for tl in thr_long_grid:
+        for ts_ in thr_short_grid:
+            for x0 in x0_grid:
+                for k in k_grid:
+                    params = {
+                        "thr_long": tl,
+                        "thr_short": -ts_,
+                        "k_long": cfg.get("k_long", 10),
+                        "k_short": cfg.get("k_short", 10),
+                        "size_min": 0.03,
+                        "size_max": 0.15,
+                        "size_k": k,
+                        "size_x0": x0,
+                        "size_zcap": 4.0,
+                        "size_q50": q50,
+                        "size_q90": q90,
+                        "score_scale_params": score_scale_params,
+                    }
+                    tr = run_slice(train_ts, params)
+                    pnl, sortino, max_dd = compute_metrics(tr)
+                    tprint(f"SignalOpt tl={tl:.3f} ts={-ts_:.3f} k={k:.2f} x0={x0:.2f} -> pnl={pnl:.6f} sortino={sortino:.6f} maxdd={max_dd:.6f}")
+                    combos.append((params, pnl, sortino, max_dd))
+
+    if combos:
+        pnls = np.array([c[1] for c in combos], dtype=np.float64)
+        sorts = np.array([c[2] for c in combos], dtype=np.float64)
+        dds = np.array([c[3] for c in combos], dtype=np.float64)
+        util = pnl_sortino_dd_utility(pnls, sorts, dds)
+        best_i = int(np.argmax(util))
+        best_signal_params = combos[best_i][0]
+    else:
+        best_signal_params = {
+            "thr_long": cfg.get("thr_long", 0.01), "thr_short": cfg.get("thr_short", -0.01),
+            "k_long": cfg.get("k_long", 10), "k_short": cfg.get("k_short", 10),
+            "size_min": 0.03, "size_max": 0.15, "size_k": 2.0, "size_x0": 0.5,
+            "size_zcap": 4.0, "size_q50": q50, "size_q90": q90,
+            "score_scale_params": score_scale_params,
+        }
+
+    tprint(f"Selected signal params: {best_signal_params}")
+
+    test_trades = run_slice(test_ts, best_signal_params)
+    pnl, sortino, max_dd = compute_metrics(test_trades)
+    tprint(f"Backtest OOS Result: Trades={len(test_trades)}, PnL={pnl:.6f}, Sortino={sortino:.6f}, MaxDD={max_dd:.6f}")
+
+    if test_trades:
+        df_res = pd.DataFrame(test_trades)
         out_path = os.path.join(cfg["data_root"], "artifacts", run_id, "backtest_results.csv")
         df_res.to_csv(out_path, index=False)
         tprint(f"Detailed results saved to {out_path}")
-    else:
-        tprint("No trades generated in backtest.")
 
+    risk_conf["signal_params"] = best_signal_params
+    model_state["risk_params"] = risk_conf
+    with open(state_file, "wb") as f:
+        pickle.dump(model_state, f)
+    tprint("Saved optimized signal params to trained state for inference use.")
     tprint("STEP: BACKTEST COMPLETE")
 
 def run_feature_generation_step(ts_sig, margin_symbols, cfg, store):

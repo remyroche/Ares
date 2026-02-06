@@ -721,11 +721,11 @@ def run_tp_sl_selection_fast(
                 sl_pct = (float(sl_mult) * barrier_pct).astype(np.float32, copy=False)
                 w_ae = ae_weight_multiplier(ae, sl_pct, w_min=w_min, w_max=w_max)
 
-                aucs, ics, pnls = [], [], []
+                # Strict OOF scoring on outer-train: collect inner-fold predictions
+                # and score each TP/SL grid point on combined OOF outputs.
+                oof_scores = np.full(tr.shape[0], np.nan, dtype=np.float32)
                 for itr, ite in inner_splits:
                     y_tr = lab.y_bin[tr][itr]
-                    y_te = lab.y_bin[tr][ite]
-                    yr_te = lab.y_ret[tr][ite]
 
                     # class balance on THIS inner-train
                     w_cls = class_weight_balanced(y_tr)
@@ -741,18 +741,28 @@ def run_tp_sl_selection_fast(
                         regularize_intercept=False,
                     )
 
-                    scores = fast_ridge_scores(Xtr_b[ite], w)
-                    aucs.append(_auc_safe(y_te, scores))
-                    ics.append(_spearman_ic(scores, yr_te))
-                    pnls.append(_pnl_proxy(scores, yr_te))
+                    oof_scores[ite] = fast_ridge_scores(Xtr_b[ite], w)
+
+                valid_oof = np.isfinite(oof_scores)
+                if not np.any(valid_oof):
+                    inner_auc = 0.5
+                    inner_ic = 0.0
+                    inner_pnl = 0.0
+                else:
+                    y_oof = lab.y_bin[tr][valid_oof]
+                    yr_oof = lab.y_ret[tr][valid_oof]
+                    s_oof = oof_scores[valid_oof]
+                    inner_auc = _auc_safe(y_oof, s_oof)
+                    inner_ic = _spearman_ic(s_oof, yr_oof)
+                    inner_pnl = _pnl_proxy(s_oof, yr_oof)
 
                 grid_metrics.append(GridResult(
                     tp_mult=float(tp_mult),
                     sl_mult=float(sl_mult),
                     inner_score=0.0,
-                    inner_auc=float(np.mean(aucs)),
-                    inner_ic=float(np.mean(ics)),
-                    inner_pnl=float(np.mean(pnls)),
+                    inner_auc=float(inner_auc),
+                    inner_ic=float(inner_ic),
+                    inner_pnl=float(inner_pnl),
                 ))
 
         # Rank + composite score across grid

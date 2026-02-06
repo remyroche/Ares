@@ -57,12 +57,14 @@ def fetch_24h_tickers():
     tprint(f"Fetched {len(data)} 24h tickers.")
     return data
 
+from typing import Optional
+
 @dataclass
 class MarginUniverseCache:
     symbols: list[str]
     asof_day: pd.Timestamp
 
-def refresh_margin_universe_daily(cache: MarginUniverseCache | None, quotes=("USDT", "USDC", "BUSD", "EUR")) -> MarginUniverseCache:
+def refresh_margin_universe_daily(cache: Optional[MarginUniverseCache], quotes=("USDT", "USDC", "BUSD", "EUR")) -> MarginUniverseCache:
     tprint(f"Entering function: refresh_margin_universe_daily in universe.py")
     today = pd.Timestamp.utcnow().floor("D")
     if cache is not None and cache.asof_day == today:

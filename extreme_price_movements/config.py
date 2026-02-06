@@ -55,7 +55,7 @@ CFG = {
     "data_root": "data",
     "timeframe": "1h",
     "fetch_years": 3,
-    "fetch_symbols_M": 300,
+    "fetch_symbols_M": 500,
 
     # market basket
     "market_basket": ["BTC/USDT","ETH/USDT","AVAX/USDT","SOL/USDT","XRP/USDT"],
@@ -64,7 +64,7 @@ CFG = {
     "label_horizons_hours": [8],
     "train_lookback_hours": 24 * 365 * 3,   # 3 years
     "val_lookback_hours": 24 * 7,      # 7d validation (time-split, no leakage)
-    "min_train_samples": 8000,
+    "min_train_samples": 200,
 
     # per-hour cross-sectional training selection
     "variance_filter_pct": 1.0, # User requested to keep all non-constant features

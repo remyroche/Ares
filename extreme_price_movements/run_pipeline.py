@@ -11,7 +11,8 @@ import pandas as pd
 
 from extreme_price_movements.config import CFG
 from extreme_price_movements.utils import tprint
-from extreme_price_movements.data_store import PartitionedOHLCVStore
+from extreme_price_movements.data_store import PartitionedOHLCVStore, make_spot_exchange
+from extreme_price_movements.universe import refresh_margin_universe_daily, build_fetch_universe
 from extreme_price_movements.pipeline_steps import (
     run_label_generation_step_v2,
     run_feature_generation_step,
@@ -36,14 +37,42 @@ def _find_latest_feature_ts(data_root):
 
 
 
+def run_download(cfg):
+    """Download OHLCV data from Binance for the full training universe."""
+    import time as _time
+    tprint("STEP: DOWNLOAD START")
+    store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+    ex = make_spot_exchange()
+
+    mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
+    fetch_syms = build_fetch_universe(mu.symbols, cfg["market_basket"], cfg["fetch_symbols_M"])
+    tprint(f"Download universe: {len(fetch_syms)} symbols")
+
+    fetch_years = cfg.get("fetch_years", 3)
+    since = pd.Timestamp.utcnow() - pd.Timedelta(days=int(fetch_years * 365))
+    since_ms = int(since.value // 10**6)
+
+    success, fail = 0, 0
+    for i, sym in enumerate(fetch_syms):
+        try:
+            store.update_symbol(ex, sym, since_ms)
+            success += 1
+            if (i + 1) % 10 == 0:
+                tprint(f"  Download progress: {i+1}/{len(fetch_syms)} (ok={success}, fail={fail})")
+        except Exception as e:
+            fail += 1
+            tprint(f"  FAIL {sym}: {e}")
+        _time.sleep(0.1)  # gentle rate limit
+
+    tprint(f"STEP: DOWNLOAD COMPLETE — {success} ok, {fail} failed out of {len(fetch_syms)}")
+
+
 def _label_artifacts_ready(cfg, ts_sig):
     """Check whether core label artifacts exist for this run timestamp."""
     import os
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     horizons = cfg.get("label_horizons_hours", [])
     required = [
-        "spike_anatomy_best",
-        "spike_anatomy_worst",
         "exhaustion_history",
         "exh_up",
         "exh_down",
@@ -142,7 +171,7 @@ def run_train(cfg, ts_override=None):
         tprint("ERROR: Label generation did not produce required artifacts. Aborting training.")
         return
 
-    state = run_training_step(ts_sig, cfg)
+    state = run_training_step(ts_sig, cfg, store=store, margin_symbols=None)
     if state:
         tprint("TRAINING PIPELINE COMPLETE")
     else:
@@ -171,7 +200,8 @@ def run_risk_opt(cfg, ts_override=None):
 
 
 def run_all(cfg, ts_override=None):
-    """Run features -> labels -> train -> risk optimisation -> backtest in order."""
+    """Run download -> features -> labels -> train -> risk optimisation -> backtest in order."""
+    run_download(cfg)
     run_features(cfg, ts_override=ts_override)
     run_labels(cfg, ts_override=ts_override)
     run_train(cfg, ts_override=ts_override)
@@ -208,13 +238,15 @@ def run_all(cfg, ts_override=None):
 
 def main():
     parser = argparse.ArgumentParser(description="Extreme Price Movements Pipeline")
-    parser.add_argument("mode", choices=["labels", "features", "train", "backtest", "optimize_risk", "run"],
+    parser.add_argument("mode", choices=["download", "labels", "features", "train", "backtest", "optimize_risk", "run"],
                         help="Pipeline mode to run")
     args = parser.parse_args()
 
     cfg = CFG.copy()
 
-    if args.mode == "labels":
+    if args.mode == "download":
+        run_download(cfg)
+    elif args.mode == "labels":
         run_labels(cfg)
     elif args.mode == "features":
         run_features(cfg)

@@ -268,8 +268,8 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     # Volatility Z-score (using Log-ATR robust z-score)
     # Baseline: 90 days. x = log(ATR/Close).
     # Z = (x - Q(0.45)) / (1.4826 * MAD)
-    # feats["atr_pct"] is raw ATR (price units), so we normalize by C
-    vol_proxy = (feats["atr_pct"] / (c + 1e-12))
+    # atr_base is raw ATR (price units), so we normalize by C
+    vol_proxy = (atr_base / (c + 1e-12))
     log_vol = np.log(vol_proxy + 1e-9).astype(np.float32)
     feats["volatility_zscore"] = ff.numba_rolling_robust_zscore(
         log_vol, window=24 * 90, quantile=0.45

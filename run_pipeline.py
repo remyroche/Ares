@@ -102,7 +102,7 @@ def main():
     elif args.mode == "feature_generation":
         tprint("Starting Feature Generation...")
         with Timer("Margin Universe"):
-            mu = refresh_margin_universe_daily(None, quote="USDT")
+            mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
 
         ts_sig = get_ts_sig()
         generate_features_daily(ts_sig, mu.symbols, CFG, store, ex)
@@ -110,7 +110,7 @@ def main():
     elif args.mode == "labels":
         tprint("Starting Label Generation...")
         with Timer("Margin Universe"):
-            mu = refresh_margin_universe_daily(None, quote="USDT")
+            mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
 
         ts_sig = get_ts_sig()
         run_label_generation_step_v2(ts_sig, mu.symbols, CFG, store, ex)
@@ -118,7 +118,7 @@ def main():
     elif args.mode == "train":
         tprint("Starting Training...")
         with Timer("Margin Universe"):
-            mu = refresh_margin_universe_daily(None, quote="USDT")
+            mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
 
         ts_sig = get_ts_sig()
 
@@ -133,7 +133,7 @@ def main():
     elif args.mode == "risk":
         tprint("Starting Risk Optimization...")
         with Timer("Margin Universe"):
-            mu = refresh_margin_universe_daily(None, quote="USDT")
+            mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
 
         ts_sig = get_ts_sig()
         run_risk_optimization_step(ts_sig, mu.symbols, CFG, store, args.state_file)
@@ -141,7 +141,7 @@ def main():
     elif args.mode == "backtest":
         tprint("Starting Backtest...")
         with Timer("Margin Universe"):
-            mu = refresh_margin_universe_daily(None, quote="USDT")
+            mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
 
         ts_sig = get_ts_sig()
         run_backtest_step(ts_sig, mu.symbols, CFG, store, args.state_file)

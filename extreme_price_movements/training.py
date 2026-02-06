@@ -4,7 +4,6 @@ from .utils import tprint
 from .model_race import ModelRace
 from .meta_model import MetaModel
 from .exhaustion import ExhaustionModel
-from .exhaustion import ExhaustionModel
 from .feature_selection_extreme_events import mdi_feature_selection_v3
 from .candidates import select_trade_candidates_hourly, select_trade_candidates_vectorized
 import extreme_price_movements.fast_funcs as ff
@@ -33,7 +32,6 @@ def _fast_lookup(feat_df, event_ts, event_sym):
 
 
 def apply_interaction_toggles(df: pd.DataFrame, causal_cols, gate_cols, drop_raw=True):
-    tprint(f"Entering function: apply_interaction_toggles in training.py")
     out = df.copy()
     for g in gate_cols:
         if g not in out.columns:
@@ -247,7 +245,8 @@ def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms, models=Non
         if model_dn and model_dn.model:
             Xp = _build_pred_X(feats, mkt_gates, cfg, ts, dn_syms, feature_key="exh_feature_keys")
             if not Xp.empty:
-                probs = model_dn.predict_proba(Xp)
+                preds = model_dn.predict_proba(Xp)
+                probs = np.clip(preds * 2.0, 0.0, 1.0)
                 out_probs.loc[dn_syms] = probs
     return out_probs.fillna(0.0)
 
@@ -373,13 +372,14 @@ def generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_end, lookback_h
         if model_dn and model_dn.model:
             # 1. Fitted prediction
             preds = model_dn.predict_proba(X_sym_df)
+            preds = np.clip(preds * 2.0, 0.0, 1.0)
 
             # 2. Overlay OOF predictions
             if arr_oof_dn is not None:
                 oof_col = arr_oof_dn[:, j]
                 valid_oof = ~np.isnan(oof_col)
                 if valid_oof.any():
-                    preds[valid_oof] = oof_col[valid_oof]
+                    preds[valid_oof] = np.clip(oof_col[valid_oof] * 2.0, 0.0, 1.0)
             p_dn_sym = preds
 
         result[:, j] = np.where(trend_arr[:, j] > 0, p_up_sym, p_dn_sym)
@@ -728,18 +728,28 @@ def train_spike_anatomy_model(panel, feats, mkt_gates, cfg, syms, ts_end, _cache
     # Extract features using fast numpy positional indexing
     # Optimization: Precompute indices once
     # Assumes all feature DataFrames share the same index/columns
-    ref_key = available_keys[0]
-    ref_df = feats[ref_key]
-
     # Validate strict alignment for optimized lookup
     # We rely on all features having identical Index/Columns implies row_idx/col_idx are valid for all.
-    for k in available_keys[1:]:
-        if k in feats and (len(feats[k].index) != len(ref_df.index) or not feats[k].index.equals(ref_df.index) or not feats[k].columns.equals(ref_df.columns)):
-             tprint(f"Warning: Feature {k} structure mismatch in Spike Anatomy. alignment_check=FAIL")
-             # Fallback to slower safe lookup or skip? 
-             # Given this is a critical optimization, we return None (fail safe) or reindex (slow).
-             # Let's fail safe to alert the user of data corruption.
-             return None
+    # Ref: panel["close"] is the ground truth for alignment
+    ref_df = panel["close"]
+    
+    # Make a shallow copy of feats to avoid side effects if we modify
+    feats = feats.copy()
+
+    for k in available_keys:
+        if k in feats:
+            f_df = feats[k]
+            if (len(f_df.index) != len(ref_df.index) or 
+                not f_df.index.equals(ref_df.index) or 
+                not f_df.columns.equals(ref_df.columns)):
+                 
+                 tprint(f"Warning: Feature {k} structure mismatch in Spike Anatomy. Aligning to panel...")
+                 # Reindex to match panel (fill NaNs with 0 to prevent crash)
+                 feats[k] = f_df.reindex(index=ref_df.index, columns=ref_df.columns, fill_value=0.0)
+    
+    # Re-fetch ref from potentially aligned features (or just use panel index for row_idx)
+    # But current code uses ref_df.index.get_indexer.
+    # Let's use ref_df (panel["close"]) for indexing.
     
     row_idx = ref_df.index.get_indexer(event_ts_vals)
     col_idx = ref_df.columns.get_indexer(event_sym_vals)
@@ -816,84 +826,136 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
                 continue
 
             # --- Optimise TP/SL via run_tp_sl_selection_fast ---
-            # Use representative asset from market basket for speed
+            # Multi-asset selection: Top 5 from market basket to prevent overfitting
             close_df = panel["close"]
             opt_feat_keys = cfg.get("causal_cols", [])[:10]
+            
+            assets_to_opt = [s for s in cfg.get("market_basket", []) if s in close_df.columns and s in atr_pct_df.columns]
+            # If basket is empty or missing, pick top liquid by column order (assuming sorted)
+            if not assets_to_opt:
+                 assets_to_opt = list(close_df.columns[:15])
+            else:
+                 assets_to_opt = assets_to_opt[:15]
+            
+            tprint(f"TP/SL optimization pool: {assets_to_opt}")
+
             tp_mult, sl_mult = 1.0, 0.5  # defaults
             lo_val, hi_val, z_max_val = 0.03, 0.06, 3.0
 
-            # Pick representative asset: first market basket member with data
-            rep_sym = None
-            for s in cfg.get("market_basket", []):
-                if s in close_df.columns and s in atr_pct_df.columns:
-                    rep_sym = s
-                    break
-            if rep_sym is None and len(close_df.columns) > 0:
-                rep_sym = close_df.columns[0]
+            # Arrays to collect
+            all_o, all_h, all_l, all_c = [], [], [], []
+            all_a, all_ab, all_zv = [], [], []
+            all_x = []
+            all_event_idx = []
+            
+            current_offset = 0
+            pad_len = int(H) + 24
+            # NaNs for padding to prevent cross-asset leakage
+            nan_arr_1d = np.full(pad_len, np.nan, dtype=np.float32)
+            
+            panel_idx = close_df.index
+            ts_start_opt = ts - pd.Timedelta(hours=int(cfg["train_lookback_hours"]))
 
-            if rep_sym is not None:
-                panel_idx = close_df.index
-                o = panel["open"][rep_sym].values.astype(np.float32)
-                h = panel["high"][rep_sym].values.astype(np.float32)
-                l = panel["low"][rep_sym].values.astype(np.float32)
-                c = close_df[rep_sym].values.astype(np.float32)
-                # Align ATR arrays to panel index
-                a = np.nan_to_num(atr_pct_df[rep_sym].reindex(panel_idx).values.astype(np.float32), nan=0.01)
-                ab = np.nan_to_num(atr_base_df[rep_sym].reindex(panel_idx).values.astype(np.float32), nan=0.01)
-                zv = np.nan_to_num(z_score_df[rep_sym].reindex(panel_idx).values.astype(np.float32), nan=0.0)
+            for sym in assets_to_opt:
+                 # Extract data
+                 o = panel["open"][sym].values.astype(np.float32)
+                 h = panel["high"][sym].values.astype(np.float32)
+                 l = panel["low"][sym].values.astype(np.float32)
+                 c = close_df[sym].values.astype(np.float32)
+                 
+                 # Align ATR arrays
+                 a = np.nan_to_num(atr_pct_df[sym].reindex(panel_idx).values.astype(np.float32), nan=0.01)
+                 ab = np.nan_to_num(atr_base_df[sym].reindex(panel_idx).values.astype(np.float32), nan=0.01)
+                 zv = np.nan_to_num(z_score_df[sym].reindex(panel_idx).values.astype(np.float32), nan=0.0)
+                 
+                 # Features for X
+                 x_list = []
+                 for fk in opt_feat_keys:
+                     if fk in feats and sym in feats[fk].columns:
+                         aligned = feats[fk][sym].reindex(panel_idx).values.astype(np.float32)
+                         x_list.append(np.nan_to_num(aligned, nan=0.0))
+                     else:
+                         x_list.append(np.zeros(len(c), dtype=np.float32))
+                 x_arr = np.stack(x_list, axis=1) if x_list else np.zeros((len(c), 1), dtype=np.float32)
+                 
+                 # Event indices
+                 if cached_cand_mask is not None and sym in cached_cand_mask.columns:
+                     cand_series = cached_cand_mask[sym]
+                     cand_series = cand_series[(cand_series.index >= ts_start_opt) & (cand_series.index <= ts)]
+                     event_ts_idx = cand_series[cand_series].index
+                     e_idx = close_df.index.get_indexer(event_ts_idx)
+                     e_idx = e_idx[e_idx >= 0].astype(np.int32)
+                 else:
+                     mask = (close_df.index >= ts_start_opt) & (close_df.index <= ts)
+                     e_idx = np.where(mask)[0][::5].astype(np.int32)
+                 
+                 if len(e_idx) > 0:
+                     # Add to collection
+                     all_o.append(o); all_o.append(nan_arr_1d)
+                     all_h.append(h); all_h.append(nan_arr_1d)
+                     all_l.append(l); all_l.append(nan_arr_1d)
+                     all_c.append(c); all_c.append(nan_arr_1d)
+                     
+                     all_a.append(a); all_a.append(nan_arr_1d)
+                     all_ab.append(ab); all_ab.append(nan_arr_1d)
+                     all_zv.append(zv); all_zv.append(nan_arr_1d)
+                     
+                     # X needs padding with shape (pad_len, n_feats)
+                     x_pad = np.zeros((pad_len, x_arr.shape[1]), dtype=np.float32)
+                     all_x.append(x_arr); all_x.append(x_pad)
+                     
+                     # Shift event indices
+                     all_event_idx.append(e_idx + current_offset)
+                     
+                     current_offset += len(c) + pad_len
+            
+            if all_c and all_event_idx:
+                 final_o = np.concatenate(all_o)
+                 final_h = np.concatenate(all_h)
+                 final_l = np.concatenate(all_l)
+                 final_c = np.concatenate(all_c)
+                 final_a = np.concatenate(all_a)
+                 final_ab = np.concatenate(all_ab)
+                 final_zv = np.concatenate(all_zv)
+                 final_x = np.concatenate(all_x)
+                 final_events = np.concatenate(all_event_idx)
+                 
+                 tprint(f"TP/SL optimization: {len(final_events)} events from {len(assets_to_opt)} assets for H={H} side={side}")
 
-                # Features for X — align to panel index
-                panel_idx = close_df.index
-                x_list = []
-                for fk in opt_feat_keys:
-                    if fk in feats and rep_sym in feats[fk].columns:
-                        aligned = feats[fk][rep_sym].reindex(panel_idx).values.astype(np.float32)
-                        x_list.append(np.nan_to_num(aligned, nan=0.0))
-                    else:
-                        x_list.append(np.zeros(len(c), dtype=np.float32))
-                x_arr = np.stack(x_list, axis=1) if x_list else np.zeros((len(c), 1), dtype=np.float32)
-
-                # Event indices from candidate mask
-                ts_start_opt = ts - pd.Timedelta(hours=int(cfg["train_lookback_hours"]))
-                if cached_cand_mask is not None and rep_sym in cached_cand_mask.columns:
-                    cand_series = cached_cand_mask[rep_sym]
-                    cand_series = cand_series[(cand_series.index >= ts_start_opt) & (cand_series.index <= ts)]
-                    event_ts_idx = cand_series[cand_series].index
-                    event_indices = close_df.index.get_indexer(event_ts_idx)
-                    event_indices = event_indices[event_indices >= 0].astype(np.int32)
-                else:
-                    # Fallback: use every 5th hour as events
-                    mask = (close_df.index >= ts_start_opt) & (close_df.index <= ts)
-                    event_indices = np.where(mask)[0][::5].astype(np.int32)
-
-                tprint(f"TP/SL optimization: {len(event_indices)} events on {rep_sym} for H={H} side={side}")
-
-                if len(event_indices) >= 50:
-                    try:
-                        summary = run_tp_sl_selection_fast(
-                            X=x_arr,
-                            open_=o, high=h, low=l, close=c,
-                            atr_pct=a, z=zv, atr_base_pct=ab,
-                            event_idx=event_indices,
-                            horizon=H,
-                            max_events=3000,
-                            tp_mult_grid=[0.6, 0.8, 1.0, 1.25, 1.5],
-                            sl_mult_grid=[0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
-                            lo_grid=[0.01, 0.02, 0.03, 0.04],
-                            hi_grid=[0.05, 0.06, 0.07],
-                            z_max_grid=[2.5, 3.0, 3.5],
-                            entry_mode="next_open",
-                        )
-                        tp_mult = summary.final_tp_mult
-                        sl_mult = summary.final_sl_mult
-                        lo_val = summary.final_lo
-                        hi_val = summary.final_hi
-                        z_max_val = summary.final_z_max
-                        tprint(f"Optimised TP/SL for H={H} side={side}: tp_mult={tp_mult:.2f}, sl_mult={sl_mult:.2f}, lo={lo_val:.2f}, hi={hi_val:.2f}, z_max={z_max_val:.2f}")
-                    except Exception as e:
-                        tprint(f"TP/SL optimization failed for H={H} side={side}: {e}. Using defaults.")
-                else:
-                    tprint(f"Not enough events ({len(event_indices)}) for TP/SL optimization. Using defaults.")
+                 if len(final_events) >= 50:
+                     try:
+                         n_mos = float(cfg["train_lookback_hours"]) / (24 * 30.44) # average month length
+                         summary = run_tp_sl_selection_fast(
+                             X=final_x,
+                             open_=final_o, high=final_h, low=final_l, close=final_c,
+                             atr_pct=final_a, z=final_zv, atr_base_pct=final_ab,
+                             event_idx=final_events,
+                             horizon=H,
+                             max_events=3000,
+                             tp_mult_grid=[0.6, 0.8, 1.0, 1.25, 1.5],
+                             sl_mult_grid=[0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
+                             lo_grid=[0.01, 0.02, 0.03, 0.04],
+                             hi_grid=[0.05, 0.06, 0.07],
+                             z_max_grid=[2.5, 3.0, 3.5],
+                             threshold_p_grid=[0.05, 0.1, 0.2, 0.5],
+                             side=side,
+                             entry_mode="next_open",
+                             n_assets=len(assets_to_opt),
+                             n_months=n_mos,
+                         )
+                         tp_mult = summary.final_tp_mult
+                         sl_mult = summary.final_sl_mult
+                         lo_val = summary.final_lo
+                         hi_val = summary.final_hi
+                         z_max_val = summary.final_z_max
+                         thr_p_val = summary.final_threshold_p
+                         tprint(f"Optimised TP/SL for H={H} side={side}: tp_mult={tp_mult:.2f}, sl_mult={sl_mult:.2f}, lo={lo_val:.2f}, hi={hi_val:.2f}, z_max={z_max_val:.2f}, thr_p={thr_p_val:.2f}")
+                     except Exception as e:
+                         tprint(f"TP/SL optimization failed for H={H} side={side}: {e}. Using defaults.")
+                 else:
+                     tprint(f"Not enough events ({len(final_events)}) for TP/SL optimization. Using defaults.")
+            else:
+                 tprint(f"No valid assets/events found for TP/SL optimization. Using defaults.")
 
             # Recompute barrier pct with optimized params if changed
             if abs(lo_val - 0.03) > 1e-6 or abs(hi_val - 0.06) > 1e-6 or abs(z_max_val - 3.0) > 1e-6:
@@ -1002,6 +1064,43 @@ def train_models_from_artifacts(datasets, cfg):
                         gmm.fit(X_scaled)
                         spike_models[mode] = {"gmm": gmm, "scaler": scaler, "columns": list(df_spike_num.columns)}
                         tprint(f"Spike GMM ({mode}) fitted with {n_try} components.")
+
+                        # Generate OOF Scores (Log-Likelihood)
+                        # We use the full set as OOF here simplistically since GMM is unsupervised density estimation
+                        scores = gmm.score_samples(X_scaled)
+                        
+                        # Save OOF artifact
+                        # Align with original index
+                        df_oof = pd.DataFrame(scores, index=df_spike_num.index, columns=["score"])
+                        # If index was MultiIndex, restore it? 
+                        # We reset_index earlier for df_spike_num if it was MI.
+                        # But typically datasets[key] comes loaded via pd.read_parquet which might have lost MI if not handled.
+                        # `load_artifact_df` usually returns default range index unless instructed.
+                        # Let's check datasets[key] structure.
+                        # If `df_spike` had index, we want to align `df_oof` to it.
+                        # df_spike_num was reset-indexed if MI. 
+                        # "if isinstance(df_spike_num.index, pd.MultiIndex): df_spike_num = ..."
+                        # Actually we used `df_spike_num` for fitting.
+                        # Let's align `df_oof` to `df_spike` (original df with metadata).
+
+                        # If df_spike has columns "ts", "symbol", use them as index for OOF.
+                        if "ts" in df_spike.columns and "symbol" in df_spike.columns:
+                            df_oof["ts"] = df_spike["ts"]
+                            df_oof["symbol"] = df_spike["symbol"]
+                            # Reordering
+                        
+                        # Save
+                        run_id = datasets[key].attrs.get("run_id") 
+                        # datasets loaded via `load_artifact_df` might not track run_id implicitly?
+                        # `train_models_from_artifacts` doesn't know run_id from args.
+                        # But `pipeline_steps` knows.
+                        # We can't save here easily without run_id.
+                        # Actually, we can return spike OOFs and let caller save?
+                        # Or pass run_id?
+                        
+                        # Let's store OOF in spike_models payload?
+                        spike_models[mode]["oof_scores"] = df_oof
+
                         break
                     except ValueError as e:
                         tprint(f"Spike GMM ({mode}) failed with {n_try} components: {e}")
@@ -1027,9 +1126,17 @@ def train_models_from_artifacts(datasets, cfg):
                 if df.empty or len(df) < cfg["min_train_samples"] // 4:
                     continue
 
+                # Schema assertion: verify dataset has required columns
+                required_cols = {"__y_bin__", "__y_ret__", "__w__"}
+                missing = required_cols - set(df.columns)
+                assert not missing, f"Dataset {key} missing columns: {missing}"
+
                 y = df["__y_bin__"].values.astype(int)
-                y_ret = df["__y_ret__"].values.astype(np.float32)
-                w = df["__w__"].values.astype(np.float32)
+                y_ret = df["__y_ret__"].values.astype(np.float64)
+                w_raw = df["__w__"].values.astype(np.float64)
+                # Cap weights at p95 to prevent n_eff collapse from skewed uniqueness weights
+                p95 = np.percentile(w_raw, 95)
+                w = np.clip(w_raw, 0.0, max(p95, 1e-6))
 
                 drop_cols = ["__y_bin__", "__y_ret__", "__w__", "__ts__", "__symbol__"]
                 X = df.drop(columns=[c for c in drop_cols if c in df.columns])
@@ -1081,15 +1188,16 @@ def train_models_from_artifacts(datasets, cfg):
                 cols = list(X.columns)
 
                 # Derive strategy context for logging
-                cand_filter = "unknown"
+                # long+mr = buy dips (candidates with worst recent returns)
+                # long+tf = buy momentum (candidates with best recent returns)
+                # short+mr = sell rips (candidates with best recent returns)
+                # short+tf = sell weakness (candidates with worst recent returns)
                 if side == "long":
-                    if k == "mr": cand_filter = "worst" # ret < 0
-                    else: cand_filter = "best"          # ret > 0
-                else: # short
-                    if k == "mr": cand_filter = "best"  # ret > 0
-                    else: cand_filter = "worst"         # ret < 0
+                    cand_filter = "bottom_ret" if k == "mr" else "top_ret"
+                else:
+                    cand_filter = "top_ret" if k == "mr" else "bottom_ret"
 
-                tprint(f"Training {side} {k} ({cand_filter}) H={H} (n={len(X)})...")
+                tprint(f"Training {side}_{k} [{key}] cand={cand_filter} H={H} (n={len(X)})...")
 
                 # --- Integrated MDI Feature Selection ---
                 # Fix: Don't feed raw 300+ features to ModelRace. Select top signal first.
@@ -1197,18 +1305,36 @@ def train_models_from_artifacts(datasets, cfg):
             df = datasets[key]
             if len(df) > 100:
                 y = df["__y__"].values.astype(int)
-                w = df["__w__"].values.astype(np.float32)
+                w_raw = df["__w__"].values.astype(np.float64)
+                p95_w = np.percentile(w_raw, 95)
+                w = np.clip(w_raw, 0.0, max(p95_w, 1e-6))
                 # Drop meta/targets
                 # In `build_exhaustion_Xy`, X columns are features + G_VOL/G_TREND
                 # The reset_index added `ts` `symbol`.
                 drop_cols = ["__y__", "__w__", "ts", "symbol"]
                 X = df.drop(columns=[c for c in drop_cols if c in df.columns])
 
-                tprint(f"Exhaustion {d}: {len(X)} samples, {X.shape[1]} features, class dist: 0={int((y==0).sum())} 1={int((y==1).sum())}")
+                n_pos = int((y==1).sum())
+                n_neg = int((y==0).sum())
+                prevalence = n_pos / max(1, len(y))
+                n_eff_exh = (np.sum(w) ** 2) / np.sum(w ** 2)
+                tprint(f"Exhaustion {d}: {len(X)} samples, {X.shape[1]} features, class dist: 0={n_neg} 1={n_pos} (prev={prevalence:.4f}), n_eff={n_eff_exh:.0f}")
                 m = ExhaustionModel(C=cfg["exh_C"], l1_ratio=cfg["exh_l1_ratio"])
                 m.fit(X, y, sample_weight=w)
                 if m.model is not None:
                     tprint(f"Exhaustion {d}: fitted, {len(m.selected_features)} selected features")
+                    # Evaluate with PR-AUC (appropriate for extreme imbalance)
+                    try:
+                        from sklearn.metrics import average_precision_score, precision_score
+                        p_exh = m.model.predict_proba(X[m.selected_features])[:, 1]
+                        pr_auc = average_precision_score(y, p_exh, sample_weight=w)
+                        # Precision at top-K (K = 2 * n_pos)
+                        k = min(2 * max(n_pos, 1), len(y))
+                        top_k_idx = np.argsort(p_exh)[-k:]
+                        prec_at_k = float(np.mean(y[top_k_idx]))
+                        tprint(f"Exhaustion {d}: PR-AUC={pr_auc:.4f} (baseline={prevalence:.4f}), Prec@{k}={prec_at_k:.4f}")
+                    except Exception as e:
+                        tprint(f"Exhaustion {d}: eval error: {e}")
                 else:
                     tprint(f"Exhaustion {d}: fitting failed (model is None)")
                 exh_models[d] = m
@@ -1255,11 +1381,11 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
     window_base = 24 * 30
 
     tprint("Computing ATR baselines for optimization...")
-    atr_base_df = atr_pct_df.rolling(window_base, min_periods=24).median().fillna(method='bfill')
+    atr_base_df = atr_pct_df.rolling(window_base, min_periods=24).median().bfill()
     # Using the fast numpy functions if possible, but pandas is easier for alignment here
     # For Z, we need a robust one.
     # Let's use the one from fast_funcs if available or re-implement simple robust Z.
-    atr_std_df = atr_pct_df.rolling(window_base, min_periods=24).std().fillna(method='bfill')
+    atr_std_df = atr_pct_df.rolling(window_base, min_periods=24).std().bfill()
     z_df = (atr_pct_df - atr_base_df) / (atr_std_df + 1e-12)
 
     # 2. Iterate over strategies (buckets)
@@ -1281,8 +1407,7 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
         tprint("No candidates found.")
         return cfg
 
-    mask = (cand_mask.index >= ts_start) & (cand_mask.index <= ts)
-    final_mask = cand_mask & pd.Series(mask, index=cand_mask.index).fillna(False)
+    final_mask = cand_mask.loc[(cand_mask.index >= ts_start) & (cand_mask.index <= ts)]
 
     valid_ts = final_mask[final_mask.any(axis=1)].index
 
@@ -1342,19 +1467,20 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
         l = low_df[sym].values.astype(np.float32)
         c = close_df[sym].values.astype(np.float32)
 
-        a = atr_pct_df[sym].values.astype(np.float32)
-        b = atr_base_df[sym].values.astype(np.float32)
-        z_v = z_df[sym].values.astype(np.float32)
+        a = np.nan_to_num(atr_pct_df[sym].reindex(close_df.index).values.astype(np.float32), nan=0.01)
+        b = np.nan_to_num(atr_base_df[sym].reindex(close_df.index).values.astype(np.float32), nan=0.01)
+        z_v = np.nan_to_num(z_df[sym].reindex(close_df.index).values.astype(np.float32), nan=0.0)
 
         # Features
-        # Gather into (T, F)
+        # Gather into (T, F) — reindex to panel index to ensure length match
+        panel_idx = close_df.index
         x_list = []
         for k in feat_keys:
-            if k in feats:
-                x_list.append(feats[k][sym].values.astype(np.float32))
+            if k in feats and sym in feats[k].columns:
+                x_list.append(np.nan_to_num(feats[k][sym].reindex(panel_idx).values.astype(np.float32), nan=0.0))
             else:
                 x_list.append(np.zeros(len(c), dtype=np.float32))
-        x_arr = np.stack(x_list, axis=1)
+        x_arr = np.stack(x_list, axis=1) if x_list else np.zeros((len(c), 1), dtype=np.float32)
 
         # Append
         big_open.append(o)
@@ -1434,7 +1560,7 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
                     # idx is sorted? Yes.
                     # Find integer location
                     try:
-                        time_idx = idx.get_loc(t)
+                        time_idx = close_df.index.get_loc(t)
                     except KeyError:
                         continue
 

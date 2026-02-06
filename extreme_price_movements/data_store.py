@@ -213,7 +213,7 @@ class PartitionedOHLCVStore:
                 pd.DatetimeIndex([], tz="UTC", name="ts")
             )
 
-    def save_partitioned(self, symbol: str, df: pd.DataFrame):
+    def save_partitioned(self, symbol: str, df: pd.DataFrame, defer_compact: bool = False):
         if df.empty:
             return
 
@@ -244,10 +244,9 @@ class PartitionedOHLCVStore:
 
             write_df = group.drop(columns=["year"])
             write_df.to_parquet(fpath, index=False)
-            # tprint(f"Saved chunk to {fpath} ({len(write_df)} rows)")
 
-            # Always compact to ensure single file per YEAR
-            self.compact_partition(symbol, year)
+            if not defer_compact:
+                self.compact_partition(symbol, year)
 
     def compact_partition(self, symbol: str, year: int):
         sym_dir = self._get_symbol_dir(symbol)
@@ -294,7 +293,9 @@ class PartitionedOHLCVStore:
             days_covered = duration_sec / 86400.0
             avg_rows = len(merged) / days_covered if days_covered > 0 else 0
             
-            tprint(f"Updated {new_fpath}: {len(merged)} rows, {days_covered:.2f}d, ~{avg_rows:.1f} r/d")
+            ts_min_dt = pd.Timestamp(ts_min_val, unit='s', tz='UTC').strftime('%Y-%m-%d')
+            ts_max_dt = pd.Timestamp(ts_max_val, unit='s', tz='UTC').strftime('%Y-%m-%d')
+            tprint(f"Updated {new_fpath}: {len(merged)} rows, {ts_min_dt} -> {ts_max_dt} ({days_covered:.0f}d, ~{avg_rows:.0f} r/d)")
 
             for f in files:
                 if f != new_fpath:
@@ -335,15 +336,18 @@ class PartitionedOHLCVStore:
             if start_ms >= now_ms:
                 return self.load(symbol)
 
-            tprint(f"FETCH incr: {symbol} from {pd.to_datetime(start_ms, unit='ms', utc=True)}")
+            start_dt = pd.to_datetime(start_ms, unit='ms', utc=True).strftime('%Y-%m-%d %H:%M')
+            tprint(f"FETCH incr: {symbol} from {start_dt}")
             
-            # Progressive fetch and save
+            # Progressive fetch and save (defer compaction to end)
             has_new_data = False
+            touched_years = set()
             for chunk_df in fetch_ohlcv_all_7d_chunks(exchange, symbol, start_ms, timeframe=self.timeframe, limit=1000):
                 if not chunk_df.empty:
                     has_new_data = True
                     fresh = self._downcast(chunk_df)
-                    self.save_partitioned(symbol, fresh)
+                    self.save_partitioned(symbol, fresh, defer_compact=True)
+                    touched_years.update(fresh.index.year.unique())
                     
                     # Update metadata incrementally
                     new_last = fresh.index.max()
@@ -351,6 +355,10 @@ class PartitionedOHLCVStore:
                     if new_last_ms > last_ts_ms:
                          self._write_meta(symbol, {"last_ts_ms": new_last_ms})
                          last_ts_ms = new_last_ms
+
+            # Single compaction pass per year at the end
+            for yr in sorted(touched_years):
+                self.compact_partition(symbol, yr)
 
 
 def save_features(feats: dict, ts: pd.Timestamp, root_dir: str):

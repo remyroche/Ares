@@ -13,7 +13,6 @@ from extreme_price_movements.training import (
 from extreme_price_movements.candidates import select_trade_candidates_hourly, entry_price_next_hour_open
 
 def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side, cfg, max_hold_hours):
-    tprint(f"Entering function: simulate_trade_hourly in engine.py")
     if np.isnan(entry_px) or entry_px <= 0:
         return 0.0, ts_entry, "no_entry"
 
@@ -349,7 +348,6 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
     return pd.DataFrame(score_rows)
 
 def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config, cfg, p_exh_cand, current_positions_syms, tradeable_candidates=None):
-    tprint(f"Entering function: generate_hourly_signals in engine.py")
     if ts_sig not in mkt_gates.index:
         return []
 

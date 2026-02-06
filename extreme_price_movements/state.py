@@ -3,7 +3,7 @@ import os
 import shutil
 import tempfile
 import pandas as pd
-from typing import Dict, Any
+from typing import Dict, Any, Optional, Union
 from .utils import tprint
 
 class StateManager:
@@ -32,7 +32,7 @@ class StateManager:
             temp_name = tf.name
         shutil.move(temp_name, self.filepath)
 
-    def get_last_ts_sig(self) -> pd.Timestamp | None:
+    def get_last_ts_sig(self) -> Optional[pd.Timestamp]:
         tprint(f"Entering function: get_last_ts_sig in state.py")
         val = self.state.get("last_ts_sig")
         if val:

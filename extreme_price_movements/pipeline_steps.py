@@ -69,7 +69,7 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex):
 
     tprint("STEP: LABEL GENERATION COMPLETE")
 
-def run_training_step(ts_sig, cfg):
+def run_training_step(ts_sig, cfg, store=None, margin_symbols=None):
     """Train all models from label artifacts. Saves trained state to disk."""
     tprint("STEP: MODEL TRAINING START")
 
@@ -80,12 +80,55 @@ def run_training_step(ts_sig, cfg):
     tprint("Loading label datasets from artifacts...")
 
     # Spike anatomy
+    missing_spike = []
     for mode in ["best", "worst"]:
         name = f"spike_anatomy_{mode}"
         df_spike = load_artifact_df(cfg["data_root"], run_id, "labels", name)
         if df_spike is not None:
             datasets[name] = df_spike
+        else:
+            missing_spike.append(mode)
 
+    if missing_spike:
+        tprint(f"Adding Missing Spike artifacts: {missing_spike} (Generating in-memory...)")
+        if store is None:
+            tprint("ERROR: store is None, cannot generate missing spike artifacts.")
+            # Critical failure if we can't generate
+        else:
+            # Need features and panel. Load them.
+            # Mirror run_label_generation_step_v2 logic roughly but localized
+            tprint("Loading features and panel for Spike Anatomy generation...")
+            feats = load_features(ts_sig, cfg["data_root"])
+            if feats is None:
+                tprint("ERROR: Features not found.")
+            else:
+                train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=ts_sig)
+                dfs = {}
+                lookback_days = max(90, int(cfg["fetch_years"] * 365))
+                for s in train_syms:
+                    df = store.load(s)
+                    if not df.empty: dfs[s] = df[df.index <= ts_sig].tail(24*lookback_days)
+                
+                if dfs:
+                    panel = to_panel(dfs)
+                    mkt_df = compute_market_features(panel, cfg["market_basket"])
+                    mkt_gates = add_regime_gates(mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
+                    
+                    # Intersect symbols
+                    sample_feat = next(iter(feats.values()))
+                    valid_syms = sorted(set(sample_feat.columns) & set(panel["close"].columns) & set(train_syms))
+                    panel = {k: v[valid_syms] for k, v in panel.items() if isinstance(v, pd.DataFrame)}
+                    
+                    from extreme_price_movements.training import train_spike_anatomy_model
+                    
+                    for mode in missing_spike:
+                        tprint(f"Generating Spike Anatomy ({mode})...")
+                        df_spike = train_spike_anatomy_model(panel, feats, mkt_gates, cfg, valid_syms, ts_sig, mode=mode)
+                        if df_spike is not None:
+                            datasets[f"spike_anatomy_{mode}"] = df_spike
+                            save_artifact_df(df_spike, cfg["data_root"], run_id, "labels", f"spike_anatomy_{mode}")
+                            tprint(f"Saved generated spike artifact: spike_anatomy_{mode}")
+    
     # Alpha models (long/short × mr/tf × horizons)
     trade_sides = ["long", "short"]
     kinds = ["mr", "tf"]
@@ -157,6 +200,10 @@ def run_training_step(ts_sig, cfg):
         for mode in ["best", "worst"]:
             m = spike.get(mode)
             tprint(f"  spike_{mode}: {'fitted' if m else 'NO MODEL'}")
+            if m and "oof_scores" in m:
+                oof_df = m["oof_scores"]
+                save_artifact_df(oof_df, cfg["data_root"], run_id, "labels", f"spike_oof_{mode}")
+                tprint(f"  Saved OOF scores: spike_oof_{mode}")
 
         exh = bundle.get("exh_models", {})
         for d in ["up", "down"]:
@@ -180,11 +227,13 @@ def run_risk_optimization_step(ts_sig, margin_symbols, cfg, store, state_file):
         return
 
     # Prevent OOS leakage
+    run_ts = ts_sig # Keep original for loading artifacts
+    opt_ts = ts_sig # Used for data filtering
+    
     oos_days = cfg.get("oos_holdout_days", 0)
     if oos_days > 0:
-        ts_train_end = ts_sig - pd.Timedelta(days=oos_days)
-        tprint(f"Risk Optimization: Excluding last {oos_days} days (OOS). Training end: {ts_train_end}")
-        ts_sig = ts_train_end
+        opt_ts = ts_sig - pd.Timedelta(days=oos_days)
+        tprint(f"Risk Optimization: Excluding last {oos_days} days (OOS). Training end: {opt_ts}")
 
     with open(state_file, "rb") as f:
         state = pickle.load(f)
@@ -195,35 +244,41 @@ def run_risk_optimization_step(ts_sig, margin_symbols, cfg, store, state_file):
         return
 
     # Need Data for optimization (simulation)
-    train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=ts_sig)
+    # Use opt_ts to filter training universe and data
+    train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=opt_ts)
     dfs = {}
 
     lookback_days = max(90, int(cfg["fetch_years"] * 365))
 
     for s in train_syms:
         df = store.load(s)
-        if not df.empty: dfs[s] = df[df.index <= ts_sig].tail(24*lookback_days)
+        if not df.empty: dfs[s] = df[df.index <= opt_ts].tail(24*lookback_days)
 
     if not dfs: return
 
     panel = to_panel(dfs)
     mkt_df = compute_market_features(panel, cfg["market_basket"])
     mkt_gates = add_regime_gates(mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
-    feats = load_features(ts_sig, cfg["data_root"])
+    
+    # Load features using run_ts (actual storage location)
+    feats = load_features(run_ts, cfg["data_root"])
+    if feats is None:
+        tprint("ERROR: Features not found for risk optimization.")
+        return
 
-    # We also need p_exh_hist. Load from artifacts?
-    # Or re-generate? Re-generation is safer but slower.
-    # Let's try loading.
-    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    # We also need p_exh_hist. Load from artifacts (using run_ts).
+    run_id = run_ts.strftime("%Y%m%d_%H%M%S")
     from extreme_price_movements.data_store import load_artifact_df
     p_exh_hist = load_artifact_df(cfg["data_root"], run_id, "labels", "exhaustion_history")
 
     if p_exh_hist is None:
         tprint("Exhaustion history artifact missing. Regenerating...")
-        p_exh_hist = generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_sig, cfg["train_lookback_hours"], train_syms)
+        # Generate up to opt_ts? Or regenerate full and slice?
+        # Typically we want history up to opt_ts for optimization.
+        p_exh_hist = generate_exhaustion_history(panel, feats, mkt_gates, cfg, opt_ts, cfg["train_lookback_hours"], train_syms)
 
     alpha_models = bundle["alpha_models"]
-    best_risk = optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts_sig, p_exh_hist, alpha_models)
+    best_risk = optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, opt_ts, p_exh_hist, alpha_models)
 
     prev_risk = state.get("risk_params", {}) if isinstance(state.get("risk_params"), dict) else {}
     if isinstance(prev_risk, dict) and "signal_params" in prev_risk and isinstance(best_risk, dict):

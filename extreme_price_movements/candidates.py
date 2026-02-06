@@ -4,7 +4,6 @@ from .utils import tprint
 import extreme_price_movements.fast_funcs as ff
 
 def select_trade_candidates_hourly(feats, ts, syms, pct=0.05, min_n=10, max_n=60, metric="dist_ema_fast"):
-    tprint(f"Entering function: select_trade_candidates_hourly in candidates.py")
     if ts not in feats[metric].index:
         return [], []
     s = feats[metric].loc[ts, syms].dropna()

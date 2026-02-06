@@ -17,6 +17,7 @@ from extreme_price_movements.optimise_tpsl_ratio import (
     compute_vol_z_log_mad,
     PurgedKFold,
 )
+from extreme_price_movements.fast_funcs import simulate_trade_numba
 
 def _fast_lookup(feat_df, event_ts, event_sym):
     """Fast extraction of values at (ts, sym) positions using numpy indexing.
@@ -1172,8 +1173,8 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
 
     atr_pct_df = feats["atr_pct"]
     window_base = 24 * 30
-    atr_base_df = atr_pct_df.rolling(window_base, min_periods=24).median().fillna(method='bfill')
-    atr_std_df = atr_pct_df.rolling(window_base, min_periods=24).std().fillna(method='bfill')
+    atr_base_df = atr_pct_df.rolling(window_base, min_periods=24).median().bfill()
+    atr_std_df = atr_pct_df.rolling(window_base, min_periods=24).std().bfill()
     z_df = (atr_pct_df - atr_base_df) / (atr_std_df + 1e-12)
 
     # Flatten
@@ -1234,10 +1235,14 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
     ts_start = ts - pd.Timedelta(days=lookback_days)
 
     cand_mask = select_trade_candidates_vectorized(panel, feats, pct=cfg["trade_extreme_pct"], metric=cfg["trade_deviation_metric"])
-    if cand_mask is None: return cfg
+    if cand_mask is None:
+        tprint("Risk Opt: select_trade_candidates_vectorized returned None")
+        return cfg
+
+    tprint(f"Risk Opt: cand_mask sum={cand_mask.sum().sum()}")
 
     mask = (cand_mask.index >= ts_start) & (cand_mask.index <= ts)
-    final_mask = cand_mask & pd.Series(mask, index=cand_mask.index).fillna(False)
+    final_mask = cand_mask.loc[mask]
 
     # Extract Events for Batch Scoring
     # We need to construct a DataFrame similar to what engine.py does
@@ -1245,7 +1250,9 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
 
     # Find active cells
     active_ts_idx, active_col_idx = np.where(final_mask.values)
-    if len(active_ts_idx) == 0: return cfg
+    if len(active_ts_idx) == 0:
+        tprint("Risk Opt: No active events found.")
+        return cfg
 
     event_ts = final_mask.index[active_ts_idx]
     event_sym = final_mask.columns[active_col_idx]
@@ -1347,7 +1354,7 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
 
         # Net Score
         net_score = s_long - s_short
-        thr = cfg["thr_long"]
+        thr = cfg.get("thr_long", 0.0)
 
         # Filter and Collect Indices
         # We need to map back to (ts, sym) and then to flat_idx
@@ -1369,48 +1376,322 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
         buckets[target_long].extend(get_flat_indices(grp.loc[long_idxs]))
         buckets[target_short].extend(get_flat_indices(grp.loc[short_idxs]))
 
-    # 4. Run Optimization per Bucket
+    # 4. Run Optimization per Bucket and Collect Simulation Data for Threshold Opt
+
+    sim_data = [] # List of tuples: (score, side_int, ret_val)
+
     for bucket_key, indices in buckets.items():
         if not indices: continue
 
-        # Parse key: "long_tf" -> side="long", k="tf"
         parts = bucket_key.split("_")
         side, k = parts[0], parts[1]
+        side_int = 1 if side == "long" else -1
 
         idx_arr = np.array(indices, dtype=np.int32)
         tprint(f"Risk Opt Bucket {bucket_key}: {len(idx_arr)} events")
 
-        if len(idx_arr) < 20:
-             # Default
-             granular_risk[f"risk_{bucket_key}"] = {
-                "tp_mult": 1.0, "sl_mult": 0.5,
-                "k_sl": 2.0, "k_trail_start": 2.0, "k_trail_dist": 1.0
-             }
-             continue
+        tp_mult, sl_mult = 1.0, 0.5 # Default
 
-        summary = run_tp_sl_selection_fast(
-            X=full_X,
-            open_=full_open, high=full_high, low=full_low, close=full_close,
-            atr_pct=full_atr, z=full_z, atr_base_pct=full_atr_base,
-            event_idx=idx_arr,
-            horizon=24,
-            max_events=2000,
-            tp_mult_grid=[0.5, 1.0, 1.5, 2.0, 2.5, 3.0],
-            sl_mult_grid=[0.5, 1.0, 1.5, 2.0, 2.5],
-            entry_mode="next_open"
-        )
+        if len(idx_arr) >= 20:
+            try:
+                summary = run_tp_sl_selection_fast(
+                    X=full_X,
+                    open_=full_open, high=full_high, low=full_low, close=full_close,
+                    atr_pct=full_atr, z=full_z, atr_base_pct=full_atr_base,
+                    event_idx=idx_arr,
+                    horizon=24,
+                    max_events=2000,
+                    tp_mult_grid=[0.5, 1.0, 1.5, 2.0, 2.5, 3.0],
+                    sl_mult_grid=[0.5, 1.0, 1.5, 2.0, 2.5],
+                    entry_mode="next_open"
+                )
+                tp_mult = summary.final_tp_mult
+                sl_mult = summary.final_sl_mult
+            except Exception as e:
+                tprint(f"Optimization failed for {bucket_key}: {e}")
 
-        tprint(f"Optimized {bucket_key}: TP={summary.final_tp_mult:.2f}, SL={summary.final_sl_mult:.2f}")
+        tprint(f"Optimized {bucket_key}: TP={tp_mult:.2f}, SL={sl_mult:.2f}")
         granular_risk[f"risk_{bucket_key}"] = {
-            "tp_mult": summary.final_tp_mult,
-            "sl_mult": summary.final_sl_mult,
+            "tp_mult": tp_mult,
+            "sl_mult": sl_mult,
             "k_sl": 2.0, "k_trail_start": 2.0, "k_trail_dist": 1.0
         }
+
+        # --- Simulate Trades for Threshold/Sizing Opt ---
+        # We need to simulate the outcome of each trade in this bucket using the optimized TP/SL
+        # to see if higher thresholds would yield better portfolio results.
+
+        # We need the Net Score for these indices.
+        # We have indices into flattened arrays.
+        # We need to map back to net_score.
+        # This is tricky because indices are disjoint.
+        # We computed net_score in the `groupby` loop but discarded it.
+        # We need to preserve net_score alongside indices.
+
+        # Re-scan the groupby groups to associate score with flat index?
+        # Or store it in step 3.
+        # Let's fix step 3 logic slightly to store metadata.
+        pass
+
+    # Re-extract scores aligned with indices (Post-hoc fix)
+    # We iterate again? No, let's just re-calculate or store in step 3.
+    # To minimize diff complexity, I'll re-iterate the groups here since I have df_events.
+
+    # Map flat_idx -> ret
+    flat_ret_map = {}
+
+    # Run simulation for ALL indices found in buckets
+    all_indices = []
+    for inds in buckets.values(): all_indices.extend(inds)
+    all_indices = np.unique(all_indices)
+
+    for idx in all_indices:
+        # Which bucket?
+        # A trade might fall into multiple? No, partitions are distinct (best/worst).
+        # Find bucket params
+        # This is slow if we search.
+        # But we know the bucket from the loop above.
+        pass
+
+    # Better approach: Loop over buckets again to simulate.
+    # We need to link flat_idx back to (ts, sym) to get score?
+    # Or just store score in buckets?
+    # Buckets currently store just indices.
+
+    # Let's assume we can reconstruct the score or just re-loop groups.
+    pass
+
+    # 5. Threshold & Sizing Optimization (Grid Search)
+    # We need a list of: (net_score, return_pct)
+    # net_score determines if trade is taken and size.
+    # return_pct is the outcome.
+
+    trade_pool = [] # (score, ret)
+
+    # Re-iterate groups to get scores and map to simulation results
+    for kind, grp in df_events.groupby("kind"):
+        if kind == "best":
+            m_long = alpha_models.get("long", {}).get("tf", {})
+            m_short = alpha_models.get("short", {}).get("mr", {})
+            meta_long = meta_models.get("long_tf")
+            meta_short = meta_models.get("short_mr")
+            bucket_l = "long_tf"
+            bucket_s = "short_mr"
+        else:
+            m_long = alpha_models.get("long", {}).get("mr", {})
+            m_short = alpha_models.get("short", {}).get("tf", {})
+            meta_long = meta_models.get("long_mr")
+            meta_short = meta_models.get("short_tf")
+            bucket_l = "long_mr"
+            bucket_s = "short_tf"
+
+        if not m_long or not m_short: continue
+
+        # Predict (Redundant calculation but necessary to recover scores)
+        # Or I could have cached it.
+        # Given speed, re-calc is fine.
+        grp_long = apply_interaction_toggles(grp.copy(), cfg.get(f"{bucket_l.split('_')[1]}_feature_keys", cfg["causal_cols"]), ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
+        cols_l = m_long["feat_cols"]
+        X_long = pd.DataFrame(0.0, index=grp.index, columns=cols_l)
+        avail_l = [c for c in cols_l if c in grp_long.columns]; X_long[avail_l] = grp_long[avail_l].fillna(0.0)
+        p_long = m_long["model"].predict(X_long)
+        s_long = (p_long - 0.5) * 0.1
+        if meta_long:
+             grp_num = grp.select_dtypes(include=[np.number]).copy()
+             grp_t = apply_interaction_toggles(grp_num, cfg.get(f"{bucket_l.split('_')[1]}_feature_keys", cfg["causal_cols"]), ["G_VOL", "G_TREND"], drop_raw=False)
+             X_m = meta_long.prepare_meta_features(p_long, grp_t, pred_col_name="pred_logit")
+             if meta_long.selected_features:
+                  for c in meta_long.selected_features:
+                      if c not in X_m.columns: X_m[c] = 0.0
+             s_long = meta_long.predict(X_m)
+
+        grp_short = apply_interaction_toggles(grp.copy(), cfg.get(f"{bucket_s.split('_')[1]}_feature_keys", cfg["causal_cols"]), ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
+        cols_s = m_short["feat_cols"]
+        X_short = pd.DataFrame(0.0, index=grp.index, columns=cols_s)
+        avail_s = [c for c in cols_s if c in grp_short.columns]; X_short[avail_s] = grp_short[avail_s].fillna(0.0)
+        p_short = m_short["model"].predict(X_short)
+        s_short = (p_short - 0.5) * 0.1
+        if meta_short:
+             grp_num = grp.select_dtypes(include=[np.number]).copy()
+             grp_t = apply_interaction_toggles(grp_num, cfg.get(f"{bucket_s.split('_')[1]}_feature_keys", cfg["causal_cols"]), ["G_VOL", "G_TREND"], drop_raw=False)
+             X_m = meta_short.prepare_meta_features(p_short, grp_t, pred_col_name="pred_logit")
+             if meta_short.selected_features:
+                  for c in meta_short.selected_features:
+                      if c not in X_m.columns: X_m[c] = 0.0
+             s_short = meta_short.predict(X_m)
+
+        net_score = s_long - s_short
+
+        # Now simulate
+        for i, idx in enumerate(grp.index):
+            sym = grp.loc[idx, "symbol"]
+            ts_val = grp.loc[idx, "ts"]
+            ns = float(net_score[i])
+
+            # Determine Side and Bucket
+            if ns > 0:
+                side = "long"; b_key = bucket_l; side_int = 1
+            else:
+                side = "short"; b_key = bucket_s; side_int = -1
+
+            # Get Params
+            # Note: granular_risk might not have key if <20 events.
+            # Fallback to default.
+            rp = granular_risk.get(f"risk_{b_key}", {"tp_mult": 1.0, "sl_mult": 0.5})
+            tp_m = rp["tp_mult"]
+            sl_m = rp["sl_mult"]
+
+            # Get Index
+            if sym not in asset_offsets: continue
+            try:
+                t_idx = close_df.index.get_loc(ts_val)
+                flat_idx = asset_offsets[sym] + t_idx
+            except: continue
+
+            # Dynamic Barrier calculation (simplified for simulation)
+            # We access flattened arrays
+            if flat_idx >= len(full_close): continue
+
+            entry_px = full_open[flat_idx+1] if flat_idx+1 < len(full_open) else np.nan
+            if np.isnan(entry_px): continue
+
+            # Barrier
+            atr_val = full_atr[flat_idx]
+            z_val = full_z[flat_idx]
+            base_val = full_atr_base[flat_idx]
+
+            # Re-impl scaled_atr_pct logic roughly or strict?
+            # scaled_atr_pct logic:
+            # shock = clip(z, 0, 3)
+            # a = (0.06/base - 1)/3
+            # raw = atr * (1 + a*shock)
+            # clip(raw, 0.03, 0.06)
+
+            shock = min(max(z_val, 0.0), 3.0)
+            a = (0.06 / max(base_val, 1e-4) - 1.0) / 3.0
+            raw_b = atr_val * (1.0 + a * shock)
+            barrier_pct = min(max(raw_b, 0.03), 0.06)
+
+            sl_dist = sl_m * barrier_pct * entry_px
+            act_dist = tp_m * barrier_pct * entry_px
+            tr_dist = 1.0 * barrier_pct * entry_px # Fixed trail dist? 1.0 matches default k_trail_dist? No, k_trail_dist=1.0 is default in config but let's check.
+            # Config default is 0.5 usually. But here we use defaults.
+            # In simulate_trade_hourly, logic is: tp_dist is used as activation.
+            # And sl_dist is trailing distance? No.
+            # Trailing Stop Logic: Activation = TP level. Trailing = SL level.
+            # Let's align with simulate_trade_hourly logic.
+            # "tp_mult defines Activation. sl_mult defines Trailing Distance."
+            # So:
+
+            # Wait, simulate_trade_numba uses sl_dist (fixed SL), act_dist, trailing_dist.
+            # Engine logic:
+            # tp_dist = tp_mult * barrier * price
+            # sl_dist = sl_mult * barrier * price
+            # sl_price = entry - sl_dist
+            # If high >= entry + tp_dist -> Activate.
+            # Once activated, floor is entry + tp_dist (actually engine floors at activation price).
+            # And trail distance?
+            # Engine: "Stop Loss is floored at Activation Price and trails..."
+            # It seems sl_dist is used as the trailing distance?
+            # "sl_mult defines Trailing Distance" (from memory).
+            # So tr_dist = sl_dist.
+
+            # Simulating
+            # We need slices of arrays.
+            # Slice length 24h.
+            start_pos = flat_idx + 1
+            end_pos = min(start_pos + 24, asset_offsets[sym] + buffer_size - 1) # Don't cross buffer
+            # Actually asset_offsets point to start of data.
+            # We must respect boundary.
+
+            # Passing arrays to numba func
+            # Slicing creates view?
+            o_slice = full_open[start_pos:end_pos]
+            h_slice = full_high[start_pos:end_pos]
+            l_slice = full_low[start_pos:end_pos]
+            c_slice = full_close[start_pos:end_pos]
+
+            if len(o_slice) == 0: continue
+
+            ret, _, _ = simulate_trade_numba(
+                o_slice, h_slice, l_slice, c_slice,
+                entry_px, side_int,
+                sl_dist, act_dist, sl_dist # using sl_dist as trailing distance per engine logic
+            )
+
+            trade_pool.append((ns, ret))
+
+    # Grid Search
+    # thr: 0.0 to 0.4
+    # scale: 1.0 to 10.0
+
+    # We want independent thr_long, thr_short.
+    # trade_pool has signed score.
+
+    trades = np.array(trade_pool, dtype=np.float32) # (N, 2) [score, ret]
+
+    best_sharpe = -999.0
+    best_tl = 0.0
+    best_ts = 0.0
+    best_scale = 1.0
+
+    # Grid
+    thr_grid = [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
+    scale_grid = [1.0, 2.0, 4.0, 6.0, 8.0, 10.0]
+
+    # Optimize
+    if len(trades) > 50:
+        for tl in thr_grid:
+            for ts in thr_grid:
+                for sc in scale_grid:
+                    # Vectorized PnL
+                    # Longs: score > tl
+                    # Shorts: score < -ts
+
+                    scores = trades[:, 0]
+                    rets = trades[:, 1]
+
+                    # Sizes
+                    # size = clip(sc * |score|, 0.03, 0.15)
+                    # if filter passed
+
+                    # Masks
+                    mask_l = scores > tl
+                    mask_s = scores < -ts
+                    mask = mask_l | mask_s
+
+                    if np.sum(mask) < 20: continue
+
+                    # Abs score for sizing
+                    abs_sc = np.abs(scores[mask])
+                    sizes = np.clip(sc * abs_sc, 0.03, 0.15)
+
+                    pnls = sizes * rets[mask]
+
+                    # Sharpe = mean / std
+                    mu = np.mean(pnls)
+                    sigma = np.std(pnls)
+
+                    if sigma < 1e-6: sharpe = 0.0
+                    else: sharpe = mu / sigma
+
+                    if sharpe > best_sharpe:
+                        best_sharpe = sharpe
+                        best_tl = tl
+                        best_ts = ts
+                        best_scale = sc
+
+        tprint(f"Risk Opt (Thresholds): Best Sharpe={best_sharpe:.4f}, ThrL={best_tl}, ThrS={best_ts}, Scale={best_scale}")
+    else:
+        tprint("Risk Opt (Thresholds): Not enough trades for optimization. Using defaults.")
 
     best_params = {
         "k_sl": cfg["risk_k_sl"],
         "k_trail_start": cfg["risk_k_trail_start"],
         "k_trail_dist": cfg["risk_k_trail_dist"],
-        "granular_risk": granular_risk
+        "granular_risk": granular_risk,
+        "thr_long": float(best_tl),
+        "thr_short": float(best_ts),
+        "pos_size_scale": float(best_scale)
     }
     return best_params

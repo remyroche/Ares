@@ -369,13 +369,14 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
                 # If ns < 0 => Short (using dom_short strategy)
 
                 # Thresholds
-                thr = cfg["thr_long"] # Assumes symmetric threshold for simplicity
+                thr_long = cfg.get("thr_long", 0.0)
+                thr_short = cfg.get("thr_short", 0.0)
 
-                if ns > thr:
+                if ns > thr_long:
                     orders_candidates.append({
                         "symbol": sym, "side": "long", "score": ns, "dom": dom_long
                     })
-                elif ns < -thr:
+                elif ns < -thr_short:
                     orders_candidates.append({
                         "symbol": sym, "side": "short", "score": abs(ns), "dom": dom_short
                     })
@@ -384,29 +385,33 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
     orders_candidates.sort(key=lambda x: x["score"], reverse=True)
 
     # Apply Limits (Max Longs, Max Shorts)
-    # We just pick top K total? Or top K per side?
-    # Original code: top K longs, top K shorts.
-
     longs = [o for o in orders_candidates if o["side"] == "long"][:cfg["k_long"]]
     shorts = [o for o in orders_candidates if o["side"] == "short"][:cfg["k_short"]]
 
     final_orders = longs + shorts
 
-    # Allocation
-    total_wt = sum(x["score"] for x in final_orders)
+    # Allocation (Absolute Scaling based on Score)
     orders_out = []
-    if total_wt > 0:
-        gross_cap = float(cfg["wallet_gross_cap"])
-        for ord in final_orders:
-            w_alloc = gross_cap * (ord["score"] / total_wt)
-            ord["weight"] = w_alloc
-            # Inject Risk Params
-            r_key = f"risk_{ord['side']}_{ord['dom']}"
-            if risk_config and "granular_risk" in risk_config:
-                g_risk = risk_config["granular_risk"].get(r_key)
-                if g_risk:
-                    ord["risk_params"] = g_risk
+    gross_cap = float(cfg["wallet_gross_cap"])
+    pos_scale = cfg.get("pos_size_scale", 1.0)
 
-            orders_out.append(ord)
+    for ord in final_orders:
+        # User request: "optimise the rate at which position sizing... increases with Net Score absolute value"
+        # Formula: size_pct = clip(scale * |score|, 3%, 15%)
+        # If score < thr, we don't trade. If score > thr, size logic applies.
+
+        raw_size = pos_scale * abs(ord["score"])
+        size_pct = np.clip(raw_size, 0.03, 0.15)
+
+        ord["weight"] = gross_cap * size_pct
+
+        # Inject Risk Params
+        r_key = f"risk_{ord['side']}_{ord['dom']}"
+        if risk_config and "granular_risk" in risk_config:
+            g_risk = risk_config["granular_risk"].get(r_key)
+            if g_risk:
+                ord["risk_params"] = g_risk
+
+        orders_out.append(ord)
 
     return orders_out

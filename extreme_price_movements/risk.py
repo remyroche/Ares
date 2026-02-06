@@ -33,13 +33,16 @@ class TrailingStop:
         self.k_trail_dist = k_trail_dist
 
         self.initial_sl_dist = k_sl * atr_val * entry_px
+        self.activation_dist = k_trail_start * atr_val * entry_px
 
         if side == "long":
             self.sl_px = entry_px - self.initial_sl_dist
             self.highest_high = entry_px
+            self.activation_floor_px = entry_px + self.activation_dist
         else:
             self.sl_px = entry_px + self.initial_sl_dist
             self.lowest_low = entry_px
+            self.activation_floor_px = entry_px - self.activation_dist
 
         self.trailing_active = False
 
@@ -57,6 +60,7 @@ class TrailingStop:
                 if is_active:
                     trail_dist_px = self.k_trail_dist * self.atr * self.entry_px
                     new_sl = current_high - trail_dist_px
+                    new_sl = max(new_sl, self.activation_floor_px)
                     if new_sl > self.sl_px:
                         trail_would_trigger = True
 
@@ -78,6 +82,7 @@ class TrailingStop:
             if self.trailing_active:
                 trail_dist_px = self.k_trail_dist * self.atr * self.entry_px
                 new_sl = self.highest_high - trail_dist_px
+                new_sl = max(new_sl, self.activation_floor_px)
                 if new_sl > self.sl_px:
                     self.sl_px = new_sl
 
@@ -93,6 +98,7 @@ class TrailingStop:
                 if is_active:
                     trail_dist_px = self.k_trail_dist * self.atr * self.entry_px
                     new_sl = current_low + trail_dist_px
+                    new_sl = min(new_sl, self.activation_floor_px)
                     if new_sl < self.sl_px:
                         trail_would_trigger = True
 
@@ -114,6 +120,7 @@ class TrailingStop:
             if self.trailing_active:
                 trail_dist_px = self.k_trail_dist * self.atr * self.entry_px
                 new_sl = self.lowest_low + trail_dist_px
+                new_sl = min(new_sl, self.activation_floor_px)
                 if new_sl < self.sl_px:
                     self.sl_px = new_sl
 
@@ -132,6 +139,7 @@ class TrailingStop:
             "k_sl": self.k_sl,
             "k_trail_start": self.k_trail_start,
             "k_trail_dist": self.k_trail_dist,
+            "activation_floor_px": self.activation_floor_px,
             "sl_px": self.sl_px,
             "highest_high": getattr(self, "highest_high", None),
             "lowest_low": getattr(self, "lowest_low", None),
@@ -155,4 +163,6 @@ class TrailingStop:
         if "lowest_low" in d and d["lowest_low"] is not None:
             obj.lowest_low = d["lowest_low"]
         obj.trailing_active = d["trailing_active"]
+        if "activation_floor_px" in d and d["activation_floor_px"] is not None:
+            obj.activation_floor_px = d["activation_floor_px"]
         return obj

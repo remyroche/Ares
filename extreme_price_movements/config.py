@@ -14,6 +14,23 @@ NEW_FEATURES = [
     "tf_bias", "shock_rel", "resid_strength", "evr_slope", "stall_ext"
 ]
 
+BROAD_FEATURES = [
+    # Price Action
+    "gap_pct", "range_pct", "roc_div", "ret1h_z", "body_pct", "wick_body_ratio",
+    "vol_price_spread", "wick_ratio", "body_ratio",
+    # Volume/Flow
+    "v_power", "flow_persistence", "flow_ratio", "churn",
+    "vol_range_shock", "climax_decay", "cumulative_delta_stall",
+    "vol_expansion_ratio", "vol_compression", "rvol_z",
+    # Advanced
+    "fvg", "slope", "atr_slope", "dist_vwap_norm", "rsi_slope",
+    "funding_proxy", "dist_ema_fast",
+    # Scores
+    "spike_score", "grind_score", "chop_score",
+    # Time
+    "sin_hod", "cos_hod", "sin_dow", "cos_dow"
+]
+
 CFG = {
     # persistence / fetch
     "data_root": "data",
@@ -176,14 +193,14 @@ CFG = {
     "tf_feature_keys": [
         "accept", "retest_accept", "tf_qual", "coherence_24", "impulse_ratio_24",
         "tf_tape", "clv_mean_4", "pullback_2", "pullback_4", "ft_2", "ft_4"
-    ] + NEUTRAL_FEATURES + NEW_FEATURES,
+    ] + NEUTRAL_FEATURES + NEW_FEATURES + BROAD_FEATURES,
 
     # MR Head (Specifics + Global)
     "mr_feature_keys": [
         "reject", "overext", "overext_weak", "mr_qual", "retrace_12",
         "impulse_ratio_24", "coherence_24", "mr_tape",
         "clv_mean_4", "pullback_2", "pullback_4", "ft_2", "ft_4"
-    ] + NEUTRAL_FEATURES + NEW_FEATURES,
+    ] + NEUTRAL_FEATURES + NEW_FEATURES + BROAD_FEATURES,
 
     # Meta Learner
     "meta_feature_keys": [

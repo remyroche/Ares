@@ -1375,7 +1375,12 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
                     indices.append(flat_idx)
 
             indices = np.array(indices, dtype=np.int32)
-            tprint(f"Bucket {side} {k} ({cand_filter}): {len(indices)} events")
+            if len(indices) > 0:
+                mean_atr = float(np.mean(full_atr[indices]))
+                mean_z = float(np.mean(full_z[indices]))
+                tprint(f"Bucket {side} {k} ({cand_filter}): {len(indices)} events | Mean ATR%={mean_atr*100:.2f} | Mean VolZ={mean_z:.2f}")
+            else:
+                tprint(f"Bucket {side} {k} ({cand_filter}): 0 events")
 
             if len(indices) < 50:
                 tprint("Not enough events, using defaults.")
@@ -1413,6 +1418,15 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
             )
 
             tprint(f"Optimized {side} {k}: TP_mult={summary.final_tp_mult:.2f}, SL_mult={summary.final_sl_mult:.2f}")
+
+            if summary.outer_results:
+                avg_auc = np.mean([r.test_auc for r in summary.outer_results])
+                avg_ic = np.mean([r.test_ic for r in summary.outer_results])
+                avg_pnl = np.mean([r.test_pnl for r in summary.outer_results])
+                tprint(f"  Avg Test Metrics: AUC={avg_auc:.4f}, IC={avg_ic:.4f}, PnL={avg_pnl:.4f}")
+
+                pairs = [(r.chosen_tp_mult, r.chosen_sl_mult) for r in summary.outer_results]
+                tprint(f"  Stability (Chosen Pairs): {pairs}")
 
             # Store in granular risk
             # We map these to the config keys used by Triple Barrier execution

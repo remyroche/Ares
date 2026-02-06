@@ -1,7 +1,5 @@
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LogisticRegression
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.metrics import brier_score_loss, roc_auc_score
@@ -10,47 +8,31 @@ from extreme_price_movements.feature_selection_extreme_events import mdi_feature
 from extreme_price_movements.purged_cv import PurgedKFold
 
 
-class ScaledLogisticRegression(LogisticRegression):
-    """
-    Wrapper to apply StandardScaler internally, ensuring sample_weight 
-    is correctly passed to fit (bypassing Pipeline limitations with CalibratedClassifierCV).
-    """
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.scaler = StandardScaler()
-
-    def fit(self, X, y, sample_weight=None):
-        X_scaled = self.scaler.fit_transform(X)
-        return super().fit(X_scaled, y, sample_weight=sample_weight)
-
-    def predict(self, X):
-        X_scaled = self.scaler.transform(X)
-        return super().predict(X_scaled)
-        
-    def predict_proba(self, X):
-        X_scaled = self.scaler.transform(X)
-        return super().predict_proba(X_scaled)
-
 class ExhaustionModel:
-    def __init__(self, C=1.0, l1_ratio=0.3, cv_splits=5):
+    def __init__(self, n_estimators=1000, min_samples_leaf=50, max_features='sqrt', cv_splits=5, max_depth=7, min_impurity_decrease=0.0):
         tprint(f"Entering function: __init__ in exhaustion.py")
-        self.C = C
-        self.l1_ratio = l1_ratio
+        self.n_estimators = n_estimators
+        self.min_samples_leaf = min_samples_leaf
+        self.max_features = max_features
         self.cv_splits = cv_splits
+        self.max_depth = max_depth
+        self.min_impurity_decrease = min_impurity_decrease
         self.model = None
         self.metrics = {}
         self.selected_features = None
 
     def _make_base_estimator(self):
         tprint(f"Entering function: _make_base_estimator in exhaustion.py")
-        return ScaledLogisticRegression(
-            penalty="elasticnet",
-            solver="saga",
-            l1_ratio=self.l1_ratio,
-            C=self.C,
-            max_iter=2000,
+        return ExtraTreesClassifier(
+            n_estimators=self.n_estimators,
+            max_depth=self.max_depth,
+            min_samples_leaf=self.min_samples_leaf,
+            max_features=self.max_features,
+            min_impurity_decrease=self.min_impurity_decrease,
+            n_jobs=-1,
             random_state=42,
-            class_weight="balanced" 
+            class_weight="balanced",
+            criterion="entropy"
         )
 
     def fit(self, X: pd.DataFrame, y: np.ndarray, sample_weight: np.ndarray = None):
@@ -83,9 +65,10 @@ class ExhaustionModel:
 
         base_selector = ExtraTreesClassifier(
             n_estimators=500, # Increased per v3 request
-            max_depth=None,   # Let v3 suggest depth
+            max_depth=self.max_depth,   # Let v3 suggest depth
             min_samples_leaf=50,
             max_features='sqrt',
+            min_impurity_decrease=self.min_impurity_decrease,
             n_jobs=-1,
             random_state=42,
             class_weight="balanced"

@@ -1276,6 +1276,99 @@ def numba_rolling_zscore_fused(df, window, eps=1e-12):
 
     return res_df
 
+@jit(nopython=True, cache=True)
+def _numba_sign_consistency_1d(x, window):
+    n = len(x)
+    out = np.full(n, np.nan, dtype=np.float32)
+
+    if window < 2: return out
+
+    # Returns array: r[i] = x[i] - x[i-1] (diff approx return if x is log price, or just diff)
+    # Actually user said "bars ... in the same direction".
+    # Assuming x is Price.
+    # Calculate returns first? Or calculate on the fly.
+
+    for i in range(n):
+        if i < window: continue
+
+        start = i - window + 1
+        end = i + 1 # Slice x[start:end] includes i
+
+        # 1. Determine Window Direction (Close[i] vs Start?)
+        # User: "between local extrema and last bars"
+        # Move Direction is determined by position of Current relative to Local Min/Max?
+        # Usually: if Current is near High, it's Up. Near Low, it's Down.
+        # Let's use ret_w = x[i] - x[i-window] as proxy?
+        # Or find Min/Max in window first.
+
+        local_min = np.inf
+        local_max = -np.inf
+        idx_min = -1
+        idx_max = -1
+
+        # Scan window
+        for j in range(start, end):
+            val = x[j]
+            if not np.isnan(val):
+                if val < local_min:
+                    local_min = val
+                    idx_min = j
+                if val > local_max:
+                    local_max = val
+                    idx_max = j
+
+        if idx_min == -1 or idx_max == -1: continue
+
+        # Determine anchor based on larger move magnitude?
+        # If (Max - Current) < (Current - Min) -> Up Move from Min
+        # Else -> Down Move from Max
+
+        # Or use net return over window?
+        # If x[i] > x[start], assume Up?
+        # Robust way:
+        up_move = (x[i] - local_min)
+        dn_move = (local_max - x[i])
+
+        if up_move > dn_move:
+            # Up Trend from Local Min
+            anchor_idx = idx_min
+            target_sign = 1.0
+        else:
+            # Down Trend from Local Max
+            anchor_idx = idx_max
+            target_sign = -1.0
+
+        if anchor_idx >= i:
+            # Current is the extremum? Consistency is 1.0 or undefined?
+            out[i] = 0.0 # No bars between extremum and current
+            continue
+
+        # Count bars in same direction from anchor to current
+        # Check returns r[k] = x[k] - x[k-1] for k in (anchor_idx+1 ... i)
+
+        total_bars = 0
+        consistent_bars = 0
+
+        for k in range(anchor_idx + 1, i + 1):
+            diff = x[k] - x[k-1]
+            sign_diff = 1.0 if diff > 0 else (-1.0 if diff < 0 else 0.0)
+
+            if sign_diff != 0:
+                total_bars += 1
+                if sign_diff == target_sign:
+                    consistent_bars += 1
+
+        if total_bars > 0:
+            out[i] = consistent_bars / total_bars
+        else:
+            out[i] = 0.0
+
+    return out
+
+def numba_sign_consistency(df, window):
+    tprint(f"Entering function: numba_sign_consistency in fast_funcs.py")
+    return apply_to_matrix(df, _numba_sign_consistency_1d, window)
+
 def numba_causal_clip(df, lo, hi):
     # lo, hi should be same shape as df
     is_series = isinstance(df, pd.Series)

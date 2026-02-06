@@ -219,9 +219,24 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
     meta_models = model_bundle["meta_models"]
     spike_model = model_bundle.get("spike_model")
 
+    # Determine trend direction (Best vs Worst) for each candidate
+    trend_map = {}
+    metric_name = cfg.get("trade_deviation_metric", "dist_ema_fast")
+    if metric_name in feats:
+        try:
+            m_vals = feats[metric_name].loc[ts_sig, list(candidates)]
+            for s, v in m_vals.items():
+                if np.isfinite(v):
+                    trend_map[s] = 1 if v > 0 else -1
+        except KeyError:
+            pass
+
     rows = []
     for sym in candidates:
         try:
+            t_dir = trend_map.get(sym, 0)
+            if t_dir == 0: continue # Skip if no trend info
+
             p_lag = 0.5
             if ts_lag in p_exh_cand.index and sym in p_exh_cand.columns:
                 p_lag = float(p_exh_cand.loc[ts_lag, sym])
@@ -238,7 +253,8 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
                     "feat_cols_mr": fcols_mr, "feat_cols_tf": fcols_tf,
                     "mkt_ret24h": float(mrk["mkt_ret24h"]), "mkt_ret6h": float(mrk["mkt_ret6h"]),
                     "mkt_trend": float(mrk["mkt_trend"]), "mkt_rv": float(mrk["mkt_rv"]),
-                    "G_VOL": int(mrk["G_VOL"]), "G_TREND": int(mrk["G_TREND"]), "p_exh_lag1": p_lag
+                    "G_VOL": int(mrk["G_VOL"]), "G_TREND": int(mrk["G_TREND"]), "p_exh_lag1": p_lag,
+                    "trend_dir": t_dir
                 }
                 all_keys = set(fcols_mr) | set(fcols_tf) | set(cfg.get("spike_feature_keys", [])) | set(cfg.get("meta_feature_keys", []))
                 for k in all_keys:
@@ -293,8 +309,19 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
 
         if meta_mr:
             num = grp.select_dtypes(include=[np.number]).copy()
-            toggled = apply_interaction_toggles(num, keys_mr, ["G_VOL", "G_TREND"], drop_raw=False)
-            X_meta = meta_mr.prepare_meta_features(p_mr, toggled, pred_col_name="pred_logit")
+            # Pass all features but rely on meta_model.predict to filter selected ones
+            # toggled = apply_interaction_toggles(num, keys_mr, ["G_VOL", "G_TREND"], drop_raw=False)
+            # Actually meta models were trained on 'meta_feature_keys'.
+            # num contains all 'all_keys' which includes 'meta_feature_keys'.
+            # We don't need interaction toggles for meta model input (features are already columns in num)
+            # unless apply_interaction_toggles created specific columns used in training?
+            # In training.py, we did: df = apply_interaction_toggles(df, feat_keys, ...)
+            # where feat_keys were 'mr_feature_keys' (for alpha model).
+            # But the meta model dataframe (X_feats) was just df[configured_meta_keys].
+            # Configured meta keys might include toggled features? No, meta keys are usually base features.
+            # Assuming meta keys are base features, we can just pass num.
+
+            X_meta = meta_mr.prepare_meta_features(p_mr, num, pred_col_name="pred_logit")
             if meta_mr.selected_features:
                 X_meta = X_meta.reindex(columns=meta_mr.selected_features, fill_value=0.0)
             s_mr = meta_mr.predict(X_meta)
@@ -303,8 +330,7 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
 
         if meta_tf:
             num = grp.select_dtypes(include=[np.number]).copy()
-            toggled = apply_interaction_toggles(num, keys_tf, ["G_VOL", "G_TREND"], drop_raw=False)
-            X_meta = meta_tf.prepare_meta_features(p_tf, toggled, pred_col_name="pred_logit")
+            X_meta = meta_tf.prepare_meta_features(p_tf, num, pred_col_name="pred_logit")
             if meta_tf.selected_features:
                 X_meta = X_meta.reindex(columns=meta_tf.selected_features, fill_value=0.0)
             s_tf = meta_tf.predict(X_meta)
@@ -317,6 +343,7 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
                 "side_key": side_key,
                 "score_mr": float(s_mr[i]),
                 "score_tf": float(s_tf[i]),
+                "trend_dir": int(grp.loc[idx, "trend_dir"])
             })
 
     return pd.DataFrame(score_rows)
@@ -360,20 +387,53 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
         l_tf = float(long_df.loc[sym, "score_tf"])
         s_tf = float(short_df.loc[sym, "score_tf"])
 
+        # Determine trend direction from the dataframe
+        # (It should be same for long_df and short_df for same symbol)
+        t_dir = int(long_df.loc[sym, "trend_dir"])
+
         if score_scale:
             l_mr = _robust_norm(l_mr, score_scale.get("long_mr_center", 0.0), score_scale.get("long_mr_scale", 1.0))
             s_mr = _robust_norm(s_mr, score_scale.get("short_mr_center", 0.0), score_scale.get("short_mr_scale", 1.0))
             l_tf = _robust_norm(l_tf, score_scale.get("long_tf_center", 0.0), score_scale.get("long_tf_scale", 1.0))
             s_tf = _robust_norm(s_tf, score_scale.get("short_tf_center", 0.0), score_scale.get("short_tf_scale", 1.0))
 
-        net_mr = float(l_mr - s_mr)
-        net_tf = float(l_tf - s_tf)
-        if abs(net_mr) >= abs(net_tf):
-            net_score = net_mr
-            dom = "mr"
+        # Scoring Logic Split
+        # Best (Up Trend, t_dir > 0): Long_TF (buy) vs Short_MR (sell)
+        # Worst (Down Trend, t_dir < 0): Long_MR (buy) vs Short_TF (sell)
+
+        if t_dir > 0:
+            # Best Performer Pipeline
+            # Score = Long_TF - Short_MR
+            # If > 0, Long (Trend Following). If < 0, Short (Mean Reversion).
+            # Dominant logic:
+            # If abs(Long_TF) > abs(Short_MR), we say 'tf' dominates?
+            # Or just use the net score?
+            # User said: "Best Performer Score = Best Performer TF - Best Performer MR"
+
+            # net_score = l_tf - s_mr
+            # But we need to assign a 'dom' (tf or mr) for risk params.
+            # If l_tf (TF part) contributes more to the absolute value?
+            # Actually, l_tf is usually > 0, s_mr is usually > 0 (if predicting Short).
+            # Wait, Meta Models predict a score.
+            # If l_tf > s_mr -> Net Long (Trend Follow). dom="tf".
+            # If s_mr > l_tf -> Net Short (Mean Reversion). dom="mr".
+
+            net_score = l_tf - s_mr
+            if l_tf >= s_mr:
+                dom = "tf"
+            else:
+                dom = "mr"
+
         else:
-            net_score = net_tf
-            dom = "tf"
+            # Worst Performer Pipeline
+            # Score = Long_MR - Short_TF
+            # If > 0, Long (Mean Reversion). If < 0, Short (Trend Following).
+
+            net_score = l_mr - s_tf
+            if l_mr >= s_tf:
+                dom = "mr"
+            else:
+                dom = "tf"
 
         long_mode = _bucket_mode_from_side_dom("long", dom)
         short_mode = _bucket_mode_from_side_dom("short", dom)

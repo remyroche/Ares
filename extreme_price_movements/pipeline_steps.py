@@ -346,6 +346,11 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                 k_sl = rp.get("k_sl", cfg["risk_k_sl"])
                 k_ts = rp.get("k_trail_start", cfg["risk_k_trail_start"])
                 k_td = rp.get("k_trail_dist", cfg["risk_k_trail_dist"])
+
+                # Extract optimized TP/SL multipliers if available
+                tp_mult = rp.get("tp_mult", cfg.get("tp_mult"))
+                sl_mult = rp.get("sl_mult", cfg.get("sl_mult"))
+
                 sc_scale = rp.get("score_scale", 0.0)
                 adj = (1.0 + sc_scale * abs(score))
 
@@ -353,6 +358,9 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                 temp_cfg["risk_k_sl"] = k_sl * adj
                 temp_cfg["risk_k_trail_start"] = k_ts
                 temp_cfg["risk_k_trail_dist"] = k_td
+
+                if tp_mult is not None: temp_cfg["tp_mult"] = tp_mult
+                if sl_mult is not None: temp_cfg["sl_mult"] = sl_mult
 
                 ret, exit_ts, reason = simulate_trade_hourly(
                     o_s[sym], h_s[sym], l_s[sym], c_s[sym], atr_s[sym],

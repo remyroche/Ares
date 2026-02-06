@@ -879,7 +879,7 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
                             max_events=3000,
                             tp_mult_grid=[0.6, 0.8, 1.0, 1.25, 1.5],
                             sl_mult_grid=[0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
-                            lo_grid=[0.02, 0.03, 0.04],
+                            lo_grid=[0.01, 0.02, 0.03, 0.04],
                             hi_grid=[0.05, 0.06, 0.07],
                             z_max_grid=[2.5, 3.0, 3.5],
                             entry_mode="next_open",
@@ -1481,7 +1481,7 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
                 max_events=2000, # Cap for speed
                 tp_mult_grid=[0.5, 1.0, 1.5, 2.0, 2.5, 3.0], # Wider grid
                 sl_mult_grid=[0.5, 1.0, 1.5, 2.0, 2.5],
-                lo_grid=[0.02, 0.03, 0.04],
+                lo_grid=[0.01, 0.02, 0.03, 0.04],
                 hi_grid=[0.05, 0.06, 0.07],
                 z_max_grid=[2.5, 3.0, 3.5],
                 entry_mode="next_open"

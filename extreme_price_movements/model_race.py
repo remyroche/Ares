@@ -5,11 +5,11 @@ from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import Pipeline
 from sklearn.metrics import roc_auc_score, brier_score_loss, log_loss, accuracy_score
 from scipy.stats import rankdata
 from catboost import CatBoostClassifier
 from xgboost import XGBClassifier
+import lightgbm as lgb
 import joblib
 from extreme_price_movements.utils import tprint
 from extreme_price_movements.purged_cv import PurgedKFold
@@ -107,6 +107,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         n_est_et = 200 if race_mode else 1000
         n_iter_cb = 300 if race_mode else 1000
         n_est_xgb = 2 if race_mode else 10 # 2*150=300 vs 10*150=1500 trees
+        n_est_lgbm = 200 if race_mode else 1000
 
         # 1. Baseline
         # ScaledLogisticRegression (Solves Pipeline+SampleWeight issue)
@@ -157,6 +158,23 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             random_state=42
         )
 
+        # 5. LightGBM
+        candidates["lightgbm"] = lgb.LGBMClassifier(
+            n_estimators=n_est_lgbm,
+            learning_rate=0.02,
+            max_depth=5,
+            num_leaves=31,
+            reg_alpha=1,
+            reg_lambda=5,
+            subsample=0.6,
+            colsample_bytree=0.6,
+            min_child_samples=50,
+            objective='binary',
+            n_jobs=-1,
+            random_state=42,
+            verbose=-1
+        )
+
         return candidates
 
     def fit(self, X, y, sample_weight=None, returns=None):
@@ -202,7 +220,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         # Store per-model detailed metrics for reporting
         detailed_metrics = {}
 
-        for name, model in candidates.items():
+        for name, base_model in candidates.items():
             tprint(f"Race: Training {name}...")
             fold_scores = []
             fold_aucs = []
@@ -223,8 +241,32 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     w_tr = safe_slice(sample_weight, train_idx) if sample_weight is not None else None
                     ret_val = safe_slice(returns, val_idx)
 
-                    model.fit(X_tr, y_tr, sample_weight=w_tr)
-                    probs = model.predict_proba(X_val)[:, 1]
+                    # --- Calibration Logic ---
+                    # We wrap the candidate in CalibratedClassifierCV using an inner split.
+                    # If minority class is too small, fallback to direct fit.
+
+                    # Clone fresh estimator (sklearn style)
+                    from sklearn.base import clone
+                    model_to_fit = clone(base_model)
+
+                    # Determine inner CV for calibration
+                    min_class = min(np.bincount(y_tr.astype(int)))
+                    if min_class < 3:
+                        # Not enough samples for inner CV calibration
+                        calibrated_clf = model_to_fit
+                        calibrated_clf.fit(X_tr, y_tr, sample_weight=w_tr)
+                    else:
+                        inner_splits = min(3, min_class)
+                        inner_cv = PurgedKFold(n_splits=inner_splits, purge=3, embargo=1)
+                        calibrated_clf = CalibratedClassifierCV(
+                            estimator=model_to_fit,
+                            method='isotonic', # Preferred for bias correction
+                            cv=inner_cv
+                        )
+                        calibrated_clf.fit(X_tr, y_tr, sample_weight=w_tr)
+
+                    # Predict
+                    probs = calibrated_clf.predict_proba(X_val)[:, 1]
 
                     metrics = calculate_selection_score(y_val, probs, ret_val)
                     fold_scores.append(metrics["Selection_Score"])
@@ -277,10 +319,12 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             tprint(f"Race Winner: {best_name} (Score={results[best_name]:.4f})")
 
         # 2. Generate OOF predictions with best model (for meta model)
-        tprint(f"Generating OOF predictions with {best_name}...")
+        # We must maintain calibration structure for OOF too
+        tprint(f"Generating OOF predictions with {best_name} (Calibrated)...")
         oof_probs = np.full(len(y), np.nan, dtype=np.float32)
         oof_candidates = self._get_candidates(race_mode=True)
-        oof_model = oof_candidates[best_name]
+        base_oof_model = oof_candidates[best_name]
+
         for train_idx, val_idx in cached_splits:
             if use_numpy:
                 X_tr, X_val = X_np[train_idx], X_np[val_idx]
@@ -288,8 +332,26 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                 X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
             y_tr = safe_slice(y, train_idx)
             w_tr = safe_slice(sample_weight, train_idx) if sample_weight is not None else None
-            oof_model.fit(X_tr, y_tr, sample_weight=w_tr)
-            oof_probs[val_idx] = oof_model.predict_proba(X_val)[:, 1]
+
+            # Calibration
+            from sklearn.base import clone
+            model_to_fit = clone(base_oof_model)
+            min_class = min(np.bincount(y_tr.astype(int)))
+            if min_class < 3:
+                calibrated_clf = model_to_fit
+                calibrated_clf.fit(X_tr, y_tr, sample_weight=w_tr)
+            else:
+                inner_splits = min(3, min_class)
+                inner_cv = PurgedKFold(n_splits=inner_splits, purge=3, embargo=1)
+                calibrated_clf = CalibratedClassifierCV(
+                    estimator=model_to_fit,
+                    method='isotonic',
+                    cv=inner_cv
+                )
+                calibrated_clf.fit(X_tr, y_tr, sample_weight=w_tr)
+
+            oof_probs[val_idx] = calibrated_clf.predict_proba(X_val)[:, 1]
+
         # Fill any remaining NaN with 0.5 (neutral)
         oof_probs = np.nan_to_num(oof_probs, nan=0.5)
         self.oof_probs = oof_probs
@@ -323,12 +385,21 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         final_candidates = self._get_candidates(race_mode=False)
         final_base = final_candidates[best_name]
 
-        self.best_model = CalibratedClassifierCV(
-            estimator=final_base,
-            method='isotonic',
-            cv=3
-        )
-        self.best_model.fit(X, y, sample_weight=sample_weight)
+        # Use 5-fold for final calibration if data allows
+        min_class = min(np.bincount(y.astype(int)))
+        final_cv_splits = min(5, min_class)
+
+        if final_cv_splits < 2:
+             self.best_model = final_base
+             self.best_model.fit(X, y, sample_weight=sample_weight)
+        else:
+             final_cv = PurgedKFold(n_splits=final_cv_splits, purge=5, embargo=2)
+             self.best_model = CalibratedClassifierCV(
+                estimator=final_base,
+                method='isotonic',
+                cv=final_cv
+             )
+             self.best_model.fit(X, y, sample_weight=sample_weight)
 
         return self
 

@@ -404,7 +404,7 @@ def _build_pred_X_window(feats, mkt_gates, cfg, t_idx, syms, feature_key="exh_fe
 
 def build_hourly_training_set_and_weights(
     panel, feats, mkt_gates, cfg, syms, ts_end, p_exh_hist, H, model_kind,
-    trend_filter=None, feature_key=None,
+    trend_filter=None, feature_key=None, extra_feature_keys=None,
     label_method="atr", fixed_tp=0.05, fixed_sl=0.025, side="long",
     _cached_cand_mask=None, _cached_tb=None
 ):
@@ -491,6 +491,10 @@ def build_hourly_training_set_and_weights(
         feat_keys = cfg.get(feature_key, [])
     else:
         feat_keys = cfg.get("causal_cols", [])
+
+    if extra_feature_keys:
+        # Add extra keys, preserving uniqueness
+        feat_keys = list(set(feat_keys) | set(extra_feature_keys))
 
     # --- Vectorized event extraction using numpy ---
     valid_syms = [s for s in syms if s in window_cand.columns and s in tb_labels.columns]
@@ -910,9 +914,13 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
             for H in horizons:
                 tprint(f"Generating labels for {side} {k} ({cand_filter}) H={H}...")
 
+                # Optimization: We include meta keys here so they are present in the dataframe
+                # for the meta model later. However, we must filter them out when training
+                # the alpha model itself (in train_models_from_artifacts).
                 X, y, y_ret, cols, w, meta_idx = build_hourly_training_set_and_weights(
                     panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, H, k,
                     trend_filter=trend_filter, feature_key=feat_key,
+                    extra_feature_keys=cfg.get("meta_feature_keys", []),
                     label_method="triple_barrier",
                     fixed_tp=fixed_tp, fixed_sl=fixed_sl, side=side,
                     _cached_cand_mask=cached_cand_mask,
@@ -1011,6 +1019,51 @@ def train_models_from_artifacts(datasets, cfg):
 
                 drop_cols = ["__y_bin__", "__y_ret__", "__w__", "__ts__", "__symbol__"]
                 X = df.drop(columns=[c for c in drop_cols if c in df.columns])
+
+                # Filter features strictly for the Alpha Model (exclude meta-only features)
+                # We need to know which feature_key was used.
+                # k is "mr" or "tf"
+                feat_key_name = "tf_feature_keys" if k == "tf" else "mr_feature_keys"
+                allowed_keys = set(cfg.get(feat_key_name, []))
+
+                # Also include "causal_cols" if feature_key fallback logic was used, but
+                # here we know we used the explicit keys.
+                # Note: build_hourly_training_set_and_weights adds gate columns G_VOL/G_TREND and p_exh_lag1.
+                # We should allow those too.
+                # And interaction toggles? apply_interaction_toggles creates columns like "col_G_0".
+                # If "col" is in allowed_keys, "col_G_0" should be allowed.
+
+                # Simpler approach: Filter base columns.
+                # But X has interaction columns already.
+                # We can't easily filter interaction columns by exact name match.
+                # Heuristic: Check if base feature part of the column name is in allowed_keys.
+
+                valid_cols = []
+                # Always keep market gates/lags if they are standard inputs
+                std_inputs = {"p_exh_lag1", "G_VOL", "G_TREND", "mkt_ret24h", "mkt_ret6h", "mkt_trend", "mkt_rv"}
+
+                for c in X.columns:
+                    # Check exact match
+                    if c in allowed_keys or c in std_inputs:
+                        valid_cols.append(c)
+                        continue
+                    # Check interaction pattern: {col}_{gate}_0 or {col}_{gate}_1
+                    # We assume gate is G_VOL or G_TREND
+                    is_inter = False
+                    for g in ["G_VOL", "G_TREND"]:
+                        if f"_{g}_0" in c or f"_{g}_1" in c:
+                             base = c.split(f"_{g}_")[0]
+                             if base in allowed_keys:
+                                 valid_cols.append(c)
+                                 is_inter = True
+                                 break
+                    if is_inter: continue
+
+                if not valid_cols:
+                     tprint(f"Warning: No valid columns found for {side} {k} after filtering. Using all.")
+                     valid_cols = list(X.columns)
+
+                X = X[valid_cols]
                 cols = list(X.columns)
 
                 # Derive strategy context for logging

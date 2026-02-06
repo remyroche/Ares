@@ -50,6 +50,8 @@ import scipy.linalg as la
 from scipy.stats import spearmanr
 from sklearn.metrics import roc_auc_score
 
+from extreme_price_movements.utils import tprint
+
 # Optional rolling speedups
 try:
     import bottleneck as bn  # type: ignore
@@ -758,10 +760,22 @@ def run_tp_sl_selection_fast(
         ic_arr = np.array([g.inner_ic for g in grid_metrics], dtype=np.float64)
         pnl_arr = np.array([g.inner_pnl for g in grid_metrics], dtype=np.float64)
 
-        comp = 0.5 * _rank01(pnl_arr, True) + 0.3 * _rank01(ic_arr, True) + 0.2 * _rank01(auc_arr, True)
+        # 60% AUC, 40% IC
+        comp = 0.6 * _rank01(auc_arr, True) + 0.4 * _rank01(ic_arr, True)
+
+        # Log top performers
+        indices = np.argsort(comp)[::-1]
+        tprint(f"[Fold {ofold}] Top Grid Results:")
+        for k in range(min(5, len(indices))):
+            idx = indices[k]
+            res = grid_metrics[idx]
+            tprint(f"  #{k+1}: TP={res.tp_mult:.2f} SL={res.sl_mult:.2f} | "
+                   f"AUC={res.inner_auc:.4f} IC={res.inner_ic:.4f} PnL={res.inner_pnl:.4f} Score={comp[idx]:.4f}")
+
         best_i = int(np.argmax(comp))
         best_tp = float(grid_metrics[best_i].tp_mult)
         best_sl = float(grid_metrics[best_i].sl_mult)
+        tprint(f"[Fold {ofold}] Selected: TP={best_tp:.2f} SL={best_sl:.2f}")
         chosen_pairs.append((best_tp, best_sl))
 
         # Outer test evaluation with chosen grid
@@ -794,7 +808,8 @@ def run_tp_sl_selection_fast(
         pnl_s = np.tanh(test_pnl)
         ic_s = 0.5 * (np.clip(test_ic, -1.0, 1.0) + 1.0)
         auc_s = np.clip(test_auc, 0.0, 1.0)
-        test_score = float(0.5 * (0.5 * (pnl_s + 1.0)) + 0.3 * ic_s + 0.2 * auc_s)
+        # 60% AUC, 40% IC
+        test_score = float(0.6 * auc_s + 0.4 * ic_s)
 
         outer_results.append(OuterFoldResult(
             fold=ofold,

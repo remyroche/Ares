@@ -158,8 +158,10 @@ def run_training_step(ts_sig, cfg):
 
         meta = bundle.get("meta_models", {})
         for side in trade_sides:
-            m = meta.get(side)
-            tprint(f"  meta_{side}: {'fitted' if m and m.model else 'NO MODEL'}")
+            for k in kinds:
+                key = f"{side}_{k}"
+                m = meta.get(key)
+                tprint(f"  meta_{key}: {'fitted' if m and m.model else 'NO MODEL'}")
 
     tprint("STEP: MODEL TRAINING COMPLETE")
     return state

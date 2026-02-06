@@ -66,7 +66,7 @@ CFG = {
     "train_extreme_max": 80,
 
     # hourly trading selection (top/bot deviations)
-    "trade_extreme_pct": 0.05,
+    "trade_extreme_pct": 0.06,
     "trade_extreme_min": 10,
     "trade_extreme_max": 80,
     "trade_deviation_metric": "dist_ema_fast",

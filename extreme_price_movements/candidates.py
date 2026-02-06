@@ -22,7 +22,7 @@ def select_trade_candidates_hourly(feats, ts, syms, pct=0.05, min_n=10, max_n=60
             try:
                 r24 = feats["range_24h_pct"].loc[ts, sym]
                 vz = feats["volatility_zscore"].loc[ts, sym]
-                if r24 > 0.10 and vz > 1.6:
+                if r24 > 0.09 and vz > 1.6:
                     filtered.append(sym)
             except KeyError:
                 continue
@@ -81,10 +81,10 @@ def select_trade_candidates_vectorized(panel, feats, pct=0.05, metric="ret24h"):
     # 2. Volatility & Event Filters (Apply BEFORE Expansion)
     # This ensures we select events where conditions were met AT THE TIME of the event.
 
-    # Filter 2: 24h High/Low range > 10%
+    # Filter 2: 24h High/Low range > 9%
     if "range_24h_pct" in feats:
         vol_metric = feats["range_24h_pct"]
-        vol_mask = vol_metric > 0.10
+        vol_mask = vol_metric > 0.09
     else:
         # Fallback if feature missing (legacy)
         c = panel["close"]
@@ -93,7 +93,7 @@ def select_trade_candidates_vectorized(panel, feats, pct=0.05, metric="ret24h"):
         roll_h = h.rolling(24).max()
         roll_l = l.rolling(24).min()
         vol_metric = (roll_h - roll_l) / (c + 1e-12)
-        vol_mask = vol_metric > 0.10
+        vol_mask = vol_metric > 0.09
 
     # Filter 3: Volatility Z-score > 1.6
     if "volatility_zscore" in feats:

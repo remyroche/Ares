@@ -571,6 +571,9 @@ def select_top_features_fast_ridge(
 class GridResult:
     tp_mult: float
     sl_mult: float
+    lo: float
+    hi: float
+    z_max: float
     inner_score: float
     inner_auc: float
     inner_ic: float
@@ -581,6 +584,9 @@ class OuterFoldResult:
     fold: int
     chosen_tp_mult: float
     chosen_sl_mult: float
+    chosen_lo: float
+    chosen_hi: float
+    chosen_z_max: float
     test_score: float
     test_auc: float
     test_ic: float
@@ -588,10 +594,13 @@ class OuterFoldResult:
 
 @dataclass
 class SelectionSummary:
-    chosen_pairs: List[Tuple[float, float]]
+    chosen_pairs: List[Tuple[float, float, float, float, float]] # tp, sl, lo, hi, z_max
     outer_results: List[OuterFoldResult]
     final_tp_mult: float
     final_sl_mult: float
+    final_lo: float
+    final_hi: float
+    final_z_max: float
 
 
 def run_tp_sl_selection_fast(
@@ -621,11 +630,15 @@ def run_tp_sl_selection_fast(
     # AE weight bounds
     w_min: float = 0.5,
     w_max: float = 2.0,
+    # New grids
+    lo_grid: Optional[Iterable[float]] = None,
+    hi_grid: Optional[Iterable[float]] = None,
+    z_max_grid: Optional[Iterable[float]] = None,
 ) -> SelectionSummary:
     """
     High-throughput variant:
       - Build event cache once (normalized return tensors)
-      - Precompute barrier_pct once
+      - Precompute barrier_pct once per (lo, hi, z_max) tuple
       - Per-grid: label once, precompute AE-until-exit once per grid (needed because exit depends on thresholds)
         (Note: AE itself is computed from prefix-min lows; cheap.)
       - Fit via Cholesky ridge (no sklearn model.fit overhead)
@@ -648,19 +661,23 @@ def run_tp_sl_selection_fast(
 
     e = cache.event_idx
     if e.size == 0:
-        return SelectionSummary([], [], 1.0, 1.0)
+        return SelectionSummary([], [], 1.0, 1.0, lo, hi, z_max)
 
     X_e_full = X[e].astype(np.float32, copy=False)
 
     atr_pct = _f32(atr_pct)
     z = _f32(z)
     atr_base_pct = _f32(atr_base_pct)
-    barrier_pct = scaled_atr_pct_dynamic_a(
-        atr_pct=atr_pct[e],
-        z=z[e],
-        atr_base_pct=atr_base_pct[e],
-        z_max=z_max, lo=lo, hi=hi
-    )
+
+    # Defaults for grids if not provided
+    if lo_grid is None: lo_grid = [lo]
+    if hi_grid is None: hi_grid = [hi]
+    if z_max_grid is None: z_max_grid = [z_max]
+
+    # Convert to list for repeated iteration
+    lo_grid = list(lo_grid)
+    hi_grid = list(hi_grid)
+    z_max_grid = list(z_max_grid)
 
     if outer_cv is None:
         outer_cv = PurgedKFold(n_splits=3, purge=5, embargo=2)
@@ -668,7 +685,7 @@ def run_tp_sl_selection_fast(
         inner_cv = PurgedKFold(n_splits=3, purge=5, embargo=2)
 
     outer_results: List[OuterFoldResult] = []
-    chosen_pairs: List[Tuple[float, float]] = []
+    chosen_pairs: List[Tuple[float, float, float, float, float]] = []
 
     outer_splits = list(outer_cv.split(X_e_full))
 
@@ -676,13 +693,20 @@ def run_tp_sl_selection_fast(
         X_tr_full = X_e_full[tr]
         X_te_full = X_e_full[te]
 
-        # Reference labels for feature selection (tp=1, sl=1)
-        ref = label_from_cache(cache, barrier_pct, tp_mult=1.0, sl_mult=1.0)
+        # Reference labels for feature selection (tp=1, sl=1, using defaults)
+        # Using default lo/hi/z_max for feature selection to have a stable baseline
+        barrier_pct_ref = scaled_atr_pct_dynamic_a(
+            atr_pct=atr_pct[e],
+            z=z[e],
+            atr_base_pct=atr_base_pct[e],
+            z_max=z_max, lo=lo, hi=hi
+        )
+        ref = label_from_cache(cache, barrier_pct_ref, tp_mult=1.0, sl_mult=1.0)
 
         # AE until exit for ref (computed once here)
         ae_ref = compute_ae_until_exit_pct(cache, ref.pt_t, ref.sl_t)
 
-        sl_ref = (1.0 * barrier_pct).astype(np.float32, copy=False)
+        sl_ref = (1.0 * barrier_pct_ref).astype(np.float32, copy=False)
         w_ae_ref = ae_weight_multiplier(ae_ref, sl_ref, w_min=w_min, w_max=w_max)
 
         # class balanced weights on outer-train subset
@@ -709,61 +733,75 @@ def run_tp_sl_selection_fast(
         inner_splits = list(inner_cv.split(Xtr_b))
 
         grid_metrics: List[GridResult] = []
-        # Cache labels per grid to avoid recomputing across inner folds
-        # (Still per outer fold; memory ok for small grid)
-        for tp_mult in tp_mult_grid:
-            for sl_mult in sl_mult_grid:
-                lab = label_from_cache(cache, barrier_pct, tp_mult=float(tp_mult), sl_mult=float(sl_mult))
 
-                # AE until exit for this grid (uses prefix-min + exit indices)
-                ae = compute_ae_until_exit_pct(cache, lab.pt_t, lab.sl_t)
-
-                sl_pct = (float(sl_mult) * barrier_pct).astype(np.float32, copy=False)
-                w_ae = ae_weight_multiplier(ae, sl_pct, w_min=w_min, w_max=w_max)
-
-                # Strict OOF scoring on outer-train: collect inner-fold predictions
-                # and score each TP/SL grid point on combined OOF outputs.
-                oof_scores = np.full(tr.shape[0], np.nan, dtype=np.float32)
-                for itr, ite in inner_splits:
-                    y_tr = lab.y_bin[tr][itr]
-
-                    # class balance on THIS inner-train
-                    w_cls = class_weight_balanced(y_tr)
-                    sw = (w_ae[tr][itr] * w_cls).astype(np.float32, copy=False)
-
-                    y_pm1 = (2 * y_tr.astype(np.int32) - 1).astype(np.float32, copy=False)
-
-                    w = fast_ridge_fit_cholesky(
-                        X=Xtr_b[itr],
-                        y_pm1=y_pm1,
-                        sw=sw,
-                        alpha=ridge_alpha,
-                        regularize_intercept=False,
+        # Extended Grid Search
+        for z_val in z_max_grid:
+            for lo_val in lo_grid:
+                for hi_val in hi_grid:
+                    # Recompute barrier pct for this config
+                    barrier_pct = scaled_atr_pct_dynamic_a(
+                        atr_pct=atr_pct[e],
+                        z=z[e],
+                        atr_base_pct=atr_base_pct[e],
+                        z_max=z_val, lo=lo_val, hi=hi_val
                     )
 
-                    oof_scores[ite] = fast_ridge_scores(Xtr_b[ite], w)
+                    for tp_mult in tp_mult_grid:
+                        for sl_mult in sl_mult_grid:
+                            lab = label_from_cache(cache, barrier_pct, tp_mult=float(tp_mult), sl_mult=float(sl_mult))
 
-                valid_oof = np.isfinite(oof_scores)
-                if not np.any(valid_oof):
-                    inner_auc = 0.5
-                    inner_ic = 0.0
-                    inner_pnl = 0.0
-                else:
-                    y_oof = lab.y_bin[tr][valid_oof]
-                    yr_oof = lab.y_ret[tr][valid_oof]
-                    s_oof = oof_scores[valid_oof]
-                    inner_auc = _auc_safe(y_oof, s_oof)
-                    inner_ic = _spearman_ic(s_oof, yr_oof)
-                    inner_pnl = _pnl_proxy(s_oof, yr_oof)
+                            # AE until exit for this grid (uses prefix-min + exit indices)
+                            ae = compute_ae_until_exit_pct(cache, lab.pt_t, lab.sl_t)
 
-                grid_metrics.append(GridResult(
-                    tp_mult=float(tp_mult),
-                    sl_mult=float(sl_mult),
-                    inner_score=0.0,
-                    inner_auc=float(inner_auc),
-                    inner_ic=float(inner_ic),
-                    inner_pnl=float(inner_pnl),
-                ))
+                            sl_pct = (float(sl_mult) * barrier_pct).astype(np.float32, copy=False)
+                            w_ae = ae_weight_multiplier(ae, sl_pct, w_min=w_min, w_max=w_max)
+
+                            # Strict OOF scoring on outer-train: collect inner-fold predictions
+                            # and score each TP/SL grid point on combined OOF outputs.
+                            oof_scores = np.full(tr.shape[0], np.nan, dtype=np.float32)
+                            for itr, ite in inner_splits:
+                                y_tr = lab.y_bin[tr][itr]
+
+                                # class balance on THIS inner-train
+                                w_cls = class_weight_balanced(y_tr)
+                                sw = (w_ae[tr][itr] * w_cls).astype(np.float32, copy=False)
+
+                                y_pm1 = (2 * y_tr.astype(np.int32) - 1).astype(np.float32, copy=False)
+
+                                w = fast_ridge_fit_cholesky(
+                                    X=Xtr_b[itr],
+                                    y_pm1=y_pm1,
+                                    sw=sw,
+                                    alpha=ridge_alpha,
+                                    regularize_intercept=False,
+                                )
+
+                                oof_scores[ite] = fast_ridge_scores(Xtr_b[ite], w)
+
+                            valid_oof = np.isfinite(oof_scores)
+                            if not np.any(valid_oof):
+                                inner_auc = 0.5
+                                inner_ic = 0.0
+                                inner_pnl = 0.0
+                            else:
+                                y_oof = lab.y_bin[tr][valid_oof]
+                                yr_oof = lab.y_ret[tr][valid_oof]
+                                s_oof = oof_scores[valid_oof]
+                                inner_auc = _auc_safe(y_oof, s_oof)
+                                inner_ic = _spearman_ic(s_oof, yr_oof)
+                                inner_pnl = _pnl_proxy(s_oof, yr_oof)
+
+                            grid_metrics.append(GridResult(
+                                tp_mult=float(tp_mult),
+                                sl_mult=float(sl_mult),
+                                lo=float(lo_val),
+                                hi=float(hi_val),
+                                z_max=float(z_val),
+                                inner_score=0.0,
+                                inner_auc=float(inner_auc),
+                                inner_ic=float(inner_ic),
+                                inner_pnl=float(inner_pnl),
+                            ))
 
         # Rank + composite score across grid
         auc_arr = np.array([g.inner_auc for g in grid_metrics], dtype=np.float64)
@@ -779,20 +817,25 @@ def run_tp_sl_selection_fast(
         for k in range(min(5, len(indices))):
             idx = indices[k]
             res = grid_metrics[idx]
-            tprint(f"  #{k+1}: TP={res.tp_mult:.2f} SL={res.sl_mult:.2f} | "
+            tprint(f"  #{k+1}: TP={res.tp_mult:.2f} SL={res.sl_mult:.2f} Lo={res.lo:.2f} Hi={res.hi:.2f} | "
                    f"AUC={res.inner_auc:.4f} IC={res.inner_ic:.4f} PnL={res.inner_pnl:.4f} Score={comp[idx]:.4f}")
 
         best_i = int(np.argmax(comp))
-        best_tp = float(grid_metrics[best_i].tp_mult)
-        best_sl = float(grid_metrics[best_i].sl_mult)
-        tprint(f"[Fold {ofold}] Selected: TP={best_tp:.2f} SL={best_sl:.2f}")
-        chosen_pairs.append((best_tp, best_sl))
+        best_g = grid_metrics[best_i]
+        tprint(f"[Fold {ofold}] Selected: TP={best_g.tp_mult:.2f} SL={best_g.sl_mult:.2f} Lo={best_g.lo:.2f} Hi={best_g.hi:.2f}")
+        chosen_pairs.append((best_g.tp_mult, best_g.sl_mult, best_g.lo, best_g.hi, best_g.z_max))
 
         # Outer test evaluation with chosen grid
-        lab_best = label_from_cache(cache, barrier_pct, best_tp, best_sl)
+        barrier_pct_best = scaled_atr_pct_dynamic_a(
+            atr_pct=atr_pct[e],
+            z=z[e],
+            atr_base_pct=atr_base_pct[e],
+            z_max=best_g.z_max, lo=best_g.lo, hi=best_g.hi
+        )
+        lab_best = label_from_cache(cache, barrier_pct_best, best_g.tp_mult, best_g.sl_mult)
         ae_best = compute_ae_until_exit_pct(cache, lab_best.pt_t, lab_best.sl_t)
 
-        sl_best = (best_sl * barrier_pct).astype(np.float32, copy=False)
+        sl_best = (best_g.sl_mult * barrier_pct_best).astype(np.float32, copy=False)
         w_ae_best = ae_weight_multiplier(ae_best, sl_best, w_min=w_min, w_max=w_max)
 
         # Class balance on outer-train for final fit
@@ -823,8 +866,11 @@ def run_tp_sl_selection_fast(
 
         outer_results.append(OuterFoldResult(
             fold=ofold,
-            chosen_tp_mult=best_tp,
-            chosen_sl_mult=best_sl,
+            chosen_tp_mult=best_g.tp_mult,
+            chosen_sl_mult=best_g.sl_mult,
+            chosen_lo=best_g.lo,
+            chosen_hi=best_g.hi,
+            chosen_z_max=best_g.z_max,
             test_score=test_score,
             test_auc=float(test_auc),
             test_ic=float(test_ic),
@@ -835,11 +881,14 @@ def run_tp_sl_selection_fast(
     pairs = np.array(chosen_pairs, dtype=np.float32)
     uniq, counts = np.unique(pairs, axis=0, return_counts=True)
     best = uniq[np.argmax(counts)]
-    final_tp, final_sl = float(best[0]), float(best[1])
+    final_tp, final_sl, final_lo, final_hi, final_z_max = float(best[0]), float(best[1]), float(best[2]), float(best[3]), float(best[4])
 
     return SelectionSummary(
         chosen_pairs=chosen_pairs,
         outer_results=outer_results,
         final_tp_mult=final_tp,
         final_sl_mult=final_sl,
+        final_lo=final_lo,
+        final_hi=final_hi,
+        final_z_max=final_z_max
     )

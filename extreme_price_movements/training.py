@@ -820,6 +820,7 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
             close_df = panel["close"]
             opt_feat_keys = cfg.get("causal_cols", [])[:10]
             tp_mult, sl_mult = 1.0, 0.5  # defaults
+            lo_val, hi_val, z_max_val = 0.03, 0.06, 3.0
 
             # Pick representative asset: first market basket member with data
             rep_sym = None
@@ -878,18 +879,31 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
                             max_events=3000,
                             tp_mult_grid=[0.6, 0.8, 1.0, 1.25, 1.5],
                             sl_mult_grid=[0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
+                            lo_grid=[0.01, 0.02, 0.03, 0.04],
+                            hi_grid=[0.05, 0.06, 0.07],
+                            z_max_grid=[2.5, 3.0, 3.5],
                             entry_mode="next_open",
                         )
                         tp_mult = summary.final_tp_mult
                         sl_mult = summary.final_sl_mult
-                        tprint(f"Optimised TP/SL for H={H} side={side}: tp_mult={tp_mult:.2f}, sl_mult={sl_mult:.2f}")
+                        lo_val = summary.final_lo
+                        hi_val = summary.final_hi
+                        z_max_val = summary.final_z_max
+                        tprint(f"Optimised TP/SL for H={H} side={side}: tp_mult={tp_mult:.2f}, sl_mult={sl_mult:.2f}, lo={lo_val:.2f}, hi={hi_val:.2f}, z_max={z_max_val:.2f}")
                     except Exception as e:
                         tprint(f"TP/SL optimization failed for H={H} side={side}: {e}. Using defaults.")
                 else:
                     tprint(f"Not enough events ({len(event_indices)}) for TP/SL optimization. Using defaults.")
 
-            tp_df = tp_mult * barrier_pct_df
-            sl_df = sl_mult * barrier_pct_df
+            # Recompute barrier pct with optimized params if changed
+            if abs(lo_val - 0.03) > 1e-6 or abs(hi_val - 0.06) > 1e-6 or abs(z_max_val - 3.0) > 1e-6:
+                b_pct_opt = scaled_atr_pct(atr_pct_df.values, z_score_df.values, atr_base_df.values, z_max=z_max_val, lo=lo_val, hi=hi_val)
+                barrier_pct_opt_df = pd.DataFrame(b_pct_opt, index=atr_pct_df.index, columns=atr_pct_df.columns)
+            else:
+                barrier_pct_opt_df = barrier_pct_df
+
+            tp_df = tp_mult * barrier_pct_opt_df
+            sl_df = sl_mult * barrier_pct_opt_df
             tb_labels, tb_returns = compute_triple_barrier_labels(panel, tp_df, sl_df, H, side=side)
             tb_cache[(H, side)] = (tb_labels, tb_returns)
 
@@ -1467,10 +1481,13 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
                 max_events=2000, # Cap for speed
                 tp_mult_grid=[0.5, 1.0, 1.5, 2.0, 2.5, 3.0], # Wider grid
                 sl_mult_grid=[0.5, 1.0, 1.5, 2.0, 2.5],
+                lo_grid=[0.01, 0.02, 0.03, 0.04],
+                hi_grid=[0.05, 0.06, 0.07],
+                z_max_grid=[2.5, 3.0, 3.5],
                 entry_mode="next_open"
             )
 
-            tprint(f"Optimized {side} {k}: TP_mult={summary.final_tp_mult:.2f}, SL_mult={summary.final_sl_mult:.2f}")
+            tprint(f"Optimized {side} {k}: TP={summary.final_tp_mult:.2f}, SL={summary.final_sl_mult:.2f}, Lo={summary.final_lo:.2f}, Hi={summary.final_hi:.2f}, Zmax={summary.final_z_max:.2f}")
 
             if summary.outer_results:
                 avg_auc = np.mean([r.test_auc for r in summary.outer_results])
@@ -1478,14 +1495,17 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
                 avg_pnl = np.mean([r.test_pnl for r in summary.outer_results])
                 tprint(f"  Avg Test Metrics: AUC={avg_auc:.4f}, IC={avg_ic:.4f}, PnL={avg_pnl:.4f}")
 
-                pairs = [(r.chosen_tp_mult, r.chosen_sl_mult) for r in summary.outer_results]
-                tprint(f"  Stability (Chosen Pairs): {pairs}")
+                pairs = [(r.chosen_tp_mult, r.chosen_sl_mult, r.chosen_lo, r.chosen_hi, r.chosen_z_max) for r in summary.outer_results]
+                tprint(f"  Stability (Chosen Configs): {pairs}")
 
             # Store in granular risk
             # We map these to the config keys used by Triple Barrier execution
             bucket_risk = {
                 "tp_mult": summary.final_tp_mult,
                 "sl_mult": summary.final_sl_mult,
+                "vol_lo": summary.final_lo,
+                "vol_hi": summary.final_hi,
+                "vol_z_max": summary.final_z_max,
                 # Wire optimized TP/SL mults into trailing logic used by backtests/live
                 # activation price threshold -> k_trail_start
                 # trailing distance -> k_trail_dist

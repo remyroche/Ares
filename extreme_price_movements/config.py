@@ -95,10 +95,9 @@ CFG = {
         "tf_bias", "shock_rel", "resid_strength", "evr_slope", "stall_ext",
         "spike_score", "grind_score", "chop_score",
         # Gates as continuous features
-        "G_EXH_STALL_EXT", "G_EXH_EFFORT", "G_EXH_BLOWOFF", "G_EXH_GIVEBACK",
-        "G_EXH_REJECT", "G_EXH_TAIL_FAIL",
-        "G_TF_ACCEPT", "G_TF_ACCEPT2", "G_MR_REJECT", "G_MR_OVEREXT",
-        "G_MR_SPIKE", "G_TF_GRIND", "G_MR_TAIL", "G_TF_RETEST_OK",
+        "G_EXH_EFFORT", "G_EXH_GIVEBACK",
+        "G_EXH_TAIL_FAIL",
+        "G_MR_SPIKE", "G_TF_GRIND", "G_MR_TAIL",
         "G_META_EXH", "G_META_TF_QUAL", "G_META_MR_QUAL", "G_META_AMBIG",
         # New Model Features
         "overext", "overext_weak", "effort_gate", "tail_fail", "reject", "blowoff_risk",

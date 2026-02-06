@@ -507,12 +507,12 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     mfe = mfe_long.where(dir_s > 0, o_entry - l_min_4)
     mae = mae_long.where(dir_s > 0, h_max_4 - o_entry)
 
-    feats["mfe_4h"] = (mfe / atr).astype(np.float32)
-    feats["mae_4h"] = (mae / atr).astype(np.float32)
+    feats["mfe_4h"] = (mfe / atr).shift(1).astype(np.float32)
+    feats["mae_4h"] = (mae / atr).shift(1).astype(np.float32)
 
     cur_pnl = (c - o_entry) * dir_s
     gb = (mfe - cur_pnl) / (mfe + 1e-12)
-    feats["giveback"] = gb.clip(0, 1).astype(np.float32)
+    feats["giveback"] = gb.clip(0, 1).shift(1).astype(np.float32)
 
     # --- COMPOSITE / INTERACTION FEATURES ---
 
@@ -581,29 +581,17 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["rv_ratio_6_24"] = (feats["rv_6h"] / (feats["rv_24h"] + 1e-12)).astype(np.float32)
 
     # Define gates helpers for Meta
-    accept2 = feats["G_TF_ACCEPT2"] = (ft2_pos * clv4_pos * pb2_inv).astype(np.float32)
-    # Re-define Gate vars if they were not defined yet (G_TF_ACCEPT2 was defined in GATES section in previous version, now I define it here or use it)
-    # Actually I haven't defined GATES section yet in this rewritten version!
 
-    # Let's define the GATES first as they are features too
-    feats["G_EXH_STALL_EXT"] = (feats["donch_dist_12"] * (1.0 - feats["delta_stall_6"])).fillna(0).astype(np.float32)
     feats["G_EXH_EFFORT"] = (feats["evr_6"] * (feats["vol_z24"] + 1.0) / (feats["progress"] + 1e-12)).fillna(0).astype(np.float32)
-    feats["G_EXH_BLOWOFF"] = (feats["donch_dist_12"] * feats["excess_6h"]).fillna(0).astype(np.float32)
     feats["G_EXH_GIVEBACK"] = (feats["giveback"] * (1.0 + feats["donch_dist_12"])).fillna(0).astype(np.float32)
-    feats["G_EXH_REJECT"] = ((1.0 - feats["clv_mean_4"]) * feats["pullback_4"].abs()).fillna(0).astype(np.float32)
     feats["G_EXH_TAIL_FAIL"] = (feats["tail_against"] * (feats["ft_2"] - feats["ft_4"]).clip(lower=0)).fillna(0).astype(np.float32)
-    feats["G_TF_ACCEPT"] = (ft2_pos * clv4_pos).astype(np.float32)
-    feats["G_TF_ACCEPT2"] = accept2 # Defined above
-    feats["G_MR_REJECT"] = (fail_sum * clv_inv * pb_avg_abs).fillna(0).astype(np.float32)
-    feats["G_MR_OVEREXT"] = (feats["donch_dist_12"] * (1.0 - ft2_pos)).fillna(0).astype(np.float32)
+
     feats["G_MR_SPIKE"] = (feats["speed"] * feats["excess_6h"] * clv_inv).fillna(0).astype(np.float32)
     feats["G_TF_GRIND"] = (ret_rat * feats["clv_mean_4"] * pb2_inv).astype(np.float32)
     feats["G_MR_TAIL"] = (feats["tail_against"] * (1.0 + feats["donch_dist_6"])).astype(np.float32)
-    feats["G_TF_RETEST_OK"] = (ft4_pos * clv4_pos * pb4_inv).astype(np.float32)
 
     # Meta Features using Gates
-    reject = feats["G_MR_REJECT"]
-    ambig_term = (1.0 - np.maximum(accept2, reject))
+    ambig_term = (1.0 - np.maximum(feats["accept"], feats["reject"]))
     feats["ambig"] = (ambig_term * feats["rv_ratio_6_24"]).astype(np.float32)
 
     feats["stage_tf"] = (feats["accept"] * feats["coherence_24"]).astype(np.float32)
@@ -635,9 +623,9 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["evr_slope"] = (feats["evr_3"] - feats["evr_6"]).astype(np.float32)
     feats["stall_ext_corr"] = (feats["delta_stall_6"] * feats["donch_dist_12"]).astype(np.float32)
 
-    feats["G_META_EXH"] = (feats["G_EXH_BLOWOFF"] + feats["G_EXH_EFFORT"] + feats["G_EXH_STALL_EXT"] + feats["G_EXH_GIVEBACK"]).astype(np.float32)
-    feats["G_META_TF_QUAL"] = (feats["G_TF_ACCEPT2"] * (1.0 - feats["G_META_EXH"].clip(0,1))).astype(np.float32)
-    feats["G_META_MR_QUAL"] = (feats["G_MR_REJECT"] * (1.0 - feats["G_EXH_BLOWOFF"].clip(0,1))).astype(np.float32)
+    feats["G_META_EXH"] = (feats["overext"] + feats["G_EXH_EFFORT"] + feats["stall_ext"] + feats["G_EXH_GIVEBACK"]).astype(np.float32)
+    feats["G_META_TF_QUAL"] = (feats["accept"] * (1.0 - feats["G_META_EXH"].clip(0,1))).astype(np.float32)
+    feats["G_META_MR_QUAL"] = (feats["reject"] * (1.0 - feats["overext"].clip(0,1))).astype(np.float32)
     feats["G_META_AMBIG"] = (ambig_term * feats["rv_ratio_6_24"]).astype(np.float32)
 
     # Robust Score Calculation with clipping to prevent Inf/Overflow

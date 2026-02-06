@@ -34,6 +34,34 @@ def _find_latest_feature_ts(data_root):
     return pd.to_datetime(latest, format="%Y%m%d_%H%M%S").tz_localize("UTC")
 
 
+
+
+def _label_artifacts_ready(cfg, ts_sig):
+    """Check whether core label artifacts exist for this run timestamp."""
+    import os
+    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    horizons = cfg.get("label_horizons_hours", [])
+    required = [
+        "spike_anatomy_best",
+        "spike_anatomy_worst",
+        "exhaustion_history",
+        "exh_up",
+        "exh_down",
+    ]
+    for h in horizons:
+        required.extend([
+            f"train_long_mr_{h}",
+            f"train_long_tf_{h}",
+            f"train_short_mr_{h}",
+            f"train_short_tf_{h}",
+        ])
+
+    for name in required:
+        fpath = os.path.join(cfg["data_root"], "artifacts", run_id, "labels", f"{name}.parquet")
+        if not os.path.exists(fpath):
+            return False
+    return True
+
 def run_labels(cfg, ts_override=None):
     if ts_override:
         ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
@@ -103,6 +131,17 @@ def run_train(cfg, ts_override=None):
             return
 
     tprint(f"Train mode. ts_sig={ts_sig}")
+
+    # TP/SL optimisation happens during label generation (see training.generate_label_datasets).
+    # Always refresh labels before training so TP:SL widths are re-optimised from current data.
+    tprint("Refreshing labels to optimise TP:SL widths before model training (optimise_tpsl_ratio)...")
+    store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+    run_label_generation_step_v2(ts_sig, None, cfg, store, None)
+
+    if not _label_artifacts_ready(cfg, ts_sig):
+        tprint("ERROR: Label generation did not produce required artifacts. Aborting training.")
+        return
+
     state = run_training_step(ts_sig, cfg)
     if state:
         tprint("TRAINING PIPELINE COMPLETE")
@@ -129,9 +168,19 @@ def run_risk_opt(cfg, ts_override=None):
     tprint("RISK OPTIMIZATION COMPLETE")
 
 
+
+
+def run_all(cfg, ts_override=None):
+    """Run features -> labels -> train -> risk optimisation -> backtest in order."""
+    run_features(cfg, ts_override=ts_override)
+    run_labels(cfg, ts_override=ts_override)
+    run_train(cfg, ts_override=ts_override)
+    run_risk_opt(cfg, ts_override=ts_override)
+    run_backtest(cfg, ts_override=ts_override)
+
 def main():
     parser = argparse.ArgumentParser(description="Extreme Price Movements Pipeline")
-    parser.add_argument("mode", choices=["labels", "features", "train", "backtest", "optimize_risk"],
+    parser.add_argument("mode", choices=["labels", "features", "train", "backtest", "optimize_risk", "run"],
                         help="Pipeline mode to run")
     args = parser.parse_args()
 
@@ -147,8 +196,8 @@ def main():
         run_backtest(cfg)
     elif args.mode == "optimize_risk":
         run_risk_opt(cfg)
-    else:
-        tprint(f"Mode '{args.mode}' not yet implemented.")
+    elif args.mode == "run":
+        run_all(cfg)
 
 
 if __name__ == "__main__":

@@ -173,15 +173,18 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
         else:
             return (entry_px / last_close) - 1.0, last_ts, "time_exit"
 
-def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config, cfg, p_exh_cand, current_positions_syms):
-    tprint(f"Entering function: generate_hourly_signals in engine.py")
-    if ts_sig not in mkt_gates.index:
-        return []
 
-    # 1. Live Candidate Selection (t-12 to t+16 logic adapted for live)
+
+def _robust_norm(val, center, scale, eps=1e-12):
+    return (float(val) - float(center)) / (float(scale) + eps)
+
+
+def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand, current_positions_syms):
+    if ts_sig not in mkt_gates.index:
+        return pd.DataFrame()
+
     candidates = set()
     lookback_offsets = [0, 4, 8, 12, 16]
-
     for offset in lookback_offsets:
         t_check = ts_sig - pd.Timedelta(hours=offset)
         if t_check in feats["ret24h"].index:
@@ -193,15 +196,12 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
             candidates.update(top)
             candidates.update(bot)
 
-    candidates = list(candidates)
     candidates = [s for s in candidates if s not in current_positions_syms]
-
     if not candidates:
-        return []
+        return pd.DataFrame()
 
     mrk = mkt_gates.loc[ts_sig]
     ts_lag = ts_sig - pd.Timedelta(hours=1)
-    trend_df = feats.get("trend_pct")
 
     alpha_models = model_bundle["alpha_models"]
     meta_models = model_bundle["meta_models"]
@@ -211,174 +211,199 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
     for sym in candidates:
         try:
             p_lag = 0.5
-            if ts_lag in p_exh_cand.index and sym in p_exh_cand.columns: p_lag = float(p_exh_cand.loc[ts_lag, sym])
-
-            # Evaluate BOTH long and short models for every candidate
+            if ts_lag in p_exh_cand.index and sym in p_exh_cand.columns:
+                p_lag = float(p_exh_cand.loc[ts_lag, sym])
             for side_key in ["long", "short"]:
                 m_bundle = alpha_models.get(side_key)
-                if not m_bundle or not m_bundle.get("mr") or not m_bundle.get("tf"): continue
-
+                if not m_bundle or not m_bundle.get("mr") or not m_bundle.get("tf"):
+                    continue
                 model_mr = m_bundle["mr"]["model"]
                 model_tf = m_bundle["tf"]["model"]
                 fcols_mr = m_bundle["mr"]["feat_cols"]
                 fcols_tf = m_bundle["tf"]["feat_cols"]
-
-                # meta_model retrieval deferred to aggregation step
                 rec = {
                     "symbol": sym, "side_key": side_key, "model_mr": model_mr, "model_tf": model_tf,
                     "feat_cols_mr": fcols_mr, "feat_cols_tf": fcols_tf,
-                    "mkt_ret24h": float(mrk["mkt_ret24h"]), "mkt_ret6h": float(mrk["mkt_ret6h"]), "mkt_trend": float(mrk["mkt_trend"]), "mkt_rv": float(mrk["mkt_rv"]),
+                    "mkt_ret24h": float(mrk["mkt_ret24h"]), "mkt_ret6h": float(mrk["mkt_ret6h"]),
+                    "mkt_trend": float(mrk["mkt_trend"]), "mkt_rv": float(mrk["mkt_rv"]),
                     "G_VOL": int(mrk["G_VOL"]), "G_TREND": int(mrk["G_TREND"]), "p_exh_lag1": p_lag
                 }
-
                 all_keys = set(fcols_mr) | set(fcols_tf) | set(cfg.get("spike_feature_keys", [])) | set(cfg.get("meta_feature_keys", []))
-
                 for k in all_keys:
-                    if k in feats and sym in feats[k].columns: rec[k] = float(feats[k].loc[ts_sig, sym])
-
+                    if k in feats and sym in feats[k].columns:
+                        rec[k] = float(feats[k].loc[ts_sig, sym])
                 rows.append(rec)
-        except Exception: continue
+        except Exception:
+            continue
 
     df_all = pd.DataFrame(rows)
-    score_raw_list = []
-    if not df_all.empty:
-        # Spike Inference
-        spike_keys = cfg.get("spike_feature_keys", [])
-        if spike_model:
-            # spike_model can be a dict {"gmm", "scaler", "columns"} or a raw GMM
-            if isinstance(spike_model, dict):
-                gmm = spike_model["gmm"]
-                scaler = spike_model.get("scaler")
-                spike_cols = spike_model.get("columns", spike_keys)
-                available_cols = [c for c in spike_cols if c in df_all.columns]
-                X_spike = df_all[available_cols].fillna(0.0).values
-                if scaler is not None:
-                    X_spike = scaler.transform(X_spike)
-                probs = gmm.predict_proba(X_spike)
-            else:
-                X_spike = df_all[spike_keys].fillna(0.0)
-                probs = spike_model.predict_proba(X_spike)
-            if probs is not None:
-                for i in range(probs.shape[1]):
-                    df_all[f"spike_prob_{i}"] = probs[:, i]
-            else:
-                 for i in range(4): df_all[f"spike_prob_{i}"] = 0.0
+    if df_all.empty:
+        return pd.DataFrame()
+
+    spike_keys = cfg.get("spike_feature_keys", [])
+    if spike_model:
+        if isinstance(spike_model, dict):
+            gmm = spike_model["gmm"]
+            scaler = spike_model.get("scaler")
+            spike_cols = spike_model.get("columns", spike_keys)
+            available_cols = [c for c in spike_cols if c in df_all.columns]
+            X_spike = df_all[available_cols].fillna(0.0).values
+            if scaler is not None:
+                X_spike = scaler.transform(X_spike)
+            probs = gmm.predict_proba(X_spike)
         else:
-             for i in range(4): df_all[f"spike_prob_{i}"] = 0.0
+            X_spike = df_all[spike_keys].fillna(0.0)
+            probs = spike_model.predict_proba(X_spike)
+        for i in range(probs.shape[1]):
+            df_all[f"spike_prob_{i}"] = probs[:, i]
+    else:
+        for i in range(4):
+            df_all[f"spike_prob_{i}"] = 0.0
 
-        for side_key, grp in df_all.groupby("side_key"):
-            first = grp.iloc[0]
-            model_mr = first["model_mr"]; model_tf = first["model_tf"]
-            fcols_mr = first["feat_cols_mr"]
-            fcols_tf = first["feat_cols_tf"]
+    score_rows = []
+    for side_key, grp in df_all.groupby("side_key"):
+        first = grp.iloc[0]
+        model_mr = first["model_mr"]; model_tf = first["model_tf"]
+        fcols_mr = first["feat_cols_mr"]; fcols_tf = first["feat_cols_tf"]
 
-            # Apply interaction toggles (same as training), then select trained feature columns
-            keys_mr = cfg.get("mr_feature_keys", cfg["causal_cols"])
-            grp_mr = apply_interaction_toggles(grp.copy(), keys_mr, ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
-            mr_avail = [c for c in fcols_mr if c in grp_mr.columns]
-            mr_missing = [c for c in fcols_mr if c not in grp_mr.columns]
-            X_mr_pred = grp_mr[mr_avail].fillna(0.0).astype(np.float32)
-            for c in mr_missing:
-                X_mr_pred[c] = 0.0
-            X_mr_pred = X_mr_pred[fcols_mr]
-            p_mr = model_mr.predict(X_mr_pred)
+        keys_mr = cfg.get("mr_feature_keys", cfg["causal_cols"])
+        grp_mr = apply_interaction_toggles(grp.copy(), keys_mr, ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
+        X_mr_pred = grp_mr.reindex(columns=fcols_mr, fill_value=0.0).fillna(0.0).astype(np.float32)
+        p_mr = model_mr.predict(X_mr_pred)
 
-            keys_tf = cfg.get("tf_feature_keys", cfg["causal_cols"])
-            grp_tf = apply_interaction_toggles(grp.copy(), keys_tf, ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
-            tf_avail = [c for c in fcols_tf if c in grp_tf.columns]
-            tf_missing = [c for c in fcols_tf if c not in grp_tf.columns]
-            X_tf_pred = grp_tf[tf_avail].fillna(0.0).astype(np.float32)
-            for c in tf_missing:
-                X_tf_pred[c] = 0.0
-            X_tf_pred = X_tf_pred[fcols_tf]
-            p_tf = model_tf.predict(X_tf_pred)
+        keys_tf = cfg.get("tf_feature_keys", cfg["causal_cols"])
+        grp_tf = apply_interaction_toggles(grp.copy(), keys_tf, ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
+        X_tf_pred = grp_tf.reindex(columns=fcols_tf, fill_value=0.0).fillna(0.0).astype(np.float32)
+        p_tf = model_tf.predict(X_tf_pred)
 
-            # Resolve Meta Models for this side (one for MR, one for TF)
-            meta_mr = meta_models.get(f"{side_key}_mr")
-            meta_tf = meta_models.get(f"{side_key}_tf")
+        meta_mr = meta_models.get(f"{side_key}_mr")
+        meta_tf = meta_models.get(f"{side_key}_tf")
 
-            score_mr = None
-            score_tf = None
+        if meta_mr:
+            num = grp.select_dtypes(include=[np.number]).copy()
+            toggled = apply_interaction_toggles(num, keys_mr, ["G_VOL", "G_TREND"], drop_raw=False)
+            X_meta = meta_mr.prepare_meta_features(p_mr, toggled, pred_col_name="pred_logit")
+            if meta_mr.selected_features:
+                X_meta = X_meta.reindex(columns=meta_mr.selected_features, fill_value=0.0)
+            s_mr = meta_mr.predict(X_meta)
+        else:
+            s_mr = (p_mr - 0.5) * 0.1
 
-            # 1. Score MR
-            if meta_mr:
-                numeric_cols = grp.select_dtypes(include=[np.number]).columns.tolist()
-                grp_numeric = grp[numeric_cols].copy()
-                grp_toggled = apply_interaction_toggles(grp_numeric, keys_mr, ["G_VOL", "G_TREND"], drop_raw=False)
+        if meta_tf:
+            num = grp.select_dtypes(include=[np.number]).copy()
+            toggled = apply_interaction_toggles(num, keys_tf, ["G_VOL", "G_TREND"], drop_raw=False)
+            X_meta = meta_tf.prepare_meta_features(p_tf, toggled, pred_col_name="pred_logit")
+            if meta_tf.selected_features:
+                X_meta = X_meta.reindex(columns=meta_tf.selected_features, fill_value=0.0)
+            s_tf = meta_tf.predict(X_meta)
+        else:
+            s_tf = (p_tf - 0.5) * 0.1
 
-                X_meta_mr = meta_mr.prepare_meta_features(p_mr, grp_toggled, pred_col_name="pred_logit")
+        for i, idx in enumerate(grp.index):
+            score_rows.append({
+                "symbol": grp.loc[idx, "symbol"],
+                "side_key": side_key,
+                "score_mr": float(s_mr[i]),
+                "score_tf": float(s_tf[i]),
+            })
 
-                if meta_mr.selected_features:
-                    for c in meta_mr.selected_features:
-                        if c not in X_meta_mr.columns:
-                            X_meta_mr[c] = 0.0
-                score_mr = meta_mr.predict(X_meta_mr)
-            else:
-                score_mr = (p_mr - 0.5) * 0.1
+    return pd.DataFrame(score_rows)
 
-            # 2. Score TF
-            if meta_tf:
-                numeric_cols = grp.select_dtypes(include=[np.number]).columns.tolist()
-                grp_numeric = grp[numeric_cols].copy()
-                grp_toggled = apply_interaction_toggles(grp_numeric, keys_tf, ["G_VOL", "G_TREND"], drop_raw=False)
+def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config, cfg, p_exh_cand, current_positions_syms):
+    tprint(f"Entering function: generate_hourly_signals in engine.py")
+    if ts_sig not in mkt_gates.index:
+        return []
 
-                X_meta_tf = meta_tf.prepare_meta_features(p_tf, grp_toggled, pred_col_name="pred_logit")
+    signal_params = (risk_config or {}).get("signal_params", {}) if isinstance(risk_config, dict) else {}
+    thr_long = float(signal_params.get("thr_long", cfg.get("thr_long", 0.01)))
+    thr_short = float(signal_params.get("thr_short", cfg.get("thr_short", -0.01)))
+    k_long = int(signal_params.get("k_long", cfg.get("k_long", 10)))
+    k_short = int(signal_params.get("k_short", cfg.get("k_short", 10)))
 
-                if meta_tf.selected_features:
-                    for c in meta_tf.selected_features:
-                        if c not in X_meta_tf.columns:
-                            X_meta_tf[c] = 0.0
-                score_tf = meta_tf.predict(X_meta_tf)
-            else:
-                score_tf = (p_tf - 0.5) * 0.1
+    size_min = float(signal_params.get("size_min", 0.03))
+    size_max = float(signal_params.get("size_max", 0.15))
+    size_k = float(signal_params.get("size_k", 2.0))
+    size_x0 = float(signal_params.get("size_x0", 0.5))
+    size_zcap = float(signal_params.get("size_zcap", 4.0))
+    size_q50 = signal_params.get("size_q50")
+    size_q90 = signal_params.get("size_q90")
 
-            for i, idx in enumerate(grp.index):
-                sym = grp.loc[idx, "symbol"]
-                s_mr_val = float(score_mr[i])
-                s_tf_val = float(score_tf[i])
+    sc_df = _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand, current_positions_syms)
+    if sc_df.empty:
+        return []
 
-                if s_mr_val > s_tf_val:
-                    best_s = s_mr_val
-                    dom = "mr"
-                else:
-                    best_s = s_tf_val
-                    dom = "tf"
+    long_df = sc_df[sc_df["side_key"] == "long"].set_index("symbol")
+    short_df = sc_df[sc_df["side_key"] == "short"].set_index("symbol")
+    syms = sorted(set(long_df.index).intersection(set(short_df.index)))
+    if not syms:
+        return []
 
-                score_raw_list.append((sym, side_key, best_s, dom))
-
-    # Separate long and short signals
-    long_signals = [(sym, sc, dom) for sym, sk, sc, dom in score_raw_list if sk == "long"]
-    short_signals = [(sym, sc, dom) for sym, sk, sc, dom in score_raw_list if sk == "short"]
-
-    # For longs: highest scores win; for shorts: highest scores win (model predicts short conviction)
-    long_signals.sort(key=lambda x: x[1], reverse=True)
-    short_signals.sort(key=lambda x: x[1], reverse=True)
-
-    longs = [x for x in long_signals if x[1] > cfg["thr_long"]][:cfg["k_long"]]
-    shorts = [x for x in short_signals if x[1] > cfg["thr_long"]][:cfg["k_short"]]  # Same threshold: positive = conviction
+    score_scale = signal_params.get("score_scale_params", {}) if isinstance(signal_params, dict) else {}
 
     final_orders = []
-    for s, sc, dom in longs: final_orders.append({"symbol": s, "side": "long", "score": sc, "dom": dom})
-    for s, sc, dom in shorts: final_orders.append({"symbol": s, "side": "short", "score": sc, "dom": dom})
+    abs_scores = []
+    for sym in syms:
+        l_mr = float(long_df.loc[sym, "score_mr"])
+        s_mr = float(short_df.loc[sym, "score_mr"])
+        l_tf = float(long_df.loc[sym, "score_tf"])
+        s_tf = float(short_df.loc[sym, "score_tf"])
 
-    # Allocation
-    total_wt = sum(abs(x["score"]) for x in final_orders)
+        if score_scale:
+            l_mr = _robust_norm(l_mr, score_scale.get("long_mr_center", 0.0), score_scale.get("long_mr_scale", 1.0))
+            s_mr = _robust_norm(s_mr, score_scale.get("short_mr_center", 0.0), score_scale.get("short_mr_scale", 1.0))
+            l_tf = _robust_norm(l_tf, score_scale.get("long_tf_center", 0.0), score_scale.get("long_tf_scale", 1.0))
+            s_tf = _robust_norm(s_tf, score_scale.get("short_tf_center", 0.0), score_scale.get("short_tf_scale", 1.0))
+
+        net_mr = float(l_mr - s_mr)
+        net_tf = float(l_tf - s_tf)
+        if abs(net_mr) >= abs(net_tf):
+            net_score = net_mr
+            dom = "mr"
+        else:
+            net_score = net_tf
+            dom = "tf"
+
+        if net_score >= thr_long:
+            final_orders.append({"symbol": sym, "side": "long", "score": net_score, "dom": dom})
+            abs_scores.append(abs(net_score))
+        elif net_score <= thr_short:
+            final_orders.append({"symbol": sym, "side": "short", "score": net_score, "dom": dom})
+            abs_scores.append(abs(net_score))
+
+    if not final_orders:
+        return []
+
+    longs = [o for o in final_orders if o["side"] == "long"]
+    shorts = [o for o in final_orders if o["side"] == "short"]
+    longs.sort(key=lambda x: x["score"], reverse=True)
+    shorts.sort(key=lambda x: x["score"])  # more negative first
+    final_orders = longs[:k_long] + shorts[:k_short]
+
+    if size_q50 is None or size_q90 is None:
+        arr = np.array([abs(o["score"]) for o in final_orders], dtype=np.float64)
+        size_q50 = float(np.quantile(arr, 0.5)) if arr.size else 0.0
+        size_q90 = float(np.quantile(arr, 0.9)) if arr.size else 1.0
+
     orders_out = []
-    if total_wt > 0:
-        gross_cap = float(cfg["wallet_gross_cap"])
-        for ord in final_orders:
-            w_alloc = gross_cap * (abs(ord["score"]) / total_wt)
-            ord["weight"] = w_alloc
-            # Inject Risk Params from Config if available
-            # Map side/dom to key
-            r_key = f"risk_{ord['side']}_{ord['dom']}"
-            if risk_config and "granular_risk" in risk_config:
-                g_risk = risk_config["granular_risk"].get(r_key)
-                if g_risk:
-                    # Pass these params in the order dict, so main/executor can use them
-                    # Or modify them here? executor usually takes order dict.
-                    ord["risk_params"] = g_risk
+    gross_cap = float(cfg.get("wallet_gross_cap", 1.0))
+    raw_w = []
+    for o in final_orders:
+        z = abs(float(o["score"]))
+        z_tilde = np.clip((z - size_q50) / (size_q90 - size_q50 + 1e-12), 0.0, size_zcap)
+        fz = 1.0 / (1.0 + np.exp(-size_k * (z_tilde - size_x0)))
+        w_alloc = size_min + (size_max - size_min) * fz
+        raw_w.append(w_alloc)
 
-            orders_out.append(ord)
+    total_w = float(np.sum(raw_w))
+    scale = min(1.0, gross_cap / max(total_w, 1e-12))
+
+    for ord, w_alloc in zip(final_orders, raw_w):
+        ord["weight"] = float(w_alloc * scale)
+        r_key = f"risk_{ord['side']}_{ord['dom']}"
+        if risk_config and "granular_risk" in risk_config:
+            g_risk = risk_config["granular_risk"].get(r_key)
+            if g_risk:
+                ord["risk_params"] = g_risk
+        orders_out.append(ord)
 
     return orders_out

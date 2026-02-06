@@ -673,7 +673,7 @@ def build_hourly_training_set_and_weights(
 
     return X_out, y_bin, y_ret, list(X_out.columns), weights, df_meta
 
-def train_spike_anatomy_model(panel, feats, mkt_gates, cfg, syms, ts_end, _cached_cand_mask=None):
+def train_spike_anatomy_model(panel, feats, mkt_gates, cfg, syms, ts_end, _cached_cand_mask=None, mode=None):
     tprint(f"Entering function: train_spike_anatomy_model in training.py")
     if _cached_cand_mask is not None:
         cand_mask = _cached_cand_mask
@@ -686,6 +686,20 @@ def train_spike_anatomy_model(panel, feats, mkt_gates, cfg, syms, ts_end, _cache
     window_mask = cand_mask.loc[(cand_mask.index >= ts_start) & (cand_mask.index <= ts_end)]
     if window_mask.empty or not window_mask.any(axis=None):
         tprint("Spike Anatomy: no candidates in window.")
+        return None
+
+    # Filter by mode (best/worst) if requested
+    metric_name = cfg["trade_deviation_metric"]
+    if mode in ["best", "worst"] and metric_name in feats:
+        metric_df = feats[metric_name].reindex(index=window_mask.index, columns=window_mask.columns)
+        if mode == "best":
+            mode_mask = metric_df > 0
+        else:
+            mode_mask = metric_df < 0
+        window_mask = window_mask & mode_mask
+
+    if window_mask.empty or not window_mask.any(axis=None):
+        tprint(f"Spike Anatomy ({mode}): no candidates in window.")
         return None
 
     keys = cfg.get("spike_feature_keys", [])
@@ -760,10 +774,11 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
         n_after = cached_cand_mask.sum().sum()
         tprint(f"OOS holdout: excluded last {oos_days} days (cutoff={cutoff}). Candidates: {n_before} -> {n_after}")
 
-    # 1. Spike Anatomy
-    spike_df = train_spike_anatomy_model(panel, feats, mkt_gates, cfg, syms, ts, _cached_cand_mask=cached_cand_mask)
-    if spike_df is not None:
-        datasets["spike_anatomy"] = spike_df
+    # 1. Spike Anatomy (2 GMM models: Best & Worst)
+    for mode in ["best", "worst"]:
+        spike_df = train_spike_anatomy_model(panel, feats, mkt_gates, cfg, syms, ts, _cached_cand_mask=cached_cand_mask, mode=mode)
+        if spike_df is not None:
+            datasets[f"spike_anatomy_{mode}"] = spike_df
 
     # 2. Alpha Models (MR/TF)
     trade_sides = ["long", "short"]
@@ -936,37 +951,39 @@ def train_models_from_artifacts(datasets, cfg):
     kinds = ["mr", "tf"]
     final_models = {}
 
-    # 1. Train Spike Model
-    spike_model = None
-    if "spike_anatomy" in datasets:
-        tprint("Training Spike Model...")
-        df_spike = datasets["spike_anatomy"]
-        # Ensure numeric-only, drop any index/meta columns
-        df_spike_num = df_spike.select_dtypes(include=[np.number])
-        if isinstance(df_spike_num.index, pd.MultiIndex):
-            df_spike_num = df_spike_num.reset_index(drop=True)
-        df_spike_num = df_spike_num.dropna()
-        # Drop near-zero-variance columns that cause singular covariance
-        col_std = df_spike_num.std()
-        keep_cols = col_std[col_std > 1e-6].index
-        df_spike_num = df_spike_num[keep_cols]
-        n_comp = min(4, max(1, len(df_spike_num) // 100))
-        tprint(f"Spike GMM: {len(df_spike_num)} samples, {df_spike_num.shape[1]} features, {n_comp} components")
-        if len(df_spike_num) >= 50 and df_spike_num.shape[1] >= 2:
-            # Standardize before fitting to avoid ill-conditioned covariance
-            from sklearn.preprocessing import StandardScaler
-            scaler = StandardScaler()
-            X_scaled = scaler.fit_transform(df_spike_num)
-            for n_try in [n_comp, max(1, n_comp // 2), 1]:
-                try:
-                    gmm = GaussianMixture(n_components=n_try, covariance_type='diag', reg_covar=1e-2, random_state=42)
-                    gmm.fit(X_scaled)
-                    spike_model = {"gmm": gmm, "scaler": scaler, "columns": list(df_spike_num.columns)}
-                    tprint(f"Spike GMM fitted with {n_try} components.")
-                    break
-                except ValueError as e:
-                    tprint(f"Spike GMM failed with {n_try} components: {e}")
-                    continue
+    # 1. Train Spike Models (Best & Worst)
+    spike_models = {}
+    for mode in ["best", "worst"]:
+        key = f"spike_anatomy_{mode}"
+        if key in datasets:
+            tprint(f"Training Spike Model ({mode})...")
+            df_spike = datasets[key]
+            # Ensure numeric-only, drop any index/meta columns
+            df_spike_num = df_spike.select_dtypes(include=[np.number])
+            if isinstance(df_spike_num.index, pd.MultiIndex):
+                df_spike_num = df_spike_num.reset_index(drop=True)
+            df_spike_num = df_spike_num.dropna()
+            # Drop near-zero-variance columns that cause singular covariance
+            col_std = df_spike_num.std()
+            keep_cols = col_std[col_std > 1e-6].index
+            df_spike_num = df_spike_num[keep_cols]
+            n_comp = min(4, max(1, len(df_spike_num) // 100))
+            tprint(f"Spike GMM ({mode}): {len(df_spike_num)} samples, {df_spike_num.shape[1]} features, {n_comp} components")
+            if len(df_spike_num) >= 50 and df_spike_num.shape[1] >= 2:
+                # Standardize before fitting to avoid ill-conditioned covariance
+                from sklearn.preprocessing import StandardScaler
+                scaler = StandardScaler()
+                X_scaled = scaler.fit_transform(df_spike_num)
+                for n_try in [n_comp, max(1, n_comp // 2), 1]:
+                    try:
+                        gmm = GaussianMixture(n_components=n_try, covariance_type='diag', reg_covar=1e-2, random_state=42)
+                        gmm.fit(X_scaled)
+                        spike_models[mode] = {"gmm": gmm, "scaler": scaler, "columns": list(df_spike_num.columns)}
+                        tprint(f"Spike GMM ({mode}) fitted with {n_try} components.")
+                        break
+                    except ValueError as e:
+                        tprint(f"Spike GMM ({mode}) failed with {n_try} components: {e}")
+                        continue
 
     # 2. Train Alpha Models
     # directions (up/down) replaced by sides (long/short)
@@ -1129,7 +1146,7 @@ def train_models_from_artifacts(datasets, cfg):
             tprint(f"Exhaustion {d}: no dataset found")
             exh_models[d] = None
 
-    return {"alpha_models": final_models, "exh_models": exh_models, "meta_models": meta_models, "spike_model": spike_model}
+    return {"alpha_models": final_models, "exh_models": exh_models, "meta_models": meta_models, "spike_models": spike_models}
 
 def select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
     # DEPRECATED / LEGACY WRAPPER

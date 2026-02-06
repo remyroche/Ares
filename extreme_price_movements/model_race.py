@@ -6,7 +6,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
-from sklearn.metrics import roc_auc_score, brier_score_loss
+from sklearn.metrics import roc_auc_score, brier_score_loss, log_loss, accuracy_score
 from scipy.stats import rankdata
 from catboost import CatBoostClassifier
 from xgboost import XGBClassifier
@@ -208,6 +208,8 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             fold_aucs = []
             fold_ics = []
             fold_bss = []
+            fold_logloss = []
+            fold_accuracy = []
 
             try:
                 for fold_i, (train_idx, val_idx) in enumerate(cached_splits):
@@ -230,13 +232,31 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     fold_ics.append(metrics["IC"])
                     fold_bss.append(metrics["BSS"])
 
+                    try:
+                        fold_logloss.append(log_loss(y_val, probs))
+                    except:
+                        fold_logloss.append(np.nan)
+                    fold_accuracy.append(accuracy_score(y_val, probs > 0.5))
+
                 avg_score = np.nanmean(fold_scores)
                 avg_auc = np.nanmean(fold_aucs)
                 avg_ic = np.nanmean(fold_ics)
                 avg_bss_val = np.nanmean(fold_bss)
+                std_score = np.nanstd(fold_scores)
+                avg_logloss = np.nanmean(fold_logloss)
+                avg_accuracy = np.nanmean(fold_accuracy)
+
                 results[name] = avg_score
-                detailed_metrics[name] = {"score": avg_score, "AUC": avg_auc, "IC": avg_ic, "BSS": avg_bss_val}
-                tprint(f"  {name}: Score={avg_score:.4f}  AUC={avg_auc:.4f}  IC={avg_ic:.4f}  BSS={avg_bss_val:.4f}")
+                detailed_metrics[name] = {
+                    "score": avg_score,
+                    "AUC": avg_auc,
+                    "IC": avg_ic,
+                    "BSS": avg_bss_val,
+                    "std_score": std_score,
+                    "LogLoss": avg_logloss,
+                    "Accuracy": avg_accuracy
+                }
+                tprint(f"  {name}: Score={avg_score:.4f}  AUC={avg_auc:.4f}  IC={avg_ic:.4f}  BSS={avg_bss_val:.4f}  LogLoss={avg_logloss:.4f}  Acc={avg_accuracy:.4f}  Std={std_score:.4f}")
 
             except Exception as e:
                 tprint(f"  {name} Failed: {e}")
@@ -274,6 +294,29 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         oof_probs = np.nan_to_num(oof_probs, nan=0.5)
         self.oof_probs = oof_probs
         tprint(f"OOF predictions: mean={np.mean(oof_probs):.4f}, std={np.std(oof_probs):.4f}")
+
+        # Calculate Winner OOF Metrics
+        try:
+            oof_auc = roc_auc_score(y, oof_probs)
+            oof_logloss = log_loss(y, oof_probs)
+            oof_accuracy = accuracy_score(y, oof_probs > 0.5)
+            if returns is not None and np.std(oof_probs) > 1e-9 and np.std(returns) > 1e-9:
+                oof_ic = np.corrcoef(rankdata(oof_probs), rankdata(returns))[0, 1]
+            else:
+                oof_ic = 0.0
+            tprint(f"Winner OOF Metrics: AUC={oof_auc:.4f}  IC={oof_ic:.4f}  LogLoss={oof_logloss:.4f}  Acc={oof_accuracy:.4f}")
+        except Exception as e:
+            tprint(f"Error calculating OOF metrics: {e}")
+
+        # Recap
+        tprint("\n=== Model Race Recap ===")
+        tprint(f"{'Model':<15} {'Score':>8} {'AUC':>8} {'IC':>8} {'BSS':>8} {'LogLoss':>8} {'Acc':>8} {'Std':>8}")
+        tprint("-" * 85)
+
+        sorted_models = sorted(detailed_metrics.items(), key=lambda x: x[1]['score'], reverse=True)
+        for name, m in sorted_models:
+             tprint(f"{name:<15} {m['score']:8.4f} {m['AUC']:8.4f} {m['IC']:8.4f} {m['BSS']:8.4f} {m['LogLoss']:8.4f} {m['Accuracy']:8.4f} {m['std_score']:8.4f}")
+        tprint("========================\n")
 
         # 3. Final Retraining & Calibration
         tprint(f"Retraining {best_name} on full data (full config)...")

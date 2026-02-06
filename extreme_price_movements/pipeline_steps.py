@@ -179,6 +179,13 @@ def run_risk_optimization_step(ts_sig, margin_symbols, cfg, store, state_file):
         tprint(f"State file {state_file} not found.")
         return
 
+    # Prevent OOS leakage
+    oos_days = cfg.get("oos_holdout_days", 0)
+    if oos_days > 0:
+        ts_train_end = ts_sig - pd.Timedelta(days=oos_days)
+        tprint(f"Risk Optimization: Excluding last {oos_days} days (OOS). Training end: {ts_train_end}")
+        ts_sig = ts_train_end
+
     with open(state_file, "rb") as f:
         state = pickle.load(f)
 
@@ -280,6 +287,10 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
     risk_conf = model_state.get("risk_params", {})
     bundle = model_state.get("bundle")
 
+    # Fees
+    fee_bps = cfg.get("fee_bps", 25.0)
+    fee_rate = fee_bps / 10000.0
+
     for t in valid_ts:
         orders = generate_hourly_signals(t, feats, mkt_gates, bundle, risk_conf, cfg, p_exh_hist, [])
         for order in orders:
@@ -316,9 +327,12 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                 entry_ts, entry_px, side, temp_cfg, max_hold_hours=24
             )
 
+            # Apply fees (approximate)
+            net_ret = ret - (2.0 * fee_rate)
+
             trades.append({
                 "entry_ts": entry_ts, "symbol": sym, "side": side,
-                "ret": ret, "exit_ts": exit_ts, "reason": reason
+                "ret": net_ret, "gross_ret": ret, "exit_ts": exit_ts, "reason": reason
             })
 
     if trades:

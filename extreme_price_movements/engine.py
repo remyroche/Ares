@@ -105,18 +105,28 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
             hh = h_s.loc[ts]; ll = l_s.loc[ts]; cc = c_s.loc[ts]
             if np.isnan(hh): continue
 
+            hit_tp = False
+            hit_sl = False
+
             if side == "long":
-                # Check SL first? Or TP?
-                # Optimistic: TP first.
-                if hh >= tp_price:
-                    return (tp_price / entry_px) - 1.0, ts, "take_profit"
-                if ll <= sl_price:
-                    return (sl_price / entry_px) - 1.0, ts, "stop_loss"
+                if hh >= tp_price: hit_tp = True
+                if ll <= sl_price: hit_sl = True
             else:
-                if ll <= tp_price:
-                    return (entry_px / tp_price) - 1.0, ts, "take_profit"
-                if hh >= sl_price:
-                    return (entry_px / sl_price) - 1.0, ts, "stop_loss"
+                if ll <= tp_price: hit_tp = True
+                if hh >= sl_price: hit_sl = True
+
+            if hit_tp and hit_sl:
+                # Ambiguous: both hit in same bar
+                # Use deterministic tie-break based on timestamp parity to avoid bias
+                # (Random would be better but deterministic is preferred for reproduction)
+                if int(ts.value) % 2 == 0:
+                    return (tp_price / entry_px) - 1.0 if side == "long" else (entry_px / tp_price) - 1.0, ts, "take_profit"
+                else:
+                    return (sl_price / entry_px) - 1.0 if side == "long" else (entry_px / sl_price) - 1.0, ts, "stop_loss"
+            elif hit_tp:
+                return (tp_price / entry_px) - 1.0 if side == "long" else (entry_px / tp_price) - 1.0, ts, "take_profit"
+            elif hit_sl:
+                return (sl_price / entry_px) - 1.0 if side == "long" else (entry_px / sl_price) - 1.0, ts, "stop_loss"
 
         # Time exit
         last_ts = path[-1]

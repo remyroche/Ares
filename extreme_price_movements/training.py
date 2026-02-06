@@ -1412,10 +1412,12 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
             granular_risk[f"risk_{side}_{k}"] = {
                 "tp_mult": summary.final_tp_mult,
                 "sl_mult": summary.final_sl_mult,
-                # Fallback keys for legacy
-                "k_sl": 2.0,
-                "k_trail_start": 2.0,
-                "k_trail_dist": 1.0
+                # Wire optimized TP/SL mults into trailing logic used by backtests/live
+                # activation price threshold -> k_trail_start
+                # trailing distance -> k_trail_dist
+                "k_sl": summary.final_sl_mult,
+                "k_trail_start": summary.final_tp_mult,
+                "k_trail_dist": summary.final_sl_mult
             }
 
     # Best params for default (not really used if granular is active)

@@ -22,7 +22,7 @@ def fetch_binance_cross_margin_pairs():
     tprint(f"Fetched {len(margin_pairs)} cross margin pairs from exchangeInfo.")
     return margin_pairs
 
-def margin_pairs_to_spot_symbols(margin_pairs_json, quotes=("USDT", "USDC")):
+def margin_pairs_to_spot_symbols(margin_pairs_json, quotes=("USDT", "USDC", "BUSD", "EUR")):
     tprint(f"Entering function: margin_pairs_to_spot_symbols in universe.py")
 
     # Backward compatibility for single quote string
@@ -62,7 +62,7 @@ class MarginUniverseCache:
     symbols: list[str]
     asof_day: pd.Timestamp
 
-def refresh_margin_universe_daily(cache: MarginUniverseCache | None, quotes=("USDT", "USDC")) -> MarginUniverseCache:
+def refresh_margin_universe_daily(cache: MarginUniverseCache | None, quotes=("USDT", "USDC", "BUSD", "EUR")) -> MarginUniverseCache:
     tprint(f"Entering function: refresh_margin_universe_daily in universe.py")
     today = pd.Timestamp.utcnow().floor("D")
     if cache is not None and cache.asof_day == today:
@@ -122,7 +122,7 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
         # Fallback if not provided, refresh locally?
         # Ideally should be passed.
         # We will refresh it here if None
-        mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC"))
+        mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
         margin_symbols = mu.symbols
 
     syms_all = build_fetch_universe(margin_symbols, cfg["market_basket"], cfg["fetch_symbols_M"])

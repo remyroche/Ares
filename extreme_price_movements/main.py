@@ -473,7 +473,7 @@ def run_live_cycle(initial_model_state=None):
 
             ex = make_spot_exchange()
             reconcile_state(ex, state)
-            with Timer("Margin universe refresh"): mu = refresh_margin_universe_daily(None, quotes=["USDT", "USDC"])
+            with Timer("Margin universe refresh"): mu = refresh_margin_universe_daily(None, quotes=["USDT", "USDC", "BUSD", "EUR"])
             store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
 
             last_train = model_state["ts_trained"]

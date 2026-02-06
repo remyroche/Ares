@@ -1,17 +1,17 @@
 import numpy as np
 import pandas as pd
-from extreme_price_movements.utils import tprint
-from extreme_price_movements.model_race import ModelRace
-from extreme_price_movements.meta_model import MetaModel
-from extreme_price_movements.exhaustion import ExhaustionModel
-from extreme_price_movements.exhaustion import ExhaustionModel
-from extreme_price_movements.feature_selection_extreme_events import mdi_feature_selection_v3
-from extreme_price_movements.candidates import select_trade_candidates_hourly, select_trade_candidates_vectorized
+from .utils import tprint
+from .model_race import ModelRace
+from .meta_model import MetaModel
+from .exhaustion import ExhaustionModel
+from .exhaustion import ExhaustionModel
+from .feature_selection_extreme_events import mdi_feature_selection_v3
+from .candidates import select_trade_candidates_hourly, select_trade_candidates_vectorized
 import extreme_price_movements.fast_funcs as ff
-from extreme_price_movements.labeling import compute_trailing_atr_labels, compute_triple_barrier_labels
-from extreme_price_movements.sample_weights import build_label_time_ranges, compute_sample_weights_with_uniqueness
+from .labeling import compute_trailing_atr_labels, compute_triple_barrier_labels
+from .sample_weights import build_label_time_ranges, compute_sample_weights_with_uniqueness
 from sklearn.mixture import GaussianMixture
-from extreme_price_movements.optimise_tpsl_ratio import (
+from .optimise_tpsl_ratio import (
     run_tp_sl_selection_fast,
     calibrate_atr_base_pct,
     compute_vol_z_log_mad,
@@ -48,8 +48,8 @@ def apply_interaction_toggles(df: pd.DataFrame, causal_cols, gate_cols, drop_raw
 
 def compute_weights_logic(df, cfg, model_kind):
     tprint(f"Entering function: compute_weights_logic in training.py")
-    from extreme_price_movements.model_mr import compute_mr_weights
-    from extreme_price_movements.model_tf import compute_tf_weights
+    from .model_mr import compute_mr_weights
+    from .model_tf import compute_tf_weights
     if model_kind == "mr": return compute_mr_weights(df, cfg)
     else: return compute_tf_weights(df, cfg)
 
@@ -439,8 +439,8 @@ def build_hourly_training_set_and_weights(
     # Slice to time window first, then apply subsample filter
     ts_end_adj = ts_end - pd.Timedelta(hours=H+8)
     window_cand = cand_mask.loc[(cand_mask.index >= ts_start) & (cand_mask.index <= ts_end_adj)]
-    # Subsample: keep only every 4th hour
-    window_cand = window_cand[window_cand.index.hour % 4 == 0]
+    # Subsample: keep only every 5th hour
+    window_cand = window_cand[window_cand.index.hour % 5 == 0]
 
     if feature_key:
         feat_keys = cfg.get(feature_key, [])
@@ -797,9 +797,9 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
                     event_indices = close_df.index.get_indexer(event_ts_idx)
                     event_indices = event_indices[event_indices >= 0].astype(np.int32)
                 else:
-                    # Fallback: use every 4th hour as events
+                    # Fallback: use every 5th hour as events
                     mask = (close_df.index >= ts_start_opt) & (close_df.index <= ts)
-                    event_indices = np.where(mask)[0][::4].astype(np.int32)
+                    event_indices = np.where(mask)[0][::5].astype(np.int32)
 
                 tprint(f"TP/SL optimization: {len(event_indices)} events on {rep_sym} for H={H} side={side}")
 

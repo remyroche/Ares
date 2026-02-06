@@ -178,6 +178,34 @@ def run_all(cfg, ts_override=None):
     run_risk_opt(cfg, ts_override=ts_override)
     run_backtest(cfg, ts_override=ts_override)
 
+    # Final Summary
+    if ts_override:
+        ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
+    else:
+        ts_sig = _find_latest_feature_ts(cfg["data_root"])
+
+    if ts_sig:
+        run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+        import os
+        res_path = os.path.join(cfg["data_root"], "artifacts", run_id, "backtest_results.csv")
+        if os.path.exists(res_path):
+            tprint("\n=== FINAL PIPELINE SUMMARY ===")
+            try:
+                df = pd.read_csv(res_path)
+                pnl = df["pnl"].sum()
+                count = len(df)
+                win_rate = (df["pnl"] > 0).mean() if count > 0 else 0.0
+
+                avg_pnl = pnl / count if count > 0 else 0.0
+
+                tprint(f"Total PnL: {pnl:.4f}")
+                tprint(f"Total Trades: {count}")
+                tprint(f"Win Rate: {win_rate:.2%}")
+                tprint(f"Avg PnL per Trade: {avg_pnl:.4f}")
+                tprint("==============================\n")
+            except Exception as e:
+                tprint(f"Could not read results for summary: {e}")
+
 def main():
     parser = argparse.ArgumentParser(description="Extreme Price Movements Pipeline")
     parser.add_argument("mode", choices=["labels", "features", "train", "backtest", "optimize_risk", "run"],

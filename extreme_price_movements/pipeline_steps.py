@@ -299,7 +299,7 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
 
     def compute_metrics(trades):
         if not trades:
-            return 0.0, 0.0, 0.0
+            return 0.0, 0.0, 0.0, 0.0, 0
         rets = np.array([x["pnl"] for x in trades], dtype=np.float64)
         pnl = float(np.sum(rets))
         neg = rets[rets < 0]
@@ -308,7 +308,9 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
         peak = np.maximum.accumulate(eq)
         dd = eq - peak
         max_dd = float(np.min(dd)) if dd.size else 0.0
-        return pnl, sortino, max_dd
+        count = len(trades)
+        win_rate = float(np.mean(rets > 0)) if count > 0 else 0.0
+        return pnl, sortino, max_dd, win_rate, count
 
     def run_slice(ts_list, signal_params):
         trades = []
@@ -440,8 +442,8 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                         "score_scale_params": score_scale_params,
                     }
                     tr = run_slice(train_ts, params)
-                    pnl, sortino, max_dd = compute_metrics(tr)
-                    tprint(f"SignalOpt tl={tl:.3f} ts={-ts_:.3f} k={k:.2f} x0={x0:.2f} -> pnl={pnl:.6f} sortino={sortino:.6f} maxdd={max_dd:.6f}")
+                    pnl, sortino, max_dd, win_rate, count = compute_metrics(tr)
+                    tprint(f"SignalOpt tl={tl:.3f} ts={-ts_:.3f} k={k:.2f} x0={x0:.2f} -> pnl={pnl:.6f} sortino={sortino:.6f} maxdd={max_dd:.6f} wr={win_rate:.2f} n={count}")
                     combos.append((params, pnl, sortino, max_dd))
 
     if combos:
@@ -463,8 +465,27 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
     tprint(f"Selected signal params: {best_signal_params}")
 
     test_trades = run_slice(test_ts, best_signal_params)
-    pnl, sortino, max_dd = compute_metrics(test_trades)
-    tprint(f"Backtest OOS Result: Trades={len(test_trades)}, PnL={pnl:.6f}, Sortino={sortino:.6f}, MaxDD={max_dd:.6f}")
+    pnl, sortino, max_dd, win_rate, count = compute_metrics(test_trades)
+    avg_pnl = pnl / count if count > 0 else 0.0
+    tprint(f"Backtest OOS Result: Trades={count}, PnL={pnl:.6f}, AvgPnL={avg_pnl:.6f}, Sortino={sortino:.6f}, MaxDD={max_dd:.6f}, WinRate={win_rate:.2f}")
+
+    # Breakdown
+    if test_trades:
+        df_t = pd.DataFrame(test_trades)
+        tprint("--- OOS Breakdown ---")
+        for side in ["long", "short"]:
+            df_s = df_t[df_t["side"] == side]
+            if not df_s.empty:
+                s_pnl = df_s["pnl"].sum()
+                s_wr = (df_s["pnl"] > 0).mean()
+                tprint(f"  {side.upper()}: Trades={len(df_s)}, PnL={s_pnl:.4f}, WinRate={s_wr:.2f}")
+        for dom in ["mr", "tf"]:
+            df_d = df_t[df_t["dom"] == dom]
+            if not df_d.empty:
+                d_pnl = df_d["pnl"].sum()
+                d_wr = (df_d["pnl"] > 0).mean()
+                tprint(f"  {dom.upper()}: Trades={len(df_d)}, PnL={d_pnl:.4f}, WinRate={d_wr:.2f}")
+        tprint("-----------------------")
 
     if test_trades:
         df_res = pd.DataFrame(test_trades)

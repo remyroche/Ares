@@ -80,9 +80,11 @@ def run_training_step(ts_sig, cfg):
     tprint("Loading label datasets from artifacts...")
 
     # Spike anatomy
-    df_spike = load_artifact_df(cfg["data_root"], run_id, "labels", "spike_anatomy")
-    if df_spike is not None:
-        datasets["spike_anatomy"] = df_spike
+    for mode in ["best", "worst"]:
+        name = f"spike_anatomy_{mode}"
+        df_spike = load_artifact_df(cfg["data_root"], run_id, "labels", name)
+        if df_spike is not None:
+            datasets[name] = df_spike
 
     # Alpha models (long/short × mr/tf × horizons)
     trade_sides = ["long", "short"]
@@ -150,6 +152,11 @@ def run_training_step(ts_sig, cfg):
                     tprint(f"  {side} {k}: H={m['H']}, features={len(m['feat_cols'])}")
                 else:
                     tprint(f"  {side} {k}: NO MODEL")
+
+        spike = bundle.get("spike_models", {})
+        for mode in ["best", "worst"]:
+            m = spike.get(mode)
+            tprint(f"  spike_{mode}: {'fitted' if m else 'NO MODEL'}")
 
         exh = bundle.get("exh_models", {})
         for d in ["up", "down"]:

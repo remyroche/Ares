@@ -20,7 +20,7 @@ def compute_tf_weights(df: pd.DataFrame, cfg: dict) -> np.ndarray:
     cap = 0.05
 
     p_exh = df.get("p_exh_lag1", 0.0)
-    trend = df.get("a_trend", 0.0).abs().clip(upper=cap) * 100 # scale up? trend is usually small pct
+    trend = df.get("a_trend", df.get("trend_pct", 0.0)).abs().clip(upper=cap) * 100 # scale up? trend is usually small pct
     g_trend = df.get("G_TREND", 0.0)
     g_vol = df.get("G_VOL", 0.0)
 

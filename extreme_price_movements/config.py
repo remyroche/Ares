@@ -1,20 +1,18 @@
 # Central config. Keep it deterministic and explicit.
 
-NEUTRAL_FEATURES = [
+neutral_feature_keys = [
     "rsi", "vol_z", "atr_pct", "mkt_rv_ratio", "skew", 
     "trend_snr", "efficiency", "vol_asym", "momentum_accel",
     "dist_stack", "stage_blowoff", "exh_qual", "volatility_zscore"
 ]
 
-NEW_FEATURES = [
+MODEL_FEATURES = [
+    # Momentum / structure extensions
     "thrust_decay_4", "decel_4", "ft_drop", "ext_excess", "ext_atrExp",
     "comp_to_exp", "evr6_x_volz", "stall_x_flow", "prog_def",
     "clv_collapse", "clv_pullback", "coh", "align", "retest_quality",
-    "pb_accel", "rv_ratio_6_24", "excess_coh", "asym_ft", 
-    "tf_bias", "shock_rel", "resid_strength", "evr_slope", "stall_ext"
-]
-
-BROAD_FEATURES = [
+    "pb_accel", "rv_ratio_6_24", "excess_coh", "asym_ft",
+    "tf_bias", "shock_rel", "resid_strength", "evr_slope", "stall_ext",
     # Price Action
     "gap_pct", "range_pct", "roc_div", "ret1h_z", "body_pct", "wick_body_ratio",
     "vol_price_spread", "wick_ratio", "body_ratio",
@@ -28,7 +26,21 @@ BROAD_FEATURES = [
     # Scores
     "spike_score", "grind_score", "chop_score",
     # Time
-    "sin_hod", "cos_hod", "sin_dow", "cos_dow"
+    "sin_hod", "cos_hod", "sin_dow", "cos_dow",
+]
+
+# Helper/base features produced in features.py that should remain selectable by model heads.
+# This increases candidate breadth before MDI pruning.
+HELPER_BASE_FEATURES = [
+    "ret1h", "ret6h", "atr_pct_base", "rsi_base", "rsi_slope_base",
+    "rv_6h", "rv_12h", "rv_24h", "qv", "vol_z24_base", "vol_z_base",
+    "dist_ema_fast_base", "dist_ema_slow_base", "trend_pct_base",
+    "rvol_hod_base", "signed_vol", "up_vol", "dn_vol", "up_vol_6", "dn_vol_6",
+    "vol_asym_6", "clv", "clv_mean_2", "excess_12h", "speed",
+    "atr_expansion", "stall_ext_corr",
+    "G_EXH_EFFORT", "G_EXH_GIVEBACK", "G_EXH_TAIL_FAIL",
+    "G_MR_SPIKE", "G_TF_GRIND", "G_MR_TAIL",
+    "G_META_EXH", "G_META_TF_QUAL", "G_META_MR_QUAL", "G_META_AMBIG",
 ]
 
 CFG = {
@@ -96,7 +108,7 @@ CFG = {
     # Added new features for TF/MR/Meta
     "drop_raw_causal": True,
     "causal_cols": [
-        "a_ret24h","a_rsi","a_volz","a_atr","a_trend","a_rv24",
+        "ret24h", "rsi", "vol_z", "atr_pct", "trend_pct", "rv_24h",
         "p_exh_lag1",
         "a_funding_proxy",
         "flow_ratio", "churn", "slope", "trend_snr",
@@ -192,21 +204,25 @@ CFG = {
     "tf_feature_keys": [
         "accept", "retest_accept", "tf_qual", "coherence_24", "impulse_ratio_24",
         "tf_tape", "clv_mean_4", "pullback_2", "pullback_4", "ft_2", "ft_4"
-    ] + NEUTRAL_FEATURES + NEW_FEATURES + BROAD_FEATURES,
+    ] + neutral_feature_keys + MODEL_FEATURES + HELPER_BASE_FEATURES,
 
     # MR Head (Specifics + Global)
     "mr_feature_keys": [
         "reject", "overext", "overext_weak", "mr_qual", "retrace_12",
         "impulse_ratio_24", "coherence_24", "mr_tape",
         "clv_mean_4", "pullback_2", "pullback_4", "ft_2", "ft_4"
-    ] + NEUTRAL_FEATURES + NEW_FEATURES + BROAD_FEATURES,
+    ] + neutral_feature_keys + MODEL_FEATURES + HELPER_BASE_FEATURES,
 
     # Meta Learner
     "meta_feature_keys": [
         "ambig", "stage_tf", "stage_blowoff", "stage_mr", "exh_qual",
         "accept", "reject", "rv_ratio_6_24",
         "excess_6h", "donch_dist_12", "clv_mean_4", "evr_6", "delta_stall_6",
-        "ft_2", "asym_ratio", "mfe_4h", "mae_4h", "giveback"
+        "ft_2", "asym_ratio", "mfe_4h", "mae_4h", "giveback",
+        "ret1h", "ret6h", "rv_6h", "rv_24h", "mkt_rv_ratio",
+        "qv", "signed_vol", "vol_z", "atr_pct", "trend_pct",
+        "spike_score", "grind_score", "chop_score",
+        "G_META_EXH", "G_META_TF_QUAL", "G_META_MR_QUAL", "G_META_AMBIG"
     ],
 
 }

@@ -85,38 +85,74 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
         else:
             barrier_pct = atr # Fallback
 
-        # Apply multipliers
-        tp_dist = tp_mult * barrier_pct * entry_px
-        sl_dist = sl_mult * barrier_pct * entry_px
-
-        # Simulate Fixed Exit
-        # We can reuse TrailingStop with activation=TP and trail=0 (tight stop)
-        # Or simple loop
+        # Apply multipliers for Trailing Profit with Floor
+        # tp_mult -> Activation Threshold
+        # sl_mult -> Trailing Distance (and Initial SL)
+        activation_dist = tp_mult * barrier_pct * entry_px
+        trail_dist = sl_mult * barrier_pct * entry_px
 
         end_ts = ts_entry + pd.Timedelta(hours=max_hold_hours)
         path = o_s.loc[ts_entry:end_ts].index
         if len(path) == 0:
             return 0.0, ts_entry, "no_path"
 
-        tp_price = entry_px + tp_dist if side == "long" else entry_px - tp_dist
-        sl_price = entry_px - sl_dist if side == "long" else entry_px + sl_dist
+        # Initial State
+        if side == "long":
+            activation_px = entry_px + activation_dist
+            current_sl = entry_px - trail_dist
+            floor_px = activation_px
+            max_p = entry_px
+        else: # short
+            activation_px = entry_px - activation_dist
+            current_sl = entry_px + trail_dist
+            floor_px = activation_px
+            min_p = entry_px
+
+        active = False
 
         for ts in path:
             hh = h_s.loc[ts]; ll = l_s.loc[ts]; cc = c_s.loc[ts]
             if np.isnan(hh): continue
 
             if side == "long":
-                # Check SL first? Or TP?
-                # Optimistic: TP first.
-                if hh >= tp_price:
-                    return (tp_price / entry_px) - 1.0, ts, "take_profit"
-                if ll <= sl_price:
-                    return (sl_price / entry_px) - 1.0, ts, "stop_loss"
-            else:
-                if ll <= tp_price:
-                    return (entry_px / tp_price) - 1.0, ts, "take_profit"
-                if hh >= sl_price:
-                    return (entry_px / sl_price) - 1.0, ts, "stop_loss"
+                # Update Max
+                if hh > max_p: max_p = hh
+
+                # Check Activation
+                if not active:
+                    if hh >= activation_px: active = True
+
+                # Update Stop (Trailing)
+                potential_sl = max_p - trail_dist
+                if potential_sl > current_sl: current_sl = potential_sl
+
+                # Apply Floor if Active
+                if active:
+                    if floor_px > current_sl: current_sl = floor_px
+
+                # Check Exit
+                if ll <= current_sl:
+                    return (current_sl / entry_px) - 1.0, ts, "trailing_stop"
+
+            else: # Short
+                # Update Min
+                if ll < min_p: min_p = ll
+
+                # Check Activation
+                if not active:
+                    if ll <= activation_px: active = True
+
+                # Update Stop (Trailing)
+                potential_sl = min_p + trail_dist
+                if potential_sl < current_sl: current_sl = potential_sl
+
+                # Apply Floor (Ceiling) if Active
+                if active:
+                    if floor_px < current_sl: current_sl = floor_px
+
+                # Check Exit
+                if hh >= current_sl:
+                    return (entry_px / current_sl) - 1.0, ts, "trailing_stop"
 
         # Time exit
         last_ts = path[-1]

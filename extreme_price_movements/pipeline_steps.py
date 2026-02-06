@@ -311,6 +311,10 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
             temp_cfg["risk_k_trail_start"] = k_ts
             temp_cfg["risk_k_trail_dist"] = k_td
 
+            # Inject optimized parameters if available
+            if "tp_mult" in rp: temp_cfg["tp_mult"] = rp["tp_mult"]
+            if "sl_mult" in rp: temp_cfg["sl_mult"] = rp["sl_mult"]
+
             ret, exit_ts, reason = simulate_trade_hourly(
                 o_s[sym], h_s[sym], l_s[sym], c_s[sym], atr_s[sym],
                 entry_ts, entry_px, side, temp_cfg, max_hold_hours=24

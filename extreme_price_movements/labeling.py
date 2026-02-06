@@ -163,14 +163,26 @@ def compute_trailing_atr_labels(
     return out_labels, out_returns
 
 @jit(nopython=True, cache=True)
-def _numba_triple_barrier(times, highs, lows, closes, tp_arr, sl_arr, horizon, side):
+def _numba_trailing_barrier(times, highs, lows, closes, tp_arr, sl_arr, horizon, side):
     """
-    Vectorized Triple Barrier Method.
-    tp_arr: Take Profit array (relative, >0)
-    sl_arr: Stop Loss array (relative, >0)
-    horizon: max holding period in hours (or units matching times if adjusted)
+    Vectorized Trailing Barrier Method with Activation Floor.
+    tp_arr: Activation Threshold (relative, >0)
+    sl_arr: Initial Stop / Trailing Distance (relative, >0)
+    horizon: max holding period in hours
     times: int64 (nanoseconds)
     side: 1 for Long, -1 for Short
+
+    Logic:
+    - Long:
+      Activation = Entry * (1 + tp)
+      Stop = Entry * (1 - sl)
+      TrailDist = Entry * sl
+      Floor = Activation
+      If High >= Activation -> Active
+      If Active -> Stop = max(Stop, High - TrailDist, Floor)
+      Else -> Stop = max(Stop, High - TrailDist) [Standard Trail] or just Fixed?
+              (User req: "don't go below threshold". Implies standard trail + floor constraint).
+      Exit if Low <= Stop.
     """
     n = len(closes)
     labels = np.zeros(n, dtype=np.int8)
@@ -187,27 +199,32 @@ def _numba_triple_barrier(times, highs, lows, closes, tp_arr, sl_arr, horizon, s
         if np.isnan(entry_p) or entry_p <= 0:
             continue
 
-        # Get barrier sizes for this entry
         tp = tp_arr[i]
         sl = sl_arr[i]
 
         if np.isnan(tp) or np.isnan(sl):
             continue
 
-        if side == 1:
-            tp_price = entry_p * (1.0 + tp)
-            sl_price = entry_p * (1.0 - sl)
+        # Setup Initial State
+        if side == 1: # Long
+            activation_px = entry_p * (1.0 + tp)
+            stop_px = entry_p * (1.0 - sl)
+            trail_dist = entry_p * sl
+            floor_px = activation_px
+            max_p = entry_p
         else: # Short
-            tp_price = entry_p * (1.0 - tp)
-            sl_price = entry_p * (1.0 + sl)
+            activation_px = entry_p * (1.0 - tp)
+            stop_px = entry_p * (1.0 + sl)
+            trail_dist = entry_p * sl
+            floor_px = activation_px
+            min_p = entry_p
 
-        # Iterate forward
+        active = False
         exit_found = False
 
         for j in range(i + 1, n):
             # Check Time
             if times[j] >= cutoff_t:
-                # Time Exit at Close of j (the bar where we realize time is up)
                 labels[i] = 0
                 if side == 1:
                     returns[i] = (closes[j] / entry_p) - 1.0
@@ -217,41 +234,72 @@ def _numba_triple_barrier(times, highs, lows, closes, tp_arr, sl_arr, horizon, s
                 exit_found = True
                 break
 
+            curr_h = highs[j]
+            curr_l = lows[j]
+
             if side == 1: # Long
-                # Check High (TP)
-                if highs[j] >= tp_price:
-                    labels[i] = 1
-                    returns[i] = tp
+                # Update Max
+                if curr_h > max_p:
+                    max_p = curr_h
+
+                # Check Activation
+                if not active:
+                    if curr_h >= activation_px:
+                        active = True
+
+                # Update Stop (Trailing)
+                # Standard trail: High - Dist
+                potential_stop = max_p - trail_dist
+                if potential_stop > stop_px:
+                    stop_px = potential_stop
+
+                # Apply Floor if Active
+                if active:
+                    if floor_px > stop_px:
+                        stop_px = floor_px
+
+                # Check Exit (Low hits Stop)
+                if curr_l <= stop_px:
+                    # Exit at Stop Price
+                    ret = (stop_px / entry_p) - 1.0
+                    if ret > 0: labels[i] = 1
+                    else: labels[i] = -1
+                    returns[i] = ret
                     exit_idxs[i] = j
                     exit_found = True
                     break
 
-                # Check Low (SL)
-                if lows[j] <= sl_price:
-                    labels[i] = -1
-                    returns[i] = -sl
-                    exit_idxs[i] = j
-                    exit_found = True
-                    break
             else: # Short
-                # Check Low (TP)
-                if lows[j] <= tp_price:
-                    labels[i] = 1
-                    returns[i] = tp
-                    exit_idxs[i] = j
-                    exit_found = True
-                    break
+                # Update Min
+                if curr_l < min_p:
+                    min_p = curr_l
 
-                # Check High (SL)
-                if highs[j] >= sl_price:
-                    labels[i] = -1
-                    returns[i] = -sl
+                # Check Activation
+                if not active:
+                    if curr_l <= activation_px:
+                        active = True
+
+                # Update Stop (Trailing)
+                potential_stop = min_p + trail_dist
+                if potential_stop < stop_px:
+                    stop_px = potential_stop
+
+                # Apply Floor (Ceiling for Short) if Active
+                if active:
+                    if floor_px < stop_px:
+                        stop_px = floor_px
+
+                # Check Exit (High hits Stop)
+                if curr_h >= stop_px:
+                    ret = (entry_p / stop_px) - 1.0
+                    if ret > 0: labels[i] = 1
+                    else: labels[i] = -1
+                    returns[i] = ret
                     exit_idxs[i] = j
                     exit_found = True
                     break
 
         if not exit_found:
-            # End of data
             labels[i] = 0
             if side == 1:
                 returns[i] = (closes[n-1] / entry_p) - 1.0
@@ -263,10 +311,9 @@ def _numba_triple_barrier(times, highs, lows, closes, tp_arr, sl_arr, horizon, s
 
 def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long"):
     """
-    Computes triple barrier labels for a panel.
-    tp: Scalar float OR DataFrame/Series matching panel dimensions.
-    sl: Scalar float OR DataFrame/Series matching panel dimensions.
-    side: "long" or "short"
+    Computes labels using Trailing Profit with Floor strategy (replacing Triple Barrier).
+    tp: Activation Threshold (relative)
+    sl: Trailing Distance / Initial Stop (relative)
     """
     c = panel["close"]
     h = panel["high"]
@@ -310,7 +357,7 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long"):
         else:
             sl_arr = np.full(len(c_arr), np.nan, dtype=np.float32)
 
-        lbs, rets, _ = _numba_triple_barrier(times, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int)
+        lbs, rets, _ = _numba_trailing_barrier(times, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int)
 
         out_labels[asset] = lbs
         out_returns[asset] = rets

@@ -133,6 +133,12 @@ def simulate_trade_numba(
             if trailing_active:
                 # Trailing stop based on Highest High
                 potential_new_sl = highest_high - trailing_dist
+
+                # Apply Floor (Activation Level)
+                floor_px = entry_px + activation_dist
+                if floor_px > potential_new_sl:
+                    potential_new_sl = floor_px
+
                 if potential_new_sl > sl_px:
                     trail_moved = True
                     new_sl_val = potential_new_sl
@@ -170,6 +176,12 @@ def simulate_trade_numba(
 
             if trailing_active:
                 potential_new_sl = lowest_low + trailing_dist
+
+                # Apply Floor (Activation Level for Short is Ceiling)
+                floor_px = entry_px - activation_dist
+                if floor_px < potential_new_sl:
+                    potential_new_sl = floor_px
+
                 if potential_new_sl < sl_px:
                     trail_moved = True
                     new_sl_val = potential_new_sl

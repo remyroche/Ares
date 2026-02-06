@@ -32,14 +32,21 @@ class TrailingStop:
         self.k_trail_start = k_trail_start
         self.k_trail_dist = k_trail_dist
 
+        # New: Activation Floor logic support
+        # We can store 'activation_px' if we want to enforce it as a hard floor once active.
+        # Activation Price is Entry + k_trail_start * ATR.
+
+        self.activation_dist = k_trail_start * atr_val * entry_px
         self.initial_sl_dist = k_sl * atr_val * entry_px
 
         if side == "long":
             self.sl_px = entry_px - self.initial_sl_dist
             self.highest_high = entry_px
+            self.floor_px = entry_px + self.activation_dist
         else:
             self.sl_px = entry_px + self.initial_sl_dist
             self.lowest_low = entry_px
+            self.floor_px = entry_px - self.activation_dist
 
         self.trailing_active = False
 
@@ -49,14 +56,23 @@ class TrailingStop:
             stop_hit = current_low <= self.sl_px
             trail_would_trigger = False
 
+            # Check if trail would update stop UPWARDS beyond current level before hit
+            # This is for "ambiguous" check
+
+            # Logic: If High triggered an update that moved SL > Low, we have ambiguity.
+
             if current_high > self.highest_high:
                 profit_dist = current_high - self.entry_px
-                req_start_dist = self.k_trail_start * self.atr * self.entry_px
-                is_active = self.trailing_active or (profit_dist >= req_start_dist)
+                is_active = self.trailing_active or (profit_dist >= self.activation_dist)
 
                 if is_active:
                     trail_dist_px = self.k_trail_dist * self.atr * self.entry_px
                     new_sl = current_high - trail_dist_px
+
+                    # Apply Floor
+                    if self.floor_px > new_sl:
+                        new_sl = self.floor_px
+
                     if new_sl > self.sl_px:
                         trail_would_trigger = True
 
@@ -70,14 +86,18 @@ class TrailingStop:
                 self.highest_high = current_high
 
             profit_dist = self.highest_high - self.entry_px
-            req_start_dist = self.k_trail_start * self.atr * self.entry_px
 
-            if profit_dist >= req_start_dist:
+            if profit_dist >= self.activation_dist:
                 self.trailing_active = True
 
             if self.trailing_active:
                 trail_dist_px = self.k_trail_dist * self.atr * self.entry_px
                 new_sl = self.highest_high - trail_dist_px
+
+                # Apply Floor
+                if self.floor_px > new_sl:
+                    new_sl = self.floor_px
+
                 if new_sl > self.sl_px:
                     self.sl_px = new_sl
 
@@ -87,12 +107,16 @@ class TrailingStop:
 
             if current_low < self.lowest_low:
                 profit_dist = self.entry_px - current_low
-                req_start_dist = self.k_trail_start * self.atr * self.entry_px
-                is_active = self.trailing_active or (profit_dist >= req_start_dist)
+                is_active = self.trailing_active or (profit_dist >= self.activation_dist)
 
                 if is_active:
                     trail_dist_px = self.k_trail_dist * self.atr * self.entry_px
                     new_sl = current_low + trail_dist_px
+
+                    # Apply Floor (Ceiling)
+                    if self.floor_px < new_sl:
+                        new_sl = self.floor_px
+
                     if new_sl < self.sl_px:
                         trail_would_trigger = True
 
@@ -106,14 +130,18 @@ class TrailingStop:
                 self.lowest_low = current_low
 
             profit_dist = self.entry_px - self.lowest_low
-            req_start_dist = self.k_trail_start * self.atr * self.entry_px
 
-            if profit_dist >= req_start_dist:
+            if profit_dist >= self.activation_dist:
                 self.trailing_active = True
 
             if self.trailing_active:
                 trail_dist_px = self.k_trail_dist * self.atr * self.entry_px
                 new_sl = self.lowest_low + trail_dist_px
+
+                # Apply Floor (Ceiling)
+                if self.floor_px < new_sl:
+                    new_sl = self.floor_px
+
                 if new_sl < self.sl_px:
                     self.sl_px = new_sl
 
@@ -135,7 +163,8 @@ class TrailingStop:
             "sl_px": self.sl_px,
             "highest_high": getattr(self, "highest_high", None),
             "lowest_low": getattr(self, "lowest_low", None),
-            "trailing_active": self.trailing_active
+            "trailing_active": self.trailing_active,
+            "floor_px": getattr(self, "floor_px", None)
         }
 
     @classmethod
@@ -155,4 +184,15 @@ class TrailingStop:
         if "lowest_low" in d and d["lowest_low"] is not None:
             obj.lowest_low = d["lowest_low"]
         obj.trailing_active = d["trailing_active"]
+
+        # Restore floor_px if present, else recompute
+        if "floor_px" in d and d["floor_px"] is not None:
+            obj.floor_px = d["floor_px"]
+        else:
+             # Recompute defaults
+             if obj.side == "long":
+                 obj.floor_px = obj.entry_px + obj.activation_dist
+             else:
+                 obj.floor_px = obj.entry_px - obj.activation_dist
+
         return obj

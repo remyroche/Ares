@@ -321,17 +321,23 @@ def label_from_cache(
     sl_mult: float,
 ) -> GridLabels:
     """
-    Independent grids:
-      tp_thr = tp_mult * barrier_pct
-      sl_thr = sl_mult * barrier_pct
-    Conditions:
-      PT: rH >= tp_thr
-      SL: rL <= -sl_thr
+    Trailing Profit with Floor logic:
+      Activation = tp_mult * barrier_pct
+      Dist = sl_mult * barrier_pct
+
+      Stop[t] depends on MaxHigh[0...t]:
+        if MaxHigh >= Activation:
+             Stop[t] = max(MaxHigh - Dist, Activation)
+        else:
+             Stop[t] = -Dist
+
+      Exit if rL[t] <= Stop[t].
+
     Returns:
-      PT ret = +tp_thr
-      SL ret = -sl_thr
-      time ret = rC_end
-      ambiguous => y_bin=0,y_ret=0
+      y_bin = 1 if result > 0 (Profit)
+      y_ret = realized return (Stop Price or Time Exit)
+      pt_t = sentinel (unused/proxy for "Win" exit time)
+      sl_t = Exit Time
     """
     m = cache.entry_px.size
     HN = cache.horizon
@@ -340,34 +346,80 @@ def label_from_cache(
     tp_thr = (float(tp_mult) * barrier_pct).astype(np.float32, copy=False)
     sl_thr = (float(sl_mult) * barrier_pct).astype(np.float32, copy=False)
 
-    hit_pt = cache.rH >= tp_thr[:, None]
-    hit_sl = cache.rL <= (-sl_thr[:, None])
-
-    pt_any = hit_pt.any(axis=1)
-    sl_any = hit_sl.any(axis=1)
-
+    # Pre-allocate output arrays
     sentinel = HN + 1
-    pt_t = np.where(pt_any, hit_pt.argmax(axis=1), sentinel).astype(np.int32, copy=False)
-    sl_t = np.where(sl_any, hit_sl.argmax(axis=1), sentinel).astype(np.int32, copy=False)
 
-    ambiguous = (pt_t == sl_t) & (pt_t <= HN - 1)
-    pt_first = (pt_t < sl_t)
-    sl_first = (sl_t < pt_t)
+    # 1. Cumulative Max High (Long-like logic)
+    # cache.rH is (m, H) normalized high returns
+    max_h = np.maximum.accumulate(cache.rH, axis=1)
 
-    exit_kind = np.zeros(m, dtype=np.int8)
-    exit_kind[pt_first] = 1
-    exit_kind[sl_first] = -1
-    exit_kind[ambiguous] = 2
+    # 2. Activation mask
+    activated = max_h >= tp_thr[:, None]
+
+    # 3. Calculate Stop Curve
+    # Base trailing stop: MaxH - Dist
+    trail_stop = max_h - sl_thr[:, None]
+
+    # Apply logic:
+    # If activated: max(trail_stop, floor=tp_thr)
+    # If not activated: -sl_thr
+    # We can use np.where
+
+    stop_curve = np.where(
+        activated,
+        np.maximum(trail_stop, tp_thr[:, None]),
+        -sl_thr[:, None]
+    )
+
+    # 4. Check Exit (Low <= Stop)
+    hit_exit = cache.rL <= stop_curve
+
+    # 5. Find First Exit
+    exit_any = hit_exit.any(axis=1)
+    exit_t = np.where(exit_any, hit_exit.argmax(axis=1), sentinel).astype(np.int32, copy=False)
+
+    # 6. Determine Return
+    # If exited: return is Stop Level at exit_t
+    # If time exit: return is Close at end
 
     y_ret = np.zeros(m, dtype=np.float32)
-    y_ret[pt_first] = tp_thr[pt_first]
-    y_ret[sl_first] = -sl_thr[sl_first]
-    time_mask = ~(pt_first | sl_first | ambiguous)
+
+    # Vectorized indexing for exited trades
+    exited_mask = (exit_t < sentinel)
+    if np.any(exited_mask):
+        # We need to pick stop_curve[i, exit_t[i]]
+        # Use simple indexing
+        rows = np.where(exited_mask)[0]
+        cols = exit_t[rows]
+
+        realized_stops = stop_curve[rows, cols]
+        y_ret[rows] = realized_stops
+
+    # Time Exits
+    time_mask = ~exited_mask
     if np.any(time_mask):
         y_ret[time_mask] = cache.rC_end[time_mask]
 
-    y_bin = np.zeros(m, dtype=np.uint8)
-    y_bin[pt_first] = 1
+    # 7. Classify Outcome
+    # Profit > 0 is a Win (y_bin=1)
+    y_bin = (y_ret > 0).astype(np.uint8)
+
+    # Construct "virtual" pt_t / sl_t for compatibility
+    # If Win -> pt_t = exit_t, sl_t = sentinel
+    # If Loss -> pt_t = sentinel, sl_t = exit_t
+
+    pt_t = np.full(m, sentinel, dtype=np.int32)
+    sl_t = np.full(m, sentinel, dtype=np.int32)
+
+    wins = (y_bin == 1) & exited_mask
+    losses = (y_bin == 0) & exited_mask
+
+    pt_t[wins] = exit_t[wins]
+    sl_t[losses] = exit_t[losses]
+
+    exit_kind = np.zeros(m, dtype=np.int8)
+    exit_kind[wins] = 1
+    exit_kind[losses] = -1
 
     return GridLabels(y_bin=y_bin, y_ret=y_ret, pt_t=pt_t, sl_t=sl_t, exit_kind=exit_kind)
 

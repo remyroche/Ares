@@ -221,6 +221,88 @@ def apply_to_matrix(df: pd.DataFrame, func, *args) -> pd.DataFrame:
 
     return res_df
 
+@jit(nopython=True, cache=True)
+def _numba_rolling_robust_zscore_1d(x, window, quantile, eps):
+    n = len(x)
+    output = np.full(n, np.nan, dtype=np.float32)
+    buf = np.empty(window, dtype=np.float32)
+    devs_buf = np.empty(window, dtype=np.float32)
+
+    if window <= 0: return output
+
+    for i in range(n):
+        # Window bounds
+        start = max(0, i - window + 1)
+        end = i + 1
+        count = 0
+
+        # Populate buffer
+        for j in range(start, end):
+            v = x[j]
+            if not np.isnan(v):
+                buf[count] = v
+                count += 1
+
+        if count < 10:
+            continue
+
+        valid_buf = buf[:count]
+
+        # 1. Base Anchor
+        idx_q = int(round(quantile * (count - 1)))
+        # partition reorders valid_buf in-place
+        part = np.partition(valid_buf, idx_q)
+        base_t = part[idx_q]
+
+        # 2. Scale (MAD)
+        # Median of x
+        idx_med = int((count - 1) // 2)
+        part_med = np.partition(valid_buf, idx_med)
+        median_val = part_med[idx_med]
+
+        # Deviations
+        for k in range(count):
+            devs_buf[k] = abs(valid_buf[k] - median_val)
+
+        # Median Absolute Deviation
+        part_dev = np.partition(devs_buf[:count], idx_med)
+        mad = part_dev[idx_med]
+
+        scale_t = np.float32(1.4826) * mad + eps
+
+        # 3. Z-score
+        val_in = x[i]
+        if not np.isnan(val_in):
+            output[i] = (val_in - base_t) / scale_t
+
+    return output
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_robust_zscore_parallel(mat, window, quantile, eps):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_robust_zscore_1d(mat[:, j], window, quantile, eps)
+
+    return out
+
+def numba_rolling_robust_zscore(df, window, quantile=0.45, eps=1e-12):
+    tprint(f"Entering function: numba_rolling_robust_zscore in fast_funcs.py")
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rolling_robust_zscore_parallel(mat, window, quantile, eps)
+
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+
+    return res_df
+
 def apply_to_frame(df: pd.DataFrame, func, *args) -> pd.DataFrame:
     """
     Applies a Numba 1D function to each column of a DataFrame.

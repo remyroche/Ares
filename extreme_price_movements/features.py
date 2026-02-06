@@ -256,9 +256,15 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     # Do NOT divide by c (FFD) as it crosses 0.
     feats["range_24h_pct"] = (h_24 - l_24).astype(np.float32)
 
-    # Volatility Z-score (rv_24h is base volatility)
-    # Using 30d lookback for Z-score baseline
-    feats["volatility_zscore"] = zscore_rolling(feats["rv_24h"], 24 * 30)
+    # Volatility Z-score (using Log-ATR robust z-score)
+    # Baseline: 90 days. x = log(ATR/Close).
+    # Z = (x - Q(0.45)) / (1.4826 * MAD)
+    # feats["atr_pct"] is raw ATR (price units), so we normalize by C
+    vol_proxy = (feats["atr_pct"] / (c + 1e-12))
+    log_vol = np.log(vol_proxy + 1e-9).astype(np.float32)
+    feats["volatility_zscore"] = ff.numba_rolling_robust_zscore(
+        log_vol, window=24 * 90, quantile=0.45
+    ).astype(np.float32)
 
     feats["qv"] = (c * v).astype(np.float32)
     feats["vol_z24_base"] = zscore_rolling(v, 24)

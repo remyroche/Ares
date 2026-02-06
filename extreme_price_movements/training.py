@@ -277,15 +277,29 @@ def generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_end, lookback_h
     tprint("Generating UP history...")
     X_up, y_up, w_up, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, train_end, train_len, syms, trend_filter="up")
     model_up = None
+    arr_oof_up = None
     if X_up is not None and len(y_up) > 100:
         model_up = ExhaustionModel(C=cfg["exh_C"], l1_ratio=cfg["exh_l1_ratio"])
         model_up.fit(X_up, y_up, sample_weight=w_up)
+        # OOF Predictions for UP
+        tprint("Generating OOF predictions for UP model...")
+        oof_preds, _ = model_up.compute_oof_predictions(X_up, y_up)
+        # Unstack to align with (ts, symbol) grid
+        s_oof = pd.Series(oof_preds, index=X_up.index)
+        # We need this to match the prediction window structure later
+        # We'll delay unstacking until we have valid_syms and t_idx defined below
+
     tprint("Generating DOWN history...")
     X_dn, y_dn, w_dn, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, train_end, train_len, syms, trend_filter="down")
     model_dn = None
+    arr_oof_dn = None
     if X_dn is not None and len(y_dn) > 100:
         model_dn = ExhaustionModel(C=cfg["exh_C"], l1_ratio=cfg["exh_l1_ratio"])
         model_dn.fit(X_dn, y_dn, sample_weight=w_dn)
+        # OOF Predictions for DOWN
+        tprint("Generating OOF predictions for DOWN model...")
+        oof_preds, _ = model_dn.compute_oof_predictions(X_dn, y_dn)
+        s_oof_dn = pd.Series(oof_preds, index=X_dn.index)
 
     # --- Fast vectorized prediction over full window ---
     t_idx = pd.date_range(train_end, ts_end, freq='h', tz="UTC")
@@ -293,6 +307,17 @@ def generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_end, lookback_h
     valid_syms = [s for s in syms if s in panel["close"].columns]
     n_t, n_s = len(t_idx), len(valid_syms)
     tprint(f"Exhaustion prediction window: {n_t} timestamps x {n_s} symbols = {n_t * n_s} cells")
+
+    # Prepare OOF arrays (n_t, n_s) aligned to prediction window
+    if model_up and 's_oof' in locals():
+        tprint("Aligning UP OOF predictions to grid...")
+        df_oof = s_oof.unstack(level="symbol").reindex(index=t_idx, columns=valid_syms)
+        arr_oof_up = df_oof.values.astype(np.float32) # contains NaNs where OOF missing
+
+    if model_dn and 's_oof_dn' in locals():
+        tprint("Aligning DOWN OOF predictions to grid...")
+        df_oof = s_oof_dn.unstack(level="symbol").reindex(index=t_idx, columns=valid_syms)
+        arr_oof_dn = df_oof.values.astype(np.float32)
 
     # Build feature+gate arrays as 2D (n_t, n_features) per symbol, predict per-symbol
     keys = cfg.get("exh_feature_keys", [])
@@ -329,13 +354,33 @@ def generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_end, lookback_h
         X_sym = np.hstack([x_feat, mg])  # (n_t, n_cols)
         X_sym_df = pd.DataFrame(X_sym, columns=keys[:x_feat.shape[1]] + mkt_cols)
 
-        p_up_sym = 0.0
+        p_up_sym = np.zeros(n_t, dtype=np.float32)
         if model_up and model_up.model:
-            p_up_sym = model_up.predict_proba(X_sym_df)
-            p_up_sym = np.clip(p_up_sym * 2.0, 0.0, 1.0)
-        p_dn_sym = 0.0
+            # 1. Fitted prediction (fallback)
+            preds = model_up.predict_proba(X_sym_df)
+            preds = np.clip(preds * 2.0, 0.0, 1.0)
+
+            # 2. Overlay OOF predictions where available
+            if arr_oof_up is not None:
+                oof_col = arr_oof_up[:, j]
+                valid_oof = ~np.isnan(oof_col)
+                if valid_oof.any():
+                    # Apply same scaling to OOF
+                    preds[valid_oof] = np.clip(oof_col[valid_oof] * 2.0, 0.0, 1.0)
+            p_up_sym = preds
+
+        p_dn_sym = np.zeros(n_t, dtype=np.float32)
         if model_dn and model_dn.model:
-            p_dn_sym = model_dn.predict_proba(X_sym_df)
+            # 1. Fitted prediction
+            preds = model_dn.predict_proba(X_sym_df)
+
+            # 2. Overlay OOF predictions
+            if arr_oof_dn is not None:
+                oof_col = arr_oof_dn[:, j]
+                valid_oof = ~np.isnan(oof_col)
+                if valid_oof.any():
+                    preds[valid_oof] = oof_col[valid_oof]
+            p_dn_sym = preds
 
         result[:, j] = np.where(trend_arr[:, j] > 0, p_up_sym, p_dn_sym)
 

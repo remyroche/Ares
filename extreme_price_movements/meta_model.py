@@ -15,6 +15,7 @@ class MetaModel:
         self.feature_names = CFG.get("meta_feature_keys", [])
         self.transformer = CausalFeatureTransformer(winsor_qt=0.02, roll_window=24*30)
         self.selected_features = None
+        self.oof_probs = None
 
     def prepare_meta_features(self, preds, feats_df, pred_col_name="pred_logit"):
         """
@@ -147,6 +148,23 @@ class MetaModel:
         best_alpha = best_row["alpha"]
 
         tprint(f"MetaModel Grid Search: Best Alpha={best_alpha}, Score={best_row['score']:.4f}")
+
+        # Generate OOF predictions for the best alpha
+        tprint(f"MetaModel: Generating OOF predictions for best alpha={best_alpha}...")
+        self.oof_probs = np.zeros(len(y), dtype=np.float32)
+
+        # We re-run CV for OOF to ensure consistency with selection
+        for train_idx, val_idx in pkf.split(X_arr):
+             X_train, X_val = X_arr[train_idx], X_arr[val_idx]
+             y_train, y_val = y_arr[train_idx], y_arr[val_idx]
+
+             y_train_log = np.log1p(y_train)
+             m = Ridge(alpha=best_alpha, fit_intercept=False)
+             m.fit(X_train, y_train_log)
+             preds_log = m.predict(X_val)
+             preds = np.expm1(preds_log)
+
+             self.oof_probs[val_idx] = preds
 
         # Refit on full data
         self.model = Ridge(alpha=best_alpha, fit_intercept=False)

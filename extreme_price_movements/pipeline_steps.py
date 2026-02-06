@@ -216,7 +216,8 @@ def run_risk_optimization_step(ts_sig, margin_symbols, cfg, store, state_file):
         p_exh_hist = generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_sig, cfg["train_lookback_hours"], train_syms)
 
     alpha_models = bundle["alpha_models"]
-    best_risk = optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts_sig, p_exh_hist, alpha_models)
+    meta_models = bundle["meta_models"]
+    best_risk = optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts_sig, p_exh_hist, alpha_models, meta_models)
 
     state["risk_params"] = best_risk
     with open(state_file, "wb") as f:

@@ -22,19 +22,31 @@ def fetch_binance_cross_margin_pairs():
     tprint(f"Fetched {len(margin_pairs)} cross margin pairs from exchangeInfo.")
     return margin_pairs
 
-def margin_pairs_to_spot_symbols(margin_pairs_json, quote="USDT"):
+def margin_pairs_to_spot_symbols(margin_pairs_json, quotes=("USDT", "USDC")):
     tprint(f"Entering function: margin_pairs_to_spot_symbols in universe.py")
-    tprint(f"Processing {len(margin_pairs_json)} margin pairs for quote {quote}...")
+
+    # Backward compatibility for single quote string
+    if isinstance(quotes, str):
+        quotes = [quotes]
+
+    tprint(f"Processing {len(margin_pairs_json)} margin pairs for quotes {quotes}...")
     out = set()
+    breakdown = {q: 0 for q in quotes}
+
     for row in margin_pairs_json:
         s = row.get("symbol", "")
-        if not s.endswith(quote):
-            continue
-        base = s[:-len(quote)]
-        if base:
-            out.add(f"{base}/{quote}")
+        for q in quotes:
+            if s.endswith(q):
+                base = s[:-len(q)]
+                if base:
+                    out.add(f"{base}/{q}")
+                    breakdown[q] += 1
+                break # Matched one quote
+
     res = sorted(out)
-    tprint(f"Found {len(res)} spot symbols matching quote {quote}.")
+
+    breakdown_str = ", ".join([f"{q}: {count}" for q, count in breakdown.items()])
+    tprint(f"Found {len(res)} spot symbols. Breakdown: {breakdown_str}")
     return res
 
 def fetch_24h_tickers():
@@ -50,7 +62,7 @@ class MarginUniverseCache:
     symbols: list[str]
     asof_day: pd.Timestamp
 
-def refresh_margin_universe_daily(cache: MarginUniverseCache | None, quote="USDT") -> MarginUniverseCache:
+def refresh_margin_universe_daily(cache: MarginUniverseCache | None, quotes=("USDT", "USDC")) -> MarginUniverseCache:
     tprint(f"Entering function: refresh_margin_universe_daily in universe.py")
     today = pd.Timestamp.utcnow().floor("D")
     if cache is not None and cache.asof_day == today:
@@ -59,7 +71,7 @@ def refresh_margin_universe_daily(cache: MarginUniverseCache | None, quote="USDT
 
     tprint("Refreshing margin universe...")
     pairs = fetch_binance_cross_margin_pairs()
-    syms = margin_pairs_to_spot_symbols(pairs, quote=quote)
+    syms = margin_pairs_to_spot_symbols(pairs, quotes=quotes)
     tprint(f"Refreshed margin universe: {len(syms)} symbols.")
     return MarginUniverseCache(symbols=syms, asof_day=today)
 
@@ -110,7 +122,7 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
         # Fallback if not provided, refresh locally?
         # Ideally should be passed.
         # We will refresh it here if None
-        mu = refresh_margin_universe_daily(None, quote="USDT")
+        mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC"))
         margin_symbols = mu.symbols
 
     syms_all = build_fetch_universe(margin_symbols, cfg["market_basket"], cfg["fetch_symbols_M"])

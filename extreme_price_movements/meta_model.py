@@ -16,21 +16,20 @@ class MetaModel:
         self.transformer = CausalFeatureTransformer(winsor_qt=0.02, roll_window=24*30)
         self.selected_features = None
 
-    def prepare_meta_features(self, preds_tf, preds_mr, feats_df):
+    def prepare_meta_features(self, preds, feats_df, pred_col_name="pred_logit"):
         """
         Constructs X_meta.
         Applies logit to predictions.
         Combines with feats_df (which should contain the meta features).
+        preds: np.array of probabilities (0..1)
         """
         tprint(f"Entering function: prepare_meta_features in meta_model.py")
         meta_data = pd.DataFrame(index=feats_df.index)
 
         eps = 1e-4
-        p_tf = np.clip(preds_tf, eps, 1 - eps)
-        p_mr = np.clip(preds_mr, eps, 1 - eps)
+        p = np.clip(preds, eps, 1 - eps)
 
-        meta_data["pred_tf_logit"] = logit(p_tf)
-        meta_data["pred_mr_logit"] = logit(p_mr)
+        meta_data[pred_col_name] = logit(p)
 
         # Merge with feats_df
         # feats_df should only contain the requested keys

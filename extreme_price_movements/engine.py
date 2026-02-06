@@ -213,10 +213,9 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
                 fcols_mr = m_bundle["mr"]["feat_cols"]
                 fcols_tf = m_bundle["tf"]["feat_cols"]
 
-                meta_model = meta_models.get(side_key)
-
+                # meta_model retrieval deferred to aggregation step
                 rec = {
-                    "symbol": sym, "side_key": side_key, "model_mr": model_mr, "model_tf": model_tf, "meta_model": meta_model,
+                    "symbol": sym, "side_key": side_key, "model_mr": model_mr, "model_tf": model_tf,
                     "feat_cols_mr": fcols_mr, "feat_cols_tf": fcols_tf,
                     "mkt_ret24h": float(mrk["mkt_ret24h"]), "mkt_ret6h": float(mrk["mkt_ret6h"]), "mkt_trend": float(mrk["mkt_trend"]), "mkt_rv": float(mrk["mkt_rv"]),
                     "G_VOL": int(mrk["G_VOL"]), "G_TREND": int(mrk["G_TREND"]), "p_exh_lag1": p_lag
@@ -259,7 +258,7 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
 
         for side_key, grp in df_all.groupby("side_key"):
             first = grp.iloc[0]
-            model_mr = first["model_mr"]; model_tf = first["model_tf"]; meta_model = first["meta_model"]
+            model_mr = first["model_mr"]; model_tf = first["model_tf"]
             fcols_mr = first["feat_cols_mr"]
             fcols_tf = first["feat_cols_tf"]
 
@@ -284,29 +283,58 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
             X_tf_pred = X_tf_pred[fcols_tf]
             p_tf = model_tf.predict(X_tf_pred)
 
-            if meta_model:
-                # Apply interaction toggles to get the same features as training
+            # Resolve Meta Models for this side (one for MR, one for TF)
+            meta_mr = meta_models.get(f"{side_key}_mr")
+            meta_tf = meta_models.get(f"{side_key}_tf")
+
+            score_mr = None
+            score_tf = None
+
+            # 1. Score MR
+            if meta_mr:
                 numeric_cols = grp.select_dtypes(include=[np.number]).columns.tolist()
                 grp_numeric = grp[numeric_cols].copy()
-                # Apply toggles with all causal cols (union of MR + TF keys)
-                all_causal = list(set(cfg.get("mr_feature_keys", [])) | set(cfg.get("tf_feature_keys", [])))
-                grp_toggled = apply_interaction_toggles(grp_numeric, all_causal, ["G_VOL", "G_TREND"], drop_raw=False)
-                X_meta = meta_model.prepare_meta_features(p_tf, p_mr, grp_toggled)
-                # Ensure all selected features exist, fill missing with 0
-                if meta_model.selected_features:
-                    for c in meta_model.selected_features:
-                        if c not in X_meta.columns:
-                            X_meta[c] = 0.0
-                score = meta_model.predict(X_meta)
+                grp_toggled = apply_interaction_toggles(grp_numeric, keys_mr, ["G_VOL", "G_TREND"], drop_raw=False)
+
+                X_meta_mr = meta_mr.prepare_meta_features(p_mr, grp_toggled, pred_col_name="pred_logit")
+
+                if meta_mr.selected_features:
+                    for c in meta_mr.selected_features:
+                        if c not in X_meta_mr.columns:
+                            X_meta_mr[c] = 0.0
+                score_mr = meta_mr.predict(X_meta_mr)
             else:
-                score = p_tf - p_mr
+                score_mr = (p_mr - 0.5) * 0.1
+
+            # 2. Score TF
+            if meta_tf:
+                numeric_cols = grp.select_dtypes(include=[np.number]).columns.tolist()
+                grp_numeric = grp[numeric_cols].copy()
+                grp_toggled = apply_interaction_toggles(grp_numeric, keys_tf, ["G_VOL", "G_TREND"], drop_raw=False)
+
+                X_meta_tf = meta_tf.prepare_meta_features(p_tf, grp_toggled, pred_col_name="pred_logit")
+
+                if meta_tf.selected_features:
+                    for c in meta_tf.selected_features:
+                        if c not in X_meta_tf.columns:
+                            X_meta_tf[c] = 0.0
+                score_tf = meta_tf.predict(X_meta_tf)
+            else:
+                score_tf = (p_tf - 0.5) * 0.1
 
             for i, idx in enumerate(grp.index):
                 sym = grp.loc[idx, "symbol"]
-                s_score = float(score[i])
-                dom = "mr" if p_mr[i] > p_tf[i] else "tf"
-                # Long models: positive score = go long; Short models: positive score = go short
-                score_raw_list.append((sym, side_key, s_score, dom))
+                s_mr_val = float(score_mr[i])
+                s_tf_val = float(score_tf[i])
+
+                if s_mr_val > s_tf_val:
+                    best_s = s_mr_val
+                    dom = "mr"
+                else:
+                    best_s = s_tf_val
+                    dom = "tf"
+
+                score_raw_list.append((sym, side_key, best_s, dom))
 
     # Separate long and short signals
     long_signals = [(sym, sc, dom) for sym, sk, sc, dom in score_raw_list if sk == "long"]

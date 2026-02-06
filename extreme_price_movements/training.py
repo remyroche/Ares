@@ -1000,148 +1000,59 @@ def train_models_from_artifacts(datasets, cfg):
 
             final_models[side][k] = best_m
 
-    # 3. Train Meta Models (using OOF predictions from alpha models on union of samples)
+    # 3. Train Meta Models (One per Alpha Model: Side x Kind)
+    # Using OOF predictions from Alpha Models to train Meta Model (re-calibration/sizing)
+    # The Alpha models (ModelRace) already generate OOF predictions via CV.
     meta_models = {}
     for side in trade_sides:
-        mr_conf = final_models[side]["mr"]
-        tf_conf = final_models[side]["tf"]
-        if not mr_conf or not tf_conf:
-            tprint(f"Meta {side}: skipped (missing MR or TF model)")
-            meta_models[side] = None; continue
+        for k in kinds:
+            # Check if alpha model exists
+            conf = final_models[side].get(k)
+            if not conf:
+                tprint(f"Meta {side}_{k}: skipped (missing alpha model)")
+                continue
 
-        H_mr = mr_conf["H"]
-        H_tf = tf_conf["H"]
+            H = conf["H"]
+            key = f"train_{side}_{k}_{H}"
+            if key not in datasets:
+                tprint(f"Meta {side}_{k}: skipped (missing dataset)")
+                continue
 
-        key_mr = f"train_{side}_mr_{H_mr}"
-        key_tf = f"train_{side}_tf_{H_tf}"
+            df = datasets[key].copy()
 
-        if key_mr not in datasets or key_tf not in datasets:
-            tprint(f"Meta {side}: skipped (missing datasets)")
-            meta_models[side] = None; continue
+            # Ensure index meta columns exist (though not strictly needed if we use df directly)
+            if "__ts__" not in df.columns or "__symbol__" not in df.columns:
+                 # If missing, we might still proceed if row order is preserved (it should be)
+                 pass
 
-        df_mr = datasets[key_mr].copy()
-        df_tf = datasets[key_tf].copy()
+            # Use the OOF probs from the race (generated via CV)
+            race = conf["model"]
+            if race.oof_probs is None:
+                tprint(f"Meta {side}_{k}: skipped (no OOF probs found)")
+                continue
 
-        if "__ts__" not in df_mr.columns or "__symbol__" not in df_mr.columns:
-            tprint(f"Meta {side}: skipped (missing meta columns)")
-            meta_models[side] = None; continue
+            p_oof = race.oof_probs
+            y_ret = df["__y_ret__"].values
 
-        # Build index for both
-        idx_mr = pd.MultiIndex.from_frame(df_mr[["__ts__", "__symbol__"]])
-        idx_tf = pd.MultiIndex.from_frame(df_tf[["__ts__", "__symbol__"]])
-        df_mr.index = idx_mr
-        df_tf.index = idx_tf
+            if len(p_oof) != len(y_ret):
+                tprint(f"Meta {side}_{k}: mismatch length OOF={len(p_oof)} vs y_ret={len(y_ret)}")
+                continue
 
-        # Union of all samples from both origins
-        all_idx = idx_mr.union(idx_tf)
-        tprint(f"Meta {side}: MR={len(idx_mr)}, TF={len(idx_tf)}, union={len(all_idx)}, overlap={len(idx_mr.intersection(idx_tf))}")
+            # Prepare meta features
+            # Extract features from df (excluding internal cols)
+            drop_cols = ["__y_bin__", "__y_ret__", "__w__", "__ts__", "__symbol__"]
+            feat_cols = [c for c in df.columns if c not in drop_cols]
+            X_feats = df[feat_cols].fillna(0.0) #.astype(np.float32)
 
-        if len(all_idx) < 200:
-            tprint(f"Meta {side}: skipped (union too small: {len(all_idx)})")
-            meta_models[side] = None; continue
+            tprint(f"Meta {side}_{k}: Training on {len(df)} samples...")
+            meta = MetaModel()
+            # Use single prediction input (OOF)
+            X_meta = meta.prepare_meta_features(p_oof, X_feats, pred_col_name="pred_logit")
+            meta.fit(X_meta, y_ret)
 
-        # Get OOF predictions from alpha models
-        mr_race = mr_conf["model"]
-        tf_race = tf_conf["model"]
-
-        # For samples IN the training set: use OOF predictions
-        # For samples NOT in the training set: use fitted model predictions
-        drop_cols = ["__y_bin__", "__y_ret__", "__w__", "__ts__", "__symbol__"]
-
-        p_mr_all = np.full(len(all_idx), 0.5, dtype=np.float32)
-        p_tf_all = np.full(len(all_idx), 0.5, dtype=np.float32)
-        y_ret_all = np.zeros(len(all_idx), dtype=np.float32)
-        w_all = np.ones(len(all_idx), dtype=np.float32)
-
-        # Map all_idx positions
-        all_idx_list = list(all_idx)
-
-        # MR OOF predictions for MR samples
-        if mr_race.oof_probs is not None:
-            for i, idx_val in enumerate(all_idx_list):
-                if idx_val in idx_mr:
-                    pos_in_mr = idx_mr.get_loc(idx_val)
-                    if isinstance(pos_in_mr, int):
-                        p_mr_all[i] = mr_race.oof_probs[pos_in_mr]
-                    elif hasattr(pos_in_mr, '__iter__'):
-                        p_mr_all[i] = mr_race.oof_probs[pos_in_mr[0]] if len(pos_in_mr) > 0 else 0.5
-
-        # TF OOF predictions for TF samples
-        if tf_race.oof_probs is not None:
-            for i, idx_val in enumerate(all_idx_list):
-                if idx_val in idx_tf:
-                    pos_in_tf = idx_tf.get_loc(idx_val)
-                    if isinstance(pos_in_tf, int):
-                        p_tf_all[i] = tf_race.oof_probs[pos_in_tf]
-                    elif hasattr(pos_in_tf, '__iter__'):
-                        p_tf_all[i] = tf_race.oof_probs[pos_in_tf[0]] if len(pos_in_tf) > 0 else 0.5
-
-        # For samples not in MR set, predict with fitted MR model
-        mr_missing_mask = ~np.array([idx_val in idx_mr for idx_val in all_idx_list])
-        if mr_missing_mask.any():
-            missing_in_tf = [all_idx_list[i] for i in range(len(all_idx_list)) if mr_missing_mask[i]]
-            X_missing = df_tf.loc[missing_in_tf].drop(columns=[c for c in drop_cols if c in df_tf.columns])
-            try:
-                p_mr_all[mr_missing_mask] = mr_race.predict(X_missing[mr_conf["feat_cols"]])
-            except Exception:
-                pass  # Keep 0.5 default
-
-        # For samples not in TF set, predict with fitted TF model
-        tf_missing_mask = ~np.array([idx_val in idx_tf for idx_val in all_idx_list])
-        if tf_missing_mask.any():
-            missing_in_mr = [all_idx_list[i] for i in range(len(all_idx_list)) if tf_missing_mask[i]]
-            X_missing = df_mr.loc[missing_in_mr].drop(columns=[c for c in drop_cols if c in df_mr.columns])
-            try:
-                p_tf_all[tf_missing_mask] = tf_race.predict(X_missing[tf_conf["feat_cols"]])
-            except Exception:
-                pass  # Keep 0.5 default
-
-        # y_ret: use TF returns where available, else MR returns
-        for i, idx_val in enumerate(all_idx_list):
-            if idx_val in idx_tf:
-                pos = idx_tf.get_loc(idx_val)
-                pos = pos if isinstance(pos, int) else (pos[0] if hasattr(pos, '__iter__') else pos)
-                y_ret_all[i] = df_tf.iloc[pos]["__y_ret__"]
-                w_all[i] = df_tf.iloc[pos]["__w__"]
-            elif idx_val in idx_mr:
-                pos = idx_mr.get_loc(idx_val)
-                pos = pos if isinstance(pos, int) else (pos[0] if hasattr(pos, '__iter__') else pos)
-                y_ret_all[i] = df_mr.iloc[pos]["__y_ret__"]
-                w_all[i] = df_mr.iloc[pos]["__w__"]
-
-        tprint(f"Meta {side}: p_mr mean={np.mean(p_mr_all):.4f} std={np.std(p_mr_all):.4f}")
-        tprint(f"Meta {side}: p_tf mean={np.mean(p_tf_all):.4f} std={np.std(p_tf_all):.4f}")
-
-        # Build shared feature matrix for meta model from label datasets
-        # Find columns common to both MR and TF datasets (excluding meta cols)
-        mr_feat_cols = set(df_mr.columns) - set(drop_cols)
-        tf_feat_cols = set(df_tf.columns) - set(drop_cols)
-        shared_feat_cols = sorted(mr_feat_cols & tf_feat_cols)
-        tprint(f"Meta {side}: {len(shared_feat_cols)} shared feature columns available")
-
-        # Extract shared features for all samples (prefer TF source, fallback MR)
-        meta_feat_rows = []
-        for i, idx_val in enumerate(all_idx_list):
-            if idx_val in idx_tf:
-                pos = idx_tf.get_loc(idx_val)
-                pos = pos if isinstance(pos, int) else (pos[0] if hasattr(pos, '__iter__') else pos)
-                meta_feat_rows.append(df_tf.iloc[pos][shared_feat_cols].values)
-            elif idx_val in idx_mr:
-                pos = idx_mr.get_loc(idx_val)
-                pos = pos if isinstance(pos, int) else (pos[0] if hasattr(pos, '__iter__') else pos)
-                meta_feat_rows.append(df_mr.iloc[pos][shared_feat_cols].values)
-            else:
-                meta_feat_rows.append(np.zeros(len(shared_feat_cols)))
-
-        df_meta_feats = pd.DataFrame(meta_feat_rows, columns=shared_feat_cols).fillna(0.0).astype(np.float32)
-        tprint(f"Meta {side}: df_meta_feats shape={df_meta_feats.shape}")
-
-        meta = MetaModel()
-        X_meta_final = meta.prepare_meta_features(p_tf_all, p_mr_all, df_meta_feats)
-        tprint(f"Meta {side}: X_meta shape={X_meta_final.shape}, columns={list(X_meta_final.columns[:5])}...")
-        meta.fit(X_meta_final, y_ret_all)
-        meta_models[side] = meta
-        tprint(f"Meta {side}: fitted on {len(all_idx)} samples, selected={meta.selected_features}")
+            # Save separately
+            meta_models[f"{side}_{k}"] = meta
+            tprint(f"Meta {side}_{k}: fitted.")
 
     # 4. Train Exhaustion Models
     exh_models = {}

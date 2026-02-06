@@ -23,8 +23,8 @@ def compute_mr_weights(df: pd.DataFrame, cfg: dict) -> np.ndarray:
     vmax = 4.0
 
     p_exh = df.get("p_exh_lag1", 0.0)
-    ret_z = df.get("a_ret1h_z", 0.0).abs().clip(upper=zmax)
-    vol_z = df.get("a_volz", 0.0).clip(upper=vmax)
+    ret_z = df.get("a_ret1h_z", df.get("ret1h_z", 0.0)).abs().clip(upper=zmax)
+    vol_z = df.get("a_volz", df.get("vol_z", 0.0)).clip(upper=vmax)
     g_trend = df.get("G_TREND", 0.0)
 
     w = 1.0 + (a * p_exh) + (b * ret_z) + (c * vol_z)

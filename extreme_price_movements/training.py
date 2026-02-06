@@ -1101,12 +1101,18 @@ def train_models_from_artifacts(datasets, cfg):
                 continue
 
             # Prepare meta features
-            # Extract features from df (excluding internal cols)
+            # Extract only configured meta keys before MDI selection (plus pred_logit added downstream)
             drop_cols = ["__y_bin__", "__y_ret__", "__w__", "__ts__", "__symbol__"]
-            feat_cols = [c for c in df.columns if c not in drop_cols]
-            X_feats = df[feat_cols].fillna(0.0) #.astype(np.float32)
+            candidate_cols = [c for c in df.columns if c not in drop_cols]
+            configured_meta = cfg.get("meta_feature_keys", [])
+            feat_cols = [c for c in configured_meta if c in candidate_cols]
+            if not feat_cols:
+                tprint(f"Meta {side}_{k}: skipped (no configured meta features available)")
+                continue
 
-            tprint(f"Meta {side}_{k}: Training on {len(df)} samples...")
+            X_feats = df[feat_cols].fillna(0.0)
+
+            tprint(f"Meta {side}_{k}: Training on {len(df)} samples with {len(feat_cols)} configured features...")
             meta = MetaModel()
             # Use single prediction input (OOF)
             X_meta = meta.prepare_meta_features(p_oof, X_feats, pred_col_name="pred_logit")

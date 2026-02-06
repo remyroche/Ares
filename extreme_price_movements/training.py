@@ -805,9 +805,21 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
 
                 if len(event_indices) >= 50:
                     try:
+                        # Directional inversion for Short optimization
+                        if side == "short":
+                            use_o = 1.0 / np.maximum(o, 1e-6)
+                            use_c = 1.0 / np.maximum(c, 1e-6)
+                            use_h = 1.0 / np.maximum(l, 1e-6)
+                            use_l = 1.0 / np.maximum(h, 1e-6)
+                        else:
+                            use_o = o
+                            use_c = c
+                            use_h = h
+                            use_l = l
+
                         summary = run_tp_sl_selection_fast(
                             X=x_arr,
-                            open_=o, high=h, low=l, close=c,
+                            open_=use_o, high=use_h, low=use_l, close=use_c,
                             atr_pct=a, z=zv, atr_base_pct=ab,
                             event_idx=event_indices,
                             horizon=H,
@@ -1415,12 +1427,28 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
             # If we use Trailing ATR, we map them: k_sl = sl_mult (approx).
             # The prompt implies we want to find optimal "TP:SL ratio" and levels.
 
+            # Prepare directional data (invert if Short to use Long logic)
+            if side == "short":
+                # Invert prices: P -> 1/P
+                # High -> 1/Low, Low -> 1/High
+                # Returns will be approximate (log returns flip sign)
+                # 100 -> 90 (-10%). 0.01 -> 0.0111 (+11%). Close enough for optimization.
+                use_open = 1.0 / np.maximum(full_open, 1e-6)
+                use_close = 1.0 / np.maximum(full_close, 1e-6)
+                use_high = 1.0 / np.maximum(full_low, 1e-6)
+                use_low = 1.0 / np.maximum(full_high, 1e-6)
+            else:
+                use_open = full_open
+                use_close = full_close
+                use_high = full_high
+                use_low = full_low
+
             summary = run_tp_sl_selection_fast(
                 X=full_X,
-                open_=full_open,
-                high=full_high,
-                low=full_low,
-                close=full_close,
+                open_=use_open,
+                high=use_high,
+                low=use_low,
+                close=use_close,
                 atr_pct=full_atr,
                 z=full_z,
                 atr_base_pct=full_atr_base,

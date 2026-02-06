@@ -329,9 +329,17 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                     continue
                 entry_px = float(o_s.loc[entry_ts, sym])
 
-                risk_key = f"risk_{side}_{dom}"
+                if dom == "tf":
+                    mode = "best" if side == "long" else "worst"
+                else:
+                    mode = "worst" if side == "long" else "best"
+                risk_keys = [f"risk_{dom}_{mode}", f"risk_{side}_{dom}"]
                 granular = local_risk.get("granular_risk", {})
-                rp = granular.get(risk_key, {})
+                rp = {}
+                for risk_key in risk_keys:
+                    if risk_key in granular:
+                        rp = granular[risk_key]
+                        break
 
                 k_sl = rp.get("k_sl", cfg["risk_k_sl"])
                 k_ts = rp.get("k_trail_start", cfg["risk_k_trail_start"])

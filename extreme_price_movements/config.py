@@ -13,6 +13,13 @@ MODEL_FEATURES = [
     "clv_collapse", "clv_pullback", "coh", "align", "retest_quality",
     "pb_accel", "rv_ratio_6_24", "excess_coh", "asym_ft",
     "tf_bias", "shock_rel", "resid_strength", "evr_slope", "stall_ext",
+    # Earlier trend following / volatility-of-volatility signals
+    "vov_iqr_20", "vov_mad_20", "vov_mad_60", "vov_ratio", "vov_interaction",
+    "vov_fast_slow_ratio", "accel_5h", "dlog_vol_5h", "signed_max_bar_ret_5h",
+    "jump_rate_10h", "volu_z", "volume_price_corr_10h", "draw_sym_10h", "draw_extreme_10h",
+    "breakout_24h",
+    "meta_abs_net_x_breakout", "meta_abs_net_x_drawext", "meta_abs_net_x_vov_ratio",
+    "meta_alignment", "meta_signal_x_accel",
     # Price Action
     "gap_pct", "range_pct", "roc_div", "ret1h_z", "body_pct", "wick_body_ratio",
     "vol_price_spread", "wick_ratio", "body_ratio",
@@ -133,6 +140,12 @@ CFG = {
         "S", "impulse_ratio_24", "impulse_ratio_12", "coherence_24", "accel",
         "tf_tape", "mr_tape", "accept", "retest_accept", "tf_qual", "mr_qual",
         "retrace_12", "ambig", "stage_tf", "stage_blowoff", "stage_mr", "exh_qual"
+        ,"vov_iqr_20", "vov_mad_20", "vov_mad_60", "vov_ratio", "vov_interaction",
+        "vov_fast_slow_ratio", "accel_5h", "dlog_vol_5h", "signed_max_bar_ret_5h",
+        "jump_rate_10h", "volu_z", "volume_price_corr_10h", "draw_sym_10h", "breakout_24h",
+        "vol_z_30_calm",
+        "meta_abs_net_x_breakout", "meta_abs_net_x_drawext", "meta_abs_net_x_vov_ratio",
+        "meta_alignment", "meta_signal_x_accel"
     ],
 
     # thresholds / picks
@@ -203,7 +216,8 @@ CFG = {
     # TF Head (Specifics + Global)
     "tf_feature_keys": [
         "accept", "retest_accept", "tf_qual", "coherence_24", "impulse_ratio_24",
-        "tf_tape", "clv_mean_4", "pullback_2", "pullback_4", "ft_2", "ft_4"
+        "tf_tape", "clv_mean_4", "pullback_2", "pullback_4", "ft_2", "ft_4",
+        "vov_ratio", "vov_interaction", "vov_fast_slow_ratio", "accel_5h", "breakout_24h"
     ] + neutral_feature_keys + MODEL_FEATURES + HELPER_BASE_FEATURES,
 
     # MR Head (Specifics + Global)
@@ -222,7 +236,18 @@ CFG = {
         "ret1h", "ret6h", "rv_6h", "rv_24h", "mkt_rv_ratio",
         "qv", "signed_vol", "vol_z", "atr_pct", "trend_pct",
         "spike_score", "grind_score", "chop_score",
-        "G_META_EXH", "G_META_TF_QUAL", "G_META_MR_QUAL", "G_META_AMBIG"
+        "G_META_EXH", "G_META_TF_QUAL", "G_META_MR_QUAL", "G_META_AMBIG",
+        "vol_z_30_calm", "breakout_24h", "draw_extreme_10h",
+        "meta_abs_net_x_breakout", "meta_abs_net_x_drawext", "meta_abs_net_x_vov_ratio",
+        "meta_alignment", "meta_signal_x_accel"
     ],
+
+    # Inference dynamic-basket controls
+    "inference_event_window_hours": 12,
+    "inference_event_threshold": 0.07,
+    "inference_perf_pct": 0.10,
+    "inference_draw_window_hours": 8,
+    "inference_sign_consistency_min": 0.80,
+    "inference_basket_ttl_hours": 24,
 
 }

@@ -1379,12 +1379,13 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
 
             if len(indices) < 50:
                 tprint("Not enough events, using defaults.")
-                granular_risk[f"risk_{side}_{k}"] = {
+                default_risk = {
                     "k_sl": cfg["risk_k_sl"],
                     "k_trail_start": cfg["risk_k_trail_start"],
                     "k_trail_dist": cfg["risk_k_trail_dist"],
-                    # "tp_mult": ... we store optimized params
                 }
+                granular_risk[f"risk_{side}_{k}"] = default_risk
+                granular_risk[f"risk_{k}_{cand_filter}"] = default_risk
                 continue
 
             # Run optimization
@@ -1415,7 +1416,7 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
 
             # Store in granular risk
             # We map these to the config keys used by Triple Barrier execution
-            granular_risk[f"risk_{side}_{k}"] = {
+            bucket_risk = {
                 "tp_mult": summary.final_tp_mult,
                 "sl_mult": summary.final_sl_mult,
                 # Wire optimized TP/SL mults into trailing logic used by backtests/live
@@ -1425,6 +1426,8 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
                 "k_trail_start": summary.final_tp_mult,
                 "k_trail_dist": summary.final_sl_mult
             }
+            granular_risk[f"risk_{side}_{k}"] = bucket_risk
+            granular_risk[f"risk_{k}_{cand_filter}"] = bucket_risk
 
     # Best params for default (not really used if granular is active)
     best_params = {

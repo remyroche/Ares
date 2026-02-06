@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from .utils import tprint
+import extreme_price_movements.fast_funcs as ff
 
 def select_trade_candidates_hourly(feats, ts, syms, pct=0.05, min_n=10, max_n=60, metric="dist_ema_fast"):
     tprint(f"Entering function: select_trade_candidates_hourly in candidates.py")
@@ -15,15 +16,123 @@ def select_trade_candidates_hourly(feats, ts, syms, pct=0.05, min_n=10, max_n=60
     top = s.sort_values(ascending=False).head(k).index.tolist()
     bot = s.sort_values(ascending=True).head(k).index.tolist()
 
-    # Apply Filters (Abs Range 12h > 7% & Vol Z > 1.6)
+    # Apply Filters (Abs Range 12h > 7% & Vol Z > 1.6 & Sign Consistency > 80%)
+    # We calculate sign consistency on the fly for candidates to avoid massive precomputation if not needed
+    def get_sign_consistency(sym):
+        try:
+            # We need the close price series history ending at ts
+            # Assuming feats has 'ret1h' or we need panel?
+            # feats usually contains derived features.
+            # We need raw close or we can approximate with ret1h cumsum?
+            # Ideally we have panel. But this function signature only has feats.
+            # However, `feats` in live engine context is a dictionary of DataFrames.
+            # And often contains "close" if not explicitly removed.
+            # But let's check what's available.
+            # If "close" is not in feats, we might struggle.
+            # But `select_trade_candidates_vectorized` takes panel.
+            # `select_trade_candidates_hourly` is used in `engine.py`.
+            # In `engine.py`, `simulate_trade_hourly` has `o_s, h_s...`
+            # But `select_trade_candidates_hourly` is called in `engine.py` with `feats`.
+            # `feats` usually has `ret1h`.
+            # Let's assume we can't easily get close history here without panel.
+            # BUT: We can use `detect_extreme_movement_candidates` logic if we had panel.
+            # Since we don't have panel here, we might need to skip this check or assume it's done elsewhere?
+            # Or rely on `select_trade_candidates_vectorized` for training.
+            # For live/sim, we might need to pass panel?
+            # Let's skip expensive check here if data missing, or use a proxy if available.
+            pass
+        except:
+            pass
+        return 1.0 # Default pass if we can't check
+
+    # Wait, the user wants "additional criteria: 80% ...".
+    # If I can't implement it here, I should change the signature or use vectorized.
+    # The `select_trade_candidates_vectorized` below has `panel` access.
+    # `select_trade_candidates_hourly` is less critical for training but used in inference/sim.
+    # In `engine.py`, `generate_hourly_signals` calls `select_trade_candidates_hourly`.
+    # `generate_hourly_signals` does NOT pass panel.
+    # This is a problem for live inference if I enforce this rule.
+    # I should probably update `engine.py` to pass panel or calculate consistency beforehand.
+    # BUT: `feats` likely has `close` or `ret1h`.
+    # Constructing price from returns:
+    # prices = (1 + feats["ret1h"][sym]).cumprod()
+    # This is close enough for sign consistency check (monotony).
+
     def apply_filters(candidates):
         filtered = []
         for sym in candidates:
             try:
                 r12 = feats["range_12h_pct"].loc[ts, sym]
                 vz = feats["volatility_zscore"].loc[ts, sym]
+
                 if r12 > 0.07 and vz > 1.6:
-                    filtered.append(sym)
+                    # Sign Consistency Check (12h)
+                    # Use ret1h to reconstruct path
+                    # Look back 12 hours
+                    end_loc = feats["ret1h"].index.get_loc(ts)
+                    start_loc = max(0, end_loc - 12 + 1)
+
+                    # Need returns segment
+                    rets_seg = feats["ret1h"][sym].iloc[start_loc : end_loc+1].values
+                    # Reconstruct approx price path (start=1.0)
+                    px = np.concatenate([[1.0], np.cumprod(1.0 + rets_seg)])
+
+                    # Use numba function on this small array?
+                    # `_numba_sign_consistency_1d` expects an array and window.
+                    # Here we passed a window of data. Window size = len(px).
+                    # But the function scans.
+                    # We can just run the logic manually for single window.
+
+                    # Logic:
+                    # 1. Find Min/Max in window
+                    idx_min = np.argmin(px)
+                    idx_max = np.argmax(px)
+
+                    curr_val = px[-1]
+                    local_min = px[idx_min]
+                    local_max = px[idx_max]
+
+                    up_move = curr_val - local_min
+                    dn_move = local_max - curr_val
+
+                    target_sign = 0
+                    anchor_idx = 0
+
+                    if up_move > dn_move:
+                        target_sign = 1
+                        anchor_idx = idx_min
+                    else:
+                        target_sign = -1
+                        anchor_idx = idx_max
+
+                    # Slice from anchor to end
+                    # px has length N+1. rets_seg has length N.
+                    # px[0] corresponds to T-12 close (base).
+                    # px[1] is T-11 close. rets_seg[0] is T-11 return.
+                    # Anchor index in px.
+                    # If anchor is at 0 (start), we check all returns.
+
+                    # We need returns FROM anchor+1 to END.
+                    # rets indices: 0..N-1.
+                    # px indices: 0..N.
+                    # If anchor at px[k], next return is rets_seg[k].
+
+                    check_rets = rets_seg[anchor_idx:]
+                    if len(check_rets) > 0:
+                        signs = np.sign(check_rets)
+                        # Count matches (ignore zeros)
+                        valid = signs != 0
+                        if valid.sum() > 0:
+                            matches = (signs[valid] == target_sign).sum()
+                            consistency = matches / valid.sum()
+                        else:
+                            consistency = 0.0
+                    else:
+                        consistency = 0.0 # Current is extremum?
+
+                    if consistency >= 0.80:
+                        filtered.append(sym)
+
             except KeyError:
                 continue
         return filtered
@@ -101,8 +210,18 @@ def select_trade_candidates_vectorized(panel, feats, pct=0.05, metric="ret24h"):
     else:
         event_mask = pd.DataFrame(True, index=vol_mask.index, columns=vol_mask.columns)
 
+    # Filter 4: Sign Consistency > 80%
+    # We use Numba optimized function on close prices
+    if "close" in panel:
+        sc = ff.numba_sign_consistency(panel["close"], 12)
+        sc_df = pd.DataFrame(sc, index=panel["close"].index, columns=panel["close"].columns)
+        sc_mask = sc_df >= 0.80
+    else:
+        # Fallback if close not in panel (unlikely)
+        sc_mask = pd.DataFrame(True, index=vol_mask.index, columns=vol_mask.columns)
+
     # Combine Filters into Base Mask
-    base_mask = base_mask & vol_mask & event_mask
+    base_mask = base_mask & vol_mask & event_mask & sc_mask
 
     # 3. Time Expansion
     # Offsets: t-12, t-8, t-4, t+4, t+8, t+12, t+16

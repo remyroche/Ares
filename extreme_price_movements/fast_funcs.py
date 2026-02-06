@@ -778,10 +778,43 @@ def _numba_pct_change(x, n_shift):
             out[i] = (curr - prev) / prev
     return out
 
+@jit(nopython=True, cache=True)
+def _numba_grouped_rolling_mean_gather_kernel(col_vals, indices, window, out_vals):
+    # Computes rolling mean of col_vals[indices] and stores in out_vals[indices]
+
+    n = len(indices)
+    # Use float64 for accumulation to match original implementation precision
+    current_sum = 0.0
+    current_count = 0
+
+    if window <= 0:
+        return
+
+    for i in range(n):
+        idx_curr = indices[i]
+        val_in = col_vals[idx_curr]
+
+        if not np.isnan(val_in):
+            current_sum += val_in
+            current_count += 1
+
+        if i >= window:
+            idx_out = indices[i - window]
+            val_out = col_vals[idx_out]
+            if not np.isnan(val_out):
+                current_sum -= val_out
+                current_count -= 1
+
+        if current_count > 0:
+            out_vals[idx_curr] = current_sum / current_count
+        else:
+            out_vals[idx_curr] = np.nan
+
 def numba_grouped_rolling_mean(df: pd.DataFrame, group_series: pd.Series, window: int) -> pd.DataFrame:
     """
     Vectorized grouped rolling mean.
     Optimized to use pre-computed indices per group to avoid repeated masking.
+    Uses gather kernel to avoid subset allocation.
     """
     tprint(f"Entering function: numba_grouped_rolling_mean in fast_funcs.py")
     is_series = isinstance(df, pd.Series)
@@ -805,7 +838,6 @@ def numba_grouped_rolling_mean(df: pd.DataFrame, group_series: pd.Series, window
     n_rows, n_cols = mat.shape
     out_mat = np.full((n_rows, n_cols), np.nan, dtype=np.float32)
 
-    # Helper function to process groups? No, loop is fine.
     # Iterating columns
     for j in range(n_cols):
         col_vals = mat[:, j]
@@ -813,14 +845,8 @@ def numba_grouped_rolling_mean(df: pd.DataFrame, group_series: pd.Series, window
             indices = group_indices[g]
             if len(indices) == 0: continue
 
-            # Extract subset (copy)
-            subset = col_vals[indices]
-
-            # Apply rolling
-            rolled = _numba_rolling_mean_nan_safe(subset, window)
-
-            # Write back
-            out_mat[indices, j] = rolled
+            # Use optimized gather kernel (avoids subset copy + output allocation)
+            _numba_grouped_rolling_mean_gather_kernel(col_vals, indices, window, out_mat[:, j])
 
     res_df = pd.DataFrame(out_mat, index=df.index, columns=df.columns)
 

@@ -10,6 +10,7 @@ from sklearn.metrics import roc_auc_score, brier_score_loss, log_loss, accuracy_
 from scipy.stats import rankdata
 from catboost import CatBoostClassifier
 from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier
 import joblib
 from extreme_price_movements.utils import tprint
 from extreme_price_movements.purged_cv import PurgedKFold
@@ -98,15 +99,80 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         self.best_model = None
         self.best_model_name = None
         self.metrics = {}
+        self.race_sample_frac = 0.25
+        self.race_early_stopping_rounds = 100
+
+    @staticmethod
+    def _compute_pos_weight(y):
+        y_arr = np.asarray(y)
+        pos = np.sum(y_arr == 1)
+        neg = np.sum(y_arr == 0)
+        if pos <= 0:
+            return 1.0
+        return max(1.0, float(neg) / float(pos))
+
+    @staticmethod
+    def _subsample_indices(indices, frac, seed):
+        if frac >= 1.0 or len(indices) <= 1:
+            return indices
+        target_size = max(1, int(np.ceil(len(indices) * frac)))
+        rng = np.random.default_rng(seed)
+        picked = np.sort(rng.choice(indices, size=target_size, replace=False))
+        return picked
+
+    def _fit_model(self, model, X_tr, y_tr, X_val=None, y_val=None, sample_weight=None):
+        fit_kwargs = {}
+        if sample_weight is not None:
+            fit_kwargs["sample_weight"] = sample_weight
+
+        pos_weight = self._compute_pos_weight(y_tr)
+
+        if isinstance(model, ScaledLogisticRegression):
+            model.set_params(class_weight={0: 1.0, 1: pos_weight})
+        elif isinstance(model, ExtraTreesClassifier):
+            model.set_params(class_weight={0: 1.0, 1: pos_weight})
+
+        if isinstance(model, CatBoostClassifier):
+            model.set_params(scale_pos_weight=pos_weight)
+            if X_val is not None and y_val is not None:
+                fit_kwargs.update({
+                    "eval_set": (X_val, y_val),
+                    "early_stopping_rounds": self.race_early_stopping_rounds,
+                    "use_best_model": True,
+                })
+        elif isinstance(model, XGBClassifier):
+            model.set_params(scale_pos_weight=pos_weight, eval_metric="auc")
+            if X_val is not None and y_val is not None:
+                fit_kwargs.update({
+                    "eval_set": [(X_val, y_val)],
+                    "verbose": False,
+                    "early_stopping_rounds": self.race_early_stopping_rounds,
+                })
+        elif isinstance(model, LGBMClassifier):
+            model.set_params(scale_pos_weight=pos_weight)
+            if X_val is not None and y_val is not None:
+                fit_kwargs.update({
+                    "eval_set": [(X_val, y_val)],
+                    "eval_metric": "auc",
+                    "callbacks": [],
+                })
+                try:
+                    from lightgbm import early_stopping
+                    fit_kwargs["callbacks"].append(early_stopping(self.race_early_stopping_rounds, verbose=False))
+                except Exception:
+                    pass
+
+        model.fit(X_tr, y_tr, **fit_kwargs)
 
     def _get_candidates(self, race_mode=True):
         tprint(f"Entering function: _get_candidates in model_race.py (race_mode={race_mode})")
         candidates = {}
 
         # Scaling factors for race vs final
-        n_est_et = 200 if race_mode else 1000
-        n_iter_cb = 300 if race_mode else 1000
-        n_est_xgb = 2 if race_mode else 10 # 2*150=300 vs 10*150=1500 trees
+        n_est_et = 120 if race_mode else 1000
+        n_iter_cb = 180 if race_mode else 1000
+        n_est_xgb = 1 if race_mode else 10 # 1*150=150 vs 10*150=1500 trees
+        n_est_lgbm = 250 if race_mode else 1000
 
         # 1. Baseline
         # ScaledLogisticRegression (Solves Pipeline+SampleWeight issue)
@@ -138,6 +204,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             min_data_in_leaf=50,
             verbose=0,
             loss_function='Logloss',
+            eval_metric='AUC',
             allow_writing_files=False,
             random_state=42
         )
@@ -154,6 +221,27 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             colsample_bylevel=0.6,
             max_delta_step=3,
             n_jobs=-1,
+            random_state=42
+        )
+
+        # 5. LightGBM
+        candidates["lightgbm"] = LGBMClassifier(
+            objective="binary",
+            n_estimators=n_est_lgbm,
+            learning_rate=0.03,
+            num_leaves=31,
+            max_depth=6,
+            min_child_samples=100,
+            subsample=0.6,
+            colsample_bytree=0.6,
+            subsample_freq=1,
+            reg_alpha=1.0,
+            reg_lambda=20.0,
+            min_split_gain=0.02,
+            max_bin=127,
+            min_data_in_bin=25,
+            n_jobs=-1,
+            verbosity=-1,
             random_state=42
         )
 
@@ -213,17 +301,20 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
             try:
                 for fold_i, (train_idx, val_idx) in enumerate(cached_splits):
+                    race_train_idx = self._subsample_indices(train_idx, self.race_sample_frac, seed=42 + fold_i)
+                    race_val_idx = self._subsample_indices(val_idx, self.race_sample_frac, seed=142 + fold_i)
+
                     if use_numpy:
-                        X_tr, X_val = X_np[train_idx], X_np[val_idx]
+                        X_tr, X_val = X_np[race_train_idx], X_np[race_val_idx]
                     else:
-                        X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
+                        X_tr, X_val = X.iloc[race_train_idx], X.iloc[race_val_idx]
 
-                    y_tr = safe_slice(y, train_idx)
-                    y_val = safe_slice(y, val_idx)
-                    w_tr = safe_slice(sample_weight, train_idx) if sample_weight is not None else None
-                    ret_val = safe_slice(returns, val_idx)
+                    y_tr = safe_slice(y, race_train_idx)
+                    y_val = safe_slice(y, race_val_idx)
+                    w_tr = safe_slice(sample_weight, race_train_idx) if sample_weight is not None else None
+                    ret_val = safe_slice(returns, race_val_idx)
 
-                    model.fit(X_tr, y_tr, sample_weight=w_tr)
+                    self._fit_model(model, X_tr, y_tr, X_val=X_val, y_val=y_val, sample_weight=w_tr)
                     probs = model.predict_proba(X_val)[:, 1]
 
                     metrics = calculate_selection_score(y_val, probs, ret_val)

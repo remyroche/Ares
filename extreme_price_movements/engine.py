@@ -31,6 +31,11 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
     tp_mult = cfg.get("tp_mult")
     sl_mult = cfg.get("sl_mult")
 
+    # Retrieve optimized barrier params or defaults
+    vol_lo = float(cfg.get("vol_lo", 0.03))
+    vol_hi = float(cfg.get("vol_hi", 0.06))
+    vol_z_max = float(cfg.get("vol_z_max", 3.0))
+
     if tp_mult is not None and sl_mult is not None:
         # TRIPLE BARRIER LOGIC
         # Compute dynamic barrier level if possible
@@ -78,7 +83,7 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
 
                     # scaled_atr_pct
                     barrier_pct = scaled_atr_pct(
-                        atr, z, base, z_max=3.0, lo=0.03, hi=0.06
+                        atr, z, base, z_max=vol_z_max, lo=vol_lo, hi=vol_hi
                     )
                 else:
                     barrier_pct = atr

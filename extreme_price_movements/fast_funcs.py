@@ -222,11 +222,14 @@ def apply_to_matrix(df: pd.DataFrame, func, *args) -> pd.DataFrame:
     return res_df
 
 @jit(nopython=True, cache=True)
-def _numba_rolling_robust_zscore_1d(x, window, quantile, eps):
+def _numba_rolling_robust_zscore_1d(x, window, quantile, eps, step=1):
     n = len(x)
     output = np.full(n, np.nan, dtype=np.float32)
-    buf = np.empty(window, dtype=np.float32)
-    devs_buf = np.empty(window, dtype=np.float32)
+
+    # Calculate buffer size based on stride
+    buf_size = (window + step - 1) // step + 2
+    buf = np.empty(buf_size, dtype=np.float32)
+    devs_buf = np.empty(buf_size, dtype=np.float32)
 
     if window <= 0: return output
 
@@ -236,8 +239,12 @@ def _numba_rolling_robust_zscore_1d(x, window, quantile, eps):
         end = i + 1
         count = 0
 
-        # Populate buffer
-        for j in range(start, end):
+        # Populate buffer with stride
+        # We start sampling from 'start'.
+        # Note: As 'i' advances by 1, 'start' advances by 1.
+        # This creates a "dithering" effect where the sampled grid shifts over time,
+        # providing better coverage than static grid subsampling.
+        for j in range(start, end, step):
             v = x[j]
             if not np.isnan(v):
                 buf[count] = v
@@ -278,23 +285,31 @@ def _numba_rolling_robust_zscore_1d(x, window, quantile, eps):
     return output
 
 @jit(nopython=True, parallel=True, cache=True)
-def _numba_rolling_robust_zscore_parallel(mat, window, quantile, eps):
+def _numba_rolling_robust_zscore_parallel(mat, window, quantile, eps, step=1):
     n_rows, n_cols = mat.shape
     out = np.empty((n_rows, n_cols), dtype=np.float32)
 
     for j in prange(n_cols):
-        out[:, j] = _numba_rolling_robust_zscore_1d(mat[:, j], window, quantile, eps)
+        out[:, j] = _numba_rolling_robust_zscore_1d(mat[:, j], window, quantile, eps, step)
 
     return out
 
-def numba_rolling_robust_zscore(df, window, quantile=0.45, eps=1e-12):
+def numba_rolling_robust_zscore(df, window, quantile=0.45, eps=1e-12, max_samples=None):
     tprint(f"Entering function: numba_rolling_robust_zscore in fast_funcs.py")
     is_series = isinstance(df, pd.Series)
     if is_series:
         df = df.to_frame()
 
+    # Determine sampling step
+    step = 1
+    if max_samples is not None and window > max_samples:
+        step = max(1, window // max_samples)
+
+    if step > 1:
+        tprint(f"Optimizing Robust Z-Score: window={window} -> subsampling with step={step} (max_samples={max_samples})")
+
     mat = df.to_numpy(dtype=np.float32, copy=False)
-    res = _numba_rolling_robust_zscore_parallel(mat, window, quantile, eps)
+    res = _numba_rolling_robust_zscore_parallel(mat, window, quantile, eps, step)
 
     res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
 

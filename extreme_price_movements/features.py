@@ -272,7 +272,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     vol_proxy = (atr_base / (c + 1e-12))
     log_vol = np.log(vol_proxy + 1e-9).astype(np.float32)
     feats["volatility_zscore"] = ff.numba_rolling_robust_zscore(
-        log_vol, window=24 * 90, quantile=0.45
+        log_vol, window=24 * 90, quantile=0.45, max_samples=300
     ).astype(np.float32)
 
     feats["qv"] = (c * v).astype(np.float32)
@@ -464,7 +464,9 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     vol_mu_30d = ff.apply_to_frame(v, ff._numba_rolling_mean_nan_safe, 24 * 30)
     vol_sd_30d = ff.apply_to_frame(v, ff._numba_rolling_std_nan_safe, 24 * 30)
     feats["volu_z"] = ((v - vol_mu_30d) / (vol_sd_30d + 1e-12)).astype(np.float32)
-    feats["vol_z_30_calm"] = ff.numba_rolling_robust_zscore(np.log(feats["atr_pct_base"] + 1e-9), window=24 * 30, quantile=0.45).astype(np.float32)
+    feats["vol_z_30_calm"] = ff.numba_rolling_robust_zscore(
+        np.log(feats["atr_pct_base"] + 1e-9), window=24 * 30, quantile=0.45, max_samples=300
+    ).astype(np.float32)
     feats["volume_price_corr_10h"] = ff.numba_rolling_corr(feats["ret1h"].abs(), v, 10).fillna(0).astype(np.float32)
 
     sma_fast = ff.apply_to_frame(c, ff._numba_rolling_mean_nan_safe, max(24, int(cfg["trend_sma_n"] * 0.5)))

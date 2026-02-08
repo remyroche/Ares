@@ -82,3 +82,14 @@ Result: `calculate_entropy_statistics_numba` speedup >700x (2.11s -> 0.003s). Fu
 -   Reusing the buffer for collection avoids $N$ allocations, which is a massive win for GC and speed.
 
 **Action:** Use `np.partition` instead of `sort` for rolling quantile calculations if exact sorted order isn't required (only k-th element). Ensure to reuse the collection buffer to minimize allocation overhead.
+
+## 2026-02-08 - Sign Consistency Optimization (O(N*W) to O(N))
+
+**Learning:** `_numba_sign_consistency_1d` had nested loops resulting in $O(N \cdot W)$ complexity. Specifically, it scanned the window for Min/Max ($O(W)$) and then iterated to count consistent bars ($O(W)$) for *every* step. This scaled linearly with window size, causing slowdowns for large windows or histories.
+
+**Action:** Replaced the implementation with an $O(N)$ algorithm:
+1. Used **Monotonic Deques** to find Rolling Min/Max indices in amortized $O(1)$ per step.
+2. Used **Prefix Sums** of sign-of-returns to calculate consistency counts in $O(1)$ per step.
+Result: ~40x speedup for W=1000 (0.45s -> 0.01s).
+
+**Note:** The test `test_select_trade_candidates_vectorized` fails locally (even with the original implementation) due to constant price input yielding 0 consistency score, while the test expects a candidate selection. This appears to be a pre-existing issue in the test suite or environment configuration.

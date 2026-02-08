@@ -1283,83 +1283,161 @@ def _numba_sign_consistency_1d(x, window):
 
     if window < 2: return out
 
-    # Returns array: r[i] = x[i] - x[i-1] (diff approx return if x is log price, or just diff)
-    # Actually user said "bars ... in the same direction".
-    # Assuming x is Price.
-    # Calculate returns first? Or calculate on the fly.
+    # 1. Precompute Prefix Sums of Returns Signs
+    # diff[i] = x[i] - x[i-1]. For i=0, diff=NaN or 0.
+    # P_pos[i] = count of (diff > 0) in 0..i
+    # P_neg[i] = count of (diff < 0) in 0..i
+    # P_nz[i]  = count of (diff != 0) in 0..i
+
+    # We use int32 for counts
+    P_pos = np.zeros(n, dtype=np.int32)
+    P_neg = np.zeros(n, dtype=np.int32)
+    P_nz = np.zeros(n, dtype=np.int32)
+
+    curr_pos = 0
+    curr_neg = 0
+    curr_nz = 0
+
+    # Start from 1 because diff at 0 is undefined
+    for i in range(1, n):
+        prev = x[i-1]
+        curr = x[i]
+
+        is_pos = False
+        is_neg = False
+        is_nz = False
+
+        if not np.isnan(prev) and not np.isnan(curr):
+            diff = curr - prev
+            if diff > 0:
+                is_pos = True
+                is_nz = True
+            elif diff < 0:
+                is_neg = True
+                is_nz = True
+            # if diff == 0, is_nz is False
+
+        if is_pos: curr_pos += 1
+        if is_neg: curr_neg += 1
+        if is_nz:  curr_nz += 1
+
+        P_pos[i] = curr_pos
+        P_neg[i] = curr_neg
+        P_nz[i]  = curr_nz
+
+    # 2. Sliding Window Min/Max using Monotonic Deques
+    # Min Deque: Stores indices of increasing values. Front is Min.
+    # Max Deque: Stores indices of decreasing values. Front is Max.
+    # Use circular buffers for deques.
+
+    dq_min_idx = np.empty(window, dtype=np.int32)
+    dq_min_front = 0
+    dq_min_back = -1
+
+    dq_max_idx = np.empty(window, dtype=np.int32)
+    dq_max_front = 0
+    dq_max_back = -1
 
     for i in range(n):
+        val = x[i]
+        lower_bound = i - window + 1
+
+        # --- Update Min Deque ---
+        # Pop front (out of window)
+        while dq_min_front <= dq_min_back:
+            idx = dq_min_idx[dq_min_front % window]
+            if idx < lower_bound:
+                dq_min_front += 1
+            else:
+                break
+
+        # Push back
+        if not np.isnan(val):
+            while dq_min_front <= dq_min_back:
+                idx = dq_min_idx[dq_min_back % window]
+                # We want *first* occurrence of min, so pop only if strictly greater
+                if x[idx] > val:
+                    dq_min_back -= 1
+                else:
+                    break
+            dq_min_back += 1
+            dq_min_idx[dq_min_back % window] = i
+
+        # --- Update Max Deque ---
+        # Pop front (out of window)
+        while dq_max_front <= dq_max_back:
+            idx = dq_max_idx[dq_max_front % window]
+            if idx < lower_bound:
+                dq_max_front += 1
+            else:
+                break
+
+        # Push back
+        if not np.isnan(val):
+            while dq_max_front <= dq_max_back:
+                idx = dq_max_idx[dq_max_back % window]
+                # We want *first* occurrence of max, so pop only if strictly smaller
+                if x[idx] < val:
+                    dq_max_back -= 1
+                else:
+                    break
+            dq_max_back += 1
+            dq_max_idx[dq_max_back % window] = i
+
+        # --- Logic ---
         if i < window: continue
 
-        start = i - window + 1
-        end = i + 1 # Slice x[start:end] includes i
-
-        # 1. Determine Window Direction (Close[i] vs Start?)
-        # User: "between local extrema and last bars"
-        # Move Direction is determined by position of Current relative to Local Min/Max?
-        # Usually: if Current is near High, it's Up. Near Low, it's Down.
-        # Let's use ret_w = x[i] - x[i-window] as proxy?
-        # Or find Min/Max in window first.
-
-        local_min = np.inf
-        local_max = -np.inf
+        # Get Min/Max indices
         idx_min = -1
         idx_max = -1
 
-        # Scan window
-        for j in range(start, end):
-            val = x[j]
-            if not np.isnan(val):
-                if val < local_min:
-                    local_min = val
-                    idx_min = j
-                if val > local_max:
-                    local_max = val
-                    idx_max = j
+        if dq_min_front <= dq_min_back:
+            idx_min = dq_min_idx[dq_min_front % window]
 
-        if idx_min == -1 or idx_max == -1: continue
+        if dq_max_front <= dq_max_back:
+            idx_max = dq_max_idx[dq_max_front % window]
 
-        # Determine anchor based on larger move magnitude?
-        # If (Max - Current) < (Current - Min) -> Up Move from Min
-        # Else -> Down Move from Max
-
-        # Or use net return over window?
-        # If x[i] > x[start], assume Up?
-        # Robust way:
-        up_move = (x[i] - local_min)
-        dn_move = (local_max - x[i])
-
-        if up_move > dn_move:
-            # Up Trend from Local Min
-            anchor_idx = idx_min
-            target_sign = 1.0
-        else:
-            # Down Trend from Local Max
-            anchor_idx = idx_max
-            target_sign = -1.0
-
-        if anchor_idx >= i:
-            # Current is the extremum? Consistency is 1.0 or undefined?
-            out[i] = 0.0 # No bars between extremum and current
+        if idx_min == -1 or idx_max == -1:
             continue
 
-        # Count bars in same direction from anchor to current
-        # Check returns r[k] = x[k] - x[k-1] for k in (anchor_idx+1 ... i)
+        local_min = x[idx_min]
+        local_max = x[idx_max]
 
-        total_bars = 0
-        consistent_bars = 0
+        # Safe calc for moves (handles if val/local_min/max are NaNs, although indices point to valid)
+        # If val is NaN (current bar is NaN), up_move will be NaN.
+        up_move = val - local_min
+        dn_move = local_max - val
 
-        for k in range(anchor_idx + 1, i + 1):
-            diff = x[k] - x[k-1]
-            sign_diff = 1.0 if diff > 0 else (-1.0 if diff < 0 else 0.0)
+        target_sign = 0.0
+        anchor_idx = -1
 
-            if sign_diff != 0:
-                total_bars += 1
-                if sign_diff == target_sign:
-                    consistent_bars += 1
+        if up_move > dn_move:
+             target_sign = 1.0
+             anchor_idx = idx_min
+        else:
+             target_sign = -1.0
+             anchor_idx = idx_max
 
-        if total_bars > 0:
-            out[i] = consistent_bars / total_bars
+        if anchor_idx >= i:
+            out[i] = 0.0
+            continue
+
+        # Count using Prefix Sums
+        # range (anchor_idx + 1, i + 1)
+        # Count is P[i] - P[anchor_idx]
+
+        consistent_count = 0
+        total_count = 0
+
+        total_count = P_nz[i] - P_nz[anchor_idx]
+
+        if target_sign == 1.0:
+            consistent_count = P_pos[i] - P_pos[anchor_idx]
+        else:
+            consistent_count = P_neg[i] - P_neg[anchor_idx]
+
+        if total_count > 0:
+            out[i] = consistent_count / total_count
         else:
             out[i] = 0.0
 

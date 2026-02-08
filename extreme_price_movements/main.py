@@ -384,7 +384,7 @@ def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger, model_
                     z = (atr - base) / (std + 1e-12)
                     barrier_pct = scaled_atr_pct(atr, z, base, z_max=3.0, lo=0.03, hi=0.06)
                 else:
-                    barrier_pct = atr # Fallback
+                    barrier_pct = 0.045  # Safe mid-range fraction fallback (NOT raw price-space ATR)
 
                 # Convert to k factors relative to CURRENT ATR?
                 # barrier_pct is absolute percent.
@@ -399,11 +399,12 @@ def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger, model_
                 # Map to TrailingStop:
                 # k_sl = sl_mult * k_barrier
                 # k_trail_start = tp_mult * k_barrier
-                # k_trail_dist = 0.001 (tight)
+                # k_trail_dist = trail_mult * k_barrier (tight trail, from config)
+                trail_mult = float(g_risk.get("trail_mult", 0.25))
 
                 k_sl_adj = sl_mult * k_barrier * adj # scaling SL
                 k_ts = tp_mult * k_barrier
-                k_td = 0.001
+                k_td = trail_mult * k_barrier
 
             else:
                 # Legacy Trailing Logic

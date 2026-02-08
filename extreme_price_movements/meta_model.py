@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import Ridge
+from sklearn.preprocessing import StandardScaler
 from scipy.special import logit
 from extreme_price_movements.utils import tprint
 from extreme_price_movements.feature_transforms import CausalFeatureTransformer
@@ -9,11 +10,13 @@ from extreme_price_movements.purged_cv import PurgedKFold
 from extreme_price_movements.config import CFG
 
 class MetaModel:
-    def __init__(self):
+    def __init__(self, strategy_name=None):
         tprint(f"Entering function: __init__ in meta_model.py")
-        self.model = Ridge(alpha=1.0, fit_intercept=False)
+        self.strategy_name = strategy_name
+        self.model = Ridge(alpha=1.0, fit_intercept=True)
         self.feature_names = CFG.get("meta_feature_keys", [])
         self.transformer = CausalFeatureTransformer(winsor_qt=0.02, roll_window=24*30)
+        self.scaler = StandardScaler()
         self.selected_features = None
         self.oof_probs = None
 
@@ -24,7 +27,6 @@ class MetaModel:
         Combines with feats_df (which should contain the meta features).
         preds: np.array of probabilities (0..1)
         """
-        tprint(f"Entering function: prepare_meta_features in meta_model.py")
         meta_data = pd.DataFrame(index=feats_df.index)
 
         eps = 1e-4
@@ -70,7 +72,7 @@ class MetaModel:
     def fit(self, X_meta, y):
         tprint(f"Entering function: fit in meta_model.py")
 
-        # 1. Feature Selection
+        # 1. Feature Selection (relaxed for small meta feature sets)
         n_samples = len(X_meta)
         n_select = min(20, max(1, n_samples // 100))
         tprint(f"MetaModel: Running MDI selection. Target={n_select}")
@@ -80,8 +82,8 @@ class MetaModel:
             y=y,
             analysis_n_estimators=500,
             end_features=n_select,
-            cumulative_cap=0.98,
-            min_share=0.001,
+            cumulative_cap=0.99,
+            min_share=0.0001,
             min_features=5,
             max_features_pct=0.5
         )
@@ -90,7 +92,10 @@ class MetaModel:
         tprint(f"MetaModel: Selected {len(self.selected_features)} features.")
         X_sel = X_meta[self.selected_features]
 
-        alphas = [0.1, 0.3, 0.6, 1.0, 3.0]
+        # Expanded alpha grid for all strategies (wider range for better regularization tuning)
+        alphas = [0.01, 0.1, 0.3, 1.0, 3.0, 5.0, 7.5, 10.0, 12.5, 15.0, 20.0]
+        tprint(f"MetaModel: Using expanded alpha grid: {alphas}")
+        
         pkf = PurgedKFold(n_splits=3, purge=5, embargo=2)
 
         results = []
@@ -105,19 +110,13 @@ class MetaModel:
                 X_train, X_val = X_arr[train_idx], X_arr[val_idx]
                 y_train, y_val = y_arr[train_idx], y_arr[val_idx]
 
-                # Log transformation for fitting
-                # Use log1p(abs(y)) * sign(y) if negative returns exist?
-                # Trade returns can be negative. log1p requires x > -1.
-                # Since returns are small (e.g. -0.05 to +0.05), log1p is fine.
-                # But wait, max loss is -1.0.
-                # If returns < -1.0, log1p fails.
-                # Assuming returns are > -1.0.
-                y_train_log = np.log1p(y_train)
+                scaler = StandardScaler()
+                X_train_s = scaler.fit_transform(X_train)
+                X_val_s = scaler.transform(X_val)
 
-                m = Ridge(alpha=alpha, fit_intercept=False)
-                m.fit(X_train, y_train_log)
-                preds_log = m.predict(X_val)
-                preds = np.expm1(preds_log)
+                m = Ridge(alpha=alpha, fit_intercept=True)
+                m.fit(X_train_s, y_train)
+                preds = m.predict(X_val_s)
 
                 p, s, d = self._calc_metrics(y_val, preds)
                 scores["pnl"].append(p)
@@ -153,33 +152,44 @@ class MetaModel:
         tprint(f"MetaModel: Generating OOF predictions for best alpha={best_alpha}...")
         self.oof_probs = np.zeros(len(y), dtype=np.float32)
 
-        # We re-run CV for OOF to ensure consistency with selection
         for train_idx, val_idx in pkf.split(X_arr):
              X_train, X_val = X_arr[train_idx], X_arr[val_idx]
              y_train, y_val = y_arr[train_idx], y_arr[val_idx]
 
-             y_train_log = np.log1p(y_train)
-             m = Ridge(alpha=best_alpha, fit_intercept=False)
-             m.fit(X_train, y_train_log)
-             preds_log = m.predict(X_val)
-             preds = np.expm1(preds_log)
+             scaler = StandardScaler()
+             X_train_s = scaler.fit_transform(X_train)
+             X_val_s = scaler.transform(X_val)
+
+             m = Ridge(alpha=best_alpha, fit_intercept=True)
+             m.fit(X_train_s, y_train)
+             preds = m.predict(X_val_s)
 
              self.oof_probs[val_idx] = preds
 
+        oof_std = np.std(self.oof_probs)
+        tprint(f"MetaModel OOF: mean={np.mean(self.oof_probs):.6f}, std={oof_std:.6f}")
+        if oof_std < 1e-6:
+            tprint("WARNING: MetaModel OOF predictions have near-zero variance — model may be degenerate.")
+
         # Refit on full data
-        self.model = Ridge(alpha=best_alpha, fit_intercept=False)
-        self.model.fit(X_sel, np.log1p(y))
+        self.scaler = StandardScaler()
+        X_scaled = self.scaler.fit_transform(X_sel)
+        self.model = Ridge(alpha=best_alpha, fit_intercept=True)
+        self.model.fit(X_scaled, y)
 
         return self
 
     def predict(self, X_meta):
-        tprint(f"Entering function: predict in meta_model.py")
         if self.selected_features is None:
              pass
         else:
              # Ensure columns exist
              cols = [c for c in self.selected_features if c in X_meta.columns]
+             if len(cols) < len(self.selected_features):
+                 missing = set(self.selected_features) - set(cols)
+                 tprint(f"WARNING: MetaModel.predict missing {len(missing)} features: {list(missing)[:5]}")
              X_meta = X_meta[cols]
 
-        preds_log = self.model.predict(X_meta)
-        return np.expm1(preds_log)
+        X_scaled = self.scaler.transform(X_meta)
+        preds = self.model.predict(X_scaled)
+        return preds

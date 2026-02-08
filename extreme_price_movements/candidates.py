@@ -270,13 +270,13 @@ def detect_extreme_movement_candidates(
 
     up_draw = (close_t - local_low) / (close_t.abs() + 1e-12)
     dn_draw = (local_high - close_t) / (close_t.abs() + 1e-12)
-    draw_extreme = pd.Series(np.where(ret_w >= 0, up_draw, dn_draw), index=close_t.index, dtype=np.float64)
+    draw_extreme = pd.Series(np.where(ret_w >= 0, up_draw, dn_draw), index=close_t.index, dtype=np.float32)
     signed_draw_extreme = draw_extreme * np.sign(ret_w).replace(0, np.nan)
 
     # Agreement is measured only on bars between current bar and the local extremum:
     # - up move: local low -> current
     # - down move: local high -> current
-    sign_consistency = pd.Series(index=close_t.index, dtype=np.float64)
+    sign_consistency = pd.Series(index=close_t.index, dtype=np.float32)
     dir_sign = np.sign(ret_w)
 
     for sym in close_t.index:

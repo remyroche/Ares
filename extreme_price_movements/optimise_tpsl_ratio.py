@@ -69,8 +69,78 @@ except Exception:
 
 
 # --------------------------
-# Purged K-Fold (counts-based)
+# Walk-Forward CV (expanding window, train > test)
 # --------------------------
+class WalkForwardCV:
+    """Expanding-window walk-forward cross-validation.
+    
+    Events MUST be sorted by time before calling split().
+    Each fold: train = [0 .. split_point - purge], test = [split_point .. split_point + test_size].
+    Train always >= 2x test. Purge gap between train end and test start.
+    """
+    def __init__(self, n_splits: int = 3, purge: int = 5, test_fraction: float = 0.15,
+                 min_train_size: int = 50):
+        self.n_splits = int(n_splits)
+        self.purge = int(purge)
+        self.test_fraction = float(test_fraction)
+        self.min_train_size = int(min_train_size)
+
+    def split(self, X) -> Iterable[Tuple[np.ndarray, np.ndarray]]:
+        """X = event_idx values (must be sorted ascending = temporal order)."""
+        vals = np.asarray(X)
+        n = len(vals)
+        
+        # Assert monotonicity (caller must sort by time)
+        if n > 1 and np.any(np.diff(vals) < 0):
+            bad = np.where(np.diff(vals) < 0)[0]
+            pos = int(bad[0]) if bad.size else -1
+            raise ValueError(f"WalkForwardCV: event values are not sorted! "
+                             f"First violation at position {pos}, val[{pos}]={vals[pos]}, val[{pos+1}]={vals[pos+1]}. "
+                             f"Sort events by time before calling.")
+        
+        test_size = max(10, int(n * self.test_fraction))
+        # Place test windows at evenly-spaced positions in the latter part of the data
+        # First test window starts after we have enough training data
+        min_start = max(self.min_train_size + self.purge, int(n * 0.3))
+        max_start = n - test_size
+        
+        if max_start <= min_start:
+            # Not enough data for even 1 fold — try with smaller test
+            test_size = max(5, n // 5)
+            min_start = max(self.min_train_size, int(n * 0.3))
+            max_start = n - test_size
+            if max_start <= min_start:
+                return  # truly not enough data
+        
+        # Generate fold start positions
+        if self.n_splits == 1:
+            starts = [max_start]
+        else:
+            starts = np.linspace(min_start, max_start, self.n_splits, dtype=int).tolist()
+        
+        idx = np.arange(n, dtype=np.int32)
+        seen_starts = set()
+        
+        for test_start in starts:
+            test_start = int(test_start)
+            if test_start in seen_starts:
+                continue
+            seen_starts.add(test_start)
+            
+            test_end = min(test_start + test_size, n)
+            # Purge: gap between train end and test start (in value space)
+            test_min_val = vals[test_start]
+            train_mask = vals < (test_min_val - self.purge)
+            train = idx[train_mask]
+            test = idx[test_start:test_end]
+            
+            if train.size < self.min_train_size or test.size == 0:
+                continue
+            
+            yield train, test
+
+
+# Keep PurgedKFold for backward compatibility (inner CV)
 class PurgedKFold:
     def __init__(self, n_splits: int = 5, purge: int = 5, embargo: int = 0, min_train_size: Optional[int] = None):
         if n_splits < 2:
@@ -81,10 +151,9 @@ class PurgedKFold:
         self.min_train_size = None if min_train_size is None else int(min_train_size)
 
     def split(self, X) -> Iterable[Tuple[np.ndarray, np.ndarray]]:
-        # X is usually event_idx values for temporal purging
-        n = X.shape[0] if hasattr(X, "shape") else len(X)
-        idx = np.arange(n, dtype=np.int32)
         vals = np.asarray(X)
+        n = len(vals)
+        idx = np.arange(n, dtype=np.int32)
 
         fold_sizes = np.full(self.n_splits, n // self.n_splits, dtype=np.int32)
         fold_sizes[: n % self.n_splits] += 1
@@ -92,12 +161,11 @@ class PurgedKFold:
 
         for k in range(self.n_splits):
             test_indices = idx[bounds[k]:bounds[k+1]]
+            if test_indices.size == 0:
+                continue
             test_vals = vals[test_indices]
-            
             t_min, t_max = test_vals.min(), test_vals.max()
 
-            # Temporal purge: drop training events that overlap in time
-            # purge/embargo are bar-distances from the test window
             train_mask = (vals < t_min - self.purge) | (vals > t_max + self.embargo)
             train = idx[train_mask]
             test = test_indices
@@ -201,27 +269,45 @@ def compute_vol_z_log_mad(atr_pct: np.ndarray, window: int, eps: float = 1e-12) 
 
 
 # --------------------------
-# ATR scaling (dynamic a)
+# ATR scaling — canonical implementation (used by both optimizer and training)
 # --------------------------
-def scaled_atr_pct_dynamic_a(
-    atr_pct: np.ndarray,
-    z: np.ndarray,
-    atr_base_pct: np.ndarray,
+def scaled_atr_pct(
+    atr_pct,
+    z,
+    atr_base_pct,
     *,
     z_max: float = 3.0,
     lo: float = 0.03,
     hi: float = 0.06,
     eps: float = 1e-12,
-) -> np.ndarray:
-    atr_pct = _f32(atr_pct)
-    z = _f32(z)
-    atr_base_pct = _f32(atr_base_pct)
+):
+    """
+    ATR-informed, shock-scaled, bounded barrier percent.
+    Works with both scalars and numpy arrays (float32-safe).
+    """
+    is_array = isinstance(atr_pct, np.ndarray)
+    if is_array:
+        atr_pct = _f32(atr_pct)
+        z = _f32(z)
+        atr_base_pct = _f32(atr_base_pct)
 
-    shock = np.clip(z, 0.0, z_max).astype(np.float32, copy=False)
-    a = ((hi / np.maximum(atr_base_pct, eps)) - 1.0) / z_max
-    a = a.astype(np.float32, copy=False)
+    shock = np.clip(z, 0.0, z_max)
+    if is_array:
+        shock = shock.astype(np.float32, copy=False)
+
+    a = (hi / np.maximum(atr_base_pct, eps) - 1.0) / z_max
+    if is_array:
+        a = a.astype(np.float32, copy=False)
+
     raw = atr_pct * (1.0 + a * shock)
-    return np.clip(raw, lo, hi).astype(np.float32, copy=False)
+    result = np.clip(raw, lo, hi)
+    if is_array:
+        result = result.astype(np.float32, copy=False)
+    return result
+
+
+# Backward-compatible alias
+scaled_atr_pct_dynamic_a = scaled_atr_pct
 
 
 # --------------------------
@@ -314,6 +400,91 @@ def build_event_cache(
     )
 
 
+def build_event_cache_15m(
+    open_15m: np.ndarray,
+    high_15m: np.ndarray,
+    low_15m: np.ndarray,
+    close_15m: np.ndarray,
+    event_idx_1h: np.ndarray,
+    horizon_1h: int,
+    entry_mode: str = "next_open",
+    side: str = "long",
+    eps: float = 1e-12,
+) -> EventCache:
+    """Build event cache from 15m OHLCV data.
+
+    event_idx_1h: indices into the 1h timeline (signal bar).
+    Each 1h bar maps to 4 consecutive 15m bars: 1h_idx * 4 .. 1h_idx * 4 + 3.
+    The horizon in 15m bars is horizon_1h * 4.
+    Entry price is the open of the first 15m bar after the signal hour.
+    """
+    open_15m = _f32(open_15m)
+    high_15m = _f32(high_15m)
+    low_15m = _f32(low_15m)
+    close_15m = _f32(close_15m)
+
+    n_15m = close_15m.size
+    event_idx_1h = np.asarray(event_idx_1h, dtype=np.int32)
+    HN_15m = int(horizon_1h) * 4  # 15m resolution
+
+    # Map 1h indices to 15m indices
+    event_idx_15m = event_idx_1h * 4  # start of the signal hour in 15m
+
+    if entry_mode == "next_open":
+        # Entry = open of first 15m bar of the NEXT hour = (event_1h + 1) * 4
+        entry_start_15m = event_idx_15m + 4
+        valid = (entry_start_15m + HN_15m) < n_15m
+        e_1h = event_idx_1h[valid]
+        start = entry_start_15m[valid]
+        entry_px = open_15m[start]
+    elif entry_mode == "close":
+        # Entry = close of last 15m bar of signal hour = event_15m + 3
+        entry_close_15m = event_idx_15m + 3
+        valid = (entry_close_15m + 1 + HN_15m) < n_15m
+        e_1h = event_idx_1h[valid]
+        entry_px = close_15m[entry_close_15m[valid]]
+        start = entry_close_15m[valid] + 1
+    else:
+        raise ValueError("entry_mode must be 'next_open' or 'close'")
+
+    if e_1h.size == 0:
+        z = np.zeros((0, HN_15m), dtype=np.float32)
+        return EventCache(
+            event_idx=np.zeros(0, dtype=np.int32),
+            entry_px=np.zeros(0, dtype=np.float32),
+            rH=z, rL=z, rC_end=np.zeros(0, dtype=np.float32),
+            rL_prefix_min=z, rH_prefix_max=z,
+            horizon=HN_15m, side=side
+        )
+
+    offs = np.arange(HN_15m, dtype=np.int32)[None, :]
+    widx = start[:, None] + offs  # (m, HN_15m)
+
+    H = high_15m[widx]
+    L = low_15m[widx]
+    C_end = close_15m[widx[:, -1]]
+
+    denom = np.maximum(entry_px, eps).astype(np.float32, copy=False)
+    rH = (H / denom[:, None]) - 1.0
+    rL = (L / denom[:, None]) - 1.0
+    rC_end = (C_end / denom) - 1.0
+
+    rL_prefix_min = np.minimum.accumulate(rL, axis=1).astype(np.float32, copy=False)
+    rH_prefix_max = np.maximum.accumulate(rH, axis=1).astype(np.float32, copy=False)
+
+    return EventCache(
+        event_idx=e_1h.astype(np.int32, copy=False),
+        entry_px=entry_px.astype(np.float32, copy=False),
+        rH=rH.astype(np.float32, copy=False),
+        rL=rL.astype(np.float32, copy=False),
+        rC_end=rC_end.astype(np.float32, copy=False),
+        rL_prefix_min=rL_prefix_min,
+        rH_prefix_max=rH_prefix_max,
+        horizon=HN_15m,
+        side=side
+    )
+
+
 # --------------------------
 # Labeling: first-touch on normalized returns
 # --------------------------
@@ -331,15 +502,26 @@ def label_from_cache(
     barrier_pct: np.ndarray,  # (m,)
     tp_mult: float,
     sl_mult: float,
+    trail_mult: float = 0.25,
 ) -> GridLabels:
     """
+    Triple-barrier labeling with trailing-stop-aware PT returns.
+
     Independent grids:
-      tp_thr = tp_mult * barrier_pct
+      tp_thr = tp_mult * barrier_pct   (activation threshold)
       sl_thr = sl_mult * barrier_pct
     Conditions:
       Long: PT = rH >= tp_thr, SL = rL <= -sl_thr
       Short: PT = rL <= -tp_thr, SL = rH >= sl_thr
     Pessimistic: ambiguous => SL hit
+
+    Trailing-aware PT return:
+      When TP is touched at bar pt_t, a trailing stop activates.
+      trail_dist = trail_mult * barrier_pct.
+      The return is: peak_MFE_after_activation - trail_dist,
+      floored at tp_thr (can't exit below activation level).
+      This bridges the gap between instant-exit triple-barrier
+      and the engine's trailing-stop execution.
     """
     m = cache.entry_px.size
     HN = cache.horizon
@@ -347,6 +529,7 @@ def label_from_cache(
 
     tp_thr = (float(tp_mult) * barrier_pct).astype(np.float32, copy=False)
     sl_thr = (float(sl_mult) * barrier_pct).astype(np.float32, copy=False)
+    trail_dist = (float(trail_mult) * barrier_pct).astype(np.float32, copy=False)
 
     if cache.side == "long":
         hit_pt = cache.rH >= tp_thr[:, None]
@@ -382,7 +565,23 @@ def label_from_cache(
     sl_pessimistic = sl_first | ambiguous
 
     y_ret = np.zeros(m, dtype=np.float32)
-    y_ret[pt_first] = tp_thr[pt_first]
+
+    # Trailing-aware PT return: peak MFE after activation minus trail distance
+    if np.any(pt_first):
+        pt_idx = np.where(pt_first)[0]
+        pt_bars = pt_t[pt_idx]  # bar of TP activation
+        # Peak MFE from activation to horizon end (using prefix max arrays)
+        # rH_prefix_max[:, t] = max(rH[:, 0:t+1]) for longs
+        # For the peak after activation, we take prefix_max at horizon end
+        last_bar = HN - 1
+        if cache.side == "long":
+            peak_mfe = cache.rH_prefix_max[pt_idx, last_bar]
+        else:
+            peak_mfe = -cache.rL_prefix_min[pt_idx, last_bar]
+        # Trailing exit return = peak - trail_dist, floored at activation level
+        trail_ret = np.maximum(peak_mfe - trail_dist[pt_idx], tp_thr[pt_idx])
+        y_ret[pt_first] = trail_ret.astype(np.float32, copy=False)
+
     y_ret[sl_pessimistic] = -sl_thr[sl_pessimistic]
     
     time_mask = ~(pt_first | sl_pessimistic)
@@ -439,6 +638,55 @@ def compute_ae_until_exit_pct(
         ae_pct = np.maximum(0.0, rH_max)
         
     return ae_pct.astype(np.float32, copy=False)
+
+
+def compute_empirical_mfe_stats(cache: EventCache) -> Dict[str, float]:
+    """Compute empirical MFE (max favorable excursion) statistics from event cache.
+    
+    Returns dict with MFE quantiles as fraction of entry price (e.g., 0.02 = 2%).
+    These are used to anchor profit-protection thresholds to actual trade behavior.
+    """
+    _defaults = {"mfe_median": 0.01, "mfe_p25": 0.005, "mfe_p75": 0.02, "mfe_p90": 0.03,
+                 "mae_median": 0.01, "mae_p75": 0.02, "n_events": 0}
+    m = cache.entry_px.size
+    if m == 0:
+        return _defaults
+    
+    # Extract raw MFE/MAE from prefix tensors; use nanmax/nanmin to handle NaN windows
+    rH_max = np.nanmax(cache.rH_prefix_max, axis=1)  # max high return over full horizon
+    rL_min = np.nanmin(cache.rL_prefix_min, axis=1)   # min low return over full horizon
+    
+    if cache.side == "long":
+        mfe_raw = rH_max    # MFE = max high return
+        mae_raw = -rL_min   # MAE = max adverse (low) excursion
+    else:
+        mfe_raw = -rL_min   # Short MFE = max drop (favorable)
+        mae_raw = rH_max    # Short MAE = max rise (adverse)
+    
+    # Filter out NaN events (windows with missing OHLC data)
+    valid = np.isfinite(mfe_raw) & np.isfinite(mae_raw)
+    mfe = np.maximum(0.0, mfe_raw[valid])
+    mae = np.maximum(0.0, mae_raw[valid])
+    
+    if len(mfe) < 3:
+        return _defaults
+    
+    # Filter out zero-MFE events (no favorable movement at all)
+    mfe_pos = mfe[mfe > 0.001]  # > 0.1% MFE
+    if len(mfe_pos) < 5:
+        mfe_pos = mfe[mfe > 0]
+    if len(mfe_pos) < 3:
+        mfe_pos = mfe  # use all
+    
+    return {
+        "mfe_median": float(np.nanmedian(mfe_pos)) if len(mfe_pos) > 0 else 0.01,
+        "mfe_p25": float(np.nanpercentile(mfe_pos, 25)) if len(mfe_pos) > 0 else 0.005,
+        "mfe_p75": float(np.nanpercentile(mfe_pos, 75)) if len(mfe_pos) > 0 else 0.02,
+        "mfe_p90": float(np.nanpercentile(mfe_pos, 90)) if len(mfe_pos) > 0 else 0.03,
+        "mae_median": float(np.nanmedian(mae)) if len(mae) > 0 else 0.01,
+        "mae_p75": float(np.nanpercentile(mae, 75)) if len(mae) > 0 else 0.02,
+        "n_events": int(valid.sum()),
+    }
 
 
 def ae_weight_multiplier(
@@ -567,33 +815,43 @@ def _calculate_strategy_metrics(
     labels: np.ndarray, 
     exit_kinds: np.ndarray,
     threshold_p: float = 0.5,
-    cost_linear: float = 0.0010, # 10bps base
-    cost_quad: float = 0.0005,   # scaling with aggressiveness
+    fee_bps: float = 25.0,
 ) -> Dict[str, float]:
     """
-    Robust strategy performance:
+    Net-after-fee strategy performance metrics.
     1. Gating/Masking: Top-threshold scores, EXCLUDE ambiguous (exit_kind=2).
-    2. Cost Model: impact = L * size + Q * size^2 (size normalized to traded signals).
-    3. Metrics: T-stat and Expected Value (EV) net of costs.
+    2. Fee model: round-trip fee = 2 * fee_bps/10000 per trade.
+    3. Metrics: Net PnL, Net Profit Factor, T-stat, Win Rate.
     """
+    _empty = {"t_stat": 0.0, "pnl": 0.0, "net_pnl": 0.0, "net_pf": 0.0,
+              "payoff": 0.0, "wr": 0.0, "tp_p": 0.0, "sl_p": 0.0, "to_p": 0.0,
+              "n_active": 0, "ev": 0.0}
     scores = np.asarray(scores, dtype=np.float32)
     returns = np.asarray(returns, dtype=np.float32)
     
+    # Filter out NaN inputs
+    finite_mask = np.isfinite(scores) & np.isfinite(returns)
+    if not np.all(finite_mask):
+        scores = scores[finite_mask]
+        returns = returns[finite_mask]
+        labels = labels[finite_mask]
+        exit_kinds = exit_kinds[finite_mask]
+    
     n = len(scores)
     if n < 5:
-        return {"t_stat": 0.0, "pnl": 0.0, "wr": 0.0, "tp_p": 0.0, "sl_p": 0.0, "to_p": 0.0, "n_active": 0, "ev": 0.0}
+        return _empty
 
     # Gate: threshold by percentile
     abs_scores = np.abs(scores)
     thresh = np.percentile(abs_scores, 100.0 * (1.0 - threshold_p))
     mask = abs_scores >= thresh
     
-    # EXCLUDE ambiguous (exit_kind=2) if diagnostic separation is desired (Fix #10)
+    # EXCLUDE ambiguous (exit_kind=2)
     mask = mask & (exit_kinds != 2)
 
     n_active = int(mask.sum())
     if n_active < 2:
-        return {"t_stat": 0.0, "pnl": 0.0, "wr": 0.0, "tp_p": 0.0, "sl_p": 0.0, "to_p": 0.0, "n_active": 0, "ev": 0.0}
+        return _empty
 
     m_scores = abs_scores[mask]
     pos = np.sign(scores[mask])
@@ -601,41 +859,51 @@ def _calculate_strategy_metrics(
     l_sub = labels[mask]
     k_sub = exit_kinds[mask]
 
-    # Realistic Sizing (Conceptual fix #6)
-    # exposure scales with normalized score; costs also apply.
-    s_min = m_scores.min()
-    s_ptp = m_scores.ptp()
-    size = (m_scores - s_min) / (s_ptp + 1e-12)
-    impact = cost_linear * size + cost_quad * (size**2)
+    # Directional gross returns
+    gross_rets = pos * r_sub
     
-    # exposure is (pos * size)
-    r_strat = (pos * size) * r_sub - impact
+    # Net returns after round-trip fees
+    rt_fee = 2.0 * fee_bps / 10000.0
+    net_rets = gross_rets - rt_fee
 
-    mu = float(np.mean(r_strat))
+    # Net PnL and Profit Factor
+    net_pnl = float(np.sum(net_rets))
+    gross_wins = float(np.sum(net_rets[net_rets > 0]))
+    gross_losses = float(np.abs(np.sum(net_rets[net_rets <= 0])))
+    net_pf = gross_wins / max(gross_losses, 1e-9)
+
+    mu = float(np.mean(net_rets))
     
-    # Robust T-stat (Conceptual fix #8)
-    # Add floor to std to avoid spurious huge t-stats at tiny horizons
-    std = np.std(r_strat, ddof=1)
-    std_floor = 0.25 * float(np.median(np.abs(r_strat)))
+    # Robust T-stat with floor
+    std = np.std(net_rets, ddof=1)
+    std_floor = 0.25 * float(np.median(np.abs(net_rets)))
     std = max(float(std), float(std_floor), 1e-6)
-
     t_stat = mu / (std / np.sqrt(n_active) + 1e-12)
-    pnl = mu * n_active # Total return across subset
     
-    wr = float(l_sub.mean())
-    tp_p = (k_sub == 1).mean()
-    sl_p = (k_sub == -1).mean()
-    to_p = (k_sub == 0).mean()
+    wr = float((net_rets > 0).mean())
+    tp_p = float((k_sub == 1).mean())
+    sl_p = float((k_sub == -1).mean())
+    to_p = float((k_sub == 0).mean())
+    
+    # Payoff ratio: avg_win / avg_loss (higher = better asymmetry)
+    wins = net_rets[net_rets > 0]
+    losses = net_rets[net_rets <= 0]
+    avg_win = float(wins.mean()) if len(wins) > 0 else 0.0
+    avg_loss = float(np.abs(losses.mean())) if len(losses) > 0 else 1e-9
+    payoff = avg_win / max(avg_loss, 1e-9)
     
     return {
         "t_stat": float(t_stat),
-        "pnl": float(pnl),
-        "wr": float(wr),
-        "tp_p": float(tp_p),
-        "sl_p": float(sl_p),
-        "to_p": float(to_p),
+        "pnl": net_pnl,
+        "net_pnl": net_pnl,
+        "net_pf": net_pf,
+        "payoff": payoff,
+        "wr": wr,
+        "tp_p": tp_p,
+        "sl_p": sl_p,
+        "to_p": to_p,
         "n_active": n_active,
-        "ev": float(mu) # Expected Value net of cost
+        "ev": mu,
     }
 
 def _rank01(x: np.ndarray, higher_is_better: bool = True) -> np.ndarray:
@@ -697,6 +965,7 @@ def select_top_features_fast_ridge(
 class GridResult:
     tp_mult: float
     sl_mult: float
+    trail_mult: float
     lo: float
     hi: float
     z_max: float
@@ -714,12 +983,15 @@ class GridResult:
     t_stat: float = 0.0
     strategy_pnl: float = 0.0
     ev: float = 0.0
+    net_pf: float = 0.0
+    payoff: float = 0.0
 
 @dataclass
 class OuterFoldResult:
     fold: int
     chosen_tp_mult: float
     chosen_sl_mult: float
+    chosen_trail_mult: float
     chosen_lo: float
     chosen_hi: float
     chosen_z_max: float
@@ -731,14 +1003,16 @@ class OuterFoldResult:
 
 @dataclass
 class SelectionSummary:
-    chosen_configs: List[Tuple[float, float, float, float, float, float]] # tp, sl, lo, hi, z_max, thr_p
+    chosen_configs: List[Tuple[float, float, float, float, float, float, float]] # tp, sl, trail, lo, hi, z_max, thr_p
     outer_results: List[OuterFoldResult]
     final_tp_mult: float
     final_sl_mult: float
+    final_trail_mult: float
     final_lo: float
     final_hi: float
     final_z_max: float
     final_threshold_p: float
+    empirical_mfe_stats: Optional[Dict[str, float]] = None
 
 
 def run_tp_sl_selection_fast(
@@ -755,11 +1029,10 @@ def run_tp_sl_selection_fast(
     horizon: int,
     tp_mult_grid: Iterable[float] = (0.6, 0.8, 1.0, 1.25, 1.5),
     sl_mult_grid: Iterable[float] = (0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0),
+    trail_mult_grid: Iterable[float] = (0.05,),  # Tight trail (5% of barrier) — aligns backtest with triple-barrier assumption
     max_events: int = 5000,
     ridge_alpha: float = 0.5,
     top_k_features: int = 40,
-    outer_cv: Optional[PurgedKFold] = None,
-    inner_cv: Optional[PurgedKFold] = None,
     random_state: int = 42,
     lo: float = 0.03,
     hi: float = 0.06,
@@ -769,14 +1042,22 @@ def run_tp_sl_selection_fast(
     # AE weight bounds
     w_min: float = 0.5,
     w_max: float = 2.0,
+    # Optional 15m OHLCV for higher-resolution event windows
+    open_15m: Optional[np.ndarray] = None,
+    high_15m: Optional[np.ndarray] = None,
+    low_15m: Optional[np.ndarray] = None,
+    close_15m: Optional[np.ndarray] = None,
     # New grids
     lo_grid: Optional[Iterable[float]] = None,
     hi_grid: Optional[Iterable[float]] = None,
     z_max_grid: Optional[Iterable[float]] = None,
-    threshold_p_grid: Iterable[float] = (0.2, 0.3, 0.4),
+    threshold_p_grid: Iterable[float] = (0.3, 0.4, 0.5),
     # Context for frequency logging
     n_assets: int = 1,
     n_months: float = 3.0,
+    # Parallel time index for proper temporal sorting (same length as event_idx)
+    # If None, falls back to event_idx (only correct if event_idx is time-monotonic)
+    event_time_idx: Optional[np.ndarray] = None,
 ) -> SelectionSummary:
     """
     High-throughput variant:
@@ -792,16 +1073,65 @@ def run_tp_sl_selection_fast(
     """
     rng = np.random.default_rng(random_state)
     final_events = event_idx
+    # Parallel time index: if provided, use for temporal sorting; else fall back to event_idx
+    time_idx = np.asarray(event_time_idx, dtype=np.int64) if event_time_idx is not None else final_events.copy()
     if final_events.size > max_events:
         sel = rng.choice(final_events.size, size=max_events, replace=False)
-        final_events = np.sort(final_events[sel])
+        final_events = final_events[sel]
+        time_idx = time_idx[sel]
 
-    cache = build_event_cache(open_=open_, high=high, low=low, close=close,
-                              event_idx=final_events, horizon=horizon, entry_mode=entry_mode, side=side)
+    # Build event cache: use 15m data if available for higher-resolution labeling
+    if open_15m is not None and high_15m is not None and low_15m is not None and close_15m is not None:
+        tprint(f"  Using 15m precision for event cache (horizon={horizon}h -> {horizon*4} bars)")
+        cache = build_event_cache_15m(
+            open_15m=open_15m, high_15m=high_15m, low_15m=low_15m, close_15m=close_15m,
+            event_idx_1h=final_events, horizon_1h=horizon, entry_mode=entry_mode, side=side
+        )
+    else:
+        cache = build_event_cache(open_=open_, high=high, low=low, close=close,
+                                  event_idx=final_events, horizon=horizon, entry_mode=entry_mode, side=side)
 
     e = cache.event_idx
     if e.size == 0:
-        return SelectionSummary([], [], 1.0, 1.0, lo, hi, z_max, 0.5)
+        return SelectionSummary([], [], 1.0, 1.0, 0.5, lo, hi, z_max, 0.5, None)
+
+    # build_event_cache may filter out invalid events (e.g. near array boundary).
+    # We must apply the same filter to time_idx.
+    # cache.event_idx is a subset of final_events; find which survived.
+    # Since build_event_cache filters by `valid = (event_idx + 1 + HN) < n`,
+    # the surviving indices are a prefix-mask of final_events. Reconstruct:
+    if e.size < final_events.size:
+        # Find which positions in final_events survived into cache
+        survived = np.isin(final_events, e)
+        time_idx = time_idx[survived]
+
+    # CRITICAL: sort events by TIME (not by flat_idx which interleaves assets).
+    # flat_idx = asset_offset + time_idx, so sorting by flat_idx groups by asset.
+    # We must sort by time_idx to get proper temporal order for CV splitting.
+    sort_order = np.argsort(time_idx)
+    e = e[sort_order]
+    time_idx = time_idx[sort_order]
+    # Reorder ALL cache arrays to match sorted temporal order
+    cache = EventCache(
+        event_idx=e,
+        entry_px=cache.entry_px[sort_order],
+        rH=cache.rH[sort_order],
+        rL=cache.rL[sort_order],
+        rC_end=cache.rC_end[sort_order],
+        rL_prefix_min=cache.rL_prefix_min[sort_order],
+        rH_prefix_max=cache.rH_prefix_max[sort_order],
+        horizon=cache.horizon,
+        side=cache.side,
+    )
+
+    # Compute empirical MFE/MAE stats from the cache (before any labeling)
+    mfe_stats = compute_empirical_mfe_stats(cache)
+    tprint(f"  Empirical MFE: med={mfe_stats['mfe_median']*100:.2f}% p25={mfe_stats['mfe_p25']*100:.2f}% "
+           f"p75={mfe_stats['mfe_p75']*100:.2f}% p90={mfe_stats['mfe_p90']*100:.2f}% | "
+           f"MAE: med={mfe_stats['mae_median']*100:.2f}% p75={mfe_stats['mae_p75']*100:.2f}% (n={mfe_stats.get('n_events', 0)})")
+
+    # trail_mult IS now searched: affects PT return via trailing-stop-aware labeling
+    trail_mult_grid = list(trail_mult_grid)
 
     X_e_full = X[e].astype(np.float32, copy=False)
 
@@ -822,22 +1152,39 @@ def run_tp_sl_selection_fast(
     sl_mult_grid = sorted(list(set(sl_mult_grid)))
     threshold_p_grid = sorted(list(set(threshold_p_grid)))
 
-    # Compute safe purge size approx based on horizon (assuming worst case 1 sample = 1 bar)
-    # If events are sparse, this is conservative (good).
-    safe_purge = int(horizon) + 24 # 24h buffer safety
+    # Purge size: horizon hours of temporal gap between train and test
+    safe_purge = int(horizon) + 24  # 48 bar-indices ≈ 2 days
 
-    outer_cv = PurgedKFold(n_splits=3, purge=safe_purge, embargo=2)
-    inner_cv = PurgedKFold(n_splits=3, purge=safe_purge, embargo=2)
+    n_events = e.size
+    # Outer CV: walk-forward expanding window (train always > test)
+    # Split by time_idx (true temporal coordinate), not by e (flat_idx)
+    outer_cv = WalkForwardCV(n_splits=3, purge=safe_purge, test_fraction=0.15,
+                             min_train_size=max(50, n_events // 5))
+    # Inner CV: PurgedKFold on the outer-train subset (sorted by time)
+    inner_n_splits = 2 if n_events < 400 else 3
+    inner_cv = PurgedKFold(n_splits=inner_n_splits, purge=safe_purge, embargo=2)
+
+    outer_splits = list(outer_cv.split(time_idx))
+    tprint(f"  CV setup: {n_events} events (sorted by time), outer=WalkForward({len(outer_splits)} folds, test~15%), "
+           f"inner={inner_n_splits}-fold, purge={safe_purge}")
+    for fi, (tr_i, te_i) in enumerate(outer_splits):
+        tprint(f"    Fold {fi}: train={len(tr_i)} test={len(te_i)} "
+               f"time_range=[{int(time_idx[tr_i[0]])}..{int(time_idx[tr_i[-1]])}] "
+               f"test_time=[{int(time_idx[te_i[0]])}..{int(time_idx[te_i[-1]])}]")
+
+    if not outer_splits:
+        tprint(f"  WARNING: No valid outer folds for {n_events} events. Using conservative defaults.")
+        return SelectionSummary([], [], 1.0, 1.0, 0.5, lo, hi, z_max, 0.5, mfe_stats)
 
     outer_results: List[OuterFoldResult] = []
     chosen_configs: List[Tuple[float, float, float, float, float, float]] = []
 
-    # Important: PurgedKFold.split now uses event_idx for time-based purging (Fix #3)
-    outer_splits = list(outer_cv.split(e)) # use event indices for temporal purging
-
-    # Pre-compute mean ATR for absolute value logging
-    # Using full event set `e` to get global average context
-    mean_atr = np.mean(atr_pct) if len(atr_pct) > 0 else 0.01
+    # Pre-compute median barrier_pct for absolute value logging (issue #8: use actual scale, not raw ATR)
+    _ref_barrier = scaled_atr_pct_dynamic_a(atr_pct=atr_pct[e], z=z[e], atr_base_pct=atr_base_pct[e],
+                                             z_max=z_max, lo=lo, hi=hi)
+    mean_atr = float(np.nanmedian(_ref_barrier)) if _ref_barrier.size > 0 else 0.03
+    if np.isnan(mean_atr) or mean_atr <= 0:
+        mean_atr = 0.03
 
     for ofold, (tr, te) in enumerate(outer_splits):
         X_tr_full = X_e_full[tr]
@@ -881,13 +1228,24 @@ def run_tp_sl_selection_fast(
         Xtr_b = add_intercept(Xtr)
         Xte_b = add_intercept(Xte)
 
-        inner_splits = list(inner_cv.split(e[tr])) # use event indices for temporal purging
+        inner_splits = list(inner_cv.split(time_idx[tr])) # use TIME indices for temporal purging
+        if not inner_splits:
+            tprint(f"  Outer fold {ofold}: no valid inner splits (n_train={len(tr)}, n_test={len(te)}). Skipping.")
+            continue
+        
+        # Adaptive min-N: scale with available OOF data
+        # With threshold_p gating, only ~threshold_p fraction of OOF events are "active"
+        # So min-N should be proportional to expected active count
+        n_oof_expected = len(tr)  # OOF covers all outer-train events
+        adaptive_min_n = max(10, min(30, int(n_oof_expected * 0.08)))  # ~8% of OOF, floor 10, cap 30
 
         grid_metrics: List[GridResult] = []
-        unique_grid5 = set()
-        unique_grid6 = set()
+        seen_cfg5 = set()  # (z, lo, hi, tp, sl, trail) dedup for labeling
+        seen_cfg6 = set()  # (z, lo, hi, tp, sl, trail, thr_p) dedup for scoring
+        _diag = {"total_cfgs": 0, "skip_min_n": 0, "skip_sl_cap": 0, "passed": 0,
+                 "max_trades_seen": 0, "min_sl_seen": 1.0}
 
-        # Extended Grid Search
+        # Grid Search: tp_mult × sl_mult × trail_mult × vol params × threshold_p
         for z_val in z_max_grid:
             for lo_val in lo_grid:
                 for hi_val in hi_grid:
@@ -898,121 +1256,150 @@ def run_tp_sl_selection_fast(
                         atr_base_pct=atr_base_pct[e],
                         z_max=z_val, lo=lo_val, hi=hi_val
                     )
-
                     for tp_mult in tp_mult_grid:
                         for sl_mult in sl_mult_grid:
-                            
-                            # Deduplicate check (if floating point drift makes them look different)
-                            cfg_key5 = (float(z_val), float(lo_val), float(hi_val), float(tp_mult), float(sl_mult))
-                            if cfg_key5 in unique_grid5:
+                            # Constraint 1: Asymmetric TP > SL for positive expectancy
+                            if float(tp_mult) <= float(sl_mult):
                                 continue
-                            unique_grid5.add(cfg_key5)
-
-                            lab = label_from_cache(cache, barrier_pct, tp_mult=float(tp_mult), sl_mult=float(sl_mult))
-
-                            # AE until exit for this grid (uses prefix-min + exit indices)
-                            ae = compute_ae_until_exit_pct(cache, lab.pt_t, lab.sl_t)
-
-                            sl_pct = (float(sl_mult) * barrier_pct).astype(np.float32, copy=False)
-                            w_ae = ae_weight_multiplier(ae, sl_pct, w_min=w_min, w_max=w_max)
-
-                            # Strict OOF scoring on outer-train: collect inner-fold predictions
-                            # and score each TP/SL grid point on combined OOF outputs.
-                            oof_scores = np.full(tr.shape[0], np.nan, dtype=np.float32)
-                            y_oof_all = np.full(tr.shape[0], -1, dtype=np.int32)
-                            yr_oof_all = np.full(tr.shape[0], np.nan, dtype=np.float32)
-                            k_oof_all = np.full(tr.shape[0], 0, dtype=np.int8)
-
-                            for itr, ite in inner_splits:
-                                y_tr = lab.y_bin[tr][itr]
-                                # class balance on THIS inner-train
-                                w_cls = class_weight_balanced(y_tr)
-                                sw = (w_ae[tr][itr] * w_cls).astype(np.float32, copy=False)
-
-                                y_pm1 = (2 * y_tr.astype(np.int32) - 1).astype(np.float32, copy=False)
-
-                                w = fast_ridge_fit_cholesky(
-                                    X=Xtr_b[itr],
-                                    y_pm1=y_pm1,
-                                    sw=sw,
-                                    alpha=ridge_alpha,
-                                    regularize_intercept=False,
-                                )
-
-                                oof_scores[ite] = fast_ridge_scores(Xtr_b[ite], w)
-                                y_oof_all[ite] = lab.y_bin[tr][ite]
-                                yr_oof_all[ite] = lab.y_ret[tr][ite]
-                                k_oof_all[ite] = lab.exit_kind[tr][ite]
-
-                            valid_oof = np.isfinite(oof_scores)
-                            if not np.any(valid_oof):
-                                continue # Correctness fix #3: avoid fall-through to threshold loop with uninitialized vars
                             
-                            y_oof = y_oof_all[valid_oof]
-                            yr_oof = yr_oof_all[valid_oof]
-                            s_oof = oof_scores[valid_oof]
-                            k_oof = k_oof_all[valid_oof]
-                            inner_auc = _auc_safe(y_oof, s_oof)
-                            inner_ic = _spearman_ic(s_oof, yr_oof)
+                            # Constraint 2: Reasonable TP/SL ratio (avoid extreme asymmetry)
+                            tp_sl_ratio = float(tp_mult) / max(float(sl_mult), 0.01)
+                            if tp_sl_ratio < 1.2 or tp_sl_ratio > 5.0:
+                                continue
+
+                            for trail_val in trail_mult_grid:
+                                # Deduplicate labeling (same labels for same tp/sl/trail/vol)
+                                cfg_key_lab = (float(z_val), float(lo_val), float(hi_val), float(tp_mult), float(sl_mult), float(trail_val))
+                                if cfg_key_lab in seen_cfg5:
+                                    continue
+                                seen_cfg5.add(cfg_key_lab)
+
+                                # Label events for this TP/SL/Trail configuration
+                                lab = label_from_cache(cache, barrier_pct, tp_mult=float(tp_mult), sl_mult=float(sl_mult), trail_mult=float(trail_val))
+
+                                # AE until exit for this grid
+                                ae = compute_ae_until_exit_pct(cache, lab.pt_t, lab.sl_t)
+
+                                sl_pct = (float(sl_mult) * barrier_pct).astype(np.float32, copy=False)
+                                w_ae = ae_weight_multiplier(ae, sl_pct, w_min=w_min, w_max=w_max)
+
+                                # Strict OOF scoring on outer-train: collect inner-fold predictions
+                                # and score each TP/SL grid point on combined OOF outputs.
+                                oof_scores = np.full(tr.shape[0], np.nan, dtype=np.float32)
+                                y_oof_all = np.full(tr.shape[0], -1, dtype=np.int32)
+                                yr_oof_all = np.full(tr.shape[0], np.nan, dtype=np.float32)
+                                k_oof_all = np.full(tr.shape[0], 0, dtype=np.int8)
+
+                                for itr, ite in inner_splits:
+                                    y_tr = lab.y_bin[tr][itr]
+                                    # class balance on THIS inner-train
+                                    w_cls = class_weight_balanced(y_tr)
+                                    sw = (w_ae[tr][itr] * w_cls).astype(np.float32, copy=False)
+
+                                    y_pm1 = (2 * y_tr.astype(np.int32) - 1).astype(np.float32, copy=False)
+
+                                    w = fast_ridge_fit_cholesky(
+                                        X=Xtr_b[itr],
+                                        y_pm1=y_pm1,
+                                        sw=sw,
+                                        alpha=ridge_alpha,
+                                        regularize_intercept=False,
+                                    )
+
+                                    oof_scores[ite] = fast_ridge_scores(Xtr_b[ite], w)
+                                    y_oof_all[ite] = lab.y_bin[tr][ite]
+                                    yr_oof_all[ite] = lab.y_ret[tr][ite]
+                                    k_oof_all[ite] = lab.exit_kind[tr][ite]
+
+                                valid_oof = np.isfinite(oof_scores) & np.isfinite(yr_oof_all)
+                                if not np.any(valid_oof):
+                                    continue
                                 
-                            for thr_p in threshold_p_grid:
-                                # Deduplicate evaluated configs (Correctness fix #2)
-                                cfg_key6 = (float(z_val), float(lo_val), float(hi_val), float(tp_mult), float(sl_mult), float(thr_p))
-                                if cfg_key6 in unique_grid6: continue
-                                unique_grid6.add(cfg_key6)
+                                y_oof = y_oof_all[valid_oof]
+                                yr_oof = yr_oof_all[valid_oof]
+                                s_oof = oof_scores[valid_oof]
+                                k_oof = k_oof_all[valid_oof]
+                                inner_auc = _auc_safe(y_oof, s_oof)
+                                inner_ic = _spearman_ic(s_oof, yr_oof)
+                                    
+                                for thr_p in threshold_p_grid:
+                                    cfg_key_score = (float(z_val), float(lo_val), float(hi_val), float(tp_mult), float(sl_mult), float(trail_val), float(thr_p))
+                                    if cfg_key_score in seen_cfg6: continue
+                                    seen_cfg6.add(cfg_key_score)
 
-                                # Robust Strategy Metrics
-                                m = _calculate_strategy_metrics(
-                                    scores=s_oof,
-                                    returns=yr_oof,
-                                    labels=y_oof,
-                                    exit_kinds=k_oof,
-                                    threshold_p=float(thr_p)
-                                )
-                                t_stat = m["t_stat"]
-                                inner_pnl = m["pnl"]
-                                win_rate = m["wr"]
-                                trades = m["n_active"]
-                                tp_p = m["tp_p"]
-                                sl_p = m["sl_p"]
-                                to_p = m["to_p"]
-                                ev = m["ev"]
+                                    # Net-after-fee Strategy Metrics
+                                    m = _calculate_strategy_metrics(
+                                        scores=s_oof,
+                                        returns=yr_oof,
+                                        labels=y_oof,
+                                        exit_kinds=k_oof,
+                                        threshold_p=float(thr_p),
+                                        fee_bps=25.0,
+                                    )
+                                    t_stat = m["t_stat"]
+                                    inner_pnl = m["net_pnl"]
+                                    win_rate = m["wr"]
+                                    trades = m["n_active"]
+                                    tp_p = m["tp_p"]
+                                    sl_p = m["sl_p"]
+                                    to_p = m["to_p"]
+                                    ev = m["ev"]
+                                    net_pf = m["net_pf"]
 
-                                grid_metrics.append(GridResult(
-                                    tp_mult=float(tp_mult),
-                                    sl_mult=float(sl_mult),
-                                    lo=float(lo_val),
-                                    hi=float(hi_val),
-                                    z_max=float(z_val),
-                                    threshold_p=float(thr_p),
-                                    inner_score=0.0,
-                                    inner_auc=float(inner_auc),
-                                    inner_ic=float(inner_ic),
-                                    inner_pnl=float(inner_pnl),
-                                    win_rate=float(win_rate),
-                                    trades=int(trades),
-                                    tp_pct=float(tp_p),
-                                    sl_pct=float(sl_p),
-                                    timeout_pct=float(to_p),
-                                    trades_per_month=float(trades) / (n_assets * n_months) if (n_assets * n_months) > 0 else 0.0,
-                                    t_stat=float(t_stat),
-                                    strategy_pnl=float(inner_pnl),
-                                ))
-                                grid_metrics[-1].ev = float(ev)
+                                    # Hard constraints: skip garbage configs
+                                    _diag["total_cfgs"] += 1
+                                    _diag["max_trades_seen"] = max(_diag["max_trades_seen"], trades)
+                                    _diag["min_sl_seen"] = min(_diag["min_sl_seen"], sl_p)
+                                    if trades < adaptive_min_n:
+                                        _diag["skip_min_n"] += 1
+                                        continue  # min-N constraint (adaptive)
+                                    if sl_p > 0.70:
+                                        _diag["skip_sl_cap"] += 1
+                                        continue  # SL% cap: reject configs with >70% stop-loss rate
+                                    _diag["passed"] += 1
+
+                                    grid_metrics.append(GridResult(
+                                        tp_mult=float(tp_mult),
+                                        sl_mult=float(sl_mult),
+                                        trail_mult=float(trail_val),
+                                        lo=float(lo_val),
+                                        hi=float(hi_val),
+                                        z_max=float(z_val),
+                                        threshold_p=float(thr_p),
+                                        inner_score=0.0,
+                                        inner_auc=float(inner_auc),
+                                        inner_ic=float(inner_ic),
+                                        inner_pnl=float(inner_pnl),
+                                        win_rate=float(win_rate),
+                                        trades=int(trades),
+                                        tp_pct=float(tp_p),
+                                        sl_pct=float(sl_p),
+                                        timeout_pct=float(to_p),
+                                        trades_per_month=float(trades) / (n_assets * n_months) if (n_assets * n_months) > 0 else 0.0,
+                                        t_stat=float(t_stat),
+                                        strategy_pnl=float(inner_pnl),
+                                        ev=float(ev),
+                                        net_pf=float(net_pf),
+                                        payoff=float(m.get("payoff", 0.0)),
+                                    ))
 
 
-        # Rank + composite score across grid (Statistical Validity fix #6)
-        # Weights: 0.5 T-stat, 0.3 Expected Value (EV), 0.2 IC
+        if not grid_metrics:
+            tprint(f"  Outer fold {ofold}: no configs passed hard constraints (min_n={adaptive_min_n}). "
+                   f"Evaluated={_diag['total_cfgs']}, skip_min_n={_diag['skip_min_n']}, skip_sl_cap={_diag['skip_sl_cap']}, "
+                   f"max_trades_seen={_diag['max_trades_seen']}, min_sl_seen={_diag['min_sl_seen']:.2f}. Skipping.")
+            continue
+
+        # Rank + composite score: proven scoring that finds positive-gross configs
+        # Weights: 0.5 T-stat + 0.3 EV + 0.2 IC (original scoring that worked)
+        # Hard constraints (min-N, SL% cap) already filter garbage configs above
         t_stats = np.array([g.t_stat for g in grid_metrics])
         ics = np.array([g.inner_ic for g in grid_metrics])
         evs = np.array([g.ev for g in grid_metrics])
         
         r_tval = _rank01(t_stats, True)
         r_ic = _rank01(ics, True)
-        
-        # Robust scaling for EV (Conceptual fix #7)
-        # Scale EV by a robust volatility estimate to make it dimensionless
-        # and bound with tanh to prevent it from over-dominating.
+        # Robust scaling for EV
         ev_scale = float(np.median(np.abs(evs)) + 1e-6)
         r_ev = _rank01(np.tanh(evs / ev_scale), True)
         
@@ -1029,14 +1416,16 @@ def run_tp_sl_selection_fast(
             # Calculate absolute avg distances
             abs_tp = res.tp_mult * mean_atr
             abs_sl = res.sl_mult * mean_atr
-            tprint(f"  #{k+1}: TP={res.tp_mult:.2f} ({abs_tp:.2%}) SL={res.sl_mult:.2f} ({abs_sl:.2%}) Lo={res.lo:.2f} Hi={res.hi:.2f} Z={res.z_max:.1f} Thr={res.threshold_p:.2f} | "
-                   f"AUC={res.inner_auc:.4f} IC={res.inner_ic:.4f} EV={res.ev:.4f} T={res.t_stat:.2f} WR={res.win_rate:.2%} N={res.trades} | "
-                   f"TP:{res.tp_pct:.1%}|SL:{res.sl_pct:.1%}|TO:{res.timeout_pct:.1%} | N/Mo:{res.trades_per_month:.1f} | Score={comp[idx]:.4f}")
+            tprint(f"  #{k+1}: TP={res.tp_mult:.2f} ({abs_tp:.2%}) SL={res.sl_mult:.2f} ({abs_sl:.2%}) Trail={res.trail_mult:.2f} Lo={res.lo:.2f} Hi={res.hi:.2f} Thr={res.threshold_p:.2f} | "
+                   f"NetPnL={res.strategy_pnl:+.4f} PF={res.net_pf:.2f} T={res.t_stat:.2f} IC={res.inner_ic:.4f} WR={res.win_rate:.2%} N={res.trades} | "
+                   f"TP:{res.tp_pct:.1%}|SL:{res.sl_pct:.1%}|TO:{res.timeout_pct:.1%} | Score={comp[idx]:.4f}")
 
         best_i = int(np.argmax(comp))
         best_g = grid_metrics[best_i]
-        tprint(f"[Fold {ofold}] Selected: TP={best_g.tp_mult:.2f} SL={best_g.sl_mult:.2f} Lo={best_g.lo:.2f} Hi={best_g.hi:.2f} Thr={best_g.threshold_p:.2f}")
-        chosen_configs.append((best_g.tp_mult, best_g.sl_mult, best_g.lo, best_g.hi, best_g.z_max, best_g.threshold_p))
+        best_inner_score = float(comp[best_i])
+        tprint(f"[Fold {ofold}] Selected: TP={best_g.tp_mult:.2f} SL={best_g.sl_mult:.2f} Trail={best_g.trail_mult:.2f} "
+               f"Lo={best_g.lo:.2f} Hi={best_g.hi:.2f} Thr={best_g.threshold_p:.2f} | InnerScore={best_inner_score:.4f}")
+        chosen_configs.append((best_g.tp_mult, best_g.sl_mult, best_g.trail_mult, best_g.lo, best_g.hi, best_g.z_max, best_g.threshold_p))
 
         # Outer test evaluation with chosen grid
         barrier_pct_best = scaled_atr_pct_dynamic_a(
@@ -1045,7 +1434,7 @@ def run_tp_sl_selection_fast(
             atr_base_pct=atr_base_pct[e],
             z_max=best_g.z_max, lo=best_g.lo, hi=best_g.hi
         )
-        lab_best = label_from_cache(cache, barrier_pct_best, best_g.tp_mult, best_g.sl_mult)
+        lab_best = label_from_cache(cache, barrier_pct_best, best_g.tp_mult, best_g.sl_mult, trail_mult=best_g.trail_mult)
         ae_best = compute_ae_until_exit_pct(cache, lab_best.pt_t, lab_best.sl_t)
 
         sl_best = (best_g.sl_mult * barrier_pct_best).astype(np.float32, copy=False)
@@ -1067,27 +1456,53 @@ def run_tp_sl_selection_fast(
 
         yb_te = lab_best.y_bin[te]
         yr_te = lab_best.y_ret[te]
+        
+        # Guard inputs: NaN in returns or scores will poison metrics
+        nan_scores = int(np.isnan(scores_te).sum())
+        nan_rets = int(np.isnan(yr_te).sum())
+        if nan_scores > 0 or nan_rets > 0:
+            tprint(f"  [Fold {ofold}] Outer test has NaN inputs: {nan_scores} NaN scores, {nan_rets} NaN returns (of {len(yr_te)}). Cleaning.")
+            valid_mask = ~(np.isnan(scores_te) | np.isnan(yr_te))
+            scores_te = scores_te[valid_mask]
+            yr_te = yr_te[valid_mask]
+            yb_te = yb_te[valid_mask]
+            exit_kinds_te = lab_best.exit_kind[te][valid_mask]
+        else:
+            exit_kinds_te = lab_best.exit_kind[te]
+        
         test_auc = _auc_safe(yb_te, scores_te)
         test_ic = _spearman_ic(scores_te, yr_te)
         
-        # Aligned Outer Metrics (Correctness fix #3: use selected best_g.threshold_p)
+        # Outer test metrics — use same fee-aware calculation
         tm = _calculate_strategy_metrics(
             scores=scores_te,
             returns=yr_te,
             labels=yb_te,
-            exit_kinds=lab_best.exit_kind[te],
-            threshold_p=best_g.threshold_p
+            exit_kinds=exit_kinds_te,
+            threshold_p=best_g.threshold_p,
+            fee_bps=25.0,
         )
-        test_tval = tm["t_stat"]
-        test_ev = tm["ev"]
         
-        # Outer score tracks inner logic: 0.5*tanh(t) + 0.3*tanh(ev*100) + 0.2*IC
-        test_score = float(0.5 * np.tanh(test_tval) + 0.3 * np.tanh(test_ev * 100) + 0.2 * test_ic)
+        # Guard against NaN — if metrics are invalid, skip this fold
+        test_net_pnl = tm["net_pnl"]
+        test_ev = tm["ev"]
+        test_n = tm["n_active"]
+        if np.isnan(test_net_pnl) or np.isnan(test_ev) or test_n < 5:
+            tprint(f"  [Fold {ofold}] Outer test invalid (NetPnL={test_net_pnl}, EV={test_ev}, N={test_n}). Skipping.")
+            continue
+        
+        # Outer test score = the SAME scalar used for inner ranking
+        # Use net_pnl directly (the thing we actually care about)
+        test_score = float(test_net_pnl)
+        
+        tprint(f"  [Fold {ofold}] Outer test: AUC={test_auc:.4f} IC={test_ic:.4f} "
+               f"NetPnL={test_net_pnl:+.4f} EV={test_ev:+.6f} N={test_n} | TestScore={test_score:+.4f}")
 
         outer_results.append(OuterFoldResult(
             fold=ofold,
             chosen_tp_mult=best_g.tp_mult,
             chosen_sl_mult=best_g.sl_mult,
+            chosen_trail_mult=best_g.trail_mult,
             chosen_lo=best_g.lo,
             chosen_hi=best_g.hi,
             chosen_z_max=best_g.z_max,
@@ -1098,37 +1513,59 @@ def run_tp_sl_selection_fast(
             test_pnl=float(test_ev),
         ))
 
-    # --- AGGREGATION: Maximize mean test_score across folds ---
+    # --- AGGREGATION ---
     if not outer_results:
-        return SelectionSummary([], [], 1.0, 1.0, lo, hi, z_max, 0.5)
+        tprint("  WARNING: No valid outer folds. Using conservative defaults.")
+        return SelectionSummary([], [], 1.0, 1.0, 0.5, lo, hi, z_max, 0.5, mfe_stats)
 
-    # Group results by config tuple
-    config_scores: Dict[Tuple[float, float, float, float, float, float], List[float]] = {}
+    # Debug table: show all configs and their per-fold scores
+    tprint(f"\n  --- Aggregation Debug ({len(outer_results)} valid folds) ---")
+    config_data: Dict[Tuple, List[Tuple[int, float]]] = {}  # cfg -> [(fold, score), ...]
     for r in outer_results:
-        cfg = (float(r.chosen_tp_mult), float(r.chosen_sl_mult), float(r.chosen_lo), float(r.chosen_hi), float(r.chosen_z_max), float(r.chosen_threshold_p))
-        if cfg not in config_scores:
-            config_scores[cfg] = []
-        config_scores[cfg].append(r.test_score)
+        cfg = (float(r.chosen_tp_mult), float(r.chosen_sl_mult), float(r.chosen_trail_mult),
+               float(r.chosen_lo), float(r.chosen_hi), float(r.chosen_z_max), float(r.chosen_threshold_p))
+        if cfg not in config_data:
+            config_data[cfg] = []
+        config_data[cfg].append((r.fold, r.test_score))
     
-    # Pick cfg with max mean test_score
-    best_cfg = (1.0, 1.0, lo, hi, z_max, 0.5)
-    max_mean = -999.0
-    for cfg, f_scores in config_scores.items():
-        m_score = float(np.mean(f_scores))
-        if m_score > max_mean:
-            max_mean = m_score
-            best_cfg = cfg
+    for cfg, fold_scores in config_data.items():
+        scores_list = [s for _, s in fold_scores]
+        folds_str = ", ".join([f"F{f}={s:+.4f}" for f, s in fold_scores])
+        tprint(f"  Config TP={cfg[0]:.2f} SL={cfg[1]:.2f} Trail={cfg[2]:.2f} Lo={cfg[3]:.2f} Hi={cfg[4]:.2f}: "
+               f"{folds_str} | mean={np.mean(scores_list):+.4f} n_folds={len(scores_list)}")
 
-    tprint(f"\nFinal Combined Selection (Max Mean Test Score={max_mean:.4f}):")
-    tprint(f"  TP={best_cfg[0]:.2f}, SL={best_cfg[1]:.2f}, Lo={best_cfg[2]:.2f}, Hi={best_cfg[3]:.2f}, Z={best_cfg[4]:.1f}, Thr={best_cfg[5]:.2f}")
+    # Selection strategy:
+    # 1. If any config appears in >= 2 folds, pick the one with best mean score (stability)
+    # 2. Otherwise, pick the config with the best single-fold test score
+    multi_fold_cfgs = {cfg: fs for cfg, fs in config_data.items() if len(fs) >= 2}
+    
+    if multi_fold_cfgs:
+        # Pick most stable config (appears in most folds, tiebreak by mean score)
+        best_cfg = max(multi_fold_cfgs.keys(),
+                       key=lambda c: (len(multi_fold_cfgs[c]), np.mean([s for _, s in multi_fold_cfgs[c]])))
+        best_mean = float(np.mean([s for _, s in multi_fold_cfgs[best_cfg]]))
+        tprint(f"  Selection: stable config (appears in {len(multi_fold_cfgs[best_cfg])} folds, mean={best_mean:+.4f})")
+    else:
+        # No config appears in multiple folds — pick best single-fold score
+        best_r = max(outer_results, key=lambda r: r.test_score)
+        best_cfg = (float(best_r.chosen_tp_mult), float(best_r.chosen_sl_mult), float(best_r.chosen_trail_mult),
+                    float(best_r.chosen_lo), float(best_r.chosen_hi), float(best_r.chosen_z_max), float(best_r.chosen_threshold_p))
+        best_mean = best_r.test_score
+        tprint(f"  Selection: best single-fold (fold {best_r.fold}, score={best_mean:+.4f})")
+
+    tprint(f"\nFinal Combined Selection (Score={best_mean:+.4f}):")
+    tprint(f"  TP={best_cfg[0]:.2f}, SL={best_cfg[1]:.2f}, Trail={best_cfg[2]:.2f}, "
+           f"Lo={best_cfg[3]:.2f}, Hi={best_cfg[4]:.2f}, Z={best_cfg[5]:.1f}, Thr={best_cfg[6]:.2f}")
 
     return SelectionSummary(
         chosen_configs=chosen_configs,
         outer_results=outer_results,
         final_tp_mult=best_cfg[0],
         final_sl_mult=best_cfg[1],
-        final_lo=best_cfg[2],
-        final_hi=best_cfg[3],
-        final_z_max=best_cfg[4],
-        final_threshold_p=best_cfg[5]
+        final_trail_mult=best_cfg[2],
+        final_lo=best_cfg[3],
+        final_hi=best_cfg[4],
+        final_z_max=best_cfg[5],
+        final_threshold_p=best_cfg[6],
+        empirical_mfe_stats=mfe_stats,
     )

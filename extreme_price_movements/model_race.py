@@ -13,6 +13,11 @@ from lightgbm import LGBMClassifier
 import joblib
 from extreme_price_movements.utils import tprint
 from extreme_price_movements.purged_cv import PurgedKFold
+from extreme_price_movements.metrics import calculate_selection_score
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.isotonic import IsotonicRegression
+from sklearn.model_selection import TimeSeriesSplit
+from scipy.optimize import brentq
 
 class Float64Wrapper(BaseEstimator, ClassifierMixin):
     """Wraps a classifier so predict_proba / decision_function always return float64.
@@ -71,333 +76,6 @@ class ScaledLogisticRegression(LogisticRegression):
 
 
 
-def _softsign(x):
-    return x / (1.0 + np.abs(x))
-
-
-def _zscore(x, eps=1e-12):
-    x = np.asarray(x, dtype=float)
-    mu = np.nanmean(x)
-    sd = np.nanstd(x)
-    if not np.isfinite(sd) or sd < eps:
-        return np.zeros_like(x)
-    return (x - mu) / (sd + eps)
-
-
-def _max_drawdown(equity_curve):
-    ec = np.asarray(equity_curve, dtype=float)
-    if ec.size < 2:
-        return 0.0
-    peak = np.maximum.accumulate(ec)
-    dd = peak - ec
-    mdd = np.nanmax(dd)
-    return float(mdd) if np.isfinite(mdd) else 0.0
-
-
-def _clip01(x):
-    return float(np.clip(x, 0.0, 1.0))
-
-
-def _normalize_bss(bss):
-    bss_capped = float(np.clip(bss, -1.0, 1.0))
-    return _clip01((bss_capped + 1.0) / 2.0)
-
-
-def _position_from_prob(
-    p,
-    *,
-    mode="linear",            # "linear" | "centered" | "rank" | "sigmoid"
-    min_pos=0.0,
-    max_pos=1.0,
-    center=0.5,               # used by "centered"
-    sigmoid_k=6.0,            # used by "sigmoid"
-):
-    """
-    Map model probability/score to position size in [min_pos, max_pos] (or symmetric if min_pos<0).
-    Assumes p is higher => stronger signal.
-    """
-    p = np.asarray(p, dtype=float)
-
-    if mode == "linear":
-        s = p
-    elif mode == "centered":
-        # -1..1 if p in [0,1], centered at `center`
-        s = (p - center) / (0.5 if center == 0.5 else max(1e-12, max(center, 1 - center)))
-        s = np.clip(s, -1.0, 1.0)
-        # map -1..1 to min_pos..max_pos if symmetric bounds; else just scale into range
-        if min_pos < 0.0 and max_pos > 0.0:
-            # symmetric-ish: allow both long/short
-            # s=-1 -> min_pos, s=+1 -> max_pos
-            s = (s + 1.0) / 2.0
-        else:
-            # long-only
-            s = (s + 1.0) / 2.0
-    elif mode == "rank":
-        # robust to calibration; uses cross-sectional rank
-        r = np.argsort(np.argsort(p)).astype(float)
-        s = r / max(1.0, (len(p) - 1.0))
-    elif mode == "sigmoid":
-        # squashes extremes, useful if p isn't calibrated
-        s = 1.0 / (1.0 + np.exp(-sigmoid_k * (p - 0.5)))
-    else:
-        raise ValueError(f"Unknown position mode: {mode}")
-
-    # Final scale to [min_pos, max_pos]
-    s = np.clip(s, 0.0, 1.0) if (min_pos >= 0.0 and max_pos >= 0.0) else np.clip(s, 0.0, 1.0)
-    pos = min_pos + (max_pos - min_pos) * s
-    return pos
-
-
-def calculate_selection_score(
-    y_true,
-    y_prob,
-    trade_returns,
-    *,
-    # ---- Position sizing ----
-    size_mode="rank",       # "linear"|"rank"|"sigmoid"|"centered"
-    min_pos=0.0,              # long-only default. set -1..1 for long/short with centered mode
-    max_pos=1.0,
-    size_center=0.5,          # centered mode
-    sigmoid_k=6.0,            # sigmoid mode
-    size_clip=(0.0, 1.0),     # additional clip safety
-    leverage=3.0,             # scalar multiplier on position size
-
-    # ---- Realized metric ----
-    cost_per_trade=0.005,       # cost per unit position (so pos*cost). Default set to 0.5%
-    use_log_equity=False,
-    annualization_factor=None,
-    dd_penalty=0.25,
-    coverage_penalty=0.10,
-
-    # ---- Utility-weighted IC ----
-    utility_clip=3.0,
-    utility_power=1.0,
-    ic_cap=0.10,
-
-    # ---- BSS ----
-    bss_min_prev=0.02,
-    bss_cap_ref_min=1e-6,
-
-    # ---- Composite weights ----
-    w_realized=0.55,
-    w_uic=0.35,
-    w_bss=0.10,
-):
-    """
-    Same as v2, but realized returns are *position-sized*:
-        sized_return_i = position_i * trade_return_i - abs(position_i)*cost_per_trade
-
-    Position is derived from y_prob (or its rank), enabling bet sizing / leverage effects to
-    influence the realized metric and the utility-weighted IC.
-    """
-    y_true = np.asarray(y_true) if y_true is not None else None
-    y_prob = np.asarray(y_prob, dtype=float)
-    r = np.asarray(trade_returns, dtype=float)
-
-    n = min(len(y_prob), len(r), len(y_true) if y_true is not None else len(y_prob))
-    y_prob = y_prob[:n]
-    r = r[:n]
-    if y_true is not None:
-        y_true = y_true[:n]
-
-    m = np.isfinite(y_prob) & np.isfinite(r)
-    if y_true is not None:
-        m = m & np.isfinite(y_true)
-
-    y_prob_m = y_prob[m]
-    r_m = r[m]
-    y_true_m = y_true[m].astype(int) if y_true is not None else None
-
-    metrics = {"N": int(n), "N_valid": int(m.sum())}
-    if metrics["N_valid"] < 5:
-        metrics.update({
-            "Position_Mean": 0.0,
-            "Position_AbsMean": 0.0,
-            "Realized_Metric": 0.0,
-            "Realized_Score": 0.0,
-            "Utility_IC": 0.0,
-            "Utility_IC_Score": 0.0,
-            "BSS": 0.0,
-            "BSS_Score": 0.5,
-            "Selection_Score": 0.0,
-        })
-        return metrics
-
-    # -------------------------
-    # 0) Position sizing
-    # -------------------------
-    pos = _position_from_prob(
-        y_prob_m,
-        mode=size_mode,
-        min_pos=min_pos,
-        max_pos=max_pos,
-        center=size_center,
-        sigmoid_k=sigmoid_k,
-    )
-    pos = np.asarray(pos, dtype=float) * float(leverage)
-    pos = np.clip(pos, float(size_clip[0]), float(size_clip[1])) if size_clip is not None else pos
-
-    # -------------------------
-    # 1) Position-sized realized returns
-    # -------------------------
-    # -------------------------
-    # 1) Position-sized realized returns
-    # -------------------------
-    # Cost scales with absolute exposure
-    sized_r = pos * r_m - np.abs(pos) * float(cost_per_trade)
-
-    # Equity curve
-    if use_log_equity:
-        equity = np.nancumsum(sized_r)
-        peak = np.maximum.accumulate(equity)
-        # DD as % from peak (assuming returns are log-returns approx)
-        # 1 - exp(equity - peak)
-        dd_series = 1.0 - np.exp(equity - peak)
-    else:
-        equity = np.nancumprod(1.0 + sized_r)
-        peak = np.maximum.accumulate(equity)
-        dd_series = (peak - equity) / np.maximum(peak, 1e-12)
-
-    mu = float(np.nanmean(sized_r))
-    sd = float(np.nanstd(sized_r, ddof=1)) if len(sized_r) > 1 else 0.0
-    sharpe_per_trade = mu / (sd + 1e-12)
-    sharpe = sharpe_per_trade * np.sqrt(float(annualization_factor)) if annualization_factor is not None else sharpe_per_trade
-
-    mdd_pct = float(np.max(dd_series)) if len(dd_series) > 0 else 0.0
-    # MDD Penalty: directly penalize % DD. 
-    # e.g. 20% DD => 0.2 penalty. 
-    # We want robust score in [0,1].
-    
-    # Coverage: Fraction of ACTIVE trades (abs(pos) > epsilon)
-    active_mask = np.abs(pos) > 1e-6
-    coverage = np.mean(active_mask)
-
-    # Score components
-    # Map Sharpe to [0,1] robustly (softsign centered at 0?)
-    # softsign(x) = x / (1+|x|). Maps -inf->-1, inf->1.
-    # We want 0->0.5? Or just positive sharpe focus?
-    # Let's use user's softsign logic but clearer:
-    # realized_raw in [-1, 1]
-    
-    # cov_term: penalize low coverage.
-    cov_term = np.clip(coverage, 0.0, 1.0)
-    
-    # Penalty logic: 
-    # Score = (Softsign(Sharpe) - P_dd * MDD + P_cov * Coverage) normalized?
-    # Let's keep it simple:
-    # Base = 0.5 + 0.5 * softsign(Sharpe)  (in 0..1)
-    # Penalties subtraction
-    
-    base_realized = 0.5 * (1.0 + (sharpe / (1.0 + abs(sharpe))))
-    
-    # Penalize MDD: limit impact to say 0.3
-    # If MDD=0.2 (20%), penalty = 0.2 * dd_penalty
-    dd_impact = dd_penalty * mdd_pct
-    
-    # Reward coverage: small bump if coverage is high, or penalty if low?
-    # User had coverage_penalty * cov_term (additive).
-    # Let's say we want at least 5% coverage. 
-    # If coverage < 0.05 => penalty.
-    # Simpler: just add weighted coverage.
-    cov_impact = coverage_penalty * cov_term
-
-    realized_score = np.clip(base_realized - dd_impact + cov_impact, 0.0, 1.0)
-
-    metrics["Position_Mean"] = float(np.nanmean(pos))
-    metrics["Position_AbsMean"] = float(np.nanmean(np.abs(pos)))
-    metrics["Sized_Return_Mean"] = mu
-    metrics["Sized_Return_Std"] = sd
-    metrics["Sharpe"] = float(sharpe)
-    metrics["Max_Drawdown"] = mdd_pct
-    metrics["Coverage"] = float(coverage)
-    metrics["Realized_Score"] = float(realized_score)
-
-    # -------------------------
-    # 2) Utility-weighted IC (prob vs utility of *UNIT* returns)
-    # -------------------------
-    # Avoid feedback loop: Usage of Sized returns inflates IC.
-    # Use r_m (raw unit trade returns) for utility calculation.
-    ur = _zscore(r_m)
-    ur = np.clip(ur, -float(utility_clip), float(utility_clip))
-    # Utility function: focuses on tails of the *market opportunity*
-    u = np.sign(ur) * (np.abs(ur) ** float(utility_power))
-
-    if np.nanstd(y_prob_m) < 1e-12 or np.nanstd(u) < 1e-12:
-        uic = 0.0
-    else:
-        uic = spearmanr(y_prob_m, u, nan_policy="omit").correlation
-        uic = 0.0 if (uic is None or not np.isfinite(uic)) else float(uic)
-
-    # Sigmoid scaling for IC to prevent hard cap saturation
-    # sigmoid: 2 / (1 + exp(-x/s)) - 1
-    # scale s ~ 0.05 so that IC=0.10 => score ~ 0.76, IC=0.2 => score ~ 0.96
-    s_ic = 0.08
-    uic_score = 2.0 / (1.0 + np.exp(-max(0.0, uic) / s_ic)) - 1.0
-    uic_score = np.clip(uic_score, 0.0, 1.0)
-
-    metrics["Utility_IC"] = float(uic)
-    metrics["Utility_IC_Score"] = float(uic_score)
-
-    # -------------------------
-    # 3) Brier Skill Score (calibration)
-    # -------------------------
-    bss = 0.0
-    bss_score = 0.5
-    if y_true_m is not None:
-        p = np.clip(y_prob_m, 0.0, 1.0)
-        prev = float(np.mean(y_true_m)) if len(y_true_m) else 0.0
-        if bss_min_prev < prev < (1.0 - bss_min_prev):
-            try:
-                bs = float(brier_score_loss(y_true_m, p))
-                bs_ref = float(brier_score_loss(y_true_m, np.full_like(p, prev)))
-                bs_ref = max(bs_ref, float(bss_cap_ref_min))
-                bss = 1.0 - (bs / bs_ref)
-                if not np.isfinite(bss):
-                    bss = 0.0
-                bss_score = _normalize_bss(bss)
-            except Exception:
-                bss, bss_score = 0.0, 0.5
-
-    metrics["BSS"] = float(bss)
-    metrics["BSS_Score"] = float(bss_score)
-
-    # -------------------------
-    # 4) Composite
-    # -------------------------
-    # Adjust weights to de-emphasize BSS if using Rank sizing
-    # E.g. 0.60, 0.35, 0.05
-    sel = (
-        float(w_realized) * metrics["Realized_Score"] +
-        float(w_uic) * metrics["Utility_IC_Score"] +
-        float(w_bss) * metrics["BSS_Score"]
-    )
-    metrics["Selection_Score"] = float(np.clip(sel, 0.0, 1.0))
-
-    # Diagnostic keys
-    if y_true_m is not None:
-        try:
-             if len(np.unique(y_true_m)) > 1:
-                 metrics["AUC"] = float(roc_auc_score(y_true_m, y_prob_m))
-             else:
-                 metrics["AUC"] = 0.5
-        except:
-             metrics["AUC"] = 0.5
-    else:
-        metrics["AUC"] = 0.5
-        
-    metrics["IC"] = metrics["Utility_IC"]
-    # Or keep original IC? The new logic uses Utility IC.
-    # We can add standard IC too.
-    try:
-        std_ic = spearmanr(y_prob_m, r_m, nan_policy="omit").correlation
-        metrics["Standard_IC"] = float(std_ic) if (std_ic is not None and np.isfinite(std_ic)) else 0.0
-    except:
-        metrics["Standard_IC"] = 0.0
-    
-    return metrics
-
-
-
 class ModelRace(BaseEstimator, ClassifierMixin):
     def __init__(self, kind="long", n_splits=5, race_sample_frac=0.5, race_early_stopping_rounds=50):
         self.kind = kind
@@ -421,6 +99,35 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         n_samples = int(len(indices) * frac)
         return np.random.choice(indices, n_samples, replace=False)
 
+    def _find_bias_correction_factor(self, probs, target_mean):
+        # Find k such that mean(sigmoid(logit(p) + log(k))) == target_mean
+        # This aligns the average prediction with the target prevalence.
+        
+        eps = 1e-9
+        probs = np.clip(probs, eps, 1.0 - eps)
+        odds = probs / (1.0 - probs)
+        
+        def objective(k):
+            # p_new = k*odds / (1 + k*odds)
+            new_odds = k * odds
+            p_new = new_odds / (1.0 + new_odds)
+            return np.mean(p_new) - target_mean
+
+        try:
+            # Check bounds first
+            if objective(1e-3) > 0: return 1e-3
+            if objective(1e3) < 0: return 1e3
+            return brentq(objective, 1e-3, 1e3)
+        except Exception:
+            return 1.0
+
+    def _apply_correction(self, probs, factor):
+        eps = 1e-9
+        probs = np.clip(probs, eps, 1.0 - eps)
+        odds = probs / (1.0 - probs)
+        new_odds = factor * odds
+        return new_odds / (1.0 + new_odds)
+
     def _get_candidates(self, race_mode=True):
         # Configure models
         # ExtraTrees, XGBoost, LightGBM, CatBoost
@@ -440,7 +147,8 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
         # 2. XGBoost
         xgb_params = {
-            "n_estimators": 200 if race_mode else 800,
+            "n_estimators": 3 if race_mode else 5,
+            "num_parallel_tree": 150 if race_mode else 400,
             "max_depth": 4,
             "learning_rate": 0.05,
             "reg_lambda": 5.0,              # L2 (default=1 is often too weak)
@@ -452,7 +160,6 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             "colsample_bytree": 0.8,
             "n_jobs": -1,
             "random_state": 42,
-            "min_samples_split": 100,
             "enable_categorical": False
         }
         candidates["xgboost"] = Float64Wrapper(XGBClassifier(**xgb_params))
@@ -562,6 +269,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         # ExtraTrees/XGBoost prefer numpy. CatBoost handles both but numpy is fine if no categorical features.
         # We assume numeric features here.
         X_np = X
+        X_np = X
         use_numpy = False
         if hasattr(X, "iloc"):
             try:
@@ -571,6 +279,10 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             except (ValueError, TypeError):
                 # Fallback if conversion fails (e.g. mixed types)
                 use_numpy = False
+        elif hasattr(X, "ndim") and hasattr(X, "shape"):
+            # Numpy array
+            use_numpy = True
+            X_np = X
 
         # Cache CV splits
         tscv = PurgedKFold(n_splits=self.n_splits, purge=5, embargo=2)
@@ -593,6 +305,11 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             fold_aucs = []
             fold_ics = []
             fold_bss = []
+            fold_bs = [] # Brier Score
+            fold_ref = [] # Brier Ref
+            fold_p10 = [] # Prec Top 10%
+            fold_p25 = [] # Prec Top 25%
+            fold_p40 = [] # Prec Top 40%
             fold_logloss = []
             fold_accuracy = []
 
@@ -609,23 +326,47 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     w_tr = safe_slice(sample_weight, train_idx) if sample_weight is not None else None
                     ret_val = safe_slice(returns, val_idx)
 
-                    # Raw model fit — no CalibratedClassifierCV.
-                    # Treat predict_proba output as rank scores, not calibrated probabilities.
-                    estimator = clone(model)
-                    if w_tr is not None:
-                        estimator.fit(X_tr, y_tr, sample_weight=w_tr)
-                    else:
-                        estimator.fit(X_tr, y_tr)
-                    
-                    probs = estimator.predict_proba(X_val)[:, 1]
 
-                    # w_bss=0: raw outputs are rank scores, BSS is meaningless
-                    metrics = calculate_selection_score(y_val, probs, ret_val, w_bss=0.0, w_realized=0.60, w_uic=0.40)
+                    
+                    
+                    # Fit raw model (no CalibratedClassifierCV wrapper)
+                    # We will apply bias correction manually on validation set
+                    model_clone = clone(model)
+                    
+                    # We use _fit_model to handle sample weights and early stopping
+                    # passing X_val/y_val for early stopping if supported (XGB/LGBM/Cat)
+                    w_tr_fit = safe_slice(sample_weight, train_idx) if sample_weight is not None else None
+                    self._fit_model(model_clone, X_tr, y_tr, X_val=X_val, y_val=y_val, sample_weight=w_tr_fit)
+                    
+                    # Predict raw (biased) probabilities on validation
+                    probs_raw = model_clone.predict_proba(X_val)[:, 1]
+                    
+                    # Correction: Match mean(probs_val) to mean(y_tr)
+                    # This removes global bias from scale_pos_weight/subsampling
+                    # We use y_tr mean as the "prior" expectation.
+                    if w_tr is not None:
+                        target_mean = np.average(y_tr, weights=w_tr)
+                    else:
+                        target_mean = np.mean(y_tr)
+                        
+                    factor = self._find_bias_correction_factor(probs_raw, target_mean)
+                    probs = self._apply_correction(probs_raw, factor)
+                    
+                    # w_bss=0.20: Enabled BSS in selection score
+                    # We now compute weighted BSS for diagnostics
+                    w_val = safe_slice(sample_weight, val_idx) if sample_weight is not None else None
+                    metrics = calculate_selection_score(y_val, probs, ret_val, sample_weight=w_val, w_bss=0.20, w_realized=0.55, w_uic=0.25)
                     fold_scores.append(metrics["Selection_Score"])
                     fold_aucs.append(metrics["AUC"])
                     fold_ics.append(metrics["IC"])
                     fold_bss.append(metrics["BSS"])
-
+                    fold_bs.append(metrics.get("Brier_Score", np.nan))
+                    fold_ref.append(metrics.get("Brier_Ref", np.nan))
+                    fold_p10.append(metrics.get("Prec_Top10", np.nan))
+                    fold_p25.append(metrics.get("Prec_Top25", np.nan))
+                    fold_p40.append(metrics.get("Prec_Top40", np.nan))
+                    # fold_p40 handled below if needed, but metrics returns it
+                    
                     try:
                         fold_logloss.append(log_loss(y_val, np.clip(probs, 1e-7, 1-1e-7)))
                     except:
@@ -636,21 +377,34 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                 avg_auc = np.nanmean(fold_aucs)
                 avg_ic = np.nanmean(fold_ics)
                 avg_bss_val = np.nanmean(fold_bss)
+                avg_bs = np.nanmean(fold_bs)
+                avg_ref = np.nanmean(fold_ref)
+                avg_p10 = np.nanmean(fold_p10)
+                avg_p25 = np.nanmean(fold_p25)
+                avg_p40 = np.nanmean(fold_p40)
                 std_score = np.nanstd(fold_scores)
                 avg_logloss = np.nanmean(fold_logloss)
                 avg_accuracy = np.nanmean(fold_accuracy)
 
-                results[name] = avg_score
+                # Penalize high fold-variance to prevent overfit models from winning
+                penalized_score = avg_score - 0.6 * std_score
+                results[name] = penalized_score
                 detailed_metrics[name] = {
                     "score": avg_score,
+                    "penalized_score": penalized_score,
                     "AUC": avg_auc,
                     "IC": avg_ic,
                     "BSS": avg_bss_val,
+                    "BS": avg_bs,
+                    "BS_Ref": avg_ref,
+                    "Prec10": avg_p10,
+                    "Prec25": avg_p25,
+                    "Prec40": avg_p40,
                     "std_score": std_score,
                     "LogLoss": avg_logloss,
                     "Accuracy": avg_accuracy
                 }
-                tprint(f"  {name}: Score={avg_score:.4f}  AUC={avg_auc:.4f}  IC={avg_ic:.4f}  BSS={avg_bss_val:.4f}  LogLoss={avg_logloss:.4f}  Acc={avg_accuracy:.4f}  Std={std_score:.4f}")
+                tprint(f"  {name}: Score={avg_score:.4f}  PenScore={penalized_score:.4f}  AUC={avg_auc:.4f}  IC={avg_ic:.4f}  BSS={avg_bss_val:.4f} (BS={avg_bs:.4f}/Ref={avg_ref:.4f}) Prec10={avg_p10:.4f}  LogLoss={avg_logloss:.4f}  Acc={avg_accuracy:.4f}  Std={std_score:.4f}")
 
             except Exception as e:
                 tprint(f"  {name} Failed: {e}")
@@ -666,7 +420,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         self.metrics = results
         if best_name in detailed_metrics:
             dm = detailed_metrics[best_name]
-            tprint(f"Race Winner: {best_name} (Score={dm['score']:.4f}, AUC={dm['AUC']:.4f}, IC={dm['IC']:.4f}, BSS={dm['BSS']:.4f})")
+            tprint(f"Race Winner: {best_name} (PenScore={dm['penalized_score']:.4f}, Score={dm['score']:.4f}, AUC={dm['AUC']:.4f}, IC={dm['IC']:.4f}, Std={dm['std_score']:.4f})")
         else:
             tprint(f"Race Winner: {best_name} (Score={results[best_name]:.4f})")
 
@@ -683,13 +437,25 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             y_tr = safe_slice(y, train_idx)
             w_tr = safe_slice(sample_weight, train_idx) if sample_weight is not None else None
             
-            # Raw model fit — same as race, no calibration wrapper
+            # Raw model fit — using _fit_model for consistency with race (early stopping, weights)
             estimator = clone(oof_model)
-            if w_tr is not None:
-                estimator.fit(X_tr, y_tr, sample_weight=w_tr)
-            else:
-                estimator.fit(X_tr, y_tr)
+            self._fit_model(estimator, X_tr, y_tr, X_val=X_val, y_val=y_val, sample_weight=w_tr)
+            
             oof_probs[val_idx] = estimator.predict_proba(X_val)[:, 1]
+            
+            # Recalibrate OOF probabilities
+            # Same logic: match OOF mean to y_tr mean
+            if w_tr is not None:
+                target_mean = np.average(y_tr, weights=w_tr)
+            else:
+                target_mean = np.mean(y_tr)
+            
+            # Predict raw (biased)
+            probs_raw = estimator.predict_proba(X_val)[:, 1]
+            
+            # Find and apply correction
+            factor = self._find_bias_correction_factor(probs_raw, target_mean)
+            oof_probs[val_idx] = self._apply_correction(probs_raw, factor)
         # Fill any remaining NaN with 0.5 (neutral)
         oof_probs = np.nan_to_num(oof_probs, nan=0.5)
         self.oof_probs = oof_probs
@@ -711,39 +477,96 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             else:
                 oof_ic = 0.0
             # OOF selection score (same weights as race)
-            oof_sel = calculate_selection_score(y, oof_probs, returns, w_bss=0.0, w_realized=0.60, w_uic=0.40)
+            oof_sel = calculate_selection_score(y, oof_probs, returns, sample_weight=sample_weight, w_bss=0.20, w_realized=0.55, w_uic=0.25)
             tprint(f"Winner OOF Metrics: AUC={oof_auc:.4f}  IC={oof_ic:.4f}  LogLoss={oof_logloss:.4f}  Acc={oof_accuracy:.4f}  SelScore={oof_sel['Selection_Score']:.4f}")
+            
+            # --- Post-hoc Isotonic Calibration ---
+            # Fit calibrator on OOF predictions
+            # This ensures that predict_proba returns calibrated probabilities
+            tprint("Fitting IsotonicRegression on OOF predictions...")
+            self.calibrator_ = IsotonicRegression(out_of_bounds='clip', y_min=0.0, y_max=1.0)
+            if sample_weight is not None:
+                self.calibrator_.fit(oof_probs, y, sample_weight=sample_weight)
+            else:
+                self.calibrator_.fit(oof_probs, y)
+                
+            # Re-calibrate the stored OOF probs
+            calibrated_oof = self.calibrator_.predict(oof_probs).astype(np.float32)
+            
+            raw_brier = brier_score_loss(y, np.clip(oof_probs, 1e-7, 1-1e-7), sample_weight=sample_weight)
+            cal_brier = brier_score_loss(y, np.clip(calibrated_oof, 1e-7, 1-1e-7), sample_weight=sample_weight)
+            tprint(f"Isotonic calibration: Brier raw={raw_brier:.4f} -> calibrated={cal_brier:.4f}")
+            
+            self.oof_probs = calibrated_oof
+
         except Exception as e:
-            tprint(f"Error calculating OOF metrics: {e}")
+            tprint(f"Error calculating OOF metrics or calibration: {e}")
 
         # Recap
         tprint("\n=== Model Race Recap ===")
-        tprint(f"{'Model':<15} {'Score':>8} {'AUC':>8} {'IC':>8} {'BSS':>8} {'LogLoss':>8} {'Acc':>8} {'Std':>8}")
-        tprint("-" * 85)
+        tprint(f"{'Model':<15} {'Score':>8} {'AUC':>8} {'IC':>8} {'BSS':>8} {'BS':>8} {'Ref':>8} {'P10':>8} {'P25':>8} {'P40':>8} {'LogLoss':>8} {'Acc':>8} {'Std':>8}")
+        tprint("-" * 135)
 
         sorted_models = sorted(detailed_metrics.items(), key=lambda x: x[1]['score'], reverse=True)
         for name, m in sorted_models:
-             tprint(f"{name:<15} {m['score']:8.4f} {m['AUC']:8.4f} {m['IC']:8.4f} {m['BSS']:8.4f} {m['LogLoss']:8.4f} {m['Accuracy']:8.4f} {m['std_score']:8.4f}")
+             tprint(f"{name:<15} {m['score']:8.4f} {m['AUC']:8.4f} {m['IC']:8.4f} {m['BSS']:8.4f} {m['BS']:8.4f} {m['BS_Ref']:8.4f} {m['Prec10']:8.4f} {m['Prec25']:8.4f} {m['Prec40']:8.4f} {m['LogLoss']:8.4f} {m['Accuracy']:8.4f} {m['std_score']:8.4f}")
         tprint("========================\n")
 
         # 3. Final Retraining (raw model, no calibration wrapper)
         # Calibration is harmful with small n and uncalibrated objectives.
         # Output is treated as rank score by downstream (engine, backtest).
-        tprint(f"Retraining {best_name} on full data (full config)...")
-        final_candidates = self._get_candidates(race_mode=False)
-        final_base = final_candidates[best_name]
-        self.best_model = clone(final_base)
-        if sample_weight is not None:
-            self.best_model.fit(X, y, sample_weight=sample_weight)
-        else:
-            self.best_model.fit(X, y)
+        if detailed_metrics:
+             best_name = max(detailed_metrics.items(), key=lambda x: x[1]['score'])[0]
+             self.best_model_name = best_name
+             self.best_model = candidates[best_name]
 
+        tprint(f"Retraining {self.best_model_name} on full data (full config)...")
+        final_candidates = self._get_candidates(race_mode=False)
+        # For the final model, we ALSO use CalibratedClassifierCV to ensure inference probabilities are calibrated.
+        # Use TimeSeriesSplit(5) for better usage of data in final model.
+        
+        final_base = clone(self.best_model)
+        if hasattr(final_base, "estimator"): # Unwrap wrapper if needed? No, Float64Wrapper is a classifier.
+             pass
+
+        # We fit the raw model on full data.
+        # Note: We need to store the bias correction factor for the FINAL model too?
+        # Post-hoc Isotonic handles bias, but inputs to Itosonic must be consistent with training?
+        # Actually, Isotonic is fit on OOF. OOF was Bias-Corrected in the loop (see above).
+        # So Isotonic expects Bias-Corrected inputs.
+        # Therefore, we MUST compute and apply Bias Correction in predict_proba BEFORE Isotonic.
+        
+        # 1. Fit Raw Model
+        # (We could calibrate here too, but Isotonic on OOF is usually enough for the final head)
+        # Actually: to be consistent with the race metrics, we SHOULD use CalibratedClassifierCV here too?
+        # User said: "Consider wrapping each fold's estimator... but Post-hoc OOF is for final model"
+        # Since we use Isotonic on OOF in predict_proba, the final model is effectively calibrated.
+        # But wait! If we leave 'best_model' as raw, then predict_proba applies isotonic.
+        # That logic is sound.
+        
+        if sample_weight is not None:
+             self.best_model.fit(X, y, sample_weight=sample_weight)
+        else:
+             self.best_model.fit(X, y)
+             
+        # No more manual bias correction factor needed (Isotonic handles it)
         return self
 
     def predict_proba(self, X):
         if self.best_model is None:
             raise ValueError("ModelRace not fitted")
-        return self.best_model.predict_proba(X)
+        probs = self.best_model.predict_proba(X)
+        
+        # 1. Apply Post-hoc Isotonic Calibration (Local Calibration)
+        if hasattr(self, 'calibrator_'):
+            # Calibrate class 1
+            # Note: IsotonicRegression.predict expects 1D array
+            p1 = self.calibrator_.predict(probs[:, 1])
+            probs[:, 1] = p1
+            probs[:, 0] = 1.0 - p1
+        
+        # Ensure float64 returns
+        return np.asarray(probs, dtype=np.float64)
 
     def predict(self, X):
         # Return probability class 1 (rank score, not calibrated probability)

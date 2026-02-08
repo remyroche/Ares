@@ -165,10 +165,10 @@ def compute_trailing_atr_labels(
 @jit(nopython=True, cache=True)
 def _numba_triple_barrier(times, highs, lows, closes, tp_arr, sl_arr, horizon, side):
     """
-    Vectorized Triple Barrier Method.
-    tp_arr: Take Profit array (relative, >0)
-    sl_arr: Stop Loss array (relative, >0)
-    horizon: max holding period in hours (or units matching times if adjusted)
+    Trailing-profit barrier labeling.
+    tp_arr: Activation threshold (relative, >0) — once MFE reaches this, trailing stop activates.
+    sl_arr: Stop-loss distance (relative, >0) — fixed from entry.
+    Trail deviation = 0.5 * tp_arr (half the activation threshold).
     times: int64 (nanoseconds)
     side: 1 for Long, -1 for Short
     """
@@ -187,27 +187,29 @@ def _numba_triple_barrier(times, highs, lows, closes, tp_arr, sl_arr, horizon, s
         if np.isnan(entry_p) or entry_p <= 0:
             continue
 
-        # Get barrier sizes for this entry
-        tp = tp_arr[i]
+        activation = tp_arr[i]
         sl = sl_arr[i]
 
-        if np.isnan(tp) or np.isnan(sl):
+        if np.isnan(activation) or np.isnan(sl):
             continue
 
-        if side == 1:
-            tp_price = entry_p * (1.0 + tp)
-            sl_price = entry_p * (1.0 - sl)
-        else: # Short
-            tp_price = entry_p * (1.0 - tp)
-            sl_price = entry_p * (1.0 + sl)
+        trail_dev = 0.5 * activation  # trailing deviation = half activation
 
-        # Iterate forward
+        if side == 1:  # Long
+            sl_price = entry_p * (1.0 - sl)
+            activation_price = entry_p * (1.0 + activation)
+            extreme = entry_p
+        else:  # Short
+            sl_price = entry_p * (1.0 + sl)
+            activation_price = entry_p * (1.0 - activation)
+            extreme = entry_p
+
+        trailing_active = False
         exit_found = False
 
         for j in range(i + 1, n):
-            # Check Time
             if times[j] >= cutoff_t:
-                # Time Exit at Close of j (the bar where we realize time is up)
+                # Time exit
                 labels[i] = 0
                 if side == 1:
                     returns[i] = (closes[j] / entry_p) - 1.0
@@ -217,41 +219,55 @@ def _numba_triple_barrier(times, highs, lows, closes, tp_arr, sl_arr, horizon, s
                 exit_found = True
                 break
 
-            if side == 1: # Long
-                # Check High (TP)
-                if highs[j] >= tp_price:
-                    labels[i] = 1
-                    returns[i] = tp
+            hh = highs[j]
+            ll = lows[j]
+            cc = closes[j]
+            if np.isnan(hh) or np.isnan(ll):
+                continue
+
+            # Check stop-loss
+            if side == 1:
+                if ll <= sl_price:
+                    ret = (sl_price / entry_p) - 1.0
+                    returns[i] = ret
+                    labels[i] = 1 if trailing_active else -1
+                    exit_idxs[i] = j
+                    exit_found = True
+                    break
+            else:
+                if hh >= sl_price:
+                    ret = (entry_p / sl_price) - 1.0
+                    returns[i] = ret
+                    labels[i] = 1 if trailing_active else -1
                     exit_idxs[i] = j
                     exit_found = True
                     break
 
-                # Check Low (SL)
-                if lows[j] <= sl_price:
-                    labels[i] = -1
-                    returns[i] = -sl
-                    exit_idxs[i] = j
-                    exit_found = True
-                    break
-            else: # Short
-                # Check Low (TP)
-                if lows[j] <= tp_price:
-                    labels[i] = 1
-                    returns[i] = tp
-                    exit_idxs[i] = j
-                    exit_found = True
-                    break
+            # Update extreme and check activation
+            if side == 1:
+                if hh > extreme:
+                    extreme = hh
+                if extreme >= activation_price:
+                    trailing_active = True
+            else:
+                if ll < extreme:
+                    extreme = ll
+                if extreme <= activation_price:
+                    trailing_active = True
 
-                # Check High (SL)
-                if highs[j] >= sl_price:
-                    labels[i] = -1
-                    returns[i] = -sl
-                    exit_idxs[i] = j
-                    exit_found = True
-                    break
+            # Ratchet trailing stop
+            if trailing_active:
+                trail_dist = trail_dev * entry_p
+                if side == 1:
+                    new_sl = extreme - trail_dist
+                    if new_sl > sl_price:
+                        sl_price = new_sl
+                else:
+                    new_sl = extreme + trail_dist
+                    if new_sl < sl_price:
+                        sl_price = new_sl
 
         if not exit_found:
-            # End of data
             labels[i] = 0
             if side == 1:
                 returns[i] = (closes[n-1] / entry_p) - 1.0

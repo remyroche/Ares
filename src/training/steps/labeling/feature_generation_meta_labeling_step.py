@@ -11022,36 +11022,49 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 r_multiple = (labeled_data['realized_return'] / r_unit).replace([np.inf, -np.inf], np.nan)
                 labeled_data['r_multiple'] = r_multiple.astype(np.float32)
 
-                # Enhanced Weighting Logic (Signal vs Magnitude)
-                # Step A: Log-Dampening (Taming the Whales)
-                # NetReturn = (ExitPrice - EntryPrice)/EntryPrice - (1.5 * FeeRate)
-                # We approximate NetReturn from realized_return (which is Gross - transaction_cost)
-                # So Gross = realized_return + transaction_cost
-                # NetReturn = Gross - 1.5 * 0.003
+                # Enhanced Weighting Logic (Signal vs Path Efficiency)
+                # Keep raw return magnitude in the weighting term (no log dampening)
+                # and blend it with a configurable path-efficiency metric y = MFE - alpha * MAE.
 
                 fee_rate_fixed = 0.003  # Fixed as per instruction "FeeRate is 0.3" (0.3% -> 0.003)
-                # Use fee_rate_fixed as transaction_cost for backing out gross return,
-                # as the prompt implies FeeRate is the transaction cost constant.
                 gross_return = labeled_data['realized_return'] + fee_rate_fixed
                 net_return_custom = gross_return - (1.5 * fee_rate_fixed)
 
-                # RawWeight = log(1 + |NetReturn|)
-                raw_weight = np.log1p(net_return_custom.abs())
+                # Return-driven component (raw magnitude, always >= 0)
+                return_weight = net_return_custom.abs().fillna(0.0)
 
-                # Step B: Mean Normalization (Stabilizing the Model)
-                # Scale so average weight is 1.0
-                avg_weight = raw_weight.mean()
-                if avg_weight > 0:
-                    final_weight = raw_weight / avg_weight
+                # Path-efficiency component (positive when MFE meaningfully exceeds alpha * MAE)
+                path_weight_alpha = float(config.get('path_weight_alpha', 0.5))
+                path_component = (mfe_series - path_weight_alpha * mae_series).fillna(0.0)
+                path_component = path_component.clip(lower=0.0)
+
+                combined_weight = return_weight * (1.0 + path_component)
+                combined_weight = combined_weight.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+                # Ensure weights remain informative even if all components collapse to zero
+                if (combined_weight > 0).any():
+                    final_weight = combined_weight
+                elif (return_weight > 0).any():
+                    final_weight = return_weight
                 else:
-                    final_weight = raw_weight.fillna(1.0)
+                    final_weight = pd.Series(1.0, index=labeled_data.index)
+
+                avg_weight = final_weight.mean()
+                if avg_weight > 0:
+                    final_weight = final_weight / avg_weight
+                else:
+                    final_weight = final_weight.fillna(1.0)
 
                 if 'binary_label' in labeled_data.columns:
                     final_weight = final_weight.where(~labeled_data['binary_label'].isna())
 
                 labeled_data['target_sample_weight'] = final_weight.astype(np.float32)
 
-                tprint(f"⚖️ Applied enhanced sample weighting: mean={final_weight.mean():.4f}, max={final_weight.max():.4f}", "INFO")
+                tprint(
+                    f"⚖️ Applied enhanced sample weighting (alpha={path_weight_alpha:.2f}): "
+                    f"mean={final_weight.mean():.4f}, max={final_weight.max():.4f}",
+                    "INFO"
+                )
             except Exception as e:
                 tprint(f"⚠️ Weight calculation failed: {e}", "WARNING")
                 labeled_data['target_sample_weight'] = np.float32(1.0)

@@ -661,6 +661,12 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["shock_rel"] = feats["excess_6h"]
     feats["resid_strength"] = feats["excess_6h"]
     feats["evr_slope"] = (feats["evr_3"] - feats["evr_6"]).astype(np.float32)
+    
+    # Volatility Interaction Context (New)
+    feats["dist_ext_x_vol"] = (feats["donch_dist_12"] * feats["vol_z"]).fillna(0).astype(np.float32)
+    feats["regime_x_vol"] = (feats["rv_ratio_6_24"] * feats["vol_z"]).fillna(0).astype(np.float32)
+    feats["rsi_x_vol"] = ((feats["rsi"] - 50.0) * feats["vol_z"]).fillna(0).astype(np.float32)
+
     feats["stall_ext_corr"] = (feats["delta_stall_6"] * feats["donch_dist_12"]).astype(np.float32)
 
     feats["G_META_EXH"] = (feats["overext"] + feats["G_EXH_EFFORT"] + feats["stall_ext"] + feats["G_EXH_GIVEBACK"]).astype(np.float32)
@@ -697,10 +703,118 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     coh_norm = feats["coh"].clip(0,1).fillna(0)
     feats["chop_score"] = (feats["rv_ratio_6_24"].clip(0, 100) * (1.0 - coh_norm)).fillna(0).astype(np.float32)
 
+    # =====================================================================
+    # ORTHOGONAL FEATURES — structurally independent from existing clusters
+    # =====================================================================
+
+    # --- Cross-asset features (temporarily disabled) ---
+    # feats["xs_rank_ret6h"] = feats["ret6h"].rank(axis=1, pct=True).astype(np.float32)
+    # feats["xs_rank_vol_z"] = feats["vol_z"].rank(axis=1, pct=True).astype(np.float32)
+    # feats["xs_rank_rv24"] = feats["rv_24h"].rank(axis=1, pct=True).astype(np.float32)
+    # feats["beta_24h"] = ...
+    # feats["resid_ret_6h"] = ...
+
+    # 1. Multi-timeframe momentum divergence: short vs long disagreement
+    #    Sign disagreement between 2h and 24h returns — captures regime transitions
+    sign_2h = np.sign(feats["ret2h"])
+    sign_24h = np.sign(feats["ret24h"])
+    feats["mtf_divergence"] = (sign_2h * sign_24h * -1.0).astype(np.float32)  # +1 = diverging
+    #    Magnitude-weighted divergence
+    feats["mtf_div_mag"] = ((feats["ret2h"] - feats["ret24h"] / 12.0) / (feats["rv_6h"] + 1e-12)).clip(-10, 10).astype(np.float32)
+
+    # 2. Mean-reversion speed proxy: rolling autocorrelation of returns
+    #    Negative autocorr = fast mean-reversion, positive = trending
+    feats["autocorr_6h"] = ff.numba_rolling_corr(
+        feats["ret1h"], feats["ret1h"].shift(1), 6
+    ).fillna(0).astype(np.float32)
+    feats["autocorr_24h"] = ff.numba_rolling_corr(
+        feats["ret1h"], feats["ret1h"].shift(1), 24
+    ).fillna(0).astype(np.float32)
+
+    # 3. Price path entropy proxy: ratio of actual path length to displacement
+    #    High = choppy/random, Low = directional/clean
+    abs_ret_sum_12 = ff.numba_rolling_sum(feats["ret1h"].abs(), 12)
+    displacement_12 = feats["ret12h"].abs()
+    feats["path_efficiency_12"] = (displacement_12 / (abs_ret_sum_12 + 1e-12)).clip(0, 1).astype(np.float32)
+    abs_ret_sum_24 = ff.numba_rolling_sum(feats["ret1h"].abs(), 24)
+    displacement_24 = feats["ret24h"].abs()
+    feats["path_efficiency_24"] = (displacement_24 / (abs_ret_sum_24 + 1e-12)).clip(0, 1).astype(np.float32)
+
+    # 6. Hurst exponent proxy: R/S ratio over rolling window
+    #    H > 0.5 = trending, H < 0.5 = mean-reverting
+    range_24 = ff.numba_rolling_max(c, 24) - ff.numba_rolling_min(c, 24)
+    std_24 = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 24)
+    feats["hurst_proxy_24"] = (np.log(range_24 / (std_24 * np.sqrt(24) + 1e-12) + 1e-12) / np.log(24)).clip(0, 1).fillna(0.5).astype(np.float32)
+
+    # 7. Volume concentration: rolling Gini-like measure (max_vol / sum_vol over 12h)
+    #    High = volume clustered in few bars, Low = evenly distributed
+    v_max_12 = ff.numba_rolling_max(v, 12)
+    v_sum_12 = ff.numba_rolling_sum(v, 12)
+    feats["vol_concentration_12"] = (v_max_12 / (v_sum_12 + 1e-12)).astype(np.float32)
+
+    # 4. Signed volume divergence: volume trend vs price trend disagreement
+    vol_trend = ff.numba_rolling_sum(v, 6) - ff.numba_rolling_sum(v, 24) / 4.0
+    price_trend = feats["ret6h"]
+    feats["vol_price_diverge"] = (np.sign(vol_trend) * np.sign(price_trend) * -1.0).astype(np.float32)
+
+    # =====================================================================
+    # RESIDUALISED FEATURES — relative surprise, not absolute magnitude
+    # =====================================================================
+    # Rationale: low-conviction trades outperform high-conviction ones,
+    # meaning relative surprise matters, not absolute score.
+
+    # (a) Z-scored surprise signals: s_z = (s_t - rolling_mean) / rolling_std
+    #     Window = 48h (~2x max hold) to capture "unusual for recent regime"
+    RESID_WINDOW = 48
+
+    for feat_name in ["rsi", "dist_ema_fast", "dist_vwap_norm", "flow_persistence",
+                      "excess_6h", "vol_z", "atr_expansion", "coherence_24"]:
+        if feat_name in feats:
+            raw = feats[feat_name]
+            roll_mu = ff.apply_to_frame(raw, ff._numba_rolling_mean_nan_safe, RESID_WINDOW)
+            roll_sd = ff.apply_to_frame(raw, ff._numba_rolling_std_nan_safe, RESID_WINDOW)
+            feats[f"{feat_name}_z"] = ((raw - roll_mu) / (roll_sd + 1e-12)).clip(-5, 5).fillna(0).astype(np.float32)
+
+    # (b) Rolling edge residual: how much is the model's current signal
+    #     deviating from its recent realised performance?
+    #     Proxy: z-score of composite scores (accept, reject, overext)
+    for comp_name in ["accept", "reject", "overext", "blowoff_risk", "exh_qual"]:
+        if comp_name in feats:
+            raw = feats[comp_name]
+            roll_mu = ff.apply_to_frame(raw, ff._numba_rolling_mean_nan_safe, RESID_WINDOW)
+            roll_sd = ff.apply_to_frame(raw, ff._numba_rolling_std_nan_safe, RESID_WINDOW)
+            feats[f"{comp_name}_surprise"] = ((raw - roll_mu) / (roll_sd + 1e-12)).clip(-5, 5).fillna(0).astype(np.float32)
+
+    # (c) Residual distance from value vs market trend
+    #     dist_resid = dist_to_vwap - k * market_trend_strength
+    #     Stops MR entries that are "cheap" only because market is trending hard
+    mkt_trend_s = mkt_gates["mkt_trend"].reindex(c.index).astype(np.float32)
+    mkt_trend_bc = pd.DataFrame(
+        np.repeat(np.asarray(mkt_trend_s)[:, None], c.shape[1], axis=1),
+        index=c.index, columns=c.columns
+    ).astype(np.float32)
+    mkt_rv_s = mkt_gates["mkt_rv"].reindex(c.index).astype(np.float32)
+    mkt_rv_bc = pd.DataFrame(
+        np.repeat(np.asarray(mkt_rv_s)[:, None], c.shape[1], axis=1),
+        index=c.index, columns=c.columns
+    ).astype(np.float32)
+    # Normalised market trend strength (in vol units)
+    mkt_trend_z = mkt_trend_bc / (mkt_rv_bc * np.sqrt(24) + 1e-12)
+    feats["dist_vwap_resid"] = (feats["dist_vwap_norm"] - 0.5 * mkt_trend_z).astype(np.float32)
+    feats["dist_ema_fast_resid"] = (feats["dist_ema_fast"] - 0.5 * mkt_trend_z).astype(np.float32)
+    feats["trend_pct_resid"] = (feats["trend_pct"] - 0.5 * mkt_trend_z).astype(np.float32)
+
     tprint("Features: Applying Causal Transforms (Log + Winsor + ZScore)")
     transformer = CausalFeatureTransformer(winsor_qt=0.02, roll_window=24*30)
 
-    skip_transform = ["sin_hod", "cos_hod", "sin_dow", "cos_dow", "range_24h_pct", "range_12h_pct", "volatility_zscore", "breakout_24h", "draw_sym_10h", "draw_extreme_10h"]
+    skip_transform = ["sin_hod", "cos_hod", "sin_dow", "cos_dow", "range_24h_pct", "range_12h_pct", "volatility_zscore", "breakout_24h", "draw_sym_10h", "draw_extreme_10h",
+                       "mtf_divergence", "vol_price_diverge", "meta_alignment",
+                       # Residualised features — already z-scored, don't double-transform
+                       "rsi_z", "dist_ema_fast_z", "dist_vwap_norm_z", "flow_persistence_z",
+                       "excess_6h_z", "vol_z_z", "atr_expansion_z", "coherence_24_z",
+                       "accept_surprise", "reject_surprise", "overext_surprise",
+                       "blowoff_risk_surprise", "exh_qual_surprise",
+                       "dist_vwap_resid", "dist_ema_fast_resid", "trend_pct_resid"]
 
     for k in feats.keys():
         tprint(f"Generating feature: {k}")

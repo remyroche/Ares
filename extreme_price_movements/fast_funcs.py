@@ -941,26 +941,18 @@ def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend,
             if reversal_size >= limit_dist:
                 labels[i] = 1.0
 
-                # Weight Calculation
-                # X = distance to peak = fwd_max - curr_p
-                # Y = reversal size = reversal_size
-                # ATR = curr_atr
-                # W = log(1 + Y / (X^2 * ATR)) -> No, user said Y/(X^2 * ATR)
-                # Wait, units.
-                # Y is price diff. X is price diff. ATR is price diff.
-                # X^2 is price^2.
-                # Y / (X^2 * ATR) -> price / (price^3) = 1/price^2.
-                # This seems dimensionally weird if not normalized?
-                # User: "Ensure Y is defined in price units OR drop ATR normalisation if Y is already in ATR units"
-                # If X, Y, ATR are all price units:
-                # X ~ 100. X^2 ~ 10000. ATR ~ 100.
-                # Y ~ 200.
-                # Y / (X^2 * ATR) ~ 200 / (10000 * 100) ~ small.
-                # Maybe user meant X in ATR units?
-                # "timing X² matters more"
-                # If X is small (near 0), X^2 is very small. Denom small -> Weight huge.
-                # If X is in price units (e.g. 1.0), X^2 = 1.0.
-                # Let's assume user wants raw values but we should protect against div/0.
+                # New "Fat Tail" Weighting Logic
+                # 1. Remove ATR normalization from denominator (X^2) to boost high-vol samples?
+                #    User: "Modify compute_peak_labels_and_weights to boost high-volatility samples."
+                #    User: "The current weighting formula log(1 + Y / (X^2 * ATR)) divides by ATR... explicitly trains the model to ignore high-volatility events."
+                #    New Formula: Weight = log(1 + Y / X_safe^2) * (1.0 + 2.0 * ATR_pct / 0.01) [Boost by volatility]
+                
+                # ATR as percentage of price (approximate, since we only have raw ATR)
+                # Let's assume input `atr` is raw price units.
+                atr_pct_approx = curr_atr / curr_p if curr_p > 0 else 0.0
+                
+                # Volatility Boost Factor: e.g. if ATR=2%, boost=3x. If ATR=0.5%, boost=1.5x.
+                vol_boost = 1.0 + 2.0 * min(atr_pct_approx / 0.01, 5.0) # Cap at 5% ATR (11x boost)
 
                 X_val = fwd_max - curr_p
                 Y_val = reversal_size
@@ -968,9 +960,26 @@ def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend,
                 # Protect X=0
                 X_safe = max(X_val, 1e-4)
 
-                term = Y_val / ((X_safe**2) * curr_atr)
-                weights[i] = np.log1p(term)
+                # Original: term = Y_val / ((X_safe**2) * curr_atr)
+                # New: term = Y_val / (X_safe**2)  (Pure Price Action intensity)
+                # Note: this makes term scale with 1/Price. 
+                # To be scale-invariant, we should normalize X and Y by Price?
+                # User didn't explicitly ask for scale invariance, but "intensity" usually relative.
+                # However, sticking to User's specific "remove ATR from denominator" request:
+                term = Y_val / (X_safe**2)
+                
+                # Apply Vol Boost
+                weights[i] = np.log1p(term) * vol_boost
 
+                # Soft Label: 1.0 if perfect peak, decays as we get further away
+                # perfect peak X=0. Label = 1.0.
+                # Threshold near_dist.
+                # label = 1.0 - (X_val / near_dist) clipped to [0, 1]
+                # This gives a "triangular" soft label.
+                soft_lbl = 1.0 - (X_val / near_dist)
+                if soft_lbl < 0: soft_lbl = 0.0
+                labels[i] = float(soft_lbl)
+                
         else: # Looking for Trough (Bottom)
             # 1. Find Forward Min (Trough)
             fwd_min = np.inf
@@ -985,8 +994,14 @@ def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend,
 
             if idx_min == -1: continue
 
-            # 2. Check Trough Proximity
-            if curr_p > (fwd_min + near_dist):
+            # 2. Check Trough Proximity (Relaxed/Soft)
+            # We now allow samples even if slightly outside strict near_dist, 
+            # effectively handled by the Soft Label which will be 0.0 if > near_dist.
+            # But for efficiency we can keep the hard cut-off for now, or relax it.
+            # "Relax near_dist in high volatility" -> simpler to just use soft label within current near_dist?
+            # Or expand near_dist? User said "Relax near_dist".
+            # Let's expand the check window by 50% but label will decay to 0.
+            if curr_p > (fwd_min + near_dist * 1.5):
                 continue
 
             # 3. Check Rally AFTER Trough
@@ -1005,16 +1020,27 @@ def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend,
 
             reversal_size = fwd_max_after - fwd_min
             if reversal_size >= limit_dist:
-                labels[i] = 1.0
+                
+                # Weight Calculation (Fat Tail Logic)
+                atr_pct_approx = curr_atr / curr_p if curr_p > 0 else 0.0
+                vol_boost = 1.0 + 2.0 * min(atr_pct_approx / 0.01, 5.0) 
 
-                # Weight Calculation
-                # X = distance to trough = curr_p - fwd_min
                 X_val = curr_p - fwd_min
                 Y_val = reversal_size
 
                 X_safe = max(X_val, 1e-4)
-                term = Y_val / ((X_safe**2) * curr_atr)
-                weights[i] = np.log1p(term)
+                
+                # Remove ATR from denominator
+                term = Y_val / (X_safe**2)
+                weights[i] = np.log1p(term) * vol_boost
+
+                # Soft Label
+                # Distance X_val.
+                # Standard near_dist. 
+                # If X_val > near_dist, label < 0 -> 0.
+                soft_lbl = 1.0 - (X_val / near_dist)
+                if soft_lbl < 0: soft_lbl = 0.0
+                labels[i] = float(soft_lbl)  
 
     return labels, weights
 
@@ -1364,6 +1390,171 @@ def _numba_sign_consistency_1d(x, window):
             out[i] = 0.0
 
     return out
+
+
+# ============================================================================
+# SPECIALIST LABELING FUNCTIONS
+# ============================================================================
+
+@jit(nopython=True, cache=True)
+def _numba_quality_label(close, high, low, volume, signed_vol, horizon=6):
+    """
+    Compute quality score for Trap Specialist.
+    
+    Quality = Flow Consistency × Price Efficiency × Volume Conviction
+    
+    Args:
+        close: Close prices
+        high: High prices
+        low: Low prices
+        volume: Volume
+        signed_vol: Signed volume (volume * sign(close - open))
+        horizon: Forward-looking window (default 6 bars)
+    
+    Returns:
+        quality_score: Array of quality scores (0 = trap, 1 = clean move)
+    """
+    n = len(close)
+    quality = np.zeros(n, dtype=np.float32)
+    
+    for i in range(horizon, n):
+        # 1. Flow Consistency: Does volume support direction?
+        fwd_ret = close[i] - close[i-horizon]
+        fwd_signed_vol = 0.0
+        for j in range(i-horizon, i):
+            fwd_signed_vol += signed_vol[j]
+        
+        # Flow alignment: 1.0 if volume and price agree, 0.0 otherwise
+        flow_align = 1.0 if (fwd_ret * fwd_signed_vol > 0) else 0.0
+        
+        # 2. Price Efficiency: Net move / Gross path
+        net_move = abs(fwd_ret)
+        gross_path = 0.0
+        for j in range(i-horizon+1, i+1):
+            gross_path += abs(close[j] - close[j-1])
+        
+        efficiency = net_move / (gross_path + 1e-9)
+        
+        # 3. Volume Conviction: Sustained vs Spike
+        vol_sum = 0.0
+        vol_sq_sum = 0.0
+        for j in range(i-horizon, i):
+            vol_sum += volume[j]
+            vol_sq_sum += volume[j] * volume[j]
+        
+        vol_mean = vol_sum / horizon
+        vol_variance = (vol_sq_sum / horizon) - (vol_mean * vol_mean)
+        vol_std = np.sqrt(max(vol_variance, 0.0))
+        vol_consistency = 1.0 - min(vol_std / (vol_mean + 1e-9), 1.0)
+        
+        # Composite Quality Score (weighted average)
+        quality[i] = (flow_align * 0.4 + efficiency * 0.4 + vol_consistency * 0.2)
+    
+    return quality
+
+
+def compute_quality_labels(panel, horizon=6):
+    """
+    Compute quality labels for all symbols in panel.
+    
+    Args:
+        panel: Dictionary with OHLCV DataFrames
+        horizon: Forward-looking window
+    
+    Returns:
+        DataFrame of quality scores (index=timestamp, columns=symbols)
+    """
+    close = panel["close"]
+    high = panel["high"]
+    low = panel["low"]
+    volume = panel["volume"]
+    open_prices = panel["open"]
+    
+    # Compute signed volume
+    signed_vol = volume * np.sign(close - open_prices)
+    
+    quality_df = pd.DataFrame(index=close.index, columns=close.columns, dtype=np.float32)
+    
+    for sym in close.columns:
+        c_arr = close[sym].to_numpy(dtype=np.float32)
+        h_arr = high[sym].to_numpy(dtype=np.float32)
+        l_arr = low[sym].to_numpy(dtype=np.float32)
+        v_arr = volume[sym].to_numpy(dtype=np.float32)
+        sv_arr = signed_vol[sym].to_numpy(dtype=np.float32)
+        
+        quality_arr = _numba_quality_label(c_arr, h_arr, l_arr, v_arr, sv_arr, horizon)
+        quality_df[sym] = quality_arr
+    
+    return quality_df
+
+
+@jit(nopython=True, cache=True)
+def _numba_gamma_label(close, atr, horizon=6):
+    """
+    Compute realized volatility (gamma) label for Gamma Specialist.
+    
+    Realized Volatility = StdDev of returns over next `horizon` bars,
+    normalized by current ATR for stationarity.
+    
+    Args:
+        close: Close prices
+        atr: Average True Range
+        horizon: Forward-looking window (default 6 bars)
+    
+    Returns:
+        gamma: Array of normalized realized volatility
+               (0 = dead, ~1 = normal, >2 = explosive)
+    """
+    n = len(close)
+    gamma = np.zeros(n, dtype=np.float32)
+    
+    for i in range(n - horizon):
+        # Compute forward returns
+        fwd_rets_sum = 0.0
+        fwd_rets_sq_sum = 0.0
+        
+        for j in range(i, i + horizon):
+            ret = close[j+1] - close[j]
+            fwd_rets_sum += ret
+            fwd_rets_sq_sum += ret * ret
+        
+        # Realized volatility = StdDev of forward returns
+        mean_ret = fwd_rets_sum / horizon
+        variance = (fwd_rets_sq_sum / horizon) - (mean_ret * mean_ret)
+        realized_vol = np.sqrt(max(variance, 0.0))
+        
+        # Normalize by current ATR
+        curr_atr = atr[i]
+        gamma[i] = realized_vol / (curr_atr + 1e-9)
+    
+    return gamma
+
+
+def compute_gamma_labels(panel, feats, horizon=6):
+    """
+    Compute gamma (realized volatility) labels for all symbols.
+    
+    Args:
+        panel: Dictionary with OHLCV DataFrames
+        feats: Dictionary of feature DataFrames (must contain 'atr_pct')
+        horizon: Forward-looking window
+    
+    Returns:
+        DataFrame of gamma labels (index=timestamp, columns=symbols)
+    """
+    close = panel["close"]
+    atr = feats["atr_pct"]
+    
+    gamma_df = pd.DataFrame(index=close.index, columns=close.columns, dtype=np.float32)
+    
+    for sym in close.columns:
+        c_arr = close[sym].to_numpy(dtype=np.float32)
+        atr_arr = atr[sym].to_numpy(dtype=np.float32)
+        
+        gamma_arr = _numba_gamma_label(c_arr, atr_arr, horizon)
+        gamma_df[sym] = gamma_arr
+    
+    return gamma_df
 
 def numba_sign_consistency(df, window):
     tprint(f"Entering function: numba_sign_consistency in fast_funcs.py")

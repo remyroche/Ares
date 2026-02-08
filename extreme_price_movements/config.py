@@ -145,7 +145,20 @@ CFG = {
         "jump_rate_10h", "volu_z", "volume_price_corr_10h", "draw_sym_10h", "breakout_24h",
         "vol_z_30_calm",
         "meta_abs_net_x_breakout", "meta_abs_net_x_drawext", "meta_abs_net_x_vov_ratio",
-        "meta_alignment", "meta_signal_x_accel"
+        "meta_alignment", "meta_signal_x_accel",
+        # Orthogonal features (structurally independent dimensions)
+        "mtf_divergence", "mtf_div_mag",
+        "autocorr_6h", "autocorr_24h",
+        "path_efficiency_12", "path_efficiency_24",
+        "hurst_proxy_24",
+        "vol_concentration_12",
+        "vol_price_diverge",
+        # Residualised features — relative surprise, not absolute magnitude
+        "rsi_z", "dist_ema_fast_z", "dist_vwap_norm_z", "flow_persistence_z",
+        "excess_6h_z", "vol_z_z", "atr_expansion_z", "coherence_24_z",
+        "accept_surprise", "reject_surprise", "overext_surprise",
+        "blowoff_risk_surprise", "exh_qual_surprise",
+        "dist_vwap_resid", "dist_ema_fast_resid", "trend_pct_resid"
     ],
 
     # thresholds / picks
@@ -156,6 +169,7 @@ CFG = {
 
     # sizing / risk / costs
     "wallet_gross_cap": 0.25,
+    "sizing_mode": "rank",            # "rank" (default), "equal", or "score" — rank uses percentile within batch
     "score_map": "tanh",
     "score_scale": 15.0,
     "tp": 0.05,
@@ -165,11 +179,25 @@ CFG = {
     "borrow_apr": 0.20,
 
     # OOS holdout for backtest
-    "oos_holdout_days": 30,     # Exclude last N days from training for OOS backtest
+    "oos_holdout_days": 180,    # Exclude last 6 months from training for OOS backtest
 
-    # Triple Barrier Risk Params (used in backtest & live)
-    "tp_mult": 1.0,             # TP = tp_mult * barrier_pct
-    "sl_mult": 0.5,             # SL = sl_mult * barrier_pct
+    # Trailing Profit Risk Params (used in backtest & live, all vol-scaled)
+    "tp_mult": 1.0,             # Activation threshold = tp_mult * barrier_pct
+    "sl_mult": 0.5,             # Stop-loss = sl_mult * barrier_pct
+    "trail_mult": 0.5,          # Trailing deviation = trail_mult * barrier_pct
+
+    # Regime throttle: reduce sizing during drawdowns
+    "throttle_lookback_trades": 20,     # look at last N closed trades
+    "throttle_dd_threshold": -0.02,     # cumPnL drawdown trigger
+    "throttle_sizing_factor": 0.5,      # reduce sizing to 50% when triggered
+
+    # Portfolio constraints
+    "max_concurrent_trades": 5,
+    "max_portfolio_weight": 0.25,
+
+    # Daily risk budget: concentration controls
+    "max_daily_per_specialist": 8,   # max trades/day per bucket (LONG_TF, SHORT_MR, etc.)
+    "max_daily_total": 25,           # max total trades/day across all buckets
 
     # Legacy Risk Params (Trailing Stop fallback)
     "risk_k_sl": 2.0,           # stop distance in ATR multiples
@@ -203,7 +231,11 @@ CFG = {
         "donch_dist_12", "excess_6h", "overext", "overext_weak", "effort_gate", "stall_ext", "tail_fail",
         "reject", "blowoff_risk",
         "clv_mean_4", "pullback_2", "pullback_4", "giveback", "evr_6", "progress",
-        "delta_stall_6", "tail_against"
+        "delta_stall_6", "tail_against",
+        # Context features (Volatility & Regime)
+        "vol_z", "atr_pct", "rsi", "mkt_rv_ratio", "dist_vwap_norm", "accel",
+        # Interaction Features
+        "dist_ext_x_vol", "regime_x_vol", "rsi_x_vol"
     ],
 
     # Spike / Regime Head
@@ -213,18 +245,23 @@ CFG = {
         "retrace_12", "donch_dist_12"
     ],
 
-    # TF Head (Specifics + Global)
+    # TF Head (Specifics + Global) — includes trend maturity features
     "tf_feature_keys": [
         "accept", "retest_accept", "tf_qual", "coherence_24", "impulse_ratio_24",
         "tf_tape", "clv_mean_4", "pullback_2", "pullback_4", "ft_2", "ft_4",
-        "vov_ratio", "vov_interaction", "vov_fast_slow_ratio", "accel_5h", "breakout_24h"
+        "vov_ratio", "vov_interaction", "vov_fast_slow_ratio", "accel_5h", "breakout_24h",
+        "stage_tf", "tf_bias", "flow_persistence", "flow_ratio",
+        "progress", "evr_6", "delta_stall_6"
     ] + neutral_feature_keys + MODEL_FEATURES + HELPER_BASE_FEATURES,
 
-    # MR Head (Specifics + Global)
+    # MR Head (Specifics + Global) — includes exhaustion features
     "mr_feature_keys": [
         "reject", "overext", "overext_weak", "mr_qual", "retrace_12",
         "impulse_ratio_24", "coherence_24", "mr_tape",
-        "clv_mean_4", "pullback_2", "pullback_4", "ft_2", "ft_4"
+        "clv_mean_4", "pullback_2", "pullback_4", "ft_2", "ft_4",
+        "giveback", "blowoff_risk", "exh_qual", "stage_blowoff", "stage_mr",
+        "donch_dist_12", "excess_6h", "tail_fail", "tail_against",
+        "mfe_4h", "mae_4h"
     ] + neutral_feature_keys + MODEL_FEATURES + HELPER_BASE_FEATURES,
 
     # Meta Learner
@@ -239,7 +276,11 @@ CFG = {
         "G_META_EXH", "G_META_TF_QUAL", "G_META_MR_QUAL", "G_META_AMBIG",
         "vol_z_30_calm", "breakout_24h", "draw_extreme_10h",
         "meta_abs_net_x_breakout", "meta_abs_net_x_drawext", "meta_abs_net_x_vov_ratio",
-        "meta_alignment", "meta_signal_x_accel"
+        "meta_alignment", "meta_signal_x_accel",
+        # Specialist features
+        "trap_quality", "predicted_vol_6h",
+        # Gated entry features
+        "bounce_signal", "trap_strength", "volume_capitulation", "entry_quality_composite",
     ],
 
     # Inference dynamic-basket controls
@@ -249,5 +290,11 @@ CFG = {
     "inference_draw_window_hours": 8,
     "inference_sign_consistency_min": 0.80,
     "inference_basket_ttl_hours": 24,
+    
+    # High-frequency simulation
+    "use_15m_precision": True,  # Enable 15m OHLCV for trailing profit (requires CCXT exchange)
+    
+    # Risk logging
+    "verbose_risk_logging": False,  # Enable detailed per-trade TP/SL logging
 
 }

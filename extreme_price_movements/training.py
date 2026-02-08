@@ -15,6 +15,7 @@ from .optimise_tpsl_ratio import (
     calibrate_atr_base_pct,
     compute_vol_z_log_mad,
     PurgedKFold,
+    scaled_atr_pct,
 )
 
 def _fast_lookup(feat_df, event_ts, event_sym):
@@ -51,33 +52,6 @@ def compute_weights_logic(df, cfg, model_kind):
     if model_kind == "mr": return compute_mr_weights(df, cfg)
     else: return compute_tf_weights(df, cfg)
 
-def scaled_atr_pct(
-    atr_pct: float,
-    z: float,
-    atr_base_pct: float,
-    *,
-    z_max: float = 3.0,
-    lo: float = 0.03,
-    hi: float = 0.06,
-    eps: float = 1e-12,
-):
-    """
-    ATR-informed, shock-scaled, bounded barrier percent.
-    Vectorized using NumPy.
-    """
-    # 1) Shock control
-    shock = np.clip(z, 0.0, z_max)
-
-    # 2) Dynamic multiplier 'a' so that:
-    #    atr_base_pct * (1 + a*z_max) ≈ hi
-    a = (hi / np.maximum(atr_base_pct, eps) - 1.0) / z_max
-
-    # 3) Multiplicative scaling
-    raw = atr_pct * (1.0 + a * shock)
-
-    # 4) Enforce cross-asset low/high targets
-    return np.clip(raw, lo, hi)
-
 def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, syms, trend_filter=None):
     tprint(f"Entering function: build_exhaustion_Xy in training.py")
     c = panel["close"]
@@ -89,6 +63,10 @@ def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, sy
     mask = (idx >= ts_start) & (idx <= ts_train_end + pd.Timedelta(hours=H))
     idx_slice = idx[mask]
     valid_syms = [s for s in syms if s in c.columns]
+    # Also filter against feature columns to avoid KeyError on newly listed symbols
+    for fk in cfg.get("exh_feature_keys", []):
+        if fk in feats:
+            valid_syms = [s for s in valid_syms if s in feats[fk].columns]
     if not valid_syms: return None, None, None, None
     t_index = idx[(idx >= ts_start) & (idx <= ts_train_end)]
     current = c.loc[t_index, valid_syms]
@@ -220,7 +198,7 @@ def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms, models=Non
             tprint("Training UP model...")
             X, y, w, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts, lookback, valid_syms, trend_filter="up")
             if X is not None and len(y) > 100:
-                model_up = ExhaustionModel(C=cfg["exh_C"], l1_ratio=cfg["exh_l1_ratio"])
+                model_up = ExhaustionModel()
                 model_up.fit(X, y, sample_weight=w)
             else:
                 tprint("Not enough data for UP model.")
@@ -228,8 +206,8 @@ def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms, models=Non
         if model_up and model_up.model:
             Xp = _build_pred_X(feats, mkt_gates, cfg, ts, up_syms, feature_key="exh_feature_keys")
             if not Xp.empty:
+                # No manual scaling needed with calibration
                 probs = model_up.predict_proba(Xp)
-                probs = np.clip(probs * 2.0, 0.0, 1.0)
                 out_probs.loc[up_syms] = probs
     if dn_syms:
         if models and "down" in models: model_dn = models["down"]
@@ -237,7 +215,7 @@ def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms, models=Non
             tprint("Training DOWN model...")
             X, y, w, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts, lookback, valid_syms, trend_filter="down")
             if X is not None and len(y) > 100:
-                model_dn = ExhaustionModel(C=cfg["exh_C"], l1_ratio=cfg["exh_l1_ratio"])
+                model_dn = ExhaustionModel()
                 model_dn.fit(X, y, sample_weight=w)
             else:
                 tprint("Not enough data for DOWN model.")
@@ -246,8 +224,8 @@ def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms, models=Non
             Xp = _build_pred_X(feats, mkt_gates, cfg, ts, dn_syms, feature_key="exh_feature_keys")
             if not Xp.empty:
                 preds = model_dn.predict_proba(Xp)
-                probs = np.clip(preds * 2.0, 0.0, 1.0)
-                out_probs.loc[dn_syms] = probs
+                # No manual scaling needed
+                out_probs.loc[dn_syms] = preds
     return out_probs.fillna(0.0)
 
 def _build_pred_X(feats, mkt_gates, cfg, ts, syms, feature_key="exh_feature_keys"):
@@ -278,7 +256,7 @@ def generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_end, lookback_h
     model_up = None
     arr_oof_up = None
     if X_up is not None and len(y_up) > 100:
-        model_up = ExhaustionModel(C=cfg["exh_C"], l1_ratio=cfg["exh_l1_ratio"])
+        model_up = ExhaustionModel()
         model_up.fit(X_up, y_up, sample_weight=w_up)
         # OOF Predictions for UP
         tprint("Generating OOF predictions for UP model...")
@@ -293,7 +271,7 @@ def generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_end, lookback_h
     model_dn = None
     arr_oof_dn = None
     if X_dn is not None and len(y_dn) > 100:
-        model_dn = ExhaustionModel(C=cfg["exh_C"], l1_ratio=cfg["exh_l1_ratio"])
+        model_dn = ExhaustionModel()
         model_dn.fit(X_dn, y_dn, sample_weight=w_dn)
         # OOF Predictions for DOWN
         tprint("Generating OOF predictions for DOWN model...")
@@ -357,29 +335,27 @@ def generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_end, lookback_h
         if model_up and model_up.model:
             # 1. Fitted prediction (fallback)
             preds = model_up.predict_proba(X_sym_df)
-            preds = np.clip(preds * 2.0, 0.0, 1.0)
-
+            
             # 2. Overlay OOF predictions where available
             if arr_oof_up is not None:
                 oof_col = arr_oof_up[:, j]
                 valid_oof = ~np.isnan(oof_col)
                 if valid_oof.any():
-                    # Apply same scaling to OOF
-                    preds[valid_oof] = np.clip(oof_col[valid_oof] * 2.0, 0.0, 1.0)
+                    # OOF is already calibrated
+                    preds[valid_oof] = oof_col[valid_oof]
             p_up_sym = preds
 
         p_dn_sym = np.zeros(n_t, dtype=np.float32)
         if model_dn and model_dn.model:
             # 1. Fitted prediction
             preds = model_dn.predict_proba(X_sym_df)
-            preds = np.clip(preds * 2.0, 0.0, 1.0)
-
+            
             # 2. Overlay OOF predictions
             if arr_oof_dn is not None:
                 oof_col = arr_oof_dn[:, j]
                 valid_oof = ~np.isnan(oof_col)
                 if valid_oof.any():
-                    preds[valid_oof] = np.clip(oof_col[valid_oof] * 2.0, 0.0, 1.0)
+                    preds[valid_oof] = oof_col[valid_oof]
             p_dn_sym = preds
 
         result[:, j] = np.where(trend_arr[:, j] > 0, p_up_sym, p_dn_sym)
@@ -566,7 +542,28 @@ def build_hourly_training_set_and_weights(
             trade_dir = np.ones(len(event_ts))
         pnl = ret_vals * trade_dir
 
-    y_bin = (pnl > 0).astype(np.int8)
+    # Quantile-based labels: top 30% -> 1, bottom 30% -> 0, middle 40% dropped
+    q_lo = float(cfg.get("label_quantile_lo", 0.30))
+    q_hi = float(cfg.get("label_quantile_hi", 0.70))
+    pnl_lo = np.quantile(pnl[np.isfinite(pnl)], q_lo) if np.sum(np.isfinite(pnl)) > 10 else 0.0
+    pnl_hi = np.quantile(pnl[np.isfinite(pnl)], q_hi) if np.sum(np.isfinite(pnl)) > 10 else 0.0
+    keep_mask = (pnl <= pnl_lo) | (pnl >= pnl_hi)
+    tprint(f"Quantile labels: lo_thr={pnl_lo:.6f}, hi_thr={pnl_hi:.6f}, "
+           f"kept={keep_mask.sum()}/{len(pnl)} ({keep_mask.mean()*100:.0f}%)")
+
+    # Apply mask — drop ambiguous middle samples
+    event_ts = event_ts[keep_mask]
+    event_sym = event_sym[keep_mask]
+    entry_ts = event_ts + pd.Timedelta(hours=1)
+    pnl = pnl[keep_mask]
+    lbl_vals = lbl_vals[keep_mask]
+    ret_vals = ret_vals[keep_mask]
+
+    if len(event_ts) == 0:
+        tprint("No rows after quantile filtering.")
+        return None, None, None, None, None, None
+
+    y_bin = (pnl >= pnl_hi).astype(np.int8)
 
     # Weights from ret24h
     pa = np.abs(np.nan_to_num(_fast_lookup(feats["ret24h"], event_ts, event_sym), nan=0.0))
@@ -582,6 +579,19 @@ def build_hourly_training_set_and_weights(
         class_mult = np.where(y_bin == 1, w_pos, w_neg).astype(np.float32)
         weights_raw = weights_raw * class_mult
 
+    # Regime-consistency weighting: upweight samples where trade direction
+    # aligns with the prevailing market trend (mkt_trend)
+    if "mkt_trend" in mkt_gates.columns:
+        mkt_trend_vals = mkt_gates["mkt_trend"].reindex(event_ts).values
+        mkt_trend_vals = np.nan_to_num(mkt_trend_vals, nan=0.0)
+        # For long trades (pnl > 0 when price goes up), alignment = mkt_trend > 0
+        # For short trades (pnl > 0 when price goes down), alignment = mkt_trend < 0
+        if side == "long":
+            regime_align = np.where(mkt_trend_vals > 0, 1.5, 0.75).astype(np.float32)
+        else:
+            regime_align = np.where(mkt_trend_vals < 0, 1.5, 0.75).astype(np.float32)
+        weights_raw = weights_raw * regime_align
+
     # Volatility-based weight multiplier: range_24h * vol_z, bounded [0.5, 2.0]
     if "range_24h_pct" in feats and "volatility_zscore" in feats:
         r24 = np.abs(np.nan_to_num(_fast_lookup(feats["range_24h_pct"], event_ts, event_sym), nan=0.0))
@@ -594,6 +604,12 @@ def build_hourly_training_set_and_weights(
     ts_arr = event_ts.values if hasattr(event_ts, 'values') else event_ts
     sym_arr = event_sym.values if hasattr(event_sym, 'values') else event_sym
     parts = {"ts": ts_arr, "symbol": sym_arr, "y_bin": y_bin, "y_ret": pnl.astype(np.float32), "w": weights_raw.astype(np.float32)}
+
+    # Store barrier_pct for risk-adjusted meta model target
+    if "atr_pct" in feats:
+        barrier_vals = _fast_lookup(feats["atr_pct"], event_ts, event_sym)
+        barrier_vals = np.nan_to_num(barrier_vals, nan=0.02).astype(np.float32)
+        parts["__barrier_pct__"] = np.clip(barrier_vals, 0.005, None)
 
     # p_exh_lag1
     lag_ts = event_ts - pd.Timedelta(hours=1)
@@ -665,6 +681,15 @@ def build_hourly_training_set_and_weights(
     
     tprint(f"Applied uniqueness weighting: mean={weights.mean():.3f}, std={weights.std():.3f}")
     df.drop(columns=["w"], inplace=True)
+
+    # Preserve raw meta feature columns BEFORE interaction toggles destroy them.
+    # At inference time (engine.py), the meta model receives raw feature names,
+    # so we must train on raw names too. Prefix with __meta_raw__ to avoid
+    # collision with toggled columns and to survive drop_raw=True.
+    meta_keys_cfg = cfg.get("meta_feature_keys", [])
+    for mk in meta_keys_cfg:
+        if mk in df.columns:
+            df[f"__meta_raw__{mk}"] = df[mk].values
 
     df = apply_interaction_toggles(df, feat_keys, ["G_VOL", "G_TREND"], drop_raw=cfg["drop_raw_causal"])
     y_bin = df.pop("y_bin").values.astype(int)
@@ -830,16 +855,21 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
             close_df = panel["close"]
             opt_feat_keys = cfg.get("causal_cols", [])[:10]
             
+            # Fallback for optimization: expand pool if market basket is too small
+            # We want at least 1000 events for robust TP/SL. 40 is too few.
             assets_to_opt = [s for s in cfg.get("market_basket", []) if s in close_df.columns and s in atr_pct_df.columns]
-            # If basket is empty or missing, pick top liquid by column order (assuming sorted)
-            if not assets_to_opt:
-                 assets_to_opt = list(close_df.columns[:15])
-            else:
-                 assets_to_opt = assets_to_opt[:15]
             
-            tprint(f"TP/SL optimization pool: {assets_to_opt}")
+            # If basket provided < 30 assets, fill up with top liquid ones from the panel
+            target_pool_size = 50
+            if len(assets_to_opt) < target_pool_size:
+                 remaining = [s for s in close_df.columns if s not in assets_to_opt and s in atr_pct_df.columns]
+                 # Prefer assets with non-zero candidates if possible, or just top ones
+                 assets_to_opt.extend(remaining[:target_pool_size - len(assets_to_opt)])
+            
+            tprint(f"TP/SL optimization pool: {len(assets_to_opt)} assets (Example: {assets_to_opt[:5]}...)")
 
             tp_mult, sl_mult = 1.0, 0.5  # defaults
+            tprint(f"TP/SL Defaults: tp_mult={tp_mult}, sl_mult={sl_mult}")
             lo_val, hi_val, z_max_val = 0.03, 0.06, 3.0
 
             # Arrays to collect
@@ -847,6 +877,7 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
             all_a, all_ab, all_zv = [], [], []
             all_x = []
             all_event_idx = []
+            all_time_idx = []  # raw time indices (pre-offset) for temporal sorting
             
             current_offset = 0
             pad_len = int(H) + 24
@@ -906,6 +937,7 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
                      
                      # Shift event indices
                      all_event_idx.append(e_idx + current_offset)
+                     all_time_idx.append(e_idx)  # raw time index (pre-offset) for temporal sorting
                      
                      current_offset += len(c) + pad_len
             
@@ -919,6 +951,7 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
                  final_zv = np.concatenate(all_zv)
                  final_x = np.concatenate(all_x)
                  final_events = np.concatenate(all_event_idx)
+                 final_time_idx = np.concatenate(all_time_idx)
                  
                  tprint(f"TP/SL optimization: {len(final_events)} events from {len(assets_to_opt)} assets for H={H} side={side}")
 
@@ -942,6 +975,7 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
                              entry_mode="next_open",
                              n_assets=len(assets_to_opt),
                              n_months=n_mos,
+                             event_time_idx=final_time_idx,
                          )
                          tp_mult = summary.final_tp_mult
                          sl_mult = summary.final_sl_mult
@@ -1028,6 +1062,53 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
             datasets[f"exh_{d}"] = df_out.reset_index()
 
     return datasets
+
+def train_specialist_models(panel, feats, mkt_gates, cfg, syms, ts_end):
+    """
+    Train Trap and Gamma specialist models.
+    
+    Args:
+        panel: Dictionary with OHLCV DataFrames
+        feats: Dictionary of feature DataFrames
+        mkt_gates: Market regime gates DataFrame
+        cfg: Configuration dictionary
+        syms: List of symbols to train on
+        ts_end: End timestamp for training window
+    
+    Returns:
+        Dictionary with trained specialist models
+    """
+    from .trap_specialist import train_trap_specialist
+    from .gamma_specialist import train_gamma_specialist
+    
+    tprint("=" * 60)
+    tprint("TRAINING SPECIALIST MODELS")
+    tprint("=" * 60)
+    
+    specialist_models = {}
+    
+    # 1. Trap Specialist (GMM-based quality filter)
+    try:
+        trap_model = train_trap_specialist(panel, feats, cfg, syms, ts_end)
+        specialist_models["trap_model"] = trap_model
+    except Exception as e:
+        tprint(f"ERROR: Trap Specialist training failed: {e}")
+        specialist_models["trap_model"] = None
+    
+    # 2. Gamma Specialist (ExtraTrees regression for volatility)
+    try:
+        gamma_model = train_gamma_specialist(panel, feats, cfg, syms, ts_end)
+        specialist_models["gamma_model"] = gamma_model
+    except Exception as e:
+        tprint(f"ERROR: Gamma Specialist training failed: {e}")
+        specialist_models["gamma_model"] = None
+    
+    tprint("=" * 60)
+    tprint("SPECIALIST TRAINING COMPLETE")
+    tprint("=" * 60)
+    
+    return specialist_models
+
 
 def train_models_from_artifacts(datasets, cfg):
     tprint(f"Entering function: train_models_from_artifacts in training.py")
@@ -1132,13 +1213,13 @@ def train_models_from_artifacts(datasets, cfg):
                 assert not missing, f"Dataset {key} missing columns: {missing}"
 
                 y = df["__y_bin__"].values.astype(int)
-                y_ret = df["__y_ret__"].values.astype(np.float64)
-                w_raw = df["__w__"].values.astype(np.float64)
-                # Cap weights at p95 to prevent n_eff collapse from skewed uniqueness weights
-                p95 = np.percentile(w_raw, 95)
-                w = np.clip(w_raw, 0.0, max(p95, 1e-6))
+                y_ret = df["__y_ret__"].values.astype(np.float32)
+                w_raw = df["__w__"].values.astype(np.float32)
+                # Temper weights with sqrt to reduce n_eff collapse from skewed uniqueness weights
+                # sqrt preserves relative ordering but compresses the tail
+                w = np.sqrt(np.clip(w_raw, 0.0, None))
 
-                drop_cols = ["__y_bin__", "__y_ret__", "__w__", "__ts__", "__symbol__"]
+                drop_cols = ["__y_bin__", "__y_ret__", "__w__", "__ts__", "__symbol__", "__barrier_pct__"]
                 X = df.drop(columns=[c for c in drop_cols if c in df.columns])
 
                 # Filter features strictly for the Alpha Model (exclude meta-only features)
@@ -1211,9 +1292,10 @@ def train_models_from_artifacts(datasets, cfg):
                     X, y,
                     base_model=mdi_base,
                     sample_weight=w,
+                    end_features=60,
                     cumulative_cap=0.99,
                     min_share=0.0005,
-                    min_features=10,
+                    min_features=30,
                     max_features_pct=0.8
                 )
                 
@@ -1225,11 +1307,23 @@ def train_models_from_artifacts(datasets, cfg):
                 
                 tprint(f"  Class dist: 0={int((y==0).sum())} ({(y==0).mean()*100:.1f}%), 1={int((y==1).sum())} ({(y==1).mean()*100:.1f}%)")
 
-                race = ModelRace(kind=k, n_splits=3)
+                race = ModelRace(kind=k, n_splits=5)
                 race.fit(X_sel, y, sample_weight=w, returns=y_ret)
                 score = race.metrics.get(race.best_model_name, -1.0)
                 dm = race.detailed_metrics.get(race.best_model_name, {})
                 tprint(f"Finished {side} {k} H={H}: Winner={race.best_model_name}, Score={score:.4f}, AUC={dm.get('AUC',0):.4f}, IC={dm.get('IC',0):.4f}, BSS={dm.get('BSS',0):.4f}")
+
+                # --- Alpha model OOF diagnostics ---
+                if race.oof_probs is not None:
+                    oof = race.oof_probs
+                    tprint(f"  OOF probs: mean={np.mean(oof):.4f}, std={np.std(oof):.4f}, "
+                           f"min={np.min(oof):.4f}, max={np.max(oof):.4f}")
+                    # OOF-based return correlation (key signal quality metric)
+                    if np.std(oof) > 1e-9 and np.std(y_ret) > 1e-9:
+                        oof_ret_corr = float(np.corrcoef(oof, y_ret)[0, 1])
+                        tprint(f"  OOF-return correlation: {oof_ret_corr:.4f}")
+                    # Calibration: mean predicted prob vs actual positive rate
+                    tprint(f"  Calibration: mean_pred={np.mean(oof):.4f} vs actual_rate={np.mean(y):.4f}")
 
                 if score > best_ic:
                     best_ic = score
@@ -1275,25 +1369,68 @@ def train_models_from_artifacts(datasets, cfg):
                 tprint(f"Meta {side}_{k}: mismatch length OOF={len(p_oof)} vs y_ret={len(y_ret)}")
                 continue
 
-            # Prepare meta features
-            # Extract only configured meta keys before MDI selection (plus pred_logit added downstream)
-            drop_cols = ["__y_bin__", "__y_ret__", "__w__", "__ts__", "__symbol__"]
-            candidate_cols = [c for c in df.columns if c not in drop_cols]
+            # Prepare meta features using RAW feature names (not interaction-toggled).
+            # At inference time (engine.py), the meta model receives raw feature names
+            # like "ambig", not toggled names like "ambig_G_VOL_0".
+            # Raw values were preserved as __meta_raw__{name} columns in
+            # build_hourly_training_set_and_weights before interaction toggles.
             configured_meta = cfg.get("meta_feature_keys", [])
-            feat_cols = [c for c in configured_meta if c in candidate_cols]
+            feat_cols = []
+            raw_prefix = "__meta_raw__"
+            for mk in configured_meta:
+                prefixed = f"{raw_prefix}{mk}"
+                if prefixed in df.columns:
+                    feat_cols.append(mk)  # use raw name for column in X_feats
+            feat_cols = list(dict.fromkeys(feat_cols))  # dedupe preserving order
             if not feat_cols:
-                tprint(f"Meta {side}_{k}: skipped (no configured meta features available)")
+                tprint(f"Meta {side}_{k}: skipped (no raw meta features found in dataset)")
                 continue
 
-            X_feats = df[feat_cols].fillna(0.0)
+            # Build X_feats with raw feature names (matching inference column names)
+            X_feats = pd.DataFrame(index=df.index)
+            for mk in feat_cols:
+                X_feats[mk] = df[f"{raw_prefix}{mk}"].values
+            X_feats = X_feats.fillna(0.0)
 
-            tprint(f"Meta {side}_{k}: Training on {len(df)} samples with {len(feat_cols)} configured features...")
+            # Risk-adjusted target: y_ret / barrier_pct (normalize by vol)
+            # This makes the meta model predict risk-adjusted quality, not raw return
+            if "__barrier_pct__" in df.columns:
+                barrier_vals = df["__barrier_pct__"].values.astype(np.float32)
+                barrier_vals = np.clip(barrier_vals, 0.005, None)  # floor at 0.5%
+                y_target = y_ret / barrier_vals
+                tprint(f"  Using risk-adjusted target (y_ret / barrier_pct)")
+            else:
+                y_target = y_ret
+                tprint(f"  Using raw y_ret target (no barrier_pct available)")
+
+            tprint(f"Meta {side}_{k}: Training on {len(df)} samples with {len(feat_cols)} raw meta features...")
+            tprint(f"  Meta feature names: {feat_cols[:10]}{'...' if len(feat_cols) > 10 else ''}")
+            tprint(f"  Target: mean={np.mean(y_target):.6f}, std={np.std(y_target):.6f}, "
+                   f"min={np.min(y_target):.4f}, max={np.max(y_target):.4f}")
+            tprint(f"  OOF probs input: mean={np.mean(p_oof):.4f}, std={np.std(p_oof):.4f}")
+
             meta = MetaModel()
-            # Use single prediction input (OOF)
             X_meta = meta.prepare_meta_features(p_oof, X_feats, pred_col_name="pred_logit")
-            meta.fit(X_meta, y_ret)
 
-            # Save separately
+            # Add feature interactions: pred_logit × key features
+            pred_logit = X_meta["pred_logit"].values
+            for interact_feat in ["vol_z", "mkt_rv_ratio", "ambig", "exh_qual", "trend_pct"]:
+                if interact_feat in X_meta.columns:
+                    X_meta[f"pred_x_{interact_feat}"] = pred_logit * X_meta[interact_feat].values
+
+            meta.fit(X_meta, y_target)
+
+            # --- Meta model OOF diagnostics ---
+            if meta.oof_probs is not None:
+                m_oof = meta.oof_probs
+                tprint(f"  Meta OOF preds: mean={np.mean(m_oof):.6f}, std={np.std(m_oof):.6f}, "
+                       f"min={np.min(m_oof):.6f}, max={np.max(m_oof):.6f}")
+                if np.std(m_oof) > 1e-9 and np.std(y_ret) > 1e-9:
+                    meta_ic = float(np.corrcoef(m_oof, y_ret)[0, 1])
+                    tprint(f"  Meta OOF IC (pred vs y_ret): {meta_ic:.4f}")
+            if meta.selected_features:
+                tprint(f"  Meta selected features: {meta.selected_features[:8]}{'...' if len(meta.selected_features) > 8 else ''}")
+
             meta_models[f"{side}_{k}"] = meta
             tprint(f"Meta {side}_{k}: fitted.")
 
@@ -1319,14 +1456,15 @@ def train_models_from_artifacts(datasets, cfg):
                 prevalence = n_pos / max(1, len(y))
                 n_eff_exh = (np.sum(w) ** 2) / np.sum(w ** 2)
                 tprint(f"Exhaustion {d}: {len(X)} samples, {X.shape[1]} features, class dist: 0={n_neg} 1={n_pos} (prev={prevalence:.4f}), n_eff={n_eff_exh:.0f}")
-                m = ExhaustionModel(C=cfg["exh_C"], l1_ratio=cfg["exh_l1_ratio"])
+                m = ExhaustionModel()
                 m.fit(X, y, sample_weight=w)
                 if m.model is not None:
                     tprint(f"Exhaustion {d}: fitted, {len(m.selected_features)} selected features")
                     # Evaluate with PR-AUC (appropriate for extreme imbalance)
                     try:
                         from sklearn.metrics import average_precision_score, precision_score
-                        p_exh = m.model.predict_proba(X[m.selected_features])[:, 1]
+                        X_eval = X[m.selected_features].fillna(0.0)
+                        p_exh = m.model.predict_proba(X_eval)[:, 1]
                         pr_auc = average_precision_score(y, p_exh, sample_weight=w)
                         # Precision at top-K (K = 2 * n_pos)
                         k = min(2 * max(n_pos, 1), len(y))
@@ -1345,7 +1483,23 @@ def train_models_from_artifacts(datasets, cfg):
             tprint(f"Exhaustion {d}: no dataset found")
             exh_models[d] = None
 
-    return {"alpha_models": final_models, "exh_models": exh_models, "meta_models": meta_models, "spike_models": spike_models}
+    # 4. Train Specialist Models (Trap & Gamma)
+    # Note: Specialists require panel and feats which are not passed to train_models_from_artifacts
+    # We'll need to refactor this or train specialists separately in pipeline_steps
+    # For now, return None and handle in pipeline_steps
+    specialist_models = {
+        "trap_model": None,
+        "gamma_model": None,
+    }
+    tprint("Specialist models (Trap, Gamma) will be trained separately in pipeline")
+
+    return {
+        "alpha_models": final_models, 
+        "exh_models": exh_models, 
+        "meta_models": meta_models, 
+        "spike_models": spike_models,
+        "specialist_models": specialist_models,
+    }
 
 def select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
     # DEPRECATED / LEGACY WRAPPER
@@ -1436,8 +1590,15 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
 
     tprint("Flattening panel data for pooled optimization...")
 
+    # 15m precision is NOT used in the optimizer — the build_event_cache_15m
+    # requires a contiguous 15m array aligned 4:1 with the full 1h panel,
+    # which would require downloading 90 days of 15m data per symbol (~400 symbols).
+    # 1h resolution is sufficient for grid search; 15m is used in backtest engine per-trade.
+    use_15m = False
+    exchange = None
+
     assets = close_df.columns
-    # Collect arrays
+    # Collect arrays (1h resolution — always needed for features/ATR)
     big_open = []
     big_high = []
     big_low = []
@@ -1447,9 +1608,19 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
     big_atr_base = []
     big_X = [] # Features
 
+    # 15m resolution arrays (optional)
+    big_open_15m = []
+    big_high_15m = []
+    big_low_15m = []
+    big_close_15m = []
+    has_15m_data = False
+
     asset_offsets = {}
+    asset_offsets_15m = {}
     current_offset = 0
+    current_offset_15m = 0
     buffer_size = 100 # larger than horizon
+    buffer_size_15m = 400 # 100 hours * 4
 
     # We need features too.
     # Let's pick a standard set of features for X
@@ -1482,7 +1653,7 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
                 x_list.append(np.zeros(len(c), dtype=np.float32))
         x_arr = np.stack(x_list, axis=1) if x_list else np.zeros((len(c), 1), dtype=np.float32)
 
-        # Append
+        # Append 1h data
         big_open.append(o)
         big_high.append(h)
         big_low.append(l)
@@ -1508,7 +1679,45 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
         big_z.append(nan_buf)
         big_X.append(nan_buf_x)
 
-    # Concatenate
+        # Download/load 15m data for this asset
+        if use_15m:
+            try:
+                from extreme_price_movements.hf_data_loader import get_15m_ohlcv
+                ccxt_sym = sym if "/" in sym else sym.replace("USDT", "/USDT")
+                # Download full optimization window in one shot
+                window_hours = int((ts - ts_start).total_seconds() / 3600) + 48
+                ts_start_utc = pd.Timestamp(ts_start)
+                if ts_start_utc.tzinfo is None:
+                    ts_start_utc = ts_start_utc.tz_localize('UTC')
+                else:
+                    ts_start_utc = ts_start_utc.tz_convert('UTC')
+
+                df_15m = get_15m_ohlcv(exchange, ccxt_sym, ts_start_utc, window_hours)
+                if not df_15m.empty and len(df_15m) >= len(c) * 3:  # at least 75% coverage
+                    o15 = df_15m['open'].values.astype(np.float32)
+                    h15 = df_15m['high'].values.astype(np.float32)
+                    l15 = df_15m['low'].values.astype(np.float32)
+                    c15 = df_15m['close'].values.astype(np.float32)
+
+                    big_open_15m.append(o15)
+                    big_high_15m.append(h15)
+                    big_low_15m.append(l15)
+                    big_close_15m.append(c15)
+
+                    asset_offsets_15m[sym] = current_offset_15m
+                    current_offset_15m += len(c15) + buffer_size_15m
+
+                    nan_buf_15m = np.full(buffer_size_15m, np.nan, dtype=np.float32)
+                    big_open_15m.append(nan_buf_15m)
+                    big_high_15m.append(nan_buf_15m)
+                    big_low_15m.append(nan_buf_15m)
+                    big_close_15m.append(nan_buf_15m)
+                else:
+                    tprint(f"  {sym}: 15m data insufficient ({len(df_15m) if not df_15m.empty else 0} bars), using 1h")
+            except Exception as e:
+                tprint(f"  {sym}: 15m download failed: {e}")
+
+    # Concatenate 1h arrays
     full_open = np.concatenate(big_open)
     full_high = np.concatenate(big_high)
     full_low = np.concatenate(big_low)
@@ -1517,6 +1726,16 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
     full_atr_base = np.concatenate(big_atr_base)
     full_z = np.concatenate(big_z)
     full_X = np.concatenate(big_X, axis=0)
+
+    # Concatenate 15m arrays if available
+    full_open_15m = full_high_15m = full_low_15m = full_close_15m = None
+    if use_15m and big_open_15m:
+        full_open_15m = np.concatenate(big_open_15m)
+        full_high_15m = np.concatenate(big_high_15m)
+        full_low_15m = np.concatenate(big_low_15m)
+        full_close_15m = np.concatenate(big_close_15m)
+        has_15m_data = True
+        tprint(f"15m data: {len(asset_offsets_15m)}/{len(asset_offsets)} assets, {len(full_close_15m)} total bars")
 
     # Now iterate strategies and collect event indices
     for side in trade_sides:
@@ -1532,8 +1751,10 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
 
             trend_filter = "up" if cand_filter == "best" else "down"
 
-            # Collect indices
+            # Collect indices (1h and optionally 15m)
             indices = []
+            time_indices = []  # parallel array: actual time position (shared across assets)
+            indices_15m = [] if has_15m_data else None
 
             # Iterate valid timestamps
             for t in valid_ts:
@@ -1553,31 +1774,44 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
 
                     # Found a candidate
                     # Get index in full arrays
-                    # t is timestamp. We need integer index in the asset array.
-                    # Assuming all assets have same index 'idx' (from panel)
-                    # We can map t to integer index in panel
-
-                    # idx is sorted? Yes.
-                    # Find integer location
                     try:
-                        time_idx = close_df.index.get_loc(t)
+                        tidx = close_df.index.get_loc(t)
                     except KeyError:
                         continue
 
-                    flat_idx = asset_offsets[sym] + time_idx
+                    flat_idx = asset_offsets[sym] + tidx
                     indices.append(flat_idx)
+                    time_indices.append(tidx)  # true temporal coordinate (same for all assets at time t)
+
+                    # Also collect 15m index if available for this asset
+                    if has_15m_data and sym in asset_offsets_15m:
+                        flat_idx_15m = asset_offsets_15m[sym] + tidx
+                        indices_15m.append(flat_idx_15m)
 
             indices = np.array(indices, dtype=np.int32)
+            time_indices = np.array(time_indices, dtype=np.int64)
             if len(indices) > 0:
-                mean_atr = float(np.mean(full_atr[indices]))
                 mean_z = float(np.mean(full_z[indices]))
-                tprint(f"Bucket {side} {k} ({cand_filter}): {len(indices)} events | Mean ATR%={mean_atr*100:.2f} | Mean VolZ={mean_z:.2f}")
+                # Compute actual barrier_pct (vol-scaled, clipped fraction) for meaningful logging
+                _b_pct = scaled_atr_pct(
+                    full_atr[indices], full_z[indices],
+                    full_atr_base[indices], z_max=3.0, lo=0.03, hi=0.06
+                )
+                mean_barrier = float(np.nanmean(_b_pct))
+                tprint(f"Bucket {side} {k} ({cand_filter}): {len(indices)} events | Mean Barrier%={mean_barrier*100:.2f} | Mean VolZ={mean_z:.2f}")
             else:
                 tprint(f"Bucket {side} {k} ({cand_filter}): 0 events")
 
             if len(indices) < 50:
                 tprint("Not enough events, using defaults.")
                 default_risk = {
+                    "tp_mult": cfg.get("tp_mult", 1.0),
+                    "sl_mult": cfg.get("sl_mult", 0.5),
+                    "trail_mult": cfg.get("trail_mult", 0.5),
+                    "vol_lo": cfg.get("vol_lo", 0.03),
+                    "vol_hi": cfg.get("vol_hi", 0.06),
+                    "vol_z_max": cfg.get("vol_z_max", 3.0),
+                    "max_hold_hours": 12 if k == "mr" else 24,
                     "k_sl": cfg["risk_k_sl"],
                     "k_trail_start": cfg["risk_k_trail_start"],
                     "k_trail_dist": cfg["risk_k_trail_dist"],
@@ -1593,6 +1827,17 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
             # If we use Trailing ATR, we map them: k_sl = sl_mult (approx).
             # The prompt implies we want to find optimal "TP:SL ratio" and levels.
 
+            # Prepare optional 15m arrays for this bucket
+            _15m_kwargs = {}
+            if has_15m_data and indices_15m and len(indices_15m) == len(indices):
+                _15m_kwargs = {
+                    "open_15m": full_open_15m,
+                    "high_15m": full_high_15m,
+                    "low_15m": full_low_15m,
+                    "close_15m": full_close_15m,
+                }
+                tprint(f"  Passing 15m data to optimizer ({len(indices)} events)")
+
             summary = run_tp_sl_selection_fast(
                 X=full_X,
                 open_=full_open,
@@ -1603,17 +1848,20 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
                 z=full_z,
                 atr_base_pct=full_atr_base,
                 event_idx=indices,
-                horizon=24, # Fixed horizon for now
-                max_events=2000, # Cap for speed
-                tp_mult_grid=[0.5, 1.0, 1.5, 2.0, 2.5, 3.0], # Wider grid
-                sl_mult_grid=[0.5, 1.0, 1.5, 2.0, 2.5],
+                horizon=24,
+                max_events=2000,
+                tp_mult_grid=[0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.5, 2.0],
+                sl_mult_grid=[0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1.0],
+                trail_mult_grid=[0.15, 0.25, 0.35, 0.50],
                 lo_grid=[0.01, 0.02, 0.03, 0.04],
                 hi_grid=[0.05, 0.06, 0.07],
                 z_max_grid=[2.5, 3.0, 3.5],
-                entry_mode="next_open"
+                entry_mode="next_open",
+                event_time_idx=time_indices,
+                **_15m_kwargs
             )
 
-            tprint(f"Optimized {side} {k}: TP={summary.final_tp_mult:.2f}, SL={summary.final_sl_mult:.2f}, Lo={summary.final_lo:.2f}, Hi={summary.final_hi:.2f}, Zmax={summary.final_z_max:.2f}")
+            tprint(f"Optimized {side} {k}: TP={summary.final_tp_mult:.2f}, SL={summary.final_sl_mult:.2f}, Trail={summary.final_trail_mult:.2f}, Lo={summary.final_lo:.2f}, Hi={summary.final_hi:.2f}, Zmax={summary.final_z_max:.2f}")
 
             if summary.outer_results:
                 avg_auc = np.mean([r.test_auc for r in summary.outer_results])
@@ -1621,28 +1869,68 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
                 avg_pnl = np.mean([r.test_pnl for r in summary.outer_results])
                 tprint(f"  Avg Test Metrics: AUC={avg_auc:.4f}, IC={avg_ic:.4f}, PnL={avg_pnl:.4f}")
 
-                pairs = [(r.chosen_tp_mult, r.chosen_sl_mult, r.chosen_lo, r.chosen_hi, r.chosen_z_max) for r in summary.outer_results]
+                pairs = [(r.chosen_tp_mult, r.chosen_sl_mult, r.chosen_trail_mult, r.chosen_lo, r.chosen_hi, r.chosen_z_max) for r in summary.outer_results]
                 tprint(f"  Stability (Chosen Configs): {pairs}")
 
-            # Store in granular risk
-            # We map these to the config keys used by Triple Barrier execution
+            # Per-bucket max hold hours: MR = shorter (reversion is fast), TF = longer
+            bucket_hold = 12 if k == "mr" else 24
+
+            # Per-bucket profit-protection anchored to EMPIRICAL MFE quantiles
+            # (not ATR%, which is wildly mis-scaled at ~57%)
+            mfe_s = summary.empirical_mfe_stats or {}
+            mfe_med = mfe_s.get("mfe_median", 0.01)
+            mfe_p25 = mfe_s.get("mfe_p25", 0.005)
+            mfe_p75 = mfe_s.get("mfe_p75", 0.02)
+            mae_med = mfe_s.get("mae_median", 0.01)
+            mae_p75 = mfe_s.get("mae_p75", 0.02)
+
+            # BE threshold: trigger at p25 of MFE (protect early — most losers saw at least this much profit)
+            # MR: tighter (p25), TF: slightly wider (between p25 and median)
+            if k == "mr":
+                be_pct = max(0.003, mfe_p25)
+            else:
+                be_pct = max(0.003, 0.5 * (mfe_p25 + mfe_med))
+
+            # Profit-lock: trigger at p25 MFE (early protection — most winners reach this)
+            lock_pct = max(0.005, mfe_p25)
+            # Lock amount: lock 50% of p25 MFE as real profit
+            lock_amt = max(0.002, 0.50 * mfe_p25)
+
+            # Max giveback: exit if return drops more than 50-65% from peak MFE
+            # MR: tighter giveback (reversion is fast), TF: slightly wider
+            giveback_frac = 0.50 if k == "mr" else 0.60
+            giveback_pct = max(0.003, giveback_frac * mfe_med)
+
+            # Max loss: hard cap at mae_p75 (75th percentile of adverse excursion)
+            max_loss = max(0.01, min(0.05, mae_p75))
+
+            tprint(f"  {side}_{k} profit-protection (empirical MFE): "
+                   f"MFE p25={mfe_p25*100:.2f}% med={mfe_med*100:.2f}% p75={mfe_p75*100:.2f}% | "
+                   f"MAE med={mae_med*100:.2f}% p75={mae_p75*100:.2f}% | "
+                   f"BE@{be_pct*100:.2f}% Lock@{lock_pct*100:.2f}% LockAmt={lock_amt*100:.2f}% "
+                   f"Giveback={giveback_pct*100:.2f}% MaxLoss={max_loss*100:.2f}%")
+
             bucket_risk = {
                 "tp_mult": summary.final_tp_mult,
                 "sl_mult": summary.final_sl_mult,
+                "trail_mult": summary.final_trail_mult,
                 "vol_lo": summary.final_lo,
                 "vol_hi": summary.final_hi,
                 "vol_z_max": summary.final_z_max,
-                # Wire optimized TP/SL mults into trailing logic used by backtests/live
-                # activation price threshold -> k_trail_start
-                # trailing distance -> k_trail_dist
+                "max_hold_hours": bucket_hold,
                 "k_sl": summary.final_sl_mult,
                 "k_trail_start": summary.final_tp_mult,
-                "k_trail_dist": summary.final_sl_mult
+                "k_trail_dist": summary.final_trail_mult,
+                # Profit-protection (anchored to empirical MFE quantiles)
+                "be_threshold_pct": be_pct,
+                "profit_lock_pct": lock_pct,
+                "profit_lock_amount": lock_amt,
+                "giveback_pct": giveback_pct,
+                "max_loss_pct": max_loss,
             }
             granular_risk[f"risk_{side}_{k}"] = bucket_risk
             granular_risk[f"risk_{k}_{cand_filter}"] = bucket_risk
 
-    # Best params for default (not really used if granular is active)
     best_params = {
         "k_sl": cfg["risk_k_sl"],
         "k_trail_start": cfg["risk_k_trail_start"],

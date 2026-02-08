@@ -289,7 +289,7 @@ def apply_adaptive_ffd_panel(
     """
     # Pre-allocate output numpy array
     n_rows, n_cols = panel_df.shape
-    out_data = np.full((n_rows, n_cols), np.nan, dtype=np.float64)
+    out_data = np.full((n_rows, n_cols), np.nan, dtype=np.float32)
     diagnostics = {}
     
     cols = panel_df.columns

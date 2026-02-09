@@ -1420,15 +1420,24 @@ def run_tp_sl_selection_fast(
         # Log top performers
         indices = np.argsort(comp)[::-1]
         tprint(f"[Fold {ofold}] Top Grid Results (sorted by Score):")
+        tprint(f"  {'Rank':<4} {'Config (TP/SL/Trail/Thr)':<35} {'NetPnL':>9} {'AvgPnL':>9} {'PF':>5} {'WR':>6} {'Payoff':>6} {'AUC':>6} {'IC':>7} {'N':>4}")
+
         for k in range(min(5, len(indices))):
             idx = indices[k]
             res = grid_metrics[idx]
-            # Calculate absolute avg distances
+            # Calculate absolute avg distances for context
             abs_tp = res.tp_mult * mean_atr
             abs_sl = res.sl_mult * mean_atr
-            tprint(f"  #{k+1}: TP={res.tp_mult:.2f} ({abs_tp:.2%}) SL={res.sl_mult:.2f} ({abs_sl:.2%}) Trail={res.trail_mult:.2f} Lo={res.lo:.2f} Hi={res.hi:.2f} Thr={res.threshold_p:.2f} | "
-                   f"NetPnL={res.strategy_pnl:+.4f} PF={res.net_pf:.2f} T={res.t_stat:.2f} IC={res.inner_ic:.4f} WR={res.win_rate:.2%} N={res.trades} | "
-                   f"TP:{res.tp_pct:.1%}|SL:{res.sl_pct:.1%}|TO:{res.timeout_pct:.1%} | Score={comp[idx]:.4f}")
+
+            cfg_str = f"TP={res.tp_mult:.2f} SL={res.sl_mult:.2f} Tr={res.trail_mult:.2f} Th={res.threshold_p:.2f}"
+
+            # Detailed breakdown log
+            # We want to show: NetPnL (total), AvgPnL (EV), Payoff (AvgWin/AvgLoss), WR, PF, AUC, IC
+            tprint(f"  #{k+1:<3} {cfg_str:<35} {res.strategy_pnl:>+9.4f} {res.ev:>+9.6f} {res.net_pf:>5.2f} {res.win_rate:>6.2%} {res.payoff:>6.2f} {res.inner_auc:>6.3f} {res.inner_ic:>+7.4f} {res.trades:>4}")
+
+            # Second line for TP/SL details if verbose or just top 1?
+            if k == 0:
+                tprint(f"       -> Abs: TP~{abs_tp:.2%} SL~{abs_sl:.2%} | Dist: TP={res.tp_pct:.0%} SL={res.sl_pct:.0%} TO={res.timeout_pct:.0%} | Score={comp[idx]:.4f}")
 
         best_i = int(np.argmax(comp))
         best_g = grid_metrics[best_i]

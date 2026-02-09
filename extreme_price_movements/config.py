@@ -81,6 +81,8 @@ CFG = {
     # gates
     "gate_vol_lookback_hours": 24 * 14,
     "gate_trend_thr": 0.02,
+    "accept_gate_window": 64,
+    "accept_gate_percentile_mode": "approx",
 
     # base feature windows (used for base/fast/slow variants)
     "atr_n": 14,
@@ -136,9 +138,9 @@ CFG = {
         "G_MR_SPIKE", "G_TF_GRIND", "G_MR_TAIL",
         "G_META_EXH", "G_META_TF_QUAL", "G_META_MR_QUAL", "G_META_AMBIG",
         # New Model Features
-        "overext", "overext_weak", "effort_gate", "tail_fail", "reject", "blowoff_risk",
+        "overext", "overext_weak", "effort_gate", "tail_fail", "blowoff_risk",
         "S", "impulse_ratio_24", "impulse_ratio_12", "coherence_24", "accel",
-        "tf_tape", "mr_tape", "accept", "retest_accept", "tf_qual", "mr_qual",
+        "tf_tape", "mr_tape", "accept", "accept_bin3", "accept_gt66", "accept_gt85", "retest_accept", "tf_qual", "mr_qual",
         "retrace_12", "ambig", "stage_tf", "stage_blowoff", "stage_mr", "exh_qual"
         ,"vov_iqr_20", "vov_mad_20", "vov_mad_60", "vov_ratio", "vov_interaction",
         "vov_fast_slow_ratio", "accel_5h", "dlog_vol_5h", "signed_max_bar_ret_5h",
@@ -156,9 +158,24 @@ CFG = {
         # Residualised features — relative surprise, not absolute magnitude
         "rsi_z", "dist_ema_fast_z", "dist_vwap_norm_z", "flow_persistence_z",
         "excess_6h_z", "vol_z_z", "atr_expansion_z", "coherence_24_z",
-        "accept_surprise", "reject_surprise", "overext_surprise",
+        "accept_surprise", "overext_surprise",
         "blowoff_risk_surprise", "exh_qual_surprise",
-        "dist_vwap_resid", "dist_ema_fast_resid", "trend_pct_resid"
+        "dist_vwap_resid", "dist_ema_fast_resid", "trend_pct_resid",
+        "mkt_rv_pct", "abs_mkt_ret24h_z", "trend_bin3",
+        "s_z_64", "s_pct_64", "s_bin3_64", "s_gt66_64", "s_gt85_64",
+        "s_z_8", "s_pct_8", "s_bin3_8", "s_gt66_8", "s_gt85_8",
+        "reject_z_64", "reject_pct_64", "reject_bin3_64",
+        "reject_z_8", "reject_pct_8", "reject_bin3_8",
+        "retest_accept_z_64", "retest_accept_pct_64", "retest_accept_bin3_64",
+        "retest_accept_z_8", "retest_accept_pct_8", "retest_accept_bin3_8",
+        "tf_qual_z_64", "tf_qual_pct_64", "tf_qual_bin3_64",
+        "tf_qual_z_8", "tf_qual_pct_8", "tf_qual_bin3_8",
+        "mr_qual_z_64", "mr_qual_pct_64", "mr_qual_bin3_64",
+        "mr_qual_z_8", "mr_qual_pct_8", "mr_qual_bin3_8",
+        "accept_score_cs_trimmed_mean", "accept_score_cs_median", "accept_score_cs_p75", "accept_score_cs_p90", "accept_score_cs_iqr", "accept_score_cs_std",
+        "reject_score_cs_trimmed_mean", "reject_score_cs_median", "reject_score_cs_p75", "reject_score_cs_p90", "reject_score_cs_iqr", "reject_score_cs_std",
+        "tf_qual_score_cs_trimmed_mean", "tf_qual_score_cs_median", "tf_qual_score_cs_p75", "tf_qual_score_cs_p90", "tf_qual_score_cs_iqr", "tf_qual_score_cs_std",
+        "mr_qual_score_cs_trimmed_mean", "mr_qual_score_cs_median", "mr_qual_score_cs_p75", "mr_qual_score_cs_p90", "mr_qual_score_cs_iqr", "mr_qual_score_cs_std"
     ],
 
     # thresholds / picks
@@ -233,7 +250,7 @@ CFG = {
     # which features go into exhaustion ML (plus sin/cos time features) (3)
     "exh_feature_keys": [
         "donch_dist_12", "excess_6h", "overext", "overext_weak", "effort_gate", "stall_ext", "tail_fail",
-        "reject", "blowoff_risk",
+        "blowoff_risk",
         "clv_mean_4", "pullback_2", "pullback_4", "giveback", "evr_6", "progress",
         "delta_stall_6", "tail_against",
         # Context features (Volatility & Regime)
@@ -260,7 +277,7 @@ CFG = {
 
     # MR Head (Specifics + Global) — includes exhaustion features
     "mr_feature_keys": [
-        "reject", "overext", "overext_weak", "mr_qual", "retrace_12",
+        "accept", "accept_bin3", "overext", "overext_weak", "mr_qual", "retrace_12",
         "impulse_ratio_24", "coherence_24", "mr_tape",
         "clv_mean_4", "pullback_2", "pullback_4", "ft_2", "ft_4",
         "giveback", "blowoff_risk", "exh_qual", "stage_blowoff", "stage_mr",
@@ -271,7 +288,7 @@ CFG = {
     # Meta Learner
     "meta_feature_keys": [
         "ambig", "stage_tf", "stage_blowoff", "stage_mr", "exh_qual",
-        "accept", "reject", "rv_ratio_6_24",
+        "accept", "accept_bin3", "accept_gt85", "rv_ratio_6_24",
         "excess_6h", "donch_dist_12", "clv_mean_4", "evr_6", "delta_stall_6",
         "ft_2", "asym_ratio", "mfe_4h", "mae_4h", "giveback",
         "ret1h", "ret6h", "rv_6h", "rv_24h", "mkt_rv_ratio",

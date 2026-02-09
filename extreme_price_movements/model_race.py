@@ -267,6 +267,8 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         # 0. Preparation
         # Cast y and sample_weight to float64 for consistent dtype handling
         y = np.asarray(y, dtype=np.float64)
+        y = np.clip(y, 0.0, 1.0)
+        y_hard = (y >= 0.5).astype(np.int8)
         if sample_weight is not None:
             sample_weight = np.asarray(sample_weight, dtype=np.float64)
         if returns is None:
@@ -336,6 +338,8 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
                     y_tr = safe_slice(y, train_idx)
                     y_val = safe_slice(y, val_idx)
+                    y_tr_fit = (y_tr >= 0.5).astype(np.int8)
+                    y_val_fit = (y_val >= 0.5).astype(np.int8)
                     w_tr = safe_slice(sample_weight, train_idx) if sample_weight is not None else None
                     ret_val = safe_slice(returns, val_idx)
 
@@ -349,7 +353,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     # We use _fit_model to handle sample weights and early stopping
                     # passing X_val/y_val for early stopping if supported (XGB/LGBM/Cat)
                     w_tr_fit = safe_slice(sample_weight, train_idx) if sample_weight is not None else None
-                    self._fit_model(model_clone, X_tr, y_tr, X_val=X_val, y_val=y_val, sample_weight=w_tr_fit)
+                    self._fit_model(model_clone, X_tr, y_tr_fit, X_val=X_val, y_val=y_val_fit, sample_weight=w_tr_fit)
                     
                     # Predict raw (biased) probabilities on validation
                     probs_raw = model_clone.predict_proba(X_val)[:, 1]
@@ -358,7 +362,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     # IMPORTANT: Use unweighted prevalence. Sample weights upweight
                     # minority class for training loss, making weighted_prev ≈ 0.5.
                     # But calibrated probabilities must reflect actual prevalence.
-                    target_mean = float(np.mean(y_tr))
+                    target_mean = float(np.mean(y_tr_fit))
                         
                     factor = self._find_bias_correction_factor(probs_raw, target_mean)
                     probs = self._apply_correction(probs_raw, factor)
@@ -367,7 +371,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     # w_bss=0.20: Enabled BSS in selection score
                     # We now compute weighted BSS for diagnostics
                     w_val = safe_slice(sample_weight, val_idx) if sample_weight is not None else None
-                    metrics = calculate_selection_score(y_val, probs, ret_val, sample_weight=w_val, w_bss=0.20, w_realized=0.55, w_uic=0.25)
+                    metrics = calculate_selection_score(y_val_fit, probs, ret_val, sample_weight=w_val, w_bss=0.20, w_realized=0.55, w_uic=0.25)
                     fold_scores.append(metrics["Selection_Score"])
                     fold_aucs.append(metrics["AUC"])
                     fold_ics.append(metrics["IC"])
@@ -381,10 +385,10 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     # fold_p40 handled below if needed, but metrics returns it
                     
                     try:
-                        fold_logloss.append(log_loss(y_val, np.clip(probs, 1e-7, 1-1e-7)))
+                        fold_logloss.append(log_loss(y_val_fit, np.clip(probs, 1e-7, 1-1e-7)))
                     except:
                         fold_logloss.append(np.nan)
-                    fold_accuracy.append(accuracy_score(y_val, probs > 0.5))
+                    fold_accuracy.append(accuracy_score(y_val_fit, probs > 0.5))
 
                 avg_score = np.nanmean(fold_scores)
                 avg_auc = np.nanmean(fold_aucs)
@@ -402,11 +406,11 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
                 train_loss = alpha_objective_logloss(y, np.clip(np.nan_to_num(oof_model, nan=np.nanmean(oof_model)), 1e-6, 1-1e-6), w=sample_weight)
                 valid = np.isfinite(oof_model)
-                comps = alpha_rank_components(y[valid], oof_model[valid], returns[valid], sample_weight[valid] if sample_weight is not None else None, groups_arr[valid] if groups_arr is not None else None, rank_cfg)
+                comps = alpha_rank_components(y_hard[valid], oof_model[valid], returns[valid], sample_weight[valid] if sample_weight is not None else None, groups_arr[valid] if groups_arr is not None else None, rank_cfg)
                 results[name] = 0.0
                 top10_mask = topk_mask(oof_model[valid], 0.10, groups=groups_arr[valid] if groups_arr is not None else None)
-                ece10 = ece_at_mask(y[valid], oof_model[valid], top10_mask, n_bins=10, w=sample_weight[valid] if sample_weight is not None else None)
-                curve = calibration_curve_bins(y[valid], oof_model[valid], n_bins=10)
+                ece10 = ece_at_mask(y_hard[valid], oof_model[valid], top10_mask, n_bins=10, w=sample_weight[valid] if sample_weight is not None else None)
+                curve = calibration_curve_bins(y_hard[valid], oof_model[valid], n_bins=10)
                 profile = calibration_profile(curve)
                 detailed_metrics[name] = {
                     "score": avg_score,
@@ -478,17 +482,20 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             else:
                 X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
             y_tr = safe_slice(y, train_idx)
+            y_val = safe_slice(y, val_idx)
+            y_tr_fit = (y_tr >= 0.5).astype(np.int8)
+            y_val_fit = (y_val >= 0.5).astype(np.int8)
             w_tr = safe_slice(sample_weight, train_idx) if sample_weight is not None else None
             
             # Raw model fit — using _fit_model for consistency with race (early stopping, weights)
             estimator = clone(oof_model)
-            self._fit_model(estimator, X_tr, y_tr, X_val=X_val, y_val=y_val, sample_weight=w_tr)
+            self._fit_model(estimator, X_tr, y_tr_fit, X_val=X_val, y_val=y_val_fit, sample_weight=w_tr)
             
             oof_probs[val_idx] = estimator.predict_proba(X_val)[:, 1]
             
             # Recalibrate OOF probabilities
             # Same logic: match OOF mean to UNWEIGHTED y_tr mean
-            target_mean = float(np.mean(y_tr))
+            target_mean = float(np.mean(y_tr_fit))
             
             # Predict raw (biased)
             probs_raw = estimator.predict_proba(X_val)[:, 1]
@@ -509,15 +516,15 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
         # Calculate Winner OOF Metrics (rank-based, not calibration-dependent)
         try:
-            oof_auc = roc_auc_score(y, oof_probs)
-            oof_logloss = log_loss(y, np.clip(oof_probs, 1e-7, 1-1e-7))
-            oof_accuracy = accuracy_score(y, oof_probs > 0.5)
+            oof_auc = roc_auc_score(y_hard, oof_probs)
+            oof_logloss = log_loss(y_hard, np.clip(oof_probs, 1e-7, 1-1e-7))
+            oof_accuracy = accuracy_score(y_hard, oof_probs > 0.5)
             if returns is not None and np.std(oof_probs) > 1e-9 and np.std(returns) > 1e-9:
                 oof_ic = np.corrcoef(rankdata(oof_probs), rankdata(returns))[0, 1]
             else:
                 oof_ic = 0.0
             # OOF selection score (same weights as race)
-            oof_sel = calculate_selection_score(y, oof_probs, returns, sample_weight=sample_weight, w_bss=0.20, w_realized=0.55, w_uic=0.25)
+            oof_sel = calculate_selection_score(y_hard, oof_probs, returns, sample_weight=sample_weight, w_bss=0.20, w_realized=0.55, w_uic=0.25)
             tprint(f"Winner OOF Metrics: AUC={oof_auc:.4f}  IC={oof_ic:.4f}  LogLoss={oof_logloss:.4f}  Acc={oof_accuracy:.4f}  SelScore={oof_sel['Selection_Score']:.4f}")
             
             # --- Post-hoc Isotonic Calibration ---
@@ -528,13 +535,13 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             # IMPORTANT: Fit calibrator WITHOUT sample weights.
             # Weights upweight minority class, making calibrator target weighted
             # prevalence (~0.5) instead of actual prevalence (~0.31).
-            self.calibrator_.fit(oof_probs, y)
+            self.calibrator_.fit(oof_probs, y_hard)
                 
             # Re-calibrate the stored OOF probs
             calibrated_oof = self.calibrator_.predict(oof_probs).astype(np.float32)
             
-            raw_brier = brier_score_loss(y, np.clip(oof_probs, 1e-7, 1-1e-7))
-            cal_brier = brier_score_loss(y, np.clip(calibrated_oof, 1e-7, 1-1e-7))
+            raw_brier = brier_score_loss(y_hard, np.clip(oof_probs, 1e-7, 1-1e-7))
+            cal_brier = brier_score_loss(y_hard, np.clip(calibrated_oof, 1e-7, 1-1e-7))
             tprint(f"Isotonic calibration: Brier raw={raw_brier:.4f} -> calibrated={cal_brier:.4f}")
             win_dm = self.detailed_metrics.get(self.best_model_name, {})
             tprint(f"Calibration profile ({self.best_model_name}): {win_dm.get('calibration_profile', 'n/a')}, ECE@10={win_dm.get('ece_top10', float('nan')):.4f}")
@@ -588,9 +595,9 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         # That logic is sound.
         
         if sample_weight is not None:
-             self.best_model.fit(X, y, sample_weight=sample_weight)
+             self.best_model.fit(X, y_hard, sample_weight=sample_weight)
         else:
-             self.best_model.fit(X, y)
+             self.best_model.fit(X, y_hard)
              
         # No more manual bias correction factor needed (Isotonic handles it)
         return self

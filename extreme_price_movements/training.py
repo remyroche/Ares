@@ -152,6 +152,12 @@ def _normalize_cross_sectional(ts_vals, weights):
     return w
 
 
+def _sigmoid(x):
+    x = np.asarray(x, dtype=np.float64)
+    x = np.clip(x, -60.0, 60.0)
+    return 1.0 / (1.0 + np.exp(-x))
+
+
 def _compute_atr_scale(atr_pct_df, cfg):
     fast_hl = int(cfg.get('atr_norm_fast_hl_hours', 24))
     slow_hl = int(cfg.get('atr_norm_slow_hl_hours', 24*5))
@@ -695,7 +701,45 @@ def build_hourly_training_set_and_weights(
         tprint("No rows after quantile filtering.")
         return None, None, None, None, None, None
 
-    y_bin = (pnl >= pnl_hi).astype(np.int8)
+    y_hard = (pnl >= pnl_hi).astype(np.float32)
+
+    # Soft labels from path quality: q = MFEtp - c*MAEsl; p = sigmoid(k*q)
+    # Then blend with dynamic alpha(q): y* = (1-alpha)*y + alpha*p
+    use_soft_labels = bool(cfg.get("label_use_soft", True))
+    if use_soft_labels:
+        c_soft = float(cfg.get("label_soft_c", 1.0))
+        k_soft = float(cfg.get("label_soft_k", 2.0))
+        alpha_min = float(cfg.get("label_soft_alpha_min", 0.05))
+        alpha_max = float(cfg.get("label_soft_alpha_max", 0.60))
+        alpha_s = float(cfg.get("label_soft_alpha_s", 3.0))
+        q0 = float(cfg.get("label_soft_q0", 0.5))
+
+        if "mfe_4h" in feats:
+            mfe_raw = np.nan_to_num(_fast_lookup(feats["mfe_4h"], event_ts, event_sym), nan=0.0)
+        else:
+            mfe_raw = np.maximum(pnl, 0.0)
+        if "mae_4h" in feats:
+            mae_raw = np.nan_to_num(_fast_lookup(feats["mae_4h"], event_ts, event_sym), nan=0.0)
+        else:
+            mae_raw = np.maximum(-pnl, 0.0)
+
+        if "atr_pct" in feats:
+            tp_scale = np.nan_to_num(_fast_lookup(feats["atr_pct"], event_ts, event_sym), nan=0.02)
+        else:
+            tp_scale = np.full(len(event_ts), 0.02, dtype=np.float32)
+        tp_scale = np.clip(np.abs(tp_scale), 1e-4, None)
+        sl_scale = np.clip(0.5 * tp_scale, 1e-4, None)
+
+        mfe_tp = np.maximum(mfe_raw, 0.0) / tp_scale
+        mae_sl = np.maximum(mae_raw, 0.0) / sl_scale
+        q = mfe_tp - c_soft * mae_sl
+        p_soft = _sigmoid(k_soft * q)
+        alpha = alpha_min + (alpha_max - alpha_min) * _sigmoid(alpha_s * (np.abs(q) - q0))
+        alpha = np.clip(alpha, 0.0, 1.0)
+        y_bin = ((1.0 - alpha) * y_hard) + (alpha * p_soft)
+        y_bin = np.clip(y_bin, 0.0, 1.0).astype(np.float32)
+    else:
+        y_bin = y_hard
 
     # Base weight from move magnitude
     pa = np.abs(np.nan_to_num(_fast_lookup(feats["ret24h"], event_ts, event_sym), nan=0.0))
@@ -1395,7 +1439,7 @@ def train_models_from_artifacts(datasets, cfg):
                         df[feat_name] = vals.astype(np.float32)
                         tprint(f"  Injected {feat_name} into {key} (coverage: {np.mean(~np.isnan(vals)):.1%})")
 
-                y = df["__y_bin__"].values.astype(int)
+                y = df["__y_bin__"].values.astype(np.float32)
                 y_ret = df["__y_ret__"].values.astype(np.float32)
                 w_raw = df["__w__"].values.astype(np.float32)
                 # Temper weights with sqrt to reduce n_eff collapse from skewed uniqueness weights

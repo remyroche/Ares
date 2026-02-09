@@ -37,7 +37,7 @@ class MetaModel:
         base = float(np.mean(y_true))
         return {"MetaIC": float(ic), "TopKNetRet": top, "TopKUplift": float(top - base)}
 
-    def fit(self, X_meta, y):
+    def fit(self, X_meta, y, sample_weight=None):
         tprint(f"Entering function: fit in meta_model.py")
 
         n_samples = len(X_meta)
@@ -78,7 +78,11 @@ class MetaModel:
                 X_val_s = scaler.transform(X_val)
 
                 m = Ridge(alpha=alpha, fit_intercept=True)
-                m.fit(X_train_s, y_train)
+                if sample_weight is not None:
+                    w_train = np.asarray(sample_weight)[train_idx]
+                    m.fit(X_train_s, y_train, sample_weight=w_train)
+                else:
+                    m.fit(X_train_s, y_train)
                 preds = m.predict(X_val_s)
                 losses.append(meta_objective_huber(y_val, preds, delta=1.0))
 
@@ -97,7 +101,11 @@ class MetaModel:
             X_train_s = scaler.fit_transform(X_train)
             X_val_s = scaler.transform(X_val)
             m = Ridge(alpha=best_alpha, fit_intercept=True)
-            m.fit(X_train_s, y_train)
+            if sample_weight is not None:
+                w_train = np.asarray(sample_weight)[train_idx]
+                m.fit(X_train_s, y_train, sample_weight=w_train)
+            else:
+                m.fit(X_train_s, y_train)
             self.oof_probs[val_idx] = m.predict(X_val_s)
 
         assess = self._meta_assess(y_arr, self.oof_probs)
@@ -106,7 +114,10 @@ class MetaModel:
         self.scaler = StandardScaler()
         X_scaled = self.scaler.fit_transform(X_sel)
         self.model = Ridge(alpha=best_alpha, fit_intercept=True)
-        self.model.fit(X_scaled, y)
+        if sample_weight is not None:
+            self.model.fit(X_scaled, y, sample_weight=np.asarray(sample_weight))
+        else:
+            self.model.fit(X_scaled, y)
         return self
 
     def predict(self, X_meta):

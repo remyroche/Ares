@@ -117,6 +117,66 @@ def apply_interaction_toggles(df: pd.DataFrame, causal_cols, gate_cols, drop_raw
         out = out.drop(columns=[c for c in causal_cols if c in out.columns], errors="ignore")
     return out
 
+
+
+def _winsorize_and_unit_mean(arr, lo_q=0.05, hi_q=0.95, clip_min=0.75, clip_max=1.25):
+    a = np.asarray(arr, dtype=np.float64)
+    if a.size == 0:
+        return a
+    valid = np.isfinite(a)
+    if not valid.any():
+        return np.ones_like(a)
+    v = a[valid]
+    lo = np.quantile(v, lo_q)
+    hi = np.quantile(v, hi_q)
+    out = np.clip(a, lo, hi)
+    out = np.clip(out, clip_min, clip_max)
+    mu = np.nanmean(out)
+    if not np.isfinite(mu) or mu <= 1e-12:
+        return np.ones_like(out)
+    return out / mu
+
+
+def _normalize_cross_sectional(ts_vals, weights):
+    w = np.asarray(weights, dtype=np.float64).copy()
+    ts = np.asarray(ts_vals)
+    if len(w) == 0:
+        return w
+    for t in np.unique(ts):
+        m = ts == t
+        s = np.sum(w[m])
+        if s > 0:
+            w[m] = w[m] / s
+        else:
+            w[m] = 1.0 / max(1, m.sum())
+    return w
+
+
+def _compute_atr_scale(atr_pct_df, cfg):
+    fast_hl = int(cfg.get('atr_norm_fast_hl_hours', 24))
+    slow_hl = int(cfg.get('atr_norm_slow_hl_hours', 24*5))
+    global_hl = int(cfg.get('atr_norm_global_hl_hours', 24*5))
+    warmup_h = int(cfg.get('atr_norm_warmup_hours', 24*10))
+    g_lo, g_hi = cfg.get('atr_norm_clip_global', [0.7, 1.5])
+    m_lo, m_hi = cfg.get('atr_norm_clip_scale', [0.6, 2.5])
+
+    atr = atr_pct_df.astype(np.float64)
+    ewm_fast = atr.ewm(halflife=fast_hl, min_periods=12).mean()
+    ewm_slow = atr.ewm(halflife=slow_hl, min_periods=12).mean()
+    atr_ewm = atr.ewm(halflife=global_hl, min_periods=12).mean()
+
+    warmup_n = min(len(atr_ewm), max(24, warmup_h))
+    atr_ref = float(np.nanmedian(atr_ewm.iloc[:warmup_n].values)) if warmup_n > 0 else float(np.nanmedian(atr_ewm.values))
+    if not np.isfinite(atr_ref) or atr_ref <= 1e-9:
+        atr_ref = float(np.nanmedian(atr.values))
+    atr_ref = max(atr_ref, 1e-6)
+
+    local = atr / (ewm_fast + 1e-12)
+    global_raw = np.sqrt(ewm_slow / atr_ref)
+    global_mult = np.clip(global_raw, g_lo, g_hi)
+    atr_scale = np.clip(local * global_mult, m_lo, m_hi)
+    return atr_scale.astype(np.float32), atr_ref
+
 def compute_weights_logic(df, cfg, model_kind):
     tprint(f"Entering function: compute_weights_logic in training.py")
     from .model_mr import compute_mr_weights
@@ -637,39 +697,38 @@ def build_hourly_training_set_and_weights(
 
     y_bin = (pnl >= pnl_hi).astype(np.int8)
 
-    # Weights from ret24h
+    # Base weight from move magnitude
     pa = np.abs(np.nan_to_num(_fast_lookup(feats["ret24h"], event_ts, event_sym), nan=0.0))
-    weights_raw = np.log(1 + pa)
+    w_base = np.log1p(pa)
 
-    # Class imbalance correction: inverse-frequency weighting
-    n_pos = (y_bin == 1).sum()
-    n_neg = (y_bin == 0).sum()
-    if n_pos > 0 and n_neg > 0:
-        n_total = n_pos + n_neg
-        w_pos = n_total / (2.0 * n_pos)
-        w_neg = n_total / (2.0 * n_neg)
-        class_mult = np.where(y_bin == 1, w_pos, w_neg).astype(np.float32)
-        weights_raw = weights_raw * class_mult
+    # Mild class-balance multiplier (inverse-freq with sqrt exponent + hard cap)
+    p_pos = float(np.mean(y_bin)) if len(y_bin) else 0.5
+    p_pos = float(np.clip(p_pos, 1e-4, 1 - 1e-4))
+    w1 = (0.5 / p_pos) ** 0.5
+    w0 = (0.5 / (1.0 - p_pos)) ** 0.5
+    w_class = np.where(y_bin == 1, w1, w0)
+    w_class = np.clip(w_class, 0.85, 1.25)
 
-    # Regime-consistency weighting: upweight samples where trade direction
-    # aligns with the prevailing market trend (mkt_trend)
-    if "mkt_trend" in mkt_gates.columns:
-        mkt_trend_vals = mkt_gates["mkt_trend"].reindex(event_ts).values
-        mkt_trend_vals = np.nan_to_num(mkt_trend_vals, nan=0.0)
-        # For long trades (pnl > 0 when price goes up), alignment = mkt_trend > 0
-        # For short trades (pnl > 0 when price goes down), alignment = mkt_trend < 0
-        if side == "long":
-            regime_align = np.where(mkt_trend_vals > 0, 1.5, 0.75).astype(np.float32)
-        else:
-            regime_align = np.where(mkt_trend_vals < 0, 1.5, 0.75).astype(np.float32)
-        weights_raw = weights_raw * regime_align
+    # Consensus weight from geometry votes (timeouts ignored)
+    n_tp = np.nan_to_num(_fast_lookup(feats.get("__geom_n_tp__", pd.DataFrame(0, index=tb_labels.index, columns=tb_labels.columns)), event_ts, event_sym), nan=0.0)
+    n_sl = np.nan_to_num(_fast_lookup(feats.get("__geom_n_sl__", pd.DataFrame(0, index=tb_labels.index, columns=tb_labels.columns)), event_ts, event_sym), nan=0.0)
+    n_res = n_tp + n_sl
+    c_cons = (n_tp - n_sl) / np.maximum(1.0, n_res)
+    A = float(cfg.get("consensus_amp", 0.25))
+    k_cons = float(cfg.get("consensus_k", 2.0))
+    w_consensus = 1.0 + A * np.tanh(k_cons * c_cons)
 
-    # Volatility-based weight multiplier: range_24h * vol_z, bounded [0.5, 2.0]
-    if "range_24h_pct" in feats and "volatility_zscore" in feats:
-        r24 = np.abs(np.nan_to_num(_fast_lookup(feats["range_24h_pct"], event_ts, event_sym), nan=0.0))
-        vz = np.abs(np.nan_to_num(_fast_lookup(feats["volatility_zscore"], event_ts, event_sym), nan=0.0))
-        vol_mult = np.clip(r24 * vz, 0.5, 2.0).astype(np.float32)
-        weights_raw = weights_raw * vol_mult
+    beta = float(cfg.get("consensus_beta", 0.20))
+    w_base = _winsorize_and_unit_mean(w_base, clip_min=0.75, clip_max=1.25)
+    w_class = _winsorize_and_unit_mean(w_class, clip_min=0.75, clip_max=1.25)
+    w_consensus = _winsorize_and_unit_mean(w_consensus, clip_min=0.75, clip_max=1.25)
+
+    w_mix = ((1.0 - beta) * (w_base * w_class)) + (beta * w_consensus)
+    p95 = np.nanpercentile(w_mix, 95) if len(w_mix) else 1.0
+    w_mix = np.clip(w_mix, 0.0, max(p95, 1e-6))
+    w_mix = _normalize_cross_sectional(event_ts, w_mix)
+    w_mix = w_mix / max(np.nanmean(w_mix), 1e-12)
+    weights_raw = w_mix.astype(np.float32)
 
     # Build feature DataFrame
     # event_ts is a DatetimeIndex, event_sym is a numpy array
@@ -682,6 +741,11 @@ def build_hourly_training_set_and_weights(
         barrier_vals = _fast_lookup(feats["atr_pct"], event_ts, event_sym)
         barrier_vals = np.nan_to_num(barrier_vals, nan=0.02).astype(np.float32)
         parts["__barrier_pct__"] = np.clip(barrier_vals, 0.005, None)
+
+    parts["__n_tp__"] = n_tp.astype(np.float32)
+    parts["__n_sl__"] = n_sl.astype(np.float32)
+    parts["__n_res__"] = n_res.astype(np.float32)
+    parts["__w_consensus__"] = w_consensus.astype(np.float32)
 
     # p_exh_lag1
     lag_ts = event_ts - pd.Timedelta(hours=1)
@@ -942,202 +1006,71 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
     horizons = cfg["label_horizons_hours"]
 
     # Pre-compute triple barrier labels per (H, side) — shared across MR/TF
-    # Use run_tp_sl_selection_fast to independently optimise TP and SL multipliers
     tb_cache = {}
 
     if "atr_pct" in feats:
         atr_pct_df = feats["atr_pct"]
-        window_size = 24 * 30
-        atr_base_df = atr_pct_df.rolling(window_size, min_periods=24).median()
-        atr_std_df = atr_pct_df.rolling(window_size, min_periods=24).std()
-        z_score_df = (atr_pct_df - atr_base_df) / (atr_std_df + 1e-12)
-        b_pct_vals = scaled_atr_pct(atr_pct_df.values, z_score_df.values, atr_base_df.values, z_max=3.0, lo=0.03, hi=0.06)
-        barrier_pct_df = pd.DataFrame(b_pct_vals, index=atr_pct_df.index, columns=atr_pct_df.columns)
+        atr_scale_df, atr_ref = _compute_atr_scale(atr_pct_df, cfg)
+        tprint(f"ATR normalization: atr_ref={atr_ref:.6f}, scale_mean={float(np.nanmean(atr_scale_df.values)):.4f}")
     else:
         atr_pct_df = None
-        barrier_pct_df = None
+        atr_scale_df = None
 
+    fee_pct = float(cfg.get("label_round_trip_fee_pct", 0.5)) / 100.0
+    tp_vals = [float(x) / 100.0 for x in cfg.get("label_tp_values_pct", [5.0, 3.5, 2.0])]
+    sl_vals = [float(x) / 100.0 for x in cfg.get("label_sl_values_pct", [0.5, 1.0, 2.0])]
+    min_net_rr = float(cfg.get("label_min_net_rr", 1.5))
+    min_tp_hit = float(cfg.get("label_min_tp_hit_rate", 0.02))
+    max_timeout = float(cfg.get("label_max_timeout_rate", 0.90))
+
+    geom_cache = {}
     for H in horizons:
         for side in trade_sides:
-            tprint(f"Pre-computing triple barrier labels H={H} side={side}...")
+            tprint(f"Pre-computing geometry labels H={H} side={side}...")
 
-            if atr_pct_df is None:
-                # Fallback: fixed barriers
-                tb_labels, tb_returns = compute_triple_barrier_labels(panel, 0.05, 0.025, H, side=side)
-                tb_cache[(H, side)] = (tb_labels, tb_returns)
-                continue
-
-            # --- Optimise TP/SL via run_tp_sl_selection_fast ---
-            # Multi-asset selection: Top 5 from market basket to prevent overfitting
-            close_df = panel["close"]
-            opt_feat_keys = cfg.get("causal_cols", [])[:10]
-            
-            # Fallback for optimization: expand pool if market basket is too small
-            # We want at least 1000 events for robust TP/SL. 40 is too few.
-            assets_to_opt = [s for s in cfg.get("market_basket", []) if s in close_df.columns and s in atr_pct_df.columns]
-            
-            # If basket provided < 30 assets, fill up with top liquid ones from the panel
-            target_pool_size = 50
-            if len(assets_to_opt) < target_pool_size:
-                 remaining = [s for s in close_df.columns if s not in assets_to_opt and s in atr_pct_df.columns]
-                 # Prefer assets with non-zero candidates if possible, or just top ones
-                 assets_to_opt.extend(remaining[:target_pool_size - len(assets_to_opt)])
-            
-            tprint(f"TP/SL optimization pool: {len(assets_to_opt)} assets (Example: {assets_to_opt[:5]}...)")
-
-            tp_mult = float(cfg.get("tp_mult", 0.50))
-            sl_mult = float(cfg.get("sl_mult", 0.18))
-            lo_val, hi_val, z_max_val = 0.03, 0.06, 3.0
-            # Log absolute values at default barrier_pct
-            _default_bp = 0.5 * (lo_val + hi_val)  # ~4.5%
-            tprint(f"TP/SL Defaults: tp_mult={tp_mult}, sl_mult={sl_mult} "
-                   f"(abs TP~{tp_mult*_default_bp*100:.1f}%, SL~{sl_mult*_default_bp*100:.1f}%, "
-                   f"ratio={tp_mult/max(sl_mult,0.01):.1f}x)")
-
-            # Arrays to collect
-            all_o, all_h, all_l, all_c = [], [], [], []
-            all_a, all_ab, all_zv = [], [], []
-            all_x = []
-            all_event_idx = []
-            all_time_idx = []  # raw time indices (pre-offset) for temporal sorting
-            
-            current_offset = 0
-            pad_len = int(H) + 24
-            # NaNs for padding to prevent cross-asset leakage
-            nan_arr_1d = np.full(pad_len, np.nan, dtype=np.float32)
-            
-            panel_idx = close_df.index
-            ts_start_opt = ts - pd.Timedelta(hours=int(cfg["train_lookback_hours"]))
-
-            for sym in assets_to_opt:
-                 # Extract data
-                 o = panel["open"][sym].values.astype(np.float32)
-                 h = panel["high"][sym].values.astype(np.float32)
-                 l = panel["low"][sym].values.astype(np.float32)
-                 c = close_df[sym].values.astype(np.float32)
-                 
-                 # Align ATR arrays
-                 a = np.nan_to_num(atr_pct_df[sym].reindex(panel_idx).values.astype(np.float32), nan=0.01)
-                 ab = np.nan_to_num(atr_base_df[sym].reindex(panel_idx).values.astype(np.float32), nan=0.01)
-                 zv = np.nan_to_num(z_score_df[sym].reindex(panel_idx).values.astype(np.float32), nan=0.0)
-                 
-                 # Features for X
-                 x_list = []
-                 for fk in opt_feat_keys:
-                     if fk in feats and sym in feats[fk].columns:
-                         aligned = feats[fk][sym].reindex(panel_idx).values.astype(np.float32)
-                         x_list.append(np.nan_to_num(aligned, nan=0.0))
-                     else:
-                         x_list.append(np.zeros(len(c), dtype=np.float32))
-                 x_arr = np.stack(x_list, axis=1) if x_list else np.zeros((len(c), 1), dtype=np.float32)
-                 
-                 # Event indices
-                 if cached_cand_mask is not None and sym in cached_cand_mask.columns:
-                     cand_series = cached_cand_mask[sym]
-                     cand_series = cand_series[(cand_series.index >= ts_start_opt) & (cand_series.index <= ts)]
-                     event_ts_idx = cand_series[cand_series].index
-                     e_idx = close_df.index.get_indexer(event_ts_idx)
-                     e_idx = e_idx[e_idx >= 0].astype(np.int32)
-                 else:
-                     mask = (close_df.index >= ts_start_opt) & (close_df.index <= ts)
-                     e_idx = np.where(mask)[0][::5].astype(np.int32)
-                 
-                 if len(e_idx) > 0:
-                     # Add to collection
-                     all_o.append(o); all_o.append(nan_arr_1d)
-                     all_h.append(h); all_h.append(nan_arr_1d)
-                     all_l.append(l); all_l.append(nan_arr_1d)
-                     all_c.append(c); all_c.append(nan_arr_1d)
-                     
-                     all_a.append(a); all_a.append(nan_arr_1d)
-                     all_ab.append(ab); all_ab.append(nan_arr_1d)
-                     all_zv.append(zv); all_zv.append(nan_arr_1d)
-                     
-                     # X needs padding with shape (pad_len, n_feats)
-                     x_pad = np.zeros((pad_len, x_arr.shape[1]), dtype=np.float32)
-                     all_x.append(x_arr); all_x.append(x_pad)
-                     
-                     # Shift event indices
-                     all_event_idx.append(e_idx + current_offset)
-                     all_time_idx.append(e_idx)  # raw time index (pre-offset) for temporal sorting
-                     
-                     current_offset += len(c) + pad_len
-            
-            if all_c and all_event_idx:
-                 final_o = np.concatenate(all_o)
-                 final_h = np.concatenate(all_h)
-                 final_l = np.concatenate(all_l)
-                 final_c = np.concatenate(all_c)
-                 final_a = np.concatenate(all_a)
-                 final_ab = np.concatenate(all_ab)
-                 final_zv = np.concatenate(all_zv)
-                 final_x = np.concatenate(all_x)
-                 final_events = np.concatenate(all_event_idx)
-                 final_time_idx = np.concatenate(all_time_idx)
-                 
-                 tprint(f"TP/SL optimization: {len(final_events)} events from {len(assets_to_opt)} assets for H={H} side={side}")
-
-                 if len(final_events) >= 50:
-                     try:
-                         n_mos = float(cfg["train_lookback_hours"]) / (24 * 30.44) # average month length
-                         summary = run_tp_sl_selection_fast(
-                             X=final_x,
-                             open_=final_o, high=final_h, low=final_l, close=final_c,
-                             atr_pct=final_a, z=final_zv, atr_base_pct=final_ab,
-                             event_idx=final_events,
-                             horizon=H,
-                             max_events=3000,
-                             tp_mult_grid=[0.4, 0.5, 0.6, 0.8, 1.0, 1.25, 1.5],
-                             sl_mult_grid=[0.10, 0.15, 0.18, 0.25, 0.30, 0.40, 0.50],
-                             lo_grid=[0.01, 0.02, 0.03, 0.04],
-                             hi_grid=[0.05, 0.06, 0.07],
-                             z_max_grid=[2.5, 3.0, 3.5],
-                             threshold_p_grid=[0.05, 0.1, 0.2, 0.5],
-                             side=side,
-                             entry_mode="next_open",
-                             n_assets=len(assets_to_opt),
-                             n_months=n_mos,
-                             event_time_idx=final_time_idx,
-                         )
-                         tp_mult = summary.final_tp_mult
-                         sl_mult = summary.final_sl_mult
-                         lo_val = summary.final_lo
-                         hi_val = summary.final_hi
-                         z_max_val = summary.final_z_max
-                         thr_p_val = summary.final_threshold_p
-                         # Enforce hard constraints on optimized values
-                         _opt_bp = 0.5 * (lo_val + hi_val)
-                         _abs_tp = tp_mult * _opt_bp
-                         _ratio = tp_mult / max(sl_mult, 0.01)
-                         min_ratio = float(cfg.get("min_tp_sl_ratio", 1.5))
-                         min_tp_abs = float(cfg.get("min_tp_abs_pct", 0.02))
-                         if _abs_tp < min_tp_abs:
-                             tp_mult = min_tp_abs / max(_opt_bp, 0.01)
-                             tprint(f"  Enforced min TP: tp_mult raised to {tp_mult:.2f} (abs {tp_mult*_opt_bp*100:.1f}%)")
-                         if _ratio < min_ratio:
-                             sl_mult = tp_mult / min_ratio
-                             tprint(f"  Enforced min ratio: sl_mult lowered to {sl_mult:.2f}")
-                         tprint(f"Optimised TP/SL for H={H} side={side}: tp_mult={tp_mult:.2f}, sl_mult={sl_mult:.2f} "
-                                f"(abs TP~{tp_mult*_opt_bp*100:.1f}%, SL~{sl_mult*_opt_bp*100:.1f}%, ratio={tp_mult/max(sl_mult,0.01):.1f}x) "
-                                f"lo={lo_val:.2f}, hi={hi_val:.2f}, z_max={z_max_val:.2f}, thr_p={thr_p_val:.2f}")
-                     except Exception as e:
-                         tprint(f"TP/SL optimization failed for H={H} side={side}: {e}. Using defaults.")
-                 else:
-                     tprint(f"Not enough events ({len(final_events)}) for TP/SL optimization. Using defaults.")
+            if atr_scale_df is None:
+                atr_scale_local = pd.DataFrame(1.0, index=panel["close"].index, columns=panel["close"].columns)
             else:
-                 tprint(f"No valid assets/events found for TP/SL optimization. Using defaults.")
+                atr_scale_local = atr_scale_df.reindex(index=panel["close"].index, columns=panel["close"].columns).fillna(1.0)
 
-            # Recompute barrier pct with optimized params if changed
-            if abs(lo_val - 0.03) > 1e-6 or abs(hi_val - 0.06) > 1e-6 or abs(z_max_val - 3.0) > 1e-6:
-                b_pct_opt = scaled_atr_pct(atr_pct_df.values, z_score_df.values, atr_base_df.values, z_max=z_max_val, lo=lo_val, hi=hi_val)
-                barrier_pct_opt_df = pd.DataFrame(b_pct_opt, index=atr_pct_df.index, columns=atr_pct_df.columns)
-            else:
-                barrier_pct_opt_df = barrier_pct_df
+            geom_runs = []
+            for tpv in tp_vals:
+                for slv in sl_vals:
+                    net_rr = tpv / max(slv + fee_pct, 1e-9)
+                    if net_rr < min_net_rr:
+                        continue
+                    tp_df = np.clip(atr_scale_local * tpv, 0.001, None)
+                    sl_df = np.clip(atr_scale_local * slv, 0.001, None)
+                    lbl, ret = compute_triple_barrier_labels(panel, tp_df, sl_df, H, side=side)
+                    tp_hit = float((lbl.values == 1).sum()) / max(1, lbl.size)
+                    to_rate = float((lbl.values == 0).sum()) / max(1, lbl.size)
+                    if tp_hit < min_tp_hit or to_rate > max_timeout:
+                        continue
+                    geom_runs.append((lbl, ret, tpv, slv))
 
-            tp_df = tp_mult * barrier_pct_opt_df
-            sl_df = sl_mult * barrier_pct_opt_df
-            tb_labels, tb_returns = compute_triple_barrier_labels(panel, tp_df, sl_df, H, side=side)
+            if not geom_runs:
+                tprint(f"No valid geometry for H={H} side={side}; using fallback.")
+                lbl, ret = compute_triple_barrier_labels(panel, 0.05, 0.01, H, side=side)
+                geom_runs = [(lbl, ret, 0.05, 0.01)]
+
+            labels_stack = np.stack([x[0].values for x in geom_runs], axis=0)
+            rets_stack = np.stack([x[1].values for x in geom_runs], axis=0)
+            n_tp_df = pd.DataFrame(np.sum(labels_stack == 1, axis=0), index=panel["close"].index, columns=panel["close"].columns)
+            n_sl_df = pd.DataFrame(np.sum(labels_stack == -1, axis=0), index=panel["close"].index, columns=panel["close"].columns)
+            n_to_df = pd.DataFrame(np.sum(labels_stack == 0, axis=0), index=panel["close"].index, columns=panel["close"].columns)
+
+            agg_ret = np.nanmean(rets_stack, axis=0)
+            agg_lbl = np.where(n_tp_df.values > n_sl_df.values, 1, np.where(n_sl_df.values > n_tp_df.values, -1, 0)).astype(np.int8)
+            tb_labels = pd.DataFrame(agg_lbl, index=panel["close"].index, columns=panel["close"].columns)
+            tb_returns = pd.DataFrame(agg_ret, index=panel["close"].index, columns=panel["close"].columns)
             tb_cache[(H, side)] = (tb_labels, tb_returns)
+            geom_cache[(H, side)] = {"n_tp": n_tp_df, "n_sl": n_sl_df, "n_to": n_to_df, "n_geom": len(geom_runs)}
+
+    if geom_cache:
+        any_key = next(iter(geom_cache.keys()))
+        feats["__geom_n_tp__"] = geom_cache[any_key]["n_tp"]
+        feats["__geom_n_sl__"] = geom_cache[any_key]["n_sl"]
+        feats["__geom_n_to__"] = geom_cache[any_key]["n_to"]
 
     for side in trade_sides:
         for k in kinds:
@@ -1159,6 +1092,11 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
 
             for H in horizons:
                 tprint(f"Generating labels for {side} {k} ({cand_filter}) H={H}...")
+
+                if (H, side) in geom_cache:
+                    feats["__geom_n_tp__"] = geom_cache[(H, side)]["n_tp"]
+                    feats["__geom_n_sl__"] = geom_cache[(H, side)]["n_sl"]
+                    feats["__geom_n_to__"] = geom_cache[(H, side)]["n_to"]
 
                 # Optimization: We include meta keys here so they are present in the dataframe
                 # for the meta model later. However, we must filter them out when training
@@ -1591,6 +1529,22 @@ def train_models_from_artifacts(datasets, cfg):
                             parts = [f"{bl}(n={bm['n']}): BSS={bm['bss']:.3f} AUC={bm['auc']:.3f} Brier={bm.get('brier',0):.4f}" 
                                      for bl, bm in rbuckets.items()]
                             tprint(f"    {rname}: {' | '.join(parts)}")
+                    if "__n_res__" in df.columns:
+                        n_res_vals = np.clip(df["__n_res__"].values.astype(float), 0.0, None)
+                        try:
+                            from sklearn.metrics import roc_auc_score
+                            if len(np.unique(y)) > 1:
+                                auc_all = float(roc_auc_score(y, oof))
+                            else:
+                                auc_all = 0.5
+                        except Exception:
+                            auc_all = 0.5
+                        resolved_w = n_res_vals / max(np.mean(n_res_vals), 1e-9)
+                        try:
+                            auc_res = float(roc_auc_score(y, oof, sample_weight=resolved_w)) if len(np.unique(y)) > 1 else 0.5
+                        except Exception:
+                            auc_res = 0.5
+                        tprint(f"  AUC reporting ({side}/{k}/H={H}): raw={auc_all:.4f}, resolved-weighted={auc_res:.4f}")
 
                 alpha_diag = {}
                 if race.best_model_name in race.detailed_metrics:
@@ -1684,6 +1638,38 @@ def train_models_from_artifacts(datasets, cfg):
                 y_target = y_ret
                 tprint(f"  Using raw y_ret target (no barrier_pct available)")
 
+            # Meta weights: magnitude + MAE/MFE proxy + consensus; remove 20% lowest n_res
+            n_res = df.get("__n_res__", pd.Series(np.ones(len(df)), index=df.index)).values.astype(np.float64)
+            keep = n_res >= np.quantile(n_res, 0.20)
+            if keep.sum() < 100:
+                keep = np.ones(len(df), dtype=bool)
+
+            df = df.loc[keep].copy()
+            X_feats = X_feats.loc[keep].copy()
+            y_target = y_target[keep]
+            p_oof = p_oof[keep]
+            n_res = n_res[keep]
+
+            mag = np.log1p(np.abs(y_target))
+            mag = np.clip(mag, None, np.quantile(mag, 0.95) if len(mag) > 0 else 1.0)
+            mag = 0.9 + 0.2 * (mag / max(np.mean(mag), 1e-9))
+            mag = _winsorize_and_unit_mean(mag, clip_min=0.75, clip_max=1.25)
+
+            mfe_proxy = np.clip(np.abs(df.get("__barrier_pct__", pd.Series(np.ones(len(df)), index=df.index)).values.astype(np.float64)), 1e-4, None)
+            mae_proxy = np.clip(np.abs(y_target), 1e-4, None)
+            mae_mfe = np.log1p(mae_proxy / mfe_proxy)
+            mae_mfe = _winsorize_and_unit_mean(mae_mfe, clip_min=0.75, clip_max=1.25)
+
+            cons = np.clip(df.get("__w_consensus__", pd.Series(np.ones(len(df)), index=df.index)).values.astype(np.float64), 0.75, 1.25)
+            cons = _winsorize_and_unit_mean(cons, clip_min=0.75, clip_max=1.25)
+
+            w_meta = mag * mae_mfe * cons
+            alpha_pow = float(np.clip(cfg.get("meta_weight_alpha", 0.5), 0.3, 0.7))
+            w_meta = np.power(np.clip(w_meta, 1e-9, None), alpha_pow)
+            ts_vals = df["__ts__"].values if "__ts__" in df.columns else np.arange(len(df))
+            w_meta = _normalize_cross_sectional(ts_vals, w_meta)
+            w_meta = w_meta / max(np.mean(w_meta), 1e-12)
+
             tprint(f"Meta {side}_{k}: Training on {len(df)} samples with {len(feat_cols)} raw meta features...")
             tprint(f"  Meta feature names: {feat_cols[:10]}{'...' if len(feat_cols) > 10 else ''}")
             tprint(f"  Target: mean={np.mean(y_target):.6f}, std={np.std(y_target):.6f}, "
@@ -1699,7 +1685,7 @@ def train_models_from_artifacts(datasets, cfg):
                 if interact_feat in X_meta.columns:
                     X_meta[f"pred_x_{interact_feat}"] = pred_logit * X_meta[interact_feat].values
 
-            meta.fit(X_meta, y_target)
+            meta.fit(X_meta, y_target, sample_weight=w_meta)
 
             # --- Meta model OOF diagnostics ---
             if meta.oof_probs is not None:

@@ -307,6 +307,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             fold_bss = []
             fold_bs = [] # Brier Score
             fold_ref = [] # Brier Ref
+            fold_brier = [] # Basic (unweighted) Brier
             fold_p10 = [] # Prec Top 10%
             fold_p25 = [] # Prec Top 25%
             fold_p40 = [] # Prec Top 40%
@@ -341,13 +342,11 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     # Predict raw (biased) probabilities on validation
                     probs_raw = model_clone.predict_proba(X_val)[:, 1]
                     
-                    # Correction: Match mean(probs_val) to mean(y_tr)
-                    # This removes global bias from scale_pos_weight/subsampling
-                    # We use y_tr mean as the "prior" expectation.
-                    if w_tr is not None:
-                        target_mean = np.average(y_tr, weights=w_tr)
-                    else:
-                        target_mean = np.mean(y_tr)
+                    # Correction: Match mean(probs_val) to UNWEIGHTED mean(y_tr)
+                    # IMPORTANT: Use unweighted prevalence. Sample weights upweight
+                    # minority class for training loss, making weighted_prev ≈ 0.5.
+                    # But calibrated probabilities must reflect actual prevalence.
+                    target_mean = float(np.mean(y_tr))
                         
                     factor = self._find_bias_correction_factor(probs_raw, target_mean)
                     probs = self._apply_correction(probs_raw, factor)
@@ -362,6 +361,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     fold_bss.append(metrics["BSS"])
                     fold_bs.append(metrics.get("Brier_Score", np.nan))
                     fold_ref.append(metrics.get("Brier_Ref", np.nan))
+                    fold_brier.append(metrics.get("Brier", np.nan))
                     fold_p10.append(metrics.get("Prec_Top10", np.nan))
                     fold_p25.append(metrics.get("Prec_Top25", np.nan))
                     fold_p40.append(metrics.get("Prec_Top40", np.nan))
@@ -379,6 +379,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                 avg_bss_val = np.nanmean(fold_bss)
                 avg_bs = np.nanmean(fold_bs)
                 avg_ref = np.nanmean(fold_ref)
+                avg_brier = np.nanmean(fold_brier)
                 avg_p10 = np.nanmean(fold_p10)
                 avg_p25 = np.nanmean(fold_p25)
                 avg_p40 = np.nanmean(fold_p40)
@@ -397,6 +398,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     "BSS": avg_bss_val,
                     "BS": avg_bs,
                     "BS_Ref": avg_ref,
+                    "Brier": avg_brier,
                     "Prec10": avg_p10,
                     "Prec25": avg_p25,
                     "Prec40": avg_p40,
@@ -404,7 +406,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     "LogLoss": avg_logloss,
                     "Accuracy": avg_accuracy
                 }
-                tprint(f"  {name}: Score={avg_score:.4f}  PenScore={penalized_score:.4f}  AUC={avg_auc:.4f}  IC={avg_ic:.4f}  BSS={avg_bss_val:.4f} (BS={avg_bs:.4f}/Ref={avg_ref:.4f}) Prec10={avg_p10:.4f}  LogLoss={avg_logloss:.4f}  Acc={avg_accuracy:.4f}  Std={std_score:.4f}")
+                tprint(f"  {name}: Score={avg_score:.4f}  PenScore={penalized_score:.4f}  AUC={avg_auc:.4f}  IC={avg_ic:.4f}  BSS={avg_bss_val:.4f} (BS={avg_bs:.4f}/Ref={avg_ref:.4f}) Brier={avg_brier:.4f}  Prec10={avg_p10:.4f}  LogLoss={avg_logloss:.4f}  Acc={avg_accuracy:.4f}  Std={std_score:.4f}")
 
             except Exception as e:
                 tprint(f"  {name} Failed: {e}")
@@ -444,11 +446,8 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             oof_probs[val_idx] = estimator.predict_proba(X_val)[:, 1]
             
             # Recalibrate OOF probabilities
-            # Same logic: match OOF mean to y_tr mean
-            if w_tr is not None:
-                target_mean = np.average(y_tr, weights=w_tr)
-            else:
-                target_mean = np.mean(y_tr)
+            # Same logic: match OOF mean to UNWEIGHTED y_tr mean
+            target_mean = float(np.mean(y_tr))
             
             # Predict raw (biased)
             probs_raw = estimator.predict_proba(X_val)[:, 1]
@@ -483,18 +482,18 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             # --- Post-hoc Isotonic Calibration ---
             # Fit calibrator on OOF predictions
             # This ensures that predict_proba returns calibrated probabilities
-            tprint("Fitting IsotonicRegression on OOF predictions...")
+            tprint("Fitting IsotonicRegression on OOF predictions (unweighted)...")
             self.calibrator_ = IsotonicRegression(out_of_bounds='clip', y_min=0.0, y_max=1.0)
-            if sample_weight is not None:
-                self.calibrator_.fit(oof_probs, y, sample_weight=sample_weight)
-            else:
-                self.calibrator_.fit(oof_probs, y)
+            # IMPORTANT: Fit calibrator WITHOUT sample weights.
+            # Weights upweight minority class, making calibrator target weighted
+            # prevalence (~0.5) instead of actual prevalence (~0.31).
+            self.calibrator_.fit(oof_probs, y)
                 
             # Re-calibrate the stored OOF probs
             calibrated_oof = self.calibrator_.predict(oof_probs).astype(np.float32)
             
-            raw_brier = brier_score_loss(y, np.clip(oof_probs, 1e-7, 1-1e-7), sample_weight=sample_weight)
-            cal_brier = brier_score_loss(y, np.clip(calibrated_oof, 1e-7, 1-1e-7), sample_weight=sample_weight)
+            raw_brier = brier_score_loss(y, np.clip(oof_probs, 1e-7, 1-1e-7))
+            cal_brier = brier_score_loss(y, np.clip(calibrated_oof, 1e-7, 1-1e-7))
             tprint(f"Isotonic calibration: Brier raw={raw_brier:.4f} -> calibrated={cal_brier:.4f}")
             
             self.oof_probs = calibrated_oof
@@ -504,12 +503,12 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
         # Recap
         tprint("\n=== Model Race Recap ===")
-        tprint(f"{'Model':<15} {'Score':>8} {'AUC':>8} {'IC':>8} {'BSS':>8} {'BS':>8} {'Ref':>8} {'P10':>8} {'P25':>8} {'P40':>8} {'LogLoss':>8} {'Acc':>8} {'Std':>8}")
-        tprint("-" * 135)
+        tprint(f"{'Model':<15} {'Score':>8} {'AUC':>8} {'IC':>8} {'BSS':>8} {'Brier':>8} {'BS':>8} {'Ref':>8} {'P10':>8} {'P25':>8} {'P40':>8} {'LogLoss':>8} {'Acc':>8} {'Std':>8}")
+        tprint("-" * 143)
 
         sorted_models = sorted(detailed_metrics.items(), key=lambda x: x[1]['score'], reverse=True)
         for name, m in sorted_models:
-             tprint(f"{name:<15} {m['score']:8.4f} {m['AUC']:8.4f} {m['IC']:8.4f} {m['BSS']:8.4f} {m['BS']:8.4f} {m['BS_Ref']:8.4f} {m['Prec10']:8.4f} {m['Prec25']:8.4f} {m['Prec40']:8.4f} {m['LogLoss']:8.4f} {m['Accuracy']:8.4f} {m['std_score']:8.4f}")
+             tprint(f"{name:<15} {m['score']:8.4f} {m['AUC']:8.4f} {m['IC']:8.4f} {m['BSS']:8.4f} {m.get('Brier',0):8.4f} {m['BS']:8.4f} {m['BS_Ref']:8.4f} {m['Prec10']:8.4f} {m['Prec25']:8.4f} {m['Prec40']:8.4f} {m['LogLoss']:8.4f} {m['Accuracy']:8.4f} {m['std_score']:8.4f}")
         tprint("========================\n")
 
         # 3. Final Retraining (raw model, no calibration wrapper)

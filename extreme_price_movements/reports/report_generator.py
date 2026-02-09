@@ -156,6 +156,24 @@ def generate_training_report(
                         for regime, metrics in oof['per_regime'].items():
                             lines.append(f"  - {regime}: AUC={_fmt(metrics.get('auc', 0.0))}, IC={_fmt(metrics.get('ic', 0.0))}, WR={_pct(metrics.get('win_rate', 0.0))}")
 
+            # Per-regime BSS/AUC from model_info
+            per_regime = model_info.get("per_regime", {})
+            if per_regime:
+                lines.append(f"\n##### Per-Regime BSS, Brier & AUC")
+                lines.append("| Regime | Low (BSS / Brier / AUC / N) | Mid (BSS / Brier / AUC / N) | High (BSS / Brier / AUC / N) |")
+                lines.append("|--------|----------------------------|----------------------------|------------------------------|")
+                for rname, rbuckets in per_regime.items():
+                    low = rbuckets.get("low", {})
+                    mid = rbuckets.get("mid", {})
+                    high = rbuckets.get("high", {})
+                    lines.append(
+                        f"| {rname} | "
+                        f"{_fmt(low.get('bss', 0.0))} / {_fmt(low.get('brier', 0.0))} / {_fmt(low.get('auc', 0.5))} / {low.get('n', 0)} | "
+                        f"{_fmt(mid.get('bss', 0.0))} / {_fmt(mid.get('brier', 0.0))} / {_fmt(mid.get('auc', 0.5))} / {mid.get('n', 0)} | "
+                        f"{_fmt(high.get('bss', 0.0))} / {_fmt(high.get('brier', 0.0))} / {_fmt(high.get('auc', 0.5))} / {high.get('n', 0)} |"
+                    )
+                lines.append("")
+
             lines.append(f"- **Top features**: {', '.join(feat_cols[:10])}")
             lines.append("")
 

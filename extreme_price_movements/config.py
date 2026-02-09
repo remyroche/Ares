@@ -182,9 +182,13 @@ CFG = {
     "oos_holdout_days": 180,    # Exclude last 6 months from training for OOS backtest
 
     # Trailing Profit Risk Params (used in backtest & live, all vol-scaled)
-    "tp_mult": 1.0,             # Activation threshold = tp_mult * barrier_pct
-    "sl_mult": 0.5,             # Stop-loss = sl_mult * barrier_pct
-    "trail_mult": 0.5,          # Trailing deviation = trail_mult * barrier_pct
+    # Target absolute: TP ~2%, SL ~0.7% (with median barrier_pct ~4%)
+    "tp_mult": 0.50,            # Activation threshold = tp_mult * barrier_pct (~2%)
+    "sl_mult": 0.18,            # Stop-loss = sl_mult * barrier_pct (~0.7%)
+    "trail_mult": 0.25,         # Trailing deviation = trail_mult * barrier_pct
+    # Hard constraints enforced in optimizer and defaults
+    "min_tp_sl_ratio": 1.5,     # TP:SL ratio must be >= 1.5
+    "min_tp_abs_pct": 0.02,     # TP must be >= 2% absolute
 
     # Regime throttle: reduce sizing during drawdowns
     "throttle_lookback_trades": 20,     # look at last N closed trades

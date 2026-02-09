@@ -317,29 +317,34 @@ def calculate_selection_score(
     # -------------------------
     # 3) Brier Skill Score (calibration)
     # -------------------------
+    # IMPORTANT: BSS is computed WITHOUT sample weights.
+    # Sample weights upweight minority class for training loss, but BSS must
+    # measure calibration on the actual data distribution. Using weights makes
+    # weighted_prev ≈ 0.5 even when actual_prev ≈ 0.31, causing BS_ref ≈ 0.25
+    # and negative BSS even for models with AUC > 0.5.
     bss = 0.0
     bss_score = 0.5
     bs = 0.0
     bs_ref = 0.0
+    brier_basic = 0.0
     
     if y_true_m is not None:
         p = np.clip(y_prob_m, 0.0, 1.0)
         
-        # Weighted mean for reference Brier
-        if w_m is not None and np.sum(w_m) > 0:
-            prev = float(np.average(y_true_m, weights=w_m))
-        else:
-            prev = float(np.mean(y_true_m)) if len(y_true_m) else 0.0
+        # UNWEIGHTED prevalence for BSS reference
+        prev = float(np.mean(y_true_m)) if len(y_true_m) else 0.0
+
+        # Basic (unweighted) Brier score — always computed
+        try:
+            brier_basic = float(brier_score_loss(y_true_m, p))
+        except Exception:
+            brier_basic = 0.0
             
         if bss_min_prev < prev < (1.0 - bss_min_prev):
             try:
-                # Weighted Brier Score
-                if w_m is not None:
-                    bs = float(brier_score_loss(y_true_m, p, sample_weight=w_m))
-                    bs_ref = float(brier_score_loss(y_true_m, np.full_like(p, prev), sample_weight=w_m))
-                else:
-                    bs = float(brier_score_loss(y_true_m, p))
-                    bs_ref = float(brier_score_loss(y_true_m, np.full_like(p, prev)))
+                # UNWEIGHTED Brier scores for BSS
+                bs = float(brier_score_loss(y_true_m, p))
+                bs_ref = float(brier_score_loss(y_true_m, np.full_like(p, prev)))
                     
                 bs_ref = max(bs_ref, float(bss_cap_ref_min))
                 bss = 1.0 - (bs / bs_ref)
@@ -354,6 +359,7 @@ def calculate_selection_score(
     # Add raw components for diagnostics
     metrics["Brier_Score"] = float(bs) if y_true_m is not None else 0.0
     metrics["Brier_Ref"] = float(bs_ref) if y_true_m is not None else 0.0
+    metrics["Brier"] = float(brier_basic) if y_true_m is not None else 0.0
 
     # -------------------------
     # 4) Top-K Precision

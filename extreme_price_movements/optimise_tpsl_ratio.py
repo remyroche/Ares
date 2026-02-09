@@ -1256,15 +1256,25 @@ def run_tp_sl_selection_fast(
                         atr_base_pct=atr_base_pct[e],
                         z_max=z_val, lo=lo_val, hi=hi_val
                     )
+                    # Compute mean barrier_pct for this vol config to enforce absolute constraints
+                    _mean_bp = float(np.nanmedian(barrier_pct)) if barrier_pct.size > 0 else 0.04
+                    if _mean_bp <= 0 or np.isnan(_mean_bp):
+                        _mean_bp = 0.04
+
                     for tp_mult in tp_mult_grid:
+                        # Constraint: absolute TP must be >= 2%
+                        abs_tp = float(tp_mult) * _mean_bp
+                        if abs_tp < 0.02:
+                            continue
+
                         for sl_mult in sl_mult_grid:
                             # Constraint 1: Asymmetric TP > SL for positive expectancy
                             if float(tp_mult) <= float(sl_mult):
                                 continue
                             
-                            # Constraint 2: Reasonable TP/SL ratio (avoid extreme asymmetry)
+                            # Constraint 2: TP:SL ratio must be >= 1.5 (hard floor)
                             tp_sl_ratio = float(tp_mult) / max(float(sl_mult), 0.01)
-                            if tp_sl_ratio < 1.2 or tp_sl_ratio > 5.0:
+                            if tp_sl_ratio < 1.5 or tp_sl_ratio > 5.0:
                                 continue
 
                             for trail_val in trail_mult_grid:

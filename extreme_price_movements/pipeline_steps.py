@@ -33,6 +33,21 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex):
         return
 
     panel = to_panel(dfs)
+
+    # Data coverage diagnostics
+    _close = panel["close"]
+    _ts_min = _close.index.min()
+    _ts_max = _close.index.max()
+    _n_hours = len(_close)
+    _n_days = (_ts_max - _ts_min).total_seconds() / 86400 if _ts_max > _ts_min else 0
+    _n_syms = _close.shape[1]
+    _non_nan_pct = float(_close.notna().sum().sum()) / max(_close.size, 1) * 100
+    tprint(f"DATA COVERAGE: {_n_syms} symbols, {_n_hours} hourly bars, "
+           f"{_n_days:.0f} days ({_ts_min.date()} to {_ts_max.date()}), "
+           f"{_non_nan_pct:.1f}% non-NaN")
+    if _n_days < 365:
+        tprint(f"WARNING: Only {_n_days:.0f} days of data — recommend >= 365 days for robust training")
+
     mkt_df = compute_market_features(panel, cfg["market_basket"])
     mkt_gates = add_regime_gates(mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
 

@@ -18,6 +18,75 @@ from .optimise_tpsl_ratio import (
     scaled_atr_pct,
 )
 
+def compute_per_regime_metrics(y_true, y_prob, df, sample_weight=None):
+    """Compute BSS and AUC per regime bucket from OOF predictions.
+    
+    Args:
+        y_true: binary labels (n,)
+        y_prob: predicted probabilities (n,)
+        df: DataFrame with __regime_*__ columns
+        sample_weight: optional sample weights (n,)
+    
+    Returns:
+        dict: {regime_name: {bucket_label: {bss, auc, n}}}
+    """
+    from sklearn.metrics import roc_auc_score, brier_score_loss
+    
+    regime_cols = [c for c in df.columns if c.startswith("__regime_") and c.endswith("__")]
+    if not regime_cols:
+        return {}
+    
+    bucket_labels = {0: "low", 1: "mid", 2: "high"}
+    results = {}
+    
+    for rc in regime_cols:
+        regime_name = rc.replace("__regime_", "").replace("__", "")
+        regime_vals = df[rc].values if rc in df.columns else None
+        if regime_vals is None:
+            continue
+        
+        regime_results = {}
+        for bucket_id, bucket_name in bucket_labels.items():
+            mask = regime_vals == bucket_id
+            n_bucket = int(mask.sum())
+            if n_bucket < 20:
+                regime_results[bucket_name] = {"bss": 0.0, "auc": 0.5, "brier": 0.0, "n": n_bucket}
+                continue
+            
+            y_b = y_true[mask]
+            p_b = np.clip(y_prob[mask], 1e-7, 1 - 1e-7)
+            
+            # BSS — UNWEIGHTED (sample weights distort BSS via weighted prevalence)
+            bss = 0.0
+            brier_basic = 0.0
+            try:
+                prev = float(np.mean(y_b))
+                brier_basic = float(brier_score_loss(y_b, p_b))
+                if 0.02 < prev < 0.98:
+                    bs = float(brier_score_loss(y_b, p_b))
+                    bs_ref = float(brier_score_loss(y_b, np.full_like(p_b, prev)))
+                    bs_ref = max(bs_ref, 1e-6)
+                    bss = 1.0 - (bs / bs_ref)
+                    if not np.isfinite(bss):
+                        bss = 0.0
+            except Exception:
+                bss = 0.0
+            
+            # AUC
+            auc = 0.5
+            try:
+                if len(np.unique(y_b)) > 1:
+                    auc = float(roc_auc_score(y_b, p_b))
+            except Exception:
+                auc = 0.5
+            
+            regime_results[bucket_name] = {"bss": round(bss, 4), "auc": round(auc, 4), "brier": round(brier_basic, 4), "n": n_bucket}
+        
+        results[regime_name] = regime_results
+    
+    return results
+
+
 def _fast_lookup(feat_df, event_ts, event_sym):
     """Fast extraction of values at (ts, sym) positions using numpy indexing.
     Returns 1D array of values. NaN where lookup fails."""
@@ -682,6 +751,51 @@ def build_hourly_training_set_and_weights(
     tprint(f"Applied uniqueness weighting: mean={weights.mean():.3f}, std={weights.std():.3f}")
     df.drop(columns=["w"], inplace=True)
 
+    # --- Regime columns for per-regime BSS/AUC reporting ---
+    # 6 regime dimensions: vol_12h, vol_48h, volume_12h, volume_48h, trend_12h, trend_48h
+    # Each bucketed into 3 terciles (low/mid/high)
+    _regime_map = {
+        "__regime_vol_12h__": "rv_12h",
+        "__regime_vol_48h__": "rv_24h",         # rv_24h is closest proxy for 48h
+        "__regime_volume_12h__": "vol_z_base",   # volume z-score (short horizon)
+        "__regime_volume_48h__": "vol_z24_base", # volume z-score (longer horizon)
+        "__regime_trend_12h__": "ret6h",         # 6h return as 12h trend proxy
+        "__regime_trend_48h__": "trend_pct_base",# trend pct as 48h trend proxy
+    }
+    for regime_col, src_col in _regime_map.items():
+        if src_col in df.columns:
+            vals = df[src_col].values.astype(np.float64)
+            valid = np.isfinite(vals)
+            if valid.sum() > 10:
+                try:
+                    terciles = np.nanpercentile(vals[valid], [33.3, 66.7])
+                    buckets = np.full(len(vals), 1, dtype=np.int8)  # default mid
+                    buckets[vals <= terciles[0]] = 0  # low
+                    buckets[vals >= terciles[1]] = 2  # high
+                    df[regime_col] = buckets
+                except Exception:
+                    df[regime_col] = np.int8(1)
+            else:
+                df[regime_col] = np.int8(1)
+        else:
+            # Try to look up from feats directly
+            if src_col in feats:
+                raw_vals = _fast_lookup(feats[src_col], event_ts, event_sym)
+                raw_vals = np.nan_to_num(raw_vals, nan=0.0).astype(np.float64)
+                if len(raw_vals) > 10:
+                    try:
+                        terciles = np.nanpercentile(raw_vals, [33.3, 66.7])
+                        buckets = np.full(len(raw_vals), 1, dtype=np.int8)
+                        buckets[raw_vals <= terciles[0]] = 0
+                        buckets[raw_vals >= terciles[1]] = 2
+                        df[regime_col] = buckets
+                    except Exception:
+                        df[regime_col] = np.int8(1)
+                else:
+                    df[regime_col] = np.int8(1)
+            else:
+                df[regime_col] = np.int8(1)
+
     # Preserve raw meta feature columns BEFORE interaction toggles destroy them.
     # At inference time (engine.py), the meta model receives raw feature names,
     # so we must train on raw names too. Prefix with __meta_raw__ to avoid
@@ -868,9 +982,14 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
             
             tprint(f"TP/SL optimization pool: {len(assets_to_opt)} assets (Example: {assets_to_opt[:5]}...)")
 
-            tp_mult, sl_mult = 1.0, 0.5  # defaults
-            tprint(f"TP/SL Defaults: tp_mult={tp_mult}, sl_mult={sl_mult}")
+            tp_mult = float(cfg.get("tp_mult", 0.50))
+            sl_mult = float(cfg.get("sl_mult", 0.18))
             lo_val, hi_val, z_max_val = 0.03, 0.06, 3.0
+            # Log absolute values at default barrier_pct
+            _default_bp = 0.5 * (lo_val + hi_val)  # ~4.5%
+            tprint(f"TP/SL Defaults: tp_mult={tp_mult}, sl_mult={sl_mult} "
+                   f"(abs TP~{tp_mult*_default_bp*100:.1f}%, SL~{sl_mult*_default_bp*100:.1f}%, "
+                   f"ratio={tp_mult/max(sl_mult,0.01):.1f}x)")
 
             # Arrays to collect
             all_o, all_h, all_l, all_c = [], [], [], []
@@ -965,8 +1084,8 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
                              event_idx=final_events,
                              horizon=H,
                              max_events=3000,
-                             tp_mult_grid=[0.6, 0.8, 1.0, 1.25, 1.5],
-                             sl_mult_grid=[0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
+                             tp_mult_grid=[0.4, 0.5, 0.6, 0.8, 1.0, 1.25, 1.5],
+                             sl_mult_grid=[0.10, 0.15, 0.18, 0.25, 0.30, 0.40, 0.50],
                              lo_grid=[0.01, 0.02, 0.03, 0.04],
                              hi_grid=[0.05, 0.06, 0.07],
                              z_max_grid=[2.5, 3.0, 3.5],
@@ -983,7 +1102,21 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
                          hi_val = summary.final_hi
                          z_max_val = summary.final_z_max
                          thr_p_val = summary.final_threshold_p
-                         tprint(f"Optimised TP/SL for H={H} side={side}: tp_mult={tp_mult:.2f}, sl_mult={sl_mult:.2f}, lo={lo_val:.2f}, hi={hi_val:.2f}, z_max={z_max_val:.2f}, thr_p={thr_p_val:.2f}")
+                         # Enforce hard constraints on optimized values
+                         _opt_bp = 0.5 * (lo_val + hi_val)
+                         _abs_tp = tp_mult * _opt_bp
+                         _ratio = tp_mult / max(sl_mult, 0.01)
+                         min_ratio = float(cfg.get("min_tp_sl_ratio", 1.5))
+                         min_tp_abs = float(cfg.get("min_tp_abs_pct", 0.02))
+                         if _abs_tp < min_tp_abs:
+                             tp_mult = min_tp_abs / max(_opt_bp, 0.01)
+                             tprint(f"  Enforced min TP: tp_mult raised to {tp_mult:.2f} (abs {tp_mult*_opt_bp*100:.1f}%)")
+                         if _ratio < min_ratio:
+                             sl_mult = tp_mult / min_ratio
+                             tprint(f"  Enforced min ratio: sl_mult lowered to {sl_mult:.2f}")
+                         tprint(f"Optimised TP/SL for H={H} side={side}: tp_mult={tp_mult:.2f}, sl_mult={sl_mult:.2f} "
+                                f"(abs TP~{tp_mult*_opt_bp*100:.1f}%, SL~{sl_mult*_opt_bp*100:.1f}%, ratio={tp_mult/max(sl_mult,0.01):.1f}x) "
+                                f"lo={lo_val:.2f}, hi={hi_val:.2f}, z_max={z_max_val:.2f}, thr_p={thr_p_val:.2f}")
                      except Exception as e:
                          tprint(f"TP/SL optimization failed for H={H} side={side}: {e}. Using defaults.")
                  else:
@@ -1314,6 +1447,7 @@ def train_models_from_artifacts(datasets, cfg):
                 tprint(f"Finished {side} {k} H={H}: Winner={race.best_model_name}, Score={score:.4f}, AUC={dm.get('AUC',0):.4f}, IC={dm.get('IC',0):.4f}, BSS={dm.get('BSS',0):.4f}")
 
                 # --- Alpha model OOF diagnostics ---
+                per_regime = {}
                 if race.oof_probs is not None:
                     oof = race.oof_probs
                     tprint(f"  OOF probs: mean={np.mean(oof):.4f}, std={np.std(oof):.4f}, "
@@ -1325,9 +1459,18 @@ def train_models_from_artifacts(datasets, cfg):
                     # Calibration: mean predicted prob vs actual positive rate
                     tprint(f"  Calibration: mean_pred={np.mean(oof):.4f} vs actual_rate={np.mean(y):.4f}")
 
+                    # --- Per-regime BSS/AUC ---
+                    per_regime = compute_per_regime_metrics(y, oof, df, sample_weight=w)
+                    if per_regime:
+                        tprint(f"  Per-regime BSS/AUC/Brier ({len(per_regime)} dimensions):")
+                        for rname, rbuckets in per_regime.items():
+                            parts = [f"{bl}(n={bm['n']}): BSS={bm['bss']:.3f} AUC={bm['auc']:.3f} Brier={bm.get('brier',0):.4f}" 
+                                     for bl, bm in rbuckets.items()]
+                            tprint(f"    {rname}: {' | '.join(parts)}")
+
                 if score > best_ic:
                     best_ic = score
-                    best_m = {"model": race, "H": H, "feat_cols": cols}
+                    best_m = {"model": race, "H": H, "feat_cols": cols, "per_regime": per_regime}
 
             final_models[side][k] = best_m
 
@@ -1850,8 +1993,8 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
                 event_idx=indices,
                 horizon=24,
                 max_events=2000,
-                tp_mult_grid=[0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.5, 2.0],
-                sl_mult_grid=[0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1.0],
+                tp_mult_grid=[0.4, 0.5, 0.6, 0.8, 1.0, 1.25, 1.5],
+                sl_mult_grid=[0.10, 0.15, 0.18, 0.25, 0.30, 0.40, 0.50],
                 trail_mult_grid=[0.15, 0.25, 0.35, 0.50],
                 lo_grid=[0.01, 0.02, 0.03, 0.04],
                 hi_grid=[0.05, 0.06, 0.07],
@@ -1861,7 +2004,26 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
                 **_15m_kwargs
             )
 
-            tprint(f"Optimized {side} {k}: TP={summary.final_tp_mult:.2f}, SL={summary.final_sl_mult:.2f}, Trail={summary.final_trail_mult:.2f}, Lo={summary.final_lo:.2f}, Hi={summary.final_hi:.2f}, Zmax={summary.final_z_max:.2f}")
+            # Enforce hard constraints on optimized values
+            _opt_bp_risk = 0.5 * (summary.final_lo + summary.final_hi)
+            _abs_tp_risk = summary.final_tp_mult * _opt_bp_risk
+            _ratio_risk = summary.final_tp_mult / max(summary.final_sl_mult, 0.01)
+            min_ratio = float(cfg.get("min_tp_sl_ratio", 1.5))
+            min_tp_abs = float(cfg.get("min_tp_abs_pct", 0.02))
+            _tp_m = summary.final_tp_mult
+            _sl_m = summary.final_sl_mult
+            if _abs_tp_risk < min_tp_abs:
+                _tp_m = min_tp_abs / max(_opt_bp_risk, 0.01)
+                tprint(f"  Enforced min TP: tp_mult raised to {_tp_m:.2f} (abs {_tp_m*_opt_bp_risk*100:.1f}%)")
+            if _tp_m / max(_sl_m, 0.01) < min_ratio:
+                _sl_m = _tp_m / min_ratio
+                tprint(f"  Enforced min ratio: sl_mult lowered to {_sl_m:.2f}")
+            summary.final_tp_mult = _tp_m
+            summary.final_sl_mult = _sl_m
+            tprint(f"Optimized {side} {k}: TP={summary.final_tp_mult:.2f} ({summary.final_tp_mult*_opt_bp_risk*100:.1f}%), "
+                   f"SL={summary.final_sl_mult:.2f} ({summary.final_sl_mult*_opt_bp_risk*100:.1f}%), "
+                   f"ratio={summary.final_tp_mult/max(summary.final_sl_mult,0.01):.1f}x, "
+                   f"Trail={summary.final_trail_mult:.2f}, Lo={summary.final_lo:.2f}, Hi={summary.final_hi:.2f}, Zmax={summary.final_z_max:.2f}")
 
             if summary.outer_results:
                 avg_auc = np.mean([r.test_auc for r in summary.outer_results])

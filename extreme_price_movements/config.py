@@ -61,7 +61,26 @@ CFG = {
     "market_basket": ["BTC/USDT","ETH/USDT","AVAX/USDT","SOL/USDT","XRP/USDT"],
 
     # training horizons to compare (1)
-    "label_horizons_hours": [8],
+    "label_horizons_hours": [2, 4, 8],
+    "label_tp_values_pct": [5.0, 3.5, 2.0],
+    "label_sl_values_pct": [0.5, 1.0, 2.0],
+    "label_round_trip_fee_pct": 0.5,
+    "label_min_net_rr": 1.5,
+    "label_min_tp_hit_rate": 0.02,
+    "label_max_timeout_rate": 0.90,
+
+    # ATR normalization for barrier scaling
+    "atr_norm_fast_hl_hours": 24,
+    "atr_norm_slow_hl_hours": 24 * 5,
+    "atr_norm_global_hl_hours": 24 * 5,
+    "atr_norm_warmup_hours": 24 * 10,
+    "atr_norm_clip_global": [0.7, 1.5],
+    "atr_norm_clip_scale": [0.6, 2.5],
+
+    # Consensus weight blending
+    "consensus_amp": 0.25,
+    "consensus_k": 2.0,
+    "consensus_beta": 0.20,
     "train_lookback_hours": 24 * 365 * 3,   # 3 years
     "val_lookback_hours": 24 * 7,      # 7d validation (time-split, no leakage)
     "min_train_samples": 200,

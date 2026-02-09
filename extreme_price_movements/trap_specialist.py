@@ -26,21 +26,12 @@ TRAP_FEATURE_KEYS = [
 ]
 
 
-def train_trap_specialist(panel, feats, cfg, syms, ts_end):
+def build_trap_dataset(panel, feats, cfg, syms):
     """
-    Train Trap Specialist GMM model.
-    
-    Args:
-        panel: Dictionary with OHLCV DataFrames
-        feats: Dictionary of feature DataFrames
-        cfg: Configuration dictionary
-        syms: List of symbols to train on
-        ts_end: End timestamp for training window
-    
-    Returns:
-        Dictionary with trained GMM model, scaler, and metadata
+    Build training dataset for Trap Specialist.
+    Returns: DataFrame with features and 'y_quality' column.
     """
-    tprint("Training Trap Specialist (GMM)...")
+    tprint(f"Building Trap Specialist dataset...")
     
     # 1. Generate quality labels
     horizon = cfg.get("trap_horizon", 6)
@@ -49,8 +40,7 @@ def train_trap_specialist(panel, feats, cfg, syms, ts_end):
     
     # 2. Build feature matrix
     tprint(f"  Building feature matrix ({len(TRAP_FEATURE_KEYS)} features)...")
-    X_list = []
-    y_list = []
+    data_list = []
     
     for sym in syms:
         if sym not in quality_scores.columns:
@@ -63,48 +53,74 @@ def train_trap_specialist(panel, feats, cfg, syms, ts_end):
             continue
         
         # Extract features for this symbol
-        X_sym_list = []
-        valid_idx = []
+        # Use pandas reindexing for speed instead of loop
+        valid_idx = y_sym.index.intersection(feats[TRAP_FEATURE_KEYS[0]].index)
+        if len(valid_idx) < 100: continue
         
-        for idx in y_sym.index:
-            if idx not in feats[TRAP_FEATURE_KEYS[0]].index:
-                continue
+        y_sym = y_sym.loc[valid_idx]
+
+        # Check all features exist
+        # We can stack features into a DataFrame for this symbol
+        X_df_list = []
+        valid_feats = True
+        for k in TRAP_FEATURE_KEYS:
+            if k not in feats or sym not in feats[k].columns:
+                valid_feats = False
+                break
+            X_df_list.append(feats[k][sym].reindex(valid_idx))
             
-            row = []
-            valid = True
-            for feat_key in TRAP_FEATURE_KEYS:
-                if feat_key not in feats or sym not in feats[feat_key].columns:
-                    valid = False
-                    break
-                val = feats[feat_key].loc[idx, sym]
-                if np.isnan(val) or np.isinf(val):
-                    valid = False
-                    break
-                row.append(val)
-            
-            if valid:
-                X_sym_list.append(row)
-                valid_idx.append(idx)
+        if not valid_feats: continue
         
-        if len(X_sym_list) > 0:
-            X_sym = np.array(X_sym_list, dtype=np.float32)
-            y_sym_aligned = y_sym.loc[valid_idx].values
+        X_sym = pd.concat(X_df_list, axis=1)
+        X_sym.columns = TRAP_FEATURE_KEYS
+
+        # Drop NaNs
+        combined = X_sym.copy()
+        combined["y_quality"] = y_sym.values
+        combined["symbol"] = sym
+        combined = combined.dropna()
+
+        if len(combined) > 0:
+            data_list.append(combined)
             
-            X_list.append(X_sym)
-            y_list.append(y_sym_aligned)
-    
-    if not X_list:
+    if not data_list:
         tprint("  ERROR: No valid training data for Trap Specialist")
         return None
+
+    full_df = pd.concat(data_list)
+    # Ensure index name is preserved or reset?
+    # Usually index is timestamp. Let's reset index to keep timestamp as column if needed.
+    full_df.index.name = "ts"
+    full_df = full_df.reset_index()
     
-    X = np.vstack(X_list)
-    y = np.concatenate(y_list)
+    tprint(f"  Trap dataset: {len(full_df)} samples")
+    return full_df
+
+
+def train_trap_from_dataset(dataset, cfg):
+    """
+    Train Trap Specialist from pre-built dataset.
+    Args:
+        dataset: DataFrame with features and 'y_quality' column.
+        cfg: Config dict.
+    Returns:
+        Trained model dict.
+    """
+    tprint("Training Trap Specialist (GMM) from dataset...")
+
+    if dataset is None or dataset.empty:
+        tprint("  ERROR: Dataset is empty.")
+        return None
+
+    X = dataset[TRAP_FEATURE_KEYS].values.astype(np.float32)
+    y = dataset["y_quality"].values.astype(np.float32)
     
     tprint(f"  Training data: {len(X)} samples, {X.shape[1]} features")
     
     # 3. Bin quality scores into 4 clusters for GMM
-    tprint("  Binning quality scores into 4 clusters...")
-    y_binned = pd.qcut(y, q=4, labels=False, duplicates='drop')
+    # Binning is only for analysis/check, GMM is unsupervised/semi-supervised on features
+    # Wait, GMM is trained on X (features), NOT y.
+    # But we use y for semantic sorting.
     
     # 4. Fit GMM
     tprint("  Fitting GMM (4 components)...")
@@ -142,11 +158,24 @@ def train_trap_specialist(panel, feats, cfg, syms, ts_end):
     # 6. Validation metrics
     from sklearn.metrics import silhouette_score, davies_bouldin_score
     
-    silhouette = silhouette_score(X_scaled, cluster_labels)
-    davies_bouldin = davies_bouldin_score(X_scaled, cluster_labels)
+    # Compute on subset if too large for silhouette
+    if len(X_scaled) > 10000:
+        idx = np.random.choice(len(X_scaled), 10000, replace=False)
+        X_val = X_scaled[idx]
+        lbl_val = cluster_labels[idx]
+    else:
+        X_val = X_scaled
+        lbl_val = cluster_labels
     
-    tprint(f"  Silhouette Score: {silhouette:.3f} (higher is better)")
-    tprint(f"  Davies-Bouldin Index: {davies_bouldin:.3f} (lower is better)")
+    try:
+        silhouette = silhouette_score(X_val, lbl_val)
+        davies_bouldin = davies_bouldin_score(X_val, lbl_val)
+        tprint(f"  Silhouette Score: {silhouette:.3f} (higher is better)")
+        tprint(f"  Davies-Bouldin Index: {davies_bouldin:.3f} (lower is better)")
+    except Exception as e:
+        tprint(f"  Metrics failed: {e}")
+        silhouette = 0.0
+        davies_bouldin = 0.0
     
     tprint("✅ Trap Specialist training complete")
     
@@ -159,3 +188,11 @@ def train_trap_specialist(panel, feats, cfg, syms, ts_end):
         "silhouette_score": silhouette,
         "davies_bouldin_score": davies_bouldin,
     }
+
+
+def train_trap_specialist(panel, feats, cfg, syms, ts_end):
+    """
+    Train Trap Specialist GMM model (Legacy wrapper).
+    """
+    ds = build_trap_dataset(panel, feats, cfg, syms)
+    return train_trap_from_dataset(ds, cfg)

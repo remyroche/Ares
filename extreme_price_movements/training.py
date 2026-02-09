@@ -17,6 +17,8 @@ from .optimise_tpsl_ratio import (
     PurgedKFold,
     scaled_atr_pct,
 )
+from .trap_specialist import build_trap_dataset, train_trap_from_dataset
+from .gamma_specialist import build_gamma_dataset, train_gamma_from_dataset
 
 def compute_per_regime_metrics(y_true, y_prob, df, sample_weight=None):
     """Compute BSS and AUC per regime bucket from OOF predictions.
@@ -1194,6 +1196,16 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
             df_out["__w__"] = w
             datasets[f"exh_{d}"] = df_out.reset_index()
 
+    # 4. Specialist Models (Trap & Gamma)
+    tprint("Generating specialist training sets...")
+    trap_df = build_trap_dataset(panel, feats, cfg, syms)
+    if trap_df is not None:
+        datasets["trap_model"] = trap_df
+
+    gamma_df = build_gamma_dataset(panel, feats, cfg, syms)
+    if gamma_df is not None:
+        datasets["gamma_model"] = gamma_df
+
     return datasets
 
 def train_specialist_models(panel, feats, mkt_gates, cfg, syms, ts_end):
@@ -1627,14 +1639,34 @@ def train_models_from_artifacts(datasets, cfg):
             exh_models[d] = None
 
     # 4. Train Specialist Models (Trap & Gamma)
-    # Note: Specialists require panel and feats which are not passed to train_models_from_artifacts
-    # We'll need to refactor this or train specialists separately in pipeline_steps
-    # For now, return None and handle in pipeline_steps
     specialist_models = {
         "trap_model": None,
         "gamma_model": None,
     }
-    tprint("Specialist models (Trap, Gamma) will be trained separately in pipeline")
+
+    # Train Trap Model
+    if "trap_model" in datasets:
+        trap_df = datasets["trap_model"]
+        tprint("Training Trap Specialist from artifact...")
+        # If it was saved as parquet, index might need handling?
+        # build_trap_dataset returns frame with 'ts' column (from reset_index).
+        try:
+            m = train_trap_from_dataset(trap_df, cfg)
+            specialist_models["trap_model"] = m
+        except Exception as e:
+            tprint(f"Trap Specialist training failed: {e}")
+            import traceback; traceback.print_exc()
+
+    # Train Gamma Model
+    if "gamma_model" in datasets:
+        gamma_df = datasets["gamma_model"]
+        tprint("Training Gamma Specialist from artifact...")
+        try:
+            m = train_gamma_from_dataset(gamma_df, cfg)
+            specialist_models["gamma_model"] = m
+        except Exception as e:
+            tprint(f"Gamma Specialist training failed: {e}")
+            import traceback; traceback.print_exc()
 
     return {
         "alpha_models": final_models, 

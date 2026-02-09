@@ -134,21 +134,12 @@ def compute_gamma_weights(y_gamma, base_weights):
     return base_weights * huber_weights
 
 
-def train_gamma_specialist(panel, feats, cfg, syms, ts_end):
+def build_gamma_dataset(panel, feats, cfg, syms):
     """
-    Train Gamma Specialist regression model.
-    
-    Args:
-        panel: Dictionary with OHLCV DataFrames
-        feats: Dictionary of feature DataFrames
-        cfg: Configuration dictionary
-        syms: List of symbols to train on
-        ts_end: End timestamp for training window
-    
-    Returns:
-        Trained GammaModel instance
+    Build training dataset for Gamma Specialist.
+    Returns: DataFrame with features and 'y_gamma' column.
     """
-    tprint("Training Gamma Specialist (ExtraTrees Regression)...")
+    tprint(f"Building Gamma Specialist dataset...")
     
     # 1. Generate gamma labels
     horizon = cfg.get("gamma_horizon", 6)
@@ -157,8 +148,7 @@ def train_gamma_specialist(panel, feats, cfg, syms, ts_end):
     
     # 2. Build feature matrix
     tprint(f"  Building feature matrix ({len(GAMMA_FEATURE_KEYS)} features)...")
-    X_list = []
-    y_list = []
+    data_list = []
     
     for sym in syms:
         if sym not in gamma_labels.columns:
@@ -170,43 +160,59 @@ def train_gamma_specialist(panel, feats, cfg, syms, ts_end):
         if len(y_sym) < 100:
             continue
         
-        # Extract features for this symbol
-        X_sym_list = []
-        valid_idx = []
+        # Extract features for this symbol using reindexing
+        valid_idx = y_sym.index.intersection(feats[GAMMA_FEATURE_KEYS[0]].index)
+        if len(valid_idx) < 100: continue
         
-        for idx in y_sym.index:
-            if idx not in feats[GAMMA_FEATURE_KEYS[0]].index:
-                continue
+        y_sym = y_sym.loc[valid_idx]
+
+        # Check all features exist
+        X_df_list = []
+        valid_feats = True
+        for k in GAMMA_FEATURE_KEYS:
+            if k not in feats or sym not in feats[k].columns:
+                valid_feats = False
+                break
+            X_df_list.append(feats[k][sym].reindex(valid_idx))
             
-            row = []
-            valid = True
-            for feat_key in GAMMA_FEATURE_KEYS:
-                if feat_key not in feats or sym not in feats[feat_key].columns:
-                    valid = False
-                    break
-                val = feats[feat_key].loc[idx, sym]
-                if np.isnan(val) or np.isinf(val):
-                    valid = False
-                    break
-                row.append(val)
-            
-            if valid:
-                X_sym_list.append(row)
-                valid_idx.append(idx)
+        if not valid_feats: continue
+
+        X_sym = pd.concat(X_df_list, axis=1)
+        X_sym.columns = GAMMA_FEATURE_KEYS
+
+        # Combine
+        combined = X_sym.copy()
+        combined["y_gamma"] = y_sym.values
+        combined["symbol"] = sym
+        combined = combined.dropna()
         
-        if len(X_sym_list) > 0:
-            X_sym = np.array(X_sym_list, dtype=np.float32)
-            y_sym_aligned = y_sym.loc[valid_idx].values
+        if len(combined) > 0:
+            data_list.append(combined)
             
-            X_list.append(X_sym)
-            y_list.append(y_sym_aligned)
-    
-    if not X_list:
+    if not data_list:
         tprint("  ERROR: No valid training data for Gamma Specialist")
         return None
+
+    full_df = pd.concat(data_list)
+    full_df.index.name = "ts"
+    full_df = full_df.reset_index()
     
-    X = pd.DataFrame(np.vstack(X_list), columns=GAMMA_FEATURE_KEYS)
-    y = np.concatenate(y_list)
+    tprint(f"  Gamma dataset: {len(full_df)} samples")
+    return full_df
+
+
+def train_gamma_from_dataset(dataset, cfg):
+    """
+    Train Gamma Specialist from pre-built dataset.
+    """
+    tprint("Training Gamma Specialist (ExtraTrees Regression) from dataset...")
+
+    if dataset is None or dataset.empty:
+        tprint("  ERROR: Dataset is empty.")
+        return None
+
+    X = dataset[GAMMA_FEATURE_KEYS]
+    y = dataset["y_gamma"].values.astype(np.float32)
     
     tprint(f"  Training data: {len(X)} samples, {X.shape[1]} features")
     tprint(f"  Gamma range: [{y.min():.3f}, {y.max():.3f}], mean={y.mean():.3f}")
@@ -264,3 +270,11 @@ def train_gamma_specialist(panel, feats, cfg, syms, ts_end):
     tprint("✅ Gamma Specialist training complete")
     
     return model
+
+
+def train_gamma_specialist(panel, feats, cfg, syms, ts_end):
+    """
+    Train Gamma Specialist regression model (Legacy wrapper).
+    """
+    ds = build_gamma_dataset(panel, feats, cfg, syms)
+    return train_gamma_from_dataset(ds, cfg)

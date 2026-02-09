@@ -192,6 +192,11 @@ def train_daily(ts_sig, margin_symbols, cfg, store, ex):
         df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
         if df is not None: datasets[name] = df
 
+    # Specialist models
+    for name in ["trap_model", "gamma_model"]:
+        df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
+        if df is not None: datasets[name] = df
+
     if not found_count:
         tprint("ERROR: No label datasets found. Run 'labels' mode first.")
         return None

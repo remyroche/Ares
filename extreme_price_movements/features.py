@@ -7,6 +7,7 @@ from extreme_price_movements.feature_transforms import CausalFeatureTransformer
 from extreme_price_movements.time_utils import ensure_utc
 from extreme_price_movements.frac_diff_adaptive import find_min_ffd, frac_diff_ffd
 from extreme_price_movements.validation import validate_panel
+from extreme_price_movements.gated_features import add_accept_gate_features, add_gate_features, cross_sectional_gate_aggregates
 import extreme_price_movements.fast_funcs as ff
 
 # Initialize joblib cache
@@ -140,7 +141,18 @@ def add_regime_gates(mkt_df: pd.DataFrame, gate_vol_lookback_hours: int, gate_tr
     df["G_TREND"] = (df["mkt_ret24h"].abs() > dyn_thr).astype(np.int32)
     df["mkt_rv_ratio"] = df["mkt_rv"] / (df["mkt_rv_med"] + 1e-12)
 
-    float_cols = ["mkt_rv_med", "mkt_rv_ratio"]
+    rv_mean = ff.numba_rolling_mean(df[["mkt_rv"]], gate_vol_lookback_hours)["mkt_rv"].shift(1)
+    rv_std = ff.numba_rolling_std(df[["mkt_rv"]], gate_vol_lookback_hours)["mkt_rv"].shift(1).clip(lower=1e-6)
+    df["mkt_rv_pct"] = ((df["mkt_rv"] - rv_mean) / rv_std).clip(-6, 6).fillna(0.0).astype(np.float32)
+    df["mkt_rv_pct"] = (0.5 * (1.0 + np.vectorize(np.math.erf)(df["mkt_rv_pct"] / np.sqrt(2.0)))).astype(np.float32)
+
+    abs_ret = df["mkt_ret24h"].abs()
+    abs_ret_mean = ff.numba_rolling_mean(abs_ret.to_frame("x"), gate_vol_lookback_hours)["x"].shift(1)
+    abs_ret_std = ff.numba_rolling_std(abs_ret.to_frame("x"), gate_vol_lookback_hours)["x"].shift(1).clip(lower=1e-6)
+    df["abs_mkt_ret24h_z"] = ((abs_ret - abs_ret_mean) / abs_ret_std).clip(-6, 6).fillna(0.0).astype(np.float32)
+    df["trend_bin3"] = np.digitize(df["abs_mkt_ret24h_z"].to_numpy(), bins=[-0.5, 0.5]).astype(np.int8)
+
+    float_cols = ["mkt_rv_med", "mkt_rv_ratio", "mkt_rv_pct", "abs_mkt_ret24h_z", "trend_bin3"]
     for c in float_cols:
         df[c] = df[c].astype(np.float32)
 
@@ -423,6 +435,21 @@ def _compute_features_impl(panel, mkt_gates, cfg):
                             index=c.index, columns=c.columns).astype(np.float32)
     feats["mkt_rv_ratio"] = rv_ratio
 
+    mkt_rv_pct_s = mkt_gates["mkt_rv_pct"].reindex(c.index).astype(np.float32)
+    mkt_rv_pct = pd.DataFrame(np.repeat(mkt_rv_pct_s.to_numpy()[:, None], c.shape[1], axis=1),
+                              index=c.index, columns=c.columns).astype(np.float32)
+    feats["mkt_rv_pct"] = mkt_rv_pct
+
+    abs_mkt_ret24h_z_s = mkt_gates["abs_mkt_ret24h_z"].reindex(c.index).astype(np.float32)
+    abs_mkt_ret24h_z = pd.DataFrame(np.repeat(abs_mkt_ret24h_z_s.to_numpy()[:, None], c.shape[1], axis=1),
+                                    index=c.index, columns=c.columns).astype(np.float32)
+    feats["abs_mkt_ret24h_z"] = abs_mkt_ret24h_z
+
+    trend_bin3_s = mkt_gates["trend_bin3"].reindex(c.index).astype(np.float32)
+    trend_bin3 = pd.DataFrame(np.repeat(trend_bin3_s.to_numpy()[:, None], c.shape[1], axis=1),
+                              index=c.index, columns=c.columns).astype(np.float32)
+    feats["trend_bin3"] = trend_bin3
+
     def pick_by_rv(fast_df, base_df, slow_df):
         rr = rv_ratio
         out = base_df.copy()
@@ -565,7 +592,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     pb_avg = (feats["pullback_2"] + feats["pullback_4"]) / 2.0
     fail_term = (feats["failure_2"] + 0.5 * feats["failure_4"])
-    feats["reject"] = ((1.0 - feats["clv_mean_4"].clip(lower=0)) * pb_avg * fail_term).fillna(0).astype(np.float32)
+    feats["reject_score"] = ((1.0 - feats["clv_mean_4"].clip(lower=0)) * pb_avg * fail_term).fillna(0).astype(np.float32)
 
     feats["impulse_ratio_24"] = (feats["ret1h"].abs() / (feats["ret24h"].abs() + 1e-12)).fillna(0).astype(np.float32)
     feats["impulse_ratio_12"] = (feats["ret1h"].abs() / (feats["ret12h"].abs() + 1e-12)).fillna(0).astype(np.float32)
@@ -608,14 +635,101 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     ret_rat = (feats["ret4h"].abs() / (feats["ret1h"].abs() + 1e-12))
 
     # 3/ TF vs MR
-    feats["accept"] = (ft2_pos * clv4_pos * pb2_inv).astype(np.float32)
-    feats["retest_accept"] = (ft4_pos * clv4_pos * pb4_inv).astype(np.float32)
+    feats["accept_score"] = (ft2_pos * clv4_pos * pb2_inv).astype(np.float32)
+    feats["retest_accept_score"] = (ft4_pos * clv4_pos * pb4_inv).astype(np.float32)
 
-    feats["tf_qual"] = (feats["accept"] * feats["tf_tape"]).astype(np.float32)
+    feats["tf_qual_score"] = (feats["accept_score"] * feats["tf_tape"]).astype(np.float32)
 
-    # feats["reject"] already computed
-    feats["mr_qual"] = (feats["reject"] * feats["mr_tape"]).astype(np.float32)
+    feats["mr_qual_score"] = (feats["reject_score"] * feats["mr_tape"]).astype(np.float32)
     feats["retrace_12"] = (-feats["pullback_12"]).astype(np.float32)
+
+    gate_window = int(cfg.get("accept_gate_window", 64))
+    gate_windows = sorted(set([8, gate_window]))
+    percentile_mode = cfg.get("accept_gate_percentile_mode", "approx")
+
+    gate_df = pd.DataFrame(index=c.index)
+    score_panels = {
+        "accept_score": feats["accept_score"],
+        "reject_score": feats["reject_score"],
+        "retest_accept_score": feats["retest_accept_score"],
+        "tf_qual_score": feats["tf_qual_score"],
+        "mr_qual_score": feats["mr_qual_score"],
+    }
+    for score_col, score_panel in score_panels.items():
+        agg = cross_sectional_gate_aggregates(score_panel)
+        for agg_col in agg.columns:
+            gate_df[f"{score_col}_{agg_col}"] = agg[agg_col]
+
+    gate_df["accept_score"] = gate_df["accept_score_cs_trimmed_mean"].astype(np.float32)
+    for score_col in ["reject_score", "retest_accept_score", "tf_qual_score", "mr_qual_score"]:
+        gate_df[score_col] = gate_df[f"{score_col}_cs_trimmed_mean"].astype(np.float32)
+
+    gate_sources = [
+        "accept_score",
+        "reject_score",
+        "retest_accept_score",
+        "tf_qual_score",
+        "mr_qual_score",
+    ]
+    for w in gate_windows:
+        gate_df = add_accept_gate_features(
+            gate_df,
+            s_col="accept_score",
+            N=w,
+            add_strict=True,
+            percentile_mode=percentile_mode,
+        )
+        for score_col in gate_sources[1:]:
+            gate_df = add_gate_features(
+                gate_df,
+                s_col=score_col,
+                prefix=score_col.replace("_score", ""),
+                n=w,
+                add_strict=True,
+                percentile_mode=percentile_mode,
+            )
+
+    derived_prefixes = ["reject", "retest_accept", "tf_qual", "mr_qual"]
+    derived_suffixes = ["mean", "std", "z", "pct", "bin3", "gt66", "gt85"]
+    for w in gate_windows:
+        for prefix in derived_prefixes:
+            src_cols = [f"{prefix}_{suffix}_{w}" for suffix in derived_suffixes]
+            src_arr = gate_df[src_cols].to_numpy()
+            rep_arr = np.repeat(src_arr[:, None, :], c.shape[1], axis=1)
+            for col_idx, src_col in enumerate(src_cols):
+                feats[src_col] = pd.DataFrame(rep_arr[:, :, col_idx], index=c.index, columns=c.columns).astype(np.float32)
+
+        accept_gate_cols = [
+            f"s_mean_{w}",
+            f"s_std_{w}",
+            f"s_z_{w}",
+            f"s_pct_{w}",
+            f"s_bin3_{w}",
+            f"s_gt66_{w}",
+            f"s_gt85_{w}",
+        ]
+        rep = np.repeat(gate_df[accept_gate_cols].to_numpy()[:, None, :], c.shape[1], axis=1)
+        for col_idx, gate_col in enumerate(accept_gate_cols):
+            feats[gate_col] = pd.DataFrame(rep[:, :, col_idx], index=c.index, columns=c.columns).astype(np.float32)
+
+    for score_col in score_panels:
+        for agg_col in ["cs_median", "cs_trimmed_mean", "cs_p75", "cs_p90", "cs_iqr", "cs_std"]:
+            col = f"{score_col}_{agg_col}"
+            vals = np.repeat(gate_df[col].to_numpy()[:, None], c.shape[1], axis=1)
+            feats[col] = pd.DataFrame(vals, index=c.index, columns=c.columns).astype(np.float32)
+
+    s_pct = feats[f"s_pct_{gate_window}"]
+    s_bin3 = feats[f"s_bin3_{gate_window}"]
+    s_gt66 = feats[f"s_gt66_{gate_window}"]
+    s_gt85 = feats[f"s_gt85_{gate_window}"]
+    reject_like = (1.0 - s_pct).astype(np.float32)
+    feats["accept"] = s_pct
+    feats["accept_bin3"] = s_bin3.astype(np.float32)
+    feats["accept_gt66"] = s_gt66.astype(np.float32)
+    feats["accept_gt85"] = s_gt85.astype(np.float32)
+    feats["retest_accept"] = s_gt66
+    feats["tf_qual"] = (s_pct * feats["tf_tape"]).astype(np.float32)
+    feats["mr_qual"] = (reject_like * feats["mr_tape"]).astype(np.float32)
 
     # 4/ Meta
     feats["rv_ratio_6_24"] = (feats["rv_6h"] / (feats["rv_24h"] + 1e-12)).astype(np.float32)
@@ -631,12 +745,12 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["G_MR_TAIL"] = (feats["tail_against"] * (1.0 + feats["donch_dist_6"])).astype(np.float32)
 
     # Meta Features using Gates
-    ambig_term = (1.0 - np.maximum(feats["accept"], feats["reject"]))
+    ambig_term = (1.0 - np.maximum(feats["accept"], reject_like))
     feats["ambig"] = (ambig_term * feats["rv_ratio_6_24"]).astype(np.float32)
 
     feats["stage_tf"] = (feats["accept"] * feats["coherence_24"]).astype(np.float32)
     feats["stage_blowoff"] = (feats["blowoff_risk"] + feats["effort_gate"] + feats["stall_ext"]).astype(np.float32)
-    feats["stage_mr"] = (feats["reject"] * (1.0 + feats["overext"])).astype(np.float32)
+    feats["stage_mr"] = (reject_like * (1.0 + feats["overext"])).astype(np.float32)
     feats["exh_qual"] = (feats["effort_gate"] + feats["stall_ext"] + feats["tail_fail"] + feats["overext_weak"]).astype(np.float32)
 
     feats["thrust_decay_4"] = (feats["ret1h"].abs() / (feats["ret4h"].abs() + 1e-12)).astype(np.float32)
@@ -671,7 +785,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     feats["G_META_EXH"] = (feats["overext"] + feats["G_EXH_EFFORT"] + feats["stall_ext"] + feats["G_EXH_GIVEBACK"]).astype(np.float32)
     feats["G_META_TF_QUAL"] = (feats["accept"] * (1.0 - feats["G_META_EXH"].clip(0,1))).astype(np.float32)
-    feats["G_META_MR_QUAL"] = (feats["reject"] * (1.0 - feats["overext"].clip(0,1))).astype(np.float32)
+    feats["G_META_MR_QUAL"] = (reject_like * (1.0 - feats["overext"].clip(0,1))).astype(np.float32)
     feats["G_META_AMBIG"] = (ambig_term * feats["rv_ratio_6_24"]).astype(np.float32)
 
     ret_w = feats["ret10h"]
@@ -689,12 +803,12 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["breakout_24h"] = np.where(choose_up, up_break, dn_break).astype(np.float32) / (c + 1e-12)
     feats["breakout_24h"] = feats["breakout_24h"].astype(np.float32)
 
-    abs_net_score = feats["accept"] + feats["reject"]
+    abs_net_score = feats["accept"] + reject_like
     feats["meta_abs_net_x_breakout"] = (abs_net_score * feats["breakout_24h"].abs()).astype(np.float32)
     feats["meta_abs_net_x_drawext"] = (abs_net_score * feats["draw_extreme_10h"]).astype(np.float32)
     feats["meta_abs_net_x_vov_ratio"] = (abs_net_score * (feats["vov_ratio"] - 1.0).clip(lower=0)).astype(np.float32)
-    feats["meta_alignment"] = (np.sign(feats["accept"] - feats["reject"]) * np.sign(feats["ret5h"])).astype(np.float32)
-    feats["meta_signal_x_accel"] = ((feats["accept"] - feats["reject"]) * feats["accel_5h"]).astype(np.float32)
+    feats["meta_alignment"] = (np.sign(feats["accept"] - reject_like) * np.sign(feats["ret5h"])).astype(np.float32)
+    feats["meta_signal_x_accel"] = ((feats["accept"] - reject_like) * feats["accel_5h"]).astype(np.float32)
 
     # Robust Score Calculation with clipping to prevent Inf/Overflow
     # We clip components to avoid exploding values when denominators are near zero
@@ -778,7 +892,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     # (b) Rolling edge residual: how much is the model's current signal
     #     deviating from its recent realised performance?
     #     Proxy: z-score of composite scores (accept, reject, overext)
-    for comp_name in ["accept", "reject", "overext", "blowoff_risk", "exh_qual"]:
+    for comp_name in ["accept", "overext", "blowoff_risk", "exh_qual"]:
         if comp_name in feats:
             raw = feats[comp_name]
             roll_mu = ff.apply_to_frame(raw, ff._numba_rolling_mean_nan_safe, RESID_WINDOW)
@@ -812,9 +926,14 @@ def _compute_features_impl(panel, mkt_gates, cfg):
                        # Residualised features — already z-scored, don't double-transform
                        "rsi_z", "dist_ema_fast_z", "dist_vwap_norm_z", "flow_persistence_z",
                        "excess_6h_z", "vol_z_z", "atr_expansion_z", "coherence_24_z",
-                       "accept_surprise", "reject_surprise", "overext_surprise",
+                       "accept_surprise", "overext_surprise",
                        "blowoff_risk_surprise", "exh_qual_surprise",
                        "dist_vwap_resid", "dist_ema_fast_resid", "trend_pct_resid"]
+
+    for w in gate_windows:
+        for prefix in ["s", "reject", "retest_accept", "tf_qual", "mr_qual"]:
+            for suffix in ["mean", "std", "z", "pct", "bin3", "gt66", "gt85"]:
+                skip_transform.append(f"{prefix}_{suffix}_{w}")
 
     for k in feats.keys():
         tprint(f"Generating feature: {k}")

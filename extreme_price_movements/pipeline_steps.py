@@ -178,6 +178,13 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None):
             datasets[name] = df
             tprint(f"  Loaded {name}: {len(df)} rows")
 
+    # Specialist models
+    for name in ["trap_model", "gamma_model"]:
+        df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
+        if df is not None:
+            datasets[name] = df
+            tprint(f"  Loaded {name}: {len(df)} rows")
+
     if not found_count:
         tprint("ERROR: No alpha label datasets found. Run 'labels' mode first.")
         return None
@@ -188,47 +195,8 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None):
     with Timer("Model Training"):
         trained_bundle = train_models_from_artifacts(datasets, cfg)
     
-    # 2b. Train Specialist Models (requires panel and feats)
-    # Load panel and feats if they were used for spike generation
-    if store is not None and margin_symbols:
-        try:
-            from extreme_price_movements.training import train_specialist_models
-            
-            tprint("Loading panel and features for Specialist training...")
-            train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=ts_sig)
-            
-            dfs = {}
-            lookback_days = max(90, int(cfg["fetch_years"] * 365))
-            for s in train_syms:
-                df = store.load(s)
-                if not df.empty:
-                    dfs[s] = df[df.index <= ts_sig].tail(24*lookback_days)
-            
-            if dfs:
-                panel = to_panel(dfs)
-                mkt_df = compute_market_features(panel, cfg["market_basket"])
-                mkt_gates = add_regime_gates(mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
-                
-                feats = load_features(ts_sig, cfg["data_root"])
-                if feats is not None:
-                    # Align symbols
-                    sample_feat = next(iter(feats.values()))
-                    valid_syms = sorted(set(sample_feat.columns) & set(panel["close"].columns) & set(train_syms))
-                    panel = {k: v[valid_syms] for k, v in panel.items() if isinstance(v, pd.DataFrame)}
-                    
-                    with Timer("Specialist Training"):
-                        specialist_models = train_specialist_models(panel, feats, mkt_gates, cfg, valid_syms, ts_sig)
-                    
-                    # Merge into bundle
-                    trained_bundle["specialist_models"] = specialist_models
-                else:
-                    tprint("WARNING: Features not found, skipping Specialist training")
-            else:
-                tprint("WARNING: No panel data, skipping Specialist training")
-        except Exception as e:
-            tprint(f"WARNING: Specialist training failed: {e}")
-            import traceback
-            traceback.print_exc()
+    # Specialist Models are now trained inside train_models_from_artifacts
+    # using artifacts loaded above.
 
 
     # 3. Save trained state

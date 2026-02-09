@@ -9,8 +9,10 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.ensemble import ExtraTreesRegressor
+from sklearn.model_selection import KFold
 from extreme_price_movements.utils import tprint
 from extreme_price_movements.fast_funcs import compute_gamma_labels
+from extreme_price_movements.purged_cv import PurgedKFold
 
 
 # Feature set for volatility prediction (25 features)
@@ -107,6 +109,66 @@ class GammaModel(BaseEstimator, RegressorMixin):
         
         X_sel = X[self.selected_features_]
         return self.model.predict(X_sel)
+
+    def compute_oof_predictions(self, X, y):
+        """Compute OOF predictions for Gamma Model."""
+        tprint("  GammaModel: Computing OOF predictions...")
+
+        # Use simple KFold for regression if time-dependency is loose,
+        # but PurgedKFold is better for time-series.
+        # Using PurgedKFold(n_splits=5)
+        kf = PurgedKFold(n_splits=5, purge=2, embargo=0) # minimal purge for speed
+
+        oof_preds = np.full(len(y), np.nan, dtype=np.float32)
+
+        # Ensure array
+        if isinstance(X, pd.DataFrame):
+            X_arr = X.values.astype(np.float32)
+            cols = X.columns
+        else:
+            X_arr = X
+            cols = None
+
+        y_arr = np.array(y, dtype=np.float32)
+
+        # If selected features already known, use them. Else use all?
+        # fit() selects features. If we haven't fit, we don't know features.
+        # Assume full fit happens later or we do feature selection inside fold?
+        # Doing FS inside fold is expensive.
+        # We will use all features for OOF if not selected, or pre-select?
+        # Let's perform a quick pre-selection on full data first if self.selected_features_ is None.
+
+        if self.selected_features_ is None and cols is not None:
+             # Quick fit to get features
+             self.fit(X, y) # This sets self.selected_features_
+
+        if self.selected_features_ is not None and cols is not None:
+             # Map selected features to indices
+             col_idx = [cols.get_loc(c) for c in self.selected_features_]
+             X_use = X_arr[:, col_idx]
+        else:
+             X_use = X_arr
+
+        for i, (train_idx, test_idx) in enumerate(kf.split(X_use)):
+            X_train, X_test = X_use[train_idx], X_use[test_idx]
+            y_train = y_arr[train_idx]
+
+            # Train fold model
+            est = ExtraTreesRegressor(
+                n_estimators=self.n_estimators // 2, # reduced for speed in OOF
+                max_depth=self.max_depth,
+                min_samples_leaf=self.min_samples_leaf,
+                min_impurity_decrease=self.min_impurity_decrease,
+                ccp_alpha=self.ccp_alpha,
+                max_features="sqrt",
+                bootstrap=False,
+                random_state=self.random_state + i,
+                n_jobs=self.n_jobs
+            )
+            est.fit(X_train, y_train)
+            oof_preds[test_idx] = est.predict(X_test)
+
+        return oof_preds
 
 
 def compute_gamma_weights(y_gamma, base_weights):

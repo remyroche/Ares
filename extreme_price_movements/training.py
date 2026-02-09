@@ -17,7 +17,7 @@ from .optimise_tpsl_ratio import (
     PurgedKFold,
     scaled_atr_pct,
 )
-from .trap_specialist import build_trap_dataset, train_trap_from_dataset
+from .trap_specialist import build_trap_dataset, train_trap_from_dataset, compute_trap_oof_predictions
 from .gamma_specialist import build_gamma_dataset, train_gamma_from_dataset
 
 def compute_per_regime_metrics(y_true, y_prob, df, sample_weight=None):
@@ -1332,6 +1332,59 @@ def train_models_from_artifacts(datasets, cfg):
                         tprint(f"Spike GMM ({mode}) failed with {n_try} components: {e}")
                         continue
 
+    # 1.5 Train Specialist Models & Generate OOF (Moved before Alpha Models to provide features)
+    specialist_models = {
+        "trap_model": None,
+        "gamma_model": None,
+    }
+
+    specialist_oof_lookup = {} # key: (ts, symbol) -> dict of scores
+
+    # Train Trap Model
+    if "trap_model" in datasets:
+        trap_df = datasets["trap_model"]
+        tprint("Training Trap Specialist from artifact...")
+        try:
+            m = train_trap_from_dataset(trap_df, cfg)
+            specialist_models["trap_model"] = m
+
+            # Generate OOF
+            from .trap_specialist import TRAP_FEATURE_KEYS
+            X_trap = trap_df[TRAP_FEATURE_KEYS].values.astype(np.float32)
+            y_trap = trap_df["y_quality"].values.astype(np.float32)
+            trap_oof = compute_trap_oof_predictions(X_trap, y_trap, cfg)
+
+            # Store OOF for injection
+            # trap_df has 'ts' and 'symbol'
+            oof_series = pd.Series(trap_oof, index=pd.MultiIndex.from_frame(trap_df[["ts", "symbol"]]))
+            specialist_oof_lookup["trap_score"] = oof_series
+
+        except Exception as e:
+            tprint(f"Trap Specialist training failed: {e}")
+            import traceback; traceback.print_exc()
+
+    # Train Gamma Model
+    if "gamma_model" in datasets:
+        gamma_df = datasets["gamma_model"]
+        tprint("Training Gamma Specialist from artifact...")
+        try:
+            m = train_gamma_from_dataset(gamma_df, cfg)
+            specialist_models["gamma_model"] = m
+
+            # Generate OOF
+            from .gamma_specialist import GAMMA_FEATURE_KEYS
+            X_gamma = gamma_df[GAMMA_FEATURE_KEYS].values.astype(np.float32)
+            y_gamma = gamma_df["y_gamma"].values.astype(np.float32)
+            gamma_oof = m.compute_oof_predictions(X_gamma, y_gamma)
+
+            # Store OOF
+            oof_series = pd.Series(gamma_oof, index=pd.MultiIndex.from_frame(gamma_df[["ts", "symbol"]]))
+            specialist_oof_lookup["gamma_score"] = oof_series
+
+        except Exception as e:
+            tprint(f"Gamma Specialist training failed: {e}")
+            import traceback; traceback.print_exc()
+
     # 2. Train Alpha Models
     # directions (up/down) replaced by sides (long/short)
     trade_sides = ["long", "short"]
@@ -1356,6 +1409,29 @@ def train_models_from_artifacts(datasets, cfg):
                 required_cols = {"__y_bin__", "__y_ret__", "__w__"}
                 missing = required_cols - set(df.columns)
                 assert not missing, f"Dataset {key} missing columns: {missing}"
+
+                # Inject Specialist OOF Features
+                # df has ts, symbol. We can map.
+                # Note: df is a copy from datasets[key], so modifying it is safe for this loop.
+                # But we should ensure we don't modify the original artifact if cached.
+                # Currently datasets[key] is loaded from disk once.
+                # We make a copy below for training, but let's inject before.
+
+                # Check if ts/symbol columns exist
+                if "ts" in df.columns and "symbol" in df.columns:
+                    mi = pd.MultiIndex.from_frame(df[["ts", "symbol"]])
+                    for feat_name, oof_ser in specialist_oof_lookup.items():
+                        # Map values. Fill NaN with 0.5 (neutral) or median?
+                        # Trap: 0=Trap, 1=Quality. Gamma: Volatility.
+                        # Use 0.0 for missing gamma? 0.0 for Trap?
+                        # Trap: mean ~ 0.5. Gamma: mean ~ 0.5.
+                        # Let's fill with median of OOF to avoid bias.
+                        fill_val = oof_ser.median() if not oof_ser.empty else 0.0
+
+                        # Reindex to align
+                        vals = oof_ser.reindex(mi).fillna(fill_val).values
+                        df[feat_name] = vals.astype(np.float32)
+                        tprint(f"  Injected {feat_name} into {key} (coverage: {np.mean(~np.isnan(vals)):.1%})")
 
                 y = df["__y_bin__"].values.astype(int)
                 y_ret = df["__y_ret__"].values.astype(np.float32)
@@ -1386,8 +1462,8 @@ def train_models_from_artifacts(datasets, cfg):
                 # Heuristic: Check if base feature part of the column name is in allowed_keys.
 
                 valid_cols = []
-                # Always keep market gates/lags if they are standard inputs
-                std_inputs = {"p_exh_lag1", "G_VOL", "G_TREND", "mkt_ret24h", "mkt_ret6h", "mkt_trend", "mkt_rv"}
+                # Always keep market gates/lags/specialist scores if they are standard inputs
+                std_inputs = {"p_exh_lag1", "G_VOL", "G_TREND", "mkt_ret24h", "mkt_ret6h", "mkt_trend", "mkt_rv", "trap_score", "gamma_score"}
 
                 for c in X.columns:
                     # Check exact match
@@ -1637,36 +1713,6 @@ def train_models_from_artifacts(datasets, cfg):
         else:
             tprint(f"Exhaustion {d}: no dataset found")
             exh_models[d] = None
-
-    # 4. Train Specialist Models (Trap & Gamma)
-    specialist_models = {
-        "trap_model": None,
-        "gamma_model": None,
-    }
-
-    # Train Trap Model
-    if "trap_model" in datasets:
-        trap_df = datasets["trap_model"]
-        tprint("Training Trap Specialist from artifact...")
-        # If it was saved as parquet, index might need handling?
-        # build_trap_dataset returns frame with 'ts' column (from reset_index).
-        try:
-            m = train_trap_from_dataset(trap_df, cfg)
-            specialist_models["trap_model"] = m
-        except Exception as e:
-            tprint(f"Trap Specialist training failed: {e}")
-            import traceback; traceback.print_exc()
-
-    # Train Gamma Model
-    if "gamma_model" in datasets:
-        gamma_df = datasets["gamma_model"]
-        tprint("Training Gamma Specialist from artifact...")
-        try:
-            m = train_gamma_from_dataset(gamma_df, cfg)
-            specialist_models["gamma_model"] = m
-        except Exception as e:
-            tprint(f"Gamma Specialist training failed: {e}")
-            import traceback; traceback.print_exc()
 
     return {
         "alpha_models": final_models, 

@@ -9,8 +9,10 @@ import numpy as np
 import pandas as pd
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import KFold
 from extreme_price_movements.utils import tprint
 from extreme_price_movements.fast_funcs import compute_quality_labels
+from extreme_price_movements.purged_cv import PurgedKFold
 
 
 # Compact feature set for GMM (8 features instead of 18)
@@ -70,7 +72,7 @@ def build_trap_dataset(panel, feats, cfg, syms):
             X_df_list.append(feats[k][sym].reindex(valid_idx))
             
         if not valid_feats: continue
-        
+
         X_sym = pd.concat(X_df_list, axis=1)
         X_sym.columns = TRAP_FEATURE_KEYS
 
@@ -188,6 +190,74 @@ def train_trap_from_dataset(dataset, cfg):
         "silhouette_score": silhouette,
         "davies_bouldin_score": davies_bouldin,
     }
+
+def compute_trap_oof_predictions(X, y, cfg):
+    """
+    Compute OOF quality scores for Trap Specialist.
+    Returns: array of scores.
+    """
+    tprint("  TrapSpecialist: Computing OOF scores...")
+
+    # Using PurgedKFold(n_splits=5)
+    kf = PurgedKFold(n_splits=5, purge=2, embargo=0)
+
+    oof_scores = np.full(len(y), np.nan, dtype=np.float32)
+
+    # Ensure array
+    if isinstance(X, pd.DataFrame):
+        X_arr = X.values.astype(np.float32)
+    else:
+        X_arr = X
+
+    y_arr = np.array(y, dtype=np.float32)
+
+    # Since we need scaling, we must scale inside fold
+
+    for i, (train_idx, test_idx) in enumerate(kf.split(X_arr)):
+        X_train, X_test = X_arr[train_idx], X_arr[test_idx]
+        y_train = y_arr[train_idx]
+
+        # Fit Fold Model
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+
+        try:
+            gmm = GaussianMixture(
+                n_components=4,
+                covariance_type='full',
+                max_iter=100, # reduced iter for speed in OOF
+                n_init=3,     # reduced init for speed
+                random_state=cfg.get("random_state", 42) + i,
+                verbose=0
+            )
+            gmm.fit(X_train_scaled)
+
+            # Semantic Sorting on Fold
+            train_labels = gmm.predict(X_train_scaled)
+            cluster_means = []
+            for k in range(4):
+                mask = (train_labels == k)
+                if mask.sum() > 0:
+                    cluster_means.append(y_train[mask].mean())
+                else:
+                    cluster_means.append(0.0)
+
+            # Map cluster ID to quality score
+            # We can use the mean quality as the score directly
+            # prediction = mean_quality[cluster]
+
+            X_test_scaled = scaler.transform(X_test)
+            test_labels = gmm.predict(X_test_scaled)
+
+            # Vectorized mapping
+            scores = np.array([cluster_means[l] for l in test_labels], dtype=np.float32)
+            oof_scores[test_idx] = scores
+
+        except Exception:
+            # Fallback if GMM fails
+            continue
+
+    return oof_scores
 
 
 def train_trap_specialist(panel, feats, cfg, syms, ts_end):

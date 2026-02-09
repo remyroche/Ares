@@ -82,8 +82,8 @@ def generate_training_report(
 
     # Summary table
     lines.append("\n### Performance Summary")
-    lines.append("| Model | Features | AUC | IC | Sharpe | Win Rate | Avg Return | Trades | Best Iter |")
-    lines.append("|-------|----------|-----|----|---------| ---------|------------|--------|-----------|")
+    lines.append("| Model | Features | AUC | IC | Sharpe | Win Rate | Prec@10 | Prec@40 | AvgTr/day@10 | AvgTr/day@30 | Avg Return | Trades | Best Iter |")
+    lines.append("|-------|----------|-----|----|---------| ---------|---------|---------|-------------|-------------|------------|--------|-----------|")
 
     for side in ["long", "short"]:
         side_bundle = alpha_models.get(side, {})
@@ -100,17 +100,23 @@ def generate_training_report(
             # Extract metrics from extra_info
             oof_key = f"{side}_{kind}"
             oof = extra_info.get(f"oof_{oof_key}", {}) if extra_info else {}
+            if not oof:
+                oof = model_info.get("alpha_diag", {})
 
             auc = _fmt(oof.get('auc', 0.0)) if oof.get('auc') else "N/A"
             ic = _fmt(oof.get('ic', 0.0)) if oof.get('ic') else "N/A"
             sharpe = _fmt(oof.get('sharpe', 0.0)) if oof.get('sharpe') else "N/A"
             win_rate = _pct(oof.get('win_rate', 0.0)) if oof.get('win_rate') else "N/A"
+            p10 = _fmt(oof.get('prec10', 0.0)) if oof.get('prec10') is not None else "N/A"
+            p40 = _fmt(oof.get('prec40', 0.0)) if oof.get('prec40') is not None else "N/A"
+            at10 = _fmt(oof.get('avg_trades_day_10', 0.0)) if oof.get('avg_trades_day_10') is not None else "N/A"
+            at30 = _fmt(oof.get('avg_trades_day_30', 0.0)) if oof.get('avg_trades_day_30') is not None else "N/A"
             avg_ret = _fmt(oof.get('avg_return', 0.0), 6) if oof.get('avg_return') else "N/A"
             n_trades = oof.get('n_trades', 0) if oof.get('n_trades') else "N/A"
 
             lines.append(
                 f"| {model_name} | {len(feat_cols)} | {auc} | {ic} | {sharpe} | "
-                f"{win_rate} | {avg_ret} | {n_trades} | {best_iter} |"
+                f"{win_rate} | {p10} | {p40} | {at10} | {at30} | {avg_ret} | {n_trades} | {best_iter} |"
             )
     lines.append("")
 
@@ -138,6 +144,8 @@ def generate_training_report(
             if extra_info:
                 oof_key = f"{side}_{kind}"
                 oof = extra_info.get(f"oof_{oof_key}", {})
+                if not oof:
+                    oof = model_info.get("alpha_diag", {})
                 if oof:
                     lines.append(f"- **OOF AUC**: {_fmt(oof.get('auc', 0.0))}")
                     lines.append(f"- **OOF IC**: {_fmt(oof.get('ic', 0.0))}")
@@ -149,6 +157,12 @@ def generate_training_report(
                     lines.append(f"- **OOF Sortino**: {_fmt(oof.get('sortino', 0.0))}")
                     lines.append(f"- **OOF Calmar**: {_fmt(oof.get('calmar', 0.0))}")
                     lines.append(f"- **OOF Trades**: {oof.get('n_trades', 0)}")
+                    lines.append(f"- **OOF Prec@10**: {_fmt(oof.get('prec10', 0.0))}")
+                    lines.append(f"- **OOF Prec@40**: {_fmt(oof.get('prec40', 0.0))}")
+                    lines.append(f"- **OOF Avg Trades/Day @10%**: {_fmt(oof.get('avg_trades_day_10', 0.0))}")
+                    lines.append(f"- **OOF Avg Trades/Day @30%**: {_fmt(oof.get('avg_trades_day_30', 0.0))}")
+                    lines.append(f"- **OOF ECE@10**: {_fmt(oof.get('ece_top10', 0.0))}")
+                    lines.append(f"- **OOF Calibration Profile**: {oof.get('calibration_profile', 'N/A')}")
 
                     # Per-regime breakdown if available
                     if 'per_regime' in oof:

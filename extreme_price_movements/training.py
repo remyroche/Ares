@@ -19,6 +19,7 @@ from .optimise_tpsl_ratio import (
 )
 from .trap_specialist import build_trap_dataset, train_trap_from_dataset, compute_trap_oof_predictions
 from .gamma_specialist import build_gamma_dataset, train_gamma_from_dataset
+from .model_scoring import precision_at_k, avg_trades_per_day, ece_at_mask, topk_mask, calibration_curve_bins, calibration_profile, ic_cross_sectional
 
 def compute_per_regime_metrics(y_true, y_prob, df, sample_weight=None):
     """Compute BSS and AUC per regime bucket from OOF predictions.
@@ -1255,69 +1256,28 @@ def train_specialist_models(panel, feats, mkt_gates, cfg, syms, ts_end):
     return specialist_models
 
 
-def _compute_and_print_meta_metrics(y_true, y_pred, name):
-    from sklearn.metrics import roc_auc_score, accuracy_score
+def _compute_and_print_meta_metrics(y_true, y_pred, name, groups=None):
+    y_bin = (np.asarray(y_true) > 0).astype(int)
+    y_pred = np.asarray(y_pred, dtype=float)
 
-    # Correlation (IC)
-    if np.std(y_pred) > 1e-9 and np.std(y_true) > 1e-9:
-        try:
-            ic = float(np.corrcoef(y_true, y_pred)[0, 1])
-        except:
-            ic = 0.0
+    ic = ic_cross_sectional(y_pred, y_true, groups=groups)
+    prec10 = precision_at_k(y_bin, y_pred, 0.10, groups=groups)
+    prec40 = precision_at_k(y_bin, y_pred, 0.40, groups=groups)
+
+    if groups is not None:
+        trades_day_10 = avg_trades_per_day(y_pred, 0.10, np.asarray(groups))
+        trades_day_30 = avg_trades_per_day(y_pred, 0.30, np.asarray(groups))
     else:
-        ic = 0.0
+        trades_day_10 = float(len(y_pred) * 0.10)
+        trades_day_30 = float(len(y_pred) * 0.30)
 
-    # Classification metrics (using sign of y_true)
-    y_bin = (y_true > 0).astype(int)
-    try:
-        # Check if we have both classes
-        if len(np.unique(y_bin)) > 1:
-            auc = roc_auc_score(y_bin, y_pred)
-        else:
-            auc = 0.5
-    except:
-        auc = 0.5
+    m10 = topk_mask(y_pred, 0.10, groups=groups)
+    ece10 = ece_at_mask(y_bin, np.clip((y_pred - np.min(y_pred)) / (np.ptp(y_pred) + 1e-9), 0.0, 1.0), m10, n_bins=10)
 
-    acc = accuracy_score(y_bin, (y_pred > 0).astype(int))
-
-    # Precision at top 10%
-    k = int(len(y_true) * 0.1)
-    if k > 0:
-        top_k_idx = np.argsort(y_pred)[-k:]
-        try:
-            prec10 = float(np.mean(y_bin[top_k_idx]))
-        except:
-            prec10 = 0.0
-    else:
-        prec10 = 0.0
-
-    tprint(f"  {name} Metrics (vs y_ret): IC={ic:.4f}  AUC={auc:.4f}  Acc={acc:.4f}  Prec10={prec10:.4f}")
-
-    # Financial Metrics (Top 10% and Top 40% trades, 0.5% fee)
-    fee = 0.005
-    for pct in [10, 40]:
-        n_top = int(len(y_true) * (pct / 100))
-        if n_top < 5: continue
-
-        # Select indices (y_pred is sorted ascending, take tail)
-        idx_top = np.argsort(y_pred)[-n_top:]
-        sel_rets = y_true[idx_top]
-
-        # Apply fees
-        net_rets = sel_rets - fee
-
-        avg_pnl = np.mean(net_rets)
-        total_pnl = np.sum(net_rets)
-        win_rate = np.mean(net_rets > 0)
-
-        # Sortino-like Risk/Reward (Mean / Downside Deviation)
-        # Downside Deviation = sqrt(mean(min(0, r)^2))
-        downside_sq = np.minimum(0, net_rets) ** 2
-        downside_dev = np.sqrt(np.mean(downside_sq))
-
-        ratio = avg_pnl / (downside_dev + 1e-9)
-
-        tprint(f"    Top{pct}% (n={n_top}): AvgPnL={avg_pnl*100:.2f}%  WinRate={win_rate*100:.1f}%  Ratio={ratio:.2f}")
+    tprint(
+        f"  {name} Meta assess: IC={ic:.4f} Prec10={prec10:.4f} Prec40={prec40:.4f} "
+        f"AvgTrades/Day@10={trades_day_10:.2f} AvgTrades/Day@30={trades_day_30:.2f} ECE@10={ece10:.4f}"
+    )
 
 def train_models_from_artifacts(datasets, cfg):
     tprint(f"Entering function: train_models_from_artifacts in training.py")
@@ -1593,7 +1553,8 @@ def train_models_from_artifacts(datasets, cfg):
                 tprint(f"  Class dist: 0={int((y==0).sum())} ({(y==0).mean()*100:.1f}%), 1={int((y==1).sum())} ({(y==1).mean()*100:.1f}%)")
 
                 race = ModelRace(kind=k, n_splits=5)
-                race.fit(X_sel, y, sample_weight=w, returns=y_ret)
+                groups = df["__ts__"].values if "__ts__" in df.columns else None
+                race.fit(X_sel, y, sample_weight=w, returns=y_ret, groups=groups)
                 score = race.metrics.get(race.best_model_name, -1.0)
                 dm = race.detailed_metrics.get(race.best_model_name, {})
                 tprint(f"Finished {side} {k} H={H}: Winner={race.best_model_name}, Score={score:.4f}, AUC={dm.get('AUC',0):.4f}, IC={dm.get('IC',0):.4f}, BSS={dm.get('BSS',0):.4f}")
@@ -1610,6 +1571,17 @@ def train_models_from_artifacts(datasets, cfg):
                         tprint(f"  OOF-return correlation: {oof_ret_corr:.4f}")
                     # Calibration: mean predicted prob vs actual positive rate
                     tprint(f"  Calibration: mean_pred={np.mean(oof):.4f} vs actual_rate={np.mean(y):.4f}")
+                    g = df["__ts__"].values if "__ts__" in df.columns else None
+                    m10 = topk_mask(oof, 0.10, groups=g)
+                    ece10 = ece_at_mask(y, oof, m10, n_bins=10, w=w)
+                    curve = calibration_curve_bins(y, oof, n_bins=10)
+                    profile = calibration_profile(curve)
+                    p10 = precision_at_k(y, oof, 0.10, groups=g)
+                    p40 = precision_at_k(y, oof, 0.40, groups=g)
+                    tpd10 = avg_trades_per_day(oof, 0.10, g) if g is not None else float(len(oof) * 0.10)
+                    tpd30 = avg_trades_per_day(oof, 0.30, g) if g is not None else float(len(oof) * 0.30)
+                    tprint(f"  Alpha OOF: Prec@10={p10:.4f} Prec@40={p40:.4f} AvgTrades/Day@10={tpd10:.2f} AvgTrades/Day@30={tpd30:.2f}")
+                    tprint(f"  Alpha calibration: ECE@10={ece10:.4f} profile={profile}")
 
                     # --- Per-regime BSS/AUC ---
                     per_regime = compute_per_regime_metrics(y, oof, df, sample_weight=w)
@@ -1620,9 +1592,23 @@ def train_models_from_artifacts(datasets, cfg):
                                      for bl, bm in rbuckets.items()]
                             tprint(f"    {rname}: {' | '.join(parts)}")
 
+                alpha_diag = {}
+                if race.best_model_name in race.detailed_metrics:
+                    dm_best = race.detailed_metrics[race.best_model_name]
+                    alpha_diag = {
+                        "prec10": float(dm_best.get("Prec10", np.nan)),
+                        "prec40": float(dm_best.get("Prec40", np.nan)),
+                        "ece_top10": float(dm_best.get("ece_top10", np.nan)),
+                        "calibration_profile": dm_best.get("calibration_profile", "n/a"),
+                    }
+                    if "__ts__" in df.columns and race.oof_probs is not None:
+                        groups_v = df["__ts__"].values
+                        alpha_diag["avg_trades_day_10"] = float(avg_trades_per_day(race.oof_probs, 0.10, groups_v))
+                        alpha_diag["avg_trades_day_30"] = float(avg_trades_per_day(race.oof_probs, 0.30, groups_v))
+
                 if score > best_ic:
                     best_ic = score
-                    best_m = {"model": race, "H": H, "feat_cols": cols, "per_regime": per_regime}
+                    best_m = {"model": race, "H": H, "feat_cols": cols, "per_regime": per_regime, "alpha_diag": alpha_diag}
 
             final_models[side][k] = best_m
 
@@ -1722,7 +1708,8 @@ def train_models_from_artifacts(datasets, cfg):
                        f"min={np.min(m_oof):.6f}, max={np.max(m_oof):.6f}")
 
                 # Use raw y_ret (not risk-adjusted) for evaluation metrics
-                _compute_and_print_meta_metrics(y_ret, m_oof, name=f"Meta {side}_{k}")
+                meta_groups = df["__ts__"].values if "__ts__" in df.columns else None
+                _compute_and_print_meta_metrics(y_ret, m_oof, name=f"Meta {side}_{k}", groups=meta_groups)
 
             if meta.selected_features:
                 tprint(f"  Meta selected features ({len(meta.selected_features)}): {meta.selected_features[:8]}{'...' if len(meta.selected_features) > 8 else ''}")

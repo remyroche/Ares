@@ -18,8 +18,9 @@ from extreme_price_movements.pipeline_steps import (
     run_feature_generation_step,
     run_training_step,
     run_backtest_step,
-    run_risk_optimization_step
+    run_risk_optimization_step,
 )
+from extreme_price_movements.optimise import run_optimise_step, Policy
 
 
 def _find_latest_feature_ts(data_root):
@@ -200,13 +201,12 @@ def run_risk_opt(cfg, ts_override=None):
 
 
 def run_all(cfg, ts_override=None):
-    """Run download -> features -> labels -> train -> risk optimisation -> backtest in order."""
+    """Run download -> features -> labels -> train -> optimise in order."""
     run_download(cfg)
     run_features(cfg, ts_override=ts_override)
     run_labels(cfg, ts_override=ts_override)
     run_train(cfg, ts_override=ts_override)
-    run_risk_opt(cfg, ts_override=ts_override)
-    run_backtest(cfg, ts_override=ts_override)
+    run_optimise(cfg, ts_override=ts_override)
 
     # Final Summary
     if ts_override:
@@ -236,9 +236,35 @@ def run_all(cfg, ts_override=None):
             except Exception as e:
                 tprint(f"Could not read results for summary: {e}")
 
+
+def run_optimise(cfg, ts_override=None):
+    if ts_override:
+        ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
+    else:
+        ts_sig = _find_latest_feature_ts(cfg["data_root"])
+        if ts_sig is None:
+            tprint("ERROR: No feature directories found.")
+            return
+
+    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    import os
+    backtest_file = os.path.join(cfg["data_root"], "artifacts", run_id, "backtest_results.csv")
+    if not os.path.exists(backtest_file):
+        tprint(f"ERROR: Backtest results not found at {backtest_file}. Generate candidate trades first.")
+        return
+    trades = pd.read_csv(backtest_file)
+    if "atr_pct_15m" in trades.columns:
+        atr_15m = trades["atr_pct_15m"]
+    else:
+        atr_15m = pd.Series(0.01, index=trades.index)
+
+    params_path = os.path.join(cfg["data_root"], "artifacts", run_id, "models", "bucket_params.json")
+    run_optimise_step(trades=trades, atr_15m=atr_15m, output_path=params_path, policy=Policy(mode="train_baseline", params_path=params_path))
+    tprint(f"OPTIMISE COMPLETE: {params_path}")
+
 def main():
     parser = argparse.ArgumentParser(description="Extreme Price Movements Pipeline")
-    parser.add_argument("mode", choices=["download", "labels", "features", "train", "backtest", "optimize_risk", "run"],
+    parser.add_argument("mode", choices=["download", "labels", "features", "train", "backtest", "optimize_risk", "optimise", "run"],
                         help="Pipeline mode to run")
     args = parser.parse_args()
 
@@ -256,6 +282,8 @@ def main():
         run_backtest(cfg)
     elif args.mode == "optimize_risk":
         run_risk_opt(cfg)
+    elif args.mode == "optimise":
+        run_optimise(cfg)
     elif args.mode == "run":
         run_all(cfg)
 

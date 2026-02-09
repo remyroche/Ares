@@ -1281,6 +1281,32 @@ def _compute_and_print_meta_metrics(y_true, y_pred, name):
 
     tprint(f"  {name} Metrics (vs y_ret): IC={ic:.4f}  AUC={auc:.4f}  Acc={acc:.4f}  Prec10={prec10:.4f}")
 
+    # Financial Metrics (Top 10% and Top 40% trades, 0.5% fee)
+    fee = 0.005
+    for pct in [10, 40]:
+        n_top = int(len(y_true) * (pct / 100))
+        if n_top < 5: continue
+
+        # Select indices (y_pred is sorted ascending, take tail)
+        idx_top = np.argsort(y_pred)[-n_top:]
+        sel_rets = y_true[idx_top]
+
+        # Apply fees
+        net_rets = sel_rets - fee
+
+        avg_pnl = np.mean(net_rets)
+        total_pnl = np.sum(net_rets)
+        win_rate = np.mean(net_rets > 0)
+
+        # Sortino-like Risk/Reward (Mean / Downside Deviation)
+        # Downside Deviation = sqrt(mean(min(0, r)^2))
+        downside_sq = np.minimum(0, net_rets) ** 2
+        downside_dev = np.sqrt(np.mean(downside_sq))
+
+        ratio = avg_pnl / (downside_dev + 1e-9)
+
+        tprint(f"    Top{pct}% (n={n_top}): AvgPnL={avg_pnl*100:.2f}%  WinRate={win_rate*100:.1f}%  Ratio={ratio:.2f}")
+
 def train_models_from_artifacts(datasets, cfg):
     tprint(f"Entering function: train_models_from_artifacts in training.py")
     directions = ["up", "down"]

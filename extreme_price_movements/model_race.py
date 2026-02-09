@@ -14,6 +14,15 @@ import joblib
 from extreme_price_movements.utils import tprint
 from extreme_price_movements.purged_cv import PurgedKFold
 from extreme_price_movements.metrics import calculate_selection_score
+from extreme_price_movements.model_scoring import (
+    AlphaRankConfig,
+    alpha_objective_logloss,
+    alpha_rank_components,
+    ece_at_mask,
+    topk_mask,
+    calibration_curve_bins,
+    calibration_profile,
+)
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.isotonic import IsotonicRegression
 from sklearn.model_selection import TimeSeriesSplit
@@ -245,7 +254,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
         model.fit(X_tr, y_tr, **fit_kwargs)
 
-    def fit(self, X, y, sample_weight=None, returns=None):
+    def fit(self, X, y, sample_weight=None, returns=None, groups=None):
         """
         X: features
         y: binary target
@@ -264,6 +273,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             returns = y
         else:
             returns = np.asarray(returns, dtype=np.float64)
+        groups_arr = None if groups is None else np.asarray(groups)
 
         # Optimize: Convert to numpy once if possible (and suitable for all models)
         # ExtraTrees/XGBoost prefer numpy. CatBoost handles both but numpy is fine if no categorical features.
@@ -298,6 +308,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
         # Store per-model detailed metrics for reporting
         detailed_metrics = {}
+        rank_cfg = AlphaRankConfig(k_frac=0.10, cal_metric="brier")
 
         for name, model in candidates.items():
             tprint(f"Race: Training {name}...")
@@ -313,6 +324,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             fold_p40 = [] # Prec Top 40%
             fold_logloss = []
             fold_accuracy = []
+            oof_model = np.full(len(y), np.nan, dtype=np.float64)
 
             try:
                 for fold_i, (train_idx, val_idx) in enumerate(cached_splits):
@@ -350,6 +362,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                         
                     factor = self._find_bias_correction_factor(probs_raw, target_mean)
                     probs = self._apply_correction(probs_raw, factor)
+                    oof_model[val_idx] = probs
                     
                     # w_bss=0.20: Enabled BSS in selection score
                     # We now compute weighted BSS for diagnostics
@@ -387,12 +400,22 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                 avg_logloss = np.nanmean(fold_logloss)
                 avg_accuracy = np.nanmean(fold_accuracy)
 
-                # Penalize high fold-variance to prevent overfit models from winning
-                penalized_score = avg_score - 0.6 * std_score
-                results[name] = penalized_score
+                train_loss = alpha_objective_logloss(y, np.clip(np.nan_to_num(oof_model, nan=np.nanmean(oof_model)), 1e-6, 1-1e-6), w=sample_weight)
+                valid = np.isfinite(oof_model)
+                comps = alpha_rank_components(y[valid], oof_model[valid], returns[valid], sample_weight[valid] if sample_weight is not None else None, groups_arr[valid] if groups_arr is not None else None, rank_cfg)
+                results[name] = 0.0
+                top10_mask = topk_mask(oof_model[valid], 0.10, groups=groups_arr[valid] if groups_arr is not None else None)
+                ece10 = ece_at_mask(y[valid], oof_model[valid], top10_mask, n_bins=10, w=sample_weight[valid] if sample_weight is not None else None)
+                curve = calibration_curve_bins(y[valid], oof_model[valid], n_bins=10)
+                profile = calibration_profile(curve)
                 detailed_metrics[name] = {
                     "score": avg_score,
-                    "penalized_score": penalized_score,
+                    "rank_score": 0.0,
+                    "alpha_train_loss": train_loss,
+                    "rank_components": comps,
+                    "ece_top10": ece10,
+                    "calibration_curve": curve,
+                    "calibration_profile": profile,
                     "AUC": avg_auc,
                     "IC": avg_ic,
                     "BSS": avg_bss_val,
@@ -406,7 +429,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     "LogLoss": avg_logloss,
                     "Accuracy": avg_accuracy
                 }
-                tprint(f"  {name}: Score={avg_score:.4f}  PenScore={penalized_score:.4f}  AUC={avg_auc:.4f}  IC={avg_ic:.4f}  BSS={avg_bss_val:.4f} (BS={avg_bs:.4f}/Ref={avg_ref:.4f}) Brier={avg_brier:.4f}  Prec10={avg_p10:.4f}  LogLoss={avg_logloss:.4f}  Acc={avg_accuracy:.4f}  Std={std_score:.4f}")
+                tprint(f"  {name}: LegacyScore={avg_score:.4f} AUC={avg_auc:.4f} IC={avg_ic:.4f} BSS={avg_bss_val:.4f} Brier={avg_brier:.4f} Prec10={avg_p10:.4f} Prec40={avg_p40:.4f} LogLoss={avg_logloss:.4f} TrainLoss={train_loss:.4f}")
 
             except Exception as e:
                 tprint(f"  {name} Failed: {e}")
@@ -417,14 +440,32 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         if not results:
             raise ValueError("All models failed in race")
 
+        # New alpha ranking system based on IC/Prec@K/Calibration/Stability
+        comp_keys = ["IC", "Prec@K", "Cal@K", "StdIC"]
+        zscores = {n: {} for n in detailed_metrics}
+        for ck in comp_keys:
+            vals = np.array([detailed_metrics[n]["rank_components"].get(ck, np.nan) for n in detailed_metrics], dtype=float)
+            mu, sd = np.nanmean(vals), np.nanstd(vals)
+            for n in detailed_metrics:
+                v = detailed_metrics[n]["rank_components"].get(ck, np.nan)
+                zscores[n][ck] = 0.0 if (not np.isfinite(sd) or sd < 1e-12 or not np.isfinite(v)) else float((v - mu) / sd)
+
+        for n in detailed_metrics:
+            c = detailed_metrics[n]["rank_components"]
+            z = zscores[n]
+            rank_score = (
+                rank_cfg.w_ic * z["IC"] + rank_cfg.w_prec * z["Prec@K"]
+                - rank_cfg.w_cal * z["Cal@K"] - rank_cfg.w_std * z["StdIC"]
+                - rank_cfg.w_neff_pen * c.get("n_eff_pen", 0.0)
+            )
+            detailed_metrics[n]["rank_score"] = float(rank_score)
+            results[n] = float(rank_score)
+
         best_name = max(results, key=results.get)
         self.best_model_name = best_name
         self.metrics = results
-        if best_name in detailed_metrics:
-            dm = detailed_metrics[best_name]
-            tprint(f"Race Winner: {best_name} (PenScore={dm['penalized_score']:.4f}, Score={dm['score']:.4f}, AUC={dm['AUC']:.4f}, IC={dm['IC']:.4f}, Std={dm['std_score']:.4f})")
-        else:
-            tprint(f"Race Winner: {best_name} (Score={results[best_name]:.4f})")
+        dm = detailed_metrics.get(best_name, {})
+        tprint(f"Race Winner: {best_name} (RankScore={results[best_name]:.4f}, IC={dm.get('rank_components',{}).get('IC',0):.4f}, Prec@10={dm.get('rank_components',{}).get('Prec@K',0):.4f})")
 
         # 2. Generate OOF predictions with best model (for meta model)
         tprint(f"Generating OOF predictions with {best_name}...")
@@ -495,6 +536,8 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             raw_brier = brier_score_loss(y, np.clip(oof_probs, 1e-7, 1-1e-7))
             cal_brier = brier_score_loss(y, np.clip(calibrated_oof, 1e-7, 1-1e-7))
             tprint(f"Isotonic calibration: Brier raw={raw_brier:.4f} -> calibrated={cal_brier:.4f}")
+            win_dm = self.detailed_metrics.get(self.best_model_name, {})
+            tprint(f"Calibration profile ({self.best_model_name}): {win_dm.get('calibration_profile', 'n/a')}, ECE@10={win_dm.get('ece_top10', float('nan')):.4f}")
             
             self.oof_probs = calibrated_oof
 
@@ -503,19 +546,20 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
         # Recap
         tprint("\n=== Model Race Recap ===")
-        tprint(f"{'Model':<15} {'Score':>8} {'AUC':>8} {'IC':>8} {'BSS':>8} {'Brier':>8} {'BS':>8} {'Ref':>8} {'P10':>8} {'P25':>8} {'P40':>8} {'LogLoss':>8} {'Acc':>8} {'Std':>8}")
-        tprint("-" * 143)
+        tprint(f"{'Model':<15} {'RankSc':>8} {'AUC':>8} {'IC':>8} {'BSS':>8} {'Brier':>8} {'P10':>8} {'P40':>8} {'LL':>8} {'ECE10':>8}")
+        tprint("-" * 108)
 
-        sorted_models = sorted(detailed_metrics.items(), key=lambda x: x[1]['score'], reverse=True)
+        sorted_models = sorted(detailed_metrics.items(), key=lambda x: x[1]['rank_score'], reverse=True)
         for name, m in sorted_models:
-             tprint(f"{name:<15} {m['score']:8.4f} {m['AUC']:8.4f} {m['IC']:8.4f} {m['BSS']:8.4f} {m.get('Brier',0):8.4f} {m['BS']:8.4f} {m['BS_Ref']:8.4f} {m['Prec10']:8.4f} {m['Prec25']:8.4f} {m['Prec40']:8.4f} {m['LogLoss']:8.4f} {m['Accuracy']:8.4f} {m['std_score']:8.4f}")
+            ece10 = m.get('ece_top10', np.nan)
+            tprint(f"{name:<15} {m['rank_score']:8.4f} {m['AUC']:8.4f} {m['IC']:8.4f} {m['BSS']:8.4f} {m.get('Brier',0):8.4f} {m['Prec10']:8.4f} {m['Prec40']:8.4f} {m['LogLoss']:8.4f} {ece10:8.4f}")
         tprint("========================\n")
 
         # 3. Final Retraining (raw model, no calibration wrapper)
         # Calibration is harmful with small n and uncalibrated objectives.
         # Output is treated as rank score by downstream (engine, backtest).
         if detailed_metrics:
-             best_name = max(detailed_metrics.items(), key=lambda x: x[1]['score'])[0]
+             best_name = max(detailed_metrics.items(), key=lambda x: x[1]['rank_score'])[0]
              self.best_model_name = best_name
              self.best_model = candidates[best_name]
 

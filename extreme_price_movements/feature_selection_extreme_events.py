@@ -195,10 +195,11 @@ def extract_extra_mdi_metrics_fast(
 # Main Production Pipeline
 # ======================================================================================
 
-def linear_prescreen_enet_3x(
+def linear_prescreen_enet(
     X: pd.DataFrame,
     y: np.ndarray,
     n_select: int,
+    multiplier: int = 5,
     l1_ratio: float = 0.6,
     alpha_lo: float = 1e-6,
     alpha_hi: float = 1e1,
@@ -208,7 +209,7 @@ def linear_prescreen_enet_3x(
     random_state: int = 42,
 ) -> list[str]:
     """
-    Drop-in ElasticNet pre-screen that targets keep-count ~= 3 * n_select.
+    Drop-in ElasticNet pre-screen that targets keep-count ~= multiplier * n_select.
 
     Returns a list of feature names to keep (exactly target_keep if possible,
     otherwise the closest solution trimmed by |coef|).
@@ -221,7 +222,7 @@ def linear_prescreen_enet_3x(
     if X is None or X.empty:
         return []
     p = X.shape[1]
-    target_keep = int(np.clip(3 * int(n_select), 1, p))
+    target_keep = int(np.clip(multiplier * int(n_select), 1, p))
 
     y = np.asarray(y)
     y_t = np.sign(y) * np.log1p(np.abs(y))
@@ -335,6 +336,37 @@ def mdi_feature_selection_v3(
     min_features: int = 5,    # Hard floor
     max_features_pct: float = 0.5, # Hard ceiling (fraction of input)
 ) -> MDISelectionResult:
+    """
+    Robust MDI Feature Selection with Quantile-Transformed Correlations v3.
+
+    This function performs feature selection using Mean Decrease Impurity (MDI) from tree ensembles,
+    robustified by Clustered Feature Importance (CFI) via hierarchical clustering or simpler
+    deduplication, and recursive feature elimination (RFE).
+
+    Algorithm Overview (MDI Feature Selection):
+    1.  **Data Cleaning**: Rows with NaNs/Infs are dropped.
+    2.  **Splitting**: Purged K-Fold Cross-Validation is used to respect time-series causality.
+    3.  **Feature Deduplication (Pre-screening)**:
+        -   Features are Quantile Transformed to Normal distribution.
+        -   Greedy removal of highly correlated features (> 0.95 correlation) to reduce multicollinearity.
+    4.  **ElasticNet Pre-screening**:
+        -   If feature count is high (> 5 * end_features), L1+L2 regularization (ElasticNet) is used to
+            quickly select a candidate subset (approx 5x the target count).
+    5.  **Recursive Feature Elimination (RFE) Loop**:
+        -   In each iteration, `ExtraTreesRegressor` is trained on CV folds.
+        -   MDI metrics (Share, Frequency, Depth-weighted, Coverage-weighted) are extracted and aggregated.
+        -   Features are ranked by a composite score of Stability-Weighted Importance (Stability = Mean * (HitRate / CV)).
+        -   Bottom ~25% of features are dropped until `end_features` is reached.
+
+    Final Feature Count Determination:
+    -   The RFE loop aims to reach `end_features` (default: min(60, 1% of samples)).
+    -   After the loop, the **Final Feature Selection** applies a "Cumulative Effective Importance" logic:
+        1.  Calculate **Effective Importance** for each feature: `Imp_eff = Mean_Imp - 0.5 * Std_Imp`.
+            This penalizes features with unstable importance across folds.
+        2.  Normalize Effective Importance to sum to 1.0.
+        3.  Accumulate features (sorted by rank) until the cumulative sum reaches `cumulative_cap` (default 0.98 or 98%).
+        4.  This count is then clamped by `min_features` (floor) and `max_features_pct` (ceiling).
+    """
     if not isinstance(X, pd.DataFrame):
         raise TypeError("X must be a pandas DataFrame.")
 
@@ -486,12 +518,13 @@ def mdi_feature_selection_v3(
 
     current_features = kept_features
 
-    if len(current_features) > 3 * end_features:
+    if len(current_features) > 5 * end_features:
         tprint(f"MDI: Running Linear ElasticNet prescreen on {len(current_features)} features...")
-        prescreened_features = linear_prescreen_enet_3x(
+        prescreened_features = linear_prescreen_enet(
             X[current_features],
             y_np,
-            n_select=end_features
+            n_select=end_features,
+            multiplier=5
         )
         tprint(f"MDI: ElasticNet prescreen reduced features from {len(current_features)} to {len(prescreened_features)}")
         current_features = prescreened_features

@@ -201,11 +201,12 @@ def run_risk_opt(cfg, ts_override=None):
 
 
 def run_all(cfg, ts_override=None):
-    """Run download -> features -> labels -> train -> optimise in order."""
+    """Run download -> features -> labels -> train -> backtest -> optimise in order."""
     run_download(cfg)
     run_features(cfg, ts_override=ts_override)
     run_labels(cfg, ts_override=ts_override)
     run_train(cfg, ts_override=ts_override)
+    run_backtest(cfg, ts_override=ts_override)
     run_optimise(cfg, ts_override=ts_override)
 
     # Final Summary
@@ -250,11 +251,16 @@ def run_optimise(cfg, ts_override=None):
     import os
     backtest_file = os.path.join(cfg["data_root"], "artifacts", run_id, "backtest_results.csv")
     if not os.path.exists(backtest_file):
-        tprint(f"ERROR: Backtest results not found at {backtest_file}. Generate candidate trades first.")
-        return
+        tprint("Backtest results not found. Running backtest first...")
+        run_backtest(cfg, ts_override=ts_override)
+        if not os.path.exists(backtest_file):
+            tprint(f"ERROR: Backtest still not found at {backtest_file}. Aborting optimise.")
+            return
     trades = pd.read_csv(backtest_file)
     if "atr_pct_15m" in trades.columns:
         atr_15m = trades["atr_pct_15m"]
+    elif "atr" in trades.columns:
+        atr_15m = trades["atr"]
     else:
         atr_15m = pd.Series(0.01, index=trades.index)
 

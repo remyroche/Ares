@@ -526,6 +526,12 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
                 for ifeat in ["vol_z", "mkt_rv_ratio", "ambig", "exh_qual", "trend_pct"]:
                     if ifeat in X_meta.columns:
                         X_meta[f"pred_x_{ifeat}"] = pl * X_meta[ifeat].values
+                # Regime bucket interactions (must match training)
+                for rcol in ["G_VOL", "G_TREND"]:
+                    if rcol in grp_df.columns:
+                        rv = grp_df[rcol].values
+                        for bkt in [0, 1, 2]:
+                            X_meta[f"pred_x_{rcol}_{bkt}"] = pl * (rv == bkt).astype(float)
             if meta_model.selected_features:
                 available = set(X_meta.columns)
                 selected = set(meta_model.selected_features)

@@ -177,7 +177,7 @@ def calculate_selection_score(
 
     y_prob_m = y_prob[m]
     r_m = r[m]
-    y_true_m = y_true[m].astype(int) if y_true is not None else None
+    y_true_m = (y_true[m] >= 0.5).astype(int) if y_true is not None else None
 
     # Handle sample weights
     w_m = None

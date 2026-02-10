@@ -279,6 +279,15 @@ def train_gamma_from_dataset(dataset, cfg):
     tprint(f"  Training data: {len(X)} samples, {X.shape[1]} features")
     tprint(f"  Gamma range: [{y.min():.3f}, {y.max():.3f}], mean={y.mean():.3f}")
     
+    # Subsample for speed (ExtraTrees on 2.4M rows is slow)
+    max_gamma_samples = cfg.get("gamma_max_train_samples", 300_000)
+    if len(X) > max_gamma_samples:
+        rng = np.random.RandomState(cfg.get("random_state", 42))
+        idx_sub = rng.choice(len(X), max_gamma_samples, replace=False)
+        X = X.iloc[idx_sub].reset_index(drop=True)
+        y = y[idx_sub]
+        tprint(f"  Subsampled {max_gamma_samples} / {len(dataset)} for training")
+    
     # 3. Compute sample weights (Huber-style for robustness)
     base_weights = np.ones(len(y), dtype=np.float32)
     sample_weights = compute_gamma_weights(y, base_weights)

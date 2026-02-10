@@ -119,25 +119,35 @@ def train_trap_from_dataset(dataset, cfg):
     
     tprint(f"  Training data: {len(X)} samples, {X.shape[1]} features")
     
-    # 3. Bin quality scores into 4 clusters for GMM
-    # Binning is only for analysis/check, GMM is unsupervised/semi-supervised on features
-    # Wait, GMM is trained on X (features), NOT y.
-    # But we use y for semantic sorting.
+    # Subsample for GMM fitting (full covariance on 8M rows is prohibitive)
+    max_gmm_samples = cfg.get("trap_max_gmm_samples", 200_000)
+    if len(X) > max_gmm_samples:
+        rng = np.random.RandomState(cfg.get("random_state", 42))
+        idx_sub = rng.choice(len(X), max_gmm_samples, replace=False)
+        X_fit = X[idx_sub]
+        y_fit = y[idx_sub]
+        tprint(f"  Subsampled {max_gmm_samples} / {len(X)} for GMM fitting")
+    else:
+        X_fit = X
+        y_fit = y
     
     # 4. Fit GMM
     tprint("  Fitting GMM (4 components)...")
     scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
+    X_scaled_fit = scaler.fit_transform(X_fit)
     
     gmm = GaussianMixture(
         n_components=4,
-        covariance_type='full',
+        covariance_type='diag',
         max_iter=200,
-        n_init=10,
+        n_init=3,
         random_state=cfg.get("random_state", 42),
         verbose=0
     )
-    gmm.fit(X_scaled)
+    gmm.fit(X_scaled_fit)
+    
+    # Scale full dataset for prediction
+    X_scaled = scaler.transform(X)
     
     # 5. Semantic Sorting: Map GMM clusters to quality levels
     tprint("  Performing semantic sorting...")
@@ -217,16 +227,27 @@ def compute_trap_oof_predictions(X, y, cfg):
         X_train, X_test = X_arr[train_idx], X_arr[test_idx]
         y_train = y_arr[train_idx]
 
+        # Subsample train fold for GMM speed
+        max_fold = 200_000
+        if len(X_train) > max_fold:
+            rng = np.random.RandomState(cfg.get("random_state", 42) + i)
+            sub = rng.choice(len(X_train), max_fold, replace=False)
+            X_train_sub = X_train[sub]
+            y_train_sub = y_train[sub]
+        else:
+            X_train_sub = X_train
+            y_train_sub = y_train
+
         # Fit Fold Model
         scaler = StandardScaler()
-        X_train_scaled = scaler.fit_transform(X_train)
+        X_train_scaled = scaler.fit_transform(X_train_sub)
 
         try:
             gmm = GaussianMixture(
                 n_components=4,
-                covariance_type='full',
-                max_iter=100, # reduced iter for speed in OOF
-                n_init=3,     # reduced init for speed
+                covariance_type='diag',
+                max_iter=100,
+                n_init=2,
                 random_state=cfg.get("random_state", 42) + i,
                 verbose=0
             )
@@ -238,7 +259,7 @@ def compute_trap_oof_predictions(X, y, cfg):
             for k in range(4):
                 mask = (train_labels == k)
                 if mask.sum() > 0:
-                    cluster_means.append(y_train[mask].mean())
+                    cluster_means.append(y_train_sub[mask].mean())
                 else:
                     cluster_means.append(0.0)
 

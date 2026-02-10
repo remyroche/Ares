@@ -553,8 +553,8 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
         # Recap
         tprint("\n=== Model Race Recap ===")
-        tprint(f"{'Model':<15} {'RankSc':>8} {'AUC':>8} {'IC':>8} {'BSS':>8} {'Brier':>8} {'P10':>8} {'P40':>8} {'LL':>8} {'ECE10':>8}")
-        tprint("-" * 108)
+        tprint(f"{'Model':<15} {'RankSc':>8} {'RcAUC':>8} {'RcIC':>8} {'RcBSS':>8} {'RcBrier':>8} {'RaceP10':>8} {'RaceP40':>8} {'LL':>8} {'ECE10':>8}")
+        tprint("-" * 112)
 
         sorted_models = sorted(detailed_metrics.items(), key=lambda x: x[1]['rank_score'], reverse=True)
         for name, m in sorted_models:

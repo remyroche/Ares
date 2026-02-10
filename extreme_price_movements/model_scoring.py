@@ -45,7 +45,7 @@ def topk_mask(scores: np.ndarray, k_frac: float, groups: Optional[np.ndarray] = 
 
 
 def precision_at_k(y: np.ndarray, scores: np.ndarray, k_frac: float, groups: Optional[np.ndarray] = None) -> float:
-    y = np.asarray(y, dtype=int)
+    y = (np.asarray(y) >= 0.5).astype(int)
     m = topk_mask(scores, k_frac, groups=groups)
     return float(y[m].mean()) if m.any() else float('nan')
 

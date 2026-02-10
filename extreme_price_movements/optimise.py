@@ -43,8 +43,43 @@ class Policy:
         return payload.get("buckets", {}).get(str(bucket), self.baseline_params())
 
 
+def _adapt_backtest_columns(trades: pd.DataFrame) -> pd.DataFrame:
+    """Map backtest_results.csv columns to tpsl_optimiser expected schema."""
+    df = trades.copy()
+    # timestamp
+    if "timestamp" not in df.columns and "entry_ts" in df.columns:
+        df["timestamp"] = pd.to_datetime(df["entry_ts"], utc=True)
+    # confidence
+    if "confidence" not in df.columns and "score" in df.columns:
+        df["confidence"] = df["score"].abs().clip(0, 1)
+    # entry_price
+    if "entry_price" not in df.columns and "entry_px" in df.columns:
+        df["entry_price"] = df["entry_px"]
+    # exit_price — reconstruct from entry_px + gross_ret
+    if "exit_price" not in df.columns:
+        if "entry_px" in df.columns and "gross_ret" in df.columns and "side" in df.columns:
+            is_long = (df["side"] == "long").astype(int)
+            df["exit_price"] = np.where(
+                is_long == 1,
+                df["entry_px"] * (1.0 + df["gross_ret"]),
+                df["entry_px"] * (1.0 - df["gross_ret"]),
+            )
+        else:
+            df["exit_price"] = df.get("entry_price", df.get("entry_px", 1.0))
+    # is_long
+    if "is_long" not in df.columns and "side" in df.columns:
+        df["is_long"] = (df["side"] == "long").astype(int)
+    # bucket
+    if "bucket" not in df.columns and "side" in df.columns and "dom" in df.columns:
+        df["bucket"] = df["side"].str.upper() + "_" + df["dom"].str.upper()
+    return df
+
+
 def run_optimise_step(trades: pd.DataFrame, atr_15m: pd.Series, output_path: str, policy: Policy | None = None) -> dict:
     policy = policy or Policy(mode="train_baseline")
+
+    # Adapt column names from backtest output to tpsl_optimiser schema
+    trades = _adapt_backtest_columns(trades)
 
     m00 = load_step_module("00_load_trades.py")
     m10 = load_step_module("10_tp_sl_calibration.py")
@@ -62,7 +97,7 @@ def run_optimise_step(trades: pd.DataFrame, atr_15m: pd.Series, output_path: str
         if bucket_df.empty:
             continue
 
-        atr_scale = m10.compute_atr_scale(atr_15m.reindex(bucket_df.index).fillna(method="ffill").fillna(atr_15m.median()))
+        atr_scale = m10.compute_atr_scale(atr_15m.reindex(bucket_df.index).ffill().fillna(atr_15m.median()))
         tp_sl = m10.calibrate_tp_sl(bucket_df, atr_scale)
 
         sl_pct = tp_sl["sl_mult"] * atr_scale.to_numpy()

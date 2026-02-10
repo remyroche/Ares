@@ -194,17 +194,45 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None):
     # 2. Train models
     with Timer("Model Training"):
         trained_bundle = train_models_from_artifacts(datasets, cfg)
+        alpha_metrics = trained_bundle.get("alpha_oof_metrics", {}) if trained_bundle else {}
     
     # Specialist Models are now trained inside train_models_from_artifacts
     # using artifacts loaded above.
 
 
     # 3. Save trained state
+    # Populate granular_risk with sensible defaults for all 8 bucket keys
+    # so the backtest engine doesn't fall back to global cfg with warnings.
+    # MR buckets: tighter SL, shorter hold. TF buckets: wider TP, longer hold.
+    _mr_risk = {
+        "tp_mult": cfg.get("tp_mult", 0.50),
+        "sl_mult": cfg.get("sl_mult", 0.18),
+        "trail_mult": cfg.get("trail_mult", 0.25),
+        "k_sl": cfg.get("risk_k_sl", 2.0),
+        "k_trail_start": cfg.get("risk_k_trail_start", 1.0),
+        "k_trail_dist": cfg.get("risk_k_trail_dist", 1.0),
+        "max_hold_hours": 12,
+    }
+    _tf_risk = {
+        "tp_mult": cfg.get("tp_mult", 0.50) * 1.2,
+        "sl_mult": cfg.get("sl_mult", 0.18),
+        "trail_mult": cfg.get("trail_mult", 0.25),
+        "k_sl": cfg.get("risk_k_sl", 2.0),
+        "k_trail_start": cfg.get("risk_k_trail_start", 1.0),
+        "k_trail_dist": cfg.get("risk_k_trail_dist", 1.0),
+        "max_hold_hours": 24,
+    }
+    _granular = {
+        "risk_mr_best": _mr_risk, "risk_mr_worst": _mr_risk,
+        "risk_tf_best": _tf_risk, "risk_tf_worst": _tf_risk,
+        "risk_long_mr": _mr_risk, "risk_short_mr": _mr_risk,
+        "risk_long_tf": _tf_risk, "risk_short_tf": _tf_risk,
+    }
     default_risk = {
         "k_sl": cfg.get("risk_k_sl", 2.0),
         "k_trail_start": cfg.get("risk_k_trail_start", 1.0),
         "k_trail_dist": cfg.get("risk_k_trail_dist", 0.5),
-        "granular_risk": {}
+        "granular_risk": _granular,
     }
 
     state = {
@@ -261,6 +289,7 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None):
             bundle=bundle or {},
             datasets=datasets or {},
             specialist_models=bundle.get("specialist_models") if bundle else None,
+            extra_info=alpha_metrics,
         )
         tprint(f"Training report saved to {report_path}")
     except Exception as e:

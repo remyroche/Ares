@@ -10,6 +10,8 @@ import extreme_price_movements.fast_funcs as ff
 from .labeling import compute_trailing_atr_labels, compute_triple_barrier_labels
 from .sample_weights import build_label_time_ranges, compute_sample_weights_with_uniqueness
 from sklearn.mixture import GaussianMixture
+from sklearn.metrics import roc_auc_score
+from scipy.stats import spearmanr
 from .optimise_tpsl_ratio import (
     run_tp_sl_selection_fast,
     calibrate_atr_base_pct,
@@ -20,24 +22,81 @@ from .optimise_tpsl_ratio import (
 from .trap_specialist import build_trap_dataset, train_trap_from_dataset, compute_trap_oof_predictions
 from .gamma_specialist import build_gamma_dataset, train_gamma_from_dataset
 from .model_scoring import precision_at_k, avg_trades_per_day, ece_at_mask, topk_mask, calibration_curve_bins, calibration_profile, ic_cross_sectional
+from .metrics import calculate_selection_score
 
-def compute_per_regime_metrics(y_true, y_prob, df, sample_weight=None):
-    """Compute BSS and AUC per regime bucket from OOF predictions.
+
+def _aggregate_alpha_oof_metrics(y_true, probs, returns, sample_weight=None, groups=None):
+    """Aggregate tradability and calibration metrics for alpha models."""
+    metrics = {}
+    y_bin = (np.asarray(y_true) >= 0.5).astype(int)
+    probs = np.asarray(probs, dtype=float)
+    returns = np.asarray(returns, dtype=float)
+    sw = np.asarray(sample_weight, dtype=float) if sample_weight is not None else None
+
+    mask = np.isfinite(probs) & np.isfinite(returns)
+    if y_true is not None:
+        mask &= np.isfinite(y_bin)
+    if sw is not None:
+        sw = sw[: len(mask)]
+        mask &= np.isfinite(sw)
+
+    if mask.sum() < 10:
+        return metrics
+
+    y_m = y_bin[mask]
+    p_m = probs[mask]
+    r_m = returns[mask]
+    w_m = sw[mask] if sw is not None else None
+    # Selection score already returns composite metrics we need
+    sel_metrics = calculate_selection_score(y_m, p_m, r_m, sample_weight=w_m)
+    metrics.update({
+        "auc": float(sel_metrics.get("AUC", np.nan)),
+        "ic": float(sel_metrics.get("IC", np.nan)),
+        "sharpe": float(sel_metrics.get("Sharpe", np.nan)),
+        "win_rate": float(sel_metrics.get("WinRate", np.nan)),
+        "avg_return": float(sel_metrics.get("AvgReturn", np.nan)),
+        "n_trades": int(sel_metrics.get("Trades", 0)),
+        "rank_ic": float(sel_metrics.get("RankIC", np.nan)),
+        "max_dd": float(sel_metrics.get("MaxDD", np.nan)),
+        "sortino": float(sel_metrics.get("Sortino", np.nan)),
+        "calmar": float(sel_metrics.get("Calmar", np.nan)),
+    })
+
+    if len(np.unique(y_m)) > 1:
+        metrics["auc_raw"] = float(roc_auc_score(y_m, p_m))
+
+    if groups is not None and mask.sum() > 0:
+        grp = np.asarray(groups)[mask]
+        ic = ic_cross_sectional(p_m, r_m, groups=grp)
+        metrics["ic_cs"] = float(ic)
+
+    return metrics
+
+def compute_per_regime_metrics(y_true, y_prob, df, sample_weight=None, global_prev=None):
+    """Compute BSS and AUC per regime bucket from OOF predictions (all unweighted).
     
     Args:
-        y_true: binary labels (n,)
+        y_true: labels (n,) — will be binarized at 0.5
         y_prob: predicted probabilities (n,)
         df: DataFrame with __regime_*__ columns
-        sample_weight: optional sample weights (n,)
+        sample_weight: IGNORED (kept for API compat). All metrics unweighted.
+        global_prev: global prevalence for BSS_global baseline comparison
     
     Returns:
-        dict: {regime_name: {bucket_label: {bss, auc, n}}}
+        dict: {regime_name: {bucket_label: {bss, bss_global, auc, brier, n}}}
     """
     from sklearn.metrics import roc_auc_score, brier_score_loss
     
     regime_cols = [c for c in df.columns if c.startswith("__regime_") and c.endswith("__")]
     if not regime_cols:
         return {}
+    
+    # Compute global prevalence if not provided
+    y_bin_all = (np.asarray(y_true) >= 0.5).astype(np.int8)
+    if global_prev is None:
+        global_prev = float(np.mean(y_bin_all))
+    bs_ref_global = global_prev * (1.0 - global_prev)
+    bs_ref_global = max(bs_ref_global, 1e-6)
     
     bucket_labels = {0: "low", 1: "mid", 2: "high"}
     results = {}
@@ -53,27 +112,33 @@ def compute_per_regime_metrics(y_true, y_prob, df, sample_weight=None):
             mask = regime_vals == bucket_id
             n_bucket = int(mask.sum())
             if n_bucket < 20:
-                regime_results[bucket_name] = {"bss": 0.0, "auc": 0.5, "brier": 0.0, "n": n_bucket}
+                regime_results[bucket_name] = {"bss": 0.0, "bss_global": 0.0, "auc": 0.5, "brier": 0.0, "n": n_bucket}
                 continue
             
-            y_b = y_true[mask]
+            y_b = y_bin_all[mask]
             p_b = np.clip(y_prob[mask], 1e-7, 1 - 1e-7)
             
-            # BSS — UNWEIGHTED (sample weights distort BSS via weighted prevalence)
+            # BSS with bucket-specific baseline
             bss = 0.0
+            bss_global = 0.0
             brier_basic = 0.0
             try:
-                prev = float(np.mean(y_b))
+                prev_bucket = float(np.mean(y_b))
                 brier_basic = float(brier_score_loss(y_b, p_b))
-                if 0.02 < prev < 0.98:
-                    bs = float(brier_score_loss(y_b, p_b))
-                    bs_ref = float(brier_score_loss(y_b, np.full_like(p_b, prev)))
-                    bs_ref = max(bs_ref, 1e-6)
-                    bss = 1.0 - (bs / bs_ref)
+                # Bucket-baseline BSS
+                if 0.02 < prev_bucket < 0.98:
+                    bs_ref_bucket = prev_bucket * (1.0 - prev_bucket)
+                    bs_ref_bucket = max(bs_ref_bucket, 1e-6)
+                    bss = 1.0 - (brier_basic / bs_ref_bucket)
                     if not np.isfinite(bss):
                         bss = 0.0
+                # Global-baseline BSS (comparable across buckets)
+                bss_global = 1.0 - (brier_basic / bs_ref_global)
+                if not np.isfinite(bss_global):
+                    bss_global = 0.0
             except Exception:
                 bss = 0.0
+                bss_global = 0.0
             
             # AUC
             auc = 0.5
@@ -83,7 +148,10 @@ def compute_per_regime_metrics(y_true, y_prob, df, sample_weight=None):
             except Exception:
                 auc = 0.5
             
-            regime_results[bucket_name] = {"bss": round(bss, 4), "auc": round(auc, 4), "brier": round(brier_basic, 4), "n": n_bucket}
+            regime_results[bucket_name] = {
+                "bss": round(bss, 4), "bss_global": round(bss_global, 4),
+                "auc": round(auc, 4), "brier": round(brier_basic, 4), "n": n_bucket
+            }
         
         results[regime_name] = regime_results
     
@@ -702,15 +770,19 @@ def build_hourly_training_set_and_weights(
         return None, None, None, None, None, None
 
     y_hard = (pnl >= pnl_hi).astype(np.float32)
+    tprint(f"Hard label dist: 0={int((y_hard==0).sum())} ({(y_hard==0).mean()*100:.1f}%), "
+           f"1={int((y_hard==1).sum())} ({(y_hard==1).mean()*100:.1f}%)")
 
     # Soft labels from path quality: q = MFEtp - c*MAEsl; p = sigmoid(k*q)
     # Then blend with dynamic alpha(q): y* = (1-alpha)*y + alpha*p
+    # NOTE: alpha_max capped at 0.15 to prevent soft labels from pushing
+    # true positives below 0.5 (which ModelRace uses as binarization threshold).
     use_soft_labels = bool(cfg.get("label_use_soft", True))
     if use_soft_labels:
         c_soft = float(cfg.get("label_soft_c", 1.0))
         k_soft = float(cfg.get("label_soft_k", 2.0))
-        alpha_min = float(cfg.get("label_soft_alpha_min", 0.05))
-        alpha_max = float(cfg.get("label_soft_alpha_max", 0.60))
+        alpha_min = float(cfg.get("label_soft_alpha_min", 0.02))
+        alpha_max = float(cfg.get("label_soft_alpha_max", 0.15))
         alpha_s = float(cfg.get("label_soft_alpha_s", 3.0))
         q0 = float(cfg.get("label_soft_q0", 0.5))
 
@@ -750,7 +822,7 @@ def build_hourly_training_set_and_weights(
     p_pos = float(np.clip(p_pos, 1e-4, 1 - 1e-4))
     w1 = (0.5 / p_pos) ** 0.5
     w0 = (0.5 / (1.0 - p_pos)) ** 0.5
-    w_class = np.where(y_bin == 1, w1, w0)
+    w_class = np.where(y_bin >= 0.5, w1, w0)
     w_class = np.clip(w_class, 0.85, 1.25)
 
     # Consensus weight from geometry votes (timeouts ignored)
@@ -917,7 +989,7 @@ def build_hourly_training_set_and_weights(
             df[f"__meta_raw__{mk}"] = df[mk].values
 
     df = apply_interaction_toggles(df, feat_keys, ["G_VOL", "G_TREND"], drop_raw=cfg["drop_raw_causal"])
-    y_bin = df.pop("y_bin").values.astype(int)
+    y_bin = df.pop("y_bin").values.astype(np.float32)
     y_ret = df.pop("y_ret").values.astype(np.float32)
 
     X_out = df.drop(columns=["ts", "symbol"], errors="ignore").astype(np.float32)
@@ -1238,13 +1310,24 @@ def train_specialist_models(panel, feats, mkt_gates, cfg, syms, ts_end):
     return specialist_models
 
 
-def _compute_and_print_meta_metrics(y_true, y_pred, name, groups=None):
-    y_bin = (np.asarray(y_true) > 0).astype(int)
+def _compute_and_print_meta_metrics(y_true, y_pred, name, groups=None, y_raw_ret=None):
+    """Print meta model diagnostics with economically meaningful metrics.
+
+    IC_target: rank corr of pred vs transformed target (what model optimizes)
+    IC_raw:    rank corr of pred vs raw returns (what trading PnL depends on)
+    R²:        OOS R-squared of pred vs raw returns (variance explained)
+    WinRate@k: fraction with raw_ret > 0 in top k% by pred score
+    AvgRet@k:  mean raw return in top k% (bps)
+    CVaR@k:    mean of worst 20% raw returns in top k% (downside tail)
+    Sharpe@10: mean/std of per-timestamp Top10 avg returns (signal stability)
+    GtP@10:    Gain-to-Pain = sum(gains) / sum(|losses|) for Top10 per-ts returns
+    Tail sanity: top10 vs bot10 realized raw returns (detects sign flips)
+    """
+    y_true = np.asarray(y_true, dtype=float)
     y_pred = np.asarray(y_pred, dtype=float)
 
-    ic = ic_cross_sectional(y_pred, y_true, groups=groups)
-    prec10 = precision_at_k(y_bin, y_pred, 0.10, groups=groups)
-    prec40 = precision_at_k(y_bin, y_pred, 0.40, groups=groups)
+    ic_target = ic_cross_sectional(y_pred, y_true, groups=groups)
+    ic_raw = ic_cross_sectional(y_pred, y_raw_ret, groups=groups) if y_raw_ret is not None else float('nan')
 
     if groups is not None:
         trades_day_10 = avg_trades_per_day(y_pred, 0.10, np.asarray(groups))
@@ -1253,12 +1336,76 @@ def _compute_and_print_meta_metrics(y_true, y_pred, name, groups=None):
         trades_day_10 = float(len(y_pred) * 0.10)
         trades_day_30 = float(len(y_pred) * 0.30)
 
-    m10 = topk_mask(y_pred, 0.10, groups=groups)
-    ece10 = ece_at_mask(y_bin, np.clip((y_pred - np.min(y_pred)) / (np.ptp(y_pred) + 1e-9), 0.0, 1.0), m10, n_bins=10)
+    # Top10 and Bot10 masks for tail sanity
+    m_top10 = topk_mask(y_pred, 0.10, groups=groups)
+    m_bot10 = topk_mask(-y_pred, 0.10, groups=groups)  # lowest predictions
+
+    has_raw = y_raw_ret is not None
+    r = np.asarray(y_raw_ret, dtype=float) if has_raw else y_true
+
+    # R² of predictions vs raw returns (OOS variance explained)
+    if has_raw:
+        ss_res = float(np.sum((y_raw_ret - y_pred) ** 2))
+        ss_tot = float(np.sum((y_raw_ret - np.mean(y_raw_ret)) ** 2))
+        r_squared = 1.0 - ss_res / max(ss_tot, 1e-12)
+    else:
+        r_squared = float('nan')
+
+    # WinRate@k: fraction with raw_ret > 0 (economically meaningful)
+    base_win = float(np.mean(r > 0))
+    win10 = float(np.mean(r[m_top10] > 0)) if m_top10.any() else float('nan')
+    win40_m = topk_mask(y_pred, 0.40, groups=groups)
+    win40 = float(np.mean(r[win40_m] > 0)) if win40_m.any() else float('nan')
+
+    # AvgRet@k in bps (×10000)
+    avg_ret_top10 = float(np.mean(r[m_top10])) * 10000 if m_top10.any() else float('nan')
+    avg_ret_bot10 = float(np.mean(r[m_bot10])) * 10000 if m_bot10.any() else float('nan')
+
+    # CVaR@10: mean of worst 20% of raw returns in top decile
+    if m_top10.any() and has_raw:
+        top10_rets = r[m_top10]
+        n_worst = max(1, int(0.20 * len(top10_rets)))
+        cvar10 = float(np.mean(np.sort(top10_rets)[:n_worst])) * 10000
+    else:
+        cvar10 = float('nan')
+
+    # Sharpe@10 and Gain-to-Pain@10: per-timestamp Top10 avg return stability
+    sharpe10 = float('nan')
+    gtp10 = float('nan')
+    n_ts_top10 = 0
+    if m_top10.any() and has_raw and groups is not None:
+        g = np.asarray(groups)
+        ts_rets = []
+        for t in np.unique(g):
+            tm = (g == t) & m_top10
+            if tm.any():
+                ts_rets.append(float(np.mean(r[tm])))
+        if len(ts_rets) >= 5:
+            ts_arr = np.array(ts_rets)
+            n_ts_top10 = len(ts_arr)
+            mu_ts = float(np.mean(ts_arr))
+            std_ts = float(np.std(ts_arr, ddof=1))
+            sharpe10 = mu_ts / max(std_ts, 1e-12)
+            gains = float(np.sum(ts_arr[ts_arr > 0]))
+            pains = float(np.sum(np.abs(ts_arr[ts_arr < 0])))
+            gtp10 = gains / max(pains, 1e-12)
+
+    # Target-space top10 mean (for debugging)
+    tgt_top10 = float(np.mean(y_true[m_top10])) if m_top10.any() else float('nan')
+    pred_top10 = float(np.mean(y_pred[m_top10])) if m_top10.any() else float('nan')
 
     tprint(
-        f"  {name} Meta assess: IC={ic:.4f} Prec10={prec10:.4f} Prec40={prec40:.4f} "
-        f"AvgTrades/Day@10={trades_day_10:.2f} AvgTrades/Day@30={trades_day_30:.2f} ECE@10={ece10:.4f}"
+        f"  {name}: IC_target={ic_target:.4f} IC_raw={ic_raw:.4f} R²={r_squared:.6f} "
+        f"WinRate@10={win10:.4f} WinRate@40={win40:.4f} (base={base_win:.4f}) "
+        f"AvgTrades/Day@10={trades_day_10:.2f}"
+    )
+    tprint(
+        f"  {name} Top10: AvgRet={avg_ret_top10:+.2f}bps CVaR={cvar10:+.2f}bps "
+        f"Sharpe={sharpe10:.4f} GtP={gtp10:.4f} (n_ts={n_ts_top10})"
+    )
+    tprint(
+        f"  {name} Bot10: AvgRet={avg_ret_bot10:+.2f}bps  "
+        f"(Top10-Bot10 spread={avg_ret_top10 - avg_ret_bot10:+.2f}bps)"
     )
 
 def train_models_from_artifacts(datasets, cfg):
@@ -1354,16 +1501,22 @@ def train_models_from_artifacts(datasets, cfg):
             m = train_trap_from_dataset(trap_df, cfg)
             specialist_models["trap_model"] = m
 
-            # Generate OOF
+            # Generate scores via direct prediction (fast; OOF CV on 8M rows is prohibitive)
             from .trap_specialist import TRAP_FEATURE_KEYS
-            X_trap = trap_df[TRAP_FEATURE_KEYS].values.astype(np.float32)
-            y_trap = trap_df["y_quality"].values.astype(np.float32)
-            trap_oof = compute_trap_oof_predictions(X_trap, y_trap, cfg)
-
-            # Store OOF for injection
-            # trap_df has 'ts' and 'symbol'
-            oof_series = pd.Series(trap_oof, index=pd.MultiIndex.from_frame(trap_df[["ts", "symbol"]]))
-            specialist_oof_lookup["trap_score"] = oof_series
+            if m is not None and "gmm" in m and "scaler" in m:
+                X_trap = trap_df[TRAP_FEATURE_KEYS].values.astype(np.float32)
+                y_trap = trap_df["y_quality"].values.astype(np.float32)
+                X_scaled = m["scaler"].transform(X_trap)
+                cluster_labels = m["gmm"].predict(X_scaled)
+                # Map clusters to quality scores using semantic ordering
+                cluster_means = []
+                for k in range(m["gmm"].n_components):
+                    mask = cluster_labels == k
+                    cluster_means.append(float(y_trap[mask].mean()) if mask.sum() > 0 else 0.0)
+                trap_scores = np.array([cluster_means[l] for l in cluster_labels], dtype=np.float32)
+                oof_series = pd.Series(trap_scores, index=pd.MultiIndex.from_frame(trap_df[["ts", "symbol"]]))
+                specialist_oof_lookup["trap_score"] = oof_series
+                tprint(f"  Trap scores generated: mean={trap_scores.mean():.3f}, std={trap_scores.std():.3f}")
 
         except Exception as e:
             tprint(f"Trap Specialist training failed: {e}")
@@ -1377,15 +1530,14 @@ def train_models_from_artifacts(datasets, cfg):
             m = train_gamma_from_dataset(gamma_df, cfg)
             specialist_models["gamma_model"] = m
 
-            # Generate OOF
-            from .gamma_specialist import GAMMA_FEATURE_KEYS
-            X_gamma = gamma_df[GAMMA_FEATURE_KEYS].values.astype(np.float32)
-            y_gamma = gamma_df["y_gamma"].values.astype(np.float32)
-            gamma_oof = m.compute_oof_predictions(X_gamma, y_gamma)
-
-            # Store OOF
-            oof_series = pd.Series(gamma_oof, index=pd.MultiIndex.from_frame(gamma_df[["ts", "symbol"]]))
-            specialist_oof_lookup["gamma_score"] = oof_series
+            # Generate scores via direct prediction (fast)
+            if m is not None:
+                from .gamma_specialist import GAMMA_FEATURE_KEYS
+                X_gamma = gamma_df[GAMMA_FEATURE_KEYS]
+                gamma_scores = m.predict(X_gamma).astype(np.float32)
+                oof_series = pd.Series(gamma_scores, index=pd.MultiIndex.from_frame(gamma_df[["ts", "symbol"]]))
+                specialist_oof_lookup["gamma_score"] = oof_series
+                tprint(f"  Gamma scores generated: mean={gamma_scores.mean():.3f}, std={gamma_scores.std():.3f}")
 
         except Exception as e:
             tprint(f"Gamma Specialist training failed: {e}")
@@ -1532,60 +1684,100 @@ def train_models_from_artifacts(datasets, cfg):
                 X_sel = X[selected_feats]
                 cols = list(selected_feats)
                 
-                tprint(f"  Class dist: 0={int((y==0).sum())} ({(y==0).mean()*100:.1f}%), 1={int((y==1).sum())} ({(y==1).mean()*100:.1f}%)")
+                y_hard_check = (y >= 0.5).astype(int)
+                tprint(f"  Class dist: 0={int((y_hard_check==0).sum())} ({(y_hard_check==0).mean()*100:.1f}%), "
+                       f"1={int((y_hard_check==1).sum())} ({(y_hard_check==1).mean()*100:.1f}%)")
 
                 race = ModelRace(kind=k, n_splits=5)
                 groups = df["__ts__"].values if "__ts__" in df.columns else None
                 race.fit(X_sel, y, sample_weight=w, returns=y_ret, groups=groups)
                 score = race.metrics.get(race.best_model_name, -1.0)
                 dm = race.detailed_metrics.get(race.best_model_name, {})
-                tprint(f"Finished {side} {k} H={H}: Winner={race.best_model_name}, Score={score:.4f}, AUC={dm.get('AUC',0):.4f}, IC={dm.get('IC',0):.4f}, BSS={dm.get('BSS',0):.4f}")
-
-                # --- Alpha model OOF diagnostics ---
+                # Race CV AUC = fold-averaged AUC during model selection
+                # OOF AUC = AUC on full post-calibration OOF vector (canonical)
+                oof_auc_canonical = 0.5
+                if race.oof_probs is not None:
+                    y_bin_canon = (y >= 0.5).astype(np.int8)
+                    if len(np.unique(y_bin_canon)) > 1:
+                        from sklearn.metrics import roc_auc_score as _roc_auc
+                        oof_auc_canonical = float(_roc_auc(y_bin_canon, race.oof_probs))
+                # --- Alpha model OOF diagnostics (all metrics from same post-calibration oof) ---
                 per_regime = {}
+                oof_bss = dm.get('BSS', 0)  # fallback to race BSS
+                _bs_oof = float('nan')
+                _prev_global = float('nan')
                 if race.oof_probs is not None:
                     oof = race.oof_probs
-                    tprint(f"  OOF probs: mean={np.mean(oof):.4f}, std={np.std(oof):.4f}, "
+                    y_bin_oof = (y >= 0.5).astype(np.int8)
+                    # Recompute BSS from post-calibration OOF (same probs as all other metrics)
+                    from sklearn.metrics import brier_score_loss as _bsl
+                    _prev_global = float(np.mean(y_bin_oof))
+                    _p_clip = np.clip(oof, 1e-7, 1 - 1e-7)
+                    try:
+                        _bs_oof = float(_bsl(y_bin_oof, _p_clip))
+                        _bs_ref_global = float(_bsl(y_bin_oof, np.full_like(_p_clip, _prev_global)))
+                        _bs_ref_global = max(_bs_ref_global, 1e-6)
+                        oof_bss = 1.0 - (_bs_oof / _bs_ref_global)
+                        if not np.isfinite(oof_bss):
+                            oof_bss = 0.0
+                    except Exception:
+                        _bs_oof = 0.0
+                        oof_bss = 0.0
+
+                tprint(f"Finished {side} {k} H={H}: Winner={race.best_model_name}, Score={score:.4f}, "
+                       f"RcAUC={dm.get('AUC',0):.4f}, OOF_AUC={oof_auc_canonical:.4f}, "
+                       f"RcIC={dm.get('IC',0):.4f}, RcBSS={dm.get('BSS',0):.4f}, "
+                       f"OOF_Brier={_bs_oof:.4f}, OOF_BSS={oof_bss:.4f}")
+
+                if race.oof_probs is not None:
+                    tprint(f"  OOF probs [post-cal]: mean={np.mean(oof):.4f}, std={np.std(oof):.4f}, "
                            f"min={np.min(oof):.4f}, max={np.max(oof):.4f}")
+                    tprint(f"  OOF Brier={_bs_oof:.4f}, prev={_prev_global:.4f}, BSS={oof_bss:.4f}")
                     # OOF-based return correlation (key signal quality metric)
                     if np.std(oof) > 1e-9 and np.std(y_ret) > 1e-9:
                         oof_ret_corr = float(np.corrcoef(oof, y_ret)[0, 1])
                         tprint(f"  OOF-return correlation: {oof_ret_corr:.4f}")
                     # Calibration: mean predicted prob vs actual positive rate
-                    tprint(f"  Calibration: mean_pred={np.mean(oof):.4f} vs actual_rate={np.mean(y):.4f}")
+                    tprint(f"  Calibration: mean_pred={np.mean(oof):.4f} vs actual_rate={_prev_global:.4f}")
                     g = df["__ts__"].values if "__ts__" in df.columns else None
+                    # All eval metrics UNWEIGHTED (Option B: weights only for training loss)
                     m10 = topk_mask(oof, 0.10, groups=g)
-                    ece10 = ece_at_mask(y, oof, m10, n_bins=10, w=w)
-                    curve = calibration_curve_bins(y, oof, n_bins=10)
+                    ece10 = ece_at_mask(y_bin_oof, oof, m10, n_bins=10)
+                    curve = calibration_curve_bins(y_bin_oof, oof, n_bins=10)
                     profile = calibration_profile(curve)
-                    p10 = precision_at_k(y, oof, 0.10, groups=g)
-                    p40 = precision_at_k(y, oof, 0.40, groups=g)
+                    p10 = precision_at_k(y_bin_oof, oof, 0.10, groups=g)
+                    p40 = precision_at_k(y_bin_oof, oof, 0.40, groups=g)
                     tpd10 = avg_trades_per_day(oof, 0.10, g) if g is not None else float(len(oof) * 0.10)
                     tpd30 = avg_trades_per_day(oof, 0.30, g) if g is not None else float(len(oof) * 0.30)
-                    tprint(f"  Alpha OOF: Prec@10={p10:.4f} Prec@40={p40:.4f} AvgTrades/Day@10={tpd10:.2f} AvgTrades/Day@30={tpd30:.2f}")
+                    tprint(
+                        f"  AlphaPrec@10={p10:.4f} AlphaPrec@40={p40:.4f} "
+                        f"AvgTrades/Day@10={tpd10:.2f} AvgTrades/Day@30={tpd30:.2f}"
+                    )
                     tprint(f"  Alpha calibration: ECE@10={ece10:.4f} profile={profile}")
 
-                    # --- Per-regime BSS/AUC ---
-                    per_regime = compute_per_regime_metrics(y, oof, df, sample_weight=w)
+                    # --- Per-regime BSS/AUC (unweighted, with both bucket and global baselines) ---
+                    per_regime = compute_per_regime_metrics(y, oof, df, global_prev=_prev_global)
                     if per_regime:
                         tprint(f"  Per-regime BSS/AUC/Brier ({len(per_regime)} dimensions):")
                         for rname, rbuckets in per_regime.items():
-                            parts = [f"{bl}(n={bm['n']}): BSS={bm['bss']:.3f} AUC={bm['auc']:.3f} Brier={bm.get('brier',0):.4f}" 
-                                     for bl, bm in rbuckets.items()]
+                            parts = []
+                            for bl, bm in rbuckets.items():
+                                bss_g = bm.get('bss_global', 0)
+                                parts.append(f"{bl}(n={bm['n']}): BSS={bm['bss']:.3f} BSS_g={bss_g:.3f} AUC={bm['auc']:.3f} Brier={bm.get('brier',0):.4f}")
                             tprint(f"    {rname}: {' | '.join(parts)}")
                     if "__n_res__" in df.columns:
                         n_res_vals = np.clip(df["__n_res__"].values.astype(float), 0.0, None)
                         try:
                             from sklearn.metrics import roc_auc_score
-                            if len(np.unique(y)) > 1:
-                                auc_all = float(roc_auc_score(y, oof))
+                            if len(np.unique(y_bin_oof)) > 1:
+                                auc_all = float(roc_auc_score(y_bin_oof, oof))
                             else:
                                 auc_all = 0.5
                         except Exception:
                             auc_all = 0.5
                         resolved_w = n_res_vals / max(np.mean(n_res_vals), 1e-9)
                         try:
-                            auc_res = float(roc_auc_score(y, oof, sample_weight=resolved_w)) if len(np.unique(y)) > 1 else 0.5
+                            auc_res = float(roc_auc_score(y_bin_oof, oof, sample_weight=resolved_w)) if len(np.unique(y_bin_oof)) > 1 else 0.5
                         except Exception:
                             auc_res = 0.5
                         tprint(f"  AUC reporting ({side}/{k}/H={H}): raw={auc_all:.4f}, resolved-weighted={auc_res:.4f}")
@@ -1599,10 +1791,12 @@ def train_models_from_artifacts(datasets, cfg):
                         "ece_top10": float(dm_best.get("ece_top10", np.nan)),
                         "calibration_profile": dm_best.get("calibration_profile", "n/a"),
                     }
-                    if "__ts__" in df.columns and race.oof_probs is not None:
-                        groups_v = df["__ts__"].values
-                        alpha_diag["avg_trades_day_10"] = float(avg_trades_per_day(race.oof_probs, 0.10, groups_v))
-                        alpha_diag["avg_trades_day_30"] = float(avg_trades_per_day(race.oof_probs, 0.30, groups_v))
+                if race.oof_probs is not None:
+                    groups_v = df["__ts__"].values if "__ts__" in df.columns else None
+                    alpha_diag["avg_trades_day_10"] = float(avg_trades_per_day(race.oof_probs, 0.10, groups_v)) if groups_v is not None else float(len(race.oof_probs) * 0.10)
+                    alpha_diag["avg_trades_day_30"] = float(avg_trades_per_day(race.oof_probs, 0.30, groups_v)) if groups_v is not None else float(len(race.oof_probs) * 0.30)
+                    oof_metrics = _aggregate_alpha_oof_metrics(y, race.oof_probs, y_ret, sample_weight=w, groups=groups_v)
+                    alpha_diag.update(oof_metrics)
 
                 if score > best_ic:
                     best_ic = score
@@ -1671,16 +1865,30 @@ def train_models_from_artifacts(datasets, cfg):
                 X_feats[mk] = df[f"{raw_prefix}{mk}"].values
             X_feats = X_feats.fillna(0.0)
 
-            # Risk-adjusted target: y_ret / barrier_pct (normalize by vol)
-            # This makes the meta model predict risk-adjusted quality, not raw return
-            if "__barrier_pct__" in df.columns:
-                barrier_vals = df["__barrier_pct__"].values.astype(np.float32)
-                barrier_vals = np.clip(barrier_vals, 0.005, None)  # floor at 0.5%
-                y_target = y_ret / barrier_vals
-                tprint(f"  Using risk-adjusted target (y_ret / barrier_pct)")
+            # Cross-sectional rank percentile target.
+            # For each timestamp, rank raw returns across symbols and convert to
+            # percentile [0, 1]. This is the cleanest target for a meta layer
+            # whose job is cross-sectional selection:
+            #   - Immune to market-wide drift (rank is relative)
+            #   - No tail warping (unlike log/winsor transforms)
+            #   - IC on rank_pct ≡ IC on raw returns (monotone transform)
+            #   - Ridge learns "which features predict relative outperformance"
+            _ts_meta = df["__ts__"].values if "__ts__" in df.columns else None
+            if _ts_meta is not None:
+                y_target = np.zeros(len(y_ret), dtype=np.float64)
+                for t in np.unique(_ts_meta):
+                    _tmask = _ts_meta == t
+                    n_t = _tmask.sum()
+                    if n_t > 1:
+                        from scipy.stats import rankdata
+                        y_target[_tmask] = (rankdata(y_ret[_tmask]) - 1) / (n_t - 1)
+                    else:
+                        y_target[_tmask] = 0.5
             else:
-                y_target = y_ret
-                tprint(f"  Using raw y_ret target (no barrier_pct available)")
+                from scipy.stats import rankdata
+                y_target = (rankdata(y_ret) - 1) / max(len(y_ret) - 1, 1)
+            tprint(f"  Using rank_pct target: mean={np.mean(y_target):.4f}, "
+                   f"std={np.std(y_target):.4f}, range=[{np.min(y_target):.4f}, {np.max(y_target):.4f}]")
 
             # Meta weights: magnitude + MAE/MFE proxy + consensus; remove 20% lowest n_res
             n_res = df.get("__n_res__", pd.Series(np.ones(len(df)), index=df.index)).values.astype(np.float64)
@@ -1694,20 +1902,16 @@ def train_models_from_artifacts(datasets, cfg):
             p_oof = p_oof[keep]
             n_res = n_res[keep]
 
-            mag = np.log1p(np.abs(y_target))
-            mag = np.clip(mag, None, np.quantile(mag, 0.95) if len(mag) > 0 else 1.0)
-            mag = 0.9 + 0.2 * (mag / max(np.mean(mag), 1e-9))
-            mag = _winsorize_and_unit_mean(mag, clip_min=0.75, clip_max=1.25)
-
-            mfe_proxy = np.clip(np.abs(df.get("__barrier_pct__", pd.Series(np.ones(len(df)), index=df.index)).values.astype(np.float64)), 1e-4, None)
-            mae_proxy = np.clip(np.abs(y_target), 1e-4, None)
-            mae_mfe = np.log1p(mae_proxy / mfe_proxy)
-            mae_mfe = _winsorize_and_unit_mean(mae_mfe, clip_min=0.75, clip_max=1.25)
+            # Confidence weight: upweight samples where alpha model is more decisive
+            # (further from 0.5). Meta should focus on "strong calls" where gating matters.
+            conf_w = np.abs(p_oof - 0.5) * 2.0  # [0, 1] range
+            conf_w = 0.8 + 0.4 * (conf_w / max(np.mean(conf_w), 1e-9))
+            mag = _winsorize_and_unit_mean(conf_w, clip_min=0.75, clip_max=1.25)
 
             cons = np.clip(df.get("__w_consensus__", pd.Series(np.ones(len(df)), index=df.index)).values.astype(np.float64), 0.75, 1.25)
             cons = _winsorize_and_unit_mean(cons, clip_min=0.75, clip_max=1.25)
 
-            w_meta = mag * mae_mfe * cons
+            w_meta = mag * cons
             alpha_pow = float(np.clip(cfg.get("meta_weight_alpha", 0.5), 0.3, 0.7))
             w_meta = np.power(np.clip(w_meta, 1e-9, None), alpha_pow)
             ts_vals = df["__ts__"].values if "__ts__" in df.columns else np.arange(len(df))
@@ -1723,13 +1927,21 @@ def train_models_from_artifacts(datasets, cfg):
             meta = MetaModel()
             X_meta = meta.prepare_meta_features(p_oof, X_feats, pred_col_name="pred_logit")
 
-            # Add feature interactions: pred_logit × key features
+            # Add feature interactions: pred_logit × key features + regime buckets
             pred_logit = X_meta["pred_logit"].values
             for interact_feat in ["vol_z", "mkt_rv_ratio", "ambig", "exh_qual", "trend_pct"]:
                 if interact_feat in X_meta.columns:
                     X_meta[f"pred_x_{interact_feat}"] = pred_logit * X_meta[interact_feat].values
+            # Regime bucket interactions: pred_logit × vol/trend regime indicators
+            for regime_col in ["G_VOL", "G_TREND"]:
+                raw_regime = f"{raw_prefix}{regime_col}"
+                if raw_regime in df.columns:
+                    rv = df[raw_regime].values
+                    for bucket in [0, 1, 2]:
+                        X_meta[f"pred_x_{regime_col}_{bucket}"] = pred_logit * (rv == bucket).astype(float)
 
-            meta.fit(X_meta, y_target, sample_weight=w_meta)
+            meta_groups = df["__ts__"].values if "__ts__" in df.columns else None
+            meta.fit(X_meta, y_target, sample_weight=w_meta, groups=meta_groups)
 
             # --- Meta model OOF diagnostics ---
             if meta.oof_probs is not None:
@@ -1737,9 +1949,10 @@ def train_models_from_artifacts(datasets, cfg):
                 tprint(f"  Meta OOF preds: mean={np.mean(m_oof):.6f}, std={np.std(m_oof):.6f}, "
                        f"min={np.min(m_oof):.6f}, max={np.max(m_oof):.6f}")
 
-                # Use raw y_ret (not risk-adjusted) for evaluation metrics
                 meta_groups = df["__ts__"].values if "__ts__" in df.columns else None
-                _compute_and_print_meta_metrics(y_ret, m_oof, name=f"Meta {side}_{k}", groups=meta_groups)
+                y_ret_filtered = df["__y_ret__"].values if "__y_ret__" in df.columns else y_target
+                _compute_and_print_meta_metrics(y_target, m_oof, name=f"Meta {side}_{k}",
+                                                groups=meta_groups, y_raw_ret=y_ret_filtered)
 
             if meta.selected_features:
                 tprint(f"  Meta selected features ({len(meta.selected_features)}): {meta.selected_features[:8]}{'...' if len(meta.selected_features) > 8 else ''}")
@@ -1797,9 +2010,10 @@ def train_models_from_artifacts(datasets, cfg):
             exh_models[d] = None
 
     return {
-        "alpha_models": final_models, 
-        "exh_models": exh_models, 
-        "meta_models": meta_models, 
+        "alpha_models": final_models,
+        "alpha_oof_metrics": {f"{side}_{kind}": final_models.get(side, {}).get(kind, {}).get("alpha_diag", {}) for side in trade_sides for kind in kinds},
+        "exh_models": exh_models,
+        "meta_models": meta_models,
         "spike_models": spike_models,
         "specialist_models": specialist_models,
     }

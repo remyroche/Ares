@@ -26,6 +26,9 @@ MODEL_FEATURES = [
     # New Risk/Exhaustion (Report 2026-02-10)
     "wick_ratio_4h_max", "vol_price_div", "rsi_lag1", "rsi_1h_slope",
     "cvar_5pct", "amihud_illiq", "clv_mean_24", "vol_z_4h", "atr_pct_change",
+    # Alpha Features (Report 2026-02-10)
+    "breakout_min", "impulse_reversal", "impulse_reversal_short",
+    "breakout_confirmed", "breakout_t", "pct_breakout_t",
     # Volume/Flow
     "v_power", "flow_persistence", "flow_ratio", "churn",
     "vol_range_shock", "climax_decay", "cumulative_delta_stall",
@@ -327,6 +330,13 @@ CFG = {
         "trap_quality", "predicted_vol_6h",
         # Gated entry features
         "bounce_signal", "trap_strength", "volume_capitulation", "entry_quality_composite",
+        # TF Meta Features (Report 2026-02-10)
+        "trend_t", "trend_z_t", "convexity_t", "convexity_bis_t",
+        "vw_breakout", "breakout_soft", "tail_score",
+        # MR Meta Features (Report 2026-02-10)
+        "mr_soft", "mr_potential", "mr_potential_exhaust",
+        "climax", "vol_exhaust", "mr_climax", "shock_decay",
+        "pct_extreme", "mr_pct", "stall", "mr_failure",
     ],
 
     # Inference dynamic-basket controls

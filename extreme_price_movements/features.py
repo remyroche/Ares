@@ -314,13 +314,13 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     # --- New Exhaustion & Risk Features (Report 2026-02-10) ---
 
     # 1. Wick Ratio Max (Exhaustion for short_mr)
-    feats["wick_ratio_4h_max"] = feats["wick_ratio"].rolling(4).max().astype(np.float32)
+    feats["wick_ratio_4h_max"] = ff.numba_rolling_max(feats["wick_ratio"], 4).astype(np.float32)
 
     # 2. Volume/Price Divergence (Exhaustion for short_mr)
     # Correlation between price changes and volume changes over 12 hours.
-    v_chg = v.pct_change().fillna(0)
-    # Using pandas rolling corr
-    feats["vol_price_div"] = feats["ret1h"].rolling(12).corr(v_chg).fillna(0).astype(np.float32)
+    v_chg = ff.numba_pct_change(v, 1).fillna(0).astype(np.float32)
+    # Using numba rolling corr (O(N) vs Pandas O(N^2) or O(N log N))
+    feats["vol_price_div"] = ff.numba_rolling_corr(feats["ret1h"], v_chg, 12).fillna(0).astype(np.float32)
 
     # 3. RSI Lagged (for divergence check)
     if "rsi" in feats:
@@ -330,12 +330,13 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     # 4. Tail Risk (CVaR Proxy for long_tf)
     # 5th percentile return over 48 hours (2 days)
-    feats["cvar_5pct"] = feats["ret1h"].rolling(48).quantile(0.05).fillna(0).astype(np.float32)
+    # Use Numba-optimized rolling quantile (O(N) vs Pandas O(N log W))
+    feats["cvar_5pct"] = ff.numba_rolling_quantile(feats["ret1h"], 48, 0.05).fillna(0).astype(np.float32)
 
     # 5. Liquidity Shock (Amihud Proxy for long_tf)
     # |Ret| / (Volume * Price). Spikes indicate price moving on thin liquidity.
     illiq_raw = (feats["ret1h"].abs() / ((v * c) + 1e-12)).replace([np.inf, -np.inf], np.nan)
-    feats["amihud_illiq"] = illiq_raw.rolling(24).mean().fillna(0).astype(np.float32)
+    feats["amihud_illiq"] = ff.apply_to_frame(illiq_raw, ff._numba_rolling_mean_nan_safe, 24).fillna(0).astype(np.float32)
 
     # 6. Skew Proxy (Close Location Value Mean)
     if "clv" in feats:
@@ -343,7 +344,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     # 7. Stabilization / Falling Knife Features (for long_mr)
     # Climax Volume
-    feats["vol_z_4h"] = ff.numba_rolling_zscore(v, 4).fillna(0).astype(np.float32)
+    feats["vol_z_4h"] = zscore_rolling(v, 4).fillna(0).astype(np.float32)
 
     # ATR pct change (Volatility Cooling)
     if "atr_pct" in feats:
@@ -957,6 +958,105 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["dist_vwap_resid"] = (feats["dist_vwap_norm"] - 0.5 * mkt_trend_z).astype(np.float32)
     feats["dist_ema_fast_resid"] = (feats["dist_ema_fast"] - 0.5 * mkt_trend_z).astype(np.float32)
     feats["trend_pct_resid"] = (feats["trend_pct"] - 0.5 * mkt_trend_z).astype(np.float32)
+
+    # =====================================================================
+    # User Requested Features (Report 2026-02-10) - TF/MR/Alpha
+    # =====================================================================
+
+    # Base Components
+    ema_6 = ema(c, 6)
+    ema_24 = ema(c, 24)
+    trend_t = ema_6.diff(1).astype(np.float32)
+    feats["trend_t"] = trend_t
+
+    # trend_z_t = trend_t / std(price, 24)
+    std_c_24 = ff.apply_to_frame(c, ff._numba_rolling_std_nan_safe, 24)
+    feats["trend_z_t"] = (trend_t / (std_c_24 + 1e-12)).astype(np.float32)
+
+    # convexity_t
+    convexity_t = trend_t.diff(1).astype(np.float32)
+    feats["convexity_t"] = convexity_t
+
+    # convexity_bis_t
+    feats["convexity_bis_t"] = (ema_6 - ema_24).diff(1).astype(np.float32)
+
+    # convexity_z_t
+    convexity_z_t = zscore_rolling(convexity_t, 24).fillna(0).astype(np.float32)
+    # feats["convexity_z_t"] = convexity_z_t # Not requested but needed for intermediates
+
+    # breakout_t / breakout_z
+    feats["breakout_t"] = ((c - ema_24) / (std_c_24 + 1e-12)).astype(np.float32)
+    breakout_z = feats["breakout_t"]
+
+    # rvol
+    # v is log-transformed volume (Log -> EWMA(5)) from _transform_volume
+    # ema_v_24 is EMA of log-volume
+    # rvol_ratio = exp(log(vol) - log(avg_vol)) = vol / avg_vol
+    ema_v_24 = ema(v, 24)
+    rvol_ratio = np.exp(v - ema_v_24)
+    log_1_rvol = np.log(1.0 + rvol_ratio).astype(np.float32)
+
+    # impulse
+    feats["impulse"] = (feats["ret1h"] / (feats["rv_6h"] + 1e-12)).astype(np.float32)
+    impulse = feats["impulse"]
+
+    # pct_pos
+    min_24 = ff.numba_rolling_min(c, 24)
+    max_24 = ff.numba_rolling_max(c, 24)
+    pct_pos = ((c - min_24) / (max_24 - min_24 + 1e-12)).clip(0, 1)
+
+    # squeeze
+    squeeze = feats["vol_compression"]
+
+    # --- TF Meta Features ---
+    feats["vw_breakout"] = (breakout_z * log_1_rvol).astype(np.float32)
+
+    sigmoid_rvol = (1.0 / (1.0 + np.exp(-(v - ema_v_24)))).astype(np.float32)
+    feats["breakout_soft"] = (breakout_z * sigmoid_rvol).astype(np.float32)
+
+    feats["tail_score"] = (feats["trend_z_t"] *
+                           np.maximum(0, convexity_z_t) *
+                           np.maximum(0, breakout_z)).astype(np.float32)
+
+    # --- MR Meta Features ---
+    sigmoid_neg_conv_z = (1.0 / (1.0 + np.exp(convexity_z_t))).astype(np.float32) # sigmoid(-x)
+    feats["mr_soft"] = (breakout_z.abs() * sigmoid_neg_conv_z).astype(np.float32)
+
+    feats["mr_potential"] = ((c - ema_24).abs() / (feats["atr_pct_base"] * c + 1e-12)).astype(np.float32)
+
+    feats["mr_potential_exhaust"] = (feats["mr_potential"] * np.maximum(0, -convexity_z_t)).astype(np.float32)
+
+    feats["climax"] = (breakout_z.abs() * log_1_rvol).astype(np.float32)
+
+    sigmoid_conv_z = (1.0 / (1.0 + np.exp(-convexity_z_t))).astype(np.float32)
+    feats["vol_exhaust"] = (log_1_rvol * sigmoid_conv_z).astype(np.float32)
+
+    feats["mr_climax"] = (breakout_z.abs() * log_1_rvol * sigmoid_neg_conv_z).astype(np.float32)
+
+    imp_abs = impulse.abs()
+    imp_abs_lag = imp_abs.shift(1).fillna(0)
+    feats["shock_decay"] = (imp_abs_lag * np.maximum(0, imp_abs_lag - imp_abs)).astype(np.float32)
+
+    feats["pct_extreme"] = (pct_pos - 0.5).abs().astype(np.float32)
+
+    feats["mr_pct"] = (feats["pct_extreme"] * sigmoid_conv_z).astype(np.float32)
+
+    tz_abs = feats["trend_z_t"].abs()
+    feats["stall"] = np.maximum(0, tz_abs.shift(1).fillna(0) - tz_abs).astype(np.float32)
+
+    feats["mr_failure"] = (squeeze * breakout_z.abs() * feats["stall"]).astype(np.float32)
+
+    # --- Alpha Features ---
+    feats["breakout_min"] = np.minimum(np.maximum(0, breakout_z), log_1_rvol).astype(np.float32)
+
+    imp_lag = impulse.shift(1).fillna(0)
+    feats["impulse_reversal"] = (np.maximum(0, -imp_lag) * np.maximum(0, impulse)).astype(np.float32)
+
+    feats["impulse_reversal_short"] = (np.maximum(0, imp_lag) * np.maximum(0, -impulse)).astype(np.float32)
+
+    feats["breakout_confirmed"] = (breakout_z * (rvol_ratio > 1.2).astype(np.float32)).astype(np.float32)
+
+    feats["pct_breakout_t"] = np.maximum(0, pct_pos - 0.9).astype(np.float32)
 
     tprint("Features: Applying Causal Transforms (Log + Winsor + ZScore)")
     transformer = CausalFeatureTransformer(winsor_qt=0.02, roll_window=24*30)

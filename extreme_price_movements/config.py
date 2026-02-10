@@ -23,6 +23,9 @@ MODEL_FEATURES = [
     # Price Action
     "gap_pct", "range_pct", "roc_div", "ret1h_z", "body_pct", "wick_body_ratio",
     "vol_price_spread", "wick_ratio", "body_ratio",
+    # New Risk/Exhaustion (Report 2026-02-10)
+    "wick_ratio_4h_max", "vol_price_div", "rsi_lag1", "rsi_1h_slope",
+    "cvar_5pct", "amihud_illiq", "clv_mean_24", "vol_z_4h", "atr_pct_change",
     # Volume/Flow
     "v_power", "flow_persistence", "flow_ratio", "churn",
     "vol_range_shock", "climax_decay", "cumulative_delta_stall",
@@ -144,6 +147,9 @@ CFG = {
         "rvol_z", "vol_range_shock", "climax_decay",
         "cumulative_delta_stall", "vol_expansion_ratio", "vol_compression",
         "atr_slope", "dist_vwap_norm", "momentum_accel",
+        # New Exhaustion/Risk features (Report 2026-02-10)
+        "wick_ratio_4h_max", "vol_price_div", "rsi_lag1", "rsi_1h_slope",
+        "cvar_5pct", "amihud_illiq", "clv_mean_24", "vol_z_4h", "atr_pct_change",
         # New Feature Candidates
         "thrust_decay_4", "decel_4", "ft_drop", "ext_excess", "ext_atrExp",
         "comp_to_exp", "evr6_x_volz", "stall_x_flow", "prog_def",

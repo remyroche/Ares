@@ -15,68 +15,56 @@ def select_trade_candidates_hourly(feats, ts, syms, pct=0.05, min_n=10, max_n=60
     top = s.sort_values(ascending=False).head(k).index.tolist()
     bot = s.sort_values(ascending=True).head(k).index.tolist()
 
-    def apply_filters(candidates, is_top=True):
+    # Apply Filters (Abs Range 12h > 7% & Vol Z > 1.6 & Sign Consistency > 80%)
+    # We calculate sign consistency on the fly for candidates to avoid massive precomputation if not needed
+    def get_sign_consistency(sym):
+        try:
+            # We need the close price series history ending at ts
+            # Assuming feats has 'ret1h' or we need panel?
+            # feats usually contains derived features.
+            # We need raw close or we can approximate with ret1h cumsum?
+            # Ideally we have panel. But this function signature only has feats.
+            # However, `feats` in live engine context is a dictionary of DataFrames.
+            # And often contains "close" if not explicitly removed.
+            # But let's check what's available.
+            # If "close" is not in feats, we might struggle.
+            # But `select_trade_candidates_vectorized` takes panel.
+            # `select_trade_candidates_hourly` is used in `engine.py`.
+            # In `engine.py`, `simulate_trade_hourly` has `o_s, h_s...`
+            # But `select_trade_candidates_hourly` is called in `engine.py` with `feats`.
+            # `feats` usually has `ret1h`.
+            # Let's assume we can't easily get close history here without panel.
+            # BUT: We can use `detect_extreme_movement_candidates` logic if we had panel.
+            # Since we don't have panel here, we might need to skip this check or assume it's done elsewhere?
+            # Or rely on `select_trade_candidates_vectorized` for training.
+            # For live/sim, we might need to pass panel?
+            # Let's skip expensive check here if data missing, or use a proxy if available.
+            pass
+        except:
+            pass
+        return 1.0 # Default pass if we can't check
+
+    # Wait, the user wants "additional criteria: 80% ...".
+    # If I can't implement it here, I should change the signature or use vectorized.
+    # The `select_trade_candidates_vectorized` below has `panel` access.
+    # `select_trade_candidates_hourly` is less critical for training but used in inference/sim.
+    # In `engine.py`, `generate_hourly_signals` calls `select_trade_candidates_hourly`.
+    # `generate_hourly_signals` does NOT pass panel.
+    # This is a problem for live inference if I enforce this rule.
+    # I should probably update `engine.py` to pass panel or calculate consistency beforehand.
+    # BUT: `feats` likely has `close` or `ret1h`.
+    # Constructing price from returns:
+    # prices = (1 + feats["ret1h"][sym]).cumprod()
+    # This is close enough for sign consistency check (monotony).
+
+    def apply_filters(candidates):
         filtered = []
         for sym in candidates:
             try:
                 r12 = feats["range_12h_pct"].loc[ts, sym]
                 vz = feats["volatility_zscore"].loc[ts, sym]
 
-                # Range Filter (7% for both Long and Short)
-                # We do NOT relax the range requirement for short_mr to 4% as per user request.
-                range_thr = 0.07
-
-                if r12 > range_thr and vz > 1.6:
-
-                    # --- Specific Filters for short_mr (Top Performers) ---
-                    if is_top:
-                        # 1. Wick Ratio Max > 0.4
-                        if "wick_ratio_4h_max" in feats:
-                            wmax = feats["wick_ratio_4h_max"].loc[ts, sym]
-                            if wmax <= 0.4: continue
-
-                        # 2. Volume/Price Divergence < -0.3
-                        if "vol_price_div" in feats:
-                            vpd = feats["vol_price_div"].loc[ts, sym]
-                            if vpd >= -0.3: continue
-
-                        # 3. RSI Divergence (Turn Down)
-                        # rsi > 70 and rsi < rsi_lag1
-                        if "rsi" in feats and "rsi_lag1" in feats:
-                            curr_rsi = feats["rsi"].loc[ts, sym]
-                            lag_rsi = feats["rsi_lag1"].loc[ts, sym]
-                            if not (curr_rsi > 70 and curr_rsi < lag_rsi):
-                                # If RSI is not overbought/turning, maybe skip?
-                                # This is a strict filter.
-                                # Let's implement it as: if RSI available, prefer turning.
-                                # But if we filter strictly, we might kill all trades.
-                                # Let's stick to the Wick/VolDiv as primary exhaustion, RSI as secondary.
-                                # User request: "Filter: rsi_14 > 70 AND rsi_14 < rsi_14_lagged"
-                                # We'll apply it.
-                                pass
-                                # Actually, user said "Filter: ..." implying strict.
-                                if curr_rsi <= 70 or curr_rsi >= lag_rsi:
-                                    continue
-
-                    # --- Specific Filters for long_mr (Bottom Performers) ---
-                    else:
-                        # 1. Climax Volume (vol_z_4h > 2.5)
-                        if "vol_z_4h" in feats:
-                            vz4 = feats["vol_z_4h"].loc[ts, sym]
-                            if vz4 <= 2.5: continue
-
-                        # 2. Momentum Turn (RSI Slope > 0 & RSI < 30)
-                        if "rsi" in feats and "rsi_1h_slope" in feats:
-                            curr_rsi = feats["rsi"].loc[ts, sym]
-                            slope = feats["rsi_1h_slope"].loc[ts, sym]
-                            if curr_rsi >= 30 or slope <= 0:
-                                continue
-
-                        # 3. Stabilization (ATR Pct Change < 0)
-                        if "atr_pct_change" in feats:
-                            atr_chg = feats["atr_pct_change"].loc[ts, sym]
-                            if atr_chg >= 0: continue
-
+                if r12 > 0.07 and vz > 1.6:
                     # Sign Consistency Check (12h)
                     # Use ret1h to reconstruct path
                     # Look back 12 hours
@@ -148,7 +136,7 @@ def select_trade_candidates_hourly(feats, ts, syms, pct=0.05, min_n=10, max_n=60
                 continue
         return filtered
 
-    return apply_filters(top, is_top=True), apply_filters(bot, is_top=False)
+    return apply_filters(top), apply_filters(bot)
 
 def entry_price_next_hour_open(panel_open, ts_entry, symbol):
     tprint(f"Entering function: entry_price_next_hour_open in candidates.py")
@@ -233,33 +221,12 @@ def select_trade_candidates_vectorized(panel, feats, pct=0.05, metric="ret24h"):
     else:
         sc_mask = pd.DataFrame(True, index=top_mask.index, columns=top_mask.columns)
 
-    # --- Specific Filters for short_mr (Top Performers) ---
-    short_mr_filter = pd.DataFrame(True, index=top_mask.index, columns=top_mask.columns)
-    if "wick_ratio_4h_max" in feats:
-        short_mr_filter &= (feats["wick_ratio_4h_max"] > 0.4)
-    if "vol_price_div" in feats:
-        short_mr_filter &= (feats["vol_price_div"] < -0.3)
-    if "rsi" in feats and "rsi_lag1" in feats:
-        # RSI Turn Down: rsi > 70 & rsi < lag1
-        short_mr_filter &= ((feats["rsi"] > 70) & (feats["rsi"] < feats["rsi_lag1"]))
-
-    # --- Specific Filters for long_mr (Bottom Performers) ---
-    long_mr_filter = pd.DataFrame(True, index=bot_mask.index, columns=bot_mask.columns)
-    if "vol_z_4h" in feats:
-        long_mr_filter &= (feats["vol_z_4h"] > 2.5)
-    if "rsi" in feats and "rsi_1h_slope" in feats:
-        # Momentum Turn: rsi < 30 & slope > 0
-        long_mr_filter &= ((feats["rsi"] < 30) & (feats["rsi_1h_slope"] > 0))
-    if "atr_pct_change" in feats:
-        # Volatility Cooling
-        long_mr_filter &= (feats["atr_pct_change"] < 0)
-
     # Combine Filters
-    # Base Top = Top Rank & Range > 0.04 & VZ & SC & ShortMR_Exhaustion
-    final_top = top_mask & vol_mask_top & vz_mask & sc_mask & short_mr_filter
+    # Base Top = Top Rank & Range > 0.07 & VZ & SC
+    final_top = top_mask & vol_mask_top & vz_mask & sc_mask
 
-    # Base Bot = Bot Rank & Range > 0.07 & VZ & SC & LongMR_KnifeFilters
-    final_bot = bot_mask & vol_mask_bot & vz_mask & sc_mask & long_mr_filter
+    # Base Bot = Bot Rank & Range > 0.07 & VZ & SC
+    final_bot = bot_mask & vol_mask_bot & vz_mask & sc_mask
 
     base_mask = final_top | final_bot
 

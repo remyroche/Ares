@@ -620,55 +620,78 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
             l_tf = _robust_norm(l_tf, score_scale.get("long_tf_center", 0.0), score_scale.get("long_tf_scale", 1.0))
             s_tf = _robust_norm(s_tf, score_scale.get("short_tf_center", 0.0), score_scale.get("short_tf_scale", 1.0))
 
-        # Scoring Logic Split
-        # Best (Up Trend, t_dir > 0): Long_TF (buy) vs Short_MR (sell)
-        # Worst (Down Trend, t_dir < 0): Long_MR (buy) vs Short_TF (sell)
+        # Decoupled Logic (Report 2026-02-10)
+        # Treat each model output as an independent signal.
+        # Best (Up Trend, t_dir > 0): Long_TF (buy) OR Short_MR (sell)
+        # Worst (Down Trend, t_dir < 0): Long_MR (buy) OR Short_TF (sell)
+
+        potential_signals = []
 
         if t_dir > 0:
             # Best Performer Pipeline
-            # Score = Long_TF - Short_MR
-            # If > 0, Long (Trend Following). If < 0, Short (Mean Reversion).
-            # Dominant logic:
-            # If abs(Long_TF) > abs(Short_MR), we say 'tf' dominates?
-            # Or just use the net score?
-            # User said: "Best Performer Score = Best Performer TF - Best Performer MR"
+            # Check Long_TF
+            mode_l = "best" # long_tf is 'best' bucket
+            thr_l = float(signal_params.get(f"thr_tf_{mode_l}", thr_long))
+            if l_tf > thr_l:
+                potential_signals.append({
+                    "symbol": sym, "side": "long", "score": l_tf, "dom": "tf", "mode": mode_l
+                })
 
-            # net_score = l_tf - s_mr
-            # But we need to assign a 'dom' (tf or mr) for risk params.
-            # If l_tf (TF part) contributes more to the absolute value?
-            # Actually, l_tf is usually > 0, s_mr is usually > 0 (if predicting Short).
-            # Wait, Meta Models predict a score.
-            # If l_tf > s_mr -> Net Long (Trend Follow). dom="tf".
-            # If s_mr > l_tf -> Net Short (Mean Reversion). dom="mr".
+            # Check Short_MR
+            mode_s = "best" # short_mr is 'best' bucket (reversal of best)
+            thr_s = float(signal_params.get(f"thr_mr_{mode_s}", thr_short))
+            # Short thresholds are typically negative (e.g. -0.01).
+            # But here meta models predict rank percentile centered?
+            # If meta predicts > 0, it means "good trade".
+            # Wait, `short_mr` meta predicts rank relative to Short PnL.
+            # So a high POSITIVE score means "Good Short".
+            # Thresholds in config might be positive for meta scores if they represent quality.
+            # However, `thr_short` defaults to -0.01.
+            # If the system expects signed scores (long > 0, short < 0), we need to negate s_mr.
+            # Previous logic: `net_score = l_tf - s_mr`.
+            # If s_mr was large (0.8), net_score becomes negative (-0.8), triggering short.
+            # So s_mr is a POSITIVE quality score for a SHORT trade.
+            # To create a negative signal score: signal = -s_mr.
 
-            net_score = l_tf - s_mr
-            if l_tf >= s_mr:
-                dom = "tf"
-            else:
-                dom = "mr"
+            # If we use `thr_short` (e.g. -0.01), we check if -s_mr < thr_short => s_mr > -thr_short.
+            # Example: thr_short = -0.01. We need -s_mr < -0.01 => s_mr > 0.01.
+
+            neg_s_mr = -s_mr
+            if neg_s_mr < thr_s:
+                 potential_signals.append({
+                    "symbol": sym, "side": "short", "score": neg_s_mr, "dom": "mr", "mode": mode_s
+                })
 
         else:
             # Worst Performer Pipeline
-            # Score = Long_MR - Short_TF
-            # If > 0, Long (Mean Reversion). If < 0, Short (Trend Following).
+            # Check Long_MR
+            mode_l = "worst" # long_mr is 'worst' bucket
+            thr_l = float(signal_params.get(f"thr_mr_{mode_l}", thr_long))
+            if l_mr > thr_l:
+                potential_signals.append({
+                    "symbol": sym, "side": "long", "score": l_mr, "dom": "mr", "mode": mode_l
+                })
 
-            net_score = l_mr - s_tf
-            if l_mr >= s_tf:
-                dom = "mr"
-            else:
-                dom = "tf"
+            # Check Short_TF
+            mode_s = "worst" # short_tf is 'worst' bucket
+            thr_s = float(signal_params.get(f"thr_tf_{mode_s}", thr_short))
 
-        long_mode = _bucket_mode_from_side_dom("long", dom)
-        short_mode = _bucket_mode_from_side_dom("short", dom)
-        dom_thr_long = float(signal_params.get(f"thr_{dom}_{long_mode}", thr_long))
-        dom_thr_short = float(signal_params.get(f"thr_{dom}_{short_mode}", thr_short))
+            neg_s_tf = -s_tf
+            if neg_s_tf < thr_s:
+                 potential_signals.append({
+                    "symbol": sym, "side": "short", "score": neg_s_tf, "dom": "tf", "mode": mode_s
+                })
 
-        if net_score >= dom_thr_long:
-            final_orders.append({"symbol": sym, "side": "long", "score": net_score, "dom": dom, "mode": long_mode})
-            abs_scores.append(abs(net_score))
-        elif net_score <= dom_thr_short:
-            final_orders.append({"symbol": sym, "side": "short", "score": net_score, "dom": dom, "mode": short_mode})
-            abs_scores.append(abs(net_score))
+        # Conflict Resolution (Mutual Exclusivity)
+        # If we have both Long and Short for the same symbol (rare but possible with decoupled logic),
+        # we treat it as High Uncertainty and take NO position.
+        # User Instruction: "if there is a conflict, don't open any position"
+        if len(potential_signals) > 1:
+            # Conflict detected -> Ignore all signals for this symbol
+            pass
+        elif len(potential_signals) == 1:
+            final_orders.append(potential_signals[0])
+            abs_scores.append(abs(potential_signals[0]["score"]))
 
     if not final_orders:
         return []

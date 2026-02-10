@@ -311,6 +311,46 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     max_oc = np.maximum(o, c)
     feats["wick_ratio"] = ((h - max_oc) / ((h - l) + 1e-12)).astype(np.float32)
 
+    # --- New Exhaustion & Risk Features (Report 2026-02-10) ---
+
+    # 1. Wick Ratio Max (Exhaustion for short_mr)
+    feats["wick_ratio_4h_max"] = feats["wick_ratio"].rolling(4).max().astype(np.float32)
+
+    # 2. Volume/Price Divergence (Exhaustion for short_mr)
+    # Correlation between price changes and volume changes over 12 hours.
+    v_chg = v.pct_change().fillna(0)
+    # Using pandas rolling corr
+    feats["vol_price_div"] = feats["ret1h"].rolling(12).corr(v_chg).fillna(0).astype(np.float32)
+
+    # 3. RSI Lagged (for divergence check)
+    if "rsi" in feats:
+        feats["rsi_lag1"] = feats["rsi"].shift(1).astype(np.float32)
+        # RSI Slope 1h (Momentum Turn for long_mr)
+        feats["rsi_1h_slope"] = feats["rsi"].diff(1).fillna(0).astype(np.float32)
+
+    # 4. Tail Risk (CVaR Proxy for long_tf)
+    # 5th percentile return over 48 hours (2 days)
+    feats["cvar_5pct"] = feats["ret1h"].rolling(48).quantile(0.05).fillna(0).astype(np.float32)
+
+    # 5. Liquidity Shock (Amihud Proxy for long_tf)
+    # |Ret| / (Volume * Price). Spikes indicate price moving on thin liquidity.
+    illiq_raw = (feats["ret1h"].abs() / ((v * c) + 1e-12)).replace([np.inf, -np.inf], np.nan)
+    feats["amihud_illiq"] = illiq_raw.rolling(24).mean().fillna(0).astype(np.float32)
+
+    # 6. Skew Proxy (Close Location Value Mean)
+    if "clv" in feats:
+        feats["clv_mean_24"] = ff.apply_to_frame(feats["clv"], ff._numba_rolling_mean_nan_safe, 24).fillna(0).astype(np.float32)
+
+    # 7. Stabilization / Falling Knife Features (for long_mr)
+    # Climax Volume
+    feats["vol_z_4h"] = ff.numba_rolling_zscore(v, 4).fillna(0).astype(np.float32)
+
+    # ATR pct change (Volatility Cooling)
+    if "atr_pct" in feats:
+        feats["atr_pct_change"] = feats["atr_pct"].pct_change().fillna(0).astype(np.float32)
+
+    # --- End New Features ---
+
     feats["vol_price_spread"] = (v / ((h - l) + 1e-12)).astype(np.float32)
 
     prev_close = c.shift(1)

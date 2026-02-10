@@ -7,6 +7,8 @@ Usage:
 """
 import sys
 import argparse
+import json
+import os
 import pandas as pd
 
 from extreme_price_movements.config import CFG
@@ -21,6 +23,35 @@ from extreme_price_movements.pipeline_steps import (
     run_risk_optimization_step,
 )
 from extreme_price_movements.optimise import run_optimise_step, Policy
+
+
+def _bucket_params_paths(cfg, ts_sig):
+    """Return (preferred_shared_path, legacy_run_scoped_path)."""
+    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    shared = os.path.join("extreme_price_movements", "artifacts", "models", "bucket_params.json")
+    legacy = os.path.join(cfg["data_root"], "artifacts", run_id, "models", "bucket_params.json")
+    return shared, legacy
+
+
+def _load_bucket_params_for_train(cfg, ts_sig):
+    """Load optimized bucket params for training, preferring the shared path.
+
+    Returns loaded dict or None if not found/invalid.
+    """
+    shared_path, legacy_path = _bucket_params_paths(cfg, ts_sig)
+    for path in (shared_path, legacy_path):
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            cfg["bucket_params_path"] = path
+            tprint(f"Using bucket params for training: {path}")
+            return payload
+        except Exception as exc:
+            tprint(f"WARNING: Failed to load bucket params from {path}: {exc}")
+    tprint("Bucket params not found; training will use defaults.")
+    return None
 
 
 def _find_latest_feature_ts(data_root):
@@ -139,7 +170,6 @@ def run_backtest(cfg, ts_override=None):
             return
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
-    import os
     state_file = os.path.join(cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl")
     if not os.path.exists(state_file):
         tprint(f"ERROR: Trained state not found at {state_file}. Run 'train' mode first.")
@@ -161,6 +191,7 @@ def run_train(cfg, ts_override=None):
             return
 
     tprint(f"Train mode. ts_sig={ts_sig}")
+    _load_bucket_params_for_train(cfg, ts_sig)
 
     # TP/SL optimisation happens during label generation (see training.generate_label_datasets).
     # Always refresh labels before training so TP:SL widths are re-optimised from current data.
@@ -189,7 +220,6 @@ def run_risk_opt(cfg, ts_override=None):
             return
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
-    import os
     state_file = os.path.join(cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl")
 
     tprint(f"Risk Optimization mode. ts_sig={ts_sig}")
@@ -217,7 +247,6 @@ def run_all(cfg, ts_override=None):
 
     if ts_sig:
         run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
-        import os
         res_path = os.path.join(cfg["data_root"], "artifacts", run_id, "backtest_results.csv")
         if os.path.exists(res_path):
             tprint("\n=== FINAL PIPELINE SUMMARY ===")
@@ -248,7 +277,6 @@ def run_optimise(cfg, ts_override=None):
             return
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
-    import os
     backtest_file = os.path.join(cfg["data_root"], "artifacts", run_id, "backtest_results.csv")
     if not os.path.exists(backtest_file):
         tprint("Backtest results not found. Running backtest first...")
@@ -264,9 +292,19 @@ def run_optimise(cfg, ts_override=None):
     else:
         atr_15m = pd.Series(0.01, index=trades.index)
 
-    params_path = os.path.join(cfg["data_root"], "artifacts", run_id, "models", "bucket_params.json")
+    params_path, legacy_params_path = _bucket_params_paths(cfg, ts_sig)
+    os.makedirs(os.path.dirname(params_path), exist_ok=True)
     run_optimise_step(trades=trades, atr_15m=atr_15m, output_path=params_path, policy=Policy(mode="train_baseline", params_path=params_path))
     tprint(f"OPTIMISE COMPLETE: {params_path}")
+
+    # Backward compatibility for callers still expecting run-scoped path.
+    try:
+        os.makedirs(os.path.dirname(legacy_params_path), exist_ok=True)
+        with open(params_path, "r", encoding="utf-8") as src, open(legacy_params_path, "w", encoding="utf-8") as dst:
+            dst.write(src.read())
+        tprint(f"OPTIMISE LEGACY COPY: {legacy_params_path}")
+    except Exception as exc:
+        tprint(f"WARNING: Unable to write legacy bucket params copy: {exc}")
 
 def main():
     parser = argparse.ArgumentParser(description="Extreme Price Movements Pipeline")

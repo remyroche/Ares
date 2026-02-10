@@ -398,6 +398,9 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                 avg_ref = np.nanmean(fold_ref)
                 avg_brier = np.nanmean(fold_brier)
                 avg_p10 = np.nanmean(fold_p10)
+                std_p10 = np.nanstd(fold_p10)
+                cv_p10 = std_p10 / avg_p10 if avg_p10 > 1e-9 else 1.0
+
                 avg_p25 = np.nanmean(fold_p25)
                 avg_p40 = np.nanmean(fold_p40)
                 std_score = np.nanstd(fold_scores)
@@ -427,6 +430,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     "BS_Ref": avg_ref,
                     "Brier": avg_brier,
                     "Prec10": avg_p10,
+                    "CV_Prec10": cv_p10,
                     "Prec25": avg_p25,
                     "Prec40": avg_p40,
                     "std_score": std_score,

@@ -23,6 +23,7 @@ from .trap_specialist import build_trap_dataset, train_trap_from_dataset, comput
 from .gamma_specialist import build_gamma_dataset, train_gamma_from_dataset
 from .model_scoring import precision_at_k, avg_trades_per_day, ece_at_mask, topk_mask, calibration_curve_bins, calibration_profile, ic_cross_sectional
 from .metrics import calculate_selection_score
+from .gate_metrics import compute_stage_gate_metrics
 
 
 def _aggregate_alpha_oof_metrics(y_true, probs, returns, sample_weight=None, groups=None):
@@ -1414,6 +1415,9 @@ def train_models_from_artifacts(datasets, cfg):
     kinds = ["mr", "tf"]
     final_models = {}
 
+    alpha_gate_results = []
+    meta_gate_results = []
+
     # 1. Train Spike Models (Best & Worst)
     spike_models = {}
     for mode in ["best", "worst"]:
@@ -1802,6 +1806,32 @@ def train_models_from_artifacts(datasets, cfg):
                     best_ic = score
                     best_m = {"model": race, "H": H, "feat_cols": cols, "per_regime": per_regime, "alpha_diag": alpha_diag}
 
+            # --- Stage Gate Check (Alpha) ---
+            if best_m is not None:
+                race_best = best_m["model"]
+                cv_prec10 = race_best.detailed_metrics.get(race_best.best_model_name, {}).get("CV_Prec10", 1.0)
+
+                # We need OOF probs and targets from the best model (which corresponds to 'race')
+                # But 'race' is the ModelRace instance. Its oof_probs are for the best model.
+                # And we need y, y_ret from the dataset used for best_m["H"]
+                best_H = best_m["H"]
+                best_key = f"train_{side}_{k}_{best_H}"
+                if best_key in datasets:
+                    df_best = datasets[best_key]
+                    y_best = df_best["__y_bin__"].values
+                    y_ret_best = df_best["__y_ret__"].values
+                    oof_best = race_best.oof_probs
+
+                    # Ensure alignment (ModelRace OOF should align with input y)
+                    if oof_best is not None and len(oof_best) == len(y_best):
+                        gate_res = compute_stage_gate_metrics(
+                            y_best, oof_best, y_ret_best,
+                            model_type="classifier",
+                            cv_prec10=cv_prec10
+                        )
+                        gate_res["Model"] = f"{side}_{k}"
+                        alpha_gate_results.append(gate_res)
+
             final_models[side][k] = best_m
 
     # 3. Train Meta Models (One per Alpha Model: Side x Kind)
@@ -1960,6 +1990,19 @@ def train_models_from_artifacts(datasets, cfg):
             meta_models[f"{side}_{k}"] = meta
             tprint(f"Meta {side}_{k}: fitted.")
 
+            # --- Stage Gate Check (Meta) ---
+            if meta.oof_probs is not None:
+                # y_target is the rank percentile target used for training meta
+                # y_ret_filtered is the raw return (for downside checks)
+                y_ret_filtered = df["__y_ret__"].values if "__y_ret__" in df.columns else y_target
+
+                gate_res = compute_stage_gate_metrics(
+                    y_target, meta.oof_probs, y_ret_filtered,
+                    model_type="quantile_meta"
+                )
+                gate_res["Model"] = f"{side}_{k}"
+                meta_gate_results.append(gate_res)
+
     # 4. Train Exhaustion Models
     exh_models = {}
     for d in directions:
@@ -2008,6 +2051,36 @@ def train_models_from_artifacts(datasets, cfg):
         else:
             tprint(f"Exhaustion {d}: no dataset found")
             exh_models[d] = None
+
+    # --- Stage Gate Reporting ---
+    tprint("\n=== Stage Gate Report: Alpha Models (Classifiers) ===")
+    alpha_pass_count = 0
+    if alpha_gate_results:
+        df_alpha_gate = pd.DataFrame(alpha_gate_results)
+        cols_order = ["Model", "passed", "PR_AUC", "Brier_Imp", "Lift_k", "CV_Prec_k"]
+        # Print main columns
+        tprint(df_alpha_gate[ [c for c in cols_order if c in df_alpha_gate.columns] ].to_string(index=False))
+        alpha_pass_count = df_alpha_gate["passed"].sum()
+    else:
+        tprint("No Alpha models evaluated.")
+
+    tprint(f"\nAlpha Stage: {alpha_pass_count}/4 passed.")
+    if alpha_pass_count < 2:
+        tprint("WARNING: Alpha Stage FAILED (< 2 models passed).")
+
+    tprint("\n=== Stage Gate Report: Meta Models (Quantile) ===")
+    meta_pass_count = 0
+    if meta_gate_results:
+        df_meta_gate = pd.DataFrame(meta_gate_results)
+        cols_order = ["Model", "passed", "Coverage_Diff", "Pinball_Imp", "Spearman_IC", "Pass_Spread", "Pass_Downside"]
+        tprint(df_meta_gate[ [c for c in cols_order if c in df_meta_gate.columns] ].to_string(index=False))
+        meta_pass_count = df_meta_gate["passed"].sum()
+    else:
+        tprint("No Meta models evaluated.")
+
+    tprint(f"\nMeta Stage: {meta_pass_count}/4 passed.")
+    if meta_pass_count < 2:
+        tprint("WARNING: Meta Stage FAILED (< 2 models passed).")
 
     return {
         "alpha_models": final_models,

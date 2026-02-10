@@ -62,7 +62,7 @@ def compute_stage_gate_metrics(y_true, y_prob, y_ret=None, model_type="classifie
         metrics["Pass_Loss"] = pass_loss
 
         # 3. Lift@k and Precision@k Lift
-        k = 0.10
+        k = 0.20
         n_k = max(1, int(len(y_true) * k))
         idx = np.argsort(y_prob)[-n_k:]
         prec_k = np.mean(y_true[idx])
@@ -123,11 +123,11 @@ def compute_stage_gate_metrics(y_true, y_prob, y_ret=None, model_type="classifie
         pass_ic = (ic >= 0.04)
         metrics["Pass_IC"] = pass_ic
 
-        # 4. Top10 - Bot50 Median Spread
-        n_10 = max(1, int(len(y_true) * 0.10))
+        # 4. Top20 - Bot50 Median Spread
+        n_20 = max(1, int(len(y_true) * 0.20))
         n_50 = max(1, int(len(y_true) * 0.50))
 
-        idx_top = np.argsort(y_prob)[-n_10:]
+        idx_top = np.argsort(y_prob)[-n_20:]
         idx_bot = np.argsort(y_prob)[:n_50] # bottom 50% by prediction
 
         med_top = np.median(y_true[idx_top])
@@ -142,7 +142,7 @@ def compute_stage_gate_metrics(y_true, y_prob, y_ret=None, model_type="classifie
         pass_spread = (spread >= thresh) or (spread > 0) # "or at least > 0" from user request
         metrics["Pass_Spread"] = pass_spread
 
-        # 5. Conditional Downside (ES10)
+        # 5. Conditional Downside (ES10 on Top 20% Selection)
         # Using y_ret if available (raw returns), else y_true
         target_y = y_ret if y_ret is not None else y_true
 
@@ -153,8 +153,8 @@ def compute_stage_gate_metrics(y_true, y_prob, y_ret=None, model_type="classifie
         mask_base = target_y <= q10_base
         es10_base = np.mean(target_y[mask_base]) if mask_base.any() else q10_base
 
-        # ES10 of Top 10% selected by model
-        idx_sel = np.argsort(y_prob)[-n_10:]
+        # ES10 of Top 20% selected by model
+        idx_sel = np.argsort(y_prob)[-n_20:]
         sel_y = target_y[idx_sel]
 
         if len(sel_y) < 5:

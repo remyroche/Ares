@@ -1809,7 +1809,7 @@ def train_models_from_artifacts(datasets, cfg):
             # --- Stage Gate Check (Alpha) ---
             if best_m is not None:
                 race_best = best_m["model"]
-                cv_prec10 = race_best.detailed_metrics.get(race_best.best_model_name, {}).get("CV_Prec10", 1.0)
+                cv_prec20 = race_best.detailed_metrics.get(race_best.best_model_name, {}).get("CV_Prec20", 1.0)
 
                 # We need OOF probs and targets from the best model (which corresponds to 'race')
                 # But 'race' is the ModelRace instance. Its oof_probs are for the best model.
@@ -1827,7 +1827,7 @@ def train_models_from_artifacts(datasets, cfg):
                         gate_res = compute_stage_gate_metrics(
                             y_best, oof_best, y_ret_best,
                             model_type="classifier",
-                            cv_prec10=cv_prec10
+                            cv_prec10=cv_prec20  # Passing CV_Prec20 to the argument named cv_prec10 (which is generic in impl)
                         )
                         gate_res["Model"] = f"{side}_{k}"
                         alpha_gate_results.append(gate_res)

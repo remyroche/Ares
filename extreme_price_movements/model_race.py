@@ -322,6 +322,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             fold_ref = [] # Brier Ref
             fold_brier = [] # Basic (unweighted) Brier
             fold_p10 = [] # Prec Top 10%
+            fold_p20 = [] # Prec Top 20%
             fold_p25 = [] # Prec Top 25%
             fold_p40 = [] # Prec Top 40%
             fold_logloss = []
@@ -380,6 +381,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     fold_ref.append(metrics.get("Brier_Ref", np.nan))
                     fold_brier.append(metrics.get("Brier", np.nan))
                     fold_p10.append(metrics.get("Prec_Top10", np.nan))
+                    fold_p20.append(metrics.get("Prec_Top20", np.nan))
                     fold_p25.append(metrics.get("Prec_Top25", np.nan))
                     fold_p40.append(metrics.get("Prec_Top40", np.nan))
                     # fold_p40 handled below if needed, but metrics returns it
@@ -400,6 +402,10 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                 avg_p10 = np.nanmean(fold_p10)
                 std_p10 = np.nanstd(fold_p10)
                 cv_p10 = std_p10 / avg_p10 if avg_p10 > 1e-9 else 1.0
+
+                avg_p20 = np.nanmean(fold_p20)
+                std_p20 = np.nanstd(fold_p20)
+                cv_p20 = std_p20 / avg_p20 if avg_p20 > 1e-9 else 1.0
 
                 avg_p25 = np.nanmean(fold_p25)
                 avg_p40 = np.nanmean(fold_p40)
@@ -431,6 +437,8 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     "Brier": avg_brier,
                     "Prec10": avg_p10,
                     "CV_Prec10": cv_p10,
+                    "Prec20": avg_p20,
+                    "CV_Prec20": cv_p20,
                     "Prec25": avg_p25,
                     "Prec40": avg_p40,
                     "std_score": std_score,

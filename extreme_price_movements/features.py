@@ -314,13 +314,13 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     # --- New Exhaustion & Risk Features (Report 2026-02-10) ---
 
     # 1. Wick Ratio Max (Exhaustion for short_mr)
-    feats["wick_ratio_4h_max"] = feats["wick_ratio"].rolling(4).max().astype(np.float32)
+    feats["wick_ratio_4h_max"] = ff.numba_rolling_max(feats["wick_ratio"], 4).astype(np.float32)
 
     # 2. Volume/Price Divergence (Exhaustion for short_mr)
     # Correlation between price changes and volume changes over 12 hours.
     v_chg = v.pct_change().fillna(0)
-    # Using pandas rolling corr
-    feats["vol_price_div"] = feats["ret1h"].rolling(12).corr(v_chg).fillna(0).astype(np.float32)
+    # Using numba rolling corr (O(N) vs Pandas O(N^2) or O(N log N))
+    feats["vol_price_div"] = ff.numba_rolling_corr(feats["ret1h"], v_chg, 12).fillna(0).astype(np.float32)
 
     # 3. RSI Lagged (for divergence check)
     if "rsi" in feats:
@@ -330,12 +330,13 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     # 4. Tail Risk (CVaR Proxy for long_tf)
     # 5th percentile return over 48 hours (2 days)
-    feats["cvar_5pct"] = feats["ret1h"].rolling(48).quantile(0.05).fillna(0).astype(np.float32)
+    # Use Numba-optimized rolling quantile (O(N) vs Pandas O(N log W))
+    feats["cvar_5pct"] = ff.numba_rolling_quantile(feats["ret1h"], 48, 0.05).fillna(0).astype(np.float32)
 
     # 5. Liquidity Shock (Amihud Proxy for long_tf)
     # |Ret| / (Volume * Price). Spikes indicate price moving on thin liquidity.
     illiq_raw = (feats["ret1h"].abs() / ((v * c) + 1e-12)).replace([np.inf, -np.inf], np.nan)
-    feats["amihud_illiq"] = illiq_raw.rolling(24).mean().fillna(0).astype(np.float32)
+    feats["amihud_illiq"] = ff.apply_to_frame(illiq_raw, ff._numba_rolling_mean_nan_safe, 24).fillna(0).astype(np.float32)
 
     # 6. Skew Proxy (Close Location Value Mean)
     if "clv" in feats:

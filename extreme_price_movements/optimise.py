@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Dict, Any
 
 import numpy as np
 import pandas as pd
@@ -92,30 +92,59 @@ def run_optimise_step(trades: pd.DataFrame, atr_15m: pd.Series, output_path: str
     buckets = list(pd.Series(trades["bucket"].astype(str).unique()).sort_values())[:4]
     all_out = {}
 
+    # List to collect all trials across all buckets and steps
+    all_trials_log = []
+
     for bucket in buckets:
         bucket_df = m00.load_trades_for_bucket(trades, bucket)
         if bucket_df.empty:
             continue
 
+        # Determine test split index (same as m50 uses)
+        n = len(bucket_df)
+        split_idx = max(1, int(n * 0.30)) if n > 0 else 0
+
         atr_scale = m10.compute_atr_scale(atr_15m.reindex(bucket_df.index).ffill().fillna(atr_15m.median()))
-        tp_sl = m10.calibrate_tp_sl(bucket_df, atr_scale)
+
+        # Step 10: TP/SL Calibration
+        tp_sl, trials_10 = m10.calibrate_tp_sl(bucket_df, atr_scale, test_split_idx=split_idx)
+        trials_10["bucket"] = bucket
+        trials_10["step"] = "10_tp_sl"
+        all_trials_log.append(trials_10)
 
         sl_pct = tp_sl["sl_mult"] * atr_scale.to_numpy()
-        risk_cut = m20.optimise_loss_limiter(bucket_df, sl_pct=sl_pct)
+
+        # Step 20: Loss Limiter Optimization
+        risk_cut, trials_20 = m20.optimise_loss_limiter(bucket_df, sl_pct=sl_pct, test_split_idx=split_idx)
+        trials_20["bucket"] = bucket
+        trials_20["step"] = "20_risk_cut"
+        all_trials_log.append(trials_20)
 
         raw_returns = np.where(bucket_df["is_long"].astype(int).to_numpy() == 1,
                                (bucket_df["exit_price"] - bucket_df["entry_price"]) / bucket_df["entry_price"],
                                (bucket_df["entry_price"] - bucket_df["exit_price"]) / bucket_df["entry_price"])
 
         tp_pct_entry = tp_sl["tp_mult"] * atr_scale.to_numpy()
-        profit = m30.optimise_profit_exit(raw_returns, tp_pct_entry=tp_pct_entry, fee_pct=0.005)
 
-        sizing = m40.optimise_position_sizing(
-            exit_prices=bucket_df["exit_price"].to_numpy(dtype=float),
-            entry_prices=bucket_df["entry_price"].to_numpy(dtype=float),
-            is_long=bucket_df["is_long"].to_numpy(dtype=int),
-            confidences=bucket_df["confidence"].to_numpy(dtype=float),
+        # Step 30: Profit Exit Optimization
+        profit, trials_30 = m30.optimise_profit_exit(bucket_df, raw_returns, tp_pct_entry=tp_pct_entry, fee_pct=0.005, test_split_idx=split_idx)
+        trials_30["bucket"] = bucket
+        trials_30["step"] = "30_profit_exit"
+        all_trials_log.append(trials_30)
+
+        # Step 40: Position Sizing Optimization
+        # Pass raw exit/entry/is_long as original code did, but metrics will use them
+        sizing, trials_40 = m40.optimise_position_sizing(
+            bucket_df,
+            bucket_df["exit_price"].to_numpy(dtype=float),
+            bucket_df["entry_price"].to_numpy(dtype=float),
+            bucket_df["is_long"].to_numpy(dtype=int),
+            bucket_df["confidence"].to_numpy(dtype=float),
+            test_split_idx=split_idx
         )
+        trials_40["bucket"] = bucket
+        trials_40["step"] = "40_sizing"
+        all_trials_log.append(trials_40)
 
         pos_size = m40.sigmoid_sizing(bucket_df["confidence"].to_numpy(dtype=float), sizing["k"], sizing["c0"], sizing["s_min"], sizing["s_max"])
         net_returns = raw_returns * pos_size - 0.005
@@ -133,5 +162,17 @@ def run_optimise_step(trades: pd.DataFrame, atr_15m: pd.Series, output_path: str
         all_out[bucket] = combined
         mw.merge_and_write_params(output_path, bucket, combined)
         tprint(f"optimise: bucket={bucket} trades={len(bucket_df)} saved={output_path}")
+
+    # Concatenate and save consolidated report CSV
+    if all_trials_log:
+        consolidated_df = pd.concat(all_trials_log, ignore_index=True)
+        # Reorder columns to put context first
+        cols = ["bucket", "step"] + [c for c in consolidated_df.columns if c not in ["bucket", "step"]]
+        consolidated_df = consolidated_df[cols]
+
+        # Save CSV alongside JSON output (same directory, change extension)
+        csv_path = Path(output_path).with_suffix(".csv")
+        consolidated_df.to_csv(csv_path, index=False)
+        tprint(f"optimise: detailed report saved={csv_path}")
 
     return all_out

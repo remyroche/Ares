@@ -318,7 +318,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     # 2. Volume/Price Divergence (Exhaustion for short_mr)
     # Correlation between price changes and volume changes over 12 hours.
-    v_chg = v.pct_change().fillna(0)
+    v_chg = ff.numba_pct_change(v, 1).fillna(0).astype(np.float32)
     # Using numba rolling corr (O(N) vs Pandas O(N^2) or O(N log N))
     feats["vol_price_div"] = ff.numba_rolling_corr(feats["ret1h"], v_chg, 12).fillna(0).astype(np.float32)
 
@@ -989,6 +989,9 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     breakout_z = feats["breakout_t"]
 
     # rvol
+    # v is log-transformed volume (Log -> EWMA(5)) from _transform_volume
+    # ema_v_24 is EMA of log-volume
+    # rvol_ratio = exp(log(vol) - log(avg_vol)) = vol / avg_vol
     ema_v_24 = ema(v, 24)
     rvol_ratio = np.exp(v - ema_v_24)
     log_1_rvol = np.log(1.0 + rvol_ratio).astype(np.float32)

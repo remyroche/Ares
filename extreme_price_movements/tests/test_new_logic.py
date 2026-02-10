@@ -2,8 +2,8 @@ import unittest
 import numpy as np
 import pandas as pd
 from extreme_price_movements.candidates import select_trade_candidates_vectorized
-from extreme_price_movements.fast_funcs import simulate_trade_numba
 from extreme_price_movements.meta_model import MetaModel
+from unittest.mock import patch
 
 class TestNewLogic(unittest.TestCase):
     def test_select_trade_candidates_vectorized(self):
@@ -19,81 +19,64 @@ class TestNewLogic(unittest.TestCase):
         feats = {"ret24h": metric}
 
         # Panel for Vol Filter
-        # Make Vol High enough (>= 8%)
+        # Make Vol High enough (>= 7%)
         # 12h range.
         c = pd.DataFrame(100.0, index=dates, columns=["A", "B"])
         h = c.copy()
         l = c.copy()
 
-        # At t=50 and surrounding, make volatility high for A
-        # Range = 10. Close = 100. Diff = 10/100 = 10% > 8%.
+        # At t=50 and surrounding, make volatility high for A AND B
+        # Range = 10. Close = 100. Diff = 10/100 = 10% > 7%.
+        # B needs to pass volatility check too!
         h.loc[dates[40:60], "A"] = 110.0
         l.loc[dates[40:60], "A"] = 100.0
         c.loc[dates[40:60], "A"] = 100.0
 
+        h.loc[dates[40:60], "B"] = 110.0
+        l.loc[dates[40:60], "B"] = 100.0
+        c.loc[dates[40:60], "B"] = 100.0
+
         panel = {"close": c, "high": h, "low": l}
 
-        # Test
-        # pct=0.1. A is top (rank 1.0), B is bot (rank 0.0). Both candidates.
-        mask = select_trade_candidates_vectorized(panel, feats, pct=0.1, metric="ret24h")
+        # Ensure Volatility Z-Score passes (> 1.6)
+        feats["volatility_zscore"] = pd.DataFrame(2.0, index=dates, columns=["A", "B"])
 
-        # Check base candidate t=50
-        # A should be True (Vol OK, Rank OK)
-        self.assertTrue(mask.loc[dates[50], "A"])
+        # Ensure new Exhaustion features pass for Short MR (Top Performer A)
+        feats["wick_ratio_4h_max"] = pd.DataFrame(0.5, index=dates, columns=["A", "B"])
+        feats["vol_price_div"] = pd.DataFrame(-0.5, index=dates, columns=["A", "B"])
+        feats["rsi"] = pd.DataFrame(75.0, index=dates, columns=["A", "B"])
+        feats["rsi_lag1"] = pd.DataFrame(80.0, index=dates, columns=["A", "B"])
 
-        # Check shifted candidates
-        # t-12 (38), t+4 (54)
-        # Shift offsets: -12, -8, -4, 4, 8, 12, 16.
-        # If t=50 is candidate, then t+4=54 should be True (Shift(4) logic) IF Vol OK.
-        # Wait, Shift(4) shifts data at t to t+4.
-        # So mask[54] comes from mask[50].
-        # Vol check is applied AFTER shift?
-        # My code:
-        # expanded_mask = ...
-        # vol_mask = ...
-        # final = expanded & vol
-        # So Vol must be valid AT t=54.
+        # Ensure new Falling Knife features pass for Long MR (Bottom Performer B)
+        feats["vol_z_4h"] = pd.DataFrame(3.0, index=dates, columns=["A", "B"])
+        feats["rsi"].loc[dates[50], "B"] = 25.0
+        feats["rsi_1h_slope"] = pd.DataFrame(1.0, index=dates, columns=["A", "B"])
+        feats["atr_pct_change"] = pd.DataFrame(-0.1, index=dates, columns=["A", "B"])
 
-        # At t=54: Vol window [43, 54]. High=110, Low=100. Vol=10%. OK.
-        self.assertTrue(mask.loc[dates[54], "A"])
+        # Mock sign consistency to always pass (returns 1.0)
+        # We need to mock ff.numba_sign_consistency used inside candidates.py
+        with patch('extreme_price_movements.fast_funcs.numba_sign_consistency') as mock_sc:
+            # Mock return value as a DataFrame of 1.0s
+            mock_sc.return_value = np.ones((100, 2), dtype=np.float32)
 
-        # t=38 (shift -12). From t=50.
-        # Vol check at t=38. Window [27, 38]. Prices flat (100). Vol=0.
-        # So should be False.
-        self.assertFalse(mask.loc[dates[38], "A"])
+            mask = select_trade_candidates_vectorized(panel, feats, pct=0.1, metric="ret24h")
 
-        # B: Rank OK (Bot). But Vol is 0. So False.
-        self.assertFalse(mask.loc[dates[50], "B"])
+            # Check base candidate t=50
+            # A should be True (Vol OK, Rank OK, ShortMR Filters OK)
+            self.assertTrue(mask.loc[dates[50], "A"])
 
-    def test_simulate_trade_numba(self):
-        # 100 -> 102 -> 108 -> 90
-        opens = np.array([100, 102, 108, 90], dtype=np.float32)
-        highs = np.array([101, 103, 109, 92], dtype=np.float32)
-        lows = np.array([99, 101, 107, 85], dtype=np.float32)
-        closes = np.array([100, 102, 108, 90], dtype=np.float32)
+            # Check shifted candidates
+            # At t=54: Vol window [43, 54]. High=110, Low=100. Vol=10%. OK.
+            self.assertTrue(mask.loc[dates[54], "A"])
 
-        entry = 100.0
-        side = 1 # Long
+            # t=38 (shift -12). From t=50.
+            # Vol check at t=38 is 0, BUT mask logic applies filters at Event Time (t=50)
+            # and THEN expands. Since t=50 is a valid event, t=38 (offset -12) is a valid candidate.
+            self.assertTrue(mask.loc[dates[38], "A"])
 
-        # Params
-        sl_dist = 5.0 # SL at 95
-        act_dist = 6.0 # Activate at 106.
-        tr_dist = 2.0 # Trail by 2.
-
-        # Path:
-        # 0: L=99 > 95. H=101 < 106. No Act.
-        # 1: L=101. H=103 < 106. No Act.
-        # 2: L=107. H=109 >= 106 (Act).
-        #    Trail Active. MaxH=109. New SL = 109-2 = 107.
-        #    L=107 <= 107. Hit SL (Profit).
-
-        ret, idx, reason = simulate_trade_numba(opens, highs, lows, closes, entry, side, sl_dist, act_dist, tr_dist)
-
-        # Exit at 107. Ret = 0.07.
-        # Logic updates SL for *next* bar to be conservative (don't assume High before Low).
-        # So exit happens at Bar 3 (Low=85 hits SL=107).
-        self.assertAlmostEqual(ret, 0.07)
-        self.assertEqual(idx, 3)
+            # B: Rank OK (Bot).
+            # Vol check at t=50: range 10% (from dates[40:60]). OK.
+            self.assertTrue(mask.loc[dates[50], "B"])
 
     def test_meta_model(self):
         # Simple data

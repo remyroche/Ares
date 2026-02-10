@@ -178,57 +178,49 @@ def select_trade_candidates_vectorized(panel, feats, pct=0.05, metric="ret24h"):
     # Broadcast valid_counts as a column vector
     vc = valid_counts.values[:, np.newaxis]
     r = ranks.values
-
-    # Separation of Top (short_mr candidate) and Bottom (long_mr candidate) masks
-    top_mask_arr = (r > (vc - k)) & df_metric.notna().values
-    bot_mask_arr = (r <= k) & df_metric.notna().values
-
+    base_mask_arr = (r > (vc - k)) | (r <= k)
+    # Mask out NaN positions
+    base_mask_arr = base_mask_arr & df_metric.notna().values
     # Mask out rows with too few valid values
-    top_mask_arr[valid_counts.values < k, :] = False
-    bot_mask_arr[valid_counts.values < k, :] = False
+    base_mask_arr[valid_counts.values < k, :] = False
 
-    top_mask = pd.DataFrame(top_mask_arr, index=df_metric.index, columns=df_metric.columns)
-    bot_mask = pd.DataFrame(bot_mask_arr, index=df_metric.index, columns=df_metric.columns)
+    base_mask = pd.DataFrame(base_mask_arr, index=df_metric.index, columns=df_metric.columns)
 
     # 2. Volatility & Event Filters (Apply BEFORE Expansion)
+    # This ensures we select events where conditions were met AT THE TIME of the event.
 
-    # Range Filter (Strict > 7% for both Top and Bottom)
+    # Filter 2: 12h High/Low range > 7%
     if "range_12h_pct" in feats:
         vol_metric = feats["range_12h_pct"]
-        vol_mask_top = vol_metric > 0.07
-        vol_mask_bot = vol_metric > 0.07
+        vol_mask = vol_metric > 0.07
     else:
+        # Fallback if feature missing (legacy)
         c = panel["close"]
         h = panel["high"]
         l = panel["low"]
         roll_h = h.rolling(12).max()
         roll_l = l.rolling(12).min()
         vol_metric = (roll_h - roll_l) / (c + 1e-12)
-        vol_mask_top = vol_metric > 0.07
-        vol_mask_bot = vol_metric > 0.07
+        vol_mask = vol_metric > 0.07
 
-    # Volatility Z-score > 1.6 (Common)
+    # Filter 3: Volatility Z-score > 1.6
     if "volatility_zscore" in feats:
-        vz_mask = feats["volatility_zscore"] > 1.6
+        event_mask = feats["volatility_zscore"] > 1.6
     else:
-        vz_mask = pd.DataFrame(True, index=top_mask.index, columns=top_mask.columns)
+        event_mask = pd.DataFrame(True, index=vol_mask.index, columns=vol_mask.columns)
 
-    # Sign Consistency > 80% (Common)
+    # Filter 4: Sign Consistency > 80%
+    # We use Numba optimized function on close prices
     if "close" in panel:
         sc = ff.numba_sign_consistency(panel["close"], 12)
         sc_df = pd.DataFrame(sc, index=panel["close"].index, columns=panel["close"].columns)
         sc_mask = sc_df >= 0.80
     else:
-        sc_mask = pd.DataFrame(True, index=top_mask.index, columns=top_mask.columns)
+        # Fallback if close not in panel (unlikely)
+        sc_mask = pd.DataFrame(True, index=vol_mask.index, columns=vol_mask.columns)
 
-    # Combine Filters
-    # Base Top = Top Rank & Range > 0.07 & VZ & SC
-    final_top = top_mask & vol_mask_top & vz_mask & sc_mask
-
-    # Base Bot = Bot Rank & Range > 0.07 & VZ & SC
-    final_bot = bot_mask & vol_mask_bot & vz_mask & sc_mask
-
-    base_mask = final_top | final_bot
+    # Combine Filters into Base Mask
+    base_mask = base_mask & vol_mask & event_mask & sc_mask
 
     # 3. Time Expansion
     # Offsets: t-12, t-8, t-4, t+4, t+8, t+12, t+16

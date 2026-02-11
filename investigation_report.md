@@ -73,10 +73,9 @@ The addition of **powerful new features** (Wick Ratio, Vol/Price Div, Specialist
 
 **Cause:**
 **Insufficient Regularization for Noisy Features.**
-*   The Meta Models are now using LGBM/XGBoost Quantile Regression, rather than Ridge Regression.
-*   The previous implementation summary mentioned an "Expanded alpha grid" (for linear models), but this is not applicable here.
-*   The current tree-based models likely **overfit** to the noise in the new "Report 2026-02-10" meta features.
-*   The current fixed regularization (`lambda_l1=1.0`, `lambda_l2=10.0`, `min_data_in_leaf=40` for LGBM) appears insufficient to prevent overfitting on the expanded feature set, leading to poor OOS generalization (low IC) and inability to separate top/bottom performers (low Spread).
+*   The Meta Models use Gradient Boosting (LGBM/XGB) with Hyperparameter Optimization (HPO).
+*   Current HPO ranges for regularization (`reg_lambda` max 20-40, `lambda_l1` max 2.0) appear **too low** given the increased noise from the new, expanded feature set ("Report 2026-02-10").
+*   The optimizer may be fitting training noise (improving Pinball Loss) rather than generalizing, leading to poor OOS metrics (IC, Spread) and failure to pass stage gates.
 
 ### D. Success of Short TF Strategy
 **Observation:**
@@ -89,6 +88,6 @@ Short Trend Following (`short_tf`) inherently benefits from volatility expansion
 
 ## 3. Recommendations
 
-1.  **Increase GBDT Regularization:** Since the Meta Models use Gradient Boosting (LGBM/XGB), increase the regularization parameters (e.g., `lambda_l1`, `lambda_l2`, `min_data_in_leaf`) or reduce `num_leaves` to combat overfitting on the new feature set.
+1.  **Extend Regularization Grid:** Update the HPO configuration in `meta_model.py` to explore significantly higher regularization values (e.g., `lambda_l1` up to 10-20, `lambda_l2` up to 100) to force the model to ignore noise in the new feature set.
 2.  **Calibrate Alpha Models:** Re-run calibration tuning (Isotonic or Platt scaling) or apply the missing "Expanded TP/SL Grids" to find more robust risk parameters that might align probabilities better.
 3.  **Verify Candidate Logic:** Ensure the `sign_consistency` check in `candidates.py` is working as intended (using correct data source), as it significantly reduces the candidate pool and improves signal quality.

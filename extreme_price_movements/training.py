@@ -1809,11 +1809,7 @@ def train_models_from_artifacts(datasets, cfg):
             # --- Stage Gate Check (Alpha) ---
             if best_m is not None:
                 race_best = best_m["model"]
-                cv_prec20 = race_best.detailed_metrics.get(race_best.best_model_name, {}).get("CV_Prec20", 1.0)
 
-                # We need OOF probs and targets from the best model (which corresponds to 'race')
-                # But 'race' is the ModelRace instance. Its oof_probs are for the best model.
-                # And we need y, y_ret from the dataset used for best_m["H"]
                 best_H = best_m["H"]
                 best_key = f"train_{side}_{k}_{best_H}"
                 if best_key in datasets:
@@ -1822,12 +1818,28 @@ def train_models_from_artifacts(datasets, cfg):
                     y_ret_best = df_best["__y_ret__"].values
                     oof_best = race_best.oof_probs
 
-                    # Ensure alignment (ModelRace OOF should align with input y)
                     if oof_best is not None and len(oof_best) == len(y_best):
+                        # Compute CV(Prec@20) via bootstrap from OOF predictions
+                        y_bin_hard = (y_best >= 0.5).astype(np.float64)
+                        n_boot = 50
+                        rng = np.random.RandomState(42)
+                        prec_samples = []
+                        n_total = len(y_bin_hard)
+                        k_frac = 0.20
+                        for _ in range(n_boot):
+                            idx_b = rng.choice(n_total, size=n_total, replace=True)
+                            n_k = max(1, int(n_total * k_frac))
+                            top_idx = np.argsort(oof_best[idx_b])[-n_k:]
+                            p_k = np.mean(y_bin_hard[idx_b][top_idx])
+                            prec_samples.append(p_k)
+                        prec_arr = np.array(prec_samples)
+                        cv_prec20 = float(np.std(prec_arr) / (np.mean(prec_arr) + 1e-9))
+                        tprint(f"  {side}_{k}: Bootstrap CV(Prec@20)={cv_prec20:.3f} (mean={np.mean(prec_arr):.3f}, std={np.std(prec_arr):.4f})")
+
                         gate_res = compute_stage_gate_metrics(
                             y_best, oof_best, y_ret_best,
                             model_type="classifier",
-                            cv_prec10=cv_prec20  # Passing CV_Prec20 to the argument named cv_prec10 (which is generic in impl)
+                            cv_prec10=cv_prec20
                         )
                         gate_res["Model"] = f"{side}_{k}"
                         alpha_gate_results.append(gate_res)

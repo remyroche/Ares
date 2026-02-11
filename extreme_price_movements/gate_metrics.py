@@ -27,13 +27,17 @@ def compute_stage_gate_metrics(y_true, y_prob, y_ret=None, model_type="classifie
         return {"passed": False, "reason": "Insufficient data", "metrics": metrics}
 
     if model_type == "classifier":
+        # Binarize soft labels (continuous 0-1 from soft label blending)
+        # sklearn's brier_score_loss / log_loss require binary y_true
+        y_bin = (y_true >= 0.5).astype(np.float64)
+
         # Baseline prevalence
-        base_prev = np.mean(y_true) if baseline_prev is None else baseline_prev
+        base_prev = np.mean(y_bin) if baseline_prev is None else baseline_prev
         metrics["Base_Prev"] = base_prev
 
         # 1. PR-AUC
         try:
-            pr_auc = average_precision_score(y_true, y_prob)
+            pr_auc = average_precision_score(y_bin, y_prob)
         except:
             pr_auc = 0.0
 
@@ -44,12 +48,12 @@ def compute_stage_gate_metrics(y_true, y_prob, y_ret=None, model_type="classifie
         metrics["Pass_PR_AUC"] = pass_pr_auc
 
         # 2. Brier & LogLoss Improvement
-        brier = brier_score_loss(y_true, y_prob)
-        ll = log_loss(y_true, np.clip(y_prob, 1e-7, 1-1e-7))
+        brier = brier_score_loss(y_bin, y_prob)
+        ll = log_loss(y_bin, np.clip(y_prob, 1e-7, 1-1e-7))
 
         base_prob = np.full_like(y_prob, base_prev)
-        base_brier = brier_score_loss(y_true, base_prob)
-        base_ll = log_loss(y_true, base_prob)
+        base_brier = brier_score_loss(y_bin, base_prob)
+        base_ll = log_loss(y_bin, base_prob)
 
         brier_imp = (base_brier - brier) / base_brier if base_brier > 1e-9 else 0.0
         ll_imp = (base_ll - ll) / base_ll if base_ll > 1e-9 else 0.0
@@ -63,9 +67,9 @@ def compute_stage_gate_metrics(y_true, y_prob, y_ret=None, model_type="classifie
 
         # 3. Lift@k and Precision@k Lift
         k = 0.20
-        n_k = max(1, int(len(y_true) * k))
+        n_k = max(1, int(len(y_bin) * k))
         idx = np.argsort(y_prob)[-n_k:]
-        prec_k = np.mean(y_true[idx])
+        prec_k = np.mean(y_bin[idx])
 
         lift_k = prec_k / base_prev if base_prev > 1e-9 else 0.0
         prec_lift_abs = prec_k - base_prev

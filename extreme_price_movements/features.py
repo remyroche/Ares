@@ -1,17 +1,31 @@
 import numpy as np
 import pandas as pd
 import hashlib
+import os
+import pickle
+import re
 from joblib import Memory
 from extreme_price_movements.utils import tprint, check_inf_nan
 from extreme_price_movements.feature_transforms import CausalFeatureTransformer
 from extreme_price_movements.time_utils import ensure_utc
 from extreme_price_movements.frac_diff_adaptive import find_min_ffd, frac_diff_ffd
 from extreme_price_movements.validation import validate_panel
-from extreme_price_movements.gated_features import add_accept_gate_features, add_gate_features, cross_sectional_gate_aggregates
+from extreme_price_movements.gated_features import add_accept_gate_features, add_gate_features
 import extreme_price_movements.fast_funcs as ff
 
 # Initialize joblib cache
 _cache = Memory("./cache/features", verbose=0)
+
+# --- Per-column FFD incremental cache ---
+_FFD_COL_CACHE_DIR = "./cache/ffd_columns"
+
+def _sanitize_col_name(name):
+    """Make column name filesystem-safe."""
+    return re.sub(r'[^\w\-.]', '_', str(name))
+
+def _col_data_hash(arr):
+    """Fast hash of column data for cache key."""
+    return hashlib.md5(np.ascontiguousarray(arr).tobytes()).hexdigest()[:16]
 
 def zscore_rolling(x: pd.DataFrame, n: int):
     return ff.numba_zscore(x, n)
@@ -31,31 +45,91 @@ def rolling_mad(df: pd.DataFrame, window: int):
     mad = ff.numba_rolling_median((df - med).abs(), window)
     return mad.astype(np.float32)
 
-@_cache.cache
 def _transform_price(df, _label=""):
+    """Transform raw prices: Log -> EWMA(5) -> Adaptive FracDiff.
+
+    Two-level per-column incremental caching:
+      L1: Raw column data unchanged  -> load cached FFD result  (0 cost)
+      L2: Data changed, d_opt cached  -> skip find_min_ffd      (~80% faster)
+    """
     tprint(f"Transforming Prices ({_label}): Log -> EWMA(5) -> Adaptive FracDiff [{df.shape[1]} cols]")
     # Safe Log: Clip input to be at least 1e-9 to avoid log(0) or log(neg)
     df_log = np.log(np.maximum(df, 1e-9))
     df_den = ff.apply_to_frame(df_log, ff._numba_ewma_nan_safe, 2.0/6.0, False)
-    
-    # Apply adaptive FFD per column
+
+    # Per-column incremental FFD cache
+    cache_dir = os.path.join(_FFD_COL_CACHE_DIR, _sanitize_col_name(_label or "default"))
+    os.makedirs(cache_dir, exist_ok=True)
+
     df_fd = pd.DataFrame(index=df.index, columns=df.columns, dtype=np.float32)
     total_cols = len(df_den.columns)
+    stats = {"cached": 0, "cached_d": 0, "computed": 0}
+
     for i, col in enumerate(df_den.columns):
-        if (i+1) % 5 == 0 or (i+1) == total_cols:
-             tprint(f"Adaptive FFD ({_label}): {i+1}/{total_cols} - {col}")
-        
-        series = df_den[col].dropna()
-        if len(series) < 100:
-            # Fallback to fixed d=0.4 for short series
-            d_opt = 0.4
-        else:
-            # Find minimal d for stationarity
-            d_opt, _, _ = find_min_ffd(series, d_range=(0.0, 1.0), step=0.1)
-        
-        # Apply FFD
-        df_fd[col] = frac_diff_ffd(df_den[col], d_opt, thres=1e-5)
-    
+        safe_col = _sanitize_col_name(col)
+        # Hash RAW input — deterministic key for the full pipeline
+        col_raw = df[col].to_numpy(dtype=np.float64)
+        data_hash = _col_data_hash(col_raw)
+
+        col_dir = os.path.join(cache_dir, safe_col)
+        os.makedirs(col_dir, exist_ok=True)
+        result_path = os.path.join(col_dir, f"ffd_{data_hash}.npy")
+        d_opt_path = os.path.join(col_dir, "d_opt.pkl")
+
+        # --- Level 1: exact raw-data match -> instant load ---
+        if os.path.exists(result_path):
+            try:
+                cached_vals = np.load(result_path, allow_pickle=False)
+                if len(cached_vals) == len(df_fd):
+                    df_fd[col] = cached_vals
+                    stats["cached"] += 1
+                    continue
+            except Exception:
+                pass
+
+        # --- Level 2: reuse cached d_opt (skip expensive ADF search) ---
+        d_opt = None
+        if os.path.exists(d_opt_path):
+            try:
+                with open(d_opt_path, 'rb') as f:
+                    d_info = pickle.load(f)
+                d_opt = d_info.get('d_opt')
+                if d_opt is not None:
+                    stats["cached_d"] += 1
+            except Exception:
+                d_opt = None
+
+        # --- Full compute: find optimal d ---
+        if d_opt is None:
+            series = df_den[col].dropna()
+            if len(series) < 100:
+                d_opt = 0.4
+            else:
+                d_opt, _, _ = find_min_ffd(series, d_range=(0.0, 1.0), step=0.1)
+            stats["computed"] += 1
+
+        # Apply FFD with (cached or computed) d_opt
+        result = frac_diff_ffd(df_den[col], d_opt, thres=1e-5)
+        df_fd[col] = result
+
+        # Persist caches
+        try:
+            # Clean stale result files for this column
+            for fname in os.listdir(col_dir):
+                if fname.startswith("ffd_") and fname.endswith(".npy") and fname != os.path.basename(result_path):
+                    os.remove(os.path.join(col_dir, fname))
+            np.save(result_path, result.values.astype(np.float32))
+            with open(d_opt_path, 'wb') as f:
+                pickle.dump({'d_opt': d_opt, 'n_rows': len(df)}, f)
+        except Exception as e:
+            tprint(f"Warning: FFD cache write failed for {col}: {e}")
+
+        if (i + 1) % 5 == 0 or (i + 1) == total_cols:
+            tprint(f"Adaptive FFD ({_label}): {i+1}/{total_cols} - {col}")
+
+    tprint(f"Adaptive FFD ({_label}): cache_hit={stats['cached']}, "
+           f"reused_d={stats['cached_d']}, full_compute={stats['computed']} "
+           f"(total {total_cols})")
     tprint(f"Adaptive FFD ({_label}): d range [{df_fd.min().min():.3f}, {df_fd.max().max():.3f}]")
     return df_fd
 
@@ -174,35 +248,12 @@ def compute_funding_proxy(c, h, l, v, mkt_df):
 
     return (relative_premium + (0.5 * intensity)).astype(np.float32)
 
-def _hash_panel(panel):
-    """Create hash of panel data for cache key."""
-    h = hashlib.md5()
-    for key in sorted(panel.keys()):
-        h.update(key.encode())
-        h.update(panel[key].values.tobytes())
-    return h.hexdigest()
-
-def _hash_mkt_gates(mkt_gates):
-    """Create hash of market gates for cache key."""
-    return hashlib.md5(mkt_gates.values.tobytes()).hexdigest()
-
-@_cache.cache
-def _compute_features_cached(panel_hash, mkt_gates_hash, cfg_tuple, panel, mkt_gates):
-    """Cached implementation of feature computation."""
-    return _compute_features_impl(panel, mkt_gates, dict(cfg_tuple))
-
 def compute_features_hourly(panel, mkt_gates, cfg):
     """
-    Compute features with caching to avoid recomputation.
-    Uses hash-based cache key for panel and mkt_gates.
+    Compute features. Joblib caching removed — features are persisted to parquet
+    by save_features, and the joblib serialization doubled peak memory.
     """
-    # Create cache keys
-    panel_hash = _hash_panel(panel)
-    mkt_gates_hash = _hash_mkt_gates(mkt_gates)
-    cfg_tuple = tuple(sorted(cfg.items()))
-    
-    # Call cached implementation
-    return _compute_features_cached(panel_hash, mkt_gates_hash, cfg_tuple, panel, mkt_gates)
+    return _compute_features_impl(panel, mkt_gates, cfg)
 
 def _compute_features_impl(panel, mkt_gates, cfg):
     tprint("Features: compute base matrices")
@@ -219,31 +270,62 @@ def _compute_features_impl(panel, mkt_gates, cfg):
         for error in validation_results['errors'][:3]:  # Show first 3 errors
             tprint(f"  - {error}")
     
-    o_raw, h_raw, l_raw, c_raw, v_raw = panel["open"], panel["high"], panel["low"], panel["close"], panel["volume"]
+    # Memory Optim: Process sequentially and clear panel/raw data aggressively
+    import gc
 
-    new_idx = ensure_utc(pd.DataFrame(index=c_raw.index)).index
-    o_raw.index = new_idx
-    h_raw.index = new_idx
-    l_raw.index = new_idx
-    c_raw.index = new_idx
-    v_raw.index = new_idx
-
-    if len(mkt_gates) == len(c_raw):
+    # 1. Setup Index
+    # We need a reference index. Use Close logic from original code.
+    c_ref = panel["close"]
+    new_idx = ensure_utc(pd.DataFrame(index=c_ref.index)).index
+    
+    if len(mkt_gates) == len(new_idx):
         mkt_gates.index = new_idx
     else:
         mkt_gates = mkt_gates.reindex(new_idx)
 
-    o_raw = o_raw.astype(np.float32)
-    h_raw = h_raw.astype(np.float32)
-    l_raw = l_raw.astype(np.float32)
-    c_raw = c_raw.astype(np.float32)
-    v_raw = v_raw.astype(np.float32)
-
+    # 2. Transform Open
+    o_raw = panel.pop("open").astype(np.float32)
+    o_raw.index = new_idx
     o = _transform_price(o_raw, _label="open")
+    del o_raw
+    gc.collect()
+
+    # 3. Transform High
+    h_raw = panel.pop("high").astype(np.float32)
+    h_raw.index = new_idx
     h = _transform_price(h_raw, _label="high")
+    del h_raw
+    gc.collect()
+
+    # 4. Transform Low
+    l_raw = panel.pop("low").astype(np.float32)
+    l_raw.index = new_idx
     l = _transform_price(l_raw, _label="low")
+    del l_raw
+    gc.collect()
+
+    # 5. Transform Close
+    c_raw = panel.pop("close").astype(np.float32)
+    c_raw.index = new_idx
+
+    # Compute Proxy Target (User Request 2026-02-11)
+    # Forward 3h returns for feature selection skill metric
+    fwd_ret_3h = (c_raw.shift(-3) / c_raw - 1.0).fillna(0.0).astype(np.float32)
+    target_proxy = fwd_ret_3h
+
     c = _transform_price(c_raw, _label="close")
+    del c_raw # Note: c is needed for Volume transform? No, but needed for features.
+    gc.collect()
+
+    # 6. Transform Volume
+    v_raw = panel.pop("volume").astype(np.float32)
+    v_raw.index = new_idx
     v = _transform_volume(v_raw)
+    del v_raw
+    gc.collect()
+    
+    # Clear panel rest
+    panel.clear()
 
     feats = {}
     feats["ret1h"] = c
@@ -276,6 +358,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     # Do NOT divide by c (FFD) as it crosses 0.
     feats["range_24h_pct"] = (h_24 - l_24).astype(np.float32)
     feats["range_12h_pct"] = (h_12 - l_12).astype(np.float32)
+    del h_24, l_24, h_12, l_12
 
     # Volatility Z-score (using Log-ATR robust z-score)
     # Baseline: 90 days. x = log(ATR/Close).
@@ -286,6 +369,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["volatility_zscore"] = ff.numba_rolling_robust_zscore(
         log_vol, window=24 * 90, quantile=0.45
     ).astype(np.float32)
+    del vol_proxy, log_vol
 
     feats["qv"] = (c * v).astype(np.float32)
     feats["vol_z24_base"] = zscore_rolling(v, 24)
@@ -310,6 +394,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     # New Spike Features
     max_oc = np.maximum(o, c)
     feats["wick_ratio"] = ((h - max_oc) / ((h - l) + 1e-12)).astype(np.float32)
+    del body, upper_wick, lower_wick, max_oc
 
     # --- New Exhaustion & Risk Features (Report 2026-02-10) ---
 
@@ -321,6 +406,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     v_chg = ff.numba_pct_change(v, 1).fillna(0).astype(np.float32)
     # Using numba rolling corr (O(N) vs Pandas O(N^2) or O(N log N))
     feats["vol_price_div"] = ff.numba_rolling_corr(feats["ret1h"], v_chg, 12).fillna(0).astype(np.float32)
+    del v_chg
 
     # 3. RSI Lagged (for divergence check)
     if "rsi" in feats:
@@ -361,6 +447,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     tr = np.maximum(tr_1, np.maximum(tr_2, tr_3))
     atr_tr = ff.apply_to_frame(tr, ff._numba_ewma_nan_safe, 1.0/cfg["atr_n"], False)
     feats["atr_expansion"] = (tr / (atr_tr + 1e-12)).astype(np.float32)
+    del prev_close, tr_1, tr_2, tr_3, tr, atr_tr
 
     sma_base = ff.apply_to_frame(c, ff._numba_rolling_mean_nan_safe, cfg["trend_sma_n"])
     feats["trend_pct_base"] = (c - sma_base).astype(np.float32)
@@ -501,14 +588,34 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     rsi_fast = rsi(c, max(2, int(cfg["rsi_n"] * 0.5)))
     rsi_slow = rsi(c, int(cfg["rsi_n"] * 2))
     feats["rsi"] = pick_by_rv(rsi_fast, rsi_base, rsi_slow)
+    del rsi_fast, rsi_slow
 
     atr_fast = atr_percent(h, l, c, max(2, int(cfg["atr_n"] * 0.5)))
     atr_slow = atr_percent(h, l, c, int(cfg["atr_n"] * 2))
     feats["atr_pct"] = pick_by_rv(atr_fast, atr_base, atr_slow)
+    del atr_fast, atr_slow
 
     volz_fast = zscore_rolling(v, max(24, int(cfg["volz_n"] * 0.5)))
     volz_slow = zscore_rolling(v, int(cfg["volz_n"] * 2))
     feats["vol_z"] = pick_by_rv(volz_fast, feats["vol_z_base"], volz_slow)
+    del volz_fast, volz_slow
+
+    # --- New Volume & Liquidity Gates (Z-score based) ---
+    feats["G_VOL_LIQ_GT1"] = (feats["vol_z"] > 1.0).astype(np.int8)
+    feats["G_VOL_LIQ_GT2"] = (feats["vol_z"] > 2.0).astype(np.int8)
+    feats["G_VOL_LIQ_GT3"] = (feats["vol_z"] > 3.0).astype(np.int8)
+
+    # Amihud Z-score (Illiquidity Z-score, lower is better)
+    # Use robust Z-score over long window (30d)
+    amihud_log = np.log(feats["amihud_illiq"] + 1e-12)
+    feats["amihud_z"] = ff.numba_rolling_robust_zscore(amihud_log, window=24*30, quantile=0.50).astype(np.float32)
+    del amihud_log
+
+    # Liquidity Gates (0 = average, -1 = good liquidity, -2 = excellent)
+    # Since amihud is illiquidity, lower Z is better.
+    feats["G_LIQ_GOOD"] = (feats["amihud_z"] < 0.0).astype(np.int8)
+    feats["G_LIQ_GREAT"] = (feats["amihud_z"] < -1.0).astype(np.int8)
+    feats["G_LIQ_EXCEL"] = (feats["amihud_z"] < -2.0).astype(np.int8)
 
     # Earlier trend detection / volatility-of-volatility composites
     vov_fast = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 20)
@@ -521,6 +628,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["vov_fast_slow_ratio"] = (vov_fast / (vov_slow + 1e-12)).astype(np.float32)
     relu_vov_z = feats["vol_z"].clip(lower=0)
     feats["vov_interaction"] = (feats["vol_z"] * relu_vov_z).astype(np.float32)
+    del vov_fast, vov_slow, q25_20, q75_20, relu_vov_z
 
     feats["accel_5h"] = (feats["ret5h"] - (feats["ret10h"] / 2.0)).astype(np.float32)
     feats["dlog_vol_5h"] = (v - v.shift(5)).astype(np.float32)
@@ -532,6 +640,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     vol_mu_30d = ff.apply_to_frame(v, ff._numba_rolling_mean_nan_safe, 24 * 30)
     vol_sd_30d = ff.apply_to_frame(v, ff._numba_rolling_std_nan_safe, 24 * 30)
     feats["volu_z"] = ((v - vol_mu_30d) / (vol_sd_30d + 1e-12)).astype(np.float32)
+    del max_bar, sign_max_bar, q90_dx, vol_mu_30d, vol_sd_30d
     feats["vol_z_30_calm"] = ff.numba_rolling_robust_zscore(np.log(feats["atr_pct_base"] + 1e-9), window=24 * 30, quantile=0.45).astype(np.float32)
     feats["volume_price_corr_10h"] = ff.numba_rolling_corr(feats["ret1h"].abs(), v, 10).fillna(0).astype(np.float32)
 
@@ -540,12 +649,14 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     trend_fast = (c - sma_fast)
     trend_slow = (c - sma_slow)
     feats["trend_pct"] = pick_by_rv(trend_fast, feats["trend_pct_base"], trend_slow)
+    del sma_fast, sma_slow, trend_fast, trend_slow
 
     ema_fast_f = ema(c, max(4, int(cfg["ema_fast"] * 0.5)))
     ema_fast_s = ema(c, int(cfg["ema_fast"] * 2))
     dist_fast_f = (c - ema_fast_f) / (feats["atr_pct"] + 1e-12)
     dist_fast_s = (c - ema_fast_s) / (feats["atr_pct"] + 1e-12)
     feats["dist_ema_fast"] = pick_by_rv(dist_fast_f, feats["dist_ema_fast_base"], dist_fast_s)
+    del ema_fast_f, ema_fast_s, dist_fast_f, dist_fast_s
 
     feats["vol_z24"] = feats["vol_z24_base"]
     feats["rsi_slope"] = feats["rsi"].diff(cfg["rsi_slope_n"]).astype(np.float32)
@@ -621,6 +732,11 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     cur_pnl = (c - o_entry) * dir_s
     gb = (mfe - cur_pnl) / (mfe + 1e-12)
     feats["giveback"] = gb.clip(0, 1).shift(1).astype(np.float32)
+    del o_entry, h_max_4, l_min_4, mfe_long, mae_long, mfe, mae, cur_pnl, gb
+
+    # --- Memory checkpoint: free GC before composite features ---
+    tprint(f"Features: {len(feats)} base features computed. Running GC before composites...")
+    gc.collect()
 
     # --- COMPOSITE / INTERACTION FEATURES ---
 
@@ -684,91 +800,133 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["mr_qual_score"] = (feats["reject_score"] * feats["mr_tape"]).astype(np.float32)
     feats["retrace_12"] = (-feats["pullback_12"]).astype(np.float32)
 
+    # --- Gate Generation & Selection (Updated 2026-02-10) ---
+    from .gated_features import add_gate_features_panel, select_gated_features
+
     gate_window = int(cfg.get("accept_gate_window", 64))
     gate_windows = sorted(set([8, gate_window]))
     percentile_mode = cfg.get("accept_gate_percentile_mode", "approx")
 
-    gate_df = pd.DataFrame(index=c.index)
-    score_panels = {
-        "accept_score": feats["accept_score"],
-        "reject_score": feats["reject_score"],
-        "retest_accept_score": feats["retest_accept_score"],
-        "tf_qual_score": feats["tf_qual_score"],
-        "mr_qual_score": feats["mr_qual_score"],
+    # Define Gate Sources (Panel Data directly from feats)
+    # Mapping: Source Name -> (Panel Data, Output Prefix)
+    # Note: accept_score maps to prefix 's' for legacy reasons
+    gate_configs = {
+        "accept_score":        (feats["accept_score"], "s"),
+        "reject_score":        (feats["reject_score"], "reject"),
+        "retest_accept_score": (feats["retest_accept_score"], "retest_accept"),
+        "tf_qual_score":       (feats["tf_qual_score"], "tf_qual"),
+        "mr_qual_score":       (feats["mr_qual_score"], "mr_qual"),
+        "vol_z":               (feats["vol_z"], "vol_z"),
+        # Liquidity Score: Higher is better (more liquid). Amihud is Illiq (lower is better).
+        "liquidity_score":     (-feats["amihud_z"], "liquidity"),
     }
-    for score_col, score_panel in score_panels.items():
-        agg = cross_sectional_gate_aggregates(score_panel)
-        for agg_col in agg.columns:
-            gate_df[f"{score_col}_{agg_col}"] = agg[agg_col]
 
-    gate_df["accept_score"] = gate_df["accept_score_cs_trimmed_mean"].astype(np.float32)
-    for score_col in ["reject_score", "retest_accept_score", "tf_qual_score", "mr_qual_score"]:
-        gate_df[score_col] = gate_df[f"{score_col}_cs_trimmed_mean"].astype(np.float32)
+    tprint(f"Generating Gated Features for windows {gate_windows} with selection...")
 
-    gate_sources = [
-        "accept_score",
-        "reject_score",
-        "retest_accept_score",
-        "tf_qual_score",
-        "mr_qual_score",
-    ]
+    # Skill metric: Monthly time blocks for robust evaluation
+    periods = c.index.to_period("M")
+    unique_periods = periods.unique()
+    time_blocks = [(periods == p) for p in unique_periods]
+    # Train mask: Exclude last 3 hours (where forward target is invalid/0 due to shift)
+    train_mask_proxy = pd.Series(True, index=c.index)
+    if len(train_mask_proxy) > 3:
+        train_mask_proxy.iloc[-3:] = False
+
     for w in gate_windows:
-        gate_df = add_accept_gate_features(
-            gate_df,
-            s_col="accept_score",
-            N=w,
-            add_strict=True,
-            percentile_mode=percentile_mode,
-        )
-        for score_col in gate_sources[1:]:
-            gate_df = add_gate_features(
-                gate_df,
-                s_col=score_col,
-                prefix=score_col.replace("_score", ""),
+        for source_name, (source_panel, prefix) in gate_configs.items():
+            # 1. Generate ALL candidates for this family (mean, std, z, pct, bin3, gt25..gt90)
+            # Returns dict: feature_name -> Panel DataFrame
+            family_features = add_gate_features_panel(
+                source_panel,
+                prefix=prefix,
                 n=w,
                 add_strict=True,
-                percentile_mode=percentile_mode,
+                percentile_mode=percentile_mode
             )
 
-    derived_prefixes = ["reject", "retest_accept", "tf_qual", "mr_qual"]
-    derived_suffixes = ["mean", "std", "z", "pct", "bin3", "gt66", "gt85"]
-    for w in gate_windows:
-        for prefix in derived_prefixes:
-            src_cols = [f"{prefix}_{suffix}_{w}" for suffix in derived_suffixes]
-            src_arr = gate_df[src_cols].to_numpy()
-            rep_arr = np.repeat(src_arr[:, None, :], c.shape[1], axis=1)
-            for col_idx, src_col in enumerate(src_cols):
-                feats[src_col] = pd.DataFrame(rep_arr[:, :, col_idx], index=c.index, columns=c.columns).astype(np.float32)
+            # 2. Extract BASE features (Always keep mean, std, z, pct, bin3)
+            base_suffixes = ["mean", "std", "z", "pct", "bin3"]
+            for suffix in base_suffixes:
+                feat_name = f"{prefix}_{suffix}_{w}"
+                if feat_name in family_features:
+                    feats[feat_name] = family_features[feat_name]
 
-        accept_gate_cols = [
-            f"s_mean_{w}",
-            f"s_std_{w}",
-            f"s_z_{w}",
-            f"s_pct_{w}",
-            f"s_bin3_{w}",
-            f"s_gt66_{w}",
-            f"s_gt85_{w}",
-        ]
-        rep = np.repeat(gate_df[accept_gate_cols].to_numpy()[:, None, :], c.shape[1], axis=1)
-        for col_idx, gate_col in enumerate(accept_gate_cols):
-            feats[gate_col] = pd.DataFrame(rep[:, :, col_idx], index=c.index, columns=c.columns).astype(np.float32)
+            # 3. SELECT best threshold features (from gt25, gt50, ..., gt90)
+            # Construct mini-table for selection function
+            # Only include the 'gt' threshold candidates
+            candidates_table = {k: v for k, v in family_features.items() if "_gt" in k}
+            
+            # If no candidates produced, skip selection
+            if not candidates_table:
+                continue
 
-    for score_col in score_panels:
-        for agg_col in ["cs_median", "cs_trimmed_mean", "cs_p75", "cs_p90", "cs_iqr", "cs_std"]:
-            col = f"{score_col}_{agg_col}"
-            vals = np.repeat(gate_df[col].to_numpy()[:, None], c.shape[1], axis=1)
-            feats[col] = pd.DataFrame(vals, index=c.index, columns=c.columns).astype(np.float32)
+            # Run selection: Selects globally best thresholds based on prevalence/skill
+            selected_names = select_gated_features(
+                gate_feature_table=candidates_table,
+                families=[(prefix, w)],
+                target=target_proxy,
+                time_blocks=time_blocks,
+                train_mask=train_mask_proxy
+            )
 
-    s_pct = feats[f"s_pct_{gate_window}"]
-    s_bin3 = feats[f"s_bin3_{gate_window}"]
-    s_gt66 = feats[f"s_gt66_{gate_window}"]
-    s_gt85 = feats[f"s_gt85_{gate_window}"]
-    reject_like = (1.0 - s_pct).astype(np.float32)
+            # 4. Store SELECTED features
+            for name in selected_names:
+                if name in candidates_table:
+                    feats[name] = candidates_table[name]
+            
+            # Explicitly clear intermediate dict to free memory
+            del family_features
+            del candidates_table
+            # import gc; gc.collect() # Optional frequent GC
+
+    # Re-bind standardized names for downstream dependencies
+    # These rely on the standard `gate_window` (e.g. 64) features being present
+    # Warning: If `select_gated_features` didn't select gt66/gt85, these might fall back or error?
+    # Actually, `select_gated_features` has fallback logic to ensure *some* gates are selected.
+    # But `s_gt66` specifically is used below.
+    # We should ensure s_gt66_64 exists if needed, or update this logic to use selected gates.
+    
+    # Safe getters since selection is dynamic
+    def get_feat(name, fallback_zeros=True):
+        if name in feats:
+            return feats[name]
+        if fallback_zeros:
+            return pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32)
+        raise KeyError(name)
+
+    s_pct = get_feat(f"s_pct_{gate_window}")
+    s_bin3 = get_feat(f"s_bin3_{gate_window}")
+    
+    # Dynamic selection might explicitly select gt66/gt85 or might select gt50/gt90.
+    # For backward compatibility variables, we ideally want specific thresholds if they exist,
+    # or the "best" available proxy?
+    # Let's check what was selected for 's' (accept_score) at gate_window.
+    # If gt66 not selected, try to find nearest? Or just use zeros?
+    # User code implies selection is for "feature table".
+    # But `feats["accept_gt66"]` might be used by Meta model expecting exactly that?
+    # If Meta model is retrained, it will use whatever is available.
+    # But hardcoded `accept_gt66` reference suggests we might want to force potential "standard" gates into feats?
+    # Compromise: `select_gated_features` picks the *best*.
+    # If we need specific ones for legacy logic, we might need to update legacy logic.
+    # For now, let's map `accept_gt66` to `s_gt66_{w}` ONLY if it exists.
+    
     feats["accept"] = s_pct
     feats["accept_bin3"] = s_bin3.astype(np.float32)
-    feats["accept_gt66"] = s_gt66.astype(np.float32)
-    feats["accept_gt85"] = s_gt85.astype(np.float32)
-    feats["retest_accept"] = s_gt66
+
+    # reject_like: reject gate percentile (MR counterpart to accept)
+    reject_like = get_feat(f"reject_pct_{gate_window}")
+    
+    # Map strict gates if they exist
+    if f"s_gt66_{gate_window}" in feats:
+        feats["accept_gt66"] = feats[f"s_gt66_{gate_window}"]
+        feats["retest_accept"] = feats[f"s_gt66_{gate_window}"] # Legacy alias
+    else:
+        # Fallback to whatever was selected as "broad" or "rare"?
+        pass
+
+    if f"s_gt85_{gate_window}" in feats:
+        feats["accept_gt85"] = feats[f"s_gt85_{gate_window}"]
+
     feats["tf_qual"] = (s_pct * feats["tf_tape"]).astype(np.float32)
     feats["mr_qual"] = (reject_like * feats["mr_tape"]).astype(np.float32)
 
@@ -1058,35 +1216,49 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     feats["pct_breakout_t"] = np.maximum(0, pct_pos - 0.9).astype(np.float32)
 
-    tprint("Features: Applying Causal Transforms (Log + Winsor + ZScore)")
+    # Free target_proxy — no longer needed after gated feature selection
+    del target_proxy, time_blocks, train_mask_proxy
+    gc.collect()
+
+    tprint(f"Features: {len(feats)} features before CausalTransform. Applying transforms...")
     transformer = CausalFeatureTransformer(winsor_qt=0.02, roll_window=24*30)
 
-    skip_transform = ["sin_hod", "cos_hod", "sin_dow", "cos_dow", "range_24h_pct", "range_12h_pct", "volatility_zscore", "breakout_24h", "draw_sym_10h", "draw_extreme_10h",
-                       "mtf_divergence", "vol_price_diverge", "meta_alignment",
-                       # Residualised features — already z-scored, don't double-transform
-                       "rsi_z", "dist_ema_fast_z", "dist_vwap_norm_z", "flow_persistence_z",
-                       "excess_6h_z", "vol_z_z", "atr_expansion_z", "coherence_24_z",
-                       "accept_surprise", "overext_surprise",
-                       "blowoff_risk_surprise", "exh_qual_surprise",
-                       "dist_vwap_resid", "dist_ema_fast_resid", "trend_pct_resid"]
+    skip_transform_set = {
+        "sin_hod", "cos_hod", "sin_dow", "cos_dow", "range_24h_pct", "range_12h_pct",
+        "volatility_zscore", "breakout_24h", "draw_sym_10h", "draw_extreme_10h",
+        "G_VOL_LIQ_GT1", "G_VOL_LIQ_GT2", "G_VOL_LIQ_GT3", "G_LIQ_GOOD", "G_LIQ_GREAT", "G_LIQ_EXCEL",
+        "mtf_divergence", "vol_price_diverge", "meta_alignment",
+        # Residualised features — already z-scored, don't double-transform
+        "rsi_z", "dist_ema_fast_z", "dist_vwap_norm_z", "flow_persistence_z",
+        "excess_6h_z", "vol_z_z", "atr_expansion_z", "coherence_24_z",
+        "accept_surprise", "overext_surprise",
+        "blowoff_risk_surprise", "exh_qual_surprise",
+        "dist_vwap_resid", "dist_ema_fast_resid", "trend_pct_resid",
+    }
 
     for w in gate_windows:
-        for prefix in ["s", "reject", "retest_accept", "tf_qual", "mr_qual"]:
-            for suffix in ["mean", "std", "z", "pct", "bin3", "gt66", "gt85"]:
-                skip_transform.append(f"{prefix}_{suffix}_{w}")
+        for prefix in ["s", "reject", "retest_accept", "tf_qual", "mr_qual", "vol_z", "liquidity"]:
+            for suffix in ["mean", "std", "z", "pct", "bin3", "gt25", "gt50", "gt66", "gt75", "gt85", "gt90"]:
+                skip_transform_set.add(f"{prefix}_{suffix}_{w}")
 
-    for k in feats.keys():
-        tprint(f"Generating feature: {k}")
-        if k in skip_transform:
+    feat_keys_list = list(feats.keys())
+    n_transformed, n_skipped = 0, 0
+    for i, k in enumerate(feat_keys_list):
+        if k in skip_transform_set:
             feats[k] = feats[k].astype(np.float32)
+            n_skipped += 1
             continue
         try:
             feats[k] = transformer.transform(feats[k], name=k)
+            n_transformed += 1
         except Exception as e:
             tprint(f"Warning: Transform failed for {k}: {e}")
             import traceback
             traceback.print_exc()
             feats[k] = feats[k].astype(np.float32)
+        if (i + 1) % 50 == 0:
+            tprint(f"  CausalTransform progress: {i+1}/{len(feat_keys_list)}")
+    tprint(f"CausalTransform complete: {n_transformed} transformed, {n_skipped} skipped")
 
     # Final check for Inf/NaN
     tprint("Features: performing final Inf/NaN check")

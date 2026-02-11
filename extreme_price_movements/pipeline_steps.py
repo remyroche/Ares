@@ -1219,6 +1219,9 @@ def run_feature_generation_step(ts_sig, margin_symbols, cfg, store):
     # 3. Compute Features (Panel)
     tprint("Constructing Panel...")
     panel = to_panel(dfs)
+    del dfs
+    tprint("Panel constructed. Cleared raw dfs from memory.")
+    import gc; gc.collect()
     
     tprint("Computing Market Features...")
     mkt_df = compute_market_features(panel, cfg["market_basket"])

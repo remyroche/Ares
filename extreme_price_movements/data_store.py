@@ -372,43 +372,43 @@ def save_features(feats: dict, ts: pd.Timestamp, root_dir: str):
     correct restoration of special characters (e.g. slashes) upon loading.
 
     feats: dict of DataFrames (feature_name -> DataFrame(index=t, cols=syms))
+
+    Memory-optimized: extracts columns directly per symbol instead of
+    pre-materializing all numpy arrays (which doubled peak memory).
     """
+    import gc
     ts_str = ts.strftime("%Y%m%d_%H%M%S")
     out_dir = os.path.join(root_dir, "features", ts_str)
     os.makedirs(out_dir, exist_ok=True)
     
     tprint(f"Saving features to {out_dir}...")
     
-    # 1. Pivot from  Dict[Feat -> DF(Sims)]  to  Dict[Sym -> DF(Feats)]
-    # We assume all DFs have same columns (symbols) and index
     first_key = list(feats.keys())[0]
-    symbols = feats[first_key].columns
-    
-    # Pre-extract numpy arrays + index once (avoids repeated pandas overhead)
+    symbols = list(feats[first_key].columns)
     feat_keys = [k for k in feats if hasattr(feats[k], "columns")]
-    feat_arrays = {}  # key -> (numpy_array, col_list)
-    for k in feat_keys:
-        df = feats[k]
-        feat_arrays[k] = (df.values, list(df.columns))
     time_index = feats[first_key].index
+    
+    # Build column-index lookup once per feature (avoids repeated .index() calls)
+    col_idx = {}  # feat_key -> {sym: int}
+    for k in feat_keys:
+        cols = list(feats[k].columns)
+        col_idx[k] = {s: i for i, s in enumerate(cols)}
     
     count = 0
     total = len(symbols)
     
     for i, sym in enumerate(symbols):
         try:
-            # Fast numpy column extraction
             parts = {}
             for k in feat_keys:
-                arr, cols = feat_arrays[k]
-                if sym in cols:
-                    j = cols.index(sym)
-                    parts[k] = arr[:, j]
+                idx_map = col_idx[k]
+                if sym in idx_map:
+                    j = idx_map[sym]
+                    parts[k] = feats[k].iloc[:, j].values
             
             df_sym = pd.DataFrame(parts, index=time_index)
             df_sym["__symbol__"] = sym
 
-            # Save
             safe_sym = sym.replace("/", "_")
             fname = f"symbol={safe_sym}.parquet"
             fpath = os.path.join(out_dir, fname)
@@ -417,6 +417,7 @@ def save_features(feats: dict, ts: pd.Timestamp, root_dir: str):
             count += 1
             if count % 50 == 0:
                 tprint(f"Saved features for {count}/{total} symbols...")
+                gc.collect()
                 
         except Exception as e:
             tprint(f"Failed to save features for {sym}: {e}")

@@ -18,8 +18,10 @@ REQUIRED_COLUMNS = {
 
 @dataclass(frozen=True)
 class LoadTradesConfig:
-    confidence_floor: float = 0.60
+    # Deprecated: fixed floor. Now we use top 20% decile.
+    confidence_floor: float = 0.0
     timeframe: str = "15min"
+    top_percentile: float = 0.80 # Top 20%
 
 
 def _ensure_columns(df: pd.DataFrame, cols: Iterable[str]) -> None:
@@ -36,7 +38,12 @@ def load_trades_for_bucket(trades: pd.DataFrame, bucket: str, cfg: LoadTradesCon
     out["timestamp"] = pd.to_datetime(out["timestamp"], utc=True, errors="coerce")
     out = out.dropna(subset=["timestamp"]) 
     out = out[out["bucket"].astype(str) == str(bucket)]
-    out = out[out["confidence"].astype(float) >= float(cfg.confidence_floor)]
+
+    # Calculate threshold for Top 20%
+    if not out.empty:
+        threshold = out["confidence"].quantile(cfg.top_percentile)
+        out = out[out["confidence"] >= threshold]
+
     out["timestamp_15m"] = out["timestamp"].dt.floor(cfg.timeframe)
     out = out.sort_values("timestamp_15m").reset_index(drop=True)
     return out

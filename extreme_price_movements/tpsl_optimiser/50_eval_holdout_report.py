@@ -23,6 +23,24 @@ def evaluate_holdout(trades: pd.DataFrame, net_returns: np.ndarray) -> dict:
         "holdout_win_rate": float((df["net_return"] > 0).mean()) if len(df) else 0.0,
     }
 
+    # Decile Metrics (Top 10, 20, 30%)
+    if not df.empty and "confidence" in df.columns:
+        decile_rows = []
+        for pct in [0.90, 0.80, 0.70]: # Top 10%, 20%, 30%
+            threshold = df["confidence"].quantile(pct)
+            subset = df[df["confidence"] >= threshold]
+
+            # Use round to ensure "Top10%" instead of "Top9%"
+            decile_val = int(round((1.0 - pct) * 100))
+            label = f"Top{decile_val}%"
+            decile_rows.append({
+                "decile": label,
+                "n_trades": int(len(subset)),
+                "pnl_net": float(subset["net_return"].sum()),
+                "win_rate": float((subset["net_return"] > 0).mean()) if len(subset) else 0.0,
+            })
+        out["decile_metrics"] = decile_rows
+
     vol = df.get("realized_vol_12", pd.Series(np.abs(df["net_return"].rolling(12, min_periods=1).std())))
     volume = df.get("volume_12", pd.Series(np.ones(len(df))))
     trend = df.get("trend_12", pd.Series(df["net_return"].rolling(12, min_periods=1).mean()))

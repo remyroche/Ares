@@ -27,7 +27,16 @@ def optimise_profit_exit(trades: pd.DataFrame, trade_returns: np.ndarray, tp_pct
     best = None
     trials_data = []
 
-    for act_n, be_act_n, d_min, d_max in product([0.5, 0.75, 1.0], [0.25, 0.5, 0.75], [0.1, 0.2, 0.3], [0.5, 0.8, 1.0]):
+    # Add baseline: no trailing/penalty
+    # Simulate by setting act_n high enough it never triggers or penalty is 0.
+    # But this logic here assumes penalty is ALWAYS applied based on params.
+    # To simulate "Keep TP/SL defined in 1)", we should have a case where penalty is 0.
+    # If act_n = be_act_n, penalty is 0.
+    grid = list(product([0.5, 0.75, 1.0], [0.25, 0.5, 0.75], [0.1, 0.2, 0.3], [0.5, 0.8, 1.0]))
+    # Add "disabled" config: act_n=1.0, be_act_n=1.0 => penalty = 0
+    grid.append((1.0, 1.0, 0.0, 0.0))
+
+    for act_n, be_act_n, d_min, d_max in grid:
         # trail_penalty is % of TP? No, it's clipped to [0,1] * tp_pct_entry
         # Wait, if act_n < be_act_n, penalty is 0.
         # tp_pct_entry is the TP distance (e.g. 0.02).

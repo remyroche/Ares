@@ -15,8 +15,8 @@ class TpSlCalibrationConfig:
     warmup_bars: int = 96
     lo: float = 0.6
     hi: float = 2.5
-    tp_grid: tuple[float, ...] = (1.5, 2.0, 2.5, 3.0)
-    sl_grid: tuple[float, ...] = (0.75, 1.0, 1.25)
+    tp_grid: tuple[float, ...] = (2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 6.0, 7.0, 8.0)
+    sl_ratio_grid: tuple[float, ...] = (1.25, 1.0, 0.75, 0.66, 0.5, 0.33, 0.25)
 
 
 def _ewm_halflife(s: pd.Series, hl_bars: int) -> pd.Series:
@@ -77,22 +77,14 @@ def calibrate_tp_sl(trades: pd.DataFrame, atr_scale: pd.Series, cfg: TpSlCalibra
     test_mask = ~train_mask
     has_test = np.any(test_mask)
 
-    for tp_mult, sl_mult in product(cfg.tp_grid, cfg.sl_grid):
+    for tp_mult, sl_ratio in product(cfg.tp_grid, cfg.sl_ratio_grid):
+        sl_mult = tp_mult / sl_ratio
+
         tp_pct = tp_mult * df["atr_scale"].to_numpy()
         sl_pct = sl_mult * df["atr_scale"].to_numpy()
-        rr = tp_pct / (sl_pct + 0.5)
-
-        # Check RR validity on full set or just train? Usually policy constraint applies globally.
-        mask = rr >= 1.5
-        if mask.sum() < 10:
-            continue
 
         # Apply TP/SL logic (Gross returns clipped)
         # Note: logic assumes exit at TP or SL if touched.
-        # Ideally we check high/low against levels, but here we assume 'base_ret' is the full potential return
-        # and we cap it. This is a simplification common in optimization steps.
-        # However, real simulation checks path. Since we lack path here, we rely on approximations.
-        # But 'optimize_profit_exit' implies trailing logic later.
         clipped = np.clip(base_ret, -sl_pct, tp_pct)
 
         # --- Train Selection ---
@@ -108,6 +100,7 @@ def calibrate_tp_sl(trades: pd.DataFrame, atr_scale: pd.Series, cfg: TpSlCalibra
         trial_metrics = {
             "tp_mult": tp_mult,
             "sl_mult": sl_mult,
+            "sl_ratio": sl_ratio,
             "train_pnl": pnl,
             "train_sortino": sortino,
         }

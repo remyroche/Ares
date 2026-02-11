@@ -8,37 +8,25 @@ Based on a detailed code inspection, the following changes were introduced in th
 
 ### A. New Feature Engineering (`extreme_price_movements/features.py`)
 A significant block of features labeled **"Report 2026-02-10"** was added to the `compute_features_hourly` function. These features focus on exhaustion, risk, and specific strategy signals:
-*   **Exhaustion Features:**
-    *   `wick_ratio_4h_max`: Rolling max of wick ratio (detects rejection).
-    *   `vol_price_div`: Volume-price divergence (correlation of returns and volume changes).
-    *   `rsi_lag1`, `rsi_1h_slope`: RSI momentum and change.
-    *   `clv_mean_24`: Mean Close Location Value (skewness proxy).
-    *   `vol_z_4h`: Short-term volume z-score.
-    *   `atr_pct_change`: Volatility cooling signal.
-*   **Risk Features:**
-    *   `cvar_5pct`: Conditional Value at Risk proxy (tail risk).
-    *   `amihud_illiq`: Amihud illiquidity proxy (price impact per unit volume).
-*   **Meta Features (TF & MR):**
-    *   `trend_t`, `trend_z_t`, `convexity_t`, `breakout_t`, `rvol_ratio`.
-    *   `vw_breakout`, `breakout_soft`, `tail_score`.
-    *   `mr_soft`, `mr_potential`, `climax`, `vol_exhaust`, `shock_decay`, `pct_extreme`, `stall`, `mr_failure`.
-*   **Alpha Features:**
-    *   `breakout_min`, `impulse_reversal`, `impulse_reversal_short`, `breakout_confirmed`, `pct_breakout_t`.
+*   **Exhaustion Features:** `wick_ratio_4h_max`, `vol_price_div`, `rsi_lag1`, `rsi_1h_slope`, `clv_mean_24`, `vol_z_4h`, `atr_pct_change`.
+*   **Risk Features:** `cvar_5pct`, `amihud_illiq`.
+*   **Meta Features:** `trend_t`, `breakout_t`, `rvol_ratio`, `mr_soft`, `climax`, `shock_decay`, etc.
+*   **Alpha Features:** `breakout_min`, `impulse_reversal`, `breakout_confirmed`.
 
 ### B. Specialist Model Integration (`extreme_price_movements/training.py`)
 *   **OOF Injection:** The training pipeline now explicitly injects **Out-of-Fold (OOF) predictions** from specialist models (`trap_score`, `gamma_score`) into the feature set for Alpha models.
-*   **Feature Filtering:** Training data for Alpha models is filtered using specific `tf_feature_keys` and `mr_feature_keys`, while Meta models receive the full feature set plus `pred_logit` and interaction terms.
+*   **Feature Filtering:** Training data for Alpha models is filtered using specific `tf_feature_keys` and `mr_feature_keys`.
 
 ### C. Candidate Selection Logic (`extreme_price_movements/candidates.py`)
-*   **Vectorized Filters:** The `select_trade_candidates_vectorized` function now enforces stricter criteria:
-    *   **Range Filter:** `range_12h_pct > 0.07` (12h High/Low range > 7%).
+*   **Vectorized Filters:** The `select_trade_candidates_vectorized` function (newly added) enforces stricter criteria:
+    *   **Range Filter:** `range_12h_pct > 0.07`.
     *   **Volatility Filter:** `volatility_zscore > 1.6`.
-    *   **Sign Consistency:** `sign_consistency >= 0.80` (requires 80% of recent returns to align with trend direction).
-*   **Time Expansion:** Candidates are expanded with offsets `[-12, -8, -4, 4, 8, 12, 16]` hours around the event to capture context.
+    *   **Sign Consistency:** `sign_consistency >= 0.80`.
+*   **Time Expansion:** Candidates are expanded with offsets `[-12, -8, -4, 4, 8, 12, 16]` hours.
 
 ### D. Training Pipeline Updates (`extreme_price_movements/training.py`)
-*   **Feature Selection:** Now uses `mdi_feature_selection_v3` with `ExtraTreesRegressor`.
-*   **Risk Optimization:** `optimize_risk_params` uses `run_tp_sl_selection_fast` with a **smaller** grid (TP max 1.5) than the "Expanded" version described in the implementation summary (TP max 3.0).
+*   **Feature Selection:** Uses `mdi_feature_selection_v3` with `ExtraTreesRegressor`.
+*   **Risk Optimization:** Uses `run_tp_sl_selection_fast` with a **smaller** grid (TP max 1.5) than intended.
 
 ---
 
@@ -53,9 +41,7 @@ The observed shifts in model performance metrics are a direct result of the chan
 *   `short_tf` Rw-AUC: +0.022
 
 **Cause:**
-The addition of **powerful new features** (Wick Ratio, Vol/Price Div, Specialist Scores) provides better signal discrimination.
-*   `wick_ratio_4h_max` and `vol_price_div` are excellent for detecting exhaustion, which directly improves `short_mr` (Mean Reversion) and `short_tf` (Trend Following breakdown) strategies.
-*   `trap_score` and `gamma_score` (Specialist OOFs) likely add high-quality, independent information about trap probability and volatility regimes, boosting the Information Coefficient (IC).
+The addition of **powerful new features** (Wick Ratio, Vol/Price Div, Specialist Scores) provides better signal discrimination, boosting the model's ranking ability (AUC) and correlation with returns (IC).
 
 ### B. Degradation in Alpha Calibration (ECE@10)
 **Observation:**
@@ -63,9 +49,10 @@ The addition of **powerful new features** (Wick Ratio, Vol/Price Div, Specialist
 *   `long_tf` ECE@10: +0.130 (worse)
 
 **Cause:**
-**Overconfidence.**
-*   The new features make the models more confident (pushing probabilities closer to 0 or 1).
-*   Models rank well (high AUC) but are miscalibrated (high ECE), meaning their probability estimates are too extreme compared to actual win rates.
+**Calibration Pipeline Mismatch in `ModelRace`.**
+*   The `ModelRace` logic trains the `IsotonicRegression` calibrator on **bias-corrected OOF probabilities** (where the mean is forced to match the low target prevalence, e.g., 5%).
+*   However, during inference (`predict_proba`), the final model's **raw, uncorrected output** (often biased around 0.5 due to class balancing/weighting) is fed directly into this calibrator.
+*   Since the input distributions differ drastically (Bias-Corrected vs. Raw), the Isotonic model misinterprets the high raw scores as extreme confidence, resulting in poorly calibrated final probabilities and high ECE.
 
 ### C. Failure of Meta Models (Spread/IC)
 **Observation:**
@@ -73,21 +60,21 @@ The addition of **powerful new features** (Wick Ratio, Vol/Price Div, Specialist
 
 **Cause:**
 **Insufficient Regularization for Noisy Features.**
-*   The Meta Models use Gradient Boosting (LGBM/XGB) with Hyperparameter Optimization (HPO).
-*   Current HPO ranges for regularization (`reg_lambda` max 20-40, `lambda_l1` max 2.0) appear **too low** given the increased noise from the new, expanded feature set ("Report 2026-02-10").
-*   The optimizer may be fitting training noise (improving Pinball Loss) rather than generalizing, leading to poor OOS metrics (IC, Spread) and failure to pass stage gates.
+*   The Meta Models use GBDT (LGBM/XGB) Quantile Regression with HPO.
+*   The current HPO ranges for regularization (`reg_lambda` max 20-40) are **insufficient** for the increased noise dimensionality introduced by the new feature set.
+*   The optimizer likely overfits to training noise (improving validation Pinball Loss locally) but fails to generalize to the OOS spread metric used in the gates.
 
 ### D. Success of Short TF Strategy
 **Observation:**
 *   `short_tf` passed all stage gates.
 
 **Reason:**
-Short Trend Following (`short_tf`) inherently benefits from volatility expansion and breakdown signals. The new `vol_price_div` (volume-price divergence) and `breakout_confirmed` features are particularly strong predictors for this regime, allowing it to maintain high precision (Lift@k) even if calibration is imperfect.
+Short Trend Following inherently benefits from volatility expansion signals (`vol_price_div`, `breakout_confirmed`), allowing it to maintain high precision even with imperfect calibration.
 
 ---
 
 ## 3. Recommendations
 
-1.  **Extend Regularization Grid:** Update the HPO configuration in `meta_model.py` to explore significantly higher regularization values (e.g., `lambda_l1` up to 10-20, `lambda_l2` up to 100) to force the model to ignore noise in the new feature set.
-2.  **Calibrate Alpha Models:** Re-run calibration tuning (Isotonic or Platt scaling) or apply the missing "Expanded TP/SL Grids" to find more robust risk parameters that might align probabilities better.
-3.  **Verify Candidate Logic:** Ensure the `sign_consistency` check in `candidates.py` is working as intended (using correct data source), as it significantly reduces the candidate pool and improves signal quality.
+1.  **Fix Alpha Calibration:** Update `ModelRace.predict_proba` to apply the same **Bias Correction** to the raw model output *before* passing it to the Isotonic Calibrator, ensuring consistent input distributions.
+2.  **Extend Meta Model Regularization:** Update `meta_model.py` to extend the HPO grid for regularization parameters to much higher values (e.g., `lambda` up to 100) to force generalization.
+3.  **Verify Candidate Logic:** Ensure `sign_consistency` uses the correct data source (Panel vs Features).

@@ -6,6 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 from collections import defaultdict
+import importlib.util
 
 from numba import jit
 import numpy as np
@@ -18,6 +19,12 @@ from sklearn.preprocessing import QuantileTransformer, StandardScaler
 from sklearn.utils import check_random_state
 from .utils import tprint, check_inf_nan, clean_dataset
 from .sequential_bootstrap import get_ind_matrix, seq_bootstrap
+
+# Optional LightGBM for early-stopping capable selectors
+if importlib.util.find_spec("lightgbm") is not None:
+    import lightgbm as lgb
+else:
+    lgb = None
 
 # ======================================================================================
 # Purged + Embargoed CV (time series)
@@ -199,7 +206,7 @@ def linear_prescreen_enet(
     X: pd.DataFrame,
     y: np.ndarray,
     n_select: int,
-    multiplier: int = 5,
+    multiplier: int = 4,
     l1_ratio: float = 0.6,
     alpha_lo: float = 1e-6,
     alpha_hi: float = 1e1,
@@ -324,6 +331,7 @@ def mdi_feature_selection_v3(
     n_splits: int = 6,
     purge: int = 5,
     min_samples_leaf: int = 50,
+    min_samples_leaf_pct: float = 0.01,
     min_impurity_decrease: float = 1e-4,
     analysis_n_estimators: int = 500, # Higher for 150-feature stability
 
@@ -390,10 +398,12 @@ def mdi_feature_selection_v3(
         end_features = min_features
 
     if base_model is None:
+        default_leaf = max(1, int(np.ceil(min_samples_leaf_pct * len(X))))
         base_model = ExtraTreesRegressor(
             n_estimators=500,
             max_depth=None,
-            min_samples_leaf=20,
+            min_samples_leaf=default_leaf,
+            min_samples_split=max(2, 3 * default_leaf),
             max_features='sqrt',
             n_jobs=-1,
             random_state=42
@@ -518,13 +528,13 @@ def mdi_feature_selection_v3(
 
     current_features = kept_features
 
-    if len(current_features) > 5 * end_features:
+    if len(current_features) > 4 * end_features:
         tprint(f"MDI: Running Linear ElasticNet prescreen on {len(current_features)} features...")
         prescreened_features = linear_prescreen_enet(
             X[current_features],
             y_np,
             n_select=end_features,
-            multiplier=5
+            multiplier=4
         )
         tprint(f"MDI: ElasticNet prescreen reduced features from {len(current_features)} to {len(prescreened_features)}")
         current_features = prescreened_features
@@ -575,18 +585,53 @@ def mdi_feature_selection_v3(
 
         valid_folds = 0
 
-        for train_idx, _ in splits_curr:
+        for train_idx, val_idx in splits_curr:
             m = clone(base_model)
             params = {}
-            if "max_depth" in supported_params: params["max_depth"] = depth
+            if "max_depth" in supported_params:
+                # For LGBM-style models keep tree depth strictly below 6.
+                if "min_data_in_leaf" in supported_params:
+                    params["max_depth"] = min(max(2, depth), 5)
+                else:
+                    params["max_depth"] = depth
             if "n_estimators" in supported_params: params["n_estimators"] = analysis_n_estimators
-            if "min_samples_leaf" in supported_params: params["min_samples_leaf"] = min_samples_leaf
+
+            train_n = max(1, int(len(train_idx)))
+            leaf_samples = max(1, int(np.ceil(min_samples_leaf_pct * train_n)))
+            if "min_samples_leaf" in supported_params: params["min_samples_leaf"] = leaf_samples
+            if "min_samples_split" in supported_params: params["min_samples_split"] = max(2, 3 * leaf_samples)
+
+            if "min_data_in_leaf" in supported_params:
+                params["min_data_in_leaf"] = max(2, int(np.ceil(0.012 * train_n)))
+            if "min_data_in_bin" in supported_params:
+                params["min_data_in_bin"] = 127
+            if "min_gain_to_split" in supported_params:
+                base_gain = base_params.get("min_gain_to_split", 0.0)
+                params["min_gain_to_split"] = float(base_gain) if float(base_gain) > 0 else 0.05
+            if "feature_fraction" in supported_params:
+                ff = float(base_params.get("feature_fraction", 0.7))
+                params["feature_fraction"] = ff if 0.6 <= ff <= 0.9 else 0.7
+            if "bagging_fraction" in supported_params:
+                bf = float(base_params.get("bagging_fraction", 0.7))
+                params["bagging_fraction"] = bf if 0.6 <= bf <= 0.9 else 0.7
+
             if "min_impurity_decrease" in supported_params: params["min_impurity_decrease"] = min_impurity_decrease
             if "random_state" in supported_params: params["random_state"] = random_state
             m.set_params(**params)
 
             sw_tr = sw_curr_np[train_idx] if sw_curr_np is not None else None
-            m.fit(X_curr_np[train_idx], y_curr_np[train_idx], sample_weight=sw_tr)
+            is_lgbm = (m.__class__.__module__.startswith("lightgbm") and lgb is not None)
+            if is_lgbm and len(val_idx) > 0:
+                m.fit(
+                    X_curr_np[train_idx],
+                    y_curr_np[train_idx],
+                    sample_weight=sw_tr,
+                    eval_set=[(X_curr_np[val_idx], y_curr_np[val_idx])],
+                    eval_metric="l2",
+                    callbacks=[lgb.early_stopping(50, verbose=False)],
+                )
+            else:
+                m.fit(X_curr_np[train_idx], y_curr_np[train_idx], sample_weight=sw_tr)
 
             # C-level raw importance
             # folds_data['share'].append(m.feature_importances_)

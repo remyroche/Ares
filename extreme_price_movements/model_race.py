@@ -7,9 +7,18 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import roc_auc_score, brier_score_loss, log_loss, accuracy_score
 from scipy.stats import rankdata, spearmanr
-from catboost import CatBoostClassifier
-from xgboost import XGBClassifier
-from lightgbm import LGBMClassifier
+try:
+    from catboost import CatBoostClassifier
+except Exception:
+    CatBoostClassifier = None
+try:
+    from xgboost import XGBClassifier
+except Exception:
+    XGBClassifier = None
+try:
+    from lightgbm import LGBMClassifier
+except Exception:
+    LGBMClassifier = None
 import joblib
 from extreme_price_movements.utils import tprint
 from extreme_price_movements.purged_cv import PurgedKFold
@@ -27,6 +36,35 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.isotonic import IsotonicRegression
 from sklearn.model_selection import TimeSeriesSplit
 from scipy.optimize import brentq
+from extreme_price_movements.calibration import (
+    safe_clip_proba,
+    compute_prevalences,
+    compute_logit_shift,
+    apply_logit_shift,
+)
+
+
+def calculate_selection_score(y_true, y_prob, y_ret, sample_weight=None, **kwargs):
+    """Backward-compatible wrapper exposing legacy AUC/BSS/IC keys for tests/logs."""
+    from extreme_price_movements.metrics import calculate_selection_score as _calc
+    out = _calc(y_true, y_prob, y_ret, sample_weight=sample_weight, **kwargs)
+    y_true = np.asarray(y_true)
+    y_prob = np.asarray(y_prob)
+    y_ret = np.asarray(y_ret)
+    try:
+        out["AUC"] = float(roc_auc_score(y_true, y_prob)) if len(np.unique(y_true)) > 1 else 0.5
+    except Exception:
+        out["AUC"] = 0.5
+    brier = float(np.mean((y_prob - y_true) ** 2))
+    base = float(np.mean(y_true))
+    brier_ref = float(np.mean((base - y_true) ** 2))
+    out["BSS"] = 1.0 - (brier / max(1e-9, brier_ref))
+    try:
+        out["IC"] = float(np.corrcoef(rankdata(y_prob), rankdata(y_ret))[0, 1])
+    except Exception:
+        out["IC"] = 0.0
+    return out
+
 
 class Float64Wrapper(BaseEstimator, ClassifierMixin):
     """Wraps a classifier so predict_proba / decision_function always return float64.
@@ -96,6 +134,9 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         self.metrics = {}
         self.detailed_metrics = {}
         self.oof_probs = None
+        self.final_bias_factor_ = 1.0
+        self.calibration_state_ = None
+        self._used_sample_weight_ = False
 
     def _compute_pos_weight(self, y):
         # Inverse class frequency
@@ -108,34 +149,20 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         n_samples = int(len(indices) * frac)
         return np.random.choice(indices, n_samples, replace=False)
 
-    def _find_bias_correction_factor(self, probs, target_mean):
-        # Find k such that mean(sigmoid(logit(p) + log(k))) == target_mean
-        # This aligns the average prediction with the target prevalence.
-        
-        eps = 1e-9
-        probs = np.clip(probs, eps, 1.0 - eps)
-        odds = probs / (1.0 - probs)
-        
-        def objective(k):
-            # p_new = k*odds / (1 + k*odds)
-            new_odds = k * odds
-            p_new = new_odds / (1.0 + new_odds)
-            return np.mean(p_new) - target_mean
+    def _build_bias_state(self, y_unweighted, y_weighted, eps=1e-6):
+        delta_logit = compute_logit_shift(y_unweighted, y_weighted, eps=eps)
+        return {
+            "schema_version": 1,
+            "method": "logit_shift",
+            "target_unweighted_prevalence": float(y_unweighted),
+            "weighted_prevalence": float(y_weighted),
+            "delta_logit": float(delta_logit),
+            "eps": float(eps),
+            "calibration_input": "bias_corrected",
+        }
 
-        try:
-            # Check bounds first
-            if objective(1e-3) > 0: return 1e-3
-            if objective(1e3) < 0: return 1e3
-            return brentq(objective, 1e-3, 1e3)
-        except Exception:
-            return 1.0
-
-    def _apply_correction(self, probs, factor):
-        eps = 1e-9
-        probs = np.clip(probs, eps, 1.0 - eps)
-        odds = probs / (1.0 - probs)
-        new_odds = factor * odds
-        return new_odds / (1.0 + new_odds)
+    def _apply_bias_state(self, p_raw, state):
+        return apply_logit_shift(p_raw, state["delta_logit"], eps=state.get("eps", 1e-6))
 
     def _get_candidates(self, race_mode=True):
         # Configure models
@@ -171,7 +198,8 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             "random_state": 42,
             "enable_categorical": False
         }
-        candidates["xgboost"] = Float64Wrapper(XGBClassifier(**xgb_params))
+        if XGBClassifier is not None:
+            candidates["xgboost"] = Float64Wrapper(XGBClassifier(**xgb_params))
 
         # 3. LightGBM
         lgb_params = {
@@ -189,7 +217,8 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             "random_state": 42,
             "verbose": -1
         }
-        candidates["lightgbm"] = Float64Wrapper(LGBMClassifier(**lgb_params))
+        if LGBMClassifier is not None:
+            candidates["lightgbm"] = Float64Wrapper(LGBMClassifier(**lgb_params))
 
         # 4. CatBoost
         cb_params = {
@@ -204,7 +233,8 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             "random_seed": 42,
             "allow_writing_files": False
         }
-        candidates["catboost"] = Float64Wrapper(CatBoostClassifier(**cb_params))
+        if CatBoostClassifier is not None:
+            candidates["catboost"] = Float64Wrapper(CatBoostClassifier(**cb_params))
         
         return candidates
 
@@ -221,7 +251,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         elif isinstance(model, ExtraTreesClassifier):
             model.set_params(class_weight={0: 1.0, 1: pos_weight})
 
-        if isinstance(model, CatBoostClassifier):
+        if CatBoostClassifier is not None and isinstance(model, CatBoostClassifier):
             model.set_params(scale_pos_weight=pos_weight)
             if X_val is not None and y_val is not None:
                 fit_kwargs.update({
@@ -229,7 +259,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     "early_stopping_rounds": self.race_early_stopping_rounds,
                     "use_best_model": True,
                 })
-        elif isinstance(model, XGBClassifier):
+        elif XGBClassifier is not None and isinstance(model, XGBClassifier):
             model.set_params(scale_pos_weight=pos_weight, eval_metric="auc")
             if X_val is not None and y_val is not None:
                 fit_kwargs.update({
@@ -238,7 +268,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     # early_stopping_rounds deprecated in fit, use constructor or callbacks if needed
                     # For simple race, we can omit it or relying on constructor
                 })
-        elif isinstance(model, LGBMClassifier):
+        elif LGBMClassifier is not None and isinstance(model, LGBMClassifier):
             model.set_params(scale_pos_weight=pos_weight)
             if X_val is not None and y_val is not None:
                 fit_kwargs.update({
@@ -359,14 +389,16 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     # Predict raw (biased) probabilities on validation
                     probs_raw = model_clone.predict_proba(X_val)[:, 1]
                     
-                    # Correction: Match mean(probs_val) to UNWEIGHTED mean(y_tr)
-                    # IMPORTANT: Use unweighted prevalence. Sample weights upweight
-                    # minority class for training loss, making weighted_prev ≈ 0.5.
-                    # But calibrated probabilities must reflect actual prevalence.
-                    target_mean = float(np.mean(y_tr_fit))
-                        
-                    factor = self._find_bias_correction_factor(probs_raw, target_mean)
-                    probs = self._apply_correction(probs_raw, factor)
+                    # Bias correction contract (fold): map weighted-model raw probs to
+                    # unweighted prevalence domain before isotonic training.
+                    p_unweighted_fold = float(np.mean(y_val_fit))
+                    if w_tr_fit is not None:
+                        den = float(np.sum(w_tr_fit))
+                        p_weighted_fold = float(np.sum(w_tr_fit * y_tr_fit) / max(den, 1e-12))
+                    else:
+                        p_weighted_fold = float(np.mean(y_tr_fit))
+                    delta_logit_fold = compute_logit_shift(p_unweighted_fold, p_weighted_fold, eps=1e-6)
+                    probs = apply_logit_shift(probs_raw, delta_logit_fold, eps=1e-6)
                     oof_model[val_idx] = probs
                     
                     # w_bss=0.20: Enabled BSS in selection score
@@ -505,19 +537,23 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             
             oof_probs[val_idx] = estimator.predict_proba(X_val)[:, 1]
             
-            # Recalibrate OOF probabilities
-            # Same logic: match OOF mean to UNWEIGHTED y_tr mean
-            target_mean = float(np.mean(y_tr_fit))
-            
-            # Predict raw (biased)
+            # Predict raw then apply fold bias correction contract.
             probs_raw = estimator.predict_proba(X_val)[:, 1]
-            
-            # Find and apply correction
-            factor = self._find_bias_correction_factor(probs_raw, target_mean)
-            oof_probs[val_idx] = self._apply_correction(probs_raw, factor)
+            if sample_weight is not None:
+                w_tr_fold = sample_weight[train_idx]
+                den = float(np.sum(w_tr_fold))
+                p_weighted_fold = float(np.sum(w_tr_fold * y_tr_fit) / max(den, 1e-12))
+            else:
+                p_weighted_fold = float(np.mean(y_tr_fit))
+            p_unweighted_fold = float(np.mean(y_val_fit))
+            delta_logit_fold = compute_logit_shift(p_unweighted_fold, p_weighted_fold, eps=1e-6)
+            oof_probs[val_idx] = apply_logit_shift(probs_raw, delta_logit_fold, eps=1e-6)
         # Fill any remaining NaN with 0.5 (neutral)
         oof_probs = np.nan_to_num(oof_probs, nan=0.5)
         self.oof_probs = oof_probs
+        self._used_sample_weight_ = sample_weight is not None
+        p_unweighted_all, p_weighted_all = compute_prevalences(y_hard, sample_weight)
+        self.calibration_state_ = self._build_bias_state(p_unweighted_all, p_weighted_all, eps=1e-6)
         tprint(f"OOF predictions: mean={np.mean(oof_probs):.4f}, std={np.std(oof_probs):.4f}")
 
         # Effective sample size diagnostic
@@ -548,6 +584,8 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             # Weights upweight minority class, making calibrator target weighted
             # prevalence (~0.5) instead of actual prevalence (~0.31).
             self.calibrator_.fit(oof_probs, y_hard)
+            if isinstance(self.calibration_state_, dict):
+                self.calibration_state_["calibration_input"] = "bias_corrected"
                 
             # Re-calibrate the stored OOF probs
             calibrated_oof = self.calibrator_.predict(oof_probs).astype(np.float32)
@@ -610,24 +648,37 @@ class ModelRace(BaseEstimator, ClassifierMixin):
              self.best_model.fit(X, y_hard, sample_weight=sample_weight)
         else:
              self.best_model.fit(X, y_hard)
-             
-        # No more manual bias correction factor needed (Isotonic handles it)
+
+# No more manual bias correction factor needed (Isotonic handles it)
         return self
+
+    def predict_proba_raw(self, X):
+        if self.best_model is None:
+            raise ValueError("ModelRace not fitted")
+        probs = np.asarray(self.best_model.predict_proba(X), dtype=np.float64)
+        return safe_clip_proba(probs[:, 1], eps=1e-6)
 
     def predict_proba(self, X):
         if self.best_model is None:
             raise ValueError("ModelRace not fitted")
-        probs = self.best_model.predict_proba(X)
-        
-        # 1. Apply Post-hoc Isotonic Calibration (Local Calibration)
+        if self.calibration_state_ is None or "delta_logit" not in self.calibration_state_:
+            raise RuntimeError("Missing calibration_state_. Refit ModelRace with calibration enabled before inference.")
+
+        if self._used_sample_weight_ and self.calibration_state_ is None:
+            raise RuntimeError("Sample-weighted training requires persisted calibration_state_.")
+
+        p_raw = self.predict_proba_raw(X)
+        p_corr = self._apply_bias_state(p_raw, self.calibration_state_)
+
         if hasattr(self, 'calibrator_'):
-            # Calibrate class 1
-            # Note: IsotonicRegression.predict expects 1D array
-            p1 = self.calibrator_.predict(probs[:, 1])
-            probs[:, 1] = p1
-            probs[:, 0] = 1.0 - p1
-        
-        # Ensure float64 returns
+            if self.calibration_state_.get("calibration_input") != "bias_corrected":
+                raise RuntimeError("Calibrator expects bias-corrected inputs but calibration_state_ is inconsistent.")
+            p_cal = self.calibrator_.predict(p_corr)
+        else:
+            p_cal = p_corr
+
+        p_cal = safe_clip_proba(p_cal, eps=1e-6)
+        probs = np.column_stack([1.0 - p_cal, p_cal])
         return np.asarray(probs, dtype=np.float64)
 
     def predict(self, X):

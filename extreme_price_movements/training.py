@@ -26,6 +26,63 @@ from .metrics import calculate_selection_score
 from .gate_metrics import compute_stage_gate_metrics
 
 
+class AlphaHorizonEnsemble:
+    """Average probabilities across multiple horizon-specific alpha models."""
+    def __init__(self, members):
+        # members: list of dict(model, feat_cols, H, weight, oof_probs)
+        self.members = members
+        self.oof_probs = None
+        if members:
+            oofs = [m.get("oof_probs") for m in members if m.get("oof_probs") is not None]
+            if oofs:
+                self.oof_probs = np.mean(np.vstack(oofs), axis=0).astype(np.float32)
+
+    def predict_proba(self, X):
+        preds = []
+        for m in self.members:
+            mdl = m["model"]
+            cols = m["feat_cols"]
+            if hasattr(X, "reindex"):
+                Xi = X.reindex(columns=cols, fill_value=0.0)
+            else:
+                Xi = X
+            p = mdl.predict_proba(Xi)[:, 1]
+            preds.append(np.asarray(p, dtype=np.float64))
+        if not preds:
+            n = len(X) if hasattr(X, "__len__") else 0
+            p1 = np.full(n, 0.5, dtype=np.float64)
+        else:
+            p1 = np.mean(np.vstack(preds), axis=0)
+        p1 = np.clip(p1, 1e-6, 1 - 1e-6)
+        return np.column_stack([1.0 - p1, p1])
+
+
+
+
+def compute_meta_target(ret2: np.ndarray, ret4: np.ndarray, ret8: np.ndarray) -> np.ndarray:
+    def _signed_log_demeaned(x):
+        x = np.asarray(x, dtype=float)
+        z = np.sign(x) * np.log1p(np.abs(x))
+        return z - float(np.mean(z))
+
+    r2 = _signed_log_demeaned(ret2)
+    r4 = _signed_log_demeaned(ret4)
+    r8 = _signed_log_demeaned(ret8)
+    return (0.3 * r2 + 0.4 * r4 + 0.3 * r8).astype(np.float64)
+
+
+def build_horizon_prediction_features(conf: dict, X_eval: pd.DataFrame) -> pd.DataFrame:
+    out = pd.DataFrame(index=X_eval.index)
+    models_by_h = conf.get("models_by_h", {}) if conf else {}
+    for H in [2, 4, 8]:
+        if H in models_by_h:
+            m = models_by_h[H]
+            Xi = X_eval.reindex(columns=m.get("feat_cols", []), fill_value=0.0)
+            out[f"pred_H{H}"] = m["model"].predict_proba(Xi)[:, 1]
+        else:
+            out[f"pred_H{H}"] = 0.5
+    return out
+
 def _aggregate_alpha_oof_metrics(y_true, probs, returns, sample_weight=None, groups=None):
     """Aggregate tradability and calibration metrics for alpha models."""
     metrics = {}
@@ -1134,9 +1191,9 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
         atr_scale_df = None
 
     fee_pct = float(cfg.get("label_round_trip_fee_pct", 0.5)) / 100.0
-    tp_vals = [float(x) / 100.0 for x in cfg.get("label_tp_values_pct", [5.0, 3.5, 2.0])]
+    tp_vals = [float(x) / 100.0 for x in cfg.get("label_tp_values_pct", [3.0, 4.0, 5.0, 6.0])]
     sl_vals = [float(x) / 100.0 for x in cfg.get("label_sl_values_pct", [0.5, 1.0, 2.0])]
-    min_net_rr = float(cfg.get("label_min_net_rr", 1.5))
+    min_net_rr = float(cfg.get("label_min_net_rr", 1.2))
     min_tp_hit = float(cfg.get("label_min_tp_hit_rate", 0.02))
     max_timeout = float(cfg.get("label_max_timeout_rate", 0.90))
 
@@ -1409,7 +1466,124 @@ def _compute_and_print_meta_metrics(y_true, y_pred, name, groups=None, y_raw_ret
         f"(Top10-Bot10 spread={avg_ret_top10 - avg_ret_bot10:+.2f}bps)"
     )
 
-def train_models_from_artifacts(datasets, cfg):
+def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
+    """Train only meta models from datasets and pre-trained alpha models."""
+    trade_sides = ["long", "short"]
+    kinds = ["mr", "tf"]
+    meta_models = {}
+    meta_gate_results = []
+
+    for side in trade_sides:
+        for k in kinds:
+            conf = alpha_models.get(side, {}).get(k) if alpha_models else None
+            if not conf:
+                tprint(f"Meta {side}_{k}: skipped (missing alpha model)")
+                continue
+
+            models_by_h = conf.get("models_by_h", {})
+            preferred = [4, 2, 8]
+            available_h = [h for h in preferred if h in models_by_h]
+            if not available_h:
+                H = conf.get("H", 4)
+                available_h = [H]
+            H = available_h[0]
+            key = f"train_{side}_{k}_{H}"
+            if key not in datasets:
+                tprint(f"Meta {side}_{k}: skipped (missing dataset)")
+                continue
+
+            df = datasets[key].copy()
+            race = conf["model"]
+            if race.oof_probs is None:
+                tprint(f"Meta {side}_{k}: skipped (no OOF probs found)")
+                continue
+
+            p_oof = race.oof_probs
+            y_ret = df["__y_ret__"].values
+            if len(p_oof) != len(y_ret):
+                tprint(f"Meta {side}_{k}: mismatch length OOF={len(p_oof)} vs y_ret={len(y_ret)}")
+                continue
+
+            configured_meta = cfg.get("meta_feature_keys", [])
+            raw_prefix = "__meta_raw__"
+            feat_cols = [mk for mk in configured_meta if f"{raw_prefix}{mk}" in df.columns]
+            feat_cols = list(dict.fromkeys(feat_cols))
+            if not feat_cols:
+                tprint(f"Meta {side}_{k}: skipped (no raw meta features found in dataset)")
+                continue
+
+            X_feats = pd.DataFrame(index=df.index)
+            for mk in feat_cols:
+                X_feats[mk] = df[f"{raw_prefix}{mk}"].values
+            X_feats = X_feats.fillna(0.0)
+
+            def _ret_for_h(h):
+                k_h = f"train_{side}_{k}_{h}"
+                if k_h in datasets and "__y_ret__" in datasets[k_h].columns and len(datasets[k_h]) == len(df):
+                    return datasets[k_h]["__y_ret__"].values.astype(np.float64)
+                return y_ret.astype(np.float64)
+
+            y_target = compute_meta_target(_ret_for_h(2), _ret_for_h(4), _ret_for_h(8))
+
+            n_res = df.get("__n_res__", pd.Series(np.ones(len(df)), index=df.index)).values.astype(np.float64)
+            keep = n_res >= np.quantile(n_res, 0.20)
+            if keep.sum() < 100:
+                keep = np.ones(len(df), dtype=bool)
+
+            df = df.loc[keep].copy()
+            X_feats = X_feats.loc[keep].copy()
+            y_target = y_target[keep]
+            p_oof = p_oof[keep]
+            n_res = n_res[keep]
+
+            conf_w = np.abs(p_oof - 0.5) * 2.0
+            conf_w = 0.8 + 0.4 * (conf_w / max(np.mean(conf_w), 1e-9))
+            mag = _winsorize_and_unit_mean(conf_w, clip_min=0.75, clip_max=1.25)
+            cons = np.clip(df.get("__w_consensus__", pd.Series(np.ones(len(df)), index=df.index)).values.astype(np.float64), 0.75, 1.25)
+            cons = _winsorize_and_unit_mean(cons, clip_min=0.75, clip_max=1.25)
+            w_meta = mag * cons
+            alpha_pow = float(np.clip(cfg.get("meta_weight_alpha", 0.5), 0.3, 0.7))
+            w_meta = np.power(np.clip(w_meta, 1e-9, None), alpha_pow)
+            ts_vals = df["__ts__"].values if "__ts__" in df.columns else np.arange(len(df))
+            w_meta = _normalize_cross_sectional(ts_vals, w_meta)
+            w_meta = w_meta / max(np.mean(w_meta), 1e-12)
+
+            meta = MetaModel()
+            pred_h = pd.DataFrame(index=X_feats.index)
+            for h in [2, 4, 8]:
+                if h in models_by_h and models_by_h[h]["model"].oof_probs is not None:
+                    p_h = np.asarray(models_by_h[h]["model"].oof_probs, dtype=float)
+                    pred_h[f"pred_H{h}"] = p_h[keep] if len(p_h) == len(df) else p_oof
+                else:
+                    pred_h[f"pred_H{h}"] = p_oof
+            X_feats = pd.concat([X_feats, pred_h], axis=1)
+            X_meta = meta.prepare_meta_features(p_oof, X_feats, pred_col_name="pred_logit")
+
+            pred_logit = X_meta["pred_logit"].values
+            for interact_feat in ["vol_z", "mkt_rv_ratio", "ambig", "exh_qual", "trend_pct"]:
+                if interact_feat in X_meta.columns:
+                    X_meta[f"pred_x_{interact_feat}"] = pred_logit * X_meta[interact_feat].values
+            for regime_col in ["G_VOL", "G_TREND"]:
+                raw_regime = f"{raw_prefix}{regime_col}"
+                if raw_regime in df.columns:
+                    rv = df[raw_regime].values
+                    for bucket in [0, 1, 2]:
+                        X_meta[f"pred_x_{regime_col}_{bucket}"] = pred_logit * (rv == bucket).astype(float)
+
+            meta_groups = df["__ts__"].values if "__ts__" in df.columns else None
+            meta.fit(X_meta, y_target, sample_weight=w_meta, groups=meta_groups)
+            meta_models[f"{side}_{k}"] = meta
+            tprint(f"Meta {side}_{k}: fitted.")
+
+            if meta.oof_probs is not None:
+                y_ret_filtered = df["__y_ret__"].values if "__y_ret__" in df.columns else y_target
+                gate_res = compute_stage_gate_metrics(y_target, meta.oof_probs, y_ret_filtered, model_type="quantile_meta")
+                gate_res["Model"] = f"{side}_{k}"
+                meta_gate_results.append(gate_res)
+
+    return meta_models, meta_gate_results
+
+def train_models_from_artifacts(datasets, cfg, train_meta=True):
     tprint(f"Entering function: train_models_from_artifacts in training.py")
     directions = ["up", "down"]
     kinds = ["mr", "tf"]
@@ -1557,6 +1731,8 @@ def train_models_from_artifacts(datasets, cfg):
         final_models[side] = {}
         for k in kinds:
             best_ic = -1.0; best_m = None
+            per_h_models = {}
+            feature_selection_by_h = {}
             horizons = cfg["label_horizons_hours"]
 
             for H in horizons:
@@ -1683,7 +1859,8 @@ def train_models_from_artifacts(datasets, cfg):
                 )
                 
                 selected_feats = sel_res.selected_features
-                tprint(f"MDI selected {len(selected_feats)} features (from {X.shape[1]}).")
+                feature_selection_by_h[H] = list(selected_feats)
+                tprint(f"MDI selected {len(selected_feats)} features (from {X.shape[1]}) for H={H}.")
                 
                 X_sel = X[selected_feats]
                 cols = list(selected_feats)
@@ -1806,6 +1983,19 @@ def train_models_from_artifacts(datasets, cfg):
                     best_ic = score
                     best_m = {"model": race, "H": H, "feat_cols": cols, "per_regime": per_regime, "alpha_diag": alpha_diag}
 
+                per_h_models[H] = {
+                    "model": race,
+                    "H": H,
+                    "feat_cols": cols,
+                    "per_regime": per_regime,
+                    "alpha_diag": alpha_diag,
+                    "score": score,
+                }
+
+            # Persist per-horizon base artifacts for downstream meta features.
+            if best_m is not None:
+                best_m["models_by_h"] = {h: {"model": v["model"], "feat_cols": v["feat_cols"], "H": v["H"], "selected_features": feature_selection_by_h.get(h, v["feat_cols"])} for h, v in per_h_models.items()}
+
             # --- Stage Gate Check (Alpha) ---
             if best_m is not None:
                 race_best = best_m["model"]
@@ -1847,173 +2037,10 @@ def train_models_from_artifacts(datasets, cfg):
             final_models[side][k] = best_m
 
     # 3. Train Meta Models (One per Alpha Model: Side x Kind)
-    # Using OOF predictions from Alpha Models to train Meta Model (re-calibration/sizing)
-    # The Alpha models (ModelRace) already generate OOF predictions via CV.
-    meta_models = {}
-    for side in trade_sides:
-        for k in kinds:
-            # Check if alpha model exists
-            conf = final_models[side].get(k)
-            if not conf:
-                tprint(f"Meta {side}_{k}: skipped (missing alpha model)")
-                continue
-
-            H = conf["H"]
-            key = f"train_{side}_{k}_{H}"
-            if key not in datasets:
-                tprint(f"Meta {side}_{k}: skipped (missing dataset)")
-                continue
-
-            df = datasets[key].copy()
-
-            # Ensure index meta columns exist (though not strictly needed if we use df directly)
-            if "__ts__" not in df.columns or "__symbol__" not in df.columns:
-                 # If missing, we might still proceed if row order is preserved (it should be)
-                 pass
-
-            # Use the OOF probs from the race (generated via CV)
-            race = conf["model"]
-            if race.oof_probs is None:
-                tprint(f"Meta {side}_{k}: skipped (no OOF probs found)")
-                continue
-
-            p_oof = race.oof_probs
-            y_ret = df["__y_ret__"].values
-
-            if len(p_oof) != len(y_ret):
-                tprint(f"Meta {side}_{k}: mismatch length OOF={len(p_oof)} vs y_ret={len(y_ret)}")
-                continue
-
-            # Prepare meta features using RAW feature names (not interaction-toggled).
-            # At inference time (engine.py), the meta model receives raw feature names
-            # like "ambig", not toggled names like "ambig_G_VOL_0".
-            # Raw values were preserved as __meta_raw__{name} columns in
-            # build_hourly_training_set_and_weights before interaction toggles.
-            configured_meta = cfg.get("meta_feature_keys", [])
-            feat_cols = []
-            raw_prefix = "__meta_raw__"
-            for mk in configured_meta:
-                prefixed = f"{raw_prefix}{mk}"
-                if prefixed in df.columns:
-                    feat_cols.append(mk)  # use raw name for column in X_feats
-            feat_cols = list(dict.fromkeys(feat_cols))  # dedupe preserving order
-            if not feat_cols:
-                tprint(f"Meta {side}_{k}: skipped (no raw meta features found in dataset)")
-                continue
-
-            # Build X_feats with raw feature names (matching inference column names)
-            X_feats = pd.DataFrame(index=df.index)
-            for mk in feat_cols:
-                X_feats[mk] = df[f"{raw_prefix}{mk}"].values
-            X_feats = X_feats.fillna(0.0)
-
-            # Cross-sectional rank percentile target.
-            # For each timestamp, rank raw returns across symbols and convert to
-            # percentile [0, 1]. This is the cleanest target for a meta layer
-            # whose job is cross-sectional selection:
-            #   - Immune to market-wide drift (rank is relative)
-            #   - No tail warping (unlike log/winsor transforms)
-            #   - IC on rank_pct ≡ IC on raw returns (monotone transform)
-            #   - Ridge learns "which features predict relative outperformance"
-            _ts_meta = df["__ts__"].values if "__ts__" in df.columns else None
-            if _ts_meta is not None:
-                y_target = np.zeros(len(y_ret), dtype=np.float64)
-                for t in np.unique(_ts_meta):
-                    _tmask = _ts_meta == t
-                    n_t = _tmask.sum()
-                    if n_t > 1:
-                        from scipy.stats import rankdata
-                        y_target[_tmask] = (rankdata(y_ret[_tmask]) - 1) / (n_t - 1)
-                    else:
-                        y_target[_tmask] = 0.5
-            else:
-                from scipy.stats import rankdata
-                y_target = (rankdata(y_ret) - 1) / max(len(y_ret) - 1, 1)
-            tprint(f"  Using rank_pct target: mean={np.mean(y_target):.4f}, "
-                   f"std={np.std(y_target):.4f}, range=[{np.min(y_target):.4f}, {np.max(y_target):.4f}]")
-
-            # Meta weights: magnitude + MAE/MFE proxy + consensus; remove 20% lowest n_res
-            n_res = df.get("__n_res__", pd.Series(np.ones(len(df)), index=df.index)).values.astype(np.float64)
-            keep = n_res >= np.quantile(n_res, 0.20)
-            if keep.sum() < 100:
-                keep = np.ones(len(df), dtype=bool)
-
-            df = df.loc[keep].copy()
-            X_feats = X_feats.loc[keep].copy()
-            y_target = y_target[keep]
-            p_oof = p_oof[keep]
-            n_res = n_res[keep]
-
-            # Confidence weight: upweight samples where alpha model is more decisive
-            # (further from 0.5). Meta should focus on "strong calls" where gating matters.
-            conf_w = np.abs(p_oof - 0.5) * 2.0  # [0, 1] range
-            conf_w = 0.8 + 0.4 * (conf_w / max(np.mean(conf_w), 1e-9))
-            mag = _winsorize_and_unit_mean(conf_w, clip_min=0.75, clip_max=1.25)
-
-            cons = np.clip(df.get("__w_consensus__", pd.Series(np.ones(len(df)), index=df.index)).values.astype(np.float64), 0.75, 1.25)
-            cons = _winsorize_and_unit_mean(cons, clip_min=0.75, clip_max=1.25)
-
-            w_meta = mag * cons
-            alpha_pow = float(np.clip(cfg.get("meta_weight_alpha", 0.5), 0.3, 0.7))
-            w_meta = np.power(np.clip(w_meta, 1e-9, None), alpha_pow)
-            ts_vals = df["__ts__"].values if "__ts__" in df.columns else np.arange(len(df))
-            w_meta = _normalize_cross_sectional(ts_vals, w_meta)
-            w_meta = w_meta / max(np.mean(w_meta), 1e-12)
-
-            tprint(f"Meta {side}_{k}: Training on {len(df)} samples with {len(feat_cols)} raw meta features...")
-            tprint(f"  Meta feature names: {feat_cols[:10]}{'...' if len(feat_cols) > 10 else ''}")
-            tprint(f"  Target: mean={np.mean(y_target):.6f}, std={np.std(y_target):.6f}, "
-                   f"min={np.min(y_target):.4f}, max={np.max(y_target):.4f}")
-            tprint(f"  OOF probs input: mean={np.mean(p_oof):.4f}, std={np.std(p_oof):.4f}")
-
-            meta = MetaModel()
-            X_meta = meta.prepare_meta_features(p_oof, X_feats, pred_col_name="pred_logit")
-
-            # Add feature interactions: pred_logit × key features + regime buckets
-            pred_logit = X_meta["pred_logit"].values
-            for interact_feat in ["vol_z", "mkt_rv_ratio", "ambig", "exh_qual", "trend_pct"]:
-                if interact_feat in X_meta.columns:
-                    X_meta[f"pred_x_{interact_feat}"] = pred_logit * X_meta[interact_feat].values
-            # Regime bucket interactions: pred_logit × vol/trend regime indicators
-            for regime_col in ["G_VOL", "G_TREND"]:
-                raw_regime = f"{raw_prefix}{regime_col}"
-                if raw_regime in df.columns:
-                    rv = df[raw_regime].values
-                    for bucket in [0, 1, 2]:
-                        X_meta[f"pred_x_{regime_col}_{bucket}"] = pred_logit * (rv == bucket).astype(float)
-
-            meta_groups = df["__ts__"].values if "__ts__" in df.columns else None
-            meta.fit(X_meta, y_target, sample_weight=w_meta, groups=meta_groups)
-
-            # --- Meta model OOF diagnostics ---
-            if meta.oof_probs is not None:
-                m_oof = meta.oof_probs
-                tprint(f"  Meta OOF preds: mean={np.mean(m_oof):.6f}, std={np.std(m_oof):.6f}, "
-                       f"min={np.min(m_oof):.6f}, max={np.max(m_oof):.6f}")
-
-                meta_groups = df["__ts__"].values if "__ts__" in df.columns else None
-                y_ret_filtered = df["__y_ret__"].values if "__y_ret__" in df.columns else y_target
-                _compute_and_print_meta_metrics(y_target, m_oof, name=f"Meta {side}_{k}",
-                                                groups=meta_groups, y_raw_ret=y_ret_filtered)
-
-            if meta.selected_features:
-                tprint(f"  Meta selected features ({len(meta.selected_features)}): {meta.selected_features[:8]}{'...' if len(meta.selected_features) > 8 else ''}")
-
-            meta_models[f"{side}_{k}"] = meta
-            tprint(f"Meta {side}_{k}: fitted.")
-
-            # --- Stage Gate Check (Meta) ---
-            if meta.oof_probs is not None:
-                # y_target is the rank percentile target used for training meta
-                # y_ret_filtered is the raw return (for downside checks)
-                y_ret_filtered = df["__y_ret__"].values if "__y_ret__" in df.columns else y_target
-
-                gate_res = compute_stage_gate_metrics(
-                    y_target, meta.oof_probs, y_ret_filtered,
-                    model_type="quantile_meta"
-                )
-                gate_res["Model"] = f"{side}_{k}"
-                meta_gate_results.append(gate_res)
+    if train_meta:
+        meta_models, meta_gate_results = train_meta_models_from_artifacts(datasets, cfg, final_models)
+    else:
+        meta_models, meta_gate_results = {}, []
 
     # 4. Train Exhaustion Models
     exh_models = {}
@@ -2467,7 +2494,7 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
             _opt_bp_risk = 0.5 * (summary.final_lo + summary.final_hi)
             _abs_tp_risk = summary.final_tp_mult * _opt_bp_risk
             _ratio_risk = summary.final_tp_mult / max(summary.final_sl_mult, 0.01)
-            min_ratio = float(cfg.get("min_tp_sl_ratio", 1.5))
+            min_ratio = float(cfg.get("min_tp_sl_ratio", 1.2))
             min_tp_abs = float(cfg.get("min_tp_abs_pct", 0.02))
             _tp_m = summary.final_tp_mult
             _sl_m = summary.final_sl_mult

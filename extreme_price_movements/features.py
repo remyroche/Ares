@@ -308,10 +308,12 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     c_raw = panel.pop("close").astype(np.float32)
     c_raw.index = new_idx
 
-    # Compute Proxy Target (User Request 2026-02-11)
-    # Forward 3h returns for feature selection skill metric
-    fwd_ret_3h = (c_raw.shift(-3) / c_raw - 1.0).fillna(0.0).astype(np.float32)
-    target_proxy = fwd_ret_3h
+    # Compute Proxy Target for gate-feature selection:
+    # use average of 2h and 8h forward returns to reduce horizon mismatch.
+    fwd_ret_2h = (c_raw.shift(-2) / c_raw - 1.0).fillna(0.0).astype(np.float32)
+    fwd_ret_4h = (c_raw.shift(-4) / c_raw - 1.0).fillna(0.0).astype(np.float32)
+    fwd_ret_8h = (c_raw.shift(-8) / c_raw - 1.0).fillna(0.0).astype(np.float32)
+    target_proxy = (0.3 * fwd_ret_2h + 0.4 * fwd_ret_4h + 0.3 * fwd_ret_8h).astype(np.float32)
 
     c = _transform_price(c_raw, _label="close")
     del c_raw # Note: c is needed for Volume transform? No, but needed for features.
@@ -843,10 +845,10 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     periods = c.index.to_period("M")
     unique_periods = periods.unique()
     time_blocks = [(periods == p) for p in unique_periods]
-    # Train mask: Exclude last 3 hours (where forward target is invalid/0 due to shift)
+    # Train mask: Exclude last 8 hours (where forward target is invalid/0 due to shift)
     train_mask_proxy = pd.Series(True, index=c.index)
-    if len(train_mask_proxy) > 3:
-        train_mask_proxy.iloc[-3:] = False
+    if len(train_mask_proxy) > 8:
+        train_mask_proxy.iloc[-8:] = False
 
     for w in gate_windows:
         for source_name, (source_panel, prefix) in gate_configs.items():

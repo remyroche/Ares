@@ -11,10 +11,13 @@ import pandas as pd
 from numba import njit
 from scipy.special import logit
 from scipy.stats import median_abs_deviation
+from sklearn.ensemble import ExtraTreesRegressor
+from sklearn.linear_model import Ridge
 from sklearn.linear_model import QuantileRegressor
 from sklearn.preprocessing import SplineTransformer
 
 from extreme_price_movements.config import CFG
+from extreme_price_movements.feature_selection_extreme_events import mdi_feature_selection_v3 as mdi_feature_selection_classic
 from extreme_price_movements.purged_cv import PurgedKFold
 from extreme_price_movements.quantile_feature_selection_extreme_events import mdi_feature_selection_v3
 from extreme_price_movements.utils import tprint
@@ -105,6 +108,7 @@ class MetaModel:
         self.interaction_constraints: Optional[List[List[int]]] = None
         self.oof_probs: Optional[np.ndarray] = None
         self.report_rows: List[dict] = []
+        self._selected_features_by_pool: Dict[str, List[str]] = {}
 
     def prepare_meta_features(self, preds, feats_df, pred_col_name="pred_logit"):
         p = np.clip(np.asarray(preds, dtype=float), 1e-4, 1 - 1e-4)
@@ -298,6 +302,18 @@ class MetaModel:
         return [[int(i), int(j)] for i, j, _ in keep]
 
     def _fit_model(self, kind: str, params: dict, X_tr, y_tr, X_va, y_va, sample_weight=None):
+        if kind == "ridge":
+            model = Ridge(**params)
+            model.fit(X_tr, y_tr, sample_weight=sample_weight)
+            return model
+        if kind == "extratrees":
+            model = ExtraTreesRegressor(**params)
+            model.fit(X_tr, y_tr, sample_weight=sample_weight)
+            return model
+        if kind == "qreg_l1":
+            model = QuantileRegressor(**params)
+            model.fit(X_tr, y_tr)
+            return model
         if kind == "xgb":
             if xgb is None:
                 raise RuntimeError("xgboost not available")
@@ -351,52 +367,182 @@ class MetaModel:
     def _coverage(self, y: np.ndarray, q: np.ndarray) -> float:
         return float(np.mean(y <= q))
 
-    def _race_candidates(self, mono: Tuple[int, ...], inter: List[List[int]]) -> Dict[str, Tuple[str, Sequence[float], dict]]:
+
+    def _tail_ramp_weights(self, y: np.ndarray, lambda_: float, q0: float = 0.70, q1: float = 1.00) -> np.ndarray:
+        from scipy.stats import rankdata
+        y = np.asarray(y, dtype=float)
+        r = rankdata(y, method="average") / max(len(y), 1)
+        t = np.clip((r - q0) / max(1e-9, (q1 - q0)), 0.0, 1.0)
+        return (1.0 + float(lambda_) * t).astype(float)
+
+    def _signed_log_demeaned(self, y: np.ndarray) -> np.ndarray:
+        y = np.asarray(y, dtype=float)
+        z = np.sign(y) * np.log1p(np.abs(y))
+        return z - float(np.mean(z))
+
+    def _select_features_for_candidate(self, X: pd.DataFrame, y: np.ndarray, candidate_name: str, kind: str) -> List[str]:
+        # Independent feature selection per candidate as requested.
+        tailweighted = "tailweighted" in candidate_name
+        if kind in ("xgb", "lgb", "qreg_l1") and not tailweighted:
+            fs = mdi_feature_selection_v3(X, y, min_features=15, max_features=50, alpha=0.85)
+            return list(fs.selected_features)
+
+        base_model = None
+        if tailweighted:
+            if "lgbm_tailweighted" in candidate_name:
+                if lgb is not None:
+                    base_model = lgb.LGBMRegressor(
+                        objective="regression",
+                        n_estimators=200,
+                        num_leaves=31,
+                        learning_rate=0.05,
+                        random_state=42,
+                        n_jobs=3,
+                        verbosity=-1,
+                    )
+            elif "ridge_tailweighted" in candidate_name:
+                base_model = None
+
+        try:
+            fs = mdi_feature_selection_classic(
+                X,
+                y,
+                base_model=base_model,
+                end_features=min(40, max(20, int(np.sqrt(max(25, X.shape[1])) * 4))),
+                min_features=15,
+                max_features_pct=0.5,
+            )
+            return list(fs.selected_features)
+        except Exception:
+            # Robust fallback for tiny/unstable smoke scenarios.
+            return list(X.columns[: min(25, X.shape[1])])
+
+    def _candidate_target_and_weight(self, y: np.ndarray, base_sw: Optional[np.ndarray], candidate_name: str) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+        y_fit = np.asarray(y, dtype=float)
+        sw_fit = None if base_sw is None else np.asarray(base_sw, dtype=float)
+
+        if "tailweighted" in candidate_name:
+            y_fit = self._signed_log_demeaned(y_fit)
+            lambdas = [0.0, 1.0, 2.0, 4.0]
+            chosen = 0.0
+            for lmb in lambdas:
+                if f"_l{int(lmb)}" in candidate_name:
+                    chosen = lmb
+                    break
+            ramp = self._tail_ramp_weights(y_fit, chosen, q0=0.70, q1=1.00)
+            sw_fit = ramp if sw_fit is None else (sw_fit * ramp)
+
+        return y_fit, sw_fit
+
+    def _race_candidates(self, mono: Tuple[int, ...], inter: List[List[int]]) -> Dict[str, Tuple[str, Sequence[float], dict, str]]:
+        # Race config: intentionally lighter than final retraining.
         xgb_single = {
-            "objective": "reg:quantileerror", "quantile_alpha": 0.85, "max_depth": 5, "gamma": 0.07,
-            "learning_rate": 0.05, "n_estimators": 1500, "subsample": 0.7, "colsample_bytree": 0.7,
-            "reg_alpha": 0.5, "reg_lambda": 10.0, "tree_method": "hist", "random_state": 42, "n_jobs": 3,
-            "verbosity": 0, "monotone_constraints": mono, "interaction_constraints": inter,
-        }
-        xgb_multi = {
-            "objective": "reg:quantileerror", "max_depth": 6, "gamma": 0.1,
-            "learning_rate": 0.25, "n_estimators": 400, "subsample": 0.6, "colsample_bytree": 0.6,
-            "reg_alpha": 1.0, "reg_lambda": 20.0, "tree_method": "hist", "random_state": 42, "n_jobs": 3,
+            "objective": "reg:quantileerror", "quantile_alpha": 0.85, "max_depth": 4, "gamma": 0.1,
+            "learning_rate": 0.07, "n_estimators": 600, "subsample": 0.7, "colsample_bytree": 0.7,
+            "reg_alpha": 1.0, "reg_lambda": 20.0, "num_parallel_tree": 10,
+            "tree_method": "hist", "random_state": 42, "n_jobs": 3,
             "verbosity": 0, "monotone_constraints": mono, "interaction_constraints": inter,
         }
         lgb_q = {
-            "objective": "quantile", "alpha": 0.85, "boosting_type": "gbdt", "num_leaves": 63,
-            "max_depth": 6, "min_data_in_leaf": 40, "min_sum_hessian_in_leaf": 1e-3,
-            "learning_rate": 0.05, "n_estimators": 1500, "min_gain_to_split": 0.05,
-            "lambda_l1": 1.0, "lambda_l2": 10.0, "feature_fraction": 0.6, "bagging_fraction": 0.6,
+            "objective": "quantile", "alpha": 0.85, "boosting_type": "gbdt", "num_leaves": 31,
+            "max_depth": 5, "min_data_in_leaf": 40, "min_sum_hessian_in_leaf": 1e-3,
+            "learning_rate": 0.07, "n_estimators": 700, "min_gain_to_split": 0.05,
+            "lambda_l1": 2.0, "lambda_l2": 20.0, "feature_fraction": 0.6, "bagging_fraction": 0.6,
             "bagging_freq": 1, "max_bin": 127, "random_state": 42, "n_jobs": 3, "verbosity": -1,
             "monotone_constraints": mono,
         }
-        return {
-            "xgb_single_085": ("xgb", [0.85], xgb_single),
-            "xgb_multi_070_090": ("xgb", [0.7, 0.75, 0.8, 0.85, 0.9], xgb_multi),
-            "xgb_multi_080_090": ("xgb", [0.8, 0.85, 0.9], xgb_multi),
-            "lgbm_085": ("lgb", [0.85], lgb_q),
+        ridge = {"alpha": 5.0, "fit_intercept": True}
+        et = {
+            "n_estimators": 300,
+            "max_depth": 8,
+            "min_samples_leaf": 40,
+            "max_features": "sqrt",
+            "n_jobs": 3,
+            "random_state": 42,
+        }
+        qreg_l1 = {"quantile": 0.85, "alpha": 1.0, "solver": "highs"}
+
+        # Constrained / unconstrained quantile counterparts requested by user.
+        xgb_single_unconstrained = dict(xgb_single)
+        xgb_single_unconstrained.pop("monotone_constraints", None)
+        xgb_single_unconstrained.pop("interaction_constraints", None)
+
+        lgb_q_unconstrained = dict(lgb_q)
+        lgb_q_unconstrained.pop("monotone_constraints", None)
+
+        out = {
+            "xgb_multi_075_080_085": ("xgb", [0.75, 0.80, 0.85], xgb_single, "quantile"),
+            "xgb_multi_075_080_085_unconstrained": ("xgb", [0.75, 0.80, 0.85], xgb_single_unconstrained, "quantile"),
+            "lgbm_085": ("lgb", [0.85], lgb_q, "quantile"),
+            "lgbm_085_unconstrained": ("lgb", [0.85], lgb_q_unconstrained, "quantile"),
+            "qreg_l1_085": ("qreg_l1", [0.85], qreg_l1, "quantile"),
+            "ridge_reg": ("ridge", [0.85], ridge, "non_quantile"),
+            "extratrees_reg": ("extratrees", [0.85], et, "non_quantile"),
         }
 
-    def _oof_score(self, y: np.ndarray, pred: np.ndarray, baseline: Dict[str, float]) -> Tuple[float, Dict[str, float], bool]:
-        pin = _pinball(y, pred, 0.85)
-        util, mean_top, iqr_top, sortino_top = _topk_stats(y, pred, frac=0.15)
-        top_idx = np.argpartition(pred, -max(1, int(0.15 * len(pred))))[-max(1, int(0.15 * len(pred))):]
-        maxdd = float(_maxdd_numba(y[top_idx].astype(np.float64)))
-        urisk = sortino_top - 2.0 * maxdd
-        coverage = self._coverage(y, pred)
-        score = 0.45 * (-pin) + 0.35 * (mean_top - 0.5 * iqr_top) + 0.20 * urisk
+        # Tail-weighted regression variants
+        for lmb in [0, 1, 2, 4]:
+            out[f"ridge_tailweighted_l{lmb}"] = ("ridge", [0.85], dict(ridge), "non_quantile")
+            out[f"extratrees_tailweighted_l{lmb}"] = ("extratrees", [0.85], dict(et), "non_quantile")
+            out[f"lgbm_tailweighted_l{lmb}"] = ("lgb", [0.85], dict(lgb_q), "non_quantile")
+            out[f"xgb_tailweighted_l{lmb}"] = ("xgb", [0.85], dict(xgb_single), "non_quantile")
 
-        guard = (
-            abs(coverage - 0.85) <= 0.05
-            and util >= baseline["util"] * 0.95
-            and maxdd <= baseline["maxdd"] * 1.20
+        return out
+
+    def _oof_score(self, y: np.ndarray, pred: np.ndarray, baseline: Dict[str, float], quantile_like: bool = True) -> Tuple[float, Dict[str, float], bool]:
+        pin = _pinball(y, pred, 0.85)
+        util30, mean_top30, iqr_top30, sortino_top30 = _topk_stats(y, pred, frac=0.30)
+        util10, mean_top10, iqr_top10, sortino_top10 = _topk_stats(y, pred, frac=0.10)
+
+        n10 = max(1, int(0.10 * len(pred)))
+        idx_top10 = np.argpartition(pred, -n10)[-n10:]
+        idx_bot10 = np.argpartition(pred, n10)[:n10]
+        top10_mean = float(np.mean(y[idx_top10]))
+        bot10_mean = float(np.mean(y[idx_bot10]))
+        spread10 = top10_mean - bot10_mean
+
+        top10_pred_mean = float(np.mean(pred[idx_top10]))
+        top10_realized_rate = float(np.mean(y[idx_top10] > np.median(y)))
+        gap_top10 = abs(top10_pred_mean - top10_realized_rate)
+
+        maxdd = float(_maxdd_numba(y[idx_top10].astype(np.float64)))
+        urisk = sortino_top10 - 2.0 * maxdd
+        coverage = self._coverage(y, pred)
+
+        # Business-metric-heavy score with small pinball contribution.
+        score = (
+            0.28 * mean_top30 +
+            0.28 * mean_top10 +
+            0.24 * spread10 +
+            0.12 * urisk +
+            0.05 * (-pin) +
+            0.03 * (-gap_top10)
         )
+
+        if quantile_like:
+            guard = (
+                abs(coverage - 0.85) <= 0.08
+                and util10 >= baseline["util"] * 0.90
+                and maxdd <= baseline["maxdd"] * 1.30
+            )
+        else:
+            guard = (
+                util10 >= baseline["util"] * 0.90
+                and maxdd <= baseline["maxdd"] * 1.30
+            )
+
         metrics = {
             "pinball085": pin,
-            "topk_utility": util,
-            "sortino_med": sortino_top,
+            "topk_utility": util10,
+            "top30_mean": mean_top30,
+            "top10_mean": mean_top10,
+            "top10_mean_y": top10_mean,
+            "bot10_mean_y": bot10_mean,
+            "spread10": spread10,
+            "top_decile_pred_mean": top10_pred_mean,
+            "top_decile_realized_rate": top10_realized_rate,
+            "top_decile_calibration_gap": gap_top10,
+            "sortino_med": sortino_top10,
             "maxdd_med": maxdd,
             "coverage_tau085": coverage,
             "score": score,
@@ -419,8 +565,10 @@ class MetaModel:
                 p = dict(params)
                 if kind == "xgb":
                     p["quantile_alpha"] = q
-                else:
+                elif kind in ("lgb", "qreg_l1"):
                     p["alpha"] = q
+                    if kind == "qreg_l1":
+                        p["quantile"] = q
                 m = self._fit_model(kind, p, X_tr, y_tr, X_va, y_va, sample_weight=sw_tr)
                 fold_preds.append(m.predict(X_va))
             fold_pred = np.median(np.vstack(fold_preds), axis=0)
@@ -434,7 +582,7 @@ class MetaModel:
             oof[va] = fold_pred
 
         mask = np.isfinite(oof)
-        score, metrics, guard = self._oof_score(y[mask], oof[mask], baseline)
+        score, metrics, guard = self._oof_score(y[mask], oof[mask], baseline, quantile_like=(kind in ("xgb", "lgb", "qreg_l1")))
         return oof, metrics, guard
 
     def _optuna_hpo(self, winner_name: str, winner_kind: str, winner_qs: Sequence[float], base_params: dict, X: np.ndarray, y: np.ndarray, sw: Optional[np.ndarray]) -> dict:
@@ -450,9 +598,10 @@ class MetaModel:
                 p["n_estimators"] = trial.suggest_categorical("n_estimators", [800, 1200, 1800] if len(winner_qs) == 1 else [200, 400, 600])
                 p["subsample"] = trial.suggest_categorical("subsample", [0.6, 0.7, 0.8] if len(winner_qs) == 1 else [0.5, 0.6, 0.7])
                 p["colsample_bytree"] = trial.suggest_categorical("colsample_bytree", [0.6, 0.7, 0.8] if len(winner_qs) == 1 else [0.5, 0.6, 0.7])
-                p["reg_alpha"] = trial.suggest_categorical("reg_alpha", [0.0, 0.5, 1.0] if len(winner_qs) == 1 else [0.5, 1.0, 2.0])
-                p["reg_lambda"] = trial.suggest_categorical("reg_lambda", [5.0, 10.0, 20.0] if len(winner_qs) == 1 else [10.0, 20.0, 40.0])
-            else:
+                p["reg_alpha"] = trial.suggest_float("reg_alpha", 0.0, 20.0)
+                p["reg_lambda"] = trial.suggest_float("reg_lambda", 5.0, 100.0)
+                p["num_parallel_tree"] = trial.suggest_categorical("num_parallel_tree", [5, 20, 50, 100, 200, 400])
+            elif winner_kind == "lgb":
                 p["num_leaves"] = trial.suggest_categorical("num_leaves", [31, 63, 127])
                 p["max_depth"] = trial.suggest_categorical("max_depth", [5, 6, 7])
                 p["min_data_in_leaf"] = trial.suggest_categorical("min_data_in_leaf", [20, 40, 80])
@@ -461,8 +610,16 @@ class MetaModel:
                 p["n_estimators"] = trial.suggest_categorical("n_estimators", [800, 1200, 1800])
                 p["feature_fraction"] = trial.suggest_categorical("feature_fraction", [0.5, 0.6, 0.7])
                 p["bagging_fraction"] = trial.suggest_categorical("bagging_fraction", [0.5, 0.6, 0.7])
-                p["lambda_l1"] = trial.suggest_categorical("lambda_l1", [0.5, 1.0, 2.0])
-                p["lambda_l2"] = trial.suggest_categorical("lambda_l2", [5.0, 10.0, 20.0])
+                p["lambda_l1"] = trial.suggest_float("lambda_l1", 0.0, 20.0)
+                p["lambda_l2"] = trial.suggest_float("lambda_l2", 5.0, 100.0)
+            elif winner_kind == "ridge":
+                p["alpha"] = trial.suggest_float("alpha", 0.01, 100.0, log=True)
+            elif winner_kind == "extratrees":
+                p["n_estimators"] = trial.suggest_int("n_estimators", 300, 1200)
+                p["max_depth"] = trial.suggest_int("max_depth", 4, 16)
+                p["min_samples_leaf"] = trial.suggest_int("min_samples_leaf", 10, 80)
+            elif winner_kind == "qreg_l1":
+                p["alpha"] = trial.suggest_float("alpha", 1e-4, 20.0, log=True)
             oof, _, _ = self._cv_train_predict(winner_kind, winner_qs, p, X, y, sw)
             m = np.isfinite(oof)
             return _pinball(y[m], oof[m], 0.85)
@@ -547,44 +704,63 @@ class MetaModel:
 
     def fit(self, X_meta: pd.DataFrame, y, sample_weight=None, groups=None):
         y_np = np.asarray(y, dtype=float)
-        fs = mdi_feature_selection_v3(X_meta, y_np, min_features=15, max_features=50, alpha=0.85)
-        self.selected_features = fs.selected_features
-        X_sel = X_meta[self.selected_features]
-        Xv = X_sel.to_numpy(dtype=float)
         sw = None if sample_weight is None else np.asarray(sample_weight, dtype=float)
 
-        self.monotone_constraints = self._discover_monotone_constraints(X_sel, y_np, bootstraps=50)
-        self.interaction_constraints = self._discover_interactions(X_sel, y_np)
+        # Constraints are discovered using quantile-style selected features from a baseline run.
+        base_q_feats = self._select_features_for_candidate(X_meta, y_np, "xgb_multi_075_080_085", "xgb")
+        if not base_q_feats:
+            base_q_feats = list(X_meta.columns[: min(20, X_meta.shape[1])])
+        X_sel_q = X_meta[base_q_feats]
+        self.monotone_constraints = self._discover_monotone_constraints(X_sel_q, y_np, bootstraps=50)
+        self.interaction_constraints = self._discover_interactions(X_sel_q, y_np)
 
         candidates = self._race_candidates(self.monotone_constraints, self.interaction_constraints)
         if xgb is None:
             tprint("MetaModel: xgboost missing; xgb candidates skipped")
         if lgb is None:
-            raise RuntimeError("lightgbm is required for quantile meta-model")
+            tprint("MetaModel: lightgbm missing; lgb candidates skipped")
 
         best_name = None
         best_oof = None
-        best_metrics = None
         best_score = -1e18
         best_any_name = None
         best_any_oof = None
         best_any_score = -1e18
         records = []
+        selected_by_candidate: Dict[str, List[str]] = {}
 
-        for name, (kind, qs, params) in candidates.items():
+        for name, (kind, qs, params, pool_name) in candidates.items():
             if kind == "xgb" and xgb is None:
                 continue
+            if kind == "lgb" and lgb is None:
+                continue
+
+            selected = self._select_features_for_candidate(X_meta, y_np, name, kind)
+            if not selected:
+                continue
+            selected_by_candidate[name] = selected
+            Xv = X_meta[selected].to_numpy(dtype=float)
+
+            y_fit, sw_fit = self._candidate_target_and_weight(y_np, sw, name)
+
             try:
-                oof, metrics, guard_ok = self._cv_train_predict(kind, qs, params, Xv, y_np, sw)
+                oof, metrics, guard_ok = self._cv_train_predict(kind, qs, params, Xv, y_fit, sw_fit)
             except Exception as exc:
                 tprint(f"MetaModel candidate {name} failed: {exc}")
                 continue
-            rec = {"model": name, **metrics, "guard_pass": int(guard_ok)}
+
+            rec = {
+                "model": name,
+                "pool": pool_name,
+                "n_features": len(selected),
+                **metrics,
+                "guard_pass": int(guard_ok),
+            }
             records.append(rec)
             if metrics["score"] > best_any_score:
                 best_any_name, best_any_oof, best_any_score = name, oof, metrics["score"]
             if guard_ok and metrics["score"] > best_score:
-                best_name, best_oof, best_metrics, best_score = name, oof, metrics, metrics["score"]
+                best_name, best_oof, best_score = name, oof, metrics["score"]
 
         if best_name is None:
             if best_any_name is None:
@@ -592,23 +768,37 @@ class MetaModel:
             tprint("MetaModel: no candidate passed strict guardrails; falling back to highest-score candidate")
             best_name, best_oof = best_any_name, best_any_oof
 
-        kind, qs, params = candidates[best_name]
-        tuned_params = self._optuna_hpo(best_name, kind, qs, params, Xv, y_np, sw)
+        kind, qs, params, best_pool = candidates[best_name]
+        self.selected_features = selected_by_candidate[best_name]
+        Xv = X_meta[self.selected_features].to_numpy(dtype=float)
+        y_fit, sw_fit = self._candidate_target_and_weight(y_np, sw, best_name)
+
+        tuned_params = self._optuna_hpo(best_name, kind, qs, params, Xv, y_fit, sw_fit)
+
+        # Final mode: increase compute budget for chosen model.
+        final_params = dict(tuned_params)
+        if kind in ("xgb", "lgb"):
+            final_params["n_estimators"] = int(max(1200, final_params.get("n_estimators", 800)))
+        if kind == "extratrees":
+            final_params["n_estimators"] = int(max(900, final_params.get("n_estimators", 300)))
+
         final_models = []
         for q in qs:
-            p = dict(tuned_params)
+            p = dict(final_params)
             if kind == "xgb":
                 p["quantile_alpha"] = q
-            else:
+            elif kind in ("lgb", "qreg_l1"):
                 p["alpha"] = q
-            model = self._fit_model(kind, p, Xv, y_np, Xv, y_np, sample_weight=sw)
+                if kind == "qreg_l1":
+                    p["quantile"] = q
+            model = self._fit_model(kind, p, Xv, y_fit, Xv, y_fit, sample_weight=sw_fit)
             final_models.append(model)
 
-        self.model = {"kind": kind, "quantiles": list(qs), "models": final_models}
+        self.model = {"kind": kind, "quantiles": list(qs), "models": final_models, "pool": best_pool}
         self._model_type = best_name
         self.oof_probs = best_oof
         self.report_rows = records
-        self._write_model_reports(records, best_oof, y_np)
+        self._write_model_reports(records, best_oof, y_fit)
         return self
 
     def predict(self, X_meta):

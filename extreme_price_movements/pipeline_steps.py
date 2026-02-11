@@ -5,7 +5,7 @@ import numpy as np
 
 from extreme_price_movements.utils import tprint, Timer
 from extreme_price_movements.data_store import load_features, save_features, save_artifact_df, load_artifact_df, to_panel
-from extreme_price_movements.training import generate_label_datasets, generate_exhaustion_history, optimize_risk_params, train_models_from_artifacts
+from extreme_price_movements.training import generate_label_datasets, generate_exhaustion_history, optimize_risk_params, train_models_from_artifacts, train_meta_models_from_artifacts
 from extreme_price_movements.features import compute_market_features, add_regime_gates, compute_features_hourly
 from extreme_price_movements.universe import get_training_universe, refresh_margin_universe_daily
 from extreme_price_movements.engine import simulate_trade_hourly, generate_hourly_signals, _build_side_score_df
@@ -85,7 +85,8 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex):
 
     tprint("STEP: LABEL GENERATION COMPLETE")
 
-def run_training_step(ts_sig, cfg, store=None, margin_symbols=None):
+def run_training_step(ts_sig, cfg, store=None, margin_symbols=None, stage="all"):
+    """stage in {all, base, meta}."""
     """Train all models from label artifacts. Saves trained state to disk."""
     tprint("STEP: MODEL TRAINING START")
 
@@ -193,8 +194,24 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None):
 
     # 2. Train models
     with Timer("Model Training"):
-        trained_bundle = train_models_from_artifacts(datasets, cfg)
-        alpha_metrics = trained_bundle.get("alpha_oof_metrics", {}) if trained_bundle else {}
+        if stage == "meta":
+            # Meta-only mode: requires base state with trained alpha models.
+            state_dir = os.path.join(cfg["data_root"], "artifacts", run_id, "models")
+            base_state_path = os.path.join(state_dir, "trained_state_base.pkl")
+            if not os.path.exists(base_state_path):
+                tprint(f"ERROR: Base state not found at {base_state_path}. Run train_base first.")
+                return None
+            with open(base_state_path, "rb") as f:
+                base_state = pickle.load(f)
+            base_bundle = base_state.get("bundle", {})
+            alpha_models = base_bundle.get("alpha_models", {})
+            meta_models, meta_gate_results = train_meta_models_from_artifacts(datasets, cfg, alpha_models)
+            trained_bundle = dict(base_bundle)
+            trained_bundle["meta_models"] = meta_models
+            alpha_metrics = trained_bundle.get("alpha_oof_metrics", {})
+        else:
+            trained_bundle = train_models_from_artifacts(datasets, cfg, train_meta=(stage != "base"))
+            alpha_metrics = trained_bundle.get("alpha_oof_metrics", {}) if trained_bundle else {}
     
     # Specialist Models are now trained inside train_models_from_artifacts
     # using artifacts loaded above.
@@ -243,10 +260,16 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None):
 
     state_dir = os.path.join(cfg["data_root"], "artifacts", run_id, "models")
     os.makedirs(state_dir, exist_ok=True)
-    state_path = os.path.join(state_dir, "trained_state.pkl")
+    state_name = "trained_state_base.pkl" if stage == "base" else ("trained_state_meta.pkl" if stage == "meta" else "trained_state.pkl")
+    state_path = os.path.join(state_dir, state_name)
     with open(state_path, "wb") as f:
         pickle.dump(state, f)
     tprint(f"Saved trained state to {state_path}")
+    if stage == "meta":
+        canonical_state = os.path.join(state_dir, "trained_state.pkl")
+        with open(canonical_state, "wb") as f:
+            pickle.dump(state, f)
+        tprint(f"Saved canonical trained state to {canonical_state}")
 
     # Log summary
     bundle = trained_bundle
@@ -295,8 +318,16 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None):
     except Exception as e:
         tprint(f"WARNING: Failed to generate training report: {e}")
 
-    tprint("STEP: MODEL TRAINING COMPLETE")
+    tprint(f"STEP: MODEL TRAINING COMPLETE ({stage})")
     return state
+
+def run_training_base_step(ts_sig, cfg, store=None, margin_symbols=None):
+    return run_training_step(ts_sig, cfg, store=store, margin_symbols=margin_symbols, stage="base")
+
+
+def run_training_meta_step(ts_sig, cfg, store=None, margin_symbols=None):
+    return run_training_step(ts_sig, cfg, store=store, margin_symbols=margin_symbols, stage="meta")
+
 
 def run_risk_optimization_step(ts_sig, margin_symbols, cfg, store, state_file):
     tprint("STEP: RISK OPTIMIZATION START")

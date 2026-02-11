@@ -24,6 +24,14 @@ from src.utils.numba_funcs import (
 )
 from .utils import tprint
 
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_ewma_parallel(mat, alpha, adjust):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = _numba_ewma_nan_safe(mat[:, j], alpha, adjust)
+    return out
+
 @jit(nopython=True, cache=True)
 def _numba_ewma_nan_safe(x, alpha, adjust=False):
     n = len(x)
@@ -79,6 +87,30 @@ def _numba_rolling_sum_nan_safe(x, window):
             output[i] = current_sum
 
     return output
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_sum_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_sum_nan_safe(mat[:, j], window)
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_mean_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_mean_nan_safe(mat[:, j], window)
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_std_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_std_nan_safe(mat[:, j], window)
+    return out
 
 @jit(nopython=True, cache=True)
 def simulate_trade_numba(
@@ -636,6 +668,14 @@ def numba_zscore(df, n):
 
 # --- NEW KERNELS & WRAPPERS ---
 
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_max_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_max(mat[:, j], window)
+    return out
+
 @jit(nopython=True, cache=True)
 def _numba_rolling_max(x, window):
     n = len(x)
@@ -680,6 +720,14 @@ def _numba_rolling_max(x, window):
         if front <= back:
             out[i] = x[deque_indices[front % window]]
 
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_min_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_min(mat[:, j], window)
     return out
 
 @jit(nopython=True, cache=True)
@@ -892,6 +940,14 @@ def _numba_rolling_quantile_dual_parallel(mat, window, q1, q2):
         _numba_rolling_quantile_dual_1d(mat[:, j], window, q1, q2, out1[:, j], out2[:, j])
 
     return out1, out2
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_pct_change_parallel(mat, n_shift):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = _numba_pct_change(mat[:, j], n_shift)
+    return out
 
 @jit(nopython=True, cache=True)
 def _numba_pct_change(x, n_shift):
@@ -1173,20 +1229,59 @@ def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend,
 # Wrappers
 def numba_rolling_max(df, n):
     tprint(f"Entering function: numba_rolling_max in fast_funcs.py")
-    return apply_to_frame(df, _numba_rolling_max, n)
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rolling_max_parallel(mat, n)
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+    if is_series:
+        return res_df[res_df.columns[0]]
+    return res_df
 
 def numba_rolling_min(df, n):
     tprint(f"Entering function: numba_rolling_min in fast_funcs.py")
-    return apply_to_frame(df, _numba_rolling_min, n)
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rolling_min_parallel(mat, n)
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+    if is_series:
+        return res_df[res_df.columns[0]]
+    return res_df
 
 def numba_rolling_sum(df, n):
     tprint(f"Entering function: numba_rolling_sum in fast_funcs.py")
-    # CHANGED: Use NaN-safe version
-    return apply_to_frame(df, _numba_rolling_sum_nan_safe, n)
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rolling_sum_parallel(mat, n)
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+    if is_series:
+        return res_df[res_df.columns[0]]
+    return res_df
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_median_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_median(mat[:, j], window)
+    return out
 
 def numba_rolling_median(df, n):
     tprint(f"Entering function: numba_rolling_median in fast_funcs.py")
-    return apply_to_frame(df, _numba_rolling_median, n)
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rolling_median_parallel(mat, n)
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+    if is_series:
+        return res_df[res_df.columns[0]]
+    return res_df
 
 def numba_rolling_quantile(df, n, q):
     # tprint(f"Entering function: numba_rolling_quantile in fast_funcs.py")
@@ -1214,7 +1309,15 @@ def numba_rolling_quantile_dual(df, n, q1, q2):
 
 def numba_pct_change(df, n):
     tprint(f"Entering function: numba_pct_change in fast_funcs.py")
-    return apply_to_frame(df, _numba_pct_change, n)
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_pct_change_parallel(mat, n)
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+    if is_series:
+        return res_df[res_df.columns[0]]
+    return res_df
 
 def numba_rolling_corr(df1, df2, n):
     tprint(f"Entering function: numba_rolling_corr in fast_funcs.py")
@@ -1222,11 +1325,38 @@ def numba_rolling_corr(df1, df2, n):
 
 def numba_rolling_mean(df, n):
     # tprint(f"Entering function: numba_rolling_mean in fast_funcs.py")
-    return apply_to_frame(df, _numba_rolling_mean_nan_safe, n)
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rolling_mean_parallel(mat, n)
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+    if is_series:
+        return res_df[res_df.columns[0]]
+    return res_df
 
 def numba_rolling_std(df, n):
     # tprint(f"Entering function: numba_rolling_std in fast_funcs.py")
-    return apply_to_frame(df, _numba_rolling_std_nan_safe, n)
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rolling_std_parallel(mat, n)
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+    if is_series:
+        return res_df[res_df.columns[0]]
+    return res_df
+
+def numba_ewma(df, alpha, adjust=False):
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_ewma_parallel(mat, alpha, adjust)
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+    if is_series:
+        return res_df[res_df.columns[0]]
+    return res_df
 
 def compute_peak_labels_and_weights(close_df, atr_df, horizon, near_k, rev_k, is_uptrend, max_near_pct=0.02, min_rev_pct=0.005):
     tprint(f"Entering function: compute_peak_labels_and_weights in fast_funcs.py")

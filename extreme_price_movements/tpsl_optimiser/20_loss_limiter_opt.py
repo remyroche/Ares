@@ -71,7 +71,14 @@ def optimise_loss_limiter(trades: pd.DataFrame, sl_pct: np.ndarray, test_split_i
 
     # --- Stage 1 ---
     stage1 = []
-    for w, mode, theta0, theta_min in product([15, 30, 60], [TriggerMode.AND, TriggerMode.OR, TriggerMode.TIMES], [0.8, 1.0, 1.2, 1.4, 1.6], [0.2, 0.3, 0.4]):
+
+    # Add a trial with "No Risk Cut" (baseline)
+    # Simulate effectively unreachable threshold
+    grid = list(product([15, 30, 60], [TriggerMode.AND, TriggerMode.OR, TriggerMode.TIMES], [0.8, 1.0, 1.2, 1.4, 1.6], [0.2, 0.3, 0.4]))
+    # Add "disabled" config: High theta0 so it never triggers
+    grid.append((30, TriggerMode.TIMES, 999.0, 0.3))
+
+    for w, mode, theta0, theta_min in grid:
         lam_rv, lam_rng = 0.5, 0.25
         # Note: 'w' logic missing in original, keeping as is
         D = speed_n * (1 + lam_rv * rv_n) * (1 + lam_rng * np.minimum(1.0, range_n))

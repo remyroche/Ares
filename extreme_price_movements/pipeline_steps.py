@@ -315,6 +315,19 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None, stage="all")
             extra_info=alpha_metrics,
         )
         tprint(f"Training report saved to {report_path}")
+
+        # Save and print extended quality gate metrics JSON (base/meta, race + winners first)
+        try:
+            from extreme_price_movements.training import save_training_gate_report
+            gate_report = bundle.get("quality_gate_report") if isinstance(bundle, dict) else None
+            if gate_report:
+                gate_path = save_training_gate_report(gate_report, cfg, run_id=run_id)
+                tprint(f"Quality gate report saved to {gate_path}")
+                winners = gate_report.get("winners", {})
+                tprint(f"Model race winners (base): {winners.get('base', [])}")
+                tprint(f"Model race winners (meta): {winners.get('meta', [])}")
+        except Exception as e:
+            tprint(f"WARNING: Failed to save quality gate report: {e}")
     except Exception as e:
         tprint(f"WARNING: Failed to generate training report: {e}")
 

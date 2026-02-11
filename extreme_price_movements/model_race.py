@@ -357,6 +357,8 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             fold_p40 = [] # Prec Top 40%
             fold_logloss = []
             fold_accuracy = []
+            fold_base_logloss = []
+            fold_logloss_imp = []
             oof_model = np.full(len(y), np.nan, dtype=np.float64)
 
             try:
@@ -419,9 +421,17 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     # fold_p40 handled below if needed, but metrics returns it
                     
                     try:
-                        fold_logloss.append(log_loss(y_val_fit, np.clip(probs, 1e-7, 1-1e-7)))
+                        ll_fold = log_loss(y_val_fit, np.clip(probs, 1e-7, 1-1e-7))
+                        fold_logloss.append(ll_fold)
+                        p_fold = float(np.mean(y_val_fit))
+                        p_fold = float(np.clip(p_fold, 1e-7, 1 - 1e-7))
+                        ll_base_fold = log_loss(y_val_fit, np.full_like(y_val_fit, p_fold, dtype=np.float64))
+                        fold_base_logloss.append(ll_base_fold)
+                        fold_logloss_imp.append((ll_base_fold - ll_fold) / max(ll_base_fold, 1e-9))
                     except:
                         fold_logloss.append(np.nan)
+                        fold_base_logloss.append(np.nan)
+                        fold_logloss_imp.append(np.nan)
                     fold_accuracy.append(accuracy_score(y_val_fit, probs > 0.5))
 
                 avg_score = np.nanmean(fold_scores)
@@ -475,7 +485,13 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     "Prec40": avg_p40,
                     "std_score": std_score,
                     "LogLoss": avg_logloss,
-                    "Accuracy": avg_accuracy
+                    "Accuracy": avg_accuracy,
+                    "fold_logloss": [float(x) for x in fold_logloss],
+                    "fold_precision20": [float(x) for x in fold_p20],
+                    "fold_precision10": [float(x) for x in fold_p10],
+                    "fold_brier": [float(x) for x in fold_brier],
+                    "fold_base_logloss": [float(x) for x in fold_base_logloss],
+                    "fold_logloss_imp": [float(x) for x in fold_logloss_imp],
                 }
                 tprint(f"  {name}: LegacyScore={avg_score:.4f} AUC={avg_auc:.4f} IC={avg_ic:.4f} BSS={avg_bss_val:.4f} Brier={avg_brier:.4f} Prec10={avg_p10:.4f} Prec40={avg_p40:.4f} LogLoss={avg_logloss:.4f} TrainLoss={train_loss:.4f}")
 

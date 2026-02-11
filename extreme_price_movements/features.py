@@ -308,10 +308,12 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     c_raw = panel.pop("close").astype(np.float32)
     c_raw.index = new_idx
 
-    # Compute Proxy Target (User Request 2026-02-11)
-    # Forward 3h returns for feature selection skill metric
-    fwd_ret_3h = (c_raw.shift(-3) / c_raw - 1.0).fillna(0.0).astype(np.float32)
-    target_proxy = fwd_ret_3h
+    # Compute Proxy Target for gate-feature selection:
+    # use average of 2h and 8h forward returns to reduce horizon mismatch.
+    fwd_ret_2h = (c_raw.shift(-2) / c_raw - 1.0).fillna(0.0).astype(np.float32)
+    fwd_ret_4h = (c_raw.shift(-4) / c_raw - 1.0).fillna(0.0).astype(np.float32)
+    fwd_ret_8h = (c_raw.shift(-8) / c_raw - 1.0).fillna(0.0).astype(np.float32)
+    target_proxy = (0.3 * fwd_ret_2h + 0.4 * fwd_ret_4h + 0.3 * fwd_ret_8h).astype(np.float32)
 
     c = _transform_price(c_raw, _label="close")
     del c_raw # Note: c is needed for Volume transform? No, but needed for features.
@@ -331,7 +333,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["ret1h"] = c
     feats["ret6h"] = ff.numba_rolling_sum(c, 6)
 
-    for H in [2, 3, 4, 5, 10, 12, 16, 20, 24, 28]:
+    for H in [2, 3, 4, 5, 8, 10, 12, 16, 20, 24, 28]:
         feats[f"ret{H}h"] = ff.numba_rolling_sum(c, H)
 
     feats["range_pct"] = (h - l)
@@ -347,7 +349,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["rv_24h"] = ff.numba_rolling_std(feats["ret1h"], 24)
     feats["rv_6h"] = ff.numba_rolling_std(feats["ret1h"], 6)
     feats["rv_12h"] = ff.numba_rolling_std(feats["ret1h"], 12)
-
+    
     # New Filter Features (Range & Vol Z-score)
     h_24 = ff.numba_rolling_max(h, 24)
     l_24 = ff.numba_rolling_min(l, 24)
@@ -668,9 +670,10 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     atr = feats["atr_pct"] + 1e-12
     rv6 = feats["rv_6h"] + 1e-12
+    rv8 = feats["rv_8h"] + 1e-12
     rv12 = feats["rv_12h"] + 1e-12
 
-    for k in [2, 4, 6, 12, 24]:
+    for k in [2, 4, 6, 8, 12, 24]:
         rmax = ff.numba_rolling_max(c, k)
         rmin = ff.numba_rolling_min(c, k)
 
@@ -688,7 +691,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["excess_6h"] = (feats["ret1h"].abs() / rv6).astype(np.float32)
     feats["excess_12h"] = (feats["ret1h"].abs() / rv12).astype(np.float32)
 
-    for k in [2, 4]:
+    for k in [2, 4, 8]:
         feats[f"ft_{k}"] = (feats[f"ret{k}h"] / (feats["ret1h"].abs() + 1e-12)).astype(np.float32)
         feats[f"failure_{k}"] = (-1 * feats[f"ft_{k}"]).clip(lower=0).astype(np.float32)
 
@@ -728,6 +731,20 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     feats["mfe_4h"] = (mfe / atr).shift(1).astype(np.float32)
     feats["mae_4h"] = (mae / atr).shift(1).astype(np.float32)
+
+    # 8h MFE/MAE
+    o_entry_8 = o.shift(7)
+    h_max_8 = ff.numba_rolling_max(h, 8)
+    l_min_8 = ff.numba_rolling_min(l, 8)
+
+    mfe_long_8 = h_max_8 - o_entry_8
+    mae_long_8 = o_entry_8 - l_min_8
+
+    mfe_8 = mfe_long_8.where(dir_s > 0, o_entry_8 - l_min_8)
+    mae_8 = mae_long_8.where(dir_s > 0, h_max_8 - o_entry_8)
+
+    feats["mfe_8h"] = (mfe_8 / atr).shift(1).astype(np.float32)
+    feats["mae_8h"] = (mae_8 / atr).shift(1).astype(np.float32)
 
     cur_pnl = (c - o_entry) * dir_s
     gb = (mfe - cur_pnl) / (mfe + 1e-12)
@@ -827,10 +844,10 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     periods = c.index.to_period("M")
     unique_periods = periods.unique()
     time_blocks = [(periods == p) for p in unique_periods]
-    # Train mask: Exclude last 3 hours (where forward target is invalid/0 due to shift)
+    # Train mask: Exclude last 8 hours (where forward target is invalid/0 due to shift)
     train_mask_proxy = pd.Series(True, index=c.index)
-    if len(train_mask_proxy) > 3:
-        train_mask_proxy.iloc[-3:] = False
+    if len(train_mask_proxy) > 8:
+        train_mask_proxy.iloc[-8:] = False
 
     for w in gate_windows:
         for source_name, (source_panel, prefix) in gate_configs.items():
@@ -955,6 +972,10 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["thrust_decay_4"] = (feats["ret1h"].abs() / (feats["ret4h"].abs() + 1e-12)).astype(np.float32)
     feats["decel_4"] = (feats["momentum_accel"].abs() / rv6).astype(np.float32)
     feats["ft_drop"] = (feats["ft_2"] - feats["ft_4"]).astype(np.float32)
+
+    feats["thrust_decay_8"] = (feats["ret1h"].abs() / (feats["ret8h"].abs() + 1e-12)).astype(np.float32)
+    feats["decel_8"] = (feats["momentum_accel"].abs() / rv12).astype(np.float32)
+    feats["ft_drop_8"] = (feats["ft_4"] - feats["ft_8"]).astype(np.float32)
     feats["ext_excess"] = (feats["donch_dist_12"] * feats["excess_6h"]).astype(np.float32)
     feats["ext_atrExp"] = (feats["donch_dist_12"] * np.log(feats["atr_expansion"] + 1e-12)).astype(np.float32)
     feats["comp_to_exp"] = ((1.0 / (feats["vol_compression"] + 1e-12)) * feats["atr_expansion"]).astype(np.float32)

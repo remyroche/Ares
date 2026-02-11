@@ -69,22 +69,25 @@ def _dedupe_corr_tail(X: pd.DataFrame, y: np.ndarray, cols: Sequence[str], thres
 
 
 def _fit_quantile_lgbm(X_tr, y_tr, X_va, y_va, alpha: float, seed: int) -> lgb.LGBMRegressor:
+    n_train = max(1, int(len(X_tr)))
+    min_data_in_leaf = max(2, int(np.ceil(0.012 * n_train)))
     model = lgb.LGBMRegressor(
         objective="quantile",
         alpha=alpha,
         boosting_type="gbdt",
         learning_rate=0.05,
-        n_estimators=1000,
+        n_estimators=800,
         num_leaves=63,
-        max_depth=6,
-        min_data_in_leaf=30,
+        max_depth=5,
+        min_data_in_leaf=min_data_in_leaf,
         min_sum_hessian_in_leaf=3e-2,
         min_gain_to_split=0.05,
         lambda_l1=1.0,
         lambda_l2=10.0,
-        feature_fraction=0.6,
-        bagging_fraction=0.6,
+        feature_fraction=0.7,
+        bagging_fraction=0.7,
         bagging_freq=1,
+        min_data_in_bin=127,
         max_bin=127,
         random_state=seed,
         n_jobs=3,
@@ -95,7 +98,7 @@ def _fit_quantile_lgbm(X_tr, y_tr, X_va, y_va, alpha: float, seed: int) -> lgb.L
         y_tr,
         eval_set=[(X_va, y_va)],
         eval_metric="quantile",
-        callbacks=[lgb.early_stopping(100, verbose=False)],
+        callbacks=[lgb.early_stopping(50, verbose=False)],
     )
     return model
 

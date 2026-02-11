@@ -210,6 +210,28 @@ def run_train(cfg, ts_override=None):
         tprint("TRAINING PIPELINE FAILED")
 
 
+
+
+def run_train_base(cfg, ts_override=None):
+    ex, store, ts_sig, margin_symbols = _prepare_context(cfg, ts_override)
+    if ts_sig is None:
+        return
+    tprint(f"Train base mode. ts_sig={ts_sig}")
+    _load_bucket_params_for_train(cfg, ts_sig)
+    run_label_generation_step_v2(ts_sig=ts_sig, margin_symbols=margin_symbols, cfg=cfg, store=store, ex=ex)
+    run_training_base_step(ts_sig=ts_sig, cfg=cfg, store=store, margin_symbols=margin_symbols)
+
+
+def run_train_meta(cfg, ts_override=None):
+    ex, store, ts_sig, margin_symbols = _prepare_context(cfg, ts_override)
+    if ts_sig is None:
+        return
+    tprint(f"Train meta mode. ts_sig={ts_sig}")
+    _load_bucket_params_for_train(cfg, ts_sig)
+    # labels are required for meta datasets; regenerate to ensure parity with ts.
+    run_label_generation_step_v2(ts_sig=ts_sig, margin_symbols=margin_symbols, cfg=cfg, store=store, ex=ex)
+    run_training_meta_step(ts_sig=ts_sig, cfg=cfg, store=store, margin_symbols=margin_symbols)
+
 def run_risk_opt(cfg, ts_override=None):
     if ts_override:
         ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
@@ -308,7 +330,7 @@ def run_optimise(cfg, ts_override=None):
 
 def main():
     parser = argparse.ArgumentParser(description="Extreme Price Movements Pipeline")
-    parser.add_argument("mode", choices=["download", "labels", "features", "train", "backtest", "optimize_risk", "optimise", "run"],
+    parser.add_argument("mode", choices=["download", "labels", "features", "train", "train_base", "train_meta", "backtest", "optimize_risk", "optimise", "run"],
                         help="Pipeline mode to run")
     args = parser.parse_args()
 
@@ -322,6 +344,10 @@ def main():
         run_features(cfg)
     elif args.mode == "train":
         run_train(cfg)
+    elif args.mode == "train_base":
+        run_train_base(cfg)
+    elif args.mode == "train_meta":
+        run_train_meta(cfg)
     elif args.mode == "backtest":
         run_backtest(cfg)
     elif args.mode == "optimize_risk":

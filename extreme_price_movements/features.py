@@ -10,7 +10,7 @@ from extreme_price_movements.feature_transforms import CausalFeatureTransformer
 from extreme_price_movements.time_utils import ensure_utc
 from extreme_price_movements.frac_diff_adaptive import find_min_ffd, frac_diff_ffd
 from extreme_price_movements.validation import validate_panel
-from extreme_price_movements.gated_features import add_accept_gate_features, add_gate_features
+from extreme_price_movements.gated_features import add_accept_gate_features, add_gate_features, add_gate_interaction_panel
 import extreme_price_movements.fast_funcs as ff
 
 # Initialize joblib cache
@@ -44,6 +44,90 @@ def rolling_mad(df: pd.DataFrame, window: int):
     med = ff.numba_rolling_median(df, window)
     mad = ff.numba_rolling_median((df - med).abs(), window)
     return mad.astype(np.float32)
+
+
+def _rolling_shannon_entropy_df(df: pd.DataFrame, window: int, bins: int = 16) -> pd.DataFrame:
+    """Rolling Shannon entropy via histogram probabilities per column."""
+    out = pd.DataFrame(index=df.index, columns=df.columns, dtype=np.float32)
+    eps = 1e-12
+    for col in df.columns:
+        x = df[col].to_numpy(dtype=np.float64)
+        res = np.full(len(x), np.nan, dtype=np.float32)
+        for i in range(window - 1, len(x)):
+            w = x[i - window + 1:i + 1]
+            w = w[np.isfinite(w)]
+            if len(w) < max(4, window // 2):
+                continue
+            lo, hi = np.min(w), np.max(w)
+            if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+                res[i] = 0.0
+                continue
+            hist, _ = np.histogram(w, bins=bins, range=(lo, hi))
+            p = hist.astype(np.float64) / (hist.sum() + eps)
+            p = p[p > 0]
+            ent = -np.sum(p * np.log(p + eps)) / np.log(bins)
+            res[i] = np.float32(ent)
+        out[col] = res
+    return out.fillna(0.0).astype(np.float32)
+
+
+def _rolling_permutation_entropy_df(df: pd.DataFrame, window: int, order: int = 3, delay: int = 1) -> pd.DataFrame:
+    """Rolling permutation entropy per column (normalized by log(order!))."""
+    from math import factorial
+    out = pd.DataFrame(index=df.index, columns=df.columns, dtype=np.float32)
+    max_h = np.log(float(factorial(order))) + 1e-12
+    eps = 1e-12
+    for col in df.columns:
+        x = df[col].to_numpy(dtype=np.float64)
+        res = np.full(len(x), np.nan, dtype=np.float32)
+        for i in range(window - 1, len(x)):
+            w = x[i - window + 1:i + 1]
+            w = w[np.isfinite(w)]
+            if len(w) < order + 2:
+                continue
+            counts = {}
+            n_pat = 0
+            m = len(w) - (order - 1) * delay
+            for j in range(max(0, m)):
+                seq = w[j:j + order * delay:delay]
+                if len(seq) != order or not np.all(np.isfinite(seq)):
+                    continue
+                pat = tuple(np.argsort(seq, kind="mergesort"))
+                counts[pat] = counts.get(pat, 0) + 1
+                n_pat += 1
+            if n_pat == 0:
+                res[i] = 0.0
+                continue
+            p = np.array(list(counts.values()), dtype=np.float64) / (n_pat + eps)
+            ent = -np.sum(p * np.log(p + eps)) / max_h
+            res[i] = np.float32(ent)
+        out[col] = res
+    return out.fillna(0.0).astype(np.float32)
+
+
+def _rolling_spectral_entropy_df(df: pd.DataFrame, window: int) -> pd.DataFrame:
+    """Rolling spectral entropy from FFT power spectrum per column (normalized)."""
+    out = pd.DataFrame(index=df.index, columns=df.columns, dtype=np.float32)
+    eps = 1e-12
+    for col in df.columns:
+        x = df[col].to_numpy(dtype=np.float64)
+        res = np.full(len(x), np.nan, dtype=np.float32)
+        for i in range(window - 1, len(x)):
+            w = x[i - window + 1:i + 1]
+            w = w[np.isfinite(w)]
+            if len(w) < max(8, window // 2):
+                continue
+            w = w - np.mean(w)
+            pw = np.abs(np.fft.rfft(w)) ** 2
+            if len(pw) <= 1:
+                res[i] = 0.0
+                continue
+            p = pw[1:] / (np.sum(pw[1:]) + eps)
+            p = p[p > 0]
+            ent = -np.sum(p * np.log(p + eps)) / np.log(len(pw) - 1 + eps)
+            res[i] = np.float32(ent)
+        out[col] = res
+    return out.fillna(0.0).astype(np.float32)
 
 def _transform_price(df, _label=""):
     """Transform raw prices: Log -> EWMA(5) -> Adaptive FracDiff.
@@ -346,10 +430,14 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["rsi_base"] = rsi_base
     feats["rsi_slope_base"] = rsi_base.diff(cfg["rsi_slope_n"]).astype(np.float32)
 
-    feats["rv_24h"] = ff.numba_rolling_std(feats["ret1h"], 24)
-    feats["rv_6h"] = ff.numba_rolling_std(feats["ret1h"], 6)
-    feats["rv_12h"] = ff.numba_rolling_std(feats["ret1h"], 12)
-    
+
+    feats["rv_24h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 24)
+    feats["rv_2h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 2)
+    feats["rv_4h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 4)
+    feats["rv_6h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 6)
+    feats["rv_8h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 8)
+    feats["rv_12h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 12)
+
     # New Filter Features (Range & Vol Z-score)
     h_24 = ff.numba_rolling_max(h, 24)
     l_24 = ff.numba_rolling_min(l, 24)
@@ -411,10 +499,10 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     del v_chg
 
     # 3. RSI Lagged (for divergence check)
-    if "rsi" in feats:
-        feats["rsi_lag1"] = feats["rsi"].shift(1).astype(np.float32)
-        # RSI Slope 1h (Momentum Turn for long_mr)
-        feats["rsi_1h_slope"] = feats["rsi"].diff(1).fillna(0).astype(np.float32)
+    # Use base RSI here (adaptive RSI is created later).
+    feats["rsi_lag1"] = rsi_base.shift(1).astype(np.float32)
+    # RSI Slope 1h (Momentum Turn for long_mr)
+    feats["rsi_1h_slope"] = rsi_base.diff(1).fillna(0).astype(np.float32)
 
     # 4. Tail Risk (CVaR Proxy for long_tf)
     # 5th percentile return over 48 hours (2 days)
@@ -427,16 +515,16 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["amihud_illiq"] = ff.numba_rolling_mean(illiq_raw, 24).fillna(0).astype(np.float32)
 
     # 6. Skew Proxy (Close Location Value Mean)
-    if "clv" in feats:
-        feats["clv_mean_24"] = ff.numba_rolling_mean(feats["clv"], 24).fillna(0).astype(np.float32)
+    clv_raw_early = ((2 * c - h - l) / ((h - l) + 1e-9)).fillna(0)
+    feats["clv_mean_24"] = ff.apply_to_frame(clv_raw_early, ff._numba_rolling_mean_nan_safe, 24).fillna(0).astype(np.float32)
+
 
     # 7. Stabilization / Falling Knife Features (for long_mr)
     # Climax Volume
     feats["vol_z_4h"] = zscore_rolling(v, 4).fillna(0).astype(np.float32)
 
     # ATR pct change (Volatility Cooling)
-    if "atr_pct" in feats:
-        feats["atr_pct_change"] = feats["atr_pct"].pct_change().fillna(0).astype(np.float32)
+    feats["atr_pct_change"] = atr_base.pct_change().fillna(0).astype(np.float32)
 
     # --- End New Features ---
 
@@ -749,6 +837,32 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     cur_pnl = (c - o_entry) * dir_s
     gb = (mfe - cur_pnl) / (mfe + 1e-12)
     feats["giveback"] = gb.clip(0, 1).shift(1).astype(np.float32)
+
+    # 2h MFE/MAE and directional path-risk block
+    o_entry_2 = o.shift(1)
+    h_max_2 = ff.numba_rolling_max(h, 2)
+    l_min_2 = ff.numba_rolling_min(l, 2)
+
+    mfe_long_2 = h_max_2 - o_entry_2
+    mae_long_2 = o_entry_2 - l_min_2
+
+    mfe_2 = mfe_long_2.where(dir_s > 0, o_entry_2 - l_min_2)
+    mae_2 = mae_long_2.where(dir_s > 0, h_max_2 - o_entry_2)
+
+    feats["mfe_2h"] = (mfe_2 / atr).shift(1).astype(np.float32)
+    feats["mae_2h"] = (mae_2 / atr).shift(1).astype(np.float32)
+
+    d_long = (h_max_2 - o_entry_2) / atr
+    d_short = (o_entry_2 - l_min_2) / atr
+    risk_long = (mae_long_2 / (mfe_long_2 + 1e-12)).clip(0, 10)
+    risk_short = ((h_max_2 - o_entry_2) / ((o_entry_2 - l_min_2) + 1e-12)).clip(0, 10)
+
+    feats["dir_path_long_2h"] = d_long.shift(1).astype(np.float32)
+    feats["dir_path_short_2h"] = d_short.shift(1).astype(np.float32)
+    feats["dir_path_risk_long_2h"] = risk_long.shift(1).astype(np.float32)
+    feats["dir_path_risk_short_2h"] = risk_short.shift(1).astype(np.float32)
+    feats["dir_path_edge_2h"] = (feats["dir_path_long_2h"] - feats["dir_path_short_2h"]).astype(np.float32)
+    feats["dir_path_risk_skew_2h"] = (feats["dir_path_risk_long_2h"] - feats["dir_path_risk_short_2h"]).astype(np.float32)
     del o_entry, h_max_4, l_min_4, mfe_long, mae_long, mfe, mae, cur_pnl, gb
 
     # --- Memory checkpoint: free GC before composite features ---
@@ -947,6 +1061,21 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["tf_qual"] = (s_pct * feats["tf_tape"]).astype(np.float32)
     feats["mr_qual"] = (reject_like * feats["mr_tape"]).astype(np.float32)
 
+    # Gate interactions with directional 2h path-risk block
+    dir_edge = feats.get("dir_path_edge_2h", pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32))
+    feats["accept_x_dir_edge_2h"] = (s_pct * dir_edge).astype(np.float32)
+    feats["reject_x_dir_edge_2h"] = (reject_like * dir_edge).astype(np.float32)
+    feats["tfq_x_dir_edge_2h"] = (feats["tf_qual"] * dir_edge).astype(np.float32)
+    feats["mrq_x_dir_edge_2h"] = (feats["mr_qual"] * dir_edge).astype(np.float32)
+
+    gate_interactions = {}
+    gate_interactions.update(add_gate_interaction_panel(s_pct, dir_edge, prefix="accept_dir2h"))
+    gate_interactions.update(add_gate_interaction_panel(reject_like, dir_edge, prefix="reject_dir2h"))
+    gate_interactions.update(add_gate_interaction_panel(feats["tf_qual"], dir_edge, prefix="tfq_dir2h"))
+    gate_interactions.update(add_gate_interaction_panel(feats["mr_qual"], dir_edge, prefix="mrq_dir2h"))
+    for gk, gv in gate_interactions.items():
+        feats[gk] = gv.astype(np.float32)
+
     # 4/ Meta
     feats["rv_ratio_6_24"] = (feats["rv_6h"] / (feats["rv_24h"] + 1e-12)).astype(np.float32)
 
@@ -1090,6 +1219,49 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     vol_trend = ff.numba_rolling_sum(v, 6) - ff.numba_rolling_sum(v, 24) / 4.0
     price_trend = feats["ret6h"]
     feats["vol_price_diverge"] = (np.sign(vol_trend) * np.sign(price_trend) * -1.0).astype(np.float32)
+
+    # 5. Alpha asymmetry-volatility features (MR/TF, long/short)
+    neg_ret = feats["ret1h"].clip(upper=0)
+    pos_ret = feats["ret1h"].clip(lower=0)
+    neg_sq = neg_ret * neg_ret
+    pos_sq = pos_ret * pos_ret
+
+    # Downside / Upside semivariance
+    feats["downside_semivariance_8"] = ff.apply_to_frame(neg_sq, ff._numba_rolling_mean_nan_safe, 8).astype(np.float32)
+    feats["downside_semivariance_24"] = ff.apply_to_frame(neg_sq, ff._numba_rolling_mean_nan_safe, 24).astype(np.float32)
+    feats["upside_semivariance_8"] = ff.apply_to_frame(pos_sq, ff._numba_rolling_mean_nan_safe, 8).astype(np.float32)
+    feats["upside_semivariance_24"] = ff.apply_to_frame(pos_sq, ff._numba_rolling_mean_nan_safe, 24).astype(np.float32)
+
+    # Downside / Upside volatility ratio (std ratio, not variance ratio)
+    down_vol_8 = np.sqrt(feats["downside_semivariance_8"].clip(lower=0))
+    up_vol_8 = np.sqrt(feats["upside_semivariance_8"].clip(lower=0))
+    down_vol_24 = np.sqrt(feats["downside_semivariance_24"].clip(lower=0))
+    up_vol_24 = np.sqrt(feats["upside_semivariance_24"].clip(lower=0))
+    feats["down_up_vol_ratio_8"] = (down_vol_8 / (up_vol_8 + 1e-12)).astype(np.float32)
+    feats["down_up_vol_ratio_24"] = (down_vol_24 / (up_vol_24 + 1e-12)).astype(np.float32)
+
+    # Volatility shock asymmetry
+    feats["vol_shock_asym_8_24"] = (feats["rv_8h"] - feats["rv_24h"]).astype(np.float32)
+    feats["vol_shock_asym_4_12"] = (feats["rv_4h"] - feats["rv_12h"]).astype(np.float32)
+    # Backward-compatible alias for requested notation "σ4 - σ212" (interpreted as 4 vs 12)
+    feats["vol_shock_asym_4_212"] = feats["vol_shock_asym_4_12"].astype(np.float32)
+
+    # 6. Alpha entropy features (MR/TF, long/short)
+    # Shannon entropy of returns
+    feats["shannon_entropy_ret_8"] = _rolling_shannon_entropy_df(feats["ret1h"], window=8, bins=8)
+    feats["shannon_entropy_ret_16"] = _rolling_shannon_entropy_df(feats["ret1h"], window=16, bins=12)
+
+    # Permutation entropy of returns
+    feats["perm_entropy_ret_12"] = _rolling_permutation_entropy_df(feats["ret1h"], window=12, order=3, delay=1)
+    feats["perm_entropy_ret_24"] = _rolling_permutation_entropy_df(feats["ret1h"], window=24, order=3, delay=1)
+
+    # Spectral entropy of returns
+    feats["spectral_entropy_ret_24"] = _rolling_spectral_entropy_df(feats["ret1h"], window=24)
+    feats["spectral_entropy_ret_48"] = _rolling_spectral_entropy_df(feats["ret1h"], window=48)
+
+    # Volume entropy
+    feats["volume_entropy_12"] = _rolling_shannon_entropy_df(v, window=12, bins=10)
+    feats["volume_entropy_24"] = _rolling_shannon_entropy_df(v, window=24, bins=12)
 
     # =====================================================================
     # RESIDUALISED FEATURES — relative surprise, not absolute magnitude

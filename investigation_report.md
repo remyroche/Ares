@@ -38,7 +38,7 @@ A significant block of features labeled **"Report 2026-02-10"** was added to the
 
 ### D. Training Pipeline Updates (`extreme_price_movements/training.py`)
 *   **Feature Selection:** Now uses `mdi_feature_selection_v3` with `ExtraTreesRegressor`.
-*   **Risk Optimization:** `optimize_risk_params` uses `run_tp_sl_selection_fast` with a **smaller** grid (TP max 1.5) than the "Expanded" version described in the implementation summary (TP max 3.0), suggesting the expanded grid might be missing or reverted.
+*   **Risk Optimization:** `optimize_risk_params` uses `run_tp_sl_selection_fast` with a **smaller** grid (TP max 1.5) than the "Expanded" version described in the implementation summary (TP max 3.0).
 
 ---
 
@@ -63,19 +63,20 @@ The addition of **powerful new features** (Wick Ratio, Vol/Price Div, Specialist
 *   `long_tf` ECE@10: +0.130 (worse)
 
 **Cause:**
-**Overconfidence without Regularization.**
+**Overconfidence.**
 *   The new features make the models more confident (pushing probabilities closer to 0 or 1).
-*   However, the **"Regularization Enhancement"** (expanded alpha/lambda grids for calibration) described in the implementation summary is **MISSING** from the current code (`meta_model.py` still uses standard `reg_alpha=0.5/1.0`).
-*   This leads to models that rank well (high AUC) but are miscalibrated (high ECE), meaning their probability estimates are too extreme compared to actual win rates.
+*   Models rank well (high AUC) but are miscalibrated (high ECE), meaning their probability estimates are too extreme compared to actual win rates.
 
 ### C. Failure of Meta Models (Spread/IC)
 **Observation:**
 *   All Meta Models failed the stage gates (Spread, IC, Coverage).
 
 **Cause:**
-**Missing Regularization.**
-*   The Meta Models are trained on `pred_logit` plus the new "Report 2026-02-10" meta features.
-*   Without the "Expanded alpha grid" (up to 20.0) mentioned in the summary, the Meta Models likely **overfit** to the noise in the new features, leading to poor generalization (low IC) and inability to separate top/bottom performers (low Spread).
+**Insufficient Regularization for Noisy Features.**
+*   The Meta Models are now using LGBM/XGBoost Quantile Regression, rather than Ridge Regression.
+*   The previous implementation summary mentioned an "Expanded alpha grid" (for linear models), but this is not applicable here.
+*   The current tree-based models likely **overfit** to the noise in the new "Report 2026-02-10" meta features.
+*   The current fixed regularization (`lambda_l1=1.0`, `lambda_l2=10.0`, `min_data_in_leaf=40` for LGBM) appears insufficient to prevent overfitting on the expanded feature set, leading to poor OOS generalization (low IC) and inability to separate top/bottom performers (low Spread).
 
 ### D. Success of Short TF Strategy
 **Observation:**
@@ -88,6 +89,6 @@ Short Trend Following (`short_tf`) inherently benefits from volatility expansion
 
 ## 3. Recommendations
 
-1.  **Apply Regularization:** Implement the "Expanded alpha grid" (up to 20.0) in `meta_model.py` to fix Meta Model overfitting and improve Alpha calibration.
+1.  **Increase GBDT Regularization:** Since the Meta Models use Gradient Boosting (LGBM/XGB), increase the regularization parameters (e.g., `lambda_l1`, `lambda_l2`, `min_data_in_leaf`) or reduce `num_leaves` to combat overfitting on the new feature set.
 2.  **Calibrate Alpha Models:** Re-run calibration tuning (Isotonic or Platt scaling) or apply the missing "Expanded TP/SL Grids" to find more robust risk parameters that might align probabilities better.
 3.  **Verify Candidate Logic:** Ensure the `sign_consistency` check in `candidates.py` is working as intended (using correct data source), as it significantly reduces the candidate pool and improves signal quality.

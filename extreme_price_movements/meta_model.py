@@ -357,12 +357,14 @@ class MetaModel:
             "learning_rate": 0.05, "n_estimators": 1500, "subsample": 0.7, "colsample_bytree": 0.7,
             "reg_alpha": 0.5, "reg_lambda": 10.0, "tree_method": "hist", "random_state": 42, "n_jobs": 3,
             "verbosity": 0, "monotone_constraints": mono, "interaction_constraints": inter,
+            "num_parallel_tree": 3,  # RF-style boosting to reduce variance/overfitting
         }
         xgb_multi = {
             "objective": "reg:quantileerror", "max_depth": 6, "gamma": 0.1,
             "learning_rate": 0.25, "n_estimators": 400, "subsample": 0.6, "colsample_bytree": 0.6,
             "reg_alpha": 1.0, "reg_lambda": 20.0, "tree_method": "hist", "random_state": 42, "n_jobs": 3,
             "verbosity": 0, "monotone_constraints": mono, "interaction_constraints": inter,
+            "num_parallel_tree": 3,  # RF-style boosting
         }
         lgb_q = {
             "objective": "quantile", "alpha": 0.85, "boosting_type": "gbdt", "num_leaves": 63,

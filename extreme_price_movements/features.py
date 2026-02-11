@@ -309,9 +309,11 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     c_raw.index = new_idx
 
     # Compute Proxy Target (User Request 2026-02-11)
-    # Forward 3h returns for feature selection skill metric
-    fwd_ret_3h = (c_raw.shift(-3) / c_raw - 1.0).fillna(0.0).astype(np.float32)
-    target_proxy = fwd_ret_3h
+    # Forward 2h and 8h returns averaged for feature selection skill metric
+    # This aligns gate selection with the multi-horizon nature of Alpha models.
+    fwd_ret_2h = (c_raw.shift(-2) / c_raw - 1.0).fillna(0.0).astype(np.float32)
+    fwd_ret_8h = (c_raw.shift(-8) / c_raw - 1.0).fillna(0.0).astype(np.float32)
+    target_proxy = (0.5 * (fwd_ret_2h + fwd_ret_8h)).astype(np.float32)
 
     c = _transform_price(c_raw, _label="close")
     del c_raw # Note: c is needed for Volume transform? No, but needed for features.

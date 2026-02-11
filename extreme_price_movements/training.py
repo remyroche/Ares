@@ -25,6 +25,317 @@ from .model_scoring import precision_at_k, avg_trades_per_day, ece_at_mask, topk
 from .metrics import calculate_selection_score
 from .gate_metrics import compute_stage_gate_metrics
 
+import os
+import json
+from datetime import datetime, timezone
+
+
+def _emoji(pass_flag):
+    return "✅" if bool(pass_flag) else "⚠️"
+
+
+TOPK_GATE_FRAC = 0.20
+TOPK_INFO_FRACS = (0.10, 0.30)
+
+
+def _mad(x):
+    x = np.asarray(x, dtype=float)
+    x = x[np.isfinite(x)]
+    if x.size == 0:
+        return 0.0
+    med = np.median(x)
+    return float(np.median(np.abs(x - med)) + 1e-12)
+
+
+def _safe_spearman(x, y):
+    try:
+        v = spearmanr(x, y).correlation
+        return float(v) if np.isfinite(v) else 0.0
+    except Exception:
+        return 0.0
+
+
+def _build_bin_mono_metrics(y_true, score, n_bins=10):
+    y_true = np.asarray(y_true, dtype=float)
+    score = np.asarray(score, dtype=float)
+    mask = np.isfinite(y_true) & np.isfinite(score)
+    y_true, score = y_true[mask], score[mask]
+    if y_true.size < 20:
+        return {"rho_bin_med": 0.0, "top_gt_mid_gt_bot": False, "top20_bot50_spread": 0.0}
+    q = np.nanquantile(score, np.linspace(0, 1, n_bins + 1))
+    q[0] -= 1e-12
+    q[-1] += 1e-12
+    bins = np.clip(np.digitize(score, q[1:-1]), 0, n_bins - 1)
+    medians = []
+    idxs = []
+    for b in range(n_bins):
+        m = bins == b
+        if m.any():
+            idxs.append(b)
+            medians.append(float(np.median(y_true[m])))
+    rho = _safe_spearman(idxs, medians) if len(medians) >= 3 else 0.0
+    top = float(np.median(y_true[score >= np.nanquantile(score, 0.90)]))
+    mid = float(np.median(y_true[(score >= np.nanquantile(score, 0.45)) & (score <= np.nanquantile(score, 0.55))]))
+    bot = float(np.median(y_true[score <= np.nanquantile(score, 0.10)]))
+    spread = float(np.median(y_true[score >= np.nanquantile(score, 0.80)]) - np.median(y_true[score <= np.nanquantile(score, 0.50)]))
+    return {
+        "rho_bin_med": rho,
+        "top_gt_mid_gt_bot": bool((top > mid) and (mid > bot)),
+        "top20_bot50_spread": spread,
+    }
+
+
+def _fold_stats_from_groups(y, pred, groups, fn):
+    if groups is None:
+        return []
+    g = np.asarray(groups)
+    out = []
+    for gg in np.unique(g):
+        m = g == gg
+        if np.sum(m) < 10:
+            continue
+        out.append(fn(y[m], pred[m]))
+    return out
+
+
+def _base_model_report_entry(model_name, side, kind, dm, y_bin, oof_probs, y_ret, groups):
+    prev = float(np.mean(y_bin))
+    prev = float(np.clip(prev, 1e-7, 1 - 1e-7))
+    base_brier = prev * (1.0 - prev)
+    base_ll = -(prev*np.log(prev) + (1-prev)*np.log(1-prev))
+    brier = float(dm.get("Brier", np.nan))
+    ll = float(dm.get("LogLoss", np.nan))
+    brier_imp = (base_brier - brier) / max(base_brier, 1e-9)
+    ll_imp = (base_ll - ll) / max(base_ll, 1e-9)
+
+    k_frac = TOPK_GATE_FRAC
+    k_n = max(1, int(len(y_bin) * k_frac))
+    idx = np.argsort(oof_probs)[-k_n:]
+    prec_k = float(np.mean(y_bin[idx]))
+    lift_k = prec_k / max(prev, 1e-9)
+    prec_lift_abs = prec_k - prev
+
+    # Informational (non-gating) precision/lift at 10% and 30%
+    info_metrics = {}
+    for _frac in TOPK_INFO_FRACS:
+        _n = max(1, int(len(y_bin) * _frac))
+        _idx = np.argsort(oof_probs)[-_n:]
+        _prec = float(np.mean(y_bin[_idx]))
+        info_metrics[f"prec_at_{int(_frac*100)}pct"] = _prec
+        info_metrics[f"lift_at_{int(_frac*100)}pct"] = _prec / max(prev, 1e-9)
+
+    fold_imp = [x for x in dm.get("fold_logloss_imp", []) if np.isfinite(x)]
+    pos_fold_ratio = float(np.mean(np.array(fold_imp) >= 0.005)) if fold_imp else 0.0
+    worst_fold_imp = float(np.min(fold_imp)) if fold_imp else -1.0
+
+    checks = {
+        "pr_auc_ge_0_54": float(dm.get("Prec20", np.nan)) >= 0 and float(dm.get("AUC", 0.0)) >= 0 and float(dm.get("AUC", 0.0)) >= 0,
+        "brier_and_logloss_improve_ge_2pct": bool((brier_imp >= 0.02) and (ll_imp >= 0.02)),
+        "liftk_and_preck_lift": bool((lift_k >= 1.2) and ((prec_lift_abs >= 0.025) or ((lift_k - 1.0) >= 0.05))),
+        "cv_precisionk_le_0_30": float(dm.get("CV_Prec20", 1.0)) <= 0.30,
+        "delta_logloss_le_minus_0_5pct": ll_imp >= 0.005,
+        "logloss_improves_in_ge_70pct_folds": pos_fold_ratio >= 0.70,
+        "worst_fold_delta_logloss_ge_0_5pct_improve": worst_fold_imp >= 0.005,
+    }
+
+    from sklearn.metrics import average_precision_score
+    pr_auc = float(average_precision_score(y_bin, oof_probs)) if len(np.unique(y_bin)) > 1 else 0.0
+    checks["pr_auc_ge_0_54"] = pr_auc >= 0.54
+
+    metrics = {
+        "pr_auc": pr_auc,
+        "brier_improvement": float(brier_imp),
+        "logloss_improvement": float(ll_imp),
+        "lift_at_20pct": float(lift_k),
+        "precision_lift_abs": float(prec_lift_abs),
+        "cv_precision20": float(dm.get("CV_Prec20", np.nan)),
+        "fold_logloss_improvement_ratio": pos_fold_ratio,
+        "worst_fold_logloss_improvement": worst_fold_imp,
+        **info_metrics,
+    }
+
+    return {
+        "model": model_name,
+        "side": side,
+        "kind": kind,
+        "score": float(dm.get("rank_score", dm.get("score", 0.0))),
+        "checks": {k: {"pass": bool(v), "emoji": _emoji(v)} for k, v in checks.items()},
+        "metrics": metrics,
+        "passed": bool(all(checks.values())),
+    }
+
+
+def _meta_report_entry(name, meta_model, y_target, y_ret, base_score, groups):
+    pred = np.asarray(meta_model.oof_probs, dtype=float)
+    y_target = np.asarray(y_target, dtype=float)
+    y_ret = np.asarray(y_ret, dtype=float)
+    if pred.size != y_target.size:
+        n = min(pred.size, y_target.size)
+        pred, y_target, y_ret = pred[:n], y_target[:n], y_ret[:n]
+        if groups is not None:
+            groups = np.asarray(groups)[:n]
+
+    tau = 0.85
+    is_quantile = meta_model.model and meta_model.model.get("kind") in {"xgb", "lgb", "qreg_l1"}
+
+    def pinball(y, q, a=tau):
+        e = y - q
+        return float(np.mean(np.maximum(a*e, (a-1.0)*e)))
+
+    cov = float(np.mean(y_target <= pred))
+    pb = pinball(y_target, pred)
+    base_q = float(np.quantile(y_target, tau))
+    pb_base = pinball(y_target, np.full_like(y_target, base_q))
+    pb_imp = (pb_base - pb) / max(pb_base, 1e-9)
+
+    fold_pb_imp = []
+    fold_sign = []
+    if groups is not None:
+        g = np.asarray(groups)
+        for gg in np.unique(g):
+            m = g == gg
+            if np.sum(m) < 20:
+                continue
+            pbf = pinball(y_target[m], pred[m])
+            bqf = float(np.quantile(y_target[m], tau))
+            pbbf = pinball(y_target[m], np.full(np.sum(m), bqf))
+            impf = (pbbf - pbf) / max(pbbf, 1e-9)
+            fold_pb_imp.append(float(impf))
+            fold_sign.append(float(impf) >= 0.02)
+
+    ic = _safe_spearman(pred, y_ret)
+    fold_ics = _fold_stats_from_groups(y_ret, pred, groups, _safe_spearman) if groups is not None else []
+    pos_ic_ratio = float(np.mean(np.array(fold_ics) > 0)) if fold_ics else 0.0
+    stable_sign = True
+    if fold_ics:
+        signs = np.sign(fold_ics)
+        stable_sign = bool(np.mean(signs == np.sign(np.mean(fold_ics))) >= 0.7)
+
+    mono = _build_bin_mono_metrics(y_ret, pred, n_bins=10)
+    mad_y = _mad(y_ret)
+    spread_ok = (mono["top20_bot50_spread"] >= 0.25 * mad_y) or (mono["top20_bot50_spread"] > 0)
+
+    k20 = max(1, int(TOPK_GATE_FRAC * len(pred)))
+    idx_meta = np.argsort(pred)[-k20:]
+    idx_base = np.argsort(base_score)[-k20:]
+    def es_tail(v):
+        s = np.asarray(v, dtype=float)
+        if s.size == 0:
+            return 0.0
+        q = np.quantile(s, 0.15)
+        tail = s[s <= q]
+        return float(np.mean(tail)) if tail.size else float(q)
+    es_meta = es_tail(y_ret[idx_meta])
+    es_base = es_tail(y_ret[idx_base])
+    es_ok = es_meta <= 1.1 * es_base if es_base > 0 else es_meta >= 1.1 * es_base
+
+    def strat_metrics(sel_idx):
+        r = y_ret[sel_idx]
+        net = float(np.sum(r))
+        dn = r[r < 0]
+        sortino = float(np.mean(r) / (np.std(dn) + 1e-9)) if dn.size else 0.0
+        return net, sortino
+    net_meta, sort_meta = strat_metrics(idx_meta)
+    net_base, sort_base = strat_metrics(idx_base)
+
+    # Informational (non-gating): Top10 and Top30 policy slices
+    info_policy = {}
+    for _frac in TOPK_INFO_FRACS:
+        _k = max(1, int(_frac * len(pred)))
+        _idx_m = np.argsort(pred)[-_k:]
+        _idx_b = np.argsort(base_score)[-_k:]
+        _nm, _sm = strat_metrics(_idx_m)
+        _nb, _sb = strat_metrics(_idx_b)
+        tag = f"{int(_frac*100)}"
+        info_policy[f"net_return_meta_top{tag}"] = _nm
+        info_policy[f"net_return_base_top{tag}"] = _nb
+        info_policy[f"sortino_meta_top{tag}"] = _sm
+        info_policy[f"sortino_base_top{tag}"] = _sb
+
+    checks = {}
+    if is_quantile:
+        checks.update({
+            "coverage_tau": abs(cov - tau) <= 0.05,
+            "pinball_improve_ge_2pct": pb_imp >= 0.02,
+            "pinball_improve_ge_2of3_folds": (np.mean(fold_sign) >= (2/3)) if fold_sign else False,
+        })
+    else:
+        # proxy robust-loss/bias checks based on oof residuals
+        res = pred - y_target
+        loss = float(np.mean(np.abs(res)))
+        loss_base = float(np.mean(np.abs(np.full_like(y_target, np.median(y_target)) - y_target)))
+        loss_imp = (loss_base - loss) / max(loss_base, 1e-9)
+        fold_loss = _fold_stats_from_groups(y_target, pred, groups, lambda yt, pr: (np.mean(np.abs(np.median(yt)-yt)) - np.mean(np.abs(pr-yt))) / max(np.mean(np.abs(np.median(yt)-yt)),1e-9)) if groups is not None else []
+        mean_err = float(np.mean(res))
+        bias_fold = _fold_stats_from_groups(y_target, pred, groups, lambda yt, pr: np.mean(pr-yt)) if groups is not None else []
+        mad_t = _mad(y_target)
+        checks.update({
+            "robust_loss_ge_2pct": loss_imp >= 0.02,
+            "robust_loss_ge_2of3_folds": (np.mean(np.array(fold_loss) > 0) >= 2/3) if fold_loss else False,
+            "robust_loss_worst_fold_ge_1pct": (np.min(fold_loss) >= 0.01) if fold_loss else False,
+            "bias_overall": abs(mean_err) <= 0.05 * mad_t,
+            "bias_per_fold": (np.max(np.abs(bias_fold)) <= 0.07 * mad_t) if bias_fold else False,
+        })
+
+    checks.update({
+        "spearman_ic_ge_0_03": ic >= 0.03,
+        "ic_stable_sign": stable_sign,
+        "ic_pos_ge_70pct_folds": pos_ic_ratio >= 0.70,
+        "bin_monotonicity_ge_0_9": mono["rho_bin_med"] >= 0.90,
+        "top_mid_bottom_ordering": mono["top_gt_mid_gt_bot"],
+        "top20_bottom50_spread": spread_ok,
+        "es20_meta_vs_base": es_ok,
+        "net_return_vs_no_meta": net_meta > net_base,
+        "sortino_vs_no_meta": sort_meta > sort_base,
+    })
+
+    return {
+        "model": name,
+        "model_type": meta_model.model.get("kind") if meta_model.model else None,
+        "passed": bool(all(checks.values())),
+        "checks": {k: {"pass": bool(v), "emoji": _emoji(v)} for k, v in checks.items()},
+        "metrics": {
+            "coverage": cov,
+            "pinball_improvement": pb_imp,
+            "spearman_ic": ic,
+            "ic_positive_fold_ratio": pos_ic_ratio,
+            "bin_spearman": mono["rho_bin_med"],
+            "top20_bottom50_spread": mono["top20_bot50_spread"],
+            "es20_meta": es_meta,
+            "es20_base": es_base,
+            "net_return_meta": net_meta,
+            "net_return_base": net_base,
+            "sortino_meta": sort_meta,
+            "sortino_base": sort_base,
+            **info_policy,
+        },
+    }
+
+
+def save_training_gate_report(report_payload, cfg, run_id=None):
+    reports_dir = os.path.join("extreme_price_movements", "reports")
+    os.makedirs(reports_dir, exist_ok=True)
+    rid = run_id or datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    out_path = os.path.join(reports_dir, f"training_gate_report_{rid}.json")
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(report_payload, f, indent=2)
+    return out_path
+
+
+def print_training_gate_report(report_payload):
+    tprint("\n=== Model Quality Gate Report (with thresholds) ===")
+    for section in ["base_models", "meta_models"]:
+        items = report_payload.get(section, [])
+        if not items:
+            tprint(f"{section}: no entries")
+            continue
+        tprint(f"{section}: {len(items)} models")
+        for it in items:
+            status = "✅" if it.get("passed") else "⚠️"
+            tprint(f"  {status} {it.get('model')} score={it.get('score', np.nan):.4f}")
+            for ck, cv in it.get("checks", {}).items():
+                tprint(f"    {cv.get('emoji','⚠️')} {ck}: {cv.get('pass')}" )
+
 
 class AlphaHorizonEnsemble:
     """Average probabilities across multiple horizon-specific alpha models."""
@@ -2121,6 +2432,88 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
     if meta_pass_count < 2:
         tprint("WARNING: Meta Stage FAILED (< 2 models passed).")
 
+    # Extended per-model quality report (base + meta) including race candidates.
+    base_quality_rows = []
+    for side in trade_sides:
+        for kind in kinds:
+            conf = final_models.get(side, {}).get(kind)
+            if not conf or "model" not in conf:
+                continue
+            H = conf.get("H", 4)
+            ds_key = f"train_{side}_{kind}_{H}"
+            if ds_key not in datasets:
+                continue
+            dfm = datasets[ds_key]
+            y_bin = (dfm["__y_bin__"].values >= 0.5).astype(int)
+            y_ret = dfm["__y_ret__"].values.astype(float)
+            groups = dfm["__ts__"].values if "__ts__" in dfm.columns else None
+            race = conf["model"]
+            if race.oof_probs is None:
+                continue
+            oof_probs = np.asarray(race.oof_probs, dtype=float)
+            n = min(len(y_bin), len(oof_probs), len(y_ret))
+            y_bin, oof_probs, y_ret = y_bin[:n], oof_probs[:n], y_ret[:n]
+            if groups is not None:
+                groups = np.asarray(groups)[:n]
+            for cand_name, dm in race.detailed_metrics.items():
+                entry = _base_model_report_entry(
+                    model_name=f"{side}_{kind}:{cand_name}",
+                    side=side,
+                    kind=kind,
+                    dm=dm,
+                    y_bin=y_bin,
+                    oof_probs=oof_probs,
+                    y_ret=y_ret,
+                    groups=groups,
+                )
+                entry["is_winner"] = (cand_name == race.best_model_name)
+                base_quality_rows.append(entry)
+
+    meta_quality_rows = []
+    for key, meta in meta_models.items():
+        if not key or "_" not in key:
+            continue
+        side, kind = key.split("_", 1)
+        conf = final_models.get(side, {}).get(kind)
+        if not conf or conf.get("model") is None or conf["model"].oof_probs is None:
+            continue
+        H = conf.get("H", 4)
+        ds_key = f"train_{side}_{kind}_{H}"
+        if ds_key not in datasets:
+            continue
+        dfm = datasets[ds_key]
+        y_ret = dfm["__y_ret__"].values.astype(float)
+        y_target = compute_meta_target(
+            datasets.get(f"train_{side}_{kind}_2", dfm)["__y_ret__"].values.astype(float) if f"train_{side}_{kind}_2" in datasets else y_ret,
+            datasets.get(f"train_{side}_{kind}_4", dfm)["__y_ret__"].values.astype(float) if f"train_{side}_{kind}_4" in datasets else y_ret,
+            datasets.get(f"train_{side}_{kind}_8", dfm)["__y_ret__"].values.astype(float) if f"train_{side}_{kind}_8" in datasets else y_ret,
+        )
+        base_score = np.asarray(conf["model"].oof_probs, dtype=float)
+        groups = dfm["__ts__"].values if "__ts__" in dfm.columns else None
+        n = min(len(y_ret), len(y_target), len(base_score), len(meta.oof_probs) if meta.oof_probs is not None else 0)
+        if n <= 10:
+            continue
+        y_ret, y_target, base_score = y_ret[:n], y_target[:n], base_score[:n]
+        if groups is not None:
+            groups = np.asarray(groups)[:n]
+        meta_quality_rows.append(_meta_report_entry(key, meta, y_target, y_ret, base_score, groups))
+
+    winners_base = sorted([r for r in base_quality_rows if r.get("is_winner")], key=lambda x: x.get("score", -1e9), reverse=True)
+    others_base = sorted([r for r in base_quality_rows if not r.get("is_winner")], key=lambda x: x.get("score", -1e9), reverse=True)
+    winners_meta = sorted([r for r in meta_quality_rows if r.get("passed")], key=lambda x: x.get("metrics", {}).get("spearman_ic", -1e9), reverse=True)
+    others_meta = sorted([r for r in meta_quality_rows if not r.get("passed")], key=lambda x: x.get("metrics", {}).get("spearman_ic", -1e9), reverse=True)
+
+    gate_report = {
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "base_models": winners_base + others_base,
+        "meta_models": winners_meta + others_meta,
+        "winners": {
+            "base": [r["model"] for r in winners_base],
+            "meta": [r["model"] for r in winners_meta],
+        },
+    }
+    print_training_gate_report(gate_report)
+
     return {
         "alpha_models": final_models,
         "alpha_oof_metrics": {f"{side}_{kind}": final_models.get(side, {}).get(kind, {}).get("alpha_diag", {}) for side in trade_sides for kind in kinds},
@@ -2128,7 +2521,9 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
         "meta_models": meta_models,
         "spike_models": spike_models,
         "specialist_models": specialist_models,
+        "quality_gate_report": gate_report,
     }
+
 
 def select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
     # DEPRECATED / LEGACY WRAPPER

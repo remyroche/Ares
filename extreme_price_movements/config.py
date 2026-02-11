@@ -8,7 +8,9 @@ neutral_feature_keys = [
 
 MODEL_FEATURES = [
     # Momentum / structure extensions
-    "thrust_decay_4", "decel_4", "ft_drop", "ext_excess", "ext_atrExp",
+    "thrust_decay_4", "decel_4", "ft_drop",
+    "thrust_decay_8", "decel_8", "ft_drop_8",
+    "ext_excess", "ext_atrExp",
     "comp_to_exp", "evr6_x_volz", "stall_x_flow", "prog_def",
     "clv_collapse", "clv_pullback", "coh", "align", "retest_quality",
     "pb_accel", "rv_ratio_6_24", "excess_coh", "asym_ft",
@@ -47,8 +49,8 @@ MODEL_FEATURES = [
 # Helper/base features produced in features.py that should remain selectable by model heads.
 # This increases candidate breadth before MDI pruning.
 HELPER_BASE_FEATURES = [
-    "ret1h", "ret6h", "atr_pct_base", "rsi_base", "rsi_slope_base",
-    "rv_6h", "rv_12h", "rv_24h", "qv", "vol_z24_base", "vol_z_base",
+    "ret1h", "ret6h", "ret8h", "atr_pct_base", "rsi_base", "rsi_slope_base",
+    "rv_6h", "rv_8h", "rv_12h", "rv_24h", "qv", "vol_z24_base", "vol_z_base",
     "dist_ema_fast_base", "dist_ema_slow_base", "trend_pct_base",
     "rvol_hod_base", "signed_vol", "up_vol", "dn_vol", "up_vol_6", "dn_vol_6",
     "vol_asym_6", "clv", "clv_mean_2", "excess_12h", "speed",
@@ -306,7 +308,7 @@ CFG = {
     # TF Head (Specifics + Global) — includes trend maturity features
     "tf_feature_keys": [
         "accept", "retest_accept", "tf_qual", "coherence_24", "impulse_ratio_24",
-        "tf_tape", "clv_mean_4", "pullback_2", "pullback_4", "ft_2", "ft_4",
+        "tf_tape", "clv_mean_4", "pullback_2", "pullback_4", "pullback_8", "ft_2", "ft_4", "ft_8",
         "vov_ratio", "vov_interaction", "vov_fast_slow_ratio", "accel_5h", "breakout_24h",
         "stage_tf", "tf_bias", "flow_persistence", "flow_ratio",
         "progress", "evr_6", "delta_stall_6"
@@ -316,19 +318,19 @@ CFG = {
     "mr_feature_keys": [
         "accept", "accept_bin3", "overext", "overext_weak", "mr_qual", "retrace_12",
         "impulse_ratio_24", "coherence_24", "mr_tape",
-        "clv_mean_4", "pullback_2", "pullback_4", "ft_2", "ft_4",
+        "clv_mean_4", "pullback_2", "pullback_4", "pullback_8", "ft_2", "ft_4", "ft_8",
         "giveback", "blowoff_risk", "exh_qual", "stage_blowoff", "stage_mr",
-        "donch_dist_12", "excess_6h", "tail_fail", "tail_against",
-        "mfe_4h", "mae_4h"
+        "donch_dist_12", "donch_dist_8", "excess_6h", "tail_fail", "tail_against",
+        "mfe_4h", "mae_4h", "mfe_8h", "mae_8h"
     ] + neutral_feature_keys + MODEL_FEATURES + HELPER_BASE_FEATURES,
 
     # Meta Learner
     "meta_feature_keys": [
         "ambig", "stage_tf", "stage_blowoff", "stage_mr", "exh_qual",
         "accept", "accept_bin3", "accept_gt85", "rv_ratio_6_24",
-        "excess_6h", "donch_dist_12", "clv_mean_4", "evr_6", "delta_stall_6",
-        "ft_2", "asym_ratio", "mfe_4h", "mae_4h", "giveback",
-        "ret1h", "ret6h", "rv_6h", "rv_24h", "mkt_rv_ratio",
+        "excess_6h", "donch_dist_12", "donch_dist_8", "clv_mean_4", "evr_6", "delta_stall_6",
+        "ft_2", "asym_ratio", "mfe_4h", "mae_4h", "mfe_8h", "mae_8h", "giveback",
+        "ret1h", "ret6h", "rv_6h", "rv_8h", "rv_24h", "mkt_rv_ratio",
         "qv", "signed_vol", "vol_z", "atr_pct", "trend_pct",
         "spike_score", "grind_score", "chop_score",
         "G_META_EXH", "G_META_TF_QUAL", "G_META_MR_QUAL", "G_META_AMBIG",

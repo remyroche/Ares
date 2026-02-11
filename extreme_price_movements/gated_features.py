@@ -160,6 +160,30 @@ def add_accept_gate_features(
     )
 
 
+def add_gate_interaction_panel(
+    left: pd.DataFrame,
+    right: pd.DataFrame,
+    prefix: str,
+    clip: float = 10.0,
+) -> Dict[str, pd.DataFrame]:
+    """
+    Build compact interaction features between two panel signals (Time x Assets).
+    Returns a dict of standardized interaction variants.
+    """
+    l = left.astype(np.float32)
+    r = right.astype(np.float32)
+
+    prod = (l * r).clip(-clip, clip).astype(np.float32)
+    abs_prod = (l.abs() * r.abs()).clip(0, clip).astype(np.float32)
+    signed_mag = (np.sign(l) * r.abs()).clip(-clip, clip).astype(np.float32)
+
+    return {
+        f"{prefix}_prod": prod,
+        f"{prefix}_abs_prod": abs_prod,
+        f"{prefix}_signed_mag": signed_mag,
+    }
+
+
 # --------- Feature Selection Helpers (User Request) ---------
 
 def prevalence(binary_gate_col: Union[pd.Series, pd.DataFrame], train_mask: pd.Series) -> float:

@@ -19,6 +19,14 @@ MODEL_FEATURES = [
     "vov_iqr_20", "vov_mad_20", "vov_mad_60", "vov_ratio", "vov_interaction",
     "vov_fast_slow_ratio", "accel_5h", "dlog_vol_5h", "signed_max_bar_ret_5h",
     "jump_rate_10h", "volu_z", "volume_price_corr_10h", "draw_sym_10h", "draw_extreme_10h",
+    "shannon_entropy_ret_8", "shannon_entropy_ret_16",
+    "perm_entropy_ret_12", "perm_entropy_ret_24",
+    "spectral_entropy_ret_24", "spectral_entropy_ret_48",
+    "volume_entropy_12", "volume_entropy_24",
+    "downside_semivariance_8", "downside_semivariance_24",
+    "upside_semivariance_8", "upside_semivariance_24",
+    "down_up_vol_ratio_8", "down_up_vol_ratio_24",
+    "vol_shock_asym_8_24", "vol_shock_asym_4_12", "vol_shock_asym_4_212",
     "breakout_24h",
     "meta_abs_net_x_breakout", "meta_abs_net_x_drawext", "meta_abs_net_x_vov_ratio",
     "meta_alignment", "meta_signal_x_accel",
@@ -31,6 +39,15 @@ MODEL_FEATURES = [
     # Alpha Features (Report 2026-02-10)
     "breakout_min", "impulse_reversal", "impulse_reversal_short",
     "breakout_confirmed", "breakout_t", "pct_breakout_t",
+    # 2h directional path-risk
+    "dir_path_long_2h", "dir_path_short_2h", "dir_path_risk_long_2h", "dir_path_risk_short_2h",
+    "dir_path_edge_2h", "dir_path_risk_skew_2h",
+    # Gate interactions (2h focus)
+    "accept_x_dir_edge_2h", "reject_x_dir_edge_2h", "tfq_x_dir_edge_2h", "mrq_x_dir_edge_2h",
+    "accept_dir2h_prod", "accept_dir2h_abs_prod", "accept_dir2h_signed_mag",
+    "reject_dir2h_prod", "reject_dir2h_abs_prod", "reject_dir2h_signed_mag",
+    "tfq_dir2h_prod", "tfq_dir2h_abs_prod", "tfq_dir2h_signed_mag",
+    "mrq_dir2h_prod", "mrq_dir2h_abs_prod", "mrq_dir2h_signed_mag",
     # Volume/Flow
     "v_power", "flow_persistence", "flow_ratio", "churn",
     "vol_range_shock", "climax_decay", "cumulative_delta_stall",
@@ -49,8 +66,8 @@ MODEL_FEATURES = [
 # Helper/base features produced in features.py that should remain selectable by model heads.
 # This increases candidate breadth before MDI pruning.
 HELPER_BASE_FEATURES = [
-    "ret1h", "ret6h", "ret8h", "atr_pct_base", "rsi_base", "rsi_slope_base",
-    "rv_6h", "rv_8h", "rv_12h", "rv_24h", "qv", "vol_z24_base", "vol_z_base",
+    "ret1h", "ret2h", "ret4h", "ret6h", "ret8h", "atr_pct_base", "rsi_base", "rsi_slope_base",
+    "rv_2h", "rv_4h", "rv_6h", "rv_8h", "rv_12h", "rv_24h", "qv", "vol_z24_base", "vol_z_base",
     "dist_ema_fast_base", "dist_ema_slow_base", "trend_pct_base",
     "rvol_hod_base", "signed_vol", "up_vol", "dn_vol", "up_vol_6", "dn_vol_6",
     "vol_asym_6", "clv", "clv_mean_2", "excess_12h", "speed",
@@ -146,7 +163,7 @@ CFG = {
     # Added new features for TF/MR/Meta
     "drop_raw_causal": True,
     "causal_cols": [
-        "ret24h", "rsi", "vol_z", "atr_pct", "trend_pct", "rv_24h",
+        "ret24h", "rsi", "vol_z", "atr_pct", "trend_pct", "rv_2h", "rv_4h", "rv_24h",
         "p_exh_lag1",
         "a_funding_proxy",
         "flow_ratio", "churn", "slope", "trend_snr",
@@ -174,12 +191,26 @@ CFG = {
         "S", "impulse_ratio_24", "impulse_ratio_12", "coherence_24", "accel",
         "tf_tape", "mr_tape", "accept", "accept_bin3", "accept_gt66", "accept_gt85", "retest_accept", "tf_qual", "mr_qual",
         "retrace_12", "ambig", "stage_tf", "stage_blowoff", "stage_mr", "exh_qual"
+        ,"mfe_2h", "mae_2h", "dir_path_long_2h", "dir_path_short_2h",
+        "dir_path_risk_long_2h", "dir_path_risk_short_2h", "dir_path_edge_2h", "dir_path_risk_skew_2h",
+        "accept_x_dir_edge_2h", "reject_x_dir_edge_2h", "tfq_x_dir_edge_2h", "mrq_x_dir_edge_2h",
+        "accept_dir2h_prod", "accept_dir2h_abs_prod", "accept_dir2h_signed_mag",
+        "reject_dir2h_prod", "reject_dir2h_abs_prod", "reject_dir2h_signed_mag",
+        "tfq_dir2h_prod", "tfq_dir2h_abs_prod", "tfq_dir2h_signed_mag",
+        "mrq_dir2h_prod", "mrq_dir2h_abs_prod", "mrq_dir2h_signed_mag"
         ,"vov_iqr_20", "vov_mad_20", "vov_mad_60", "vov_ratio", "vov_interaction",
         "vov_fast_slow_ratio", "accel_5h", "dlog_vol_5h", "signed_max_bar_ret_5h",
         "jump_rate_10h", "volu_z", "volume_price_corr_10h", "draw_sym_10h", "breakout_24h",
         "vol_z_30_calm",
         "meta_abs_net_x_breakout", "meta_abs_net_x_drawext", "meta_abs_net_x_vov_ratio",
         "meta_alignment", "meta_signal_x_accel",
+        "dir_path_long_2h", "dir_path_short_2h", "dir_path_risk_long_2h", "dir_path_risk_short_2h",
+        "dir_path_edge_2h", "dir_path_risk_skew_2h",
+        "accept_x_dir_edge_2h", "reject_x_dir_edge_2h", "tfq_x_dir_edge_2h", "mrq_x_dir_edge_2h",
+        "accept_dir2h_prod", "accept_dir2h_abs_prod", "accept_dir2h_signed_mag",
+        "reject_dir2h_prod", "reject_dir2h_abs_prod", "reject_dir2h_signed_mag",
+        "tfq_dir2h_prod", "tfq_dir2h_abs_prod", "tfq_dir2h_signed_mag",
+        "mrq_dir2h_prod", "mrq_dir2h_abs_prod", "mrq_dir2h_signed_mag",
         # Orthogonal features (structurally independent dimensions)
         "mtf_divergence", "mtf_div_mag",
         "autocorr_6h", "autocorr_24h",
@@ -187,6 +218,14 @@ CFG = {
         "hurst_proxy_24",
         "vol_concentration_12",
         "vol_price_diverge",
+        "shannon_entropy_ret_8", "shannon_entropy_ret_16",
+        "perm_entropy_ret_12", "perm_entropy_ret_24",
+        "spectral_entropy_ret_24", "spectral_entropy_ret_48",
+        "volume_entropy_12", "volume_entropy_24",
+        "downside_semivariance_8", "downside_semivariance_24",
+        "upside_semivariance_8", "upside_semivariance_24",
+        "down_up_vol_ratio_8", "down_up_vol_ratio_24",
+        "vol_shock_asym_8_24", "vol_shock_asym_4_12", "vol_shock_asym_4_212",
         # Residualised features — relative surprise, not absolute magnitude
         "rsi_z", "dist_ema_fast_z", "dist_vwap_norm_z", "flow_persistence_z",
         "excess_6h_z", "vol_z_z", "atr_expansion_z", "coherence_24_z",
@@ -311,7 +350,13 @@ CFG = {
         "tf_tape", "clv_mean_4", "pullback_2", "pullback_4", "pullback_8", "ft_2", "ft_4", "ft_8",
         "vov_ratio", "vov_interaction", "vov_fast_slow_ratio", "accel_5h", "breakout_24h",
         "stage_tf", "tf_bias", "flow_persistence", "flow_ratio",
-        "progress", "evr_6", "delta_stall_6"
+        "progress", "evr_6", "delta_stall_6", "rv_2h", "rv_4h",
+        "dir_path_long_2h", "dir_path_short_2h", "dir_path_edge_2h",
+        "accept_x_dir_edge_2h", "tfq_x_dir_edge_2h", "accept_dir2h_prod", "tfq_dir2h_prod",
+        "downside_semivariance_8", "downside_semivariance_24",
+        "upside_semivariance_8", "upside_semivariance_24",
+        "down_up_vol_ratio_8", "down_up_vol_ratio_24",
+        "vol_shock_asym_8_24", "vol_shock_asym_4_12", "vol_shock_asym_4_212"
     ] + neutral_feature_keys + MODEL_FEATURES + HELPER_BASE_FEATURES,
 
     # MR Head (Specifics + Global) — includes exhaustion features
@@ -321,7 +366,13 @@ CFG = {
         "clv_mean_4", "pullback_2", "pullback_4", "pullback_8", "ft_2", "ft_4", "ft_8",
         "giveback", "blowoff_risk", "exh_qual", "stage_blowoff", "stage_mr",
         "donch_dist_12", "donch_dist_8", "excess_6h", "tail_fail", "tail_against",
-        "mfe_4h", "mae_4h", "mfe_8h", "mae_8h"
+        "mfe_2h", "mae_2h", "mfe_4h", "mae_4h", "mfe_8h", "mae_8h",
+        "rv_2h", "rv_4h", "dir_path_risk_long_2h", "dir_path_risk_short_2h",
+        "reject_x_dir_edge_2h", "mrq_x_dir_edge_2h", "reject_dir2h_prod", "mrq_dir2h_prod",
+        "downside_semivariance_8", "downside_semivariance_24",
+        "upside_semivariance_8", "upside_semivariance_24",
+        "down_up_vol_ratio_8", "down_up_vol_ratio_24",
+        "vol_shock_asym_8_24", "vol_shock_asym_4_12", "vol_shock_asym_4_212"
     ] + neutral_feature_keys + MODEL_FEATURES + HELPER_BASE_FEATURES,
 
     # Meta Learner
@@ -329,14 +380,25 @@ CFG = {
         "ambig", "stage_tf", "stage_blowoff", "stage_mr", "exh_qual",
         "accept", "accept_bin3", "accept_gt85", "rv_ratio_6_24",
         "excess_6h", "donch_dist_12", "donch_dist_8", "clv_mean_4", "evr_6", "delta_stall_6",
-        "ft_2", "asym_ratio", "mfe_4h", "mae_4h", "mfe_8h", "mae_8h", "giveback",
-        "ret1h", "ret6h", "rv_6h", "rv_8h", "rv_24h", "mkt_rv_ratio",
+        "ft_2", "asym_ratio", "mfe_2h", "mae_2h", "mfe_4h", "mae_4h", "mfe_8h", "mae_8h", "giveback",
+        "ret1h", "ret2h", "ret4h", "ret6h", "rv_2h", "rv_4h", "rv_6h", "rv_8h", "rv_24h", "mkt_rv_ratio",
         "qv", "signed_vol", "vol_z", "atr_pct", "trend_pct",
         "spike_score", "grind_score", "chop_score",
         "G_META_EXH", "G_META_TF_QUAL", "G_META_MR_QUAL", "G_META_AMBIG",
         "vol_z_30_calm", "breakout_24h", "draw_extreme_10h",
         "meta_abs_net_x_breakout", "meta_abs_net_x_drawext", "meta_abs_net_x_vov_ratio",
         "meta_alignment", "meta_signal_x_accel",
+        "dir_path_long_2h", "dir_path_short_2h", "dir_path_risk_long_2h", "dir_path_risk_short_2h",
+        "dir_path_edge_2h", "dir_path_risk_skew_2h",
+        "accept_x_dir_edge_2h", "reject_x_dir_edge_2h", "tfq_x_dir_edge_2h", "mrq_x_dir_edge_2h",
+        "accept_dir2h_prod", "accept_dir2h_abs_prod", "accept_dir2h_signed_mag",
+        "reject_dir2h_prod", "reject_dir2h_abs_prod", "reject_dir2h_signed_mag",
+        "tfq_dir2h_prod", "tfq_dir2h_abs_prod", "tfq_dir2h_signed_mag",
+        "mrq_dir2h_prod", "mrq_dir2h_abs_prod", "mrq_dir2h_signed_mag",
+        "downside_semivariance_8", "downside_semivariance_24",
+        "upside_semivariance_8", "upside_semivariance_24",
+        "down_up_vol_ratio_8", "down_up_vol_ratio_24",
+        "vol_shock_asym_8_24", "vol_shock_asym_4_12", "vol_shock_asym_4_212",
         # Specialist features
         "trap_quality", "predicted_vol_6h",
         # Gated entry features

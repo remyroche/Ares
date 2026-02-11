@@ -1547,6 +1547,31 @@ def train_models_from_artifacts(datasets, cfg):
             tprint(f"Gamma Specialist training failed: {e}")
             import traceback; traceback.print_exc()
 
+    class HorizonEnsemble:
+        def __init__(self, models):
+            # models: list of dicts {"model": race, "feat_cols": cols, "weight": w}
+            self.models = models
+            self.oof_probs = None # To be set after alignment
+
+        def predict(self, X):
+            # X is DataFrame with all needed columns
+            preds = []
+            total_w = 0.0
+            for m in self.models:
+                race = m["model"]
+                cols = m["feat_cols"]
+                w = m.get("weight", 1.0)
+
+                # Select columns for this model (robust to missing if model handles it, but ModelRace expects valid cols)
+                # We assume X contains union of cols.
+                X_sub = X[cols] # Retains order
+
+                p = race.predict(X_sub)
+                preds.append(p * w)
+                total_w += w
+
+            return np.sum(preds, axis=0) / max(total_w, 1e-9)
+
     # 2. Train Alpha Models
     # directions (up/down) replaced by sides (long/short)
     trade_sides = ["long", "short"]
@@ -1556,7 +1581,7 @@ def train_models_from_artifacts(datasets, cfg):
     for side in trade_sides:
         final_models[side] = {}
         for k in kinds:
-            best_ic = -1.0; best_m = None
+            candidates = [] # List of (score, bundle)
             horizons = cfg["label_horizons_hours"]
 
             for H in horizons:
@@ -1802,13 +1827,85 @@ def train_models_from_artifacts(datasets, cfg):
                     oof_metrics = _aggregate_alpha_oof_metrics(y, race.oof_probs, y_ret, sample_weight=w, groups=groups_v)
                     alpha_diag.update(oof_metrics)
 
-                if score > best_ic:
-                    best_ic = score
-                    best_m = {"model": race, "H": H, "feat_cols": cols, "per_regime": per_regime, "alpha_diag": alpha_diag}
+                # Bundle needed info (df metadata for alignment)
+                # Note: We store just the index columns to save memory, or full df if needed for meta
+                m_bundle = {
+                    "model": race, "H": H, "feat_cols": cols,
+                    "per_regime": per_regime, "alpha_diag": alpha_diag,
+                    "df_meta": df[["__ts__", "__symbol__"]].copy(),
+                    "score": score
+                }
+                candidates.append(m_bundle)
+
+            # Selection Logic: Single Winner vs Joint Ensemble
+            if not candidates:
+                continue
+
+            candidates.sort(key=lambda x: x["score"], reverse=True)
+            best_m = candidates[0]
+            best_score = best_m["score"]
+
+            # Check for ensemble candidates: score within 5% of best
+            ensemble_cands = [c for c in candidates if c["score"] >= best_score * 0.95]
+
+            # Use ensemble if we have >1 good candidates and it's requested (implicitly by "jointly")
+            # We enable it for TF models specifically as requested ("long_tf"), but generic is safer.
+            if len(ensemble_cands) > 1:
+                tprint(f"{side} {k}: Ensembling {len(ensemble_cands)} horizons {[c['H'] for c in ensemble_cands]}")
+
+                # Create Ensemble Model
+                # Need to align OOFs. Use best model's index as reference.
+                # Primary is best_m
+                ref_df = best_m["df_meta"]
+                ref_idx = pd.MultiIndex.from_frame(ref_df)
+
+                aligned_oofs = []
+                ensemble_members = []
+
+                for cand in ensemble_cands:
+                    c_model = cand["model"]
+                    c_df = cand["df_meta"]
+                    c_oof = c_model.oof_probs
+
+                    if c_oof is None: continue
+
+                    # Align OOF to ref_idx
+                    c_idx = pd.MultiIndex.from_frame(c_df)
+                    s_oof = pd.Series(c_oof, index=c_idx)
+
+                    # Reindex to reference (inner join to be safe? or left join?)
+                    # If we use Meta training on best_m dataset, we need coverage there.
+                    # Use reindex (fill NaN with 0.5 neutral)
+                    aligned = s_oof.reindex(ref_idx).fillna(0.5).values
+                    aligned_oofs.append(aligned)
+
+                    ensemble_members.append({
+                        "model": c_model,
+                        "feat_cols": cand["feat_cols"],
+                        "weight": 1.0 # Equal weight for now
+                    })
+
+                if aligned_oofs:
+                    ens_oof = np.mean(aligned_oofs, axis=0)
+
+                    # Create Ensemble Object
+                    ens_model = HorizonEnsemble(ensemble_members)
+                    ens_model.oof_probs = ens_oof # Store for Meta training
+
+                    # Update best_m to be the ensemble
+                    # We keep "H" as best_m["H"] so Meta uses that dataset for targets
+                    best_m["model"] = ens_model
+                    # Union of feature cols for Engine
+                    all_cols = set()
+                    for m in ensemble_members:
+                        all_cols.update(m["feat_cols"])
+                    best_m["feat_cols"] = list(all_cols)
+
+                    tprint(f"  Ensemble created. Feat cols union: {len(best_m['feat_cols'])}")
 
             # --- Stage Gate Check (Alpha) ---
             if best_m is not None:
-                race_best = best_m["model"]
+                race_best = best_m["model"] # This might be Ensemble or ModelRace
 
                 best_H = best_m["H"]
                 best_key = f"train_{side}_{k}_{best_H}"

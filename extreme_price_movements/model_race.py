@@ -611,21 +611,47 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         else:
              self.best_model.fit(X, y_hard)
              
-        # No more manual bias correction factor needed (Isotonic handles it)
+        # Compute final bias factor for the full model
+        # Target mean should be unweighted prevalence of y_hard
+        target_mean = float(np.mean(y_hard))
+
+        # Predict on training data to estimate model bias
+        # For robustness with large data, we use a subset? Or full if feasible.
+        # Assuming X fits in memory since we just trained on it.
+        # Note: If X is huge, predict_proba might be slow, but it's necessary for calibration.
+        probs_train = self.best_model.predict_proba(X)[:, 1]
+        self.final_bias_factor = self._find_bias_correction_factor(probs_train, target_mean)
+        tprint(f"Final Model Bias Factor: {self.final_bias_factor:.4f} (Target Mean: {target_mean:.4f}, Model Mean: {np.mean(probs_train):.4f})")
+
         return self
 
     def predict_proba(self, X):
         if self.best_model is None:
             raise ValueError("ModelRace not fitted")
+
+        # 1. Get raw predictions
         probs = self.best_model.predict_proba(X)
+        p1_raw = probs[:, 1]
         
-        # 1. Apply Post-hoc Isotonic Calibration (Local Calibration)
+        # 2. Apply Bias Correction (if factor exists)
+        if hasattr(self, 'final_bias_factor'):
+            p1_corr = self._apply_correction(p1_raw, self.final_bias_factor)
+        else:
+            p1_corr = p1_raw
+
+        # 3. Apply Post-hoc Isotonic Calibration (Local Calibration)
         if hasattr(self, 'calibrator_'):
             # Calibrate class 1
             # Note: IsotonicRegression.predict expects 1D array
-            p1 = self.calibrator_.predict(probs[:, 1])
+            # The calibrator was trained on bias-corrected OOF probabilities,
+            # so we must pass bias-corrected probabilities here.
+            p1 = self.calibrator_.predict(p1_corr)
             probs[:, 1] = p1
             probs[:, 0] = 1.0 - p1
+        else:
+            # Fallback to corrected probabilities if no calibrator
+            probs[:, 1] = p1_corr
+            probs[:, 0] = 1.0 - p1_corr
         
         # Ensure float64 returns
         return np.asarray(probs, dtype=np.float64)

@@ -70,10 +70,10 @@ CFG = {
 
     # training horizons to compare (1)
     "label_horizons_hours": [2, 4, 8],
-    "label_tp_values_pct": [5.0, 3.5, 2.0],
+    "label_tp_values_pct": [3.0, 4.0, 5.0, 6.0],
     "label_sl_values_pct": [0.5, 1.0, 2.0],
     "label_round_trip_fee_pct": 0.5,
-    "label_min_net_rr": 1.5,
+    "label_min_net_rr": 1.2,
     "label_min_tp_hit_rate": 0.02,
     "label_max_timeout_rate": 0.90,
 
@@ -241,7 +241,7 @@ CFG = {
     "sl_mult": 0.18,            # Stop-loss = sl_mult * barrier_pct (~0.7%)
     "trail_mult": 0.25,         # Trailing deviation = trail_mult * barrier_pct
     # Hard constraints enforced in optimizer and defaults
-    "min_tp_sl_ratio": 1.5,     # TP:SL ratio must be >= 1.5
+    "min_tp_sl_ratio": 1.2,     # TP:SL ratio must be >= 1.2
     "min_tp_abs_pct": 0.02,     # TP must be >= 2% absolute
 
     # Regime throttle: reduce sizing during drawdowns

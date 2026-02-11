@@ -1,0 +1,26 @@
+09012f9 Optimize numba_zscore with fused kernel and improve stability
+50bc669 Merge pull request #3597 from remyroche/bolt-fused-zscore-stability-1143053570817069010
+1af0e26 Update optimise bucket params path and train fallback loading
+ccb360b Merge pull request #3602 from remyroche/codex/update-bucket_params-save-path-and-source
+15f3a7b Implement report recommendations: Decoupled Engine, Exhaustion Filters, and New Features.
+17de4f1 Update feature selection to 5x ElasticNet prescreen and add detailed MDI documentation
+328165b Finalize report implementation: Decoupled engine, new features, and config update.
+eb0eec5 Merge pull request #3604 from remyroche/feature-selection-update-16417573108293346298
+0d2355d Create quantile_feature_selection_extreme_events.py
+4fa5ae3 Finalize report implementation: Decoupled engine, new features, and config update.
+37a4f30 Refactor RSI and ATR calculations with fused parallel Numba kernels
+ca48f0b Finalize report implementation: Features, Config, Engine Decoupling, and Reverted Candidates.
+112b4eb Merge pull request #3603 from remyroche/jules/report-impl-20260210-2648352902249367576
+81cd9d8 Merge pull request #3605 from remyroche/bolt/performance-fused-indicators-11550033953626683508
+08208d8 Implement tail-aware quantile meta-model acceptance criteria
+cf4519c Merge pull request #3606 from remyroche/codex/implement-quantile-gam-training-model
+3641cf8 Enhance optimization reporting with comprehensive metrics CSV
+7b5348a Merge pull request #3607 from remyroche/enhance-optimization-reporting-3925148498050364314
+b7c5b26 feat: Add TF/MR Meta and Alpha features
+cdc5767 Implement model stage gates for Alpha and Meta models
+fa8e205 Implement model stage gates for Alpha and Meta models
+0887561 feat: Add and optimize TF/MR Meta and Alpha features
+5c96578 Merge pull request #3609 from remyroche/feature/model-stage-gates-3080513343852931011
+15cb39d feat: Add TF/MR Meta and Alpha features with optimizations
+16440d6 Merge pull request #3608 from remyroche/feature-tf-mr-alpha-signals-12955227150604289662
+dedb242 morning commit quantile & interaction gates

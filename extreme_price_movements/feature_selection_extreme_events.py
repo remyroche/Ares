@@ -377,7 +377,7 @@ def mdi_feature_selection_v3(
     purge: int = 5,
     min_samples_leaf: int = 50,
     min_samples_leaf_pct: float = 0.01,
-    min_impurity_decrease: float = 1e-4,
+    min_impurity_decrease: float = 0.0,
     analysis_n_estimators: int = 500, # Higher for 150-feature stability
 
     pre_dedupe_threshold: float = 0.95, # Relaxed from 0.98 to 0.95 per plan
@@ -654,7 +654,7 @@ def mdi_feature_selection_v3(
                 params["min_data_in_bin"] = 127
             if "min_gain_to_split" in supported_params:
                 base_gain = base_params.get("min_gain_to_split", 0.0)
-                params["min_gain_to_split"] = float(base_gain) if float(base_gain) > 0 else 0.05
+                params["min_gain_to_split"] = float(base_gain) if float(base_gain) > 0 else 0.0
             if "feature_fraction" in supported_params:
                 ff = float(base_params.get("feature_fraction", 0.7))
                 params["feature_fraction"] = ff if 0.6 <= ff <= 0.9 else 0.7
@@ -693,7 +693,13 @@ def mdi_feature_selection_v3(
             share = m.feature_importances_.astype(np.float64)
 
             # Fast extra metrics
-            freq, mdi_d, mdi_c, _ = extract_extra_mdi_metrics_fast(m, p)
+            if hasattr(m, "estimators_"):
+                freq, mdi_d, mdi_c, _ = extract_extra_mdi_metrics_fast(m, p)
+            else:
+                freq = np.zeros(p, dtype=np.float64)
+                mdi_d = np.zeros(p, dtype=np.float64)
+                mdi_c = np.zeros(p, dtype=np.float64)
+
             # Ensure float64
             freq = freq.astype(np.float64)
             mdi_d = mdi_d.astype(np.float64)

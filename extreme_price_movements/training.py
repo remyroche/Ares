@@ -156,26 +156,31 @@ def _base_model_report_entry(model_name, side, kind, dm, y_bin, oof_probs, y_ret
     bootstrap_prec20_cv = float(np.std(prec_arr) / (np.mean(prec_arr) + 1e-9))
 
     from sklearn.metrics import average_precision_score
-    pr_auc = float(average_precision_score(y_bin, oof_probs)) if len(np.unique(y_bin)) > 1 else 0.0
+    # Ensure binary labels and safe probs
+    y_bin_calc = (np.asarray(y_bin) >= 0.5).astype(int)
+    oof_probs_safe = np.nan_to_num(oof_probs, nan=0.0)
+    try:
+        pr_auc = float(average_precision_score(y_bin_calc, oof_probs_safe)) if len(np.unique(y_bin_calc)) > 1 else 0.0
+    except Exception:
+        pr_auc = 0.0
 
-    # Prevalence-aware PR-AUC threshold
-    # For imbalanced data, PR-AUC is heavily influenced by prevalence
-    # Threshold = max(0.50, min(0.54, base_rate + 0.10))
-    prev_for_threshold = float(np.mean(y_bin))
-    pr_auc_threshold = max(0.50, min(0.54, prev_for_threshold + 0.10))
+    # Prevalence-aware PR-AUC threshold (matching gate_metrics.py logic)
+    # Threshold = max(1.25 * prev, prev + 0.05)
+    # We remove the 0.50 floor because for low-prevalence (e.g. 0.35), 0.45 is a good score.
+    prev_for_threshold = float(np.mean(y_bin_calc))
+    pr_auc_threshold = max(1.25 * prev_for_threshold, prev_for_threshold + 0.05)
 
-    # Diagnostic: PR-AUC below 0.5 indicates model is worse than random
-    # This is a critical issue that should be flagged
-    if pr_auc < 0.5:
-        tprint(f"WARNING: PR-AUC ({pr_auc:.4f}) < 0.5 for {model_name} - model is worse than random!")
-        tprint(f"  Prevalence: {prev_for_threshold:.4f}, Lift@20%: {lift_k:.4f}")
+    # Diagnostic: PR-AUC below prevalence indicates model is worse than random
+    if pr_auc < prev_for_threshold:
+        tprint(f"WARNING: PR-AUC ({pr_auc:.4f}) < Prevalence ({prev_for_threshold:.4f}) for {model_name} - model is worse than random!")
+        tprint(f"  Lift@20%: {lift_k:.4f}")
         # Check if labels might be inverted
         if lift_k < 1.0 and prec_lift_abs < 0:
             tprint(f"  CRITICAL: Lift < 1.0 and precision lift negative - possible label inversion!")
 
     checks = {
         "pr_auc_ge_threshold": pr_auc >= pr_auc_threshold,
-        "pr_auc_ge_0_5": pr_auc >= 0.5,  # New check: model must be at least better than random
+        "pr_auc_ge_random": pr_auc >= prev_for_threshold,
         "brier_and_logloss_improve_ge_2pct": bool((brier_imp >= 0.02) and (ll_imp >= 0.02)),
         "liftk_and_preck_lift": bool((lift_k >= 1.2) and ((prec_lift_abs >= 0.025) or ((lift_k - 1.0) >= 0.05))),
         "bootstrap_prec20_cv_le_0_30": bootstrap_prec20_cv <= 0.30,

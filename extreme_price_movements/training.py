@@ -2336,6 +2336,15 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
 
                 tprint(f"Training {side}_{k} [{key}] cand={cand_filter} H={H} (n={len(X)})...")
 
+                # Class dist check BEFORE MDI
+                y_hard_check = (y >= 0.5).astype(int)
+                tprint(f"  Class dist: 0={int((y_hard_check==0).sum())} ({(y_hard_check==0).mean()*100:.1f}%), "
+                       f"1={int((y_hard_check==1).sum())} ({(y_hard_check==1).mean()*100:.1f}%)")
+
+                if len(np.unique(y_hard_check)) < 2:
+                     tprint(f"Skipping {side} {k} H={H}: Constant target (only 1 class).")
+                     continue
+
                 # --- Integrated MDI Feature Selection ---
                 # Fix: Don't feed raw 300+ features to ModelRace. Select top signal first.
                 tprint(f"Running MDI Feature Selection for {side} {k}...")
@@ -2356,15 +2365,16 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
                 )
                 
                 selected_feats = sel_res.selected_features
+
+                if not selected_feats:
+                    tprint(f"Skipping {side} {k} H={H}: MDI selected 0 features (likely poor target or no signal).")
+                    continue
+
                 feature_selection_by_h[H] = list(selected_feats)
                 tprint(f"MDI selected {len(selected_feats)} features (from {X.shape[1]}) for H={H}.")
                 
                 X_sel = X[selected_feats]
                 cols = list(selected_feats)
-                
-                y_hard_check = (y >= 0.5).astype(int)
-                tprint(f"  Class dist: 0={int((y_hard_check==0).sum())} ({(y_hard_check==0).mean()*100:.1f}%), "
-                       f"1={int((y_hard_check==1).sum())} ({(y_hard_check==1).mean()*100:.1f}%)")
 
                 race = ModelRace(kind=k, n_splits=5)
                 groups = df["__ts__"].values if "__ts__" in df.columns else None

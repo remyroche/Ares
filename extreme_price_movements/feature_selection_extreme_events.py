@@ -451,6 +451,16 @@ def mdi_feature_selection_v3(
     # Update N after potentially dropping rows
     N = X_np_full.shape[0]
 
+    # Check target variability (Constant Target Detection)
+    if len(np.unique(y_np)) < 2:
+        tprint("MDI: Target y has less than 2 unique values (constant or empty). Returning empty result.")
+        return MDISelectionResult(pd.DataFrame(), [], [])
+
+    # Check target variance (for regression)
+    if np.var(y_np) < 1e-12:
+        tprint("MDI: Target y has near-zero variance. Returning empty result.")
+        return MDISelectionResult(pd.DataFrame(), [], [])
+
     feature_names_full = list(X.columns)
     name_to_idx = {name: i for i, name in enumerate(feature_names_full)}
 
@@ -593,13 +603,45 @@ def mdi_feature_selection_v3(
                 if "min_data_in_leaf" in supported_params:
                     params["max_depth"] = min(max(2, depth), 5)
                 else:
-                    params["max_depth"] = depth
+                    # For Bagging (ExtraTrees/RF), check if user specified max_depth
+                    # If user set None (unlimited), respect it. If user set int, respect it.
+                    # Only apply heuristic 'depth' if base_model didn't specify preference.
+                    # We assume default is None for sklearn.
+                    user_depth = base_params.get("max_depth")
+                    if user_depth is not None:
+                        params["max_depth"] = user_depth
+                    else:
+                        # If user left it None, we should PROBABLY leave it None for Bagging to reduce bias.
+                        # The original code forced 'depth' (~4-6), which is too shallow for regression.
+                        params["max_depth"] = None
+
             if "n_estimators" in supported_params: params["n_estimators"] = analysis_n_estimators
 
             train_n = max(1, int(len(train_idx)))
-            leaf_samples = max(1, int(np.ceil(min_samples_leaf_pct * train_n)))
-            if "min_samples_leaf" in supported_params: params["min_samples_leaf"] = leaf_samples
-            if "min_samples_split" in supported_params: params["min_samples_split"] = max(2, 3 * leaf_samples)
+
+            # Logic for min_samples_leaf: Respect user input if > 1, else use dynamic pct
+            user_leaf = base_params.get("min_samples_leaf", 1)
+            # If user_leaf is integer and > 1, assume they know what they want (e.g. 50)
+            # If user_leaf is 1 (default), we apply dynamic logic.
+            # (Note: sklearn allows float for fraction, handle that too)
+
+            is_explicit_leaf = False
+            if isinstance(user_leaf, int) and user_leaf > 1:
+                is_explicit_leaf = True
+            elif isinstance(user_leaf, float) and user_leaf > 0.0:
+                is_explicit_leaf = True
+
+            if is_explicit_leaf:
+                # User specified leaf size/fraction, keep it (don't overwrite)
+                # But we must ensure params doesn't get overwritten?
+                # clone(base_model) keeps params. We only add to params dict if we want to CHANGE it.
+                # So if we don't put it in params, it stays as user_leaf.
+                pass
+            else:
+                # User used default (1), so we apply dynamic 1% logic
+                leaf_samples = max(1, int(np.ceil(min_samples_leaf_pct * train_n)))
+                if "min_samples_leaf" in supported_params: params["min_samples_leaf"] = leaf_samples
+                if "min_samples_split" in supported_params: params["min_samples_split"] = max(2, 3 * leaf_samples)
 
             if "min_data_in_leaf" in supported_params:
                 params["min_data_in_leaf"] = max(2, int(np.ceil(0.012 * train_n)))

@@ -718,8 +718,8 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
         baseline_labeling_enabled = config.get('run_labeling_baseline_check', True)
         apply_quantile_compression = config.get('apply_quantile_compression', True)
         # Base quantile compression bounds (regime-aware adjustments applied later)
-        quantile_lower_pct = float(config.get('quantile_compression_lower_pct', 0.0025))
-        quantile_upper_pct = float(config.get('quantile_compression_upper_pct', 0.9975))
+        quantile_lower_pct = float(config.get('quantile_compression_lower_pct', 0.0010))
+        quantile_upper_pct = float(config.get('quantile_compression_upper_pct', 0.9990))
         if quantile_upper_pct <= quantile_lower_pct:
             quantile_upper_pct = min(0.999, quantile_lower_pct + 0.01)
         quantile_compression_stats: Dict[str, Dict[str, Any]] = {}
@@ -880,16 +880,16 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                 vol_config.quality_scoring.min_quality_threshold = 0.4
                 vol_config.quality_scoring.min_predictability = 0.4
 
-            vol_config.volatility.enabled = True
-            vol_config.volatility.sensitivity = 1.15
+            vol_config.volatility.enabled = False
+            vol_config.volatility.sensitivity = 0.0
             if hasattr(vol_config, 'multi_target'):
-                vol_config.multi_target.volatility_modulation = True
+                vol_config.multi_target.volatility_modulation = False
                 vol_config.multi_target.min_threshold_multiplier = 1.0
-                vol_config.multi_target.max_threshold_multiplier = 2.0
+                vol_config.multi_target.max_threshold_multiplier = 1.0
             if hasattr(vol_config, 'rate_control'):
                 vol_config.rate_control.enabled = True
                 vol_config.rate_control.max_ops_per_day = 8
-            volatility_adaptation_enabled = getattr(vol_config.volatility, 'enabled', True)
+            volatility_adaptation_enabled = False
 
             # Configure label smoothing with timeframe-optimized parameters
             vol_config.label_smoothing.enabled = True
@@ -2110,6 +2110,8 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                         quantile_compression_overview['lower_pct'] = effective_lower_pct
                         quantile_compression_overview['upper_pct'] = effective_upper_pct
                         candidate_columns = [
+                            'target_long',
+                            'target_short',
                             'target_long_fused',
                             'target_short_fused',
                             'target_margin_long',

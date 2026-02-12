@@ -106,7 +106,7 @@ def _fold_stats_from_groups(y, pred, groups, fn):
     return out
 
 
-def _base_model_report_entry(model_name, side, kind, dm, y_bin, oof_probs, y_ret, groups):
+def _base_model_report_entry(model_name, side, kind, dm, y_bin, oof_probs, y_ret, groups, y_lbl=None):
     prev = float(np.mean(y_bin))
     prev = float(np.clip(prev, 1e-7, 1 - 1e-7))
     base_brier = prev * (1.0 - prev)
@@ -125,6 +125,19 @@ def _base_model_report_entry(model_name, side, kind, dm, y_bin, oof_probs, y_ret
     prec_k = float(np.mean(y_bin[idx]))
     lift_k = prec_k / max(prev, 1e-9)
     prec_lift_abs = prec_k - prev
+
+    # Timeout Rate Analysis (if raw labels available)
+    timeout_metrics = {}
+    if y_lbl is not None:
+        # 0 = timeout, 1 = profit, -1 = stop loss
+        # Check timeout rate in top 20%
+        to_k = float(np.mean(y_lbl[idx] == 0))
+        timeout_metrics["timeout_rate_at_20pct"] = to_k
+        # Check timeout rate in bottom 50%
+        n_bot = max(1, int(len(y_bin) * 0.50))
+        idx_bot = np.argsort(oof_probs)[:n_bot]
+        to_bot = float(np.mean(y_lbl[idx_bot] == 0))
+        timeout_metrics["timeout_rate_at_bot50pct"] = to_bot
 
     # Informational (non-gating) precision/lift at 10% and 30%
     info_metrics = {}
@@ -200,6 +213,7 @@ def _base_model_report_entry(model_name, side, kind, dm, y_bin, oof_probs, y_ret
         "fold_logloss_improvement_ratio": pos_fold_ratio,
         "worst_fold_logloss_improvement": worst_fold_imp,
         **info_metrics,
+        **timeout_metrics,
     }
 
     return {
@@ -1322,7 +1336,15 @@ def build_hourly_training_set_and_weights(
     # event_ts is a DatetimeIndex, event_sym is a numpy array
     ts_arr = event_ts.values if hasattr(event_ts, 'values') else event_ts
     sym_arr = event_sym.values if hasattr(event_sym, 'values') else event_sym
-    parts = {"ts": ts_arr, "symbol": sym_arr, "y_bin": y_bin, "y_ret": pnl.astype(np.float32), "w": weights_raw.astype(np.float32)}
+    # Store raw triple-barrier label (-1, 0, 1) for timeout analysis
+    parts = {
+        "ts": ts_arr,
+        "symbol": sym_arr,
+        "y_bin": y_bin,
+        "y_ret": pnl.astype(np.float32),
+        "w": weights_raw.astype(np.float32),
+        "__y_lbl__": lbl_vals.astype(np.int8)
+    }
 
     # Store barrier_pct for risk-adjusted meta model target
     if "atr_pct" in feats:
@@ -2762,6 +2784,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
                 dfm = datasets[ds_key]
                 y_bin = (dfm["__y_bin__"].values >= 0.5).astype(int)
                 y_ret = dfm["__y_ret__"].values.astype(float)
+                y_lbl = dfm["__y_lbl__"].values.astype(int) if "__y_lbl__" in dfm.columns else None
                 groups = dfm["__ts__"].values if "__ts__" in dfm.columns else None
                 for cand_name, dm in race.detailed_metrics.items():
                     # Use per-model OOF predictions from detailed_metrics, not the winner's OOF
@@ -2773,6 +2796,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
                         oof_probs = np.asarray(oof_probs, dtype=float)
                     n = min(len(y_bin), len(oof_probs), len(y_ret))
                     y_bin_model, oof_probs_model, y_ret_model = y_bin[:n], oof_probs[:n], y_ret[:n]
+                    y_lbl_model = y_lbl[:n] if y_lbl is not None else None
                     if groups is not None:
                         groups_model = np.asarray(groups)[:n]
                     else:
@@ -2786,6 +2810,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
                         oof_probs=oof_probs_model,
                         y_ret=y_ret_model,
                         groups=groups_model,
+                        y_lbl=y_lbl_model,
                     )
                     entry["H"] = H_rep
                     entry["is_winner"] = (cand_name == race.best_model_name)

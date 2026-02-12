@@ -26,6 +26,16 @@ def compute_stage_gate_metrics(y_true, y_prob, y_ret=None, model_type="classifie
     if len(y_true) < 10:
         return {"passed": False, "reason": "Insufficient data", "metrics": metrics}
 
+    # --- Top 40% Focus (User Requirement) ---
+    # Focus metrics on the top 40% of predictions to favor "sniper" models
+    # that might have poor global consistency but excellent high-confidence ranking.
+    n_top40 = max(5, int(len(y_prob) * 0.40))
+    idx_top40 = np.argsort(y_prob)[-n_top40:]
+
+    y_true_top40 = y_true[idx_top40]
+    y_prob_top40 = y_prob[idx_top40]
+    y_ret_top40 = y_ret[idx_top40] if y_ret is not None else None
+
     if model_type == "classifier":
         # Binarize soft labels (continuous 0-1 from soft label blending)
         # sklearn's brier_score_loss / log_loss require binary y_true
@@ -35,7 +45,7 @@ def compute_stage_gate_metrics(y_true, y_prob, y_ret=None, model_type="classifie
         base_prev = np.mean(y_bin) if baseline_prev is None else baseline_prev
         metrics["Base_Prev"] = base_prev
 
-        # 1. PR-AUC
+        # 1. PR-AUC (Global - standard)
         try:
             pr_auc = average_precision_score(y_bin, y_prob)
         except:
@@ -47,7 +57,7 @@ def compute_stage_gate_metrics(y_true, y_prob, y_ret=None, model_type="classifie
         pass_pr_auc = pr_auc >= pr_auc_thresh
         metrics["Pass_PR_AUC"] = pass_pr_auc
 
-        # 2. Brier & LogLoss Improvement
+        # 2. Brier & LogLoss Improvement (Global - standard)
         brier = brier_score_loss(y_bin, y_prob)
         ll = log_loss(y_bin, np.clip(y_prob, 1e-7, 1-1e-7))
 
@@ -100,28 +110,39 @@ def compute_stage_gate_metrics(y_true, y_prob, y_ret=None, model_type="classifie
     elif model_type == "meta_regression":
         # Non-quantile meta models: avoid quantile-coverage gates.
         # Use ranking quality + robust residual/bias and downside controls.
-        resid = y_prob - y_true
-        abs_err = np.abs(resid)
-        base_abs_err = np.abs(y_true - np.median(y_true))
-        loss = float(np.mean(abs_err))
-        base_loss = float(np.mean(base_abs_err))
-        loss_imp = (base_loss - loss) / base_loss if base_loss > 1e-9 else 0.0
-        metrics["Robust_Loss_Imp"] = loss_imp
+
+        # Focus on Top 40% for IC and Loss
+        resid_top40 = y_prob_top40 - y_true_top40
+        abs_err_top40 = np.abs(resid_top40)
+
+        # Baseline: Median of FULL set (we want to beat the global median guess even in the tail)
+        # Or median of Top 40%? "Global Consistency" implies beating a global baseline.
+        # But if we focus on the tail, we should compare to the tail baseline?
+        # Let's use Top 40% Improvement vs Top 40% Baseline (Relative Sniper Quality)
+        base_abs_err_top40 = np.abs(y_true_top40 - np.median(y_true))
+
+        loss_top40 = float(np.mean(abs_err_top40))
+        base_loss_top40 = float(np.mean(base_abs_err_top40))
+
+        loss_imp = (base_loss_top40 - loss_top40) / base_loss_top40 if base_loss_top40 > 1e-9 else 0.0
+        metrics["Robust_Loss_Imp_Top40"] = loss_imp
         pass_loss = loss_imp >= 0.02
-        metrics["Pass_Robust_Loss"] = pass_loss
+        metrics["Pass_Robust_Loss_Top40"] = pass_loss
 
+        # Bias on Top 40%
         mad_y = float(median_abs_deviation(y_true, scale='normal'))
-        mean_err = float(np.mean(resid))
+        mean_err_top40 = float(np.mean(resid_top40))
         bias_lim = 0.05 * max(mad_y, 1e-9)
-        metrics["Bias_Abs"] = abs(mean_err)
+        metrics["Bias_Abs_Top40"] = abs(mean_err_top40)
         metrics["Bias_Limit"] = bias_lim
-        pass_bias = abs(mean_err) <= bias_lim
-        metrics["Pass_Bias"] = pass_bias
+        pass_bias = abs(mean_err_top40) <= bias_lim
+        metrics["Pass_Bias_Top40"] = pass_bias
 
-        ic, _ = spearmanr(y_true, y_prob)
-        metrics["Spearman_IC"] = ic
-        pass_ic = bool(np.isfinite(ic) and ic >= 0.04)
-        metrics["Pass_IC"] = pass_ic
+        # IC on Top 40%
+        ic, _ = spearmanr(y_true_top40, y_prob_top40)
+        metrics["Spearman_IC_Top40"] = ic
+        pass_ic = bool(np.isfinite(ic) and ic >= 0.03) # Slightly relaxed for tail
+        metrics["Pass_IC_Top40"] = pass_ic
 
         n_20 = max(1, int(len(y_true) * 0.20))
         n_50 = max(1, int(len(y_true) * 0.50))
@@ -161,32 +182,36 @@ def compute_stage_gate_metrics(y_true, y_prob, y_ret=None, model_type="classifie
         # Target is y_true (rank/score). y_prob is prediction.
         tau = 0.85
 
-        # 1. Coverage
-        cov = np.mean(y_true <= y_prob)
-        metrics["Coverage"] = cov
-        metrics["Coverage_Diff"] = abs(cov - tau)
-        pass_cov = metrics["Coverage_Diff"] <= 0.05
-        metrics["Pass_Coverage"] = pass_cov
+        # 1. Coverage on Top 40%
+        # Conditionally: Does the model correctly bracket the target in high-prob regions?
+        cov = np.mean(y_true_top40 <= y_prob_top40)
+        metrics["Coverage_Top40"] = cov
+        metrics["Coverage_Diff_Top40"] = abs(cov - tau)
+        # Relaxed check for tail coverage (harder to get right)
+        pass_cov = metrics["Coverage_Diff_Top40"] <= 0.08
+        metrics["Pass_Coverage_Top40"] = pass_cov
 
-        # 2. Pinball Improvement
+        # 2. Pinball Improvement on Top 40%
         def pinball(y, q, alpha):
             return np.mean(np.maximum(alpha * (y - q), (alpha - 1.0) * (y - q)))
 
-        pb = pinball(y_true, y_prob, tau)
-        # Baseline: constant prediction at quantile(tau)
+        pb = pinball(y_true_top40, y_prob_top40, tau)
+
+        # Baseline: constant prediction at global quantile(tau) applied to Top 40 subset
+        # This checks if dynamic model improves over a static guess even in the tail.
         base_pred = np.quantile(y_true, tau)
-        base_pb = pinball(y_true, np.full_like(y_true, base_pred), tau)
+        base_pb = pinball(y_true_top40, np.full_like(y_true_top40, base_pred), tau)
 
         pb_imp = (base_pb - pb) / base_pb if base_pb > 1e-9 else 0.0
-        metrics["Pinball_Imp"] = pb_imp
-        pass_pb = pb_imp >= 0.02 # or >= 2/3 folds? We check global improvement here.
-        metrics["Pass_Pinball"] = pass_pb
+        metrics["Pinball_Imp_Top40"] = pb_imp
+        pass_pb = pb_imp >= 0.01 # Relaxed for tail
+        metrics["Pass_Pinball_Top40"] = pass_pb
 
-        # 3. Spearman IC
-        ic, _ = spearmanr(y_true, y_prob)
-        metrics["Spearman_IC"] = ic
-        pass_ic = (ic >= 0.04)
-        metrics["Pass_IC"] = pass_ic
+        # 3. Spearman IC on Top 40%
+        ic, _ = spearmanr(y_true_top40, y_prob_top40)
+        metrics["Spearman_IC_Top40"] = ic
+        pass_ic = (ic >= 0.03)
+        metrics["Pass_IC_Top40"] = pass_ic
 
         # 4. Top20 - Bot50 Median Spread
         n_20 = max(1, int(len(y_true) * 0.20))

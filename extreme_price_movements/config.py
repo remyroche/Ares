@@ -348,7 +348,7 @@ CFG = {
 
     # Soft Labels (Target Smoothing)
     "label_use_soft": True,
-    "label_soft_alpha_max": 0.20, # Widened from 0.15 to 0.20 to reduce overconfidence
+    "label_soft_alpha_max": 0.15, # Reverted to 0.15
 
     "exh_train_lookback_hours": 24 * 14,
     "min_exh_samples": 6000,

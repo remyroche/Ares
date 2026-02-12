@@ -96,6 +96,67 @@ def compute_stage_gate_metrics(y_true, y_prob, y_ret=None, model_type="classifie
 
         metrics["passed"] = bool(pass_pr_auc and pass_loss and pass_lift and pass_cv)
 
+
+    elif model_type == "meta_regression":
+        # Non-quantile meta models: avoid quantile-coverage gates.
+        # Use ranking quality + robust residual/bias and downside controls.
+        resid = y_prob - y_true
+        abs_err = np.abs(resid)
+        base_abs_err = np.abs(y_true - np.median(y_true))
+        loss = float(np.mean(abs_err))
+        base_loss = float(np.mean(base_abs_err))
+        loss_imp = (base_loss - loss) / base_loss if base_loss > 1e-9 else 0.0
+        metrics["Robust_Loss_Imp"] = loss_imp
+        pass_loss = loss_imp >= 0.02
+        metrics["Pass_Robust_Loss"] = pass_loss
+
+        mad_y = float(median_abs_deviation(y_true, scale='normal'))
+        mean_err = float(np.mean(resid))
+        bias_lim = 0.05 * max(mad_y, 1e-9)
+        metrics["Bias_Abs"] = abs(mean_err)
+        metrics["Bias_Limit"] = bias_lim
+        pass_bias = abs(mean_err) <= bias_lim
+        metrics["Pass_Bias"] = pass_bias
+
+        ic, _ = spearmanr(y_true, y_prob)
+        metrics["Spearman_IC"] = ic
+        pass_ic = bool(np.isfinite(ic) and ic >= 0.04)
+        metrics["Pass_IC"] = pass_ic
+
+        n_20 = max(1, int(len(y_true) * 0.20))
+        n_50 = max(1, int(len(y_true) * 0.50))
+        idx_top = np.argsort(y_prob)[-n_20:]
+        idx_bot = np.argsort(y_prob)[:n_50]
+        med_top = np.median(y_true[idx_top])
+        med_bot = np.median(y_true[idx_bot])
+        spread = med_top - med_bot
+        thresh = max(0.0, 0.25 * mad_y)
+        metrics["Spread"] = spread
+        metrics["Spread_Thresh"] = thresh
+        pass_spread = (spread >= thresh) or (spread > 0)
+        metrics["Pass_Spread"] = pass_spread
+
+        target_y = y_ret if y_ret is not None else y_true
+        q10_base = np.quantile(target_y, 0.10)
+        base_tail = target_y[target_y <= q10_base]
+        es10_base = np.mean(base_tail) if base_tail.any() else q10_base
+
+        sel_y = target_y[idx_top]
+        if len(sel_y) < 5:
+            es10_sel = es10_base
+        else:
+            q10_sel = np.quantile(sel_y, 0.10)
+            sel_tail = sel_y[sel_y <= q10_sel]
+            es10_sel = np.mean(sel_tail) if sel_tail.any() else q10_sel
+
+        metrics["ES10_Base"] = es10_base
+        metrics["ES10_Sel"] = es10_sel
+        limit = es10_base - 0.20 * abs(es10_base)
+        pass_downside = es10_sel >= limit
+        metrics["Pass_Downside"] = pass_downside
+
+        metrics["passed"] = bool(pass_loss and pass_bias and pass_ic and pass_spread and pass_downside)
+
     elif model_type == "quantile_meta":
         # Target is y_true (rank/score). y_prob is prediction.
         tau = 0.85

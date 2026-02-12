@@ -209,7 +209,7 @@ def _base_model_report_entry(model_name, side, kind, dm, y_bin, oof_probs, y_ret
 
 
 def _meta_report_entry(name, meta_model, y_target, y_ret, base_score, groups):
-    pred = np.asarray(meta_model.oof_probs, dtype=float)
+    pred = int(getattr(meta_model, "score_sign", 1)) * np.asarray(meta_model.oof_probs, dtype=float)
     y_target = np.asarray(y_target, dtype=float)
     y_ret = np.asarray(y_ret, dtype=float)
     if pred.size != y_target.size:
@@ -219,7 +219,7 @@ def _meta_report_entry(name, meta_model, y_target, y_ret, base_score, groups):
             groups = np.asarray(groups)[:n]
 
     tau = 0.85
-    is_quantile = meta_model.model and meta_model.model.get("kind") in {"xgb", "lgb", "qreg_l1"}
+    is_quantile = bool(meta_model.model and meta_model.model.get("pool") == "quantile")
 
     def pinball(y, q, a=tau):
         e = y - q
@@ -260,6 +260,7 @@ def _meta_report_entry(name, meta_model, y_target, y_ret, base_score, groups):
 
     k20 = max(1, int(TOPK_GATE_FRAC * len(pred)))
     idx_meta = np.argsort(pred)[-k20:]
+    idx_meta_flip = np.argsort(-pred)[-k20:]
     idx_base = np.argsort(base_score)[-k20:]
     def es_tail(v):
         s = np.asarray(v, dtype=float)
@@ -279,6 +280,7 @@ def _meta_report_entry(name, meta_model, y_target, y_ret, base_score, groups):
         sortino = float(np.mean(r) / (np.std(dn) + 1e-9)) if dn.size else 0.0
         return net, sortino
     net_meta, sort_meta = strat_metrics(idx_meta)
+    net_meta_flip, sort_meta_flip = strat_metrics(idx_meta_flip)
     net_base, sort_base = strat_metrics(idx_base)
 
     # Informational (non-gating): Top10 and Top30 policy slices
@@ -347,9 +349,12 @@ def _meta_report_entry(name, meta_model, y_target, y_ret, base_score, groups):
             "es20_meta": es_meta,
             "es20_base": es_base,
             "net_return_meta": net_meta,
+            "net_return_meta_if_flipped": net_meta_flip,
             "net_return_base": net_base,
             "sortino_meta": sort_meta,
+            "sortino_meta_if_flipped": sort_meta_flip,
             "sortino_base": sort_base,
+            "direction_flip_improves": bool((net_meta_flip > net_meta) and (sort_meta_flip > sort_meta)),
             **info_policy,
         },
     }
@@ -412,16 +417,33 @@ class AlphaHorizonEnsemble:
 
 
 
-def compute_meta_target(ret2: np.ndarray, ret4: np.ndarray, ret8: np.ndarray) -> np.ndarray:
-    def _signed_log_demeaned(x):
-        x = np.asarray(x, dtype=float)
-        z = np.sign(x) * np.log1p(np.abs(x))
-        return z - float(np.mean(z))
+def compute_meta_target(ret1: np.ndarray, ret2: np.ndarray, ret4: np.ndarray, ret6: np.ndarray, groups=None) -> np.ndarray:
+    """Build a global meta target as a weighted average of per-horizon log-returns.
 
-    r2 = _signed_log_demeaned(ret2)
-    r4 = _signed_log_demeaned(ret4)
-    r8 = _signed_log_demeaned(ret8)
-    return (0.3 * r2 + 0.4 * r4 + 0.3 * r8).astype(np.float32)
+    Target is global across opportunities (time+assets), with earlier horizons
+    weighted more heavily: [0.3, 0.3, 0.2, 0.2] for [t+1, t+2, t+4, t+6].
+    The `groups` argument is kept for backward compatibility but intentionally ignored.
+    """
+
+    def _log1p_ret(x: np.ndarray) -> np.ndarray:
+        v = np.asarray(x, dtype=float)
+        # Keep log1p numerically safe for edge cases below -100%.
+        v = np.clip(v, -0.999999, None)
+        out = np.log1p(v)
+        if not np.all(np.isfinite(out)):
+            finite = np.isfinite(out)
+            if finite.any():
+                fill = float(np.nanmedian(out[finite]))
+                out = np.where(finite, out, fill)
+            else:
+                out = np.zeros_like(out, dtype=float)
+        return out.astype(np.float32)
+
+    r1 = _log1p_ret(ret1)
+    r2 = _log1p_ret(ret2)
+    r4 = _log1p_ret(ret4)
+    r6 = _log1p_ret(ret6)
+    return (0.3 * r1 + 0.3 * r2 + 0.2 * r4 + 0.2 * r6).astype(np.float32)
 
 
 def build_horizon_prediction_features(conf: dict, X_eval: pd.DataFrame) -> pd.DataFrame:
@@ -1738,8 +1760,8 @@ def train_specialist_models(panel, feats, mkt_gates, cfg, syms, ts_end):
 def _compute_and_print_meta_metrics(y_true, y_pred, name, groups=None, y_raw_ret=None):
     """Print meta model diagnostics with economically meaningful metrics.
 
-    IC_target: rank corr of pred vs transformed target (what model optimizes)
-    IC_raw:    rank corr of pred vs raw returns (what trading PnL depends on)
+    IC_target: global rank corr of pred vs transformed target (all time+assets)
+    IC_raw:    global rank corr of pred vs raw returns (all time+assets)
     R²:        OOS R-squared of pred vs raw returns (variance explained)
     WinRate@k: fraction with raw_ret > 0 in top k% by pred score
     AvgRet@k:  mean raw return in top k% (bps)
@@ -1751,8 +1773,8 @@ def _compute_and_print_meta_metrics(y_true, y_pred, name, groups=None, y_raw_ret
     y_true = np.asarray(y_true, dtype=float)
     y_pred = np.asarray(y_pred, dtype=float)
 
-    ic_target = ic_cross_sectional(y_pred, y_true, groups=groups)
-    ic_raw = ic_cross_sectional(y_pred, y_raw_ret, groups=groups) if y_raw_ret is not None else float('nan')
+    ic_target = _safe_spearman(y_pred, y_true)
+    ic_raw = _safe_spearman(y_pred, y_raw_ret) if y_raw_ret is not None else float('nan')
 
     if groups is not None:
         trades_day_10 = avg_trades_per_day(y_pred, 0.10, np.asarray(groups))
@@ -1940,20 +1962,40 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
 
             # Build y_target from per-horizon returns (aligned to common samples)
             def _ret_for_h_aligned(h):
+                ds_key = f"train_{side}_{k}_{h}"
+                if ds_key in datasets:
+                    df_h = datasets[ds_key]
+                    if "__ts__" in df_h.columns and "__symbol__" in df_h.columns:
+                        h_keys = list(zip(df_h["__ts__"].values, df_h["__symbol__"].values))
+                        h_lookup = {kk: i for i, kk in enumerate(h_keys)}
+                        common_keys = list(zip(df["__ts__"].values, df["__symbol__"].values))
+                        h_idx = np.array([h_lookup.get(ck, -1) for ck in common_keys])
+                        valid = h_idx >= 0
+                        ret = np.zeros(len(df), dtype=np.float32)
+                        ret[valid] = df_h["__y_ret__"].values[h_idx[valid]].astype(np.float32)
+                        if valid.any():
+                            return ret
                 if h in horizon_dfs:
                     df_h, _ = horizon_dfs[h]
                     if "__ts__" in df_h.columns and "__symbol__" in df_h.columns:
                         h_keys = list(zip(df_h["__ts__"].values, df_h["__symbol__"].values))
-                        h_lookup = {k: i for i, k in enumerate(h_keys)}
+                        h_lookup = {kk: i for i, kk in enumerate(h_keys)}
                         common_keys = list(zip(df["__ts__"].values, df["__symbol__"].values))
-                        h_idx = np.array([h_lookup.get(k, -1) for k in common_keys])
+                        h_idx = np.array([h_lookup.get(ck, -1) for ck in common_keys])
                         valid = h_idx >= 0
                         ret = np.zeros(len(df), dtype=np.float32)
                         ret[valid] = df_h["__y_ret__"].values[h_idx[valid]].astype(np.float32)
-                        return ret
+                        if valid.any():
+                            return ret
                 return y_ret.astype(np.float32)
 
-            y_target = compute_meta_target(_ret_for_h_aligned(2), _ret_for_h_aligned(4), _ret_for_h_aligned(8))
+            y_target = compute_meta_target(
+                _ret_for_h_aligned(1),
+                _ret_for_h_aligned(2),
+                _ret_for_h_aligned(4),
+                _ret_for_h_aligned(6),
+                groups=None,
+            )
 
             n_res = df.get("__n_res__", pd.Series(np.ones(len(df)), index=df.index)).values.astype(np.float32)
             keep = n_res >= np.quantile(n_res, 0.20)
@@ -2001,8 +2043,40 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
 
             if meta.oof_probs is not None:
                 y_ret_filtered = df["__y_ret__"].values if "__y_ret__" in df.columns else y_target
-                gate_res = compute_stage_gate_metrics(y_target, meta.oof_probs, y_ret_filtered, model_type="quantile_meta")
+
+                # Orientation safeguard: for MR buckets, allow score-direction flip if
+                # OOF ranking quality is better with -pred than pred.
+                def _top_spread(yv, sv, frac=0.10):
+                    n = len(yv)
+                    if n <= 2:
+                        return 0.0
+                    ksel = max(1, int(frac * n))
+                    it = np.argsort(sv)[-ksel:]
+                    ib = np.argsort(sv)[:ksel]
+                    return float(np.mean(yv[it]) - np.mean(yv[ib]))
+
+                pred_oof = np.asarray(meta.oof_probs, dtype=float)
+                ic_pos = _safe_spearman(pred_oof, y_ret_filtered)
+                ic_neg = _safe_spearman(-pred_oof, y_ret_filtered)
+                sp_pos = _top_spread(y_ret_filtered, pred_oof, frac=0.10)
+                sp_neg = _top_spread(y_ret_filtered, -pred_oof, frac=0.10)
+
+                meta.score_sign = 1
+                if k == "mr" and ((ic_neg > ic_pos + 1e-4) and (sp_neg > sp_pos + 1e-6)):
+                    meta.score_sign = -1
+                    tprint(f"Meta {side}_{k}: orientation flipped (OOF IC {ic_pos:.4f}->{ic_neg:.4f}, spread10 {sp_pos:.6f}->{sp_neg:.6f})")
+
+                pred_for_gate = meta.score_sign * pred_oof
+                is_quant = bool(meta.model and meta.model.get("pool") == "quantile")
+                gate_type = "quantile_meta" if is_quant else "meta_regression"
+                gate_res = compute_stage_gate_metrics(y_target, pred_for_gate, y_ret_filtered, model_type=gate_type)
                 gate_res["Model"] = f"{side}_{k}"
+                gate_res["Model_Type"] = gate_type
+                gate_res["Score_Sign"] = int(meta.score_sign)
+                gate_res["IC_Pos"] = float(ic_pos)
+                gate_res["IC_Neg"] = float(ic_neg)
+                gate_res["Spread10_Pos"] = float(sp_pos)
+                gate_res["Spread10_Neg"] = float(sp_neg)
                 meta_gate_results.append(gate_res)
 
     return meta_models, meta_gate_results
@@ -2656,9 +2730,11 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
             _oof_parts.append(oof_h[:len(dfm)] if len(oof_h) >= len(dfm) else np.pad(oof_h, (0, len(dfm) - len(oof_h)), constant_values=0.5))
         base_score = np.mean(_oof_parts, axis=0)
         y_target = compute_meta_target(
+            datasets.get(f"train_{side}_{kind}_1", dfm)["__y_ret__"].values[:len(dfm)].astype(float) if f"train_{side}_{kind}_1" in datasets else y_ret,
             datasets.get(f"train_{side}_{kind}_2", dfm)["__y_ret__"].values[:len(dfm)].astype(float) if f"train_{side}_{kind}_2" in datasets else y_ret,
             datasets.get(f"train_{side}_{kind}_4", dfm)["__y_ret__"].values[:len(dfm)].astype(float) if f"train_{side}_{kind}_4" in datasets else y_ret,
-            datasets.get(f"train_{side}_{kind}_8", dfm)["__y_ret__"].values[:len(dfm)].astype(float) if f"train_{side}_{kind}_8" in datasets else y_ret,
+            datasets.get(f"train_{side}_{kind}_6", dfm)["__y_ret__"].values[:len(dfm)].astype(float) if f"train_{side}_{kind}_6" in datasets else y_ret,
+            groups=None,
         )
         groups = dfm["__ts__"].values if "__ts__" in dfm.columns else None
         n = min(len(y_ret), len(y_target), len(base_score), len(meta.oof_probs) if meta.oof_probs is not None else 0)

@@ -34,6 +34,16 @@ def _pct(v, decimals=2):
     return f"{v * 100:.{decimals}f}%"
 
 
+def _horizons_to_bars(horizons_hours: List[int], timeframe: str) -> Dict[int, int]:
+    """Convert label horizons in hours to bar counts for the configured timeframe."""
+    if not horizons_hours:
+        return {}
+    tf_hours = pd.to_timedelta(timeframe).total_seconds() / 3600.0
+    if tf_hours <= 0:
+        return {}
+    return {int(h): int(round(float(h) / tf_hours)) for h in horizons_hours}
+
+
 # ──────────────────────────────────────────────
 # TRAINING REPORT
 # ──────────────────────────────────────────────
@@ -55,7 +65,14 @@ def generate_training_report(
     # ── Config summary ──
     lines.append("## Configuration")
     lines.append(f"- **Train lookback**: {cfg.get('train_lookback_hours', '?')} hours")
-    lines.append(f"- **Label horizons**: {cfg.get('label_horizons_hours', '?')}")
+    horizons = cfg.get('label_horizons_hours', [])
+    timeframe = cfg.get('timeframe', '1h')
+    lines.append(f"- **Timeframe**: {timeframe} (signals are made on the last closed bar)")
+    lines.append(f"- **Label horizons**: {horizons}")
+    horizon_bars = _horizons_to_bars(horizons, timeframe)
+    if horizon_bars:
+        bars_desc = ", ".join([f"{h}h → {b} bars" for h, b in horizon_bars.items()])
+        lines.append(f"- **Prediction horizons in bars**: {bars_desc}")
     lines.append(f"- **Label method**: triple_barrier")
     lines.append(f"- **Label quantiles**: lo={cfg.get('label_quantile_lo', 0.3)}, hi={cfg.get('label_quantile_hi', 0.7)}")
     lines.append(f"- **OOS holdout**: {cfg.get('oos_holdout_days', 0)} days")

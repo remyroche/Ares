@@ -1848,3 +1848,71 @@ def numba_causal_clip(df, lo, hi):
         return res_df[res_df.columns[0]]
 
     return res_df
+
+# ============================================================================
+# REGIME SWITCHING UTILITIES
+# ============================================================================
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_pick_by_regime_parallel(fast, base, slow, regime, fast_thr, slow_thr):
+    n_rows, n_cols = base.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        for i in range(n_rows):
+            r = regime[i, j]
+            # Numba/Numpy nan comparison: NaN > thr is False, NaN < thr is False.
+            # Pandas: NaN > thr is False.
+            # So if r is NaN:
+            #   r > fast_thr is False.
+            #   r < slow_thr is False.
+            #   Falls to else -> base.
+            # This matches Pandas behavior:
+            #   out.where(~(NaN > fast), fast) -> out.where(~False, fast) -> out.where(True, fast) -> Keep out (base).
+
+            if r > fast_thr:
+                out[i, j] = fast[i, j]
+            elif r < slow_thr:
+                out[i, j] = slow[i, j]
+            else:
+                out[i, j] = base[i, j]
+    return out
+
+def numba_pick_by_regime(fast_df, base_df, slow_df, rv_ratio, fast_thr, slow_thr):
+    # tprint(f"Entering function: numba_pick_by_regime in fast_funcs.py")
+    is_series = isinstance(fast_df, pd.Series)
+    if is_series:
+        fast_df = fast_df.to_frame()
+        base_df = base_df.to_frame()
+        slow_df = slow_df.to_frame()
+        rv_ratio = rv_ratio.to_frame()
+
+    # ALIGNMENT SAFETY:
+    # We must ensure all inputs align with base_df index/columns (matching original behavior)
+    # This prevents subtle index misalignment bugs when converting to numpy
+    target_idx = base_df.index
+    target_cols = base_df.columns
+
+    # Check and reindex if necessary (cheap if already aligned/same object)
+    if not fast_df.index.equals(target_idx) or not fast_df.columns.equals(target_cols):
+        fast_df = fast_df.reindex(index=target_idx, columns=target_cols)
+
+    if not slow_df.index.equals(target_idx) or not slow_df.columns.equals(target_cols):
+        slow_df = slow_df.reindex(index=target_idx, columns=target_cols)
+
+    if not rv_ratio.index.equals(target_idx) or not rv_ratio.columns.equals(target_cols):
+        rv_ratio = rv_ratio.reindex(index=target_idx, columns=target_cols)
+
+    # Convert to numpy float32
+    fast = fast_df.to_numpy(dtype=np.float32, copy=False)
+    base = base_df.to_numpy(dtype=np.float32, copy=False)
+    slow = slow_df.to_numpy(dtype=np.float32, copy=False)
+    regime = rv_ratio.to_numpy(dtype=np.float32, copy=False)
+
+    res = _numba_pick_by_regime_parallel(fast, base, slow, regime, fast_thr, slow_thr)
+
+    res_df = pd.DataFrame(res, index=target_idx, columns=target_cols)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+    return res_df

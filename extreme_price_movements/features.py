@@ -668,26 +668,28 @@ def _compute_features_impl(panel, mkt_gates, cfg):
                               index=c.index, columns=c.columns).astype(np.float32)
     feats["trend_bin3"] = trend_bin3
 
-    def pick_by_rv(fast_df, base_df, slow_df):
-        rr = rv_ratio
-        out = base_df.copy()
-        out = out.where(~(rr > cfg["rv_ratio_fast_thr"]), fast_df)
-        out = out.where(~(rr < cfg["rv_ratio_slow_thr"]), slow_df)
-        return out.astype(np.float32)
-
     rsi_fast = rsi(c, max(2, int(cfg["rsi_n"] * 0.5)))
     rsi_slow = rsi(c, int(cfg["rsi_n"] * 2))
-    feats["rsi"] = pick_by_rv(rsi_fast, rsi_base, rsi_slow)
+    feats["rsi"] = ff.numba_pick_by_regime(
+        rsi_fast, rsi_base, rsi_slow, rv_ratio,
+        cfg["rv_ratio_fast_thr"], cfg["rv_ratio_slow_thr"]
+    )
     del rsi_fast, rsi_slow
 
     atr_fast = atr_percent(h, l, c, max(2, int(cfg["atr_n"] * 0.5)))
     atr_slow = atr_percent(h, l, c, int(cfg["atr_n"] * 2))
-    feats["atr_pct"] = pick_by_rv(atr_fast, atr_base, atr_slow)
+    feats["atr_pct"] = ff.numba_pick_by_regime(
+        atr_fast, atr_base, atr_slow, rv_ratio,
+        cfg["rv_ratio_fast_thr"], cfg["rv_ratio_slow_thr"]
+    )
     del atr_fast, atr_slow
 
     volz_fast = zscore_rolling(v, max(24, int(cfg["volz_n"] * 0.5)))
     volz_slow = zscore_rolling(v, int(cfg["volz_n"] * 2))
-    feats["vol_z"] = pick_by_rv(volz_fast, feats["vol_z_base"], volz_slow)
+    feats["vol_z"] = ff.numba_pick_by_regime(
+        volz_fast, feats["vol_z_base"], volz_slow, rv_ratio,
+        cfg["rv_ratio_fast_thr"], cfg["rv_ratio_slow_thr"]
+    )
     del volz_fast, volz_slow
 
     # --- New Volume & Liquidity Gates (Z-score based) ---
@@ -738,14 +740,20 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     sma_slow = ff.numba_rolling_mean(c, int(cfg["trend_sma_n"] * 2))
     trend_fast = (c - sma_fast)
     trend_slow = (c - sma_slow)
-    feats["trend_pct"] = pick_by_rv(trend_fast, feats["trend_pct_base"], trend_slow)
+    feats["trend_pct"] = ff.numba_pick_by_regime(
+        trend_fast, feats["trend_pct_base"], trend_slow, rv_ratio,
+        cfg["rv_ratio_fast_thr"], cfg["rv_ratio_slow_thr"]
+    )
     del sma_fast, sma_slow, trend_fast, trend_slow
 
     ema_fast_f = ema(c, max(4, int(cfg["ema_fast"] * 0.5)))
     ema_fast_s = ema(c, int(cfg["ema_fast"] * 2))
     dist_fast_f = (c - ema_fast_f) / (feats["atr_pct"] + 1e-12)
     dist_fast_s = (c - ema_fast_s) / (feats["atr_pct"] + 1e-12)
-    feats["dist_ema_fast"] = pick_by_rv(dist_fast_f, feats["dist_ema_fast_base"], dist_fast_s)
+    feats["dist_ema_fast"] = ff.numba_pick_by_regime(
+        dist_fast_f, feats["dist_ema_fast_base"], dist_fast_s, rv_ratio,
+        cfg["rv_ratio_fast_thr"], cfg["rv_ratio_slow_thr"]
+    )
     del ema_fast_f, ema_fast_s, dist_fast_f, dist_fast_s
 
     feats["vol_z24"] = feats["vol_z24_base"]

@@ -93,3 +93,13 @@ Result: `calculate_entropy_statistics_numba` speedup >700x (2.11s -> 0.003s). Fu
 **Action:**
 1. Implemented a **fused parallel kernel** for rolling Z-score, calculating mean and std in a single pass. This achieved a **4x speedup** (0.044s -> 0.011s for 1M elements).
 2. Introduced an **"Assumed Mean" centering technique** (subtracting the first valid value `K` from all elements in the window) to the variance accumulation logic. This completely resolves numerical instability for large inputs without the complexity of Welford's algorithm for sliding windows.
+
+## 2026-02-12 - Regime-Based Selection Optimization & Alignment
+
+**Learning:** Replacing Pandas `where` chains for regime-based feature selection (Fast/Base/Slow) with a Numba kernel (`numba_pick_by_regime`) yielded a ~2.6x speedup and reduced memory allocations. However, **Index Alignment is critical**.
+Pandas operations implicitly align by index. Converting DataFrames to NumPy arrays for Numba processing loses this alignment. If inputs (e.g., `rsi_fast` vs `rv_ratio`) are misaligned—even slightly, or due to different window start points—the Numba kernel will produce garbage or shifted results, destroying model performance.
+
+**Action:** When replacing Pandas logic with NumPy/Numba:
+1.  **Anchor to a reference**: Explicitly define a target index/columns (e.g., from `base_df`).
+2.  **Enforce Alignment**: Use `reindex(index=target.index, columns=target.columns)` on all inputs before `to_numpy()`. Do not assume alignment just because they share a source.
+3.  **Verify**: Add tests specifically for misaligned inputs to ensure the alignment logic works.

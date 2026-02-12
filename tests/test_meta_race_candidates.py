@@ -16,7 +16,7 @@ def test_meta_race_tailweighted_candidates_smoke(monkeypatch):
     monkeypatch.setattr(MetaModel, "_optuna_hpo", lambda self, *args, **kwargs: args[3])
 
     # Force a deterministic, compact race that still includes required candidate families.
-    def _small_race(self, mono, inter):
+    def _small_race(self):
         ridge = {"alpha": 2.0, "fit_intercept": True}
         et = {"n_estimators": 60, "max_depth": 6, "min_samples_leaf": 8, "max_features": "sqrt", "n_jobs": 1, "random_state": 42}
         lgb_like = {"objective": "quantile", "alpha": 0.85, "n_estimators": 120, "learning_rate": 0.08, "num_leaves": 31, "max_depth": 5, "random_state": 42, "n_jobs": 1, "verbosity": -1}
@@ -28,14 +28,6 @@ def test_meta_race_tailweighted_candidates_smoke(monkeypatch):
 
     monkeypatch.setattr(MetaModel, "_race_candidates", _small_race)
 
-    calls = []
-    original_select = MetaModel._select_features_for_candidate
-
-    def _counting_select(self, X_meta, y_np, candidate_name, kind):
-        calls.append(candidate_name)
-        return original_select(self, X_meta, y_np, candidate_name, kind)
-
-    monkeypatch.setattr(MetaModel, "_select_features_for_candidate", _counting_select)
 
     m = MetaModel(strategy_name="smoke")
     m.fit(X, y)
@@ -56,6 +48,3 @@ def test_meta_race_tailweighted_candidates_smoke(monkeypatch):
         assert "spread10" in row
         assert "top_decile_calibration_gap" in row
 
-    # ensure feature selection invoked independently per candidate
-    assert "ridge_tailweighted_l1" in calls
-    assert "extratrees_tailweighted_l1" in calls

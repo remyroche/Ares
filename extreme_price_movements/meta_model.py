@@ -113,6 +113,7 @@ class MetaModel:
         self.interaction_constraints: Optional[List[List[int]]] = None
         self.oof_probs: Optional[np.ndarray] = None
         self.report_rows: List[dict] = []
+        self.score_sign: int = 1
         self._selected_features_by_pool: Dict[str, List[str]] = {}
 
     def prepare_meta_features(self, preds, feats_df, pred_col_name="pred_logit"):
@@ -383,7 +384,14 @@ class MetaModel:
     def _signed_log_demeaned(self, y: np.ndarray) -> np.ndarray:
         y = np.asarray(y, dtype=float)
         z = np.sign(y) * np.log1p(np.abs(y))
-        return z - float(np.mean(z))
+        finite = np.isfinite(z)
+        if not finite.any():
+            return np.zeros_like(z, dtype=float)
+        center = float(np.nanmean(z))
+        out = z - center
+        fill = float(np.nanmedian(out[finite]))
+        out[~finite] = fill
+        return out
 
     def _select_features_for_candidate(self, X: pd.DataFrame, y: np.ndarray, candidate_name: str, kind: str) -> List[str]:
         # Independent feature selection per candidate as requested.
@@ -457,6 +465,21 @@ class MetaModel:
                     break
             ramp = self._tail_ramp_weights(y_fit, chosen, q0=0.70, q1=1.00)
             sw_fit = ramp if sw_fit is None else (sw_fit * ramp)
+
+        finite_y = np.isfinite(y_fit)
+        if not finite_y.any():
+            y_fit = np.zeros_like(y_fit, dtype=float)
+        elif not finite_y.all():
+            y_fill = float(np.nanmedian(y_fit[finite_y]))
+            y_fit = np.where(finite_y, y_fit, y_fill)
+
+        if sw_fit is not None:
+            finite_w = np.isfinite(sw_fit)
+            if not finite_w.any():
+                sw_fit = np.ones_like(sw_fit, dtype=float)
+            else:
+                w_fill = float(np.nanmedian(sw_fit[finite_w]))
+                sw_fit = np.where(finite_w, sw_fit, w_fill)
 
         return y_fit, sw_fit
 
@@ -681,6 +704,22 @@ class MetaModel:
             pnl_std = float(np.std(chunk_vals)) if chunk_vals else 0.0
             sortino = float(_sortino_numba(yk.astype(np.float64)))
             maxdd = float(_maxdd_numba(yk.astype(np.float64)))
+            q_edges = np.quantile(pred, np.linspace(0.0, 1.0, 11))
+            q_edges[0] -= 1e-12
+            q_edges[-1] += 1e-12
+            b = np.clip(np.digitize(pred, q_edges[1:-1]), 0, 9)
+            meds = np.array([np.median(y[b == i]) for i in range(10) if np.any(b == i)], dtype=float)
+            idxs = np.array([i for i in range(10) if np.any(b == i)], dtype=float)
+            if meds.size >= 3:
+                mono_bin = float(pd.Series(idxs).corr(pd.Series(meds), method="spearman"))
+            else:
+                mono_bin = float("nan")
+
+            # Keep old fields as tail-shape diagnostics (non-monotonicity semantics).
+            tail_shape_069 = float(np.mean(np.diff(np.quantile(yk, np.linspace(0.6, 0.9, 4))) >= -1e-12))
+            tail_shape_079 = float(np.mean(np.diff(np.quantile(yk, np.linspace(0.7, 0.9, 3))) >= -1e-12))
+            tail_shape_089 = float(np.mean(np.diff(np.quantile(yk, np.linspace(0.8, 0.9, 3))) >= -1e-12))
+
             rows.append({
                 "k": k,
                 "precision@topk": prec,
@@ -696,9 +735,10 @@ class MetaModel:
                 "coverage_topdec_tau085_raw": float(np.mean(yk <= pred[idx])),
                 "coverage_global_tau085_cal": float(np.mean(y <= pred)),
                 "coverage_topdec_tau085_cal": float(np.mean(yk <= pred[idx])),
-                "monotonicity_0.6_0.9": float(np.mean(np.diff(np.quantile(yk, np.linspace(0.6, 0.9, 4))) >= -1e-12)),
-                "monotonicity_0.7_0.9": float(np.mean(np.diff(np.quantile(yk, np.linspace(0.7, 0.9, 3))) >= -1e-12)),
-                "monotonicity_0.8_0.9": float(np.mean(np.diff(np.quantile(yk, np.linspace(0.8, 0.9, 3))) >= -1e-12)),
+                "monotonicity_bin_spearman": mono_bin,
+                "tail_shape_0.6_0.9": tail_shape_069,
+                "tail_shape_0.7_0.9": tail_shape_079,
+                "tail_shape_0.8_0.9": tail_shape_089,
             })
         metric_df = pd.DataFrame(rows)
 
@@ -869,4 +909,4 @@ class MetaModel:
             raise RuntimeError("MetaModel must be fitted before predict")
         X = X_meta[self.selected_features].to_numpy(dtype=float)
         preds = np.vstack([m.predict(X) for m in self.model["models"]])
-        return np.median(preds, axis=0)
+        return int(self.score_sign) * np.median(preds, axis=0)

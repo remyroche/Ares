@@ -346,6 +346,10 @@ CFG = {
     "exh_near_thr": 0.015,       # Fallback % proximity
     "exh_rev_thr_pct": 0.03,     # Fallback % reversal (3%)
 
+    # Soft Labels (Target Smoothing)
+    "label_use_soft": True,
+    "label_soft_alpha_max": 0.15, # Reverted to 0.15
+
     "exh_train_lookback_hours": 24 * 14,
     "min_exh_samples": 6000,
     "exh_C": 1.0,

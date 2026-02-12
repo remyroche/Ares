@@ -9,6 +9,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import roc_auc_score, brier_score_loss, log_loss, accuracy_score
 from scipy.stats import rankdata, spearmanr
+from scipy.special import logit, expit
 try:
     from catboost import CatBoostClassifier
 except Exception:
@@ -359,6 +360,11 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         candidates = self._get_candidates(race_mode=True)
         results = {}
 
+        # --- Dynamic Regularization (User Requested) ---
+        n_samples = len(y)
+        min_leaf_dyn = max(75, int(n_samples / 50))
+        tprint(f"ModelRace: Dynamic min_samples_leaf set to {min_leaf_dyn} (n={n_samples})")
+
         def safe_slice(arr, idx):
             if hasattr(arr, "iloc"): return arr.iloc[idx]
             return arr[idx]
@@ -368,6 +374,23 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         rank_cfg = AlphaRankConfig(k_frac=0.10, cal_metric="brier")
 
         for name, model in candidates.items():
+            # Apply dynamic regularization to inner estimator
+            if hasattr(model, "estimator"): inner = model.estimator
+            else: inner = model
+
+            # ExtraTrees
+            if "min_samples_leaf" in inner.get_params():
+                inner.set_params(min_samples_leaf=min_leaf_dyn)
+            # LightGBM / CatBoost
+            if "min_data_in_leaf" in inner.get_params():
+                inner.set_params(min_data_in_leaf=min_leaf_dyn)
+            # LightGBM alias
+            if "min_child_samples" in inner.get_params():
+                inner.set_params(min_child_samples=min_leaf_dyn)
+            # XGBoost (approximate mapping: hessian ~ 0.25 * count)
+            if "min_child_weight" in inner.get_params():
+                 inner.set_params(min_child_weight=max(1, int(min_leaf_dyn / 4)))
+
             tprint(f"Race: Training {name}...")
             fold_scores = []
             fold_aucs = []
@@ -416,16 +439,21 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     # Predict raw (biased) probabilities on validation
                     probs_raw = model_clone.predict_proba(X_val)[:, 1]
                     
-                    # Bias correction contract (fold): map weighted-model raw probs to
-                    # unweighted prevalence domain before isotonic training.
-                    p_unweighted_fold = float(np.mean(y_val_fit))
-                    if w_tr_fit is not None:
-                        den = float(np.sum(w_tr_fit))
-                        p_weighted_fold = float(np.sum(w_tr_fit * y_tr_fit) / max(den, 1e-12))
-                    else:
-                        p_weighted_fold = float(np.mean(y_tr_fit))
-                    delta_logit_fold = compute_logit_shift(p_unweighted_fold, p_weighted_fold, eps=1e-6)
-                    probs = apply_logit_shift(probs_raw, delta_logit_fold, eps=1e-6)
+                    # --- In-Fold Platt Scaling (User Requested) ---
+                    # Maps raw score (which might be overconfident/biased) to well-calibrated prob
+                    # using Logistic Regression on logits.
+                    p_clip = np.clip(probs_raw, 1e-6, 1 - 1e-6)
+                    logits_raw = logit(p_clip).reshape(-1, 1)
+
+                    try:
+                        # High C (100) to allow fitting the curve without over-regularizing the scaler itself
+                        platt = LogisticRegression(C=100.0, solver='lbfgs', random_state=42)
+                        platt.fit(logits_raw, y_val_fit)
+                        probs = platt.predict_proba(logits_raw)[:, 1]
+                    except Exception:
+                        # Fallback if single-class in validation or convergence fail
+                        probs = probs_raw
+
                     oof_model[val_idx] = probs
                     
                     # w_bss=0.20: Enabled BSS in selection score

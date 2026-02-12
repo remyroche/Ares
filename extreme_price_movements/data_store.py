@@ -125,6 +125,10 @@ class PartitionedOHLCVStore:
         except Exception as e:
             tprint(f"Error writing meta for {symbol}: {e}")
 
+    def get_symbol_meta(self, symbol: str) -> dict:
+        """Public accessor for persisted metadata (last_ts_ms, etc.)."""
+        return self._read_meta(symbol)
+
     def _downcast(self, df: pd.DataFrame) -> pd.DataFrame:
         if df.empty:
             return df
@@ -397,32 +401,60 @@ def save_features(feats: dict, ts: pd.Timestamp, root_dir: str):
     count = 0
     total = len(symbols)
     
+    resume_path = os.path.join(out_dir, "_resume.json")
+    resume_state = {}
+    if os.path.exists(resume_path):
+        try:
+            with open(resume_path, "r") as f:
+                resume_state = json.load(f)
+        except Exception:
+            resume_state = {}
+    completed = set(resume_state.get("completed_symbols", []))
+
     for i, sym in enumerate(symbols):
         try:
+            safe_sym = sym.replace("/", "_")
+            fname = f"symbol={safe_sym}.parquet"
+            fpath = os.path.join(out_dir, fname)
+
+            if sym in completed and os.path.exists(fpath):
+                count += 1
+                continue
+
             parts = {}
             for k in feat_keys:
                 idx_map = col_idx[k]
                 if sym in idx_map:
                     j = idx_map[sym]
                     parts[k] = feats[k].iloc[:, j].values
-            
+
             df_sym = pd.DataFrame(parts, index=time_index)
             df_sym["__symbol__"] = sym
 
-            safe_sym = sym.replace("/", "_")
-            fname = f"symbol={safe_sym}.parquet"
-            fpath = os.path.join(out_dir, fname)
             df_sym.to_parquet(fpath)
-            
+            completed.add(sym)
+            resume_state["completed_symbols"] = sorted(completed)
+            resume_state["updated_at"] = pd.Timestamp.utcnow().isoformat()
+            try:
+                with open(resume_path, "w") as f:
+                    json.dump(resume_state, f, indent=2)
+            except Exception as exc:
+                tprint(f"WARNING: Failed to update feature resume state: {exc}")
+
             count += 1
             if count % 50 == 0:
                 tprint(f"Saved features for {count}/{total} symbols...")
                 gc.collect()
-                
+
         except Exception as e:
             tprint(f"Failed to save features for {sym}: {e}")
 
     tprint(f"Feature save complete. {count}/{total} symbols saved.")
+    if count >= total and os.path.exists(resume_path):
+        try:
+            os.remove(resume_path)
+        except OSError:
+            pass
 
 def load_features(ts: pd.Timestamp, root_dir: str) -> dict:
     """

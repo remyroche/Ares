@@ -3,7 +3,17 @@ import numpy as np
 from .utils import tprint
 import extreme_price_movements.fast_funcs as ff
 
-def select_trade_candidates_hourly(feats, ts, syms, pct=0.05, min_n=10, max_n=60, metric="dist_ema_fast"):
+def select_trade_candidates_hourly(
+    feats,
+    ts,
+    syms,
+    pct=0.05,
+    min_n=10,
+    max_n=60,
+    metric="dist_ema_fast",
+    min_range_pct=0.07,
+    min_vol_zscore=1.6,
+):
     if ts not in feats[metric].index:
         return [], []
     s = feats[metric].loc[ts, syms].dropna()
@@ -64,7 +74,7 @@ def select_trade_candidates_hourly(feats, ts, syms, pct=0.05, min_n=10, max_n=60
                 r12 = feats["range_12h_pct"].loc[ts, sym]
                 vz = feats["volatility_zscore"].loc[ts, sym]
 
-                if r12 > 0.07 and vz > 1.6:
+                if r12 > min_range_pct and vz > min_vol_zscore:
                     # Sign Consistency Check (12h)
                     # Use ret1h to reconstruct path
                     # Look back 12 hours
@@ -146,7 +156,14 @@ def entry_price_next_hour_open(panel_open, ts_entry, symbol):
     except Exception:
         return np.nan
 
-def select_trade_candidates_vectorized(panel, feats, pct=0.05, metric="ret24h"):
+def select_trade_candidates_vectorized(
+    panel,
+    feats,
+    pct=0.05,
+    metric="ret24h",
+    min_range_pct=0.07,
+    min_vol_zscore=1.6,
+):
     """
     Vectorized candidate selection with time expansion and volatility filtering.
     Optimized using argpartition for faster top-K selection.
@@ -189,10 +206,10 @@ def select_trade_candidates_vectorized(panel, feats, pct=0.05, metric="ret24h"):
     # 2. Volatility & Event Filters (Apply BEFORE Expansion)
     # This ensures we select events where conditions were met AT THE TIME of the event.
 
-    # Filter 2: 12h High/Low range > 7%
+    # Filter 2: 12h High/Low range exceeds configured pct
     if "range_12h_pct" in feats:
         vol_metric = feats["range_12h_pct"]
-        vol_mask = vol_metric > 0.07
+        vol_mask = vol_metric > min_range_pct
     else:
         # Fallback if feature missing (legacy)
         c = panel["close"]
@@ -201,11 +218,11 @@ def select_trade_candidates_vectorized(panel, feats, pct=0.05, metric="ret24h"):
         roll_h = h.rolling(12).max()
         roll_l = l.rolling(12).min()
         vol_metric = (roll_h - roll_l) / (c + 1e-12)
-        vol_mask = vol_metric > 0.07
+        vol_mask = vol_metric > min_range_pct
 
     # Filter 3: Volatility Z-score > 1.6
     if "volatility_zscore" in feats:
-        event_mask = feats["volatility_zscore"] > 1.6
+        event_mask = feats["volatility_zscore"] > min_vol_zscore
     else:
         event_mask = pd.DataFrame(True, index=vol_mask.index, columns=vol_mask.columns)
 

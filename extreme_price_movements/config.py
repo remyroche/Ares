@@ -61,6 +61,17 @@ MODEL_FEATURES = [
     "spike_score", "grind_score", "chop_score",
     # Time
     "sin_hod", "cos_hod", "sin_dow", "cos_dow",
+    # New regime-transition and entropy features for improved PR-AUC and robustness
+    "regime_transition_entropy_12h", "regime_transition_entropy_48h",
+    "trend_regime_switch_12h", "vol_regime_switch_12h",
+    "entropy_jump_24h", "complexity_regime_24h",
+    "rsi_z_x_regime_vol", "vol_z_x_regime_trend",
+    "mtf_divergence_x_regime_vol_12h", "hurst_proxy_x_regime_trend_48h",
+    # Regime features for fold robustness (Report 2026-02-11)
+    "vol_regime_z", "is_high_vol_regime", "is_low_vol_regime",
+    "trend_regime", "is_trending", "is_ranging",
+    "liq_regime", "regime_stability_24h",
+    "rsi_x_high_vol", "trend_x_trending", "vol_z_x_low_vol",
 ]
 
 # Helper/base features produced in features.py that should remain selectable by model heads.
@@ -81,8 +92,8 @@ CFG = {
     # persistence / fetch
     "data_root": "data",
     "timeframe": "1h",
-    "fetch_years": 3,
-    "fetch_symbols_M": 500,
+    "fetch_years": 4,
+    "fetch_symbols_M": 600,
 
     # market basket
     "market_basket": ["BTC/USDT","ETH/USDT","AVAX/USDT","SOL/USDT","XRP/USDT"],
@@ -114,9 +125,11 @@ CFG = {
 
     # per-hour cross-sectional training selection
     "variance_filter_pct": 1.0, # User requested to keep all non-constant features
-    "train_extreme_pct_hourly": 0.05,
+    "train_extreme_pct_hourly": 0.06,
     "train_extreme_min": 10,
     "train_extreme_max": 80,
+    "train_min_range_pct": 0.07,
+    "train_min_vol_zscore": 1.6,
 
     # hourly trading selection (top/bot deviations)
     "trade_extreme_pct": 0.06,
@@ -254,6 +267,14 @@ CFG = {
         "mr_qual_z_8", "mr_qual_pct_8", "mr_qual_bin3_8",
         "mr_qual_gt25_8", "mr_qual_gt50_8", "mr_qual_gt66_8", "mr_qual_gt75_8", "mr_qual_gt85_8", "mr_qual_gt90_8",
 
+        # New Multi-Horizon Aggregated Features
+        "ret_mean", "ret_max", "ret_min",
+        "rv_mean", "rv_max", "rv_min",
+        
+        # New Tail-Risk Features
+        "ret_pct5_24h", "ret_pct95_24h", "gap_zscore", "vol_shock_z", 
+        "range_zscore", "tail_risk_score",
+        
     ],
 
     # thresholds / picks
@@ -395,10 +416,6 @@ CFG = {
         "reject_dir2h_prod", "reject_dir2h_abs_prod", "reject_dir2h_signed_mag",
         "tfq_dir2h_prod", "tfq_dir2h_abs_prod", "tfq_dir2h_signed_mag",
         "mrq_dir2h_prod", "mrq_dir2h_abs_prod", "mrq_dir2h_signed_mag",
-        "downside_semivariance_8", "downside_semivariance_24",
-        "upside_semivariance_8", "upside_semivariance_24",
-        "down_up_vol_ratio_8", "down_up_vol_ratio_24",
-        "vol_shock_asym_8_24", "vol_shock_asym_4_12", "vol_shock_asym_4_212",
         # Specialist features
         "trap_quality", "predicted_vol_6h",
         # Gated entry features

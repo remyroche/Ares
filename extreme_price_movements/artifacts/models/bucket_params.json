@@ -19,104 +19,124 @@
         "tp_mult": 3.0
       },
       "evaluation": {
-        "holdout_pnl_net": -0.9499404257841437,
-        "holdout_trades": 183,
-        "holdout_win_rate": 0.0,
+        "decile_metrics": [
+          {
+            "decile": "Top10%",
+            "n_trades": 138,
+            "pnl_net": -0.6801077657048719,
+            "win_rate": 0.007246376811594203
+          },
+          {
+            "decile": "Top20%",
+            "n_trades": 138,
+            "pnl_net": -0.6801077657048719,
+            "win_rate": 0.007246376811594203
+          },
+          {
+            "decile": "Top30%",
+            "n_trades": 138,
+            "pnl_net": -0.6801077657048719,
+            "win_rate": 0.007246376811594203
+          }
+        ],
+        "holdout_pnl_net": -0.6801077657048719,
+        "holdout_trades": 138,
+        "holdout_win_rate": 0.007246376811594203,
         "regime_breakdown": [
           {
-            "n_trades": 16,
-            "pnl_net": -0.08069360766726576,
+            "n_trades": 18,
+            "pnl_net": -0.08979165541980658,
             "regime": "low/mid/mid",
             "win_rate": 0.0
           },
           {
-            "n_trades": 28,
-            "pnl_net": -0.12791184317020146,
+            "n_trades": 14,
+            "pnl_net": -0.06259931138777082,
             "regime": "low/mid/high",
             "win_rate": 0.0
           },
           {
-            "n_trades": 1,
-            "pnl_net": -0.004724047866888363,
-            "regime": "low/nan/low",
-            "win_rate": 0.0
-          },
-          {
-            "n_trades": 6,
-            "pnl_net": -0.03316837318239364,
+            "n_trades": 2,
+            "pnl_net": -0.010494665510086994,
             "regime": "low/nan/mid",
             "win_rate": 0.0
           },
           {
-            "n_trades": 9,
-            "pnl_net": -0.03174058565093285,
+            "n_trades": 11,
+            "pnl_net": -0.05025441000912993,
             "regime": "low/nan/high",
             "win_rate": 0.0
           },
           {
-            "n_trades": 6,
-            "pnl_net": -0.02711389201188072,
+            "n_trades": 13,
+            "pnl_net": -0.06849737725699684,
             "regime": "mid/mid/low",
             "win_rate": 0.0
           },
           {
-            "n_trades": 5,
-            "pnl_net": -0.029475762331956066,
+            "n_trades": 11,
+            "pnl_net": -0.06382392431904017,
             "regime": "mid/mid/mid",
             "win_rate": 0.0
           },
           {
             "n_trades": 2,
-            "pnl_net": -0.015189127314175037,
+            "pnl_net": -0.008065101623685681,
             "regime": "mid/mid/high",
             "win_rate": 0.0
           },
           {
-            "n_trades": 8,
-            "pnl_net": -0.054595848713297465,
+            "n_trades": 3,
+            "pnl_net": -0.015000000000000017,
             "regime": "mid/nan/low",
             "win_rate": 0.0
           },
           {
-            "n_trades": 19,
-            "pnl_net": -0.10001155047584667,
+            "n_trades": 8,
+            "pnl_net": -0.03703401901034331,
             "regime": "mid/nan/mid",
             "win_rate": 0.0
           },
           {
-            "n_trades": 21,
-            "pnl_net": -0.10128344622517187,
+            "n_trades": 9,
+            "pnl_net": -0.03569512940845661,
             "regime": "mid/nan/high",
             "win_rate": 0.0
           },
           {
-            "n_trades": 35,
-            "pnl_net": -0.2044304845025807,
+            "n_trades": 10,
+            "pnl_net": -0.06383196954832583,
             "regime": "high/mid/low",
             "win_rate": 0.0
           },
           {
-            "n_trades": 12,
-            "pnl_net": -0.06132877172646659,
+            "n_trades": 1,
+            "pnl_net": -0.0011855709509814992,
             "regime": "high/mid/mid",
             "win_rate": 0.0
           },
           {
-            "n_trades": 11,
-            "pnl_net": -0.05783790999281474,
+            "n_trades": 10,
+            "pnl_net": -0.03531111088811544,
+            "regime": "high/mid/high",
+            "win_rate": 0.1
+          },
+          {
+            "n_trades": 20,
+            "pnl_net": -0.1081924105089464,
             "regime": "high/nan/low",
             "win_rate": 0.0
           },
           {
-            "n_trades": 3,
-            "pnl_net": -0.017069577077606028,
+            "n_trades": 5,
+            "pnl_net": -0.02582577537327281,
             "regime": "high/nan/mid",
             "win_rate": 0.0
           },
           {
             "n_trades": 1,
-            "pnl_net": -0.0033655978746657497,
-            "regime": "nan/mid/high",
+            "pnl_net": -0.00450533448991301,
+            "regime": "nan/mid/mid",
             "win_rate": 0.0
           }
         ]
@@ -132,7 +152,7 @@
       "policy_mode": "train_baseline",
       "position_sizing": {
         "c0": 0.85,
-        "k": 6.0,
+        "k": 2.0,
         "s_max": 0.15,
         "s_min": 0.03
       },
@@ -146,8 +166,8 @@
       "tp_sl": {
         "atr_scale_hi": 2.5,
         "atr_scale_lo": 0.6,
-        "sl_mult": 0.75,
-        "tp_mult": 1.5
+        "sl_mult": 1.6,
+        "tp_mult": 2.0
       }
     },
     "LONG_TF": {
@@ -169,111 +189,125 @@
         "tp_mult": 3.0
       },
       "evaluation": {
-        "holdout_pnl_net": -1.2128981540647616,
-        "holdout_trades": 208,
-        "holdout_win_rate": 0.10096153846153846,
+        "decile_metrics": [
+          {
+            "decile": "Top10%",
+            "n_trades": 152,
+            "pnl_net": -0.9338771614474752,
+            "win_rate": 0.08552631578947369
+          },
+          {
+            "decile": "Top20%",
+            "n_trades": 152,
+            "pnl_net": -0.9338771614474752,
+            "win_rate": 0.08552631578947369
+          },
+          {
+            "decile": "Top30%",
+            "n_trades": 152,
+            "pnl_net": -0.9338771614474752,
+            "win_rate": 0.08552631578947369
+          }
+        ],
+        "holdout_pnl_net": -0.9338771614474752,
+        "holdout_trades": 152,
+        "holdout_win_rate": 0.08552631578947369,
         "regime_breakdown": [
           {
-            "n_trades": 21,
-            "pnl_net": -0.14750563613153175,
+            "n_trades": 17,
+            "pnl_net": -0.12436768929829484,
             "regime": "low/mid/low",
             "win_rate": 0.0
           },
           {
-            "n_trades": 15,
-            "pnl_net": -0.0873292832255749,
+            "n_trades": 8,
+            "pnl_net": -0.035909195956481336,
             "regime": "low/mid/mid",
             "win_rate": 0.0
           },
           {
-            "n_trades": 1,
-            "pnl_net": -0.004250074036745618,
+            "n_trades": 7,
+            "pnl_net": -0.040821421013012366,
             "regime": "low/mid/high",
             "win_rate": 0.0
           },
           {
-            "n_trades": 17,
-            "pnl_net": -0.13168769627699353,
+            "n_trades": 6,
+            "pnl_net": -0.051283896606239186,
             "regime": "low/nan/low",
             "win_rate": 0.0
           },
           {
-            "n_trades": 14,
-            "pnl_net": -0.081017151068433,
+            "n_trades": 9,
+            "pnl_net": -0.07124740871390428,
             "regime": "low/nan/mid",
-            "win_rate": 0.07142857142857142
+            "win_rate": 0.0
           },
           {
-            "n_trades": 1,
-            "pnl_net": -0.004250074036745597,
+            "n_trades": 3,
+            "pnl_net": -0.009629184215465648,
             "regime": "low/nan/high",
             "win_rate": 0.0
           },
           {
-            "n_trades": 12,
-            "pnl_net": -0.08735794600722953,
+            "n_trades": 7,
+            "pnl_net": -0.06520391871669064,
             "regime": "mid/mid/low",
             "win_rate": 0.0
           },
           {
-            "n_trades": 8,
-            "pnl_net": -0.05354235999087002,
+            "n_trades": 2,
+            "pnl_net": -0.011321295363716444,
             "regime": "mid/mid/mid",
             "win_rate": 0.0
           },
           {
-            "n_trades": 8,
-            "pnl_net": -0.057778257406444766,
+            "n_trades": 5,
+            "pnl_net": -0.02526305714929004,
             "regime": "mid/nan/low",
+            "win_rate": 0.4
+          },
+          {
+            "n_trades": 14,
+            "pnl_net": -0.07380544516400432,
+            "regime": "mid/nan/mid",
+            "win_rate": 0.0
+          },
+          {
+            "n_trades": 23,
+            "pnl_net": -0.11150621850151533,
+            "regime": "mid/nan/high",
+            "win_rate": 0.17391304347826086
+          },
+          {
+            "n_trades": 15,
+            "pnl_net": -0.11528349225964406,
+            "regime": "high/mid/low",
+            "win_rate": 0.06666666666666667
+          },
+          {
+            "n_trades": 16,
+            "pnl_net": -0.0894851216683013,
+            "regime": "high/mid/mid",
             "win_rate": 0.125
           },
           {
             "n_trades": 14,
-            "pnl_net": -0.07392617951440231,
-            "regime": "mid/nan/mid",
-            "win_rate": 0.21428571428571427
-          },
-          {
-            "n_trades": 26,
-            "pnl_net": -0.13881178199209432,
-            "regime": "mid/nan/high",
-            "win_rate": 0.11538461538461539
-          },
-          {
-            "n_trades": 11,
-            "pnl_net": -0.1031989954687106,
-            "regime": "high/mid/low",
-            "win_rate": 0.0
-          },
-          {
-            "n_trades": 15,
-            "pnl_net": -0.10491777427102877,
-            "regime": "high/mid/mid",
-            "win_rate": 0.06666666666666667
-          },
-          {
-            "n_trades": 36,
-            "pnl_net": -0.1068256118704677,
+            "pnl_net": -0.07267190788792204,
             "regime": "high/mid/high",
-            "win_rate": 0.25
-          },
-          {
-            "n_trades": 3,
-            "pnl_net": -0.01814784419537864,
-            "regime": "high/nan/mid",
-            "win_rate": 0.3333333333333333
+            "win_rate": 0.14285714285714285
           },
           {
             "n_trades": 5,
-            "pnl_net": -0.014723185940610485,
+            "pnl_net": -0.015662363379202928,
             "regime": "high/nan/high",
-            "win_rate": 0.2
+            "win_rate": 0.4
           },
           {
             "n_trades": 1,
-            "pnl_net": 0.0023716973684998945,
-            "regime": "nan/mid/high",
-            "win_rate": 1.0
+            "pnl_net": -0.020415545553790347,
+            "regime": "nan/mid/low",
+            "win_rate": 0.0
           }
         ]
       },
@@ -302,8 +336,8 @@
       "tp_sl": {
         "atr_scale_hi": 2.5,
         "atr_scale_lo": 0.6,
-        "sl_mult": 0.75,
-        "tp_mult": 1.5
+        "sl_mult": 1.6,
+        "tp_mult": 2.0
       }
     },
     "SHORT_MR": {
@@ -325,104 +359,100 @@
         "tp_mult": 3.0
       },
       "evaluation": {
-        "holdout_pnl_net": -0.2494948030424635,
-        "holdout_trades": 49,
-        "holdout_win_rate": 0.08163265306122448,
+        "decile_metrics": [
+          {
+            "decile": "Top10%",
+            "n_trades": 30,
+            "pnl_net": -0.12501050019291077,
+            "win_rate": 0.13333333333333333
+          },
+          {
+            "decile": "Top20%",
+            "n_trades": 30,
+            "pnl_net": -0.12501050019291077,
+            "win_rate": 0.13333333333333333
+          },
+          {
+            "decile": "Top30%",
+            "n_trades": 30,
+            "pnl_net": -0.12501050019291077,
+            "win_rate": 0.13333333333333333
+          }
+        ],
+        "holdout_pnl_net": -0.12501050019291077,
+        "holdout_trades": 30,
+        "holdout_win_rate": 0.13333333333333333,
         "regime_breakdown": [
           {
-            "n_trades": 8,
-            "pnl_net": -0.055179426291663815,
+            "n_trades": 2,
+            "pnl_net": -0.008492611129136865,
             "regime": "low/mid/low",
             "win_rate": 0.0
           },
           {
-            "n_trades": 1,
-            "pnl_net": -0.004248513313857704,
-            "regime": "low/mid/mid",
-            "win_rate": 0.0
-          },
-          {
-            "n_trades": 1,
-            "pnl_net": 0.0011198497465014457,
-            "regime": "low/mid/high",
-            "win_rate": 1.0
-          },
-          {
-            "n_trades": 3,
-            "pnl_net": -0.014659232989174821,
+            "n_trades": 5,
+            "pnl_net": -0.015360628482321552,
             "regime": "low/nan/low",
             "win_rate": 0.0
           },
           {
             "n_trades": 2,
-            "pnl_net": -0.0084926111291369,
+            "pnl_net": -0.007041577746869061,
             "regime": "low/nan/mid",
             "win_rate": 0.0
           },
           {
             "n_trades": 1,
-            "pnl_net": -0.004250937063409342,
-            "regime": "low/nan/high",
+            "pnl_net": -0.007940886130409433,
+            "regime": "mid/mid/low",
             "win_rate": 0.0
           },
           {
             "n_trades": 1,
-            "pnl_net": -0.007937269929996696,
+            "pnl_net": -0.007940886130409443,
             "regime": "mid/mid/mid",
             "win_rate": 0.0
           },
           {
-            "n_trades": 5,
-            "pnl_net": -0.022701744315230483,
+            "n_trades": 3,
+            "pnl_net": 0.0013487519954959596,
             "regime": "mid/mid/high",
-            "win_rate": 0.2
+            "win_rate": 0.6666666666666666
           },
           {
-            "n_trades": 3,
-            "pnl_net": -0.0200504170274292,
+            "n_trades": 1,
+            "pnl_net": -0.010071963036503238,
             "regime": "mid/nan/low",
             "win_rate": 0.0
           },
           {
-            "n_trades": 4,
-            "pnl_net": -0.015611535013618314,
+            "n_trades": 1,
+            "pnl_net": -0.010071963036503238,
             "regime": "mid/nan/mid",
             "win_rate": 0.0
           },
           {
             "n_trades": 3,
-            "pnl_net": -0.019519531897072652,
+            "pnl_net": -0.016634760555547284,
             "regime": "mid/nan/high",
             "win_rate": 0.0
           },
           {
-            "n_trades": 2,
-            "pnl_net": -0.005527019715537465,
-            "regime": "high/mid/low",
-            "win_rate": 0.5
-          },
-          {
-            "n_trades": 8,
-            "pnl_net": -0.039469742213157605,
+            "n_trades": 6,
+            "pnl_net": -0.02558346470645735,
             "regime": "high/mid/mid",
-            "win_rate": 0.125
-          },
-          {
-            "n_trades": 2,
-            "pnl_net": -0.00529882898514271,
-            "regime": "high/mid/high",
-            "win_rate": 0.0
+            "win_rate": 0.16666666666666666
           },
           {
             "n_trades": 4,
-            "pnl_net": -0.023421537339968795,
-            "regime": "high/nan/high",
-            "win_rate": 0.0
+            "pnl_net": -0.00927962510383985,
+            "regime": "high/mid/high",
+            "win_rate": 0.25
           },
           {
             "n_trades": 1,
-            "pnl_net": -0.004246305564568448,
-            "regime": "nan/mid/high",
+            "pnl_net": -0.007940886130409424,
+            "regime": "nan/mid/low",
             "win_rate": 0.0
           }
         ]
@@ -452,8 +482,8 @@
       "tp_sl": {
         "atr_scale_hi": 2.5,
         "atr_scale_lo": 0.6,
-        "sl_mult": 0.75,
-        "tp_mult": 1.5
+        "sl_mult": 1.6,
+        "tp_mult": 2.0
       }
     },
     "SHORT_TF": {
@@ -475,115 +505,129 @@
         "tp_mult": 3.0
       },
       "evaluation": {
-        "holdout_pnl_net": -0.8545106277477592,
-        "holdout_trades": 184,
-        "holdout_win_rate": 0.1358695652173913,
+        "decile_metrics": [
+          {
+            "decile": "Top10%",
+            "n_trades": 145,
+            "pnl_net": -0.6995001203796849,
+            "win_rate": 0.034482758620689655
+          },
+          {
+            "decile": "Top20%",
+            "n_trades": 145,
+            "pnl_net": -0.6995001203796849,
+            "win_rate": 0.034482758620689655
+          },
+          {
+            "decile": "Top30%",
+            "n_trades": 145,
+            "pnl_net": -0.6995001203796849,
+            "win_rate": 0.034482758620689655
+          }
+        ],
+        "holdout_pnl_net": -0.6995001203796849,
+        "holdout_trades": 145,
+        "holdout_win_rate": 0.034482758620689655,
         "regime_breakdown": [
           {
-            "n_trades": 7,
-            "pnl_net": -0.050433754484845224,
+            "n_trades": 6,
+            "pnl_net": -0.02919519339013612,
             "regime": "low/mid/low",
             "win_rate": 0.0
           },
           {
-            "n_trades": 8,
-            "pnl_net": -0.042246404266349256,
+            "n_trades": 5,
+            "pnl_net": -0.025858308719227452,
             "regime": "low/mid/mid",
             "win_rate": 0.0
           },
           {
-            "n_trades": 17,
-            "pnl_net": -0.05003742477324436,
+            "n_trades": 14,
+            "pnl_net": -0.04718005191816403,
             "regime": "low/mid/high",
-            "win_rate": 0.23529411764705882
-          },
-          {
-            "n_trades": 20,
-            "pnl_net": -0.09411070345926051,
-            "regime": "low/nan/low",
-            "win_rate": 0.05
-          },
-          {
-            "n_trades": 9,
-            "pnl_net": -0.04461332385750598,
-            "regime": "low/nan/mid",
-            "win_rate": 0.1111111111111111
-          },
-          {
-            "n_trades": 16,
-            "pnl_net": -0.10443987363395538,
-            "regime": "mid/mid/low",
-            "win_rate": 0.0625
-          },
-          {
-            "n_trades": 16,
-            "pnl_net": -0.081084204174428,
-            "regime": "mid/mid/mid",
             "win_rate": 0.0
           },
           {
-            "n_trades": 7,
-            "pnl_net": -0.01993352527791237,
-            "regime": "mid/mid/high",
-            "win_rate": 0.2857142857142857
+            "n_trades": 14,
+            "pnl_net": -0.07583789648315754,
+            "regime": "low/nan/low",
+            "win_rate": 0.0
           },
           {
             "n_trades": 9,
-            "pnl_net": -0.046819561798405164,
-            "regime": "mid/nan/low",
-            "win_rate": 0.1111111111111111
-          },
-          {
-            "n_trades": 4,
-            "pnl_net": 0.0030996814417908153,
-            "regime": "mid/nan/mid",
-            "win_rate": 0.75
-          },
-          {
-            "n_trades": 9,
-            "pnl_net": -0.027380536688774187,
-            "regime": "mid/nan/high",
-            "win_rate": 0.2222222222222222
-          },
-          {
-            "n_trades": 7,
-            "pnl_net": -0.04352344694182185,
-            "regime": "high/mid/low",
+            "pnl_net": -0.025856198856888838,
+            "regime": "low/nan/mid",
             "win_rate": 0.0
           },
           {
             "n_trades": 13,
-            "pnl_net": -0.06476443554605872,
+            "pnl_net": -0.090631951795059,
+            "regime": "mid/mid/low",
+            "win_rate": 0.0
+          },
+          {
+            "n_trades": 10,
+            "pnl_net": -0.04913252320593767,
+            "regime": "mid/mid/mid",
+            "win_rate": 0.0
+          },
+          {
+            "n_trades": 5,
+            "pnl_net": -0.018912701279965225,
+            "regime": "mid/mid/high",
+            "win_rate": 0.0
+          },
+          {
+            "n_trades": 8,
+            "pnl_net": -0.056077604745977394,
+            "regime": "mid/nan/low",
+            "win_rate": 0.0
+          },
+          {
+            "n_trades": 6,
+            "pnl_net": -0.024837396789826965,
+            "regime": "mid/nan/mid",
+            "win_rate": 0.0
+          },
+          {
+            "n_trades": 6,
+            "pnl_net": -0.0205298922206661,
+            "regime": "mid/nan/high",
+            "win_rate": 0.0
+          },
+          {
+            "n_trades": 6,
+            "pnl_net": -0.021355424023740056,
+            "regime": "high/mid/low",
+            "win_rate": 0.0
+          },
+          {
+            "n_trades": 7,
+            "pnl_net": -0.03165240847392688,
             "regime": "high/mid/mid",
-            "win_rate": 0.15384615384615385
+            "win_rate": 0.14285714285714285
           },
           {
-            "n_trades": 14,
-            "pnl_net": -0.03367854907920644,
+            "n_trades": 17,
+            "pnl_net": -0.0757107982954031,
             "regime": "high/mid/high",
-            "win_rate": 0.35714285714285715
-          },
-          {
-            "n_trades": 1,
-            "pnl_net": 0.0012426360054807791,
-            "regime": "high/nan/low",
-            "win_rate": 1.0
+            "win_rate": 0.17647058823529413
           },
           {
             "n_trades": 11,
-            "pnl_net": -0.06913649818487179,
+            "pnl_net": -0.05280911876356936,
             "regime": "high/nan/mid",
             "win_rate": 0.09090909090909091
           },
           {
-            "n_trades": 15,
-            "pnl_net": -0.07777795918696312,
+            "n_trades": 7,
+            "pnl_net": -0.0463665046499109,
             "regime": "high/nan/high",
-            "win_rate": 0.06666666666666667
+            "win_rate": 0.0
           },
           {
             "n_trades": 1,
-            "pnl_net": -0.008872743841428471,
+            "pnl_net": -0.0075561467681282465,
             "regime": "nan/mid/low",
             "win_rate": 0.0
           }
@@ -599,8 +643,8 @@
       },
       "policy_mode": "train_baseline",
       "position_sizing": {
-        "c0": 0.65,
-        "k": 20.0,
+        "c0": 0.85,
+        "k": 2.0,
         "s_max": 0.15,
         "s_min": 0.03
       },
@@ -614,8 +658,8 @@
       "tp_sl": {
         "atr_scale_hi": 2.5,
         "atr_scale_lo": 0.6,
-        "sl_mult": 0.75,
-        "tp_mult": 1.5
+        "sl_mult": 1.6,
+        "tp_mult": 2.0
       }
     }
   },

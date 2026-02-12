@@ -9,6 +9,7 @@ import sys
 import argparse
 import json
 import os
+import shutil
 import pandas as pd
 
 from extreme_price_movements.config import CFG
@@ -19,6 +20,8 @@ from extreme_price_movements.pipeline_steps import (
     run_label_generation_step_v2,
     run_feature_generation_step,
     run_training_step,
+    run_training_base_step,
+    run_training_meta_step,
     run_backtest_step,
     run_risk_optimization_step,
 )
@@ -68,6 +71,85 @@ def _find_latest_feature_ts(data_root):
 
 
 
+def _labels_dir(cfg, ts_sig):
+    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    return os.path.join(cfg["data_root"], "artifacts", run_id, "labels")
+
+
+def _label_cache_dir(ts_sig):
+    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    return os.path.join("extreme_price_movements", "artifacts", "label_cache", run_id)
+
+
+def _copy_dir(src, dst, desc):
+    if not os.path.isdir(src):
+        return False
+    try:
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        if os.path.exists(dst):
+            shutil.rmtree(dst)
+        shutil.copytree(src, dst)
+        return True
+    except Exception as exc:
+        tprint(f"WARNING: Failed to copy {desc}: {exc}")
+        return False
+
+
+def _cache_label_artifacts(cfg, ts_sig):
+    src = _labels_dir(cfg, ts_sig)
+    dst = _label_cache_dir(ts_sig)
+    if os.path.isdir(src):
+        _copy_dir(src, dst, "labels to cache")
+
+
+def _restore_cached_labels(cfg, ts_sig):
+    cache_dir = _label_cache_dir(ts_sig)
+    if not os.path.isdir(cache_dir):
+        return False
+    label_dir = _labels_dir(cfg, ts_sig)
+    os.makedirs(os.path.dirname(label_dir), exist_ok=True)
+    return _copy_dir(cache_dir, label_dir, "cached labels")
+
+
+def _generate_labels_with_cache(ts_sig, margin_symbols, cfg, store, ex):
+    _cache_label_artifacts(cfg, ts_sig)
+    run_label_generation_step_v2(ts_sig=ts_sig, margin_symbols=margin_symbols, cfg=cfg, store=store, ex=ex)
+    if _label_artifacts_ready(cfg, ts_sig):
+        _cache_label_artifacts(cfg, ts_sig)
+        return True
+    tprint("WARNING: Label generation failed; attempting to reuse cached artifacts.")
+    if _restore_cached_labels(cfg, ts_sig) and _label_artifacts_ready(cfg, ts_sig):
+        tprint("Recovered label artifacts from cache.")
+        return True
+    return False
+
+
+def _download_resume_path():
+    return os.path.join("extreme_price_movements", "artifacts", "download_resume.json")
+
+
+def _load_download_resume():
+    path = _download_resume_path()
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as exc:
+            tprint(f"WARNING: Failed to read download resume markers: {exc}")
+    return {}
+
+
+def _save_download_resume(markers):
+    path = _download_resume_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(markers, f, indent=2)
+    except Exception as exc:
+        tprint(f"WARNING: Failed to persist download resume markers: {exc}")
+
+
+
 
 def run_download(cfg):
     """Download OHLCV data from Binance for the full training universe."""
@@ -84,11 +166,19 @@ def run_download(cfg):
     since = pd.Timestamp.utcnow() - pd.Timedelta(days=int(fetch_years * 365))
     since_ms = int(since.value // 10**6)
 
+    resume_markers = _load_download_resume()
+
     success, fail = 0, 0
     for i, sym in enumerate(fetch_syms):
         try:
             store.update_symbol(ex, sym, since_ms)
             success += 1
+            meta = store.get_symbol_meta(sym)
+            last_ts_ms = meta.get("last_ts_ms") if isinstance(meta, dict) else None
+            if last_ts_ms:
+                resume_markers[sym] = last_ts_ms
+            if (i + 1) % 10 == 0:
+                _save_download_resume(resume_markers)
             if (i + 1) % 10 == 0:
                 tprint(f"  Download progress: {i+1}/{len(fetch_syms)} (ok={success}, fail={fail})")
         except Exception as e:
@@ -97,6 +187,7 @@ def run_download(cfg):
         _time.sleep(0.1)  # gentle rate limit
 
     tprint(f"STEP: DOWNLOAD COMPLETE — {success} ok, {fail} failed out of {len(fetch_syms)}")
+    _save_download_resume(resume_markers)
 
 
 def _label_artifacts_ready(cfg, ts_sig):
@@ -136,10 +227,10 @@ def run_labels(cfg, ts_override=None):
 
     store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
 
-    # No exchange needed — data already in store, features already on disk
-    run_label_generation_step_v2(ts_sig, None, cfg, store, None)
-
-    tprint("LABELS PIPELINE COMPLETE")
+    if _generate_labels_with_cache(ts_sig, None, cfg, store, None):
+        tprint("LABELS PIPELINE COMPLETE")
+    else:
+        tprint("ERROR: Label generation failed and no cache was available.")
 
 
 def run_features(cfg, ts_override=None):
@@ -197,9 +288,7 @@ def run_train(cfg, ts_override=None):
     # Always refresh labels before training so TP:SL widths are re-optimised from current data.
     tprint("Refreshing labels to optimise TP:SL widths before model training (optimise_tpsl_ratio)...")
     store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
-    run_label_generation_step_v2(ts_sig, None, cfg, store, None)
-
-    if not _label_artifacts_ready(cfg, ts_sig):
+    if not _generate_labels_with_cache(ts_sig, None, cfg, store, None):
         tprint("ERROR: Label generation did not produce required artifacts. Aborting training.")
         return
 
@@ -212,13 +301,35 @@ def run_train(cfg, ts_override=None):
 
 
 
+def _prepare_context(cfg, ts_override=None):
+    """Shared setup for train_base / train_meta: resolve ts, build store, get margin symbols."""
+    if ts_override:
+        ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
+    else:
+        ts_sig = _find_latest_feature_ts(cfg["data_root"])
+        if ts_sig is None:
+            tprint("ERROR: No feature directories found. Run feature_generation first.")
+            return None, None, None, None
+
+    store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+    ex = None  # exchange not needed for training (data already in store)
+    margin_symbols = None  # will be auto-refreshed downstream if needed
+    return ex, store, ts_sig, margin_symbols
+
+
 def run_train_base(cfg, ts_override=None):
     ex, store, ts_sig, margin_symbols = _prepare_context(cfg, ts_override)
     if ts_sig is None:
         return
     tprint(f"Train base mode. ts_sig={ts_sig}")
     _load_bucket_params_for_train(cfg, ts_sig)
-    run_label_generation_step_v2(ts_sig=ts_sig, margin_symbols=margin_symbols, cfg=cfg, store=store, ex=ex)
+    # Reuse labels if they already exist; only regenerate if missing.
+    if _label_artifacts_ready(cfg, ts_sig):
+        tprint("Labels already present, skipping regeneration.")
+    else:
+        if not _generate_labels_with_cache(ts_sig, margin_symbols, cfg, store, ex):
+            tprint("ERROR: Unable to refresh labels for train_base.")
+            return
     run_training_base_step(ts_sig=ts_sig, cfg=cfg, store=store, margin_symbols=margin_symbols)
 
 
@@ -228,8 +339,13 @@ def run_train_meta(cfg, ts_override=None):
         return
     tprint(f"Train meta mode. ts_sig={ts_sig}")
     _load_bucket_params_for_train(cfg, ts_sig)
-    # labels are required for meta datasets; regenerate to ensure parity with ts.
-    run_label_generation_step_v2(ts_sig=ts_sig, margin_symbols=margin_symbols, cfg=cfg, store=store, ex=ex)
+    # Reuse labels from train_base if they exist; only regenerate if missing.
+    if _label_artifacts_ready(cfg, ts_sig):
+        tprint("Labels already present from train_base, skipping regeneration.")
+    else:
+        if not _generate_labels_with_cache(ts_sig, margin_symbols, cfg, store, ex):
+            tprint("ERROR: Unable to refresh labels for train_meta.")
+            return
     run_training_meta_step(ts_sig=ts_sig, cfg=cfg, store=store, margin_symbols=margin_symbols)
 
 def run_risk_opt(cfg, ts_override=None):

@@ -5,7 +5,10 @@ from sklearn.linear_model import Lasso, ElasticNet
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.preprocessing import StandardScaler
 from extreme_price_movements.utils import tprint
-from extreme_price_movements.feature_selection_extreme_events import mdi_feature_selection_v3
+from extreme_price_movements.feature_selection_extreme_events import (
+    mdi_feature_selection_v3,
+    mdi_feature_selection_v4_topk
+)
 
 def compute_tf_weights(df: pd.DataFrame, cfg: dict) -> np.ndarray:
     """
@@ -70,19 +73,38 @@ class TFModel:
             random_state=42
         )
 
-        sel_res = mdi_feature_selection_v3(
+        # Two-stage feature selection:
+        # Stage 1: Use v3 to get 2x target features
+        # Stage 2: Use v4_topk to refine to target count
+        n_stage1 = min(X.shape[1], n_select * 2)
+        
+        sel_res_stage1 = mdi_feature_selection_v3(
             X, y,
             base_model=base_selector,
             sample_weight=sample_weight,
             analysis_n_estimators=500,
-            end_features=n_select,
+            end_features=n_stage1,
             cumulative_cap=0.98,
             min_share=0.001,
             min_features=5,
             max_features_pct=0.8
         )
+        
+        # If we got more than target features, refine with v4_topk
+        if len(sel_res_stage1.selected_features) > n_select:
+            tprint(f"TFModel: Refining {len(sel_res_stage1.selected_features)} features with v4_topk")
+            X_stage1 = X[sel_res_stage1.selected_features]
+            
+            sel_res = mdi_feature_selection_v4_topk(
+                X_stage1, y,
+                base_model=base_selector,
+                sample_weight=sample_weight,
+                topk_weight=0.3
+            )
+            self.selected_features = sel_res.selected_features[:n_select]
+        else:
+            self.selected_features = sel_res_stage1.selected_features[:n_select]
 
-        self.selected_features = sel_res.selected_features[:n_select]
         tprint(f"TFModel: Selected {len(self.selected_features)} features.")
         if len(self.selected_features) > 0:
              tprint(f"Top features: {self.selected_features[:5]}")

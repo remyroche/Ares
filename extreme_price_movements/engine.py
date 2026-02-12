@@ -371,9 +371,15 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
             t_check = ts_sig - pd.Timedelta(hours=offset)
             if t_check in feats["ret24h"].index:
                 top, bot = select_trade_candidates_hourly(
-                    feats, t_check, list(feats["ret24h"].columns),
-                    cfg["trade_extreme_pct"], cfg["trade_extreme_min"], cfg["trade_extreme_max"],
-                    cfg["trade_deviation_metric"]
+                    feats,
+                    t_check,
+                    list(feats["ret24h"].columns),
+                    cfg["trade_extreme_pct"],
+                    cfg["trade_extreme_min"],
+                    cfg["trade_extreme_max"],
+                    cfg["trade_deviation_metric"],
+                    cfg.get("train_min_range_pct", 0.07),
+                    cfg.get("train_min_vol_zscore", 1.6),
                 )
                 candidates.update(top)
                 candidates.update(bot)
@@ -418,15 +424,26 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
                 model_tf = m_bundle["tf"]["model"]
                 fcols_mr = m_bundle["mr"]["feat_cols"]
                 fcols_tf = m_bundle["tf"]["feat_cols"]
+                # Multi-horizon models for averaging
+                mr_by_h = m_bundle["mr"].get("models_by_h", {})
+                tf_by_h = m_bundle["tf"].get("models_by_h", {})
                 rec = {
                     "symbol": sym, "side_key": side_key, "model_mr": model_mr, "model_tf": model_tf,
                     "feat_cols_mr": fcols_mr, "feat_cols_tf": fcols_tf,
+                    "mr_models_by_h": mr_by_h, "tf_models_by_h": tf_by_h,
                     "mkt_ret24h": float(mrk["mkt_ret24h"]), "mkt_ret6h": float(mrk["mkt_ret6h"]),
                     "mkt_trend": float(mrk["mkt_trend"]), "mkt_rv": float(mrk["mkt_rv"]),
                     "G_VOL": int(mrk["G_VOL"]), "G_TREND": int(mrk["G_TREND"]), "p_exh_lag1": p_lag,
                     "trend_dir": t_dir
                 }
-                all_keys = set(fcols_mr) | set(fcols_tf) | set(cfg.get("spike_feature_keys", [])) | set(cfg.get("meta_feature_keys", []))
+                # Collect feature columns from all horizons
+                all_fcols_mr = set(fcols_mr)
+                all_fcols_tf = set(fcols_tf)
+                for _h_info in mr_by_h.values():
+                    all_fcols_mr |= set(_h_info.get("feat_cols", []))
+                for _h_info in tf_by_h.values():
+                    all_fcols_tf |= set(_h_info.get("feat_cols", []))
+                all_keys = all_fcols_mr | all_fcols_tf | set(cfg.get("spike_feature_keys", [])) | set(cfg.get("meta_feature_keys", []))
                 for k in all_keys:
                     if k in feats and sym in feats[k].columns:
                         rec[k] = float(feats[k].loc[ts_sig, sym])
@@ -500,16 +517,41 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
         first = grp.iloc[0]
         model_mr = first["model_mr"]; model_tf = first["model_tf"]
         fcols_mr = first["feat_cols_mr"]; fcols_tf = first["feat_cols_tf"]
+        mr_by_h = first.get("mr_models_by_h", {})
+        tf_by_h = first.get("tf_models_by_h", {})
 
         keys_mr = cfg.get("mr_feature_keys", cfg["causal_cols"])
-        grp_mr = apply_interaction_toggles(grp.copy(), keys_mr, ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
-        X_mr_pred = grp_mr.reindex(columns=fcols_mr, fill_value=0.0).fillna(0.0).astype(np.float32)
-        p_mr = model_mr.predict(X_mr_pred)
-
         keys_tf = cfg.get("tf_feature_keys", cfg["causal_cols"])
-        grp_tf = apply_interaction_toggles(grp.copy(), keys_tf, ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
-        X_tf_pred = grp_tf.reindex(columns=fcols_tf, fill_value=0.0).fillna(0.0).astype(np.float32)
-        p_tf = model_tf.predict(X_tf_pred)
+
+        # Multi-horizon MR prediction (average across all horizons)
+        if mr_by_h:
+            mr_preds = []
+            for _h, _hi in mr_by_h.items():
+                _m = _hi["model"]
+                _fc = _hi.get("feat_cols", fcols_mr)
+                _grp = apply_interaction_toggles(grp.copy(), keys_mr, ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
+                _X = _grp.reindex(columns=_fc, fill_value=0.0).fillna(0.0).astype(np.float32)
+                mr_preds.append(_m.predict(_X))
+            p_mr = np.mean(mr_preds, axis=0)
+        else:
+            grp_mr = apply_interaction_toggles(grp.copy(), keys_mr, ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
+            X_mr_pred = grp_mr.reindex(columns=fcols_mr, fill_value=0.0).fillna(0.0).astype(np.float32)
+            p_mr = model_mr.predict(X_mr_pred)
+
+        # Multi-horizon TF prediction (average across all horizons)
+        if tf_by_h:
+            tf_preds = []
+            for _h, _hi in tf_by_h.items():
+                _m = _hi["model"]
+                _fc = _hi.get("feat_cols", fcols_tf)
+                _grp = apply_interaction_toggles(grp.copy(), keys_tf, ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
+                _X = _grp.reindex(columns=_fc, fill_value=0.0).fillna(0.0).astype(np.float32)
+                tf_preds.append(_m.predict(_X))
+            p_tf = np.mean(tf_preds, axis=0)
+        else:
+            grp_tf = apply_interaction_toggles(grp.copy(), keys_tf, ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
+            X_tf_pred = grp_tf.reindex(columns=fcols_tf, fill_value=0.0).fillna(0.0).astype(np.float32)
+            p_tf = model_tf.predict(X_tf_pred)
 
         meta_mr = meta_models.get(f"{side_key}_mr")
         meta_tf = meta_models.get(f"{side_key}_tf")

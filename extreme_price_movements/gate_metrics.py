@@ -29,7 +29,7 @@ def compute_stage_gate_metrics(y_true, y_prob, y_ret=None, model_type="classifie
     if model_type == "classifier":
         # Binarize soft labels (continuous 0-1 from soft label blending)
         # sklearn's brier_score_loss / log_loss require binary y_true
-        y_bin = (y_true >= 0.5).astype(np.float64)
+        y_bin = (y_true >= 0.5).astype(np.float32)
 
         # Baseline prevalence
         base_prev = np.mean(y_bin) if baseline_prev is None else baseline_prev

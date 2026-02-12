@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 from collections import defaultdict
 import importlib.util
 
-from numba import jit
+from numba import jit, prange
 import numpy as np
 import pandas as pd
 from sklearn.base import clone
@@ -820,3 +820,383 @@ def mdi_feature_selection_v3(
 
 # Backwards compatibility alias if needed, or update call sites
 mdi_feature_selection_leakage_safe = mdi_feature_selection_v3
+
+
+# ======================================================================================
+# Top-K Precision Feature Selection (Report 2026-02-11)
+# ======================================================================================
+
+@jit(nopython=True, cache=True)
+def _compute_spearman_fast(x: np.ndarray, y: np.ndarray) -> float:
+    """Fast Spearman correlation using rank computation."""
+    n = len(x)
+    if n < 3:
+        return 0.0
+    
+    # Compute ranks for x
+    x_order = np.argsort(x)
+    x_ranks = np.empty(n, dtype=np.float64)
+    for i in range(n):
+        x_ranks[x_order[i]] = float(i)
+    
+    # Compute ranks for y
+    y_order = np.argsort(y)
+    y_ranks = np.empty(n, dtype=np.float64)
+    for i in range(n):
+        y_ranks[y_order[i]] = float(i)
+    
+    # Pearson correlation on ranks
+    mean_x = np.mean(x_ranks)
+    mean_y = np.mean(y_ranks)
+    
+    num = 0.0
+    den_x = 0.0
+    den_y = 0.0
+    
+    for i in range(n):
+        dx = x_ranks[i] - mean_x
+        dy = y_ranks[i] - mean_y
+        num += dx * dy
+        den_x += dx * dx
+        den_y += dy * dy
+    
+    if den_x < 1e-12 or den_y < 1e-12:
+        return 0.0
+    
+    return num / np.sqrt(den_x * den_y)
+
+
+@jit(nopython=True, cache=True)
+def _bin_and_compute_pos_rates_numba(
+    feat_vals: np.ndarray,
+    y_binary: np.ndarray,
+    sample_weight: np.ndarray,
+    n_bins: int,
+    percentiles: np.ndarray
+) -> tuple:
+    """
+    Bin feature values and compute positive rates per bin.
+    Returns (bin_indices, pos_rates, has_weight).
+    """
+    n = len(feat_vals)
+    has_weight = len(sample_weight) == n
+    
+    # Assign bins based on percentiles
+    bin_labels = np.empty(n, dtype=np.int64)
+    for i in range(n):
+        bin_labels[i] = 0
+        for b in range(n_bins):
+            if feat_vals[i] <= percentiles[b]:
+                bin_labels[i] = b
+                break
+        else:
+            bin_labels[i] = n_bins - 1
+    
+    # Compute positive rate per bin using bincount
+    # Sum of y per bin
+    y_sum = np.zeros(n_bins, dtype=np.float64)
+    w_sum = np.zeros(n_bins, dtype=np.float64)
+    counts = np.zeros(n_bins, dtype=np.float64)
+    
+    for i in range(n):
+        b = bin_labels[i]
+        if has_weight:
+            y_sum[b] += y_binary[i] * sample_weight[i]
+            w_sum[b] += sample_weight[i]
+        else:
+            y_sum[b] += y_binary[i]
+            counts[b] += 1.0
+    
+    # Compute positive rates
+    pos_rates = np.zeros(n_bins, dtype=np.float64)
+    for b in range(n_bins):
+        if has_weight:
+            if w_sum[b] > 0:
+                pos_rates[b] = y_sum[b] / w_sum[b]
+        else:
+            if counts[b] > 0:
+                pos_rates[b] = y_sum[b] / counts[b]
+    
+    return bin_labels, pos_rates, has_weight
+
+
+def compute_decile_ranking_importance(
+    X: pd.DataFrame,
+    y: np.ndarray,
+    n_bins: int = 5,
+    n_bootstrap: int = 20,
+    sample_weight: Optional[np.ndarray] = None,
+    random_state: int = 42,
+    n_jobs: int = -1
+) -> pd.Series:
+    """
+    Compute feature importance based on quintile-based monotonic ranking strength.
+    
+    OPTIMIZED VERSION:
+    ==================
+    - Uses Numba JIT for core computation
+    - Vectorized binning using np.percentile
+    - Reduced bootstrap iterations (20 vs 50)
+    - Fast Spearman correlation without scipy overhead
+    - 5 bins (quintiles) = 20% each, aligning with lift@20% metric
+    - Parallel column processing using joblib
+    
+    PURPOSE:
+    ========
+    Standard MDI feature selection optimizes for overall impurity reduction,
+    which doesn't guarantee that selected features are good at ranking 
+    positive examples. This function measures how well each feature 
+    exhibits monotonic relationship with the target across quintiles.
+    
+    ADVANTAGES OVER TOP-K:
+    ======================
+    1. Monotonic ranking strength: Measures if positive rate increases 
+       monotonically across quintiles (not just at one cutoff)
+    2. Robust to k choice: No arbitrary 20% cutoff - uses all data
+    3. Uses Spearman correlation: Captures ranking quality across entire range
+    4. 5 bins (20% each) aligns with lift@20% metric used in training gates
+    
+    HOW IT WORKS:
+    =============
+    1. For each feature, bin samples into quintiles (5 equal-sized bins, 20% each)
+    2. Compute positive rate per bin
+    3. Compute Spearman correlation between bin index and positive rate
+    4. Return absolute Spearman correlation as importance
+    
+    A feature with perfect monotonic ranking would have:
+    - Quintile 1 (lowest values): lowest positive rate
+    - Quintile 5 (highest values): highest positive rate
+    - Spearman correlation ≈ 1.0
+    
+    Args:
+        X: Feature DataFrame (n_samples, n_features)
+        y: Binary target (n_samples,)
+        n_bins: Number of bins (default 5 for quintiles, max 5)
+        n_bootstrap: Number of bootstrap iterations for stability (default 20)
+        sample_weight: Optional sample weights
+        random_state: Random seed for reproducibility
+        n_jobs: Number of parallel jobs (-1 for all cores, 1 for sequential)
+    
+    Returns:
+        pd.Series: Feature importance (Spearman correlation), sorted descending
+    """
+    # Cap n_bins at 5 (20% each max) to align with lift@20% metric
+    n_bins = min(n_bins, 5)
+    
+    y = np.asarray(y, dtype=np.float64)
+    y_binary = (y >= 0.5).astype(np.float64)
+    
+    n_samples = len(y)
+    min_samples_per_bin = max(5, n_bins)
+    
+    rng = np.random.RandomState(random_state)
+    
+    # Pre-compute bootstrap indices
+    bootstrap_indices = rng.randint(0, n_samples, size=(n_bootstrap, n_samples))
+    
+    # Prepare sample weight array
+    w_arr = np.asarray(sample_weight, dtype=np.float64) if sample_weight is not None else np.empty(0, dtype=np.float64)
+    
+    # Convert X to numpy array for faster column access (float32 for memory efficiency)
+    X_values = X.values.astype(np.float32)
+    col_names = list(X.columns)
+    n_cols = len(col_names)
+    
+    # Pre-allocate results array for parallel processing
+    importance_values = np.zeros(n_cols, dtype=np.float64)
+    
+    def _process_column(col_idx: int) -> float:
+        """Process a single column and return its importance score."""
+        feat_vals = X_values[:, col_idx]
+        
+        # Skip features with no variance
+        if np.nanstd(feat_vals) < 1e-9:
+            return 0.0
+        
+        # Skip features with too many NaN
+        valid_mask = np.isfinite(feat_vals)
+        n_valid = valid_mask.sum()
+        if n_valid < min_samples_per_bin * n_bins:
+            return 0.0
+        
+        spearman_samples = []
+        
+        for boot_idx in range(n_bootstrap):
+            idx = bootstrap_indices[boot_idx]
+            
+            feat_sample = feat_vals[idx]
+            y_sample = y_binary[idx]
+            w_sample = w_arr[idx] if len(w_arr) > 0 else w_arr
+            
+            # Get valid mask
+            valid = np.isfinite(feat_sample)
+            n_valid_boot = valid.sum()
+            if n_valid_boot < min_samples_per_bin * n_bins:
+                continue
+            
+            feat_valid = feat_sample[valid]
+            y_valid = y_sample[valid]
+            w_valid = w_sample[valid] if len(w_sample) > 0 else np.empty(0, dtype=np.float64)
+            
+            # Compute percentiles for binning
+            try:
+                percentiles = np.percentile(feat_valid, np.linspace(0, 100, n_bins + 1)[1:-1])
+                
+                # Bin and compute positive rates
+                bin_labels, pos_rates, has_weight = _bin_and_compute_pos_rates_numba(
+                    feat_valid, y_valid, w_valid, n_bins, percentiles
+                )
+                
+                # Count non-empty bins
+                n_actual_bins = 0
+                for b in range(n_bins):
+                    if pos_rates[b] > 0 or np.sum(bin_labels == b) > 0:
+                        n_actual_bins += 1
+                
+                if n_actual_bins < 3:
+                    continue
+                
+                # Get valid bin indices and positive rates
+                bin_indices_arr = np.arange(n_bins, dtype=np.float64)
+                
+                # Compute Spearman correlation
+                corr = _compute_spearman_fast(bin_indices_arr, pos_rates)
+                
+                if np.isfinite(corr):
+                    spearman_samples.append(abs(corr))
+                    
+            except Exception:
+                continue
+        
+        if spearman_samples:
+            return np.mean(spearman_samples)
+        else:
+            return 0.0
+    
+    # Use joblib for parallel processing if n_jobs != 1
+    if n_jobs != 1 and n_cols > 10:
+        try:
+            from joblib import Parallel, delayed
+            results = Parallel(n_jobs=n_jobs, backend='loky')(
+                delayed(_process_column)(col_idx) for col_idx in range(n_cols)
+            )
+            importance_values = np.array(results)
+        except ImportError:
+            # Fallback to sequential if joblib not available
+            for col_idx in range(n_cols):
+                importance_values[col_idx] = _process_column(col_idx)
+    else:
+        # Sequential processing
+        for col_idx in range(n_cols):
+            importance_values[col_idx] = _process_column(col_idx)
+    
+    importance = dict(zip(col_names, importance_values))
+    return pd.Series(importance).sort_values(ascending=False)
+
+
+def compute_topk_feature_importance(
+    X: pd.DataFrame,
+    y: np.ndarray,
+    k_frac: float = 0.20,
+    n_bootstrap: int = 50,
+    sample_weight: Optional[np.ndarray] = None,
+    random_state: int = 42
+) -> pd.Series:
+    """
+    [DEPRECATED] Use compute_decile_ranking_importance instead.
+    
+    Compute feature importance based on precision@k contribution.
+    This is kept for backwards compatibility but decile-based approach
+    is preferred for robustness.
+    """
+    # Delegate to decile-based implementation
+    return compute_decile_ranking_importance(
+        X, y, n_bins=10, n_bootstrap=n_bootstrap,
+        sample_weight=sample_weight, random_state=random_state
+    )
+
+
+def mdi_feature_selection_v4_topk(
+    X: pd.DataFrame,
+    y: Union[pd.Series, np.ndarray],
+    base_model=None,
+    sample_weight: Optional[np.ndarray] = None,
+    k_frac: float = 0.20,
+    topk_weight: float = 0.3,
+    **kwargs
+) -> MDISelectionResult:
+    """
+    MDI feature selection v4 with decile-based ranking awareness.
+    
+    PURPOSE:
+    ========
+    Combines standard MDI importance with decile-based monotonic ranking strength.
+    This addresses models that have good overall metrics but poor 
+    concentration of edge at the top (low lift@k).
+    
+    IMPROVEMENT OVER TOP-K:
+    =======================
+    Instead of measuring precision at a single k cutoff, this version uses
+    decile-based Spearman correlation which:
+    1. Measures monotonic ranking strength across ALL deciles
+    2. Is robust to the choice of k (no arbitrary 20% cutoff)
+    3. Captures whether positive rate increases monotonically with feature value
+    
+    WEIGHTING:
+    ==========
+    - MDI importance: (1 - topk_weight) = 0.70 by default
+    - Decile ranking importance: topk_weight = 0.30 by default
+    
+    The decile component ensures features that exhibit monotonic relationship
+    with the target get selected, even if they don't have the highest MDI.
+    
+    Args:
+        X: Feature DataFrame
+        y: Target variable
+        base_model: Base model for MDI (default: ExtraTreesRegressor)
+        sample_weight: Optional sample weights
+        k_frac: [DEPRECATED] Kept for API compatibility
+        topk_weight: Weight for decile ranking component (default 0.30)
+        **kwargs: Additional arguments passed to mdi_feature_selection_v3
+    
+    Returns:
+        MDISelectionResult with combined importance ranking
+    """
+    tprint(f"MDI v4 TopK: Running combined MDI + decile-ranking selection (weight={topk_weight})")
+    
+    # 1. Get standard MDI result
+    mdi_result = mdi_feature_selection_v3(X, y, base_model, sample_weight=sample_weight, **kwargs)
+    
+    # 2. Get decile-based ranking importance
+    decile_imp = compute_decile_ranking_importance(
+        X, y, n_bins=10, sample_weight=sample_weight
+    )
+    
+    # 3. Normalize both importance scores
+    mdi_imp = mdi_result.metrics_table['share_mu'].copy()
+    
+    # Normalize to [0, 1]
+    mdi_norm = (mdi_imp - mdi_imp.min()) / (mdi_imp.max() - mdi_imp.min() + 1e-9)
+    
+    decile_aligned = decile_imp.reindex(mdi_imp.index, fill_value=0)
+    decile_norm = (decile_aligned - decile_aligned.min()) / (decile_aligned.max() - decile_aligned.min() + 1e-9)
+    
+    # 4. Combine
+    combined = (1 - topk_weight) * mdi_norm + topk_weight * decile_norm
+    
+    # 5. Re-rank
+    combined_sorted = combined.sort_values(ascending=False)
+    
+    # 6. Select top features (same count as MDI result)
+    n_selected = len(mdi_result.selected_features)
+    selected = combined_sorted.head(n_selected).index.tolist()
+    
+    # Create new metrics table with combined score
+    new_metrics = mdi_result.metrics_table.copy()
+    new_metrics['decile_importance'] = decile_aligned
+    new_metrics['combined_score'] = combined
+    new_metrics = new_metrics.loc[combined_sorted.index]
+    
+    tprint(f"MDI v4 TopK: Selected {len(selected)} features with combined importance")
+    
+    return MDISelectionResult(new_metrics, selected, mdi_result.kept_after_dedupe)

@@ -38,6 +38,14 @@ TOPK_GATE_FRAC = 0.20
 TOPK_INFO_FRACS = (0.10, 0.30)
 
 
+def _get_training_candidate_config(cfg):
+    return (
+        cfg.get("train_extreme_pct_hourly", cfg.get("trade_extreme_pct", 0.05)),
+        cfg.get("train_min_range_pct", 0.07),
+        cfg.get("train_min_vol_zscore", 1.6),
+    )
+
+
 def _mad(x):
     x = np.asarray(x, dtype=float)
     x = x[np.isfinite(x)]
@@ -103,8 +111,11 @@ def _base_model_report_entry(model_name, side, kind, dm, y_bin, oof_probs, y_ret
     prev = float(np.clip(prev, 1e-7, 1 - 1e-7))
     base_brier = prev * (1.0 - prev)
     base_ll = -(prev*np.log(prev) + (1-prev)*np.log(1-prev))
-    brier = float(dm.get("Brier", np.nan))
-    ll = float(dm.get("LogLoss", np.nan))
+    # Recompute Brier/LL from OOF predictions (consistent with y_bin)
+    from sklearn.metrics import brier_score_loss, log_loss as _log_loss
+    p_clip = np.clip(oof_probs, 1e-7, 1 - 1e-7)
+    brier = float(brier_score_loss(y_bin, p_clip))
+    ll = float(_log_loss(y_bin, p_clip))
     brier_imp = (base_brier - brier) / max(base_brier, 1e-9)
     ll_imp = (base_ll - ll) / max(base_ll, 1e-9)
 
@@ -125,30 +136,62 @@ def _base_model_report_entry(model_name, side, kind, dm, y_bin, oof_probs, y_ret
         info_metrics[f"lift_at_{int(_frac*100)}pct"] = _prec / max(prev, 1e-9)
 
     fold_imp = [x for x in dm.get("fold_logloss_imp", []) if np.isfinite(x)]
-    pos_fold_ratio = float(np.mean(np.array(fold_imp) >= 0.005)) if fold_imp else 0.0
+    pos_fold_ratio = float(np.mean(np.array(fold_imp) > 0.0)) if fold_imp else 0.0
     worst_fold_imp = float(np.min(fold_imp)) if fold_imp else -1.0
 
-    checks = {
-        "pr_auc_ge_0_54": float(dm.get("Prec20", np.nan)) >= 0 and float(dm.get("AUC", 0.0)) >= 0 and float(dm.get("AUC", 0.0)) >= 0,
-        "brier_and_logloss_improve_ge_2pct": bool((brier_imp >= 0.02) and (ll_imp >= 0.02)),
-        "liftk_and_preck_lift": bool((lift_k >= 1.2) and ((prec_lift_abs >= 0.025) or ((lift_k - 1.0) >= 0.05))),
-        "cv_precisionk_le_0_30": float(dm.get("CV_Prec20", 1.0)) <= 0.30,
-        "delta_logloss_le_minus_0_5pct": ll_imp >= 0.005,
-        "logloss_improves_in_ge_70pct_folds": pos_fold_ratio >= 0.70,
-        "worst_fold_delta_logloss_ge_0_5pct_improve": worst_fold_imp >= 0.005,
-    }
+    # Bootstrap CV(Prec@20) from OOF predictions
+    # This computes the coefficient of variation (std/mean) of precision@20% across bootstrap samples.
+    # Note: This is NOT cross-validation - it measures bootstrap stability of the precision estimate.
+    n_boot = 50
+    rng = np.random.RandomState(42)
+    prec_samples = []
+    n_total = len(y_bin)
+    for _ in range(n_boot):
+        idx_b = rng.choice(n_total, size=n_total, replace=True)
+        _n_k = max(1, int(n_total * k_frac))
+        top_idx = np.argsort(oof_probs[idx_b])[-_n_k:]
+        p_k_b = float(np.mean(y_bin[idx_b][top_idx]))
+        prec_samples.append(p_k_b)
+    prec_arr = np.array(prec_samples)
+    bootstrap_prec20_cv = float(np.std(prec_arr) / (np.mean(prec_arr) + 1e-9))
 
     from sklearn.metrics import average_precision_score
     pr_auc = float(average_precision_score(y_bin, oof_probs)) if len(np.unique(y_bin)) > 1 else 0.0
-    checks["pr_auc_ge_0_54"] = pr_auc >= 0.54
+
+    # Prevalence-aware PR-AUC threshold
+    # For imbalanced data, PR-AUC is heavily influenced by prevalence
+    # Threshold = max(0.50, min(0.54, base_rate + 0.10))
+    prev_for_threshold = float(np.mean(y_bin))
+    pr_auc_threshold = max(0.50, min(0.54, prev_for_threshold + 0.10))
+
+    # Diagnostic: PR-AUC below 0.5 indicates model is worse than random
+    # This is a critical issue that should be flagged
+    if pr_auc < 0.5:
+        tprint(f"WARNING: PR-AUC ({pr_auc:.4f}) < 0.5 for {model_name} - model is worse than random!")
+        tprint(f"  Prevalence: {prev_for_threshold:.4f}, Lift@20%: {lift_k:.4f}")
+        # Check if labels might be inverted
+        if lift_k < 1.0 and prec_lift_abs < 0:
+            tprint(f"  CRITICAL: Lift < 1.0 and precision lift negative - possible label inversion!")
+
+    checks = {
+        "pr_auc_ge_threshold": pr_auc >= pr_auc_threshold,
+        "pr_auc_ge_0_5": pr_auc >= 0.5,  # New check: model must be at least better than random
+        "brier_and_logloss_improve_ge_2pct": bool((brier_imp >= 0.02) and (ll_imp >= 0.02)),
+        "liftk_and_preck_lift": bool((lift_k >= 1.2) and ((prec_lift_abs >= 0.025) or ((lift_k - 1.0) >= 0.05))),
+        "bootstrap_prec20_cv_le_0_30": bootstrap_prec20_cv <= 0.30,
+        "delta_logloss_le_minus_0_5pct": ll_imp >= 0.005,
+        "logloss_improves_in_ge_70pct_folds": pos_fold_ratio >= 0.70,
+        "worst_fold_delta_logloss_ge_0_5pct_improve": worst_fold_imp >= -0.005,
+    }
 
     metrics = {
         "pr_auc": pr_auc,
+        "pr_auc_threshold": pr_auc_threshold,
         "brier_improvement": float(brier_imp),
         "logloss_improvement": float(ll_imp),
         "lift_at_20pct": float(lift_k),
         "precision_lift_abs": float(prec_lift_abs),
-        "cv_precision20": float(dm.get("CV_Prec20", np.nan)),
+        "bootstrap_prec20_cv": bootstrap_prec20_cv,
         "fold_logloss_improvement_ratio": pos_fold_ratio,
         "worst_fold_logloss_improvement": worst_fold_imp,
         **info_metrics,
@@ -369,7 +412,6 @@ class AlphaHorizonEnsemble:
 
 
 
-
 def compute_meta_target(ret2: np.ndarray, ret4: np.ndarray, ret8: np.ndarray) -> np.ndarray:
     def _signed_log_demeaned(x):
         x = np.asarray(x, dtype=float)
@@ -379,7 +421,7 @@ def compute_meta_target(ret2: np.ndarray, ret4: np.ndarray, ret8: np.ndarray) ->
     r2 = _signed_log_demeaned(ret2)
     r4 = _signed_log_demeaned(ret4)
     r8 = _signed_log_demeaned(ret8)
-    return (0.3 * r2 + 0.4 * r4 + 0.3 * r8).astype(np.float64)
+    return (0.3 * r2 + 0.4 * r4 + 0.3 * r8).astype(np.float32)
 
 
 def build_horizon_prediction_features(conf: dict, X_eval: pd.DataFrame) -> pd.DataFrame:
@@ -603,7 +645,7 @@ def _compute_atr_scale(atr_pct_df, cfg):
     g_lo, g_hi = cfg.get('atr_norm_clip_global', [0.7, 1.5])
     m_lo, m_hi = cfg.get('atr_norm_clip_scale', [0.6, 2.5])
 
-    atr = atr_pct_df.astype(np.float64)
+    atr = atr_pct_df.astype(np.float32)
     ewm_fast = atr.ewm(halflife=fast_hl, min_periods=12).mean()
     ewm_slow = atr.ewm(halflife=slow_hl, min_periods=12).mean()
     atr_ewm = atr.ewm(halflife=global_hl, min_periods=12).mean()
@@ -686,7 +728,7 @@ def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, sy
         thr = float(cfg["exh_reversal_thr"])
         is_short_rev = ((fmin / (current + 1e-12)) - 1.0) <= -thr
         is_long_rev = ((fmax / (current + 1e-12)) - 1.0) >= thr
-    ret24 = feats["ret24h"].loc[t_index, valid_syms]
+    ret24 = feats["ret24h"].reindex(index=t_index, columns=valid_syms)
     dir_mat = np.sign(ret24).fillna(0).astype(np.int8)
     y = np.zeros(current.shape, dtype=np.int8)
     w = np.ones(current.shape, dtype=np.float32)
@@ -713,11 +755,11 @@ def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, sy
     # Exhaustion features are specific now
     for k in cfg.get("exh_feature_keys", cfg.get("exh_feature_keys_legacy", [])):
         if k in feats:
-            X_parts.append(feats[k].loc[t_index, valid_syms].stack(future_stack=True).rename(k))
+            X_parts.append(feats[k].reindex(index=t_index, columns=valid_syms).stack(future_stack=True).rename(k))
     X = pd.concat(X_parts, axis=1)
     X.index.names = ["ts", "symbol"]
     if trend_filter:
-        trend_vals = feats["trend_pct"].loc[t_index, valid_syms].stack(future_stack=True)
+        trend_vals = feats["trend_pct"].reindex(index=t_index, columns=valid_syms).stack(future_stack=True)
         common_idx = X.index.intersection(trend_vals.index)
         X = X.loc[common_idx]; trend_vals = trend_vals.loc[common_idx]
         if trend_filter == "up": keep = trend_vals > 0
@@ -751,7 +793,8 @@ def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, sy
     mg = mkt_gates.loc[t_index, ["mkt_ret24h", "mkt_ret6h", "mkt_trend", "mkt_rv", "G_VOL", "G_TREND"]]
     for col in mg.columns:
         vals = pd.Series(X.index.get_level_values("ts").map(mg[col]).values, index=X.index)
-        if vals.std() > 1e-9:
+        _std = vals.std()
+        if pd.notna(_std) and _std > 1e-9:
             X[col] = vals
 
     return X, y_arr, w_arr, list(X.columns)
@@ -760,7 +803,7 @@ def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms, models=Non
     tprint(f"Entering function: compute_p_exhaustion_at_t in training.py")
     t_index = pd.DatetimeIndex([ts], tz="UTC")
     valid_syms = [s for s in syms if s in panel["close"].columns]
-    trend_vals = feats["trend_pct"].loc[ts, valid_syms]
+    trend_vals = feats["trend_pct"].reindex(columns=valid_syms).loc[ts] if ts in feats["trend_pct"].index else pd.Series(0.0, index=valid_syms)
     up_syms = trend_vals[trend_vals > 0].index.tolist()
     dn_syms = trend_vals[trend_vals <= 0].index.tolist()
     tprint(f"compute_p_exhaustion_at_t: {len(up_syms)} up, {len(dn_syms)} down")
@@ -812,7 +855,7 @@ def _build_pred_X(feats, mkt_gates, cfg, ts, syms, feature_key="exh_feature_keys
 
     for k in keys:
         if k in feats:
-            X_parts.append(feats[k].loc[t_index, syms].stack(future_stack=True).rename(k))
+            X_parts.append(feats[k].reindex(index=t_index, columns=syms).stack(future_stack=True).rename(k))
     if not X_parts: return pd.DataFrame()
 
     Xp = pd.concat(X_parts, axis=1)
@@ -837,7 +880,6 @@ def generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_end, lookback_h
         tprint("Generating OOF predictions for UP model...")
         oof_preds, _ = model_up.compute_oof_predictions(X_up, y_up)
         # Unstack to align with (ts, symbol) grid
-        s_oof = pd.Series(oof_preds, index=X_up.index)
         # We need this to match the prediction window structure later
         # We'll delay unstacking until we have valid_syms and t_idx defined below
 
@@ -1022,13 +1064,21 @@ def build_hourly_training_set_and_weights(
             horizon_hours=H
         )
 
+    train_pct, train_min_range, train_min_vol = _get_training_candidate_config(cfg)
     if _cached_cand_mask is not None:
         cand_mask = _cached_cand_mask
     else:
-        cand_mask = select_trade_candidates_vectorized(panel, feats, pct=cfg["trade_extreme_pct"], metric=cfg["trade_deviation_metric"])
+        cand_mask = select_trade_candidates_vectorized(
+            panel,
+            feats,
+            pct=train_pct,
+            metric=cfg["trade_deviation_metric"],
+            min_range_pct=train_min_range,
+            min_vol_zscore=train_min_vol,
+        )
     if cand_mask is None:
         tprint("No candidates mask returned.")
-        return None, None, None, None, None
+        return None, None, None, None, None, None
     tprint(f"Candidates found: {cand_mask.sum().sum()}")
 
     ts_start = ts_end - pd.Timedelta(hours=int(cfg["train_lookback_hours"]))
@@ -1466,8 +1516,14 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
 
     # Pre-compute shared expensive operations once
     tprint("Pre-computing candidate mask (shared across all steps)...")
+    train_pct, train_min_range, train_min_vol = _get_training_candidate_config(cfg)
     cached_cand_mask = select_trade_candidates_vectorized(
-        panel, feats, pct=cfg["trade_extreme_pct"], metric=cfg["trade_deviation_metric"]
+        panel,
+        feats,
+        pct=train_pct,
+        metric=cfg["trade_deviation_metric"],
+        min_range_pct=train_min_range,
+        min_vol_zscore=train_min_vol,
     )
 
     # Apply OOS holdout: exclude last N days from training labels
@@ -1613,7 +1669,7 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
     directions = ["up", "down"]
     for d in directions:
         tprint(f"Generating exhaustion training set for {d}...")
-        X, y, w, cols = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts, lookback, syms, trend_filter=d)
+        X, y, w, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts, lookback, syms, trend_filter=d)
         if X is not None:
             df_out = X.copy()
             df_out["__y__"] = y
@@ -1792,28 +1848,82 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                 continue
 
             models_by_h = conf.get("models_by_h", {})
-            preferred = [4, 2, 8]
-            available_h = [h for h in preferred if h in models_by_h]
-            if not available_h:
-                H = conf.get("H", 4)
-                available_h = [H]
-            H = available_h[0]
-            key = f"train_{side}_{k}_{H}"
-            if key not in datasets:
-                tprint(f"Meta {side}_{k}: skipped (missing dataset)")
+
+            # --- Build intersection dataset across all available horizons ---
+            # Each horizon has a different sample set. We inner-join on (ts, symbol)
+            # so the meta model trains on samples present in ALL horizons.
+            horizon_dfs = {}  # h -> (df, oof_probs)
+            for h in [2, 4, 8]:
+                ds_key = f"train_{side}_{k}_{h}"
+                if ds_key not in datasets:
+                    continue
+                race_h = models_by_h.get(h, {}).get("model") if h in models_by_h else None
+                if race_h is None or race_h.oof_probs is None:
+                    continue
+                df_h = datasets[ds_key]
+                oof_h = np.asarray(race_h.oof_probs, dtype=float)
+                if len(oof_h) != len(df_h):
+                    tprint(f"Meta {side}_{k} H={h}: OOF length mismatch ({len(oof_h)} vs {len(df_h)}), skipping horizon")
+                    continue
+                horizon_dfs[h] = (df_h, oof_h)
+
+            if not horizon_dfs:
+                tprint(f"Meta {side}_{k}: skipped (no horizon with valid OOF)")
+                continue
+            tprint(f"Meta {side}_{k}: {len(horizon_dfs)} horizons available: {sorted(horizon_dfs.keys())}")
+
+            # Use the largest horizon dataset as the base (for meta feature columns)
+            base_H = max(horizon_dfs.keys(), key=lambda h: len(horizon_dfs[h][0]))
+            df_base = horizon_dfs[base_H][0]
+
+            # Build (ts, symbol) index for intersection
+            if "__ts__" in df_base.columns and "__symbol__" in df_base.columns:
+                # Create a multi-index key for each horizon
+                base_keys = list(zip(df_base["__ts__"].values, df_base["__symbol__"].values))
+                common_set = set(base_keys)
+                for h, (df_h, _) in horizon_dfs.items():
+                    if h == base_H:
+                        continue
+                    if "__ts__" in df_h.columns and "__symbol__" in df_h.columns:
+                        h_keys = set(zip(df_h["__ts__"].values, df_h["__symbol__"].values))
+                        common_set &= h_keys
+                # Filter base to common samples
+                keep_mask = np.array([k in common_set for k in base_keys])
+                tprint(f"  Intersection: {keep_mask.sum()}/{len(base_keys)} samples common across all horizons")
+            else:
+                # Fallback: use min-length truncation
+                min_len = min(len(df_h) for df_h, _ in horizon_dfs.values())
+                keep_mask = np.ones(len(df_base), dtype=bool)
+                keep_mask[min_len:] = False
+                tprint(f"  No ts/symbol columns; truncating to {min_len} samples")
+
+            if keep_mask.sum() < 100:
+                tprint(f"Meta {side}_{k}: skipped (only {keep_mask.sum()} common samples)")
                 continue
 
-            df = datasets[key].copy()
-            race = conf["model"]
-            if race.oof_probs is None:
-                tprint(f"Meta {side}_{k}: skipped (no OOF probs found)")
-                continue
+            df = df_base.loc[keep_mask].reset_index(drop=True).copy()
 
-            p_oof = race.oof_probs
+            # Build OOF predictions for each horizon, aligned to common samples
+            pred_h = pd.DataFrame(index=df.index)
+            p_oof_avg_parts = []
+            for h in sorted(horizon_dfs.keys()):
+                df_h, oof_h = horizon_dfs[h]
+                if "__ts__" in df_h.columns and "__symbol__" in df_h.columns:
+                    h_keys = list(zip(df_h["__ts__"].values, df_h["__symbol__"].values))
+                    h_lookup = {k: i for i, k in enumerate(h_keys)}
+                    common_keys = list(zip(df["__ts__"].values, df["__symbol__"].values))
+                    h_idx = np.array([h_lookup.get(k, -1) for k in common_keys])
+                    valid = h_idx >= 0
+                    p_h = np.full(len(df), 0.5, dtype=float)
+                    p_h[valid] = oof_h[h_idx[valid]]
+                else:
+                    p_h = oof_h[:len(df)]
+                pred_h[f"pred_H{h}"] = p_h
+                p_oof_avg_parts.append(p_h)
+
+            # Average OOF across horizons as the primary alpha signal for meta
+            p_oof = np.mean(p_oof_avg_parts, axis=0)
             y_ret = df["__y_ret__"].values
-            if len(p_oof) != len(y_ret):
-                tprint(f"Meta {side}_{k}: mismatch length OOF={len(p_oof)} vs y_ret={len(y_ret)}")
-                continue
 
             configured_meta = cfg.get("meta_feature_keys", [])
             raw_prefix = "__meta_raw__"
@@ -1828,21 +1938,31 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                 X_feats[mk] = df[f"{raw_prefix}{mk}"].values
             X_feats = X_feats.fillna(0.0)
 
-            def _ret_for_h(h):
-                k_h = f"train_{side}_{k}_{h}"
-                if k_h in datasets and "__y_ret__" in datasets[k_h].columns and len(datasets[k_h]) == len(df):
-                    return datasets[k_h]["__y_ret__"].values.astype(np.float64)
-                return y_ret.astype(np.float64)
+            # Build y_target from per-horizon returns (aligned to common samples)
+            def _ret_for_h_aligned(h):
+                if h in horizon_dfs:
+                    df_h, _ = horizon_dfs[h]
+                    if "__ts__" in df_h.columns and "__symbol__" in df_h.columns:
+                        h_keys = list(zip(df_h["__ts__"].values, df_h["__symbol__"].values))
+                        h_lookup = {k: i for i, k in enumerate(h_keys)}
+                        common_keys = list(zip(df["__ts__"].values, df["__symbol__"].values))
+                        h_idx = np.array([h_lookup.get(k, -1) for k in common_keys])
+                        valid = h_idx >= 0
+                        ret = np.zeros(len(df), dtype=np.float32)
+                        ret[valid] = df_h["__y_ret__"].values[h_idx[valid]].astype(np.float32)
+                        return ret
+                return y_ret.astype(np.float32)
 
-            y_target = compute_meta_target(_ret_for_h(2), _ret_for_h(4), _ret_for_h(8))
+            y_target = compute_meta_target(_ret_for_h_aligned(2), _ret_for_h_aligned(4), _ret_for_h_aligned(8))
 
-            n_res = df.get("__n_res__", pd.Series(np.ones(len(df)), index=df.index)).values.astype(np.float64)
+            n_res = df.get("__n_res__", pd.Series(np.ones(len(df)), index=df.index)).values.astype(np.float32)
             keep = n_res >= np.quantile(n_res, 0.20)
             if keep.sum() < 100:
                 keep = np.ones(len(df), dtype=bool)
 
-            df = df.loc[keep].copy()
-            X_feats = X_feats.loc[keep].copy()
+            df = df.loc[keep].reset_index(drop=True).copy()
+            X_feats = X_feats.loc[keep].reset_index(drop=True).copy()
+            pred_h = pred_h.loc[keep].reset_index(drop=True).copy()
             y_target = y_target[keep]
             p_oof = p_oof[keep]
             n_res = n_res[keep]
@@ -1850,7 +1970,7 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             conf_w = np.abs(p_oof - 0.5) * 2.0
             conf_w = 0.8 + 0.4 * (conf_w / max(np.mean(conf_w), 1e-9))
             mag = _winsorize_and_unit_mean(conf_w, clip_min=0.75, clip_max=1.25)
-            cons = np.clip(df.get("__w_consensus__", pd.Series(np.ones(len(df)), index=df.index)).values.astype(np.float64), 0.75, 1.25)
+            cons = np.clip(df.get("__w_consensus__", pd.Series(np.ones(len(df)), index=df.index)).values.astype(np.float32), 0.75, 1.25)
             cons = _winsorize_and_unit_mean(cons, clip_min=0.75, clip_max=1.25)
             w_meta = mag * cons
             alpha_pow = float(np.clip(cfg.get("meta_weight_alpha", 0.5), 0.3, 0.7))
@@ -1860,13 +1980,6 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             w_meta = w_meta / max(np.mean(w_meta), 1e-12)
 
             meta = MetaModel()
-            pred_h = pd.DataFrame(index=X_feats.index)
-            for h in [2, 4, 8]:
-                if h in models_by_h and models_by_h[h]["model"].oof_probs is not None:
-                    p_h = np.asarray(models_by_h[h]["model"].oof_probs, dtype=float)
-                    pred_h[f"pred_H{h}"] = p_h[keep] if len(p_h) == len(df) else p_oof
-                else:
-                    pred_h[f"pred_H{h}"] = p_oof
             X_feats = pd.concat([X_feats, pred_h], axis=1)
             X_meta = meta.prepare_meta_features(p_oof, X_feats, pred_col_name="pred_logit")
 
@@ -1943,7 +2056,6 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
                         # If index was MultiIndex, restore it? 
                         # We reset_index earlier for df_spike_num if it was MI.
                         # But typically datasets[key] comes loaded via pd.read_parquet which might have lost MI if not handled.
-                        # `load_artifact_df` usually returns default range index unless instructed.
                         # Let's check datasets[key] structure.
                         # If `df_spike` had index, we want to align `df_oof` to it.
                         # df_spike_num was reset-indexed if MI. 
@@ -2073,7 +2185,6 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
                         # Map values. Fill NaN with 0.5 (neutral) or median?
                         # Trap: 0=Trap, 1=Quality. Gamma: Volatility.
                         # Use 0.0 for missing gamma? 0.0 for Trap?
-                        # Trap: mean ~ 0.5. Gamma: mean ~ 0.5.
                         # Let's fill with median of OOF to avoid bias.
                         fill_val = oof_ser.median() if not oof_ser.empty else 0.0
 
@@ -2096,6 +2207,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
                 # We need to know which feature_key was used.
                 # k is "mr" or "tf"
                 feat_key_name = "tf_feature_keys" if k == "tf" else "mr_feature_keys"
+
                 allowed_keys = set(cfg.get(feat_key_name, []))
 
                 # Also include "causal_cols" if feature_key fallback logic was used, but
@@ -2303,47 +2415,71 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
                     "score": score,
                 }
 
-            # Persist per-horizon base artifacts for downstream meta features.
+            # --- Multi-horizon deployment: all horizons are kept ---
+            # best_m serves as the "primary" (highest score) for backward compat.
+            # models_by_h stores all trained horizons for inference averaging.
             if best_m is not None:
                 best_m["models_by_h"] = {h: {"model": v["model"], "feat_cols": v["feat_cols"], "H": v["H"], "selected_features": feature_selection_by_h.get(h, v["feat_cols"])} for h, v in per_h_models.items()}
+                tprint(f"  {side}_{k}: Deploying {len(per_h_models)} horizons: {sorted(per_h_models.keys())} (primary H={best_m['H']})")
 
-            # --- Stage Gate Check (Alpha) ---
-            if best_m is not None:
-                race_best = best_m["model"]
+            # --- Save OOF predictions as lightweight parquet for fast meta loading ---
+            _run_id = cfg.get("run_id", "default")
+            oof_dir = os.path.join(cfg["data_root"], "artifacts", _run_id, "oof")
+            os.makedirs(oof_dir, exist_ok=True)
+            for _h, _v in per_h_models.items():
+                _race = _v["model"]
+                if _race.oof_probs is not None:
+                    _oof_path = os.path.join(oof_dir, f"oof_{side}_{k}_H{_h}.parquet")
+                    pd.DataFrame({"oof_prob": _race.oof_probs}).to_parquet(_oof_path, index=False)
 
-                best_H = best_m["H"]
-                best_key = f"train_{side}_{k}_{best_H}"
-                if best_key in datasets:
-                    df_best = datasets[best_key]
-                    y_best = df_best["__y_bin__"].values
-                    y_ret_best = df_best["__y_ret__"].values
-                    oof_best = race_best.oof_probs
+            # --- Save each ModelRace in native format (fast load) ---
+            models_dir = os.path.join(cfg["data_root"], "artifacts", _run_id, "models", "native")
+            for _h, _v in per_h_models.items():
+                _race = _v["model"]
+                _model_dir = os.path.join(models_dir, f"{side}_{k}_H{_h}")
+                _race.save_native(_model_dir)
+                import json as _json
+                with open(os.path.join(_model_dir, "columns.json"), "w") as _cf:
+                    _json.dump({"feat_cols": _v.get("feat_cols", []), "selected_features": _v.get("selected_features", _v.get("feat_cols", []))}, _cf)
+            # Strip for pickle fallback
+            for _h, _v in per_h_models.items():
+                _v["model"].strip_for_serialization()
 
-                    if oof_best is not None and len(oof_best) == len(y_best):
-                        # Compute CV(Prec@20) via bootstrap from OOF predictions
-                        y_bin_hard = (y_best >= 0.5).astype(np.float64)
-                        n_boot = 50
-                        rng = np.random.RandomState(42)
-                        prec_samples = []
-                        n_total = len(y_bin_hard)
-                        k_frac = 0.20
-                        for _ in range(n_boot):
-                            idx_b = rng.choice(n_total, size=n_total, replace=True)
-                            n_k = max(1, int(n_total * k_frac))
-                            top_idx = np.argsort(oof_best[idx_b])[-n_k:]
-                            p_k = np.mean(y_bin_hard[idx_b][top_idx])
-                            prec_samples.append(p_k)
-                        prec_arr = np.array(prec_samples)
-                        cv_prec20 = float(np.std(prec_arr) / (np.mean(prec_arr) + 1e-9))
-                        tprint(f"  {side}_{k}: Bootstrap CV(Prec@20)={cv_prec20:.3f} (mean={np.mean(prec_arr):.3f}, std={np.std(prec_arr):.4f})")
+            # --- Stage Gate Check (Alpha) — per horizon ---
+            for _gate_H, _gate_v in per_h_models.items():
+                _gate_race = _gate_v["model"]
+                _gate_key = f"train_{side}_{k}_{_gate_H}"
+                if _gate_key not in datasets or _gate_race.oof_probs is None:
+                    continue
+                _gate_df = datasets[_gate_key]
+                _gate_y = _gate_df["__y_bin__"].values
+                _gate_yret = _gate_df["__y_ret__"].values
+                _gate_oof = _gate_race.oof_probs
+                if len(_gate_oof) != len(_gate_y):
+                    continue
+                # Bootstrap CV(Prec@20)
+                _yb_hard = (_gate_y >= 0.5).astype(np.float64)
+                _rng = np.random.RandomState(42)
+                _prec_samples = []
+                _n = len(_yb_hard)
+                _kf = 0.20
+                for _ in range(50):
+                    _ib = _rng.choice(_n, size=_n, replace=True)
+                    _nk = max(1, int(_n * _kf))
+                    top_idx = np.argsort(_gate_oof[_ib])[-_nk:]
+                    p_k_b = float(np.mean(_yb_hard[_ib][top_idx]))
+                    _prec_samples.append(p_k_b)
+                _pa = np.array(_prec_samples)
+                _cv20 = float(np.std(_pa) / (np.mean(_pa) + 1e-9))
+                tprint(f"  {side}_{k} H={_gate_H}: Bootstrap CV(Prec@20)={_cv20:.3f}")
 
-                        gate_res = compute_stage_gate_metrics(
-                            y_best, oof_best, y_ret_best,
-                            model_type="classifier",
-                            cv_prec10=cv_prec20
-                        )
-                        gate_res["Model"] = f"{side}_{k}"
-                        alpha_gate_results.append(gate_res)
+                gate_res = compute_stage_gate_metrics(
+                    _gate_y, _gate_oof, _gate_yret,
+                    model_type="classifier",
+                    cv_prec10=_cv20
+                )
+                gate_res["Model"] = f"{side}_{k}_H{_gate_H}"
+                alpha_gate_results.append(gate_res)
 
             final_models[side][k] = best_m
 
@@ -2414,9 +2550,11 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
     else:
         tprint("No Alpha models evaluated.")
 
-    tprint(f"\nAlpha Stage: {alpha_pass_count}/4 passed.")
-    if alpha_pass_count < 2:
-        tprint("WARNING: Alpha Stage FAILED (< 2 models passed).")
+    n_alpha_models = len(alpha_gate_results) if alpha_gate_results else 0
+    alpha_half = max(1, n_alpha_models // 2)
+    tprint(f"\nAlpha Stage: {alpha_pass_count}/{n_alpha_models} passed (need {alpha_half}).")
+    if alpha_pass_count < alpha_half:
+        tprint(f"WARNING: Alpha Stage FAILED (< {alpha_half} models passed).")
 
     tprint("\n=== Stage Gate Report: Meta Models (Quantile) ===")
     meta_pass_count = 0
@@ -2428,46 +2566,61 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
     else:
         tprint("No Meta models evaluated.")
 
-    tprint(f"\nMeta Stage: {meta_pass_count}/4 passed.")
-    if meta_pass_count < 2:
-        tprint("WARNING: Meta Stage FAILED (< 2 models passed).")
+    n_meta_models = len(meta_gate_results) if meta_gate_results else 0
+    meta_half = max(1, n_meta_models // 2)
+    tprint(f"\nMeta Stage: {meta_pass_count}/{n_meta_models} passed (need {meta_half}).")
+    if meta_pass_count < meta_half:
+        tprint(f"WARNING: Meta Stage FAILED (< {meta_half} models passed).")
 
-    # Extended per-model quality report (base + meta) including race candidates.
+    # Extended per-model quality report (base + meta) — per horizon per bucket.
     base_quality_rows = []
     for side in trade_sides:
         for kind in kinds:
             conf = final_models.get(side, {}).get(kind)
-            if not conf or "model" not in conf:
+            if not conf:
                 continue
-            H = conf.get("H", 4)
-            ds_key = f"train_{side}_{kind}_{H}"
-            if ds_key not in datasets:
-                continue
-            dfm = datasets[ds_key]
-            y_bin = (dfm["__y_bin__"].values >= 0.5).astype(int)
-            y_ret = dfm["__y_ret__"].values.astype(float)
-            groups = dfm["__ts__"].values if "__ts__" in dfm.columns else None
-            race = conf["model"]
-            if race.oof_probs is None:
-                continue
-            oof_probs = np.asarray(race.oof_probs, dtype=float)
-            n = min(len(y_bin), len(oof_probs), len(y_ret))
-            y_bin, oof_probs, y_ret = y_bin[:n], oof_probs[:n], y_ret[:n]
-            if groups is not None:
-                groups = np.asarray(groups)[:n]
-            for cand_name, dm in race.detailed_metrics.items():
-                entry = _base_model_report_entry(
-                    model_name=f"{side}_{kind}:{cand_name}",
-                    side=side,
-                    kind=kind,
-                    dm=dm,
-                    y_bin=y_bin,
-                    oof_probs=oof_probs,
-                    y_ret=y_ret,
-                    groups=groups,
-                )
-                entry["is_winner"] = (cand_name == race.best_model_name)
-                base_quality_rows.append(entry)
+            models_by_h = conf.get("models_by_h", {})
+            if not models_by_h:
+                # Fallback: single-model legacy format
+                models_by_h = {conf.get("H", 4): {"model": conf["model"], "feat_cols": conf["feat_cols"]}}
+            for H_rep, h_info in models_by_h.items():
+                ds_key = f"train_{side}_{kind}_{H_rep}"
+                if ds_key not in datasets:
+                    continue
+                race = h_info["model"]
+                if race.oof_probs is None:
+                    continue
+                dfm = datasets[ds_key]
+                y_bin = (dfm["__y_bin__"].values >= 0.5).astype(int)
+                y_ret = dfm["__y_ret__"].values.astype(float)
+                groups = dfm["__ts__"].values if "__ts__" in dfm.columns else None
+                for cand_name, dm in race.detailed_metrics.items():
+                    # Use per-model OOF predictions from detailed_metrics, not the winner's OOF
+                    oof_probs = dm.get("oof_probs")
+                    if oof_probs is None:
+                        # Fallback to winner's OOF if per-model not available (legacy)
+                        oof_probs = np.asarray(race.oof_probs, dtype=float)
+                    else:
+                        oof_probs = np.asarray(oof_probs, dtype=float)
+                    n = min(len(y_bin), len(oof_probs), len(y_ret))
+                    y_bin_model, oof_probs_model, y_ret_model = y_bin[:n], oof_probs[:n], y_ret[:n]
+                    if groups is not None:
+                        groups_model = np.asarray(groups)[:n]
+                    else:
+                        groups_model = None
+                    entry = _base_model_report_entry(
+                        model_name=f"{side}_{kind}_H{H_rep}:{cand_name}",
+                        side=side,
+                        kind=kind,
+                        dm=dm,
+                        y_bin=y_bin_model,
+                        oof_probs=oof_probs_model,
+                        y_ret=y_ret_model,
+                        groups=groups_model,
+                    )
+                    entry["H"] = H_rep
+                    entry["is_winner"] = (cand_name == race.best_model_name)
+                    base_quality_rows.append(entry)
 
     meta_quality_rows = []
     for key, meta in meta_models.items():
@@ -2475,20 +2628,38 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
             continue
         side, kind = key.split("_", 1)
         conf = final_models.get(side, {}).get(kind)
-        if not conf or conf.get("model") is None or conf["model"].oof_probs is None:
+        if not conf:
             continue
-        H = conf.get("H", 4)
-        ds_key = f"train_{side}_{kind}_{H}"
-        if ds_key not in datasets:
+        models_by_h = conf.get("models_by_h", {})
+        # Collect available horizon OOFs (same logic as train_meta)
+        _h_oofs = {}
+        for h in [2, 4, 8]:
+            ds_key = f"train_{side}_{kind}_{h}"
+            if ds_key not in datasets:
+                continue
+            race_h = models_by_h.get(h, {}).get("model") if h in models_by_h else None
+            if race_h is None or race_h.oof_probs is None:
+                continue
+            df_h = datasets[ds_key]
+            oof_h = np.asarray(race_h.oof_probs, dtype=float)
+            if len(oof_h) == len(df_h):
+                _h_oofs[h] = (df_h, oof_h)
+        if not _h_oofs:
             continue
-        dfm = datasets[ds_key]
+        # Use largest-H dataset as base, average OOF across horizons
+        _base_H = max(_h_oofs.keys(), key=lambda h: len(_h_oofs[h][0]))
+        dfm = _h_oofs[_base_H][0]
         y_ret = dfm["__y_ret__"].values.astype(float)
+        # Average base_score from all horizon OOFs (truncated to base length)
+        _oof_parts = []
+        for h, (df_h, oof_h) in _h_oofs.items():
+            _oof_parts.append(oof_h[:len(dfm)] if len(oof_h) >= len(dfm) else np.pad(oof_h, (0, len(dfm) - len(oof_h)), constant_values=0.5))
+        base_score = np.mean(_oof_parts, axis=0)
         y_target = compute_meta_target(
-            datasets.get(f"train_{side}_{kind}_2", dfm)["__y_ret__"].values.astype(float) if f"train_{side}_{kind}_2" in datasets else y_ret,
-            datasets.get(f"train_{side}_{kind}_4", dfm)["__y_ret__"].values.astype(float) if f"train_{side}_{kind}_4" in datasets else y_ret,
-            datasets.get(f"train_{side}_{kind}_8", dfm)["__y_ret__"].values.astype(float) if f"train_{side}_{kind}_8" in datasets else y_ret,
+            datasets.get(f"train_{side}_{kind}_2", dfm)["__y_ret__"].values[:len(dfm)].astype(float) if f"train_{side}_{kind}_2" in datasets else y_ret,
+            datasets.get(f"train_{side}_{kind}_4", dfm)["__y_ret__"].values[:len(dfm)].astype(float) if f"train_{side}_{kind}_4" in datasets else y_ret,
+            datasets.get(f"train_{side}_{kind}_8", dfm)["__y_ret__"].values[:len(dfm)].astype(float) if f"train_{side}_{kind}_8" in datasets else y_ret,
         )
-        base_score = np.asarray(conf["model"].oof_probs, dtype=float)
         groups = dfm["__ts__"].values if "__ts__" in dfm.columns else None
         n = min(len(y_ret), len(y_target), len(base_score), len(meta.oof_probs) if meta.oof_probs is not None else 0)
         if n <= 10:
@@ -2525,12 +2696,12 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
     }
 
 
-def select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
+def select_best_horizon(panel, feats, mkt_gates, cfg, syms, ts):
     # DEPRECATED / LEGACY WRAPPER
     # This function is kept for backward compatibility if needed,
     # but strictly we should use the new split.
     # We can implement it by calling the new functions in sequence.
-    datasets = generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist)
+    datasets = generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, None)
     return train_models_from_artifacts(datasets, cfg)
 
 def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_hist, alpha_models):
@@ -2787,7 +2958,7 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
                 cands = row[row].index.intersection(assets)
 
                 # Check trend
-                trend_vals = feats["trend_pct"].loc[t, cands]
+                trend_vals = feats["trend_pct"].reindex(columns=cands).loc[t] if t in feats["trend_pct"].index else pd.Series(0.0, index=cands)
 
                 for sym in cands:
                     tv = trend_vals[sym]

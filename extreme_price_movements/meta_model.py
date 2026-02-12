@@ -15,9 +15,13 @@ from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.linear_model import Ridge
 from sklearn.linear_model import QuantileRegressor
 from sklearn.preprocessing import SplineTransformer
+from joblib import Parallel, delayed
 
 from extreme_price_movements.config import CFG
-from extreme_price_movements.feature_selection_extreme_events import mdi_feature_selection_v3 as mdi_feature_selection_classic
+from extreme_price_movements.feature_selection_extreme_events import (
+    mdi_feature_selection_v3 as mdi_feature_selection_classic,
+    mdi_feature_selection_v4_topk as mdi_feature_selection_v4_topk_classic
+)
 from extreme_price_movements.purged_cv import PurgedKFold
 from extreme_price_movements.quantile_feature_selection_extreme_events import mdi_feature_selection_v3
 from extreme_price_movements.utils import tprint
@@ -78,18 +82,19 @@ def _sortino_numba(x: np.ndarray) -> float:
 
 
 def _pinball(y: np.ndarray, q: np.ndarray, tau: float) -> float:
-    return float(_pinball_numba(np.asarray(y, dtype=np.float64), np.asarray(q, dtype=np.float64), float(tau)))
+    # Use float32 by default for memory efficiency
+    return float(_pinball_numba(np.asarray(y, dtype=np.float32), np.asarray(q, dtype=np.float32), float(tau)))
 
 
 def _topk_stats(y: np.ndarray, s: np.ndarray, frac: float = 0.15, lam: float = 1.0) -> Tuple[float, float, float, float]:
     k = max(1, int(np.ceil(len(y) * frac)))
     idx = np.argpartition(s, -k)[-k:]
-    sel = np.asarray(y, dtype=float)[idx]
+    sel = np.asarray(y, dtype=np.float32)[idx]
     neg = sel[sel < 0]
     mean_top = float(np.mean(sel))
     iqr = float(np.quantile(sel, 0.75) - np.quantile(sel, 0.25))
     util = mean_top - lam * (abs(float(np.mean(neg))) if neg.size else 0.0)
-    return util, mean_top, iqr, float(_sortino_numba(sel.astype(np.float64)))
+    return util, mean_top, iqr, float(_sortino_numba(sel.astype(np.float32)))
 
 
 @dataclass
@@ -382,10 +387,25 @@ class MetaModel:
 
     def _select_features_for_candidate(self, X: pd.DataFrame, y: np.ndarray, candidate_name: str, kind: str) -> List[str]:
         # Independent feature selection per candidate as requested.
+        # Meta model is focused on top30%, so use two-stage selection with decile ranking.
         tailweighted = "tailweighted" in candidate_name
+        
+        # Target feature count
+        n_target = min(40, max(20, int(np.sqrt(max(25, X.shape[1])) * 4)))
+        n_stage1 = min(X.shape[1], n_target * 3)  # 3x target for meta model
+        
         if kind in ("xgb", "lgb", "qreg_l1") and not tailweighted:
-            fs = mdi_feature_selection_v3(X, y, min_features=15, max_features=50, alpha=0.85)
-            return list(fs.selected_features)
+            # Two-stage: v3 to get 2x, then v4_topk to refine
+            try:
+                fs_stage1 = mdi_feature_selection_v3(X, y, min_features=20, max_features=n_stage1, alpha=0.85)
+                if len(fs_stage1.selected_features) > n_target:
+                    X_stage1 = X[list(fs_stage1.selected_features)]
+                    fs = mdi_feature_selection_v4_topk_classic(X_stage1, y, topk_weight=0.3)
+                    sel = list(fs.selected_features)[:n_target]
+                    return sel if len(sel) >= 20 else list(fs_stage1.selected_features)[:n_target]
+                return list(fs_stage1.selected_features)[:n_target]
+            except Exception:
+                return list(X.columns[:min(25, X.shape[1])])
 
         base_model = None
         if tailweighted:
@@ -404,15 +424,21 @@ class MetaModel:
                 base_model = None
 
         try:
-            fs = mdi_feature_selection_classic(
+            # Two-stage: v3 to get 2x, then v4_topk to refine
+            fs_stage1 = mdi_feature_selection_classic(
                 X,
                 y,
                 base_model=base_model,
-                end_features=min(40, max(20, int(np.sqrt(max(25, X.shape[1])) * 4))),
-                min_features=15,
+                end_features=n_stage1,
+                min_features=20,
                 max_features_pct=0.5,
             )
-            return list(fs.selected_features)
+            if len(fs_stage1.selected_features) > n_target:
+                X_stage1 = X[list(fs_stage1.selected_features)]
+                fs = mdi_feature_selection_v4_topk_classic(X_stage1, y, base_model=base_model, topk_weight=0.3)
+                sel = list(fs.selected_features)[:n_target]
+                return sel if len(sel) >= 20 else list(fs_stage1.selected_features)[:n_target]
+            return list(fs_stage1.selected_features)[:n_target]
         except Exception:
             # Robust fallback for tiny/unstable smoke scenarios.
             return list(X.columns[: min(25, X.shape[1])])
@@ -434,14 +460,15 @@ class MetaModel:
 
         return y_fit, sw_fit
 
-    def _race_candidates(self, mono: Tuple[int, ...], inter: List[List[int]]) -> Dict[str, Tuple[str, Sequence[float], dict, str]]:
-        # Race config: intentionally lighter than final retraining.
+    def _race_candidates(self) -> Dict[str, Tuple[str, Sequence[float], dict, str]]:
+        # Race config: constraint-free templates.
+        # Constraints are discovered per-candidate after MDI feature selection.
         xgb_single = {
             "objective": "reg:quantileerror", "quantile_alpha": 0.85, "max_depth": 4, "gamma": 0.1,
             "learning_rate": 0.07, "n_estimators": 600, "subsample": 0.7, "colsample_bytree": 0.7,
-            "reg_alpha": 1.0, "reg_lambda": 20.0, "num_parallel_tree": 10,
+            "reg_alpha": 1.0, "reg_lambda": 20.0,
             "tree_method": "hist", "random_state": 42, "n_jobs": 3,
-            "verbosity": 0, "monotone_constraints": mono, "interaction_constraints": inter,
+            "verbosity": 0, "_wants_constraints": True,
         }
         lgb_q = {
             "objective": "quantile", "alpha": 0.85, "boosting_type": "gbdt", "num_leaves": 31,
@@ -449,7 +476,7 @@ class MetaModel:
             "learning_rate": 0.07, "n_estimators": 700, "min_gain_to_split": 0.05,
             "lambda_l1": 2.0, "lambda_l2": 20.0, "feature_fraction": 0.6, "bagging_fraction": 0.6,
             "bagging_freq": 1, "max_bin": 127, "random_state": 42, "n_jobs": 3, "verbosity": -1,
-            "monotone_constraints": mono,
+            "_wants_constraints": True,
         }
         ridge = {"alpha": 5.0, "fit_intercept": True}
         et = {
@@ -462,13 +489,11 @@ class MetaModel:
         }
         qreg_l1 = {"quantile": 0.85, "alpha": 1.0, "solver": "highs"}
 
-        # Constrained / unconstrained quantile counterparts requested by user.
         xgb_single_unconstrained = dict(xgb_single)
-        xgb_single_unconstrained.pop("monotone_constraints", None)
-        xgb_single_unconstrained.pop("interaction_constraints", None)
+        xgb_single_unconstrained.pop("_wants_constraints", None)
 
         lgb_q_unconstrained = dict(lgb_q)
-        lgb_q_unconstrained.pop("monotone_constraints", None)
+        lgb_q_unconstrained.pop("_wants_constraints", None)
 
         out = {
             "xgb_multi_075_080_085": ("xgb", [0.75, 0.80, 0.85], xgb_single, "quantile"),
@@ -600,7 +625,8 @@ class MetaModel:
                 p["colsample_bytree"] = trial.suggest_categorical("colsample_bytree", [0.6, 0.7, 0.8] if len(winner_qs) == 1 else [0.5, 0.6, 0.7])
                 p["reg_alpha"] = trial.suggest_float("reg_alpha", 0.0, 20.0)
                 p["reg_lambda"] = trial.suggest_float("reg_lambda", 5.0, 100.0)
-                p["num_parallel_tree"] = trial.suggest_categorical("num_parallel_tree", [5, 20, 50, 100, 200, 400])
+                # num_parallel_tree incompatible with reg:quantileerror
+                p.pop("num_parallel_tree", None)
             elif winner_kind == "lgb":
                 p["num_leaves"] = trial.suggest_categorical("num_leaves", [31, 63, 127])
                 p["max_depth"] = trial.suggest_categorical("max_depth", [5, 6, 7])
@@ -706,20 +732,65 @@ class MetaModel:
         y_np = np.asarray(y, dtype=float)
         sw = None if sample_weight is None else np.asarray(sample_weight, dtype=float)
 
-        # Constraints are discovered using quantile-style selected features from a baseline run.
-        base_q_feats = self._select_features_for_candidate(X_meta, y_np, "xgb_multi_075_080_085", "xgb")
-        if not base_q_feats:
-            base_q_feats = list(X_meta.columns[: min(20, X_meta.shape[1])])
-        X_sel_q = X_meta[base_q_feats]
-        self.monotone_constraints = self._discover_monotone_constraints(X_sel_q, y_np, bootstraps=50)
-        self.interaction_constraints = self._discover_interactions(X_sel_q, y_np)
+        # Discover monotone constraints once on the full feature set, then slice per-candidate.
+        # Interaction discovery is skipped (O(n²) on 89 features is too expensive).
+        _all_cols = list(X_meta.columns)
+        _full_mono = self._discover_monotone_constraints(X_meta, y_np, bootstraps=30)
+        _col_to_mono = dict(zip(_all_cols, _full_mono))
 
-        candidates = self._race_candidates(self.monotone_constraints, self.interaction_constraints)
+        candidates = self._race_candidates()
         if xgb is None:
             tprint("MetaModel: xgboost missing; xgb candidates skipped")
         if lgb is None:
             tprint("MetaModel: lightgbm missing; lgb candidates skipped")
 
+        # Filter candidates to those with available backends
+        valid_candidates = {
+            name: (kind, qs, params, pool_name)
+            for name, (kind, qs, params, pool_name) in candidates.items()
+            if not (kind == "xgb" and xgb is None) and not (kind == "lgb" and lgb is None)
+        }
+
+        def _eval_one_candidate(name: str, kind: str, qs, params, pool_name: str):
+            """Evaluate a single candidate and return results."""
+            selected = self._select_features_for_candidate(X_meta, y_np, name, kind)
+            if not selected:
+                return None
+            X_sel = X_meta[selected]
+            Xv = X_sel.to_numpy(dtype=np.float32)
+            y_fit, sw_fit = self._candidate_target_and_weight(y_np, sw, name)
+            # Slice pre-computed constraints to this candidate's features
+            _params = dict(params)
+            if _params.pop("_wants_constraints", False):
+                _mono = tuple(_col_to_mono.get(c, 0) for c in selected)
+                if kind == "xgb":
+                    _params["monotone_constraints"] = _mono
+                elif kind == "lgb" and _params.get("objective") != "quantile":
+                    _params["monotone_constraints"] = list(_mono)
+            try:
+                oof, metrics, guard_ok = self._cv_train_predict(kind, qs, _params, Xv, y_fit, sw_fit)
+            except Exception as exc:
+                tprint(f"MetaModel candidate {name} failed: {exc}")
+                return None
+            return {
+                "name": name,
+                "kind": kind,
+                "qs": qs,
+                "params": params,
+                "pool_name": pool_name,
+                "selected": selected,
+                "oof": oof,
+                "metrics": metrics,
+                "guard_ok": guard_ok,
+            }
+
+        # Parallel candidate evaluation (max 2 workers)
+        results = Parallel(n_jobs=2, backend="loky")(
+            delayed(_eval_one_candidate)(name, kind, qs, params, pool_name)
+            for name, (kind, qs, params, pool_name) in valid_candidates.items()
+        )
+
+        # Collect results
         best_name = None
         best_oof = None
         best_score = -1e18
@@ -728,45 +799,37 @@ class MetaModel:
         best_any_score = -1e18
         records = []
         selected_by_candidate: Dict[str, List[str]] = {}
+        best_candidate_info = None
 
-        for name, (kind, qs, params, pool_name) in candidates.items():
-            if kind == "xgb" and xgb is None:
+        for res in results:
+            if res is None:
                 continue
-            if kind == "lgb" and lgb is None:
-                continue
-
-            selected = self._select_features_for_candidate(X_meta, y_np, name, kind)
-            if not selected:
-                continue
-            selected_by_candidate[name] = selected
-            Xv = X_meta[selected].to_numpy(dtype=float)
-
-            y_fit, sw_fit = self._candidate_target_and_weight(y_np, sw, name)
-
-            try:
-                oof, metrics, guard_ok = self._cv_train_predict(kind, qs, params, Xv, y_fit, sw_fit)
-            except Exception as exc:
-                tprint(f"MetaModel candidate {name} failed: {exc}")
-                continue
-
+            name = res["name"]
+            selected_by_candidate[name] = res["selected"]
             rec = {
                 "model": name,
-                "pool": pool_name,
-                "n_features": len(selected),
-                **metrics,
-                "guard_pass": int(guard_ok),
+                "pool": res["pool_name"],
+                "n_features": len(res["selected"]),
+                **res["metrics"],
+                "guard_pass": int(res["guard_ok"]),
             }
             records.append(rec)
-            if metrics["score"] > best_any_score:
-                best_any_name, best_any_oof, best_any_score = name, oof, metrics["score"]
-            if guard_ok and metrics["score"] > best_score:
-                best_name, best_oof, best_score = name, oof, metrics["score"]
+            if res["metrics"]["score"] > best_any_score:
+                best_any_name, best_any_oof, best_any_score = name, res["oof"], res["metrics"]["score"]
+            if res["guard_ok"] and res["metrics"]["score"] > best_score:
+                best_name, best_oof, best_score = name, res["oof"], res["metrics"]["score"]
+                best_candidate_info = res
 
         if best_name is None:
             if best_any_name is None:
                 raise RuntimeError("No model candidates completed")
             tprint("MetaModel: no candidate passed strict guardrails; falling back to highest-score candidate")
             best_name, best_oof = best_any_name, best_any_oof
+            # Find the fallback candidate info
+            for res in results:
+                if res is not None and res["name"] == best_any_name:
+                    best_candidate_info = res
+                    break
 
         kind, qs, params, best_pool = candidates[best_name]
         self.selected_features = selected_by_candidate[best_name]

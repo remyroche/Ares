@@ -81,7 +81,7 @@ def avg_uniqueness_on_grid(label_times: pd.DataFrame, grid: pd.DatetimeIndex, co
         i1_v = i1[idx_v]
 
         sums = prefix[i1_v + 1] - prefix[i0_v]
-        counts = (i1_v - i0_v + 1).astype(np.float64)
+        counts = (i1_v - i0_v + 1).astype(np.float32)
 
         out[idx_v] = sums / counts
 

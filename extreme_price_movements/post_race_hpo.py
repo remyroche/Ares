@@ -421,7 +421,7 @@ def _fit_predict_fold(
     if model_name == "extratrees":
         clf = build_extratrees(params)
         clf.fit(X_tr, y_tr, sample_weight=sample_weight_tr)
-        return clf.predict_proba(X_va)[:, 1].astype(np.float64)
+        return clf.predict_proba(X_va)[:, 1].astype(np.float32)
 
     if model_name == "xgboost":
         if XGBClassifier is None:
@@ -441,7 +441,7 @@ def _fit_predict_fold(
             verbose=False,
             early_stopping_rounds=config.early_stopping_rounds,
         )
-        return clf.predict_proba(X_va)[:, 1].astype(np.float64)
+        return clf.predict_proba(X_va)[:, 1].astype(np.float32)
 
     if model_name == "lightgbm":
         if LGBMClassifier is None:
@@ -455,7 +455,7 @@ def _fit_predict_fold(
             eval_metric="auc",
             callbacks=_lgbm_callbacks(config.early_stopping_rounds),
         )
-        return clf.predict_proba(X_va)[:, 1].astype(np.float64)
+        return clf.predict_proba(X_va)[:, 1].astype(np.float32)
 
     if model_name == "catboost":
         if CatBoostClassifier is None:
@@ -475,7 +475,7 @@ def _fit_predict_fold(
             early_stopping_rounds=config.early_stopping_rounds,
             verbose=False,
         )
-        return clf.predict_proba(X_va)[:, 1].astype(np.float64)
+        return clf.predict_proba(X_va)[:, 1].astype(np.float32)
 
     raise ValueError(f"Unknown model_name={model_name}")
 
@@ -493,7 +493,7 @@ def make_objective(
     """
     X = _as_2d(X)
     y = _as_1d(y).astype(np.int32)
-    sw = None if sample_weight is None else _as_1d(sample_weight).astype(np.float64)
+    sw = None if sample_weight is None else _as_1d(sample_weight).astype(np.float32)
 
     cv = PurgedKFold(n_splits=config.n_splits, purge=config.purge, embargo=config.embargo)
     splits = cv.split(X)
@@ -732,7 +732,7 @@ def run_hpo(
     # --- Reconstruct best params for model construction ---
     X = _as_2d(X)
     y = _as_1d(y).astype(np.int32)
-    sw = None if sample_weight is None else _as_1d(sample_weight).astype(np.float64)
+    sw = None if sample_weight is None else _as_1d(sample_weight).astype(np.float32)
 
     # For the suggest functions, we need to re-call them with the best trial to get
     # the full params dict (including private keys like _use_scale_pos_weight).

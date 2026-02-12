@@ -1,3 +1,5 @@
+import os
+import pickle
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, ClassifierMixin, clone
@@ -21,6 +23,16 @@ except Exception:
     LGBMClassifier = None
 import joblib
 from extreme_price_movements.utils import tprint
+
+
+def _is_xgb(est):
+    return type(est).__module__.startswith("xgboost")
+
+def _is_lgb(est):
+    return type(est).__module__.startswith("lightgbm")
+
+def _is_cb(est):
+    return type(est).__module__.startswith("catboost")
 from extreme_price_movements.purged_cv import PurgedKFold
 from extreme_price_movements.metrics import calculate_selection_score
 from extreme_price_movements.model_scoring import (
@@ -124,11 +136,12 @@ class ScaledLogisticRegression(LogisticRegression):
 
 
 class ModelRace(BaseEstimator, ClassifierMixin):
-    def __init__(self, kind="long", n_splits=5, race_sample_frac=0.5, race_early_stopping_rounds=50):
+    def __init__(self, kind="long", n_splits=5, race_sample_frac=0.5, race_early_stopping_rounds=50, max_label_horizon_hours=8):
         self.kind = kind
         self.n_splits = n_splits
         self.race_sample_frac = race_sample_frac
         self.race_early_stopping_rounds = race_early_stopping_rounds
+        self.max_label_horizon_hours = max_label_horizon_hours
         self.best_model = None
         self.best_model_name = None
         self.metrics = {}
@@ -183,9 +196,9 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
         # 2. XGBoost
         xgb_params = {
-            "n_estimators": 3 if race_mode else 5,
+            "n_estimators": 5 if race_mode else 10,  # Increase from 3/5
             "num_parallel_tree": 150 if race_mode else 400,
-            "max_depth": 4,
+            "max_depth": 5,  # Increased from 4 for better separation
             "learning_rate": 0.05,
             "reg_lambda": 5.0,              # L2 (default=1 is often too weak)
             "reg_alpha": 0.0,               # keep 0 initially
@@ -196,15 +209,16 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             "colsample_bytree": 0.8,
             "n_jobs": -1,
             "random_state": 42,
-            "enable_categorical": False
+            "enable_categorical": False,
+            "eval_metric": ["auc", "aucpr"],  # Track PR-AUC for ranking quality
         }
         if XGBClassifier is not None:
             candidates["xgboost"] = Float64Wrapper(XGBClassifier(**xgb_params))
 
         # 3. LightGBM
         lgb_params = {
-            "n_estimators": 200 if race_mode else 800,
-            "max_depth": 4,
+            "n_estimators": 300 if race_mode else 1000,  # Increase from 200/800
+            "max_depth": 6,  # Increased from 4 for better separation
             "learning_rate": 0.05,
             "subsample": 0.8,
             "feature_fraction": 0.8,
@@ -215,7 +229,10 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             "colsample_bytree": 0.8,
             "n_jobs": -1,
             "random_state": 42,
-            "verbose": -1
+            "verbose": -1,
+            "is_unbalance": True,  # Handle class imbalance for better PR-AUC
+            "objective": "xentropy",
+            "metric": ["auc", "average_precision"],
         }
         if LGBMClassifier is not None:
             candidates["lightgbm"] = Float64Wrapper(LGBMClassifier(**lgb_params))
@@ -226,12 +243,14 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             "l2_leaf_reg": 10.0,        
             "random_strength": 1.0,     
             "bagging_temperature": 1.0,         
-            "depth": 4,
+            "depth": 5,  # Increased from 4 for better separation
             "learning_rate": 0.05,
             "verbose": 0,
             "thread_count": -1,
             "random_seed": 42,
-            "allow_writing_files": False
+            "allow_writing_files": False,
+            "eval_metric": "PRAUC",  # Direct PR-AUC optimization
+            "auto_class_weights": "Balanced",  # Handle class imbalance
         }
         if CatBoostClassifier is not None:
             candidates["catboost"] = Float64Wrapper(CatBoostClassifier(**cb_params))
@@ -327,7 +346,13 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             X_np = X
 
         # Cache CV splits
-        tscv = PurgedKFold(n_splits=self.n_splits, purge=5, embargo=2)
+        # Purge is set to max_label_horizon + buffer to prevent label leakage.
+        # With label horizons up to max_label_horizon_hours, labels at time t can overlap
+        # with labels at t+max_label_horizon_hours, causing regime sensitivity.
+        # Buffer of 2 provides additional safety margin.
+        purge_samples = self.max_label_horizon_hours + 2
+        embargo_samples = max(2, self.max_label_horizon_hours // 2)
+        tscv = PurgedKFold(n_splits=self.n_splits, purge=purge_samples, embargo=embargo_samples)
         cached_splits = list(tscv.split(X))
 
         # 1. The Race
@@ -492,6 +517,8 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     "fold_brier": [float(x) for x in fold_brier],
                     "fold_base_logloss": [float(x) for x in fold_base_logloss],
                     "fold_logloss_imp": [float(x) for x in fold_logloss_imp],
+                    # Store per-model OOF predictions for gate checks
+                    "oof_probs": np.nan_to_num(oof_model.copy(), nan=0.5).astype(np.float32),
                 }
                 tprint(f"  {name}: LegacyScore={avg_score:.4f} AUC={avg_auc:.4f} IC={avg_ic:.4f} BSS={avg_bss_val:.4f} Brier={avg_brier:.4f} Prec10={avg_p10:.4f} Prec40={avg_p40:.4f} LogLoss={avg_logloss:.4f} TrainLoss={train_loss:.4f}")
 
@@ -525,7 +552,111 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             detailed_metrics[n]["rank_score"] = float(rank_score)
             results[n] = float(rank_score)
 
-        best_name = max(results, key=results.get)
+        # Compute quality gate checks for each model (same as _base_model_report_entry in training.py)
+        def _compute_gate_checks(dm, y_hard, oof_probs, prev):
+            """Compute quality gate checks for a model. Returns (n_passed, checks_dict)."""
+            from sklearn.metrics import average_precision_score, brier_score_loss, log_loss as _log_loss
+            
+            # Brier and logloss improvement
+            p_clip = np.clip(oof_probs, 1e-7, 1 - 1e-7)
+            base_brier = prev * (1.0 - prev)
+            base_ll = -(prev * np.log(prev + 1e-12) + (1 - prev) * np.log(1 - prev + 1e-12))
+            try:
+                brier = float(brier_score_loss(y_hard, p_clip))
+                ll = float(_log_loss(y_hard, p_clip))
+                brier_imp = (base_brier - brier) / max(base_brier, 1e-9)
+                ll_imp = (base_ll - ll) / max(base_ll, 1e-9)
+            except Exception:
+                brier_imp, ll_imp = 0.0, 0.0
+            
+            # PR-AUC
+            try:
+                pr_auc = float(average_precision_score(y_hard, oof_probs)) if len(np.unique(y_hard)) > 1 else 0.0
+            except Exception:
+                pr_auc = 0.0
+            
+            # Lift@20%
+            k_frac = 0.20
+            k_n = max(1, int(len(y_hard) * k_frac))
+            idx = np.argsort(oof_probs)[-k_n:]
+            prec_k = float(np.mean(y_hard[idx]))
+            lift_k = prec_k / max(prev, 1e-9)
+            prec_lift_abs = prec_k - prev
+            
+            # Fold stability
+            fold_imp = [x for x in dm.get("fold_logloss_imp", []) if np.isfinite(x)]
+            pos_fold_ratio = float(np.mean(np.array(fold_imp) > 0.0)) if fold_imp else 0.0
+            worst_fold_imp = float(np.min(fold_imp)) if fold_imp else -1.0
+            
+            # Bootstrap CV for precision@20%
+            n_boot = 50
+            rng_boot = np.random.RandomState(42)
+            prec_samples = []
+            n_total = len(y_hard)
+            for _ in range(n_boot):
+                idx_b = rng_boot.choice(n_total, size=n_total, replace=True)
+                _n_k = max(1, int(n_total * k_frac))
+                top_idx = np.argsort(oof_probs[idx_b])[-_n_k:]
+                p_k_b = float(np.mean(y_hard[idx_b][top_idx]))
+                prec_samples.append(p_k_b)
+            prec_arr = np.array(prec_samples)
+            bootstrap_prec20_cv = float(np.std(prec_arr) / (np.mean(prec_arr) + 1e-9))
+            
+            # Prevalence-aware PR-AUC threshold
+            pr_auc_threshold = max(0.50, min(0.54, prev + 0.10))
+            
+            # Gate checks (same as training.py)
+            checks = {
+                "pr_auc_ge_threshold": pr_auc >= pr_auc_threshold,
+                "brier_and_logloss_improve_ge_2pct": bool((brier_imp >= 0.02) and (ll_imp >= 0.02)),
+                "liftk_and_preck_lift": bool((lift_k >= 1.2) and ((prec_lift_abs >= 0.025) or ((lift_k - 1.0) >= 0.05))),
+                "bootstrap_prec20_cv_le_0_30": bootstrap_prec20_cv <= 0.30,
+                "delta_logloss_le_minus_0_5pct": ll_imp >= 0.005,
+                "logloss_improves_in_ge_70pct_folds": pos_fold_ratio >= 0.70,
+                "worst_fold_delta_logloss_ge_0_5pct_improve": worst_fold_imp >= -0.005,
+            }
+            n_passed = sum(checks.values())
+            return n_passed, checks
+        
+        # Compute gate checks for all models
+        prev = float(np.mean(y_hard))
+        gate_results = {}
+        for n in detailed_metrics:
+            dm = detailed_metrics[n]
+            # Get OOF predictions for this model (stored during race)
+            oof_model = np.full(len(y), np.nan, dtype=np.float64)
+            # We need to reconstruct OOF from the race - use stored fold predictions
+            # The OOF was computed during the race loop above
+            # For now, use the model's stored OOF if available, otherwise compute
+            if "oof_probs" in dm:
+                oof_model = dm["oof_probs"]
+            else:
+                # Fallback: use the overall OOF (same for all models in current implementation)
+                oof_model = np.nan_to_num(oof_model, nan=0.5)
+            n_passed, checks = _compute_gate_checks(dm, y_hard, oof_model, prev)
+            gate_results[n] = {"n_passed": n_passed, "checks": checks}
+            detailed_metrics[n]["gate_checks"] = checks
+            detailed_metrics[n]["gate_n_passed"] = n_passed
+        
+        # Winner selection: prioritize models passing most gates, use rank_score as tie-breaker
+        # Sort by (n_passed, rank_score) descending
+        sorted_candidates = sorted(
+            results.items(),
+            key=lambda x: (gate_results[x[0]]["n_passed"], x[1]),
+            reverse=True
+        )
+        best_name = sorted_candidates[0][0]
+        best_n_passed = gate_results[best_name]["n_passed"]
+        best_score = results[best_name]
+        
+        tprint(f"Gate-aware winner selection:")
+        for name, score in sorted_candidates[:4]:
+            tprint(f"  {name}: gates_passed={gate_results[name]['n_passed']}/7, rank_score={score:.4f}")
+        
+        # Log if we're selecting a model with fewer gates passed due to tie-breaker
+        if best_n_passed < 7:
+            tprint(f"WARNING: Best model '{best_name}' passes only {best_n_passed}/7 gates")
+
         self.best_model_name = best_name
         self.metrics = results
         dm = detailed_metrics.get(best_name, {})
@@ -593,7 +724,6 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             
             # --- Post-hoc Isotonic Calibration ---
             # Fit calibrator on OOF predictions
-            # This ensures that predict_proba returns calibrated probabilities
             tprint("Fitting IsotonicRegression on OOF predictions (unweighted)...")
             self.calibrator_ = IsotonicRegression(out_of_bounds='clip', y_min=0.0, y_max=1.0)
             # IMPORTANT: Fit calibrator WITHOUT sample weights.
@@ -609,6 +739,21 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             raw_brier = brier_score_loss(y_hard, np.clip(oof_probs, 1e-7, 1-1e-7))
             cal_brier = brier_score_loss(y_hard, np.clip(calibrated_oof, 1e-7, 1-1e-7))
             tprint(f"Isotonic calibration: Brier raw={raw_brier:.4f} -> calibrated={cal_brier:.4f}")
+            
+            # Optional Platt scaling: only apply if it improves Brier score
+            from sklearn.linear_model import LogisticRegression
+            from sklearn.metrics import brier_score_loss
+            platt_calibrator = LogisticRegression(random_state=42, max_iter=1000)
+            platt_calibrator.fit(calibrated_oof.reshape(-1, 1), y_hard)
+            platt_calibrated = platt_calibrator.predict_proba(calibrated_oof.reshape(-1, 1))[:, 1]
+            platt_brier = brier_score_loss(y_hard, np.clip(platt_calibrated, 1e-7, 1-1e-7))
+            
+            if platt_brier < cal_brier - 1e-4:  # Only keep Platt if it materially improves Brier
+                self.platt_calibrator_ = platt_calibrator
+                tprint(f"Platt scaling enabled: Brier improved {cal_brier:.4f} -> {platt_brier:.4f}")
+            else:
+                self.platt_calibrator_ = None
+                tprint(f"Platt scaling skipped: no improvement (isotonic={cal_brier:.4f}, platt={platt_brier:.4f})")
             win_dm = self.detailed_metrics.get(self.best_model_name, {})
             tprint(f"Calibration profile ({self.best_model_name}): {win_dm.get('calibration_profile', 'n/a')}, ECE@10={win_dm.get('ece_top10', float('nan')):.4f}")
             
@@ -693,6 +838,10 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         else:
             p_cal = p_corr
 
+        # Apply Platt scaling if available
+        if hasattr(self, 'platt_calibrator_') and self.platt_calibrator_ is not None:
+            p_cal = self.platt_calibrator_.predict_proba(p_cal.reshape(-1, 1))[:, 1]
+
         p_cal = safe_clip_proba(p_cal, eps=1e-6)
         probs = np.column_stack([1.0 - p_cal, p_cal])
         return np.asarray(probs, dtype=np.float64)
@@ -700,3 +849,88 @@ class ModelRace(BaseEstimator, ClassifierMixin):
     def predict(self, X):
         # Return probability class 1 (rank score, not calibrated probability)
         return self.predict_proba(X)[:, 1]
+
+    def strip_for_serialization(self):
+        """Drop heavy internals not needed for inference or meta training."""
+        for attr in ["race_sample_frac", "race_early_stopping_rounds",
+                      "n_splits"]:
+            if hasattr(self, attr):
+                try:
+                    delattr(self, attr)
+                except AttributeError:
+                    pass
+        return self
+
+    def save_native(self, directory):
+        """Save using native model formats (10-100x faster than pickle)."""
+        os.makedirs(directory, exist_ok=True)
+        inner = self.best_model
+        if isinstance(inner, Float64Wrapper):
+            inner = inner.estimator
+        if _is_xgb(inner):
+            inner.save_model(os.path.join(directory, "model.ubj"))
+            fmt = "model.ubj"
+        elif _is_lgb(inner):
+            inner.booster_.save_model(os.path.join(directory, "model.lgb"))
+            fmt = "model.lgb"
+        elif _is_cb(inner):
+            inner.save_model(os.path.join(directory, "model.cbm"))
+            fmt = "model.cbm"
+        else:
+            joblib.dump(inner, os.path.join(directory, "model.joblib"), compress=3)
+            fmt = "model.joblib"
+        sidecar = {
+            "best_model_name": self.best_model_name,
+            "kind": self.kind,
+            "metrics": self.metrics,
+            "detailed_metrics": self.detailed_metrics,
+            "oof_probs": self.oof_probs,
+            "calibration_state_": self.calibration_state_,
+            "final_bias_factor_": self.final_bias_factor_,
+            "_used_sample_weight_": self._used_sample_weight_,
+            "calibrator_": getattr(self, "calibrator_", None),
+            "platt_calibrator_": getattr(self, "platt_calibrator_", None),
+            "classes_": getattr(self.best_model, "classes_", np.array([0, 1])),
+            "model_file": fmt,
+        }
+        with open(os.path.join(directory, "sidecar.pkl"), "wb") as f:
+            pickle.dump(sidecar, f)
+
+    @classmethod
+    def load_native(cls, directory):
+        """Load from native-format files."""
+        with open(os.path.join(directory, "sidecar.pkl"), "rb") as f:
+            sc = pickle.load(f)
+        mf = sc["model_file"]
+        mp = os.path.join(directory, mf)
+        if mf.endswith(".ubj"):
+            from xgboost import XGBClassifier as _XGB
+            inner = _XGB()
+            inner.load_model(mp)
+        elif mf.endswith(".lgb"):
+            from lightgbm import LGBMClassifier as _LGB
+            inner = _LGB()
+            inner._Booster = __import__("lightgbm").Booster(model_file=mp)
+            inner._fitted = True
+            inner._n_classes = 2
+        elif mf.endswith(".cbm"):
+            from catboost import CatBoostClassifier as _CB
+            inner = _CB()
+            inner.load_model(mp)
+        else:
+            inner = joblib.load(mp)
+        wrapper = Float64Wrapper(estimator=inner)
+        wrapper.classes_ = sc.get("classes_", np.array([0, 1]))
+        obj = cls.__new__(cls)
+        obj.best_model = wrapper
+        obj.best_model_name = sc["best_model_name"]
+        obj.kind = sc["kind"]
+        obj.metrics = sc["metrics"]
+        obj.detailed_metrics = sc["detailed_metrics"]
+        obj.oof_probs = sc["oof_probs"]
+        obj.calibration_state_ = sc["calibration_state_"]
+        obj.final_bias_factor_ = sc["final_bias_factor_"]
+        obj._used_sample_weight_ = sc["_used_sample_weight_"]
+        obj.calibrator_ = sc.get("calibrator_")
+        obj.platt_calibrator_ = sc.get("platt_calibrator_")
+        return obj

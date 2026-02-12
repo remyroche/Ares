@@ -1871,10 +1871,13 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
 
             models_by_h = conf.get("models_by_h", {})
 
-            # --- Build intersection dataset across all available horizons ---
-            # Each horizon has a different sample set. We inner-join on (ts, symbol)
-            # so the meta model trains on samples present in ALL horizons.
+            # --- Build UNION dataset across all available horizons ---
+            # We aggregate samples from all horizons to maximize training data.
+            # Missing OOF predictions (sample not in H) are imputed as neutral (0.5).
+            # Missing returns (sample not in H) are imputed as 0.0 (middle quantile assumption).
             horizon_dfs = {}  # h -> (df, oof_probs)
+            all_keys = set()
+
             for h in [2, 4, 8]:
                 ds_key = f"train_{side}_{k}_{h}"
                 if ds_key not in datasets:
@@ -1887,113 +1890,167 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                 if len(oof_h) != len(df_h):
                     tprint(f"Meta {side}_{k} H={h}: OOF length mismatch ({len(oof_h)} vs {len(df_h)}), skipping horizon")
                     continue
+
+                # Ensure ts/symbol columns exist
+                if "__ts__" not in df_h.columns or "__symbol__" not in df_h.columns:
+                     tprint(f"Meta {side}_{k} H={h}: missing ts/symbol columns, skipping")
+                     continue
+
                 horizon_dfs[h] = (df_h, oof_h)
+
+                # Add keys to master set
+                h_keys = list(zip(df_h["__ts__"].values, df_h["__symbol__"].values))
+                all_keys.update(h_keys)
 
             if not horizon_dfs:
                 tprint(f"Meta {side}_{k}: skipped (no horizon with valid OOF)")
                 continue
+
             tprint(f"Meta {side}_{k}: {len(horizon_dfs)} horizons available: {sorted(horizon_dfs.keys())}")
+            tprint(f"  Union: {len(all_keys)} unique samples across horizons")
 
-            # Use the largest horizon dataset as the base (for meta feature columns)
-            base_H = max(horizon_dfs.keys(), key=lambda h: len(horizon_dfs[h][0]))
-            df_base = horizon_dfs[base_H][0]
-
-            # Build (ts, symbol) index for intersection
-            if "__ts__" in df_base.columns and "__symbol__" in df_base.columns:
-                # Create a multi-index key for each horizon
-                base_keys = list(zip(df_base["__ts__"].values, df_base["__symbol__"].values))
-                common_set = set(base_keys)
-                for h, (df_h, _) in horizon_dfs.items():
-                    if h == base_H:
-                        continue
-                    if "__ts__" in df_h.columns and "__symbol__" in df_h.columns:
-                        h_keys = set(zip(df_h["__ts__"].values, df_h["__symbol__"].values))
-                        common_set &= h_keys
-                # Filter base to common samples
-                keep_mask = np.array([k in common_set for k in base_keys])
-                tprint(f"  Intersection: {keep_mask.sum()}/{len(base_keys)} samples common across all horizons")
-            else:
-                # Fallback: use min-length truncation
-                min_len = min(len(df_h) for df_h, _ in horizon_dfs.values())
-                keep_mask = np.ones(len(df_base), dtype=bool)
-                keep_mask[min_len:] = False
-                tprint(f"  No ts/symbol columns; truncating to {min_len} samples")
-
-            if keep_mask.sum() < 100:
-                tprint(f"Meta {side}_{k}: skipped (only {keep_mask.sum()} common samples)")
+            if len(all_keys) < 100:
+                tprint(f"Meta {side}_{k}: skipped (only {len(all_keys)} samples)")
                 continue
 
-            df = df_base.loc[keep_mask].reset_index(drop=True).copy()
+            # Create Master DataFrame
+            # Sort keys for determinism
+            sorted_keys = sorted(list(all_keys))
+            df = pd.DataFrame(sorted_keys, columns=["__ts__", "__symbol__"])
 
-            # Build OOF predictions for each horizon, aligned to common samples
+            # Map keys to index for fast lookup
+            key_to_idx = {k: i for i, k in enumerate(sorted_keys)}
+            n_samples = len(df)
+
+            # Initialize columns
             pred_h = pd.DataFrame(index=df.index)
             p_oof_avg_parts = []
+
+            # Temporary arrays for aggregation
+            w_sum = np.zeros(n_samples, dtype=np.float32)
+            w_count = np.zeros(n_samples, dtype=np.int32)
+
+            n_res_sum = np.zeros(n_samples, dtype=np.float32)
+            n_res_count = np.zeros(n_samples, dtype=np.int32)
+
+            w_cons_sum = np.zeros(n_samples, dtype=np.float32)
+            w_cons_count = np.zeros(n_samples, dtype=np.int32)
+
+            # Meta features: we identify needed columns first
+            configured_meta = cfg.get("meta_feature_keys", [])
+            raw_prefix = "__meta_raw__"
+
+            # We need to know which raw columns exist. Check all horizons.
+            available_raw_cols = set()
+            for h, (df_h, _) in horizon_dfs.items():
+                for c in df_h.columns:
+                    if c.startswith(raw_prefix):
+                         base_feat = c[len(raw_prefix):]
+                         if base_feat in configured_meta:
+                             available_raw_cols.add(c)
+
+            # Initialize feature arrays
+            feat_data = {c: np.zeros(n_samples, dtype=np.float32) for c in available_raw_cols}
+            feat_filled = {c: np.zeros(n_samples, dtype=bool) for c in available_raw_cols}
+
+            # Storage for returns (for target calculation)
+            ret_data = {} # h -> array of returns
+            for h_code in [2, 4, 8]:
+                 ret_data[h_code] = np.zeros(n_samples, dtype=np.float32)
+
             for h in sorted(horizon_dfs.keys()):
                 df_h, oof_h = horizon_dfs[h]
-                if "__ts__" in df_h.columns and "__symbol__" in df_h.columns:
-                    h_keys = list(zip(df_h["__ts__"].values, df_h["__symbol__"].values))
-                    h_lookup = {k: i for i, k in enumerate(h_keys)}
-                    common_keys = list(zip(df["__ts__"].values, df["__symbol__"].values))
-                    h_idx = np.array([h_lookup.get(k, -1) for k in common_keys])
-                    valid = h_idx >= 0
-                    p_h = np.full(len(df), 0.5, dtype=float)
-                    p_h[valid] = oof_h[h_idx[valid]]
-                else:
-                    p_h = oof_h[:len(df)]
+                h_keys = list(zip(df_h["__ts__"].values, df_h["__symbol__"].values))
+
+                # Map h_keys to master index
+                h_indices = [key_to_idx[k] for k in h_keys]
+                h_indices = np.array(h_indices)
+
+                # 1. Prediction OOF
+                p_h = np.full(n_samples, 0.5, dtype=np.float32)
+                p_h[h_indices] = oof_h
                 pred_h[f"pred_H{h}"] = p_h
                 p_oof_avg_parts.append(p_h)
 
-            # Average OOF across horizons as the primary alpha signal for meta
-            p_oof = np.mean(p_oof_avg_parts, axis=0)
-            y_ret = df["__y_ret__"].values
+                # 2. Weights
+                w_h = df_h["__w__"].values if "__w__" in df_h.columns else np.ones(len(df_h))
+                w_sum[h_indices] += w_h
+                w_count[h_indices] += 1
 
-            configured_meta = cfg.get("meta_feature_keys", [])
-            raw_prefix = "__meta_raw__"
-            feat_cols = [mk for mk in configured_meta if f"{raw_prefix}{mk}" in df.columns]
-            feat_cols = list(dict.fromkeys(feat_cols))
+                # 3. Aux
+                nr_h = df_h["__n_res__"].values if "__n_res__" in df_h.columns else np.ones(len(df_h))
+                n_res_sum[h_indices] += nr_h
+                n_res_count[h_indices] += 1
+
+                wc_h = df_h["__w_consensus__"].values if "__w_consensus__" in df_h.columns else np.ones(len(df_h))
+                w_cons_sum[h_indices] += wc_h
+                w_cons_count[h_indices] += 1
+
+                # 4. Returns
+                if h in ret_data:
+                     ret_h = df_h["__y_ret__"].values if "__y_ret__" in df_h.columns else np.zeros(len(df_h))
+                     ret_data[h][h_indices] = ret_h
+
+                # 5. Features
+                for c in available_raw_cols:
+                    if c in df_h.columns:
+                        vals = df_h[c].values
+                        mask_unfilled = ~feat_filled[c][h_indices]
+                        if mask_unfilled.any():
+                             idx_master_unfilled = h_indices[mask_unfilled]
+                             idx_source_unfilled = np.where(mask_unfilled)[0]
+                             feat_data[c][idx_master_unfilled] = vals[idx_source_unfilled]
+                             feat_filled[c][idx_master_unfilled] = True
+
+            # Finalize aggregations
+            mask_w = w_count > 0
+            w_final = np.zeros(n_samples, dtype=np.float32)
+            w_final[mask_w] = w_sum[mask_w] / w_count[mask_w]
+            df["__w_consensus__"] = np.where(w_cons_count > 0, w_cons_sum / np.maximum(1, w_cons_count), 1.0)
+            df["__n_res__"] = np.where(n_res_count > 0, n_res_sum / np.maximum(1, n_res_count), 1.0)
+            df["__w__"] = w_final
+
+            # Average OOF
+            p_oof = np.mean(p_oof_avg_parts, axis=0)
+
+            # Features DataFrame
+            feat_cols = sorted(list(available_raw_cols))
             if not feat_cols:
-                tprint(f"Meta {side}_{k}: skipped (no raw meta features found in dataset)")
+                tprint(f"Meta {side}_{k}: skipped (no raw meta features found in union)")
                 continue
 
-            X_feats = pd.DataFrame(index=df.index)
-            for mk in feat_cols:
-                X_feats[mk] = df[f"{raw_prefix}{mk}"].values
-            X_feats = X_feats.fillna(0.0)
+            X_feats_clean = pd.DataFrame(index=df.index)
+            for c in feat_cols:
+                base_name = c[len(raw_prefix):]
+                X_feats_clean[base_name] = feat_data[c]
+            X_feats = X_feats_clean
 
-            # Build y_target from per-horizon returns (aligned to common samples)
-            def _ret_for_h_aligned(h):
-                ds_key = f"train_{side}_{k}_{h}"
-                if ds_key in datasets:
-                    df_h = datasets[ds_key]
-                    if "__ts__" in df_h.columns and "__symbol__" in df_h.columns:
-                        h_keys = list(zip(df_h["__ts__"].values, df_h["__symbol__"].values))
-                        h_lookup = {kk: i for i, kk in enumerate(h_keys)}
-                        common_keys = list(zip(df["__ts__"].values, df["__symbol__"].values))
-                        h_idx = np.array([h_lookup.get(ck, -1) for ck in common_keys])
-                        valid = h_idx >= 0
-                        ret = np.zeros(len(df), dtype=np.float32)
-                        ret[valid] = df_h["__y_ret__"].values[h_idx[valid]].astype(np.float32)
-                        if valid.any():
-                            return ret
-                if h in horizon_dfs:
-                    df_h, _ = horizon_dfs[h]
-                    if "__ts__" in df_h.columns and "__symbol__" in df_h.columns:
-                        h_keys = list(zip(df_h["__ts__"].values, df_h["__symbol__"].values))
-                        h_lookup = {kk: i for i, kk in enumerate(h_keys)}
-                        common_keys = list(zip(df["__ts__"].values, df["__symbol__"].values))
-                        h_idx = np.array([h_lookup.get(ck, -1) for ck in common_keys])
-                        valid = h_idx >= 0
-                        ret = np.zeros(len(df), dtype=np.float32)
-                        ret[valid] = df_h["__y_ret__"].values[h_idx[valid]].astype(np.float32)
-                        if valid.any():
-                            return ret
-                return y_ret.astype(np.float32)
+            # Target Construction (using available returns and proxies)
+            v_ret2 = ret_data.get(2, np.zeros(n_samples))
+            v_ret4 = ret_data.get(4, np.zeros(n_samples))
+            v_ret8 = ret_data.get(8, np.zeros(n_samples))
+
+            arg_ret1 = v_ret2
+            arg_ret2 = v_ret2
+            arg_ret4 = v_ret4
+            arg_ret6 = v_ret8
+
+            # Synthetic y_ret for metrics (using largest available horizon as representative)
+            avail_h = sorted([h for h in ret_data if np.any(ret_data[h] != 0)])
+            if avail_h:
+                # Prefer H4 if available (middle ground), else largest
+                best_h = 4 if 4 in avail_h else avail_h[-1]
+                y_ret = ret_data[best_h]
+            else:
+                y_ret = v_ret4 # All zeros
+
+            df["__y_ret__"] = y_ret
 
             y_target = compute_meta_target(
-                _ret_for_h_aligned(1),
-                _ret_for_h_aligned(2),
-                _ret_for_h_aligned(4),
-                _ret_for_h_aligned(6),
+                arg_ret1,
+                arg_ret2,
+                arg_ret4,
+                arg_ret6,
                 groups=None,
             )
 

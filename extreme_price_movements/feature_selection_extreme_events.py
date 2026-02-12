@@ -324,6 +324,51 @@ class MDISelectionResult:
     selected_features: List[str]
     kept_after_dedupe: List[str]
 
+
+def _emit_mdi_noise_diagnostics(
+    X_np: np.ndarray,
+    y_np: np.ndarray,
+    metrics_df_sorted: pd.DataFrame,
+    mean_model_fit_score: float,
+) -> None:
+    """Log root-cause diagnostics when MDI importances collapse to near-zero."""
+    # Option 1: Poor features
+    feature_var = np.nanvar(X_np, axis=0)
+    near_constant_ratio = float(np.mean(feature_var < 1e-8)) if feature_var.size else 1.0
+
+    # Option 2: Poor importance measurement
+    mean_share = float(np.nanmean(metrics_df_sorted.get("share_mu", np.array([0.0]))))
+    mean_share_std = float(np.nanmean(metrics_df_sorted.get("share_std", np.array([0.0]))))
+    high_noise_ratio = float(
+        np.mean(
+            metrics_df_sorted.get("share_std", pd.Series(dtype=float)).to_numpy()
+            > metrics_df_sorted.get("share_mu", pd.Series(dtype=float)).to_numpy()
+        )
+    ) if len(metrics_df_sorted) else 1.0
+
+    # Option 3: Poor target
+    target_std = float(np.nanstd(y_np))
+    target_iqr = float(np.nanpercentile(y_np, 75) - np.nanpercentile(y_np, 25))
+    unique_target_ratio = float(np.unique(np.round(y_np, 8)).size / max(len(y_np), 1))
+
+    # Option 4: Poor model fit (LGBM or any tree regressor used for MDI)
+    tprint(
+        "MDI diagnostics (near-zero effective mass): "
+        f"features[near_const={near_constant_ratio:.1%}] | "
+        f"importance[mean_share={mean_share:.2e}, mean_std={mean_share_std:.2e}, std>mu={high_noise_ratio:.1%}] | "
+        f"target[std={target_std:.3e}, iqr={target_iqr:.3e}, unique_ratio={unique_target_ratio:.1%}] | "
+        f"model_fit[oof_r2={mean_model_fit_score:.4f}]"
+    )
+
+    if near_constant_ratio > 0.35:
+        tprint("MDI diagnostics: Feature quality risk — high near-constant feature share.")
+    if high_noise_ratio > 0.7:
+        tprint("MDI diagnostics: Importance measurement risk — fold-to-fold variance dominates mean importance.")
+    if target_std < 1e-5 or target_iqr < 1e-5:
+        tprint("MDI diagnostics: Target quality risk — target has very low dispersion.")
+    if np.isfinite(mean_model_fit_score) and mean_model_fit_score < -0.05:
+        tprint("MDI diagnostics: Model quality risk — negative OOF R² suggests model is mostly fitting noise.")
+
 def mdi_feature_selection_v3(
     X: pd.DataFrame,
     y: Union[pd.Series, np.ndarray],
@@ -540,6 +585,7 @@ def mdi_feature_selection_v3(
         current_features = prescreened_features
 
     metrics_df_sorted = pd.DataFrame()
+    mean_model_fit_score = float("nan")
 
     # Cache supported params once
     base_params = base_model.get_params() if hasattr(base_model, 'get_params') else {}
@@ -584,6 +630,7 @@ def mdi_feature_selection_v3(
         pos_counts = {k: np.zeros(p, dtype=np.float64) for k in ['share', 'freq', 'mdi_depth', 'mdi_cov']}
 
         valid_folds = 0
+        fold_fit_scores: List[float] = []
 
         for train_idx, val_idx in splits_curr:
             m = clone(base_model)
@@ -633,6 +680,14 @@ def mdi_feature_selection_v3(
             else:
                 m.fit(X_curr_np[train_idx], y_curr_np[train_idx], sample_weight=sw_tr)
 
+            if len(val_idx) > 1:
+                y_val = y_curr_np[val_idx]
+                y_pred = m.predict(X_curr_np[val_idx])
+                ss_tot = float(np.sum((y_val - np.mean(y_val)) ** 2))
+                if ss_tot > 1e-12:
+                    ss_res = float(np.sum((y_val - y_pred) ** 2))
+                    fold_fit_scores.append(1.0 - ss_res / ss_tot)
+
             # C-level raw importance
             # folds_data['share'].append(m.feature_importances_)
             share = m.feature_importances_.astype(np.float64)
@@ -657,6 +712,8 @@ def mdi_feature_selection_v3(
 
         if valid_folds == 0:
             break
+
+        mean_model_fit_score = float(np.mean(fold_fit_scores)) if fold_fit_scores else float("nan")
 
         # 3. Aggregation
         agg = {}
@@ -756,6 +813,7 @@ def mdi_feature_selection_v3(
     else:
         # Fallback: if effective importance is zero (all noisy), use straight mu
         tprint("MDI: Effective importance is zero (high noise). Falling back to share_mu.")
+        _emit_mdi_noise_diagnostics(X_np_full, y_np, metrics_df_sorted, mean_model_fit_score)
         share_norm = share_mu / (np.sum(share_mu) + 1e-12)
 
     # 3. Cumulative Cutoff

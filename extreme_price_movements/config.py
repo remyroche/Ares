@@ -77,8 +77,10 @@ MODEL_FEATURES = [
 # Helper/base features produced in features.py that should remain selectable by model heads.
 # This increases candidate breadth before MDI pruning.
 HELPER_BASE_FEATURES = [
-    "ret1h", "ret2h", "ret4h", "ret6h", "ret8h", "atr_pct_base", "rsi_base", "rsi_slope_base",
-    "rv_2h", "rv_4h", "rv_6h", "rv_8h", "rv_12h", "rv_24h", "qv", "vol_z24_base", "vol_z_base",
+    "ret1h", "ret2h", "ret4h", "ret6h", "ret8h", "ret48h", "ret72h", "ret120h",
+    "atr_pct_base", "rsi_base", "rsi_slope_base",
+    "rv_2h", "rv_4h", "rv_6h", "rv_8h", "rv_12h", "rv_24h", "rv_48h", "rv_120h",
+    "qv", "vol_z24_base", "vol_z_base",
     "dist_ema_fast_base", "dist_ema_slow_base", "trend_pct_base",
     "rvol_hod_base", "signed_vol", "up_vol", "dn_vol", "up_vol_6", "dn_vol_6",
     "vol_asym_6", "clv", "clv_mean_2", "excess_12h", "speed",
@@ -100,10 +102,10 @@ CFG = {
 
     # training horizons to compare (1)
     "label_horizons_hours": [2, 4, 8],
-    "label_tp_values_pct": [3.0, 4.0, 5.0, 6.0],
+    "label_tp_values_pct": [1.5, 2.0, 3.0, 4.0, 5.0, 6.0],
     "label_sl_values_pct": [0.5, 1.0, 2.0],
     "label_round_trip_fee_pct": 0.5,
-    "label_min_net_rr": 1.2,
+    "label_min_net_rr": 0.9,
     "label_min_tp_hit_rate": 0.02,
     "label_max_timeout_rate": 0.90,
 
@@ -123,16 +125,24 @@ CFG = {
     "val_lookback_hours": 24 * 7,      # 7d validation (time-split, no leakage)
     "min_train_samples": 200,
 
+    # MFE/MAE-based sample weighting (Report 2026-02-12)
+    # Weight samples by how "decisive" the price movement was relative to barriers
+    # w = w_min + (1-w_min) * clip(max(MFE/TP, MAE/SL) / tau, 0, 1)
+    # Timeout samples are capped at 0.7
+    "mfe_mae_w_min": 0.5,      # Minimum weight floor
+    "mfe_mae_tau": 1.0,        # Scaling factor (d/tau)
+    "mfe_mae_cost_floor": 0.001,  # Cost floor for touch margin penalty
+
     # per-hour cross-sectional training selection
     "variance_filter_pct": 1.0, # User requested to keep all non-constant features
-    "train_extreme_pct_hourly": 0.06,
+    "train_extreme_pct_hourly": 0.07,
     "train_extreme_min": 10,
     "train_extreme_max": 80,
     "train_min_range_pct": 0.07,
     "train_min_vol_zscore": 1.6,
 
     # hourly trading selection (top/bot deviations)
-    "trade_extreme_pct": 0.06,
+    "trade_extreme_pct": 0.07,
     "trade_extreme_min": 10,
     "trade_extreme_max": 80,
     "trade_deviation_metric": "dist_ema_fast",
@@ -145,7 +155,7 @@ CFG = {
     # gates
     "gate_vol_lookback_hours": 24 * 14,
     "gate_trend_thr": 0.02,
-    "accept_gate_window": 64,
+    "accept_gate_window": 24,
     "accept_gate_percentile_mode": "approx",
 
     # base feature windows (used for base/fast/slow variants)
@@ -216,6 +226,11 @@ CFG = {
         "reject_dir2h_prod", "reject_dir2h_abs_prod", "reject_dir2h_signed_mag",
         "tfq_dir2h_prod", "tfq_dir2h_abs_prod", "tfq_dir2h_signed_mag",
         "mrq_dir2h_prod", "mrq_dir2h_abs_prod", "mrq_dir2h_signed_mag"
+        # OHLCV-based trend quality features (Report 2026-02-12)
+        ,"trend_age_hours", "higher_highs_count_48h", "trend_retest_success_rate",
+        "trend_overextension_z", "volume_trend_alignment", "trend_regime_stability",
+        "trend_strength_vs_reversion", "support_quality_score", "dip_velocity",
+        "dip_volume_profile", "reversion_target_distance"
         ,"vov_iqr_20", "vov_mad_20", "vov_mad_60", "vov_ratio", "vov_interaction",
         "vov_fast_slow_ratio", "accel_5h", "dlog_vol_5h", "signed_max_bar_ret_5h",
         "jump_rate_10h", "volu_z", "volume_price_corr_10h", "draw_sym_10h", "breakout_24h",
@@ -382,11 +397,20 @@ CFG = {
         "stage_tf", "tf_bias", "flow_persistence", "flow_ratio",
         "progress", "evr_6", "delta_stall_6", "rv_2h", "rv_4h",
         "dir_path_long_2h", "dir_path_short_2h", "dir_path_edge_2h",
+        # Multi-day regime context (distinguish real trends from bear rallies)
+        "donch_dist_48", "donch_dist_72", "donch_dist_120",
+        "pullback_48", "pullback_72", "pullback_120",
+        "dist_from_high_48h", "dist_from_high_120h",
+        "trend_slope_48h", "trend_slope_120h", "trend_accel_120h",
+        "rv_ratio_24_120", "ret48h", "ret120h",
         "accept_x_dir_edge_2h", "tfq_x_dir_edge_2h", "accept_dir2h_prod", "tfq_dir2h_prod",
         "downside_semivariance_8", "downside_semivariance_24",
         "upside_semivariance_8", "upside_semivariance_24",
         "down_up_vol_ratio_8", "down_up_vol_ratio_24",
-        "vol_shock_asym_8_24", "vol_shock_asym_4_12", "vol_shock_asym_4_212"
+        "vol_shock_asym_8_24", "vol_shock_asym_4_12", "vol_shock_asym_4_212",
+        # OHLCV-based trend quality features (Report 2026-02-12)
+        "trend_age_hours", "higher_highs_count_48h", "trend_retest_success_rate",
+        "trend_overextension_z", "volume_trend_alignment", "trend_regime_stability",
     ] + neutral_feature_keys + MODEL_FEATURES + HELPER_BASE_FEATURES,
 
     # MR Head (Specifics + Global) — includes exhaustion features
@@ -399,10 +423,19 @@ CFG = {
         "mfe_2h", "mae_2h", "mfe_4h", "mae_4h", "mfe_8h", "mae_8h",
         "rv_2h", "rv_4h", "dir_path_risk_long_2h", "dir_path_risk_short_2h",
         "reject_x_dir_edge_2h", "mrq_x_dir_edge_2h", "reject_dir2h_prod", "mrq_dir2h_prod",
+        # Multi-day regime context (distinguish real dips from trend continuation)
+        "donch_dist_48", "donch_dist_72", "donch_dist_120",
+        "pullback_48", "pullback_72", "pullback_120",
+        "dist_from_low_48h", "dist_from_low_120h",
+        "trend_slope_48h", "trend_slope_120h", "trend_accel_120h",
+        "rv_ratio_24_120", "ret48h", "ret120h",
         "downside_semivariance_8", "downside_semivariance_24",
         "upside_semivariance_8", "upside_semivariance_24",
         "down_up_vol_ratio_8", "down_up_vol_ratio_24",
-        "vol_shock_asym_8_24", "vol_shock_asym_4_12", "vol_shock_asym_4_212"
+        "vol_shock_asym_8_24", "vol_shock_asym_4_12", "vol_shock_asym_4_212",
+        # OHLCV-based mean-reversion quality features (Report 2026-02-12)
+        "trend_strength_vs_reversion", "support_quality_score", "dip_velocity",
+        "dip_volume_profile", "reversion_target_distance",
     ] + neutral_feature_keys + MODEL_FEATURES + HELPER_BASE_FEATURES,
 
     # Meta Learner
@@ -436,6 +469,13 @@ CFG = {
         "mr_soft", "mr_potential", "mr_potential_exhaust",
         "climax", "vol_exhaust", "mr_climax", "shock_decay",
         "pct_extreme", "mr_pct", "stall", "mr_failure",
+        # Multi-day regime context (meta learns regime-conditional weighting)
+        "dist_from_high_48h", "dist_from_high_120h",
+        "dist_from_low_48h", "dist_from_low_120h",
+        "trend_slope_48h", "trend_slope_120h",
+        "rv_ratio_24_120", "rv_48h", "rv_120h",
+        "ret48h", "ret120h",
+        "donch_dist_48", "donch_dist_120",
     ],
 
     # Inference dynamic-basket controls

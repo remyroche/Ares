@@ -64,7 +64,7 @@ def validate_downloaded_data(store, symbol):
 def main():
     parser = argparse.ArgumentParser(description="Extreme Price Movements Pipeline")
     parser.add_argument("--light", action="store_true", help="Run in light mode (less data)")
-    parser.add_argument("--mode", choices=["download", "feature_generation", "labels", "train", "risk", "backtest", "run"], required=True, help="Pipeline mode")
+    parser.add_argument("--mode", choices=["download", "feature_generation", "labels", "train", "train_base", "train_meta", "risk", "optimise", "backtest", "run"], required=True, help="Pipeline mode")
     parser.add_argument("--state-file", default="model_state.pkl", help="Path to persist model state")
 
     args = parser.parse_args()
@@ -116,7 +116,7 @@ def main():
         run_label_generation_step_v2(ts_sig, mu.symbols, CFG, store, ex)
 
     elif args.mode == "train":
-        tprint("Starting Training...")
+        tprint("Starting Training (all)...")
         with Timer("Margin Universe"):
             mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
 
@@ -130,7 +130,35 @@ def main():
         else:
             tprint("Training failed or produced no state.")
 
-    elif args.mode == "risk":
+    elif args.mode == "train_base":
+        tprint("Starting Training (base only)...")
+        with Timer("Margin Universe"):
+            mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
+        ts_sig = get_ts_sig()
+        from extreme_price_movements.pipeline_steps import run_training_base_step
+        state = run_training_base_step(ts_sig, CFG, store=store, margin_symbols=mu.symbols)
+        if state:
+            with open(args.state_file, "wb") as f:
+                pickle.dump(state, f)
+            tprint(f"Base model state saved to {args.state_file}")
+        else:
+            tprint("Base training failed or produced no state.")
+
+    elif args.mode == "train_meta":
+        tprint("Starting Training (meta only)...")
+        with Timer("Margin Universe"):
+            mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
+        ts_sig = get_ts_sig()
+        from extreme_price_movements.pipeline_steps import run_training_meta_step
+        state = run_training_meta_step(ts_sig, CFG, store=store, margin_symbols=mu.symbols)
+        if state:
+            with open(args.state_file, "wb") as f:
+                pickle.dump(state, f)
+            tprint(f"Meta model state saved to {args.state_file}")
+        else:
+            tprint("Meta training failed or produced no state.")
+
+    elif args.mode in ("risk", "optimise"):
         tprint("Starting Risk Optimization...")
         with Timer("Margin Universe"):
             mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))

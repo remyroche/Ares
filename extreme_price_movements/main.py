@@ -119,37 +119,32 @@ def generate_features_daily(ts_sig, margin_symbols, cfg, store, ex):
         feats = compute_features_hourly(panel, mkt_gates, cfg)
         tprint("Hourly features computed (generation)")
 
-        # Filter to save only missing symbols
-        feats_to_save = {}
+    # Free large intermediates before save to prevent OOM
+    import gc
+    del panel, dfs, mkt_df, mkt_gates
+    gc.collect()
+    tprint("Freed panel/dfs/mkt memory before save")
 
-        # Check available columns in features
-        # feats is Dict[FeatName -> DataFrame]
+    # Save features OUTSIDE the Timer block — pass full feats to avoid OOM from copy
+    tprint(f"Feature keys: {len(feats)}, missing_syms: {len(missing_syms)}")
 
-        # Just to be safe, check one known feature like 'ret1h'
-        if "ret1h" in feats:
-            available_cols = feats["ret1h"].columns
-            valid_missing = [s for s in missing_syms if s in available_cols]
-        else:
-            # Fallback if structure is different
-            valid_missing = missing_syms
+    if "ret1h" in feats:
+        available_cols = list(feats["ret1h"].columns)
+        valid_missing = [s for s in missing_syms if s in available_cols]
+        tprint(f"available_cols: {len(available_cols)}, valid_missing: {len(valid_missing)}")
+    else:
+        valid_missing = missing_syms
+        tprint(f"ret1h not in feats, using all missing_syms: {len(valid_missing)}")
 
-        if not valid_missing:
-            tprint("No valid missing symbols found in computed features.")
-            return
+    if not valid_missing:
+        tprint("No valid missing symbols found in computed features.")
+        return
 
-        for k, v in feats.items():
-            if isinstance(v, pd.DataFrame):
-                # Select only the columns for missing symbols
-                cols = [c for c in valid_missing if c in v.columns]
-                if cols:
-                    feats_to_save[k] = v[cols]
-            else:
-                pass
-
-        if feats_to_save:
-            save_features(feats_to_save, ts_sig, cfg["data_root"])
-        else:
-            tprint("No features to save.")
+    # Save directly — save_features extracts per-symbol columns on the fly (no copy)
+    import sys; sys.stdout.flush(); sys.stderr.flush()
+    tprint(f"Saving {len(valid_missing)} symbols...")
+    save_features(feats, ts_sig, cfg["data_root"])
+    sys.stdout.flush(); sys.stderr.flush()
 
     tprint("DAILY FEATURE GENERATION COMPLETE")
 

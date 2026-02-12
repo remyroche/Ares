@@ -758,6 +758,72 @@ class EnsembleTrainer(BaseTrainer):
                 metrics['improvement_over_avg'] = metrics['meta_r2'] - metrics['base_avg_r2']
                 tprint_info(f"📊 Meta-learner R²: {metrics['meta_r2']:.4f} vs Base Average R²: {metrics['base_avg_r2']:.4f} (Δ: {metrics['improvement_over_avg']:+.4f})")
             
+            # Calculate IC (Information Coefficient) comparison: base models vs meta-learner
+            # IC is Spearman correlation between predictions and targets
+            # Also compute IC on 30% quantile (top 30% predictions) for tail-focused evaluation
+            try:
+                from scipy.stats import spearmanr
+                
+                targets_arr = np.asarray(targets, dtype=float)
+                meta_pred_arr = np.asarray(meta_predictions, dtype=float)
+                
+                # Overall IC
+                meta_ic, meta_ic_pval = spearmanr(meta_pred_arr, targets_arr)
+                metrics['meta_ic'] = float(meta_ic) if np.isfinite(meta_ic) else 0.0
+                metrics['meta_ic_pval'] = float(meta_ic_pval) if np.isfinite(meta_ic_pval) else 1.0
+                
+                # IC on 30% quantile (top 30% predictions by magnitude)
+                n_samples = len(meta_pred_arr)
+                n_top30 = max(10, int(n_samples * 0.30))
+                top30_mask = np.abs(meta_pred_arr) >= np.percentile(np.abs(meta_pred_arr), 70)
+                if top30_mask.sum() >= 10:
+                    meta_ic_top30, _ = spearmanr(meta_pred_arr[top30_mask], targets_arr[top30_mask])
+                    metrics['meta_ic_top30'] = float(meta_ic_top30) if np.isfinite(meta_ic_top30) else 0.0
+                else:
+                    metrics['meta_ic_top30'] = 0.0
+                
+                # Per-base-model IC for comparison
+                if oof_predictions.shape[1] > 1:
+                    base_ics = []
+                    base_ics_top30 = []
+                    for i in range(oof_predictions.shape[1]):
+                        base_pred = oof_predictions[:, i]
+                        base_ic, _ = spearmanr(base_pred, targets_arr)
+                        base_ics.append(float(base_ic) if np.isfinite(base_ic) else 0.0)
+                        
+                        # Base model IC on top 30%
+                        top30_mask_base = np.abs(base_pred) >= np.percentile(np.abs(base_pred), 70)
+                        if top30_mask_base.sum() >= 10:
+                            base_ic_t30, _ = spearmanr(base_pred[top30_mask_base], targets_arr[top30_mask_base])
+                            base_ics_top30.append(float(base_ic_t30) if np.isfinite(base_ic_t30) else 0.0)
+                        else:
+                            base_ics_top30.append(0.0)
+                    
+                    metrics['base_ic_mean'] = float(np.mean(base_ics))
+                    metrics['base_ic_std'] = float(np.std(base_ics))
+                    metrics['base_ic_best'] = float(np.max(base_ics))
+                    metrics['base_ics_per_model'] = base_ics
+                    
+                    metrics['base_ic_top30_mean'] = float(np.mean(base_ics_top30))
+                    metrics['base_ic_top30_std'] = float(np.std(base_ics_top30))
+                    metrics['base_ics_top30_per_model'] = base_ics_top30
+                    
+                    # IC degradation: positive means meta-learner degraded from base models
+                    metrics['ic_degradation'] = metrics['base_ic_mean'] - metrics['meta_ic']
+                    metrics['ic_top30_degradation'] = metrics['base_ic_top30_mean'] - metrics['meta_ic_top30']
+                    
+                    # Log warning if meta-learner significantly degrades IC
+                    if metrics['ic_degradation'] > 0.02:
+                        tprint_warning(f"⚠️ Meta-learner IC degradation: base={metrics['base_ic_mean']:.4f} → meta={metrics['meta_ic']:.4f} (Δ: {metrics['ic_degradation']:+.4f})")
+                    else:
+                        tprint_info(f"📊 Meta-learner IC: {metrics['meta_ic']:.4f} vs Base IC mean: {metrics['base_ic_mean']:.4f} (Δ: {metrics['ic_degradation']:+.4f})")
+                    
+                    if metrics['ic_top30_degradation'] > 0.02:
+                        tprint_warning(f"⚠️ Meta-learner IC@30% degradation: base={metrics['base_ic_top30_mean']:.4f} → meta={metrics['meta_ic_top30']:.4f} (Δ: {metrics['ic_top30_degradation']:+.4f})")
+                    
+            except Exception as ic_exc:
+                self.logger.debug(f"IC comparison calculation failed: {ic_exc}")
+            
             # Store meta-learner
             self._meta_learner = meta_model
             

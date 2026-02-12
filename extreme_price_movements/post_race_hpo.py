@@ -210,15 +210,15 @@ def suggest_xgboost(trial: optuna.Trial, *, base_random_state: int = 42) -> Dict
     """XGBoost — conservative for noisy labels: high min_child_weight, gamma, reg_lambda."""
     n_estimators = trial.suggest_int("n_estimators", 600, 6000, step=200)
     learning_rate = trial.suggest_float("learning_rate", 0.01, 0.08, log=True)
-    max_depth = trial.suggest_int("max_depth", 2, 6)
-    min_child_weight = trial.suggest_float("min_child_weight", 10.0, 300.0, log=True)
+    max_depth = trial.suggest_int("max_depth", 2, 5)
+    min_child_weight = trial.suggest_float("min_child_weight", 75.0, 500.0, log=True)
     gamma = trial.suggest_float("gamma", 0.5, 20.0, log=True)
 
     subsample = trial.suggest_float("subsample", 0.6, 0.9)
     colsample_bytree = trial.suggest_float("colsample_bytree", 0.5, 0.9)
     colsample_bynode = trial.suggest_float("colsample_bynode", 0.5, 0.9)
 
-    reg_lambda = trial.suggest_float("reg_lambda", 5.0, 200.0, log=True)
+    reg_lambda = trial.suggest_float("reg_lambda", 15.0, 500.0, log=True)
     reg_alpha = trial.suggest_float("reg_alpha", 0.0, 10.0)
 
     max_delta_step = trial.suggest_float("max_delta_step", 0.0, 5.0)
@@ -262,7 +262,7 @@ def suggest_lightgbm(trial: optuna.Trial, *, base_random_state: int = 42) -> Dic
     """LightGBM — cap leaves aggressively, raise min_child_samples, strong L1/L2."""
     n_estimators = trial.suggest_int("n_estimators", 800, 8000, step=200)
     learning_rate = trial.suggest_float("learning_rate", 0.01, 0.08, log=True)
-    max_depth = trial.suggest_int("max_depth", 2, 8)
+    max_depth = trial.suggest_int("max_depth", 2, 6)
 
     num_leaves = trial.suggest_int("num_leaves", 8, 96, log=True)
     if max_depth > 0:
@@ -271,10 +271,10 @@ def suggest_lightgbm(trial: optuna.Trial, *, base_random_state: int = 42) -> Dic
     subsample = trial.suggest_float("subsample", 0.6, 0.9)
     colsample_bytree = trial.suggest_float("colsample_bytree", 0.5, 0.9)
 
-    min_child_samples = trial.suggest_int("min_child_samples", 30, 400, log=True)
+    min_child_samples = trial.suggest_int("min_child_samples", 75, 600, log=True)
     min_child_weight = trial.suggest_float("min_child_weight", 1e-3, 10.0, log=True)
 
-    lambda_l2 = trial.suggest_float("lambda_l2", 5.0, 200.0, log=True)
+    lambda_l2 = trial.suggest_float("lambda_l2", 15.0, 500.0, log=True)
     lambda_l1 = trial.suggest_float("lambda_l1", 0.0, 50.0)
 
     min_split_gain = trial.suggest_float("min_split_gain", 0.0, 5.0)
@@ -316,9 +316,9 @@ def suggest_catboost(trial: optuna.Trial, *, base_random_state: int = 42) -> Dic
     """CatBoost — keep depth small, strong regularisation."""
     iterations = trial.suggest_int("iterations", 800, 8000, step=200)
     learning_rate = trial.suggest_float("learning_rate", 0.01, 0.08, log=True)
-    depth = trial.suggest_int("depth", 2, 7)
+    depth = trial.suggest_int("depth", 2, 5)
 
-    l2_leaf_reg = trial.suggest_float("l2_leaf_reg", 5.0, 200.0, log=True)
+    l2_leaf_reg = trial.suggest_float("l2_leaf_reg", 15.0, 500.0, log=True)
     random_strength = trial.suggest_float("random_strength", 0.0, 3.0)
     bagging_temperature = trial.suggest_float("bagging_temperature", 0.0, 1.5)
 
@@ -363,7 +363,7 @@ class HPOConfig:
     model_name: str  # extratrees | xgboost | lightgbm | catboost
     n_trials: int = 150
     timeout_sec: Optional[int] = None
-    n_splits: int = 4
+    n_splits: int = 3
     purge: int = 12
     embargo: int = 2
     random_state: int = 42

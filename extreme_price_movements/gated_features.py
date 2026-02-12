@@ -216,48 +216,53 @@ def within_family_zscores(p_by_thr: Dict[int, float]) -> Tuple[Dict[int, float],
 
 def robust_skill_metric(gate_col: Union[pd.Series, pd.DataFrame], target: Union[pd.Series, pd.DataFrame], time_blocks: Optional[List[pd.Series]], train_mask: Optional[pd.Series]) -> Optional[float]:
     # "Cheap" but stable: block-median IC of gate vs target
-    # Memory-optimized: uses column-wise correlation instead of .stack()
+    # Optimized: subsample columns for panel data, use numpy rankdata
     if target is None:
         return None
 
+    from scipy.stats import rankdata as _rankdata
+
     scores = []
-    
+
     is_panel = isinstance(gate_col, pd.DataFrame)
-    
-    # If no blocks provided, treat whole range as one block
+
     if time_blocks is None:
         time_blocks = [pd.Series(True, index=gate_col.index)]
-    
+
+    # For panels, subsample columns to cap computation
+    _MAX_COLS = 50
+    if is_panel:
+        shared_cols = gate_col.columns.intersection(target.columns) if isinstance(target, pd.DataFrame) else gate_col.columns
+        if len(shared_cols) > _MAX_COLS:
+            rng = np.random.default_rng(42)
+            shared_cols = shared_cols[rng.choice(len(shared_cols), _MAX_COLS, replace=False)]
+    else:
+        shared_cols = None
+
     for block_mask in time_blocks:
-        if train_mask is None:
-             tm = block_mask
-        else:
-             tm = (train_mask & block_mask)
-             
+        tm = (train_mask & block_mask) if train_mask is not None else block_mask
+
         if not tm.any():
              continue
-             
+
         if is_panel:
-            g_sub = gate_col.loc[tm]
+            g_sub = gate_col.loc[tm, shared_cols].to_numpy(dtype=np.float32)
             if isinstance(target, pd.DataFrame):
-                t_sub = target.loc[tm]
+                t_sub = target.loc[tm, shared_cols].to_numpy(dtype=np.float32)
             else:
-                t_sub = target.loc[tm]
-            
-            # Memory-efficient: compute per-column Spearman, then average
-            # Avoids .stack() which creates N_rows × N_cols elements
+                t_sub = np.tile(target.loc[tm].to_numpy(dtype=np.float32)[:, None], (1, len(shared_cols)))
+
             col_scores = []
-            shared_cols = g_sub.columns.intersection(t_sub.columns) if isinstance(target, pd.DataFrame) else g_sub.columns
-            for col in shared_cols:
-                g_vec = g_sub[col].dropna()
-                if isinstance(target, pd.DataFrame):
-                    t_vec = t_sub[col].reindex(g_vec.index).dropna()
-                else:
-                    t_vec = t_sub.reindex(g_vec.index).dropna()
-                common = g_vec.index.intersection(t_vec.index)
-                if len(common) < 20:
+            for j in range(g_sub.shape[1]):
+                gv = g_sub[:, j]
+                tv = t_sub[:, j]
+                valid = np.isfinite(gv) & np.isfinite(tv)
+                if valid.sum() < 20:
                     continue
-                c = g_vec.loc[common].corr(t_vec.loc[common], method="spearman")
+                gv, tv = gv[valid], tv[valid]
+                rg = _rankdata(gv)
+                rt = _rankdata(tv)
+                c = float(np.corrcoef(rg, rt)[0, 1])
                 if not isnan(c):
                     col_scores.append(c)
             if len(col_scores) >= 3:
@@ -271,10 +276,10 @@ def robust_skill_metric(gate_col: Union[pd.Series, pd.DataFrame], target: Union[
             scan_subset = gate_col[m]
             target_subset = target[m]
             score = scan_subset.corr(target_subset, method="spearman")
-            
+
         if not isnan(score):
             scores.append(score)
-            
+
     if len(scores) == 0:
         return None
     return float(np.median(scores))
@@ -413,6 +418,27 @@ def select_gated_features(
 
         # 6) Add selected feature names
         for t in sorted(chosen):
-            selected.append(f"{interaction}_gt{t}_{window}")
+            feat_name = f"{interaction}_gt{t}_{window}"
+            selected.append(feat_name)
+            
+            # Gate quality diagnostics
+            skill = skill_by_thr.get(t)
+            p = p_by_thr.get(t, 0.0)
+            
+            # Warn on low skill (IC < 0.02)
+            if skill is not None and skill < 0.02:
+                try:
+                    from src.utils.tprint import tprint_warning
+                    tprint_warning(f"⚠️ Gate '{feat_name}' has low skill: IC={skill:.4f}")
+                except ImportError:
+                    pass
+            
+            # Warn on extreme prevalence (< 5% or > 50%)
+            if p < 0.05 or p > 0.50:
+                try:
+                    from src.utils.tprint import tprint_warning
+                    tprint_warning(f"⚠️ Gate '{feat_name}' has extreme prevalence: {p:.2%}")
+                except ImportError:
+                    pass
 
     return selected

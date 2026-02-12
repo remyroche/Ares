@@ -15,7 +15,7 @@ from sklearn.base import clone
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.linear_model import ElasticNet
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import QuantileTransformer, StandardScaler
+from sklearn.preprocessing import QuantileTransformer, RobustScaler, StandardScaler
 from sklearn.utils import check_random_state
 from .utils import tprint, check_inf_nan, clean_dataset
 from .sequential_bootstrap import get_ind_matrix, seq_bootstrap
@@ -207,10 +207,11 @@ def linear_prescreen_enet(
     y: np.ndarray,
     n_select: int,
     multiplier: int = 4,
-    l1_ratio: float = 0.6,
-    alpha_lo: float = 1e-6,
+    l1_ratio: float = 0.2,
+    alpha_lo: float = 0.01,
     alpha_hi: float = 1e1,
     max_iter: int = 5000,
+    tol: float = 1e-3,
     max_steps: int = 25,
     tol_frac: float = 0.15,
     random_state: int = 42,
@@ -222,8 +223,8 @@ def linear_prescreen_enet(
     otherwise the closest solution trimmed by |coef|).
 
     Notes:
-    - Uses signed log transform on y: sign(y) * log1p(|y|)
-    - Standardizes X before ElasticNet (required for meaningful L1/L2 penalties)
+    - Uses RobustScaler on X (handles outlier meta-features better than StandardScaler)
+    - y is used as-is (caller is responsible for any target transform)
     - Searches alpha on a log scale to hit the target sparsity
     """
     if X is None or X.empty:
@@ -231,17 +232,20 @@ def linear_prescreen_enet(
     p = X.shape[1]
     target_keep = int(np.clip(multiplier * int(n_select), 1, p))
 
-    y = np.asarray(y)
-    y_t = np.sign(y) * np.log1p(np.abs(y))
+    y = np.asarray(y, dtype=float)
+    # Scale target to unit variance for stable ElasticNet convergence
+    y_std = float(np.nanstd(y))
+    y_t = y / max(y_std, 1e-9)
 
     def fit_abscoef(alpha: float) -> np.ndarray:
         pipe = Pipeline([
-            ("scaler", StandardScaler(with_mean=True, with_std=True)),
+            ("scaler", RobustScaler()),
             ("enet", ElasticNet(
                 alpha=alpha,
                 l1_ratio=l1_ratio,
                 max_iter=max_iter,
-                random_state=random_state
+                tol=tol,
+                random_state=random_state,
             ))
         ])
         pipe.fit(X, y_t)

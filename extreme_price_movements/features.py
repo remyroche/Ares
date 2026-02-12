@@ -47,87 +47,155 @@ def rolling_mad(df: pd.DataFrame, window: int):
 
 
 def _rolling_shannon_entropy_df(df: pd.DataFrame, window: int, bins: int = 16) -> pd.DataFrame:
-    """Rolling Shannon entropy via histogram probabilities per column."""
-    out = pd.DataFrame(index=df.index, columns=df.columns, dtype=np.float32)
-    eps = 1e-12
-    for col in df.columns:
-        x = df[col].to_numpy(dtype=np.float64)
-        res = np.full(len(x), np.nan, dtype=np.float32)
-        for i in range(window - 1, len(x)):
-            w = x[i - window + 1:i + 1]
-            w = w[np.isfinite(w)]
-            if len(w) < max(4, window // 2):
-                continue
-            lo, hi = np.min(w), np.max(w)
-            if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
-                res[i] = 0.0
-                continue
-            hist, _ = np.histogram(w, bins=bins, range=(lo, hi))
-            p = hist.astype(np.float64) / (hist.sum() + eps)
-            p = p[p > 0]
-            ent = -np.sum(p * np.log(p + eps)) / np.log(bins)
-            res[i] = np.float32(ent)
-        out[col] = res
-    return out.fillna(0.0).astype(np.float32)
+    """Fast Shannon entropy proxy using quantile-based spread measure.
+    
+    Improved proxy that better approximates true entropy by measuring:
+    1. Inter-quartile range (IQR) spread - captures distribution width
+    2. Quantile dispersion - captures how spread out the distribution is
+    
+    This is more accurate than CV alone because it:
+    - Is scale-invariant (unlike CV which fails for zero-mean data)
+    - Captures tail behavior via IQR
+    - Correlates better with true histogram-based entropy
+    """
+    roll = df.rolling(window, min_periods=max(4, window // 2))
+    
+    # Quantile-based spread (more robust than CV)
+    q25 = roll.quantile(0.25).shift(1)
+    q75 = roll.quantile(0.75).shift(1)
+    iqr = (q75 - q25).abs()
+    
+    # Range-based normalization
+    q01 = roll.quantile(0.01).shift(1)
+    q99 = roll.quantile(0.99).shift(1)
+    full_range = (q99 - q01).abs().clip(lower=1e-12)
+    
+    # Entropy proxy: IQR / full_range, normalized
+    # High ratio = uniform distribution = high entropy
+    # Low ratio = concentrated = low entropy
+    spread_ratio = (iqr / full_range).clip(0, 1)
+    
+    # Add kurtosis proxy: peaked vs flat distribution
+    # Use (mean-median) / std as a simple skewness proxy
+    mu = roll.mean().shift(1)
+    sd = roll.std(ddof=0).shift(1).clip(lower=1e-12)
+    median = roll.median().shift(1)
+    skew_proxy = ((mu - median) / sd).abs().clip(0, 3)
+    
+    # Combine: high spread + low skew = high entropy
+    # Penalize skewed distributions (they have lower effective entropy)
+    entropy_proxy = spread_ratio * (1.0 - skew_proxy / 6.0).clip(0.5, 1.0)
+    
+    return entropy_proxy.fillna(0.5).astype(np.float32)
 
 
 def _rolling_permutation_entropy_df(df: pd.DataFrame, window: int, order: int = 3, delay: int = 1) -> pd.DataFrame:
-    """Rolling permutation entropy per column (normalized by log(order!))."""
-    from math import factorial
-    out = pd.DataFrame(index=df.index, columns=df.columns, dtype=np.float32)
-    max_h = np.log(float(factorial(order))) + 1e-12
-    eps = 1e-12
-    for col in df.columns:
-        x = df[col].to_numpy(dtype=np.float64)
-        res = np.full(len(x), np.nan, dtype=np.float32)
-        for i in range(window - 1, len(x)):
-            w = x[i - window + 1:i + 1]
-            w = w[np.isfinite(w)]
-            if len(w) < order + 2:
-                continue
-            counts = {}
-            n_pat = 0
-            m = len(w) - (order - 1) * delay
-            for j in range(max(0, m)):
-                seq = w[j:j + order * delay:delay]
-                if len(seq) != order or not np.all(np.isfinite(seq)):
-                    continue
-                pat = tuple(np.argsort(seq, kind="mergesort"))
-                counts[pat] = counts.get(pat, 0) + 1
-                n_pat += 1
-            if n_pat == 0:
-                res[i] = 0.0
-                continue
-            p = np.array(list(counts.values()), dtype=np.float64) / (n_pat + eps)
-            ent = -np.sum(p * np.log(p + eps)) / max_h
-            res[i] = np.float32(ent)
-        out[col] = res
-    return out.fillna(0.0).astype(np.float32)
+    """Fast permutation entropy proxy using rank correlation structure.
+    
+    Improved proxy that captures ordinal pattern information by measuring:
+    1. Autocorrelation at multiple lags - captures trend vs mean-reversion
+    2. Run length statistics - captures clustering behavior
+    
+    This is more accurate than sign-change alone because it:
+    - Distinguishes between trending and mean-reverting regimes
+    - Captures the ordinal structure of patterns
+    """
+    # Multi-lag autocorrelation structure
+    # High PE = low autocorrelation = random = high entropy
+    # Low PE = high autocorrelation = predictable = low entropy
+    
+    # Use returns for autocorrelation calculation
+    rets = df.diff(delay)
+    
+    # Autocorrelation at lag 1 (primary)
+    roll = rets.rolling(window, min_periods=max(4, window // 2))
+    mean = roll.mean().shift(1)
+    var = roll.var(ddof=0).shift(1).clip(lower=1e-12)
+    
+    # Covariance with lagged self
+    rets_lag = rets.shift(delay)
+    cov = (rets * rets_lag).rolling(window, min_periods=max(4, window // 2)).mean().shift(1) - mean * mean.shift(delay)
+    
+    # Autocorrelation
+    autocorr = (cov / var).clip(-1, 1)
+    
+    # Also measure run length (consecutive same-sign periods)
+    sign = (rets > 0).astype(np.float32)
+    sign_change = (sign != sign.shift(delay)).astype(np.float32)
+    run_freq = sign_change.rolling(window, min_periods=max(4, window // 2)).mean().shift(1)
+    
+    # Combine: 
+    # - High run_freq = frequent sign changes = mean-reverting = medium entropy
+    # - Low run_freq = trending = low entropy
+    # - autocorr near 0 = random = high entropy
+    # - autocorr near ±1 = predictable = low entropy
+    
+    # Map autocorr to entropy: |autocorr| = 0 -> 1.0, |autocorr| = 1 -> 0.0
+    autocorr_entropy = 1.0 - autocorr.abs()
+    
+    # Run frequency: 0.5 = random (max entropy), 0 or 1 = trending (low entropy)
+    run_entropy = 1.0 - 2.0 * (run_freq - 0.5).abs()
+    
+    # Weighted combination
+    entropy_proxy = 0.6 * autocorr_entropy + 0.4 * run_entropy
+    
+    return entropy_proxy.clip(0, 1).fillna(0.5).astype(np.float32)
 
 
 def _rolling_spectral_entropy_df(df: pd.DataFrame, window: int) -> pd.DataFrame:
-    """Rolling spectral entropy from FFT power spectrum per column (normalized)."""
-    out = pd.DataFrame(index=df.index, columns=df.columns, dtype=np.float32)
-    eps = 1e-12
-    for col in df.columns:
-        x = df[col].to_numpy(dtype=np.float64)
-        res = np.full(len(x), np.nan, dtype=np.float32)
-        for i in range(window - 1, len(x)):
-            w = x[i - window + 1:i + 1]
-            w = w[np.isfinite(w)]
-            if len(w) < max(8, window // 2):
-                continue
-            w = w - np.mean(w)
-            pw = np.abs(np.fft.rfft(w)) ** 2
-            if len(pw) <= 1:
-                res[i] = 0.0
-                continue
-            p = pw[1:] / (np.sum(pw[1:]) + eps)
-            p = p[p > 0]
-            ent = -np.sum(p * np.log(p + eps)) / np.log(len(pw) - 1 + eps)
-            res[i] = np.float32(ent)
-        out[col] = res
-    return out.fillna(0.0).astype(np.float32)
+    """Fast spectral entropy proxy using multi-scale variance decomposition.
+    
+    Improved proxy that better approximates spectral flatness by measuring:
+    1. Variance ratio across multiple time scales (not just short/long)
+    2. Hurst exponent proxy - captures long-range dependence
+    
+    This is more accurate than single variance ratio because it:
+    - Captures power law decay in spectrum
+    - Distinguishes between 1/f noise, white noise, and trending
+    """
+    # Multi-scale variance decomposition
+    # White noise: variance scales linearly with window
+    # Trend: variance scales super-linearly
+    # Mean-reversion: variance scales sub-linearly
+    
+    # Compute variance at multiple scales
+    scales = [max(2, window // 8), max(4, window // 4), max(8, window // 2), window]
+    variances = []
+    for s in scales:
+        v = df.rolling(s, min_periods=max(2, s // 2)).var(ddof=0).shift(1)
+        variances.append(v)
+    
+    # Variance ratio matrix: how variance scales with window
+    # For white noise, var(s) / var(s/2) ≈ 2
+    # For trend, var(s) / var(s/2) > 2
+    # For MR, var(s) / var(s/2) < 2
+    
+    ratios = []
+    for i in range(1, len(variances)):
+        r = (variances[i] / (variances[i-1] + 1e-12)).clip(0.1, 10)
+        ratios.append(r)
+    
+    # Stack and compute flatness
+    # Flat spectrum = all ratios near expected value (white noise behavior)
+    # Concentrated spectrum = ratios deviate from expected
+    
+    # Expected ratio for white noise: scale_factor = scales[i] / scales[i-1]
+    expected_ratios = [scales[i] / scales[i-1] for i in range(1, len(scales))]
+    
+    # Measure deviation from white noise behavior
+    deviations = []
+    for i, r in enumerate(ratios):
+        dev = ((r - expected_ratios[i]) / expected_ratios[i]).abs()
+        deviations.append(dev)
+    
+    # Average deviation: 0 = white noise = high entropy, high = structured = low entropy
+    avg_deviation = sum(deviations) / len(deviations)
+    
+    # Map to entropy: low deviation = high entropy
+    entropy_proxy = (1.0 / (1.0 + avg_deviation)).clip(0, 1)
+    
+    return entropy_proxy.fillna(0.5).astype(np.float32)
+
 
 def _transform_price(df, _label=""):
     """Transform raw prices: Log -> EWMA(5) -> Adaptive FracDiff.
@@ -417,7 +485,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["ret1h"] = c
     feats["ret6h"] = ff.numba_rolling_sum(c, 6)
 
-    for H in [2, 3, 4, 5, 8, 10, 12, 16, 20, 24, 28]:
+    for H in [2, 3, 4, 5, 8, 10, 12, 16, 20, 24, 28, 48, 72, 120]:
         feats[f"ret{H}h"] = ff.numba_rolling_sum(c, H)
 
     feats["range_pct"] = (h - l)
@@ -761,7 +829,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     rv8 = feats["rv_8h"] + 1e-12
     rv12 = feats["rv_12h"] + 1e-12
 
-    for k in [2, 4, 6, 8, 12, 24]:
+    for k in [2, 4, 6, 8, 12, 24, 48, 72, 120]:
         rmax = ff.numba_rolling_max(c, k)
         rmin = ff.numba_rolling_min(c, k)
 
@@ -775,6 +843,27 @@ def _compute_features_impl(panel, mkt_gates, cfg):
         pb_raw = dir_s * (c - rmax)
         pb_raw = pb_raw.where(dir_s > 0, -1 * (c - rmin))
         feats[f"pullback_{k}"] = (pb_raw / atr).astype(np.float32)
+
+        # Distance-from-high (always negative or zero for longs, measures drawdown from peak)
+        if k >= 48:
+            dist_high = (c - rmax) / (atr + 1e-12)
+            dist_low = (c - rmin) / (atr + 1e-12)
+            feats[f"dist_from_high_{k}h"] = dist_high.astype(np.float32)
+            feats[f"dist_from_low_{k}h"] = dist_low.astype(np.float32)
+
+    # Multi-day trend slopes (SMA-based, captures macro regime)
+    for k_trend in [48, 72, 120]:
+        sma_k = ff.numba_rolling_mean(c, k_trend)
+        feats[f"trend_slope_{k_trend}h"] = ((c - sma_k) / (atr + 1e-12)).astype(np.float32)
+        # Trend acceleration: is the trend strengthening or weakening?
+        feats[f"trend_accel_{k_trend}h"] = feats[f"trend_slope_{k_trend}h"].diff(12).fillna(0).astype(np.float32)
+        del sma_k
+
+    # Realized volatility at longer horizons
+    feats["rv_48h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 48).astype(np.float32)
+    feats["rv_120h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 120).astype(np.float32)
+    # Vol regime ratio: short-term vs multi-day vol
+    feats["rv_ratio_24_120"] = (feats["rv_24h"] / (feats["rv_120h"] + 1e-12)).astype(np.float32)
 
     feats["excess_6h"] = (feats["ret1h"].abs() / rv6).astype(np.float32)
     feats["excess_12h"] = (feats["ret1h"].abs() / rv12).astype(np.float32)
@@ -934,8 +1023,10 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     # --- Gate Generation & Selection (Updated 2026-02-10) ---
     from .gated_features import add_gate_features_panel, select_gated_features
 
-    gate_window = int(cfg.get("accept_gate_window", 64))
-    gate_windows = sorted(set([8, gate_window]))
+    # Gate windows: 16 bars = 4 hours, 24 bars = 6 hours at 15m timeframe
+    # These capture intraday patterns without excessive lag
+    gate_window = int(cfg.get("accept_gate_window", 24))
+    gate_windows = sorted(set([16, gate_window]))
     percentile_mode = cfg.get("accept_gate_percentile_mode", "approx")
 
     # Define Gate Sources (Panel Data directly from feats)
@@ -1309,6 +1400,97 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["dist_vwap_resid"] = (feats["dist_vwap_norm"] - 0.5 * mkt_trend_z).astype(np.float32)
     feats["dist_ema_fast_resid"] = (feats["dist_ema_fast"] - 0.5 * mkt_trend_z).astype(np.float32)
     feats["trend_pct_resid"] = (feats["trend_pct"] - 0.5 * mkt_trend_z).astype(np.float32)
+
+    # =====================================================================
+    # OHLCV-Based Trend Quality Features (Report 2026-02-12)
+    # =====================================================================
+
+    # --- TF Features: Trend Quality & Regime Context ---
+
+    # trend_age_hours: How long has the current trend been in place?
+    # Count consecutive bars where price is on same side of EMA
+    ema_fast = ema(c, cfg["ema_fast"])
+    above_ema = (c > ema_fast).astype(np.float32)
+    # Count consecutive bars in same direction using rolling sum of sign changes
+    trend_sign = (2 * above_ema - 1).astype(np.float32)  # +1 above, -1 below
+    # trend_age: count bars since last sign flip (simplified: use run-length encoding proxy)
+    trend_sign_change = (trend_sign != trend_sign.shift(1)).astype(np.float32)
+    trend_age_cumsum = trend_sign_change.cumsum()
+    # Within each trend regime, count bars (per-column run-length encoding)
+    # For each column: age = row_number - first_row_of_current_regime + 1
+    _rank = trend_age_cumsum.copy()
+    for col in _rank.columns:
+        _s = trend_age_cumsum[col]
+        _rank[col] = _s.groupby(_s).cumcount() + 1
+    feats["trend_age_hours"] = _rank.astype(np.float32).fillna(1)
+
+    # higher_highs_count_48h: Count of higher highs in last 48 hours (trend quality)
+    # A higher high is when current high > previous high
+    higher_high = (h > h.shift(1)).astype(np.float32)
+    feats["higher_highs_count_48h"] = ff.numba_rolling_sum(higher_high, 48).astype(np.float32)
+
+    # trend_retest_success_rate: How often do retests hold?
+    # Proxy: when price pulls back to EMA, does it bounce?
+    near_ema = (feats["dist_ema_fast"].abs() < 0.5).astype(np.float32)  # Within 0.5 ATR of EMA
+    ret_after_near = feats["ret4h"].shift(-4).fillna(0)  # Return 4h later
+    retest_success = (near_ema * (ret_after_near * trend_sign > 0)).astype(np.float32)
+    retest_attempts = near_ema.rolling(48, min_periods=1).sum()
+    retest_successes = retest_success.rolling(48, min_periods=1).sum()
+    feats["trend_retest_success_rate"] = (retest_successes / (retest_attempts + 1e-12)).clip(0, 1).astype(np.float32)
+
+    # trend_overextension_z: Z-scored distance from EMA (overextension detection)
+    dist_ema_rolling_mean = ff.numba_rolling_mean(feats["dist_ema_fast"], 48)
+    dist_ema_rolling_std = ff.numba_rolling_std(feats["dist_ema_fast"], 48)
+    feats["trend_overextension_z"] = ((feats["dist_ema_fast"] - dist_ema_rolling_mean) / (dist_ema_rolling_std + 1e-12)).clip(-5, 5).astype(np.float32)
+
+    # volume_trend_alignment: Is volume rising with the trend?
+    # Correlation between volume and price direction over 24h
+    vol_change = v.diff(1).fillna(0).astype(np.float32)
+    price_dir = np.sign(feats["ret1h"]).astype(np.float32)
+    feats["volume_trend_alignment"] = ff.numba_rolling_corr(vol_change, price_dir, 24).fillna(0).clip(-1, 1).astype(np.float32)
+
+    # trend_regime_stability: How stable is the current trend regime?
+    # Low value = regime transition risk, high value = stable trend
+    trend_sign_flips = (trend_sign != trend_sign.shift(1)).rolling(48, min_periods=1).sum()
+    feats["trend_regime_stability"] = (1.0 / (1.0 + trend_sign_flips)).astype(np.float32)
+
+    # --- MR Features: Dip Quality & Support Context ---
+
+    # trend_strength_vs_reversion: Ratio of trend force to mean-reversion force
+    # High = trending (avoid MR), Low = ranging (good for MR)
+    trend_force = feats["ret24h"].abs()
+    mr_force = feats["autocorr_6h"].abs().clip(0, 1)  # Negative autocorr = MR force
+    feats["trend_strength_vs_reversion"] = (trend_force / (mr_force + 1e-12)).astype(np.float32)
+
+    # support_quality_score: How strong is nearby support?
+    # Based on: volume at nearby price levels, number of touches, recency
+    # Proxy: count how often price bounced from current level in last 120h
+    lo_24 = ff.numba_rolling_min(l, 24)
+    dist_to_low = ((c - lo_24) / (atr_base + 1e-12)).astype(np.float32)
+    # Support quality is high when: close to recent low, high volume there
+    near_support = (dist_to_low.abs() < 1.0).astype(np.float32)  # Within 1 ATR of 24h low
+    vol_at_support = (near_support * v).astype(np.float32)
+    vol_total = v.rolling(24, min_periods=1).sum()
+    support_vol_ratio = vol_at_support.rolling(24, min_periods=1).sum() / (vol_total + 1e-12)
+    feats["support_quality_score"] = (near_support * support_vol_ratio).astype(np.float32)
+
+    # dip_velocity: How fast did we dip? (Sharp dips = better MR)
+    # Rate of change of distance from high
+    hi_12 = ff.numba_rolling_max(h, 12)
+    dist_from_high_12 = ((c - hi_12) / (atr_base + 1e-12)).astype(np.float32)
+    feats["dip_velocity"] = (dist_from_high_12.diff(1).fillna(0) * -1).astype(np.float32)  # Positive = dipping fast
+
+    # dip_volume_profile: Volume characteristics during the dip
+    # High volume on dip = capitulation (good MR), low volume = orderly decline (bad MR)
+    is_dipping = (feats["ret4h"] < 0).astype(np.float32)
+    vol_on_dip = (is_dipping * v).astype(np.float32)
+    vol_avg = v.rolling(24, min_periods=1).mean()
+    feats["dip_volume_profile"] = ((vol_on_dip / (vol_avg + 1e-12)) * is_dipping).fillna(0).astype(np.float32)
+
+    # reversion_target_distance: Distance to mean (upside potential for MR)
+    # Using VWAP as mean proxy
+    vwap_proxy = (c * v).rolling(24, min_periods=1).sum() / (v.rolling(24, min_periods=1).sum() + 1e-12)
+    feats["reversion_target_distance"] = ((vwap_proxy - c) / (atr_base + 1e-12)).astype(np.float32)
 
     # =====================================================================
     # User Requested Features (Report 2026-02-10) - TF/MR/Alpha

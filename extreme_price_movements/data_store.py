@@ -470,7 +470,17 @@ def load_features(ts: pd.Timestamp, root_dir: str) -> dict:
     in_dir = os.path.join(root_dir, "features", ts_str)
     
     if not os.path.exists(in_dir):
-        return None
+        # Fallback: find most recent feature directory
+        feat_root = os.path.join(root_dir, "features")
+        if os.path.exists(feat_root):
+            dirs = sorted([d for d in os.listdir(feat_root) if os.path.isdir(os.path.join(feat_root, d)) and not d.startswith(".")], reverse=True)
+            if dirs:
+                in_dir = os.path.join(feat_root, dirs[0])
+                tprint(f"Exact ts {ts_str} not found, falling back to most recent: {dirs[0]}")
+            else:
+                return None
+        else:
+            return None
         
     files = glob.glob(os.path.join(in_dir, "symbol=*.parquet"))
     if not files:
@@ -587,9 +597,20 @@ def save_artifact_df(df: pd.DataFrame, root_dir: str, run_id: str, category: str
 def load_artifact_df(root_dir: str, run_id: str, category: str, name: str) -> pd.DataFrame:
     """
     Load an artifact DataFrame. Returns None if not found.
+    Falls back to the most recent artifact directory if exact run_id not found.
     """
     fpath = os.path.join(root_dir, "artifacts", run_id, category, f"{name}.parquet")
     if os.path.exists(fpath):
         tprint(f"Loading artifact: {fpath}")
         return pd.read_parquet(fpath)
+
+    # Fallback: find most recent artifact dir containing this category/name
+    art_root = os.path.join(root_dir, "artifacts")
+    if os.path.exists(art_root):
+        dirs = sorted([d for d in os.listdir(art_root) if os.path.isdir(os.path.join(art_root, d)) and not d.startswith(".")], reverse=True)
+        for d in dirs:
+            alt = os.path.join(art_root, d, category, f"{name}.parquet")
+            if os.path.exists(alt):
+                tprint(f"Artifact {run_id}/{category}/{name} not found, falling back to {d}")
+                return pd.read_parquet(alt)
     return None

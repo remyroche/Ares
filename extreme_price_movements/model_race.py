@@ -199,11 +199,11 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         xgb_params = {
             "n_estimators": 5 if race_mode else 10,  # Increase from 3/5
             "num_parallel_tree": 150 if race_mode else 400,
-            "max_depth": 5,  # Increased from 4 for better separation
+            "max_depth": 5,
             "learning_rate": 0.05,
-            "reg_lambda": 5.0,              # L2 (default=1 is often too weak)
-            "reg_alpha": 0.0,               # keep 0 initially
-            "min_child_weight": 20,
+            "reg_lambda": 15.0,
+            "reg_alpha": 0.0,
+            "min_child_weight": 40,
             "tree_method": "hist",
             "gamma": 1.0,                   
             "subsample": 0.8,
@@ -219,13 +219,13 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         # 3. LightGBM
         lgb_params = {
             "n_estimators": 300 if race_mode else 1000,  # Increase from 200/800
-            "max_depth": 6,  # Increased from 4 for better separation
+            "max_depth": 6,
             "learning_rate": 0.05,
             "subsample": 0.8,
             "feature_fraction": 0.8,
             "bagging_fraction": 0.8,
             "bagging_freq": 1,
-            "lambda_l2": 5.0,
+            "lambda_l2": 15.0,
             "lambda_l1": 0.0,
             "colsample_bytree": 0.8,
             "n_jobs": -1,
@@ -241,10 +241,10 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         # 4. CatBoost
         cb_params = {
             "iterations": 200 if race_mode else 800,
-            "l2_leaf_reg": 10.0,        
-            "random_strength": 1.0,     
-            "bagging_temperature": 1.0,         
-            "depth": 5,  # Increased from 4 for better separation
+            "l2_leaf_reg": 20.0,
+            "random_strength": 1.0,
+            "bagging_temperature": 1.0,
+            "depth": 5,
             "learning_rate": 0.05,
             "verbose": 0,
             "thread_count": -1,
@@ -362,8 +362,9 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
         # --- Dynamic Regularization (User Requested) ---
         n_samples = len(y)
-        min_leaf_dyn = max(75, int(n_samples / 50))
-        tprint(f"ModelRace: Dynamic min_samples_leaf set to {min_leaf_dyn} (n={n_samples})")
+        min_leaf_dyn = max(75, int(n_samples * 0.01))
+        min_cw_dyn = max(75, int(n_samples * 0.01 * 0.25))  # XGB hessian ~ 0.25 * count
+        tprint(f"ModelRace: Dynamic min_samples_leaf={min_leaf_dyn}, min_child_weight={min_cw_dyn} (n={n_samples}, 1.0%)")
 
         def safe_slice(arr, idx):
             if hasattr(arr, "iloc"): return arr.iloc[idx]
@@ -387,9 +388,9 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             # LightGBM alias
             if "min_child_samples" in inner.get_params():
                 inner.set_params(min_child_samples=min_leaf_dyn)
-            # XGBoost (approximate mapping: hessian ~ 0.25 * count)
+            # XGBoost (hessian-based: use dedicated min_cw_dyn)
             if "min_child_weight" in inner.get_params():
-                 inner.set_params(min_child_weight=max(1, int(min_leaf_dyn / 4)))
+                 inner.set_params(min_child_weight=min_cw_dyn)
 
             tprint(f"Race: Training {name}...")
             fold_scores = []
@@ -439,19 +440,19 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     # Predict raw (biased) probabilities on validation
                     probs_raw = model_clone.predict_proba(X_val)[:, 1]
                     
-                    # --- In-Fold Platt Scaling (User Requested) ---
-                    # Maps raw score (which might be overconfident/biased) to well-calibrated prob
-                    # using Logistic Regression on logits.
-                    p_clip = np.clip(probs_raw, 1e-6, 1 - 1e-6)
-                    logits_raw = logit(p_clip).reshape(-1, 1)
-
-                    try:
-                        # High C (100) to allow fitting the curve without over-regularizing the scaler itself
-                        platt = LogisticRegression(C=100.0, solver='lbfgs', random_state=42)
-                        platt.fit(logits_raw, y_val_fit)
-                        probs = platt.predict_proba(logits_raw)[:, 1]
-                    except Exception:
-                        # Fallback if single-class in validation or convergence fail
+                    # --- Prior Correction (replaces in-fold Platt scaling) ---
+                    # Tree models with scale_pos_weight / class_weight shift raw
+                    # probabilities away from the true prevalence.  We correct by
+                    # mapping the model's mean prediction back to the training
+                    # prevalence using a logit-space shift (equivalent to adjusting
+                    # the intercept of a Platt scaler without fitting on val data).
+                    p_train = float(np.mean(y_tr_fit))
+                    p_model = float(np.clip(np.mean(probs_raw), 1e-7, 1 - 1e-7))
+                    if abs(p_model - p_train) > 0.01:
+                        # Shift in logit space: logit(p_corrected) = logit(p_raw) + delta
+                        delta = logit(np.clip(p_train, 1e-7, 1 - 1e-7)) - logit(p_model)
+                        probs = expit(logit(np.clip(probs_raw, 1e-7, 1 - 1e-7)) + delta)
+                    else:
                         probs = probs_raw
 
                     oof_model[val_idx] = probs
@@ -765,13 +766,13 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             # Re-calibrate the stored OOF probs
             calibrated_oof = self.calibrator_.predict(oof_probs).astype(np.float32)
             
+            from sklearn.metrics import brier_score_loss
+            from sklearn.linear_model import LogisticRegression
             raw_brier = brier_score_loss(y_hard, np.clip(oof_probs, 1e-7, 1-1e-7))
             cal_brier = brier_score_loss(y_hard, np.clip(calibrated_oof, 1e-7, 1-1e-7))
             tprint(f"Isotonic calibration: Brier raw={raw_brier:.4f} -> calibrated={cal_brier:.4f}")
             
             # Optional Platt scaling: only apply if it improves Brier score
-            from sklearn.linear_model import LogisticRegression
-            from sklearn.metrics import brier_score_loss
             platt_calibrator = LogisticRegression(random_state=42, max_iter=1000)
             platt_calibrator.fit(calibrated_oof.reshape(-1, 1), y_hard)
             platt_calibrated = platt_calibrator.predict_proba(calibrated_oof.reshape(-1, 1))[:, 1]
@@ -805,10 +806,18 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         # 3. Final Retraining (raw model, no calibration wrapper)
         # Calibration is harmful with small n and uncalibrated objectives.
         # Output is treated as rank score by downstream (engine, backtest).
-        if detailed_metrics:
-             best_name = max(detailed_metrics.items(), key=lambda x: x[1]['rank_score'])[0]
-             self.best_model_name = best_name
-             self.best_model = candidates[best_name]
+        # NOTE: Winner already selected above (lines 670-692) using gate-aware logic:
+        #       - Primary: most gates passed
+        #       - Tie-breaker: rank_score
+        # Do NOT re-select here - use existing self.best_model_name
+        if self.best_model_name and self.best_model_name in candidates:
+             self.best_model = candidates[self.best_model_name]
+        else:
+             # Fallback should never happen, but log if it does
+             tprint(f"WARNING: best_model_name '{self.best_model_name}' not in candidates, falling back to rank_score selection")
+             if detailed_metrics:
+                  self.best_model_name = max(detailed_metrics.items(), key=lambda x: x[1]['rank_score'])[0]
+                  self.best_model = candidates[self.best_model_name]
 
         tprint(f"Retraining {self.best_model_name} on full data (full config)...")
         final_candidates = self._get_candidates(race_mode=False)

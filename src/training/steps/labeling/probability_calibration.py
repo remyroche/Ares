@@ -665,6 +665,37 @@ def validate_monotonicity(
     total_comparisons = max(len(valid_bins) - 1, 1)
     monotonicity_score = 1.0 - (violations / total_comparisons)
     
+    # Diagnostic output for low monotonicity
+    if monotonicity_score < 0.5:
+        try:
+            from src.utils.tprint import tprint_warning
+            bin_returns = [f"{s['mean_return']:.6f}" for s in valid_bins]
+            bin_probs = [f"{s['mean_prob']:.3f}" for s in valid_bins]
+            bin_counts = [str(s['count']) for s in valid_bins]
+            tprint_warning(
+                f"⚠️ Low monotonicity ({monotonicity_score:.2f}, {violations}/{total_comparisons} violations). "
+                f"Bin returns: [{', '.join(bin_returns)}]"
+            )
+            tprint_warning(
+                f"   Bin probs: [{', '.join(bin_probs)}] | Counts: [{', '.join(bin_counts)}]"
+            )
+            # Check for inverted relationship (all returns decreasing)
+            if len(valid_bins) >= 3:
+                returns_increasing = sum(
+                    1 for i in range(len(valid_bins) - 1) 
+                    if valid_bins[i + 1]["mean_return"] > valid_bins[i]["mean_return"]
+                )
+                if returns_increasing == 0:
+                    tprint_warning(
+                        "   🔴 CRITICAL: All bin returns are DECREASING with probability - model may be anti-predictive or labels inverted!"
+                    )
+                elif returns_increasing <= len(valid_bins) // 3:
+                    tprint_warning(
+                        "   🟡 WARNING: Most bin returns decrease with probability - check calibration or label construction"
+                    )
+        except ImportError:
+            pass  # tprint not available
+    
     # Calculate slope in high-probability region (top 3 bins)
     high_prob_bins = [s for s in bin_stats[-3:] if not np.isnan(s["mean_return"])]
     if len(high_prob_bins) >= 2:

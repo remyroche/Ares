@@ -53,8 +53,9 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex):
 
     feats = load_features(ts_sig, cfg["data_root"])
     if feats is None:
-        tprint("ERROR: Features not found. Run feature_generation first.")
-        return
+        tprint("Features not found on disk. Computing inline...")
+        feats = compute_features_hourly(panel, mkt_gates, cfg)
+        tprint(f"Inline feature computation done: {len(feats)} features")
 
     # Restrict to symbols present in both panel and features
     sample_feat = next(iter(feats.values()))
@@ -200,12 +201,44 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None, stage="all")
             state_dir = os.path.join(cfg["data_root"], "artifacts", run_id, "models")
             base_state_path = os.path.join(state_dir, "trained_state_base.pkl")
             if not os.path.exists(base_state_path):
-                tprint(f"ERROR: Base state not found at {base_state_path}. Run train_base first.")
-                return None
+                # Fallback: search previous artifact directories for base state
+                artifacts_root = os.path.join(cfg["data_root"], "artifacts")
+                prev_dirs = sorted(
+                    [d for d in os.listdir(artifacts_root)
+                     if os.path.isdir(os.path.join(artifacts_root, d)) and d != run_id],
+                    reverse=True
+                )
+                found = False
+                for prev_id in prev_dirs:
+                    candidate = os.path.join(artifacts_root, prev_id, "models", "trained_state_base.pkl")
+                    if os.path.exists(candidate):
+                        tprint(f"Base state not in {run_id}, falling back to {prev_id}")
+                        base_state_path = candidate
+                        state_dir = os.path.join(artifacts_root, prev_id, "models")
+                        found = True
+                        break
+                if not found:
+                    tprint(f"ERROR: Base state not found at {base_state_path} or any previous run. Run train_base first.")
+                    return None
 
             # Fast path: try loading OOF from parquet files first
             oof_dir = os.path.join(cfg["data_root"], "artifacts", run_id, "oof")
             _oof_parquets_found = os.path.isdir(oof_dir) and len([f for f in os.listdir(oof_dir) if f.endswith(".parquet")]) > 0
+
+            if not _oof_parquets_found:
+                # Fallback: search previous artifact directories for OOF parquets
+                artifacts_root = os.path.join(cfg["data_root"], "artifacts")
+                for prev_id in sorted(
+                    [d for d in os.listdir(artifacts_root)
+                     if os.path.isdir(os.path.join(artifacts_root, d)) and d != run_id],
+                    reverse=True
+                ):
+                    candidate_oof = os.path.join(artifacts_root, prev_id, "oof")
+                    if os.path.isdir(candidate_oof) and any(f.endswith(".parquet") for f in os.listdir(candidate_oof)):
+                        tprint(f"OOF parquets not in {run_id}, falling back to {prev_id}")
+                        oof_dir = candidate_oof
+                        _oof_parquets_found = True
+                        break
 
             if _oof_parquets_found:
                 tprint(f"Loading OOF predictions from parquet (fast path): {oof_dir}")
@@ -251,12 +284,17 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None, stage="all")
                         _k_v.pop("_best_oof", None)
             else:
                 tprint("No OOF parquet files found; loading full pickle (slow path)...")
+                tprint(f"  Loading base state from {base_state_path} ({os.path.getsize(base_state_path) / 1e6:.1f} MB)...")
                 with open(base_state_path, "rb") as f:
                     base_state = pickle.load(f)
+                tprint("  Base state loaded.")
                 base_bundle = base_state.get("bundle", {})
                 alpha_models = base_bundle.get("alpha_models", {})
+                del base_state  # free memory
 
+            tprint(f"Starting meta model training ({len(datasets)} datasets, {sum(len(v.get('models_by_h', {})) for s in alpha_models.values() for v in s.values())} alpha horizons)...")
             meta_models, meta_gate_results = train_meta_models_from_artifacts(datasets, cfg, alpha_models)
+            tprint(f"Meta model training complete: {len(meta_models)} meta models fitted.")
 
             # Save meta models as standalone lightweight pickle (no base pickle load needed)
             meta_only_path = os.path.join(state_dir, "trained_state_meta_only.pkl")
@@ -319,6 +357,23 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None, stage="all")
         from extreme_price_movements.model_race import ModelRace
         native_dir = os.path.join(state_dir, "native")
         base_state_path = os.path.join(state_dir, "trained_state_base.pkl")
+
+        # Fallback: if neither native dir nor base pkl exist in current run_id, search previous
+        if not os.path.isdir(native_dir) and not os.path.exists(base_state_path):
+            artifacts_root = os.path.join(cfg["data_root"], "artifacts")
+            for prev_id in sorted(
+                [d for d in os.listdir(artifacts_root)
+                 if os.path.isdir(os.path.join(artifacts_root, d)) and d != run_id],
+                reverse=True
+            ):
+                prev_state_dir = os.path.join(artifacts_root, prev_id, "models")
+                prev_native = os.path.join(prev_state_dir, "native")
+                prev_pkl = os.path.join(prev_state_dir, "trained_state_base.pkl")
+                if os.path.isdir(prev_native) or os.path.exists(prev_pkl):
+                    tprint(f"State assembly: models not in {run_id}, falling back to {prev_id}")
+                    native_dir = prev_native
+                    base_state_path = prev_pkl
+                    break
 
         if os.path.isdir(native_dir):
             # Fast path: load models from native format

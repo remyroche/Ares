@@ -8,7 +8,7 @@ from .feature_selection_extreme_events import mdi_feature_selection_v3
 from .candidates import select_trade_candidates_hourly, select_trade_candidates_vectorized
 import extreme_price_movements.fast_funcs as ff
 from .labeling import compute_trailing_atr_labels, compute_triple_barrier_labels
-from .sample_weights import build_label_time_ranges, compute_sample_weights_with_uniqueness
+from .sample_weights import build_label_time_ranges, compute_sample_weights_with_uniqueness, compute_mfe_mae_weights
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import roc_auc_score
 from scipy.stats import spearmanr
@@ -436,17 +436,16 @@ class AlphaHorizonEnsemble:
 
 
 
-def compute_meta_target(ret1: np.ndarray, ret2: np.ndarray, ret4: np.ndarray, ret6: np.ndarray, groups=None) -> np.ndarray:
+def compute_meta_target(ret2: np.ndarray, ret4: np.ndarray, ret8: np.ndarray, groups=None) -> np.ndarray:
     """Build a global meta target as a weighted average of per-horizon log-returns.
 
     Target is global across opportunities (time+assets), with earlier horizons
-    weighted more heavily: [0.3, 0.3, 0.2, 0.2] for [t+1, t+2, t+4, t+6].
+    weighted more heavily: [0.40, 0.35, 0.25] for [H2, H4, H8].
     The `groups` argument is kept for backward compatibility but intentionally ignored.
     """
 
     def _log1p_ret(x: np.ndarray) -> np.ndarray:
         v = np.asarray(x, dtype=float)
-        # Keep log1p numerically safe for edge cases below -100%.
         v = np.clip(v, -0.999999, None)
         out = np.log1p(v)
         if not np.all(np.isfinite(out)):
@@ -458,11 +457,10 @@ def compute_meta_target(ret1: np.ndarray, ret2: np.ndarray, ret4: np.ndarray, re
                 out = np.zeros_like(out, dtype=float)
         return out.astype(np.float32)
 
-    r1 = _log1p_ret(ret1)
     r2 = _log1p_ret(ret2)
     r4 = _log1p_ret(ret4)
-    r6 = _log1p_ret(ret6)
-    return (0.3 * r1 + 0.3 * r2 + 0.2 * r4 + 0.2 * r6).astype(np.float32)
+    r8 = _log1p_ret(ret8)
+    return (0.40 * r2 + 0.35 * r4 + 0.25 * r8).astype(np.float32)
 
 
 def build_horizon_prediction_features(conf: dict, X_eval: pd.DataFrame) -> pd.DataFrame:
@@ -1198,23 +1196,10 @@ def build_hourly_training_set_and_weights(
     ret_vals = _fast_lookup(tb_returns, entry_ts, event_sym)
 
     # PnL computation
-    if label_method == "triple_barrier":
-        pnl = ret_vals
-    else:
-        if "trend_pct" in feats:
-            tv = _fast_lookup(feats["trend_pct"], event_ts, event_sym)
-            tv = np.nan_to_num(tv, nan=0.0)
-        else:
-            tv = np.ones(len(event_ts), dtype=np.float32)
-        td = np.sign(tv)
-        td[td == 0] = 1.0
-        if model_kind == "tf":
-            trade_dir = td
-        elif model_kind == "mr":
-            trade_dir = -td
-        else:
-            trade_dir = np.ones(len(event_ts))
-        pnl = ret_vals * trade_dir
+    # For triple_barrier: ret_vals already encodes the correct directional return
+    # (long returns for side="long", short returns for side="short").
+    # No trade_dir adjustment needed — the side is baked into the barrier labels.
+    pnl = ret_vals
 
     # Quantile-based labels + weighting.
     q_lo = float(cfg.get("label_quantile_lo", 0.30))
@@ -1302,6 +1287,50 @@ def build_hourly_training_set_and_weights(
     pa = np.abs(np.nan_to_num(_fast_lookup(feats["ret24h"], event_ts, event_sym), nan=0.0))
     w_base = np.log1p(pa)
     w_base = w_base * w_quant
+
+    # MFE/MAE-based weighting (Report 2026-02-12)
+    # Weight by how "decisive" the price movement was relative to barriers
+    # r_mfe = MFE/TP, r_mae = MAE/SL, d = max(r_mfe, r_mae)
+    # w_mfe_mae = w_min + (1-w_min) * clip(d/tau, 0, 1)
+    # This weights samples by excursion quality, not speed or net R:R
+    
+    # Get MFE/MAE from features (already computed in features.py)
+    if "mfe_4h" in feats:
+        mfe_vals = np.nan_to_num(_fast_lookup(feats["mfe_4h"], event_ts, event_sym), nan=0.0)
+    else:
+        mfe_vals = np.maximum(pnl, 0.0)
+    if "mae_4h" in feats:
+        mae_vals = np.nan_to_num(_fast_lookup(feats["mae_4h"], event_ts, event_sym), nan=0.0)
+    else:
+        mae_vals = np.maximum(-pnl, 0.0)
+    
+    # Get barrier distances (TP/SL) from ATR
+    if "atr_pct" in feats:
+        barrier_vals = np.nan_to_num(_fast_lookup(feats["atr_pct"], event_ts, event_sym), nan=0.02)
+    else:
+        barrier_vals = np.full(len(event_ts), 0.02, dtype=np.float32)
+    tp_vals = np.clip(np.abs(barrier_vals), 1e-4, None)
+    sl_vals = np.clip(0.5 * tp_vals, 1e-4, None)
+    
+    # Timeout detection: lbl_vals == 0 means timeout
+    is_timeout = (lbl_vals == 0)
+    
+    # Compute MFE/MAE weights
+    w_mfe_mae = compute_mfe_mae_weights(
+        mfe=mfe_vals,
+        mae=mae_vals,
+        tp=tp_vals,
+        sl=sl_vals,
+        is_timeout=is_timeout,
+        touch_margin=None,  # Not available in training data
+        w_min=float(cfg.get("mfe_mae_w_min", 0.5)),
+        tau=float(cfg.get("mfe_mae_tau", 1.0)),
+        cost_floor=float(cfg.get("mfe_mae_cost_floor", 0.001))
+    )
+    
+    # Multiply into base weight (before normalization)
+    w_base = w_base * w_mfe_mae
+    tprint(f"MFE/MAE weighting: mean={w_mfe_mae.mean():.3f}, p10={np.quantile(w_mfe_mae, 0.10):.3f}, p90={np.quantile(w_mfe_mae, 0.90):.3f}")
 
     # Mild class-balance multiplier (inverse-freq with sqrt exponent + hard cap)
     p_pos = float(np.mean(y_bin)) if len(y_bin) else 0.5
@@ -1626,8 +1655,14 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
 
     if "atr_pct" in feats:
         atr_pct_df = feats["atr_pct"]
-        atr_scale_df, atr_ref = _compute_atr_scale(atr_pct_df, cfg)
-        tprint(f"ATR normalization: atr_ref={atr_ref:.6f}, scale_mean={float(np.nanmean(atr_scale_df.values)):.4f}")
+        # Adaptive vol-scaling: TP/SL scale with realized volatility
+        # atr_pct / rolling_median(atr_pct, 30d) → low-vol periods get tighter barriers
+        atr_median_30d = atr_pct_df.rolling(24 * 30, min_periods=24).median()
+        atr_scale_df = np.clip(atr_pct_df / (atr_median_30d + 1e-12), 0.7, 2.0).astype(np.float32)
+        atr_ref = float(np.nanmedian(atr_median_30d.values))
+        tprint(f"Adaptive vol-scaling: atr_ref_median={atr_ref:.6f}, scale_mean={float(np.nanmean(atr_scale_df.values)):.4f}, "
+               f"scale_p10={float(np.nanpercentile(atr_scale_df.values, 10)):.3f}, "
+               f"scale_p90={float(np.nanpercentile(atr_scale_df.values, 90)):.3f}")
     else:
         atr_pct_df = None
         atr_scale_df = None
@@ -1662,20 +1697,39 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
                     to_rate = float((lbl.values == 0).sum()) / max(1, lbl.size)
                     if tp_hit < min_tp_hit or to_rate > max_timeout:
                         continue
-                    geom_runs.append((lbl, ret, tpv, slv))
+                    rr_weight = float(np.clip(net_rr / 1.2, 0.0, 1.0))
+                    geom_runs.append((lbl, ret, tpv, slv, rr_weight))
 
             if not geom_runs:
                 tprint(f"No valid geometry for H={H} side={side}; using fallback.")
                 lbl, ret = compute_triple_barrier_labels(panel, 0.05, 0.01, H, side=side)
-                geom_runs = [(lbl, ret, 0.05, 0.01)]
+                geom_runs = [(lbl, ret, 0.05, 0.01, 1.0)]
 
             labels_stack = np.stack([x[0].values for x in geom_runs], axis=0)
             rets_stack = np.stack([x[1].values for x in geom_runs], axis=0)
-            n_tp_df = pd.DataFrame(np.sum(labels_stack == 1, axis=0), index=panel["close"].index, columns=panel["close"].columns)
-            n_sl_df = pd.DataFrame(np.sum(labels_stack == -1, axis=0), index=panel["close"].index, columns=panel["close"].columns)
-            n_to_df = pd.DataFrame(np.sum(labels_stack == 0, axis=0), index=panel["close"].index, columns=panel["close"].columns)
+            rr_weights_raw = np.array([x[4] for x in geom_runs], dtype=np.float32)
 
-            agg_ret = np.nanmean(rets_stack, axis=0)
+            # Mild RR weighting: sqrt to compress range, then normalize to unit mean
+            # e.g. raw [0.75, 0.83, 1.0] → sqrt [0.87, 0.91, 1.0] → normalized [0.93, 0.98, 1.07]
+            # This preserves n_eff while mildly favoring high-RR geometries
+            rr_weights = np.sqrt(rr_weights_raw)
+            rr_weights = rr_weights / (rr_weights.mean() + 1e-12)  # normalize to unit mean
+
+            # RR-weighted vote: each geometry's TP/SL/TO counts are scaled by its RR quality
+            w_tp = np.zeros_like(labels_stack[0], dtype=np.float32)
+            w_sl = np.zeros_like(labels_stack[0], dtype=np.float32)
+            w_to = np.zeros_like(labels_stack[0], dtype=np.float32)
+            for gi in range(len(geom_runs)):
+                w_tp += rr_weights[gi] * (labels_stack[gi] == 1).astype(np.float32)
+                w_sl += rr_weights[gi] * (labels_stack[gi] == -1).astype(np.float32)
+                w_to += rr_weights[gi] * (labels_stack[gi] == 0).astype(np.float32)
+            n_tp_df = pd.DataFrame(w_tp, index=panel["close"].index, columns=panel["close"].columns)
+            n_sl_df = pd.DataFrame(w_sl, index=panel["close"].index, columns=panel["close"].columns)
+            n_to_df = pd.DataFrame(w_to, index=panel["close"].index, columns=panel["close"].columns)
+
+            # RR-weighted return average
+            w_sum = rr_weights.sum()
+            agg_ret = np.average(rets_stack, axis=0, weights=rr_weights) if w_sum > 0 else np.nanmean(rets_stack, axis=0)
             agg_lbl = np.where(n_tp_df.values > n_sl_df.values, 1, np.where(n_sl_df.values > n_tp_df.values, -1, 0)).astype(np.int8)
             tb_labels = pd.DataFrame(agg_lbl, index=panel["close"].index, columns=panel["close"].columns)
             tb_returns = pd.DataFrame(agg_ret, index=panel["close"].index, columns=panel["close"].columns)
@@ -1910,6 +1964,9 @@ def _compute_and_print_meta_metrics(y_true, y_pred, name, groups=None, y_raw_ret
 
 def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
     """Train only meta models from datasets and pre-trained alpha models."""
+    import time as _time
+    _t0_meta = _time.monotonic()
+    tprint("train_meta_models_from_artifacts: starting")
     trade_sides = ["long", "short"]
     kinds = ["mr", "tf"]
     meta_models = {}
@@ -1954,7 +2011,7 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                 if horizon_skip_reasons:
                     tprint(f"  Horizon availability diagnostics: {horizon_skip_reasons}")
                 continue
-            tprint(f"Meta {side}_{k}: {len(horizon_dfs)} horizons available: {sorted(horizon_dfs.keys())}")
+            tprint(f"Meta {side}_{k}: {len(horizon_dfs)} horizons available: {sorted(horizon_dfs.keys())} ({_time.monotonic()-_t0_meta:.1f}s)")
             if horizon_skip_reasons:
                 tprint(f"  Horizons excluded: {horizon_skip_reasons}")
 
@@ -1963,6 +2020,7 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             df_base = horizon_dfs[base_H][0]
 
             # Build (ts, symbol) index for union + diagnostics
+            tprint(f"  Building union key index ({len(df_base)} base rows)...")
             if "__ts__" in df_base.columns and "__symbol__" in df_base.columns:
                 base_keys = list(zip(df_base["__ts__"].values, df_base["__symbol__"].values))
                 union_keys = []
@@ -2030,6 +2088,7 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                         df = pd.concat([df, df_extra], axis=0, ignore_index=True)
 
                 df = df.reset_index(drop=True)
+                tprint(f"  Union dataset built: {len(df)} rows ({_time.monotonic()-_t0_meta:.1f}s)")
             else:
                 # Fallback: use min-length truncation
                 min_len = min(len(df_h) for df_h, _ in horizon_dfs.values())
@@ -2043,6 +2102,7 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                 continue
 
             # Build OOF predictions for each horizon, aligned to common samples
+            tprint(f"  Aligning OOF predictions across horizons...")
             pred_h = pd.DataFrame(index=df.index)
             p_oof_avg_parts = []
             for h in sorted(horizon_dfs.keys()):
@@ -2064,6 +2124,7 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             p_oof = np.mean(p_oof_avg_parts, axis=0)
             y_ret = df["__y_ret__"].values
 
+            tprint(f"  OOF alignment done ({_time.monotonic()-_t0_meta:.1f}s). Building meta features...")
             configured_meta = cfg.get("meta_feature_keys", [])
             raw_prefix = "__meta_raw__"
             feat_cols = [mk for mk in configured_meta if f"{raw_prefix}{mk}" in df.columns]
@@ -2075,44 +2136,50 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             X_feats = pd.DataFrame(index=df.index)
             for mk in feat_cols:
                 X_feats[mk] = df[f"{raw_prefix}{mk}"].values
-            X_feats = X_feats.fillna(0.0)
+            X_feats = X_feats.fillna(0.0).astype(np.float32)
 
             # Build y_target from per-horizon returns (aligned to common samples)
+            # Pre-build common keys once to avoid redundant list(zip()) per horizon
+            _has_keys = "__ts__" in df.columns and "__symbol__" in df.columns
+            if _has_keys:
+                _common_keys = list(zip(df["__ts__"].values, df["__symbol__"].values))
+            _h_lookup_cache = {}
+
             def _ret_for_h_aligned(h):
                 ds_key = f"train_{side}_{k}_{h}"
-                if ds_key in datasets:
-                    df_h = datasets[ds_key]
-                    if "__ts__" in df_h.columns and "__symbol__" in df_h.columns:
-                        h_keys = list(zip(df_h["__ts__"].values, df_h["__symbol__"].values))
-                        h_lookup = {kk: i for i, kk in enumerate(h_keys)}
-                        common_keys = list(zip(df["__ts__"].values, df["__symbol__"].values))
-                        h_idx = np.array([h_lookup.get(ck, -1) for ck in common_keys])
-                        valid = h_idx >= 0
-                        ret = np.zeros(len(df), dtype=np.float32)
-                        ret[valid] = df_h["__y_ret__"].values[h_idx[valid]].astype(np.float32)
-                        if valid.any():
-                            return ret
-                if h in horizon_dfs:
-                    df_h, _ = horizon_dfs[h]
-                    if "__ts__" in df_h.columns and "__symbol__" in df_h.columns:
-                        h_keys = list(zip(df_h["__ts__"].values, df_h["__symbol__"].values))
-                        h_lookup = {kk: i for i, kk in enumerate(h_keys)}
-                        common_keys = list(zip(df["__ts__"].values, df["__symbol__"].values))
-                        h_idx = np.array([h_lookup.get(ck, -1) for ck in common_keys])
-                        valid = h_idx >= 0
-                        ret = np.zeros(len(df), dtype=np.float32)
-                        ret[valid] = df_h["__y_ret__"].values[h_idx[valid]].astype(np.float32)
-                        if valid.any():
-                            return ret
+                for source_df in [datasets.get(ds_key), horizon_dfs.get(h, (None,))[0]]:
+                    if source_df is None:
+                        continue
+                    if not (_has_keys and "__ts__" in source_df.columns and "__symbol__" in source_df.columns):
+                        continue
+                    cache_id = id(source_df)
+                    if cache_id not in _h_lookup_cache:
+                        _h_lookup_cache[cache_id] = {
+                            kk: i for i, kk in enumerate(
+                                zip(source_df["__ts__"].values, source_df["__symbol__"].values)
+                            )
+                        }
+                    h_lookup = _h_lookup_cache[cache_id]
+                    h_idx = np.array([h_lookup.get(ck, -1) for ck in _common_keys])
+                    valid = h_idx >= 0
+                    if not valid.any():
+                        continue
+                    ret = np.zeros(len(df), dtype=np.float32)
+                    ret[valid] = source_df["__y_ret__"].values[h_idx[valid]].astype(np.float32)
+                    return ret
                 return y_ret.astype(np.float32)
 
+            tprint(f"  Computing meta target ({_time.monotonic()-_t0_meta:.1f}s)...")
             y_target = compute_meta_target(
-                _ret_for_h_aligned(1),
                 _ret_for_h_aligned(2),
                 _ret_for_h_aligned(4),
-                _ret_for_h_aligned(6),
+                _ret_for_h_aligned(8),
                 groups=None,
             )
+            _yt_finite = y_target[np.isfinite(y_target)]
+            tprint(f"  Meta target stats: n={len(y_target)}, finite={len(_yt_finite)}, "
+                   f"mean={np.mean(_yt_finite):.6f}, std={np.std(_yt_finite):.6f}, "
+                   f"p10={np.percentile(_yt_finite, 10):.6f}, p90={np.percentile(_yt_finite, 90):.6f}")
 
             n_res = df.get("__n_res__", pd.Series(np.ones(len(df)), index=df.index)).values.astype(np.float32)
             keep = n_res >= np.quantile(n_res, 0.20)
@@ -2138,7 +2205,9 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             w_meta = _normalize_cross_sectional(ts_vals, w_meta)
             w_meta = w_meta / max(np.mean(w_meta), 1e-12)
 
+            tprint(f"  Fitting MetaModel {side}_{k} (n={len(df)}, feats={len(feat_cols)}) ({_time.monotonic()-_t0_meta:.1f}s)...")
             meta = MetaModel()
+            meta.strategy_name = f"{side}_{k}"
             X_feats = pd.concat([X_feats, pred_h], axis=1)
             X_meta = meta.prepare_meta_features(p_oof, X_feats, pred_col_name="pred_logit")
 
@@ -2156,7 +2225,7 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             meta_groups = df["__ts__"].values if "__ts__" in df.columns else None
             meta.fit(X_meta, y_target, sample_weight=w_meta, groups=meta_groups)
             meta_models[f"{side}_{k}"] = meta
-            tprint(f"Meta {side}_{k}: fitted.")
+            tprint(f"Meta {side}_{k}: fitted ({_time.monotonic()-_t0_meta:.1f}s).")
 
             if meta.oof_probs is not None:
                 y_ret_filtered = df["__y_ret__"].values if "__y_ret__" in df.columns else y_target
@@ -2196,6 +2265,7 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                 gate_res["Spread10_Neg"] = float(sp_neg)
                 meta_gate_results.append(gate_res)
 
+    tprint(f"train_meta_models_from_artifacts: done ({_time.monotonic()-_t0_meta:.1f}s), {len(meta_models)} meta models")
     return meta_models, meta_gate_results
 
 def train_models_from_artifacts(datasets, cfg, train_meta=True):
@@ -2483,7 +2553,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
                 tprint(f"  Class dist: 0={int((y_hard_check==0).sum())} ({(y_hard_check==0).mean()*100:.1f}%), "
                        f"1={int((y_hard_check==1).sum())} ({(y_hard_check==1).mean()*100:.1f}%)")
 
-                race = ModelRace(kind=k, n_splits=5)
+                race = ModelRace(kind=k, n_splits=3)
                 groups = df["__ts__"].values if "__ts__" in df.columns else None
                 race.fit(X_sel, y, sample_weight=w, returns=y_ret, groups=groups)
                 score = race.metrics.get(race.best_model_name, -1.0)
@@ -2850,10 +2920,9 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
             _oof_parts.append(oof_h[:len(dfm)] if len(oof_h) >= len(dfm) else np.pad(oof_h, (0, len(dfm) - len(oof_h)), constant_values=0.5))
         base_score = np.mean(_oof_parts, axis=0)
         y_target = compute_meta_target(
-            datasets.get(f"train_{side}_{kind}_1", dfm)["__y_ret__"].values[:len(dfm)].astype(float) if f"train_{side}_{kind}_1" in datasets else y_ret,
             datasets.get(f"train_{side}_{kind}_2", dfm)["__y_ret__"].values[:len(dfm)].astype(float) if f"train_{side}_{kind}_2" in datasets else y_ret,
             datasets.get(f"train_{side}_{kind}_4", dfm)["__y_ret__"].values[:len(dfm)].astype(float) if f"train_{side}_{kind}_4" in datasets else y_ret,
-            datasets.get(f"train_{side}_{kind}_6", dfm)["__y_ret__"].values[:len(dfm)].astype(float) if f"train_{side}_{kind}_6" in datasets else y_ret,
+            datasets.get(f"train_{side}_{kind}_8", dfm)["__y_ret__"].values[:len(dfm)].astype(float) if f"train_{side}_{kind}_8" in datasets else y_ret,
             groups=None,
         )
         groups = dfm["__ts__"].values if "__ts__" in dfm.columns else None

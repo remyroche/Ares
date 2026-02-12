@@ -14,7 +14,8 @@ from scipy.stats import median_abs_deviation
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.linear_model import Ridge
 from sklearn.linear_model import QuantileRegressor
-from sklearn.preprocessing import SplineTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import RobustScaler, SplineTransformer
 from joblib import Parallel, delayed
 
 from extreme_price_movements.config import CFG
@@ -136,73 +137,36 @@ class MetaModel:
         return fit.reg.predict(fit.spline.transform(grid.reshape(-1, 1)))
 
     def _discover_monotone_constraints(self, X: pd.DataFrame, y: np.ndarray, bootstraps: int = 50) -> Tuple[int, ...]:
-        taus = [0.75, 0.85, 0.95]
-        mad_y = float(median_abs_deviation(y, scale="normal")) + 1e-9
-        stats = {
-            c: {"A85": [], "Aall": [], "sign85": [], "sign95": [], "m_up": [], "m_broad": []}
-            for c in X.columns
-        }
+        from scipy.stats import spearmanr
         rng = np.random.default_rng(42)
         n = len(X)
+        cols = list(X.columns)
+        # Fast path: bootstrap Spearman correlation to detect consistent monotone direction
+        signs = {c: [] for c in cols}
         for _ in range(bootstraps):
             bidx = rng.choice(n, size=n, replace=True)
             yb = y[bidx]
-            for col in X.columns:
+            for col in cols:
                 xb = X[col].to_numpy(dtype=float)[bidx]
-                for tau in taus:
-                    fit = self._fit_huberized_quantile_gam(xb, yb, tau)
-                    q50, q90 = np.quantile(xb, [0.5, 0.9])
-                    swing = float(self._eval_curve(fit, np.array([q90]))[0] - self._eval_curve(fit, np.array([q50]))[0])
-                    A = abs(swing) / mad_y
-                    sign = int(np.sign(swing))
-                    if tau == 0.85:
-                        stats[col]["A85"].append(A)
-                        stats[col]["sign85"].append(sign)
-                    if tau == 0.95:
-                        stats[col]["sign95"].append(sign)
-                    stats[col]["Aall"].append(A)
-                    g1 = np.linspace(np.quantile(xb, 0.6), np.quantile(xb, 0.99), 32)
-                    g2 = np.linspace(np.quantile(xb, 0.3), np.quantile(xb, 0.9), 32)
-                    d1 = np.diff(self._eval_curve(fit, g1))
-                    d2 = np.diff(self._eval_curve(fit, g2))
-                    if sign != 0:
-                        stats[col]["m_up"].append(float(np.mean(np.sign(d1) == sign)))
-                        stats[col]["m_broad"].append(float(np.mean(np.sign(d2) == sign)))
-                    else:
-                        stats[col]["m_up"].append(0.0)
-                        stats[col]["m_broad"].append(0.0)
+                rho, _ = spearmanr(xb, yb)
+                signs[col].append(int(np.sign(rho)) if abs(rho) > 0.02 else 0)
 
         passed = []
-        for col in X.columns:
-            sign85 = np.array(stats[col]["sign85"], dtype=int)
-            sign95 = np.array(stats[col]["sign95"], dtype=int)
-            if sign85.size == 0:
+        for col in cols:
+            s = np.array(signs[col], dtype=int)
+            if s.size == 0:
                 continue
-            direction = int(np.sign(np.median(sign85)))
+            direction = int(np.sign(np.median(s)))
             if direction == 0:
                 continue
-            direction_consistency = float(np.mean(sign85 == direction))
-            flips95 = float(np.mean(sign95 != direction)) if sign95.size else 1.0
-            A85 = np.array(stats[col]["A85"], dtype=float)
-            med_A85 = float(np.median(A85)) if A85.size else 0.0
-            mad_A85 = float(np.median(np.abs(A85 - med_A85))) if A85.size else 1.0
-            ratio = mad_A85 / max(abs(med_A85), 1e-9)
-            mup = float(np.mean(np.array(stats[col]["m_up"]) >= 0.80))
-            mbroad = float(np.mean(np.array(stats[col]["m_broad"]) >= 0.70))
-            if (
-                direction_consistency >= 0.90
-                and flips95 <= 0.20
-                and med_A85 >= 0.02
-                and ratio <= 0.5
-                and mup >= 0.80
-                and mbroad >= 0.70
-            ):
-                passed.append((col, direction, med_A85))
+            consistency = float(np.mean(s == direction))
+            if consistency >= 0.85:
+                passed.append((col, direction, consistency))
 
-        if len(passed) > int(0.6 * X.shape[1]):
-            passed = sorted(passed, key=lambda t: t[2], reverse=True)[: int(0.6 * X.shape[1])]
+        if len(passed) > int(0.6 * len(cols)):
+            passed = sorted(passed, key=lambda t: t[2], reverse=True)[: int(0.6 * len(cols))]
         sign_map = {c: s for c, s, _ in passed}
-        return tuple(sign_map.get(c, 0) for c in X.columns)
+        return tuple(sign_map.get(c, 0) for c in cols)
 
     def _pair_auc_proxy(self, x1: np.ndarray, x2: np.ndarray, z: np.ndarray, bins: int = 12) -> float:
         if len(np.unique(z)) < 2:
@@ -309,8 +273,11 @@ class MetaModel:
 
     def _fit_model(self, kind: str, params: dict, X_tr, y_tr, X_va, y_va, sample_weight=None):
         if kind == "ridge":
-            model = Ridge(**params)
-            model.fit(X_tr, y_tr, sample_weight=sample_weight)
+            model = Pipeline([
+                ("scaler", RobustScaler()),
+                ("ridge", Ridge(**params)),
+            ])
+            model.fit(X_tr, y_tr, ridge__sample_weight=sample_weight)
             return model
         if kind == "extratrees":
             model = ExtraTreesRegressor(**params)
@@ -402,6 +369,14 @@ class MetaModel:
         # Meta model is focused on top30%, so use two-stage selection with decile ranking.
         tailweighted = "tailweighted" in candidate_name
         
+        # Scale target to unit variance so tree split gains are meaningful.
+        # Meta targets (log-returns) have std ~0.01-0.02 which causes near-zero
+        # importances in ExtraTrees/LGBM and triggers the "Eff. Mass 0.000" fallback.
+        y_scaled = np.asarray(y, dtype=float)
+        y_std = float(np.nanstd(y_scaled))
+        if y_std > 1e-9:
+            y_scaled = y_scaled / y_std
+
         # Target feature count
         n_target = min(40, max(20, int(np.sqrt(max(25, X.shape[1])) * 4)))
         n_stage1 = min(X.shape[1], n_target * 3)  # 3x target for meta model
@@ -409,10 +384,10 @@ class MetaModel:
         if kind in ("xgb", "lgb", "qreg_l1") and not tailweighted:
             # Two-stage: v3 to get 2x, then v4_topk to refine
             try:
-                fs_stage1 = mdi_feature_selection_v3(X, y, min_features=20, max_features=n_stage1, alpha=0.85)
+                fs_stage1 = mdi_feature_selection_v3(X, y_scaled, min_features=20, max_features=n_stage1, alpha=0.85)
                 if len(fs_stage1.selected_features) > n_target:
                     X_stage1 = X[list(fs_stage1.selected_features)]
-                    fs = mdi_feature_selection_v4_topk_classic(X_stage1, y, topk_weight=0.3)
+                    fs = mdi_feature_selection_v4_topk_classic(X_stage1, y_scaled, topk_weight=0.3)
                     sel = list(fs.selected_features)[:n_target]
                     return sel if len(sel) >= 20 else list(fs_stage1.selected_features)[:n_target]
                 return list(fs_stage1.selected_features)[:n_target]
@@ -440,7 +415,7 @@ class MetaModel:
             # Two-stage: v3 to get 2x, then v4_topk to refine
             fs_stage1 = mdi_feature_selection_classic(
                 X,
-                y,
+                y_scaled,
                 base_model=base_model,
                 end_features=n_stage1,
                 min_features=20,
@@ -448,7 +423,7 @@ class MetaModel:
             )
             if len(fs_stage1.selected_features) > n_target:
                 X_stage1 = X[list(fs_stage1.selected_features)]
-                fs = mdi_feature_selection_v4_topk_classic(X_stage1, y, base_model=base_model, topk_weight=0.3)
+                fs = mdi_feature_selection_v4_topk_classic(X_stage1, y_scaled, base_model=base_model, topk_weight=0.3)
                 sel = list(fs.selected_features)[:n_target]
                 return sel if len(sel) >= 20 else list(fs_stage1.selected_features)[:n_target]
             return list(fs_stage1.selected_features)[:n_target]
@@ -506,7 +481,7 @@ class MetaModel:
             "bagging_freq": 1, "max_bin": 127, "random_state": 42, "n_jobs": 3, "verbosity": -1,
             "_wants_constraints": True,
         }
-        ridge = {"alpha": 5.0, "fit_intercept": True}
+        ridge = {"alpha": 1.0, "fit_intercept": True}
         et = {
             "n_estimators": 300,
             "max_depth": 8,
@@ -515,7 +490,7 @@ class MetaModel:
             "n_jobs": 3,
             "random_state": 42,
         }
-        qreg_l1 = {"quantile": 0.85, "alpha": 1.0, "solver": "highs"}
+        qreg_l1 = {"quantile": 0.85, "alpha": 0.1, "solver": "highs"}
 
         xgb_single_unconstrained = dict(xgb_single)
         xgb_single_unconstrained.pop("_wants_constraints", None)
@@ -717,7 +692,7 @@ class MetaModel:
             pruner=optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=1),
             study_name=f"meta_hpo_{winner_name}",
         )
-        study.optimize(objective, n_trials=30, timeout=1800, gc_after_trial=True)
+        study.optimize(objective, n_trials=15, timeout=300, gc_after_trial=True)
         if study.best_trial is None:
             return base_params
         best = dict(base_params)
@@ -731,13 +706,15 @@ class MetaModel:
         pred = np.asarray(oof, dtype=float)
         ks = np.arange(0.70, 0.901, 0.05)
         rows = []
+        # Round-trip cost: 50bps (buy+sell+fees+slippage) for high-vol low-liquidity
+        cost_per_trade = 0.005
         for k in ks:
             frac = 1.0 - k
             top_n = max(1, int(frac * len(pred)))
             idx = np.argpartition(pred, -top_n)[-top_n:]
             yk = y[idx]
             prec = float(np.mean(yk > 0))
-            pnl_day = float(np.mean(yk) - 0.005)
+            pnl_day = float(np.mean(yk) - cost_per_trade)
             chunk = 14
             chunk_vals = [np.mean(yk[i : i + chunk]) for i in range(0, len(yk), chunk) if len(yk[i : i + chunk]) > 0]
             pnl_std = float(np.std(chunk_vals)) if chunk_vals else 0.0
@@ -770,6 +747,11 @@ class MetaModel:
                 "Spearman_IC": pd.Series(pred).corr(pd.Series(y), method="spearman"),
                 "Avg_trades_day": top_n / max(1, len(np.unique(np.arange(len(pred)) // 24))),
                 "Gain_to_Pain": float(np.sum(yk[yk > 0]) / max(1e-9, abs(np.sum(yk[yk < 0])))),
+                "cost_per_trade": cost_per_trade,
+                "mean_win": float(np.mean(yk[yk > 0])) if np.any(yk > 0) else 0.0,
+                "mean_loss": float(np.mean(yk[yk <= 0])) if np.any(yk <= 0) else 0.0,
+                "win_loss_ratio": float(np.mean(yk[yk > 0]) / max(1e-9, abs(np.mean(yk[yk <= 0])))) if np.any(yk > 0) and np.any(yk <= 0) else float('nan'),
+                "effective_tp_sl_ratio": float(np.mean(yk[yk > 0]) / max(1e-9, abs(np.mean(yk[yk <= 0])))) if np.any(yk > 0) and np.any(yk <= 0) else float('nan'),
                 "coverage_global_tau085_raw": float(np.mean(y <= pred)),
                 "coverage_topdec_tau085_raw": float(np.mean(yk <= pred[idx])),
                 "coverage_global_tau085_cal": float(np.mean(y <= pred)),
@@ -781,23 +763,31 @@ class MetaModel:
             })
         metric_df = pd.DataFrame(rows)
 
+        # TP:SL grid search on top-30% selected trades (not all trades)
+        top30_n = max(1, int(0.30 * len(pred)))
+        idx_top30 = np.argpartition(pred, -top30_n)[-top30_n:]
+        y_top30 = y[idx_top30]
+        y_std_top30 = float(np.std(y_top30)) if len(y_top30) > 1 else 1e-6
+
         tps = [2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0, 7.0]
         sl_factors = [0.3, 0.5, 0.7]
         baseline = metric_df.iloc[len(metric_df) // 2]
         best_grid = None
         best_score = -np.inf
+        grid_rows = []
         for tp in tps:
             for sf in sl_factors:
                 sl = sf * tp
-                rr = np.clip(y / max(1e-9, np.std(y)), -sl, tp)
+                rr = np.clip(y_top30 / max(1e-9, y_std_top30), -sl, tp)
                 sortino = float(_sortino_numba(rr.astype(np.float64)))
                 maxdd = float(_maxdd_numba(rr.astype(np.float64)))
+                pnl = float(np.mean(rr))
+                grid_rows.append({"TP": tp, "SL": sl, "TP_SL_ratio": tp / max(sl, 1e-9), "PnL": pnl, "Sortino": sortino, "MaxDD": maxdd})
                 trades = len(rr) / max(1, len(np.unique(np.arange(len(rr)) // 24)))
                 if maxdd <= baseline["MaxDD"] * 1.30 and sortino >= baseline["Sortino"] * 0.70 and trades <= baseline["Avg_trades_day"] * 1.30:
-                    score = np.mean(rr)
-                    if score > best_score:
-                        best_score = score
-                        best_grid = {"TP": tp, "SL": sl, "score": score}
+                    if pnl > best_score:
+                        best_score = pnl
+                        best_grid = {"TP": tp, "SL": sl, "TP_SL_ratio": tp / max(sl, 1e-9), "score": pnl}
 
         out = pd.DataFrame(model_scores)
         out_file = report_dir / f"meta_model_{self.strategy_name or 'generic'}_race.csv"
@@ -808,14 +798,20 @@ class MetaModel:
             pd.DataFrame([best_grid]).to_csv(report_dir / f"meta_model_{self.strategy_name or 'generic'}_tpsl.csv", index=False)
 
     def fit(self, X_meta: pd.DataFrame, y, sample_weight=None, groups=None):
+        import time as _time
+        _t0 = _time.monotonic()
+        tprint(f"MetaModel.fit: {self.strategy_name} starting (n={len(y)}, feats={X_meta.shape[1]})")
         y_np = np.asarray(y, dtype=float)
         sw = None if sample_weight is None else np.asarray(sample_weight, dtype=float)
 
         # Discover monotone constraints once on the full feature set, then slice per-candidate.
         # Interaction discovery is skipped (O(n²) on 89 features is too expensive).
         _all_cols = list(X_meta.columns)
-        _full_mono = self._discover_monotone_constraints(X_meta, y_np, bootstraps=30)
+        tprint(f"  Discovering monotone constraints ({X_meta.shape[1]} features, 15 bootstraps)...")
+        _full_mono = self._discover_monotone_constraints(X_meta, y_np, bootstraps=15)
+        _n_constrained = sum(1 for m in _full_mono if m != 0)
         _col_to_mono = dict(zip(_all_cols, _full_mono))
+        tprint(f"  Monotone constraints done: {_n_constrained}/{len(_all_cols)} constrained ({_time.monotonic()-_t0:.1f}s)")
 
         candidates = self._race_candidates()
         if xgb is None:
@@ -865,10 +861,12 @@ class MetaModel:
             }
 
         # Parallel candidate evaluation (max 2 workers)
+        tprint(f"  Racing {len(valid_candidates)} candidates ({_time.monotonic()-_t0:.1f}s)...")
         results = Parallel(n_jobs=2, backend="loky")(
             delayed(_eval_one_candidate)(name, kind, qs, params, pool_name)
             for name, (kind, qs, params, pool_name) in valid_candidates.items()
         )
+        tprint(f"  Race done ({_time.monotonic()-_t0:.1f}s).")
 
         # Collect results
         best_name = None
@@ -916,8 +914,10 @@ class MetaModel:
         Xv = X_meta[self.selected_features].to_numpy(dtype=float)
         y_fit, sw_fit = self._candidate_target_and_weight(y_np, sw, best_name)
 
+        tprint(f"  Winner: {best_name} (score={best_score:.6f}, pool={best_pool}, feats={len(self.selected_features)}). Starting HPO ({_time.monotonic()-_t0:.1f}s)...")
         is_trans = "tailweighted" in kind or "tailweighted" in best_name
         tuned_params = self._optuna_hpo(best_name, kind, qs, params, Xv, y_fit, sw_fit, score_y=y_np, is_transformed=is_trans)
+        tprint(f"  HPO done ({_time.monotonic()-_t0:.1f}s). Fitting final model...")
 
         # Final mode: increase compute budget for chosen model.
         final_params = dict(tuned_params)
@@ -943,6 +943,7 @@ class MetaModel:
         self.oof_probs = best_oof
         self.report_rows = records
         self._write_model_reports(records, best_oof, y_np)
+        tprint(f"MetaModel.fit: {self.strategy_name} done ({_time.monotonic()-_t0:.1f}s). Winner={best_name}")
         return self
 
     def predict(self, X_meta):

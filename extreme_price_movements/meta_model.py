@@ -382,8 +382,14 @@ class MetaModel:
 
     def _signed_log_demeaned(self, y: np.ndarray) -> np.ndarray:
         y = np.asarray(y, dtype=float)
-        z = np.sign(y) * np.log1p(np.abs(y))
-        return z - float(np.mean(z))
+        valid = np.isfinite(y)
+        if not valid.any():
+            return np.zeros_like(y)
+        z = np.zeros_like(y)
+        z[valid] = np.sign(y[valid]) * np.log1p(np.abs(y[valid]))
+        mu = np.mean(z[valid])
+        z[valid] -= mu
+        return z
 
     def _select_features_for_candidate(self, X: pd.DataFrame, y: np.ndarray, candidate_name: str, kind: str) -> List[str]:
         # Independent feature selection per candidate as requested.
@@ -681,6 +687,15 @@ class MetaModel:
             pnl_std = float(np.std(chunk_vals)) if chunk_vals else 0.0
             sortino = float(_sortino_numba(yk.astype(np.float64)))
             maxdd = float(_maxdd_numba(yk.astype(np.float64)))
+
+            yk_clean = yk[np.isfinite(yk)]
+            if len(yk_clean) > 0:
+                mono_69 = float(np.mean(np.diff(np.quantile(yk_clean, np.linspace(0.6, 0.9, 4))) >= -1e-12))
+                mono_79 = float(np.mean(np.diff(np.quantile(yk_clean, np.linspace(0.7, 0.9, 3))) >= -1e-12))
+                mono_89 = float(np.mean(np.diff(np.quantile(yk_clean, np.linspace(0.8, 0.9, 3))) >= -1e-12))
+            else:
+                mono_69, mono_79, mono_89 = 0.0, 0.0, 0.0
+
             rows.append({
                 "k": k,
                 "precision@topk": prec,
@@ -696,9 +711,9 @@ class MetaModel:
                 "coverage_topdec_tau085_raw": float(np.mean(yk <= pred[idx])),
                 "coverage_global_tau085_cal": float(np.mean(y <= pred)),
                 "coverage_topdec_tau085_cal": float(np.mean(yk <= pred[idx])),
-                "monotonicity_0.6_0.9": float(np.mean(np.diff(np.quantile(yk, np.linspace(0.6, 0.9, 4))) >= -1e-12)),
-                "monotonicity_0.7_0.9": float(np.mean(np.diff(np.quantile(yk, np.linspace(0.7, 0.9, 3))) >= -1e-12)),
-                "monotonicity_0.8_0.9": float(np.mean(np.diff(np.quantile(yk, np.linspace(0.8, 0.9, 3))) >= -1e-12)),
+                "monotonicity_0.6_0.9": mono_69,
+                "monotonicity_0.7_0.9": mono_79,
+                "monotonicity_0.8_0.9": mono_89,
             })
         metric_df = pd.DataFrame(rows)
 

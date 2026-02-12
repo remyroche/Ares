@@ -383,17 +383,19 @@ class MetaModel:
         t = np.clip((r - q0) / max(1e-9, (q1 - q0)), 0.0, 1.0)
         return (1.0 + float(lambda_) * t).astype(float)
 
-    def _signed_log_demeaned(self, y: np.ndarray) -> np.ndarray:
+    def _signed_log(self, y: np.ndarray) -> np.ndarray:
         y = np.asarray(y, dtype=float)
         z = np.sign(y) * np.log1p(np.abs(y))
         finite = np.isfinite(z)
         if not finite.any():
             return np.zeros_like(z, dtype=float)
-        center = float(np.nanmean(z))
-        out = z - center
-        fill = float(np.nanmedian(out[finite]))
-        out[~finite] = fill
-        return out
+        fill = float(np.nanmedian(z[finite]))
+        z[~finite] = fill
+        return z
+
+    def _inverse_signed_log(self, z: np.ndarray) -> np.ndarray:
+        z = np.asarray(z, dtype=float)
+        return np.sign(z) * np.expm1(np.abs(z))
 
     def _select_features_for_candidate(self, X: pd.DataFrame, y: np.ndarray, candidate_name: str, kind: str) -> List[str]:
         # Independent feature selection per candidate as requested.
@@ -423,6 +425,7 @@ class MetaModel:
                 if lgb is not None:
                     base_model = lgb.LGBMRegressor(
                         objective="regression",
+                        metric="rmse",
                         n_estimators=200,
                         num_leaves=31,
                         learning_rate=0.05,
@@ -458,7 +461,7 @@ class MetaModel:
         sw_fit = None if base_sw is None else np.asarray(base_sw, dtype=float)
 
         if "tailweighted" in candidate_name:
-            y_fit = self._signed_log_demeaned(y_fit)
+            y_fit = self._signed_log(y_fit)
             lambdas = [0.0, 1.0, 2.0, 4.0]
             chosen = 0.0
             for lmb in lambdas:
@@ -619,6 +622,7 @@ class MetaModel:
         y: np.ndarray,
         sw: Optional[np.ndarray],
         score_y: Optional[np.ndarray] = None,
+        is_transformed: bool = False,
     ) -> Tuple[np.ndarray, Dict[str, float], bool]:
         pkf = PurgedKFold(n_splits=3, purge=5, embargo=2)
         oof = np.full(len(y), np.nan, dtype=float)
@@ -652,6 +656,9 @@ class MetaModel:
                 fold_pred[ev_idx] = calibrated_ev
             oof[va] = fold_pred
 
+        if is_transformed:
+            oof = self._inverse_signed_log(oof)
+
         mask = np.isfinite(oof)
         score, metrics, guard = self._oof_score(
             y_eval[mask],
@@ -661,7 +668,7 @@ class MetaModel:
         )
         return oof, metrics, guard
 
-    def _optuna_hpo(self, winner_name: str, winner_kind: str, winner_qs: Sequence[float], base_params: dict, X: np.ndarray, y: np.ndarray, sw: Optional[np.ndarray]) -> dict:
+    def _optuna_hpo(self, winner_name: str, winner_kind: str, winner_qs: Sequence[float], base_params: dict, X: np.ndarray, y: np.ndarray, sw: Optional[np.ndarray], score_y: Optional[np.ndarray] = None, is_transformed: bool = False) -> dict:
         if importlib.util.find_spec("optuna") is None:
             return base_params
         import optuna
@@ -697,9 +704,13 @@ class MetaModel:
                 p["min_samples_leaf"] = trial.suggest_int("min_samples_leaf", 10, 80)
             elif winner_kind == "qreg_l1":
                 p["alpha"] = trial.suggest_float("alpha", 1e-4, 20.0, log=True)
-            oof, _, _ = self._cv_train_predict(winner_kind, winner_qs, p, X, y, sw, score_y=y)
+            oof, _, _ = self._cv_train_predict(winner_kind, winner_qs, p, X, y, sw, score_y=score_y, is_transformed=is_transformed)
             m = np.isfinite(oof)
-            return _pinball(y[m], oof[m], 0.85)
+            # Use original y (score_y) for pinball optimization if transformed
+            y_target = score_y if score_y is not None else y
+            # But oof is inverse transformed if is_transformed=True.
+            # So oof and y_target are in same (original) space.
+            return _pinball(y_target[m], oof[m], 0.85)
 
         study = optuna.create_study(
             direction="minimize",
@@ -836,7 +847,8 @@ class MetaModel:
                 elif kind == "lgb" and _params.get("objective") != "quantile":
                     _params["monotone_constraints"] = list(_mono)
             try:
-                oof, metrics, guard_ok = self._cv_train_predict(kind, qs, _params, Xv, y_fit, sw_fit, score_y=y_np)
+                is_trans = "tailweighted" in kind or "tailweighted" in name
+                oof, metrics, guard_ok = self._cv_train_predict(kind, qs, _params, Xv, y_fit, sw_fit, score_y=y_np, is_transformed=is_trans)
             except Exception as exc:
                 tprint(f"MetaModel candidate {name} failed: {exc}")
                 return None
@@ -904,7 +916,8 @@ class MetaModel:
         Xv = X_meta[self.selected_features].to_numpy(dtype=float)
         y_fit, sw_fit = self._candidate_target_and_weight(y_np, sw, best_name)
 
-        tuned_params = self._optuna_hpo(best_name, kind, qs, params, Xv, y_fit, sw_fit)
+        is_trans = "tailweighted" in kind or "tailweighted" in best_name
+        tuned_params = self._optuna_hpo(best_name, kind, qs, params, Xv, y_fit, sw_fit, score_y=y_np, is_transformed=is_trans)
 
         # Final mode: increase compute budget for chosen model.
         final_params = dict(tuned_params)
@@ -925,7 +938,7 @@ class MetaModel:
             model = self._fit_model(kind, p, Xv, y_fit, Xv, y_fit, sample_weight=sw_fit)
             final_models.append(model)
 
-        self.model = {"kind": kind, "quantiles": list(qs), "models": final_models, "pool": best_pool}
+        self.model = {"kind": kind, "quantiles": list(qs), "models": final_models, "pool": best_pool, "is_transformed": is_trans}
         self._model_type = best_name
         self.oof_probs = best_oof
         self.report_rows = records
@@ -937,4 +950,7 @@ class MetaModel:
             raise RuntimeError("MetaModel must be fitted before predict")
         X = X_meta[self.selected_features].to_numpy(dtype=float)
         preds = np.vstack([m.predict(X) for m in self.model["models"]])
-        return int(self.score_sign) * np.median(preds, axis=0)
+        med_preds = np.median(preds, axis=0)
+        if self.model.get("is_transformed", False):
+            med_preds = self._inverse_signed_log(med_preds)
+        return int(self.score_sign) * med_preds

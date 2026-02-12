@@ -137,6 +137,11 @@ CFG = {
     "trade_extreme_max": 80,
     "trade_deviation_metric": "dist_ema_fast",
 
+    # Quantile label handling: keep union of samples, emphasize tails via weights
+    "label_quantile_mode": "weighted_union",
+    "label_quantile_weight_floor": 0.35,
+    "label_quantile_weight_gamma": 1.5,
+
     # gates
     "gate_vol_lookback_hours": 24 * 14,
     "gate_trend_thr": 0.02,

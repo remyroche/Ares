@@ -1142,7 +1142,11 @@ def build_hourly_training_set_and_weights(
     entry_ts = event_ts + pd.Timedelta(hours=1)
 
     # Filter: entry_ts must be in tb_labels index
+    n_pre_entry = len(event_ts)
     entry_valid = entry_ts.isin(tb_labels.index)
+    n_entry_drop = int((~entry_valid).sum())
+    if n_entry_drop > 0:
+        tprint(f"Entry alignment drop (H={H}): removed {n_entry_drop}/{n_pre_entry} events missing in tb_labels index")
     event_ts = event_ts[entry_valid]
     event_sym = event_sym[entry_valid]
     entry_ts = event_ts + pd.Timedelta(hours=1)
@@ -1160,6 +1164,10 @@ def build_hourly_training_set_and_weights(
             keep = trend_dir > 0
         else:
             keep = trend_dir <= 0
+        n_pre_trend = len(event_ts)
+        n_trend_drop = int((~keep).sum())
+        if n_trend_drop > 0:
+            tprint(f"Trend filter drop ({trend_filter}): removed {n_trend_drop}/{n_pre_trend} events")
         event_ts = event_ts[keep]
         event_sym = event_sym[keep]
         entry_ts = event_ts + pd.Timedelta(hours=1)
@@ -1194,26 +1202,43 @@ def build_hourly_training_set_and_weights(
             trade_dir = np.ones(len(event_ts))
         pnl = ret_vals * trade_dir
 
-    # Quantile-based labels: top 30% -> 1, bottom 30% -> 0, middle 40% dropped
+    # Quantile-based labels + weighting.
     q_lo = float(cfg.get("label_quantile_lo", 0.30))
     q_hi = float(cfg.get("label_quantile_hi", 0.70))
     pnl_lo = np.quantile(pnl[np.isfinite(pnl)], q_lo) if np.sum(np.isfinite(pnl)) > 10 else 0.0
     pnl_hi = np.quantile(pnl[np.isfinite(pnl)], q_hi) if np.sum(np.isfinite(pnl)) > 10 else 0.0
-    keep_mask = (pnl <= pnl_lo) | (pnl >= pnl_hi)
-    tprint(f"Quantile labels: lo_thr={pnl_lo:.6f}, hi_thr={pnl_hi:.6f}, "
-           f"kept={keep_mask.sum()}/{len(pnl)} ({keep_mask.mean()*100:.0f}%)")
+    quantile_mode = str(cfg.get("label_quantile_mode", "weighted_union")).lower()
+    w_quant = np.ones(len(pnl), dtype=np.float32)
 
-    # Apply mask — drop ambiguous middle samples
-    event_ts = event_ts[keep_mask]
-    event_sym = event_sym[keep_mask]
-    entry_ts = event_ts + pd.Timedelta(hours=1)
-    pnl = pnl[keep_mask]
-    lbl_vals = lbl_vals[keep_mask]
-    ret_vals = ret_vals[keep_mask]
+    if quantile_mode == "hard_filter":
+        keep_mask = (pnl <= pnl_lo) | (pnl >= pnl_hi)
+        n_kept = int(keep_mask.sum())
+        n_drop = int(len(pnl) - n_kept)
+        tprint(f"Quantile labels [hard_filter]: lo_thr={pnl_lo:.6f}, hi_thr={pnl_hi:.6f}, "
+               f"kept={n_kept}/{len(pnl)} ({keep_mask.mean()*100:.0f}%), dropped={n_drop}")
 
-    if len(event_ts) == 0:
-        tprint("No rows after quantile filtering.")
-        return None, None, None, None, None, None
+        # Apply mask — drop ambiguous middle samples
+        event_ts = event_ts[keep_mask]
+        event_sym = event_sym[keep_mask]
+        entry_ts = event_ts + pd.Timedelta(hours=1)
+        pnl = pnl[keep_mask]
+        lbl_vals = lbl_vals[keep_mask]
+        ret_vals = ret_vals[keep_mask]
+
+        if len(event_ts) == 0:
+            tprint("No rows after quantile filtering.")
+            return None, None, None, None, None, None
+    else:
+        # Weighted-union mode: keep all samples, emphasize tails continuously.
+        ranks = pd.Series(pnl).rank(method="average", pct=True).values.astype(np.float32)
+        dist = np.abs(ranks - 0.5) * 2.0  # 0 at median, 1 at extremes
+        tail_floor = float(np.clip(cfg.get("label_quantile_weight_floor", 0.35), 0.0, 1.0))
+        tail_gamma = float(np.clip(cfg.get("label_quantile_weight_gamma", 1.5), 0.5, 4.0))
+        w_quant = tail_floor + (1.0 - tail_floor) * np.power(np.clip(dist, 0.0, 1.0), tail_gamma)
+        tprint(
+            f"Quantile labels [weighted_union]: lo_thr={pnl_lo:.6f}, hi_thr={pnl_hi:.6f}, "
+            f"kept={len(pnl)}/{len(pnl)} (100%), w_quant(mean={w_quant.mean():.3f}, p10={np.quantile(w_quant, 0.10):.3f}, p90={np.quantile(w_quant, 0.90):.3f})"
+        )
 
     y_hard = (pnl >= pnl_hi).astype(np.float32)
     tprint(f"Hard label dist: 0={int((y_hard==0).sum())} ({(y_hard==0).mean()*100:.1f}%), "
@@ -1262,6 +1287,7 @@ def build_hourly_training_set_and_weights(
     # Base weight from move magnitude
     pa = np.abs(np.nan_to_num(_fast_lookup(feats["ret24h"], event_ts, event_sym), nan=0.0))
     w_base = np.log1p(pa)
+    w_base = w_base * w_quant
 
     # Mild class-balance multiplier (inverse-freq with sqrt exponent + hard cap)
     p_pos = float(np.mean(y_bin)) if len(y_bin) else 0.5
@@ -1876,59 +1902,123 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
 
             models_by_h = conf.get("models_by_h", {})
 
-            # --- Build intersection dataset across all available horizons ---
-            # Each horizon has a different sample set. We inner-join on (ts, symbol)
-            # so the meta model trains on samples present in ALL horizons.
+            # --- Build union dataset across all available horizons ---
+            # Each horizon can have a different sample set. We align by (ts, symbol)
+            # and train on the UNION so we preserve available coverage.
             horizon_dfs = {}  # h -> (df, oof_probs)
+            horizon_skip_reasons = {}
             for h in [2, 4, 8]:
                 ds_key = f"train_{side}_{k}_{h}"
                 if ds_key not in datasets:
+                    horizon_skip_reasons[h] = "missing_dataset"
                     continue
                 race_h = models_by_h.get(h, {}).get("model") if h in models_by_h else None
-                if race_h is None or race_h.oof_probs is None:
+                if race_h is None:
+                    horizon_skip_reasons[h] = "missing_alpha_model"
+                    continue
+                if race_h.oof_probs is None:
+                    horizon_skip_reasons[h] = "missing_oof_probs"
                     continue
                 df_h = datasets[ds_key]
                 oof_h = np.asarray(race_h.oof_probs, dtype=float)
                 if len(oof_h) != len(df_h):
+                    horizon_skip_reasons[h] = f"oof_len_mismatch:{len(oof_h)}!={len(df_h)}"
                     tprint(f"Meta {side}_{k} H={h}: OOF length mismatch ({len(oof_h)} vs {len(df_h)}), skipping horizon")
                     continue
                 horizon_dfs[h] = (df_h, oof_h)
 
             if not horizon_dfs:
                 tprint(f"Meta {side}_{k}: skipped (no horizon with valid OOF)")
+                if horizon_skip_reasons:
+                    tprint(f"  Horizon availability diagnostics: {horizon_skip_reasons}")
                 continue
             tprint(f"Meta {side}_{k}: {len(horizon_dfs)} horizons available: {sorted(horizon_dfs.keys())}")
+            if horizon_skip_reasons:
+                tprint(f"  Horizons excluded: {horizon_skip_reasons}")
 
             # Use the largest horizon dataset as the base (for meta feature columns)
             base_H = max(horizon_dfs.keys(), key=lambda h: len(horizon_dfs[h][0]))
             df_base = horizon_dfs[base_H][0]
 
-            # Build (ts, symbol) index for intersection
+            # Build (ts, symbol) index for union + diagnostics
             if "__ts__" in df_base.columns and "__symbol__" in df_base.columns:
-                # Create a multi-index key for each horizon
                 base_keys = list(zip(df_base["__ts__"].values, df_base["__symbol__"].values))
-                common_set = set(base_keys)
-                for h, (df_h, _) in horizon_dfs.items():
+                union_keys = []
+                seen_keys = set()
+                key_to_idx_by_h = {}
+
+                for kk in base_keys:
+                    if kk not in seen_keys:
+                        union_keys.append(kk)
+                        seen_keys.add(kk)
+
+                for h in sorted(horizon_dfs.keys()):
+                    df_h, _ = horizon_dfs[h]
+                    ts_vals = df_h["__ts__"]
+                    sym_vals = df_h["__symbol__"]
+                    null_key_rows = int((ts_vals.isna() | sym_vals.isna()).sum())
+                    h_keys = list(zip(ts_vals.values, sym_vals.values))
+                    uniq_keys = len(set(h_keys))
+                    dup_keys = len(h_keys) - uniq_keys
+                    if null_key_rows > 0 or dup_keys > 0:
+                        tprint(
+                            f"    H{h} key hygiene: rows={len(df_h)}, unique={uniq_keys}, duplicates={dup_keys}, null_keys={null_key_rows}"
+                        )
+                    key_to_idx_by_h[h] = {kxy: i for i, kxy in enumerate(h_keys)}
+                    for kk in h_keys:
+                        if kk not in seen_keys:
+                            union_keys.append(kk)
+                            seen_keys.add(kk)
+
+                inter_count = sum(1 for kk in union_keys if all(kk in key_to_idx_by_h[h] for h in horizon_dfs.keys()))
+                tprint(f"  Union: {len(union_keys)} unique samples across horizons (intersection={inter_count})")
+                for h in sorted(horizon_dfs.keys()):
+                    present = np.array([kk in key_to_idx_by_h[h] for kk in union_keys], dtype=bool)
+                    miss_cnt = int((~present).sum())
+                    coverage = float(present.mean() * 100.0)
+                    tprint(f"    H{h} coverage on union: {present.sum()}/{len(union_keys)} ({coverage:.1f}%), missing={miss_cnt}")
+
+                base_lookup = {kk: i for i, kk in enumerate(base_keys)}
+                for h in sorted(horizon_dfs.keys()):
                     if h == base_H:
                         continue
-                    if "__ts__" in df_h.columns and "__symbol__" in df_h.columns:
-                        h_keys = set(zip(df_h["__ts__"].values, df_h["__symbol__"].values))
-                        common_set &= h_keys
-                # Filter base to common samples
-                keep_mask = np.array([k in common_set for k in base_keys])
-                tprint(f"  Intersection: {keep_mask.sum()}/{len(base_keys)} samples common across all horizons")
+                    h_key_set = set(key_to_idx_by_h[h].keys())
+                    base_key_set = set(base_lookup.keys())
+                    base_only = len(base_key_set - h_key_set)
+                    h_only = len(h_key_set - base_key_set)
+                    if base_only > 0 or h_only > 0:
+                        tprint(
+                            f"    H{h} vs base H{base_H}: base_only={base_only}, h_only={h_only}"
+                        )
+
+                df = df_base.iloc[[base_lookup[kk] for kk in union_keys if kk in base_lookup]].copy()
+
+                missing_keys = [kk for kk in union_keys if kk not in base_lookup]
+                if missing_keys:
+                    donor_horizons = sorted(horizon_dfs.keys(), key=lambda hh: (-len(horizon_dfs[hh][0]), hh))
+                    extra_rows = []
+                    for kk in missing_keys:
+                        for h in donor_horizons:
+                            h_idx = key_to_idx_by_h[h].get(kk, -1)
+                            if h_idx >= 0:
+                                extra_rows.append(horizon_dfs[h][0].iloc[h_idx].reindex(df_base.columns))
+                                break
+                    if extra_rows:
+                        df_extra = pd.DataFrame(extra_rows, columns=df_base.columns)
+                        df = pd.concat([df, df_extra], axis=0, ignore_index=True)
+
+                df = df.reset_index(drop=True)
             else:
                 # Fallback: use min-length truncation
                 min_len = min(len(df_h) for df_h, _ in horizon_dfs.values())
                 keep_mask = np.ones(len(df_base), dtype=bool)
                 keep_mask[min_len:] = False
+                df = df_base.loc[keep_mask].reset_index(drop=True).copy()
                 tprint(f"  No ts/symbol columns; truncating to {min_len} samples")
 
-            if keep_mask.sum() < 100:
-                tprint(f"Meta {side}_{k}: skipped (only {keep_mask.sum()} common samples)")
+            if len(df) < 100:
+                tprint(f"Meta {side}_{k}: skipped (only {len(df)} union samples)")
                 continue
-
-            df = df_base.loc[keep_mask].reset_index(drop=True).copy()
 
             # Build OOF predictions for each horizon, aligned to common samples
             pred_h = pd.DataFrame(index=df.index)

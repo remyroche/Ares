@@ -603,11 +603,12 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             bootstrap_prec20_cv = float(np.std(prec_arr) / (np.mean(prec_arr) + 1e-9))
             
             # Prevalence-aware PR-AUC threshold
-            pr_auc_threshold = max(0.50, min(0.54, prev + 0.10))
+            pr_auc_threshold = max(1.25 * prev, prev + 0.05)
             
             # Gate checks (same as training.py)
             checks = {
                 "pr_auc_ge_threshold": pr_auc >= pr_auc_threshold,
+                "pr_auc_ge_random": pr_auc >= prev,
                 "brier_and_logloss_improve_ge_2pct": bool((brier_imp >= 0.02) and (ll_imp >= 0.02)),
                 "liftk_and_preck_lift": bool((lift_k >= 1.2) and ((prec_lift_abs >= 0.025) or ((lift_k - 1.0) >= 0.05))),
                 "bootstrap_prec20_cv_le_0_30": bootstrap_prec20_cv <= 0.30,

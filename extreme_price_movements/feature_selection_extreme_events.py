@@ -677,11 +677,17 @@ def mdi_feature_selection_v3(
 
         metrics_df = pd.DataFrame(agg, index=current_features)
 
-        # Final Ranking
+        # Compute Effective metrics (Penalize Instability: mu - 0.5 * std)
+        # This aligns ranking with the final "Effective Mass" calculation to avoid selecting features with 0 mass.
+        metrics_df['share_eff'] = np.maximum(0, metrics_df['share_mu'] - 0.5 * metrics_df['share_std'])
+        metrics_df['mdi_depth_eff'] = np.maximum(0, metrics_df['mdi_depth_mu'] - 0.5 * metrics_df['mdi_depth_std'])
+        metrics_df['mdi_cov_eff'] = np.maximum(0, metrics_df['mdi_cov_mu'] - 0.5 * metrics_df['mdi_cov_std'])
+
+        # Final Ranking (Prioritize Effective Mass)
         metrics_df['composite_rank'] = (
-            metrics_df['share_stab'].rank(ascending=False) * 0.5 +
-            metrics_df['mdi_depth_stab'].rank(ascending=False) * 0.3 +
-            metrics_df['mdi_cov_stab'].rank(ascending=False) * 0.2
+            metrics_df['share_eff'].rank(ascending=False) * 0.5 +
+            metrics_df['mdi_depth_eff'].rank(ascending=False) * 0.3 +
+            metrics_df['mdi_cov_eff'].rank(ascending=False) * 0.2
         ).rank()
 
         metrics_df_sorted = metrics_df.sort_values('composite_rank')

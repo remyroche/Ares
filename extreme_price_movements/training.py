@@ -415,8 +415,15 @@ class AlphaHorizonEnsemble:
 def compute_meta_target(ret2: np.ndarray, ret4: np.ndarray, ret8: np.ndarray) -> np.ndarray:
     def _signed_log_demeaned(x):
         x = np.asarray(x, dtype=float)
-        z = np.sign(x) * np.log1p(np.abs(x))
-        return z - float(np.mean(z))
+        valid = np.isfinite(x)
+        if not valid.any():
+            return np.zeros_like(x)
+        z = np.zeros_like(x)
+        z[valid] = np.sign(x[valid]) * np.log1p(np.abs(x[valid]))
+        # Use only valid values for centering
+        mu = np.mean(z[valid])
+        z[valid] -= mu
+        return z
 
     r2 = _signed_log_demeaned(ret2)
     r4 = _signed_log_demeaned(ret4)
@@ -1954,6 +1961,20 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                 return y_ret.astype(np.float32)
 
             y_target = compute_meta_target(_ret_for_h_aligned(2), _ret_for_h_aligned(4), _ret_for_h_aligned(8))
+
+            # Diagnostic: check y_target integrity
+            n_nan_y = np.isnan(y_target).sum()
+            n_tot = len(y_target)
+            if n_nan_y > 0:
+                tprint(f"  WARNING: y_target has {n_nan_y}/{n_tot} NaNs! Replacing with 0.")
+                y_target = np.nan_to_num(y_target, nan=0.0)
+
+            # Diagnostic: check y_target correlation with y_ret (should be positive)
+            if np.std(y_target) > 1e-9 and np.std(y_ret) > 1e-9:
+                corr_tgt = np.corrcoef(y_target, y_ret)[0, 1]
+                tprint(f"  Meta Target Check: Corr(y_target, y_ret) = {corr_tgt:.4f}")
+                if corr_tgt < 0.2:
+                    tprint(f"  WARNING: Low/Negative correlation between meta target and raw returns ({corr_tgt:.4f})!")
 
             n_res = df.get("__n_res__", pd.Series(np.ones(len(df)), index=df.index)).values.astype(np.float32)
             keep = n_res >= np.quantile(n_res, 0.20)

@@ -597,11 +597,21 @@ class MetaModel:
         }
         return score, metrics, guard
 
-    def _cv_train_predict(self, kind: str, quantiles: Sequence[float], params: dict, X: np.ndarray, y: np.ndarray, sw: Optional[np.ndarray]) -> Tuple[np.ndarray, Dict[str, float], bool]:
+    def _cv_train_predict(
+        self,
+        kind: str,
+        quantiles: Sequence[float],
+        params: dict,
+        X: np.ndarray,
+        y: np.ndarray,
+        sw: Optional[np.ndarray],
+        score_y: Optional[np.ndarray] = None,
+    ) -> Tuple[np.ndarray, Dict[str, float], bool]:
         pkf = PurgedKFold(n_splits=3, purge=5, embargo=2)
         oof = np.full(len(y), np.nan, dtype=float)
-        baseline_util, _, _, _ = _topk_stats(y, np.zeros_like(y), frac=0.15)
-        baseline_dd = float(_maxdd_numba(np.abs(y).astype(np.float64)))
+        y_eval = np.asarray(y if score_y is None else score_y, dtype=float)
+        baseline_util, _, _, _ = _topk_stats(y_eval, np.zeros_like(y_eval), frac=0.15)
+        baseline_dd = float(_maxdd_numba(np.abs(y_eval).astype(np.float64)))
         baseline = {"util": max(1e-6, baseline_util), "maxdd": max(1e-6, baseline_dd)}
 
         for tr, va in pkf.split(X):
@@ -630,7 +640,12 @@ class MetaModel:
             oof[va] = fold_pred
 
         mask = np.isfinite(oof)
-        score, metrics, guard = self._oof_score(y[mask], oof[mask], baseline, quantile_like=(kind in ("xgb", "lgb", "qreg_l1")))
+        score, metrics, guard = self._oof_score(
+            y_eval[mask],
+            oof[mask],
+            baseline,
+            quantile_like=(kind in ("xgb", "lgb", "qreg_l1")),
+        )
         return oof, metrics, guard
 
     def _optuna_hpo(self, winner_name: str, winner_kind: str, winner_qs: Sequence[float], base_params: dict, X: np.ndarray, y: np.ndarray, sw: Optional[np.ndarray]) -> dict:
@@ -669,7 +684,7 @@ class MetaModel:
                 p["min_samples_leaf"] = trial.suggest_int("min_samples_leaf", 10, 80)
             elif winner_kind == "qreg_l1":
                 p["alpha"] = trial.suggest_float("alpha", 1e-4, 20.0, log=True)
-            oof, _, _ = self._cv_train_predict(winner_kind, winner_qs, p, X, y, sw)
+            oof, _, _ = self._cv_train_predict(winner_kind, winner_qs, p, X, y, sw, score_y=y)
             m = np.isfinite(oof)
             return _pinball(y[m], oof[m], 0.85)
 
@@ -808,7 +823,7 @@ class MetaModel:
                 elif kind == "lgb" and _params.get("objective") != "quantile":
                     _params["monotone_constraints"] = list(_mono)
             try:
-                oof, metrics, guard_ok = self._cv_train_predict(kind, qs, _params, Xv, y_fit, sw_fit)
+                oof, metrics, guard_ok = self._cv_train_predict(kind, qs, _params, Xv, y_fit, sw_fit, score_y=y_np)
             except Exception as exc:
                 tprint(f"MetaModel candidate {name} failed: {exc}")
                 return None
@@ -901,7 +916,7 @@ class MetaModel:
         self._model_type = best_name
         self.oof_probs = best_oof
         self.report_rows = records
-        self._write_model_reports(records, best_oof, y_fit)
+        self._write_model_reports(records, best_oof, y_np)
         return self
 
     def predict(self, X_meta):

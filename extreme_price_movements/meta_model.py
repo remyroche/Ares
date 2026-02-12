@@ -334,12 +334,13 @@ class MetaModel:
             return model
         try:
             model = lgb.LGBMRegressor(**params)
+            metric = "quantile" if params.get("objective") == "quantile" else "rmse"
             model.fit(
                 X_tr,
                 y_tr,
                 sample_weight=sample_weight,
                 eval_set=[(X_va, y_va)],
-                eval_metric="quantile",
+                eval_metric=metric,
                 callbacks=[lgb.early_stopping(100, verbose=False)],
             )
             return model
@@ -348,12 +349,13 @@ class MetaModel:
             p2.pop("monotone_constraints", None)
             p2.pop("interaction_constraints", None)
             model = lgb.LGBMRegressor(**p2)
+            metric = "quantile" if p2.get("objective") == "quantile" else "rmse"
             model.fit(
                 X_tr,
                 y_tr,
                 sample_weight=sample_weight,
                 eval_set=[(X_va, y_va)],
-                eval_metric="quantile",
+                eval_metric=metric,
                 callbacks=[lgb.early_stopping(100, verbose=False)],
             )
             return model
@@ -529,11 +531,22 @@ class MetaModel:
         }
 
         # Tail-weighted regression variants
+        # Use regression objectives (MSE) instead of quantile objectives
+        lgb_reg = dict(lgb_q)
+        lgb_reg["objective"] = "regression"
+        lgb_reg["metric"] = "rmse"
+        lgb_reg.pop("alpha", None)
+        lgb_reg.pop("quantile_alpha", None)
+
+        xgb_reg = dict(xgb_single)
+        xgb_reg["objective"] = "reg:squarederror"
+        xgb_reg.pop("quantile_alpha", None)
+
         for lmb in [0, 1, 2, 4]:
             out[f"ridge_tailweighted_l{lmb}"] = ("ridge", [0.85], dict(ridge), "non_quantile")
             out[f"extratrees_tailweighted_l{lmb}"] = ("extratrees", [0.85], dict(et), "non_quantile")
-            out[f"lgbm_tailweighted_l{lmb}"] = ("lgb", [0.85], dict(lgb_q), "non_quantile")
-            out[f"xgb_tailweighted_l{lmb}"] = ("xgb", [0.85], dict(xgb_single), "non_quantile")
+            out[f"lgbm_tailweighted_l{lmb}"] = ("lgb", [0.85], dict(lgb_reg), "non_quantile")
+            out[f"xgb_tailweighted_l{lmb}"] = ("xgb", [0.85], dict(xgb_reg), "non_quantile")
 
         return out
 

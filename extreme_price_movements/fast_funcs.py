@@ -24,14 +24,6 @@ from src.utils.numba_funcs import (
 )
 from .utils import tprint
 
-@jit(nopython=True, parallel=True, cache=True)
-def _numba_ewma_parallel(mat, alpha, adjust):
-    n_rows, n_cols = mat.shape
-    out = np.empty((n_rows, n_cols), dtype=np.float32)
-    for j in prange(n_cols):
-        out[:, j] = _numba_ewma_nan_safe(mat[:, j], alpha, adjust)
-    return out
-
 @jit(nopython=True, cache=True)
 def _numba_ewma_nan_safe(x, alpha, adjust=False):
     n = len(x)
@@ -87,30 +79,6 @@ def _numba_rolling_sum_nan_safe(x, window):
             output[i] = current_sum
 
     return output
-
-@jit(nopython=True, parallel=True, cache=True)
-def _numba_rolling_sum_parallel(mat, window):
-    n_rows, n_cols = mat.shape
-    out = np.empty((n_rows, n_cols), dtype=np.float32)
-    for j in prange(n_cols):
-        out[:, j] = _numba_rolling_sum_nan_safe(mat[:, j], window)
-    return out
-
-@jit(nopython=True, parallel=True, cache=True)
-def _numba_rolling_mean_parallel(mat, window):
-    n_rows, n_cols = mat.shape
-    out = np.empty((n_rows, n_cols), dtype=np.float32)
-    for j in prange(n_cols):
-        out[:, j] = _numba_rolling_mean_nan_safe(mat[:, j], window)
-    return out
-
-@jit(nopython=True, parallel=True, cache=True)
-def _numba_rolling_std_parallel(mat, window):
-    n_rows, n_cols = mat.shape
-    out = np.empty((n_rows, n_cols), dtype=np.float32)
-    for j in prange(n_cols):
-        out[:, j] = _numba_rolling_std_nan_safe(mat[:, j], window)
-    return out
 
 @jit(nopython=True, cache=True)
 def simulate_trade_numba(
@@ -408,273 +376,139 @@ def apply_to_frame_binary(df1: pd.DataFrame, df2: pd.DataFrame, func, *args) -> 
     return apply_to_matrix_binary(df1, df2, func, *args)
 
 @jit(nopython=True, cache=True)
-def _numba_rsi_fused_1d(close, n, out):
-    l = len(close)
-    out[:] = np.nan
+def numba_rsi_kernel(close, n):
+    """
+    RSI = 100 - 100 / (1 + RS)
+    RS = Average Gain / Average Loss
+    """
+    delta = np.empty_like(close)
+    delta[0] = np.nan
+    delta[1:] = close[1:] - close[:-1]
 
-    if n <= 0: return
+    up = np.maximum(delta, 0.0)
+    dn = np.maximum(-delta, 0.0)
 
-    alpha = 1.0 / n
-    alpha_inv = 1.0 - alpha
+    # EWMA with alpha = 1/n, adjust=False
+    alpha = np.float32(1.0) / n
 
-    avg_up = 0.0
-    avg_dn = 0.0
+    avg_up = _numba_ewma_nan_safe(up, alpha, adjust=False)
+    avg_dn = _numba_ewma_nan_safe(dn, alpha, adjust=False)
 
-    # Find first valid
-    first_valid_idx = -1
-    for i in range(1, l):
-        prev = close[i-1]
-        curr = close[i]
-        if not np.isnan(prev) and not np.isnan(curr):
-            first_valid_idx = i
-            diff = curr - prev
-            if diff > 0:
-                avg_up = diff
-                avg_dn = 0.0
+    out = np.empty_like(close)
+    c100 = np.float32(100.0)
+    c50 = np.float32(50.0)
+    c1 = np.float32(1.0)
+
+    for i in range(len(close)):
+        if np.isnan(avg_dn[i]) or avg_dn[i] == 0:
+            if np.isnan(avg_up[i]):
+                out[i] = np.nan
+            elif avg_up[i] == 0:
+                 out[i] = c50 # No move
             else:
-                avg_up = 0.0
-                avg_dn = -diff
-            break
-
-    if first_valid_idx == -1:
-        return
-
-    # Write first output
-    if avg_dn == 0:
-        if avg_up == 0:
-             out[first_valid_idx] = 50.0
+                 out[i] = c100 # Only up moves
         else:
-             out[first_valid_idx] = 100.0
-    else:
-        rs = avg_up / avg_dn
-        out[first_valid_idx] = 100.0 - (100.0 / (1.0 + rs))
-
-    for i in range(first_valid_idx + 1, l):
-        prev = close[i-1]
-        curr = close[i]
-
-        if np.isnan(prev) or np.isnan(curr):
-            out[i] = out[i-1]
-            continue
-
-        diff = curr - prev
-
-        up = diff if diff > 0 else 0.0
-        dn = -diff if diff < 0 else 0.0
-
-        avg_up = alpha_inv * avg_up + alpha * up
-        avg_dn = alpha_inv * avg_dn + alpha * dn
-
-        if avg_dn == 0:
-            if avg_up == 0:
-                out[i] = 50.0
-            else:
-                out[i] = 100.0
-        else:
-            rs = avg_up / avg_dn
-            out[i] = 100.0 - (100.0 / (1.0 + rs))
-
-@jit(nopython=True, parallel=True, cache=True)
-def _numba_rsi_fused_parallel(mat, n):
-    n_rows, n_cols = mat.shape
-    out = np.empty((n_rows, n_cols), dtype=np.float32)
-
-    for j in prange(n_cols):
-        _numba_rsi_fused_1d(mat[:, j], n, out[:, j])
+            rs = avg_up[i] / avg_dn[i]
+            out[i] = c100 - (c100 / (c1 + rs))
 
     return out
 
-def numba_rsi(df, n):
+def numba_rsi(close_df, n):
     tprint(f"Entering function: numba_rsi in fast_funcs.py")
-    is_series = isinstance(df, pd.Series)
-    if is_series:
-        df = df.to_frame()
-
-    mat = df.to_numpy(dtype=np.float32, copy=False)
-    res = _numba_rsi_fused_parallel(mat, n)
-
-    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
-
-    if is_series:
-        return res_df[res_df.columns[0]]
-
-    return res_df
+    return apply_to_frame(close_df, numba_rsi_kernel, n)
 
 @jit(nopython=True, cache=True)
-def _numba_atr_fused_1d(high, low, close, n, out):
-    l = len(close)
-    out[:] = np.nan
+def numba_atr_kernel(high, low, close, n):
+    """
+    ATR using EWM smoothing.
+    TR = max(h-l, abs(h-prev_c), abs(l-prev_c))
+    """
+    sz = len(close)
+    tr = np.empty(sz, dtype=np.float32)
+    tr[0] = high[0] - low[0] # First TR is High - Low
 
-    if n <= 0: return
+    for i in range(1, sz):
+        h = high[i]; l = low[i]; pc = close[i-1]
+        v1 = h - l
+        v2 = abs(h - pc)
+        v3 = abs(l - pc)
+        tr[i] = max(v1, max(v2, v3))
 
-    alpha = 1.0 / n
-    alpha_inv = 1.0 - alpha
+    # ATR is EWM of TR
+    atr = _numba_ewma_nan_safe(tr, np.float32(1.0)/n, adjust=False)
 
-    atr = np.nan
-
-    first_valid_idx = -1
-    for i in range(l):
-        h = high[i]
-        lo = low[i]
+    # Return ATR percent: ATR / Close
+    out = np.empty(sz, dtype=np.float32)
+    for i in range(sz):
         c = close[i]
-
-        if not np.isnan(h) and not np.isnan(lo) and not np.isnan(c):
-             atr = h - lo
-             first_valid_idx = i
-             if c != 0:
-                 out[i] = atr / c
-             break
-
-    if first_valid_idx == -1:
-        return
-
-    for i in range(first_valid_idx + 1, l):
-        h = high[i]
-        lo = low[i]
-        c = close[i]
-        prev_c = close[i-1]
-
-        tr = np.nan
-        if not np.isnan(h) and not np.isnan(lo) and not np.isnan(prev_c):
-             v1 = h - lo
-             v2 = abs(h - prev_c)
-             v3 = abs(lo - prev_c)
-             tr = max(v1, max(v2, v3))
-        elif not np.isnan(h) and not np.isnan(lo):
-             # Fallback if prev_c is NaN but current is valid (e.g. gap)
-             tr = h - lo
-
-        if not np.isnan(tr):
-            atr = alpha_inv * atr + alpha * tr
-
-        if not np.isnan(c) and c != 0:
-            out[i] = atr / c
+        if c == 0 or np.isnan(c):
+             out[i] = np.nan
         else:
-            out[i] = np.nan
-
-@jit(nopython=True, parallel=True, cache=True)
-def _numba_atr_fused_parallel(h, l, c, n):
-    n_rows, n_cols = c.shape
-    out = np.empty((n_rows, n_cols), dtype=np.float32)
-
-    for j in prange(n_cols):
-        _numba_atr_fused_1d(h[:, j], l[:, j], c[:, j], n, out[:, j])
+             out[i] = atr[i] / c
 
     return out
 
 @jit(nopython=True, cache=True)
-def _numba_atr_no_norm_fused_1d(high, low, close, n, out):
-    l = len(close)
-    out[:] = np.nan
+def numba_atr_no_norm_kernel(high, low, close, n):
+    """
+    ATR using EWM smoothing, without normalization by close.
+    """
+    sz = len(close)
+    tr = np.empty(sz, dtype=np.float32)
+    tr[0] = high[0] - low[0]
 
-    if n <= 0: return
+    for i in range(1, sz):
+        h = high[i]; l = low[i]; pc = close[i-1]
+        v1 = h - l
+        v2 = abs(h - pc)
+        v3 = abs(l - pc)
+        tr[i] = max(v1, max(v2, v3))
 
-    alpha = 1.0 / n
-    alpha_inv = 1.0 - alpha
-
-    atr = np.nan
-
-    first_valid_idx = -1
-    for i in range(l):
-        h = high[i]
-        lo = low[i]
-
-        if not np.isnan(h) and not np.isnan(lo):
-             atr = h - lo
-             first_valid_idx = i
-             out[i] = atr
-             break
-
-    if first_valid_idx == -1:
-        return
-
-    for i in range(first_valid_idx + 1, l):
-        h = high[i]
-        lo = low[i]
-        prev_c = close[i-1]
-
-        tr = np.nan
-        if not np.isnan(h) and not np.isnan(lo) and not np.isnan(prev_c):
-             v1 = h - lo
-             v2 = abs(h - prev_c)
-             v3 = abs(lo - prev_c)
-             tr = max(v1, max(v2, v3))
-        elif not np.isnan(h) and not np.isnan(lo):
-             tr = h - lo
-
-        if not np.isnan(tr):
-            atr = alpha_inv * atr + alpha * tr
-
-        out[i] = atr
-
-@jit(nopython=True, parallel=True, cache=True)
-def _numba_atr_no_norm_fused_parallel(h, l, c, n):
-    n_rows, n_cols = c.shape
-    out = np.empty((n_rows, n_cols), dtype=np.float32)
-
-    for j in prange(n_cols):
-        _numba_atr_no_norm_fused_1d(h[:, j], l[:, j], c[:, j], n, out[:, j])
-
-    return out
+    atr = _numba_ewma_nan_safe(tr, np.float32(1.0)/n, adjust=False)
+    return atr
 
 def numba_atr_no_norm(high_df, low_df, close_df, n):
     # tprint(f"Entering function: numba_atr_no_norm in fast_funcs.py")
-    is_series = isinstance(close_df, pd.Series)
-
-    if is_series:
-        high_df = high_df.to_frame()
-        low_df = low_df.to_frame()
-        close_df = close_df.to_frame()
-
-    h_mat = high_df.to_numpy(dtype=np.float32, copy=False)
-    l_mat = low_df.to_numpy(dtype=np.float32, copy=False)
-    c_mat = close_df.to_numpy(dtype=np.float32, copy=False)
-
-    res = _numba_atr_no_norm_fused_parallel(h_mat, l_mat, c_mat, n)
-
-    res_df = pd.DataFrame(res, index=close_df.index, columns=close_df.columns)
-
-    if is_series:
-        return res_df[res_df.columns[0]]
-
-    return res_df
+    out = pd.DataFrame(index=close_df.index, columns=close_df.columns, dtype=np.float32)
+    cols = close_df.columns
+    total_cols = len(cols)
+    for i, c in enumerate(cols):
+        if i % 100 == 0:
+            tprint(f"numba_atr_no_norm progress: {i}/{total_cols} columns processed")
+        h = high_df[c].to_numpy(dtype=np.float32)
+        l = low_df[c].to_numpy(dtype=np.float32)
+        cl = close_df[c].to_numpy(dtype=np.float32)
+        res = numba_atr_no_norm_kernel(h, l, cl, n)
+        out[c] = res
+    return out
 
 def numba_atr(high_df, low_df, close_df, n):
-    # tprint(f"Entering function: numba_atr in fast_funcs.py")
-    is_series = isinstance(close_df, pd.Series)
-
-    if is_series:
-        high_df = high_df.to_frame()
-        low_df = low_df.to_frame()
-        close_df = close_df.to_frame()
-
-    h_mat = high_df.to_numpy(dtype=np.float32, copy=False)
-    l_mat = low_df.to_numpy(dtype=np.float32, copy=False)
-    c_mat = close_df.to_numpy(dtype=np.float32, copy=False)
-
-    res = _numba_atr_fused_parallel(h_mat, l_mat, c_mat, n)
-
-    res_df = pd.DataFrame(res, index=close_df.index, columns=close_df.columns)
-
-    if is_series:
-        return res_df[res_df.columns[0]]
-
-    return res_df
+    # This requires synchronized iteration over 3 dataframes.
+    tprint(f"Entering function: numba_atr in fast_funcs.py")
+    out = pd.DataFrame(index=close_df.index, columns=close_df.columns, dtype=np.float32)
+    cols = close_df.columns
+    total_cols = len(cols)
+    for i, c in enumerate(cols):
+        if i % 100 == 0:
+            tprint(f"numba_atr progress: {i}/{total_cols} columns processed")
+        h = high_df[c].to_numpy(dtype=np.float32)
+        l = low_df[c].to_numpy(dtype=np.float32)
+        cl = close_df[c].to_numpy(dtype=np.float32)
+        res = numba_atr_kernel(h, l, cl, n)
+        out[c] = res
+    return out
 
 def numba_zscore(df, n):
-    # Optimized to use single-pass fused kernel (4x faster + better precision)
+    # (x - mean) / std
+    # Using nan_safe versions
     # tprint(f"Entering function: numba_zscore in fast_funcs.py")
-    return numba_rolling_zscore_fused(df, n)
+    mu = apply_to_frame(df, _numba_rolling_mean_nan_safe, n)
+    sd = apply_to_frame(df, _numba_rolling_std_nan_safe, n)
+
+    # Vectorized pandas operation for final step is fine/fast
+    return (df - mu) / (sd + np.float32(1e-12))
 
 # --- NEW KERNELS & WRAPPERS ---
-
-@jit(nopython=True, parallel=True, cache=True)
-def _numba_rolling_max_parallel(mat, window):
-    n_rows, n_cols = mat.shape
-    out = np.empty((n_rows, n_cols), dtype=np.float32)
-    for j in prange(n_cols):
-        out[:, j] = _numba_rolling_max(mat[:, j], window)
-    return out
 
 @jit(nopython=True, cache=True)
 def _numba_rolling_max(x, window):
@@ -720,14 +554,6 @@ def _numba_rolling_max(x, window):
         if front <= back:
             out[i] = x[deque_indices[front % window]]
 
-    return out
-
-@jit(nopython=True, parallel=True, cache=True)
-def _numba_rolling_min_parallel(mat, window):
-    n_rows, n_cols = mat.shape
-    out = np.empty((n_rows, n_cols), dtype=np.float32)
-    for j in prange(n_cols):
-        out[:, j] = _numba_rolling_min(mat[:, j], window)
     return out
 
 @jit(nopython=True, cache=True)
@@ -940,14 +766,6 @@ def _numba_rolling_quantile_dual_parallel(mat, window, q1, q2):
         _numba_rolling_quantile_dual_1d(mat[:, j], window, q1, q2, out1[:, j], out2[:, j])
 
     return out1, out2
-
-@jit(nopython=True, parallel=True, cache=True)
-def _numba_pct_change_parallel(mat, n_shift):
-    n_rows, n_cols = mat.shape
-    out = np.empty((n_rows, n_cols), dtype=np.float32)
-    for j in prange(n_cols):
-        out[:, j] = _numba_pct_change(mat[:, j], n_shift)
-    return out
 
 @jit(nopython=True, cache=True)
 def _numba_pct_change(x, n_shift):
@@ -1229,59 +1047,20 @@ def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend,
 # Wrappers
 def numba_rolling_max(df, n):
     tprint(f"Entering function: numba_rolling_max in fast_funcs.py")
-    is_series = isinstance(df, pd.Series)
-    if is_series:
-        df = df.to_frame()
-    mat = df.to_numpy(dtype=np.float32, copy=False)
-    res = _numba_rolling_max_parallel(mat, n)
-    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
-    if is_series:
-        return res_df[res_df.columns[0]]
-    return res_df
+    return apply_to_frame(df, _numba_rolling_max, n)
 
 def numba_rolling_min(df, n):
     tprint(f"Entering function: numba_rolling_min in fast_funcs.py")
-    is_series = isinstance(df, pd.Series)
-    if is_series:
-        df = df.to_frame()
-    mat = df.to_numpy(dtype=np.float32, copy=False)
-    res = _numba_rolling_min_parallel(mat, n)
-    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
-    if is_series:
-        return res_df[res_df.columns[0]]
-    return res_df
+    return apply_to_frame(df, _numba_rolling_min, n)
 
 def numba_rolling_sum(df, n):
     tprint(f"Entering function: numba_rolling_sum in fast_funcs.py")
-    is_series = isinstance(df, pd.Series)
-    if is_series:
-        df = df.to_frame()
-    mat = df.to_numpy(dtype=np.float32, copy=False)
-    res = _numba_rolling_sum_parallel(mat, n)
-    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
-    if is_series:
-        return res_df[res_df.columns[0]]
-    return res_df
-
-@jit(nopython=True, parallel=True, cache=True)
-def _numba_rolling_median_parallel(mat, window):
-    n_rows, n_cols = mat.shape
-    out = np.empty((n_rows, n_cols), dtype=np.float32)
-    for j in prange(n_cols):
-        out[:, j] = _numba_rolling_median(mat[:, j], window)
-    return out
+    # CHANGED: Use NaN-safe version
+    return apply_to_frame(df, _numba_rolling_sum_nan_safe, n)
 
 def numba_rolling_median(df, n):
     tprint(f"Entering function: numba_rolling_median in fast_funcs.py")
-    is_series = isinstance(df, pd.Series)
-    if is_series:
-        df = df.to_frame()
-    mat = df.to_numpy(dtype=np.float32, copy=False)
-    res = _numba_rolling_median_parallel(mat, n)
-    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
-    if is_series:
-        return res_df[res_df.columns[0]]
-    return res_df
+    return apply_to_frame(df, _numba_rolling_median, n)
 
 def numba_rolling_quantile(df, n, q):
     # tprint(f"Entering function: numba_rolling_quantile in fast_funcs.py")
@@ -1309,15 +1088,7 @@ def numba_rolling_quantile_dual(df, n, q1, q2):
 
 def numba_pct_change(df, n):
     tprint(f"Entering function: numba_pct_change in fast_funcs.py")
-    is_series = isinstance(df, pd.Series)
-    if is_series:
-        df = df.to_frame()
-    mat = df.to_numpy(dtype=np.float32, copy=False)
-    res = _numba_pct_change_parallel(mat, n)
-    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
-    if is_series:
-        return res_df[res_df.columns[0]]
-    return res_df
+    return apply_to_frame(df, _numba_pct_change, n)
 
 def numba_rolling_corr(df1, df2, n):
     tprint(f"Entering function: numba_rolling_corr in fast_funcs.py")
@@ -1325,38 +1096,11 @@ def numba_rolling_corr(df1, df2, n):
 
 def numba_rolling_mean(df, n):
     # tprint(f"Entering function: numba_rolling_mean in fast_funcs.py")
-    is_series = isinstance(df, pd.Series)
-    if is_series:
-        df = df.to_frame()
-    mat = df.to_numpy(dtype=np.float32, copy=False)
-    res = _numba_rolling_mean_parallel(mat, n)
-    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
-    if is_series:
-        return res_df[res_df.columns[0]]
-    return res_df
+    return apply_to_frame(df, _numba_rolling_mean_nan_safe, n)
 
 def numba_rolling_std(df, n):
     # tprint(f"Entering function: numba_rolling_std in fast_funcs.py")
-    is_series = isinstance(df, pd.Series)
-    if is_series:
-        df = df.to_frame()
-    mat = df.to_numpy(dtype=np.float32, copy=False)
-    res = _numba_rolling_std_parallel(mat, n)
-    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
-    if is_series:
-        return res_df[res_df.columns[0]]
-    return res_df
-
-def numba_ewma(df, alpha, adjust=False):
-    is_series = isinstance(df, pd.Series)
-    if is_series:
-        df = df.to_frame()
-    mat = df.to_numpy(dtype=np.float32, copy=False)
-    res = _numba_ewma_parallel(mat, alpha, adjust)
-    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
-    if is_series:
-        return res_df[res_df.columns[0]]
-    return res_df
+    return apply_to_frame(df, _numba_rolling_std_nan_safe, n)
 
 def compute_peak_labels_and_weights(close_df, atr_df, horizon, near_k, rev_k, is_uptrend, max_near_pct=0.02, min_rev_pct=0.005):
     tprint(f"Entering function: compute_peak_labels_and_weights in fast_funcs.py")
@@ -1445,32 +1189,22 @@ def _numba_rolling_zscore_nan_safe_1d(x, window, eps=1e-12):
     sum_val = 0.0
     sum_sq = 0.0
     count = 0
-    K = 0.0
 
     for i in range(n):
         # Entering
         val_in = x[i]
         if not np.isnan(val_in):
-            if count == 0:
-                K = float(val_in)
-
-            val_in_64 = float(val_in) - K
-            sum_val += val_in_64
-            sum_sq += val_in_64 * val_in_64
+            sum_val += val_in
+            sum_sq += val_in * val_in
             count += 1
 
         # Leaving
         if i >= window:
             val_out = x[i - window]
             if not np.isnan(val_out):
-                val_out_64 = float(val_out) - K
-                sum_val -= val_out_64
-                sum_sq -= val_out_64 * val_out_64
+                sum_val -= val_out
+                sum_sq -= val_out * val_out
                 count -= 1
-
-        if count == 0:
-            sum_val = 0.0
-            sum_sq = 0.0
 
         # Output logic
         if count > 1:
@@ -1483,9 +1217,7 @@ def _numba_rolling_zscore_nan_safe_1d(x, window, eps=1e-12):
             std = np.sqrt(var_num / (count - 1))
 
             if not np.isnan(val_in):
-                 # Reconstruct actual mean for z-score calc
-                 actual_mean = mean + K
-                 output[i] = (val_in - actual_mean) / (std + eps)
+                 output[i] = (val_in - mean) / (std + eps)
             else:
                  output[i] = np.nan
 

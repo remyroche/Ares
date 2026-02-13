@@ -81,7 +81,7 @@ def avg_uniqueness_on_grid(label_times: pd.DataFrame, grid: pd.DatetimeIndex, co
         i1_v = i1[idx_v]
 
         sums = prefix[i1_v + 1] - prefix[i0_v]
-        counts = (i1_v - i0_v + 1).astype(np.float32)
+        counts = (i1_v - i0_v + 1).astype(np.float64)
 
         out[idx_v] = sums / counts
 
@@ -233,72 +233,3 @@ def build_label_time_ranges(
         't_start': entry_times,
         't_end': exit_times
     }, index=range(len(entry_times)))
-
-
-def compute_mfe_mae_weights(
-    mfe: np.ndarray,
-    mae: np.ndarray,
-    tp: np.ndarray,
-    sl: np.ndarray,
-    is_timeout: np.ndarray,
-    touch_margin: Optional[np.ndarray] = None,
-    w_min: float = 0.5,
-    tau: float = 1.0,
-    cost_floor: float = 0.001
-) -> np.ndarray:
-    """
-    Compute sample weights based on MFE/MAE relative to barriers.
-    
-    Rationale:
-    - r_mfe = MFE/TP: how much of TP was "within reach"
-    - r_mae = MAE/SL: how close to SL did we get
-    - d = max(r_mfe, r_mae): the more extreme excursion (normalized)
-    - w_base = w_min + (1-w_min) * clip(d/tau, 0, 1)
-    
-    This weights samples by how "decisive" the price movement was,
-    without weighting by speed (regime bias) or net R:R (trading policy).
-    
-    Args:
-        mfe: Max Favorable Excursion (positive, as fraction of price)
-        mae: Max Adverse Excursion (positive, as fraction of price)
-        tp: Take-profit barrier distance (positive, as fraction of price)
-        sl: Stop-loss barrier distance (positive, as fraction of price)
-        is_timeout: Boolean array, True if label hit timeout (no TP/SL)
-        touch_margin: How close to barrier when hit (optional, for cost floor check)
-        w_min: Minimum weight floor (default 0.5)
-        tau: Scaling factor for d/tau (default 1.0)
-        cost_floor: Minimum touch margin to avoid cost-floor penalty (default 0.1%)
-        
-    Returns:
-        Sample weights as numpy array
-    """
-    mfe = np.asarray(mfe, dtype=np.float64)
-    mae = np.asarray(mae, dtype=np.float64)
-    tp = np.asarray(tp, dtype=np.float64)
-    sl = np.asarray(sl, dtype=np.float64)
-    is_timeout = np.asarray(is_timeout, dtype=bool)
-    
-    # Ensure positive barriers
-    tp = np.maximum(tp, 1e-8)
-    sl = np.maximum(sl, 1e-8)
-    
-    # Normalized excursions
-    r_mfe = np.maximum(mfe, 0.0) / tp  # How much of TP was within reach
-    r_mae = np.maximum(mae, 0.0) / sl  # How close to SL
-    
-    # Take the more extreme normalized excursion
-    d = np.maximum(r_mfe, r_mae)
-    
-    # Base weight: w_min + (1-w_min) * clip(d/tau, 0, 1)
-    w_base = w_min + (1.0 - w_min) * np.clip(d / tau, 0.0, 1.0)
-    
-    # Cost floor penalty: if touch margin < cost_floor, halve the weight
-    if touch_margin is not None:
-        touch_margin = np.asarray(touch_margin, dtype=np.float64)
-        cost_floor_mask = touch_margin < cost_floor
-        w_base = np.where(cost_floor_mask, w_base * 0.5, w_base)
-    
-    # Timeout cap: if timeout, cap weight at 0.7
-    w = np.where(is_timeout, np.minimum(w_base, 0.7), w_base)
-    
-    return w.astype(np.float32)

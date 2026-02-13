@@ -5,7 +5,7 @@ import numpy as np
 
 from extreme_price_movements.utils import tprint, Timer
 from extreme_price_movements.data_store import load_features, save_features, save_artifact_df, load_artifact_df, to_panel
-from extreme_price_movements.training import generate_label_datasets, generate_exhaustion_history, optimize_risk_params, train_models_from_artifacts, train_meta_models_from_artifacts
+from extreme_price_movements.training import generate_label_datasets, generate_exhaustion_history, optimize_risk_params, train_models_from_artifacts
 from extreme_price_movements.features import compute_market_features, add_regime_gates, compute_features_hourly
 from extreme_price_movements.universe import get_training_universe, refresh_margin_universe_daily
 from extreme_price_movements.engine import simulate_trade_hourly, generate_hourly_signals, _build_side_score_df
@@ -53,9 +53,8 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex):
 
     feats = load_features(ts_sig, cfg["data_root"])
     if feats is None:
-        tprint("Features not found on disk. Computing inline...")
-        feats = compute_features_hourly(panel, mkt_gates, cfg)
-        tprint(f"Inline feature computation done: {len(feats)} features")
+        tprint("ERROR: Features not found. Run feature_generation first.")
+        return
 
     # Restrict to symbols present in both panel and features
     sample_feat = next(iter(feats.values()))
@@ -86,13 +85,11 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex):
 
     tprint("STEP: LABEL GENERATION COMPLETE")
 
-def run_training_step(ts_sig, cfg, store=None, margin_symbols=None, stage="all"):
-    """stage in {all, base, meta}."""
+def run_training_step(ts_sig, cfg, store=None, margin_symbols=None):
     """Train all models from label artifacts. Saves trained state to disk."""
     tprint("STEP: MODEL TRAINING START")
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
-    cfg["run_id"] = run_id
     datasets = {}
 
     # Ensure we always have a margin universe for downstream specialist training
@@ -196,119 +193,8 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None, stage="all")
 
     # 2. Train models
     with Timer("Model Training"):
-        if stage == "meta":
-            # Meta-only mode: requires base state with trained alpha models.
-            state_dir = os.path.join(cfg["data_root"], "artifacts", run_id, "models")
-            base_state_path = os.path.join(state_dir, "trained_state_base.pkl")
-            if not os.path.exists(base_state_path):
-                # Fallback: search previous artifact directories for base state
-                artifacts_root = os.path.join(cfg["data_root"], "artifacts")
-                prev_dirs = sorted(
-                    [d for d in os.listdir(artifacts_root)
-                     if os.path.isdir(os.path.join(artifacts_root, d)) and d != run_id],
-                    reverse=True
-                )
-                found = False
-                for prev_id in prev_dirs:
-                    candidate = os.path.join(artifacts_root, prev_id, "models", "trained_state_base.pkl")
-                    if os.path.exists(candidate):
-                        tprint(f"Base state not in {run_id}, falling back to {prev_id}")
-                        base_state_path = candidate
-                        state_dir = os.path.join(artifacts_root, prev_id, "models")
-                        found = True
-                        break
-                if not found:
-                    tprint(f"ERROR: Base state not found at {base_state_path} or any previous run. Run train_base first.")
-                    return None
-
-            # Fast path: try loading OOF from parquet files first
-            oof_dir = os.path.join(cfg["data_root"], "artifacts", run_id, "oof")
-            _oof_parquets_found = os.path.isdir(oof_dir) and len([f for f in os.listdir(oof_dir) if f.endswith(".parquet")]) > 0
-
-            if not _oof_parquets_found:
-                # Fallback: search previous artifact directories for OOF parquets
-                artifacts_root = os.path.join(cfg["data_root"], "artifacts")
-                for prev_id in sorted(
-                    [d for d in os.listdir(artifacts_root)
-                     if os.path.isdir(os.path.join(artifacts_root, d)) and d != run_id],
-                    reverse=True
-                ):
-                    candidate_oof = os.path.join(artifacts_root, prev_id, "oof")
-                    if os.path.isdir(candidate_oof) and any(f.endswith(".parquet") for f in os.listdir(candidate_oof)):
-                        tprint(f"OOF parquets not in {run_id}, falling back to {prev_id}")
-                        oof_dir = candidate_oof
-                        _oof_parquets_found = True
-                        break
-
-            if _oof_parquets_found:
-                tprint(f"Loading OOF predictions from parquet (fast path): {oof_dir}")
-                # Build lightweight alpha_models dict with OOF from parquet
-                import glob
-                _oof_files = glob.glob(os.path.join(oof_dir, "oof_*.parquet"))
-                _oof_data = {}  # (side, kind, H) -> oof_probs
-                for _fp in _oof_files:
-                    _fn = os.path.basename(_fp).replace("oof_", "").replace(".parquet", "")
-                    # Parse: "long_mr_H2" -> side=long, kind=mr, H=2
-                    _parts = _fn.rsplit("_H", 1)
-                    if len(_parts) == 2:
-                        _sk = _parts[0]  # "long_mr"
-                        _h = int(_parts[1])
-                        _side_kind = _sk.split("_", 1)
-                        if len(_side_kind) == 2:
-                            _oof_df = pd.read_parquet(_fp)
-                            _oof_data[(_side_kind[0], _side_kind[1], _h)] = _oof_df["oof_prob"].values
-                tprint(f"  Loaded {len(_oof_data)} OOF vectors from parquet")
-
-                # Build a lightweight alpha_models structure for train_meta
-                # (only needs models_by_h with model.oof_probs for each horizon)
-                class _OofStub:
-                    """Lightweight stub replacing ModelRace for meta training (OOF only)."""
-                    def __init__(self, oof):
-                        self.oof_probs = oof
-                alpha_models = {}
-                for (_side, _kind, _h), _oof in _oof_data.items():
-                    if _side not in alpha_models:
-                        alpha_models[_side] = {}
-                    if _kind not in alpha_models[_side]:
-                        alpha_models[_side][_kind] = {"H": _h, "feat_cols": [], "models_by_h": {}}
-                    alpha_models[_side][_kind]["models_by_h"][_h] = {
-                        "model": _OofStub(_oof), "feat_cols": [], "H": _h
-                    }
-                    # Set primary H to the one with most samples
-                    if len(_oof) > len(alpha_models[_side][_kind].get("_best_oof", [])):
-                        alpha_models[_side][_kind]["H"] = _h
-                        alpha_models[_side][_kind]["_best_oof"] = _oof
-                # Clean up temp keys
-                for _s in alpha_models.values():
-                    for _k_v in _s.values():
-                        _k_v.pop("_best_oof", None)
-            else:
-                tprint("No OOF parquet files found; loading full pickle (slow path)...")
-                tprint(f"  Loading base state from {base_state_path} ({os.path.getsize(base_state_path) / 1e6:.1f} MB)...")
-                with open(base_state_path, "rb") as f:
-                    base_state = pickle.load(f)
-                tprint("  Base state loaded.")
-                base_bundle = base_state.get("bundle", {})
-                alpha_models = base_bundle.get("alpha_models", {})
-                del base_state  # free memory
-
-            tprint(f"Starting meta model training ({len(datasets)} datasets, {sum(len(v.get('models_by_h', {})) for s in alpha_models.values() for v in s.values())} alpha horizons)...")
-            meta_models, meta_gate_results = train_meta_models_from_artifacts(datasets, cfg, alpha_models)
-            tprint(f"Meta model training complete: {len(meta_models)} meta models fitted.")
-
-            # Save meta models as standalone lightweight pickle (no base pickle load needed)
-            meta_only_path = os.path.join(state_dir, "trained_state_meta_only.pkl")
-            with open(meta_only_path, "wb") as f:
-                pickle.dump({"meta_models": meta_models}, f)
-            tprint(f"Saved meta-only state to {meta_only_path}")
-
-            # Build a minimal trained_bundle for the rest of this function
-            # (alpha_models stub is enough for logging; full merge happens at optimise/backtest)
-            trained_bundle = {"alpha_models": alpha_models, "meta_models": meta_models}
-            alpha_metrics = {}
-        else:
-            trained_bundle = train_models_from_artifacts(datasets, cfg, train_meta=(stage != "base"))
-            alpha_metrics = trained_bundle.get("alpha_oof_metrics", {}) if trained_bundle else {}
+        trained_bundle = train_models_from_artifacts(datasets, cfg)
+        alpha_metrics = trained_bundle.get("alpha_oof_metrics", {}) if trained_bundle else {}
     
     # Specialist Models are now trained inside train_models_from_artifacts
     # using artifacts loaded above.
@@ -349,94 +235,18 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None, stage="all")
         "granular_risk": _granular,
     }
 
+    state = {
+        "ts_trained": ts_sig,
+        "bundle": trained_bundle,
+        "risk_params": default_risk
+    }
+
     state_dir = os.path.join(cfg["data_root"], "artifacts", run_id, "models")
     os.makedirs(state_dir, exist_ok=True)
-
-    if stage == "meta":
-        # Assemble canonical state: load base models (native or pickle) + merge meta
-        from extreme_price_movements.model_race import ModelRace
-        native_dir = os.path.join(state_dir, "native")
-        base_state_path = os.path.join(state_dir, "trained_state_base.pkl")
-
-        # Fallback: if neither native dir nor base pkl exist in current run_id, search previous
-        if not os.path.isdir(native_dir) and not os.path.exists(base_state_path):
-            artifacts_root = os.path.join(cfg["data_root"], "artifacts")
-            for prev_id in sorted(
-                [d for d in os.listdir(artifacts_root)
-                 if os.path.isdir(os.path.join(artifacts_root, d)) and d != run_id],
-                reverse=True
-            ):
-                prev_state_dir = os.path.join(artifacts_root, prev_id, "models")
-                prev_native = os.path.join(prev_state_dir, "native")
-                prev_pkl = os.path.join(prev_state_dir, "trained_state_base.pkl")
-                if os.path.isdir(prev_native) or os.path.exists(prev_pkl):
-                    tprint(f"State assembly: models not in {run_id}, falling back to {prev_id}")
-                    native_dir = prev_native
-                    base_state_path = prev_pkl
-                    break
-
-        if os.path.isdir(native_dir):
-            # Fast path: load models from native format
-            tprint(f"Loading base models from native format: {native_dir}")
-            import glob as _glob
-            _native_dirs = [d for d in _glob.glob(os.path.join(native_dir, "*")) if os.path.isdir(d)]
-            _native_alpha = {}
-            for _nd in _native_dirs:
-                _name = os.path.basename(_nd)  # e.g. "long_mr_H2"
-                _parts = _name.rsplit("_H", 1)
-                if len(_parts) != 2:
-                    continue
-                _sk = _parts[0]
-                _h = int(_parts[1])
-                _side_kind = _sk.split("_", 1)
-                if len(_side_kind) != 2:
-                    continue
-                _side, _kind = _side_kind
-                race = ModelRace.load_native(_nd)
-                # Load feature columns
-                _cols_path = os.path.join(_nd, "columns.json")
-                _fcols, _sfeat = [], []
-                if os.path.exists(_cols_path):
-                    import json as _json
-                    with open(_cols_path) as _cf:
-                        _cdata = _json.load(_cf)
-                    _fcols = _cdata.get("feat_cols", [])
-                    _sfeat = _cdata.get("selected_features", _fcols)
-                if _side not in _native_alpha:
-                    _native_alpha[_side] = {}
-                if _kind not in _native_alpha[_side]:
-                    _native_alpha[_side][_kind] = {"H": _h, "feat_cols": _fcols, "models_by_h": {}}
-                _native_alpha[_side][_kind]["models_by_h"][_h] = {
-                    "model": race, "feat_cols": _fcols, "H": _h, "selected_features": _sfeat
-                }
-            tprint(f"  Loaded {len(_native_dirs)} models from native format")
-            # Build state from native models
-            base_bundle = {"alpha_models": _native_alpha}
-        else:
-            tprint("No native models found; loading base pickle (slow path)...")
-            with open(base_state_path, "rb") as f:
-                base_state = pickle.load(f)
-            base_bundle = base_state.get("bundle", {})
-
-        base_bundle["meta_models"] = meta_models
-        state = {"ts_trained": ts_sig, "bundle": base_bundle, "risk_params": default_risk}
-        for _name in ["trained_state_meta.pkl", "trained_state.pkl"]:
-            _path = os.path.join(state_dir, _name)
-            with open(_path, "wb") as f:
-                pickle.dump(state, f)
-        tprint(f"Saved canonical trained state to {state_dir}/trained_state.pkl")
-        trained_bundle = base_bundle
-    else:
-        state = {
-            "ts_trained": ts_sig,
-            "bundle": trained_bundle,
-            "risk_params": default_risk
-        }
-        state_name = "trained_state_base.pkl" if stage == "base" else "trained_state.pkl"
-        state_path = os.path.join(state_dir, state_name)
-        with open(state_path, "wb") as f:
-            pickle.dump(state, f)
-        tprint(f"Saved trained state to {state_path}")
+    state_path = os.path.join(state_dir, "trained_state.pkl")
+    with open(state_path, "wb") as f:
+        pickle.dump(state, f)
+    tprint(f"Saved trained state to {state_path}")
 
     # Log summary
     bundle = trained_bundle
@@ -446,12 +256,7 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None, stage="all")
             for k in kinds:
                 m = alpha.get(side, {}).get(k)
                 if m:
-                    mbh = m.get("models_by_h", {})
-                    if mbh:
-                        h_list = sorted(mbh.keys())
-                        tprint(f"  {side} {k}: {len(h_list)} horizons {h_list} (primary H={m['H']}, features={len(m['feat_cols'])})")
-                    else:
-                        tprint(f"  {side} {k}: H={m['H']}, features={len(m['feat_cols'])}")
+                    tprint(f"  {side} {k}: H={m['H']}, features={len(m['feat_cols'])}")
                 else:
                     tprint(f"  {side} {k}: NO MODEL")
 
@@ -487,32 +292,11 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None, stage="all")
             extra_info=alpha_metrics,
         )
         tprint(f"Training report saved to {report_path}")
-
-        # Save and print extended quality gate metrics JSON (base/meta, race + winners first)
-        try:
-            from extreme_price_movements.training import save_training_gate_report
-            gate_report = bundle.get("quality_gate_report") if isinstance(bundle, dict) else None
-            if gate_report:
-                gate_path = save_training_gate_report(gate_report, cfg, run_id=run_id)
-                tprint(f"Quality gate report saved to {gate_path}")
-                winners = gate_report.get("winners", {})
-                tprint(f"Model race winners (base): {winners.get('base', [])}")
-                tprint(f"Model race winners (meta): {winners.get('meta', [])}")
-        except Exception as e:
-            tprint(f"WARNING: Failed to save quality gate report: {e}")
     except Exception as e:
         tprint(f"WARNING: Failed to generate training report: {e}")
 
-    tprint(f"STEP: MODEL TRAINING COMPLETE ({stage})")
+    tprint("STEP: MODEL TRAINING COMPLETE")
     return state
-
-def run_training_base_step(ts_sig, cfg, store=None, margin_symbols=None):
-    return run_training_step(ts_sig, cfg, store=store, margin_symbols=margin_symbols, stage="base")
-
-
-def run_training_meta_step(ts_sig, cfg, store=None, margin_symbols=None):
-    return run_training_step(ts_sig, cfg, store=store, margin_symbols=margin_symbols, stage="meta")
-
 
 def run_risk_optimization_step(ts_sig, margin_symbols, cfg, store, state_file):
     tprint("STEP: RISK OPTIMIZATION START")
@@ -1435,9 +1219,6 @@ def run_feature_generation_step(ts_sig, margin_symbols, cfg, store):
     # 3. Compute Features (Panel)
     tprint("Constructing Panel...")
     panel = to_panel(dfs)
-    del dfs
-    tprint("Panel constructed. Cleared raw dfs from memory.")
-    import gc; gc.collect()
     
     tprint("Computing Market Features...")
     mkt_df = compute_market_features(panel, cfg["market_basket"])

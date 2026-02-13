@@ -165,11 +165,10 @@ def compute_trailing_atr_labels(
 @jit(nopython=True, cache=True)
 def _numba_triple_barrier(times, highs, lows, closes, tp_arr, sl_arr, horizon, side):
     """
-    Trailing-profit barrier labeling with early stall exit.
+    Trailing-profit barrier labeling.
     tp_arr: Activation threshold (relative, >0) — once MFE reaches this, trailing stop activates.
     sl_arr: Stop-loss distance (relative, >0) — fixed from entry.
     Trail deviation = 0.5 * tp_arr (half the activation threshold).
-    Stall exit: if after 50% of horizon, MFE < 50% of activation threshold, exit at close.
     times: int64 (nanoseconds)
     side: 1 for Long, -1 for Short
     """
@@ -179,13 +178,11 @@ def _numba_triple_barrier(times, highs, lows, closes, tp_arr, sl_arr, horizon, s
     exit_idxs = np.zeros(n, dtype=np.int64)
 
     limit_ns = horizon * 3600 * 1_000_000_000
-    stall_ns = limit_ns // 2  # 50% of horizon
 
     for i in range(n - 1):
         entry_p = closes[i]
         entry_t = times[i]
         cutoff_t = entry_t + limit_ns
-        stall_t = entry_t + stall_ns
 
         if np.isnan(entry_p) or entry_p <= 0:
             continue
@@ -197,7 +194,6 @@ def _numba_triple_barrier(times, highs, lows, closes, tp_arr, sl_arr, horizon, s
             continue
 
         trail_dev = 0.5 * activation  # trailing deviation = half activation
-        stall_threshold = 0.5 * activation  # MFE must exceed 50% of activation by half-horizon
 
         if side == 1:  # Long
             sl_price = entry_p * (1.0 - sl)
@@ -210,7 +206,6 @@ def _numba_triple_barrier(times, highs, lows, closes, tp_arr, sl_arr, horizon, s
 
         trailing_active = False
         exit_found = False
-        stall_checked = False
 
         for j in range(i + 1, n):
             if times[j] >= cutoff_t:
@@ -259,24 +254,6 @@ def _numba_triple_barrier(times, highs, lows, closes, tp_arr, sl_arr, horizon, s
                     extreme = ll
                 if extreme <= activation_price:
                     trailing_active = True
-
-            # Early stall exit: at 50% of horizon, check if MFE < 50% of activation
-            if not stall_checked and not trailing_active and times[j] >= stall_t:
-                stall_checked = True
-                if side == 1:
-                    mfe_so_far = (extreme / entry_p) - 1.0
-                else:
-                    mfe_so_far = (entry_p / extreme) - 1.0
-                if mfe_so_far < stall_threshold:
-                    # Stall exit at close price
-                    labels[i] = 0
-                    if side == 1:
-                        returns[i] = (cc / entry_p) - 1.0
-                    else:
-                        returns[i] = (entry_p / cc) - 1.0
-                    exit_idxs[i] = j
-                    exit_found = True
-                    break
 
             # Ratchet trailing stop
             if trailing_active:

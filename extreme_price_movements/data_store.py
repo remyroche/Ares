@@ -125,10 +125,6 @@ class PartitionedOHLCVStore:
         except Exception as e:
             tprint(f"Error writing meta for {symbol}: {e}")
 
-    def get_symbol_meta(self, symbol: str) -> dict:
-        """Public accessor for persisted metadata (last_ts_ms, etc.)."""
-        return self._read_meta(symbol)
-
     def _downcast(self, df: pd.DataFrame) -> pd.DataFrame:
         if df.empty:
             return df
@@ -376,85 +372,56 @@ def save_features(feats: dict, ts: pd.Timestamp, root_dir: str):
     correct restoration of special characters (e.g. slashes) upon loading.
 
     feats: dict of DataFrames (feature_name -> DataFrame(index=t, cols=syms))
-
-    Memory-optimized: extracts columns directly per symbol instead of
-    pre-materializing all numpy arrays (which doubled peak memory).
     """
-    import gc
     ts_str = ts.strftime("%Y%m%d_%H%M%S")
     out_dir = os.path.join(root_dir, "features", ts_str)
     os.makedirs(out_dir, exist_ok=True)
     
     tprint(f"Saving features to {out_dir}...")
     
+    # 1. Pivot from  Dict[Feat -> DF(Sims)]  to  Dict[Sym -> DF(Feats)]
+    # We assume all DFs have same columns (symbols) and index
     first_key = list(feats.keys())[0]
-    symbols = list(feats[first_key].columns)
-    feat_keys = [k for k in feats if hasattr(feats[k], "columns")]
-    time_index = feats[first_key].index
+    symbols = feats[first_key].columns
     
-    # Build column-index lookup once per feature (avoids repeated .index() calls)
-    col_idx = {}  # feat_key -> {sym: int}
+    # Pre-extract numpy arrays + index once (avoids repeated pandas overhead)
+    feat_keys = [k for k in feats if hasattr(feats[k], "columns")]
+    feat_arrays = {}  # key -> (numpy_array, col_list)
     for k in feat_keys:
-        cols = list(feats[k].columns)
-        col_idx[k] = {s: i for i, s in enumerate(cols)}
+        df = feats[k]
+        feat_arrays[k] = (df.values, list(df.columns))
+    time_index = feats[first_key].index
     
     count = 0
     total = len(symbols)
     
-    resume_path = os.path.join(out_dir, "_resume.json")
-    resume_state = {}
-    if os.path.exists(resume_path):
-        try:
-            with open(resume_path, "r") as f:
-                resume_state = json.load(f)
-        except Exception:
-            resume_state = {}
-    completed = set(resume_state.get("completed_symbols", []))
-
     for i, sym in enumerate(symbols):
         try:
-            safe_sym = sym.replace("/", "_")
-            fname = f"symbol={safe_sym}.parquet"
-            fpath = os.path.join(out_dir, fname)
-
-            if sym in completed and os.path.exists(fpath):
-                count += 1
-                continue
-
+            # Fast numpy column extraction
             parts = {}
             for k in feat_keys:
-                idx_map = col_idx[k]
-                if sym in idx_map:
-                    j = idx_map[sym]
-                    parts[k] = feats[k].iloc[:, j].values
-
+                arr, cols = feat_arrays[k]
+                if sym in cols:
+                    j = cols.index(sym)
+                    parts[k] = arr[:, j]
+            
             df_sym = pd.DataFrame(parts, index=time_index)
             df_sym["__symbol__"] = sym
 
+            # Save
+            safe_sym = sym.replace("/", "_")
+            fname = f"symbol={safe_sym}.parquet"
+            fpath = os.path.join(out_dir, fname)
             df_sym.to_parquet(fpath)
-            completed.add(sym)
-            resume_state["completed_symbols"] = sorted(completed)
-            resume_state["updated_at"] = pd.Timestamp.utcnow().isoformat()
-            try:
-                with open(resume_path, "w") as f:
-                    json.dump(resume_state, f, indent=2)
-            except Exception as exc:
-                tprint(f"WARNING: Failed to update feature resume state: {exc}")
-
+            
             count += 1
             if count % 50 == 0:
                 tprint(f"Saved features for {count}/{total} symbols...")
-                gc.collect()
-
+                
         except Exception as e:
             tprint(f"Failed to save features for {sym}: {e}")
 
     tprint(f"Feature save complete. {count}/{total} symbols saved.")
-    if count >= total and os.path.exists(resume_path):
-        try:
-            os.remove(resume_path)
-        except OSError:
-            pass
 
 def load_features(ts: pd.Timestamp, root_dir: str) -> dict:
     """
@@ -470,17 +437,7 @@ def load_features(ts: pd.Timestamp, root_dir: str) -> dict:
     in_dir = os.path.join(root_dir, "features", ts_str)
     
     if not os.path.exists(in_dir):
-        # Fallback: find most recent feature directory
-        feat_root = os.path.join(root_dir, "features")
-        if os.path.exists(feat_root):
-            dirs = sorted([d for d in os.listdir(feat_root) if os.path.isdir(os.path.join(feat_root, d)) and not d.startswith(".")], reverse=True)
-            if dirs:
-                in_dir = os.path.join(feat_root, dirs[0])
-                tprint(f"Exact ts {ts_str} not found, falling back to most recent: {dirs[0]}")
-            else:
-                return None
-        else:
-            return None
+        return None
         
     files = glob.glob(os.path.join(in_dir, "symbol=*.parquet"))
     if not files:
@@ -597,20 +554,9 @@ def save_artifact_df(df: pd.DataFrame, root_dir: str, run_id: str, category: str
 def load_artifact_df(root_dir: str, run_id: str, category: str, name: str) -> pd.DataFrame:
     """
     Load an artifact DataFrame. Returns None if not found.
-    Falls back to the most recent artifact directory if exact run_id not found.
     """
     fpath = os.path.join(root_dir, "artifacts", run_id, category, f"{name}.parquet")
     if os.path.exists(fpath):
         tprint(f"Loading artifact: {fpath}")
         return pd.read_parquet(fpath)
-
-    # Fallback: find most recent artifact dir containing this category/name
-    art_root = os.path.join(root_dir, "artifacts")
-    if os.path.exists(art_root):
-        dirs = sorted([d for d in os.listdir(art_root) if os.path.isdir(os.path.join(art_root, d)) and not d.startswith(".")], reverse=True)
-        for d in dirs:
-            alt = os.path.join(art_root, d, category, f"{name}.parquet")
-            if os.path.exists(alt):
-                tprint(f"Artifact {run_id}/{category}/{name} not found, falling back to {d}")
-                return pd.read_parquet(alt)
     return None

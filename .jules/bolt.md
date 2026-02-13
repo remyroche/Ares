@@ -93,3 +93,9 @@ Result: `calculate_entropy_statistics_numba` speedup >700x (2.11s -> 0.003s). Fu
 **Action:**
 1. Implemented a **fused parallel kernel** for rolling Z-score, calculating mean and std in a single pass. This achieved a **4x speedup** (0.044s -> 0.011s for 1M elements).
 2. Introduced an **"Assumed Mean" centering technique** (subtracting the first valid value `K` from all elements in the window) to the variance accumulation logic. This completely resolves numerical instability for large inputs without the complexity of Welford's algorithm for sliding windows.
+
+## 2026-02-13 - Parallel Rolling Correlation
+
+**Learning:** `numba_rolling_corr` was using `apply_to_frame_binary` which iterated over columns in a Python loop. For datasets with many columns (e.g., 200+), this serial overhead is significant (2.0s).
+
+**Action:** Implemented `_numba_rolling_corr_parallel` using `prange` to parallelize the column iteration. This reduced execution time from ~2.0s to ~0.25s (8x speedup) for 50k rows x 200 columns. Added a fast path in `numba_rolling_corr` to use this parallel kernel when DataFrame columns are identical.

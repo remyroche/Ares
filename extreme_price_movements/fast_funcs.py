@@ -1319,8 +1319,25 @@ def numba_pct_change(df, n):
         return res_df[res_df.columns[0]]
     return res_df
 
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_corr_parallel(mat1, mat2, window):
+    n_rows, n_cols = mat1.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_correlation(mat1[:, j], mat2[:, j], window)
+    return out
+
 def numba_rolling_corr(df1, df2, n):
     tprint(f"Entering function: numba_rolling_corr in fast_funcs.py")
+
+    # Check for exact column match (fast path)
+    if isinstance(df1, pd.DataFrame) and isinstance(df2, pd.DataFrame) and df1.columns.equals(df2.columns) and df1.index.equals(df2.index):
+        m1 = df1.to_numpy(dtype=np.float32, copy=False)
+        m2 = df2.to_numpy(dtype=np.float32, copy=False)
+
+        res = _numba_rolling_corr_parallel(m1, m2, n)
+        return pd.DataFrame(res, index=df1.index, columns=df1.columns)
+
     return apply_to_frame_binary(df1, df2, _numba_rolling_correlation, n)
 
 def numba_rolling_mean(df, n):

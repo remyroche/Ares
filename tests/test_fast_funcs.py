@@ -1,3 +1,4 @@
+
 import unittest
 import numpy as np
 import pandas as pd
@@ -36,6 +37,23 @@ class TestFastFuncs(unittest.TestCase):
         # Initial points might be 0 due to 0 variance logic in numba correlation
         self.assertEqual(res_arr[2], 1.0)
         self.assertEqual(res_arr[4], 1.0)
+
+    def test_rolling_corr_mismatch(self):
+        # Test fallback path
+        s1 = np.array([1, 2, 3, 4, 5], dtype=np.float32)
+        s2 = np.array([1, 2, 3, 4, 5], dtype=np.float32)
+        df1 = pd.DataFrame({'a': s1, 'b': s1})
+        df2 = pd.DataFrame({'a': s2}) # Missing 'b'
+
+        res = ff.numba_rolling_corr(df1, df2, 3)
+
+        # 'a' should be correlated (1.0)
+        res_a = res['a'].to_numpy()
+        self.assertEqual(res_a[2], 1.0)
+
+        # 'b' should be NaN because it's missing in df2
+        res_b = res['b'].to_numpy()
+        self.assertTrue(np.isnan(res_b).all())
 
     def test_grouped_rolling_mean(self):
         v = pd.DataFrame({'a': [1, 10, 2, 20, 3, 30]}, dtype=np.float32)

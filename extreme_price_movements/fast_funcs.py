@@ -413,9 +413,32 @@ def numba_rsi_kernel(close, n):
 
     return out
 
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rsi_parallel(mat, n):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = numba_rsi_kernel(mat[:, j], n)
+
+    return out
+
 def numba_rsi(close_df, n):
     tprint(f"Entering function: numba_rsi in fast_funcs.py")
-    return apply_to_frame(close_df, numba_rsi_kernel, n)
+
+    is_series = isinstance(close_df, pd.Series)
+    if is_series:
+        close_df = close_df.to_frame()
+
+    mat = close_df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rsi_parallel(mat, n)
+
+    res_df = pd.DataFrame(res, index=close_df.index, columns=close_df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+
+    return res_df
 
 @jit(nopython=True, cache=True)
 def numba_atr_kernel(high, low, close, n):
@@ -467,35 +490,58 @@ def numba_atr_no_norm_kernel(high, low, close, n):
     atr = _numba_ewma_nan_safe(tr, np.float32(1.0)/n, adjust=False)
     return atr
 
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_atr_parallel(high_mat, low_mat, close_mat, n):
+    n_rows, n_cols = close_mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = numba_atr_kernel(high_mat[:, j], low_mat[:, j], close_mat[:, j], n)
+
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_atr_no_norm_parallel(high_mat, low_mat, close_mat, n):
+    n_rows, n_cols = close_mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = numba_atr_no_norm_kernel(high_mat[:, j], low_mat[:, j], close_mat[:, j], n)
+
+    return out
+
 def numba_atr_no_norm(high_df, low_df, close_df, n):
-    # tprint(f"Entering function: numba_atr_no_norm in fast_funcs.py")
-    out = pd.DataFrame(index=close_df.index, columns=close_df.columns, dtype=np.float32)
-    cols = close_df.columns
-    total_cols = len(cols)
-    for i, c in enumerate(cols):
-        if i % 100 == 0:
-            tprint(f"numba_atr_no_norm progress: {i}/{total_cols} columns processed")
-        h = high_df[c].to_numpy(dtype=np.float32)
-        l = low_df[c].to_numpy(dtype=np.float32)
-        cl = close_df[c].to_numpy(dtype=np.float32)
-        res = numba_atr_no_norm_kernel(h, l, cl, n)
-        out[c] = res
+    tprint(f"Entering function: numba_atr_no_norm in fast_funcs.py")
+
+    if not high_df.columns.equals(close_df.columns):
+        high_df = high_df[close_df.columns]
+    if not low_df.columns.equals(close_df.columns):
+        low_df = low_df[close_df.columns]
+
+    h = high_df.to_numpy(dtype=np.float32, copy=False)
+    l = low_df.to_numpy(dtype=np.float32, copy=False)
+    c = close_df.to_numpy(dtype=np.float32, copy=False)
+
+    res = _numba_atr_no_norm_parallel(h, l, c, n)
+
+    out = pd.DataFrame(res, index=close_df.index, columns=close_df.columns)
     return out
 
 def numba_atr(high_df, low_df, close_df, n):
-    # This requires synchronized iteration over 3 dataframes.
     tprint(f"Entering function: numba_atr in fast_funcs.py")
-    out = pd.DataFrame(index=close_df.index, columns=close_df.columns, dtype=np.float32)
-    cols = close_df.columns
-    total_cols = len(cols)
-    for i, c in enumerate(cols):
-        if i % 100 == 0:
-            tprint(f"numba_atr progress: {i}/{total_cols} columns processed")
-        h = high_df[c].to_numpy(dtype=np.float32)
-        l = low_df[c].to_numpy(dtype=np.float32)
-        cl = close_df[c].to_numpy(dtype=np.float32)
-        res = numba_atr_kernel(h, l, cl, n)
-        out[c] = res
+
+    if not high_df.columns.equals(close_df.columns):
+        high_df = high_df[close_df.columns]
+    if not low_df.columns.equals(close_df.columns):
+        low_df = low_df[close_df.columns]
+
+    h = high_df.to_numpy(dtype=np.float32, copy=False)
+    l = low_df.to_numpy(dtype=np.float32, copy=False)
+    c = close_df.to_numpy(dtype=np.float32, copy=False)
+
+    res = _numba_atr_parallel(h, l, c, n)
+
+    out = pd.DataFrame(res, index=close_df.index, columns=close_df.columns)
     return out
 
 def numba_zscore(df, n):

@@ -133,7 +133,10 @@ class ExhaustionModel(BaseEstimator, ClassifierMixin):
                      X[c] = 0.0 # Or NaN? Model might fail. 0 is safer for sparse/standardized.
              X = X[self.selected_features_]
 
-        return self.model.predict_proba(X)[:, 1]
+        proba = self.model.predict_proba(X)
+        if proba.shape[1] == 1:
+            return np.zeros(len(X)) if self.model.classes_[0] == 0 else np.ones(len(X))
+        return proba[:, 1]
 
     def compute_oof_predictions(self, X: pd.DataFrame, y: np.ndarray) -> tuple[np.ndarray, dict]:
         """
@@ -194,7 +197,12 @@ class ExhaustionModel(BaseEstimator, ClassifierMixin):
             )
             clf.fit(X_train, y_train)
 
-            p_test = clf.predict_proba(X_test)[:, 1]
+            proba = clf.predict_proba(X_test)
+            if proba.shape[1] == 1:
+                # Single class in training fold — assign 0 or 1 based on which class
+                p_test = np.zeros(len(X_test)) if clf.classes_[0] == 0 else np.ones(len(X_test))
+            else:
+                p_test = proba[:, 1]
             oof_preds[test_idx] = p_test
 
             try:

@@ -12,6 +12,12 @@ from extreme_price_movements.engine import simulate_trade_hourly, generate_hourl
 from extreme_price_movements.metrics import MetricsLogger
 from extreme_price_movements.risk import TrailingStop
 from extreme_price_movements.reports.report_generator import generate_training_report, generate_risk_report, generate_backtest_report
+from extreme_price_movements.ridge_position_sizer import (
+    RidgePositionSizer,
+    run_ridge_position_sizer_step,
+    load_meta_oof_predictions,
+    load_trade_outcomes_from_oof,
+)
 
 def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex):
     tprint("STEP: LABEL GENERATION START")
@@ -192,6 +198,8 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None):
     tprint(f"Loaded {len(datasets)} datasets total.")
 
     # 2. Train models
+    # Inject run_id so meta OOF files are saved to the correct artifacts directory
+    cfg["run_id"] = run_id
     with Timer("Model Training"):
         trained_bundle = train_models_from_artifacts(datasets, cfg)
         alpha_metrics = trained_bundle.get("alpha_oof_metrics", {}) if trained_bundle else {}
@@ -297,6 +305,166 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None):
 
     tprint("STEP: MODEL TRAINING COMPLETE")
     return state
+
+
+def run_ridge_sizer_step(ts_sig, cfg, state_file):
+    """Run ridge position sizer to learn optimal meta model combination weights.
+    
+    Processes each bucket (long_mr, long_tf, short_mr, short_tf) separately,
+    combining per-horizon regressors (H2, H4, H8) + classifier + agreement
+    features into a single Ridge combiner per bucket.
+    
+    Args:
+        ts_sig: Timestamp for the training run
+        cfg: Configuration dictionary
+        state_file: Path to the trained state file
+        
+    Returns:
+        Dict with ridge sizer weights and metrics per bucket, or None if failed
+    """
+    tprint("STEP: RIDGE POSITION SIZER START")
+    
+    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    data_root = cfg.get("data_root", "data")
+    
+    # Use the per-bucket loader from run_ridge_sizer which handles per-horizon
+    # grouping and agreement features
+    from extreme_price_movements.run_ridge_sizer import (
+        load_meta_oof_predictions as load_bucket_oofs,
+        load_trade_outcomes,
+    )
+    
+    # IV. Dynamically load latest tpsl_optimiser params for exit policy alignment
+    import json as _json
+    _tpsl_params = {}
+    _bp_path = os.path.join(data_root, "artifacts", run_id, "models", "bucket_params.json")
+    if os.path.exists(_bp_path):
+        try:
+            with open(_bp_path) as _f:
+                _bp_data = _json.load(_f)
+            _tpsl_params = _bp_data.get("buckets", {})
+            tprint(f"  Loaded tpsl_optimiser params from {_bp_path} ({len(_tpsl_params)} buckets)")
+        except Exception as _e:
+            tprint(f"  WARNING: Could not load tpsl params: {_e}")
+    else:
+        # Try previous run's params
+        _art_dir = os.path.join(data_root, "artifacts")
+        if os.path.isdir(_art_dir):
+            _prev_runs = sorted([d for d in os.listdir(_art_dir) if d != run_id and os.path.isdir(os.path.join(_art_dir, d))], reverse=True)
+            for _prev_id in _prev_runs:
+                _prev_bp = os.path.join(_art_dir, _prev_id, "models", "bucket_params.json")
+                if os.path.exists(_prev_bp):
+                    try:
+                        with open(_prev_bp) as _f:
+                            _bp_data = _json.load(_f)
+                        _tpsl_params = _bp_data.get("buckets", {})
+                        tprint(f"  Loaded tpsl_optimiser params from previous run {_prev_id} ({len(_tpsl_params)} buckets)")
+                    except Exception:
+                        pass
+                    break
+        if not _tpsl_params:
+            tprint("  No tpsl_optimiser params found, Ridge sizer will use default exit policy")
+    
+    try:
+        bucket_oofs = load_bucket_oofs(data_root, run_id)
+    except FileNotFoundError as e:
+        tprint(f"WARNING: {e}")
+        tprint("Skipping ridge sizer step - no meta OOF predictions found.")
+        return None
+    
+    cost_pct = cfg.get("fee_bps", 25.0) / 10000.0
+    output_dir = os.path.join(data_root, "artifacts", run_id, "ridge_sizer")
+    os.makedirs(output_dir, exist_ok=True)
+    
+    all_weights = {}
+    all_params = {}
+    all_metrics = {}
+    
+    for bucket_name, oof_preds in bucket_oofs.items():
+        tprint(f"  Ridge sizer for bucket: {bucket_name} ({oof_preds.shape})")
+        
+        # Build trade outcomes from OOF context
+        try:
+            trade_outcomes = load_trade_outcomes(data_root, run_id, oof_preds)
+        except FileNotFoundError as e:
+            tprint(f"  Skipping {bucket_name}: {e}")
+            continue
+        
+        if "return" not in trade_outcomes.columns:
+            tprint(f"  Skipping {bucket_name}: missing 'return' column")
+            continue
+        
+        # Extract prediction columns (reg_H*, clf, agreement features)
+        _meta_cols = {"timestamp", "symbol", "return", "is_long", "index"}
+        pred_cols = [c for c in oof_preds.columns if c not in _meta_cols]
+        if not pred_cols:
+            tprint(f"  Skipping {bucket_name}: no prediction columns")
+            continue
+        oof_pred_df = oof_preds[pred_cols].copy()
+        
+        timestamps = None
+        if 'timestamp' in trade_outcomes.columns:
+            timestamps = trade_outcomes['timestamp'].values
+        symbols = None
+        if 'symbol' in trade_outcomes.columns:
+            symbols = trade_outcomes['symbol'].values
+        
+        try:
+            sizer, metrics = run_ridge_position_sizer_step(
+                oof_preds=oof_pred_df,
+                trade_outcomes=trade_outcomes,
+                timestamps=timestamps,
+                cfg={'cost_pct': cost_pct},
+                save_model=False,
+                run_id=run_id,
+                symbols=symbols,
+            )
+            weights = sizer.get_weights()
+            for wname, wval in weights.items():
+                all_weights[f"{bucket_name}_{wname}"] = wval
+            all_params[bucket_name] = sizer.best_params_
+            all_metrics[bucket_name] = metrics
+            tprint(f"  {bucket_name} weights: {weights}")
+        except Exception as e:
+            tprint(f"  {bucket_name} failed: {e}")
+            continue
+    
+    # Save combined weights
+    import json
+    weights_path = os.path.join(output_dir, "sizer_weights.json")
+    from datetime import datetime, timezone
+    with open(weights_path, 'w') as f:
+        json.dump({
+            'weights': all_weights,
+            'params_per_bucket': all_params,
+            'run_id': run_id,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+        }, f, indent=2)
+    tprint(f"Saved weights to {weights_path}")
+    
+    # Update state file with ridge sizer weights
+    if os.path.exists(state_file):
+        with open(state_file, "rb") as f:
+            state = pickle.load(f)
+        
+        state["ridge_sizer"] = {
+            "weights": all_weights,
+            "params_per_bucket": all_params,
+            "metrics": all_metrics,
+        }
+        
+        with open(state_file, "wb") as f:
+            pickle.dump(state, f)
+        
+        tprint(f"Updated state file with ridge sizer weights")
+    
+    tprint(f"STEP: RIDGE POSITION SIZER COMPLETE — {len(all_params)} buckets processed")
+    return {
+        "weights": all_weights,
+        "params_per_bucket": all_params,
+        "metrics": all_metrics,
+    }
+
 
 def run_risk_optimization_step(ts_sig, margin_symbols, cfg, store, state_file):
     tprint("STEP: RISK OPTIMIZATION START")
@@ -1158,6 +1326,17 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
 def run_feature_generation_step(ts_sig, margin_symbols, cfg, store):
     tprint("STEP: FEATURE GENERATION START")
     tprint(f"Target Timestamp: {ts_sig}")
+
+    # Check if features already exist for this timestamp (incremental skip)
+    existing_feats = load_features(ts_sig, cfg["data_root"])
+    if existing_feats is not None:
+        _sample = next(iter(existing_feats.values()))
+        _n_syms = len(_sample.columns)
+        _n_feats = len(existing_feats)
+        tprint(f"Features already exist: {_n_feats} features × {_n_syms} symbols. Skipping recomputation.")
+        tprint("STEP: FEATURE GENERATION COMPLETE (cached)")
+        del existing_feats
+        return
 
     # 1. Define Universe
     # We want "all assets in our universe".

@@ -1,6 +1,8 @@
 import argparse
+import gc
 import pickle
 import os
+import shutil
 import sys
 import pandas as pd
 from extreme_price_movements.config import CFG
@@ -10,6 +12,30 @@ from extreme_price_movements.universe import refresh_margin_universe_daily, buil
 from extreme_price_movements.main import train_daily, run_live_cycle, generate_features_daily
 from extreme_price_movements.pipeline_steps import run_label_generation_step_v2, run_risk_optimization_step, run_backtest_step
 from extreme_price_movements.time_utils import get_ts_sig
+
+
+def clear_cache():
+    """Clear joblib and feature caches to ensure clean runs."""
+    cache_dir = "./cache/features"
+    if os.path.isdir(cache_dir):
+        shutil.rmtree(cache_dir)
+        tprint(f"Cleared cache: {cache_dir}")
+    gc.collect()
+    tprint("Cache cleared, gc.collect() done.")
+
+
+def find_latest_feature_ts(data_root):
+    """Find the latest feature timestamp from saved feature directories."""
+    feat_dir = os.path.join(data_root, "features")
+    if not os.path.isdir(feat_dir):
+        return None
+    dirs = sorted([d for d in os.listdir(feat_dir) if os.path.isdir(os.path.join(feat_dir, d))])
+    if not dirs:
+        return None
+    latest = dirs[-1]  # e.g. '20260212_220000'
+    ts = pd.Timestamp(latest[:8] + "T" + latest[9:11] + ":" + latest[11:13] + ":" + latest[13:15], tz="UTC")
+    tprint(f"Using latest feature timestamp: {ts}")
+    return ts
 
 def validate_downloaded_data(store, symbol):
     safe_sym = symbol.replace("/", "_")
@@ -69,6 +95,9 @@ def main():
 
     args = parser.parse_args()
 
+    # Clear cache before every run to ensure clean state
+    clear_cache()
+
     if args.light:
         CFG["fetch_years"] = 0.5
         tprint("LIGHT MODE ENABLED: fetch_years set to 0.5")
@@ -112,7 +141,10 @@ def main():
         with Timer("Margin Universe"):
             mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
 
-        ts_sig = get_ts_sig()
+        ts_sig = find_latest_feature_ts(CFG["data_root"])
+        if ts_sig is None:
+            tprint("ERROR: No features found. Run feature_generation first.")
+            sys.exit(1)
         run_label_generation_step_v2(ts_sig, mu.symbols, CFG, store, ex)
 
     elif args.mode == "train":
@@ -120,7 +152,10 @@ def main():
         with Timer("Margin Universe"):
             mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
 
-        ts_sig = get_ts_sig()
+        ts_sig = find_latest_feature_ts(CFG["data_root"])
+        if ts_sig is None:
+            tprint("ERROR: No features found. Run feature_generation first.")
+            sys.exit(1)
 
         state = train_daily(ts_sig, mu.symbols, CFG, store, ex)
         if state:
@@ -131,12 +166,17 @@ def main():
             tprint("Training failed or produced no state.")
 
     elif args.mode == "train_base":
-        tprint("Starting Training (base only)...")
+        tprint("Starting Base Model Training...")
         with Timer("Margin Universe"):
             mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
-        ts_sig = get_ts_sig()
-        from extreme_price_movements.pipeline_steps import run_training_base_step
-        state = run_training_base_step(ts_sig, CFG, store=store, margin_symbols=mu.symbols)
+
+        ts_sig = find_latest_feature_ts(CFG["data_root"])
+        if ts_sig is None:
+            tprint("ERROR: No features found. Run feature_generation first.")
+            sys.exit(1)
+
+        from extreme_price_movements.main import train_daily_base
+        state = train_daily_base(ts_sig, mu.symbols, CFG, store, ex)
         if state:
             with open(args.state_file, "wb") as f:
                 pickle.dump(state, f)
@@ -145,12 +185,17 @@ def main():
             tprint("Base training failed or produced no state.")
 
     elif args.mode == "train_meta":
-        tprint("Starting Training (meta only)...")
+        tprint("Starting Meta Model Training...")
         with Timer("Margin Universe"):
             mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
-        ts_sig = get_ts_sig()
-        from extreme_price_movements.pipeline_steps import run_training_meta_step
-        state = run_training_meta_step(ts_sig, CFG, store=store, margin_symbols=mu.symbols)
+
+        ts_sig = find_latest_feature_ts(CFG["data_root"])
+        if ts_sig is None:
+            tprint("ERROR: No features found. Run feature_generation first.")
+            sys.exit(1)
+
+        from extreme_price_movements.main import train_daily_meta
+        state = train_daily_meta(ts_sig, mu.symbols, CFG, store, ex)
         if state:
             with open(args.state_file, "wb") as f:
                 pickle.dump(state, f)

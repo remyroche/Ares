@@ -8,6 +8,7 @@ import glob
 import shutil
 import fcntl
 from datetime import timezone
+import pyarrow.parquet as pq
 
 from extreme_price_movements.utils import tprint, retry_with_backoff
 
@@ -361,67 +362,182 @@ class PartitionedOHLCVStore:
                 self.compact_partition(symbol, yr)
 
 
-def save_features(feats: dict, ts: pd.Timestamp, root_dir: str):
+def _feature_meta_path(parquet_path: str) -> str:
+    return parquet_path.replace(".parquet", ".meta.json")
+
+
+def _write_feature_metadata(parquet_path: str, symbol: str, index: pd.Index):
+    meta_path = _feature_meta_path(parquet_path)
+    if len(index) == 0:
+        first_ts = last_ts = None
+    else:
+        first_ts = pd.Timestamp(index[0]).isoformat()
+        last_ts = pd.Timestamp(index[-1]).isoformat()
+
+    meta = {
+        "version": 1,
+        "symbol": symbol,
+        "rows": int(len(index)),
+        "first_ts": first_ts,
+        "last_ts": last_ts,
+    }
+
+    tmp_meta = meta_path + ".tmp"
+    with open(tmp_meta, "w") as fp:
+        json.dump(meta, fp)
+    os.replace(tmp_meta, meta_path)
+
+
+def _read_feature_metadata(parquet_path: str) -> dict | None:
+    meta_path = _feature_meta_path(parquet_path)
+    if not os.path.exists(meta_path):
+        return None
+    try:
+        with open(meta_path, "r") as fp:
+            return json.load(fp)
+    except Exception:
+        return None
+
+
+def _infer_feature_bounds_from_file(parquet_path: str) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
+    try:
+        pf = pq.ParquetFile(parquet_path)
+    except Exception:
+        return None, None
+
+    if pf.num_row_groups == 0:
+        return None, None
+
+    index_col = None
+    for name in pf.schema.names:
+        if name.startswith("__index_level_"):
+            index_col = name
+            break
+
+    if index_col is None:
+        return None, None
+
+    try:
+        first_group = pf.read_row_group(0, columns=[index_col])
+        last_group = pf.read_row_group(pf.num_row_groups - 1, columns=[index_col])
+        first_val = first_group.column(0)[0].as_py()
+        last_val = last_group.column(0)[-1].as_py()
+        return pd.Timestamp(first_val), pd.Timestamp(last_val)
+    except Exception:
+        return None, None
+
+
+def get_feature_bounds(parquet_path: str) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
+    meta = _read_feature_metadata(parquet_path)
+    if meta:
+        first_ts = pd.Timestamp(meta["first_ts"]) if meta.get("first_ts") else None
+        last_ts = pd.Timestamp(meta["last_ts"]) if meta.get("last_ts") else None
+        return first_ts, last_ts
+
+    return _infer_feature_bounds_from_file(parquet_path)
+
+
+def append_symbol_features(parquet_path: str, symbol: str, new_data: pd.DataFrame) -> int:
+    if new_data.empty:
+        return 0
+
+    new_data = new_data.sort_index()
+    numeric_cols = [c for c in new_data.columns if c != "__symbol__"]
+    new_data[numeric_cols] = new_data[numeric_cols].astype(np.float32)
+
+    existing = None
+    if os.path.exists(parquet_path):
+        existing = pd.read_parquet(parquet_path)
+        if "__symbol__" in existing.columns:
+            existing = existing.drop(columns=["__symbol__"])
+
+    all_cols = sorted(set(new_data.columns) | (set(existing.columns) if existing is not None else set()))
+    new_aligned = new_data.reindex(columns=all_cols)
+
+    if existing is not None:
+        existing_aligned = existing.reindex(columns=all_cols)
+        before_rows = len(existing_aligned)
+        combined = pd.concat([existing_aligned, new_aligned])
+    else:
+        before_rows = 0
+        combined = new_aligned
+
+    combined = combined[~combined.index.duplicated(keep="last")].sort_index()
+    combined["__symbol__"] = symbol
+    combined.to_parquet(parquet_path)
+    _write_feature_metadata(parquet_path, symbol, combined.index)
+
+    return len(combined) - before_rows
+
+
+def save_features(
+    feats: dict,
+    ts: pd.Timestamp,
+    root_dir: str,
+    min_timestamp_by_symbol: dict[str, pd.Timestamp] | None = None,
+):
     """
-    Save generated features to disk (Per-Symbol).
+    Save generated features to disk (Per-Symbol), streaming one symbol at a time.
 
-    Each symbol is saved as a separate Parquet file with the naming convention:
-    symbol={safe_symbol}.parquet
-
-    The original symbol name is preserved in the '__symbol__' column to ensure
-    correct restoration of special characters (e.g. slashes) upon loading.
+    Peak memory ≈ 1 symbol × N_features × T rows (~2 MB).
+    No temp chunk dirs, no merge step.
 
     feats: dict of DataFrames (feature_name -> DataFrame(index=t, cols=syms))
     """
     ts_str = ts.strftime("%Y%m%d_%H%M%S")
     out_dir = os.path.join(root_dir, "features", ts_str)
     os.makedirs(out_dir, exist_ok=True)
-    
+
     tprint(f"Saving features to {out_dir}...")
-    
-    # 1. Pivot from  Dict[Feat -> DF(Sims)]  to  Dict[Sym -> DF(Feats)]
-    # We assume all DFs have same columns (symbols) and index
+
     first_key = list(feats.keys())[0]
-    symbols = feats[first_key].columns
-    
-    # Pre-extract numpy arrays + index once (avoids repeated pandas overhead)
+    symbols = list(feats[first_key].columns)
     feat_keys = [k for k in feats if hasattr(feats[k], "columns")]
-    feat_arrays = {}  # key -> (numpy_array, col_list)
-    for k in feat_keys:
-        df = feats[k]
-        feat_arrays[k] = (df.values, list(df.columns))
     time_index = feats[first_key].index
-    
-    count = 0
     total = len(symbols)
-    
-    for i, sym in enumerate(symbols):
-        try:
-            # Fast numpy column extraction
-            parts = {}
-            for k in feat_keys:
-                arr, cols = feat_arrays[k]
-                if sym in cols:
-                    j = cols.index(sym)
-                    parts[k] = arr[:, j]
-            
-            df_sym = pd.DataFrame(parts, index=time_index)
-            df_sym["__symbol__"] = sym
+    n_feats = len(feat_keys)
 
-            # Save
-            safe_sym = sym.replace("/", "_")
-            fname = f"symbol={safe_sym}.parquet"
-            fpath = os.path.join(out_dir, fname)
-            df_sym.to_parquet(fpath)
-            
-            count += 1
-            if count % 50 == 0:
-                tprint(f"Saved features for {count}/{total} symbols...")
-                
-        except Exception as e:
-            tprint(f"Failed to save features for {sym}: {e}")
+    # Pre-build column-index maps once (feat_key -> {sym: col_idx})
+    col_maps = {}
+    for k in feat_keys:
+        col_maps[k] = {c: j for j, c in enumerate(feats[k].columns)}
 
-    tprint(f"Feature save complete. {count}/{total} symbols saved.")
+    # Pre-extract underlying numpy arrays (no copy, just .values reference)
+    arrays = {k: feats[k].values for k in feat_keys}
+
+    count = 0
+    for sym in symbols:
+        cutoff_ts = None
+        if min_timestamp_by_symbol:
+            cutoff_ts = min_timestamp_by_symbol.get(sym)
+
+        # Build {feat_name: 1-D array} for this symbol
+        col_data = {}
+        for k in feat_keys:
+            j = col_maps[k].get(sym)
+            if j is not None:
+                col_data[k] = arrays[k][:, j]
+
+        if not col_data:
+            continue
+
+        df_sym = pd.DataFrame(col_data, index=time_index)
+        df_sym = df_sym.astype(np.float32, copy=False)
+        if cutoff_ts is not None:
+            df_sym = df_sym[df_sym.index > cutoff_ts]
+        if df_sym.empty:
+            continue
+
+        safe_sym = sym.replace("/", "_")
+        final_path = os.path.join(out_dir, f"symbol={safe_sym}.parquet")
+        append_symbol_features(final_path, sym, df_sym)
+        del df_sym
+        count += 1
+
+        if count % 100 == 0:
+            tprint(f"Saved {count}/{total} symbols ({n_feats} features each)")
+
+    tprint(f"Feature save complete. {count}/{total} symbols saved ({n_feats} features).")
 
 def load_features(ts: pd.Timestamp, root_dir: str) -> dict:
     """

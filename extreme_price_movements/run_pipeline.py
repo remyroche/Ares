@@ -6,6 +6,7 @@ Usage:
     python3 extreme_price_movements/run_pipeline.py labels
 """
 import sys
+import os
 import argparse
 import pandas as pd
 
@@ -21,6 +22,7 @@ from extreme_price_movements.pipeline_steps import (
     run_risk_optimization_step,
 )
 from extreme_price_movements.optimise import run_optimise_step, Policy
+from extreme_price_movements.pipeline_steps import run_ridge_sizer_step
 
 
 def _find_latest_feature_ts(data_root):
@@ -43,6 +45,30 @@ def run_download(cfg):
     import time as _time
     tprint("STEP: DOWNLOAD START")
     store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+
+    # --- Freshness check: skip download if data is < 6 days old ---
+    import glob as _glob, json as _json
+    _FRESHNESS_DAYS = 6
+    _meta_dir = store.ohlcv_dir
+    _meta_files = _glob.glob(os.path.join(_meta_dir, "*.meta.json"))
+    if _meta_files:
+        _latest_ms = 0
+        for mf in _meta_files[:20]:  # sample up to 20 symbols
+            try:
+                with open(mf) as _fp:
+                    _m = _json.load(_fp)
+                _latest_ms = max(_latest_ms, _m.get("last_ts_ms", 0))
+            except Exception:
+                pass
+        if _latest_ms > 0:
+            _latest_ts = pd.to_datetime(_latest_ms, unit="ms", utc=True)
+            _age = pd.Timestamp.utcnow() - _latest_ts
+            tprint(f"Data freshness: latest={_latest_ts}, age={_age}")
+            if _age < pd.Timedelta(days=_FRESHNESS_DAYS):
+                tprint(f"Data is {_age.total_seconds()/3600:.1f}h old (< {_FRESHNESS_DAYS}d). Skipping download.")
+                tprint("STEP: DOWNLOAD COMPLETE (fresh)")
+                return
+
     ex = make_spot_exchange()
 
     mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
@@ -200,13 +226,43 @@ def run_risk_opt(cfg, ts_override=None):
 
 
 
+def run_ridge_sizer(cfg, ts_override=None):
+    """Run ridge position sizer on meta model OOF predictions."""
+    if ts_override:
+        ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
+    else:
+        ts_sig = _find_latest_feature_ts(cfg["data_root"])
+        if ts_sig is None:
+            tprint("ERROR: No feature directories found.")
+            return
+
+    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    import os
+    state_file = os.path.join(cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl")
+    if not os.path.exists(state_file):
+        tprint(f"ERROR: Trained state not found at {state_file}. Run 'train' mode first.")
+        return
+
+    tprint(f"Ridge Sizer mode. ts_sig={ts_sig}")
+    result = run_ridge_sizer_step(ts_sig, cfg, state_file)
+    if result:
+        tprint(f"RIDGE SIZER COMPLETE — {len(result.get('weights', {}))} weights learned")
+    else:
+        tprint("RIDGE SIZER: No results (possibly no meta OOF predictions found)")
+
+
 def run_all(cfg, ts_override=None):
-    """Run download -> features -> labels -> train -> backtest -> optimise in order."""
+    """Run download -> features -> train (includes labels) -> ridge_sizer -> optimise in order.
+    
+    Note: 'train' already refreshes labels internally.
+    Note: 'optimise' triggers backtest internally if backtest_results.csv is missing,
+          then runs the tpsl_optimiser pipeline (TP/SL calibration, loss limiter,
+          profit exit, position sizing, holdout evaluation).
+    """
     run_download(cfg)
     run_features(cfg, ts_override=ts_override)
-    run_labels(cfg, ts_override=ts_override)
     run_train(cfg, ts_override=ts_override)
-    run_backtest(cfg, ts_override=ts_override)
+    run_ridge_sizer(cfg, ts_override=ts_override)
     run_optimise(cfg, ts_override=ts_override)
 
     # Final Summary
@@ -238,6 +294,29 @@ def run_all(cfg, ts_override=None):
                 tprint(f"Could not read results for summary: {e}")
 
 
+def run_train_meta(cfg, ts_override=None):
+    """Re-run only meta model training, reusing existing base models."""
+    if ts_override:
+        ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
+    else:
+        ts_sig = _find_latest_feature_ts(cfg["data_root"])
+        if ts_sig is None:
+            tprint("ERROR: No feature directories found.")
+            return
+
+    from extreme_price_movements.main import train_daily_meta
+    store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+    ex = make_spot_exchange()
+    result = train_daily_meta(ts_sig, None, cfg, store, ex)
+    if result:
+        import pickle as _pkl
+        _pkl.dump(result, open("model_state.pkl", "wb"))
+        tprint("Meta model state saved to model_state.pkl")
+        tprint("TRAIN_META PIPELINE COMPLETE")
+    else:
+        tprint("TRAIN_META PIPELINE FAILED")
+
+
 def run_optimise(cfg, ts_override=None):
     if ts_override:
         ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
@@ -247,11 +326,12 @@ def run_optimise(cfg, ts_override=None):
             tprint("ERROR: No feature directories found.")
             return
 
-    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    run_id = ts_sig.strftime("%Y%mwh%d_%H%M%S")
     import os
+    state_file = os.path.join(cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl")
     backtest_file = os.path.join(cfg["data_root"], "artifacts", run_id, "backtest_results.csv")
     if not os.path.exists(backtest_file):
-        tprint("Backtest results not found. Running backtest first...")
+        tprint("Backtest results not found. Running backtest to generate trade data for optimiser...")
         run_backtest(cfg, ts_override=ts_override)
         if not os.path.exists(backtest_file):
             tprint(f"ERROR: Backtest still not found at {backtest_file}. Aborting optimise.")
@@ -265,12 +345,16 @@ def run_optimise(cfg, ts_override=None):
         atr_15m = pd.Series(0.01, index=trades.index)
 
     params_path = os.path.join(cfg["data_root"], "artifacts", run_id, "models", "bucket_params.json")
-    run_optimise_step(trades=trades, atr_15m=atr_15m, output_path=params_path, policy=Policy(mode="train_baseline", params_path=params_path))
+    run_optimise_step(
+        trades=trades, atr_15m=atr_15m, output_path=params_path,
+        policy=Policy(mode="train_baseline", params_path=params_path),
+        state_path=state_file if os.path.exists(state_file) else None,
+    )
     tprint(f"OPTIMISE COMPLETE: {params_path}")
 
 def main():
     parser = argparse.ArgumentParser(description="Extreme Price Movements Pipeline")
-    parser.add_argument("mode", choices=["download", "labels", "features", "train", "backtest", "optimize_risk", "optimise", "run"],
+    parser.add_argument("mode", choices=["download", "labels", "features", "train", "train_meta", "ridge_sizer", "backtest", "optimize_risk", "optimise", "run"],
                         help="Pipeline mode to run")
     args = parser.parse_args()
 
@@ -284,6 +368,10 @@ def main():
         run_features(cfg)
     elif args.mode == "train":
         run_train(cfg)
+    elif args.mode == "train_meta":
+        run_train_meta(cfg)
+    elif args.mode == "ridge_sizer":
+        run_ridge_sizer(cfg)
     elif args.mode == "backtest":
         run_backtest(cfg)
     elif args.mode == "optimize_risk":

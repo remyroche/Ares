@@ -508,6 +508,227 @@ def numba_zscore(df, n):
     # Vectorized pandas operation for final step is fine/fast
     return (df - mu) / (sd + np.float32(1e-12))
 
+# --- PARALLEL ROLLING HELPERS ---
+
+@jit(nopython=True, cache=True)
+def _numba_rolling_mean_1d(x, window):
+    """Single-pass rolling mean with NaN handling."""
+    n = len(x)
+    out = np.full(n, np.nan, dtype=np.float32)
+    
+    if window <= 0:
+        return out
+    
+    current_sum = 0.0
+    current_count = 0
+    
+    for i in range(n):
+        val_in = x[i]
+        if not np.isnan(val_in):
+            current_sum += val_in
+            current_count += 1
+        
+        if i >= window:
+            val_out = x[i - window]
+            if not np.isnan(val_out):
+                current_sum -= val_out
+                current_count -= 1
+        
+        if current_count > 0:
+            out[i] = np.float32(current_sum / current_count)
+    
+    return out
+
+
+@jit(nopython=True, cache=True)
+def _numba_rolling_std_1d(x, window):
+    """Single-pass rolling std with K-shift for numerical stability."""
+    n = len(x)
+    out = np.full(n, np.nan, dtype=np.float32)
+    
+    if window <= 0:
+        return out
+    
+    # Circular buffer for K-shift
+    window_vals = np.empty(window, dtype=np.float64)
+    window_valid = np.zeros(window, dtype=np.bool_)
+    buf_idx = 0
+    
+    for i in range(n):
+        val_in = x[i]
+        
+        # Store in circular buffer
+        if not np.isnan(val_in):
+            window_vals[buf_idx] = val_in
+            window_valid[buf_idx] = True
+        else:
+            window_valid[buf_idx] = False
+        buf_idx = (buf_idx + 1) % window
+        
+        if i >= window - 1:
+            # Compute K-shift variance
+            K = 0.0
+            K_set = False
+            sum_d = 0.0
+            sum_d_sq = 0.0
+            count = 0
+            
+            for j in range(window):
+                idx = (buf_idx + j) % window
+                if window_valid[idx]:
+                    v = window_vals[idx]
+                    if not K_set:
+                        K = v
+                        K_set = True
+                    d = v - K
+                    sum_d += d
+                    sum_d_sq += d * d
+                    count += 1
+            
+            if count > 1:
+                var_num = sum_d_sq - (sum_d * sum_d) / count
+                if var_num < 0:
+                    var_num = 0.0
+                out[i] = np.float32(np.sqrt(var_num / (count - 1)))
+        
+        else:
+            # Warmup
+            if not np.isnan(val_in):
+                if i == 0:
+                    K = val_in
+                    K_set = True
+                    sum_d = 0.0
+                    sum_d_sq = 0.0
+                    count = 1
+                else:
+                    d = val_in - K
+                    sum_d += d
+                    sum_d_sq += d * d
+                    count += 1
+                
+                if count > 1:
+                    var_num = sum_d_sq - (sum_d * sum_d) / count
+                    if var_num < 0:
+                        var_num = 0.0
+                    out[i] = np.float32(np.sqrt(var_num / (count - 1)))
+    
+    return out
+
+
+@jit(nopython=True, cache=True)
+def _numba_ewma_1d(x, alpha, adjust=False):
+    """EWMA with NaN handling."""
+    n = len(x)
+    out = np.full(n, np.nan, dtype=np.float32)
+    one = np.float32(1.0)
+    
+    # Find first valid
+    first_valid = -1
+    for i in range(n):
+        if not np.isnan(x[i]):
+            first_valid = i
+            break
+    
+    if first_valid == -1:
+        return out
+    
+    out[first_valid] = x[first_valid]
+    
+    for i in range(first_valid + 1, n):
+        val = x[i]
+        if np.isnan(val):
+            out[i] = out[i-1]
+        else:
+            out[i] = (one - alpha) * out[i-1] + alpha * val
+    
+    return out
+
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_mean_parallel(mat, window):
+    """Parallel rolling mean across all columns."""
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_mean_1d(mat[:, j], window)
+    
+    return out
+
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_std_parallel(mat, window):
+    """Parallel rolling std across all columns with K-shift stability."""
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_std_1d(mat[:, j], window)
+    
+    return out
+
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_ewma_parallel(mat, alpha, adjust=False):
+    """Parallel EWMA across all columns."""
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    
+    for j in prange(n_cols):
+        out[:, j] = _numba_ewma_1d(mat[:, j], alpha, adjust)
+    
+    return out
+
+
+def numba_rolling_mean_parallel(df, window):
+    """Wrapper for parallel rolling mean."""
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+    
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rolling_mean_parallel(mat, window)
+    
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+    if is_series:
+        return res_df[res_df.columns[0]]
+    return res_df
+
+
+def numba_rolling_std_parallel(df, window):
+    """Wrapper for parallel rolling std with K-shift stability."""
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+    
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rolling_std_parallel(mat, window)
+    
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+    if is_series:
+        return res_df[res_df.columns[0]]
+    return res_df
+
+
+def numba_ewma_parallel(df, span=None, alpha=None, adjust=False):
+    """Wrapper for parallel EWMA. Specify either span or alpha."""
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+    
+    if alpha is None:
+        if span is None:
+            raise ValueError("Either span or alpha must be provided")
+        alpha = np.float32(2.0 / (span + 1.0))
+    
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_ewma_parallel(mat, alpha, adjust)
+    
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+    if is_series:
+        return res_df[res_df.columns[0]]
+    return res_df
+
 # --- NEW KERNELS & WRAPPERS ---
 
 @jit(nopython=True, cache=True)
@@ -1102,6 +1323,10 @@ def numba_rolling_std(df, n):
     # tprint(f"Entering function: numba_rolling_std in fast_funcs.py")
     return apply_to_frame(df, _numba_rolling_std_nan_safe, n)
 
+def numba_ewma(df, alpha, adjust=False):
+    """Public EWMA wrapper for DataFrame/Series."""
+    return apply_to_frame(df, _numba_ewma_nan_safe, np.float32(alpha), adjust)
+
 def compute_peak_labels_and_weights(close_df, atr_df, horizon, near_k, rev_k, is_uptrend, max_near_pct=0.02, min_rev_pct=0.005):
     tprint(f"Entering function: compute_peak_labels_and_weights in fast_funcs.py")
 
@@ -1180,52 +1405,121 @@ def numba_frac_diff(df, d, window, thres=1e-5):
 
 @jit(nopython=True, cache=True)
 def _numba_rolling_zscore_nan_safe_1d(x, window, eps=1e-12):
+    """
+    Rolling z-score with K-shift (assumed mean) for numerical stability.
+    
+    Uses Welford's online algorithm variant with K-shift to prevent
+    catastrophic cancellation in variance calculation when values are large.
+    
+    K-shift: Instead of computing Sum(X^2) - (Sum(X)^2)/N directly,
+    we compute Sum((X-K)^2) - (Sum(X-K)^2)/N where K is the first valid
+    value in the window. This centers the data around K, reducing magnitude
+    and preventing floating-point cancellation errors.
+    """
     n = len(x)
     output = np.full(n, np.nan, dtype=np.float32)
 
     if window <= 0:
         return output
 
-    sum_val = 0.0
-    sum_sq = 0.0
+    # K-shift: use first valid value as assumed mean
+    K = 0.0
+    K_set = False
+    
+    # For rolling window, we need to track shifted values
+    # sum_d = Sum(X - K), sum_d_sq = Sum((X - K)^2)
+    sum_d = 0.0
+    sum_d_sq = 0.0
     count = 0
+    
+    # Circular buffer for K-shift values in current window
+    window_vals = np.empty(window, dtype=np.float64)
+    window_valid = np.zeros(window, dtype=np.bool_)
+    buf_idx = 0
 
     for i in range(n):
-        # Entering
         val_in = x[i]
+        
+        # Store incoming value in circular buffer
         if not np.isnan(val_in):
-            sum_val += val_in
-            sum_sq += val_in * val_in
-            count += 1
-
-        # Leaving
-        if i >= window:
-            val_out = x[i - window]
-            if not np.isnan(val_out):
-                sum_val -= val_out
-                sum_sq -= val_out * val_out
-                count -= 1
-
-        # Output logic
-        if count > 1:
-            mean = sum_val / count
-            # Var = (SumSq - (Sum^2)/N) / (N-1)
-            var_num = sum_sq - (sum_val * sum_val) / count
-
-            if var_num < 0: var_num = 0.0
-
-            std = np.sqrt(var_num / (count - 1))
-
-            if not np.isnan(val_in):
-                 output[i] = (val_in - mean) / (std + eps)
-            else:
-                 output[i] = np.nan
-
-        elif count == 1:
-             # Std is undefined (0 or NaN) for N=1 depending on definition.
-             output[i] = np.nan
+            window_vals[buf_idx] = val_in
+            window_valid[buf_idx] = True
         else:
-             output[i] = np.nan
+            window_valid[buf_idx] = False
+        
+        buf_idx = (buf_idx + 1) % window
+
+        # Recompute K-shift and sums from scratch for numerical stability
+        # This is O(window) but ensures K is always from current window
+        if i >= window - 1:
+            # Find first valid value in window for K-shift
+            K = 0.0
+            K_set = False
+            sum_d = 0.0
+            sum_d_sq = 0.0
+            count = 0
+            
+            for j in range(window):
+                idx = (buf_idx + j) % window
+                if window_valid[idx]:
+                    v = window_vals[idx]
+                    if not K_set:
+                        K = v
+                        K_set = True
+                    d = v - K
+                    sum_d += d
+                    sum_d_sq += d * d
+                    count += 1
+            
+            # Output logic
+            if count > 1 and K_set:
+                # Var = (SumD^2 - (SumD)^2/N) / (N-1)
+                # This is numerically stable because d values are centered around K
+                var_num = sum_d_sq - (sum_d * sum_d) / count
+                
+                if var_num < 0:
+                    var_num = 0.0
+                
+                std = np.sqrt(var_num / (count - 1))
+                
+                if not np.isnan(val_in):
+                    # z = (X - mean) / std = ((X - K) - (SumD/N)) / std
+                    d_in = val_in - K
+                    mean_d = sum_d / count
+                    output[i] = (d_in - mean_d) / (std + eps)
+                else:
+                    output[i] = np.nan
+            elif count == 1 and K_set and not np.isnan(val_in):
+                # Single value - zscore is 0 by convention
+                output[i] = 0.0
+            else:
+                output[i] = np.nan
+        else:
+            # Warmup period - use incremental approach
+            if not np.isnan(val_in):
+                if not K_set:
+                    K = val_in
+                    K_set = True
+                d = val_in - K
+                sum_d += d
+                sum_d_sq += d * d
+                count += 1
+            
+            if count > 1 and K_set:
+                var_num = sum_d_sq - (sum_d * sum_d) / count
+                if var_num < 0:
+                    var_num = 0.0
+                std = np.sqrt(var_num / (count - 1))
+                if not np.isnan(val_in):
+                    d_in = val_in - K
+                    mean_d = sum_d / count
+                    output[i] = (d_in - mean_d) / (std + eps)
+                else:
+                    output[i] = np.nan
+            elif count == 1 and K_set and not np.isnan(val_in):
+                output[i] = 0.0
+            else:
+                output[i] = np.nan
 
     return output
 

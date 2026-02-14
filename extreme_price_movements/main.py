@@ -8,7 +8,17 @@ import uuid
 from extreme_price_movements.config import CFG
 from extreme_price_movements.utils import tprint, Timer
 from extreme_price_movements.universe import refresh_margin_universe_daily, build_fetch_universe, select_live_candidates, get_training_universe
-from extreme_price_movements.data_store import make_spot_exchange, PartitionedOHLCVStore, to_panel, check_data_health, save_features, load_features, get_feature_path, load_artifact_df
+from extreme_price_movements.data_store import (
+    make_spot_exchange,
+    PartitionedOHLCVStore,
+    to_panel,
+    check_data_health,
+    save_features,
+    load_features,
+    get_feature_path,
+    get_feature_bounds,
+    load_artifact_df,
+)
 from extreme_price_movements.features import compute_market_features, add_regime_gates, compute_features_hourly
 from extreme_price_movements.engine import generate_hourly_signals
 from extreme_price_movements.candidates import select_trade_candidates_hourly, entry_price_next_hour_open, detect_extreme_movement_candidates
@@ -19,6 +29,7 @@ from extreme_price_movements.training import select_best_horizon, compute_p_exha
 from extreme_price_movements.risk import TrailingStop
 from extreme_price_movements.optimization_utils import filter_low_variance_assets
 from extreme_price_movements.pipeline_steps import run_label_generation_step_v2, run_risk_optimization_step, run_backtest_step
+from extreme_price_movements.model_loader import load_model_bundle, load_full_state, find_latest_run_id, load_bucket_params
 
 def reconcile_state(ex, state):
     tprint("Reconciling state...")
@@ -79,20 +90,29 @@ def generate_features_daily(ts_sig, margin_symbols, cfg, store, ex):
     train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=ts_sig)
     tprint(f"Target universe size: {len(train_syms)}")
 
-    missing_syms = []
+    pending_syms = []
+    last_ts_by_symbol: dict[str, pd.Timestamp] = {}
+
     for s in train_syms:
         fpath = get_feature_path(cfg["data_root"], ts_sig, s)
         if not os.path.exists(fpath):
-            missing_syms.append(s)
+            pending_syms.append(s)
+            continue
 
-    if not missing_syms:
-        tprint("All features already generated.")
+        _, last_ts = get_feature_bounds(fpath)
+        if last_ts is None or last_ts < ts_sig:
+            pending_syms.append(s)
+            if last_ts is not None:
+                last_ts_by_symbol[s] = last_ts
+
+    if not pending_syms:
+        tprint("All features already generated and up to date.")
         return
 
-    tprint(f"Generating features for {len(missing_syms)} missing symbols...")
+    tprint(f"Generating features for {len(pending_syms)} symbols (missing or stale)...")
 
     # We must load market basket to compute market features
-    load_syms = sorted(list(set(missing_syms).union(set(cfg["market_basket"]))))
+    load_syms = sorted(list(set(pending_syms).union(set(cfg["market_basket"]))))
 
     dfs = {}
 
@@ -112,11 +132,17 @@ def generate_features_daily(ts_sig, margin_symbols, cfg, store, ex):
 
     with Timer("Feature Computation"):
         panel = to_panel(dfs)
+        del dfs  # free raw data
+        import gc; gc.collect()
+
         mkt_df = compute_market_features(panel, cfg["market_basket"])
         tprint("Market features computed (generation)")
         mkt_gates = add_regime_gates(mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
+        del mkt_df  # free intermediate
 
         feats = compute_features_hourly(panel, mkt_gates, cfg)
+        del panel, mkt_gates  # free large objects
+        gc.collect()
         tprint("Hourly features computed (generation)")
 
         # Filter to save only missing symbols
@@ -128,48 +154,51 @@ def generate_features_daily(ts_sig, margin_symbols, cfg, store, ex):
         # Just to be safe, check one known feature like 'ret1h'
         if "ret1h" in feats:
             available_cols = feats["ret1h"].columns
-            valid_missing = [s for s in missing_syms if s in available_cols]
+            valid_targets = [s for s in pending_syms if s in available_cols]
         else:
             # Fallback if structure is different
-            valid_missing = missing_syms
+            valid_targets = pending_syms
 
-        if not valid_missing:
-            tprint("No valid missing symbols found in computed features.")
+        if not valid_targets:
+            tprint("No valid target symbols found in computed features.")
             return
 
         for k, v in feats.items():
             if isinstance(v, pd.DataFrame):
-                # Select only the columns for missing symbols
-                cols = [c for c in valid_missing if c in v.columns]
+                # Select only the columns for pending symbols
+                cols = [c for c in valid_targets if c in v.columns]
                 if cols:
                     feats_to_save[k] = v[cols]
             else:
                 pass
 
         if feats_to_save:
-            save_features(feats_to_save, ts_sig, cfg["data_root"])
+            min_ts_map = {s: last_ts_by_symbol.get(s) for s in valid_targets if s in last_ts_by_symbol}
+            save_features(
+                feats_to_save,
+                ts_sig,
+                cfg["data_root"],
+                min_timestamp_by_symbol=min_ts_map if min_ts_map else None,
+            )
         else:
             tprint("No features to save.")
 
+        del feats, feats_to_save
+        gc.collect()
+
     tprint("DAILY FEATURE GENERATION COMPLETE")
 
-def train_daily(ts_sig, margin_symbols, cfg, store, ex):
-    tprint("DAILY TRAINING START")
-
-    # In the new split, train_daily only trains models from artifacts.
-    # It assumes labels are generated.
-
-    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+def _load_label_datasets(cfg, run_id):
+    """Load all label datasets from artifacts. Shared by train_daily / train_daily_base / train_daily_meta."""
     datasets = {}
-
-    # 1. Load Datasets from artifacts
-    # We need to know which keys to look for.
-    # We can glob or just try standard keys.
     tprint("Loading label datasets from artifacts...")
 
     # Spike
-    df_spike = load_artifact_df(cfg["data_root"], run_id, "labels", "spike_anatomy")
-    if df_spike is not None: datasets["spike_anatomy"] = df_spike
+    for mode in ["best", "worst"]:
+        name = f"spike_anatomy_{mode}"
+        df_spike = load_artifact_df(cfg["data_root"], run_id, "labels", name)
+        if df_spike is not None:
+            datasets[name] = df_spike
 
     # Alpha models
     trade_sides = ["long", "short"]
@@ -190,40 +219,109 @@ def train_daily(ts_sig, margin_symbols, cfg, store, ex):
     for d in ["up", "down"]:
         name = f"exh_{d}"
         df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
-        if df is not None: datasets[name] = df
+        if df is not None:
+            datasets[name] = df
 
     # Specialist models
     for name in ["trap_model", "gamma_model"]:
         df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
-        if df is not None: datasets[name] = df
+        if df is not None:
+            datasets[name] = df
+
+    return datasets, found_count
+
+
+def _default_risk(cfg):
+    return {
+        "k_sl": cfg.get("risk_k_sl", 2.0),
+        "k_trail_start": cfg.get("risk_k_trail_start", 1.0),
+        "k_trail_dist": cfg.get("risk_k_trail_dist", 0.5),
+        "granular_risk": {}
+    }
+
+
+def train_daily(ts_sig, margin_symbols, cfg, store, ex):
+    """Full training: base + meta in one shot."""
+    tprint("DAILY TRAINING START")
+    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    cfg["run_id"] = run_id
+    datasets, found_count = _load_label_datasets(cfg, run_id)
 
     if not found_count:
         tprint("ERROR: No label datasets found. Run 'labels' mode first.")
         return None
 
     with Timer("Model Training"):
-        trained_bundle = train_models_from_artifacts(datasets, cfg)
+        trained_bundle = train_models_from_artifacts(datasets, cfg, train_meta=True)
         tprint("Models trained.")
 
-        # Note: Risk optimization is now separate step.
-        # But for backward compat, we should return a state that has 'risk_params' if we don't run risk step?
-        # If we return None for risk, execute_hourly might fail.
-        # We will initialize with default risk params here, and 'risk' step will update them.
-        default_risk = {
-            "k_sl": cfg.get("risk_k_sl", 2.0),
-            "k_trail_start": cfg.get("risk_k_trail_start", 1.0),
-            "k_trail_dist": cfg.get("risk_k_trail_dist", 0.5),
-            "granular_risk": {}
-        }
-
-        new_state = {
-            "ts_trained": ts_sig,
-            "bundle": trained_bundle,
-            "risk_params": default_risk
-        }
-
     tprint("DAILY TRAINING COMPLETE")
-    return new_state
+    return {"ts_trained": ts_sig, "bundle": trained_bundle, "risk_params": _default_risk(cfg)}
+
+
+def train_daily_base(ts_sig, margin_symbols, cfg, store, ex):
+    """Train only base (alpha) models. Saves intermediate state for train_daily_meta."""
+    tprint("DAILY BASE TRAINING START")
+    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    cfg["run_id"] = run_id
+    datasets, found_count = _load_label_datasets(cfg, run_id)
+
+    if not found_count:
+        tprint("ERROR: No label datasets found. Run 'labels' mode first.")
+        return None
+
+    with Timer("Base Model Training"):
+        trained_bundle = train_models_from_artifacts(datasets, cfg, train_meta=False)
+        tprint("Base models trained.")
+
+    # Save intermediate alpha models for meta training
+    import pickle as _pkl
+    intermediate_path = os.path.join(cfg["data_root"], "artifacts", run_id, "base_models_intermediate.pkl")
+    os.makedirs(os.path.dirname(intermediate_path), exist_ok=True)
+    with open(intermediate_path, "wb") as f:
+        _pkl.dump(trained_bundle, f)
+    tprint(f"Base models intermediate saved to {intermediate_path}")
+
+    tprint("DAILY BASE TRAINING COMPLETE")
+    return {"ts_trained": ts_sig, "bundle": trained_bundle, "risk_params": _default_risk(cfg)}
+
+
+def train_daily_meta(ts_sig, margin_symbols, cfg, store, ex):
+    """Train only meta models, loading base models from intermediate state."""
+    tprint("DAILY META TRAINING START")
+    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    cfg["run_id"] = run_id
+    datasets, found_count = _load_label_datasets(cfg, run_id)
+
+    if not found_count:
+        tprint("ERROR: No label datasets found. Run 'labels' mode first.")
+        return None
+
+    # Load intermediate alpha models
+    import pickle as _pkl
+    intermediate_path = os.path.join(cfg["data_root"], "artifacts", run_id, "base_models_intermediate.pkl")
+    if not os.path.exists(intermediate_path):
+        tprint(f"ERROR: Base models intermediate not found at {intermediate_path}. Run 'train_base' first.")
+        return None
+
+    with open(intermediate_path, "rb") as f:
+        base_bundle = _pkl.load(f)
+    tprint(f"Loaded base models from {intermediate_path}")
+
+    alpha_models = base_bundle.get("alpha_models", {})
+    if not alpha_models:
+        tprint("ERROR: No alpha models found in intermediate state.")
+        return None
+
+    with Timer("Meta Model Training"):
+        from extreme_price_movements.training import train_meta_models_from_artifacts
+        meta_models, meta_gate_results = train_meta_models_from_artifacts(datasets, cfg, alpha_models)
+        tprint(f"Meta models trained: {len(meta_models)}")
+
+    # Merge meta into base bundle
+    base_bundle["meta_models"] = meta_models
+    tprint("DAILY META TRAINING COMPLETE")
+    return {"ts_trained": ts_sig, "bundle": base_bundle, "risk_params": _default_risk(cfg)}
 
 def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger, model_state):
     tprint(f"Entering function: execute_hourly in main.py")
@@ -296,6 +394,27 @@ def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger, model_
 
     risk_conf = model_state.get("risk_params")
     granular_risk = risk_conf.get("granular_risk", {}) if risk_conf else {}
+    
+    # Merge bucket_params (optimized exit policy from tpsl_optimiser) into granular_risk
+    # This ensures live trading uses the optimized TP/SL/exit parameters
+    bucket_params = model_state.get("bucket_params", {})
+    if bucket_params and not granular_risk:
+        # Build granular_risk from bucket_params
+        granular_risk = {}
+        for bucket_key, bucket_cfg in bucket_params.items():
+            # bucket_key is like "LONG_MR", "SHORT_TF", etc.
+            # Map to risk keys: "risk_mr_best", "risk_long_mr", etc.
+            parts = bucket_key.split("_")
+            if len(parts) == 2:
+                side, dom = parts[0].lower(), parts[1].lower()
+                # Add both naming conventions for compatibility
+                granular_risk[f"risk_{dom}_best"] = bucket_cfg
+                granular_risk[f"risk_{dom}_worst"] = bucket_cfg
+                granular_risk[f"risk_{side}_{dom}"] = bucket_cfg
+        if granular_risk:
+            risk_conf = risk_conf or {}
+            risk_conf["granular_risk"] = granular_risk
+            tprint(f"Applied {len(bucket_params)} bucket params to risk config")
 
     o = panel["open"]; h = panel["high"]; l = panel["low"]; c = panel["close"]
     exits_count = 0
@@ -451,8 +570,6 @@ def run_live_cycle(initial_model_state=None):
             "risk_params": None
         }
         # Try load from default file
-        import os
-        import pickle
         if os.path.exists("model_state.pkl"):
             try:
                 with open("model_state.pkl", "rb") as f:
@@ -460,6 +577,14 @@ def run_live_cycle(initial_model_state=None):
                 tprint("Loaded model state from model_state.pkl")
             except Exception as e:
                 tprint(f"Failed to load model state: {e}")
+        
+        # If still no bundle, try loading from latest run_id artifacts
+        if model_state.get("bundle") is None:
+            cfg = CFG.copy()
+            latest_run_id = find_latest_run_id(cfg["data_root"])
+            if latest_run_id:
+                tprint(f"Loading model bundle from latest run_id: {latest_run_id}")
+                model_state = load_full_state(latest_run_id, cfg["data_root"])
 
     cfg = CFG.copy()
     state = StateManager()
@@ -482,7 +607,7 @@ def run_live_cycle(initial_model_state=None):
             with Timer("Margin universe refresh"): mu = refresh_margin_universe_daily(None, quotes=["USDT", "USDC", "BUSD", "EUR"])
             store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
 
-            last_train = model_state["ts_trained"]
+            last_train = model_state.get("ts_trained")
             need_train = False
             if last_train is None: need_train = True
             else:

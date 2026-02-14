@@ -85,6 +85,7 @@ HELPER_BASE_FEATURES = [
     "rvol_hod_base", "signed_vol", "up_vol", "dn_vol", "up_vol_6", "dn_vol_6",
     "vol_asym_6", "clv", "clv_mean_2", "excess_12h", "speed",
     "atr_expansion", "stall_ext_corr",
+    "asset_atr_level", "asset_vol_level", "atr_state", "vol_state",
     "G_EXH_EFFORT", "G_EXH_GIVEBACK", "G_EXH_TAIL_FAIL",
     "G_MR_SPIKE", "G_TF_GRIND", "G_MR_TAIL",
     "G_META_EXH", "G_META_TF_QUAL", "G_META_MR_QUAL", "G_META_AMBIG",
@@ -121,7 +122,7 @@ CFG = {
     "consensus_amp": 0.25,
     "consensus_k": 2.0,
     "consensus_beta": 0.20,
-    "train_lookback_hours": 24 * 365 * 3,   # 3 years
+    "train_lookback_hours": 24 * 365 * 4,   # 4 years
     "val_lookback_hours": 24 * 7,      # 7d validation (time-split, no leakage)
     "min_train_samples": 200,
 
@@ -133,9 +134,16 @@ CFG = {
     "mfe_mae_tau": 1.0,        # Scaling factor (d/tau)
     "mfe_mae_cost_floor": 0.001,  # Cost floor for touch margin penalty
 
+    # Meta model sample weighting
+    # Magnitude sigmoid: w = 1 + alpha * sigmoid((|ret| - q70) / std)
+    # alpha=0.5 gives top-30% ~1.25-1.5x upweight (moderate)
+    "meta_weight_sigmoid_alpha": 0.5,
+    # MFE/MAE quality: w_exc = 0.5 + 0.5 * clip(max(MFE/barrier, MAE/barrier) / tau, 0, 1)
+    "meta_mfe_mae_tau": 1.0,
+
     # per-hour cross-sectional training selection
-    "variance_filter_pct": 1.0, # User requested to keep all non-constant features
-    "train_extreme_pct_hourly": 0.07,
+    "variance_filter_pct": 1.0, # Keep all non-constant assets
+    "train_extreme_pct_hourly": 0.9,  # Keep 90% of candidates (was 0.07 = 7%)
     "train_extreme_min": 10,
     "train_extreme_max": 80,
     "train_min_range_pct": 0.07,
@@ -476,6 +484,8 @@ CFG = {
         "rv_ratio_24_120", "rv_48h", "rv_120h",
         "ret48h", "ret120h",
         "donch_dist_48", "donch_dist_120",
+        # Asset identity features (raw-scale, not normalized)
+        "asset_atr_level", "asset_vol_level", "atr_state", "vol_state",
     ],
 
     # Inference dynamic-basket controls

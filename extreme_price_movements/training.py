@@ -29,6 +29,166 @@ import os
 import json
 from datetime import datetime, timezone
 
+# =============================================================================
+# UNIFIED BARRIER FACTORY - Canonical TP/SL geometry (best-of-both pipelines)
+# =============================================================================
+def _coerce_feature_to_panel_df(x, panel, name: str, fill_value: float = np.nan):
+    """Ensure feature is a DataFrame aligned to panel['close'] index/columns."""
+    close = panel["close"]
+    if isinstance(x, pd.DataFrame):
+        return x.reindex(index=close.index, columns=close.columns)
+    if isinstance(x, np.ndarray):
+        if x.shape == close.shape:
+            tprint(f"Warning: feature '{name}' provided as ndarray; coercing to DataFrame aligned to panel.")
+            return pd.DataFrame(x, index=close.index, columns=close.columns)
+        tprint(
+            f"Warning: feature '{name}' ndarray shape {x.shape} mismatches panel {close.shape}; "
+            f"using fill_value={fill_value}."
+        )
+        return pd.DataFrame(fill_value, index=close.index, columns=close.columns)
+    if x is None:
+        return pd.DataFrame(fill_value, index=close.index, columns=close.columns)
+    tprint(f"Warning: feature '{name}' has unexpected type {type(x)}; using fill_value={fill_value}.")
+    return pd.DataFrame(fill_value, index=close.index, columns=close.columns)
+
+
+def compute_barrier_factory(
+    atr_pct: pd.DataFrame,
+    window_size: int = 24 * 30,
+    k_tp: float = 1.0,
+    sl_base_mult: float = 0.5,
+    horizon: int = 4,
+    H_base: int = 4,
+    disp_floor: float = 0.1,
+    z_max: float = 3.0,
+    k_reg: float = 0.3,
+    m_lo: float = 0.7,
+    m_hi: float = 1.5,
+    sl_lo: float = 0.4,
+    sl_hi: float = 0.7,
+    z_gate: float = 1.0,
+    tp_lo: float = 0.02,   # Lower bound for TP (2%)
+    tp_hi: float = 0.06,  # Upper bound for TP (6%)
+    return_components: bool = False,
+) -> tuple:
+    """
+    Canonical barrier factory - unified TP/SL geometry for both pipelines.
+    
+    Formula:
+        tp_raw = k_tp * atr_pct * m(z) * sqrt(H / H_base)
+        tp = clamp(tp_raw, tp_lo, tp_hi)  # Match old scaled_atr_pct behavior
+        sl = sl_base_mult * sl_mult(z) * tp
+        
+    Where:
+        base = median(atr_pct, window)
+        disp = max(MAD(atr_pct, window), disp_floor * base)
+        z = (atr_pct - base) / disp  (robust z-score)
+        m(z) = exp(k_reg * clip(z, -z_max, z_max)) then clipped to [m_lo, m_hi]
+        sl_mult(z) = sl_lo for z < z_gate, interpolates to sl_hi for z >= z_gate
+    
+    Note: z_gate is used ONLY for SL adaptation, not for event selection.
+    Event gating should be applied separately in the candidate filtering stage.
+    
+    TP bounds (tp_lo, tp_hi) match the old scaled_atr_pct behavior:
+    - Old: barrier = scaled_atr_pct(atr, z, base, lo=0.02, hi=0.06) 
+    - New: barrier = clamp(k_tp * atr_pct * m(z) * sqrt(H), 0.02, 0.06)
+    
+    Returns:
+        (tp_df, sl_df) or (tp_df, sl_df, diagnostics) if return_components=True
+    """
+    import numpy as np
+    
+    # 1. Compute base and dispersion (P1's robust approach)
+    atr_median = atr_pct.rolling(window_size, min_periods=24).median()
+    
+    # MAD with floor
+    def _rolling_mad(x, window):
+        roll_med = x.rolling(window, min_periods=24).median()
+        return (x - roll_med).abs().rolling(window, min_periods=24).median()
+    
+    atr_mad = _rolling_mad(atr_pct, window_size)
+    atr_disp = np.maximum(atr_mad, disp_floor * atr_median)
+    
+    # 2. Robust z-score (P1's approach in P2's log-ratio friendly form)
+    z_score = (atr_pct - atr_median) / (atr_disp + 1e-12)
+    z_clipped = np.clip(z_score, -z_max, z_max)
+    
+    # 3. Regime multiplier m(z) - smooth exponential with bounds (P1's mapping)
+    m_raw = np.exp(k_reg * z_clipped)
+    m_clipped = np.clip(m_raw, m_lo, m_hi)
+    
+    # 4. Horizon scaling (P2's sqrt scaling)
+    h_scale = np.sqrt(horizon / H_base)
+    
+    # 5. Raw TP = k_tp * ATR% * m(z) * sqrt(H/H_base)
+    tp_raw = k_tp * atr_pct * m_clipped * h_scale
+    
+    # 6. Apply bounds to match old scaled_atr_pct behavior (Issue: barriers too large without bounds!)
+    tp_vals = np.clip(tp_raw, tp_lo, tp_hi)
+    
+    # Debug: print bounds being used
+    import sys
+    print(f"DEBUG barrier_factory: tp_lo={tp_lo}, tp_hi={tp_hi}, tp_raw_mean={np.nanmean(tp_raw):.4f}, tp_clipped_mean={np.nanmean(tp_vals):.4f}", file=sys.stderr)
+    
+    # 7. SL ratio adapts to regime (P1's adaptive SL)
+    # One-sided: only adapt when z > z_gate (high vol regime)
+    # Below z_gate: uses sl_lo (quiet market - not traded if gating at z_gate for events)
+    # Above z_gate: interpolates to sl_hi (volatile market - the regime we trade)
+    z_norm = np.clip((z_clipped - z_gate) / (z_max - z_gate), 0, 1)  # 0 to 1 for z in [z_gate, z_max]
+    sl_mult = sl_lo + (sl_hi - sl_lo) * z_norm
+    
+    # SL = sl_base_mult * sl_mult * TP
+    sl_vals = sl_base_mult * sl_mult * tp_vals
+    
+    tp_df = pd.DataFrame(tp_vals, index=atr_pct.index, columns=atr_pct.columns)
+    sl_df = pd.DataFrame(sl_vals, index=atr_pct.index, columns=atr_pct.columns)
+    
+    if return_components:
+        # Per-asset diagnostics for cross-asset portability check
+        asset_diagnostics = {}
+        for col in atr_pct.columns:
+            col_idx = atr_pct.columns.get_loc(col)
+            m_vals = m_clipped.values[:, col_idx]
+            sl_m = sl_mult.values[:, col_idx]
+            atr_col = atr_pct[col].values
+            tp_col = tp_vals.values[:, col_idx]
+            
+            # TP in ATR units: avoid division by zero
+            tp_atr_ratio = np.divide(tp_col, atr_col, out=np.full_like(tp_col, np.nan), where=atr_col != 0)
+            
+            asset_diagnostics[col] = {
+                "m_at_m_lo_pct": float(np.mean(m_vals == m_lo)),
+                "m_at_m_hi_pct": float(np.mean(m_vals == m_hi)),
+                "sl_at_sl_lo_pct": float(np.mean(sl_m == sl_lo)),
+                "sl_at_sl_hi_pct": float(np.mean(sl_m == sl_hi)),
+                "tp_atr_units": float(np.nanmean(tp_atr_ratio)),
+            }
+        
+        diagnostics = {
+            "z_mean": float(np.nanmean(z_clipped.values)),
+            "z_p10": float(np.nanpercentile(z_clipped.values, 10)),
+            "z_p90": float(np.nanpercentile(z_clipped.values, 90)),
+            "z_below_gate_pct": float(np.mean(z_clipped.values < z_gate)),
+            "z_above_gate_pct": float(np.mean(z_clipped.values >= z_gate)),
+            "m_mean": float(np.nanmean(m_clipped.values)),
+            "m_p10": float(np.nanpercentile(m_clipped.values, 10)),
+            "m_p90": float(np.nanpercentile(m_clipped.values, 90)),
+            "m_at_m_lo_pct": float(np.mean(m_clipped.values == m_lo)),
+            "m_at_m_hi_pct": float(np.mean(m_clipped.values == m_hi)),
+            "sl_mult_mean": float(np.nanmean(sl_mult)),
+            "sl_at_sl_lo_pct": float(np.mean(sl_mult == sl_lo)),
+            "sl_at_sl_hi_pct": float(np.mean(sl_mult == sl_hi)),
+            "tp_mean": float(np.nanmean(tp_vals)),
+            "sl_mean": float(np.nanmean(sl_vals)),
+            "clip_low_pct": float(np.mean(m_clipped.values == m_lo)),
+            "clip_high_pct": float(np.mean(m_clipped.values == m_hi)),
+            "asset_diagnostics": asset_diagnostics,
+        }
+        return tp_df, sl_df, diagnostics
+    
+    return tp_df, sl_df
+
+
 
 def _emoji(pass_flag):
     return "✅" if bool(pass_flag) else "⚠️"
@@ -61,6 +221,26 @@ def _safe_spearman(x, y):
         return float(v) if np.isfinite(v) else 0.0
     except Exception:
         return 0.0
+
+
+def _avg_trades_per_day_global(scores, k_frac, timestamps):
+    """Average selected trades/day using GLOBAL top-k and full day span.
+
+    This avoids per-timestamp `max(1, ceil(k*group_size))` behavior that can
+    collapse @10 and @30 to similar counts when groups are sparse.
+    """
+    s = np.asarray(scores, dtype=float)
+    if s.size == 0:
+        return 0.0
+    k = max(1, int(np.ceil(float(k_frac) * s.size)))
+    if timestamps is None:
+        return float(k)
+    ts = np.asarray(timestamps)
+    if ts.size == 0:
+        return float(k)
+    days_all = np.array([np.datetime64(t, 'D') for t in ts])
+    n_days = np.unique(days_all).size
+    return float(k / max(n_days, 1))
 
 
 def _evaluate_target(score, y, cost=0.005):
@@ -1082,7 +1262,43 @@ def compute_weights_logic(df, cfg, model_kind):
     if model_kind == "mr": return compute_mr_weights(df, cfg)
     else: return compute_tf_weights(df, cfg)
 
-def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, syms, trend_filter=None):
+
+def _strategy_bucket_context(trade_side: str, model_kind: str) -> tuple:
+    """Return (candidate_bucket, move_bucket, strategy_label) for (trade_side, model_kind)."""
+    if trade_side == "long":
+        cand_filter = "worst" if model_kind == "mr" else "best"
+    else:
+        cand_filter = "best" if model_kind == "mr" else "worst"
+    move_bucket = "up" if cand_filter == "best" else "down"
+    if trade_side == "long" and model_kind == "mr":
+        strategy_label = "buy_dips"
+    elif trade_side == "long" and model_kind == "tf":
+        strategy_label = "buy_momentum"
+    elif trade_side == "short" and model_kind == "mr":
+        strategy_label = "sell_rips"
+    else:
+        strategy_label = "sell_weakness"
+    return cand_filter, move_bucket, strategy_label
+
+def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, syms, trend_filter=None, model_direction=None):
+    """
+    Build exhaustion training data.
+    
+    Parameters
+    ----------
+    model_direction : str, optional
+        'up' for UP model (predicts long reversals during downtrends)
+        'down' for DOWN model (predicts short reversals during uptrends)
+        If None, uses legacy behavior (deprecated).
+    
+    Label Assignment Logic (FIXED):
+    - UP model (model_direction='up'): Looks for LONG reversals during DOWNTRENDS
+      - Uses trend_filter='down' to select downtrending samples
+      - Assigns is_long_rev labels (long reversal happened)
+    - DOWN model (model_direction='down'): Looks for SHORT reversals during UPTRENDS
+      - Uses trend_filter='up' to select uptrending samples  
+      - Assigns is_short_rev labels (short reversal happened)
+    """
     tprint(f"Entering function: build_exhaustion_Xy in training.py")
     c = panel["close"]
     idx = c.index
@@ -1146,17 +1362,39 @@ def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, sy
     y = np.zeros(current.shape, dtype=np.int8)
     w = np.ones(current.shape, dtype=np.float32)
 
-    mask_up = (dir_mat > 0)
-    if mask_up.values.any():
-        y[mask_up] = is_short_rev.values[mask_up].astype(np.int8)
-        if cfg.get("exh_label_type") == "peak":
-             w[mask_up] = w_short_s.values[mask_up].astype(np.float32)
+    # FIXED: Label assignment based on model_direction
+    # UP model (model_direction='up'): Predicts LONG reversals during DOWNTRENDS
+    # DOWN model (model_direction='down'): Predicts SHORT reversals during UPTRENDS
+    if model_direction == 'up':
+        # UP model: Look for long reversals (is_long_rev) during downtrends (dir_mat < 0)
+        mask_dn = (dir_mat < 0)
+        if mask_dn.values.any():
+            y[mask_dn] = is_long_rev.values[mask_dn].astype(np.int8)
+            if cfg.get("exh_label_type") == "peak":
+                w[mask_dn] = w_long_s.values[mask_dn].astype(np.float32)
+        tprint(f"UP model: Using LONG reversal labels during DOWNTRENDS")
+    elif model_direction == 'down':
+        # DOWN model: Look for short reversals (is_short_rev) during uptrends (dir_mat > 0)
+        mask_up = (dir_mat > 0)
+        if mask_up.values.any():
+            y[mask_up] = is_short_rev.values[mask_up].astype(np.int8)
+            if cfg.get("exh_label_type") == "peak":
+                w[mask_up] = w_short_s.values[mask_up].astype(np.float32)
+        tprint(f"DOWN model: Using SHORT reversal labels during UPTRENDS")
+    else:
+        # Legacy behavior (deprecated - kept for backward compatibility)
+        # This was the buggy behavior that caused the imbalance
+        mask_up = (dir_mat > 0)
+        if mask_up.values.any():
+            y[mask_up] = is_short_rev.values[mask_up].astype(np.int8)
+            if cfg.get("exh_label_type") == "peak":
+                w[mask_up] = w_short_s.values[mask_up].astype(np.float32)
 
-    mask_dn = (dir_mat < 0)
-    if mask_dn.values.any():
-        y[mask_dn] = is_long_rev.values[mask_dn].astype(np.int8)
-        if cfg.get("exh_label_type") == "peak":
-             w[mask_dn] = w_long_s.values[mask_dn].astype(np.float32)
+        mask_dn = (dir_mat < 0)
+        if mask_dn.values.any():
+            y[mask_dn] = is_long_rev.values[mask_dn].astype(np.int8)
+            if cfg.get("exh_label_type") == "peak":
+                w[mask_dn] = w_long_s.values[mask_dn].astype(np.float32)
 
     if cfg.get("exh_label_type") == "peak":
         mask_boosted = w > 1.0
@@ -1186,7 +1424,11 @@ def build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts_end, lookback_hours, sy
     else:
         y_df = pd.DataFrame(y, index=t_index, columns=valid_syms).stack(future_stack=True).rename("y")
         w_df = pd.DataFrame(w, index=t_index, columns=valid_syms).stack(future_stack=True).rename("w")
-        X = X.join(y_df).join(w_df).dropna()
+        common_idx = X.index.intersection(y_df.index).intersection(w_df.index)
+        X = X.loc[common_idx].copy()
+        X["y"] = y_df.reindex(common_idx).values
+        X["w"] = w_df.reindex(common_idx).values
+        X = X.dropna()
         y_arr = X.pop("y").astype(int).values
         w_arr = X.pop("w").astype(np.float32).values
 
@@ -1227,7 +1469,7 @@ def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms, models=Non
         if models and "up" in models: model_up = models["up"]
         else:
             tprint("Training UP model...")
-            X, y, w, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts, lookback, valid_syms, trend_filter="up")
+            X, y, w, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts, lookback, valid_syms, model_direction="up")
             if X is not None and len(y) > 100:
                 model_up = ExhaustionModel()
                 model_up.fit(X, y, sample_weight=w)
@@ -1244,7 +1486,7 @@ def compute_p_exhaustion_at_t(panel, feats, mkt_gates, cfg, ts, syms, models=Non
         if models and "down" in models: model_dn = models["down"]
         else:
             tprint("Training DOWN model...")
-            X, y, w, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts, lookback, valid_syms, trend_filter="down")
+            X, y, w, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, ts, lookback, valid_syms, model_direction="down")
             if X is not None and len(y) > 100:
                 model_dn = ExhaustionModel()
                 model_dn.fit(X, y, sample_weight=w)
@@ -1283,7 +1525,7 @@ def generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_end, lookback_h
     train_end = ts_end - pd.Timedelta(hours=lookback_hours)
     train_len = cfg["exh_train_lookback_hours"]
     tprint("Generating UP history...")
-    X_up, y_up, w_up, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, train_end, train_len, syms, trend_filter="up")
+    X_up, y_up, w_up, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, train_end, train_len, syms, model_direction="up")
     model_up = None
     arr_oof_up = None
     if X_up is not None and len(y_up) > 100:
@@ -1297,7 +1539,7 @@ def generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_end, lookback_h
         # We'll delay unstacking until we have valid_syms and t_idx defined below
 
     tprint("Generating DOWN history...")
-    X_dn, y_dn, w_dn, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, train_end, train_len, syms, trend_filter="down")
+    X_dn, y_dn, w_dn, _ = build_exhaustion_Xy(panel, feats, mkt_gates, cfg, train_end, train_len, syms, model_direction="down")
     model_dn = None
     arr_oof_dn = None
     if X_dn is not None and len(y_dn) > 100:
@@ -1412,70 +1654,11 @@ def build_hourly_training_set_and_weights(
     panel, feats, mkt_gates, cfg, syms, ts_end, p_exh_hist, H, model_kind,
     trend_filter=None, feature_key=None, extra_feature_keys=None,
     label_method="atr", fixed_tp=0.05, fixed_sl=0.025, side="long",
-    _cached_cand_mask=None, _cached_tb=None
+    _cached_cand_mask=None, _cached_tb=None, _tb_cache=None
 ):
     tprint(f"Entering function: build_hourly_training_set_and_weights in training.py")
     c = panel["close"]
     idx = c.index
-
-    if _cached_tb is not None:
-        tb_labels, tb_returns = _cached_tb
-    elif label_method == "triple_barrier":
-        # Dynamic Barrier Logic
-        if "atr_pct" in feats:
-            atr_pct = feats["atr_pct"]
-
-            window_size = 24 * 30
-
-            tprint("Computing dynamic barriers...")
-            atr_base = atr_pct.rolling(window_size, min_periods=24).median()
-            atr_std = atr_pct.rolling(window_size, min_periods=24).std()
-
-            z_score = (atr_pct - atr_base) / (atr_std + 1e-12)
-
-            b_pct_vals = scaled_atr_pct(
-                atr_pct.values,
-                z_score.values,
-                atr_base.values,
-                z_max=3.0,
-                lo=0.03,
-                hi=0.06
-            )
-
-            barrier_pct = pd.DataFrame(b_pct_vals, index=atr_pct.index, columns=atr_pct.columns)
-
-            tp_df = barrier_pct
-            sl_df = 0.5 * barrier_pct
-
-            tprint(f"Labeling: Dynamic Triple Barrier (Mean TP={tp_df.mean().mean():.4f}, Side={side})")
-
-            tb_labels, tb_returns = compute_triple_barrier_labels(
-                panel, tp_df, sl_df, H, side=side
-            )
-        else:
-            tprint("Warning: atr_pct not found for dynamic barriers. Falling back to fixed.")
-            tprint(f"Labeling: Fixed Triple Barrier (TP={fixed_tp}, SL={fixed_sl}, Side={side})")
-            tb_labels, tb_returns = compute_triple_barrier_labels(
-                panel, fixed_tp, fixed_sl, H, side=side
-            )
-
-    else:
-        # Default ATR logic
-        k_sl = cfg.get("train_k_sl", 2.0)
-        k_pt = cfg.get("train_k_pt", 2.0)
-        k_tp = cfg.get("train_k_tp", 1.0)
-
-        if "atr_pct" in feats:
-            atr_df = feats["atr_pct"]
-        else:
-            tprint("Warning: atr_pct not found, using default 1% ATR for labeling")
-            atr_df = pd.DataFrame(0.01, index=c.index, columns=c.columns)
-
-        tb_labels, tb_returns = compute_trailing_atr_labels(
-            panel, atr_df,
-            k_sl=k_sl, k_pt=k_pt, k_tp=k_tp,
-            horizon_hours=H
-        )
 
     train_pct, train_min_range, train_min_vol = _get_training_candidate_config(cfg)
     if _cached_cand_mask is not None:
@@ -1498,8 +1681,118 @@ def build_hourly_training_set_and_weights(
     # Slice to time window first, then apply subsample filter
     ts_end_adj = ts_end - pd.Timedelta(hours=H+8)
     window_cand = cand_mask.loc[(cand_mask.index >= ts_start) & (cand_mask.index <= ts_end_adj)]
-    # Subsample: keep every 3rd hour (reduced from 5 to preserve more data while maintaining uniqueness)
-    window_cand = window_cand[window_cand.index.hour % 3 == 0]
+    if window_cand.empty:
+        tprint(
+            "No rows generated for training set: "
+            f"valid_syms=0, window_cand_shape={window_cand.shape}, "
+            f"ts_window=[{ts_start}, {ts_end_adj}]"
+        )
+        return None, None, None, None, None, None
+
+    # Early symbol precheck before any barrier computation.
+    valid_syms = [s for s in syms if s in window_cand.columns and s in c.columns]
+    if not valid_syms:
+        tprint(
+            "No rows generated for training set: "
+            f"valid_syms={len(valid_syms)}, window_cand_shape={window_cand.shape}, "
+            f"ts_window=[{ts_start}, {ts_end_adj}]"
+        )
+        return None, None, None, None, None, None
+
+    if _cached_tb is not None:
+        tb_labels, tb_returns = _cached_tb
+    elif label_method == "triple_barrier":
+        # Use unified barrier factory (canonical TP/SL geometry)
+        if "atr_pct" in feats:
+            atr_pct = _coerce_feature_to_panel_df(feats["atr_pct"], panel, "atr_pct", fill_value=0.01)
+
+            # Get config parameters for barrier factory
+            k_tp = float(cfg.get("barrier_k_tp", 1.0))
+            sl_base_mult = float(cfg.get("barrier_sl_base_mult", 0.5))
+            disp_floor = float(cfg.get("barrier_disp_floor", 0.1))
+            z_max = float(cfg.get("barrier_z_max", 3.0))
+            k_reg = float(cfg.get("barrier_k_reg", 0.3))
+            m_lo = float(cfg.get("barrier_m_lo", 0.7))
+            m_hi = float(cfg.get("barrier_m_hi", 1.5))
+            sl_lo = float(cfg.get("barrier_sl_lo", 0.4))
+            sl_hi = float(cfg.get("barrier_sl_hi", 0.7))
+            z_gate = float(cfg.get("barrier_z_gate", 1.0))
+            H_base = float(cfg.get("label_horizon_base", 4))
+            tp_lo = float(cfg.get("barrier_tp_lo_h2", 0.015)) if int(H) == 2 else float(cfg.get("barrier_tp_lo", 0.02))
+            tp_hi = float(cfg.get("barrier_tp_hi", 0.06))
+            tb_cache_key = (
+                int(H),
+                str(side),
+                float(k_tp),
+                float(sl_base_mult),
+                float(disp_floor),
+                float(z_max),
+                float(k_reg),
+                float(m_lo),
+                float(m_hi),
+                float(sl_lo),
+                float(sl_hi),
+                float(z_gate),
+                float(tp_lo),
+                float(tp_hi),
+            )
+            if _tb_cache is not None and tb_cache_key in _tb_cache:
+                tb_labels, tb_returns = _tb_cache[tb_cache_key]
+                tprint("Using cached barriers/triple-barrier labels")
+            else:
+                tprint("Computing barriers using unified factory...")
+                tp_df, sl_df, diag = compute_barrier_factory(
+                    atr_pct=atr_pct,
+                    window_size=24 * 30,
+                    k_tp=k_tp,
+                    sl_base_mult=sl_base_mult,
+                    horizon=H,
+                    H_base=H_base,
+                    disp_floor=disp_floor,
+                    z_max=z_max,
+                    k_reg=k_reg,
+                    m_lo=m_lo,
+                    m_hi=m_hi,
+                    sl_lo=sl_lo,
+                    sl_hi=sl_hi,
+                    z_gate=z_gate,
+                    tp_lo=tp_lo,
+                    tp_hi=tp_hi,
+                    return_components=True,
+                )
+                tprint(
+                    f"Labeling: Unified Barrier Factory (Mean TP={diag['tp_mean']:.4f}, "
+                    f"SL={diag['sl_mean']:.4f}, m∈[{diag['m_p10']:.2f},{diag['m_p90']:.2f}], "
+                    f"m_at bounds: lo={diag['m_at_m_lo_pct']:.1%}, hi={diag['m_at_m_hi_pct']:.1%}, "
+                    f"z_gate: below={diag['z_below_gate_pct']:.1%}, above={diag['z_above_gate_pct']:.1%}, "
+                    f"sl_mult: lo={diag['sl_at_sl_lo_pct']:.1%}, hi={diag['sl_at_sl_hi_pct']:.1%})"
+                )
+                tb_labels, tb_returns = compute_triple_barrier_labels(
+                    panel, tp_df, sl_df, H, side=side
+                )
+                if _tb_cache is not None:
+                    _tb_cache[tb_cache_key] = (tb_labels, tb_returns)
+
+    else:
+        # Default ATR logic
+        k_sl = cfg.get("train_k_sl", 2.0)
+        k_pt = cfg.get("train_k_pt", 2.0)
+        k_tp = cfg.get("train_k_tp", 1.0)
+
+        if "atr_pct" in feats:
+            atr_df = feats["atr_pct"]
+        else:
+            tprint("Warning: atr_pct not found, using default 1% ATR for labeling")
+            atr_df = pd.DataFrame(0.01, index=c.index, columns=c.columns)
+
+        tb_labels, tb_returns = compute_trailing_atr_labels(
+            panel, atr_df,
+            k_sl=k_sl, k_pt=k_pt, k_tp=k_tp,
+            horizon_hours=H
+        )
+
+    # Subsample: disabled - use all hours for maximum signal
+    # window_cand = window_cand[window_cand.index.hour % 3 == 0]
 
     if feature_key:
         feat_keys = cfg.get(feature_key, [])
@@ -1511,24 +1804,47 @@ def build_hourly_training_set_and_weights(
         feat_keys = list(set(feat_keys) | set(extra_feature_keys))
 
     # --- Vectorized event extraction using numpy ---
-    valid_syms = [s for s in syms if s in window_cand.columns and s in tb_labels.columns]
+    valid_syms = [s for s in valid_syms if s in tb_labels.columns]
     if not valid_syms or window_cand.empty:
-        tprint("No rows generated for training set.")
+        tprint(
+            "No rows generated for training set: "
+            f"valid_syms={len(valid_syms)}, window_cand_shape={window_cand.shape}, "
+            f"ts_window=[{ts_start}, {ts_end_adj}]"
+        )
         return None, None, None, None, None, None
 
-    # Option A: Pre-filter candidates to only those where entry_ts will be valid
-    # This prevents dropping samples after expensive feature extraction
-    valid_entry_times = tb_labels.index - pd.Timedelta(hours=1)
-    window_cand_aligned = window_cand[window_cand.index.isin(valid_entry_times)]
-    if window_cand_aligned.empty:
-        tprint("No rows after aligning to tb_labels index.")
-        return None, None, None, None, None, None
+    # Pre-filter candidates to where entry_ts is present in tb_labels index.
+    # Use UTC-ns comparison to avoid tz-aware vs tz-naive mismatch causing false-empty alignment.
+    try:
+        cand_ns = pd.to_datetime(window_cand.index, utc=True).view("i8")
+        valid_entry_ns = pd.to_datetime(tb_labels.index, utc=True).view("i8") - int(pd.Timedelta(hours=1).value)
+        align_mask = np.isin(cand_ns, valid_entry_ns)
+        if align_mask.any():
+            window_cand_aligned = window_cand.iloc[align_mask]
+        else:
+            tprint(
+                "No rows after strict entry alignment; falling back to unaligned candidates "
+                "and relying on entry_valid post-filter."
+            )
+            window_cand_aligned = window_cand
+    except Exception:
+        valid_entry_times = tb_labels.index - pd.Timedelta(hours=1)
+        window_cand_aligned = window_cand[window_cand.index.isin(valid_entry_times)]
+        if window_cand_aligned.empty:
+            tprint(
+                "No rows after aligning to tb_labels index (fallback path); "
+                "using unaligned candidates and relying on entry_valid post-filter."
+            )
+            window_cand_aligned = window_cand
 
     sub_mask = window_cand_aligned[valid_syms]
     rows_idx, cols_idx = np.where(sub_mask.values)
     tprint(f"Candidate events: {len(rows_idx)}")
     if len(rows_idx) == 0:
-        tprint("No rows generated for training set.")
+        tprint(
+            "No rows generated for training set: candidate event extraction returned 0 "
+            f"(sub_mask_shape={sub_mask.shape})"
+        )
         return None, None, None, None, None, None
 
     event_ts = sub_mask.index[rows_idx]
@@ -1549,7 +1865,10 @@ def build_hourly_training_set_and_weights(
     entry_ts = event_ts + pd.Timedelta(hours=1)
 
     if len(event_ts) == 0:
-        tprint("No rows generated for training set.")
+        tprint(
+            "No rows generated for training set: "
+            f"all events dropped by entry alignment (pre={n_pre_entry}, drop={n_entry_drop})"
+        )
         return None, None, None, None, None, None
 
     # Trend filter
@@ -1570,7 +1889,10 @@ def build_hourly_training_set_and_weights(
         entry_ts = event_ts + pd.Timedelta(hours=1)
 
     if len(event_ts) == 0:
-        tprint("No rows generated for training set.")
+        tprint(
+            "No rows generated for training set: "
+            f"trend_filter='{trend_filter}' removed all events"
+        )
         return None, None, None, None, None, None
 
     tprint(f"Events after trend filter: {len(event_ts)}")
@@ -1803,7 +2125,10 @@ def build_hourly_training_set_and_weights(
     if feat_cols:
         df[feat_cols] = df[feat_cols].fillna(0)
     if df.empty:
-        tprint("No rows generated for training set.")
+        tprint(
+            "No rows generated for training set: "
+            "DataFrame empty after critical-column drop/fill"
+        )
         return None, None, None, None, None, None
     tprint(f"Final training set size: {len(df)}")
 
@@ -1832,11 +2157,25 @@ def build_hourly_training_set_and_weights(
     # Compute sample weights with uniqueness (AFML Chapter 4)
     base_weights = df["w"].values
     returns = df["y_ret"].values
+    
+    # Extract selection metric values for event scoring
+    # Use range_16h_pct - the high/low percentage difference used in candidate selection
+    selection_metric_name = "range_16h_pct"
+    selection_metric_values = None
+    if selection_metric_name in feats:
+        # Look up the metric values at event times and symbols
+        selection_metric_values = _fast_lookup(feats[selection_metric_name], df["ts"].values, df["symbol"].values)
+        selection_metric_values = np.nan_to_num(selection_metric_values, nan=0.0)
+        tprint(f"Extracted selection metric '{selection_metric_name}' for event scoring")
+    else:
+        tprint(f"Warning: Selection metric '{selection_metric_name}' not found in features, using fallback")
+    
     weights = compute_sample_weights_with_uniqueness(
         label_times=label_times,
         returns=returns,
         base_weights=base_weights,
-        time_grid=time_grid
+        time_grid=time_grid,
+        selection_metric=selection_metric_values
     )
     
     tprint(f"Applied uniqueness weighting: mean={weights.mean():.3f}, std={weights.std():.3f}")
@@ -2010,6 +2349,196 @@ def _get_bucket_label_config(cfg, side, kind):
     min_net_rr = float(cfg.get(rr_key, cfg.get("label_min_net_rr", 1.2)))
     return tp_vals, sl_vals, min_net_rr
 
+
+def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
+    """Build grid-aggregated triple-barrier labels shared across MR/TF for each (H, side)."""
+    tb_cache = {}    # (H, side) -> (tb_labels, tb_returns)
+    geom_cache = {}  # (H, side) -> {"n_tp", "n_sl", "n_to", "n_geom"}
+
+    if "atr_pct" in feats:
+        atr_pct_df = _coerce_feature_to_panel_df(feats["atr_pct"], panel, "atr_pct", fill_value=0.02)
+    else:
+        atr_pct_df = None
+
+    fee_pct = float(cfg.get("label_round_trip_fee_pct", 0.5)) / 100.0
+    min_tp_hit = float(cfg.get("label_min_tp_hit_rate", 0.02))
+    min_tp_hit_h2 = float(cfg.get("label_min_tp_hit_rate_h2", 0.01))
+    max_timeout = float(cfg.get("label_max_timeout_rate", 0.90))
+    max_timeout_h2 = float(cfg.get("label_max_timeout_rate_h2", 0.97))
+
+    # Global TP/SL values interpreted as multipliers relative to ATR%.
+    tp_mults = cfg.get("barrier_k_tp_grid", [0.8, 1.0, 1.25, 1.6, 2.0, 2.5])
+    sl_base_mults = cfg.get("barrier_sl_base_grid", [0.5, 1.0, 1.5])
+    min_net_rr = float(cfg.get("label_min_net_rr", 0.9))
+    min_net_rr_h2 = float(cfg.get("label_min_net_rr_h2", 0.75))
+    min_events_h2 = int(cfg.get("label_min_events_h2", 50))
+    h2_rescue_topk = int(cfg.get("label_h2_rescue_topk", 3))
+
+    # Unified barrier factory params (shared across all geometries)
+    disp_floor = float(cfg.get("barrier_disp_floor", 0.1))
+    z_max = float(cfg.get("barrier_z_max", 3.0))
+    k_reg = float(cfg.get("barrier_k_reg", 0.3))
+    m_lo = float(cfg.get("barrier_m_lo", 0.7))
+    m_hi = float(cfg.get("barrier_m_hi", 1.5))
+    sl_lo = float(cfg.get("barrier_sl_lo", 0.4))
+    sl_hi = float(cfg.get("barrier_sl_hi", 0.7))
+    z_gate = float(cfg.get("barrier_z_gate", 1.0))
+    H_base = float(cfg.get("label_horizon_base", 4))
+    tp_lo = float(cfg.get("barrier_tp_lo", 0.02))
+    tp_lo_h2 = float(cfg.get("barrier_tp_lo_h2", 0.015))
+    tp_hi = float(cfg.get("barrier_tp_hi", 0.06))
+
+    # Cache raw triple barrier results per (H, side, k_tp, sl_base_mult) to avoid recomputation
+    _raw_tb_cache = {}
+
+    for H in horizons:
+        for side in trade_sides:
+            min_tp_hit_eff = min_tp_hit_h2 if int(H) == 2 else min_tp_hit
+            tp_lo_eff = tp_lo_h2 if int(H) == 2 else tp_lo
+            max_timeout_eff = max_timeout_h2 if int(H) == 2 else max_timeout
+            min_net_rr_eff = min_net_rr_h2 if int(H) == 2 else min_net_rr
+            min_events_eff = min_events_h2 if int(H) == 2 else 100
+            reject_counts = {
+                "rr": 0,
+                "n_events": 0,
+                "tp_hit": 0,
+                "timeout": 0,
+            }
+            total_geoms = 0
+            if atr_pct_df is None:
+                atr_pct_local = pd.DataFrame(0.02, index=panel["close"].index, columns=panel["close"].columns)
+            else:
+                atr_pct_local = atr_pct_df.fillna(0.02)
+
+            tprint(f"Pre-computing geometry labels H={H} side={side} (k_tp={tp_mults}, sl_base={sl_base_mults})...")
+
+            geom_runs = []
+            relaxed_pool = []
+            for k_tp in tp_mults:
+                for sl_base_mult in sl_base_mults:
+                    total_geoms += 1
+                    tp_df, sl_df = compute_barrier_factory(
+                        atr_pct=atr_pct_local,
+                        window_size=24 * 30,
+                        k_tp=k_tp,
+                        sl_base_mult=sl_base_mult,
+                        horizon=H,
+                        H_base=H_base,
+                        disp_floor=disp_floor,
+                        z_max=z_max,
+                        k_reg=k_reg,
+                        m_lo=m_lo,
+                        m_hi=m_hi,
+                        sl_lo=sl_lo,
+                        sl_hi=sl_hi,
+                        z_gate=z_gate,
+                        tp_lo=tp_lo_eff,
+                        tp_hi=tp_hi,
+                    )
+
+                    net_rr = k_tp / max(sl_base_mult + fee_pct / (k_tp + 1e-9), 1e-9)
+                    if net_rr < min_net_rr_eff:
+                        reject_counts["rr"] += 1
+                        continue
+                    raw_key = (H, side, round(float(k_tp), 4), round(float(sl_base_mult), 4))
+                    if raw_key not in _raw_tb_cache:
+                        lbl, ret = compute_triple_barrier_labels(panel, tp_df, sl_df, H, side=side)
+                        _raw_tb_cache[raw_key] = (lbl, ret)
+                    lbl, ret = _raw_tb_cache[raw_key]
+
+                    n_events = lbl.size
+                    tp_hit = float((lbl.values == 1).sum()) / max(1, n_events)
+                    sl_hit = float((lbl.values == -1).sum()) / max(1, n_events)
+                    to_rate = float((lbl.values == 0).sum()) / max(1, n_events)
+
+                    if n_events < min_events_eff:
+                        reject_counts["n_events"] += 1
+                        continue
+                    relaxed_pool.append((lbl, ret, k_tp, sl_base_mult, net_rr, tp_hit, sl_hit, to_rate, n_events))
+                    if tp_hit < min_tp_hit_eff:
+                        reject_counts["tp_hit"] += 1
+                        continue
+                    if to_rate > max_timeout_eff:
+                        reject_counts["timeout"] += 1
+                        continue
+
+                    rr_weight = float(np.clip(net_rr / 1.2, 0.0, 1.0))
+                    geom_runs.append((lbl, ret, k_tp, sl_base_mult, rr_weight, tp_hit, sl_hit, to_rate, n_events))
+
+            if not geom_runs:
+                # H=2 rescue: keep top-K geometries by tp_hit if strict gates still reject all.
+                if int(H) == 2 and relaxed_pool:
+                    relaxed_pool.sort(key=lambda x: (x[5], -x[7]), reverse=True)  # tp_hit desc, timeout asc
+                    picked = relaxed_pool[: max(1, h2_rescue_topk)]
+                    for (lbl, ret, k_tp, sl_base_mult, net_rr, tp_hit, sl_hit, to_rate, n_events) in picked:
+                        rr_weight = float(np.clip(net_rr / 1.2, 0.0, 1.0))
+                        geom_runs.append((lbl, ret, k_tp, sl_base_mult, rr_weight, tp_hit, sl_hit, to_rate, n_events))
+                    tprint(
+                        f"H=2 rescue accepted {len(geom_runs)} geometries "
+                        f"(best tp_hit={picked[0][5]:.4f}, timeout={picked[0][7]:.4f})"
+                    )
+
+            if not geom_runs:
+                tprint(f"No valid geometry for H={H} side={side}; using fallback.")
+                tprint(
+                    "Geometry rejection breakdown: "
+                    f"H={H}, side={side}, total={total_geoms}, "
+                    f"rr={reject_counts['rr']}, n_events={reject_counts['n_events']}, "
+                    f"tp_hit={reject_counts['tp_hit']}, timeout={reject_counts['timeout']}, "
+                    f"min_tp_hit={min_tp_hit_eff:.4f}, tp_lo={tp_lo_eff:.4f}, "
+                    f"max_timeout={max_timeout_eff:.4f}, min_rr={min_net_rr_eff:.4f}, "
+                    f"min_events={min_events_eff}"
+                )
+                tp_df, sl_df = compute_barrier_factory(
+                    atr_pct=atr_pct_local,
+                    window_size=24 * 30,
+                    k_tp=1.0,
+                    sl_base_mult=0.5,
+                    horizon=H,
+                    H_base=H_base,
+                    disp_floor=disp_floor,
+                    z_max=z_max,
+                    k_reg=k_reg,
+                    m_lo=m_lo,
+                    m_hi=m_hi,
+                    sl_lo=sl_lo,
+                    sl_hi=sl_hi,
+                    z_gate=z_gate,
+                    tp_lo=tp_lo_eff,
+                    tp_hi=tp_hi,
+                )
+                lbl, ret = compute_triple_barrier_labels(panel, tp_df, sl_df, H, side=side)
+                geom_runs = [(lbl, ret, 1.0, 0.5, 1.0, 0.1, 0.1, 0.8, lbl.size)]
+
+            labels_stack = np.stack([x[0].values for x in geom_runs], axis=0)
+            rets_stack = np.stack([x[1].values for x in geom_runs], axis=0)
+            rr_weights_raw = np.array([x[4] for x in geom_runs], dtype=np.float32)
+
+            rr_weights = np.sqrt(rr_weights_raw)
+            rr_weights = rr_weights / (rr_weights.mean() + 1e-12)
+
+            w_tp = np.zeros_like(labels_stack[0], dtype=np.float32)
+            w_sl = np.zeros_like(labels_stack[0], dtype=np.float32)
+            w_to = np.zeros_like(labels_stack[0], dtype=np.float32)
+            for gi in range(len(geom_runs)):
+                w_tp += rr_weights[gi] * (labels_stack[gi] == 1).astype(np.float32)
+                w_sl += rr_weights[gi] * (labels_stack[gi] == -1).astype(np.float32)
+                w_to += rr_weights[gi] * (labels_stack[gi] == 0).astype(np.float32)
+            n_tp_df = pd.DataFrame(w_tp, index=panel["close"].index, columns=panel["close"].columns)
+            n_sl_df = pd.DataFrame(w_sl, index=panel["close"].index, columns=panel["close"].columns)
+            n_to_df = pd.DataFrame(w_to, index=panel["close"].index, columns=panel["close"].columns)
+
+            w_sum = rr_weights.sum()
+            agg_ret = np.average(rets_stack, axis=0, weights=rr_weights) if w_sum > 0 else np.nanmean(rets_stack, axis=0)
+            agg_lbl = np.where(n_tp_df.values > n_sl_df.values, 1, np.where(n_sl_df.values > n_tp_df.values, -1, 0)).astype(np.int8)
+            tb_labels = pd.DataFrame(agg_lbl, index=panel["close"].index, columns=panel["close"].columns)
+            tb_returns = pd.DataFrame(agg_ret, index=panel["close"].index, columns=panel["close"].columns)
+
+            tb_cache[(H, side)] = (tb_labels, tb_returns)
+            geom_cache[(H, side)] = {"n_tp": n_tp_df, "n_sl": n_sl_df, "n_to": n_to_df, "n_geom": len(geom_runs)}
+
+    return tb_cache, geom_cache
+
 def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
     tprint(f"Entering function: generate_label_datasets in training.py")
     datasets = {}
@@ -2044,99 +2573,14 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
     kinds = ["mr", "tf"]
     horizons = cfg["label_horizons_hours"]
 
-    # Pre-compute triple barrier labels per (H, side) — shared across MR/TF
-    tb_cache = {}
-
-    if "atr_pct" in feats:
-        atr_pct_df = feats["atr_pct"]
-        # Adaptive vol-scaling: TP/SL scale with realized volatility
-        # atr_pct / rolling_median(atr_pct, 30d) → low-vol periods get tighter barriers
-        atr_median_30d = atr_pct_df.rolling(24 * 30, min_periods=24).median()
-        atr_scale_df = np.clip(atr_pct_df / (atr_median_30d + 1e-12), 0.7, 2.0).astype(np.float32)
-        atr_ref = float(np.nanmedian(atr_median_30d.values))
-        tprint(f"Adaptive vol-scaling: atr_ref_median={atr_ref:.6f}, scale_mean={float(np.nanmean(atr_scale_df.values)):.4f}, "
-               f"scale_p10={float(np.nanpercentile(atr_scale_df.values, 10)):.3f}, "
-               f"scale_p90={float(np.nanpercentile(atr_scale_df.values, 90)):.3f}")
-    else:
-        atr_pct_df = None
-        atr_scale_df = None
-
-    fee_pct = float(cfg.get("label_round_trip_fee_pct", 0.5)) / 100.0
-    min_tp_hit = float(cfg.get("label_min_tp_hit_rate", 0.02))
-    max_timeout = float(cfg.get("label_max_timeout_rate", 0.90))
-
-    # Cache raw triple barrier results per (H, side, tpv, slv) to avoid recomputation
-    # when multiple buckets share the same TP/SL values
-    _raw_tb_cache = {}
-
-    # Global TP/SL values (shared across all buckets)
-    tp_vals = [float(x) / 100.0 for x in cfg.get("label_tp_values_pct", [3.0, 4.0, 5.0, 6.0])]
-    sl_vals = [float(x) / 100.0 for x in cfg.get("label_sl_values_pct", [0.5, 1.0, 2.0])]
-    min_net_rr = float(cfg.get("label_min_net_rr", 0.9))
-
-    geom_cache = {}
-    for H in horizons:
-        for side in trade_sides:
-            if atr_scale_df is None:
-                atr_scale_local = pd.DataFrame(1.0, index=panel["close"].index, columns=panel["close"].columns)
-            else:
-                atr_scale_local = atr_scale_df.reindex(index=panel["close"].index, columns=panel["close"].columns).fillna(1.0)
-
-            tprint(f"Pre-computing geometry labels H={H} side={side} "
-                   f"(TP={[round(v*100,1) for v in tp_vals]}%, min_rr={min_net_rr:.1f})...")
-
-            geom_runs = []
-            for tpv in tp_vals:
-                for slv in sl_vals:
-                    net_rr = tpv / max(slv + fee_pct, 1e-9)
-                    if net_rr < min_net_rr:
-                        continue
-                    raw_key = (H, side, round(tpv, 6), round(slv, 6))
-                    if raw_key not in _raw_tb_cache:
-                        tp_df = np.clip(atr_scale_local * tpv, 0.001, None)
-                        sl_df = np.clip(atr_scale_local * slv, 0.001, None)
-                        lbl, ret = compute_triple_barrier_labels(panel, tp_df, sl_df, H, side=side)
-                        _raw_tb_cache[raw_key] = (lbl, ret)
-                    lbl, ret = _raw_tb_cache[raw_key]
-                    tp_hit = float((lbl.values == 1).sum()) / max(1, lbl.size)
-                    to_rate = float((lbl.values == 0).sum()) / max(1, lbl.size)
-                    if tp_hit < min_tp_hit or to_rate > max_timeout:
-                        continue
-                    rr_weight = float(np.clip(net_rr / 1.2, 0.0, 1.0))
-                    geom_runs.append((lbl, ret, tpv, slv, rr_weight))
-
-            if not geom_runs:
-                tprint(f"No valid geometry for H={H} side={side}; using fallback.")
-                lbl, ret = compute_triple_barrier_labels(panel, 0.05, 0.01, H, side=side)
-                geom_runs = [(lbl, ret, 0.05, 0.01, 1.0)]
-
-            labels_stack = np.stack([x[0].values for x in geom_runs], axis=0)
-            rets_stack = np.stack([x[1].values for x in geom_runs], axis=0)
-            rr_weights_raw = np.array([x[4] for x in geom_runs], dtype=np.float32)
-
-            rr_weights = np.sqrt(rr_weights_raw)
-            rr_weights = rr_weights / (rr_weights.mean() + 1e-12)
-
-            w_tp = np.zeros_like(labels_stack[0], dtype=np.float32)
-            w_sl = np.zeros_like(labels_stack[0], dtype=np.float32)
-            w_to = np.zeros_like(labels_stack[0], dtype=np.float32)
-            for gi in range(len(geom_runs)):
-                w_tp += rr_weights[gi] * (labels_stack[gi] == 1).astype(np.float32)
-                w_sl += rr_weights[gi] * (labels_stack[gi] == -1).astype(np.float32)
-                w_to += rr_weights[gi] * (labels_stack[gi] == 0).astype(np.float32)
-            n_tp_df = pd.DataFrame(w_tp, index=panel["close"].index, columns=panel["close"].columns)
-            n_sl_df = pd.DataFrame(w_sl, index=panel["close"].index, columns=panel["close"].columns)
-            n_to_df = pd.DataFrame(w_to, index=panel["close"].index, columns=panel["close"].columns)
-
-            w_sum = rr_weights.sum()
-            agg_ret = np.average(rets_stack, axis=0, weights=rr_weights) if w_sum > 0 else np.nanmean(rets_stack, axis=0)
-            agg_lbl = np.where(n_tp_df.values > n_sl_df.values, 1, np.where(n_sl_df.values > n_tp_df.values, -1, 0)).astype(np.int8)
-            tb_labels = pd.DataFrame(agg_lbl, index=panel["close"].index, columns=panel["close"].columns)
-            tb_returns = pd.DataFrame(agg_ret, index=panel["close"].index, columns=panel["close"].columns)
-            # Share the same labels across MR and TF for this (H, side)
-            for kind in kinds:
-                tb_cache[(H, side, kind)] = (tb_labels, tb_returns)
-                geom_cache[(H, side, kind)] = {"n_tp": n_tp_df, "n_sl": n_sl_df, "n_to": n_to_df, "n_geom": len(geom_runs)}
+    # Pre-compute triple-barrier labels with geometry-grid aggregation per (H, side)
+    tb_cache, geom_cache = build_grid_aggregated_tb_cache(
+        panel=panel,
+        feats=feats,
+        cfg=cfg,
+        horizons=horizons,
+        trade_sides=trade_sides,
+    )
 
     if geom_cache:
         any_key = next(iter(geom_cache.keys()))
@@ -2146,16 +2590,9 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
 
     for side in trade_sides:
         for k in kinds:
-            # Determine Candidate Filter based on Strategy
-            cand_filter = "unknown"
-            if side == "long":
-                if k == "mr": cand_filter = "worst" # ret < 0
-                else: cand_filter = "best"          # ret > 0
-            else: # short
-                if k == "mr": cand_filter = "best"  # ret > 0
-                else: cand_filter = "worst"         # ret < 0
-
-            trend_filter = "up" if cand_filter == "best" else "down"
+            trade_side = side
+            cand_filter, move_bucket, strategy_label = _strategy_bucket_context(trade_side, k)
+            trend_filter = move_bucket
 
             feat_key = "tf_feature_keys" if k == "tf" else "mr_feature_keys"
 
@@ -2163,12 +2600,16 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
             fixed_sl = 0.025
 
             for H in horizons:
-                tprint(f"Generating labels for {side} {k} ({cand_filter}) H={H}...")
+                tprint(
+                    f"Generating labels: trade_side={trade_side}, kind={k}, "
+                    f"move_bucket={move_bucket}, candidate_bucket={cand_filter}, "
+                    f"strategy={strategy_label}, H={H}"
+                )
 
-                if (H, side, k) in geom_cache:
-                    feats["__geom_n_tp__"] = geom_cache[(H, side, k)]["n_tp"]
-                    feats["__geom_n_sl__"] = geom_cache[(H, side, k)]["n_sl"]
-                    feats["__geom_n_to__"] = geom_cache[(H, side, k)]["n_to"]
+                if (H, side) in geom_cache:
+                    feats["__geom_n_tp__"] = geom_cache[(H, side)]["n_tp"]
+                    feats["__geom_n_sl__"] = geom_cache[(H, side)]["n_sl"]
+                    feats["__geom_n_to__"] = geom_cache[(H, side)]["n_to"]
 
                 # Optimization: We include meta keys here so they are present in the dataframe
                 # for the meta model later. However, we must filter them out when training
@@ -2180,7 +2621,7 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
                     label_method="triple_barrier",
                     fixed_tp=fixed_tp, fixed_sl=fixed_sl, side=side,
                     _cached_cand_mask=cached_cand_mask,
-                    _cached_tb=tb_cache[(H, side, k)]
+                    _cached_tb=tb_cache[(H, side)]
                 )
 
                 if X is not None:
@@ -2285,12 +2726,8 @@ def _compute_and_print_meta_metrics(y_true, y_pred, name, groups=None, y_raw_ret
     ic_target = _safe_spearman(y_pred, y_true)
     ic_raw = _safe_spearman(y_pred, y_raw_ret) if y_raw_ret is not None else float('nan')
 
-    if groups is not None:
-        trades_day_10 = avg_trades_per_day(y_pred, 0.10, np.asarray(groups))
-        trades_day_30 = avg_trades_per_day(y_pred, 0.30, np.asarray(groups))
-    else:
-        trades_day_10 = float(len(y_pred) * 0.10)
-        trades_day_30 = float(len(y_pred) * 0.30)
+    trades_day_10 = _avg_trades_per_day_global(y_pred, 0.10, np.asarray(groups) if groups is not None else None)
+    trades_day_30 = _avg_trades_per_day_global(y_pred, 0.30, np.asarray(groups) if groups is not None else None)
 
     # Top10 and Bot10 masks for tail sanity
     m_top10 = topk_mask(y_pred, 0.10, groups=groups)
@@ -2375,39 +2812,70 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
     meta_gate_results = []
     _bucket_y_ret = {}  # per-bucket raw returns for OOF saving
 
+    def _collect_horizon_oof(side_name, kind_name):
+        conf_local = alpha_models.get(side_name, {}).get(kind_name) if alpha_models else None
+        if not conf_local:
+            return {}, {2: "missing_alpha_bucket", 4: "missing_alpha_bucket", 8: "missing_alpha_bucket"}
+        models_by_h_local = conf_local.get("models_by_h", {})
+        out = {}
+        skip = {}
+        for h_local in [2, 4, 8]:
+            ds_key_local = f"train_{side_name}_{kind_name}_{h_local}"
+            if ds_key_local not in datasets:
+                skip[h_local] = "missing_dataset"
+                continue
+            race_local = models_by_h_local.get(h_local, {}).get("model") if h_local in models_by_h_local else None
+            if race_local is None:
+                skip[h_local] = "missing_alpha_model"
+                continue
+            if race_local.oof_probs is None:
+                skip[h_local] = "missing_oof_probs"
+                continue
+            df_local = datasets[ds_key_local]
+            oof_local = np.asarray(race_local.oof_probs, dtype=float)
+            if len(oof_local) != len(df_local):
+                skip[h_local] = f"oof_len_mismatch:{len(oof_local)}!={len(df_local)}"
+                continue
+            out[h_local] = (df_local, oof_local)
+        return out, skip
+
+    def _align_oof_to_union(df_union, source_df, source_oof):
+        if "__ts__" in df_union.columns and "__symbol__" in df_union.columns and "__ts__" in source_df.columns and "__symbol__" in source_df.columns:
+            src_lookup = {
+                kk: i for i, kk in enumerate(zip(source_df["__ts__"].values, source_df["__symbol__"].values))
+            }
+            union_keys = list(zip(df_union["__ts__"].values, df_union["__symbol__"].values))
+            src_idx = np.array([src_lookup.get(kk, -1) for kk in union_keys], dtype=int)
+            valid = src_idx >= 0
+            aligned = np.full(len(df_union), 0.5, dtype=np.float32)
+            aligned[valid] = source_oof[src_idx[valid]].astype(np.float32)
+            return aligned
+        n_use = min(len(df_union), len(source_oof))
+        aligned = np.full(len(df_union), 0.5, dtype=np.float32)
+        aligned[:n_use] = source_oof[:n_use].astype(np.float32)
+        return aligned
+
     for side in trade_sides:
         for k in kinds:
+            trade_side = side
+            cand_filter, move_bucket, strategy_label = _strategy_bucket_context(trade_side, k)
+            tprint(
+                f"Meta bucket context: trade_side={trade_side}, kind={k}, "
+                f"move_bucket={move_bucket}, candidate_bucket={cand_filter}, strategy={strategy_label}"
+            )
             conf = alpha_models.get(side, {}).get(k) if alpha_models else None
             if not conf:
                 tprint(f"Meta {side}_{k}: skipped (missing alpha model)")
                 continue
 
-            models_by_h = conf.get("models_by_h", {})
-
-            # --- Build union dataset across all available horizons ---
-            # Each horizon can have a different sample set. We align by (ts, symbol)
-            # and train on the UNION so we preserve available coverage.
-            horizon_dfs = {}  # h -> (df, oof_probs)
-            horizon_skip_reasons = {}
-            for h in [2, 4, 8]:
-                ds_key = f"train_{side}_{k}_{h}"
-                if ds_key not in datasets:
-                    horizon_skip_reasons[h] = "missing_dataset"
-                    continue
-                race_h = models_by_h.get(h, {}).get("model") if h in models_by_h else None
-                if race_h is None:
-                    horizon_skip_reasons[h] = "missing_alpha_model"
-                    continue
-                if race_h.oof_probs is None:
-                    horizon_skip_reasons[h] = "missing_oof_probs"
-                    continue
-                df_h = datasets[ds_key]
-                oof_h = np.asarray(race_h.oof_probs, dtype=float)
-                if len(oof_h) != len(df_h):
-                    horizon_skip_reasons[h] = f"oof_len_mismatch:{len(oof_h)}!={len(df_h)}"
-                    tprint(f"Meta {side}_{k} H={h}: OOF length mismatch ({len(oof_h)} vs {len(df_h)}), skipping horizon")
-                    continue
-                horizon_dfs[h] = (df_h, oof_h)
+            # Primary horizon OOF set (this bucket's own alpha models)
+            horizon_dfs, horizon_skip_reasons = _collect_horizon_oof(side, k)
+            for h, reason in horizon_skip_reasons.items():
+                if reason.startswith("oof_len_mismatch"):
+                    ds_key_dbg = f"train_{side}_{k}_{h}"
+                    _df_len = len(datasets.get(ds_key_dbg, [])) if ds_key_dbg in datasets else "na"
+                    _oof_len = reason.split(":")[-1].split("!=")[0] if ":" in reason else "na"
+                    tprint(f"Meta {side}_{k} H={h}: OOF length mismatch ({_oof_len} vs {_df_len}), skipping horizon")
 
             if not horizon_dfs:
                 tprint(f"Meta {side}_{k}: skipped (no horizon with valid OOF)")
@@ -2510,18 +2978,27 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             p_oof_avg_parts = []
             for h in sorted(horizon_dfs.keys()):
                 df_h, oof_h = horizon_dfs[h]
-                if "__ts__" in df_h.columns and "__symbol__" in df_h.columns:
-                    h_keys = list(zip(df_h["__ts__"].values, df_h["__symbol__"].values))
-                    h_lookup = {k: i for i, k in enumerate(h_keys)}
-                    common_keys = list(zip(df["__ts__"].values, df["__symbol__"].values))
-                    h_idx = np.array([h_lookup.get(k, -1) for k in common_keys])
-                    valid = h_idx >= 0
-                    p_h = np.full(len(df), 0.5, dtype=float)
-                    p_h[valid] = oof_h[h_idx[valid]]
-                else:
-                    p_h = oof_h[:len(df)]
+                p_h = _align_oof_to_union(df, df_h, oof_h)
+                pred_h[f"pred_{k}_H{h}"] = p_h
                 pred_h[f"pred_H{h}"] = p_h
                 p_oof_avg_parts.append(p_h)
+
+            # Ensure side-level meta models see all same-side base outputs (TF + MR)
+            for k_other in kinds:
+                other_horizon_dfs, _ = _collect_horizon_oof(side, k_other)
+                for h in [2, 4, 8]:
+                    col_name = f"pred_{k_other}_H{h}"
+                    if col_name in pred_h.columns:
+                        continue
+                    if h in other_horizon_dfs:
+                        df_h_other, oof_h_other = other_horizon_dfs[h]
+                        pred_h[col_name] = _align_oof_to_union(df, df_h_other, oof_h_other)
+                    else:
+                        pred_h[col_name] = np.full(len(df), 0.5, dtype=np.float32)
+            tprint(
+                f"  Meta {side}_{k}: added same-side TF/MR base OOF features "
+                f"(cols={len([c for c in pred_h.columns if c.startswith('pred_')])})"
+            )
 
             y_ret = df["__y_ret__"].values
 
@@ -2625,6 +3102,35 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
 
             # Also keep raw pred_H columns as features
             X_feats = pd.concat([X_feats, pred_h], axis=1)
+
+            # 4 disagreement features per base kind (computed independently on TF and MR OOFs)
+            for kind_name in ["tf", "mr"]:
+                p2 = pred_h[f"pred_{kind_name}_H2"].values.astype(np.float32)
+                p4 = pred_h[f"pred_{kind_name}_H4"].values.astype(np.float32)
+                p8 = pred_h[f"pred_{kind_name}_H8"].values.astype(np.float32)
+                stack = np.vstack([p2, p4, p8]).T.astype(np.float32)
+                pair_abs = (np.abs(p2 - p4) + np.abs(p2 - p8) + np.abs(p4 - p8)) / 3.0
+                vote_p = (stack > 0.5).mean(axis=1).astype(np.float32)
+                X_feats[f"disagree_{kind_name}_std"] = np.std(stack, axis=1, dtype=np.float32).astype(np.float32)
+                X_feats[f"disagree_{kind_name}_range"] = (np.max(stack, axis=1) - np.min(stack, axis=1)).astype(np.float32)
+                X_feats[f"disagree_{kind_name}_pair_abs"] = pair_abs.astype(np.float32)
+                X_feats[f"disagree_{kind_name}_vote_mix"] = (4.0 * vote_p * (1.0 - vote_p)).astype(np.float32)
+                if kind_name == "tf":
+                    agree_tf_avg = (1.0 - np.clip(pair_abs, 0.0, 1.0)).astype(np.float32)
+                else:
+                    agree_mr_avg = (1.0 - np.clip(pair_abs, 0.0, 1.0)).astype(np.float32)
+
+            # Additional 4 cross-kind features requested:
+            # 1) average agreement TF - average agreement MR
+            # 2-4) TF - MR per horizon (H2/H4/H8)
+            X_feats["agree_tf_minus_mr_avg"] = (
+                agree_tf_avg - agree_mr_avg
+            ).astype(np.float32)
+            for h in [2, 4, 8]:
+                X_feats[f"tf_minus_mr_H{h}"] = (
+                    pred_h[f"pred_tf_H{h}"].values.astype(np.float32) - pred_h[f"pred_mr_H{h}"].values.astype(np.float32)
+                ).astype(np.float32)
+
             X_meta_base = X_feats.fillna(0.0)
 
             # Add interaction features
@@ -3138,17 +3644,17 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
                 X = X[valid_cols]
                 cols = list(X.columns)
 
-                # Derive strategy context for logging
-                # long+mr = buy dips (candidates with worst recent returns)
-                # long+tf = buy momentum (candidates with best recent returns)
-                # short+mr = sell rips (candidates with best recent returns)
-                # short+tf = sell weakness (candidates with worst recent returns)
-                if side == "long":
-                    cand_filter = "bottom_ret" if k == "mr" else "top_ret"
-                else:
-                    cand_filter = "top_ret" if k == "mr" else "bottom_ret"
+                # Explicit strategy context for logging:
+                # trade_side (long/short) is separate from move_bucket (up/down).
+                trade_side = side
+                cand_filter, move_bucket, strategy_label = _strategy_bucket_context(trade_side, k)
+                cand_filter_pretty = "top_ret" if cand_filter == "best" else "bottom_ret"
 
-                tprint(f"Training {side}_{k} [{key}] cand={cand_filter} H={H} (n={len(X)})...")
+                tprint(
+                    f"Training {side}_{k} [{key}] trade_side={trade_side} "
+                    f"move_bucket={move_bucket} candidate_bucket={cand_filter_pretty} "
+                    f"strategy={strategy_label} H={H} (n={len(X)})..."
+                )
 
                 # --- Integrated MDI Feature Selection ---
                 # Fix: Don't feed raw 300+ features to ModelRace. Select top signal first.
@@ -3238,11 +3744,11 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
                     curve = calibration_curve_bins(y_bin_oof, oof, n_bins=10)
                     profile = calibration_profile(curve)
                     p10 = precision_at_k(y_bin_oof, oof, 0.10, groups=g)
-                    p40 = precision_at_k(y_bin_oof, oof, 0.40, groups=g)
-                    tpd10 = avg_trades_per_day(oof, 0.10, g) if g is not None else float(len(oof) * 0.10)
-                    tpd30 = avg_trades_per_day(oof, 0.30, g) if g is not None else float(len(oof) * 0.30)
+                    p30 = precision_at_k(y_bin_oof, oof, 0.30, groups=g)
+                    tpd10 = _avg_trades_per_day_global(oof, 0.10, g)
+                    tpd30 = _avg_trades_per_day_global(oof, 0.30, g)
                     tprint(
-                        f"  AlphaPrec@10={p10:.4f} AlphaPrec@40={p40:.4f} "
+                        f"  AlphaPrec@10={p10:.4f} AlphaPrec@30={p30:.4f} "
                         f"AvgTrades/Day@10={tpd10:.2f} AvgTrades/Day@30={tpd30:.2f}"
                     )
                     tprint(f"  Alpha calibration: ECE@10={ece10:.4f} profile={profile}")
@@ -3285,8 +3791,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
                     }
                 if race.oof_probs is not None:
                     groups_v = df["__ts__"].values if "__ts__" in df.columns else None
-                    alpha_diag["avg_trades_day_10"] = float(avg_trades_per_day(race.oof_probs, 0.10, groups_v)) if groups_v is not None else float(len(race.oof_probs) * 0.10)
-                    alpha_diag["avg_trades_day_30"] = float(avg_trades_per_day(race.oof_probs, 0.30, groups_v)) if groups_v is not None else float(len(race.oof_probs) * 0.30)
+                    alpha_diag["avg_trades_day_10"] = float(_avg_trades_per_day_global(race.oof_probs, 0.10, groups_v))
+                    alpha_diag["avg_trades_day_30"] = float(_avg_trades_per_day_global(race.oof_probs, 0.30, groups_v))
                     oof_metrics = _aggregate_alpha_oof_metrics(y, race.oof_probs, y_ret, sample_weight=w, groups=groups_v)
                     alpha_diag.update(oof_metrics)
 
@@ -3886,16 +4392,9 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
     # Now iterate strategies and collect event indices
     for side in trade_sides:
         for k in kinds:
-            # Filter logic
-            cand_filter = "unknown"
-            if side == "long":
-                if k == "mr": cand_filter = "worst"
-                else: cand_filter = "best"
-            else:
-                if k == "mr": cand_filter = "best"
-                else: cand_filter = "worst"
-
-            trend_filter = "up" if cand_filter == "best" else "down"
+            trade_side = side
+            cand_filter, move_bucket, strategy_label = _strategy_bucket_context(trade_side, k)
+            trend_filter = move_bucket
 
             # Collect indices (1h and optionally 15m)
             indices = []
@@ -3944,9 +4443,16 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
                     full_atr_base[indices], z_max=3.0, lo=0.03, hi=0.06
                 )
                 mean_barrier = float(np.nanmean(_b_pct))
-                tprint(f"Bucket {side} {k} ({cand_filter}): {len(indices)} events | Mean Barrier%={mean_barrier*100:.2f} | Mean VolZ={mean_z:.2f}")
+                tprint(
+                    f"Bucket trade_side={trade_side} kind={k} move_bucket={move_bucket} "
+                    f"candidate_bucket={cand_filter} strategy={strategy_label}: {len(indices)} events | "
+                    f"Mean Barrier%={mean_barrier*100:.2f} | Mean VolZ={mean_z:.2f}"
+                )
             else:
-                tprint(f"Bucket {side} {k} ({cand_filter}): 0 events")
+                tprint(
+                    f"Bucket trade_side={trade_side} kind={k} move_bucket={move_bucket} "
+                    f"candidate_bucket={cand_filter} strategy={strategy_label}: 0 events"
+                )
 
             if len(indices) < 50:
                 tprint("Not enough events, using defaults.")

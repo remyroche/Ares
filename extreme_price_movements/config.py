@@ -36,6 +36,20 @@ MODEL_FEATURES = [
     # New Risk/Exhaustion (Report 2026-02-10)
     "wick_ratio_4h_max", "vol_price_div", "rsi_lag1", "rsi_1h_slope",
     "cvar_5pct", "amihud_illiq", "clv_mean_24", "vol_z_4h", "atr_pct_change",
+    # FFD d-specific features (d=0.4,0.6)
+    "ffd_rv_2h_04", "ffd_rv_6h_04", "ffd_rv_24h_04",
+    "ffd_vol_price_corr_10h_04",
+    "ffd_donch_dist_04_12", "ffd_donch_dist_04_24", "ffd_donch_dist_04_48",
+    "ffd_amihud_04", "ffd_vol_range_shock_04",
+    "ffd_dist_ema_fast_04", "ffd_dist_ema_slow_04",
+    "ffd_rv_2h_06", "ffd_rv_6h_06", "ffd_rv_24h_06",
+    "ffd_accel_06", "ffd_z_06",
+    "ffd_vol_price_corr_10h_06",
+    "ffd_donch_dist_06_12", "ffd_donch_dist_06_24", "ffd_donch_dist_06_48",
+    "ffd_atr_expansion_06", "ffd_cvar_5pct_06",
+    "ffd_amihud_06", "ffd_vol_range_shock_06",
+    # D-family strength indicators
+    "ffd_strength_04", "ffd_strength_05", "ffd_strength_06",
     # Alpha Features (Report 2026-02-10)
     "breakout_min", "impulse_reversal", "impulse_reversal_short",
     "breakout_confirmed", "breakout_t", "pct_breakout_t",
@@ -89,6 +103,30 @@ HELPER_BASE_FEATURES = [
     "G_EXH_EFFORT", "G_EXH_GIVEBACK", "G_EXH_TAIL_FAIL",
     "G_MR_SPIKE", "G_TF_GRIND", "G_MR_TAIL",
     "G_META_EXH", "G_META_TF_QUAL", "G_META_MR_QUAL", "G_META_AMBIG",
+    # FFD d-specific helper features
+    "ffd_diff_1_04", "ffd_diff_2_04", "ffd_diff_4_04", "ffd_diff_8_04",
+    "ffd_diff_1_05", "ffd_diff_2_05", "ffd_diff_4_05", "ffd_diff_8_05",
+    "ffd_diff_1_06", "ffd_diff_2_06", "ffd_diff_4_06", "ffd_diff_8_06",
+    "ffd_ema_spread_04", "ffd_ema_spread_05", "ffd_ema_spread_06",
+    "ffd_rv_12_04", "ffd_rv_24_04", "ffd_rv_12_05", "ffd_rv_24_05", "ffd_rv_12_06", "ffd_rv_24_06",
+    "ffd_z_24_04", "ffd_z_24_05", "ffd_z_24_06",
+    "ffd_range_24_04", "ffd_range_24_05", "ffd_range_24_06",
+    "ffd_slope_04_12", "ffd_slope_04_24", "ffd_mr_z_04", "ffd_mr_z_05",
+    "ffd_d1_05", "ffd_d4_05",
+    "ffd_ctx_slope_04_12", "ffd_ctx_slope_04_24",
+    # FFD d-specific advanced features
+    "ffd_rv_2h_04", "ffd_rv_6h_04", "ffd_rv_24h_04",
+    "ffd_vol_price_corr_10h_04",
+    "ffd_donch_dist_04_12", "ffd_donch_dist_04_24", "ffd_donch_dist_04_48",
+    "ffd_amihud_04", "ffd_vol_range_shock_04",
+    "ffd_dist_ema_fast_04", "ffd_dist_ema_slow_04",
+    "ffd_rv_2h_06", "ffd_rv_6h_06", "ffd_rv_24h_06",
+    "ffd_accel_06", "ffd_z_06",
+    "ffd_vol_price_corr_10h_06",
+    "ffd_donch_dist_06_12", "ffd_donch_dist_06_24", "ffd_donch_dist_06_48",
+    "ffd_atr_expansion_06", "ffd_cvar_5pct_06",
+    "ffd_amihud_06", "ffd_vol_range_shock_06",
+    "ffd_strength_04", "ffd_strength_05", "ffd_strength_06",
 ]
 
 CFG = {
@@ -97,6 +135,23 @@ CFG = {
     "timeframe": "1h",
     "fetch_years": 4,
     "fetch_symbols_M": 600,
+
+    # feature transformation remediation
+    "ffd_d_values": [0.4, 0.5, 0.6],
+    "ffd_d_default": [0.4, 0.5, 0.6],
+    "ffd_d_base": 0.4,
+    # Family-level d priorities (primary first)
+    # impulse/event momentum diffs -> fastest shock reaction
+    "ffd_impulse_d_values": [0.6, 0.5],
+    # carry/move continuation -> between impulse and context
+    "ffd_carry_d_values": [0.5, 0.4],
+    # context/trend under noise -> slowest of triad
+    "ffd_context_d_values": [0.4],
+    "ffd_thres": 1e-5,
+    "ffd_mr_window": 24,
+    "ffd_slope_windows": [12, 24],
+    "atr_ln_floor": 1e-6,
+    "safe_log_eps": 1e-9,
 
     # market basket
     "market_basket": ["BTC/USDT","ETH/USDT","AVAX/USDT","SOL/USDT","XRP/USDT"],
@@ -143,11 +198,52 @@ CFG = {
 
     # per-hour cross-sectional training selection
     "variance_filter_pct": 1.0, # Keep all non-constant assets
-    "train_extreme_pct_hourly": 0.9,  # Keep 90% of candidates (was 0.07 = 7%)
+    "train_extreme_pct_hourly": 0.06,  # Keep top/bottom 6% as extreme candidates (reduced from 0.08)
     "train_extreme_min": 10,
     "train_extreme_max": 80,
     "train_min_range_pct": 0.07,
     "train_min_vol_zscore": 1.6,
+
+    # Triple barrier geometry parameters (DEPRECATED - use unified barrier factory params below)
+    # Old Pipeline 1 params:
+    "train_z_max": 3.0,            # Max z-score clip (symmetric) - DEPRECATED
+    "train_tp_k_lo": 0.5,          # TP lower bound = k_lo * base_ATR - DEPRECATED
+    "train_tp_k_hi": 1.5,          # TP upper bound = k_hi * base_ATR - DEPRECATED
+    "train_sl_mult_lo": 0.4,       # SL ratio in quiet markets - DEPRECATED
+    "train_sl_mult_hi": 0.7,       # SL ratio in volatile markets - DEPRECATED
+
+    # Unified barrier factory parameters (v3 - single source of truth for both pipelines)
+    # Single barrier mode: k_tp and sl_base_mult are scalars
+    "barrier_k_tp": 1.0,                      # dimensionless k_tp for single geometry
+    "barrier_sl_base_mult": 0.5,              # RR (e.g., 0.5 = 2:1 reward:risk)
+    
+    # TP bounds (match old scaled_atr_pct behavior: clamp to [tp_lo, tp_hi])
+    "barrier_tp_lo": 0.02,     # Lower bound for TP (2%)
+    "barrier_tp_hi": 0.06,     # Upper bound for TP (6%)
+    
+    # Multi-geometry mode: k_tp and sl_base_mult are grids
+    "barrier_k_tp_grid": [0.8, 1.0, 1.25, 1.6, 2.0, 2.5],  # dimensionless k_tp grid
+    "barrier_sl_base_grid": [0.5, 1.0, 1.5],  # RR grid (0.5 = 2:1, 1.0 = 1:1, 1.5 = 0.67:1)
+    
+    # Dispersion-based regime scaling
+    "barrier_disp_floor": 0.1,     # MAD-based z-score floor (prevents division by near-zero)
+    "barrier_z_max": 3.0,         # Max z-score clip (symmetric)
+    "barrier_k_reg": 0.3,         # Regime tightness: lower = tighter TP in quiet markets
+    "barrier_m_lo": 0.7,          # Multiplier low (quiet markets)
+    "barrier_m_hi": 1.5,          # Multiplier high (volatile markets)
+    "barrier_sl_lo": 0.4,         # SL ratio in quiet markets
+    "barrier_sl_hi": 0.7,         # SL ratio in volatile markets
+    "barrier_z_gate": 1.0,        # z-score threshold for regime transition
+    
+    # Horizon scaling
+    "label_horizon_base": 4,       # base horizon for sqrt(H/H_base) scaling
+    "label_min_net_rr": 0.9,      # min reward:risk ratio after fees
+    
+    # Legacy / deprecated params
+    "label_tp_mults": [0.5, 1.0, 1.5, 2.0],   # DEPRECATED: use barrier_k_tp_grid
+    "label_sl_mults": [0.3, 0.5, 0.7, 1.0],    # DEPRECATED: use barrier_sl_base_grid
+    "label_tp_values_pct": [1.5, 2.0, 3.0, 4.0, 5.0, 6.0],
+    "label_sl_values_pct": [0.5, 1.0, 2.0],
 
     # hourly trading selection (top/bot deviations)
     "trade_extreme_pct": 0.07,
@@ -156,6 +252,9 @@ CFG = {
     "trade_deviation_metric": "dist_ema_fast",
 
     # Quantile label handling: keep union of samples, emphasize tails via weights
+    # label_quantile_hi=0.65 gives 35% prevalence (samples >= 65th percentile are positive)
+    "label_quantile_lo": 0.30,
+    "label_quantile_hi": 0.65,
     "label_quantile_mode": "weighted_union",
     "label_quantile_weight_floor": 0.35,
     "label_quantile_weight_gamma": 1.5,
@@ -207,9 +306,23 @@ CFG = {
         "rvol_z", "vol_range_shock", "climax_decay",
         "cumulative_delta_stall", "vol_expansion_ratio", "vol_compression",
         "atr_slope", "dist_vwap_norm", "momentum_accel",
-        # New Exhaustion/Risk features (Report 2026-02-10)
+        # New Risk/Exhaustion (Report 2026-02-10)
         "wick_ratio_4h_max", "vol_price_div", "rsi_lag1", "rsi_1h_slope",
         "cvar_5pct", "amihud_illiq", "clv_mean_24", "vol_z_4h", "atr_pct_change",
+        # FFD d-specific features (d=0.4,0.6)
+        "ffd_rv_2h_04", "ffd_rv_6h_04", "ffd_rv_24h_04",
+        "ffd_vol_price_corr_10h_04",
+        "ffd_donch_dist_04_12", "ffd_donch_dist_04_24", "ffd_donch_dist_04_48",
+        "ffd_amihud_04", "ffd_vol_range_shock_04",
+        "ffd_dist_ema_fast_04", "ffd_dist_ema_slow_04",
+        "ffd_rv_2h_06", "ffd_rv_6h_06", "ffd_rv_24h_06",
+        "ffd_accel_06", "ffd_z_06",
+        "ffd_vol_price_corr_10h_06",
+        "ffd_donch_dist_06_12", "ffd_donch_dist_06_24", "ffd_donch_dist_06_48",
+        "ffd_atr_expansion_06", "ffd_cvar_5pct_06",
+        "ffd_amihud_06", "ffd_vol_range_shock_06",
+        # D-family strength indicators
+        "ffd_strength_04", "ffd_strength_05", "ffd_strength_06",
         # New Feature Candidates
         "thrust_decay_4", "decel_4", "ft_drop", "ext_excess", "ext_atrExp",
         "comp_to_exp", "evr6_x_volz", "stall_x_flow", "prog_def",
@@ -363,11 +476,11 @@ CFG = {
     "exh_atr_near_k": 1.5,       # Proximity to peak in ATRs (relaxed from 1.0)
 
     # Clipping for Peak Targeting
-    "exh_near_dist_cap_pct": 0.02, # Max proximity distance (2%)
-    "exh_rev_dist_floor_pct": 0.005, # Min reversal distance (0.5%) - User asked for 5% but using 0.5% as safe default
+    "exh_near_dist_cap_pct": 0.05, # Max proximity distance (5%) - relaxed for crypto volatility
+    "exh_rev_dist_floor_pct": 0.01, # Min reversal distance (1%) - relaxed for crypto volatility
 
-    "exh_near_thr": 0.015,       # Fallback % proximity
-    "exh_rev_thr_pct": 0.03,     # Fallback % reversal (3%)
+    "exh_near_thr": 0.03,       # Fallback % proximity
+    "exh_rev_thr_pct": 0.02,     # Fallback % reversal (3%)
 
     # Soft Labels (Target Smoothing)
     "label_use_soft": True,
@@ -484,6 +597,20 @@ CFG = {
         "rv_ratio_24_120", "rv_48h", "rv_120h",
         "ret48h", "ret120h",
         "donch_dist_48", "donch_dist_120",
+        # FFD d-specific features for meta learner
+        "ffd_rv_2h_04", "ffd_rv_6h_04", "ffd_rv_24h_04",
+        "ffd_vol_price_corr_10h_04",
+        "ffd_donch_dist_04_12", "ffd_donch_dist_04_24", "ffd_donch_dist_04_48",
+        "ffd_amihud_04", "ffd_vol_range_shock_04",
+        "ffd_dist_ema_fast_04", "ffd_dist_ema_slow_04",
+        "ffd_rv_2h_06", "ffd_rv_6h_06", "ffd_rv_24h_06",
+        "ffd_accel_06", "ffd_z_06",
+        "ffd_vol_price_corr_10h_06",
+        "ffd_donch_dist_06_12", "ffd_donch_dist_06_24", "ffd_donch_dist_06_48",
+        "ffd_atr_expansion_06", "ffd_cvar_5pct_06",
+        "ffd_amihud_06", "ffd_vol_range_shock_06",
+        # D-family strength indicators for meta
+        "ffd_strength_04", "ffd_strength_05", "ffd_strength_06",
         # Asset identity features (raw-scale, not normalized)
         "asset_atr_level", "asset_vol_level", "atr_state", "vol_state",
     ],

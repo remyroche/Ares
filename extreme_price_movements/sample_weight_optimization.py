@@ -19,9 +19,41 @@ except Exception:  # pragma: no cover - optional dependency
 
 from .purged_cv import IntervalPurgedKFold
 from .utils import tprint
+from .config import CFG, TEST_FEATURE_KEYS
 
 
 EPS = 1e-8
+
+
+def select_test_feature_frame(X_frame: pd.DataFrame) -> pd.DataFrame:
+    """Return X_frame filtered to configured learnability-test features when available."""
+    if not isinstance(X_frame, pd.DataFrame) or X_frame.empty:
+        return X_frame
+    test_keys = CFG.get("test_feature_keys", TEST_FEATURE_KEYS)
+    keep = [c for c in test_keys if c in X_frame.columns]
+    if keep:
+        return X_frame.loc[:, keep]
+    return X_frame
+
+
+def _select_test_feature_matrix(
+    X: np.ndarray | pd.DataFrame,
+    feature_names: Optional[Iterable[str]] = None,
+) -> np.ndarray:
+    """Filter X to configured test_feature_keys when column names are available."""
+    if isinstance(X, pd.DataFrame):
+        return np.asarray(select_test_feature_frame(X), dtype=np.float32)
+
+    X_arr = np.asarray(X, dtype=np.float32)
+    if feature_names is None:
+        return X_arr
+
+    names = [str(c) for c in feature_names]
+    test_keys = CFG.get("test_feature_keys", TEST_FEATURE_KEYS)
+    keep_idx = [i for i, c in enumerate(names) if c in test_keys]
+    if not keep_idx:
+        return X_arr
+    return X_arr[:, keep_idx]
 
 
 def compute_n_eff(weights: np.ndarray) -> float:
@@ -334,7 +366,7 @@ class WeightOptimizationResult:
 
 
 def optimize_component_weights(
-    X: np.ndarray,
+    X: np.ndarray | pd.DataFrame,
     y_ret: np.ndarray,
     label_intervals: np.ndarray,
     components: Dict[str, np.ndarray],
@@ -345,11 +377,13 @@ def optimize_component_weights(
     min_n_eff_ratio: float = 0.30,
     max_top1pct: float = 0.10,
     random_state: int = 42,
+    feature_names: Optional[Iterable[str]] = None,
 ) -> WeightOptimizationResult:
     if not components:
         ones = np.ones(len(y_ret), dtype=float)
         return WeightOptimizationResult(ones, {}, -10.0, {"reason": "no_components"})
 
+    X = _select_test_feature_matrix(X, feature_names=feature_names)
     names = list(components.keys())
     if optuna is None or n_trials <= 0:
         alphas = {k: 1.0 for k in names}

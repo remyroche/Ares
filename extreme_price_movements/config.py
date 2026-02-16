@@ -129,6 +129,35 @@ HELPER_BASE_FEATURES = [
     "ffd_strength_04", "ffd_strength_05", "ffd_strength_06",
 ]
 
+# Compact feature basket for learnability tests across symbol universes,
+# TBM geometry settings, and sample-weight configurations.
+# Emphasis: 2/4/8-bar behavior + longer-horizon regime context.
+TEST_FEATURE_KEYS = [
+    # Realized vol / ATR (multi-horizon)
+    "rv_2h", "rv_4h", "rv_8h", "rv_24h", "atr_pct", "atr_pct_change",
+    # Returns + slope family (2/4/8 focus)
+    "ret2h", "ret4h", "ret8h", "ret24h", "slope", "atr_slope", "rsi_slope",
+    # Momentum acceleration
+    "momentum_accel", "accel", "accel_5h",
+    # Price distance / z-score style context (EMA / VWAP / breakout band proxies)
+    "dist_ema_fast", "dist_vwap_norm", "breakout_t", "pct_breakout_t", "ret1h_z",
+    # RVOL + volume acceleration
+    "rvol_z", "vol_z", "vol_z_4h", "dlog_vol_5h", "volume_entropy_12",
+    # Vol-of-vol
+    "vov_ratio", "vov_fast_slow_ratio", "vov_mad_20",
+    # Autocorrelation / Hurst-ish / path efficiency proxies
+    "autocorr_6h", "autocorr_24h", "hurst_proxy_24", "path_efficiency_12", "path_efficiency_24",
+    # Liquidity + time-of-day
+    "amihud_illiq", "amihud_z", "sin_hod", "cos_hod", "sin_dow", "cos_dow",
+    # Mid/long lookback context for 8-bar horizon learnability (16-24h + slower)
+    "ret16h", "ret24h", "rv_24h", "coherence_24", "impulse_ratio_24", "range_24h_pct",
+    "shannon_entropy_ret_16", "perm_entropy_ret_24", "spectral_entropy_ret_24", "volume_entropy_24",
+    "ret48h", "ret120h", "rv_48h", "rv_120h", "spectral_entropy_ret_48",
+    # Longer-timeframe regime context
+    "trend_regime", "vol_regime_z", "regime_stability_24h", "trend_slope_48h", "trend_slope_120h",
+    "rv_ratio_24_120", "donch_dist_48", "donch_dist_120", "dist_from_high_120h", "dist_from_low_120h",
+]
+
 CFG = {
     # persistence / fetch
     "data_root": "data",
@@ -635,6 +664,9 @@ CFG = {
         # Asset identity features (raw-scale, not normalized)
         "asset_atr_level", "asset_vol_level", "atr_state", "vol_state",
     ],
+
+    # Unified learnability-test feature basket used by research comparison scripts
+    "test_feature_keys": TEST_FEATURE_KEYS,
 
     # Inference dynamic-basket controls
     "inference_event_window_hours": 12,

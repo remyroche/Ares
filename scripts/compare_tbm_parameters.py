@@ -41,6 +41,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from extreme_price_movements.data_store import to_panel
 from extreme_price_movements.labeling import compute_triple_barrier_labels
+from extreme_price_movements.config import CFG, TEST_FEATURE_KEYS
 
 
 EPS = 1e-12
@@ -462,12 +463,12 @@ def choose_feature_matrix(artifacts: RunArtifacts, max_features: int = 20) -> Tu
             continue
         good.append(k)
 
-    preferred = [
-        "atr_pct", "vol_z", "trend_snr", "rsi", "dist_ema_fast", "ret1h", "ret4h", "ret8h",
-        "breakout_24h", "vol_asym", "rv_24h", "momentum_accel",
-    ]
-    ordered = [k for k in preferred if k in good] + [k for k in good if k not in preferred]
-    selected = ordered[:max_features]
+    preferred = CFG.get("test_feature_keys", TEST_FEATURE_KEYS)
+    selected = [k for k in preferred if k in good]
+    if not selected:
+        raise ValueError("No configured test_feature_keys available in features for TBM comparison")
+    if max_features is not None and max_features > 0:
+        selected = selected[:max_features]
 
     stacked = {}
     for k in selected:

@@ -37,6 +37,32 @@ def ema(x: pd.DataFrame, span: int):
     alpha = 2.0 / (span + 1.0)
     return ff.numba_ewma(x, alpha, False)
 
+
+def _safe_log_df(df: pd.DataFrame, eps: float = 1e-9) -> pd.DataFrame:
+    """Causal-safe log transform for strictly positive inputs."""
+    return np.log(np.maximum(df, eps)).astype(np.float32)
+
+
+def _transform_close_fixed_ffd(
+    df: pd.DataFrame,
+    d: float = 0.4,
+    _label: str = "close",
+    already_logged: bool = False,
+    thres: float = 1e-5,
+) -> pd.DataFrame:
+    """Transform close only with fixed d to avoid adaptive ADF leakage."""
+    tprint(f"Transforming Close ({_label}): Log -> EWMA(5) -> FFD(d={d:.2f}) [{df.shape[1]} cols]")
+    df_log = df.astype(np.float32) if already_logged else _safe_log_df(df)
+    df_den = ff.numba_ewma(df_log, 2.0 / 6.0, False)
+
+    out = pd.DataFrame(index=df.index, columns=df.columns, dtype=np.float32)
+    total_cols = len(df_den.columns)
+    for i, col in enumerate(df_den.columns):
+        out[col] = frac_diff_ffd(df_den[col], d=float(d), thres=float(thres)).astype(np.float32)
+        if (i + 1) % 10 == 0 or (i + 1) == total_cols:
+            tprint(f"Fixed FFD ({_label}, d={d:.2f}): {i+1}/{total_cols}")
+    return out
+
 def atr_percent(high: pd.DataFrame, low: pd.DataFrame, close: pd.DataFrame, n: int):
     return ff.numba_atr_no_norm(high, low, close, n)
 
@@ -317,9 +343,9 @@ def compute_market_features(panel, basket_syms, trend_sma_hours=24*14):
     mkt_low_raw   = l[basket].mean(axis=1)
     mkt_vol_raw   = v[basket].mean(axis=1)
 
-    mkt_close = _transform_price(mkt_close_raw.to_frame(name="c"))["c"]
-    mkt_high  = _transform_price(mkt_high_raw.to_frame(name="h"))["h"]
-    mkt_low   = _transform_price(mkt_low_raw.to_frame(name="l"))["l"]
+    mkt_close = ff.numba_ewma(_safe_log_df(mkt_close_raw.to_frame(name="c")), 2.0 / 6.0, False)["c"]
+    mkt_high  = ff.numba_ewma(_safe_log_df(mkt_high_raw.to_frame(name="h")), 2.0 / 6.0, False)["h"]
+    mkt_low   = ff.numba_ewma(_safe_log_df(mkt_low_raw.to_frame(name="l")), 2.0 / 6.0, False)["l"]
     mkt_vol   = _transform_volume(mkt_vol_raw.to_frame(name="v"))["v"]
 
     mkt_ret24h_df = ff.numba_rolling_sum(mkt_close.to_frame(), 24)
@@ -435,23 +461,25 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     else:
         mkt_gates = mkt_gates.reindex(new_idx)
 
-    # 2. Transform Open
+    safe_log_eps = float(cfg.get("safe_log_eps", 1e-9))
+
+    # 2. Transform Open (log-space only; no adaptive FFD on OHLC geometry)
     o_raw = panel.pop("open").astype(np.float32)
     o_raw.index = new_idx
-    o = _transform_price(o_raw, _label="open")
+    o = ff.numba_ewma(_safe_log_df(o_raw, eps=safe_log_eps), 2.0 / 6.0, False)
     del o_raw
     gc.collect()
 
-    # 3. Transform High
+    # 3. Transform High (log-space)
     h_raw = panel.pop("high").astype(np.float32)
     h_raw.index = new_idx
-    h = _transform_price(h_raw, _label="high")
+    h = ff.numba_ewma(_safe_log_df(h_raw, eps=safe_log_eps), 2.0 / 6.0, False)
     # keep h_raw alive for raw ATR% computation below
 
-    # 4. Transform Low
+    # 4. Transform Low (log-space)
     l_raw = panel.pop("low").astype(np.float32)
     l_raw.index = new_idx
-    l = _transform_price(l_raw, _label="low")
+    l = ff.numba_ewma(_safe_log_df(l_raw, eps=safe_log_eps), 2.0 / 6.0, False)
     # keep l_raw alive for raw ATR% computation below
 
     # 5. Transform Close
@@ -464,6 +492,8 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     fwd_ret_4h = (c_raw.shift(-4) / c_raw - 1.0).fillna(0.0).astype(np.float32)
     fwd_ret_8h = (c_raw.shift(-8) / c_raw - 1.0).fillna(0.0).astype(np.float32)
     target_proxy = (0.3 * fwd_ret_2h + 0.4 * fwd_ret_4h + 0.3 * fwd_ret_8h).astype(np.float32)
+    del fwd_ret_2h, fwd_ret_4h, fwd_ret_8h
+    gc.collect()
 
     # --- Raw-scale asset identity features (computed before FFD transform deletes raw data) ---
     # Raw ATR% = ATR(h_raw, l_raw, c_raw, 14) / c_raw  (fraction, not log-differenced)
@@ -472,7 +502,16 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     del h_raw, l_raw, _raw_atr
     gc.collect()
 
-    c = _transform_price(c_raw, _label="close")
+    c_log = _safe_log_df(c_raw, eps=safe_log_eps)
+    ffd_thres = float(cfg.get("ffd_thres", 1e-5))
+
+    c = _transform_close_fixed_ffd(
+        c_raw,
+        d=float(cfg.get("ffd_d_base", 0.4)),
+        _label="close",
+        already_logged=False,
+        thres=ffd_thres,
+    )
     del c_raw
     gc.collect()
 
@@ -489,30 +528,229 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     panel.clear()
 
     feats = {}
-    feats["ret1h"] = c
-    feats["ret6h"] = ff.numba_rolling_sum(c, 6)
+
+    # Correct return naming: log returns from log close
+    feats["lr_1h"] = c_log.diff(1).astype(np.float32)
+    feats["lr_2h"] = c_log.diff(2).astype(np.float32)
+    feats["lr_4h"] = c_log.diff(4).astype(np.float32)
+    feats["lr_6h"] = c_log.diff(6).astype(np.float32)
+    feats["lr_12h"] = c_log.diff(12).astype(np.float32)
+    feats["lr_24h"] = c_log.diff(24).astype(np.float32)
+
+    # Compatibility aliases (one-release bridge)
+    feats["ret1h"] = feats["lr_1h"]
+    feats["ret6h"] = feats["lr_6h"]
 
     for H in [2, 3, 4, 5, 8, 10, 12, 16, 20, 24, 28, 48, 72, 120]:
         feats[f"ret{H}h"] = ff.numba_rolling_sum(c, H)
 
-    feats["range_pct"] = (h - l)
-    feats["gap_pct"]   = (o - c.shift(1))
+    # Geometry in log-space with ATR_ln normalization
+    prev_c_log = c_log.shift(1)
+    tr_ln_1 = (h - l)
+    tr_ln_2 = (h - prev_c_log).abs()
+    tr_ln_3 = (l - prev_c_log).abs()
+    tr_ln = np.maximum(tr_ln_1, np.maximum(tr_ln_2, tr_ln_3))
+    atr_ln = ff.numba_ewma(tr_ln, 1.0 / cfg["atr_n"], False).clip(lower=float(cfg.get("atr_ln_floor", 1e-6)))
+
+    feats["atr_ln"] = atr_ln.astype(np.float32)
+    feats["range_ln"] = (h - l).astype(np.float32)
+    feats["gap_ln"] = (o - prev_c_log).astype(np.float32)
+    feats["body_ln"] = (c_log - o).astype(np.float32)
+    feats["upper_wick_ln"] = (h - np.maximum(o, c_log)).clip(lower=0).astype(np.float32)
+    feats["lower_wick_ln"] = (np.minimum(o, c_log) - l).clip(lower=0).astype(np.float32)
+
+    feats["range_pct"] = (feats["range_ln"] / (feats["atr_ln"] + 1e-12)).astype(np.float32)
+    feats["gap_pct"] = (feats["gap_ln"] / (feats["atr_ln"] + 1e-12)).astype(np.float32)
 
     atr_base = atr_percent(h, l, c, n=cfg["atr_n"])
     feats["atr_pct_base"] = atr_base
 
+    # Fixed multi-d close-only FFD block
+    d_values = [float(d) for d in cfg.get("ffd_d_values", [0.4, 0.5, 0.6])]
+    d_values = sorted(set(d_values))
+
+    impulse_d_values = [float(d) for d in cfg.get("ffd_impulse_d_values", [0.6, 0.5])]
+    carry_d_values = [float(d) for d in cfg.get("ffd_carry_d_values", [0.5, 0.4])]
+    context_d_values = [float(d) for d in cfg.get("ffd_context_d_values", [0.4])]
+
+    ffd_close = {}
+    for d in d_values:
+        d_tag = f"{int(round(d * 10)):02d}"
+        ffd_c_d = _transform_close_fixed_ffd(
+            c_log,
+            d=d,
+            _label=f"close_d{d_tag}",
+            already_logged=True,
+            thres=ffd_thres,
+        )
+        ffd_close[d] = ffd_c_d
+
+        # Core per-d template block (ensures broad, symmetric d coverage)
+        feats[f"ffd_diff_1_{d_tag}"] = ffd_c_d.diff(1).astype(np.float32)
+        feats[f"ffd_diff_2_{d_tag}"] = ffd_c_d.diff(2).astype(np.float32)
+        feats[f"ffd_diff_4_{d_tag}"] = ffd_c_d.diff(4).astype(np.float32)
+        feats[f"ffd_diff_8_{d_tag}"] = ffd_c_d.diff(8).astype(np.float32)
+
+        ffd_ema_6 = ff.numba_ewma(ffd_c_d, 2.0 / 7.0, False)
+        ffd_ema_24 = ff.numba_ewma(ffd_c_d, 2.0 / 25.0, False)
+        feats[f"ffd_ema_spread_{d_tag}"] = (ffd_ema_6 - ffd_ema_24).astype(np.float32)
+
+        ffd_rv_12 = ff.apply_to_frame(feats[f"ffd_diff_1_{d_tag}"], ff._numba_rolling_std_nan_safe, 12)
+        ffd_rv_24 = ff.apply_to_frame(feats[f"ffd_diff_1_{d_tag}"], ff._numba_rolling_std_nan_safe, 24)
+        feats[f"ffd_rv_12_{d_tag}"] = ffd_rv_12.astype(np.float32)
+        feats[f"ffd_rv_24_{d_tag}"] = ffd_rv_24.astype(np.float32)
+
+        ffd_mu_24 = ff.numba_rolling_mean(ffd_c_d, 24)
+        ffd_sd_24 = ff.numba_rolling_std(ffd_c_d, 24)
+        feats[f"ffd_z_24_{d_tag}"] = ((ffd_c_d - ffd_mu_24) / (ffd_sd_24 + 1e-12)).astype(np.float32)
+
+        ffd_max_24 = ff.numba_rolling_max(ffd_c_d, 24)
+        ffd_min_24 = ff.numba_rolling_min(ffd_c_d, 24)
+        feats[f"ffd_range_24_{d_tag}"] = (ffd_max_24 - ffd_min_24).astype(np.float32)
+
+    # Carry layer (mid-speed continuation): d=0.5 primary, d=0.4 secondary
+    for d in carry_d_values:
+        if d in ffd_close:
+            d_tag = f"{int(round(d * 10)):02d}"
+            d_series = ffd_close[d]
+            for w in cfg.get("ffd_slope_windows", [12, 24]):
+                feats[f"ffd_slope_{d_tag}_{int(w)}"] = ff.apply_to_frame(d_series, ff._numba_rolling_slope, int(w)).astype(np.float32)
+            mr_w = int(cfg.get("ffd_mr_window", 24))
+            mu = ff.numba_rolling_mean(d_series, mr_w)
+            sd = ff.numba_rolling_std(d_series, mr_w)
+            feats[f"ffd_mr_z_{d_tag}"] = ((d_series - mu) / (sd + 1e-12)).astype(np.float32)
+
+    # Impulse/event momentum diffs (fastest): d=0.6 primary, d=0.5 backup
+    for d in impulse_d_values:
+        if d in ffd_close:
+            d_tag = f"{int(round(d * 10)):02d}"
+            d_series = ffd_close[d]
+            feats[f"ffd_d1_{d_tag}"] = d_series.diff(1).astype(np.float32)
+            feats[f"ffd_d4_{d_tag}"] = d_series.diff(4).astype(np.float32)
+
+    # Context/trend under noise (slowest in this triad): d=0.4 primary
+    for d in context_d_values:
+        if d in ffd_close:
+            d_tag = f"{int(round(d * 10)):02d}"
+            d_series = ffd_close[d]
+            for w in cfg.get("ffd_slope_windows", [12, 24]):
+                feats[f"ffd_ctx_slope_{d_tag}_{int(w)}"] = ff.apply_to_frame(d_series, ff._numba_rolling_slope, int(w)).astype(np.float32)
+
+    def _pick_primary_d(preferred_d_values):
+        for d in preferred_d_values:
+            if d in ffd_close:
+                return d
+        return d_values[0] if d_values else float(cfg.get("ffd_d_base", 0.4))
+
+    impulse_primary_d = _pick_primary_d(impulse_d_values)
+    carry_primary_d = _pick_primary_d(carry_d_values)
+    context_primary_d = _pick_primary_d(context_d_values)
+
+    c_impulse = ffd_close.get(impulse_primary_d, c)
+    c_carry = ffd_close.get(carry_primary_d, c)
+    c_context = ffd_close.get(context_primary_d, c)
+
+    # Remap key legacy return family to configured d-policy:
+    # - ret1h: impulse-primary (fast shock reaction)
+    # - ret2h..ret6h: carry-primary (move continuation)
+    # - ret>=8h: context-primary (regime/trend under noise)
+    feats["ret1h"] = c_impulse.diff(1).astype(np.float32)
+    for H in [2, 3, 4, 5, 6]:
+        feats[f"ret{H}h"] = ff.numba_rolling_sum(c_carry, H).astype(np.float32)
+    for H in [8, 10, 12, 16, 20, 24, 28, 48, 72, 120]:
+        feats[f"ret{H}h"] = ff.numba_rolling_sum(c_context, H).astype(np.float32)
+
+    # Carry price becomes default base for many pre-existing features.
+    c = c_carry
+
     # --- Asset Identity Features (raw-scale, NOT cross-sectionally normalized) ---
     # These provide "who is this asset" context without one-hot encoding.
-    # asset_atr_level: rolling median of raw ATR% over 60 days — stable volatility fingerprint
-    # asset_vol_level: rolling median of raw log(volume_usd) over 60 days — stable liquidity fingerprint
-    _W_IDENTITY = 24 * 60  # 60 days in hours
-    feats["asset_atr_level"] = ff.numba_rolling_median(_raw_atr_pct, _W_IDENTITY).astype(np.float32)
-    feats["asset_vol_level"] = ff.numba_rolling_median(_raw_log_vol, _W_IDENTITY).astype(np.float32)
+    # asset_atr_level: smooth baseline of raw ATR% over 60 days — stable volatility fingerprint
+    # asset_vol_level: smooth baseline of raw log(volume_usd) over 60 days — stable liquidity fingerprint
+    # Use EWMA (alpha=2/(1440+1)) as fast O(T*S) proxy for rolling median.
+    _ALPHA_IDENTITY = 2.0 / (24 * 60 + 1)  # EWMA alpha matching 60-day span
+    feats["asset_atr_level"] = ff.numba_ewma(_raw_atr_pct, _ALPHA_IDENTITY, False).astype(np.float32)
+    feats["asset_vol_level"] = ff.numba_ewma(_raw_log_vol, _ALPHA_IDENTITY, False).astype(np.float32)
     # atr_state: current ATR% / long-run level — >1 means elevated vol vs own baseline
     feats["atr_state"] = (_raw_atr_pct / (feats["asset_atr_level"] + 1e-9)).astype(np.float32)
     # vol_state: current log_vol / long-run level — >1 means elevated activity vs own baseline
     feats["vol_state"] = (_raw_log_vol / (feats["asset_vol_level"] + 1e-9)).astype(np.float32)
     del _raw_atr_pct, _raw_log_vol
+
+    # --- D-Specific Feature Families ---
+    # Realized volatility family (d=0.4,0.6)
+    for d in [0.4, 0.6]:
+        d_tag = f"{int(round(d * 10)):02d}"
+        base_diff = feats[f"ffd_diff_1_{d_tag}"]
+        feats[f"ffd_rv_2h_{d_tag}"] = ff.apply_to_frame(base_diff, ff._numba_rolling_std_nan_safe, 2).astype(np.float32)
+        feats[f"ffd_rv_6h_{d_tag}"] = ff.apply_to_frame(base_diff, ff._numba_rolling_std_nan_safe, 6).astype(np.float32)
+        feats[f"ffd_rv_24h_{d_tag}"] = ff.apply_to_frame(base_diff, ff._numba_rolling_std_nan_safe, 24).astype(np.float32)
+
+    # Momentum acceleration features (d=0.6)
+    for d in [0.6]:
+        d_tag = f"{int(round(d * 10)):02d}"
+        diff = feats[f"ffd_diff_1_{d_tag}"]
+        feats[f"ffd_accel_{d_tag}"] = diff.diff().astype(np.float32)
+        vol = ff.apply_to_frame(diff, ff._numba_rolling_std_nan_safe, 24)
+        feats[f"ffd_z_{d_tag}"] = (diff / (vol + 1e-12)).fillna(0).clip(-50, 50).astype(np.float32)
+
+    # Volume-price correlation features (d=0.4,0.6)
+    for d in [0.4, 0.6]:
+        d_tag = f"{int(round(d * 10)):02d}"
+        diff = feats[f"ffd_diff_1_{d_tag}"]
+        feats[f"ffd_vol_price_corr_10h_{d_tag}"] = ff.numba_rolling_corr(diff.abs(), v, 10).fillna(0).astype(np.float32)
+
+    # Donchian channel features (d=0.4,0.6)
+    for d in [0.4, 0.6]:
+        d_tag = f"{int(round(d * 10)):02d}"
+        d_series = ffd_close[d]
+        for k in [12, 24, 48]:
+            rmax = ff.numba_rolling_max(d_series, k)
+            rmin = ff.numba_rolling_min(d_series, k)
+            rmax_s = rmax.shift(1)
+            rmin_s = rmin.shift(1)
+            dir_s = np.sign(ff.numba_rolling_sum(d_series, 24))
+            donch = dir_s * (d_series - rmax_s)
+            donch = donch.where(dir_s > 0, -1 * (d_series - rmin_s))
+            feats[f"ffd_donch_dist_{d_tag}_{k}"] = (donch / atr_base).clip(lower=0).astype(np.float32)
+
+    # ATR expansion and tail risk (d=0.6)
+    for d in [0.6]:
+        d_tag = f"{int(round(d * 10)):02d}"
+        d_series = ffd_close[d]
+        tr_d = np.maximum(h - l, np.maximum((h - d_series.shift(1)).abs(), (l - d_series.shift(1)).abs()))
+        atr_tr_d = ff.numba_ewma(tr_d, 1.0/cfg["atr_n"], False)
+        feats[f"ffd_atr_expansion_{d_tag}"] = (tr_d / (atr_tr_d + 1e-12)).astype(np.float32)
+        diff = d_series.diff(1)
+        feats[f"ffd_cvar_5pct_{d_tag}"] = ff.numba_rolling_quantile(diff, 48, 0.05).fillna(0).astype(np.float32)
+
+    # Liquidity shock features (d=0.4,0.6)
+    for d in [0.4, 0.6]:
+        d_tag = f"{int(round(d * 10)):02d}"
+        diff = feats[f"ffd_diff_1_{d_tag}"]
+        illiq_raw = (diff.abs() / ((v * ffd_close[d]) + 1e-12)).replace([np.inf, -np.inf], np.nan)
+        feats[f"ffd_amihud_{d_tag}"] = ff.numba_rolling_mean(illiq_raw, 24).fillna(0).astype(np.float32)
+        vr = v * diff.abs()
+        ema_vr = ema(vr, 24)
+        feats[f"ffd_vol_range_shock_{d_tag}"] = (vr / (ema_vr + 1e-12)).astype(np.float32)
+
+    # Distance-from-mean-reversion features (d=0.4)
+    for d in [0.4]:
+        d_tag = f"{int(round(d * 10)):02d}"
+        d_series = ffd_close[d]
+        ema_fast = ema(d_series, max(4, int(cfg["ema_fast"] * 0.5)))
+        ema_slow = ema(d_series, int(cfg["ema_fast"] * 2))
+        feats[f"ffd_dist_ema_fast_{d_tag}"] = ((d_series - ema_fast) / (atr_base + 1e-12)).astype(np.float32)
+        feats[f"ffd_dist_ema_slow_{d_tag}"] = ((d_series - ema_slow) / (atr_base + 1e-12)).astype(np.float32)
+
+    # D-family strength indicators
+    abs_04 = feats["ffd_diff_1_04"].abs()
+    abs_05 = feats["ffd_diff_1_05"].abs()
+    abs_06 = feats["ffd_diff_1_06"].abs()
+    total = abs_04 + abs_05 + abs_06 + 1e-12
+    feats["ffd_strength_04"] = (abs_04 / total).astype(np.float32)
+    feats["ffd_strength_05"] = (abs_05 / total).astype(np.float32)
+    feats["ffd_strength_06"] = (abs_06 / total).astype(np.float32)
 
     rsi_base = rsi(c, n=cfg["rsi_n"])
     feats["rsi_base"] = rsi_base
@@ -627,8 +865,8 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["atr_expansion"] = (tr / (atr_tr + 1e-12)).astype(np.float32)
     del prev_close, tr_1, tr_2, tr_3, tr, atr_tr
 
-    sma_base = ff.numba_rolling_mean(c, cfg["trend_sma_n"])
-    feats["trend_pct_base"] = (c - sma_base).astype(np.float32)
+    sma_base = ff.numba_rolling_mean(c_context, cfg["trend_sma_n"])
+    feats["trend_pct_base"] = (c_context - sma_base).astype(np.float32)
 
     hod = pd.Series(v.index.hour, index=v.index)
     rvol_denom = ff.numba_grouped_rolling_mean(v, hod, int(cfg["rvol_days"]*24))
@@ -822,10 +1060,10 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["vol_z_30_calm"] = ff.numba_rolling_robust_zscore(np.log(feats["atr_pct_base"] + 1e-9), window=24 * 30, quantile=0.45).astype(np.float32)
     feats["volume_price_corr_10h"] = ff.numba_rolling_corr(feats["ret1h"].abs(), v, 10).fillna(0).astype(np.float32)
 
-    sma_fast = ff.numba_rolling_mean(c, max(24, int(cfg["trend_sma_n"] * 0.5)))
-    sma_slow = ff.numba_rolling_mean(c, int(cfg["trend_sma_n"] * 2))
-    trend_fast = (c - sma_fast)
-    trend_slow = (c - sma_slow)
+    sma_fast = ff.numba_rolling_mean(c_context, max(24, int(cfg["trend_sma_n"] * 0.5)))
+    sma_slow = ff.numba_rolling_mean(c_context, int(cfg["trend_sma_n"] * 2))
+    trend_fast = (c_context - sma_fast)
+    trend_slow = (c_context - sma_slow)
     feats["trend_pct"] = pick_by_rv(trend_fast, feats["trend_pct_base"], trend_slow)
     del sma_fast, sma_slow, trend_fast, trend_slow
 
@@ -850,31 +1088,31 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     rv12 = feats["rv_12h"] + 1e-12
 
     for k in [2, 4, 6, 8, 12, 24, 48, 72, 120]:
-        rmax = ff.numba_rolling_max(c, k)
-        rmin = ff.numba_rolling_min(c, k)
+        rmax = ff.numba_rolling_max(c_context, k)
+        rmin = ff.numba_rolling_min(c_context, k)
 
         rmax_s = rmax.shift(1)
         rmin_s = rmin.shift(1)
 
-        donch = dir_s * (c - rmax_s)
-        donch = donch.where(dir_s > 0, -1 * (c - rmin_s))
+        donch = dir_s * (c_context - rmax_s)
+        donch = donch.where(dir_s > 0, -1 * (c_context - rmin_s))
         feats[f"donch_dist_{k}"] = (donch / atr).clip(lower=0).astype(np.float32)
 
-        pb_raw = dir_s * (c - rmax)
-        pb_raw = pb_raw.where(dir_s > 0, -1 * (c - rmin))
+        pb_raw = dir_s * (c_context - rmax)
+        pb_raw = pb_raw.where(dir_s > 0, -1 * (c_context - rmin))
         feats[f"pullback_{k}"] = (pb_raw / atr).astype(np.float32)
 
         # Distance-from-high (always negative or zero for longs, measures drawdown from peak)
         if k >= 48:
-            dist_high = (c - rmax) / (atr + 1e-12)
-            dist_low = (c - rmin) / (atr + 1e-12)
+            dist_high = (c_context - rmax) / (atr + 1e-12)
+            dist_low = (c_context - rmin) / (atr + 1e-12)
             feats[f"dist_from_high_{k}h"] = dist_high.astype(np.float32)
             feats[f"dist_from_low_{k}h"] = dist_low.astype(np.float32)
 
     # Multi-day trend slopes (SMA-based, captures macro regime)
     for k_trend in [48, 72, 120]:
-        sma_k = ff.numba_rolling_mean(c, k_trend)
-        feats[f"trend_slope_{k_trend}h"] = ((c - sma_k) / (atr + 1e-12)).astype(np.float32)
+        sma_k = ff.numba_rolling_mean(c_context, k_trend)
+        feats[f"trend_slope_{k_trend}h"] = ((c_context - sma_k) / (atr + 1e-12)).astype(np.float32)
         # Trend acceleration: is the trend strengthening or weakening?
         feats[f"trend_accel_{k_trend}h"] = feats[f"trend_slope_{k_trend}h"].diff(12).fillna(0).astype(np.float32)
         del sma_k
@@ -1716,10 +1954,14 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     # Free target_proxy — no longer needed after gated feature selection
     del target_proxy, time_blocks, train_mask_proxy
+    # Free base price/volume DataFrames and all remaining intermediates before CausalTransform
+    del o, h, l, c, v
+    del atr_base, atr, dir_s, rv6, rv12, rv_ratio, mkt_gates
     gc.collect()
 
     tprint(f"Features: {len(feats)} features before CausalTransform. Applying transforms...")
-    transformer = CausalFeatureTransformer(winsor_qt=0.02, roll_window=24*30)
+    # Disable cache to avoid Arrow/parquet serialization memory spikes (~3× per feature)
+    transformer = CausalFeatureTransformer(winsor_qt=0.02, roll_window=24*30, enable_cache=False)
 
     skip_transform_set = {
         "sin_hod", "cos_hod", "sin_dow", "cos_dow", "range_24h_pct", "range_12h_pct",
@@ -1739,29 +1981,42 @@ def _compute_features_impl(panel, mkt_gates, cfg):
             for suffix in ["mean", "std", "z", "pct", "bin3", "gt25", "gt50", "gt66", "gt75", "gt85", "gt90"]:
                 skip_transform_set.add(f"{prefix}_{suffix}_{w}")
 
+    # Capture shared index/columns ONCE before converting to numpy
+    _sample_df = feats[list(feats.keys())[0]]
+    _feat_index = _sample_df.index
+    _feat_columns = list(_sample_df.columns)
+    del _sample_df
+
     feat_keys_list = list(feats.keys())
     n_transformed, n_skipped = 0, 0
     for i, k in enumerate(feat_keys_list):
         if k in skip_transform_set:
-            feats[k] = feats[k].astype(np.float32)
+            feats[k] = np.asarray(feats[k], dtype=np.float32)
             n_skipped += 1
-            continue
-        try:
-            feats[k] = transformer.transform(feats[k], name=k)
-            n_transformed += 1
-        except Exception as e:
-            tprint(f"Warning: Transform failed for {k}: {e}")
-            import traceback
-            traceback.print_exc()
-            feats[k] = feats[k].astype(np.float32)
+        else:
+            try:
+                feats[k] = np.asarray(transformer.transform(feats[k], name=k), dtype=np.float32)
+                n_transformed += 1
+            except Exception as e:
+                tprint(f"Warning: Transform failed for {k}: {e}")
+                import traceback
+                traceback.print_exc()
+                feats[k] = np.asarray(feats[k], dtype=np.float32)
         if (i + 1) % 50 == 0:
+            gc.collect()
             tprint(f"  CausalTransform progress: {i+1}/{len(feat_keys_list)}")
+    del transformer
+    gc.collect()
     tprint(f"CausalTransform complete: {n_transformed} transformed, {n_skipped} skipped")
 
-    # Final check for Inf/NaN
+    # Final check for Inf/NaN (numpy arrays now)
     tprint("Features: performing final Inf/NaN check")
-    for k, v in feats.items():
-        check_inf_nan(v, k)
+    for k in feats:
+        arr = feats[k]
+        if not np.isfinite(arr).all():
+            n_bad = (~np.isfinite(arr)).sum()
+            tprint(f"  WARNING: {k} has {n_bad} non-finite values, replacing with 0")
+            feats[k] = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
 
     tprint(f"Features: done ({len(feats)} keys)")
-    return feats
+    return feats, _feat_index, _feat_columns

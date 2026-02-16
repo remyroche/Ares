@@ -475,6 +475,8 @@ def save_features(
     ts: pd.Timestamp,
     root_dir: str,
     min_timestamp_by_symbol: dict[str, pd.Timestamp] | None = None,
+    feat_index: pd.Index | None = None,
+    feat_columns: list | None = None,
 ):
     """
     Save generated features to disk (Per-Symbol), streaming one symbol at a time.
@@ -482,7 +484,8 @@ def save_features(
     Peak memory ≈ 1 symbol × N_features × T rows (~2 MB).
     No temp chunk dirs, no merge step.
 
-    feats: dict of DataFrames (feature_name -> DataFrame(index=t, cols=syms))
+    feats: dict of feature_name -> DataFrame(index=t, cols=syms) OR numpy array (T, S).
+           When numpy arrays, feat_index and feat_columns must be provided.
     """
     ts_str = ts.strftime("%Y%m%d_%H%M%S")
     out_dir = os.path.join(root_dir, "features", ts_str)
@@ -491,19 +494,78 @@ def save_features(
     tprint(f"Saving features to {out_dir}...")
 
     first_key = list(feats.keys())[0]
-    symbols = list(feats[first_key].columns)
-    feat_keys = [k for k in feats if hasattr(feats[k], "columns")]
-    time_index = feats[first_key].index
+    first_val = feats[first_key]
+
+    # Detect whether feats contains DataFrames or numpy arrays
+    if isinstance(first_val, pd.DataFrame):
+        symbols = list(first_val.columns)
+        time_index = first_val.index
+        feat_keys = [k for k in feats if hasattr(feats[k], "columns")]
+        col_maps = {k: {c: j for j, c in enumerate(feats[k].columns)} for k in feat_keys}
+        arrays = {k: feats[k].values for k in feat_keys}
+    else:
+        # Numpy array mode — iterate per-feature first to avoid random access
+        # across 469 scattered arrays (which thrashes swap).
+        # Phase 1: Extract columns per-feature sequentially, free each array.
+        # Phase 2: Write per-symbol from transposed structure.
+        import gc as _gc
+        assert feat_index is not None and feat_columns is not None, \
+            "feat_index and feat_columns required when feats contains numpy arrays"
+        symbols = list(feat_columns)
+        time_index = feat_index
+        feat_keys = [k for k in feats if isinstance(feats[k], np.ndarray) and feats[k].ndim == 2]
+        n_feats = len(feat_keys)
+        total = len(symbols)
+
+        # Phase 1: Transpose — build per-symbol column dict, free each feature array
+        tprint(f"  Transposing {n_feats} features × {total} symbols for save...")
+        sym_data = {j: {} for j in range(total)}  # sym_idx -> {feat_name: 1D array}
+        for fi, k in enumerate(feat_keys):
+            arr = feats[k]
+            for j in range(total):
+                sym_data[j][k] = arr[:, j].copy()  # copy column to own memory
+            feats[k] = None  # free the (T, S) array
+            if (fi + 1) % 50 == 0:
+                _gc.collect()
+                tprint(f"  Transpose progress: {fi+1}/{n_feats}")
+        _gc.collect()
+        tprint(f"  Transpose complete. Writing {total} symbols...")
+
+        # Phase 2: Write per-symbol
+        count = 0
+        for j, sym in enumerate(symbols):
+            cutoff_ts = None
+            if min_timestamp_by_symbol:
+                cutoff_ts = min_timestamp_by_symbol.get(sym)
+
+            col_data = sym_data.pop(j)  # pop to free as we go
+            if not col_data:
+                continue
+
+            df_sym = pd.DataFrame(col_data, index=time_index)
+            del col_data
+            df_sym = df_sym.astype(np.float32, copy=False)
+            if cutoff_ts is not None:
+                df_sym = df_sym[df_sym.index > cutoff_ts]
+            if df_sym.empty:
+                continue
+
+            safe_sym = sym.replace("/", "_")
+            final_path = os.path.join(out_dir, f"symbol={safe_sym}.parquet")
+            append_symbol_features(final_path, sym, df_sym)
+            del df_sym
+            count += 1
+
+            if count % 50 == 0:
+                tprint(f"  Saved {count}/{total} symbols ({n_feats} features each)")
+            if count % 200 == 0:
+                _gc.collect()
+
+        tprint(f"Feature save complete. {count}/{total} symbols saved ({n_feats} features).")
+        return
+
     total = len(symbols)
     n_feats = len(feat_keys)
-
-    # Pre-build column-index maps once (feat_key -> {sym: col_idx})
-    col_maps = {}
-    for k in feat_keys:
-        col_maps[k] = {c: j for j, c in enumerate(feats[k].columns)}
-
-    # Pre-extract underlying numpy arrays (no copy, just .values reference)
-    arrays = {k: feats[k].values for k in feat_keys}
 
     count = 0
     for sym in symbols:
@@ -534,8 +596,10 @@ def save_features(
         del df_sym
         count += 1
 
-        if count % 100 == 0:
+        if count % 50 == 0:
             tprint(f"Saved {count}/{total} symbols ({n_feats} features each)")
+        if count % 100 == 0:
+            _gc.collect()
 
     tprint(f"Feature save complete. {count}/{total} symbols saved ({n_feats} features).")
 
@@ -561,9 +625,10 @@ def load_features(ts: pd.Timestamp, root_dir: str) -> dict:
         
     tprint(f"Found {len(files)} feature files in {in_dir}. Loading...")
     
-    # We need to pivot back to Dict[Feat -> DF(Syms)]
-    # 1. Read all symbol DFs
-    loaded_dfs = {} # Sym -> DF
+    # Build Dict[Feat -> Dict[Symbol -> Series]] incrementally to reduce peak memory.
+    # Previous implementation stored all symbol DataFrames first, then pivoted, which
+    # could double memory pressure on large universes.
+    feat_buffers = {}
     
     for fpath in files:
         try:
@@ -576,32 +641,37 @@ def load_features(ts: pd.Timestamp, root_dir: str) -> dict:
                 if not df.empty:
                     real_sym = str(df["__symbol__"].iloc[0])
                     df = df.drop(columns=["__symbol__"])
-                    loaded_dfs[real_sym] = df
                 else:
                     df = df.drop(columns=["__symbol__"])
-                    loaded_dfs[sym] = df
+                    real_sym = sym
             else:
                 # Legacy files without __symbol__: restore slash from underscore
                 # e.g. BTC_USDT -> BTC/USDT (first underscore only)
                 real_sym = sym.replace("_", "/", 1)
-                loaded_dfs[real_sym] = df
+
+            for k in df.columns:
+                if k not in feat_buffers:
+                    feat_buffers[k] = {}
+                feat_buffers[k][real_sym] = pd.to_numeric(df[k], errors="coerce").astype(np.float32, copy=False)
+
+            del df
         except Exception as e:
             tprint(f"Error loading {fpath}: {e}")
-            
-    if not loaded_dfs:
-        return None
 
-    # 2. Pivot to Feat -> DF
-    # All loaded DFs should have same columns (features)
-    sample_df = list(loaded_dfs.values())[0]
-    feat_keys = sample_df.columns
+    # Encourage timely memory reclamation after file ingest loop
+    import gc as _gc
+    _gc.collect()
+            
+    if not feat_buffers:
+        return None
     
     feats_out = {}
-    for k in feat_keys:
+    for k, data in feat_buffers.items():
         # Construct DF for this feature: Index=Time, Cols=Symbols
-        # We can dict comprehension
-        data = {sym: df[k] for sym, df in loaded_dfs.items() if k in df.columns}
         feats_out[k] = pd.DataFrame(data).sort_index()
+
+    feat_buffers.clear()
+    _gc.collect()
         
     tprint(f"Loaded {len(feats_out)} feature matrices.")
     return feats_out

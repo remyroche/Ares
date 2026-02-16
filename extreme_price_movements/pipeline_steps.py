@@ -1404,10 +1404,10 @@ def run_feature_generation_step(ts_sig, margin_symbols, cfg, store):
     mkt_gates = add_regime_gates(mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
     
     tprint("Computing Asset Features (Hourly)...")
-    feats = compute_features_hourly(panel, mkt_gates, cfg)
+    feats, feat_index, feat_columns = compute_features_hourly(panel, mkt_gates, cfg)
     
     # 4. Save
-    save_features(feats, ts_sig, cfg["data_root"])
+    save_features(feats, ts_sig, cfg["data_root"], feat_index=feat_index, feat_columns=feat_columns)
     
     tprint(f"Generated features for {len(loaded_syms)} symbols.")
     tprint("STEP: FEATURE GENERATION COMPLETE")

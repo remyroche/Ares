@@ -140,37 +140,32 @@ def generate_features_daily(ts_sig, margin_symbols, cfg, store, ex):
         mkt_gates = add_regime_gates(mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
         del mkt_df  # free intermediate
 
-        feats = compute_features_hourly(panel, mkt_gates, cfg)
+        feats, feat_index, feat_columns = compute_features_hourly(panel, mkt_gates, cfg)
         del panel, mkt_gates  # free large objects
         gc.collect()
         tprint("Hourly features computed (generation)")
 
         # Filter to save only missing symbols
-        feats_to_save = {}
-
-        # Check available columns in features
-        # feats is Dict[FeatName -> DataFrame]
-
-        # Just to be safe, check one known feature like 'ret1h'
-        if "ret1h" in feats:
-            available_cols = feats["ret1h"].columns
-            valid_targets = [s for s in pending_syms if s in available_cols]
-        else:
-            # Fallback if structure is different
-            valid_targets = pending_syms
+        # feats is Dict[FeatName -> numpy array], feat_columns is list of symbol names
+        available_cols = feat_columns
+        valid_targets = [s for s in pending_syms if s in available_cols]
 
         if not valid_targets:
             tprint("No valid target symbols found in computed features.")
             return
 
-        for k, v in feats.items():
-            if isinstance(v, pd.DataFrame):
-                # Select only the columns for pending symbols
-                cols = [c for c in valid_targets if c in v.columns]
+        # Build column index for filtering
+        col_idx = {s: i for i, s in enumerate(feat_columns)}
+        target_indices = [col_idx[s] for s in valid_targets]
+
+        feats_to_save = {}
+        for k, arr in feats.items():
+            if isinstance(arr, np.ndarray) and arr.ndim == 2:
+                feats_to_save[k] = arr[:, target_indices]
+            elif isinstance(arr, pd.DataFrame):
+                cols = [c for c in valid_targets if c in arr.columns]
                 if cols:
-                    feats_to_save[k] = v[cols]
-            else:
-                pass
+                    feats_to_save[k] = arr[cols].values
 
         if feats_to_save:
             min_ts_map = {s: last_ts_by_symbol.get(s) for s in valid_targets if s in last_ts_by_symbol}
@@ -179,6 +174,8 @@ def generate_features_daily(ts_sig, margin_symbols, cfg, store, ex):
                 ts_sig,
                 cfg["data_root"],
                 min_timestamp_by_symbol=min_ts_map if min_ts_map else None,
+                feat_index=feat_index,
+                feat_columns=valid_targets,
             )
         else:
             tprint("No features to save.")
@@ -367,7 +364,11 @@ def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger, model_
         panel = to_panel(dfs)
         mkt_df = compute_market_features(panel, cfg["market_basket"])
         mkt_gates = add_regime_gates(mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
-        feats = compute_features_hourly(panel, mkt_gates, cfg)
+        feats_np, feat_index, feat_columns = compute_features_hourly(panel, mkt_gates, cfg)
+        # Reconstruct DataFrames for execution path (needs .loc / column access)
+        feats = {k: pd.DataFrame(v, index=feat_index, columns=feat_columns) if isinstance(v, np.ndarray) and v.ndim == 2 else v
+                 for k, v in feats_np.items()}
+        del feats_np
         tprint("Features generated")
 
     move_syms = detect_extreme_movement_candidates(

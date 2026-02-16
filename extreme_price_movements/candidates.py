@@ -338,9 +338,16 @@ def detect_extreme_movement_candidates(
     if not event_syms:
         return []
 
-    perf_h = max(1, min(int(event_window_hours), len(feats.get("ret1h", c).index)))
-    perf_key = f"ret{perf_h}h"
-    perf = feats[perf_key].loc[ts].dropna() if perf_key in feats else feats.get("ret1h", c).loc[ts].dropna()
+    # Support both DataFrame and numpy array feats
+    _fallback = c
+    _ret1h = feats.get("ret1h", _fallback)
+    if isinstance(_ret1h, pd.DataFrame):
+        perf_h = max(1, min(int(event_window_hours), len(_ret1h.index)))
+        perf_key = f"ret{perf_h}h"
+        perf = feats[perf_key].loc[ts].dropna() if perf_key in feats else _ret1h.loc[ts].dropna()
+    else:
+        # numpy array mode — use panel close for perf ranking
+        perf = (c.loc[ts] / (c.shift(int(event_window_hours)).loc[ts] + 1e-12) - 1.0).dropna()
     if perf.empty:
         return []
 

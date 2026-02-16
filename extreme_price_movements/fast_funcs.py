@@ -1406,15 +1406,15 @@ def numba_frac_diff(df, d, window, thres=1e-5):
 @jit(nopython=True, cache=True)
 def _numba_rolling_zscore_nan_safe_1d(x, window, eps=1e-12):
     """
-    Rolling z-score with K-shift (assumed mean) for numerical stability.
-    
-    Uses Welford's online algorithm variant with K-shift to prevent
-    catastrophic cancellation in variance calculation when values are large.
-    
-    K-shift: Instead of computing Sum(X^2) - (Sum(X)^2)/N directly,
-    we compute Sum((X-K)^2) - (Sum(X-K)^2)/N where K is the first valid
-    value in the window. This centers the data around K, reducing magnitude
-    and preventing floating-point cancellation errors.
+    True O(n) rolling z-score using incremental mean/variance updates.
+
+    Uses a circular buffer to track outgoing values.  When a value leaves
+    the window we subtract its contribution from running sums; when a new
+    value enters we add it.  Variance is computed via the two-pass-safe
+    formula  Var = (sum_sq - sum^2/n) / (n-1)  where sums are K-shifted
+    (K = first valid value seen) to avoid catastrophic cancellation.
+
+    Complexity: O(n) total  (was O(n × window) before).
     """
     n = len(x)
     output = np.full(n, np.nan, dtype=np.float32)
@@ -1422,104 +1422,59 @@ def _numba_rolling_zscore_nan_safe_1d(x, window, eps=1e-12):
     if window <= 0:
         return output
 
-    # K-shift: use first valid value as assumed mean
+    # Circular buffer for values in the current window
+    buf = np.empty(window, dtype=np.float64)
+    buf_valid = np.zeros(window, dtype=np.bool_)
+    buf_idx = 0
+
+    # K-shift constant (set once from first valid value)
     K = 0.0
     K_set = False
-    
-    # For rolling window, we need to track shifted values
-    # sum_d = Sum(X - K), sum_d_sq = Sum((X - K)^2)
+
+    # Running shifted sums: d = val - K
     sum_d = 0.0
     sum_d_sq = 0.0
     count = 0
-    
-    # Circular buffer for K-shift values in current window
-    window_vals = np.empty(window, dtype=np.float64)
-    window_valid = np.zeros(window, dtype=np.bool_)
-    buf_idx = 0
 
     for i in range(n):
         val_in = x[i]
-        
-        # Store incoming value in circular buffer
-        if not np.isnan(val_in):
-            window_vals[buf_idx] = val_in
-            window_valid[buf_idx] = True
+        in_valid = not np.isnan(val_in)
+
+        # --- Remove outgoing value (only after window is full) ---
+        if i >= window:
+            out_idx = buf_idx          # oldest slot (about to be overwritten)
+            if buf_valid[out_idx]:
+                old_d = buf[out_idx] - K
+                sum_d -= old_d
+                sum_d_sq -= old_d * old_d
+                count -= 1
+
+        # --- Add incoming value ---
+        if in_valid:
+            if not K_set:
+                K = val_in
+                K_set = True
+            d = val_in - K
+            sum_d += d
+            sum_d_sq += d * d
+            count += 1
+            buf[buf_idx] = val_in
+            buf_valid[buf_idx] = True
         else:
-            window_valid[buf_idx] = False
-        
+            buf_valid[buf_idx] = False
+
         buf_idx = (buf_idx + 1) % window
 
-        # Recompute K-shift and sums from scratch for numerical stability
-        # This is O(window) but ensures K is always from current window
-        if i >= window - 1:
-            # Find first valid value in window for K-shift
-            K = 0.0
-            K_set = False
-            sum_d = 0.0
-            sum_d_sq = 0.0
-            count = 0
-            
-            for j in range(window):
-                idx = (buf_idx + j) % window
-                if window_valid[idx]:
-                    v = window_vals[idx]
-                    if not K_set:
-                        K = v
-                        K_set = True
-                    d = v - K
-                    sum_d += d
-                    sum_d_sq += d * d
-                    count += 1
-            
-            # Output logic
-            if count > 1 and K_set:
-                # Var = (SumD^2 - (SumD)^2/N) / (N-1)
-                # This is numerically stable because d values are centered around K
-                var_num = sum_d_sq - (sum_d * sum_d) / count
-                
-                if var_num < 0:
-                    var_num = 0.0
-                
-                std = np.sqrt(var_num / (count - 1))
-                
-                if not np.isnan(val_in):
-                    # z = (X - mean) / std = ((X - K) - (SumD/N)) / std
-                    d_in = val_in - K
-                    mean_d = sum_d / count
-                    output[i] = (d_in - mean_d) / (std + eps)
-                else:
-                    output[i] = np.nan
-            elif count == 1 and K_set and not np.isnan(val_in):
-                # Single value - zscore is 0 by convention
-                output[i] = 0.0
-            else:
-                output[i] = np.nan
-        else:
-            # Warmup period - use incremental approach
-            if not np.isnan(val_in):
-                if not K_set:
-                    K = val_in
-                    K_set = True
-                d = val_in - K
-                sum_d += d
-                sum_d_sq += d * d
-                count += 1
-            
-            if count > 1 and K_set:
-                var_num = sum_d_sq - (sum_d * sum_d) / count
-                if var_num < 0:
-                    var_num = 0.0
-                std = np.sqrt(var_num / (count - 1))
-                if not np.isnan(val_in):
-                    d_in = val_in - K
-                    mean_d = sum_d / count
-                    output[i] = (d_in - mean_d) / (std + eps)
-                else:
-                    output[i] = np.nan
-            elif count == 1 and K_set and not np.isnan(val_in):
-                output[i] = 0.0
-            else:
-                output[i] = np.nan
+        # --- Compute z-score ---
+        if count > 1 and in_valid:
+            var_num = sum_d_sq - (sum_d * sum_d) / count
+            if var_num < 0.0:
+                var_num = 0.0
+            std = np.sqrt(var_num / (count - 1))
+            mean_d = sum_d / count
+            output[i] = ((val_in - K) - mean_d) / (std + eps)
+        elif count == 1 and in_valid:
+            output[i] = 0.0
 
     return output
 

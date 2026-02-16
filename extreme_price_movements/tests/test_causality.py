@@ -43,7 +43,7 @@ def test_feature_causality():
 
     mkt_base = compute_market_features(panel, symbols)
     mkt_gates_base = add_regime_gates(mkt_base, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
-    feats_base = compute_features_hourly(panel, mkt_gates_base, cfg)
+    feats_base, _, _ = compute_features_hourly(panel, mkt_gates_base, cfg)
 
     # 3. Modify data at t+1
     # Pick a target time t
@@ -63,7 +63,7 @@ def test_feature_causality():
     # 4. Recompute features
     mkt_mod = compute_market_features(panel_mod, symbols)
     mkt_gates_mod = add_regime_gates(mkt_mod, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
-    feats_mod = compute_features_hourly(panel_mod, mkt_gates_mod, cfg)
+    feats_mod, _, _ = compute_features_hourly(panel_mod, mkt_gates_mod, cfg)
 
     # 5. Verify equality at t
     # Check Market Features

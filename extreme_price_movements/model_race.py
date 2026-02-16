@@ -754,8 +754,11 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             
             # --- Post-hoc Isotonic Calibration ---
             # Fit calibrator on OOF predictions
+            # Use relaxed constraints (y_min=0.05, y_max=0.95) to prevent degenerate
+            # score distributions where all predictions cluster tightly around prevalence.
+            # This was causing "degenerate IQR" warnings in backtest.
             tprint("Fitting IsotonicRegression on OOF predictions (unweighted)...")
-            self.calibrator_ = IsotonicRegression(out_of_bounds='clip', y_min=0.0, y_max=1.0)
+            self.calibrator_ = IsotonicRegression(out_of_bounds='clip', y_min=0.05, y_max=0.95)
             # IMPORTANT: Fit calibrator WITHOUT sample weights.
             # Weights upweight minority class, making calibrator target weighted
             # prevalence (~0.5) instead of actual prevalence (~0.31).
@@ -765,6 +768,28 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                 
             # Re-calibrate the stored OOF probs
             calibrated_oof = self.calibrator_.predict(oof_probs).astype(np.float32)
+            
+            # --- Minimum Variance Enforcement ---
+            # Prevent degenerate score distributions (all predictions near prevalence)
+            # This addresses the "degenerate IQR" warnings seen in backtest
+            MIN_VARIANCE = 0.01  # Minimum std dev threshold
+            cal_std = np.std(calibrated_oof)
+            if cal_std < MIN_VARIANCE:
+                tprint(f"WARNING: Calibrated scores have low variance (std={cal_std:.6f}). Enforcing minimum spread.")
+                # Blend with rank-based scores to restore variance while preserving rank order
+                rank_scores = (rankdata(oof_probs) - 1) / (len(oof_probs) - 1)  # Normalize to [0, 1]
+                # Blend factor: how much to mix in rank scores (higher = more variance)
+                blend_factor = 0.3
+                # Center rank scores around prevalence for consistency
+                prevalence = np.mean(y_hard)
+                rank_scores_centered = rank_scores - 0.5 + prevalence
+                rank_scores_centered = np.clip(rank_scores_centered, 0.05, 0.95)
+                # Blend calibrated with rank-based
+                calibrated_oof = (1 - blend_factor) * calibrated_oof + blend_factor * rank_scores_centered
+                tprint(f"  Blended with rank scores: new std={np.std(calibrated_oof):.6f}")
+            
+            # Preserve raw rank scores for downstream use (e.g., ridge sizer)
+            self.raw_rank_scores_ = (rankdata(oof_probs) - 1) / (len(oof_probs) - 1)
             
             from sklearn.metrics import brier_score_loss
             from sklearn.linear_model import LogisticRegression

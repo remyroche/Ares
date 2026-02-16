@@ -8,6 +8,13 @@ import numpy as np
 import pandas as pd
 from typing import Union, Optional
 
+# Import tprint for logging
+try:
+    from .utils import tprint
+except ImportError:
+    def tprint(msg):
+        print(msg)
+
 
 def concurrent_on_event_grid(label_times: pd.DataFrame, grid: pd.DatetimeIndex) -> np.ndarray:
     """
@@ -147,50 +154,89 @@ def compute_sample_weights_with_uniqueness(
     label_times: pd.DataFrame,
     returns: Union[pd.Series, np.ndarray],
     base_weights: Union[pd.Series, np.ndarray, None] = None,
-    time_grid: Optional[pd.DatetimeIndex] = None
+    time_grid: Optional[pd.DatetimeIndex] = None,
+    selection_metric: Optional[Union[pd.Series, np.ndarray]] = None
 ) -> np.ndarray:
     """
-    Compute sample weights combining uniqueness and return magnitude.
+    Compute sample weights combining uniqueness, event intensity, and MFE/MAE base weights.
     
     Args:
         label_times: DataFrame with ['t_start', 't_end'] columns
-        returns: Realized returns for weighting by magnitude
-        base_weights: Optional base weights (e.g., from exhaustion probability)
+        returns: Realized returns for reference (not used in magnitude weighting)
+        base_weights: MFE/MAE-based weights from compute_mfe_mae_weights() function
         time_grid: Optional time grid for uniqueness calculation
+        selection_metric: Optional metric values used for candidate selection 
+                         (e.g., dist_ema_fast). If provided, event scoring will be
+                         based on this instead of realized returns.
         
     Returns:
         Combined sample weights as numpy array
+        
+    Weight Components:
+    - Uniqueness: Addresses label overlap (AFML Chapter 4)
+    - Event Score: 1 / (1 - percentile) of selection metric intensity, 
+                   normalized to [0.8, 1.2], with percentile clamped to [0.01, 0.99]
+    - Base Weights: MFE/MAE-based weights based on decisive price movement relative to barriers
+    
+    Final formula: w = uniqueness * event_score * mfe_mae_base_weight
     """
     # Compute uniqueness
     uniqueness_ser = compute_avg_uniqueness(label_times, time_grid=time_grid)
     uniqueness = uniqueness_ser.values
     
-    # Prepare returns array
-    if isinstance(returns, pd.Series):
-        # Align if series
-        # Assuming index alignment matches label_times
-        if not returns.index.equals(label_times.index):
-             returns = returns.reindex(label_times.index).fillna(0.0)
-        returns_arr = returns.values
+    # Compute event score based on selection metric intensity percentile
+    # More intense events (higher absolute metric values) get higher scores
+    if selection_metric is not None:
+        # Use the same metric that was used for candidate selection
+        if isinstance(selection_metric, pd.Series):
+            if not selection_metric.index.equals(label_times.index):
+                selection_metric = selection_metric.reindex(label_times.index).fillna(0.0)
+            metric_values = np.abs(selection_metric.values)
+        else:
+            metric_values = np.abs(np.asarray(selection_metric))
+        
+        tprint(f"Using selection metric for event scoring: mean={metric_values.mean():.3f}, std={metric_values.std():.3f}")
     else:
-        returns_arr = np.asarray(returns)
-        if len(returns_arr) != len(uniqueness):
-            # Fallback or error? Assuming aligned if array
-             pass
-
-    # Return magnitude weighting (log scale)
-    magnitude_weight = np.log1p(np.abs(returns_arr))
+        # Fallback to realized returns if no selection metric provided
+        if isinstance(returns, pd.Series):
+            if not returns.index.equals(label_times.index):
+                returns = returns.reindex(label_times.index).fillna(0.0)
+            returns_arr = returns.values
+        else:
+            returns_arr = np.asarray(returns)
+        metric_values = np.abs(returns_arr)
+        tprint(f"Using realized returns for event scoring (fallback)")
     
-    # Combine: w = uniqueness * magnitude * base_weight
-    combined = uniqueness * magnitude_weight
+    # Vectorized percentile calculation
+    # Get percentile ranks (0-1) for each metric value
+    sorted_indices = np.argsort(metric_values)
+    percentile_ranks = np.empty_like(metric_values)
+    percentile_ranks[sorted_indices] = np.arange(1, len(metric_values) + 1) / len(metric_values)
+    
+    # Clamp percentiles to [0.01, 0.99] to prevent extreme scores
+    percentile_ranks = np.clip(percentile_ranks, 0.01, 0.99)
+    
+    # Score = 1 / (1 - percentile), then normalize to [0.8, 1.2]
+    # This way: high intensity (high percentile) = higher score
+    raw_scores = 1.0 / (1.0 - percentile_ranks + 0.01)  # +0.01 to avoid division by zero
+    # Normalize: map typical range [1, 100] to [0.8, 1.2]
+    event_scores = 0.8 + 0.4 * (np.log1p(raw_scores - 1) / np.log1p(99))
+    
+    # Combine: w = uniqueness * event_score * base_weight
+    combined = uniqueness * event_scores
+    
+    # Log weighting statistics for debugging
+    tprint(f"Weight components - Uniqueness: mean={uniqueness.mean():.3f}, std={uniqueness.std():.3f}")
+    tprint(f"Weight components - Event Score: mean={event_scores.mean():.3f}, std={event_scores.std():.3f}, min={event_scores.min():.3f}, max={event_scores.max():.3f}")
+    tprint(f"Weight components - Combined (pre-normalization): mean={combined.mean():.3f}, std={combined.std():.3f}")
     
     if base_weights is not None:
         if isinstance(base_weights, pd.Series):
-             if not base_weights.index.equals(label_times.index):
-                 base_weights = base_weights.reindex(label_times.index).fillna(1.0)
-             base_arr = base_weights.values
+            if not base_weights.index.equals(label_times.index):
+                base_weights = base_weights.reindex(label_times.index).fillna(1.0)
+            base_arr = base_weights.values
         else:
-             base_arr = np.asarray(base_weights)
+            base_arr = np.asarray(base_weights)
 
         combined = combined * base_arr
     

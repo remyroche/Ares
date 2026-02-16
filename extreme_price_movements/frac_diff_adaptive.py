@@ -331,3 +331,22 @@ def apply_adaptive_ffd_panel(
     
     output = pd.DataFrame(out_data, index=idx, columns=cols)
     return output, diagnostics
+
+
+def compute_weight_window_sizes(d_values, thres: float = 1e-5) -> dict:
+    """Return effective fixed-width window sizes for each FFD d value.
+
+    The effective memory is determined by weight truncation (thres) and should
+    be measured empirically from get_weights_ffd instead of assumed.
+    """
+    out = {}
+    for d in d_values:
+        d_f = float(d)
+        weights = get_weights_ffd(d_f, thres)
+        k = int(len(weights))
+        out[d_f] = {
+            "K": k,
+            "warmup_bars": max(0, k - 1),
+            "compute_cost": f"O(N x {k})",
+        }
+    return out

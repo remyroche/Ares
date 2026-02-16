@@ -749,8 +749,9 @@ class MetaClassifierModel:
         y_bin = (hit_count > 0).astype(np.int8)
 
         # Weight multiplier: normalized hit count (more hits = stronger signal)
+        # Scale to [1.0, 1.5] instead of [1.0, 2.0] to reduce over-weighting
         max_possible = n_combos * len(y_per_horizon)
-        w_barrier = 1.0 + np.clip(hit_count / max(max_possible, 1), 0, 1)
+        w_barrier = 1.0 + 0.5 * np.clip(hit_count / max(max_possible, 1), 0, 1)
         # Normalize to unit mean
         w_barrier = w_barrier / max(float(np.mean(w_barrier)), 1e-12)
 

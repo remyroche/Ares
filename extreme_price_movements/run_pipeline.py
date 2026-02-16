@@ -101,8 +101,6 @@ def _label_artifacts_ready(cfg, ts_sig):
     horizons = cfg.get("label_horizons_hours", [])
     required = [
         "exhaustion_history",
-        "exh_up",
-        "exh_down",
     ]
     for h in horizons:
         required.extend([
@@ -326,7 +324,7 @@ def run_optimise(cfg, ts_override=None):
             tprint("ERROR: No feature directories found.")
             return
 
-    run_id = ts_sig.strftime("%Y%mwh%d_%H%M%S")
+    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     import os
     state_file = os.path.join(cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl")
     backtest_file = os.path.join(cfg["data_root"], "artifacts", run_id, "backtest_results.csv")

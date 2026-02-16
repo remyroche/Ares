@@ -306,10 +306,25 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long"):
     tp: Scalar float OR DataFrame/Series matching panel dimensions.
     sl: Scalar float OR DataFrame/Series matching panel dimensions.
     side: "long" or "short"
+
+    Hit logic:
+    - TP/SL hit detection is based on intrabar extremes (`high`/`low`), not `close`.
+    - `close` is used only for non-hit exits (timeout/stall return calculation).
     """
+    required = {"close", "high", "low"}
+    missing = required.difference(panel.keys())
+    if missing:
+        raise KeyError(f"compute_triple_barrier_labels requires panel keys {sorted(required)}; missing={sorted(missing)}")
+
     c = panel["close"]
     h = panel["high"]
     l = panel["low"]
+
+    # Ensure all price matrices are aligned so hit checks always use matching high/low bars.
+    if not h.index.equals(c.index) or not h.columns.equals(c.columns):
+        h = h.reindex(index=c.index, columns=c.columns)
+    if not l.index.equals(c.index) or not l.columns.equals(c.columns):
+        l = l.reindex(index=c.index, columns=c.columns)
 
     assets = c.columns
     times = c.index.view(np.int64)

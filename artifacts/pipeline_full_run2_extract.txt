@@ -1,0 +1,121 @@
+=== STAGES/ERRORS ===
+[2026-02-14 19:48:22 UTC] STEP: DOWNLOAD START
+[2026-02-14 19:48:22 UTC] STEP: DOWNLOAD COMPLETE (fresh)
+[2026-02-14 19:48:22 UTC] STEP: FEATURE GENERATION START
+[2026-02-14 19:51:27 UTC] STEP: FEATURE GENERATION COMPLETE (cached)
+[2026-02-14 19:51:28 UTC] STEP: LABEL GENERATION START
+[2026-02-14 19:58:12 UTC] STEP: LABEL GENERATION COMPLETE
+[2026-02-14 19:58:13 UTC] STEP: MODEL TRAINING START
+[2026-02-14 20:20:08 UTC] STEP: MODEL TRAINING COMPLETE
+[2026-02-14 20:20:08 UTC] STEP: RIDGE POSITION SIZER START
+[2026-02-14 20:20:52 UTC] STEP: RIDGE POSITION SIZER COMPLETE — 4 buckets processed
+[2026-02-14 20:20:52 UTC] STEP: BACKTEST START
+
+=== WARNINGS ===
+[2026-02-14 19:55:40 UTC] No valid geometry for H=2 side=long; using fallback.
+[2026-02-14 19:55:46 UTC] No valid geometry for H=2 side=short; using fallback.
+[2026-02-14 20:35:17 UTC]   ScoreScale WARNING: long_mr has degenerate IQR (1.85e-04). Disabling normalization (center=0, scale=1).
+[2026-02-14 20:35:17 UTC]   ScoreScale WARNING: short_mr has degenerate IQR (7.55e-04). Disabling normalization (center=0, scale=1).
+[2026-02-14 20:35:17 UTC]   ScoreScale WARNING: long_tf has degenerate IQR (7.06e-04). Disabling normalization (center=0, scale=1).
+[2026-02-14 20:35:17 UTC]   ScoreScale WARNING: short_tf has degenerate IQR (0.00e+00). Disabling normalization (center=0, scale=1).
+[2026-02-14 20:41:36 UTC] SignalOpt tl=0.000 ts=-0.000 k=2.00 x0=0.50 -> pnl=0.000000 sortino=0.000000 maxdd=0.000000 wr=0.00 n=0
+[2026-02-14 20:47:27 UTC] SignalOpt tl=0.000 ts=-0.000 k=4.00 x0=0.50 -> pnl=0.000000 sortino=0.000000 maxdd=0.000000 wr=0.00 n=0
+[2026-02-14 20:53:18 UTC] SignalOpt tl=0.000 ts=-0.000 k=2.00 x0=0.70 -> pnl=0.000000 sortino=0.000000 maxdd=0.000000 wr=0.00 n=0
+[2026-02-14 20:58:47 UTC] SignalOpt tl=0.000 ts=-0.000 k=4.00 x0=0.70 -> pnl=0.000000 sortino=0.000000 maxdd=0.000000 wr=0.00 n=0
+[2026-02-14 21:03:57 UTC] SignalOpt tl=0.000 ts=-0.000 k=2.00 x0=0.90 -> pnl=0.000000 sortino=0.000000 maxdd=0.000000 wr=0.00 n=0
+[2026-02-14 21:09:08 UTC] SignalOpt tl=0.000 ts=-0.000 k=4.00 x0=0.90 -> pnl=0.000000 sortino=0.000000 maxdd=0.000000 wr=0.00 n=0
+[2026-02-14 21:14:21 UTC] SignalOpt tl=0.020 ts=-0.000 k=2.00 x0=0.50 -> pnl=0.000000 sortino=0.000000 maxdd=0.000000 wr=0.00 n=0
+[2026-02-14 21:19:32 UTC] SignalOpt tl=0.020 ts=-0.000 k=4.00 x0=0.50 -> pnl=0.000000 sortino=0.000000 maxdd=0.000000 wr=0.00 n=0
+[2026-02-14 21:24:44 UTC] SignalOpt tl=0.020 ts=-0.000 k=2.00 x0=0.70 -> pnl=0.000000 sortino=0.000000 maxdd=0.000000 wr=0.00 n=0
+[2026-02-14 21:29:57 UTC] SignalOpt tl=0.020 ts=-0.000 k=4.00 x0=0.70 -> pnl=0.000000 sortino=0.000000 maxdd=0.000000 wr=0.00 n=0
+[2026-02-14 21:35:13 UTC] SignalOpt tl=0.020 ts=-0.000 k=2.00 x0=0.90 -> pnl=0.000000 sortino=0.000000 maxdd=0.000000 wr=0.00 n=0
+[2026-02-14 21:40:36 UTC] SignalOpt tl=0.020 ts=-0.000 k=4.00 x0=0.90 -> pnl=0.000000 sortino=0.000000 maxdd=0.000000 wr=0.00 n=0
+
+=== MODEL_METRICS ===
+[2026-02-14 19:59:45 UTC] Race Winner: xgboost (RankScore=-0.0335, IC=-0.0113, Prec@10=0.3193)
+[2026-02-14 19:59:49 UTC]   AUC reporting (long/mr/H=2): raw=0.5083, resolved-weighted=0.5058
+[2026-02-14 20:02:10 UTC] Race Winner: extratrees (RankScore=-0.2715, IC=0.0158, Prec@10=0.3235)
+[2026-02-14 20:02:11 UTC]   AUC reporting (long/mr/H=4): raw=0.5248, resolved-weighted=0.5250
+[2026-02-14 20:04:25 UTC] Race Winner: extratrees (RankScore=0.3900, IC=0.0165, Prec@10=0.3269)
+[2026-02-14 20:04:26 UTC]   AUC reporting (long/mr/H=8): raw=0.5158, resolved-weighted=0.5147
+[2026-02-14 20:04:26 UTC]   long_mr: Deploying 3 horizons: [2, 4, 8] (primary H=8)
+[2026-02-14 20:05:16 UTC] Race Winner: extratrees (RankScore=1.0447, IC=0.0932, Prec@10=0.3221)
+[2026-02-14 20:05:17 UTC]   AUC reporting (long/tf/H=2): raw=0.5426, resolved-weighted=0.5515
+[2026-02-14 20:06:06 UTC] Race Winner: xgboost (RankScore=1.2393, IC=0.0399, Prec@10=0.3233)
+[2026-02-14 20:06:09 UTC]   AUC reporting (long/tf/H=4): raw=0.5255, resolved-weighted=0.5298
+[2026-02-14 20:07:02 UTC] Race Winner: extratrees (RankScore=0.9039, IC=0.0263, Prec@10=0.3217)
+[2026-02-14 20:07:03 UTC]   AUC reporting (long/tf/H=8): raw=0.5346, resolved-weighted=0.5351
+[2026-02-14 20:07:03 UTC]   long_tf: Deploying 3 horizons: [2, 4, 8] (primary H=4)
+[2026-02-14 20:08:00 UTC] Race Winner: extratrees (RankScore=-1.1454, IC=0.0015, Prec@10=0.2921)
+[2026-02-14 20:08:01 UTC]   AUC reporting (short/mr/H=2): raw=0.5185, resolved-weighted=0.5230
+[2026-02-14 20:08:44 UTC] Race Winner: catboost (RankScore=0.8603, IC=0.0143, Prec@10=0.3009)
+[2026-02-14 20:08:46 UTC]   AUC reporting (short/mr/H=4): raw=0.5359, resolved-weighted=0.5403
+[2026-02-14 20:09:26 UTC] Race Winner: catboost (RankScore=1.1081, IC=0.0222, Prec@10=0.2933)
+[2026-02-14 20:09:28 UTC]   AUC reporting (short/mr/H=8): raw=0.5577, resolved-weighted=0.5613
+[2026-02-14 20:09:28 UTC]   short_mr: Deploying 3 horizons: [2, 4, 8] (primary H=8)
+[2026-02-14 20:10:34 UTC] Race Winner: extratrees (RankScore=0.5424, IC=-0.0052, Prec@10=0.2991)
+[2026-02-14 20:10:35 UTC]   AUC reporting (short/tf/H=2): raw=0.5208, resolved-weighted=0.5440
+[2026-02-14 20:11:41 UTC] Race Winner: lightgbm (RankScore=0.3655, IC=-0.0130, Prec@10=0.2924)
+[2026-02-14 20:11:44 UTC]   AUC reporting (short/tf/H=4): raw=0.5162, resolved-weighted=0.5140
+[2026-02-14 20:12:49 UTC] Race Winner: extratrees (RankScore=0.1930, IC=0.0305, Prec@10=0.2886)
+[2026-02-14 20:12:50 UTC]   AUC reporting (short/tf/H=8): raw=0.5215, resolved-weighted=0.5117
+[2026-02-14 20:12:50 UTC]   short_tf: Deploying 3 horizons: [2, 4, 8] (primary H=2)
+[2026-02-14 20:12:59 UTC]   Target race winner: soft_top30_semivol
+[2026-02-14 20:12:59 UTC]   Winning target 'soft_top30_semivol': n=15243, mean=0.338064, std=0.306448
+[2026-02-14 20:13:19 UTC]   Winner: ridge (composite=0.3306). Starting HPO (20.4s)...
+[2026-02-14 20:13:22 UTC] MetaModel.fit: long_mr_H2 done (23.8s). Winner=ridge, IC=0.3306
+[2026-02-14 20:13:31 UTC]   Target race winner: soft_top30
+[2026-02-14 20:13:31 UTC]   Winning target 'soft_top30': n=15243, mean=0.301522, std=0.364402
+[2026-02-14 20:13:54 UTC]   Winner: extratrees (composite=0.3229). Starting HPO (22.5s)...
+[2026-02-14 20:14:12 UTC] MetaModel.fit: long_mr_H4 done (40.8s). Winner=extratrees, IC=0.3229
+[2026-02-14 20:14:20 UTC]   Target race winner: tail_amp_semivol
+[2026-02-14 20:14:20 UTC]   Winning target 'tail_amp_semivol': n=15243, mean=0.516622, std=0.270591
+[2026-02-14 20:14:42 UTC]   Winner: ridge (composite=0.3527). Starting HPO (22.1s)...
+[2026-02-14 20:14:46 UTC] MetaModel.fit: long_mr_H8 done (25.9s). Winner=ridge, IC=0.3527
+[2026-02-14 20:14:51 UTC]   Winner: ridge_clf (composite=1.7647). Fitting final model...
+[2026-02-14 20:15:00 UTC]   Target race winner: qbin_mid_semivol
+[2026-02-14 20:15:00 UTC]   Winning target 'qbin_mid_semivol': n=7930, mean=0.649453, std=0.262664
+[2026-02-14 20:15:15 UTC]   Winner: xgb_basic (composite=0.3768). Starting HPO (14.8s)...
+[2026-02-14 20:15:21 UTC] MetaModel.fit: long_tf_H2 done (21.5s). Winner=xgb_basic, IC=0.3768
+[2026-02-14 20:15:26 UTC]   Target race winner: tail_amp_semivol
+[2026-02-14 20:15:26 UTC]   Winning target 'tail_amp_semivol': n=7930, mean=0.540179, std=0.434575
+[2026-02-14 20:15:42 UTC]   Winner: xgb_basic (composite=0.3940). Starting HPO (16.3s)...
+[2026-02-14 20:15:51 UTC] MetaModel.fit: long_tf_H4 done (25.5s). Winner=xgb_basic, IC=0.3940
+[2026-02-14 20:15:56 UTC]   Target race winner: qbin_mid_semivol
+[2026-02-14 20:15:56 UTC]   Winning target 'qbin_mid_semivol': n=7930, mean=0.555201, std=0.375080
+[2026-02-14 20:16:11 UTC]   Winner: xgb_basic (composite=0.3788). Starting HPO (15.2s)...
+[2026-02-14 20:16:17 UTC] MetaModel.fit: long_tf_H8 done (21.2s). Winner=xgb_basic, IC=0.3788
+[2026-02-14 20:16:21 UTC]   Winner: catboost_clf (composite=1.6976). Fitting final model...
+[2026-02-14 20:16:30 UTC]   Target race winner: soft_top30
+[2026-02-14 20:16:30 UTC]   Winning target 'soft_top30': n=7930, mean=0.299747, std=0.365803
+[2026-02-14 20:16:46 UTC]   Winner: extratrees (composite=0.3635). Starting HPO (16.7s)...
+[2026-02-14 20:16:58 UTC] MetaModel.fit: short_mr_H2 done (28.5s). Winner=extratrees, IC=0.3635
+[2026-02-14 20:17:03 UTC]   Target race winner: soft_top30
+[2026-02-14 20:17:03 UTC]   Winning target 'soft_top30': n=7930, mean=0.301224, std=0.364651
+[2026-02-14 20:17:19 UTC]   Winner: extratrees (composite=0.4010). Starting HPO (16.6s)...
+[2026-02-14 20:17:29 UTC] MetaModel.fit: short_mr_H4 done (26.2s). Winner=extratrees, IC=0.4010
+[2026-02-14 20:17:33 UTC]   Target race winner: qbin_mid
+[2026-02-14 20:17:33 UTC]   Winning target 'qbin_mid': n=7930, mean=0.539760, std=0.265763
+[2026-02-14 20:17:50 UTC]   Winner: extratrees (composite=0.3789). Starting HPO (16.6s)...
+[2026-02-14 20:18:03 UTC] MetaModel.fit: short_mr_H8 done (29.7s). Winner=extratrees, IC=0.3789
+[2026-02-14 20:18:06 UTC]   Winner: catboost_clf (composite=2.1228). Fitting final model...
+[2026-02-14 20:18:18 UTC]   Target race winner: tail_amp_semivol
+[2026-02-14 20:18:18 UTC]   Winning target 'tail_amp_semivol': n=15243, mean=0.522590, std=0.259637
+[2026-02-14 20:18:38 UTC]   Winner: ridge (composite=0.3609). Starting HPO (20.1s)...
+[2026-02-14 20:18:42 UTC] MetaModel.fit: short_tf_H2 done (23.6s). Winner=ridge, IC=0.3609
+[2026-02-14 20:18:50 UTC]   Target race winner: soft_top30
+[2026-02-14 20:18:50 UTC]   Winning target 'soft_top30': n=15243, mean=0.301699, std=0.364265
+[2026-02-14 20:19:12 UTC]   Winner: extratrees (composite=0.3600). Starting HPO (22.6s)...
+[2026-02-14 20:19:28 UTC] MetaModel.fit: short_tf_H4 done (38.0s). Winner=extratrees, IC=0.3600
+[2026-02-14 20:19:35 UTC]   Target race winner: tail_amp_semivol
+[2026-02-14 20:19:35 UTC]   Winning target 'tail_amp_semivol': n=15243, mean=0.520572, std=0.271461
+[2026-02-14 20:19:56 UTC]   Winner: ridge (composite=0.3938). Starting HPO (20.5s)...
+[2026-02-14 20:19:59 UTC] MetaModel.fit: short_tf_H8 done (23.9s). Winner=ridge, IC=0.3938
+[2026-02-14 20:20:04 UTC]   Winner: et_clf (composite=2.1205). Fitting final model...
+[2026-02-14 20:20:08 UTC] STEP: MODEL TRAINING COMPLETE
+[2026-02-14 20:20:08 UTC]     Winner: rank_residual (IC=0.1676)
+[2026-02-14 20:20:23 UTC]     Winner: winsorized (IC=0.1494)
+[2026-02-14 20:20:30 UTC]     Winner: rank_residual (IC=0.1403)
+[2026-02-14 20:20:40 UTC]     Winner: rank_residual (IC=0.0776)
+[2026-02-14 21:40:36 UTC] Selected signal params: {'thr_long': 0.02, 'thr_short': -0.0, 'k_long': 10, 'k_short': 10, 'size_min': 0.03, 'size_max': 0.15, 'size_k': 4.0, 'size_x0': 0.9, 'size_zcap': 4.0, 'size_q50': 0.0, 'size_q90': 0.001, 'score_scale_params': {'long_mr_center': 0.0, 'long_mr_scale': 1.0, 'short_mr_center': 0.0, 'short_mr_scale': 1.0, 'long_tf_center': 0.0, 'long_tf_scale': 1.0, 'short_tf_center': 0.0, 'short_tf_scale': 1.0}}
+

@@ -5,6 +5,19 @@ Candidate Selection Threshold Comparison
 Compares Fixed, ATR-normalized, and Volume-Weighted candidate selection methods.
 Uses ExtraTrees with the same parameters as the target race in training.py.
 
+Feature Usage:
+  - Candidate Selection (Ranking):
+      * Signal: ret6h (fallback: ret24h)
+      * Normalization: atr_pct (winsorized & smoothed)
+      * Volume Weighting: rvol_z, volu_z
+  - Filtering:
+      * Range: range_12h_pct (fallback: range_16h_pct, range_pct)
+      * Volatility: volatility_zscore (fallback: vol_z)
+      * Sign Consistency: sign_consistency (fallback: sign_consistency_12h, or ret6h rolling sign mean)
+  - Model Evaluation (IC / OOF CV):
+      * Features: extreme_price_movements.config.MODEL_FEATURES (filtered by availability)
+      * Target: ret6h (or ret24h)
+
 Usage:
     python scripts/compare_candidate_thresholds.py \
         --features data/features/20260214_190000 \

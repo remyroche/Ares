@@ -48,6 +48,7 @@ from extreme_price_movements import fast_funcs as ff
 from extreme_price_movements.training_defaults import (
     get_candidate_filter_defaults,
     get_barrier_factory_defaults,
+    get_target_race_model_defaults,
 )
 from extreme_price_movements.offline_optimisers.params_store import (
     REPORTS_DIR,
@@ -65,22 +66,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-ET_REGRESSOR_PARAMS = {
-    "n_estimators": 200,
-    "max_depth": 4,
-    "min_samples_leaf": 30,
-    "max_features": "sqrt",
-    "n_jobs": 3,
-    "random_state": 42,
-}
 
-RIDGE_SCREEN_ALPHA = 0.5
-RIDGE_SCREEN_TOP_FRAC = 0.25
 OOF_MAX_SAMPLES = 1_800_000
 OOF_RIDGE_MAX_TRAIN_SAMPLES = 700_000
 FEATURE_CHUNK_SIZE = 8
 _PSUTIL_WARNED = False
 MAX_GEOMETRY_CACHE_KEYS = 12
+
+_TARGET_RACE_DEFAULTS = get_target_race_model_defaults(CFG)
+ET_REGRESSOR_PARAMS = dict(_TARGET_RACE_DEFAULTS["et_params"])
+RIDGE_SCREEN_ALPHA = float(_TARGET_RACE_DEFAULTS["ridge_screen_alpha"])
+RIDGE_SCREEN_TOP_FRAC = float(_TARGET_RACE_DEFAULTS["ridge_screen_top_frac"])
 
 
 def get_memory_mb() -> float:

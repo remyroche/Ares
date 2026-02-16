@@ -52,6 +52,7 @@ from extreme_price_movements.offline_optimisers.params_store import (
 from extreme_price_movements.training_defaults import (
     get_candidate_filter_defaults,
     get_barrier_factory_defaults,
+    get_tbm_optimizer_defaults,
 )
 
 
@@ -1092,19 +1093,20 @@ def evaluate_config(
 # ---------------------------
 # Grids
 # ---------------------------
-def base_param_template() -> Dict[str, Any]:
+def base_param_template(cfg_runtime: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    tbm_defaults = get_tbm_optimizer_defaults(cfg_runtime if cfg_runtime is not None else CFG)
     return {
-        "tp_abs_lo_pct": 0.005,
-        "tp_abs_hi_pct": 0.08,
-        "sl_abs_lo_pct": 0.005,
-        "sl_abs_hi_pct": 0.08,
+        "tp_abs_lo_pct": float(tbm_defaults["tp_abs_lo_pct"]),
+        "tp_abs_hi_pct": float(tbm_defaults["tp_abs_hi_pct"]),
+        "sl_abs_lo_pct": float(tbm_defaults["sl_abs_lo_pct"]),
+        "sl_abs_hi_pct": float(tbm_defaults["sl_abs_hi_pct"]),
         "tp_mult_lo": 0.5,
         "tp_mult_hi": 3.0,
         "sl_mult_lo": 0.3,
         "sl_mult_hi": 2.0,
         "mix_weight": 0.5,
-        "horizon_alpha": 0.5,
-        "horizon_base": 4,
+        "horizon_alpha": float(tbm_defaults["horizon_alpha"]),
+        "horizon_base": int(tbm_defaults["horizon_base"]),
         "quantile_basis": "composite",
         "quantile_lo": 0.2,
         "quantile_hi": 0.8,
@@ -1118,8 +1120,8 @@ def base_param_template() -> Dict[str, Any]:
         "sl_min_bps": 100,
         "tp_min_abs_pct": 0.005,
         "tp_min_bps": 50,
-        "fee_pct": 0.5,
-        "slip_buffer": 0.1,
+        "fee_pct": float(tbm_defaults["fee_pct"]),
+        "slip_buffer": float(tbm_defaults["slip_buffer"]),
         "min_net_rr": 0.7,
         "min_tp_hit_rate": 0.01,
         "max_timeout_rate": 0.95,
@@ -1131,13 +1133,13 @@ def base_param_template() -> Dict[str, Any]:
         "sl_activation_minutes": 0,
         "trail_sl_mult": 0.0,
         "tp_time_decay": "none",
-        "tp_abs_pct": 0.02,
-        "tp_base_pct": 0.02,
-        "base_atr_window": 168,
+        "tp_abs_pct": float(tbm_defaults["tp_abs_pct"]),
+        "tp_base_pct": float(tbm_defaults["tp_base_pct"]),
+        "base_atr_window": int(tbm_defaults["base_atr_window"]),
     }
 
 
-def stage1_grid() -> List[Dict[str, Any]]:
+def stage1_grid(cfg_runtime: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     cfgs = []
     for k_tp, sl_as_tp, regime_model, h_scaling in product(
         [0.8, 1.0, 1.25, 1.6, 2.0],
@@ -1145,7 +1147,7 @@ def stage1_grid() -> List[Dict[str, Any]]:
         ["none", "mix"],
         ["none", "sqrt"],
     ):
-        c = base_param_template()
+        c = base_param_template(cfg_runtime)
         c.update(
             {
                 "mode": "atr_mult_rr",
@@ -1277,7 +1279,7 @@ def run(args: argparse.Namespace) -> None:
     layer2_cache: Dict[str, Any] = LRUCache(max_size=40)
     eval_cache: Dict[str, Any] = {} # eval cache is small (bucket stack), no need for LRU
 
-    stage1_cfgs = stage1_grid()
+    stage1_cfgs = stage1_grid(runtime_cfg)
     barrier_defaults = get_barrier_factory_defaults(runtime_cfg)
     for _cfg in stage1_cfgs:
         _cfg.setdefault("k_tp", float(barrier_defaults["barrier_k_tp"]))

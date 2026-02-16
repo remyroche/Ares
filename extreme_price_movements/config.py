@@ -196,6 +196,27 @@ CFG = {
     # MFE/MAE quality: w_exc = 0.5 + 0.5 * clip(max(MFE/barrier, MAE/barrier) / tau, 0, 1)
     "meta_mfe_mae_tau": 1.0,
 
+    # Sample-weight optimization (base + meta)
+    "sample_weight_opt_enable": True,
+    "sample_weight_opt_min_samples": 400,
+    "sample_weight_opt_trials": 16,
+    "meta_sample_weight_opt_trials": 12,
+    "sample_weight_opt_n_splits": 5,
+    "sample_weight_opt_embargo_bars": 10,
+    "sample_weight_opt_min_n_eff_ratio": 0.30,
+    "sample_weight_opt_max_top1pct": 0.10,
+    "sample_weight_opt_model_family": "ExtraTrees",
+    # Component controls
+    "sample_weight_vol_direction": "downweight_high",
+    "sample_weight_vol_power": 0.5,
+    "sample_weight_vol_min_group_size": 20,
+    "sample_weight_recency_half_life_bars": 24 * 30,
+    "sample_weight_recency_min_era_neff_ratio": 0.2,
+    "sample_weight_use_distance_component": True,
+    "sample_weight_distance_form": "inverse",  # inverse | exp
+    "sample_weight_distance_k": 0.5,
+    "sample_weight_distance_min_dist": 0.5,
+
     # per-hour cross-sectional training selection
     "variance_filter_pct": 1.0, # Keep all non-constant assets
     "train_extreme_pct_hourly": 0.06,  # Keep top/bottom 6% as extreme candidates (reduced from 0.08)

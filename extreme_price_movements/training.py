@@ -2509,6 +2509,18 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                 )
                 lbl, ret = compute_triple_barrier_labels(panel, tp_df, sl_df, H, side=side)
                 geom_runs = [(lbl, ret, 1.0, 0.5, 1.0, 0.1, 0.1, 0.8, lbl.size)]
+            else:
+                # Diagnostics: print accepted geometry count + params to trace what survives gates.
+                geom_desc = []
+                for _, _, k_tp_v, sl_base_v, rr_w, tp_hit_v, sl_hit_v, to_rate_v, n_ev_v in geom_runs:
+                    geom_desc.append(
+                        f"(k_tp={k_tp_v:.2f}, sl={sl_base_v:.2f}, tp_hit={tp_hit_v:.3f}, "
+                        f"to={to_rate_v:.3f}, n={int(n_ev_v)}, w={rr_w:.3f})"
+                    )
+                tprint(
+                    f"Accepted geometries H={H} side={side}: {len(geom_runs)} | "
+                    + "; ".join(geom_desc)
+                )
 
             labels_stack = np.stack([x[0].values for x in geom_runs], axis=0)
             rets_stack = np.stack([x[1].values for x in geom_runs], axis=0)

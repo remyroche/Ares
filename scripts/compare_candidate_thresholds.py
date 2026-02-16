@@ -1013,58 +1013,6 @@ def select_candidates_cross_sectional_side_aware(
     )
 
 
-def select_candidates_atr_quintiles(
-    metric: pd.DataFrame,
-    atr_effective: pd.DataFrame,
-    pct: float,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Select tails within ATR quintiles using vectorized bucket assignment + NumPy selection."""
-    m_arr = metric.to_numpy(dtype=np.float32, copy=False)
-    a_arr = atr_effective.to_numpy(dtype=np.float32, copy=False)
-    n_rows, n_cols = m_arr.shape
-
-    # Vectorized ATR quintile assignment per row (0..4), NaN where invalid.
-    # Equivalent intent to qcut per row, with much lower overhead.
-    atr_rank_pct = atr_effective.rank(axis=1, method="first", pct=True).to_numpy(dtype=np.float32, copy=False)
-    bucket_arr = np.floor(atr_rank_pct * 5.0).astype(np.int8, copy=False)
-    bucket_arr = np.clip(bucket_arr, 0, 4)
-
-    valid = np.isfinite(m_arr) & np.isfinite(a_arr)
-    mask_arr = np.zeros((n_rows, n_cols), dtype=bool)
-    sign_arr = np.zeros((n_rows, n_cols), dtype=np.int8)
-
-    for i in range(n_rows):
-        valid_i = valid[i]
-        if int(valid_i.sum()) < 20:
-            continue
-        m_i = m_arr[i]
-        b_i = bucket_arr[i]
-        for b in range(5):
-            idx = np.flatnonzero(valid_i & (b_i == b))
-            n_bucket = int(len(idx))
-            if n_bucket < 4:
-                continue
-            k = max(1, int(n_bucket * pct))
-            vals = m_i[idx]
-
-            # bottom k
-            bot_local = np.argpartition(vals, k - 1)[:k]
-            bot_idx = idx[bot_local]
-            # top k
-            top_local = np.argpartition(vals, n_bucket - k)[n_bucket - k:]
-            top_idx = idx[top_local]
-
-            mask_arr[i, bot_idx] = True
-            sign_arr[i, bot_idx] = -1
-            mask_arr[i, top_idx] = True
-            sign_arr[i, top_idx] = 1
-
-    return (
-        pd.DataFrame(mask_arr, index=metric.index, columns=metric.columns, dtype=bool),
-        pd.DataFrame(sign_arr, index=metric.index, columns=metric.columns, dtype=np.int8),
-    )
-
-
 def apply_quality_filters_array(
     base_mask_arr: np.ndarray,
     filter_masks: Optional[dict] = None,
@@ -1290,8 +1238,10 @@ class DataContainer:
                 continue
 
             codes = row_idx[valid].astype(np.int32, copy=False)
-            xv = x[valid].astype(np.float64, copy=False)
-            yv = y[valid].astype(np.float64, copy=False)
+            # Avoid casting to float64 for intermediate vectors to save memory,
+            # trusting bincount to handle accumulation precision or float32 limits.
+            xv = x[valid]
+            yv = y[valid]
 
             cnt = np.bincount(codes, minlength=n_ts).astype(np.float64)
             sx = np.bincount(codes, weights=xv, minlength=n_ts)
@@ -1402,35 +1352,64 @@ def estimate_pooled_ic_std(
     min_group_size: int = 20,
 ) -> tuple[float, str, int, int, int]:
     """Estimate IC uncertainty from pooled chunks when per-timestamp IC is sparse."""
-    oof_values = np.asarray(oof_values)
-    y_values = np.asarray(y_values)
-    ts_values = np.asarray(ts_values)
-    if len(oof_values) < max(100, min_group_size * 3):
+    # Ensure inputs are handled efficiently, respecting float32 preference
+    valid = np.isfinite(oof_values) & np.isfinite(y_values)
+    if valid.sum() < max(100, min_group_size * 3):
         return 0.0, "insufficient", 0, len(oof_values), 0
 
-    df = pd.DataFrame({"oof": oof_values, "y": y_values, "ts": ts_values})
-    df = df[np.isfinite(df["oof"]) & np.isfinite(df["y"])].sort_values("ts")
-    if len(df) < max(100, min_group_size * 3):
-        return 0.0, "insufficient", 0, len(df), 0
+    oof = oof_values[valid]
+    y = y_values[valid]
+    ts = ts_values[valid]
 
-    timestamp_ics = []
-    for _, group in df.groupby("ts"):
-        if len(group) >= 2:
-            ts_ic = safe_pearson_corr(
-                group["oof"].to_numpy(dtype=np.float32, copy=False),
-                group["y"].to_numpy(dtype=np.float32, copy=False),
-            )
-            if np.isfinite(ts_ic):
-                timestamp_ics.append(ts_ic)
+    # Vectorized timestamp encoding
+    ts_codes, unique_ts = pd.factorize(ts, sort=True)
+    n_ts = len(unique_ts)
 
-    if len(timestamp_ics) >= 10:
-        return float(np.std(timestamp_ics)), "per_timestamp", len(timestamp_ics), len(df), 0
+    # Use bincount for vectorized per-timestamp correlation
+    counts = np.bincount(ts_codes, minlength=n_ts)
+    group_mask = counts >= 2
 
+    # Check if we have enough groups for reliable statistics
+    if group_mask.sum() >= 10:
+        # Fully vectorized correlation calculation
+        sum_x = np.bincount(ts_codes, weights=oof, minlength=n_ts)
+        sum_y = np.bincount(ts_codes, weights=y, minlength=n_ts)
+        # float32 squared can overflow/lose precision, but respecting 32-bit request
+        sum_xx = np.bincount(ts_codes, weights=oof * oof, minlength=n_ts)
+        sum_yy = np.bincount(ts_codes, weights=y * y, minlength=n_ts)
+        sum_xy = np.bincount(ts_codes, weights=oof * y, minlength=n_ts)
+
+        n = counts[group_mask]
+        sx = sum_x[group_mask]
+        sy = sum_y[group_mask]
+        sxx = sum_xx[group_mask]
+        syy = sum_yy[group_mask]
+        sxy = sum_xy[group_mask]
+
+        numer = n * sxy - sx * sy
+        denom_x = n * sxx - sx * sx
+        denom_y = n * syy - sy * sy
+        denom_sq = denom_x * denom_y
+
+        # Floating point safety
+        valid_denom = denom_sq > 1e-12
+        if valid_denom.sum() >= 10:
+            numer = numer[valid_denom]
+            denom_sq = denom_sq[valid_denom]
+            denom = np.sqrt(denom_sq)
+            corrs = numer / denom
+            return float(np.std(corrs)), "per_timestamp", len(corrs), len(oof), 0
+
+    # Fallback to pooled chunks if per-timestamp is sparse
+    # Create sorted dataframe only for fallback path
+    df = pd.DataFrame({"oof": oof, "y": y, "ts": ts}).sort_values("ts")
     n_groups = max(5, min(30, len(df) // max(min_group_size, 1)))
     if n_groups < 2:
-        return 0.0, "insufficient", len(timestamp_ics), len(df), 0
+        return 0.0, "insufficient", 0, len(df), 0
+
     group_ids = np.floor(np.linspace(0, n_groups, len(df), endpoint=False)).astype(np.int32)
     pooled_ics = []
+    # Small loop over chunks (max 30 iterations)
     for g in range(n_groups):
         chunk = df[group_ids == g]
         if len(chunk) >= min_group_size:
@@ -1440,7 +1419,14 @@ def estimate_pooled_ic_std(
             )
             if np.isfinite(chunk_ic):
                 pooled_ics.append(chunk_ic)
-    return (float(np.std(pooled_ics)) if len(pooled_ics) >= 2 else 0.0, "pooled_chunked", len(timestamp_ics), len(df), len(pooled_ics))
+
+    return (
+        float(np.std(pooled_ics)) if len(pooled_ics) >= 2 else 0.0,
+        "pooled_chunked",
+        0,
+        len(df),
+        len(pooled_ics),
+    )
 
 
 def compute_snr(pos_values: np.ndarray, neg_values: np.ndarray) -> float:

@@ -6,7 +6,7 @@ Compares Fixed, ATR-normalized, and Volume-Weighted candidate selection methods.
 Uses ExtraTrees with the same parameters as the target race in training.py.
 
 Usage:
-    python scripts/compare_candidate_thresholds.py \
+    python -m extreme_price_movements.offline_optimisers.compare_candidate_thresholds \
         --features data/features/20260214_190000 \
         --panel data/klines \
         --output reports/candidate_threshold_comparison.csv
@@ -33,7 +33,7 @@ from sklearn.linear_model import Ridge
 from sklearn.preprocessing import RobustScaler
 
 # Add project root to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 # Re-use from extreme_price_movements
 from extreme_price_movements.purged_cv import PurgedKFold
@@ -45,6 +45,16 @@ from extreme_price_movements.training import (
 )
 from extreme_price_movements.utils import tprint
 from extreme_price_movements import fast_funcs as ff
+from extreme_price_movements.training_defaults import (
+    get_candidate_filter_defaults,
+    get_barrier_factory_defaults,
+)
+from extreme_price_movements.offline_optimisers.params_store import (
+    REPORTS_DIR,
+    save_best_params_csv,
+    apply_offline_optimizer_best_params,
+    CANDIDATE_BEST_PARAMS_CSV,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -2202,6 +2212,8 @@ def run_comparison(
     logger.info("Candidate Selection Threshold Comparison")
     logger.info("=" * 60)
     tlog("Starting comparison run")
+
+    runtime_cfg = apply_offline_optimizer_best_params(deepcopy(CFG))
     
     # Load data - try pipeline format first, then fallback to generic loader
     logger.info(f"Loading features from: {feature_path}")
@@ -2330,13 +2342,16 @@ def run_comparison(
     configs = []
     
     # Default values for filters
-    default_pct = 0.06
-    default_range_pct = 0.07
-    default_vol_zscore = 1.6
-    default_sign_consistency = 0.70
-    default_tp_lo = 0.02
-    default_tp_hi = 0.06
-    default_sl_mult = 0.50
+    candidate_defaults = get_candidate_filter_defaults(runtime_cfg)
+    barrier_defaults = get_barrier_factory_defaults(runtime_cfg)
+
+    default_pct = float(candidate_defaults["train_extreme_pct_hourly"])
+    default_range_pct = float(candidate_defaults["train_min_range_pct"])
+    default_vol_zscore = float(candidate_defaults["train_min_vol_zscore"])
+    default_sign_consistency = float(candidate_defaults["min_feat_sign_consistency"])
+    default_tp_lo = float(barrier_defaults["barrier_tp_lo"])
+    default_tp_hi = float(barrier_defaults["barrier_tp_hi"])
+    default_sl_mult = float(barrier_defaults["barrier_sl_base_mult"])
     pct_grid = [0.06]  # Single pct for initial runs
     
     # Expansion variants
@@ -2615,24 +2630,24 @@ def run_comparison(
                 use_extratrees=use_extratrees,
             )
 
-            cfg_variant = deepcopy(CFG)
+            cfg_variant = deepcopy(runtime_cfg)
             cfg_variant["train_extreme_pct_hourly"] = pct
             
             # Unified barrier factory params (v3 - single source of truth)
             # These replace the old train_tp_lo, train_tp_hi, train_sl_mult params
-            cfg_variant["barrier_k_tp"] = float(cfg.get("barrier_k_tp", 1.0))
-            cfg_variant["barrier_sl_base_mult"] = float(cfg.get("barrier_sl_base_mult", 0.5))
-            cfg_variant["barrier_disp_floor"] = float(cfg.get("barrier_disp_floor", 0.1))
-            cfg_variant["barrier_z_max"] = float(cfg.get("barrier_z_max", 3.0))
-            cfg_variant["barrier_k_reg"] = float(cfg.get("barrier_k_reg", 0.3))
-            cfg_variant["barrier_m_lo"] = float(cfg.get("barrier_m_lo", 0.7))
-            cfg_variant["barrier_m_hi"] = float(cfg.get("barrier_m_hi", 1.5))
-            cfg_variant["barrier_sl_lo"] = float(cfg.get("barrier_sl_lo", 0.4))
-            cfg_variant["barrier_sl_hi"] = float(cfg.get("barrier_sl_hi", 0.7))
-            cfg_variant["barrier_z_gate"] = float(cfg.get("barrier_z_gate", 1.0))
-            cfg_variant["barrier_tp_lo"] = float(cfg.get("barrier_tp_lo", 0.02))
-            cfg_variant["barrier_tp_hi"] = float(cfg.get("barrier_tp_hi", 0.06))
-            cfg_variant["label_horizon_base"] = float(cfg.get("label_horizon_base", 4))
+            cfg_variant["barrier_k_tp"] = float(cfg.get("barrier_k_tp", barrier_defaults["barrier_k_tp"]))
+            cfg_variant["barrier_sl_base_mult"] = float(cfg.get("barrier_sl_base_mult", barrier_defaults["barrier_sl_base_mult"]))
+            cfg_variant["barrier_disp_floor"] = float(cfg.get("barrier_disp_floor", barrier_defaults["barrier_disp_floor"]))
+            cfg_variant["barrier_z_max"] = float(cfg.get("barrier_z_max", barrier_defaults["barrier_z_max"]))
+            cfg_variant["barrier_k_reg"] = float(cfg.get("barrier_k_reg", barrier_defaults["barrier_k_reg"]))
+            cfg_variant["barrier_m_lo"] = float(cfg.get("barrier_m_lo", barrier_defaults["barrier_m_lo"]))
+            cfg_variant["barrier_m_hi"] = float(cfg.get("barrier_m_hi", barrier_defaults["barrier_m_hi"]))
+            cfg_variant["barrier_sl_lo"] = float(cfg.get("barrier_sl_lo", barrier_defaults["barrier_sl_lo"]))
+            cfg_variant["barrier_sl_hi"] = float(cfg.get("barrier_sl_hi", barrier_defaults["barrier_sl_hi"]))
+            cfg_variant["barrier_z_gate"] = float(cfg.get("barrier_z_gate", barrier_defaults["barrier_z_gate"]))
+            cfg_variant["barrier_tp_lo"] = float(cfg.get("barrier_tp_lo", barrier_defaults["barrier_tp_lo"]))
+            cfg_variant["barrier_tp_hi"] = float(cfg.get("barrier_tp_hi", barrier_defaults["barrier_tp_hi"]))
+            cfg_variant["label_horizon_base"] = float(cfg.get("label_horizon_base", barrier_defaults["label_horizon_base"]))
 
             horizons_hours = list(cfg_variant.get("label_horizons_hours", [2, 4, 8]))
             if any(float(h) <= 2.0 for h in horizons_hours):
@@ -2887,6 +2902,20 @@ def run_comparison(
             )
     logger.info("=" * 60)
     logger.info(f"Results saved to: {output_path}")
+
+    try:
+        if len(sort_view) > 0:
+            best = sort_view.iloc[0]
+            best_params = {
+                "train_extreme_pct_hourly": float(best.get("pct", default_pct)),
+                "train_min_range_pct": float(best.get("min_range_pct", default_range_pct)) if pd.notna(best.get("min_range_pct")) else default_range_pct,
+                "train_min_vol_zscore": float(best.get("min_vol_zscore", default_vol_zscore)) if pd.notna(best.get("min_vol_zscore")) else default_vol_zscore,
+                "min_feat_sign_consistency": float(best.get("min_sign_consistency", default_sign_consistency)) if pd.notna(best.get("min_sign_consistency")) else default_sign_consistency,
+            }
+            save_best_params_csv(CANDIDATE_BEST_PARAMS_CSV, best_params, metadata={"source": "compare_candidate_thresholds"})
+            logger.info(f"Saved best params CSV: {CANDIDATE_BEST_PARAMS_CSV}")
+    except Exception as exc:
+        logger.warning(f"Failed to persist candidate best params CSV: {exc}")
     
     # Print summary table
     print("\n" + "=" * 140)
@@ -2942,7 +2971,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output",
-        default="reports/candidate_threshold_comparison.csv",
+        default=str(REPORTS_DIR / "candidate_threshold_comparison.csv"),
         help="Output CSV path (default: reports/candidate_threshold_comparison.csv)"
     )
     parser.add_argument(

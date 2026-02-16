@@ -90,14 +90,19 @@ class RunArtifacts:
     features: Dict[str, pd.DataFrame]
 
 
-def _subsample_symbols(symbols: Sequence[str], keep_fraction: float = 0.33) -> List[str]:
-    """Deterministic symbol subsample: alphabetical, every 3rd token, then 33%."""
+def _subsample_symbols(symbols: Sequence[str]) -> List[str]:
+    """Deterministic symbol subsample: alphabetical, keep every 3rd token."""
     syms_sorted = sorted(set(map(str, symbols)))
-    third = syms_sorted[::3] if syms_sorted else []
-    if not third:
-        return syms_sorted
-    n_keep = max(1, int(math.ceil(len(third) * keep_fraction)))
-    return third[:n_keep]
+    return syms_sorted[::3] if syms_sorted else []
+
+
+def _index_cache_key(index: pd.MultiIndex) -> str:
+    """Stable key for per-index cached stacked arrays."""
+    ts_vals = index.get_level_values(0).asi8.astype(np.int64, copy=False)
+    sym_vals = index.get_level_values(1).astype(str)
+    ts_hash = int(pd.util.hash_array(ts_vals).sum())
+    sym_hash = int(pd.util.hash_array(sym_vals.to_numpy(dtype=object, copy=False)).sum())
+    return f"{len(index)}::{ts_hash}::{sym_hash}"
 
 
 # ---------------------------
@@ -179,9 +184,11 @@ def load_features(features_path: Path) -> Dict[str, pd.DataFrame]:
 
 
 def align_artifacts(panel: Dict[str, pd.DataFrame], features: Dict[str, pd.DataFrame]) -> RunArtifacts:
-    idx = panel["close"].index
+    idx_full = panel["close"].index
+    cutoff = idx_full.max() - pd.DateOffset(years=2)
+    idx = idx_full[idx_full >= cutoff]
     cols_all = list(panel["close"].columns)
-    cols = pd.Index(_subsample_symbols(cols_all, keep_fraction=0.33))
+    cols = pd.Index(_subsample_symbols(cols_all))
     p_out: Dict[str, pd.DataFrame] = {}
     for k, df in panel.items():
         if df.index.tz is None:
@@ -477,6 +484,37 @@ def choose_feature_matrix(artifacts: RunArtifacts, max_features: int = 20) -> Tu
     return X, selected
 
 
+def get_stacked_feature_matrix(
+    artifacts: RunArtifacts,
+    eval_cache: Dict[str, Any],
+    max_features: int = 20,
+) -> Tuple[pd.DataFrame, List[str]]:
+    """Build (once) and cache stacked feature matrix in float32."""
+    key = f"feature_matrix::{max_features}"
+    if key not in eval_cache:
+        X_flat, feat_cols = choose_feature_matrix(artifacts, max_features=max_features)
+        eval_cache[key] = (X_flat, feat_cols)
+        gc.collect()
+    return eval_cache[key]
+
+
+def get_stacked_array(
+    eval_cache: Dict[str, Any],
+    cache_name: str,
+    frame: pd.DataFrame,
+    stacked_index: pd.MultiIndex,
+    *,
+    dtype: np.dtype,
+) -> np.ndarray:
+    """Cache DataFrame.stack().reindex(...) as dense numpy array."""
+    cache = eval_cache.setdefault(cache_name, {})
+    key = f"{_index_cache_key(stacked_index)}::{id(frame)}"
+    if key not in cache:
+        arr = frame.stack().reindex(stacked_index).to_numpy(dtype=dtype, copy=False)
+        cache[key] = np.asarray(arr, dtype=dtype)
+    return cache[key]
+
+
 def compute_weights(events: pd.DataFrame, cfg: Dict[str, Any]) -> np.ndarray:
     scheme = cfg.get("weighting_scheme", "none")
     w = np.ones(len(events), dtype=np.float32)
@@ -594,7 +632,6 @@ def evaluate_config(
     eval_cache: Dict[str, Any],
     detailed_slices: bool = False,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    c = artifacts.panel["close"]
     events_rows: List[pd.DataFrame] = []
 
     for h in horizons:
@@ -637,13 +674,13 @@ def evaluate_config(
     events = pd.concat(events_rows, ignore_index=True)
 
     # Bucket tagging.
-    bucket_map: Dict[str, np.ndarray] = {}
     stacked_index = pd.MultiIndex.from_arrays([events["ts"], events["symbol"]])
-    stack_key = f"bucket_stack::{len(events)}::{int(pd.util.hash_pandas_object(pd.Series(events['symbol'].values.astype(str))).sum())}"
+    stack_key = _index_cache_key(stacked_index)
     cache_bucket_stack = eval_cache.setdefault("bucket_stack", {})
     if stack_key in cache_bucket_stack:
         bucket_map = cache_bucket_stack[stack_key]
     else:
+        bucket_map: Dict[str, np.ndarray] = {}
         for bname, bmask in bucket_masks.items():
             bucket_map[bname] = bmask.stack().reindex(stacked_index).fillna(False).to_numpy(dtype=bool)
         cache_bucket_stack[stack_key] = bucket_map
@@ -655,25 +692,66 @@ def evaluate_config(
     events["bucket"] = bucket
 
     # Regime and quintile slices for Stage 2.
-    atr = artifacts.features["atr_pct"].stack().reindex(stacked_index)
-    q = atr.groupby(level=0).transform(lambda x: pd.qcut(x.rank(method="first"), 5, labels=False, duplicates="drop") if x.notna().sum() > 5 else pd.Series(2, index=x.index))
-    events["vol_quintile"] = q.fillna(2).astype(int).values + 1
-    roll = artifacts.features["atr_pct"].rolling(24 * 14, min_periods=24).median().stack().reindex(stacked_index)
-    ratio = (atr / (roll + EPS)).fillna(1.0)
+    atr = get_stacked_array(
+        eval_cache,
+        "atr_stack",
+        artifacts.features["atr_pct"],
+        stacked_index,
+        dtype=np.float32,
+    )
+    atr_roll = eval_cache.get("atr_roll_14d")
+    if atr_roll is None:
+        atr_roll = artifacts.features["atr_pct"].rolling(24 * 14, min_periods=24).median().astype(np.float32)
+        eval_cache["atr_roll_14d"] = atr_roll
+        gc.collect()
+    roll = get_stacked_array(
+        eval_cache,
+        "atr_roll_stack",
+        atr_roll,
+        stacked_index,
+        dtype=np.float32,
+    )
+    atr = np.nan_to_num(atr, nan=0.0, copy=False)
+    ratio = np.divide(atr, roll + EPS, out=np.ones_like(atr, dtype=np.float32), where=np.isfinite(roll))
+
+    atr_s = pd.Series(atr, index=stacked_index, dtype=np.float32)
+    ts_counts = atr_s.groupby(level=0).transform("count").to_numpy(dtype=np.int32, copy=False)
+    rank_pct = atr_s.groupby(level=0).rank(method="first", pct=True).to_numpy(dtype=np.float32, copy=False)
+    q = np.full(len(events), 2, dtype=np.int16)
+    valid_q = (ts_counts > 5) & np.isfinite(rank_pct)
+    q[valid_q] = np.minimum((rank_pct[valid_q] * 5.0).astype(np.int16), 4)
+    events["vol_quintile"] = q + 1
+
     regime = np.where(ratio < 0.85, "low_vol", np.where(ratio > 1.15, "high_vol", "medium_vol"))
     events["regime"] = regime
 
     # Quantile filtering.
-    basis = make_quantile_basis(artifacts, cfg.get("quantile_basis", "composite")).stack().reindex(stacked_index)
+    quant_basis = cfg.get("quantile_basis", "composite")
+    basis_frame_key = f"quant_basis_frame::{quant_basis}"
+    if basis_frame_key not in eval_cache:
+        eval_cache[basis_frame_key] = make_quantile_basis(artifacts, quant_basis).astype(np.float32)
+        gc.collect()
+    basis = get_stacked_array(
+        eval_cache,
+        "quant_basis_stack",
+        eval_cache[basis_frame_key],
+        stacked_index,
+        dtype=np.float32,
+    )
     keep_mask = np.ones(len(events), dtype=bool)
     full_bucket_counts = events.groupby("bucket").size().to_dict()
     if cfg.get("use_quantile_filter", False):
         lo = float(cfg.get("quantile_lo", 0.2))
         hi = float(cfg.get("quantile_hi", 0.8))
-        by_ts = basis.groupby(level=0)
-        lo_t = by_ts.transform(lambda x: x.quantile(lo))
-        hi_t = by_ts.transform(lambda x: x.quantile(hi))
-        keep_mask = (basis.values <= lo_t.values) | (basis.values >= hi_t.values)
+        basis_s = pd.Series(basis, index=stacked_index, dtype=np.float32)
+        by_ts = basis_s.groupby(level=0)
+        lo_map = by_ts.quantile(lo)
+        hi_map = by_ts.quantile(hi)
+        ts_idx = stacked_index.get_level_values(0)
+        lo_t = ts_idx.map(lo_map).to_numpy(dtype=np.float32, copy=False)
+        hi_t = ts_idx.map(hi_map).to_numpy(dtype=np.float32, copy=False)
+        keep_mask = (basis <= lo_t) | (basis >= hi_t)
+        keep_mask &= np.isfinite(basis)
         min_keep = float(cfg.get("min_keep_fraction", 0.5))
         cur = keep_mask.mean()
         if cur < min_keep:
@@ -713,11 +791,7 @@ def evaluate_config(
     coverage = ess / max(ess_full, 1.0)
 
     # Feature matrix + OOF scoring.
-    if "feature_matrix" in eval_cache:
-        X_flat, feat_cols = eval_cache["feature_matrix"]
-    else:
-        X_flat, feat_cols = choose_feature_matrix(artifacts)
-        eval_cache["feature_matrix"] = (X_flat, feat_cols)
+    X_flat, feat_cols = get_stacked_feature_matrix(artifacts, eval_cache)
     y_signed = events["label"].astype(np.float32).values
     y_bin = (events["label"].values == 1).astype(np.float32)
     payoff = events["payoff"].astype(np.float32).values
@@ -838,6 +912,9 @@ def evaluate_config(
     if detailed_slices:
         detail["regime_metrics"] = per_slice_metrics(events, pred, "regime")
         detail["vol_quintile_metrics"] = per_slice_metrics(events, pred, "vol_quintile")
+
+    del events, pred, y_signed, y_bin, payoff, weights
+    gc.collect()
 
     return summary, detail
 

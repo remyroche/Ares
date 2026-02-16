@@ -23,6 +23,8 @@ import gc
 import hashlib
 import json
 import math
+import resource
+import time
 from dataclasses import dataclass
 from itertools import product
 from pathlib import Path
@@ -54,9 +56,28 @@ from extreme_price_movements.training_defaults import (
     get_barrier_factory_defaults,
     get_tbm_optimizer_defaults,
 )
+from extreme_price_movements.utils import tprint
 
 
 EPS = 1e-12
+
+
+def _memory_snapshot_mb() -> float:
+    """Process resident memory estimate in MB (high-water mark on Linux)."""
+    rss_kb = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    return rss_kb / 1024.0
+
+
+def _cache_pressure_summary(
+    layer1_cache: Dict[str, Any],
+    layer2_cache: Dict[str, Any],
+    eval_cache: Dict[str, Any],
+) -> str:
+    bucket_stack = eval_cache.get("bucket_stack", {})
+    return (
+        f"cache_sizes(layer1={len(layer1_cache)}, layer2={len(layer2_cache)}, "
+        f"eval_keys={len(eval_cache)}, bucket_stack_keys={len(bucket_stack)})"
+    )
 
 
 def _safe_float(v: Any, default: float = 0.0) -> float:
@@ -271,6 +292,7 @@ def _read_symbol_parquet_dir(folder: Path) -> Dict[str, pd.DataFrame]:
 
 
 def load_panel(panel_path: Path) -> Dict[str, pd.DataFrame]:
+    tprint(f"Loading panel data from: {panel_path}")
     if panel_path.is_dir():
         dfs = _read_symbol_parquet_dir(panel_path)
         has_ohlcv = {"open", "high", "low", "close", "volume"}.issubset(
@@ -302,6 +324,7 @@ def load_panel(panel_path: Path) -> Dict[str, pd.DataFrame]:
 
 
 def load_features(features_path: Path) -> Dict[str, pd.DataFrame]:
+    tprint(f"Loading features from: {features_path}")
     if features_path.is_file():
         raise ValueError("--features expects a directory of symbol=*.parquet feature files")
     dfs = _read_symbol_parquet_dir(features_path)
@@ -319,6 +342,10 @@ def align_artifacts(
     features: Dict[str, pd.DataFrame],
     lookback_years: int = 2,
 ) -> RunArtifacts:
+    tprint(
+        f"Aligning artifacts with lookback_years={lookback_years} "
+        f"(panel_symbols={len(panel.get('close', pd.DataFrame()).columns)})"
+    )
     idx_full = panel["close"].index
     cutoff = idx_full.max() - pd.DateOffset(years=int(lookback_years))
     idx = idx_full[idx_full >= cutoff]
@@ -355,7 +382,12 @@ def align_artifacts(
         atr = tr.rolling(24, min_periods=4).mean()
         f_out["atr_pct"] = (atr / close).clip(lower=1e-6).fillna(0.01).astype(np.float32)
 
-    return RunArtifacts(panel=p_out, features=f_out)
+    out = RunArtifacts(panel=p_out, features=f_out)
+    tprint(
+        f"Aligned artifacts ready: bars={len(idx)}, symbols={len(cols)}, "
+        f"feature_frames={len(f_out)}, mem_peak_mb={_memory_snapshot_mb():.1f}"
+    )
+    return out
 
 
 # ---------------------------
@@ -790,6 +822,13 @@ def evaluate_config(
     detailed_slices: bool = False,
     collect_weights: bool = False,
 ) -> Tuple[Dict[str, Any], Dict[str, Any], Optional[pd.DataFrame]]:
+    cfg_id = config_id(cfg)
+    t0 = time.perf_counter()
+    tprint(
+        f"[eval:start] {cfg_id} mode={cfg.get('mode', 'unknown')} "
+        f"horizons={list(horizons)} mem_peak_mb={_memory_snapshot_mb():.1f} "
+        f"{_cache_pressure_summary(layer1_cache, layer2_cache, eval_cache)}"
+    )
     events_rows: List[pd.DataFrame] = []
 
     for h in horizons:
@@ -801,6 +840,9 @@ def evaluate_config(
             if key1 not in layer1_cache:
                 tp_df, sl_df, geom_stats = build_barriers(artifacts, cfg, h, side)
                 layer1_cache[key1] = (tp_df, sl_df, geom_stats)
+                tprint(f"[eval:{cfg_id}] barrier_cache miss h={h} side={side}")
+            else:
+                tprint(f"[eval:{cfg_id}] barrier_cache hit h={h} side={side}")
             tp_df, sl_df, geom_stats = layer1_cache[key1]
 
             # Key2: Labels depends fully on barriers (key1) + horizon/side (in key1).
@@ -812,6 +854,9 @@ def evaluate_config(
             if key2 not in layer2_cache:
                 lbl, ret = compute_triple_barrier_labels(artifacts.panel, tp_df, sl_df, h, side=side)
                 layer2_cache[key2] = (lbl, ret)
+                tprint(f"[eval:{cfg_id}] label_cache miss h={h} side={side}")
+            else:
+                tprint(f"[eval:{cfg_id}] label_cache hit h={h} side={side}")
             lbl, ret = layer2_cache[key2]
 
             df = pd.DataFrame(
@@ -830,6 +875,10 @@ def evaluate_config(
             events_rows.append(df)
 
     events = pd.concat(events_rows, ignore_index=True)
+    tprint(
+        f"[eval:{cfg_id}] raw_events={len(events):,} "
+        f"mem_peak_mb={_memory_snapshot_mb():.1f}"
+    )
 
     # Bucket tagging.
     stacked_index = pd.MultiIndex.from_arrays([events["ts"], events["symbol"]])
@@ -917,6 +966,10 @@ def evaluate_config(
 
     full_n = len(events)
     events = events.loc[keep_mask].copy().reset_index(drop=True)
+    tprint(
+        f"[eval:{cfg_id}] quantile_filter_kept={len(events):,}/{full_n:,} "
+        f"({(len(events)/max(full_n,1))*100:.1f}%)"
+    )
 
     # Filter constraints.
     fee = float(cfg.get("fee_pct", 0.5)) / 100.0
@@ -930,7 +983,11 @@ def evaluate_config(
     max_timeout = float(cfg.get("max_timeout_rate", 0.95))
     min_raw = int(cfg.get("min_raw_events", 50))
 
+    pre_rr_n = len(events)
     events = events[events["net_rr"] >= min_rr].reset_index(drop=True)
+    tprint(
+        f"[eval:{cfg_id}] rr_filter_kept={len(events):,}/{pre_rr_n:,} min_net_rr={min_rr:.3f}"
+    )
 
     pass_cells = 0
     total_cells = 0
@@ -955,6 +1012,10 @@ def evaluate_config(
     payoff = events["payoff"].astype(np.float32).values
 
     pred = train_and_predict_per_bucket(events, X_flat, weights, n_folds=5)
+    tprint(
+        f"[eval:{cfg_id}] model_scored n={len(pred):,} ic_payoff={_safe_spearman(pred, payoff):.4f} "
+        f"ic_label={_safe_spearman(pred, y_signed):.4f}"
+    )
 
     ic_label = _safe_spearman(pred, y_signed)
     ic_payoff = _safe_spearman(pred, payoff)
@@ -1025,8 +1086,6 @@ def evaluate_config(
     if worst_bucket_ic < -0.1:
         stage2_score -= 0.5
 
-    cfg_id = config_id(cfg)
-
     summary = {
         "config_id": cfg_id,
         "mode": cfg.get("mode", "unknown"),
@@ -1084,6 +1143,13 @@ def evaluate_config(
         weights_df["config_id"] = cfg_id
         weights_df["mode"] = str(cfg.get("mode", "unknown"))
 
+    tprint(
+        f"[eval:done] {cfg_id} stage1={stage1_score:.4f} stage2={stage2_score:.4f} "
+        f"coverage={coverage:.3f} ess={ess:.1f} tp={summary['tp_hit_rate']:.3f} "
+        f"timeout={summary['timeout_rate']:.3f} hard_gate={hard_gate} "
+        f"elapsed_s={time.perf_counter()-t0:.2f} mem_peak_mb={_memory_snapshot_mb():.1f} "
+        f"{_cache_pressure_summary(layer1_cache, layer2_cache, eval_cache)}"
+    )
     del events, pred, y_signed, y_bin, payoff, weights
     gc.collect()
 
@@ -1264,6 +1330,8 @@ def promote_stage1(stage1_results: pd.DataFrame, top_k: int = 10) -> List[str]:
 # Main
 # ---------------------------
 def run(args: argparse.Namespace) -> None:
+    t0 = time.perf_counter()
+    tprint("Starting TBM parameter comparison run")
     runtime_cfg = apply_offline_optimizer_best_params(dict(CFG))
     features = load_features(Path(args.features))
     panel = load_panel(Path(args.panel)) if args.panel else None
@@ -1273,6 +1341,10 @@ def run(args: argparse.Namespace) -> None:
 
     artifacts = align_artifacts(panel, features, lookback_years=args.lookback_years)
     bucket_masks = build_bucket_masks(artifacts, cfg_runtime=runtime_cfg)
+    tprint(
+        f"Artifacts + buckets ready: bars={len(artifacts.panel['close'])}, symbols={len(artifacts.panel['close'].columns)} "
+        f"bucket_masks={list(bucket_masks.keys())} mem_peak_mb={_memory_snapshot_mb():.1f}"
+    )
 
     # Use LRUCache to prevent OOM on large grids
     layer1_cache: Dict[str, Any] = LRUCache(max_size=40)
@@ -1289,6 +1361,10 @@ def run(args: argparse.Namespace) -> None:
         _cfg.setdefault("horizon_base", float(barrier_defaults["label_horizon_base"]))
     if args.quick:
         stage1_cfgs = stage1_cfgs[: max(1, args.max_configs)]
+    tprint(
+        f"Stage1 config count={len(stage1_cfgs)} quick={args.quick} horizons={args.horizons} "
+        f"{_cache_pressure_summary(layer1_cache, layer2_cache, eval_cache)}"
+    )
 
     stage1_rows = []
     details: Dict[str, Any] = {}
@@ -1312,7 +1388,14 @@ def run(args: argparse.Namespace) -> None:
         if weights_df is not None and not weights_df.empty:
             collected_weights.append(weights_df)
         if i % 5 == 0:
-            print(f"[stage1] {i}/{len(stage1_cfgs)} done")
+            top = max(stage1_rows, key=lambda x: x.get("stage1_score", -1e9)) if stage1_rows else {}
+            tprint(
+                f"[stage1] progress={i}/{len(stage1_cfgs)} best_cfg={top.get('config_id', 'n/a')} "
+                f"best_stage1={top.get('stage1_score', float('nan')):.4f} "
+                f"best_ic_payoff={top.get('ic_payoff', float('nan')):.4f} "
+                f"mem_peak_mb={_memory_snapshot_mb():.1f} "
+                f"{_cache_pressure_summary(layer1_cache, layer2_cache, eval_cache)}"
+            )
             gc.collect()
 
     stage1_df = pd.DataFrame(stage1_rows)
@@ -1325,9 +1408,11 @@ def run(args: argparse.Namespace) -> None:
 
     stage2_df = pd.DataFrame()
     if args.stage2 and winners:
+        tprint(f"Stage2 enabled with {len(winners)} winners from Stage1")
         id_to_cfg = {config_id(c): c for c in stage1_cfgs}
         base_cfgs = [id_to_cfg[w] for w in winners if w in id_to_cfg]
         stage2_cfgs = stage2_grids_from_stage1(base_cfgs, max_per_substage=args.max_stage2_configs)
+        tprint(f"Stage2 config count={len(stage2_cfgs)} (max_per_substage={args.max_stage2_configs})")
 
         rows = []
         for _cfg in stage2_cfgs:
@@ -1353,13 +1438,24 @@ def run(args: argparse.Namespace) -> None:
             if weights_df is not None and not weights_df.empty:
                 collected_weights.append(weights_df)
             if i % 5 == 0:
-                print(f"[stage2] {i}/{len(stage2_cfgs)} done")
+                top2 = max(rows, key=lambda x: x.get("stage2_score", -1e9)) if rows else {}
+                tprint(
+                    f"[stage2] progress={i}/{len(stage2_cfgs)} best_cfg={top2.get('config_id', 'n/a')} "
+                    f"best_stage2={top2.get('stage2_score', float('nan')):.4f} "
+                    f"best_sortino={top2.get('sortino', float('nan')):.4f} "
+                    f"mem_peak_mb={_memory_snapshot_mb():.1f} "
+                    f"{_cache_pressure_summary(layer1_cache, layer2_cache, eval_cache)}"
+                )
                 gc.collect()
 
         stage2_df = pd.DataFrame(rows)
 
     out_df = stage1_df if stage2_df.empty else pd.concat([stage1_df, stage2_df], ignore_index=True)
     out_df = out_df.sort_values(["stage2_score", "stage1_score", "ic_payoff"], ascending=False)
+    tprint(
+        f"Scoring complete: total_rows={len(out_df)} stage1_rows={len(stage1_df)} stage2_rows={len(stage2_df)} "
+        f"mem_peak_mb={_memory_snapshot_mb():.1f}"
+    )
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1373,24 +1469,37 @@ def run(args: argparse.Namespace) -> None:
     learnability_df = _build_tbm_learnability_report_rows(out_df, details)
     if not learnability_df.empty:
         learnability_df.to_csv(learnability_path, index=False)
-        print(f"Saved learnability CSV: {learnability_path}")
+        tprint(f"Saved learnability CSV: {learnability_path}")
 
     if collected_weights:
         weights_path = Path(args.weights_output) if args.weights_output else output_path.with_suffix(".weights.parquet")
         weights_path.parent.mkdir(parents=True, exist_ok=True)
         all_weights = pd.concat(collected_weights, ignore_index=True)
         all_weights.to_parquet(weights_path, index=False)
-        print(f"Saved sample weights: {weights_path}")
+        tprint(f"Saved sample weights: {weights_path} (rows={len(all_weights):,})")
 
     if not out_df.empty:
         best = out_df.iloc[0].to_dict()
         best_params = details.get(best.get("config_id"), {}).get("config", {})
         if isinstance(best_params, dict):
             save_best_params_csv(TBM_BEST_PARAMS_CSV, best_params, metadata={"source": "compare_tbm_parameters", "config_id": best.get("config_id")})
-            print(f"Saved best params CSV: {TBM_BEST_PARAMS_CSV}")
+            tprint(f"Saved best params CSV: {TBM_BEST_PARAMS_CSV}")
 
-    print(f"Saved CSV: {output_path}")
-    print(f"Saved JSON: {detail_path}")
+    tprint(f"Saved CSV: {output_path}")
+    tprint(f"Saved JSON: {detail_path}")
+    if not out_df.empty:
+        top = out_df.iloc[0]
+        tprint(
+            f"Best config summary: config_id={top.get('config_id', 'n/a')} "
+            f"stage2={float(top.get('stage2_score', 0.0)):.4f} "
+            f"stage1={float(top.get('stage1_score', 0.0)):.4f} "
+            f"ic_payoff={float(top.get('ic_payoff', 0.0)):.4f} "
+            f"sortino={float(top.get('sortino', 0.0)):.4f}"
+        )
+    tprint(
+        f"Run completed in {time.perf_counter()-t0:.2f}s with mem_peak_mb={_memory_snapshot_mb():.1f} "
+        f"{_cache_pressure_summary(layer1_cache, layer2_cache, eval_cache)}"
+    )
 
 
 

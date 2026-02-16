@@ -116,11 +116,12 @@ def cast_features_dtype(feats: dict, float_dtype: np.dtype) -> dict:
     return feats
 
 
-def select_symbol_subset(all_symbols: list[str], step: int = 3, limit: int = 200) -> list[str]:
-    """Select every `step`-th symbol in alphabetical order, capped by `limit`."""
+def select_symbol_subset(all_symbols: list[str], step: int = 3, limit: int = 0) -> list[str]:
+    """Select every `step`-th symbol in alphabetical order, optionally capped by `limit`."""
     syms_sorted = sorted({str(s) for s in all_symbols})
     selected = syms_sorted[::max(1, int(step))]
-    return selected[: int(limit)]
+    lim = int(limit)
+    return selected if lim <= 0 else selected[:lim]
 
 
 def subset_feature_universe(feats: dict, symbols: list[str]) -> dict:
@@ -578,6 +579,8 @@ def evaluate_training_slices(
     sample_frac: float = 1.0,
     geometry_cache: Optional[dict] = None,
     geometry_cache_key: Optional[tuple] = None,
+    sample_weight_sink: Optional[list[dict]] = None,
+    config_id: Optional[str] = None,
 ) -> list:
     """Evaluate MR/TF x long/short slices reusing training labeling & sampling logic."""
     # Defensive: training barrier/grid code expects atr_pct as DataFrame aligned to panel.
@@ -809,6 +812,26 @@ def evaluate_training_slices(
                         "weighted_ret_bps": weighted_ret * 1e4,
                     }
                 )
+                if sample_weight_sink is not None:
+                    if isinstance(meta_idx, pd.MultiIndex):
+                        ts_vals = meta_idx.get_level_values(0)
+                        sym_vals = meta_idx.get_level_values(1) if meta_idx.nlevels > 1 else pd.Index([None] * len(meta_idx))
+                    else:
+                        ts_vals = pd.Index([None] * len(w))
+                        sym_vals = pd.Index([None] * len(w))
+                    w_clipped = np.asarray(np.clip(w, 1e-8, None), dtype=np.float32)
+                    for i in range(len(w_clipped)):
+                        sample_weight_sink.append(
+                            {
+                                "config_id": config_id or "unknown",
+                                "side": side,
+                                "kind": kind,
+                                "horizon": int(h),
+                                "timestamp": ts_vals[i] if i < len(ts_vals) else None,
+                                "symbol": sym_vals[i] if i < len(sym_vals) else None,
+                                "sample_weight": float(w_clipped[i]),
+                            }
+                        )
                 tlog(f"Slice done: side={side}, kind={kind}, H={h}, n={len(y_ret)}")
 
     if cache is not None and cache_key is not None:
@@ -2156,6 +2179,9 @@ def run_comparison(
     stage3: bool = False,
     winners: list = None,
     use_extratrees: bool = False,  # Default: Ridge only for Stage 1 & 2
+    symbol_step: int = 3,
+    symbol_limit: int = 0,
+    save_sample_weights: bool = False,
 ):
     """
     Main comparison runner.
@@ -2225,17 +2251,26 @@ def run_comparison(
         logger.error("Required feature 'ret6h' (or fallback 'ret24h') not found in data")
         return
 
-    # Upstream symbol reduction: every 3rd symbol in alphabetical order, capped to 200.
+    # Symbol universe selection defaults to every 3rd symbol in alphabetical order.
     base_ret_df = feats.get("ret6h") if isinstance(feats.get("ret6h"), pd.DataFrame) else feats.get("ret24h")
     if not isinstance(base_ret_df, pd.DataFrame):
         raise ValueError("ret6h/ret24h must be DataFrame for symbol-universe selection")
-    selected_symbols = select_symbol_subset(list(base_ret_df.columns), step=3, limit=200)
+    all_symbols = sorted({str(c) for c in base_ret_df.columns})
+    selected_symbols = select_symbol_subset(
+        list(base_ret_df.columns),
+        step=max(1, int(symbol_step)),
+        limit=(int(symbol_limit) if int(symbol_limit) > 0 else len(all_symbols)),
+    )
     if not selected_symbols:
         raise ValueError("Symbol subset selection produced empty universe")
-    tlog(
-        "Symbol universe reduction applied: "
-        f"source={len(base_ret_df.columns)} -> selected={len(selected_symbols)} (every 3rd, cap=200)"
-    )
+    if len(selected_symbols) == len(all_symbols):
+        tlog(f"Symbol universe selection: using full set ({len(selected_symbols)} symbols)")
+    else:
+        tlog(
+            "Symbol universe reduction applied: "
+            f"source={len(base_ret_df.columns)} -> selected={len(selected_symbols)} "
+            f"(step={max(1, int(symbol_step))}, limit={int(symbol_limit) if int(symbol_limit) > 0 else 'all'})"
+        )
     feats = subset_feature_universe(feats, selected_symbols)
 
     # Log available features
@@ -2463,6 +2498,7 @@ def run_comparison(
     tlog(f"Prepared {len(configs)} configs for execution")
     results = []
     slice_results = []
+    sample_weight_rows: list[dict] = []
     
     for cfg in configs:
         config_id = cfg["config_id"]
@@ -2666,6 +2702,8 @@ def run_comparison(
                         sample_frac=SAMPLE_FRAC,
                         geometry_cache=training_slice_geometry_cache,
                         geometry_cache_key=geometry_cache_key,
+                        sample_weight_sink=sample_weight_rows if save_sample_weights else None,
+                        config_id=config_id,
                     )
             for r in training_slice_rows:
                 slice_results.append(
@@ -2836,6 +2874,17 @@ def run_comparison(
         slice_output = output_path.replace(".csv", "_slices.csv")
         pd.DataFrame(slice_results).to_csv(slice_output, index=False)
         logger.info(f"Slice-level results saved to: {slice_output}")
+    if save_sample_weights:
+        sw_output = output_path.replace(".csv", "_sample_weights.csv")
+        if sample_weight_rows:
+            sw_df = pd.DataFrame(sample_weight_rows)
+            sw_df.to_csv(sw_output, index=False)
+            logger.info(f"Sample weights saved to: {sw_output}")
+        else:
+            logger.warning(
+                "Sample-weight export requested but no slice weights were generated; "
+                "downstream should use existing/default sample-weight values as fallback"
+            )
     logger.info("=" * 60)
     logger.info(f"Results saved to: {output_path}")
     
@@ -2924,7 +2973,24 @@ if __name__ == "__main__":
         default=[],
         help="List of winning config_ids from stage 2 to test in stage 3 (auto-selected if not provided)"
     )
-    
+    parser.add_argument(
+        "--symbol-step",
+        type=int,
+        default=3,
+        help="Select every N-th symbol in sorted universe (default: 3)"
+    )
+    parser.add_argument(
+        "--symbol-limit",
+        type=int,
+        default=0,
+        help="Max number of symbols to keep after step sampling (default: 0 = no cap)"
+    )
+    parser.add_argument(
+        "--save-sample-weights",
+        action="store_true",
+        help="Export training-slice sample weights to <output>_sample_weights.csv for downstream base/meta models"
+    )
+
     args = parser.parse_args()
     
     if args.verbose:
@@ -2943,6 +3009,9 @@ if __name__ == "__main__":
         max_features=args.max_features,
         stage3=args.stage3,
         winners=args.winners,
+        symbol_step=args.symbol_step,
+        symbol_limit=args.symbol_limit,
+        save_sample_weights=args.save_sample_weights,
     )
     
     # =============================================================================
@@ -2981,4 +3050,7 @@ if __name__ == "__main__":
                 stage3=True,
                 winners=top_winners,
                 use_extratrees=True,  # Use ExtraTrees for Stage 3
+                symbol_step=args.symbol_step,
+                symbol_limit=args.symbol_limit,
+                save_sample_weights=args.save_sample_weights,
             )

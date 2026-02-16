@@ -21,7 +21,7 @@ except Exception:  # pragma: no cover - optional dependency
 from ..purged_cv import IntervalPurgedKFold
 from ..utils import tprint
 from ..config import CFG, TEST_FEATURE_KEYS
-from ..training_defaults import get_sample_weight_opt_defaults
+from ..training_defaults import get_sample_weight_opt_defaults, get_sample_weight_eval_model_defaults
 
 
 EPS = 1e-8
@@ -257,34 +257,17 @@ def log_weight_statistics(weights: np.ndarray, era_indices: np.ndarray, name: st
     return stats
 
 
-def _make_model(model_family: str, random_state: int):
+def _make_model(model_family: str, random_state: int, cfg_runtime: Optional[Dict[str, Any]] = None):
     fam = model_family.lower()
-    if fam == "extratrees":
-        return ExtraTreesRegressor(
-            n_estimators=50,
-            max_depth=6,
-            min_samples_leaf=50,
-            max_features="sqrt",
-            n_jobs=-1,
-            random_state=random_state,
-        )
+    model_defaults = get_sample_weight_eval_model_defaults(cfg_runtime if cfg_runtime is not None else CFG)
+    et_defaults = dict(model_defaults.get("extratrees", {}))
+    rf_defaults = dict(model_defaults.get("randomforest", {}))
+
     if fam == "randomforest":
-        return RandomForestRegressor(
-            n_estimators=80,
-            max_depth=6,
-            min_samples_leaf=50,
-            max_features="sqrt",
-            n_jobs=-1,
-            random_state=random_state,
-        )
-    return ExtraTreesRegressor(
-        n_estimators=50,
-        max_depth=6,
-        min_samples_leaf=50,
-        max_features="sqrt",
-        n_jobs=-1,
-        random_state=random_state,
-    )
+        return RandomForestRegressor(**rf_defaults, random_state=random_state)
+
+    # ExtraTrees is the canonical fallback to match training-side optimizer defaults.
+    return ExtraTreesRegressor(**et_defaults, random_state=random_state)
 
 
 def _safe_ic(y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -303,6 +286,7 @@ def _run_cv_ic(
     n_splits: int,
     embargo_bars: int,
     seed: int,
+    cfg_runtime: Optional[Dict[str, Any]] = None,
 ) -> np.ndarray:
     splitter = IntervalPurgedKFold(n_splits=n_splits, embargo_bars=embargo_bars)
     fold_ics = []
@@ -316,7 +300,7 @@ def _run_cv_ic(
     for tr, va in splitter.split(Xs, label_intervals=label_intervals):
         if len(tr) < 64 or len(va) < 32:
             continue
-        model = _make_model(model_family, random_state=seed)
+        model = _make_model(model_family, random_state=seed, cfg_runtime=cfg_runtime)
         model.fit(Xs[tr], yv[tr], sample_weight=wv[tr])
         pred = model.predict(Xs[va])
         fold_ics.append(_safe_ic(yv[va], pred))
@@ -335,6 +319,7 @@ def constrained_objective(
     seeds: Iterable[int] = (42, 123),
     min_n_eff_ratio: float = 0.30,
     max_top1pct: float = 0.10,
+    cfg_runtime: Optional[Dict[str, Any]] = None,
 ) -> float:
     n_eff = compute_n_eff(w)
     min_n_eff = min_n_eff_ratio * len(w)
@@ -348,7 +333,7 @@ def constrained_objective(
     for seed in seeds:
         fold_ics = _run_cv_ic(
             X, y_ret, w, label_intervals, model_family=model_family,
-            n_splits=n_splits, embargo_bars=embargo_bars, seed=int(seed),
+            n_splits=n_splits, embargo_bars=embargo_bars, seed=int(seed), cfg_runtime=cfg_runtime,
         )
         if fold_ics.size:
             fold_scores.append(float(np.mean(fold_ics)))
@@ -380,6 +365,7 @@ def optimize_component_weights(
     max_top1pct: float = 0.10,
     random_state: int = 42,
     feature_names: Optional[Iterable[str]] = None,
+    cfg_runtime: Optional[Dict[str, Any]] = None,
 ) -> WeightOptimizationResult:
     if not components:
         ones = np.ones(len(y_ret), dtype=float)
@@ -397,6 +383,7 @@ def optimize_component_weights(
             embargo_bars=embargo_bars,
             min_n_eff_ratio=min_n_eff_ratio,
             max_top1pct=max_top1pct,
+            cfg_runtime=cfg_runtime,
         )
         return WeightOptimizationResult(w, alphas, val, {"fallback": "optuna_unavailable_or_disabled"})
 
@@ -413,6 +400,7 @@ def optimize_component_weights(
             embargo_bars=embargo_bars,
             min_n_eff_ratio=min_n_eff_ratio,
             max_top1pct=max_top1pct,
+            cfg_runtime=cfg_runtime,
         )
         return float(score)
 
@@ -439,11 +427,13 @@ def run_ablation(
     production_model: str = "ExtraTrees",
     n_splits: int = 5,
     embargo_bars: int = 10,
+    cfg_runtime: Optional[Dict[str, Any]] = None,
 ) -> list[tuple[str, float]]:
     results = []
     base_score = constrained_objective(
         baseline_weights, X, y_ret, label_intervals,
         model_family=production_model, n_splits=n_splits, embargo_bars=embargo_bars,
+        cfg_runtime=cfg_runtime,
     )
     results.append(("baseline", float(base_score)))
 
@@ -453,6 +443,7 @@ def run_ablation(
         score = constrained_objective(
             w, X, y_ret, label_intervals,
             model_family=production_model, n_splits=n_splits, embargo_bars=embargo_bars,
+            cfg_runtime=cfg_runtime,
         )
         results.append((name, float(score)))
 
@@ -462,6 +453,7 @@ def run_ablation(
         score = constrained_objective(
             w, X, y_ret, label_intervals,
             model_family=production_model, n_splits=n_splits, embargo_bars=embargo_bars,
+            cfg_runtime=cfg_runtime,
         )
         results.append((f"{n1}+{n2}", float(score)))
 
@@ -536,6 +528,7 @@ def _build_stage_learnability_rows(
         production_model=sw_defaults["sample_weight_opt_model_family"],
         n_splits=int(sw_defaults["sample_weight_opt_n_splits"]),
         embargo_bars=int(sw_defaults["sample_weight_opt_embargo_bars"]),
+        cfg_runtime=cfg_runtime,
     )
     ablation_rank = {name: i + 1 for i, (name, _) in enumerate(ablation)}
     ablation_score = {name: float(score) for name, score in ablation}
@@ -640,6 +633,7 @@ def run_offline_sample_weight_optimisation(
                     min_n_eff_ratio=float(sw_defaults["sample_weight_opt_min_n_eff_ratio"]),
                     max_top1pct=float(sw_defaults["sample_weight_opt_max_top1pct"]),
                     random_state=int(cfg_runtime.get("seed", 42)),
+                    cfg_runtime=cfg_runtime,
                 )
 
                 best_params[f"component_alphas_{stage_name}"] = res.component_alphas

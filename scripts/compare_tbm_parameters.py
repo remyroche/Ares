@@ -8,6 +8,11 @@ Implements the staged optimization plan from `plans/tbm_parameter_optimization.m
 - Two-layer caching (barrier series + labels).
 - Learnability metrics: IC_label, IC_payoff, calibration, and robustness slices.
 
+Note on performance:
+- Barrier construction is fully vectorized (Pandas).
+- Labeling iterates over assets (Python loop) but uses Numba-compiled kernels for high speed.
+- Memory usage is controlled via LRU caching of intermediate barrier/label artifacts.
+
 The script is intentionally self-contained and resilient to different parquet layouts.
 """
 
@@ -39,6 +44,43 @@ from extreme_price_movements.labeling import compute_triple_barrier_labels
 
 
 EPS = 1e-12
+
+# Parameters that affect barrier geometry (TP/SL/Time scaling).
+# Only these should trigger re-computation of barriers.
+BARRIER_PARAMS = {
+    "tp_method", "sl_method", "k_tp", "k_sl", "sl_as_tp_pct",
+    "tp_regime_model", "sl_regime_model", "mix_weight",
+    "horizon_scaling", "horizon_alpha", "horizon_base",
+    "tp_abs_pct", "tp_base_pct", "base_atr_window",
+    "tp_abs_lo_pct", "tp_abs_hi_pct", "sl_abs_lo_pct", "sl_abs_hi_pct",
+    "sl_noise_buffer", "sl_min_abs_pct", "sl_min_bps",
+    "tp_min_abs_pct", "tp_min_bps",
+    "tp_time_decay", "trail_sl_mult", "tp_side_skew",
+}
+
+
+class LRUCache(dict):
+    """
+    Simple LRU cache for large DataFrames.
+    Evicts oldest items when max_size is exceeded.
+    """
+    def __init__(self, max_size=50):
+        super().__init__()
+        self.max_size = max_size
+
+    def __setitem__(self, key, value):
+        if key in self:
+            del self[key]
+        super().__setitem__(key, value)
+        if len(self) > self.max_size:
+            oldest = next(iter(self))
+            del self[oldest]
+
+    def __getitem__(self, key):
+        value = super().__getitem__(key)
+        del self[key]
+        super().__setitem__(key, value)
+        return value
 
 
 @dataclass
@@ -186,6 +228,10 @@ def serialize_key(params: Dict[str, Any]) -> Dict[str, Any]:
         else:
             out[k] = v
     return out
+
+
+def _get_barrier_params(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    return {k: cfg[k] for k in BARRIER_PARAMS if k in cfg}
 
 
 def config_id(config: Dict[str, Any]) -> str:
@@ -425,7 +471,7 @@ def choose_feature_matrix(artifacts: RunArtifacts, max_features: int = 20) -> Tu
 
     stacked = {}
     for k in selected:
-        stacked[k] = artifacts.features[k].stack(dropna=False)
+        stacked[k] = artifacts.features[k].stack()
     X = pd.DataFrame(stacked).astype(np.float32)
     return X, selected
 
@@ -552,23 +598,21 @@ def evaluate_config(
 
     for h in horizons:
         for side in ["long", "short"]:
-            key1 = json.dumps(serialize_key({"h": h, "side": side, "cfg": cfg}), sort_keys=True)
+            # Key1: Barriers depends only on geometric params.
+            barrier_cfg = _get_barrier_params(cfg)
+            key1 = json.dumps(serialize_key({"h": h, "side": side, "cfg": barrier_cfg}), sort_keys=True)
+
             if key1 not in layer1_cache:
                 tp_df, sl_df, geom_stats = build_barriers(artifacts, cfg, h, side)
                 layer1_cache[key1] = (tp_df, sl_df, geom_stats)
             tp_df, sl_df, geom_stats = layer1_cache[key1]
 
-            key2 = json.dumps(
-                serialize_key(
-                    {
-                        "layer1": key1,
-                        "sl_activation_minutes": cfg.get("sl_activation_minutes", 0),
-                        "trail_sl_mult": cfg.get("trail_sl_mult", 0),
-                        "tp_time_decay": cfg.get("tp_time_decay", "none"),
-                    }
-                ),
-                sort_keys=True,
-            )
+            # Key2: Labels depends fully on barriers (key1) + horizon/side (in key1).
+            # Note: compute_triple_barrier_labels uses JIT logic that may interpret TP
+            # as trailing activation. It does NOT use sl_activation_minutes.
+            # So key2 is effectively just key1.
+            key2 = key1
+
             if key2 not in layer2_cache:
                 lbl, ret = compute_triple_barrier_labels(artifacts.panel, tp_df, sl_df, h, side=side)
                 layer2_cache[key2] = (lbl, ret)
@@ -576,13 +620,14 @@ def evaluate_config(
 
             df = pd.DataFrame(
                 {
-                    "label": lbl.stack(dropna=False),
-                    "payoff": ret.stack(dropna=False),
-                    "tp": tp_df.stack(dropna=False),
-                    "sl": sl_df.stack(dropna=False),
+                    "label": lbl.stack(),
+                    "payoff": ret.stack(),
+                    "tp": tp_df.stack(),
+                    "sl": sl_df.stack(),
                 }
             )
-            df = df.dropna(subset=["label", "payoff", "tp", "sl"]).reset_index().rename(columns={"level_0": "ts", "level_1": "symbol"})
+            df.index.names = ["ts", "symbol"]
+            df = df.dropna(subset=["label", "payoff", "tp", "sl"]).reset_index()
             df["side"] = side
             df["horizon"] = h
             df["bound_saturation"] = geom_stats["bound_saturation"]
@@ -599,7 +644,7 @@ def evaluate_config(
         bucket_map = cache_bucket_stack[stack_key]
     else:
         for bname, bmask in bucket_masks.items():
-            bucket_map[bname] = bmask.stack(dropna=False).reindex(stacked_index).fillna(False).to_numpy(dtype=bool)
+            bucket_map[bname] = bmask.stack().reindex(stacked_index).fillna(False).to_numpy(dtype=bool)
         cache_bucket_stack[stack_key] = bucket_map
 
     bucket = np.full(len(events), "Global", dtype=object)
@@ -609,16 +654,16 @@ def evaluate_config(
     events["bucket"] = bucket
 
     # Regime and quintile slices for Stage 2.
-    atr = artifacts.features["atr_pct"].stack(dropna=False).reindex(stacked_index)
+    atr = artifacts.features["atr_pct"].stack().reindex(stacked_index)
     q = atr.groupby(level=0).transform(lambda x: pd.qcut(x.rank(method="first"), 5, labels=False, duplicates="drop") if x.notna().sum() > 5 else pd.Series(2, index=x.index))
     events["vol_quintile"] = q.fillna(2).astype(int).values + 1
-    roll = artifacts.features["atr_pct"].rolling(24 * 14, min_periods=24).median().stack(dropna=False).reindex(stacked_index)
+    roll = artifacts.features["atr_pct"].rolling(24 * 14, min_periods=24).median().stack().reindex(stacked_index)
     ratio = (atr / (roll + EPS)).fillna(1.0)
     regime = np.where(ratio < 0.85, "low_vol", np.where(ratio > 1.15, "high_vol", "medium_vol"))
     events["regime"] = regime
 
     # Quantile filtering.
-    basis = make_quantile_basis(artifacts, cfg.get("quantile_basis", "composite")).stack(dropna=False).reindex(stacked_index)
+    basis = make_quantile_basis(artifacts, cfg.get("quantile_basis", "composite")).stack().reindex(stacked_index)
     keep_mask = np.ones(len(events), dtype=bool)
     full_bucket_counts = events.groupby("bucket").size().to_dict()
     if cfg.get("use_quantile_filter", False):
@@ -648,7 +693,7 @@ def evaluate_config(
     max_timeout = float(cfg.get("max_timeout_rate", 0.95))
     min_raw = int(cfg.get("min_raw_events", 50))
 
-    events = events[events["net_rr"] >= min_rr]
+    events = events[events["net_rr"] >= min_rr].reset_index(drop=True)
 
     pass_cells = 0
     total_cells = 0
@@ -978,9 +1023,10 @@ def run(args: argparse.Namespace) -> None:
     artifacts = align_artifacts(panel, features)
     bucket_masks = build_bucket_masks(artifacts)
 
-    layer1_cache: Dict[str, Any] = {}
-    layer2_cache: Dict[str, Any] = {}
-    eval_cache: Dict[str, Any] = {}
+    # Use LRUCache to prevent OOM on large grids
+    layer1_cache: Dict[str, Any] = LRUCache(max_size=40)
+    layer2_cache: Dict[str, Any] = LRUCache(max_size=40)
+    eval_cache: Dict[str, Any] = {} # eval cache is small (bucket stack), no need for LRU
 
     stage1_cfgs = stage1_grid()
     if args.quick:

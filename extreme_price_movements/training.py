@@ -9,6 +9,14 @@ from .candidates import select_trade_candidates_hourly, select_trade_candidates_
 import extreme_price_movements.fast_funcs as ff
 from .labeling import compute_trailing_atr_labels, compute_triple_barrier_labels
 from .sample_weights import build_label_time_ranges, compute_sample_weights_with_uniqueness, compute_mfe_mae_weights
+from .sample_weight_optimization import (
+    compute_vol_weights,
+    compute_liquidity_weights,
+    compute_distance_to_barrier_weights,
+    compute_recency_weights,
+    optimize_component_weights,
+    log_weight_statistics,
+)
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import roc_auc_score
 from scipy.stats import spearmanr
@@ -1650,6 +1658,120 @@ def _build_pred_X_window(feats, mkt_gates, cfg, t_idx, syms, feature_key="exh_fe
         Xp[col] = Xp.index.get_level_values("ts").map(mg[col])
     return Xp.fillna(0)
 
+def _persist_sample_weight_artifact(
+    cfg: dict,
+    stage: str,
+    fallback_weights: np.ndarray,
+    final_weights: np.ndarray,
+    ts_values=None,
+    symbol_values=None,
+    diagnostics: dict | None = None,
+):
+    """Persist fallback/final sample weights for downstream training and auditing."""
+    run_id = cfg.get("run_id")
+    if not run_id:
+        return
+    try:
+        out_dir = os.path.join(cfg.get("data_root", "data"), "artifacts", run_id, "sample_weights")
+        os.makedirs(out_dir, exist_ok=True)
+        n = len(final_weights)
+        out = pd.DataFrame({
+            "w_fallback": np.asarray(fallback_weights, dtype=np.float32),
+            "w_final": np.asarray(final_weights, dtype=np.float32),
+        })
+        if ts_values is not None and len(ts_values) == n:
+            out["ts"] = pd.to_datetime(ts_values).values
+        if symbol_values is not None and len(symbol_values) == n:
+            out["symbol"] = np.asarray(symbol_values)
+        if diagnostics:
+            out.attrs.update({k: v for k, v in diagnostics.items() if isinstance(v, (str, int, float, bool))})
+        fpath = os.path.join(out_dir, f"{stage}.parquet")
+        out.to_parquet(fpath, index=False)
+        tprint(f"Saved sample weights artifact: {fpath}")
+    except Exception as exc:
+        tprint(f"Warning: failed to persist sample weights for {stage}: {exc}")
+
+
+def _optimize_training_sample_weights(
+    df: pd.DataFrame,
+    X_frame: pd.DataFrame,
+    y_ret: np.ndarray,
+    label_times: pd.DataFrame,
+    base_weights: np.ndarray,
+    cfg: dict,
+    stage: str,
+    extra_components: dict | None = None,
+) -> tuple[np.ndarray, dict]:
+    """Optimize sample-weight component blend using constrained CV objective."""
+    if not bool(cfg.get("sample_weight_opt_enable", True)):
+        return np.asarray(base_weights, dtype=np.float32), {"optimized": False, "reason": "disabled"}
+
+    n = len(base_weights)
+    if n < int(cfg.get("sample_weight_opt_min_samples", 400)):
+        return np.asarray(base_weights, dtype=np.float32), {"optimized": False, "reason": "too_few_samples"}
+
+    components: dict[str, np.ndarray] = {"base": np.asarray(base_weights, dtype=float)}
+    ts_vals = pd.to_datetime(df["ts"]).values
+
+    if "rv_24h" in df.columns:
+        components["vol_cs"] = compute_vol_weights(
+            df["rv_24h"].values, ts_vals,
+            direction=cfg.get("sample_weight_vol_direction", "downweight_high"),
+            power=float(cfg.get("sample_weight_vol_power", 0.5)),
+            min_group_size=int(cfg.get("sample_weight_vol_min_group_size", 20)),
+        )
+
+    if "volume_usd_24h" in df.columns:
+        components["liquidity"] = compute_liquidity_weights(df["volume_usd_24h"].values)
+    elif "quote_volume_24h" in df.columns:
+        components["liquidity"] = compute_liquidity_weights(df["quote_volume_24h"].values)
+
+    era = pd.to_datetime(df["ts"]).dt.to_period("M").astype(str).values
+    bar_idx = np.arange(n, dtype=int)
+    components["recency"] = compute_recency_weights(
+        bar_idx, era,
+        half_life_bars=int(cfg.get("sample_weight_recency_half_life_bars", 24 * 30)),
+        min_era_neff_ratio=float(cfg.get("sample_weight_recency_min_era_neff_ratio", 0.2)),
+    )
+
+    if extra_components:
+        for k, v in extra_components.items():
+            if v is None:
+                continue
+            arr = np.asarray(v, dtype=float)
+            if len(arr) == n:
+                components[k] = arr
+
+    label_intervals = np.column_stack([
+        pd.to_datetime(label_times["t_start"]).values.astype("datetime64[ns]"),
+        pd.to_datetime(label_times["t_end"]).values.astype("datetime64[ns]"),
+    ])
+
+    X_np = np.asarray(X_frame, dtype=np.float32)
+    res = optimize_component_weights(
+        X=X_np,
+        y_ret=np.asarray(y_ret, dtype=float),
+        label_intervals=label_intervals,
+        components=components,
+        production_model=cfg.get("sample_weight_opt_model_family", "ExtraTrees"),
+        n_trials=int(cfg.get("sample_weight_opt_trials", 16)),
+        n_splits=int(cfg.get("sample_weight_opt_n_splits", 5)),
+        embargo_bars=int(cfg.get("sample_weight_opt_embargo_bars", 10)),
+        min_n_eff_ratio=float(cfg.get("sample_weight_opt_min_n_eff_ratio", 0.30)),
+        max_top1pct=float(cfg.get("sample_weight_opt_max_top1pct", 0.10)),
+        random_state=int(cfg.get("seed", 42)),
+    )
+
+    tprint(f"[{stage}] sample-weight optimization objective={res.objective_value:.5f} alphas={res.component_alphas}")
+    log_weight_statistics(res.optimized_weights, era, f"{stage}_optimized")
+    info = {
+        "optimized": True,
+        "objective": float(res.objective_value),
+        "component_alphas": res.component_alphas,
+    }
+    return np.asarray(res.optimized_weights, dtype=np.float32), info
+
+
 def build_hourly_training_set_and_weights(
     panel, feats, mkt_gates, cfg, syms, ts_end, p_exh_hist, H, model_kind,
     trend_filter=None, feature_key=None, extra_feature_keys=None,
@@ -2177,8 +2299,52 @@ def build_hourly_training_set_and_weights(
         time_grid=time_grid,
         selection_metric=selection_metric_values
     )
-    
-    tprint(f"Applied uniqueness weighting: mean={weights.mean():.3f}, std={weights.std():.3f}")
+
+    # Distance-to-barrier component (saturating alternative from sample-weight optimization plan)
+    dist_component = None
+    if bool(cfg.get("sample_weight_use_distance_component", True)):
+        entry_px = np.ones(len(df), dtype=float)
+        up_bar = 1.0 + np.clip(tp_vals[:len(df)], 1e-6, None)
+        dn_bar = 1.0 - np.clip(sl_vals[:len(df)], 1e-6, None)
+        atr_proxy = np.clip(np.abs(barrier_vals[:len(df)]), 1e-6, None)
+        dist_component = compute_distance_to_barrier_weights(
+            entry_prices=entry_px,
+            upper_barriers=up_bar,
+            lower_barriers=dn_bar,
+            atr_past=atr_proxy,
+            k=float(cfg.get("sample_weight_distance_k", 0.5)),
+            min_dist=float(cfg.get("sample_weight_distance_min_dist", 0.5)),
+            form=str(cfg.get("sample_weight_distance_form", "inverse")),
+        )
+
+    weight_opt_info = {"optimized": False, "reason": "no_feature_cols"}
+    feature_cols_for_opt = [
+        c for c in df.columns
+        if c not in {"ts", "symbol", "y_bin", "y_ret", "w"} and np.issubdtype(df[c].dtype, np.number)
+    ]
+    if feature_cols_for_opt:
+        weights, weight_opt_info = _optimize_training_sample_weights(
+            df=df,
+            X_frame=df[feature_cols_for_opt].fillna(0.0),
+            y_ret=returns,
+            label_times=label_times,
+            base_weights=weights,
+            cfg=cfg,
+            stage="base",
+            extra_components={"distance": dist_component} if dist_component is not None else None,
+        )
+
+    _persist_sample_weight_artifact(
+        cfg=cfg,
+        stage=f"base_{side}_{model_kind}_H{H}",
+        fallback_weights=base_weights,
+        final_weights=weights,
+        ts_values=df["ts"].values,
+        symbol_values=df["symbol"].values,
+        diagnostics=weight_opt_info,
+    )
+
+    tprint(f"Applied uniqueness+optimized weighting: mean={weights.mean():.3f}, std={weights.std():.3f}")
     df.drop(columns=["w"], inplace=True)
 
     # --- Regime columns for per-regime BSS/AUC reporting ---
@@ -3234,7 +3400,44 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                     w_meta_h = w_meta_h / max(float(np.mean(w_meta_h)), 1e-12)
                     _n_eff_new = float(np.sum(w_meta_h) ** 2 / max(np.sum(w_meta_h ** 2), 1e-12))
                     tprint(f"    {_h_label} n_eff clipped: {_n_eff:.0f} -> {_n_eff_new:.0f} (N={len(w_meta_h)})")
+
+                _meta_opt_info = {"optimized": False, "reason": "not_run"}
+                _meta_ts = None
+                if bool(cfg.get("sample_weight_opt_enable", True)) and "__ts__" in df.columns:
+                    _meta_ts = pd.to_datetime(df["__ts__"])
+                    _meta_label_times = pd.DataFrame({
+                        "t_start": _meta_ts,
+                        "t_end": _meta_ts + pd.Timedelta(hours=int(_h)),
+                    })
+                    _meta_extra = {
+                        "magnitude": w_mag,
+                        "excursion": w_exc,
+                    }
+                    if _vol_proxy is not None and len(_vol_proxy) == len(w_meta_h):
+                        _meta_extra["vol_cs"] = compute_vol_weights(_vol_proxy, _meta_ts.values)
+                    w_meta_h, _meta_opt_info = _optimize_training_sample_weights(
+                        df=pd.DataFrame({"ts": _meta_ts}),
+                        X_frame=X_meta_base.select_dtypes(include=[np.number]).fillna(0.0),
+                        y_ret=y_ret_raw_h,
+                        label_times=_meta_label_times,
+                        base_weights=w_meta_h,
+                        cfg={
+                            **cfg,
+                            "sample_weight_opt_trials": int(cfg.get("meta_sample_weight_opt_trials", cfg.get("sample_weight_opt_trials", 16))),
+                        },
+                        stage=f"meta_reg_{_h_label}",
+                        extra_components=_meta_extra,
+                    )
                 w_meta_h = w_meta_h.astype(np.float32)
+                _persist_sample_weight_artifact(
+                    cfg=cfg,
+                    stage=f"meta_reg_{_h_label}",
+                    fallback_weights=(w_mag * w_exc).astype(np.float32),
+                    final_weights=w_meta_h,
+                    ts_values=_meta_ts.values if _meta_ts is not None else None,
+                    symbol_values=df["__symbol__"].values if "__symbol__" in df.columns else None,
+                    diagnostics=_meta_opt_info,
+                )
 
                 # Target race for this horizon
                 tprint(f"  Running target race for {_h_label} ({_time.monotonic()-_t0_meta:.1f}s)...")
@@ -3334,7 +3537,39 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                 w_meta_clf = w_meta_clf / max(float(np.mean(w_meta_clf)), 1e-12)
                 _n_eff_clf_new = float(np.sum(w_meta_clf) ** 2 / max(np.sum(w_meta_clf ** 2), 1e-12))
                 tprint(f"    {side}_{k}_clf n_eff clipped: {_n_eff_clf:.0f} -> {_n_eff_clf_new:.0f} (N={len(w_meta_clf)})")
+
+            _meta_clf_opt_info = {"optimized": False, "reason": "not_run"}
+            _meta_ts_c = None
+            if bool(cfg.get("sample_weight_opt_enable", True)) and "__ts__" in df.columns:
+                _meta_ts_c = pd.to_datetime(df["__ts__"]) 
+                _mid_h_c = 4 if 4 in _available_horizons else _available_horizons[len(_available_horizons)//2]
+                _meta_label_times_c = pd.DataFrame({
+                    "t_start": _meta_ts_c,
+                    "t_end": _meta_ts_c + pd.Timedelta(hours=int(_mid_h_c)),
+                })
+                w_meta_clf, _meta_clf_opt_info = _optimize_training_sample_weights(
+                    df=pd.DataFrame({"ts": _meta_ts_c}),
+                    X_frame=X_meta_base.select_dtypes(include=[np.number]).fillna(0.0),
+                    y_ret=_y_per_h[_mid_h_c].astype(np.float64),
+                    label_times=_meta_label_times_c,
+                    base_weights=w_meta_clf,
+                    cfg={
+                        **cfg,
+                        "sample_weight_opt_trials": int(cfg.get("meta_sample_weight_opt_trials", cfg.get("sample_weight_opt_trials", 16))),
+                    },
+                    stage=f"meta_clf_{side}_{k}",
+                    extra_components={"magnitude": w_mag_clf, "excursion": w_exc_clf},
+                )
             w_meta_clf = w_meta_clf.astype(np.float32)
+            _persist_sample_weight_artifact(
+                cfg=cfg,
+                stage=f"meta_clf_{side}_{k}",
+                fallback_weights=(w_mag_clf * w_exc_clf).astype(np.float32),
+                final_weights=w_meta_clf,
+                ts_values=_meta_ts_c.values if _meta_ts_c is not None else None,
+                symbol_values=df["__symbol__"].values if "__symbol__" in df.columns else None,
+                diagnostics=_meta_clf_opt_info,
+            )
 
             # Use the middle horizon's target for the classifier's y_ret argument
             _mid_h = 4 if 4 in _y_per_h else _available_horizons[len(_available_horizons)//2]

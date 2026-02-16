@@ -10,6 +10,7 @@ import extreme_price_movements.fast_funcs as ff
 from .labeling import compute_trailing_atr_labels, compute_triple_barrier_labels
 from .sample_weights import build_label_time_ranges, compute_sample_weights_with_uniqueness, compute_mfe_mae_weights
 from .sample_weight_optimization import (
+    combine_weights_safely,
     compute_vol_weights,
     compute_liquidity_weights,
     compute_distance_to_barrier_weights,
@@ -18,6 +19,7 @@ from .sample_weight_optimization import (
     log_weight_statistics,
     select_test_feature_frame,
 )
+from .offline_optimisers.params_store import apply_offline_optimizer_best_params
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import roc_auc_score
 from scipy.stats import spearmanr
@@ -213,6 +215,15 @@ def _get_training_candidate_config(cfg):
         cfg.get("train_min_range_pct", 0.07),
         cfg.get("train_min_vol_zscore", 1.6),
     )
+
+
+def _resolve_training_cfg_with_offline_optimisers(cfg):
+    """Apply persisted offline-optimiser best params onto cfg with cfg values as fallback."""
+    try:
+        return apply_offline_optimizer_best_params(cfg)
+    except Exception as exc:
+        tprint(f"Warning: failed to load offline optimiser params; using cfg defaults ({exc})")
+        return cfg
 
 
 def _mad(x):
@@ -1716,6 +1727,27 @@ def _optimize_training_sample_weights(
 
     X_frame = select_test_feature_frame(X_frame)
     X_np = np.asarray(X_frame, dtype=np.float32)
+
+    fixed_component_alphas = cfg.get("sample_weight_component_alphas")
+    stage_l = str(stage).lower()
+    if "meta" in stage_l:
+        fixed_component_alphas = cfg.get("sample_weight_component_alphas_meta", fixed_component_alphas)
+    elif "base" in stage_l or "alpha" in stage_l:
+        fixed_component_alphas = cfg.get("sample_weight_component_alphas_base", fixed_component_alphas)
+    if isinstance(fixed_component_alphas, dict) and fixed_component_alphas:
+        resolved_alphas = {
+            str(name): float(fixed_component_alphas.get(name, 1.0))
+            for name in components.keys()
+        }
+        optimized_weights = combine_weights_safely(
+            components,
+            resolved_alphas,
+            min_n_eff_ratio=float(cfg.get("sample_weight_opt_min_n_eff_ratio", 0.30)),
+        )
+        tprint(f"[{stage}] using persisted sample-weight component alphas={resolved_alphas}")
+        log_weight_statistics(optimized_weights, era, f"{stage}_persisted_alphas")
+        return np.asarray(optimized_weights, dtype=np.float32)
+
     res = optimize_component_weights(
         X=X_np,
         y_ret=np.asarray(y_ret, dtype=float),
@@ -3580,6 +3612,7 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
 
 def train_models_from_artifacts(datasets, cfg, train_meta=True):
     tprint(f"Entering function: train_models_from_artifacts in training.py")
+    cfg = _resolve_training_cfg_with_offline_optimisers(cfg)
     directions = ["up", "down"]
     kinds = ["mr", "tf"]
     final_models = {}

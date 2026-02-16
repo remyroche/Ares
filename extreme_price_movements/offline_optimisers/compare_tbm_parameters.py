@@ -33,7 +33,7 @@ import pandas as pd
 from scipy.stats import spearmanr
 from sklearn.linear_model import Ridge
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 import sys
 
 if str(PROJECT_ROOT) not in sys.path:
@@ -42,9 +42,139 @@ if str(PROJECT_ROOT) not in sys.path:
 from extreme_price_movements.data_store import to_panel
 from extreme_price_movements.labeling import compute_triple_barrier_labels
 from extreme_price_movements.config import CFG, TEST_FEATURE_KEYS
+from extreme_price_movements.candidates import select_trade_candidates_vectorized
+from extreme_price_movements.offline_optimisers.params_store import (
+    REPORTS_DIR,
+    TBM_BEST_PARAMS_CSV,
+    save_best_params_csv,
+    apply_offline_optimizer_best_params,
+)
+from extreme_price_movements.training_defaults import (
+    get_candidate_filter_defaults,
+    get_barrier_factory_defaults,
+)
 
 
 EPS = 1e-12
+
+
+def _safe_float(v: Any, default: float = 0.0) -> float:
+    try:
+        x = float(v)
+        return x if np.isfinite(x) else float(default)
+    except Exception:
+        return float(default)
+
+
+def _build_tbm_learnability_report_rows(
+    out_df: pd.DataFrame,
+    details: Dict[str, Any],
+) -> pd.DataFrame:
+    """Expand per-config detail JSON into a thorough, CSV-friendly learnability report."""
+    rows: List[Dict[str, Any]] = []
+    if out_df is None or out_df.empty:
+        return pd.DataFrame(rows)
+
+    for _, rec in out_df.iterrows():
+        config_id = str(rec.get("config_id", ""))
+        detail = details.get(config_id, {}) if isinstance(details, dict) else {}
+        cfg = detail.get("config", {}) if isinstance(detail, dict) else {}
+        bucket_metrics = detail.get("bucket_metrics", {}) if isinstance(detail, dict) else {}
+        regime_metrics = detail.get("regime_metrics", {}) if isinstance(detail, dict) else {}
+        vol_metrics = detail.get("vol_quintile_metrics", {}) if isinstance(detail, dict) else {}
+        bucket_h_metrics = detail.get("bucket_horizon_metrics", {}) if isinstance(detail, dict) else {}
+
+        base = {
+            "config_id": config_id,
+            "stage2_score": _safe_float(rec.get("stage2_score"), 0.0),
+            "stage1_score": _safe_float(rec.get("stage1_score"), 0.0),
+            "ic_label": _safe_float(rec.get("ic_label"), 0.0),
+            "ic_payoff": _safe_float(rec.get("ic_payoff"), 0.0),
+            "ic_snr": _safe_float(rec.get("ic_snr"), 0.0),
+            "sharpe": _safe_float(rec.get("sharpe"), 0.0),
+            "sortino": _safe_float(rec.get("sortino"), 0.0),
+            "coverage": _safe_float(rec.get("coverage"), 0.0),
+            "hard_gate": bool(rec.get("hard_gate", False)),
+            "k_tp": _safe_float(cfg.get("k_tp"), np.nan),
+            "sl_as_tp_pct": _safe_float(cfg.get("sl_as_tp_pct"), np.nan),
+            "tp_abs_lo_pct": _safe_float(cfg.get("tp_abs_lo_pct"), np.nan),
+            "tp_abs_hi_pct": _safe_float(cfg.get("tp_abs_hi_pct"), np.nan),
+            "horizon_base": _safe_float(cfg.get("horizon_base"), np.nan),
+            "horizon_alpha": _safe_float(cfg.get("horizon_alpha"), np.nan),
+        }
+
+        # Aggregate bucket/robustness diagnostics (similar spirit to candidate script slices)
+        bucket_rows = [v for v in bucket_metrics.values() if isinstance(v, dict)]
+        if bucket_rows:
+            ic_payoff_vals = np.array([_safe_float(v.get("ic_payoff"), np.nan) for v in bucket_rows], dtype=float)
+            ic_label_vals = np.array([_safe_float(v.get("ic_label"), np.nan) for v in bucket_rows], dtype=float)
+            n_vals = np.array([_safe_float(v.get("n"), np.nan) for v in bucket_rows], dtype=float)
+            base["bucket_ic_payoff_mean"] = float(np.nanmean(ic_payoff_vals))
+            base["bucket_ic_payoff_min"] = float(np.nanmin(ic_payoff_vals))
+            base["bucket_ic_payoff_std"] = float(np.nanstd(ic_payoff_vals))
+            base["bucket_ic_label_mean"] = float(np.nanmean(ic_label_vals))
+            base["bucket_samples_mean"] = float(np.nanmean(n_vals))
+            base["bucket_samples_min"] = float(np.nanmin(n_vals))
+        else:
+            base["bucket_ic_payoff_mean"] = np.nan
+            base["bucket_ic_payoff_min"] = np.nan
+            base["bucket_ic_payoff_std"] = np.nan
+            base["bucket_ic_label_mean"] = np.nan
+            base["bucket_samples_mean"] = np.nan
+            base["bucket_samples_min"] = np.nan
+
+        # Flatten slices for detailed learnability report
+        if not regime_metrics:
+            rows.append({**base, "slice_type": "regime", "slice_name": "all"})
+        else:
+            for sname, sm in regime_metrics.items():
+                if not isinstance(sm, dict):
+                    continue
+                rows.append(
+                    {
+                        **base,
+                        "slice_type": "regime",
+                        "slice_name": str(sname),
+                        "slice_n": _safe_float(sm.get("n"), np.nan),
+                        "slice_ic_label": _safe_float(sm.get("ic_label"), np.nan),
+                        "slice_ic_payoff": _safe_float(sm.get("ic_payoff"), np.nan),
+                        "slice_payoff_mean": _safe_float(sm.get("payoff_mean"), np.nan),
+                        "slice_label_pos": _safe_float(sm.get("label_pos"), np.nan),
+                    }
+                )
+
+        for sname, sm in (vol_metrics or {}).items():
+            if not isinstance(sm, dict):
+                continue
+            rows.append(
+                {
+                    **base,
+                    "slice_type": "vol_quintile",
+                    "slice_name": str(sname),
+                    "slice_n": _safe_float(sm.get("n"), np.nan),
+                    "slice_ic_label": _safe_float(sm.get("ic_label"), np.nan),
+                    "slice_ic_payoff": _safe_float(sm.get("ic_payoff"), np.nan),
+                    "slice_payoff_mean": _safe_float(sm.get("payoff_mean"), np.nan),
+                    "slice_label_pos": _safe_float(sm.get("label_pos"), np.nan),
+                }
+            )
+
+        for sname, sm in (bucket_h_metrics or {}).items():
+            if not isinstance(sm, dict):
+                continue
+            rows.append(
+                {
+                    **base,
+                    "slice_type": "bucket_horizon",
+                    "slice_name": str(sname),
+                    "slice_n": _safe_float(sm.get("n"), np.nan),
+                    "slice_tp_hit": _safe_float(sm.get("tp_hit"), np.nan),
+                    "slice_timeout": _safe_float(sm.get("timeout"), np.nan),
+                    "slice_ok": bool(sm.get("ok", False)),
+                }
+            )
+
+    return pd.DataFrame(rows)
 
 # Parameters that affect barrier geometry (TP/SL/Time scaling).
 # Only these should trigger re-computation of barriers.
@@ -398,7 +528,7 @@ def build_barriers(
 # ---------------------------
 # Event extraction and scoring
 # ---------------------------
-def build_bucket_masks(artifacts: RunArtifacts) -> Dict[str, pd.DataFrame]:
+def build_bucket_masks(artifacts: RunArtifacts, cfg_runtime: Dict[str, Any] | None = None) -> Dict[str, pd.DataFrame]:
     c = artifacts.panel["close"]
     feats = artifacts.features
 
@@ -423,6 +553,28 @@ def build_bucket_masks(artifacts: RunArtifacts) -> Dict[str, pd.DataFrame]:
     tf_short = (tf_source <= 0).astype(bool)
     mr_long = (mr_source > 0).astype(bool)
     mr_short = (mr_source <= 0).astype(bool)
+
+    candidate_filter = pd.DataFrame(True, index=c.index, columns=c.columns)
+    if cfg_runtime is not None:
+        candidate_defaults = get_candidate_filter_defaults(cfg_runtime)
+        try:
+            candidate_filter = select_trade_candidates_vectorized(
+                artifacts.panel,
+                artifacts.features,
+                pct=float(candidate_defaults["train_extreme_pct_hourly"]),
+                metric=cfg_runtime.get("trade_deviation_metric", "ret24h"),
+                min_range_pct=float(candidate_defaults["train_min_range_pct"]),
+                min_vol_zscore=float(candidate_defaults["train_min_vol_zscore"]),
+            )
+            if candidate_filter is None:
+                candidate_filter = pd.DataFrame(True, index=c.index, columns=c.columns)
+        except Exception:
+            candidate_filter = pd.DataFrame(True, index=c.index, columns=c.columns)
+
+    tf_long = tf_long & candidate_filter
+    tf_short = tf_short & candidate_filter
+    mr_long = mr_long & candidate_filter
+    mr_short = mr_short & candidate_filter
 
     return {
         "TF_long": tf_long,
@@ -1110,6 +1262,7 @@ def promote_stage1(stage1_results: pd.DataFrame, top_k: int = 10) -> List[str]:
 # Main
 # ---------------------------
 def run(args: argparse.Namespace) -> None:
+    runtime_cfg = apply_offline_optimizer_best_params(dict(CFG))
     features = load_features(Path(args.features))
     panel = load_panel(Path(args.panel)) if args.panel else None
 
@@ -1117,7 +1270,7 @@ def run(args: argparse.Namespace) -> None:
         raise ValueError("--panel is required for TBM optimization")
 
     artifacts = align_artifacts(panel, features, lookback_years=args.lookback_years)
-    bucket_masks = build_bucket_masks(artifacts)
+    bucket_masks = build_bucket_masks(artifacts, cfg_runtime=runtime_cfg)
 
     # Use LRUCache to prevent OOM on large grids
     layer1_cache: Dict[str, Any] = LRUCache(max_size=40)
@@ -1125,6 +1278,13 @@ def run(args: argparse.Namespace) -> None:
     eval_cache: Dict[str, Any] = {} # eval cache is small (bucket stack), no need for LRU
 
     stage1_cfgs = stage1_grid()
+    barrier_defaults = get_barrier_factory_defaults(runtime_cfg)
+    for _cfg in stage1_cfgs:
+        _cfg.setdefault("k_tp", float(barrier_defaults["barrier_k_tp"]))
+        _cfg.setdefault("sl_as_tp_pct", float(barrier_defaults["barrier_sl_base_mult"]))
+        _cfg.setdefault("tp_abs_lo_pct", float(barrier_defaults["barrier_tp_lo"]))
+        _cfg.setdefault("tp_abs_hi_pct", float(barrier_defaults["barrier_tp_hi"]))
+        _cfg.setdefault("horizon_base", float(barrier_defaults["label_horizon_base"]))
     if args.quick:
         stage1_cfgs = stage1_cfgs[: max(1, args.max_configs)]
 
@@ -1168,6 +1328,12 @@ def run(args: argparse.Namespace) -> None:
         stage2_cfgs = stage2_grids_from_stage1(base_cfgs, max_per_substage=args.max_stage2_configs)
 
         rows = []
+        for _cfg in stage2_cfgs:
+            _cfg.setdefault("k_tp", float(barrier_defaults["barrier_k_tp"]))
+            _cfg.setdefault("sl_as_tp_pct", float(barrier_defaults["barrier_sl_base_mult"]))
+            _cfg.setdefault("tp_abs_lo_pct", float(barrier_defaults["barrier_tp_lo"]))
+            _cfg.setdefault("tp_abs_hi_pct", float(barrier_defaults["barrier_tp_hi"]))
+            _cfg.setdefault("horizon_base", float(barrier_defaults["label_horizon_base"]))
         for i, cfg in enumerate(stage2_cfgs, 1):
             s, d, weights_df = evaluate_config(
                 artifacts,
@@ -1201,12 +1367,25 @@ def run(args: argparse.Namespace) -> None:
     with detail_path.open("w") as f:
         json.dump(details, f, indent=2)
 
+    learnability_path = output_path.with_name("tbm__learnability_report.csv")
+    learnability_df = _build_tbm_learnability_report_rows(out_df, details)
+    if not learnability_df.empty:
+        learnability_df.to_csv(learnability_path, index=False)
+        print(f"Saved learnability CSV: {learnability_path}")
+
     if collected_weights:
         weights_path = Path(args.weights_output) if args.weights_output else output_path.with_suffix(".weights.parquet")
         weights_path.parent.mkdir(parents=True, exist_ok=True)
         all_weights = pd.concat(collected_weights, ignore_index=True)
         all_weights.to_parquet(weights_path, index=False)
         print(f"Saved sample weights: {weights_path}")
+
+    if not out_df.empty:
+        best = out_df.iloc[0].to_dict()
+        best_params = details.get(best.get("config_id"), {}).get("config", {})
+        if isinstance(best_params, dict):
+            save_best_params_csv(TBM_BEST_PARAMS_CSV, best_params, metadata={"source": "compare_tbm_parameters", "config_id": best.get("config_id")})
+            print(f"Saved best params CSV: {TBM_BEST_PARAMS_CSV}")
 
     print(f"Saved CSV: {output_path}")
     print(f"Saved JSON: {detail_path}")
@@ -1217,7 +1396,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Optimize/compare TBM parameter sets")
     p.add_argument("--features", required=True, help="Path to features directory (symbol=*.parquet)")
     p.add_argument("--panel", required=True, help="Path to panel parquet or symbol parquet directory")
-    p.add_argument("--output", required=True, help="Output CSV path")
+    p.add_argument("--output", default=str(REPORTS_DIR / "tbm_parameter_comparison.csv"), help="Output CSV path")
     p.add_argument("--quick", action="store_true", help="Quick stage1 subset")
     p.add_argument("--stage2", action="store_true", help="Run stage2 validation")
     p.add_argument("--top-k", type=int, default=10, help="Stage1 promotion top-k")

@@ -140,6 +140,62 @@ class PurgedKFold(BaseCrossValidator):
         )
 
 
+class IntervalPurgedKFold(BaseCrossValidator):
+    """Purged CV using per-sample [t_start, t_end] label intervals plus fixed-bar embargo."""
+
+    def __init__(self, n_splits: int = 5, embargo_bars: int = 10, min_train_size: int | None = None):
+        if n_splits < 2:
+            raise ValueError("n_splits must be >=2")
+        self.n_splits = n_splits
+        self.embargo_bars = max(int(embargo_bars), 0)
+        self.min_train_size = min_train_size
+
+    def get_n_splits(self, X=None, y=None, groups=None) -> int:
+        return self.n_splits
+
+    def split(self, X, y=None, groups=None, label_intervals=None):
+        if label_intervals is None:
+            raise ValueError("label_intervals is required for IntervalPurgedKFold")
+
+        intervals = np.asarray(label_intervals)
+        if intervals.ndim != 2 or intervals.shape[1] != 2:
+            raise ValueError("label_intervals must be shape (n_samples, 2) -> [t_start, t_end]")
+
+        n_samples = len(intervals)
+        fold_sizes = np.full(self.n_splits, n_samples // self.n_splits, dtype=np.int32)
+        fold_sizes[: n_samples % self.n_splits] += 1
+
+        starts = intervals[:, 0].astype("datetime64[ns]")
+        ends = intervals[:, 1].astype("datetime64[ns]")
+
+        st = 0
+        for fs in fold_sizes:
+            va_start, va_end = st, st + fs
+            st = va_end
+
+            val_idx = np.arange(va_start, va_end, dtype=np.int32)
+            if val_idx.size == 0:
+                continue
+
+            val_start_time = starts[val_idx].min()
+            val_end_time = ends[val_idx].max()
+
+            overlap = (starts <= val_end_time) & (ends >= val_start_time)
+            train_mask = ~overlap
+
+            # fixed-bar embargo after validation boundary
+            emb_end = min(n_samples, va_end + self.embargo_bars)
+            train_mask[va_start:emb_end] = False
+
+            train_idx = np.where(train_mask)[0].astype(np.int32)
+            if train_idx.size == 0:
+                continue
+            if self.min_train_size is not None and train_idx.size < self.min_train_size:
+                continue
+            yield train_idx, val_idx
+
+
+
 class CombinatorialPurgedKFold(BaseCrossValidator):
     """
     Combinatorial Purged K-Fold (CPCV) from AFML Chapter 7.

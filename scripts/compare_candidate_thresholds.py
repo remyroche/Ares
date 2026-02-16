@@ -20,6 +20,7 @@ import os
 import sys
 import logging
 from copy import deepcopy
+from collections import OrderedDict
 from typing import Dict, Optional, Any
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
@@ -56,7 +57,7 @@ logger = logging.getLogger(__name__)
 
 ET_REGRESSOR_PARAMS = {
     "n_estimators": 200,
-    "max_depth": 6,
+    "max_depth": 4,
     "min_samples_leaf": 30,
     "max_features": "sqrt",
     "n_jobs": 3,
@@ -69,6 +70,7 @@ OOF_MAX_SAMPLES = 1_800_000
 OOF_RIDGE_MAX_TRAIN_SAMPLES = 700_000
 FEATURE_CHUNK_SIZE = 8
 _PSUTIL_WARNED = False
+MAX_GEOMETRY_CACHE_KEYS = 12
 
 
 def get_memory_mb() -> float:
@@ -111,6 +113,30 @@ def cast_features_dtype(feats: dict, float_dtype: np.dtype) -> dict:
     for name, df in feats.items():
         if isinstance(df, pd.DataFrame):
             feats[name] = cast_dataframe_dtype(df, float_dtype=float_dtype)
+    return feats
+
+
+def select_symbol_subset(all_symbols: list[str], step: int = 3, limit: int = 200) -> list[str]:
+    """Select every `step`-th symbol in alphabetical order, capped by `limit`."""
+    syms_sorted = sorted({str(s) for s in all_symbols})
+    selected = syms_sorted[::max(1, int(step))]
+    return selected[: int(limit)]
+
+
+def subset_feature_universe(feats: dict, symbols: list[str]) -> dict:
+    """Subset all feature dataframes to a reduced symbol universe."""
+    sym_set = set(symbols)
+    dropped = 0
+    for name, df in feats.items():
+        if not isinstance(df, pd.DataFrame):
+            continue
+        keep_cols = [c for c in df.columns if c in sym_set]
+        if keep_cols:
+            feats[name] = df.reindex(columns=keep_cols)
+        else:
+            dropped += 1
+    if dropped > 0:
+        tlog(f"Symbol subset removed all columns for {dropped} feature tables")
     return feats
 
 
@@ -456,12 +482,80 @@ def _build_bucket_candidate_mask(
         else:
             tlog("Bucket mask: trend_pct is non-DataFrame/incompatible; skipping move-bucket filter")
             return candidate_mask
+
+    overlap_cols = trend_df.columns.intersection(candidate_mask.columns)
+    overlap_n = len(overlap_cols)
+    if overlap_n == 0:
+        tlog(
+            "Bucket mask: trend_pct has zero column overlap with candidate mask; "
+            f"trend_cols={trend_df.shape[1]}, candidate_cols={candidate_mask.shape[1]} | skipping move-bucket filter"
+        )
+        return candidate_mask
+    if overlap_n < max(5, int(0.1 * candidate_mask.shape[1])):
+        tlog(
+            "Bucket mask: low trend/candidate column overlap; "
+            f"overlap={overlap_n}/{candidate_mask.shape[1]}"
+        )
+
     trend_aligned = trend_df.reindex(index=candidate_mask.index, columns=candidate_mask.columns)
+    trend_arr = trend_aligned.to_numpy(dtype=np.float32, copy=False)
+    finite_ratio = float(np.isfinite(trend_arr).mean())
+    if finite_ratio < 0.05:
+        tlog(
+            f"Bucket mask: trend_pct alignment has low finite coverage ({finite_ratio:.2%}) "
+            f"for shape={trend_arr.shape}; skipping move-bucket filter"
+        )
+        return candidate_mask
+    if finite_ratio < 0.50:
+        tlog(
+            f"Bucket mask: degraded trend_pct finite coverage ({finite_ratio:.2%}) "
+            f"for shape={trend_arr.shape}; applying filter with caution"
+        )
+
     if move_bucket == "up":
         trend_mask = trend_aligned > 0
     else:
         trend_mask = trend_aligned <= 0
-    return (candidate_mask & trend_mask).fillna(False)
+
+    bucket_mask = (candidate_mask & trend_mask).fillna(False)
+    base_n = int(candidate_mask.to_numpy(dtype=bool, copy=False).sum())
+    bucket_n = int(bucket_mask.to_numpy(dtype=bool, copy=False).sum())
+    if base_n > 0 and bucket_n == 0:
+        finite = np.isfinite(trend_arr)
+        up_share = float(np.nanmean(trend_arr > 0)) if finite.any() else 0.0
+        down_share = float(np.nanmean(trend_arr <= 0)) if finite.any() else 0.0
+        if finite.any():
+            vals = trend_arr[finite]
+            q10 = float(np.nanpercentile(vals, 10))
+            q50 = float(np.nanpercentile(vals, 50))
+            q90 = float(np.nanpercentile(vals, 90))
+            bucket_stats = f"trend_q10={q10:.4g},trend_q50={q50:.4g},trend_q90={q90:.4g}"
+        else:
+            bucket_stats = "trend_quantiles=nan"
+        tlog(
+            "Bucket mask collapsed to zero after trend filter: "
+            f"move_bucket={move_bucket}, pre_selected={base_n}, post_selected={bucket_n}, "
+            f"finite_fraction={finite_ratio:.2%}, trend_up_share={up_share:.2%}, trend_down_share={down_share:.2%}, "
+            f"{bucket_stats}, sub_mask_shape={bucket_mask.shape}"
+        )
+    return bucket_mask
+
+
+def cache_geometry_entry(
+    cache: "OrderedDict[tuple[Any, ...], tuple[dict, dict]]",
+    key: tuple[Any, ...],
+    value: tuple[dict, dict],
+    max_keys: int = MAX_GEOMETRY_CACHE_KEYS,
+) -> None:
+    """Store geometry cache entry with LRU eviction to cap memory growth."""
+    if key in cache:
+        cache.move_to_end(key)
+        cache[key] = value
+        return
+    cache[key] = value
+    while len(cache) > max_keys:
+        evicted_key, _ = cache.popitem(last=False)
+        tlog(f"Training-slice geometry cache evicted oldest key hash={hash(evicted_key)}")
 
 
 def infer_stage_label(config_id: str) -> str:
@@ -482,6 +576,8 @@ def evaluate_training_slices(
     cache: Optional[dict] = None,
     cache_key: Optional[tuple] = None,
     sample_frac: float = 1.0,
+    geometry_cache: Optional[dict] = None,
+    geometry_cache_key: Optional[tuple] = None,
 ) -> list:
     """Evaluate MR/TF x long/short slices reusing training labeling & sampling logic."""
     # Defensive: training barrier/grid code expects atr_pct as DataFrame aligned to panel.
@@ -514,14 +610,87 @@ def evaluate_training_slices(
     rows = []
     mkt_gates = build_proxy_mkt_gates(feats)
     ts_end = candidate_mask.index.max()
-    tb_cache_by_h_side, geom_cache_by_h_side = build_grid_aggregated_tb_cache(
-        panel=panel,
-        feats=feats,
-        cfg=cfg_variant,
-        horizons=horizons,
-        trade_sides=["long", "short"],
-    )
     bucket_mask_cache: dict[tuple[str, str], pd.DataFrame] = {}
+
+    # Fast-fail before expensive grid/label precomputation.
+    # If every side/kind bucket is empty, training slices are structurally impossible.
+    bucket_nonzero_counts: dict[tuple[str, str], int] = {}
+    for side in ["long", "short"]:
+        for kind in ["mr", "tf"]:
+            move_bucket = _bucket_move_bucket(side, kind)
+            bucket_mask = _build_bucket_candidate_mask(
+                candidate_mask=candidate_mask,
+                feats=feats,
+                move_bucket=move_bucket,
+            )
+            bucket_mask_cache[(side, kind)] = bucket_mask
+            bucket_nonzero_counts[(side, kind)] = int(bucket_mask.to_numpy(dtype=bool, copy=False).sum())
+
+    total_bucket_selected = int(sum(bucket_nonzero_counts.values()))
+    if total_bucket_selected == 0:
+        tlog(
+            "Training-slice fast skip: all side/kind bucket masks are empty; "
+            "skipping geometry precompute"
+        )
+        logger.warning(
+            "All training-slice buckets empty after bucketing; slice metrics are not informative for this config"
+        )
+        for side in ["long", "short"]:
+            for kind in ["mr", "tf"]:
+                for h in horizons:
+                    rows.append(
+                        {
+                            "slice": f"{side}_{kind}",
+                            "side": side,
+                            "kind": kind,
+                            "horizon": h,
+                            "n_samples": 0,
+                            "label_pos_rate": 0,
+                            "mean_ret_bps": 0,
+                            "sharpe": 0,
+                            "sortino": 0,
+                            "weighted_ret_bps": 0,
+                        }
+                    )
+        if cache is not None and cache_key is not None:
+            cache[cache_key] = [dict(r) for r in rows]
+        tlog("Training-slice evaluation done")
+        return rows
+
+    if (
+        geometry_cache is not None
+        and geometry_cache_key is not None
+        and geometry_cache_key in geometry_cache
+    ):
+        tb_cache_by_h_side, geom_cache_by_h_side = geometry_cache[geometry_cache_key]
+        if isinstance(geometry_cache, OrderedDict):
+            geometry_cache.move_to_end(geometry_cache_key)
+        tlog(
+            "Training-slice geometry cache hit: "
+            f"key_hash={hash(geometry_cache_key)}, horizons={tuple(horizons)}, "
+            f"k_tp={cfg_variant.get('barrier_k_tp')}, sl_base={cfg_variant.get('barrier_sl_base_mult')}, "
+            f"tp_lo={cfg_variant.get('barrier_tp_lo')}, tp_hi={cfg_variant.get('barrier_tp_hi')}"
+        )
+    else:
+        tlog(
+            "Training-slice geometry cache miss: building grid "
+            f"key_hash={hash(geometry_cache_key) if geometry_cache_key is not None else 'none'}, "
+            f"horizons={tuple(horizons)}, k_tp={cfg_variant.get('barrier_k_tp')}, "
+            f"sl_base={cfg_variant.get('barrier_sl_base_mult')}, "
+            f"tp_lo={cfg_variant.get('barrier_tp_lo')}, tp_hi={cfg_variant.get('barrier_tp_hi')}"
+        )
+        tb_cache_by_h_side, geom_cache_by_h_side = build_grid_aggregated_tb_cache(
+            panel=panel,
+            feats=feats,
+            cfg=cfg_variant,
+            horizons=horizons,
+            trade_sides=["long", "short"],
+        )
+        if geometry_cache is not None and geometry_cache_key is not None:
+            if isinstance(geometry_cache, OrderedDict):
+                cache_geometry_entry(geometry_cache, geometry_cache_key, (tb_cache_by_h_side, geom_cache_by_h_side))
+            else:
+                geometry_cache[geometry_cache_key] = (tb_cache_by_h_side, geom_cache_by_h_side)
 
     for side in ["long", "short"]:
         for kind in ["mr", "tf"]:
@@ -534,12 +703,6 @@ def evaluate_training_slices(
             trend_filter = "up" if cand_filter == "best" else "down"
             feat_key = "tf_feature_keys" if kind == "tf" else "mr_feature_keys"
             move_bucket = _bucket_move_bucket(side, kind)
-            if (side, kind) not in bucket_mask_cache:
-                bucket_mask_cache[(side, kind)] = _build_bucket_candidate_mask(
-                    candidate_mask=candidate_mask,
-                    feats=feats,
-                    move_bucket=move_bucket,
-                )
             bucket_mask = bucket_mask_cache[(side, kind)]
             syms = list(bucket_mask.columns)
             bucket_n = int(bucket_mask.to_numpy(dtype=bool, copy=False).sum())
@@ -930,21 +1093,45 @@ def apply_quality_filters_array(
     return filtered
 
 
-def compute_cross_sectional_base_mask(metric: pd.DataFrame, pct: float) -> np.ndarray:
-    """Compute cross-sectional base mask as ndarray (top/bottom pct)."""
-    n_symbols = metric.shape[1]
-    k = max(1, int(n_symbols * pct))
+def compute_cross_sectional_base_mask_and_sign(metric: pd.DataFrame, pct: float) -> tuple[np.ndarray, np.ndarray]:
+    """Compute cross-sectional base mask + directional sign with fully vectorized NumPy ops."""
+    arr = metric.to_numpy(dtype=np.float32, copy=False)
+    n_rows, n_cols = arr.shape
+    k = max(1, int(n_cols * pct))
 
-    ranks = metric.rank(axis=1, method="first")
-    valid_counts = metric.notna().sum(axis=1)
+    valid = np.isfinite(arr)
+    valid_counts = valid.sum(axis=1)
+    row_ok = valid_counts >= k
 
-    vc = valid_counts.to_numpy()[:, np.newaxis]
-    r = ranks.to_numpy(copy=False)
-    valid = metric.notna().to_numpy(copy=False)
+    # Place NaNs at extremes so argsort stays vectorized and deterministic.
+    arr_for_top = np.where(valid, arr, -np.inf)
+    arr_for_bot = np.where(valid, arr, np.inf)
 
-    mask_arr = ((r > (vc - k)) | (r <= k)) & valid
-    mask_arr[valid_counts.to_numpy() < k, :] = False
-    return mask_arr
+    top_idx = np.argsort(arr_for_top, axis=1)[:, -k:]
+    bot_idx = np.argsort(arr_for_bot, axis=1)[:, :k]
+
+    row_ids = np.repeat(np.arange(n_rows, dtype=np.int32), k)
+    top_flat = top_idx.reshape(-1)
+    bot_flat = bot_idx.reshape(-1)
+
+    top_valid = row_ok[row_ids] & np.isfinite(arr[row_ids, top_flat])
+    bot_valid = row_ok[row_ids] & np.isfinite(arr[row_ids, bot_flat])
+
+    mask_arr = np.zeros((n_rows, n_cols), dtype=bool)
+    sign_arr = np.zeros((n_rows, n_cols), dtype=np.int8)
+
+    rr_top = row_ids[top_valid]
+    cc_top = top_flat[top_valid]
+    rr_bot = row_ids[bot_valid]
+    cc_bot = bot_flat[bot_valid]
+
+    # Momentum convention: long top winners (+1), short bottom losers (-1).
+    mask_arr[rr_top, cc_top] = True
+    sign_arr[rr_top, cc_top] = 1
+    mask_arr[rr_bot, cc_bot] = True
+    sign_arr[rr_bot, cc_bot] = -1
+
+    return mask_arr, sign_arr
 
 
 def expand_candidate_mask(base_mask: pd.DataFrame, offsets: list[int]) -> pd.DataFrame:
@@ -967,7 +1154,8 @@ def select_candidates_cross_sectional(
     min_sign_consistency: float = None,
     base_mask_cache: Optional[dict] = None,
     base_cache_key: Optional[tuple] = None,
-) -> pd.DataFrame:
+    return_sign: bool = False,
+) -> pd.DataFrame | tuple[pd.DataFrame, pd.DataFrame]:
     """
     Unified cross-sectional selection for all three modes.
     
@@ -992,11 +1180,16 @@ def select_candidates_cross_sectional(
         Boolean mask of selected candidates (True = selected)
     """
     if base_mask_cache is not None and base_cache_key is not None and base_cache_key in base_mask_cache:
-        base_mask_arr = base_mask_cache[base_cache_key]
+        cached = base_mask_cache[base_cache_key]
+        if isinstance(cached, tuple) and len(cached) == 2:
+            base_mask_arr, base_sign_arr = cached
+        else:
+            base_mask_arr = cached
+            base_sign_arr = np.zeros_like(base_mask_arr, dtype=np.int8)
     else:
-        base_mask_arr = compute_cross_sectional_base_mask(metric, pct)
+        base_mask_arr, base_sign_arr = compute_cross_sectional_base_mask_and_sign(metric, pct)
         if base_mask_cache is not None and base_cache_key is not None:
-            base_mask_cache[base_cache_key] = base_mask_arr
+            base_mask_cache[base_cache_key] = (base_mask_arr, base_sign_arr)
 
     has_filters = any(
         [
@@ -1016,7 +1209,116 @@ def select_candidates_cross_sectional(
     else:
         mask_arr = np.array(base_mask_arr, copy=True, dtype=bool)
 
-    return pd.DataFrame(mask_arr, index=metric.index, columns=metric.columns, dtype=bool)
+    mask_df = pd.DataFrame(mask_arr, index=metric.index, columns=metric.columns, dtype=bool)
+    if not return_sign:
+        return mask_df
+
+    sign_filtered = np.where(mask_arr, base_sign_arr, 0).astype(np.int8, copy=False)
+    sign_df = pd.DataFrame(sign_filtered, index=metric.index, columns=metric.columns, dtype=np.int8)
+    return mask_df, sign_df
+
+
+def gather_candidate_values(arr: np.ndarray, row_idx: np.ndarray, col_idx: np.ndarray) -> np.ndarray:
+    """Gather candidate values from 2D feature array using integer indices."""
+    return arr[row_idx, col_idx]
+
+
+class DataContainer:
+    """Holds pre-aligned feature matrices and fast gather utilities."""
+
+    def __init__(
+        self,
+        feats: dict,
+        index: pd.Index,
+        columns: pd.Index,
+        feature_names: list[str],
+        float_dtype: np.dtype,
+    ):
+        self.index = index
+        self.columns = columns
+        self.float_dtype = float_dtype
+        self.feat_arr: dict[str, np.ndarray] = {}
+
+        for f in feature_names:
+            df = feats.get(f)
+            if df is None or not isinstance(df, pd.DataFrame):
+                continue
+            if (
+                df.shape[0] != len(index)
+                or df.shape[1] != len(columns)
+                or not df.index.equals(index)
+                or not df.columns.equals(columns)
+            ):
+                df = df.reindex(index=index, columns=columns)
+            self.feat_arr[f] = np.ascontiguousarray(df.to_numpy(dtype=float_dtype, copy=False))
+
+    def get_feature_matrix(
+        self,
+        feature_names: list[str],
+        row_idx: np.ndarray,
+        col_idx: np.ndarray,
+    ) -> tuple[np.ndarray, list[str]]:
+        used = [f for f in feature_names if f in self.feat_arr]
+        if not used:
+            return np.empty((len(row_idx), 0), dtype=self.float_dtype), []
+        X = np.empty((len(row_idx), len(used)), dtype=self.float_dtype)
+        for j, f in enumerate(used):
+            X[:, j] = gather_candidate_values(self.feat_arr[f], row_idx, col_idx)
+        return X, used
+
+    def compute_feature_target_ic(
+        self,
+        feature_names: list[str],
+        row_idx: np.ndarray,
+        col_idx: np.ndarray,
+        y: np.ndarray,
+        top_n: int = 20,
+    ) -> float:
+        if len(y) == 0:
+            return 0.0
+        y = np.asarray(y, dtype=np.float32)
+        ics: list[float] = []
+        n_ts = len(self.index)
+
+        for feat_name in feature_names[: top_n * 2]:
+            arr = self.feat_arr.get(feat_name)
+            if arr is None:
+                continue
+            x = gather_candidate_values(arr, row_idx, col_idx)
+            valid = np.isfinite(x) & np.isfinite(y)
+            if valid.sum() < 20:
+                continue
+
+            codes = row_idx[valid].astype(np.int32, copy=False)
+            xv = x[valid].astype(np.float64, copy=False)
+            yv = y[valid].astype(np.float64, copy=False)
+
+            cnt = np.bincount(codes, minlength=n_ts).astype(np.float64)
+            sx = np.bincount(codes, weights=xv, minlength=n_ts)
+            sy = np.bincount(codes, weights=yv, minlength=n_ts)
+            sxx = np.bincount(codes, weights=xv * xv, minlength=n_ts)
+            syy = np.bincount(codes, weights=yv * yv, minlength=n_ts)
+            sxy = np.bincount(codes, weights=xv * yv, minlength=n_ts)
+
+            ok = cnt >= 5.0
+            if not np.any(ok):
+                continue
+            cnt_ok = cnt[ok]
+            cov = sxy[ok] - (sx[ok] * sy[ok] / cnt_ok)
+            varx = sxx[ok] - (sx[ok] * sx[ok] / cnt_ok)
+            vary = syy[ok] - (sy[ok] * sy[ok] / cnt_ok)
+            denom = np.sqrt(np.maximum(varx, 0.0) * np.maximum(vary, 0.0))
+            corr = np.zeros_like(cov)
+            nz = denom > 1e-12
+            corr[nz] = cov[nz] / denom[nz]
+            corr = corr[np.isfinite(corr)]
+            if corr.size > 0:
+                ics.append(float(np.mean(np.abs(corr))))
+
+        if not ics:
+            return 0.0
+        ics_sorted = sorted(ics, reverse=True)[:top_n]
+        return float(np.mean(ics_sorted))
 
 
 def build_long_form_tables(
@@ -1093,6 +1395,54 @@ def safe_pearson_corr(x: np.ndarray, y: np.ndarray) -> float:
     return float(corr) if np.isfinite(corr) else 0.0
 
 
+def estimate_pooled_ic_std(
+    oof_values: np.ndarray,
+    y_values: np.ndarray,
+    ts_values: np.ndarray,
+    min_group_size: int = 20,
+) -> tuple[float, str, int, int, int]:
+    """Estimate IC uncertainty from pooled chunks when per-timestamp IC is sparse."""
+    oof_values = np.asarray(oof_values)
+    y_values = np.asarray(y_values)
+    ts_values = np.asarray(ts_values)
+    if len(oof_values) < max(100, min_group_size * 3):
+        return 0.0, "insufficient", 0, len(oof_values), 0
+
+    df = pd.DataFrame({"oof": oof_values, "y": y_values, "ts": ts_values})
+    df = df[np.isfinite(df["oof"]) & np.isfinite(df["y"])].sort_values("ts")
+    if len(df) < max(100, min_group_size * 3):
+        return 0.0, "insufficient", 0, len(df), 0
+
+    timestamp_ics = []
+    for _, group in df.groupby("ts"):
+        if len(group) >= 2:
+            ts_ic = safe_pearson_corr(
+                group["oof"].to_numpy(dtype=np.float32, copy=False),
+                group["y"].to_numpy(dtype=np.float32, copy=False),
+            )
+            if np.isfinite(ts_ic):
+                timestamp_ics.append(ts_ic)
+
+    if len(timestamp_ics) >= 10:
+        return float(np.std(timestamp_ics)), "per_timestamp", len(timestamp_ics), len(df), 0
+
+    n_groups = max(5, min(30, len(df) // max(min_group_size, 1)))
+    if n_groups < 2:
+        return 0.0, "insufficient", len(timestamp_ics), len(df), 0
+    group_ids = np.floor(np.linspace(0, n_groups, len(df), endpoint=False)).astype(np.int32)
+    pooled_ics = []
+    for g in range(n_groups):
+        chunk = df[group_ids == g]
+        if len(chunk) >= min_group_size:
+            chunk_ic = safe_pearson_corr(
+                chunk["oof"].to_numpy(dtype=np.float32, copy=False),
+                chunk["y"].to_numpy(dtype=np.float32, copy=False),
+            )
+            if np.isfinite(chunk_ic):
+                pooled_ics.append(chunk_ic)
+    return (float(np.std(pooled_ics)) if len(pooled_ics) >= 2 else 0.0, "pooled_chunked", len(timestamp_ics), len(df), len(pooled_ics))
+
+
 def compute_snr(pos_values: np.ndarray, neg_values: np.ndarray) -> float:
     """Compute Signal-to-Noise Ratio between positive and negative distributions."""
     if len(pos_values) < 2 or len(neg_values) < 2:
@@ -1108,75 +1458,23 @@ def compute_snr(pos_values: np.ndarray, neg_values: np.ndarray) -> float:
 
 
 def compute_feature_target_correlation(
-    precomputed: dict,
-    target_candidates: pd.Series,
+    data_container: DataContainer,
     available_features: list,
     candidate_row_idx: np.ndarray,
     candidate_col_idx: np.ndarray,
-    candidate_index_ref: pd.Index,
-    candidate_columns_ref: pd.Index,
-    top_n: int = 20
+    target_values: np.ndarray,
+    top_n: int = 20,
 ) -> float:
-    """
-    Compute mean |IC| of top features with target.
-    
-    Uses direct 2D gathers from feature matrices to avoid expensive full stacking.
-    """
+    """Compute mean |IC| of top features with target via vectorized bincount aggregation."""
     if not available_features:
-        logger.warning("No MODEL_FEATURES found in feature data")
         return 0.0
-
-    target_idx = target_candidates.index
-    if len(target_idx) == 0:
-        return 0.0
-    y_all = target_candidates.to_numpy(dtype=np.float32, copy=False)
-
-    ics = []
-    for feat_name in available_features[:top_n * 2]:  # Check more than needed
-        feat_df = precomputed.get("feats", {}).get(feat_name)
-        if feat_df is None:
-            continue
-        if (
-            feat_df.shape[0] != len(candidate_index_ref)
-            or feat_df.shape[1] != len(candidate_columns_ref)
-            or not feat_df.index.equals(candidate_index_ref)
-            or not feat_df.columns.equals(candidate_columns_ref)
-        ):
-            feat_df = feat_df.reindex(index=candidate_index_ref, columns=candidate_columns_ref)
-        feat_arr = feat_df.to_numpy(dtype=np.float32, copy=False)
-        x_all = feat_arr[candidate_row_idx, candidate_col_idx]
-        del feat_arr, feat_df
-        valid = np.isfinite(x_all) & np.isfinite(y_all)
-        if valid.sum() == 0:
-            continue
-        joined = pd.DataFrame(
-            {
-                "x": x_all[valid],
-                "y": y_all[valid],
-            },
-            index=target_idx[valid],
-        )
-
-        if joined.empty:
-            continue
-
-        timestamp_ics = joined.groupby(level=0).apply(
-            lambda g: safe_pearson_corr(
-                g["x"].to_numpy(dtype=np.float32, copy=False),
-                g["y"].to_numpy(dtype=np.float32, copy=False),
-            ) if len(g) >= 5 else np.nan
-        )
-        timestamp_ics = timestamp_ics[np.isfinite(timestamp_ics)]
-
-        if not timestamp_ics.empty:
-            ics.append(np.abs(timestamp_ics.values).mean())
-
-    if not ics:
-        return 0.0
-
-    # Return mean of top N by |IC|
-    ics_sorted = sorted(ics, reverse=True)[:top_n]
-    return np.mean(ics_sorted)
+    return data_container.compute_feature_target_ic(
+        feature_names=available_features,
+        row_idx=candidate_row_idx,
+        col_idx=candidate_col_idx,
+        y=target_values,
+        top_n=top_n,
+    )
 
 
 def get_stacked_feature_series(
@@ -1203,42 +1501,20 @@ def get_stacked_feature_series(
 
 
 def materialize_feature_matrix(
-    precomputed: dict,
+    data_container: DataContainer,
     available_features: list,
     candidate_row_idx: np.ndarray,
     candidate_col_idx: np.ndarray,
-    candidate_index_ref: pd.Index,
-    candidate_columns_ref: pd.Index,
     float_dtype: np.dtype,
 ) -> tuple[np.ndarray, list[str]]:
-    """Materialize candidate feature matrix in chunks to cap peak memory."""
-    feats = precomputed.get("feats", {})
-    used = [f for f in available_features if f in feats]
-    if not used:
-        return np.empty((len(candidate_row_idx), 0), dtype=float_dtype), []
-
-    X = np.empty((len(candidate_row_idx), len(used)), dtype=float_dtype)
-    for start in range(0, len(used), FEATURE_CHUNK_SIZE):
-        end = min(start + FEATURE_CHUNK_SIZE, len(used))
-        chunk_feats = used[start:end]
-        for offset, feat_name in enumerate(chunk_feats):
-            feat_df = feats.get(feat_name)
-            if feat_df is None:
-                X[:, start + offset] = np.nan
-                continue
-            if (
-                feat_df.shape[0] != len(candidate_index_ref)
-                or feat_df.shape[1] != len(candidate_columns_ref)
-                or not feat_df.index.equals(candidate_index_ref)
-                or not feat_df.columns.equals(candidate_columns_ref)
-            ):
-                feat_df = feat_df.reindex(index=candidate_index_ref, columns=candidate_columns_ref)
-            feat_arr = feat_df.to_numpy(dtype=float_dtype, copy=False)
-            vals = feat_arr[candidate_row_idx, candidate_col_idx]
-            X[:, start + offset] = vals
-            del vals, feat_arr, feat_df
-        gc.collect()
-
+    """Materialize candidate feature matrix directly from cached arrays."""
+    X, used = data_container.get_feature_matrix(
+        feature_names=available_features,
+        row_idx=candidate_row_idx,
+        col_idx=candidate_col_idx,
+    )
+    if X.dtype != float_dtype:
+        X = X.astype(float_dtype, copy=False)
     return X, used
 
 
@@ -1499,6 +1775,7 @@ def compute_learnability_metrics(
     candidate_returns_raw = candidate_returns_raw[valid_mask]
     candidate_target = candidate_target[valid_mask]
     candidate_signs = candidate_signs[valid_mask]
+    candidate_signs = np.where(candidate_signs == 0, 1, candidate_signs)
     candidate_returns = candidate_returns_raw * candidate_signs
     
     if len(candidate_returns) < 50:
@@ -1568,14 +1845,13 @@ def compute_learnability_metrics(
 
     tlog("Metrics: computing feature-target correlation")
     # 6. Feature-Target Correlation
+    data_container: DataContainer = precomputed["data_container"]
     mean_feat_ic = compute_feature_target_correlation(
-        precomputed=precomputed,
-        target_candidates=candidates["target"],
+        data_container=data_container,
         available_features=available_features,
         candidate_row_idx=candidate_row_idx,
         candidate_col_idx=candidate_col_idx,
-        candidate_index_ref=candidate_mask.index,
-        candidate_columns_ref=candidate_mask.columns,
+        target_values=candidates["target"].to_numpy(dtype=np.float32, copy=False),
         top_n=20,
     )
     
@@ -1632,12 +1908,10 @@ def compute_learnability_metrics(
     # 8. Information Coefficient (requires OOF predictions)
     if len(available_features) >= 10:
         X_all, used_features = materialize_feature_matrix(
-            precomputed=precomputed,
+            data_container=data_container,
             available_features=available_features,
             candidate_row_idx=candidate_row_idx,
             candidate_col_idx=candidate_col_idx,
-            candidate_index_ref=candidate_mask.index,
-            candidate_columns_ref=candidate_mask.columns,
             float_dtype=float_dtype,
         )
         y_arr = candidates["target"].to_numpy(dtype=float_dtype, copy=False)
@@ -1676,20 +1950,16 @@ def compute_learnability_metrics(
                     oof_mae = float(np.mean(np.abs(oof[oof_valid] - y[oof_valid])))
                     oof_directional_acc = float(np.mean(np.sign(oof[oof_valid]) == np.sign(y[oof_valid])))
 
-                    oof_df = pd.DataFrame({"oof": oof, "y": y, "ts": ts_vals})
-                    oof_df = oof_df[oof_df["oof"].notna()]
-                    timestamp_ics = []
-                    for ts, group in oof_df.groupby("ts"):
-                        if len(group) >= 5:
-                            ts_ic = safe_pearson_corr(
-                                group["oof"].to_numpy(dtype=float_dtype, copy=False),
-                                group["y"].to_numpy(dtype=float_dtype, copy=False),
-                            )
-                            if np.isfinite(ts_ic):
-                                timestamp_ics.append(ts_ic)
-                    ic_std = np.std(timestamp_ics) if timestamp_ics else 0
-                    del oof_df
-                    gc.collect()
+                    ic_std, ic_std_mode, ic_ts_n, ic_n, ic_chunks_n = estimate_pooled_ic_std(
+                        oof_values=oof[oof_valid],
+                        y_values=y[oof_valid],
+                        ts_values=np.asarray(ts_vals[oof_valid]),
+                    )
+                    tlog(
+                        "IC uncertainty estimate: "
+                        f"mode={ic_std_mode}, n_candidates={ic_n}, n_timestamps={ic_ts_n}, n_chunks={ic_chunks_n}, "
+                        f"ic_std={ic_std:.6f}"
+                    )
                 else:
                     ic, ic_std, ic_spearman, oof_mae, oof_directional_acc = 0, 0, 0, 0, 0
                 ridge_alpha_used = float(oof_diag.get("ridge_alpha", RIDGE_SCREEN_ALPHA))
@@ -1827,37 +2097,63 @@ def load_features_from_parquet(feature_path: str) -> dict:
     return feats
 
 
-def load_panel_data(panel_path: str) -> pd.DataFrame:
-    """
-    Load panel data (OHLCV) for computing returns if needed.
-    """
+def load_panel_data(
+    panel_path: str,
+    symbols: Optional[list[str]] = None,
+    columns: Optional[list[str]] = None,
+) -> pd.DataFrame:
+    """Load panel data lazily with projection/predicate pushdown when possible."""
     if os.path.isfile(panel_path):
-        return pd.read_parquet(panel_path)
+        try:
+            df = pd.read_parquet(panel_path, columns=columns)
+        except Exception:
+            df = pd.read_parquet(panel_path)
+            if columns is not None:
+                keep = [c for c in columns if c in df.columns]
+                if keep:
+                    df = df[keep]
+        if symbols is not None and "symbol" in df.columns:
+            df = df[df["symbol"].isin(symbols)]
+        return df
     elif os.path.isdir(panel_path):
-        # Load all parquet files in directory
-        dfs = []
-        for root, dirs, files in os.walk(panel_path):
-            for f in files:
-                if f.endswith(".parquet"):
-                    fpath = os.path.join(root, f)
-                    df = pd.read_parquet(fpath)
+        try:
+            import pyarrow.dataset as ds
+            import pyarrow.compute as pc
 
-                    # Derive symbol from partition path when missing (e.g., .../symbol=BTC_USDT/...)
+            dataset = ds.dataset(panel_path, format="parquet", partitioning="hive")
+            wanted_cols = columns or list(dataset.schema.names)
+            # keep only existing columns
+            wanted_cols = [c for c in wanted_cols if c in dataset.schema.names]
+            filt = None
+            if symbols:
+                if "symbol" in dataset.schema.names:
+                    filt = pc.field("symbol").isin(symbols)
+            table = dataset.to_table(columns=wanted_cols, filter=filt)
+            return table.to_pandas()
+        except Exception as exc:
+            logger.warning(f"PyArrow lazy panel load failed ({exc}); falling back to batch parquet reads")
+            dfs = []
+            for root, _, files in os.walk(panel_path):
+                for f in files:
+                    if not f.endswith('.parquet'):
+                        continue
+                    fpath = os.path.join(root, f)
+                    df = pd.read_parquet(fpath, columns=columns)
                     if "symbol" not in df.columns:
                         sym = None
-                        parts = root.split(os.sep)
-                        for p in parts:
+                        for p in root.split(os.sep):
                             if p.startswith("symbol="):
                                 sym = p.replace("symbol=", "")
                                 break
                         if sym is not None:
                             df["symbol"] = sym
+                    if symbols is not None and "symbol" in df.columns:
+                        df = df[df["symbol"].isin(symbols)]
+                    if len(df) > 0:
+                        dfs.append(df)
+            if dfs:
+                return pd.concat(dfs, ignore_index=True)
 
-                    dfs.append(df)
-        
-        if dfs:
-            return pd.concat(dfs, ignore_index=True)
-    
     raise FileNotFoundError(f"Panel path not found: {panel_path}")
 
 
@@ -1942,7 +2238,20 @@ def run_comparison(
     if "ret6h" not in feats and "ret24h" not in feats:
         logger.error("Required feature 'ret6h' (or fallback 'ret24h') not found in data")
         return
-    
+
+    # Upstream symbol reduction: every 3rd symbol in alphabetical order, capped to 200.
+    base_ret_df = feats.get("ret6h") if isinstance(feats.get("ret6h"), pd.DataFrame) else feats.get("ret24h")
+    if not isinstance(base_ret_df, pd.DataFrame):
+        raise ValueError("ret6h/ret24h must be DataFrame for symbol-universe selection")
+    selected_symbols = select_symbol_subset(list(base_ret_df.columns), step=3, limit=200)
+    if not selected_symbols:
+        raise ValueError("Symbol subset selection produced empty universe")
+    tlog(
+        "Symbol universe reduction applied: "
+        f"source={len(base_ret_df.columns)} -> selected={len(selected_symbols)} (every 3rd, cap=200)"
+    )
+    feats = subset_feature_universe(feats, selected_symbols)
+
     # Log available features
     available_model_features = [f for f in MODEL_FEATURES if f in feats]
     if max_features is not None and max_features > 0:
@@ -1953,7 +2262,11 @@ def run_comparison(
     if panel_path is None:
         raise ValueError("--panel is required for training-aligned MR/TF long/short slice evaluation")
     tlog("Loading panel data")
-    panel_raw = load_panel_data(panel_path)
+    panel_raw = load_panel_data(
+        panel_path,
+        symbols=selected_symbols,
+        columns=["timestamp", "datetime", "open_time", "date", "symbol", "open", "high", "low", "close", "volume"],
+    )
     panel = to_panel_dict(panel_raw)
     tlog(f"Loaded panel with close shape={panel['close'].shape}")
 
@@ -1969,7 +2282,16 @@ def run_comparison(
         float_dtype=float_dtype,
         atr_reference=metric_pack.get("atr_effective"),
     )
-    tlog("Built long-form base table (features materialized lazily)")
+    base_ref_df = feats.get("ret6h") if isinstance(feats.get("ret6h"), pd.DataFrame) else feats.get("ret24h")
+    data_container = DataContainer(
+        feats=feats,
+        index=base_ref_df.index,
+        columns=base_ref_df.columns,
+        feature_names=available_model_features,
+        float_dtype=float_dtype,
+    )
+    precomputed["data_container"] = data_container
+    tlog("Built long-form base table + pre-aligned DataContainer arrays")
 
     # Keep feats for filter application, but we'll pass it to selection functions
     # Define test configurations with filter variants
@@ -2143,6 +2465,7 @@ def run_comparison(
 
     base_mask_cache: dict[tuple[str, float], np.ndarray] = {}
     training_slice_cache: dict[tuple[Any, ...], list] = {}
+    training_slice_geometry_cache: OrderedDict[tuple[Any, ...], tuple[dict, dict]] = OrderedDict()
     disable_training_slices = False
 
     tlog(f"Prepared {len(configs)} configs for execution")
@@ -2175,7 +2498,7 @@ def run_comparison(
             expansion_offsets = cfg.get("expansion_offsets", [])
 
             tlog(f"Selecting candidates: mode={mode}, pct={pct}")
-            candidate_mask_base = select_candidates_cross_sectional(
+            candidate_mask_base, side_sign_base = select_candidates_cross_sectional(
                 metric_by_mode[mode],
                 pct,
                 filter_masks=filter_mask_pack,
@@ -2184,9 +2507,11 @@ def run_comparison(
                 min_sign_consistency=min_sign_consistency,
                 base_mask_cache=base_mask_cache,
                 base_cache_key=(mode, float(pct)),
+                return_sign=True,
             )
             # Troubleshooting: show where candidates are filtered out.
-            raw_base_arr = base_mask_cache.get((mode, float(pct)))
+            raw_cached = base_mask_cache.get((mode, float(pct)))
+            raw_base_arr = raw_cached[0] if isinstance(raw_cached, tuple) else raw_cached
             if raw_base_arr is not None:
                 n_raw = int(raw_base_arr.sum())
                 dbg_arr = np.array(raw_base_arr, copy=True, dtype=bool)
@@ -2216,6 +2541,14 @@ def run_comparison(
             base_selected_n = int(candidate_mask_base.to_numpy(dtype=bool, copy=False).sum())
             tlog(f"Candidate base mask: selected={base_selected_n}")
             candidate_mask = expand_candidate_mask(candidate_mask_base, expansion_offsets)
+            side_sign = side_sign_base.copy()
+            if expansion_offsets:
+                for off in expansion_offsets:
+                    shifted = side_sign_base.shift(int(off)).fillna(0).astype(np.int8)
+                    # Preserve first non-zero sign when expanded overlap occurs.
+                    fill_mask = (side_sign == 0) & (shifted != 0)
+                    side_sign = side_sign.where(~fill_mask, shifted)
+            side_sign = side_sign.where(candidate_mask, 0).astype(np.int8)
             expanded_selected_n = int(candidate_mask.to_numpy(dtype=bool, copy=False).sum())
             if expansion_offsets:
                 tlog(
@@ -2226,6 +2559,8 @@ def run_comparison(
                 tlog(f"Candidate expansion skipped: selected={expanded_selected_n}")
 
             candidate_mask = align_candidate_mask_to_panel_symbols(candidate_mask, panel)
+            side_sign = side_sign.reindex(index=candidate_mask.index, columns=candidate_mask.columns, fill_value=0).astype(np.int8)
+            side_sign = side_sign.where(candidate_mask, 0).astype(np.int8)
             aligned_selected_n = int(candidate_mask.to_numpy(dtype=bool, copy=False).sum())
             panel_overlap_cols = int(
                 len(candidate_mask.columns.intersection(panel["close"].columns))
@@ -2270,6 +2605,13 @@ def run_comparison(
             cfg_variant["barrier_tp_lo"] = float(cfg.get("barrier_tp_lo", 0.02))
             cfg_variant["barrier_tp_hi"] = float(cfg.get("barrier_tp_hi", 0.06))
             cfg_variant["label_horizon_base"] = float(cfg.get("label_horizon_base", 4))
+
+            horizons_hours = list(cfg_variant.get("label_horizons_hours", [2, 4, 8]))
+            if any(float(h) <= 2.0 for h in horizons_hours):
+                cfg_variant["barrier_tp_lo"] = min(float(cfg_variant["barrier_tp_lo"]), 0.004)
+            elif any(float(h) <= 4.0 for h in horizons_hours):
+                cfg_variant["barrier_tp_lo"] = min(float(cfg_variant["barrier_tp_lo"]), 0.008)
+            cfg_variant["barrier_tp_hi"] = max(float(cfg_variant["barrier_tp_hi"]), float(cfg_variant["barrier_tp_lo"]))
             
             if cfg.get("min_range_pct") is not None:
                 cfg_variant["train_min_range_pct"] = float(cfg["min_range_pct"])
@@ -2289,6 +2631,21 @@ def run_comparison(
                 cfg_variant.get("barrier_disp_floor"),
                 tuple(expansion_offsets),
                 tuple(cfg_variant.get("label_horizons_hours", [2, 4, 8])),
+            )
+            geometry_cache_key = (
+                tuple(cfg_variant.get("label_horizons_hours", [2, 4, 8])),
+                cfg_variant.get("barrier_k_tp"),
+                cfg_variant.get("barrier_sl_base_mult"),
+                cfg_variant.get("barrier_disp_floor"),
+                cfg_variant.get("barrier_z_max"),
+                cfg_variant.get("barrier_k_reg"),
+                cfg_variant.get("barrier_m_lo"),
+                cfg_variant.get("barrier_m_hi"),
+                cfg_variant.get("barrier_sl_lo"),
+                cfg_variant.get("barrier_sl_hi"),
+                cfg_variant.get("barrier_z_gate"),
+                cfg_variant.get("barrier_tp_lo"),
+                cfg_variant.get("barrier_tp_hi"),
             )
 
             if disable_training_slices:
@@ -2315,6 +2672,8 @@ def run_comparison(
                         cache=training_slice_cache,
                         cache_key=training_cache_key,
                         sample_frac=SAMPLE_FRAC,
+                        geometry_cache=training_slice_geometry_cache,
+                        geometry_cache_key=geometry_cache_key,
                     )
             for r in training_slice_rows:
                 slice_results.append(

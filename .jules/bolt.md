@@ -93,3 +93,15 @@ Result: `calculate_entropy_statistics_numba` speedup >700x (2.11s -> 0.003s). Fu
 **Action:**
 1. Implemented a **fused parallel kernel** for rolling Z-score, calculating mean and std in a single pass. This achieved a **4x speedup** (0.044s -> 0.011s for 1M elements).
 2. Introduced an **"Assumed Mean" centering technique** (subtracting the first valid value `K` from all elements in the window) to the variance accumulation logic. This completely resolves numerical instability for large inputs without the complexity of Welford's algorithm for sliding windows.
+
+## 2026-02-16 - Parallelizing ATR Calculation with Numba
+
+**Learning:** Iterating over DataFrame columns in Python to apply a Numba kernel (`for c in cols: kernel(...)`) is significantly slower than passing the entire matrix to a parallel Numba kernel (`prange`), especially for wide DataFrames (e.g., 5000 columns).
+
+**Insight:** The overhead of Python loops, `enumerate`, and repeated `to_numpy()` calls dominates execution time. Converting the entire DataFrame to a contiguous 2D Numpy array once and iterating with `prange` yielded a ~150-280x speedup (1.9s -> 0.01s).
+
+**Action:** When optimizing element-wise or column-wise operations on DataFrames in `fast_funcs.py`, always prefer:
+1. Align inputs using `index.intersection()` once.
+2. Convert to 2D float32 Numpy arrays.
+3. Use a `@jit(parallel=True)` kernel with `prange(n_cols)`.
+4. Reindex the output DataFrame to match the input structure if necessary.

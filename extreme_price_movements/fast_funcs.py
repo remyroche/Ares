@@ -448,6 +448,26 @@ def numba_atr_kernel(high, low, close, n):
 
     return out
 
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_atr_parallel(high_mat, low_mat, close_mat, n):
+    n_rows, n_cols = high_mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = numba_atr_kernel(high_mat[:, j], low_mat[:, j], close_mat[:, j], n)
+
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_atr_no_norm_parallel(high_mat, low_mat, close_mat, n):
+    n_rows, n_cols = high_mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = numba_atr_no_norm_kernel(high_mat[:, j], low_mat[:, j], close_mat[:, j], n)
+
+    return out
+
 @jit(nopython=True, cache=True)
 def numba_atr_no_norm_kernel(high, low, close, n):
     """
@@ -468,35 +488,77 @@ def numba_atr_no_norm_kernel(high, low, close, n):
     return atr
 
 def numba_atr_no_norm(high_df, low_df, close_df, n):
-    # tprint(f"Entering function: numba_atr_no_norm in fast_funcs.py")
-    out = pd.DataFrame(index=close_df.index, columns=close_df.columns, dtype=np.float32)
-    cols = close_df.columns
-    total_cols = len(cols)
-    for i, c in enumerate(cols):
-        if i % 100 == 0:
-            tprint(f"numba_atr_no_norm progress: {i}/{total_cols} columns processed")
-        h = high_df[c].to_numpy(dtype=np.float32)
-        l = low_df[c].to_numpy(dtype=np.float32)
-        cl = close_df[c].to_numpy(dtype=np.float32)
-        res = numba_atr_no_norm_kernel(h, l, cl, n)
-        out[c] = res
-    return out
+    tprint(f"Entering function: numba_atr_no_norm in fast_funcs.py")
+
+    is_series = isinstance(close_df, pd.Series)
+    if is_series:
+        close_df = close_df.to_frame()
+    if isinstance(high_df, pd.Series):
+        high_df = high_df.to_frame()
+    if isinstance(low_df, pd.Series):
+        low_df = low_df.to_frame()
+
+    # Align columns (intersection) to ensure safe numpy conversion
+    common_cols = close_df.columns.intersection(high_df.columns).intersection(low_df.columns)
+
+    if len(common_cols) == 0:
+        # Return empty/NaN frame with original structure
+        out = pd.DataFrame(np.nan, index=close_df.index, columns=close_df.columns, dtype=np.float32)
+        if is_series: return out[out.columns[0]]
+        return out
+
+    h_mat = high_df[common_cols].to_numpy(dtype=np.float32, copy=False)
+    l_mat = low_df[common_cols].to_numpy(dtype=np.float32, copy=False)
+    c_mat = close_df[common_cols].to_numpy(dtype=np.float32, copy=False)
+
+    res = _numba_atr_no_norm_parallel(h_mat, l_mat, c_mat, n)
+
+    res_df = pd.DataFrame(res, index=close_df.index, columns=common_cols)
+
+    # Reindex to match original close_df columns (filling NaNs for missing ones)
+    if not res_df.columns.equals(close_df.columns):
+        res_df = res_df.reindex(columns=close_df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+
+    return res_df
 
 def numba_atr(high_df, low_df, close_df, n):
-    # This requires synchronized iteration over 3 dataframes.
     tprint(f"Entering function: numba_atr in fast_funcs.py")
-    out = pd.DataFrame(index=close_df.index, columns=close_df.columns, dtype=np.float32)
-    cols = close_df.columns
-    total_cols = len(cols)
-    for i, c in enumerate(cols):
-        if i % 100 == 0:
-            tprint(f"numba_atr progress: {i}/{total_cols} columns processed")
-        h = high_df[c].to_numpy(dtype=np.float32)
-        l = low_df[c].to_numpy(dtype=np.float32)
-        cl = close_df[c].to_numpy(dtype=np.float32)
-        res = numba_atr_kernel(h, l, cl, n)
-        out[c] = res
-    return out
+
+    is_series = isinstance(close_df, pd.Series)
+    if is_series:
+        close_df = close_df.to_frame()
+    if isinstance(high_df, pd.Series):
+        high_df = high_df.to_frame()
+    if isinstance(low_df, pd.Series):
+        low_df = low_df.to_frame()
+
+    # Align columns (intersection)
+    common_cols = close_df.columns.intersection(high_df.columns).intersection(low_df.columns)
+
+    if len(common_cols) == 0:
+        out = pd.DataFrame(np.nan, index=close_df.index, columns=close_df.columns, dtype=np.float32)
+        if is_series: return out[out.columns[0]]
+        return out
+
+    h_mat = high_df[common_cols].to_numpy(dtype=np.float32, copy=False)
+    l_mat = low_df[common_cols].to_numpy(dtype=np.float32, copy=False)
+    c_mat = close_df[common_cols].to_numpy(dtype=np.float32, copy=False)
+
+    res = _numba_atr_parallel(h_mat, l_mat, c_mat, n)
+
+    res_df = pd.DataFrame(res, index=close_df.index, columns=common_cols)
+
+    # Reindex to match original close_df columns
+    if not res_df.columns.equals(close_df.columns):
+        res_df = res_df.reindex(columns=close_df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+
+    return res_df
 
 def numba_zscore(df, n):
     # (x - mean) / std

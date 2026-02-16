@@ -619,7 +619,7 @@ def load_features(ts: pd.Timestamp, root_dir: str) -> dict:
     if not os.path.exists(in_dir):
         return None
         
-    files = glob.glob(os.path.join(in_dir, "symbol=*.parquet"))
+    files = sorted(glob.glob(os.path.join(in_dir, "symbol=*.parquet")))
     if not files:
         return None
         
@@ -630,7 +630,11 @@ def load_features(ts: pd.Timestamp, root_dir: str) -> dict:
     # could double memory pressure on large universes.
     feat_buffers = {}
     
-    for fpath in files:
+    start_load = time.time()
+    total_files = len(files)
+    progress_every = 25 if total_files >= 100 else 10
+
+    for i, fpath in enumerate(files, start=1):
         try:
             fname = os.path.basename(fpath)
             # fname is symbol=XYZ.parquet
@@ -655,6 +659,12 @@ def load_features(ts: pd.Timestamp, root_dir: str) -> dict:
                 feat_buffers[k][real_sym] = pd.to_numeric(df[k], errors="coerce").astype(np.float32, copy=False)
 
             del df
+            if i % progress_every == 0 or i == total_files:
+                elapsed = time.time() - start_load
+                tprint(
+                    f"Feature load progress: {i}/{total_files} files "
+                    f"({(i / total_files) * 100:.1f}%) in {elapsed:.1f}s"
+                )
         except Exception as e:
             tprint(f"Error loading {fpath}: {e}")
 

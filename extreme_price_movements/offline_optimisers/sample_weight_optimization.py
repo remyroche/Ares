@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from itertools import combinations
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
+import csv
 import resource
 
 import numpy as np
@@ -12,7 +13,6 @@ import pandas as pd
 from scipy.stats import spearmanr
 from sklearn.base import clone
 from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor
-from sklearn.preprocessing import StandardScaler
 
 try:
     import optuna
@@ -69,7 +69,7 @@ def _select_test_feature_matrix(
     if isinstance(X, pd.DataFrame):
         return np.asarray(select_test_feature_frame(X), dtype=np.float32)
 
-    X_arr = np.asarray(X, dtype=np.float32)
+    X_arr = np.asarray(X, dtype=np.float32, copy=False)
     if feature_names is None:
         return X_arr
 
@@ -79,6 +79,20 @@ def _select_test_feature_matrix(
     if not keep_idx:
         return X_arr
     return X_arr[:, keep_idx]
+
+
+def _standardize_feature_matrix(X: np.ndarray) -> np.ndarray:
+    """In-place standardisation (zero mean / unit std) to avoid per-fold copies."""
+    X_arr = np.asarray(X, dtype=np.float32)
+    if X_arr.ndim != 2 or X_arr.size == 0:
+        return X_arr
+
+    mean = np.mean(X_arr, axis=0, keepdims=True, dtype=np.float32)
+    std = np.std(X_arr, axis=0, keepdims=True, dtype=np.float32)
+    std = np.maximum(std, np.float32(1e-6))
+    X_arr -= mean
+    X_arr /= std
+    return X_arr
 
 
 def compute_n_eff(weights: np.ndarray) -> float:
@@ -101,31 +115,34 @@ def combine_weights_safely(
 
     local_weights = component_weights.copy()
     clipped: Dict[str, np.ndarray] = {}
+    template = None
 
     for name, w in components.items():
-        arr = np.asarray(w, dtype=float)
+        arr = np.asarray(w, dtype=np.float32, copy=False)
         p5 = float(np.nanpercentile(arr, 5))
         p95 = float(np.nanpercentile(arr, 95))
         span = p95 - p5
         ratio = p95 / (p5 + 1e-12)
 
         if not np.isfinite(span) or span < 1e-6 or ratio < 1.05:
-            clipped[name] = np.ones_like(arr, dtype=float)
+            clipped[name] = np.ones_like(arr, dtype=np.float32)
             local_weights[name] = 0.0
         else:
-            base = np.maximum(arr, eps)
-            clipped[name] = np.clip(base, p5, p95)
+            base = np.maximum(arr, eps, dtype=np.float32)
+            clipped[name] = np.clip(base, p5, p95).astype(np.float32, copy=False)
+        if template is None:
+            template = clipped[name]
 
-    log_w = np.zeros_like(next(iter(clipped.values())), dtype=float)
+    log_w = np.zeros_like(template, dtype=np.float32)
     for name, w in clipped.items():
         alpha = float(local_weights.get(name, 1.0))
         if alpha == 0.0:
             continue
-        log_w += alpha * np.log(w + eps)
+        log_w += np.float32(alpha) * np.log(w + eps, dtype=np.float32)
 
-    w_final = np.exp(log_w)
-    if not np.all(np.isfinite(w_final)) or np.sum(w_final) <= 0:
-        w_final = np.ones_like(w_final, dtype=float)
+    w_final = np.exp(log_w, dtype=np.float32)
+    if not np.all(np.isfinite(w_final)) or np.sum(w_final, dtype=np.float64) <= 0:
+        w_final = np.ones_like(w_final, dtype=np.float32)
 
     target_n_eff = min_n_eff_ratio * len(w_final)
     n_eff = compute_n_eff(w_final)
@@ -135,16 +152,32 @@ def combine_weights_safely(
         lo, hi = 1.0, 8.0
         for _ in range(24):
             mid = 0.5 * (lo + hi)
-            w_t = np.power(np.maximum(w_final, eps), 1.0 / mid)
+            w_t = np.power(np.maximum(w_final, eps), 1.0 / mid, dtype=np.float32)
             w_t /= max(float(np.mean(w_t)), eps)
             if compute_n_eff(w_t) >= target_n_eff:
                 hi = mid
             else:
                 lo = mid
-        w_final = np.power(np.maximum(w_final, eps), 1.0 / hi)
+        w_final = np.power(np.maximum(w_final, eps), 1.0 / hi, dtype=np.float32)
 
-    w_final /= max(float(np.mean(w_final)), eps)
+    w_final /= max(float(np.mean(w_final, dtype=np.float64)), eps)
     return w_final
+
+
+def _nanmedian_group(values: np.ndarray, inv: np.ndarray, group_count: int) -> np.ndarray:
+    """Vectorized nanmedian per group using partial sorting for moderate group sizes."""
+    medians = np.zeros(group_count, dtype=np.float32)
+    for idx in range(group_count):
+        mask = inv == idx
+        if not np.any(mask):
+            medians[idx] = 1.0
+            continue
+        vals = values[mask]
+        med = np.nanmedian(vals)
+        if not np.isfinite(med) or med <= 0:
+            med = 1.0
+        medians[idx] = np.float32(med)
+    return medians
 
 
 def compute_vol_weights(
@@ -154,20 +187,25 @@ def compute_vol_weights(
     power: float = 0.5,
     min_group_size: int = 20,
 ) -> np.ndarray:
-    vol_df = pd.DataFrame({"vol": np.asarray(past_vol, dtype=float), "ts": pd.to_datetime(timestamps)})
+    vol = np.asarray(past_vol, dtype=np.float32)
+    ts = pd.to_datetime(timestamps).values.astype("datetime64[ns]")
+    if vol.size == 0:
+        return np.ones(0, dtype=np.float32)
 
-    def safe_median(x: pd.Series) -> float:
-        if len(x) < min_group_size:
-            return float(x.median()) if len(x) else 1.0
-        return float(x.median())
-
-    denom = vol_df.groupby("ts")["vol"].transform(lambda x: x / (safe_median(x) + EPS)).values
-    denom = np.maximum(denom, EPS)
-    if direction == "downweight_high":
-        w = np.power(denom, -power)
+    ts_int = ts.astype("int64", copy=False)
+    unique_ts, inv = np.unique(ts_int, return_inverse=True)
+    if unique_ts.size and min_group_size > 1:
+        medians = _nanmedian_group(vol, inv, unique_ts.size)
     else:
-        w = np.power(denom, power)
-    return w / max(float(np.mean(w)), EPS)
+        medians = np.ones(unique_ts.size, dtype=np.float32)
+
+    denom = vol / np.maximum(medians[inv], np.float32(EPS))
+    denom = np.maximum(denom, np.float32(EPS))
+    if direction == "downweight_high":
+        w = np.power(denom, -power, dtype=np.float32)
+    else:
+        w = np.power(denom, power, dtype=np.float32)
+    return w / max(float(np.mean(w, dtype=np.float64)), EPS)
 
 
 def compute_liquidity_weights(
@@ -222,14 +260,16 @@ def compute_recency_weights(
     w = np.power(2.0, -age_bars / max(float(half_life_bars), 1.0))
     w = np.clip(w, clip_range[0], clip_range[1])
 
-    era_df = pd.DataFrame({"w": w, "era": np.asarray(era_indices)})
-    era_neff = era_df.groupby("era").apply(lambda g: (g["w"].sum() ** 2) / max((g["w"] ** 2).sum(), EPS))
-    n_samples_per_era = era_df.groupby("era").size()
-
-    min_era_neff = float(era_neff.min()) if len(era_neff) else len(w)
-    min_expected = float((n_samples_per_era * min_era_neff_ratio).min()) if len(n_samples_per_era) else 0.0
-    if min_era_neff < min_expected:
-        w = np.power(w, 0.5)
+    eras = np.asarray(era_indices)
+    if eras.size:
+        _, inv = np.unique(eras, return_inverse=True)
+        w_sum = np.bincount(inv, weights=w)
+        w_sq_sum = np.bincount(inv, weights=w * w)
+        n_samples_per_era = np.bincount(inv)
+        era_neff = (w_sum ** 2) / np.maximum(w_sq_sum, EPS)
+        min_expected = float(np.min(n_samples_per_era * min_era_neff_ratio)) if n_samples_per_era.size else 0.0
+        if era_neff.size and float(np.min(era_neff)) < min_expected:
+            w = np.power(w, 0.5)
 
     return w / max(float(np.mean(w)), EPS)
 
@@ -239,29 +279,37 @@ def check_component_redundancy(
     threshold: float = 0.85,
 ) -> Dict[str, Any]:
     names = list(components.keys())
-    arrays = [np.asarray(components[n], dtype=float) for n in names]
-    n = len(arrays)
-    corr = np.eye(n, dtype=float)
+    arrays = [np.asarray(components[n], dtype=float, copy=False) for n in names]
+    redundant: list[tuple[str, str, float]] = []
+    max_corr = 0.0
 
-    redundant = []
-    for i in range(n):
-        for j in range(i + 1, n):
+    for i in range(len(arrays)):
+        for j in range(i + 1, len(arrays)):
             r, _ = spearmanr(arrays[i], arrays[j])
             r = float(0.0 if not np.isfinite(r) else r)
-            corr[i, j] = corr[j, i] = r
+            max_corr = max(max_corr, abs(r))
             if abs(r) > threshold:
                 redundant.append((names[i], names[j], r))
 
-    corr_map = {name: corr[idx, :].tolist() for idx, name in enumerate(names)}
-    return {"pairs": redundant, "corr_matrix": corr_map}
+    return {"pairs": redundant, "max_corr": max_corr}
 
 
 def log_weight_statistics(weights: np.ndarray, era_indices: np.ndarray, name: str) -> Dict[str, float]:
-    w = np.asarray(weights, dtype=float)
-    era_df = pd.DataFrame({"w": w, "era": np.asarray(era_indices)})
-    era_neff = era_df.groupby("era").apply(lambda g: (g["w"].sum() ** 2) / max((g["w"] ** 2).sum(), EPS))
+    w = np.asarray(weights, dtype=float, copy=False)
+    eras = np.asarray(era_indices)
+    if eras.size:
+        _, inv = np.unique(eras, return_inverse=True)
+        w_sum = np.bincount(inv, weights=w)
+        w_sq_sum = np.bincount(inv, weights=w * w)
+        era_neff = (w_sum ** 2) / np.maximum(w_sq_sum, EPS)
+        era_neff_min = float(np.min(era_neff)) if era_neff.size else 0.0
+        era_neff_mean = float(np.mean(era_neff)) if era_neff.size else 0.0
+    else:
+        era_neff_min = 0.0
+        era_neff_mean = 0.0
 
     top1_k = max(1, int(len(w) * 0.01))
+    total = max(np.sum(w), EPS)
     stats = {
         "mean": float(np.mean(w)),
         "std": float(np.std(w)),
@@ -272,9 +320,9 @@ def log_weight_statistics(weights: np.ndarray, era_indices: np.ndarray, name: st
         "p99": float(np.percentile(w, 99)),
         "max": float(np.max(w)),
         "n_eff": float(compute_n_eff(w)),
-        "top1pct_share": float(np.sort(w)[-top1_k:].sum() / max(np.sum(w), EPS)),
-        "era_neff_min": float(era_neff.min()) if len(era_neff) else 0.0,
-        "era_neff_mean": float(era_neff.mean()) if len(era_neff) else 0.0,
+        "top1pct_share": float(np.sort(w)[-top1_k:].sum() / total),
+        "era_neff_min": era_neff_min,
+        "era_neff_mean": era_neff_mean,
     }
     tprint(f"{name} weights | " + " ".join([f"{k}={v:.4f}" for k, v in stats.items()]))
     return stats
@@ -306,20 +354,18 @@ def _run_cv_ic(
     sample_weight: np.ndarray,
     label_intervals: np.ndarray,
     model_family: str,
-    n_splits: int,
-    embargo_bars: int,
-    seed: int,
+    n_splits: int = 2,  # 2 for stage1, 3 for stage2, 4 for stage3
+    embargo_bars: int = 10,  # Default value added
+    seed: int = 42,  # Default value added
     cfg_runtime: Optional[Dict[str, Any]] = None,
 ) -> np.ndarray:
     splitter = IntervalPurgedKFold(n_splits=n_splits, embargo_bars=embargo_bars)
     fold_ics = []
-    Xv = np.asarray(X, dtype=np.float32)
-    yv = np.asarray(y, dtype=float)
-    wv = np.asarray(sample_weight, dtype=float)
+    Xs = np.asarray(X, dtype=np.float32, copy=False)
+    yv = np.asarray(y, dtype=float, copy=False)
+    wv = np.asarray(sample_weight, dtype=float, copy=False)
 
-    scaler = StandardScaler()
-    Xs = scaler.fit_transform(Xv)
-
+    base_model = _make_model(model_family, random_state=seed, cfg_runtime=cfg_runtime)
     for fold_idx, (tr, va) in enumerate(splitter.split(Xs, label_intervals=label_intervals), start=1):
         if len(tr) < 64 or len(va) < 32:
             _tprint_metrics(
@@ -330,7 +376,7 @@ def _run_cv_ic(
                 mem_mb=_process_memory_mb(),
             )
             continue
-        model = _make_model(model_family, random_state=seed, cfg_runtime=cfg_runtime)
+        model = clone(base_model)
         model.fit(Xs[tr], yv[tr], sample_weight=wv[tr])
         pred = model.predict(Xs[va])
         fold_ic = _safe_ic(yv[va], pred)
@@ -358,8 +404,8 @@ def constrained_objective(
     y_ret: np.ndarray,
     label_intervals: np.ndarray,
     model_family: str,
-    n_splits: int,
-    embargo_bars: int,
+    n_splits: int = 2,  # 2 for stage1, 3 for stage2, 4 for stage3
+    embargo_bars: int = 10,  # Default value added
     seeds: Iterable[int] = (42, 123),
     min_n_eff_ratio: float = 0.30,
     max_top1pct: float = 0.10,
@@ -426,7 +472,7 @@ def optimize_component_weights(
     components: Dict[str, np.ndarray],
     production_model: str = "ExtraTrees",
     n_trials: int = 20,
-    n_splits: int = 5,
+    n_splits: int = 2,  # 2 for stage1, 3 for stage2, 4 for stage3
     embargo_bars: int = 10,
     min_n_eff_ratio: float = 0.30,
     max_top1pct: float = 0.10,
@@ -439,6 +485,7 @@ def optimize_component_weights(
         return WeightOptimizationResult(ones, {}, -10.0, {"reason": "no_components"})
 
     X = _select_test_feature_matrix(X, feature_names=feature_names)
+    X = _standardize_feature_matrix(X)
     names = list(components.keys())
     _tprint_metrics(
         "Weight optimisation started",
@@ -520,41 +567,52 @@ def run_ablation(
     components: Dict[str, np.ndarray],
     baseline_weights: np.ndarray,
     production_model: str = "ExtraTrees",
-    n_splits: int = 5,
+    n_splits: int = 3,  # Reduced from 5 for memory efficiency
     embargo_bars: int = 10,
     cfg_runtime: Optional[Dict[str, Any]] = None,
+    enable: bool = True,
 ) -> list[tuple[str, float]]:
     _tprint_metrics("Ablation started", n_components=len(components), mem_mb=_process_memory_mb())
+    if not enable or not components:
+        return [("baseline", float("nan"))]
+    X_std = _standardize_feature_matrix(X)
     results = []
     base_score = constrained_objective(
-        baseline_weights, X, y_ret, label_intervals,
+        baseline_weights, X_std, y_ret, label_intervals,
         model_family=production_model, n_splits=n_splits, embargo_bars=embargo_bars,
         cfg_runtime=cfg_runtime,
     )
     results.append(("baseline", float(base_score)))
     _tprint_metrics("Ablation baseline", score=float(base_score), mem_mb=_process_memory_mb())
 
-    for name, w_comp in components.items():
-        w = baseline_weights * np.asarray(w_comp, dtype=float)
-        w /= max(float(np.mean(w)), EPS)
+    baseline_arr = np.asarray(baseline_weights, dtype=float, copy=False)
+    scratch = baseline_arr.copy()
+    comp_arrays = {k: np.asarray(v, dtype=float, copy=False) for k, v in components.items()}
+
+    for name, w_comp in comp_arrays.items():
+        np.multiply(baseline_arr, w_comp, out=scratch)
+        scratch /= max(float(np.mean(scratch)), EPS)
         score = constrained_objective(
-            w, X, y_ret, label_intervals,
+            scratch, X_std, y_ret, label_intervals,
             model_family=production_model, n_splits=n_splits, embargo_bars=embargo_bars,
             cfg_runtime=cfg_runtime,
         )
         results.append((name, float(score)))
         _tprint_metrics("Ablation single component", component=name, score=float(score), mem_mb=_process_memory_mb())
+        scratch[:] = baseline_arr
 
-    for n1, n2 in combinations(components.keys(), 2):
-        w = baseline_weights * np.asarray(components[n1], dtype=float) * np.asarray(components[n2], dtype=float)
-        w /= max(float(np.mean(w)), EPS)
+    for n1, n2 in combinations(comp_arrays.keys(), 2):
+        np.multiply(baseline_arr, comp_arrays[n1], out=scratch)
+        np.multiply(scratch, comp_arrays[n2], out=scratch)
+        scratch /= max(float(np.mean(scratch)), EPS)
         score = constrained_objective(
-            w, X, y_ret, label_intervals,
+            scratch, X_std, y_ret, label_intervals,
             model_family=production_model, n_splits=n_splits, embargo_bars=embargo_bars,
             cfg_runtime=cfg_runtime,
         )
         results.append((f"{n1}+{n2}", float(score)))
         _tprint_metrics("Ablation pair", component=f"{n1}+{n2}", score=float(score), mem_mb=_process_memory_mb())
+        scratch[:] = baseline_arr
 
     return sorted(results, key=lambda x: x[1], reverse=True)
 
@@ -628,6 +686,7 @@ def _build_stage_learnability_rows(
         n_splits=int(sw_defaults["sample_weight_opt_n_splits"]),
         embargo_bars=int(sw_defaults["sample_weight_opt_embargo_bars"]),
         cfg_runtime=cfg_runtime,
+        enable=bool(cfg_runtime.get("sample_weight_opt_enable_ablation", True)) if isinstance(cfg_runtime, dict) else True,
     )
     ablation_rank = {name: i + 1 for i, (name, _) in enumerate(ablation)}
     ablation_score = {name: float(score) for name, score in ablation}
@@ -784,7 +843,13 @@ def run_offline_sample_weight_optimisation(
     out = Path(output_csv) if output_csv else (REPORTS_DIR / "sample_weight_optimization_report.csv")
     if not report_rows:
         report_rows = [{"stage": "base", "row_type": "summary", "component": "ALL", "objective_value": np.nan, "note": "defaults_only"}]
-    pd.DataFrame(report_rows).to_csv(out, index=False)
+    if report_rows:
+        with out.open("w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=sorted(report_rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(report_rows)
+    else:
+        pd.DataFrame(report_rows).to_csv(out, index=False)
     save_best_params_csv(SAMPLE_WEIGHT_BEST_PARAMS_CSV, best_params, metadata={"source": "sample_weight_optimization"})
     _tprint_metrics(
         "Offline sample-weight optimisation finished",

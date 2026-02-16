@@ -18,6 +18,7 @@ import hashlib
 import json
 import os
 import sys
+import glob
 import logging
 from copy import deepcopy
 from collections import OrderedDict
@@ -29,7 +30,9 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 from sklearn.ensemble import ExtraTreesRegressor
+from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.linear_model import Ridge
+from sklearn.metrics import brier_score_loss, roc_auc_score
 from sklearn.preprocessing import RobustScaler
 
 # Add project root to path
@@ -67,16 +70,31 @@ logger = logging.getLogger(__name__)
 
 
 
-OOF_MAX_SAMPLES = 1_800_000
+OOF_MAX_SAMPLES = 600_000
 OOF_RIDGE_MAX_TRAIN_SAMPLES = 700_000
 FEATURE_CHUNK_SIZE = 8
 _PSUTIL_WARNED = False
-MAX_GEOMETRY_CACHE_KEYS = 12
+MAX_GEOMETRY_CACHE_KEYS = 1
+STAGE1_OOF_MAX_SAMPLES = 250_000
+STAGE1_OOF_SPLITS = 2
+STAGE23_OOF_SPLITS = 3
+STAGE1_SYMBOL_SUBSAMPLE_STEP = 2
 
 _TARGET_RACE_DEFAULTS = get_target_race_model_defaults(CFG)
 ET_REGRESSOR_PARAMS = dict(_TARGET_RACE_DEFAULTS["et_params"])
 RIDGE_SCREEN_ALPHA = float(_TARGET_RACE_DEFAULTS["ridge_screen_alpha"])
 RIDGE_SCREEN_TOP_FRAC = float(_TARGET_RACE_DEFAULTS["ridge_screen_top_frac"])
+
+
+def cleanup_run_caches() -> None:
+    """Best-effort cleanup of in-process caches before each optimizer run."""
+    gc.collect()
+    try:
+        import pyarrow as pa  # type: ignore
+
+        pa.default_memory_pool().release_unused()
+    except Exception:
+        pass
 
 
 def get_memory_mb() -> float:
@@ -119,6 +137,24 @@ def cast_features_dtype(feats: dict, float_dtype: np.dtype) -> dict:
     for name, df in feats.items():
         if isinstance(df, pd.DataFrame):
             feats[name] = cast_dataframe_dtype(df, float_dtype=float_dtype)
+    return feats
+
+
+def normalize_feature_time_indices(feats: dict) -> dict:
+    """Normalize feature DatetimeIndex objects to UTC-naive to avoid tz mismatch drops."""
+    for name, df in feats.items():
+        if not isinstance(df, pd.DataFrame):
+            continue
+        if not isinstance(df.index, pd.DatetimeIndex):
+            continue
+        try:
+            idx_norm = pd.to_datetime(df.index, utc=True).tz_localize(None)
+            if not df.index.equals(idx_norm):
+                df2 = df.copy(deep=False)
+                df2.index = idx_norm
+                feats[name] = df2
+        except Exception:
+            continue
     return feats
 
 
@@ -456,10 +492,11 @@ def training_slice_precheck(candidate_mask: pd.DataFrame, panel: dict) -> tuple[
     close_df = panel["close"]
     if candidate_mask.empty:
         return False, "candidate mask empty"
-    overlap = close_df.columns.intersection(candidate_mask.columns)
+    aligned_mask = align_candidate_mask_to_panel_symbols(candidate_mask, panel)
+    overlap = close_df.columns.intersection(aligned_mask.columns)
     if len(overlap) == 0:
         return False, "no symbol overlap between candidate mask and panel close"
-    if int(candidate_mask.to_numpy(dtype=bool, copy=False).sum()) == 0:
+    if int(aligned_mask.to_numpy(dtype=bool, copy=False).sum()) == 0:
         return False, "candidate mask has zero selected events"
     return True, ""
 
@@ -490,21 +527,50 @@ def _build_bucket_candidate_mask(
             tlog("Bucket mask: trend_pct is non-DataFrame/incompatible; skipping move-bucket filter")
             return candidate_mask
 
-    overlap_cols = trend_df.columns.intersection(candidate_mask.columns)
+    trend_aligned_source = trend_df
+    overlap_cols = trend_aligned_source.columns.intersection(candidate_mask.columns)
     overlap_n = len(overlap_cols)
     if overlap_n == 0:
-        tlog(
-            "Bucket mask: trend_pct has zero column overlap with candidate mask; "
-            f"trend_cols={trend_df.shape[1]}, candidate_cols={candidate_mask.shape[1]} | skipping move-bucket filter"
-        )
-        return candidate_mask
+        # Try normalized symbol matching (e.g. BTC/USDT vs BTC_USDT).
+        norm_to_trend: dict[str, str] = {}
+        dup_norm: set[str] = set()
+        for c in trend_aligned_source.columns:
+            k = _normalize_symbol(c)
+            if k in norm_to_trend and norm_to_trend[k] != c:
+                dup_norm.add(k)
+            else:
+                norm_to_trend[k] = c
+        for k in dup_norm:
+            norm_to_trend.pop(k, None)
+
+        rename_map: dict[Any, Any] = {}
+        for c in candidate_mask.columns:
+            src = norm_to_trend.get(_normalize_symbol(c))
+            if src is not None:
+                rename_map[src] = c
+        if rename_map:
+            trend_aligned_source = trend_aligned_source.rename(columns=rename_map)
+            if trend_aligned_source.columns.has_duplicates:
+                trend_aligned_source = trend_aligned_source.T.groupby(level=0).last().T
+            overlap_cols = trend_aligned_source.columns.intersection(candidate_mask.columns)
+            overlap_n = len(overlap_cols)
+            tlog(
+                "Bucket mask: recovered overlap via normalized symbol mapping; "
+                f"overlap={overlap_n}/{candidate_mask.shape[1]}"
+            )
+        if overlap_n == 0:
+            tlog(
+                "Bucket mask: trend_pct has zero column overlap with candidate mask; "
+                f"trend_cols={trend_df.shape[1]}, candidate_cols={candidate_mask.shape[1]} | skipping move-bucket filter"
+            )
+            return candidate_mask
     if overlap_n < max(5, int(0.1 * candidate_mask.shape[1])):
         tlog(
             "Bucket mask: low trend/candidate column overlap; "
             f"overlap={overlap_n}/{candidate_mask.shape[1]}"
         )
 
-    trend_aligned = trend_df.reindex(index=candidate_mask.index, columns=candidate_mask.columns)
+    trend_aligned = trend_aligned_source.reindex(index=candidate_mask.index, columns=candidate_mask.columns)
     trend_arr = trend_aligned.to_numpy(dtype=np.float32, copy=False)
     finite_ratio = float(np.isfinite(trend_arr).mean())
     if finite_ratio < 0.05:
@@ -585,6 +651,7 @@ def evaluate_training_slices(
     sample_frac: float = 1.0,
     geometry_cache: Optional[dict] = None,
     geometry_cache_key: Optional[tuple] = None,
+    precomputed_geometry: Optional[tuple[dict, dict]] = None,
     sample_weight_sink: Optional[list[dict]] = None,
     config_id: Optional[str] = None,
 ) -> list:
@@ -616,6 +683,9 @@ def evaluate_training_slices(
         return [dict(r) for r in cache[cache_key]]
 
     tlog("Training-slice evaluation start")
+    tp_ratio = float(cfg_variant.get("barrier_k_tp", 1.0))
+    sl_ratio = float(cfg_variant.get("barrier_sl_base_mult", 0.5))
+    tp_sl_ratio = f"{tp_ratio:.2f}:{sl_ratio:.2f}"
     rows = []
     mkt_gates = build_proxy_mkt_gates(feats)
     ts_end = candidate_mask.index.max()
@@ -654,6 +724,9 @@ def evaluate_training_slices(
                             "kind": kind,
                             "horizon": h,
                             "n_samples": 0,
+                            "n_days": 0,
+                            "opportunities_per_day": 0.0,
+                            "tp_sl_ratio": tp_sl_ratio,
                             "label_pos_rate": 0,
                             "mean_ret_bps": 0,
                             "sharpe": 0,
@@ -666,7 +739,10 @@ def evaluate_training_slices(
         tlog("Training-slice evaluation done")
         return rows
 
-    if (
+    if precomputed_geometry is not None:
+        tb_cache_by_h_side, geom_cache_by_h_side = precomputed_geometry
+        tlog("Training-slice geometry reuse: using precomputed shared geometry")
+    elif (
         geometry_cache is not None
         and geometry_cache_key is not None
         and geometry_cache_key in geometry_cache
@@ -730,6 +806,9 @@ def evaluate_training_slices(
                             "kind": kind,
                             "horizon": h,
                             "n_samples": 0,
+                            "n_days": 0,
+                            "opportunities_per_day": 0.0,
+                            "tp_sl_ratio": tp_sl_ratio,
                             "label_pos_rate": 0,
                             "mean_ret_bps": 0,
                             "sharpe": 0,
@@ -803,6 +882,13 @@ def evaluate_training_slices(
                     else 0.0
                 )
                 weighted_ret = float(np.average(y_ret, weights=np.clip(w, 1e-8, None)))
+                if isinstance(meta_idx, pd.MultiIndex):
+                    ts_vals = pd.to_datetime(meta_idx.get_level_values(0), utc=True, errors="coerce")
+                else:
+                    ts_vals = pd.to_datetime(pd.Index([None] * len(y_ret)), utc=True, errors="coerce")
+                ts_vals = pd.Index(ts_vals).dropna()
+                n_days = int(ts_vals.normalize().nunique()) if len(ts_vals) > 0 else 0
+                opportunities_per_day = float(len(y_ret) / max(1, n_days))
 
                 rows.append(
                     {
@@ -811,6 +897,9 @@ def evaluate_training_slices(
                         "kind": kind,
                         "horizon": h,
                         "n_samples": int(len(y_ret)),
+                        "n_days": n_days,
+                        "opportunities_per_day": opportunities_per_day,
+                        "tp_sl_ratio": tp_sl_ratio,
                         "label_pos_rate": float(np.nanmean(y_bin >= 0.5)),
                         "mean_ret_bps": mean_ret * 1e4,
                         "sharpe": sharpe,
@@ -852,6 +941,7 @@ def aggregate_slice_rows(slice_rows: list) -> dict:
         return {
             "slice_overall_sharpe": 0.0,
             "slice_overall_sortino": 0.0,
+            "slice_overall_opportunities_per_day": 0.0,
             "slice_total_samples": 0,
             "slice_metrics_json": "{}",
         }
@@ -861,6 +951,7 @@ def aggregate_slice_rows(slice_rows: list) -> dict:
         return {
             "slice_overall_sharpe": 0.0,
             "slice_overall_sortino": 0.0,
+            "slice_overall_opportunities_per_day": 0.0,
             "slice_total_samples": 0,
             "slice_metrics_json": "{}",
         }
@@ -873,6 +964,8 @@ def aggregate_slice_rows(slice_rows: list) -> dict:
                 "weighted_ret_bps": float(np.average(g["weighted_ret_bps"], weights=np.clip(g["n_samples"], 1, None))),
                 "sharpe": float(np.average(g["sharpe"], weights=np.clip(g["n_samples"], 1, None))),
                 "sortino": float(np.average(g["sortino"], weights=np.clip(g["n_samples"], 1, None))),
+                "opportunities_per_day": float(np.average(g["opportunities_per_day"], weights=np.clip(g["n_samples"], 1, None))),
+                "tp_sl_ratio": str(g["tp_sl_ratio"].dropna().iloc[0]) if g["tp_sl_ratio"].notna().any() else "",
             }
         )
     ).reset_index(drop=True)
@@ -886,6 +979,10 @@ def aggregate_slice_rows(slice_rows: list) -> dict:
         float(np.average(grouped["sortino"], weights=np.clip(grouped["n_samples"], 1, None)))
         if total_samples > 0 else 0.0
     )
+    overall_opportunities_per_day = (
+        float(np.average(grouped["opportunities_per_day"], weights=np.clip(grouped["n_samples"], 1, None)))
+        if total_samples > 0 else 0.0
+    )
 
     metrics_json = json.dumps(
         {
@@ -895,6 +992,8 @@ def aggregate_slice_rows(slice_rows: list) -> dict:
                 "weighted_ret_bps": row["weighted_ret_bps"],
                 "sharpe": row["sharpe"],
                 "sortino": row["sortino"],
+                "opportunities_per_day": row["opportunities_per_day"],
+                "tp_sl_ratio": row["tp_sl_ratio"],
             }
             for _, row in grouped.iterrows()
         }
@@ -903,6 +1002,7 @@ def aggregate_slice_rows(slice_rows: list) -> dict:
     return {
         "slice_overall_sharpe": overall_sharpe,
         "slice_overall_sortino": overall_sortino,
+        "slice_overall_opportunities_per_day": overall_opportunities_per_day,
         "slice_total_samples": int(total_samples),
         "slice_metrics_json": metrics_json,
     }
@@ -1305,8 +1405,42 @@ def build_long_form_tables(
     target_col: str,
     float_dtype: np.dtype,
     atr_reference: Optional[pd.DataFrame] = None,
+    tb_base: Optional[dict] = None,
 ) -> dict:
     """Build reusable long-form base table once; feature tables are materialized lazily."""
+    def _norm_sym(s: Any) -> str:
+        s = str(s).upper()
+        return "".join(ch for ch in s if ch.isalnum())
+
+    def _align_panel_cols_to_feature_cols(df: pd.DataFrame, target_cols: pd.Index) -> pd.DataFrame:
+        if not isinstance(df, pd.DataFrame):
+            return pd.DataFrame(index=ret_base.index, columns=target_cols, dtype=float)
+        src_cols = list(df.columns)
+        tgt_cols = list(target_cols)
+        direct_hit = sum(1 for c in tgt_cols if c in df.columns)
+        if direct_hit == len(tgt_cols):
+            return df.reindex(index=ret_base.index, columns=target_cols)
+        norm_to_src: dict[str, str] = {}
+        dup_norm: set[str] = set()
+        for c in src_cols:
+            k = _norm_sym(c)
+            if k in norm_to_src and norm_to_src[k] != c:
+                dup_norm.add(k)
+            else:
+                norm_to_src[k] = c
+        for k in dup_norm:
+            norm_to_src.pop(k, None)
+        rename_map: dict[Any, Any] = {}
+        for c in src_cols:
+            k = _norm_sym(c)
+            tgt = next((t for t in tgt_cols if _norm_sym(t) == k), None)
+            if tgt is not None:
+                rename_map[c] = tgt
+        aligned = df.rename(columns=rename_map)
+        if aligned.columns.has_duplicates:
+            aligned = aligned.T.groupby(level=0).last().T
+        return aligned.reindex(index=ret_base.index, columns=target_cols)
+
     target = feats.get(target_col)
     if target is None:
         target = feats.get("ret24h")
@@ -1326,19 +1460,91 @@ def build_long_form_tables(
     if atr_pct is None:
         atr_pct = pd.DataFrame(np.nan, index=ret_base.index, columns=ret_base.columns)
 
-    valid_counts = target.notna().sum(axis=1)
-    threshold = target.quantile(0.65, axis=1)
-    labels = target.gt(threshold, axis=0).astype(np.float32)
-    labels = labels.where(valid_counts >= 10, np.nan)
+    if (
+        isinstance(tb_base, dict)
+        and isinstance(tb_base.get("ret_long"), pd.DataFrame)
+        and isinstance(tb_base.get("ret_short"), pd.DataFrame)
+        and isinstance(tb_base.get("label_long"), pd.DataFrame)
+        and isinstance(tb_base.get("label_short"), pd.DataFrame)
+    ):
+        # Legacy fallback targets/labels (feature-space aligned) used when
+        # aggregated geometry coverage is partial due symbol naming/schema gaps.
+        valid_counts = target.notna().sum(axis=1)
+        threshold = target.quantile(0.65, axis=1)
+        legacy_label_long_df = target.gt(threshold, axis=0).astype(np.float32)
+        legacy_label_long_df = legacy_label_long_df.where(valid_counts >= 10, np.nan)
+        legacy_label_short_df = (1.0 - legacy_label_long_df).astype(np.float32)
 
-    base_long = pd.DataFrame(
-        {
-            "ret_base": ret_base.stack(future_stack=True).astype(float_dtype, copy=False),
-            "target": target.stack(future_stack=True).astype(float_dtype, copy=False),
-            "atr_pct": atr_pct.stack(future_stack=True).astype(float_dtype, copy=False),
-            "label": labels.stack(future_stack=True).astype(np.float32, copy=False),
-        }
-    )
+        ret_long = _align_panel_cols_to_feature_cols(tb_base["ret_long"], ret_base.columns)
+        ret_short = _align_panel_cols_to_feature_cols(tb_base["ret_short"], ret_base.columns)
+        label_long = _align_panel_cols_to_feature_cols(tb_base["label_long"], ret_base.columns)
+        label_short = _align_panel_cols_to_feature_cols(tb_base["label_short"], ret_base.columns)
+
+        ret_base_s = ret_base.stack(future_stack=True).astype(float_dtype, copy=False)
+        ret_long_s = ret_long.stack(future_stack=True).astype(float_dtype, copy=False)
+        ret_short_s = ret_short.stack(future_stack=True).astype(float_dtype, copy=False)
+        label_long_s = (label_long == 1).stack(future_stack=True).astype(np.float32, copy=False)
+        label_short_s = (label_short == 1).stack(future_stack=True).astype(np.float32, copy=False)
+
+        legacy_target_long_s = target.stack(future_stack=True).astype(float_dtype, copy=False)
+        legacy_target_short_s = (-target).stack(future_stack=True).astype(float_dtype, copy=False)
+        legacy_label_long_s = legacy_label_long_df.stack(future_stack=True).astype(np.float32, copy=False)
+        legacy_label_short_s = legacy_label_short_df.stack(future_stack=True).astype(np.float32, copy=False)
+
+        cov_ret_long = float(np.isfinite(ret_long_s.to_numpy(dtype=np.float32, copy=False)).mean())
+        cov_ret_short = float(np.isfinite(ret_short_s.to_numpy(dtype=np.float32, copy=False)).mean())
+        cov_lbl_long = float(np.isfinite(label_long_s.to_numpy(dtype=np.float32, copy=False)).mean())
+        cov_lbl_short = float(np.isfinite(label_short_s.to_numpy(dtype=np.float32, copy=False)).mean())
+        tlog(
+            "Aggregated base coverage before fallback: "
+            f"ret_long={cov_ret_long:.2%}, ret_short={cov_ret_short:.2%}, "
+            f"label_long={cov_lbl_long:.2%}, label_short={cov_lbl_short:.2%}"
+        )
+
+        # Fill missing aggregated values with side-consistent legacy proxies.
+        ret_long_s = ret_long_s.where(np.isfinite(ret_long_s), legacy_target_long_s).astype(float_dtype, copy=False)
+        ret_short_s = ret_short_s.where(np.isfinite(ret_short_s), legacy_target_short_s).astype(float_dtype, copy=False)
+        label_long_s = label_long_s.where(np.isfinite(label_long_s), legacy_label_long_s).astype(np.float32, copy=False)
+        label_short_s = label_short_s.where(np.isfinite(label_short_s), legacy_label_short_s).astype(np.float32, copy=False)
+
+        cov_ret_long_after = float(np.isfinite(ret_long_s.to_numpy(dtype=np.float32, copy=False)).mean())
+        cov_ret_short_after = float(np.isfinite(ret_short_s.to_numpy(dtype=np.float32, copy=False)).mean())
+        cov_lbl_long_after = float(np.isfinite(label_long_s.to_numpy(dtype=np.float32, copy=False)).mean())
+        cov_lbl_short_after = float(np.isfinite(label_short_s.to_numpy(dtype=np.float32, copy=False)).mean())
+        tlog(
+            "Aggregated base coverage after fallback: "
+            f"ret_long={cov_ret_long_after:.2%}, ret_short={cov_ret_short_after:.2%}, "
+            f"label_long={cov_lbl_long_after:.2%}, label_short={cov_lbl_short_after:.2%}"
+        )
+
+        base_long = pd.DataFrame(
+            {
+                "ret_base": ret_base_s,
+                "ret_long": ret_long_s,
+                "ret_short": ret_short_s,
+                "target_long": ret_long_s,
+                "target_short": ret_short_s,
+                "label_long": label_long_s,
+                "label_short": label_short_s,
+                "atr_pct": atr_pct.stack(future_stack=True).astype(float_dtype, copy=False),
+            }
+        )
+        # Keep legacy aliases for compatibility (defaults to long side).
+        base_long["target"] = base_long["target_long"]
+        base_long["label"] = base_long["label_long"]
+    else:
+        valid_counts = target.notna().sum(axis=1)
+        threshold = target.quantile(0.65, axis=1)
+        labels = target.gt(threshold, axis=0).astype(np.float32)
+        labels = labels.where(valid_counts >= 10, np.nan)
+        base_long = pd.DataFrame(
+            {
+                "ret_base": ret_base.stack(future_stack=True).astype(float_dtype, copy=False),
+                "target": target.stack(future_stack=True).astype(float_dtype, copy=False),
+                "atr_pct": atr_pct.stack(future_stack=True).astype(float_dtype, copy=False),
+                "label": labels.stack(future_stack=True).astype(np.float32, copy=False),
+            }
+        )
 
     return {
         "base_long": base_long,
@@ -1585,6 +1791,7 @@ def _uniform_subsample_idx(n: int, k: int, seed: int) -> np.ndarray:
 def run_oof_cv(
     X: np.ndarray,
     y: np.ndarray,
+    ts_values: Optional[np.ndarray] = None,
     sample_weights: np.ndarray = None,
     n_splits: int = 3,
     purge: int = 12,  # 12 hours in index units
@@ -1607,17 +1814,41 @@ def run_oof_cv(
     y_valid = np.isfinite(y)
     y_filled = np.where(y_valid, y, np.nanmedian(y[y_valid])).astype(float_dtype, copy=False)
     
-    # Create time index for purging
-    time_idx = np.arange(n_samples, dtype=np.int32)
-    
     pkf = PurgedKFold(n_splits=n_splits, purge=purge, embargo=2)
-    
-    splits = list(pkf.split(time_idx))
+    if ts_values is not None and len(ts_values) == n_samples:
+        ts_codes, unique_ts = pd.factorize(pd.Series(ts_values), sort=True)
+        ts_codes = ts_codes.astype(np.int32, copy=False)
+        time_idx = np.arange(len(unique_ts), dtype=np.int32)
+        ts_splits = list(pkf.split(time_idx))
+        splits = []
+        for train_ts_idx, val_ts_idx in ts_splits:
+            train_mask = np.isin(ts_codes, train_ts_idx)
+            val_mask = np.isin(ts_codes, val_ts_idx)
+            train_idx = np.flatnonzero(train_mask)
+            val_idx = np.flatnonzero(val_mask)
+            if len(train_idx) > 0 and len(val_idx) > 0:
+                splits.append((train_idx, val_idx))
+    else:
+        # Fallback to row-order splitting when timestamp groups are unavailable.
+        time_idx = np.arange(n_samples, dtype=np.int32)
+        splits = list(pkf.split(time_idx))
+    if not splits:
+        return oof, {
+            "ridge_alpha": float(ridge_alpha),
+            "ridge_top_frac": float(ridge_top_frac),
+            "ridge_selected_k_mean": 0.0,
+            "ridge_jaccard_median": 0.0,
+            "ridge_replacement_rate_median": 0.0,
+        }
     selected_sets: list[set[int]] = []
     selected_ks: list[int] = []
+    model_name = "ExtraTrees" if use_extratrees else "Ridge"
 
     for fold_i, (train_idx, val_idx) in enumerate(splits, start=1):
-        tlog(f"OOF fold {fold_i}/{len(splits)}: train={len(train_idx)}, val={len(val_idx)}")
+        tlog(
+            f"OOF fold {fold_i}/{len(splits)} [{model_name}]: "
+            f"train={len(train_idx)}, val={len(val_idx)}"
+        )
         X_train, X_val = X[train_idx], X[val_idx]
         y_train = y_filled[train_idx]
 
@@ -1648,7 +1879,7 @@ def run_oof_cv(
         )
         selected_sets.append(set(selected_idx.tolist()))
         selected_ks.append(int(len(selected_idx)))
-        tlog(f"OOF fold {fold_i}: Ridge-screen selected {len(selected_idx)} candidate generation variants")
+        tlog(f"OOF fold {fold_i}: Ridge-screen selected {len(selected_idx)} features")
 
         X_train_sel = X_train[:, selected_idx]
         X_val_sel = X_val[:, selected_idx]
@@ -1699,6 +1930,68 @@ def run_oof_cv(
     return oof, diagnostics
 
 
+def run_oof_cv_classifier(
+    X: np.ndarray,
+    y_cls: np.ndarray,
+    ts_values: Optional[np.ndarray] = None,
+    sample_weights: np.ndarray = None,
+    n_splits: int = 3,
+    purge: int = 12,
+    random_state: int = 42,
+    ridge_alpha: float = RIDGE_SCREEN_ALPHA,
+    ridge_top_frac: float = RIDGE_SCREEN_TOP_FRAC,
+) -> np.ndarray:
+    """Run purged OOF CV for binary classification with ExtraTreesClassifier."""
+    n_samples = len(y_cls)
+    oof_proba = np.full(n_samples, np.nan, dtype=np.float32)
+
+    pkf = PurgedKFold(n_splits=n_splits, purge=purge, embargo=2)
+    if ts_values is not None and len(ts_values) == n_samples:
+        ts_codes, unique_ts = pd.factorize(pd.Series(ts_values), sort=True)
+        ts_codes = ts_codes.astype(np.int32, copy=False)
+        time_idx = np.arange(len(unique_ts), dtype=np.int32)
+        ts_splits = list(pkf.split(time_idx))
+        splits = []
+        for train_ts_idx, val_ts_idx in ts_splits:
+            train_mask = np.isin(ts_codes, train_ts_idx)
+            val_mask = np.isin(ts_codes, val_ts_idx)
+            train_idx = np.flatnonzero(train_mask)
+            val_idx = np.flatnonzero(val_mask)
+            if len(train_idx) > 0 and len(val_idx) > 0:
+                splits.append((train_idx, val_idx))
+    else:
+        time_idx = np.arange(n_samples, dtype=np.int32)
+        splits = list(pkf.split(time_idx))
+    if not splits:
+        return oof_proba
+
+    for fold_i, (train_idx, val_idx) in enumerate(splits, start=1):
+        tlog(f"OOF-CLF fold {fold_i}/{len(splits)} [ExtraTreesClassifier]: train={len(train_idx)}, val={len(val_idx)}")
+        X_train, X_val = X[train_idx], X[val_idx]
+        y_train = y_cls[train_idx]
+        sw_train = sample_weights[train_idx] if sample_weights is not None else None
+
+        selected_idx = _ridge_select_topk(
+            X_train=X_train,
+            y_train=y_train.astype(np.float32, copy=False),
+            sample_weight=sw_train,
+            top_frac=ridge_top_frac,
+            alpha=ridge_alpha,
+        )
+        X_train_sel = X_train[:, selected_idx]
+        X_val_sel = X_val[:, selected_idx]
+
+        clf = ExtraTreesClassifier(**{**ET_REGRESSOR_PARAMS, "random_state": random_state})
+        clf.fit(X_train_sel, y_train, sample_weight=sw_train)
+        proba = clf.predict_proba(X_val_sel)
+        oof_proba[val_idx] = proba[:, 1].astype(np.float32, copy=False)
+
+        del X_train, X_val, X_train_sel, X_val_sel, y_train, sw_train, clf
+        gc.collect()
+
+    return oof_proba
+
+
 def compute_learnability_metrics(
     candidate_mask: pd.DataFrame,
     precomputed: dict,
@@ -1706,6 +1999,8 @@ def compute_learnability_metrics(
     float_dtype: np.dtype,
     side_sign: Optional[pd.DataFrame] = None,
     use_extratrees: bool = False,
+    oof_max_samples: int = OOF_MAX_SAMPLES,
+    oof_n_splits: int = STAGE23_OOF_SPLITS,
 ) -> dict:
     """
     Compute all learnability metrics for a candidate selection method.
@@ -1732,15 +2027,14 @@ def compute_learnability_metrics(
     mask_arr = candidate_mask.to_numpy(dtype=bool, copy=False)
     candidate_row_idx, candidate_col_idx = np.nonzero(mask_arr)
     flat_idx = np.flatnonzero(mask_arr.ravel(order="C"))
-    candidate_index = base_long.index[flat_idx]
 
     if side_sign is None:
         sign_arr = np.ones_like(mask_arr, dtype=np.int8)
     else:
         sign_arr = side_sign.to_numpy(dtype=np.int8, copy=False)
-    side_sign_long = pd.Series(sign_arr.ravel(order="C"), index=base_long.index)
+    side_sign_flat = sign_arr.ravel(order="C")
 
-    if len(candidate_index) == 0:
+    if len(flat_idx) == 0:
         logger.warning("No candidates selected for this configuration")
         tlog("Metrics: no candidates")
         return {
@@ -1761,6 +2055,8 @@ def compute_learnability_metrics(
             "ic_spearman": 0,
             "oof_mae": 0,
             "oof_directional_acc": 0,
+            "auc": 0,
+            "brier": 0,
             "ridge_alpha": RIDGE_SCREEN_ALPHA,
             "ridge_top_frac": RIDGE_SCREEN_TOP_FRAC,
             "ridge_selected_k_mean": 0,
@@ -1779,19 +2075,55 @@ def compute_learnability_metrics(
             "atr_decile_pnl_json": "{}",
         }
 
-    candidates = base_long.iloc[flat_idx]
-    side_sign_candidates = side_sign_long.loc[candidate_index]
+    use_geom_side = {"target_long", "target_short", "label_long", "label_short", "ret_long", "ret_short"}.issubset(base_long.columns)
+    candidate_returns_raw = base_long["ret_base"].to_numpy(dtype=float_dtype, copy=False)[flat_idx]
+    candidate_signs = side_sign_flat[flat_idx].astype(float_dtype, copy=False)
+    if use_geom_side:
+        target_long = base_long["target_long"].to_numpy(dtype=float_dtype, copy=False)[flat_idx]
+        target_short = base_long["target_short"].to_numpy(dtype=float_dtype, copy=False)[flat_idx]
+        ret_long = base_long["ret_long"].to_numpy(dtype=float_dtype, copy=False)[flat_idx]
+        ret_short = base_long["ret_short"].to_numpy(dtype=float_dtype, copy=False)[flat_idx]
+        label_long = base_long["label_long"].to_numpy(dtype=np.float32, copy=False)[flat_idx]
+        label_short = base_long["label_short"].to_numpy(dtype=np.float32, copy=False)[flat_idx]
+        use_long = candidate_signs >= 0
+        candidate_target_full = np.where(use_long, target_long, target_short).astype(float_dtype, copy=False)
+        candidate_returns_full = np.where(use_long, ret_long, ret_short).astype(float_dtype, copy=False)
+        candidate_labels_full = np.where(use_long, label_long, label_short).astype(np.float32, copy=False)
+    else:
+        candidate_target_full = base_long["target"].to_numpy(dtype=float_dtype, copy=False)[flat_idx]
+        candidate_returns_full = candidate_returns_raw
+        candidate_labels_full = base_long["label"].to_numpy(dtype=np.float32, copy=False)[flat_idx]
 
-    candidate_returns_raw = candidates["ret_base"].to_numpy(dtype=float_dtype, copy=False)
-    candidate_target = candidates["target"].to_numpy(dtype=float_dtype, copy=False)
-    candidate_signs = side_sign_candidates.to_numpy(dtype=float_dtype, copy=False)
+    # Label robustness: if barrier labels are degenerate or missing, fallback to
+    # direction-of-return proxy to keep class metrics meaningful.
+    lbl_valid = np.isfinite(candidate_labels_full)
+    pos_rate_raw = float(np.mean(candidate_labels_full[lbl_valid] > 0.5)) if np.any(lbl_valid) else float("nan")
+    if (not np.any(lbl_valid)) or (np.isfinite(pos_rate_raw) and (pos_rate_raw < 0.01 or pos_rate_raw > 0.99)):
+        proxy_labels = (candidate_returns_full > 0).astype(np.float32, copy=False)
+        if np.any(lbl_valid):
+            candidate_labels_full = np.where(lbl_valid, candidate_labels_full, proxy_labels).astype(np.float32, copy=False)
+        else:
+            candidate_labels_full = proxy_labels.astype(np.float32, copy=False)
+        # If original labels are almost single-class, fully switch to proxy.
+        if np.isfinite(pos_rate_raw) and (pos_rate_raw < 0.01 or pos_rate_raw > 0.99):
+            candidate_labels_full = proxy_labels.astype(np.float32, copy=False)
+        pos_rate_new = float(np.mean(candidate_labels_full > 0.5)) if len(candidate_labels_full) > 0 else 0.0
+        tlog(
+            "Metrics labels fallback applied: "
+            f"orig_pos_rate={pos_rate_raw if np.isfinite(pos_rate_raw) else float('nan'):.4f}, "
+            f"new_pos_rate={pos_rate_new:.4f}"
+        )
 
-    valid_mask = np.isfinite(candidate_returns_raw) & np.isfinite(candidate_target)
-    candidate_returns_raw = candidate_returns_raw[valid_mask]
-    candidate_target = candidate_target[valid_mask]
+    valid_mask = np.isfinite(candidate_returns_full) & np.isfinite(candidate_target_full)
+    candidate_returns_raw = candidate_returns_full[valid_mask]
+    candidate_target = candidate_target_full[valid_mask]
     candidate_signs = candidate_signs[valid_mask]
+    candidate_labels = candidate_labels_full[valid_mask]
     candidate_signs = np.where(candidate_signs == 0, 1, candidate_signs)
-    candidate_returns = candidate_returns_raw * candidate_signs
+    # Keep return metrics unbiased with respect to the oracle side assignment used
+    # for candidate construction. Directional trading quality is evaluated via OOF.
+    candidate_returns = candidate_returns_raw
+    candidate_ts = np.asarray(candidate_mask.index.to_numpy()[candidate_row_idx])[valid_mask]
     
     if len(candidate_returns) < 50:
         logger.warning(f"Too few candidates: {len(candidate_returns)}")
@@ -1814,6 +2146,8 @@ def compute_learnability_metrics(
             "ic_spearman": 0,
             "oof_mae": 0,
             "oof_directional_acc": 0,
+            "auc": 0,
+            "brier": 0,
             "ridge_alpha": RIDGE_SCREEN_ALPHA,
             "ridge_top_frac": RIDGE_SCREEN_TOP_FRAC,
             "ridge_selected_k_mean": 0,
@@ -1843,8 +2177,6 @@ def compute_learnability_metrics(
     ret6h_q01 = float(np.nanpercentile(candidate_returns_raw, 1)) if len(candidate_returns_raw) > 0 else 0.0
     ret6h_q05 = float(np.nanpercentile(candidate_returns_raw, 5)) if len(candidate_returns_raw) > 0 else 0.0
 
-    candidate_labels = candidates["label"].to_numpy(dtype=np.float32, copy=False)
-    candidate_labels = candidate_labels[valid_mask]
     label_finite = np.isfinite(candidate_labels)
     pos_values = candidate_returns_raw[label_finite & (candidate_labels == 1.0)]
     neg_values = candidate_returns_raw[label_finite & (candidate_labels == 0.0)]
@@ -1866,22 +2198,23 @@ def compute_learnability_metrics(
         available_features=available_features,
         candidate_row_idx=candidate_row_idx,
         candidate_col_idx=candidate_col_idx,
-        target_values=candidates["target"].to_numpy(dtype=np.float32, copy=False),
+        target_values=(candidate_target_full.astype(np.float32, copy=False)),
         top_n=20,
     )
     
-    # 7. Sharpe Ratio (annualized)
-    if len(candidate_returns) > 1 and np.std(candidate_returns) > 0:
-        # Assuming hourly data: 24 * 365 = 8760 hours per year
-        sharpe = np.mean(candidate_returns) / np.std(candidate_returns) * np.sqrt(8760)
+    # 7. Sharpe/Sortino on timestamp-aggregated (hourly) returns.
+    hourly_returns = pd.Series(candidate_returns, index=pd.Index(candidate_ts)).groupby(level=0).mean()
+    hr = hourly_returns.to_numpy(dtype=np.float64, copy=False)
+    if len(hr) > 1 and np.std(hr) > 1e-12:
+        sharpe = float(np.mean(hr) / np.std(hr) * np.sqrt(24.0 * 365.0))
     else:
-        sharpe = 0
+        sharpe = 0.0
 
     mean_return_bps = float(np.mean(candidate_returns) * 1e4) if len(candidate_returns) > 0 else 0.0
     volatility_bps = float(np.std(candidate_returns) * 1e4) if len(candidate_returns) > 0 else 0.0
-    downside = candidate_returns[candidate_returns < 0]
-    if len(downside) > 1 and np.std(downside) > 0:
-        sortino = float(np.mean(candidate_returns) / np.std(downside) * np.sqrt(8760))
+    downside = hr[hr < 0]
+    if len(downside) > 1 and np.std(downside) > 1e-12:
+        sortino = float(np.mean(hr) / np.std(downside) * np.sqrt(24.0 * 365.0))
     else:
         sortino = 0.0
     hit_rate = float(np.mean(candidate_returns > 0)) if len(candidate_returns) > 0 else 0.0
@@ -1889,7 +2222,7 @@ def compute_learnability_metrics(
     p05 = np.nanpercentile(candidate_returns, 5) if len(candidate_returns) > 0 else 0.0
     tail_ratio = float(p95 / abs(p05)) if abs(p05) > 1e-12 else 0.0
 
-    atr_selected = candidates["atr_pct"].to_numpy(dtype=float_dtype, copy=False)
+    atr_selected = base_long["atr_pct"].to_numpy(dtype=float_dtype, copy=False)[flat_idx]
     atr_selected = atr_selected[valid_mask]
     atr_selected = atr_selected[np.isfinite(atr_selected)]
     atr_mean = float(np.mean(atr_selected)) if len(atr_selected) > 0 else 0.0
@@ -1900,7 +2233,7 @@ def compute_learnability_metrics(
     atr_decile_worst = -1
     atr_decile_worst_share = 0.0
     atr_decile_pnl_json = "{}"
-    atr_raw = candidates["atr_pct"].to_numpy(dtype=float_dtype, copy=False)
+    atr_raw = base_long["atr_pct"].to_numpy(dtype=float_dtype, copy=False)[flat_idx]
     atr_raw = atr_raw[valid_mask]
     valid_atr_for_deciles = np.isfinite(atr_raw) & np.isfinite(candidate_returns)
     if valid_atr_for_deciles.sum() >= 100:
@@ -1919,6 +2252,9 @@ def compute_learnability_metrics(
         except Exception:
             pass
     
+    auc = 0.0
+    brier = 0.0
+
     tlog("Metrics: entering OOF/IC block")
     # 8. Information Coefficient (requires OOF predictions)
     if len(available_features) >= 10:
@@ -1929,7 +2265,7 @@ def compute_learnability_metrics(
             candidate_col_idx=candidate_col_idx,
             float_dtype=float_dtype,
         )
-        y_arr = candidates["target"].to_numpy(dtype=float_dtype, copy=False)
+        y_arr = candidate_target_full.astype(float_dtype, copy=False)
         if X_all.shape[1] >= 10 and len(used_features) >= 10:
             valid_rows = np.isfinite(y_arr) & np.isfinite(X_all).all(axis=1)
         else:
@@ -1938,12 +2274,12 @@ def compute_learnability_metrics(
         if valid_rows.sum() >= 100:
             X = X_all[valid_rows]
             y = y_arr[valid_rows]
-            ts_vals = candidate_index.get_level_values(0)[valid_rows]
+            ts_vals = np.asarray(candidate_mask.index.to_numpy()[candidate_row_idx])[valid_rows]
 
             if len(y) >= 100:
-                if len(y) > OOF_MAX_SAMPLES:
+                if len(y) > int(oof_max_samples):
                     n_before_oof = len(y)
-                    sub_idx = _uniform_subsample_idx(len(y), OOF_MAX_SAMPLES, seed=42)
+                    sub_idx = _uniform_subsample_idx(len(y), int(oof_max_samples), seed=42)
                     X = X[sub_idx]
                     y = y[sub_idx]
                     ts_vals = ts_vals[sub_idx]
@@ -1952,6 +2288,8 @@ def compute_learnability_metrics(
                 oof, oof_diag = run_oof_cv(
                     X,
                     y,
+                    ts_values=np.asarray(ts_vals),
+                    n_splits=int(oof_n_splits),
                     float_dtype=float_dtype,
                     ridge_alpha=RIDGE_SCREEN_ALPHA,
                     ridge_top_frac=RIDGE_SCREEN_TOP_FRAC,
@@ -1977,6 +2315,26 @@ def compute_learnability_metrics(
                     )
                 else:
                     ic, ic_std, ic_spearman, oof_mae, oof_directional_acc = 0, 0, 0, 0, 0
+
+                if use_extratrees:
+                    y_cls_raw = candidate_labels_full[valid_rows]
+                    y_cls = (y_cls_raw > 0.5).astype(np.int8, copy=False)
+                    if len(y_cls) >= 100 and y_cls.sum() > 0 and y_cls.sum() < len(y_cls):
+                        oof_proba = run_oof_cv_classifier(
+                            X,
+                            y_cls,
+                            ts_values=np.asarray(ts_vals),
+                            n_splits=int(oof_n_splits),
+                            ridge_alpha=RIDGE_SCREEN_ALPHA,
+                            ridge_top_frac=RIDGE_SCREEN_TOP_FRAC,
+                        )
+                        proba_valid = np.isfinite(oof_proba)
+                        if proba_valid.sum() >= 50:
+                            y_cls_valid = y_cls[proba_valid].astype(np.int32, copy=False)
+                            p_valid = np.clip(oof_proba[proba_valid], 1e-6, 1 - 1e-6)
+                            if y_cls_valid.sum() > 0 and y_cls_valid.sum() < len(y_cls_valid):
+                                auc = float(roc_auc_score(y_cls_valid, p_valid))
+                                brier = float(brier_score_loss(y_cls_valid, p_valid))
                 ridge_alpha_used = float(oof_diag.get("ridge_alpha", RIDGE_SCREEN_ALPHA))
                 ridge_top_frac_used = float(oof_diag.get("ridge_top_frac", RIDGE_SCREEN_TOP_FRAC))
                 ridge_selected_k_mean = float(oof_diag.get("ridge_selected_k_mean", 0.0))
@@ -2023,6 +2381,8 @@ def compute_learnability_metrics(
         "ic_spearman": ic_spearman if np.isfinite(ic_spearman) else 0,
         "oof_mae": oof_mae,
         "oof_directional_acc": oof_directional_acc,
+        "auc": auc if np.isfinite(auc) else 0,
+        "brier": brier if np.isfinite(brier) else 0,
         "ridge_alpha": ridge_alpha_used,
         "ridge_top_frac": ridge_top_frac_used,
         "ridge_selected_k_mean": ridge_selected_k_mean,
@@ -2112,12 +2472,108 @@ def load_features_from_parquet(feature_path: str) -> dict:
     return feats
 
 
+def load_selected_features_from_symbol_parquets(
+    feature_dir: str,
+    wanted_features: set[str],
+    float_dtype: np.dtype,
+) -> dict:
+    """Load only selected columns from pipeline symbol parquet files."""
+    files = sorted(glob.glob(os.path.join(feature_dir, "symbol=*.parquet")))
+    if not files:
+        return {}
+
+    # Discover available columns once to avoid per-file schema scans.
+    sample_cols = set(pd.read_parquet(files[0]).columns)
+    select_cols = [c for c in sorted(wanted_features) if c in sample_cols]
+    if not select_cols:
+        tlog("Selective symbol-parquet loader: no requested columns found")
+        return {}
+
+    feat_buffers: dict[str, dict[str, pd.Series]] = {k: {} for k in select_cols}
+    total_files = len(files)
+    progress_every = 25 if total_files >= 100 else 10
+    start = pd.Timestamp.utcnow().timestamp()
+
+    for i, fpath in enumerate(files, start=1):
+        try:
+            fname = os.path.basename(fpath)
+            sym = fname.replace("symbol=", "").replace(".parquet", "")
+            read_cols = list(select_cols)
+            # Keep original symbol if present.
+            if "__symbol__" in sample_cols:
+                read_cols.append("__symbol__")
+            df = pd.read_parquet(fpath, columns=read_cols)
+            if "__symbol__" in df.columns and not df.empty:
+                real_sym = str(df["__symbol__"].iloc[0])
+                df = df.drop(columns=["__symbol__"], errors="ignore")
+            else:
+                real_sym = sym.replace("_", "/", 1)
+            for k in select_cols:
+                if k in df.columns:
+                    feat_buffers[k][real_sym] = pd.to_numeric(df[k], errors="coerce").astype(float_dtype, copy=False)
+            del df
+            if i % progress_every == 0 or i == total_files:
+                elapsed = pd.Timestamp.utcnow().timestamp() - start
+                tlog(
+                    f"Selective feature load progress: {i}/{total_files} files "
+                    f"({(i / total_files) * 100:.1f}%) in {elapsed:.1f}s"
+                )
+        except Exception as exc:
+            logger.warning(f"Selective feature load failed for {fpath}: {exc}")
+
+    feats_out: dict[str, pd.DataFrame] = {}
+    for k, sym_map in feat_buffers.items():
+        if sym_map:
+            feats_out[k] = pd.DataFrame(sym_map).sort_index()
+    feat_buffers.clear()
+    gc.collect()
+    tlog(f"Selective loader built {len(feats_out)} feature matrices")
+    return feats_out
+
+
 def load_panel_data(
     panel_path: str,
     symbols: Optional[list[str]] = None,
     columns: Optional[list[str]] = None,
 ) -> pd.DataFrame:
     """Load panel data lazily with projection/predicate pushdown when possible."""
+    def _symbol_values_for_filter(requested_symbols: Optional[list[str]]) -> Optional[list[str]]:
+        if not requested_symbols:
+            return None
+        vals: set[str] = set()
+        for s in requested_symbols:
+            s_str = str(s)
+            vals.add(s_str)
+            vals.add(s_str.replace("/", "_"))
+        return sorted(vals)
+
+    def _list_parquet_files(root_path: str) -> list[str]:
+        parquet_files: list[str] = []
+        for root, _, files in os.walk(root_path):
+            for fname in files:
+                if fname.endswith(".parquet"):
+                    parquet_files.append(os.path.join(root, fname))
+        return parquet_files
+
+    def _resolve_projection(requested: Optional[list[str]], available: list[str]) -> list[str]:
+        if requested is None:
+            return list(available)
+        available_set = set(available)
+        projected = [c for c in requested if c in available_set]
+        # Support common timestamp aliasing in panel stores.
+        if "timestamp" in requested and "timestamp" not in available_set and "ts" in available_set:
+            projected.append("ts")
+        # De-duplicate while preserving order (avoids duplicate-key DataFrames like ['ts', ..., 'ts']).
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for col in projected:
+            if col not in seen:
+                deduped.append(col)
+                seen.add(col)
+        return deduped
+
+    symbol_filter_values = _symbol_values_for_filter(symbols)
+
     if os.path.isfile(panel_path):
         try:
             df = pd.read_parquet(panel_path, columns=columns)
@@ -2127,45 +2583,49 @@ def load_panel_data(
                 keep = [c for c in columns if c in df.columns]
                 if keep:
                     df = df[keep]
-        if symbols is not None and "symbol" in df.columns:
-            df = df[df["symbol"].isin(symbols)]
+        if symbol_filter_values is not None and "symbol" in df.columns:
+            df = df[df["symbol"].astype(str).isin(symbol_filter_values)]
         return df
     elif os.path.isdir(panel_path):
+        parquet_files = _list_parquet_files(panel_path)
+        if not parquet_files:
+            raise FileNotFoundError(f"No parquet files found under panel path: {panel_path}")
         try:
             import pyarrow.dataset as ds
             import pyarrow.compute as pc
 
-            dataset = ds.dataset(panel_path, format="parquet", partitioning="hive")
-            wanted_cols = columns or list(dataset.schema.names)
-            # keep only existing columns
-            wanted_cols = [c for c in wanted_cols if c in dataset.schema.names]
+            dataset = ds.dataset(parquet_files, format="parquet", partitioning="hive")
+            wanted_cols = _resolve_projection(columns, list(dataset.schema.names))
             filt = None
-            if symbols:
+            if symbol_filter_values:
                 if "symbol" in dataset.schema.names:
-                    filt = pc.field("symbol").isin(symbols)
+                    filt = pc.field("symbol").isin(symbol_filter_values)
             table = dataset.to_table(columns=wanted_cols, filter=filt)
             return table.to_pandas()
         except Exception as exc:
             logger.warning(f"PyArrow lazy panel load failed ({exc}); falling back to batch parquet reads")
             dfs = []
-            for root, _, files in os.walk(panel_path):
-                for f in files:
-                    if not f.endswith('.parquet'):
-                        continue
-                    fpath = os.path.join(root, f)
+            for fpath in parquet_files:
+                root = os.path.dirname(fpath)
+                try:
                     df = pd.read_parquet(fpath, columns=columns)
-                    if "symbol" not in df.columns:
-                        sym = None
-                        for p in root.split(os.sep):
-                            if p.startswith("symbol="):
-                                sym = p.replace("symbol=", "")
-                                break
-                        if sym is not None:
-                            df["symbol"] = sym
-                    if symbols is not None and "symbol" in df.columns:
-                        df = df[df["symbol"].isin(symbols)]
-                    if len(df) > 0:
-                        dfs.append(df)
+                except Exception:
+                    df = pd.read_parquet(fpath)
+                    keep = _resolve_projection(columns, list(df.columns))
+                    if keep:
+                        df = df[keep]
+                if "symbol" not in df.columns:
+                    sym = None
+                    for p in root.split(os.sep):
+                        if p.startswith("symbol="):
+                            sym = p.replace("symbol=", "")
+                            break
+                    if sym is not None:
+                        df["symbol"] = sym
+                if symbol_filter_values is not None and "symbol" in df.columns:
+                    df = df[df["symbol"].astype(str).isin(symbol_filter_values)]
+                if len(df) > 0:
+                    dfs.append(df)
             if dfs:
                 return pd.concat(dfs, ignore_index=True)
 
@@ -2207,6 +2667,7 @@ def run_comparison(
     logger.info("=" * 60)
     logger.info("Candidate Selection Threshold Comparison")
     logger.info("=" * 60)
+    cleanup_run_caches()
     tlog("Starting comparison run")
 
     runtime_cfg = apply_offline_optimizer_best_params(deepcopy(CFG))
@@ -2224,35 +2685,54 @@ def run_comparison(
         "OOF model stack defaults: "
         f"RobustScaler->Ridge(alpha={RIDGE_SCREEN_ALPHA}) top_frac={RIDGE_SCREEN_TOP_FRAC:.0%}->ExtraTrees"
     )
+    tlog(f"OOF estimator for this run: {'ExtraTrees' if use_extratrees else 'Ridge'}")
 
     if symbol_files:
         # Pipeline format: per-symbol files, need to parse timestamp from path
         logger.info("Detected pipeline per-symbol format")
-        import re
-        # Extract timestamp from path like 'data/features/20260214_190000'
-        match = re.search(r'(\d{8}_\d{6})', feature_path)
-        if match:
-            ts_str = match.group(1)
-            ts = pd.to_datetime(ts_str, format="%Y%m%d_%H%M%S")
-            # Determine root_dir (parent of 'features' directory)
-            features_dir = os.path.dirname(feature_path)
-            root_dir = os.path.dirname(features_dir) if features_dir.endswith('features') else os.path.dirname(feature_path)
-            feats = load_features_pipeline(ts, root_dir)
-            if feats is None:
-                raise ValueError(f"Failed to load features from {feature_path}")
-            logger.info(f"Loaded {len(feats)} features via pipeline loader")
-            logger.info(f"Casting features to {dtype}...")
-            tlog("Casting feature DataFrames")
-            feats = cast_features_dtype(feats, float_dtype=float_dtype)
-            gc.collect()
-        else:
-            raise ValueError(f"Could not parse timestamp from path: {feature_path}")
+        requested_model_features = CFG.get("test_feature_keys", TEST_FEATURE_KEYS)
+        if max_features is not None and max_features > 0:
+            requested_model_features = requested_model_features[:max_features]
+        requested_model_features = [str(f) for f in requested_model_features]
+        structural_keys = {
+            "ret6h",
+            "ret24h",
+            "atr_pct",
+            "trend_pct",
+            "range_12h_pct",
+            "range_16h_pct",
+            "range_pct",
+            "volatility_zscore",
+            "vol_z",
+            "rvol_z",
+            "volu_z",
+            "sign_consistency",
+            "sign_consistency_12h",
+        }
+        wanted_features = set(requested_model_features) | structural_keys
+        tlog(
+            "Selective pipeline load: "
+            f"requested_model={len(requested_model_features)}, structural={len(structural_keys)}"
+        )
+        feats = load_selected_features_from_symbol_parquets(
+            feature_dir=feature_path,
+            wanted_features=wanted_features,
+            float_dtype=float_dtype,
+        )
+        if not feats:
+            raise ValueError(f"Failed selective feature load from {feature_path}")
+        logger.info(f"Loaded {len(feats)} selected features via pipeline loader")
+        gc.collect()
     else:
         # Generic format: per-feature files
         tlog("Loading generic feature parquet layout")
         feats = load_features_from_parquet(feature_path)
         feats = cast_features_dtype(feats, float_dtype=float_dtype)
         gc.collect()
+
+    # Normalize feature timestamps to UTC-naive once to prevent downstream
+    # tz-aware vs tz-naive alignment drops in training-slice label joins.
+    feats = normalize_feature_time_indices(feats)
     
     # Check required features
     if "ret6h" not in feats and "ret24h" not in feats:
@@ -2294,6 +2774,34 @@ def run_comparison(
     logger.info(f"Available test_feature_keys: {len(available_model_features)}/{len(test_feature_universe)}")
     tlog(f"Using {len(available_model_features)} test features")
 
+    # OOM guard: keep only model features plus minimal structural inputs.
+    structural_keys = {
+        "ret6h",
+        "ret24h",
+        "atr_pct",
+        "trend_pct",
+        "range_12h_pct",
+        "range_16h_pct",
+        "range_pct",
+        "volatility_zscore",
+        "vol_z",
+        "rvol_z",
+        "volu_z",
+        "sign_consistency",
+        "sign_consistency_12h",
+    }
+    keep_feature_keys = structural_keys | set(available_model_features)
+    before_feature_count = len(feats)
+    feats = {k: v for k, v in feats.items() if k in keep_feature_keys}
+    tlog(
+        "Feature pruning applied: "
+        f"{before_feature_count} -> {len(feats)} keys "
+        f"(model={len(available_model_features)}, structural={len(structural_keys)})"
+    )
+    # Ensure training-slice builders use the same compact test feature universe.
+    runtime_cfg["mr_feature_keys"] = list(available_model_features)
+    runtime_cfg["tf_feature_keys"] = list(available_model_features)
+
     if panel_path is None:
         raise ValueError("--panel is required for training-aligned MR/TF long/short slice evaluation")
     tlog("Loading panel data")
@@ -2310,12 +2818,43 @@ def run_comparison(
     metric_by_mode = metric_pack["metrics"]
     tlog(f"Precomputed metric modes: {list(metric_by_mode.keys())}")
 
+    tlog("Precomputing aggregated TP/SL geometry base for learnability metrics")
+    tb_base = None
+    try:
+        horizons_cfg = runtime_cfg.get("label_horizons_hours", [2, 4, 8])
+        base_h = int(runtime_cfg.get("label_horizon_base", 4))
+        if base_h not in [int(h) for h in horizons_cfg]:
+            base_h = int(horizons_cfg[0]) if horizons_cfg else 4
+        tb_cache_base, _geom_cache_base = build_grid_aggregated_tb_cache(
+            panel=panel,
+            feats=feats,
+            cfg=runtime_cfg,
+            horizons=[base_h],
+            trade_sides=["long", "short"],
+        )
+        long_pair = tb_cache_base.get((base_h, "long"))
+        short_pair = tb_cache_base.get((base_h, "short"))
+        if long_pair is not None and short_pair is not None:
+            tb_base = {
+                "horizon": base_h,
+                "ret_long": long_pair[1],
+                "ret_short": short_pair[1],
+                "label_long": long_pair[0],
+                "label_short": short_pair[0],
+            }
+            tlog(f"Aggregated geometry base ready (horizon={base_h}h)")
+        else:
+            tlog("Aggregated geometry base unavailable for selected horizon; fallback to legacy target/labels")
+    except Exception as exc:
+        logger.warning(f"Aggregated geometry base precompute failed ({exc}); falling back to legacy target/labels")
+
     tlog("Building long-form precomputed tables")
     precomputed = build_long_form_tables(
         feats=feats,
         target_col="ret6h",
         float_dtype=float_dtype,
         atr_reference=metric_pack.get("atr_effective"),
+        tb_base=tb_base,
     )
     base_ref_df = feats.get("ret6h") if isinstance(feats.get("ret6h"), pd.DataFrame) else feats.get("ret24h")
     data_container = DataContainer(
@@ -2347,6 +2886,7 @@ def run_comparison(
     default_sign_consistency = float(candidate_defaults["min_feat_sign_consistency"])
     default_tp_lo = float(barrier_defaults["barrier_tp_lo"])
     default_tp_hi = float(barrier_defaults["barrier_tp_hi"])
+    default_k_tp = float(barrier_defaults["barrier_k_tp"])
     default_sl_mult = float(barrier_defaults["barrier_sl_base_mult"])
     pct_grid = [0.06]  # Single pct for initial runs
     
@@ -2428,7 +2968,7 @@ def run_comparison(
                     "min_vol_zscore": default_vol_zscore,
                     "min_sign_consistency": default_sign_consistency,
                     "barrier_sl_base_mult": default_sl_mult,
-                    "barrier_k_tp": 1.0,
+                    "barrier_k_tp": default_k_tp,
                 }
             )
 
@@ -2465,7 +3005,7 @@ def run_comparison(
             # Check if this config matches any of the winners
             # Winners should match the base config_id (without expansion suffix)
             base_id = cfg["config_id"].split("_E")[0] if "_E" in cfg["config_id"] else cfg["config_id"]
-            if base_id in winners:
+            if cfg["config_id"] in winners or base_id in winners:
                 for new_pct in stage3_pcts:
                     if new_pct != cfg.get("pct", 0.06):
                         new_cfg = dict(cfg)
@@ -2477,6 +3017,7 @@ def run_comparison(
                         stage3_configs.append(new_cfg)
         if stage3_configs:
             tlog(f"Stage 3 setup done: {len(stage3_configs)} configs")
+            tlog(f"Stage 3 pct grid: {sorted({float(c['pct']) for c in stage3_configs})}")
             configs = stage3_configs  # Replace with stage 3 configs only
         else:
             tlog(f"Stage 3 setup done: no configs matched winners={winners}")
@@ -2505,6 +3046,49 @@ def run_comparison(
     training_slice_cache: dict[tuple[Any, ...], list] = {}
     training_slice_geometry_cache: OrderedDict[tuple[Any, ...], tuple[dict, dict]] = OrderedDict()
     disable_training_slices = False
+    shared_geometry_key: Optional[tuple[Any, ...]] = None
+    shared_geometry_value: Optional[tuple[dict, dict]] = None
+
+    # Prewarm geometry once for the common barrier setup used by most configs.
+    try:
+        geom_cfg = deepcopy(runtime_cfg)
+        for k, v in barrier_defaults.items():
+            geom_cfg[k] = geom_cfg.get(k, v)
+        horizons_hours = list(geom_cfg.get("label_horizons_hours", [2, 4, 8]))
+        if any(float(h) <= 2.0 for h in horizons_hours):
+            geom_cfg["barrier_tp_lo"] = min(float(geom_cfg.get("barrier_tp_lo", 0.02)), 0.004)
+        elif any(float(h) <= 4.0 for h in horizons_hours):
+            geom_cfg["barrier_tp_lo"] = min(float(geom_cfg.get("barrier_tp_lo", 0.02)), 0.008)
+        geom_cfg["barrier_tp_hi"] = max(float(geom_cfg.get("barrier_tp_hi", 0.06)), float(geom_cfg.get("barrier_tp_lo", 0.02)))
+
+        shared_geometry_key = (
+            tuple(geom_cfg.get("label_horizons_hours", [2, 4, 8])),
+            geom_cfg.get("barrier_k_tp"),
+            geom_cfg.get("barrier_sl_base_mult"),
+            geom_cfg.get("barrier_disp_floor"),
+            geom_cfg.get("barrier_z_max"),
+            geom_cfg.get("barrier_k_reg"),
+            geom_cfg.get("barrier_m_lo"),
+            geom_cfg.get("barrier_m_hi"),
+            geom_cfg.get("barrier_sl_lo"),
+            geom_cfg.get("barrier_sl_hi"),
+            geom_cfg.get("barrier_z_gate"),
+            geom_cfg.get("barrier_tp_lo"),
+            geom_cfg.get("barrier_tp_hi"),
+        )
+        tlog("Prewarming shared training-slice geometry cache")
+        shared_tb, shared_geom = build_grid_aggregated_tb_cache(
+            panel=panel,
+            feats=feats,
+            cfg=geom_cfg,
+            horizons=geom_cfg.get("label_horizons_hours", [2, 4, 8]),
+            trade_sides=["long", "short"],
+        )
+        shared_geometry_value = (shared_tb, shared_geom)
+        cache_geometry_entry(training_slice_geometry_cache, shared_geometry_key, shared_geometry_value)
+        tlog("Shared training-slice geometry cache ready")
+    except Exception as exc:
+        tlog(f"Shared geometry prewarm skipped: {exc}")
 
     tlog(f"Prepared {len(configs)} configs for execution")
     results = []
@@ -2515,11 +3099,14 @@ def run_comparison(
         config_id = cfg["config_id"]
         mode = cfg["mode"]
         pct = cfg["pct"]
-        candidate_mask = None
-        side_sign = None
+        candidate_mask_metrics = None
+        candidate_mask_panel = None
+        side_sign_metrics = None
+        side_sign_panel = None
         
         logger.info("-" * 40)
         stage_label = infer_stage_label(config_id)
+        is_stage1 = stage_label == "Stage 1"
         logger.info(f"Running config [{stage_label}]: {config_id} (mode={mode}, pct={pct})")
         tlog(f"Config start: {config_id}")
         
@@ -2579,16 +3166,16 @@ def run_comparison(
                 )
             base_selected_n = int(candidate_mask_base.to_numpy(dtype=bool, copy=False).sum())
             tlog(f"Candidate base mask: selected={base_selected_n}")
-            candidate_mask = expand_candidate_mask(candidate_mask_base, expansion_offsets)
-            side_sign = side_sign_base.copy()
+            candidate_mask_metrics = expand_candidate_mask(candidate_mask_base, expansion_offsets)
+            side_sign_metrics = side_sign_base.copy()
             if expansion_offsets:
                 for off in expansion_offsets:
                     shifted = side_sign_base.shift(int(off)).fillna(0).astype(np.int8)
                     # Preserve first non-zero sign when expanded overlap occurs.
-                    fill_mask = (side_sign == 0) & (shifted != 0)
-                    side_sign = side_sign.where(~fill_mask, shifted)
-            side_sign = side_sign.where(candidate_mask, 0).astype(np.int8)
-            expanded_selected_n = int(candidate_mask.to_numpy(dtype=bool, copy=False).sum())
+                    fill_mask = (side_sign_metrics == 0) & (shifted != 0)
+                    side_sign_metrics = side_sign_metrics.where(~fill_mask, shifted)
+            side_sign_metrics = side_sign_metrics.where(candidate_mask_metrics, 0).astype(np.int8)
+            expanded_selected_n = int(candidate_mask_metrics.to_numpy(dtype=bool, copy=False).sum())
             if expansion_offsets:
                 tlog(
                     f"Applied candidate expansion ({expansion_name}): offsets={expansion_offsets}, "
@@ -2597,16 +3184,33 @@ def run_comparison(
             else:
                 tlog(f"Candidate expansion skipped: selected={expanded_selected_n}")
 
-            candidate_mask = align_candidate_mask_to_panel_symbols(candidate_mask, panel)
-            side_sign = side_sign.reindex(index=candidate_mask.index, columns=candidate_mask.columns, fill_value=0).astype(np.int8)
-            side_sign = side_sign.where(candidate_mask, 0).astype(np.int8)
-            aligned_selected_n = int(candidate_mask.to_numpy(dtype=bool, copy=False).sum())
+            if is_stage1 and STAGE1_SYMBOL_SUBSAMPLE_STEP > 1:
+                keep_cols = list(candidate_mask_metrics.columns[::STAGE1_SYMBOL_SUBSAMPLE_STEP])
+                if keep_cols and len(keep_cols) < candidate_mask_metrics.shape[1]:
+                    candidate_mask_metrics = candidate_mask_metrics.reindex(columns=keep_cols, fill_value=False)
+                    side_sign_metrics = side_sign_metrics.reindex(columns=keep_cols, fill_value=0).astype(np.int8)
+                    stage1_selected_n = int(candidate_mask_metrics.to_numpy(dtype=bool, copy=False).sum())
+                    tlog(
+                        "Stage 1 symbol subsample applied: "
+                        f"step={STAGE1_SYMBOL_SUBSAMPLE_STEP}, cols={len(keep_cols)}, selected={stage1_selected_n}"
+                    )
+
+            # Keep learnability metrics in feature-space coordinates; build a separate
+            # panel-aligned mask only for training-slice stage.
+            candidate_mask_panel = align_candidate_mask_to_panel_symbols(candidate_mask_metrics, panel)
+            side_sign_panel = side_sign_metrics.reindex(
+                index=candidate_mask_panel.index,
+                columns=candidate_mask_panel.columns,
+                fill_value=0,
+            ).astype(np.int8)
+            side_sign_panel = side_sign_panel.where(candidate_mask_panel, 0).astype(np.int8)
+            aligned_selected_n = int(candidate_mask_panel.to_numpy(dtype=bool, copy=False).sum())
             panel_overlap_cols = int(
-                len(candidate_mask.columns.intersection(panel["close"].columns))
+                len(candidate_mask_panel.columns.intersection(panel["close"].columns))
             ) if "close" in panel else 0
             tlog(
                 f"Candidate alignment: selected={aligned_selected_n}, "
-                f"cols={candidate_mask.shape[1]}, panel_overlap_cols={panel_overlap_cols}"
+                f"cols={candidate_mask_panel.shape[1]}, panel_overlap_cols={panel_overlap_cols}"
             )
             if base_selected_n > 0 and aligned_selected_n == 0:
                 tlog(
@@ -2617,13 +3221,17 @@ def run_comparison(
             
             # Compute metrics
             tlog(f"Computing learnability metrics: {config_id}")
+            oof_n_splits = STAGE1_OOF_SPLITS if is_stage1 else STAGE23_OOF_SPLITS
+            oof_max_samples = STAGE1_OOF_MAX_SAMPLES if is_stage1 else OOF_MAX_SAMPLES
             metrics = compute_learnability_metrics(
-                candidate_mask=candidate_mask,
+                candidate_mask=candidate_mask_metrics,
                 precomputed=precomputed,
                 available_features=available_model_features,
                 float_dtype=float_dtype,
-                side_sign=side_sign,
+                side_sign=side_sign_metrics,
                 use_extratrees=use_extratrees,
+                oof_max_samples=oof_max_samples,
+                oof_n_splits=oof_n_splits,
             )
 
             cfg_variant = deepcopy(runtime_cfg)
@@ -2660,7 +3268,7 @@ def run_comparison(
                 cfg_variant["min_feat_sign_consistency"] = float(cfg["min_sign_consistency"])
 
             training_cache_key = (
-                fingerprint_candidate_mask(candidate_mask),
+                fingerprint_candidate_mask(candidate_mask_panel),
                 float(cfg_variant.get("train_extreme_pct_hourly", 0.0)),
                 cfg_variant.get("train_min_range_pct"),
                 cfg_variant.get("train_min_vol_zscore"),
@@ -2691,7 +3299,7 @@ def run_comparison(
                 tlog("Training-slice stage skipped: disabled after prior structural precheck failure")
                 training_slice_rows = []
             else:
-                ok_slices, why_not = training_slice_precheck(candidate_mask, panel)
+                ok_slices, why_not = training_slice_precheck(candidate_mask_panel, panel)
                 if not ok_slices:
                     tlog(f"Training-slice stage skipped: {why_not}")
                     if why_not in {
@@ -2702,8 +3310,13 @@ def run_comparison(
                     training_slice_rows = []
                 else:
                     tlog(f"Evaluating training slices: {config_id}")
+                    shared_geom = (
+                        shared_geometry_value
+                        if shared_geometry_key is not None and geometry_cache_key == shared_geometry_key
+                        else None
+                    )
                     training_slice_rows = evaluate_training_slices(
-                        candidate_mask=candidate_mask,
+                        candidate_mask=candidate_mask_panel,
                         feats=feats,
                         panel=panel,
                         cfg_variant=cfg_variant,
@@ -2713,6 +3326,7 @@ def run_comparison(
                         sample_frac=SAMPLE_FRAC,
                         geometry_cache=training_slice_geometry_cache,
                         geometry_cache_key=geometry_cache_key,
+                        precomputed_geometry=shared_geom,
                         sample_weight_sink=sample_weight_rows if save_sample_weights else None,
                         config_id=config_id,
                     )
@@ -2761,15 +3375,23 @@ def run_comparison(
                 f"  HitRate: {metrics['hit_rate']:.2%} | Sortino: {metrics['sortino']:.2f} | "
                 f"Return(bps): {metrics['mean_return_bps']:.2f} ± {metrics['volatility_bps']:.2f}"
             )
+            logger.info(f"  Clf AUC: {metrics.get('auc', 0.0):.4f} | Brier: {metrics.get('brier', 0.0):.4f}")
             logger.info(
                 f"  SliceSharpe: {metrics['slice_overall_sharpe']:.2f} | "
                 f"SliceSortino: {metrics['slice_overall_sortino']:.2f} | "
+                f"SliceOpp/Day: {metrics.get('slice_overall_opportunities_per_day', 0.0):.2f} | "
                 f"SliceN: {metrics['slice_total_samples']}"
+            )
+            logger.info(
+                f"  TP:SL used: {float(cfg.get('barrier_k_tp', 1.0)):.2f}:{float(cfg.get('barrier_sl_base_mult', 0.5)):.2f}"
             )
             tlog(f"Config done: {config_id}")
             
             # Free memory
-            del candidate_mask
+            del candidate_mask_metrics
+            del candidate_mask_panel
+            del side_sign_metrics
+            del side_sign_panel
             del metrics
             gc.collect()
             
@@ -2804,6 +3426,8 @@ def run_comparison(
                 "ic_spearman": 0,
                 "oof_mae": 0,
                 "oof_directional_acc": 0,
+                "auc": 0,
+                "brier": 0,
                 "ridge_alpha": RIDGE_SCREEN_ALPHA,
                 "ridge_top_frac": RIDGE_SCREEN_TOP_FRAC,
                 "ridge_selected_k_mean": 0,
@@ -2822,13 +3446,16 @@ def run_comparison(
                 "atr_decile_pnl_json": "{}",
                 "slice_overall_sharpe": 0,
                 "slice_overall_sortino": 0,
+                "slice_overall_opportunities_per_day": 0,
                 "slice_total_samples": 0,
                 "slice_metrics_json": "{}",
                 "error": str(e)
             })
         finally:
-            candidate_mask = None
-            side_sign = None
+            candidate_mask_metrics = None
+            candidate_mask_panel = None
+            side_sign_metrics = None
+            side_sign_panel = None
             feature_cache = precomputed.get("feature_series_cache")
             if isinstance(feature_cache, dict) and feature_cache:
                 feature_cache.clear()
@@ -2840,37 +3467,58 @@ def run_comparison(
     # Create results DataFrame
     results_df = pd.DataFrame(results)
 
-    # Learnability-first policy ranking:
-    # Primary: maximize IC
-    # Constraint: IC_std <= median IC_std across valid configs
-    # Secondary: maximize KS then SNR
-    # Tie-break: Sharpe, Sortino, mean_return_bps
+    # Learnability-first policy ranking with classifier-aware global score.
     valid_icstd = results_df["ic_std"].to_numpy(dtype=float)
     valid_icstd = valid_icstd[np.isfinite(valid_icstd)]
     icstd_threshold = float(np.median(valid_icstd)) if len(valid_icstd) > 0 else 0.0
     results_df["policy_icstd_threshold"] = icstd_threshold
     results_df["policy_pass_stability"] = results_df["ic_std"] <= icstd_threshold
+    results_df["auc"] = pd.to_numeric(results_df.get("auc", 0.0), errors="coerce").fillna(0.0)
+    results_df["brier"] = pd.to_numeric(results_df.get("brier", 0.0), errors="coerce").fillna(0.0)
+
+    rank_ic = results_df["ic"].rank(pct=True, method="average")
+    rank_ks = results_df["ks_stat"].rank(pct=True, method="average")
+    rank_snr = results_df["snr"].rank(pct=True, method="average")
+    rank_sharpe = results_df["sharpe"].rank(pct=True, method="average")
+    rank_sortino = results_df["sortino"].rank(pct=True, method="average")
+    rank_auc = results_df["auc"].rank(pct=True, method="average")
+    rank_brier = 1.0 - results_df["brier"].rank(pct=True, method="average")
+
+    results_df["global_score"] = (
+        0.22 * rank_ic
+        + 0.16 * rank_ks
+        + 0.14 * rank_snr
+        + 0.12 * rank_sharpe
+        + 0.12 * rank_sortino
+        + 0.14 * rank_auc
+        + 0.10 * rank_brier
+    )
+    # Small stability bonus/penalty keeps unstable IC_std from dominating rank.
+    results_df["global_score"] = results_df["global_score"] * np.where(
+        results_df["policy_pass_stability"].to_numpy(dtype=bool),
+        1.03,
+        0.97,
+    )
+
     sort_view = results_df.sort_values(
-        by=[
-            "policy_pass_stability",
-            "ic",
-            "ks_stat",
-            "snr",
-            "sharpe",
-            "sortino",
-            "mean_return_bps",
-        ],
-        ascending=[False, False, False, False, False, False, False],
+        by=["global_score", "policy_pass_stability", "ic", "ks_stat", "snr"],
+        ascending=[False, False, False, False, False],
     ).reset_index(drop=True)
-    sort_view["policy_rank"] = np.arange(1, len(sort_view) + 1, dtype=np.int32)
-    results_df = results_df.merge(sort_view[["config_id", "policy_rank"]], on="config_id", how="left")
+    sort_view["global_rank"] = np.arange(1, len(sort_view) + 1, dtype=np.int32)
+    sort_view["policy_rank"] = sort_view["global_rank"]
+    results_df = results_df.merge(
+        sort_view[["config_id", "policy_rank", "global_rank", "global_score"]],
+        on="config_id",
+        how="left",
+    )
     if len(sort_view) > 0:
         best_row = sort_view.iloc[0]
         tlog(
             "Policy best config: "
             f"{best_row['config_id']} | pass={bool(best_row['policy_pass_stability'])} "
+            f"global_score={best_row['global_score']:.4f} "
             f"IC={best_row['ic']:.4f} IC_std={best_row['ic_std']:.4f} "
-            f"KS={best_row['ks_stat']:.4f} SNR={best_row['snr']:.4f}"
+            f"AUC={best_row.get('auc', 0.0):.4f} Brier={best_row.get('brier', 0.0):.4f}"
         )
     
     # Ensure output directory exists
@@ -2914,34 +3562,42 @@ def run_comparison(
         logger.warning(f"Failed to persist candidate best params CSV: {exc}")
     
     # Print summary table
-    print("\n" + "=" * 140)
+    print("\n" + "=" * 172)
     print("CANDIDATE SELECTION THRESHOLD COMPARISON RESULTS")
-    print("=" * 140)
+    print("=" * 172)
     print(f"{'Config':<10} {'Mode':<12} {'Pct':>5} {'Range':>6} {'VolZ':>5} {'SignC':>5} "
-          f"{'N_Cand':>7} {'IC':>7} {'IC_std':>7} {'KS':>6} {'SNR':>6} {'Bal':>6} {'Sharpe':>7} {'Hit':>6} {'Sort':>7}")
-    print("-" * 140)
+          f"{'N_Cand':>7} {'IC':>7} {'IC_std':>7} {'AUC':>6} {'Brier':>6} {'KS':>6} {'SNR':>6} "
+          f"{'Bal':>6} {'Sharpe':>7} {'Hit':>6} {'Sort':>7} {'GScore':>7} {'Rank':>5}")
+    print("-" * 172)
     
     for _, row in results_df.iterrows():
         range_str = f"{row['min_range_pct']:.2f}" if pd.notna(row.get('min_range_pct')) else "-"
         volz_str = f"{row['min_vol_zscore']:.1f}" if pd.notna(row.get('min_vol_zscore')) else "-"
         signc_str = f"{row['min_sign_consistency']:.0%}" if pd.notna(row.get('min_sign_consistency')) else "-"
+        global_rank = int(row["global_rank"]) if pd.notna(row.get("global_rank")) else 0
         print(f"{row['config_id']:<10} {row['mode']:<12} {row['pct']:>5.2f} "
               f"{range_str:>6} {volz_str:>5} {signc_str:>5} "
               f"{row['n_candidates_mean']:>7.1f} {row['ic']:>7.4f} {row['ic_std']:>7.4f} "
+              f"{row.get('auc', 0.0):>6.3f} {row.get('brier', 0.0):>6.3f} "
               f"{row['ks_stat']:>6.3f} {row['snr']:>6.2f} {row['class_balance']:>5.1%} "
-              f"{row['sharpe']:>7.2f} {row['hit_rate']:>5.1%} {row['sortino']:>7.2f}")
+              f"{row['sharpe']:>7.2f} {row['hit_rate']:>5.1%} {row['sortino']:>7.2f} "
+              f"{row.get('global_score', 0.0):>7.4f} {global_rank:>5d}")
 
     if len(sort_view) > 0:
         best = sort_view.iloc[0]
         print(
             f"Policy best: {best['config_id']} | Rank=1 | "
             f"Pass={bool(best['policy_pass_stability'])} | "
+            f"GlobalScore={best.get('global_score', 0.0):.4f} | "
             f"IC={best['ic']:.4f} IC_std={best['ic_std']:.4f} "
-            f"KS={best['ks_stat']:.4f} SNR={best['snr']:.4f} "
-            f"Sharpe={best['sharpe']:.2f}"
+            f"AUC={best.get('auc', 0.0):.4f} Brier={best.get('brier', 0.0):.4f} "
+            f"Sharpe={best['sharpe']:.2f} Sortino={best['sortino']:.2f}"
         )
+    print("\nGLOBAL RANKING (best -> worst)")
+    rank_cols = ["global_rank", "config_id", "global_score", "ic", "auc", "brier", "sharpe", "sortino"]
+    print(sort_view[rank_cols].to_string(index=False))
 
-    print("=" * 140)
+    print("=" * 172)
     
     return results_df
 
@@ -2990,7 +3646,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--stage3",
         action="store_true",
-        help="Enable stage 3: run winners with pct=[0.05, 0.06, 0.07]. Use with --winners (or auto-runs after stage 1+2)"
+        help="Force stage 3 auto-run after stage 2 (default behavior unless --skip-stage3 is set)"
+    )
+    parser.add_argument(
+        "--skip-stage3",
+        action="store_true",
+        help="Run only stage 2 and skip stage 3"
     )
     parser.add_argument(
         "--winners",
@@ -3022,18 +3683,19 @@ if __name__ == "__main__":
         logging.getLogger().setLevel(logging.DEBUG)
     
     # =============================================================================
-    # Auto-select winners if not provided and prepare for potential Stage 3
+    # Stage 2 always runs first; Stage 3 auto-runs unless explicitly skipped.
     # =============================================================================
-    auto_stage3 = args.stage3 or len(args.winners) > 0
-    
+    auto_stage3 = (not args.skip_stage3) or args.stage3 or len(args.winners) > 0
+
+    tlog("Starting Stage 2 run")
     run_comparison(
         args.features,
         args.panel,
         args.output,
         dtype=args.dtype,
         max_features=args.max_features,
-        stage3=args.stage3,
-        winners=args.winners,
+        stage3=False,
+        winners=[],
         symbol_step=args.symbol_step,
         symbol_limit=args.symbol_limit,
         save_sample_weights=args.save_sample_weights,
@@ -3048,10 +3710,14 @@ if __name__ == "__main__":
             try:
                 import pandas as pd
                 prev_results = pd.read_csv(args.output)
-                # Find top 4 configs by slice_overall_sortino from FULL_E* configs
+                # Find top 4 FULL_E configs by global score from Stage 2 output.
                 full_configs = prev_results[prev_results['config_id'].str.contains('FULL_E')]
                 if len(full_configs) > 0:
-                    top_winners = full_configs.nlargest(4, 'slice_overall_sortino')['config_id'].tolist()
+                    score_col = "global_score" if "global_score" in full_configs.columns else "policy_rank"
+                    if score_col == "global_score":
+                        top_winners = full_configs.nlargest(4, score_col)["config_id"].tolist()
+                    else:
+                        top_winners = full_configs.nsmallest(4, score_col)["config_id"].tolist()
                     tlog(f"Auto-selected top 4 winners: {top_winners}")
                 else:
                     tlog("No FULL_E configs found, cannot auto-select winners")
@@ -3065,7 +3731,7 @@ if __name__ == "__main__":
         if top_winners:
             # Run Stage 3 with top winners
             stage3_output = args.output.replace('.csv', '_stage3.csv')
-            tlog(f"Auto-running Stage 3 with winners: {top_winners}")
+            tlog(f"Starting Stage 3 run with winners={top_winners} and pct grid [0.05, 0.06, 0.07]")
             run_comparison(
                 args.features,
                 args.panel,
@@ -3079,3 +3745,7 @@ if __name__ == "__main__":
                 symbol_limit=args.symbol_limit,
                 save_sample_weights=args.save_sample_weights,
             )
+        else:
+            tlog("Stage 3 skipped: no winners selected")
+    else:
+        tlog("Stage 3 disabled via --skip-stage3")

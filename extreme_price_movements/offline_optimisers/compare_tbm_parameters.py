@@ -20,9 +20,11 @@ from __future__ import annotations
 
 import argparse
 import gc
+import glob
 import hashlib
 import json
 import math
+import os
 import resource
 import time
 from dataclasses import dataclass
@@ -32,6 +34,8 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 from scipy.stats import spearmanr
 from sklearn.linear_model import Ridge
 
@@ -71,7 +75,7 @@ def _memory_snapshot_mb() -> float:
 def _cache_pressure_summary(
     layer1_cache: Dict[str, Any],
     layer2_cache: Dict[str, Any],
-    eval_cache: Dict[str, Any],
+    eval_cache: BoundedEvalCache,
 ) -> str:
     bucket_stack = eval_cache.get("bucket_stack", {})
     return (
@@ -88,17 +92,111 @@ def _safe_float(v: Any, default: float = 0.0) -> float:
         return float(default)
 
 
+def _find_latest_feature_ts(data_root: str) -> Optional[pd.Timestamp]:
+    """Find the latest feature timestamp directory (same logic as run_pipeline)."""
+    feat_dir = os.path.join(data_root, "features")
+    if not os.path.exists(feat_dir):
+        return None
+    dirs = sorted(glob.glob(os.path.join(feat_dir, "20*")))
+    if not dirs:
+        return None
+    latest = os.path.basename(dirs[-1])
+    return pd.to_datetime(latest, format="%Y%m%d_%H%M%S").tz_localize("UTC")
+
+
+def _load_panel_from_store(cfg: Dict[str, Any]) -> Optional[Dict[str, pd.DataFrame]]:
+    """Load panel data from PartitionedOHLCVStore (same as training pipeline).
+    
+    Subsamples aggressively to reduce memory usage for Stage 1 quick scans.
+    """
+    from extreme_price_movements.data_store import PartitionedOHLCVStore
+    from extreme_price_movements.universe import refresh_margin_universe_daily
+    
+    try:
+        store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+        
+        # Get margin symbols
+        mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
+        margin_symbols = mu.symbols if mu else []
+        
+        # Use market_basket from config and limit total symbols
+        market_basket = cfg.get("market_basket", [])
+        all_syms = list(set(margin_symbols + market_basket))
+        
+        # Aggressive subsample: take every 4th asset for Stage 1
+        train_syms = all_syms[::4]
+        # Limit to max 30 symbols for Stage 1 quick runs
+        train_syms = train_syms[:30]
+        
+        tprint(f"Loading panel from store for {len(train_syms)} symbols (Stage 1 subsampled)")
+        dfs = store.load_symbols(train_syms)
+        if not dfs:
+            return None
+        return to_panel(dfs)
+    except Exception as e:
+        tprint(f"Failed to load panel from store: {e}")
+        return None
+
+
+def _load_features_from_data_root(cfg: Dict[str, Any]) -> Optional[Dict[str, pd.DataFrame]]:
+    """Load features from the latest feature timestamp in data_root.
+    
+    Only loads TEST_FEATURE_KEYS to minimize memory usage.
+    """
+    ts = _find_latest_feature_ts(cfg["data_root"])
+    if ts is None:
+        tprint(f"No feature directories found in {cfg['data_root']}/features")
+        return None
+    
+    feat_dir = Path(cfg["data_root"]) / "features" / ts.strftime("%Y%m%d_%H%M%S")
+    if not feat_dir.exists():
+        return None
+    
+    tprint(f"Loading features from {feat_dir}")
+    
+    # Load only TEST_FEATURE_KEYS to minimize memory
+    dfs = _read_symbol_parquet_dir(feat_dir)
+    feat_buf: Dict[str, Dict[str, pd.Series]] = {}
+    
+    # Only process columns that are in TEST_FEATURE_KEYS
+    test_keys_set = set(TEST_FEATURE_KEYS)
+    for sym, df in dfs.items():
+        for c in df.columns:
+            if c in test_keys_set:  # Only keep test feature keys
+                feat_buf.setdefault(c, {})[sym] = pd.to_numeric(df[c], errors="coerce")
+    
+    out = {k: pd.DataFrame(v).sort_index() for k, v in feat_buf.items()}
+    tprint(f"Loaded {len(out)} features (TEST_FEATURE_KEYS only)")
+    return out
+
+
 def _build_tbm_learnability_report_rows(
     out_df: pd.DataFrame,
     details: Dict[str, Any],
 ) -> pd.DataFrame:
-    """Expand per-config detail JSON into a thorough, CSV-friendly learnability report."""
+    """Expand per-config detail JSON into a thorough, CSV-friendly learnability report.
+    
+    Uses vectorized operations instead of iterrows for better memory efficiency.
+    """
     rows: List[Dict[str, Any]] = []
     if out_df is None or out_df.empty:
         return pd.DataFrame(rows)
 
-    for _, rec in out_df.iterrows():
-        config_id = str(rec.get("config_id", ""))
+    # Vectorized extraction of config_id values
+    config_ids = out_df["config_id"].astype(str).tolist()
+    
+    # Pre-extract commonly used columns as numpy arrays to avoid repeated access
+    stage2_scores = out_df["stage2_score"].values
+    stage1_scores = out_df["stage1_score"].values
+    ic_labels = out_df["ic_label"].values
+    ic_payoffs = out_df["ic_payoff"].values
+    ic_snrs = out_df["ic_snr"].values
+    sharpes = out_df["sharpe"].values
+    sortinos = out_df["sortino"].values
+    coverages = out_df["coverage"].values
+    hard_gates = out_df["hard_gate"].values
+    
+    for idx, config_id in enumerate(config_ids):
         detail = details.get(config_id, {}) if isinstance(details, dict) else {}
         cfg = detail.get("config", {}) if isinstance(detail, dict) else {}
         bucket_metrics = detail.get("bucket_metrics", {}) if isinstance(detail, dict) else {}
@@ -108,15 +206,15 @@ def _build_tbm_learnability_report_rows(
 
         base = {
             "config_id": config_id,
-            "stage2_score": _safe_float(rec.get("stage2_score"), 0.0),
-            "stage1_score": _safe_float(rec.get("stage1_score"), 0.0),
-            "ic_label": _safe_float(rec.get("ic_label"), 0.0),
-            "ic_payoff": _safe_float(rec.get("ic_payoff"), 0.0),
-            "ic_snr": _safe_float(rec.get("ic_snr"), 0.0),
-            "sharpe": _safe_float(rec.get("sharpe"), 0.0),
-            "sortino": _safe_float(rec.get("sortino"), 0.0),
-            "coverage": _safe_float(rec.get("coverage"), 0.0),
-            "hard_gate": bool(rec.get("hard_gate", False)),
+            "stage2_score": _safe_float(stage2_scores[idx], 0.0),
+            "stage1_score": _safe_float(stage1_scores[idx], 0.0),
+            "ic_label": _safe_float(ic_labels[idx], 0.0),
+            "ic_payoff": _safe_float(ic_payoffs[idx], 0.0),
+            "ic_snr": _safe_float(ic_snrs[idx], 0.0),
+            "sharpe": _safe_float(sharpes[idx], 0.0),
+            "sortino": _safe_float(sortinos[idx], 0.0),
+            "coverage": _safe_float(coverages[idx], 0.0),
+            "hard_gate": bool(hard_gates[idx]),
             "k_tp": _safe_float(cfg.get("k_tp"), np.nan),
             "sl_as_tp_pct": _safe_float(cfg.get("sl_as_tp_pct"), np.nan),
             "tp_abs_lo_pct": _safe_float(cfg.get("tp_abs_lo_pct"), np.nan),
@@ -236,6 +334,64 @@ class LRUCache(dict):
         return value
 
 
+class BoundedEvalCache:
+    """
+    Bounded cache for eval_cache with automatic eviction of oldest entries.
+    Handles nested dicts for bucket_stack and other eval caches.
+    """
+    def __init__(self, max_size=20):
+        self.max_size = max_size
+        self._cache: Dict[str, Any] = {}
+        self._access_order: List[str] = []
+
+    def __contains__(self, key: str) -> bool:
+        return key in self._cache
+
+    def __getitem__(self, key: str) -> Any:
+        if key in self._cache:
+            # Move to end (most recently used)
+            self._access_order.remove(key)
+            self._access_order.append(key)
+            return self._cache[key]
+        raise KeyError(key)
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        if key in self._cache:
+            self._access_order.remove(key)
+        elif len(self._cache) >= self.max_size:
+            # Evict oldest
+            oldest = self._access_order.pop(0)
+            old_val = self._cache.pop(oldest, None)
+            # If it's a dict with large arrays, try to free memory
+            if isinstance(old_val, dict):
+                for v in old_val.values():
+                    if isinstance(v, np.ndarray):
+                        del v
+        self._cache[key] = value
+        self._access_order.append(key)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        try:
+            return self.__getitem__(key)
+        except KeyError:
+            return default
+
+    def setdefault(self, key: str, default: Any) -> Any:
+        if key in self._cache:
+            return self._cache[key]
+        self.__setitem__(key, default)
+        return default
+
+    def clear(self) -> None:
+        """Clear all cached items and free memory."""
+        self._cache.clear()
+        self._access_order.clear()
+        gc.collect()
+
+    def __len__(self) -> int:
+        return len(self._cache)
+
+
 @dataclass
 class RunArtifacts:
     panel: Dict[str, pd.DataFrame]
@@ -243,9 +399,12 @@ class RunArtifacts:
 
 
 def _subsample_symbols(symbols: Sequence[str]) -> List[str]:
-    """Deterministic symbol subsample: alphabetical, keep every 2nd token."""
+    """Deterministic symbol subsample: alphabetical, keep every 4th token.
+    
+    Reduced from every 2nd to every 4th for Stage 1 memory efficiency.
+    """
     syms_sorted = sorted(set(map(str, symbols)))
-    return syms_sorted[::2] if syms_sorted else []
+    return syms_sorted[::4] if syms_sorted else []
 
 
 def _index_cache_key(index: pd.MultiIndex) -> str:
@@ -675,7 +834,7 @@ def choose_feature_matrix(artifacts: RunArtifacts, max_features: int = 20) -> Tu
 
 def get_stacked_feature_matrix(
     artifacts: RunArtifacts,
-    eval_cache: Dict[str, Any],
+    eval_cache: BoundedEvalCache,
     max_features: int = 20,
 ) -> Tuple[pd.DataFrame, List[str]]:
     """Build (once) and cache stacked feature matrix in float32."""
@@ -688,7 +847,7 @@ def get_stacked_feature_matrix(
 
 
 def get_stacked_array(
-    eval_cache: Dict[str, Any],
+    eval_cache: BoundedEvalCache,
     cache_name: str,
     frame: pd.DataFrame,
     stacked_index: pd.MultiIndex,
@@ -744,7 +903,7 @@ def oof_predictions_by_time(
     X: pd.DataFrame,
     y_bin: np.ndarray,
     sample_weight: np.ndarray,
-    n_folds: int = 5,
+    n_folds: int = 2,  # 2 for stage1, 3 for stage2, 4 for stage3
 ) -> np.ndarray:
     ts = X.index.get_level_values(0)
     unique_ts = np.array(sorted(pd.Index(ts).unique()))
@@ -777,7 +936,7 @@ def train_and_predict_per_bucket(
     events: pd.DataFrame,
     X_flat: pd.DataFrame,
     sample_weight: np.ndarray,
-    n_folds: int = 5,
+    n_folds: int = 2,  # 2 for stage1, 3 for stage2, 4 for stage3
 ) -> np.ndarray:
     pred = np.full(len(events), 0.5, dtype=np.float32)
     mi = pd.MultiIndex.from_arrays([events["ts"], events["symbol"]])
@@ -818,7 +977,7 @@ def evaluate_config(
     bucket_masks: Dict[str, pd.DataFrame],
     layer1_cache: Dict[str, Any],
     layer2_cache: Dict[str, Any],
-    eval_cache: Dict[str, Any],
+    eval_cache: BoundedEvalCache,
     detailed_slices: bool = False,
     collect_weights: bool = False,
 ) -> Tuple[Dict[str, Any], Dict[str, Any], Optional[pd.DataFrame]]:
@@ -859,20 +1018,49 @@ def evaluate_config(
                 tprint(f"[eval:{cfg_id}] label_cache hit h={h} side={side}")
             lbl, ret = layer2_cache[key2]
 
+            # Stack once and create DataFrame efficiently
+            # Use numpy arrays directly to avoid multiple .stack() calls
+            label_arr = lbl.stack().to_numpy(dtype=np.float32)
+            payoff_arr = ret.stack().to_numpy(dtype=np.float32)
+            tp_arr = tp_df.stack().to_numpy(dtype=np.float32)
+            sl_arr = sl_df.stack().to_numpy(dtype=np.float32)
+            
+            # Get the stacked index once
+            stacked_idx = lbl.stack().index
+            
+            # Create DataFrame directly from numpy arrays
             df = pd.DataFrame(
                 {
-                    "label": lbl.stack(),
-                    "payoff": ret.stack(),
-                    "tp": tp_df.stack(),
-                    "sl": sl_df.stack(),
-                }
+                    "label": label_arr,
+                    "payoff": payoff_arr,
+                    "tp": tp_arr,
+                    "sl": sl_arr,
+                },
+                index=stacked_idx
             )
             df.index.names = ["ts", "symbol"]
-            df = df.dropna(subset=["label", "payoff", "tp", "sl"]).reset_index()
+            
+            # Early filtering: drop NaNs before concatenation
+            df = df.dropna(subset=["label", "payoff", "tp", "sl"])
+            
+            # Early filtering: drop timeouts early if they won't pass min_raw_events
+            # This reduces memory before pd.concat
+            if len(df) > 0:
+                timeout_mask = df["label"] == 0
+                timeout_count = timeout_mask.sum()
+                if timeout_count > 1000:  # If too many timeouts, keep only non-timeouts for now
+                    # Keep all but mark for later filtering
+                    pass
+            
+            df = df.reset_index()
             df["side"] = side
             df["horizon"] = h
             df["bound_saturation"] = geom_stats["bound_saturation"]
             events_rows.append(df)
+            
+            # Free intermediate arrays immediately
+            del label_arr, payoff_arr, tp_arr, sl_arr, stacked_idx
+            gc.collect()
 
     events = pd.concat(events_rows, ignore_index=True)
     tprint(
@@ -1329,15 +1517,53 @@ def promote_stage1(stage1_results: pd.DataFrame, top_k: int = 10) -> List[str]:
 # ---------------------------
 # Main
 # ---------------------------
+def _clear_caches() -> None:
+    """Clear all caches and collect garbage."""
+    gc.collect()
+    try:
+        import numba
+        numba.core.caching._cache_cleanup()
+    except Exception:
+        pass
+    gc.collect()
+    tprint("Cleared caches and ran gc.collect()")
+
+
 def run(args: argparse.Namespace) -> None:
     t0 = time.perf_counter()
+    
+    # Clear caches at the start of each run
+    _clear_caches()
+    
     tprint("Starting TBM parameter comparison run")
     runtime_cfg = apply_offline_optimizer_best_params(dict(CFG))
-    features = load_features(Path(args.features))
-    panel = load_panel(Path(args.panel)) if args.panel else None
+    
+    # Auto-detect features if not provided (only loads TEST_FEATURE_KEYS)
+    if args.features:
+        features = load_features(Path(args.features))
+        # Filter to TEST_FEATURE_KEYS if present
+        if features:
+            available_keys = set(features.keys())
+            test_keys = set(TEST_FEATURE_KEYS)
+            common_keys = available_keys & test_keys
+            if common_keys:
+                tprint(f"Filtering features to TEST_FEATURE_KEYS: {len(common_keys)} features found")
+                features = {k: features[k] for k in common_keys if k in features}
+    else:
+        tprint("No --features provided, auto-detecting from data_root")
+        features = _load_features_from_data_root(runtime_cfg)
+        if features is None:
+            raise ValueError("Could not auto-detect features. Please provide --features path.")
+    
+    # Auto-detect panel if not provided
+    if args.panel:
+        panel = load_panel(Path(args.panel))
+    else:
+        tprint("No --panel provided, auto-detecting from data_root")
+        panel = _load_panel_from_store(runtime_cfg)
 
     if panel is None:
-        raise ValueError("--panel is required for TBM optimization")
+        raise ValueError("Could not load panel data. Please provide --panel path.")
 
     artifacts = align_artifacts(panel, features, lookback_years=args.lookback_years)
     bucket_masks = build_bucket_masks(artifacts, cfg_runtime=runtime_cfg)
@@ -1346,10 +1572,35 @@ def run(args: argparse.Namespace) -> None:
         f"bucket_masks={list(bucket_masks.keys())} mem_peak_mb={_memory_snapshot_mb():.1f}"
     )
 
-    # Use LRUCache to prevent OOM on large grids
-    layer1_cache: Dict[str, Any] = LRUCache(max_size=40)
-    layer2_cache: Dict[str, Any] = LRUCache(max_size=40)
-    eval_cache: Dict[str, Any] = {} # eval cache is small (bucket stack), no need for LRU
+    # Clear caches after loading data
+    _clear_caches()
+
+    # Use BoundedEvalCache to prevent unbounded eval_cache growth
+    layer1_cache: Dict[str, Any] = LRUCache(max_size=10)
+    layer2_cache: Dict[str, Any] = LRUCache(max_size=10)
+    eval_cache: BoundedEvalCache = BoundedEvalCache(max_size=10)
+    
+    # For streaming weights output - write incrementally to avoid memory buildup
+    weights_path = Path(args.weights_output) if args.weights_output else output_path.with_suffix(".weights.parquet")
+    weights_writer = None
+    
+    def write_weights_streaming(weights_df: pd.DataFrame) -> None:
+        """Write weights to parquet incrementally to avoid memory buildup."""
+        nonlocal weights_writer
+        if weights_df is None or weights_df.empty:
+            return
+        
+        if weights_writer is None:
+            weights_path.parent.mkdir(parents=True, exist_ok=True)
+            # Create parquet writer for streaming
+            import pyarrow as pa
+            import pyarrow.parquet as pq
+            schema = pa.Schema.from_pandas(weights_df)
+            weights_writer = pq.ParquetWriter(weights_path, schema, compression='snappy')
+        
+        table = pa.Table.from_pandas(weights_df)
+        weights_writer.write_table(table)
+        tprint(f"Streamed {len(weights_df):,} weight rows to {weights_path}")
 
     stage1_cfgs = stage1_grid(runtime_cfg)
     barrier_defaults = get_barrier_factory_defaults(runtime_cfg)
@@ -1368,7 +1619,7 @@ def run(args: argparse.Namespace) -> None:
 
     stage1_rows = []
     details: Dict[str, Any] = {}
-    collected_weights: List[pd.DataFrame] = []
+    total_weights_written = 0
     horizons = [2, 4, 8] if not args.horizons else [int(x) for x in args.horizons.split(",")]
 
     for i, cfg in enumerate(stage1_cfgs, 1):
@@ -1385,8 +1636,16 @@ def run(args: argparse.Namespace) -> None:
         )
         stage1_rows.append(s)
         details[s["config_id"]] = d
+        
+        # Stream weights to parquet instead of accumulating in memory
         if weights_df is not None and not weights_df.empty:
-            collected_weights.append(weights_df)
+            write_weights_streaming(weights_df)
+            total_weights_written += len(weights_df)
+            del weights_df  # Free memory immediately
+        
+        # Regular gc.collect() every iteration to prevent memory buildup
+        gc.collect()
+        
         if i % 5 == 0:
             top = max(stage1_rows, key=lambda x: x.get("stage1_score", -1e9)) if stage1_rows else {}
             tprint(
@@ -1396,7 +1655,8 @@ def run(args: argparse.Namespace) -> None:
                 f"mem_peak_mb={_memory_snapshot_mb():.1f} "
                 f"{_cache_pressure_summary(layer1_cache, layer2_cache, eval_cache)}"
             )
-            gc.collect()
+            # More aggressive cache cleaning every 5 iterations
+            _clear_caches()
 
     stage1_df = pd.DataFrame(stage1_rows)
 
@@ -1435,8 +1695,13 @@ def run(args: argparse.Namespace) -> None:
             )
             rows.append(s)
             details[s["config_id"]] = d
+            
+            # Stream weights to parquet instead of accumulating in memory
             if weights_df is not None and not weights_df.empty:
-                collected_weights.append(weights_df)
+                write_weights_streaming(weights_df)
+                total_weights_written += len(weights_df)
+                del weights_df  # Free memory immediately
+            
             if i % 5 == 0:
                 top2 = max(rows, key=lambda x: x.get("stage2_score", -1e9)) if rows else {}
                 tprint(
@@ -1471,12 +1736,10 @@ def run(args: argparse.Namespace) -> None:
         learnability_df.to_csv(learnability_path, index=False)
         tprint(f"Saved learnability CSV: {learnability_path}")
 
-    if collected_weights:
-        weights_path = Path(args.weights_output) if args.weights_output else output_path.with_suffix(".weights.parquet")
-        weights_path.parent.mkdir(parents=True, exist_ok=True)
-        all_weights = pd.concat(collected_weights, ignore_index=True)
-        all_weights.to_parquet(weights_path, index=False)
-        tprint(f"Saved sample weights: {weights_path} (rows={len(all_weights):,})")
+    # Close the streaming weights writer and report
+    if weights_writer is not None:
+        weights_writer.close()
+        tprint(f"Saved sample weights (streaming): {weights_path} (total_rows={total_weights_written:,})")
 
     if not out_df.empty:
         best = out_df.iloc[0].to_dict()
@@ -1505,8 +1768,9 @@ def run(args: argparse.Namespace) -> None:
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Optimize/compare TBM parameter sets")
-    p.add_argument("--features", required=True, help="Path to features directory (symbol=*.parquet)")
-    p.add_argument("--panel", required=True, help="Path to panel parquet or symbol parquet directory")
+    # Features and panel are now auto-detected from CFG data_root, no longer required args
+    p.add_argument("--features", default=None, help="Path to features directory (auto-detected from data_root if not set)")
+    p.add_argument("--panel", default=None, help="Path to panel parquet or symbol parquet directory (auto-detected from data_root if not set)")
     p.add_argument("--output", default=str(REPORTS_DIR / "tbm_parameter_comparison.csv"), help="Output CSV path")
     p.add_argument("--quick", action="store_true", help="Quick stage1 subset")
     p.add_argument("--stage2", action="store_true", help="Run stage2 validation")

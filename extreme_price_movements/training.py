@@ -1970,7 +1970,13 @@ def build_hourly_training_set_and_weights(
 
     # Diagnostic: log gap rate (should now be 0% after pre-filtering)
     n_pre_entry = len(event_ts)
-    entry_valid = entry_ts.isin(tb_labels.index)
+    # Robust timestamp matching across tz-aware/naive representations.
+    try:
+        entry_ns = pd.to_datetime(entry_ts, utc=True).view("i8")
+        tb_ns = pd.to_datetime(tb_labels.index, utc=True).view("i8")
+        entry_valid = np.isin(entry_ns, tb_ns)
+    except Exception:
+        entry_valid = entry_ts.isin(tb_labels.index)
     n_entry_drop = int((~entry_valid).sum())
     gap_rate = n_entry_drop / n_pre_entry if n_pre_entry > 0 else 0.0
     if n_entry_drop > 0:

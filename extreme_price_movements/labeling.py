@@ -140,7 +140,8 @@ def compute_trailing_atr_labels(
     # Intersection of assets
     valid_assets = [a for a in assets if a in atr_df.columns]
 
-    times = c.index.view(np.int64)
+    # Ensure times are in nanoseconds for Numba compatibility
+    times = c.index.astype("datetime64[ns]").view(np.int64)
 
     out_labels = pd.DataFrame(0, index=c.index, columns=valid_assets, dtype=np.int8)
     out_returns = pd.DataFrame(0.0, index=c.index, columns=valid_assets, dtype=np.float32)
@@ -163,7 +164,7 @@ def compute_trailing_atr_labels(
     return out_labels, out_returns
 
 @jit(nopython=True, cache=True)
-def _numba_triple_barrier(times, highs, lows, closes, tp_arr, sl_arr, horizon, side):
+def _numba_triple_barrier(times, opens, highs, lows, closes, tp_arr, sl_arr, horizon, side):
     """
     Trailing-profit barrier labeling with early stall exit.
     tp_arr: Activation threshold (relative, >0) — once MFE reaches this, trailing stop activates.
@@ -213,13 +214,14 @@ def _numba_triple_barrier(times, highs, lows, closes, tp_arr, sl_arr, horizon, s
         stall_checked = False
 
         for j in range(i + 1, n):
-            if times[j] >= cutoff_t:
-                # Time exit
+            # Check strict overshoot (Gap/End of horizon)
+            if times[j] > cutoff_t:
+                # Time exit at Open of this bar (best approximation of horizon expiration)
                 labels[i] = 0
                 if side == 1:
-                    returns[i] = (closes[j] / entry_p) - 1.0
+                    returns[i] = (opens[j] / entry_p) - 1.0
                 else:
-                    returns[i] = (entry_p / closes[j]) - 1.0
+                    returns[i] = (entry_p / opens[j]) - 1.0
                 exit_idxs[i] = j
                 exit_found = True
                 break
@@ -290,6 +292,17 @@ def _numba_triple_barrier(times, highs, lows, closes, tp_arr, sl_arr, horizon, s
                     if new_sl < sl_price:
                         sl_price = new_sl
 
+            # Exact horizon match (Last Bar): Processed H/L above, now force exit at Close
+            if times[j] == cutoff_t:
+                labels[i] = 0
+                if side == 1:
+                    returns[i] = (cc / entry_p) - 1.0
+                else:
+                    returns[i] = (entry_p / cc) - 1.0
+                exit_idxs[i] = j
+                exit_found = True
+                break
+
         if not exit_found:
             labels[i] = 0
             if side == 1:
@@ -311,23 +324,31 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long"):
     - TP/SL hit detection is based on intrabar extremes (`high`/`low`), not `close`.
     - `close` is used only for non-hit exits (timeout/stall return calculation).
     """
-    required = {"close", "high", "low"}
+    required = {"close", "high", "low", "open"}
     missing = required.difference(panel.keys())
     if missing:
-        raise KeyError(f"compute_triple_barrier_labels requires panel keys {sorted(required)}; missing={sorted(missing)}")
+        # Fallback for open: use close if open missing, but warn
+        if "open" in missing and len(missing) == 1:
+            pass # We'll handle it below
+        else:
+            raise KeyError(f"compute_triple_barrier_labels requires panel keys {sorted(required)}; missing={sorted(missing)}")
 
     c = panel["close"]
     h = panel["high"]
     l = panel["low"]
+    o = panel.get("open", c) # Fallback to close if open missing
 
     # Ensure all price matrices are aligned so hit checks always use matching high/low bars.
     if not h.index.equals(c.index) or not h.columns.equals(c.columns):
         h = h.reindex(index=c.index, columns=c.columns)
     if not l.index.equals(c.index) or not l.columns.equals(c.columns):
         l = l.reindex(index=c.index, columns=c.columns)
+    if not o.index.equals(c.index) or not o.columns.equals(c.columns):
+        o = o.reindex(index=c.index, columns=c.columns)
 
     assets = c.columns
-    times = c.index.view(np.int64)
+    # Ensure times are in nanoseconds for Numba compatibility
+    times = c.index.astype("datetime64[ns]").view(np.int64)
 
     out_labels = pd.DataFrame(0, index=c.index, columns=assets, dtype=np.int8)
     out_returns = pd.DataFrame(0.0, index=c.index, columns=assets, dtype=np.float32)
@@ -349,6 +370,7 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long"):
         c_arr = c[asset].to_numpy(dtype=np.float32)
         h_arr = h[asset].to_numpy(dtype=np.float32)
         l_arr = l[asset].to_numpy(dtype=np.float32)
+        o_arr = o[asset].to_numpy(dtype=np.float32)
 
         # Extract TP/SL arrays for this asset
         # Handle case where tp_df might not have the column (if passed as partial df)
@@ -364,7 +386,7 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long"):
         else:
             sl_arr = np.full(len(c_arr), np.nan, dtype=np.float32)
 
-        lbs, rets, _ = _numba_triple_barrier(times, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int)
+        lbs, rets, _ = _numba_triple_barrier(times, o_arr, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int)
 
         out_labels[asset] = lbs
         out_returns[asset] = rets

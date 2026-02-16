@@ -764,6 +764,39 @@ def _numba_ewma_parallel(mat, alpha, adjust=False):
     return out
 
 
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_sum_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_sum_nan_safe(mat[:, j], window)
+
+    return out
+
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_median_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_median(mat[:, j], window)
+
+    return out
+
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_quantile_parallel(mat, window, q):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_quantile(mat[:, j], window, q)
+
+    return out
+
+
 def numba_rolling_mean_parallel(df, window):
     """Wrapper for parallel rolling mean."""
     is_series = isinstance(df, pd.Series)
@@ -1414,16 +1447,51 @@ def numba_rolling_min(df, n):
 
 def numba_rolling_sum(df, n):
     tprint(f"Entering function: numba_rolling_sum in fast_funcs.py")
-    # CHANGED: Use NaN-safe version
-    return apply_to_frame(df, _numba_rolling_sum_nan_safe, n)
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rolling_sum_parallel(mat, n)
+
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+
+    return res_df
 
 def numba_rolling_median(df, n):
     tprint(f"Entering function: numba_rolling_median in fast_funcs.py")
-    return apply_to_frame(df, _numba_rolling_median, n)
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rolling_median_parallel(mat, n)
+
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+
+    return res_df
 
 def numba_rolling_quantile(df, n, q):
     # tprint(f"Entering function: numba_rolling_quantile in fast_funcs.py")
-    return apply_to_frame(df, _numba_rolling_quantile, n, q)
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rolling_quantile_parallel(mat, n, q)
+
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+
+    return res_df
 
 def numba_rolling_quantile_dual(df, n, q1, q2):
     # tprint(f"Entering function: numba_rolling_quantile_dual in fast_funcs.py")

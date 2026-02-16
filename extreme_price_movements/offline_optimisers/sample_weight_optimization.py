@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from itertools import combinations
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
+import resource
 
 import numpy as np
 import pandas as pd
@@ -25,6 +26,28 @@ from ..training_defaults import get_sample_weight_opt_defaults, get_sample_weigh
 
 
 EPS = 1e-8
+
+
+def _process_memory_mb() -> float:
+    """Best-effort current process RSS in MB."""
+    try:
+        rss_kb = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        # ru_maxrss is in bytes on macOS, KB on Linux.
+        if rss_kb > 10_000_000:
+            return rss_kb / (1024.0 * 1024.0)
+        return rss_kb / 1024.0
+    except Exception:
+        return float("nan")
+
+
+def _tprint_metrics(prefix: str, **metrics: float | int | str) -> None:
+    parts = []
+    for k, v in metrics.items():
+        if isinstance(v, float):
+            parts.append(f"{k}={v:.6f}")
+        else:
+            parts.append(f"{k}={v}")
+    tprint(f"{prefix} | {' '.join(parts)}")
 
 
 def select_test_feature_frame(X_frame: pd.DataFrame) -> pd.DataFrame:
@@ -297,13 +320,34 @@ def _run_cv_ic(
     scaler = StandardScaler()
     Xs = scaler.fit_transform(Xv)
 
-    for tr, va in splitter.split(Xs, label_intervals=label_intervals):
+    for fold_idx, (tr, va) in enumerate(splitter.split(Xs, label_intervals=label_intervals), start=1):
         if len(tr) < 64 or len(va) < 32:
+            _tprint_metrics(
+                "CV fold skipped",
+                fold=fold_idx,
+                train_size=len(tr),
+                valid_size=len(va),
+                mem_mb=_process_memory_mb(),
+            )
             continue
         model = _make_model(model_family, random_state=seed, cfg_runtime=cfg_runtime)
         model.fit(Xs[tr], yv[tr], sample_weight=wv[tr])
         pred = model.predict(Xs[va])
-        fold_ics.append(_safe_ic(yv[va], pred))
+        fold_ic = _safe_ic(yv[va], pred)
+        fold_ics.append(fold_ic)
+        _tprint_metrics(
+            "CV fold complete",
+            fold=fold_idx,
+            seed=seed,
+            train_size=len(tr),
+            valid_size=len(va),
+            ic=fold_ic,
+            pred_mean=float(np.mean(pred)),
+            pred_std=float(np.std(pred)),
+            valid_ret_mean=float(np.mean(yv[va])),
+            weighted_valid_ret_mean=float(np.average(yv[va], weights=wv[va])) if len(va) else 0.0,
+            mem_mb=_process_memory_mb(),
+        )
 
     return np.asarray(fold_ics, dtype=float)
 
@@ -327,6 +371,16 @@ def constrained_objective(
     top1pct_share = float(np.sort(w)[-k:].sum() / max(float(np.sum(w)), EPS))
 
     if n_eff < min_n_eff or top1pct_share > max_top1pct:
+        _tprint_metrics(
+            "Objective rejected",
+            n_eff=n_eff,
+            min_n_eff=min_n_eff,
+            n_eff_ratio=n_eff / max(len(w), 1),
+            top1pct_share=top1pct_share,
+            max_top1pct=max_top1pct,
+            weighted_return_mean=float(np.average(y_ret, weights=w)) if len(y_ret) else 0.0,
+            mem_mb=_process_memory_mb(),
+        )
         return -10.0
 
     fold_scores = []
@@ -338,10 +392,23 @@ def constrained_objective(
         if fold_ics.size:
             fold_scores.append(float(np.mean(fold_ics)))
     if not fold_scores:
+        _tprint_metrics("Objective invalid", reason="no_fold_scores", mem_mb=_process_memory_mb())
         return -10.0
     ic_mean = float(np.mean(fold_scores))
     ic_std = float(np.std(fold_scores))
-    return ic_mean - 0.5 * ic_std
+    objective = ic_mean - 0.5 * ic_std
+    _tprint_metrics(
+        "Objective evaluated",
+        n_eff=n_eff,
+        n_eff_ratio=n_eff / max(len(w), 1),
+        top1pct_share=top1pct_share,
+        ic_mean=ic_mean,
+        ic_std=ic_std,
+        objective=objective,
+        weighted_return_mean=float(np.average(y_ret, weights=w)) if len(y_ret) else 0.0,
+        mem_mb=_process_memory_mb(),
+    )
+    return objective
 
 
 @dataclass
@@ -373,6 +440,15 @@ def optimize_component_weights(
 
     X = _select_test_feature_matrix(X, feature_names=feature_names)
     names = list(components.keys())
+    _tprint_metrics(
+        "Weight optimisation started",
+        n_samples=len(y_ret),
+        n_features=int(X.shape[1]) if X.ndim == 2 else 0,
+        n_components=len(names),
+        n_trials=n_trials,
+        model=production_model,
+        mem_mb=_process_memory_mb(),
+    )
     if optuna is None or n_trials <= 0:
         alphas = {k: 1.0 for k in names}
         w = combine_weights_safely(components, alphas, min_n_eff_ratio=min_n_eff_ratio)
@@ -402,6 +478,18 @@ def optimize_component_weights(
             max_top1pct=max_top1pct,
             cfg_runtime=cfg_runtime,
         )
+        learnability = _weight_learnability_metrics(w, y_ret)
+        _tprint_metrics(
+            "Optuna trial",
+            trial=trial.number,
+            score=score,
+            n_eff=learnability["n_eff"],
+            n_eff_ratio=learnability["n_eff_ratio"],
+            top1pct_weight_share=learnability["top1pct_weight_share"],
+            weighted_return_mean=learnability["weighted_return_mean"],
+            weight_std=learnability["weight_std"],
+            mem_mb=_process_memory_mb(),
+        )
         return float(score)
 
     study.optimize(_obj, n_trials=int(n_trials), show_progress_bar=False)
@@ -415,6 +503,13 @@ def optimize_component_weights(
         "n_trials": len(study.trials),
         "redundancy": check_component_redundancy(components),
     }
+    _tprint_metrics(
+        "Weight optimisation complete",
+        best_trial=diagnostics["best_trial"],
+        n_trials=diagnostics["n_trials"],
+        best_value=float(study.best_value),
+        mem_mb=_process_memory_mb(),
+    )
     return WeightOptimizationResult(optimized, alphas, float(study.best_value), diagnostics)
 
 
@@ -429,6 +524,7 @@ def run_ablation(
     embargo_bars: int = 10,
     cfg_runtime: Optional[Dict[str, Any]] = None,
 ) -> list[tuple[str, float]]:
+    _tprint_metrics("Ablation started", n_components=len(components), mem_mb=_process_memory_mb())
     results = []
     base_score = constrained_objective(
         baseline_weights, X, y_ret, label_intervals,
@@ -436,6 +532,7 @@ def run_ablation(
         cfg_runtime=cfg_runtime,
     )
     results.append(("baseline", float(base_score)))
+    _tprint_metrics("Ablation baseline", score=float(base_score), mem_mb=_process_memory_mb())
 
     for name, w_comp in components.items():
         w = baseline_weights * np.asarray(w_comp, dtype=float)
@@ -446,6 +543,7 @@ def run_ablation(
             cfg_runtime=cfg_runtime,
         )
         results.append((name, float(score)))
+        _tprint_metrics("Ablation single component", component=name, score=float(score), mem_mb=_process_memory_mb())
 
     for n1, n2 in combinations(components.keys(), 2):
         w = baseline_weights * np.asarray(components[n1], dtype=float) * np.asarray(components[n2], dtype=float)
@@ -456,6 +554,7 @@ def run_ablation(
             cfg_runtime=cfg_runtime,
         )
         results.append((f"{n1}+{n2}", float(score)))
+        _tprint_metrics("Ablation pair", component=f"{n1}+{n2}", score=float(score), mem_mb=_process_memory_mb())
 
     return sorted(results, key=lambda x: x[1], reverse=True)
 
@@ -594,10 +693,23 @@ def run_offline_sample_weight_optimisation(
 
     cfg_runtime = apply_offline_optimizer_best_params(dict(CFG))
     best_params = _default_sample_weight_best_params(cfg_runtime)
+    _tprint_metrics(
+        "Offline sample-weight optimisation started",
+        component_csv=component_csv or "",
+        output_csv=output_csv or "",
+        n_trials=n_trials,
+        mem_mb=_process_memory_mb(),
+    )
 
     report_rows: list[dict[str, Any]] = []
     if component_csv:
         df = pd.read_csv(component_csv)
+        _tprint_metrics(
+            "Loaded component CSV",
+            rows=len(df),
+            columns=len(df.columns),
+            mem_mb=_process_memory_mb(),
+        )
         comp_cols = [c for c in df.columns if c.startswith("comp_")]
         if {"y_ret", "t_start", "t_end"}.issubset(df.columns) and comp_cols:
             stage_col = _detect_stage_column(df)
@@ -615,6 +727,15 @@ def run_offline_sample_weight_optimisation(
             for stage_name, sdf in stage_frames.items():
                 if sdf.empty:
                     continue
+                _tprint_metrics(
+                    "Stage optimisation started",
+                    stage=stage_name,
+                    rows=len(sdf),
+                    components=len(comp_cols),
+                    y_ret_mean=float(np.mean(sdf["y_ret"].astype(float).values)),
+                    y_ret_std=float(np.std(sdf["y_ret"].astype(float).values)),
+                    mem_mb=_process_memory_mb(),
+                )
                 components = {c.replace("comp_", ""): sdf[c].astype(float).values for c in comp_cols}
                 X = sdf[[c for c in sdf.columns if c.startswith("x_")]] if any(c.startswith("x_") for c in sdf.columns) else np.zeros((len(sdf), 1), dtype=float)
                 label_intervals = np.column_stack([
@@ -652,6 +773,12 @@ def run_offline_sample_weight_optimisation(
                         cfg_runtime=cfg_runtime,
                     )
                 )
+                _tprint_metrics(
+                    "Stage optimisation complete",
+                    stage=stage_name,
+                    objective_value=float(res.objective_value),
+                    mem_mb=_process_memory_mb(),
+                )
 
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     out = Path(output_csv) if output_csv else (REPORTS_DIR / "sample_weight_optimization_report.csv")
@@ -659,6 +786,13 @@ def run_offline_sample_weight_optimisation(
         report_rows = [{"stage": "base", "row_type": "summary", "component": "ALL", "objective_value": np.nan, "note": "defaults_only"}]
     pd.DataFrame(report_rows).to_csv(out, index=False)
     save_best_params_csv(SAMPLE_WEIGHT_BEST_PARAMS_CSV, best_params, metadata={"source": "sample_weight_optimization"})
+    _tprint_metrics(
+        "Offline sample-weight optimisation finished",
+        report_rows=len(report_rows),
+        report_csv=str(out),
+        best_params_csv=str(SAMPLE_WEIGHT_BEST_PARAMS_CSV),
+        mem_mb=_process_memory_mb(),
+    )
     return {"report_csv": str(out), "best_params_csv": str(SAMPLE_WEIGHT_BEST_PARAMS_CSV), "best_params": best_params}
 
 

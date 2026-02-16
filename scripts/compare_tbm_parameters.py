@@ -91,9 +91,9 @@ class RunArtifacts:
 
 
 def _subsample_symbols(symbols: Sequence[str]) -> List[str]:
-    """Deterministic symbol subsample: alphabetical, keep every 3rd token."""
+    """Deterministic symbol subsample: alphabetical, keep every 2nd token."""
     syms_sorted = sorted(set(map(str, symbols)))
-    return syms_sorted[::3] if syms_sorted else []
+    return syms_sorted[::2] if syms_sorted else []
 
 
 def _index_cache_key(index: pd.MultiIndex) -> str:
@@ -183,9 +183,13 @@ def load_features(features_path: Path) -> Dict[str, pd.DataFrame]:
     return out
 
 
-def align_artifacts(panel: Dict[str, pd.DataFrame], features: Dict[str, pd.DataFrame]) -> RunArtifacts:
+def align_artifacts(
+    panel: Dict[str, pd.DataFrame],
+    features: Dict[str, pd.DataFrame],
+    lookback_years: int = 2,
+) -> RunArtifacts:
     idx_full = panel["close"].index
-    cutoff = idx_full.max() - pd.DateOffset(years=2)
+    cutoff = idx_full.max() - pd.DateOffset(years=int(lookback_years))
     idx = idx_full[idx_full >= cutoff]
     cols_all = list(panel["close"].columns)
     cols = pd.Index(_subsample_symbols(cols_all))
@@ -631,7 +635,8 @@ def evaluate_config(
     layer2_cache: Dict[str, Any],
     eval_cache: Dict[str, Any],
     detailed_slices: bool = False,
-) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    collect_weights: bool = False,
+) -> Tuple[Dict[str, Any], Dict[str, Any], Optional[pd.DataFrame]]:
     events_rows: List[pd.DataFrame] = []
 
     for h in horizons:
@@ -867,8 +872,10 @@ def evaluate_config(
     if worst_bucket_ic < -0.1:
         stage2_score -= 0.5
 
+    cfg_id = config_id(cfg)
+
     summary = {
-        "config_id": config_id(cfg),
+        "config_id": cfg_id,
         "mode": cfg.get("mode", "unknown"),
         "k_tp": cfg.get("k_tp"),
         "sl_method": cfg.get("sl_method"),
@@ -913,10 +920,21 @@ def evaluate_config(
         detail["regime_metrics"] = per_slice_metrics(events, pred, "regime")
         detail["vol_quintile_metrics"] = per_slice_metrics(events, pred, "vol_quintile")
 
+    weights_df: Optional[pd.DataFrame] = None
+    if collect_weights:
+        weights_df = events[["ts", "symbol", "side", "horizon", "bucket", "label", "payoff"]].copy()
+        # Current run-computed TBM/event weights are preserved as fallback defaults
+        # for both downstream base and meta model training consumers.
+        weights_df["sample_weight"] = weights.astype(np.float32, copy=False)
+        weights_df["base_sample_weight"] = weights_df["sample_weight"]
+        weights_df["meta_sample_weight"] = weights_df["sample_weight"]
+        weights_df["config_id"] = cfg_id
+        weights_df["mode"] = str(cfg.get("mode", "unknown"))
+
     del events, pred, y_signed, y_bin, payoff, weights
     gc.collect()
 
-    return summary, detail
+    return summary, detail, weights_df
 
 
 # ---------------------------
@@ -1098,7 +1116,7 @@ def run(args: argparse.Namespace) -> None:
     if panel is None:
         raise ValueError("--panel is required for TBM optimization")
 
-    artifacts = align_artifacts(panel, features)
+    artifacts = align_artifacts(panel, features, lookback_years=args.lookback_years)
     bucket_masks = build_bucket_masks(artifacts)
 
     # Use LRUCache to prevent OOM on large grids
@@ -1112,10 +1130,11 @@ def run(args: argparse.Namespace) -> None:
 
     stage1_rows = []
     details: Dict[str, Any] = {}
+    collected_weights: List[pd.DataFrame] = []
     horizons = [2, 4, 8] if not args.horizons else [int(x) for x in args.horizons.split(",")]
 
     for i, cfg in enumerate(stage1_cfgs, 1):
-        s, d = evaluate_config(
+        s, d, weights_df = evaluate_config(
             artifacts,
             cfg,
             horizons=horizons,
@@ -1124,9 +1143,12 @@ def run(args: argparse.Namespace) -> None:
             layer2_cache=layer2_cache,
             eval_cache=eval_cache,
             detailed_slices=False,
+            collect_weights=True,
         )
         stage1_rows.append(s)
         details[s["config_id"]] = d
+        if weights_df is not None and not weights_df.empty:
+            collected_weights.append(weights_df)
         if i % 5 == 0:
             print(f"[stage1] {i}/{len(stage1_cfgs)} done")
             gc.collect()
@@ -1147,7 +1169,7 @@ def run(args: argparse.Namespace) -> None:
 
         rows = []
         for i, cfg in enumerate(stage2_cfgs, 1):
-            s, d = evaluate_config(
+            s, d, weights_df = evaluate_config(
                 artifacts,
                 cfg,
                 horizons=horizons,
@@ -1156,9 +1178,12 @@ def run(args: argparse.Namespace) -> None:
                 layer2_cache=layer2_cache,
                 eval_cache=eval_cache,
                 detailed_slices=True,
+                collect_weights=True,
             )
             rows.append(s)
             details[s["config_id"]] = d
+            if weights_df is not None and not weights_df.empty:
+                collected_weights.append(weights_df)
             if i % 5 == 0:
                 print(f"[stage2] {i}/{len(stage2_cfgs)} done")
                 gc.collect()
@@ -1175,6 +1200,13 @@ def run(args: argparse.Namespace) -> None:
     detail_path = output_path.with_suffix(".json")
     with detail_path.open("w") as f:
         json.dump(details, f, indent=2)
+
+    if collected_weights:
+        weights_path = Path(args.weights_output) if args.weights_output else output_path.with_suffix(".weights.parquet")
+        weights_path.parent.mkdir(parents=True, exist_ok=True)
+        all_weights = pd.concat(collected_weights, ignore_index=True)
+        all_weights.to_parquet(weights_path, index=False)
+        print(f"Saved sample weights: {weights_path}")
 
     print(f"Saved CSV: {output_path}")
     print(f"Saved JSON: {detail_path}")
@@ -1193,6 +1225,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p.add_argument("--horizons", default="2,4,8", help="Comma-separated horizons in hours")
     p.add_argument("--max-configs", type=int, default=20, help="Max configs when --quick")
     p.add_argument("--max-stage2-configs", type=int, default=24, help="Max configs per Stage2 substage (hierarchical cap)")
+    p.add_argument("--lookback-years", type=int, default=2, help="Years of history to keep")
+    p.add_argument("--weights-output", default="", help="Optional sample-weights parquet output path")
     return p.parse_args(argv)
 
 

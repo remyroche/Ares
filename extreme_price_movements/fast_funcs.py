@@ -413,9 +413,31 @@ def numba_rsi_kernel(close, n):
 
     return out
 
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rsi_parallel(mat, n):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = numba_rsi_kernel(mat[:, j], n)
+
+    return out
+
 def numba_rsi(close_df, n):
     tprint(f"Entering function: numba_rsi in fast_funcs.py")
-    return apply_to_frame(close_df, numba_rsi_kernel, n)
+    is_series = isinstance(close_df, pd.Series)
+    if is_series:
+        close_df = close_df.to_frame()
+
+    mat = close_df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rsi_parallel(mat, n)
+
+    res_df = pd.DataFrame(res, index=close_df.index, columns=close_df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+
+    return res_df
 
 @jit(nopython=True, cache=True)
 def numba_atr_kernel(high, low, close, n):
@@ -793,6 +815,26 @@ def numba_ewma_parallel(df, span=None, alpha=None, adjust=False):
 
 # --- NEW KERNELS & WRAPPERS ---
 
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_max_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_max(mat[:, j], window)
+
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_min_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_min(mat[:, j], window)
+
+    return out
+
 @jit(nopython=True, cache=True)
 def _numba_rolling_max(x, window):
     n = len(x)
@@ -1059,6 +1101,16 @@ def _numba_pct_change(x, n_shift):
         curr = x[i]
         if prev != 0 and not np.isnan(prev) and not np.isnan(curr):
             out[i] = (curr - prev) / prev
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_pct_change_parallel(mat, n_shift):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = _numba_pct_change(mat[:, j], n_shift)
+
     return out
 
 @jit(nopython=True, cache=True)
@@ -1330,11 +1382,35 @@ def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend,
 # Wrappers
 def numba_rolling_max(df, n):
     tprint(f"Entering function: numba_rolling_max in fast_funcs.py")
-    return apply_to_frame(df, _numba_rolling_max, n)
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rolling_max_parallel(mat, n)
+
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+
+    return res_df
 
 def numba_rolling_min(df, n):
     tprint(f"Entering function: numba_rolling_min in fast_funcs.py")
-    return apply_to_frame(df, _numba_rolling_min, n)
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rolling_min_parallel(mat, n)
+
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+
+    return res_df
 
 def numba_rolling_sum(df, n):
     tprint(f"Entering function: numba_rolling_sum in fast_funcs.py")
@@ -1371,7 +1447,19 @@ def numba_rolling_quantile_dual(df, n, q1, q2):
 
 def numba_pct_change(df, n):
     tprint(f"Entering function: numba_pct_change in fast_funcs.py")
-    return apply_to_frame(df, _numba_pct_change, n)
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_pct_change_parallel(mat, n)
+
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+
+    return res_df
 
 def numba_rolling_corr(df1, df2, n):
     tprint(f"Entering function: numba_rolling_corr in fast_funcs.py")

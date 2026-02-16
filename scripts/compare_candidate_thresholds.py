@@ -739,13 +739,13 @@ def apply_quality_filters_array(
 
 
 def compute_cross_sectional_base_mask(metric_arr: np.ndarray, pct: float) -> np.ndarray:
-    """Compute cross-sectional base mask as ndarray (top/bottom pct)."""
+    """Compute cross-sectional base signs as int8 ndarray (1=Top, -1=Bottom)."""
     valid = np.isfinite(metric_arr)
     n_valid = valid.sum(axis=1)
     k = np.maximum(1, (n_valid * pct).astype(int))
 
     n_rows, n_cols = metric_arr.shape
-    mask_arr = np.zeros_like(metric_arr, dtype=bool)
+    sign_arr = np.zeros_like(metric_arr, dtype=np.int8)
 
     # Iterate rows for top-k/bottom-k selection (Numpy loop is efficient enough for typical N)
     for i in range(n_rows):
@@ -761,38 +761,53 @@ def compute_cross_sectional_base_mask(metric_arr: np.ndarray, pct: float) -> np.
         vals = row_vals[valid_idx]
 
         if k_i >= n_v:
-             mask_arr[i, valid_idx] = True
+             # If selecting all, assign signs based on median? Or just +1?
+             # Fallback: everything valid is selected. Split by median.
+             med = np.median(vals)
+             sign_arr[i, valid_idx[vals > med]] = 1
+             sign_arr[i, valid_idx[vals <= med]] = -1
              continue
 
-        # Bottom k
+        # Bottom k (Short/MeanRev Long) -> -1
         part_idx = np.argpartition(vals, k_i)
         bot_local_idx = part_idx[:k_i]
-        mask_arr[i, valid_idx[bot_local_idx]] = True
+        sign_arr[i, valid_idx[bot_local_idx]] = -1
 
-        # Top k
+        # Top k (Long/MeanRev Short) -> 1
         part_idx_top = np.argpartition(vals, n_v - k_i)
         top_local_idx = part_idx_top[n_v - k_i:]
-        mask_arr[i, valid_idx[top_local_idx]] = True
+        sign_arr[i, valid_idx[top_local_idx]] = 1
 
-    return mask_arr
+    return sign_arr
 
 
-def expand_candidate_mask(base_mask_arr: np.ndarray, offsets: list[int]) -> np.ndarray:
-    """Expand candidate timestamps by OR-ing shifted copies of the base mask."""
+def expand_signed_mask(base_sign_arr: np.ndarray, offsets: list[int]) -> np.ndarray:
+    """Expand signed candidate timestamps, propagating signs (latest wins or non-zero)."""
     if not offsets:
-        return base_mask_arr
-    expanded = base_mask_arr.copy()
+        return base_sign_arr
+    expanded = base_sign_arr.copy()
+
+    # We want to propagate signs. If overlap, what to do?
+    # Simple strategy: prioritize existing non-zero, or let new shifts overwrite?
+    # Usually expansion means "if signal at t, then t+1 is also active".
+    # So we propagate forward (positive offsets).
+    # If base is at t, and offset is +1, then t+1 gets signal from t.
+    # We iterate offsets.
 
     for off in offsets:
         off = int(off)
-        shifted = np.zeros_like(base_mask_arr)
+        shifted = np.zeros_like(base_sign_arr)
         if off > 0:
-            shifted[off:] = base_mask_arr[:-off]
+            shifted[off:] = base_sign_arr[:-off]
         elif off < 0:
-            shifted[:off] = base_mask_arr[-off:]
+            shifted[:off] = base_sign_arr[-off:]
         else:
-            shifted = base_mask_arr
-        expanded |= shifted
+            shifted = base_sign_arr
+
+        # Merge: if expanded is 0, take shifted. If both non-zero, keep expanded (priority to original/closer).
+        mask_empty = expanded == 0
+        expanded[mask_empty] = shifted[mask_empty]
+
     return expanded
 
 
@@ -807,14 +822,14 @@ def select_candidates_cross_sectional(
     base_cache_key: Optional[tuple] = None,
 ) -> np.ndarray:
     """
-    Unified cross-sectional selection returning numpy boolean mask.
+    Unified cross-sectional selection returning signed int8 array (+1/-1/0).
     """
     if base_mask_cache is not None and base_cache_key is not None and base_cache_key in base_mask_cache:
-        base_mask_arr = base_mask_cache[base_cache_key]
+        base_sign_arr = base_mask_cache[base_cache_key]
     else:
-        base_mask_arr = compute_cross_sectional_base_mask(metric_arr, pct)
+        base_sign_arr = compute_cross_sectional_base_mask(metric_arr, pct)
         if base_mask_cache is not None and base_cache_key is not None:
-            base_mask_cache[base_cache_key] = base_mask_arr
+            base_mask_cache[base_cache_key] = base_sign_arr
 
     has_filters = any(
         [
@@ -824,17 +839,29 @@ def select_candidates_cross_sectional(
         ]
     )
     if has_filters:
-        mask_arr = apply_quality_filters_array(
-            base_mask_arr=base_mask_arr,
-            filter_masks=filter_masks,
-            min_range_pct=min_range_pct,
-            min_vol_zscore=min_vol_zscore,
-            min_sign_consistency=min_sign_consistency,
-        )
-    else:
-        mask_arr = base_mask_arr.copy()
+        # Quality filters are boolean. Apply them to zero-out signs.
+        # We need a small adapter since apply_quality_filters_array expected bool.
+        # Let's just reimplement the masking here for clarity with signs.
 
-    return mask_arr
+        sign_arr = base_sign_arr.copy()
+
+        # Construct combined boolean mask
+        keep_mask = np.ones(sign_arr.shape, dtype=bool)
+        if min_range_pct is not None:
+            range_mask = filter_masks["range_masks"].get(float(min_range_pct))
+            if range_mask is not None: keep_mask &= range_mask
+        if min_vol_zscore is not None:
+            vol_mask = filter_masks["vol_masks"].get(float(min_vol_zscore))
+            if vol_mask is not None: keep_mask &= vol_mask
+        if min_sign_consistency is not None:
+            sc_mask = filter_masks["sc_masks"].get(float(min_sign_consistency))
+            if sc_mask is not None: keep_mask &= sc_mask
+
+        sign_arr[~keep_mask] = 0
+    else:
+        sign_arr = base_sign_arr.copy()
+
+    return sign_arr
 
 
 # =============================================================================
@@ -1040,18 +1067,19 @@ def run_oof_cv(
 
 
 def compute_learnability_metrics(
-    candidate_mask_arr: np.ndarray,
+    sign_arr: np.ndarray,
     data: DataContainer,
     available_features: list,
     float_dtype: np.dtype,
     use_extratrees: bool = False,
 ) -> dict:
     """
-    Compute all learnability metrics for a candidate selection method using fast array access.
+    Compute learnability metrics using Directional Sharpe (Momentum assumption).
     """
     tlog("Metrics: start")
 
-    row_idx, col_idx = np.nonzero(candidate_mask_arr)
+    # Non-zero signs are selected
+    row_idx, col_idx = np.nonzero(sign_arr)
     n_candidates = len(row_idx)
 
     if n_candidates == 0:
@@ -1066,12 +1094,17 @@ def compute_learnability_metrics(
 
     target_arr = ret_arr
 
-    candidate_returns = ret_arr[row_idx, col_idx]
+    candidate_returns_raw = ret_arr[row_idx, col_idx]
     candidate_target = target_arr[row_idx, col_idx]
+    candidate_signs = sign_arr[row_idx, col_idx]
 
-    valid_mask = np.isfinite(candidate_returns) & np.isfinite(candidate_target)
-    candidate_returns = candidate_returns[valid_mask]
+    valid_mask = np.isfinite(candidate_returns_raw) & np.isfinite(candidate_target)
+    candidate_returns_raw = candidate_returns_raw[valid_mask]
     candidate_target = candidate_target[valid_mask]
+    candidate_signs = candidate_signs[valid_mask]
+
+    # Calculate Directional Returns (Momentum: Long Tops, Short Bottoms)
+    candidate_returns = candidate_returns_raw * candidate_signs
     
     row_idx = row_idx[valid_mask]
     col_idx = col_idx[valid_mask]
@@ -1082,17 +1115,13 @@ def compute_learnability_metrics(
 
     n_candidates_mean = float(n_candidates / len(data.common_index))
     mean_return_bps = float(np.mean(candidate_returns) * 1e4)
+
+    # Sharpe on Directional Returns
     sharpe = float(np.mean(candidate_returns) / np.std(candidate_returns) * np.sqrt(8760)) if np.std(candidate_returns) > 0 else 0.0
     
-    # Additional metrics for parity
-    pos_rets = candidate_returns[candidate_target > 0] # Proxy for positive class if target is return
+    # KS / SNR using target > 0 as positive class proxy
+    pos_rets = candidate_returns[candidate_target > 0]
     neg_rets = candidate_returns[candidate_target <= 0]
-    
-    # Use actual labels if available?
-    # Original used 'label' column which was target > threshold.
-    # We can infer a label or just use return sign for KS/SNR proxy if label col is missing.
-    # But let's check if 'label' is in data.
-    # For now, use sign of target.
     
     ks_stat = compute_ks_statistic(pos_rets, neg_rets)
     snr = compute_snr(pos_rets, neg_rets)
@@ -1353,7 +1382,8 @@ def run_comparison(
         metric_arr = metric_by_mode_arr.get(mode)
         if metric_arr is None: continue
 
-        cand_mask_arr = select_candidates_cross_sectional(
+        # Returns int8 signed array
+        sign_arr = select_candidates_cross_sectional(
             metric_arr, pct,
             filter_masks=filter_mask_pack,
             min_range_pct=cfg.get("min_range_pct"),
@@ -1365,17 +1395,19 @@ def run_comparison(
 
         expansion_offsets = cfg.get("expansion_offsets", [])
         if expansion_offsets:
-            cand_mask_arr = expand_candidate_mask(cand_mask_arr, expansion_offsets)
+            sign_arr = expand_signed_mask(sign_arr, expansion_offsets)
+
+        # Boolean mask for training slices
+        cand_mask_arr = sign_arr != 0
             
-        # Metrics
+        # Metrics (uses signed array for directional sharpe)
         metrics = compute_learnability_metrics(
-            cand_mask_arr, data, available_model_features, float_dtype, use_extratrees
+            sign_arr, data, available_model_features, float_dtype, use_extratrees
         )
 
-        # Training Slices
+        # Training Slices (needs boolean mask)
         cfg_variant = deepcopy(CFG)
         cfg_variant["train_extreme_pct_hourly"] = pct
-        # ... populate other cfg vars ...
 
         slice_rows = evaluate_training_slices(
             cand_mask_arr, data, cfg_variant, horizons=[2, 4, 8], sample_frac=0.33

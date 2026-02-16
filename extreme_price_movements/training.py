@@ -16,6 +16,7 @@ from .sample_weight_optimization import (
     compute_recency_weights,
     optimize_component_weights,
     log_weight_statistics,
+    select_test_feature_frame,
 )
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import roc_auc_score
@@ -1713,6 +1714,7 @@ def _optimize_training_sample_weights(
         pd.to_datetime(label_times["t_end"]).values.astype("datetime64[ns]"),
     ])
 
+    X_frame = select_test_feature_frame(X_frame)
     X_np = np.asarray(X_frame, dtype=np.float32)
     res = optimize_component_weights(
         X=X_np,

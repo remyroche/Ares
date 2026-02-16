@@ -37,7 +37,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Re-use from extreme_price_movements
 from extreme_price_movements.purged_cv import PurgedKFold
-from extreme_price_movements.config import MODEL_FEATURES, CFG
+from extreme_price_movements.config import TEST_FEATURE_KEYS, CFG
 from extreme_price_movements.data_store import load_features as load_features_pipeline
 from extreme_price_movements.training import (
     build_hourly_training_set_and_weights,
@@ -2239,11 +2239,17 @@ def run_comparison(
     feats = subset_feature_universe(feats, selected_symbols)
 
     # Log available features
-    available_model_features = [f for f in MODEL_FEATURES if f in feats]
+    test_feature_universe = CFG.get("test_feature_keys", TEST_FEATURE_KEYS)
+    available_model_features = [f for f in test_feature_universe if f in feats]
+    if not available_model_features:
+        raise ValueError(
+            "No configured test_feature_keys are available in loaded features; "
+            "cannot run learnability comparison on the requested test feature set"
+        )
     if max_features is not None and max_features > 0:
         available_model_features = available_model_features[:max_features]
-    logger.info(f"Available MODEL_FEATURES: {len(available_model_features)}/{len(MODEL_FEATURES)}")
-    tlog(f"Using {len(available_model_features)} model features")
+    logger.info(f"Available test_feature_keys: {len(available_model_features)}/{len(test_feature_universe)}")
+    tlog(f"Using {len(available_model_features)} test features")
 
     if panel_path is None:
         raise ValueError("--panel is required for training-aligned MR/TF long/short slice evaluation")
@@ -2905,7 +2911,7 @@ if __name__ == "__main__":
         "--max-features",
         type=int,
         default=60,
-        help="Cap number of MODEL_FEATURES used for OOF modeling (default: 60)"
+        help="Cap number of test_feature_keys used for OOF modeling (default: 60)"
     )
     parser.add_argument(
         "--stage3",

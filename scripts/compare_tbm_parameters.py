@@ -42,6 +42,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from extreme_price_movements.data_store import to_panel
 from extreme_price_movements.labeling import compute_triple_barrier_labels
 from extreme_price_movements.config import CFG, TEST_FEATURE_KEYS
+from extreme_price_movements.training import compute_barrier_factory
 
 
 EPS = 1e-12
@@ -90,14 +91,10 @@ class RunArtifacts:
     features: Dict[str, pd.DataFrame]
 
 
-def _subsample_symbols(symbols: Sequence[str], keep_fraction: float = 0.33) -> List[str]:
-    """Deterministic symbol subsample: alphabetical, every 3rd token, then 33%."""
+def _subsample_symbols(symbols: Sequence[str]) -> List[str]:
+    """Deterministic symbol subsample: alphabetical, every 2nd symbol."""
     syms_sorted = sorted(set(map(str, symbols)))
-    third = syms_sorted[::3] if syms_sorted else []
-    if not third:
-        return syms_sorted
-    n_keep = max(1, int(math.ceil(len(third) * keep_fraction)))
-    return third[:n_keep]
+    return syms_sorted[::2] if syms_sorted else []
 
 
 # ---------------------------
@@ -181,7 +178,7 @@ def load_features(features_path: Path) -> Dict[str, pd.DataFrame]:
 def align_artifacts(panel: Dict[str, pd.DataFrame], features: Dict[str, pd.DataFrame]) -> RunArtifacts:
     idx = panel["close"].index
     cols_all = list(panel["close"].columns)
-    cols = pd.Index(_subsample_symbols(cols_all, keep_fraction=0.33))
+    cols = pd.Index(cols_all)
     p_out: Dict[str, pd.DataFrame] = {}
     for k, df in panel.items():
         if df.index.tz is None:
@@ -312,7 +309,49 @@ def build_barriers(
     cfg: Dict[str, Any],
     horizon: int,
     side: str,
+    barrier_backend: str = "compare",
 ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, float]]:
+    if barrier_backend == "pipeline":
+        atr = artifacts.features["atr_pct"].clip(lower=1e-6)
+        k_tp = float(cfg.get("barrier_k_tp", cfg.get("k_tp", CFG.get("barrier_k_tp", 1.0))))
+        if "barrier_sl_base_mult" in cfg:
+            sl_base_mult = float(cfg["barrier_sl_base_mult"])
+        elif cfg.get("sl_method") == "tp_pct":
+            sl_base_mult = float(cfg.get("sl_as_tp_pct", CFG.get("barrier_sl_base_mult", 0.5)))
+        else:
+            sl_base_mult = float(CFG.get("barrier_sl_base_mult", 0.5))
+
+        tp_df, sl_df, diag = compute_barrier_factory(
+            atr_pct=atr,
+            window_size=24 * 30,
+            k_tp=k_tp,
+            sl_base_mult=sl_base_mult,
+            horizon=horizon,
+            H_base=float(cfg.get("label_horizon_base", CFG.get("label_horizon_base", 4))),
+            disp_floor=float(cfg.get("barrier_disp_floor", CFG.get("barrier_disp_floor", 0.1))),
+            z_max=float(cfg.get("barrier_z_max", CFG.get("barrier_z_max", 3.0))),
+            k_reg=float(cfg.get("barrier_k_reg", CFG.get("barrier_k_reg", 0.3))),
+            m_lo=float(cfg.get("barrier_m_lo", CFG.get("barrier_m_lo", 0.7))),
+            m_hi=float(cfg.get("barrier_m_hi", CFG.get("barrier_m_hi", 1.5))),
+            sl_lo=float(cfg.get("barrier_sl_lo", CFG.get("barrier_sl_lo", 0.4))),
+            sl_hi=float(cfg.get("barrier_sl_hi", CFG.get("barrier_sl_hi", 0.7))),
+            z_gate=float(cfg.get("barrier_z_gate", CFG.get("barrier_z_gate", 1.0))),
+            tp_lo=float(cfg.get("barrier_tp_lo", CFG.get("barrier_tp_lo", 0.02))),
+            tp_hi=float(cfg.get("barrier_tp_hi", CFG.get("barrier_tp_hi", 0.06))),
+            return_components=True,
+        )
+        out_stats = {
+            "tp_mean": float(np.nanmean(tp_df.values)),
+            "sl_mean": float(np.nanmean(sl_df.values)),
+            "bound_saturation": float(
+                ((tp_df.values <= float(cfg.get("barrier_tp_lo", CFG.get("barrier_tp_lo", 0.02))))
+                 | (tp_df.values >= float(cfg.get("barrier_tp_hi", CFG.get("barrier_tp_hi", 0.06))))).mean()
+            ),
+            "m_at_m_lo_pct": float(diag.get("m_at_m_lo_pct", 0.0)),
+            "m_at_m_hi_pct": float(diag.get("m_at_m_hi_pct", 0.0)),
+        }
+        return tp_df.astype(np.float32), sl_df.astype(np.float32), out_stats
+
     atr = artifacts.features["atr_pct"].clip(lower=1e-6)
 
     h_scale = _horizon_scale(
@@ -452,7 +491,12 @@ def make_quantile_basis(artifacts: RunArtifacts, basis: str) -> pd.DataFrame:
     return c.pct_change().abs()
 
 
-def choose_feature_matrix(artifacts: RunArtifacts, max_features: int = 20) -> Tuple[pd.DataFrame, List[str]]:
+def choose_feature_matrix(
+    artifacts: RunArtifacts,
+    max_features: int = 20,
+    feature_profile: str = "test",
+    explicit_keys: Optional[Sequence[str]] = None,
+) -> Tuple[pd.DataFrame, List[str]]:
     good = []
     for k, v in artifacts.features.items():
         if not isinstance(v, pd.DataFrame):
@@ -463,7 +507,16 @@ def choose_feature_matrix(artifacts: RunArtifacts, max_features: int = 20) -> Tu
             continue
         good.append(k)
 
-    preferred = CFG.get("test_feature_keys", TEST_FEATURE_KEYS)
+    if explicit_keys:
+        preferred = list(explicit_keys)
+    elif feature_profile == "training_union":
+        preferred = []
+        for key in ["tf_feature_keys", "mr_feature_keys", "test_feature_keys"]:
+            preferred.extend(CFG.get(key, []))
+        preferred.extend(TEST_FEATURE_KEYS)
+        preferred = list(dict.fromkeys(preferred))
+    else:
+        preferred = CFG.get("test_feature_keys", TEST_FEATURE_KEYS)
     selected = [k for k in preferred if k in good]
     if not selected:
         raise ValueError("No configured test_feature_keys available in features for TBM comparison")
@@ -593,6 +646,7 @@ def evaluate_config(
     layer2_cache: Dict[str, Any],
     eval_cache: Dict[str, Any],
     detailed_slices: bool = False,
+    barrier_backend: str = "compare",
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     c = artifacts.panel["close"]
     events_rows: List[pd.DataFrame] = []
@@ -604,7 +658,7 @@ def evaluate_config(
             key1 = json.dumps(serialize_key({"h": h, "side": side, "cfg": barrier_cfg}), sort_keys=True)
 
             if key1 not in layer1_cache:
-                tp_df, sl_df, geom_stats = build_barriers(artifacts, cfg, h, side)
+                tp_df, sl_df, geom_stats = build_barriers(artifacts, cfg, h, side, barrier_backend=barrier_backend)
                 layer1_cache[key1] = (tp_df, sl_df, geom_stats)
             tp_df, sl_df, geom_stats = layer1_cache[key1]
 
@@ -716,7 +770,8 @@ def evaluate_config(
     if "feature_matrix" in eval_cache:
         X_flat, feat_cols = eval_cache["feature_matrix"]
     else:
-        X_flat, feat_cols = choose_feature_matrix(artifacts)
+        feat_opts = eval_cache.get("feature_options", {})
+        X_flat, feat_cols = choose_feature_matrix(artifacts, **feat_opts)
         eval_cache["feature_matrix"] = (X_flat, feat_cols)
     y_signed = events["label"].astype(np.float32).values
     y_bin = (events["label"].values == 1).astype(np.float32)
@@ -830,6 +885,7 @@ def evaluate_config(
 
     detail = {
         "config": serialize_key(cfg),
+        "barrier_backend": barrier_backend,
         "feature_columns": feat_cols,
         "bucket_metrics": per_bucket,
         "bucket_horizon_metrics": {f"{k[0]}_H{k[1]}": v for k, v in bucket_h_metrics.items()},
@@ -1022,12 +1078,42 @@ def run(args: argparse.Namespace) -> None:
         raise ValueError("--panel is required for TBM optimization")
 
     artifacts = align_artifacts(panel, features)
+
+    # Default behavior: evaluate the most recent 2 years only.
+    ts_max = artifacts.panel["close"].index.max()
+    ts_min = ts_max - pd.Timedelta(days=365 * 2)
+    recent_mask = artifacts.panel["close"].index >= ts_min
+    for key in list(artifacts.panel.keys()):
+        artifacts.panel[key] = artifacts.panel[key].loc[recent_mask]
+    for key in list(artifacts.features.keys()):
+        artifacts.features[key] = artifacts.features[key].loc[recent_mask]
+    print(
+        f"Date window: using last 2 years [{artifacts.panel['close'].index.min()} .. {artifacts.panel['close'].index.max()}]"
+    )
+
+    # Default behavior: deterministic symbol subsample (every 2nd symbol alphabetically).
+    if not args.full_symbols:
+        subsampled = _subsample_symbols(list(artifacts.panel["close"].columns))
+        for key in list(artifacts.panel.keys()):
+            artifacts.panel[key] = artifacts.panel[key].reindex(columns=subsampled)
+        for key in list(artifacts.features.keys()):
+            artifacts.features[key] = artifacts.features[key].reindex(columns=subsampled)
+        print(f"Symbol subsampling enabled by default: kept {len(subsampled)}/{len(panel['close'].columns)} symbols (every 2nd sorted symbol)")
+    else:
+        print(f"Symbol subsampling disabled (--full-symbols): using full universe ({len(artifacts.panel['close'].columns)} symbols)")
     bucket_masks = build_bucket_masks(artifacts)
 
     # Use LRUCache to prevent OOM on large grids
     layer1_cache: Dict[str, Any] = LRUCache(max_size=40)
     layer2_cache: Dict[str, Any] = LRUCache(max_size=40)
-    eval_cache: Dict[str, Any] = {} # eval cache is small (bucket stack), no need for LRU
+    explicit_feature_keys = [x.strip() for x in args.feature_keys.split(",") if x.strip()] if args.feature_keys else None
+    eval_cache: Dict[str, Any] = {
+        "feature_options": {
+            "feature_profile": args.feature_profile,
+            "explicit_keys": explicit_feature_keys,
+            "max_features": args.max_features,
+        }
+    } # eval cache is small (bucket stack), no need for LRU
 
     stage1_cfgs = stage1_grid()
     if args.quick:
@@ -1047,6 +1133,7 @@ def run(args: argparse.Namespace) -> None:
             layer2_cache=layer2_cache,
             eval_cache=eval_cache,
             detailed_slices=False,
+            barrier_backend=args.barrier_backend,
         )
         stage1_rows.append(s)
         details[s["config_id"]] = d
@@ -1079,6 +1166,7 @@ def run(args: argparse.Namespace) -> None:
                 layer2_cache=layer2_cache,
                 eval_cache=eval_cache,
                 detailed_slices=True,
+                barrier_backend=args.barrier_backend,
             )
             rows.append(s)
             details[s["config_id"]] = d
@@ -1099,6 +1187,42 @@ def run(args: argparse.Namespace) -> None:
     with detail_path.open("w") as f:
         json.dump(details, f, indent=2)
 
+    if args.save_sample_weights:
+        if out_df.empty:
+            print("No rows available to export sample weights")
+        else:
+            best_cfg_id = str(out_df.iloc[0]["config_id"])
+            best_cfg = details.get(best_cfg_id, {}).get("config", {})
+            fallback_cfg = {
+                "weighting_scheme": "combined",
+                "rr_weight_power": 1.0,
+                "tp_hit_weight": 0.5,
+                "timeout_penalty": 0.5,
+            }
+            selected_cfg = {**fallback_cfg, **best_cfg}
+            summary, _ = evaluate_config(
+                artifacts,
+                selected_cfg,
+                horizons=horizons,
+                bucket_masks=bucket_masks,
+                layer1_cache=layer1_cache,
+                layer2_cache=layer2_cache,
+                eval_cache=eval_cache,
+                detailed_slices=False,
+                barrier_backend=args.barrier_backend,
+            )
+            weights_payload = {
+                "best_config_id": best_cfg_id,
+                "weighting_config": {k: selected_cfg.get(k) for k in fallback_cfg.keys()},
+                "fallback_weighting_config": fallback_cfg,
+                "summary": summary,
+            }
+            weights_path = Path(args.save_sample_weights)
+            weights_path.parent.mkdir(parents=True, exist_ok=True)
+            with weights_path.open("w") as f:
+                json.dump(weights_payload, f, indent=2)
+            print(f"Saved sample-weight config: {weights_path}")
+
     print(f"Saved CSV: {output_path}")
     print(f"Saved JSON: {detail_path}")
 
@@ -1116,6 +1240,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p.add_argument("--horizons", default="2,4,8", help="Comma-separated horizons in hours")
     p.add_argument("--max-configs", type=int, default=20, help="Max configs when --quick")
     p.add_argument("--max-stage2-configs", type=int, default=24, help="Max configs per Stage2 substage (hierarchical cap)")
+    p.add_argument("--barrier-backend", choices=["compare", "pipeline"], default="pipeline", help="Barrier geometry backend")
+    p.add_argument("--full-symbols", action="store_true", help="Disable default subsampling and use full symbol universe")
+    p.add_argument("--feature-profile", choices=["test", "training_union"], default="training_union", help="Feature key source")
+    p.add_argument("--feature-keys", default="", help="Optional comma-separated explicit feature keys")
+    p.add_argument("--max-features", type=int, default=0, help="Optional max number of selected features (0=all)")
+    p.add_argument("--save-sample-weights", default="", help="Optional JSON path to save sample-weight configuration for downstream models")
     return p.parse_args(argv)
 
 

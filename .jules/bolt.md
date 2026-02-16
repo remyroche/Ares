@@ -105,3 +105,7 @@ Result: `calculate_entropy_statistics_numba` speedup >700x (2.11s -> 0.003s). Fu
 2. Convert to 2D float32 Numpy arrays.
 3. Use a `@jit(parallel=True)` kernel with `prange(n_cols)`.
 4. Reindex the output DataFrame to match the input structure if necessary.
+
+## 2026-02-16 - Parallelizing Numba Kernels
+Learning: Even with Numba-jitted inner functions, iterating over DataFrame columns in Python using `apply_to_frame` or `apply_to_matrix` incurs significant overhead, especially for operations with low per-column complexity (like RSI, rolling max/min, pct_change).
+Action: Always prefer `prange` loops inside a parallel Numba kernel over Python-level iteration when processing DataFrames column-wise. This yielded 3-13x speedups for common indicators.

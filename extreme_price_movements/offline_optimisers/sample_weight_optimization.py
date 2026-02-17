@@ -118,7 +118,7 @@ def combine_weights_safely(
     template = None
 
     for name, w in components.items():
-        arr = np.asarray(w, dtype=np.float32, copy=False)
+        arr = np.asarray(w, dtype=np.float32)
         p5 = float(np.nanpercentile(arr, 5))
         p95 = float(np.nanpercentile(arr, 95))
         span = p95 - p5
@@ -166,18 +166,17 @@ def combine_weights_safely(
 
 def _nanmedian_group(values: np.ndarray, inv: np.ndarray, group_count: int) -> np.ndarray:
     """Vectorized nanmedian per group using partial sorting for moderate group sizes."""
-    medians = np.zeros(group_count, dtype=np.float32)
-    for idx in range(group_count):
-        mask = inv == idx
-        if not np.any(mask):
-            medians[idx] = 1.0
-            continue
-        vals = values[mask]
-        med = np.nanmedian(vals)
-        if not np.isfinite(med) or med <= 0:
-            med = 1.0
-        medians[idx] = np.float32(med)
-    return medians
+    if values.size == 0 or group_count == 0:
+        return np.ones(group_count, dtype=np.float32)
+
+    df = pd.DataFrame({"v": values, "g": inv})
+    grouped = df.groupby("g")["v"].median()
+    medians = grouped.reindex(range(group_count)).values
+
+    # Fill NaNs/inf/<=0 with 1.0
+    mask = np.isfinite(medians) & (medians > 0)
+    medians = np.where(mask, medians, 1.0)
+    return medians.astype(np.float32)
 
 
 def compute_vol_weights(
@@ -192,7 +191,7 @@ def compute_vol_weights(
     if vol.size == 0:
         return np.ones(0, dtype=np.float32)
 
-    ts_int = ts.astype("int64", copy=False)
+    ts_int = ts.astype("int64")
     unique_ts, inv = np.unique(ts_int, return_inverse=True)
     if unique_ts.size and min_group_size > 1:
         medians = _nanmedian_group(vol, inv, unique_ts.size)
@@ -279,7 +278,7 @@ def check_component_redundancy(
     threshold: float = 0.85,
 ) -> Dict[str, Any]:
     names = list(components.keys())
-    arrays = [np.asarray(components[n], dtype=float, copy=False) for n in names]
+    arrays = [np.asarray(components[n], dtype=float) for n in names]
     redundant: list[tuple[str, str, float]] = []
     max_corr = 0.0
 
@@ -295,7 +294,7 @@ def check_component_redundancy(
 
 
 def log_weight_statistics(weights: np.ndarray, era_indices: np.ndarray, name: str) -> Dict[str, float]:
-    w = np.asarray(weights, dtype=float, copy=False)
+    w = np.asarray(weights, dtype=float)
     eras = np.asarray(era_indices)
     if eras.size:
         _, inv = np.unique(eras, return_inverse=True)
@@ -361,9 +360,9 @@ def _run_cv_ic(
 ) -> np.ndarray:
     splitter = IntervalPurgedKFold(n_splits=n_splits, embargo_bars=embargo_bars)
     fold_ics = []
-    Xs = np.asarray(X, dtype=np.float32, copy=False)
-    yv = np.asarray(y, dtype=float, copy=False)
-    wv = np.asarray(sample_weight, dtype=float, copy=False)
+    Xs = np.asarray(X, dtype=np.float32)
+    yv = np.asarray(y, dtype=float)
+    wv = np.asarray(sample_weight, dtype=float)
 
     base_model = _make_model(model_family, random_state=seed, cfg_runtime=cfg_runtime)
     for fold_idx, (tr, va) in enumerate(splitter.split(Xs, label_intervals=label_intervals), start=1):
@@ -585,9 +584,9 @@ def run_ablation(
     results.append(("baseline", float(base_score)))
     _tprint_metrics("Ablation baseline", score=float(base_score), mem_mb=_process_memory_mb())
 
-    baseline_arr = np.asarray(baseline_weights, dtype=float, copy=False)
+    baseline_arr = np.asarray(baseline_weights, dtype=float)
     scratch = baseline_arr.copy()
-    comp_arrays = {k: np.asarray(v, dtype=float, copy=False) for k, v in components.items()}
+    comp_arrays = {k: np.asarray(v, dtype=float) for k, v in components.items()}
 
     for name, w_comp in comp_arrays.items():
         np.multiply(baseline_arr, w_comp, out=scratch)
@@ -762,17 +761,38 @@ def run_offline_sample_weight_optimisation(
 
     report_rows: list[dict[str, Any]] = []
     if component_csv:
-        df = pd.read_csv(component_csv)
+        # Pre-scan header to determine required columns
+        header_df = pd.read_csv(component_csv, nrows=0)
+        all_cols = set(header_df.columns)
+        test_keys = set(CFG.get("test_feature_keys", TEST_FEATURE_KEYS))
+
+        # Determine columns to load
+        keep_cols = {c for c in all_cols if c in ("y_ret", "t_start", "t_end") or c.startswith("comp_")}
+        stage_col = _detect_stage_column(header_df)
+        if stage_col:
+            keep_cols.add(stage_col)
+
+        feature_cols = []
+        for c in all_cols:
+            norm_c = c[2:] if c.startswith("x_") else c
+            if norm_c in test_keys:
+                feature_cols.append(c)
+                keep_cols.add(c)
+
+        df = pd.read_csv(component_csv, usecols=list(keep_cols))
         _tprint_metrics(
             "Loaded component CSV",
             rows=len(df),
             columns=len(df.columns),
+            features_loaded=len(feature_cols),
             mem_mb=_process_memory_mb(),
         )
         comp_cols = [c for c in df.columns if c.startswith("comp_")]
+
+        # Verify essential columns
         if {"y_ret", "t_start", "t_end"}.issubset(df.columns) and comp_cols:
-            stage_col = _detect_stage_column(df)
             if stage_col is None:
+                # If stage_col was not detected, create dummy column
                 df = df.copy()
                 df["stage"] = "base"
                 stage_col = "stage"
@@ -796,7 +816,12 @@ def run_offline_sample_weight_optimisation(
                     mem_mb=_process_memory_mb(),
                 )
                 components = {c.replace("comp_", ""): sdf[c].astype(float).values for c in comp_cols}
-                X = sdf[[c for c in sdf.columns if c.startswith("x_")]] if any(c.startswith("x_") for c in sdf.columns) else np.zeros((len(sdf), 1), dtype=float)
+
+                current_feature_cols = [c for c in feature_cols if c in sdf.columns]
+                if current_feature_cols:
+                    X = sdf[current_feature_cols]
+                else:
+                    X = np.zeros((len(sdf), 1), dtype=float)
                 label_intervals = np.column_stack([
                     pd.to_datetime(sdf["t_start"]).values.astype("datetime64[ns]"),
                     pd.to_datetime(sdf["t_end"]).values.astype("datetime64[ns]"),

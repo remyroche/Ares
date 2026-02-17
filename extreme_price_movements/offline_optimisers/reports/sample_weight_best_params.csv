@@ -1,0 +1,2 @@
+source,sample_weight_vol_power,sample_weight_distance_k,sample_weight_distance_min_dist,sample_weight_recency_half_life_bars,component_alphas,component_alphas_base,component_alphas_meta,saved_at
+sample_weight_optimization,0.5,0.5,0.5,720,"{""A"": 1.0}","{""A"": 1.0}","{""A"": 1.0}",2026-02-17T09:13:28.018643+00:00

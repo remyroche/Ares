@@ -20,7 +20,8 @@ from src.utils.numba_funcs import (
     _numba_rolling_rsquared,
     _numba_rolling_median,
     _numba_rolling_sum,
-    _numba_rolling_correlation
+    _numba_rolling_correlation,
+    _numba_rolling_mad
 )
 from .utils import tprint
 
@@ -725,6 +726,17 @@ def _numba_ewma_1d(x, alpha, adjust=False):
         else:
             out[i] = (one - alpha) * out[i-1] + alpha * val
     
+    return out
+
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_mad_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_mad(mat[:, j], window)
+
     return out
 
 
@@ -1469,6 +1481,22 @@ def numba_rolling_median(df, n):
 
     mat = df.to_numpy(dtype=np.float32, copy=False)
     res = _numba_rolling_median_parallel(mat, n)
+
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+
+    return res_df
+
+def numba_rolling_mad(df, n):
+    tprint(f"Entering function: numba_rolling_mad in fast_funcs.py")
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rolling_mad_parallel(mat, n)
 
     res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
 

@@ -67,9 +67,11 @@ def atr_percent(high: pd.DataFrame, low: pd.DataFrame, close: pd.DataFrame, n: i
     return ff.numba_atr_no_norm(high, low, close, n)
 
 def rolling_mad(df: pd.DataFrame, window: int):
-    med = ff.numba_rolling_median(df, window)
-    mad = ff.numba_rolling_median((df - med).abs(), window)
-    return mad.astype(np.float32)
+    """
+    Calculate rolling MAD (Median Absolute Deviation) using Numba.
+    Uses standard definition: Median(|x - Median(Window)|).
+    """
+    return ff.numba_rolling_mad(df, window).astype(np.float32)
 
 
 def _rolling_shannon_entropy_df(df: pd.DataFrame, window: int, bins: int = 16) -> pd.DataFrame:

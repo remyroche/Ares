@@ -3596,7 +3596,7 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
         if _bret_key in _bucket_y_ret:
             _bret = _bucket_y_ret[_bret_key]
             if len(_bret) == len(meta_obj.oof_probs):
-                _dm = _detailed_oof_metrics(meta_obj.oof_probs, _bret)
+                _dm = _detailed_oof_metrics(meta_obj.oof_probs, _bret, cost=(2.0 * (float(cfg.get("fee_bps", 25.0)) + float(cfg.get("slippage_bps", 0.0))) / 10000.0))
                 tprint(
                     f"  {key:22s} {_mtype:5s} {_winner_name:18s} "
                     f"{_dm.get('IC_global',0):>7.4f} {_dm.get('IC_top30',0):>7.4f} "

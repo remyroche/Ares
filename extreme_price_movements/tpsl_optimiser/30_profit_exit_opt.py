@@ -6,10 +6,11 @@ from typing import Tuple
 import numpy as np
 import pandas as pd
 
+from extreme_price_movements.pnl import CostModel, trade_return_net_vec
 from extreme_price_movements.tpsl_optimiser.metrics_utils import compute_comprehensive_metrics
 
 
-def optimise_profit_exit(trades: pd.DataFrame, trade_returns: np.ndarray, tp_pct_entry: np.ndarray, fee_pct: float = 0.005, test_split_idx: int = 0) -> Tuple[dict, pd.DataFrame]:
+def optimise_profit_exit(trades: pd.DataFrame, trade_returns: np.ndarray, tp_pct_entry: np.ndarray, fee_pct: float = 0.005, test_split_idx: int = 0, cost: CostModel | None = None, init_params: dict | None = None) -> Tuple[dict, pd.DataFrame]:
     """Optimise trailing controls against net PnL.
 
     This step intentionally consumes frozen TP/SL from previous steps.
@@ -35,6 +36,13 @@ def optimise_profit_exit(trades: pd.DataFrame, trade_returns: np.ndarray, tp_pct
     grid = list(product([0.5, 0.75, 1.0], [0.25, 0.5, 0.75], [0.1, 0.2, 0.3], [0.5, 0.8, 1.0]))
     # Add "disabled" config: act_n=1.0, be_act_n=1.0 => penalty = 0
     grid.append((1.0, 1.0, 0.0, 0.0))
+    if init_params:
+        grid.append((
+            float(init_params.get("act_n", 1.0)),
+            float(init_params.get("be_act_n", 1.0)),
+            float(init_params.get("d_min", 0.0)),
+            float(init_params.get("d_max", 0.0)),
+        ))
 
     for act_n, be_act_n, d_min, d_max in grid:
         # trail_penalty is % of TP? No, it's clipped to [0,1] * tp_pct_entry
@@ -46,7 +54,8 @@ def optimise_profit_exit(trades: pd.DataFrame, trade_returns: np.ndarray, tp_pct
         # Apply penalty to raw returns (net of penalty)
         # Note: original code subtracts fee_pct here: net = trade_returns - fee_pct - penalty
         # We replicate this logic for selection score.
-        net_ret = trade_returns - fee_pct - trail_penalty * 0.01
+        cost = cost or CostModel(fee_side=float(fee_pct) / 2.0)
+        net_ret = trade_return_net_vec(raw_ret_underlying=(trade_returns - trail_penalty * 0.01), side=np.ones(len(trade_returns)), pos_w=np.ones(len(trade_returns)), cost=cost)
 
         # Train Selection
         net_train = net_ret[train_mask]
@@ -86,7 +95,7 @@ def optimise_profit_exit(trades: pd.DataFrame, trade_returns: np.ndarray, tp_pct
             test_trades["exit_price"] = new_exit
             test_trades["exit_reason"] = "profit_opt"
 
-            m = compute_comprehensive_metrics(test_trades, fee_pct=fee_pct)
+            m = compute_comprehensive_metrics(test_trades, fee_pct=fee_pct, cost=cost)
             trial_metrics.update(m)
 
         trials_data.append(trial_metrics)

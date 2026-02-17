@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import pickle
 from dataclasses import dataclass
@@ -9,6 +10,14 @@ from typing import Literal, Dict, Any, Optional
 import numpy as np
 import pandas as pd
 
+from extreme_price_movements.persistence.policy_params_store import (
+    get_initial_params,
+    load_params_store,
+    save_params_store,
+    store_best_params,
+)
+from extreme_price_movements.pnl import CostModel, trade_return_net_vec
+from extreme_price_movements.telemetry.tprint_hooks import emit_bucket_summary, emit_run_header
 from extreme_price_movements.tpsl_optimiser import load_step_module
 from extreme_price_movements.utils import tprint
 
@@ -109,7 +118,7 @@ def _adapt_backtest_columns(trades: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def run_optimise_step(trades: pd.DataFrame, atr_15m: pd.Series, output_path: str, policy: Policy | None = None, state_path: str | None = None) -> dict:
+def run_optimise_step(trades: pd.DataFrame, atr_15m: pd.Series, output_path: str, policy: Policy | None = None, state_path: str | None = None, cost: CostModel | None = None, enforce_threaded_exit_stream: bool = True) -> dict:
     """Run the optimisation pipeline for TP/SL and position sizing.
     
     Args:
@@ -123,6 +132,10 @@ def run_optimise_step(trades: pd.DataFrame, atr_15m: pd.Series, output_path: str
         Dict with optimisation results per bucket
     """
     policy = policy or Policy(mode="train_baseline")
+
+    run_id = Path(output_path).stem
+    policy_version = str(run_id)
+
 
     # Try to load ridge weights from policy or state file
     ridge_weights = None
@@ -152,6 +165,15 @@ def run_optimise_step(trades: pd.DataFrame, atr_15m: pd.Series, output_path: str
     # List to collect all trials across all buckets and steps
     all_trials_log = []
 
+    fee_pct = float((trades.attrs.get("fee_pct") if hasattr(trades, "attrs") else None) or 0.005)
+    cost = cost or CostModel(fee_side=fee_pct / 2.0)
+    cost_dict = {"fee_side": float(cost.fee_side), "slippage_side": float(cost.slippage_side), "round_trip": float(cost.round_trip)}
+    cost_hash = hashlib.sha256(json.dumps(cost_dict, sort_keys=True).encode("utf-8")).hexdigest()[:10]
+    emit_run_header(tprint=tprint, run_id=run_id, policy_version=policy_version, cost_model=cost_dict, extra={"n_buckets": len(buckets)})
+
+    store = load_params_store()
+    version_key = f"{policy_version}|{cost_hash}"
+
     for bucket in buckets:
         bucket_df = m00.load_trades_for_bucket(trades, bucket)
         if bucket_df.empty:
@@ -163,8 +185,13 @@ def run_optimise_step(trades: pd.DataFrame, atr_15m: pd.Series, output_path: str
 
         atr_scale = m10.compute_atr_scale(atr_15m.reindex(bucket_df.index).ffill().fillna(atr_15m.median()))
 
+        params_init = get_initial_params(store, version_key, bucket, defaults=policy.resolve_params(bucket))
+
         # Step 10: TP/SL Calibration
-        tp_sl, trials_10 = m10.calibrate_tp_sl(bucket_df, atr_scale, test_split_idx=split_idx)
+        tp_sl, trials_10 = m10.calibrate_tp_sl(
+            bucket_df, atr_scale, test_split_idx=split_idx, fee_pct=fee_pct, cost=cost,
+            init_params=params_init.get("tp_sl", params_init)
+        )
         trials_10["bucket"] = bucket
         trials_10["step"] = "10_tp_sl"
         all_trials_log.append(trials_10)
@@ -172,7 +199,7 @@ def run_optimise_step(trades: pd.DataFrame, atr_15m: pd.Series, output_path: str
         sl_pct = tp_sl["sl_mult"] * atr_scale.to_numpy()
 
         # Step 20: Loss Limiter Optimization
-        risk_cut, trials_20 = m20.optimise_loss_limiter(bucket_df, sl_pct=sl_pct, test_split_idx=split_idx)
+        risk_cut, trials_20 = m20.optimise_loss_limiter(bucket_df, sl_pct=sl_pct, test_split_idx=split_idx, fee_pct=fee_pct, cost=cost, init_params=params_init.get("loss_limiter", params_init))
         trials_20["bucket"] = bucket
         trials_20["step"] = "20_risk_cut"
         all_trials_log.append(trials_20)
@@ -184,12 +211,15 @@ def run_optimise_step(trades: pd.DataFrame, atr_15m: pd.Series, output_path: str
         tp_pct_entry = tp_sl["tp_mult"] * atr_scale.to_numpy()
 
         # Step 30: Profit Exit Optimization
-        profit, trials_30 = m30.optimise_profit_exit(bucket_df, raw_returns, tp_pct_entry=tp_pct_entry, fee_pct=0.005, test_split_idx=split_idx)
+        profit, trials_30 = m30.optimise_profit_exit(bucket_df, raw_returns, tp_pct_entry=tp_pct_entry, fee_pct=fee_pct, test_split_idx=split_idx, cost=cost, init_params=params_init.get("profit_exit", params_init))
         trials_30["bucket"] = bucket
         trials_30["step"] = "30_profit_exit"
         all_trials_log.append(trials_30)
 
         # Step 40: Position Sizing Optimization
+        threaded_exit_stream = bool(bucket_df.attrs.get("threaded_exit_stream", False))
+        if enforce_threaded_exit_stream and not threaded_exit_stream:
+            raise RuntimeError("Stage40 sizing is using stale exit stream; thread post-20/30 ledger first.")
         # Pass raw exit/entry/is_long as original code did, but metrics will use them
         sizing, trials_40 = m40.optimise_position_sizing(
             bucket_df,
@@ -197,7 +227,10 @@ def run_optimise_step(trades: pd.DataFrame, atr_15m: pd.Series, output_path: str
             bucket_df["entry_price"].to_numpy(dtype=float),
             bucket_df["is_long"].to_numpy(dtype=int),
             bucket_df["confidence"].to_numpy(dtype=float),
-            test_split_idx=split_idx
+            test_split_idx=split_idx,
+            fee_pct=fee_pct,
+            cost=cost,
+            init_params=params_init.get("position_sizing", params_init.get("sizing", params_init))
         )
         trials_40["bucket"] = bucket
         trials_40["step"] = "40_sizing"
@@ -215,12 +248,36 @@ def run_optimise_step(trades: pd.DataFrame, atr_15m: pd.Series, output_path: str
             sizing["ridge_weights"] = ridge_weights
 
         pos_size = m40.sigmoid_sizing(confidence, sizing["k"], sizing["c0"], sizing["s_min"], sizing["s_max"])
-        net_returns = raw_returns * pos_size - 0.005
+        net_returns = trade_return_net_vec(raw_ret_underlying=raw_returns, side=np.ones(len(raw_returns)), pos_w=pos_size, cost=cost)
         report = m50.evaluate_holdout(bucket_df, net_returns)
+        holdout_ledger = m50.build_holdout_trade_ledger(bucket_df, net_returns, cost=cost)
+        ledger_path = Path(output_path).with_name(f"{Path(output_path).stem}_{bucket}_holdout_ledger.csv")
+        if not holdout_ledger.empty:
+            holdout_ledger.to_csv(ledger_path, index=False)
+        report["holdout_ledger_path"] = str(ledger_path)
+
+        if not holdout_ledger.empty:
+            emit_bucket_summary(
+                tprint=tprint,
+                run_id=run_id,
+                bucket_id=bucket,
+                kind="optimiser_eval",
+                stats={
+                    "ledger_rows": int(len(holdout_ledger)),
+                    "ledger_checksum": hashlib.sha256(holdout_ledger.to_csv(index=False).encode("utf-8")).hexdigest()[:12],
+                    "holdout_pnl_net": float(report.get("holdout_pnl_net", 0.0)),
+                    "best_tp_mult": float(tp_sl.get("tp_mult", 0.0)),
+                    "best_sl_mult": float(tp_sl.get("sl_mult", 0.0)),
+                    "best_theta0": float(risk_cut.get("theta0", 0.0)),
+                    "best_act_n": float(profit.get("act_n", 0.0)),
+                    "best_size_k": float(sizing.get("k", 0.0)),
+                    "threaded_exit_stream": threaded_exit_stream,
+                },
+            )
 
         combined = {
             "policy_mode": policy.mode,
-            "baseline_seed": policy.resolve_params(bucket),
+            "baseline_seed": params_init,
             "tp_sl": tp_sl,
             "loss_limiter": risk_cut,
             "profit_exit": profit,
@@ -234,6 +291,23 @@ def run_optimise_step(trades: pd.DataFrame, atr_15m: pd.Series, output_path: str
         
         all_out[bucket] = combined
         mw.merge_and_write_params(output_path, bucket, combined)
+
+        store = store_best_params(
+            store=store,
+            version_key=version_key,
+            bucket_id=bucket,
+            params={
+                "tp_sl": tp_sl,
+                "loss_limiter": risk_cut,
+                "profit_exit": profit,
+                "position_sizing": sizing,
+            },
+            metrics={
+                "holdout_pnl_net": float(report.get("holdout_pnl_net", 0.0)),
+                "holdout_win_rate": float(report.get("holdout_win_rate", 0.0)),
+                "holdout_trades": int(report.get("holdout_trades", 0)),
+            },
+        )
         tprint(f"optimise: bucket={bucket} trades={len(bucket_df)} saved={output_path}")
 
     # Concatenate and save consolidated report CSV
@@ -248,4 +322,5 @@ def run_optimise_step(trades: pd.DataFrame, atr_15m: pd.Series, output_path: str
         consolidated_df.to_csv(csv_path, index=False)
         tprint(f"optimise: detailed report saved={csv_path}")
 
+    save_params_store(store)
     return all_out

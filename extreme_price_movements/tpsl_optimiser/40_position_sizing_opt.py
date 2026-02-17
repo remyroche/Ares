@@ -6,6 +6,7 @@ from typing import Tuple
 import numpy as np
 import pandas as pd
 
+from extreme_price_movements.pnl import CostModel, trade_return_net_vec
 from extreme_price_movements.tpsl_optimiser.metrics_utils import compute_comprehensive_metrics
 
 
@@ -14,7 +15,7 @@ def sigmoid_sizing(conf: np.ndarray, k: float, c0: float, s_min: float = 0.03, s
     return s_min + (s_max - s_min) * sig
 
 
-def compute_equity_metrics(exit_prices, entry_prices, is_long, confidences, k, c0, fee_pct: float = 0.005, initial_capital: float = 100000.0):
+def compute_equity_metrics(exit_prices, entry_prices, is_long, confidences, k, c0, fee_pct: float = 0.005, initial_capital: float = 100000.0, cost: CostModel | None = None):
     n = len(exit_prices)
     if n == 0:
         return 0.0, 0.0, 0.0, np.array([])
@@ -29,7 +30,8 @@ def compute_equity_metrics(exit_prices, entry_prices, is_long, confidences, k, c
     raw_rets = np.where(is_long == 1,
                         (exit_prices - entry_prices) / entry_prices,
                         (entry_prices - exit_prices) / entry_prices)
-    net_rets = (raw_rets * pos_sizes) - fee_pct
+    cost = cost or CostModel(fee_side=float(fee_pct) / 2.0)
+    net_rets = trade_return_net_vec(raw_ret_underlying=raw_rets, side=np.ones(len(raw_rets)), pos_w=pos_sizes, cost=cost)
 
     # Simple compounding loop for equity curve maxdd
     curr_eq = initial_capital
@@ -48,7 +50,7 @@ def compute_equity_metrics(exit_prices, entry_prices, is_long, confidences, k, c
     return total_pnl, sortino, max_dd, equity
 
 
-def optimise_position_sizing(trades: pd.DataFrame, exit_prices, entry_prices, is_long, confidences, test_split_idx: int = 0) -> Tuple[dict, pd.DataFrame]:
+def optimise_position_sizing(trades: pd.DataFrame, exit_prices, entry_prices, is_long, confidences, test_split_idx: int = 0, fee_pct: float = 0.005, cost: CostModel | None = None, init_params: dict | None = None) -> Tuple[dict, pd.DataFrame]:
     # Split for optimization vs reporting
     n = len(exit_prices)
     split = test_split_idx if test_split_idx > 0 else n
@@ -61,12 +63,18 @@ def optimise_position_sizing(trades: pd.DataFrame, exit_prices, entry_prices, is
     results = []
     trials_data = []
 
-    for k, c0 in product(np.linspace(2.0, 20.0, 10), np.linspace(0.55, 0.85, 13)):
+    k_grid = list(np.linspace(2.0, 20.0, 10))
+    c0_grid = list(np.linspace(0.55, 0.85, 13))
+    if init_params:
+        k_grid.append(float(init_params.get("k", 8.0)))
+        c0_grid.append(float(init_params.get("c0", 0.7)))
+
+    for k, c0 in product(sorted(set(k_grid)), sorted(set(c0_grid))):
         # Train Selection
         if len(train_idx) > 0:
             pnl, sortino, max_dd, _ = compute_equity_metrics(
                 exit_prices[train_idx], entry_prices[train_idx], is_long[train_idx], confidences[train_idx],
-                float(k), float(c0)
+                float(k), float(c0), fee_pct=fee_pct, cost=cost
             )
         else:
             pnl, sortino, max_dd = 0.0, 0.0, 0.0
@@ -117,7 +125,7 @@ def optimise_position_sizing(trades: pd.DataFrame, exit_prices, entry_prices, is
             # Given "optimise.py" structure, steps seem independent or cumulative in a way I might be missing.
             # But here I just report what happens if we apply sizing to THESE trades.
 
-            m = compute_comprehensive_metrics(test_trades) # uses pos_size column
+            m = compute_comprehensive_metrics(test_trades, fee_pct=fee_pct, cost=cost) # uses pos_size column
             trial_metrics.update(m)
 
         trials_data.append(trial_metrics)

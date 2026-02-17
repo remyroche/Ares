@@ -1,6 +1,9 @@
 import numpy as np
 import pandas as pd
 
+from extreme_price_movements.pnl import CostModel
+from extreme_price_movements.pnl_asserts import assert_units
+from extreme_price_movements.telemetry.tprint_hooks import emit_bucket_summary
 from extreme_price_movements.utils import tprint
 
 from extreme_price_movements.risk import TrailingStop
@@ -45,7 +48,7 @@ def _compute_barrier_pct(feats_s, ts_sig, atr, cfg):
     return default_barrier
 
 
-def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side, cfg, max_hold_hours, exchange=None, symbol=None):
+def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side, cfg, max_hold_hours, exchange=None, symbol=None, cost: CostModel | None = None):
     """Simulate a trade using trailing-profit policy.
 
     Exit logic (all distances are vol-scaled via barrier_pct):
@@ -68,6 +71,8 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
           tp_pct: activation distance as % of entry price
     """
     _empty_extras = {"mae_pct": 0.0, "mfe_pct": 0.0, "bars_to_mfe": 0, "sl_pct": 0.0, "tp_pct": 0.0}
+    if cost is not None:
+        assert_units(cost)
     if np.isnan(entry_px) or entry_px <= 0:
         return 0.0, ts_entry, "no_entry", _empty_extras
 
@@ -559,7 +564,7 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
         def _meta_predict_or_fallback(meta_model, p_alpha, grp_df, label):
             """Predict with meta model; fall back to raw alpha if meta output is degenerate."""
             if meta_model is None:
-                return (p_alpha - 0.5) * 0.1
+                return (p_alpha - 0.5) * 0.1, np.ones(len(p_alpha), dtype=bool)
             num = grp_df.select_dtypes(include=[np.number]).copy()
             X_meta = meta_model.prepare_meta_features(p_alpha, num, pred_col_name="pred_logit")
             # Add feature interactions (must match training)
@@ -583,7 +588,7 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
                 if coverage < 0.8:
                     tprint(f"  Meta {side_key}_{label}: DISABLED — feature coverage {coverage:.0%} "
                            f"({len(missing)} missing of {len(selected)})")
-                    return (p_alpha - 0.5) * 0.1
+                    return (p_alpha - 0.5) * 0.1, np.ones(len(p_alpha), dtype=bool)
                 if missing:
                     tprint(f"  Meta {side_key}_{label}: {len(missing)} features missing "
                            f"(coverage {coverage:.0%}), filling with 0")
@@ -609,7 +614,9 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
                 "score_tf": float(s_tf[i]),
                 "trend_dir": int(grp.loc[idx, "trend_dir"]),
                 "trap_quality": float(grp.loc[idx, "trap_quality"]),
-                "predicted_vol_6h": float(grp.loc[idx, "predicted_vol_6h"])
+                "predicted_vol_6h": float(grp.loc[idx, "predicted_vol_6h"]),
+                "used_fallback_mr": bool(fb_mr[i]),
+                "used_fallback_tf": bool(fb_tf[i]),
             })
 
     return pd.DataFrame(score_rows)
@@ -635,6 +642,20 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
     sc_df = _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand, current_positions_syms, tradeable_candidates=tradeable_candidates)
     if sc_df.empty:
         return []
+
+    if "used_fallback_mr" in sc_df.columns and "used_fallback_tf" in sc_df.columns:
+        fb_any = (sc_df["used_fallback_mr"] | sc_df["used_fallback_tf"]).astype(float)
+        emit_bucket_summary(
+            tprint=tprint,
+            run_id=str(ts_sig),
+            bucket_id="META_ALL",
+            kind="meta_fallback",
+            stats={
+                "pct_fallback_used": float(fb_any.mean()),
+                "pct_meta_used": float(1.0 - fb_any.mean()),
+                "n_rows": int(len(sc_df)),
+            },
+        )
 
     long_df = sc_df[sc_df["side_key"] == "long"].set_index("symbol")
     short_df = sc_df[sc_df["side_key"] == "short"].set_index("symbol")

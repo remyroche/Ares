@@ -307,6 +307,7 @@ BARRIER_PARAMS = {
     "sl_noise_buffer", "sl_min_abs_pct", "sl_min_bps",
     "tp_min_abs_pct", "tp_min_bps",
     "tp_time_decay", "trail_sl_mult", "tp_side_skew",
+    "quantile_window", "tp_quantile",
 }
 
 
@@ -680,6 +681,34 @@ def build_barriers(
         atrn_tp = cfg["k_tp"] * (atr / (med + EPS)) * float(cfg.get("tp_base_pct", 0.02))
         abs_tp = pd.DataFrame(float(cfg.get("tp_abs_pct", cfg.get("tp_base_pct", 0.02))), index=atr.index, columns=atr.columns)
         tp = 0.5 * atrn_tp + 0.5 * abs_tp
+    elif tp_method == "rolling_quantile":
+        # Calculate absolute returns for quantile estimation
+        # Use close-to-close returns
+        abs_ret = artifacts.panel["close"].pct_change().abs()
+
+        # Calculate rolling quantile
+        window = int(cfg.get("quantile_window", 720))
+        q = float(cfg.get("tp_quantile", 0.95))
+
+        # Pre-clip extreme outliers (winsorization) to prevent skewing
+        # Clip at 99.9th percentile of the full series or fixed threshold
+        # For simplicity/speed in rolling window, just clip raw series at a high threshold (e.g. 20%)
+        # or rely on quantile robustness. Here we rely on quantile robustness but user can add winsorization later.
+
+        base_val = abs_ret.rolling(window, min_periods=max(24, window // 10)).quantile(q)
+
+        # Fill initial NaNs with expanding quantile or median * multiplier fallback
+        if base_val.isna().any().any():
+             # Fallback to ATR-based estimate for warmup period
+             fallback = 2.0 * atr
+             base_val = base_val.fillna(fallback)
+
+        # Apply scaling:
+        # base_val is 1-hour quantile (since panel is hourly).
+        # We need to scale to the target horizon 'h'.
+        # Re-use h_scale logic for consistent horizon scaling.
+        # Also apply regime multiplier (optional, but consistent with other methods).
+        tp = base_val * h_scale * tp_regime
     else:
         raise ValueError(f"Unsupported tp_method={tp_method}")
 
@@ -1390,11 +1419,14 @@ def base_param_template(cfg_runtime: Optional[Dict[str, Any]] = None) -> Dict[st
         "tp_abs_pct": float(tbm_defaults["tp_abs_pct"]),
         "tp_base_pct": float(tbm_defaults["tp_base_pct"]),
         "base_atr_window": int(tbm_defaults["base_atr_window"]),
+        "quantile_window": 720,  # 30 days
+        "tp_quantile": 0.95,
     }
 
 
 def stage1_grid(cfg_runtime: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     cfgs = []
+    # Standard ATR Multiplier Grid
     for k_tp, sl_as_tp, regime_model, h_scaling in product(
         [0.8, 1.0, 1.25, 1.6, 2.0],
         [0.4, 0.5, 0.6, 0.7],
@@ -1415,6 +1447,31 @@ def stage1_grid(cfg_runtime: Optional[Dict[str, Any]] = None) -> List[Dict[str, 
             }
         )
         cfgs.append(c)
+
+    # Rolling Quantile Grid (Alternative to k_tp)
+    # Replaces k_tp iteration with tp_quantile iteration
+    for tp_quantile, sl_as_tp, regime_model, h_scaling in product(
+        [0.90, 0.95, 0.98, 0.99],
+        [0.4, 0.5, 0.6, 0.7],
+        ["none", "mix"],
+        ["none", "sqrt"],
+    ):
+        c = base_param_template(cfg_runtime)
+        c.update(
+            {
+                "mode": "rolling_quantile_rr",
+                "tp_method": "rolling_quantile",
+                "sl_method": "tp_pct",
+                "tp_quantile": float(tp_quantile),
+                "quantile_window": 720, # Fixed 30-day window for stage 1
+                "sl_as_tp_pct": float(sl_as_tp),
+                "tp_regime_model": regime_model,
+                "sl_regime_model": regime_model,
+                "horizon_scaling": h_scaling,
+            }
+        )
+        cfgs.append(c)
+
     return cfgs
 
 

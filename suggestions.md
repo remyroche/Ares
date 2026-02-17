@@ -67,6 +67,14 @@ A user might consider setting a threshold such as "Current Volume > 80% of Avera
 
 **Recommendation:** **Yes, this is a strong candidate for reducing noise.** It shifts the focus from "guessing a magic number" to "targeting a statistical probability," which is generally more robust. We suggest testing `Rolling Quantile (e.g., 0.90)` as a replacement or enhancement to the fixed `k_tp` / `k_sl` multipliers in `compare_tbm_parameters.py`.
 
+### Comparison to ATR Deviations
+
+While Average True Range (ATR) also adapts to volatility, there are key differences that make Rolling Quantiles potentially more robust for noise reduction:
+
+*   **Parametric vs. Non-Parametric:** ATR is a mean-based measure of volatility magnitude. Using `k * ATR` implicitly assumes a specific distribution shape (often Normal or Laplace) where "2.0 deviations" corresponds to a fixed probability (e.g., ~95%). However, crypto returns are heavily skewed and fat-tailed (high kurtosis). Rolling Quantiles make **no distributional assumptions**; they directly measure the *empirical probability* of a move (e.g., the actual 95th percentile over the last month), regardless of whether the distribution is currently normal or extreme.
+*   **Tail Sensitivity:** In high-kurtosis regimes ("fat tails"), a standard deviation-based measure like ATR might underestimate the frequency of large moves, leading to stops being hit too often. A 99th percentile Rolling Quantile will naturally expand further than `3 * ATR` in these conditions to capture the true probability mass, providing better protection against noise.
+*   **Skewness:** ATR treats upside and downside volatility symmetrically. Rolling Quantiles can be calculated separately for upside and downside returns (or as absolute returns), capturing directional skew in volatility that symmetric measures miss.
+
 ### Mitigating Outlier Skew
 To prevent large outliers (e.g., flash crashes, scam wicks) from distorting the calculated quantile levels, consider the following strategies:
 

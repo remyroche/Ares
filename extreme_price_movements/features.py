@@ -18,6 +18,7 @@ _cache = Memory("./cache/features", verbose=0)
 
 # --- Per-column FFD incremental cache ---
 _FFD_COL_CACHE_DIR = "./cache/ffd_columns"
+EPS = 1e-12
 
 def _sanitize_col_name(name):
     """Make column name filesystem-safe."""
@@ -412,6 +413,165 @@ def add_regime_gates(mkt_df: pd.DataFrame, gate_vol_lookback_hours: int, gate_tr
 
     return df
 
+
+def compute_vol_regime_features(close_df: pd.DataFrame, vol_window: int = 24, pct_window: int = 252):
+    """Compute volatility-regime features from close prices."""
+    ret = np.log(close_df / close_df.shift(1))
+    rv = ret.rolling(vol_window).std().shift(1)
+
+    vol_pct = rv.rolling(pct_window).rank(pct=True).clip(0.0, 1.0)
+    vol_high = (vol_pct - 0.8).clip(lower=0.0)
+    vol_low = (0.2 - vol_pct).clip(lower=0.0)
+
+    return vol_pct.astype(np.float32), vol_high.astype(np.float32), vol_low.astype(np.float32)
+
+
+def compute_cusum_regime_features(cusum_strength_df: pd.DataFrame, h: float):
+    """Normalize cusum strength and expose a high-regime hinge."""
+    cusum_strength_norm = (cusum_strength_df / (h + EPS)).clip(lower=0.0)
+    cusum_high = (cusum_strength_norm - 1.0).clip(lower=0.0)
+    return cusum_strength_norm.astype(np.float32), cusum_high.astype(np.float32)
+
+
+def compute_liquidity_features(volume_df: pd.DataFrame, avg_window: int = 720):
+    """Compute liquidity ratios from volume relative to lagged rolling baseline."""
+    vol_avg = volume_df.rolling(avg_window).mean().shift(1)
+    liq_ratio = volume_df / (vol_avg + EPS)
+    liq_low = (1.0 - liq_ratio).clip(lower=0.0)
+    return liq_ratio.astype(np.float32), liq_low.astype(np.float32)
+
+
+def add_interactions(p_success_df: pd.DataFrame, vol_high: pd.DataFrame, cusum_high: pd.DataFrame, liq_low: pd.DataFrame):
+    """Interaction terms between success probability signal and regime shocks."""
+    return {
+        "p_vol_high": (p_success_df * vol_high).astype(np.float32),
+        "p_cusum_high": (p_success_df * cusum_high).astype(np.float32),
+        "p_liq_low": (p_success_df * liq_low).astype(np.float32),
+    }
+
+
+def _robust_obs_var_per_col(df: pd.DataFrame) -> np.ndarray:
+    """Robust baseline observation variance estimate per column from first differences."""
+    d = df.diff().to_numpy(dtype=np.float64)
+    med = np.nanmedian(d, axis=0)
+    mad = np.nanmedian(np.abs(d - med), axis=0)
+    sigma = (1.4826 * mad) / np.sqrt(2.0)
+    var = np.square(np.clip(sigma, 1e-6, None))
+    var[~np.isfinite(var)] = 1.0
+    return var.astype(np.float64)
+
+
+def _kalman_local_level_df(y_df: pd.DataFrame, lambda_qr: float, r_base: np.ndarray | None = None):
+    """Local-level Kalman filter: y_t = x_t + eps_t, x_t = x_{t-1} + eta_t."""
+    y = y_df.to_numpy(dtype=np.float64)
+    t_len, n_cols = y.shape
+    r = _robust_obs_var_per_col(y_df) if r_base is None else np.asarray(r_base, dtype=np.float64)
+    r = np.clip(r, 1e-8, None)
+    q = np.clip(lambda_qr, 1e-8, None) * r
+
+    x = np.full_like(y, np.nan, dtype=np.float64)
+    innov_var = np.full_like(y, np.nan, dtype=np.float64)
+    p_state = np.full_like(y, np.nan, dtype=np.float64)
+
+    # initialize from first finite observation or zero fallback
+    first_obs = np.where(np.isfinite(y[0]), y[0], 0.0)
+    x_prev = first_obs.copy()
+    p_prev = r.copy()
+
+    for t in range(t_len):
+        y_t = y[t]
+        x_pred = x_prev
+        p_pred = p_prev + q
+
+        s_t = p_pred + r
+        k_t = p_pred / np.clip(s_t, 1e-12, None)
+        innov_t = y_t - x_pred
+
+        valid = np.isfinite(y_t)
+        x_new = np.where(valid, x_pred + k_t * innov_t, x_pred)
+        p_new = np.where(valid, (1.0 - k_t) * p_pred, p_pred)
+
+        x[t] = x_new
+        innov_var[t] = s_t
+        p_state[t] = p_new
+
+        x_prev = x_new
+        p_prev = p_new
+
+    return (
+        pd.DataFrame(x, index=y_df.index, columns=y_df.columns).astype(np.float32),
+        pd.DataFrame(innov_var, index=y_df.index, columns=y_df.columns).astype(np.float32),
+        pd.DataFrame(p_state, index=y_df.index, columns=y_df.columns).astype(np.float32),
+        pd.Series(r.astype(np.float32), index=y_df.columns),
+    )
+
+
+def _decile_monotonicity_score(signal_df: pd.DataFrame, ret_df: pd.DataFrame) -> float:
+    """Cross-sectional decile monotonicity score using mean return per decile."""
+    s = signal_df.to_numpy(dtype=np.float64)
+    r = ret_df.to_numpy(dtype=np.float64)
+    sums = np.zeros(10, dtype=np.float64)
+    counts = np.zeros(10, dtype=np.float64)
+
+    for t in range(s.shape[0]):
+        s_t = s[t]
+        r_t = r[t]
+        valid = np.isfinite(s_t) & np.isfinite(r_t)
+        if valid.sum() < 20:
+            continue
+        s_v = s_t[valid]
+        r_v = r_t[valid]
+        q = np.nanpercentile(s_v, [10,20,30,40,50,60,70,80,90])
+        dec = np.searchsorted(q, s_v, side='right')
+        for d in range(10):
+            m = dec == d
+            if m.any():
+                sums[d] += r_v[m].sum()
+                counts[d] += m.sum()
+
+    means = sums / np.clip(counts, 1.0, None)
+    if np.all(~np.isfinite(means)):
+        return 0.0
+    x = np.arange(10, dtype=np.float64)
+    if np.nanstd(means) < 1e-12:
+        return 0.0
+    corr = np.corrcoef(x, np.nan_to_num(means, nan=np.nanmean(means)))[0, 1]
+    return float(np.nan_to_num(corr, nan=0.0))
+
+
+def _turnover_penalty(signal_df: pd.DataFrame) -> float:
+    arr = signal_df.to_numpy(dtype=np.float64)
+    sd = np.nanstd(arr, axis=0)
+    z = arr / np.clip(sd, 1e-6, None)
+    pos = np.tanh(z)
+    dpos = np.abs(np.diff(pos, axis=0))
+    return float(np.nanmean(dpos)) if dpos.size else 0.0
+
+
+def tune_global_kalman_lambda(score_df: pd.DataFrame, net_ret_df: pd.DataFrame, grid_size: int = 15) -> float:
+    """Tune global lambda=Q/R via decile monotonicity with mild turnover penalty on subsample."""
+    n_t, n_c = score_df.shape
+    row_step = max(1, n_t // 1500)
+    col_step = max(1, n_c // 64)
+    score_sub = score_df.iloc[::row_step, ::col_step]
+    ret_sub = net_ret_df.reindex(score_sub.index).iloc[:, ::col_step]
+
+    r_base = _robust_obs_var_per_col(score_sub)
+    lam_grid = np.logspace(-3, 1, int(np.clip(grid_size, 10, 20)))
+
+    best_lam = float(lam_grid[len(lam_grid)//2])
+    best_obj = -1e18
+    for lam in lam_grid:
+        state_df, _, _, _ = _kalman_local_level_df(score_sub, lambda_qr=float(lam), r_base=r_base)
+        mono = _decile_monotonicity_score(state_df, ret_sub)
+        turn = _turnover_penalty(state_df)
+        obj = mono - 0.05 * turn
+        if obj > best_obj:
+            best_obj = obj
+            best_lam = float(lam)
+
+    return float(best_lam)
+
 def compute_regime_features(c, h, l, v, atr_base, mkt_gates):
     """
     Compute regime conditioning features (cusum, vol, etc.).
@@ -442,11 +602,11 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates):
     # Count bars since last trigger (decay proxy)
     feats["cusum_decay"] = ff.numba_ewma(is_trigger, 2.0/25.0, False).shift(1).astype(np.float32)
 
-    # 4. Volatility Percentile (Rolling Sigma Rank)
-    # Rank of current rv_24h in last 30 days window
-    rv_min = ff.numba_rolling_min(rv_24, 24*30)
-    rv_max = ff.numba_rolling_max(rv_24, 24*30)
-    feats["vol_percentile"] = ((rv_24 - rv_min) / (rv_max - rv_min + 1e-12)).clip(0, 1).shift(1).astype(np.float32)
+    # 4. Volatility percentile and hinges
+    vol_pct, vol_high, vol_low = compute_vol_regime_features(c, vol_window=24, pct_window=252)
+    feats["vol_percentile"] = vol_pct
+    feats["vol_high"] = vol_high
+    feats["vol_low"] = vol_low
 
     # 5. Vol of Vol (Rolling Std of Sigma)
     # Coefficient of variation of volatility
@@ -458,9 +618,22 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates):
     atr_max = ff.numba_rolling_max(atr_base, 24*30)
     feats["atr_percentile"] = ((atr_base - atr_min) / (atr_max - atr_min + 1e-12)).clip(0, 1).shift(1).astype(np.float32)
 
-    # 7. Liquidity Ratio (Volume / Rolling Avg)
-    vol_ma = ff.numba_rolling_mean(v, 24*14)
-    feats["liquidity_ratio"] = (v / (vol_ma + 1e-12)).shift(1).astype(np.float32)
+    # 7. Liquidity ratio and low-liquidity hinge
+    liq_ratio, liq_low = compute_liquidity_features(v, avg_window=24 * 30)
+    feats["liquidity_ratio"] = liq_ratio
+    feats["liq_low"] = liq_low
+
+    # 8. CUSUM normalization and high-regime hinge
+    cusum_strength_norm, cusum_high = compute_cusum_regime_features(feats["cusum_strength"].abs(), h=6.0)
+    feats["cusum_strength_norm"] = cusum_strength_norm
+    feats["cusum_high"] = cusum_high
+
+    assert float(feats["vol_percentile"].max().max()) <= 1.0 + 1e-6
+    assert float(feats["vol_percentile"].min().min()) >= -1e-6
+    assert float(feats["vol_high"].min().min()) >= -1e-6
+    assert float(feats["vol_low"].min().min()) >= -1e-6
+    assert float(feats["cusum_high"].min().min()) >= -1e-6
+    assert float(feats["liq_low"].min().min()) >= -1e-6
 
     return feats
 
@@ -1402,6 +1575,32 @@ def _compute_features_impl(panel, mkt_gates, cfg):
         s_max = np.maximum(s_max, feats[f"ret{k}h"].abs())
     feats["S"] = (dir_s * s_max).astype(np.float32)
 
+    # --- Global Kalman Q/R tuner + Kalman features ---
+    # Tune lambda(Q/R) on score monotonicity across deciles with mild turnover penalty.
+    kalman_lambda = tune_global_kalman_lambda(feats["S"], feats["ret1h"], grid_size=15)
+
+    score_rm24 = ff.numba_rolling_mean(feats["S"], 24).shift(1).astype(np.float32)
+    vol_ratio_input = feats.get("liquidity_ratio", (v / (ff.numba_rolling_mean(v, 24 * 30).shift(1) + EPS)).astype(np.float32))
+
+    kf_score_mean, kf_innov_var, kf_state_unc, r_score = _kalman_local_level_df(feats["S"], kalman_lambda)
+    kf_rm24_mean, _, _, _ = _kalman_local_level_df(score_rm24, kalman_lambda)
+    kf_atr_mean, _, _, _ = _kalman_local_level_df(feats["atr_pct"], kalman_lambda)
+    kf_vol_ratio_mean, _, _, _ = _kalman_local_level_df(vol_ratio_input, kalman_lambda)
+    kf_ret1h_mean, _, _, _ = _kalman_local_level_df(feats["ret1h"], kalman_lambda)
+
+    feats["kf_score_mean"] = kf_score_mean.astype(np.float32)
+    feats["kf_score_rm24_mean"] = kf_rm24_mean.astype(np.float32)
+    feats["kf_atr_mean"] = kf_atr_mean.astype(np.float32)
+    feats["kf_vol_ratio_mean"] = kf_vol_ratio_mean.astype(np.float32)
+    feats["kf_ret1h_mean"] = kf_ret1h_mean.astype(np.float32)
+
+    # Meta diagnostics: innovation variance, SNR estimate, and state uncertainty.
+    feats["kf_innov_var"] = kf_innov_var.astype(np.float32)
+    feats["kf_state_uncertainty"] = kf_state_unc.astype(np.float32)
+    r_score_df = pd.DataFrame(np.repeat(r_score.values.reshape(1, -1), len(c.index), axis=0), index=c.index, columns=c.columns).astype(np.float32)
+    q_score_df = (kalman_lambda * r_score_df).astype(np.float32)
+    feats["kf_snr_est"] = (q_score_df / (r_score_df + EPS)).astype(np.float32)
+
     feats["coherence_24"] = (dir_s * (feats["ret6h"] + feats["ret12h"] + feats["ret24h"]) / (feats["rv_24h"] + 1e-12)).astype(np.float32)
 
     turb = rv_ratio # Already broadcasted
@@ -1669,6 +1868,16 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["meta_abs_net_x_vov_ratio"] = (abs_net_score * (feats["vov_ratio"] - 1.0).clip(lower=0)).astype(np.float32)
     feats["meta_alignment"] = (np.sign(feats["accept"] - reject_like) * np.sign(feats["ret5h"])).astype(np.float32)
     feats["meta_signal_x_accel"] = ((feats["accept"] - reject_like) * feats["accel_5h"]).astype(np.float32)
+
+    # Regime interactions using base-model agreement-weighted success signal.
+    base_agreement = (1.0 - (feats["accept"] - reject_like).abs()).clip(0.0, 1.0)
+    p_success_df = (((feats["accept"] + reject_like) * 0.5) * base_agreement).astype(np.float32)
+    vol_high = feats.get("vol_high", pd.DataFrame(0.0, index=c.index, columns=c.columns, dtype=np.float32))
+    cusum_high = feats.get("cusum_high", pd.DataFrame(0.0, index=c.index, columns=c.columns, dtype=np.float32))
+    liq_low = feats.get("liq_low", pd.DataFrame(0.0, index=c.index, columns=c.columns, dtype=np.float32))
+    interaction_dict = add_interactions(p_success_df, vol_high, cusum_high, liq_low)
+    for ik, iv in interaction_dict.items():
+        feats[ik] = iv.astype(np.float32)
 
     # Robust Score Calculation with clipping to prevent Inf/Overflow
     # We clip components to avoid exploding values when denominators are near zero

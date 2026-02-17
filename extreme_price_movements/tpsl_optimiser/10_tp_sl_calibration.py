@@ -7,6 +7,7 @@ from typing import Dict, Iterable, Tuple
 import numpy as np
 import pandas as pd
 
+from extreme_price_movements.pnl import CostModel
 from extreme_price_movements.tpsl_optimiser.metrics_utils import compute_comprehensive_metrics
 
 
@@ -52,7 +53,7 @@ def _equity_metrics(rets: np.ndarray) -> tuple[float, float, float]:
     return pnl, sortino, max_dd
 
 
-def calibrate_tp_sl(trades: pd.DataFrame, atr_scale: pd.Series, cfg: TpSlCalibrationConfig | None = None, test_split_idx: int = 0) -> Tuple[Dict[str, float], pd.DataFrame]:
+def calibrate_tp_sl(trades: pd.DataFrame, atr_scale: pd.Series, cfg: TpSlCalibrationConfig | None = None, test_split_idx: int = 0, fee_pct: float = 0.005, cost: CostModel | None = None, init_params: dict | None = None) -> Tuple[Dict[str, float], pd.DataFrame]:
     cfg = cfg or TpSlCalibrationConfig()
     df = trades.copy()
     df = df.assign(atr_scale=atr_scale.reindex(df.index).fillna(1.0).to_numpy())
@@ -77,7 +78,15 @@ def calibrate_tp_sl(trades: pd.DataFrame, atr_scale: pd.Series, cfg: TpSlCalibra
     test_mask = ~train_mask
     has_test = np.any(test_mask)
 
-    for tp_mult, sl_ratio in product(cfg.tp_grid, cfg.sl_ratio_grid):
+
+    combos = list(product(cfg.tp_grid, cfg.sl_ratio_grid))
+    if init_params:
+        tp0 = float(init_params.get("tp_mult", np.nan))
+        sl0 = float(init_params.get("sl_mult", np.nan))
+        if np.isfinite(tp0) and np.isfinite(sl0) and sl0 > 1e-9:
+            combos.append((tp0, tp0 / sl0))
+
+    for tp_mult, sl_ratio in combos:
         sl_mult = tp_mult / sl_ratio
 
         tp_pct = tp_mult * df["atr_scale"].to_numpy()
@@ -118,7 +127,7 @@ def calibrate_tp_sl(trades: pd.DataFrame, atr_scale: pd.Series, cfg: TpSlCalibra
             test_trades["exit_reason"] = "tpsl_calib" # placeholder
 
             # Compute full suite of metrics on test set
-            m = compute_comprehensive_metrics(test_trades)
+            m = compute_comprehensive_metrics(test_trades, fee_pct=fee_pct, cost=cost)
             # Prefix keys to avoid collision if needed, but here we just dump them
             trial_metrics.update(m)
 

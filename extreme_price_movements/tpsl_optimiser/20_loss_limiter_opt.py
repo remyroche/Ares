@@ -8,6 +8,7 @@ from typing import Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from extreme_price_movements.pnl import CostModel
 from extreme_price_movements.tpsl_optimiser.metrics_utils import compute_comprehensive_metrics
 
 
@@ -48,7 +49,7 @@ def risk_cut_trigger(D_t: float, mae_n: float, p: TriggerParams) -> tuple[bool, 
     return score >= p.theta0, score
 
 
-def optimise_loss_limiter(trades: pd.DataFrame, sl_pct: np.ndarray, test_split_idx: int = 0) -> Tuple[dict, pd.DataFrame]:
+def optimise_loss_limiter(trades: pd.DataFrame, sl_pct: np.ndarray, test_split_idx: int = 0, fee_pct: float = 0.005, cost: CostModel | None = None, init_params: dict | None = None) -> Tuple[dict, pd.DataFrame]:
     ret = np.where(trades["is_long"].astype(int).to_numpy() == 1,
                    (trades["exit_price"] - trades["entry_price"]) / trades["entry_price"],
                    (trades["entry_price"] - trades["exit_price"]) / trades["entry_price"])
@@ -77,6 +78,13 @@ def optimise_loss_limiter(trades: pd.DataFrame, sl_pct: np.ndarray, test_split_i
     grid = list(product([15, 30, 60], [TriggerMode.AND, TriggerMode.OR, TriggerMode.TIMES], [0.8, 1.0, 1.2, 1.4, 1.6], [0.2, 0.3, 0.4]))
     # Add "disabled" config: High theta0 so it never triggers
     grid.append((30, TriggerMode.TIMES, 999.0, 0.3))
+    if init_params:
+        _w = int(init_params.get("w_minutes", 30))
+        _mode = str(init_params.get("risk_cut_mode", "TIMES"))
+        _theta0 = float(init_params.get("theta0", 1.2))
+        _theta_min = float(init_params.get("theta_mae_min", 0.3))
+        if _mode in {m.value for m in TriggerMode}:
+            grid.append((_w, TriggerMode(_mode), _theta0, _theta_min))
 
     for w, mode, theta0, theta_min in grid:
         lam_rv, lam_rng = 0.5, 0.25
@@ -146,7 +154,7 @@ def optimise_loss_limiter(trades: pd.DataFrame, sl_pct: np.ndarray, test_split_i
             if np.any(trigs_test):
                  test_trades.loc[test_trades.index[trigs_test], "exit_reason"] = "risk_cut_triggered"
 
-            m = compute_comprehensive_metrics(test_trades)
+            m = compute_comprehensive_metrics(test_trades, fee_pct=fee_pct, cost=cost)
             trial_metrics.update(m)
 
         trials_data.append(trial_metrics)
@@ -198,7 +206,7 @@ def optimise_loss_limiter(trades: pd.DataFrame, sl_pct: np.ndarray, test_split_i
             if np.any(trigs_test):
                  test_trades.loc[test_trades.index[trigs_test], "exit_reason"] = "risk_cut_triggered"
 
-            m = compute_comprehensive_metrics(test_trades)
+            m = compute_comprehensive_metrics(test_trades, fee_pct=fee_pct, cost=cost)
             trial_metrics.update(m)
 
         trials_data.append(trial_metrics)

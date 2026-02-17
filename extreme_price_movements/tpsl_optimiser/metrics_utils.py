@@ -1,13 +1,15 @@
 import numpy as np
 import pandas as pd
 
+from extreme_price_movements.pnl import CostModel, trade_return_net_vec
+
 
 def _bucket3(x: pd.Series) -> pd.Series:
     q = x.rank(pct=True, method='first')
     return pd.cut(q, bins=[0, 1/3, 2/3, 1], labels=["low", "mid", "high"], include_lowest=True)
 
 
-def compute_comprehensive_metrics(trades: pd.DataFrame, fee_pct: float = 0.005, initial_capital: float = 100000.0) -> dict:
+def compute_comprehensive_metrics(trades: pd.DataFrame, fee_pct: float = 0.005, initial_capital: float = 100000.0, cost: CostModel | None = None) -> dict:
     """Computes comprehensive performance metrics for a set of trades.
 
     Args:
@@ -38,8 +40,9 @@ def compute_comprehensive_metrics(trades: pd.DataFrame, fee_pct: float = 0.005, 
     else:
         pos_size = trades["pos_size"].to_numpy()
 
-    # Calculate net returns
-    net_ret = (raw_ret * pos_size) - fee_pct
+    # Calculate net returns (single canonical cost model)
+    cost = cost or CostModel(fee_side=float(fee_pct) / 2.0)
+    net_ret = trade_return_net_vec(raw_ret_underlying=raw_ret, side=np.ones(len(raw_ret)), pos_w=pos_size, cost=cost)
     trades = trades.assign(net_return=net_ret)
 
     # --- A) Core Performance (Net) ---

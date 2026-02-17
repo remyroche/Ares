@@ -3,6 +3,8 @@ import pickle
 import pandas as pd
 import numpy as np
 
+from extreme_price_movements.pnl import CostModel, trade_return_net
+from extreme_price_movements.pnl_asserts import assert_pos_w, assert_units
 from extreme_price_movements.utils import tprint, Timer
 from extreme_price_movements.data_store import load_features, save_features, save_artifact_df, load_artifact_df, to_panel
 from extreme_price_movements.training import generate_label_datasets, generate_exhaustion_history, optimize_risk_params, train_models_from_artifacts
@@ -12,6 +14,7 @@ from extreme_price_movements.engine import simulate_trade_hourly, generate_hourl
 from extreme_price_movements.metrics import MetricsLogger
 from extreme_price_movements.risk import TrailingStop
 from extreme_price_movements.reports.report_generator import generate_training_report, generate_risk_report, generate_backtest_report
+from extreme_price_movements.telemetry.tprint_hooks import emit_bucket_summary, emit_run_header
 from extreme_price_movements.ridge_position_sizer import (
     RidgePositionSizer,
     run_ridge_position_sizer_step,
@@ -599,7 +602,15 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
     bundle = model_state.get("bundle")
 
     fee_bps = cfg.get("fee_bps", 25.0)
-    fee_rate = fee_bps / 10000.0
+    cost = CostModel(fee_side=float(fee_bps) / 10000.0, slippage_side=float(cfg.get("slippage_bps", 0.0)) / 10000.0)
+    assert_units(cost)
+    emit_run_header(
+        tprint=tprint,
+        run_id=run_id,
+        policy_version=str(run_id),
+        cost_model={"fee_side": float(cost.fee_side), "slippage_side": float(cost.slippage_side), "round_trip": float(cost.round_trip)},
+        extra={"stage": "backtest_signal_optimization"},
+    )
 
     def rank01(x: np.ndarray, higher_is_better: bool = True) -> np.ndarray:
         x = np.asarray(x, dtype=np.float64)
@@ -764,18 +775,22 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                 ret, exit_ts, reason, trade_extras = simulate_trade_hourly(
                     o_s[sym], h_s[sym], l_s[sym], c_s[sym], atr_s[sym],
                     entry_ts, entry_px, side, temp_cfg, max_hold_hours=hold_hours,
-                    exchange=exchange, symbol=sym if "/" in sym else sym.replace("USDT", "/USDT")  # CCXT format
+                    exchange=exchange, symbol=sym if "/" in sym else sym.replace("USDT", "/USDT"), cost=cost  # CCXT format
                 )
-                net_ret = ret - (2.0 * fee_rate)
-                pnl = net_ret * weight
+                assert_pos_w(weight)
+                side_sign = 1 if side == "long" else -1
+                net_ret = trade_return_net(raw_ret_underlying=ret, side=side_sign, pos_w=weight, cost=cost)
+                pnl = net_ret
                 
                 # Store risk parameters + MAE/MFE for aggregate statistics
                 bucket_label = f"{side.upper()}_{dom.upper()}"
                 trade_record = {
                     "entry_ts": entry_ts, "symbol": sym, "side": side, "dom": dom,
+                    "asset": sym, "t_entry": int(entry_ts.value), "t_exit": int(exit_ts.value),
                     "bucket": bucket_label,
-                    "score": score, "weight": weight, "ret": net_ret, "pnl": pnl,
-                    "gross_ret": ret, "exit_ts": exit_ts, "reason": reason,
+                    "score": score, "weight": weight, "pos_w": weight, "ret": net_ret, "pnl": pnl,
+                    "net_ret_equity": net_ret, "cost_rt": cost.round_trip, "raw_ret_underlying": ret,
+                    "gross_ret": ret, "exit_ts": exit_ts, "reason": reason, "exit_reason": reason,
                     "sl_mult": temp_cfg.get("sl_mult", 0.5),
                     "tp_mult": temp_cfg.get("tp_mult", 1.0),
                     "trail_mult": temp_cfg.get("trail_mult", 0.25),
@@ -802,6 +817,35 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
         
         # Log aggregate TP/SL statistics (using actual barrier-scaled distances from engine)
         if trades:
+            reason_counts = {}
+            for tr in trades:
+                rs = str(tr.get("reason", "unknown"))
+                reason_counts[rs] = reason_counts.get(rs, 0) + 1
+            n_tr = max(1, len(trades))
+            tp_sl_binds = reason_counts.get("stop_loss", 0) + reason_counts.get("trailing_stop", 0)
+            hold_by_reason = {}
+            mean_ret_by_reason = {}
+            for rs in sorted(reason_counts.keys()):
+                rs_rows = [tr for tr in trades if str(tr.get("reason")) == rs]
+                holds = [float((pd.Timestamp(tr["exit_ts"]) - pd.Timestamp(tr["entry_ts"])).total_seconds()/3600.0) for tr in rs_rows]
+                rets = [float(tr.get("ret", 0.0)) for tr in rs_rows]
+                hold_by_reason[rs] = float(np.median(holds)) if holds else 0.0
+                mean_ret_by_reason[rs] = float(np.mean(rets)) if rets else 0.0
+
+            emit_bucket_summary(
+                tprint=tprint,
+                run_id=run_id,
+                bucket_id="ALL_RUNTIME",
+                kind="runtime_exit",
+                stats={
+                    "n_trades": int(len(trades)),
+                    "tp_sl_bind_rate": float(tp_sl_binds / n_tr),
+                    "exit_reason_counts": reason_counts,
+                    "median_hold_h_by_reason": hold_by_reason,
+                    "mean_net_ret_equity_by_reason": mean_ret_by_reason,
+                    "cost_rt": float(cost.round_trip),
+                },
+            )
             avg_sl_pct = np.mean([t["sl_pct"] * 100 for t in trades])
             avg_tp_pct = np.mean([t["tp_pct"] * 100 for t in trades])
             avg_trail_pct = np.mean([t["trail_mult"] * t["sl_pct"] * 100 for t in trades])  # trail ≈ trail_mult * barrier
@@ -1225,7 +1269,7 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
         tprint(f"  Profit Factor:      {recon_pf:.3f}")
 
         # Fee impact
-        total_fees = float((2.0 * fee_rate * df_t["weight"]).sum())
+        total_fees = float((cost.round_trip * df_t["weight"].abs()).sum())
         gross_pnl_before_fees = float(df_t["gross_ret"].mul(df_t["weight"]).sum())
         tprint(f"\n  Gross PnL (pre-fee): {gross_pnl_before_fees:+.6f}")
         tprint(f"  Total Fees:          {total_fees:+.6f}")
@@ -1310,7 +1354,7 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                 cfg=cfg,
                 trades=test_trades,
                 signal_params=best_signal_params,
-                fee_rate=fee_rate,
+                fee_rate=(cost.fee_side + cost.slippage_side),
             )
             tprint(f"Backtest report saved to {report_path}")
         except Exception as e:

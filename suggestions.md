@@ -66,3 +66,18 @@ A user might consider setting a threshold such as "Current Volume > 80% of Avera
     *   **Overfitting:** Risk of tuning the quantile specifically to past data features that may not repeat.
 
 **Recommendation:** **Yes, this is a strong candidate for reducing noise.** It shifts the focus from "guessing a magic number" to "targeting a statistical probability," which is generally more robust. We suggest testing `Rolling Quantile (e.g., 0.90)` as a replacement or enhancement to the fixed `k_tp` / `k_sl` multipliers in `compare_tbm_parameters.py`.
+
+### Mitigating Outlier Skew
+To prevent large outliers (e.g., flash crashes, scam wicks) from distorting the calculated quantile levels, consider the following strategies:
+
+1.  **Pre-computation Clipping (Winsorization):**
+    *   **What:** Clip the raw return series (e.g., at the 1st/99th percentiles or a fixed standard deviation threshold like +/- 5 sigma) *before* calculating the rolling metric.
+    *   **Why:** This neutralizes the impact of single extreme candles ("black swans") that would otherwise inflate the quantile (and thus the TP/SL distance) for the entire duration of the rolling window (e.g., 30 days).
+
+2.  **Robust Aggregation (Median-Based Metrics):**
+    *   **What:** Instead of relying on Mean or Standard Deviation (which are sensitive to outliers), calculate levels using the **Median** and **Interquartile Range (IQR)** or **Median Absolute Deviation (MAD)**.
+    *   **Why:** The median is inherently robust. A single outlier does not shift the median significantly, whereas it can drag the mean drastically.
+
+3.  **Output Smoothing:**
+    *   **What:** Apply a short-term moving average (e.g., 3-day Simple Moving Average) to the *calculated quantile level itself*.
+    *   **Why:** This prevents the TP/SL level from "jumping" violently when a large outlier enters or exits the rolling window, ensuring smoother parameter transitions.

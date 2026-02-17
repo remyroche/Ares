@@ -118,7 +118,7 @@ def combine_weights_safely(
     template = None
 
     for name, w in components.items():
-        arr = np.asarray(w, dtype=np.float32, copy=False)
+        arr = np.asarray(w, dtype=np.float32)
         p5 = float(np.nanpercentile(arr, 5))
         p95 = float(np.nanpercentile(arr, 95))
         span = p95 - p5
@@ -279,7 +279,7 @@ def check_component_redundancy(
     threshold: float = 0.85,
 ) -> Dict[str, Any]:
     names = list(components.keys())
-    arrays = [np.asarray(components[n], dtype=float, copy=False) for n in names]
+    arrays = [np.asarray(components[n], dtype=float) for n in names]
     redundant: list[tuple[str, str, float]] = []
     max_corr = 0.0
 
@@ -295,7 +295,7 @@ def check_component_redundancy(
 
 
 def log_weight_statistics(weights: np.ndarray, era_indices: np.ndarray, name: str) -> Dict[str, float]:
-    w = np.asarray(weights, dtype=float, copy=False)
+    w = np.asarray(weights, dtype=float)
     eras = np.asarray(era_indices)
     if eras.size:
         _, inv = np.unique(eras, return_inverse=True)
@@ -361,9 +361,9 @@ def _run_cv_ic(
 ) -> np.ndarray:
     splitter = IntervalPurgedKFold(n_splits=n_splits, embargo_bars=embargo_bars)
     fold_ics = []
-    Xs = np.asarray(X, dtype=np.float32, copy=False)
-    yv = np.asarray(y, dtype=float, copy=False)
-    wv = np.asarray(sample_weight, dtype=float, copy=False)
+    Xs = np.asarray(X, dtype=np.float32)
+    yv = np.asarray(y, dtype=float)
+    wv = np.asarray(sample_weight, dtype=float)
 
     base_model = _make_model(model_family, random_state=seed, cfg_runtime=cfg_runtime)
     for fold_idx, (tr, va) in enumerate(splitter.split(Xs, label_intervals=label_intervals), start=1):
@@ -585,9 +585,9 @@ def run_ablation(
     results.append(("baseline", float(base_score)))
     _tprint_metrics("Ablation baseline", score=float(base_score), mem_mb=_process_memory_mb())
 
-    baseline_arr = np.asarray(baseline_weights, dtype=float, copy=False)
+    baseline_arr = np.asarray(baseline_weights, dtype=float)
     scratch = baseline_arr.copy()
-    comp_arrays = {k: np.asarray(v, dtype=float, copy=False) for k, v in components.items()}
+    comp_arrays = {k: np.asarray(v, dtype=float) for k, v in components.items()}
 
     for name, w_comp in comp_arrays.items():
         np.multiply(baseline_arr, w_comp, out=scratch)

@@ -69,7 +69,7 @@ def _select_test_feature_matrix(
     if isinstance(X, pd.DataFrame):
         return np.asarray(select_test_feature_frame(X), dtype=np.float32)
 
-    X_arr = np.asarray(X, dtype=np.float32, copy=False)
+    X_arr = np.asarray(X, dtype=np.float32)
     if feature_names is None:
         return X_arr
 

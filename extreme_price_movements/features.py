@@ -423,44 +423,44 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates):
     # Detects if price is persistently drifting away from mean
     # Normalized by volatility
     ret1h = c.diff(1).fillna(0)
-    std_ret = ff.numba_rolling_std(ret1h, 24)
-    std_ret = (std_ret + 1e-12)
+    rv_24 = ff.numba_rolling_std(ret1h, 24)
+    std_ret = (rv_24 + 1e-12)
 
     # Vectorized approximation: Rolling Sum of (Ret - Mean) / Vol
     # This captures local trend strength
-    roll_z = ff.numba_rolling_mean(ret1h / std_ret, 24) * np.sqrt(24)
+    # Shift by 1 to ensure decision-time causality (no current-bar leakage).
+    roll_z = (ff.numba_rolling_mean(ret1h / std_ret, 24) * np.sqrt(24)).shift(1)
     feats["cusum_strength"] = roll_z.astype(np.float32)
 
     # 2. Standardized Move Magnitude |z| (over 24h)
-    rv_24 = ff.numba_rolling_std(ret1h, 24)
     ret_24 = ff.numba_rolling_sum(ret1h, 24)
-    feats["move_magnitude_z"] = (ret_24 / (rv_24 * np.sqrt(24) + 1e-12)).astype(np.float32)
+    feats["move_magnitude_z"] = (ret_24 / (rv_24 * np.sqrt(24) + 1e-12)).shift(1).astype(np.float32)
 
     # 3. Time Since CUSUM Trigger (Trend Age Proxy)
-    # Trigger when |cusum| > 5
+    # Trigger when |cusum| > 5 based on lagged signal only.
     is_trigger = (feats["cusum_strength"].abs() > 5.0).astype(np.float32)
     # Count bars since last trigger (decay proxy)
-    feats["cusum_decay"] = ff.numba_ewma(is_trigger, 2.0/25.0, False).astype(np.float32)
+    feats["cusum_decay"] = ff.numba_ewma(is_trigger, 2.0/25.0, False).shift(1).astype(np.float32)
 
     # 4. Volatility Percentile (Rolling Sigma Rank)
     # Rank of current rv_24h in last 30 days window
     rv_min = ff.numba_rolling_min(rv_24, 24*30)
     rv_max = ff.numba_rolling_max(rv_24, 24*30)
-    feats["vol_percentile"] = ((rv_24 - rv_min) / (rv_max - rv_min + 1e-12)).clip(0, 1).astype(np.float32)
+    feats["vol_percentile"] = ((rv_24 - rv_min) / (rv_max - rv_min + 1e-12)).clip(0, 1).shift(1).astype(np.float32)
 
     # 5. Vol of Vol (Rolling Std of Sigma)
     # Coefficient of variation of volatility
     vv = ff.numba_rolling_std(rv_24, 24)
-    feats["vol_of_vol"] = (vv / (rv_24 + 1e-12)).astype(np.float32)
+    feats["vol_of_vol"] = (vv / (rv_24 + 1e-12)).shift(1).astype(np.float32)
 
     # 6. ATR Percentile (similar to vol percentile but using ATR)
     atr_min = ff.numba_rolling_min(atr_base, 24*30)
     atr_max = ff.numba_rolling_max(atr_base, 24*30)
-    feats["atr_percentile"] = ((atr_base - atr_min) / (atr_max - atr_min + 1e-12)).clip(0, 1).astype(np.float32)
+    feats["atr_percentile"] = ((atr_base - atr_min) / (atr_max - atr_min + 1e-12)).clip(0, 1).shift(1).astype(np.float32)
 
     # 7. Liquidity Ratio (Volume / Rolling Avg)
     vol_ma = ff.numba_rolling_mean(v, 24*14)
-    feats["liquidity_ratio"] = (v / (vol_ma + 1e-12)).astype(np.float32)
+    feats["liquidity_ratio"] = (v / (vol_ma + 1e-12)).shift(1).astype(np.float32)
 
     return feats
 

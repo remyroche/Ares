@@ -57,6 +57,46 @@ from extreme_price_movements.calibration import (
 )
 
 
+def _safe_binary_calibrate(preds, y_true, min_unique=20, min_samples=100):
+    """Calibrate binary probabilities with guardrails and fallback.
+
+    Returns (calibrated_probs, calibrator_or_none, method_name).
+    """
+    preds = np.asarray(preds, dtype=np.float64)
+    y_true = np.asarray(y_true)
+    valid = np.isfinite(preds) & np.isfinite(y_true)
+    if valid.sum() < max(20, min_samples):
+        return preds, None, "identity"
+
+    x = preds[valid]
+    y = y_true[valid]
+    if len(np.unique(y)) < 2 or len(np.unique(np.round(x, 8))) < min_unique:
+        try:
+            platt = LogisticRegression(random_state=42, max_iter=1000)
+            platt.fit(x.reshape(-1, 1), y)
+            out = preds.copy()
+            out[valid] = platt.predict_proba(x.reshape(-1, 1))[:, 1]
+            return out.astype(np.float32), platt, "platt"
+        except Exception:
+            return preds, None, "identity"
+
+    try:
+        iso = IsotonicRegression(out_of_bounds='clip', y_min=0.05, y_max=0.95)
+        iso.fit(x, y)
+        out = preds.copy()
+        out[valid] = iso.predict(x)
+        return out.astype(np.float32), iso, "isotonic"
+    except Exception:
+        try:
+            platt = LogisticRegression(random_state=42, max_iter=1000)
+            platt.fit(x.reshape(-1, 1), y)
+            out = preds.copy()
+            out[valid] = platt.predict_proba(x.reshape(-1, 1))[:, 1]
+            return out.astype(np.float32), platt, "platt"
+        except Exception:
+            return preds, None, "identity"
+
+
 def calculate_selection_score(y_true, y_prob, y_ret, sample_weight=None, **kwargs):
     """Backward-compatible wrapper exposing legacy AUC/BSS/IC keys for tests/logs."""
     from extreme_price_movements.metrics import calculate_selection_score as _calc
@@ -493,14 +533,12 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                         fold_logloss_imp.append(np.nan)
                     fold_accuracy.append(accuracy_score(y_val_fit, probs > 0.5))
 
-                # --- Enforce Calibration (Post-hoc on OOF) ---
-                # Fit Isotonic on OOF before computing selection metrics
+                # --- Enforce Calibration (Post-hoc on OOF) with guardrails ---
                 valid = np.isfinite(oof_model)
-                calibrator = IsotonicRegression(out_of_bounds='clip', y_min=0.05, y_max=0.95)
-                # Fit on valid OOF (unweighted for calibration to match raw prevalence)
-                calibrator.fit(oof_model[valid], y_hard[valid])
-                oof_cal = oof_model.copy()
-                oof_cal[valid] = calibrator.predict(oof_model[valid]).astype(np.float32)
+                oof_cal, calibrator, cal_method = _safe_binary_calibrate(
+                    oof_model, y_hard, min_unique=20, min_samples=100
+                )
+                tprint(f"  {name}: OOF calibration method={cal_method}")
 
                 # Use Calibrated OOF for Selection Metrics
                 oof_metrics = calculate_selection_score(
@@ -775,17 +813,14 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             # Use relaxed constraints (y_min=0.05, y_max=0.95) to prevent degenerate
             # score distributions where all predictions cluster tightly around prevalence.
             # This was causing "degenerate IQR" warnings in backtest.
-            tprint("Fitting IsotonicRegression on OOF predictions (unweighted)...")
-            self.calibrator_ = IsotonicRegression(out_of_bounds='clip', y_min=0.05, y_max=0.95)
-            # IMPORTANT: Fit calibrator WITHOUT sample weights.
-            # Weights upweight minority class, making calibrator target weighted
-            # prevalence (~0.5) instead of actual prevalence (~0.31).
-            self.calibrator_.fit(oof_probs, y_hard)
+            tprint("Running calibration router on OOF predictions (isotonic/platt/identity)...")
+            calibrated_oof, self.calibrator_, cal_method = _safe_binary_calibrate(
+                oof_probs, y_hard, min_unique=20, min_samples=100
+            )
             if isinstance(self.calibration_state_, dict):
                 self.calibration_state_["calibration_input"] = "bias_corrected"
-                
-            # Re-calibrate the stored OOF probs
-            calibrated_oof = self.calibrator_.predict(oof_probs).astype(np.float32)
+                self.calibration_state_["calibration_method"] = cal_method
+            tprint(f"Calibration router selected: {cal_method}")
             
             # --- Minimum Variance Enforcement ---
             # Prevent degenerate score distributions (all predictions near prevalence)
@@ -813,7 +848,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             from sklearn.linear_model import LogisticRegression
             raw_brier = brier_score_loss(y_hard, np.clip(oof_probs, 1e-7, 1-1e-7))
             cal_brier = brier_score_loss(y_hard, np.clip(calibrated_oof, 1e-7, 1-1e-7))
-            tprint(f"Isotonic calibration: Brier raw={raw_brier:.4f} -> calibrated={cal_brier:.4f}")
+            tprint(f"Calibration ({cal_method}): Brier raw={raw_brier:.4f} -> calibrated={cal_brier:.4f}")
             
             # Optional Platt scaling: only apply if it improves Brier score
             platt_calibrator = LogisticRegression(random_state=42, max_iter=1000)
@@ -912,10 +947,13 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         p_raw = self.predict_proba_raw(X)
         p_corr = self._apply_bias_state(p_raw, self.calibration_state_)
 
-        if hasattr(self, 'calibrator_'):
+        if hasattr(self, 'calibrator_') and self.calibrator_ is not None:
             if self.calibration_state_.get("calibration_input") != "bias_corrected":
                 raise RuntimeError("Calibrator expects bias-corrected inputs but calibration_state_ is inconsistent.")
-            p_cal = self.calibrator_.predict(p_corr)
+            if hasattr(self.calibrator_, 'predict_proba'):
+                p_cal = self.calibrator_.predict_proba(p_corr.reshape(-1, 1))[:, 1]
+            else:
+                p_cal = self.calibrator_.predict(p_corr)
         else:
             p_cal = p_corr
 

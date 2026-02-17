@@ -950,6 +950,10 @@ def print_training_gate_report(report_payload):
     tprint("=" * 100)
 
 
+OUT_SL = np.int8(0)
+OUT_TO = np.int8(1)
+OUT_TP = np.int8(2)
+
 class AlphaHorizonEnsemble:
     """Average probabilities across multiple horizon-specific alpha models."""
     def __init__(self, members):
@@ -2066,21 +2070,30 @@ def build_hourly_training_set_and_weights(
     # New Target Logic: Binary (TP vs Rest) with Outcome-based Weighting
     # Outcomes: 2=TP, 1=TIMEOUT, 0=SL
 
+    valid_outcomes = np.isin(lbl_vals, np.array([OUT_SL, OUT_TO, OUT_TP], dtype=lbl_vals.dtype))
+    assert bool(np.all(valid_outcomes)), f"Unexpected outcome labels found: {np.unique(lbl_vals[~valid_outcomes])}"
+
     # Target: 1 if TP, 0 otherwise
-    y_bin = (lbl_vals == 2).astype(np.float32)
+    y_bin = (lbl_vals == OUT_TP).astype(np.float32)
 
     # Weighting based on Quality and Outcome Importance
     # TP (2): w = quality (0.5 to 1.0) -> cleaner wins matter more? Or messy wins less?
     # SL (0): w = 1.0 - quality (0.0=Bad Loss -> w=1.0, 0.5=Near Miss -> w=0.5)
     # TO (1): w = 0.2 (Downweight timeouts)
 
-    w_outcome = np.ones_like(y_bin)
-    w_outcome = np.where(lbl_vals == 2, qual_vals, w_outcome)
-    w_outcome = np.where(lbl_vals == 0, 1.0 - qual_vals, w_outcome)
-    w_outcome = np.where(lbl_vals == 1, float(cfg.get("timeout_weight", 0.2)), w_outcome)
+    w_outcome = np.ones_like(y_bin, dtype=np.float32)
+    is_tp = (lbl_vals == OUT_TP)
+    is_sl = (lbl_vals == OUT_SL)
+    is_to = (lbl_vals == OUT_TO)
+    timeout_weight = float(cfg.get("timeout_weight", 0.2))
+    w_outcome[is_tp] = qual_vals[is_tp]
+    w_outcome[is_sl] = 1.0 - qual_vals[is_sl]
+    w_outcome[is_to] = timeout_weight
 
-    # Clip weights
-    w_outcome = np.clip(w_outcome, 0.1, 2.0)
+    # Clip weights (configurable; tighter defaults to reduce peaky calibration artifacts)
+    w_clip_min = float(cfg.get("outcome_weight_clip_min", 0.5))
+    w_clip_max = float(cfg.get("outcome_weight_clip_max", 2.0))
+    w_outcome = np.clip(w_outcome, w_clip_min, w_clip_max)
 
     # Base weight from move magnitude
     pa = np.abs(np.nan_to_num(_fast_lookup(feats["ret24h"], event_ts, event_sym), nan=0.0))
@@ -2111,8 +2124,8 @@ def build_hourly_training_set_and_weights(
     tp_vals = np.clip(np.abs(barrier_vals), 1e-4, None)
     sl_vals = np.clip(0.5 * tp_vals, 1e-4, None)
     
-    # Timeout detection: lbl_vals == 0 means timeout
-    is_timeout = (lbl_vals == 0)
+    # Timeout detection
+    is_timeout = (lbl_vals == OUT_TO)
     
     # Compute MFE/MAE weights
     w_mfe_mae = compute_mfe_mae_weights(
@@ -2223,6 +2236,30 @@ def build_hourly_training_set_and_weights(
         )
         return None, None, None, None, None, None
     tprint(f"Final training set size: {len(df)}")
+
+    # Quick leakage sanity KPI for regime features vs realized future returns.
+    if bool(cfg.get("check_regime_leakage", True)):
+        corr_warn_thr = float(cfg.get("regime_corr_warn_thr", 0.35))
+        regime_probe = ["cusum_strength", "move_magnitude_z", "cusum_decay", "vol_percentile", "vol_of_vol", "atr_percentile", "liquidity_ratio"]
+        suspicious = []
+        for rk in regime_probe:
+            if rk not in df.columns:
+                continue
+            xv = np.asarray(df[rk].values, dtype=np.float64)
+            yv = np.asarray(df["y_ret"].values, dtype=np.float64)
+            m = np.isfinite(xv) & np.isfinite(yv)
+            if m.sum() < 100:
+                continue
+            sd_x = float(np.nanstd(xv[m]))
+            sd_y = float(np.nanstd(yv[m]))
+            if sd_x < 1e-12 or sd_y < 1e-12:
+                continue
+            corr = float(np.corrcoef(xv[m], yv[m])[0, 1])
+            if np.isfinite(corr) and abs(corr) >= corr_warn_thr:
+                suspicious.append((rk, corr))
+        if suspicious:
+            suspicious_txt = ", ".join([f"{k}:{c:+.3f}" for k, c in suspicious])
+            tprint(f"WARNING: high regime-feature corr with future returns (check leakage/OOS): {suspicious_txt}")
 
     # Build label time ranges for uniqueness weighting
     entry_times = df["ts"].values
@@ -2649,32 +2686,39 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                     + "; ".join(geom_desc)
                 )
 
-            labels_stack = np.stack([x[0].values for x in geom_runs], axis=0)
-            rets_stack = np.stack([x[1].values for x in geom_runs], axis=0)
-            qual_stack = np.stack([x[2].values for x in geom_runs], axis=0)
             rr_weights_raw = np.array([x[5] for x in geom_runs], dtype=np.float32)
-
-            rr_weights = np.sqrt(rr_weights_raw)
+            rr_weights = np.sqrt(rr_weights_raw).astype(np.float32)
             rr_weights = rr_weights / (rr_weights.mean() + 1e-12)
 
-            w_tp = np.zeros_like(labels_stack[0], dtype=np.float32)
-            w_sl = np.zeros_like(labels_stack[0], dtype=np.float32)
-            w_to = np.zeros_like(labels_stack[0], dtype=np.float32)
-            for gi in range(len(geom_runs)):
-                # 2=TP, 0=SL, 1=TO
-                w_tp += rr_weights[gi] * (labels_stack[gi] == 2).astype(np.float32)
-                w_sl += rr_weights[gi] * (labels_stack[gi] == 0).astype(np.float32)
-                w_to += rr_weights[gi] * (labels_stack[gi] == 1).astype(np.float32)
+            first_shape = geom_runs[0][0].values.shape
+            w_tp = np.zeros(first_shape, dtype=np.float32)
+            w_sl = np.zeros(first_shape, dtype=np.float32)
+            w_to = np.zeros(first_shape, dtype=np.float32)
+            agg_ret_num = np.zeros(first_shape, dtype=np.float32)
+            agg_qual_num = np.zeros(first_shape, dtype=np.float32)
+
+            for gi, (lbl_df, ret_df, qual_df, *_rest) in enumerate(geom_runs):
+                w = rr_weights[gi]
+                lbl_vals = lbl_df.values
+                ret_vals = ret_df.values.astype(np.float32)
+                qual_vals = qual_df.values.astype(np.float32)
+                w_tp += w * (lbl_vals == OUT_TP).astype(np.float32)
+                w_sl += w * (lbl_vals == OUT_SL).astype(np.float32)
+                w_to += w * (lbl_vals == OUT_TO).astype(np.float32)
+                agg_ret_num += w * ret_vals
+                agg_qual_num += w * qual_vals
+
             n_tp_df = pd.DataFrame(w_tp, index=panel["close"].index, columns=panel["close"].columns)
             n_sl_df = pd.DataFrame(w_sl, index=panel["close"].index, columns=panel["close"].columns)
             n_to_df = pd.DataFrame(w_to, index=panel["close"].index, columns=panel["close"].columns)
 
-            w_sum = rr_weights.sum()
-            agg_ret = np.average(rets_stack, axis=0, weights=rr_weights) if w_sum > 0 else np.nanmean(rets_stack, axis=0)
-            agg_qual = np.average(qual_stack, axis=0, weights=rr_weights) if w_sum > 0 else np.nanmean(qual_stack, axis=0)
+            w_sum = float(rr_weights.sum())
+            denom = w_sum if w_sum > 0 else 1.0
+            agg_ret = (agg_ret_num / denom).astype(np.float32)
+            agg_qual = (agg_qual_num / denom).astype(np.float32)
 
             # Map back to 3-way outcomes (2=TP, 0=SL, 1=TO)
-            agg_lbl = np.where(n_tp_df.values > n_sl_df.values, 2, np.where(n_sl_df.values > n_tp_df.values, 0, 1)).astype(np.int8)
+            agg_lbl = np.where(n_tp_df.values > n_sl_df.values, OUT_TP, np.where(n_sl_df.values > n_tp_df.values, OUT_SL, OUT_TO)).astype(np.int8)
 
             tb_labels = pd.DataFrame(agg_lbl, index=panel["close"].index, columns=panel["close"].columns)
             tb_returns = pd.DataFrame(agg_ret, index=panel["close"].index, columns=panel["close"].columns)

@@ -38,4 +38,15 @@ Extreme outliers can skew mean-based statistics (like Sharpe or mean IC) signifi
 
 While `compare_candidate_thresholds.py` filters by relative volatility (`vol_zscore`) and range (`range_pct`), it doesn't explicitly filter by absolute volume or liquidity.
 
-**Suggestion:** Add a **Minimum Dollar Volume Filter** (e.g., `min_avg_daily_volume`) to exclude periods where an asset is technically volatile but illiquid (wide spreads, thin books), as these "opportunities" are often untradable noise.
+**Clarification on "80% of Average Daily Volume":**
+A user might consider setting a threshold such as "Current Volume > 80% of Average Daily Volume". It is important to distinguish between **Absolute Liquidity** and **Relative Volume**:
+
+*   **Absolute Liquidity (Asset Filter):** This ensures the asset itself is tradable without significant slippage.
+    *   **Recommendation:** Use a fixed dollar threshold (e.g., **Minimum Average Daily Volume > $10M**). This filters out illiquid micro-caps entirely.
+    *   *Why:* An asset with $100k daily volume trading at 200% relative volume is still too illiquid for institutional-sized positions.
+
+*   **Relative Volume (Time Filter):** This ensures the specific time period is active.
+    *   **Caution on "80% Threshold":** Setting a minimum threshold of "80% of Average Volume" is likely **too aggressive**. Volume typically follows a log-normal distribution where the median is lower than the mean. A threshold of 80% of the mean could exclude >60% of valid trading periods, including quiet but profitable sessions (e.g., Asian session).
+    *   **Recommendation:** If filtering for activity, use a lower threshold (e.g., **>20-50% of Average**) or use a **Z-score (e.g., `vol_z > -0.5`)** to avoid only "dead" zones, rather than requiring high activity for every trade.
+
+**Suggestion:** Implement a **Minimum Absolute Dollar Volume Filter** (e.g., >$10M ADV) as a primary gate to ensure all selected candidates are structurally tradable.

@@ -24,7 +24,7 @@ def test_combine_weights_safely_does_not_mutate_weights_dict():
 
 
 def test_interval_purged_kfold_uses_label_overlap():
-    ts = pd.date_range("2025-01-01", periods=20, freq="H")
+    ts = pd.date_range("2025-01-01", periods=20, freq="h")
     intervals = np.column_stack([ts.values, (ts + pd.Timedelta(hours=2)).values])
     cv = IntervalPurgedKFold(n_splits=4, embargo_bars=1)
     for tr, va in cv.split(np.arange(len(ts)), label_intervals=intervals):
@@ -37,7 +37,7 @@ def test_interval_purged_kfold_uses_label_overlap():
 
 def test_component_weight_functions_are_normalized():
     n = 64
-    ts = pd.date_range("2025-01-01", periods=n, freq="H")
+    ts = pd.date_range("2025-01-01", periods=n, freq="h")
     vol = np.linspace(0.5, 1.5, n)
     w_vol = compute_vol_weights(vol, ts.values)
     w_liq = compute_liquidity_weights(np.linspace(100, 1000, n))

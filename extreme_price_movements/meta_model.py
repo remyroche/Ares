@@ -125,7 +125,7 @@ class MetaModel:
 
     # ── Candidate definitions ────────────────────────────────────────────
     def _build_candidates(self) -> Dict[str, dict]:
-        """5 candidates: Ridge, ET, ET+tail, XGB, XGB-quantile."""
+        """Candidates: Ridge, Huber, ET, ET+tail, XGB."""
         candidates = {}
 
         # 1. Ridge (RobustScaler + Ridge)
@@ -135,7 +135,14 @@ class MetaModel:
             "tail_lambda": 0.0,
         }
 
-        # 2. ExtraTrees (baseline)
+        # 2. Huber Regressor (Robust objective)
+        candidates["huber"] = {
+            "kind": "huber",
+            "params": {"epsilon": 1.35, "alpha": 0.001, "fit_intercept": True},
+            "tail_lambda": 0.0,
+        }
+
+        # 3. ExtraTrees (baseline)
         candidates["extratrees"] = {
             "kind": "extratrees",
             "params": {
@@ -145,7 +152,7 @@ class MetaModel:
             "tail_lambda": 0.0,
         }
 
-        # 3. ExtraTrees + tail-weighting (λ=2.0, no monotone constraints)
+        # 4. ExtraTrees + tail-weighting (λ=2.0, no monotone constraints)
         candidates["extratrees_tailweighted"] = {
             "kind": "extratrees",
             "params": {
@@ -155,7 +162,7 @@ class MetaModel:
             "tail_lambda": 2.0,
         }
 
-        # 4. XGB basic (reg:squarederror) — heavily regularised for small meta datasets
+        # 5. XGB basic (reg:squarederror) — heavily regularised for small meta datasets
         if xgb is not None:
             _xgb_common = {
                 "max_depth": 4, "learning_rate": 0.03, "n_estimators": 800,
@@ -170,9 +177,12 @@ class MetaModel:
                 "params": {"objective": "reg:squarederror", **_xgb_common},
                 "tail_lambda": 0.0,
             }
-            # NOTE: xgb_quantile (reg:quantileerror, τ=0.85) removed.
-            # Meta targets are rank-transformed [0,1]; quantile regression
-            # predicts ~0.85 for everything → near-zero or anti-correlated IC.
+            # Robust objective candidate if available (Pseudohuber)
+            candidates["xgb_robust"] = {
+                "kind": "xgb",
+                "params": {"objective": "reg:pseudohubererror", **_xgb_common},
+                "tail_lambda": 0.0,
+            }
 
         return candidates
 
@@ -184,6 +194,14 @@ class MetaModel:
                 ("ridge", Ridge(**params)),
             ])
             model.fit(X_tr, y_tr, ridge__sample_weight=sw)
+            return model
+        if kind == "huber":
+            from sklearn.linear_model import HuberRegressor
+            model = Pipeline([
+                ("scaler", RobustScaler()),
+                ("huber", HuberRegressor(**params)),
+            ])
+            model.fit(X_tr, y_tr, huber__sample_weight=sw)
             return model
         if kind == "extratrees":
             model = ExtraTreesRegressor(**params)
@@ -517,7 +535,8 @@ class MetaClassifierModel:
         candidates["ridge_clf"] = {
             "kind": "ridge_clf",
             "params": {"C": 0.1, "penalty": "l2", "solver": "lbfgs",
-                       "max_iter": 1000, "class_weight": "balanced"},
+                       "max_iter": 1000, "class_weight": "balanced",
+                       "multi_class": "multinomial"},
         }
 
         # 2. ExtraTrees Classifier
@@ -540,6 +559,7 @@ class MetaClassifierModel:
                     "l2_leaf_reg": 10.0, "random_seed": 42,
                     "auto_class_weights": "Balanced",
                     "verbose": 0, "thread_count": 3,
+                    "loss_function": "MultiClass",
                 },
             }
         except ImportError:
@@ -563,13 +583,6 @@ class MetaClassifierModel:
             model = ExtraTreesClassifier(**params)
             model.fit(X_tr, y_tr, sample_weight=sw)
             return model
-        if kind == "xgb_clf":
-            p = dict(params)
-            es_rounds = p.pop("early_stopping_rounds", 50)
-            model = xgb.XGBClassifier(**p, early_stopping_rounds=es_rounds)
-            model.fit(X_tr, y_tr, sample_weight=sw,
-                      eval_set=[(X_va, y_va)], verbose=False)
-            return model
         if kind == "catboost_clf":
             import catboost
             p = dict(params)
@@ -580,18 +593,21 @@ class MetaClassifierModel:
         raise ValueError(f"Unknown classifier kind: {kind}")
 
     def _predict_proba(self, model, X):
-        """Get probability of positive class."""
+        """Get probability of classes. Returns (N, 3)."""
         pp = model.predict_proba(X)
-        if pp.ndim == 2 and pp.shape[1] >= 2:
-            return pp[:, 1]
-        return pp.ravel()
+        if pp.ndim == 2:
+            return pp
+        # Fallback if 1D (should not happen for multiclass)
+        return pp
 
     # ── CV evaluation ────────────────────────────────────────────────
     def _cv_evaluate(self, kind, params, X, y, sw=None) -> Tuple[np.ndarray, float]:
-        """3-fold purged CV. Returns (oof_probs, pr_auc)."""
-        from sklearn.metrics import average_precision_score
+        """3-fold purged CV. Returns (oof_probs, brier_score).
+        oof_probs shape: (N, 3).
+        """
+        from sklearn.metrics import brier_score_loss
         pkf = PurgedKFold(n_splits=3, purge=5, embargo=2)
-        oof = np.full(len(y), np.nan, dtype=float)
+        oof = np.full((len(y), 3), np.nan, dtype=float)
 
         for tr, va in pkf.split(X):
             X_tr, X_va = X[tr], X[va]
@@ -599,177 +615,119 @@ class MetaClassifierModel:
             sw_tr = None if sw is None else sw[tr]
             try:
                 model = self._fit_one(kind, params, X_tr, y_tr, X_va, y_va, sw=sw_tr)
-                oof[va] = self._predict_proba(model, X_va)
+                pp = self._predict_proba(model, X_va)
+                oof[va] = pp
             except Exception:
-                oof[va] = 0.5
+                oof[va] = 1.0 / 3.0
 
-        mask = np.isfinite(oof)
-        if mask.sum() < 20 or len(np.unique(y[mask])) < 2:
-            return oof, 0.0
-        pr_auc = float(average_precision_score(y[mask], oof[mask]))
-        return oof, pr_auc
+        mask = np.isfinite(oof).all(axis=1)
+        if mask.sum() < 20:
+            return oof, 999.0
+
+        # Metric: Brier score (multi-class: sum of squared differences)
+        # We can use EV as primary metric?
+        # But for CV selection, a proper scoring rule like Brier or LogLoss is better.
+        # Let's use LogLoss.
+        from sklearn.metrics import log_loss
+        try:
+            score = log_loss(y[mask], oof[mask])
+        except Exception:
+            score = 999.0
+        return oof, score
 
     # ── Comprehensive classifier metrics ─────────────────────────────
     @staticmethod
-    def _compute_clf_metrics(oof: np.ndarray, y_bin: np.ndarray,
+    def _compute_clf_metrics(oof: np.ndarray, y_class: np.ndarray,
                              y_ret: np.ndarray, groups=None,
                              fee: float = 0.005) -> dict:
-        """Compute classifier metrics: Prec@K, Lift, Recall, Sortino, PnL, MaxDD, stability."""
-        from sklearn.metrics import average_precision_score, log_loss as _log_loss, roc_auc_score
-        mask = np.isfinite(oof) & np.isfinite(y_ret)
-        pred, y_b, y_r = oof[mask], y_bin[mask], y_ret[mask]
+        """Compute classifier metrics: EV, Brier, Accuracy, PnL."""
+        from sklearn.metrics import log_loss, brier_score_loss, accuracy_score
+        mask = np.isfinite(oof).all(axis=1) & np.isfinite(y_ret)
+        pred, y_c, y_r = oof[mask], y_class[mask], y_ret[mask]
         n = len(pred)
         if n < 20:
             return {"n": n}
 
-        prev = float(np.mean(y_b))
+        # EV calculation: P(TP)*2 - P(SL)*1 (assuming 2:1 ratio standard)
+        # TP=class 2, SL=class 0.
+        ev_vec = pred[:, 2] * 2.0 - pred[:, 0] * 1.0
+
         try:
-            auc = float(roc_auc_score(y_b, pred)) if len(np.unique(y_b)) > 1 else 0.5
-        except Exception:
-            auc = 0.5
-        try:
-            pr_auc = float(average_precision_score(y_b, pred)) if len(np.unique(y_b)) > 1 else prev
-        except Exception:
-            pr_auc = prev
-        try:
-            ll = float(_log_loss(y_b, np.clip(pred, 1e-7, 1 - 1e-7)))
+            ll = float(log_loss(y_c, np.clip(pred, 1e-7, 1 - 1e-7)))
         except Exception:
             ll = float("nan")
 
-        metrics = {"n": n, "prevalence": prev, "auc": auc, "pr_auc": pr_auc, "logloss": ll}
+        acc = float(accuracy_score(y_c, np.argmax(pred, axis=1)))
 
-        # Precision, Lift, Recall at various K fractions
+        metrics = {"n": n, "logloss": ll, "accuracy": acc}
+
+        # Precision/PnL at top K EV
         for frac_pct in [13, 26, 39]:
             frac = frac_pct / 100.0
             k = max(1, int(n * frac))
-            idx_top = np.argpartition(pred, -k)[-k:]
-            prec_k = float(np.mean(y_b[idx_top]))
-            lift_k = prec_k / max(prev, 1e-9)
-            # Recall of true top-K: how many of the actual positives are in our top-K?
-            n_pos = max(1, int(y_b.sum()))
-            recall_k = float(np.sum(y_b[idx_top])) / n_pos
-            metrics[f"prec_{frac_pct}"] = prec_k
-            metrics[f"lift_{frac_pct}"] = lift_k
-            metrics[f"recall_true_top_{frac_pct}"] = recall_k
+            idx_top = np.argpartition(ev_vec, -k)[-k:]
 
-        # PnL-based metrics using top-26% as trade selection
-        k26 = max(1, int(n * 0.26))
-        idx_trade = np.argpartition(pred, -k26)[-k26:]
-        trade_rets = y_r[idx_trade] - fee  # subtract round-trip fee
+            # Realized PnL of selected trades
+            trade_rets = y_r[idx_top] - fee
+            mean_ret = float(np.mean(trade_rets))
+            win_rate = float(np.mean(trade_rets > 0))
 
-        # Sortino ratio
-        mean_ret = float(np.mean(trade_rets))
-        downside = trade_rets[trade_rets < 0]
-        downside_std = float(np.std(downside)) if len(downside) > 1 else 1e-9
-        sortino = mean_ret / max(downside_std, 1e-9)
-        metrics["sortino"] = sortino
+            metrics[f"ev_top{frac_pct}_ret"] = mean_ret
+            metrics[f"ev_top{frac_pct}_wr"] = win_rate
 
-        # Cumulative PnL and MaxDD
-        cum_pnl = np.cumsum(trade_rets)
-        total_pnl = float(cum_pnl[-1]) if len(cum_pnl) > 0 else 0.0
-        running_max = np.maximum.accumulate(cum_pnl)
-        drawdowns = cum_pnl - running_max
-        max_dd = float(np.min(drawdowns)) if len(drawdowns) > 0 else 0.0
-        metrics["pnl_total_bps"] = total_pnl * 10000
-        metrics["max_dd_bps"] = max_dd * 10000
-
-        # Win rate
-        metrics["win_rate"] = float(np.mean(trade_rets > 0))
-
-        # Avg trades per day (if groups/timestamps available)
-        if groups is not None:
-            g = np.asarray(groups)[mask]
-            g_trade = g[idx_trade]
-            unique_days = len(np.unique(g_trade))
-            metrics["avg_trades_day"] = len(idx_trade) / max(unique_days, 1)
-        else:
-            metrics["avg_trades_day"] = float("nan")
-
-        # Rolling stability: Spearman IC in 5 equal-sized time chunks
-        chunk_size = max(1, n // 5)
-        chunk_ics = []
-        for i in range(5):
-            s, e = i * chunk_size, min((i + 1) * chunk_size, n)
-            if e - s < 20:
-                continue
-            ic_chunk = _safe_spearman(pred[s:e], y_r[s:e])
-            chunk_ics.append(ic_chunk)
-        if chunk_ics:
-            metrics["ic_stability_mean"] = float(np.mean(chunk_ics))
-            metrics["ic_stability_std"] = float(np.std(chunk_ics))
-            metrics["ic_stability_min"] = float(np.min(chunk_ics))
-        else:
-            metrics["ic_stability_mean"] = 0.0
-            metrics["ic_stability_std"] = 1.0
-            metrics["ic_stability_min"] = 0.0
+        # Calibration (Brier for TP class)
+        y_tp = (y_c == 2).astype(int)
+        try:
+            brier_tp = float(brier_score_loss(y_tp, pred[:, 2]))
+            metrics["brier_tp"] = brier_tp
+        except Exception:
+            pass
 
         return metrics
 
     # ── Multi-barrier label construction ────────────────────────────
     @staticmethod
-    def _build_multi_barrier_labels(
+    def _build_multiclass_labels(
         y_per_horizon: Dict[int, np.ndarray],
-        tp_vals_pct: Sequence[float] = (1.5, 2.0, 3.0, 4.0, 5.0, 6.0),
-        sl_vals_pct: Sequence[float] = (0.5, 1.0, 2.0),
-        fee_pct: float = 0.5,
+        vol_proxy: np.ndarray,
+        k_tp: float = 2.0,
+        k_sl: float = 1.0,
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """Build binary labels from multiple (TP, SL) barrier configs.
+        """Build 3-class labels (0=SL, 1=Timeout, 2=TP) using risk-unit thresholds."""
+        n = len(vol_proxy)
+        y_class = np.ones(n, dtype=np.int8) # Default 1 (Timeout)
 
-        For each valid combo where TP > 1.5*(SL + fee), check if any
-        per-horizon return exceeds TP. Aggregate hits across combos:
-        binary label = 1 if any hit, weight = clipped hit count.
+        vp = np.clip(vol_proxy, 1e-9, None)
+        tp_thresh = k_tp * vp
+        sl_thresh = k_sl * vp
 
-        Returns (y_bin, w_barrier) both shape (n,).
-        """
-        n = len(next(iter(y_per_horizon.values())))
-        hit_count = np.zeros(n, dtype=np.float32)
-        n_combos = 0
+        max_ret = np.full(n, -999.0)
+        min_ret = np.full(n, 999.0)
 
-        for tp_pct in tp_vals_pct:
-            for sl_pct in sl_vals_pct:
-                # Filter: TP > 1.5 * (SL + fee)
-                if tp_pct <= 1.5 * (sl_pct + fee_pct):
-                    continue
-                tp_dec = tp_pct / 100.0
-                n_combos += 1
-                # Check each horizon: did return exceed TP?
-                for h, r_h in y_per_horizon.items():
-                    r_h = np.asarray(r_h, dtype=float)
-                    hits = (r_h >= tp_dec).astype(np.float32)
-                    hit_count += hits
+        for h, y_h in y_per_horizon.items():
+            max_ret = np.maximum(max_ret, y_h)
+            min_ret = np.minimum(min_ret, y_h)
 
-        if n_combos == 0:
-            # Fallback: use top-30% by absolute return
-            r_avg = np.mean([np.abs(v) for v in y_per_horizon.values()], axis=0)
-            cutoff = float(np.percentile(r_avg[np.isfinite(r_avg)], 70))
-            y_bin = (r_avg >= cutoff).astype(np.int8)
-            return y_bin, np.ones(n, dtype=np.float32)
+        hit_tp = max_ret >= tp_thresh
+        hit_sl = min_ret <= -sl_thresh
 
-        # Binary label: 1 if any barrier was hit across any horizon
-        y_bin = (hit_count > 0).astype(np.int8)
+        # Assign classes
+        # If hit_sl -> 0
+        # Else if hit_tp -> 2
+        # Else -> 1
 
-        # Weight multiplier: normalized hit count (more hits = stronger signal)
-        # Scale to [1.0, 1.5] instead of [1.0, 2.0] to reduce over-weighting
-        max_possible = n_combos * len(y_per_horizon)
-        w_barrier = 1.0 + 0.5 * np.clip(hit_count / max(max_possible, 1), 0, 1)
-        # Normalize to unit mean
-        w_barrier = w_barrier / max(float(np.mean(w_barrier)), 1e-12)
+        y_class[hit_tp] = 2
+        y_class[hit_sl] = 0 # SL overrides TP (conservative)
 
-        return y_bin, w_barrier
+        w_class = np.ones(n, dtype=np.float32)
+        return y_class, w_class
 
     # ── Main fit ─────────────────────────────────────────────────────
     def fit(self, X_meta: pd.DataFrame, y_ret: np.ndarray,
             sample_weight=None, groups=None,
-            y_per_horizon: Optional[Dict[int, np.ndarray]] = None):
-        """Race classifiers using multi-barrier binary labels.
-
-        Args:
-            X_meta: Feature matrix (already prepared with pred_logit etc.)
-            y_ret: Continuous return target (for metrics computation)
-            sample_weight: Optional sample weights
-            groups: Optional group/timestamp array for purged CV
-            y_per_horizon: {horizon: raw_returns} for multi-barrier labels
-        """
+            y_per_horizon: Optional[Dict[int, np.ndarray]] = None,
+            vol_proxy: Optional[np.ndarray] = None):
+        """Race classifiers using multi-barrier labels (multiclass if vol_proxy provided)."""
         import time as _time
         _t0 = _time.monotonic()
         tprint(f"MetaClassifierModel.fit: {self.strategy_name} starting "
@@ -786,19 +744,28 @@ class MetaClassifierModel:
         Xv = Xv_raw[:, keep_cols]
         tprint(f"  Features: {X_meta.shape[1]} -> {len(selected_cols)}")
 
-        # Build multi-barrier binary labels
-        if y_per_horizon and len(y_per_horizon) > 0:
-            y_bin, w_barrier = self._build_multi_barrier_labels(y_per_horizon)
-            tprint(f"  Multi-barrier labels: {int(y_bin.sum())} positives "
-                   f"({float(np.mean(y_bin)):.3f} prev), "
-                   f"w_barrier mean={float(np.mean(w_barrier)):.3f}")
+        # Build labels
+        if vol_proxy is not None and y_per_horizon:
+            # Drop samples with undefined volatility (Task 5)
+            valid_vol = np.isfinite(vol_proxy) & (vol_proxy > 1e-9)
+            if not valid_vol.all():
+                n_drop = int((~valid_vol).sum())
+                tprint(f"  Dropping {n_drop} samples with invalid vol_proxy.")
+                valid_idx = np.where(valid_vol)[0]
+                Xv = Xv[valid_idx]
+                y_ret_np = y_ret_np[valid_idx]
+                if sw is not None:
+                    sw = sw[valid_idx]
+                if groups is not None:
+                    groups = np.asarray(groups)[valid_idx]
+                y_per_horizon = {h: v[valid_idx] for h, v in y_per_horizon.items()}
+                vol_proxy = vol_proxy[valid_idx]
+
+            # New multiclass path (Task 6, 7)
+            y_class, w_barrier = self._build_multiclass_labels(y_per_horizon, vol_proxy)
+            tprint(f"  Multiclass labels (0=SL, 1=TO, 2=TP): {np.bincount(y_class)}")
         else:
-            # Fallback: top-30% by absolute return
-            y_abs = np.abs(y_ret_np)
-            cutoff = float(np.percentile(y_abs[np.isfinite(y_abs)], 70))
-            y_bin = (y_abs >= cutoff).astype(np.int8)
-            w_barrier = np.ones(len(y_ret_np), dtype=np.float32)
-            tprint(f"  Fallback labels (top-30%): {int(y_bin.sum())} positives")
+            raise ValueError("MetaClassifierModel requires vol_proxy (ATR) and y_per_horizon for risk-based labeling.")
 
         # Combine barrier weights with sample weights
         if sw is not None:
@@ -807,10 +774,9 @@ class MetaClassifierModel:
         else:
             sw_combined = w_barrier
 
-        prev = float(np.mean(y_bin))
         candidates = self._build_candidates()
         records = []
-        best_score = -1e18
+        best_score = 1e18 # Lower logloss is better
         best_rec = None
 
         for name, cand in candidates.items():
@@ -818,57 +784,46 @@ class MetaClassifierModel:
             params = dict(cand["params"])
 
             try:
-                oof, pr_auc = self._cv_evaluate(kind, params, Xv, y_bin, sw_combined)
+                oof, logloss = self._cv_evaluate(kind, params, Xv, y_class, sw_combined)
             except Exception as exc:
                 tprint(f"    {name} failed: {exc}")
                 continue
 
             metrics = self._compute_clf_metrics(
-                oof, y_bin, y_ret_np, groups=groups, fee=self.FEE_PER_ROUND_TRIP)
+                oof, y_class, y_ret_np, groups=groups, fee=self.FEE_PER_ROUND_TRIP)
             metrics["model"] = name
-            metrics["pr_auc_cv"] = pr_auc
-
-            # PR-AUC lift = PR-AUC / prevalence
-            pr_auc_lift = pr_auc / max(prev, 1e-9)
-            metrics["pr_auc_lift"] = pr_auc_lift
-
-            # Composite score: PR-AUC_lift * Lift@26 * (1 + 0.3*Sortino)
-            lift26 = metrics.get("lift_26", 1.0)
-            sortino = max(0.0, metrics.get("sortino", 0.0))
-            composite = pr_auc_lift * lift26 * (1.0 + 0.3 * sortino)
-            metrics["composite_score"] = composite
+            metrics["logloss_cv"] = logloss
 
             records.append(metrics)
-            tprint(f"    {name}: PR-AUC_lift={pr_auc_lift:.4f}, "
-                   f"Lift@26={lift26:.3f}, Sortino={sortino:.3f}, "
-                   f"composite={composite:.4f}")
+            tprint(f"    {name}: LogLoss={logloss:.4f}, Acc={metrics.get('accuracy',0):.3f}")
 
-            if composite > best_score:
-                best_score = composite
+            # Use LogLoss for selection
+            if logloss < best_score:
+                best_score = logloss
                 best_rec = {
                     "name": name, "kind": kind, "params": params,
-                    "oof": oof, "y_bin": y_bin,
+                    "oof": oof, "y_class": y_class,
                     "metrics": metrics,
                 }
 
         if best_rec is None:
             raise RuntimeError("No classifier candidates completed")
 
-        self.label_threshold = prev
-        self.oof_probs = best_rec["oof"]
+        self.label_threshold = 0.0 # Not used in multiclass
+        self.oof_probs = best_rec["oof"] # (N, 3)
         self._model_type = best_rec["name"]
         self.report_rows = records
 
         # Final fit on all data with best config
         kind = best_rec["kind"]
         params = best_rec["params"]
-        y_bin_final = best_rec["y_bin"]
+        y_final = best_rec["y_class"]
         tprint(f"  Winner: {best_rec['name']} "
-               f"(composite={best_score:.4f}). Fitting final model...")
+               f"(LogLoss={best_score:.4f}). Fitting final model...")
 
-        final_model = self._fit_one(kind, params, Xv, y_bin_final, Xv, y_bin_final,
+        final_model = self._fit_one(kind, params, Xv, y_final, Xv, y_final,
                                     sw=sw_combined)
-        self.model = {"kind": kind, "models": [final_model], "threshold": prev}
+        self.model = {"kind": kind, "models": [final_model], "multiclass": True}
 
         # Save race report
         report_dir = Path("extreme_price_movements/reports")
@@ -879,18 +834,20 @@ class MetaClassifierModel:
         )
 
         tprint(f"MetaClassifierModel.fit: {self.strategy_name} done ({_time.monotonic()-_t0:.1f}s). "
-               f"Winner={best_rec['name']}, prev={prev:.3f}")
+               f"Winner={best_rec['name']}")
         return self
 
     def predict_proba(self, X_meta):
         if self.selected_features is None or self.model is None:
             raise RuntimeError("MetaClassifierModel must be fitted before predict")
         X = X_meta[self.selected_features].to_numpy(dtype=float)
-        probs = []
+        probs_list = []
         for m in self.model["models"]:
             pp = m.predict_proba(X)
-            if pp.ndim == 2 and pp.shape[1] >= 2:
-                probs.append(pp[:, 1])
+            # Ensure (N, 3)
+            if pp.ndim == 2:
+                probs_list.append(pp)
             else:
-                probs.append(pp.ravel())
-        return np.mean(probs, axis=0)
+                # Should not happen for multiclass
+                probs_list.append(pp)
+        return np.mean(probs_list, axis=0)

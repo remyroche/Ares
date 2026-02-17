@@ -982,16 +982,16 @@ class AlphaHorizonEnsemble:
 
 
 
-def compute_meta_target(ret2: np.ndarray, ret4: np.ndarray, ret8: np.ndarray, groups=None) -> np.ndarray:
-    """Build a per-trade meta target as winsorized log-return.
+def compute_meta_target(ret2: np.ndarray, ret4: np.ndarray, ret8: np.ndarray, vol_proxy: Optional[np.ndarray] = None, groups=None) -> np.ndarray:
+    """Build a per-trade meta target as risk-normalized, squashed log-return.
 
-    Uses weighted average of per-horizon log-returns [0.40, 0.35, 0.25] for [H2, H4, H8],
-    then winsorizes at [5th, 95th] percentile to reduce outlier noise while preserving
-    per-trade magnitude information.
+    Uses weighted average of per-horizon log-returns [0.40, 0.35, 0.25] for [H2, H4, H8].
+    If vol_proxy (ATR) is provided, returns are normalized to risk units (approx Z-score)
+    before averaging. Finally, apply monotone squashing (asinh) to handle tails robustly
+    without hard clipping.
 
     This target is NOT cross-sectional rank (we want to trade every profitable asset,
     not just the best one). It preserves the key property: bigger positive return = better trade.
-    The `groups` argument is kept for backward compatibility but intentionally ignored.
     """
 
     def _log1p_ret(x: np.ndarray) -> np.ndarray:
@@ -1005,33 +1005,42 @@ def compute_meta_target(ret2: np.ndarray, ret4: np.ndarray, ret8: np.ndarray, gr
                 out = np.where(finite, out, fill)
             else:
                 out = np.zeros_like(out, dtype=float)
-        return out.astype(np.float32)
+        return out.astype(np.float64)
 
     r2 = _log1p_ret(ret2)
     r4 = _log1p_ret(ret4)
     r8 = _log1p_ret(ret8)
-    raw = (0.40 * r2 + 0.35 * r4 + 0.25 * r8).astype(np.float64)
 
-    # Asymmetric winsorization: hard clip downside at p5, sqrt-compress upside above p90
-    # Rationale: downside outliers are noise (stop-losses), but upside tails
-    # contain real signal about trade quality that we want to preserve.
-    # sqrt compression (not tanh) preserves monotonic ordering within the tail,
-    # which is critical for IC_t30 (ranking quality among top predictions).
-    finite = np.isfinite(raw)
-    if finite.sum() > 10:
-        lo = float(np.percentile(raw[finite], 5))
-        hi = float(np.percentile(raw[finite], 90))
-        # Hard clip downside
-        raw = np.where(raw < lo, lo, raw)
-        # Sqrt-compress upside: values above p90 are compressed but ordering preserved
-        # sqrt(x) is monotonic and never saturates, unlike tanh
-        above = raw > hi
-        if above.any():
-            scale = max(float(np.std(raw[finite])), 1e-9)
-            excess = (raw[above] - hi) / scale  # normalized excess
-            raw[above] = hi + scale * np.sqrt(excess)  # sqrt preserves ordering
+    if vol_proxy is not None:
+        assert len(vol_proxy) == len(r2), f"vol_proxy length mismatch: {len(vol_proxy)} vs {len(r2)}"
+        vp = np.clip(np.asarray(vol_proxy, dtype=float), 1e-9, None)
+        # Normalize by expected volatility over horizon H: sigma_H = atr_1h * sqrt(H)
+        # Using sqrt(H) scaling assumes diffusive variance.
+        n2 = r2 / (vp * np.sqrt(2.0))
+        n4 = r4 / (vp * np.sqrt(4.0))
+        n8 = r8 / (vp * np.sqrt(8.0))
+        raw = (0.40 * n2 + 0.35 * n4 + 0.25 * n8)
 
-    return raw.astype(np.float32)
+        # Monotone squashing: asinh(x/c) with c=2.0 (risk units)
+        # 2.0 risk units = 2 sigma event.
+        c = 2.0
+        target = np.arcsinh(raw / c)
+    else:
+        # Fallback to legacy logic if no vol_proxy
+        raw = (0.40 * r2 + 0.35 * r4 + 0.25 * r8)
+        finite = np.isfinite(raw)
+        if finite.sum() > 10:
+            lo = float(np.percentile(raw[finite], 5))
+            hi = float(np.percentile(raw[finite], 90))
+            raw = np.where(raw < lo, lo, raw)
+            above = raw > hi
+            if above.any():
+                scale = max(float(np.std(raw[finite])), 1e-9)
+                excess = (raw[above] - hi) / scale
+                raw[above] = hi + scale * np.sqrt(excess)
+        target = raw
+
+    return target.astype(np.float32)
 
 
 def build_horizon_prediction_features(conf: dict, X_eval: pd.DataFrame) -> pd.DataFrame:
@@ -3204,6 +3213,11 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
 
             tprint(f"  Computing meta target ({_time.monotonic()-_t0_meta:.1f}s)...")
             _r2, _r4, _r8 = _ret_for_h_aligned(2), _ret_for_h_aligned(4), _ret_for_h_aligned(8)
+
+            # Use vol_proxy (ATR) for risk-normalized target
+            _vol_proxy = df["__barrier_pct__"].values.astype(np.float64) if "__barrier_pct__" in df.columns else None
+            y_target_h = compute_meta_target(_r2, _r4, _r8, vol_proxy=_vol_proxy)
+
             # Per-horizon returns for multi-barrier classifier labels
             _y_per_h = {2: _r2, 4: _r4, 8: _r8}
 
@@ -3418,61 +3432,55 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                     )
                 w_meta_h = w_meta_h.astype(np.float32)
 
-                # Target race for this horizon
-                tprint(f"  Running target race for {_h_label} ({_time.monotonic()-_t0_meta:.1f}s)...")
-                _tgt_name, y_target_h, _tgt_log = _run_target_race(
-                    X_meta_base.to_numpy(dtype=np.float32), y_ret_raw_h, _vol_proxy, w_meta_h, _h_label)
-                for _ll in _tgt_log:
-                    tprint(_ll)
                 _yt_fin = y_target_h[np.isfinite(y_target_h)]
-                tprint(f"  Winning target '{_tgt_name}': n={len(y_target_h)}, "
-                       f"mean={np.mean(_yt_fin):.6f}, std={np.std(_yt_fin):.6f}")
+            tprint(f"  Using risk-normalized target: n={len(y_target_h)}, "
+                   f"mean={np.mean(_yt_fin):.6f}, std={np.std(_yt_fin):.6f}")
 
-                # Fit MetaModel for this horizon
-                meta_h = MetaModel()
-                meta_h.strategy_name = _h_label
-                tprint(f"  Fitting MetaModel {_h_label} (n={len(df)}, feats={X_meta_base.shape[1]}) ({_time.monotonic()-_t0_meta:.1f}s)...")
-                meta_h.fit(X_meta_base, y_target_h, sample_weight=w_meta_h, groups=meta_groups,
-                           y_per_horizon=_y_per_h)
-                meta_models[_h_label] = meta_h
-                _bucket_y_ret[_h_label] = y_ret_raw_h.copy()
-                tprint(f"Meta {_h_label}: fitted ({_time.monotonic()-_t0_meta:.1f}s).")
+            # Fit MetaModel for this horizon
+            meta_h = MetaModel()
+            meta_h.strategy_name = _h_label
+            tprint(f"  Fitting MetaModel {_h_label} (n={len(df)}, feats={X_meta_base.shape[1]}) ({_time.monotonic()-_t0_meta:.1f}s)...")
+            meta_h.fit(X_meta_base, y_target_h, sample_weight=w_meta_h, groups=meta_groups,
+                       y_per_horizon=_y_per_h)
+            meta_models[_h_label] = meta_h
+            _bucket_y_ret[_h_label] = y_ret_raw_h.copy()
+            tprint(f"Meta {_h_label}: fitted ({_time.monotonic()-_t0_meta:.1f}s).")
 
-                # Orientation safeguard for MR buckets
-                if meta_h.oof_probs is not None:
-                    y_ret_filtered = df["__y_ret__"].values if "__y_ret__" in df.columns else y_target_h
+            # Orientation safeguard for MR buckets
+            if meta_h.oof_probs is not None:
+                y_ret_filtered = df["__y_ret__"].values if "__y_ret__" in df.columns else y_target_h
 
-                    def _top_spread(yv, sv, frac=0.10):
-                        n = len(yv)
-                        if n <= 2:
-                            return 0.0
-                        ksel = max(1, int(frac * n))
-                        it = np.argsort(sv)[-ksel:]
-                        ib = np.argsort(sv)[:ksel]
-                        return float(np.mean(yv[it]) - np.mean(yv[ib]))
+                def _top_spread(yv, sv, frac=0.10):
+                    n = len(yv)
+                    if n <= 2:
+                        return 0.0
+                    ksel = max(1, int(frac * n))
+                    it = np.argsort(sv)[-ksel:]
+                    ib = np.argsort(sv)[:ksel]
+                    return float(np.mean(yv[it]) - np.mean(yv[ib]))
 
-                    pred_oof = np.asarray(meta_h.oof_probs, dtype=float)
-                    ic_pos = _safe_spearman(pred_oof, y_ret_filtered)
-                    ic_neg = _safe_spearman(-pred_oof, y_ret_filtered)
-                    sp_pos = _top_spread(y_ret_filtered, pred_oof, frac=0.10)
-                    sp_neg = _top_spread(y_ret_filtered, -pred_oof, frac=0.10)
+                pred_oof = np.asarray(meta_h.oof_probs, dtype=float)
+                ic_pos = _safe_spearman(pred_oof, y_ret_filtered)
+                ic_neg = _safe_spearman(-pred_oof, y_ret_filtered)
+                sp_pos = _top_spread(y_ret_filtered, pred_oof, frac=0.10)
+                sp_neg = _top_spread(y_ret_filtered, -pred_oof, frac=0.10)
 
-                    meta_h.score_sign = 1
-                    if k == "mr" and ((ic_neg > ic_pos + 1e-4) and (sp_neg > sp_pos + 1e-6)):
-                        meta_h.score_sign = -1
-                        tprint(f"Meta {_h_label}: orientation flipped (IC {ic_pos:.4f}->{ic_neg:.4f})")
+                meta_h.score_sign = 1
+                if k == "mr" and ((ic_neg > ic_pos + 1e-4) and (sp_neg > sp_pos + 1e-6)):
+                    meta_h.score_sign = -1
+                    tprint(f"Meta {_h_label}: orientation flipped (IC {ic_pos:.4f}->{ic_neg:.4f})")
 
-                    pred_for_gate = meta_h.score_sign * pred_oof
-                    gate_type = "meta_regression"
-                    gate_res = compute_stage_gate_metrics(y_target_h, pred_for_gate, y_ret_filtered, model_type=gate_type)
-                    gate_res["Model"] = _h_label
-                    gate_res["Model_Type"] = gate_type
-                    gate_res["Score_Sign"] = int(meta_h.score_sign)
-                    gate_res["IC_Pos"] = float(ic_pos)
-                    gate_res["IC_Neg"] = float(ic_neg)
-                    gate_res["Spread10_Pos"] = float(sp_pos)
-                    gate_res["Spread10_Neg"] = float(sp_neg)
-                    meta_gate_results.append(gate_res)
+                pred_for_gate = meta_h.score_sign * pred_oof
+                gate_type = "meta_regression"
+                gate_res = compute_stage_gate_metrics(y_target_h, pred_for_gate, y_ret_filtered, model_type=gate_type)
+                gate_res["Model"] = _h_label
+                gate_res["Model_Type"] = gate_type
+                gate_res["Score_Sign"] = int(meta_h.score_sign)
+                gate_res["IC_Pos"] = float(ic_pos)
+                gate_res["IC_Neg"] = float(ic_neg)
+                gate_res["Spread10_Pos"] = float(sp_pos)
+                gate_res["Spread10_Neg"] = float(sp_neg)
+                meta_gate_results.append(gate_res)
 
             # ══════════════════════════════════════════════════════════════
             # CLASSIFIER TRAINING (single per bucket, uses all horizons)
@@ -3546,8 +3554,9 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             tprint(f"  Fitting MetaClassifierModel {side}_{k} ({_time.monotonic()-_t0_meta:.1f}s)...")
             meta_clf = MetaClassifierModel()
             meta_clf.strategy_name = f"{side}_{k}"
+            # Pass vol_proxy for risk-unit thresholding
             meta_clf.fit(X_meta_base, y_target_clf, sample_weight=w_meta_clf, groups=meta_groups,
-                         y_per_horizon=_y_per_h)
+                         y_per_horizon=_y_per_h, vol_proxy=_vol_proxy)
             meta_models[f"{side}_{k}_clf"] = meta_clf
             _bucket_y_ret[f"{side}_{k}_clf"] = y_target_clf.copy()
             tprint(f"Meta {side}_{k}_clf: fitted ({_time.monotonic()-_t0_meta:.1f}s).")
@@ -4329,7 +4338,14 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
                 return arr[:len(dfm)]
             return np.pad(arr, (0, len(dfm) - len(arr)), constant_values=0.0)
         _r2_rpt, _r4_rpt, _r8_rpt = _aligned_ret(2), _aligned_ret(4), _aligned_ret(8)
-        y_target = compute_meta_target(_r2_rpt, _r4_rpt, _r8_rpt, groups=None)
+
+        # Extract vol_proxy from base df (largest horizon usually) for reporting metrics
+        # Note: 'dfm' is the largest horizon dataset.
+        _vol_proxy_rpt = dfm["__barrier_pct__"].values.astype(float) if "__barrier_pct__" in dfm.columns else None
+        if _vol_proxy_rpt is not None and len(_vol_proxy_rpt) < len(dfm):
+             _vol_proxy_rpt = np.pad(_vol_proxy_rpt, (0, len(dfm) - len(_vol_proxy_rpt)), constant_values=0.02)
+
+        y_target = compute_meta_target(_r2_rpt, _r4_rpt, _r8_rpt, vol_proxy=_vol_proxy_rpt, groups=None)
         _y_per_h_rpt = {2: _r2_rpt, 4: _r4_rpt, 8: _r8_rpt}
         groups = dfm["__ts__"].values if "__ts__" in dfm.columns else None
         n = min(len(y_ret), len(y_target), len(base_score), len(meta.oof_probs) if meta.oof_probs is not None else 0)

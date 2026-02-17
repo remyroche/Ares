@@ -54,10 +54,8 @@ def _assert_inputs(df: pd.DataFrame) -> None:
         raise ValueError("NaNs in score")
     if df["fwd_ret_4h"].isna().any():
         raise ValueError("NaNs in fwd_ret_4h")
-    if not (
-        np.issubdtype(df["ts"].dtype, np.datetime64)
-        or np.issubdtype(df["ts"].dtype, np.integer)
-    ):
+    # Check if ts is datetime-like (handles datetime64 with or without timezone)
+    if not (pd.api.types.is_datetime64_any_dtype(df["ts"]) or np.issubdtype(df["ts"].dtype, np.integer)):
         raise ValueError("ts must be datetime64 or integer")
 
 

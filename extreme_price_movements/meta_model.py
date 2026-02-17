@@ -25,6 +25,8 @@ from extreme_price_movements.feature_selection_extreme_events import (
 from extreme_price_movements.purged_cv import PurgedKFold
 from extreme_price_movements.utils import tprint
 
+META_CLASS_ORDER = np.array([0, 1, 2], dtype=np.int64)
+
 if importlib.util.find_spec("xgboost") is not None:
     import xgboost as xgb
 else:
@@ -593,12 +595,33 @@ class MetaClassifierModel:
         raise ValueError(f"Unknown classifier kind: {kind}")
 
     def _predict_proba(self, model, X):
-        """Get probability of classes. Returns (N, 3)."""
-        pp = model.predict_proba(X)
-        if pp.ndim == 2:
-            return pp
-        # Fallback if 1D (should not happen for multiclass)
-        return pp
+        """Get class probabilities aligned to class order [0,1,2]."""
+        pp_raw = np.asarray(model.predict_proba(X), dtype=np.float64)
+        if pp_raw.ndim != 2:
+            raise ValueError(f"predict_proba returned invalid shape: {pp_raw.shape}")
+
+        out = np.zeros((pp_raw.shape[0], 3), dtype=np.float64)
+        classes = getattr(model, "classes_", None)
+        if classes is None and hasattr(model, "named_steps"):
+            classes = getattr(model.named_steps.get("clf"), "classes_", None)
+        if classes is None and hasattr(model, "classes"):
+            classes = np.asarray(model.classes)
+        if classes is None:
+            if pp_raw.shape[1] == 3:
+                out = pp_raw
+            else:
+                raise ValueError("Unable to align class probabilities: missing class metadata")
+        else:
+            classes = np.asarray(classes).astype(np.int64)
+            for j, cls in enumerate(classes):
+                if cls in META_CLASS_ORDER and j < pp_raw.shape[1]:
+                    out[:, int(cls)] = pp_raw[:, j]
+
+        row_sum = out.sum(axis=1, keepdims=True)
+        row_sum = np.where(row_sum > 1e-12, row_sum, 1.0)
+        out = out / row_sum
+        assert out.shape[1] == 3, f"Expected 3 classes after alignment, got {out.shape}"
+        return out
 
     # ── CV evaluation ────────────────────────────────────────────────
     def _cv_evaluate(self, kind, params, X, y, sw=None) -> Tuple[np.ndarray, float]:
@@ -623,6 +646,9 @@ class MetaClassifierModel:
         mask = np.isfinite(oof).all(axis=1)
         if mask.sum() < 20:
             return oof, 999.0
+        row_sums = oof[mask].sum(axis=1)
+        assert np.all(np.isfinite(row_sums)), "OOF row sums contain non-finite values"
+        assert np.all(np.abs(row_sums - 1.0) < 1e-3), "OOF probabilities must sum to ~1"
 
         # Metric: Brier score (multi-class: sum of squared differences)
         # We can use EV as primary metric?
@@ -843,11 +869,10 @@ class MetaClassifierModel:
         X = X_meta[self.selected_features].to_numpy(dtype=float)
         probs_list = []
         for m in self.model["models"]:
-            pp = m.predict_proba(X)
-            # Ensure (N, 3)
-            if pp.ndim == 2:
-                probs_list.append(pp)
-            else:
-                # Should not happen for multiclass
-                probs_list.append(pp)
-        return np.mean(probs_list, axis=0)
+            pp = self._predict_proba(m, X)
+            probs_list.append(pp)
+        out = np.mean(probs_list, axis=0)
+        row_sums = out.sum(axis=1)
+        assert out.shape[1] == 3, f"Expected multiclass probabilities of shape (N,3), got {out.shape}"
+        assert np.all(np.abs(row_sums - 1.0) < 1e-3), "Predicted probabilities must sum to ~1"
+        return out

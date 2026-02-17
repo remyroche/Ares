@@ -3,11 +3,24 @@ import pandas as pd
 from numba import jit
 from .fast_funcs import simulate_trade_numba
 
+OUT_SL = np.int8(0)
+OUT_TO = np.int8(1)
+OUT_TP = np.int8(2)
+_QUALITY_EPS = 1e-9
+
 @jit(nopython=True, cache=True)
 def _clip_scalar(val, a_min, a_max):
     if val < a_min: return a_min
     if val > a_max: return a_max
     return val
+
+@jit(nopython=True, cache=True)
+def _soft_squash_pos(val):
+    # Monotone compression to avoid hard saturation when raw ratios spike.
+    # For val>=0: maps to [0,1).
+    if val <= 0.0:
+        return 0.0
+    return val / (1.0 + val)
 
 @jit(nopython=True, cache=True)
 def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl_arr, horizon, side):
@@ -81,7 +94,7 @@ def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl
 
             if tt > cutoff_t:
                 # TIMEOUT
-                outcomes[i] = 1
+                outcomes[i] = OUT_TO
                 if side == 1:
                     ret = (opens[j] / entry_p) - 1.0
                 else:
@@ -91,7 +104,8 @@ def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl
 
                 # Timeout Quality: 0.5 centered, +/- based on progress to TP
                 # Cap at 0.1 to 0.9
-                rel_prog = ret / activation if activation > 0 else 0
+                den_tp = max(abs(activation), _QUALITY_EPS)
+                rel_prog = ret / den_tp
                 quality[i] = 0.5 + _clip_scalar(rel_prog * 0.4, -0.4, 0.4)
 
                 exit_found = True
@@ -100,13 +114,14 @@ def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl
             if np.isnan(hh) or np.isnan(ll):
                 if tt == cutoff_t:
                     # Timeout at close
-                    outcomes[i] = 1
+                    outcomes[i] = OUT_TO
                     if side == 1: ret = (cc / entry_p) - 1.0
                     else: ret = (entry_p / cc) - 1.0
                     returns[i] = ret
                     exit_idxs[i] = j
 
-                    rel_prog = ret / activation if activation > 0 else 0
+                    den_tp = max(abs(activation), _QUALITY_EPS)
+                    rel_prog = ret / den_tp
                     quality[i] = 0.5 + _clip_scalar(rel_prog * 0.4, -0.4, 0.4)
 
                     exit_found = True
@@ -130,34 +145,39 @@ def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl
 
             if hit_sl and hit_tp:
                 # Ambiguous bar - Assume SL
-                outcomes[i] = 0
+                outcomes[i] = OUT_SL
                 returns[i] = -sl
                 exit_idxs[i] = j
                 # Loss Quality: did we see profit first?
                 # f(MAE, MFE). Here we hit SL, so MAE >= SL_dist.
                 # Quality depends on MFE seen before? We track MFE of *this* bar too.
                 # MFE/TP_dist.
-                qual = 0.0 + (mfe_val / (entry_p * activation)) * 0.5
+                den_tp = max(entry_p * abs(activation), _QUALITY_EPS)
+                qual_raw = (mfe_val / den_tp) * 0.5
+                qual = _soft_squash_pos(qual_raw)
                 quality[i] = _clip_scalar(qual, 0.0, 0.49)
                 exit_found = True
                 break
 
             if hit_sl:
-                outcomes[i] = 0
+                outcomes[i] = OUT_SL
                 returns[i] = -sl
                 exit_idxs[i] = j
-                qual = 0.0 + (mfe_val / (entry_p * activation)) * 0.5
+                den_tp = max(entry_p * abs(activation), _QUALITY_EPS)
+                qual_raw = (mfe_val / den_tp) * 0.5
+                qual = _soft_squash_pos(qual_raw)
                 quality[i] = _clip_scalar(qual, 0.0, 0.49)
                 exit_found = True
                 break
 
             if hit_tp:
-                outcomes[i] = 2
+                outcomes[i] = OUT_TP
                 returns[i] = activation
                 exit_idxs[i] = j
                 # Win Quality: how much heat did we take?
                 # 1.0 - (MAE / SL_dist) * 0.5
-                mae_ratio = mae_val / (entry_p * sl) if sl > 0 else 0
+                den_sl = max(entry_p * abs(sl), _QUALITY_EPS)
+                mae_ratio = mae_val / den_sl
                 qual = 1.0 - (mae_ratio * 0.5)
                 quality[i] = _clip_scalar(qual, 0.51, 1.0)
                 exit_found = True
@@ -165,24 +185,27 @@ def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl
 
             # Exact cutoff at close
             if tt == cutoff_t:
-                outcomes[i] = 1
+                outcomes[i] = OUT_TO
                 if side == 1: ret = (cc / entry_p) - 1.0
                 else: ret = (entry_p / cc) - 1.0
                 returns[i] = ret
                 exit_idxs[i] = j
-                rel_prog = ret / activation if activation > 0 else 0
+                den_tp = max(abs(activation), _QUALITY_EPS)
+                rel_prog = ret / den_tp
                 quality[i] = 0.5 + _clip_scalar(rel_prog * 0.4, -0.4, 0.4)
                 exit_found = True
                 break
 
         if not exit_found:
-            outcomes[i] = 1
+            outcomes[i] = OUT_TO
             if side == 1: returns[i] = (closes[n-1] / entry_p) - 1.0
             else: returns[i] = (entry_p / closes[n-1]) - 1.0
             exit_idxs[i] = n - 1
-            rel_prog = returns[i] / activation if activation > 0 else 0
+            den_tp = max(abs(activation), _QUALITY_EPS)
+            rel_prog = returns[i] / den_tp
             quality[i] = 0.5 + _clip_scalar(rel_prog * 0.4, -0.4, 0.4)
 
+    quality = np.clip(np.nan_to_num(quality, nan=0.0, posinf=1.0, neginf=0.0), 0.0, 1.0).astype(np.float32)
     return outcomes, returns, quality, exit_idxs
 
 @jit(nopython=True, cache=True)

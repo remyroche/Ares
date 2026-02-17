@@ -22,7 +22,7 @@ import glob
 import logging
 from copy import deepcopy
 from collections import OrderedDict
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, Iterable
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
 
@@ -46,6 +46,7 @@ from extreme_price_movements.training import (
     build_hourly_training_set_and_weights,
     build_grid_aggregated_tb_cache,
 )
+from extreme_price_movements.sample_weights import compute_avg_uniqueness
 from extreme_price_movements.utils import tprint
 from extreme_price_movements import fast_funcs as ff
 from extreme_price_movements.training_defaults import (
@@ -79,6 +80,7 @@ STAGE1_OOF_MAX_SAMPLES = 250_000
 STAGE1_OOF_SPLITS = 2
 STAGE23_OOF_SPLITS = 3
 STAGE1_SYMBOL_SUBSAMPLE_STEP = 2
+EPS = 1e-12
 
 _TARGET_RACE_DEFAULTS = get_target_race_model_defaults(CFG)
 ET_REGRESSOR_PARAMS = dict(_TARGET_RACE_DEFAULTS["et_params"])
@@ -118,6 +120,45 @@ def tlog(message: str):
         tprint(f"{message} | mem={mem:.1f}MB")
     else:
         tprint(message)
+
+
+def apply_deprado_concurrency_weight(
+    weights: np.ndarray,
+    meta_idx: Any,
+    horizon_hours: int,
+    enable: bool = True,
+) -> np.ndarray:
+    """Apply de Prado concurrency uniqueness scaling to slice weights (compare-only path)."""
+    w = np.asarray(weights, dtype=np.float32)
+    if not enable or w.size == 0:
+        return w
+    if not isinstance(meta_idx, pd.MultiIndex) or meta_idx.nlevels < 1:
+        return w
+
+    ts = pd.to_datetime(meta_idx.get_level_values(0), utc=True, errors="coerce")
+    valid = pd.Series(ts).notna().values
+    if valid.sum() < 4:
+        return w
+
+    t_start = pd.DatetimeIndex(ts[valid])
+    t_end = t_start + pd.Timedelta(hours=int(max(1, horizon_hours)))
+    label_times = pd.DataFrame({"t_start": t_start, "t_end": t_end}, index=np.where(valid)[0])
+    grid = pd.DatetimeIndex(np.unique(np.concatenate([t_start.values, t_end.values]))).sort_values()
+
+    uniq = compute_avg_uniqueness(label_times=label_times, time_grid=grid)
+    u = np.ones(len(w), dtype=np.float32)
+    if len(uniq) > 0:
+        u_vals = np.asarray(uniq.values, dtype=np.float32)
+        u_idx = np.asarray(uniq.index.values, dtype=int)
+        u[u_idx] = u_vals
+
+    u = np.nan_to_num(u, nan=1.0, posinf=1.0, neginf=1.0)
+    mean_u = float(np.mean(u)) if len(u) else 1.0
+    if mean_u > 1e-8:
+        u = u / mean_u
+    w2 = w * u
+    w2 = np.clip(w2, 1e-8, None)
+    return w2.astype(np.float32)
 
 
 def cast_dataframe_dtype(df: pd.DataFrame, float_dtype: np.dtype) -> pd.DataFrame:
@@ -872,6 +913,12 @@ def evaluate_training_slices(
                 y_ret = np.asarray(y_ret, dtype=np.float32)
                 y_bin = np.asarray(y_bin, dtype=np.float32)
                 w = np.asarray(w, dtype=np.float32)
+                w = apply_deprado_concurrency_weight(
+                    weights=w,
+                    meta_idx=meta_idx,
+                    horizon_hours=int(h),
+                    enable=bool(cfg_variant.get("compare_use_deprado_concurrency_weight", True)),
+                )
                 mean_ret = float(np.nanmean(y_ret))
                 vol_ret = float(np.nanstd(y_ret))
                 downside = y_ret[y_ret < 0]
@@ -1036,6 +1083,180 @@ def preprocess_atr(
     }
 
 
+def _cusum_zscore_std(ret_df: pd.DataFrame, span: int = 96, z_cap: float = 8.0) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Standard z-score using EWM sigma with clipping."""
+    sigma = ret_df.ewm(span=int(span), min_periods=max(8, int(span // 4)), adjust=False).std()
+    sigma = sigma.abs().replace(0, np.nan)
+    z = (ret_df / (sigma + EPS)).clip(lower=-float(z_cap), upper=float(z_cap))
+    return z.astype(np.float32), sigma.astype(np.float32)
+
+
+def _cusum_zscore_mad(ret_df: pd.DataFrame, win: int = 256, z_cap: float = 10.0) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Robust z-score using rolling MAD."""
+    minp = max(10, int(win // 5))
+    med = ret_df.rolling(int(win), min_periods=minp).median()
+    mad = (ret_df - med).abs().rolling(int(win), min_periods=minp).median()
+    scale = 1.4826 * mad
+    z = ((ret_df - med) / (scale + EPS)).clip(lower=-float(z_cap), upper=float(z_cap))
+    return z.astype(np.float32), scale.astype(np.float32)
+
+
+def _cusum_zscore_iqr(ret_df: pd.DataFrame, win: int = 256, z_cap: float = 10.0) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Robust z-score using rolling IQR."""
+    minp = max(10, int(win // 5))
+    q1 = ret_df.rolling(int(win), min_periods=minp).quantile(0.25)
+    q3 = ret_df.rolling(int(win), min_periods=minp).quantile(0.75)
+    iqr = q3 - q1
+    scale = iqr / 1.349
+    med = ret_df.rolling(int(win), min_periods=minp).median()
+    z = ((ret_df - med) / (scale + EPS)).clip(lower=-float(z_cap), upper=float(z_cap))
+    return z.astype(np.float32), scale.astype(np.float32)
+
+
+def _cusum_remove_drift(z_df: pd.DataFrame, mu_win: int = 64, method: str = "ewm") -> pd.DataFrame:
+    """Remove micro-drift from z before CUSUM accumulation."""
+    if str(method).lower() == "ewm":
+        mu = z_df.ewm(span=int(mu_win), adjust=False, min_periods=max(10, int(mu_win // 4))).mean()
+    else:
+        mu = z_df.rolling(int(mu_win), min_periods=max(10, int(mu_win // 4))).mean()
+    return (z_df - mu).astype(np.float32)
+
+
+def _build_cusum_z_for_frame(
+    ret_df: pd.DataFrame,
+    z_mode: str = "std_clip",
+    z_cap: float = 8.0,
+    robust_win: int = 256,
+    drift_remove: bool = True,
+    mu_win: int = 64,
+    drift_method: str = "ewm",
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Build robust z-score frame and companion scale frame for CUSUM."""
+    mode = str(z_mode).lower()
+    if mode == "std_clip":
+        z_df, sigma_df = _cusum_zscore_std(ret_df, span=96, z_cap=z_cap)
+    elif mode == "mad":
+        z_df, sigma_df = _cusum_zscore_mad(ret_df, win=robust_win, z_cap=z_cap)
+    elif mode == "iqr":
+        z_df, sigma_df = _cusum_zscore_iqr(ret_df, win=robust_win, z_cap=z_cap)
+    else:
+        raise ValueError("cusum_z_mode must be one of: std_clip, mad, iqr")
+
+    if bool(drift_remove):
+        z_df = _cusum_remove_drift(z_df, mu_win=mu_win, method=drift_method)
+
+    return z_df.astype(np.float32), sigma_df.astype(np.float32)
+
+
+def _compute_cusum_strength_from_z(
+    z_df: pd.DataFrame,
+    h_in: float,
+    shock_z: Optional[float] = 5.0,
+    cooldown: int = 3,
+) -> pd.DataFrame:
+    """Trigger-only directional CUSUM impulse detector (no episode closure dependency)."""
+    z_arr = z_df.to_numpy(dtype=np.float32, copy=False)
+    out = np.zeros_like(z_arr, dtype=np.float32)
+    n_rows, n_cols = z_arr.shape
+
+    h_in = float(max(h_in, 1e-6))
+    cooldown = int(max(0, cooldown))
+    shock_z = None if shock_z is None else float(max(shock_z, 0.0))
+
+    for c in range(n_cols):
+        col = z_arr[:, c]
+        s_pos = 0.0
+        s_neg = 0.0
+        cd = 0
+
+        for i in range(n_rows):
+            zi = float(col[i])
+            if not np.isfinite(zi):
+                s_pos = 0.0
+                s_neg = 0.0
+                if cd > 0:
+                    cd -= 1
+                continue
+
+            if cd > 0:
+                cd -= 1
+                # Keep trigger-only semantics: do not accumulate during cooldown.
+                s_pos = 0.0
+                s_neg = 0.0
+                continue
+
+            # Instantaneous shock trigger for flash/gap-like impulses.
+            if shock_z is not None and abs(zi) >= shock_z:
+                out[i, c] = np.float32(np.sign(zi) * abs(zi))
+                s_pos = 0.0
+                s_neg = 0.0
+                cd = cooldown
+                continue
+
+            # Directional CUSUM impulse accumulation.
+            s_pos = max(0.0, s_pos + zi)
+            s_neg = min(0.0, s_neg + zi)
+
+            if s_pos >= h_in:
+                out[i, c] = np.float32(s_pos)
+                s_pos = 0.0
+                s_neg = 0.0
+                cd = cooldown
+            elif s_neg <= -h_in:
+                out[i, c] = np.float32(s_neg)
+                s_pos = 0.0
+                s_neg = 0.0
+                cd = cooldown
+
+    return pd.DataFrame(out, index=z_df.index, columns=z_df.columns, dtype=np.float32)
+
+
+def _conditional_expand_with_z_and_sign(
+    base_mask: pd.DataFrame,
+    base_sign: pd.DataFrame,
+    offsets: Iterable[int],
+    z_df: Optional[pd.DataFrame],
+    ret_df: Optional[pd.DataFrame],
+    sigma_df: Optional[pd.DataFrame] = None,
+    z_min: float = 1.0,
+    sign_pct: float = 0.6,
+    consistency_bars: int = 5,
+    vol_ratio: float = 1.2,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Expand candidates but keep only bars supported by z-gate + sign consistency."""
+    expanded = base_mask.copy()
+    sign_out = base_sign.copy().astype(np.int8)
+    if not offsets:
+        return expanded, sign_out
+
+    for off in offsets:
+        shifted_mask = base_mask.shift(int(off)).fillna(False)
+        shifted_sign = base_sign.shift(int(off)).fillna(0).astype(np.int8)
+
+        cond = shifted_mask
+        if z_df is not None:
+            z_shift = z_df.shift(int(off))
+            cond = cond & z_shift.abs().ge(float(z_min)).fillna(False)
+        if ret_df is not None:
+            r_shift = ret_df.shift(int(off))
+            sign_match = (np.sign(r_shift) == shifted_sign).where(shifted_sign != 0, False)
+            sm = sign_match.rolling(int(max(1, consistency_bars)), min_periods=1).mean()
+            cond = cond & sm.ge(float(sign_pct)).fillna(False)
+        if sigma_df is not None:
+            sig_shift = sigma_df.shift(int(off))
+            sig_base = sigma_df.where(base_mask)
+            sig_base_med = sig_base.rolling(int(max(2, consistency_bars)), min_periods=1).median()
+            vr = sig_shift / (sig_base_med + EPS)
+            cond = cond & vr.ge(float(vol_ratio)).fillna(False)
+
+        expanded |= cond
+        fill_mask = (sign_out == 0) & cond & (shifted_sign != 0)
+        sign_out = sign_out.where(~fill_mask, shifted_sign)
+
+    sign_out = sign_out.where(expanded, 0).astype(np.int8)
+    return expanded.fillna(False), sign_out
+
+
 # =============================================================================
 # Candidate Selection Functions
 # =============================================================================
@@ -1055,6 +1276,49 @@ def precompute_selection_metrics(feats: dict, float_dtype: np.dtype) -> dict:
 
     metrics = {"fixed": ret_base}
 
+    cusum_pack: Dict[str, Any] = {"z": None, "sigma": None, "strength_by_h": {}}
+    ret_for_cusum = feats.get("ret1h")
+    if ret_for_cusum is None:
+        ret_for_cusum = ret_base
+    ret_for_cusum = ret_for_cusum.astype(float_dtype, copy=False)
+    z_mode = str(CFG.get("cusum_z_mode", "std_clip"))
+    z_cap = float(CFG.get("cusum_z_cap", 8.0))
+    robust_win = int(CFG.get("cusum_robust_win", 256))
+    drift_remove = bool(CFG.get("cusum_drift_remove", True))
+    mu_win = int(CFG.get("cusum_mu_win", 64))
+    drift_method = str(CFG.get("cusum_drift_method", "ewm"))
+    z_df, sigma_df = _build_cusum_z_for_frame(
+        ret_for_cusum,
+        z_mode=z_mode,
+        z_cap=z_cap,
+        robust_win=robust_win,
+        drift_remove=drift_remove,
+        mu_win=mu_win,
+        drift_method=drift_method,
+    )
+    cusum_pack["z"] = z_df.astype(float_dtype, copy=False)
+    cusum_pack["sigma"] = sigma_df.astype(float_dtype, copy=False)
+    shock_z = CFG.get("cusum_shock_z", 5.0)
+    if shock_z is not None:
+        shock_z = float(shock_z)
+    cooldown = int(CFG.get("cusum_impulse_cooldown", 3))
+    use_sparse_strength = bool(CFG.get("cusum_strength_sparse", True))
+    for h in (5.0, 6.0, 7.0):
+        key = f"{h:.1f}"
+        strength_df = _compute_cusum_strength_from_z(
+            z_df,
+            h_in=h,
+            shock_z=shock_z,
+            cooldown=cooldown,
+        ).astype(float_dtype, copy=False)
+        if not strength_df.index.equals(ret_for_cusum.index) or not strength_df.columns.equals(ret_for_cusum.columns):
+            raise ValueError(f"CUSUM strength alignment mismatch for h={key}")
+        if use_sparse_strength:
+            strength_df = strength_df.astype(pd.SparseDtype(float_dtype, 0.0))
+        cusum_pack["strength_by_h"][key] = strength_df
+    # default CUSUM metric in common map
+    metrics["cusum"] = cusum_pack["strength_by_h"].get("6.0")
+
     atr_effective = None
     atr_pct = feats.get("atr_pct")
     if atr_pct is not None:
@@ -1073,6 +1337,7 @@ def precompute_selection_metrics(feats: dict, float_dtype: np.dtype) -> dict:
     return {
         "metrics": metrics,
         "atr_effective": atr_effective,
+        "cusum_pack": cusum_pack,
     }
 
 
@@ -1170,29 +1435,41 @@ def apply_quality_filters_array(
     return filtered
 
 
-def compute_cross_sectional_base_mask_and_sign(metric: pd.DataFrame, pct: float) -> tuple[np.ndarray, np.ndarray]:
-    """Compute cross-sectional base mask + directional sign with fully vectorized NumPy ops."""
+def compute_cross_sectional_base_mask_and_sign(
+    metric: pd.DataFrame,
+    pct: float,
+    eligible_mask: Optional[np.ndarray] = None,
+    low_count_policy: str = "keep_all",
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compute cross-sectional base mask + sign with deterministic low-count handling."""
     arr = metric.to_numpy(dtype=np.float32, copy=False)
     n_rows, n_cols = arr.shape
     k = max(1, int(n_cols * pct))
 
     valid = np.isfinite(arr)
+    if eligible_mask is not None:
+        valid &= np.asarray(eligible_mask, dtype=bool)
     valid_counts = valid.sum(axis=1)
-    row_ok = valid_counts >= k
 
-    # Place NaNs at extremes so argsort stays vectorized and deterministic.
+    # Deterministic low-trigger handling for sparse modes (e.g., CUSUM):
+    # - keep_all: keep all valid points when count<k
+    # - drop: drop timestamp entirely when count<k
+    low_count_policy = str(low_count_policy).lower()
+    row_keep_all = valid_counts < k
+
     arr_for_top = np.where(valid, arr, -np.inf)
     arr_for_bot = np.where(valid, arr, np.inf)
 
-    top_idx = np.argsort(arr_for_top, axis=1)[:, -k:]
-    bot_idx = np.argsort(arr_for_bot, axis=1)[:, :k]
+    # O(N) partial selection avoids full per-row sort for better scaling.
+    top_idx = np.argpartition(arr_for_top, kth=max(n_cols - k, 0), axis=1)[:, -k:]
+    bot_idx = np.argpartition(arr_for_bot, kth=max(k - 1, 0), axis=1)[:, :k]
 
     row_ids = np.repeat(np.arange(n_rows, dtype=np.int32), k)
     top_flat = top_idx.reshape(-1)
     bot_flat = bot_idx.reshape(-1)
 
-    top_valid = row_ok[row_ids] & np.isfinite(arr[row_ids, top_flat])
-    bot_valid = row_ok[row_ids] & np.isfinite(arr[row_ids, bot_flat])
+    top_valid = valid[row_ids, top_flat]
+    bot_valid = valid[row_ids, bot_flat]
 
     mask_arr = np.zeros((n_rows, n_cols), dtype=bool)
     sign_arr = np.zeros((n_rows, n_cols), dtype=np.int8)
@@ -1202,11 +1479,27 @@ def compute_cross_sectional_base_mask_and_sign(metric: pd.DataFrame, pct: float)
     rr_bot = row_ids[bot_valid]
     cc_bot = bot_flat[bot_valid]
 
-    # Momentum convention: long top winners (+1), short bottom losers (-1).
     mask_arr[rr_top, cc_top] = True
     sign_arr[rr_top, cc_top] = 1
     mask_arr[rr_bot, cc_bot] = True
     sign_arr[rr_bot, cc_bot] = -1
+
+    if np.any(row_keep_all):
+        if low_count_policy == "keep_all":
+            keep_rows = np.where(row_keep_all)[0]
+            valid_keep = valid[keep_rows]
+            arr_keep = arr[keep_rows]
+            pos = valid_keep & (arr_keep > 0)
+            neg = valid_keep & (arr_keep < 0)
+            mask_arr[keep_rows] = valid_keep
+            sign_keep = np.zeros(valid_keep.shape, dtype=np.int8)
+            sign_keep[pos] = 1
+            sign_keep[neg] = -1
+            sign_arr[keep_rows] = sign_keep
+        elif low_count_policy == "drop":
+            drop_rows = np.where(row_keep_all)[0]
+            mask_arr[drop_rows] = False
+            sign_arr[drop_rows] = 0
 
     return mask_arr, sign_arr
 
@@ -1232,6 +1525,8 @@ def select_candidates_cross_sectional(
     base_mask_cache: Optional[dict] = None,
     base_cache_key: Optional[tuple] = None,
     return_sign: bool = False,
+    prefilter_arr: Optional[np.ndarray] = None,
+    low_count_policy: str = "keep_all",
 ) -> pd.DataFrame | tuple[pd.DataFrame, pd.DataFrame]:
     """
     Unified cross-sectional selection for all three modes.
@@ -1264,27 +1559,17 @@ def select_candidates_cross_sectional(
             base_mask_arr = cached
             base_sign_arr = np.zeros_like(base_mask_arr, dtype=np.int8)
     else:
-        base_mask_arr, base_sign_arr = compute_cross_sectional_base_mask_and_sign(metric, pct)
+        base_mask_arr, base_sign_arr = compute_cross_sectional_base_mask_and_sign(
+            metric,
+            pct,
+            eligible_mask=prefilter_arr,
+            low_count_policy=low_count_policy,
+        )
         if base_mask_cache is not None and base_cache_key is not None:
             base_mask_cache[base_cache_key] = (base_mask_arr, base_sign_arr)
 
-    has_filters = any(
-        [
-            min_range_pct is not None,
-            min_vol_zscore is not None,
-            min_sign_consistency is not None,
-        ]
-    )
-    if has_filters:
-        mask_arr = apply_quality_filters_array(
-            base_mask_arr=base_mask_arr,
-            filter_masks=filter_masks,
-            min_range_pct=min_range_pct,
-            min_vol_zscore=min_vol_zscore,
-            min_sign_consistency=min_sign_consistency,
-        )
-    else:
-        mask_arr = np.array(base_mask_arr, copy=True, dtype=bool)
+    # Filters are now applied pre-ranking through prefilter_arr for deterministic ranks.
+    mask_arr = np.asarray(base_mask_arr, dtype=bool)
 
     mask_df = pd.DataFrame(mask_arr, index=metric.index, columns=metric.columns, dtype=bool)
     if not return_sign:
@@ -2071,7 +2356,7 @@ def compute_learnability_metrics(
             "atr_q50": 0,
             "atr_q90": 0,
             "atr_decile_worst": -1,
-            "atr_decile_worst_share": 0,
+            "atr_decile_worst_share": np.nan,
             "atr_decile_pnl_json": "{}",
         }
 
@@ -2162,7 +2447,7 @@ def compute_learnability_metrics(
             "atr_q50": 0,
             "atr_q90": 0,
             "atr_decile_worst": -1,
-            "atr_decile_worst_share": 0,
+            "atr_decile_worst_share": np.nan,
             "atr_decile_pnl_json": "{}",
         }
     
@@ -2697,6 +2982,7 @@ def run_comparison(
         structural_keys = {
             "ret6h",
             "ret24h",
+            "ret1h",
             "atr_pct",
             "trend_pct",
             "range_12h_pct",
@@ -2888,7 +3174,9 @@ def run_comparison(
     default_tp_hi = float(barrier_defaults["barrier_tp_hi"])
     default_k_tp = float(barrier_defaults["barrier_k_tp"])
     default_sl_mult = float(barrier_defaults["barrier_sl_base_mult"])
-    pct_grid = [0.06]  # Single pct for initial runs
+    default_cusum_h = float(runtime_cfg.get("cusum_h", 6.0))
+    default_cusum_z_gate = float(runtime_cfg.get("cusum_z_gate", 0.5))
+    pct_grid = [0.06, 0.20]  # Broader pct grid for Stage 1/2 comparisons
     
     # Expansion variants
     expansion_variants = [
@@ -2900,21 +3188,21 @@ def run_comparison(
     ]
     
     # Modes to test
-    modes = [("F", "fixed"), ("A", "atr"), ("VW", "vol_weight")]
+    modes = [("F", "fixed"), ("A", "atr"), ("VW", "vol_weight"), ("C", "cusum")]
     
     # Use 33% of samples for faster execution
     SAMPLE_FRAC = 0.33
     
     # =============================================================================
-    # STAGE 1: Filter sweep (27 configs)
-    # 3 modes × 3 filter sweeps × 3 values each
+    # STAGE 1: Filter sweep (54 configs)
+    # 3 modes × 2 pct values × (4 range + 3 vol + 2 sign-consistency)
     # No expansions in this stage - just filter sweeps to find best values
     # =============================================================================
     tlog("Stage 1 setup: building filter-sweep configs")
     # One-at-a-time filter sweeps for each mode (pipeline-aligned defaults on other filters)
     for mode_prefix, mode_name in modes:
         for pct in pct_grid:
-            for range_pct in [0.06, 0.07, 0.08]:
+            for range_pct in [0.06, 0.07, 0.08, 0.09]:
                 configs.append(
                     {
                         "config_id": f"{mode_prefix}_P{int(pct * 100):02d}_R{int(range_pct * 100):02d}",
@@ -2923,6 +3211,8 @@ def run_comparison(
                         "min_range_pct": range_pct,
                         "min_vol_zscore": default_vol_zscore,
                         "min_sign_consistency": default_sign_consistency,
+                        "cusum_h": default_cusum_h,
+                        "cusum_z_gate": default_cusum_z_gate,
                     }
                 )
             for vol_z in [1.4, 1.6, 1.8]:
@@ -2934,9 +3224,11 @@ def run_comparison(
                         "min_range_pct": default_range_pct,
                         "min_vol_zscore": vol_z,
                         "min_sign_consistency": default_sign_consistency,
+                        "cusum_h": default_cusum_h,
+                        "cusum_z_gate": default_cusum_z_gate,
                     }
                 )
-            for sc in [0.60, 0.70, 0.80]:
+            for sc in [0.60, 0.70]:
                 configs.append(
                     {
                         "config_id": f"{mode_prefix}_P{int(pct * 100):02d}_S{int(sc * 100):02d}",
@@ -2945,14 +3237,16 @@ def run_comparison(
                         "min_range_pct": default_range_pct,
                         "min_vol_zscore": default_vol_zscore,
                         "min_sign_consistency": sc,
+                        "cusum_h": default_cusum_h,
+                        "cusum_z_gate": default_cusum_z_gate,
                     }
                 )
 
     tlog(f"Stage 1 setup done: {len(configs)} configs")
 
     # =============================================================================
-    # STAGE 2: Expansion variants (15 configs)
-    # 3 modes × 5 expansion variants
+    # STAGE 2: Expansion variants (30 configs)
+    # 3 modes × 2 pct values × 5 expansion variants
     # Uses best filter values from Stage 1
     # =============================================================================
     tlog("Stage 2 setup: adding FULL configs + expansion variants")
@@ -2969,10 +3263,12 @@ def run_comparison(
                     "min_sign_consistency": default_sign_consistency,
                     "barrier_sl_base_mult": default_sl_mult,
                     "barrier_k_tp": default_k_tp,
+                    "cusum_h": default_cusum_h,
+                    "cusum_z_gate": default_cusum_z_gate,
                 }
             )
 
-    # Add expansion variants to FULL configs only (15 configs total)
+    # Add expansion variants to FULL configs only (30 configs total)
     expanded_configs = []
     for cfg in configs:
         if "_FULL" in cfg["config_id"]:
@@ -2989,9 +3285,9 @@ def run_comparison(
     tlog(f"Stage 2 setup done: {len(configs)} configs")
 
     # =============================================================================
-    # STAGE 3: PCT variations for winners (12 configs)
+    # STAGE 3: PCT variations for winners (up to 20 configs)
     # Added when --stage3 flag is used with --winners
-    # 4 winners × 3 pct values = 12 configs
+    # 4 winners × 5 pct values = 20 configs (before skipping original pct)
     # Stage 3 always uses ExtraTrees for final selection
     # =============================================================================
     if stage3 and winners:
@@ -2999,7 +3295,7 @@ def run_comparison(
         # Force ExtraTrees for Stage 3
         use_extratrees = True
         
-        stage3_pcts = [0.05, 0.06, 0.07]
+        stage3_pcts = [0.05, 0.06, 0.07, 0.10, 0.20]
         stage3_configs = []
         for cfg in configs:
             # Check if this config matches any of the winners
@@ -3111,9 +3407,9 @@ def run_comparison(
         tlog(f"Config start: {config_id}")
         
         try:
-            if mode not in {"fixed", "atr", "vol_weight"}:
+            if mode not in {"fixed", "atr", "vol_weight", "cusum"}:
                 raise ValueError(f"Unsupported mode in default sweep: '{mode}'")
-            if mode not in metric_by_mode:
+            if mode != "cusum" and mode not in metric_by_mode:
                 raise ValueError(f"Required features missing for mode '{mode}'")
 
             # Extract filter parameters from config
@@ -3124,19 +3420,52 @@ def run_comparison(
             expansion_offsets = cfg.get("expansion_offsets", [])
 
             tlog(f"Selecting candidates: mode={mode}, pct={pct}")
+            metric_for_mode = metric_by_mode.get(mode)
+            prefilter_arr = None
+            low_count_policy = str(cfg.get("cusum_low_count_policy", "keep_all"))
+            if mode == "cusum":
+                cusum_pack = metric_pack.get("cusum_pack", {}) if isinstance(metric_pack, dict) else {}
+                strength_by_h = cusum_pack.get("strength_by_h", {}) if isinstance(cusum_pack, dict) else {}
+                cusum_h = float(cfg.get("cusum_h", default_cusum_h))
+                metric_for_mode = strength_by_h.get(f"{cusum_h:.1f}")
+                if metric_for_mode is None:
+                    raise ValueError(f"CUSUM metric unavailable for h={cusum_h:.1f}")
+
+            # Pre-ranking quality filters: rank only among valid points.
+            if filter_mask_pack is not None:
+                prefilter_arr = np.array(filter_mask_pack.get("true_arr"), copy=True, dtype=bool)
+                if min_range_pct is not None:
+                    range_mask = filter_mask_pack["range_masks"].get(float(min_range_pct))
+                    if range_mask is not None:
+                        prefilter_arr &= range_mask
+                if min_vol_zscore is not None:
+                    vol_mask = filter_mask_pack["vol_masks"].get(float(min_vol_zscore))
+                    if vol_mask is not None:
+                        prefilter_arr &= vol_mask
+                if min_sign_consistency is not None:
+                    sc_mask = filter_mask_pack["sc_masks"].get(float(min_sign_consistency))
+                    if sc_mask is not None:
+                        prefilter_arr &= sc_mask
+            if mode == "cusum" and metric_for_mode is not None:
+                trig = metric_for_mode.to_numpy(dtype=np.float32, copy=False)
+                trig_mask = np.isfinite(trig) & (np.abs(trig) > 0)
+                prefilter_arr = trig_mask if prefilter_arr is None else (prefilter_arr & trig_mask)
+
             candidate_mask_base, side_sign_base = select_candidates_cross_sectional(
-                metric_by_mode[mode],
+                metric_for_mode,
                 pct,
                 filter_masks=filter_mask_pack,
                 min_range_pct=min_range_pct,
                 min_vol_zscore=min_vol_zscore,
                 min_sign_consistency=min_sign_consistency,
                 base_mask_cache=base_mask_cache,
-                base_cache_key=(mode, float(pct)),
+                base_cache_key=(mode, float(pct), low_count_policy),
                 return_sign=True,
+                prefilter_arr=prefilter_arr,
+                low_count_policy=low_count_policy,
             )
             # Troubleshooting: show where candidates are filtered out.
-            raw_cached = base_mask_cache.get((mode, float(pct)))
+            raw_cached = base_mask_cache.get((mode, float(pct), low_count_policy))
             raw_base_arr = raw_cached[0] if isinstance(raw_cached, tuple) else raw_cached
             if raw_base_arr is not None:
                 n_raw = int(raw_base_arr.sum())
@@ -3164,17 +3493,45 @@ def run_comparison(
                     f"raw={n_raw}, after_range={n_after_range}, "
                     f"after_vol={n_after_vol}, after_sign={n_after_sc}"
                 )
+            if mode == "cusum":
+                cusum_pack = metric_pack.get("cusum_pack", {}) if isinstance(metric_pack, dict) else {}
+                z_df = cusum_pack.get("z") if isinstance(cusum_pack, dict) else None
+                z_gate = float(cfg.get("cusum_z_gate", default_cusum_z_gate))
+                if isinstance(z_df, pd.DataFrame):
+                    z_gate_mask = z_df.abs().ge(z_gate).reindex(index=candidate_mask_base.index, columns=candidate_mask_base.columns).fillna(False)
+                    candidate_mask_base = (candidate_mask_base & z_gate_mask).fillna(False)
+                    side_sign_base = side_sign_base.where(candidate_mask_base, 0).astype(np.int8)
+                    tlog(f"CUSUM z-gate applied: z>={z_gate:.2f}")
+
             base_selected_n = int(candidate_mask_base.to_numpy(dtype=bool, copy=False).sum())
             tlog(f"Candidate base mask: selected={base_selected_n}")
-            candidate_mask_metrics = expand_candidate_mask(candidate_mask_base, expansion_offsets)
-            side_sign_metrics = side_sign_base.copy()
-            if expansion_offsets:
-                for off in expansion_offsets:
-                    shifted = side_sign_base.shift(int(off)).fillna(0).astype(np.int8)
-                    # Preserve first non-zero sign when expanded overlap occurs.
-                    fill_mask = (side_sign_metrics == 0) & (shifted != 0)
-                    side_sign_metrics = side_sign_metrics.where(~fill_mask, shifted)
-            side_sign_metrics = side_sign_metrics.where(candidate_mask_metrics, 0).astype(np.int8)
+
+            if mode == "cusum" and expansion_offsets:
+                cusum_pack = metric_pack.get("cusum_pack", {}) if isinstance(metric_pack, dict) else {}
+                z_df = cusum_pack.get("z") if isinstance(cusum_pack, dict) else None
+                ret_df = feats.get("ret1h") if isinstance(feats.get("ret1h"), pd.DataFrame) else feats.get("ret6h")
+                candidate_mask_metrics, side_sign_metrics = _conditional_expand_with_z_and_sign(
+                    base_mask=candidate_mask_base,
+                    base_sign=side_sign_base,
+                    offsets=expansion_offsets,
+                    z_df=z_df if isinstance(z_df, pd.DataFrame) else None,
+                    ret_df=ret_df if isinstance(ret_df, pd.DataFrame) else None,
+                    sigma_df=(cusum_pack.get("sigma") if isinstance(cusum_pack.get("sigma"), pd.DataFrame) else None),
+                    z_min=float(cfg.get("cusum_expand_z_min", 1.0)),
+                    sign_pct=float(cfg.get("cusum_expand_sign_pct", 0.6)),
+                    consistency_bars=int(cfg.get("cusum_expand_consistency_bars", 5)),
+                    vol_ratio=float(cfg.get("cusum_expand_vol_ratio", 1.2)),
+                )
+            else:
+                candidate_mask_metrics = expand_candidate_mask(candidate_mask_base, expansion_offsets)
+                side_sign_metrics = side_sign_base.copy()
+                if expansion_offsets:
+                    for off in expansion_offsets:
+                        shifted = side_sign_base.shift(int(off)).fillna(0).astype(np.int8)
+                        # Preserve first non-zero sign when expanded overlap occurs.
+                        fill_mask = (side_sign_metrics == 0) & (shifted != 0)
+                        side_sign_metrics = side_sign_metrics.where(~fill_mask, shifted)
+                side_sign_metrics = side_sign_metrics.where(candidate_mask_metrics, 0).astype(np.int8)
             expanded_selected_n = int(candidate_mask_metrics.to_numpy(dtype=bool, copy=False).sum())
             if expansion_offsets:
                 tlog(
@@ -3409,44 +3766,44 @@ def run_comparison(
                 "barrier_disp_floor": cfg.get("barrier_disp_floor", 0.1),
                 "expansion_name": cfg.get("expansion_name", "none"),
                 "expansion_offsets": ",".join(str(o) for o in cfg.get("expansion_offsets", [])) if cfg.get("expansion_offsets") else "",
-                "n_candidates_mean": 0,
-                "ic": 0,
-                "ic_std": 0,
-                "ks_stat": 0,
-                "snr": 0,
-                "class_balance": 0,
-                "mean_feat_ic": 0,
-                "sharpe": 0,
-                "candidate_rate": 0,
-                "mean_return_bps": 0,
-                "volatility_bps": 0,
-                "sortino": 0,
-                "hit_rate": 0,
-                "tail_ratio": 0,
-                "ic_spearman": 0,
-                "oof_mae": 0,
-                "oof_directional_acc": 0,
-                "auc": 0,
-                "brier": 0,
+                "n_candidates_mean": np.nan,
+                "ic": np.nan,
+                "ic_std": np.nan,
+                "ks_stat": np.nan,
+                "snr": np.nan,
+                "class_balance": np.nan,
+                "mean_feat_ic": np.nan,
+                "sharpe": np.nan,
+                "candidate_rate": np.nan,
+                "mean_return_bps": np.nan,
+                "volatility_bps": np.nan,
+                "sortino": np.nan,
+                "hit_rate": np.nan,
+                "tail_ratio": np.nan,
+                "ic_spearman": np.nan,
+                "oof_mae": np.nan,
+                "oof_directional_acc": np.nan,
+                "auc": np.nan,
+                "brier": np.nan,
                 "ridge_alpha": RIDGE_SCREEN_ALPHA,
                 "ridge_top_frac": RIDGE_SCREEN_TOP_FRAC,
-                "ridge_selected_k_mean": 0,
-                "ridge_jaccard_median": 0,
-                "ridge_replacement_rate_median": 0,
-                "mean_abs_ret6h": 0,
-                "median_abs_ret6h": 0,
-                "ret6h_q01": 0,
-                "ret6h_q05": 0,
-                "atr_mean": 0,
-                "atr_q10": 0,
-                "atr_q50": 0,
-                "atr_q90": 0,
+                "ridge_selected_k_mean": np.nan,
+                "ridge_jaccard_median": np.nan,
+                "ridge_replacement_rate_median": np.nan,
+                "mean_abs_ret6h": np.nan,
+                "median_abs_ret6h": np.nan,
+                "ret6h_q01": np.nan,
+                "ret6h_q05": np.nan,
+                "atr_mean": np.nan,
+                "atr_q10": np.nan,
+                "atr_q50": np.nan,
+                "atr_q90": np.nan,
                 "atr_decile_worst": -1,
-                "atr_decile_worst_share": 0,
+                "atr_decile_worst_share": np.nan,
                 "atr_decile_pnl_json": "{}",
-                "slice_overall_sharpe": 0,
-                "slice_overall_sortino": 0,
-                "slice_overall_opportunities_per_day": 0,
+                "slice_overall_sharpe": np.nan,
+                "slice_overall_sortino": np.nan,
+                "slice_overall_opportunities_per_day": np.nan,
                 "slice_total_samples": 0,
                 "slice_metrics_json": "{}",
                 "error": str(e)
@@ -3468,46 +3825,61 @@ def run_comparison(
     results_df = pd.DataFrame(results)
 
     # Learnability-first policy ranking with classifier-aware global score.
-    valid_icstd = results_df["ic_std"].to_numpy(dtype=float)
+    error_series = results_df.get("error", pd.Series("", index=results_df.index)).fillna("").astype(str)
+    results_df["has_error"] = error_series.str.len() > 0
+    valid_policy_mask = ~results_df["has_error"].to_numpy(dtype=bool)
+
+    results_df["auc"] = pd.to_numeric(results_df.get("auc", np.nan), errors="coerce")
+    results_df["brier"] = pd.to_numeric(results_df.get("brier", np.nan), errors="coerce")
+
+    valid_icstd = pd.to_numeric(results_df.loc[valid_policy_mask, "ic_std"], errors="coerce").to_numpy(dtype=float)
     valid_icstd = valid_icstd[np.isfinite(valid_icstd)]
-    icstd_threshold = float(np.median(valid_icstd)) if len(valid_icstd) > 0 else 0.0
+    icstd_threshold = float(np.median(valid_icstd)) if len(valid_icstd) > 0 else float("nan")
     results_df["policy_icstd_threshold"] = icstd_threshold
-    results_df["policy_pass_stability"] = results_df["ic_std"] <= icstd_threshold
-    results_df["auc"] = pd.to_numeric(results_df.get("auc", 0.0), errors="coerce").fillna(0.0)
-    results_df["brier"] = pd.to_numeric(results_df.get("brier", 0.0), errors="coerce").fillna(0.0)
+    results_df["policy_pass_stability"] = False
+    if np.isfinite(icstd_threshold):
+        results_df.loc[valid_policy_mask, "policy_pass_stability"] = (
+            pd.to_numeric(results_df.loc[valid_policy_mask, "ic_std"], errors="coerce") <= icstd_threshold
+        )
 
-    rank_ic = results_df["ic"].rank(pct=True, method="average")
-    rank_ks = results_df["ks_stat"].rank(pct=True, method="average")
-    rank_snr = results_df["snr"].rank(pct=True, method="average")
-    rank_sharpe = results_df["sharpe"].rank(pct=True, method="average")
-    rank_sortino = results_df["sortino"].rank(pct=True, method="average")
-    rank_auc = results_df["auc"].rank(pct=True, method="average")
-    rank_brier = 1.0 - results_df["brier"].rank(pct=True, method="average")
+    score = pd.Series(np.nan, index=results_df.index, dtype=float)
+    if bool(np.any(valid_policy_mask)):
+        valid_idx = results_df.index[valid_policy_mask]
+        rank_ic = results_df.loc[valid_idx, "ic"].rank(pct=True, method="average")
+        rank_ks = results_df.loc[valid_idx, "ks_stat"].rank(pct=True, method="average")
+        rank_snr = results_df.loc[valid_idx, "snr"].rank(pct=True, method="average")
+        rank_sharpe = results_df.loc[valid_idx, "sharpe"].rank(pct=True, method="average")
+        rank_sortino = results_df.loc[valid_idx, "sortino"].rank(pct=True, method="average")
+        rank_auc = results_df.loc[valid_idx, "auc"].rank(pct=True, method="average")
+        rank_brier = 1.0 - results_df.loc[valid_idx, "brier"].rank(pct=True, method="average")
 
-    results_df["global_score"] = (
-        0.22 * rank_ic
-        + 0.16 * rank_ks
-        + 0.14 * rank_snr
-        + 0.12 * rank_sharpe
-        + 0.12 * rank_sortino
-        + 0.14 * rank_auc
-        + 0.10 * rank_brier
-    )
-    # Small stability bonus/penalty keeps unstable IC_std from dominating rank.
-    results_df["global_score"] = results_df["global_score"] * np.where(
-        results_df["policy_pass_stability"].to_numpy(dtype=bool),
-        1.03,
-        0.97,
-    )
+        score.loc[valid_idx] = (
+            0.22 * rank_ic
+            + 0.16 * rank_ks
+            + 0.14 * rank_snr
+            + 0.12 * rank_sharpe
+            + 0.12 * rank_sortino
+            + 0.14 * rank_auc
+            + 0.10 * rank_brier
+        )
+        # Small stability bonus/penalty keeps unstable IC_std from dominating rank.
+        score.loc[valid_idx] = score.loc[valid_idx] * np.where(
+            results_df.loc[valid_idx, "policy_pass_stability"].to_numpy(dtype=bool),
+            1.03,
+            0.97,
+        )
+
+    results_df["global_score"] = score
 
     sort_view = results_df.sort_values(
-        by=["global_score", "policy_pass_stability", "ic", "ks_stat", "snr"],
-        ascending=[False, False, False, False, False],
+        by=["has_error", "global_score", "policy_pass_stability", "ic", "ks_stat", "snr"],
+        ascending=[True, False, False, False, False, False],
+        na_position="last",
     ).reset_index(drop=True)
     sort_view["global_rank"] = np.arange(1, len(sort_view) + 1, dtype=np.int32)
     sort_view["policy_rank"] = sort_view["global_rank"]
     results_df = results_df.merge(
-        sort_view[["config_id", "policy_rank", "global_rank", "global_score"]],
+        sort_view[["config_id", "policy_rank", "global_rank"]],
         on="config_id",
         how="left",
     )
@@ -3731,7 +4103,7 @@ if __name__ == "__main__":
         if top_winners:
             # Run Stage 3 with top winners
             stage3_output = args.output.replace('.csv', '_stage3.csv')
-            tlog(f"Starting Stage 3 run with winners={top_winners} and pct grid [0.05, 0.06, 0.07]")
+            tlog(f"Starting Stage 3 run with winners={top_winners} and pct grid [0.05, 0.06, 0.07, 0.10, 0.20]")
             run_comparison(
                 args.features,
                 args.panel,

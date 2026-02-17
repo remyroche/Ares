@@ -3,6 +3,187 @@ import pandas as pd
 from numba import jit
 from .fast_funcs import simulate_trade_numba
 
+@jit(nopython=True, cache=True)
+def _clip_scalar(val, a_min, a_max):
+    if val < a_min: return a_min
+    if val > a_max: return a_max
+    return val
+
+@jit(nopython=True, cache=True)
+def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl_arr, horizon, side):
+    """
+    Triple barrier labeling returning 3-way outcome and quality scores.
+
+    Outcomes:
+        2: TP_FIRST (Profit)
+        1: TIMEOUT (Time expiry)
+        0: SL_FIRST (Loss)
+
+    Quality Scores (0.0 to 1.0):
+        TP: f(MFE, MAE) = 1.0 - (MAE / SL_dist) * 0.5  (Clean win = 1.0, messy win < 1.0)
+        SL: f(MAE, MFE) = 0.0 + (MFE / TP_dist) * 0.5  (Bad loss = 0.0, close call loss > 0.0)
+        TIMEOUT: 0.5 + (Return / TP_dist) * 0.4        (Centered at 0.5)
+
+    times: int64 (nanoseconds)
+    side: 1 for Long, -1 for Short
+    """
+    n = len(closes)
+    outcomes = np.zeros(n, dtype=np.int8)
+    quality = np.zeros(n, dtype=np.float32)
+    returns = np.zeros(n, dtype=np.float32)
+    exit_idxs = np.zeros(n, dtype=np.int64)
+
+    limit_ns = horizon * 3600 * 1_000_000_000
+
+    for i in range(n - 1):
+        entry_p = closes[i]
+        entry_t = times[i]
+        cutoff_t = entry_t + limit_ns
+
+        if np.isnan(entry_p) or entry_p <= 0:
+            continue
+
+        activation = tp_arr[i] # TP distance (pct)
+        sl = sl_arr[i]         # SL distance (pct)
+
+        if np.isnan(activation) or np.isnan(sl):
+            continue
+
+        if side == 1:  # Long
+            sl_price = entry_p * (1.0 - sl)
+            tp_price = entry_p * (1.0 + activation)
+        else:  # Short
+            sl_price = entry_p * (1.0 + sl)
+            tp_price = entry_p * (1.0 - activation)
+
+        exit_found = False
+
+        # Track MFE/MAE for quality calculation
+        mfe_val = 0.0 # Max Favorable Excursion (price diff)
+        mae_val = 0.0 # Max Adverse Excursion (price diff)
+
+        for j in range(i + 1, n):
+            tt = times[j]
+            hh = highs[j]
+            ll = lows[j]
+            cc = closes[j]
+
+            # Update MFE/MAE
+            if side == 1:
+                cur_mfe = max(0.0, hh - entry_p)
+                cur_mae = max(0.0, entry_p - ll)
+            else:
+                cur_mfe = max(0.0, entry_p - ll)
+                cur_mae = max(0.0, hh - entry_p)
+
+            if cur_mfe > mfe_val: mfe_val = cur_mfe
+            if cur_mae > mae_val: mae_val = cur_mae
+
+            if tt > cutoff_t:
+                # TIMEOUT
+                outcomes[i] = 1
+                if side == 1:
+                    ret = (opens[j] / entry_p) - 1.0
+                else:
+                    ret = (entry_p / opens[j]) - 1.0
+                returns[i] = ret
+                exit_idxs[i] = j
+
+                # Timeout Quality: 0.5 centered, +/- based on progress to TP
+                # Cap at 0.1 to 0.9
+                rel_prog = ret / activation if activation > 0 else 0
+                quality[i] = 0.5 + _clip_scalar(rel_prog * 0.4, -0.4, 0.4)
+
+                exit_found = True
+                break
+
+            if np.isnan(hh) or np.isnan(ll):
+                if tt == cutoff_t:
+                    # Timeout at close
+                    outcomes[i] = 1
+                    if side == 1: ret = (cc / entry_p) - 1.0
+                    else: ret = (entry_p / cc) - 1.0
+                    returns[i] = ret
+                    exit_idxs[i] = j
+
+                    rel_prog = ret / activation if activation > 0 else 0
+                    quality[i] = 0.5 + _clip_scalar(rel_prog * 0.4, -0.4, 0.4)
+
+                    exit_found = True
+                    break
+                continue
+
+            # Check Stops
+            hit_tp = False
+            hit_sl = False
+
+            if side == 1:
+                if ll <= sl_price: hit_sl = True
+                if hh >= tp_price: hit_tp = True
+            else:
+                if hh >= sl_price: hit_sl = True
+                if ll <= tp_price: hit_tp = True
+
+            # If both hit in same bar, assume Worst Case (SL first) or check Open?
+            # Standard conservative: SL first unless Open gap passed TP?
+            # Let's assume Worst Case (SL) if ambiguous.
+
+            if hit_sl and hit_tp:
+                # Ambiguous bar - Assume SL
+                outcomes[i] = 0
+                returns[i] = -sl
+                exit_idxs[i] = j
+                # Loss Quality: did we see profit first?
+                # f(MAE, MFE). Here we hit SL, so MAE >= SL_dist.
+                # Quality depends on MFE seen before? We track MFE of *this* bar too.
+                # MFE/TP_dist.
+                qual = 0.0 + (mfe_val / (entry_p * activation)) * 0.5
+                quality[i] = _clip_scalar(qual, 0.0, 0.49)
+                exit_found = True
+                break
+
+            if hit_sl:
+                outcomes[i] = 0
+                returns[i] = -sl
+                exit_idxs[i] = j
+                qual = 0.0 + (mfe_val / (entry_p * activation)) * 0.5
+                quality[i] = _clip_scalar(qual, 0.0, 0.49)
+                exit_found = True
+                break
+
+            if hit_tp:
+                outcomes[i] = 2
+                returns[i] = activation
+                exit_idxs[i] = j
+                # Win Quality: how much heat did we take?
+                # 1.0 - (MAE / SL_dist) * 0.5
+                mae_ratio = mae_val / (entry_p * sl) if sl > 0 else 0
+                qual = 1.0 - (mae_ratio * 0.5)
+                quality[i] = _clip_scalar(qual, 0.51, 1.0)
+                exit_found = True
+                break
+
+            # Exact cutoff at close
+            if tt == cutoff_t:
+                outcomes[i] = 1
+                if side == 1: ret = (cc / entry_p) - 1.0
+                else: ret = (entry_p / cc) - 1.0
+                returns[i] = ret
+                exit_idxs[i] = j
+                rel_prog = ret / activation if activation > 0 else 0
+                quality[i] = 0.5 + _clip_scalar(rel_prog * 0.4, -0.4, 0.4)
+                exit_found = True
+                break
+
+        if not exit_found:
+            outcomes[i] = 1
+            if side == 1: returns[i] = (closes[n-1] / entry_p) - 1.0
+            else: returns[i] = (entry_p / closes[n-1]) - 1.0
+            exit_idxs[i] = n - 1
+            rel_prog = returns[i] / activation if activation > 0 else 0
+            quality[i] = 0.5 + _clip_scalar(rel_prog * 0.4, -0.4, 0.4)
+
+    return outcomes, returns, quality, exit_idxs
 
 @jit(nopython=True, cache=True)
 def _numba_trailing_atr_labeling(
@@ -324,16 +505,14 @@ def _numba_triple_barrier(times, opens, highs, lows, closes, tp_arr, sl_arr, hor
 
     return labels, returns, exit_idxs
 
-def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long"):
+def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_outcomes=False):
     """
     Computes triple barrier labels for a panel.
     tp: Scalar float OR DataFrame/Series matching panel dimensions.
     sl: Scalar float OR DataFrame/Series matching panel dimensions.
     side: "long" or "short"
-
-    Hit logic:
-    - TP/SL hit detection is based on intrabar extremes (`high`/`low`), not `close`.
-    - `close` is used only for non-hit exits (timeout/stall return calculation).
+    return_outcomes: If True, returns (outcomes, quality, returns).
+                     Outcomes: 2=TP, 1=TIMEOUT, 0=SL
     """
     required = {"close", "high", "low"}
     missing = required.difference(panel.keys())
@@ -359,6 +538,10 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long"):
 
     out_labels = pd.DataFrame(0, index=c.index, columns=assets, dtype=np.int8)
     out_returns = pd.DataFrame(0.0, index=c.index, columns=assets, dtype=np.float32)
+    out_quality = None
+
+    if return_outcomes:
+        out_quality = pd.DataFrame(0.0, index=c.index, columns=assets, dtype=np.float32)
 
     side_int = 1 if side == "long" else -1
 
@@ -380,12 +563,9 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long"):
         l_arr = l[asset].to_numpy(dtype=np.float32)
 
         # Extract TP/SL arrays for this asset
-        # Handle case where tp_df might not have the column (if passed as partial df)
-        # Assuming alignment for now
         if asset in tp_df.columns:
             tp_arr = tp_df[asset].to_numpy(dtype=np.float32)
         else:
-             # Fallback or error? defaulting to NaN effectively skips
              tp_arr = np.full(len(c_arr), np.nan, dtype=np.float32)
 
         if asset in sl_df.columns:
@@ -393,9 +573,21 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long"):
         else:
             sl_arr = np.full(len(c_arr), np.nan, dtype=np.float32)
 
-        lbs, rets, _ = _numba_triple_barrier(times, o_arr, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int)
+        if return_outcomes:
+            # New 3-way outcomes + quality
+            out, rets, qual, _ = _numba_triple_barrier_outcomes(
+                times, o_arr, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int
+            )
+            out_labels[asset] = out
+            out_returns[asset] = rets
+            out_quality[asset] = qual
+        else:
+            # Legacy binary/tertiary (-1,0,1)
+            # Use original numba function to maintain exact behavior
+            lbs, rets, _ = _numba_triple_barrier(times, o_arr, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int)
+            out_labels[asset] = lbs
+            out_returns[asset] = rets
 
-        out_labels[asset] = lbs
-        out_returns[asset] = rets
-
+    if return_outcomes:
+        return out_labels, out_returns, out_quality
     return out_labels, out_returns

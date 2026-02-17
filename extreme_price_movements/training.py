@@ -1816,8 +1816,26 @@ def build_hourly_training_set_and_weights(
         )
         return None, None, None, None, None, None
 
+    # 3) Purge Label Noise (Microstructure Filtering)
+    if bool(cfg.get("use_noise_filter", True)):
+        # Liquidity Filter
+        vol = panel["volume"]
+        vol_ma = vol.rolling(24*30, min_periods=24).mean()
+        liq_mask = vol >= (0.25 * vol_ma)
+
+        # Wick Filter
+        h = panel["high"]
+        l = panel["low"]
+        c = panel["close"]
+        wick_size = (h - l) / (c + 1e-9)
+        wick_thr = float(cfg.get("noise_filter_wick_thr", 0.05))
+        wick_mask = wick_size < wick_thr
+
+        noise_mask = liq_mask & wick_mask
+        window_cand = window_cand & noise_mask.reindex(window_cand.index).fillna(False)
+
     if _cached_tb is not None:
-        tb_labels, tb_returns = _cached_tb
+        tb_labels, tb_returns, tb_quality = _cached_tb
     elif label_method == "triple_barrier":
         # Use unified barrier factory (canonical TP/SL geometry)
         if "atr_pct" in feats:
@@ -1854,7 +1872,7 @@ def build_hourly_training_set_and_weights(
                 float(tp_hi),
             )
             if _tb_cache is not None and tb_cache_key in _tb_cache:
-                tb_labels, tb_returns = _tb_cache[tb_cache_key]
+                tb_labels, tb_returns, tb_quality = _tb_cache[tb_cache_key]
                 tprint("Using cached barriers/triple-barrier labels")
             else:
                 tprint("Computing barriers using unified factory...")
@@ -1884,14 +1902,14 @@ def build_hourly_training_set_and_weights(
                     f"z_gate: below={diag['z_below_gate_pct']:.1%}, above={diag['z_above_gate_pct']:.1%}, "
                     f"sl_mult: lo={diag['sl_at_sl_lo_pct']:.1%}, hi={diag['sl_at_sl_hi_pct']:.1%})"
                 )
-                tb_labels, tb_returns = compute_triple_barrier_labels(
-                    panel, tp_df, sl_df, H, side=side
+                tb_labels, tb_returns, tb_quality = compute_triple_barrier_labels(
+                    panel, tp_df, sl_df, H, side=side, return_outcomes=True
                 )
                 if _tb_cache is not None:
-                    _tb_cache[tb_cache_key] = (tb_labels, tb_returns)
+                    _tb_cache[tb_cache_key] = (tb_labels, tb_returns, tb_quality)
 
     else:
-        # Default ATR logic
+        # Default ATR logic (fallback: no quality score)
         k_sl = cfg.get("train_k_sl", 2.0)
         k_pt = cfg.get("train_k_pt", 2.0)
         k_tp = cfg.get("train_k_tp", 1.0)
@@ -1907,6 +1925,8 @@ def build_hourly_training_set_and_weights(
             k_sl=k_sl, k_pt=k_pt, k_tp=k_tp,
             horizon_hours=H
         )
+        # Mock quality for legacy ATR
+        tb_quality = pd.DataFrame(0.5, index=tb_labels.index, columns=tb_labels.columns)
 
     # Subsample: disabled - use all hours for maximum signal
     # window_cand = window_cand[window_cand.index.hour % 3 == 0]
@@ -1919,6 +1939,11 @@ def build_hourly_training_set_and_weights(
     if extra_feature_keys:
         # Add extra keys, preserving uniqueness
         feat_keys = list(set(feat_keys) | set(extra_feature_keys))
+
+    # Add Regime Conditioning Features
+    regime_keys = ['cusum_strength', 'move_magnitude_z', 'cusum_decay', 'vol_percentile', 'vol_of_vol', 'atr_percentile', 'liquidity_ratio']
+    if bool(cfg.get("use_regime_features", True)):
+        feat_keys = list(set(feat_keys) | set(regime_keys))
 
     # --- Vectorized event extraction using numpy ---
     valid_syms = [s for s in valid_syms if s in tb_labels.columns]
@@ -2024,99 +2049,34 @@ def build_hourly_training_set_and_weights(
     # Extract TB labels/returns at entry time
     lbl_vals = _fast_lookup(tb_labels, entry_ts, event_sym)
     ret_vals = _fast_lookup(tb_returns, entry_ts, event_sym)
+    qual_vals = _fast_lookup(tb_quality, entry_ts, event_sym)
 
     # PnL computation
-    # For triple_barrier: ret_vals already encodes the correct directional return
-    # (long returns for side="long", short returns for side="short").
-    # No trade_dir adjustment needed — the side is baked into the barrier labels.
     pnl = ret_vals
 
-    # Quantile-based labels + weighting.
-    q_lo = float(cfg.get("label_quantile_lo", 0.30))
-    q_hi = float(cfg.get("label_quantile_hi", 0.70))
-    pnl_lo = np.quantile(pnl[np.isfinite(pnl)], q_lo) if np.sum(np.isfinite(pnl)) > 10 else 0.0
-    pnl_hi = np.quantile(pnl[np.isfinite(pnl)], q_hi) if np.sum(np.isfinite(pnl)) > 10 else 0.0
-    quantile_mode = str(cfg.get("label_quantile_mode", "weighted_union")).lower()
-    w_quant = np.ones(len(pnl), dtype=np.float32)
+    # New Target Logic: Binary (TP vs Rest) with Outcome-based Weighting
+    # Outcomes: 2=TP, 1=TIMEOUT, 0=SL
 
-    if quantile_mode == "hard_filter":
-        keep_mask = (pnl <= pnl_lo) | (pnl >= pnl_hi)
-        n_kept = int(keep_mask.sum())
-        n_drop = int(len(pnl) - n_kept)
-        tprint(f"Quantile labels [hard_filter]: lo_thr={pnl_lo:.6f}, hi_thr={pnl_hi:.6f}, "
-               f"kept={n_kept}/{len(pnl)} ({keep_mask.mean()*100:.0f}%), dropped={n_drop}")
+    # Target: 1 if TP, 0 otherwise
+    y_bin = (lbl_vals == 2).astype(np.float32)
 
-        # Apply mask — drop ambiguous middle samples
-        event_ts = event_ts[keep_mask]
-        event_sym = event_sym[keep_mask]
-        entry_ts = event_ts + pd.Timedelta(hours=1)
-        pnl = pnl[keep_mask]
-        lbl_vals = lbl_vals[keep_mask]
-        ret_vals = ret_vals[keep_mask]
+    # Weighting based on Quality and Outcome Importance
+    # TP (2): w = quality (0.5 to 1.0) -> cleaner wins matter more? Or messy wins less?
+    # SL (0): w = 1.0 - quality (0.0=Bad Loss -> w=1.0, 0.5=Near Miss -> w=0.5)
+    # TO (1): w = 0.2 (Downweight timeouts)
 
-        if len(event_ts) == 0:
-            tprint("No rows after quantile filtering.")
-            return None, None, None, None, None, None
-    else:
-        # Weighted-union mode: keep all samples, emphasize tails continuously.
-        ranks = pd.Series(pnl).rank(method="average", pct=True).values.astype(np.float32)
-        dist = np.abs(ranks - 0.5) * 2.0  # 0 at median, 1 at extremes
-        tail_floor = float(np.clip(cfg.get("label_quantile_weight_floor", 0.35), 0.0, 1.0))
-        tail_gamma = float(np.clip(cfg.get("label_quantile_weight_gamma", 1.5), 0.5, 4.0))
-        w_quant = tail_floor + (1.0 - tail_floor) * np.power(np.clip(dist, 0.0, 1.0), tail_gamma)
-        tprint(
-            f"Quantile labels [weighted_union]: lo_thr={pnl_lo:.6f}, hi_thr={pnl_hi:.6f}, "
-            f"kept={len(pnl)}/{len(pnl)} (100%), w_quant(mean={w_quant.mean():.3f}, p10={np.quantile(w_quant, 0.10):.3f}, p90={np.quantile(w_quant, 0.90):.3f})"
-        )
+    w_outcome = np.ones_like(y_bin)
+    w_outcome = np.where(lbl_vals == 2, qual_vals, w_outcome)
+    w_outcome = np.where(lbl_vals == 0, 1.0 - qual_vals, w_outcome)
+    w_outcome = np.where(lbl_vals == 1, float(cfg.get("timeout_weight", 0.2)), w_outcome)
 
-    y_hard = (pnl >= pnl_hi).astype(np.float32)
-    tprint(f"Hard label dist: 0={int((y_hard==0).sum())} ({(y_hard==0).mean()*100:.1f}%), "
-           f"1={int((y_hard==1).sum())} ({(y_hard==1).mean()*100:.1f}%)")
-
-    # Soft labels from path quality: q = MFEtp - c*MAEsl; p = sigmoid(k*q)
-    # Then blend with dynamic alpha(q): y* = (1-alpha)*y + alpha*p
-    # NOTE: alpha_max capped at 0.15 to prevent soft labels from pushing
-    # true positives below 0.5 (which ModelRace uses as binarization threshold).
-    use_soft_labels = bool(cfg.get("label_use_soft", True))
-    if use_soft_labels:
-        c_soft = float(cfg.get("label_soft_c", 1.0))
-        k_soft = float(cfg.get("label_soft_k", 2.0))
-        alpha_min = float(cfg.get("label_soft_alpha_min", 0.02))
-        alpha_max = float(cfg.get("label_soft_alpha_max", 0.15))
-        alpha_s = float(cfg.get("label_soft_alpha_s", 3.0))
-        q0 = float(cfg.get("label_soft_q0", 0.5))
-
-        if "mfe_4h" in feats:
-            mfe_raw = np.nan_to_num(_fast_lookup(feats["mfe_4h"], event_ts, event_sym), nan=0.0)
-        else:
-            mfe_raw = np.maximum(pnl, 0.0)
-        if "mae_4h" in feats:
-            mae_raw = np.nan_to_num(_fast_lookup(feats["mae_4h"], event_ts, event_sym), nan=0.0)
-        else:
-            mae_raw = np.maximum(-pnl, 0.0)
-
-        if "atr_pct" in feats:
-            tp_scale = np.nan_to_num(_fast_lookup(feats["atr_pct"], event_ts, event_sym), nan=0.02)
-        else:
-            tp_scale = np.full(len(event_ts), 0.02, dtype=np.float32)
-        tp_scale = np.clip(np.abs(tp_scale), 1e-4, None)
-        sl_scale = np.clip(0.5 * tp_scale, 1e-4, None)
-
-        mfe_tp = np.maximum(mfe_raw, 0.0) / tp_scale
-        mae_sl = np.maximum(mae_raw, 0.0) / sl_scale
-        q = mfe_tp - c_soft * mae_sl
-        p_soft = _sigmoid(k_soft * q)
-        alpha = alpha_min + (alpha_max - alpha_min) * _sigmoid(alpha_s * (np.abs(q) - q0))
-        alpha = np.clip(alpha, 0.0, 1.0)
-        y_bin = ((1.0 - alpha) * y_hard) + (alpha * p_soft)
-        y_bin = np.clip(y_bin, 0.0, 1.0).astype(np.float32)
-    else:
-        y_bin = y_hard
+    # Clip weights
+    w_outcome = np.clip(w_outcome, 0.1, 2.0)
 
     # Base weight from move magnitude
     pa = np.abs(np.nan_to_num(_fast_lookup(feats["ret24h"], event_ts, event_sym), nan=0.0))
     w_base = np.log1p(pa)
-    w_base = w_base * w_quant
+    w_base = w_base * w_outcome
 
     # MFE/MAE-based weighting (Report 2026-02-12)
     # Weight by how "decisive" the price movement was relative to barriers
@@ -2598,19 +2558,21 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                         continue
                     raw_key = (H, side, round(float(k_tp), 4), round(float(sl_base_mult), 4))
                     if raw_key not in _raw_tb_cache:
-                        lbl, ret = compute_triple_barrier_labels(panel, tp_df, sl_df, H, side=side)
-                        _raw_tb_cache[raw_key] = (lbl, ret)
-                    lbl, ret = _raw_tb_cache[raw_key]
+                        # Request outcomes (2=TP, 1=TO, 0=SL) and quality
+                        lbl, ret, qual = compute_triple_barrier_labels(panel, tp_df, sl_df, H, side=side, return_outcomes=True)
+                        _raw_tb_cache[raw_key] = (lbl, ret, qual)
+                    lbl, ret, qual = _raw_tb_cache[raw_key]
 
                     n_events = lbl.size
-                    tp_hit = float((lbl.values == 1).sum()) / max(1, n_events)
-                    sl_hit = float((lbl.values == -1).sum()) / max(1, n_events)
-                    to_rate = float((lbl.values == 0).sum()) / max(1, n_events)
+                    # Map 2->TP, 0->SL, 1->TO for stats
+                    tp_hit = float((lbl.values == 2).sum()) / max(1, n_events)
+                    sl_hit = float((lbl.values == 0).sum()) / max(1, n_events)
+                    to_rate = float((lbl.values == 1).sum()) / max(1, n_events)
 
                     if n_events < min_events_eff:
                         reject_counts["n_events"] += 1
                         continue
-                    relaxed_pool.append((lbl, ret, k_tp, sl_base_mult, net_rr, tp_hit, sl_hit, to_rate, n_events))
+                    relaxed_pool.append((lbl, ret, qual, k_tp, sl_base_mult, net_rr, tp_hit, sl_hit, to_rate, n_events))
                     if tp_hit < min_tp_hit_eff:
                         reject_counts["tp_hit"] += 1
                         continue
@@ -2619,19 +2581,19 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                         continue
 
                     rr_weight = float(np.clip(net_rr / 1.2, 0.0, 1.0))
-                    geom_runs.append((lbl, ret, k_tp, sl_base_mult, rr_weight, tp_hit, sl_hit, to_rate, n_events))
+                    geom_runs.append((lbl, ret, qual, k_tp, sl_base_mult, rr_weight, tp_hit, sl_hit, to_rate, n_events))
 
             if not geom_runs:
                 # H=2 rescue: keep top-K geometries by tp_hit if strict gates still reject all.
                 if int(H) == 2 and relaxed_pool:
-                    relaxed_pool.sort(key=lambda x: (x[5], -x[7]), reverse=True)  # tp_hit desc, timeout asc
+                    relaxed_pool.sort(key=lambda x: (x[6], -x[8]), reverse=True)  # tp_hit desc, timeout asc (idx 6, 8 now)
                     picked = relaxed_pool[: max(1, h2_rescue_topk)]
-                    for (lbl, ret, k_tp, sl_base_mult, net_rr, tp_hit, sl_hit, to_rate, n_events) in picked:
+                    for (lbl, ret, qual, k_tp, sl_base_mult, net_rr, tp_hit, sl_hit, to_rate, n_events) in picked:
                         rr_weight = float(np.clip(net_rr / 1.2, 0.0, 1.0))
-                        geom_runs.append((lbl, ret, k_tp, sl_base_mult, rr_weight, tp_hit, sl_hit, to_rate, n_events))
+                        geom_runs.append((lbl, ret, qual, k_tp, sl_base_mult, rr_weight, tp_hit, sl_hit, to_rate, n_events))
                     tprint(
                         f"H=2 rescue accepted {len(geom_runs)} geometries "
-                        f"(best tp_hit={picked[0][5]:.4f}, timeout={picked[0][7]:.4f})"
+                        f"(best tp_hit={picked[0][6]:.4f}, timeout={picked[0][8]:.4f})"
                     )
 
             if not geom_runs:
@@ -2663,12 +2625,12 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                     tp_lo=tp_lo_eff,
                     tp_hi=tp_hi,
                 )
-                lbl, ret = compute_triple_barrier_labels(panel, tp_df, sl_df, H, side=side)
-                geom_runs = [(lbl, ret, 1.0, 0.5, 1.0, 0.1, 0.1, 0.8, lbl.size)]
+                lbl, ret, qual = compute_triple_barrier_labels(panel, tp_df, sl_df, H, side=side, return_outcomes=True)
+                geom_runs = [(lbl, ret, qual, 1.0, 0.5, 1.0, 0.1, 0.1, 0.8, lbl.size)]
             else:
                 # Diagnostics: print accepted geometry count + params to trace what survives gates.
                 geom_desc = []
-                for _, _, k_tp_v, sl_base_v, rr_w, tp_hit_v, sl_hit_v, to_rate_v, n_ev_v in geom_runs:
+                for _, _, _, k_tp_v, sl_base_v, rr_w, tp_hit_v, sl_hit_v, to_rate_v, n_ev_v in geom_runs:
                     geom_desc.append(
                         f"(k_tp={k_tp_v:.2f}, sl={sl_base_v:.2f}, tp_hit={tp_hit_v:.3f}, "
                         f"to={to_rate_v:.3f}, n={int(n_ev_v)}, w={rr_w:.3f})"
@@ -2680,7 +2642,8 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
 
             labels_stack = np.stack([x[0].values for x in geom_runs], axis=0)
             rets_stack = np.stack([x[1].values for x in geom_runs], axis=0)
-            rr_weights_raw = np.array([x[4] for x in geom_runs], dtype=np.float32)
+            qual_stack = np.stack([x[2].values for x in geom_runs], axis=0)
+            rr_weights_raw = np.array([x[5] for x in geom_runs], dtype=np.float32)
 
             rr_weights = np.sqrt(rr_weights_raw)
             rr_weights = rr_weights / (rr_weights.mean() + 1e-12)
@@ -2689,20 +2652,26 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
             w_sl = np.zeros_like(labels_stack[0], dtype=np.float32)
             w_to = np.zeros_like(labels_stack[0], dtype=np.float32)
             for gi in range(len(geom_runs)):
-                w_tp += rr_weights[gi] * (labels_stack[gi] == 1).astype(np.float32)
-                w_sl += rr_weights[gi] * (labels_stack[gi] == -1).astype(np.float32)
-                w_to += rr_weights[gi] * (labels_stack[gi] == 0).astype(np.float32)
+                # 2=TP, 0=SL, 1=TO
+                w_tp += rr_weights[gi] * (labels_stack[gi] == 2).astype(np.float32)
+                w_sl += rr_weights[gi] * (labels_stack[gi] == 0).astype(np.float32)
+                w_to += rr_weights[gi] * (labels_stack[gi] == 1).astype(np.float32)
             n_tp_df = pd.DataFrame(w_tp, index=panel["close"].index, columns=panel["close"].columns)
             n_sl_df = pd.DataFrame(w_sl, index=panel["close"].index, columns=panel["close"].columns)
             n_to_df = pd.DataFrame(w_to, index=panel["close"].index, columns=panel["close"].columns)
 
             w_sum = rr_weights.sum()
             agg_ret = np.average(rets_stack, axis=0, weights=rr_weights) if w_sum > 0 else np.nanmean(rets_stack, axis=0)
-            agg_lbl = np.where(n_tp_df.values > n_sl_df.values, 1, np.where(n_sl_df.values > n_tp_df.values, -1, 0)).astype(np.int8)
+            agg_qual = np.average(qual_stack, axis=0, weights=rr_weights) if w_sum > 0 else np.nanmean(qual_stack, axis=0)
+
+            # Map back to 3-way outcomes (2=TP, 0=SL, 1=TO)
+            agg_lbl = np.where(n_tp_df.values > n_sl_df.values, 2, np.where(n_sl_df.values > n_tp_df.values, 0, 1)).astype(np.int8)
+
             tb_labels = pd.DataFrame(agg_lbl, index=panel["close"].index, columns=panel["close"].columns)
             tb_returns = pd.DataFrame(agg_ret, index=panel["close"].index, columns=panel["close"].columns)
+            tb_quality = pd.DataFrame(agg_qual, index=panel["close"].index, columns=panel["close"].columns)
 
-            tb_cache[(H, side)] = (tb_labels, tb_returns)
+            tb_cache[(H, side)] = (tb_labels, tb_returns, tb_quality)
             geom_cache[(H, side)] = {"n_tp": n_tp_df, "n_sl": n_sl_df, "n_to": n_to_df, "n_geom": len(geom_runs)}
 
     return tb_cache, geom_cache

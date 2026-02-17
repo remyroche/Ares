@@ -50,3 +50,19 @@ A user might consider setting a threshold such as "Current Volume > 80% of Avera
     *   **Recommendation:** If filtering for activity, use a lower threshold (e.g., **>20-50% of Average**) or use a **Z-score (e.g., `vol_z > -0.5`)** to avoid only "dead" zones, rather than requiring high activity for every trade.
 
 **Suggestion:** Implement a **Minimum Absolute Dollar Volume Filter** (e.g., >$10M ADV) as a primary gate to ensure all selected candidates are structurally tradable.
+
+## 7. Use Rolling Quantiles for TBM
+
+**Concept:** Instead of using fixed multipliers (e.g., `2.0 * ATR`) or static percentiles for Take-Profit (TP) and Stop-Loss (SL) levels, use **Rolling Quantiles** (e.g., 30-day window) of historical returns or volatility distributions to dynamically set these levels.
+
+*   **Pros:**
+    *   **Regime Adaptability:** Automatically tightens stops in low-volatility regimes and widens them in high-volatility regimes, reducing noise from "whipsaws" during quiet periods and premature stops during trending moves.
+    *   **Statistical Robustness:** Targets specific probability masses (e.g., setting TP at the 90th percentile of historical moves), which is more statistically grounded than arbitrary multipliers.
+    *   **Reduced Parameter Sensitivity:** Avoids the "cliff edge" risk of fixed parameters (e.g., why 2.0x ATR vs 2.1x?), as the quantile adapts smoothly.
+
+*   **Cons/Risks:**
+    *   **Lag:** Rolling metrics are backward-looking. A sudden regime shift (e.g., flash crash) might be missed if the window is too long, or overreacted to if too short.
+    *   **Complexity:** Introduces new hyperparameters (window size, quantile target) which need tuning.
+    *   **Overfitting:** Risk of tuning the quantile specifically to past data features that may not repeat.
+
+**Recommendation:** **Yes, this is a strong candidate for reducing noise.** It shifts the focus from "guessing a magic number" to "targeting a statistical probability," which is generally more robust. We suggest testing `Rolling Quantile (e.g., 0.90)` as a replacement or enhancement to the fixed `k_tp` / `k_sl` multipliers in `compare_tbm_parameters.py`.

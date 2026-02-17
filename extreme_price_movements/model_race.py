@@ -353,7 +353,12 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         # Buffer of 2 provides additional safety margin.
         purge_samples = self.max_label_horizon_hours + 2
         embargo_samples = max(2, self.max_label_horizon_hours // 2)
-        tscv = PurgedKFold(n_splits=self.n_splits, purge=purge_samples, embargo=embargo_samples)
+
+        # Use groups as timestamps for time-based purging if available
+        # Note: training.py passes timestamps in 'groups'
+        times_for_cv = groups_arr if groups_arr is not None else None
+
+        tscv = PurgedKFold(n_splits=self.n_splits, purge=purge_samples, embargo=embargo_samples, times=times_for_cv)
         cached_splits = list(tscv.split(X))
 
         # 1. The Race
@@ -488,68 +493,81 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                         fold_logloss_imp.append(np.nan)
                     fold_accuracy.append(accuracy_score(y_val_fit, probs > 0.5))
 
-                avg_score = np.nanmean(fold_scores)
-                avg_auc = np.nanmean(fold_aucs)
-                avg_ic = np.nanmean(fold_ics)
-                avg_bss_val = np.nanmean(fold_bss)
-                avg_bs = np.nanmean(fold_bs)
-                avg_ref = np.nanmean(fold_ref)
-                avg_brier = np.nanmean(fold_brier)
+                # --- Enforce Calibration (Post-hoc on OOF) ---
+                # Fit Isotonic on OOF before computing selection metrics
+                valid = np.isfinite(oof_model)
+                calibrator = IsotonicRegression(out_of_bounds='clip', y_min=0.05, y_max=0.95)
+                # Fit on valid OOF (unweighted for calibration to match raw prevalence)
+                calibrator.fit(oof_model[valid], y_hard[valid])
+                oof_cal = oof_model.copy()
+                oof_cal[valid] = calibrator.predict(oof_model[valid]).astype(np.float32)
+
+                # Use Calibrated OOF for Selection Metrics
+                oof_metrics = calculate_selection_score(
+                    y_hard[valid], oof_cal[valid], returns[valid],
+                    sample_weight=sample_weight[valid] if sample_weight is not None else None,
+                    w_bss=0.20, w_realized=0.55, w_uic=0.25
+                )
+
+                # Stability Diagnostics
+                std_score = np.nanstd(fold_scores)
                 avg_p10 = np.nanmean(fold_p10)
                 std_p10 = np.nanstd(fold_p10)
                 cv_p10 = std_p10 / avg_p10 if avg_p10 > 1e-9 else 1.0
 
-                avg_p20 = np.nanmean(fold_p20)
-                std_p20 = np.nanstd(fold_p20)
-                cv_p20 = std_p20 / avg_p20 if avg_p20 > 1e-9 else 1.0
+                train_loss = alpha_objective_logloss(y, np.clip(np.nan_to_num(oof_cal, nan=np.nanmean(oof_cal)), 1e-6, 1-1e-6), w=sample_weight)
 
-                avg_p25 = np.nanmean(fold_p25)
-                avg_p40 = np.nanmean(fold_p40)
-                std_score = np.nanstd(fold_scores)
-                avg_logloss = np.nanmean(fold_logloss)
-                avg_accuracy = np.nanmean(fold_accuracy)
+                comps = alpha_rank_components(
+                    y_hard[valid], oof_cal[valid], returns[valid],
+                    w=sample_weight[valid] if sample_weight is not None else None,
+                    groups=groups_arr[valid] if groups_arr is not None else None,
+                    cfg=rank_cfg
+                )
 
-                train_loss = alpha_objective_logloss(y, np.clip(np.nan_to_num(oof_model, nan=np.nanmean(oof_model)), 1e-6, 1-1e-6), w=sample_weight)
-                valid = np.isfinite(oof_model)
-                comps = alpha_rank_components(y_hard[valid], oof_model[valid], returns[valid], sample_weight[valid] if sample_weight is not None else None, groups_arr[valid] if groups_arr is not None else None, rank_cfg)
-                results[name] = 0.0
-                top10_mask = topk_mask(oof_model[valid], 0.10, groups=groups_arr[valid] if groups_arr is not None else None)
-                ece10 = ece_at_mask(y_hard[valid], oof_model[valid], top10_mask, n_bins=10, w=sample_weight[valid] if sample_weight is not None else None)
-                curve = calibration_curve_bins(y_hard[valid], oof_model[valid], n_bins=10)
+                results[name] = 0.0 # Placeholder, set by rank_score later
+
+                top10_mask = topk_mask(oof_cal[valid], 0.10, groups=groups_arr[valid] if groups_arr is not None else None)
+                ece10 = ece_at_mask(y_hard[valid], oof_cal[valid], top10_mask, n_bins=10, w=sample_weight[valid] if sample_weight is not None else None)
+                curve = calibration_curve_bins(y_hard[valid], oof_cal[valid], n_bins=10)
                 profile = calibration_profile(curve)
+
                 detailed_metrics[name] = {
-                    "score": avg_score,
+                    "score": oof_metrics["Selection_Score"],
                     "rank_score": 0.0,
                     "alpha_train_loss": train_loss,
                     "rank_components": comps,
                     "ece_top10": ece10,
                     "calibration_curve": curve,
                     "calibration_profile": profile,
-                    "AUC": avg_auc,
-                    "IC": avg_ic,
-                    "BSS": avg_bss_val,
-                    "BS": avg_bs,
-                    "BS_Ref": avg_ref,
-                    "Brier": avg_brier,
-                    "Prec10": avg_p10,
-                    "CV_Prec10": cv_p10,
-                    "Prec20": avg_p20,
-                    "CV_Prec20": cv_p20,
-                    "Prec25": avg_p25,
-                    "Prec40": avg_p40,
+                    "AUC": oof_metrics["AUC"],
+                    "IC": oof_metrics["IC"],
+                    "BSS": oof_metrics["BSS"],
+                    "BS": oof_metrics.get("Brier_Score", np.nan),
+                    "BS_Ref": oof_metrics.get("Brier_Ref", np.nan),
+                    "Brier": oof_metrics.get("Brier", np.nan),
+                    "Prec10": oof_metrics.get("Prec_Top10", np.nan),
+                    "CV_Prec10": cv_p10, # Keep fold-based CV stability measure
+                    "Prec20": oof_metrics.get("Prec_Top20", np.nan),
+                    "CV_Prec20": np.nanstd(fold_p20) / (np.nanmean(fold_p20) + 1e-9),
+                    "Prec25": oof_metrics.get("Prec_Top25", np.nan),
+                    "Prec40": oof_metrics.get("Prec_Top40", np.nan),
                     "std_score": std_score,
-                    "LogLoss": avg_logloss,
-                    "Accuracy": avg_accuracy,
+                    "LogLoss": log_loss(y_hard[valid], np.clip(oof_cal[valid], 1e-7, 1-1e-7)),
+                    "Accuracy": accuracy_score(y_hard[valid], oof_cal[valid] > 0.5),
                     "fold_logloss": [float(x) for x in fold_logloss],
                     "fold_precision20": [float(x) for x in fold_p20],
                     "fold_precision10": [float(x) for x in fold_p10],
                     "fold_brier": [float(x) for x in fold_brier],
                     "fold_base_logloss": [float(x) for x in fold_base_logloss],
                     "fold_logloss_imp": [float(x) for x in fold_logloss_imp],
-                    # Store per-model OOF predictions for gate checks
-                    "oof_probs": np.nan_to_num(oof_model.copy(), nan=0.5).astype(np.float32),
+                    # Store Calibrated OOF for gate checks
+                    "oof_probs": np.nan_to_num(oof_cal.copy(), nan=0.5).astype(np.float32),
+                    # Store raw OOF for reference
+                    "oof_raw": np.nan_to_num(oof_model.copy(), nan=0.5).astype(np.float32),
+                    # Store calibrator for inference
+                    "calibrator": calibrator,
                 }
-                tprint(f"  {name}: LegacyScore={avg_score:.4f} AUC={avg_auc:.4f} IC={avg_ic:.4f} BSS={avg_bss_val:.4f} Brier={avg_brier:.4f} Prec10={avg_p10:.4f} Prec40={avg_p40:.4f} LogLoss={avg_logloss:.4f} TrainLoss={train_loss:.4f}")
+                tprint(f"  {name}: OOF_Cal_Score={detailed_metrics[name]['score']:.4f} AUC={detailed_metrics[name]['AUC']:.4f} IC={detailed_metrics[name]['IC']:.4f} BSS={detailed_metrics[name]['BSS']:.4f} Prec10={detailed_metrics[name]['Prec10']:.4f}")
 
             except Exception as e:
                 tprint(f"  {name} Failed: {e}")

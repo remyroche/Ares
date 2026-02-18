@@ -355,79 +355,132 @@ def main():
     )
     os.makedirs(output_dir, exist_ok=True)
     
+    # -------------------------------------------------------------------------
+    # Group buckets by direction: long_* = up-trend sizer, short_* = down-trend
+    # Training a single sizer across both directions dilutes IC because the
+    # long and short signals have incompatible return distributions and the
+    # short_mr bucket has inverted IC.
+    # -------------------------------------------------------------------------
+    _meta_cols = {"timestamp", "symbol", "return", "is_long", "index"}
+
+    direction_groups = {"long": {}, "short": {}}
+    for bucket_name, oof_preds in bucket_oofs.items():
+        direction = "long" if bucket_name.startswith("long") else "short"
+        direction_groups[direction][bucket_name] = oof_preds
+
+    all_direction_results = {}  # direction -> {weights, params, metrics, buckets}
+
+    for direction, dir_buckets in direction_groups.items():
+        if not dir_buckets:
+            continue
+        tprint("=" * 80)
+        tprint(f"Ridge Position Sizer — direction: {direction.upper()} ({list(dir_buckets.keys())})")
+
+        # Each bucket has its own event set (different lengths: long_mr=7551, long_tf=5167).
+        # We train one Ridge per bucket within the direction, then store all weights
+        # together in a single per-direction weight file. At inference the engine
+        # applies the correct bucket's weights based on which bucket fired.
+        dir_weights: Dict = {}
+        dir_params: Dict = {}
+        dir_metrics: Dict = {}
+
+        for bucket_name, oof_preds in dir_buckets.items():
+            try:
+                trade_outcomes = load_trade_outcomes(args.data_root, run_id, oof_preds)
+            except FileNotFoundError as e:
+                tprint(f"  Skipping {bucket_name}: {e}")
+                continue
+            if "return" not in trade_outcomes.columns:
+                tprint(f"  Skipping {bucket_name}: missing 'return' column")
+                continue
+
+            pred_cols = [c for c in oof_preds.columns if c not in _meta_cols]
+            if not pred_cols:
+                tprint(f"  Skipping {bucket_name}: no prediction columns")
+                continue
+            oof_pred_df = oof_preds[pred_cols].copy()
+            tprint(f"  {bucket_name}: {len(oof_pred_df)} rows, features={pred_cols}")
+
+            timestamps = trade_outcomes['timestamp'].values if 'timestamp' in trade_outcomes.columns else None
+            symbols    = trade_outcomes['symbol'].values    if 'symbol'    in trade_outcomes.columns else None
+
+            try:
+                sizer, metrics = run_ridge_position_sizer_step(
+                    oof_preds=oof_pred_df,
+                    trade_outcomes=trade_outcomes,
+                    timestamps=timestamps,
+                    cfg={'cost_pct': args.cost_pct},
+                    save_model=False,
+                    run_id=run_id,
+                    symbols=symbols,
+                )
+                bkt_weights = sizer.get_weights()
+                # Prefix with bucket name so the combined manifest stays unambiguous
+                for wname, wval in bkt_weights.items():
+                    dir_weights[f"{bucket_name}_{wname}"] = wval
+                dir_params[bucket_name] = sizer.best_params_
+                dir_metrics[bucket_name] = metrics
+                tprint(f"  {bucket_name} weights: {bkt_weights}")
+            except Exception as e:
+                tprint(f"  {bucket_name} failed: {e}")
+                import traceback; traceback.print_exc()
+                continue
+
+        if not dir_weights:
+            tprint(f"  No weights produced for direction {direction}, skipping")
+            continue
+
+        # Save per-direction weight file
+        dir_weights_path = os.path.join(output_dir, f"sizer_weights_{direction}.json")
+        with open(dir_weights_path, 'w') as f:
+            json.dump({
+                'direction': direction,
+                'weights': dir_weights,
+                'params_per_bucket': dir_params,
+                'buckets': list(dir_buckets.keys()),
+                'run_id': run_id,
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+            }, f, indent=2)
+        tprint(f"  Saved {direction} sizer weights to {dir_weights_path}")
+
+        all_direction_results[direction] = {
+            'weights': dir_weights,
+            'params': dir_params,
+            'metrics': dir_metrics,
+            'buckets': list(dir_buckets.keys()),
+        }
+
+    # Save combined manifest (backward-compatible: flattens all weights)
     all_weights = {}
     all_params = {}
-    
-    for bucket_name, oof_preds in bucket_oofs.items():
-        tprint("-" * 80)
-        tprint(f"Running Ridge Position Sizer for bucket: {bucket_name}")
-        tprint(f"  OOF shape: {oof_preds.shape}")
-        
-        # Build trade outcomes from OOF context
-        try:
-            trade_outcomes = load_trade_outcomes(args.data_root, run_id, oof_preds)
-            tprint(f"  Trade outcomes shape: {trade_outcomes.shape}")
-        except FileNotFoundError as e:
-            tprint(f"  Skipping {bucket_name}: {e}")
-            continue
-        
-        if "return" not in trade_outcomes.columns:
-            tprint(f"  Skipping {bucket_name}: missing 'return' column")
-            continue
-        
-        # Extract prediction columns (reg_H*, clf, agreement features)
-        _meta_cols = {"timestamp", "symbol", "return", "is_long", "index"}
-        pred_cols = [c for c in oof_preds.columns if c not in _meta_cols]
-        if not pred_cols:
-            tprint(f"  Skipping {bucket_name}: no prediction columns")
-            continue
-        oof_pred_df = oof_preds[pred_cols].copy()
-        tprint(f"  Prediction features: {pred_cols}")
-        
-        timestamps = None
-        if 'timestamp' in trade_outcomes.columns:
-            timestamps = trade_outcomes['timestamp'].values
-        
-        try:
-            sizer, metrics = run_ridge_position_sizer_step(
-                oof_preds=oof_pred_df,
-                trade_outcomes=trade_outcomes,
-                timestamps=timestamps,
-                cfg={'cost_pct': args.cost_pct},
-                save_model=False,
-                run_id=run_id,
-            )
-            weights = sizer.get_weights()
-            # Prefix weights with bucket name
-            for wname, wval in weights.items():
-                all_weights[f"{bucket_name}_{wname}"] = wval
-            all_params[bucket_name] = sizer.best_params_
-            tprint(f"  {bucket_name} weights: {weights}")
-        except Exception as e:
-            tprint(f"  {bucket_name} failed: {e}")
-            continue
-    
-    # Save combined weights
+    for direction, res in all_direction_results.items():
+        all_weights.update(res['weights'])
+        for bkt in res['buckets']:
+            all_params[bkt] = res['params']
+
     weights_path = os.path.join(output_dir, "sizer_weights.json")
     with open(weights_path, 'w') as f:
         json.dump({
             'weights': all_weights,
             'params_per_bucket': all_params,
+            'directions': {d: {'buckets': r['buckets'], 'params': r['params']}
+                           for d, r in all_direction_results.items()},
             'run_id': run_id,
             'timestamp': datetime.now(timezone.utc).isoformat(),
         }, f, indent=2)
-    tprint(f"Saved weights to {weights_path}")
-    
+    tprint(f"Saved combined manifest to {weights_path}")
+
     # Print summary
     tprint("=" * 80)
     tprint("RIDGE POSITION SIZER COMPLETE")
     tprint("=" * 80)
-    tprint(f"Buckets processed: {len(all_params)}")
-    for name, w in all_weights.items():
-        tprint(f"  {name}: {w:.4f}")
+    for direction, res in all_direction_results.items():
+        tprint(f"  {direction.upper()} sizer — buckets: {res['buckets']}")
+        for name, w in res['weights'].items():
+            tprint(f"    {name}: {w:.4f}")
     tprint(f"Output directory: {output_dir}")
     tprint("=" * 80)
-    
+
     return 0
 
 

@@ -15,11 +15,13 @@ from .sample_weight_optimization import (
     compute_liquidity_weights,
     compute_distance_to_barrier_weights,
     compute_recency_weights,
+    sample_weight_tp_classifier,
+    sample_weight_meta_regression,
     optimize_component_weights,
     log_weight_statistics,
     select_test_feature_frame,
 )
-from .offline_optimisers.params_store import apply_offline_optimizer_best_params
+from .offline_optimisers.params_store import apply_offline_optimizer_best_params, load_tbm_geometry_grid
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import roc_auc_score
 from scipy.stats import spearmanr
@@ -38,6 +40,7 @@ from .gate_metrics import compute_stage_gate_metrics
 
 import os
 import json
+from typing import Optional
 from datetime import datetime, timezone
 
 # =============================================================================
@@ -63,6 +66,32 @@ def _coerce_feature_to_panel_df(x, panel, name: str, fill_value: float = np.nan)
     return pd.DataFrame(fill_value, index=close.index, columns=close.columns)
 
 
+def _compute_barrier_base(
+    atr_pct: pd.DataFrame,
+    window_size: int,
+    disp_floor: float,
+    z_max: float,
+    k_reg: float,
+    m_lo: float,
+    m_hi: float,
+    sl_lo: float,
+    sl_hi: float,
+    z_gate: float,
+) -> dict:
+    """Pre-compute the shared rolling base (median, MAD, z, m, sl_mult) once per
+    (atr_window, side, kind, H) so compute_barrier_factory can skip redundant
+    rolling operations when sweeping over (k_tp, sl_base_mult) combinations."""
+    atr_median = atr_pct.rolling(window_size, min_periods=24).median()
+    atr_mad = (atr_pct - atr_median).abs().rolling(window_size, min_periods=24).median()
+    atr_disp = np.maximum(atr_mad, disp_floor * atr_median)
+    z_score = (atr_pct - atr_median) / (atr_disp + 1e-12)
+    z_clipped = np.clip(z_score, -z_max, z_max)
+    m_clipped = np.clip(np.exp(k_reg * z_clipped), m_lo, m_hi)
+    z_norm = np.clip((z_clipped - z_gate) / (z_max - z_gate), 0, 1)
+    sl_mult = sl_lo + (sl_hi - sl_lo) * z_norm
+    return {"atr_median": atr_median, "z_clipped": z_clipped, "m_clipped": m_clipped, "sl_mult": sl_mult}
+
+
 def compute_barrier_factory(
     atr_pct: pd.DataFrame,
     window_size: int = 24 * 30,
@@ -78,9 +107,10 @@ def compute_barrier_factory(
     sl_lo: float = 0.4,
     sl_hi: float = 0.7,
     z_gate: float = 1.0,
-    tp_lo: float = 0.02,   # Lower bound for TP (2%)
-    tp_hi: float = 0.06,  # Upper bound for TP (6%)
+    tp_lo: float = 0.02,
+    tp_hi: float = 0.06,
     return_components: bool = False,
+    _base: dict | None = None,
 ) -> tuple:
     """
     Canonical barrier factory - unified TP/SL geometry for both pipelines.
@@ -107,48 +137,22 @@ def compute_barrier_factory(
     Returns:
         (tp_df, sl_df) or (tp_df, sl_df, diagnostics) if return_components=True
     """
-    import numpy as np
-    
-    # 1. Compute base and dispersion (P1's robust approach)
-    atr_median = atr_pct.rolling(window_size, min_periods=24).median()
-    
-    # MAD with floor
-    def _rolling_mad(x, window):
-        roll_med = x.rolling(window, min_periods=24).median()
-        return (x - roll_med).abs().rolling(window, min_periods=24).median()
-    
-    atr_mad = _rolling_mad(atr_pct, window_size)
-    atr_disp = np.maximum(atr_mad, disp_floor * atr_median)
-    
-    # 2. Robust z-score (P1's approach in P2's log-ratio friendly form)
-    z_score = (atr_pct - atr_median) / (atr_disp + 1e-12)
-    z_clipped = np.clip(z_score, -z_max, z_max)
-    
-    # 3. Regime multiplier m(z) - smooth exponential with bounds (P1's mapping)
-    m_raw = np.exp(k_reg * z_clipped)
-    m_clipped = np.clip(m_raw, m_lo, m_hi)
-    
-    # 4. Horizon scaling (P2's sqrt scaling)
+    # Use pre-computed base when provided (avoids redundant rolling ops across k_tp/sl sweeps)
+    if _base is not None:
+        m_clipped = _base["m_clipped"]
+        sl_mult   = _base["sl_mult"]
+    else:
+        atr_median = atr_pct.rolling(window_size, min_periods=24).median()
+        atr_mad = (atr_pct - atr_median).abs().rolling(window_size, min_periods=24).median()
+        atr_disp = np.maximum(atr_mad, disp_floor * atr_median)
+        z_clipped = np.clip((atr_pct - atr_median) / (atr_disp + 1e-12), -z_max, z_max)
+        m_clipped = np.clip(np.exp(k_reg * z_clipped), m_lo, m_hi)
+        z_norm = np.clip((z_clipped - z_gate) / (z_max - z_gate), 0, 1)
+        sl_mult = sl_lo + (sl_hi - sl_lo) * z_norm
+
     h_scale = np.sqrt(horizon / H_base)
-    
-    # 5. Raw TP = k_tp * ATR% * m(z) * sqrt(H/H_base)
     tp_raw = k_tp * atr_pct * m_clipped * h_scale
-    
-    # 6. Apply bounds to match old scaled_atr_pct behavior (Issue: barriers too large without bounds!)
     tp_vals = np.clip(tp_raw, tp_lo, tp_hi)
-    
-    # Debug: print bounds being used
-    import sys
-    print(f"DEBUG barrier_factory: tp_lo={tp_lo}, tp_hi={tp_hi}, tp_raw_mean={np.nanmean(tp_raw):.4f}, tp_clipped_mean={np.nanmean(tp_vals):.4f}", file=sys.stderr)
-    
-    # 7. SL ratio adapts to regime (P1's adaptive SL)
-    # One-sided: only adapt when z > z_gate (high vol regime)
-    # Below z_gate: uses sl_lo (quiet market - not traded if gating at z_gate for events)
-    # Above z_gate: interpolates to sl_hi (volatile market - the regime we trade)
-    z_norm = np.clip((z_clipped - z_gate) / (z_max - z_gate), 0, 1)  # 0 to 1 for z in [z_gate, z_max]
-    sl_mult = sl_lo + (sl_hi - sl_lo) * z_norm
-    
-    # SL = sl_base_mult * sl_mult * TP
     sl_vals = sl_base_mult * sl_mult * tp_vals
     
     tp_df = pd.DataFrame(tp_vals, index=atr_pct.index, columns=atr_pct.columns)
@@ -1725,6 +1729,97 @@ def _optimize_training_sample_weights(
         min_era_neff_ratio=float(cfg.get("sample_weight_recency_min_era_neff_ratio", 0.2)),
     )
 
+    # Trade-quality component from excursion quality (MFE/MAE vs TP/SL).
+    # Keep as a separate optimizable component (even if base weights already include it)
+    # so stage-specific alpha selection can up/down-weight it explicitly.
+    if bool(cfg.get("sample_weight_use_trade_quality_component", True)):
+        mfe_col = "__mfe__" if "__mfe__" in df.columns else ("mfe_4h" if "mfe_4h" in df.columns else None)
+        mae_col = "__mae__" if "__mae__" in df.columns else ("mae_4h" if "mae_4h" in df.columns else None)
+        if mfe_col is not None and mae_col is not None:
+            mfe_v = np.nan_to_num(df[mfe_col].values, nan=0.0).astype(np.float64)
+            mae_v = np.nan_to_num(df[mae_col].values, nan=0.0).astype(np.float64)
+            if "__tp__" in df.columns:
+                tp_v = np.clip(np.abs(np.nan_to_num(df["__tp__"].values, nan=0.02).astype(np.float64)), 1e-4, None)
+            elif "__barrier_pct__" in df.columns:
+                tp_v = np.clip(np.abs(np.nan_to_num(df["__barrier_pct__"].values, nan=0.02).astype(np.float64)), 1e-4, None)
+            else:
+                tp_v = np.full(n, 0.02, dtype=np.float64)
+
+            if "__sl__" in df.columns:
+                sl_v = np.clip(np.abs(np.nan_to_num(df["__sl__"].values, nan=0.01).astype(np.float64)), 1e-4, None)
+            else:
+                sl_v = np.clip(0.5 * tp_v, 1e-4, None)
+
+            if "__is_timeout__" in df.columns:
+                is_to = np.asarray(df["__is_timeout__"].values, dtype=bool)
+            elif "__y_lbl__" in df.columns:
+                is_to = (np.asarray(df["__y_lbl__"].values) == OUT_TO)
+            else:
+                is_to = np.zeros(n, dtype=bool)
+
+            w_trade_quality = compute_mfe_mae_weights(
+                mfe=mfe_v,
+                mae=mae_v,
+                tp=tp_v,
+                sl=sl_v,
+                is_timeout=is_to,
+                touch_margin=None,
+                w_min=float(cfg.get("mfe_mae_w_min", 0.5)),
+                tau=float(cfg.get("mfe_mae_tau", 1.0)),
+                cost_floor=float(cfg.get("mfe_mae_cost_floor", 0.001)),
+            )
+            components["trade_quality"] = np.asarray(w_trade_quality, dtype=np.float64)
+
+    # Magnitude/opportunity gates as additive components (not hard replacements).
+    # These are economically grounded helpers to downweight low-opportunity rows
+    # and saturate tail influence for return regression targets.
+    if bool(cfg.get("sample_weight_use_tp_opportunity_component", True)):
+        if "__barrier_pct__" in df.columns:
+            atr_proxy = np.clip(np.nan_to_num(df["__barrier_pct__"].values, nan=0.02).astype(np.float64), 1e-6, None)
+        elif "atr_pct" in df.columns:
+            atr_proxy = np.clip(np.nan_to_num(df["atr_pct"].values, nan=0.02).astype(np.float64), 1e-6, None)
+        else:
+            atr_proxy = np.full(n, 0.02, dtype=np.float64)
+
+        fee_rt = float(
+            cfg.get(
+                "sample_weight_fee_rt",
+                float(cfg.get("label_round_trip_fee_pct", 0.5)) / 100.0,
+            )
+        )
+        components["tp_opportunity"] = sample_weight_tp_classifier(
+            atr_pct_past=atr_proxy,
+            fee_rt=fee_rt,
+            k=float(cfg.get("sample_weight_tp_k", 1.5)),
+            s=cfg.get("sample_weight_tp_softness", None),
+            w_min=float(cfg.get("sample_weight_tp_w_min", 0.4)),
+        ).astype(np.float64, copy=False)
+
+    if bool(cfg.get("sample_weight_use_meta_magnitude_component", True)):
+        if "__barrier_pct__" in df.columns:
+            atr_proxy = np.clip(np.nan_to_num(df["__barrier_pct__"].values, nan=0.02).astype(np.float64), 1e-6, None)
+        elif "atr_pct" in df.columns:
+            atr_proxy = np.clip(np.nan_to_num(df["atr_pct"].values, nan=0.02).astype(np.float64), 1e-6, None)
+        else:
+            atr_proxy = None
+
+        fee_rt = float(
+            cfg.get(
+                "sample_weight_fee_rt",
+                float(cfg.get("label_round_trip_fee_pct", 0.5)) / 100.0,
+            )
+        )
+        components["meta_magnitude"] = sample_weight_meta_regression(
+            y_ret_net=np.asarray(y_ret, dtype=np.float64),
+            atr_pct_past=atr_proxy,
+            fee_rt=fee_rt,
+            k=float(cfg.get("sample_weight_meta_k", 1.5)),
+            s=cfg.get("sample_weight_meta_softness", None),
+            w_min=float(cfg.get("sample_weight_meta_w_min", 0.4)),
+            alpha=None,
+            alpha_quantile=float(cfg.get("sample_weight_meta_alpha_quantile", 0.5)),
+        ).astype(np.float64, copy=False)
+
     if extra_components:
         for k, v in extra_components.items():
             if v is None:
@@ -1801,6 +1896,7 @@ def build_hourly_training_set_and_weights(
             metric=cfg["trade_deviation_metric"],
             min_range_pct=train_min_range,
             min_vol_zscore=train_min_vol,
+            sign_consistency_min=float(cfg.get("min_feat_sign_consistency", 0.80)),
         )
     if cand_mask is None:
         tprint("No candidates mask returned.")
@@ -1891,7 +1987,7 @@ def build_hourly_training_set_and_weights(
                 tprint("Computing barriers using unified factory...")
                 tp_df, sl_df, diag = compute_barrier_factory(
                     atr_pct=atr_pct,
-                    window_size=24 * 30,
+                    window_size=int(cfg.get("barrier_atr_window", 24 * 30)),
                     k_tp=k_tp,
                     sl_base_mult=sl_base_mult,
                     horizon=H,
@@ -2184,7 +2280,12 @@ def build_hourly_training_set_and_weights(
         "y_bin": y_bin,
         "y_ret": pnl.astype(np.float32),
         "w": weights_raw.astype(np.float32),
-        "__y_lbl__": lbl_vals.astype(np.int8)
+        "__y_lbl__": lbl_vals.astype(np.int8),
+        "__mfe__": np.asarray(mfe_vals, dtype=np.float32),
+        "__mae__": np.asarray(mae_vals, dtype=np.float32),
+        "__tp__": np.asarray(tp_vals, dtype=np.float32),
+        "__sl__": np.asarray(sl_vals, dtype=np.float32),
+        "__is_timeout__": np.asarray(is_timeout, dtype=np.int8),
     }
 
     # Store barrier_pct for risk-adjusted meta model target
@@ -2287,17 +2388,38 @@ def build_hourly_training_set_and_weights(
     base_weights = df["w"].values
     returns = df["y_ret"].values
     
-    # Extract selection metric values for event scoring
-    # Use range_16h_pct - the high/low percentage difference used in candidate selection
-    selection_metric_name = "range_16h_pct"
+    # Extract selection metric values for event scoring.
+    # Prefer range_16h_pct; fall back to compatible range proxies.
+    selection_metric_name = None
+    for metric_key in ("range_16h_pct", "range_12h_pct", "range_pct"):
+        if metric_key in feats:
+            selection_metric_name = metric_key
+            break
     selection_metric_values = None
-    if selection_metric_name in feats:
+    if selection_metric_name is not None:
         # Look up the metric values at event times and symbols
-        selection_metric_values = _fast_lookup(feats[selection_metric_name], df["ts"].values, df["symbol"].values)
-        selection_metric_values = np.nan_to_num(selection_metric_values, nan=0.0)
-        tprint(f"Extracted selection metric '{selection_metric_name}' for event scoring")
+        metric_raw = _fast_lookup(feats[selection_metric_name], df["ts"].values, df["symbol"].values)
+        metric_raw = np.asarray(metric_raw, dtype=np.float32)
+        finite = np.isfinite(metric_raw)
+        if finite.sum() >= 32:
+            metric_f = metric_raw[finite]
+            m_std = float(np.nanstd(metric_f))
+            m_span = float(np.nanpercentile(metric_f, 95) - np.nanpercentile(metric_f, 5))
+            if m_std > 1e-8 and m_span > 1e-8:
+                selection_metric_values = np.nan_to_num(metric_raw, nan=0.0)
+                tprint(f"Extracted selection metric '{selection_metric_name}' for event scoring")
+            else:
+                tprint(
+                    f"Warning: Selection metric '{selection_metric_name}' is near-constant "
+                    f"(std={m_std:.3e}, p95-p05={m_span:.3e}); using fallback"
+                )
+        else:
+            tprint(
+                f"Warning: Selection metric '{selection_metric_name}' has low finite coverage "
+                f"({int(finite.sum())}/{len(metric_raw)}); using fallback"
+            )
     else:
-        tprint(f"Warning: Selection metric '{selection_metric_name}' not found in features, using fallback")
+        tprint("Warning: Selection metric not found in features, using fallback")
     
     weights = compute_sample_weights_with_uniqueness(
         label_times=label_times,
@@ -2528,9 +2650,30 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
     max_timeout = float(cfg.get("label_max_timeout_rate", 0.90))
     max_timeout_h2 = float(cfg.get("label_max_timeout_rate_h2", 0.97))
 
-    # Global TP/SL values interpreted as multipliers relative to ATR%.
-    tp_mults = cfg.get("barrier_k_tp_grid", [0.8, 1.0, 1.25, 1.6, 2.0, 2.5])
-    sl_base_mults = cfg.get("barrier_sl_base_grid", [0.5, 1.0, 1.5])
+    # TP/SL geometry grid — loaded once, resolved per (H, side) from per-cell data.
+    # compare_tbm_parameters.py saves a per-(bucket, horizon) grid; we take the union
+    # of both bucket cells sharing a given (side, H) so all needed geometries are computed.
+    _tbm_grid = load_tbm_geometry_grid()
+    _per_cell = _tbm_grid.get("per_cell", {})
+    _global_k_tp = _tbm_grid["k_tp_grid"] if _tbm_grid["k_tp_grid"] else None
+    _global_sl   = _tbm_grid["sl_base_grid"] if _tbm_grid["sl_base_grid"] else None
+    _grid_source = "tbm_geometry_grid.csv" if _per_cell or _global_k_tp else "hardcoded defaults"
+    tprint(f"Geometry grid loaded: source={_grid_source}  per_cell_keys={sorted(_per_cell.keys())}")
+
+    def _grid_for_cell(kind: str, side: str, H: int):
+        """Return (k_tp_list, sl_list, tp_abs_lo_pct_or_None) for a specific (kind, side, H) cell.
+        kind is 'mr' or 'tf'; cell_key format is 'MR_long_H4'.
+        Falls back to global grid, then cfg overrides, then hardcoded defaults.
+        tp_abs_lo_pct_or_None is None when no per-cell value is available (caller uses global tp_lo).
+        """
+        cell_key = f"{kind.upper()}_{side}_H{H}"
+        cell = _per_cell.get(cell_key)
+        if cell and cell.get("k_tp_grid") and cell.get("sl_base_grid"):
+            return sorted(cell["k_tp_grid"]), sorted(cell["sl_base_grid"]), cell.get("tp_abs_lo_pct")
+        # Fall back to global grid, then cfg overrides, then hardcoded defaults
+        k_fallback = cfg.get("barrier_k_tp_grid", _global_k_tp or [0.8, 1.0, 1.25, 1.6, 2.0, 2.5])
+        s_fallback = cfg.get("barrier_sl_base_grid", _global_sl or [0.5, 1.0, 1.5])
+        return k_fallback, s_fallback, None
     min_net_rr = float(cfg.get("label_min_net_rr", 0.9))
     min_net_rr_h2 = float(cfg.get("label_min_net_rr_h2", 0.75))
     min_events_h2 = int(cfg.get("label_min_events_h2", 50))
@@ -2550,40 +2693,397 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
     tp_lo_h2 = float(cfg.get("barrier_tp_lo_h2", 0.015))
     tp_hi = float(cfg.get("barrier_tp_hi", 0.06))
 
-    # Cache raw triple barrier results per (H, side, k_tp, sl_base_mult) to avoid recomputation
+    # Cache raw triple barrier results per (H, side, k_tp, sl_base_mult) to avoid recomputation.
+    # Shared across kinds: barrier computation depends only on (side, k_tp, sl_base_mult, H),
+    # not on kind. Kind only determines which subset of the grid is swept.
     _raw_tb_cache = {}
+    # kinds must match the downstream generate_label_datasets loop
+    _kinds = ["mr", "tf"]
+
+    def _resolve_cell_min_tp_hit(side: str, kind: str, h: int, default_val: float) -> float:
+        """Resolve per-cell TP-hit threshold with flexible key fallbacks.
+
+        Supported keys (first found wins), e.g. for kind='mr', side='long', h=8:
+          - label_min_tp_hit_rate_mr_long_h8
+          - label_min_tp_hit_rate_mr_long
+          - label_min_tp_hit_rate_long_mr_h8
+          - label_min_tp_hit_rate_long_mr
+          - label_min_tp_hit_rate_MR_long_H8
+        """
+        kind_l = str(kind).lower()
+        side_l = str(side).lower()
+        key_candidates = [
+            f"label_min_tp_hit_rate_{kind_l}_{side_l}_h{int(h)}",
+            f"label_min_tp_hit_rate_{kind_l}_{side_l}",
+            f"label_min_tp_hit_rate_{side_l}_{kind_l}_h{int(h)}",
+            f"label_min_tp_hit_rate_{side_l}_{kind_l}",
+            f"label_min_tp_hit_rate_{str(kind).upper()}_{str(side).lower()}_H{int(h)}",
+        ]
+        for _k in key_candidates:
+            if _k in cfg:
+                try:
+                    return float(cfg.get(_k, default_val))
+                except Exception:
+                    continue
+        return float(default_val)
+
+    def _resolve_cell_tp_floor(side: str, kind: str, h: int, default_val: float, mode: str) -> float:
+        """Resolve per-cell TP floor for mode in {'search','prod'} with fallback keys."""
+        kind_l = str(kind).lower()
+        side_l = str(side).lower()
+        key_candidates = [
+            f"barrier_tp_lo_{mode}_{kind_l}_{side_l}_h{int(h)}",
+            f"barrier_tp_lo_{mode}_{kind_l}_{side_l}",
+            f"barrier_tp_lo_{mode}_{side_l}_{kind_l}_h{int(h)}",
+            f"barrier_tp_lo_{mode}_{side_l}_{kind_l}",
+            f"barrier_tp_lo_{mode}_{str(kind).upper()}_{str(side).lower()}_H{int(h)}",
+        ]
+        for _k in key_candidates:
+            if _k in cfg:
+                try:
+                    return float(cfg.get(_k, default_val))
+                except Exception:
+                    continue
+        return float(default_val)
+
+    def _co_calibrate_tp_floor(tp_floor: float, sl_base_mult: float, tp_hi_local: float) -> float:
+        """Co-calibrate TP floor with SL geometry so floors are tuned jointly."""
+        alpha = float(cfg.get("barrier_tp_lo_sl_cocalib_alpha", 0.30))
+        sl_ref = float(cfg.get("barrier_sl_base_mult_ref", 0.5))
+        # Higher SL multiple -> require a somewhat higher TP floor to preserve economic edge.
+        scale = 1.0 + alpha * ((float(sl_base_mult) - sl_ref) / max(sl_ref, 1e-9))
+        scale = float(np.clip(scale, 0.6, 1.8))
+        out = float(tp_floor) * scale
+        return float(np.clip(out, 1e-4, tp_hi_local))
+
+    def _quality_metrics_from_proxy(lbl_df, ret_df, qual_df):
+        """Compute bound-event quality proxies from current geometry outputs."""
+        qual_vals = qual_df.values.astype(np.float64, copy=False).ravel()
+        lbl_vals = lbl_df.values.ravel()
+        ret_vals = ret_df.values.astype(np.float64, copy=False).ravel()
+        finite_q = np.isfinite(qual_vals)
+        if finite_q.any():
+            qv = qual_vals[finite_q]
+            y_tp_q = (lbl_vals[finite_q] == OUT_TP).astype(np.float64)
+            y_bound_q = (lbl_vals[finite_q] != OUT_TO).astype(np.float64)
+            bmask = y_bound_q > 0.0
+            if bmask.sum() >= 10:
+                qb = qv[bmask]
+                yb = y_tp_q[bmask]
+                n_pos_b = int(yb.sum())
+                n_neg_b = int(len(yb) - n_pos_b)
+                if n_pos_b > 0 and n_neg_b > 0:
+                    rb = pd.Series(qb).rank(method="average").to_numpy(np.float64)
+                    ub = rb[yb == 1].sum() - n_pos_b * (n_pos_b + 1) / 2.0
+                    auc_bound = float(ub / (n_pos_b * n_neg_b))
+                else:
+                    auc_bound = 0.5
+            else:
+                auc_bound = 0.5
+            if len(qv) >= 10:
+                q_thr = float(np.quantile(qv, 0.90))
+                top_mask = qv >= q_thr
+                tp_top = float(y_tp_q[top_mask].mean()) if top_mask.any() else 0.0
+                tp_rest = float(y_tp_q[~top_mask].mean()) if (~top_mask).any() else 0.0
+                tp_sep_top10 = tp_top - tp_rest
+            else:
+                tp_sep_top10 = 0.0
+        else:
+            auc_bound = 0.5
+            tp_sep_top10 = 0.0
+        tp_ret = ret_vals[lbl_vals == OUT_TP]
+        sl_ret = ret_vals[lbl_vals == OUT_SL]
+        if tp_ret.size > 0 and sl_ret.size > 0:
+            er_tp = float(np.mean(tp_ret))
+            er_sl = float(np.mean(sl_ret))
+            tp_over_sl = er_tp / max(abs(er_sl), 1e-9)
+        else:
+            tp_over_sl = 0.0
+        return float(auc_bound), float(tp_sep_top10), float(tp_over_sl)
 
     for H in horizons:
         for side in trade_sides:
-            min_tp_hit_eff = min_tp_hit_h2 if int(H) == 2 else min_tp_hit
-            tp_lo_eff = tp_lo_h2 if int(H) == 2 else tp_lo
-            max_timeout_eff = max_timeout_h2 if int(H) == 2 else max_timeout
-            min_net_rr_eff = min_net_rr_h2 if int(H) == 2 else min_net_rr
-            min_events_eff = min_events_h2 if int(H) == 2 else 100
-            reject_counts = {
-                "rr": 0,
-                "n_events": 0,
-                "tp_hit": 0,
-                "timeout": 0,
-            }
-            total_geoms = 0
-            if atr_pct_df is None:
-                atr_pct_local = pd.DataFrame(0.02, index=panel["close"].index, columns=panel["close"].columns)
-            else:
-                atr_pct_local = atr_pct_df.fillna(0.02)
+            for kind in _kinds:
+                if atr_pct_df is None:
+                    atr_pct_local = pd.DataFrame(0.02, index=panel["close"].index, columns=panel["close"].columns)
+                else:
+                    atr_pct_local = atr_pct_df.fillna(0.02)
 
-            tprint(f"Pre-computing geometry labels H={H} side={side} (k_tp={tp_mults}, sl_base={sl_base_mults})...")
+                # _grid_for_cell must come first — _cell_tp_abs_lo is used in floor resolution below.
+                tp_mults, sl_base_mults, _cell_tp_abs_lo = _grid_for_cell(kind, side, int(H))
 
-            geom_runs = []
-            relaxed_pool = []
-            for k_tp in tp_mults:
-                for sl_base_mult in sl_base_mults:
-                    total_geoms += 1
+                _default_tp_hit = min_tp_hit_h2 if int(H) == 2 else min_tp_hit
+                min_tp_hit_eff = _resolve_cell_min_tp_hit(side=side, kind=kind, h=int(H), default_val=_default_tp_hit)
+                # Separate search-vs-production TP floors.
+                # Per-cell tp_abs_lo_pct from the geometry grid takes priority over global cfg value —
+                # this is the floor the optimizer actually selected for this (kind, side, H) cell.
+                _global_tp_lo_base = tp_lo_h2 if int(H) == 2 else tp_lo
+                _cell_tp_lo_base = float(_cell_tp_abs_lo) if _cell_tp_abs_lo is not None else _global_tp_lo_base
+                tp_lo_search_default = float(cfg.get("barrier_tp_lo_search_h2" if int(H) == 2 else "barrier_tp_lo_search", _cell_tp_lo_base))
+                tp_lo_prod_default = float(cfg.get("barrier_tp_lo_prod_h2" if int(H) == 2 else "barrier_tp_lo_prod", max(_cell_tp_lo_base, tp_lo_search_default)))
+                tp_lo_eff_search = _resolve_cell_tp_floor(side=side, kind=kind, h=int(H), default_val=tp_lo_search_default, mode="search")
+                tp_lo_eff_prod = _resolve_cell_tp_floor(side=side, kind=kind, h=int(H), default_val=tp_lo_prod_default, mode="prod")
+                # Optional horizon scaling for TP floors.
+                if bool(cfg.get("barrier_tp_lo_scale_with_horizon", True)):
+                    _h_scale = float(np.sqrt(max(float(H), 1.0) / max(float(H_base), 1.0)))
+                    tp_lo_eff_search *= _h_scale
+                    tp_lo_eff_prod *= _h_scale
+                # Production floor should not be looser than search floor by default.
+                tp_lo_eff_prod = max(tp_lo_eff_prod, tp_lo_eff_search)
+                max_timeout_eff = max_timeout_h2 if int(H) == 2 else max_timeout
+                min_net_rr_eff = min_net_rr_h2 if int(H) == 2 else min_net_rr
+                min_events_eff = min_events_h2 if int(H) == 2 else 100
+                reject_counts = {
+                    "rr": 0,
+                    "n_events": 0,
+                    "tp_hit": 0,
+                    "timeout": 0,
+                }
+                total_geoms = 0
+                clip_stats = {
+                    "tp_floor_shares": [],
+                    "tp_ceil_shares": [],
+                }
+                # Resolve atr_window from the exact cell key, then global, then cfg, then default.
+                _cell_key_exact = f"{kind.upper()}_{side}_H{H}"
+                _cell_window = _per_cell.get(_cell_key_exact, {}).get("atr_window")
+                _atr_window = _cell_window or _tbm_grid.get("atr_window") or int(cfg.get("barrier_atr_window", 24 * 30))
+                tprint(f"Pre-computing geometry labels H={H} side={side} kind={kind} (k_tp={tp_mults}, sl_base={sl_base_mults}, atr_window={_atr_window})...")
+
+                # Pre-compute expensive rolling median/MAD base once per (H, side, kind, atr_window).
+                tprint(f"  Computing barrier base (window={_atr_window}h) once for H={H} side={side} kind={kind}...")
+                _barrier_base = _compute_barrier_base(
+                    atr_pct_local, _atr_window, disp_floor, z_max, k_reg, m_lo, m_hi, sl_lo, sl_hi, z_gate
+                )
+
+                geom_runs = []
+                relaxed_pool = []
+                for k_tp in tp_mults:
+                    for sl_base_mult in sl_base_mults:
+                        total_geoms += 1
+                        tp_lo_eval = _co_calibrate_tp_floor(tp_lo_eff_search, sl_base_mult, tp_hi)
+                        tp_df, sl_df = compute_barrier_factory(
+                            atr_pct=atr_pct_local,
+                            window_size=_atr_window,
+                            k_tp=k_tp,
+                            sl_base_mult=sl_base_mult,
+                            horizon=H,
+                            H_base=H_base,
+                            disp_floor=disp_floor,
+                            z_max=z_max,
+                            k_reg=k_reg,
+                            m_lo=m_lo,
+                            m_hi=m_hi,
+                            sl_lo=sl_lo,
+                            sl_hi=sl_hi,
+                            z_gate=z_gate,
+                            tp_lo=tp_lo_eval,
+                            tp_hi=tp_hi,
+                            _base=_barrier_base,
+                        )
+                        _tp_vals = tp_df.values
+                        _tp_floor_share = float(np.mean(_tp_vals <= (tp_lo_eval + 1e-9)))
+                        _tp_ceil_share = float(np.mean(_tp_vals >= (tp_hi - 1e-9)))
+                        clip_stats["tp_floor_shares"].append(_tp_floor_share)
+                        clip_stats["tp_ceil_shares"].append(_tp_ceil_share)
+
+                        net_rr = k_tp / max(sl_base_mult + fee_pct / (k_tp + 1e-9), 1e-9)
+                        if net_rr < min_net_rr_eff:
+                            reject_counts["rr"] += 1
+                            continue
+                        raw_key = (
+                            int(H),
+                            str(side),
+                            int(_atr_window),
+                            round(float(k_tp), 4),
+                            round(float(sl_base_mult), 4),
+                            round(float(tp_lo_eval), 6),
+                            round(float(tp_hi), 6),
+                        )
+                        if raw_key not in _raw_tb_cache:
+                            lbl, ret, qual = compute_triple_barrier_labels(panel, tp_df, sl_df, H, side=side, return_outcomes=True)
+                            _raw_tb_cache[raw_key] = (lbl, ret, qual)
+                        lbl, ret, qual = _raw_tb_cache[raw_key]
+
+                        n_events = lbl.size
+                        tp_hit = float((lbl.values == 2).sum()) / max(1, n_events)
+                        sl_hit = float((lbl.values == 0).sum()) / max(1, n_events)
+                        to_rate = float((lbl.values == 1).sum()) / max(1, n_events)
+
+                        if n_events < min_events_eff:
+                            reject_counts["n_events"] += 1
+                            continue
+
+                        # Track guardrail breaches for diagnostics, but do not hard-reject.
+                        if tp_hit < min_tp_hit_eff:
+                            reject_counts["tp_hit"] += 1
+                        if to_rate > max_timeout_eff:
+                            reject_counts["timeout"] += 1
+
+                        # Composite geometry score (quality-first, TP-hit as guardrail).
+                        auc_bound, tp_sep_top10, tp_over_sl = _quality_metrics_from_proxy(lbl, ret, qual)
+                        bind = tp_hit + sl_hit
+                        # Empirical TP-hit guardrail baseline from rolling per-timestamp TP share.
+                        _tp_ts = (lbl.values == OUT_TP).mean(axis=1).astype(np.float64)
+                        _tp_roll_win = int(cfg.get("label_tp_hit_guardrail_roll_hours", 24 * 14))
+                        _tp_roll = pd.Series(_tp_ts).rolling(_tp_roll_win, min_periods=max(24, _tp_roll_win // 8)).mean()
+                        _tp_emp_base = float(_tp_roll.quantile(float(cfg.get("label_tp_hit_guardrail_quantile", 0.50)))) if _tp_roll.notna().any() else float(tp_hit)
+
+                        # Normalize components to stable [0, 1]-ish ranges.
+                        auc_term = float(np.clip((auc_bound - 0.5) / 0.2, 0.0, 1.0))
+                        sep_term = float(np.clip(tp_sep_top10 / 0.12, 0.0, 1.0))
+                        bind_term = float(np.clip(bind, 0.0, 1.0))
+                        edge_term = float(np.clip((tp_over_sl - 1.0) / 1.0, 0.0, 1.0))
+
+                        # Guardrails: soft penalties (TP-hit no longer primary hard gate).
+                        tp_guard_target = max(
+                            min_tp_hit_eff * float(cfg.get("label_tp_hit_guardrail_floor_frac", 0.25)),
+                            _tp_emp_base,
+                        )
+                        tp_guard = float(np.clip(tp_hit / max(tp_guard_target, 1e-9), 0.0, 1.0))
+                        to_guard = float(np.clip(max_timeout_eff / max(to_rate, 1e-9), 0.0, 1.0))
+                        rr_guard = float(np.clip(net_rr / max(min_net_rr_eff, 1e-9), 0.0, 2.0))
+
+                        # Quality-first ranking weights.
+                        base_score = (
+                            0.45 * auc_term
+                            + 0.30 * sep_term
+                            + 0.15 * bind_term
+                            + 0.10 * edge_term
+                        )
+                        geom_weight = base_score * (0.85 + 0.15 * tp_guard) * (0.80 + 0.20 * to_guard) * (0.80 + 0.20 * min(rr_guard, 1.0))
+                        relaxed_pool.append({
+                            "lbl": lbl,
+                            "ret": ret,
+                            "qual": qual,
+                            "k_tp": float(k_tp),
+                            "sl_base_mult": float(sl_base_mult),
+                            "rr_weight": float(max(geom_weight, 1e-6)),
+                            "tp_hit": float(tp_hit),
+                            "sl_hit": float(sl_hit),
+                            "to_rate": float(to_rate),
+                            "n_events": int(n_events),
+                            "auc_bound": float(auc_bound),
+                            "tp_sep_top10": float(tp_sep_top10),
+                            "bind": float(bind),
+                            "tp_over_sl": float(tp_over_sl),
+                            "tp_guard_target": float(tp_guard_target),
+                            "tp_emp_base": float(_tp_emp_base),
+                            "tp_floor_share": float(_tp_floor_share),
+                            "tp_ceil_share": float(_tp_ceil_share),
+                        })
+
+                # Keep top-N geometries per (bucket, horizon) by composite score.
+                if relaxed_pool:
+                    relaxed_pool.sort(
+                        key=lambda g: (
+                            g["rr_weight"],
+                            g["auc_bound"],
+                            g["tp_sep_top10"],
+                            g["bind"],
+                            g["tp_over_sl"],
+                        ),
+                        reverse=True,
+                    )
+                    keep_top_n = int(cfg.get("label_geom_keep_topn_per_cell", 6))
+                    keep_top_n = max(1, keep_top_n)
+                    geom_runs = relaxed_pool[:keep_top_n]
+                    # Recompute selected geometries under production TP floor for deployment labels.
+                    if bool(cfg.get("label_use_production_tp_floor", True)):
+                        prod_runs = []
+                        for _g in geom_runs:
+                            _k_tp = float(_g["k_tp"])
+                            _sl_base = float(_g["sl_base_mult"])
+                            _tp_lo_prod_eval = _co_calibrate_tp_floor(tp_lo_eff_prod, _sl_base, tp_hi)
+                            _prod_key = (
+                                int(H),
+                                str(side),
+                                int(_atr_window),
+                                round(_k_tp, 4),
+                                round(_sl_base, 4),
+                                round(float(_tp_lo_prod_eval), 6),
+                                round(float(tp_hi), 6),
+                            )
+                            if _prod_key not in _raw_tb_cache:
+                                _tp_df_p, _sl_df_p = compute_barrier_factory(
+                                    atr_pct=atr_pct_local,
+                                    window_size=_atr_window,
+                                    k_tp=_k_tp,
+                                    sl_base_mult=_sl_base,
+                                    horizon=H,
+                                    H_base=H_base,
+                                    disp_floor=disp_floor,
+                                    z_max=z_max,
+                                    k_reg=k_reg,
+                                    m_lo=m_lo,
+                                    m_hi=m_hi,
+                                    sl_lo=sl_lo,
+                                    sl_hi=sl_hi,
+                                    z_gate=z_gate,
+                                    tp_lo=_tp_lo_prod_eval,
+                                    tp_hi=tp_hi,
+                                    _base=_barrier_base,
+                                )
+                                _lbl_p, _ret_p, _qual_p = compute_triple_barrier_labels(panel, _tp_df_p, _sl_df_p, H, side=side, return_outcomes=True)
+                                _raw_tb_cache[_prod_key] = (_lbl_p, _ret_p, _qual_p)
+                            _lbl_p, _ret_p, _qual_p = _raw_tb_cache[_prod_key]
+                            _n_events_p = _lbl_p.size
+                            _tp_hit_p = float((_lbl_p.values == OUT_TP).sum()) / max(1, _n_events_p)
+                            _sl_hit_p = float((_lbl_p.values == OUT_SL).sum()) / max(1, _n_events_p)
+                            _to_rate_p = float((_lbl_p.values == OUT_TO).sum()) / max(1, _n_events_p)
+                            _auc_b_p, _tp_sep_p, _tp_over_sl_p = _quality_metrics_from_proxy(_lbl_p, _ret_p, _qual_p)
+                            _bind_p = _tp_hit_p + _sl_hit_p
+                            prod_runs.append({
+                                **_g,
+                                "lbl": _lbl_p,
+                                "ret": _ret_p,
+                                "qual": _qual_p,
+                                "tp_hit": _tp_hit_p,
+                                "sl_hit": _sl_hit_p,
+                                "to_rate": _to_rate_p,
+                                "auc_bound": _auc_b_p,
+                                "tp_sep_top10": _tp_sep_p,
+                                "tp_over_sl": _tp_over_sl_p,
+                                "bind": _bind_p,
+                                "tp_floor_search": float(tp_lo_eff_search),
+                                "tp_floor_prod": float(_tp_lo_prod_eval),
+                            })
+                        geom_runs = prod_runs
+
+                if not geom_runs:
+                    # Rescue path mirrored for H2/H4/H8 with stricter fallbacks on longer horizons.
+                    if relaxed_pool and int(H) in (2, 4, 8):
+                        rescue_topk_h2 = int(cfg.get("label_h2_rescue_topk", h2_rescue_topk))
+                        rescue_topk_h4 = int(cfg.get("label_h4_rescue_topk", 2))
+                        rescue_topk_h8 = int(cfg.get("label_h8_rescue_topk", 1))
+                        _rescue_topk = rescue_topk_h2 if int(H) == 2 else (rescue_topk_h4 if int(H) == 4 else rescue_topk_h8)
+                        picked = relaxed_pool[: max(1, _rescue_topk)]
+                        geom_runs = picked
+                        tprint(
+                            f"H={H} rescue accepted {len(geom_runs)} geometries "
+                            f"(best tp_hit={picked[0]['tp_hit']:.4f}, timeout={picked[0]['to_rate']:.4f}, "
+                            f"auc_bound={picked[0]['auc_bound']:.4f}, tp_sep={picked[0]['tp_sep_top10']*100:.2f}pp)"
+                        )
+
+                if not geom_runs:
+                    tprint(f"No valid geometry for H={H} side={side} kind={kind}; using fallback.")
+                    tprint(
+                        "Geometry rejection breakdown: "
+                        f"H={H}, side={side}, kind={kind}, total={total_geoms}, "
+                        f"rr={reject_counts['rr']}, n_events={reject_counts['n_events']}, "
+                        f"tp_hit={reject_counts['tp_hit']}, timeout={reject_counts['timeout']}, "
+                        f"min_tp_hit={min_tp_hit_eff:.4f}, tp_lo_search={tp_lo_eff_search:.4f}, tp_lo_prod={tp_lo_eff_prod:.4f}, "
+                        f"max_timeout={max_timeout_eff:.4f}, min_rr={min_net_rr_eff:.4f}, "
+                        f"min_events={min_events_eff}, "
+                        f"tp_floor_share_mean={float(np.mean(clip_stats['tp_floor_shares'])) if clip_stats['tp_floor_shares'] else 0.0:.3f}, "
+                        f"tp_ceil_share_mean={float(np.mean(clip_stats['tp_ceil_shares'])) if clip_stats['tp_ceil_shares'] else 0.0:.3f}"
+                    )
+                    _tp_lo_fb = _co_calibrate_tp_floor(tp_lo_eff_prod, 0.5, tp_hi)
                     tp_df, sl_df = compute_barrier_factory(
                         atr_pct=atr_pct_local,
-                        window_size=24 * 30,
-                        k_tp=k_tp,
-                        sl_base_mult=sl_base_mult,
+                        window_size=_atr_window,
+                        k_tp=1.0,
+                        sl_base_mult=0.5,
                         horizon=H,
                         H_base=H_base,
                         disp_floor=disp_floor,
@@ -2594,138 +3094,107 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                         sl_lo=sl_lo,
                         sl_hi=sl_hi,
                         z_gate=z_gate,
-                        tp_lo=tp_lo_eff,
+                        tp_lo=_tp_lo_fb,
                         tp_hi=tp_hi,
+                        _base=_barrier_base,
                     )
-
-                    net_rr = k_tp / max(sl_base_mult + fee_pct / (k_tp + 1e-9), 1e-9)
-                    if net_rr < min_net_rr_eff:
-                        reject_counts["rr"] += 1
-                        continue
-                    raw_key = (H, side, round(float(k_tp), 4), round(float(sl_base_mult), 4))
-                    if raw_key not in _raw_tb_cache:
-                        # Request outcomes (2=TP, 1=TO, 0=SL) and quality
-                        lbl, ret, qual = compute_triple_barrier_labels(panel, tp_df, sl_df, H, side=side, return_outcomes=True)
-                        _raw_tb_cache[raw_key] = (lbl, ret, qual)
-                    lbl, ret, qual = _raw_tb_cache[raw_key]
-
-                    n_events = lbl.size
-                    # Map 2->TP, 0->SL, 1->TO for stats
-                    tp_hit = float((lbl.values == 2).sum()) / max(1, n_events)
-                    sl_hit = float((lbl.values == 0).sum()) / max(1, n_events)
-                    to_rate = float((lbl.values == 1).sum()) / max(1, n_events)
-
-                    if n_events < min_events_eff:
-                        reject_counts["n_events"] += 1
-                        continue
-                    relaxed_pool.append((lbl, ret, qual, k_tp, sl_base_mult, net_rr, tp_hit, sl_hit, to_rate, n_events))
-                    if tp_hit < min_tp_hit_eff:
-                        reject_counts["tp_hit"] += 1
-                        continue
-                    if to_rate > max_timeout_eff:
-                        reject_counts["timeout"] += 1
-                        continue
-
-                    rr_weight = float(np.clip(net_rr / 1.2, 0.0, 1.0))
-                    geom_runs.append((lbl, ret, qual, k_tp, sl_base_mult, rr_weight, tp_hit, sl_hit, to_rate, n_events))
-
-            if not geom_runs:
-                # H=2 rescue: keep top-K geometries by tp_hit if strict gates still reject all.
-                if int(H) == 2 and relaxed_pool:
-                    relaxed_pool.sort(key=lambda x: (x[6], -x[8]), reverse=True)  # tp_hit desc, timeout asc (idx 6, 8 now)
-                    picked = relaxed_pool[: max(1, h2_rescue_topk)]
-                    for (lbl, ret, qual, k_tp, sl_base_mult, net_rr, tp_hit, sl_hit, to_rate, n_events) in picked:
-                        rr_weight = float(np.clip(net_rr / 1.2, 0.0, 1.0))
-                        geom_runs.append((lbl, ret, qual, k_tp, sl_base_mult, rr_weight, tp_hit, sl_hit, to_rate, n_events))
+                    lbl, ret, qual = compute_triple_barrier_labels(panel, tp_df, sl_df, H, side=side, return_outcomes=True)
+                    _tp_vals_fb = tp_df.values
+                    _n_events_fb = lbl.size
+                    _tp_hit_fb = float((lbl.values == OUT_TP).sum()) / max(1, _n_events_fb)
+                    _sl_hit_fb = float((lbl.values == OUT_SL).sum()) / max(1, _n_events_fb)
+                    _to_rate_fb = float((lbl.values == OUT_TO).sum()) / max(1, _n_events_fb)
+                    geom_runs = [{
+                        "lbl": lbl,
+                        "ret": ret,
+                        "qual": qual,
+                        "k_tp": 1.0,
+                        "sl_base_mult": 0.5,
+                        "rr_weight": 1.0,
+                        "tp_hit": _tp_hit_fb,
+                        "sl_hit": _sl_hit_fb,
+                        "to_rate": _to_rate_fb,
+                        "n_events": int(_n_events_fb),
+                        "auc_bound": 0.5,
+                        "tp_sep_top10": 0.0,
+                        "bind": _tp_hit_fb + _sl_hit_fb,
+                        "tp_over_sl": 1.0,
+                        "tp_floor_share": float(np.mean(_tp_vals_fb <= (_tp_lo_fb + 1e-9))),
+                        "tp_ceil_share": float(np.mean(_tp_vals_fb >= (tp_hi - 1e-9))),
+                    }]
+                else:
+                    geom_desc = []
+                    for _g in geom_runs:
+                        geom_desc.append(
+                            f"(k_tp={_g['k_tp']:.2f}, sl={_g['sl_base_mult']:.2f}, tp_hit={_g['tp_hit']:.3f}, "
+                            f"to={_g['to_rate']:.3f}, n={int(_g['n_events'])}, "
+                            f"auc_b={_g['auc_bound']:.3f}, sep={_g['tp_sep_top10']*100:.2f}pp, "
+                            f"bind={_g['bind']:.3f}, edge={_g['tp_over_sl']:.2f}, w={_g['rr_weight']:.3f})"
+                        )
                     tprint(
-                        f"H=2 rescue accepted {len(geom_runs)} geometries "
-                        f"(best tp_hit={picked[0][6]:.4f}, timeout={picked[0][8]:.4f})"
+                        f"Accepted geometries H={H} side={side} kind={kind}: {len(geom_runs)} | "
+                        + "; ".join(geom_desc)
                     )
-
-            if not geom_runs:
-                tprint(f"No valid geometry for H={H} side={side}; using fallback.")
-                tprint(
-                    "Geometry rejection breakdown: "
-                    f"H={H}, side={side}, total={total_geoms}, "
-                    f"rr={reject_counts['rr']}, n_events={reject_counts['n_events']}, "
-                    f"tp_hit={reject_counts['tp_hit']}, timeout={reject_counts['timeout']}, "
-                    f"min_tp_hit={min_tp_hit_eff:.4f}, tp_lo={tp_lo_eff:.4f}, "
-                    f"max_timeout={max_timeout_eff:.4f}, min_rr={min_net_rr_eff:.4f}, "
-                    f"min_events={min_events_eff}"
-                )
-                tp_df, sl_df = compute_barrier_factory(
-                    atr_pct=atr_pct_local,
-                    window_size=24 * 30,
-                    k_tp=1.0,
-                    sl_base_mult=0.5,
-                    horizon=H,
-                    H_base=H_base,
-                    disp_floor=disp_floor,
-                    z_max=z_max,
-                    k_reg=k_reg,
-                    m_lo=m_lo,
-                    m_hi=m_hi,
-                    sl_lo=sl_lo,
-                    sl_hi=sl_hi,
-                    z_gate=z_gate,
-                    tp_lo=tp_lo_eff,
-                    tp_hi=tp_hi,
-                )
-                lbl, ret, qual = compute_triple_barrier_labels(panel, tp_df, sl_df, H, side=side, return_outcomes=True)
-                geom_runs = [(lbl, ret, qual, 1.0, 0.5, 1.0, 0.1, 0.1, 0.8, lbl.size)]
-            else:
-                # Diagnostics: print accepted geometry count + params to trace what survives gates.
-                geom_desc = []
-                for _, _, _, k_tp_v, sl_base_v, rr_w, tp_hit_v, sl_hit_v, to_rate_v, n_ev_v in geom_runs:
-                    geom_desc.append(
-                        f"(k_tp={k_tp_v:.2f}, sl={sl_base_v:.2f}, tp_hit={tp_hit_v:.3f}, "
-                        f"to={to_rate_v:.3f}, n={int(n_ev_v)}, w={rr_w:.3f})"
+                    tprint(
+                        "Geometry diagnostics: "
+                        f"H={H}, side={side}, kind={kind}, total={total_geoms}, "
+                        f"rr={reject_counts['rr']}, n_events={reject_counts['n_events']}, "
+                        f"tp_hit_guardrail={reject_counts['tp_hit']}, timeout_guardrail={reject_counts['timeout']}, "
+                        f"min_tp_hit={min_tp_hit_eff:.4f}, max_timeout={max_timeout_eff:.4f}, min_rr={min_net_rr_eff:.4f}, "
+                        f"tp_floor_share_mean={float(np.mean(clip_stats['tp_floor_shares'])) if clip_stats['tp_floor_shares'] else 0.0:.3f}, "
+                        f"tp_ceil_share_mean={float(np.mean(clip_stats['tp_ceil_shares'])) if clip_stats['tp_ceil_shares'] else 0.0:.3f}"
                     )
-                tprint(
-                    f"Accepted geometries H={H} side={side}: {len(geom_runs)} | "
-                    + "; ".join(geom_desc)
-                )
+                    _clip_warn_thr = float(cfg.get("label_tp_floor_clip_warn_threshold", 0.70))
+                    _tp_floor_mean = float(np.mean(clip_stats["tp_floor_shares"])) if clip_stats["tp_floor_shares"] else 0.0
+                    if _tp_floor_mean > _clip_warn_thr:
+                        tprint(
+                            f"WARNING: TP floor clipping is high for H={H} side={side} kind={kind} "
+                            f"({100.0*_tp_floor_mean:.1f}% > {100.0*_clip_warn_thr:.1f}%). "
+                            f"Consider raising production TP floor or widening geometry."
+                        )
 
-            rr_weights_raw = np.array([x[5] for x in geom_runs], dtype=np.float32)
-            rr_weights = np.sqrt(rr_weights_raw).astype(np.float32)
-            rr_weights = rr_weights / (rr_weights.mean() + 1e-12)
+                rr_weights_raw = np.array([g["rr_weight"] for g in geom_runs], dtype=np.float32)
+                rr_weights = np.sqrt(rr_weights_raw).astype(np.float32)
+                rr_weights = rr_weights / (rr_weights.mean() + 1e-12)
 
-            first_shape = geom_runs[0][0].values.shape
-            w_tp = np.zeros(first_shape, dtype=np.float32)
-            w_sl = np.zeros(first_shape, dtype=np.float32)
-            w_to = np.zeros(first_shape, dtype=np.float32)
-            agg_ret_num = np.zeros(first_shape, dtype=np.float32)
-            agg_qual_num = np.zeros(first_shape, dtype=np.float32)
+                first_shape = geom_runs[0]["lbl"].values.shape
+                w_tp = np.zeros(first_shape, dtype=np.float32)
+                w_sl = np.zeros(first_shape, dtype=np.float32)
+                w_to = np.zeros(first_shape, dtype=np.float32)
+                agg_ret_num = np.zeros(first_shape, dtype=np.float32)
+                agg_qual_num = np.zeros(first_shape, dtype=np.float32)
 
-            for gi, (lbl_df, ret_df, qual_df, *_rest) in enumerate(geom_runs):
-                w = rr_weights[gi]
-                lbl_vals = lbl_df.values
-                ret_vals = ret_df.values.astype(np.float32)
-                qual_vals = qual_df.values.astype(np.float32)
-                w_tp += w * (lbl_vals == OUT_TP).astype(np.float32)
-                w_sl += w * (lbl_vals == OUT_SL).astype(np.float32)
-                w_to += w * (lbl_vals == OUT_TO).astype(np.float32)
-                agg_ret_num += w * ret_vals
-                agg_qual_num += w * qual_vals
+                for gi, g in enumerate(geom_runs):
+                    w = rr_weights[gi]
+                    lbl_df = g["lbl"]
+                    ret_df = g["ret"]
+                    qual_df = g["qual"]
+                    lbl_vals = lbl_df.values
+                    ret_vals = ret_df.values.astype(np.float32)
+                    qual_vals = qual_df.values.astype(np.float32)
+                    w_tp += w * (lbl_vals == OUT_TP).astype(np.float32)
+                    w_sl += w * (lbl_vals == OUT_SL).astype(np.float32)
+                    w_to += w * (lbl_vals == OUT_TO).astype(np.float32)
+                    agg_ret_num += w * ret_vals
+                    agg_qual_num += w * qual_vals
 
-            n_tp_df = pd.DataFrame(w_tp, index=panel["close"].index, columns=panel["close"].columns)
-            n_sl_df = pd.DataFrame(w_sl, index=panel["close"].index, columns=panel["close"].columns)
-            n_to_df = pd.DataFrame(w_to, index=panel["close"].index, columns=panel["close"].columns)
+                n_tp_df = pd.DataFrame(w_tp, index=panel["close"].index, columns=panel["close"].columns)
+                n_sl_df = pd.DataFrame(w_sl, index=panel["close"].index, columns=panel["close"].columns)
+                n_to_df = pd.DataFrame(w_to, index=panel["close"].index, columns=panel["close"].columns)
 
-            w_sum = float(rr_weights.sum())
-            denom = w_sum if w_sum > 0 else 1.0
-            agg_ret = (agg_ret_num / denom).astype(np.float32)
-            agg_qual = (agg_qual_num / denom).astype(np.float32)
+                w_sum = float(rr_weights.sum())
+                denom = w_sum if w_sum > 0 else 1.0
+                agg_ret = (agg_ret_num / denom).astype(np.float32)
+                agg_qual = (agg_qual_num / denom).astype(np.float32)
 
-            # Map back to 3-way outcomes (2=TP, 0=SL, 1=TO)
-            agg_lbl = np.where(n_tp_df.values > n_sl_df.values, OUT_TP, np.where(n_sl_df.values > n_tp_df.values, OUT_SL, OUT_TO)).astype(np.int8)
+                agg_lbl = np.where(n_tp_df.values > n_sl_df.values, OUT_TP, np.where(n_sl_df.values > n_tp_df.values, OUT_SL, OUT_TO)).astype(np.int8)
 
-            tb_labels = pd.DataFrame(agg_lbl, index=panel["close"].index, columns=panel["close"].columns)
-            tb_returns = pd.DataFrame(agg_ret, index=panel["close"].index, columns=panel["close"].columns)
-            tb_quality = pd.DataFrame(agg_qual, index=panel["close"].index, columns=panel["close"].columns)
+                tb_labels = pd.DataFrame(agg_lbl, index=panel["close"].index, columns=panel["close"].columns)
+                tb_returns = pd.DataFrame(agg_ret, index=panel["close"].index, columns=panel["close"].columns)
+                tb_quality = pd.DataFrame(agg_qual, index=panel["close"].index, columns=panel["close"].columns)
 
-            tb_cache[(H, side)] = (tb_labels, tb_returns, tb_quality)
-            geom_cache[(H, side)] = {"n_tp": n_tp_df, "n_sl": n_sl_df, "n_to": n_to_df, "n_geom": len(geom_runs)}
+                tb_cache[(H, side, kind)] = (tb_labels, tb_returns, tb_quality)
+                geom_cache[(H, side, kind)] = {"n_tp": n_tp_df, "n_sl": n_sl_df, "n_to": n_to_df, "n_geom": len(geom_runs)}
 
     return tb_cache, geom_cache
 
@@ -2741,6 +3210,9 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
         feats,
         pct=train_pct,
         metric=cfg["trade_deviation_metric"],
+        min_range_pct=_train_min_range,
+        min_vol_zscore=_train_min_vol,
+        sign_consistency_min=float(cfg.get("min_feat_sign_consistency", 0.80)),
     )
 
     # Apply OOS holdout: exclude last N days from training labels
@@ -2796,14 +3268,11 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
                     f"strategy={strategy_label}, H={H}"
                 )
 
-                if (H, side) in geom_cache:
-                    feats["__geom_n_tp__"] = geom_cache[(H, side)]["n_tp"]
-                    feats["__geom_n_sl__"] = geom_cache[(H, side)]["n_sl"]
-                    feats["__geom_n_to__"] = geom_cache[(H, side)]["n_to"]
+                if (H, side, k) in geom_cache:
+                    feats["__geom_n_tp__"] = geom_cache[(H, side, k)]["n_tp"]
+                    feats["__geom_n_sl__"] = geom_cache[(H, side, k)]["n_sl"]
+                    feats["__geom_n_to__"] = geom_cache[(H, side, k)]["n_to"]
 
-                # Optimization: We include meta keys here so they are present in the dataframe
-                # for the meta model later. However, we must filter them out when training
-                # the alpha model itself (in train_models_from_artifacts).
                 X, y, y_ret, cols, w, meta_idx = build_hourly_training_set_and_weights(
                     panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, H, k,
                     trend_filter=trend_filter, feature_key=feat_key,
@@ -2811,7 +3280,7 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
                     label_method="triple_barrier",
                     fixed_tp=fixed_tp, fixed_sl=fixed_sl, side=side,
                     _cached_cand_mask=cached_cand_mask,
-                    _cached_tb=tb_cache[(H, side)]
+                    _cached_tb=tb_cache[(H, side, k)]
                 )
 
                 if X is not None:
@@ -4453,7 +4922,12 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
     ts_start = ts - pd.Timedelta(days=lookback_days)
 
     # Select candidates
-    cand_mask = select_trade_candidates_vectorized(panel, feats, pct=cfg["trade_extreme_pct"], metric=cfg["trade_deviation_metric"])
+    cand_mask = select_trade_candidates_vectorized(
+        panel, feats,
+        pct=cfg["trade_extreme_pct"],
+        metric=cfg["trade_deviation_metric"],
+        sign_consistency_min=float(cfg.get("min_feat_sign_consistency", 0.80)),
+    )
     if cand_mask is None:
         tprint("No candidates found.")
         return cfg

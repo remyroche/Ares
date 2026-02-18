@@ -79,7 +79,9 @@ MAX_GEOMETRY_CACHE_KEYS = 1
 STAGE1_OOF_MAX_SAMPLES = 250_000
 STAGE1_OOF_SPLITS = 2
 STAGE23_OOF_SPLITS = 3
-STAGE1_SYMBOL_SUBSAMPLE_STEP = 2
+STAGE1_SYMBOL_SUBSAMPLE_STEP = 1
+STAGE23_SYMBOL_SUBSAMPLE_STEP = 1
+GEOMETRY_CACHE_MAX_MB = 1536
 EPS = 1e-12
 
 _TARGET_RACE_DEFAULTS = get_target_race_model_defaults(CFG)
@@ -672,6 +674,130 @@ def cache_geometry_entry(
         tlog(f"Training-slice geometry cache evicted oldest key hash={hash(evicted_key)}")
 
 
+def _estimate_geometry_cache_size_bytes(tb_cache_by_h_side: dict, geom_cache_by_h_side: dict) -> int:
+    total = 0
+    for tb_triplet in tb_cache_by_h_side.values():
+        if isinstance(tb_triplet, tuple):
+            for df in tb_triplet:
+                if isinstance(df, pd.DataFrame):
+                    total += int(df.memory_usage(index=True, deep=True).sum())
+    for geom_pack in geom_cache_by_h_side.values():
+        if isinstance(geom_pack, dict):
+            for df in geom_pack.values():
+                if isinstance(df, pd.DataFrame):
+                    total += int(df.memory_usage(index=True, deep=True).sum())
+    return total
+
+
+def _geometry_cache_dir(
+    output_path: str,
+    feature_path: str,
+    panel_close: pd.DataFrame,
+    shared_geometry_key: tuple[Any, ...],
+) -> str:
+    reports_dir = os.path.abspath(os.path.dirname(output_path) or ".")
+    root = os.path.join(reports_dir, ".geometry_cache")
+    cols_hash = hashlib.sha1(
+        ",".join(map(str, panel_close.columns)).encode("utf-8")
+    ).hexdigest()[:16]
+    sig = {
+        "feature_path": os.path.abspath(feature_path),
+        "panel_shape": [int(panel_close.shape[0]), int(panel_close.shape[1])],
+        "panel_start": str(panel_close.index.min()),
+        "panel_end": str(panel_close.index.max()),
+        "panel_cols_hash": cols_hash,
+        "shared_geometry_key": [str(v) for v in shared_geometry_key],
+    }
+    cache_id = hashlib.sha1(json.dumps(sig, sort_keys=True).encode("utf-8")).hexdigest()[:24]
+    return os.path.join(root, cache_id)
+
+
+def load_persisted_geometry_cache(cache_dir: str) -> Optional[tuple[dict, dict]]:
+    manifest_path = os.path.join(cache_dir, "manifest.json")
+    if not os.path.exists(manifest_path):
+        return None
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            manifest = json.load(f)
+        entries = manifest.get("entries", [])
+        if not entries:
+            return None
+        tb_cache_by_h_side: dict[tuple[int, str], tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]] = {}
+        geom_cache_by_h_side: dict[tuple[int, str], dict[str, pd.DataFrame]] = {}
+        for item in entries:
+            h = int(item["h"])
+            side = str(item["side"])
+            lbl = pd.read_parquet(os.path.join(cache_dir, item["tb_labels"]))
+            ret = pd.read_parquet(os.path.join(cache_dir, item["tb_returns"]))
+            qual = pd.read_parquet(os.path.join(cache_dir, item["tb_quality"]))
+            n_tp = pd.read_parquet(os.path.join(cache_dir, item["geom_n_tp"]))
+            n_sl = pd.read_parquet(os.path.join(cache_dir, item["geom_n_sl"]))
+            n_to = pd.read_parquet(os.path.join(cache_dir, item["geom_n_to"]))
+            tb_cache_by_h_side[(h, side)] = (lbl, ret, qual)
+            geom_cache_by_h_side[(h, side)] = {"n_tp": n_tp, "n_sl": n_sl, "n_to": n_to}
+        return tb_cache_by_h_side, geom_cache_by_h_side
+    except Exception as exc:
+        tlog(f"Persisted geometry cache load failed: {exc}")
+        return None
+
+
+def save_persisted_geometry_cache(
+    cache_dir: str,
+    tb_cache_by_h_side: dict,
+    geom_cache_by_h_side: dict,
+    max_mb: int = GEOMETRY_CACHE_MAX_MB,
+) -> bool:
+    try:
+        est_bytes = _estimate_geometry_cache_size_bytes(tb_cache_by_h_side, geom_cache_by_h_side)
+        max_bytes = int(max_mb) * 1024 * 1024
+        if est_bytes > max_bytes:
+            tlog(
+                "Skipping persisted geometry cache write: "
+                f"estimated_size={est_bytes / (1024**2):.1f}MB > limit={max_mb}MB"
+            )
+            return False
+
+        os.makedirs(cache_dir, exist_ok=True)
+        entries = []
+        for (h, side), tb_triplet in sorted(tb_cache_by_h_side.items(), key=lambda x: (int(x[0][0]), str(x[0][1]))):
+            if (h, side) not in geom_cache_by_h_side:
+                continue
+            lbl, ret, qual = tb_triplet
+            geom_pack = geom_cache_by_h_side[(h, side)]
+            base = f"h{int(h)}_{side}"
+            files = {
+                "tb_labels": f"{base}_tb_labels.parquet",
+                "tb_returns": f"{base}_tb_returns.parquet",
+                "tb_quality": f"{base}_tb_quality.parquet",
+                "geom_n_tp": f"{base}_geom_n_tp.parquet",
+                "geom_n_sl": f"{base}_geom_n_sl.parquet",
+                "geom_n_to": f"{base}_geom_n_to.parquet",
+            }
+            lbl.to_parquet(os.path.join(cache_dir, files["tb_labels"]), compression="zstd")
+            ret.to_parquet(os.path.join(cache_dir, files["tb_returns"]), compression="zstd")
+            qual.to_parquet(os.path.join(cache_dir, files["tb_quality"]), compression="zstd")
+            geom_pack["n_tp"].to_parquet(os.path.join(cache_dir, files["geom_n_tp"]), compression="zstd")
+            geom_pack["n_sl"].to_parquet(os.path.join(cache_dir, files["geom_n_sl"]), compression="zstd")
+            geom_pack["n_to"].to_parquet(os.path.join(cache_dir, files["geom_n_to"]), compression="zstd")
+            entries.append({"h": int(h), "side": side, **files})
+
+        manifest = {
+            "created_at_utc": pd.Timestamp.utcnow().isoformat(),
+            "estimated_size_mb": float(est_bytes / (1024**2)),
+            "entries": entries,
+        }
+        with open(os.path.join(cache_dir, "manifest.json"), "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2)
+        tlog(
+            "Persisted geometry cache saved: "
+            f"entries={len(entries)}, est_size={est_bytes / (1024**2):.1f}MB"
+        )
+        return True
+    except Exception as exc:
+        tlog(f"Persisted geometry cache save failed: {exc}")
+        return False
+
+
 def infer_stage_label(config_id: str) -> str:
     """Infer sweep stage from config id."""
     if "_S3" in config_id:
@@ -827,6 +953,8 @@ def evaluate_training_slices(
             else:
                 cand_filter = "best" if kind == "mr" else "worst"
             trend_filter = "up" if cand_filter == "best" else "down"
+            if (side == "long" and kind == "tf") or (side == "short" and kind == "mr"):
+                trend_filter = "down"
             feat_key = "tf_feature_keys" if kind == "tf" else "mr_feature_keys"
             move_bucket = _bucket_move_bucket(side, kind)
             bucket_mask = bucket_mask_cache[(side, kind)]
@@ -1276,11 +1404,23 @@ def precompute_selection_metrics(feats: dict, float_dtype: np.dtype) -> dict:
 
     metrics = {"fixed": ret_base}
 
-    cusum_pack: Dict[str, Any] = {"z": None, "sigma": None, "strength_by_h": {}}
+    atr_effective = None
+    atr_pct = feats.get("atr_pct")
+    if atr_pct is not None:
+        atr_pack = preprocess_atr(atr_pct.astype(float_dtype, copy=False))
+        # Use robust denominator everywhere for ATR mode.
+        atr_effective = atr_pack["atr_robust"].astype(float_dtype, copy=False)
+        metrics["atr"] = (ret_base / atr_pack["atr_robust"]).astype(float_dtype, copy=False)
+
+    cusum_pack: Dict[str, Any] = {"z": None, "sigma": None, "strength_by_h": {}, "atr_adjusted": False}
     ret_for_cusum = feats.get("ret1h")
     if ret_for_cusum is None:
         ret_for_cusum = ret_base
     ret_for_cusum = ret_for_cusum.astype(float_dtype, copy=False)
+    if isinstance(atr_effective, pd.DataFrame):
+        atr_for_cusum = atr_effective.reindex(index=ret_for_cusum.index, columns=ret_for_cusum.columns)
+        ret_for_cusum = (ret_for_cusum / (atr_for_cusum.abs() + EPS)).astype(float_dtype, copy=False)
+        cusum_pack["atr_adjusted"] = True
     z_mode = str(CFG.get("cusum_z_mode", "std_clip"))
     z_cap = float(CFG.get("cusum_z_cap", 8.0))
     robust_win = int(CFG.get("cusum_robust_win", 256))
@@ -1319,20 +1459,15 @@ def precompute_selection_metrics(feats: dict, float_dtype: np.dtype) -> dict:
     # default CUSUM metric in common map
     metrics["cusum"] = cusum_pack["strength_by_h"].get("6.0")
 
-    atr_effective = None
-    atr_pct = feats.get("atr_pct")
-    if atr_pct is not None:
-        atr_pack = preprocess_atr(atr_pct.astype(float_dtype, copy=False))
-        # Use robust denominator everywhere for ATR mode.
-        atr_effective = atr_pack["atr_robust"].astype(float_dtype, copy=False)
-        metrics["atr"] = (ret_base / atr_pack["atr_robust"]).astype(float_dtype, copy=False)
-        metrics["atr_robust"] = (ret_base / atr_pack["atr_robust"]).astype(float_dtype, copy=False)
-
     rvol_z = feats.get("rvol_z")
     volu_z = feats.get("volu_z")
     if rvol_z is not None and volu_z is not None:
         vol_combined = ((rvol_z.astype(float_dtype, copy=False) + volu_z.astype(float_dtype, copy=False)) / 2).astype(float_dtype, copy=False)
-        metrics["vol_weight"] = (ret_base.abs() * vol_combined.clip(lower=0) * np.sign(ret_base)).astype(float_dtype, copy=False)
+        vol_tilt = (1.0 + 0.12 * vol_combined.clip(lower=0.0, upper=3.0)).astype(float_dtype, copy=False)
+        atr_base = metrics.get("atr", ret_base).astype(float_dtype, copy=False)
+        metrics["atr_vol_weight"] = (atr_base * vol_tilt).astype(float_dtype, copy=False)
+    else:
+        metrics["atr_vol_weight"] = metrics.get("atr", ret_base).astype(float_dtype, copy=False)
 
     return {
         "metrics": metrics,
@@ -1963,6 +2098,18 @@ def compute_snr(pos_values: np.ndarray, neg_values: np.ndarray) -> float:
         return 0.0
 
 
+def _scores_to_pseudo_proba(scores: np.ndarray) -> np.ndarray:
+    """Map arbitrary model scores into (0,1) via empirical rank transform."""
+    s = np.asarray(scores, dtype=np.float64)
+    n = len(s)
+    if n == 0:
+        return np.asarray([], dtype=np.float64)
+    order = np.argsort(s, kind="mergesort")
+    p = np.empty(n, dtype=np.float64)
+    p[order] = (np.arange(n, dtype=np.float64) + 0.5) / n
+    return np.clip(p, 1e-6, 1.0 - 1e-6)
+
+
 def compute_feature_target_correlation(
     data_container: DataContainer,
     available_features: list,
@@ -2539,6 +2686,12 @@ def compute_learnability_metrics(
     
     auc = 0.0
     brier = 0.0
+    ic_oof_n = 0
+    auc_oof_n = 0
+    brier_oof_n = 0
+    ic_source = "none"
+    auc_source = "none"
+    brier_source = "none"
 
     tlog("Metrics: entering OOF/IC block")
     # 8. Information Coefficient (requires OOF predictions)
@@ -2583,6 +2736,8 @@ def compute_learnability_metrics(
 
                 oof_valid = np.isfinite(oof)
                 if oof_valid.sum() >= 50:
+                    ic_oof_n = int(oof_valid.sum())
+                    ic_source = "oof_regression"
                     ic = safe_pearson_corr(oof[oof_valid], y[oof_valid])
                     ic_spearman = stats.spearmanr(oof[oof_valid], y[oof_valid], nan_policy="omit").statistic
                     oof_mae = float(np.mean(np.abs(oof[oof_valid] - y[oof_valid])))
@@ -2601,6 +2756,26 @@ def compute_learnability_metrics(
                 else:
                     ic, ic_std, ic_spearman, oof_mae, oof_directional_acc = 0, 0, 0, 0, 0
 
+                # Always compute classification diagnostics from OOF regression scores.
+                y_cls_raw = candidate_labels_full[valid_rows]
+                y_cls = (y_cls_raw > 0.5).astype(np.int8, copy=False)
+                if len(y_cls) >= 100 and y_cls.sum() > 0 and y_cls.sum() < len(y_cls):
+                    y_cls_valid = y_cls[oof_valid].astype(np.int32, copy=False)
+                    score_valid = oof[oof_valid].astype(np.float64, copy=False)
+                    if len(y_cls_valid) >= 50 and y_cls_valid.sum() > 0 and y_cls_valid.sum() < len(y_cls_valid):
+                        try:
+                            auc = float(roc_auc_score(y_cls_valid, score_valid))
+                            auc_oof_n = int(len(y_cls_valid))
+                            auc_source = "oof_regression_scores"
+                        except Exception:
+                            auc = 0.0
+                        p_rank = _scores_to_pseudo_proba(score_valid)
+                        if len(p_rank) == len(y_cls_valid):
+                            brier = float(brier_score_loss(y_cls_valid, p_rank))
+                            brier_oof_n = int(len(y_cls_valid))
+                            brier_source = "oof_regression_rank_proba"
+
+                # If classifier OOF is enabled, override with calibrated probability metrics.
                 if use_extratrees:
                     y_cls_raw = candidate_labels_full[valid_rows]
                     y_cls = (y_cls_raw > 0.5).astype(np.int8, copy=False)
@@ -2620,6 +2795,10 @@ def compute_learnability_metrics(
                             if y_cls_valid.sum() > 0 and y_cls_valid.sum() < len(y_cls_valid):
                                 auc = float(roc_auc_score(y_cls_valid, p_valid))
                                 brier = float(brier_score_loss(y_cls_valid, p_valid))
+                                auc_oof_n = int(len(y_cls_valid))
+                                brier_oof_n = int(len(y_cls_valid))
+                                auc_source = "oof_classifier_proba"
+                                brier_source = "oof_classifier_proba"
                 ridge_alpha_used = float(oof_diag.get("ridge_alpha", RIDGE_SCREEN_ALPHA))
                 ridge_top_frac_used = float(oof_diag.get("ridge_top_frac", RIDGE_SCREEN_TOP_FRAC))
                 ridge_selected_k_mean = float(oof_diag.get("ridge_selected_k_mean", 0.0))
@@ -2666,6 +2845,12 @@ def compute_learnability_metrics(
         "ic_spearman": ic_spearman if np.isfinite(ic_spearman) else 0,
         "oof_mae": oof_mae,
         "oof_directional_acc": oof_directional_acc,
+        "ic_source": ic_source,
+        "ic_oof_n": int(ic_oof_n),
+        "auc_source": auc_source,
+        "auc_oof_n": int(auc_oof_n),
+        "brier_source": brier_source,
+        "brier_oof_n": int(brier_oof_n),
         "auc": auc if np.isfinite(auc) else 0,
         "brier": brier if np.isfinite(brier) else 0,
         "ridge_alpha": ridge_alpha_used,
@@ -3016,6 +3201,15 @@ def run_comparison(
         feats = cast_features_dtype(feats, float_dtype=float_dtype)
         gc.collect()
 
+    # Keep training/event-scoring logic healthy even when range_16h_pct is absent.
+    if "range_16h_pct" not in feats:
+        if "range_12h_pct" in feats:
+            feats["range_16h_pct"] = feats["range_12h_pct"]
+            tlog("Derived missing range_16h_pct from range_12h_pct")
+        elif "range_pct" in feats:
+            feats["range_16h_pct"] = feats["range_pct"]
+            tlog("Derived missing range_16h_pct from range_pct")
+
     # Normalize feature timestamps to UTC-naive once to prevent downstream
     # tz-aware vs tz-naive alignment drops in training-slice label joins.
     feats = normalize_feature_time_indices(feats)
@@ -3188,10 +3382,10 @@ def run_comparison(
     ]
     
     # Modes to test
-    modes = [("F", "fixed"), ("A", "atr"), ("VW", "vol_weight"), ("C", "cusum")]
+    modes = [("F", "fixed"), ("A", "atr"), ("AVW", "atr_vol_weight"), ("C", "cusum")]
     
     # Use 33% of samples for faster execution
-    SAMPLE_FRAC = 0.33
+    SAMPLE_FRAC = 1.00
     
     # =============================================================================
     # STAGE 1: Filter sweep (54 configs)
@@ -3312,6 +3506,9 @@ def run_comparison(
                         new_cfg["pct"] = new_pct
                         stage3_configs.append(new_cfg)
         if stage3_configs:
+            # Deduplicate same config_id produced by duplicate winners.
+            dedup_stage3 = {str(c["config_id"]): c for c in stage3_configs}
+            stage3_configs = list(dedup_stage3.values())
             tlog(f"Stage 3 setup done: {len(stage3_configs)} configs")
             tlog(f"Stage 3 pct grid: {sorted({float(c['pct']) for c in stage3_configs})}")
             configs = stage3_configs  # Replace with stage 3 configs only
@@ -3319,6 +3516,12 @@ def run_comparison(
             tlog(f"Stage 3 setup done: no configs matched winners={winners}")
     else:
         tlog("Stage 3 setup skipped")
+
+    # Final safety dedupe for config ids before execution.
+    cfg_map = {str(c["config_id"]): c for c in configs}
+    if len(cfg_map) < len(configs):
+        tlog(f"Deduplicated configs by config_id: {len(configs)} -> {len(cfg_map)}")
+    configs = list(cfg_map.values())
     
     range_thresholds = [cfg["min_range_pct"] for cfg in configs if cfg.get("min_range_pct") is not None]
     vol_thresholds = [cfg["min_vol_zscore"] for cfg in configs if cfg.get("min_vol_zscore") is not None]
@@ -3373,13 +3576,30 @@ def run_comparison(
             geom_cfg.get("barrier_tp_hi"),
         )
         tlog("Prewarming shared training-slice geometry cache")
-        shared_tb, shared_geom = build_grid_aggregated_tb_cache(
-            panel=panel,
-            feats=feats,
-            cfg=geom_cfg,
-            horizons=geom_cfg.get("label_horizons_hours", [2, 4, 8]),
-            trade_sides=["long", "short"],
+        cache_dir = _geometry_cache_dir(
+            output_path=output_path,
+            feature_path=feature_path,
+            panel_close=panel["close"],
+            shared_geometry_key=shared_geometry_key,
         )
+        persisted = load_persisted_geometry_cache(cache_dir)
+        if persisted is not None:
+            shared_tb, shared_geom = persisted
+            tlog(f"Loaded persisted geometry cache from {cache_dir}")
+        else:
+            shared_tb, shared_geom = build_grid_aggregated_tb_cache(
+                panel=panel,
+                feats=feats,
+                cfg=geom_cfg,
+                horizons=geom_cfg.get("label_horizons_hours", [2, 4, 8]),
+                trade_sides=["long", "short"],
+            )
+            save_persisted_geometry_cache(
+                cache_dir=cache_dir,
+                tb_cache_by_h_side=shared_tb,
+                geom_cache_by_h_side=shared_geom,
+                max_mb=GEOMETRY_CACHE_MAX_MB,
+            )
         shared_geometry_value = (shared_tb, shared_geom)
         cache_geometry_entry(training_slice_geometry_cache, shared_geometry_key, shared_geometry_value)
         tlog("Shared training-slice geometry cache ready")
@@ -3407,7 +3627,7 @@ def run_comparison(
         tlog(f"Config start: {config_id}")
         
         try:
-            if mode not in {"fixed", "atr", "vol_weight", "cusum"}:
+            if mode not in {"fixed", "atr", "atr_vol_weight", "cusum"}:
                 raise ValueError(f"Unsupported mode in default sweep: '{mode}'")
             if mode != "cusum" and mode not in metric_by_mode:
                 raise ValueError(f"Required features missing for mode '{mode}'")
@@ -3541,15 +3761,16 @@ def run_comparison(
             else:
                 tlog(f"Candidate expansion skipped: selected={expanded_selected_n}")
 
-            if is_stage1 and STAGE1_SYMBOL_SUBSAMPLE_STEP > 1:
-                keep_cols = list(candidate_mask_metrics.columns[::STAGE1_SYMBOL_SUBSAMPLE_STEP])
+            stage_symbol_step = STAGE1_SYMBOL_SUBSAMPLE_STEP if is_stage1 else STAGE23_SYMBOL_SUBSAMPLE_STEP
+            if stage_symbol_step > 1:
+                keep_cols = list(candidate_mask_metrics.columns[::stage_symbol_step])
                 if keep_cols and len(keep_cols) < candidate_mask_metrics.shape[1]:
                     candidate_mask_metrics = candidate_mask_metrics.reindex(columns=keep_cols, fill_value=False)
                     side_sign_metrics = side_sign_metrics.reindex(columns=keep_cols, fill_value=0).astype(np.int8)
                     stage1_selected_n = int(candidate_mask_metrics.to_numpy(dtype=bool, copy=False).sum())
                     tlog(
-                        "Stage 1 symbol subsample applied: "
-                        f"step={STAGE1_SYMBOL_SUBSAMPLE_STEP}, cols={len(keep_cols)}, selected={stage1_selected_n}"
+                        f"{stage_label} symbol subsample applied: "
+                        f"step={stage_symbol_step}, cols={len(keep_cols)}, selected={stage1_selected_n}"
                     )
 
             # Keep learnability metrics in feature-space coordinates; build a separate
@@ -3723,7 +3944,10 @@ def run_comparison(
             
             results.append(result)
             
-            logger.info(f"  Candidates/timestamp: {metrics['n_candidates_mean']:.1f}")
+            logger.info(
+                f"  Candidates/timestamp: {metrics['n_candidates_mean']:.3f} "
+                f"(rate={metrics.get('candidate_rate', 0.0):.4%})"
+            )
             logger.info(f"  IC: {metrics['ic']:.4f} ± {metrics['ic_std']:.4f}")
             logger.info(f"  KS: {metrics['ks_stat']:.4f}, SNR: {metrics['snr']:.4f}")
             logger.info(f"  Class balance: {metrics['class_balance']:.2%}")
@@ -3733,6 +3957,11 @@ def run_comparison(
                 f"Return(bps): {metrics['mean_return_bps']:.2f} ± {metrics['volatility_bps']:.2f}"
             )
             logger.info(f"  Clf AUC: {metrics.get('auc', 0.0):.4f} | Brier: {metrics.get('brier', 0.0):.4f}")
+            logger.info(
+                f"  OOF provenance: IC[{metrics.get('ic_source','none')} n={int(metrics.get('ic_oof_n',0))}] "
+                f"AUC[{metrics.get('auc_source','none')} n={int(metrics.get('auc_oof_n',0))}] "
+                f"Brier[{metrics.get('brier_source','none')} n={int(metrics.get('brier_oof_n',0))}]"
+            )
             logger.info(
                 f"  SliceSharpe: {metrics['slice_overall_sharpe']:.2f} | "
                 f"SliceSortino: {metrics['slice_overall_sortino']:.2f} | "
@@ -3783,6 +4012,12 @@ def run_comparison(
                 "ic_spearman": np.nan,
                 "oof_mae": np.nan,
                 "oof_directional_acc": np.nan,
+                "ic_source": "none",
+                "ic_oof_n": 0,
+                "auc_source": "none",
+                "auc_oof_n": 0,
+                "brier_source": "none",
+                "brier_oof_n": 0,
                 "auc": np.nan,
                 "brier": np.nan,
                 "ridge_alpha": RIDGE_SCREEN_ALPHA,
@@ -3823,6 +4058,12 @@ def run_comparison(
     tlog("Building results dataframe")
     # Create results DataFrame
     results_df = pd.DataFrame(results)
+    if "config_id" in results_df.columns:
+        n_before = len(results_df)
+        results_df = results_df.drop_duplicates(subset=["config_id"], keep="first").reset_index(drop=True)
+        n_after = len(results_df)
+        if n_after < n_before:
+            tlog(f"Deduplicated results by config_id: {n_before} -> {n_after}")
 
     # Learnability-first policy ranking with classifier-aware global score.
     error_series = results_df.get("error", pd.Series("", index=results_df.index)).fillna("").astype(str)
@@ -3903,7 +4144,14 @@ def run_comparison(
     results_df.to_csv(output_path, index=False)
     if slice_results:
         slice_output = output_path.replace(".csv", "_slices.csv")
-        pd.DataFrame(slice_results).to_csv(slice_output, index=False)
+        slices_df = pd.DataFrame(slice_results)
+        if {"config_id", "slice", "horizon"}.issubset(slices_df.columns):
+            n_before = len(slices_df)
+            slices_df = slices_df.drop_duplicates(subset=["config_id", "slice", "horizon"], keep="first")
+            n_after = len(slices_df)
+            if n_after < n_before:
+                tlog(f"Deduplicated slice rows: {n_before} -> {n_after}")
+        slices_df.to_csv(slice_output, index=False)
         logger.info(f"Slice-level results saved to: {slice_output}")
     if save_sample_weights:
         sw_output = output_path.replace(".csv", "_sample_weights.csv")
@@ -4090,6 +4338,7 @@ if __name__ == "__main__":
                         top_winners = full_configs.nlargest(4, score_col)["config_id"].tolist()
                     else:
                         top_winners = full_configs.nsmallest(4, score_col)["config_id"].tolist()
+                    top_winners = list(dict.fromkeys([str(w) for w in top_winners]))
                     tlog(f"Auto-selected top 4 winners: {top_winners}")
                 else:
                     tlog("No FULL_E configs found, cannot auto-select winners")
@@ -4098,7 +4347,7 @@ if __name__ == "__main__":
                 tlog(f"Could not auto-select winners: {e}")
                 top_winners = []
         else:
-            top_winners = args.winners
+            top_winners = list(dict.fromkeys([str(w) for w in args.winners]))
         
         if top_winners:
             # Run Stage 3 with top winners

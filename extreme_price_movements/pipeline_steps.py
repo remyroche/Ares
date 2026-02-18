@@ -1,12 +1,22 @@
 import os
 import pickle
+import glob
 import pandas as pd
 import numpy as np
+import pyarrow.parquet as pq
 
 from extreme_price_movements.pnl import CostModel, trade_return_net
 from extreme_price_movements.pnl_asserts import assert_pos_w, assert_units
 from extreme_price_movements.utils import tprint, Timer
-from extreme_price_movements.data_store import load_features, save_features, save_artifact_df, load_artifact_df, to_panel
+from extreme_price_movements.data_store import (
+    load_features,
+    load_features_selected,
+    save_features,
+    save_artifact_df,
+    load_artifact_df,
+    to_panel,
+    get_feature_bounds,
+)
 from extreme_price_movements.training import generate_label_datasets, generate_exhaustion_history, optimize_risk_params, train_models_from_artifacts
 from extreme_price_movements.features import compute_market_features, add_regime_gates, compute_features_hourly
 from extreme_price_movements.universe import get_training_universe, refresh_margin_universe_daily
@@ -21,10 +31,298 @@ from extreme_price_movements.ridge_position_sizer import (
     load_meta_oof_predictions,
     load_trade_outcomes_from_oof,
 )
+from extreme_price_movements.offline_optimisers.params_store import apply_offline_optimizer_best_params
+from extreme_price_movements.reports.bucket_report import (
+    report_labels,
+    report_base_training,
+    report_meta_training,
+    report_ridge_sizer,
+    report_optimise,
+)
+
+def _expected_feature_keys_from_cfg(cfg) -> set[str]:
+    keys: set[str] = set()
+    for name in (
+        "exh_feature_keys",
+        "spike_feature_keys",
+        "tf_feature_keys",
+        "mr_feature_keys",
+        "meta_feature_keys",
+        "test_feature_keys",
+    ):
+        vals = cfg.get(name, [])
+        if isinstance(vals, (list, tuple)):
+            for v in vals:
+                if isinstance(v, str) and v:
+                    keys.add(v)
+    # Core features that downstream logic assumes are present.
+    keys.update({"atr_pct", "ret1h", "ret24h"})
+    return keys
+
+
+def _align_features_to_panel(feats: dict, panel: dict[str, pd.DataFrame], symbols: list[str]) -> dict:
+    close = panel["close"]
+    out = {}
+    for k, df in feats.items():
+        if not isinstance(df, pd.DataFrame):
+            continue
+        idx = df.index
+        if isinstance(idx, pd.DatetimeIndex):
+            if idx.tz is None:
+                df.index = idx.tz_localize("UTC")
+            else:
+                df.index = idx.tz_convert("UTC")
+        out[k] = df.reindex(index=close.index, columns=symbols).astype(np.float32)
+    return out
+
+
+def _feature_structural_gaps(
+    feats: dict,
+    expected_keys: set[str],
+    ref_index: pd.DatetimeIndex,
+    ref_symbols: list[str],
+) -> tuple[list[str], list[str]]:
+    """Return (missing_keys, partial_keys) vs reference period/symbol universe."""
+    if not isinstance(feats, dict) or not feats:
+        return sorted(expected_keys), []
+
+    missing: list[str] = []
+    partial: list[str] = []
+    ref_syms = set(map(str, ref_symbols))
+    ref_start = ref_index.min() if len(ref_index) else None
+    ref_end = ref_index.max() if len(ref_index) else None
+
+    for k in sorted(expected_keys):
+        if k not in feats or not isinstance(feats.get(k), pd.DataFrame):
+            missing.append(k)
+            continue
+        df = feats[k]
+        have_syms = set(map(str, df.columns))
+        if not ref_syms.issubset(have_syms):
+            partial.append(k)
+            continue
+        if ref_start is not None and ref_end is not None:
+            if len(df.index) == 0:
+                partial.append(k)
+                continue
+            if df.index.min() > ref_start or df.index.max() < ref_end:
+                partial.append(k)
+                continue
+    return missing, partial
+
+
+def _scan_feature_cache_light(
+    ts_sig: pd.Timestamp,
+    data_root: str,
+    expected_keys: set[str],
+    panel_close: pd.DataFrame,
+) -> dict | None:
+    """
+    Lightweight cache scan:
+    - avoids loading full feature matrices
+    - checks expected keys against parquet schemas
+    - checks symbol/time coverage using per-file metadata bounds
+    """
+    ts_str = ts_sig.strftime("%Y%m%d_%H%M%S")
+    in_dir = os.path.join(data_root, "features", ts_str)
+    files = sorted(glob.glob(os.path.join(in_dir, "symbol=*.parquet")))
+    if not files:
+        return None
+
+    ref_symbols = [str(s) for s in panel_close.columns]
+    required_bounds: dict[str, tuple[pd.Timestamp, pd.Timestamp]] = {}
+    for s in ref_symbols:
+        ser = panel_close[s]
+        valid_idx = ser.index[ser.notna()]
+        if len(valid_idx) == 0:
+            continue
+        required_bounds[s] = (pd.Timestamp(valid_idx[0]), pd.Timestamp(valid_idx[-1]))
+
+    key_symbol_counts: dict[str, int] = {k: 0 for k in expected_keys}
+    present_symbols: set[str] = set()
+    uncovered_symbols: set[str] = set()
+
+    total_files = len(files)
+    progress_every = 100 if total_files >= 500 else 50
+    for i, fpath in enumerate(files, start=1):
+        fname = os.path.basename(fpath)
+        sym = fname.replace("symbol=", "").replace(".parquet", "").replace("_", "/", 1)
+
+        if sym in required_bounds:
+            present_symbols.add(sym)
+            req_first, req_last = required_bounds[sym]
+            first_ts, last_ts = get_feature_bounds(fpath)
+            if first_ts is None or last_ts is None or first_ts > req_first or last_ts < req_last:
+                uncovered_symbols.add(sym)
+
+        try:
+            schema_names = set(pq.ParquetFile(fpath).schema.names)
+        except Exception:
+            schema_names = set()
+        feat_cols = [c for c in schema_names if c in expected_keys]
+        for c in feat_cols:
+            key_symbol_counts[c] += 1
+
+        if i % progress_every == 0 or i == total_files:
+            tprint(
+                f"Feature cache scan progress: {i}/{total_files} files "
+                f"({(i / total_files) * 100:.1f}%)"
+            )
+
+    required_set = set(required_bounds.keys())
+    missing_symbols = sorted(required_set - present_symbols)
+    required_n = len(required_set)
+
+    missing_keys: list[str] = []
+    partial_keys: set[str] = set()
+    for k in sorted(expected_keys):
+        present_n = int(key_symbol_counts.get(k, 0))
+        if present_n <= 0:
+            missing_keys.append(k)
+        elif present_n < required_n:
+            partial_keys.add(k)
+
+    # If some symbols have missing files or incomplete time bounds, all present keys are partial.
+    if missing_symbols or uncovered_symbols:
+        partial_keys.update(set(expected_keys) - set(missing_keys))
+
+    available_key_count = sum(1 for k in expected_keys if key_symbol_counts.get(k, 0) > 0)
+    return {
+        "in_dir": in_dir,
+        "file_count": total_files,
+        "required_symbol_count": required_n,
+        "available_key_count": available_key_count,
+        "missing_symbols": missing_symbols,
+        "uncovered_symbols": sorted(uncovered_symbols),
+        "missing_keys": missing_keys,
+        "partial_keys": sorted(partial_keys),
+    }
+
+
+def _build_tail_only_backfill_cutoffs(
+    ts_sig: pd.Timestamp,
+    data_root: str,
+    panel_close: pd.DataFrame,
+    backfill_keys: list[str],
+) -> tuple[dict[str, pd.Timestamp], dict[str, int]]:
+    """
+    Build per-symbol cutoff timestamps for tail-only backfill writes.
+
+    A symbol is tail-only eligible iff:
+    - symbol parquet exists,
+    - all backfill keys already exist in that symbol parquet schema,
+    - feature coverage starts at/before required start,
+    - and ends before required end (missing only at tail).
+
+    Structural/interior gaps are excluded (no cutoff), which forces full write.
+    """
+    ts_str = ts_sig.strftime("%Y%m%d_%H%M%S")
+    in_dir = os.path.join(data_root, "features", ts_str)
+    backfill_set = set(backfill_keys)
+    cutoffs: dict[str, pd.Timestamp] = {}
+
+    stats = {
+        "eligible_tail_only": 0,
+        "missing_symbol_file": 0,
+        "missing_backfill_columns": 0,
+        "structural_or_interior": 0,
+        "already_covered": 0,
+    }
+
+    if not backfill_set:
+        return cutoffs, stats
+
+    for sym in panel_close.columns:
+        sym = str(sym)
+        ser = panel_close[sym]
+        valid_idx = ser.index[ser.notna()]
+        if len(valid_idx) == 0:
+            continue
+        req_first = pd.Timestamp(valid_idx[0])
+        req_last = pd.Timestamp(valid_idx[-1])
+
+        safe_sym = sym.replace("/", "_")
+        fpath = os.path.join(in_dir, f"symbol={safe_sym}.parquet")
+        if not os.path.exists(fpath):
+            stats["missing_symbol_file"] += 1
+            continue
+
+        try:
+            schema_names = set(pq.ParquetFile(fpath).schema.names)
+        except Exception:
+            stats["structural_or_interior"] += 1
+            continue
+
+        if not backfill_set.issubset(schema_names):
+            stats["missing_backfill_columns"] += 1
+            continue
+
+        first_ts, last_ts = get_feature_bounds(fpath)
+        if first_ts is None or last_ts is None:
+            stats["structural_or_interior"] += 1
+            continue
+
+        if first_ts > req_first:
+            # Interior/leading gap: must rewrite full history.
+            stats["structural_or_interior"] += 1
+            continue
+
+        if last_ts >= req_last:
+            # Already covered for this symbol and key set.
+            stats["already_covered"] += 1
+            continue
+
+        cutoffs[sym] = pd.Timestamp(last_ts)
+        stats["eligible_tail_only"] += 1
+
+    return cutoffs, stats
+
+
+def _local_store_symbols(store) -> list[str]:
+    """Best-effort local symbol discovery from partitioned OHLCV store."""
+    import glob
+    syms: list[str] = []
+    ohlcv_dir = getattr(store, "ohlcv_dir", None)
+    if not ohlcv_dir:
+        return syms
+    for path in glob.glob(os.path.join(ohlcv_dir, "symbol=*")):
+        base = os.path.basename(path)
+        if not base.startswith("symbol="):
+            continue
+        raw = base.replace("symbol=", "")
+        syms.append(raw.replace("_", "/", 1))
+    return sorted(set(syms))
+
 
 def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex):
+    cfg = apply_offline_optimizer_best_params(dict(cfg))
     tprint("STEP: LABEL GENERATION START")
-    train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=ts_sig)
+    _labels_use_store_universe = False
+    # Labels should be able to run fully offline from local store contents.
+    # If margin_symbols is not provided, source it directly from store instead of
+    # triggering a network refresh of margin universe.
+    if margin_symbols is None:
+        margin_symbols = _local_store_symbols(store)
+        if margin_symbols:
+            tprint(f"Labels universe source: local store symbols ({len(margin_symbols)})")
+            _labels_use_store_universe = True
+        else:
+            tprint("Labels universe source: local store symbols empty; falling back to market basket")
+            margin_symbols = list(cfg.get("market_basket", []))
+    if _labels_use_store_universe:
+        from extreme_price_movements.optimization_utils import filter_low_variance_assets
+        syms_all = sorted(set(margin_symbols).union(set(cfg.get("market_basket", []))))
+        tprint(f"Labels offline universe build: using local store symbols + basket ({len(syms_all)} symbols)")
+        train_syms = filter_low_variance_assets(
+            store,
+            syms_all,
+            lookback_days=30,
+            threshold_pct=cfg["variance_filter_pct"],
+            ts_sig=ts_sig,
+        )
+        train_syms = sorted(list(set(train_syms).union(set(cfg.get("market_basket", [])))))
+    else:
+        train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=ts_sig)
     tprint(f"Universe: {len(train_syms)} symbols")
 
     # Load Data & Features
@@ -60,8 +358,19 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex):
     mkt_df = compute_market_features(panel, cfg["market_basket"])
     mkt_gates = add_regime_gates(mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
 
-    feats = load_features(ts_sig, cfg["data_root"])
-    if feats is None:
+    label_feature_keys = set(cfg.get("exh_feature_keys", []))
+    label_feature_keys.update(cfg.get("spike_feature_keys", []))
+    label_feature_keys.update(cfg.get("tf_feature_keys", []))
+    label_feature_keys.update(cfg.get("mr_feature_keys", []))
+    label_feature_keys.update(cfg.get("meta_feature_keys", []))
+    label_feature_keys.update({"atr_pct", "ret1h", "ret24h"})
+    feats = load_features_selected(
+        ts_sig,
+        cfg["data_root"],
+        feature_keys=sorted(label_feature_keys),
+        symbols=train_syms,
+    )
+    if feats is None or len(feats) == 0:
         tprint("ERROR: Features not found. Run feature_generation first.")
         return
 
@@ -76,8 +385,9 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex):
         return
     train_syms = valid_syms
 
-    # Restrict panel to valid symbols to keep downstream operations aligned
+    # Restrict panel to valid symbols and hard-align all feature frames to panel.
     panel = {k: v[valid_syms] for k, v in panel.items() if isinstance(v, pd.DataFrame)}
+    feats = _align_features_to_panel(feats, panel, valid_syms)
 
     # 1. Exhaustion History
     p_exh_hist = generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_sig, cfg["train_lookback_hours"], train_syms)
@@ -92,10 +402,16 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex):
     for name, df in datasets.items():
         save_artifact_df(df, cfg["data_root"], run_id, "labels", name)
 
+    try:
+        rp = report_labels(run_id, cfg["data_root"], cfg)
+        tprint(f"Label bucket report: {rp}")
+    except Exception as _re:
+        tprint(f"WARNING: label bucket report failed: {_re}")
     tprint("STEP: LABEL GENERATION COMPLETE")
 
 def run_training_step(ts_sig, cfg, store=None, margin_symbols=None):
     """Train all models from label artifacts. Saves trained state to disk."""
+    cfg = apply_offline_optimizer_best_params(dict(cfg))
     tprint("STEP: MODEL TRAINING START")
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
@@ -132,11 +448,19 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None):
             # Need features and panel. Load them.
             # Mirror run_label_generation_step_v2 logic roughly but localized
             tprint("Loading features and panel for Spike Anatomy generation...")
-            feats = load_features(ts_sig, cfg["data_root"])
-            if feats is None:
+            train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=ts_sig)
+            spike_feature_keys = set(cfg.get("spike_feature_keys", []))
+            spike_feature_keys.update(cfg.get("meta_feature_keys", []))
+            spike_feature_keys.update({"atr_pct", "ret1h", "ret24h"})
+            feats = load_features_selected(
+                ts_sig,
+                cfg["data_root"],
+                feature_keys=sorted(spike_feature_keys),
+                symbols=train_syms,
+            )
+            if feats is None or len(feats) == 0:
                 tprint("ERROR: Features not found.")
             else:
-                train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=ts_sig)
                 dfs = {}
                 lookback_days = max(90, int(cfg["fetch_years"] * 365))
                 for s in train_syms:
@@ -306,6 +630,18 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None):
     except Exception as e:
         tprint(f"WARNING: Failed to generate training report: {e}")
 
+    # Per-bucket/horizon detailed reports
+    try:
+        rp = report_base_training(run_id, bundle or {}, cfg)
+        tprint(f"Base training bucket report: {rp}")
+    except Exception as _re:
+        tprint(f"WARNING: base training bucket report failed: {_re}")
+    try:
+        rp = report_meta_training(run_id, cfg["data_root"], bundle or {}, cfg)
+        tprint(f"Meta training bucket report: {rp}")
+    except Exception as _re:
+        tprint(f"WARNING: meta training bucket report failed: {_re}")
+
     tprint("STEP: MODEL TRAINING COMPLETE")
     return state
 
@@ -378,94 +714,151 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
     cost_pct = cfg.get("fee_bps", 25.0) / 10000.0
     output_dir = os.path.join(data_root, "artifacts", run_id, "ridge_sizer")
     os.makedirs(output_dir, exist_ok=True)
-    
+
+    # -------------------------------------------------------------------------
+    # Group buckets by direction: long_* = up-trend sizer, short_* = down-trend.
+    # A single combined sizer dilutes IC because long IC (~0.031) and short IC
+    # (~0.005) are incompatible, and short_mr has inverted IC (−0.011).
+    # -------------------------------------------------------------------------
+    _meta_cols = {"timestamp", "symbol", "return", "is_long", "index"}
+    direction_groups = {"long": {}, "short": {}}
+    for bucket_name, oof_preds in bucket_oofs.items():
+        direction = "long" if bucket_name.startswith("long") else "short"
+        direction_groups[direction][bucket_name] = oof_preds
+
+    all_direction_results = {}
+
+    for direction, dir_buckets in direction_groups.items():
+        if not dir_buckets:
+            continue
+        tprint(f"  Ridge sizer — direction: {direction.upper()} ({list(dir_buckets.keys())})")
+
+        # Each bucket has its own event set (different lengths).
+        # Train one Ridge per bucket within the direction; store all weights
+        # together in a single per-direction weight file.
+        dir_weights: dict = {}
+        dir_params: dict = {}
+        dir_metrics: dict = {}
+
+        for bucket_name, oof_preds in dir_buckets.items():
+            try:
+                trade_outcomes = load_trade_outcomes(data_root, run_id, oof_preds)
+            except FileNotFoundError as e:
+                tprint(f"    Skipping {bucket_name}: {e}")
+                continue
+            if "return" not in trade_outcomes.columns:
+                tprint(f"    Skipping {bucket_name}: missing 'return' column")
+                continue
+            pred_cols = [c for c in oof_preds.columns if c not in _meta_cols]
+            if not pred_cols:
+                tprint(f"    Skipping {bucket_name}: no prediction columns")
+                continue
+            oof_pred_df = oof_preds[pred_cols].copy()
+            timestamps = trade_outcomes['timestamp'].values if 'timestamp' in trade_outcomes.columns else None
+            symbols    = trade_outcomes['symbol'].values    if 'symbol'    in trade_outcomes.columns else None
+            tprint(f"    {bucket_name}: {len(oof_pred_df)} rows, features={pred_cols}")
+
+            try:
+                sizer, metrics = run_ridge_position_sizer_step(
+                    oof_preds=oof_pred_df,
+                    trade_outcomes=trade_outcomes,
+                    timestamps=timestamps,
+                    cfg={'cost_pct': cost_pct},
+                    save_model=False,
+                    run_id=run_id,
+                    symbols=symbols,
+                )
+                bkt_weights = sizer.get_weights()
+                for wname, wval in bkt_weights.items():
+                    dir_weights[f"{bucket_name}_{wname}"] = wval
+                dir_params[bucket_name] = sizer.best_params_
+                dir_metrics[bucket_name] = metrics
+                tprint(f"    {bucket_name} weights: {bkt_weights}")
+            except Exception as e:
+                tprint(f"    {bucket_name} failed: {e}")
+                continue
+
+        if not dir_weights:
+            tprint(f"    No weights produced for direction {direction}, skipping")
+            continue
+
+        # Save per-direction weight file
+        import json as _json
+        from datetime import datetime as _dt, timezone as _tz
+        dir_weights_path = os.path.join(output_dir, f"sizer_weights_{direction}.json")
+        with open(dir_weights_path, 'w') as f:
+            _json.dump({
+                'direction': direction,
+                'weights': dir_weights,
+                'params_per_bucket': dir_params,
+                'buckets': list(dir_buckets.keys()),
+                'run_id': run_id,
+                'timestamp': _dt.now(_tz.utc).isoformat(),
+            }, f, indent=2)
+        tprint(f"    Saved {direction} sizer weights to {dir_weights_path}")
+
+        all_direction_results[direction] = {
+            'weights': dir_weights,
+            'params': dir_params,
+            'metrics': dir_metrics,
+            'buckets': list(dir_buckets.keys()),
+        }
+
+    # Flatten for backward-compatible combined manifest + state
     all_weights = {}
     all_params = {}
     all_metrics = {}
-    
-    for bucket_name, oof_preds in bucket_oofs.items():
-        tprint(f"  Ridge sizer for bucket: {bucket_name} ({oof_preds.shape})")
-        
-        # Build trade outcomes from OOF context
-        try:
-            trade_outcomes = load_trade_outcomes(data_root, run_id, oof_preds)
-        except FileNotFoundError as e:
-            tprint(f"  Skipping {bucket_name}: {e}")
-            continue
-        
-        if "return" not in trade_outcomes.columns:
-            tprint(f"  Skipping {bucket_name}: missing 'return' column")
-            continue
-        
-        # Extract prediction columns (reg_H*, clf, agreement features)
-        _meta_cols = {"timestamp", "symbol", "return", "is_long", "index"}
-        pred_cols = [c for c in oof_preds.columns if c not in _meta_cols]
-        if not pred_cols:
-            tprint(f"  Skipping {bucket_name}: no prediction columns")
-            continue
-        oof_pred_df = oof_preds[pred_cols].copy()
-        
-        timestamps = None
-        if 'timestamp' in trade_outcomes.columns:
-            timestamps = trade_outcomes['timestamp'].values
-        symbols = None
-        if 'symbol' in trade_outcomes.columns:
-            symbols = trade_outcomes['symbol'].values
-        
-        try:
-            sizer, metrics = run_ridge_position_sizer_step(
-                oof_preds=oof_pred_df,
-                trade_outcomes=trade_outcomes,
-                timestamps=timestamps,
-                cfg={'cost_pct': cost_pct},
-                save_model=False,
-                run_id=run_id,
-                symbols=symbols,
-            )
-            weights = sizer.get_weights()
-            for wname, wval in weights.items():
-                all_weights[f"{bucket_name}_{wname}"] = wval
-            all_params[bucket_name] = sizer.best_params_
-            all_metrics[bucket_name] = metrics
-            tprint(f"  {bucket_name} weights: {weights}")
-        except Exception as e:
-            tprint(f"  {bucket_name} failed: {e}")
-            continue
-    
-    # Save combined weights
+    for direction, res in all_direction_results.items():
+        all_weights.update(res['weights'])
+        for bkt in res['buckets']:
+            all_params[bkt] = res['params']
+        all_metrics[direction] = res['metrics']
+
     import json
-    weights_path = os.path.join(output_dir, "sizer_weights.json")
     from datetime import datetime, timezone
+    weights_path = os.path.join(output_dir, "sizer_weights.json")
     with open(weights_path, 'w') as f:
         json.dump({
             'weights': all_weights,
             'params_per_bucket': all_params,
+            'directions': {d: {'buckets': r['buckets'], 'params': r['params']}
+                           for d, r in all_direction_results.items()},
             'run_id': run_id,
             'timestamp': datetime.now(timezone.utc).isoformat(),
         }, f, indent=2)
-    tprint(f"Saved weights to {weights_path}")
-    
-    # Update state file with ridge sizer weights
+    tprint(f"Saved combined manifest to {weights_path}")
+
+    # Update state file
     if os.path.exists(state_file):
         with open(state_file, "rb") as f:
             state = pickle.load(f)
-        
         state["ridge_sizer"] = {
             "weights": all_weights,
             "params_per_bucket": all_params,
             "metrics": all_metrics,
+            "directions": {d: r['buckets'] for d, r in all_direction_results.items()},
         }
-        
         with open(state_file, "wb") as f:
             pickle.dump(state, f)
-        
-        tprint(f"Updated state file with ridge sizer weights")
-    
-    tprint(f"STEP: RIDGE POSITION SIZER COMPLETE — {len(all_params)} buckets processed")
+        tprint("Updated state file with ridge sizer weights")
+
+    _ridge_result = {
+        "weights": all_weights,
+        "params_per_bucket": all_params,
+        "metrics": all_metrics,
+        "directions": {d: r['buckets'] for d, r in all_direction_results.items()},
+    }
+    try:
+        rp = report_ridge_sizer(run_id, _ridge_result)
+        tprint(f"Ridge sizer bucket report: {rp}")
+    except Exception as _re:
+        tprint(f"WARNING: ridge sizer bucket report failed: {_re}")
+    tprint(f"STEP: RIDGE POSITION SIZER COMPLETE — {len(all_direction_results)} directions, {len(all_params)} buckets")
     return {
         "weights": all_weights,
         "params_per_bucket": all_params,
         "metrics": all_metrics,
+        "directions": {d: r['buckets'] for d, r in all_direction_results.items()},
     }
 
 
@@ -1367,25 +1760,35 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
     tprint("Saved optimized signal params to trained state for inference use.")
     tprint("STEP: BACKTEST COMPLETE")
 
-def run_feature_generation_step(ts_sig, margin_symbols, cfg, store):
+def run_feature_generation_step(ts_sig, margin_symbols, cfg, store, force_full_recompute: bool = False):
     tprint("STEP: FEATURE GENERATION START")
     tprint(f"Target Timestamp: {ts_sig}")
 
-    # Check if features already exist for this timestamp (incremental skip)
-    existing_feats = load_features(ts_sig, cfg["data_root"])
-    if existing_feats is not None:
-        _sample = next(iter(existing_feats.values()))
-        _n_syms = len(_sample.columns)
-        _n_feats = len(existing_feats)
-        tprint(f"Features already exist: {_n_feats} features × {_n_syms} symbols. Skipping recomputation.")
-        tprint("STEP: FEATURE GENERATION COMPLETE (cached)")
-        del existing_feats
-        return
+    # Check if feature files already exist for this timestamp (lightweight check only).
+    ts_str = ts_sig.strftime("%Y%m%d_%H%M%S")
+    feat_dir = os.path.join(cfg["data_root"], "features", ts_str)
+    existing_files = sorted(glob.glob(os.path.join(feat_dir, "symbol=*.parquet")))
+    expected_keys = _expected_feature_keys_from_cfg(cfg)
+    backfill_keys: list[str] = []
+    if existing_files and force_full_recompute:
+        tprint(
+            f"Features already exist: {len(existing_files)} symbol files. "
+            "Force flag enabled: recomputing full feature set."
+        )
 
     # 1. Define Universe
     # We want "all assets in our universe".
     # This implies the margin universe (Top M).
-    train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=None) 
+    try:
+        train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=None)
+    except Exception as exc:
+        tprint(f"WARNING: get_training_universe failed ({exc}); falling back to local store symbol discovery")
+        train_syms = _local_store_symbols(store)
+        if cfg.get("market_basket"):
+            train_syms = sorted(set(train_syms).union(set(cfg["market_basket"])))
+        if not train_syms:
+            tprint("CRITICAL: no symbols available from local store fallback.")
+            return
     # disable ts_sig in universe selection to ensure we see everything available currently?
     # actually getting training universe usually filters by variance over 30d.
     # User said "Ensure we generate features for ALL assets... if not log why".
@@ -1442,16 +1845,180 @@ def run_feature_generation_step(ts_sig, margin_symbols, cfg, store):
     # 3. Compute Features (Panel)
     tprint("Constructing Panel...")
     panel = to_panel(dfs)
-    
+
+    # Strict cache completeness check against target period + symbol universe.
+    if existing_files and not force_full_recompute:
+        scan = _scan_feature_cache_light(
+            ts_sig=ts_sig,
+            data_root=cfg["data_root"],
+            expected_keys=expected_keys,
+            panel_close=panel["close"],
+        )
+        miss_keys = scan["missing_keys"] if scan else list(expected_keys)
+        partial_keys = scan["partial_keys"] if scan else []
+        backfill_keys = sorted(set(miss_keys + partial_keys))
+        if backfill_keys:
+            tprint(
+                f"Feature cache incomplete for {ts_sig}: "
+                f"missing={len(miss_keys)} partial={len(partial_keys)}. "
+                "Backfilling missing/partial features only."
+            )
+            if scan:
+                tprint(
+                    f"Cache scan summary: files={scan['file_count']} "
+                    f"required_symbols={scan['required_symbol_count']} "
+                    f"available_expected_keys={scan['available_key_count']}/{len(expected_keys)}"
+                )
+                if scan["missing_symbols"]:
+                    tprint(
+                        "Missing symbol files: "
+                        + ", ".join(scan["missing_symbols"][:20])
+                        + (" ..." if len(scan["missing_symbols"]) > 20 else "")
+                    )
+                if scan["uncovered_symbols"]:
+                    tprint(
+                        "Time-coverage mismatch symbols: "
+                        + ", ".join(scan["uncovered_symbols"][:20])
+                        + (" ..." if len(scan["uncovered_symbols"]) > 20 else "")
+                    )
+            if miss_keys:
+                tprint("Missing keys: " + ", ".join(miss_keys[:30]) + (" ..." if len(miss_keys) > 30 else ""))
+            if partial_keys:
+                tprint("Partial keys: " + ", ".join(partial_keys[:30]) + (" ..." if len(partial_keys) > 30 else ""))
+        else:
+            _n_syms = len(panel["close"].columns)
+            _n_feats = len(expected_keys)
+            tprint(
+                f"Features already exist and cover full target period: "
+                f"{_n_feats} features × {_n_syms} symbols. Skipping recomputation."
+            )
+            tprint("STEP: FEATURE GENERATION COMPLETE (cached)")
+            return
+
     tprint("Computing Market Features...")
     mkt_df = compute_market_features(panel, cfg["market_basket"])
     mkt_gates = add_regime_gates(mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
-    
-    tprint("Computing Asset Features (Hourly)...")
-    feats, feat_index, feat_columns = compute_features_hourly(panel, mkt_gates, cfg)
-    
-    # 4. Save
-    save_features(feats, ts_sig, cfg["data_root"], feat_index=feat_index, feat_columns=feat_columns)
-    
+
+    # Memory guard: backfill mode can still be very heavy (full graph on full symbol set).
+    # Run in symbol chunks and stream-save to cap peak RSS.
+    chunk_size = int(cfg.get("feature_backfill_symbol_chunk_size", 140))
+    use_chunked_backfill = (
+        bool(backfill_keys)
+        and not force_full_recompute
+        and chunk_size > 0
+        and len(loaded_syms) > chunk_size
+    )
+
+    if use_chunked_backfill:
+        import gc
+
+        backfill_set = set(backfill_keys)
+        tail_cutoffs, tail_stats = _build_tail_only_backfill_cutoffs(
+            ts_sig=ts_sig,
+            data_root=cfg["data_root"],
+            panel_close=panel["close"],
+            backfill_keys=backfill_keys,
+        )
+        tprint(
+            "Tail-only backfill cutoffs: "
+            f"eligible={tail_stats['eligible_tail_only']} "
+            f"missing_file={tail_stats['missing_symbol_file']} "
+            f"missing_cols={tail_stats['missing_backfill_columns']} "
+            f"structural_or_interior={tail_stats['structural_or_interior']} "
+            f"already_covered={tail_stats['already_covered']}"
+        )
+        all_syms = list(panel["close"].columns)
+        total_chunks = (len(all_syms) + chunk_size - 1) // chunk_size
+        unresolved_union: set[str] = set()
+        total_saved_keys = 0
+        tprint(
+            f"Computing Asset Features (Hourly) in chunked backfill mode: "
+            f"{len(all_syms)} symbols, chunk_size={chunk_size}, chunks={total_chunks}"
+        )
+
+        for ci, start in enumerate(range(0, len(all_syms), chunk_size), start=1):
+            chunk_syms = all_syms[start:start + chunk_size]
+            tprint(
+                f"[Feature chunk {ci}/{total_chunks}] symbols={len(chunk_syms)} "
+                f"({chunk_syms[0]} .. {chunk_syms[-1]})"
+            )
+            panel_chunk = {
+                k: v[chunk_syms].copy()
+                for k, v in panel.items()
+                if isinstance(v, pd.DataFrame)
+            }
+            feats_chunk, feat_index, feat_columns = compute_features_hourly(panel_chunk, mkt_gates.copy(), cfg)
+
+            unresolved = [k for k in backfill_keys if k not in feats_chunk]
+            if unresolved:
+                unresolved_union.update(unresolved)
+            feats_chunk = {k: v for k, v in feats_chunk.items() if k in backfill_set}
+            tprint(f"[Feature chunk {ci}/{total_chunks}] saving {len(feats_chunk)} keys")
+            if feats_chunk:
+                chunk_cutoffs = {s: tail_cutoffs[s] for s in chunk_syms if s in tail_cutoffs}
+                save_features(
+                    feats_chunk,
+                    ts_sig,
+                    cfg["data_root"],
+                    min_timestamp_by_symbol=chunk_cutoffs if chunk_cutoffs else None,
+                    feat_index=feat_index,
+                    feat_columns=feat_columns,
+                )
+                total_saved_keys = len(feats_chunk)
+            del panel_chunk, feats_chunk
+            gc.collect()
+
+        tprint(f"Computed + saved chunked backfill features: {total_saved_keys} keys")
+        if unresolved_union:
+            unresolved_sorted = sorted(unresolved_union)
+            tprint(
+                "Warning: some expected backfill keys were not produced by compute_features_hourly: "
+                + ", ".join(unresolved_sorted[:30]) + (" ..." if len(unresolved_sorted) > 30 else "")
+            )
+    else:
+        tprint("Computing Asset Features (Hourly)...")
+        feats, feat_index, feat_columns = compute_features_hourly(panel, mkt_gates, cfg)
+        min_ts_by_symbol = None
+
+        if backfill_keys and not force_full_recompute:
+            backfill_set = set(backfill_keys)
+            unresolved = sorted([k for k in backfill_keys if k not in feats])
+            feats = {k: v for k, v in feats.items() if k in backfill_set}
+            min_ts_by_symbol, tail_stats = _build_tail_only_backfill_cutoffs(
+                ts_sig=ts_sig,
+                data_root=cfg["data_root"],
+                panel_close=panel["close"],
+                backfill_keys=backfill_keys,
+            )
+            tprint(f"Computed + saving only missing/partial features: {len(feats)} keys")
+            tprint(
+                "Tail-only backfill cutoffs: "
+                f"eligible={tail_stats['eligible_tail_only']} "
+                f"missing_file={tail_stats['missing_symbol_file']} "
+                f"missing_cols={tail_stats['missing_backfill_columns']} "
+                f"structural_or_interior={tail_stats['structural_or_interior']} "
+                f"already_covered={tail_stats['already_covered']}"
+            )
+            if unresolved:
+                tprint(
+                    "Warning: some expected backfill keys were not produced by compute_features_hourly: "
+                    + ", ".join(unresolved[:30]) + (" ..." if len(unresolved) > 30 else "")
+                )
+        elif force_full_recompute:
+            tprint(f"Computed + saving full feature set: {len(feats)} keys")
+
+        # 4. Save
+        if feats:
+            save_features(
+                feats,
+                ts_sig,
+                cfg["data_root"],
+                min_timestamp_by_symbol=min_ts_by_symbol,
+                feat_index=feat_index,
+                feat_columns=feat_columns,
+            )
+        else:
+            tprint("No feature keys selected for save after missing/new filter; nothing to write.")
+
     tprint(f"Generated features for {len(loaded_syms)} symbols.")
     tprint("STEP: FEATURE GENERATION COMPLETE")

@@ -687,6 +687,125 @@ def load_features(ts: pd.Timestamp, root_dir: str) -> dict:
     return feats_out
 
 
+def load_features_selected(
+    ts: pd.Timestamp,
+    root_dir: str,
+    feature_keys: list[str] | set[str] | tuple[str, ...] | None = None,
+    symbols: list[str] | set[str] | tuple[str, ...] | None = None,
+) -> dict:
+    """
+    Load a subset of features/symbols from disk.
+
+    This avoids loading every cached feature matrix into memory when only a
+    narrow key set is required by downstream steps (e.g. label generation).
+    """
+    if feature_keys is None and symbols is None:
+        return load_features(ts, root_dir)
+
+    ts_str = ts.strftime("%Y%m%d_%H%M%S")
+    in_dir = os.path.join(root_dir, "features", ts_str)
+    if not os.path.exists(in_dir):
+        return None
+
+    files = sorted(glob.glob(os.path.join(in_dir, "symbol=*.parquet")))
+    if not files:
+        return None
+
+    feature_set = set(feature_keys) if feature_keys else None
+    symbol_set = set(map(str, symbols)) if symbols else None
+    feat_buffers: dict[str, dict[str, pd.Series]] = {}
+
+    tprint(
+        f"Found {len(files)} feature files in {in_dir}. "
+        f"Selective load: keys={len(feature_set) if feature_set else 'ALL'}, "
+        f"symbols={len(symbol_set) if symbol_set else 'ALL'}"
+    )
+
+    start_load = time.time()
+    total_files = len(files)
+    progress_every = 25 if total_files >= 100 else 10
+
+    for i, fpath in enumerate(files, start=1):
+        try:
+            fname = os.path.basename(fpath)
+            sym_guess = fname.replace("symbol=", "").replace(".parquet", "").replace("_", "/", 1)
+            if symbol_set is not None and sym_guess not in symbol_set:
+                if i % progress_every == 0 or i == total_files:
+                    elapsed = time.time() - start_load
+                    tprint(
+                        f"Selective feature load progress: {i}/{total_files} files "
+                        f"({(i / total_files) * 100:.1f}%) in {elapsed:.1f}s"
+                    )
+                continue
+
+            schema_names = set(pq.ParquetFile(fpath).schema.names)
+            cols_to_read = []
+            if "__symbol__" in schema_names:
+                cols_to_read.append("__symbol__")
+            if feature_set is None:
+                cols_to_read.extend(
+                    [c for c in schema_names if c != "__symbol__" and not c.startswith("__index_level_")]
+                )
+            else:
+                cols_to_read.extend([c for c in feature_set if c in schema_names])
+
+            if not cols_to_read or (len(cols_to_read) == 1 and cols_to_read[0] == "__symbol__"):
+                if i % progress_every == 0 or i == total_files:
+                    elapsed = time.time() - start_load
+                    tprint(
+                        f"Selective feature load progress: {i}/{total_files} files "
+                        f"({(i / total_files) * 100:.1f}%) in {elapsed:.1f}s"
+                    )
+                continue
+
+            df = pd.read_parquet(fpath, columns=cols_to_read)
+
+            if "__symbol__" in df.columns:
+                if not df.empty:
+                    real_sym = str(df["__symbol__"].iloc[0])
+                else:
+                    real_sym = sym_guess
+                df = df.drop(columns=["__symbol__"])
+            else:
+                real_sym = sym_guess
+
+            if symbol_set is not None and real_sym not in symbol_set:
+                if i % progress_every == 0 or i == total_files:
+                    elapsed = time.time() - start_load
+                    tprint(
+                        f"Selective feature load progress: {i}/{total_files} files "
+                        f"({(i / total_files) * 100:.1f}%) in {elapsed:.1f}s"
+                    )
+                continue
+
+            for k in df.columns:
+                if feature_set is not None and k not in feature_set:
+                    continue
+                if k not in feat_buffers:
+                    feat_buffers[k] = {}
+                feat_buffers[k][real_sym] = pd.to_numeric(df[k], errors="coerce").astype(np.float32, copy=False)
+
+            del df
+            if i % progress_every == 0 or i == total_files:
+                elapsed = time.time() - start_load
+                tprint(
+                    f"Selective feature load progress: {i}/{total_files} files "
+                    f"({(i / total_files) * 100:.1f}%) in {elapsed:.1f}s"
+                )
+        except Exception as e:
+            tprint(f"Error loading {fpath}: {e}")
+
+    if not feat_buffers:
+        return None
+
+    feats_out = {}
+    for k, data in feat_buffers.items():
+        feats_out[k] = pd.DataFrame(data).sort_index()
+
+    tprint(f"Loaded {len(feats_out)} selected feature matrices.")
+    return feats_out
+
+
 def check_data_health(df: pd.DataFrame, timeframe="1h") -> dict:
     if df.empty:
         return {"status": "empty", "completeness": 0.0, "missing_count": 0}

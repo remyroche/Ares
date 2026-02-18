@@ -1,6 +1,8 @@
 import requests
 import pandas as pd
 from dataclasses import dataclass
+import os
+import glob
 from extreme_price_movements.utils import tprint
 from extreme_price_movements.optimization_utils import filter_low_variance_assets
 
@@ -120,12 +122,31 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
     2. Variance Filter (Top N% by volatility)
     3. Union with Market Basket
     """
+    def _local_store_symbols(_store):
+        out = []
+        ohlcv_dir = getattr(_store, "ohlcv_dir", None)
+        if not ohlcv_dir:
+            return out
+        for path in glob.glob(os.path.join(ohlcv_dir, "symbol=*")):
+            base = os.path.basename(path)
+            if not base.startswith("symbol="):
+                continue
+            raw = base.replace("symbol=", "")
+            out.append(raw.replace("_", "/", 1))
+        return sorted(set(out))
+
     if margin_symbols is None:
-        # Fallback if not provided, refresh locally?
-        # Ideally should be passed.
-        # We will refresh it here if None
-        mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
-        margin_symbols = mu.symbols
+        # Fallback if not provided.
+        # Prefer live refresh; if unavailable (e.g., offline/DNS issues), use local store symbols.
+        try:
+            mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
+            margin_symbols = mu.symbols
+        except Exception as e:
+            tprint(f"Warning: margin universe refresh failed ({e}); falling back to local store symbols.")
+            margin_symbols = _local_store_symbols(store)
+            if not margin_symbols:
+                tprint("Warning: local store symbol fallback empty; using market basket only.")
+                margin_symbols = list(cfg.get("market_basket", []))
 
     syms_all = build_fetch_universe(margin_symbols, cfg["market_basket"], cfg["fetch_symbols_M"])
     train_syms = filter_low_variance_assets(store, syms_all, lookback_days=30, threshold_pct=cfg["variance_filter_pct"], ts_sig=ts_sig)

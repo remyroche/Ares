@@ -1,0 +1,11 @@
+{
+  "date_span_days": 1278.4,
+  "events_per_day": 19.9,
+  "ic_global": 0.019601643837461814,
+  "ic_ir": 0.051745953061656226,
+  "ic_mean": 0.0291038737715214,
+  "ic_mode": "per_ts_cross_sectional",
+  "ic_std": 0.5624376796547474,
+  "mean_group_size": 4.750840493089279,
+  "n_total_events": 25436
+}

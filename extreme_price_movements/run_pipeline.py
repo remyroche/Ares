@@ -135,7 +135,7 @@ def run_labels(cfg, ts_override=None):
     tprint("LABELS PIPELINE COMPLETE")
 
 
-def run_features(cfg, ts_override=None):
+def run_features(cfg, ts_override=None, force_recompute: bool = False):
     if ts_override:
         ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
     else:
@@ -148,7 +148,7 @@ def run_features(cfg, ts_override=None):
     store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
 
     # Pass None for margin_symbols to trigger auto-refresh in universe logic
-    run_feature_generation_step(ts_sig, None, cfg, store)
+    run_feature_generation_step(ts_sig, None, cfg, store, force_full_recompute=bool(force_recompute))
 
     tprint("FEATURES PIPELINE COMPLETE")
 
@@ -349,11 +349,19 @@ def run_optimise(cfg, ts_override=None):
         state_path=state_file if os.path.exists(state_file) else None,
     )
     tprint(f"OPTIMISE COMPLETE: {params_path}")
+    try:
+        from extreme_price_movements.reports.bucket_report import report_optimise
+        run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+        rp = report_optimise(run_id, cfg["data_root"])
+        tprint(f"Optimise bucket report: {rp}")
+    except Exception as _re:
+        tprint(f"WARNING: optimise bucket report failed: {_re}")
 
 def main():
     parser = argparse.ArgumentParser(description="Extreme Price Movements Pipeline")
     parser.add_argument("mode", choices=["download", "labels", "features", "train", "train_meta", "ridge_sizer", "backtest", "optimize_risk", "optimise", "run"],
                         help="Pipeline mode to run")
+    parser.add_argument("--force-feature-recompute", action="store_true", help="Force full recompute in features mode")
     args = parser.parse_args()
 
     cfg = CFG.copy()
@@ -363,7 +371,7 @@ def main():
     elif args.mode == "labels":
         run_labels(cfg)
     elif args.mode == "features":
-        run_features(cfg)
+        run_features(cfg, force_recompute=bool(args.force_feature_recompute))
     elif args.mode == "train":
         run_train(cfg)
     elif args.mode == "train_meta":

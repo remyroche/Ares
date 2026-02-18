@@ -26,6 +26,7 @@ from ..training_defaults import get_sample_weight_opt_defaults, get_sample_weigh
 
 
 EPS = 1e-8
+KNOWN_BUCKETS = {"MR_long", "MR_short", "TF_long", "TF_short"}
 
 
 def _process_memory_mb() -> float:
@@ -93,6 +94,67 @@ def _standardize_feature_matrix(X: np.ndarray) -> np.ndarray:
     X_arr -= mean
     X_arr /= std
     return X_arr
+
+
+def _sigmoid(x: np.ndarray) -> np.ndarray:
+    x = np.clip(np.asarray(x, dtype=np.float64), -50.0, 50.0)
+    return 1.0 / (1.0 + np.exp(-x))
+
+
+def sample_weight_tp_classifier(
+    atr_pct_past: np.ndarray,
+    fee_rt: float = 0.002,
+    k: float = 1.5,
+    s: float | None = None,
+    w_min: float = 0.4,
+    dtype=np.float32,
+) -> np.ndarray:
+    m = np.asarray(atr_pct_past, dtype=np.float64)
+    if s is None:
+        s = 0.5 * float(fee_rt)
+    s = max(float(s), 1e-12)
+    gate = _sigmoid((m - (k * float(fee_rt))) / s)
+    w = float(w_min) + (1.0 - float(w_min)) * gate
+    return np.asarray(w, dtype=dtype)
+
+
+def compute_alpha_from_train_fold(y_train: np.ndarray, q: float = 0.50) -> float:
+    y = np.asarray(y_train, dtype=np.float64)
+    abs_y = np.abs(y)
+    alpha = float(np.quantile(abs_y, q)) if abs_y.size else 1e-12
+    return max(alpha, 1e-12)
+
+
+def sample_weight_meta_regression(
+    y_ret_net: np.ndarray,
+    atr_pct_past: np.ndarray | None = None,
+    fee_rt: float = 0.002,
+    k: float = 1.5,
+    s: float | None = None,
+    w_min: float = 0.4,
+    alpha: float | None = None,
+    alpha_quantile: float = 0.50,
+    dtype=np.float32,
+) -> np.ndarray:
+    y = np.asarray(y_ret_net, dtype=np.float64)
+    if s is None:
+        s = 0.5 * float(fee_rt)
+    s = max(float(s), 1e-12)
+
+    if atr_pct_past is None:
+        w_opp = np.ones(len(y), dtype=np.float64)
+    else:
+        m = np.asarray(atr_pct_past, dtype=np.float64)
+        w_opp = _sigmoid((m - (k * float(fee_rt))) / s)
+
+    abs_y = np.abs(y)
+    if alpha is None:
+        alpha = compute_alpha_from_train_fold(abs_y, q=float(alpha_quantile))
+    alpha = max(float(alpha), 1e-12)
+    w_tail = np.tanh(abs_y / alpha)
+
+    w = float(w_min) + (1.0 - float(w_min)) * (w_opp * w_tail)
+    return np.asarray(w, dtype=dtype)
 
 
 def compute_n_eff(weights: np.ndarray) -> float:
@@ -347,6 +409,24 @@ def _safe_ic(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return float(ic)
 
 
+def _decile_spread(y_true: np.ndarray, score: np.ndarray) -> float:
+    y = np.asarray(y_true, dtype=float)
+    s = np.asarray(score, dtype=float)
+    m = np.isfinite(y) & np.isfinite(s)
+    if int(np.sum(m)) < 20:
+        return 0.0
+    y = y[m]
+    s = s[m]
+    try:
+        dec = pd.qcut(pd.Series(s), 10, labels=False, duplicates="drop")
+        g = pd.DataFrame({"d": dec, "y": y}).groupby("d")["y"].mean()
+        if len(g) < 2:
+            return 0.0
+        return float(g.iloc[-1] - g.iloc[0])
+    except Exception:
+        return 0.0
+
+
 def _run_cv_ic(
     X: np.ndarray,
     y: np.ndarray,
@@ -357,12 +437,15 @@ def _run_cv_ic(
     embargo_bars: int = 10,  # Default value added
     seed: int = 42,  # Default value added
     cfg_runtime: Optional[Dict[str, Any]] = None,
-) -> np.ndarray:
+    bucket_codes: Optional[np.ndarray] = None,
+) -> tuple[np.ndarray, np.ndarray]:
     splitter = IntervalPurgedKFold(n_splits=n_splits, embargo_bars=embargo_bars)
     fold_ics = []
+    fold_spreads = []
     Xs = np.asarray(X, dtype=np.float32)
     yv = np.asarray(y, dtype=float)
     wv = np.asarray(sample_weight, dtype=float)
+    bv = None if bucket_codes is None else np.asarray(bucket_codes)
 
     base_model = _make_model(model_family, random_state=seed, cfg_runtime=cfg_runtime)
     for fold_idx, (tr, va) in enumerate(splitter.split(Xs, label_intervals=label_intervals), start=1):
@@ -375,18 +458,55 @@ def _run_cv_ic(
                 mem_mb=_process_memory_mb(),
             )
             continue
-        model = clone(base_model)
-        model.fit(Xs[tr], yv[tr], sample_weight=wv[tr])
-        pred = model.predict(Xs[va])
-        fold_ic = _safe_ic(yv[va], pred)
+        if bv is None:
+            model = clone(base_model)
+            model.fit(Xs[tr], yv[tr], sample_weight=wv[tr])
+            pred = model.predict(Xs[va])
+            fold_ic = _safe_ic(yv[va], pred)
+            fold_spread = _decile_spread(yv[va], pred)
+            buckets_scored = 1
+        else:
+            pred_full = np.full(len(va), np.nan, dtype=float)
+            va_b = bv[va]
+            tr_b = bv[tr]
+            buckets_scored = 0
+            for b in np.unique(tr_b):
+                tr_mask = tr_b == b
+                va_mask = va_b == b
+                tr_idx = tr[tr_mask]
+                va_idx = va[va_mask]
+                if len(tr_idx) < 64 or len(va_idx) < 32:
+                    continue
+                model = clone(base_model)
+                model.fit(Xs[tr_idx], yv[tr_idx], sample_weight=wv[tr_idx])
+                pred_full[va_mask] = model.predict(Xs[va_idx])
+                buckets_scored += 1
+            valid_mask = np.isfinite(pred_full)
+            if int(np.sum(valid_mask)) < 32:
+                _tprint_metrics(
+                    "CV fold skipped",
+                    fold=fold_idx,
+                    reason="insufficient_bucket_predictions",
+                    train_size=len(tr),
+                    valid_size=len(va),
+                    buckets_scored=buckets_scored,
+                    mem_mb=_process_memory_mb(),
+                )
+                continue
+            pred = pred_full[valid_mask]
+            fold_ic = _safe_ic(yv[va][valid_mask], pred)
+            fold_spread = _decile_spread(yv[va][valid_mask], pred)
         fold_ics.append(fold_ic)
+        fold_spreads.append(fold_spread)
         _tprint_metrics(
             "CV fold complete",
             fold=fold_idx,
             seed=seed,
+            buckets_scored=buckets_scored,
             train_size=len(tr),
             valid_size=len(va),
             ic=fold_ic,
+            decile_spread=fold_spread,
             pred_mean=float(np.mean(pred)),
             pred_std=float(np.std(pred)),
             valid_ret_mean=float(np.mean(yv[va])),
@@ -394,7 +514,7 @@ def _run_cv_ic(
             mem_mb=_process_memory_mb(),
         )
 
-    return np.asarray(fold_ics, dtype=float)
+    return np.asarray(fold_ics, dtype=float), np.asarray(fold_spreads, dtype=float)
 
 
 def constrained_objective(
@@ -409,6 +529,7 @@ def constrained_objective(
     min_n_eff_ratio: float = 0.30,
     max_top1pct: float = 0.10,
     cfg_runtime: Optional[Dict[str, Any]] = None,
+    bucket_codes: Optional[np.ndarray] = None,
 ) -> float:
     n_eff = compute_n_eff(w)
     min_n_eff = min_n_eff_ratio * len(w)
@@ -429,18 +550,23 @@ def constrained_objective(
         return -10.0
 
     fold_scores = []
+    spread_scores = []
     for seed in seeds:
-        fold_ics = _run_cv_ic(
+        fold_ics, fold_spreads = _run_cv_ic(
             X, y_ret, w, label_intervals, model_family=model_family,
             n_splits=n_splits, embargo_bars=embargo_bars, seed=int(seed), cfg_runtime=cfg_runtime,
+            bucket_codes=bucket_codes,
         )
         if fold_ics.size:
             fold_scores.append(float(np.mean(fold_ics)))
+        if fold_spreads.size:
+            spread_scores.append(float(np.mean(fold_spreads)))
     if not fold_scores:
         _tprint_metrics("Objective invalid", reason="no_fold_scores", mem_mb=_process_memory_mb())
         return -10.0
     ic_mean = float(np.mean(fold_scores))
     ic_std = float(np.std(fold_scores))
+    spread_mean = float(np.mean(spread_scores)) if spread_scores else 0.0
     objective = ic_mean - 0.5 * ic_std
     _tprint_metrics(
         "Objective evaluated",
@@ -449,6 +575,7 @@ def constrained_objective(
         top1pct_share=top1pct_share,
         ic_mean=ic_mean,
         ic_std=ic_std,
+        decile_spread_mean=spread_mean,
         objective=objective,
         weighted_return_mean=float(np.average(y_ret, weights=w)) if len(y_ret) else 0.0,
         mem_mb=_process_memory_mb(),
@@ -478,6 +605,7 @@ def optimize_component_weights(
     random_state: int = 42,
     feature_names: Optional[Iterable[str]] = None,
     cfg_runtime: Optional[Dict[str, Any]] = None,
+    bucket_codes: Optional[np.ndarray] = None,
 ) -> WeightOptimizationResult:
     if not components:
         ones = np.ones(len(y_ret), dtype=float)
@@ -506,6 +634,7 @@ def optimize_component_weights(
             min_n_eff_ratio=min_n_eff_ratio,
             max_top1pct=max_top1pct,
             cfg_runtime=cfg_runtime,
+            bucket_codes=bucket_codes,
         )
         return WeightOptimizationResult(w, alphas, val, {"fallback": "optuna_unavailable_or_disabled"})
 
@@ -523,6 +652,7 @@ def optimize_component_weights(
             min_n_eff_ratio=min_n_eff_ratio,
             max_top1pct=max_top1pct,
             cfg_runtime=cfg_runtime,
+            bucket_codes=bucket_codes,
         )
         learnability = _weight_learnability_metrics(w, y_ret)
         _tprint_metrics(
@@ -570,6 +700,7 @@ def run_ablation(
     embargo_bars: int = 10,
     cfg_runtime: Optional[Dict[str, Any]] = None,
     enable: bool = True,
+    bucket_codes: Optional[np.ndarray] = None,
 ) -> list[tuple[str, float]]:
     _tprint_metrics("Ablation started", n_components=len(components), mem_mb=_process_memory_mb())
     if not enable or not components:
@@ -579,7 +710,7 @@ def run_ablation(
     base_score = constrained_objective(
         baseline_weights, X_std, y_ret, label_intervals,
         model_family=production_model, n_splits=n_splits, embargo_bars=embargo_bars,
-        cfg_runtime=cfg_runtime,
+        cfg_runtime=cfg_runtime, bucket_codes=bucket_codes,
     )
     results.append(("baseline", float(base_score)))
     _tprint_metrics("Ablation baseline", score=float(base_score), mem_mb=_process_memory_mb())
@@ -594,7 +725,7 @@ def run_ablation(
         score = constrained_objective(
             scratch, X_std, y_ret, label_intervals,
             model_family=production_model, n_splits=n_splits, embargo_bars=embargo_bars,
-            cfg_runtime=cfg_runtime,
+            cfg_runtime=cfg_runtime, bucket_codes=bucket_codes,
         )
         results.append((name, float(score)))
         _tprint_metrics("Ablation single component", component=name, score=float(score), mem_mb=_process_memory_mb())
@@ -607,7 +738,7 @@ def run_ablation(
         score = constrained_objective(
             scratch, X_std, y_ret, label_intervals,
             model_family=production_model, n_splits=n_splits, embargo_bars=embargo_bars,
-            cfg_runtime=cfg_runtime,
+            cfg_runtime=cfg_runtime, bucket_codes=bucket_codes,
         )
         results.append((f"{n1}+{n2}", float(score)))
         _tprint_metrics("Ablation pair", component=f"{n1}+{n2}", score=float(score), mem_mb=_process_memory_mb())
@@ -635,6 +766,59 @@ def _detect_stage_column(df: pd.DataFrame) -> str | None:
         if c in df.columns:
             return c
     return None
+
+
+def _detect_bucket_column(df: pd.DataFrame) -> str | None:
+    for c in ("bucket", "slice_bucket", "model_bucket"):
+        if c in df.columns:
+            return c
+    return None
+
+
+def _to_bool_series(s: pd.Series) -> pd.Series:
+    if s.dtype == bool:
+        return s.fillna(False)
+    if np.issubdtype(s.dtype, np.number):
+        return s.fillna(0).astype(float) > 0.0
+    as_str = s.astype(str).str.strip().str.lower()
+    return as_str.isin({"1", "true", "t", "yes", "y"})
+
+
+def _apply_hard_candidate_prefilter(df: pd.DataFrame, bucket_col: str | None = None) -> pd.DataFrame:
+    for c in ("candidate_mask", "is_candidate", "candidate", "is_trade_candidate"):
+        if c in df.columns:
+            mask = _to_bool_series(df[c])
+            out = df.loc[mask].copy()
+            _tprint_metrics(
+                "Hard candidate prefilter applied",
+                source_col=c,
+                kept=len(out),
+                total=len(df),
+                keep_rate=float(len(out) / max(len(df), 1)),
+                mem_mb=_process_memory_mb(),
+            )
+            return out
+
+    if bucket_col and bucket_col in df.columns:
+        mask = df[bucket_col].astype(str).isin(KNOWN_BUCKETS)
+        out = df.loc[mask].copy()
+        _tprint_metrics(
+            "Hard candidate prefilter applied",
+            source_col=bucket_col,
+            kept=len(out),
+            total=len(df),
+            keep_rate=float(len(out) / max(len(df), 1)),
+            mem_mb=_process_memory_mb(),
+        )
+        return out
+
+    _tprint_metrics(
+        "Hard candidate prefilter unavailable",
+        reason="no_candidate_or_bucket_column",
+        rows=len(df),
+        mem_mb=_process_memory_mb(),
+    )
+    return df
 
 
 def _is_meta_stage(stage_val: Any) -> bool:
@@ -670,6 +854,7 @@ def _build_stage_learnability_rows(
     optimized_weights: np.ndarray,
     objective_value: float,
     cfg_runtime: Dict[str, Any],
+    bucket_codes: Optional[np.ndarray] = None,
 ) -> list[Dict[str, Any]]:
     rows: list[Dict[str, Any]] = []
     metrics = _weight_learnability_metrics(optimized_weights, y_ret)
@@ -686,6 +871,7 @@ def _build_stage_learnability_rows(
         embargo_bars=int(sw_defaults["sample_weight_opt_embargo_bars"]),
         cfg_runtime=cfg_runtime,
         enable=bool(cfg_runtime.get("sample_weight_opt_enable_ablation", True)) if isinstance(cfg_runtime, dict) else True,
+        bucket_codes=bucket_codes,
     )
     ablation_rank = {name: i + 1 for i, (name, _) in enumerate(ablation)}
     ablation_score = {name: float(score) for name, score in ablation}
@@ -771,6 +957,12 @@ def run_offline_sample_weight_optimisation(
         stage_col = _detect_stage_column(header_df)
         if stage_col:
             keep_cols.add(stage_col)
+        bucket_col = _detect_bucket_column(header_df)
+        if bucket_col:
+            keep_cols.add(bucket_col)
+        for c in ("candidate_mask", "is_candidate", "candidate", "is_trade_candidate"):
+            if c in all_cols:
+                keep_cols.add(c)
 
         feature_cols = []
         for c in all_cols:
@@ -806,6 +998,10 @@ def run_offline_sample_weight_optimisation(
             for stage_name, sdf in stage_frames.items():
                 if sdf.empty:
                     continue
+                sdf = _apply_hard_candidate_prefilter(sdf, bucket_col=bucket_col)
+                if sdf.empty:
+                    _tprint_metrics("Stage skipped", stage=stage_name, reason="empty_after_candidate_prefilter", mem_mb=_process_memory_mb())
+                    continue
                 _tprint_metrics(
                     "Stage optimisation started",
                     stage=stage_name,
@@ -822,6 +1018,16 @@ def run_offline_sample_weight_optimisation(
                     X = sdf[current_feature_cols]
                 else:
                     X = np.zeros((len(sdf), 1), dtype=float)
+                if bucket_col and bucket_col in sdf.columns:
+                    bucket_codes = sdf[bucket_col].astype(str).values
+                else:
+                    bucket_codes = np.full(len(sdf), "Global", dtype=object)
+                _tprint_metrics(
+                    "Stage bucket training setup",
+                    stage=stage_name,
+                    n_buckets=len(pd.unique(bucket_codes)),
+                    mem_mb=_process_memory_mb(),
+                )
                 label_intervals = np.column_stack([
                     pd.to_datetime(sdf["t_start"]).values.astype("datetime64[ns]"),
                     pd.to_datetime(sdf["t_end"]).values.astype("datetime64[ns]"),
@@ -839,6 +1045,7 @@ def run_offline_sample_weight_optimisation(
                     max_top1pct=float(sw_defaults["sample_weight_opt_max_top1pct"]),
                     random_state=int(cfg_runtime.get("seed", 42)),
                     cfg_runtime=cfg_runtime,
+                    bucket_codes=bucket_codes,
                 )
 
                 best_params[f"component_alphas_{stage_name}"] = res.component_alphas
@@ -855,6 +1062,7 @@ def run_offline_sample_weight_optimisation(
                         optimized_weights=res.optimized_weights,
                         objective_value=float(res.objective_value),
                         cfg_runtime=cfg_runtime,
+                        bucket_codes=bucket_codes,
                     )
                 )
                 _tprint_metrics(

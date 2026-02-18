@@ -1,0 +1,66 @@
+{
+  "created_at_utc": "2026-02-17T23:52:49.359917+00:00",
+  "estimated_size_mb": 828.1894283294678,
+  "entries": [
+    {
+      "h": 2,
+      "side": "long",
+      "tb_labels": "h2_long_tb_labels.parquet",
+      "tb_returns": "h2_long_tb_returns.parquet",
+      "tb_quality": "h2_long_tb_quality.parquet",
+      "geom_n_tp": "h2_long_geom_n_tp.parquet",
+      "geom_n_sl": "h2_long_geom_n_sl.parquet",
+      "geom_n_to": "h2_long_geom_n_to.parquet"
+    },
+    {
+      "h": 2,
+      "side": "short",
+      "tb_labels": "h2_short_tb_labels.parquet",
+      "tb_returns": "h2_short_tb_returns.parquet",
+      "tb_quality": "h2_short_tb_quality.parquet",
+      "geom_n_tp": "h2_short_geom_n_tp.parquet",
+      "geom_n_sl": "h2_short_geom_n_sl.parquet",
+      "geom_n_to": "h2_short_geom_n_to.parquet"
+    },
+    {
+      "h": 4,
+      "side": "long",
+      "tb_labels": "h4_long_tb_labels.parquet",
+      "tb_returns": "h4_long_tb_returns.parquet",
+      "tb_quality": "h4_long_tb_quality.parquet",
+      "geom_n_tp": "h4_long_geom_n_tp.parquet",
+      "geom_n_sl": "h4_long_geom_n_sl.parquet",
+      "geom_n_to": "h4_long_geom_n_to.parquet"
+    },
+    {
+      "h": 4,
+      "side": "short",
+      "tb_labels": "h4_short_tb_labels.parquet",
+      "tb_returns": "h4_short_tb_returns.parquet",
+      "tb_quality": "h4_short_tb_quality.parquet",
+      "geom_n_tp": "h4_short_geom_n_tp.parquet",
+      "geom_n_sl": "h4_short_geom_n_sl.parquet",
+      "geom_n_to": "h4_short_geom_n_to.parquet"
+    },
+    {
+      "h": 8,
+      "side": "long",
+      "tb_labels": "h8_long_tb_labels.parquet",
+      "tb_returns": "h8_long_tb_returns.parquet",
+      "tb_quality": "h8_long_tb_quality.parquet",
+      "geom_n_tp": "h8_long_geom_n_tp.parquet",
+      "geom_n_sl": "h8_long_geom_n_sl.parquet",
+      "geom_n_to": "h8_long_geom_n_to.parquet"
+    },
+    {
+      "h": 8,
+      "side": "short",
+      "tb_labels": "h8_short_tb_labels.parquet",
+      "tb_returns": "h8_short_tb_returns.parquet",
+      "tb_quality": "h8_short_tb_quality.parquet",
+      "geom_n_tp": "h8_short_geom_n_tp.parquet",
+      "geom_n_sl": "h8_short_geom_n_sl.parquet",
+      "geom_n_to": "h8_short_geom_n_to.parquet"
+    }
+  ]
+}

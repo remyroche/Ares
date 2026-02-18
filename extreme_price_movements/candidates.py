@@ -163,6 +163,7 @@ def select_trade_candidates_vectorized(
     metric="ret24h",
     min_range_pct=0.07,
     min_vol_zscore=1.6,
+    sign_consistency_min=0.80,
 ):
     """
     Vectorized candidate selection with time expansion and volatility filtering.
@@ -231,7 +232,7 @@ def select_trade_candidates_vectorized(
     if "close" in panel:
         sc = ff.numba_sign_consistency(panel["close"], 12)
         sc_df = pd.DataFrame(sc, index=panel["close"].index, columns=panel["close"].columns)
-        sc_mask = sc_df >= 0.80
+        sc_mask = sc_df >= sign_consistency_min
     else:
         # Fallback if close not in panel (unlikely)
         sc_mask = pd.DataFrame(True, index=vol_mask.index, columns=vol_mask.columns)

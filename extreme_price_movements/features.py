@@ -1767,6 +1767,9 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     if f"s_gt85_{gate_window}" in feats:
         feats["accept_gt85"] = feats[f"s_gt85_{gate_window}"]
+    else:
+        # Keep stable key availability even when dynamic gate selection skips gt85.
+        feats["accept_gt85"] = (s_pct >= 0.85).astype(np.float32)
 
     feats["tf_qual"] = (s_pct * feats["tf_tape"]).astype(np.float32)
     feats["mr_qual"] = (reject_like * feats["mr_tape"]).astype(np.float32)
@@ -2121,6 +2124,104 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     vwap_proxy = (c * v).rolling(24, min_periods=1).sum() / (v.rolling(24, min_periods=1).sum() + 1e-12)
     feats["reversion_target_distance"] = ((vwap_proxy - c) / (atr_base + 1e-12)).astype(np.float32)
 
+    # ---------------------------------------------------------------------
+    # Regime-transition / complexity features (2h/4h/8h trade-horizon focus)
+    # ---------------------------------------------------------------------
+    # Volatility regime in rolling z-space
+    feats["vol_regime_z"] = zscore_rolling(feats["rv_24h"], 48).fillna(0).astype(np.float32)
+    feats["is_high_vol_regime"] = (feats["vol_regime_z"] > 0.75).astype(np.float32)
+    feats["is_low_vol_regime"] = (feats["vol_regime_z"] < -0.75).astype(np.float32)
+
+    # Trend regime score from 24h return in local-vol units
+    feats["trend_regime"] = (
+        feats["ret24h"] / (feats["rv_24h"] * np.sqrt(24.0) + 1e-12)
+    ).clip(-3, 3).astype(np.float32)
+    feats["is_trending"] = (feats["trend_regime"].abs() >= 0.75).astype(np.float32)
+    feats["is_ranging"] = (1.0 - feats["is_trending"]).astype(np.float32)
+
+    # Liquidity regime: high value means better-than-usual liquidity
+    feats["liq_regime"] = (-feats["amihud_z"]).clip(-5, 5).astype(np.float32)
+
+    # Regime switching intensity (12h) and stability (24h)
+    trend_state = np.sign(feats["trend_regime"]).replace(0, np.nan).ffill().fillna(0)
+    vol_state = np.sign(feats["vol_regime_z"]).replace(0, np.nan).ffill().fillna(0)
+    trend_switch_evt = (trend_state != trend_state.shift(1)).astype(np.float32)
+    vol_switch_evt = (vol_state != vol_state.shift(1)).astype(np.float32)
+    feats["trend_regime_switch_12h"] = ff.numba_rolling_sum(trend_switch_evt, 12).astype(np.float32)
+    feats["vol_regime_switch_12h"] = ff.numba_rolling_sum(vol_switch_evt, 12).astype(np.float32)
+    feats["regime_stability_24h"] = (
+        1.0 / (1.0 + ff.numba_rolling_sum((trend_switch_evt + vol_switch_evt) > 0, 24))
+    ).astype(np.float32)
+
+    # Entropy of switching process (binary entropy of switch-rate over horizon)
+    def _binary_entropy(p):
+        p = p.clip(1e-6, 1 - 1e-6)
+        return -(p * np.log(p) + (1.0 - p) * np.log(1.0 - p))
+
+    sw12 = (ff.numba_rolling_sum((trend_switch_evt + vol_switch_evt) > 0, 12) / 12.0).clip(0, 1)
+    sw48 = (ff.numba_rolling_sum((trend_switch_evt + vol_switch_evt) > 0, 48) / 48.0).clip(0, 1)
+    feats["regime_transition_entropy_12h"] = _binary_entropy(sw12).astype(np.float32)
+    feats["regime_transition_entropy_48h"] = _binary_entropy(sw48).astype(np.float32)
+    feats["entropy_jump_24h"] = (
+        feats["regime_transition_entropy_12h"] - feats["regime_transition_entropy_48h"]
+    ).astype(np.float32)
+    feats["complexity_regime_24h"] = (
+        0.5 * feats["regime_transition_entropy_12h"]
+        + 0.5 * feats["regime_transition_entropy_48h"]
+    ).astype(np.float32)
+
+    # Regime interaction terms requested in config
+    feats["rsi_z_x_regime_vol"] = (feats.get("rsi_z", 0.0) * feats["vol_regime_z"]).astype(np.float32)
+    feats["vol_z_x_regime_trend"] = (feats["vol_z"] * feats["trend_regime"]).astype(np.float32)
+    feats["mtf_divergence_x_regime_vol_12h"] = (
+        feats["mtf_div_mag"] * ff.numba_rolling_mean(feats["vol_regime_z"], 12)
+    ).astype(np.float32)
+    feats["hurst_proxy_x_regime_trend_48h"] = (
+        feats["hurst_proxy_24"] * ff.numba_rolling_mean(feats["trend_regime"], 48)
+    ).astype(np.float32)
+    feats["rsi_x_high_vol"] = (
+        ((feats["rsi"] - 50.0) / 50.0) * feats["is_high_vol_regime"]
+    ).astype(np.float32)
+    feats["trend_x_trending"] = (feats["trend_regime"] * feats["is_trending"]).astype(np.float32)
+    feats["vol_z_x_low_vol"] = (feats["vol_z"] * feats["is_low_vol_regime"]).astype(np.float32)
+
+    # ---------------------------------------------------------------------
+    # Entry/trap quality features for 2h/4h/8h opportunity framing
+    # ---------------------------------------------------------------------
+    # Bounce signal: short-horizon reversal after stress in the opposite direction.
+    down_stress = ((feats["ret2h"] < 0) | (feats["ret4h"] < 0)).astype(np.float32)
+    up_bounce = (feats["ret2h"] > 0).astype(np.float32)
+    feats["bounce_signal"] = (
+        down_stress * up_bounce * (1.0 + feats["vol_z"].clip(lower=0))
+    ).astype(np.float32)
+
+    # Volume capitulation: sharp adverse move + high abnormal volume (causal proxy).
+    adverse_4h = (-feats["ret4h"]).clip(lower=0)
+    feats["volume_capitulation"] = (
+        adverse_4h * feats["vol_z"].clip(lower=0)
+    ).astype(np.float32)
+
+    # Trap strength: exhaustion + capitulation + failed continuation context.
+    feats["trap_strength"] = (
+        feats["volume_capitulation"] * (1.0 + feats["overext"].clip(lower=0)) * (1.0 - feats["accept"])
+    ).astype(np.float32)
+
+    # Composite entry quality across 2h/4h/8h context.
+    feats["entry_quality_composite"] = (
+        0.40 * feats["accept"]
+        + 0.25 * feats["bounce_signal"]
+        + 0.20 * feats["retest_accept_score"]
+        + 0.15 * (1.0 - feats["ambig"].clip(0, 1))
+    ).astype(np.float32)
+
+    # Specialist proxies at feature stage (actual specialist outputs are added in engine.py).
+    feats["predicted_vol_6h"] = (
+        (feats["rv_6h"] / (feats["rv_24h"] + 1e-12)).clip(0, 10)
+    ).astype(np.float32)
+    feats["trap_quality"] = (
+        (1.0 / (1.0 + feats["trap_strength"])) * (1.0 - feats["ambig"].clip(0, 1))
+    ).astype(np.float32)
+
     # =====================================================================
     # User Requested Features (Report 2026-02-10) - TF/MR/Alpha
     # =====================================================================
@@ -2228,8 +2329,15 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     gc.collect()
 
     tprint(f"Features: {len(feats)} features before CausalTransform. Applying transforms...")
-    # Disable cache to avoid Arrow/parquet serialization memory spikes (~3× per feature)
-    transformer = CausalFeatureTransformer(winsor_qt=0.02, roll_window=24*30, enable_cache=False)
+    # Transform cache can be enabled for incremental/tail-only runs to persist parquet transforms.
+    transform_cache_enabled = bool(cfg.get("feature_transform_cache_enabled", False))
+    transform_cache_dir = cfg.get("feature_transform_cache_dir", "./cache/feature_transforms")
+    transformer = CausalFeatureTransformer(
+        winsor_qt=0.02,
+        roll_window=24 * 30,
+        cache_dir=transform_cache_dir,
+        enable_cache=transform_cache_enabled,
+    )
 
     skip_transform_set = {
         "sin_hod", "cos_hod", "sin_dow", "cos_dow", "range_24h_pct", "range_12h_pct",

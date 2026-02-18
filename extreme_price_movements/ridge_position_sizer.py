@@ -2006,9 +2006,15 @@ class RidgePositionSizer:
         )
         
         self.is_fitted_ = True
-        
+
+        # Store OOF inputs for downstream diagnostics / preds_metrics_computations
+        self.oof_preds_ = oof_preds.copy() if isinstance(oof_preds, pd.DataFrame) else pd.DataFrame(X, columns=self.model_names_)
+        self.oof_targets_ = y_raw.copy()
+        self.oof_timestamps_ = np.asarray(timestamps).copy() if timestamps is not None else None
+        self.oof_symbols_ = np.asarray(symbols).copy() if symbols is not None else None
+
         tprint(f"RidgePositionSizer.fit: Done. Weights: {self.weights_}")
-        
+
         return self
     
     def predict(self, model_preds: pd.DataFrame) -> np.ndarray:
@@ -2287,7 +2293,35 @@ def run_ridge_position_sizer_step(
         cv_path = reports_dir / f"ridge_position_sizer_cv_{run_id or 'latest'}.csv"
         sizer.cv_results_.to_csv(cv_path, index=False)
         metrics['cv_results_path'] = str(cv_path)
-    
+
+    # Export OOF parquet for preds_metrics_computations.py diagnostics
+    # score = Ridge combined signal; fwd_ret_H4 = raw trade return (proxy for H4)
+    if sizer.oof_preds_ is not None and sizer.oof_targets_ is not None:
+        n_oof = len(sizer.oof_targets_)
+        X_oof_scaled = sizer.scaler_.transform(
+            np.nan_to_num(sizer.oof_preds_.values, nan=0.0, posinf=0.0, neginf=0.0)
+        )
+        oof_score = X_oof_scaled @ sizer.weights_
+        oof_payload: dict = {
+            "score": oof_score.astype(np.float32),
+            "fwd_ret_H4": sizer.oof_targets_.astype(np.float32),
+        }
+        if sizer.oof_timestamps_ is not None and len(sizer.oof_timestamps_) == n_oof:
+            oof_payload["ts"] = pd.to_datetime(sizer.oof_timestamps_)
+        else:
+            oof_payload["ts"] = pd.RangeIndex(n_oof)
+        if sizer.oof_symbols_ is not None and len(sizer.oof_symbols_) == n_oof:
+            oof_payload["asset"] = sizer.oof_symbols_.astype(str)
+        else:
+            oof_payload["asset"] = "ALL"
+        oof_df_out = pd.DataFrame(oof_payload)
+        _oof_dir = Path("data") / "artifacts" / (run_id or "latest") / "ridge_sizer"
+        _oof_dir.mkdir(parents=True, exist_ok=True)
+        _oof_path = _oof_dir / "ridge_sizer_oof.parquet"
+        oof_df_out.to_parquet(_oof_path, index=False)
+        metrics['oof_parquet_path'] = str(_oof_path)
+        tprint(f"Saved Ridge sizer OOF parquet to {_oof_path}")
+
     tprint("-" * 80)
     tprint("Ridge Position Sizer Results:")
     tprint(f"  Models combined: {len(weights)}")

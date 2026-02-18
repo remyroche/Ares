@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from numba import jit
+from joblib import Parallel, delayed
 from .fast_funcs import simulate_trade_numba
 
 OUT_SL = np.int8(0)
@@ -205,7 +206,9 @@ def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl
             rel_prog = returns[i] / den_tp
             quality[i] = 0.5 + _clip_scalar(rel_prog * 0.4, -0.4, 0.4)
 
-    quality = np.clip(np.nan_to_num(quality, nan=0.0, posinf=1.0, neginf=0.0), 0.0, 1.0).astype(np.float32)
+    # Numba compatibility: avoid nan_to_num keyword args unsupported in some versions.
+    quality = np.nan_to_num(quality)
+    quality = np.clip(quality, 0.0, 1.0).astype(np.float32)
     return outcomes, returns, quality, exit_idxs
 
 @jit(nopython=True, cache=True)
@@ -579,37 +582,31 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
     else:
         sl_df = sl
 
-    for asset in assets:
+    def _process_asset(asset):
         c_arr = c[asset].to_numpy(dtype=np.float32)
         o_arr = o[asset].to_numpy(dtype=np.float32)
         h_arr = h[asset].to_numpy(dtype=np.float32)
         l_arr = l[asset].to_numpy(dtype=np.float32)
-
-        # Extract TP/SL arrays for this asset
-        if asset in tp_df.columns:
-            tp_arr = tp_df[asset].to_numpy(dtype=np.float32)
-        else:
-             tp_arr = np.full(len(c_arr), np.nan, dtype=np.float32)
-
-        if asset in sl_df.columns:
-            sl_arr = sl_df[asset].to_numpy(dtype=np.float32)
-        else:
-            sl_arr = np.full(len(c_arr), np.nan, dtype=np.float32)
-
+        tp_arr = tp_df[asset].to_numpy(dtype=np.float32) if asset in tp_df.columns else np.full(len(c_arr), np.nan, dtype=np.float32)
+        sl_arr = sl_df[asset].to_numpy(dtype=np.float32) if asset in sl_df.columns else np.full(len(c_arr), np.nan, dtype=np.float32)
         if return_outcomes:
-            # New 3-way outcomes + quality
             out, rets, qual, _ = _numba_triple_barrier_outcomes(
                 times, o_arr, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int
             )
-            out_labels[asset] = out
-            out_returns[asset] = rets
-            out_quality[asset] = qual
+            return asset, out, rets, qual
         else:
-            # Legacy binary/tertiary (-1,0,1)
-            # Use original numba function to maintain exact behavior
             lbs, rets, _ = _numba_triple_barrier(times, o_arr, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int)
-            out_labels[asset] = lbs
-            out_returns[asset] = rets
+            return asset, lbs, rets, None
+
+    results = Parallel(n_jobs=-1, prefer="threads")(
+        delayed(_process_asset)(asset) for asset in assets
+    )
+
+    for asset, lbs_or_out, rets, qual in results:
+        out_labels[asset] = lbs_or_out
+        out_returns[asset] = rets
+        if return_outcomes and qual is not None:
+            out_quality[asset] = qual
 
     if return_outcomes:
         return out_labels, out_returns, out_quality

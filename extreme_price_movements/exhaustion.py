@@ -119,7 +119,6 @@ class ExhaustionModel(BaseEstimator, ClassifierMixin):
         return self
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
-        tprint(f"Entering function: predict_proba in exhaustion.py")
         if self.model is None:
             raise ValueError("Model not fitted")
 

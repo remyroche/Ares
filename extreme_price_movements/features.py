@@ -417,9 +417,9 @@ def add_regime_gates(mkt_df: pd.DataFrame, gate_vol_lookback_hours: int, gate_tr
 def compute_vol_regime_features(close_df: pd.DataFrame, vol_window: int = 24, pct_window: int = 252):
     """Compute volatility-regime features from close prices."""
     ret = np.log(close_df / close_df.shift(1))
-    rv = ret.rolling(vol_window).std().shift(1)
+    rv = ff.numba_rolling_std(ret, vol_window).shift(1)
 
-    vol_pct = rv.rolling(pct_window).rank(pct=True).clip(0.0, 1.0)
+    vol_pct = ff.numba_rolling_rank(rv, pct_window, pct=True).clip(0.0, 1.0)
     vol_high = (vol_pct - 0.8).clip(lower=0.0)
     vol_low = (0.2 - vol_pct).clip(lower=0.0)
 
@@ -435,7 +435,7 @@ def compute_cusum_regime_features(cusum_strength_df: pd.DataFrame, h: float):
 
 def compute_liquidity_features(volume_df: pd.DataFrame, avg_window: int = 720):
     """Compute liquidity ratios from volume relative to lagged rolling baseline."""
-    vol_avg = volume_df.rolling(avg_window).mean().shift(1)
+    vol_avg = ff.numba_rolling_mean(volume_df, avg_window).shift(1)
     liq_ratio = volume_df / (vol_avg + EPS)
     liq_low = (1.0 - liq_ratio).clip(lower=0.0)
     return liq_ratio.astype(np.float32), liq_low.astype(np.float32)

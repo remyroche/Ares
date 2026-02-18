@@ -1541,6 +1541,72 @@ def numba_rolling_quantile_dual(df, n, q1, q2):
 
     return out1, out2
 
+@jit(nopython=True, cache=True)
+def _numba_rolling_rank_1d(x, window, pct, min_periods):
+    n = len(x)
+    out = np.full(n, np.nan, dtype=np.float32)
+
+    for i in range(n):
+        val = x[i]
+        if np.isnan(val):
+            continue
+
+        # Window bounds
+        start = max(0, i - window + 1)
+        end = i + 1
+
+        count_less = 0
+        count_equal = 0
+        count_valid = 0
+
+        for j in range(start, end):
+            v = x[j]
+            if not np.isnan(v):
+                count_valid += 1
+                if v < val:
+                    count_less += 1
+                elif v == val:
+                    count_equal += 1
+
+        if count_valid >= min_periods and count_valid > 0:
+            # Pandas default 'average' rank: L + (E + 1) / 2
+            rank = count_less + (count_equal + 1.0) * 0.5
+            if pct:
+                out[i] = rank / count_valid
+            else:
+                out[i] = rank
+
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_rank_parallel(mat, window, pct, min_periods):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_rank_1d(mat[:, j], window, pct, min_periods)
+
+    return out
+
+def numba_rolling_rank(df, window, pct=True, min_periods=None):
+    tprint(f"Entering function: numba_rolling_rank in fast_funcs.py")
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
+    if min_periods is None:
+        min_periods = window
+
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rolling_rank_parallel(mat, window, pct, min_periods)
+
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+
+    return res_df
+
 def numba_pct_change(df, n):
     tprint(f"Entering function: numba_pct_change in fast_funcs.py")
     is_series = isinstance(df, pd.Series)

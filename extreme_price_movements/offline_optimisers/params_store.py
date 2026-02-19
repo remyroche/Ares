@@ -78,7 +78,20 @@ def load_tbm_geometry_grid() -> Dict[str, Any]:
     """Load the geometry grid saved by compare_tbm_parameters.py.
 
     Returns a dict with keys:
-        per_cell    : dict[cell_key -> {"k_tp_grid", "sl_base_grid", "atr_window"}]
+        per_cell    : dict[cell_key -> {
+                          "k_tp_grid"    : sorted unique k_tp values for this cell,
+                          "sl_base_grid" : sorted unique sl_as_tp_pct values for this cell,
+                          "validated_pairs": list of (k_tp, sl_as_tp_pct) tuples that were
+                                            explicitly validated by the optimizer — callers
+                                            should sweep only these pairs, not the full
+                                            Cartesian product of k_tp_grid × sl_base_grid,
+                          "atr_windows"  : sorted unique base_atr_window values for this cell
+                                           (replaces single "atr_window" — callers should
+                                            iterate over all windows),
+                          "atr_window"   : first atr_window (backward-compat alias),
+                          "tp_abs_lo_pct": TP floor (min across cell rows),
+                          "sl_abs_lo_pct": SL floor (min across cell rows),
+                      }]
                       cell_key format: "MR_long_H4", "TF_short_H2", etc.
         k_tp_grid   : global fallback — sorted unique k_tp across all cells
         sl_base_grid: global fallback — sorted unique sl_as_tp_pct across all cells
@@ -109,12 +122,29 @@ def load_tbm_geometry_grid() -> Dict[str, Any]:
             for cell_key, grp in df.groupby("cell_key"):
                 _tp_lo_vals = grp["tp_abs_lo_pct"].dropna().unique().tolist() if "tp_abs_lo_pct" in grp.columns else []
                 _sl_lo_vals = grp["sl_abs_lo_pct"].dropna().unique().tolist() if "sl_abs_lo_pct" in grp.columns else []
+                # Validated triplets: exact (k_tp, sl_as_tp_pct, atr_window) per optimizer row.
+                # The window is part of each validated config — callers iterate these triplets
+                # directly, pre-computing one barrier base per unique window and reusing it.
+                _triplets: list = []
+                _has_win = "base_atr_window" in grp.columns
+                _cols = ["k_tp", "sl_as_tp_pct"] + (["base_atr_window"] if _has_win else [])
+                for _, row in grp[_cols].dropna().iterrows():
+                    win = int(row["base_atr_window"]) if _has_win else (atr_window or 720)
+                    triplet = (round(float(row["k_tp"]), 6), round(float(row["sl_as_tp_pct"]), 6), win)
+                    if triplet not in _triplets:
+                        _triplets.append(triplet)
+                # Unique windows needed to pre-compute barrier bases (one per window, reused).
+                _win_vals: list = sorted(set(t[2] for t in _triplets))
+                _first_win = _win_vals[0] if _win_vals else atr_window
                 per_cell[str(cell_key)] = {
                     "k_tp_grid": sorted(grp["k_tp"].dropna().unique().tolist()),
                     "sl_base_grid": sorted(grp["sl_as_tp_pct"].dropna().unique().tolist()),
-                    "atr_window": int(grp["base_atr_window"].iloc[0]) if "base_atr_window" in grp.columns else atr_window,
-                    "tp_abs_lo_pct": float(_tp_lo_vals[0]) if _tp_lo_vals else None,
-                    "sl_abs_lo_pct": float(_sl_lo_vals[0]) if _sl_lo_vals else None,
+                    "validated_triplets": _triplets,
+                    "validated_pairs": [(t[0], t[1]) for t in _triplets],
+                    "atr_windows": _win_vals,
+                    "atr_window": _first_win,
+                    "tp_abs_lo_pct": float(min(_tp_lo_vals)) if _tp_lo_vals else None,
+                    "sl_abs_lo_pct": float(min(_sl_lo_vals)) if _sl_lo_vals else None,
                 }
 
         return {"per_cell": per_cell, "k_tp_grid": k_tp_grid, "sl_base_grid": sl_base_grid, "atr_window": atr_window}

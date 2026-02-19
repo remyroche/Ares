@@ -103,13 +103,13 @@ def get_sample_weight_eval_model_defaults(cfg: Dict[str, Any] | None = None) -> 
             "max_depth": int(c.get("sample_weight_eval_et_max_depth", 6)),
             "min_samples_leaf": int(c.get("sample_weight_eval_et_min_samples_leaf", 50)),
             "max_features": c.get("sample_weight_eval_et_max_features", "sqrt"),
-            "n_jobs": int(c.get("sample_weight_eval_et_n_jobs", -1)),
+            "n_jobs": int(c.get("sample_weight_eval_et_n_jobs", 2)),
         },
         "randomforest": {
             "n_estimators": int(c.get("sample_weight_eval_rf_n_estimators", 80)),
             "max_depth": int(c.get("sample_weight_eval_rf_max_depth", 6)),
             "min_samples_leaf": int(c.get("sample_weight_eval_rf_min_samples_leaf", 50)),
             "max_features": c.get("sample_weight_eval_rf_max_features", "sqrt"),
-            "n_jobs": int(c.get("sample_weight_eval_rf_n_jobs", -1)),
+            "n_jobs": int(c.get("sample_weight_eval_rf_n_jobs", 2)),
         },
     }

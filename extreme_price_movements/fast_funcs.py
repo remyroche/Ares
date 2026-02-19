@@ -25,7 +25,7 @@ from src.utils.numba_funcs import (
 )
 from .utils import tprint
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _numba_ewma_nan_safe(x, alpha, adjust=False):
     n = len(x)
     out = np.full(n, np.nan, dtype=np.float32)
@@ -53,7 +53,7 @@ def _numba_ewma_nan_safe(x, alpha, adjust=False):
 
     return out
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _numba_rolling_sum_nan_safe(x, window):
     n = len(x)
     output = np.full(n, np.nan, dtype=np.float32)
@@ -81,7 +81,7 @@ def _numba_rolling_sum_nan_safe(x, window):
 
     return output
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def simulate_trade_numba(
     opens, highs, lows, closes,
     entry_px, side_int,
@@ -222,7 +222,7 @@ def apply_to_matrix(df: pd.DataFrame, func, *args) -> pd.DataFrame:
 
     return res_df
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _numba_rolling_robust_zscore_1d(x, window, quantile, eps):
     n = len(x)
     output = np.full(n, np.nan, dtype=np.float32)
@@ -376,7 +376,7 @@ def apply_to_frame_binary(df1: pd.DataFrame, df2: pd.DataFrame, func, *args) -> 
     tprint(f"Entering function: apply_to_frame_binary in fast_funcs.py")
     return apply_to_matrix_binary(df1, df2, func, *args)
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def numba_rsi_kernel(close, n):
     """
     RSI = 100 - 100 / (1 + RS)
@@ -440,7 +440,7 @@ def numba_rsi(close_df, n):
 
     return res_df
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def numba_atr_kernel(high, low, close, n):
     """
     ATR using EWM smoothing.
@@ -491,7 +491,7 @@ def _numba_atr_no_norm_parallel(high_mat, low_mat, close_mat, n):
 
     return out
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def numba_atr_no_norm_kernel(high, low, close, n):
     """
     ATR using EWM smoothing, without normalization by close.
@@ -595,7 +595,7 @@ def numba_zscore(df, n):
 
 # --- PARALLEL ROLLING HELPERS ---
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _numba_rolling_mean_1d(x, window):
     """Single-pass rolling mean with NaN handling."""
     n = len(x)
@@ -625,7 +625,7 @@ def _numba_rolling_mean_1d(x, window):
     return out
 
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _numba_rolling_std_1d(x, window):
     """Single-pass rolling std with K-shift for numerical stability."""
     n = len(x)
@@ -700,7 +700,7 @@ def _numba_rolling_std_1d(x, window):
     return out
 
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _numba_ewma_1d(x, alpha, adjust=False):
     """EWMA with NaN handling."""
     n = len(x)
@@ -880,7 +880,7 @@ def _numba_rolling_min_parallel(mat, window):
 
     return out
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _numba_rolling_max(x, window):
     n = len(x)
     out = np.full(n, np.nan, dtype=np.float32)
@@ -926,7 +926,7 @@ def _numba_rolling_max(x, window):
 
     return out
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _numba_rolling_min(x, window):
     n = len(x)
     out = np.full(n, np.nan, dtype=np.float32)
@@ -970,7 +970,7 @@ def _numba_rolling_min(x, window):
 
     return out
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _numba_rolling_quantile(x, window, q):
     n = len(x)
     out = np.full(n, np.nan, dtype=np.float32)
@@ -1021,7 +1021,7 @@ def _numba_rolling_quantile(x, window, q):
 
     return out
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _numba_rolling_quantile_dual_1d(x, window, q1, q2, out1, out2):
     n = len(x)
     # out1, out2 passed in to avoid allocation
@@ -1137,7 +1137,7 @@ def _numba_rolling_quantile_dual_parallel(mat, window, q1, q2):
 
     return out1, out2
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _numba_pct_change(x, n_shift):
     l = len(x)
     out = np.full(l, np.nan, dtype=np.float32)
@@ -1158,7 +1158,7 @@ def _numba_pct_change_parallel(mat, n_shift):
 
     return out
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _numba_grouped_rolling_mean_gather_kernel(col_vals, indices, window, out_vals):
     # Computes rolling mean of col_vals[indices] and stores in out_vals[indices]
 
@@ -1235,7 +1235,7 @@ def numba_grouped_rolling_mean(df: pd.DataFrame, group_series: pd.Series, window
 
     return res_df
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend, max_near_pct, min_rev_pct):
     """
     Computes "Peak Proximity" label and sample weights.
@@ -1606,7 +1606,7 @@ def compute_peak_labels_and_weights(close_df, atr_df, horizon, near_k, rev_k, is
 
     return l_out, w_out
   
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _numba_frac_diff_kernel(x, d, window, thres):
     # Fixed Width Window Frac Diff
     # w_k = -w_{k-1} * (d - k + 1) / k
@@ -1649,7 +1649,7 @@ def numba_frac_diff(df, d, window, thres=1e-5):
     tprint(f"Entering function: numba_frac_diff in fast_funcs.py")
     return apply_to_matrix(df, _numba_frac_diff_kernel, d, window, thres)
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _numba_rolling_zscore_nan_safe_1d(x, window, eps=1e-12):
     """
     True O(n) rolling z-score using incremental mean/variance updates.
@@ -1724,7 +1724,7 @@ def _numba_rolling_zscore_nan_safe_1d(x, window, eps=1e-12):
 
     return output
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _numba_causal_clip_with_ffill_1d(x, lo, hi):
     n = len(x)
     out = np.empty(n, dtype=np.float32)
@@ -1797,7 +1797,7 @@ def numba_rolling_zscore_fused(df, window, eps=1e-12):
 
     return res_df
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _numba_sign_consistency_1d(x, window):
     n = len(x)
     out = np.full(n, np.nan, dtype=np.float32)
@@ -1891,7 +1891,7 @@ def _numba_sign_consistency_1d(x, window):
 # SPECIALIST LABELING FUNCTIONS
 # ============================================================================
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _numba_quality_label(close, high, low, volume, signed_vol, horizon=6):
     """
     Compute quality score for Trap Specialist.
@@ -1983,7 +1983,7 @@ def compute_quality_labels(panel, horizon=6):
     return quality_df
 
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _numba_gamma_label(close, atr, horizon=6):
     """
     Compute realized volatility (gamma) label for Gamma Specialist.

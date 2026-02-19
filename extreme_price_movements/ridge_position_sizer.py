@@ -70,7 +70,7 @@ class ExitReason(Enum):
 # Numba-Optimized Trade Exit Simulator
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def simulate_trade_exit(
     highs: np.ndarray,
     lows: np.ndarray,

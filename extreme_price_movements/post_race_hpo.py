@@ -201,7 +201,7 @@ def suggest_extratrees(trial: optuna.Trial, *, base_random_state: int = 42) -> D
         "class_weight": class_weight,
         "min_impurity_decrease": min_impurity_decrease,
         "ccp_alpha": ccp_alpha,
-        "n_jobs": -1,
+        "n_jobs": 2,
         "random_state": base_random_state,
     }
 
@@ -245,7 +245,7 @@ def suggest_xgboost(trial: optuna.Trial, *, base_random_state: int = 42) -> Dict
         "max_delta_step": max_delta_step,
         "tree_method": tree_method,
         "grow_policy": grow_policy,
-        "n_jobs": -1,
+        "n_jobs": 2,
         "random_state": base_random_state,
         "eval_metric": "auc",
         "verbosity": 0,
@@ -304,7 +304,7 @@ def suggest_lightgbm(trial: optuna.Trial, *, base_random_state: int = 42) -> Dic
         "objective": "binary",
         "metric": "auc",
         "random_state": base_random_state,
-        "n_jobs": -1,
+        "n_jobs": 2,
         "verbose": -1,
     }
     params["_imbalance_mode"] = imbalance_mode
@@ -578,12 +578,12 @@ def _reconstruct_params(model_name: str, raw_params: Dict[str, Any], random_stat
         if not p.get("bootstrap", False):
             p.pop("max_samples", None)
 
-        p.update({"n_jobs": -1, "random_state": random_state})
+        p.update({"n_jobs": 2, "random_state": random_state})
 
     elif model_name == "xgboost":
         p.pop("use_scale_pos_weight", None)  # handled at fit time
         p.update({
-            "n_jobs": -1,
+            "n_jobs": 2,
             "random_state": random_state,
             "enable_categorical": False,
             "eval_metric": "auc",
@@ -598,7 +598,7 @@ def _reconstruct_params(model_name: str, raw_params: Dict[str, Any], random_stat
             "objective": "binary",
             "metric": "auc",
             "random_state": random_state,
-            "n_jobs": -1,
+            "n_jobs": 2,
             "verbose": -1,
         })
 

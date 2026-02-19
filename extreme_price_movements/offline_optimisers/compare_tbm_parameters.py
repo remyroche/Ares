@@ -1218,7 +1218,7 @@ def train_and_predict_per_bucket(
         if len(idx) < 100:
             continue
         Xb = X_flat.reindex(mi[idx]).fillna(0.0)
-        yb = (events.loc[idx, "label"].values == 1).astype(np.float32)
+        yb = events.loc[idx, "quality"].values.astype(np.float32)
         wb = sample_weight[idx].astype(np.float32, copy=False)
         pred[idx] = oof_predictions_by_time(Xb, yb, wb, n_folds=n_folds)
         del Xb, yb, wb
@@ -1241,6 +1241,70 @@ def per_slice_metrics(events: pd.DataFrame, score: np.ndarray, slice_col: str) -
             "timeout_rate": float((y == 0).mean()),
         }
     return out
+
+
+def compute_vectorized_soft_labels(
+    panel: Dict[str, pd.DataFrame],
+    tp_df: pd.DataFrame,
+    sl_df: pd.DataFrame,
+    horizon: int,
+    side: str = "long"
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Vectorized approximation of soft labels for offline optimization grid sweeps."""
+    c = panel["close"]
+    horizon_bars = int(horizon * 4)
+    
+    if side == "long":
+        future_high = panel["high"].rolling(window=horizon_bars, min_periods=1).max().shift(-horizon_bars)
+        future_low = panel["low"].rolling(window=horizon_bars, min_periods=1).min().shift(-horizon_bars)
+        mfe_global = future_high - c
+        mae_global = c - future_low
+    else:
+        future_low = panel["low"].rolling(window=horizon_bars, min_periods=1).min().shift(-horizon_bars)
+        future_high = panel["high"].rolling(window=horizon_bars, min_periods=1).max().shift(-horizon_bars)
+        mfe_global = c - future_low
+        mae_global = future_high - c
+    
+    tp_dist = c * tp_df
+    sl_dist = c * sl_df
+    
+    hit_tp_mask = mfe_global >= tp_dist
+    hit_sl_mask = mae_global >= sl_dist
+    
+    hit_tp_resolved = hit_tp_mask & (~hit_sl_mask)
+    hit_sl_resolved = hit_sl_mask
+    
+    lbl = pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.int8)
+    lbl[hit_tp_resolved] = 1
+    lbl[hit_sl_resolved] = -1
+    
+    ret = pd.DataFrame(0.0, index=c.index, columns=c.columns, dtype=np.float32)
+    ret_to = (c.shift(-horizon_bars) - c) / c
+    if side == "short":
+        ret_to = -ret_to
+    
+    ret[hit_tp_resolved] = tp_df[hit_tp_resolved].astype(np.float32)
+    ret[hit_sl_resolved] = -sl_df[hit_sl_resolved].astype(np.float32)
+    timeout_mask = ~(hit_tp_resolved | hit_sl_resolved)
+    ret[timeout_mask] = ret_to[timeout_mask].astype(np.float32)
+    
+    quality = pd.DataFrame(0.5, index=c.index, columns=c.columns, dtype=np.float32)
+    
+    sl_dist_safe = np.maximum(sl_dist, 1e-8)
+    mae_ratio = mae_global / sl_dist_safe
+    qual_tp = 1.0 - (mae_ratio * 0.5)
+    quality[hit_tp_resolved] = np.clip(qual_tp[hit_tp_resolved], 0.51, 1.0).astype(np.float32)
+    
+    tp_dist_safe = np.maximum(tp_dist, 1e-8)
+    mfe_ratio = mfe_global / tp_dist_safe
+    qual_sl = (mfe_ratio * 0.5)
+    quality[hit_sl_resolved] = np.clip(qual_sl[hit_sl_resolved], 0.0, 0.49).astype(np.float32)
+    
+    rel_prog = ret_to / tp_dist_safe
+    qual_to = 0.5 + np.clip(rel_prog * 0.4, -0.4, 0.4)
+    quality[timeout_mask] = qual_to[timeout_mask].astype(np.float32)
+
+    return lbl, ret, quality
 
 
 def evaluate_config(
@@ -1291,18 +1355,19 @@ def evaluate_config(
             key2 = key1
 
             if key2 not in layer2_cache:
-                lbl, ret = compute_triple_barrier_labels(artifacts.panel, tp_df, sl_df, h, side=side)
-                layer2_cache[key2] = (lbl, ret)
+                lbl, ret, qual = compute_vectorized_soft_labels(artifacts.panel, tp_df, sl_df, h, side=side)
+                layer2_cache[key2] = (lbl, ret, qual)
                 tprint(f"[eval:{cfg_id}] label_cache miss h={h} side={side}")
             else:
                 tprint(f"[eval:{cfg_id}] label_cache hit h={h} side={side}")
-            lbl, ret = layer2_cache[key2]
+            lbl, ret, qual = layer2_cache[key2]
 
             # Stack once and create DataFrame efficiently
             lbl_s = lbl.stack(future_stack=True)
             stacked_idx = lbl_s.index
             label_arr = lbl_s.to_numpy(dtype=np.float32, copy=False)
             payoff_arr = ret.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
+            qual_arr = qual.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
             tp_arr = tp_df.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
             sl_arr = sl_df.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
             
@@ -1311,6 +1376,7 @@ def evaluate_config(
                 {
                     "label": label_arr,
                     "payoff": payoff_arr,
+                    "quality": qual_arr,
                     "tp": tp_arr,
                     "sl": sl_arr,
                 },
@@ -1319,7 +1385,7 @@ def evaluate_config(
             df.index.names = ["ts", "symbol"]
             
             # Early filtering: drop NaNs before concatenation
-            df = df.dropna(subset=["label", "payoff", "tp", "sl"])
+            df = df.dropna(subset=["label", "payoff", "quality", "tp", "sl"])
             
             # Early filtering: drop timeouts early if they won't pass min_raw_events
             # This reduces memory before pd.concat
@@ -1337,12 +1403,13 @@ def evaluate_config(
             events_rows.append(df)
             
             # Free intermediate arrays immediately
-            del label_arr, payoff_arr, tp_arr, sl_arr, stacked_idx, lbl_s
+            del label_arr, payoff_arr, qual_arr, tp_arr, sl_arr, stacked_idx, lbl_s
             gc.collect()
 
     events = pd.concat(events_rows, ignore_index=True)
     events["label"] = events["label"].astype(np.float32, copy=False)
     events["payoff"] = events["payoff"].astype(np.float32, copy=False)
+    events["quality"] = events["quality"].astype(np.float32, copy=False)
     events["tp"] = events["tp"].astype(np.float32, copy=False)
     events["sl"] = events["sl"].astype(np.float32, copy=False)
     events["horizon"] = events["horizon"].astype(np.int16, copy=False)
@@ -2289,6 +2356,7 @@ def _apply_prod_aligned_tp_centering(
     artifacts: RunArtifacts,
     bucket_masks: Dict[str, pd.DataFrame],
     cfg_runtime: Optional[Dict[str, Any]] = None,
+    preserve_sl_axis: bool = False,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     runtime = cfg_runtime or CFG
     if not bool(runtime.get("tbm_prod_aligned_tp_enable", True)):
@@ -2332,50 +2400,53 @@ def _apply_prod_aligned_tp_centering(
 
     out = []
     for c in cfgs:
-        prev_tp_base = float(c.get("tp_base_pct", c.get("tp_abs_pct", float(aligned["tp_base_pct"]))))
-        prev_tp_lo = float(c.get("tp_abs_lo_pct", tp_lo_new))
-        for cand in ladder:
-            c2 = dict(c)
-            tp_base_new = float(cand.get("tp_base_pct", aligned["tp_base_pct"]))
-            c2["tp_base_pct"] = tp_base_new
-            c2["tp_abs_pct"] = tp_base_new
-            c2["tp_abs_lo_pct"] = max(prev_tp_lo, tp_lo_new)
-            c2.setdefault("prod_tp_abs_lo_pct", c2["tp_abs_lo_pct"])
-            c2["prod_aligned_tp"] = {
-                "atr_q": float(cand.get("atr_q", aligned["atr_q"])),
-                "q": float(cand.get("q", aligned["q"])),
-                "alpha": float(cand.get("alpha", aligned["alpha"])),
-                "margin_mult": float(aligned["margin_mult"]),
-                "fee_pct_total": float(aligned["fee_pct_total"]),
-                "tp_min_tradeable": float(aligned["tp_min_tradeable"]),
-                "s_H2": float(aligned.get("scaling", {}).get("s2", aligned["s_worst"])),
-                "tp_atr_anchor": float(aligned["tp_atr_anchor"]),
-                "tp_base_pct_final": float(tp_base_new),
-                "tp_abs_lo_pct_final": float(c2["tp_abs_lo_pct"]),
-                "worst_horizon": int(aligned["worst_horizon"]),
-                "tp_base_pre_override": prev_tp_base,
-                "tp_abs_lo_pre_override": prev_tp_lo,
-                "tp_eff_targets": cand.get("tp_eff_targets", {}),
-                "tp_eff_bands": cand.get("tp_eff_bands", {}),
-                "scaling": cand.get("scaling", aligned.get("scaling", {})),
-                "atr_quantiles": aligned.get("atr_quantiles", {}),
-            }
-            if bool(runtime.get("prod_sl_tp_wide_enable", True)):
-                sup_add = float(runtime.get("prod_sl_tp_superiority_add", c2.get("prod_sl_tp_superiority_add", 0.0075)))
-                if sup_add > 0.02:
-                    tprint(
-                        f"[prod_sl_tp_policy] NOTE superiority_add={sup_add:.4f} is very high vs typical TP levels; "
-                        "this can over-prune SL ladder."
-                    )
-                policy = SLTPPolicy(
-                    sl_as_tp_pct_grid=tuple(float(x) for x in runtime.get("prod_sl_tp_pct_grid", [0.20, 0.25, 0.30, 0.35, 0.40, 0.50, 0.60, 0.75, 0.90, 1.00, 1.25])),
-                    superiority_add=sup_add,
-                    drop_on_violation=bool(runtime.get("prod_sl_tp_drop_on_violation", True)),
+        # Preserve the grid's own tp_base_pct and tp_abs_lo_pct — these are first-class
+        # optimisation axes. The prod-aligned centering only injects production metadata
+        # (prod_tp_abs_lo_pct, prod_aligned_tp) used for admissibility reporting, without
+        # overwriting the barrier parameters used for actual barrier computation.
+        grid_tp_base = float(c.get("tp_base_pct", c.get("tp_abs_pct", float(aligned["tp_base_pct"]))))
+        grid_tp_lo = float(c.get("tp_abs_lo_pct", tp_lo_new))
+        c2 = dict(c)
+        # prod_tp_abs_lo_pct: production floor for admissibility reporting only.
+        # Uses max(grid floor, ATR-derived floor) so production reporting is conservative,
+        # but the barrier computation still uses the grid's tp_abs_lo_pct.
+        c2["prod_tp_abs_lo_pct"] = max(grid_tp_lo, tp_lo_new)
+        c2["prod_aligned_tp"] = {
+            "atr_q": float(aligned["atr_q"]),
+            "q": float(aligned["q"]),
+            "alpha": float(aligned["alpha"]),
+            "margin_mult": float(aligned["margin_mult"]),
+            "fee_pct_total": float(aligned["fee_pct_total"]),
+            "tp_min_tradeable": float(aligned["tp_min_tradeable"]),
+            "s_H2": float(aligned.get("scaling", {}).get("s2", aligned["s_worst"])),
+            "tp_atr_anchor": float(aligned["tp_atr_anchor"]),
+            "tp_base_pct_final": grid_tp_base,
+            "tp_abs_lo_pct_final": c2["prod_tp_abs_lo_pct"],
+            "worst_horizon": int(aligned["worst_horizon"]),
+            "tp_base_pre_override": grid_tp_base,
+            "tp_abs_lo_pre_override": grid_tp_lo,
+            "tp_eff_targets": (ladder[0].get("tp_eff_targets", {}) if ladder else {}),
+            "tp_eff_bands": (ladder[0].get("tp_eff_bands", {}) if ladder else {}),
+            "scaling": aligned.get("scaling", {}),
+            "atr_quantiles": aligned.get("atr_quantiles", {}),
+        }
+        if preserve_sl_axis or not bool(runtime.get("prod_sl_tp_wide_enable", True)):
+            # Stage 1: sl_as_tp_pct is a first-class grid axis — do not expand/override it.
+            out.append(c2)
+        else:
+            sup_add = float(runtime.get("prod_sl_tp_superiority_add", c2.get("prod_sl_tp_superiority_add", 0.0075)))
+            if sup_add > 0.02:
+                tprint(
+                    f"[prod_sl_tp_policy] NOTE superiority_add={sup_add:.4f} is very high vs typical TP levels; "
+                    "this can over-prune SL ladder."
                 )
-                tp_eff_ref = float((cand.get("tp_eff_targets", {}) or {}).get("H2", float("nan")))
-                out.extend(expand_configs_wide_sl_tp_additive_superiority(c2, tp_eff=tp_eff_ref, policy=policy))
-            else:
-                out.append(c2)
+            policy = SLTPPolicy(
+                sl_as_tp_pct_grid=tuple(float(x) for x in runtime.get("prod_sl_tp_pct_grid", [0.20, 0.25, 0.30, 0.35, 0.40, 0.50, 0.60, 0.75, 0.90, 1.00, 1.25])),
+                superiority_add=sup_add,
+                drop_on_violation=bool(runtime.get("prod_sl_tp_drop_on_violation", True)),
+            )
+            tp_eff_ref = float((aligned.get("tp_eff_targets", {}) or {}).get("H2", float("nan")))
+            out.extend(expand_configs_wide_sl_tp_additive_superiority(c2, tp_eff=tp_eff_ref, policy=policy))
 
     # de-duplicate expanded grid
     uniq = {config_id(c): c for c in out}
@@ -2509,14 +2580,16 @@ def stage1_grid(cfg_runtime: Optional[Dict[str, Any]] = None) -> List[Dict[str, 
     # and wastes compute. atr_norm normalises by rolling median ATR so the barrier scales
     # with the event's volatility spike rather than the absolute ATR level.
     # tp_base_pct = base TP when atr/median_atr == 1.0.
-    # base_atr_window: [336, 504, 672] (14d–28d). Prior run confirmed 672>504>336.
+    # k_tp: [0.4, 0.5] added — tighter TP → higher tp_hit → lower sl_to_tp ratio.
+    # sl_as_tp_pct: [0.8, 1.0, 1.2] added — wider SL relative to TP → lower sl_to_tp ratio.
+    # tp_base_pct: [0.020] added — higher absolute TP floor.
+    # base_atr_window: [336, 504, 672, 840] (14d–35d). Prior run confirmed 672>504>336.
     # 84/168 excluded: too short, produces high timeout + low bind + low coverage.
-    # 840 reserved for Stage 2A upward probe if winner lands at 672.
     for k_tp, tp_base, sl_as_tp, atr_win in product(
-        [0.7, 1.0, 1.25, 1.6],
-        [0.006, 0.010, 0.015],  # base TP at median-vol: 0.6%, 1.0%, 1.5%
-        [0.4, 0.6],
-        [336, 504, 672],   # 14d / 21d / 28d slow median reference (prior run: 672>504>336)
+        [0.4, 0.5, 0.7, 1.0, 1.25, 1.6],
+        [0.006, 0.010, 0.015, 0.020, 0.025, 0.030],  # 0.025/0.030 needed for k_tp=0.4 to clear H2 floor guard
+        [0.4, 0.6, 0.8, 1.0, 1.2],
+        [336, 504, 672, 840],  # 14d / 21d / 28d / 35d slow median reference
     ):
         c = base_param_template(cfg_runtime)
         c.update(
@@ -2649,9 +2722,11 @@ _PROMOTE_MIN_TP_SEP: float = 0.05     # min_cell_tp_sep floor (5pp)
 _PROMOTE_MIN_AUC: float = 0.56        # min_cell_auc floor (lowered from 0.57 for crypto noise)
 _PROMOTE_MIN_AP_LIFT: float = 1.25    # AP / base_rate — model must lift precision 25% above random
 _PROMOTE_MIN_TP_OVER_SL: float = 1.05 # E[r|TP] / abs(E[r|SL]) — 5% payoff edge required
-_PROMOTE_MAX_SL_TO_TP: float = 3      # SL-hit / TP-hit ratio cap — prevents SL-dominated labelers
+_PROMOTE_MAX_SL_TO_TP: float = 3      # SL-hit / TP-hit ratio cap — informational only; fee_ev gate is the binding constraint
 _MAX_BARRIER_RATIO: float = 1.0       # SL-mean / TP-mean cap — ensures SL isn't too high compared to TP
 _AVG_AUC_THRESHOLD: float = 0.54      # Minimum average AUC for the selected set of geometries
+_ROUND_TRIP_FEE: float = 0.005        # 0.5% round-trip fee (entry + exit) applied to both TP and SL legs
+_PROMOTE_MIN_FEE_EV: float = 0.0      # fee-adjusted EV must be > 0: tp_hit*(tp_mean-fee) - sl_hit*(sl_mean+fee) > 0
 
 # Tier definitions for the feasible-set builder.
 # Each tier is a tuple of (cov_min, bind_min, timeout_max, tp_sep_min, auc_min, ap_lift_min, tp_over_sl_min).
@@ -2703,9 +2778,12 @@ def _build_feasible_set(
             mask = mask & (df["min_cell_ap_lift"].fillna(0.0) >= ap_lift_min)
         if tp_over_sl_min > 0.0 and "min_cell_tp_over_sl" in df.columns:
             mask = mask & (df["min_cell_tp_over_sl"].fillna(0.0) >= tp_over_sl_min)
-        # sl_to_tp cap: reject SL-dominated labelers (sl_hit / tp_hit > 2.04).
-        if "sl_to_tp" in df.columns:
-            mask = mask & (df["sl_to_tp"].fillna(999.0) <= _PROMOTE_MAX_SL_TO_TP)
+        # Fee-adjusted EV gate: tp_hit*(tp_mean - fee) - sl_hit*(sl_mean + fee) > 0.
+        # This is a hard tradeability constraint applied at ALL tiers — a geometry that
+        # cannot generate positive expected value after 0.5% round-trip fees is not tradeable
+        # regardless of its learnability. Applied at all tiers (never relaxed).
+        if "fee_ev" in df.columns:
+            mask = mask & (df["fee_ev"].fillna(-999.0) > _PROMOTE_MIN_FEE_EV)
         # barrier_ratio cap: ensure SL size isn't too high compared to TP size.
         if "barrier_ratio" in df.columns:
             mask = mask & (df["barrier_ratio"].fillna(999.0) <= _MAX_BARRIER_RATIO)
@@ -2760,7 +2838,7 @@ def _jaccard_distance(v1: np.ndarray, v2: np.ndarray) -> float:
 def _diverse_subset(
     feasible_df: pd.DataFrame,
     details: Dict[str, Any],
-    run_vectors: Dict[str, np.ndarray],
+    run_vectors: Optional[Dict[str, np.ndarray]] = None,
     min_distance: float = 1.0,
     max_configs: int = 20,
 ) -> pd.DataFrame:
@@ -2768,6 +2846,8 @@ def _diverse_subset(
 
     Also enforces a strict check against opposite labels (TP vs SL on same event).
     """
+    if run_vectors is None:
+        run_vectors = {}
     selected_indices: List[int] = []
     selected_cfgs: List[Dict[str, Any]] = []
     selected_ids: List[str] = []
@@ -2877,6 +2957,9 @@ def _build_per_cell_feasible_sets(
     Returns dict: cell_key -> diverse feasible DataFrame (subset of out_df rows).
     """
     # Pre-filter to structurally valid configs only.
+    # Fallback chain: prefer hard_gate+pass_cells+timeout_range, relax each in turn,
+    # and finally use all configs (pass_cells==total_cells) when hard_gate is universally
+    # False (e.g. econ_ok fails for all configs due to sl_to_tp guardrail).
     _to_r_col = out_df["timeout_range"].fillna(999.0) if "timeout_range" in out_df.columns else pd.Series(0.0, index=out_df.index)
     struct_mask = (out_df["hard_gate"] == True) & (out_df["pass_cells"] == out_df["total_cells"]) & (_to_r_col <= _MAX_TIMEOUT_RANGE)
     base_df = out_df[struct_mask].copy()
@@ -2884,6 +2967,15 @@ def _build_per_cell_feasible_sets(
         base_df = out_df[(out_df["hard_gate"] == True) & (out_df["pass_cells"] == out_df["total_cells"])].copy()
     if base_df.empty:
         base_df = out_df[out_df["hard_gate"] == True].copy()
+    if base_df.empty:
+        # hard_gate universally False (e.g. econ_ok blocks all) — fall back to
+        # configs that at least passed all 12 cells structurally.
+        base_df = out_df[out_df["pass_cells"] == out_df["total_cells"]].copy()
+        if not base_df.empty:
+            tprint(f"[per_cell] hard_gate=False for all configs; using pass_cells==total_cells fallback ({len(base_df)} configs)")
+    if base_df.empty:
+        base_df = out_df.copy()
+        tprint(f"[per_cell] WARNING: using all {len(base_df)} configs as fallback (no structural filter passed)")
 
     result: Dict[str, pd.DataFrame] = {}
 
@@ -2906,6 +2998,16 @@ def _build_per_cell_feasible_sets(
             tp_over_sl_cell = cell_m.get("tp_over_sl", float("nan"))
             dir_sup_cell = cell_m.get("dir_superiority_top_decile", float("nan"))
             barrier_ratio_cell = cell_m.get("barrier_ratio", float("nan"))
+            # Fee-adjusted EV: tp_hit*(tp_mean - fee) - sl_hit*(sl_mean + fee)
+            # Uses actual barrier sizes from the cell — not a ratio proxy.
+            _tp_h = cell_m.get("tp_hit", float("nan"))
+            _sl_h = cell_m.get("sl_hit", float("nan"))
+            _tp_m = cell_m.get("tp_mean", float("nan"))
+            _sl_m = cell_m.get("sl_mean", float("nan"))
+            if not any(math.isnan(v) for v in [_tp_h, _sl_h, _tp_m, _sl_m]):
+                fee_ev_cell = _tp_h * (_tp_m - _ROUND_TRIP_FEE) - _sl_h * (_sl_m + _ROUND_TRIP_FEE)
+            else:
+                fee_ev_cell = float("nan")
             cell_rows.append({
                 "config_id": cid,
                 "min_cell_auc": auc_cell if not math.isnan(auc_cell) else 0.0,
@@ -2921,6 +3023,7 @@ def _build_per_cell_feasible_sets(
                 "min_cell_tp_over_sl": tp_over_sl_cell if not math.isnan(tp_over_sl_cell) else 0.0,
                 "min_cell_dir_superiority": dir_sup_cell if not math.isnan(dir_sup_cell) else 0.0,
                 "barrier_ratio": barrier_ratio_cell if not math.isnan(barrier_ratio_cell) else 999.0,
+                "fee_ev": fee_ev_cell,
             })
 
         if not cell_rows:
@@ -3028,6 +3131,18 @@ def _per_bucket_metrics_from_details(
     payoff_vals = [p for p in payoffs if not math.isnan(p)]
     cell_dispersion = float(np.std(payoff_vals)) if len(payoff_vals) > 1 else 0.0
 
+    # Fee-adjusted EV: min across the bucket's cells.
+    # EV = tp_hit*(tp_mean - fee) - sl_hit*(sl_mean + fee)
+    fee_evs = []
+    for c in cells:
+        _tp_h = c.get("tp_hit", float("nan"))
+        _sl_h = c.get("sl_hit", float("nan"))
+        _tp_m = c.get("tp_mean", float("nan"))
+        _sl_m = c.get("sl_mean", float("nan"))
+        if not any(math.isnan(v) for v in [_tp_h, _sl_h, _tp_m, _sl_m]):
+            fee_evs.append(_tp_h * (_tp_m - _ROUND_TRIP_FEE) - _sl_h * (_sl_m + _ROUND_TRIP_FEE))
+    fee_ev_min = float(np.min(fee_evs)) if fee_evs else float("nan")
+
     return {
         "config_id":          cid,
         "bucket":             bucket_name,
@@ -3048,6 +3163,7 @@ def _per_bucket_metrics_from_details(
         "timeout_rate":       round(_safe_min(timeouts), 4)  if not math.isnan(_safe_min(timeouts)) else 1.0,
         "sl_to_tp":           round(sl_to_tp_max, 4)         if not math.isnan(sl_to_tp_max)       else 999.0,
         "barrier_ratio":      round(barrier_max, 4)          if not math.isnan(barrier_max)        else 999.0,
+        "fee_ev":             round(fee_ev_min, 6)           if not math.isnan(fee_ev_min)         else float("nan"),
     }
 
 
@@ -3445,6 +3561,7 @@ def run(args: argparse.Namespace) -> None:
         artifacts=artifacts,
         bucket_masks=bucket_masks,
         cfg_runtime=runtime_cfg,
+        preserve_sl_axis=True,
     )
     if stage1_prod_aligned_meta:
         tprint(
@@ -3540,6 +3657,7 @@ def run(args: argparse.Namespace) -> None:
             artifacts=artifacts,
             bucket_masks=bucket_masks,
             cfg_runtime=runtime_cfg,
+            preserve_sl_axis=True,
         )
         if stage2_prod_aligned_meta:
             tprint(

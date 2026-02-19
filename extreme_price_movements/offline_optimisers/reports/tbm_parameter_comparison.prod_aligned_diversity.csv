@@ -1,0 +1,2 @@
+bucket,unique_tp_base_pct,unique_tp_eff_h2,unique_tp_eff_h4,unique_tp_eff_h8,h2_min,h2_max,diversity_pass
+atr_norm,0,1,1,1,0.01,0.01,False

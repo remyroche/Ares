@@ -80,7 +80,7 @@ def purged_embargoed_splits(
 # Fast MDI Metrics
 # ======================================================================================
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _numba_compute_mdi_metrics_tree(
     children_left, children_right, feature, weighted_n_node_samples,
     impurity, gains, root_n, depth_discount, eps,
@@ -454,7 +454,7 @@ def mdi_feature_selection_v3(
             min_samples_leaf=default_leaf,
             min_samples_split=max(2, 3 * default_leaf),
             max_features='sqrt',
-            n_jobs=-1,
+            n_jobs=2,
             random_state=42
         )
 
@@ -894,7 +894,7 @@ mdi_feature_selection_leakage_safe = mdi_feature_selection_v3
 # Top-K Precision Feature Selection (Report 2026-02-11)
 # ======================================================================================
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _compute_spearman_fast(x: np.ndarray, y: np.ndarray) -> float:
     """Fast Spearman correlation using rank computation."""
     n = len(x)
@@ -934,7 +934,7 @@ def _compute_spearman_fast(x: np.ndarray, y: np.ndarray) -> float:
     return num / np.sqrt(den_x * den_y)
 
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _bin_and_compute_pos_rates_numba(
     feat_vals: np.ndarray,
     y_binary: np.ndarray,
@@ -995,7 +995,7 @@ def compute_decile_ranking_importance(
     n_bootstrap: int = 20,
     sample_weight: Optional[np.ndarray] = None,
     random_state: int = 42,
-    n_jobs: int = -1
+    n_jobs: int = 2
 ) -> pd.Series:
     """
     Compute feature importance based on quintile-based monotonic ranking strength.

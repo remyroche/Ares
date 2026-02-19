@@ -69,7 +69,7 @@ class TFModel:
             max_depth=None,   # Let v3 suggest depth
             min_samples_leaf=50,
             max_features='sqrt',
-            n_jobs=-1,
+            n_jobs=2,
             random_state=42
         )
 

@@ -643,14 +643,19 @@ def optimize_component_weights(
 
     def _obj(trial: "optuna.trial.Trial") -> float:
         alphas = {n: trial.suggest_float(f"alpha_{n}", 0.0, 1.5) for n in names}
-        w = combine_weights_safely(components, alphas, min_n_eff_ratio=min_n_eff_ratio)
+        
+        # Determine constraints: allow Optuna to dynamically search these if they aren't strictly locked
+        trial_n_eff = trial.suggest_float("min_n_eff_ratio", 0.10, 0.90) if cfg_runtime is None or "sample_weight_opt_min_n_eff_ratio" not in cfg_runtime else min_n_eff_ratio
+        trial_top1pct = trial.suggest_float("max_top1pct", 0.05, 0.20) if cfg_runtime is None or "sample_weight_opt_max_top1pct" not in cfg_runtime else max_top1pct
+        
+        w = combine_weights_safely(components, alphas, min_n_eff_ratio=trial_n_eff)
         score = constrained_objective(
             w, X, y_ret, label_intervals,
             model_family=production_model,
             n_splits=n_splits,
             embargo_bars=embargo_bars,
-            min_n_eff_ratio=min_n_eff_ratio,
-            max_top1pct=max_top1pct,
+            min_n_eff_ratio=trial_n_eff,
+            max_top1pct=trial_top1pct,
             cfg_runtime=cfg_runtime,
             bucket_codes=bucket_codes,
         )
@@ -672,7 +677,8 @@ def optimize_component_weights(
 
     best_params = study.best_params if len(study.trials) else {}
     alphas = {n: float(best_params.get(f"alpha_{n}", 1.0)) for n in names}
-    optimized = combine_weights_safely(components, alphas, min_n_eff_ratio=min_n_eff_ratio)
+    best_n_eff = float(best_params.get("min_n_eff_ratio", min_n_eff_ratio))
+    optimized = combine_weights_safely(components, alphas, min_n_eff_ratio=best_n_eff)
 
     diagnostics = {
         "best_trial": int(study.best_trial.number) if study.best_trial is not None else -1,

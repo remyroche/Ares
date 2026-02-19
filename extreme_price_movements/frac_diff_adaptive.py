@@ -36,7 +36,7 @@ def get_weights_ffd(d: float, thres: float = 1e-5) -> np.ndarray:
     w = np.array(w[::-1], dtype=np.float64)
     return w
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _numba_apply_weights(x: np.ndarray, weights: np.ndarray) -> np.ndarray:
     """
     Apply convolution with weights, handling NaNs.

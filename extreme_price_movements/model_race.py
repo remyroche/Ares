@@ -230,7 +230,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             "max_depth": 7,
             "min_samples_leaf": 50,
             "max_features": "sqrt",
-            "n_jobs": -1,
+            "n_jobs": 2,
             "random_state": 42
         }
         candidates["extratrees"] = Float64Wrapper(ExtraTreesClassifier(**et_params))
@@ -248,7 +248,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             "gamma": 1.0,                   
             "subsample": 0.8,
             "colsample_bytree": 0.8,
-            "n_jobs": -1,
+            "n_jobs": 2,
             "random_state": 42,
             "enable_categorical": False,
             "eval_metric": ["auc", "aucpr"],  # Track PR-AUC for ranking quality
@@ -268,7 +268,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             "lambda_l2": 15.0,
             "lambda_l1": 0.0,
             "colsample_bytree": 0.8,
-            "n_jobs": -1,
+            "n_jobs": 2,
             "random_state": 42,
             "verbose": -1,
             "is_unbalance": True,  # Handle class imbalance for better PR-AUC

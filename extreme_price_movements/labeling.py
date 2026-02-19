@@ -9,13 +9,13 @@ OUT_TO = np.int8(1)
 OUT_TP = np.int8(2)
 _QUALITY_EPS = 1e-9
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _clip_scalar(val, a_min, a_max):
     if val < a_min: return a_min
     if val > a_max: return a_max
     return val
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _soft_squash_pos(val):
     # Monotone compression to avoid hard saturation when raw ratios spike.
     # For val>=0: maps to [0,1).
@@ -23,7 +23,7 @@ def _soft_squash_pos(val):
         return 0.0
     return val / (1.0 + val)
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl_arr, horizon, side):
     """
     Triple barrier labeling returning 3-way outcome and quality scores.
@@ -175,11 +175,16 @@ def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl
                 outcomes[i] = OUT_TP
                 returns[i] = activation
                 exit_idxs[i] = j
+                
+                # Time Penalty: explicit penalization of duration exposure
+                time_elapsed = max(0, tt - entry_t)
+                time_penalty = min(0.15, 0.15 * (time_elapsed / max(limit_ns, 1)))
+                
                 # Win Quality: how much heat did we take?
-                # 1.0 - (MAE / SL_dist) * 0.5
+                # 1.0 - (MAE / SL_dist) * 0.5 - time_penalty
                 den_sl = max(entry_p * abs(sl), _QUALITY_EPS)
                 mae_ratio = mae_val / den_sl
-                qual = 1.0 - (mae_ratio * 0.5)
+                qual = 1.0 - (mae_ratio * 0.5) - time_penalty
                 quality[i] = _clip_scalar(qual, 0.51, 1.0)
                 exit_found = True
                 break
@@ -211,7 +216,7 @@ def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl
     quality = np.clip(quality, 0.0, 1.0).astype(np.float32)
     return outcomes, returns, quality, exit_idxs
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _numba_trailing_atr_labeling(
     times, opens, highs, lows, closes, atr_pct,
     k_sl, k_pt, k_tp, horizon_hours
@@ -369,7 +374,7 @@ def compute_trailing_atr_labels(
 
     return out_labels, out_returns
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _numba_triple_barrier(times, opens, highs, lows, closes, tp_arr, sl_arr, horizon, side):
     """
     Trailing-profit barrier labeling with early stall exit.
@@ -598,7 +603,7 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
             lbs, rets, _ = _numba_triple_barrier(times, o_arr, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int)
             return asset, lbs, rets, None
 
-    results = Parallel(n_jobs=-1, prefer="threads")(
+    results = Parallel(n_jobs=2, prefer="threads")(
         delayed(_process_asset)(asset) for asset in assets
     )
 

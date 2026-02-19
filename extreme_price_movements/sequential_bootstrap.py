@@ -52,7 +52,7 @@ def get_label_intervals(label_times: pd.DataFrame, price_times: pd.DatetimeIndex
 
     return i0, i1, valid
 
-@jit(nopython=True, cache=True)
+@jit(nopython=True, nogil=True, cache=True)
 def _seq_bootstrap_numba(
     starts: np.ndarray,
     ends: np.ndarray,

@@ -1583,7 +1583,8 @@ def evaluate_config(
         "n": 0, "n_eval_kept": 0, "tp_hit": 0.0, "sl_hit": 0.0, "timeout": 1.0,
         "tp_hit_kept": 0.0, "sl_hit_kept": 0.0, "timeout_kept": 1.0,
         "bind": 0.0, "balance": 0.0, "sl_to_tp": float("nan"),
-        "tp_mean": float("nan"), "sl_mean": float("nan"), "payoff_mean": float("nan"),
+        "tp_mean": float("nan"), "sl_mean": float("nan"), "barrier_ratio": float("nan"),
+        "payoff_mean": float("nan"),
         "max_timeout_threshold": float("nan"), "ok": False,
         "ic_payoff": float("nan"), "ic_label": float("nan"),
         "auc_label": float("nan"), "tp_sep_top10": float("nan"),
@@ -1635,6 +1636,7 @@ def evaluate_config(
             "sl_to_tp": round(sl_hit_kept / max(tp_hit_kept, EPS), 4),
             "tp_mean": float(g["tp"].mean()),
             "sl_mean": float(g["sl"].mean()),
+            "barrier_ratio": round(float((g["sl"].mean() + 0.003) / max(g["tp"].mean(), EPS)), 4),
             "payoff_mean": float(g["payoff"].mean()),
             "max_timeout_threshold": round(max_timeout_h, 4),
             "ok": ok,
@@ -1863,6 +1865,7 @@ def evaluate_config(
     cell_ap_lifts = [v["ap_lift"] for v in bucket_h_metrics.values() if not math.isnan(v.get("ap_lift", float("nan")))]
     cell_tp_over_sls = [v["tp_over_sl"] for v in bucket_h_metrics.values() if not math.isnan(v.get("tp_over_sl", float("nan")))]
     cell_dir_sups = [v["dir_superiority_top_decile"] for v in bucket_h_metrics.values() if not math.isnan(v.get("dir_superiority_top_decile", float("nan")))]
+    cell_barrier_ratios = [v["barrier_ratio"] for v in bucket_h_metrics.values() if not math.isnan(v.get("barrier_ratio", float("nan")))]
     cell_dispersion = float(np.std(cell_payoffs)) if len(cell_payoffs) > 1 else 0.0
     min_cell_payoff = float(np.min(cell_payoffs)) if cell_payoffs else 0.0
     min_cell_ic = float(np.min(cell_ics)) if cell_ics else 0.0
@@ -1881,6 +1884,7 @@ def evaluate_config(
     median_cell_tp_over_sl = float(np.median(cell_tp_over_sls)) if cell_tp_over_sls else float("nan")
     min_cell_dir_superiority = float(np.min(cell_dir_sups)) if cell_dir_sups else float("nan")
     median_cell_dir_superiority = float(np.median(cell_dir_sups)) if cell_dir_sups else float("nan")
+    max_barrier_ratio = float(np.max(cell_barrier_ratios)) if cell_barrier_ratios else float("nan")
 
     # Config-level bind/balance (aggregate across all events).
     tp_hit_agg = float((events["label"] == 1).mean()) if len(events) else 0.0
@@ -2140,6 +2144,7 @@ def evaluate_config(
         "bind": round(bind_agg, 4),
         "balance": round(balance_agg, 4),
         "sl_to_tp": round(sl_to_tp_agg, 4),
+        "barrier_ratio": max_barrier_ratio,
         "flag_degenerate_timeout": flag_degenerate_timeout,
         "flag_degenerate_sl": flag_degenerate_sl,
         "flag_degenerate_tp": flag_degenerate_tp,
@@ -2645,6 +2650,8 @@ _PROMOTE_MIN_AUC: float = 0.56        # min_cell_auc floor (lowered from 0.57 fo
 _PROMOTE_MIN_AP_LIFT: float = 1.25    # AP / base_rate — model must lift precision 25% above random
 _PROMOTE_MIN_TP_OVER_SL: float = 1.05 # E[r|TP] / abs(E[r|SL]) — 5% payoff edge required
 _PROMOTE_MAX_SL_TO_TP: float = 3      # SL-hit / TP-hit ratio cap — prevents SL-dominated labelers
+_MAX_BARRIER_RATIO: float = 1.0       # SL-mean / TP-mean cap — ensures SL isn't too high compared to TP
+_AVG_AUC_THRESHOLD: float = 0.54      # Minimum average AUC for the selected set of geometries
 
 # Tier definitions for the feasible-set builder.
 # Each tier is a tuple of (cov_min, bind_min, timeout_max, tp_sep_min, auc_min, ap_lift_min, tp_over_sl_min).
@@ -2699,6 +2706,9 @@ def _build_feasible_set(
         # sl_to_tp cap: reject SL-dominated labelers (sl_hit / tp_hit > 2.04).
         if "sl_to_tp" in df.columns:
             mask = mask & (df["sl_to_tp"].fillna(999.0) <= _PROMOTE_MAX_SL_TO_TP)
+        # barrier_ratio cap: ensure SL size isn't too high compared to TP size.
+        if "barrier_ratio" in df.columns:
+            mask = mask & (df["barrier_ratio"].fillna(999.0) <= _MAX_BARRIER_RATIO)
         result = df[mask]
         if not result.empty:
             if tier > 0:
@@ -2723,31 +2733,82 @@ def _param_distance(cfg_a: Dict[str, Any], cfg_b: Dict[str, Any]) -> float:
     return d_win + d_ktp + d_sl + d_tp
 
 
+def _check_label_conflict(v1: np.ndarray, v2: np.ndarray) -> bool:
+    """Check for opposite labels at the same timestamp (1 vs -1)."""
+    # 1 vs -1 conflict: (v1 == 1 & v2 == -1) | (v1 == -1 & v2 == 1)
+    # This is equivalent to v1 * v2 == -1 (since only -1*1 or 1*-1 gives -1)
+    if v1 is None or v2 is None:
+        return False
+    return bool(np.any(v1 * v2 == -1))
+
+
+def _jaccard_distance(v1: np.ndarray, v2: np.ndarray) -> float:
+    """Jaccard distance on non-zero label occurrences."""
+    if v1 is None or v2 is None:
+        return 0.0
+    # Jaccard on outcome existence (label != 0)
+    # v1, v2 are signed labels (-1, 0, 1).
+    m1 = v1 != 0
+    m2 = v2 != 0
+    intersection = np.logical_and(m1, m2).sum()
+    union = np.logical_or(m1, m2).sum()
+    if union == 0:
+        return 0.0
+    return 1.0 - float(intersection) / float(union)
+
+
 def _diverse_subset(
     feasible_df: pd.DataFrame,
     details: Dict[str, Any],
+    run_vectors: Dict[str, np.ndarray],
     min_distance: float = 1.0,
     max_configs: int = 20,
 ) -> pd.DataFrame:
-    """Greedy diversity selection: pick configs ensuring param distance >= min_distance
-    from all previously selected configs.  feasible_df must already be sorted by
-    learnability (best first).
+    """Greedy diversity selection using Param Distance + Jaccard Distance.
+
+    Also enforces a strict check against opposite labels (TP vs SL on same event).
     """
     selected_indices: List[int] = []
     selected_cfgs: List[Dict[str, Any]] = []
+    selected_ids: List[str] = []
 
     for idx, row in feasible_df.iterrows():
         cid = row["config_id"]
         cfg_i = details.get(cid, {}).get("config", {})
+        vec_i = run_vectors.get(cid)
+
         if not isinstance(cfg_i, dict):
             continue
-        too_close = any(
-            _param_distance(cfg_i, sel_cfg) < min_distance
-            for sel_cfg in selected_cfgs
-        )
-        if not too_close:
+
+        # Check against all previously selected
+        accept = True
+        for sel_cfg, sel_id in zip(selected_cfgs, selected_ids):
+            vec_sel = run_vectors.get(sel_id)
+
+            # 1. Critical Conflict Check
+            if _check_label_conflict(vec_i, vec_sel):
+                # We raise an error as requested to fast fail
+                raise ValueError(
+                    f"Opposite labels detected between {sel_id} and candidate {cid} "
+                    "for the same timestamp/symbol. This violates outcome consistency."
+                )
+
+            # 2. Distance Check
+            p_dist = _param_distance(cfg_i, sel_cfg)
+            j_dist = _jaccard_distance(vec_i, vec_sel)
+
+            # Composite distance: purely additive for now
+            total_dist = p_dist + j_dist
+
+            if total_dist < min_distance:
+                accept = False
+                break
+
+        if accept:
             selected_indices.append(idx)
             selected_cfgs.append(cfg_i)
+            selected_ids.append(cid)
+
         if len(selected_indices) >= max_configs:
             break
 
@@ -2844,6 +2905,7 @@ def _build_per_cell_feasible_sets(
             ap_lift_cell = cell_m.get("ap_lift", float("nan"))
             tp_over_sl_cell = cell_m.get("tp_over_sl", float("nan"))
             dir_sup_cell = cell_m.get("dir_superiority_top_decile", float("nan"))
+            barrier_ratio_cell = cell_m.get("barrier_ratio", float("nan"))
             cell_rows.append({
                 "config_id": cid,
                 "min_cell_auc": auc_cell if not math.isnan(auc_cell) else 0.0,
@@ -2858,6 +2920,7 @@ def _build_per_cell_feasible_sets(
                 "min_cell_ap_lift": ap_lift_cell if not math.isnan(ap_lift_cell) else 0.0,
                 "min_cell_tp_over_sl": tp_over_sl_cell if not math.isnan(tp_over_sl_cell) else 0.0,
                 "min_cell_dir_superiority": dir_sup_cell if not math.isnan(dir_sup_cell) else 0.0,
+                "barrier_ratio": barrier_ratio_cell if not math.isnan(barrier_ratio_cell) else 999.0,
             })
 
         if not cell_rows:
@@ -2888,13 +2951,23 @@ def _build_per_cell_feasible_sets(
         if len(diverse) < 2 and len(feasible) >= 2:
             diverse = feasible.head(2)  # last resort: top-2 by learnability rank
 
+        # Post-selection check: "On average, geometries must pass a higher threshold".
+        # If the set average is below _AVG_AUC_THRESHOLD, prune from the bottom (worst learnability)
+        # until the average is met, provided we keep at least 2 configs (for diversity).
+        # Exception: if all configs are below the threshold, we might be left with 2 mediocre ones.
+        # This enforces that the SET quality is high, not just minimum viability.
+        if "min_cell_auc" in diverse.columns:
+            while len(diverse) > 3 and diverse["min_cell_auc"].mean() < _AVG_AUC_THRESHOLD:
+                diverse = diverse.iloc[:-1]  # Drop last (lowest ranked)
+
         # Attach full out_df row data for downstream use.
         full_rows = out_df[out_df["config_id"].isin(diverse["config_id"])].copy()
         result[cell_key] = full_rows
 
+        avg_auc = diverse["min_cell_auc"].mean() if "min_cell_auc" in diverse.columns and not diverse.empty else 0.0
         tprint(
             f"[per_cell] {cell_key}: {len(diverse)} diverse configs "
-            f"(tier={tier}, feasible_pool={len(feasible)})"
+            f"(tier={tier}, feasible_pool={len(feasible)}, avg_auc={avg_auc:.4f})"
         )
 
     return result
@@ -2941,6 +3014,7 @@ def _per_bucket_metrics_from_details(
     ap_lifts  = [c.get("ap_lift",      float("nan")) for c in cells]
     tp_over   = [c.get("tp_over_sl",   float("nan")) for c in cells]
     sl_to_tps = [c.get("sl_to_tp",     float("nan")) for c in cells]
+    barrier_rs= [c.get("barrier_ratio",float("nan")) for c in cells]
     payoffs   = [c.get("payoff_mean",  float("nan")) for c in cells]
     disps     = [c.get("payoff_mean",  float("nan")) for c in cells]
 
@@ -2949,6 +3023,7 @@ def _per_bucket_metrics_from_details(
     bind_vals = [b for b in binds if not math.isnan(b)]
     bind_min = float(np.min(bind_vals)) if bind_vals else float("nan")
     sl_to_tp_max = float(np.max([s for s in sl_to_tps if not math.isnan(s)])) if any(not math.isnan(s) for s in sl_to_tps) else float("nan")
+    barrier_max = float(np.max([b for b in barrier_rs if not math.isnan(b)])) if any(not math.isnan(b) for b in barrier_rs) else float("nan")
 
     payoff_vals = [p for p in payoffs if not math.isnan(p)]
     cell_dispersion = float(np.std(payoff_vals)) if len(payoff_vals) > 1 else 0.0
@@ -2972,6 +3047,7 @@ def _per_bucket_metrics_from_details(
         "bind":               round(bind_min, 4)             if not math.isnan(bind_min)           else 0.0,
         "timeout_rate":       round(_safe_min(timeouts), 4)  if not math.isnan(_safe_min(timeouts)) else 1.0,
         "sl_to_tp":           round(sl_to_tp_max, 4)         if not math.isnan(sl_to_tp_max)       else 999.0,
+        "barrier_ratio":      round(barrier_max, 4)          if not math.isnan(barrier_max)        else 999.0,
     }
 
 
@@ -3668,6 +3744,7 @@ def run(args: argparse.Namespace) -> None:
                     "cell_ic_std_asset": float(cell_m_i.get("ic_std_asset", float("nan"))),
                     "cell_ic_payoff": float(cell_m_i.get("ic_payoff", float("nan"))),
                     "cell_ic_label": float(cell_m_i.get("ic_label", float("nan"))),
+                    "cell_barrier_ratio": float(cell_m_i.get("barrier_ratio", float("nan"))),
                     "cell_n": int(cell_m_i.get("n", 0)),
                 })
 
@@ -3699,6 +3776,7 @@ def run(args: argparse.Namespace) -> None:
                 "cell_ece": float("nan"), "cell_monotonicity": float("nan"),
                 "cell_ic_std_time": float("nan"), "cell_ic_std_asset": float("nan"),
                 "cell_ic_payoff": float("nan"), "cell_ic_label": float("nan"),
+                "cell_barrier_ratio": float("nan"),
                 "cell_n": 0,
             })
 

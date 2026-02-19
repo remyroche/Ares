@@ -62,6 +62,22 @@ from extreme_price_movements.training_defaults import (
     get_tbm_optimizer_defaults,
 )
 from extreme_price_movements.utils import tprint
+from extreme_price_movements.barrier_geometry import (
+    make_effective_tp,
+    effective_tp_floor,
+    effective_sl_floor,
+    apply_horizon_scaling,
+)
+from extreme_price_movements.production_admissibility import (
+    ProdGates,
+    production_admissibility_report,
+    apply_econ_guardrail_to_stage2,
+    compute_prod_aligned_tp_params,
+)
+from extreme_price_movements.production_sl_tp_policy import (
+    SLTPPolicy,
+    expand_configs_wide_sl_tp_additive_superiority,
+)
 
 
 EPS = 1e-12
@@ -753,6 +769,22 @@ def _get_barrier_params(cfg: Dict[str, Any]) -> Dict[str, Any]:
     return {k: cfg[k] for k in BARRIER_PARAMS if k in cfg}
 
 
+
+
+def _apply_compare_production_floor(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Optionally evaluate TBM configs under production TP floor semantics."""
+    if not bool(cfg.get("evaluate_under_prod_floor", False)):
+        return cfg
+    cfg_eff = dict(cfg)
+    prod_floor = cfg_eff.get(
+        "prod_tp_abs_lo_pct",
+        cfg_eff.get("barrier_tp_lo_prod", cfg_eff.get("tp_abs_lo_pct", 0.005)),
+    )
+    cfg_eff["tp_abs_lo_pct"] = float(prod_floor)
+    cfg_eff["_prod_floor_applied"] = True
+    return cfg_eff
+
+
 def config_id(config: Dict[str, Any]) -> str:
     payload = json.dumps(serialize_key(config), sort_keys=True)
     return "CFG" + hashlib.sha1(payload.encode()).hexdigest()[:10].upper()
@@ -829,15 +861,6 @@ def _regime_multiplier(atr_pct: pd.DataFrame, model: str, mix_weight: float = 0.
     raise ValueError(f"Unknown regime model: {model}")
 
 
-def _horizon_scale(h: int, scaling: str, alpha: float = 0.5, base: float = 4.0) -> float:
-    if scaling == "none":
-        return 1.0
-    if scaling == "sqrt":
-        return math.sqrt(max(h, EPS) / max(base, EPS))
-    if scaling == "power":
-        return (max(h, EPS) / max(base, EPS)) ** alpha
-    raise ValueError(f"Unknown horizon scaling: {scaling}")
-
 
 def _apply_caps(x: pd.DataFrame, lo: float, hi: float) -> pd.DataFrame:
     return x.clip(lower=lo, upper=hi)
@@ -856,13 +879,6 @@ def build_barriers(
     # Fill the first row (NaN after shift) with the second row to avoid all-NaN columns.
     atr = atr.bfill(limit=1)
 
-    h_scale = _horizon_scale(
-        h=horizon,
-        scaling=cfg.get("horizon_scaling", "none"),
-        alpha=float(cfg.get("horizon_alpha", 0.5)),
-        base=float(cfg.get("horizon_base", 4.0)),
-    )
-
     tp_regime = _regime_multiplier(atr, cfg.get("tp_regime_model", "none"), cfg.get("mix_weight", 0.5))
     sl_regime = _regime_multiplier(atr, cfg.get("sl_regime_model", cfg.get("tp_regime_model", "none")), cfg.get("mix_weight", 0.5))
 
@@ -873,25 +889,51 @@ def build_barriers(
     sl_method = cfg["sl_method"]
 
     if tp_method == "atr_mult":
-        tp = cfg["k_tp"] * side_mult * atr * tp_regime * h_scale
+        tp_raw = cfg["k_tp"] * side_mult * atr * tp_regime
     elif tp_method == "semi_atr_mult":
-        atr_tp = cfg["k_tp"] * side_mult * atr * tp_regime * h_scale
+        atr_tp = cfg["k_tp"] * side_mult * atr * tp_regime
         abs_tp = pd.DataFrame(float(cfg.get("tp_abs_pct", cfg.get("tp_base_pct", 0.02))), index=atr.index, columns=atr.columns)
-        tp = 0.5 * atr_tp + 0.5 * abs_tp
+        tp_raw = 0.5 * atr_tp + 0.5 * abs_tp
     elif tp_method == "absolute":
-        tp = pd.DataFrame(float(cfg["tp_abs_pct"]), index=atr.index, columns=atr.columns)
+        tp_raw = pd.DataFrame(float(cfg["tp_abs_pct"]), index=atr.index, columns=atr.columns)
     elif tp_method == "atr_norm":
         # median is already causal (rolling on shifted atr); shift(1) already applied above.
         med = atr.rolling(int(cfg.get("base_atr_window", 168)), min_periods=24).median().fillna(atr.median())
-        tp = cfg["k_tp"] * (atr / (med + EPS)) * float(cfg["tp_base_pct"])
+        tp_raw = cfg["k_tp"] * (atr / (med + EPS)) * float(cfg["tp_base_pct"])
     elif tp_method == "semi_atr_norm":
         med = atr.rolling(int(cfg.get("base_atr_window", 168)), min_periods=24).median().fillna(atr.median())
         atrn_tp = cfg["k_tp"] * (atr / (med + EPS)) * float(cfg.get("tp_base_pct", 0.02))
         abs_tp = pd.DataFrame(float(cfg.get("tp_abs_pct", cfg.get("tp_base_pct", 0.02))), index=atr.index, columns=atr.columns)
-        tp = 0.5 * atrn_tp + 0.5 * abs_tp
+        tp_raw = 0.5 * atrn_tp + 0.5 * abs_tp
     else:
         raise ValueError(f"Unsupported tp_method={tp_method}")
 
+    # Canonical effective TP floor (production semantics):
+    # tp_lo_eff = max(tp_abs_lo_pct, tp_min_abs_pct, tp_min_bps/1e4)
+    tp_lo_eff = effective_tp_floor(
+        tp_abs_lo_pct=float(cfg.get("tp_abs_lo_pct", 0.005)),
+        tp_min_abs_pct=float(cfg.get("tp_min_abs_pct", 0.005)),
+        tp_min_bps=float(cfg.get("tp_min_bps", 50)),
+    )
+    tp = make_effective_tp(
+        tp_raw,
+        horizon=horizon,
+        horizon_scaling=cfg.get("horizon_scaling", "none"),
+        lo=float(cfg.get("tp_abs_lo_pct", 0.005)),
+        hi=float(cfg.get("tp_abs_hi_pct", 0.08)),
+        horizon_alpha=float(cfg.get("horizon_alpha", 0.5)),
+        horizon_base=float(cfg.get("horizon_base", 4.0)),
+    ).clip(lower=tp_lo_eff)
+
+    # Path dependence approximation knobs (applied on TP before final floor/cap enforcement).
+    if cfg.get("tp_time_decay", "none") == "linear":
+        decay = max(0.6, 1.0 - 0.06 * max(horizon - 2, 0))
+        tp = tp * decay
+
+    # Re-enforce TP floor/cap after optional transforms so effective floor attribution is stable.
+    tp = tp.clip(lower=tp_lo_eff, upper=float(cfg.get("tp_abs_hi_pct", 0.08)))
+
+    # SL must be derived from effective TP (post-scale/post-clip) when sl_method=tp_pct.
     if sl_method == "tp_pct":
         sl = float(cfg["sl_as_tp_pct"]) * tp
     elif sl_method == "atr_mult":
@@ -901,27 +943,25 @@ def build_barriers(
     else:
         raise ValueError(f"Unsupported sl_method={sl_method}")
 
-    tp = _apply_caps(tp, float(cfg.get("tp_abs_lo_pct", 0.005)), float(cfg.get("tp_abs_hi_pct", 0.08)))
     sl = _apply_caps(sl, float(cfg.get("sl_abs_lo_pct", 0.005)), float(cfg.get("sl_abs_hi_pct", 0.08)))
-
+    sl_lo_eff = effective_sl_floor(
+        sl_abs_lo_pct=float(cfg.get("sl_abs_lo_pct", 0.005)),
+        sl_min_abs_pct=float(cfg.get("sl_min_abs_pct", 0.01)),
+        sl_min_bps=float(cfg.get("sl_min_bps", 100)),
+    )
     if cfg.get("sl_noise_buffer", False):
-        sl_min = max(float(cfg.get("sl_min_abs_pct", 0.01)), float(cfg.get("sl_min_bps", 100)) / 10000.0)
-        sl = sl.clip(lower=sl_min)
+        sl = sl.clip(lower=sl_lo_eff)
 
-    tp_min = max(float(cfg.get("tp_min_abs_pct", 0.005)), float(cfg.get("tp_min_bps", 50)) / 10000.0)
-    tp = tp.clip(lower=tp_min)
-
-    # Path dependence approximation knobs (applied as geometry transforms).
-    if cfg.get("tp_time_decay", "none") == "linear":
-        decay = max(0.6, 1.0 - 0.06 * max(horizon - 2, 0))
-        tp = tp * decay
     if float(cfg.get("trail_sl_mult", 0.0)) > 0:
         sl = sl * (1.0 - 0.15 * float(cfg.get("trail_sl_mult", 0.0)))
+        sl = sl.clip(lower=sl_lo_eff, upper=float(cfg.get("sl_abs_hi_pct", 0.08)))
 
     out_stats = {
         "tp_mean": float(np.nanmean(tp.values)),
         "sl_mean": float(np.nanmean(sl.values)),
-        "bound_saturation": float(((tp.values <= float(cfg.get("tp_abs_lo_pct", 0.005))) | (tp.values >= float(cfg.get("tp_abs_hi_pct", 0.08)))).mean()),
+        "tp_floor_eff": float(tp_lo_eff),
+        "sl_floor_eff": float(sl_lo_eff),
+        "bound_saturation": float(((tp.values <= float(tp_lo_eff + 1e-9)) | (tp.values >= float(cfg.get("tp_abs_hi_pct", 0.08) - 1e-9))).mean()),
     }
     return tp.astype(np.float32), sl.astype(np.float32), out_stats
 
@@ -1214,6 +1254,7 @@ def evaluate_config(
     detailed_slices: bool = False,
     collect_weights: bool = False,
 ) -> Tuple[Dict[str, Any], Dict[str, Any], Optional[pd.DataFrame]]:
+    cfg = _apply_compare_production_floor(cfg)
     cfg_id = config_id(cfg)
     t0 = time.perf_counter()
     tprint(
@@ -1227,7 +1268,13 @@ def evaluate_config(
         for side in ["long", "short"]:
             # Key1: Barriers depends only on geometric params.
             barrier_cfg = _get_barrier_params(cfg)
-            key1 = json.dumps(serialize_key({"h": h, "side": side, "cfg": barrier_cfg}), sort_keys=True)
+            key1 = json.dumps(serialize_key({
+                "h": h,
+                "side": side,
+                "cfg": barrier_cfg,
+                "prod_floor_mode": bool(cfg.get("_prod_floor_applied", False)),
+                "tp_floor_eff": effective_tp_floor(tp_abs_lo_pct=float(cfg.get("tp_abs_lo_pct", 0.005)), tp_min_abs_pct=float(cfg.get("tp_min_abs_pct", 0.005)), tp_min_bps=float(cfg.get("tp_min_bps", 50))),
+            }), sort_keys=True)
 
             if key1 not in layer1_cache:
                 tp_df, sl_df, geom_stats = build_barriers(artifacts, cfg, h, side)
@@ -1502,12 +1549,28 @@ def evaluate_config(
             "pass_cells": 0,
             "total_cells": 0,
             "worst_bucket_coverage": 0.0,
+            "prod_admissible_tier0": False,
+            "prod_adm_failures": 1,
+            "econ_ok": False,
+            "econ_G": 0.0,
+            "econ_multiplier": 0.0,
+            "tp_floor_bind_prod_agg": float("nan"),
+            "max_cell_tp_floor_bind_prod": float("nan"),
+            "floor_dominance_penalty": 0.0,
+            "prod_aligned_tp": cfg.get("prod_aligned_tp", {}),
         }
         detail = {
             "config": serialize_key(cfg),
             "feature_columns": [],
             "bucket_metrics": {},
             "bucket_horizon_metrics": {},
+            "production_admissibility": {
+                "admissible_tier0": False,
+                "failures": ["U_prod is empty: no production-evaluable events after candidate/RR filters."],
+                "per_cell_health": {},
+                "aggregates": {},
+            },
+            "prod_aligned_tp": cfg.get("prod_aligned_tp", {}),
             "calibration": {"brier": 0.0, "ece": 0.0, "monotonicity": 0.0, "oof_payoff_decile_spread": 0.0},
         }
         tprint(f"[eval:done] {cfg_id} empty_after_filters hard_gate=False")
@@ -1517,7 +1580,8 @@ def evaluate_config(
     # Pre-initialize all 12 canonical cells with n=0 defaults so cells with zero
     # surviving events are always materialized (not absent) in bucket_horizon_metrics.
     _DEFAULT_CELL_METRICS = {
-        "n": 0, "tp_hit": 0.0, "sl_hit": 0.0, "timeout": 1.0,
+        "n": 0, "n_eval_kept": 0, "tp_hit": 0.0, "sl_hit": 0.0, "timeout": 1.0,
+        "tp_hit_kept": 0.0, "sl_hit_kept": 0.0, "timeout_kept": 1.0,
         "bind": 0.0, "balance": 0.0, "sl_to_tp": float("nan"),
         "tp_mean": float("nan"), "sl_mean": float("nan"), "payoff_mean": float("nan"),
         "max_timeout_threshold": float("nan"), "ok": False,
@@ -1541,29 +1605,34 @@ def evaluate_config(
     }
     total_cells = len(bucket_h_metrics)
     for (b, h), g in events.groupby(["bucket", "horizon"]):
-        tp_hit = float((g["label"] == 1).mean())
-        timeout = float((g["label"] == 0).mean())
+        n_eval_kept = int(len(g))
+        tp_hit_kept = float((g["label"] == 1).mean())
+        timeout_kept = float((g["label"] == 0).mean())
         # Horizon-dependent timeout threshold: shorter horizons tolerate more timeouts.
         # If cfg explicitly sets max_timeout_rate (non-zero), use that; otherwise adaptive.
         if _max_timeout_base > 0.0:
             max_timeout_h = _max_timeout_base
         else:
             max_timeout_h = 0.90 + 0.025 * (int(h) / 8.0)
-        ok = (len(g) >= min_raw) and (tp_hit >= min_tp_hit) and (timeout <= max_timeout_h)
+        ok = (n_eval_kept >= min_raw) and (tp_hit_kept >= min_tp_hit) and (timeout_kept <= max_timeout_h)
         pass_cells += int(ok)
-        sl_hit_cell = float((g["label"] == -1).mean())
-        bind_cell = tp_hit + sl_hit_cell
-        balance_cell = (min(tp_hit, sl_hit_cell) / max(max(tp_hit, sl_hit_cell), EPS))
+        sl_hit_kept = float((g["label"] == -1).mean())
+        bind_cell = tp_hit_kept + sl_hit_kept
+        balance_cell = (min(tp_hit_kept, sl_hit_kept) / max(max(tp_hit_kept, sl_hit_kept), EPS))
         # tp_mean/sl_mean: actual barrier sizes in % for this bucket-horizon cell.
         # These are the values that will be passed to the production labeler.
         bucket_h_metrics[(b, h)] = {
-            "n": int(len(g)),
-            "tp_hit": tp_hit,
-            "sl_hit": sl_hit_cell,
-            "timeout": timeout,
+            "n": n_eval_kept,
+            "n_eval_kept": n_eval_kept,
+            "tp_hit": tp_hit_kept,
+            "sl_hit": sl_hit_kept,
+            "timeout": timeout_kept,
+            "tp_hit_kept": tp_hit_kept,
+            "sl_hit_kept": sl_hit_kept,
+            "timeout_kept": timeout_kept,
             "bind": round(bind_cell, 4),
             "balance": round(balance_cell, 4),
-            "sl_to_tp": round(sl_hit_cell / max(tp_hit, EPS), 4),
+            "sl_to_tp": round(sl_hit_kept / max(tp_hit_kept, EPS), 4),
             "tp_mean": float(g["tp"].mean()),
             "sl_mean": float(g["sl"].mean()),
             "payoff_mean": float(g["payoff"].mean()),
@@ -1935,6 +2004,121 @@ def evaluate_config(
     if not math.isnan(min_cell_tp_over_sl) and min_cell_tp_over_sl < 1.0:
         stage2_score -= 0.10
 
+    # Economic guardrail: hard constraints + bounded stage2 adjustment.
+    _econ_tp_hit_floor = float(cfg.get("econ_tp_hit_floor", 0.10))
+    _econ_sl_to_tp_cap = float(cfg.get("econ_sl_to_tp_cap", 2.5))
+    _econ_tp_over_sl_floor = float(cfg.get("econ_tp_over_sl_floor", 1.05))
+    _econ_min_factor = float(cfg.get("econ_min_factor", 0.85))
+    _econ_mult_floor = float(cfg.get("econ_mult_floor", 0.70))
+    _econ_mult_weight = float(cfg.get("econ_mult_weight", 0.30))
+    _econ_bonus_max = float(cfg.get("econ_add_bonus_max", 0.03))
+
+    # Surface threshold conflicts with existing settings when economics are stricter.
+    if float(cfg.get("min_tp_hit_rate", 0.01)) < _econ_tp_hit_floor:
+        tprint(
+            f"[ECON_GUARDRAIL:{cfg_id}] NOTE min_tp_hit_rate={float(cfg.get('min_tp_hit_rate',0.01)):.3f} "
+            f"is looser than econ_tp_hit_floor={_econ_tp_hit_floor:.3f}."
+        )
+
+    stage2_score, econ_ok, econ_G, econ_multiplier = apply_econ_guardrail_to_stage2(
+        stage2_score,
+        tp_hit_agg=tp_hit_agg,
+        sl_to_tp_agg=sl_to_tp_agg,
+        tp_over_sl=median_cell_tp_over_sl,
+        min_factor=_econ_min_factor,
+        mult_floor=_econ_mult_floor,
+        mult_weight=_econ_mult_weight,
+        add_bonus_max=_econ_bonus_max,
+        tp_hit_floor=_econ_tp_hit_floor,
+        sl_to_tp_cap=_econ_sl_to_tp_cap,
+        tp_over_sl_floor=_econ_tp_over_sl_floor,
+    )
+    hard_gate = bool(hard_gate and econ_ok)
+
+    # Production-aligned admissibility on U_prod (post candidate/quantile/RR filters).
+    _prod_aligned_meta = cfg.get("prod_aligned_tp", {}) if isinstance(cfg.get("prod_aligned_tp", {}), dict) else {}
+    _tp_min_tradeable = float(_prod_aligned_meta.get("tp_min_tradeable", cfg.get("prod_adm_tradeable_tp_min", 0.015)))
+    _prod_tp_lo = float(cfg.get("prod_tp_abs_lo_pct", cfg.get("tp_abs_lo_pct", 0.005)))
+    _prod_sl_lo = float(cfg.get("prod_sl_abs_lo_pct", cfg.get("sl_abs_lo_pct", 0.005)))
+    _prod_gates = ProdGates(
+        n_min=int(cfg.get("prod_adm_n_min", 50)),
+        bind_cell_min=float(cfg.get("prod_adm_bind_cell_min", 0.38)),
+        bind_min=float(cfg.get("prod_adm_bind_min", 0.50)),
+        timeout_max=float(cfg.get("prod_adm_timeout_max", 0.60)),
+        timeout_range_max=float(cfg.get("prod_adm_timeout_range_max", 0.50)),
+        sl_to_tp_max=float(cfg.get("prod_adm_sl_to_tp_max", 2.5)),
+        tp_hit_min_agg=float(cfg.get("prod_adm_tp_hit_min_agg", 0.10)),
+        auc_min=float(cfg.get("prod_adm_auc_min", 0.54)),
+        auc_bound_min=float(cfg.get("prod_adm_auc_bound_min", 0.52)),
+        tp_sep_min=float(cfg.get("prod_adm_tp_sep_min", 0.04)),
+        ap_lift_min=float(cfg.get("prod_adm_ap_lift_min", 1.20)),
+        tp_over_sl_min=float(cfg.get("prod_adm_tp_over_sl_min", 1.05)),
+        tp_floor_bind_max_cell=float(cfg.get("prod_adm_floor_bind_cell_max", cfg.get("prod_adm_tp_floor_bind_max_cell", 0.35))),
+        tp_floor_bind_max_agg=float(cfg.get("prod_adm_floor_bind_agg_max", cfg.get("prod_adm_tp_floor_bind_max_agg", 0.20))),
+        sl_floor_bind_max_cell=(
+            float(cfg.get("prod_adm_sl_floor_bind_max_cell"))
+            if cfg.get("prod_adm_sl_floor_bind_max_cell", None) is not None
+            else None
+        ),
+        enforce_tradeable_tp_lo=bool(cfg.get("prod_adm_enforce_tradeable_tp_lo", True)),
+        tradeable_tp_min=float(_tp_min_tradeable),
+    )
+    _bucket_h_metrics_prod = {f"{k[0]}_H{k[1]}": v for k, v in bucket_h_metrics.items()}
+    prod_admissibility = production_admissibility_report(
+        events_prod=events,
+        score_prod=pred,
+        bucket_horizon_metrics_prod=_bucket_h_metrics_prod,
+        tp_lo_prod=_prod_tp_lo,
+        sl_lo_prod=_prod_sl_lo,
+        gates=_prod_gates,
+    )
+
+    # Tradeability is explicitly gated on effective TP distribution in U_prod (events["tp"]).
+    _tp_eff_arr = events["tp"].to_numpy(dtype=np.float64, copy=False) if "tp" in events.columns else np.array([], dtype=np.float64)
+    _tp_eff_arr = _tp_eff_arr[np.isfinite(_tp_eff_arr)] if _tp_eff_arr.size else _tp_eff_arr
+    _tp_eff_p50 = float(np.quantile(_tp_eff_arr, 0.50)) if _tp_eff_arr.size else float("nan")
+    _tp_eff_p75 = float(np.quantile(_tp_eff_arr, 0.75)) if _tp_eff_arr.size else float("nan")
+    _tp_eff_p90 = float(np.quantile(_tp_eff_arr, 0.90)) if _tp_eff_arr.size else float("nan")
+    _tradeable_min_lo = float(cfg.get("prod_adm_tradeable_tp_min_lo", 0.012))
+    _tradeable_min = float(_tp_min_tradeable)
+    _tradeable_min_hi = float(cfg.get("prod_adm_tradeable_tp_min_hi", 0.022))
+    _tradeable_rule_p50 = bool(np.isfinite(_tp_eff_p50) and (_tp_eff_p50 >= _tradeable_min_lo))
+    _tradeable_rule_tail = bool(
+        np.isfinite(_tp_eff_p75)
+        and np.isfinite(_tp_eff_p90)
+        and (_tp_eff_p75 >= _tradeable_min)
+        and (_tp_eff_p90 >= _tradeable_min_hi)
+    )
+    _tradeable_ok = bool(_tradeable_rule_p50 or _tradeable_rule_tail)
+    if not _tradeable_ok:
+        prod_admissibility.setdefault("failures", []).append(
+            "tp_eff tradeability 2-of-3 rule failed: "
+            f"p50={_tp_eff_p50:.4f} (min_lo={_tradeable_min_lo:.4f}), "
+            f"p75={_tp_eff_p75:.4f}/p90={_tp_eff_p90:.4f} "
+            f"(mins={_tradeable_min:.4f}/{_tradeable_min_hi:.4f})"
+        )
+    prod_admissibility["admissible_tier0"] = bool(prod_admissibility.get("admissible_tier0", False) and _tradeable_ok)
+    prod_admissibility.setdefault("aggregates", {}).update({
+        "tp_eff_p50_prod": _tp_eff_p50,
+        "tp_eff_p75_prod": _tp_eff_p75,
+        "tp_eff_p90_prod": _tp_eff_p90,
+        "tp_eff_tradeable_min_lo": _tradeable_min_lo,
+        "tp_eff_tradeable_min": _tradeable_min,
+        "tp_eff_tradeable_min_hi": _tradeable_min_hi,
+        "tp_eff_tradeable_rule_p50": _tradeable_rule_p50,
+        "tp_eff_tradeable_rule_tail": _tradeable_rule_tail,
+        "tp_eff_tradeable_ok": _tradeable_ok,
+    })
+
+    if not bool(prod_admissibility.get("admissible_tier0", False)):
+        tprint(f"[PROD_ADMISSIBILITY:{cfg_id}] FAIL " + " | ".join(prod_admissibility.get("failures", [])))
+
+    _pa_agg = prod_admissibility.get("aggregates", {}) if isinstance(prod_admissibility, dict) else {}
+    _tp_fb_agg = _safe_float(_pa_agg.get("tp_floor_bind_prod_agg"), 0.0)
+    _tp_fb_max = _safe_float(_pa_agg.get("max_cell_tp_floor_bind_prod"), 0.0)
+    _floor_dom_pen = float(cfg.get("floor_dominance_penalty_weight_agg", 0.25)) * max(_tp_fb_agg, 0.0) + float(cfg.get("floor_dominance_penalty_weight_max", 0.25)) * max(_tp_fb_max, 0.0)
+    stage2_score -= _floor_dom_pen
+
     summary = {
         "config_id": cfg_id,
         "mode": cfg.get("mode", "unknown"),
@@ -1999,6 +2183,21 @@ def evaluate_config(
         "median_cell_tp_over_sl": round(median_cell_tp_over_sl, 4) if not math.isnan(median_cell_tp_over_sl) else float("nan"),
         "min_cell_dir_superiority": round(min_cell_dir_superiority, 4) if not math.isnan(min_cell_dir_superiority) else float("nan"),
         "median_cell_dir_superiority": round(median_cell_dir_superiority, 4) if not math.isnan(median_cell_dir_superiority) else float("nan"),
+        "prod_admissible_tier0": bool(prod_admissibility.get("admissible_tier0", False)),
+        "prod_adm_failures": int(len(prod_admissibility.get("failures", []))),
+        "econ_ok": bool(econ_ok),
+        "econ_G": float(econ_G),
+        "econ_multiplier": float(econ_multiplier),
+        "tp_floor_bind_prod_agg": float(_tp_fb_agg),
+        "max_cell_tp_floor_bind_prod": float(_tp_fb_max),
+        "floor_dominance_penalty": float(_floor_dom_pen),
+        "tp_eff_p50_prod": _safe_float(_pa_agg.get("tp_eff_p50_prod"), float("nan")),
+        "tp_eff_p75_prod": _safe_float(_pa_agg.get("tp_eff_p75_prod"), float("nan")),
+        "tp_eff_p90_prod": _safe_float(_pa_agg.get("tp_eff_p90_prod"), float("nan")),
+        "tp_eff_tradeable_ok": bool(_pa_agg.get("tp_eff_tradeable_ok", False)),
+        "tp_eff_tradeable_rule_p50": bool(_pa_agg.get("tp_eff_tradeable_rule_p50", False)),
+        "tp_eff_tradeable_rule_tail": bool(_pa_agg.get("tp_eff_tradeable_rule_tail", False)),
+        "prod_aligned_tp": cfg.get("prod_aligned_tp", {}),
     }
 
     detail = {
@@ -2006,6 +2205,20 @@ def evaluate_config(
         "feature_columns": feat_cols,
         "bucket_metrics": per_bucket,
         "bucket_horizon_metrics": {f"{k[0]}_H{k[1]}": v for k, v in bucket_h_metrics.items()},
+        "production_admissibility": prod_admissibility,
+        "prod_aligned_tp": cfg.get("prod_aligned_tp", {}),
+        "economic_guardrail": {
+            "econ_ok": bool(econ_ok),
+            "econ_G": float(econ_G),
+            "econ_multiplier": float(econ_multiplier),
+        "tp_floor_bind_prod_agg": float(_tp_fb_agg),
+        "max_cell_tp_floor_bind_prod": float(_tp_fb_max),
+        "floor_dominance_penalty": float(_floor_dom_pen),
+            "tp_hit_floor": _econ_tp_hit_floor,
+            "sl_to_tp_cap": _econ_sl_to_tp_cap,
+            "tp_over_sl_floor": _econ_tp_over_sl_floor,
+            "min_factor": _econ_min_factor,
+        },
         "calibration": {"brier": brier, "ece": ece, "monotonicity": mono, "oof_payoff_decile_spread": decile_spread},
     }
     if detailed_slices:
@@ -2034,6 +2247,146 @@ def evaluate_config(
     gc.collect()
 
     return summary, detail, weights_df
+
+
+def _horizon_scale_for_cfg(cfg: Dict[str, Any], horizon: int) -> float:
+    scaled = apply_horizon_scaling(
+        1.0,
+        horizon=int(horizon),
+        scaling=str(cfg.get("horizon_scaling", "none")),
+        alpha=float(cfg.get("horizon_alpha", 0.5)),
+        base=float(cfg.get("horizon_base", 4.0)),
+    )
+    return float(scaled)
+
+
+def _atr_pct_samples_for_prod_universe(
+    artifacts: RunArtifacts,
+    bucket_masks: Dict[str, pd.DataFrame],
+) -> np.ndarray:
+    atr = artifacts.features.get("atr_pct")
+    close = artifacts.panel.get("close")
+    if atr is None or close is None:
+        return np.array([], dtype=np.float64)
+    atr = atr.reindex(index=close.index, columns=close.columns).shift(1)
+    union_mask = pd.DataFrame(False, index=close.index, columns=close.columns)
+    for m in bucket_masks.values():
+        if isinstance(m, pd.DataFrame):
+            union_mask |= m.reindex(index=close.index, columns=close.columns).fillna(False)
+    samples = atr.where(union_mask).to_numpy(dtype=np.float64, copy=False).ravel()
+    samples = samples[np.isfinite(samples)]
+    return samples
+
+
+def _apply_prod_aligned_tp_centering(
+    cfgs: List[Dict[str, Any]],
+    *,
+    artifacts: RunArtifacts,
+    bucket_masks: Dict[str, pd.DataFrame],
+    cfg_runtime: Optional[Dict[str, Any]] = None,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    runtime = cfg_runtime or CFG
+    if not bool(runtime.get("tbm_prod_aligned_tp_enable", True)):
+        return cfgs, {}
+
+    atr_samples = _atr_pct_samples_for_prod_universe(artifacts, bucket_masks)
+    if atr_samples.size == 0:
+        tprint("[prod_aligned_tp] WARNING no ATR% samples in production universe; skipping TP centering override")
+        return cfgs, {}
+
+    fee_pct_total = float(runtime.get("tbm_prod_aligned_fee_pct_total", runtime.get("fee_pct", 0.005)))
+    worst_h = int(runtime.get("tbm_prod_aligned_worst_horizon", 2))
+    q = float(runtime.get("tbm_prod_aligned_q", 0.25))
+    alpha = float(runtime.get("tbm_prod_aligned_alpha", 0.45))
+    margin_mult = float(runtime.get("tbm_prod_aligned_margin_mult", 4.0))
+    hard_min_tp = float(runtime.get("tbm_prod_aligned_hard_min_tp", 0.02))
+    inflate = float(runtime.get("tbm_prod_aligned_inflate", 1.10))
+    h2_l = float(runtime.get("tbm_prod_aligned_h2_l2", 0.01))
+    h2_u = float(runtime.get("tbm_prod_aligned_h2_u2", 0.04))
+
+    anchor_cfg = cfgs[0] if cfgs else base_param_template(runtime)
+    aligned = compute_prod_aligned_tp_params(
+        atr_pct_samples=atr_samples,
+        fee_pct_total=fee_pct_total,
+        horizon_scaling_fn=lambda h: _horizon_scale_for_cfg(anchor_cfg, h),
+        worst_horizon=worst_h,
+        q=q,
+        alpha=alpha,
+        margin_mult=margin_mult,
+        hard_min_tp=hard_min_tp,
+        inflate=inflate,
+        horizons=(2, 4, 8),
+        h2_lower=h2_l,
+        h2_upper=h2_u,
+    )
+
+    tp_lo_new = float(aligned["tp_abs_lo_pct"])
+    ladder = list(aligned.get("tp_base_candidates", []))
+    if not ladder:
+        ladder = [{"tp_base_pct": float(aligned["tp_base_pct"]), "tp_eff_targets": {}, "tp_eff_bands": {}, "q": q, "alpha": alpha}]
+
+    out = []
+    for c in cfgs:
+        prev_tp_base = float(c.get("tp_base_pct", c.get("tp_abs_pct", float(aligned["tp_base_pct"]))))
+        prev_tp_lo = float(c.get("tp_abs_lo_pct", tp_lo_new))
+        for cand in ladder:
+            c2 = dict(c)
+            tp_base_new = float(cand.get("tp_base_pct", aligned["tp_base_pct"]))
+            c2["tp_base_pct"] = tp_base_new
+            c2["tp_abs_pct"] = tp_base_new
+            c2["tp_abs_lo_pct"] = max(prev_tp_lo, tp_lo_new)
+            c2.setdefault("prod_tp_abs_lo_pct", c2["tp_abs_lo_pct"])
+            c2["prod_aligned_tp"] = {
+                "atr_q": float(cand.get("atr_q", aligned["atr_q"])),
+                "q": float(cand.get("q", aligned["q"])),
+                "alpha": float(cand.get("alpha", aligned["alpha"])),
+                "margin_mult": float(aligned["margin_mult"]),
+                "fee_pct_total": float(aligned["fee_pct_total"]),
+                "tp_min_tradeable": float(aligned["tp_min_tradeable"]),
+                "s_H2": float(aligned.get("scaling", {}).get("s2", aligned["s_worst"])),
+                "tp_atr_anchor": float(aligned["tp_atr_anchor"]),
+                "tp_base_pct_final": float(tp_base_new),
+                "tp_abs_lo_pct_final": float(c2["tp_abs_lo_pct"]),
+                "worst_horizon": int(aligned["worst_horizon"]),
+                "tp_base_pre_override": prev_tp_base,
+                "tp_abs_lo_pre_override": prev_tp_lo,
+                "tp_eff_targets": cand.get("tp_eff_targets", {}),
+                "tp_eff_bands": cand.get("tp_eff_bands", {}),
+                "scaling": cand.get("scaling", aligned.get("scaling", {})),
+                "atr_quantiles": aligned.get("atr_quantiles", {}),
+            }
+            if bool(runtime.get("prod_sl_tp_wide_enable", True)):
+                sup_add = float(runtime.get("prod_sl_tp_superiority_add", c2.get("prod_sl_tp_superiority_add", 0.0075)))
+                if sup_add > 0.02:
+                    tprint(
+                        f"[prod_sl_tp_policy] NOTE superiority_add={sup_add:.4f} is very high vs typical TP levels; "
+                        "this can over-prune SL ladder."
+                    )
+                policy = SLTPPolicy(
+                    sl_as_tp_pct_grid=tuple(float(x) for x in runtime.get("prod_sl_tp_pct_grid", [0.20, 0.25, 0.30, 0.35, 0.40, 0.50, 0.60, 0.75, 0.90, 1.00, 1.25])),
+                    superiority_add=sup_add,
+                    drop_on_violation=bool(runtime.get("prod_sl_tp_drop_on_violation", True)),
+                )
+                tp_eff_ref = float((cand.get("tp_eff_targets", {}) or {}).get("H2", float("nan")))
+                out.extend(expand_configs_wide_sl_tp_additive_superiority(c2, tp_eff=tp_eff_ref, policy=policy))
+            else:
+                out.append(c2)
+
+    # de-duplicate expanded grid
+    uniq = {config_id(c): c for c in out}
+    out = list(uniq.values())
+
+    if tp_lo_new <= 0.005 + 1e-12:
+        tprint(
+            f"[prod_aligned_tp] NOTE computed tp_abs_lo_pct={tp_lo_new:.4f} is not above legacy 0.5% floor; "
+            "consider higher margin_mult or hard_min_tp"
+        )
+    tprint(
+        f"[prod_aligned_tp] applied ladder to {len(cfgs)} base cfgs -> {len(out)} cfgs "
+        f"(tp_base_count={len(ladder)}, tp_abs_lo_pct>={tp_lo_new:.4f}, q50={aligned.get('atr_quantiles',{}).get('q50', float('nan')):.4f}, "
+        f"q75={aligned.get('atr_quantiles',{}).get('q75', float('nan')):.4f}, q90={aligned.get('atr_quantiles',{}).get('q90', float('nan')):.4f})"
+    )
+    return out, aligned
 
 
 # ---------------------------
@@ -2082,9 +2435,68 @@ def base_param_template(cfg_runtime: Optional[Dict[str, Any]] = None) -> Dict[st
         "tp_abs_pct": float(tbm_defaults["tp_abs_pct"]),
         "tp_base_pct": float(tbm_defaults["tp_base_pct"]),
         "base_atr_window": int(tbm_defaults["base_atr_window"]),
+        # Production-aligned TP centering knobs.
+        "tbm_prod_aligned_tp_enable": bool((cfg_runtime if cfg_runtime is not None else CFG).get("tbm_prod_aligned_tp_enable", True)),
+        "tbm_prod_aligned_fee_pct_total": float((cfg_runtime if cfg_runtime is not None else CFG).get("tbm_prod_aligned_fee_pct_total", 0.005)),
+        "tbm_prod_aligned_worst_horizon": int((cfg_runtime if cfg_runtime is not None else CFG).get("tbm_prod_aligned_worst_horizon", 2)),
+        "tbm_prod_aligned_q": float((cfg_runtime if cfg_runtime is not None else CFG).get("tbm_prod_aligned_q", 0.25)),
+        "tbm_prod_aligned_alpha": float((cfg_runtime if cfg_runtime is not None else CFG).get("tbm_prod_aligned_alpha", 0.45)),
+        "tbm_prod_aligned_margin_mult": float((cfg_runtime if cfg_runtime is not None else CFG).get("tbm_prod_aligned_margin_mult", 4.0)),
+        "tbm_prod_aligned_hard_min_tp": float((cfg_runtime if cfg_runtime is not None else CFG).get("tbm_prod_aligned_hard_min_tp", 0.02)),
+        "tbm_prod_aligned_inflate": float((cfg_runtime if cfg_runtime is not None else CFG).get("tbm_prod_aligned_inflate", 1.10)),
+        "tbm_prod_aligned_h2_l2": float((cfg_runtime if cfg_runtime is not None else CFG).get("tbm_prod_aligned_h2_l2", 0.01)),
+        "tbm_prod_aligned_h2_u2": float((cfg_runtime if cfg_runtime is not None else CFG).get("tbm_prod_aligned_h2_u2", 0.04)),
+        "prod_adm_tradeable_tp_min": float((cfg_runtime if cfg_runtime is not None else CFG).get("prod_adm_tradeable_tp_min", 0.015)),
+        "prod_adm_tradeable_tp_min_lo": float((cfg_runtime if cfg_runtime is not None else CFG).get("prod_adm_tradeable_tp_min_lo", 0.012)),
+        "prod_adm_tradeable_tp_min_hi": float((cfg_runtime if cfg_runtime is not None else CFG).get("prod_adm_tradeable_tp_min_hi", 0.022)),
+        "prod_adm_floor_bind_agg_max": float((cfg_runtime if cfg_runtime is not None else CFG).get("prod_adm_floor_bind_agg_max", 0.20)),
+        "prod_adm_floor_bind_cell_max": float((cfg_runtime if cfg_runtime is not None else CFG).get("prod_adm_floor_bind_cell_max", 0.35)),
+        # Wide SL/TP ladder policy under additive TP superiority rule.
+        "prod_sl_tp_wide_enable": bool((cfg_runtime if cfg_runtime is not None else CFG).get("prod_sl_tp_wide_enable", True)),
+        "prod_sl_tp_superiority_add": float((cfg_runtime if cfg_runtime is not None else CFG).get("prod_sl_tp_superiority_add", 0.0075)),
+        "prod_sl_tp_drop_on_violation": bool((cfg_runtime if cfg_runtime is not None else CFG).get("prod_sl_tp_drop_on_violation", True)),
+        "prod_sl_tp_pct_grid": (cfg_runtime if cfg_runtime is not None else CFG).get(
+            "prod_sl_tp_pct_grid",
+            [0.20, 0.25, 0.30, 0.35, 0.40, 0.50, 0.60, 0.75, 0.90, 1.00, 1.25],
+        ),
     }
 
 
+
+
+def _is_grid_tradeable_h2(cfg: Dict[str, Any], *, min_ratio_to_floor: float = 1.35) -> bool:
+    """Static guard: reject configs whose median-vol H2 TP is too close to effective floor."""
+    tp_method = str(cfg.get("tp_method", ""))
+    if tp_method not in {"atr_norm", "semi_atr_norm", "atr_mult", "semi_atr_mult", "absolute"}:
+        return True
+    h2_scale = 1.0
+    scaling = str(cfg.get("horizon_scaling", "none"))
+    if scaling == "sqrt":
+        h2_scale = (2.0 / max(float(cfg.get("horizon_base", 4.0)), EPS)) ** 0.5
+    elif scaling == "power":
+        h2_scale = (2.0 / max(float(cfg.get("horizon_base", 4.0)), EPS)) ** float(cfg.get("horizon_alpha", 0.5))
+    tp_anchor = float(cfg.get("tp_base_pct", cfg.get("tp_abs_pct", 0.01))) * float(cfg.get("k_tp", 1.0)) * h2_scale
+    tp_floor_eff = effective_tp_floor(
+        tp_abs_lo_pct=float(cfg.get("tp_abs_lo_pct", 0.005)),
+        tp_min_abs_pct=float(cfg.get("tp_min_abs_pct", 0.005)),
+        tp_min_bps=float(cfg.get("tp_min_bps", 50)),
+    )
+    return tp_anchor >= min_ratio_to_floor * tp_floor_eff
+
+
+def _filter_tradeability_guard(cfgs: List[Dict[str, Any]], cfg_runtime: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    if not cfgs:
+        return cfgs
+    ratio = float((cfg_runtime or CFG).get("tbm_h2_tradeability_floor_ratio", 1.35))
+    kept, dropped = [], 0
+    for c in cfgs:
+        if _is_grid_tradeable_h2(c, min_ratio_to_floor=ratio):
+            kept.append(c)
+        else:
+            dropped += 1
+    if dropped > 0:
+        tprint(f"[grid_guard] dropped {dropped}/{len(cfgs)} configs: H2 TP anchor too close to effective floor (ratio<{ratio:.2f})")
+    return kept or cfgs
 def stage1_grid(cfg_runtime: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     cfgs = []
 
@@ -2951,7 +3363,21 @@ def run(args: argparse.Namespace) -> None:
         weights_writer.write_table(table)
         tprint(f"Streamed {len(weights_df):,} weight rows to {weights_path}")
 
-    stage1_cfgs = stage1_grid(runtime_cfg)
+    stage1_cfgs = _filter_tradeability_guard(stage1_grid(runtime_cfg), runtime_cfg)
+    stage1_cfgs, stage1_prod_aligned_meta = _apply_prod_aligned_tp_centering(
+        stage1_cfgs,
+        artifacts=artifacts,
+        bucket_masks=bucket_masks,
+        cfg_runtime=runtime_cfg,
+    )
+    if stage1_prod_aligned_meta:
+        tprint(
+            "[prod_aligned_tp] Stage1 centered with "
+            f"q50={stage1_prod_aligned_meta.get('atr_quantiles',{}).get('q50', float('nan')):.4f} "
+            f"q75={stage1_prod_aligned_meta.get('atr_quantiles',{}).get('q75', float('nan')):.4f} "
+            f"q90={stage1_prod_aligned_meta.get('atr_quantiles',{}).get('q90', float('nan')):.4f}"
+        )
+    _log_prod_aligned_wiring(stage1_cfgs, "stage1")
     barrier_defaults = get_barrier_factory_defaults(runtime_cfg)
     for _cfg in stage1_cfgs:
         _cfg.setdefault("k_tp", float(barrier_defaults["barrier_k_tp"]))
@@ -3032,7 +3458,21 @@ def run(args: argparse.Namespace) -> None:
         tprint(f"Stage2 enabled with {len(winners)} winners from Stage1")
         id_to_cfg = {config_id(c): c for c in stage1_cfgs}
         base_cfgs = [id_to_cfg[w] for w in winners if w in id_to_cfg]
-        stage2_cfgs = stage2_grids_from_stage1(base_cfgs, max_per_substage=args.max_stage2_configs)
+        stage2_cfgs = _filter_tradeability_guard(stage2_grids_from_stage1(base_cfgs, max_per_substage=args.max_stage2_configs), runtime_cfg)
+        stage2_cfgs, stage2_prod_aligned_meta = _apply_prod_aligned_tp_centering(
+            stage2_cfgs,
+            artifacts=artifacts,
+            bucket_masks=bucket_masks,
+            cfg_runtime=runtime_cfg,
+        )
+        if stage2_prod_aligned_meta:
+            tprint(
+                "[prod_aligned_tp] Stage2 centered with "
+                f"q50={stage2_prod_aligned_meta.get('atr_quantiles',{}).get('q50', float('nan')):.4f} "
+                f"q75={stage2_prod_aligned_meta.get('atr_quantiles',{}).get('q75', float('nan')):.4f} "
+                f"q90={stage2_prod_aligned_meta.get('atr_quantiles',{}).get('q90', float('nan')):.4f}"
+            )
+        _log_prod_aligned_wiring(stage2_cfgs, "stage2")
         tprint(f"Stage2 config count={len(stage2_cfgs)} (max_per_substage={args.max_stage2_configs})")
 
         rows = []
@@ -3121,6 +3561,8 @@ def run(args: argparse.Namespace) -> None:
     detail_path = output_path.with_suffix(".json")
     with detail_path.open("w") as f:
         json.dump(details, f, indent=2)
+
+    _build_prod_aligned_reports(out_df, details, output_path)
 
     learnability_path = output_path.with_name("tbm__learnability_report.csv")
     learnability_df = _build_tbm_learnability_report_rows(out_df, details)
@@ -3297,6 +3739,108 @@ def run(args: argparse.Namespace) -> None:
         f"{_cache_pressure_summary(layer1_cache, layer2_cache, eval_cache)}"
     )
 
+
+
+
+
+def _log_prod_aligned_wiring(cfgs: List[Dict[str, Any]], stage_name: str) -> None:
+    if not cfgs:
+        tprint(f"[prod_aligned_tp] {stage_name}: no configs")
+        return
+    n_with = sum(1 for c in cfgs if isinstance(c.get("prod_aligned_tp", None), dict) and bool(c.get("prod_aligned_tp")))
+    h_vals = sorted(set(int(h) for h in (2, 4, 8)))
+    tprint(
+        f"[prod_aligned_tp] {stage_name}: configs={len(cfgs)} with_prod_aligned_meta={n_with}/{len(cfgs)} "
+        f"horizons={h_vals}"
+    )
+
+def _build_prod_aligned_reports(
+    out_df: pd.DataFrame,
+    details: Dict[str, Any],
+    output_path: Path,
+) -> None:
+    """Emit diversity/tradeability/rejection reports for expanded prod-aligned grid."""
+    rows_div = []
+    rows_rej = []
+    rows_trade = []
+
+    for _, r in out_df.iterrows():
+        cid = str(r.get("config_id", ""))
+        bucket = str(r.get("mode", "unknown"))
+        d = details.get(cid, {}) if isinstance(details, dict) else {}
+        pa = d.get("production_admissibility", {}) if isinstance(d, dict) else {}
+        agg = pa.get("aggregates", {}) if isinstance(pa, dict) else {}
+        cfg_meta = d.get("prod_aligned_tp", r.get("prod_aligned_tp", {})) if isinstance(d, dict) else {}
+
+        targets = cfg_meta.get("tp_eff_targets", {}) if isinstance(cfg_meta, dict) else {}
+        rows_div.append({
+            "bucket": bucket,
+            "config_id": cid,
+            "tp_base_pct": float(r.get("tp_base_pct", float("nan"))),
+            "tp_eff_h2": float(targets.get("H2", float("nan"))),
+            "tp_eff_h4": float(targets.get("H4", float("nan"))),
+            "tp_eff_h8": float(targets.get("H8", float("nan"))),
+        })
+
+        rows_trade.append({
+            "config_id": cid,
+            "bucket": bucket,
+            "prod_admissible_tier0": bool(r.get("prod_admissible_tier0", False)),
+            "tp_eff_p50_prod": float(agg.get("tp_eff_p50_prod", r.get("tp_eff_p50_prod", float("nan")))),
+            "tp_eff_p75_prod": float(agg.get("tp_eff_p75_prod", r.get("tp_eff_p75_prod", float("nan")))),
+            "tp_eff_p90_prod": float(agg.get("tp_eff_p90_prod", r.get("tp_eff_p90_prod", float("nan")))),
+            "tp_eff_tradeable_rule_p50": bool(agg.get("tp_eff_tradeable_rule_p50", r.get("tp_eff_tradeable_rule_p50", False))),
+            "tp_eff_tradeable_rule_tail": bool(agg.get("tp_eff_tradeable_rule_tail", r.get("tp_eff_tradeable_rule_tail", False))),
+            "tp_eff_tradeable_ok": bool(agg.get("tp_eff_tradeable_ok", r.get("tp_eff_tradeable_ok", False))),
+            "tp_floor_bind_prod_agg": float(r.get("tp_floor_bind_prod_agg", float("nan"))),
+            "max_cell_tp_floor_bind_prod": float(r.get("max_cell_tp_floor_bind_prod", float("nan"))),
+            "tp_hit_agg": float(r.get("tp_hit_rate", float("nan"))),
+            "sl_to_tp_agg": float(r.get("sl_to_tp", float("nan"))),
+            "tp_over_sl_median_cell": float(r.get("median_cell_tp_over_sl", float("nan"))),
+            "min_cell_auc_bound": float(r.get("min_cell_auc_bound", float("nan"))),
+            "min_cell_tp_sep": float(r.get("min_cell_tp_sep", float("nan"))),
+            "missing_cells": int(max(0, int(r.get("total_cells", 0)) - int(r.get("pass_cells", 0)))),
+        })
+
+        fails = pa.get("failures", []) if isinstance(pa, dict) else []
+        if not bool(r.get("prod_admissible_tier0", False)):
+            if fails:
+                for f in fails:
+                    rows_rej.append({"config_id": cid, "bucket": bucket, "reason": str(f)})
+            else:
+                rows_rej.append({"config_id": cid, "bucket": bucket, "reason": "unknown_prod_admissibility_failure"})
+
+    if rows_div:
+        div_df = pd.DataFrame(rows_div)
+        grp = div_df.groupby("bucket", observed=True).agg(
+            unique_tp_base_pct=("tp_base_pct", lambda x: int(pd.Series(x).dropna().round(6).nunique())),
+            unique_tp_eff_h2=("tp_eff_h2", lambda x: int(pd.Series(x).dropna().round(6).nunique())),
+            unique_tp_eff_h4=("tp_eff_h4", lambda x: int(pd.Series(x).dropna().round(6).nunique())),
+            unique_tp_eff_h8=("tp_eff_h8", lambda x: int(pd.Series(x).dropna().round(6).nunique())),
+            h2_min=("tp_eff_h2", "min"),
+            h2_max=("tp_eff_h2", "max"),
+        ).reset_index()
+        grp["diversity_pass"] = (
+            (grp["unique_tp_base_pct"] >= 4)
+            & (grp["unique_tp_eff_h2"] >= 4)
+            & (grp["h2_min"] <= 0.011)
+            & (grp["h2_max"] >= 0.03)
+        )
+        div_path = output_path.with_suffix(".prod_aligned_diversity.csv")
+        grp.to_csv(div_path, index=False)
+        tprint(f"Saved production-aligned diversity report: {div_path}")
+
+    if rows_trade:
+        trade_df = pd.DataFrame(rows_trade)
+        trade_path = output_path.with_suffix(".prod_aligned_tradeability.csv")
+        trade_df.to_csv(trade_path, index=False)
+        tprint(f"Saved production-aligned tradeability report: {trade_path}")
+
+    if rows_rej:
+        rej_df = pd.DataFrame(rows_rej)
+        rej_path = output_path.with_suffix(".rejected_configs_reasons.csv")
+        rej_df.to_csv(rej_path, index=False)
+        tprint(f"Saved rejected-config reasons report: {rej_path}")
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:

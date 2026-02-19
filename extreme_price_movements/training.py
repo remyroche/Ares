@@ -21,7 +21,7 @@ from .sample_weight_optimization import (
     log_weight_statistics,
     select_test_feature_frame,
 )
-from .offline_optimisers.params_store import apply_offline_optimizer_best_params, load_tbm_geometry_grid
+from .offline_optimisers.params_store import apply_offline_optimizer_best_params, load_tbm_geometry_grid, CANDIDATE_BEST_PARAMS_CSV
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import roc_auc_score
 from scipy.stats import spearmanr
@@ -36,6 +36,8 @@ from .trap_specialist import build_trap_dataset, train_trap_from_dataset, comput
 from .gamma_specialist import build_gamma_dataset, train_gamma_from_dataset
 from .model_scoring import precision_at_k, avg_trades_per_day, ece_at_mask, topk_mask, calibration_curve_bins, calibration_profile, ic_cross_sectional
 from .metrics import calculate_selection_score
+from .barrier_geometry import make_effective_tp
+from .production_admissibility import ProdGates, production_admissibility_report
 from .gate_metrics import compute_stage_gate_metrics
 
 import os
@@ -150,9 +152,16 @@ def compute_barrier_factory(
         z_norm = np.clip((z_clipped - z_gate) / (z_max - z_gate), 0, 1)
         sl_mult = sl_lo + (sl_hi - sl_lo) * z_norm
 
-    h_scale = np.sqrt(horizon / H_base)
-    tp_raw = k_tp * atr_pct * m_clipped * h_scale
-    tp_vals = np.clip(tp_raw, tp_lo, tp_hi)
+    tp_raw = k_tp * atr_pct * m_clipped
+    tp_vals = make_effective_tp(
+        tp_raw,
+        horizon=int(horizon),
+        horizon_scaling="sqrt",
+        lo=float(tp_lo),
+        hi=float(tp_hi),
+        horizon_alpha=0.5,
+        horizon_base=float(H_base),
+    )
     sl_vals = sl_base_mult * sl_mult * tp_vals
     
     tp_df = pd.DataFrame(tp_vals, index=atr_pct.index, columns=atr_pct.columns)
@@ -228,6 +237,38 @@ def _resolve_training_cfg_with_offline_optimisers(cfg):
     except Exception as exc:
         tprint(f"Warning: failed to load offline optimiser params; using cfg defaults ({exc})")
         return cfg
+
+
+def _build_optimal_candidate_mask(panel, feats, cfg):
+    """Build candidate mask strictly from persisted offline-optimal threshold conditions."""
+    strict = bool(cfg.get("require_offline_candidate_ranges", True))
+    cfg_resolved = _resolve_training_cfg_with_offline_optimisers(cfg)
+
+    if strict and (not CANDIDATE_BEST_PARAMS_CSV.exists()):
+        raise RuntimeError(
+            "Candidate best-params CSV missing; strict range mode forbids generating events outside offline-optimal ranges. "
+            f"Expected: {CANDIDATE_BEST_PARAMS_CSV}"
+        )
+
+    train_pct, train_min_range, train_min_vol = _get_training_candidate_config(cfg_resolved)
+    sign_min = float(cfg_resolved.get("min_feat_sign_consistency", 0.80))
+
+    tprint(
+        "Building strict candidate mask from offline-optimal conditions: "
+        f"pct={float(train_pct):.4f}, min_range_pct={float(train_min_range):.4f}, "
+        f"min_vol_zscore={float(train_min_vol):.4f}, min_feat_sign_consistency={sign_min:.3f}, "
+        f"strict={strict}"
+    )
+    cand_mask = select_trade_candidates_vectorized(
+        panel,
+        feats,
+        pct=train_pct,
+        metric=cfg_resolved["trade_deviation_metric"],
+        min_range_pct=train_min_range,
+        min_vol_zscore=train_min_vol,
+        sign_consistency_min=sign_min,
+    )
+    return cand_mask, cfg_resolved
 
 
 def _mad(x):
@@ -1885,19 +1926,11 @@ def build_hourly_training_set_and_weights(
     c = panel["close"]
     idx = c.index
 
-    train_pct, train_min_range, train_min_vol = _get_training_candidate_config(cfg)
     if _cached_cand_mask is not None:
         cand_mask = _cached_cand_mask
     else:
-        cand_mask = select_trade_candidates_vectorized(
-            panel,
-            feats,
-            pct=train_pct,
-            metric=cfg["trade_deviation_metric"],
-            min_range_pct=train_min_range,
-            min_vol_zscore=train_min_vol,
-            sign_consistency_min=float(cfg.get("min_feat_sign_consistency", 0.80)),
-        )
+        # Strict mode: never generate events outside persisted offline-optimal candidate ranges.
+        cand_mask, _ = _build_optimal_candidate_mask(panel, feats, cfg)
     if cand_mask is None:
         tprint("No candidates mask returned.")
         return None, None, None, None, None, None
@@ -2535,7 +2568,7 @@ def train_spike_anatomy_model(panel, feats, mkt_gates, cfg, syms, ts_end, _cache
     if _cached_cand_mask is not None:
         cand_mask = _cached_cand_mask
     else:
-        cand_mask = select_trade_candidates_vectorized(panel, feats, pct=cfg["trade_extreme_pct"], metric=cfg["trade_deviation_metric"])
+        cand_mask, _ = _build_optimal_candidate_mask(panel, feats, cfg)
     if cand_mask is None: return None
 
     # Slice to time window FIRST (fast index slice), then filter
@@ -2699,6 +2732,9 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
     _raw_tb_cache = {}
     # kinds must match the downstream generate_label_datasets loop
     _kinds = ["mr", "tf"]
+
+    _prod_events_rows = []
+    _prod_cell_metrics = {}
 
     def _resolve_cell_min_tp_hit(side: str, kind: str, h: int, default_val: float) -> float:
         """Resolve per-cell TP-hit threshold with flexible key fallbacks.
@@ -2905,34 +2941,38 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                             _raw_tb_cache[raw_key] = (lbl, ret, qual)
                         lbl, ret, qual = _raw_tb_cache[raw_key]
 
-                        n_events = lbl.size
-                        tp_hit = float((lbl.values == 2).sum()) / max(1, n_events)
-                        sl_hit = float((lbl.values == 0).sum()) / max(1, n_events)
-                        to_rate = float((lbl.values == 1).sum()) / max(1, n_events)
+                        n_events_raw = lbl.size
+                        tp_hit_raw = float((lbl.values == 2).sum()) / max(1, n_events_raw)
+                        sl_hit_raw = float((lbl.values == 0).sum()) / max(1, n_events_raw)
+                        timeout_raw = float((lbl.values == 1).sum()) / max(1, n_events_raw)
 
-                        if n_events < min_events_eff:
+                        # Kept-universe counters are unavailable at this stage (pre candidate/rr filters).
+                        n_candidates = -1
+                        n_rr_kept = -1
+
+                        if n_events_raw < min_events_eff:
                             reject_counts["n_events"] += 1
                             continue
 
                         # Track guardrail breaches for diagnostics, but do not hard-reject.
-                        if tp_hit < min_tp_hit_eff:
+                        if tp_hit_raw < min_tp_hit_eff:
                             reject_counts["tp_hit"] += 1
-                        if to_rate > max_timeout_eff:
+                        if timeout_raw > max_timeout_eff:
                             reject_counts["timeout"] += 1
 
                         # Composite geometry score (quality-first, TP-hit as guardrail).
                         auc_bound, tp_sep_top10, tp_over_sl = _quality_metrics_from_proxy(lbl, ret, qual)
-                        bind = tp_hit + sl_hit
+                        bind_raw = tp_hit_raw + sl_hit_raw
                         # Empirical TP-hit guardrail baseline from rolling per-timestamp TP share.
                         _tp_ts = (lbl.values == OUT_TP).mean(axis=1).astype(np.float64)
                         _tp_roll_win = int(cfg.get("label_tp_hit_guardrail_roll_hours", 24 * 14))
                         _tp_roll = pd.Series(_tp_ts).rolling(_tp_roll_win, min_periods=max(24, _tp_roll_win // 8)).mean()
-                        _tp_emp_base = float(_tp_roll.quantile(float(cfg.get("label_tp_hit_guardrail_quantile", 0.50)))) if _tp_roll.notna().any() else float(tp_hit)
+                        _tp_emp_base = float(_tp_roll.quantile(float(cfg.get("label_tp_hit_guardrail_quantile", 0.50)))) if _tp_roll.notna().any() else float(tp_hit_raw)
 
                         # Normalize components to stable [0, 1]-ish ranges.
                         auc_term = float(np.clip((auc_bound - 0.5) / 0.2, 0.0, 1.0))
                         sep_term = float(np.clip(tp_sep_top10 / 0.12, 0.0, 1.0))
-                        bind_term = float(np.clip(bind, 0.0, 1.0))
+                        bind_term = float(np.clip(bind_raw, 0.0, 1.0))
                         edge_term = float(np.clip((tp_over_sl - 1.0) / 1.0, 0.0, 1.0))
 
                         # Guardrails: soft penalties (TP-hit no longer primary hard gate).
@@ -2940,8 +2980,8 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                             min_tp_hit_eff * float(cfg.get("label_tp_hit_guardrail_floor_frac", 0.25)),
                             _tp_emp_base,
                         )
-                        tp_guard = float(np.clip(tp_hit / max(tp_guard_target, 1e-9), 0.0, 1.0))
-                        to_guard = float(np.clip(max_timeout_eff / max(to_rate, 1e-9), 0.0, 1.0))
+                        tp_guard = float(np.clip(tp_hit_raw / max(tp_guard_target, 1e-9), 0.0, 1.0))
+                        to_guard = float(np.clip(max_timeout_eff / max(timeout_raw, 1e-9), 0.0, 1.0))
                         rr_guard = float(np.clip(net_rr / max(min_net_rr_eff, 1e-9), 0.0, 2.0))
 
                         # Quality-first ranking weights.
@@ -2959,13 +2999,23 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                             "k_tp": float(k_tp),
                             "sl_base_mult": float(sl_base_mult),
                             "rr_weight": float(max(geom_weight, 1e-6)),
-                            "tp_hit": float(tp_hit),
-                            "sl_hit": float(sl_hit),
-                            "to_rate": float(to_rate),
-                            "n_events": int(n_events),
+                            "tp_hit": float(tp_hit_raw),
+                            "sl_hit": float(sl_hit_raw),
+                            "to_rate": float(timeout_raw),
+                            "n_events": int(n_events_raw),
+                            "tp_hit_raw": float(tp_hit_raw),
+                            "sl_hit_raw": float(sl_hit_raw),
+                            "timeout_raw": float(timeout_raw),
+                            "n_raw": int(n_events_raw),
+                            "tp_hit_kept": float("nan"),
+                            "sl_hit_kept": float("nan"),
+                            "timeout_kept": float("nan"),
+                            "n_candidates": int(n_candidates),
+                            "n_rr_kept": int(n_rr_kept),
                             "auc_bound": float(auc_bound),
                             "tp_sep_top10": float(tp_sep_top10),
-                            "bind": float(bind),
+                            "bind": float(bind_raw),
+                            "bind_raw": float(bind_raw),
                             "tp_over_sl": float(tp_over_sl),
                             "tp_guard_target": float(tp_guard_target),
                             "tp_emp_base": float(_tp_emp_base),
@@ -3003,6 +3053,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                                 round(_sl_base, 4),
                                 round(float(_tp_lo_prod_eval), 6),
                                 round(float(tp_hi), 6),
+                                "prod_floor",
                             )
                             if _prod_key not in _raw_tb_cache:
                                 _tp_df_p, _sl_df_p = compute_barrier_factory(
@@ -3070,8 +3121,8 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                     tprint(
                         "Geometry rejection breakdown: "
                         f"H={H}, side={side}, kind={kind}, total={total_geoms}, "
-                        f"rr={reject_counts['rr']}, n_events={reject_counts['n_events']}, "
-                        f"tp_hit={reject_counts['tp_hit']}, timeout={reject_counts['timeout']}, "
+                        f"rr_rejects={reject_counts['rr']}, n_events_rejects={reject_counts['n_events']}, "
+                        f"tp_hit_guardrail_rejects={reject_counts['tp_hit']}, timeout_guardrail_rejects={reject_counts['timeout']}, "
                         f"min_tp_hit={min_tp_hit_eff:.4f}, tp_lo_search={tp_lo_eff_search:.4f}, tp_lo_prod={tp_lo_eff_prod:.4f}, "
                         f"max_timeout={max_timeout_eff:.4f}, min_rr={min_net_rr_eff:.4f}, "
                         f"min_events={min_events_eff}, "
@@ -3126,10 +3177,11 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                     geom_desc = []
                     for _g in geom_runs:
                         geom_desc.append(
-                            f"(k_tp={_g['k_tp']:.2f}, sl={_g['sl_base_mult']:.2f}, tp_hit={_g['tp_hit']:.3f}, "
-                            f"to={_g['to_rate']:.3f}, n={int(_g['n_events'])}, "
+                            f"(k_tp={_g['k_tp']:.2f}, sl={_g['sl_base_mult']:.2f}, tp_hit_raw={_g['tp_hit']:.3f}, "
+                            f"timeout_raw={_g['to_rate']:.3f}, n_raw={int(_g['n_events'])}, "
                             f"auc_b={_g['auc_bound']:.3f}, sep={_g['tp_sep_top10']*100:.2f}pp, "
-                            f"bind={_g['bind']:.3f}, edge={_g['tp_over_sl']:.2f}, w={_g['rr_weight']:.3f})"
+                            f"bind_raw={_g['bind']:.3f}, edge={_g['tp_over_sl']:.2f}, w={_g['rr_weight']:.3f}, "
+                            f"n_candidates={int(_g.get('n_candidates', -1))}, n_rr_kept={int(_g.get('n_rr_kept', -1))})"
                         )
                     tprint(
                         f"Accepted geometries H={H} side={side} kind={kind}: {len(geom_runs)} | "
@@ -3138,8 +3190,8 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                     tprint(
                         "Geometry diagnostics: "
                         f"H={H}, side={side}, kind={kind}, total={total_geoms}, "
-                        f"rr={reject_counts['rr']}, n_events={reject_counts['n_events']}, "
-                        f"tp_hit_guardrail={reject_counts['tp_hit']}, timeout_guardrail={reject_counts['timeout']}, "
+                        f"rr_rejects={reject_counts['rr']}, n_events_rejects={reject_counts['n_events']}, "
+                        f"tp_hit_guardrail_rejects={reject_counts['tp_hit']}, timeout_guardrail_rejects={reject_counts['timeout']}, "
                         f"min_tp_hit={min_tp_hit_eff:.4f}, max_timeout={max_timeout_eff:.4f}, min_rr={min_net_rr_eff:.4f}, "
                         f"tp_floor_share_mean={float(np.mean(clip_stats['tp_floor_shares'])) if clip_stats['tp_floor_shares'] else 0.0:.3f}, "
                         f"tp_ceil_share_mean={float(np.mean(clip_stats['tp_ceil_shares'])) if clip_stats['tp_ceil_shares'] else 0.0:.3f}"
@@ -3152,6 +3204,49 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                             f"({100.0*_tp_floor_mean:.1f}% > {100.0*_clip_warn_thr:.1f}%). "
                             f"Consider raising production TP floor or widening geometry."
                         )
+
+                    # Build production-admissibility inputs for label-step diagnostics (best geometry per cell).
+                    _best_g = geom_runs[0]
+                    _tp_lo_audit = float(_best_g.get("tp_floor_prod", _best_g.get("tp_floor_search", tp_lo_eff_search)))
+                    _tp_df_a, _sl_df_a = compute_barrier_factory(
+                        atr_pct=atr_pct_local,
+                        window_size=_atr_window,
+                        k_tp=float(_best_g["k_tp"]),
+                        sl_base_mult=float(_best_g["sl_base_mult"]),
+                        horizon=H,
+                        H_base=H_base,
+                        disp_floor=disp_floor,
+                        z_max=z_max,
+                        k_reg=k_reg,
+                        m_lo=m_lo,
+                        m_hi=m_hi,
+                        sl_lo=sl_lo,
+                        sl_hi=sl_hi,
+                        z_gate=z_gate,
+                        tp_lo=_tp_lo_audit,
+                        tp_hi=tp_hi,
+                        _base=_barrier_base,
+                    )
+                    _lbl_s = _best_g["lbl"].stack()
+                    _ret_s = _best_g["ret"].stack()
+                    _tp_s = _tp_df_a.stack().reindex(_lbl_s.index)
+                    _sl_s = _sl_df_a.stack().reindex(_lbl_s.index)
+                    _bucket = f"{kind.upper()}_{side}"
+                    _y_prod = np.where(_lbl_s.values == OUT_TP, 1, np.where(_lbl_s.values == OUT_SL, -1, 0)).astype(np.int8)
+                    _prod_events_rows.append(pd.DataFrame({
+                        "bucket": _bucket,
+                        "horizon": int(H),
+                        "label": _y_prod,
+                        "tp": _tp_s.values.astype(np.float32, copy=False),
+                        "sl": _sl_s.values.astype(np.float32, copy=False),
+                        "payoff": _ret_s.values.astype(np.float32, copy=False),
+                    }))
+                    _prod_cell_metrics[f"{_bucket}_H{int(H)}"] = {
+                        "timeout": float(_best_g.get("timeout_raw", _best_g.get("to_rate", float("nan")))),
+                        "auc_bound": float(_best_g.get("auc_bound", float("nan"))),
+                        "tp_sep_top10": float(_best_g.get("tp_sep_top10", float("nan"))),
+                        "tp_over_sl": float(_best_g.get("tp_over_sl", float("nan"))),
+                    }
 
                 rr_weights_raw = np.array([g["rr_weight"] for g in geom_runs], dtype=np.float32)
                 rr_weights = np.sqrt(rr_weights_raw).astype(np.float32)
@@ -3196,24 +3291,58 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                 tb_cache[(H, side, kind)] = (tb_labels, tb_returns, tb_quality)
                 geom_cache[(H, side, kind)] = {"n_tp": n_tp_df, "n_sl": n_sl_df, "n_to": n_to_df, "n_geom": len(geom_runs)}
 
+    # Production-aligned admissibility diagnostic (label-step side).
+    if _prod_events_rows:
+        _events_prod = pd.concat(_prod_events_rows, ignore_index=True)
+        _score_prod = np.zeros(len(_events_prod), dtype=np.float32)
+        _tp_lo_prod_eval = float(cfg.get("barrier_tp_lo_prod", cfg.get("barrier_tp_lo", 0.02)))
+        _sl_lo_prod_eval = float(cfg.get("tbm_sl_abs_lo_pct", cfg.get("barrier_tp_lo", 0.02)))
+        _gates = ProdGates(
+            n_min=int(cfg.get("prod_adm_n_min", 50)),
+            bind_cell_min=float(cfg.get("prod_adm_bind_cell_min", 0.38)),
+            bind_min=float(cfg.get("prod_adm_bind_min", 0.50)),
+            timeout_max=float(cfg.get("prod_adm_timeout_max", 0.60)),
+            timeout_range_max=float(cfg.get("prod_adm_timeout_range_max", 0.50)),
+            sl_to_tp_max=float(cfg.get("prod_adm_sl_to_tp_max", 3.0)),
+            auc_min=float(cfg.get("prod_adm_auc_min", 0.56)),
+            auc_bound_min=float(cfg.get("prod_adm_auc_bound_min", 0.52)),
+            tp_sep_min=float(cfg.get("prod_adm_tp_sep_min", 0.05)),
+            ap_lift_min=float(cfg.get("prod_adm_ap_lift_min", 1.25)),
+            tp_over_sl_min=float(cfg.get("prod_adm_tp_over_sl_min", 1.05)),
+            tp_floor_bind_max_cell=float(cfg.get("prod_adm_tp_floor_bind_max_cell", 0.70)),
+            tp_floor_bind_max_agg=float(cfg.get("prod_adm_tp_floor_bind_max_agg", 0.65)),
+        )
+        _prod_report = production_admissibility_report(
+            events_prod=_events_prod,
+            score_prod=_score_prod,
+            bucket_horizon_metrics_prod=_prod_cell_metrics,
+            tp_lo_prod=_tp_lo_prod_eval,
+            sl_lo_prod=_sl_lo_prod_eval,
+            gates=_gates,
+        )
+        if not bool(_prod_report.get("admissible_tier0", False)):
+            tprint("[LABEL_PROD_ADMISSIBILITY] FAIL " + " | ".join(_prod_report.get("failures", [])))
+        else:
+            tprint("[LABEL_PROD_ADMISSIBILITY] PASS")
+        # Surface potential threshold conflicts with existing config values.
+        if float(cfg.get("label_max_timeout_rate", 0.90)) > _gates.timeout_max:
+            tprint(
+                f"[LABEL_PROD_ADMISSIBILITY] NOTE existing label_max_timeout_rate={float(cfg.get('label_max_timeout_rate')):.3f} "
+                f"is looser than prod_adm_timeout_max={_gates.timeout_max:.3f}."
+            )
+
     return tb_cache, geom_cache
 
 def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
     tprint(f"Entering function: generate_label_datasets in training.py")
     datasets = {}
 
+    # Always resolve + enforce persisted offline-optimal candidate ranges before any event generation.
+    cfg = _resolve_training_cfg_with_offline_optimisers(cfg)
+
     # Pre-compute shared expensive operations once
     tprint("Pre-computing candidate mask (shared across all steps)...")
-    train_pct, _train_min_range, _train_min_vol = _get_training_candidate_config(cfg)
-    cached_cand_mask = select_trade_candidates_vectorized(
-        panel,
-        feats,
-        pct=train_pct,
-        metric=cfg["trade_deviation_metric"],
-        min_range_pct=_train_min_range,
-        min_vol_zscore=_train_min_vol,
-        sign_consistency_min=float(cfg.get("min_feat_sign_consistency", 0.80)),
-    )
+    cached_cand_mask, cfg = _build_optimal_candidate_mask(panel, feats, cfg)
 
     # Apply OOS holdout: exclude last N days from training labels
     oos_days = cfg.get("oos_holdout_days", 0)
@@ -4922,12 +5051,7 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
     ts_start = ts - pd.Timedelta(days=lookback_days)
 
     # Select candidates
-    cand_mask = select_trade_candidates_vectorized(
-        panel, feats,
-        pct=cfg["trade_extreme_pct"],
-        metric=cfg["trade_deviation_metric"],
-        sign_consistency_min=float(cfg.get("min_feat_sign_consistency", 0.80)),
-    )
+    cand_mask, _ = _build_optimal_candidate_mask(panel, feats, cfg)
     if cand_mask is None:
         tprint("No candidates found.")
         return cfg

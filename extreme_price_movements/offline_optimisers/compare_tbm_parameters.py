@@ -1636,7 +1636,7 @@ def evaluate_config(
             "sl_to_tp": round(sl_hit_kept / max(tp_hit_kept, EPS), 4),
             "tp_mean": float(g["tp"].mean()),
             "sl_mean": float(g["sl"].mean()),
-            "barrier_ratio": round(float(g["sl"].mean() / max(g["tp"].mean(), EPS)), 4),
+            "barrier_ratio": round(float((g["sl"].mean() + 0.003) / max(g["tp"].mean(), EPS)), 4),
             "payoff_mean": float(g["payoff"].mean()),
             "max_timeout_threshold": round(max_timeout_h, 4),
             "ok": ok,
@@ -2733,31 +2733,82 @@ def _param_distance(cfg_a: Dict[str, Any], cfg_b: Dict[str, Any]) -> float:
     return d_win + d_ktp + d_sl + d_tp
 
 
+def _check_label_conflict(v1: np.ndarray, v2: np.ndarray) -> bool:
+    """Check for opposite labels at the same timestamp (1 vs -1)."""
+    # 1 vs -1 conflict: (v1 == 1 & v2 == -1) | (v1 == -1 & v2 == 1)
+    # This is equivalent to v1 * v2 == -1 (since only -1*1 or 1*-1 gives -1)
+    if v1 is None or v2 is None:
+        return False
+    return bool(np.any(v1 * v2 == -1))
+
+
+def _jaccard_distance(v1: np.ndarray, v2: np.ndarray) -> float:
+    """Jaccard distance on non-zero label occurrences."""
+    if v1 is None or v2 is None:
+        return 0.0
+    # Jaccard on outcome existence (label != 0)
+    # v1, v2 are signed labels (-1, 0, 1).
+    m1 = v1 != 0
+    m2 = v2 != 0
+    intersection = np.logical_and(m1, m2).sum()
+    union = np.logical_or(m1, m2).sum()
+    if union == 0:
+        return 0.0
+    return 1.0 - float(intersection) / float(union)
+
+
 def _diverse_subset(
     feasible_df: pd.DataFrame,
     details: Dict[str, Any],
+    run_vectors: Dict[str, np.ndarray],
     min_distance: float = 1.0,
     max_configs: int = 20,
 ) -> pd.DataFrame:
-    """Greedy diversity selection: pick configs ensuring param distance >= min_distance
-    from all previously selected configs.  feasible_df must already be sorted by
-    learnability (best first).
+    """Greedy diversity selection using Param Distance + Jaccard Distance.
+
+    Also enforces a strict check against opposite labels (TP vs SL on same event).
     """
     selected_indices: List[int] = []
     selected_cfgs: List[Dict[str, Any]] = []
+    selected_ids: List[str] = []
 
     for idx, row in feasible_df.iterrows():
         cid = row["config_id"]
         cfg_i = details.get(cid, {}).get("config", {})
+        vec_i = run_vectors.get(cid)
+
         if not isinstance(cfg_i, dict):
             continue
-        too_close = any(
-            _param_distance(cfg_i, sel_cfg) < min_distance
-            for sel_cfg in selected_cfgs
-        )
-        if not too_close:
+
+        # Check against all previously selected
+        accept = True
+        for sel_cfg, sel_id in zip(selected_cfgs, selected_ids):
+            vec_sel = run_vectors.get(sel_id)
+
+            # 1. Critical Conflict Check
+            if _check_label_conflict(vec_i, vec_sel):
+                # We raise an error as requested to fast fail
+                raise ValueError(
+                    f"Opposite labels detected between {sel_id} and candidate {cid} "
+                    "for the same timestamp/symbol. This violates outcome consistency."
+                )
+
+            # 2. Distance Check
+            p_dist = _param_distance(cfg_i, sel_cfg)
+            j_dist = _jaccard_distance(vec_i, vec_sel)
+
+            # Composite distance: purely additive for now
+            total_dist = p_dist + j_dist
+
+            if total_dist < min_distance:
+                accept = False
+                break
+
+        if accept:
             selected_indices.append(idx)
             selected_cfgs.append(cfg_i)
+            selected_ids.append(cid)
+
         if len(selected_indices) >= max_configs:
             break
 
@@ -2906,7 +2957,7 @@ def _build_per_cell_feasible_sets(
         # Exception: if all configs are below the threshold, we might be left with 2 mediocre ones.
         # This enforces that the SET quality is high, not just minimum viability.
         if "min_cell_auc" in diverse.columns:
-            while len(diverse) > 2 and diverse["min_cell_auc"].mean() < _AVG_AUC_THRESHOLD:
+            while len(diverse) > 3 and diverse["min_cell_auc"].mean() < _AVG_AUC_THRESHOLD:
                 diverse = diverse.iloc[:-1]  # Drop last (lowest ranked)
 
         # Attach full out_df row data for downstream use.

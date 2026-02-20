@@ -444,6 +444,10 @@ def _run_cv_ic(
     fold_spreads = []
     Xs = np.asarray(X, dtype=np.float32)
     yv = np.asarray(y, dtype=float)
+    _yv_finite = np.isfinite(yv)
+    if not _yv_finite.all():
+        _yv_fill = float(np.nanmedian(yv[_yv_finite])) if _yv_finite.any() else 0.0
+        yv = np.where(_yv_finite, yv, _yv_fill)
     wv = np.asarray(sample_weight, dtype=float)
     bv = None if bucket_codes is None else np.asarray(bucket_codes)
 

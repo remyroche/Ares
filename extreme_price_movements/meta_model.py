@@ -257,7 +257,9 @@ class MetaModel:
                     h_mask = mask & np.isfinite(r_h)
                     h_ic = _safe_spearman(oof[h_mask], r_h[h_mask])
                 else:
-                    h_ic = _safe_spearman(oof, r_h[:len(oof)])
+                    min_len = min(len(oof), len(r_h))
+                    h_mask2 = np.isfinite(oof[:min_len]) & np.isfinite(r_h[:min_len])
+                    h_ic = _safe_spearman(oof[:min_len][h_mask2], r_h[:min_len][h_mask2])
                 h_ics.append(h_ic)
             if h_ics:
                 ic_mh = float(np.mean(h_ics))

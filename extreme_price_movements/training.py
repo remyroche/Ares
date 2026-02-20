@@ -1062,13 +1062,16 @@ def compute_meta_target(ret2: np.ndarray, ret4: np.ndarray, ret8: np.ndarray, vo
 
     if vol_proxy is not None:
         assert len(vol_proxy) == len(r2), f"vol_proxy length mismatch: {len(vol_proxy)} vs {len(r2)}"
-        vp = np.clip(np.asarray(vol_proxy, dtype=float), 1e-9, None)
+        vp = np.clip(np.asarray(vol_proxy, dtype=float), 1e-4, None)
         # Normalize by expected volatility over horizon H: sigma_H = atr_1h * sqrt(H)
         # Using sqrt(H) scaling assumes diffusive variance.
         n2 = r2 / (vp * np.sqrt(2.0))
         n4 = r4 / (vp * np.sqrt(4.0))
         n8 = r8 / (vp * np.sqrt(8.0))
         raw = (0.40 * n2 + 0.35 * n4 + 0.25 * n8)
+        # Guard against any residual inf/nan before arcsinh
+        raw = np.where(np.isfinite(raw), raw, 0.0)
+        raw = np.clip(raw, -1e6, 1e6)
 
         # Monotone squashing: asinh(x/c) with c=2.0 (risk units)
         # 2.0 risk units = 2 sigma event.
@@ -1901,7 +1904,7 @@ def _optimize_training_sample_weights(
         X_np_std -= mean
         X_np_std /= std
         
-        for train_idx, test_idx in cv.split(X_np_std, qual_vals, label_intervals_ridge):
+        for train_idx, test_idx in cv.split(X_np_std, qual_vals, label_intervals=label_intervals_ridge):
             if len(train_idx) < 100 or len(test_idx) == 0:
                 continue
             from sklearn.linear_model import Ridge # Import Ridge here to avoid circular dependency if it's in the top-level import block
@@ -2871,6 +2874,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
             qv = qual_vals[finite_q]
             y_tp_q = (lbl_vals[finite_q] == OUT_TP).astype(np.float64)
             y_bound_q = (lbl_vals[finite_q] != OUT_TO).astype(np.float64)
+            bmask = y_bound_q.astype(bool)
             if bmask.sum() >= 10:
                 qb = qv[bmask]
                 yb = y_tp_q[bmask]
@@ -3004,9 +3008,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                     )
                     
                     if raw_key not in _raw_tb_cache:
-                        # Vectorized Sweep: Use fast pandas max/min offsets instead of bar-by-bar Numba execution for candidate ranking
-                        from .compare_tbm_parameters import compute_vectorized_soft_labels
-                        lbl, ret, qual = compute_vectorized_soft_labels(panel, tp_df, sl_df, int(H), side=side)
+                        lbl, ret, qual = compute_triple_barrier_labels(panel, tp_df, sl_df, H, side=side, return_outcomes=True)
                         _raw_tb_cache[raw_key] = (lbl, ret, qual)
                         
                     lbl, ret, qual = _raw_tb_cache[raw_key]
@@ -3314,14 +3316,19 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                     _sl_s = _sl_df_a.stack().reindex(_lbl_s.index)
                     _bucket = f"{kind.upper()}_{side}"
                     _y_prod = np.where(_lbl_s.values == OUT_TP, 1, np.where(_lbl_s.values == OUT_SL, -1, 0)).astype(np.int8)
-                    _prod_events_rows.append(pd.DataFrame({
+                    _prod_df = pd.DataFrame({
                         "bucket": _bucket,
                         "horizon": int(H),
                         "label": _y_prod,
                         "tp": _tp_s.values.astype(np.float32, copy=False),
                         "sl": _sl_s.values.astype(np.float32, copy=False),
                         "payoff": _ret_s.values.astype(np.float32, copy=False),
-                    }))
+                    })
+                    _prod_sample_n = int(cfg.get("prod_adm_sample_n", 500_000))
+                    if len(_prod_df) > _prod_sample_n:
+                        _prod_df = _prod_df.sample(n=_prod_sample_n, random_state=42)
+                    _prod_events_rows.append(_prod_df)
+                    del _prod_df, _lbl_s, _ret_s, _tp_s, _sl_s, _y_prod, _tp_df_a, _sl_df_a
                     _prod_cell_metrics[f"{_bucket}_H{int(H)}"] = {
                         "timeout": float(_best_g.get("timeout_raw", _best_g.get("to_rate", float("nan")))),
                         "auc_bound": float(_best_g.get("auc_bound", float("nan"))),
@@ -3438,7 +3445,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                 geom_runs.clear()
                 relaxed_pool.clear()
                 _raw_tb_cache.clear()
-                _barrier_base_cache.clear()
+                # Do NOT clear _barrier_base_cache — it is pre-computed globally and reused across cells.
 
     # Production-aligned admissibility diagnostic (label-step side).
     if _prod_events_rows:
@@ -3573,6 +3580,7 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
                     feats["__geom_n_sl__"] = geom_cache[(H, side, k)]["n_sl"]
                     feats["__geom_n_to__"] = geom_cache[(H, side, k)]["n_to"]
 
+                _tb_key = (H, side, k)
                 X, y, y_ret, cols, w, meta_idx = build_hourly_training_set_and_weights(
                     panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, H, k,
                     trend_filter=trend_filter, feature_key=feat_key,
@@ -3580,8 +3588,10 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
                     label_method="triple_barrier",
                     fixed_tp=fixed_tp, fixed_sl=fixed_sl, side=side,
                     _cached_cand_mask=cached_cand_mask,
-                    _cached_tb=tb_cache[(H, side, k)]
+                    _cached_tb=tb_cache.get(_tb_key)
                 )
+                tb_cache.pop(_tb_key, None)
+                geom_cache.pop(_tb_key, None)
 
                 if X is not None:
                     df_out = X.copy()
@@ -4150,6 +4160,11 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             for _h in _available_horizons:
                 _h_label = f"{side}_{k}_H{_h}"
                 y_ret_raw_h = _y_per_h[_h].astype(np.float64)
+                # Guard: replace any inf/nan with 0 so downstream sklearn/optuna don't choke
+                _y_finite_mask = np.isfinite(y_ret_raw_h)
+                if not _y_finite_mask.all():
+                    _y_fill = float(np.nanmedian(y_ret_raw_h[_y_finite_mask])) if _y_finite_mask.any() else 0.0
+                    y_ret_raw_h = np.where(_y_finite_mask, y_ret_raw_h, _y_fill)
 
                 # Sample weights: magnitude sigmoid (moderate top-30% upweight) + MFE/MAE quality
                 # Each source is normalized to mean=1 before combining so neither dominates.
@@ -4199,7 +4214,7 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                     }
                     if _vol_proxy is not None and len(_vol_proxy) == len(w_meta_h):
                         _meta_extra["vol_cs"] = compute_vol_weights(_vol_proxy, _meta_ts.values)
-                    w_meta_h = _optimize_training_sample_weights(
+                    _w_opt = _optimize_training_sample_weights(
                         df=pd.DataFrame({"ts": _meta_ts}),
                         X_frame=X_meta_base.select_dtypes(include=[np.number]).fillna(0.0),
                         y_ret=y_ret_raw_h,
@@ -4212,6 +4227,15 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                         stage=f"meta_reg_{_h_label}",
                         extra_components=_meta_extra,
                     )
+                    # If optimizer dropped non-finite rows internally, expand back to full union size
+                    _full_n = len(w_meta_h)
+                    if len(_w_opt) != _full_n:
+                        _fin_mask = np.isfinite(y_ret_raw_h)
+                        _w_expanded = np.full(_full_n, float(np.median(_w_opt)), dtype=np.float64)
+                        _w_expanded[_fin_mask] = _w_opt[:int(_fin_mask.sum())]
+                        w_meta_h = _w_expanded
+                    else:
+                        w_meta_h = _w_opt
                 w_meta_h = w_meta_h.astype(np.float32)
 
                 _yt_fin = y_target_h[np.isfinite(y_target_h)]

@@ -12,7 +12,7 @@ from numba import njit
 from scipy.special import logit
 from scipy.stats import median_abs_deviation
 from sklearn.ensemble import ExtraTreesRegressor
-from sklearn.linear_model import Ridge
+from sklearn.linear_model import Ridge, ElasticNet
 from sklearn.linear_model import QuantileRegressor
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import RobustScaler, SplineTransformer
@@ -26,6 +26,7 @@ from extreme_price_movements.feature_selection_extreme_events import (
 from extreme_price_movements.purged_cv import PurgedKFold
 from extreme_price_movements.quantile_feature_selection_extreme_events import mdi_feature_selection_v3
 from extreme_price_movements.utils import tprint
+from extreme_price_movements.huber_nnls import HuberNNLS
 
 
 if importlib.util.find_spec("lightgbm") is not None:
@@ -279,6 +280,20 @@ class MetaModel:
             ])
             model.fit(X_tr, y_tr, ridge__sample_weight=sample_weight)
             return model
+        if kind == "elasticnet":
+            model = Pipeline([
+                ("scaler", RobustScaler()),
+                ("enet", ElasticNet(**params)),
+            ])
+            model.fit(X_tr, y_tr, enet__sample_weight=sample_weight)
+            return model
+        if kind == "huber_nnls":
+            model = Pipeline([
+                ("scaler", RobustScaler()),
+                ("huber", HuberNNLS(**params)),
+            ])
+            model.fit(X_tr, y_tr, huber__sample_weight=sample_weight)
+            return model
         if kind == "extratrees":
             model = ExtraTreesRegressor(**params)
             model.fit(X_tr, y_tr, sample_weight=sample_weight)
@@ -482,6 +497,8 @@ class MetaModel:
             "_wants_constraints": True,
         }
         ridge = {"alpha": 1.0, "fit_intercept": True}
+        enet = {"alpha": 1.0, "l1_ratio": 0.5, "positive": True, "fit_intercept": True}
+        huber = {"alpha": 1.0, "delta": 1.35, "fit_intercept": True}
         et = {
             "n_estimators": 300,
             "max_depth": 8,
@@ -505,6 +522,8 @@ class MetaModel:
             "lgbm_085_unconstrained": ("lgb", [0.85], lgb_q_unconstrained, "quantile"),
             "qreg_l1_085": ("qreg_l1", [0.85], qreg_l1, "quantile"),
             "ridge_reg": ("ridge", [0.85], ridge, "non_quantile"),
+            "elasticnet_reg": ("elasticnet", [0.85], enet, "non_quantile"),
+            "huber_nnls_reg": ("huber_nnls", [0.85], huber, "non_quantile"),
             "extratrees_reg": ("extratrees", [0.85], et, "non_quantile"),
         }
 
@@ -673,6 +692,12 @@ class MetaModel:
                 p["lambda_l2"] = trial.suggest_float("lambda_l2", 5.0, 100.0)
             elif winner_kind == "ridge":
                 p["alpha"] = trial.suggest_float("alpha", 0.01, 100.0, log=True)
+            elif winner_kind == "elasticnet":
+                p["alpha"] = trial.suggest_float("alpha", 0.001, 10.0, log=True)
+                p["l1_ratio"] = trial.suggest_float("l1_ratio", 0.0, 1.0)
+            elif winner_kind == "huber_nnls":
+                p["alpha"] = trial.suggest_float("alpha", 0.0001, 1.0, log=True)
+                p["delta"] = trial.suggest_float("delta", 1.0, 3.0)
             elif winner_kind == "extratrees":
                 p["n_estimators"] = trial.suggest_int("n_estimators", 300, 1200)
                 p["max_depth"] = trial.suggest_int("max_depth", 4, 16)

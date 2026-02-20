@@ -88,6 +88,26 @@ MODEL_FEATURES = [
     "trend_regime", "is_trending", "is_ranging",
     "liq_regime", "regime_stability_24h",
     "rsi_x_high_vol", "trend_x_trending", "vol_z_x_low_vol",
+    # New Indicators (KER, Vortex, ADX, VWAP, HVN/LVN)
+    "ker_10", "ker_16", "ker_24",
+    "vortex_diff_14", "vortex_diff_21", "vortex_diff_34",
+    "adx_7", "adx_10", "adx_14",
+    "adx_di_plus_7", "adx_di_minus_7",
+    "adx_di_plus_10", "adx_di_minus_10",
+    "adx_di_plus_14", "adx_di_minus_14",
+    "adx_7_gt25", "adx_10_gt25", "adx_14_gt25",
+    "adx_7_slope", "adx_10_slope", "adx_14_slope",
+    "dist_vwap_24_atr", "trapped_longs_24",
+    "dist_vwap_48_atr", "trapped_longs_48",
+    "dist_vwap_168_atr", "trapped_longs_168",
+    "vp_dist_poc_atr", "vp_dist_hvn_above_atr", "vp_dist_hvn_below_atr",
+    "vp_dist_lvn_above_atr", "vp_dist_lvn_below_atr",
+    "vp_in_poc_zone", "vp_in_hvn_above_zone", "vp_in_hvn_below_zone",
+    "vp_in_lvn_above_zone", "vp_in_lvn_below_zone",
+    "vp_bin_vol_share", "vp_profile_concentration", "vp_profile_entropy",
+    "vp_lvn_depth_ratio", "vp_accept_poc_touchrate",
+    "vp_accept_hvn_touchrate", "vp_accept_lvn_touchrate",
+    "vp_air_pocket_score",
 ]
 
 # Helper/base features produced in features.py that should remain selectable by model heads.
@@ -588,6 +608,9 @@ CFG = {
         # OHLCV-based trend quality features (Report 2026-02-12)
         "trend_age_hours", "higher_highs_count_48h", "trend_retest_success_rate",
         "trend_overextension_z", "volume_trend_alignment", "trend_regime_stability",
+        # New Indicators
+        "ker_16", "adx_14", "adx_14_slope", "vortex_diff_21",
+        "vp_air_pocket_score", "trapped_longs_48", "vp_dist_hvn_above_atr",
     ] + neutral_feature_keys + MODEL_FEATURES + HELPER_BASE_FEATURES,
 
     # MR Head (Specifics + Global) — includes exhaustion features
@@ -613,6 +636,9 @@ CFG = {
         # OHLCV-based mean-reversion quality features (Report 2026-02-12)
         "trend_strength_vs_reversion", "support_quality_score", "dip_velocity",
         "dip_volume_profile", "reversion_target_distance",
+        # New Indicators
+        "trapped_longs_24", "dist_vwap_24_atr", "vp_dist_poc_atr", "vp_in_poc_zone",
+        "vortex_diff_14", "adx_7",
     ] + neutral_feature_keys + MODEL_FEATURES + HELPER_BASE_FEATURES,
 
     # Meta Learner
@@ -673,6 +699,9 @@ CFG = {
         "ffd_strength_04", "ffd_strength_05", "ffd_strength_06",
         # Asset identity features (raw-scale, not normalized)
         "asset_atr_level", "asset_vol_level", "atr_state", "vol_state",
+        # New Indicators
+        "vp_profile_concentration", "vp_profile_entropy", "vp_lvn_depth_ratio",
+        "adx_14_slope", "trapped_longs_168",
     ],
 
     # Unified learnability-test feature basket used by research comparison scripts

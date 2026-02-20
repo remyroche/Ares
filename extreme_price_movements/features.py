@@ -2321,6 +2321,97 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     feats["pct_breakout_t"] = np.maximum(0, pct_pos - 0.9).astype(np.float32)
 
+    # --- New User Requested Features (KER, Vortex, ADX, VWAP, HVN/LVN) ---
+
+    # 1. Kaufman Efficiency Ratio (KER)
+    # Using c_log (log-prices) for calculation
+    for n in [10, 16, 24]:
+        feats[f"ker_{n}"] = ff.numba_ker(c_log, n).astype(np.float32)
+
+    # 2. Vortex Indicator
+    for n in [14, 21, 34]:
+        # Using smoothed log-prices (o, h, l, c_log)
+        feats[f"vortex_diff_{n}"] = ff.numba_vortex(h, l, c_log, n).astype(np.float32)
+
+    # 3. ADX & Gated Features
+    for n in [7, 10, 14]:
+        adx, dip, dim = ff.numba_adx(h, l, c_log, n)
+        feats[f"adx_{n}"] = adx.astype(np.float32)
+        feats[f"adx_di_plus_{n}"] = dip.astype(np.float32)
+        feats[f"adx_di_minus_{n}"] = dim.astype(np.float32)
+
+        # Gated features
+        feats[f"adx_{n}_gt25"] = (feats[f"adx_{n}"] > 25).astype(np.float32)
+        # Slope of ADX (is trend strengthening?)
+        feats[f"adx_{n}_slope"] = feats[f"adx_{n}"].diff(1).astype(np.float32)
+
+    # 4. Trapped Longs / VWAP Distance
+    # "Distance from the average entry price of the last N hours"
+    # We use c_log and v (log-vol) for VWAP proxy in log-space
+    for n in [24, 48, 168]:
+        vwap_n = pd.DataFrame(index=c_log.index, columns=c_log.columns, dtype=np.float32)
+        for col in c_log.columns:
+            p_arr = c_log[col].to_numpy(dtype=np.float32)
+            v_arr = v[col].to_numpy(dtype=np.float32)
+            vwap_n[col] = ff._numba_rolling_vwap(p_arr, v_arr, n)
+
+        # Distance normalized by ATR (atr_base is raw ATR, atr_ln is log-ATR)
+        # Since we are in log-space, (c_log - vwap_log) is a percentage diff.
+        # We normalize by atr_ln (volatility in log-space).
+        feats[f"dist_vwap_{n}_atr"] = ((c_log - vwap_n) / (feats["atr_ln"] + 1e-12)).astype(np.float32)
+
+        # Trapped Longs: Price < VWAP. Magnitude of trapped signal.
+        # Positive value = Longs are trapped (Price below VWAP)
+        feats[f"trapped_longs_{n}"] = ((vwap_n - c_log) / (feats["atr_ln"] + 1e-12)).clip(lower=0).astype(np.float32)
+
+    # 5. Volume Node Features (HVN/LVN)
+    # Loop over columns, construct DF, call function, stack results
+    tprint("Computing HVN/LVN features...")
+    try:
+        from .volume_node_features import hvn_lvn_features_ohlcv
+
+        # Get feature names from a sample run
+        first_col = c_log.columns[0]
+        df_first = pd.DataFrame({
+            "open": o[first_col],
+            "high": h[first_col],
+            "low": l[first_col],
+            "close": c_log[first_col], # Use c_log, not FFD c
+            "volume": v[first_col]
+        })
+        sample_res = hvn_lvn_features_ohlcv(df_first)
+        hvn_keys = list(sample_res.columns)
+
+        # Initialize containers
+        hvn_results = {k: pd.DataFrame(index=c_log.index, columns=c_log.columns, dtype=np.float32) for k in hvn_keys}
+
+        total_cols = len(c_log.columns)
+        for i, col in enumerate(c_log.columns):
+            if (i+1) % 50 == 0:
+                tprint(f"HVN/LVN: {i+1}/{total_cols}")
+
+            df_col = pd.DataFrame({
+                "open": o[col],
+                "high": h[col],
+                "low": l[col],
+                "close": c_log[col],
+                "volume": v[col]
+            })
+
+            res_df = hvn_lvn_features_ohlcv(df_col)
+
+            for k in hvn_keys:
+                hvn_results[k][col] = res_df[k].values.astype(np.float32)
+
+        # Add to main feats with prefix
+        for k, df_res in hvn_results.items():
+            feats[f"vp_{k}"] = df_res
+
+    except Exception as e:
+        tprint(f"WARNING: HVN/LVN calculation failed: {e}")
+        import traceback
+        traceback.print_exc()
+
     # Free target_proxy — no longer needed after gated feature selection
     del target_proxy, time_blocks, train_mask_proxy
     # Free base price/volume DataFrames and all remaining intermediates before CausalTransform

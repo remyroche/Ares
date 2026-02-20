@@ -2348,7 +2348,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     # 4. Trapped Longs / VWAP Distance
     # "Distance from the average entry price of the last N hours"
     # We use c_log and v (log-vol) for VWAP proxy in log-space
-    for n in [24, 48, 168]:
+    for n in [12, 24, 96]:
         vwap_n = pd.DataFrame(index=c_log.index, columns=c_log.columns, dtype=np.float32)
         for col in c_log.columns:
             p_arr = c_log[col].to_numpy(dtype=np.float32)

@@ -97,9 +97,9 @@ MODEL_FEATURES = [
     "adx_di_plus_14", "adx_di_minus_14",
     "adx_7_gt25", "adx_10_gt25", "adx_14_gt25",
     "adx_7_slope", "adx_10_slope", "adx_14_slope",
+    "dist_vwap_12_atr", "trapped_longs_12",
     "dist_vwap_24_atr", "trapped_longs_24",
-    "dist_vwap_48_atr", "trapped_longs_48",
-    "dist_vwap_168_atr", "trapped_longs_168",
+    "dist_vwap_96_atr", "trapped_longs_96",
     "vp_dist_poc_atr", "vp_dist_hvn_above_atr", "vp_dist_hvn_below_atr",
     "vp_dist_lvn_above_atr", "vp_dist_lvn_below_atr",
     "vp_in_poc_zone", "vp_in_hvn_above_zone", "vp_in_hvn_below_zone",
@@ -610,7 +610,7 @@ CFG = {
         "trend_overextension_z", "volume_trend_alignment", "trend_regime_stability",
         # New Indicators
         "ker_16", "adx_14", "adx_14_slope", "vortex_diff_21",
-        "vp_air_pocket_score", "trapped_longs_48", "vp_dist_hvn_above_atr",
+        "vp_air_pocket_score", "trapped_longs_96", "vp_dist_hvn_above_atr",
     ] + neutral_feature_keys + MODEL_FEATURES + HELPER_BASE_FEATURES,
 
     # MR Head (Specifics + Global) — includes exhaustion features
@@ -637,7 +637,7 @@ CFG = {
         "trend_strength_vs_reversion", "support_quality_score", "dip_velocity",
         "dip_volume_profile", "reversion_target_distance",
         # New Indicators
-        "trapped_longs_24", "dist_vwap_24_atr", "vp_dist_poc_atr", "vp_in_poc_zone",
+        "trapped_longs_12", "dist_vwap_12_atr", "vp_dist_poc_atr", "vp_in_poc_zone",
         "vortex_diff_14", "adx_7",
     ] + neutral_feature_keys + MODEL_FEATURES + HELPER_BASE_FEATURES,
 
@@ -701,7 +701,7 @@ CFG = {
         "asset_atr_level", "asset_vol_level", "atr_state", "vol_state",
         # New Indicators
         "vp_profile_concentration", "vp_profile_entropy", "vp_lvn_depth_ratio",
-        "adx_14_slope", "trapped_longs_168",
+        "adx_14_slope", "trapped_longs_96",
     ],
 
     # Unified learnability-test feature basket used by research comparison scripts

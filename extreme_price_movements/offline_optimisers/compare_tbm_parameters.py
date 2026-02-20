@@ -2721,7 +2721,7 @@ def stage1_grid(cfg_runtime: Optional[Dict[str, Any]] = None) -> List[Dict[str, 
     for k_tp, tp_base, sl_as_tp, atr_win in product(
         [0.4, 0.5, 0.7, 1.0, 1.25, 1.6],
         [0.006, 0.010, 0.015, 0.020, 0.025, 0.030],  # 0.025/0.030 needed for k_tp=0.4 to clear H2 floor guard
-        [0.4, 0.6, 0.8, 1.0, 1.2],
+        [0.4, 0.6, 0.7, 0.8, 1.0],
         [336, 504, 672, 840],  # 14d / 21d / 28d / 35d slow median reference
     ):
         c = base_param_template(cfg_runtime)

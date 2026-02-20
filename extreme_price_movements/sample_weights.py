@@ -7,6 +7,7 @@ based on label time ranges and overlaps.
 import numpy as np
 import pandas as pd
 from typing import Union, Optional
+from dataclasses import dataclass
 
 # Import tprint for logging
 try:
@@ -349,3 +350,101 @@ def compute_mfe_mae_weights(
     w = np.where(is_timeout, np.minimum(w_base, 0.7), w_base)
     
     return w.astype(np.float32)
+
+@dataclass(frozen=True)
+class NegMassRenormCfg:
+    # Timeout raw weight: clip((1 - Pto) / Pto, w_to_min, w_to_max)
+    w_to_min: float = 0.2
+    w_to_max: float = 1.0
+
+    # StopLoss base raw weight inside negatives (usually 1.0)
+    w_sl_raw: float = 1.0
+
+    # Target pos:neg mass ratio rho = M_pos / M_neg_target
+    # rho=1.0 means 50/50 mass (M_neg_target = M_pos)
+    rho_pos_over_neg: float = 1.0
+
+    # Optional clipping of the per-cell negative scalar alpha to avoid extreme rescaling
+    alpha_min: Optional[float] = 0.5
+    alpha_max: Optional[float] = 2.0
+
+    # Numerical safety
+    eps: float = 1e-12
+
+def _clip(x: float, lo: float, hi: float) -> float:
+    return lo if x < lo else hi if x > hi else x
+
+def compute_cell_weights_neg_mass_renorm(
+    *,
+    y: np.ndarray,
+    cell_id: np.ndarray,
+    base_w: Optional[np.ndarray],
+    cfg: NegMassRenormCfg,
+    tp_label,
+    sl_label,
+    to_label,
+) -> np.ndarray:
+    """
+    Returns final per-sample weights w_final with negative mass renormalization.
+    """
+    n = len(y)
+    if base_w is None:
+        base_w = np.ones(n, dtype=np.float64)
+    else:
+        base_w = base_w.astype(np.float64, copy=False)
+
+    w_final = base_w.copy()
+
+    unique_cells = np.unique(cell_id)
+
+    for c in unique_cells:
+        idx = np.where(cell_id == c)[0]
+        if idx.size == 0:
+            continue
+
+        y_c = y[idx]
+        bw_c = base_w[idx]
+
+        is_tp = (y_c == tp_label)
+        is_sl = (y_c == sl_label)
+        is_to = (y_c == to_label)
+
+        # If a cell has no positives or no negatives, skip renorm
+        n_pos = int(is_tp.sum())
+        n_neg = int((is_sl | is_to).sum())
+        if n_pos == 0 or n_neg == 0:
+            continue
+
+        # Timeout rate in THIS CELL among all labels
+        Pto = float(is_to.sum()) / float(idx.size)
+        Pto = min(max(Pto, cfg.eps), 1.0 - cfg.eps)
+
+        # Raw intra-negative weights
+        w_to_raw = _clip((1.0 - Pto) / Pto, cfg.w_to_min, cfg.w_to_max)
+        w_sl_raw = cfg.w_sl_raw
+
+        # Masses (include any existing base weights)
+        M_pos = float(bw_c[is_tp].sum())
+        M_neg_raw = float((bw_c[is_sl] * w_sl_raw).sum() + (bw_c[is_to] * w_to_raw).sum())
+
+        if M_neg_raw <= cfg.eps:
+            continue
+
+        # Target negative mass to preserve pos:neg ratio
+        rho = max(cfg.rho_pos_over_neg, cfg.eps)
+        M_neg_target = M_pos / rho
+
+        alpha = M_neg_target / M_neg_raw
+
+        # Optional alpha clipping
+        if cfg.alpha_min is not None:
+            alpha = max(alpha, cfg.alpha_min)
+        if cfg.alpha_max is not None:
+            alpha = min(alpha, cfg.alpha_max)
+
+        # Apply only to negatives; keep positives unchanged
+        w_final[idx[is_sl]] = bw_c[is_sl] * (w_sl_raw * alpha)
+        w_final[idx[is_to]] = bw_c[is_to] * (w_to_raw * alpha)
+        # TP remain bw_c (already set via copy)
+
+    return w_final

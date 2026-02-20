@@ -14,7 +14,7 @@ ArrayLike = Union[pd.DataFrame, np.ndarray, float]
 def apply_horizon_scaling(
     values: ArrayLike,
     *,
-    horizon: int,
+    horizon: Union[int, float, np.ndarray, pd.DataFrame],
     scaling: str = "none",
     alpha: float = 0.5,
     base: float = 4.0,
@@ -23,9 +23,20 @@ def apply_horizon_scaling(
     if scaling == "none":
         scale = 1.0
     elif scaling == "sqrt":
-        scale = math.sqrt(max(float(horizon), EPS) / max(float(base), EPS))
+        # Check for array/dataframe to use numpy
+        if isinstance(horizon, (np.ndarray, pd.DataFrame, pd.Series)):
+            h = np.maximum(horizon, EPS)
+            b = max(float(base), EPS)
+            scale = np.sqrt(h / b)
+        else:
+            scale = math.sqrt(max(float(horizon), EPS) / max(float(base), EPS))
     elif scaling == "power":
-        scale = (max(float(horizon), EPS) / max(float(base), EPS)) ** float(alpha)
+        if isinstance(horizon, (np.ndarray, pd.DataFrame, pd.Series)):
+             h = np.maximum(horizon, EPS)
+             b = max(float(base), EPS)
+             scale = (h / b) ** float(alpha)
+        else:
+             scale = (max(float(horizon), EPS) / max(float(base), EPS)) ** float(alpha)
     else:
         raise ValueError(f"Unknown horizon scaling: {scaling}")
     return values * scale
@@ -34,7 +45,7 @@ def apply_horizon_scaling(
 def make_effective_tp(
     tp_raw: ArrayLike,
     *,
-    horizon: int,
+    horizon: Union[int, float, np.ndarray, pd.DataFrame],
     horizon_scaling: str,
     lo: float,
     hi: float,
@@ -51,6 +62,8 @@ def make_effective_tp(
     )
     if isinstance(tp_scaled, pd.DataFrame):
         return tp_scaled.clip(lower=float(lo), upper=float(hi))
+    elif isinstance(tp_scaled, (pd.Series, np.ndarray)):
+         return np.clip(tp_scaled, float(lo), float(hi))
     return np.clip(tp_scaled, float(lo), float(hi))
 
 

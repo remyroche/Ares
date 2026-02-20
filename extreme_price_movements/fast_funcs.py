@@ -2075,3 +2075,132 @@ def numba_causal_clip(df, lo, hi):
         return res_df[res_df.columns[0]]
 
     return res_df
+
+@jit(nopython=True, nogil=True, cache=True)
+def _numba_rolling_entropy_proxy_1d(x, window, min_periods):
+    n = len(x)
+    out = np.full(n, np.nan, dtype=np.float32)
+    buf = np.empty(window, dtype=np.float32)
+
+    for i in range(n):
+        start = max(0, i - window + 1)
+        end = i + 1
+
+        # Count valid
+        count = 0
+        sum_val = 0.0
+        sum_sq = 0.0
+
+        for j in range(start, end):
+            val = x[j]
+            if not np.isnan(val):
+                buf[count] = val
+                sum_val += val
+                sum_sq += val * val
+                count += 1
+
+        if count < min_periods:
+            continue
+
+        # Compute Stats
+        mean = sum_val / count
+        var = (sum_sq / count) - (mean * mean)
+        sd = np.sqrt(max(var, 0.0))
+        if sd < 1e-12: sd = 1e-12
+
+        # Sort buffer for quantiles
+        valid_buf = buf[:count]
+        valid_buf.sort() # In-place sort
+
+        # Inline quantile logic for 5 quantiles
+        # q: 0.01, 0.25, 0.50, 0.75, 0.99
+
+        c_1 = count - 1
+
+        # q01
+        v_idx = 0.01 * c_1
+        i_low = int(v_idx)
+        frac = v_idx - i_low
+        # Assuming linear interpolation
+        if i_low >= c_1: q01 = valid_buf[c_1]
+        else: q01 = valid_buf[i_low] + (valid_buf[i_low+1] - valid_buf[i_low]) * frac
+
+        # q25
+        v_idx = 0.25 * c_1
+        i_low = int(v_idx)
+        frac = v_idx - i_low
+        if i_low >= c_1: q25 = valid_buf[c_1]
+        else: q25 = valid_buf[i_low] + (valid_buf[i_low+1] - valid_buf[i_low]) * frac
+
+        # q50 (Median)
+        v_idx = 0.50 * c_1
+        i_low = int(v_idx)
+        frac = v_idx - i_low
+        if i_low >= c_1: q50 = valid_buf[c_1]
+        else: q50 = valid_buf[i_low] + (valid_buf[i_low+1] - valid_buf[i_low]) * frac
+
+        # q75
+        v_idx = 0.75 * c_1
+        i_low = int(v_idx)
+        frac = v_idx - i_low
+        if i_low >= c_1: q75 = valid_buf[c_1]
+        else: q75 = valid_buf[i_low] + (valid_buf[i_low+1] - valid_buf[i_low]) * frac
+
+        # q99
+        v_idx = 0.99 * c_1
+        i_low = int(v_idx)
+        frac = v_idx - i_low
+        if i_low >= c_1: q99 = valid_buf[c_1]
+        else: q99 = valid_buf[i_low] + (valid_buf[i_low+1] - valid_buf[i_low]) * frac
+
+        # Logic from features.py
+        iqr = abs(q75 - q25)
+        full_range = abs(q99 - q01)
+        if full_range < 1e-12: full_range = 1e-12
+
+        spread_ratio = iqr / full_range
+        if spread_ratio < 0: spread_ratio = 0.0
+        elif spread_ratio > 1: spread_ratio = 1.0
+
+        skew_proxy = abs(mean - q50) / sd
+        if skew_proxy > 3.0: skew_proxy = 3.0
+
+        # Term2 clipped to [0.5, 1.0]
+        term2 = 1.0 - skew_proxy / 6.0
+        if term2 < 0.5: term2 = 0.5
+        elif term2 > 1.0: term2 = 1.0
+
+        entropy = spread_ratio * term2
+
+        out[i] = entropy
+
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_entropy_proxy_parallel(mat, window, min_periods):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_entropy_proxy_1d(mat[:, j], window, min_periods)
+
+    return out
+
+def numba_rolling_entropy_proxy(df, window, min_periods=None):
+    # tprint(f"Entering function: numba_rolling_entropy_proxy in fast_funcs.py")
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
+    if min_periods is None:
+        min_periods = window
+
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rolling_entropy_proxy_parallel(mat, window, min_periods)
+
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+
+    return res_df

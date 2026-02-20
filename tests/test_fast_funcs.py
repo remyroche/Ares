@@ -52,7 +52,9 @@ class TestFastFuncs(unittest.TestCase):
 
     def test_transformer(self):
         data = np.random.randn(100, 2).astype(np.float32)
-        df = pd.DataFrame(data, columns=['a', 'b'])
+        # Use datetime index to fix test failure
+        idx = pd.date_range("2021-01-01", periods=100, freq="1h")
+        df = pd.DataFrame(data, columns=['a', 'b'], index=idx)
         tf = CausalFeatureTransformer(winsor_qt=0.05, roll_window=10)
         res = tf.transform(df)
         self.assertEqual(res.shape, df.shape)
@@ -77,41 +79,19 @@ class TestFastFuncs(unittest.TestCase):
         self.assertEqual(res_g.to_numpy()[2], 2.0)
 
     def test_frac_diff(self):
-        # Test Frac Diff with d=1 (should differencing)
-        # Note: Fixed Window Frac Diff implementation
-        # w_0 = 1, w_1 = -1, w_2 = 0... for d=1?
-        # Let's check coefficients:
-        # w_0 = 1
-        # w_1 = -1 * (1 - 1 + 1)/1 = -1
-        # w_2 = -(-1) * (1 - 2 + 1)/2 = 1 * 0 = 0.
-        # So d=1 implies w=[1, -1, 0, 0...].
-        # So y[t] = x[t] - x[t-1].
-
         data = np.array([1, 2, 4, 7, 11], dtype=np.float32)
         df = pd.DataFrame({'a': data})
 
-        # Window needs to be at least 2 for d=1 to have effect
         res = ff.numba_frac_diff(df, d=1.0, window=3)
         res_arr = res['a'].to_numpy()
 
-        # Valid from index = window - 1 = 2
-        # i=2: x[2] - x[1] = 4 - 2 = 2.
         self.assertAlmostEqual(res_arr[2], 2.0)
-        # i=3: x[3] - x[2] = 7 - 4 = 3.
         self.assertAlmostEqual(res_arr[3], 3.0)
 
     def test_atr_no_norm(self):
         h = np.array([10, 12, 11], dtype=np.float32)
         l = np.array([8, 9, 10], dtype=np.float32)
         c = np.array([9, 11, 10], dtype=np.float32)
-        # TR[0] = 10-8 = 2.
-        # TR[1] = max(12-9, |12-9|, |9-9|) = 3.
-        # TR[2] = max(11-10, |11-11|, |10-11|) = 1.
-
-        # ATR EWM(n=2). alpha=1/2 = 0.5. adjust=False.
-        # ATR[0] = TR[0] = 2.
-        # ATR[1] = (1-0.5)*2 + 0.5*3 = 1 + 1.5 = 2.5.
-        # ATR[2] = (1-0.5)*2.5 + 0.5*1 = 1.25 + 0.5 = 1.75.
 
         hf = pd.DataFrame({'a': h})
         lf = pd.DataFrame({'a': l})
@@ -123,6 +103,63 @@ class TestFastFuncs(unittest.TestCase):
         self.assertAlmostEqual(res_arr[0], 2.0)
         self.assertAlmostEqual(res_arr[1], 2.5)
         self.assertAlmostEqual(res_arr[2], 1.75)
+
+    def test_rolling_entropy_proxy(self):
+        # Generate random data
+        np.random.seed(42)
+        df = pd.DataFrame(np.random.randn(100, 5), columns=['a', 'b', 'c', 'd', 'e'])
+        window = 20
+
+        # Run function
+        res = ff.numba_rolling_entropy_proxy(df, window, min_periods=window)
+
+        # Check output shape
+        self.assertEqual(res.shape, df.shape)
+
+        # Check values are in valid range [0.0, 1.0] (after warmup)
+        valid_res = res.iloc[window:].dropna()
+        self.assertTrue((valid_res >= 0.0).all().all())
+        self.assertTrue((valid_res <= 1.0).all().all())
+
+        # Basic check against manual calculation for one window
+        # Last window of col 'a'
+        w_data = df['a'].iloc[-window:].values.astype(np.float32)
+
+        # Sort
+        w_sorted = np.sort(w_data)
+
+        def get_q(data, q):
+            idx = q * (len(data) - 1)
+            lower = int(np.floor(idx))
+            fraction = idx - lower
+            if lower >= len(data) - 1: return data[-1]
+            return data[lower] + (data[lower+1] - data[lower]) * fraction
+
+        q25 = get_q(w_sorted, 0.25)
+        q75 = get_q(w_sorted, 0.75)
+        iqr = abs(q75 - q25)
+
+        q01 = get_q(w_sorted, 0.01)
+        q99 = get_q(w_sorted, 0.99)
+        full_range = abs(q99 - q01)
+        if full_range < 1e-12: full_range = 1e-12
+
+        spread_ratio = np.clip(iqr / full_range, 0, 1)
+
+        mean = np.mean(w_data)
+        std = np.std(w_data) # ddof=0
+        if std < 1e-12: std = 1e-12
+        median = np.median(w_data)
+
+        skew_proxy = min(abs(mean - median) / std, 3.0)
+
+        term2 = np.clip(1.0 - skew_proxy / 6.0, 0.5, 1.0)
+        entropy = spread_ratio * term2
+
+        numba_val = res['a'].iloc[-1]
+
+        # Allow small float diff
+        self.assertAlmostEqual(numba_val, entropy, places=5)
 
 if __name__ == '__main__':
     unittest.main()

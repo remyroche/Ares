@@ -8,7 +8,13 @@ from .feature_selection_extreme_events import mdi_feature_selection_v3
 from .candidates import select_trade_candidates_hourly, select_trade_candidates_vectorized
 import extreme_price_movements.fast_funcs as ff
 from .labeling import compute_trailing_atr_labels, compute_triple_barrier_labels
-from .sample_weights import build_label_time_ranges, compute_sample_weights_with_uniqueness, compute_mfe_mae_weights
+from .sample_weights import (
+    build_label_time_ranges,
+    compute_sample_weights_with_uniqueness,
+    compute_mfe_mae_weights,
+    compute_cell_weights_neg_mass_renorm,
+    NegMassRenormCfg,
+)
 from .sample_weight_optimization import (
     combine_weights_safely,
     compute_vol_weights,
@@ -66,6 +72,46 @@ def _coerce_feature_to_panel_df(x, panel, name: str, fill_value: float = np.nan)
         return pd.DataFrame(fill_value, index=close.index, columns=close.columns)
     tprint(f"Warning: feature '{name}' has unexpected type {type(x)}; using fill_value={fill_value}.")
     return pd.DataFrame(fill_value, index=close.index, columns=close.columns)
+
+
+def _compute_dynamic_horizon_frame(
+    atr_pct: pd.DataFrame,
+    base_horizon: float,
+    cfg: dict,
+    _base: dict | None = None,
+) -> pd.DataFrame | None:
+    """
+    Compute dynamic horizon based on ATR regime.
+    Formula: H_dyn = H_base * (1.0 + 0.5 * clip((z - z_lo)/(z_hi - z_lo), 0, 1))
+    Default z_lo = -1.0, z_hi = 2.0. Maps z=[-1, 2] to scale=[1.0, 1.5].
+    """
+    if not bool(cfg.get("use_dynamic_horizon", False)):
+        return None
+
+    if _base is not None and "z_clipped" in _base:
+        z = _base["z_clipped"]
+    else:
+        # Recompute minimal z-score if base not provided
+        window = int(cfg.get("barrier_atr_window", 24 * 30))
+        disp_floor = float(cfg.get("barrier_disp_floor", 0.1))
+        z_max = float(cfg.get("barrier_z_max", 3.0))
+
+        atr_median = atr_pct.rolling(window, min_periods=24).median()
+        atr_mad = (atr_pct - atr_median).abs().rolling(window, min_periods=24).median()
+        atr_disp = np.maximum(atr_mad, disp_floor * atr_median)
+        z = np.clip((atr_pct - atr_median) / (atr_disp + 1e-12), -z_max, z_max)
+
+    z_lo = float(cfg.get("dynamic_horizon_z_lo", -1.0))
+    z_hi = float(cfg.get("dynamic_horizon_z_hi", 2.0))
+    max_scale_add = float(cfg.get("dynamic_horizon_max_scale_add", 0.5))  # +50%
+
+    # Linear interpolation of scale from 1.0 to 1.0 + max_scale_add
+    # z <= z_lo -> 0.0 -> scale 1.0
+    # z >= z_hi -> 1.0 -> scale 1.5
+    fraction = np.clip((z - z_lo) / (z_hi - z_lo + 1e-9), 0.0, 1.0)
+    scale = 1.0 + max_scale_add * fraction
+
+    return scale * float(base_horizon)
 
 
 def _compute_barrier_base(
@@ -155,7 +201,7 @@ def compute_barrier_factory(
     tp_raw = k_tp * atr_pct * m_clipped
     tp_vals = make_effective_tp(
         tp_raw,
-        horizon=int(horizon),
+        horizon=horizon,
         horizon_scaling="sqrt",
         lo=float(tp_lo),
         hi=float(tp_hi),
@@ -2061,13 +2107,20 @@ def build_hourly_training_set_and_weights(
                 tb_labels, tb_returns, tb_quality = _tb_cache[tb_cache_key]
                 tprint("Using cached barriers/triple-barrier labels")
             else:
+                # Dynamic horizon scaling (+0% to +50% based on ATR regime)
+                dyn_horizon = _compute_dynamic_horizon_frame(atr_pct, float(H), cfg)
+                eff_horizon = dyn_horizon if dyn_horizon is not None else float(H)
+                if dyn_horizon is not None:
+                    h_mean = float(dyn_horizon.values[np.isfinite(dyn_horizon.values)].mean())
+                    tprint(f"Using dynamic horizon scaling (base={H}h -> mean={h_mean:.2f}h)")
+
                 tprint("Computing barriers using unified factory...")
                 tp_df, sl_df, diag = compute_barrier_factory(
                     atr_pct=atr_pct,
                     window_size=int(cfg.get("barrier_atr_window", 24 * 30)),
                     k_tp=k_tp,
                     sl_base_mult=sl_base_mult,
-                    horizon=H,
+                    horizon=eff_horizon,
                     H_base=H_base,
                     disp_floor=disp_floor,
                     z_max=z_max,
@@ -2089,7 +2142,7 @@ def build_hourly_training_set_and_weights(
                     f"sl_mult: lo={diag['sl_at_sl_lo_pct']:.1%}, hi={diag['sl_at_sl_hi_pct']:.1%})"
                 )
                 tb_labels, tb_returns, tb_quality = compute_triple_barrier_labels(
-                    panel, tp_df, sl_df, H, side=side, return_outcomes=True
+                    panel, tp_df, sl_df, H, side=side, return_outcomes=True, horizons_frame=dyn_horizon
                 )
                 if _tb_cache is not None:
                     _tb_cache[tb_cache_key] = (tb_labels, tb_returns, tb_quality)
@@ -2344,6 +2397,32 @@ def build_hourly_training_set_and_weights(
     w_mix = np.clip(w_mix, 0.0, max(p95, 1e-6))
     w_mix = _normalize_cross_sectional(event_ts, w_mix)
     w_mix = w_mix / max(np.nanmean(w_mix), 1e-12)
+
+    # Negative mass renormalization (Timeout downweighting)
+    if bool(cfg.get("use_neg_mass_renorm", True)):
+        renorm_cfg = NegMassRenormCfg(
+            w_to_min=float(cfg.get("neg_mass_w_to_min", 0.2)),
+            w_to_max=float(cfg.get("neg_mass_w_to_max", 1.0)),
+            rho_pos_over_neg=float(cfg.get("neg_mass_rho", 1.0)),
+        )
+        # We treat the whole training set as one 'cell' for renormalization purpose here
+        cell_ids = np.zeros(len(lbl_vals), dtype=np.int32)
+
+        w_mix = compute_cell_weights_neg_mass_renorm(
+            y=lbl_vals,
+            cell_id=cell_ids,
+            base_w=w_mix,
+            cfg=renorm_cfg,
+            tp_label=OUT_TP,
+            sl_label=OUT_SL,
+            to_label=OUT_TO,
+        )
+
+        n_tp_renorm = (lbl_vals == OUT_TP).sum()
+        n_sl_renorm = (lbl_vals == OUT_SL).sum()
+        n_to_renorm = (lbl_vals == OUT_TO).sum()
+        tprint(f"Renormalized Weights: TP={n_tp_renorm} SL={n_sl_renorm} TO={n_to_renorm}")
+
     weights_raw = w_mix.astype(np.float32)
 
     # Build feature DataFrame

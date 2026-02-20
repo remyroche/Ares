@@ -2075,3 +2075,344 @@ def numba_causal_clip(df, lo, hi):
         return res_df[res_df.columns[0]]
 
     return res_df
+
+# ============================================================================
+# NEW INDICATORS: KER, VORTEX, ADX
+# ============================================================================
+
+@jit(nopython=True, nogil=True, cache=True)
+def _numba_ker_1d(close, n):
+    """
+    Kaufman Efficiency Ratio (KER)
+    KER = |Change(N)| / Sum(|Change(1)|, N)
+    """
+    l = len(close)
+    out = np.full(l, np.nan, dtype=np.float32)
+
+    # Need at least N+1 points to compute change over N
+    if n < 1: return out
+
+    # We need rolling sum of absolute 1-bar changes
+    # abs_diff[i] = |close[i] - close[i-1]|
+    # We can compute this on the fly or precompute. On the fly O(1) space.
+
+    # We need a rolling sum of size N.
+    # sum_abs_diff
+
+    current_sum_abs = 0.0
+    # Buffer for abs diffs to handle rolling window removal
+    buf_abs = np.empty(n, dtype=np.float32) # Store all or just window?
+    # Just window circular buffer is enough, but n isn't huge.
+    # Actually we iterate through i.
+
+    # Let's use circular buffer for the rolling sum of 1-bar changes.
+    diff_buf = np.empty(l, dtype=np.float32) # Store all diffs for simplicity? No, O(N) memory is fine.
+
+    # Precompute all 1-bar diffs
+    diff_buf[0] = np.nan
+    for i in range(1, l):
+        diff_buf[i] = abs(close[i] - close[i-1])
+
+    # Now compute rolling sum of diff_buf over window N
+    current_sum = 0.0
+    count = 0
+
+    for i in range(l):
+        # Add new
+        val = diff_buf[i]
+        if not np.isnan(val):
+            current_sum += val
+            count += 1
+
+        # Remove old
+        if i >= n:
+            old_val = diff_buf[i-n]
+            if not np.isnan(old_val):
+                current_sum -= old_val
+                count -= 1
+
+        # We need N valid changes? Or just enough?
+        # KER definition uses N-period window.
+        # Directional Change = |Close[i] - Close[i-N]|
+
+        if i >= n:
+            direction = abs(close[i] - close[i-n])
+            volatility = current_sum
+
+            if volatility > 1e-9:
+                out[i] = direction / volatility
+            else:
+                out[i] = 1.0 if direction == 0 else 0.0 # 0/0 -> 1? or 0? 0 usually.
+                if direction > 0: out[i] = 1.0 # Pure efficiency if vol is 0 but moved? (impossible)
+
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_ker_parallel(mat, n):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = _numba_ker_1d(mat[:, j], n)
+    return out
+
+def numba_ker(close_df, n):
+    tprint(f"Entering function: numba_ker in fast_funcs.py")
+    is_series = isinstance(close_df, pd.Series)
+    if is_series: close_df = close_df.to_frame()
+    mat = close_df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_ker_parallel(mat, n)
+    res_df = pd.DataFrame(res, index=close_df.index, columns=close_df.columns)
+    if is_series: return res_df[res_df.columns[0]]
+    return res_df
+
+@jit(nopython=True, nogil=True, cache=True)
+def _numba_vortex_1d(high, low, close, n):
+    """
+    Vortex Indicator
+    Returns: VI+ - VI- (Trend strength/direction)
+    """
+    l = len(close)
+    out = np.full(l, np.nan, dtype=np.float32)
+
+    # Buffers for VM+, VM-, TR
+    # VM+ = |High[i] - Low[i-1]|
+    # VM- = |Low[i] - High[i-1]|
+    # TR = max(H-L, |H-Cp|, |L-Cp|)
+
+    vm_plus = np.zeros(l, dtype=np.float32)
+    vm_minus = np.zeros(l, dtype=np.float32)
+    tr = np.zeros(l, dtype=np.float32)
+
+    for i in range(1, l):
+        h = high[i]; l_curr = low[i]; c_prev = close[i-1]
+        h_prev = high[i-1]; l_prev = low[i-1]
+
+        vm_plus[i] = abs(h - l_prev)
+        vm_minus[i] = abs(l_curr - h_prev)
+
+        v1 = h - l_curr
+        v2 = abs(h - c_prev)
+        v3 = abs(l_curr - c_prev)
+        tr[i] = max(v1, max(v2, v3))
+
+    # Rolling Sums over N
+    # Since we need N bars, valid from index N
+
+    sum_vm_plus = 0.0
+    sum_vm_minus = 0.0
+    sum_tr = 0.0
+
+    for i in range(l):
+        sum_vm_plus += vm_plus[i]
+        sum_vm_minus += vm_minus[i]
+        sum_tr += tr[i]
+
+        if i >= n:
+            sum_vm_plus -= vm_plus[i-n]
+            sum_vm_minus -= vm_minus[i-n]
+            sum_tr -= tr[i-n]
+
+            if sum_tr > 1e-9:
+                vi_plus = sum_vm_plus / sum_tr
+                vi_minus = sum_vm_minus / sum_tr
+                out[i] = vi_plus - vi_minus
+            else:
+                out[i] = 0.0
+
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_vortex_parallel(h_mat, l_mat, c_mat, n):
+    n_rows, n_cols = h_mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = _numba_vortex_1d(h_mat[:, j], l_mat[:, j], c_mat[:, j], n)
+    return out
+
+def numba_vortex(high_df, low_df, close_df, n):
+    tprint(f"Entering function: numba_vortex in fast_funcs.py")
+    is_series = isinstance(close_df, pd.Series)
+    if is_series: close_df = close_df.to_frame()
+    if isinstance(high_df, pd.Series): high_df = high_df.to_frame()
+    if isinstance(low_df, pd.Series): low_df = low_df.to_frame()
+
+    h_mat = high_df.to_numpy(dtype=np.float32, copy=False)
+    l_mat = low_df.to_numpy(dtype=np.float32, copy=False)
+    c_mat = close_df.to_numpy(dtype=np.float32, copy=False)
+
+    res = _numba_vortex_parallel(h_mat, l_mat, c_mat, n)
+
+    res_df = pd.DataFrame(res, index=close_df.index, columns=close_df.columns)
+    if is_series: return res_df[res_df.columns[0]]
+    return res_df
+
+@jit(nopython=True, nogil=True, cache=True)
+def _numba_adx_1d(high, low, close, n):
+    """
+    ADX Indicator
+    Returns: (ADX, DI+, DI-)
+    Uses Wilder's Smoothing (alpha=1/n)
+    """
+    l = len(close)
+    adx = np.full(l, np.nan, dtype=np.float32)
+    di_plus = np.full(l, np.nan, dtype=np.float32)
+    di_minus = np.full(l, np.nan, dtype=np.float32)
+
+    # Alpha for Wilder's Smoothing
+    alpha = 1.0 / n
+
+    # State variables for smoothing
+    s_tr = 0.0
+    s_dm_plus = 0.0
+    s_dm_minus = 0.0
+
+    # Compute TR, DM+, DM- arrays first
+    tr_arr = np.zeros(l, dtype=np.float32)
+    dm_p_arr = np.zeros(l, dtype=np.float32)
+    dm_m_arr = np.zeros(l, dtype=np.float32)
+
+    tr_arr[0] = high[0] - low[0] # Approx
+
+    for i in range(1, l):
+        h = high[i]; l_curr = low[i]; c_prev = close[i-1]
+        h_prev = high[i-1]; l_prev = low[i-1]
+
+        # TR
+        v1 = h - l_curr
+        v2 = abs(h - c_prev)
+        v3 = abs(l_curr - c_prev)
+        tr_arr[i] = max(v1, max(v2, v3))
+
+        # DM
+        up_move = h - h_prev
+        dn_move = l_prev - l_curr
+
+        if up_move > dn_move and up_move > 0:
+            dm_p_arr[i] = up_move
+        else:
+            dm_p_arr[i] = 0.0
+
+        if dn_move > up_move and dn_move > 0:
+            dm_m_arr[i] = dn_move
+        else:
+            dm_m_arr[i] = 0.0
+
+    # Initialization period
+    sum_tr = 0.0
+    sum_dm_p = 0.0
+    sum_dm_m = 0.0
+
+    for i in range(1, n + 1):
+        if i < l:
+            sum_tr += tr_arr[i]
+            sum_dm_p += dm_p_arr[i]
+            sum_dm_m += dm_m_arr[i]
+
+    # State for TR/DM
+    s_tr = sum_tr
+    s_dm_p = sum_dm_p
+    s_dm_m = sum_dm_m
+
+    # First point (at index N)
+    dx = 0.0
+    if n < l:
+        if s_tr > 0:
+            dip = 100 * s_dm_p / s_tr
+            dim = 100 * s_dm_m / s_tr
+        else:
+            dip = 0.0; dim = 0.0
+
+        di_plus[n] = dip
+        di_minus[n] = dim
+
+        denom = dip + dim
+        dx = 100 * abs(dip - dim) / denom if denom > 0 else 0.0
+
+    # We will accumulate DX sum for second smoothing
+    sum_dx = dx # Initial DX
+
+    # DX Buffer
+    dx_buffer = np.zeros(l, dtype=np.float32)
+    if n < l:
+        dx_buffer[n] = dx
+
+    for i in range(n + 1, l):
+        # Update Smooth Sums
+        s_tr = s_tr - (s_tr / n) + tr_arr[i]
+        s_dm_p = s_dm_p - (s_dm_p / n) + dm_p_arr[i]
+        s_dm_m = s_dm_m - (s_dm_m / n) + dm_m_arr[i]
+
+        if s_tr > 0:
+            dip = 100 * s_dm_p / s_tr
+            dim = 100 * s_dm_m / s_tr
+        else:
+            dip = 0.0; dim = 0.0
+
+        di_plus[i] = dip
+        di_minus[i] = dim
+
+        denom = dip + dim
+        dx = 100 * abs(dip - dim) / denom if denom > 0 else 0.0
+        dx_buffer[i] = dx
+
+    # Now Smooth DX to get ADX
+    # First ADX is average of first N DX values (which start at index N)
+    # So first ADX is at index 2N - 1
+
+    if (2 * n - 1) < l:
+        sum_dx_init = 0.0
+        for i in range(n, 2 * n):
+            sum_dx_init += dx_buffer[i]
+
+        adx_val = sum_dx_init / n
+        adx[2*n - 1] = adx_val
+
+        prev_adx = adx_val
+
+        for i in range(2 * n, l):
+            # ADX[i] = (ADX[i-1] * (N-1) + DX[i]) / N
+            curr_adx = (prev_adx * (n - 1) + dx_buffer[i]) / n
+            adx[i] = curr_adx
+            prev_adx = curr_adx
+
+    return adx, di_plus, di_minus
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_adx_parallel(h_mat, l_mat, c_mat, n):
+    n_rows, n_cols = h_mat.shape
+    out_adx = np.empty((n_rows, n_cols), dtype=np.float32)
+    out_dip = np.empty((n_rows, n_cols), dtype=np.float32)
+    out_dim = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        adx, dip, dim = _numba_adx_1d(h_mat[:, j], l_mat[:, j], c_mat[:, j], n)
+        out_adx[:, j] = adx
+        out_dip[:, j] = dip
+        out_dim[:, j] = dim
+
+    return out_adx, out_dip, out_dim
+
+def numba_adx(high_df, low_df, close_df, n):
+    tprint(f"Entering function: numba_adx in fast_funcs.py")
+    is_series = isinstance(close_df, pd.Series)
+    if is_series: close_df = close_df.to_frame()
+    if isinstance(high_df, pd.Series): high_df = high_df.to_frame()
+    if isinstance(low_df, pd.Series): low_df = low_df.to_frame()
+
+    h_mat = high_df.to_numpy(dtype=np.float32, copy=False)
+    l_mat = low_df.to_numpy(dtype=np.float32, copy=False)
+    c_mat = close_df.to_numpy(dtype=np.float32, copy=False)
+
+    adx, dip, dim = _numba_adx_parallel(h_mat, l_mat, c_mat, n)
+
+    idx = close_df.index
+    cols = close_df.columns
+
+    adx_df = pd.DataFrame(adx, index=idx, columns=cols)
+    dip_df = pd.DataFrame(dip, index=idx, columns=cols)
+    dim_df = pd.DataFrame(dim, index=idx, columns=cols)
+
+    if is_series:
+        return adx_df[cols[0]], dip_df[cols[0]], dim_df[cols[0]]
+
+    return adx_df, dip_df, dim_df

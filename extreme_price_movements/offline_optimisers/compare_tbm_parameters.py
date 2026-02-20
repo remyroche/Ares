@@ -68,6 +68,10 @@ from extreme_price_movements.barrier_geometry import (
     effective_sl_floor,
     apply_horizon_scaling,
 )
+from extreme_price_movements.sample_weights import (
+    compute_cell_weights_neg_mass_renorm,
+    NegMassRenormCfg,
+)
 from extreme_price_movements.production_admissibility import (
     ProdGates,
     production_admissibility_report,
@@ -81,7 +85,7 @@ from extreme_price_movements.production_sl_tp_policy import (
 
 
 EPS = 1e-12
-TBM_CACHE_VERSION = 1
+TBM_CACHE_VERSION = 2
 
 
 def _memory_snapshot_mb() -> float:
@@ -495,14 +499,21 @@ def _tbm_cache_dir(output_path: Path, signature: Dict[str, Any]) -> Path:
 def _estimate_tbm_cache_size_bytes(layer1_cache: Dict[str, Any], layer2_cache: Dict[str, Any]) -> int:
     total = 0
     for v in layer1_cache.values():
-        if not isinstance(v, tuple) or len(v) != 3:
+        if not isinstance(v, tuple) or len(v) < 3:
             continue
-        tp_df, sl_df, _geom = v
+        tp_df = v[0]
+        sl_df = v[1]
         total += int(tp_df.memory_usage(index=True, deep=True).sum())
         total += int(sl_df.memory_usage(index=True, deep=True).sum())
+        if len(v) >= 4 and v[3] is not None:
+             total += int(v[3].memory_usage(index=True, deep=True).sum())
     for v in layer2_cache.values():
-        if not isinstance(v, tuple) or len(v) != 2:
-            continue
+        if not isinstance(v, tuple) or len(v) != 3:
+            # compute_triple_barrier_labels returns 3 elements (lbl, ret, qual)
+            if len(v) == 2: # Legacy support
+                 pass
+            else:
+                 continue
         lbl, ret = v
         total += int(lbl.memory_usage(index=True, deep=True).sum())
         total += int(ret.memory_usage(index=True, deep=True).sum())
@@ -523,11 +534,25 @@ def load_persisted_tbm_cache(cache_dir: Path) -> Tuple[Dict[str, Any], Dict[str,
             key = str(item["key"])
             tp_df = pd.read_parquet(cache_dir / item["tp_file"])
             sl_df = pd.read_parquet(cache_dir / item["sl_file"])
+
+            dyn_h = None
+            if "dyn_horizon_file" in item and item["dyn_horizon_file"]:
+                 dyn_h = pd.read_parquet(cache_dir / item["dyn_horizon_file"])
+
             lbl = pd.read_parquet(cache_dir / item["label_file"])
             ret = pd.read_parquet(cache_dir / item["return_file"])
+
+            # Legacy quality handling
+            qual = None
+            if "quality_file" in item and item["quality_file"]:
+                 qual = pd.read_parquet(cache_dir / item["quality_file"])
+            else:
+                 # Reconstruct dummy quality if missing (legacy cache)
+                 qual = pd.DataFrame(0.5, index=lbl.index, columns=lbl.columns, dtype=np.float32)
+
             geom = {"bound_saturation": float(item.get("bound_saturation", 0.0))}
-            layer1_loaded[key] = (tp_df, sl_df, geom)
-            layer2_loaded[key] = (lbl, ret)
+            layer1_loaded[key] = (tp_df, sl_df, geom, dyn_h)
+            layer2_loaded[key] = (lbl, ret, qual)
         tprint(
             f"Loaded persisted TBM cache from {cache_dir} "
             f"(entries={len(entries)}, est_size_mb={manifest.get('estimated_size_mb', float('nan'))})"
@@ -559,29 +584,52 @@ def save_persisted_tbm_cache(
         cache_dir.mkdir(parents=True, exist_ok=True)
         entries: List[Dict[str, Any]] = []
         for key in common_keys:
-            tp_df, sl_df, geom = layer1_cache[key]
-            lbl, ret = layer2_cache[key]
+            # Layer 1: (tp, sl, geom, dyn_h)
+            v1 = layer1_cache[key]
+            tp_df = v1[0]
+            sl_df = v1[1]
+            geom = v1[2]
+            dyn_h = v1[3] if len(v1) >= 4 else None
+
+            # Layer 2: (lbl, ret, qual)
+            v2 = layer2_cache[key]
+            lbl = v2[0]
+            ret = v2[1]
+            qual = v2[2] if len(v2) >= 3 else None
+
             stem = _safe_filename_from_key(key)
             tp_file = f"{stem}_tp.parquet"
             sl_file = f"{stem}_sl.parquet"
             label_file = f"{stem}_label.parquet"
             return_file = f"{stem}_return.parquet"
+
             tp_df.to_parquet(cache_dir / tp_file, compression="zstd")
             sl_df.to_parquet(cache_dir / sl_file, compression="zstd")
             lbl.to_parquet(cache_dir / label_file, compression="zstd")
             ret.to_parquet(cache_dir / return_file, compression="zstd")
-            entries.append(
-                {
-                    "key": key,
-                    "tp_file": tp_file,
-                    "sl_file": sl_file,
-                    "label_file": label_file,
-                    "return_file": return_file,
-                    "bound_saturation": _safe_float(geom.get("bound_saturation"), 0.0)
-                    if isinstance(geom, dict)
-                    else 0.0,
-                }
-            )
+
+            entry = {
+                "key": key,
+                "tp_file": tp_file,
+                "sl_file": sl_file,
+                "label_file": label_file,
+                "return_file": return_file,
+                "bound_saturation": _safe_float(geom.get("bound_saturation"), 0.0)
+                if isinstance(geom, dict)
+                else 0.0,
+            }
+
+            if dyn_h is not None:
+                dyn_file = f"{stem}_dyn_h.parquet"
+                dyn_h.to_parquet(cache_dir / dyn_file, compression="zstd")
+                entry["dyn_horizon_file"] = dyn_file
+
+            if qual is not None:
+                qual_file = f"{stem}_qual.parquet"
+                qual.to_parquet(cache_dir / qual_file, compression="zstd")
+                entry["quality_file"] = qual_file
+
+            entries.append(entry)
         manifest = {
             "signature": signature,
             "entries": entries,
@@ -866,12 +914,50 @@ def _apply_caps(x: pd.DataFrame, lo: float, hi: float) -> pd.DataFrame:
     return x.clip(lower=lo, upper=hi)
 
 
+def _compute_dynamic_horizon(
+    atr: pd.DataFrame,
+    base_horizon: int,
+    cfg: Dict[str, Any],
+) -> Tuple[Optional[pd.DataFrame], Dict[str, float]]:
+    if not bool(cfg.get("use_dynamic_horizon", False)):
+        return None, {}
+
+    window = int(cfg.get("base_atr_window", 24 * 30))
+    disp_floor = 0.1
+    z_max = 3.0
+
+    # atr is already shifted in build_barriers, so just roll
+    atr_median = atr.rolling(window, min_periods=24).median()
+    atr_mad = (atr - atr_median).abs().rolling(window, min_periods=24).median()
+    atr_disp = np.maximum(atr_mad, disp_floor * atr_median)
+    z = ((atr - atr_median) / (atr_disp + 1e-12)).clip(-z_max, z_max)
+
+    z_lo = float(cfg.get("dynamic_horizon_z_lo", -1.0))
+    z_hi = float(cfg.get("dynamic_horizon_z_hi", 2.0))
+    max_scale_add = float(cfg.get("dynamic_horizon_max_scale_add", 0.5))
+
+    fraction = ((z - z_lo) / (z_hi - z_lo + 1e-9)).clip(0.0, 1.0)
+    scale = 1.0 + max_scale_add * fraction
+
+    dyn_h = scale * float(base_horizon)
+
+    # Stats
+    vals = dyn_h.values.ravel()
+    vals = vals[np.isfinite(vals)]
+    stats = {
+        "h_mean": float(np.mean(vals)) if vals.size else float(base_horizon),
+        "h_p10": float(np.percentile(vals, 10)) if vals.size else float(base_horizon),
+        "h_p90": float(np.percentile(vals, 90)) if vals.size else float(base_horizon),
+    }
+    return dyn_h, stats
+
+
 def build_barriers(
     artifacts: RunArtifacts,
     cfg: Dict[str, Any],
     horizon: int,
     side: str,
-) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, float]]:
+) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, float], Optional[pd.DataFrame]]:
     # Use entry-time ATR only: shift by 1 bar so the barrier is set using only
     # data available at the moment the signal fires, not the current bar's ATR
     # (which would be look-ahead on 15m bars where ATR is computed on the closing price).
@@ -915,9 +1001,14 @@ def build_barriers(
         tp_min_abs_pct=float(cfg.get("tp_min_abs_pct", 0.005)),
         tp_min_bps=float(cfg.get("tp_min_bps", 50)),
     )
+
+    # Dynamic horizon
+    dyn_horizon, dyn_stats = _compute_dynamic_horizon(atr, horizon, cfg)
+    eff_horizon = dyn_horizon if dyn_horizon is not None else horizon
+
     tp = make_effective_tp(
         tp_raw,
-        horizon=horizon,
+        horizon=eff_horizon,
         horizon_scaling=cfg.get("horizon_scaling", "none"),
         lo=float(cfg.get("tp_abs_lo_pct", 0.005)),
         hi=float(cfg.get("tp_abs_hi_pct", 0.08)),
@@ -963,7 +1054,10 @@ def build_barriers(
         "sl_floor_eff": float(sl_lo_eff),
         "bound_saturation": float(((tp.values <= float(tp_lo_eff + 1e-9)) | (tp.values >= float(cfg.get("tp_abs_hi_pct", 0.08) - 1e-9))).mean()),
     }
-    return tp.astype(np.float32), sl.astype(np.float32), out_stats
+    if dyn_stats:
+        out_stats.update(dyn_stats)
+
+    return tp.astype(np.float32), sl.astype(np.float32), out_stats, dyn_horizon
 
 
 # ---------------------------
@@ -1341,21 +1435,22 @@ def evaluate_config(
             }), sort_keys=True)
 
             if key1 not in layer1_cache:
-                tp_df, sl_df, geom_stats = build_barriers(artifacts, cfg, h, side)
-                layer1_cache[key1] = (tp_df, sl_df, geom_stats)
+                tp_df, sl_df, geom_stats, dyn_h = build_barriers(artifacts, cfg, h, side)
+                layer1_cache[key1] = (tp_df, sl_df, geom_stats, dyn_h)
                 tprint(f"[eval:{cfg_id}] barrier_cache miss h={h} side={side}")
             else:
                 tprint(f"[eval:{cfg_id}] barrier_cache hit h={h} side={side}")
-            tp_df, sl_df, geom_stats = layer1_cache[key1]
+            tp_df, sl_df, geom_stats, dyn_h = layer1_cache[key1]
 
             # Key2: Labels depends fully on barriers (key1) + horizon/side (in key1).
-            # Note: compute_triple_barrier_labels uses JIT logic that may interpret TP
-            # as trailing activation. It does NOT use sl_activation_minutes.
-            # So key2 is effectively just key1.
             key2 = key1
 
             if key2 not in layer2_cache:
-                lbl, ret, qual = compute_vectorized_soft_labels(artifacts.panel, tp_df, sl_df, h, side=side)
+                # Use compute_triple_barrier_labels with return_outcomes=True to get (label, ret, qual)
+                # This matches training.py's labeling logic including dynamic horizon support.
+                lbl, ret, qual = compute_triple_barrier_labels(
+                    artifacts.panel, tp_df, sl_df, h, side=side, return_outcomes=True, horizons_frame=dyn_h
+                )
                 layer2_cache[key2] = (lbl, ret, qual)
                 tprint(f"[eval:{cfg_id}] label_cache miss h={h} side={side}")
             else:
@@ -1371,6 +1466,11 @@ def evaluate_config(
             tp_arr = tp_df.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
             sl_arr = sl_df.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
             
+            if dyn_h is not None:
+                h_arr = dyn_h.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
+            else:
+                h_arr = np.full(len(label_arr), float(h), dtype=np.float32)
+
             # Create DataFrame directly from numpy arrays
             df = pd.DataFrame(
                 {
@@ -1379,6 +1479,7 @@ def evaluate_config(
                     "quality": qual_arr,
                     "tp": tp_arr,
                     "sl": sl_arr,
+                    "horizon_eff": h_arr,
                 },
                 index=stacked_idx
             )
@@ -1413,6 +1514,7 @@ def evaluate_config(
     events["tp"] = events["tp"].astype(np.float32, copy=False)
     events["sl"] = events["sl"].astype(np.float32, copy=False)
     events["horizon"] = events["horizon"].astype(np.int16, copy=False)
+    events["horizon_eff"] = events["horizon_eff"].astype(np.float32, copy=False)
     events["side"] = events["side"].astype("category")
     tprint(
         f"[eval:{cfg_id}] raw_events={len(events):,} "
@@ -1651,6 +1753,7 @@ def evaluate_config(
         "tp_hit_kept": 0.0, "sl_hit_kept": 0.0, "timeout_kept": 1.0,
         "bind": 0.0, "balance": 0.0, "sl_to_tp": float("nan"),
         "tp_mean": float("nan"), "sl_mean": float("nan"), "barrier_ratio": float("nan"),
+        "h_eff_mean": float("nan"), "h_eff_p90": float("nan"),
         "payoff_mean": float("nan"),
         "max_timeout_threshold": float("nan"), "ok": False,
         "ic_payoff": float("nan"), "ic_label": float("nan"),
@@ -1704,6 +1807,8 @@ def evaluate_config(
             "tp_mean": float(g["tp"].mean()),
             "sl_mean": float(g["sl"].mean()),
             "barrier_ratio": round(float((g["sl"].mean() + 0.003) / max(g["tp"].mean(), EPS)), 4),
+            "h_eff_mean": float(g["horizon_eff"].mean()),
+            "h_eff_p90": float(g["horizon_eff"].quantile(0.90)),
             "payoff_mean": float(g["payoff"].mean()),
             "max_timeout_threshold": round(max_timeout_h, 4),
             "ok": ok,
@@ -1712,6 +1817,34 @@ def evaluate_config(
         }
 
     weights = compute_weights(events, cfg)
+
+    # Negative mass renormalization (Timeout downweighting)
+    if bool(cfg.get("use_neg_mass_renorm", True)):
+        # Construct cell_id array from bucket+horizon
+        # events['bucket'] is string, events['horizon'] is int.
+        # compute_cell_weights_neg_mass_renorm accepts string or int cell_ids.
+        # We can construct "Bucket_H{h}" strings.
+        # Doing this efficiently in pandas:
+        cell_ids = (events["bucket"].astype(str) + "_H" + events["horizon"].astype(str)).values
+
+        # Labels are: TP=1, SL=-1, TO=0.
+        # NegMassRenormCfg uses the config dict.
+        renorm_cfg = NegMassRenormCfg(
+            w_to_min=float(cfg.get("neg_mass_w_to_min", 0.2)),
+            w_to_max=float(cfg.get("neg_mass_w_to_max", 1.0)),
+            rho_pos_over_neg=float(cfg.get("neg_mass_rho", 1.0)),
+        )
+
+        weights = compute_cell_weights_neg_mass_renorm(
+            y=events["label"].values.astype(np.int8),
+            cell_id=cell_ids,
+            base_w=weights.astype(np.float64),
+            cfg=renorm_cfg,
+            tp_label=1,
+            sl_label=-1,
+            to_label=0,
+        ).astype(np.float32)
+
     ess = effective_sample_size(weights)
     ess_full = float(full_n)
     coverage = ess / max(ess_full, 1.0)
@@ -3361,9 +3494,8 @@ def _print_winning_geometry_summary(
         # --- Per bucket-horizon: full diagnostic row ---
         if bh:
             hdr = (f"    {'Cell':<18} {'n':>7}  "
-                   f"{'tp_hit':>7}  {'sl_hit':>7}  {'timeout':>8}  {'bind':>6}  "
-                   f"{'auc':>6}  {'auc_bnd':>7}  {'ic_lbl':>7}  {'tp_sep%':>8}  "
-                   f"{'vol_lo':>6}  {'vol_hi':>6}  ok")
+                   f"{'tp':>6} {'sl':>6} {'to':>6}  {'bind':>5} "
+                   f"{'h_eff':>5}  {'auc':>6}  {'auc_bnd':>7}  {'ic_lbl':>7}  {'sep%':>7}  ok")
             tprint(hdr)
             for cell_name in sorted(bh.keys()):
                 m = bh[cell_name]
@@ -3376,14 +3508,13 @@ def _print_winning_geometry_summary(
                     return format(v, fmt) if not (isinstance(v, float) and math.isnan(v)) else "  n/a"
                 tprint(
                     f"    {cell_name:<18} {m.get('n',0):>7,}  "
-                    f"{m.get('tp_hit',0):>7.3f}  {m.get('sl_hit',0):>7.3f}  "
-                    f"{m.get('timeout',0):>8.3f}  {m.get('bind',0):>6.3f}  "
+                    f"{m.get('tp_hit',0):>6.3f} {m.get('sl_hit',0):>6.3f} {m.get('timeout',0):>6.3f}  "
+                    f"{m.get('bind',0):>5.3f}  "
+                    f"{m.get('h_eff_mean',0):>5.2f}  "
                     f"{_fmt(m.get('auc_label', float('nan'))):>6}  "
                     f"{_fmt(m.get('auc_bound', float('nan'))):>7}  "
                     f"{_fmt(m.get('ic_label', float('nan'))):>7}  "
-                    f"{(format(m.get('tp_sep_top10',0)*100,'+.2f') if not (isinstance(m.get('tp_sep_top10',float('nan')),float) and math.isnan(m.get('tp_sep_top10',float('nan')))) else '  n/a'):>8}pp  "
-                    f"{_fmt(m.get('auc_vol_low', float('nan'))):>6}  "
-                    f"{_fmt(m.get('auc_vol_high', float('nan'))):>6}  "
+                    f"{(format(m.get('tp_sep_top10',0)*100,'+.2f') if not (isinstance(m.get('tp_sep_top10',float('nan')),float) and math.isnan(m.get('tp_sep_top10',float('nan')))) else '  n/a'):>7}  "
                     f"{ok_sym}{cell_flags}"
                 )
 

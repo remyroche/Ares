@@ -24,7 +24,7 @@ def _soft_squash_pos(val):
     return val / (1.0 + val)
 
 @jit(nopython=True, nogil=True, cache=True)
-def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl_arr, horizon, side):
+def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl_arr, horizon, side, horizons_arr=None):
     """
     Triple barrier labeling returning 3-way outcome and quality scores.
 
@@ -40,6 +40,7 @@ def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl
 
     times: int64 (nanoseconds)
     side: 1 for Long, -1 for Short
+    horizons_arr: optional float array of horizon hours per row. If None, uses scalar `horizon`.
     """
     n = len(closes)
     outcomes = np.zeros(n, dtype=np.int8)
@@ -47,11 +48,18 @@ def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl
     returns = np.zeros(n, dtype=np.float32)
     exit_idxs = np.zeros(n, dtype=np.int64)
 
-    limit_ns = horizon * 3600 * 1_000_000_000
+    limit_ns_base = int(horizon * 3600 * 1_000_000_000)
 
     for i in range(n - 1):
         entry_p = closes[i]
         entry_t = times[i]
+
+        if horizons_arr is not None:
+             # Per-trade dynamic horizon
+             limit_ns = int(horizons_arr[i] * 3600 * 1_000_000_000)
+        else:
+             limit_ns = limit_ns_base
+
         cutoff_t = entry_t + limit_ns
 
         if np.isnan(entry_p) or entry_p <= 0:
@@ -375,7 +383,7 @@ def compute_trailing_atr_labels(
     return out_labels, out_returns
 
 @jit(nopython=True, nogil=True, cache=True)
-def _numba_triple_barrier(times, opens, highs, lows, closes, tp_arr, sl_arr, horizon, side):
+def _numba_triple_barrier(times, opens, highs, lows, closes, tp_arr, sl_arr, horizon, side, horizons_arr=None):
     """
     Trailing-profit barrier labeling with early stall exit.
     tp_arr: Activation threshold (relative, >0) — once MFE reaches this, trailing stop activates.
@@ -385,19 +393,26 @@ def _numba_triple_barrier(times, opens, highs, lows, closes, tp_arr, sl_arr, hor
     times: int64 (nanoseconds)
     opens: used for overshoot time exits (first bar after horizon)
     side: 1 for Long, -1 for Short
+    horizons_arr: optional float array of horizon hours per row. If None, uses scalar `horizon`.
     """
     n = len(closes)
     labels = np.zeros(n, dtype=np.int8)
     returns = np.zeros(n, dtype=np.float32)
     exit_idxs = np.zeros(n, dtype=np.int64)
 
-    limit_ns = horizon * 3600 * 1_000_000_000
-    stall_ns = limit_ns // 2  # 50% of horizon
+    limit_ns_base = int(horizon * 3600 * 1_000_000_000)
 
     for i in range(n - 1):
         entry_p = closes[i]
         entry_t = times[i]
+
+        if horizons_arr is not None:
+             limit_ns = int(horizons_arr[i] * 3600 * 1_000_000_000)
+        else:
+             limit_ns = limit_ns_base
+
         cutoff_t = entry_t + limit_ns
+        stall_ns = limit_ns // 2
         stall_t = entry_t + stall_ns
 
         if np.isnan(entry_p) or entry_p <= 0:
@@ -536,7 +551,7 @@ def _numba_triple_barrier(times, opens, highs, lows, closes, tp_arr, sl_arr, hor
 
     return labels, returns, exit_idxs
 
-def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_outcomes=False):
+def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_outcomes=False, horizons_frame=None):
     """
     Computes triple barrier labels for a panel.
     tp: Scalar float OR DataFrame/Series matching panel dimensions.
@@ -544,6 +559,8 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
     side: "long" or "short"
     return_outcomes: If True, returns (outcomes, quality, returns).
                      Outcomes: 2=TP, 1=TIMEOUT, 0=SL
+    horizons_frame: Optional DataFrame matching panel dimensions with horizon hours (float).
+                    Used for adaptive horizon scaling.
     """
     required = {"close", "high", "low"}
     missing = required.difference(panel.keys())
@@ -562,6 +579,10 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
         l = l.reindex(index=c.index, columns=c.columns)
     if not o.index.equals(c.index) or not o.columns.equals(c.columns):
         o = o.reindex(index=c.index, columns=c.columns)
+
+    if horizons_frame is not None:
+        if not horizons_frame.index.equals(c.index) or not horizons_frame.columns.equals(c.columns):
+            horizons_frame = horizons_frame.reindex(index=c.index, columns=c.columns)
 
     assets = c.columns
     # Force ns resolution so Numba horizon arithmetic (in ns) is consistent across pandas versions.
@@ -594,13 +615,15 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
         l_arr = l[asset].to_numpy(dtype=np.float32)
         tp_arr = tp_df[asset].to_numpy(dtype=np.float32) if asset in tp_df.columns else np.full(len(c_arr), np.nan, dtype=np.float32)
         sl_arr = sl_df[asset].to_numpy(dtype=np.float32) if asset in sl_df.columns else np.full(len(c_arr), np.nan, dtype=np.float32)
+        h_arr_custom = horizons_frame[asset].to_numpy(dtype=np.float32) if (horizons_frame is not None and asset in horizons_frame.columns) else None
+
         if return_outcomes:
             out, rets, qual, _ = _numba_triple_barrier_outcomes(
-                times, o_arr, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int
+                times, o_arr, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int, horizons_arr=h_arr_custom
             )
             return asset, out, rets, qual
         else:
-            lbs, rets, _ = _numba_triple_barrier(times, o_arr, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int)
+            lbs, rets, _ = _numba_triple_barrier(times, o_arr, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int, horizons_arr=h_arr_custom)
             return asset, lbs, rets, None
 
     results = Parallel(n_jobs=2, prefer="threads")(

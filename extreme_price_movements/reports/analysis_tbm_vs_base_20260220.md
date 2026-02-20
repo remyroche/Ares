@@ -60,3 +60,14 @@
 **Answer:** Regularization is already very strong.
 *   XGBoost config: `reg_lambda=15.0`, `num_parallel_tree=400`, `n_estimators=10`. This is a Boosted Random Forest of 4000 trees.
 *   The gap likely stems from the **low signal-to-noise ratio** of short-side mean reversion, leading to "winner's curse" selection bias in the race, rather than classic overfitting.
+
+## 8. Verification of Training Data Scope
+**Question:** Verify that we only train on tradeable periods (candidates). If so, isn't the 1% base rate surprising?
+
+**Answer:**
+*   **Masking Verified:** `training.py` (lines 1320-1453) strictly enforces the candidate mask. It calls `_build_optimal_candidate_mask` (using thresholds from `compare_candidate_thresholds.py`) and only extracts events where the mask is True. We **do not** train on the entire time series.
+*   **Base Rate Context:** The "1% base rate" refers to the **conditional probability of success (TP Hit)** *given* that a candidate event has occurred.
+    - **Candidates (6% of data):** These represent "High Volatility / Opportunity".
+    - **TP Hit (1-4% of candidates):** This represents "Success". Even within high-volatility events, hitting an aggressive profit target (e.g., 2-6%) without first hitting a stop-loss or timing out is rare.
+    - **Implication:** We are indeed "predicting what happens next" within a high-volatility state. The data shows that "what happens next" is usually Chop (Timeout/SL) rather than a clean Trend (TP). Finding the 4% of "clean moves" within the 100% of "volatile moves" is the difficult task the model solves.
+*   **Conclusion:** The low base rate (~1-4%) and negative BSS are consistent with the difficulty of the problem *within the candidate subset*.

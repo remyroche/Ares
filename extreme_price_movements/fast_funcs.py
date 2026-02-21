@@ -627,76 +627,66 @@ def _numba_rolling_mean_1d(x, window):
 
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_rolling_std_1d(x, window):
-    """Single-pass rolling std with K-shift for numerical stability."""
+    """
+    Single-pass rolling std with K-shift for numerical stability.
+    O(n) implementation using incremental updates.
+    """
     n = len(x)
     out = np.full(n, np.nan, dtype=np.float32)
     
     if window <= 0:
         return out
     
-    # Circular buffer for K-shift
-    window_vals = np.empty(window, dtype=np.float64)
-    window_valid = np.zeros(window, dtype=np.bool_)
+    # Circular buffer for values in the current window
+    buf = np.empty(window, dtype=np.float64)
+    buf_valid = np.zeros(window, dtype=np.bool_)
     buf_idx = 0
     
+    # K-shift constant (set once from first valid value)
+    K = 0.0
+    K_set = False
+
+    # Running shifted sums: d = val - K
+    sum_d = 0.0
+    sum_d_sq = 0.0
+    count = 0
+
     for i in range(n):
         val_in = x[i]
+        in_valid = not np.isnan(val_in)
         
-        # Store in circular buffer
-        if not np.isnan(val_in):
-            window_vals[buf_idx] = val_in
-            window_valid[buf_idx] = True
+        # --- Remove outgoing value (only after window is full) ---
+        if i >= window:
+            out_idx = buf_idx          # oldest slot (about to be overwritten)
+            if buf_valid[out_idx]:
+                old_d = buf[out_idx] - K
+                sum_d -= old_d
+                sum_d_sq -= old_d * old_d
+                count -= 1
+
+        # --- Add incoming value ---
+        if in_valid:
+            if not K_set:
+                K = val_in
+                K_set = True
+            d = val_in - K
+            sum_d += d
+            sum_d_sq += d * d
+            count += 1
+            buf[buf_idx] = val_in
+            buf_valid[buf_idx] = True
         else:
-            window_valid[buf_idx] = False
+            buf_valid[buf_idx] = False
+
         buf_idx = (buf_idx + 1) % window
         
-        if i >= window - 1:
-            # Compute K-shift variance
-            K = 0.0
-            K_set = False
-            sum_d = 0.0
-            sum_d_sq = 0.0
-            count = 0
+        # --- Compute std ---
+        if count > 1:
+            var_num = sum_d_sq - (sum_d * sum_d) / count
+            if var_num < 0:
+                var_num = 0.0
+            out[i] = np.float32(np.sqrt(var_num / (count - 1)))
             
-            for j in range(window):
-                idx = (buf_idx + j) % window
-                if window_valid[idx]:
-                    v = window_vals[idx]
-                    if not K_set:
-                        K = v
-                        K_set = True
-                    d = v - K
-                    sum_d += d
-                    sum_d_sq += d * d
-                    count += 1
-            
-            if count > 1:
-                var_num = sum_d_sq - (sum_d * sum_d) / count
-                if var_num < 0:
-                    var_num = 0.0
-                out[i] = np.float32(np.sqrt(var_num / (count - 1)))
-        
-        else:
-            # Warmup
-            if not np.isnan(val_in):
-                if i == 0:
-                    K = val_in
-                    K_set = True
-                    sum_d = 0.0
-                    sum_d_sq = 0.0
-                    count = 1
-                else:
-                    d = val_in - K
-                    sum_d += d
-                    sum_d_sq += d * d
-                    count += 1
-                
-                if count > 1:
-                    var_num = sum_d_sq - (sum_d * sum_d) / count
-                    if var_num < 0:
-                        var_num = 0.0
-                    out[i] = np.float32(np.sqrt(var_num / (count - 1)))
-    
     return out
 
 

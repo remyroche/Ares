@@ -627,77 +627,68 @@ def _numba_rolling_mean_1d(x, window):
 
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_rolling_std_1d(x, window):
-    """Single-pass rolling std with K-shift for numerical stability."""
+    """
+    Single-pass rolling std with K-shift for numerical stability.
+    Uses O(N) dynamic K-shift update (re-centering) for stability.
+    """
     n = len(x)
-    out = np.full(n, np.nan, dtype=np.float32)
+    output = np.full(n, np.nan, dtype=np.float32)
     
     if window <= 0:
-        return out
+        return output
+
+    K = 0.0
+    K_set = False
     
-    # Circular buffer for K-shift
-    window_vals = np.empty(window, dtype=np.float64)
-    window_valid = np.zeros(window, dtype=np.bool_)
-    buf_idx = 0
+    sum_d = 0.0
+    sum_sq_d = 0.0
+    count = 0
     
     for i in range(n):
         val_in = x[i]
         
-        # Store in circular buffer
+        # Initialize K on first valid
+        if not K_set and not np.isnan(val_in):
+            K = val_in
+            K_set = True
+
+        # Entering
         if not np.isnan(val_in):
-            window_vals[buf_idx] = val_in
-            window_valid[buf_idx] = True
-        else:
-            window_valid[buf_idx] = False
-        buf_idx = (buf_idx + 1) % window
-        
-        if i >= window - 1:
-            # Compute K-shift variance
-            K = 0.0
-            K_set = False
-            sum_d = 0.0
-            sum_d_sq = 0.0
-            count = 0
+            d = val_in - K
+            sum_d += d
+            sum_sq_d += d * d
+            count += 1
             
-            for j in range(window):
-                idx = (buf_idx + j) % window
-                if window_valid[idx]:
-                    v = window_vals[idx]
-                    if not K_set:
-                        K = v
-                        K_set = True
-                    d = v - K
-                    sum_d += d
-                    sum_d_sq += d * d
-                    count += 1
+        # Leaving
+        if i >= window:
+            val_out = x[i - window]
+            if not np.isnan(val_out):
+                d = val_out - K
+                sum_d -= d
+                sum_sq_d -= d * d
+                count -= 1
+
+        # Re-center K periodically to maintain stability
+        # if mean deviation is large, d^2 becomes large and precision is lost
+        if count > 0 and i % 100 == 0:
+            mean_d = sum_d / count
+            delta = mean_d
+            # Update sums to new K' = K + delta
+            # sum(d')^2 = sum(d - delta)^2 = sum(d^2) - 2*delta*sum(d) + count*delta^2
+            sum_sq_d = sum_sq_d - 2 * delta * sum_d + count * delta * delta
+            # sum(d') = sum(d) - count*delta -> should be approx 0
+            sum_d = sum_d - count * delta
+            K += delta
             
-            if count > 1:
-                var_num = sum_d_sq - (sum_d * sum_d) / count
-                if var_num < 0:
-                    var_num = 0.0
-                out[i] = np.float32(np.sqrt(var_num / (count - 1)))
+            if sum_sq_d < 0: sum_sq_d = 0.0
+
+        # Compute
+        if count > 1:
+            var = (sum_sq_d - (sum_d * sum_d) / count) / (count - 1)
+            if var < 0: var = 0.0
+            output[i] = np.sqrt(var)
         
-        else:
-            # Warmup
-            if not np.isnan(val_in):
-                if i == 0:
-                    K = val_in
-                    K_set = True
-                    sum_d = 0.0
-                    sum_d_sq = 0.0
-                    count = 1
-                else:
-                    d = val_in - K
-                    sum_d += d
-                    sum_d_sq += d * d
-                    count += 1
-                
-                if count > 1:
-                    var_num = sum_d_sq - (sum_d * sum_d) / count
-                    if var_num < 0:
-                        var_num = 0.0
-                    out[i] = np.float32(np.sqrt(var_num / (count - 1)))
-    
-    return out
+    return output
 
 
 @jit(nopython=True, nogil=True, cache=True)

@@ -11,6 +11,7 @@ from extreme_price_movements.time_utils import ensure_utc
 from extreme_price_movements.frac_diff_adaptive import find_min_ffd, frac_diff_ffd
 from extreme_price_movements.validation import validate_panel
 from extreme_price_movements.gated_features import add_accept_gate_features, add_gate_features, add_gate_interaction_panel
+from extreme_price_movements.perp_features import compute_features as compute_perp_features
 import extreme_price_movements.fast_funcs as ff
 
 # Initialize joblib cache
@@ -19,6 +20,9 @@ _cache = Memory("./cache/features", verbose=0)
 # --- Per-column FFD incremental cache ---
 _FFD_COL_CACHE_DIR = "./cache/ffd_columns"
 EPS = 1e-12
+_PERP_FEATURE_COLLISION_RENAMES = {
+    "ret1h": "ret1h_perp",
+}
 
 def _sanitize_col_name(name):
     """Make column name filesystem-safe."""
@@ -683,6 +687,10 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     # We need a reference index. Use Close logic from original code.
     c_ref = panel["close"]
     new_idx = ensure_utc(pd.DataFrame(index=c_ref.index)).index
+
+    funding_panel = panel.get("funding_rate")
+    oi_panel = panel.get("open_interest")
+    spot_close_panel = panel.get("spot_close")
     
     if len(mkt_gates) == len(new_idx):
         mkt_gates.index = new_idx
@@ -1306,6 +1314,64 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["rsi_slope"] = feats["rsi"].diff(cfg["rsi_slope_n"]).astype(np.float32)
     feats["a_funding_proxy"] = feats["funding_proxy"]
 
+    if bool(cfg.get("use_perps", False)):
+        if isinstance(funding_panel, pd.DataFrame) and isinstance(oi_panel, pd.DataFrame):
+            tprint("Computing perp derivative features...")
+            perp_price_panel = np.exp(c_log).astype(np.float32)
+            volume_panel = np.exp(v).astype(np.float32)
+            if isinstance(spot_close_panel, pd.DataFrame):
+                spot_price_panel = spot_close_panel.reindex(
+                    index=perp_price_panel.index,
+                    columns=perp_price_panel.columns,
+                ).astype(np.float32)
+                spot_price_panel = spot_price_panel.where(spot_price_panel > 0, perp_price_panel)
+            else:
+                spot_price_panel = perp_price_panel
+
+            funding_aligned = funding_panel.reindex(
+                index=perp_price_panel.index,
+                columns=perp_price_panel.columns,
+            )
+            oi_aligned = oi_panel.reindex(
+                index=perp_price_panel.index,
+                columns=perp_price_panel.columns,
+            )
+
+            perp_buffers: dict[str, dict[str, pd.Series]] = {}
+            for sym in perp_price_panel.columns:
+                df_sym = pd.DataFrame(
+                    {
+                        "funding_rate": funding_aligned[sym],
+                        "open_interest": oi_aligned[sym],
+                        "perp_price": perp_price_panel[sym],
+                        "spot_price": spot_price_panel[sym],
+                        "volume": volume_panel[sym],
+                        "close": perp_price_panel[sym],
+                    },
+                    index=perp_price_panel.index,
+                )
+                try:
+                    sym_feats = compute_perp_features(df_sym)
+                except Exception as exc:
+                    tprint(f"WARN perp feature compute failed for {sym}: {exc}")
+                    continue
+
+                for raw_name, ser in sym_feats.items():
+                    feat_name = _PERP_FEATURE_COLLISION_RENAMES.get(raw_name, raw_name)
+                    if feat_name not in perp_buffers:
+                        perp_buffers[feat_name] = {}
+                    perp_buffers[feat_name][sym] = pd.to_numeric(ser, errors="coerce").astype(np.float32)
+
+            for feat_name, by_sym in perp_buffers.items():
+                feats[feat_name] = (
+                    pd.DataFrame(by_sym)
+                    .reindex(index=perp_price_panel.index, columns=perp_price_panel.columns)
+                    .astype(np.float32)
+                )
+            tprint(f"Perp derivative features added: {len(perp_buffers)}")
+        else:
+            tprint("Perps mode enabled but funding/open_interest data missing; skipping perp derivatives block.")
+
     # --- Regime Conditioning Features ---
     if bool(cfg.get("use_regime_features", True)):
         feats.update(compute_regime_features(c, h, l, v, atr_base, mkt_gates))
@@ -1800,6 +1866,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     feats["G_MR_SPIKE"] = (feats["speed"] * feats["excess_6h"] * clv_inv).fillna(0).astype(np.float32)
     feats["G_TF_GRIND"] = (ret_rat * feats["clv_mean_4"] * pb2_inv).astype(np.float32)
+    feats["G_TF_TREND"] = (feats["speed"] * feats["coherence_24"] * clv4_pos).fillna(0).astype(np.float32)
     feats["G_MR_TAIL"] = (feats["tail_against"] * (1.0 + feats["donch_dist_6"])).astype(np.float32)
 
     # Meta Features using Gates
@@ -1838,10 +1905,16 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["resid_strength"] = feats["excess_6h"]
     feats["evr_slope"] = (feats["evr_3"] - feats["evr_6"]).astype(np.float32)
     
+    # Base components for interactions
+    ema_6 = ema(c, 6)
+    ema_24 = ema(c, 24)
+    feats["trend_t"] = ema_6.diff(1).astype(np.float32)
+
     # Volatility Interaction Context (New)
     feats["dist_ext_x_vol"] = (feats["donch_dist_12"] * feats["vol_z"]).fillna(0).astype(np.float32)
     feats["regime_x_vol"] = (feats["rv_ratio_6_24"] * feats["vol_z"]).fillna(0).astype(np.float32)
     feats["rsi_x_vol"] = ((feats["rsi"] - 50.0) * feats["vol_z"]).fillna(0).astype(np.float32)
+    feats["vol_z_x_trend_t"] = (feats["vol_z"] * feats["trend_t"]).fillna(0).astype(np.float32)
 
     feats["stall_ext_corr"] = (feats["delta_stall_6"] * feats["donch_dist_12"]).astype(np.float32)
 
@@ -2226,11 +2299,11 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     # User Requested Features (Report 2026-02-10) - TF/MR/Alpha
     # =====================================================================
 
-    # Base Components
-    ema_6 = ema(c, 6)
-    ema_24 = ema(c, 24)
-    trend_t = ema_6.diff(1).astype(np.float32)
-    feats["trend_t"] = trend_t
+    # Base Components (already moved earlier for interactions)
+    # ema_6 = ema(c, 6)
+    # trend_t = ema_6.diff(1).astype(np.float32)
+    # feats["trend_t"] = trend_t
+    trend_t = feats["trend_t"]
 
     # trend_z_t = trend_t / std(price, 24)
     std_c_24 = ff.numba_rolling_std(c, 24)

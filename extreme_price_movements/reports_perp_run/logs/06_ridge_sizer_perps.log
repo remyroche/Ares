@@ -1,0 +1,22 @@
+[2026-02-22 23:59:10 UTC] Entering function: retry_with_backoff in utils.py
+/Users/remyroche/.matplotlib is not a writable directory
+Matplotlib created a temporary cache directory at /var/folders/dr/hz7y0z9j0x39z7519pbshgqh0000gn/T/matplotlib-kbwt_rzh because there was an issue with the default path (/Users/remyroche/.matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+2026-02-23 00:59:15,218 - DataQualityFramework - INFO - ℹ️ ✅ Comprehensive duplicate analyzer integrated
+2026-02-23 00:59:15,219 - DataQualityFramework - INFO - ℹ️ 🔧 Unified Data Quality Framework initialized (singleton)
+[2026-02-23 00:59:15.221] PERFORMANCE: DataQualityFramework initialization took 0.003s
+2026-02-23 00:59:15,221 - System.tprint - INFO - ℹ️ DataQualityFramework initialization took 0.003s
+2026-02-23 00:59:15,867 - ares.registry - INFO - ℹ️ Registered step: data_download
+2026-02-23 00:59:15,879 - System.AdvancedQualityMetrics - INFO - ℹ️ 📊 AdvancedQualityMetrics initialized with tolerant parameters
+[2026-02-23 00:59:15.883] PERFORMANCE: AdvancedQualityMetrics initialization took 0.004s
+2026-02-23 00:59:15,885 - System.tprint - INFO - ℹ️ AdvancedQualityMetrics initialization took 0.004s
+2026-02-23 00:59:15,894 - DataCleaner - INFO - ℹ️ Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+[2026-02-23 00:59:15.897] PERFORMANCE: DataCleaner(klines) initialization took 0.003s
+2026-02-23 00:59:15,897 - System.tprint - INFO - ℹ️ DataCleaner(klines) initialization took 0.003s
+2026-02-23 00:59:15,900 - DataCleaner - INFO - ℹ️ Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+[2026-02-23 00:59:15.902] PERFORMANCE: DataCleaner(klines) initialization took 0.003s
+2026-02-23 00:59:15,904 - System.tprint - INFO - ℹ️ DataCleaner(klines) initialization took 0.003s
+2026-02-23 00:59:15,909 - DataCleanerManager - INFO - ℹ️ 🔧 DataCleanerManager initialized (singleton)
+[2026-02-23 00:59:15.937] DEBUG: 🔧 [features_common.utils] Initializing common utilities module
+[2026-02-23 00:59:15.937] SUCCESS: ✅ [features_common.utils] Math validation utilities loaded
+2026-02-23 00:59:15,939 - System.tprint - INFO - ℹ️ ✅ [features_common.utils] Math validation utilities loaded
+[2026-02-23 00:59:15.942] DEBUG: 🔧 [features_common.utils] Common utilities module initialized

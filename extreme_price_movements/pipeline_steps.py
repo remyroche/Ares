@@ -1,6 +1,7 @@
 import os
 import pickle
 import glob
+import time
 import pandas as pd
 import numpy as np
 import pyarrow.parquet as pq
@@ -294,7 +295,7 @@ def _local_store_symbols(store) -> list[str]:
     return sorted(set(syms))
 
 
-def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex):
+def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizons=None):
     cfg = apply_offline_optimizer_best_params(dict(cfg))
     tprint("STEP: LABEL GENERATION START")
     _labels_use_store_universe = False
@@ -397,7 +398,8 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex):
     save_artifact_df(p_exh_hist, cfg["data_root"], run_id, "labels", "exhaustion_history")
 
     # 2. Label Datasets
-    datasets = generate_label_datasets(panel, feats, mkt_gates, cfg, train_syms, ts_sig, p_exh_hist)
+    horizons = horizons or cfg.get("label_horizons_hours", [2, 4, 8])
+    datasets = generate_label_datasets(panel, feats, mkt_gates, cfg, train_syms, ts_sig, p_exh_hist, horizons=horizons)
 
     for name, df in datasets.items():
         save_artifact_df(df, cfg["data_root"], run_id, "labels", name)
@@ -711,7 +713,7 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
         tprint("Skipping ridge sizer step - no meta OOF predictions found.")
         return None
     
-    cost_pct = cfg.get("fee_bps", 25.0) / 10000.0
+    cost_pct = float(cfg.get("ridge_cost_pct", cfg.get("fee_bps", 50.0) / 10000.0))
     output_dir = os.path.join(data_root, "artifacts", run_id, "ridge_sizer")
     os.makedirs(output_dir, exist_ok=True)
 
@@ -862,6 +864,79 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
     }
 
 
+def compute_regime_boundaries(feats):
+    """Compute stable tercile boundaries for granular regime features over the entire available dataset."""
+    tprint("  Computing stable regime boundaries...")
+    _regime_map = {
+        "vol_12h": "rv_12h",
+        "vol_48h": "rv_24h",
+        "volume_12h": "vol_z_base",
+        "volume_48h": "vol_z24_base",
+        "trend_12h": "ret6h",
+        "trend_48h": "trend_pct_base",
+    }
+    boundaries = {}
+    for rname, src_col in _regime_map.items():
+        if src_col in feats:
+            df = feats[src_col]
+            # Consider all non-NaN values across all symbols and time to define "Low/Mid/High"
+            vals = df.values.flatten()
+            valid = vals[np.isfinite(vals)]
+            if len(valid) > 100:
+                try:
+                    terciles = np.nanpercentile(valid, [33.3, 66.7])
+                    boundaries[rname] = [float(terciles[0]), float(terciles[1])]
+                    tprint(f"  Stable boundaries for {rname} ({src_col}): {boundaries[rname][0]:.4f}, {boundaries[rname][1]:.4f} (n={len(valid)})")
+                except Exception as e:
+                    tprint(f"  WARNING: Failed to compute boundaries for {rname}: {e}")
+    tprint(f"  Regime boundaries computed for {len(boundaries)} features.")
+    return boundaries
+
+
+def _extract_required_features(bundle, cfg):
+    """Dynamically extract only the required features from the model bundle."""
+    # Features needed for risk optimization, gates, and regime boundaries
+    req_feats = {
+        "atr_pct", "clv_mean_24", "ret24h", "ret24h_z", "efficiency", "exh_qual", 
+        "volatility_zscore", "ret1h", "range_12h_pct",
+        "rv_12h", "rv_24h", "vol_z_base", "vol_z24_base", "ret6h", "trend_pct_base"
+    }
+
+    dev_metric = cfg.get("trade_deviation_metric", "dist_ema_fast")
+    if dev_metric:
+        req_feats.add(dev_metric)
+        
+    req_feats.update(cfg.get("spike_feature_keys", []))
+    req_feats.update(cfg.get("meta_feature_keys", []))
+        
+    if not bundle:
+        return list(req_feats)
+        
+    # 1. Base model features
+    alpha_models = bundle.get("alpha_models", {})
+    for side in ["long", "short"]:
+        for k in ["mr", "tf"]:
+            model_wrapper = alpha_models.get(side, {}).get(k)
+            if not model_wrapper:
+                continue
+            if "models_by_h" in model_wrapper:
+                for h, model_h in model_wrapper["models_by_h"].items():
+                    req_feats.update(model_h.get("selected_features", []))
+                    req_feats.update(model_h.get("feat_cols", []))
+            elif "feat_cols" in model_wrapper:
+                req_feats.update(model_wrapper["feat_cols"])
+
+    # 2. Meta model features
+    meta_models = bundle.get("meta_models", {})
+    for _meta_key, meta_model in meta_models.items():
+        if hasattr(meta_model, "selected_features") and meta_model.selected_features:
+            req_feats.update(meta_model.selected_features)
+            
+    # Filter out dynamically generated prediction columns
+    req_feats = {f for f in req_feats if not f.startswith("pred_")}
+    
+    return list(req_feats)
+
 def run_risk_optimization_step(ts_sig, margin_symbols, cfg, store, state_file):
     tprint("STEP: RISK OPTIMIZATION START")
     if not os.path.exists(state_file):
@@ -902,11 +977,15 @@ def run_risk_optimization_step(ts_sig, margin_symbols, cfg, store, state_file):
     mkt_df = compute_market_features(panel, cfg["market_basket"])
     mkt_gates = add_regime_gates(mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
     
-    # Load features using run_ts (actual storage location)
-    feats = load_features(run_ts, cfg["data_root"])
+    # Load only required features to prevent OOM
+    req_feats = _extract_required_features(bundle, cfg)
+    feats = load_features_selected(run_ts, cfg["data_root"], feature_keys=req_feats)
     if feats is None:
         tprint("ERROR: Features not found for risk optimization.")
         return
+
+    # Compute stable regime boundaries for meta-models
+    cfg["granular_regime_boundaries"] = compute_regime_boundaries(feats)
 
     # We also need p_exh_hist. Load from artifacts (using run_ts).
     run_id = run_ts.strftime("%Y%m%d_%H%M%S")
@@ -955,6 +1034,8 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
 
     with open(state_file, "rb") as f:
         model_state = pickle.load(f)
+    
+    bundle = model_state.get("bundle")
 
     train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=ts_sig)
     dfs = {}
@@ -972,7 +1053,12 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
     panel = to_panel(dfs)
     mkt_df = compute_market_features(panel, cfg["market_basket"])
     mkt_gates = add_regime_gates(mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
-    feats = load_features(ts_sig, cfg["data_root"])
+    # Load only required features to prevent OOM
+    req_feats = _extract_required_features(bundle, cfg)
+    feats = load_features_selected(ts_sig, cfg["data_root"], feature_keys=req_feats)
+
+    # Compute stable regime boundaries for meta-models
+    cfg["granular_regime_boundaries"] = compute_regime_boundaries(feats)
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     from extreme_price_movements.data_store import load_artifact_df
@@ -1051,7 +1137,9 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
         daily_bucket_counts = defaultdict(lambda: defaultdict(int))  # date -> bucket -> count
         daily_total_counts = defaultdict(int)  # date -> total count
 
-        for t in ts_list:
+        for i, t in enumerate(ts_list):
+            if i % 20 == 0:
+                tprint(f"  Signal generation progress: {i}/{len(ts_list)} ({i/len(ts_list):.1%}) - {t}")
             # --- Regime throttle: check recent closed-trade drawdown ---
             size_mult = 1.0
             if len(trades) >= throttle_lookback:
@@ -1172,7 +1260,26 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                 )
                 assert_pos_w(weight)
                 side_sign = 1 if side == "long" else -1
-                net_ret = trade_return_net(raw_ret_underlying=ret, side=side_sign, pos_w=weight, cost=cost)
+                
+                # Dynamic cost model: handle limit fills and conditional fee concessions
+                fee_reduction_reasons = ["stop_loss", "early_invalidation", "giveback_exit"]
+                baseline_fee_side = float(cfg.get("fee_bps", 35.0)) / 10000.0
+                
+                # Entry fee: optional limit-fill fee override
+                entry_fee = float(cfg.get("limit_fill_fee_bps", 10.0)) / 10000.0 if trade_extras.get("filled_via_limit") else baseline_fee_side
+                
+                # Exit fee: apply 15bps concession for specific reasons, floor at 20bps
+                if reason in fee_reduction_reasons:
+                    exit_fee = max(0.0020, baseline_fee_side - 0.0015)
+                else:
+                    exit_fee = baseline_fee_side
+                
+                # Aggregate into symmetric CostModel for trade_return_net (expects fee_side * 2)
+                avg_fee_side = (entry_fee + exit_fee) / 2.0
+                from extreme_price_movements.pnl import CostModel
+                actual_cost = CostModel(fee_side=avg_fee_side, slippage_side=float(cfg.get("slippage_bps", 0.0)) / 10000.0)
+                
+                net_ret = trade_return_net(raw_ret_underlying=ret, side=side_sign, pos_w=weight, cost=actual_cost)
                 pnl = net_ret
                 
                 # Store risk parameters + MAE/MFE for aggregate statistics
@@ -1195,6 +1302,8 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                     "mfe_pct": trade_extras.get("mfe_pct", 0.0),
                     "bars_to_mfe": trade_extras.get("bars_to_mfe", 0),
                     "exit_stage": trade_extras.get("exit_stage", 0),
+                    "filled_via_limit": trade_extras.get("filled_via_limit", False),
+                    "exit_limit_bonus": trade_extras.get("exit_limit_bonus", 0.0),
                 }
                 # Add regime context for diagnostic reporting
                 if t in mkt_gates.index:
@@ -1218,12 +1327,36 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
             tp_sl_binds = reason_counts.get("stop_loss", 0) + reason_counts.get("trailing_stop", 0)
             hold_by_reason = {}
             mean_ret_by_reason = {}
+            
+            entry_bps = float(cfg.get("limit_offset_bps", 0.0))
+            exit_bps = float(cfg.get("exit_limit_offset_bps", 0.0))
+            offset_bps = entry_bps / 10000.0
+            
+            tprint(f"\n  Gross PnL Comparison (Market vs {entry_bps:.0f}bps Entry / {exit_bps:.0f}bps Exit) by Exit Reason:")
+            
             for rs in sorted(reason_counts.keys()):
                 rs_rows = [tr for tr in trades if str(tr.get("reason")) == rs]
                 holds = [float((pd.Timestamp(tr["exit_ts"]) - pd.Timestamp(tr["entry_ts"])).total_seconds()/3600.0) for tr in rs_rows]
                 rets = [float(tr.get("ret", 0.0)) for tr in rs_rows]
+                
+                # Calculate gross unscaled returns isolated from capital limits and weights
+                market_gross_rets = []
+                limit_gross_rets = []
+                for tr in rs_rows:
+                    g = float(tr.get("gross_ret", 0.0)) # contains both limit entry and limit exit
+                    limit_gross_rets.append(g)
+                    
+                    # Deduct the extra margin gained by limit orders to simulate the "Market Order" baseline
+                    entry_bonus = offset_bps if tr.get("filled_via_limit") else 0.0
+                    exit_bonus = float(tr.get("exit_limit_bonus", 0.0))
+                    market_gross_rets.append(g - entry_bonus - exit_bonus)
+                
                 hold_by_reason[rs] = float(np.median(holds)) if holds else 0.0
                 mean_ret_by_reason[rs] = float(np.mean(rets)) if rets else 0.0
+                
+                avg_mkt_g = float(np.mean(market_gross_rets)) if market_gross_rets else 0.0
+                avg_lmt_g = float(np.mean(limit_gross_rets)) if limit_gross_rets else 0.0
+                tprint(f"    {rs.ljust(20)}: Count={len(rs_rows):<3} | Market Gross: {avg_mkt_g*100:6.3f}% | Limit Gross: {avg_lmt_g*100:6.3f}% | Delta: +{(avg_lmt_g - avg_mkt_g)*100:5.3f}%")
 
             emit_bucket_summary(
                 tprint=tprint,
@@ -1244,13 +1377,22 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
             avg_trail_pct = np.mean([t["trail_mult"] * t["sl_pct"] * 100 for t in trades])  # trail ≈ trail_mult * barrier
             avg_mae = np.mean([t["mae_pct"] * 100 for t in trades])
             avg_mfe = np.mean([t["mfe_pct"] * 100 for t in trades])
+
+            mae_20bps = np.mean([t["mae_pct"] * 100 >= 0.2 for t in trades]) * 100
+            mae_30bps = np.mean([t["mae_pct"] * 100 >= 0.3 for t in trades]) * 100
+            mae_40bps = np.mean([t["mae_pct"] * 100 >= 0.4 for t in trades]) * 100
+            mae_50bps = np.mean([t["mae_pct"] * 100 >= 0.5 for t in trades]) * 100
             
             tprint(f"\n  TP/SL Statistics ({len(trades)} trades) [actual barrier-scaled]:")
             tprint(f"    Avg SL:    {avg_sl_pct:.2f}%")
             tprint(f"    Avg TP:    {avg_tp_pct:.2f}%")
             tprint(f"    Avg Trail: {avg_trail_pct:.2f}%")
             tprint(f"    Avg MAE:   {avg_mae:.2f}%")
-            tprint(f"    Avg MFE:   {avg_mfe:.2f}%\n")
+            tprint(f"    Avg MFE:   {avg_mfe:.2f}%")
+            tprint(f"    MAE >= 0.2%: {mae_20bps:.1f}% of trades")
+            tprint(f"    MAE >= 0.3%: {mae_30bps:.1f}% of trades")
+            tprint(f"    MAE >= 0.4%: {mae_40bps:.1f}% of trades")
+            tprint(f"    MAE >= 0.5%: {mae_50bps:.1f}% of trades\n")
         
         return trades
 
@@ -1266,6 +1408,9 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
     train_abs = np.array([abs(t["score"]) for t in raw_train], dtype=np.float64)
     q50 = float(np.quantile(train_abs, 0.5)) if train_abs.size else 0.0
     q90 = float(np.quantile(train_abs, 0.9)) if train_abs.size else max(q50 + 1e-6, 1e-3)
+    q95 = float(np.quantile(train_abs, 0.95)) if train_abs.size else max(q90 + 1e-6, 1.1 * q90)
+    q98 = float(np.quantile(train_abs, 0.98)) if train_abs.size else max(q95 + 1e-6, 1.1 * q95)
+    tprint(f"Global Score Distribution: P50={q50:.6f}, P90={q90:.6f}, P95={q95:.6f}, P98={q98:.6f}")
 
     # Calibrate long/short meta-score comparability on train only.
     side_frames = []
@@ -1350,6 +1495,8 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                         "size_zcap": 4.0,
                         "size_q50": q50,
                         "size_q90": q90,
+                        "size_q95": q95,
+                        "size_q98": q98,
                         "score_scale_params": score_scale_params,
                     }
                     tr = run_slice(train_ts, params)
@@ -1369,7 +1516,7 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
             "thr_long": cfg.get("thr_long", 0.01), "thr_short": cfg.get("thr_short", -0.01),
             "k_long": cfg.get("k_long", 10), "k_short": cfg.get("k_short", 10),
             "size_min": 0.03, "size_max": 0.15, "size_k": 2.0, "size_x0": 0.5,
-            "size_zcap": 4.0, "size_q50": q50, "size_q90": q90,
+            "size_zcap": 4.0, "size_q50": q50, "size_q90": q90, "size_q95": q95, "size_q98": q98,
             "score_scale_params": score_scale_params,
         }
 

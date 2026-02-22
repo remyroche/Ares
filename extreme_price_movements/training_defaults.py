@@ -21,6 +21,7 @@ def get_candidate_filter_defaults(cfg: Dict[str, Any] | None = None) -> Dict[str
         "train_min_range_pct": float(c.get("train_min_range_pct", 0.07)),
         "train_min_vol_zscore": float(c.get("train_min_vol_zscore", 1.6)),
         "min_feat_sign_consistency": float(c.get("min_feat_sign_consistency", 0.70)),
+        "train_chop_thr": float(c.get("train_chop_thr", 0.5)),
     }
 
 

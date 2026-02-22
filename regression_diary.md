@@ -2,7 +2,7 @@
 
 ## Baseline Reference
 - **Commit**: `34e0a3ff956a14df5cd78c09784054cc2cdf56db`
-- **Meta IC at that commit**: long_mr=0.215, long_tf=0.152, short_mr=0.028, short_tf=0.092
+- **Mit**: long_mr=0.215, long_tf=0.152, short_mr=0.028, short_tf=eta IC at that comm0.092
 - **Meta winners**: Ridge (long_mr α=5.0, long_tf α=10.0, short_mr α=0.01), ExtraTrees (short_tf)
 
 ## Phase 0: Revert to Baseline (2026-02-12)

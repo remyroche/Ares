@@ -15,6 +15,31 @@ from extreme_price_movements.training import (
 )
 from extreme_price_movements.candidates import select_trade_candidates_hourly, entry_price_next_hour_open
 
+def _estimate_global_percentile(score, q50, q90, q95=None, q98=None):
+    """Linearly interpolate global percentile for a score magnitude."""
+    z = abs(float(score))
+    # Fallbacks for missing/None quantiles
+    if q50 is None or q90 is None:
+        return 0.5  # No calibration data yet — neutral rank
+    if q50 <= 0: return 0.5 # protection
+    if q90 <= q50: q90 = q50 * 1.5
+    if q95 is None: q95 = q90 + 0.5 * (q90 - q50)
+    if q98 is None: q98 = q95 + 0.5 * (q95 - q90)
+    
+    if z <= q50:
+        return 0.5 * (z / q50)
+    if z <= q90:
+        return 0.5 + 0.4 * (z - q50) / (q90 - q50 + 1e-12)
+    if z <= q95:
+        return 0.9 + 0.05 * (z - q90) / (q95 - q90 + 1e-12)
+    if z <= q98:
+        return 0.95 + 0.03 * (z - q95) / (q98 - q95 + 1e-12)
+    
+    # Beyond P98, we linear extrapolate slightly but cap at 0.999
+    extrap = 0.98 + 0.01 * (z - q98) / (q98 - q95 + 1e-12)
+    return min(extrap, 0.999)
+
+
 def _compute_barrier_pct(feats_s, ts_sig, atr, cfg):
     """Compute vol-scaled barrier percentage from ATR history.
     
@@ -178,13 +203,66 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
         h_data = h_s
         l_data = l_s
         c_data = c_s
+
+    # Limit Order Fill Logic (Post-prediction offset)
+    use_limit = cfg.get("use_limit_orders", False)
+    limit_offset_bps = float(cfg.get("limit_offset_bps", 0.0))
+    limit_offset_pct = limit_offset_bps / 10000.0
+    
+    if use_limit and limit_offset_pct > 0:
+        if side == "long":
+            limit_px = entry_px * (1.0 - limit_offset_pct)
+        else:
+            limit_px = entry_px * (1.0 + limit_offset_pct)
+            
+        # Check first 4 bars for fill (1h or 15m depending on precision)
+        fill_window = path[:4]
+        filled = False
+        fill_ts = ts_entry
+        
+        for ts in fill_window:
+            if ts not in h_data.index or ts not in l_data.index:
+                continue
+            
+            bar_l = l_data.loc[ts]
+            bar_h = h_data.loc[ts]
+            
+            if side == "long" and bar_l <= limit_px:
+                filled = True
+                fill_ts = ts
+                break
+            elif side == "short" and bar_h >= limit_px:
+                filled = True
+                fill_ts = ts
+                break
+        
+        if not filled:
+            return 0.0, ts_entry, "limit_not_filled", _empty_extras
+        
+        # Update entry price and start time to fill event
+        entry_px = limit_px
+        ts_entry = fill_ts
+        # Resume simulation from fill_ts
+        path = path[path.get_loc(fill_ts):]
+        
+        # For this simulation, we'll use 0.20% if filled via limit
+        cfg["fee_bps"] = 20.0
+        filled_via_limit = True
+    else:
+        filled_via_limit = False
     
     if len(path) == 0:
         return 0.0, ts_entry, "no_path", _empty_extras
 
+    # Exit limit offset logic
+    exit_limit_offset_bps = float(cfg.get("exit_limit_offset_bps", 0.0))
+    exit_limit_offset_pct = exit_limit_offset_bps / 10000.0
+
     # MAE/MFE tracking
     mae_px = 0.0   # max adverse excursion (worst unrealised loss, as positive distance)
     mfe_px = 0.0   # max favorable excursion (best unrealised profit, as positive distance)
+    mae_px_4bar = 0.0  # max adverse excursion in first 4 bars
+    mfe_px_4bar = 0.0  # max favorable excursion in first 4 bars
     bars_to_mfe = 0
     bar_count = 0
 
@@ -228,6 +306,12 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
         if favorable > mfe_px:
             mfe_px = favorable
             bars_to_mfe = bar_count
+            
+        if bar_count <= 4:
+            if adverse > mae_px_4bar:
+                mae_px_4bar = adverse
+            if favorable > mfe_px_4bar:
+                mfe_px_4bar = favorable
 
         # --- Stage transitions (ratchet up only) ---
         if exit_stage == 0 and be_threshold_dist > 0 and favorable >= be_threshold_dist:
@@ -295,6 +379,7 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
                     "sl_pct": sl_dist / entry_px,
                     "tp_pct": activation_dist / entry_px,
                     "exit_stage": exit_stage,
+                    "filled_via_limit": filled_via_limit,
                 }
                 return ret, ts, "giveback_exit", extras
 
@@ -304,7 +389,15 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
             mfe_frac = mfe_px / entry_px
             kill_score = mae_frac + kill_a * bar_count - kill_b * mfe_frac - kill_c
             if kill_score > 0:
-                ret = (cc / entry_px) - 1.0 if side == "long" else (entry_px / cc) - 1.0
+                # Apply exit limit padding
+                exit_price = cc
+                if exit_limit_offset_pct > 0:
+                    if side == "long":
+                        exit_price = max(cc, cc * (1.0 + exit_limit_offset_pct))
+                    else:
+                        exit_price = min(cc, cc * (1.0 - exit_limit_offset_pct))
+
+                ret = (exit_price / entry_px) - 1.0 if side == "long" else (entry_px / exit_price) - 1.0
                 extras = {
                     "mae_pct": mae_frac,
                     "mfe_pct": mfe_frac,
@@ -312,6 +405,8 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
                     "sl_pct": sl_dist / entry_px,
                     "tp_pct": activation_dist / entry_px,
                     "exit_stage": exit_stage,
+                    "filled_via_limit": filled_via_limit,
+                    "exit_limit_bonus": abs(exit_price - cc) / entry_px,
                 }
                 return ret, ts, "early_invalidation", extras
 
@@ -322,7 +417,15 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
             hit_sl = hh >= sl_price
 
         if hit_sl:
-            ret = (sl_price / entry_px) - 1.0 if side == "long" else (entry_px / sl_price) - 1.0
+            # Apply exit limit padding
+            exit_price = sl_price
+            if exit_limit_offset_pct > 0:
+                if side == "long":
+                    exit_price = max(sl_price, sl_price * (1.0 + exit_limit_offset_pct))
+                else:
+                    exit_price = min(sl_price, sl_price * (1.0 - exit_limit_offset_pct))
+            
+            ret = (exit_price / entry_px) - 1.0 if side == "long" else (entry_px / exit_price) - 1.0
             if exit_stage >= 1:
                 reason = "trailing_stop"
             else:
@@ -330,28 +433,45 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
             extras = {
                 "mae_pct": mae_px / entry_px,
                 "mfe_pct": mfe_px / entry_px,
+                "mae_pct_4bar": mae_px_4bar / entry_px,
+                "mfe_pct_4bar": mfe_px_4bar / entry_px,
                 "bars_to_mfe": bars_to_mfe,
                 "sl_pct": sl_dist / entry_px,
                 "tp_pct": activation_dist / entry_px,
                 "exit_stage": exit_stage,
+                "filled_via_limit": filled_via_limit,
+                "exit_limit_bonus": abs(exit_price - sl_price) / entry_px,
             }
             return ret, ts, reason, extras
 
     # Time exit
     last_ts = path[-1]
     last_close = c_data.loc[last_ts]
+    
+    # Apply exit limit padding
+    exit_price = last_close
+    if exit_limit_offset_pct > 0:
+        if side == "long":
+            exit_price = max(last_close, last_close * (1.0 + exit_limit_offset_pct))
+        else:
+            exit_price = min(last_close, last_close * (1.0 - exit_limit_offset_pct))
+            
     extras = {
         "mae_pct": mae_px / entry_px,
         "mfe_pct": mfe_px / entry_px,
+        "mae_pct_4bar": mae_px_4bar / entry_px,
+        "mfe_pct_4bar": mfe_px_4bar / entry_px,
         "bars_to_mfe": bars_to_mfe,
         "sl_pct": sl_dist / entry_px,
         "tp_pct": activation_dist / entry_px,
         "exit_stage": exit_stage,
+        "filled_via_limit": filled_via_limit,
+        "exit_limit_bonus": abs(exit_price - last_close) / entry_px,
     }
     if side == "long":
-        return (last_close / entry_px) - 1.0, last_ts, "time_exit", extras
+        return (exit_price / entry_px) - 1.0, last_ts, "time_exit", extras
     else:
-        return (entry_px / last_close) - 1.0, last_ts, "time_exit", extras
+        return (entry_px / exit_price) - 1.0, last_ts, "time_exit", extras
 
 
 
@@ -363,6 +483,191 @@ def _bucket_mode_from_side_dom(side, dom):
     if dom == "tf":
         return "best" if side == "long" else "worst"
     return "worst" if side == "long" else "best"
+
+
+def _calculate_disagreement_features(meta_data, h_preds, kind_name):
+    """Replicate training.py disagreement logic."""
+    p2 = h_preds.get(f"pred_{kind_name}_H2")
+    p4 = h_preds.get(f"pred_{kind_name}_H4")
+    p8 = h_preds.get(f"pred_{kind_name}_H8")
+    if p2 is not None and p4 is not None and p8 is not None:
+        stack = np.vstack([p2, p4, p8]).T.astype(np.float32)
+        pair_abs = (np.abs(p2 - p4) + np.abs(p2 - p8) + np.abs(p4 - p8)) / 3.0
+        vote_p = (stack > 0.5).mean(axis=1).astype(np.float32)
+        meta_data[f"disagree_{kind_name}_std"] = np.std(stack, axis=1, dtype=np.float32)
+        meta_data[f"disagree_{kind_name}_range"] = np.max(stack, axis=1) - np.min(stack, axis=1)
+        meta_data[f"disagree_{kind_name}_pair_abs"] = pair_abs
+        meta_data[f"disagree_{kind_name}_vote_mix"] = 4.0 * vote_p * (1.0 - vote_p)
+        return pair_abs
+    return None
+
+def _meta_predict_or_fallback(meta_model, p_alpha, grp_df, label, side_key, mr_h_preds, tf_h_preds, cfg=None):
+    """Predict with meta model; fall back to raw alpha if meta output is degenerate."""
+    if meta_model is None:
+        return (p_alpha - 0.5) * 0.1, np.ones(len(p_alpha), dtype=bool)
+
+    num = grp_df.select_dtypes(include=[np.number]).copy()
+    X_meta = meta_model.prepare_meta_features(p_alpha, num, pred_col_name="pred_logit")
+
+    # REPLICATE training.py derived feature logic
+    # 1. Per-horizon logit features
+    from scipy.special import logit as _logit_fn
+    _logit_parts = []
+    for h in [2, 4, 8]:
+        # Collect from both h_preds sets
+        ph = mr_h_preds.get(f"pred_H{h}")
+        if ph is None:
+            ph = tf_h_preds.get(f"pred_H{h}")
+        
+        if ph is not None:
+            X_meta[f"pred_H{h}"] = ph.astype(np.float32)
+            _p_clip = np.clip(ph.astype(float), 1e-4, 1 - 1e-4)
+            _lg_h = np.clip(_logit_fn(_p_clip), -4.0, 4.0)
+            X_meta[f"pred_logit_H{h}"] = _lg_h.astype(np.float32)
+            _logit_parts.append(_lg_h)
+    
+    # Store all individual scale predictions (meta model often selects them)
+    for k, v in mr_h_preds.items():
+        X_meta[k] = v.astype(np.float32)
+    for k, v in tf_h_preds.items():
+        X_meta[k] = v.astype(np.float32)
+
+    # 2. Disagreement features
+    pair_abs_mr = _calculate_disagreement_features(X_meta, mr_h_preds, "mr")
+    pair_abs_tf = _calculate_disagreement_features(X_meta, tf_h_preds, "tf")
+
+    # 3. Cross-kind agreement
+    if pair_abs_mr is not None and pair_abs_tf is not None:
+        agree_mr_avg = (1.0 - np.clip(pair_abs_mr, 0.0, 1.0)).astype(np.float32)
+        agree_tf_avg = (1.0 - np.clip(pair_abs_tf, 0.0, 1.0)).astype(np.float32)
+        X_meta["agree_tf_minus_mr_avg"] = agree_tf_avg - agree_mr_avg
+
+    # 4. Cross-kind per-horizon diff
+    for h in [2, 4, 8]:
+        pmr = mr_h_preds.get(f"pred_mr_H{h}")
+        ptf = tf_h_preds.get(f"pred_tf_H{h}")
+        if pmr is not None and ptf is not None:
+            X_meta[f"tf_minus_mr_H{h}"] = (ptf - pmr).astype(np.float32)
+
+    # 5. Core Interaction features (must match training.py:4246)
+    if "pred_logit" in X_meta.columns:
+        pl = X_meta["pred_logit"].values
+        for interact_feat in ["vol_z", "mkt_rv_ratio", "ambig", "exh_qual", "trend_pct",
+                              "trend_t", "trend_z_t", "spike_score", "grind_score", "chop_score"]:
+            if interact_feat in X_meta.columns:
+                X_meta[f"pred_x_{interact_feat}"] = pl * X_meta[interact_feat].values
+        
+        # Regime bucket interactions (G_VOL, G_TREND)
+        for rcol in ["G_VOL", "G_TREND"]:
+            if rcol in grp_df.columns:
+                rv = grp_df[rcol].values
+                for bkt in [0, 1, 2]:
+                    X_meta[f"pred_x_{rcol}_{bkt}"] = pl * (rv == bkt).astype(float)
+
+        # 6. Granular regime interactions (vol, volume, trend at 12h/48h)
+        # Replicating training.py:2667 map
+        _regime_map = {
+            "vol_12h": "rv_12h",
+            "vol_48h": "rv_24h",
+            "volume_12h": "vol_z_base",
+            "volume_48h": "vol_z24_base",
+            "trend_12h": "ret6h",
+            "trend_48h": "trend_pct_base",
+        }
+        
+        boundaries = cfg.get("granular_regime_boundaries", {}) if cfg else {}
+        
+        for rname, src_col in _regime_map.items():
+            if src_col in grp_df.columns:
+                # Source data exists: ensure derived columns are created to satisfy coverage check
+                # Even if we don't have enough valid symbols, we must have the columns.
+                for bkt in [0, 1, 2]:
+                    X_meta[f"pred_x_{rname}_{bkt}"] = 0.0
+                
+                vals = grp_df[src_col].values.astype(float)
+                valid_mask = np.isfinite(vals)
+                
+                # Check for stable pre-calculated boundaries first
+                terciles = boundaries.get(rname)
+                
+                # If no stable boundaries, fallback to dynamic cross-sectional terciles
+                if terciles is None and valid_mask.sum() > 5:
+                    try:
+                        terciles = np.nanpercentile(vals[valid_mask], [33.3, 66.7]).tolist()
+                    except Exception:
+                        terciles = None
+                
+                if terciles:
+                    # Apply thresholds
+                    mask0 = (vals <= terciles[0])
+                    mask1 = (vals > terciles[0]) & (vals < terciles[1])
+                    mask2 = (vals >= terciles[1])
+                    
+                    X_meta[f"pred_x_{rname}_0"] = pl * mask0.astype(float)
+                    X_meta[f"pred_x_{rname}_1"] = pl * mask1.astype(float)
+                    X_meta[f"pred_x_{rname}_2"] = pl * mask2.astype(float)
+
+                    # Also store raw regime buckets (0, 1, 2) for agreement features
+                    # mapping: Low=0, Mid=1, High=2
+                    grp_df[f"__regime_{rname}__"] = (mask1.astype(int) + 2 * mask2.astype(int)).astype(float)
+                elif valid_mask.sum() > 0:
+                    # Sparse data and no boundaries: fallback to mid-bucket (1)
+                    X_meta[f"pred_x_{rname}_1"] = pl * valid_mask.astype(float)
+                    grp_df[f"__regime_{rname}__"] = 1.0
+
+        # 7. Cross-temporal / Regime agreement features (Replicating training.py:4270-4284)
+        if "trend_slope_48h" in grp_df.columns and "trend_slope_120h" in grp_df.columns:
+            ts48 = grp_df["trend_slope_48h"].values
+            ts120 = grp_df["trend_slope_120h"].values
+            X_meta["trend_slope_ratio_48_120"] = np.where(
+                np.abs(ts120) > 1e-9, ts48 / np.clip(np.abs(ts120), 1e-9, None), 0.0).astype(np.float32)
+
+        if "__regime_vol_12h__" in grp_df.columns and "__regime_vol_48h__" in grp_df.columns:
+            v12 = grp_df["__regime_vol_12h__"].values
+            v48 = grp_df["__regime_vol_48h__"].values
+            X_meta["vol_regime_agree"] = (v12 == v48).astype(np.float32)
+            X_meta["vol_regime_diff"] = (v12 - v48).astype(np.float32)
+
+        if "__regime_trend_12h__" in grp_df.columns and "__regime_trend_48h__" in grp_df.columns:
+            t12 = grp_df["__regime_trend_12h__"].values
+            t48 = grp_df["__regime_trend_48h__"].values
+            X_meta["trend_regime_agree"] = (t12 == t48).astype(np.float32)
+            X_meta["trend_regime_diff"] = (t12 - t48).astype(np.float32)
+
+    if meta_model.selected_features:
+        available = set(X_meta.columns)
+        selected = set(meta_model.selected_features)
+        present = selected & available
+        missing = selected - available
+        coverage = len(present) / max(len(selected), 1)
+        if coverage < 1.0:
+            tprint(f"  Meta {side_key}_{label}: DISABLED — feature coverage {coverage:.0%} "
+                   f"({len(missing)} missing of {len(selected)})")
+            if missing:
+                missing_list = sorted(list(missing))
+                tprint(f"    Missing keys: {missing_list[:10]} {'...' if len(missing_list) > 10 else ''}")
+            # Strict: No signal if coverage is incomplete
+            return np.zeros(len(p_alpha), dtype=np.float64), np.ones(len(p_alpha), dtype=bool)
+        if missing:
+            tprint(f"  Meta {side_key}_{label}: {len(missing)} features missing "
+                   f"(coverage {coverage:.0%}), filling with 0")
+        X_meta = X_meta.reindex(columns=meta_model.selected_features, fill_value=0.0)
+    
+    if hasattr(meta_model, "predict_proba"):
+        probs = meta_model.predict_proba(X_meta)
+        # Class 2 is TP, Class 0 is SL. Score by EV proxy.
+        s = probs[:, 2] * 2.0 - probs[:, 0] * 1.0
+    else:
+        s = meta_model.predict(X_meta)
+        
+    # Variance gate: only check on large batches (>=10 symbols).
+    # On small batches, predictions can legitimately be similar.
+    # The _center_scale degenerate guard in pipeline_steps.py
+    # already protects against systematic degeneracy.
+    if len(s) >= 10 and np.std(s) < 1e-6:
+        tprint(f"  Meta {side_key}_{label}: DISABLED — prediction std={np.std(s):.2e} (degenerate, n={len(s)})")
+        return (p_alpha - 0.5) * 0.1, np.ones(len(p_alpha), dtype=bool)
+    return s, np.zeros(len(p_alpha), dtype=bool)
 
 
 def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand, current_positions_syms, tradeable_candidates=None):
@@ -448,7 +753,13 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
                     all_fcols_mr |= set(_h_info.get("feat_cols", []))
                 for _h_info in tf_by_h.values():
                     all_fcols_tf |= set(_h_info.get("feat_cols", []))
-                all_keys = all_fcols_mr | all_fcols_tf | set(cfg.get("spike_feature_keys", [])) | set(cfg.get("meta_feature_keys", []))
+                
+                # IMPORTANT: Include source features for meta-interaction terms
+                source_regime_features = {"rv_12h", "rv_24h", "vol_z_base", "vol_z24_base", "ret6h", "trend_pct_base"}
+                interaction_base_features = {"vol_z", "mkt_rv_ratio", "ambig", "exh_qual", "trend_pct", "trend_t", "trend_z_t", "spike_score", "grind_score", "chop_score"}
+
+                all_keys = all_fcols_mr | all_fcols_tf | set(cfg.get("spike_feature_keys", [])) | set(cfg.get("meta_feature_keys", [])) | source_regime_features | interaction_base_features
+                
                 for k in all_keys:
                     if k in feats and sym in feats[k].columns:
                         rec[k] = float(feats[k].loc[ts_sig, sym])
@@ -528,83 +839,55 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
         keys_mr = cfg.get("mr_feature_keys", cfg["causal_cols"])
         keys_tf = cfg.get("tf_feature_keys", cfg["causal_cols"])
 
-        # Multi-horizon MR prediction (average across all horizons)
+        # Store individual horizon predictions for meta-features
+        mr_h_preds = {}
+        tf_h_preds = {}
+
+        # Multi-horizon MR prediction
         if mr_by_h:
-            mr_preds = []
+            mr_preds_list = []
             for _h, _hi in mr_by_h.items():
                 _m = _hi["model"]
                 _fc = _hi.get("feat_cols", fcols_mr)
                 _grp = apply_interaction_toggles(grp.copy(), keys_mr, ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
                 _X = _grp.reindex(columns=_fc, fill_value=0.0).fillna(0.0).astype(np.float32)
-                mr_preds.append(_m.predict(_X))
-            p_mr = np.mean(mr_preds, axis=0)
+                _p = _m.predict(_X)
+                mr_preds_list.append(_p)
+                mr_h_preds[f"pred_mr_H{_h}"] = _p
+                mr_h_preds[f"pred_H{_h}"] = _p # Also generic name for meta-compat
+            p_mr = np.mean(mr_preds_list, axis=0) if mr_preds_list else np.zeros(len(grp))
         else:
             grp_mr = apply_interaction_toggles(grp.copy(), keys_mr, ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
             X_mr_pred = grp_mr.reindex(columns=fcols_mr, fill_value=0.0).fillna(0.0).astype(np.float32)
             p_mr = model_mr.predict(X_mr_pred)
+            mr_h_preds["pred_mr_H2"] = p_mr # Minimal fallback
 
-        # Multi-horizon TF prediction (average across all horizons)
+        # Multi-horizon TF prediction
         if tf_by_h:
-            tf_preds = []
+            tf_preds_list = []
             for _h, _hi in tf_by_h.items():
                 _m = _hi["model"]
                 _fc = _hi.get("feat_cols", fcols_tf)
                 _grp = apply_interaction_toggles(grp.copy(), keys_tf, ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
                 _X = _grp.reindex(columns=_fc, fill_value=0.0).fillna(0.0).astype(np.float32)
-                tf_preds.append(_m.predict(_X))
-            p_tf = np.mean(tf_preds, axis=0)
+                _p = _m.predict(_X)
+                tf_preds_list.append(_p)
+                tf_h_preds[f"pred_tf_H{_h}"] = _p
+                if f"pred_H{_h}" not in mr_h_preds: # avoid collision
+                     tf_h_preds[f"pred_H{_h}"] = _p
+            p_tf = np.mean(tf_preds_list, axis=0) if tf_preds_list else np.zeros(len(grp))
         else:
             grp_tf = apply_interaction_toggles(grp.copy(), keys_tf, ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
             X_tf_pred = grp_tf.reindex(columns=fcols_tf, fill_value=0.0).fillna(0.0).astype(np.float32)
             p_tf = model_tf.predict(X_tf_pred)
+            tf_h_preds["pred_tf_H2"] = p_tf # Minimal fallback
 
-        meta_mr = meta_models.get(f"{side_key}_mr")
-        meta_tf = meta_models.get(f"{side_key}_tf")
+        meta_mr = meta_models.get(f"{side_key}_mr") or meta_models.get(f"{side_key}_mr_clf")
+        meta_tf = meta_models.get(f"{side_key}_tf") or meta_models.get(f"{side_key}_tf_clf")
 
-        def _meta_predict_or_fallback(meta_model, p_alpha, grp_df, label):
-            """Predict with meta model; fall back to raw alpha if meta output is degenerate."""
-            if meta_model is None:
-                return (p_alpha - 0.5) * 0.1, np.ones(len(p_alpha), dtype=bool)
-            num = grp_df.select_dtypes(include=[np.number]).copy()
-            X_meta = meta_model.prepare_meta_features(p_alpha, num, pred_col_name="pred_logit")
-            # Add feature interactions (must match training)
-            if "pred_logit" in X_meta.columns:
-                pl = X_meta["pred_logit"].values
-                for ifeat in ["vol_z", "mkt_rv_ratio", "ambig", "exh_qual", "trend_pct"]:
-                    if ifeat in X_meta.columns:
-                        X_meta[f"pred_x_{ifeat}"] = pl * X_meta[ifeat].values
-                # Regime bucket interactions (must match training)
-                for rcol in ["G_VOL", "G_TREND"]:
-                    if rcol in grp_df.columns:
-                        rv = grp_df[rcol].values
-                        for bkt in [0, 1, 2]:
-                            X_meta[f"pred_x_{rcol}_{bkt}"] = pl * (rv == bkt).astype(float)
-            if meta_model.selected_features:
-                available = set(X_meta.columns)
-                selected = set(meta_model.selected_features)
-                present = selected & available
-                missing = selected - available
-                coverage = len(present) / max(len(selected), 1)
-                if coverage < 0.8:
-                    tprint(f"  Meta {side_key}_{label}: DISABLED — feature coverage {coverage:.0%} "
-                           f"({len(missing)} missing of {len(selected)})")
-                    return (p_alpha - 0.5) * 0.1, np.ones(len(p_alpha), dtype=bool)
-                if missing:
-                    tprint(f"  Meta {side_key}_{label}: {len(missing)} features missing "
-                           f"(coverage {coverage:.0%}), filling with 0")
-                X_meta = X_meta.reindex(columns=meta_model.selected_features, fill_value=0.0)
-            s = meta_model.predict(X_meta)
-            # Variance gate: only check on large batches (>=10 symbols).
-            # On small batches, predictions can legitimately be similar.
-            # The _center_scale degenerate guard in pipeline_steps.py
-            # already protects against systematic degeneracy.
-            if len(s) >= 10 and np.std(s) < 1e-6:
-                tprint(f"  Meta {side_key}_{label}: DISABLED — prediction std={np.std(s):.2e} (degenerate, n={len(s)})")
-                return (p_alpha - 0.5) * 0.1
-            return s
 
-        s_mr = _meta_predict_or_fallback(meta_mr, p_mr, grp, "mr")
-        s_tf = _meta_predict_or_fallback(meta_tf, p_tf, grp, "tf")
+        s_mr, fb_mr = _meta_predict_or_fallback(meta_mr, p_mr, grp, "mr", side_key, mr_h_preds, tf_h_preds, cfg=cfg)
+        s_tf, fb_tf = _meta_predict_or_fallback(meta_tf, p_tf, grp, "tf", side_key, mr_h_preds, tf_h_preds, cfg=cfg)
 
         for i, idx in enumerate(grp.index):
             score_rows.append({
@@ -657,104 +940,55 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
             },
         )
 
-    long_df = sc_df[sc_df["side_key"] == "long"].set_index("symbol")
-    short_df = sc_df[sc_df["side_key"] == "short"].set_index("symbol")
-    syms = sorted(set(long_df.index).intersection(set(short_df.index)))
-    if not syms:
-        return []
-
     score_scale = signal_params.get("score_scale_params", {}) if isinstance(signal_params, dict) else {}
 
     final_orders = []
-    abs_scores = []
-    for sym in syms:
-        l_mr = float(long_df.loc[sym, "score_mr"])
-        s_mr = float(short_df.loc[sym, "score_mr"])
-        l_tf = float(long_df.loc[sym, "score_tf"])
-        s_tf = float(short_df.loc[sym, "score_tf"])
-
-        # Determine trend direction from the dataframe
-        # (It should be same for long_df and short_df for same symbol)
-        t_dir = int(long_df.loc[sym, "trend_dir"])
+    for row in sc_df.to_dict('records'):
+        sym = row["symbol"]
+        side_key = row["side_key"]
+        t_dir = int(row["trend_dir"])
+        s_mr = float(row["score_mr"])
+        s_tf = float(row["score_tf"])
 
         if score_scale:
-            l_mr = _robust_norm(l_mr, score_scale.get("long_mr_center", 0.0), score_scale.get("long_mr_scale", 1.0))
-            s_mr = _robust_norm(s_mr, score_scale.get("short_mr_center", 0.0), score_scale.get("short_mr_scale", 1.0))
-            l_tf = _robust_norm(l_tf, score_scale.get("long_tf_center", 0.0), score_scale.get("long_tf_scale", 1.0))
-            s_tf = _robust_norm(s_tf, score_scale.get("short_tf_center", 0.0), score_scale.get("short_tf_scale", 1.0))
+            if side_key == "long":
+                s_mr = _robust_norm(s_mr, score_scale.get("long_mr_center", 0.0), score_scale.get("long_mr_scale", 1.0))
+                s_tf = _robust_norm(s_tf, score_scale.get("long_tf_center", 0.0), score_scale.get("long_tf_scale", 1.0))
+            else:
+                s_mr = _robust_norm(s_mr, score_scale.get("short_mr_center", 0.0), score_scale.get("short_mr_scale", 1.0))
+                s_tf = _robust_norm(s_tf, score_scale.get("short_tf_center", 0.0), score_scale.get("short_tf_scale", 1.0))
 
         # Decoupled Logic (Report 2026-02-10)
-        # Treat each model output as an independent signal.
-        # Best (Up Trend, t_dir > 0): Long_TF (buy) OR Short_MR (sell)
-        # Worst (Down Trend, t_dir < 0): Long_MR (buy) OR Short_TF (sell)
+        # Long candidates (from 'top'): check TF for momentum (Up Trend) or MR for recovery (Down Trend)
+        # Short candidates (from 'bot'): check MR for reversal (Up Trend) or TF for momentum (Down Trend)
+        potential_signal = None
+        if side_key == "long":
+            if t_dir > 0:
+                mode = "best"
+                thr = float(signal_params.get(f"thr_tf_{mode}", thr_long))
+                if s_tf > thr:
+                    potential_signal = {"symbol": sym, "side": "long", "score": s_tf, "dom": "tf", "mode": mode}
+            else:
+                mode = "worst"
+                thr = float(signal_params.get(f"thr_mr_{mode}", thr_long))
+                if s_mr > thr:
+                    potential_signal = {"symbol": sym, "side": "long", "score": s_mr, "dom": "mr", "mode": mode}
+        else: # side_key == "short"
+            if t_dir > 0:
+                mode = "best"
+                thr = float(signal_params.get(f"thr_mr_{mode}", thr_short))
+                neg_s_mr = -s_mr # meta scores are quality, we negate for short signal comparison
+                if neg_s_mr < thr:
+                    potential_signal = {"symbol": sym, "side": "short", "score": neg_s_mr, "dom": "mr", "mode": mode}
+            else:
+                mode = "worst"
+                thr = float(signal_params.get(f"thr_tf_{mode}", thr_short))
+                neg_s_tf = -s_tf
+                if neg_s_tf < thr:
+                    potential_signal = {"symbol": sym, "side": "short", "score": neg_s_tf, "dom": "tf", "mode": mode}
 
-        potential_signals = []
-
-        if t_dir > 0:
-            # Best Performer Pipeline
-            # Check Long_TF
-            mode_l = "best" # long_tf is 'best' bucket
-            thr_l = float(signal_params.get(f"thr_tf_{mode_l}", thr_long))
-            if l_tf > thr_l:
-                potential_signals.append({
-                    "symbol": sym, "side": "long", "score": l_tf, "dom": "tf", "mode": mode_l
-                })
-
-            # Check Short_MR
-            mode_s = "best" # short_mr is 'best' bucket (reversal of best)
-            thr_s = float(signal_params.get(f"thr_mr_{mode_s}", thr_short))
-            # Short thresholds are typically negative (e.g. -0.01).
-            # But here meta models predict rank percentile centered?
-            # If meta predicts > 0, it means "good trade".
-            # Wait, `short_mr` meta predicts rank relative to Short PnL.
-            # So a high POSITIVE score means "Good Short".
-            # Thresholds in config might be positive for meta scores if they represent quality.
-            # However, `thr_short` defaults to -0.01.
-            # If the system expects signed scores (long > 0, short < 0), we need to negate s_mr.
-            # Previous logic: `net_score = l_tf - s_mr`.
-            # If s_mr was large (0.8), net_score becomes negative (-0.8), triggering short.
-            # So s_mr is a POSITIVE quality score for a SHORT trade.
-            # To create a negative signal score: signal = -s_mr.
-
-            # If we use `thr_short` (e.g. -0.01), we check if -s_mr < thr_short => s_mr > -thr_short.
-            # Example: thr_short = -0.01. We need -s_mr < -0.01 => s_mr > 0.01.
-
-            neg_s_mr = -s_mr
-            if neg_s_mr < thr_s:
-                 potential_signals.append({
-                    "symbol": sym, "side": "short", "score": neg_s_mr, "dom": "mr", "mode": mode_s
-                })
-
-        else:
-            # Worst Performer Pipeline
-            # Check Long_MR
-            mode_l = "worst" # long_mr is 'worst' bucket
-            thr_l = float(signal_params.get(f"thr_mr_{mode_l}", thr_long))
-            if l_mr > thr_l:
-                potential_signals.append({
-                    "symbol": sym, "side": "long", "score": l_mr, "dom": "mr", "mode": mode_l
-                })
-
-            # Check Short_TF
-            mode_s = "worst" # short_tf is 'worst' bucket
-            thr_s = float(signal_params.get(f"thr_tf_{mode_s}", thr_short))
-
-            neg_s_tf = -s_tf
-            if neg_s_tf < thr_s:
-                 potential_signals.append({
-                    "symbol": sym, "side": "short", "score": neg_s_tf, "dom": "tf", "mode": mode_s
-                })
-
-        # Conflict Resolution (Mutual Exclusivity)
-        # If we have both Long and Short for the same symbol (rare but possible with decoupled logic),
-        # we treat it as High Uncertainty and take NO position.
-        # User Instruction: "if there is a conflict, don't open any position"
-        if len(potential_signals) > 1:
-            # Conflict detected -> Ignore all signals for this symbol
-            pass
-        elif len(potential_signals) == 1:
-            final_orders.append(potential_signals[0])
-            abs_scores.append(abs(potential_signals[0]["score"]))
+        if potential_signal:
+            final_orders.append(potential_signal)
 
     if not final_orders:
         return []
@@ -764,6 +998,21 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
     longs.sort(key=lambda x: x["score"], reverse=True)
     shorts.sort(key=lambda x: x["score"])  # more negative first
     final_orders = longs[:k_long] + shorts[:k_short]
+    
+    # --- Global Percentile Gating ---
+    # Gating based on global distribution of scores (across all assets and time)
+    # This addresses the user query: "if it's in the top x%, then act on it"
+    q95 = signal_params.get("size_q95")
+    q98 = signal_params.get("size_q98")
+    for o in final_orders:
+        o["global_rank"] = _estimate_global_percentile(o["score"], size_q50, size_q90, q95, q98)
+    
+    score_gate_q = float(signal_params.get("score_gate_q", 0.0))
+    if score_gate_q > 0:
+        filtered = [o for o in final_orders if o["global_rank"] >= score_gate_q]
+        if len(filtered) < len(final_orders):
+            # tprint(f"  Global gate (>{score_gate_q:.1%}) filtered {len(final_orders) - len(filtered)} signals")
+            final_orders = filtered
 
     # Symbol mutual exclusivity: if same symbol has both long and short signals,
     # keep only the stronger one (higher |score|) to prevent ping-pong losses
@@ -783,30 +1032,22 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
     gross_cap = float(cfg.get("wallet_gross_cap", 1.0))
     sizing_mode = signal_params.get("sizing_mode", cfg.get("sizing_mode", "rank"))
     raw_w = []
-
-    # Pre-compute percentile ranks for rank-based sizing
-    if sizing_mode == "rank" and len(final_orders) >= 2:
-        abs_scores = np.array([abs(o["score"]) for o in final_orders], dtype=np.float64)
-        order = np.argsort(abs_scores)
-        ranks = np.empty_like(order, dtype=np.float64)
-        ranks[order] = np.linspace(0.0, 1.0, len(abs_scores))
-    else:
-        ranks = None
-
+    # Mode "rank" now uses GLOBAL rank (percentile) rather than hourly local rank
+    # mapping is: global_rank (interpolated) -> sigmoid weight
+    
     for i, o in enumerate(final_orders):
         if sizing_mode == "score":
-            # Legacy: raw |score| sigmoid (may have broken monotonicity)
             z = abs(float(o["score"]))
             z_tilde = np.clip((z - size_q50) / (size_q90 - size_q50 + 1e-12), 0.0, size_zcap)
             fz = 1.0 / (1.0 + np.exp(-size_k * (z_tilde - size_x0)))
             w_alloc = size_min + (size_max - size_min) * fz
-        elif sizing_mode == "rank" and ranks is not None:
-            # Rank-based: percentile rank within batch → sigmoid sizing
-            # Immune to conviction paradox (uses ordinal rank, not magnitude)
-            fz = 1.0 / (1.0 + np.exp(-size_k * (ranks[i] - size_x0)))
+        elif sizing_mode == "rank":
+            # Global Rank-based Sigmoid: rank within long-term distribution
+            # Immune to local conviction paradox and magnitude drift
+            ranks_i = o.get("global_rank", 0.5)
+            fz = 1.0 / (1.0 + np.exp(-size_k * (ranks_i - size_x0)))
             w_alloc = size_min + (size_max - size_min) * fz
         else:
-            # Equal: flat sizing
             w_alloc = (size_min + size_max) / 2.0
         raw_w.append(w_alloc)
 

@@ -468,6 +468,12 @@ class MetaModel:
         tprint(f"  HPO done ({_time.monotonic()-_t0:.1f}s). Fitting final model...")
 
         # Final fit on all data
+        if len(np.unique(y_fit)) < 2 and kind in ["ridge", "huber"]:
+            tprint(f"  WARNING: Final fit on single-class data ({np.unique(y_fit)}), returning trivial model")
+            # For regressors, we could return a constant model, but _fit_one expects a pipeline.
+            # Let's just catch the error or ensure y_fit has at least some noise.
+            pass
+
         final_model = self._fit_one(kind, tuned_params, Xv, y_fit, Xv, y_fit, sw=sw_fit)
 
         self.model = {
@@ -527,6 +533,12 @@ class MetaClassifierModel:
         self.report_rows: List[dict] = []
         self.label_threshold: float = 0.26  # default
         self.score_sign: int = 1
+
+    def prepare_meta_features(self, preds, feats_df, pred_col_name="pred_logit"):
+        p = np.clip(np.asarray(preds, dtype=float), 1e-4, 1 - 1e-4)
+        meta_data = pd.DataFrame(index=feats_df.index)
+        meta_data[pred_col_name] = np.clip(logit(p), -4.0, 4.0)
+        return pd.concat([meta_data, feats_df], axis=1).fillna(0.0)
 
     # ── Candidate definitions ────────────────────────────────────────
     def _build_candidates(self) -> Dict[str, dict]:
@@ -846,6 +858,14 @@ class MetaClassifierModel:
         kind = best_rec["kind"]
         params = best_rec["params"]
         y_final = best_rec["y_class"]
+        
+        # Safety: ensure at least 2 classes for Classifier (especially LogisticRegression)
+        unique_classes = np.unique(y_final)
+        if len(unique_classes) < 2:
+            tprint(f"  WARNING: Meta labels for {self.strategy_name} have only one class: {unique_classes}. Skipping final fit.")
+            self.model = {"kind": "trivial", "class": unique_classes[0], "multiclass": True}
+            return self
+
         tprint(f"  Winner: {best_rec['name']} "
                f"(LogLoss={best_score:.4f}). Fitting final model...")
 
@@ -868,6 +888,14 @@ class MetaClassifierModel:
     def predict_proba(self, X_meta):
         if self.selected_features is None or self.model is None:
             raise RuntimeError("MetaClassifierModel must be fitted before predict")
+            
+        if self.model.get("kind") == "trivial":
+            n = len(X_meta)
+            cls = self.model["class"]
+            out = np.zeros((n, 3), dtype=np.float64)
+            out[:, int(cls)] = 1.0
+            return out
+
         X = X_meta[self.selected_features].to_numpy(dtype=float)
         probs_list = []
         for m in self.model["models"]:

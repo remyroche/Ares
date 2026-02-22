@@ -164,6 +164,7 @@ def select_trade_candidates_vectorized(
     min_range_pct=0.07,
     min_vol_zscore=1.6,
     sign_consistency_min=0.80,
+    chop_thr=0.5,
 ):
     """
     Vectorized candidate selection with time expansion and volatility filtering.
@@ -221,11 +222,26 @@ def select_trade_candidates_vectorized(
         vol_metric = (roll_h - roll_l) / (c + 1e-12)
         vol_mask = vol_metric > min_range_pct
 
-    # Filter 3: Volatility Z-score > 1.6
-    if "volatility_zscore" in feats:
+    # Filter 3: Volatility Z-score > dynamic threshold
+    # Dynamic Z-scaling: scale min_vol_zscore based on global market volatility (48h)
+    # We use 'mkt_rv_24h' as a proxy if 'mkt_rv_48h' is not explicitly in feats
+    mkt_vol_key = "mkt_rv_48h" if "mkt_rv_48h" in feats else "mkt_rv_24h"
+    if mkt_vol_key in feats and "volatility_zscore" in feats:
+        mkt_vol = feats[mkt_vol_key]
+        mkt_vol_mean = mkt_vol.rolling(24*30, min_periods=100).mean().ffill().bfill()
+        # Scale threshold: when market is more volatile, we want higher conviction (higher z-score)
+        dynamic_thr = min_vol_zscore * (mkt_vol / (mkt_vol_mean + 1e-12)).clip(0.5, 2.0)
+        event_mask = feats["volatility_zscore"] > dynamic_thr
+    elif "volatility_zscore" in feats:
         event_mask = feats["volatility_zscore"] > min_vol_zscore
     else:
         event_mask = pd.DataFrame(True, index=vol_mask.index, columns=vol_mask.columns)
+
+    # Filter 5: Chop Filter (discard candidates with high chop_score)
+    if "chop_score" in feats:
+        chop_mask = feats["chop_score"] < chop_thr
+    else:
+        chop_mask = pd.DataFrame(True, index=vol_mask.index, columns=vol_mask.columns)
 
     # Filter 4: Sign Consistency > 80%
     # We use Numba optimized function on close prices
@@ -238,7 +254,7 @@ def select_trade_candidates_vectorized(
         sc_mask = pd.DataFrame(True, index=vol_mask.index, columns=vol_mask.columns)
 
     # Combine Filters into Base Mask
-    base_mask = base_mask & vol_mask & event_mask & sc_mask
+    base_mask = base_mask & vol_mask & event_mask & sc_mask & chop_mask
 
     # 3. Time Expansion
     # Offsets: t-12, t-8, t-4, t+4, t+8, t+12, t+16

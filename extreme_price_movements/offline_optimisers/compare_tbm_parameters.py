@@ -38,6 +38,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from scipy.stats import spearmanr
 from sklearn.linear_model import Ridge
+from joblib import Parallel, delayed
+import optuna
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 import sys
@@ -46,8 +48,13 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from extreme_price_movements.data_store import to_panel
-from extreme_price_movements.labeling import compute_triple_barrier_labels
-from extreme_price_movements.config import CFG, TEST_FEATURE_KEYS
+from extreme_price_movements.labeling import compute_triple_barrier_labels, OUT_SL, OUT_TO, OUT_TP
+from extreme_price_movements.config import (
+    CFG,
+    TEST_FEATURE_KEYS,
+    PERP_FEATURE_KEYS,
+    enable_perp_feature_keys,
+)
 from extreme_price_movements.candidates import select_trade_candidates_vectorized
 from extreme_price_movements.offline_optimisers.params_store import (
     REPORTS_DIR,
@@ -86,11 +93,22 @@ from extreme_price_movements.production_sl_tp_policy import (
 
 EPS = 1e-12
 TBM_CACHE_VERSION = 2
+ACTIVE_TEST_FEATURE_KEYS = list(TEST_FEATURE_KEYS)
+
+
+def _append_suffix(path: str, suffix: str) -> str:
+    norm = str(path).rstrip("/\\")
+    if norm.endswith(suffix):
+        return norm
+    return f"{norm}{suffix}"
 
 
 def _memory_snapshot_mb() -> float:
     """Process resident memory estimate in MB (high-water mark on Linux)."""
+    import sys
     rss_kb = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    if sys.platform == "darwin":
+        return rss_kb / (1024.0 * 1024.0)
     return rss_kb / 1024.0
 
 
@@ -126,10 +144,11 @@ def _find_latest_feature_ts(data_root: str) -> Optional[pd.Timestamp]:
     return pd.to_datetime(latest, format="%Y%m%d_%H%M%S").tz_localize("UTC")
 
 
-def _load_panel_from_store(cfg: Dict[str, Any]) -> Optional[Dict[str, pd.DataFrame]]:
+def _load_panel_from_store(cfg: Dict[str, Any]) -> Tuple[Optional[Dict[str, pd.DataFrame]], List[str]]:
     """Load panel data from PartitionedOHLCVStore (same as training pipeline).
     
     Subsamples aggressively to reduce memory usage for Stage 1 quick scans.
+    Returns (panel, symbols_used).
     """
     from extreme_price_movements.data_store import PartitionedOHLCVStore
     from extreme_price_movements.universe import refresh_margin_universe_daily
@@ -138,42 +157,52 @@ def _load_panel_from_store(cfg: Dict[str, Any]) -> Optional[Dict[str, pd.DataFra
         store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
         
         # Get margin symbols
-        mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
-        margin_symbols = mu.symbols if mu else []
+        try:
+            mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
+            margin_symbols = mu.symbols if mu else []
+        except Exception:
+            margin_symbols = []
         
         # Use market_basket from config and limit total symbols
         market_basket = cfg.get("market_basket", [])
         all_syms = list(set(margin_symbols + market_basket))
         
+        # Fallback: if no symbols found via universe/basket, look into ohlcv directory
+        if not all_syms:
+            ohlcv_dir = os.path.join(cfg["data_root"], "ohlcv")
+            if os.path.exists(ohlcv_dir):
+                all_syms = [d for d in os.listdir(ohlcv_dir) if os.path.isdir(os.path.join(ohlcv_dir, d))]
+                tprint(f"No universe symbols found, fallback to ohlcv dir: found {len(all_syms)} symbols")
+        
         # Aggressive subsample: take every 4th asset for Stage 1
         train_syms = all_syms[::4]
-        # Limit to max 30 symbols for Stage 1 quick runs
-        train_syms = train_syms[:30]
+        # Limit to max 150 symbols for Stage 1 balanced runs
+        train_syms = train_syms[:150]
         
         tprint(f"Loading panel from store for {len(train_syms)} symbols (Stage 1 subsampled)")
         dfs: Dict[str, pd.DataFrame] = {}
         for sym in train_syms:
             try:
                 df = store.load(sym)
+                if df is not None and len(df) > 500:
+                    dfs[sym] = df
             except Exception as exc:
                 tprint(f"Store load failed for {sym}: {exc}")
                 continue
-            if df is None or df.empty:
-                continue
-            required = {"open", "high", "low", "close", "volume"}
-            if not required.issubset(set(df.columns)):
-                continue
-            dfs[sym] = df
         if not dfs:
-            tprint("Panel store load returned no usable symbols")
-            return None
-        return to_panel(dfs)
+            tprint(f"Panel store load returned no usable symbols. store.ohlcv_dir={store.ohlcv_dir}")
+            return None, []
+        return to_panel(dfs), train_syms
     except Exception as e:
         tprint(f"Failed to load panel from store: {e}")
-        return None
+        return None, []
 
 
-def _load_features_from_data_root(cfg: Dict[str, Any]) -> Optional[Dict[str, pd.DataFrame]]:
+def _load_features_from_data_root(
+    cfg: Dict[str, Any],
+    symbols: Optional[List[str]] = None,
+    feature_keys: Optional[Sequence[str]] = None,
+) -> Optional[Dict[str, pd.DataFrame]]:
     """Load features from the latest feature timestamp in data_root.
     
     Only loads TEST_FEATURE_KEYS to minimize memory usage.
@@ -189,19 +218,21 @@ def _load_features_from_data_root(cfg: Dict[str, Any]) -> Optional[Dict[str, pd.
     
     tprint(f"Loading features from {feat_dir}")
     
-    # Load only TEST_FEATURE_KEYS to minimize memory
-    dfs = _read_symbol_parquet_dir(feat_dir)
+    feature_keys = list(feature_keys or ACTIVE_TEST_FEATURE_KEYS)
+    # Load only configured feature keys to minimize memory
+    columns = list(dict.fromkeys(feature_keys))
+    dfs = _read_symbol_parquet_dir(feat_dir, symbols=symbols, columns=columns)
     feat_buf: Dict[str, Dict[str, pd.Series]] = {}
     
-    # Only process columns that are in TEST_FEATURE_KEYS
-    test_keys_set = set(TEST_FEATURE_KEYS)
+    # Only process columns that are in configured feature keys.
+    test_keys_set = set(feature_keys)
     for sym, df in dfs.items():
         for c in df.columns:
             if c in test_keys_set:  # Only keep test feature keys
                 feat_buf.setdefault(c, {})[sym] = pd.to_numeric(df[c], errors="coerce")
     
     out = {k: pd.DataFrame(v).sort_index() for k, v in feat_buf.items()}
-    tprint(f"Loaded {len(out)} features (TEST_FEATURE_KEYS only)")
+    tprint(f"Loaded {len(out)} features (configured key universe only)")
     return out
 
 
@@ -514,7 +545,7 @@ def _estimate_tbm_cache_size_bytes(layer1_cache: Dict[str, Any], layer2_cache: D
                  pass
             else:
                  continue
-        lbl, ret = v
+        lbl, ret = v[0], v[1]
         total += int(lbl.memory_usage(index=True, deep=True).sum())
         total += int(ret.memory_usage(index=True, deep=True).sum())
     return total
@@ -648,44 +679,96 @@ def save_persisted_tbm_cache(
 # ---------------------------
 # IO helpers
 # ---------------------------
-def _read_symbol_parquet_dir(folder: Path) -> Dict[str, pd.DataFrame]:
+def _read_symbol_parquet_file(f: Path, columns: Optional[List[str]] = None) -> Tuple[str, pd.DataFrame]:
+    """Helper for parallel loading of a single symbol file."""
+    raw_sym = None
+    for part in f.parts:
+        if part.startswith("symbol="):
+            raw_sym = part.replace("symbol=", "").replace(".parquet", "")
+            break
+    if raw_sym is None:
+        raw_sym = f.stem.replace("symbol=", "")
+    
+    # Try to read only specific columns if provided
+    try:
+        df = pd.read_parquet(f, columns=columns)
+    except Exception:
+        # Fallback if columns are missing in some files
+        df = pd.read_parquet(f)
+        if columns:
+            df = df[[c for c in columns if c in df.columns]]
+
+    if "__symbol__" in df.columns and not df.empty:
+        sym = str(df["__symbol__"].iloc[0])
+        df = df.drop(columns=["__symbol__"])
+    else:
+        sym = raw_sym.replace("_", "/", 1)
+
+    if "year" in df.columns:
+        df = df.drop(columns=["year"])
+
+    if not isinstance(df.index, pd.DatetimeIndex):
+        if "timestamp" in df.columns:
+            df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+            df = df.set_index("timestamp")
+        else:
+            # Check if it has an Unnamed: 0 or similar for the index
+            if df.index.name is None and not df.empty:
+                 pass
+            else:
+                 raise ValueError(f"Cannot infer timestamp index for {f}")
+
+    if df.index.tz is None:
+        df.index = df.index.tz_localize("UTC")
+    else:
+        df.index = df.index.tz_convert("UTC")
+    
+    return sym, df
+
+def _read_symbol_parquet_dir(
+    folder: Path, 
+    symbols: Optional[List[str]] = None, 
+    columns: Optional[List[str]] = None
+) -> Dict[str, pd.DataFrame]:
+    """Reads a directory of symbol parquets, with push-down filtering and parallelism."""
     files = sorted(folder.glob("symbol=*.parquet"))
     if not files:
         files = sorted(folder.glob("symbol=*/**/*.parquet"))
     if not files:
         raise FileNotFoundError(f"No symbol parquet files in {folder}")
 
+    # Push-down filtering: only read files for requested symbols
+    if symbols:
+        symbols_set = {str(s).replace("/", "_") for s in symbols}
+        filtered_files = []
+        for f in files:
+            # Check if symbol is in the path
+            sym_part = None
+            for part in f.parts:
+                if part.startswith("symbol="):
+                    sym_part = part.replace("symbol=", "").replace(".parquet", "")
+                    break
+            if sym_part and sym_part in symbols_set:
+                filtered_files.append(f)
+            elif not sym_part:
+                # Fallback check on stem (remove .parquet if present in stem)
+                stem_sym = f.stem.replace("symbol=", "")
+                if stem_sym in symbols_set:
+                    filtered_files.append(f)
+        files = filtered_files
+        
+    if not files:
+        return {}
+
+    # Parallel loading
+    tprint(f"Parallel loading {len(files)} symbol files...")
+    n_jobs = min(8, len(files))
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(_read_symbol_parquet_file)(f, columns=columns) for f in files
+    )
+
     by_symbol_parts: Dict[str, List[pd.DataFrame]] = {}
-    for f in files:
-        raw_sym = None
-        for part in f.parts:
-            if part.startswith("symbol="):
-                raw_sym = part.replace("symbol=", "")
-                break
-        if raw_sym is None:
-            raw_sym = f.stem.replace("symbol=", "")
-        df = pd.read_parquet(f)
-        if "__symbol__" in df.columns and not df.empty:
-            sym = str(df["__symbol__"].iloc[0])
-            df = df.drop(columns=["__symbol__"])
-        else:
-            sym = raw_sym.replace("_", "/", 1)
-
-        if "year" in df.columns:
-            df = df.drop(columns=["year"])
-
-        if not isinstance(df.index, pd.DatetimeIndex):
-            if "timestamp" in df.columns:
-                df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
-                df = df.set_index("timestamp")
-            else:
-                raise ValueError(f"Cannot infer timestamp index for {f}")
-
-        if df.index.tz is None:
-            df.index = df.index.tz_localize("UTC")
-        else:
-            df.index = df.index.tz_convert("UTC")
-
+    for sym, df in results:
         by_symbol_parts.setdefault(sym, []).append(df.sort_index())
 
     dfs: Dict[str, pd.DataFrame] = {}
@@ -1103,6 +1186,7 @@ def build_bucket_masks(artifacts: RunArtifacts, cfg_runtime: Dict[str, Any] | No
                 min_range_pct=float(candidate_defaults["train_min_range_pct"]),
                 min_vol_zscore=float(candidate_defaults["train_min_vol_zscore"]),
                 sign_consistency_min=float(candidate_defaults.get("min_feat_sign_consistency", 0.80)),
+                chop_thr=float(candidate_defaults.get("train_chop_thr", 0.5)),
             )
             if cf is not None:
                 candidate_filter = cf.astype(bool)
@@ -1185,7 +1269,7 @@ def choose_feature_matrix(artifacts: RunArtifacts, max_features: int = 20) -> Tu
             continue
         good.append(k)
 
-    preferred = CFG.get("test_feature_keys", TEST_FEATURE_KEYS)
+    preferred = list(ACTIVE_TEST_FEATURE_KEYS)
     selected = [k for k in preferred if k in good]
     if not selected:
         raise ValueError("No configured test_feature_keys available in features for TBM comparison")
@@ -1237,8 +1321,8 @@ def compute_weights(events: pd.DataFrame, cfg: Dict[str, Any]) -> np.ndarray:
         return w
 
     rr = events["tp"].values / np.maximum(events["sl"].values, EPS)
-    tp_hit = (events["label"].values == 1).astype(float)
-    timeout = (events["label"].values == 0).astype(float)
+    tp_hit = (events["label"].values == OUT_TP).astype(float)
+    timeout = (events["label"].values == OUT_TO).astype(float)
 
     if scheme == "rr":
         w *= np.power(np.clip(rr, 0.1, 10.0), float(cfg.get("rr_weight_power", 1.0)))
@@ -1777,8 +1861,8 @@ def evaluate_config(
     total_cells = len(bucket_h_metrics)
     for (b, h), g in events.groupby(["bucket", "horizon"]):
         n_eval_kept = int(len(g))
-        tp_hit_kept = float((g["label"] == 1).mean())
-        timeout_kept = float((g["label"] == 0).mean())
+        tp_hit_kept = float((g["label"] == OUT_TP).mean())
+        timeout_kept = float((g["label"] == OUT_TO).mean())
         # Horizon-dependent timeout threshold: shorter horizons tolerate more timeouts.
         # If cfg explicitly sets max_timeout_rate (non-zero), use that; otherwise adaptive.
         if _max_timeout_base > 0.0:
@@ -1787,7 +1871,7 @@ def evaluate_config(
             max_timeout_h = 0.90 + 0.025 * (int(h) / 8.0)
         ok = (n_eval_kept >= min_raw) and (tp_hit_kept >= min_tp_hit) and (timeout_kept <= max_timeout_h)
         pass_cells += int(ok)
-        sl_hit_kept = float((g["label"] == -1).mean())
+        sl_hit_kept = float((g["label"] == OUT_SL).mean())
         bind_cell = tp_hit_kept + sl_hit_kept
         balance_cell = (min(tp_hit_kept, sl_hit_kept) / max(max(tp_hit_kept, sl_hit_kept), EPS))
         # tp_mean/sl_mean: actual barrier sizes in % for this bucket-horizon cell.
@@ -1840,9 +1924,9 @@ def evaluate_config(
             cell_id=cell_ids,
             base_w=weights.astype(np.float64),
             cfg=renorm_cfg,
-            tp_label=1,
-            sl_label=-1,
-            to_label=0,
+            tp_label=OUT_TP,
+            sl_label=OUT_SL,
+            to_label=OUT_TO,
         ).astype(np.float32)
 
     ess = effective_sample_size(weights)
@@ -1852,7 +1936,7 @@ def evaluate_config(
     # Feature matrix + OOF scoring.
     X_flat, feat_cols = get_stacked_feature_matrix(artifacts, eval_cache)
     y_signed = events["label"].astype(np.float32).values
-    y_bin = (events["label"].values == 1).astype(np.float32)
+    y_bin = (events["label"].values == OUT_TP).astype(np.float32)
     payoff = events["payoff"].astype(np.float32).values
 
     pred = train_and_predict_per_bucket(events, X_flat, weights, n_folds=5)
@@ -1891,7 +1975,7 @@ def evaluate_config(
             continue
         idx = g.index.values
         p_cell = pred[idx]
-        y_tp_cell = (g["label"].values == 1).astype(np.float32)
+        y_tp_cell = (g["label"].values == OUT_TP).astype(np.float32)
         # IC on payoff
         cell_ic = _safe_spearman(p_cell, g["payoff"].values)
         # IC on label (signed: TP=1, timeout=0, SL=-1)
@@ -1935,8 +2019,8 @@ def evaluate_config(
         # 2. tp_over_sl: E[r|TP] / abs(E[r|SL]).  Requires >= 1.05 (5% edge).
         #    Uses realized payoff (already net of fees in the labeler).
         _payoff_cell = g["payoff"].values.astype(np.float64)
-        _tp_mask_cell = g["label"].values == 1
-        _sl_mask_cell = g["label"].values == -1
+        _tp_mask_cell = g["label"].values == OUT_TP
+        _sl_mask_cell = g["label"].values == OUT_SL
         _er_tp = float(_payoff_cell[_tp_mask_cell].mean()) if _tp_mask_cell.sum() > 0 else float("nan")
         _er_sl = float(_payoff_cell[_sl_mask_cell].mean()) if _sl_mask_cell.sum() > 0 else float("nan")
         if not (math.isnan(_er_tp) or math.isnan(_er_sl)) and abs(_er_sl) > EPS:
@@ -1973,7 +2057,7 @@ def evaluate_config(
             continue
         idx = g.index.values
         p_cell = pred[idx]
-        y_tp_cell = (g["label"].values == 1).astype(np.float32)
+        y_tp_cell = (g["label"].values == OUT_TP).astype(np.float32)
         # auc_bound: only bound events
         bound_mask = g["label"].values != 0
         if bound_mask.sum() >= 10:
@@ -2087,14 +2171,14 @@ def evaluate_config(
     max_barrier_ratio = float(np.max(cell_barrier_ratios)) if cell_barrier_ratios else float("nan")
 
     # Config-level bind/balance (aggregate across all events).
-    tp_hit_agg = float((events["label"] == 1).mean()) if len(events) else 0.0
-    sl_hit_agg = float((events["label"] == -1).mean()) if len(events) else 0.0
+    tp_hit_agg = float((events["label"] == OUT_TP).mean()) if len(events) else 0.0
+    sl_hit_agg = float((events["label"] == OUT_SL).mean()) if len(events) else 0.0
     bind_agg = tp_hit_agg + sl_hit_agg
     balance_agg = min(tp_hit_agg, sl_hit_agg) / max(max(tp_hit_agg, sl_hit_agg), EPS)
     sl_to_tp_agg = sl_hit_agg / max(tp_hit_agg, EPS)
 
     # Degeneracy flags.
-    timeout_agg = float((events["label"] == 0).mean()) if len(events) else 1.0
+    timeout_agg = float((events["label"] == OUT_TO).mean()) if len(events) else 1.0
     flag_degenerate_timeout = timeout_agg > 0.85
     flag_degenerate_sl = sl_hit_agg > 0.60
     flag_degenerate_tp = tp_hit_agg < 0.05
@@ -2166,7 +2250,7 @@ def evaluate_config(
     stage1_score = (
         (0.5 * ic_snr + 0.5 * mean_bucket_ic) * math.sqrt(max(coverage, 0.0))
         - 0.2 * float(events["bound_saturation"].mean() if len(events) else 0.0)
-        - 0.2 * float((events["label"] == 0).mean() if len(events) else 1.0)
+        - 0.2 * float((events["label"] == OUT_TO).mean() if len(events) else 1.0)
     )
 
     # Learnability-focused stage2_score.
@@ -2574,7 +2658,7 @@ def _apply_prod_aligned_tp_centering(
                     "this can over-prune SL ladder."
                 )
             policy = SLTPPolicy(
-                sl_as_tp_pct_grid=tuple(float(x) for x in runtime.get("prod_sl_tp_pct_grid", [0.20, 0.25, 0.30, 0.35, 0.40, 0.50, 0.60, 0.75, 0.90, 1.00, 1.25])),
+                sl_as_tp_pct_grid=tuple(float(x) for x in runtime.get("prod_sl_tp_pct_grid", [0.20, 0.25, 0.30, 0.35, 0.40, 0.50, 0.60, 0.75, 0.90, 1.00, 1.25, 1.50, 1.75, 2.00])),
                 superiority_add=sup_add,
                 drop_on_violation=bool(runtime.get("prod_sl_tp_drop_on_violation", True)),
             )
@@ -2631,7 +2715,7 @@ def base_param_template(cfg_runtime: Optional[Dict[str, Any]] = None) -> Dict[st
         "fee_pct": float(tbm_defaults["fee_pct"]),
         "slip_buffer": float(tbm_defaults["slip_buffer"]),
         "min_net_rr": 0.4,  # relaxed for geometry search; tighter RR kills training density
-        "min_tp_hit_rate": 0.01,
+        "min_tp_hit_rate": max(0.01, float((cfg_runtime if cfg_runtime is not None else CFG).get("econ_tp_hit_floor", 0.10))),
         "max_timeout_rate": 0.0,  # 0.0 = use horizon-adaptive threshold (0.90 + 0.025*h/8)
         "min_raw_events": 50,
         "min_ess_events": 30,
@@ -3593,6 +3677,101 @@ def _clear_caches() -> None:
     gc.collect()
     tprint("Cleared caches and ran gc.collect()")
 
+class TBMObjective:
+    """Objective function for Optuna to optimize TBM parameters."""
+    def __init__(
+        self,
+        artifacts: Any,
+        bucket_masks: Dict[str, Any],
+        runtime_cfg: Dict[str, Any],
+        horizons: List[int],
+        layer1_cache: Dict[str, Any],
+        layer2_cache: Dict[str, Any],
+        eval_cache: Any,
+        write_weights_fn: Any,
+        stage_name: str = "optuna_stage1"
+    ):
+        self.artifacts = artifacts
+        self.bucket_masks = bucket_masks
+        self.runtime_cfg = runtime_cfg
+        self.horizons = horizons
+        self.layer1_cache = layer1_cache
+        self.layer2_cache = layer2_cache
+        self.eval_cache = eval_cache
+        self.write_weights_fn = write_weights_fn
+        self.stage_name = stage_name
+        self.trial_results = []
+        self.details = {}
+        self.total_weights_written = 0
+
+    def __call__(self, trial: optuna.Trial) -> float:
+        # 1. Suggest parameters
+        k_tp = trial.suggest_float("k_tp", 0.4, 2.0, step=0.1)
+        tp_base = trial.suggest_float("tp_base_pct", 0.005, 0.04, step=0.001)
+        sl_as_tp = trial.suggest_float("sl_as_tp_pct", 0.3, 1.2, step=0.1)
+        atr_win = trial.suggest_categorical("base_atr_window", [336, 504, 672, 840])
+        
+        # 2. Build config
+        c = base_param_template(self.runtime_cfg)
+        c.update({
+            "mode": self.stage_name,
+            "tp_method": "atr_norm",
+            "sl_method": "tp_pct",
+            "k_tp": float(k_tp),
+            "tp_base_pct": float(tp_base),
+            "tp_abs_pct": float(tp_base),
+            "sl_as_tp_pct": float(sl_as_tp),
+            "tp_regime_model": "none",
+            "horizon_scaling": "sqrt",
+            "base_atr_window": int(atr_win),
+        })
+
+        # Apply prod aligned centering if possible (simplified for trial)
+        c_list, _ = _apply_prod_aligned_tp_centering(
+            [c], artifacts=self.artifacts, bucket_masks=self.bucket_masks, cfg_runtime=self.runtime_cfg, preserve_sl_axis=True
+        )
+        if not c_list:
+            return -1.0
+        c = c_list[0]
+
+        # 3. Evaluate
+        cid = config_id(c)
+        try:
+            res, det, weights_df = evaluate_config(
+                self.artifacts,
+                c,
+                horizons=self.horizons,
+                bucket_masks=self.bucket_masks,
+                layer1_cache=self.layer1_cache,
+                layer2_cache=self.layer2_cache,
+                eval_cache=self.eval_cache,
+                detailed_slices=False,
+                collect_weights=True,
+            )
+            if not res:
+                return -1.0
+            
+            if weights_df is not None and not weights_df.empty:
+                self.write_weights_fn(weights_df)
+                self.total_weights_written += len(weights_df)
+                del weights_df
+
+            self.trial_results.append(res)
+            self.details[cid] = det
+            
+            # Primary metric for Optuna: mean AUC across cells
+            score = float(res.get("mean_auc", 0.0))
+            
+            # Periodic cleanup
+            if trial.number % 10 == 0:
+                gc.collect()
+                _clear_caches()
+                
+            return score
+        except Exception as e:
+            tprint(f"Trial {trial.number} failed: {e}")
+            return -1.0
+
 
 def run(args: argparse.Namespace) -> None:
     t0 = time.perf_counter()
@@ -3604,7 +3783,43 @@ def run(args: argparse.Namespace) -> None:
     
     tprint("Starting TBM parameter comparison run")
     runtime_cfg = apply_offline_optimizer_best_params(dict(CFG))
+    if args.data_root:
+        runtime_cfg["data_root"] = str(args.data_root)
+    if bool(args.perps):
+        runtime_cfg["use_perps"] = True
+        runtime_cfg["data_root"] = _append_suffix(runtime_cfg.get("data_root", "../data"), "_perp")
+        runtime_cfg = enable_perp_feature_keys(runtime_cfg)
+        existing_test = list(runtime_cfg.get("test_feature_keys", TEST_FEATURE_KEYS))
+        runtime_cfg["test_feature_keys"] = list(dict.fromkeys(existing_test + list(PERP_FEATURE_KEYS)))
+    global ACTIVE_TEST_FEATURE_KEYS
+    ACTIVE_TEST_FEATURE_KEYS = list(runtime_cfg.get("test_feature_keys", TEST_FEATURE_KEYS))
     
+    # Resolve data_root if relative
+    data_root = runtime_cfg.get("data_root", "data")
+    if not os.path.isabs(data_root):
+        # Check if local 'data' actually has data, if not fallback to PROJECT_ROOT
+        has_local_data = False
+        local_ohlcv = os.path.join(data_root, "ohlcv")
+        if os.path.exists(local_ohlcv):
+            if any(os.scandir(local_ohlcv)):
+                has_local_data = True
+        
+        if not has_local_data and (PROJECT_ROOT / data_root).exists():
+            data_root = str((PROJECT_ROOT / data_root).resolve())
+            runtime_cfg["data_root"] = data_root
+            tprint(f"Resolved relative data_root to: {data_root}")
+
+    # Auto-detect panel if not provided
+    train_syms = None
+    if args.panel:
+        panel = load_panel(Path(args.panel))
+    else:
+        tprint(f"No --panel provided, auto-detecting from data_root: {runtime_cfg.get('data_root')}")
+        panel, train_syms = _load_panel_from_store(runtime_cfg)
+
+    if panel is None:
+        raise ValueError("Could not load panel data. Please provide --panel path.")
+
     # Auto-detect features if not provided (only loads TEST_FEATURE_KEYS)
     if args.features:
         features = load_features(Path(args.features))
@@ -3618,19 +3833,14 @@ def run(args: argparse.Namespace) -> None:
                 features = {k: features[k] for k in common_keys if k in features}
     else:
         tprint("No --features provided, auto-detecting from data_root")
-        features = _load_features_from_data_root(runtime_cfg)
+        # Use subsampled symbols from panel if available to speed up loading
+        features = _load_features_from_data_root(
+            runtime_cfg,
+            symbols=train_syms,
+            feature_keys=ACTIVE_TEST_FEATURE_KEYS,
+        )
         if features is None:
             raise ValueError("Could not auto-detect features. Please provide --features path.")
-    
-    # Auto-detect panel if not provided
-    if args.panel:
-        panel = load_panel(Path(args.panel))
-    else:
-        tprint("No --panel provided, auto-detecting from data_root")
-        panel = _load_panel_from_store(runtime_cfg)
-
-    if panel is None:
-        raise ValueError("Could not load panel data. Please provide --panel path.")
 
     artifacts = align_artifacts(panel, features, lookback_years=args.lookback_years)
     # Inject candidate-threshold best params (min_feat_sign_consistency, train_extreme_pct_hourly,
@@ -3686,162 +3896,112 @@ def run(args: argparse.Namespace) -> None:
         weights_writer.write_table(table)
         tprint(f"Streamed {len(weights_df):,} weight rows to {weights_path}")
 
-    stage1_cfgs = _filter_tradeability_guard(stage1_grid(runtime_cfg), runtime_cfg)
-    stage1_cfgs, stage1_prod_aligned_meta = _apply_prod_aligned_tp_centering(
-        stage1_cfgs,
+    details: Dict[str, Any] = {}
+    stage1_rows: List[Dict[str, Any]] = []
+    total_weights_written = 0
+
+    # --- Optuna Stage 1 ---
+    tprint("Starting Optuna Stage 1 optimization...")
+    obj_s1 = TBMObjective(
         artifacts=artifacts,
         bucket_masks=bucket_masks,
-        cfg_runtime=runtime_cfg,
-        preserve_sl_axis=True,
+        runtime_cfg=runtime_cfg,
+        horizons=horizons,
+        layer1_cache=layer1_cache,
+        layer2_cache=layer2_cache,
+        eval_cache=eval_cache,
+        write_weights_fn=write_weights_streaming,
+        stage_name="optuna_stage1"
     )
-    if stage1_prod_aligned_meta:
-        tprint(
-            "[prod_aligned_tp] Stage1 centered with "
-            f"q50={stage1_prod_aligned_meta.get('atr_quantiles',{}).get('q50', float('nan')):.4f} "
-            f"q75={stage1_prod_aligned_meta.get('atr_quantiles',{}).get('q75', float('nan')):.4f} "
-            f"q90={stage1_prod_aligned_meta.get('atr_quantiles',{}).get('q90', float('nan')):.4f}"
-        )
-    _log_prod_aligned_wiring(stage1_cfgs, "stage1")
-    barrier_defaults = get_barrier_factory_defaults(runtime_cfg)
-    for _cfg in stage1_cfgs:
-        _cfg.setdefault("k_tp", float(barrier_defaults["barrier_k_tp"]))
-        _cfg.setdefault("sl_as_tp_pct", float(barrier_defaults["barrier_sl_base_mult"]))
-        _cfg.setdefault("tp_abs_lo_pct", float(barrier_defaults["barrier_tp_lo"]))
-        _cfg.setdefault("tp_abs_hi_pct", float(barrier_defaults["barrier_tp_hi"]))
-        _cfg.setdefault("horizon_base", float(barrier_defaults["label_horizon_base"]))
-    if args.quick:
-        stage1_cfgs = stage1_cfgs[: max(1, args.max_configs)]
-    tprint(
-        f"Stage1 config count={len(stage1_cfgs)} quick={args.quick} horizons={args.horizons} "
-        f"{_cache_pressure_summary(layer1_cache, layer2_cache, eval_cache)}"
-    )
-
-    stage1_rows = []
-    details: Dict[str, Any] = {}
-    total_weights_written = 0
-    for i, cfg in enumerate(stage1_cfgs, 1):
-        s, d, weights_df = evaluate_config(
-            artifacts,
-            cfg,
-            horizons=horizons,
-            bucket_masks=bucket_masks,
-            layer1_cache=layer1_cache,
-            layer2_cache=layer2_cache,
-            eval_cache=eval_cache,
-            detailed_slices=False,
-            collect_weights=True,
-        )
-        stage1_rows.append(s)
-        details[s["config_id"]] = d
-        
-        # Stream weights to parquet instead of accumulating in memory
-        if weights_df is not None and not weights_df.empty:
-            write_weights_streaming(weights_df)
-            total_weights_written += len(weights_df)
-            del weights_df  # Free memory immediately
-        
-        # Regular gc.collect() every iteration to prevent memory buildup
-        gc.collect()
-        
-        if i % 5 == 0:
-            top = max(stage1_rows, key=lambda x: x.get("stage1_score", -1e9)) if stage1_rows else {}
-            tprint(
-                f"[stage1] progress={i}/{len(stage1_cfgs)} best_cfg={top.get('config_id', 'n/a')} "
-                f"best_stage1={top.get('stage1_score', float('nan')):.4f} "
-                f"best_ic_payoff={top.get('ic_payoff', float('nan')):.4f} "
-                f"mem_peak_mb={_memory_snapshot_mb():.1f} "
-                f"{_cache_pressure_summary(layer1_cache, layer2_cache, eval_cache)}"
-            )
-            # More aggressive cache cleaning every 5 iterations
-            _clear_caches()
+    
+    study_s1 = optuna.create_study(direction="maximize")
+    n_trials_s1 = 100 if not args.quick else 20
+    study_s1.optimize(obj_s1, n_trials=n_trials_s1, n_jobs=1)
+    
+    stage1_rows = obj_s1.trial_results
+    details.update(obj_s1.details)
+    total_weights_written += obj_s1.total_weights_written
+    
+    if not stage1_rows:
+        tprint("ERROR: Stage 1 produced no valid results.")
+        return
 
     stage1_df = pd.DataFrame(stage1_rows)
+    stage1_cfgs = [details[cid]["config"] for cid in details.keys() if cid in [r["config_id"] for r in stage1_rows]]
 
+    # Filter to feasible top-k for stage 2
     winners = []
     if args.winners:
-        winners = [x.strip() for x in args.winners if x.strip()]
+        winners = [details[cid]["config"] for cid in args.winners if cid in details]
     elif args.stage2:
         # Per-cell promotion: find best configs independently per (bucket, horizon) cell
-        # (12 cells = 4 buckets × 3 horizons), then union as stage2 candidates.
-        # This ensures stage2 explores geometries optimal for each specific cell,
-        # since H2/H4/H8 have different optimal params and MR/TF have different dynamics.
         per_cell_winners = promote_stage1_per_cell(stage1_df, details, top_k_per_cell=max(2, args.top_k // 4))
         winners_set: set = set()
         for cell_key, cwinners in per_cell_winners.items():
             if cwinners:
                 tprint(f"[promote] {cell_key}: {len(cwinners)} winners → {cwinners}")
             winners_set.update(cwinners)
-        # Also include global top-k as fallback (covers configs good across all cells).
+        # Also include global top-k as fallback
         global_winners = promote_stage1(stage1_df, top_k=max(3, args.top_k // 2))
         winners_set.update(global_winners)
         winners = list(winners_set)
-        tprint(f"[promote] Total stage2 candidates: {len(winners)} (per-cell union across 12 cells + global fallback)")
+        tprint(f"[promote] Total stage2 candidates: {len(winners)}")
 
-    stage2_df = pd.DataFrame()
+    stage2_rows: List[Dict[str, Any]] = []
     if args.stage2 and winners:
-        tprint(f"Stage2 enabled with {len(winners)} winners from Stage1")
+        tprint(f"Starting refinement for {len(winners)} winners...")
         id_to_cfg = {config_id(c): c for c in stage1_cfgs}
         base_cfgs = [id_to_cfg[w] for w in winners if w in id_to_cfg]
-        stage2_cfgs = _filter_tradeability_guard(stage2_grids_from_stage1(base_cfgs, max_per_substage=args.max_stage2_configs), runtime_cfg)
-        stage2_cfgs, stage2_prod_aligned_meta = _apply_prod_aligned_tp_centering(
-            stage2_cfgs,
-            artifacts=artifacts,
-            bucket_masks=bucket_masks,
-            cfg_runtime=runtime_cfg,
-            preserve_sl_axis=True,
-        )
-        if stage2_prod_aligned_meta:
-            tprint(
-                "[prod_aligned_tp] Stage2 centered with "
-                f"q50={stage2_prod_aligned_meta.get('atr_quantiles',{}).get('q50', float('nan')):.4f} "
-                f"q75={stage2_prod_aligned_meta.get('atr_quantiles',{}).get('q75', float('nan')):.4f} "
-                f"q90={stage2_prod_aligned_meta.get('atr_quantiles',{}).get('q90', float('nan')):.4f}"
-            )
-        _log_prod_aligned_wiring(stage2_cfgs, "stage2")
-        tprint(f"Stage2 config count={len(stage2_cfgs)} (max_per_substage={args.max_stage2_configs})")
-
-        rows = []
-        for _cfg in stage2_cfgs:
-            _cfg.setdefault("k_tp", float(barrier_defaults["barrier_k_tp"]))
-            _cfg.setdefault("sl_as_tp_pct", float(barrier_defaults["barrier_sl_base_mult"]))
-            _cfg.setdefault("tp_abs_lo_pct", float(barrier_defaults["barrier_tp_lo"]))
-            _cfg.setdefault("tp_abs_hi_pct", float(barrier_defaults["barrier_tp_hi"]))
-            _cfg.setdefault("horizon_base", float(barrier_defaults["label_horizon_base"]))
-        for i, cfg in enumerate(stage2_cfgs, 1):
-            s, d, weights_df = evaluate_config(
-                artifacts,
-                cfg,
-                horizons=horizons,
-                bucket_masks=bucket_masks,
-                layer1_cache=layer1_cache,
-                layer2_cache=layer2_cache,
-                eval_cache=eval_cache,
-                detailed_slices=True,
-                collect_weights=True,
-            )
-            rows.append(s)
-            details[s["config_id"]] = d
+        for i, winner_cfg in enumerate(base_cfgs):
+            tprint(f"Refining winner {i+1}/{len(base_cfgs)}: {config_id(winner_cfg)}")
             
-            # Stream weights to parquet instead of accumulating in memory
-            if weights_df is not None and not weights_df.empty:
-                write_weights_streaming(weights_df)
-                total_weights_written += len(weights_df)
-                del weights_df  # Free memory immediately
-            
-            if i % 5 == 0:
-                top2 = max(rows, key=lambda x: x.get("stage2_score", -1e9)) if rows else {}
-                tprint(
-                    f"[stage2] progress={i}/{len(stage2_cfgs)} best_cfg={top2.get('config_id', 'n/a')} "
-                    f"best_stage2={top2.get('stage2_score', float('nan')):.4f} "
-                    f"best_sortino={top2.get('sortino', float('nan')):.4f} "
-                    f"mem_peak_mb={_memory_snapshot_mb():.1f} "
-                    f"{_cache_pressure_summary(layer1_cache, layer2_cache, eval_cache)}"
+            def s2_objective(trial):
+                base_tp = winner_cfg.get("tp_base_pct", 0.02)
+                base_k = winner_cfg.get("k_tp", 1.0)
+                
+                k_tp = trial.suggest_float("k_tp", max(0.4, base_k - 0.3), min(2.5, base_k + 0.3), step=0.1)
+                tp_base = trial.suggest_float("tp_base_pct", max(0.005, base_tp - 0.005), min(0.05, base_tp + 0.005), step=0.001)
+                sl_as_tp = trial.suggest_float("sl_as_tp_pct", 0.3, 1.2, step=0.1)
+                
+                c = dict(winner_cfg)
+                c.update({
+                    "mode": f"optuna_s2_refine_{i}",
+                    "k_tp": float(k_tp),
+                    "tp_base_pct": float(tp_base),
+                    "tp_abs_pct": float(tp_base),
+                    "sl_as_tp_pct": float(sl_as_tp),
+                })
+                
+                res, det, weights_df = evaluate_config(
+                    artifacts,
+                    c,
+                    horizons=horizons,
+                    bucket_masks=bucket_masks,
+                    layer1_cache=layer1_cache,
+                    layer2_cache=layer2_cache,
+                    eval_cache=eval_cache,
+                    detailed_slices=False,
+                    collect_weights=True,
                 )
-                gc.collect()
+                if not res: return -1.0
+                
+                if weights_df is not None and not weights_df.empty:
+                    write_weights_streaming(weights_df)
+                    nonlocal total_weights_written
+                    total_weights_written += len(weights_df)
+                    del weights_df
 
-        stage2_df = pd.DataFrame(rows)
+                stage2_rows.append(res)
+                details[config_id(c)] = det
+                return float(res.get("mean_auc", 0.0))
 
-    out_df = stage1_df if stage2_df.empty else pd.concat([stage1_df, stage2_df], ignore_index=True)
+            s2_study = optuna.create_study(direction="maximize")
+            s2_study.optimize(s2_objective, n_trials=15 if not args.quick else 5, n_jobs=1)
+            gc.collect()
+            _clear_caches()
+
+    stage2_df = pd.DataFrame(stage2_rows) if stage2_rows else pd.DataFrame()
+    out_df = pd.concat([stage1_df, stage2_df], ignore_index=True)
     # Two-level learnability sort:
     # Level 1 (hard flags, binary): hard_gate / timeout_range_ok / all_cells_pass /
     #   geometry-health gates (coverage, bind, timeout, min_tp_sep, min_auc floors).
@@ -3851,6 +4011,19 @@ def run(args: argparse.Namespace) -> None:
     out_df["_all_cells_pass"] = (out_df["pass_cells"] == out_df["total_cells"]).astype(int)
     out_df["_to_range_ok"] = (out_df["timeout_range"].fillna(999.0) <= _MAX_TIMEOUT_RANGE).astype(int) if "timeout_range" in out_df.columns else 1
     # Geometry-health gate flags (soft in sort — hard in promote/best-params)
+    # Ensure all required columns exist with fallback values for stage1-only results
+    required_cols = [
+        "min_cell_auc", "median_cell_auc", "min_cell_auc_bound", "median_cell_auc_bound",
+        "min_cell_tp_sep", "median_cell_tp_sep", "cell_dispersion", "timeout_range"
+    ]
+    
+    for col in required_cols:
+        if col not in out_df.columns:
+            if col in ["min_cell_auc", "median_cell_auc", "min_cell_auc_bound", "median_cell_auc_bound"]:
+                out_df[col] = float("nan")
+            elif col in ["min_cell_tp_sep", "median_cell_tp_sep", "cell_dispersion", "timeout_range"]:
+                out_df[col] = 0.0
+    
     _cov_ok = (out_df["coverage"] >= _PROMOTE_MIN_COVERAGE).astype(int) if "coverage" in out_df.columns else pd.Series(1, index=out_df.index)
     _bind_ok = (out_df["bind"] >= _PROMOTE_MIN_BIND).astype(int) if "bind" in out_df.columns else pd.Series(1, index=out_df.index)
     _to_ok = (out_df["timeout_rate"] <= _PROMOTE_MAX_TIMEOUT).astype(int) if "timeout_rate" in out_df.columns else pd.Series(1, index=out_df.index)
@@ -4188,6 +4361,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p.add_argument("--lookback-years", type=int, default=2, help="Years of history to keep")
     p.add_argument("--weights-output", default="", help="Optional sample-weights parquet output path")
     p.add_argument("--tbm-cache-max-mb", type=int, default=1536, help="Max on-disk persisted TBM cache size in MB")
+    p.add_argument("--data-root", default=None, help="Override cfg data_root")
+    p.add_argument("--perps", action="store_true", help="Use perp mode data/features (_perp root + perp feature keys)")
     return p.parse_args(argv)
 
 

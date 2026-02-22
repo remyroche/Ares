@@ -1,0 +1,293 @@
+[2026-02-22 23:54:06 UTC] Entering function: retry_with_backoff in utils.py
+2026-02-23 00:54:08,146 - DataQualityFramework - INFO - ℹ️ ✅ Comprehensive duplicate analyzer integrated
+2026-02-23 00:54:08,146 - DataQualityFramework - INFO - ℹ️ 🔧 Unified Data Quality Framework initialized (singleton)
+[2026-02-23 00:54:08.146] PERFORMANCE: DataQualityFramework initialization took 0.000s
+2026-02-23 00:54:08,146 - System.tprint - INFO - ℹ️ DataQualityFramework initialization took 0.000s
+2026-02-23 00:54:08,348 - ares.registry - INFO - ℹ️ Registered step: data_download
+2026-02-23 00:54:08,351 - System.AdvancedQualityMetrics - INFO - ℹ️ 📊 AdvancedQualityMetrics initialized with tolerant parameters
+[2026-02-23 00:54:08.351] PERFORMANCE: AdvancedQualityMetrics initialization took 0.000s
+2026-02-23 00:54:08,351 - System.tprint - INFO - ℹ️ AdvancedQualityMetrics initialization took 0.000s
+2026-02-23 00:54:08,354 - DataCleaner - INFO - ℹ️ Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+[2026-02-23 00:54:08.354] PERFORMANCE: DataCleaner(klines) initialization took 0.000s
+2026-02-23 00:54:08,354 - System.tprint - INFO - ℹ️ DataCleaner(klines) initialization took 0.000s
+2026-02-23 00:54:08,354 - DataCleaner - INFO - ℹ️ Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+[2026-02-23 00:54:08.354] PERFORMANCE: DataCleaner(klines) initialization took 0.000s
+2026-02-23 00:54:08,354 - System.tprint - INFO - ℹ️ DataCleaner(klines) initialization took 0.000s
+2026-02-23 00:54:08,354 - DataCleanerManager - INFO - ℹ️ 🔧 DataCleanerManager initialized (singleton)
+[2026-02-23 00:54:08.364] DEBUG: 🔧 [features_common.utils] Initializing common utilities module
+[2026-02-23 00:54:08.364] SUCCESS: ✅ [features_common.utils] Math validation utilities loaded
+2026-02-23 00:54:08,364 - System.tprint - INFO - ℹ️ ✅ [features_common.utils] Math validation utilities loaded
+[2026-02-23 00:54:08.364] DEBUG: 🔧 [features_common.utils] Common utilities module initialized
+2026-02-23 00:54:10,383 - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - ℹ️ M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+2026-02-23 00:54:10,398 - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - ℹ️ 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+[2026-02-23 00:54:10.502] DEBUG: 🔧 [transforms] Module initialized with 15 exports
+2026-02-23 00:54:10,502 - src.features_common.backward_compatibility - INFO - ℹ️ Backward compatibility ensured for features_common
+[2026-02-23 00:54:10.503] DEBUG: 🔧 [optimization] Module initialized with 6 exports
+[2026-02-23 00:54:10.503] DEBUG: 🔧 [registry] Module initialized with BaseFeatureRegistry
+[2026-02-23 00:54:10.506] DEBUG: 🚀 [features_common] Enhanced module initialized with 59 exports
+[2026-02-23 00:54:10.506] SUCCESS: ✅ [features_common] All optimizations enabled by default
+2026-02-23 00:54:10,506 - System.tprint - INFO - ℹ️ ✅ [features_common] All optimizations enabled by default
+[2026-02-23 00:54:10.506] INFO: 🔧 [features_common] VectorBT integration available
+2026-02-23 00:54:10,506 - System.tprint - INFO - ℹ️ 🔧 [features_common] VectorBT integration available
+[2026-02-23 00:54:10.506] PERFORMANCE: 📊 [features_common] Performance monitoring enabled
+2026-02-23 00:54:10,506 - System.tprint - INFO - ℹ️ 📊 [features_common] Performance monitoring enabled
+[2026-02-23 00:54:10.506] WARNING: 💾 [features_common] Intelligent caching active
+2026-02-23 00:54:10,506 - System.tprint - WARNING - ⚠️ 💾 [features_common] Intelligent caching active
+2026-02-23 00:54:10,507 - System.DataStreamingManager - INFO - ℹ️ 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+[2026-02-23 00:54:10.506] PERFORMANCE: DataStreamingManager initialization took 0.000s
+2026-02-23 00:54:10,507 - System.tprint - INFO - ℹ️ DataStreamingManager initialization took 0.000s
+[2026-02-23 00:54:10.509] ✅ Custom logger available for MLCommon.ValidationUtils
+2026-02-23 00:54:10,509 - System.tprint - INFO - ℹ️ ✅ Custom logger available for MLCommon.ValidationUtils
+2026-02-23 00:54:10,510 - System.CrossStepValidator - INFO - ℹ️ 🔍 CrossStepValidator initialized with comprehensive consistency rules
+2026-02-23 00:54:10,511 - DataCleaner - INFO - ℹ️ Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+[2026-02-23 00:54:10.511] PERFORMANCE: DataCleaner(klines) initialization took 0.000s
+2026-02-23 00:54:10,511 - System.tprint - INFO - ℹ️ DataCleaner(klines) initialization took 0.000s
+2026-02-23 00:54:10,511 - System.UnifiedDataUtils - INFO - ℹ️ 🚀 Unified Data Utils initialized
+[2026-02-22 23:54:10 UTC] GC: Collected 15 objects on startup.
+[2026-02-22 23:54:10 UTC] Backtest results not found. Running backtest to generate trade data for optimiser...
+[2026-02-22 23:54:10 UTC] Backtest mode. ts_sig=2026-02-14 19:00:00+00:00
+[2026-02-22 23:54:10 UTC] STEP: BACKTEST START
+[2026-02-22 23:54:10 UTC] Entering function: refresh_margin_universe_daily in universe.py
+[2026-02-22 23:54:10 UTC] Refreshing margin universe...
+[2026-02-22 23:54:10 UTC] Entering function: fetch_binance_cross_margin_pairs in universe.py
+[2026-02-22 23:54:11 UTC] Fetched 800 cross margin pairs from exchangeInfo.
+[2026-02-22 23:54:11 UTC] Entering function: margin_pairs_to_spot_symbols in universe.py
+[2026-02-22 23:54:11 UTC] Processing 800 margin pairs for quotes ('USDT', 'USDC', 'BUSD', 'EUR')...
+[2026-02-22 23:54:11 UTC] Found 713 spot symbols. Breakdown: USDT: 435, USDC: 278, BUSD: 0, EUR: 0
+[2026-02-22 23:54:11 UTC] Refreshed margin universe: 713 symbols.
+[2026-02-22 23:54:11 UTC] Entering function: build_fetch_universe in universe.py
+[2026-02-22 23:54:11 UTC] Building universe from 713 margin symbols + 5 basket symbols (Top 600).
+[2026-02-22 23:54:11 UTC] Entering function: fetch_24h_tickers in universe.py
+[2026-02-22 23:54:12 UTC] Fetched 3504 24h tickers.
+[2026-02-22 23:54:12 UTC] Volume map built for 3504 tickers.
+[2026-02-22 23:54:12 UTC] Scored 713 margin symbols.
+[2026-02-22 23:54:12 UTC] Selected top 600 symbols by volume.
+[2026-02-22 23:54:12 UTC] Universe selected: 600 symbols (Top 600 by vol + basket)
+[2026-02-22 23:54:12 UTC] Filtering 600 symbols by variance (Top 100%)...
+[2026-02-22 23:54:13 UTC] Variance Filter: Kept 586/600 symbols.
+[2026-02-22 23:54:13 UTC] Entering function: __init__ in utils.py
+[2026-02-22 23:54:13 UTC] Entering function: __enter__ in utils.py
+[2026-02-22 23:54:13 UTC] START: Backtest Data Load
+[2026-02-22 23:54:19 UTC] Entering function: __exit__ in utils.py
+[2026-02-22 23:54:19 UTC] END: Backtest Data Load (5.59s)
+[2026-02-22 23:54:23 UTC] Entering function: compute_market_features in features.py
+[2026-02-22 23:54:23 UTC] Entering function: numba_rolling_sum in fast_funcs.py
+[2026-02-22 23:54:23 UTC] Entering function: numba_rolling_sum in fast_funcs.py
+[2026-02-22 23:54:23 UTC] Entering function: add_regime_gates in features.py
+[2026-02-22 23:54:23 UTC] Entering function: numba_rolling_median in fast_funcs.py
+[2026-02-22 23:54:23 UTC] Found 617 feature files in ../data/features/20260214_190000. Selective load: keys=405, symbols=ALL
+[2026-02-22 23:54:25 UTC] Selective feature load progress: 25/617 files (4.1%) in 1.3s
+[2026-02-22 23:54:26 UTC] Selective feature load progress: 50/617 files (8.1%) in 2.7s
+[2026-02-22 23:54:28 UTC] Selective feature load progress: 75/617 files (12.2%) in 4.2s
+[2026-02-22 23:54:29 UTC] Selective feature load progress: 100/617 files (16.2%) in 5.5s
+[2026-02-22 23:54:31 UTC] Selective feature load progress: 125/617 files (20.3%) in 7.1s
+[2026-02-22 23:54:32 UTC] Selective feature load progress: 150/617 files (24.3%) in 8.5s
+[2026-02-22 23:54:33 UTC] Selective feature load progress: 175/617 files (28.4%) in 9.8s
+[2026-02-22 23:54:35 UTC] Selective feature load progress: 200/617 files (32.4%) in 11.1s
+[2026-02-22 23:54:36 UTC] Selective feature load progress: 225/617 files (36.5%) in 12.6s
+[2026-02-22 23:54:37 UTC] Selective feature load progress: 250/617 files (40.5%) in 14.0s
+[2026-02-22 23:54:39 UTC] Selective feature load progress: 275/617 files (44.6%) in 15.4s
+[2026-02-22 23:54:40 UTC] Selective feature load progress: 300/617 files (48.6%) in 17.0s
+[2026-02-22 23:54:42 UTC] Selective feature load progress: 325/617 files (52.7%) in 18.6s
+[2026-02-22 23:54:43 UTC] Selective feature load progress: 350/617 files (56.7%) in 19.8s
+[2026-02-22 23:54:45 UTC] Selective feature load progress: 375/617 files (60.8%) in 21.3s
+[2026-02-22 23:54:46 UTC] Selective feature load progress: 400/617 files (64.8%) in 22.7s
+[2026-02-22 23:54:48 UTC] Selective feature load progress: 425/617 files (68.9%) in 24.4s
+[2026-02-22 23:54:49 UTC] Selective feature load progress: 450/617 files (72.9%) in 25.9s
+[2026-02-22 23:54:51 UTC] Selective feature load progress: 475/617 files (77.0%) in 27.3s
+[2026-02-22 23:54:52 UTC] Selective feature load progress: 500/617 files (81.0%) in 28.8s
+[2026-02-22 23:54:54 UTC] Selective feature load progress: 525/617 files (85.1%) in 30.2s
+[2026-02-22 23:54:55 UTC] Selective feature load progress: 550/617 files (89.1%) in 31.8s
+[2026-02-22 23:54:57 UTC] Selective feature load progress: 575/617 files (93.2%) in 33.2s
+[2026-02-22 23:54:58 UTC] Selective feature load progress: 600/617 files (97.2%) in 34.6s
+[2026-02-22 23:54:59 UTC] Selective feature load progress: 617/617 files (100.0%) in 35.5s
+[2026-02-22 23:54:59 UTC] Starting to assemble DataFrames for 187 features...
+[2026-02-22 23:54:59 UTC]   Assembling df for 'tfq_dir2h_prod' (1/187)...
+[2026-02-22 23:55:00 UTC]   Assembling df for 'ffd_rv_2h_04' (11/187)...
+[2026-02-22 23:55:01 UTC]   Assembling df for 'ffd_rv_6h_06' (21/187)...
+[2026-02-22 23:55:02 UTC]   Assembling df for 'body_ratio' (31/187)...
+[2026-02-22 23:55:04 UTC]   Assembling df for 'tail_score' (41/187)...
+[2026-02-22 23:55:05 UTC]   Assembling df for 'rv_48h' (51/187)...
+[2026-02-22 23:55:06 UTC]   Assembling df for 'ffd_vol_price_corr_10h_06' (61/187)...
+[2026-02-22 23:55:07 UTC]   Assembling df for 'shock_decay' (71/187)...
+[2026-02-22 23:55:09 UTC]   Assembling df for 'mae_2h' (81/187)...
+[2026-02-22 23:55:12 UTC]   Assembling df for 'meta_abs_net_x_vov_ratio' (91/187)...
+[2026-02-22 23:55:14 UTC]   Assembling df for 'trapped_longs_96' (101/187)...
+[2026-02-22 23:55:16 UTC]   Assembling df for 'kf_atr_mean' (111/187)...
+[2026-02-22 23:55:19 UTC]   Assembling df for 'mrq_x_dir_edge_2h' (121/187)...
+[2026-02-22 23:55:22 UTC]   Assembling df for 'ret48h' (131/187)...
+[2026-02-22 23:55:26 UTC]   Assembling df for 'vol_z24_base' (141/187)...
+[2026-02-22 23:55:29 UTC]   Assembling df for 'evr_6' (151/187)...
+[2026-02-22 23:55:34 UTC]   Assembling df for 'atr_state' (161/187)...
+[2026-02-22 23:55:37 UTC]   Assembling df for 'tfq_dir2h_signed_mag' (171/187)...
+[2026-02-22 23:55:40 UTC]   Assembling df for 'convexity_t' (181/187)...
+[2026-02-22 23:55:42 UTC] Loaded 187 selected feature matrices.
+[2026-02-22 23:55:42 UTC] Loaded 187 selected feature matrices.
+[2026-02-22 23:55:43 UTC]   Computing stable regime boundaries...
+[2026-02-22 23:55:44 UTC]   Stable boundaries for vol_12h (rv_12h): 0.0000, 0.0000 (n=21493437)
+[2026-02-22 23:55:44 UTC]   Stable boundaries for vol_48h (rv_24h): 0.0000, 0.0000 (n=21493437)
+[2026-02-22 23:55:45 UTC]   Stable boundaries for volume_12h (vol_z_base): 0.0000, 0.0000 (n=21493437)
+[2026-02-22 23:55:45 UTC]   Stable boundaries for volume_48h (vol_z24_base): 0.0000, 0.0000 (n=21493437)
+[2026-02-22 23:55:46 UTC]   Stable boundaries for trend_12h (ret6h): 0.0000, 0.0000 (n=21493437)
+[2026-02-22 23:55:46 UTC]   Stable boundaries for trend_48h (trend_pct_base): 0.0000, 0.0000 (n=21493437)
+[2026-02-22 23:55:46 UTC]   Regime boundaries computed for 6 features.
+[2026-02-22 23:55:46 UTC] Loading artifact: ../data/artifacts/20260214_190000/labels/exhaustion_history.parquet
+[2026-02-22 23:55:46 UTC] Running backtest over 313 hours...
+[2026-02-22 23:55:46 UTC] [RUN_HEADER] {"cost_hash": "ce6aa2c988", "cost_model": {"fee_side": 0.0035, "round_trip": 0.007, "slippage_side": 0.0}, "policy_version": "20260214_190000", "run_id": "20260214_190000", "stage": "backtest_signal_optimization", "ts": "2026-02-22T23:55:46.657489+00:00"}
+[2026-02-22 23:55:46 UTC]   Signal generation progress: 0/62 (0.0%) - 2026-01-31 19:00:00+00:00
+[2026-02-22 23:55:48 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 6, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-01-31 20:00:00+00:00"}
+[2026-02-22 23:55:49 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-01-31 21:00:00+00:00"}
+[2026-02-22 23:55:50 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 6, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 00:00:00+00:00"}
+[2026-02-22 23:55:51 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 01:00:00+00:00"}
+[2026-02-22 23:55:52 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 10, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 02:00:00+00:00"}
+[2026-02-22 23:55:54 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 8, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 03:00:00+00:00"}
+[2026-02-22 23:55:55 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 8, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 04:00:00+00:00"}
+[2026-02-22 23:55:56 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 4, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 05:00:00+00:00"}
+[2026-02-22 23:55:57 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 12, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 06:00:00+00:00"}
+[2026-02-22 23:55:59 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 10, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 07:00:00+00:00"}
+[2026-02-22 23:56:00 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 8, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 08:00:00+00:00"}
+[2026-02-22 23:56:01 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 09:00:00+00:00"}
+[2026-02-22 23:56:02 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 14, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 10:00:00+00:00"}
+[2026-02-22 23:56:03 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 10, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 11:00:00+00:00"}
+[2026-02-22 23:56:04 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 8, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 12:00:00+00:00"}
+[2026-02-22 23:56:05 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 13:00:00+00:00"}
+[2026-02-22 23:56:06 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 14, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 14:00:00+00:00"}
+[2026-02-22 23:56:06 UTC]   Signal generation progress: 20/62 (32.3%) - 2026-02-01 15:00:00+00:00
+[2026-02-22 23:56:07 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 10, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 15:00:00+00:00"}
+[2026-02-22 23:56:08 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 16:00:00+00:00"}
+[2026-02-22 23:56:10 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 17:00:00+00:00"}
+[2026-02-22 23:56:11 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 14, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 18:00:00+00:00"}
+[2026-02-22 23:56:12 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 10, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 19:00:00+00:00"}
+[2026-02-22 23:56:13 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 4, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 20:00:00+00:00"}
+[2026-02-22 23:56:14 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 21:00:00+00:00"}
+[2026-02-22 23:56:15 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 4, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 22:00:00+00:00"}
+[2026-02-22 23:56:16 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 23:00:00+00:00"}
+[2026-02-22 23:56:17 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-02 00:00:00+00:00"}
+[2026-02-22 23:56:18 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-02 02:00:00+00:00"}
+[2026-02-22 23:56:20 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-02 04:00:00+00:00"}
+[2026-02-22 23:56:21 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-02 08:00:00+00:00"}
+[2026-02-22 23:56:21 UTC]   Signal generation progress: 40/62 (64.5%) - 2026-02-02 11:00:00+00:00
+[2026-02-22 23:56:22 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-02 12:00:00+00:00"}
+[2026-02-22 23:56:23 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 8, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-02 20:00:00+00:00"}
+[2026-02-22 23:56:25 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 4, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-02 21:00:00+00:00"}
+[2026-02-22 23:56:26 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 8, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-03 00:00:00+00:00"}
+[2026-02-22 23:56:27 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 4, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-03 01:00:00+00:00"}
+[2026-02-22 23:56:28 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 8, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-03 04:00:00+00:00"}
+[2026-02-22 23:56:30 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 6, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-03 05:00:00+00:00"}
+[2026-02-22 23:56:30 UTC]   Signal generation progress: 60/62 (96.8%) - 2026-02-03 07:00:00+00:00
+[2026-02-22 23:56:31 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 12, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-03 08:00:00+00:00"}
+[2026-02-22 23:56:31 UTC] 
+  Gross PnL Comparison (Market vs 20bps Entry / 20bps Exit) by Exit Reason:
+[2026-02-22 23:56:31 UTC]     early_invalidation  : Count=8   | Market Gross: -0.433% | Limit Gross: -0.033% | Delta: +0.400%
+[2026-02-22 23:56:31 UTC]     giveback_exit       : Count=2   | Market Gross: -0.164% | Limit Gross:  0.036% | Delta: +0.200%
+[2026-02-22 23:56:31 UTC]     limit_not_filled    : Count=10  | Market Gross:  0.000% | Limit Gross:  0.000% | Delta: +0.000%
+[2026-02-22 23:56:31 UTC]     stop_loss           : Count=11  | Market Gross: -0.740% | Limit Gross: -0.340% | Delta: +0.400%
+[2026-02-22 23:56:31 UTC]     trailing_stop       : Count=25  | Market Gross:  0.558% | Limit Gross:  0.958% | Delta: +0.400%
+[2026-02-22 23:56:31 UTC] [BUCKET_SUMMARY] {"bucket_id": "ALL_RUNTIME", "cost_rt": 0.007, "exit_reason_counts": {"early_invalidation": 8, "giveback_exit": 2, "limit_not_filled": 10, "stop_loss": 11, "trailing_stop": 25}, "kind": "runtime_exit", "mean_net_ret_equity_by_reason": {"early_invalidation": -0.00014991259253281937, "giveback_exit": -0.000187688185557631, "limit_not_filled": -0.00038350000000000005, "stop_loss": -0.00023690653987032092, "trailing_stop": -0.00028092047350298984}, "median_hold_h_by_reason": {"early_invalidation": 0.375, "giveback_exit": 0.0, "limit_not_filled": 0.0, "stop_loss": 0.0, "trailing_stop": 0.0}, "n_trades": 56, "run_id": "20260214_190000", "tp_sl_bind_rate": 0.6428571428571429}
+[2026-02-22 23:56:31 UTC] 
+  TP/SL Statistics (56 trades) [actual barrier-scaled]:
+[2026-02-22 23:56:31 UTC]     Avg SL:    0.55%
+[2026-02-22 23:56:31 UTC]     Avg TP:    1.69%
+[2026-02-22 23:56:31 UTC]     Avg Trail: 0.14%
+[2026-02-22 23:56:31 UTC]     Avg MAE:   0.84%
+[2026-02-22 23:56:31 UTC]     Avg MFE:   0.58%
+[2026-02-22 23:56:31 UTC]     MAE >= 0.2%: 62.5% of trades
+[2026-02-22 23:56:31 UTC]     MAE >= 0.3%: 60.7% of trades
+[2026-02-22 23:56:31 UTC]     MAE >= 0.4%: 50.0% of trades
+[2026-02-22 23:56:31 UTC]     MAE >= 0.5%: 48.2% of trades
+
+[2026-02-22 23:56:31 UTC] Global Score Distribution: P50=0.119311, P90=0.999348, P95=0.999812, P98=1.000000
+[2026-02-22 23:57:20 UTC]   ScoreScale: long_mr winsorized 12/118 outliers to [-0.9866, 0.0014]
+[2026-02-22 23:57:20 UTC]   ScoreScale: short_mr winsorized 12/118 outliers to [-0.1090, 0.1069]
+[2026-02-22 23:57:20 UTC]   ScoreScale: long_tf winsorized 12/118 outliers to [-0.2298, 0.0809]
+[2026-02-22 23:57:20 UTC]   ScoreScale: short_tf winsorized 12/118 outliers to [-1.0000, -0.0000]
+[2026-02-22 23:57:20 UTC] Score scale params: lmr=(-0.0067,0.4103) smr=(-0.0180,0.0770) ltf=(-0.0996,0.0725) stf=(-0.0136,0.9673)
+[2026-02-22 23:57:20 UTC]   long_mr scores: n=118, mean=-0.213903, std=0.433161, q10=-0.949462, q50=-0.006681, q90=-0.000000
+[2026-02-22 23:57:20 UTC]   short_mr scores: n=118, mean=-0.009543, std=0.077032, q10=-0.087190, q50=-0.017953, q90=0.083255
+[2026-02-22 23:57:20 UTC]   long_tf scores: n=118, mean=-0.091768, std=0.103956, q10=-0.189885, q50=-0.099641, q90=-0.012782
+[2026-02-22 23:57:20 UTC]   short_tf scores: n=118, mean=-0.355987, std=0.474102, q10=-0.999740, q50=-0.013603, q90=-0.000000
+[2026-02-22 23:57:20 UTC]   Signal generation progress: 0/62 (0.0%) - 2026-01-31 19:00:00+00:00
+[2026-02-22 23:57:21 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 6, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-01-31 20:00:00+00:00"}
+[2026-02-22 23:57:22 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-01-31 21:00:00+00:00"}
+[2026-02-22 23:57:23 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 6, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 00:00:00+00:00"}
+[2026-02-22 23:57:24 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 01:00:00+00:00"}
+[2026-02-22 23:57:25 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 10, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 02:00:00+00:00"}
+[2026-02-22 23:57:26 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 8, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 03:00:00+00:00"}
+[2026-02-22 23:57:28 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 8, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 04:00:00+00:00"}
+[2026-02-22 23:57:29 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 4, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 05:00:00+00:00"}
+[2026-02-22 23:57:30 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 12, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 06:00:00+00:00"}
+[2026-02-22 23:57:31 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 10, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 07:00:00+00:00"}
+[2026-02-22 23:57:32 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 8, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 08:00:00+00:00"}
+[2026-02-22 23:57:33 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 09:00:00+00:00"}
+[2026-02-22 23:57:34 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 14, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 10:00:00+00:00"}
+[2026-02-22 23:57:35 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 10, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 11:00:00+00:00"}
+[2026-02-22 23:57:36 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 8, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 12:00:00+00:00"}
+[2026-02-22 23:57:37 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 13:00:00+00:00"}
+[2026-02-22 23:57:39 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 14, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 14:00:00+00:00"}
+[2026-02-22 23:57:39 UTC]   Signal generation progress: 20/62 (32.3%) - 2026-02-01 15:00:00+00:00
+[2026-02-22 23:57:40 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 10, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 15:00:00+00:00"}
+[2026-02-22 23:57:41 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 16:00:00+00:00"}
+[2026-02-22 23:57:42 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 17:00:00+00:00"}
+[2026-02-22 23:57:44 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 14, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 18:00:00+00:00"}
+[2026-02-22 23:57:45 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 10, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 19:00:00+00:00"}
+[2026-02-22 23:57:45 UTC] Downloading 15m data for GNO/USDT: 2026-02-01 20:00:00+00:00 to 2026-02-02 08:00:00+00:00
+[2026-02-22 23:57:54 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 4, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 20:00:00+00:00"}
+[2026-02-22 23:57:55 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 21:00:00+00:00"}
+[2026-02-22 23:57:57 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 4, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 22:00:00+00:00"}
+[2026-02-22 23:57:58 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 23:00:00+00:00"}
+[2026-02-22 23:57:59 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-02 00:00:00+00:00"}
+[2026-02-22 23:58:01 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-02 02:00:00+00:00"}
+[2026-02-22 23:58:02 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-02 04:00:00+00:00"}
+[2026-02-22 23:58:04 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-02 08:00:00+00:00"}
+[2026-02-22 23:58:04 UTC]   Signal generation progress: 40/62 (64.5%) - 2026-02-02 11:00:00+00:00
+[2026-02-22 23:58:06 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-02 12:00:00+00:00"}
+[2026-02-22 23:58:08 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 8, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-02 20:00:00+00:00"}
+[2026-02-22 23:58:11 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 4, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-02 21:00:00+00:00"}
+[2026-02-22 23:58:14 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 8, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-03 00:00:00+00:00"}
+[2026-02-22 23:58:16 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 4, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-03 01:00:00+00:00"}
+[2026-02-22 23:58:18 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 8, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-03 04:00:00+00:00"}
+[2026-02-22 23:58:20 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 6, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-03 05:00:00+00:00"}
+[2026-02-22 23:58:20 UTC]   Signal generation progress: 60/62 (96.8%) - 2026-02-03 07:00:00+00:00
+[2026-02-22 23:58:23 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 12, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-03 08:00:00+00:00"}
+[2026-02-22 23:58:23 UTC] 
+  Gross PnL Comparison (Market vs 20bps Entry / 20bps Exit) by Exit Reason:
+[2026-02-22 23:58:23 UTC]     early_invalidation  : Count=8   | Market Gross: -0.395% | Limit Gross:  0.005% | Delta: +0.400%
+[2026-02-22 23:58:23 UTC]     giveback_exit       : Count=6   | Market Gross: -0.012% | Limit Gross:  0.188% | Delta: +0.200%
+[2026-02-22 23:58:23 UTC]     limit_not_filled    : Count=12  | Market Gross:  0.000% | Limit Gross:  0.000% | Delta: +0.000%
+[2026-02-22 23:58:23 UTC]     stop_loss           : Count=6   | Market Gross: -0.921% | Limit Gross: -0.523% | Delta: +0.399%
+[2026-02-22 23:58:23 UTC]     trailing_stop       : Count=21  | Market Gross:  0.503% | Limit Gross:  0.904% | Delta: +0.400%
+[2026-02-22 23:58:23 UTC] [BUCKET_SUMMARY] {"bucket_id": "ALL_RUNTIME", "cost_rt": 0.007, "exit_reason_counts": {"early_invalidation": 8, "giveback_exit": 6, "limit_not_filled": 12, "stop_loss": 6, "trailing_stop": 21}, "kind": "runtime_exit", "mean_net_ret_equity_by_reason": {"early_invalidation": -0.00025793226913400035, "giveback_exit": -0.0009237407240692924, "limit_not_filled": -0.0004330402780232658, "stop_loss": -0.0005656281761855492, "trailing_stop": -5.373305952044724e-05}, "median_hold_h_by_reason": {"early_invalidation": 0.5, "giveback_exit": 0.0, "limit_not_filled": 0.0, "stop_loss": 0.0, "trailing_stop": 0.0}, "n_trades": 53, "run_id": "20260214_190000", "tp_sl_bind_rate": 0.5094339622641509}
+[2026-02-22 23:58:23 UTC] 
+  TP/SL Statistics (53 trades) [actual barrier-scaled]:
+[2026-02-22 23:58:23 UTC]     Avg SL:    0.55%
+[2026-02-22 23:58:23 UTC]     Avg TP:    1.71%
+[2026-02-22 23:58:23 UTC]     Avg Trail: 0.14%
+[2026-02-22 23:58:23 UTC]     Avg MAE:   0.52%
+[2026-02-22 23:58:23 UTC]     Avg MFE:   0.65%
+[2026-02-22 23:58:23 UTC]     MAE >= 0.2%: 54.7% of trades
+[2026-02-22 23:58:23 UTC]     MAE >= 0.3%: 47.2% of trades
+[2026-02-22 23:58:23 UTC]     MAE >= 0.4%: 37.7% of trades
+[2026-02-22 23:58:23 UTC]     MAE >= 0.5%: 35.8% of trades
+
+[2026-02-22 23:58:23 UTC] SignalOpt tl=0.000 ts=-0.000 k=2.00 x0=0.50 -> pnl=-0.017325 sortino=-0.814710 maxdd=-0.018447 wr=0.30 n=53
+[2026-02-22 23:58:23 UTC]   Signal generation progress: 0/62 (0.0%) - 2026-01-31 19:00:00+00:00
+[2026-02-22 23:58:24 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 6, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-01-31 20:00:00+00:00"}
+[2026-02-22 23:58:27 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-01-31 21:00:00+00:00"}
+[2026-02-22 23:58:28 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 6, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 00:00:00+00:00"}
+[2026-02-22 23:58:31 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 01:00:00+00:00"}
+[2026-02-22 23:58:32 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 10, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 02:00:00+00:00"}
+[2026-02-22 23:58:35 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 8, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 03:00:00+00:00"}
+[2026-02-22 23:58:38 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 8, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 04:00:00+00:00"}
+[2026-02-22 23:58:41 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 4, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 05:00:00+00:00"}
+[2026-02-22 23:58:43 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 12, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 06:00:00+00:00"}
+[2026-02-22 23:58:44 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 10, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 07:00:00+00:00"}
+[2026-02-22 23:58:46 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 8, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 08:00:00+00:00"}
+[2026-02-22 23:58:47 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 09:00:00+00:00"}
+[2026-02-22 23:58:50 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 14, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 10:00:00+00:00"}
+[2026-02-22 23:58:56 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 10, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 11:00:00+00:00"}
+[2026-02-22 23:58:59 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 8, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 12:00:00+00:00"}
+[2026-02-22 23:59:04 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 13:00:00+00:00"}
+[2026-02-22 23:59:07 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 14, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 14:00:00+00:00"}
+[2026-02-22 23:59:07 UTC]   Signal generation progress: 20/62 (32.3%) - 2026-02-01 15:00:00+00:00
+[2026-02-22 23:59:13 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 10, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 15:00:00+00:00"}
+[2026-02-22 23:59:18 UTC] [BUCKET_SUMMARY] {"bucket_id": "META_ALL", "kind": "meta_fallback", "n_rows": 2, "pct_fallback_used": 0.0, "pct_meta_used": 1.0, "run_id": "2026-02-01 16:00:00+00:00"}

@@ -40,8 +40,17 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 # Re-use from extreme_price_movements
 from extreme_price_movements.purged_cv import PurgedKFold
-from extreme_price_movements.config import TEST_FEATURE_KEYS, CFG
-from extreme_price_movements.data_store import load_features as load_features_pipeline
+from extreme_price_movements.config import (
+    TEST_FEATURE_KEYS,
+    CFG,
+    PERP_FEATURE_KEYS,
+    enable_perp_feature_keys,
+)
+from extreme_price_movements.data_store import (
+    load_features as load_features_pipeline,
+    PartitionedOHLCVStore,
+    to_panel,
+)
 from extreme_price_movements.training import (
     build_hourly_training_set_and_weights,
     build_grid_aggregated_tb_cache,
@@ -83,6 +92,36 @@ STAGE1_SYMBOL_SUBSAMPLE_STEP = 1
 STAGE23_SYMBOL_SUBSAMPLE_STEP = 1
 GEOMETRY_CACHE_MAX_MB = 1536
 EPS = 1e-12
+
+
+def _append_suffix(path: str, suffix: str) -> str:
+    norm = str(path).rstrip("/\\")
+    if norm.endswith(suffix):
+        return norm
+    return f"{norm}{suffix}"
+
+
+def _resolve_runtime_cfg(*, perps: bool = False, data_root: Optional[str] = None) -> dict:
+    cfg = apply_offline_optimizer_best_params(deepcopy(CFG))
+    if data_root:
+        cfg["data_root"] = str(data_root)
+    if perps:
+        cfg["use_perps"] = True
+        cfg["data_root"] = _append_suffix(cfg.get("data_root", "../data"), "_perp")
+        cfg = enable_perp_feature_keys(cfg)
+        existing_test = list(cfg.get("test_feature_keys", TEST_FEATURE_KEYS))
+        cfg["test_feature_keys"] = list(dict.fromkeys(existing_test + list(PERP_FEATURE_KEYS)))
+    return cfg
+
+
+def _find_latest_feature_dir(data_root: str) -> Optional[str]:
+    feat_dir = os.path.join(data_root, "features")
+    if not os.path.isdir(feat_dir):
+        return None
+    dirs = sorted(glob.glob(os.path.join(feat_dir, "20*")))
+    if not dirs:
+        return None
+    return dirs[-1]
 
 _TARGET_RACE_DEFAULTS = get_target_race_model_defaults(CFG)
 ET_REGRESSOR_PARAMS = dict(_TARGET_RACE_DEFAULTS["et_params"])
@@ -3102,13 +3141,44 @@ def load_panel_data(
     raise FileNotFoundError(f"Panel path not found: {panel_path}")
 
 
+def load_panel_from_store(
+    cfg: dict,
+    symbols: Optional[list[str]] = None,
+) -> dict:
+    """Load panel directly from partitioned OHLCV store (pipeline-compatible)."""
+    store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg.get("timeframe", "1h"))
+    chosen_syms = [str(s) for s in (symbols or [])]
+    if not chosen_syms:
+        ohlcv_dir = os.path.join(cfg["data_root"], "ohlcv")
+        if os.path.isdir(ohlcv_dir):
+            chosen_syms = sorted(
+                {
+                    d.replace("symbol=", "").replace("_", "/", 1)
+                    for d in os.listdir(ohlcv_dir)
+                    if d.startswith("symbol=") and os.path.isdir(os.path.join(ohlcv_dir, d))
+                }
+            )
+    dfs: dict[str, pd.DataFrame] = {}
+    for sym in chosen_syms:
+        try:
+            df = store.load(sym)
+        except Exception:
+            continue
+        if df is None or df.empty:
+            continue
+        dfs[sym] = df
+    if not dfs:
+        raise ValueError(f"No OHLCV data found in store under {cfg['data_root']}")
+    return to_panel(dfs)
+
+
 # =============================================================================
 # Main Comparison Runner
 # =============================================================================
 
 def run_comparison(
-    feature_path: str,
-    panel_path: str,
+    feature_path: Optional[str],
+    panel_path: Optional[str],
     output_path: str,
     dtype: str = "float32",
     max_features: Optional[int] = None,
@@ -3118,6 +3188,7 @@ def run_comparison(
     symbol_step: int = 3,
     symbol_limit: int = 0,
     save_sample_weights: bool = False,
+    runtime_cfg: Optional[dict] = None,
 ):
     """
     Main comparison runner.
@@ -3140,9 +3211,11 @@ def run_comparison(
     cleanup_run_caches()
     tlog("Starting comparison run")
 
-    runtime_cfg = apply_offline_optimizer_best_params(deepcopy(CFG))
+    runtime_cfg = deepcopy(runtime_cfg) if runtime_cfg is not None else apply_offline_optimizer_best_params(deepcopy(CFG))
     
     # Load data - try pipeline format first, then fallback to generic loader
+    if not feature_path:
+        raise ValueError("feature_path is required (pass --features or resolve via --data-root)")
     logger.info(f"Loading features from: {feature_path}")
     
     # Check if this is a pipeline-style timestamp directory (has symbol=*.parquet files)
@@ -3160,7 +3233,7 @@ def run_comparison(
     if symbol_files:
         # Pipeline format: per-symbol files, need to parse timestamp from path
         logger.info("Detected pipeline per-symbol format")
-        requested_model_features = CFG.get("test_feature_keys", TEST_FEATURE_KEYS)
+        requested_model_features = runtime_cfg.get("test_feature_keys", TEST_FEATURE_KEYS)
         if max_features is not None and max_features > 0:
             requested_model_features = requested_model_features[:max_features]
         requested_model_features = [str(f) for f in requested_model_features]
@@ -3242,7 +3315,7 @@ def run_comparison(
     feats = subset_feature_universe(feats, selected_symbols)
 
     # Log available features
-    test_feature_universe = CFG.get("test_feature_keys", TEST_FEATURE_KEYS)
+    test_feature_universe = runtime_cfg.get("test_feature_keys", TEST_FEATURE_KEYS)
     available_model_features = [f for f in test_feature_universe if f in feats]
     if not available_model_features:
         raise ValueError(
@@ -3283,14 +3356,16 @@ def run_comparison(
     runtime_cfg["tf_feature_keys"] = list(available_model_features)
 
     if panel_path is None:
-        raise ValueError("--panel is required for training-aligned MR/TF long/short slice evaluation")
-    tlog("Loading panel data")
-    panel_raw = load_panel_data(
-        panel_path,
-        symbols=selected_symbols,
-        columns=["timestamp", "datetime", "open_time", "date", "symbol", "open", "high", "low", "close", "volume"],
-    )
-    panel = to_panel_dict(panel_raw)
+        tlog("No --panel provided; loading panel from partitioned store data_root")
+        panel = load_panel_from_store(runtime_cfg, symbols=selected_symbols)
+    else:
+        tlog("Loading panel data")
+        panel_raw = load_panel_data(
+            panel_path,
+            symbols=selected_symbols,
+            columns=["timestamp", "datetime", "open_time", "date", "symbol", "open", "high", "low", "close", "volume"],
+        )
+        panel = to_panel_dict(panel_raw)
     tlog(f"Loaded panel with close shape={panel['close'].shape}")
 
     tlog("Precomputing selection metrics")
@@ -4232,14 +4307,26 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--features",
-        required=True,
-        help="Path to feature data (directory or parquet file)"
+        required=False,
+        default=None,
+        help="Path to feature data (directory or parquet file). If omitted, auto-detect latest under --data-root/features."
     )
     parser.add_argument(
         "--panel",
         required=False,
         default=None,
-        help="Path to panel data (klines/OHLCV) - optional if features contain returns"
+        help="Path to panel data (klines/OHLCV). If omitted, loads from partitioned store in --data-root."
+    )
+    parser.add_argument(
+        "--data-root",
+        required=False,
+        default=None,
+        help="Override cfg data_root for auto-detection"
+    )
+    parser.add_argument(
+        "--perps",
+        action="store_true",
+        help="Use perp mode data/features (_perp root + perp feature keys)"
     )
     parser.add_argument(
         "--output",
@@ -4302,6 +4389,13 @@ if __name__ == "__main__":
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     
+    runtime_cfg = _resolve_runtime_cfg(perps=bool(args.perps), data_root=args.data_root)
+    feature_path = args.features or _find_latest_feature_dir(runtime_cfg["data_root"])
+    if not feature_path:
+        raise ValueError(
+            f"Could not auto-detect features under {runtime_cfg['data_root']}/features; provide --features explicitly."
+        )
+
     # =============================================================================
     # Stage 2 always runs first; Stage 3 auto-runs unless explicitly skipped.
     # =============================================================================
@@ -4309,7 +4403,7 @@ if __name__ == "__main__":
 
     tlog("Starting Stage 2 run")
     run_comparison(
-        args.features,
+        feature_path,
         args.panel,
         args.output,
         dtype=args.dtype,
@@ -4319,6 +4413,7 @@ if __name__ == "__main__":
         symbol_step=args.symbol_step,
         symbol_limit=args.symbol_limit,
         save_sample_weights=args.save_sample_weights,
+        runtime_cfg=runtime_cfg,
     )
     
     # =============================================================================
@@ -4354,7 +4449,7 @@ if __name__ == "__main__":
             stage3_output = args.output.replace('.csv', '_stage3.csv')
             tlog(f"Starting Stage 3 run with winners={top_winners} and pct grid [0.05, 0.06, 0.07, 0.10, 0.20]")
             run_comparison(
-                args.features,
+                feature_path,
                 args.panel,
                 stage3_output,
                 dtype=args.dtype,
@@ -4365,6 +4460,7 @@ if __name__ == "__main__":
                 symbol_step=args.symbol_step,
                 symbol_limit=args.symbol_limit,
                 save_sample_weights=args.save_sample_weights,
+                runtime_cfg=runtime_cfg,
             )
         else:
             tlog("Stage 3 skipped: no winners selected")

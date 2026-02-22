@@ -1,2 +1,7 @@
 bucket,unique_tp_base_pct,unique_tp_eff_h2,unique_tp_eff_h4,unique_tp_eff_h8,h2_min,h2_max,diversity_pass
-atr_norm,0,1,1,1,0.01,0.01,False
+optuna_s2_refine_0,0,1,1,1,0.01,0.01,False
+optuna_s2_refine_1,0,1,1,1,0.01,0.01,False
+optuna_s2_refine_2,0,1,1,1,0.01,0.01,False
+optuna_s2_refine_3,0,1,1,1,0.01,0.01,False
+optuna_s2_refine_4,0,1,1,1,0.01,0.01,False
+optuna_stage1,0,1,1,1,0.01,0.01,False

@@ -1,0 +1,27 @@
+[2026-02-22 23:58:35 UTC] Entering function: retry_with_backoff in utils.py
+/Users/remyroche/.matplotlib is not a writable directory
+Matplotlib created a temporary cache directory at /var/folders/dr/hz7y0z9j0x39z7519pbshgqh0000gn/T/matplotlib-j2ccin9h because there was an issue with the default path (/Users/remyroche/.matplotlib); it is highly recommended to set the MPLCONFIGDIR environment variable to a writable directory, in particular to speed up the import of Matplotlib and to better support multiprocessing.
+2026-02-23 00:58:38,537 - DataQualityFramework - INFO - ℹ️ ✅ Comprehensive duplicate analyzer integrated
+2026-02-23 00:58:38,542 - DataQualityFramework - INFO - ℹ️ 🔧 Unified Data Quality Framework initialized (singleton)
+[2026-02-23 00:58:38.545] PERFORMANCE: DataQualityFramework initialization took 0.008s
+2026-02-23 00:58:38,546 - System.tprint - INFO - ℹ️ DataQualityFramework initialization took 0.008s
+2026-02-23 00:58:38,916 - ares.registry - INFO - ℹ️ Registered step: data_download
+2026-02-23 00:58:38,924 - System.AdvancedQualityMetrics - INFO - ℹ️ 📊 AdvancedQualityMetrics initialized with tolerant parameters
+[2026-02-23 00:58:38.928] PERFORMANCE: AdvancedQualityMetrics initialization took 0.004s
+2026-02-23 00:58:38,929 - System.tprint - INFO - ℹ️ AdvancedQualityMetrics initialization took 0.004s
+2026-02-23 00:58:38,934 - DataCleaner - INFO - ℹ️ Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+[2026-02-23 00:58:38.935] PERFORMANCE: DataCleaner(klines) initialization took 0.001s
+2026-02-23 00:58:38,936 - System.tprint - INFO - ℹ️ DataCleaner(klines) initialization took 0.001s
+2026-02-23 00:58:38,937 - DataCleaner - INFO - ℹ️ Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+[2026-02-23 00:58:38.938] PERFORMANCE: DataCleaner(klines) initialization took 0.001s
+2026-02-23 00:58:38,939 - System.tprint - INFO - ℹ️ DataCleaner(klines) initialization took 0.001s
+2026-02-23 00:58:38,940 - DataCleanerManager - INFO - ℹ️ 🔧 DataCleanerManager initialized (singleton)
+[2026-02-23 00:58:38.963] DEBUG: 🔧 [features_common.utils] Initializing common utilities module
+[2026-02-23 00:58:38.964] SUCCESS: ✅ [features_common.utils] Math validation utilities loaded
+2026-02-23 00:58:38,965 - System.tprint - INFO - ℹ️ ✅ [features_common.utils] Math validation utilities loaded
+[2026-02-23 00:58:38.967] DEBUG: 🔧 [features_common.utils] Common utilities module initialized
+2026-02-23 00:58:41,270 - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - ℹ️ M1 GPU Manager initialized - M1: False, Generation: none, MPS: False
+2026-02-23 00:58:41,286 - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - WARNING - ⚠️ Non-M1 system detected - M1-specific optimizations disabled
+2026-02-23 00:58:41,287 - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - WARNING - ⚠️ M1-specific CPU optimizations disabled - non-M1 system detected
+[2026-02-22 23:58:42 UTC] GC: Collected 0 objects on startup.
+[2026-02-22 23:58:42 UTC] ERROR: No feature directories found. Run feature_generation first.

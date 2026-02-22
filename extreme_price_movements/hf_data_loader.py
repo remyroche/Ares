@@ -14,7 +14,7 @@ from extreme_price_movements.utils import tprint
 
 
 # Storage directory for 15m data
-HF_DATA_DIR = Path(__file__).parent / "15m_ohlcv"
+HF_DATA_DIR = Path(os.environ.get("EPM_HF_DATA_DIR", str(Path(__file__).parent / "15m_ohlcv")))
 HF_DATA_DIR.mkdir(exist_ok=True)
 
 

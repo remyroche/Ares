@@ -7,6 +7,7 @@ import ccxt
 import glob
 import shutil
 import fcntl
+from typing import Callable
 from datetime import timezone
 import pyarrow.parquet as pq
 
@@ -44,6 +45,126 @@ def make_spot_exchange():
     ex = ccxt.binance({"enableRateLimit": True})
     ex.load_markets()
     return ex
+
+
+def make_perp_exchange():
+    ex = ccxt.binanceusdm({"enableRateLimit": True})
+    ex.load_markets()
+    return ex
+
+
+def _resolve_perp_symbol(exchange, spot_symbol: str) -> str | None:
+    if not spot_symbol or "/" not in spot_symbol:
+        return None
+    base, quote = spot_symbol.split("/", 1)
+    candidates = [
+        f"{base}/{quote}:{quote}",
+        f"{base}/{quote}",
+        f"{base}{quote}",
+    ]
+    for cand in candidates:
+        if cand in getattr(exchange, "markets", {}):
+            return cand
+        if cand in getattr(exchange, "symbols", []):
+            return cand
+    return None
+
+
+def _extract_float(row: dict, keys: list[str]) -> float | None:
+    if not isinstance(row, dict):
+        return None
+    info = row.get("info", {}) if isinstance(row.get("info"), dict) else {}
+    for k in keys:
+        val = row.get(k)
+        if val is None:
+            val = info.get(k)
+        if val is None:
+            continue
+        try:
+            return float(val)
+        except Exception:
+            continue
+    return None
+
+
+def _extract_timestamp_ms(row: dict) -> int | None:
+    if not isinstance(row, dict):
+        return None
+    info = row.get("info", {}) if isinstance(row.get("info"), dict) else {}
+    for k in ["timestamp", "fundingTimestamp", "time", "transactTime", "calcTime", "fundingTime"]:
+        val = row.get(k)
+        if val is None:
+            val = info.get(k)
+        if val is None:
+            continue
+        try:
+            return int(val)
+        except Exception:
+            continue
+    return None
+
+
+def _fetch_ccxt_history_paged(
+    fetch_fn: Callable,
+    symbol: str,
+    since_ms: int,
+    until_ms: int,
+    *,
+    value_keys: list[str],
+    exchange=None,
+    timeframe: str | None = None,
+    limit: int = 1000,
+) -> pd.Series:
+    cursor = int(since_ms)
+    rows: list[tuple[int, float]] = []
+
+    while cursor < int(until_ms):
+        try:
+            if timeframe is None:
+                batch = fetch_fn(symbol, since=cursor, limit=limit)
+            else:
+                batch = fetch_fn(symbol, timeframe=timeframe, since=cursor, limit=limit)
+        except Exception as exc:
+            tprint(f"WARN history fetch failed for {symbol}: {exc}")
+            break
+
+        if not batch:
+            break
+
+        max_seen = cursor
+        for item in batch:
+            ts = _extract_timestamp_ms(item)
+            if ts is None:
+                continue
+            if ts <= max_seen:
+                max_seen = max(max_seen, ts)
+            else:
+                max_seen = ts
+            if ts < since_ms or ts >= until_ms:
+                continue
+            val = _extract_float(item, value_keys)
+            if val is None or not np.isfinite(val):
+                continue
+            rows.append((ts, val))
+
+        if max_seen <= cursor:
+            break
+        cursor = max_seen + 1
+        if exchange is not None:
+            time.sleep(float(getattr(exchange, "rateLimit", 100)) / 1000.0)
+
+        if len(batch) < limit:
+            # Provider returned fewer rows than requested; likely no more data.
+            if cursor >= until_ms:
+                break
+
+    if not rows:
+        return pd.Series(dtype=np.float32)
+
+    df = pd.DataFrame(rows, columns=["ts", "value"])
+    df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True).dt.floor("h")
+    out = df.groupby("ts")["value"].last().sort_index().astype(np.float32)
+    return out
 
 @retry_with_backoff(retries=3, backoff_in_seconds=2)
 def _fetch_ohlcv_paged(exchange, symbol, since_ms, until_ms, timeframe="1h", limit=1000):
@@ -130,7 +251,7 @@ class PartitionedOHLCVStore:
         if df.empty:
             return df
         out = df.copy()
-        for col in ["open","high","low","close","volume"]:
+        for col in ["open", "high", "low", "close", "volume", "funding_rate", "open_interest", "spot_close"]:
             if col in out.columns:
                 out[col] = pd.to_numeric(out[col], errors="coerce").astype(np.float32)
         return out
@@ -226,7 +347,7 @@ class PartitionedOHLCVStore:
                   df_reset.rename(columns={df_reset.columns[0]: "ts"}, inplace=True)
 
         df_reset["ts"] = pd.to_datetime(df_reset["ts"], utc=True)
-        for c in ["open","high","low","close","volume"]:
+        for c in ["open", "high", "low", "close", "volume", "funding_rate", "open_interest", "spot_close"]:
             if c in df_reset.columns:
                 df_reset[c] = df_reset[c].astype(np.float32)
 
@@ -306,7 +427,7 @@ class PartitionedOHLCVStore:
                         pass # race condition if already deleted
 
         except Exception as e:
-            tprint(f"Error compacting {symbol} {year}-{month}: {e}")
+            tprint(f"Error compacting {symbol} {year}: {e}")
 
     def update_symbol(self, exchange, symbol: str, since_ms: int) -> pd.DataFrame:
         # Ensure locking
@@ -360,6 +481,103 @@ class PartitionedOHLCVStore:
             # Single compaction pass per year at the end
             for yr in sorted(touched_years):
                 self.compact_partition(symbol, yr)
+
+    def update_symbol_perp(self, exchange, symbol: str, since_ms: int) -> pd.DataFrame:
+        """
+        Update symbol from perp market:
+        - OHLCV from perp exchange
+        - funding_rate history
+        - open_interest history
+        """
+        sym_dir = self._get_symbol_dir(symbol)
+        os.makedirs(sym_dir, exist_ok=True)
+        lock_path = os.path.join(sym_dir, ".lock")
+
+        with FileLock(lock_path):
+            meta = self._read_meta(symbol)
+            last_ts_ms = meta.get("last_ts_ms", 0)
+
+            if last_ts_ms > 0:
+                start_ms = last_ts_ms + 1
+            else:
+                existing_idx = self.load(symbol, columns=["ts"]).index
+                if not existing_idx.empty:
+                    start_ms = int(existing_idx.max().value // 10**6) + 1
+                else:
+                    start_ms = since_ms
+
+            now_ms = int(pd.Timestamp.utcnow().value // 10**6)
+            if start_ms >= now_ms:
+                return self.load(symbol)
+
+            perp_symbol = _resolve_perp_symbol(exchange, symbol)
+            if not perp_symbol:
+                raise ValueError(f"No perp symbol found for {symbol}")
+
+            start_dt = pd.to_datetime(start_ms, unit="ms", utc=True).strftime("%Y-%m-%d %H:%M")
+            tprint(f"FETCH perp incr: {symbol} ({perp_symbol}) from {start_dt}")
+
+            touched_years = set()
+            has_new_data = False
+            for chunk_df in fetch_ohlcv_all_7d_chunks(exchange, perp_symbol, start_ms, timeframe=self.timeframe, limit=1000):
+                if chunk_df.empty:
+                    continue
+                chunk = chunk_df.sort_index()
+                chunk = chunk[~chunk.index.duplicated(keep="last")]
+                if chunk.empty:
+                    continue
+                has_new_data = True
+
+                # Keep funding/OI fetch bounded to this chunk so we can checkpoint incrementally.
+                chunk_start_ms = int(chunk.index.min().value // 10**6)
+                chunk_end_ms = int((chunk.index.max() + pd.Timedelta(hours=1)).value // 10**6)
+                chunk_end_ms = min(chunk_end_ms, now_ms)
+
+                funding = pd.Series(dtype=np.float32)
+                if hasattr(exchange, "fetch_funding_rate_history"):
+                    funding = _fetch_ccxt_history_paged(
+                        exchange.fetch_funding_rate_history,
+                        perp_symbol,
+                        chunk_start_ms,
+                        chunk_end_ms,
+                        value_keys=["fundingRate", "funding_rate", "rate"],
+                        exchange=exchange,
+                        limit=1000,
+                    )
+
+                oi = pd.Series(dtype=np.float32)
+                if hasattr(exchange, "fetch_open_interest_history"):
+                    oi = _fetch_ccxt_history_paged(
+                        exchange.fetch_open_interest_history,
+                        perp_symbol,
+                        chunk_start_ms,
+                        chunk_end_ms,
+                        value_keys=["openInterestAmount", "openInterestValue", "openInterest", "sumOpenInterest"],
+                        exchange=exchange,
+                        timeframe=self.timeframe,
+                        limit=500,
+                    )
+
+                chunk["funding_rate"] = funding.reindex(chunk.index).ffill().fillna(0.0).astype(np.float32)
+                chunk["open_interest"] = oi.reindex(chunk.index).ffill().fillna(0.0).astype(np.float32)
+
+                fresh = self._downcast(chunk)
+                self.save_partitioned(symbol, fresh, defer_compact=True)
+                touched_years.update(fresh.index.year.unique())
+
+                # Spot-parity: persist progress chunk-by-chunk.
+                new_last_ms = int(fresh.index.max().value // 10**6)
+                if new_last_ms > last_ts_ms:
+                    self._write_meta(symbol, {"last_ts_ms": new_last_ms})
+                    last_ts_ms = new_last_ms
+
+            if not has_new_data:
+                return self.load(symbol)
+
+            for yr in sorted(touched_years):
+                self.compact_partition(symbol, int(yr))
+
+            return self.load(symbol)
 
 
 def _feature_meta_path(parquet_path: str) -> str:
@@ -799,8 +1017,22 @@ def load_features_selected(
         return None
 
     feats_out = {}
-    for k, data in feat_buffers.items():
-        feats_out[k] = pd.DataFrame(data).sort_index()
+    
+    tprint(f"Starting to assemble DataFrames for {len(feat_buffers)} features...")
+    for j, (k, data) in enumerate(feat_buffers.items()):
+        if j % 10 == 0:
+            tprint(f"  Assembling df for '{k}' ({j+1}/{len(feat_buffers)})...")
+        # Removing duplicates before dataframe construction to prevent cartesian explosion
+        # in case there are overlapping timestamps in the parquets.
+        clean_data = {}
+        for sym, ser in data.items():
+            if not ser.index.is_unique:
+                ser = ser[~ser.index.duplicated(keep='last')]
+            clean_data[sym] = ser
+            
+        feats_out[k] = pd.DataFrame(clean_data).sort_index()
+
+    tprint(f"Loaded {len(feats_out)} selected feature matrices.")
 
     tprint(f"Loaded {len(feats_out)} selected feature matrices.")
     return feats_out
@@ -839,10 +1071,22 @@ def check_data_health(df: pd.DataFrame, timeframe="1h") -> dict:
     }
 
 def to_panel(dfs_by_symbol: dict[str, pd.DataFrame]):
-    keys = ["open","high","low","close","volume"]
+    keys = ["open", "high", "low", "close", "volume"]
+    extra_keys = sorted(
+        {
+            col
+            for _sym, df in dfs_by_symbol.items()
+            for col in df.columns
+            if col not in keys
+        }
+    )
+    keys.extend(extra_keys)
     panel = {}
     for k in keys:
-        panel[k] = pd.concat([df[k].rename(sym) for sym, df in dfs_by_symbol.items()], axis=1).sort_index()
+        cols = [df[k].rename(sym) for sym, df in dfs_by_symbol.items() if k in df.columns]
+        if not cols:
+            continue
+        panel[k] = pd.concat(cols, axis=1).sort_index()
     return panel
 
 OHLCVStore = PartitionedOHLCVStore

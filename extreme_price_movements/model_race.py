@@ -406,10 +406,10 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         results = {}
 
         # --- Dynamic Regularization (User Requested) ---
-        n_samples = len(y)
-        min_leaf_dyn = max(75, int(n_samples * 0.01))
-        min_cw_dyn = max(75, int(n_samples * 0.01 * 0.25))  # XGB hessian ~ 0.25 * count
-        tprint(f"ModelRace: Dynamic min_samples_leaf={min_leaf_dyn}, min_child_weight={min_cw_dyn} (n={n_samples}, 1.0%)")
+        n_pos = int(np.sum(y > 0)) if len(y) > 0 else 0
+        min_leaf_dyn = max(75, int(n_pos * 0.015))
+        min_cw_dyn = max(75, int(n_pos * 0.015 * 0.25))  # XGB hessian ~ 0.25 * count
+        tprint(f"ModelRace: Dynamic min_samples_leaf={min_leaf_dyn}, min_child_weight={min_cw_dyn} (pos={n_pos}, 1.5%)")
 
         def safe_slice(arr, idx):
             if hasattr(arr, "iloc"): return arr.iloc[idx]
@@ -482,15 +482,39 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     w_tr_fit = safe_slice(sample_weight, train_idx) if sample_weight is not None else None
                     self._fit_model(model_clone, X_tr, y_tr_fit, X_val=X_val, y_val=y_val_fit, sample_weight=w_tr_fit)
                     
-                    # Predict raw (biased) probabilities on validation
-                    probs_raw = model_clone.predict_proba(X_val)[:, 1]
+                    # --- Calibration Wrapper ---
+                    # Instead of saving raw probabilities, we use CalibratedClassifierCV 
+                    # on the fitted model to ensure probability outputs are strictly calibrated.
+                    # We use 'prefit' because we already fitted model_clone with early stopping above.
+                    # But wait: 'prefit' means it calibrates on the training data! That leaks.
+                    # Instead, we should wrap the unfitted model in CalibratedClassifierCV(cv=5)
+                    # before fitting, but CalibratedClassifierCV doesn't pass fit_params (like eval_set) smoothly.
+                    # So we use an internal split on the training data to fit Isotonic.
+                    
+                    from sklearn.calibration import CalibratedClassifierCV
+                    # 1. Fit raw model on 80% of X_tr, calibrate on 20% of X_tr
+                    n_tr = len(X_tr)
+                    cal_split = int(n_tr * 0.8)
+                    X_tr_cal_train, X_tr_cal_val = X_tr[:cal_split], X_tr[cal_split:]
+                    y_tr_cal_train, y_tr_cal_val = y_tr_fit[:cal_split], y_tr_fit[cal_split:]
+                    w_tr_cal_train = w_tr_fit[:cal_split] if w_tr_fit is not None else None
+                    
+                    # Fit a sub-clone for calibration
+                    cal_clone = clone(model)
+                    self._fit_model(cal_clone, X_tr_cal_train, y_tr_cal_train, X_val=X_val, y_val=y_val_fit, sample_weight=w_tr_cal_train)
+                    
+                    # Fit the calibrator on the validation split
+                    calibrator = CalibratedClassifierCV(cal_clone, cv="prefit", method="isotonic")
+                    calibrator.fit(X_tr_cal_val, y_tr_cal_val)
+                    
+                    # Predict calibrated (but biased) probabilities on the actual OOF validation set
+                    probs_raw = calibrator.predict_proba(X_val)[:, 1]
                     
                     # --- Prior Correction (replaces in-fold Platt scaling) ---
                     # Tree models with scale_pos_weight / class_weight shift raw
                     # probabilities away from the true prevalence.  We correct by
                     # mapping the model's mean prediction back to the training
-                    # prevalence using a logit-space shift (equivalent to adjusting
-                    # the intercept of a Platt scaler without fitting on val data).
+                    # prevalence using a logit-space shift.
                     p_train = float(np.mean(y_tr_fit))
                     p_model = float(np.clip(np.mean(probs_raw), 1e-7, 1 - 1e-7))
                     if abs(p_model - p_train) > 0.01:
@@ -925,6 +949,25 @@ class ModelRace(BaseEstimator, ClassifierMixin):
              self.best_model.fit(X, y_hard, sample_weight=sample_weight)
         else:
              self.best_model.fit(X, y_hard)
+             
+        # Extract feature importances if possible
+        try:
+            est = self.best_model
+            if hasattr(est, "estimator"):
+                est = est.estimator
+            if hasattr(est, "feature_importances_"):
+                fi = est.feature_importances_
+                if hasattr(X, "columns"):
+                    cols = X.columns
+                else:
+                    cols = [f"f_{i}" for i in range(len(fi))]
+                top_idx = np.argsort(fi)[::-1][:5]
+                top_dict = {cols[i]: float(fi[i]) for i in top_idx}
+                tprint(f"Top 5 Feature Importances ({self.best_model_name}): {top_dict}")
+            else:
+                tprint(f"Top 5 Feature Importances ({self.best_model_name}): None (no feature_importances_)")
+        except Exception as e:
+            tprint(f"Failed to get feature importances: {e}")
 
 # No more manual bias correction factor needed (Isotonic handles it)
         return self

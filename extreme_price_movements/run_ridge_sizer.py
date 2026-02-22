@@ -327,8 +327,8 @@ def main():
     parser.add_argument(
         "--cost-pct",
         type=float,
-        default=0.0005,
-        help="Transaction cost as decimal (default: 0.0005 = 0.05%%)"
+        default=0.005,
+        help="Transaction cost as decimal (default: 0.005 = 0.5%)"
     )
     args = parser.parse_args()
     

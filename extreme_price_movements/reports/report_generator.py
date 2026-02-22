@@ -15,11 +15,12 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 
 
-REPORTS_DIR = Path(__file__).parent
+DEFAULT_REPORTS_DIR = Path(__file__).parent
 
 
 def _ensure_dir(run_id: str) -> Path:
-    d = REPORTS_DIR / run_id
+    reports_dir = Path(os.environ.get("EPM_REPORTS_DIR", str(DEFAULT_REPORTS_DIR)))
+    d = reports_dir / run_id
     d.mkdir(parents=True, exist_ok=True)
     return d
 

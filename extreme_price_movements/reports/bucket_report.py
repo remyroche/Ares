@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
-REPORTS_DIR = Path(__file__).parent
+DEFAULT_REPORTS_DIR = Path(__file__).parent
 
 _BUCKETS = ["MR_long", "MR_short", "TF_long", "TF_short"]
 _HORIZONS = [2, 4, 8]
@@ -32,7 +32,8 @@ _CELL_KEYS = [f"{b}_H{h}" for b in _BUCKETS for h in _HORIZONS]
 
 
 def _ensure_dir(run_id: str) -> Path:
-    d = REPORTS_DIR / run_id
+    reports_dir = Path(os.environ.get("EPM_REPORTS_DIR", str(DEFAULT_REPORTS_DIR)))
+    d = reports_dir / run_id
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -153,12 +154,26 @@ def report_labels(run_id: str, data_root: str, cfg: Dict[str, Any]) -> str:
                     table_rows.append([name, "0", "—", "—", "—", "—", "—", "—"])
                     continue
                 n = len(df)
-                if "label" not in df.columns:
+                # Resolve outcome columns
+                if "__y_outcome__" in df.columns:
+                    # Outcomes: 2=TP, 1=TIMEOUT, 0=SL
+                    tp = float((df["__y_outcome__"] == 2).mean())
+                    sl = float((df["__y_outcome__"] == 0).mean())
+                    to = float((df["__y_outcome__"] == 1).mean())
+                elif "label" in df.columns:
+                    # Legacy: 1=TP, -1=SL, 0=TO
+                    tp = float((df["label"] == 1).mean())
+                    sl = float((df["label"] == -1).mean())
+                    to = float((df["label"] == 0).mean())
+                elif "__y_bin__" in df.columns:
+                    # Partial: 1=TP, 0=Others (SL+TO combined)
+                    tp = float((df["__y_bin__"] == 1).mean())
+                    sl = float((df["__y_bin__"] == 0).mean()) # Mixed
+                    to = 0.0 # Unknown
+                else:
                     table_rows.append([name, str(n), "no label col", "—", "—", "—", "—", "—"])
                     continue
-                tp = float((df["label"] == 1).mean())
-                sl = float((df["label"] == -1).mean())
-                to = float((df["label"] == 0).mean())
+
                 bind = tp + sl
                 bal = min(tp, sl) / max(max(tp, sl), 1e-9)
                 tpsl = tp / max(sl, 1e-9)

@@ -125,6 +125,7 @@ def _compute_barrier_base(
     sl_lo: float,
     sl_hi: float,
     z_gate: float,
+    use_standalone_sl: bool = False,
 ) -> dict:
     """Pre-compute the shared rolling base (median, MAD, z, m, sl_mult) once per
     (atr_window, side, kind, H) so compute_barrier_factory can skip redundant
@@ -137,7 +138,7 @@ def _compute_barrier_base(
     m_clipped = np.clip(np.exp(k_reg * z_clipped), m_lo, m_hi)
     z_norm = np.clip((z_clipped - z_gate) / (z_max - z_gate), 0, 1)
     sl_mult = sl_lo + (sl_hi - sl_lo) * z_norm
-    return {"atr_median": atr_median, "z_clipped": z_clipped, "m_clipped": m_clipped, "sl_mult": sl_mult}
+    return {"atr_median": atr_median, "z_clipped": z_clipped, "m_clipped": m_clipped, "sl_mult": sl_mult, "use_standalone_sl": use_standalone_sl}
 
 
 def compute_barrier_factory(
@@ -159,6 +160,7 @@ def compute_barrier_factory(
     tp_hi: float = 0.06,
     return_components: bool = False,
     _base: dict | None = None,
+    use_standalone_sl: bool = False,
 ) -> tuple:
     """
     Canonical barrier factory - unified TP/SL geometry for both pipelines.
@@ -208,7 +210,27 @@ def compute_barrier_factory(
         horizon_alpha=0.5,
         horizon_base=float(H_base),
     )
-    sl_vals = sl_base_mult * sl_mult * tp_vals
+    
+    # User requested to use BOTH standalone SL and compounding with TP distance.
+    # We compute both and take the more conservative (tighter) stop-loss of the two.
+    
+    # 1. Standalone logic: SL is a direct multiple of ATR.
+    sl_raw_standalone = sl_base_mult * atr_pct * m_clipped
+    sl_vals_standalone = make_effective_tp(
+        sl_raw_standalone,
+        horizon=horizon,
+        horizon_scaling="sqrt",
+        lo=float(sl_lo),
+        hi=float(sl_hi),
+        horizon_alpha=0.5,
+        horizon_base=float(H_base),
+    )
+    
+    # 2. Compounded logic (legacy): SL is derived from effective TP.
+    sl_vals_compounded = sl_base_mult * sl_mult * tp_vals
+    
+    # 3. Fuse the two (take the tighter SL to satisfy both sets of geometry constraints).
+    sl_vals = np.minimum(sl_vals_standalone, sl_vals_compounded)
     
     tp_df = pd.DataFrame(tp_vals, index=atr_pct.index, columns=atr_pct.columns)
     sl_df = pd.DataFrame(sl_vals, index=atr_pct.index, columns=atr_pct.columns)
@@ -843,10 +865,11 @@ def _meta_report_entry(name, meta_model, y_target, y_ret, base_score, groups,
     mad_y = _mad(y_ret)
     spread_ok = (mono["top20_bot50_spread"] >= 0.25 * mad_y) or (mono["top20_bot50_spread"] > 0)
 
-    k20 = max(1, int(TOPK_GATE_FRAC * len(pred)))
-    idx_meta = np.argsort(pred)[-k20:]
-    idx_meta_flip = np.argsort(-pred)[-k20:]
-    idx_base = np.argsort(base_score)[-k20:]
+    # Enforcing strict Top-30% Turnover limits per new requirement
+    k30 = max(1, int(0.30 * len(pred)))
+    idx_meta = np.argsort(pred)[-k30:]
+    idx_meta_flip = np.argsort(-pred)[-k30:]
+    idx_base = np.argsort(base_score)[-k30:]
     def es_tail(v):
         s = np.asarray(v, dtype=float)
         if s.size == 0:
@@ -914,7 +937,7 @@ def _meta_report_entry(name, meta_model, y_target, y_ret, base_score, groups,
         "bin_monotonicity_ge_0_9": mono["rho_bin_med"] >= 0.90,
         "top_mid_bottom_ordering": mono["top_gt_mid_gt_bot"],
         "top20_bottom50_spread": spread_ok,
-        "es20_meta_vs_base": es_ok,
+        "es30_meta_vs_base": es_ok,
         "net_return_vs_no_meta": net_meta > net_base,
         "sortino_vs_no_meta": sort_meta > sort_base,
     })
@@ -936,8 +959,8 @@ def _meta_report_entry(name, meta_model, y_target, y_ret, base_score, groups,
             "ic_positive_fold_ratio": pos_ic_ratio,
             "bin_spearman": mono["rho_bin_med"],
             "top20_bottom50_spread": mono["top20_bot50_spread"],
-            "es20_meta": es_meta,
-            "es20_base": es_base,
+            "es30_meta": es_meta,
+            "es30_base": es_base,
             "net_return_meta": net_meta,
             "net_return_meta_if_flipped": net_meta_flip,
             "net_return_base": net_base,
@@ -952,7 +975,11 @@ def _meta_report_entry(name, meta_model, y_target, y_ret, base_score, groups,
 
 
 def save_training_gate_report(report_payload, cfg, run_id=None):
-    reports_dir = os.path.join("extreme_price_movements", "reports")
+    reports_dir = (
+        cfg.get("reports_root")
+        or os.environ.get("EPM_REPORTS_DIR")
+        or os.path.join("extreme_price_movements", "reports")
+    )
     os.makedirs(reports_dir, exist_ok=True)
     rid = run_id or datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     out_path = os.path.join(reports_dir, f"training_gate_report_{rid}.json")
@@ -2027,6 +2054,7 @@ def build_hourly_training_set_and_weights(
     _cached_cand_mask=None, _cached_tb=None, _tb_cache=None
 ):
     tprint(f"Entering function: build_hourly_training_set_and_weights in training.py")
+    empty_out = (None, None, None, None, None, None, None)
     c = panel["close"]
     idx = c.index
 
@@ -2037,7 +2065,7 @@ def build_hourly_training_set_and_weights(
         cand_mask, _ = _build_optimal_candidate_mask(panel, feats, cfg)
     if cand_mask is None:
         tprint("No candidates mask returned.")
-        return None, None, None, None, None, None
+        return empty_out
     tprint(f"Candidates found: {cand_mask.sum().sum()}")
 
     ts_start = ts_end - pd.Timedelta(hours=int(cfg["train_lookback_hours"]))
@@ -2050,7 +2078,7 @@ def build_hourly_training_set_and_weights(
             f"valid_syms=0, window_cand_shape={window_cand.shape}, "
             f"ts_window=[{ts_start}, {ts_end_adj}]"
         )
-        return None, None, None, None, None, None
+        return empty_out
 
     # Early symbol precheck before any barrier computation.
     valid_syms = [s for s in syms if s in window_cand.columns and s in c.columns]
@@ -2060,7 +2088,7 @@ def build_hourly_training_set_and_weights(
             f"valid_syms={len(valid_syms)}, window_cand_shape={window_cand.shape}, "
             f"ts_window=[{ts_start}, {ts_end_adj}]"
         )
-        return None, None, None, None, None, None
+        return empty_out
 
     # 3) Purge Label Noise (Microstructure Filtering)
     # This block was hoisted to 'generate_label_datasets' for 15x operational speedup.
@@ -2133,6 +2161,7 @@ def build_hourly_training_set_and_weights(
                     tp_lo=tp_lo,
                     tp_hi=tp_hi,
                     return_components=True,
+                    use_standalone_sl=cfg.get("use_standalone_sl", False),
                 )
                 tprint(
                     f"Labeling: Unified Barrier Factory (Mean TP={diag['tp_mean']:.4f}, "
@@ -2192,7 +2221,7 @@ def build_hourly_training_set_and_weights(
             f"valid_syms={len(valid_syms)}, window_cand_shape={window_cand.shape}, "
             f"ts_window=[{ts_start}, {ts_end_adj}]"
         )
-        return None, None, None, None, None, None
+        return empty_out
 
     # Pre-filter candidates to where entry_ts is present in tb_labels index.
     # Use UTC-ns comparison to avoid tz-aware vs tz-naive mismatch causing false-empty alignment.
@@ -2226,7 +2255,7 @@ def build_hourly_training_set_and_weights(
             "No rows generated for training set: candidate event extraction returned 0 "
             f"(sub_mask_shape={sub_mask.shape})"
         )
-        return None, None, None, None, None, None
+        return empty_out
 
     event_ts = sub_mask.index[rows_idx]
     event_sym = np.array(valid_syms)[cols_idx]
@@ -2256,7 +2285,7 @@ def build_hourly_training_set_and_weights(
             "No rows generated for training set: "
             f"all events dropped by entry alignment (pre={n_pre_entry}, drop={n_entry_drop})"
         )
-        return None, None, None, None, None, None
+        return empty_out
 
     # Trend filter
     if trend_filter and "trend_pct" in feats:
@@ -2280,7 +2309,7 @@ def build_hourly_training_set_and_weights(
             "No rows generated for training set: "
             f"trend_filter='{trend_filter}' removed all events"
         )
-        return None, None, None, None, None, None
+        return empty_out
 
     tprint(f"Events after trend filter: {len(event_ts)}")
 
@@ -2482,8 +2511,19 @@ def build_hourly_training_set_and_weights(
             if df[g].std() < 1e-9:
                 df.drop(columns=[g], inplace=True)
     # Drop rows only where critical columns are NaN; fill feature NaNs with 0
-    critical_cols = ["ts", "symbol", "y_bin", "y_ret", "w"]
-    df = df.dropna(subset=[c for c in critical_cols if c in df.columns])
+    # Include all __y_* and diagnostic columns in critical_cols to prevent them from becoming features
+    diagnostic_cols = [
+        "__y_lbl__", "__mfe__", "__mae__", "__tp__", "__sl__", "__is_timeout__",
+        "__quality__", "__barrier_pct__", "__n_tp__", "__n_sl__", "__n_res__", "__w_consensus__",
+        "__regime_vol_12h__", "__regime_vol_48h__", "__regime_volume_12h__",
+        "__regime_volume_48h__", "__regime_trend_12h__", "__regime_trend_48h__"
+    ]
+    critical_cols = ["ts", "symbol", "y_bin", "y_ret", "w"] + diagnostic_cols
+    df = df.dropna(subset=[c for c in ["ts", "symbol", "y_bin", "y_ret", "w"] if c in df.columns])
+    
+    # Extract labels before dropping diagnostic cols from features list
+    lbl_vals_out = df["__y_lbl__"].values.astype(np.int8) if "__y_lbl__" in df.columns else None
+
     feat_cols = [c for c in df.columns if c not in critical_cols]
     if feat_cols:
         df[feat_cols] = df[feat_cols].fillna(0)
@@ -2492,7 +2532,7 @@ def build_hourly_training_set_and_weights(
             "No rows generated for training set: "
             "DataFrame empty after critical-column drop/fill"
         )
-        return None, None, None, None, None, None
+        return empty_out
     tprint(f"Final training set size: {len(df)}")
 
     # Quick leakage sanity KPI for regime features vs realized future returns.
@@ -2685,7 +2725,7 @@ def build_hourly_training_set_and_weights(
 
     df_meta = df[["ts", "symbol"]] if "ts" in df.columns else pd.DataFrame(index=df.index)
 
-    return X_out, y_bin, y_ret, list(X_out.columns), weights, df_meta
+    return X_out, y_bin, y_ret, list(X_out.columns), weights, df_meta, lbl_vals_out
 
 def train_spike_anatomy_model(panel, feats, mkt_gates, cfg, syms, ts_end, _cached_cand_mask=None, mode=None):
     tprint(f"Entering function: train_spike_anatomy_model in training.py")
@@ -2883,7 +2923,8 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
     for _win in sorted(_all_windows):
         tprint(f"Pre-computing global barrier base (window={_win}h)...")
         _barrier_base_cache[_win] = _compute_barrier_base(
-            atr_pct_local, _win, disp_floor, z_max, k_reg, m_lo, m_hi, sl_lo, sl_hi, z_gate
+            atr_pct_local, _win, disp_floor, z_max, k_reg, m_lo, m_hi, sl_lo, sl_hi, z_gate,
+            use_standalone_sl=cfg.get("use_standalone_sl", False)
         )
     # -------------------------------------------------------------------------------------
 
@@ -2934,10 +2975,15 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
         return float(default_val)
 
     def _co_calibrate_tp_floor(tp_floor: float, sl_base_mult: float, tp_hi_local: float) -> float:
-        """Co-calibrate TP floor with SL geometry so floors are tuned jointly."""
-        alpha = float(cfg.get("barrier_tp_lo_sl_cocalib_alpha", 0.30))
+        """Co-calibrate TP floor with SL geometry so floors are tuned jointly.
+        
+        NOTE: Co-calibration disabled (alpha=0.0) to make TP and SL parameters independent.
+        This addresses floor dominance issue by preventing SL-based TP floor increases.
+        """
+        alpha = float(cfg.get("barrier_tp_lo_sl_cocalib_alpha", 0.0))  # Changed from 0.30 to 0.0
         sl_ref = float(cfg.get("barrier_sl_base_mult_ref", 0.5))
         # Higher SL multiple -> require a somewhat higher TP floor to preserve economic edge.
+        # DISABLED: No longer scale TP floor based on SL geometry
         scale = 1.0 + alpha * ((float(sl_base_mult) - sl_ref) / max(sl_ref, 1e-9))
         scale = float(np.clip(scale, 0.6, 1.8))
         out = float(tp_floor) * scale
@@ -2987,14 +3033,17 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
             tp_over_sl = 0.0
         return float(auc_bound), float(tp_sep_top10), float(tp_over_sl)
 
-    for H in horizons:
-        for side in trade_sides:
-            for kind in _kinds:
+    # ── ALPHA MODELS (long/short × mr/tf × horizons) ──
+    # Note: Using horizons=horizons for explicit control.
+    horizons = horizons or [2, 4, 8]
+    for side in ["long", "short"]:
+        for k_label in ["mr", "tf"]:
+            for H in horizons:
                 # _grid_for_cell must come first — _cell_tp_abs_lo is used in floor resolution below.
-                tp_mults, sl_base_mults, _cell_tp_abs_lo = _grid_for_cell(kind, side, int(H))
+                tp_mults, sl_base_mults, _cell_tp_abs_lo = _grid_for_cell(k_label, side, int(H))
 
                 _default_tp_hit = min_tp_hit_h2 if int(H) == 2 else min_tp_hit
-                min_tp_hit_eff = _resolve_cell_min_tp_hit(side=side, kind=kind, h=int(H), default_val=_default_tp_hit)
+                min_tp_hit_eff = _resolve_cell_min_tp_hit(side=side, kind=k_label, h=int(H), default_val=_default_tp_hit)
                 # Separate search-vs-production TP floors.
                 # Per-cell tp_abs_lo_pct from the geometry grid takes priority over global cfg value —
                 # this is the floor the optimizer actually selected for this (kind, side, H) cell.
@@ -3002,8 +3051,8 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                 _cell_tp_lo_base = float(_cell_tp_abs_lo) if _cell_tp_abs_lo is not None else _global_tp_lo_base
                 tp_lo_search_default = float(cfg.get("barrier_tp_lo_search_h2" if int(H) == 2 else "barrier_tp_lo_search", _cell_tp_lo_base))
                 tp_lo_prod_default = float(cfg.get("barrier_tp_lo_prod_h2" if int(H) == 2 else "barrier_tp_lo_prod", max(_cell_tp_lo_base, tp_lo_search_default)))
-                tp_lo_eff_search = _resolve_cell_tp_floor(side=side, kind=kind, h=int(H), default_val=tp_lo_search_default, mode="search")
-                tp_lo_eff_prod = _resolve_cell_tp_floor(side=side, kind=kind, h=int(H), default_val=tp_lo_prod_default, mode="prod")
+                tp_lo_eff_search = _resolve_cell_tp_floor(side=side, kind=k_label, h=int(H), default_val=tp_lo_search_default, mode="search")
+                tp_lo_eff_prod = _resolve_cell_tp_floor(side=side, kind=k_label, h=int(H), default_val=tp_lo_prod_default, mode="prod")
                 # Optional horizon scaling for TP floors.
                 if bool(cfg.get("barrier_tp_lo_scale_with_horizon", True)):
                     _h_scale = float(np.sqrt(max(float(H), 1.0) / max(float(H_base), 1.0)))
@@ -3028,7 +3077,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                 # Resolve validated triplets (k_tp, sl, atr_window) for this cell.
                 # Each triplet is one optimizer-validated config; the window is part of the
                 # config, not a separate axis.
-                _cell_key_exact = f"{kind.upper()}_{side}_H{H}"
+                _cell_key_exact = f"{k_label.upper()}_{side}_H{H}"
                 _cell_data = _per_cell.get(_cell_key_exact, {})
                 _validated_triplets = _cell_data.get("validated_triplets") or []
                 if not _validated_triplets:
@@ -3036,7 +3085,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                     _validated_triplets = [(k, s, _fallback_win) for k in tp_mults for s in sl_base_mults]
                 _cell_windows = sorted(set(t[2] for t in _validated_triplets))
                 tprint(
-                    f"Pre-computing geometry labels H={H} side={side} kind={kind} "
+                    f"Pre-computing geometry labels H={H} side={side} kind={k_label} "
                     f"(triplets={len(_validated_triplets)}, atr_windows={_cell_windows})..."
                 )
 
@@ -3276,17 +3325,19 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                         )
 
                 if not geom_runs:
-                    tprint(f"No valid geometry for H={H} side={side} kind={kind}; using fallback.")
+                    tprint(f"No valid geometry for H={H} side={side} kind={k_label}; using fallback.")
                     tprint(
                         "Geometry rejection breakdown: "
-                        f"H={H}, side={side}, kind={kind}, total={total_geoms}, "
+                        f"H={H}, side={side}, kind={k_label}, total={total_geoms}, "
                         f"rr_rejects={reject_counts['rr']}, n_events_rejects={reject_counts['n_events']}, "
                         f"tp_hit_guardrail_rejects={reject_counts['tp_hit']}, timeout_guardrail_rejects={reject_counts['timeout']}, "
                         f"min_tp_hit={min_tp_hit_eff:.4f}, tp_lo_search={tp_lo_eff_search:.4f}, tp_lo_prod={tp_lo_eff_prod:.4f}, "
                         f"max_timeout={max_timeout_eff:.4f}, min_rr={min_net_rr_eff:.4f}, "
                         f"min_events={min_events_eff}, "
                         f"tp_floor_share_mean={float(np.mean(clip_stats['tp_floor_shares'])) if clip_stats['tp_floor_shares'] else 0.0:.3f}, "
-                        f"tp_ceil_share_mean={float(np.mean(clip_stats['tp_ceil_shares'])) if clip_stats['tp_ceil_shares'] else 0.0:.3f}"
+                        f"tp_ceil_share_mean={float(np.mean(clip_stats['tp_ceil_shares'])) if clip_stats['tp_floor_shares'] else 0.0:.3f}, "
+                        f"sl_hit_mean={float(np.mean([g['sl_hit'] for g in relaxed_pool])) if relaxed_pool else 0.0:.3f}, "
+                        f"no_hit_mean={float(np.mean([max(0.0, 1.0 - g['tp_hit'] - g['sl_hit'] - g['to_rate']) for g in relaxed_pool])) if relaxed_pool else 0.0:.3f}"
                     )
                     _tp_lo_fb = _co_calibrate_tp_floor(tp_lo_eff_prod, 0.5, tp_hi)
                     tp_df, sl_df = compute_barrier_factory(
@@ -3334,21 +3385,24 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                     }]
                 else:
                     geom_desc = []
+                    no_hit_rates = []
                     for _g in geom_runs:
+                        _no_hit = max(0.0, 1.0 - _g["tp_hit"] - _g["sl_hit"] - _g["to_rate"])
+                        no_hit_rates.append(_no_hit)
                         geom_desc.append(
-                            f"(k_tp={_g['k_tp']:.2f}, sl={_g['sl_base_mult']:.2f}, tp_hit_raw={_g['tp_hit']:.3f}, "
-                            f"timeout_raw={_g['to_rate']:.3f}, n_raw={int(_g['n_events'])}, "
-                            f"auc_b={_g['auc_bound']:.3f}, sep={_g['tp_sep_top10']*100:.2f}pp, "
+                            f"(k_tp={_g['k_tp']:.2f}, sl={_g['sl_base_mult']:.2f}, tp_hit={_g['tp_hit']:.3%}, "
+                            f"sl_hit={_g['sl_hit']:.3%}, timeout={_g['to_rate']:.3%}, no_hit={_no_hit:.3%}, "
+                            f"n={int(_g['n_events'])}, auc_b={_g['auc_bound']:.3f}, sep={_g['tp_sep_top10']*100:.2f}pp, "
                             f"bind_raw={_g['bind']:.3f}, edge={_g['tp_over_sl']:.2f}, w={_g['rr_weight']:.3f}, "
                             f"n_candidates={int(_g.get('n_candidates', -1))}, n_rr_kept={int(_g.get('n_rr_kept', -1))})"
                         )
                     tprint(
-                        f"Accepted geometries H={H} side={side} kind={kind}: {len(geom_runs)} | "
+                        f"Accepted geometries H={H} side={side} kind={k_label}: {len(geom_runs)} | "
                         + "; ".join(geom_desc)
                     )
                     tprint(
                         "Geometry diagnostics: "
-                        f"H={H}, side={side}, kind={kind}, total={total_geoms}, "
+                        f"H={H}, side={side}, kind={k_label}, total={total_geoms}, "
                         f"rr_rejects={reject_counts['rr']}, n_events_rejects={reject_counts['n_events']}, "
                         f"tp_hit_guardrail_rejects={reject_counts['tp_hit']}, timeout_guardrail_rejects={reject_counts['timeout']}, "
                         f"min_tp_hit={min_tp_hit_eff:.4f}, max_timeout={max_timeout_eff:.4f}, min_rr={min_net_rr_eff:.4f}, "
@@ -3359,7 +3413,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                     _tp_floor_mean = float(np.mean(clip_stats["tp_floor_shares"])) if clip_stats["tp_floor_shares"] else 0.0
                     if _tp_floor_mean > _clip_warn_thr:
                         tprint(
-                            f"WARNING: TP floor clipping is high for H={H} side={side} kind={kind} "
+                            f"WARNING: TP floor clipping is high for H={H} side={side} kind={k_label} "
                             f"({100.0*_tp_floor_mean:.1f}% > {100.0*_clip_warn_thr:.1f}%). "
                             f"Consider raising production TP floor or widening geometry."
                         )
@@ -3393,7 +3447,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                     _ret_s = _best_g["ret"].stack().reindex(_lbl_s.index)
                     _tp_s = _tp_df_a.stack().reindex(_lbl_s.index)
                     _sl_s = _sl_df_a.stack().reindex(_lbl_s.index)
-                    _bucket = f"{kind.upper()}_{side}"
+                    _bucket = f"{k_label.upper()}_{side}"
                     _y_prod = np.where(_lbl_s.values == OUT_TP, 1, np.where(_lbl_s.values == OUT_SL, -1, 0)).astype(np.int8)
                     _prod_df = pd.DataFrame({
                         "bucket": _bucket,
@@ -3507,8 +3561,8 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                 tb_returns = pd.DataFrame(agg_ret, index=panel["close"].index, columns=panel["close"].columns)
                 tb_quality = pd.DataFrame(agg_qual, index=panel["close"].index, columns=panel["close"].columns)
 
-                tb_cache[(H, side, kind)] = (tb_labels, tb_returns, tb_quality)
-                geom_cache[(H, side, kind)] = {"n_tp": n_tp_df, "n_sl": n_sl_df, "n_to": n_to_df, "n_geom": len(geom_runs)}
+                tb_cache[(int(H), side, k_label)] = (tb_labels, tb_returns, tb_quality)
+                geom_cache[(int(H), side, k_label)] = {"n_tp": n_tp_df, "n_sl": n_sl_df, "n_to": n_to_df, "n_geom": len(geom_runs)}
 
                 # Free large per-cell intermediates immediately to avoid OOM accumulation.
                 # geom_runs holds full-panel lbl/ret/qual arrays; _raw_tb_cache holds all
@@ -3568,7 +3622,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
 
     return tb_cache, geom_cache
 
-def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
+def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, horizons=None):
     tprint(f"Entering function: generate_label_datasets in training.py")
     datasets = {}
 
@@ -3660,7 +3714,7 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
                     feats["__geom_n_to__"] = geom_cache[(H, side, k)]["n_to"]
 
                 _tb_key = (H, side, k)
-                X, y, y_ret, cols, w, meta_idx = build_hourly_training_set_and_weights(
+                X, y, y_ret, cols, w, meta_idx, lbl_vals = build_hourly_training_set_and_weights(
                     panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, H, k,
                     trend_filter=trend_filter, feature_key=feat_key,
                     extra_feature_keys=cfg.get("meta_feature_keys", []),
@@ -3676,6 +3730,7 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist):
                     df_out = X.copy()
                     df_out["__y_bin__"] = y
                     df_out["__y_ret__"] = y_ret
+                    df_out["__y_outcome__"] = lbl_vals  # Outcomes: 2=TP, 1=TIMEOUT, 0=SL
                     df_out["__w__"] = w
 
                     if meta_idx is not None:
@@ -4140,6 +4195,7 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             p_oof = p_oof[keep]
             n_res = n_res[keep]
             _y_per_h = {h: v[keep] for h, v in _y_per_h.items()}
+            y_target_h = y_target_h[keep]
 
             # Build per-horizon logit features (all 3 horizons as separate inputs)
             from scipy.special import logit as _logit_fn
@@ -4439,6 +4495,7 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             tprint(f"  Fitting MetaClassifierModel {side}_{k} ({_time.monotonic()-_t0_meta:.1f}s)...")
             meta_clf = MetaClassifierModel()
             meta_clf.strategy_name = f"{side}_{k}"
+            meta_clf.FEE_PER_ROUND_TRIP = float(cfg.get("label_round_trip_fee_pct", 0.5)) / 100.0
             # Pass vol_proxy for risk-unit thresholding
             meta_clf.fit(X_meta_base, y_target_clf, sample_weight=w_meta_clf, groups=meta_groups,
                          y_per_horizon=_y_per_h, vol_proxy=_vol_proxy)
@@ -4468,7 +4525,8 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
         if _bret_key in _bucket_y_ret:
             _bret = _bucket_y_ret[_bret_key]
             if len(_bret) == len(meta_obj.oof_probs):
-                _dm = _detailed_oof_metrics(meta_obj.oof_probs, _bret, cost=(2.0 * (float(cfg.get("fee_bps", 25.0)) + float(cfg.get("slippage_bps", 0.0))) / 10000.0))
+                _oof_score = meta_obj.oof_probs[:, 2] if (is_clf and np.ndim(meta_obj.oof_probs) == 2) else meta_obj.oof_probs
+                _dm = _detailed_oof_metrics(_oof_score, _bret, cost=(2.0 * (float(cfg.get("fee_bps", 25.0)) + float(cfg.get("slippage_bps", 0.0))) / 10000.0))
                 tprint(
                     f"  {key:22s} {_mtype:5s} {_winner_name:18s} "
                     f"{_dm.get('IC_global',0):>7.4f} {_dm.get('IC_top30',0):>7.4f} "
@@ -4492,8 +4550,10 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             is_long = 1 if side_parsed == "long" else 0
             
             meta_oof_path = os.path.join(meta_oof_dir, f"meta_oof_{key}.parquet")
+            _is_clf_key = key.endswith("_clf")
+            _oof_pred_1d = meta.oof_probs[:, 2] if (_is_clf_key and np.ndim(meta.oof_probs) == 2) else meta.oof_probs
             oof_df = pd.DataFrame({
-                "oof_pred": meta.oof_probs,
+                "oof_pred": _oof_pred_1d,
                 "index": range(len(meta.oof_probs)),
                 "is_long": is_long,
             })
@@ -5627,6 +5687,7 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
                 z_max_grid=[2.5, 3.0, 3.5],
                 entry_mode="next_open",
                 event_time_idx=time_indices,
+                fee_bps=float(cfg.get("fee_bps", 25.0)),
                 **_15m_kwargs
             )
 

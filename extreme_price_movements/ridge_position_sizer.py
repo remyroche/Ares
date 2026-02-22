@@ -1047,7 +1047,7 @@ def _rolling_rankpct(vals: np.ndarray, window: int = 2000) -> np.ndarray:
     """Percentile rank of current value within trailing window (exclude current)."""
     n = len(vals)
     out = np.full(n, np.nan, dtype=np.float64)
-    min_hist = max(20, window // 5)
+    min_hist = min(20, max(5, window // 5))  # Require at least 5 to 20 samples depending on window
     for i in range(n):
         j0 = max(0, i - window)
         hist = vals[j0:i]
@@ -1084,7 +1084,7 @@ def build_target_huber_advantage(
 ) -> np.ndarray:
     """Target 2: Huberized advantage over per-symbol rolling baseline."""
     df = pd.DataFrame({'r': returns, 'symbol': symbols})
-    min_periods = max(20, baseline_window // 5)
+    min_periods = min(20, max(5, baseline_window // 5))
     df['baseline'] = (
         df.groupby('symbol')['r']
         .transform(lambda s: s.rolling(baseline_window, min_periods=min_periods).median().shift(1))
@@ -1134,7 +1134,7 @@ def build_target_rolling_rank_residual(
 ) -> np.ndarray:
     """Target 4: Rolling rank of excess-over-baseline return mapped to [-1, 1]."""
     df = pd.DataFrame({'r': returns, 'symbol': symbols})
-    min_periods = max(20, baseline_window // 5)
+    min_periods = min(20, max(5, baseline_window // 5))
     if baseline_kind == "median":
         df['b'] = df.groupby('symbol')['r'].transform(
             lambda s: s.rolling(baseline_window, min_periods=min_periods).median().shift(1))
@@ -1202,10 +1202,13 @@ def run_ridge_target_race(
     race_log = []
     n = len(returns)
 
+    # Build net returns version for candidate generation (hurdle-centered)
+    y_net = returns - cost_pct
+    
     # Build vol proxy if symbols available
     vol = None
     if symbols is not None and len(np.unique(symbols)) > 1:
-        vol = build_trade_vol_proxy(returns, symbols, timestamps)
+        vol = build_trade_vol_proxy(y_net, symbols, timestamps)
 
     # Ensure symbols is usable (fallback to single symbol)
     if symbols is None:
@@ -1215,29 +1218,29 @@ def run_ridge_target_race(
     candidates = {}
 
     # 1. Winsorized log return
-    candidates["winsorized"] = build_target_winsorized(returns, clip_L=clip_L)
+    candidates["winsorized"] = build_target_winsorized(y_net, clip_L=clip_L)
     if vol is not None:
         candidates["winsorized_voladj"] = build_target_winsorized(
-            returns, clip_L=clip_L, vol=vol, vol_mode="partial")
+            y_net, clip_L=clip_L, vol=vol, vol_mode="partial")
 
     # 2. Huber advantage
     candidates["huber_adv"] = build_target_huber_advantage(
-        returns, symbols, delta=clip_L)
+        y_net, symbols, delta=clip_L)
     if vol is not None:
         candidates["huber_adv_voladj"] = build_target_huber_advantage(
-            returns, symbols, delta=clip_L, vol=vol, vol_mode="partial")
+            y_net, symbols, delta=clip_L, vol=vol, vol_mode="partial")
 
     # 3. Rolling rank
-    candidates["rolling_rank"] = build_target_rolling_rank(returns, symbols)
+    candidates["rolling_rank"] = build_target_rolling_rank(y_net, symbols)
     if vol is not None:
         candidates["rolling_rank_voladj"] = build_target_rolling_rank(
-            returns, symbols, vol=vol, vol_mode="partial")
+            y_net, symbols, vol=vol, vol_mode="partial")
 
     # 4. Rolling rank residual
-    candidates["rank_residual"] = build_target_rolling_rank_residual(returns, symbols)
+    candidates["rank_residual"] = build_target_rolling_rank_residual(y_net, symbols)
     if vol is not None:
         candidates["rank_residual_voladj"] = build_target_rolling_rank_residual(
-            returns, symbols, vol=vol, vol_mode="partial")
+            y_net, symbols, vol=vol, vol_mode="partial")
 
     race_log.append(f"    Ridge target race: {len(candidates)} candidates")
 
@@ -1281,7 +1284,13 @@ def run_ridge_target_race(
                 mdl = SkRidge(alpha=alpha, fit_intercept=True)
                 mdl.fit(X_tr_s, y_tr)
                 pred = mdl.predict(X_va_s)
-                ic_fold = float(spearmanr(pred, y_va).correlation)
+                # Refactor: IC is about price, not relative rank
+                y_va_ret = returns[va_idx]
+                if np.std(pred) < 1e-12 or np.std(y_va_ret) < 1e-12:
+                    ic_fold = 0.0
+                else:
+                    ic_fold = float(spearmanr(pred, y_va_ret).correlation)
+                
                 if np.isfinite(ic_fold):
                     ics.append(ic_fold)
             except Exception:
@@ -1459,7 +1468,7 @@ class RidgePositionSizer:
         alpha_range: Tuple[float, float] = (1e-4, 1e-1),
         delta_range: Tuple[float, float] = (0.5, 2.0),
         n_grid_points: int = 10,
-        cost_pct: float = 0.0005,
+        cost_pct: float = 0.005,
         sum_to_one: bool = True,
         non_negative: bool = True,
         top_k_pct: float = 0.30,
@@ -1658,6 +1667,7 @@ class RidgePositionSizer:
         self,
         X: np.ndarray,
         y: np.ndarray,
+        y_raw: np.ndarray,
         timestamps: np.ndarray | None,
         alpha: float,
         delta: float,
@@ -1696,6 +1706,7 @@ class RidgePositionSizer:
             pkf = PurgedKFold(n_splits=3, purge=5, embargo=2)
         
         oof_preds = np.full(len(y), np.nan)
+        oof_true_raw = np.full(len(y), np.nan)
         oof_weights = None
         
         # Get indices for CV split - pass groups if available
@@ -1714,6 +1725,7 @@ class RidgePositionSizer:
             
             weights = self._fit_weights(X_train_scaled, y_train, alpha, delta, gamma)
             oof_preds[val_idx] = X_val_scaled @ weights
+            oof_true_raw[val_idx] = y_raw[val_idx]
             
             if oof_weights is None:
                 oof_weights = weights.copy()
@@ -1734,6 +1746,7 @@ class RidgePositionSizer:
         
         pred = oof_preds[mask]
         true = y[mask]
+        true_raw = oof_true_raw[mask]
         ts_masked = timestamps[mask] if timestamps is not None else None
         
         # Apply top-k% selection policy PER TIMESTAMP SLICE
@@ -1746,6 +1759,7 @@ class RidgePositionSizer:
             df = pd.DataFrame({
                 'pred': pred,
                 'true': true,
+                'true_raw': true_raw,
                 'ts': ts_masked,
                 'orig_idx': np.arange(len(pred))
             })
@@ -1763,8 +1777,8 @@ class RidgePositionSizer:
             k = max(1, int(self.top_k_pct * len(pred)))
             selected_indices = np.argpartition(pred, -k)[-k:]
         
-        # Get returns for selected trades
-        selected_returns = true[selected_indices]
+        # Get returns for selected trades (use true_raw for financial metrics)
+        selected_returns = true_raw[selected_indices]
         
         # Sort by timestamp if available for proper equity curve
         if ts_masked is not None:
@@ -1774,10 +1788,10 @@ class RidgePositionSizer:
         else:
             sort_order = None
         
-        # Compute average PnL per selected trade (normalized by N_selected)
+        # Compute average PnL per selected trade (net of transaction costs)
         # This prevents PnL from scaling with the number of time slices
         n_selected = len(selected_returns)
-        pnl_total = float(np.mean(selected_returns)) if n_selected > 0 else 0.0
+        pnl_total = float(np.mean(selected_returns)) - self.cost_pct if n_selected > 0 else -self.cost_pct
         
         # Aggregate to daily returns if timestamps available
         if ts_masked is not None and len(selected_returns) > 1:
@@ -1821,8 +1835,13 @@ class RidgePositionSizer:
         max_dd = max(max_dd, 1e-6)  # Prevent division by zero
         
         # IC (Spearman correlation) on all predictions
+        # Refactor: IC is about price, not relative rank
         try:
-            ic = float(spearmanr(pred, true).correlation)
+            if np.std(pred) < 1e-12 or np.std(true_raw) < 1e-12:
+                ic = 0.0
+            else:
+                ic = float(spearmanr(pred, true_raw).correlation)
+            
             if not np.isfinite(ic):
                 ic = 0.0
         except (ValueError, TypeError):
@@ -1886,21 +1905,31 @@ class RidgePositionSizer:
             self.model_names_ = list(oof_preds.columns)
             X = oof_preds.values
         
-        # Compute raw trade returns (used for target race)
+        # Compute gross and net returns
+        # y_gross is for diagnostic metrics and IC (no cost subtraction)
+        # y_net is for optimization targets (includes cost subtraction)
         if labels is not None:
-            y_raw = np.asarray(labels, dtype=float)
-            tprint(f"  Using provided labels: mean={np.mean(y_raw):.6f}, std={np.std(y_raw):.6f}")
+            y_net = np.asarray(labels, dtype=float)
+            y_gross = y_net + self.cost_pct # Back out cost to get gross
+            tprint(f"  Using provided labels (net): mean={np.mean(y_net):.6f}, std={np.std(y_net):.6f}")
         elif 'return' in trade_outcomes.columns:
-            y_raw = np.asarray(trade_outcomes['return'].values, dtype=float)
-            tprint(f"  Using returns from trade_outcomes: mean={np.mean(y_raw):.6f}, std={np.std(y_raw):.6f}")
+            y_net = np.asarray(trade_outcomes['return'].values, dtype=float)
+            y_gross = y_net + self.cost_pct # Back out cost to get gross
+            tprint(f"  Using returns from trade_outcomes (net): mean={np.mean(y_net):.6f}, std={np.std(y_net):.6f}")
         elif all(c in trade_outcomes.columns for c in ['entry_price', 'exit_price', 'is_long']):
-            y_raw = compute_trade_labels(
+            y_gross = compute_trade_labels(
                 trade_outcomes['entry_price'].values,
                 trade_outcomes['exit_price'].values,
                 trade_outcomes['is_long'].values,
-                self.cost_pct,
+                0.0, # GROSS returns
             )
-            tprint(f"  Computed labels from prices: mean={np.mean(y_raw):.6f}, std={np.std(y_raw):.6f}")
+            y_net = compute_trade_labels(
+                trade_outcomes['entry_price'].values,
+                trade_outcomes['exit_price'].values,
+                trade_outcomes['is_long'].values,
+                self.cost_pct, # NET returns
+            )
+            tprint(f"  Computed labels (gross): mean={np.mean(y_gross):.6f}, std={np.std(y_gross):.6f}")
         else:
             raise ValueError(
                 "trade_outcomes must have either 'return' column, "
@@ -1913,9 +1942,10 @@ class RidgePositionSizer:
             symbols = trade_outcomes['symbol'].values
         
         # Align lengths
-        n = min(len(X), len(y_raw))
+        n = min(len(X), len(y_gross))
         X = X[:n]
-        y_raw = y_raw[:n]
+        y_gross = y_gross[:n]
+        y_net = y_net[:n]
         if timestamps is not None:
             timestamps = timestamps[:n]
         if groups is not None:
@@ -1925,12 +1955,14 @@ class RidgePositionSizer:
         
         # Handle NaN/Inf in predictions
         X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
-        y_raw = np.nan_to_num(y_raw, nan=0.0, posinf=0.0, neginf=0.0)
+        y_gross = np.nan_to_num(y_gross, nan=0.0, posinf=0.0, neginf=0.0)
+        y_net = np.nan_to_num(y_net, nan=0.0, posinf=0.0, neginf=0.0)
         
         # Run target representation race to find best y for this bucket
         tprint("  Running target representation race...")
+        # Note: race expects gross returns for IC evaluation, but candidate targets built off y_net
         tgt_name, y, race_log = run_ridge_target_race(
-            X, y_raw, symbols, timestamps,
+            X, y_gross, symbols, timestamps,
             alpha=0.5, cost_pct=self.cost_pct,
         )
         for line in race_log:
@@ -1940,26 +1972,67 @@ class RidgePositionSizer:
         # NOTE: Do NOT scale globally here - scaling is done per-fold in _evaluate_params
         # to prevent data leakage. The final scaler is fit after CV on all data.
         
-        # Grid search over hyperparameters
-        gamma_vals = np.linspace(self.gamma_range[0], self.gamma_range[1], self.n_grid_points)
-        alpha_vals = np.logspace(
-            np.log10(self.alpha_range[0]),
-            np.log10(self.alpha_range[1]),
-            self.n_grid_points
-        )
-        delta_vals = np.linspace(self.delta_range[0], self.delta_range[1], 5)
-        
+        # Optuna Multi-Objective Optimization over hyperparameters
+        import optuna
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+
         results = []
-        total_combos = len(gamma_vals) * len(alpha_vals) * len(delta_vals)
-        tprint(f"  Evaluating {total_combos} hyperparameter combinations...")
         
-        for gamma in gamma_vals:
-            for alpha in alpha_vals:
-                for delta in delta_vals:
-                    metrics = self._evaluate_params(
-                        X, y, timestamps, alpha, delta, gamma, groups
-                    )
-                    results.append(metrics)
+        def objective(trial):
+            gamma = trial.suggest_float("gamma", self.gamma_range[0], self.gamma_range[1])
+            alpha = trial.suggest_float("alpha", self.alpha_range[0], self.alpha_range[1], log=True)
+            delta = trial.suggest_float("delta", self.delta_range[0], self.delta_range[1])
+            
+            metrics = self._evaluate_params(
+                X, y, y_gross, timestamps, alpha, delta, gamma, groups
+            )
+            
+            # Save all metrics into trial user_attrs for later dataframe construction
+            for k, v in metrics.items():
+                trial.set_user_attr(k, v)
+            
+            # Store for the dataframe
+            results.append(metrics)
+            
+            # We want to maximize PnL_total, maximize Sortino, and minimize MaxDD
+            # For Optuna's directions=["maximize", "maximize", "minimize"]:
+            return (
+                metrics.get("PnL_total", -999.0),
+                metrics.get("Sortino", -99.0),
+                metrics.get("MaxDD", 99.0)
+            )
+
+        n_trials = min(150, self.n_grid_points * self.n_grid_points * 5)
+        tprint(f"  Evaluating {n_trials} hyperparameter combinations via Optuna...")
+        
+        class OptunaLogger:
+            def __init__(self):
+                self.best_pnl = -np.inf
+                self.best_sortino = -np.inf
+                
+            def __call__(self, study, trial):
+                pnl = trial.user_attrs.get("PnL_total", -999.0)
+                sortino = trial.user_attrs.get("Sortino", -99.0)
+                maxdd = trial.user_attrs.get("MaxDD", 99.0)
+                
+                is_best = False
+                msg = ""
+                if pnl > self.best_pnl:
+                    self.best_pnl = pnl
+                    is_best = True
+                    msg += "New Best PnL! "
+                if sortino > self.best_sortino:
+                    self.best_sortino = sortino
+                    is_best = True
+                    msg += "New Best Sortino!"
+                    
+                if is_best:
+                    tprint(f"    Trial {trial.number} {msg}PnL={pnl:.6f}, Sortino={sortino:.3f}, MaxDD={maxdd:.4f} | "
+                           f"Params: alpha={trial.params.get('alpha'):.5f}, delta={trial.params.get('delta'):.3f}, gamma={trial.params.get('gamma'):.3f}")
+
+        sampler = optuna.samplers.NSGAIISampler(seed=42)
+        study = optuna.create_study(directions=["maximize", "maximize", "minimize"], sampler=sampler)
+        study.optimize(objective, n_trials=n_trials, callbacks=[OptunaLogger()])
         
         # Create results DataFrame
         self.cv_results_ = pd.DataFrame(results)
@@ -2009,7 +2082,7 @@ class RidgePositionSizer:
 
         # Store OOF inputs for downstream diagnostics / preds_metrics_computations
         self.oof_preds_ = oof_preds.copy() if isinstance(oof_preds, pd.DataFrame) else pd.DataFrame(X, columns=self.model_names_)
-        self.oof_targets_ = y_raw.copy()
+        self.oof_targets_ = y_gross.copy()
         self.oof_timestamps_ = np.asarray(timestamps).copy() if timestamps is not None else None
         self.oof_symbols_ = np.asarray(symbols).copy() if symbols is not None else None
 
@@ -2239,7 +2312,7 @@ def run_ridge_position_sizer_step(
     alpha_range = cfg.get('alpha_range', (1e-4, 1e-1))
     delta_range = cfg.get('delta_range', (0.5, 2.0))
     n_grid_points = cfg.get('n_grid_points', 10)
-    cost_pct = cfg.get('cost_pct', 0.0005)
+    cost_pct = cfg.get('cost_pct', 0.005)
     top_k_pct = cfg.get('top_k_pct', 0.30)
     
     # Initialize sizer

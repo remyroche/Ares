@@ -1,0 +1,5 @@
+direction,bucket,ic_train,ic_val,sharpe,n_weights
+long,long_tf,,,,6
+long,long_mr,,,,6
+short,short_mr,,,,6
+short,short_tf,,,,4

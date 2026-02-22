@@ -448,7 +448,7 @@ def _numba_triple_barrier(times, opens, highs, lows, closes, tp_arr, sl_arr, hor
 
             if tt > cutoff_t:
                 # Overshoot: first bar strictly after horizon -> time exit at open.
-                labels[i] = 0
+                labels[i] = OUT_TO
                 if side == 1:
                     returns[i] = (opens[j] / entry_p) - 1.0
                 else:
@@ -460,7 +460,7 @@ def _numba_triple_barrier(times, opens, highs, lows, closes, tp_arr, sl_arr, hor
             if np.isnan(hh) or np.isnan(ll):
                 # Even if high/low are missing, still honor exact-cutoff timeout at close.
                 if tt == cutoff_t:
-                    labels[i] = 0
+                    labels[i] = OUT_TO
                     if side == 1:
                         returns[i] = (cc / entry_p) - 1.0
                     else:
@@ -475,7 +475,7 @@ def _numba_triple_barrier(times, opens, highs, lows, closes, tp_arr, sl_arr, hor
                 if ll <= sl_price:
                     ret = (sl_price / entry_p) - 1.0
                     returns[i] = ret
-                    labels[i] = 1 if trailing_active else -1
+                    labels[i] = OUT_TP if trailing_active else OUT_SL
                     exit_idxs[i] = j
                     exit_found = True
                     break
@@ -483,7 +483,7 @@ def _numba_triple_barrier(times, opens, highs, lows, closes, tp_arr, sl_arr, hor
                 if hh >= sl_price:
                     ret = (entry_p / sl_price) - 1.0
                     returns[i] = ret
-                    labels[i] = 1 if trailing_active else -1
+                    labels[i] = OUT_TP if trailing_active else OUT_SL
                     exit_idxs[i] = j
                     exit_found = True
                     break
@@ -509,7 +509,7 @@ def _numba_triple_barrier(times, opens, highs, lows, closes, tp_arr, sl_arr, hor
                     mfe_so_far = (entry_p / extreme) - 1.0
                 if mfe_so_far < stall_threshold:
                     # Stall exit at close price
-                    labels[i] = 0
+                    labels[i] = OUT_TO
                     if side == 1:
                         returns[i] = (cc / entry_p) - 1.0
                     else:
@@ -532,7 +532,7 @@ def _numba_triple_barrier(times, opens, highs, lows, closes, tp_arr, sl_arr, hor
 
             # Exact-cutoff bar: after processing hits on this bar, exit at close if still open.
             if tt == cutoff_t:
-                labels[i] = 0
+                labels[i] = OUT_TO
                 if side == 1:
                     returns[i] = (cc / entry_p) - 1.0
                 else:
@@ -542,7 +542,7 @@ def _numba_triple_barrier(times, opens, highs, lows, closes, tp_arr, sl_arr, hor
                 break
 
         if not exit_found:
-            labels[i] = 0
+            labels[i] = OUT_TO
             if side == 1:
                 returns[i] = (closes[n-1] / entry_p) - 1.0
             else:

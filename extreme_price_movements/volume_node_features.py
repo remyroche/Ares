@@ -93,26 +93,26 @@ def hvn_lvn_features_ohlcv(
         idx = np.digitize(zw, edges) - 1
         idx = np.clip(idx, 0, vp_bins - 1)
 
-        # One-hot bins: (m, vp_lookback, vp_bins)
-        # Using advanced indexing to create one-hot
-        # Shape: (m, vp_lookback, vp_bins)
-        # To avoid massive memory usage, we can iterate or use sparse logic.
-        # But user requested "vectorised (no row loops)".
-        # m ~ 30k, lookback=168, bins=21. 30k * 168 * 21 * 8 bytes ~ 800MB. Fine.
-
-        # oh = np.eye(vp_bins, dtype=float)[idx] # This might be too big if n is large.
-        # Optimization: Just compute histogram directly.
-
-        # We need per-window histogram.
-        # hist[i, b] = sum(v[window_i] where z[window_i] in bin b)
-
-        # This is effectively "scatter add".
-        # NumPy doesn't have a direct "rolling grouped sum" efficiently without loops or stride tricks + huge expansion.
-        # But we can use the expansion if memory allows.
-        # Let's try to be slightly more memory efficient if possible, but strict vectorization suggests the expansion.
-
-        oh = np.eye(vp_bins, dtype=float)[idx]
-        hist = (oh * vw[..., None]).sum(axis=1) # (m, vp_bins)
+        # Prepare histogram: (m, vp_bins)
+        # Avoid huge expansion (m, vp_lookback, vp_bins)
+        hist = np.zeros((m, vp_bins))
+        
+        # We want to add vw_i to hist[i, idx_i] for all i and window_position
+        # idx has shape (m, vp_lookback)
+        # vw has shape (m, vp_lookback)
+        rows = np.arange(m)[:, None] # (m, 1)
+        # idx[rows, cols] maps to hist[rows, idx]
+        # We can use np.add.at for unbuffered in-place addition, but it's slow.
+        # Vectorized alternative:
+        flat_idx = idx.ravel()
+        flat_rows = np.repeat(np.arange(m), vp_lookback)
+        flat_vol = vw.ravel()
+        
+        # Using bincount with weights for high speed if we can map (row, bin) to a flat index
+        # global_bin_idx = row * vp_bins + bin
+        combined_idx = flat_rows * vp_bins + flat_idx
+        hist_flat = np.bincount(combined_idx, weights=flat_vol, minlength=m * vp_bins)
+        hist = hist_flat.reshape(m, vp_bins)
 
         hist_sum = hist.sum(axis=1) + eps
         p = hist / hist_sum[:, None]

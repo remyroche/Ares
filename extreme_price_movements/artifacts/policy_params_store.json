@@ -1,0 +1,187 @@
+{
+  "bucket_params|e435e4101f": {
+    "LONG_MR": {
+      "metrics": {
+        "holdout_pnl_net": -0.0259386925114235,
+        "holdout_trades": 138,
+        "holdout_win_rate": 0.2898550724637681
+      },
+      "params": {
+        "loss_limiter": {
+          "lambda_rng": 0.0,
+          "lambda_rv": 0.0,
+          "risk_cut_mode": "AND",
+          "theta0": 0.8,
+          "theta_mae_min": 0.2,
+          "w_minutes": 15
+        },
+        "position_sizing": {
+          "c0": 0.775,
+          "k": 20.0,
+          "ridge_weights": {
+            "long_mr_reg_H2": 3.44460233428975e-17,
+            "long_mr_reg_H4": 0.29048972841428744,
+            "long_mr_reg_mean": 6.245484267680211e-17,
+            "long_mr_reg_range": 0.35475513579285634,
+            "long_mr_reg_sign_agree": 2.852958110625993e-17,
+            "long_mr_reg_std": 0.3547551357928562,
+            "long_tf_reg_H2": 0.09558085076892897,
+            "long_tf_reg_H4": 0.31258101010455697,
+            "long_tf_reg_mean": 0.1343537555054976,
+            "long_tf_reg_range": 0.18598592015201543,
+            "long_tf_reg_sign_agree": 0.08551254331698385,
+            "long_tf_reg_std": 0.1859859201520172,
+            "short_mr_reg_H2": 1.1438303159558837e-16,
+            "short_mr_reg_H4": 0.5001606640096729,
+            "short_mr_reg_mean": 0.0,
+            "short_mr_reg_range": 0.24991966799516288,
+            "short_mr_reg_sign_agree": 0.0,
+            "short_mr_reg_std": 0.24991966799516427,
+            "short_tf_clf": 0.0281290197800677,
+            "short_tf_reg_H8": 0.1416255788815021,
+            "short_tf_reg_mean": 0.14162557888150207,
+            "short_tf_reg_std": 0.6886198224569282
+          },
+          "s_max": 0.15,
+          "s_min": 0.03
+        },
+        "profit_exit": {
+          "act_n": 0.5,
+          "be_act_n": 0.5,
+          "d_max": 0.5,
+          "d_min": 0.1,
+          "fee_pct": 0.005
+        },
+        "tp_sl": {
+          "atr_scale_hi": 2.5,
+          "atr_scale_lo": 0.6,
+          "sl_mult": 1.6,
+          "tp_mult": 2.0
+        }
+      },
+      "ts": "2026-02-22T16:07:52.711888+00:00"
+    },
+    "LONG_TF": {
+      "metrics": {
+        "holdout_pnl_net": 0.0015034386048333886,
+        "holdout_trades": 14,
+        "holdout_win_rate": 0.5
+      },
+      "params": {
+        "loss_limiter": {
+          "lambda_rng": 0.0,
+          "lambda_rv": 0.0,
+          "risk_cut_mode": "AND",
+          "theta0": 0.8,
+          "theta_mae_min": 0.2,
+          "w_minutes": 15
+        },
+        "position_sizing": {
+          "c0": 0.85,
+          "k": 20.0,
+          "ridge_weights": {
+            "long_mr_reg_H2": 3.44460233428975e-17,
+            "long_mr_reg_H4": 0.29048972841428744,
+            "long_mr_reg_mean": 6.245484267680211e-17,
+            "long_mr_reg_range": 0.35475513579285634,
+            "long_mr_reg_sign_agree": 2.852958110625993e-17,
+            "long_mr_reg_std": 0.3547551357928562,
+            "long_tf_reg_H2": 0.09558085076892897,
+            "long_tf_reg_H4": 0.31258101010455697,
+            "long_tf_reg_mean": 0.1343537555054976,
+            "long_tf_reg_range": 0.18598592015201543,
+            "long_tf_reg_sign_agree": 0.08551254331698385,
+            "long_tf_reg_std": 0.1859859201520172,
+            "short_mr_reg_H2": 1.1438303159558837e-16,
+            "short_mr_reg_H4": 0.5001606640096729,
+            "short_mr_reg_mean": 0.0,
+            "short_mr_reg_range": 0.24991966799516288,
+            "short_mr_reg_sign_agree": 0.0,
+            "short_mr_reg_std": 0.24991966799516427,
+            "short_tf_clf": 0.0281290197800677,
+            "short_tf_reg_H8": 0.1416255788815021,
+            "short_tf_reg_mean": 0.14162557888150207,
+            "short_tf_reg_std": 0.6886198224569282
+          },
+          "s_max": 0.15,
+          "s_min": 0.03
+        },
+        "profit_exit": {
+          "act_n": 0.5,
+          "be_act_n": 0.5,
+          "d_max": 0.5,
+          "d_min": 0.1,
+          "fee_pct": 0.005
+        },
+        "tp_sl": {
+          "atr_scale_hi": 2.5,
+          "atr_scale_lo": 0.6,
+          "sl_mult": 1.6,
+          "tp_mult": 2.0
+        }
+      },
+      "ts": "2026-02-22T16:07:54.664202+00:00"
+    },
+    "SHORT_MR": {
+      "metrics": {
+        "holdout_pnl_net": -0.006429168069887864,
+        "holdout_trades": 119,
+        "holdout_win_rate": 0.6554621848739496
+      },
+      "params": {
+        "loss_limiter": {
+          "lambda_rng": 0.0,
+          "lambda_rv": 0.0,
+          "risk_cut_mode": "AND",
+          "theta0": 0.8,
+          "theta_mae_min": 0.2,
+          "w_minutes": 15
+        },
+        "position_sizing": {
+          "c0": 0.85,
+          "k": 2.0,
+          "ridge_weights": {
+            "long_mr_reg_H2": 3.44460233428975e-17,
+            "long_mr_reg_H4": 0.29048972841428744,
+            "long_mr_reg_mean": 6.245484267680211e-17,
+            "long_mr_reg_range": 0.35475513579285634,
+            "long_mr_reg_sign_agree": 2.852958110625993e-17,
+            "long_mr_reg_std": 0.3547551357928562,
+            "long_tf_reg_H2": 0.09558085076892897,
+            "long_tf_reg_H4": 0.31258101010455697,
+            "long_tf_reg_mean": 0.1343537555054976,
+            "long_tf_reg_range": 0.18598592015201543,
+            "long_tf_reg_sign_agree": 0.08551254331698385,
+            "long_tf_reg_std": 0.1859859201520172,
+            "short_mr_reg_H2": 1.1438303159558837e-16,
+            "short_mr_reg_H4": 0.5001606640096729,
+            "short_mr_reg_mean": 0.0,
+            "short_mr_reg_range": 0.24991966799516288,
+            "short_mr_reg_sign_agree": 0.0,
+            "short_mr_reg_std": 0.24991966799516427,
+            "short_tf_clf": 0.0281290197800677,
+            "short_tf_reg_H8": 0.1416255788815021,
+            "short_tf_reg_mean": 0.14162557888150207,
+            "short_tf_reg_std": 0.6886198224569282
+          },
+          "s_max": 0.15,
+          "s_min": 0.03
+        },
+        "profit_exit": {
+          "act_n": 0.5,
+          "be_act_n": 0.5,
+          "d_max": 0.5,
+          "d_min": 0.1,
+          "fee_pct": 0.005
+        },
+        "tp_sl": {
+          "atr_scale_hi": 2.5,
+          "atr_scale_lo": 0.6,
+          "sl_mult": 1.6,
+          "tp_mult": 2.0
+        }
+      },
+      "ts": "2026-02-22T16:07:57.168060+00:00"
+    }
+  }
+}

@@ -1058,6 +1058,7 @@ def run_tp_sl_selection_fast(
     # Parallel time index for proper temporal sorting (same length as event_idx)
     # If None, falls back to event_idx (only correct if event_idx is time-monotonic)
     event_time_idx: Optional[np.ndarray] = None,
+    fee_bps: float = 25.0,
 ) -> SelectionSummary:
     """
     High-throughput variant:
@@ -1344,7 +1345,7 @@ def run_tp_sl_selection_fast(
                                         labels=y_oof,
                                         exit_kinds=k_oof,
                                         threshold_p=float(thr_p),
-                                        fee_bps=25.0,
+                                        fee_bps=float(fee_bps),
                                     )
                                     t_stat = m["t_stat"]
                                     inner_pnl = m["net_pnl"]
@@ -1499,7 +1500,7 @@ def run_tp_sl_selection_fast(
             labels=yb_te,
             exit_kinds=exit_kinds_te,
             threshold_p=best_g.threshold_p,
-            fee_bps=25.0,
+            fee_bps=float(fee_bps),
         )
         
         # Guard against NaN — if metrics are invalid, skip this fold

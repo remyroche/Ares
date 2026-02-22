@@ -20,6 +20,7 @@ from typing import Dict, Tuple, Optional, List, Any
 
 import numpy as np
 from sklearn.metrics import roc_auc_score
+from scipy.stats import spearmanr, rankdata
 
 import optuna
 from optuna.pruners import MedianPruner
@@ -161,12 +162,17 @@ _BUILD_FN = {
 # ---------------------------
 # Optuna search spaces (crypto-noise tuned)
 # ---------------------------
-def suggest_extratrees(trial: optuna.Trial, *, base_random_state: int = 42) -> Dict[str, Any]:
+def suggest_extratrees(trial: optuna.Trial, *, base_random_state: int = 42, n_samples: int = 10000) -> Dict[str, Any]:
     """ExtraTrees — constrain hard to avoid overfitting noise."""
     n_estimators = trial.suggest_int("n_estimators", 300, 2000, step=200)
     max_depth = trial.suggest_int("max_depth", 3, 10)
-    min_samples_leaf = trial.suggest_int("min_samples_leaf", 30, 400, log=True)
-    min_samples_split = trial.suggest_int("min_samples_split", 80, 800, log=True)
+    
+    # Dynamic Regularization based on POSITIVE samples
+    n_pos = int(n_samples) # n_samples is passed as n_pos from make_objective
+    min_leaf_dyn = max(75, int(n_pos * 0.015)) # Increased to 1.5%
+    
+    min_samples_leaf = trial.suggest_int("min_samples_leaf", min_leaf_dyn, max(400, int(n_pos * 0.05)), log=True)
+    min_samples_split = trial.suggest_int("min_samples_split", min_leaf_dyn * 2, max(800, int(n_pos * 0.10)), log=True)
 
     max_feat_mode = trial.suggest_categorical("max_features_mode", ["sqrt", "log2", "frac"])
     if max_feat_mode == "frac":
@@ -206,12 +212,17 @@ def suggest_extratrees(trial: optuna.Trial, *, base_random_state: int = 42) -> D
     }
 
 
-def suggest_xgboost(trial: optuna.Trial, *, base_random_state: int = 42) -> Dict[str, Any]:
+def suggest_xgboost(trial: optuna.Trial, *, base_random_state: int = 42, n_samples: int = 10000) -> Dict[str, Any]:
     """XGBoost — conservative for noisy labels: high min_child_weight, gamma, reg_lambda."""
     n_estimators = trial.suggest_int("n_estimators", 600, 6000, step=200)
     learning_rate = trial.suggest_float("learning_rate", 0.01, 0.08, log=True)
     max_depth = trial.suggest_int("max_depth", 2, 5)
-    min_child_weight = trial.suggest_float("min_child_weight", 75.0, 500.0, log=True)
+    
+    # Dynamic Regularization for XGBoost (hessian based) based on POSITIVE samples
+    n_pos = int(n_samples) # n_samples is passed as n_pos from make_objective
+    min_cw_dyn = max(75, int(n_pos * 0.015 * 0.25))
+    
+    min_child_weight = trial.suggest_float("min_child_weight", float(min_cw_dyn), float(max(500, int(n_pos * 0.05 * 0.25))), log=True)
     gamma = trial.suggest_float("gamma", 0.5, 20.0, log=True)
 
     subsample = trial.suggest_float("subsample", 0.6, 0.9)
@@ -258,7 +269,7 @@ def suggest_xgboost(trial: optuna.Trial, *, base_random_state: int = 42) -> Dict
     return params
 
 
-def suggest_lightgbm(trial: optuna.Trial, *, base_random_state: int = 42) -> Dict[str, Any]:
+def suggest_lightgbm(trial: optuna.Trial, *, base_random_state: int = 42, n_samples: int = 10000) -> Dict[str, Any]:
     """LightGBM — cap leaves aggressively, raise min_child_samples, strong L1/L2."""
     n_estimators = trial.suggest_int("n_estimators", 800, 8000, step=200)
     learning_rate = trial.suggest_float("learning_rate", 0.01, 0.08, log=True)
@@ -271,7 +282,11 @@ def suggest_lightgbm(trial: optuna.Trial, *, base_random_state: int = 42) -> Dic
     subsample = trial.suggest_float("subsample", 0.6, 0.9)
     colsample_bytree = trial.suggest_float("colsample_bytree", 0.5, 0.9)
 
-    min_child_samples = trial.suggest_int("min_child_samples", 75, 600, log=True)
+    # Dynamic Regularization based on POSITIVE samples
+    n_pos = int(n_samples) # n_samples is passed as n_pos from make_objective
+    min_leaf_dyn = max(75, int(n_pos * 0.015))
+
+    min_child_samples = trial.suggest_int("min_child_samples", min_leaf_dyn, max(600, int(n_pos * 0.05)), log=True)
     min_child_weight = trial.suggest_float("min_child_weight", 1e-3, 10.0, log=True)
 
     lambda_l2 = trial.suggest_float("lambda_l2", 15.0, 500.0, log=True)
@@ -312,7 +327,7 @@ def suggest_lightgbm(trial: optuna.Trial, *, base_random_state: int = 42) -> Dic
     return params
 
 
-def suggest_catboost(trial: optuna.Trial, *, base_random_state: int = 42) -> Dict[str, Any]:
+def suggest_catboost(trial: optuna.Trial, *, base_random_state: int = 42, n_samples: int = 10000) -> Dict[str, Any]:
     """CatBoost — keep depth small, strong regularisation."""
     iterations = trial.suggest_int("iterations", 800, 8000, step=200)
     learning_rate = trial.suggest_float("learning_rate", 0.01, 0.08, log=True)
@@ -504,11 +519,13 @@ def make_objective(
 
     def objective(trial: optuna.Trial) -> float:
         # Suggest params once (seed-independent hypers)
-        params_base = suggest_fn(trial, base_random_state=config.random_state)
+        # Use positive sample count for dynamic regularization bounds
+        n_pos = int(np.sum(y > 0)) if len(y) > 0 else 0
+        params_base = suggest_fn(trial, base_random_state=config.random_state, n_samples=n_pos)
 
-        all_seed_aucs: List[List[float]] = []  # [seed][fold]
+        all_seed_ics: List[List[float]] = []  # [seed][fold]
 
-        running_aucs = []  # For pruning reports
+        running_ics = []  # For pruning reports
 
         for seed_offset in range(config.n_seeds):
             seed = config.random_state + seed_offset
@@ -523,7 +540,7 @@ def make_objective(
             elif config.model_name == "catboost":
                 params["random_seed"] = seed
 
-            fold_aucs: List[float] = []
+            fold_ics: List[float] = []
             for fold_i, (tr, va) in enumerate(splits):
                 X_tr, y_tr = X[tr], y[tr]
                 X_va, y_va = X[va], y[va]
@@ -534,21 +551,34 @@ def make_objective(
                     X_tr, y_tr, X_va, y_va,
                     sample_weight_tr=sw_tr, config=config,
                 )
-                auc = auc_safe(y_va, y_score)
-                fold_aucs.append(auc)
-                running_aucs.append(auc)
+                
+                # Calculate Top-30% IC instead of Global AUC
+                if len(y_score) > 10:
+                    ranks = rankdata(y_score) / len(y_score)
+                    t30 = ranks >= 0.70
+                    if t30.sum() > 2:
+                        ic_t30 = float(spearmanr(y_score[t30], y_va[t30]).statistic)
+                    else:
+                        ic_t30 = 0.0
+                else:
+                    ic_t30 = 0.0
+                    
+                if not np.isfinite(ic_t30): ic_t30 = 0.0
+                
+                fold_ics.append(ic_t30)
+                running_ics.append(ic_t30)
 
-                step = len(running_aucs) - 1
-                trial.report(float(np.mean(running_aucs)), step=step)
+                step = len(running_ics) - 1
+                trial.report(float(np.mean(running_ics)), step=step)
 
-            all_seed_aucs.append(fold_aucs)
+            all_seed_ics.append(fold_ics)
 
-        # Flatten all fold AUCs across seeds
-        flat = [a for sa in all_seed_aucs for a in sa]
-        mean_auc = float(np.mean(flat))
-        std_auc = float(np.std(flat))
-        # Stability-penalised objective (increased penalty)
-        return mean_auc - 1.0 * std_auc
+        # Flatten all fold ICs across seeds
+        flat = [a for sa in all_seed_ics for a in sa]
+        mean_ic = float(np.mean(flat))
+        std_ic = float(np.std(flat))
+        # Stability-penalised objective for Top-30% IC
+        return mean_ic - 1.0 * std_ic
 
     return objective
 

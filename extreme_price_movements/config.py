@@ -1,4 +1,14 @@
 # Central config. Keep it deterministic and explicit.
+from extreme_price_movements.perp_features import get_perp_feature_names
+
+
+_PERP_COLLISION_RENAMES = {
+    "ret1h": "ret1h_perp",
+}
+PERP_FEATURE_KEYS = [
+    _PERP_COLLISION_RENAMES.get(k, k)
+    for k in get_perp_feature_names()
+]
 
 neutral_feature_keys = [
     "rsi", "vol_z", "atr_pct", "mkt_rv_ratio", "skew", 
@@ -108,6 +118,7 @@ MODEL_FEATURES = [
     "vp_lvn_depth_ratio", "vp_accept_poc_touchrate",
     "vp_accept_hvn_touchrate", "vp_accept_lvn_touchrate",
     "vp_air_pocket_score",
+    "G_TF_TREND", "vol_z_x_trend_t",
 ]
 
 # Helper/base features produced in features.py that should remain selectable by model heads.
@@ -123,7 +134,7 @@ HELPER_BASE_FEATURES = [
     "atr_expansion", "stall_ext_corr",
     "asset_atr_level", "asset_vol_level", "atr_state", "vol_state",
     "G_EXH_EFFORT", "G_EXH_GIVEBACK", "G_EXH_TAIL_FAIL",
-    "G_MR_SPIKE", "G_TF_GRIND", "G_MR_TAIL",
+    "G_MR_SPIKE", "G_TF_GRIND", "G_TF_TREND", "G_MR_TAIL",
     "G_META_EXH", "G_META_TF_QUAL", "G_META_MR_QUAL", "G_META_AMBIG",
     # FFD d-specific helper features
     "ffd_diff_1_04", "ffd_diff_2_04", "ffd_diff_4_04", "ffd_diff_8_04",
@@ -172,7 +183,7 @@ TEST_FEATURE_KEYS = [
     # Liquidity + time-of-day
     "amihud_illiq", "amihud_z", "sin_hod", "cos_hod", "sin_dow", "cos_dow",
     # Mid/long lookback context for 8-bar horizon learnability (16-24h + slower)
-    "ret16h", "ret24h", "rv_24h", "coherence_24", "impulse_ratio_24", "range_24h_pct",
+    "ret16h", "coherence_24", "impulse_ratio_24", "range_24h_pct",
     "shannon_entropy_ret_16", "perm_entropy_ret_24", "spectral_entropy_ret_24", "volume_entropy_24",
     "ret48h", "ret120h", "rv_48h", "rv_120h", "spectral_entropy_ret_48",
     # Longer-timeframe regime context
@@ -182,7 +193,10 @@ TEST_FEATURE_KEYS = [
 
 CFG = {
     # persistence / fetch
-    "data_root": "data",
+    "data_root": "../data",
+    "reports_root": "extreme_price_movements/reports",
+    "hf_data_dir": "extreme_price_movements/15m_ohlcv",
+    "use_perps": False,
     "timeframe": "1h",
     "fetch_years": 4,
     "fetch_symbols_M": 600,
@@ -401,11 +415,11 @@ CFG = {
         "clv_collapse", "clv_pullback", "coh", "align", "retest_quality",
         "pb_accel", "rv_ratio_6_24", "excess_coh", "asym_ft", "dist_stack",
         "tf_bias", "shock_rel", "resid_strength", "evr_slope", "stall_ext",
-        "spike_score", "grind_score", "chop_score",
+        "spike_score", "grind_score", "chop_score", "G_TF_TREND", "vol_z_x_trend_t",
         # Gates as continuous features
         "G_EXH_EFFORT", "G_EXH_GIVEBACK",
         "G_EXH_TAIL_FAIL",
-        "G_MR_SPIKE", "G_TF_GRIND", "G_MR_TAIL",
+        "G_MR_SPIKE", "G_TF_GRIND", "G_TF_TREND", "G_MR_TAIL",
         "G_META_EXH", "G_META_TF_QUAL", "G_META_MR_QUAL", "G_META_AMBIG",
         # New Model Features
         "overext", "overext_weak", "effort_gate", "tail_fail", "blowoff_risk",
@@ -499,6 +513,7 @@ CFG = {
     "thr_short": -0.010,
     "k_long": 10,
     "k_short": 10,
+    "score_gate_q": 0.93,              # Global percentile gate: only trade signals in top x% (0.93 = top 7%) of global distribution
 
     # sizing / risk / costs
     "wallet_gross_cap": 0.25,
@@ -511,8 +526,7 @@ CFG = {
     "fee_bps": 25.0,
     "borrow_apr": 0.20,
 
-    # OOS holdout for backtest
-    "oos_holdout_days": 180,    # Exclude last 6 months from training for OOS backtest
+    "oos_holdout_days": 14,    # 14-day holdout for quick verification of global ranking
 
     # Trailing Profit Risk Params (used in backtest & live, all vol-scaled)
     # Target absolute: TP ~2%, SL ~0.7% (with median barrier_pct ~4%)
@@ -588,7 +602,7 @@ CFG = {
 
     # TF Head (Specifics + Global) — includes trend maturity features
     "tf_feature_keys": [
-        "accept", "retest_accept", "tf_qual", "coherence_24", "impulse_ratio_24",
+        "accept", "retest_accept", "tf_qual", "G_TF_TREND", "coherence_24", "impulse_ratio_24",
         "tf_tape", "clv_mean_4", "pullback_2", "pullback_4", "pullback_8", "ft_2", "ft_4", "ft_8",
         "vov_ratio", "vov_interaction", "vov_fast_slow_ratio", "accel_5h", "breakout_24h",
         "stage_tf", "tf_bias", "flow_persistence", "flow_ratio",
@@ -645,6 +659,7 @@ CFG = {
     "meta_feature_keys": [
         "ambig", "stage_tf", "stage_blowoff", "stage_mr", "exh_qual",
         "accept", "accept_bin3", "accept_gt85", "rv_ratio_6_24",
+        "G_TF_TREND", "vol_z_x_trend_t",
         "excess_6h", "donch_dist_12", "donch_dist_8", "clv_mean_4", "evr_6", "delta_stall_6",
         "ft_2", "asym_ratio", "mfe_2h", "mae_2h", "mfe_4h", "mae_4h", "mfe_8h", "mae_8h", "giveback",
         "ret1h", "ret2h", "ret4h", "ret6h", "rv_2h", "rv_4h", "rv_6h", "rv_8h", "rv_24h", "mkt_rv_ratio",
@@ -718,7 +733,35 @@ CFG = {
     # High-frequency simulation
     "use_15m_precision": True,  # Enable 15m OHLCV for trailing profit (requires CCXT exchange)
     
+    # Limit Order Simulation (Report 2026-02-22)
+    "use_limit_orders": True,    # Enable limit orders per user request
+    "limit_offset_bps": 20.0,    # 0.2% entry offset (buy lower / sell higher)
+    "exit_limit_offset_bps": 20.0,  # 0.2% exit offset for testing
+    "fee_bps": 35.0,  # Based on requested 0.35% round trip
+    
     # Risk logging
     "verbose_risk_logging": False,  # Enable detailed per-trade TP/SL logging
 
 }
+
+
+def _append_missing(existing, extra):
+    out = list(existing or [])
+    seen = set(out)
+    for item in list(extra or []):
+        if item in seen:
+            continue
+        out.append(item)
+        seen.add(item)
+    return out
+
+
+def enable_perp_feature_keys(cfg: dict) -> dict:
+    """
+    Enable perp-specific features for runtime config.
+    Spot pipeline remains unchanged unless this helper is called.
+    """
+    out = dict(cfg)
+    for k in ("tf_feature_keys", "mr_feature_keys", "meta_feature_keys"):
+        out[k] = _append_missing(out.get(k, []), PERP_FEATURE_KEYS)
+    return out

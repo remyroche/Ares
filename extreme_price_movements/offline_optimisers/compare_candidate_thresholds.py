@@ -3521,15 +3521,12 @@ def run_comparison(
     default_sl_mult = float(barrier_defaults["barrier_sl_base_mult"])
     default_cusum_h = float(runtime_cfg.get("cusum_h", 6.0))
     default_cusum_z_gate = float(runtime_cfg.get("cusum_z_gate", 0.5))
-    pct_grid = [0.06, 0.20]  # Broader pct grid for Stage 1/2 comparisons
+    pct_grid = [0.06]
     
     # Expansion variants
     expansion_variants = [
         ("none", []),
-        ("full", [-12, -8, -4, 4, 8, 12, 16]),
-        ("neg48", [-4, -8]),
-        ("pos48", [4, 8]),
-        ("sym48", [-4, -8, 4, 8]),
+        ("sym48", [-4, 4]),
     ]
     
     # Modes to test
@@ -3560,7 +3557,7 @@ def run_comparison(
                         "cusum_z_gate": default_cusum_z_gate,
                     }
                 )
-            for vol_z in [1.4, 1.6, 1.8]:
+            for vol_z in [1.6, 1.7]:
                 configs.append(
                     {
                         "config_id": f"{mode_prefix}_P{int(pct * 100):02d}_V{int(vol_z * 10):02d}",
@@ -3573,20 +3570,6 @@ def run_comparison(
                         "cusum_z_gate": default_cusum_z_gate,
                     }
                 )
-            for sc in [0.60, 0.70]:
-                configs.append(
-                    {
-                        "config_id": f"{mode_prefix}_P{int(pct * 100):02d}_S{int(sc * 100):02d}",
-                        "mode": mode_name,
-                        "pct": pct,
-                        "min_range_pct": default_range_pct,
-                        "min_vol_zscore": default_vol_zscore,
-                        "min_sign_consistency": sc,
-                        "cusum_h": default_cusum_h,
-                        "cusum_z_gate": default_cusum_z_gate,
-                    }
-                )
-
     tlog(f"Stage 1 setup done: {len(configs)} configs")
 
     # =============================================================================
@@ -3640,7 +3623,7 @@ def run_comparison(
         # Force ExtraTrees for Stage 3
         use_extratrees = True
         
-        stage3_pcts = [0.05, 0.06, 0.07, 0.10, 0.20]
+        stage3_pcts = [0.05, 0.06]
         stage3_configs = []
         for cfg in configs:
             # Check if this config matches any of the winners

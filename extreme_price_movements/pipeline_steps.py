@@ -722,7 +722,11 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
     # A single combined sizer dilutes IC because long IC (~0.031) and short IC
     # (~0.005) are incompatible, and short_mr has inverted IC (−0.011).
     # -------------------------------------------------------------------------
-    _meta_cols = {"timestamp", "symbol", "return", "is_long", "index"}
+    _meta_cols = {
+        "timestamp", "symbol", "return", "is_long", "index",
+        "oof_u_hat", "oof_log_mae_q70_hat", "oof_log_mfe_hat", "oof_log_dur_hat",
+        "mae_ret", "mfe_ret", "duration", "u_policy_net", "exit_code"
+    }
     direction_groups = {"long": {}, "short": {}}
     for bucket_name, oof_preds in bucket_oofs.items():
         direction = "long" if bucket_name.startswith("long") else "short"
@@ -769,6 +773,7 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
                     save_model=False,
                     run_id=run_id,
                     symbols=symbols,
+                    bucket_name=bucket_name,
                 )
                 bkt_weights = sizer.get_weights()
                 for wname, wval in bkt_weights.items():

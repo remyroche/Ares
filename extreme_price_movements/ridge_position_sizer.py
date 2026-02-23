@@ -2323,6 +2323,7 @@ def run_ridge_position_sizer_step(
     run_id: str | None = None,
     labels: np.ndarray | None = None,
     symbols: np.ndarray | None = None,
+    bucket_name: str | None = None,
 ) -> Tuple[RidgePositionSizer, Dict]:
     """Run the ridge position sizer step in the pipeline.
     
@@ -2456,6 +2457,35 @@ def run_ridge_position_sizer_step(
         metrics['oof_parquet_path'] = str(_oof_path)
         tprint(f"Saved Ridge sizer OOF parquet to {_oof_path}")
 
+    # Generate Trade Quality Diagnostic Plot
+    try:
+        from extreme_price_movements.trade_quality_diagnostics import generate_trade_quality_plot
+
+        # Prepare data for diagnostic
+        diag_df = trade_outcomes.copy()
+
+        # Predict scores using fitted sizer (aligned with trade_outcomes)
+        scores = sizer.predict(oof_preds)
+        diag_df["score"] = scores
+
+        # Determine output path
+        reports_dir = Path("extreme_price_movements/reports")
+        reports_dir.mkdir(parents=True, exist_ok=True)
+
+        b_name = bucket_name if bucket_name else "unknown_bucket"
+        r_id = run_id if run_id else "latest"
+        plot_path = reports_dir / f"trade_quality_{b_name}_{r_id}.png"
+
+        generate_trade_quality_plot(
+            df=diag_df,
+            output_path=str(plot_path),
+            bucket_label=f"{b_name} ({r_id})"
+        )
+        metrics['trade_quality_plot'] = str(plot_path)
+
+    except Exception as e:
+        tprint(f"WARNING: Failed to generate trade quality plot: {e}")
+
     tprint("-" * 80)
     tprint("Ridge Position Sizer Results:")
     tprint(f"  Models combined: {len(weights)}")
@@ -2539,6 +2569,16 @@ def load_trade_outcomes_from_oof(data_root: str, run_id: str, oof_df: pd.DataFra
             outcomes["timestamp"] = oof_df["timestamp"].values
         if "symbol" in oof_df.columns:
             outcomes["symbol"] = oof_df["symbol"].values
+
+        # Copy aux diagnostic columns
+        aux_cols = [
+            "oof_u_hat", "oof_log_mae_q70_hat", "oof_log_mfe_hat", "oof_log_dur_hat",
+            "mae_ret", "mfe_ret", "duration", "u_policy_net", "exit_code"
+        ]
+        for c in aux_cols:
+            if c in oof_df.columns:
+                outcomes[c] = oof_df[c].values
+
         tprint(f"Constructed trade outcomes from OOF context: {len(outcomes)} trades")
         return outcomes
     

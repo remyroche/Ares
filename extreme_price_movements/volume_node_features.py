@@ -19,7 +19,48 @@ Max features produced here: 18 (all HVN/LVN-centric).
 
 import numpy as np
 import pandas as pd
-from numpy.lib.stride_tricks import sliding_window_view
+from numba import jit
+
+@jit(nopython=True, cache=True)
+def _numba_rolling_weighted_histogram(bin_idx, weights, lookback, n_bins):
+    n = len(bin_idx)
+    # Output aligned to the end of the window.
+    # Current implementation returns (m, n_bins) where m = n - lookback + 1
+    m = n - lookback + 1
+    if m <= 0:
+        return np.zeros((0, n_bins), dtype=np.float32)
+
+    hist = np.zeros((m, n_bins), dtype=np.float32)
+
+    # Current window state (float64 for precision accumulation)
+    curr_hist = np.zeros(n_bins, dtype=np.float64)
+
+    # Initialize first window
+    for i in range(lookback):
+        b = bin_idx[i]
+        # bin_idx is clipped to [0, n_bins-1] before calling, but check just in case
+        if 0 <= b < n_bins:
+            curr_hist[b] += weights[i]
+
+    hist[0] = curr_hist.astype(np.float32)
+
+    # Slide
+    for i in range(1, m):
+        # Remove outgoing: index i-1 (the element that just left the window)
+        out_idx = i - 1
+        b_out = bin_idx[out_idx]
+        if 0 <= b_out < n_bins:
+            curr_hist[b_out] -= weights[out_idx]
+
+        # Add incoming: index i + lookback - 1
+        in_idx = i + lookback - 1
+        b_in = bin_idx[in_idx]
+        if 0 <= b_in < n_bins:
+            curr_hist[b_in] += weights[in_idx]
+
+        hist[i] = curr_hist.astype(np.float32)
+
+    return hist
 
 def hvn_lvn_features_ohlcv(
     df: pd.DataFrame,
@@ -86,33 +127,12 @@ def hvn_lvn_features_ohlcv(
     lvn_depth = np.full(n, np.nan)        # min_nonzero(hist)/mean(hist_nonzero) (low means "thin")
 
     if n >= vp_lookback:
-        zw = sliding_window_view(z_np, vp_lookback)     # (m, vp_lookback)
-        vw = sliding_window_view(v_np, vp_lookback)     # (m, vp_lookback)
+        # Pre-calculate bin indices for all points
+        bin_idx_all = np.digitize(z_np, edges) - 1
+        bin_idx_all = np.clip(bin_idx_all, 0, vp_bins - 1)
 
-        # Bin indices in [0, vp_bins-1]
-        idx = np.digitize(zw, edges) - 1
-        idx = np.clip(idx, 0, vp_bins - 1)
-
-        # Prepare histogram: (m, vp_bins)
-        # Avoid huge expansion (m, vp_lookback, vp_bins)
-        hist = np.zeros((m, vp_bins))
-        
-        # We want to add vw_i to hist[i, idx_i] for all i and window_position
-        # idx has shape (m, vp_lookback)
-        # vw has shape (m, vp_lookback)
-        rows = np.arange(m)[:, None] # (m, 1)
-        # idx[rows, cols] maps to hist[rows, idx]
-        # We can use np.add.at for unbuffered in-place addition, but it's slow.
-        # Vectorized alternative:
-        flat_idx = idx.ravel()
-        flat_rows = np.repeat(np.arange(m), vp_lookback)
-        flat_vol = vw.ravel()
-        
-        # Using bincount with weights for high speed if we can map (row, bin) to a flat index
-        # global_bin_idx = row * vp_bins + bin
-        combined_idx = flat_rows * vp_bins + flat_idx
-        hist_flat = np.bincount(combined_idx, weights=flat_vol, minlength=m * vp_bins)
-        hist = hist_flat.reshape(m, vp_bins)
+        # Use Numba kernel for fast rolling histogram
+        hist = _numba_rolling_weighted_histogram(bin_idx_all, v_np, vp_lookback, vp_bins)
 
         hist_sum = hist.sum(axis=1) + eps
         p = hist / hist_sum[:, None]

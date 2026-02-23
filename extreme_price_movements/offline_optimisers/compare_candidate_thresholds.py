@@ -92,24 +92,6 @@ STAGE1_SYMBOL_SUBSAMPLE_STEP = 1
 STAGE23_SYMBOL_SUBSAMPLE_STEP = 1
 GEOMETRY_CACHE_MAX_MB = 1536
 EPS = 1e-12
-BASE_ROUND_TRIP_FEE_PCT = 0.3
-BASE_ROUND_TRIP_FEE_DEC = BASE_ROUND_TRIP_FEE_PCT / 100.0
-_LEGACY_ROUND_TRIP_FEE_PCT = 0.5
-_LEGACY_ROUND_TRIP_FEE_DEC = _LEGACY_ROUND_TRIP_FEE_PCT / 100.0
-
-
-def _is_close(a: float, b: float, tol: float = 1e-12) -> bool:
-    return abs(float(a) - float(b)) <= tol
-
-
-def _normalize_fee_default(value: Optional[float], *, legacy: float, new_default: float) -> float:
-    """Map unset/legacy fee defaults to the new baseline while preserving explicit overrides."""
-    if value is None:
-        return float(new_default)
-    v = float(value)
-    if _is_close(v, legacy):
-        return float(new_default)
-    return v
 
 
 def _append_suffix(path: str, suffix: str) -> str:
@@ -129,21 +111,6 @@ def _resolve_runtime_cfg(*, perps: bool = False, data_root: Optional[str] = None
         cfg = enable_perp_feature_keys(cfg)
         existing_test = list(cfg.get("test_feature_keys", TEST_FEATURE_KEYS))
         cfg["test_feature_keys"] = list(dict.fromkeys(existing_test + list(PERP_FEATURE_KEYS)))
-    cfg["label_round_trip_fee_pct"] = _normalize_fee_default(
-        cfg.get("label_round_trip_fee_pct"),
-        legacy=_LEGACY_ROUND_TRIP_FEE_PCT,
-        new_default=BASE_ROUND_TRIP_FEE_PCT,
-    )
-    cfg["sample_weight_fee_rt"] = _normalize_fee_default(
-        cfg.get("sample_weight_fee_rt"),
-        legacy=_LEGACY_ROUND_TRIP_FEE_DEC,
-        new_default=BASE_ROUND_TRIP_FEE_DEC,
-    )
-    cfg["optimiser_fee_pct"] = _normalize_fee_default(
-        cfg.get("optimiser_fee_pct"),
-        legacy=_LEGACY_ROUND_TRIP_FEE_DEC,
-        new_default=BASE_ROUND_TRIP_FEE_DEC,
-    )
     return cfg
 
 

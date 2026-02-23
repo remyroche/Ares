@@ -2584,7 +2584,7 @@ def _apply_prod_aligned_tp_centering(
         tprint("[prod_aligned_tp] WARNING no ATR% samples in production universe; skipping TP centering override")
         return cfgs, {}
 
-    fee_pct_total = float(runtime.get("tbm_prod_aligned_fee_pct_total", runtime.get("fee_pct", 0.003)))
+    fee_pct_total = float(runtime.get("tbm_prod_aligned_fee_pct_total", runtime.get("fee_pct", 0.005)))
     worst_h = int(runtime.get("tbm_prod_aligned_worst_horizon", 2))
     q = float(runtime.get("tbm_prod_aligned_q", 0.25))
     alpha = float(runtime.get("tbm_prod_aligned_alpha", 0.45))
@@ -2730,7 +2730,7 @@ def base_param_template(cfg_runtime: Optional[Dict[str, Any]] = None) -> Dict[st
         "base_atr_window": int(tbm_defaults["base_atr_window"]),
         # Production-aligned TP centering knobs.
         "tbm_prod_aligned_tp_enable": bool((cfg_runtime if cfg_runtime is not None else CFG).get("tbm_prod_aligned_tp_enable", True)),
-        "tbm_prod_aligned_fee_pct_total": float((cfg_runtime if cfg_runtime is not None else CFG).get("tbm_prod_aligned_fee_pct_total", 0.003)),
+        "tbm_prod_aligned_fee_pct_total": float((cfg_runtime if cfg_runtime is not None else CFG).get("tbm_prod_aligned_fee_pct_total", 0.005)),
         "tbm_prod_aligned_worst_horizon": int((cfg_runtime if cfg_runtime is not None else CFG).get("tbm_prod_aligned_worst_horizon", 2)),
         "tbm_prod_aligned_q": float((cfg_runtime if cfg_runtime is not None else CFG).get("tbm_prod_aligned_q", 0.25)),
         "tbm_prod_aligned_alpha": float((cfg_runtime if cfg_runtime is not None else CFG).get("tbm_prod_aligned_alpha", 0.45)),
@@ -2942,7 +2942,7 @@ _PROMOTE_MIN_TP_OVER_SL: float = 1.05 # E[r|TP] / abs(E[r|SL]) — 5% payoff edg
 _PROMOTE_MAX_SL_TO_TP: float = 3      # SL-hit / TP-hit ratio cap — informational only; fee_ev gate is the binding constraint
 _MAX_BARRIER_RATIO: float = 1.0       # SL-mean / TP-mean cap — ensures SL isn't too high compared to TP
 _AVG_AUC_THRESHOLD: float = 0.54      # Minimum average AUC for the selected set of geometries
-_ROUND_TRIP_FEE: float = 0.003        # 0.3% round-trip fee (entry + exit) applied to both TP and SL legs
+_ROUND_TRIP_FEE: float = 0.005        # 0.5% round-trip fee (entry + exit) applied to both TP and SL legs
 _PROMOTE_MIN_FEE_EV: float = 0.0      # fee-adjusted EV must be > 0: tp_hit*(tp_mean-fee) - sl_hit*(sl_mean+fee) > 0
 
 # Tier definitions for the feasible-set builder.
@@ -2997,7 +2997,7 @@ def _build_feasible_set(
             mask = mask & (df["min_cell_tp_over_sl"].fillna(0.0) >= tp_over_sl_min)
         # Fee-adjusted EV gate: tp_hit*(tp_mean - fee) - sl_hit*(sl_mean + fee) > 0.
         # This is a hard tradeability constraint applied at ALL tiers — a geometry that
-        # cannot generate positive expected value after 0.3% round-trip fees is not tradeable
+        # cannot generate positive expected value after 0.5% round-trip fees is not tradeable
         # regardless of its learnability. Applied at all tiers (never relaxed).
         if "fee_ev" in df.columns:
             mask = mask & (df["fee_ev"].fillna(-999.0) > _PROMOTE_MIN_FEE_EV)

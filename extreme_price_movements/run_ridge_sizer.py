@@ -200,6 +200,12 @@ def load_trade_outcomes(data_root: str, run_id: str, oof_df: pd.DataFrame) -> pd
             outcomes["timestamp"] = oof_df["timestamp"].values
         if "symbol" in oof_df.columns:
             outcomes["symbol"] = oof_df["symbol"].values
+        if "u_policy_net" in oof_df.columns:
+            outcomes["u_policy_net"] = oof_df["u_policy_net"].values
+        if "u_policy" in oof_df.columns:
+            outcomes["u_policy"] = oof_df["u_policy"].values
+        if "exit_code" in oof_df.columns:
+            outcomes["exit_code"] = oof_df["exit_code"].values
         tprint(f"Constructed trade outcomes from OOF context: {len(outcomes)} trades")
         return outcomes
     

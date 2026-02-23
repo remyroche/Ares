@@ -1190,6 +1190,12 @@ def run_ridge_target_race(
     alpha: float = 0.5,
     cost_pct: float = 0.0005,
     clip_L: float = 0.02,
+    select_metric: str = "topq_u_policy",
+    topq: float = 0.30,
+    u_policy: np.ndarray | None = None,
+    require_positive_topq_u: bool = True,
+    topq_min_samples: int = 50,
+    trade_mask: np.ndarray | None = None,
 ) -> tuple:
     """Race target representations for Ridge position sizer.
 
@@ -1260,11 +1266,12 @@ def run_ridge_target_race(
         # Simple 3-fold walk-forward CV with Ridge
         fold_size = n // 3
         ics = []
+        oof_pred = np.full(n, np.nan, dtype=float)
         for fold in range(3):
             val_start = fold * fold_size
             val_end = val_start + fold_size if fold < 2 else n
             # Train on everything before val_start (walk-forward)
-            train_end = max(0, val_start - 5)  # 5-sample purge
+            train_end = max(0, val_start - 12)  # 12-bar purge
             if train_end < 50:
                 continue
             tr_idx = np.arange(0, train_end)
@@ -1284,27 +1291,52 @@ def run_ridge_target_race(
                 mdl = SkRidge(alpha=alpha, fit_intercept=True)
                 mdl.fit(X_tr_s, y_tr)
                 pred = mdl.predict(X_va_s)
-                # Refactor: IC is about price, not relative rank
+                oof_pred[va_idx] = pred
+                # Diagnostic IC (always computed/logged)
                 y_va_ret = returns[va_idx]
                 if np.std(pred) < 1e-12 or np.std(y_va_ret) < 1e-12:
                     ic_fold = 0.0
                 else:
                     ic_fold = float(spearmanr(pred, y_va_ret).correlation)
-                
                 if np.isfinite(ic_fold):
                     ics.append(ic_fold)
             except Exception:
                 continue
 
         mean_ic = float(np.mean(ics)) if ics else -1.0
-        race_log.append(f"      {tname}: IC={mean_ic:.4f} ({len(ics)} folds)")
 
-        if mean_ic > best_ic:
-            best_ic = mean_ic
+        # Primary selector: top-q realized policy utility
+        topq_u = float("nan")
+        topq_n = 0
+        pass_gate = True
+        if select_metric == "topq_u_policy":
+            if u_policy is None:
+                raise ValueError("u_policy is required when select_metric='topq_u_policy'")
+            up = np.asarray(u_policy, dtype=float)
+            _tm = np.ones(len(oof_pred), dtype=bool) if trade_mask is None else np.asarray(trade_mask[:len(oof_pred)], dtype=bool)
+            mask = np.isfinite(oof_pred) & np.isfinite(up[:len(oof_pred)]) & _tm
+            if np.any(mask):
+                pred_use = oof_pred[mask]
+                up_use = up[:len(oof_pred)][mask]
+                k_top = max(1, int(np.ceil(float(topq) * len(pred_use))))
+                idx_top = np.argsort(pred_use)[-k_top:]
+                topq_u = float(np.mean(up_use[idx_top]))
+                topq_n = int(k_top)
+                pass_gate = (topq_n >= int(topq_min_samples)) and ((topq_u > 0.0) if bool(require_positive_topq_u) else True)
+
+        race_log.append(
+            f"      {tname}: IC={mean_ic:.4f} ({len(ics)} folds) TopQMeanU={topq_u:.6f} n_top={topq_n} gate={pass_gate}"
+        )
+
+        score = (topq_u if pass_gate else -1e12) if select_metric == "topq_u_policy" else mean_ic
+        if not np.isfinite(score):
+            score = -1e12
+        if score > best_ic:
+            best_ic = score
             best_name = tname
             best_y = y_cand
 
-    race_log.append(f"    Winner: {best_name} (IC={best_ic:.4f})")
+    race_log.append(f"    Winner: {best_name} (score={best_ic:.6f}, metric={select_metric})")
     return best_name, best_y, race_log
 
 
@@ -1473,6 +1505,10 @@ class RidgePositionSizer:
         non_negative: bool = True,
         top_k_pct: float = 0.30,
         random_state: int = 42,
+        select_metric: str = "topq_u_policy",
+        select_topq: float = 0.30,
+        require_positive_topq_u: bool = True,
+        topq_min_samples: int = 50,
     ):
         """Initialize the Ridge Position Sizer.
         
@@ -1496,6 +1532,10 @@ class RidgePositionSizer:
         self.non_negative = non_negative
         self.top_k_pct = top_k_pct
         self.random_state = random_state
+        self.select_metric = str(select_metric)
+        self.select_topq = float(select_topq)
+        self.require_positive_topq_u = bool(require_positive_topq_u)
+        self.topq_min_samples = int(topq_min_samples)
         
         # Fitted attributes
         self.weights_: Optional[np.ndarray] = None
@@ -1700,10 +1740,10 @@ class RidgePositionSizer:
         # Otherwise use index-based purging (purge=5 means 5 samples)
         if timestamps is not None:
             # Time-based purging: purge 5 hours (18000 seconds) before test set
-            pkf = PurgedKFold(n_splits=3, purge=18000, embargo=7200, times=timestamps)
+            pkf = PurgedKFold(n_splits=3, purge=43200, embargo=43200, times=timestamps)
         else:
             # Index-based purging: purge 5 samples before test set
-            pkf = PurgedKFold(n_splits=3, purge=5, embargo=2)
+            pkf = PurgedKFold(n_splits=3, purge=12, embargo=12)
         
         oof_preds = np.full(len(y), np.nan)
         oof_true_raw = np.full(len(y), np.nan)
@@ -1961,9 +2001,26 @@ class RidgePositionSizer:
         # Run target representation race to find best y for this bucket
         tprint("  Running target representation race...")
         # Note: race expects gross returns for IC evaluation, but candidate targets built off y_net
+        _u_policy = None
+        if "u_policy_net" in trade_outcomes.columns:
+            _u_policy = np.asarray(trade_outcomes["u_policy_net"].values, dtype=float)
+        elif "u_policy" in trade_outcomes.columns:
+            _u_policy = np.asarray(trade_outcomes["u_policy"].values, dtype=float)
+        _trade_mask = np.asarray(trade_outcomes["trade_mask"].values, dtype=bool) if "trade_mask" in trade_outcomes.columns else np.ones(len(X), dtype=bool)
+        if self.select_metric == "topq_u_policy" and _u_policy is None:
+            raise ValueError(
+                "Ridge sizer requires trade_outcomes['u_policy'] when sizer_select_metric='topq_u_policy'. "
+                "Ensure meta OOF artifacts persist policy utility labels."
+            )
         tgt_name, y, race_log = run_ridge_target_race(
             X, y_gross, symbols, timestamps,
             alpha=0.5, cost_pct=self.cost_pct,
+            select_metric=self.select_metric,
+            topq=self.select_topq,
+            u_policy=_u_policy,
+            require_positive_topq_u=self.require_positive_topq_u,
+            topq_min_samples=self.topq_min_samples,
+            trade_mask=_trade_mask,
         )
         for line in race_log:
             tprint(line)
@@ -2323,6 +2380,10 @@ def run_ridge_position_sizer_step(
         n_grid_points=n_grid_points,
         cost_pct=cost_pct,
         top_k_pct=top_k_pct,
+        select_metric=cfg.get('sizer_select_metric', 'topq_u_policy'),
+        select_topq=float(cfg.get('sizer_topq', 0.30)),
+        require_positive_topq_u=bool(cfg.get('sizer_require_positive_topq_u', True)),
+        topq_min_samples=int(cfg.get('sizer_topq_min_samples', 50)),
     )
     
     # Fit

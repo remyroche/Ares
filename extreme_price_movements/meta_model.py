@@ -111,6 +111,9 @@ class MetaModel:
             # Single broad MDI v3 pass — high floor, no aggressive refinement
             fs1 = mdi_feature_selection_v3(
                 X, y_scaled, min_features=30, end_features=max_features,
+                selector_y=y,
+                selector_target="regression",
+                selector_loss="huber",
                 max_features_pct=0.90,
             )
             selected = list(fs1.selected_features)
@@ -225,7 +228,7 @@ class MetaModel:
     # ── CV evaluation ────────────────────────────────────────────────────
     def _cv_evaluate(self, kind, params, X, y, sw=None) -> Tuple[np.ndarray, float]:
         """3-fold purged CV. Returns (oof_predictions, spearman_ic)."""
-        pkf = PurgedKFold(n_splits=3, purge=5, embargo=2)
+        pkf = PurgedKFold(n_splits=3, purge=12, embargo=12)
         oof = np.full(len(y), np.nan, dtype=float)
 
         for tr, va in pkf.split(X):
@@ -647,7 +650,7 @@ class MetaClassifierModel:
         oof_probs shape: (N, 3).
         """
         from sklearn.metrics import brier_score_loss
-        pkf = PurgedKFold(n_splits=3, purge=5, embargo=2)
+        pkf = PurgedKFold(n_splits=3, purge=12, embargo=12)
         oof = np.full((len(y), 3), np.nan, dtype=float)
 
         for tr, va in pkf.split(X):
@@ -772,7 +775,9 @@ class MetaClassifierModel:
             y_per_horizon: Optional[Dict[int, np.ndarray]] = None,
             vol_proxy: Optional[np.ndarray] = None,
             realized_u_policy: Optional[np.ndarray] = None,
-            selection_cfg: Optional[MetaClassifierSelectionConfig] = None):
+            selection_cfg: Optional[MetaClassifierSelectionConfig] = None,
+            y_class_override: Optional[np.ndarray] = None,
+            trade_mask: Optional[np.ndarray] = None):
         """Race classifiers using multi-barrier labels (multiclass if vol_proxy provided)."""
         import time as _time
         _t0 = _time.monotonic()
@@ -791,7 +796,11 @@ class MetaClassifierModel:
         tprint(f"  Features: {X_meta.shape[1]} -> {len(selected_cols)}")
 
         # Build labels
-        if vol_proxy is not None and y_per_horizon:
+        if y_class_override is not None:
+            y_class = np.asarray(y_class_override, dtype=np.int8)
+            w_barrier = np.ones(len(y_class), dtype=np.float32)
+            tprint(f"  Multiclass labels from engine (0=SL, 1=TO, 2=TP): {np.bincount(y_class, minlength=3)}")
+        elif vol_proxy is not None and y_per_horizon:
             # Drop samples with undefined volatility (Task 5)
             valid_vol = np.isfinite(vol_proxy) & (vol_proxy > 1e-9)
             if not valid_vol.all():
@@ -806,6 +815,8 @@ class MetaClassifierModel:
                     groups = np.asarray(groups)[valid_idx]
                 if realized_u_policy is not None:
                     realized_u_policy = np.asarray(realized_u_policy, dtype=float)[valid_idx]
+                if trade_mask is not None:
+                    trade_mask = np.asarray(trade_mask, dtype=bool)[valid_idx]
                 y_per_horizon = {h: v[valid_idx] for h, v in y_per_horizon.items()}
                 vol_proxy = vol_proxy[valid_idx]
 
@@ -851,6 +862,7 @@ class MetaClassifierModel:
                 p_pred=oof,
                 realized_u_policy=realized_u_policy,
                 cfg=selection_cfg,
+                trade_mask=trade_mask,
             )
             metrics["model"] = name
             metrics["logloss_cv"] = logloss

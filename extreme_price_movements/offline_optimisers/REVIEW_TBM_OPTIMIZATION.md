@@ -40,6 +40,36 @@ The current implementation manually orchestrates a two-stage process:
 
 While this mimics the logic of the old grid search refinement, it is less efficient than allowing a single, longer Optuna study to naturally converge. TPE (Tree-structured Parzen Estimator) is designed to narrow down the search space automatically. The manual restart loses the history (meta-information) built up during Stage 1, effectively resetting the sampler's knowledge for each refinement.
 
+## Diversity & Quality Analysis
+
+**Question:** *Would this setup (single long Optuna study) still allow us to get a set of diverse & high quality geometries?*
+
+**Answer:** Yes, but with a specific post-processing strategy.
+
+Grid search naturally produces diversity by systematically covering the space. Optuna's TPE sampler, by design, converges on the "best" region, potentially reducing diversity (all top trials might cluster around a single optimal geometry).
+
+To guarantee both **Quality** and **Diversity**, we recommend the following **"Generate -> Filter -> Select"** pipeline:
+
+1.  **Generate Pool (Exploration):**
+    - Run a single, large Optuna study (e.g., 500-1000 trials).
+    - **Crucial:** Use `optuna.samplers.TPESampler(n_startup_trials=100)` to ensure sufficient random exploration before convergence.
+    - This creates a large "pool" of candidate geometries, some excellent (converged) and some diverse (exploratory).
+
+2.  **Filter Quality:**
+    - Filter the pool to keep only "high quality" candidates.
+    - Criterion: `stage2_score >= threshold` (e.g., top 20% or absolute value > 0.5).
+    - This ensures any geometry we select is tradeable and performant.
+
+3.  **Select Diverse (Greedy Selection):**
+    - Apply the existing `_diverse_subset` function (Jaccard distance on trade labels) to this high-quality pool.
+    - **Mechanism:**
+        - Pick the single best scorer.
+        - Iteratively pick the next best scorer that has `distance > min_distance` from all already selected configs.
+        - Repeat until `N` geometries are found.
+    - This leverages the existing robust diversity logic but feeds it a much richer, quality-assured pool than the limited grid search ever could.
+
+**Conclusion:** This pipeline is superior to grid search because it focuses compute on promising regions (Quality) while the explicit post-selection step guarantees behavioral variety (Diversity).
+
 ## Recommendations
 
 ### 1. Fix the Objective Function

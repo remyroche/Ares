@@ -4525,7 +4525,11 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
         if _bret_key in _bucket_y_ret:
             _bret = _bucket_y_ret[_bret_key]
             if len(_bret) == len(meta_obj.oof_probs):
-                _oof_score = meta_obj.oof_probs[:, 2] if (is_clf and np.ndim(meta_obj.oof_probs) == 2) else meta_obj.oof_probs
+                if is_clf and np.ndim(meta_obj.oof_probs) == 2:
+                    # Align diagnostics with live execution scoring (EV proxy): 2*P(TP) - P(SL)
+                    _oof_score = meta_obj.oof_probs[:, 2] * 2.0 - meta_obj.oof_probs[:, 0]
+                else:
+                    _oof_score = meta_obj.oof_probs
                 _dm = _detailed_oof_metrics(_oof_score, _bret, cost=(2.0 * (float(cfg.get("fee_bps", 25.0)) + float(cfg.get("slippage_bps", 0.0))) / 10000.0))
                 tprint(
                     f"  {key:22s} {_mtype:5s} {_winner_name:18s} "
@@ -4551,12 +4555,27 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             
             meta_oof_path = os.path.join(meta_oof_dir, f"meta_oof_{key}.parquet")
             _is_clf_key = key.endswith("_clf")
-            _oof_pred_1d = meta.oof_probs[:, 2] if (_is_clf_key and np.ndim(meta.oof_probs) == 2) else meta.oof_probs
-            oof_df = pd.DataFrame({
-                "oof_pred": _oof_pred_1d,
-                "index": range(len(meta.oof_probs)),
-                "is_long": is_long,
-            })
+            if _is_clf_key and np.ndim(meta.oof_probs) == 2:
+                p_sl = np.asarray(meta.oof_probs[:, 0], dtype=float)
+                p_to = np.asarray(meta.oof_probs[:, 1], dtype=float)
+                p_tp = np.asarray(meta.oof_probs[:, 2], dtype=float)
+                oof_ev = 2.0 * p_tp - p_sl
+                oof_df = pd.DataFrame({
+                    "oof_pred": oof_ev,
+                    "oof_ev": oof_ev,
+                    "oof_p_sl": p_sl,
+                    "oof_p_to": p_to,
+                    "oof_p_tp": p_tp,
+                    "index": range(len(meta.oof_probs)),
+                    "is_long": is_long,
+                })
+            else:
+                _oof_pred_1d = np.asarray(meta.oof_probs, dtype=float)
+                oof_df = pd.DataFrame({
+                    "oof_pred": _oof_pred_1d,
+                    "index": range(len(meta.oof_probs)),
+                    "is_long": is_long,
+                })
             
             # Attach raw returns from per-bucket storage (key stored directly)
             if key in _bucket_y_ret:
@@ -4986,15 +5005,51 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
                 best_m["models_by_h"] = {h: {"model": v["model"], "feat_cols": v["feat_cols"], "H": v["H"], "selected_features": feature_selection_by_h.get(h, v["feat_cols"])} for h, v in per_h_models.items()}
                 tprint(f"  {side}_{k}: Deploying {len(per_h_models)} horizons: {sorted(per_h_models.keys())} (primary H={best_m['H']})")
 
-            # --- Save OOF predictions as lightweight parquet for fast meta loading ---
+            # --- Save OOF predictions for fast meta loading + richer diagnostics ---
             _run_id = cfg.get("run_id", "default")
             oof_dir = os.path.join(cfg["data_root"], "artifacts", _run_id, "oof")
             os.makedirs(oof_dir, exist_ok=True)
             for _h, _v in per_h_models.items():
                 _race = _v["model"]
-                if _race.oof_probs is not None:
-                    _oof_path = os.path.join(oof_dir, f"oof_{side}_{k}_H{_h}.parquet")
-                    pd.DataFrame({"oof_prob": _race.oof_probs}).to_parquet(_oof_path, index=False)
+                if _race.oof_probs is None:
+                    continue
+
+                _oof_path = os.path.join(oof_dir, f"oof_{side}_{k}_H{_h}.parquet")
+                _gate_key = f"train_{side}_{k}_{_h}"
+                _df_oof = datasets.get(_gate_key)
+                _n = int(len(_race.oof_probs))
+                if _df_oof is not None:
+                    _n = min(_n, int(len(_df_oof)))
+
+                _payload = {
+                    "oof_prob": np.asarray(_race.oof_probs, dtype=float)[:_n],
+                    "index": np.arange(_n, dtype=np.int64),
+                }
+
+                if _df_oof is not None:
+                    if "__ts__" in _df_oof.columns:
+                        _payload["timestamp"] = pd.to_datetime(_df_oof["__ts__"]).astype("datetime64[ns]").values[:_n]
+                    elif "timestamp" in _df_oof.columns:
+                        _payload["timestamp"] = pd.to_datetime(_df_oof["timestamp"]).astype("datetime64[ns]").values[:_n]
+
+                    if "__symbol__" in _df_oof.columns:
+                        _payload["symbol"] = _df_oof["__symbol__"].astype(str).values[:_n]
+                    elif "symbol" in _df_oof.columns:
+                        _payload["symbol"] = _df_oof["symbol"].astype(str).values[:_n]
+                    elif "asset" in _df_oof.columns:
+                        _payload["symbol"] = _df_oof["asset"].astype(str).values[:_n]
+
+                    if "__y_bin__" in _df_oof.columns:
+                        _payload["y_bin"] = np.asarray(_df_oof["__y_bin__"], dtype=float)[:_n]
+                    if "__y_ret__" in _df_oof.columns:
+                        _payload["y_ret"] = np.asarray(_df_oof["__y_ret__"], dtype=float)[:_n]
+
+                _dm_best = _race.detailed_metrics.get(_race.best_model_name, {}) if hasattr(_race, "detailed_metrics") else {}
+                _oof_raw = _dm_best.get("oof_raw")
+                if _oof_raw is not None and len(_oof_raw) >= _n:
+                    _payload["oof_raw"] = np.asarray(_oof_raw, dtype=float)[:_n]
+
+                pd.DataFrame(_payload).to_parquet(_oof_path, index=False)
 
             # --- Save each ModelRace in native format (fast load) ---
             models_dir = os.path.join(cfg["data_root"], "artifacts", _run_id, "models", "native")

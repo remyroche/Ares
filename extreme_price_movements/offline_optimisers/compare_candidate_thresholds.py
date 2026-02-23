@@ -403,6 +403,80 @@ def precompute_filter_masks(
     }
 
 
+def _resolve_feature_aligned_array(
+    feats: dict,
+    candidate_names: list[str],
+    target_index: pd.Index,
+    target_columns: pd.Index,
+    float_dtype: np.dtype,
+) -> Optional[np.ndarray]:
+    """Return aligned feature array for the first available feature name."""
+    feat = _first_available_feature(feats, candidate_names)
+    if feat is None:
+        return None
+    aligned = feat.reindex(index=target_index, columns=target_columns)
+    return aligned.to_numpy(dtype=float_dtype, copy=False)
+
+
+def apply_tail_filter_on_prefilter(
+    prefilter_arr: np.ndarray,
+    tail_mode: Optional[str],
+    top_frac: Optional[float],
+    vol_tail_arr: Optional[np.ndarray],
+    entropy_tail_arr: Optional[np.ndarray],
+) -> np.ndarray:
+    """Apply a top-tail filter computed strictly inside an existing prefilter mask.
+
+    The row-wise quantile thresholds are estimated only on points already selected
+    by `prefilter_arr` (never on the full dataset).
+    """
+    mode = str(tail_mode or "none").lower()
+    frac = float(top_frac or 0.0)
+    if mode in {"none", "off", ""} or frac <= 0.0 or frac >= 1.0:
+        return prefilter_arr
+
+    out = np.array(prefilter_arr, copy=True, dtype=bool)
+    n_rows = out.shape[0]
+    q = 1.0 - frac
+
+    for i in range(n_rows):
+        row_base = out[i]
+        n_base = int(row_base.sum())
+        if n_base < 8:
+            continue
+
+        keep_vol = None
+        keep_entropy = None
+
+        if vol_tail_arr is not None and mode in {"vol24_top", "vol24_top20", "vol_or_entropy_top20"}:
+            row_vol = vol_tail_arr[i]
+            valid = row_base & np.isfinite(row_vol)
+            if int(valid.sum()) >= 8:
+                thr = np.nanquantile(row_vol[valid], q)
+                keep_vol = valid & (row_vol >= thr)
+
+        if entropy_tail_arr is not None and mode in {"entropy_top", "entropy_top20", "vol_or_entropy_top20"}:
+            row_ent = entropy_tail_arr[i]
+            valid = row_base & np.isfinite(row_ent)
+            if int(valid.sum()) >= 8:
+                thr = np.nanquantile(row_ent[valid], q)
+                keep_entropy = valid & (row_ent >= thr)
+
+        if mode in {"vol24_top", "vol24_top20"} and keep_vol is not None:
+            out[i] = keep_vol
+        elif mode in {"entropy_top", "entropy_top20"} and keep_entropy is not None:
+            out[i] = keep_entropy
+        elif mode == "vol_or_entropy_top20":
+            if keep_vol is not None and keep_entropy is not None:
+                out[i] = keep_vol | keep_entropy
+            elif keep_vol is not None:
+                out[i] = keep_vol
+            elif keep_entropy is not None:
+                out[i] = keep_entropy
+
+    return out
+
+
 def to_panel_dict(panel_df: pd.DataFrame) -> dict:
     """Convert OHLCV dataframe into training-compatible wide panel dict."""
     if isinstance(panel_df, dict):
@@ -3188,6 +3262,8 @@ def run_comparison(
     symbol_step: int = 3,
     symbol_limit: int = 0,
     save_sample_weights: bool = False,
+    tail_filter_mode: str = "auto_compare",
+    tail_filter_top_frac: float = 0.20,
     runtime_cfg: Optional[dict] = None,
 ):
     """
@@ -3592,6 +3668,41 @@ def run_comparison(
     else:
         tlog("Stage 3 setup skipped")
 
+    # Tail-regime variants: by default, compare with/without tail filter.
+    requested_tail_mode = str(tail_filter_mode or "auto_compare").lower()
+    tail_top_frac = float(tail_filter_top_frac)
+    if requested_tail_mode in {"auto", "auto_compare", "default"}:
+        tail_variants = [
+            ("TBASE", "none"),
+            ("TVE20", "vol_or_entropy_top20"),
+        ]
+    elif requested_tail_mode in {"none", "off", ""}:
+        tail_variants = [("", "none")]
+    else:
+        tail_variants = [("", requested_tail_mode)]
+
+    if len(tail_variants) > 1:
+        expanded_tail_configs = []
+        for cfg in configs:
+            for suffix, mode_name in tail_variants:
+                cfg_t = dict(cfg)
+                cfg_t["tail_filter_mode"] = mode_name
+                cfg_t["tail_filter_top_frac"] = tail_top_frac
+                cfg_t["config_id"] = f"{cfg['config_id']}_{suffix}" if suffix else cfg["config_id"]
+                expanded_tail_configs.append(cfg_t)
+        configs = expanded_tail_configs
+        tlog(
+            "Tail filter auto-compare enabled: "
+            f"variants={[m for _, m in tail_variants]}, top_frac={tail_top_frac:.0%}, "
+            f"expanded_configs={len(configs)}"
+        )
+    else:
+        mode_name = tail_variants[0][1]
+        for cfg in configs:
+            cfg["tail_filter_mode"] = mode_name
+            cfg["tail_filter_top_frac"] = tail_top_frac
+        tlog(f"Tail filter fixed mode: {mode_name}, top_frac={tail_top_frac:.0%}")
+
     # Final safety dedupe for config ids before execution.
     cfg_map = {str(c["config_id"]): c for c in configs}
     if len(cfg_map) < len(configs):
@@ -3614,6 +3725,27 @@ def run_comparison(
         vol_thresholds=vol_thresholds,
         sc_thresholds=sc_thresholds,
         float_dtype=float_dtype,
+    )
+
+    vol_tail_arr = _resolve_feature_aligned_array(
+        feats,
+        ["rv_24h", "rv_48h", "volatility_zscore", "vol_z", "rvol_z"],
+        target_index=metric_ref.index,
+        target_columns=metric_ref.columns,
+        float_dtype=float_dtype,
+    )
+    entropy_tail_arr = _resolve_feature_aligned_array(
+        feats,
+        ["spectral_entropy_ret_24", "shannon_entropy_ret_16", "perm_entropy_ret_24", "volume_entropy_24"],
+        target_index=metric_ref.index,
+        target_columns=metric_ref.columns,
+        float_dtype=float_dtype,
+    )
+    tlog(
+        "Tail filter features: "
+        f"requested_mode={tail_filter_mode}, top_frac={float(tail_filter_top_frac):.0%}, "
+        f"vol_feature={'yes' if vol_tail_arr is not None else 'no'}, "
+        f"entropy_feature={'yes' if entropy_tail_arr is not None else 'no'}"
     )
 
     base_mask_cache: dict[tuple[str, float], np.ndarray] = {}
@@ -3699,7 +3831,7 @@ def run_comparison(
         stage_label = infer_stage_label(config_id)
         is_stage1 = stage_label == "Stage 1"
         logger.info(f"Running config [{stage_label}]: {config_id} (mode={mode}, pct={pct})")
-        tlog(f"Config start: {config_id}")
+        tlog(f"Config start: {config_id} | tail_mode={cfg.get('tail_filter_mode', tail_filter_mode)} top_frac={float(cfg.get('tail_filter_top_frac', tail_filter_top_frac)):.0%}")
         
         try:
             if mode not in {"fixed", "atr", "atr_vol_weight", "cusum"}:
@@ -3741,6 +3873,13 @@ def run_comparison(
                     sc_mask = filter_mask_pack["sc_masks"].get(float(min_sign_consistency))
                     if sc_mask is not None:
                         prefilter_arr &= sc_mask
+                prefilter_arr = apply_tail_filter_on_prefilter(
+                    prefilter_arr=prefilter_arr,
+                    tail_mode=cfg.get("tail_filter_mode", tail_filter_mode),
+                    top_frac=float(cfg.get("tail_filter_top_frac", tail_filter_top_frac)),
+                    vol_tail_arr=vol_tail_arr,
+                    entropy_tail_arr=entropy_tail_arr,
+                )
             if mode == "cusum" and metric_for_mode is not None:
                 trig = metric_for_mode.to_numpy(dtype=np.float32, copy=False)
                 trig_mask = np.isfinite(trig) & (np.abs(trig) > 0)
@@ -4383,6 +4522,21 @@ if __name__ == "__main__":
         action="store_true",
         help="Export training-slice sample weights to <output>_sample_weights.csv for downstream base/meta models"
     )
+    parser.add_argument(
+        "--tail-filter-mode",
+        choices=["auto_compare", "none", "vol24_top20", "entropy_top20", "vol_or_entropy_top20"],
+        default="auto_compare",
+        help=(
+            "Tail-regime policy. auto_compare (default) runs with/without tail filter; "
+            "Quantiles are computed only within each row's pre-existing mask."
+        ),
+    )
+    parser.add_argument(
+        "--tail-filter-top-frac",
+        type=float,
+        default=0.20,
+        help="Top fraction for tail-filter quantiles (default: 0.20). Used by auto_compare tail variant too.",
+    )
 
     args = parser.parse_args()
     
@@ -4413,6 +4567,8 @@ if __name__ == "__main__":
         symbol_step=args.symbol_step,
         symbol_limit=args.symbol_limit,
         save_sample_weights=args.save_sample_weights,
+        tail_filter_mode=args.tail_filter_mode,
+        tail_filter_top_frac=args.tail_filter_top_frac,
         runtime_cfg=runtime_cfg,
     )
     
@@ -4460,6 +4616,8 @@ if __name__ == "__main__":
                 symbol_step=args.symbol_step,
                 symbol_limit=args.symbol_limit,
                 save_sample_weights=args.save_sample_weights,
+                tail_filter_mode=args.tail_filter_mode,
+                tail_filter_top_frac=args.tail_filter_top_frac,
                 runtime_cfg=runtime_cfg,
             )
         else:

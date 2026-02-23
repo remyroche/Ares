@@ -34,7 +34,22 @@ from extreme_price_movements.pipeline_steps import (
 from extreme_price_movements.optimise import run_optimise_step, Policy
 from extreme_price_movements.pipeline_steps import run_ridge_sizer_step
 
+BASE_ROUND_TRIP_FEE_PCT = 0.3
 PERP_ROUND_TRIP_FEE_PCT = 0.1
+
+
+
+def _apply_fee_model(cfg: dict, round_trip_fee_pct: float) -> None:
+    """Normalize fee keys used across training, sizing, and optimisation steps."""
+    rt = float(round_trip_fee_pct)
+    side_bps = rt * 100.0 / 2.0
+    fee_dec = rt / 100.0
+    cfg["label_round_trip_fee_pct"] = rt
+    cfg["sample_weight_fee_rt"] = fee_dec
+    cfg["fee_bps"] = side_bps
+    cfg["optimiser_fee_pct"] = fee_dec
+    cfg["ridge_cost_pct"] = fee_dec
+    cfg["limit_fill_fee_bps"] = side_bps
 
 
 def _append_suffix(path: str, suffix: str) -> str:
@@ -328,16 +343,29 @@ def run_all(cfg, ts_override=None):
             tprint("\n=== FINAL PIPELINE SUMMARY ===")
             try:
                 df = pd.read_csv(res_path)
-                pnl = df["pnl"].sum()
                 count = len(df)
-                win_rate = (df["pnl"] > 0).mean() if count > 0 else 0.0
 
-                avg_pnl = pnl / count if count > 0 else 0.0
+                # Gross vs net summary with explicit distinction.
+                gross_total = float(df["gross_ret"].sum()) if "gross_ret" in df.columns else float("nan")
+                if "net_ret_equity" in df.columns:
+                    net_total = float(df["net_ret_equity"].sum())
+                elif "pnl" in df.columns:
+                    # Legacy backtest output stores net return under `pnl`.
+                    net_total = float(df["pnl"].sum())
+                else:
+                    net_total = float("nan")
 
-                tprint(f"Total PnL: {pnl:.4f}")
+                positive_net_share = float((df["pnl"] > 0).mean()) if (count > 0 and "pnl" in df.columns) else float("nan")
+                avg_net_per_trade = (net_total / count) if count > 0 and pd.notna(net_total) else float("nan")
+
+                if pd.notna(gross_total):
+                    tprint(f"Total Gross Return: {gross_total:.4f}")
+                tprint(f"Total Net Return: {net_total:.4f}" if pd.notna(net_total) else "Total Net Return: n/a")
                 tprint(f"Total Trades: {count}")
-                tprint(f"Win Rate: {win_rate:.2%}")
-                tprint(f"Avg PnL per Trade: {avg_pnl:.4f}")
+                if pd.notna(positive_net_share):
+                    tprint(f"Positive-Net Share: {positive_net_share:.2%}")
+                if pd.notna(avg_net_per_trade):
+                    tprint(f"Avg Net Return per Trade: {avg_net_per_trade:.4f}")
                 tprint("==============================\n")
             except Exception as e:
                 tprint(f"Could not read results for summary: {e}")
@@ -469,6 +497,7 @@ def main():
     args = parser.parse_args()
 
     cfg = CFG.copy()
+    _apply_fee_model(cfg, BASE_ROUND_TRIP_FEE_PCT)
     if args.perps:
         cfg["use_perps"] = True
         cfg["data_root"] = _append_suffix(cfg.get("data_root", "../data"), "_perp")
@@ -483,12 +512,7 @@ def main():
         os.environ["EPM_HF_DATA_DIR"] = str(cfg["hf_data_dir"])
         cfg = enable_perp_feature_keys(cfg)
         # Perp-mode fee model: 0.10% round-trip (5 bps/side).
-        cfg["label_round_trip_fee_pct"] = float(PERP_ROUND_TRIP_FEE_PCT)
-        cfg["sample_weight_fee_rt"] = float(PERP_ROUND_TRIP_FEE_PCT) / 100.0
-        cfg["fee_bps"] = float(PERP_ROUND_TRIP_FEE_PCT) * 100.0 / 2.0
-        cfg["optimiser_fee_pct"] = float(PERP_ROUND_TRIP_FEE_PCT) / 100.0
-        cfg["ridge_cost_pct"] = float(PERP_ROUND_TRIP_FEE_PCT) / 100.0
-        cfg["limit_fill_fee_bps"] = float(PERP_ROUND_TRIP_FEE_PCT) * 100.0 / 2.0
+        _apply_fee_model(cfg, PERP_ROUND_TRIP_FEE_PCT)
 
     _configure_report_roots(cfg)
 

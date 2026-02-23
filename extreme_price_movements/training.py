@@ -1900,7 +1900,7 @@ def _optimize_training_sample_weights(
         fee_rt = float(
             cfg.get(
                 "sample_weight_fee_rt",
-                float(cfg.get("label_round_trip_fee_pct", 0.5)) / 100.0,
+                float(cfg.get("label_round_trip_fee_pct", 0.3)) / 100.0,
             )
         )
         components["tp_opportunity"] = sample_weight_tp_classifier(
@@ -1922,7 +1922,7 @@ def _optimize_training_sample_weights(
         fee_rt = float(
             cfg.get(
                 "sample_weight_fee_rt",
-                float(cfg.get("label_round_trip_fee_pct", 0.5)) / 100.0,
+                float(cfg.get("label_round_trip_fee_pct", 0.3)) / 100.0,
             )
         )
         components["meta_magnitude"] = sample_weight_meta_regression(
@@ -2855,7 +2855,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
     else:
         atr_pct_df = None
 
-    fee_pct = float(cfg.get("label_round_trip_fee_pct", 0.5)) / 100.0
+    fee_pct = float(cfg.get("label_round_trip_fee_pct", 0.3)) / 100.0
     min_tp_hit = float(cfg.get("label_min_tp_hit_rate", 0.02))
     min_tp_hit_h2 = float(cfg.get("label_min_tp_hit_rate_h2", 0.01))
     max_timeout = float(cfg.get("label_max_timeout_rate", 0.90))
@@ -4509,7 +4509,7 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             tprint(f"  Fitting MetaClassifierModel {side}_{k} ({_time.monotonic()-_t0_meta:.1f}s)...")
             meta_clf = MetaClassifierModel()
             meta_clf.strategy_name = f"{side}_{k}"
-            meta_clf.FEE_PER_ROUND_TRIP = float(cfg.get("label_round_trip_fee_pct", 0.5)) / 100.0
+            meta_clf.FEE_PER_ROUND_TRIP = float(cfg.get("label_round_trip_fee_pct", 0.3)) / 100.0
             # Pass vol_proxy for risk-unit thresholding
             meta_clf.fit(X_meta_base, y_target_clf, sample_weight=w_meta_clf, groups=meta_groups,
                          y_per_horizon=_y_per_h, vol_proxy=_vol_proxy)

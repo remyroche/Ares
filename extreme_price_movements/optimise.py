@@ -165,7 +165,7 @@ def run_optimise_step(trades: pd.DataFrame, atr_15m: pd.Series, output_path: str
     # List to collect all trials across all buckets and steps
     all_trials_log = []
 
-    fee_pct = float((trades.attrs.get("fee_pct") if hasattr(trades, "attrs") else None) or 0.005)
+    fee_pct = float((trades.attrs.get("fee_pct") if hasattr(trades, "attrs") else None) or 0.003)
     cost = cost or CostModel(fee_side=fee_pct / 2.0)
     cost_dict = {"fee_side": float(cost.fee_side), "slippage_side": float(cost.slippage_side), "round_trip": float(cost.round_trip)}
     cost_hash = hashlib.sha256(json.dumps(cost_dict, sort_keys=True).encode("utf-8")).hexdigest()[:10]

@@ -910,6 +910,8 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
 
     signal_params = (risk_config or {}).get("signal_params", {}) if isinstance(risk_config, dict) else {}
     thr_long = float(signal_params.get("thr_long", cfg.get("thr_long", 0.01)))
+    # Unified score convention: higher score is always better (long and short).
+    # For short buckets we keep side information separate from score orientation.
     thr_short = float(signal_params.get("thr_short", cfg.get("thr_short", -0.01)))
     k_long = int(signal_params.get("k_long", cfg.get("k_long", 10)))
     k_short = int(signal_params.get("k_short", cfg.get("k_short", 10)))
@@ -977,15 +979,13 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
             if t_dir > 0:
                 mode = "best"
                 thr = float(signal_params.get(f"thr_mr_{mode}", thr_short))
-                neg_s_mr = -s_mr # meta scores are quality, we negate for short signal comparison
-                if neg_s_mr < thr:
-                    potential_signal = {"symbol": sym, "side": "short", "score": neg_s_mr, "dom": "mr", "mode": mode}
+                if s_mr > thr:
+                    potential_signal = {"symbol": sym, "side": "short", "score": s_mr, "dom": "mr", "mode": mode}
             else:
                 mode = "worst"
                 thr = float(signal_params.get(f"thr_tf_{mode}", thr_short))
-                neg_s_tf = -s_tf
-                if neg_s_tf < thr:
-                    potential_signal = {"symbol": sym, "side": "short", "score": neg_s_tf, "dom": "tf", "mode": mode}
+                if s_tf > thr:
+                    potential_signal = {"symbol": sym, "side": "short", "score": s_tf, "dom": "tf", "mode": mode}
 
         if potential_signal:
             final_orders.append(potential_signal)
@@ -996,7 +996,7 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
     longs = [o for o in final_orders if o["side"] == "long"]
     shorts = [o for o in final_orders if o["side"] == "short"]
     longs.sort(key=lambda x: x["score"], reverse=True)
-    shorts.sort(key=lambda x: x["score"])  # more negative first
+    shorts.sort(key=lambda x: x["score"], reverse=True)
     final_orders = longs[:k_long] + shorts[:k_short]
     
     # --- Global Percentile Gating ---

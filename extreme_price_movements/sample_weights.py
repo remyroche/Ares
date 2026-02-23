@@ -17,6 +17,32 @@ except ImportError:
         print(msg)
 
 
+
+def drawdown_aware_weights(dd: np.ndarray, k_dd: float = 5.0, k_early: float = 2.0, tau: float = 24.0) -> np.ndarray:
+    """Upweight samples during drawdown and especially early in each episode."""
+    dd = np.asarray(dd, dtype=float)
+    if dd.size == 0:
+        return np.array([], dtype=float)
+
+    w = 1.0 + k_dd * np.clip(dd, 0.0, 1.0)
+
+    starts = np.zeros_like(dd, dtype=float)
+    starts[0] = 1.0 if dd[0] > 0 else 0.0
+    if dd.size > 1:
+        starts[1:] = ((dd[1:] > 0) & (dd[:-1] <= 0)).astype(float)
+
+    bonus = np.zeros_like(dd, dtype=float)
+    last_start = None
+    decay_tau = max(float(tau), 1e-6)
+    for t in range(dd.size):
+        if starts[t] > 0:
+            last_start = t
+        if last_start is not None and dd[t] > 0:
+            bonus[t] = np.exp(-(t - last_start) / decay_tau)
+
+    return w * (1.0 + k_early * bonus)
+
+
 def concurrent_on_event_grid(label_times: pd.DataFrame, grid: pd.DatetimeIndex) -> np.ndarray:
     """
     Compute number of concurrent labels at each point in the grid using sweep-line algorithm.

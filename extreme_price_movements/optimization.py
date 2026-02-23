@@ -1,4 +1,5 @@
 import numpy as np
+from dataclasses import dataclass
 from .utils import tprint
 
 EPS = 1e-12
@@ -85,6 +86,121 @@ def robust_zscore(value, baseline_values):
     q75, q25 = np.percentile(b, [75, 25])
     iqr = (q75 - q25) + EPS
     return float((value - med) / iqr)
+
+
+def equity_curve_from_returns(r: np.ndarray, equity0: float = 1.0) -> np.ndarray:
+    """Build compounded equity curve from per-period returns."""
+    r = np.asarray(r, dtype=float)
+    if np.any(r <= -1.0):
+        raise ValueError("r_t <= -1 found; log-growth undefined.")
+    return float(equity0) * np.cumprod(1.0 + r)
+
+
+def drawdown_series(equity: np.ndarray) -> np.ndarray:
+    """Drawdown series in [0, 1)."""
+    equity = np.asarray(equity, dtype=float)
+    peaks = np.maximum.accumulate(equity)
+    dd = 1.0 - equity / np.maximum(peaks, EPS)
+    return np.clip(dd, 0.0, 1.0 - 1e-12)
+
+
+def ulcer_index(dd: np.ndarray) -> float:
+    dd = np.asarray(dd, dtype=float)
+    return float(np.sqrt(np.mean(dd * dd))) if dd.size else 0.0
+
+
+def recovery_episodes(dd: np.ndarray):
+    """Return arrays of episode depth, duration, and recovery flags."""
+    dd = np.asarray(dd, dtype=float)
+    T = len(dd)
+
+    depths, durations, recovered = [], [], []
+    in_ep = False
+    start = 0
+    max_dd = 0.0
+
+    for t in range(T):
+        if not in_ep:
+            if dd[t] > 0.0:
+                in_ep = True
+                start = t
+                max_dd = dd[t]
+        else:
+            max_dd = max(max_dd, dd[t])
+            if dd[t] <= 0.0:
+                in_ep = False
+                depths.append(max_dd)
+                durations.append(t - start + 1)
+                recovered.append(True)
+
+    if in_ep:
+        depths.append(max_dd)
+        durations.append(T - start)
+        recovered.append(False)
+
+    if not depths:
+        return np.array([], dtype=float), np.array([], dtype=float), np.array([], dtype=bool)
+    return np.asarray(depths, dtype=float), np.asarray(durations, dtype=float), np.asarray(recovered, dtype=bool)
+
+
+def expected_recovery_speed(dd: np.ndarray, eps: float = 1.0, use_log: bool = True):
+    """Expected recovery speed and unrecovered-episode probability."""
+    A, D, rec = recovery_episodes(dd)
+    if A.size == 0:
+        return 0.0, 0.0
+    ratio = A / (D + eps)
+    rs = float(np.mean(np.log1p(ratio))) if use_log else float(np.mean(ratio))
+    p_not_rec = float(np.mean(~rec))
+    return rs, p_not_rec
+
+
+@dataclass
+class RiskBudgetConfig:
+    ui_max: float
+    x_min: float
+    lambda_rs: float = 0.10
+    eps_recovery_hours: float = 1.0
+    use_log_rs: bool = True
+    penalize_not_recovered: float = 0.0
+    equity0: float = 1.0
+    hard_fail: bool = True
+    soft_penalty_scale: float = 50.0
+
+
+def score_backtest_risk_budgeted(r: np.ndarray, x: np.ndarray, cfg: RiskBudgetConfig):
+    """Risk-budgeted backtest score for optimise/grid/Optuna."""
+    r = np.asarray(r, dtype=float)
+    x = np.asarray(x, dtype=float)
+    if len(r) != len(x):
+        raise ValueError("r and x must have same length.")
+
+    xbar = float(np.mean(np.abs(x))) if x.size else 0.0
+    G = float(np.mean(np.log1p(r))) if r.size else 0.0
+    E = equity_curve_from_returns(r, equity0=cfg.equity0)
+    dd = drawdown_series(E)
+    UI = ulcer_index(dd)
+    RS, p_not_rec = expected_recovery_speed(dd, eps=cfg.eps_recovery_hours, use_log=cfg.use_log_rs)
+
+    ui_violation = max(0.0, UI - cfg.ui_max)
+    x_violation = max(0.0, cfg.x_min - xbar)
+
+    if cfg.hard_fail and (ui_violation > 0.0 or x_violation > 0.0):
+        score = -1e9
+    else:
+        score = G + cfg.lambda_rs * RS - cfg.penalize_not_recovered * p_not_rec
+        if not cfg.hard_fail:
+            score -= cfg.soft_penalty_scale * (ui_violation**2 + x_violation**2)
+
+    return {
+        "score": float(score),
+        "G_mean_log1p": G,
+        "UlcerIndex": UI,
+        "RecoverySpeed": RS,
+        "p_not_recovered": p_not_rec,
+        "xbar": xbar,
+        "ui_violation": ui_violation,
+        "x_violation": x_violation,
+    }
 
 
 # -----------------------------

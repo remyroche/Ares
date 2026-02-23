@@ -11,6 +11,7 @@ from .labeling import compute_trailing_atr_labels, compute_triple_barrier_labels
 from .sample_weights import (
     build_label_time_ranges,
     compute_sample_weights_with_uniqueness,
+    drawdown_aware_weights,
     compute_mfe_mae_weights,
     compute_cell_weights_neg_mass_renorm,
     NegMassRenormCfg,
@@ -2625,6 +2626,19 @@ def build_hourly_training_set_and_weights(
         time_grid=time_grid,
         selection_metric=selection_metric_values
     )
+
+    # Optional drawdown-aware weighting proxy for faster recovery and lower ulcer behavior.
+    if bool(cfg.get("sample_weight_use_drawdown_component", True)):
+        eq_proxy = np.cumprod(1.0 + np.nan_to_num(returns, nan=0.0))
+        eq_peak = np.maximum.accumulate(eq_proxy)
+        dd_proxy = 1.0 - eq_proxy / np.maximum(eq_peak, 1e-12)
+        dd_component = drawdown_aware_weights(
+            dd_proxy,
+            k_dd=float(cfg.get("sample_weight_drawdown_k_dd", 5.0)),
+            k_early=float(cfg.get("sample_weight_drawdown_k_early", 2.0)),
+            tau=float(cfg.get("sample_weight_drawdown_tau", 24.0)),
+        )
+        weights = weights * dd_component
 
     # Distance-to-barrier component (saturating alternative from sample-weight optimization plan)
     dist_component = None

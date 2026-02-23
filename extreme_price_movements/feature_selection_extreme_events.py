@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 from sklearn.base import clone
 from sklearn.ensemble import ExtraTreesRegressor
-from sklearn.linear_model import ElasticNet
+from sklearn.linear_model import SGDRegressor
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import QuantileTransformer, RobustScaler, StandardScaler
 from sklearn.utils import check_random_state
@@ -215,9 +215,11 @@ def linear_prescreen_enet(
     max_steps: int = 25,
     tol_frac: float = 0.15,
     random_state: int = 42,
+    loss: str = "huber",
+    huber_epsilon: float = 1.35,
 ) -> list[str]:
     """
-    Drop-in ElasticNet pre-screen that targets keep-count ~= multiplier * n_select.
+    Drop-in ElasticNet-penalized linear pre-screen targeting keep-count ~= multiplier * n_select.
 
     Returns a list of feature names to keep (exactly target_keep if possible,
     otherwise the closest solution trimmed by |coef|).
@@ -226,6 +228,7 @@ def linear_prescreen_enet(
     - Uses RobustScaler on X (handles outlier meta-features better than StandardScaler)
     - y is used as-is (caller is responsible for any target transform)
     - Searches alpha on a log scale to hit the target sparsity
+    - Loss is configurable (default: Huber), with ElasticNet penalty via SGDRegressor
     """
     if X is None or X.empty:
         return []
@@ -240,12 +243,15 @@ def linear_prescreen_enet(
     def fit_abscoef(alpha: float) -> np.ndarray:
         pipe = Pipeline([
             ("scaler", RobustScaler()),
-            ("enet", ElasticNet(
+            ("enet", SGDRegressor(
+                loss=loss,
                 alpha=alpha,
+                penalty="elasticnet",
                 l1_ratio=l1_ratio,
                 max_iter=max_iter,
                 tol=tol,
                 random_state=random_state,
+                epsilon=huber_epsilon,
             ))
         ])
         pipe.fit(X, y_t)
@@ -392,6 +398,12 @@ def mdi_feature_selection_v3(
     min_share: float = 0.001, # Threshold for noise
     min_features: int = 5,    # Hard floor
     max_features_pct: float = 0.5, # Hard ceiling (fraction of input)
+    selector_target: str = "regression",
+    selector_loss: Optional[str] = None,
+    selector_alpha: Optional[float] = None,
+    selector_y: Optional[Union[pd.Series, np.ndarray]] = None,
+    candidate_cols: Optional[Sequence[str]] = None,
+    cv_splits: Optional[Sequence[Tuple[np.ndarray, np.ndarray]]] = None,
 ) -> MDISelectionResult:
     """
     Robust MDI Feature Selection with Quantile-Transformed Correlations v3.
@@ -427,9 +439,17 @@ def mdi_feature_selection_v3(
     if not isinstance(X, pd.DataFrame):
         raise TypeError("X must be a pandas DataFrame.")
 
-    # Robust Cleaning using shared utility
-    # This aligns y and sample_weight if rows are dropped.
-    X, y, sample_weight = clean_dataset(X, y, sample_weight, name="X_mdi")
+    if candidate_cols is not None:
+        candidate_cols = [c for c in candidate_cols if c in X.columns]
+        if len(candidate_cols) == 0:
+            return MDISelectionResult(pd.DataFrame(), [], [])
+        X = X[list(candidate_cols)].copy()
+
+    # Robust cleaning using shared utility.
+    # Feature selection can optimize against caller-provided target (`selector_y`),
+    # defaulting to `y` when not provided.
+    y_for_selector = selector_y if selector_y is not None else y
+    X, y_for_selector, sample_weight = clean_dataset(X, y_for_selector, sample_weight, name="X_mdi")
 
     if X.empty:
         tprint("MDI: X became empty after cleaning. Returning empty result.")
@@ -481,8 +501,8 @@ def mdi_feature_selection_v3(
         # Sync X dataframe
         X = X.iloc[finite_rows]
 
-        if hasattr(y, 'values'): y_vals = y.values
-        else: y_vals = np.asarray(y)
+        if hasattr(y_for_selector, 'values'): y_vals = y_for_selector.values
+        else: y_vals = np.asarray(y_for_selector)
         y_np = y_vals[finite_rows]
 
         if sample_weight is not None:
@@ -492,7 +512,7 @@ def mdi_feature_selection_v3(
         else:
             sw_np = None
     else:
-        y_np = y.values if hasattr(y, 'values') else np.asarray(y)
+        y_np = y_for_selector.values if hasattr(y_for_selector, 'values') else np.asarray(y_for_selector)
         sw_np = None
         if sample_weight is not None:
             sw_np = sample_weight.to_numpy() if isinstance(sample_weight, pd.Series) else np.asarray(sample_weight)
@@ -509,11 +529,14 @@ def mdi_feature_selection_v3(
         return MDISelectionResult(pd.DataFrame(), [], [])
 
     # Initial Splits for Dedupe
-    try:
-        splits_full = purged_embargoed_splits(N, n_splits, purge=purge)
-    except ValueError as e:
-        tprint(f"MDI: Split generation failed: {e}")
-        return MDISelectionResult(pd.DataFrame(), [], [])
+    if cv_splits is not None:
+        splits_full = [(np.asarray(tr, dtype=int), np.asarray(va, dtype=int)) for tr, va in cv_splits]
+    else:
+        try:
+            splits_full = purged_embargoed_splits(N, n_splits, purge=purge)
+        except ValueError as e:
+            tprint(f"MDI: Split generation failed: {e}")
+            return MDISelectionResult(pd.DataFrame(), [], [])
 
     # 1. Anchored Pre-Dedupe (Train Window 0)
     train_idx0, _ = splits_full[0]
@@ -577,13 +600,24 @@ def mdi_feature_selection_v3(
 
     current_features = kept_features
 
+    _sel_target = str(selector_target).lower().strip()
+    _sel_loss = selector_loss
+    _sel_alpha = selector_alpha
+    if _sel_loss is None:
+        # Caller-provided target controls default selector loss.
+        _sel_loss = "modified_huber" if _sel_target in {"classification", "binary", "clf"} else "huber"
+
+    if _sel_target == "quantile":
+        assert _sel_alpha is not None, "selector_alpha must be provided when selector_target='quantile'"
+
     if len(current_features) > 4 * end_features:
         tprint(f"MDI: Running Linear ElasticNet prescreen on {len(current_features)} features...")
         prescreened_features = linear_prescreen_enet(
             X[current_features],
             y_np,
             n_select=end_features,
-            multiplier=4
+            multiplier=4,
+            loss=str(_sel_loss),
         )
         tprint(f"MDI: ElasticNet prescreen reduced features from {len(current_features)} to {len(prescreened_features)}")
         current_features = prescreened_features
@@ -673,12 +707,32 @@ def mdi_feature_selection_v3(
             sw_tr = sw_curr_np[train_idx] if sw_curr_np is not None else None
             is_lgbm = (m.__class__.__module__.startswith("lightgbm") and lgb is not None)
             if is_lgbm and len(val_idx) > 0:
+                # Objective/loss should be caller-driven when provided.
+                _obj = str(getattr(m, "objective", None) or base_params.get("objective", "regression")).lower()
+                _loss_hint = str(_sel_loss).lower()
+                if _sel_target == "quantile":
+                    # Enforce quantile objective/metric invariants for quantile intent.
+                    if "objective" in supported_params:
+                        params["objective"] = "quantile"
+                    if "alpha" in supported_params and _sel_alpha is not None:
+                        params["alpha"] = float(_sel_alpha)
+                    m.set_params(**params)
+                if "quantile" in _loss_hint or "quantile" in _obj:
+                    _eval_metric = "quantile"
+                elif "huber" in _loss_hint or "huber" in _obj or "modified_huber" in _loss_hint:
+                    _eval_metric = "huber"
+                elif _loss_hint in {"absolute_error", "l1", "epsilon_insensitive"} or "l1" in _obj:
+                    _eval_metric = "l1"
+                elif _sel_target in {"classification", "binary", "clf"}:
+                    _eval_metric = "binary_logloss"
+                else:
+                    _eval_metric = "l2"
                 m.fit(
                     X_curr_np[train_idx],
                     y_curr_np[train_idx],
                     sample_weight=sw_tr,
                     eval_set=[(X_curr_np[val_idx], y_curr_np[val_idx])],
-                    eval_metric="l2",
+                    eval_metric=_eval_metric,
                     callbacks=[lgb.early_stopping(50, verbose=False)],
                 )
             else:

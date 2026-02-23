@@ -1415,6 +1415,79 @@ def _compute_features_impl(panel, mkt_gates, cfg):
         feats[f"trend_accel_{k_trend}h"] = feats[f"trend_slope_{k_trend}h"].diff(12).fillna(0).astype(np.float32)
         del sma_k
 
+    # --- Event timing + policy-normalized stage difficulty (entry-time, past-only) ---
+    eps = 1e-12
+    c_prev = c_context.shift(1)
+    h_prev = h.shift(1)
+    l_prev = l.shift(1)
+
+    def _rolling_bars_since_extreme(df: pd.DataFrame, window: int, mode: str) -> pd.DataFrame:
+        fn = np.argmax if mode == "max" else np.argmin
+        out = pd.DataFrame(index=df.index, columns=df.columns, dtype=np.float32)
+        for _col in df.columns:
+            _s = pd.to_numeric(df[_col], errors="coerce")
+            _bs = _s.rolling(window, min_periods=1).apply(lambda x: float(len(x) - 1 - fn(np.asarray(x, dtype=float))), raw=True)
+            out[_col] = _bs.astype(np.float32)
+        return out
+
+    # Time since local peak/trough in the last 12h window (all windows end at t-1)
+    time_since_peak_12h = _rolling_bars_since_extreme(h_prev, 12, "max")
+    time_since_trough_12h = _rolling_bars_since_extreme(l_prev, 12, "min")
+    # Event-direction proxy: if 12h return into t-1 is up, use peak timing; else trough timing.
+    up_dir = (c_prev / c_prev.shift(12) - 1.0) >= 0.0
+    feats["time_since_peak_12h"] = time_since_peak_12h.fillna(0.0).astype(np.float32)
+    feats["time_since_trough_12h"] = time_since_trough_12h.fillna(0.0).astype(np.float32)
+    feats["time_since_event_extreme_12h"] = np.where(
+        up_dir,
+        feats["time_since_peak_12h"],
+        feats["time_since_trough_12h"],
+    ).astype(np.float32)
+
+    # "Second-leg" acceleration indicators (with/without volume confirmation), past-only.
+    d1 = c_prev.pct_change(1).fillna(0.0)
+    d2 = c_prev.pct_change(2).fillna(0.0)
+    accel_1 = (d1 - d1.shift(1)).fillna(0.0)
+    accel_2 = (d2 - d2.shift(1)).fillna(0.0)
+    v_prev = v.shift(1)
+    vol_ratio = (v_prev / (v_prev.rolling(24, min_periods=1).median() + eps)).fillna(1.0)
+    feats["second_leg_accel_1h"] = accel_1.astype(np.float32)
+    feats["second_leg_accel_2h"] = accel_2.astype(np.float32)
+    feats["second_leg_accel_vol_1h"] = (accel_1 * vol_ratio).astype(np.float32)
+    feats["second_leg_accel_vol_2h"] = (accel_2 * vol_ratio).astype(np.float32)
+
+    # Policy-normalized stage difficulty / timing proxies (entry-time only).
+    vol_scale = feats["atr_pct"].shift(1).fillna(feats["atr_pct"]).clip(lower=eps)
+    hr_48 = feats["ret1h"].abs().shift(1).rolling(48, min_periods=1).median().clip(lower=eps)
+    be_threshold_pct = float(cfg.get("be_threshold_pct", 0.0035))
+    profit_lock_pct = float(cfg.get("profit_lock_pct", 0.0050))
+    tp_mult = float(cfg.get("tp_mult", 0.50))
+    giveback_pct = float(cfg.get("giveback_pct", 0.35))
+    trail_act_pct = tp_mult * vol_scale
+
+    feats["vol_scale"] = vol_scale.astype(np.float32)
+    feats["be_vol_units"] = (be_threshold_pct / (vol_scale + eps)).astype(np.float32)
+    feats["pl_vol_units"] = (profit_lock_pct / (vol_scale + eps)).astype(np.float32)
+    feats["trail_act_pct"] = trail_act_pct.astype(np.float32)
+    feats["trail_act_vol_units"] = (trail_act_pct / (vol_scale + eps)).astype(np.float32)
+    feats["giveback_vol_units"] = (giveback_pct / (vol_scale + eps)).astype(np.float32)
+
+    feats["t_be_proxy"] = (be_threshold_pct / (hr_48 + eps)).astype(np.float32)
+    feats["t_pl_proxy"] = (profit_lock_pct / (hr_48 + eps)).astype(np.float32)
+    feats["t_trail_proxy"] = (trail_act_pct / (hr_48 + eps)).astype(np.float32)
+
+    shock_12h = (c_prev / (c_prev.shift(12) + eps) - 1.0).abs().fillna(0.0)
+    hh_12 = h_prev.rolling(12, min_periods=1).max()
+    ll_12 = l_prev.rolling(12, min_periods=1).min()
+    dist_from_low = (c_prev / (ll_12 + eps) - 1.0).fillna(0.0)
+    dist_from_high = (hh_12 / (c_prev + eps) - 1.0).fillna(0.0)
+
+    feats["shock_12h"] = shock_12h.astype(np.float32)
+    feats["shock_vol_ratio"] = (shock_12h / ((vol_scale * np.sqrt(12.0)) + eps)).astype(np.float32)
+    feats["dist_from_low_event_12h"] = dist_from_low.astype(np.float32)
+    feats["dist_from_high_event_12h"] = dist_from_high.astype(np.float32)
+    feats["dist_from_low_vol"] = (dist_from_low / (vol_scale + eps)).astype(np.float32)
+    feats["dist_from_high_vol"] = (dist_from_high / (vol_scale + eps)).astype(np.float32)
+
     # Realized volatility at longer horizons
     feats["rv_48h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 48).astype(np.float32)
     feats["rv_120h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 120).astype(np.float32)

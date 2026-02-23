@@ -29,6 +29,23 @@ def load_best_policy_params_from_optimise(data_root: str, run_id: str) -> Dict[s
     return {}
 
 
+def load_optimise_best_policy_params(run_dir: str) -> Dict[str, Any]:
+    """Compatibility helper: load optimise best-policy params from a run directory.
+
+    Args:
+        run_dir: Path like ``{data_root}/artifacts/{run_id}``.
+    """
+    path = os.path.join(str(run_dir), "models", "bucket_params.json")
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r") as f:
+            blob = json.load(f)
+        return blob if isinstance(blob, dict) else {}
+    except Exception:
+        return {}
+
+
 @dataclass
 class PolicyOutcome:
     r_policy: float
@@ -113,6 +130,73 @@ def policy_rollout_ml(
     )
 
 
+def compute_u_policy_labels(
+    ohlc: pd.DataFrame,
+    atr_pct: pd.Series,
+    event_index: np.ndarray,
+    direction: int,
+    policy_params: Dict[str, Any],
+    max_hold_hours: int,
+    fee_rt: float = 0.003,
+) -> Dict[str, np.ndarray]:
+    """Compute engine-aligned policy labels for provided event indices.
+
+    Returns arrays aligned to ``event_index`` with keys:
+    ``r_policy``, ``u_policy``, ``exit_code``, ``mae``, ``mfe``, ``duration``.
+    """
+    idx = np.asarray(event_index, dtype=int)
+    n = len(idx)
+    r_policy = np.zeros(n, dtype=np.float32)
+    r_policy_net = np.zeros(n, dtype=np.float32)
+    u_policy = np.zeros(n, dtype=np.float32)
+    u_policy_net = np.zeros(n, dtype=np.float32)
+    exit_code = np.ones(n, dtype=np.int8)
+    early_inval = np.zeros(n, dtype=np.int8)
+    mae = np.zeros(n, dtype=np.float32)
+    mfe = np.zeros(n, dtype=np.float32)
+    duration = np.zeros(n, dtype=np.int16)
+    for i, t0 in enumerate(idx):
+        if int(t0) < 0 or int(t0) >= len(ohlc.index):
+            continue
+        out = policy_rollout_engine(
+            ohlc=ohlc,
+            atr_pct=atr_pct,
+            t0=int(t0),
+            direction=int(direction),
+            policy_params=policy_params,
+            max_hold_hours=int(max_hold_hours),
+        )
+        gross = float(out.r_policy)
+        net = (1.0 + gross) * (1.0 - float(fee_rt)) - 1.0
+        r_policy[i] = gross
+        r_policy_net[i] = net
+        u_policy[i] = float(np.log1p(max(-0.999999, gross)))
+        u_policy_net[i] = float(np.log1p(max(-0.999999, net)))
+        exit_code[i] = int(out.exit_code)
+        early_inval[i] = np.int8(str(out.reason) == "early_invalidation")
+        mae[i] = float(out.mae)
+        mfe[i] = float(out.mfe)
+        duration[i] = int(out.bars_held)
+
+    # Sanity checks: with non-negative round-trip fee, net utility should not exceed gross utility.
+    _gross_u = np.log1p(np.clip(r_policy.astype(np.float64), -0.999999, None))
+    _net_u = np.log1p(np.clip(r_policy_net.astype(np.float64), -0.999999, None))
+    assert bool(np.all(np.isfinite(_net_u))), "u_policy_net contains non-finite values"
+    assert bool(np.all(r_policy_net <= r_policy + 1e-12)), "r_policy_net must be <= r_policy for fee_rt >= 0"
+    assert bool(np.all(_net_u <= _gross_u + 1e-12)), "u_policy_net must be <= u_policy for fee_rt >= 0"
+    return {
+        "r_policy": r_policy,
+        "r_policy_net": r_policy_net,
+        "u_policy": u_policy,
+        "u_policy_net": u_policy_net,
+        "exit_code": exit_code,
+        "early_inval": early_inval,
+        "mae": mae,
+        "mfe": mfe,
+        "duration": duration,
+    }
+
+
 def build_base_tp_vs_sl(exit_code: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """Build TP-vs-SL labels while excluding timeout rows.
 
@@ -165,20 +249,23 @@ def pick_meta_classifier_by_utility_top30(
     p_pred: np.ndarray,
     realized_u_policy: np.ndarray,
     cfg: MetaClassifierSelectionConfig,
+    trade_mask: np.ndarray | None = None,
 ) -> Dict[str, float]:
     from sklearn.metrics import log_loss
 
     y_true = np.asarray(y_true)
     p_pred = np.asarray(p_pred, dtype=float)
     realized_u_policy = np.asarray(realized_u_policy, dtype=float)
+    tm = np.ones(len(y_true), dtype=bool) if trade_mask is None else np.asarray(trade_mask, dtype=bool)
+    tm = tm[:len(y_true)]
 
-    ll = float(log_loss(y_true, p_pred, labels=[0, 1, 2]))
+    ll = float(log_loss(y_true[tm], p_pred[tm], labels=[0, 1, 2])) if np.any(tm) else 999.0
     passed_gate = ll <= float(cfg.max_logloss)
 
     # Dynamic utility weights from realized outcomes on this OOF vector.
     if bool(cfg.dynamic_utility_from_realized):
         def _class_mean(k: int, dflt: float) -> float:
-            m = y_true == k
+            m = (y_true == k) & tm
             if np.any(m):
                 v = float(np.nanmean(realized_u_policy[m]))
                 if np.isfinite(v):
@@ -191,6 +278,11 @@ def pick_meta_classifier_by_utility_top30(
         u_tp, u_to, u_sl = float(cfg.u_tp), float(cfg.u_to), float(cfg.u_sl)
 
     U = expected_utility(p_pred, u_tp, u_to, u_sl)
+    valid_idx = np.where(tm)[0]
+    if len(valid_idx) == 0:
+        return {"logloss": ll, "passed_gate": 0.0, "topU_mean": float("nan"), "top_realized_u_mean": float("nan"), "baseline_realized_u_mean": float("nan"), "realized_lift_vs_baseline": float("nan"), "top_n": 0.0, "top_n_ok": 0.0, "lift_ok": 0.0, "u_tp": float(u_tp), "u_to": float(u_to), "u_sl": float(u_sl), "passed_econ": 0.0, "selection_score": float("-inf") }
+    U = U[valid_idx]
+    realized_u_policy = realized_u_policy[valid_idx]
     n = len(U)
     k = max(1, int(np.ceil(float(cfg.top_frac) * n)))
     idx = np.argsort(-U)[:k]
@@ -221,4 +313,3 @@ def pick_meta_classifier_by_utility_top30(
         "passed_econ": float(passed_econ),
         "selection_score": topU_mean,
     }
-

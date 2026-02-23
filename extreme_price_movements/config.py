@@ -226,6 +226,7 @@ CFG = {
     "label_tp_values_pct": [1.5, 2.0, 3.0, 4.0, 5.0, 6.0],
     "label_sl_values_pct": [0.5, 1.0, 2.0],
     "label_round_trip_fee_pct": 0.5,
+    "policy_fee_rt": 0.003,
     "label_min_net_rr": 0.9,
     "label_min_tp_hit_rate": 0.02,
     "label_max_timeout_rate": 0.90,
@@ -269,6 +270,7 @@ CFG = {
     "sample_weight_opt_trials": 16,
     "meta_sample_weight_opt_trials": 12,
     "meta_use_policy_value_target": True,
+    "meta_clf_use_engine_labels": True,
     # Meta classifier utility-based winner selection (logloss remains a gate)
     "meta_clf_max_logloss": 1.10,
     "meta_clf_u_tp": 1.0,
@@ -279,6 +281,12 @@ CFG = {
     "meta_clf_min_lift_vs_baseline": 0.0,
     "meta_clf_dynamic_utility_from_realized": True,
     "meta_clf_require_positive_oof_utility": True,
+
+    # Ridge sizer target selection objective
+    "sizer_select_metric": "topq_u_policy",
+    "sizer_topq": 0.30,
+    "sizer_require_positive_topq_u": True,
+    "sizer_topq_min_samples": 50,
     # Economic gate on base race: require positive realized return in top-k OOF slice
     "base_require_positive_oof_expectancy": True,
     "base_oof_expectancy_top_frac": 0.30,
@@ -286,6 +294,7 @@ CFG = {
     "policy_rollout_labeling_enable": True,
     "sample_weight_opt_n_splits": 5,
     "sample_weight_opt_embargo_bars": 10,
+    "cv_embargo_bars": 12,
     "sample_weight_opt_min_n_eff_ratio": 0.30,
     "sample_weight_opt_max_top1pct": 0.10,
     "sample_weight_opt_model_family": "ExtraTrees",
@@ -735,6 +744,13 @@ CFG = {
         # New Indicators
         "vp_profile_concentration", "vp_profile_entropy", "vp_lvn_depth_ratio",
         "adx_14_slope", "trapped_longs_96",
+        # Event-timing + policy-normalized stage features (entry-time only)
+        "time_since_peak_12h", "time_since_trough_12h", "time_since_event_extreme_12h",
+        "second_leg_accel_1h", "second_leg_accel_2h", "second_leg_accel_vol_1h", "second_leg_accel_vol_2h",
+        "vol_scale", "be_vol_units", "pl_vol_units", "trail_act_pct", "trail_act_vol_units", "giveback_vol_units",
+        "t_be_proxy", "t_pl_proxy", "t_trail_proxy",
+        "shock_12h", "shock_vol_ratio", "dist_from_low_event_12h", "dist_from_high_event_12h",
+        "dist_from_low_vol", "dist_from_high_vol",
     ],
 
     # Unified learnability-test feature basket used by research comparison scripts

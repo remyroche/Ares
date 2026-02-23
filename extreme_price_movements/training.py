@@ -57,6 +57,7 @@ import os
 import json
 from typing import Optional
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 # =============================================================================
 # UNIFIED BARRIER FACTORY - Canonical TP/SL geometry (best-of-both pipelines)
@@ -2557,6 +2558,18 @@ def build_hourly_training_set_and_weights(
         "__quality__": np.asarray(qual_vals, dtype=np.float32),
         "__u_policy__": np.log1p(np.clip(np.asarray(pnl, dtype=np.float32), -0.999999, None)),
     }
+    # Engine-identical policy labels (gross/net + utility + diagnostics)
+    _fee_rt = float(cfg.get("policy_fee_rt", 0.003))
+    _r_gross = np.asarray(pnl, dtype=np.float32)
+    _r_net = ((1.0 + _r_gross.astype(np.float64)) * (1.0 - _fee_rt) - 1.0).astype(np.float32)
+    parts["__r_policy_gross__"] = _r_gross
+    parts["__r_policy_net__"] = _r_net
+    parts["__u_policy_net__"] = np.log1p(np.clip(_r_net.astype(np.float64), -0.999999, None)).astype(np.float32)
+    parts["__mae_ret__"] = np.asarray(mae_vals, dtype=np.float32)
+    parts["__mfe_ret__"] = np.asarray(mfe_vals, dtype=np.float32)
+    parts["__duration__"] = np.asarray(_policy_bars_vals if _policy_bars_vals is not None else np.full(len(_r_gross), H, dtype=np.int16), dtype=np.int16)
+    parts["__early_inval__"] = np.asarray((lbl_vals == OUT_SL) & (np.asarray(_policy_bars_vals if _policy_bars_vals is not None else np.zeros(len(lbl_vals)), dtype=np.int16) <= int(cfg.get("kill_min_bars", 2))), dtype=np.int8)
+
     if _policy_bars_vals is not None:
         parts["__bars_policy__"] = np.asarray(_policy_bars_vals, dtype=np.int16)
 
@@ -4013,6 +4026,7 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
     meta_models = {}
     meta_gate_results = []
     _bucket_y_ret = {}  # per-bucket raw returns for OOF saving
+    _aux_head_oof = {}  # per-bucket shared-fold auxiliary head OOF outputs
 
     # Load optimize policy params dynamically (for policy-aligned targets/selection context)
     _run_id_for_policy = str(cfg.get("run_id", ""))
@@ -4065,6 +4079,326 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
         aligned = np.full(len(df_union), 0.5, dtype=np.float32)
         aligned[:n_use] = source_oof[:n_use].astype(np.float32)
         return aligned
+
+    def _train_aux_heads_shared_folds(
+        X_num,
+        y_u,
+        y_mae,
+        y_mfe,
+        y_dur,
+        trade_mask,
+        cv_embargo_bars=12,
+        bucket_id: str | None = None,
+        data_root: str = "data",
+        run_id: str = "default",
+    ):
+        """Train auxiliary meta heads with shared purged folds and return OOF preds.
+
+        Feature selection is run once per head using a selector aligned to that
+        head's objective/loss (quantile for MAE, robust for U, MSE-style trees for others).
+        """
+        from .purged_cv import PurgedKFold as _PKF
+        from .feature_selection_extreme_events import mdi_feature_selection_v3
+        from sklearn.linear_model import HuberRegressor
+        from sklearn.ensemble import ExtraTreesRegressor
+        from sklearn.metrics import mean_absolute_error as _mae_loss
+
+        _Xdf_in = X_num if isinstance(X_num, pd.DataFrame) else pd.DataFrame(np.asarray(X_num, dtype=float), columns=[f"f_{i}" for i in range(np.asarray(X_num).shape[1])])
+        Xv = np.asarray(_Xdf_in.values, dtype=float)
+        n = len(Xv)
+        tm = np.asarray(trade_mask, dtype=bool) if trade_mask is not None else np.ones(n, dtype=bool)
+        oof_u = np.full(n, np.nan, dtype=float)
+        oof_mae_q70 = np.full(n, np.nan, dtype=float)
+        oof_mfe = np.full(n, np.nan, dtype=float)
+        oof_dur = np.full(n, np.nan, dtype=float)
+        pkf = _PKF(n_splits=3, purge=int(cv_embargo_bars), embargo=int(cv_embargo_bars))
+
+        # --- Feature selection once per head (loss-aligned selectors via MDI) ---
+        _train_mask = tm & np.isfinite(y_u) & np.isfinite(y_mae) & np.isfinite(y_mfe) & np.isfinite(y_dur)
+        _Xdf = _Xdf_in.reset_index(drop=True).copy()
+
+        # Shared folds used by FS and final head training (asserted reuse).
+        _splits_shared = list(_PKF(n_splits=3, purge=int(cv_embargo_bars), embargo=int(cv_embargo_bars)).split(Xv))
+        assert len(_splits_shared) > 0, "No shared CV folds available"
+
+        def _candidate_cols(head: str) -> list[str]:
+            cols = list(_Xdf.columns)
+            if not cols:
+                return cols
+            head = str(head)
+            pats = {
+                "u": ["pred", "shock", "time_since", "dist_from", "trend", "rv", "vol", "regime", "mkt", "exh", "trap", "gamma"],
+                "mae": ["vol", "atr", "gap", "shock", "liq", "time", "stage", "dist_from", "draw", "rv"],
+                "mfe": ["pred", "ret", "trend", "mom", "shock", "dist_from", "time_since", "breakout", "draw", "mfe"],
+                "dur": ["time", "dur", "stage", "vol", "atr", "rv", "dist_from", "shock"],
+            }
+            pick = [c for c in cols if any(p in c.lower() for p in pats.get(head, []))]
+            if len(pick) < 12:
+                pick = cols
+            return pick
+
+        def _pinball(y_true, y_pred, q=0.7):
+            e = np.asarray(y_true, float) - np.asarray(y_pred, float)
+            return float(np.mean(np.maximum(q * e, (q - 1.0) * e)))
+
+        def _top30_mean_unet(score, realized_u):
+            s = np.asarray(score, dtype=float)
+            u = np.asarray(realized_u, dtype=float)
+            m = _train_mask & np.isfinite(s) & np.isfinite(u)
+            if m.sum() == 0:
+                return -1e9
+            s2 = s[m]
+            u2 = u[m]
+            n_top = max(1, int(np.ceil(0.30 * len(s2))))
+            idx = np.argpartition(s2, -n_top)[-n_top:]
+            return float(np.mean(u2[idx]))
+
+        def _z(x):
+            xv = np.asarray(x, dtype=float)
+            mu = np.nanmean(xv)
+            sd = np.nanstd(xv)
+            return (xv - mu) / (sd + 1e-12)
+
+        def _oof_single_feature(x_col, y_target, kind="reg"):
+            x = np.asarray(x_col, dtype=float).reshape(-1, 1)
+            oof = np.full(len(y_target), np.nan, dtype=float)
+            for tr, va in _splits_shared:
+                tr_idx = tr[_train_mask[tr]]
+                va_idx = va[_train_mask[va]]
+                if len(tr_idx) < 30 or len(va_idx) == 0:
+                    continue
+                if kind == "u":
+                    m = HuberRegressor(epsilon=1.35, alpha=1e-3)
+                elif kind == "mae":
+                    try:
+                        from lightgbm import LGBMRegressor
+                        m = LGBMRegressor(objective="quantile", alpha=0.7, n_estimators=250, learning_rate=0.05, num_leaves=31, random_state=42, n_jobs=-1)
+                    except Exception:
+                        m = ExtraTreesRegressor(n_estimators=120, max_depth=5, min_samples_leaf=10, random_state=42, n_jobs=1)
+                else:
+                    m = HuberRegressor(epsilon=1.35, alpha=1e-3)
+                m.fit(x[tr_idx], y_target[tr_idx])
+                oof[va_idx] = m.predict(x[va_idx])
+            if not np.isfinite(oof).all():
+                fill = float(np.nanmedian(y_target[np.isfinite(y_target)])) if np.isfinite(y_target).any() else 0.0
+                oof = np.where(np.isfinite(oof), oof, fill)
+            return oof
+
+        def _rank_u_cols(cols):
+            rows = []
+            for c in cols:
+                oof = _oof_single_feature(_Xdf[c].values, y_u, kind="u")
+                util = _top30_mean_unet(oof, y_u)
+                rows.append((c, util, oof))
+            rows.sort(key=lambda t: t[1], reverse=True)
+            return rows
+
+        def _rank_mae_cols(cols, u_hat_ref, tol=1e-6):
+            base_score = u_hat_ref / (np.nanmedian(y_mae[_train_mask]) + 1e-6)
+            base_util = _top30_mean_unet(base_score, y_u)
+            rows = []
+            for c in cols:
+                oof = _oof_single_feature(_Xdf[c].values, y_mae, kind="mae")
+                pin = _pinball(y_mae[_train_mask], oof[_train_mask], q=0.7)
+                score_exec = u_hat_ref / (oof + 1e-6)
+                util = _top30_mean_unet(score_exec, y_u)
+                ok = util >= (base_util - tol)
+                rows.append((c, pin, util, ok, oof))
+            rows.sort(key=lambda t: (not t[3], t[1], -t[2]))
+            return rows
+
+        def _rank_reg_cols(cols, y_head, u_hat_ref, mae_hat_ref, tol=1e-6):
+            base_exec = u_hat_ref / (mae_hat_ref + 1e-6)
+            base_util = _top30_mean_unet(base_exec, y_u)
+            rows = []
+            for c in cols:
+                oof = _oof_single_feature(_Xdf[c].values, y_head, kind="reg")
+                fit = _mae_loss(y_head[_train_mask], oof[_train_mask])
+                exec_aug = base_exec + 0.02 * _z(oof)
+                util = _top30_mean_unet(exec_aug, y_u)
+                ok = util >= (base_util - tol)
+                rows.append((c, fit, util, ok, oof))
+            rows.sort(key=lambda t: (not t[3], t[1], -t[2]))
+            return rows
+
+        if _train_mask.sum() < 80:
+            idx_u = idx_q = idx_mfe = idx_dur = np.arange(Xv.shape[1], dtype=int)
+        else:
+            _base_mdi = ExtraTreesRegressor(
+                n_estimators=300,
+                max_depth=8,
+                min_samples_leaf=20,
+                max_features='sqrt',
+                random_state=42,
+                n_jobs=1,
+            )
+            # U head
+            _fs_u = mdi_feature_selection_v3(
+                _Xdf, y_u,
+                base_model=_base_mdi,
+                sample_weight=None,
+                selector_y=y_u,
+                selector_target="regression",
+                selector_loss="huber",
+                candidate_cols=_candidate_cols("u"),
+                cv_splits=_splits_shared,
+                end_features=min(96, max(24, Xv.shape[1] // 2)),
+                min_features=24,
+                max_features_pct=0.9,
+            )
+            _ranked_u = _rank_u_cols(_fs_u.selected_features or list(_Xdf.columns))
+            _cols_u = [c for c, _, _ in _ranked_u]
+            _u_oof_ref = _ranked_u[0][2] if _ranked_u else np.asarray(y_u, dtype=float)
+            idx_u = np.array([_Xdf.columns.get_loc(c) for c in _cols_u[:min(len(_cols_u), max(24, Xv.shape[1] // 2))]], dtype=int)
+
+            # MAE q70 head (quantile invariant)
+            _fs_q = mdi_feature_selection_v3(
+                _Xdf, y_mae,
+                base_model=_base_mdi,
+                sample_weight=None,
+                selector_y=y_mae,
+                selector_target="quantile",
+                selector_loss="quantile",
+                selector_alpha=0.7,
+                candidate_cols=_candidate_cols("mae"),
+                cv_splits=_splits_shared,
+                end_features=min(96, max(24, Xv.shape[1] // 2)),
+                min_features=24,
+                max_features_pct=0.9,
+            )
+            _ranked_q = _rank_mae_cols(_fs_q.selected_features or list(_Xdf.columns), _u_oof_ref)
+            _cols_q = [c for c, _, _, ok, _ in _ranked_q if ok]
+            if not _cols_q:
+                _cols_q = [c for c, *_ in _ranked_q]
+            _mae_oof_ref = _ranked_q[0][4] if _ranked_q else np.asarray(y_mae, dtype=float)
+            idx_q = np.array([_Xdf.columns.get_loc(c) for c in _cols_q[:min(len(_cols_q), max(24, Xv.shape[1] // 2))]], dtype=int)
+
+            # MFE head (primary utility alignment from y_u)
+            _fs_mfe = mdi_feature_selection_v3(
+                _Xdf, y_mfe,
+                base_model=_base_mdi,
+                sample_weight=None,
+                selector_y=y_u,
+                selector_target="regression",
+                selector_loss="huber",
+                candidate_cols=_candidate_cols("mfe"),
+                cv_splits=_splits_shared,
+                end_features=min(96, max(24, Xv.shape[1] // 2)),
+                min_features=24,
+                max_features_pct=0.9,
+            )
+            _ranked_mfe = _rank_reg_cols(_fs_mfe.selected_features or list(_Xdf.columns), y_mfe, _u_oof_ref, _mae_oof_ref)
+            _cols_mfe = [c for c, _, _, ok, _ in _ranked_mfe if ok]
+            if not _cols_mfe:
+                _cols_mfe = [c for c, *_ in _ranked_mfe]
+            idx_mfe = np.array([_Xdf.columns.get_loc(c) for c in _cols_mfe[:min(len(_cols_mfe), max(24, Xv.shape[1] // 2))]], dtype=int)
+
+            # DUR head (primary utility alignment from y_u)
+            _fs_dur = mdi_feature_selection_v3(
+                _Xdf, y_dur,
+                base_model=_base_mdi,
+                sample_weight=None,
+                selector_y=y_u,
+                selector_target="regression",
+                selector_loss="huber",
+                candidate_cols=_candidate_cols("dur"),
+                cv_splits=_splits_shared,
+                end_features=min(96, max(24, Xv.shape[1] // 2)),
+                min_features=24,
+                max_features_pct=0.9,
+            )
+            _ranked_dur = _rank_reg_cols(_fs_dur.selected_features or list(_Xdf.columns), y_dur, _u_oof_ref, _mae_oof_ref)
+            _cols_dur = [c for c, _, _, ok, _ in _ranked_dur if ok]
+            if not _cols_dur:
+                _cols_dur = [c for c, *_ in _ranked_dur]
+            idx_dur = np.array([_Xdf.columns.get_loc(c) for c in _cols_dur[:min(len(_cols_dur), max(24, Xv.shape[1] // 2))]], dtype=int)
+
+        tprint(
+            f"Meta aux head feature selection sizes: U={len(idx_u)} MAEq70={len(idx_q)} "
+            f"MFE={len(idx_mfe)} DUR={len(idx_dur)}"
+        )
+
+        for tr, va in _splits_shared:
+            tr_mask = tm[tr]
+            va_mask = tm[va]
+            tr_idx = tr[tr_mask]
+            va_idx = va[va_mask]
+            if len(tr_idx) < 50 or len(va_idx) == 0:
+                continue
+            Xu_tr = Xv[tr_idx]
+            Xu_va = Xv[va_idx]
+
+            # U head (robust mean)
+            m_u = HuberRegressor(epsilon=1.35, alpha=1e-3)
+            m_u.fit(Xu_tr[:, idx_u], y_u[tr_idx])
+            oof_u[va_idx] = m_u.predict(Xu_va[:, idx_u])
+
+            # MAE q70 head (quantile)
+            try:
+                from lightgbm import LGBMRegressor
+                m_q = LGBMRegressor(
+                    objective="quantile",
+                    alpha=0.7,
+                    n_estimators=800,
+                    learning_rate=0.03,
+                    num_leaves=63,
+                    min_child_samples=50,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
+                    reg_alpha=0.0,
+                    reg_lambda=0.0,
+                    random_state=42,
+                    n_jobs=-1,
+                )
+            except Exception:
+                m_q = ExtraTreesRegressor(n_estimators=200, max_depth=6, min_samples_leaf=20, random_state=42, n_jobs=1)
+            m_q.fit(Xu_tr[:, idx_q], y_mae[tr_idx])
+            oof_mae_q70[va_idx] = m_q.predict(Xu_va[:, idx_q])
+
+            # MFE head
+            m_mfe = ExtraTreesRegressor(n_estimators=200, max_depth=6, min_samples_leaf=20, random_state=42, n_jobs=1)
+            m_mfe.fit(Xu_tr[:, idx_mfe], y_mfe[tr_idx])
+            oof_mfe[va_idx] = m_mfe.predict(Xu_va[:, idx_mfe])
+
+            # Duration head
+            m_dur = ExtraTreesRegressor(n_estimators=200, max_depth=6, min_samples_leaf=20, random_state=42, n_jobs=1)
+            m_dur.fit(Xu_tr[:, idx_dur], y_dur[tr_idx])
+            oof_dur[va_idx] = m_dur.predict(Xu_va[:, idx_dur])
+
+        # Fill holes with robust center values
+        def _fill(oof, y):
+            o = np.asarray(oof, dtype=float)
+            if np.isfinite(o).all():
+                return o.astype(np.float32)
+            fill = float(np.nanmedian(y[np.isfinite(y)])) if np.isfinite(y).any() else 0.0
+            o = np.where(np.isfinite(o), o, fill)
+            return o.astype(np.float32)
+
+        _fs_report = {
+            "u": {"n_in": int(_Xdf.shape[1]), "n_selected": int(len(idx_u))},
+            "mae_q70": {"n_in": int(_Xdf.shape[1]), "n_selected": int(len(idx_q))},
+            "mfe": {"n_in": int(_Xdf.shape[1]), "n_selected": int(len(idx_mfe))},
+            "dur": {"n_in": int(_Xdf.shape[1]), "n_selected": int(len(idx_dur))},
+            "config": {"eps": 1e-6, "tol": 1e-6},
+        }
+        try:
+            if bucket_id:
+                _rp = os.path.join(data_root, "artifacts", run_id, "fs_reports", f"{bucket_id}_cap12")
+                os.makedirs(_rp, exist_ok=True)
+                import json as _json
+                for _h in ["u", "mae_q70", "mfe", "dur"]:
+                    with open(os.path.join(_rp, f"{_h}.json"), "w") as _f:
+                        _json.dump(_fs_report[_h] | {"head": _h}, _f)
+        except Exception as _e_fsrep:
+            tprint(f"Warning: failed to persist fs report for {bucket_id}: {_e_fsrep}")
+
+        return {
+            "oof_u_hat": _fill(oof_u, y_u),
+            "oof_log_mae_q70_hat": _fill(oof_mae_q70, y_mae),
+            "oof_log_mfe_hat": _fill(oof_mfe, y_mfe),
+            "oof_log_dur_hat": _fill(oof_dur, y_dur),
+            "fs_report": _fs_report,
+        }
 
     for side in trade_sides:
         for k in kinds:
@@ -4246,20 +4580,30 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                 return y_ret.astype(np.float32)
 
             tprint(f"  Computing meta target ({_time.monotonic()-_t0_meta:.1f}s)...")
-            _r2, _r4, _r8 = _ret_for_h_aligned(2), _ret_for_h_aligned(4), _ret_for_h_aligned(8)
+            _use_policy_target = bool(cfg.get("meta_use_policy_value_target", True))
 
-            # Use vol_proxy (ATR) for risk-normalized target
+            # Use vol_proxy (ATR) for risk-normalized target / classifier fallback labels
             _vol_proxy = df["__barrier_pct__"].values.astype(np.float64) if "__barrier_pct__" in df.columns else None
-            y_target_h = compute_meta_target(_r2, _r4, _r8, vol_proxy=_vol_proxy)
-            # Optional policy-value target: y_policy = log(1 + r_policy_proxy)
-            # Uses mid-horizon aligned return as rollout proxy when explicit per-trade policy rollout
-            # labels are not materialized in this training stage.
-            if bool(cfg.get("meta_use_policy_value_target", True)):
-                _r_mid = _r4 if len(_r4) == len(df) else _r2
-                y_target_h = np.log1p(np.clip(np.asarray(_r_mid, dtype=np.float64), -0.999999, None)).astype(np.float32)
 
-            # Per-horizon returns for multi-barrier classifier labels
-            _y_per_h = {2: _r2, 4: _r4, 8: _r8}
+            if _use_policy_target:
+                if "__u_policy_net__" not in df.columns:
+                    raise RuntimeError(
+                        "meta_use_policy_value_target=True requires '__u_policy_net__' in training artifacts. "
+                        "Enable policy_rollout_labeling during label generation and rebuild artifacts."
+                    )
+                y_target_h = np.asarray(df["__u_policy_net__"].values, dtype=np.float32)
+                tprint(
+                    f"  META TARGET: policy_value(u_policy) n={len(y_target_h)} "
+                    f"mean={float(np.mean(y_target_h)):.6f} std={float(np.std(y_target_h)):.6f}"
+                )
+                # Keep horizon keys for per-horizon model slots, but target is true policy utility.
+                _y_per_h = {h: y_target_h.copy() for h in sorted(horizon_dfs.keys())}
+            else:
+                _r2, _r4, _r8 = _ret_for_h_aligned(2), _ret_for_h_aligned(4), _ret_for_h_aligned(8)
+                y_target_h = compute_meta_target(_r2, _r4, _r8, vol_proxy=_vol_proxy)
+                tprint(f"  Using risk-normalized target: n={len(y_target_h)}, mean={float(np.mean(y_target_h)):.6f}, std={float(np.std(y_target_h)):.6f}")
+                # Per-horizon returns for multi-barrier classifier labels
+                _y_per_h = {2: _r2, 4: _r4, 8: _r8}
 
             # Per-horizon IC diagnostics
             _oof_by_h = {}
@@ -4310,6 +4654,9 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             n_res = n_res[keep]
             _y_per_h = {h: v[keep] for h, v in _y_per_h.items()}
             y_target_h = y_target_h[keep]
+            _trade_mask = np.ones(len(df), dtype=bool)
+            if "__trigger_offset_h__" in df.columns:
+                _trade_mask = np.abs(np.asarray(df["__trigger_offset_h__"].values, dtype=float)) <= float(cfg.get("trade_mask_abs_hours", 4.0))
 
             # Build per-horizon logit features (all 3 horizons as separate inputs)
             from scipy.special import logit as _logit_fn
@@ -4487,9 +4834,6 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                         w_meta_h = _w_opt
                 w_meta_h = w_meta_h.astype(np.float32)
 
-                _yt_fin = y_target_h[np.isfinite(y_target_h)]
-            tprint(f"  Using risk-normalized target: n={len(y_target_h)}, "
-                   f"mean={np.mean(_yt_fin):.6f}, std={np.std(_yt_fin):.6f}")
 
             # Fit MetaModel for this horizon
             meta_h = MetaModel()
@@ -4504,7 +4848,8 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
 
             # Orientation safeguard for MR buckets
             if meta_h.oof_probs is not None:
-                y_ret_filtered = df["__y_ret__"].values if "__y_ret__" in df.columns else y_target_h
+                y_ret_filtered = (df["__y_ret__"].values if "__y_ret__" in df.columns else y_target_h)
+                _mask_eval = np.asarray(_trade_mask, dtype=bool)[:len(y_ret_filtered)]
 
                 def _top_spread(yv, sv, frac=0.10):
                     n = len(yv)
@@ -4516,10 +4861,10 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                     return float(np.mean(yv[it]) - np.mean(yv[ib]))
 
                 pred_oof = np.asarray(meta_h.oof_probs, dtype=float)
-                ic_pos = _safe_spearman(pred_oof, y_ret_filtered)
-                ic_neg = _safe_spearman(-pred_oof, y_ret_filtered)
-                sp_pos = _top_spread(y_ret_filtered, pred_oof, frac=0.10)
-                sp_neg = _top_spread(y_ret_filtered, -pred_oof, frac=0.10)
+                ic_pos = _safe_spearman(pred_oof[_mask_eval], y_ret_filtered[_mask_eval])
+                ic_neg = _safe_spearman((-pred_oof)[_mask_eval], y_ret_filtered[_mask_eval])
+                sp_pos = _top_spread(y_ret_filtered[_mask_eval], pred_oof[_mask_eval], frac=0.10)
+                sp_neg = _top_spread(y_ret_filtered[_mask_eval], (-pred_oof)[_mask_eval], frac=0.10)
 
                 meta_h.score_sign = 1
                 if k == "mr" and ((ic_neg > ic_pos + 1e-4) and (sp_neg > sp_pos + 1e-6)):
@@ -4528,7 +4873,7 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
 
                 pred_for_gate = meta_h.score_sign * pred_oof
                 gate_type = "meta_regression"
-                gate_res = compute_stage_gate_metrics(y_target_h, pred_for_gate, y_ret_filtered, model_type=gate_type)
+                gate_res = compute_stage_gate_metrics(y_target_h[_mask_eval], pred_for_gate[_mask_eval], y_ret_filtered[_mask_eval], model_type=gate_type)
                 gate_res["Model"] = _h_label
                 gate_res["Model_Type"] = gate_type
                 gate_res["Score_Sign"] = int(meta_h.score_sign)
@@ -4607,6 +4952,22 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             _mid_h = 4 if 4 in _y_per_h else _available_horizons[len(_available_horizons)//2]
             y_target_clf = _y_per_h[_mid_h].astype(np.float64)
 
+            _use_engine_meta_labels = bool(cfg.get("meta_clf_use_engine_labels", True))
+            _y_class_override = None
+            if _use_engine_meta_labels:
+                if "__y_outcome__" not in df.columns:
+                    raise RuntimeError(
+                        "meta_clf_use_engine_labels=True requires '__y_outcome__' in artifacts. "
+                        "Regenerate labels with policy_rollout_labeling enabled."
+                    )
+                _y_class_override = np.asarray(df["__y_outcome__"].values, dtype=np.int8)
+                tprint(
+                    f"  Meta classifier labels source=engine counts="
+                    f"SL={int(np.sum(_y_class_override == 0))} "
+                    f"TO={int(np.sum(_y_class_override == 1))} "
+                    f"TP={int(np.sum(_y_class_override == 2))}"
+                )
+
             tprint(f"  Fitting MetaClassifierModel {side}_{k} ({_time.monotonic()-_t0_meta:.1f}s)...")
             meta_clf = MetaClassifierModel()
             meta_clf.strategy_name = f"{side}_{k}"
@@ -4623,22 +4984,74 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                 min_lift_vs_baseline=float(cfg.get("meta_clf_min_lift_vs_baseline", 0.0)),
                 require_positive_oof_utility=bool(cfg.get("meta_clf_require_positive_oof_utility", True)),
             )
-            if "__u_policy__" in df.columns:
-                _realized_u = np.asarray(df["__u_policy__"].values, dtype=float)
+            if "__u_policy_net__" in df.columns:
+                _realized_u = np.asarray(df["__u_policy_net__"].values, dtype=float)
             else:
                 _realized_u = np.log1p(np.clip(np.asarray(y_target_clf, dtype=float), -0.999999, None))
+            # Shared-fold auxiliary heads for sizing/risk features
+            try:
+                _y_u = np.asarray(df.get("__u_policy_net__", pd.Series(np.zeros(len(df)))).values, dtype=float)
+                _y_mae = np.log1p(np.clip(np.asarray(df.get("__mae_ret__", pd.Series(np.zeros(len(df)))).values, dtype=float), 0.0, None))
+                _y_mfe = np.log1p(np.clip(np.asarray(df.get("__mfe_ret__", pd.Series(np.zeros(len(df)))).values, dtype=float), 0.0, None))
+                _y_dur = np.log1p(np.clip(np.asarray(df.get("__duration__", pd.Series(np.ones(len(df)))).values, dtype=float), 0.0, None))
+                _aux_head_oof[f"{side}_{k}"] = _train_aux_heads_shared_folds(
+                    X_num=X_meta_base.select_dtypes(include=[np.number]).fillna(0.0),
+                    y_u=_y_u,
+                    y_mae=_y_mae,
+                    y_mfe=_y_mfe,
+                    y_dur=_y_dur,
+                    trade_mask=_trade_mask,
+                    cv_embargo_bars=int(cfg.get("cv_embargo_bars", 12)),
+                    bucket_id=f"{side}_{k}",
+                    data_root=str(cfg.get("data_root", "data")),
+                    run_id=str(cfg.get("run_id", "default")),
+                )
+            except Exception as _e_aux:
+                tprint(f"Warning: aux head training failed for {side}_{k}: {_e_aux}")
+
             meta_clf.fit(
                 X_meta_base,
                 y_target_clf,
                 sample_weight=w_meta_clf,
                 groups=meta_groups,
-                y_per_horizon=_y_per_h,
-                vol_proxy=_vol_proxy,
+                y_per_horizon=None if _y_class_override is not None else _y_per_h,
+                vol_proxy=None if _y_class_override is not None else _vol_proxy,
                 realized_u_policy=_realized_u,
                 selection_cfg=_sel_cfg,
+                y_class_override=_y_class_override,
+                trade_mask=_trade_mask,
             )
             meta_models[f"{side}_{k}_clf"] = meta_clf
             _bucket_y_ret[f"{side}_{k}_clf"] = y_target_clf.copy()
+
+            # Early invalidation predictor (binary) for downstream gating/sizing
+            if "__early_inval__" in df.columns:
+                try:
+                    from sklearn.linear_model import LogisticRegression
+                    from .purged_cv import PurgedKFold as _PKF
+                    _y_ei = np.asarray(df["__early_inval__"].values, dtype=int)
+                    _X_ei = X_meta_base.select_dtypes(include=[np.number]).fillna(0.0).to_numpy(dtype=float)
+                    _oof_ei = np.full(len(_y_ei), 0.5, dtype=float)
+                    _pkf = _PKF(n_splits=3, purge=int(cfg.get("cv_embargo_bars", 12)), embargo=int(cfg.get("cv_embargo_bars", 12)))
+                    for _tr, _va in _pkf.split(_X_ei):
+                        if len(np.unique(_y_ei[_tr])) < 2:
+                            continue
+                        _m_ei = LogisticRegression(max_iter=500, class_weight="balanced", random_state=42)
+                        _m_ei.fit(_X_ei[_tr], _y_ei[_tr])
+                        _oof_ei[_va] = _m_ei.predict_proba(_X_ei[_va])[:, 1]
+                    # final fit
+                    _m_ei_final = LogisticRegression(max_iter=500, class_weight="balanced", random_state=42)
+                    if len(np.unique(_y_ei)) >= 2:
+                        _m_ei_final.fit(_X_ei, _y_ei)
+                    meta_models[f"{side}_{k}_early_inval"] = SimpleNamespace(
+                        oof_probs=np.asarray(_oof_ei, dtype=np.float32),
+                        model={"kind": "early_inval_clf", "models": [_m_ei_final], "name": "early_inval"},
+                    )
+                    _bucket_y_ret[f"{side}_{k}_early_inval"] = y_target_clf.copy()
+                    tprint(f"Meta {side}_{k}_early_inval: fitted")
+                except Exception as _e_ei:
+                    tprint(f"Warning: early invalidation model failed for {side}_{k}: {_e_ei}")
+
             tprint(f"Meta {side}_{k}_clf: fitted ({_time.monotonic()-_t0_meta:.1f}s).")
 
     # ── Comprehensive per-model summary table (global + top-30%) ──
@@ -4693,7 +5106,16 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             
             meta_oof_path = os.path.join(meta_oof_dir, f"meta_oof_{key}.parquet")
             _is_clf_key = key.endswith("_clf")
-            if _is_clf_key and np.ndim(meta.oof_probs) == 2:
+            _is_ei_key = key.endswith("_early_inval")
+            if _is_ei_key:
+                _oof_pred_1d = np.asarray(meta.oof_probs, dtype=float)
+                oof_df = pd.DataFrame({
+                    "oof_pred": _oof_pred_1d,
+                    "oof_p_early_inval": _oof_pred_1d,
+                    "index": range(len(meta.oof_probs)),
+                    "is_long": is_long,
+                })
+            elif _is_clf_key and np.ndim(meta.oof_probs) == 2:
                 p_sl = np.asarray(meta.oof_probs[:, 0], dtype=float)
                 p_to = np.asarray(meta.oof_probs[:, 1], dtype=float)
                 p_tp = np.asarray(meta.oof_probs[:, 2], dtype=float)
@@ -4711,6 +5133,7 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                 _oof_pred_1d = np.asarray(meta.oof_probs, dtype=float)
                 oof_df = pd.DataFrame({
                     "oof_pred": _oof_pred_1d,
+                    "oof_u_hat": _oof_pred_1d,
                     "index": range(len(meta.oof_probs)),
                     "is_long": is_long,
                 })
@@ -4720,7 +5143,29 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                 _bret = _bucket_y_ret[key]
                 if len(_bret) == len(meta.oof_probs):
                     oof_df["return"] = _bret
-            
+
+            # Persist policy-aligned utility labels for downstream sizer selection
+            if "__u_policy_net__" in df.columns and len(df["__u_policy_net__"]) == len(meta.oof_probs):
+                oof_df["u_policy_net"] = np.asarray(df["__u_policy_net__"].values, dtype=np.float32)
+            if "__u_policy__" in df.columns and len(df["__u_policy__"]) == len(meta.oof_probs):
+                oof_df["u_policy"] = np.asarray(df["__u_policy__"].values, dtype=np.float32)
+            if "__y_outcome__" in df.columns and len(df["__y_outcome__"]) == len(meta.oof_probs):
+                oof_df["exit_code"] = np.asarray(df["__y_outcome__"].values, dtype=np.int8)
+            _bucket_base = "_".join(key.split("_")[:2])
+            _aux = _aux_head_oof.get(_bucket_base)
+            if isinstance(_aux, dict):
+                for _cn in ["oof_u_hat", "oof_log_mae_q70_hat", "oof_log_mfe_hat", "oof_log_dur_hat"]:
+                    if _cn in _aux and len(_aux[_cn]) == len(meta.oof_probs):
+                        oof_df[_cn] = np.asarray(_aux[_cn], dtype=np.float32)
+            if "__early_inval__" in df.columns and len(df["__early_inval__"]) == len(meta.oof_probs):
+                oof_df["early_inval"] = np.asarray(df["__early_inval__"].values, dtype=np.int8)
+            if "__mae_ret__" in df.columns and len(df["__mae_ret__"]) == len(meta.oof_probs):
+                oof_df["mae_ret"] = np.asarray(df["__mae_ret__"].values, dtype=np.float32)
+            if "__mfe_ret__" in df.columns and len(df["__mfe_ret__"]) == len(meta.oof_probs):
+                oof_df["mfe_ret"] = np.asarray(df["__mfe_ret__"].values, dtype=np.float32)
+            if "__duration__" in df.columns and len(df["__duration__"]) == len(meta.oof_probs):
+                oof_df["duration"] = np.asarray(df["__duration__"].values, dtype=np.int16)
+
             oof_df.to_parquet(meta_oof_path, index=False)
             tprint(f"Saved meta OOF predictions for {key} to {meta_oof_path}")
     
@@ -4995,6 +5440,9 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
                     X, y,
                     base_model=mdi_base,
                     sample_weight=w,
+                    selector_y=y,
+                    selector_target="classification",
+                    selector_loss="modified_huber",
                     end_features=60,
                     cumulative_cap=0.99,
                     min_share=0.0005,

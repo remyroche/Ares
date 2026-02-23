@@ -1713,6 +1713,7 @@ class RidgePositionSizer:
         delta: float,
         gamma: float,
         groups: np.ndarray | None = None,
+        symbols: np.ndarray | None = None,
     ) -> Dict:
         """Evaluate hyperparameters using purged cross-validation.
         
@@ -1729,6 +1730,7 @@ class RidgePositionSizer:
             delta: Huber loss delta parameter
             gamma: Asymmetric weight parameter
             groups: Optional group labels for CV splits
+            symbols: Optional array of symbols for diversity metrics
             
         Returns:
             Dictionary of evaluation metrics
@@ -1778,6 +1780,10 @@ class RidgePositionSizer:
                 'delta': delta,
                 'gamma': gamma,
                 'PnL_total': 0.0,
+                'PnL_per_day': 0.0,
+                'Trades_per_day': 0.0,
+                'Unique_Symbols_Selected': 0,
+                'Unique_Symbols_Total': 0,
                 'Sortino': 0.0,
                 'MaxDD': 1.0,
                 'IC': 0.0,
@@ -1788,6 +1794,7 @@ class RidgePositionSizer:
         true = y[mask]
         true_raw = oof_true_raw[mask]
         ts_masked = timestamps[mask] if timestamps is not None else None
+        sym_masked = symbols[mask] if symbols is not None else None
         
         # Apply top-k% selection policy PER TIMESTAMP SLICE
         # This is more realistic: at each timestamp, we select top-k assets
@@ -1833,24 +1840,60 @@ class RidgePositionSizer:
         n_selected = len(selected_returns)
         pnl_total = float(np.mean(selected_returns)) - self.cost_pct if n_selected > 0 else -self.cost_pct
         
+        # Compute per-day metrics (log-growth per unit time)
+        pnl_per_day = pnl_total # Fallback
+        trades_per_day = 0.0
+        n_days = 1.0
+
         # Aggregate to daily returns if timestamps available
         if ts_masked is not None and len(selected_returns) > 1:
             selected_ts_sorted = ts_masked[selected_indices][sort_order] if sort_order is not None else ts_masked[selected_indices]
+
             if selected_ts_sorted is not None:
                 # Convert to pandas for easy daily aggregation
                 try:
+                    # Calculate net returns for daily aggregation
+                    # selected_returns is GROSS (true_raw), so subtract cost
+                    net_returns = selected_returns - self.cost_pct
+
+                    dates_series = pd.to_datetime(selected_ts_sorted).date
                     daily_df = pd.DataFrame({
-                        'return': selected_returns,
-                        'date': pd.to_datetime(selected_ts_sorted).date
+                        'return': net_returns,
+                        'date': dates_series
                     })
+
+                    # Sum log returns per day (assuming returns are log-returns)
                     daily_returns = daily_df.groupby('date')['return'].sum().values
+
+                    # Compute mean daily return (growth per day)
+                    pnl_per_day = float(np.mean(daily_returns))
+
+                    # Calculate number of days in the OOF period (from ts_masked)
+                    # Use all valid OOF timestamps, not just selected trades, to capture non-trading days correctly
+                    unique_dates = np.unique(pd.to_datetime(ts_masked).date)
+                    n_days = max(1, len(unique_dates))
+
+                    trades_per_day = float(n_selected) / float(n_days)
+
                 except (ValueError, TypeError, AttributeError):
                     # Fall back to unaggregated returns if date parsing fails
-                    daily_returns = selected_returns
+                    daily_returns = selected_returns - self.cost_pct
+                    pnl_per_day = pnl_total
             else:
-                daily_returns = selected_returns
+                daily_returns = selected_returns - self.cost_pct
+                pnl_per_day = pnl_total
         else:
-            daily_returns = selected_returns
+            daily_returns = selected_returns - self.cost_pct
+            pnl_per_day = pnl_total
+
+        # Unique symbols metrics
+        unique_symbols_selected = 0
+        unique_symbols_total = 0
+        if sym_masked is not None:
+            unique_symbols_total = len(np.unique(sym_masked))
+            if n_selected > 0:
+                selected_symbols = sym_masked[selected_indices]
+                unique_symbols_selected = len(np.unique(selected_symbols))
         
         # Sortino ratio on daily returns
         neg_returns = daily_returns[daily_returns < 0]
@@ -1896,6 +1939,10 @@ class RidgePositionSizer:
             'delta': delta,
             'gamma': gamma,
             'PnL_total': pnl_total,
+            'PnL_per_day': pnl_per_day,
+            'Trades_per_day': trades_per_day,
+            'Unique_Symbols_Selected': unique_symbols_selected,
+            'Unique_Symbols_Total': unique_symbols_total,
             'Sortino': sortino,
             'MaxDD': max_dd,
             'IC': ic,
@@ -2041,7 +2088,7 @@ class RidgePositionSizer:
             delta = trial.suggest_float("delta", self.delta_range[0], self.delta_range[1])
             
             metrics = self._evaluate_params(
-                X, y, y_gross, timestamps, alpha, delta, gamma, groups
+                X, y, y_gross, timestamps, alpha, delta, gamma, groups, symbols
             )
             
             # Save all metrics into trial user_attrs for later dataframe construction
@@ -2051,10 +2098,10 @@ class RidgePositionSizer:
             # Store for the dataframe
             results.append(metrics)
             
-            # We want to maximize PnL_total, maximize Sortino, and minimize MaxDD
+            # We want to maximize PnL_per_day, maximize Sortino, and minimize MaxDD
             # For Optuna's directions=["maximize", "maximize", "minimize"]:
             return (
-                metrics.get("PnL_total", -999.0),
+                metrics.get("PnL_per_day", -999.0),
                 metrics.get("Sortino", -99.0),
                 metrics.get("MaxDD", 99.0)
             )
@@ -2068,23 +2115,24 @@ class RidgePositionSizer:
                 self.best_sortino = -np.inf
                 
             def __call__(self, study, trial):
-                pnl = trial.user_attrs.get("PnL_total", -999.0)
+                pnl = trial.user_attrs.get("PnL_per_day", -999.0)
                 sortino = trial.user_attrs.get("Sortino", -99.0)
                 maxdd = trial.user_attrs.get("MaxDD", 99.0)
+                trades_per_day = trial.user_attrs.get("Trades_per_day", 0.0)
                 
                 is_best = False
                 msg = ""
                 if pnl > self.best_pnl:
                     self.best_pnl = pnl
                     is_best = True
-                    msg += "New Best PnL! "
+                    msg += "New Best PnL/Day! "
                 if sortino > self.best_sortino:
                     self.best_sortino = sortino
                     is_best = True
                     msg += "New Best Sortino!"
                     
                 if is_best:
-                    tprint(f"    Trial {trial.number} {msg}PnL={pnl:.6f}, Sortino={sortino:.3f}, MaxDD={maxdd:.4f} | "
+                    tprint(f"    Trial {trial.number} {msg}PnL/Day={pnl:.6f}, Trades/Day={trades_per_day:.1f}, Sortino={sortino:.3f}, MaxDD={maxdd:.4f} | "
                            f"Params: alpha={trial.params.get('alpha'):.5f}, delta={trial.params.get('delta'):.3f}, gamma={trial.params.get('gamma'):.3f}")
 
         sampler = optuna.samplers.NSGAIISampler(seed=42)
@@ -2095,10 +2143,10 @@ class RidgePositionSizer:
         self.cv_results_ = pd.DataFrame(results)
         
         # Compute composite J z-score for selection
-        # Use PnL_total instead of annualized since we don't have proper day count
+        # Use PnL_per_day (log-growth per unit time) instead of per trade
         self.cv_results_['J_zscore'] = composite_J_zscore(
             self.cv_results_,
-            pnl_col='PnL_total',
+            pnl_col='PnL_per_day',
             sortino_col='Sortino',
             maxdd_col='MaxDD',
             a=1.0,
@@ -2406,6 +2454,9 @@ def run_ridge_position_sizer_step(
         best_idx = sizer.cv_results_['J_zscore'].idxmax()
         best_row = sizer.cv_results_.loc[best_idx]
         metrics['cv_best_pnl_total'] = float(best_row['PnL_total'])
+        metrics['cv_best_pnl_per_day'] = float(best_row['PnL_per_day'])
+        metrics['cv_best_trades_per_day'] = float(best_row['Trades_per_day'])
+        metrics['cv_best_unique_symbols_selected'] = int(best_row['Unique_Symbols_Selected'])
         metrics['cv_best_sortino'] = float(best_row['Sortino'])
         metrics['cv_best_maxdd'] = float(best_row['MaxDD'])
         metrics['cv_best_ic'] = float(best_row['IC'])

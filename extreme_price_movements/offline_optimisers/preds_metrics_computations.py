@@ -933,9 +933,14 @@ def analyse_predictions(
     horizon: Optional[int] = None,
     optimise_params_path: Optional[str] = None,
     regime_parquet: Optional[str] = None,
+    side: str = "long",
 ) -> Dict[str, object]:
     _assert_inputs(df_raw, ret_col)
     df = df_raw.copy()
+    side_norm = str(side or "long").lower()
+    side_mult = -1.0 if side_norm == "short" else 1.0
+    ret_eff_col = "__ret_eff__"
+    df[ret_eff_col] = df[ret_col].astype(np.float32) * np.float32(side_mult)
 
     # Merge regime features from external parquet if provided and not already present
     if regime_parquet:
@@ -979,14 +984,14 @@ def analyse_predictions(
 
     df = _downcast(df)
 
-    ic = compute_ic(df, by="ts", ret_col=ret_col)
-    dec = compute_deciles(df, q=10, by="ts", ret_col=ret_col)
-    ll = lead_lag_sanity(df, by_ts="ts", ret_col=ret_col)
+    ic = compute_ic(df, by="ts", ret_col=ret_eff_col)
+    dec = compute_deciles(df, q=10, by="ts", ret_col=ret_eff_col)
+    ll = lead_lag_sanity(df, by_ts="ts", ret_col=ret_eff_col)
 
     # --- Proxy grids: optimistic, pessimistic, mid (realistic) ---
-    grid_opt = run_proxy_grid(df, mode="optimistic", ret_col=ret_col)
-    grid_pess = run_proxy_grid(df, mode="pessimistic", ret_col=ret_col)
-    grid_mid = run_proxy_grid(df, mode="mid", ret_col=ret_col)
+    grid_opt = run_proxy_grid(df, mode="optimistic", ret_col=ret_eff_col)
+    grid_pess = run_proxy_grid(df, mode="pessimistic", ret_col=ret_eff_col)
+    grid_mid = run_proxy_grid(df, mode="mid", ret_col=ret_eff_col)
 
     # --- Optimise-step policy simulation ---
     opt_params = _load_optimise_params(optimise_params_path)
@@ -999,23 +1004,23 @@ def analyse_predictions(
         df,
         tpsl=opt_tpsl_spec,
         mode="optimise",
-        ret_col=ret_col,
+        ret_col=ret_eff_col,
     )
 
     # --- Regime bucket analysis ---
-    regime_analysis = compute_regime_bucket_analysis(df, ret_col=ret_col)
+    regime_analysis = compute_regime_bucket_analysis(df, ret_col=ret_eff_col)
 
     # --- Step 1: Extreme-move gate + HL-range payoff ---
-    gate_stats = compute_extreme_gate_stats(df, ret_col=ret_col)
+    gate_stats = compute_extreme_gate_stats(df, ret_col=ret_eff_col)
 
     # --- Step 2: ATR-relative TP/SL grid ---
-    atr_grid = run_atr_proxy_grid(df, ret_col=ret_col)
+    atr_grid = run_atr_proxy_grid(df, ret_col=ret_eff_col)
 
     # --- Step 3: Stratified isotonic calibration ---
-    calibration = compute_stratified_calibration(df, ret_col=ret_col)
+    calibration = compute_stratified_calibration(df, ret_col=ret_eff_col)
 
     # --- Step 4: Top-k decile metrics (10% and 30%) ---
-    topk_metrics = compute_topk_metrics(df, ret_col=ret_col)
+    topk_metrics = compute_topk_metrics(df, ret_col=ret_eff_col)
 
     horizon_label = f"H{horizon}" if horizon is not None else ret_col
 
@@ -1036,6 +1041,8 @@ def analyse_predictions(
             "fee_levels": list(FEE_LEVELS),
             "horizon": horizon_label,
             "ret_column": ret_col,
+            "ret_column_effective": ret_eff_col,
+            "side": side_norm,
             "tp_levels": [0.02, 0.03, 0.04],
             "sl_ratio": 0.5,
             "optimise_params": opt_params,
@@ -1074,6 +1081,7 @@ def run_and_save(
     targets: Tuple[Tuple[Optional[int], str], ...],
     optimise_params_path: Optional[str] = None,
     regime_parquet: Optional[str] = None,
+    side: str = "long",
 ) -> Dict[str, Dict[str, Path]]:
     """Persist artifacts for each requested horizon under out_dir."""
 
@@ -1089,6 +1097,7 @@ def run_and_save(
             horizon=horizon,
             optimise_params_path=optimise_params_path,
             regime_parquet=regime_parquet,
+            side=side,
         )
         label_dir = outdir / label
         label_dir.mkdir(parents=True, exist_ok=True)
@@ -1235,6 +1244,12 @@ Examples:
             "Merged on ts+asset for regime bucket analysis."
         ),
     )
+    parser.add_argument(
+        "--side",
+        choices=["auto", "long", "short"],
+        default="auto",
+        help="Payoff orientation. 'short' flips forward returns for IC/decile/proxy payoff metrics.",
+    )
     args = parser.parse_args()
 
     _df = _load_input(Path(args.input))
@@ -1253,12 +1268,18 @@ Examples:
         all_horizons=args.ret_all,
     )
 
+    side_arg = str(args.side).lower()
+    if side_arg == "auto":
+        inp = str(args.input).lower()
+        side_arg = "short" if "short" in inp else "long"
+
     outputs = run_and_save(
         _df,
         args.outdir,
         targets,
         optimise_params_path=args.optimise_params,
         regime_parquet=args.regime_parquet,
+        side=side_arg,
     )
     print(json.dumps(
         {k: {kk: str(vv) for kk, vv in paths.items()} for k, paths in outputs.items()},

@@ -93,6 +93,17 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
     
     if not raw_dfs:
         raise FileNotFoundError(f"No meta OOF parquet files found in {meta_oof_dir}")
+
+    # Hard safety: when base TP-vs-SL excludes timeouts, sizing must use
+    # meta classifier probabilities (p_sl/p_to/p_tp), not base-only outputs.
+    _meta_prob_available = any(
+        all(c in df.columns for c in ("oof_p_sl", "oof_p_to", "oof_p_tp"))
+        for df in raw_dfs.values()
+    )
+    assert _meta_prob_available, (
+        "Sizing must use meta classifier probabilities when TO excluded in base. "
+        "Missing oof_p_sl/oof_p_to/oof_p_tp in meta OOF artifacts."
+    )
     
     # Parse model names into (base_bucket, col_name)
     # Patterns: long_mr_H2 -> (long_mr, reg_H2), long_mr_clf -> (long_mr, clf),

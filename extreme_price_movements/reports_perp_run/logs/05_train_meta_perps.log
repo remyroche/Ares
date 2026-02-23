@@ -20,3 +20,8 @@ Matplotlib created a temporary cache directory at /var/folders/dr/hz7y0z9j0x39z7
 [2026-02-23 00:59:15.931] SUCCESS: ✅ [features_common.utils] Math validation utilities loaded
 2026-02-23 00:59:15,935 - System.tprint - INFO - ℹ️ ✅ [features_common.utils] Math validation utilities loaded
 [2026-02-23 00:59:15.939] DEBUG: 🔧 [features_common.utils] Common utilities module initialized
+2026-02-23 00:59:21,423 - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - ℹ️ M1 GPU Manager initialized - M1: False, Generation: none, MPS: False
+2026-02-23 00:59:21,486 - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - WARNING - ⚠️ Non-M1 system detected - M1-specific optimizations disabled
+2026-02-23 00:59:21,535 - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - WARNING - ⚠️ M1-specific CPU optimizations disabled - non-M1 system detected
+[2026-02-22 23:59:24 UTC] GC: Collected 0 objects on startup.
+[2026-02-22 23:59:24 UTC] ERROR: No feature directories found.

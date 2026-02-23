@@ -1,0 +1,15 @@
+Feb 23, 2026 01:00:54 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Feb 23, 2026 01:00:54 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Feb 23, 2026 01:00:54 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.002s
+Feb 23, 2026 01:00:54 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Feb 23, 2026 01:00:54 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Feb 23, 2026 01:00:54 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.001s
+Feb 23, 2026 01:00:54 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Feb 23, 2026 01:00:54 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.001s
+Feb 23, 2026 01:00:54 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Feb 23, 2026 01:00:54 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.002s
+Feb 23, 2026 01:00:54 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Feb 23, 2026 01:00:54 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Feb 23, 2026 01:00:57 (+00:00:02) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: False, Generation: none, MPS: False
+Feb 23, 2026 01:00:57 (+00:00:02) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - WARNING - ⚠️ Non-M1 system detected - M1-specific optimizations disabled
+Feb 23, 2026 01:00:57 (+00:00:02) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - WARNING - ⚠️ M1-specific CPU optimizations disabled - non-M1 system detected

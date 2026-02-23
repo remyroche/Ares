@@ -1,0 +1,41 @@
+[2026-02-22 23:59:39 UTC] Entering function: retry_with_backoff in utils.py
+2026-02-23 00:59:40,080 - DataQualityFramework - INFO - ℹ️ ✅ Comprehensive duplicate analyzer integrated
+2026-02-23 00:59:40,083 - DataQualityFramework - INFO - ℹ️ 🔧 Unified Data Quality Framework initialized (singleton)
+[2026-02-23 00:59:40.085] PERFORMANCE: DataQualityFramework initialization took 0.005s
+2026-02-23 00:59:40,087 - System.tprint - INFO - ℹ️ DataQualityFramework initialization took 0.005s
+2026-02-23 00:59:40,956 - ares.registry - INFO - ℹ️ Registered step: data_download
+2026-02-23 00:59:40,976 - System.AdvancedQualityMetrics - INFO - ℹ️ 📊 AdvancedQualityMetrics initialized with tolerant parameters
+[2026-02-23 00:59:40.981] PERFORMANCE: AdvancedQualityMetrics initialization took 0.005s
+2026-02-23 00:59:40,983 - System.tprint - INFO - ℹ️ AdvancedQualityMetrics initialization took 0.005s
+2026-02-23 00:59:40,992 - DataCleaner - INFO - ℹ️ Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+[2026-02-23 00:59:40.996] PERFORMANCE: DataCleaner(klines) initialization took 0.004s
+2026-02-23 00:59:40,997 - System.tprint - INFO - ℹ️ DataCleaner(klines) initialization took 0.004s
+2026-02-23 00:59:41,000 - DataCleaner - INFO - ℹ️ Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+[2026-02-23 00:59:41.004] PERFORMANCE: DataCleaner(klines) initialization took 0.004s
+2026-02-23 00:59:41,009 - System.tprint - INFO - ℹ️ DataCleaner(klines) initialization took 0.004s
+2026-02-23 00:59:41,011 - DataCleanerManager - INFO - ℹ️ 🔧 DataCleanerManager initialized (singleton)
+[2026-02-23 00:59:41.038] DEBUG: 🔧 [features_common.utils] Initializing common utilities module
+[2026-02-23 00:59:41.039] SUCCESS: ✅ [features_common.utils] Math validation utilities loaded
+2026-02-23 00:59:41,040 - System.tprint - INFO - ℹ️ ✅ [features_common.utils] Math validation utilities loaded
+[2026-02-23 00:59:41.046] DEBUG: 🔧 [features_common.utils] Common utilities module initialized
+2026-02-23 00:59:46,391 - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - ℹ️ M1 GPU Manager initialized - M1: False, Generation: none, MPS: False
+2026-02-23 00:59:46,457 - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - WARNING - ⚠️ Non-M1 system detected - M1-specific optimizations disabled
+2026-02-23 00:59:46,459 - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - WARNING - ⚠️ M1-specific CPU optimizations disabled - non-M1 system detected
+[2026-02-22 23:59:47 UTC] Cleared caches and ran gc.collect()
+[2026-02-22 23:59:47 UTC] Starting TBM parameter comparison run
+[2026-02-22 23:59:47 UTC] [params_store] TBM best params loaded from /Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/reports/tbm_best_params.csv: config_id=CFG4E480D167D  base_atr_window=672  k_tp=1.8  sl_as_tp_pct=0.4  tp_base_pct=0.011  mode=optuna_s2  horizon_scaling=sqrt
+2026-02-23 00:59:47,360 - params_store - INFO - ℹ️ [params_store] TBM best params loaded from /Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/reports/tbm_best_params.csv: config_id=CFG4E480D167D  base_atr_window=672  k_tp=1.8  sl_as_tp_pct=0.4  tp_base_pct=0.011  mode=optuna_s2  horizon_scaling=sqrt
+[2026-02-22 23:59:47 UTC] [params_store] Injected into cfg: barrier_atr_window=672  barrier_k_tp=1.8  barrier_mode=optuna_s2  barrier_sl_base_mult=0.4  barrier_sl_hi=0.06  barrier_sl_lo=0.005  barrier_sl_method=tp_pct  barrier_tp_abs_pct=0.011  barrier_tp_base_pct=0.011  barrier_tp_hi=0.06  barrier_tp_lo=0.005  barrier_tp_method=atr_norm  label_horizon_base=4  label_horizon_scaling=sqrt
+2026-02-23 00:59:47,361 - params_store - INFO - ℹ️ [params_store] Injected into cfg: barrier_atr_window=672  barrier_k_tp=1.8  barrier_mode=optuna_s2  barrier_sl_base_mult=0.4  barrier_sl_hi=0.06  barrier_sl_lo=0.005  barrier_sl_method=tp_pct  barrier_tp_abs_pct=0.011  barrier_tp_base_pct=0.011  barrier_tp_hi=0.06  barrier_tp_lo=0.005  barrier_tp_method=atr_norm  label_horizon_base=4  label_horizon_scaling=sqrt
+[2026-02-22 23:59:47 UTC] No --panel provided, auto-detecting from data_root: ../data_perp
+[2026-02-22 23:59:47 UTC] Entering function: refresh_margin_universe_daily in universe.py
+[2026-02-22 23:59:47 UTC] Refreshing margin universe...
+[2026-02-22 23:59:47 UTC] Entering function: fetch_binance_cross_margin_pairs in universe.py
+[2026-02-22 23:59:47 UTC] Loading panel from store for 2 symbols (Stage 1 subsampled)
+[2026-02-22 23:59:47 UTC] Panel store load returned no usable symbols. store.ohlcv_dir=../data_perp/ohlcv
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/compare_tbm_parameters.py", line 4370, in <module>
+    run(parse_args())
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/compare_tbm_parameters.py", line 3821, in run
+    raise ValueError("Could not load panel data. Please provide --panel path.")
+ValueError: Could not load panel data. Please provide --panel path.

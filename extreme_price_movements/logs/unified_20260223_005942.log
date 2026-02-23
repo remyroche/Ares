@@ -1,0 +1,17 @@
+Feb 23, 2026 00:59:42 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Feb 23, 2026 00:59:42 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Feb 23, 2026 00:59:42 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.004s
+Feb 23, 2026 00:59:43 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Feb 23, 2026 00:59:43 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Feb 23, 2026 00:59:43 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.009s
+Feb 23, 2026 00:59:43 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Feb 23, 2026 00:59:43 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.003s
+Feb 23, 2026 00:59:43 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Feb 23, 2026 00:59:43 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.005s
+Feb 23, 2026 00:59:43 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Feb 23, 2026 00:59:43 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Feb 23, 2026 00:59:47 (+00:00:04) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: False, Generation: none, MPS: False
+Feb 23, 2026 00:59:47 (+00:00:04) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - WARNING - ⚠️ Non-M1 system detected - M1-specific optimizations disabled
+Feb 23, 2026 00:59:47 (+00:00:04) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - WARNING - ⚠️ M1-specific CPU optimizations disabled - non-M1 system detected
+Feb 23, 2026 00:59:47 (+00:00:05) - params_store - INFO - [params_store] TBM best params loaded from /Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/reports/tbm_best_params.csv: config_id=CFG4E480D167D  base_atr_window=672  k_tp=1.8  sl_as_tp_pct=0.4  tp_base_pct=0.011  mode=optuna_s2  horizon_scaling=sqrt
+Feb 23, 2026 00:59:47 (+00:00:05) - params_store - INFO - [params_store] Injected into cfg: barrier_atr_window=672  barrier_k_tp=1.8  barrier_mode=optuna_s2  barrier_sl_base_mult=0.4  barrier_sl_hi=0.06  barrier_sl_lo=0.005  barrier_sl_method=tp_pct  barrier_tp_abs_pct=0.011  barrier_tp_base_pct=0.011  barrier_tp_hi=0.06  barrier_tp_lo=0.005  barrier_tp_method=atr_norm  label_horizon_base=4  label_horizon_scaling=sqrt

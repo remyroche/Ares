@@ -163,15 +163,27 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
             combined["reg_std"] = 0.0
         
         # Attach metadata from base
-        for col in ["timestamp", "symbol", "return", "is_long", "index"]:
+        # Include aux head OOFs and realized outcomes for diagnostics
+        aux_cols = [
+            "timestamp", "symbol", "return", "is_long", "index",
+            "oof_u_hat", "oof_log_mae_q70_hat", "oof_log_mfe_hat", "oof_log_dur_hat",
+            "mae_ret", "mfe_ret", "duration", "u_policy_net", "exit_code"
+        ]
+        for col in aux_cols:
             if col in base_df.columns:
                 combined[col] = base_df[col].values
         
         result[bucket] = combined
     
     tprint(f"Loaded OOF predictions for {len(result)} buckets: {list(result.keys())}")
+
+    _meta_set = {
+        "timestamp", "symbol", "return", "is_long", "index",
+        "oof_u_hat", "oof_log_mae_q70_hat", "oof_log_mfe_hat", "oof_log_dur_hat",
+        "mae_ret", "mfe_ret", "duration", "u_policy_net", "exit_code"
+    }
     for bk, bdf in result.items():
-        pred_cols = [c for c in bdf.columns if c not in ("timestamp", "symbol", "return", "is_long", "index")]
+        pred_cols = [c for c in bdf.columns if c not in _meta_set]
         tprint(f"  {bk}: {len(bdf)} samples, pred_cols={pred_cols}")
     return result
 
@@ -206,6 +218,16 @@ def load_trade_outcomes(data_root: str, run_id: str, oof_df: pd.DataFrame) -> pd
             outcomes["u_policy"] = oof_df["u_policy"].values
         if "exit_code" in oof_df.columns:
             outcomes["exit_code"] = oof_df["exit_code"].values
+
+        # Copy aux diagnostic columns
+        aux_cols = [
+            "oof_u_hat", "oof_log_mae_q70_hat", "oof_log_mfe_hat", "oof_log_dur_hat",
+            "mae_ret", "mfe_ret", "duration"
+        ]
+        for c in aux_cols:
+            if c in oof_df.columns:
+                outcomes[c] = oof_df[c].values
+
         tprint(f"Constructed trade outcomes from OOF context: {len(outcomes)} trades")
         return outcomes
     
@@ -378,7 +400,11 @@ def main():
     # long and short signals have incompatible return distributions and the
     # short_mr bucket has inverted IC.
     # -------------------------------------------------------------------------
-    _meta_cols = {"timestamp", "symbol", "return", "is_long", "index"}
+    _meta_cols = {
+        "timestamp", "symbol", "return", "is_long", "index",
+        "oof_u_hat", "oof_log_mae_q70_hat", "oof_log_mfe_hat", "oof_log_dur_hat",
+        "mae_ret", "mfe_ret", "duration", "u_policy_net", "exit_code"
+    }
 
     direction_groups = {"long": {}, "short": {}}
     for bucket_name, oof_preds in bucket_oofs.items():
@@ -430,6 +456,7 @@ def main():
                     save_model=False,
                     run_id=run_id,
                     symbols=symbols,
+                    bucket_name=bucket_name,
                 )
                 bkt_weights = sizer.get_weights()
                 # Prefix with bucket name so the combined manifest stays unambiguous

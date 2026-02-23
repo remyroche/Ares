@@ -24,6 +24,10 @@ from extreme_price_movements.feature_selection_extreme_events import (
 )
 from extreme_price_movements.purged_cv import PurgedKFold
 from extreme_price_movements.utils import tprint
+from extreme_price_movements.policy_ml import (
+    MetaClassifierSelectionConfig,
+    pick_meta_classifier_by_utility_top30,
+)
 
 META_CLASS_ORDER = np.array([0, 1, 2], dtype=np.int64)
 
@@ -766,7 +770,9 @@ class MetaClassifierModel:
     def fit(self, X_meta: pd.DataFrame, y_ret: np.ndarray,
             sample_weight=None, groups=None,
             y_per_horizon: Optional[Dict[int, np.ndarray]] = None,
-            vol_proxy: Optional[np.ndarray] = None):
+            vol_proxy: Optional[np.ndarray] = None,
+            realized_u_policy: Optional[np.ndarray] = None,
+            selection_cfg: Optional[MetaClassifierSelectionConfig] = None):
         """Race classifiers using multi-barrier labels (multiclass if vol_proxy provided)."""
         import time as _time
         _t0 = _time.monotonic()
@@ -798,6 +804,8 @@ class MetaClassifierModel:
                     sw = sw[valid_idx]
                 if groups is not None:
                     groups = np.asarray(groups)[valid_idx]
+                if realized_u_policy is not None:
+                    realized_u_policy = np.asarray(realized_u_policy, dtype=float)[valid_idx]
                 y_per_horizon = {h: v[valid_idx] for h, v in y_per_horizon.items()}
                 vol_proxy = vol_proxy[valid_idx]
 
@@ -816,8 +824,15 @@ class MetaClassifierModel:
 
         candidates = self._build_candidates()
         records = []
-        best_score = 1e18 # Lower logloss is better
+        scored = []
         best_rec = None
+        if selection_cfg is None:
+            selection_cfg = MetaClassifierSelectionConfig()
+
+        if realized_u_policy is None:
+            realized_u_policy = np.log1p(np.clip(y_ret_np, -0.999999, None))
+        else:
+            realized_u_policy = np.asarray(realized_u_policy, dtype=float)
 
         for name, cand in candidates.items():
             kind = cand["kind"]
@@ -831,20 +846,38 @@ class MetaClassifierModel:
 
             metrics = self._compute_clf_metrics(
                 oof, y_class, y_ret_np, groups=groups, fee=self.FEE_PER_ROUND_TRIP)
+            sel = pick_meta_classifier_by_utility_top30(
+                y_true=y_class,
+                p_pred=oof,
+                realized_u_policy=realized_u_policy,
+                cfg=selection_cfg,
+            )
             metrics["model"] = name
             metrics["logloss_cv"] = logloss
+            metrics["selection_score"] = float(sel.get("selection_score", float("nan")))
+            metrics["top_realized_u_mean"] = float(sel.get("top_realized_u_mean", float("nan")))
+            metrics["passed_gate"] = float(sel.get("passed_gate", 0.0))
+            metrics["passed_econ"] = float(sel.get("passed_econ", 0.0))
 
             records.append(metrics)
-            tprint(f"    {name}: LogLoss={logloss:.4f}, Acc={metrics.get('accuracy',0):.3f}")
+            scored.append((name, kind, params, oof, y_class, metrics, sel))
+            tprint(
+                f"    {name}: LogLoss={logloss:.4f}, Acc={metrics.get('accuracy',0):.3f}, "
+                f"TopU={sel.get('selection_score', float('nan')):.5f}, "
+                f"TopRealU={sel.get('top_realized_u_mean', float('nan')):.5f}, "
+                f"gate={bool(sel.get('passed_gate',0))}, econ={bool(sel.get('passed_econ',0))}"
+            )
 
-            # Use LogLoss for selection
-            if logloss < best_score:
-                best_score = logloss
-                best_rec = {
-                    "name": name, "kind": kind, "params": params,
-                    "oof": oof, "y_class": y_class,
-                    "metrics": metrics,
-                }
+        gated = [r for r in scored if bool(r[6].get("passed_gate", 0.0) > 0.5 and r[6].get("passed_econ", 0.0) > 0.5)]
+        pool = gated if gated else scored
+        if pool:
+            _best = max(pool, key=lambda r: float(r[6].get("selection_score", -1e18)))
+            best_rec = {
+                "name": _best[0], "kind": _best[1], "params": _best[2],
+                "oof": _best[3], "y_class": _best[4],
+                "metrics": _best[5],
+                "selection": _best[6],
+            }
 
         if best_rec is None:
             raise RuntimeError("No classifier candidates completed")
@@ -866,8 +899,14 @@ class MetaClassifierModel:
             self.model = {"kind": "trivial", "class": unique_classes[0], "multiclass": True}
             return self
 
-        tprint(f"  Winner: {best_rec['name']} "
-               f"(LogLoss={best_score:.4f}). Fitting final model...")
+        _sel_best = best_rec.get("selection", {}) if isinstance(best_rec, dict) else {}
+        tprint(
+            f"  Winner: {best_rec['name']} "
+            f"(SelScore={float(_sel_best.get('selection_score', float('nan'))):.5f}, "
+            f"LogLoss={float(_sel_best.get('logloss', float('nan'))):.4f}, "
+            f"TopRealU={float(_sel_best.get('top_realized_u_mean', float('nan'))):.5f}). "
+            f"Fitting final model..."
+        )
 
         final_model = self._fit_one(kind, params, Xv, y_final, Xv, y_final,
                                     sw=sw_combined)

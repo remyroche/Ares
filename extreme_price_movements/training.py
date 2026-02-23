@@ -44,6 +44,12 @@ from .gamma_specialist import build_gamma_dataset, train_gamma_from_dataset
 from .model_scoring import precision_at_k, avg_trades_per_day, ece_at_mask, topk_mask, calibration_curve_bins, calibration_profile, ic_cross_sectional
 from .metrics import calculate_selection_score
 from .barrier_geometry import make_effective_tp
+from .policy_ml import (
+    build_base_tp_vs_sl,
+    load_best_policy_params_from_optimise,
+    MetaClassifierSelectionConfig,
+    policy_rollout_ml,
+)
 from .production_admissibility import ProdGates, production_admissibility_report
 from .gate_metrics import compute_stage_gate_metrics
 
@@ -2323,14 +2329,86 @@ def build_hourly_training_set_and_weights(
     # PnL computation
     pnl = ret_vals
 
+    # Optional: overwrite labels/returns with engine-identical rollout labels.
+    _policy_rollout_enabled = bool(cfg.get("policy_rollout_labeling_enable", True))
+    _policy_mfe_vals = None
+    _policy_mae_vals = None
+    _policy_bars_vals = None
+    if _policy_rollout_enabled and all(k in panel for k in ["open", "high", "low", "close"]):
+        try:
+            _max_hold = int(cfg.get("max_hold_hours", max(cfg.get("label_horizons_hours", [8]))))
+            _direction = 1 if trend_filter == "up" else -1
+            _idx_cache = {}
+            _ret_pol = np.zeros(len(entry_ts), dtype=np.float32)
+            _lbl_pol = np.ones(len(entry_ts), dtype=np.int8)
+            _mae_pol = np.zeros(len(entry_ts), dtype=np.float32)
+            _mfe_pol = np.zeros(len(entry_ts), dtype=np.float32)
+            _bars_pol = np.zeros(len(entry_ts), dtype=np.int16)
+            _atr_panel = feats.get("atr_pct", None)
+            for _i, (_ts_e, _sym) in enumerate(zip(entry_ts, event_sym)):
+                _sym = str(_sym)
+                if _sym not in _idx_cache:
+                    _ohlc_sym = pd.DataFrame({
+                        "open": panel["open"][_sym],
+                        "high": panel["high"][_sym],
+                        "low": panel["low"][_sym],
+                        "close": panel["close"][_sym],
+                    }).dropna()
+                    if _atr_panel is not None and hasattr(_atr_panel, "columns") and _sym in _atr_panel.columns:
+                        _atr_s = _atr_panel[_sym].reindex(_ohlc_sym.index).fillna(method="ffill").fillna(0.02)
+                    else:
+                        _atr_s = pd.Series(0.02, index=_ohlc_sym.index)
+                    _idx_cache[_sym] = (_ohlc_sym, _atr_s)
+                _ohlc_sym, _atr_s = _idx_cache[_sym]
+                _t0 = int(_ohlc_sym.index.get_indexer([pd.Timestamp(_ts_e)])[0])
+                if _t0 < 0:
+                    continue
+                _po = policy_rollout_ml(
+                    ohlc=_ohlc_sym,
+                    atr_pct=_atr_s,
+                    t0=_t0,
+                    direction=_direction,
+                    policy_params=cfg,
+                    max_hold_hours=_max_hold,
+                )
+                _ret_pol[_i] = float(_po.r_policy)
+                _lbl_pol[_i] = np.int8(_po.exit_code)
+                _mae_pol[_i] = float(_po.mae)
+                _mfe_pol[_i] = float(_po.mfe)
+                _bars_pol[_i] = int(_po.bars_held)
+            ret_vals = _ret_pol
+            lbl_vals = _lbl_pol
+            pnl = ret_vals
+            _policy_mae_vals = _mae_pol
+            _policy_mfe_vals = _mfe_pol
+            _policy_bars_vals = _bars_pol
+            tprint(f"Policy rollout labels applied: n={len(ret_vals)} direction={'long' if _direction>0 else 'short'} max_hold={_max_hold}h")
+        except Exception as _e_pol:
+            tprint(f"WARNING: policy rollout labeling failed, falling back to triple-barrier labels: {_e_pol}")
+
     # New Target Logic: Binary (TP vs Rest) with Outcome-based Weighting
     # Outcomes: 2=TP, 1=TIMEOUT, 0=SL
 
     valid_outcomes = np.isin(lbl_vals, np.array([OUT_SL, OUT_TO, OUT_TP], dtype=lbl_vals.dtype))
     assert bool(np.all(valid_outcomes)), f"Unexpected outcome labels found: {np.unique(lbl_vals[~valid_outcomes])}"
 
-    # Target: 1 if TP, 0 otherwise
-    y_bin = (lbl_vals == OUT_TP).astype(np.float32)
+    # Target: base classifier can be TP-vs-SL only (exclude timeout rows)
+    _exclude_to = bool(cfg.get("base_exclude_timeout_from_classifier", True))
+    if _exclude_to:
+        _y_tmp, _mask_tmp = build_base_tp_vs_sl(lbl_vals)
+        keep_rows = np.asarray(_mask_tmp, dtype=bool)
+        y_bin = np.asarray(_y_tmp, dtype=np.float32)
+        if not np.all(keep_rows):
+            event_ts = event_ts[keep_rows]
+            event_sym = event_sym[keep_rows]
+            entry_ts = entry_ts[keep_rows]
+            lbl_vals = lbl_vals[keep_rows]
+            ret_vals = ret_vals[keep_rows]
+            qual_vals = qual_vals[keep_rows]
+            pnl = pnl[keep_rows]
+    else:
+        # Legacy TP-vs-rest
+        y_bin = (lbl_vals == OUT_TP).astype(np.float32)
 
     # Weighting based on Quality and Outcome Importance
     # TP (2): w = quality (0.5 to 1.0) -> cleaner wins matter more? Or messy wins less?
@@ -2362,15 +2440,19 @@ def build_hourly_training_set_and_weights(
     # w_mfe_mae = w_min + (1-w_min) * clip(d/tau, 0, 1)
     # This weights samples by excursion quality, not speed or net R:R
     
-    # Get MFE/MAE from features (already computed in features.py)
-    if "mfe_4h" in feats:
-        mfe_vals = np.nan_to_num(_fast_lookup(feats["mfe_4h"], event_ts, event_sym), nan=0.0)
+    # Get MFE/MAE from policy rollout when enabled (engine-identical), else feature proxies
+    if _policy_mfe_vals is not None and _policy_mae_vals is not None:
+        mfe_vals = np.asarray(_policy_mfe_vals, dtype=np.float32)
+        mae_vals = np.asarray(_policy_mae_vals, dtype=np.float32)
     else:
-        mfe_vals = np.maximum(pnl, 0.0)
-    if "mae_4h" in feats:
-        mae_vals = np.nan_to_num(_fast_lookup(feats["mae_4h"], event_ts, event_sym), nan=0.0)
-    else:
-        mae_vals = np.maximum(-pnl, 0.0)
+        if "mfe_4h" in feats:
+            mfe_vals = np.nan_to_num(_fast_lookup(feats["mfe_4h"], event_ts, event_sym), nan=0.0)
+        else:
+            mfe_vals = np.maximum(pnl, 0.0)
+        if "mae_4h" in feats:
+            mae_vals = np.nan_to_num(_fast_lookup(feats["mae_4h"], event_ts, event_sym), nan=0.0)
+        else:
+            mae_vals = np.maximum(-pnl, 0.0)
     
     # Get barrier distances (TP/SL) from ATR
     if "atr_pct" in feats:
@@ -2473,7 +2555,10 @@ def build_hourly_training_set_and_weights(
         "__sl__": np.asarray(sl_vals, dtype=np.float32),
         "__is_timeout__": np.asarray(is_timeout, dtype=np.int8),
         "__quality__": np.asarray(qual_vals, dtype=np.float32),
+        "__u_policy__": np.log1p(np.clip(np.asarray(pnl, dtype=np.float32), -0.999999, None)),
     }
+    if _policy_bars_vals is not None:
+        parts["__bars_policy__"] = np.asarray(_policy_bars_vals, dtype=np.int16)
 
     # Store barrier_pct for risk-adjusted meta model target
     if "atr_pct" in feats:
@@ -3929,6 +4014,15 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
     meta_gate_results = []
     _bucket_y_ret = {}  # per-bucket raw returns for OOF saving
 
+    # Load optimize policy params dynamically (for policy-aligned targets/selection context)
+    _run_id_for_policy = str(cfg.get("run_id", ""))
+    _policy_params_blob = load_best_policy_params_from_optimise(cfg.get("data_root", "../data"), _run_id_for_policy) if _run_id_for_policy else {}
+    if _policy_params_blob:
+        _n_buckets = len(_policy_params_blob.get("buckets", {})) if isinstance(_policy_params_blob, dict) else 0
+        tprint(f"Meta training: loaded optimise policy params for run_id={_run_id_for_policy} (buckets={_n_buckets})")
+    else:
+        tprint("Meta training: optimise policy params not found for current run (using return-derived utility fallback).")
+
     def _collect_horizon_oof(side_name, kind_name):
         conf_local = alpha_models.get(side_name, {}).get(kind_name) if alpha_models else None
         if not conf_local:
@@ -4157,6 +4251,12 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             # Use vol_proxy (ATR) for risk-normalized target
             _vol_proxy = df["__barrier_pct__"].values.astype(np.float64) if "__barrier_pct__" in df.columns else None
             y_target_h = compute_meta_target(_r2, _r4, _r8, vol_proxy=_vol_proxy)
+            # Optional policy-value target: y_policy = log(1 + r_policy_proxy)
+            # Uses mid-horizon aligned return as rollout proxy when explicit per-trade policy rollout
+            # labels are not materialized in this training stage.
+            if bool(cfg.get("meta_use_policy_value_target", True)):
+                _r_mid = _r4 if len(_r4) == len(df) else _r2
+                y_target_h = np.log1p(np.clip(np.asarray(_r_mid, dtype=np.float64), -0.999999, None)).astype(np.float32)
 
             # Per-horizon returns for multi-barrier classifier labels
             _y_per_h = {2: _r2, 4: _r4, 8: _r8}
@@ -4395,8 +4495,9 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             meta_h = MetaModel()
             meta_h.strategy_name = _h_label
             tprint(f"  Fitting MetaModel {_h_label} (n={len(df)}, feats={X_meta_base.shape[1]}) ({_time.monotonic()-_t0_meta:.1f}s)...")
+            _meta_y_per_h = None if bool(cfg.get("meta_use_policy_value_target", True)) else _y_per_h
             meta_h.fit(X_meta_base, y_target_h, sample_weight=w_meta_h, groups=meta_groups,
-                       y_per_horizon=_y_per_h)
+                       y_per_horizon=_meta_y_per_h)
             meta_models[_h_label] = meta_h
             _bucket_y_ret[_h_label] = y_ret_raw_h.copy()
             tprint(f"Meta {_h_label}: fitted ({_time.monotonic()-_t0_meta:.1f}s).")
@@ -4511,8 +4612,31 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             meta_clf.strategy_name = f"{side}_{k}"
             meta_clf.FEE_PER_ROUND_TRIP = float(cfg.get("label_round_trip_fee_pct", 0.5)) / 100.0
             # Pass vol_proxy for risk-unit thresholding
-            meta_clf.fit(X_meta_base, y_target_clf, sample_weight=w_meta_clf, groups=meta_groups,
-                         y_per_horizon=_y_per_h, vol_proxy=_vol_proxy)
+            _sel_cfg = MetaClassifierSelectionConfig(
+                max_logloss=float(cfg.get("meta_clf_max_logloss", 1.10)),
+                dynamic_utility_from_realized=bool(cfg.get("meta_clf_dynamic_utility_from_realized", True)),
+                u_tp=float(cfg.get("meta_clf_u_tp", 1.0)),
+                u_to=float(cfg.get("meta_clf_u_to", 0.0)),
+                u_sl=float(cfg.get("meta_clf_u_sl", -3.0)),
+                top_frac=float(cfg.get("meta_clf_top_frac", 0.30)),
+                min_top_n=int(cfg.get("meta_clf_min_top_n", 50)),
+                min_lift_vs_baseline=float(cfg.get("meta_clf_min_lift_vs_baseline", 0.0)),
+                require_positive_oof_utility=bool(cfg.get("meta_clf_require_positive_oof_utility", True)),
+            )
+            if "__u_policy__" in df.columns:
+                _realized_u = np.asarray(df["__u_policy__"].values, dtype=float)
+            else:
+                _realized_u = np.log1p(np.clip(np.asarray(y_target_clf, dtype=float), -0.999999, None))
+            meta_clf.fit(
+                X_meta_base,
+                y_target_clf,
+                sample_weight=w_meta_clf,
+                groups=meta_groups,
+                y_per_horizon=_y_per_h,
+                vol_proxy=_vol_proxy,
+                realized_u_policy=_realized_u,
+                selection_cfg=_sel_cfg,
+            )
             meta_models[f"{side}_{k}_clf"] = meta_clf
             _bucket_y_ret[f"{side}_{k}_clf"] = y_target_clf.copy()
             tprint(f"Meta {side}_{k}_clf: fitted ({_time.monotonic()-_t0_meta:.1f}s).")
@@ -4999,8 +5123,20 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
                     oof_metrics = _aggregate_alpha_oof_metrics(y, race.oof_probs, y_ret, sample_weight=w, groups=groups_v)
                     alpha_diag.update(oof_metrics)
 
-                if score > best_ic:
-                    best_ic = score
+                # Economic gate: positive realized expectancy on top-k OOF selection
+                _econ_ok = True
+                _econ_mean = float("nan")
+                _econ_top_frac = float(cfg.get("base_oof_expectancy_top_frac", 0.30))
+                if race.oof_probs is not None and bool(cfg.get("base_require_positive_oof_expectancy", True)):
+                    _k_top = max(1, int(np.ceil(_econ_top_frac * len(race.oof_probs))))
+                    _idx_top = np.argsort(race.oof_probs)[-_k_top:]
+                    _econ_mean = float(np.mean(np.asarray(y_ret, dtype=float)[_idx_top]))
+                    _econ_ok = bool(_econ_mean > 0.0)
+                    tprint(f"  Base economic gate ({side}/{k}/H={H}): top{int(_econ_top_frac*100)} mean_ret={_econ_mean:.6f} pass={_econ_ok}")
+
+                _score_for_select = score if _econ_ok else -1e12
+                if _score_for_select > best_ic:
+                    best_ic = _score_for_select
                     best_m = {"model": race, "H": H, "feat_cols": cols, "per_regime": per_regime, "alpha_diag": alpha_diag}
 
                 per_h_models[H] = {
@@ -5010,6 +5146,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
                     "per_regime": per_regime,
                     "alpha_diag": alpha_diag,
                     "score": score,
+                    "econ_ok": bool(_econ_ok),
+                    "econ_top_mean_ret": float(_econ_mean) if np.isfinite(_econ_mean) else float("nan"),
                 }
 
             # --- Multi-horizon deployment: all horizons are kept ---

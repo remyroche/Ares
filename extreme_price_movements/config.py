@@ -229,6 +229,8 @@ CFG = {
     "label_min_net_rr": 0.9,
     "label_min_tp_hit_rate": 0.02,
     "label_max_timeout_rate": 0.90,
+    # Base label handling: exclude timeout (TO) from TP-vs-SL base classifier targets
+    "base_exclude_timeout_from_classifier": True,
 
     # ATR normalization for barrier scaling
     "atr_norm_fast_hl_hours": 24,
@@ -266,6 +268,22 @@ CFG = {
     "sample_weight_opt_min_samples": 400,
     "sample_weight_opt_trials": 16,
     "meta_sample_weight_opt_trials": 12,
+    "meta_use_policy_value_target": True,
+    # Meta classifier utility-based winner selection (logloss remains a gate)
+    "meta_clf_max_logloss": 1.10,
+    "meta_clf_u_tp": 1.0,
+    "meta_clf_u_to": 0.0,
+    "meta_clf_u_sl": -3.0,
+    "meta_clf_top_frac": 0.30,
+    "meta_clf_min_top_n": 50,
+    "meta_clf_min_lift_vs_baseline": 0.0,
+    "meta_clf_dynamic_utility_from_realized": True,
+    "meta_clf_require_positive_oof_utility": True,
+    # Economic gate on base race: require positive realized return in top-k OOF slice
+    "base_require_positive_oof_expectancy": True,
+    "base_oof_expectancy_top_frac": 0.30,
+    # Use engine-identical rollout labels when creating training rows
+    "policy_rollout_labeling_enable": True,
     "sample_weight_opt_n_splits": 5,
     "sample_weight_opt_embargo_bars": 10,
     "sample_weight_opt_min_n_eff_ratio": 0.30,

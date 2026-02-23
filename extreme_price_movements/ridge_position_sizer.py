@@ -1496,7 +1496,7 @@ class RidgePositionSizer:
     
     def __init__(
         self,
-        gamma_range: Tuple[float, float] = (1.0, 3.0),
+        gamma_range: Tuple[float, float] = (0.0, 0.8),
         alpha_range: Tuple[float, float] = (1e-4, 1e-1),
         delta_range: Tuple[float, float] = (0.5, 2.0),
         n_grid_points: int = 10,
@@ -2414,7 +2414,7 @@ def run_ridge_position_sizer_step(
     
     # Extract configuration
     cfg = cfg or {}
-    gamma_range = cfg.get('gamma_range', (1.0, 3.0))
+    gamma_range = cfg.get('gamma_range', (0.0, 0.8))
     alpha_range = cfg.get('alpha_range', (1e-4, 1e-1))
     delta_range = cfg.get('delta_range', (0.5, 2.0))
     n_grid_points = cfg.get('n_grid_points', 10)

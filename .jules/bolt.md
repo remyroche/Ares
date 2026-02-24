@@ -109,3 +109,9 @@ Result: `calculate_entropy_statistics_numba` speedup >700x (2.11s -> 0.003s). Fu
 ## 2026-02-16 - Parallelizing Numba Kernels
 Learning: Even with Numba-jitted inner functions, iterating over DataFrame columns in Python using `apply_to_frame` or `apply_to_matrix` incurs significant overhead, especially for operations with low per-column complexity (like RSI, rolling max/min, pct_change).
 Action: Always prefer `prange` loops inside a parallel Numba kernel over Python-level iteration when processing DataFrames column-wise. This yielded 3-13x speedups for common indicators.
+
+## 2026-02-24 - Rolling Std Optimization: Welford's Algorithm
+
+**Learning:** `_numba_rolling_std_1d` was implemented as O(N*W) by recalculating the window sum/sum_sq at every step to ensure stability. This was extremely slow for large windows (e.g. 3.45s for 100k rows, W=1000). Replacing it with an O(N) Welford's Online Algorithm (incremental updates) reduced execution time to ~0.01s (~300x speedup) while maintaining numerical stability.
+
+**Action:** Always use incremental Welford's algorithm for rolling variance/std calculations. It is O(N) and stable, unlike the naive sum of squares method which is unstable, or full recalculation which is O(N*W).

@@ -233,7 +233,7 @@ CFG = {
     "label_min_tp_hit_rate": 0.02,
     "label_max_timeout_rate": 0.90,
     # Base label handling: exclude timeout (TO) from TP-vs-SL base classifier targets
-    "base_exclude_timeout_from_classifier": True,
+    "base_exclude_timeout_from_classifier": False,
 
     # ATR normalization for barrier scaling
     "atr_norm_fast_hl_hours": 24,

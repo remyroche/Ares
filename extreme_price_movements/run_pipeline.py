@@ -530,11 +530,22 @@ def run_breakdown_diagnostics_integration(cfg: dict, ts_sig: pd.Timestamp) -> No
         # Try to create OHLC from store if missing
         try:
             store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
-            # Get a representative symbol for OHLC extraction
-            symbols = store.list_symbols()
+            # Get a representative symbol for OHLC extraction (store has no list_symbols API).
+            symbols = []
+            ohlcv_dir = getattr(store, "ohlcv_dir", None)
+            if ohlcv_dir and os.path.isdir(ohlcv_dir):
+                import glob
+                for path in glob.glob(os.path.join(ohlcv_dir, "symbol=*")):
+                    base = os.path.basename(path)
+                    if not base.startswith("symbol="):
+                        continue
+                    raw = base.replace("symbol=", "")
+                    symbols.append(raw.replace("_", "/", 1))
+            symbols = sorted(set(symbols))
+
             if symbols:
                 symbol = symbols[0]  # Use first available symbol
-                ohlc_data = store.load_symbol(symbol)
+                ohlc_data = store.load(symbol)
                 if ohlc_data is not None and len(ohlc_data) > 0:
                     ohlc_data.to_parquet(ohlc_path)
                     tprint(f"Created OHLC data for diagnostics from {symbol}")

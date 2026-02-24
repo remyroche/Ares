@@ -233,8 +233,7 @@ CFG = {
     "label_min_tp_hit_rate": 0.02,
     "label_max_timeout_rate": 0.90,
     # Base label handling: exclude timeout (TO) from TP-vs-SL base classifier targets
-    "base_exclude_timeout_from_classifier": True,
-
+    "base_exclude_timeout_from_classifier": False,
     # ATR normalization for barrier scaling
     "atr_norm_fast_hl_hours": 24,
     "atr_norm_slow_hl_hours": 24 * 5,
@@ -273,6 +272,8 @@ CFG = {
     "meta_sample_weight_opt_trials": 12,
     "meta_use_policy_value_target": True,
     "meta_clf_use_engine_labels": True,
+    # Remove classifier heads from meta race by default (regression heads only)
+    "meta_race_include_classifiers": False,
     # Meta classifier utility-based winner selection (logloss remains a gate)
     "meta_clf_max_logloss": 1.10,
     "meta_clf_u_tp": 1.0,

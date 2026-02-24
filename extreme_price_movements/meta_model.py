@@ -664,6 +664,22 @@ class MetaClassifierModel:
             except Exception:
                 oof[va] = 1.0 / 3.0
 
+        # Purged/embargo CV may leave boundary rows without OOF predictions.
+        # Fill with a safe prior so downstream selection metrics stay finite.
+        missing = ~np.isfinite(oof).all(axis=1)
+        if np.any(missing):
+            fitted = np.isfinite(oof).all(axis=1)
+            if np.any(fitted):
+                prior = np.nanmean(oof[fitted], axis=0)
+            else:
+                prior = np.bincount(np.asarray(y, dtype=int), minlength=3).astype(float)
+                prior = prior / max(prior.sum(), 1.0)
+            prior = np.where(np.isfinite(prior), prior, 0.0)
+            prior = np.clip(prior, 0.0, None)
+            s = float(prior.sum())
+            prior = prior / s if s > 1e-12 else np.array([1 / 3, 1 / 3, 1 / 3], dtype=float)
+            oof[missing] = prior
+
         mask = np.isfinite(oof).all(axis=1)
         if mask.sum() < 20:
             return oof, 999.0

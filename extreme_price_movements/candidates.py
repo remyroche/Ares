@@ -1,7 +1,9 @@
 import pandas as pd
 import numpy as np
 from .utils import tprint
-import extreme_price_movements.fast_funcs as ff
+from scipy.ndimage import binary_dilation
+
+_RANK_CACHE = {}
 
 def select_trade_candidates_hourly(
     feats,
@@ -162,8 +164,7 @@ def select_trade_candidates_vectorized(
     pct=0.05,
     metric="ret24h",
     min_range_pct=0.07,
-    min_vol_zscore=1.6,
-    sign_consistency_min=0.80,
+    min_vol_zscore=1.5,
     chop_thr=0.5,
 ):
     """
@@ -188,20 +189,33 @@ def select_trade_candidates_vectorized(
     n_cols = df_metric.shape[1]
     k = max(1, int(n_cols * pct))
 
-    # Rank each row (ascending): rank 1 = smallest, rank n = largest
-    # method='first' avoids ties; pct=False gives integer ranks
-    ranks = df_metric.rank(axis=1, method='first', na_option='keep')
-    valid_counts = df_metric.notna().sum(axis=1)
+    # O(N) partial selection via argpartition (no full per-row ranking/sort).
+    _rk = (id(df_metric), float(pct), "argpartition_topbot")
+    cached = _RANK_CACHE.get(_rk)
+    if cached is None:
+        arr = df_metric.to_numpy(dtype=np.float32, copy=False)
+        valid = np.isfinite(arr)
+        valid_counts = valid.sum(axis=1)
 
-    # Top K: rank > (valid_count - k);  Bottom K: rank <= k
-    # Broadcast valid_counts as a column vector
-    vc = valid_counts.values[:, np.newaxis]
-    r = ranks.values
-    base_mask_arr = (r > (vc - k)) | (r <= k)
-    # Mask out NaN positions
-    base_mask_arr = base_mask_arr & df_metric.notna().values
-    # Mask out rows with too few valid values
-    base_mask_arr[valid_counts.values < k, :] = False
+        arr_top = np.where(valid, arr, -np.inf)
+        arr_bot = np.where(valid, arr, np.inf)
+        top_idx = np.argpartition(arr_top, kth=max(n_cols - k, 0), axis=1)[:, -k:]
+        bot_idx = np.argpartition(arr_bot, kth=max(k - 1, 0), axis=1)[:, :k]
+
+        rows = np.repeat(np.arange(arr.shape[0], dtype=np.int32), k)
+        top_flat = top_idx.reshape(-1)
+        bot_flat = bot_idx.reshape(-1)
+        top_valid = valid[rows, top_flat]
+        bot_valid = valid[rows, bot_flat]
+
+        base_mask_arr = np.zeros_like(valid, dtype=bool)
+        base_mask_arr[rows[top_valid], top_flat[top_valid]] = True
+        base_mask_arr[rows[bot_valid], bot_flat[bot_valid]] = True
+        base_mask_arr[valid_counts < k, :] = False
+
+        _RANK_CACHE[_rk] = (base_mask_arr, valid_counts)
+    else:
+        base_mask_arr, valid_counts = cached
 
     base_mask = pd.DataFrame(base_mask_arr, index=df_metric.index, columns=df_metric.columns)
 
@@ -242,30 +256,25 @@ def select_trade_candidates_vectorized(
         chop_mask = feats["chop_score"] < chop_thr
     else:
         chop_mask = pd.DataFrame(True, index=vol_mask.index, columns=vol_mask.columns)
-
-    # Filter 4: Sign Consistency > 80%
-    # We use Numba optimized function on close prices
-    if "close" in panel:
-        sc = ff.numba_sign_consistency(panel["close"], 12)
-        sc_df = pd.DataFrame(sc, index=panel["close"].index, columns=panel["close"].columns)
-        sc_mask = sc_df >= sign_consistency_min
-    else:
-        # Fallback if close not in panel (unlikely)
-        sc_mask = pd.DataFrame(True, index=vol_mask.index, columns=vol_mask.columns)
-
-    # Combine Filters into Base Mask
-    base_mask = base_mask & vol_mask & event_mask & sc_mask & chop_mask
+    # Combine filters into base mask
+    base_mask = base_mask & vol_mask & event_mask & chop_mask
 
     # 3. Time Expansion
-    # Offsets: t-12, t-8, t-4, t+4, t+8, t+12, t+16
-    offsets = [-12, -8, -4, 4, 8, 12, 16]
+    # Two-stage expansion (entry-delay windows only, not TBM horizon cap):
+    # stage-1 late entries: +2,+4,+6,+8 ; stage-2 early entries: -2,-4
+    offsets = [2, 4, 6, 8, -2, -4]
 
-    expanded_mask = base_mask.copy()
-    for off in offsets:
-        # Shift mask
-        shifted = base_mask.shift(off)
-        expanded_mask = expanded_mask | shifted.fillna(False)
+    mask_arr = base_mask.to_numpy(dtype=bool, copy=False)
+    if offsets:
+        max_lag = int(max(abs(int(o)) for o in offsets))
+        struct = np.zeros((2 * max_lag + 1, 1), dtype=bool)
+        center = max_lag
+        struct[center, 0] = True
+        for o in offsets:
+            struct[center + int(o), 0] = True
+        mask_arr = binary_dilation(mask_arr, structure=struct)
 
+    expanded_mask = pd.DataFrame(mask_arr, index=base_mask.index, columns=base_mask.columns, dtype=bool)
     return expanded_mask
 
 def detect_extreme_movement_candidates(

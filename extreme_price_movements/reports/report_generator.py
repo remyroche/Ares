@@ -121,6 +121,23 @@ def generate_training_report(
             )
     lines.append("")
 
+    # Per-horizon alpha view (if quality gate report is available)
+    qgr = bundle.get("quality_gate_report", {}) if bundle else {}
+    base_rows = qgr.get("base_models", []) if isinstance(qgr, dict) else []
+    if base_rows:
+        lines.append("### Per-Horizon Alpha Performance (Quality Gate)")
+        lines.append("| Model | Winner | AUC | IC | LogLoss | PR-AUC | Lift@20 | BrierImp | Passed |")
+        lines.append("|-------|--------|-----|----|---------|--------|---------|----------|--------|")
+        for r in base_rows:
+            m = r.get("metrics", {}) if isinstance(r, dict) else {}
+            lines.append(
+                f"| {r.get('model', '—')} | {r.get('winner', '—')} | {_fmt(m.get('auc', float('nan')))} | "
+                f"{_fmt(m.get('ic', float('nan')))} | {_fmt(m.get('logloss', float('nan')))} | "
+                f"{_fmt(m.get('pr_auc', float('nan')))} | {_fmt(m.get('lift20', float('nan')))} | "
+                f"{_fmt(m.get('brier_imp', float('nan')))} | {bool(r.get('passed', False))} |"
+            )
+        lines.append("")
+
     # Detailed per-model breakdown
     lines.append("### Detailed Model Performance")
     for side in ["long", "short"]:
@@ -216,6 +233,81 @@ def generate_training_report(
             calib = _fmt(meta_metrics.get('calibration_error', 0.0)) if meta_metrics.get('calibration_error') else "N/A"
 
             lines.append(f"| {key} | {n_feats} | {auc} | {ic} | {sharpe} | {win_rate} | {calib} |")
+
+        # Bucket x head-type view expected by model diagnostics workflows.
+        import re
+        lines.append("\n### Meta Models by Bucket × Head Type")
+        lines.append("| Bucket | Head Type | Models | Metric 1 (head-relevant) | Metric 2 (head-relevant) | Metric 3 (head-relevant) |")
+        lines.append("|--------|-----------|--------|---------------------------|---------------------------|---------------------------|")
+
+        # Prefer quality gate metrics so each head is assessed with head-relevant KPIs.
+        qgr_meta = (bundle.get("quality_gate_report", {}) or {}).get("meta_models", []) if bundle else []
+        grouped = {}
+
+        def _head_type(name: str) -> str:
+            n = str(name).lower()
+            if re.search(r"(?:^|_)mae(?:_|$)", n):
+                return "MAE"
+            if re.search(r"(?:^|_)mfe(?:_|$)", n):
+                return "MFE"
+            if re.search(r"(?:^|_)dur(?:_|$)", n):
+                return "DUR"
+            if "utility" in n or re.search(r"(?:^|_)u(?:_|$)", n):
+                return "UTILITY"
+            if n.endswith("_clf"):
+                return "CLF"
+            if "early_inval" in n:
+                return "EARLY_INVAL"
+            mh = re.search(r"_h(\d+)$", n)
+            if mh:
+                return f"H{mh.group(1)}"
+            return "OTHER"
+
+        def _metric_priority(head: str) -> list[str]:
+            # Order is intentional: report each head with its most relevant metrics first.
+            if head == "CLF":
+                return ["auc", "logloss", "precision_at_10", "pr_auc", "brier"]
+            if head == "EARLY_INVAL":
+                return ["spearman_ic", "sortino_q", "net_ret_q", "sharpe_q", "max_dd_q"]
+            if head == "MAE":
+                return ["spearman_ic", "mae", "mae_q70", "rmse", "auc"]
+            if head == "MFE":
+                return ["spearman_ic", "lift_at_q", "net_ret_q", "precision_at_10", "auc"]
+            if head == "DUR":
+                return ["spearman_ic", "lift_at_q", "sortino_q", "net_ret_q", "auc"]
+            if head == "UTILITY" or head.startswith("H"):
+                return ["spearman_ic", "lift_at_q", "net_ret_q", "sortino_q", "auc"]
+            return ["spearman_ic", "auc", "precision_at_10", "logloss"]
+
+        for rec in qgr_meta:
+            model_name = rec.get("model", "")
+            bucket = model_name
+            for suffix in ["_clf", "_early_inval", "_mae", "_mfe", "_dur", "_utility", "_u"]:
+                if bucket.lower().endswith(suffix):
+                    bucket = bucket[: -len(suffix)]
+                    break
+            bucket = re.sub(r"_H\d+$", "", bucket, flags=re.IGNORECASE)
+            k = (bucket, _head_type(model_name))
+            grouped.setdefault(k, []).append(rec.get("metrics", {}) if isinstance(rec, dict) else {})
+
+        for (bucket, head), vals in sorted(grouped.items()):
+            med_parts = []
+            for key in _metric_priority(head):
+                arr = [v.get(key) for v in vals if isinstance(v, dict) and isinstance(v.get(key), (int, float))]
+                if arr:
+                    med_parts.append((key, _fmt(float(np.median(arr)))))
+                if len(med_parts) >= 3:
+                    break
+            while len(med_parts) < 3:
+                med_parts.append(("—", "N/A"))
+
+            m1 = f"{med_parts[0][0]}={med_parts[0][1]}"
+            m2 = f"{med_parts[1][0]}={med_parts[1][1]}"
+            m3 = f"{med_parts[2][0]}={med_parts[2][1]}"
+            lines.append(
+                f"| {bucket or '—'} | {head} | {len(vals)} | {m1} | {m2} | {m3} |"
+            )
+        lines.append("")
 
         lines.append("\n### Detailed Meta Model Performance")
         for key, meta in meta_models.items():

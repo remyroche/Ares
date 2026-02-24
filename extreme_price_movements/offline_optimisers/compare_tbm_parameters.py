@@ -25,6 +25,7 @@ import hashlib
 import json
 import math
 import os
+import platform
 import resource
 import time
 from dataclasses import dataclass
@@ -93,6 +94,10 @@ from extreme_price_movements.production_sl_tp_policy import (
 
 EPS = 1e-12
 TBM_CACHE_VERSION = 2
+
+# Cache TP construction for tp_pct SL sweeps (same TP anchor reused across SL multipliers).
+_TP_ANCHOR_CACHE: Dict[Tuple[Any, ...], Tuple[pd.DataFrame, pd.DataFrame, Dict[str, float], Optional[pd.DataFrame], float]] = {}
+_CANDIDATE_MASK_CACHE: Dict[Tuple[Any, ...], pd.DataFrame] = {}
 ACTIVE_TEST_FEATURE_KEYS = list(TEST_FEATURE_KEYS)
 
 
@@ -234,6 +239,19 @@ def _load_features_from_data_root(
     out = {k: pd.DataFrame(v).sort_index() for k, v in feat_buf.items()}
     tprint(f"Loaded {len(out)} features (configured key universe only)")
     return out
+
+
+def _candidate_pct_schedule_for_stage(stage_name: str, base_pct: float) -> Tuple[float, ...]:
+    """Candidate extreme-event percentile schedule by optimization stage.
+
+    Stage-3/refine runs use a slightly broader sweep to test sensitivity of label density.
+    """
+    base = float(base_pct)
+    if "stage3" in str(stage_name).lower() or "s2_refine" in str(stage_name).lower():
+        vals = sorted({base, 0.05, 0.04})
+    else:
+        vals = [base]
+    return tuple(float(v) for v in vals if 0.0 < float(v) < 1.0)
 
 
 def _build_tbm_learnability_report_rows(
@@ -1040,6 +1058,7 @@ def build_barriers(
     cfg: Dict[str, Any],
     horizon: int,
     side: str,
+    sl_as_tp_override: Optional[float] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, float], Optional[pd.DataFrame]]:
     # Use entry-time ATR only: shift by 1 bar so the barrier is set using only
     # data available at the moment the signal fires, not the current bar's ATR
@@ -1056,6 +1075,55 @@ def build_barriers(
 
     tp_method = cfg["tp_method"]
     sl_method = cfg["sl_method"]
+
+    # TP-anchor cache for tp_pct SL sweep: compute TP once per (cfg sans SL multiplier, side, horizon).
+    sl_as_tp_eff = float(cfg.get("sl_as_tp_pct", 0.5)) if sl_as_tp_override is None else float(sl_as_tp_override)
+    _tp_cache_key = None
+    if sl_method == "tp_pct":
+        _tp_cache_key = (
+            id(artifacts.features.get("atr_pct")),
+            int(horizon),
+            str(side),
+            str(tp_method),
+            float(cfg.get("k_tp", 1.0)),
+            float(cfg.get("tp_base_pct", cfg.get("tp_abs_pct", 0.02))),
+            float(cfg.get("tp_abs_pct", cfg.get("tp_base_pct", 0.02))),
+            float(cfg.get("tp_abs_lo_pct", 0.005)),
+            float(cfg.get("tp_abs_hi_pct", 0.08)),
+            float(cfg.get("tp_min_abs_pct", 0.005)),
+            float(cfg.get("tp_min_bps", 50)),
+            float(cfg.get("horizon_alpha", 0.5)),
+            float(cfg.get("horizon_base", 4.0)),
+            str(cfg.get("horizon_scaling", "none")),
+            int(cfg.get("base_atr_window", 168)),
+            str(cfg.get("tp_time_decay", "none")),
+            float(cfg.get("tp_side_skew", 0.0)),
+            str(cfg.get("tp_regime_model", "none")),
+            float(cfg.get("mix_weight", 0.5)),
+            bool(cfg.get("use_dynamic_horizon", False)),
+            float(cfg.get("dynamic_horizon_z_lo", -1.0)),
+            float(cfg.get("dynamic_horizon_z_hi", 2.0)),
+            float(cfg.get("dynamic_horizon_max_scale_add", 0.5)),
+        )
+        _cached = _TP_ANCHOR_CACHE.get(_tp_cache_key)
+        if _cached is not None:
+            tp_cached, atr_cached, out_stats_cached, dyn_h_cached, tp_lo_eff_cached = _cached
+            sl = sl_as_tp_eff * tp_cached
+            sl = _apply_caps(sl, float(cfg.get("sl_abs_lo_pct", 0.005)), float(cfg.get("sl_abs_hi_pct", 0.08)))
+            sl_lo_eff = effective_sl_floor(
+                sl_abs_lo_pct=float(cfg.get("sl_abs_lo_pct", 0.005)),
+                sl_min_abs_pct=float(cfg.get("sl_min_abs_pct", 0.01)),
+                sl_min_bps=float(cfg.get("sl_min_bps", 100)),
+            )
+            if cfg.get("sl_noise_buffer", False):
+                sl = sl.clip(lower=sl_lo_eff)
+            if float(cfg.get("trail_sl_mult", 0.0)) > 0:
+                sl = sl * (1.0 - 0.15 * float(cfg.get("trail_sl_mult", 0.0)))
+                sl = sl.clip(lower=sl_lo_eff, upper=float(cfg.get("sl_abs_hi_pct", 0.08)))
+            out_stats = dict(out_stats_cached)
+            out_stats["sl_mean"] = float(np.nanmean(sl.values))
+            out_stats["sl_floor_eff"] = float(sl_lo_eff)
+            return tp_cached.astype(np.float32), sl.astype(np.float32), out_stats, dyn_h_cached
 
     if tp_method == "atr_mult":
         tp_raw = cfg["k_tp"] * side_mult * atr * tp_regime
@@ -1109,7 +1177,7 @@ def build_barriers(
 
     # SL must be derived from effective TP (post-scale/post-clip) when sl_method=tp_pct.
     if sl_method == "tp_pct":
-        sl = float(cfg["sl_as_tp_pct"]) * tp
+        sl = sl_as_tp_eff * tp
     elif sl_method == "atr_mult":
         sl = float(cfg["k_sl"]) * atr * sl_regime
     elif sl_method == "absolute":
@@ -1139,6 +1207,15 @@ def build_barriers(
     }
     if dyn_stats:
         out_stats.update(dyn_stats)
+
+    if _tp_cache_key is not None:
+        _TP_ANCHOR_CACHE[_tp_cache_key] = (
+            tp.astype(np.float32),
+            atr.astype(np.float32),
+            dict(out_stats),
+            dyn_horizon,
+            float(tp_lo_eff),
+        )
 
     return tp.astype(np.float32), sl.astype(np.float32), out_stats, dyn_horizon
 
@@ -1177,19 +1254,48 @@ def build_bucket_masks(artifacts: RunArtifacts, cfg_runtime: Dict[str, Any] | No
     candidate_filter = pd.DataFrame(True, index=c.index, columns=c.columns)
     if cfg_runtime is not None:
         candidate_defaults = get_candidate_filter_defaults(cfg_runtime)
+        pct_sched = _candidate_pct_schedule_for_stage(
+            str(cfg_runtime.get("mode", "")),
+            float(candidate_defaults["train_extreme_pct_hourly"]),
+        )
         try:
-            cf = select_trade_candidates_vectorized(
-                artifacts.panel,
-                artifacts.features,
-                pct=float(candidate_defaults["train_extreme_pct_hourly"]),
-                metric=metric,
-                min_range_pct=float(candidate_defaults["train_min_range_pct"]),
-                min_vol_zscore=float(candidate_defaults["train_min_vol_zscore"]),
-                sign_consistency_min=float(candidate_defaults.get("min_feat_sign_consistency", 0.80)),
-                chop_thr=float(candidate_defaults.get("train_chop_thr", 0.5)),
-            )
-            if cf is not None:
-                candidate_filter = cf.astype(bool)
+            cf_list: List[pd.DataFrame] = []
+            for _pct in pct_sched:
+                _cand_key = (
+                    id(artifacts.features.get(metric)),
+                    id(artifacts.features.get("range_12h_pct")),
+                    id(artifacts.features.get("volatility_zscore")),
+                    id(artifacts.features.get("mkt_rv_48h", artifacts.features.get("mkt_rv_24h"))),
+                    id(artifacts.features.get("chop_score")),
+                    id(artifacts.panel.get("close")),
+                    float(_pct),
+                    str(metric),
+                    float(candidate_defaults["train_min_range_pct"]),
+                    float(candidate_defaults["train_min_vol_zscore"]),
+                    float(candidate_defaults.get("min_feat_sign_consistency", 0.80)),
+                    float(candidate_defaults.get("train_chop_thr", 0.5)),
+                )
+                _cached_cf = _CANDIDATE_MASK_CACHE.get(_cand_key)
+                if _cached_cf is None:
+                    _cached_cf = select_trade_candidates_vectorized(
+                        artifacts.panel,
+                        artifacts.features,
+                        pct=float(_pct),
+                        metric=metric,
+                        min_range_pct=float(candidate_defaults["train_min_range_pct"]),
+                        min_vol_zscore=float(candidate_defaults["train_min_vol_zscore"]),
+                        sign_consistency_min=float(candidate_defaults.get("min_feat_sign_consistency", 0.80)),
+                        chop_thr=float(candidate_defaults.get("train_chop_thr", 0.5)),
+                    )
+                    if _cached_cf is not None:
+                        _CANDIDATE_MASK_CACHE[_cand_key] = _cached_cf
+                if _cached_cf is not None:
+                    cf_list.append(_cached_cf.astype(bool))
+
+            if cf_list:
+                candidate_filter = cf_list[0].reindex(index=c.index, columns=c.columns).fillna(False).astype(bool)
+                for _cf in cf_list[1:]:
+                    candidate_filter |= _cf.reindex(index=c.index, columns=c.columns).fillna(False).astype(bool)
         except Exception:
             pass
 
@@ -1198,7 +1304,11 @@ def build_bucket_masks(artifacts: RunArtifacts, cfg_runtime: Dict[str, Any] | No
     # "down" movers = bottom pct% (worst performers): used by MR_long + TF_short
     if metric in feats:
         df_metric = feats[metric]
-        ranks = df_metric.rank(axis=1, method="first", na_option="keep", pct=True)
+        _rank_key = (id(df_metric), str(metric), "pct_rank")
+        ranks = _CANDIDATE_MASK_CACHE.get(_rank_key)  # type: ignore[assignment]
+        if ranks is None or not isinstance(ranks, pd.DataFrame):
+            ranks = df_metric.rank(axis=1, method="first", na_option="keep", pct=True)
+            _CANDIDATE_MASK_CACHE[_rank_key] = ranks
         up_zone   = (ranks > 0.5).fillna(False).astype(bool)
         down_zone = (ranks <= 0.5).fillna(False).astype(bool)
     else:
@@ -1933,19 +2043,34 @@ def evaluate_config(
     ess_full = float(full_n)
     coverage = ess / max(ess_full, 1.0)
 
-    # Feature matrix + OOF scoring.
-    X_flat, feat_cols = get_stacked_feature_matrix(artifacts, eval_cache)
+    # Structural fail-fast: skip OOF ML pass for non-viable configs.
+    bind_agg_pre = float(tp_hit_agg + sl_hit_agg)
+    min_cov_threshold = float(cfg.get("min_coverage_threshold", 0.2))
+    min_bind_threshold = float(cfg.get("min_bind_threshold", 0.2))
+    if (coverage < min_cov_threshold) or (bind_agg_pre < min_bind_threshold):
+        tprint(
+            f"[eval:{cfg_id}] fail-fast skip ML: coverage={coverage:.3f} bind={bind_agg_pre:.3f} "
+            f"(min_cov={min_cov_threshold:.2f}, min_bind={min_bind_threshold:.2f})"
+        )
+        pred = np.full(len(events), 0.5, dtype=np.float32)
+    else:
+        # Feature matrix + OOF scoring.
+        X_flat, feat_cols = get_stacked_feature_matrix(artifacts, eval_cache)
+        y_signed = events["label"].astype(np.float32).values
+        y_bin = (events["label"].values == OUT_TP).astype(np.float32)
+        payoff = events["payoff"].astype(np.float32).values
+
+        pred = train_and_predict_per_bucket(events, X_flat, weights, n_folds=5)
+        decile_spread = oof_payoff_decile_spread(pred, payoff)
+        tprint(
+            f"[eval:{cfg_id}] model_scored n={len(pred):,} ic_payoff={_safe_spearman(pred, payoff):.4f} "
+            f"ic_label={_safe_spearman(pred, y_signed):.4f} decile_spread={decile_spread:.6f}"
+        )
+
+    # Shared scoring vectors
     y_signed = events["label"].astype(np.float32).values
     y_bin = (events["label"].values == OUT_TP).astype(np.float32)
     payoff = events["payoff"].astype(np.float32).values
-
-    pred = train_and_predict_per_bucket(events, X_flat, weights, n_folds=5)
-    decile_spread = oof_payoff_decile_spread(pred, payoff)
-    tprint(
-        f"[eval:{cfg_id}] model_scored n={len(pred):,} ic_payoff={_safe_spearman(pred, payoff):.4f} "
-        f"ic_label={_safe_spearman(pred, y_signed):.4f} decile_spread={decile_spread:.6f}"
-    )
-
     ic_label = _safe_spearman(pred, y_signed)
     ic_payoff = _safe_spearman(pred, payoff)
 
@@ -2790,6 +2915,139 @@ def _filter_tradeability_guard(cfgs: List[Dict[str, Any]], cfg_runtime: Optional
     if dropped > 0:
         tprint(f"[grid_guard] dropped {dropped}/{len(cfgs)} configs: H2 TP anchor too close to effective floor (ratio<{ratio:.2f})")
     return kept or cfgs
+def stage1_grid(cfg_runtime: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    cfgs = []
+
+    # atr_norm only: atr_mult_rr is consistently degenerate (timeout>0.89, tp_hit<0.06)
+    # and wastes compute. atr_norm normalises by rolling median ATR so the barrier scales
+    # with the event's volatility spike rather than the absolute ATR level.
+    # tp_base_pct = base TP when atr/median_atr == 1.0.
+    # k_tp: [0.4, 0.5] added — tighter TP → higher tp_hit → lower sl_to_tp ratio.
+    # sl_as_tp_pct: [0.8, 1.0, 1.2] added — wider SL relative to TP → lower sl_to_tp ratio.
+    # tp_base_pct: [0.020] added — higher absolute TP floor.
+    # base_atr_window: [336, 504, 672, 840] (14d–35d). Prior run confirmed 672>504>336.
+    # 84/168 excluded: too short, produces high timeout + low bind + low coverage.
+    for k_tp, tp_base, sl_as_tp, atr_win in product(
+        [0.4, 0.5, 0.7, 1.0, 1.25, 1.6],
+        [0.006, 0.010, 0.015, 0.020, 0.025, 0.030],  # 0.025/0.030 needed for k_tp=0.4 to clear H2 floor guard
+        [0.4, 0.6, 0.7, 0.8, 1.0],
+        [336, 504, 672, 840],  # 14d / 21d / 28d / 35d slow median reference
+    ):
+        c = base_param_template(cfg_runtime)
+        c.update(
+            {
+                "mode": "atr_norm",
+                "tp_method": "atr_norm",
+                "sl_method": "tp_pct",
+                "k_tp": float(k_tp),
+                "tp_base_pct": float(tp_base),
+                "tp_abs_pct": float(tp_base),
+                "sl_as_tp_pct": float(sl_as_tp),
+                "tp_regime_model": "none",
+                "horizon_scaling": "sqrt",
+                "base_atr_window": int(atr_win),
+            }
+        )
+        cfgs.append(c)
+
+    # Dedup
+    uniq = {config_id(c): c for c in cfgs}
+    return list(uniq.values())
+
+
+def stage2_grids_from_stage1(winners: List[Dict[str, Any]], max_per_substage: int = 24) -> List[Dict[str, Any]]:
+    """Hierarchical stage-2 generation focused on refining atr_norm winners.
+
+    Stage 1 established that atr_norm with tp_base_pct=0.015, k_tp=1.25 is the
+    dominant geometry. Stage 2 refines along three axes:
+    2A) tp_base_pct fine grid + base_atr_window (slow median reference)
+    2B) SL geometry: sl_as_tp_pct fine grid + atr_mult SL alternative
+    2C) Path-dependence knobs on best 2B subset
+    """
+    if not winners:
+        return []
+
+    # 2A: Refine tp_base_pct and base_atr_window around each winner.
+    # tp_base_pct controls the TP at median volatility; the winner is 0.015.
+    # base_atr_window controls how "slow" the median reference is.
+    stage2a: List[Dict[str, Any]] = []
+    for base in winners:
+        tp_method = base.get("tp_method", "atr_norm")
+        base_tp = float(base.get("tp_base_pct", base.get("tp_abs_pct", 0.015)))
+        base_k = float(base.get("k_tp", 1.25))
+
+        if tp_method == "atr_norm":
+            # Fine-grid around the winning tp_base_pct, k_tp, and atr_window.
+            # atr_window is now a first-class axis: sweep ±1 step around winner's value.
+            # Stage 2A ladder extends one step below Stage 1 (adds 168) so a winner at
+            # the Stage 1 floor (336) still has a lower neighbour to probe.
+            # Stage 1 ladder: [336, 504, 672, 840]  (168 dropped as consistently worst)
+            # Stage 2A ladder: [168, 336, 504, 672, 840]  (168 re-enters as safety net only)
+            base_win = int(base.get("base_atr_window", 672))
+            _win_ladder = [168, 336, 504, 672, 840]
+            _win_idx = min(range(len(_win_ladder)), key=lambda i: abs(_win_ladder[i] - base_win))
+            _win_neighbours = sorted(set(_win_ladder[max(0, _win_idx - 1): _win_idx + 2]))
+            for tp_base, k_tp, atr_win in product(
+                [max(0.008, base_tp - 0.002), base_tp, min(0.020, base_tp + 0.002)],
+                [max(0.8, base_k - 0.25), base_k, min(2.0, base_k + 0.25)],
+                _win_neighbours,
+            ):
+                c = dict(base)
+                c.update({
+                    "mode": "atr_norm_2A",
+                    "tp_method": "atr_norm",
+                    "k_tp": float(k_tp),
+                    "tp_base_pct": float(tp_base),
+                    "tp_abs_pct": float(tp_base),
+                    "base_atr_window": int(atr_win),
+                })
+                stage2a.append(c)
+        else:
+            # Non-atr_norm winner: keep existing TP method, sweep k_tp only
+            for k_tp in [max(0.5, base_k - 0.4), base_k, min(2.5, base_k + 0.4)]:
+                c = dict(base)
+                c.update({"mode": f"{tp_method}_2A", "k_tp": float(k_tp)})
+                stage2a.append(c)
+
+    uniq2a = {config_id(c): c for c in stage2a}
+    stage2a = list(uniq2a.values())[:max_per_substage]
+
+    # 2B: SL geometry refinement on top 2A candidates.
+    # Primary axis: sl_as_tp_pct fine grid (winner range 0.4–0.6).
+    # Secondary: atr_mult SL as alternative to tp_pct SL.
+    stage2b: List[Dict[str, Any]] = []
+    for base in stage2a:
+        base_sl = float(base.get("sl_as_tp_pct", 0.5))
+        # Fine grid around current sl_as_tp_pct
+        for sl_pct in [max(0.3, base_sl - 0.1), base_sl, min(0.8, base_sl + 0.1), min(0.8, base_sl + 0.2)]:
+            c = dict(base)
+            c.update({"mode": f"{base.get('mode','stage2')}_sl",
+                      "sl_method": "tp_pct", "sl_as_tp_pct": float(sl_pct)})
+            stage2b.append(c)
+        # ATR-mult SL is consistently degenerate (timeout>0.85, tp_hit<0.06 in all runs).
+        # Removed to avoid wasting Stage 2 budget on dead branches.
+
+    uniq2b = {config_id(c): c for c in stage2b}
+    stage2b = list(uniq2b.values())[:max_per_substage]
+
+    # 2C: Path-dependence knobs on top slice of 2B.
+    # sl_activation_minutes: delay SL activation to avoid noise wicks at entry.
+    # trail_sl_mult: trailing SL tightening as trade moves in favour.
+    stage2c: List[Dict[str, Any]] = []
+    for base in stage2b[:max(1, min(6, len(stage2b)))]:
+        for act_m, trail in product([0, 15, 30], [0.0, 0.3, 0.6]):
+            c = dict(base)
+            c.update({
+                "mode": f"{base.get('mode','stage2')}_path",
+                "sl_activation_minutes": int(act_m),
+                "trail_sl_mult": float(trail),
+                "tp_time_decay": "none",  # keep TP fixed; decay interacts badly with atr_norm
+            })
+            stage2c.append(c)
+
+    out = stage2a + stage2b + stage2c
+    uniq = {config_id(c): c for c in out}
+    return list(uniq.values())
 
 
 # Maximum allowed spread between the highest and lowest per-cell timeout rates.
@@ -3573,9 +3831,9 @@ class TBMObjective:
 
     def __call__(self, trial: optuna.Trial) -> float:
         # 1. Suggest parameters
-        k_tp = trial.suggest_float("k_tp", 0.4, 2.0)
-        tp_base = trial.suggest_float("tp_base_pct", 0.005, 0.04)
-        sl_as_tp = trial.suggest_float("sl_as_tp_pct", 0.3, 1.2)
+        k_tp = trial.suggest_float("k_tp", 0.4, 2.0, step=0.1)
+        tp_base = trial.suggest_float("tp_base_pct", 0.005, 0.04, step=0.001)
+        sl_as_tp = trial.suggest_float("sl_as_tp_pct", 0.3, 1.2, step=0.1)
         atr_win = trial.suggest_categorical("base_atr_window", [336, 504, 672, 840])
         
         # 2. Build config
@@ -3626,16 +3884,9 @@ class TBMObjective:
             self.trial_results.append(res)
             self.details[cid] = det
             
-            # Primary metric for Optuna: stage2_score (learnability + stability + guardrails)
-            score = float(res.get("stage2_score", float("-inf")))
+            # Primary metric for Optuna: mean AUC across cells
+            score = float(res.get("mean_auc", 0.0))
             
-            # Early stopping/Pruning check: report intermediate value if trial is bad
-            # Since we compute all horizons atomically in evaluate_config, we report only at the end.
-            # However, we can use report() to signal completion.
-            trial.report(score, step=0)
-            if trial.should_prune():
-                raise optuna.TrialPruned()
-
             # Periodic cleanup
             if trial.number % 10 == 0:
                 gc.collect()
@@ -3649,7 +3900,12 @@ class TBMObjective:
 
 def run(args: argparse.Namespace) -> None:
     t0 = time.perf_counter()
-    
+
+    # Safe parallelism default: use 2 workers, but cap on Apple Silicon to avoid known stability issues.
+    _requested_jobs = max(1, int(getattr(args, "n_jobs", 2)))
+    _is_apple_arm = (platform.system() == "Darwin" and platform.machine() in {"arm64", "aarch64"})
+    optuna_n_jobs = 1 if _is_apple_arm else min(2, _requested_jobs)
+
     # Clear caches at the start of each run
     _clear_caches()
     output_path = Path(args.output)
@@ -3774,28 +4030,9 @@ def run(args: argparse.Namespace) -> None:
     stage1_rows: List[Dict[str, Any]] = []
     total_weights_written = 0
 
-    # --- Optuna Optimization (Single Unified Study) ---
-    tprint("Starting Optuna optimization (Unified TPE)...")
-
-    # Using a single, longer study allows TPE to learn the parameter space better
-    # than split/restart stages. Diversity is handled post-hoc by filtering.
-    study_name = "tbm_unified_study"
-
-    # Use SQLite for persistence if running large scale, otherwise in-memory is fine for single script run.
-    # For parallel workers, one would pass a shared RDB URL here.
-    # storage_url = "sqlite:///tbm_optimization.db"
-
-    # Configure TPE sampler with sufficient startup trials to ensure exploration
-    sampler = optuna.samplers.TPESampler(n_startup_trials=100, seed=42)
-
-    study = optuna.create_study(
-        direction="maximize",
-        sampler=sampler,
-        study_name=study_name,
-        load_if_exists=False
-    )
-
-    obj = TBMObjective(
+    # --- Optuna Stage 1 ---
+    tprint("Starting Optuna Stage 1 optimization...")
+    obj_s1 = TBMObjective(
         artifacts=artifacts,
         bucket_masks=bucket_masks,
         runtime_cfg=runtime_cfg,
@@ -3804,45 +4041,119 @@ def run(args: argparse.Namespace) -> None:
         layer2_cache=layer2_cache,
         eval_cache=eval_cache,
         write_weights_fn=write_weights_streaming,
-        stage_name="optuna_unified"
+        stage_name="optuna_stage1"
     )
     
-    n_trials = 200 if not args.quick else 30
-    study.optimize(obj, n_trials=n_trials, n_jobs=1)
+    study_s1 = optuna.create_study(direction="maximize")
+    n_trials_s1 = 100 if not args.quick else 20
+    study_s1.optimize(obj_s1, n_trials=n_trials_s1, n_jobs=optuna_n_jobs)
     
-    all_results = obj.trial_results
-    details.update(obj.details)
-    total_weights_written += obj.total_weights_written
+    stage1_rows = obj_s1.trial_results
+    details.update(obj_s1.details)
+    total_weights_written += obj_s1.total_weights_written
     
-    if not all_results:
-        tprint("ERROR: Optuna study produced no valid results.")
+    if not stage1_rows:
+        tprint("ERROR: Stage 1 produced no valid results.")
         return
 
-    # --- Diversity Pipeline: Generate -> Filter -> Select ---
-    # 1. Generate: We already have 'all_results' from the Optuna study.
-    out_df = pd.DataFrame(all_results)
+    stage1_df = pd.DataFrame(stage1_rows)
+    stage1_cfgs = [details[cid]["config"] for cid in details.keys() if cid in [r["config_id"] for r in stage1_rows]]
 
-    # 2. Filter: Keep only "high quality" candidates.
-    # Criterion: stage2_score >= threshold (e.g. median of the pool, or top quartile)
-    # This prevents the diversity selector from picking broken configs just because they are different.
-    if not out_df.empty and "stage2_score" in out_df.columns:
-        score_threshold = out_df["stage2_score"].quantile(0.50)  # Keep top 50%
-        # Also enforce a hard floor if scores are generally good
-        score_threshold = max(score_threshold, 0.0)
+    # Filter to feasible top-k for stage 2
+    winners = []
+    if args.winners:
+        winners = [details[cid]["config"] for cid in args.winners if cid in details]
+    elif args.stage2:
+        # Per-cell promotion: find best configs independently per (bucket, horizon) cell
+        per_cell_winners = promote_stage1_per_cell(stage1_df, details, top_k_per_cell=max(2, args.top_k // 4))
+        winners_set: set = set()
+        for cell_key, cwinners in per_cell_winners.items():
+            if cwinners:
+                tprint(f"[promote] {cell_key}: {len(cwinners)} winners → {cwinners}")
+            winners_set.update(cwinners)
+        # Also include global top-k as fallback
+        global_winners = promote_stage1(stage1_df, top_k=max(3, args.top_k // 2))
+        winners_set.update(global_winners)
+        winners = list(winners_set)
+        tprint(f"[promote] Total stage2 candidates: {len(winners)}")
 
-        high_quality_mask = out_df["stage2_score"] >= score_threshold
-        pool_df = out_df[high_quality_mask].copy()
-        tprint(f"[diversity] Filtered pool: {len(out_df)} -> {len(pool_df)} (threshold={score_threshold:.4f})")
-    else:
-        pool_df = out_df.copy()
+    stage2_rows: List[Dict[str, Any]] = []
+    if args.stage2 and winners:
+        tprint(f"Starting refinement for {len(winners)} winners...")
+        id_to_cfg = {config_id(c): c for c in stage1_cfgs}
+        base_cfgs = [id_to_cfg[w] for w in winners if w in id_to_cfg]
+        for i, winner_cfg in enumerate(base_cfgs):
+            tprint(f"Refining winner {i+1}/{len(base_cfgs)}: {config_id(winner_cfg)}")
+            
+            def s2_objective(trial):
+                base_tp = winner_cfg.get("tp_base_pct", 0.02)
+                base_k = winner_cfg.get("k_tp", 1.0)
+                
+                k_tp = trial.suggest_float("k_tp", max(0.4, base_k - 0.3), min(2.5, base_k + 0.3), step=0.1)
+                tp_base = trial.suggest_float("tp_base_pct", max(0.005, base_tp - 0.005), min(0.05, base_tp + 0.005), step=0.001)
+                sl_as_tp = trial.suggest_float("sl_as_tp_pct", 0.3, 1.2, step=0.1)
 
-    # 3. Select: Apply existing diversity logic (_diverse_subset) to the high-quality pool.
-    # We use the existing promote_stage1 functions which call _diverse_subset internally.
-    # but since we are now in a single stage, we apply it to the final pool.
+                # Vectorized SL sweep around TP anchor: evaluate a small SL ladder per trial.
+                sl_candidates = sorted(set([
+                    float(sl_as_tp),
+                    max(0.2, float(sl_as_tp) - 0.1),
+                    min(1.4, float(sl_as_tp) + 0.1),
+                    max(0.2, float(sl_as_tp) - 0.2),
+                    min(1.4, float(sl_as_tp) + 0.2),
+                ]))
 
-    # We still perform the global sort/rank logic below on the FULL out_df so the user sees everything,
-    # but the 'per_cell_grids' and 'winning_geometry' sections should favor the filtered diverse set.
+                best_score = -1.0
+                best_pack = None
+                for _sl in sl_candidates:
+                    c = dict(winner_cfg)
+                    c.update({
+                        "mode": f"optuna_s2_refine_{i}",
+                        "k_tp": float(k_tp),
+                        "tp_base_pct": float(tp_base),
+                        "tp_abs_pct": float(tp_base),
+                        "sl_as_tp_pct": float(_sl),
+                    })
 
+                    res, det, weights_df = evaluate_config(
+                        artifacts,
+                        c,
+                        horizons=horizons,
+                        bucket_masks=bucket_masks,
+                        layer1_cache=layer1_cache,
+                        layer2_cache=layer2_cache,
+                        eval_cache=eval_cache,
+                        detailed_slices=False,
+                        collect_weights=True,
+                    )
+                    if not res:
+                        continue
+
+                    score = float(res.get("mean_auc", 0.0))
+                    if score > best_score:
+                        best_score = score
+                        best_pack = (dict(c), dict(res), det, weights_df)
+
+                if best_pack is None:
+                    return -1.0
+
+                c_best, res_best, det_best, weights_best = best_pack
+                if weights_best is not None and not weights_best.empty:
+                    write_weights_streaming(weights_best)
+                    nonlocal total_weights_written
+                    total_weights_written += len(weights_best)
+                    del weights_best
+
+                stage2_rows.append(res_best)
+                details[config_id(c_best)] = det_best
+                return float(res_best.get("mean_auc", 0.0))
+
+            s2_study = optuna.create_study(direction="maximize")
+            s2_study.optimize(s2_objective, n_trials=15 if not args.quick else 5, n_jobs=optuna_n_jobs)
+            gc.collect()
+            _clear_caches()
+
+    stage2_df = pd.DataFrame(stage2_rows) if stage2_rows else pd.DataFrame()
+    out_df = pd.concat([stage1_df, stage2_df], ignore_index=True)
     # Two-level learnability sort:
     # Level 1 (hard flags, binary): hard_gate / timeout_range_ok / all_cells_pass /
     #   geometry-health gates (coverage, bind, timeout, min_tp_sep, min_auc floors).
@@ -3924,21 +4235,15 @@ def run(args: argparse.Namespace) -> None:
 
     per_cell_grids: Dict[str, pd.DataFrame] = {}
     if not out_df.empty:
-        # ── Step 1: structural validity pool (on FILTERED high-quality pool) ──
-        # Use pool_df from Diversity Pipeline step instead of raw out_df
-        # This ensures we only feed high-quality candidates into the final selection logic.
-
-        # We must re-sort pool_df to ensure ranking logic is preserved
-        _to_r_ok = pool_df["timeout_range"].fillna(999.0) <= _MAX_TIMEOUT_RANGE if "timeout_range" in pool_df.columns else pd.Series(True, index=pool_df.index)
-        _base_mask = (pool_df["hard_gate"] == True) & _to_r_ok & (pool_df["pass_cells"] == pool_df["total_cells"])
-        _struct_pool = pool_df[_base_mask].copy()
+        # ── Step 1: structural validity pool ──────────────────────────────────
+        _to_r_ok = out_df["timeout_range"].fillna(999.0) <= _MAX_TIMEOUT_RANGE if "timeout_range" in out_df.columns else pd.Series(True, index=out_df.index)
+        _base_mask = (out_df["hard_gate"] == True) & _to_r_ok & (out_df["pass_cells"] == out_df["total_cells"])
+        _struct_pool = out_df[_base_mask].copy()
         if _struct_pool.empty:
-            _struct_pool = pool_df[(pool_df["hard_gate"] == True) & (pool_df["pass_cells"] == pool_df["total_cells"])].copy()
+            _struct_pool = out_df[(out_df["hard_gate"] == True) & (out_df["pass_cells"] == out_df["total_cells"])].copy()
         if _struct_pool.empty:
-            _struct_pool = pool_df[pool_df["hard_gate"] == True].copy()
+            _struct_pool = out_df[out_df["hard_gate"] == True].copy()
         if _struct_pool.empty:
-            # Fallback to full out_df if high-quality pool is empty or yields no valid structure
-            tprint("[pool_select] High-quality pool empty/invalid, falling back to full set")
             _struct_pool = out_df.copy()
 
         # ── Step 2: tiered feasible-set + learnability ranking ────────────────
@@ -3965,10 +4270,8 @@ def run(args: argparse.Namespace) -> None:
         # 12 cells = 4 buckets × 3 horizons; up to max_configs_per_cell diverse configs per cell.
         # load_tbm_geometry_grid() collects all unique k_tp/sl_as_tp_pct per cell_key so
         # training.py sweeps the full set of selected geometries for each cell independently.
-
-        # Use the FILTERED high-quality pool as input to per-cell selection too
         per_cell_grids = _build_per_cell_feasible_sets(
-            pool_df, details, min_distance=1.0, max_configs_per_cell=10
+            out_df, details, min_distance=1.0, max_configs_per_cell=10
         )
 
         # ── Step 6: save geometry grid CSV (per-cell format) ─────────────────
@@ -4207,6 +4510,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p.add_argument("--horizons", default="2,4,8", help="Comma-separated horizons in hours")
     p.add_argument("--max-configs", type=int, default=20, help="Max configs when --quick")
     p.add_argument("--max-stage2-configs", type=int, default=24, help="Max configs per Stage2 substage (hierarchical cap)")
+    p.add_argument("--n-jobs", type=int, default=2, help="Optuna worker jobs (default 2; auto-capped to 1 on Apple Silicon)")
     p.add_argument("--lookback-years", type=int, default=2, help="Years of history to keep")
     p.add_argument("--weights-output", default="", help="Optional sample-weights parquet output path")
     p.add_argument("--tbm-cache-max-mb", type=int, default=1536, help="Max on-disk persisted TBM cache size in MB")

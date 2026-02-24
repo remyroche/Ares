@@ -3656,7 +3656,7 @@ def run_comparison(
         # Force ExtraTrees for Stage 3
         use_extratrees = True
         
-        stage3_pcts = [0.05, 0.06]
+        stage3_pcts = [0.04, 0.05, 0.06]
         stage3_configs = []
         for cfg in configs:
             # Check if this config matches any of the winners

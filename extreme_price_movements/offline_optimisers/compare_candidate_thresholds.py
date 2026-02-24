@@ -3554,7 +3554,7 @@ def run_comparison(
     default_sl_mult = float(barrier_defaults["barrier_sl_base_mult"])
     default_cusum_h = float(runtime_cfg.get("cusum_h", 6.0))
     default_cusum_z_gate = float(runtime_cfg.get("cusum_z_gate", 0.5))
-    pct_grid = [0.06]
+    pct_grid = [0.06, 0.07, 0.08]
     
     # Expansion variants
     expansion_variants = [
@@ -3656,7 +3656,7 @@ def run_comparison(
         # Force ExtraTrees for Stage 3
         use_extratrees = True
         
-        stage3_pcts = [0.05, 0.06]
+        stage3_pcts = [0.05, 0.06, 0.07, 0.08]
         stage3_configs = []
         for cfg in configs:
             # Check if this config matches any of the winners

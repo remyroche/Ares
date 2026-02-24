@@ -627,75 +627,67 @@ def _numba_rolling_mean_1d(x, window):
 
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_rolling_std_1d(x, window):
-    """Single-pass rolling std with K-shift for numerical stability."""
+    """
+    Single-pass rolling std with Welford's Online Algorithm.
+    Complexity: O(N) (optimized from previous O(N*W)).
+    Numerical Stability: Uses incremental mean and M2 updates to avoid catastrophic cancellation.
+    """
     n = len(x)
     out = np.full(n, np.nan, dtype=np.float32)
     
     if window <= 0:
         return out
     
-    # Circular buffer for K-shift
-    window_vals = np.empty(window, dtype=np.float64)
-    window_valid = np.zeros(window, dtype=np.bool_)
+    # Circular buffer to track values in the window
+    buf = np.empty(window, dtype=np.float64)
+    buf_valid = np.zeros(window, dtype=np.bool_)
     buf_idx = 0
     
+    # Welford's accumulator state
+    mean = 0.0
+    m2 = 0.0
+    count = 0
+
     for i in range(n):
         val_in = x[i]
+        in_valid = not np.isnan(val_in)
         
-        # Store in circular buffer
-        if not np.isnan(val_in):
-            window_vals[buf_idx] = val_in
-            window_valid[buf_idx] = True
-        else:
-            window_valid[buf_idx] = False
-        buf_idx = (buf_idx + 1) % window
-        
-        if i >= window - 1:
-            # Compute K-shift variance
-            K = 0.0
-            K_set = False
-            sum_d = 0.0
-            sum_d_sq = 0.0
-            count = 0
-            
-            for j in range(window):
-                idx = (buf_idx + j) % window
-                if window_valid[idx]:
-                    v = window_vals[idx]
-                    if not K_set:
-                        K = v
-                        K_set = True
-                    d = v - K
-                    sum_d += d
-                    sum_d_sq += d * d
-                    count += 1
-            
-            if count > 1:
-                var_num = sum_d_sq - (sum_d * sum_d) / count
-                if var_num < 0:
-                    var_num = 0.0
-                out[i] = np.float32(np.sqrt(var_num / (count - 1)))
-        
-        else:
-            # Warmup
-            if not np.isnan(val_in):
-                if i == 0:
-                    K = val_in
-                    K_set = True
-                    sum_d = 0.0
-                    sum_d_sq = 0.0
-                    count = 1
+        # 1. Remove outgoing value (only after window is full)
+        if i >= window:
+            # The value leaving is at buf_idx (circular buffer overwrites oldest)
+            if buf_valid[buf_idx]:
+                val_out = buf[buf_idx]
+                count -= 1
+                if count == 0:
+                    mean = 0.0
+                    m2 = 0.0
                 else:
-                    d = val_in - K
-                    sum_d += d
-                    sum_d_sq += d * d
-                    count += 1
-                
-                if count > 1:
-                    var_num = sum_d_sq - (sum_d * sum_d) / count
-                    if var_num < 0:
-                        var_num = 0.0
-                    out[i] = np.float32(np.sqrt(var_num / (count - 1)))
+                    delta = val_out - mean
+                    mean -= delta / count
+                    m2 -= delta * (val_out - mean)
+        
+        # 2. Add incoming value
+        if in_valid:
+            count += 1
+            delta = val_in - mean
+            mean += delta / count
+            m2 += delta * (val_in - mean)
+            
+            buf[buf_idx] = val_in
+            buf_valid[buf_idx] = True
+        else:
+            buf_valid[buf_idx] = False
+
+        # Advance buffer index
+        buf_idx += 1
+        if buf_idx >= window:
+            buf_idx = 0
+
+        # 3. Compute Std
+        if count > 1:
+            if m2 < 0:
+                m2 = 0.0
+            out[i] = np.float32(np.sqrt(m2 / (count - 1)))
     
     return out
 

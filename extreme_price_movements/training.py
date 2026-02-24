@@ -5622,7 +5622,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
             # best_m serves as the "primary" (highest score) for backward compat.
             # models_by_h stores all trained horizons for inference averaging.
             if best_m is not None:
-                best_m["models_by_h"] = {h: {"model": v["model"], "feat_cols": v["feat_cols"], "H": v["H"], "selected_features": feature_selection_by_h.get(h, v["feat_cols"])} for h, v in per_h_models.items()}
+                best_m["models_by_h"] = {h: {"model": v["model"], "feat_cols": v["feat_cols"], "H": v["H"], "selected_features": feature_selection_by_h.get(h, v["feat_cols"]), "alpha_diag": v["alpha_diag"]} for h, v in per_h_models.items()}
                 tprint(f"  {side}_{k}: Deploying {len(per_h_models)} horizons: {sorted(per_h_models.keys())} (primary H={best_m['H']})")
 
             # --- Save OOF predictions for fast meta loading + richer diagnostics ---

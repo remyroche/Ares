@@ -39,11 +39,16 @@ class CausalFeatureTransformer:
             f"CausalFeatureTransformer: Optimized Parametric Mode (sigma={self.sigma_k:.3f})"
         )
 
-    def transform(self, df: pd.DataFrame, name: str = "unknown") -> pd.DataFrame:
+    def transform(self, df: pd.DataFrame | np.ndarray, name: str = "unknown") -> pd.DataFrame | np.ndarray:
         """
         Applies Log + Causal Z-Score + Clip (Parametric Winsorization Proxy).
         O(N) complexity vs O(N*W) for rolling quantiles. ~300x Speedup.
         """
+        if isinstance(df, np.ndarray):
+            if df.size == 0:
+                return df.copy()
+            return self._apply_transform_numpy(df)
+
         if df.empty:
             return df.copy()
 

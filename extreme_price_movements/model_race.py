@@ -287,7 +287,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             "depth": 5,
             "learning_rate": 0.05,
             "verbose": 0,
-            "thread_count": -1,
+            "thread_count": 2,
             "random_seed": 42,
             "allow_writing_files": False,
             "eval_metric": "PRAUC",  # Direct PR-AUC optimization

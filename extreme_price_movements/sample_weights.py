@@ -474,3 +474,158 @@ def compute_cell_weights_neg_mass_renorm(
         # TP remain bw_c (already set via copy)
 
     return w_final
+
+
+# =============================================================================
+# OPTIMIZATION: Vectorized Single-Pass Weight Computation
+# =============================================================================
+
+def compute_all_weights_vectorized(
+    n_samples: int,
+    y_labels: np.ndarray,
+    n_res: Optional[np.ndarray] = None,
+    mfe: Optional[np.ndarray] = None,
+    mae: Optional[np.ndarray] = None,
+    tp: Optional[np.ndarray] = None,
+    sl: Optional[np.ndarray] = None,
+    barrier_pct: Optional[np.ndarray] = None,
+    dd: Optional[np.ndarray] = None,
+    selection_metric: Optional[np.ndarray] = None,
+    w_min: float = 0.5,
+    tau: float = 1.0,
+    k_dd: float = 5.0,
+    k_early: float = 2.0,
+    dd_tau: float = 24.0,
+) -> np.ndarray:
+    """
+    OPTIMIZATION: Compute all sample weights in a single vectorized pass.
+    
+    This combines:
+    1. Uniqueness weights (via n_res resolution count)
+    2. MFE/MAE quality weights
+    3. Drawdown-aware weights
+    4. Event intensity weights
+    
+    Args:
+        n_samples: Number of samples
+        y_labels: Label outcomes (2=TP, 1=TIMEOUT, 0=SL)
+        n_res: Resolution count for uniqueness weighting
+        mfe: Max Favorable Excursion
+        mae: Max Adverse Excursion  
+        tp: Take-profit barrier distance
+        sl: Stop-loss barrier distance
+        barrier_pct: Barrier percentage (ATR-based)
+        dd: Drawdown values
+        selection_metric: Metric for event intensity scoring
+        w_min: Minimum MFE/MAE weight
+        tau: MFE/MAE scaling factor
+        k_dd: Drawdown weight multiplier
+        k_early: Early drawdown bonus
+        dd_tau: Drawdown decay tau
+        
+    Returns:
+        Combined sample weights as float32 array
+    """
+    # Initialize with uniform weights
+    w = np.ones(n_samples, dtype=np.float64)
+    
+    # 1. Uniqueness weights (via sqrt of resolution count)
+    if n_res is not None:
+        n_res = np.asarray(n_res, dtype=np.float64)
+        # sqrt preserves relative ordering but compresses the tail
+        w_uniqueness = np.sqrt(np.clip(n_res, 0.0, None))
+        # Normalize to mean=1
+        w_uniqueness = w_uniqueness / max(np.mean(w_uniqueness), 1e-12)
+        w *= w_uniqueness
+    
+    # 2. MFE/MAE quality weights
+    if mfe is not None and mae is not None and tp is not None and sl is not None:
+        mfe = np.asarray(mfe, dtype=np.float64)
+        mae = np.asarray(mae, dtype=np.float64)
+        tp = np.asarray(tp, dtype=np.float64)
+        sl = np.asarray(sl, dtype=np.float64)
+        
+        # Ensure positive barriers
+        tp = np.maximum(tp, 1e-8)
+        sl = np.maximum(sl, 1e-8)
+        
+        # Normalized excursions
+        r_mfe = np.maximum(mfe, 0.0) / tp
+        r_mae = np.maximum(mae, 0.0) / sl
+        
+        # Take the more extreme normalized excursion
+        d = np.maximum(r_mfe, r_mae)
+        
+        # Base weight: w_min + (1-w_min) * clip(d/tau, 0, 1)
+        w_mfe_mae = w_min + (1.0 - w_min) * np.clip(d / tau, 0.0, 1.0)
+        
+        # Timeout cap: if timeout (y_labels == 1), cap weight at 0.7
+        is_timeout = np.asarray(y_labels, dtype=np.int8) == 1
+        w_mfe_mae = np.where(is_timeout, np.minimum(w_mfe_mae, 0.7), w_mfe_mae)
+        
+        # Normalize to mean=1
+        w_mfe_mae = w_mfe_mae / max(np.mean(w_mfe_mae), 1e-12)
+        w *= w_mfe_mae
+    
+    # 3. Drawdown-aware weights
+    if dd is not None:
+        dd = np.asarray(dd, dtype=np.float64)
+        
+        # Base drawdown weight
+        w_dd = 1.0 + k_dd * np.clip(dd, 0.0, 1.0)
+        
+        # Early drawdown bonus (vectorized approximation)
+        # Find drawdown episode starts
+        starts = np.zeros_like(dd, dtype=np.float64)
+        starts[0] = 1.0 if dd[0] > 0 else 0.0
+        if dd.size > 1:
+            starts[1:] = ((dd[1:] > 0) & (dd[:-1] <= 0)).astype(np.float64)
+        
+        # Compute decay from last start (vectorized via cumulative max with decay)
+        # This is an approximation - uses distance from last start
+        episode_idx = np.cumsum(starts) - 1  # Episode index for each point
+        episode_start_pos = np.maximum.accumulate(np.where(starts > 0, np.arange(len(dd)), 0))
+        distance_from_start = np.arange(len(dd)) - episode_start_pos
+        
+        # Decay bonus
+        decay_tau = max(float(dd_tau), 1e-6)
+        bonus = np.where(dd > 0, np.exp(-distance_from_start / decay_tau), 0.0)
+        
+        w_dd = w_dd * (1.0 + k_early * bonus)
+        
+        # Normalize to mean=1
+        w_dd = w_dd / max(np.mean(w_dd), 1e-12)
+        w *= w_dd
+    
+    # 4. Event intensity weights (based on selection metric or barrier_pct)
+    if selection_metric is not None:
+        metric_values = np.abs(np.asarray(selection_metric, dtype=np.float64))
+    elif barrier_pct is not None:
+        metric_values = np.abs(np.asarray(barrier_pct, dtype=np.float64))
+    else:
+        metric_values = None
+    
+    if metric_values is not None and len(metric_values) == n_samples:
+        # Vectorized percentile calculation
+        sorted_indices = np.argsort(metric_values)
+        percentile_ranks = np.empty_like(metric_values)
+        percentile_ranks[sorted_indices] = np.arange(1, len(metric_values) + 1) / len(metric_values)
+        
+        # Clamp percentiles to [0.01, 0.99]
+        percentile_ranks = np.clip(percentile_ranks, 0.01, 0.99)
+        
+        # Score = 1 / (1 - percentile), normalized to [0.8, 1.2]
+        raw_scores = 1.0 / (1.0 - percentile_ranks + 0.01)
+        event_scores = 0.8 + 0.4 * (np.log1p(raw_scores - 1) / np.log1p(99))
+        
+        # Normalize to mean=1
+        event_scores = event_scores / max(np.mean(event_scores), 1e-12)
+        w *= event_scores
+    
+    # Final normalization to mean=1
+    w = w / max(np.mean(w), 1e-12)
+    
+    # Clip extremes
+    w = np.clip(w, 0.1, 10.0)
+    
+    return w.astype(np.float32)

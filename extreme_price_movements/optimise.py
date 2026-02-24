@@ -98,6 +98,8 @@ def _adapt_backtest_columns(trades: pd.DataFrame) -> pd.DataFrame:
     # entry_price
     if "entry_price" not in df.columns and "entry_px" in df.columns:
         df["entry_price"] = df["entry_px"]
+    if "signal_px" not in df.columns:
+        df["signal_px"] = df["entry_price"]
     # exit_price — reconstruct from entry_px + gross_ret
     if "exit_price" not in df.columns:
         if "entry_px" in df.columns and "gross_ret" in df.columns and "side" in df.columns:
@@ -152,6 +154,7 @@ def run_optimise_step(trades: pd.DataFrame, atr_15m: pd.Series, output_path: str
     trades = _adapt_backtest_columns(trades)
 
     m00 = load_step_module("00_load_trades.py")
+    m05 = load_step_module("05_entry_offset_opt.py")
     m10 = load_step_module("10_tp_sl_calibration.py")
     m20 = load_step_module("20_loss_limiter_opt.py")
     m30 = load_step_module("30_profit_exit_opt.py")
@@ -176,8 +179,41 @@ def run_optimise_step(trades: pd.DataFrame, atr_15m: pd.Series, output_path: str
 
     for bucket in buckets:
         bucket_df = m00.load_trades_for_bucket(trades, bucket)
+        bucket_df.attrs["threaded_exit_stream"] = bool(
+            bucket_df.attrs.get("threaded_exit_stream", trades.attrs.get("threaded_exit_stream", False))
+        )
         if bucket_df.empty:
             continue
+
+        # Step 05: Learn fill-probability + pick EU-optimal entry offsets.
+        step05_cfg = m05.EntryOffsetConfig()
+        pol_features = m05.build_policy_features(bucket_df)
+        fill_model, fill_meta = m05.fit_fill_model(bucket_df, pol_features, cfg=step05_cfg)
+        pol_eval = m05.choose_entry_offsets(pol_features, fill_model, cfg=step05_cfg)
+        bucket_df = m05.apply_effective_policy_params(
+            bucket_df,
+            pol_eval,
+            base_params=policy.resolve_params(bucket),
+            cfg=step05_cfg,
+        )
+        if "place_order" in bucket_df.columns:
+            bucket_df = bucket_df[bucket_df["place_order"].astype(bool)].copy()
+        if bucket_df.empty:
+            tprint(f"optimise: bucket={bucket} no eligible trades after entry policy filter")
+            continue
+        entry_policy_payload = m05.build_entry_policy_payload(fill_model, step05_cfg, fill_meta)
+        trials_05 = pd.DataFrame(
+            {
+                "delta_atr_star": bucket_df.get("delta_atr_star", pd.Series(dtype=float)).values,
+                "p_fill_star": bucket_df.get("p_fill_star", pd.Series(dtype=float)).values,
+                "eu_star": bucket_df.get("eu_star", pd.Series(dtype=float)).values,
+                "place_order": bucket_df.get("place_order", pd.Series(dtype=bool)).astype(int).values,
+            }
+        )
+        if not trials_05.empty:
+            trials_05["bucket"] = bucket
+            trials_05["step"] = "05_entry_policy"
+            all_trials_log.append(trials_05)
 
         # Determine test split index (same as m50 uses)
         n = len(bucket_df)
@@ -217,7 +253,9 @@ def run_optimise_step(trades: pd.DataFrame, atr_15m: pd.Series, output_path: str
         all_trials_log.append(trials_30)
 
         # Step 40: Position Sizing Optimization
-        threaded_exit_stream = bool(bucket_df.attrs.get("threaded_exit_stream", False))
+        threaded_exit_stream = bool(
+            bucket_df.attrs.get("threaded_exit_stream", trades.attrs.get("threaded_exit_stream", False))
+        )
         if enforce_threaded_exit_stream and not threaded_exit_stream:
             raise RuntimeError("Stage40 sizing is using stale exit stream; thread post-20/30 ledger first.")
         # Pass raw exit/entry/is_long as original code did, but metrics will use them
@@ -278,6 +316,7 @@ def run_optimise_step(trades: pd.DataFrame, atr_15m: pd.Series, output_path: str
         combined = {
             "policy_mode": policy.mode,
             "baseline_seed": params_init,
+            "entry_policy": entry_policy_payload,
             "tp_sl": tp_sl,
             "loss_limiter": risk_cut,
             "profit_exit": profit,
@@ -297,6 +336,7 @@ def run_optimise_step(trades: pd.DataFrame, atr_15m: pd.Series, output_path: str
             version_key=version_key,
             bucket_id=bucket,
             params={
+                "entry_policy": entry_policy_payload,
                 "tp_sl": tp_sl,
                 "loss_limiter": risk_cut,
                 "profit_exit": profit,

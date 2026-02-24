@@ -33,9 +33,13 @@ from extreme_price_movements.pipeline_steps import (
 )
 from extreme_price_movements.optimise import run_optimise_step, Policy
 from extreme_price_movements.pipeline_steps import run_ridge_sizer_step
+from extreme_price_movements.breakdown_diagnostics import run_breakdown_diagnostics
 
-BASE_ROUND_TRIP_FEE_PCT = 0.3
-PERP_ROUND_TRIP_FEE_PCT = 0.1
+# SINGLE SOURCE OF TRUTH FOR FEES - All fee configuration comes from these constants
+# Spot trading fees (default)
+BASE_ROUND_TRIP_FEE_PCT = 0.3  # 0.3% round-trip = 0.15% per side (15 bps)
+# Perpetual trading fees (when --perps flag used)  
+PERP_ROUND_TRIP_FEE_PCT = 0.1  # 0.1% round-trip = 0.05% per side (5 bps)
 
 
 
@@ -244,10 +248,13 @@ def run_train(cfg, ts_override=None):
     tprint(f"Train mode. ts_sig={ts_sig}")
 
     # TP/SL optimisation happens during label generation (see training.generate_label_datasets).
-    # Always refresh labels before training so TP:SL widths are re-optimised from current data.
-    tprint("Refreshing labels to optimise TP:SL widths before model training (optimise_tpsl_ratio)...")
+    # Check if labels already exist before refreshing to avoid unnecessary recomputation.
     store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
-    run_label_generation_step_v2(ts_sig, None, cfg, store, None)
+    if _label_artifacts_ready(cfg, ts_sig):
+        tprint("Label artifacts already exist, skipping label refresh...")
+    else:
+        tprint("Refreshing labels to optimise TP:SL widths before model training (optimise_tpsl_ratio)...")
+        run_label_generation_step_v2(ts_sig, None, cfg, store, None)
 
     if not _label_artifacts_ready(cfg, ts_sig):
         tprint("ERROR: Label generation did not produce required artifacts. Aborting training.")
@@ -256,6 +263,12 @@ def run_train(cfg, ts_override=None):
     state = run_training_step(ts_sig, cfg, store=store, margin_symbols=None)
     if state:
         tprint("TRAINING PIPELINE COMPLETE")
+        
+        # Run breakdown diagnostics after base training
+        try:
+            run_breakdown_diagnostics_integration(cfg, ts_sig)
+        except Exception as e:
+            tprint(f"WARNING: breakdown diagnostics failed: {e}")
     else:
         tprint("TRAINING PIPELINE FAILED")
 
@@ -308,6 +321,12 @@ def run_ridge_sizer(cfg, ts_override=None):
     result = run_ridge_sizer_step(ts_sig, cfg, state_file)
     if result:
         tprint(f"RIDGE SIZER COMPLETE — {len(result.get('weights', {}))} weights learned")
+        
+        # Run breakdown diagnostics after ridge sizer
+        try:
+            run_breakdown_diagnostics_integration(cfg, ts_sig)
+        except Exception as e:
+            tprint(f"WARNING: breakdown diagnostics failed: {e}")
     else:
         tprint("RIDGE SIZER: No results (possibly no meta OOF predictions found)")
 
@@ -404,6 +423,13 @@ def run_train_meta(cfg, ts_override=None):
             with open("model_state.pkl", "wb") as f:
                 _pkl.dump(result, f)
             tprint("Meta model state also saved to legacy model_state.pkl")
+        
+        # Run breakdown diagnostics after meta training
+        try:
+            run_breakdown_diagnostics_integration(cfg, ts_sig)
+        except Exception as e:
+            tprint(f"WARNING: breakdown diagnostics failed: {e}")
+            
         tprint("TRAIN_META PIPELINE COMPLETE")
     else:
         tprint("TRAIN_META PIPELINE FAILED")
@@ -452,6 +478,13 @@ def run_optimise(cfg, ts_override=None):
         state_path=state_file if os.path.exists(state_file) else None,
     )
     tprint(f"OPTIMISE COMPLETE: {params_path}")
+    
+    # Run breakdown diagnostics after optimization
+    try:
+        run_breakdown_diagnostics_integration(cfg, ts_sig)
+    except Exception as e:
+        tprint(f"WARNING: breakdown diagnostics failed: {e}")
+    
     try:
         from extreme_price_movements.reports.bucket_report import report_optimise
         run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
@@ -485,10 +518,97 @@ def clear_caches():
             except Exception as e:
                 tprint(f"CACHE: Failed to clear {cdir}: {e}")
 
+
+def run_breakdown_diagnostics_integration(cfg: dict, ts_sig: pd.Timestamp) -> None:
+    """Run breakdown diagnostics integrated into pipeline steps."""
+    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    run_dir = os.path.join(cfg["data_root"], "artifacts", run_id)
+    
+    # Check if OHLC data exists for diagnostics
+    ohlc_path = os.path.join(run_dir, "ohlc.parquet")
+    if not os.path.exists(ohlc_path):
+        # Try to create OHLC from store if missing
+        try:
+            store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+            # Get a representative symbol for OHLC extraction
+            symbols = store.list_symbols()
+            if symbols:
+                symbol = symbols[0]  # Use first available symbol
+                ohlc_data = store.load_symbol(symbol)
+                if ohlc_data is not None and len(ohlc_data) > 0:
+                    ohlc_data.to_parquet(ohlc_path)
+                    tprint(f"Created OHLC data for diagnostics from {symbol}")
+                else:
+                    tprint("WARNING: No OHLC data available for breakdown diagnostics")
+                    return
+            else:
+                tprint("WARNING: No symbols found in store for breakdown diagnostics")
+                return
+        except Exception as e:
+            tprint(f"WARNING: Could not create OHLC data for diagnostics: {e}")
+            return
+    
+    # Configure breakdown diagnostics
+    diag_cfg = {
+        "ohlc_path": ohlc_path,
+        "lookback_h": cfg.get("breakdown_lookback_h", 12),
+        "baseline_trigger": cfg.get("breakdown_trigger", 0.08),
+        "trigger_sweep": cfg.get("breakdown_trigger_sweep", [0.06, 0.07, 0.08, 0.09, 0.10]),
+        "decluster_h": cfg.get("breakdown_decluster_h", 6),
+        "max_event_h": cfg.get("breakdown_max_event_h", 72),
+        "entry_offsets_h": cfg.get("breakdown_entry_offsets", [-12, -6, -4, -2, -1, 0, 1, 2, 4, 6, 12]),
+        "directions": cfg.get("breakdown_directions", ["follow", "fade"]),
+        "cost_stress_multipliers": cfg.get("breakdown_cost_stress", [1.0, 1.25, 1.5, 2.0]),
+        "optimise_run_dir": run_dir
+    }
+    
+    try:
+        tprint("Running breakdown diagnostics...")
+        result = run_breakdown_diagnostics(diag_cfg, run_dir)
+        
+        # Log key verdicts
+        verdict = result.get("verdict", {})
+        tprint("BREAKDOWN DIAGNOSTICS VERDICT:")
+        for key, value in verdict.items():
+            if key == "recommendations":
+                continue
+            tprint(f"  {key}: {value}")
+        
+        recommendations = verdict.get("recommendations", {})
+        if recommendations:
+            tprint("RECOMMENDATIONS:")
+            for key, rec in recommendations.items():
+                if verdict.get(key, False):  # Only show recommendations for failed checks
+                    tprint(f"  {key}: {rec}")
+        
+        tprint(f"Breakdown diagnostics saved to: {run_dir}/breakdown_diagnostics/")
+        
+    except Exception as e:
+        tprint(f"ERROR: breakdown diagnostics failed: {e}")
+        raise
+
+
+def run_breakdown_diagnostics_standalone(cfg: dict, ts_override: str = None) -> None:
+    """Standalone breakdown diagnostics mode."""
+    if ts_override:
+        try:
+            ts_sig = pd.to_datetime(ts_override, format="%Y%m%d_%H%M%S").tz_localize("UTC")
+        except ValueError:
+            ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
+    else:
+        ts_sig = _find_latest_feature_ts(cfg["data_root"])
+        if ts_sig is None:
+            tprint("ERROR: No feature directories found.")
+            return
+    
+    tprint(f"Breakdown Diagnostics mode. ts_sig={ts_sig}")
+    run_breakdown_diagnostics_integration(cfg, ts_sig)
+    tprint("BREAKDOWN DIAGNOSTICS COMPLETE")
+
 def main():
     clear_caches()
     parser = argparse.ArgumentParser(description="Extreme Price Movements Pipeline")
-    parser.add_argument("mode", choices=["download", "labels", "features", "train", "train_meta", "ridge_sizer", "backtest", "optimize_risk", "optimise", "run"],
+    parser.add_argument("mode", choices=["download", "labels", "features", "train", "train_meta", "ridge_sizer", "backtest", "optimize_risk", "optimise", "run", "breakdown_diagnostics"],
                         help="Pipeline mode to run")
     parser.add_argument("-perps", "--perps", action="store_true", help="Run pipeline in perps mode (isolated *_perp roots)")
     parser.add_argument("--force-feature-recompute", action="store_true", help="Force full recompute in features mode")
@@ -534,6 +654,8 @@ def main():
         run_risk_opt(cfg, ts_override=args.ts_override)
     elif args.mode == "optimise":
         run_optimise(cfg, ts_override=args.ts_override)
+    elif args.mode == "breakdown_diagnostics":
+        run_breakdown_diagnostics_standalone(cfg, ts_override=args.ts_override)
     elif args.mode == "run":
         run_all(cfg, ts_override=args.ts_override)
 

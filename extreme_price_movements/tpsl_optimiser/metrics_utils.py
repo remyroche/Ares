@@ -165,6 +165,13 @@ def compute_comprehensive_metrics(trades: pd.DataFrame, fee_pct: float = 0.005, 
         "lift_top10": lift_top10,
         "lift_bot10": lift_bot10,
     }
+    if "place_order" in trades.columns:
+        po = trades["place_order"].astype(bool)
+        metrics["place_order_rate"] = float(po.mean()) if len(po) else 0.0
+    if "eu_star" in trades.columns:
+        metrics["avg_eu_star"] = float(np.nanmean(trades["eu_star"].values.astype(float))) if len(trades) else 0.0
+    if "delta_atr_star" in trades.columns:
+        metrics["avg_delta_atr_star"] = float(np.nanmean(trades["delta_atr_star"].values.astype(float))) if len(trades) else 0.0
     metrics.update(exit_counts)
 
     # --- G) Regime-conditional performance ---

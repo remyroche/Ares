@@ -30,6 +30,7 @@ from extreme_price_movements.risk import TrailingStop
 from extreme_price_movements.optimization_utils import filter_low_variance_assets
 from extreme_price_movements.pipeline_steps import run_label_generation_step_v2, run_risk_optimization_step, run_backtest_step
 from extreme_price_movements.model_loader import load_model_bundle, load_full_state, find_latest_run_id, load_bucket_params
+from extreme_price_movements.entry_policy import compute_entry_policy_decision, flatten_bucket_policy
 
 def reconcile_state(ex, state):
     tprint("Reconciling state...")
@@ -403,6 +404,7 @@ def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger, model_
         # Build granular_risk from bucket_params
         granular_risk = {}
         for bucket_key, bucket_cfg in bucket_params.items():
+            bucket_cfg = flatten_bucket_policy(bucket_cfg)
             # bucket_key is like "LONG_MR", "SHORT_TF", etc.
             # Map to risk keys: "risk_mr_best", "risk_long_mr", etc.
             parts = bucket_key.split("_")
@@ -465,6 +467,16 @@ def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger, model_
             # Already injected by generate_hourly_signals into order['risk_params']
             # But let's double check or use defaults
             g_risk = order.get("risk_params", {})
+            g_risk = flatten_bucket_policy(g_risk)
+            pol = compute_entry_policy_decision(
+                entry_px=entry_px,
+                atr_frac=atr,
+                score=float(score),
+                bucket_cfg=g_risk,
+            )
+            if not bool(pol.get("place_order", True)):
+                continue
+            entry_px = float(pol.get("entry_px_fill", entry_px))
 
             # Check if Triple Barrier Params are present
             tp_mult = g_risk.get("tp_mult")
@@ -527,9 +539,9 @@ def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger, model_
                 # k_trail_dist = trail_mult * k_barrier (tight trail, from config)
                 trail_mult = float(g_risk.get("trail_mult", 0.25))
 
-                k_sl_adj = sl_mult * k_barrier * adj # scaling SL
-                k_ts = tp_mult * k_barrier
-                k_td = trail_mult * k_barrier
+                k_sl_adj = float(max(0.05, pol.get("sl_distance_atr_eff", sl_mult))) * k_barrier * adj
+                k_ts = float(max(0.05, pol.get("tp_distance_atr_eff", tp_mult))) * k_barrier
+                k_td = float(pol.get("trail_mult_eff", trail_mult)) * k_barrier
 
             else:
                 # Legacy Trailing Logic

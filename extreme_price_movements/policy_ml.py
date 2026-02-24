@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional, Tuple
 import pandas as pd
 
 import numpy as np
+from extreme_price_movements.utils import tprint
 
 
 def load_best_policy_params_from_optimise(data_root: str, run_id: str) -> Dict[str, Any]:
@@ -259,7 +260,12 @@ def pick_meta_classifier_by_utility_top30(
     tm = np.ones(len(y_true), dtype=bool) if trade_mask is None else np.asarray(trade_mask, dtype=bool)
     tm = tm[:len(y_true)]
 
-    ll = float(log_loss(y_true[tm], p_pred[tm], labels=[0, 1, 2])) if np.any(tm) else 999.0
+    # Handle NaN values in predictions
+    if np.any(np.isnan(p_pred[tm])):
+        tprint(f"Warning: NaN values found in predictions, using fallback log loss")
+        ll = 999.0
+    else:
+        ll = float(log_loss(y_true[tm], p_pred[tm], labels=[0, 1, 2])) if np.any(tm) else 999.0
     passed_gate = ll <= float(cfg.max_logloss)
 
     # Dynamic utility weights from realized outcomes on this OOF vector.

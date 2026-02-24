@@ -1005,12 +1005,15 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     l_24 = ff.numba_rolling_min(l, 24)
     h_12 = ff.numba_rolling_max(h, 12)
     l_12 = ff.numba_rolling_min(l, 12)
+    h_16 = ff.numba_rolling_max(h, 16)
+    l_16 = ff.numba_rolling_min(l, 16)
 
-    # range_24h_pct is max_h - min_l. inputs are log-FFD, so diff is %-ish.
+    # range_XXh_pct is max_h - min_l. inputs are log-FFD, so diff is %-ish.
     # Do NOT divide by c (FFD) as it crosses 0.
     feats["range_24h_pct"] = (h_24 - l_24).astype(np.float32)
     feats["range_12h_pct"] = (h_12 - l_12).astype(np.float32)
-    del h_24, l_24, h_12, l_12
+    feats["range_16h_pct"] = (h_16 - l_16).astype(np.float32)
+    del h_24, l_24, h_12, l_12, h_16, l_16
 
     # Volatility Z-score (using Log-ATR robust z-score)
     # Baseline: 90 days. x = log(ATR/Close).

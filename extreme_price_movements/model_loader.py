@@ -27,6 +27,7 @@ from typing import Any, Optional
 
 import numpy as np
 
+from extreme_price_movements.entry_policy import flatten_bucket_policy
 from extreme_price_movements.utils import tprint
 
 
@@ -467,7 +468,8 @@ def load_bucket_params(run_id: str, data_root: str) -> dict:
         with open(bucket_params_path, "r") as f:
             params = json.load(f)
         
-        buckets = params.get("buckets", {})
+        buckets_raw = params.get("buckets", {})
+        buckets = {k: flatten_bucket_policy(v) for k, v in buckets_raw.items()}
         tprint(f"  Loaded bucket params for {len(buckets)} buckets")
         return buckets
         

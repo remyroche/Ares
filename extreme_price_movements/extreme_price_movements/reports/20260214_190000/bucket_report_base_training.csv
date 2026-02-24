@@ -1,0 +1,13 @@
+bucket,H,winner,auc_raw,auc_weighted,ic,prec_at_10
+MR_long,2,—,,,,
+MR_long,4,—,,,,
+MR_long,8,—,,,,
+TF_long,2,—,,,,
+TF_long,4,—,,,,
+TF_long,8,—,,,,
+MR_short,2,—,,,,
+MR_short,4,—,,,,
+MR_short,8,—,,,,
+TF_short,2,—,,,,
+TF_short,4,—,,,,
+TF_short,8,—,,,,

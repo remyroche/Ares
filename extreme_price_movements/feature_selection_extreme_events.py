@@ -605,7 +605,7 @@ def mdi_feature_selection_v3(
     _sel_alpha = selector_alpha
     if _sel_loss is None:
         # Caller-provided target controls default selector loss.
-        _sel_loss = "modified_huber" if _sel_target in {"classification", "binary", "clf"} else "huber"
+        _sel_loss = "huber" if _sel_target in {"classification", "binary", "clf"} else "huber"
 
     if _sel_target == "quantile":
         assert _sel_alpha is not None, "selector_alpha must be provided when selector_target='quantile'"
@@ -632,8 +632,8 @@ def mdi_feature_selection_v3(
     while True:
         p = len(current_features)
 
-        # Subsampling Logic
-        n_star = max(30000, 300 * p, 2000 * end_features)
+        # Subsampling Logic - Limit to 5K events max for MDI
+        n_star = min(5000, max(30000, 300 * p, 2000 * end_features))
 
         if n_star < N:
              # Systematic sampling
@@ -719,7 +719,7 @@ def mdi_feature_selection_v3(
                     m.set_params(**params)
                 if "quantile" in _loss_hint or "quantile" in _obj:
                     _eval_metric = "quantile"
-                elif "huber" in _loss_hint or "huber" in _obj or "modified_huber" in _loss_hint:
+                elif "huber" in _loss_hint or "huber" in _obj:
                     _eval_metric = "huber"
                 elif _loss_hint in {"absolute_error", "l1", "epsilon_insensitive"} or "l1" in _obj:
                     _eval_metric = "l1"

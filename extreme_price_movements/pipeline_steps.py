@@ -40,6 +40,7 @@ from extreme_price_movements.reports.bucket_report import (
     report_ridge_sizer,
     report_optimise,
 )
+from extreme_price_movements.entry_policy import compute_entry_policy_decision, flatten_bucket_policy
 
 def _expected_feature_keys_from_cfg(cfg) -> set[str]:
     keys: set[str] = set()
@@ -387,7 +388,7 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
     train_syms = valid_syms
 
     # Restrict panel to valid symbols and hard-align all feature frames to panel.
-    panel = {k: v[valid_syms] for k, v in panel.items() if isinstance(v, pd.DataFrame)}
+    panel = {k: v.reindex(columns=valid_syms) for k, v in panel.items() if isinstance(v, pd.DataFrame)}
     feats = _align_features_to_panel(feats, panel, valid_syms)
 
     # 1. Exhaustion History
@@ -763,6 +764,39 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
             timestamps = trade_outcomes['timestamp'].values if 'timestamp' in trade_outcomes.columns else None
             symbols    = trade_outcomes['symbol'].values    if 'symbol'    in trade_outcomes.columns else None
             tprint(f"    {bucket_name}: {len(oof_pred_df)} rows, features={pred_cols}")
+
+            # Policy-aligned trade mask for ridge sizer (entry policy can reduce trade count).
+            _bp_key = bucket_name.upper()
+            _bp_cfg = flatten_bucket_policy(_tpsl_params.get(_bp_key, {})) if isinstance(_tpsl_params, dict) else {}
+            if _bp_cfg.get("entry_policy"):
+                _scores = np.asarray(oof_pred_df[pred_cols[0]].values, dtype=float)
+                _atr_vec = np.asarray(
+                    trade_outcomes.get("mae_ret", pd.Series(np.full(len(trade_outcomes), 0.02))).values,
+                    dtype=float,
+                )
+                _atr_vec = np.clip(np.where(np.isfinite(_atr_vec), np.abs(_atr_vec), 0.02), 1e-4, 0.5)
+                _mask = np.ones(len(trade_outcomes), dtype=bool)
+                for _i in range(len(_mask)):
+                    _pol = compute_entry_policy_decision(
+                        entry_px=1.0,
+                        atr_frac=float(_atr_vec[_i]),
+                        score=float(_scores[_i]) if _i < len(_scores) else 0.0,
+                        bucket_cfg=_bp_cfg,
+                        features={
+                            "u_hat_z": float(trade_outcomes.get("oof_u_hat", pd.Series(np.zeros(len(trade_outcomes)))).iloc[_i]) if "oof_u_hat" in trade_outcomes.columns else float(np.tanh(_scores[_i] if _i < len(_scores) else 0.0)),
+                            "mae_hat_z": float(trade_outcomes.get("oof_log_mae_q70_hat", pd.Series(np.zeros(len(trade_outcomes)))).iloc[_i]) if "oof_log_mae_q70_hat" in trade_outcomes.columns else float(abs(np.tanh(_scores[_i] if _i < len(_scores) else 0.0))),
+                            "mfe_hat_z": float(trade_outcomes.get("oof_log_mfe_hat", pd.Series(np.zeros(len(trade_outcomes)))).iloc[_i]) if "oof_log_mfe_hat" in trade_outcomes.columns else 0.0,
+                            "dur_hat_z": float(trade_outcomes.get("oof_log_dur_hat", pd.Series(np.zeros(len(trade_outcomes)))).iloc[_i]) if "oof_log_dur_hat" in trade_outcomes.columns else 0.0,
+                        },
+                    )
+                    _mask[_i] = bool(_pol.get("place_order", True))
+                trade_outcomes = trade_outcomes.loc[_mask].reset_index(drop=True)
+                oof_pred_df = oof_pred_df.loc[_mask].reset_index(drop=True)
+                if timestamps is not None:
+                    timestamps = np.asarray(timestamps)[_mask]
+                if symbols is not None:
+                    symbols = np.asarray(symbols)[_mask]
+                tprint(f"    {bucket_name}: policy mask kept {_mask.sum()}/{len(_mask)} rows for ridge training")
 
             try:
                 sizer, metrics = run_ridge_position_sizer_step(
@@ -1214,6 +1248,22 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                         break
                 if matched_key is None:
                     tprint(f"  WARNING: No granular risk for keys {risk_keys}, falling back to global cfg")
+                rp = flatten_bucket_policy(rp)
+                atr_val_for_policy = float(atr_s[sym].loc[entry_ts]) if entry_ts in atr_s[sym].index else 0.02
+                pol = compute_entry_policy_decision(
+                    entry_px=entry_px,
+                    atr_frac=atr_val_for_policy,
+                    score=score,
+                    bucket_cfg=rp,
+                    features={
+                        "u_hat_z": order.get("u_hat_z", np.tanh(score)),
+                        "mae_hat_z": order.get("mae_hat_z", abs(np.tanh(score))),
+                        "mfe_hat_z": order.get("mfe_hat_z", max(np.tanh(score), 0.0)),
+                        "dur_hat_z": order.get("dur_hat_z", 0.0),
+                    },
+                )
+                if not bool(pol.get("place_order", True)):
+                    continue
 
                 k_sl = rp.get("k_sl", cfg["risk_k_sl"])
                 k_ts = rp.get("k_trail_start", cfg["risk_k_trail_start"])
@@ -1235,6 +1285,16 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                 if tp_mult is not None: temp_cfg["tp_mult"] = tp_mult
                 if sl_mult is not None: temp_cfg["sl_mult"] = sl_mult
                 temp_cfg["trail_mult"] = trail_mult
+                temp_cfg["use_limit_orders"] = True
+                temp_cfg["limit_offset_bps"] = float(pol.get("limit_offset_bps_dynamic", temp_cfg.get("limit_offset_bps", cfg.get("limit_offset_bps", 0.0))))
+                temp_cfg["trail_mult"] = float(pol.get("trail_mult_eff", temp_cfg.get("trail_mult", trail_mult)))
+                temp_cfg["giveback_pct"] = float(pol.get("giveback_pct_eff", temp_cfg.get("giveback_pct", cfg.get("giveback_pct", 0.005))))
+                temp_cfg["profit_lock_amount"] = float(pol.get("profit_lock_amount_eff", temp_cfg.get("profit_lock_amount", cfg.get("profit_lock_amount", 0.003))))
+                temp_cfg["kill_c"] = float(pol.get("kill_c_eff", temp_cfg.get("kill_c", cfg.get("kill_c", 0.005))))
+                if pol.get("sl_distance_atr_eff") is not None:
+                    temp_cfg["sl_mult"] = float(max(0.05, pol["sl_distance_atr_eff"]))
+                if pol.get("tp_distance_atr_eff") is not None:
+                    temp_cfg["tp_mult"] = float(max(0.05, pol["tp_distance_atr_eff"]))
 
                 # Per-bucket profit-protection params (absolute % of price)
                 for pp_key in ("be_threshold_pct", "profit_lock_pct", "profit_lock_amount", "giveback_pct", "max_loss_pct"):
@@ -1247,7 +1307,7 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                 if "vol_z_max" in rp: temp_cfg["vol_z_max"] = rp["vol_z_max"]
 
                 # Per-bucket max hold hours (from risk optimization, default 24)
-                hold_hours = int(rp.get("max_hold_hours", 24))
+                hold_hours = int(pol.get("max_hold_hours_eff", rp.get("max_hold_hours", 24)))
 
                 # Initialize CCXT exchange for 15m precision if enabled
                 exchange = None
@@ -1309,6 +1369,24 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                     "exit_stage": trade_extras.get("exit_stage", 0),
                     "filled_via_limit": trade_extras.get("filled_via_limit", False),
                     "exit_limit_bonus": trade_extras.get("exit_limit_bonus", 0.0),
+                    "u_hat_z": pol.get("u_hat_z", 0.0),
+                    "mae_hat_z": pol.get("mae_hat_z", 0.0),
+                    "mfe_hat_z": pol.get("mfe_hat_z", 0.0),
+                    "dur_hat_z": pol.get("dur_hat_z", 0.0),
+                    "signal_px": entry_px,
+                    "entry_px_fill": pol.get("entry_px_fill", entry_px),
+                    "delta_atr_star": pol.get("delta_atr_star", 0.0),
+                    "delta_price_star": pol.get("delta_price_star", 0.0),
+                    "p_fill_star": pol.get("p_fill_star", 1.0),
+                    "eu_star": pol.get("eu_star", 0.0),
+                    "place_order": True,
+                    "sl_distance_atr_eff": pol.get("sl_distance_atr_eff", np.nan),
+                    "tp_distance_atr_eff": pol.get("tp_distance_atr_eff", np.nan),
+                    "trail_mult_eff": pol.get("trail_mult_eff", np.nan),
+                    "giveback_pct_eff": pol.get("giveback_pct_eff", np.nan),
+                    "profit_lock_amount_eff": pol.get("profit_lock_amount_eff", np.nan),
+                    "kill_c_eff": pol.get("kill_c_eff", np.nan),
+                    "max_hold_hours_eff": pol.get("max_hold_hours_eff", np.nan),
                 }
                 # Add regime context for diagnostic reporting
                 if t in mkt_gates.index:
@@ -2055,8 +2133,7 @@ def run_feature_generation_step(ts_sig, margin_symbols, cfg, store, force_full_r
     # Run in symbol chunks and stream-save to cap peak RSS.
     chunk_size = int(cfg.get("feature_backfill_symbol_chunk_size", 140))
     use_chunked_backfill = (
-        bool(backfill_keys)
-        and not force_full_recompute
+        (bool(backfill_keys) or force_full_recompute)
         and chunk_size > 0
         and len(loaded_syms) > chunk_size
     )
@@ -2095,7 +2172,7 @@ def run_feature_generation_step(ts_sig, margin_symbols, cfg, store, force_full_r
                 f"({chunk_syms[0]} .. {chunk_syms[-1]})"
             )
             panel_chunk = {
-                k: v[chunk_syms].copy()
+                k: v.reindex(columns=chunk_syms).copy()
                 for k, v in panel.items()
                 if isinstance(v, pd.DataFrame)
             }

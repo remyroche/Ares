@@ -1,0 +1,300 @@
+[2026-02-23 19:56:52 UTC] Entering function: retry_with_backoff in utils.py
+2026-02-23 20:56:53,858 - DataQualityFramework - INFO - ℹ️ ✅ Comprehensive duplicate analyzer integrated
+2026-02-23 20:56:53,859 - DataQualityFramework - INFO - ℹ️ 🔧 Unified Data Quality Framework initialized (singleton)
+[2026-02-23 20:56:53.859] PERFORMANCE: DataQualityFramework initialization took 0.000s
+2026-02-23 20:56:53,859 - System.tprint - INFO - ℹ️ DataQualityFramework initialization took 0.000s
+2026-02-23 20:56:54,049 - ares.registry - INFO - ℹ️ Registered step: data_download
+2026-02-23 20:56:54,053 - System.AdvancedQualityMetrics - INFO - ℹ️ 📊 AdvancedQualityMetrics initialized with tolerant parameters
+[2026-02-23 20:56:54.053] PERFORMANCE: AdvancedQualityMetrics initialization took 0.000s
+2026-02-23 20:56:54,053 - System.tprint - INFO - ℹ️ AdvancedQualityMetrics initialization took 0.000s
+2026-02-23 20:56:54,056 - DataCleaner - INFO - ℹ️ Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+[2026-02-23 20:56:54.056] PERFORMANCE: DataCleaner(klines) initialization took 0.000s
+2026-02-23 20:56:54,056 - System.tprint - INFO - ℹ️ DataCleaner(klines) initialization took 0.000s
+2026-02-23 20:56:54,056 - DataCleaner - INFO - ℹ️ Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+[2026-02-23 20:56:54.056] PERFORMANCE: DataCleaner(klines) initialization took 0.000s
+2026-02-23 20:56:54,056 - System.tprint - INFO - ℹ️ DataCleaner(klines) initialization took 0.000s
+2026-02-23 20:56:54,056 - DataCleanerManager - INFO - ℹ️ 🔧 DataCleanerManager initialized (singleton)
+[2026-02-23 20:56:54.066] DEBUG: 🔧 [features_common.utils] Initializing common utilities module
+[2026-02-23 20:56:54.066] SUCCESS: ✅ [features_common.utils] Math validation utilities loaded
+2026-02-23 20:56:54,066 - System.tprint - INFO - ℹ️ ✅ [features_common.utils] Math validation utilities loaded
+[2026-02-23 20:56:54.066] DEBUG: 🔧 [features_common.utils] Common utilities module initialized
+2026-02-23 20:56:55,950 - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - ℹ️ M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+2026-02-23 20:56:55,966 - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - ℹ️ 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+[2026-02-23 20:56:56.075] DEBUG: 🔧 [transforms] Module initialized with 15 exports
+2026-02-23 20:56:56,075 - src.features_common.backward_compatibility - INFO - ℹ️ Backward compatibility ensured for features_common
+[2026-02-23 20:56:56.076] DEBUG: 🔧 [optimization] Module initialized with 6 exports
+[2026-02-23 20:56:56.076] DEBUG: 🔧 [registry] Module initialized with BaseFeatureRegistry
+[2026-02-23 20:56:56.079] DEBUG: 🚀 [features_common] Enhanced module initialized with 59 exports
+[2026-02-23 20:56:56.079] SUCCESS: ✅ [features_common] All optimizations enabled by default
+2026-02-23 20:56:56,079 - System.tprint - INFO - ℹ️ ✅ [features_common] All optimizations enabled by default
+[2026-02-23 20:56:56.079] INFO: 🔧 [features_common] VectorBT integration available
+2026-02-23 20:56:56,079 - System.tprint - INFO - ℹ️ 🔧 [features_common] VectorBT integration available
+[2026-02-23 20:56:56.079] PERFORMANCE: 📊 [features_common] Performance monitoring enabled
+2026-02-23 20:56:56,079 - System.tprint - INFO - ℹ️ 📊 [features_common] Performance monitoring enabled
+[2026-02-23 20:56:56.079] WARNING: 💾 [features_common] Intelligent caching active
+2026-02-23 20:56:56,079 - System.tprint - WARNING - ⚠️ 💾 [features_common] Intelligent caching active
+2026-02-23 20:56:56,080 - System.DataStreamingManager - INFO - ℹ️ 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+[2026-02-23 20:56:56.079] PERFORMANCE: DataStreamingManager initialization took 0.000s
+2026-02-23 20:56:56,080 - System.tprint - INFO - ℹ️ DataStreamingManager initialization took 0.000s
+[2026-02-23 20:56:56.082] ✅ Custom logger available for MLCommon.ValidationUtils
+2026-02-23 20:56:56,082 - System.tprint - INFO - ℹ️ ✅ Custom logger available for MLCommon.ValidationUtils
+2026-02-23 20:56:56,084 - System.CrossStepValidator - INFO - ℹ️ 🔍 CrossStepValidator initialized with comprehensive consistency rules
+2026-02-23 20:56:56,084 - DataCleaner - INFO - ℹ️ Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+[2026-02-23 20:56:56.084] PERFORMANCE: DataCleaner(klines) initialization took 0.000s
+2026-02-23 20:56:56,084 - System.tprint - INFO - ℹ️ DataCleaner(klines) initialization took 0.000s
+2026-02-23 20:56:56,084 - System.UnifiedDataUtils - INFO - ℹ️ 🚀 Unified Data Utils initialized
+[2026-02-23 19:56:56 UTC] GC: Collected 15 objects on startup.
+[2026-02-23 19:56:56 UTC] CACHE: Cleared directory /Users/remyroche/Documents/Ares/cache
+[2026-02-23 19:56:56 UTC] Train mode. ts_sig=2026-02-14 19:00:00+00:00
+[2026-02-23 19:56:56 UTC] Refreshing labels to optimise TP:SL widths before model training (optimise_tpsl_ratio)...
+[2026-02-23 19:56:56 UTC] [params_store] TBM best params loaded from /Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/reports/tbm_best_params.csv: config_id=CFG4E480D167D  base_atr_window=672  k_tp=1.8  sl_as_tp_pct=0.4  tp_base_pct=0.011  mode=optuna_s2  horizon_scaling=sqrt
+2026-02-23 20:56:56,671 - params_store - INFO - ℹ️ [params_store] TBM best params loaded from /Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/reports/tbm_best_params.csv: config_id=CFG4E480D167D  base_atr_window=672  k_tp=1.8  sl_as_tp_pct=0.4  tp_base_pct=0.011  mode=optuna_s2  horizon_scaling=sqrt
+[2026-02-23 19:56:56 UTC] [params_store] Injected into cfg: barrier_atr_window=672  barrier_k_tp=1.8  barrier_mode=optuna_s2  barrier_sl_base_mult=0.4  barrier_sl_hi=0.06  barrier_sl_lo=0.005  barrier_sl_method=tp_pct  barrier_tp_abs_pct=0.011  barrier_tp_base_pct=0.011  barrier_tp_hi=0.06  barrier_tp_lo=0.005  barrier_tp_method=atr_norm  label_horizon_base=4  label_horizon_scaling=sqrt
+2026-02-23 20:56:56,672 - params_store - INFO - ℹ️ [params_store] Injected into cfg: barrier_atr_window=672  barrier_k_tp=1.8  barrier_mode=optuna_s2  barrier_sl_base_mult=0.4  barrier_sl_hi=0.06  barrier_sl_lo=0.005  barrier_sl_method=tp_pct  barrier_tp_abs_pct=0.011  barrier_tp_base_pct=0.011  barrier_tp_hi=0.06  barrier_tp_lo=0.005  barrier_tp_method=atr_norm  label_horizon_base=4  label_horizon_scaling=sqrt
+[2026-02-23 19:56:56 UTC] STEP: LABEL GENERATION START
+[2026-02-23 19:56:56 UTC] Labels universe source: local store symbols (638)
+[2026-02-23 19:56:56 UTC] Labels offline universe build: using local store symbols + basket (638 symbols)
+[2026-02-23 19:56:56 UTC] Filtering 638 symbols by variance (Top 100%)...
+[2026-02-23 19:56:58 UTC] Variance Filter: Kept 638/638 symbols.
+[2026-02-23 19:56:58 UTC] Universe: 638 symbols
+[2026-02-23 19:56:58 UTC] Entering function: __init__ in utils.py
+[2026-02-23 19:56:58 UTC] Entering function: __enter__ in utils.py
+[2026-02-23 19:56:58 UTC] START: Data Load
+[2026-02-23 19:57:04 UTC] Entering function: __exit__ in utils.py
+[2026-02-23 19:57:04 UTC] END: Data Load (5.98s)
+[2026-02-23 19:57:08 UTC] DATA COVERAGE: 638 symbols, 35293 hourly bars, 1471 days (2022-02-05 to 2026-02-14), 50.8% non-NaN
+[2026-02-23 19:57:08 UTC] Entering function: compute_market_features in features.py
+[2026-02-23 19:57:08 UTC] Transforming Volume: Log -> EWMA(5)
+[2026-02-23 19:57:08 UTC] Entering function: numba_rolling_sum in fast_funcs.py
+[2026-02-23 19:57:08 UTC] Entering function: numba_rolling_sum in fast_funcs.py
+[2026-02-23 19:57:08 UTC] Entering function: add_regime_gates in features.py
+[2026-02-23 19:57:08 UTC] Entering function: numba_rolling_median in fast_funcs.py
+[2026-02-23 19:57:08 UTC] Found 617 feature files in data/features/20260214_190000. Selective load: keys=473, symbols=638
+[2026-02-23 19:57:10 UTC] Selective feature load progress: 25/617 files (4.1%) in 2.0s
+[2026-02-23 19:57:12 UTC] Selective feature load progress: 50/617 files (8.1%) in 3.9s
+[2026-02-23 19:57:14 UTC] Selective feature load progress: 75/617 files (12.2%) in 5.7s
+[2026-02-23 19:57:16 UTC] Selective feature load progress: 100/617 files (16.2%) in 7.5s
+[2026-02-23 19:57:18 UTC] Selective feature load progress: 125/617 files (20.3%) in 9.6s
+[2026-02-23 19:57:20 UTC] Selective feature load progress: 150/617 files (24.3%) in 11.7s
+[2026-02-23 19:57:22 UTC] Selective feature load progress: 175/617 files (28.4%) in 13.4s
+[2026-02-23 19:57:24 UTC] Selective feature load progress: 200/617 files (32.4%) in 15.3s
+[2026-02-23 19:57:25 UTC] Selective feature load progress: 225/617 files (36.5%) in 16.9s
+[2026-02-23 19:57:27 UTC] Selective feature load progress: 250/617 files (40.5%) in 18.9s
+[2026-02-23 19:57:29 UTC] Selective feature load progress: 275/617 files (44.6%) in 20.6s
+[2026-02-23 19:57:31 UTC] Selective feature load progress: 300/617 files (48.6%) in 22.6s
+[2026-02-23 19:57:33 UTC] Selective feature load progress: 325/617 files (52.7%) in 25.1s
+[2026-02-23 19:57:36 UTC] Selective feature load progress: 350/617 files (56.7%) in 27.2s
+[2026-02-23 19:57:38 UTC] Selective feature load progress: 375/617 files (60.8%) in 29.6s
+[2026-02-23 19:57:40 UTC] Selective feature load progress: 400/617 files (64.8%) in 32.0s
+[2026-02-23 19:57:43 UTC] Selective feature load progress: 425/617 files (68.9%) in 34.4s
+[2026-02-23 19:57:46 UTC] Selective feature load progress: 450/617 files (72.9%) in 37.8s
+[2026-02-23 19:57:49 UTC] Selective feature load progress: 475/617 files (77.0%) in 40.4s
+[2026-02-23 19:57:52 UTC] Selective feature load progress: 500/617 files (81.0%) in 43.2s
+[2026-02-23 19:57:54 UTC] Selective feature load progress: 525/617 files (85.1%) in 45.9s
+[2026-02-23 19:57:58 UTC] Selective feature load progress: 550/617 files (89.1%) in 49.3s
+[2026-02-23 19:58:00 UTC] Selective feature load progress: 575/617 files (93.2%) in 52.1s
+[2026-02-23 19:58:03 UTC] Selective feature load progress: 600/617 files (97.2%) in 54.7s
+[2026-02-23 19:58:05 UTC] Selective feature load progress: 617/617 files (100.0%) in 56.5s
+[2026-02-23 19:58:05 UTC] Starting to assemble DataFrames for 473 features...
+[2026-02-23 19:58:05 UTC]   Assembling df for 'dir_path_risk_skew_2h' (1/473)...
+[2026-02-23 19:58:07 UTC]   Assembling df for 'stage_tf' (11/473)...
+[2026-02-23 19:58:08 UTC]   Assembling df for 'vol_shock_asym_8_24' (21/473)...
+[2026-02-23 19:58:10 UTC]   Assembling df for 'cos_dow' (31/473)...
+[2026-02-23 19:58:11 UTC]   Assembling df for 'reject_dir2h_abs_prod' (41/473)...
+[2026-02-23 19:58:13 UTC]   Assembling df for 'is_low_vol_regime' (51/473)...
+[2026-02-23 19:58:15 UTC]   Assembling df for 'ffd_ctx_slope_04_12' (61/473)...
+[2026-02-23 19:58:17 UTC]   Assembling df for 'G_META_TF_QUAL' (71/473)...
+[2026-02-23 19:58:19 UTC]   Assembling df for 'funding_proxy' (81/473)...
+[2026-02-23 19:58:22 UTC]   Assembling df for 'donch_dist_72' (91/473)...
+[2026-02-23 19:58:24 UTC]   Assembling df for 'ffd_diff_4_05' (101/473)...
+[2026-02-23 19:58:26 UTC]   Assembling df for 'reject_x_dir_edge_2h' (111/473)...
+[2026-02-23 19:58:29 UTC]   Assembling df for 'resid_strength' (121/473)...
+[2026-02-23 19:58:31 UTC]   Assembling df for 'dir_path_risk_short_2h' (131/473)...
+[2026-02-23 19:58:33 UTC]   Assembling df for 'dist_from_low_event_12h' (141/473)...
+[2026-02-23 19:58:35 UTC]   Assembling df for 'pullback_2' (151/473)...
+[2026-02-23 19:58:36 UTC]   Assembling df for 'climax' (161/473)...
+[2026-02-23 19:58:39 UTC]   Assembling df for 'ft_8' (171/473)...
+[2026-02-23 19:58:41 UTC]   Assembling df for 'trail_act_vol_units' (181/473)...
+[2026-02-23 19:58:44 UTC]   Assembling df for 'vol_asym_6' (191/473)...
+[2026-02-23 19:58:46 UTC]   Assembling df for 'perm_entropy_ret_12' (201/473)...
+[2026-02-23 19:58:49 UTC]   Assembling df for 'vp_in_hvn_above_zone' (211/473)...
+[2026-02-23 19:58:50 UTC]   Assembling df for 'adx_14_slope' (221/473)...
+[2026-02-23 19:58:52 UTC]   Assembling df for 'stall_x_flow' (231/473)...
+[2026-02-23 19:58:54 UTC]   Assembling df for 'mr_climax' (241/473)...
+[2026-02-23 19:58:56 UTC]   Assembling df for 'ffd_dist_ema_fast_04' (251/473)...
+[2026-02-23 19:58:59 UTC]   Assembling df for 'higher_highs_count_48h' (261/473)...
+[2026-02-23 19:59:02 UTC]   Assembling df for 'adx_di_plus_7' (271/473)...
+[2026-02-23 19:59:05 UTC]   Assembling df for 'G_EXH_EFFORT' (281/473)...
+[2026-02-23 19:59:08 UTC]   Assembling df for 'trend_snr' (291/473)...
+[2026-02-23 19:59:10 UTC]   Assembling df for 'sin_dow' (301/473)...
+[2026-02-23 19:59:12 UTC]   Assembling df for 'vp_lvn_depth_ratio' (311/473)...
+[2026-02-23 19:59:15 UTC]   Assembling df for 'gap_pct' (321/473)...
+[2026-02-23 19:59:17 UTC]   Assembling df for 'pb_accel' (331/473)...
+[2026-02-23 19:59:20 UTC]   Assembling df for 'blowoff_risk' (341/473)...
+[2026-02-23 19:59:23 UTC]   Assembling df for 't_be_proxy' (351/473)...
+[2026-02-23 19:59:25 UTC]   Assembling df for 'is_high_vol_regime' (361/473)...
+[2026-02-23 19:59:27 UTC]   Assembling df for 'kf_score_mean' (371/473)...
+[2026-02-23 19:59:29 UTC]   Assembling df for 'reject_dir2h_signed_mag' (381/473)...
+[2026-02-23 19:59:31 UTC]   Assembling df for 'cusum_strength_norm' (391/473)...
+[2026-02-23 19:59:34 UTC]   Assembling df for 'mr_failure' (401/473)...
+[2026-02-23 19:59:36 UTC]   Assembling df for 'grind_score' (411/473)...
+[2026-02-23 19:59:38 UTC]   Assembling df for 'signed_vol' (421/473)...
+[2026-02-23 19:59:40 UTC]   Assembling df for 'ffd_diff_8_06' (431/473)...
+[2026-02-23 19:59:42 UTC]   Assembling df for 'mae_4h' (441/473)...
+[2026-02-23 19:59:45 UTC]   Assembling df for 'rsi_x_high_vol' (451/473)...
+[2026-02-23 19:59:47 UTC]   Assembling df for 'ret1h_z' (461/473)...
+[2026-02-23 19:59:49 UTC]   Assembling df for 'vortex_diff_34' (471/473)...
+[2026-02-23 19:59:50 UTC] Loaded 473 selected feature matrices.
+[2026-02-23 19:59:50 UTC] Loaded 473 selected feature matrices.
+[2026-02-23 19:59:52 UTC] Symbol intersection: 617 (feats=617, panel=638, universe=638)
+[2026-02-23 20:01:24 UTC] Entering function: generate_exhaustion_history in training.py
+[2026-02-23 20:01:24 UTC] Generating UP history...
+[2026-02-23 20:01:24 UTC] Entering function: build_exhaustion_Xy in training.py
+[2026-02-23 20:01:24 UTC] Exhaustion Label Type: peak
+[2026-02-23 20:01:24 UTC] Entering function: compute_peak_labels_and_weights in fast_funcs.py
+[2026-02-23 20:01:24 UTC] compute_peak_labels_and_weights progress: 0/617 columns processed
+[2026-02-23 20:01:25 UTC] compute_peak_labels_and_weights progress: 100/617 columns processed
+[2026-02-23 20:01:25 UTC] compute_peak_labels_and_weights progress: 200/617 columns processed
+[2026-02-23 20:01:25 UTC] compute_peak_labels_and_weights progress: 300/617 columns processed
+[2026-02-23 20:01:25 UTC] compute_peak_labels_and_weights progress: 400/617 columns processed
+[2026-02-23 20:01:25 UTC] compute_peak_labels_and_weights progress: 500/617 columns processed
+[2026-02-23 20:01:25 UTC] compute_peak_labels_and_weights progress: 600/617 columns processed
+[2026-02-23 20:01:25 UTC] Entering function: compute_peak_labels_and_weights in fast_funcs.py
+[2026-02-23 20:01:25 UTC] compute_peak_labels_and_weights progress: 0/617 columns processed
+[2026-02-23 20:01:25 UTC] compute_peak_labels_and_weights progress: 100/617 columns processed
+[2026-02-23 20:01:25 UTC] compute_peak_labels_and_weights progress: 200/617 columns processed
+[2026-02-23 20:01:25 UTC] compute_peak_labels_and_weights progress: 300/617 columns processed
+[2026-02-23 20:01:25 UTC] compute_peak_labels_and_weights progress: 400/617 columns processed
+[2026-02-23 20:01:25 UTC] compute_peak_labels_and_weights progress: 500/617 columns processed
+[2026-02-23 20:01:25 UTC] compute_peak_labels_and_weights progress: 600/617 columns processed
+[2026-02-23 20:01:25 UTC] UP model: Using LONG reversal labels during DOWNTRENDS
+[2026-02-23 20:01:29 UTC] Exhaustion X shape: (85988, 25), y shape: (85988,)
+[2026-02-23 20:01:29 UTC] Exhaustion class dist: [85988]
+[2026-02-23 20:01:29 UTC] Entering function: fit in exhaustion.py
+[2026-02-23 20:01:29 UTC] ExhaustionModel: Running feature selection. Target features=15
+[2026-02-23 20:01:29 UTC] ExhaustionModel: Selected 15 features.
+[2026-02-23 20:01:30 UTC] Generating OOF predictions for UP model...
+[2026-02-23 20:01:30 UTC] Entering function: compute_oof_predictions in exhaustion.py
+[2026-02-23 20:01:30 UTC] Generating DOWN history...
+[2026-02-23 20:01:30 UTC] Entering function: build_exhaustion_Xy in training.py
+[2026-02-23 20:01:30 UTC] Exhaustion Label Type: peak
+[2026-02-23 20:01:31 UTC] Entering function: compute_peak_labels_and_weights in fast_funcs.py
+[2026-02-23 20:01:31 UTC] compute_peak_labels_and_weights progress: 0/617 columns processed
+[2026-02-23 20:01:31 UTC] compute_peak_labels_and_weights progress: 100/617 columns processed
+[2026-02-23 20:01:31 UTC] compute_peak_labels_and_weights progress: 200/617 columns processed
+[2026-02-23 20:01:31 UTC] compute_peak_labels_and_weights progress: 300/617 columns processed
+[2026-02-23 20:01:31 UTC] compute_peak_labels_and_weights progress: 400/617 columns processed
+[2026-02-23 20:01:31 UTC] compute_peak_labels_and_weights progress: 500/617 columns processed
+[2026-02-23 20:01:31 UTC] compute_peak_labels_and_weights progress: 600/617 columns processed
+[2026-02-23 20:01:31 UTC] Entering function: compute_peak_labels_and_weights in fast_funcs.py
+[2026-02-23 20:01:31 UTC] compute_peak_labels_and_weights progress: 0/617 columns processed
+[2026-02-23 20:01:31 UTC] compute_peak_labels_and_weights progress: 100/617 columns processed
+[2026-02-23 20:01:31 UTC] compute_peak_labels_and_weights progress: 200/617 columns processed
+[2026-02-23 20:01:31 UTC] compute_peak_labels_and_weights progress: 300/617 columns processed
+[2026-02-23 20:01:31 UTC] compute_peak_labels_and_weights progress: 400/617 columns processed
+[2026-02-23 20:01:31 UTC] compute_peak_labels_and_weights progress: 500/617 columns processed
+[2026-02-23 20:01:31 UTC] compute_peak_labels_and_weights progress: 600/617 columns processed
+[2026-02-23 20:01:31 UTC] DOWN model: Using SHORT reversal labels during UPTRENDS
+[2026-02-23 20:01:34 UTC] Exhaustion X shape: (85988, 25), y shape: (85988,)
+[2026-02-23 20:01:34 UTC] Exhaustion class dist: [85988]
+[2026-02-23 20:01:34 UTC] Entering function: fit in exhaustion.py
+[2026-02-23 20:01:34 UTC] ExhaustionModel: Running feature selection. Target features=15
+[2026-02-23 20:01:34 UTC] ExhaustionModel: Selected 15 features.
+[2026-02-23 20:01:35 UTC] Generating OOF predictions for DOWN model...
+[2026-02-23 20:01:35 UTC] Entering function: compute_oof_predictions in exhaustion.py
+[2026-02-23 20:01:36 UTC] Exhaustion prediction window: 35034 timestamps x 617 symbols = 21615978 cells
+[2026-02-23 20:01:36 UTC] Aligning UP OOF predictions to grid...
+[2026-02-23 20:01:36 UTC] Aligning DOWN OOF predictions to grid...
+[2026-02-23 20:02:15 UTC] Saving artifact: data/artifacts/20260214_190000/labels/exhaustion_history.parquet
+[2026-02-23 20:02:15 UTC] Entering function: generate_label_datasets in training.py
+[2026-02-23 20:02:15 UTC] [params_store] TBM best params loaded from /Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/reports/tbm_best_params.csv: config_id=CFG4E480D167D  base_atr_window=672  k_tp=1.8  sl_as_tp_pct=0.4  tp_base_pct=0.011  mode=optuna_s2  horizon_scaling=sqrt
+2026-02-23 21:02:15,486 - params_store - INFO - ℹ️ [params_store] TBM best params loaded from /Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/reports/tbm_best_params.csv: config_id=CFG4E480D167D  base_atr_window=672  k_tp=1.8  sl_as_tp_pct=0.4  tp_base_pct=0.011  mode=optuna_s2  horizon_scaling=sqrt
+[2026-02-23 20:02:15 UTC] [params_store] Injected into cfg: barrier_atr_window=672  barrier_k_tp=1.8  barrier_mode=optuna_s2  barrier_sl_base_mult=0.4  barrier_sl_hi=0.06  barrier_sl_lo=0.005  barrier_sl_method=tp_pct  barrier_tp_abs_pct=0.011  barrier_tp_base_pct=0.011  barrier_tp_hi=0.06  barrier_tp_lo=0.005  barrier_tp_method=atr_norm  label_horizon_base=4  label_horizon_scaling=sqrt
+2026-02-23 21:02:15,487 - params_store - INFO - ℹ️ [params_store] Injected into cfg: barrier_atr_window=672  barrier_k_tp=1.8  barrier_mode=optuna_s2  barrier_sl_base_mult=0.4  barrier_sl_hi=0.06  barrier_sl_lo=0.005  barrier_sl_method=tp_pct  barrier_tp_abs_pct=0.011  barrier_tp_base_pct=0.011  barrier_tp_hi=0.06  barrier_tp_lo=0.005  barrier_tp_method=atr_norm  label_horizon_base=4  label_horizon_scaling=sqrt
+[2026-02-23 20:02:15 UTC] Pre-computing candidate mask (shared across all steps)...
+[2026-02-23 20:02:15 UTC] [params_store] TBM best params loaded from /Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/reports/tbm_best_params.csv: config_id=CFG4E480D167D  base_atr_window=672  k_tp=1.8  sl_as_tp_pct=0.4  tp_base_pct=0.011  mode=optuna_s2  horizon_scaling=sqrt
+2026-02-23 21:02:15,489 - params_store - INFO - ℹ️ [params_store] TBM best params loaded from /Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/reports/tbm_best_params.csv: config_id=CFG4E480D167D  base_atr_window=672  k_tp=1.8  sl_as_tp_pct=0.4  tp_base_pct=0.011  mode=optuna_s2  horizon_scaling=sqrt
+[2026-02-23 20:02:15 UTC] [params_store] Injected into cfg: barrier_atr_window=672  barrier_k_tp=1.8  barrier_mode=optuna_s2  barrier_sl_base_mult=0.4  barrier_sl_hi=0.06  barrier_sl_lo=0.005  barrier_sl_method=tp_pct  barrier_tp_abs_pct=0.011  barrier_tp_base_pct=0.011  barrier_tp_hi=0.06  barrier_tp_lo=0.005  barrier_tp_method=atr_norm  label_horizon_base=4  label_horizon_scaling=sqrt
+2026-02-23 21:02:15,489 - params_store - INFO - ℹ️ [params_store] Injected into cfg: barrier_atr_window=672  barrier_k_tp=1.8  barrier_mode=optuna_s2  barrier_sl_base_mult=0.4  barrier_sl_hi=0.06  barrier_sl_lo=0.005  barrier_sl_method=tp_pct  barrier_tp_abs_pct=0.011  barrier_tp_base_pct=0.011  barrier_tp_hi=0.06  barrier_tp_lo=0.005  barrier_tp_method=atr_norm  label_horizon_base=4  label_horizon_scaling=sqrt
+[2026-02-23 20:02:15 UTC] Building strict candidate mask from offline-optimal conditions: pct=0.0500, min_range_pct=0.0600, min_vol_zscore=1.6000, min_feat_sign_consistency=0.600, strict=True
+[2026-02-23 20:02:15 UTC] Entering function: select_trade_candidates_vectorized in candidates.py
+[2026-02-23 20:02:18 UTC] Entering function: numba_sign_consistency in fast_funcs.py
+[2026-02-23 20:02:30 UTC] Pre-computing Microstructure Noise Filter...
+[2026-02-23 20:02:30 UTC] Noise filter applied globally. Candidates: 220640 -> 189074
+[2026-02-23 20:02:30 UTC] OOS holdout: excluded last 14 days (cutoff=2026-01-31 19:00:00+00:00). Candidates: 189074 -> 186267
+[2026-02-23 20:02:30 UTC] Entering function: train_spike_anatomy_model in training.py
+[2026-02-23 20:02:30 UTC] Spike Anatomy events: 86387
+[2026-02-23 20:02:31 UTC] Spike Anatomy dataset shape: (86387, 12)
+[2026-02-23 20:02:31 UTC] Entering function: train_spike_anatomy_model in training.py
+[2026-02-23 20:02:31 UTC] Spike Anatomy events: 99877
+[2026-02-23 20:02:31 UTC] Spike Anatomy dataset shape: (99877, 12)
+[2026-02-23 20:02:31 UTC] Geometry grid loaded: source=tbm_geometry_grid.csv  per_cell_keys=['MR_long_H2', 'MR_long_H4', 'MR_long_H8', 'MR_short_H2', 'MR_short_H4', 'MR_short_H8', 'TF_long_H2', 'TF_long_H4', 'TF_long_H8', 'TF_short_H2', 'TF_short_H4', 'TF_short_H8']
+[2026-02-23 20:02:31 UTC] Pre-computing global barrier base (window=336h)...
+[2026-02-23 20:02:49 UTC] Pre-computing global barrier base (window=504h)...
+[2026-02-23 20:03:05 UTC] Pre-computing global barrier base (window=672h)...
+[2026-02-23 20:03:23 UTC] Pre-computing global barrier base (window=840h)...
+[2026-02-23 20:03:40 UTC] Pre-computing geometry labels H=2 side=long kind=mr (triplets=5, atr_windows=[504, 672])...
+[2026-02-23 20:05:28 UTC] Accepted geometries H=2 side=long kind=mr: 5 | (k_tp=1.10, sl=0.90, tp_hit=1.699%, sl_hit=95.986%, timeout=2.315%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=16.99pp, bind_raw=0.977, edge=85.72, w=0.997, n_candidates=-1, n_rr_kept=-1); (k_tp=1.80, sl=0.40, tp_hit=1.233%, sl_hit=96.432%, timeout=2.334%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=12.33pp, bind_raw=0.977, edge=176.61, w=0.996, n_candidates=-1, n_rr_kept=-1); (k_tp=1.30, sl=0.90, tp_hit=1.524%, sl_hit=96.013%, timeout=2.463%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=15.24pp, bind_raw=0.975, edge=88.26, w=0.996, n_candidates=-1, n_rr_kept=-1); (k_tp=1.60, sl=0.70, tp_hit=1.330%, sl_hit=96.190%, timeout=2.480%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=13.30pp, bind_raw=0.975, edge=109.31, w=0.996, n_candidates=-1, n_rr_kept=-1); (k_tp=2.30, sl=0.60, tp_hit=1.097%, sl_hit=96.281%, timeout=2.622%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=10.97pp, bind_raw=0.974, edge=111.18, w=0.970, n_candidates=-1, n_rr_kept=-1)
+[2026-02-23 20:05:28 UTC] Geometry diagnostics: H=2, side=long, kind=mr, total=5, rr_rejects=0, n_events_rejects=0, tp_hit_guardrail_rejects=0, timeout_guardrail_rejects=0, min_tp_hit=0.0100, max_timeout=0.9700, min_rr=0.7500, tp_floor_share_mean=0.386, tp_ceil_share_mean=0.148
+[2026-02-23 20:05:41 UTC] Pre-computing geometry labels H=4 side=long kind=mr (triplets=3, atr_windows=[336, 672])...
+[2026-02-23 20:06:47 UTC] Accepted geometries H=4 side=long kind=mr: 3 | (k_tp=1.20, sl=0.50, tp_hit=1.445%, sl_hit=97.172%, timeout=1.383%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=14.45pp, bind_raw=0.986, edge=196.19, w=0.998, n_candidates=-1, n_rr_kept=-1); (k_tp=1.80, sl=0.40, tp_hit=1.154%, sl_hit=97.280%, timeout=1.566%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=11.54pp, bind_raw=0.984, edge=228.61, w=0.986, n_candidates=-1, n_rr_kept=-1); (k_tp=2.30, sl=0.60, tp_hit=1.056%, sl_hit=97.124%, timeout=1.821%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=10.56pp, bind_raw=0.982, edge=141.90, w=0.962, n_candidates=-1, n_rr_kept=-1)
+[2026-02-23 20:06:47 UTC] Geometry diagnostics: H=4, side=long, kind=mr, total=3, rr_rejects=0, n_events_rejects=0, tp_hit_guardrail_rejects=3, timeout_guardrail_rejects=0, min_tp_hit=0.0200, max_timeout=0.9000, min_rr=0.9000, tp_floor_share_mean=0.386, tp_ceil_share_mean=0.149
+[2026-02-23 20:06:59 UTC] Pre-computing geometry labels H=8 side=long kind=mr (triplets=3, atr_windows=[504, 672])...
+[2026-02-23 20:08:04 UTC] Accepted geometries H=8 side=long kind=mr: 3 | (k_tp=1.20, sl=0.60, tp_hit=1.309%, sl_hit=97.705%, timeout=0.987%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=13.09pp, bind_raw=0.990, edge=197.61, w=0.999, n_candidates=-1, n_rr_kept=-1); (k_tp=1.80, sl=0.40, tp_hit=1.075%, sl_hit=97.838%, timeout=1.087%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=10.75pp, bind_raw=0.989, edge=266.26, w=0.967, n_candidates=-1, n_rr_kept=-1); (k_tp=2.30, sl=0.60, tp_hit=1.032%, sl_hit=97.757%, timeout=1.212%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=10.32pp, bind_raw=0.988, edge=171.26, w=0.956, n_candidates=-1, n_rr_kept=-1)
+[2026-02-23 20:08:04 UTC] Geometry diagnostics: H=8, side=long, kind=mr, total=3, rr_rejects=0, n_events_rejects=0, tp_hit_guardrail_rejects=3, timeout_guardrail_rejects=0, min_tp_hit=0.0200, max_timeout=0.9000, min_rr=0.9000, tp_floor_share_mean=0.386, tp_ceil_share_mean=0.303
+[2026-02-23 20:08:15 UTC] Pre-computing geometry labels H=2 side=long kind=tf (triplets=3, atr_windows=[504, 672])...
+[2026-02-23 20:09:18 UTC] Accepted geometries H=2 side=long kind=tf: 3 | (k_tp=1.20, sl=0.60, tp_hit=1.597%, sl_hit=96.238%, timeout=2.166%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=15.97pp, bind_raw=0.978, edge=124.17, w=0.997, n_candidates=-1, n_rr_kept=-1); (k_tp=1.80, sl=0.40, tp_hit=1.233%, sl_hit=96.432%, timeout=2.334%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=12.33pp, bind_raw=0.977, edge=176.61, w=0.996, n_candidates=-1, n_rr_kept=-1); (k_tp=2.30, sl=0.60, tp_hit=1.097%, sl_hit=96.281%, timeout=2.622%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=10.97pp, bind_raw=0.974, edge=111.18, w=0.970, n_candidates=-1, n_rr_kept=-1)
+[2026-02-23 20:09:18 UTC] Geometry diagnostics: H=2, side=long, kind=tf, total=3, rr_rejects=0, n_events_rejects=0, tp_hit_guardrail_rejects=0, timeout_guardrail_rejects=0, min_tp_hit=0.0100, max_timeout=0.9700, min_rr=0.7500, tp_floor_share_mean=0.386, tp_ceil_share_mean=0.148
+[2026-02-23 20:09:30 UTC] Pre-computing geometry labels H=4 side=long kind=tf (triplets=3, atr_windows=[336, 504, 672])...
+[2026-02-23 20:10:36 UTC] Accepted geometries H=4 side=long kind=tf: 3 | (k_tp=1.20, sl=0.50, tp_hit=1.445%, sl_hit=97.172%, timeout=1.383%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=14.45pp, bind_raw=0.986, edge=196.19, w=0.998, n_candidates=-1, n_rr_kept=-1); (k_tp=1.20, sl=0.60, tp_hit=1.450%, sl_hit=97.122%, timeout=1.428%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=14.50pp, bind_raw=0.986, edge=165.90, w=0.998, n_candidates=-1, n_rr_kept=-1); (k_tp=1.80, sl=0.40, tp_hit=1.154%, sl_hit=97.280%, timeout=1.566%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=11.54pp, bind_raw=0.984, edge=228.61, w=0.986, n_candidates=-1, n_rr_kept=-1)
+[2026-02-23 20:10:36 UTC] Geometry diagnostics: H=4, side=long, kind=tf, total=3, rr_rejects=0, n_events_rejects=0, tp_hit_guardrail_rejects=3, timeout_guardrail_rejects=0, min_tp_hit=0.0200, max_timeout=0.9000, min_rr=0.9000, tp_floor_share_mean=0.386, tp_ceil_share_mean=0.149
+[2026-02-23 20:10:48 UTC] Pre-computing geometry labels H=8 side=long kind=tf (triplets=3, atr_windows=[336, 504, 672])...
+[2026-02-23 20:11:56 UTC] Accepted geometries H=8 side=long kind=tf: 3 | (k_tp=1.20, sl=0.50, tp_hit=1.298%, sl_hit=97.809%, timeout=0.893%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=12.98pp, bind_raw=0.991, edge=245.24, w=0.999, n_candidates=-1, n_rr_kept=-1); (k_tp=1.20, sl=0.60, tp_hit=1.306%, sl_hit=97.722%, timeout=0.972%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=13.06pp, bind_raw=0.990, edge=207.11, w=0.999, n_candidates=-1, n_rr_kept=-1); (k_tp=1.80, sl=0.40, tp_hit=1.073%, sl_hit=97.849%, timeout=1.077%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=10.73pp, bind_raw=0.989, edge=278.17, w=0.967, n_candidates=-1, n_rr_kept=-1)
+[2026-02-23 20:11:56 UTC] Geometry diagnostics: H=8, side=long, kind=tf, total=3, rr_rejects=0, n_events_rejects=0, tp_hit_guardrail_rejects=3, timeout_guardrail_rejects=0, min_tp_hit=0.0200, max_timeout=0.9000, min_rr=0.9000, tp_floor_share_mean=0.386, tp_ceil_share_mean=0.149
+[2026-02-23 20:12:08 UTC] Pre-computing geometry labels H=2 side=short kind=mr (triplets=10, atr_windows=[336, 504, 672, 840])...
+[2026-02-23 20:15:02 UTC] Accepted geometries H=2 side=short kind=mr: 6 | (k_tp=1.20, sl=0.50, tp_hit=1.638%, sl_hit=96.234%, timeout=2.128%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=16.38pp, bind_raw=0.979, edge=138.11, w=0.997, n_candidates=-1, n_rr_kept=-1); (k_tp=1.20, sl=0.60, tp_hit=1.641%, sl_hit=96.154%, timeout=2.206%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=16.41pp, bind_raw=0.978, edge=117.10, w=0.997, n_candidates=-1, n_rr_kept=-1); (k_tp=1.10, sl=0.90, tp_hit=1.745%, sl_hit=95.879%, timeout=2.376%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=17.45pp, bind_raw=0.976, edge=80.75, w=0.996, n_candidates=-1, n_rr_kept=-1); (k_tp=1.80, sl=0.40, tp_hit=1.259%, sl_hit=96.362%, timeout=2.380%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=12.59pp, bind_raw=0.976, edge=166.49, w=0.996, n_candidates=-1, n_rr_kept=-1); (k_tp=1.30, sl=0.90, tp_hit=1.566%, sl_hit=95.908%, timeout=2.526%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=15.66pp, bind_raw=0.975, edge=83.38, w=0.996, n_candidates=-1, n_rr_kept=-1); (k_tp=1.60, sl=0.70, tp_hit=1.364%, sl_hit=96.102%, timeout=2.534%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=13.64pp, bind_raw=0.975, edge=103.33, w=0.996, n_candidates=-1, n_rr_kept=-1)
+[2026-02-23 20:15:02 UTC] Geometry diagnostics: H=2, side=short, kind=mr, total=10, rr_rejects=0, n_events_rejects=0, tp_hit_guardrail_rejects=0, timeout_guardrail_rejects=0, min_tp_hit=0.0100, max_timeout=0.9700, min_rr=0.7500, tp_floor_share_mean=0.386, tp_ceil_share_mean=0.148
+[2026-02-23 20:15:18 UTC] Pre-computing geometry labels H=4 side=short kind=mr (triplets=10, atr_windows=[336, 504, 672, 840])...
+[2026-02-23 20:17:58 UTC] Accepted geometries H=4 side=short kind=mr: 6 | (k_tp=1.20, sl=0.50, tp_hit=1.489%, sl_hit=97.087%, timeout=1.424%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=14.89pp, bind_raw=0.986, edge=177.17, w=0.998, n_candidates=-1, n_rr_kept=-1); (k_tp=1.20, sl=0.60, tp_hit=1.493%, sl_hit=97.029%, timeout=1.478%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=14.93pp, bind_raw=0.985, edge=150.02, w=0.998, n_candidates=-1, n_rr_kept=-1); (k_tp=1.10, sl=0.90, tp_hit=1.589%, sl_hit=96.811%, timeout=1.600%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=15.89pp, bind_raw=0.984, edge=103.61, w=0.998, n_candidates=-1, n_rr_kept=-1); (k_tp=1.30, sl=0.90, tp_hit=1.435%, sl_hit=96.794%, timeout=1.771%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=14.35pp, bind_raw=0.982, edge=105.16, w=0.997, n_candidates=-1, n_rr_kept=-1); (k_tp=1.60, sl=0.70, tp_hit=1.264%, sl_hit=96.951%, timeout=1.784%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=12.64pp, bind_raw=0.982, edge=128.29, w=0.997, n_candidates=-1, n_rr_kept=-1); (k_tp=1.60, sl=0.70, tp_hit=1.264%, sl_hit=96.951%, timeout=1.784%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=12.64pp, bind_raw=0.982, edge=128.29, w=0.997, n_candidates=-1, n_rr_kept=-1)
+[2026-02-23 20:17:58 UTC] Geometry diagnostics: H=4, side=short, kind=mr, total=10, rr_rejects=0, n_events_rejects=0, tp_hit_guardrail_rejects=10, timeout_guardrail_rejects=0, min_tp_hit=0.0200, max_timeout=0.9000, min_rr=0.9000, tp_floor_share_mean=0.386, tp_ceil_share_mean=0.149
+[2026-02-23 20:18:11 UTC] Pre-computing geometry labels H=8 side=short kind=mr (triplets=10, atr_windows=[336, 504, 672, 840])...
+[2026-02-23 20:20:52 UTC] Accepted geometries H=8 side=short kind=mr: 6 | (k_tp=1.20, sl=0.50, tp_hit=1.338%, sl_hit=97.737%, timeout=0.926%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=13.38pp, bind_raw=0.991, edge=225.25, w=0.999, n_candidates=-1, n_rr_kept=-1); (k_tp=1.20, sl=0.60, tp_hit=1.346%, sl_hit=97.646%, timeout=1.008%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=13.46pp, bind_raw=0.990, edge=190.52, w=0.999, n_candidates=-1, n_rr_kept=-1); (k_tp=1.10, sl=0.90, tp_hit=1.436%, sl_hit=97.482%, timeout=1.082%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=14.36pp, bind_raw=0.989, edge=132.48, w=0.998, n_candidates=-1, n_rr_kept=-1); (k_tp=1.30, sl=0.90, tp_hit=1.320%, sl_hit=97.515%, timeout=1.165%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=13.20pp, bind_raw=0.988, edge=132.60, w=0.998, n_candidates=-1, n_rr_kept=-1); (k_tp=1.60, sl=0.70, tp_hit=1.176%, sl_hit=97.637%, timeout=1.186%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=11.76pp, bind_raw=0.988, edge=159.27, w=0.992, n_candidates=-1, n_rr_kept=-1); (k_tp=1.60, sl=0.70, tp_hit=1.176%, sl_hit=97.637%, timeout=1.186%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=11.76pp, bind_raw=0.988, edge=159.27, w=0.992, n_candidates=-1, n_rr_kept=-1)
+[2026-02-23 20:20:52 UTC] Geometry diagnostics: H=8, side=short, kind=mr, total=10, rr_rejects=0, n_events_rejects=0, tp_hit_guardrail_rejects=10, timeout_guardrail_rejects=0, min_tp_hit=0.0200, max_timeout=0.9000, min_rr=0.9000, tp_floor_share_mean=0.386, tp_ceil_share_mean=0.196
+[2026-02-23 20:21:05 UTC] Pre-computing geometry labels H=2 side=short kind=tf (triplets=10, atr_windows=[336, 504, 672, 840])...
+[2026-02-23 20:23:40 UTC] Accepted geometries H=2 side=short kind=tf: 6 | (k_tp=1.20, sl=0.50, tp_hit=1.638%, sl_hit=96.234%, timeout=2.128%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=16.38pp, bind_raw=0.979, edge=138.11, w=0.997, n_candidates=-1, n_rr_kept=-1); (k_tp=1.20, sl=0.60, tp_hit=1.641%, sl_hit=96.154%, timeout=2.206%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=16.41pp, bind_raw=0.978, edge=117.10, w=0.997, n_candidates=-1, n_rr_kept=-1); (k_tp=1.10, sl=0.90, tp_hit=1.745%, sl_hit=95.879%, timeout=2.376%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=17.45pp, bind_raw=0.976, edge=80.75, w=0.996, n_candidates=-1, n_rr_kept=-1); (k_tp=1.80, sl=0.40, tp_hit=1.259%, sl_hit=96.362%, timeout=2.380%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=12.59pp, bind_raw=0.976, edge=166.49, w=0.996, n_candidates=-1, n_rr_kept=-1); (k_tp=1.30, sl=0.90, tp_hit=1.566%, sl_hit=95.908%, timeout=2.526%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=15.66pp, bind_raw=0.975, edge=83.38, w=0.996, n_candidates=-1, n_rr_kept=-1); (k_tp=1.60, sl=0.70, tp_hit=1.364%, sl_hit=96.102%, timeout=2.534%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=13.64pp, bind_raw=0.975, edge=103.33, w=0.996, n_candidates=-1, n_rr_kept=-1)
+[2026-02-23 20:23:40 UTC] Geometry diagnostics: H=2, side=short, kind=tf, total=10, rr_rejects=0, n_events_rejects=0, tp_hit_guardrail_rejects=0, timeout_guardrail_rejects=0, min_tp_hit=0.0100, max_timeout=0.9700, min_rr=0.7500, tp_floor_share_mean=0.386, tp_ceil_share_mean=0.148
+[2026-02-23 20:23:54 UTC] Pre-computing geometry labels H=4 side=short kind=tf (triplets=10, atr_windows=[336, 504, 672, 840])...
+[2026-02-23 20:26:32 UTC] Accepted geometries H=4 side=short kind=tf: 6 | (k_tp=1.20, sl=0.50, tp_hit=1.489%, sl_hit=97.087%, timeout=1.424%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=14.89pp, bind_raw=0.986, edge=177.17, w=0.998, n_candidates=-1, n_rr_kept=-1); (k_tp=1.20, sl=0.60, tp_hit=1.493%, sl_hit=97.029%, timeout=1.478%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=14.93pp, bind_raw=0.985, edge=150.02, w=0.998, n_candidates=-1, n_rr_kept=-1); (k_tp=1.10, sl=0.90, tp_hit=1.589%, sl_hit=96.811%, timeout=1.600%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=15.89pp, bind_raw=0.984, edge=103.61, w=0.998, n_candidates=-1, n_rr_kept=-1); (k_tp=1.30, sl=0.90, tp_hit=1.435%, sl_hit=96.794%, timeout=1.771%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=14.35pp, bind_raw=0.982, edge=105.16, w=0.997, n_candidates=-1, n_rr_kept=-1); (k_tp=1.60, sl=0.70, tp_hit=1.264%, sl_hit=96.951%, timeout=1.784%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=12.64pp, bind_raw=0.982, edge=128.29, w=0.997, n_candidates=-1, n_rr_kept=-1); (k_tp=1.60, sl=0.70, tp_hit=1.264%, sl_hit=96.951%, timeout=1.784%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=12.64pp, bind_raw=0.982, edge=128.29, w=0.997, n_candidates=-1, n_rr_kept=-1)
+[2026-02-23 20:26:32 UTC] Geometry diagnostics: H=4, side=short, kind=tf, total=10, rr_rejects=0, n_events_rejects=0, tp_hit_guardrail_rejects=10, timeout_guardrail_rejects=0, min_tp_hit=0.0200, max_timeout=0.9000, min_rr=0.9000, tp_floor_share_mean=0.386, tp_ceil_share_mean=0.149
+[2026-02-23 20:26:45 UTC] Pre-computing geometry labels H=8 side=short kind=tf (triplets=10, atr_windows=[336, 504, 672, 840])...
+[2026-02-23 20:29:28 UTC] Accepted geometries H=8 side=short kind=tf: 6 | (k_tp=1.20, sl=0.50, tp_hit=1.338%, sl_hit=97.737%, timeout=0.926%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=13.38pp, bind_raw=0.991, edge=225.25, w=0.999, n_candidates=-1, n_rr_kept=-1); (k_tp=1.20, sl=0.60, tp_hit=1.346%, sl_hit=97.646%, timeout=1.008%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=13.46pp, bind_raw=0.990, edge=190.52, w=0.999, n_candidates=-1, n_rr_kept=-1); (k_tp=1.10, sl=0.90, tp_hit=1.436%, sl_hit=97.482%, timeout=1.082%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=14.36pp, bind_raw=0.989, edge=132.48, w=0.998, n_candidates=-1, n_rr_kept=-1); (k_tp=1.30, sl=0.90, tp_hit=1.320%, sl_hit=97.515%, timeout=1.165%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=13.20pp, bind_raw=0.988, edge=132.60, w=0.998, n_candidates=-1, n_rr_kept=-1); (k_tp=1.60, sl=0.70, tp_hit=1.176%, sl_hit=97.637%, timeout=1.186%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=11.76pp, bind_raw=0.988, edge=159.27, w=0.992, n_candidates=-1, n_rr_kept=-1); (k_tp=1.60, sl=0.70, tp_hit=1.176%, sl_hit=97.637%, timeout=1.186%, no_hit=0.000%, n=21775781, auc_b=1.000, sep=11.76pp, bind_raw=0.988, edge=159.27, w=0.992, n_candidates=-1, n_rr_kept=-1)
+[2026-02-23 20:29:28 UTC] Geometry diagnostics: H=8, side=short, kind=tf, total=10, rr_rejects=0, n_events_rejects=0, tp_hit_guardrail_rejects=10, timeout_guardrail_rejects=0, min_tp_hit=0.0200, max_timeout=0.9000, min_rr=0.9000, tp_floor_share_mean=0.386, tp_ceil_share_mean=0.196
+[2026-02-23 20:29:42 UTC] [LABEL_PROD_ADMISSIBILITY] FAIL sl_to_tp_prod_agg 66.12x > sl_to_tp_max 3.00x | max_cell_sl_to_tp_prod 75.53x > sl_to_tp_max 3.00x | min_cell_auc unavailable (missing auc_label in per-cell metrics). | min_cell_ap_lift unavailable (missing ap_lift in per-cell metrics).
+[2026-02-23 20:29:42 UTC] [LABEL_PROD_ADMISSIBILITY] NOTE existing label_max_timeout_rate=0.900 is looser than prod_adm_timeout_max=0.600.
+[2026-02-23 20:29:42 UTC] Generating labels: trade_side=long, kind=mr, move_bucket=down, candidate_bucket=worst, strategy=buy_dips, H=2
+[2026-02-23 20:29:42 UTC] Entering function: build_hourly_training_set_and_weights in training.py
+[2026-02-23 20:29:42 UTC] Candidates found: 186267
+[2026-02-23 20:29:43 UTC] Candidate events: 186267
+[2026-02-23 20:29:43 UTC] Trend filter drop (down): removed 58316/186267 events
+[2026-02-23 20:29:43 UTC] Events after trend filter: 127951
+[2026-02-23 20:30:18 UTC] Policy rollout labels applied: n=127951 direction=short max_hold=8h
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/run_pipeline.py", line 658, in <module>
+    main()
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/run_pipeline.py", line 640, in main
+    run_train(cfg, ts_override=args.ts_override)
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/run_pipeline.py", line 251, in run_train
+    run_label_generation_step_v2(ts_sig, None, cfg, store, None)
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/pipeline_steps.py", line 403, in run_label_generation_step_v2
+    datasets = generate_label_datasets(panel, feats, mkt_gates, cfg, train_syms, ts_sig, p_exh_hist, horizons=horizons)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/training.py", line 3829, in generate_label_datasets
+    X, y, y_ret, cols, w, meta_idx, lbl_vals = build_hourly_training_set_and_weights(
+                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/training.py", line 2470, in build_hourly_training_set_and_weights
+    w_mfe_mae = compute_mfe_mae_weights(
+                ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/sample_weights.py", line 360, in compute_mfe_mae_weights
+    r_mfe = np.maximum(mfe, 0.0) / tp  # How much of TP was within reach
+            ~~~~~~~~~~~~~~~~~~~~~^~~~
+ValueError: operands could not be broadcast together with shapes (127951,) (113965,) 

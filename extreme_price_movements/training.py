@@ -2407,6 +2407,12 @@ def build_hourly_training_set_and_weights(
             ret_vals = ret_vals[keep_rows]
             qual_vals = qual_vals[keep_rows]
             pnl = pnl[keep_rows]
+            if _policy_mfe_vals is not None:
+                _policy_mfe_vals = _policy_mfe_vals[keep_rows]
+            if _policy_mae_vals is not None:
+                _policy_mae_vals = _policy_mae_vals[keep_rows]
+            if _policy_bars_vals is not None:
+                _policy_bars_vals = _policy_bars_vals[keep_rows]
     else:
         # Legacy TP-vs-rest
         y_bin = (lbl_vals == OUT_TP).astype(np.float32)
@@ -2687,9 +2693,10 @@ def build_hourly_training_set_and_weights(
     # Extract selection metric values for event scoring.
     # Prefer range_16h_pct; fall back to compatible range proxies.
     selection_metric_name = None
-    for metric_key in ("range_16h_pct", "range_12h_pct", "range_pct"):
+    for metric_key in ("range_16h_pct", "range_12h_pct", "range_pct", "range_24h_pct"):
         if metric_key in feats:
             selection_metric_name = metric_key
+            tprint(f"Using selection metric '{selection_metric_name}' for event scoring")
             break
     selection_metric_values = None
     if selection_metric_name is not None:
@@ -3204,29 +3211,40 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                 geom_runs = []
                 relaxed_pool = []
 
+                # OPTIMIZATION: Cache barrier factory outputs by (atr_window, k_tp, sl_base_mult, H, tp_lo, tp_hi)
+                # This avoids redundant computation when same geometry is used across different (side, kind) combinations
+                _barrier_factory_cache = {} if '_barrier_factory_cache' not in dir() else _barrier_factory_cache
+
                 for k_tp, sl_base_mult, _atr_window in _validated_triplets:
                     _barrier_base = _barrier_base_cache[_atr_window]
                     total_geoms += 1
                     tp_lo_eval = _co_calibrate_tp_floor(tp_lo_eff_search, sl_base_mult, tp_hi)
-                    tp_df, sl_df = compute_barrier_factory(
-                        atr_pct=atr_pct_local,
-                        window_size=_atr_window,
-                        k_tp=k_tp,
-                        sl_base_mult=sl_base_mult,
-                        horizon=H,
-                        H_base=H_base,
-                        disp_floor=disp_floor,
-                        z_max=z_max,
-                        k_reg=k_reg,
-                        m_lo=m_lo,
-                        m_hi=m_hi,
-                        sl_lo=sl_lo,
-                        sl_hi=sl_hi,
-                        z_gate=z_gate,
-                        tp_lo=tp_lo_eval,
-                        tp_hi=tp_hi,
-                        _base=_barrier_base,
-                    )
+                    
+                    # OPTIMIZATION: Use cached barriers if available
+                    _bf_cache_key = (int(_atr_window), round(float(k_tp), 4), round(float(sl_base_mult), 4), int(H), round(float(tp_lo_eval), 6), round(float(tp_hi), 6))
+                    if _bf_cache_key in _barrier_factory_cache:
+                        tp_df, sl_df = _barrier_factory_cache[_bf_cache_key]
+                    else:
+                        tp_df, sl_df = compute_barrier_factory(
+                            atr_pct=atr_pct_local,
+                            window_size=_atr_window,
+                            k_tp=k_tp,
+                            sl_base_mult=sl_base_mult,
+                            horizon=H,
+                            H_base=H_base,
+                            disp_floor=disp_floor,
+                            z_max=z_max,
+                            k_reg=k_reg,
+                            m_lo=m_lo,
+                            m_hi=m_hi,
+                            sl_lo=sl_lo,
+                            sl_hi=sl_hi,
+                            z_gate=z_gate,
+                            tp_lo=tp_lo_eval,
+                            tp_hi=tp_hi,
+                            _base=_barrier_base,
+                        )
+                        _barrier_factory_cache[_bf_cache_key] = (tp_df, sl_df)
                     _tp_vals = tp_df.values
                     _tp_floor_share = float(np.mean(_tp_vals <= (tp_lo_eval + 1e-9)))
                     _tp_ceil_share = float(np.mean(_tp_vals >= (tp_hi - 1e-9)))
@@ -4172,7 +4190,7 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                 elif kind == "mae":
                     try:
                         from lightgbm import LGBMRegressor
-                        m = LGBMRegressor(objective="quantile", alpha=0.7, n_estimators=250, learning_rate=0.05, num_leaves=31, random_state=42, n_jobs=-1)
+                        m = LGBMRegressor(objective="quantile", alpha=0.7, n_estimators=250, learning_rate=0.05, num_leaves=31, random_state=42, n_jobs=2)
                     except Exception:
                         m = ExtraTreesRegressor(n_estimators=120, max_depth=5, min_samples_leaf=10, random_state=42, n_jobs=1)
                 else:
@@ -4226,11 +4244,11 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
         else:
             _base_mdi = ExtraTreesRegressor(
                 n_estimators=300,
-                max_depth=8,
+                max_depth=6,
                 min_samples_leaf=20,
                 max_features='sqrt',
                 random_state=42,
-                n_jobs=1,
+                n_jobs=2,
             )
             # U head
             _fs_u = mdi_feature_selection_v3(
@@ -4339,7 +4357,7 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                 m_q = LGBMRegressor(
                     objective="quantile",
                     alpha=0.7,
-                    n_estimators=800,
+                    n_estimators=500,
                     learning_rate=0.03,
                     num_leaves=63,
                     min_child_samples=50,
@@ -4348,20 +4366,20 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                     reg_alpha=0.0,
                     reg_lambda=0.0,
                     random_state=42,
-                    n_jobs=-1,
+                    n_jobs=2,
                 )
             except Exception:
-                m_q = ExtraTreesRegressor(n_estimators=200, max_depth=6, min_samples_leaf=20, random_state=42, n_jobs=1)
+                m_q = ExtraTreesRegressor(n_estimators=150, max_depth=5, min_samples_leaf=20, random_state=42, n_jobs=2)
             m_q.fit(Xu_tr[:, idx_q], y_mae[tr_idx])
             oof_mae_q70[va_idx] = m_q.predict(Xu_va[:, idx_q])
 
             # MFE head
-            m_mfe = ExtraTreesRegressor(n_estimators=200, max_depth=6, min_samples_leaf=20, random_state=42, n_jobs=1)
+            m_mfe = ExtraTreesRegressor(n_estimators=150, max_depth=5, min_samples_leaf=20, random_state=42, n_jobs=2)
             m_mfe.fit(Xu_tr[:, idx_mfe], y_mfe[tr_idx])
             oof_mfe[va_idx] = m_mfe.predict(Xu_va[:, idx_mfe])
 
             # Duration head
-            m_dur = ExtraTreesRegressor(n_estimators=200, max_depth=6, min_samples_leaf=20, random_state=42, n_jobs=1)
+            m_dur = ExtraTreesRegressor(n_estimators=150, max_depth=5, min_samples_leaf=20, random_state=42, n_jobs=2)
             m_dur.fit(Xu_tr[:, idx_dur], y_dur[tr_idx])
             oof_dur[va_idx] = m_dur.predict(Xu_va[:, idx_dur])
 
@@ -4645,9 +4663,11 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             if keep.sum() < 100:
                 keep = np.ones(len(df), dtype=bool)
 
-            df = df.loc[keep].reset_index(drop=True).copy()
-            X_feats = X_feats.loc[keep].reset_index(drop=True).copy()
-            pred_h = pred_h.loc[keep].reset_index(drop=True).copy()
+            # Memory optimization: use single copy with shared index, avoid redundant copies
+            keep_idx = np.where(keep)[0]
+            df = df.iloc[keep_idx].reset_index(drop=True)
+            X_feats = X_feats.iloc[keep_idx].reset_index(drop=True)
+            pred_h = pred_h.iloc[keep_idx].reset_index(drop=True)
             if _vol_proxy is not None:
                 _vol_proxy = _vol_proxy[keep]
             p_oof = p_oof[keep]
@@ -5434,7 +5454,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
                 
                 # Base model for MDI (ExtraTrees)
                 from sklearn.ensemble import ExtraTreesRegressor
-                mdi_base = ExtraTreesRegressor(n_estimators=500, min_samples_leaf=50, max_features='sqrt', n_jobs=2, random_state=42)
+                mdi_base = ExtraTreesRegressor(n_estimators=400, max_depth=6, min_samples_leaf=50, max_features='sqrt', n_jobs=2, random_state=42)
                 
                 sel_res = mdi_feature_selection_v3(
                     X, y,
@@ -5442,7 +5462,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
                     sample_weight=w,
                     selector_y=y,
                     selector_target="classification",
-                    selector_loss="modified_huber",
+                    selector_loss="huber",
                     end_features=60,
                     cumulative_cap=0.99,
                     min_share=0.0005,
@@ -5461,7 +5481,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
                 tprint(f"  Class dist: 0={int((y_hard_check==0).sum())} ({(y_hard_check==0).mean()*100:.1f}%), "
                        f"1={int((y_hard_check==1).sum())} ({(y_hard_check==1).mean()*100:.1f}%)")
 
-                race = ModelRace(kind=k, n_splits=3)
+                race = ModelRace(kind=k, n_splits=2)
                 groups = df["__ts__"].values if "__ts__" in df.columns else None
                 race.fit(X_sel, y, sample_weight=w, returns=y_ret, groups=groups)
                 score = race.metrics.get(race.best_model_name, -1.0)
@@ -5606,6 +5626,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
                 tprint(f"  {side}_{k}: Deploying {len(per_h_models)} horizons: {sorted(per_h_models.keys())} (primary H={best_m['H']})")
 
             # --- Save OOF predictions for fast meta loading + richer diagnostics ---
+            # Memory optimization: build payload incrementally, avoid intermediate arrays
             _run_id = cfg.get("run_id", "default")
             oof_dir = os.path.join(cfg["data_root"], "artifacts", _run_id, "oof")
             os.makedirs(oof_dir, exist_ok=True)
@@ -5621,9 +5642,10 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
                 if _df_oof is not None:
                     _n = min(_n, int(len(_df_oof)))
 
+                # Use float32 for OOF probs to halve memory vs float64
                 _payload = {
-                    "oof_prob": np.asarray(_race.oof_probs, dtype=float)[:_n],
-                    "index": np.arange(_n, dtype=np.int64),
+                    "oof_prob": np.asarray(_race.oof_probs, dtype=np.float32)[:_n],
+                    "index": np.arange(_n, dtype=np.int32),
                 }
 
                 if _df_oof is not None:
@@ -5640,14 +5662,16 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
                         _payload["symbol"] = _df_oof["asset"].astype(str).values[:_n]
 
                     if "__y_bin__" in _df_oof.columns:
-                        _payload["y_bin"] = np.asarray(_df_oof["__y_bin__"], dtype=float)[:_n]
+                        _payload["y_bin"] = np.asarray(_df_oof["__y_bin__"], dtype=np.float32)[:_n]
                     if "__y_ret__" in _df_oof.columns:
-                        _payload["y_ret"] = np.asarray(_df_oof["__y_ret__"], dtype=float)[:_n]
+                        _payload["y_ret"] = np.asarray(_df_oof["__y_ret__"], dtype=np.float32)[:_n]
 
-                _dm_best = _race.detailed_metrics.get(_race.best_model_name, {}) if hasattr(_race, "detailed_metrics") else {}
-                _oof_raw = _dm_best.get("oof_raw")
-                if _oof_raw is not None and len(_oof_raw) >= _n:
-                    _payload["oof_raw"] = np.asarray(_oof_raw, dtype=float)[:_n]
+                # Only store oof_raw if explicitly configured (saves ~50% storage per model)
+                if cfg.get("save_oof_raw", False):
+                    _dm_best = _race.detailed_metrics.get(_race.best_model_name, {}) if hasattr(_race, "detailed_metrics") else {}
+                    _oof_raw = _dm_best.get("oof_raw")
+                    if _oof_raw is not None and len(_oof_raw) >= _n:
+                        _payload["oof_raw"] = np.asarray(_oof_raw, dtype=np.float32)[:_n]
 
                 pd.DataFrame(_payload).to_parquet(_oof_path, index=False)
 
@@ -5682,7 +5706,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
                 _prec_samples = []
                 _n = len(_yb_hard)
                 _kf = 0.20
-                for _ in range(50):
+                for _ in range(25):
                     _ib = _rng.choice(_n, size=_n, replace=True)
                     _nk = max(1, int(_n * _kf))
                     top_idx = np.argsort(_gate_oof[_ib])[-_nk:]

@@ -36,6 +36,7 @@ from extreme_price_movements.ridge_position_sizer import (
     prepare_trade_outcomes_from_labels,
 )
 from extreme_price_movements.utils import tprint
+from extreme_price_movements.entry_policy import compute_entry_policy_decision, flatten_bucket_policy
 
 
 def find_latest_run_id(data_root: str) -> str:
@@ -443,6 +444,34 @@ def main():
                 continue
             oof_pred_df = oof_preds[pred_cols].copy()
             tprint(f"  {bucket_name}: {len(oof_pred_df)} rows, features={pred_cols}")
+
+            # If optimize params are present for this bucket, align sizer rows to entry policy place-order mask.
+            _run_models_path = Path(args.data_root) / "artifacts" / run_id / "models" / "bucket_params.json"
+            if _run_models_path.exists():
+                try:
+                    _bp_blob = json.loads(_run_models_path.read_text())
+                    _bp_cfg = flatten_bucket_policy(_bp_blob.get("buckets", {}).get(bucket_name.upper(), {}))
+                    if _bp_cfg.get("entry_policy"):
+                        _scores = np.asarray(oof_pred_df[pred_cols[0]].values, dtype=float)
+                        _atr_vec = np.asarray(
+                            trade_outcomes.get("mae_ret", pd.Series(np.full(len(trade_outcomes), 0.02))).values,
+                            dtype=float,
+                        )
+                        _atr_vec = np.clip(np.where(np.isfinite(_atr_vec), np.abs(_atr_vec), 0.02), 1e-4, 0.5)
+                        _mask = np.ones(len(trade_outcomes), dtype=bool)
+                        for _i in range(len(_mask)):
+                            _pol = compute_entry_policy_decision(
+                                entry_px=1.0,
+                                atr_frac=float(_atr_vec[_i]),
+                                score=float(_scores[_i]) if _i < len(_scores) else 0.0,
+                                bucket_cfg=_bp_cfg,
+                            )
+                            _mask[_i] = bool(_pol.get("place_order", True))
+                        trade_outcomes = trade_outcomes.loc[_mask].reset_index(drop=True)
+                        oof_pred_df = oof_pred_df.loc[_mask].reset_index(drop=True)
+                        tprint(f"  {bucket_name}: policy mask kept {_mask.sum()}/{len(_mask)} rows")
+                except Exception as _e_mask:
+                    tprint(f"  {bucket_name}: policy mask skipped ({_e_mask})")
 
             timestamps = trade_outcomes['timestamp'].values if 'timestamp' in trade_outcomes.columns else None
             symbols    = trade_outcomes['symbol'].values    if 'symbol'    in trade_outcomes.columns else None

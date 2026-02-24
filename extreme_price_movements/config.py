@@ -141,12 +141,14 @@ HELPER_BASE_FEATURES = [
     "ffd_diff_1_05", "ffd_diff_2_05", "ffd_diff_4_05", "ffd_diff_8_05",
     "ffd_diff_1_06", "ffd_diff_2_06", "ffd_diff_4_06", "ffd_diff_8_06",
     "ffd_ema_spread_04", "ffd_ema_spread_05", "ffd_ema_spread_06",
-    "ffd_rv_12_04", "ffd_rv_24_04", "ffd_rv_12_05", "ffd_rv_24_05", "ffd_rv_12_06", "ffd_rv_24_06",
+    "ffd_rv_12_04", "ffd_rv_12_05", "ffd_rv_12_06", "ffd_rv_24_04", "ffd_rv_24_05", "ffd_rv_24_06",
     "ffd_z_24_04", "ffd_z_24_05", "ffd_z_24_06",
     "ffd_range_24_04", "ffd_range_24_05", "ffd_range_24_06",
     "ffd_slope_04_12", "ffd_slope_04_24", "ffd_mr_z_04", "ffd_mr_z_05",
     "ffd_d1_05", "ffd_d4_05",
     "ffd_ctx_slope_04_12", "ffd_ctx_slope_04_24",
+    # Range features for event scoring and candidate selection
+    "range_pct", "range_12h_pct", "range_16h_pct", "range_24h_pct",
     # FFD d-specific advanced features
     "ffd_rv_2h_04", "ffd_rv_6h_04", "ffd_rv_24h_04",
     "ffd_vol_price_corr_10h_04",

@@ -572,7 +572,8 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
     l = panel["low"]
     o = panel["open"] if "open" in panel else c
 
-    # Ensure all price matrices are aligned so hit checks always use matching high/low bars.
+    # OPTIMIZATION: Pre-align all panel DataFrames once before the asset loop
+    # This avoids per-asset reindexing overhead
     if not h.index.equals(c.index) or not h.columns.equals(c.columns):
         h = h.reindex(index=c.index, columns=c.columns)
     if not l.index.equals(c.index) or not l.columns.equals(c.columns):
@@ -597,14 +598,17 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
 
     side_int = 1 if side == "long" else -1
 
-    # Prepare TP/SL as dataframes if they are scalars
-    if np.isscalar(tp):
-        tp_df = pd.DataFrame(tp, index=c.index, columns=assets)
+    # OPTIMIZATION: Fast path for scalar TP/SL - avoid DataFrame creation overhead
+    tp_is_scalar = np.isscalar(tp)
+    sl_is_scalar = np.isscalar(sl)
+    
+    if tp_is_scalar:
+        tp_scalar_val = float(tp)
     else:
         tp_df = tp
-
-    if np.isscalar(sl):
-        sl_df = pd.DataFrame(sl, index=c.index, columns=assets)
+    
+    if sl_is_scalar:
+        sl_scalar_val = float(sl)
     else:
         sl_df = sl
 
@@ -613,8 +617,18 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
         o_arr = o[asset].to_numpy(dtype=np.float32)
         h_arr = h[asset].to_numpy(dtype=np.float32)
         l_arr = l[asset].to_numpy(dtype=np.float32)
-        tp_arr = tp_df[asset].to_numpy(dtype=np.float32) if asset in tp_df.columns else np.full(len(c_arr), np.nan, dtype=np.float32)
-        sl_arr = sl_df[asset].to_numpy(dtype=np.float32) if asset in sl_df.columns else np.full(len(c_arr), np.nan, dtype=np.float32)
+        
+        # OPTIMIZATION: Use scalar directly when TP/SL are uniform
+        if tp_is_scalar:
+            tp_arr = np.full(len(c_arr), tp_scalar_val, dtype=np.float32)
+        else:
+            tp_arr = tp_df[asset].to_numpy(dtype=np.float32) if asset in tp_df.columns else np.full(len(c_arr), np.nan, dtype=np.float32)
+        
+        if sl_is_scalar:
+            sl_arr = np.full(len(c_arr), sl_scalar_val, dtype=np.float32)
+        else:
+            sl_arr = sl_df[asset].to_numpy(dtype=np.float32) if asset in sl_df.columns else np.full(len(c_arr), np.nan, dtype=np.float32)
+        
         h_arr_custom = horizons_frame[asset].to_numpy(dtype=np.float32) if (horizons_frame is not None and asset in horizons_frame.columns) else None
 
         if return_outcomes:
@@ -626,7 +640,10 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
             lbs, rets, _ = _numba_triple_barrier(times, o_arr, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int, horizons_arr=h_arr_custom)
             return asset, lbs, rets, None
 
-    results = Parallel(n_jobs=2, prefer="threads")(
+    # OPTIMIZATION: Use all available cores for parallel processing
+    from joblib import cpu_count
+    n_jobs = min(cpu_count(), len(assets))
+    results = Parallel(n_jobs=n_jobs, prefer="threads")(
         delayed(_process_asset)(asset) for asset in assets
     )
 

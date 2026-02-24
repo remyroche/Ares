@@ -42,7 +42,17 @@ def build_holdout_trade_ledger(trades: pd.DataFrame, net_returns: np.ndarray, co
             cost=cost,
             net_ret=float(net_returns[test_idx][i]),
         ))
-    return pd.DataFrame(rows)
+    out = pd.DataFrame(rows)
+    keep_cols = [
+        "u_hat", "u_hat_z", "mae_hat", "mae_hat_z", "mfe_hat", "mfe_hat_z", "dur_hat", "dur_hat_z",
+        "signal_px", "entry_px_fill", "delta_atr_star", "delta_price_star", "p_fill_star", "eu_star", "place_order",
+        "sl_distance_atr_eff", "tp_distance_atr_eff", "trail_mult_eff", "giveback_pct_eff",
+        "profit_lock_amount_eff", "kill_c_eff", "max_hold_hours_eff",
+    ]
+    for c in keep_cols:
+        if c in df.columns:
+            out[c] = df[c].values
+    return out
 
 def evaluate_holdout(trades: pd.DataFrame, net_returns: np.ndarray) -> dict:
     n = len(trades)

@@ -337,6 +337,18 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
             df = store.load(s)
             if not df.empty: dfs[s] = df[df.index <= ts_sig].tail(24*lookback_days)
 
+    if bool(cfg.get("label_diagnostics_mode", False)) and dfs:
+        _lens = np.array([len(df) for df in dfs.values()], dtype=np.int64)
+        _mins = [df.index.min() for df in dfs.values() if len(df) > 0]
+        _maxs = [df.index.max() for df in dfs.values() if len(df) > 0]
+        _ts_min_all = min(_mins) if _mins else None
+        _ts_max_all = max(_maxs) if _maxs else None
+        tprint(
+            "[LABEL_DIAG][SYMBOL_HISTORY_PRE_HOLDOUT] "
+            f"symbols={len(dfs)} bars_min={int(_lens.min())} bars_med={int(np.median(_lens))} bars_max={int(_lens.max())} "
+            f"ts_min={_ts_min_all} ts_max={_ts_max_all}"
+        )
+
     if not dfs:
         tprint("No data available.")
         return
@@ -2010,7 +2022,10 @@ def run_feature_generation_step(ts_sig, margin_symbols, cfg, store, force_full_r
     # We want "all assets in our universe".
     # This implies the margin universe (Top M).
     try:
-        train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=None)
+        # IMPORTANT: use pipeline timestamp for variance filtering.
+        # Passing ts_sig=None makes variance filtering anchor to "now", which can
+        # wrongly drop symbols for historical/backfill runs.
+        train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=ts_sig)
     except Exception as exc:
         tprint(f"WARNING: get_training_universe failed ({exc}); falling back to local store symbol discovery")
         train_syms = _local_store_symbols(store)
@@ -2019,13 +2034,8 @@ def run_feature_generation_step(ts_sig, margin_symbols, cfg, store, force_full_r
         if not train_syms:
             tprint("CRITICAL: no symbols available from local store fallback.")
             return
-    # disable ts_sig in universe selection to ensure we see everything available currently?
-    # actually getting training universe usually filters by variance over 30d.
-    # User said "Ensure we generate features for ALL assets... if not log why".
-    # So we should probably NOT filter by variance yet? Or just log the drops?
-    # get_training_universe DOES filter.
-    # Let's verify what we have vs what we drop.
-    
+    # Universe diagnostics still logged below; downstream skip reasons are explicit.
+
     tprint(f"Universe (Top {cfg['fetch_symbols_M']} Vol + Basket + VarianceFilter): {len(train_syms)} symbols")
     
     # 2. Load Data

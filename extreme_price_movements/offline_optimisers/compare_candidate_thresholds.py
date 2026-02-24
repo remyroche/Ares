@@ -35,6 +35,11 @@ from sklearn.linear_model import Ridge
 from sklearn.metrics import brier_score_loss, roc_auc_score
 from sklearn.preprocessing import RobustScaler
 
+try:
+    import lightgbm as lgb
+except Exception:
+    lgb = None
+
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -57,7 +62,6 @@ from extreme_price_movements.training import (
 )
 from extreme_price_movements.sample_weights import compute_avg_uniqueness
 from extreme_price_movements.utils import tprint
-from extreme_price_movements import fast_funcs as ff
 from extreme_price_movements.training_defaults import (
     get_candidate_filter_defaults,
     get_barrier_factory_defaults,
@@ -160,6 +164,21 @@ _TARGET_RACE_DEFAULTS = get_target_race_model_defaults(CFG)
 ET_REGRESSOR_PARAMS = dict(_TARGET_RACE_DEFAULTS["et_params"])
 RIDGE_SCREEN_ALPHA = float(_TARGET_RACE_DEFAULTS["ridge_screen_alpha"])
 RIDGE_SCREEN_TOP_FRAC = float(_TARGET_RACE_DEFAULTS["ridge_screen_top_frac"])
+LGBM_PARAMS = {
+    "n_estimators": 200,
+    "num_leaves": 31,
+    "learning_rate": 0.05,
+    "max_depth": 6,
+    "min_child_samples": 40,
+    "reg_alpha": 1.0,
+    "reg_lambda": 1.0,
+    "colsample_bytree": 0.8,
+    "subsample": 0.8,
+    "n_jobs": 3,
+    "random_state": 42,
+    "verbosity": -1,
+    "max_bin": 63,
+}
 
 
 def cleanup_run_caches() -> None:
@@ -303,70 +322,8 @@ def compute_global_sign_consistency(
     feats: dict,
     float_dtype: np.dtype,
 ) -> Optional[pd.DataFrame]:
-    """Compute sign consistency once globally (prefer training-aligned feature source)."""
-    sc_df = None
-    sc_source = "none"
-
-    # Prefer feature-based sign consistency to match training universe behavior.
-    if "sign_consistency" in feats:
-        sc_df = feats["sign_consistency"]
-        sc_source = "features.sign_consistency"
-    elif "sign_consistency_12h" in feats:
-        sc_df = feats["sign_consistency_12h"]
-        sc_source = "features.sign_consistency_12h"
-    else:
-        # Training-aligned fallback used in apply_training_filters:
-        # abs(rolling_mean(sign(base_ret), 12, min_periods=6))
-        # where base_ret is ret6h, or ret24h if ret6h unavailable.
-        base_ret = feats.get("ret6h")
-        if base_ret is None:
-            base_ret = feats.get("ret24h")
-        if base_ret is not None:
-            sign_mean = np.sign(base_ret).rolling(12, min_periods=6).mean().abs()
-            sc_df = sign_mean.astype(float_dtype, copy=False)
-            sc_source = "features.sign_roll_mean_abs_12"
-        elif panel is not None and "close" in panel:
-            # Final fallback for robustness only (may not match production exactly).
-            try:
-                sc_arr = ff.numba_sign_consistency(panel["close"], 12)
-                sc_df = pd.DataFrame(sc_arr, index=panel["close"].index, columns=panel["close"].columns)
-                sc_source = "panel.numba_sign_consistency"
-            except Exception as exc:
-                tlog(f"Sign-consistency fallback failed: {exc}")
-                sc_df = None
-                sc_source = "none"
-
-    if sc_df is None:
-        tlog("Sign-consistency source: unavailable")
-        return None
-
-    sc_df = sc_df.astype(float_dtype, copy=False)
-    sample_arr = sc_df.to_numpy(dtype=float_dtype, copy=False)
-    # Lightweight sample for scale detection/stat logging.
-    row_step = max(1, sample_arr.shape[0] // 512)
-    col_step = max(1, sample_arr.shape[1] // 64)
-    sample = sample_arr[::row_step, ::col_step].reshape(-1)
-    sample = sample[np.isfinite(sample)]
-
-    sc_scale = "unknown"
-    if sample.size > 0:
-        q50 = float(np.quantile(sample, 0.50))
-        q90 = float(np.quantile(sample, 0.90))
-        q99 = float(np.quantile(sample, 0.99))
-        if q99 > 1.5:
-            # Convert 0..100 style scale to 0..1 to match config thresholds (0.70, 0.80, 0.90).
-            sc_df = (sc_df / np.float32(100.0)).astype(float_dtype, copy=False)
-            sc_scale = "percent_to_ratio"
-        else:
-            sc_scale = "ratio"
-        tlog(
-            f"Sign-consistency source={sc_source}, scale={sc_scale}, "
-            f"sample_q50={q50:.4f}, sample_q90={q90:.4f}, sample_q99={q99:.4f}"
-        )
-    else:
-        tlog(f"Sign-consistency source={sc_source}, sample has no finite values")
-
-    return sc_df
+    """Deprecated for candidate-threshold optimization; disabled."""
+    return None
 
 
 def _first_available_feature(feats: dict, names: list[str]) -> Optional[pd.DataFrame]:
@@ -458,11 +415,7 @@ def apply_tail_filter_on_prefilter(
     vol_tail_arr: Optional[np.ndarray],
     entropy_tail_arr: Optional[np.ndarray],
 ) -> np.ndarray:
-    """Apply a top-tail filter computed strictly inside an existing prefilter mask.
-
-    The row-wise quantile thresholds are estimated only on points already selected
-    by `prefilter_arr` (never on the full dataset).
-    """
+    """Exclude top-tail observations within prefiltered rows."""
     mode = str(tail_mode or "none").lower()
     frac = float(top_frac or 0.0)
     if mode in {"none", "off", ""} or frac <= 0.0 or frac >= 1.0:
@@ -474,38 +427,37 @@ def apply_tail_filter_on_prefilter(
 
     for i in range(n_rows):
         row_base = out[i]
-        n_base = int(row_base.sum())
-        if n_base < 8:
+        if int(row_base.sum()) < 8:
             continue
 
-        keep_vol = None
-        keep_entropy = None
+        drop_vol = None
+        drop_entropy = None
 
-        if vol_tail_arr is not None and mode in {"vol24_top", "vol24_top20", "vol_or_entropy_top20"}:
+        if vol_tail_arr is not None and mode in {"vol24_top", "vol24_top10", "vol24_top20", "vol24_top30", "vol_or_entropy_top10", "vol_or_entropy_top20", "vol_or_entropy_top30"}:
             row_vol = vol_tail_arr[i]
             valid = row_base & np.isfinite(row_vol)
             if int(valid.sum()) >= 8:
                 thr = np.nanquantile(row_vol[valid], q)
-                keep_vol = valid & (row_vol >= thr)
+                drop_vol = valid & (row_vol >= thr)
 
-        if entropy_tail_arr is not None and mode in {"entropy_top", "entropy_top20", "vol_or_entropy_top20"}:
+        if entropy_tail_arr is not None and mode in {"entropy_top", "entropy_top10", "entropy_top20", "entropy_top30", "vol_or_entropy_top10", "vol_or_entropy_top20", "vol_or_entropy_top30"}:
             row_ent = entropy_tail_arr[i]
             valid = row_base & np.isfinite(row_ent)
             if int(valid.sum()) >= 8:
                 thr = np.nanquantile(row_ent[valid], q)
-                keep_entropy = valid & (row_ent >= thr)
+                drop_entropy = valid & (row_ent >= thr)
 
-        if mode in {"vol24_top", "vol24_top20"} and keep_vol is not None:
-            out[i] = keep_vol
-        elif mode in {"entropy_top", "entropy_top20"} and keep_entropy is not None:
-            out[i] = keep_entropy
-        elif mode == "vol_or_entropy_top20":
-            if keep_vol is not None and keep_entropy is not None:
-                out[i] = keep_vol | keep_entropy
-            elif keep_vol is not None:
-                out[i] = keep_vol
-            elif keep_entropy is not None:
-                out[i] = keep_entropy
+        if mode in {"vol24_top", "vol24_top10", "vol24_top20", "vol24_top30"} and drop_vol is not None:
+            out[i] = row_base & (~drop_vol)
+        elif mode in {"entropy_top", "entropy_top10", "entropy_top20", "entropy_top30"} and drop_entropy is not None:
+            out[i] = row_base & (~drop_entropy)
+        elif mode in {"vol_or_entropy_top10", "vol_or_entropy_top20", "vol_or_entropy_top30"}:
+            if drop_vol is not None and drop_entropy is not None:
+                out[i] = row_base & (~(drop_vol | drop_entropy))
+            elif drop_vol is not None:
+                out[i] = row_base & (~drop_vol)
+            elif drop_entropy is not None:
+                out[i] = row_base & (~drop_entropy)
 
     return out
 
@@ -631,6 +583,31 @@ def fingerprint_candidate_mask(candidate_mask: pd.DataFrame) -> str:
 def _normalize_symbol(sym: Any) -> str:
     s = str(sym).upper()
     return "".join(ch for ch in s if ch.isalnum())
+
+
+def trim_to_candidate_time_window(
+    panel: dict,
+    feats: dict,
+    candidate_mask: pd.DataFrame,
+    pad_bars_after: int = 20,
+) -> tuple[dict, dict]:
+    """Trim to candidate-active timestamps and keep +pad bars for TBM exits."""
+    if candidate_mask is None or candidate_mask.empty:
+        return panel, feats
+    arr = candidate_mask.to_numpy(dtype=bool, copy=False)
+    if not np.any(arr):
+        return panel, feats
+    row_any = np.any(arr, axis=1)
+    pos = np.flatnonzero(row_any)
+    if pos.size == 0:
+        return panel, feats
+    idx = candidate_mask.index
+    start_i = int(pos[0])
+    end_i = int(min(len(idx) - 1, pos[-1] + max(0, int(pad_bars_after))))
+    keep_idx = idx[start_i:end_i + 1]
+    panel_out = {k: (v.reindex(index=keep_idx) if isinstance(v, pd.DataFrame) else v) for k, v in panel.items()}
+    feats_out = {k: (v.reindex(index=keep_idx) if isinstance(v, pd.DataFrame) else v) for k, v in feats.items()}
+    return panel_out, feats_out
 
 
 def align_candidate_mask_to_panel_symbols(candidate_mask: pd.DataFrame, panel: dict) -> pd.DataFrame:
@@ -1786,14 +1763,18 @@ def compute_cross_sectional_base_mask_and_sign(
 
 
 def expand_candidate_mask(base_mask: pd.DataFrame, offsets: list[int]) -> pd.DataFrame:
-    """Expand candidate timestamps by OR-ing shifted copies of the base mask."""
+    """Expand candidate timestamps using vectorized binary dilation."""
     if not offsets:
         return base_mask
-    expanded = base_mask.copy()
+    arr = base_mask.to_numpy(dtype=bool, copy=False)
+    max_lag = int(max(abs(int(o)) for o in offsets))
+    struct = np.zeros((2 * max_lag + 1, 1), dtype=bool)
+    center = max_lag
+    struct[center, 0] = True
     for off in offsets:
-        shifted = base_mask.shift(int(off)).fillna(False)
-        expanded |= shifted
-    return expanded
+        struct[center + int(off), 0] = True
+    expanded = binary_dilation(arr, structure=struct)
+    return pd.DataFrame(expanded, index=base_mask.index, columns=base_mask.columns, dtype=bool)
 
 
 def select_candidates_cross_sectional(
@@ -2420,7 +2401,7 @@ def run_oof_cv(
         }
     selected_sets: list[set[int]] = []
     selected_ks: list[int] = []
-    model_name = "ExtraTrees" if use_extratrees else "Ridge"
+    model_name = "LGBM" if (use_extratrees and lgb is not None) else ("ExtraTrees" if use_extratrees else "Ridge")
 
     for fold_i, (train_idx, val_idx) in enumerate(splits, start=1):
         tlog(
@@ -2463,9 +2444,13 @@ def run_oof_cv(
         X_val_sel = X_val[:, selected_idx]
 
         if use_extratrees:
-            # Train ExtraTrees with target race parameters on screened features
-            model = ExtraTreesRegressor(**{**ET_REGRESSOR_PARAMS, "random_state": random_state})
-            model.fit(X_train_sel, y_train, sample_weight=sw_train)
+            # Train LGBM when available (fallback: ExtraTrees) on screened features
+            if lgb is not None:
+                model = lgb.LGBMRegressor(**LGBM_PARAMS)
+                model.fit(X_train_sel, y_train, sample_weight=sw_train)
+            else:
+                model = ExtraTreesRegressor(**{**ET_REGRESSOR_PARAMS, "random_state": random_state})
+                model.fit(X_train_sel, y_train, sample_weight=sw_train)
             oof[val_idx] = model.predict(X_val_sel)
         else:
             # Use Ridge only for fast IC estimation (Stage 1 & 2)
@@ -2559,8 +2544,12 @@ def run_oof_cv_classifier(
         X_train_sel = X_train[:, selected_idx]
         X_val_sel = X_val[:, selected_idx]
 
-        clf = ExtraTreesClassifier(**{**ET_REGRESSOR_PARAMS, "random_state": random_state})
-        clf.fit(X_train_sel, y_train, sample_weight=sw_train)
+        if lgb is not None:
+            clf = lgb.LGBMClassifier(**LGBM_PARAMS)
+            clf.fit(X_train_sel, y_train, sample_weight=sw_train)
+        else:
+            clf = ExtraTreesClassifier(**{**ET_REGRESSOR_PARAMS, "random_state": random_state})
+            clf.fit(X_train_sel, y_train, sample_weight=sw_train)
         proba = clf.predict_proba(X_val_sel)
         oof_proba[val_idx] = proba[:, 1].astype(np.float32, copy=False)
 
@@ -3335,9 +3324,9 @@ def run_comparison(
     tlog(f"Configured dtype={dtype}")
     tlog(
         "OOF model stack defaults: "
-        f"RobustScaler->Ridge(alpha={RIDGE_SCREEN_ALPHA}) top_frac={RIDGE_SCREEN_TOP_FRAC:.0%}->ExtraTrees"
+        f"RobustScaler->Ridge(alpha={RIDGE_SCREEN_ALPHA}) top_frac={RIDGE_SCREEN_TOP_FRAC:.0%}->LGBM"
     )
-    tlog(f"OOF estimator for this run: {'ExtraTrees' if use_extratrees else 'Ridge'}")
+    tlog(f"OOF estimator for this run: {'LGBM' if (use_extratrees and lgb is not None) else ('ExtraTrees' if use_extratrees else 'Ridge')}")
 
     if symbol_files:
         # Pipeline format: per-symbol files, need to parse timestamp from path
@@ -3536,8 +3525,7 @@ def run_comparison(
     # Filter parameter ranges:
     # - min_range_pct: [0.06, 0.07, 0.08]
     # - min_vol_zscore: [1.4, 1.6, 1.8]
-    # - min_sign_consistency: [0.60, 0.70, 0.80]
-    
+        
     configs = []
     
     # Default values for filters
@@ -3546,7 +3534,7 @@ def run_comparison(
 
     default_pct = float(candidate_defaults["train_extreme_pct_hourly"])
     default_range_pct = float(candidate_defaults["train_min_range_pct"])
-    default_vol_zscore = float(candidate_defaults["train_min_vol_zscore"])
+    default_vol_zscore = 1.5
     default_sign_consistency = float(candidate_defaults["min_feat_sign_consistency"])
     default_tp_lo = float(barrier_defaults["barrier_tp_lo"])
     default_tp_hi = float(barrier_defaults["barrier_tp_hi"])
@@ -3554,12 +3542,15 @@ def run_comparison(
     default_sl_mult = float(barrier_defaults["barrier_sl_base_mult"])
     default_cusum_h = float(runtime_cfg.get("cusum_h", 6.0))
     default_cusum_z_gate = float(runtime_cfg.get("cusum_z_gate", 0.5))
-    pct_grid = [0.06]
+    pct_grid = [0.05, 0.06, 0.07]
     
-    # Expansion variants
+    # Two-stage expansion offsets define delayed/early entry windows only.
+    # They do not cap triple-barrier horizon (which is configured independently).
     expansion_variants = [
         ("none", []),
-        ("sym48", [-4, 4]),
+        ("late2468", [2, 4, 6, 8]),
+        ("early24", [-2, -4]),
+        ("late2468_early24", [2, 4, 6, 8, -2, -4]),
     ]
     
     # Modes to test
@@ -3585,12 +3576,12 @@ def run_comparison(
                         "pct": pct,
                         "min_range_pct": range_pct,
                         "min_vol_zscore": default_vol_zscore,
-                        "min_sign_consistency": default_sign_consistency,
+                        "min_sign_consistency": None,
                         "cusum_h": default_cusum_h,
                         "cusum_z_gate": default_cusum_z_gate,
                     }
                 )
-            for vol_z in [1.6, 1.7]:
+            for vol_z in [1.4, 1.5, 1.6, 1.7, 1.8]:
                 configs.append(
                     {
                         "config_id": f"{mode_prefix}_P{int(pct * 100):02d}_V{int(vol_z * 10):02d}",
@@ -3598,7 +3589,7 @@ def run_comparison(
                         "pct": pct,
                         "min_range_pct": default_range_pct,
                         "min_vol_zscore": vol_z,
-                        "min_sign_consistency": default_sign_consistency,
+                        "min_sign_consistency": None,
                         "cusum_h": default_cusum_h,
                         "cusum_z_gate": default_cusum_z_gate,
                     }
@@ -3621,7 +3612,7 @@ def run_comparison(
                     "pct": pct,
                     "min_range_pct": default_range_pct,
                     "min_vol_zscore": default_vol_zscore,
-                    "min_sign_consistency": default_sign_consistency,
+                    "min_sign_consistency": None,
                     "barrier_sl_base_mult": default_sl_mult,
                     "barrier_k_tp": default_k_tp,
                     "cusum_h": default_cusum_h,
@@ -3656,14 +3647,13 @@ def run_comparison(
         # Force ExtraTrees for Stage 3
         use_extratrees = True
         
-        stage3_pcts = [0.05, 0.06]
         stage3_configs = []
         for cfg in configs:
             # Check if this config matches any of the winners
             # Winners should match the base config_id (without expansion suffix)
             base_id = cfg["config_id"].split("_E")[0] if "_E" in cfg["config_id"] else cfg["config_id"]
             if cfg["config_id"] in winners or base_id in winners:
-                for new_pct in stage3_pcts:
+                for new_pct in pct_grid:
                     if new_pct != cfg.get("pct", 0.06):
                         new_cfg = dict(cfg)
                         # Replace pct in config_id
@@ -3690,7 +3680,9 @@ def run_comparison(
     if requested_tail_mode in {"auto", "auto_compare", "default"}:
         tail_variants = [
             ("TBASE", "none"),
+            ("TVE10", "vol_or_entropy_top10"),
             ("TVE20", "vol_or_entropy_top20"),
+            ("TVE30", "vol_or_entropy_top30"),
         ]
     elif requested_tail_mode in {"none", "off", ""}:
         tail_variants = [("", "none")]
@@ -3703,7 +3695,7 @@ def run_comparison(
             for suffix, mode_name in tail_variants:
                 cfg_t = dict(cfg)
                 cfg_t["tail_filter_mode"] = mode_name
-                cfg_t["tail_filter_top_frac"] = tail_top_frac
+                cfg_t["tail_filter_top_frac"] = 0.10 if mode_name.endswith("top10") else (0.30 if mode_name.endswith("top30") else (0.20 if mode_name.endswith("top20") else tail_top_frac))
                 cfg_t["config_id"] = f"{cfg['config_id']}_{suffix}" if suffix else cfg["config_id"]
                 expanded_tail_configs.append(cfg_t)
         configs = expanded_tail_configs
@@ -3727,7 +3719,7 @@ def run_comparison(
     
     range_thresholds = [cfg["min_range_pct"] for cfg in configs if cfg.get("min_range_pct") is not None]
     vol_thresholds = [cfg["min_vol_zscore"] for cfg in configs if cfg.get("min_vol_zscore") is not None]
-    sc_thresholds = [cfg["min_sign_consistency"] for cfg in configs if cfg.get("min_sign_consistency") is not None]
+    sc_thresholds = []
     metric_ref = metric_by_mode.get("fixed")
     if metric_ref is None:
         metric_ref = next(iter(metric_by_mode.values()))
@@ -3858,7 +3850,7 @@ def run_comparison(
             # Extract filter parameters from config
             min_range_pct = cfg.get("min_range_pct")
             min_vol_zscore = cfg.get("min_vol_zscore")
-            min_sign_consistency = cfg.get("min_sign_consistency")
+            min_sign_consistency = None
             expansion_name = cfg.get("expansion_name", "none")
             expansion_offsets = cfg.get("expansion_offsets", [])
 
@@ -3885,17 +3877,6 @@ def run_comparison(
                     vol_mask = filter_mask_pack["vol_masks"].get(float(min_vol_zscore))
                     if vol_mask is not None:
                         prefilter_arr &= vol_mask
-                if min_sign_consistency is not None:
-                    sc_mask = filter_mask_pack["sc_masks"].get(float(min_sign_consistency))
-                    if sc_mask is not None:
-                        prefilter_arr &= sc_mask
-                prefilter_arr = apply_tail_filter_on_prefilter(
-                    prefilter_arr=prefilter_arr,
-                    tail_mode=cfg.get("tail_filter_mode", tail_filter_mode),
-                    top_frac=float(cfg.get("tail_filter_top_frac", tail_filter_top_frac)),
-                    vol_tail_arr=vol_tail_arr,
-                    entropy_tail_arr=entropy_tail_arr,
-                )
             if mode == "cusum" and metric_for_mode is not None:
                 trig = metric_for_mode.to_numpy(dtype=np.float32, copy=False)
                 trig_mask = np.isfinite(trig) & (np.abs(trig) > 0)
@@ -3922,7 +3903,6 @@ def run_comparison(
                 dbg_arr = np.array(raw_base_arr, copy=True, dtype=bool)
                 n_after_range = n_raw
                 n_after_vol = n_raw
-                n_after_sc = n_raw
                 if min_range_pct is not None:
                     range_mask = filter_mask_pack["range_masks"].get(float(min_range_pct))
                     if range_mask is not None:
@@ -3933,15 +3913,10 @@ def run_comparison(
                     if vol_mask is not None:
                         dbg_arr &= vol_mask
                         n_after_vol = int(dbg_arr.sum())
-                if min_sign_consistency is not None:
-                    sc_mask = filter_mask_pack["sc_masks"].get(float(min_sign_consistency))
-                    if sc_mask is not None:
-                        dbg_arr &= sc_mask
-                        n_after_sc = int(dbg_arr.sum())
                 tlog(
                     "Candidate filter breakdown: "
                     f"raw={n_raw}, after_range={n_after_range}, "
-                    f"after_vol={n_after_vol}, after_sign={n_after_sc}"
+                    f"after_vol={n_after_vol}"
                 )
             if mode == "cusum":
                 cusum_pack = metric_pack.get("cusum_pack", {}) if isinstance(metric_pack, dict) else {}
@@ -3983,6 +3958,20 @@ def run_comparison(
                         side_sign_metrics = side_sign_metrics.where(~fill_mask, shifted)
                 side_sign_metrics = side_sign_metrics.where(candidate_mask_metrics, 0).astype(np.int8)
             expanded_selected_n = int(candidate_mask_metrics.to_numpy(dtype=bool, copy=False).sum())
+            # Tail exclusion as final post-selection step (after expansion) to avoid early high-dimensional pruning.
+            _tail_mode_cfg = cfg.get("tail_filter_mode", tail_filter_mode)
+            _tail_frac_cfg = float(cfg.get("tail_filter_top_frac", tail_filter_top_frac))
+            if str(_tail_mode_cfg).lower() not in {"none", "off", ""}:
+                _tail_arr = apply_tail_filter_on_prefilter(
+                    prefilter_arr=candidate_mask_metrics.to_numpy(dtype=bool, copy=False),
+                    tail_mode=_tail_mode_cfg,
+                    top_frac=_tail_frac_cfg,
+                    vol_tail_arr=vol_tail_arr,
+                    entropy_tail_arr=entropy_tail_arr,
+                )
+                candidate_mask_metrics = pd.DataFrame(_tail_arr, index=candidate_mask_metrics.index, columns=candidate_mask_metrics.columns, dtype=bool)
+                side_sign_metrics = side_sign_metrics.where(candidate_mask_metrics, 0).astype(np.int8)
+                expanded_selected_n = int(candidate_mask_metrics.to_numpy(dtype=bool, copy=False).sum())
             if expansion_offsets:
                 tlog(
                     f"Applied candidate expansion ({expansion_name}): offsets={expansion_offsets}, "
@@ -4072,8 +4061,6 @@ def run_comparison(
                 cfg_variant["train_min_range_pct"] = float(cfg["min_range_pct"])
             if cfg.get("min_vol_zscore") is not None:
                 cfg_variant["train_min_vol_zscore"] = float(cfg["min_vol_zscore"])
-            if cfg.get("min_sign_consistency") is not None:
-                cfg_variant["min_feat_sign_consistency"] = float(cfg["min_sign_consistency"])
 
             training_cache_key = (
                 fingerprint_candidate_mask(candidate_mask_panel),
@@ -4123,10 +4110,16 @@ def run_comparison(
                         if shared_geometry_key is not None and geometry_cache_key == shared_geometry_key
                         else None
                     )
+                    panel_trim, feats_trim = trim_to_candidate_time_window(
+                        panel=panel,
+                        feats=feats,
+                        candidate_mask=candidate_mask_panel,
+                        pad_bars_after=20,
+                    )
                     training_slice_rows = evaluate_training_slices(
                         candidate_mask=candidate_mask_panel,
-                        feats=feats,
-                        panel=panel,
+                        feats=feats_trim,
+                        panel=panel_trim,
                         cfg_variant=cfg_variant,
                         horizons=cfg_variant.get("label_horizons_hours", [2, 4, 8]),
                         cache=training_slice_cache,
@@ -4319,18 +4312,16 @@ def run_comparison(
         rank_ic = results_df.loc[valid_idx, "ic"].rank(pct=True, method="average")
         rank_ks = results_df.loc[valid_idx, "ks_stat"].rank(pct=True, method="average")
         rank_snr = results_df.loc[valid_idx, "snr"].rank(pct=True, method="average")
-        rank_sharpe = results_df.loc[valid_idx, "sharpe"].rank(pct=True, method="average")
         rank_sortino = results_df.loc[valid_idx, "sortino"].rank(pct=True, method="average")
         rank_auc = results_df.loc[valid_idx, "auc"].rank(pct=True, method="average")
         rank_brier = 1.0 - results_df.loc[valid_idx, "brier"].rank(pct=True, method="average")
 
         score.loc[valid_idx] = (
-            0.22 * rank_ic
-            + 0.16 * rank_ks
-            + 0.14 * rank_snr
-            + 0.12 * rank_sharpe
-            + 0.12 * rank_sortino
-            + 0.14 * rank_auc
+            0.24 * rank_ic
+            + 0.18 * rank_ks
+            + 0.16 * rank_snr
+            + 0.16 * rank_sortino
+            + 0.16 * rank_auc
             + 0.10 * rank_brier
         )
         # Small stability bonus/penalty keeps unstable IC_std from dominating rank.
@@ -4404,7 +4395,6 @@ def run_comparison(
                 "train_extreme_pct_hourly": float(best.get("pct", default_pct)),
                 "train_min_range_pct": float(best.get("min_range_pct", default_range_pct)) if pd.notna(best.get("min_range_pct")) else default_range_pct,
                 "train_min_vol_zscore": float(best.get("min_vol_zscore", default_vol_zscore)) if pd.notna(best.get("min_vol_zscore")) else default_vol_zscore,
-                "min_feat_sign_consistency": float(best.get("min_sign_consistency", default_sign_consistency)) if pd.notna(best.get("min_sign_consistency")) else default_sign_consistency,
             }
             save_best_params_csv(CANDIDATE_BEST_PARAMS_CSV, best_params, metadata={"source": "compare_candidate_thresholds"})
             logger.info(f"Saved best params CSV: {CANDIDATE_BEST_PARAMS_CSV}")

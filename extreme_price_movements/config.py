@@ -267,6 +267,7 @@ CFG = {
     "meta_mfe_mae_tau": 1.0,
 
     # Sample-weight optimization (base + meta)
+    "use_neg_mass_renorm": False,  # Disabled to prevent overconfidence when combined with timeout exclusion
     "sample_weight_opt_enable": True,
     "sample_weight_opt_min_samples": 400,
     "sample_weight_opt_trials": 16,

@@ -94,11 +94,20 @@ def compute_entry_policy_decision(
     lock_amt_base = float(cfg.get("profit_lock_amount", 0.003))
     kill_c_base = float(cfg.get("kill_c", 0.005))
     hold_h_base = float(cfg.get("max_hold_hours", 24.0))
-    trail_mult_eff = float(np.clip(trail_base * (1.0 - 0.08 * best_delta + 0.06 * mfe_z), 0.05, 1.2))
-    giveback_pct_eff = float(np.clip(giveback_base * (1.0 + 0.05 * best_delta + 0.04 * dur_z), 0.001, 0.05))
-    profit_lock_amount_eff = float(np.clip(lock_amt_base * (1.0 + 0.08 * u_z), 0.0005, 0.05))
-    kill_c_eff = float(np.clip(kill_c_base * (1.0 + 0.08 * max(mae_z, 0.0)), 0.0001, 0.05))
-    max_hold_hours_eff = float(np.clip(hold_h_base * (1.0 + 0.20 * dur_z), 4.0, 72.0))
+
+    trail_mult_k_delta = float(adapt.get("trail_mult_k_delta", -0.08))
+    trail_mult_k_mfe = float(adapt.get("trail_mult_k_mfe", 0.06))
+    giveback_k_delta = float(adapt.get("giveback_k_delta", 0.05))
+    giveback_k_dur = float(adapt.get("giveback_k_dur", 0.04))
+    lock_amt_k_u = float(adapt.get("lock_amt_k_u", 0.08))
+    kill_c_k_mae = float(adapt.get("kill_c_k_mae", 0.08))
+    hold_h_k_dur = float(adapt.get("hold_h_k_dur", 0.20))
+
+    trail_mult_eff = float(np.clip(trail_base * (1.0 + trail_mult_k_delta * best_delta + trail_mult_k_mfe * mfe_z), 0.05, 1.2))
+    giveback_pct_eff = float(np.clip(giveback_base * (1.0 + giveback_k_delta * best_delta + giveback_k_dur * dur_z), 0.001, 0.05))
+    profit_lock_amount_eff = float(np.clip(lock_amt_base * (1.0 + lock_amt_k_u * u_z), 0.0005, 0.05))
+    kill_c_eff = float(np.clip(kill_c_base * (1.0 + kill_c_k_mae * max(mae_z, 0.0)), 0.0001, 0.05))
+    max_hold_hours_eff = float(np.clip(hold_h_base * (1.0 + hold_h_k_dur * dur_z), 4.0, 72.0))
 
     return {
         "u_hat_z": float(u_z),

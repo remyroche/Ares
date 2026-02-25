@@ -180,11 +180,19 @@ def _load_panel_from_store(cfg: Dict[str, Any]) -> Tuple[Optional[Dict[str, pd.D
                 tprint(f"No universe symbols found, fallback to ohlcv dir: found {len(all_syms)} symbols")
         
         # Aggressive subsample: take every 4th asset for Stage 1
+        # NOTE: Symbol selection is strictly Universe-based (subsampled).
+        # We do NOT use the candidate mask to restrict symbols here, as that would
+        # prevent us from discovering new candidates outside the mask's historical scope.
         train_syms = all_syms[::4]
         # Limit to max 150 symbols for Stage 1 balanced runs
         train_syms = train_syms[:150]
         
-        tprint(f"Loading panel from store for {len(train_syms)} symbols (Stage 1 subsampled)")
+        # Guard against any upstream logic polluting train_syms
+        if len(train_syms) > 150:
+             tprint(f"WARNING: Symbol set size {len(train_syms)} exceeds limit 150. Enforcing cap.")
+             train_syms = train_syms[:150]
+
+        tprint(f"Loading panel from store for {len(train_syms)} symbols (Stage 1 subsampled; independent of candidate mask)")
         dfs: Dict[str, pd.DataFrame] = {}
         for sym in train_syms:
             try:

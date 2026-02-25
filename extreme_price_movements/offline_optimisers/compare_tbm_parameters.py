@@ -176,7 +176,11 @@ def _load_panel_from_store(cfg: Dict[str, Any]) -> Tuple[Optional[Dict[str, pd.D
         if not all_syms:
             ohlcv_dir = os.path.join(cfg["data_root"], "ohlcv")
             if os.path.exists(ohlcv_dir):
-                all_syms = [d for d in os.listdir(ohlcv_dir) if os.path.isdir(os.path.join(ohlcv_dir, d))]
+                all_syms = [
+                    d.replace("symbol=", "")
+                    for d in os.listdir(ohlcv_dir)
+                    if os.path.isdir(os.path.join(ohlcv_dir, d))
+                ]
                 tprint(f"No universe symbols found, fallback to ohlcv dir: found {len(all_syms)} symbols")
         
         # Aggressive subsample: take every 4th asset for Stage 1
@@ -189,7 +193,13 @@ def _load_panel_from_store(cfg: Dict[str, Any]) -> Tuple[Optional[Dict[str, pd.D
         for sym in train_syms:
             try:
                 df = store.load(sym)
+                if df is not None:
+                    tprint(f"Loaded {sym}: {len(df)} rows")
                 if df is not None and len(df) > 500:
+                    # Drop partition columns inferred by pyarrow
+                    drop_cols = [c for c in ["symbol", "year", "__symbol__"] if c in df.columns]
+                    if drop_cols:
+                        df = df.drop(columns=drop_cols)
                     dfs[sym] = df
             except Exception as exc:
                 tprint(f"Store load failed for {sym}: {exc}")
@@ -1605,6 +1615,9 @@ def evaluate_config(
     eval_cache: BoundedEvalCache,
     detailed_slices: bool = False,
     collect_weights: bool = False,
+    stacked_bucket_masks: Optional[Dict[str, np.ndarray]] = None,
+    canonical_ts: Optional[np.ndarray] = None,
+    canonical_sym: Optional[np.ndarray] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Any], Optional[pd.DataFrame]]:
     cfg = _apply_compare_production_floor(cfg)
     cfg_id = config_id(cfg)
@@ -1652,53 +1665,105 @@ def evaluate_config(
             lbl, ret, qual = layer2_cache[key2]
 
             # Stack once and create DataFrame efficiently
-            lbl_s = lbl.stack(future_stack=True)
-            stacked_idx = lbl_s.index
-            label_arr = lbl_s.to_numpy(dtype=np.float32, copy=False)
+            # Optimised: use stacked arrays + masking instead of DataFrame/reset_index/concat
+            label_arr = lbl.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
+
+            # Early valid mask (not nan)
+            valid_mask = np.isfinite(label_arr)
+            # Early check if we have enough events
+            if valid_mask.sum() < 1:
+                continue
+
+            label_chunk = label_arr[valid_mask]
+
+            # Other columns: slice using valid_mask
             payoff_arr = ret.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
+            payoff_chunk = payoff_arr[valid_mask]
+
             qual_arr = qual.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
+            qual_chunk = qual_arr[valid_mask]
+
             tp_arr = tp_df.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
+            tp_chunk = tp_arr[valid_mask]
+
             sl_arr = sl_df.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
+            sl_chunk = sl_arr[valid_mask]
             
             if dyn_h is not None:
                 h_arr = dyn_h.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
+                h_chunk = h_arr[valid_mask]
             else:
-                h_arr = np.full(len(label_arr), float(h), dtype=np.float32)
+                h_chunk = np.full(len(label_chunk), float(h), dtype=np.float32)
 
-            # Create DataFrame directly from numpy arrays
-            df = pd.DataFrame(
-                {
-                    "label": label_arr,
-                    "payoff": payoff_arr,
-                    "quality": qual_arr,
-                    "tp": tp_arr,
-                    "sl": sl_arr,
-                    "horizon_eff": h_arr,
-                },
-                index=stacked_idx
-            )
-            df.index.names = ["ts", "symbol"]
+            # TS and Symbol columns
+            if canonical_ts is not None and canonical_sym is not None:
+                ts_chunk = canonical_ts[valid_mask]
+                sym_chunk = canonical_sym[valid_mask]
+            else:
+                # Fallback to slower method if pre-computed arrays not provided
+                lbl_s = lbl.stack(future_stack=True)
+                lbl_s_valid = lbl_s[valid_mask]
+                idx_frame = lbl_s_valid.index.to_frame(index=False)
+                ts_chunk = idx_frame.iloc[:, 0].to_numpy()
+                sym_chunk = idx_frame.iloc[:, 1].to_numpy()
+
+            df_dict = {
+                "ts": ts_chunk,
+                "symbol": sym_chunk,
+                "label": label_chunk,
+                "payoff": payoff_chunk,
+                "quality": qual_chunk,
+                "tp": tp_chunk,
+                "sl": sl_chunk,
+                "horizon_eff": h_chunk,
+            }
             
-            # Early filtering: drop NaNs before concatenation
-            df = df.dropna(subset=["label", "payoff", "quality", "tp", "sl"])
+            if stacked_bucket_masks is not None:
+                # Determine bucket directly and filter candidates
+                cand_mask_chunk = stacked_bucket_masks["Candidate"][valid_mask]
+
+                if np.any(cand_mask_chunk):
+                    # Filter everything by candidate mask
+                    for k_dict in df_dict:
+                        df_dict[k_dict] = df_dict[k_dict][cand_mask_chunk]
+
+                    # Compute bucket for candidates only
+                    # We need indices of candidates within valid_mask for bucket lookup?
+                    # No, cand_mask_chunk is boolean mask on valid_mask.
+                    # We need valid_mask & cand_mask indices for stacked_bucket_masks lookup?
+                    # Actually, stacked_bucket_masks corresponds to full array.
+                    # We need up/down masks for the rows that passed BOTH valid_mask AND cand_mask_chunk.
+
+                    # Construct full filter mask on original array
+                    # combined_mask = valid_mask & stacked_bucket_masks["Candidate"]
+                    # But we already sliced by valid_mask.
+                    # cand_mask_chunk IS stacked_bucket_masks["Candidate"][valid_mask]
+
+                    # So for up/down masks, we also slice by valid_mask, then by cand_mask_chunk
+                    up_mask_final = stacked_bucket_masks["up"][valid_mask][cand_mask_chunk]
+                    down_mask_final = stacked_bucket_masks["down"][valid_mask][cand_mask_chunk]
+
+                    bucket_chunk = np.full(len(df_dict["label"]), "Global", dtype=object)
+                    if side == "long":
+                        bucket_chunk[up_mask_final] = "TF_long"
+                        bucket_chunk[down_mask_final] = "MR_long"
+                    else: # short
+                        bucket_chunk[up_mask_final] = "MR_short"
+                        bucket_chunk[down_mask_final] = "TF_short"
+
+                    df_dict["bucket"] = bucket_chunk
+                else:
+                    # No candidates in this chunk
+                    continue
+
+            df = pd.DataFrame(df_dict)
             
-            # Early filtering: drop timeouts early if they won't pass min_raw_events
-            # This reduces memory before pd.concat
-            if len(df) > 0:
-                timeout_mask = df["label"] == 0
-                timeout_count = timeout_mask.sum()
-                if timeout_count > 1000:  # If too many timeouts, keep only non-timeouts for now
-                    # Keep all but mark for later filtering
-                    pass
-            
-            df = df.reset_index()
             df["side"] = side
             df["horizon"] = h
             df["bound_saturation"] = geom_stats["bound_saturation"]
             events_rows.append(df)
             
-            # Free intermediate arrays immediately
-            del label_arr, payoff_arr, qual_arr, tp_arr, sl_arr, stacked_idx, lbl_s
+            del label_arr, payoff_arr, qual_arr, tp_arr, sl_arr
             gc.collect()
 
     events = pd.concat(events_rows, ignore_index=True)
@@ -1738,50 +1803,53 @@ def evaluate_config(
         )
 
     # Bucket tagging.
-    stacked_index = pd.MultiIndex.from_arrays([events["ts"], events["symbol"]])
-    stack_key = _index_cache_key(stacked_index)
-    cache_bucket_stack = eval_cache.setdefault("bucket_stack", {})
-    if stack_key in cache_bucket_stack:
-        bucket_map = cache_bucket_stack[stack_key]
-    else:
-        bucket_map: Dict[str, np.ndarray] = {}
-        for bname, bmask in bucket_masks.items():
-            bucket_map[bname] = bmask.stack().reindex(stacked_index).fillna(False).to_numpy(dtype=bool)
-        cache_bucket_stack[stack_key] = bucket_map
-
-    # Hard candidate pre-filter: keep only rows in the candidate mask.
-    candidate_mask = bucket_map["Candidate"]
-    pre_candidate_n = len(events)
-    if np.any(candidate_mask):
-        events = events.loc[candidate_mask].copy().reset_index(drop=True)
+    # If buckets were assigned in the loop (via stacked_bucket_masks), we skip this block.
+    if "bucket" not in events.columns:
         stacked_index = pd.MultiIndex.from_arrays([events["ts"], events["symbol"]])
         stack_key = _index_cache_key(stacked_index)
         cache_bucket_stack = eval_cache.setdefault("bucket_stack", {})
         if stack_key in cache_bucket_stack:
             bucket_map = cache_bucket_stack[stack_key]
         else:
-            bucket_map = {}
+            bucket_map: Dict[str, np.ndarray] = {}
             for bname, bmask in bucket_masks.items():
                 bucket_map[bname] = bmask.stack().reindex(stacked_index).fillna(False).to_numpy(dtype=bool)
             cache_bucket_stack[stack_key] = bucket_map
-    else:
-        events = events.iloc[0:0].copy()
-    tprint(f"[eval:{cfg_id}] candidate_prefilter_kept={len(events):,}/{pre_candidate_n:,}")
 
-    # Assign bucket from side × move_direction, matching _strategy_bucket_context:
-    #   (long,  up)   → TF_long   (buy_momentum)
-    #   (short, up)   → MR_short  (sell_rips)
-    #   (long,  down) → MR_long   (buy_dips)
-    #   (short, down) → TF_short  (sell_weakness)
-    up_mask   = bucket_map["up"]
-    down_mask = bucket_map["down"]
-    side_arr  = events["side"].astype(str).to_numpy()
-    bucket = np.full(len(events), "Global", dtype=object)
-    bucket[(side_arr == "long")  & up_mask]   = "TF_long"
-    bucket[(side_arr == "short") & up_mask]   = "MR_short"
-    bucket[(side_arr == "long")  & down_mask] = "MR_long"
-    bucket[(side_arr == "short") & down_mask] = "TF_short"
-    events["bucket"] = pd.Categorical(bucket)
+        # Hard candidate pre-filter: keep only rows in the candidate mask.
+        candidate_mask = bucket_map["Candidate"]
+        pre_candidate_n = len(events)
+        if np.any(candidate_mask):
+            events = events.loc[candidate_mask].copy().reset_index(drop=True)
+            stacked_index = pd.MultiIndex.from_arrays([events["ts"], events["symbol"]])
+            stack_key = _index_cache_key(stacked_index)
+            cache_bucket_stack = eval_cache.setdefault("bucket_stack", {})
+            if stack_key in cache_bucket_stack:
+                bucket_map = cache_bucket_stack[stack_key]
+            else:
+                bucket_map = {}
+                for bname, bmask in bucket_masks.items():
+                    bucket_map[bname] = bmask.stack().reindex(stacked_index).fillna(False).to_numpy(dtype=bool)
+                cache_bucket_stack[stack_key] = bucket_map
+        else:
+            events = events.iloc[0:0].copy()
+        tprint(f"[eval:{cfg_id}] candidate_prefilter_kept={len(events):,}/{pre_candidate_n:,}")
+
+        # Assign bucket from side × move_direction, matching _strategy_bucket_context:
+        up_mask   = bucket_map["up"]
+        down_mask = bucket_map["down"]
+        side_arr  = events["side"].astype(str).to_numpy()
+        bucket = np.full(len(events), "Global", dtype=object)
+        bucket[(side_arr == "long")  & up_mask]   = "TF_long"
+        bucket[(side_arr == "short") & up_mask]   = "MR_short"
+        bucket[(side_arr == "long")  & down_mask] = "MR_long"
+        bucket[(side_arr == "short") & down_mask] = "TF_short"
+        events["bucket"] = pd.Categorical(bucket)
+    else:
+        # Candidate filter was already applied in the loop
+        if not isinstance(events["bucket"].dtype, pd.CategoricalDtype):
+            events["bucket"] = pd.Categorical(events["bucket"])
+        stacked_index = pd.MultiIndex.from_arrays([events["ts"], events["symbol"]])
 
     # Regime and quintile slices for Stage 2.
     atr = get_stacked_array(
@@ -1803,7 +1871,7 @@ def evaluate_config(
         stacked_index,
         dtype=np.float32,
     )
-    atr = np.nan_to_num(atr, nan=0.0, copy=False)
+    atr = np.nan_to_num(atr, nan=0.0)
     ratio = np.divide(atr, roll + EPS, out=np.ones_like(atr, dtype=np.float32), where=np.isfinite(roll))
 
     atr_s = pd.Series(atr, index=stacked_index, dtype=np.float32)
@@ -2043,6 +2111,10 @@ def evaluate_config(
     ess_full = float(full_n)
     coverage = ess / max(ess_full, 1.0)
 
+    # Config-level bind/balance (aggregate across all events).
+    tp_hit_agg = float((events["label"] == OUT_TP).mean()) if len(events) else 0.0
+    sl_hit_agg = float((events["label"] == OUT_SL).mean()) if len(events) else 0.0
+
     # Structural fail-fast: skip OOF ML pass for non-viable configs.
     bind_agg_pre = float(tp_hit_agg + sl_hit_agg)
     min_cov_threshold = float(cfg.get("min_coverage_threshold", 0.2))
@@ -2053,6 +2125,8 @@ def evaluate_config(
             f"(min_cov={min_cov_threshold:.2f}, min_bind={min_bind_threshold:.2f})"
         )
         pred = np.full(len(events), 0.5, dtype=np.float32)
+        decile_spread = 0.0
+        feat_cols = []
     else:
         # Feature matrix + OOF scoring.
         X_flat, feat_cols = get_stacked_feature_matrix(artifacts, eval_cache)
@@ -2295,9 +2369,7 @@ def evaluate_config(
     median_cell_dir_superiority = float(np.median(cell_dir_sups)) if cell_dir_sups else float("nan")
     max_barrier_ratio = float(np.max(cell_barrier_ratios)) if cell_barrier_ratios else float("nan")
 
-    # Config-level bind/balance (aggregate across all events).
-    tp_hit_agg = float((events["label"] == OUT_TP).mean()) if len(events) else 0.0
-    sl_hit_agg = float((events["label"] == OUT_SL).mean()) if len(events) else 0.0
+    # Config-level bind/balance (already computed above).
     bind_agg = tp_hit_agg + sl_hit_agg
     balance_agg = min(tp_hit_agg, sl_hit_agg) / max(max(tp_hit_agg, sl_hit_agg), EPS)
     sl_to_tp_agg = sl_hit_agg / max(tp_hit_agg, EPS)
@@ -3808,6 +3880,9 @@ class TBMObjective:
         self,
         artifacts: Any,
         bucket_masks: Dict[str, Any],
+        stacked_bucket_masks: Dict[str, np.ndarray],
+        canonical_ts: np.ndarray,
+        canonical_sym: np.ndarray,
         runtime_cfg: Dict[str, Any],
         horizons: List[int],
         layer1_cache: Dict[str, Any],
@@ -3818,6 +3893,9 @@ class TBMObjective:
     ):
         self.artifacts = artifacts
         self.bucket_masks = bucket_masks
+        self.stacked_bucket_masks = stacked_bucket_masks
+        self.canonical_ts = canonical_ts
+        self.canonical_sym = canonical_sym
         self.runtime_cfg = runtime_cfg
         self.horizons = horizons
         self.layer1_cache = layer1_cache
@@ -3867,6 +3945,9 @@ class TBMObjective:
                 c,
                 horizons=self.horizons,
                 bucket_masks=self.bucket_masks,
+                stacked_bucket_masks=self.stacked_bucket_masks,
+                canonical_ts=self.canonical_ts,
+                canonical_sym=self.canonical_sym,
                 layer1_cache=self.layer1_cache,
                 layer2_cache=self.layer2_cache,
                 eval_cache=self.eval_cache,
@@ -3978,9 +4059,20 @@ def run(args: argparse.Namespace) -> None:
     # so build_bucket_masks uses the optimised values, not hardcoded defaults.
     runtime_cfg = apply_offline_optimizer_best_params(dict(runtime_cfg))
     bucket_masks = build_bucket_masks(artifacts, cfg_runtime=runtime_cfg)
+
+    # Pre-stack bucket masks aligned to canonical index to avoid reindexing in loop
+    tprint("Pre-stacking bucket masks aligned to canonical index...")
+    canonical_stack_idx = artifacts.panel["close"].stack(future_stack=True).index
+    stacked_bucket_masks: Dict[str, np.ndarray] = {}
+    for k, v in bucket_masks.items():
+        stacked_bucket_masks[k] = v.stack(future_stack=True).reindex(canonical_stack_idx).fillna(False).to_numpy(dtype=bool)
+
+    canonical_ts = canonical_stack_idx.get_level_values(0).to_numpy()
+    canonical_sym = canonical_stack_idx.get_level_values(1).to_numpy()
+
     tprint(
         f"Artifacts + buckets ready: bars={len(artifacts.panel['close'])}, symbols={len(artifacts.panel['close'].columns)} "
-        f"bucket_masks={list(bucket_masks.keys())} mem_peak_mb={_memory_snapshot_mb():.1f}"
+        f"bucket_masks={list(bucket_masks.keys())} stacked_len={len(canonical_ts)} mem_peak_mb={_memory_snapshot_mb():.1f}"
     )
 
     # Clear caches after loading data
@@ -4035,6 +4127,9 @@ def run(args: argparse.Namespace) -> None:
     obj_s1 = TBMObjective(
         artifacts=artifacts,
         bucket_masks=bucket_masks,
+        stacked_bucket_masks=stacked_bucket_masks,
+        canonical_ts=canonical_ts,
+        canonical_sym=canonical_sym,
         runtime_cfg=runtime_cfg,
         horizons=horizons,
         layer1_cache=layer1_cache,
@@ -4119,6 +4214,9 @@ def run(args: argparse.Namespace) -> None:
                         c,
                         horizons=horizons,
                         bucket_masks=bucket_masks,
+                        stacked_bucket_masks=stacked_bucket_masks,
+                        canonical_ts=canonical_ts,
+                        canonical_sym=canonical_sym,
                         layer1_cache=layer1_cache,
                         layer2_cache=layer2_cache,
                         eval_cache=eval_cache,

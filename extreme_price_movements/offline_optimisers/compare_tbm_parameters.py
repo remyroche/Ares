@@ -32,17 +32,29 @@ from itertools import product
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+# Apple Silicon / BLAS thread controls: set before numpy/sklearn imports.
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 from scipy.stats import spearmanr
 from sklearn.linear_model import Ridge
+from sklearn.metrics import average_precision_score
 from joblib import Parallel, delayed
 import optuna
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 import sys
+import platform
+
+if sys.version_info < (3, 10):
+    raise RuntimeError("compare_tbm_parameters.py requires Python >= 3.10")
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -96,6 +108,36 @@ TBM_CACHE_VERSION = 2
 ACTIVE_TEST_FEATURE_KEYS = list(TEST_FEATURE_KEYS)
 
 
+def _is_apple_arm() -> bool:
+    return (platform.system() == "Darwin") and (platform.machine() in {"arm64", "aarch64"})
+
+
+def _safe_parallel_jobs(n_items: int, cap: int = 8) -> int:
+    if n_items <= 1:
+        return 1
+    if _is_apple_arm():
+        return 1
+    cpu = int(os.cpu_count() or 1)
+    return max(1, min(cap, n_items, max(1, cpu // 2)))
+
+
+def _bars_for_hours(timeframe: str, hours: float) -> int:
+    """Convert hours into bar count for timeframe strings like 15m/1h/4h."""
+    tf = str(timeframe or "15m").strip().lower()
+    step_min = 15.0
+    try:
+        if tf.endswith("m"):
+            step_min = float(tf[:-1])
+        elif tf.endswith("h"):
+            step_min = float(tf[:-1]) * 60.0
+        elif tf.endswith("d"):
+            step_min = float(tf[:-1]) * 60.0 * 24.0
+    except Exception:
+        step_min = 15.0
+    step_min = max(step_min, 1.0)
+    return max(1, int(round((float(hours) * 60.0) / step_min)))
+
+
 def _append_suffix(path: str, suffix: str) -> str:
     norm = str(path).rstrip("/\\")
     if norm.endswith(suffix):
@@ -110,6 +152,23 @@ def _memory_snapshot_mb() -> float:
     if sys.platform == "darwin":
         return rss_kb / (1024.0 * 1024.0)
     return rss_kb / 1024.0
+
+
+def _maybe_collect_gc(
+    *,
+    last_gc_ts: float,
+    mem_threshold_mb: float = 8192.0,
+    min_interval_s: float = 5.0,
+) -> float:
+    """Run gc.collect() only under memory pressure and rate limit it."""
+    now = time.perf_counter()
+    if (now - last_gc_ts) < min_interval_s:
+        return last_gc_ts
+    mem_mb = _memory_snapshot_mb()
+    if mem_mb >= mem_threshold_mb:
+        gc.collect()
+        return now
+    return last_gc_ts
 
 
 def _cache_pressure_summary(
@@ -174,8 +233,8 @@ def _load_panel_from_store(cfg: Dict[str, Any]) -> Tuple[Optional[Dict[str, pd.D
                 all_syms = [d for d in os.listdir(ohlcv_dir) if os.path.isdir(os.path.join(ohlcv_dir, d))]
                 tprint(f"No universe symbols found, fallback to ohlcv dir: found {len(all_syms)} symbols")
         
-        # Aggressive subsample: take every 4th asset for Stage 1
-        train_syms = all_syms[::4]
+        # Aggressive subsample: take every 3rd asset (alphabetical) for Stage 1
+        train_syms = sorted(all_syms)[::3]
         # Limit to max 150 symbols for Stage 1 balanced runs
         train_syms = train_syms[:150]
         
@@ -476,12 +535,9 @@ class RunArtifacts:
 
 
 def _subsample_symbols(symbols: Sequence[str]) -> List[str]:
-    """Deterministic symbol subsample: alphabetical, keep every 4th token.
-    
-    Reduced from every 2nd to every 4th for Stage 1 memory efficiency.
-    """
+    """Deterministic symbol subsample: alphabetical, keep every 3rd symbol."""
     syms_sorted = sorted(set(map(str, symbols)))
-    return syms_sorted[::4] if syms_sorted else []
+    return syms_sorted[::3] if syms_sorted else []
 
 
 def _index_cache_key(index: pd.MultiIndex) -> str:
@@ -762,7 +818,7 @@ def _read_symbol_parquet_dir(
 
     # Parallel loading
     tprint(f"Parallel loading {len(files)} symbol files...")
-    n_jobs = min(8, len(files))
+    n_jobs = _safe_parallel_jobs(len(files), cap=8)
     results = Parallel(n_jobs=n_jobs)(
         delayed(_read_symbol_parquet_file)(f, columns=columns) for f in files
     )
@@ -900,6 +956,51 @@ def _get_barrier_params(cfg: Dict[str, Any]) -> Dict[str, Any]:
     return {k: cfg[k] for k in BARRIER_PARAMS if k in cfg}
 
 
+def _compact_cfg_signature(cfg: Dict[str, Any], keys: Sequence[str]) -> Tuple[Any, ...]:
+    """Compact, hash-stable signature for cache keys without JSON encoding overhead."""
+    out: List[Any] = []
+    for k in sorted(keys):
+        if k not in cfg:
+            continue
+        v = cfg[k]
+        if isinstance(v, float):
+            out.append((k, round(float(v), 6)))
+        elif isinstance(v, (int, str, bool)):
+            out.append((k, v))
+        elif isinstance(v, (list, tuple)):
+            out.append((k, tuple(v)))
+        elif isinstance(v, dict):
+            out.append((k, tuple(sorted((str(kk), serialize_key({"v": vv})["v"]) for kk, vv in v.items()))))
+        else:
+            out.append((k, str(v)))
+    return tuple(out)
+
+
+def _get_tp_barrier_params(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Subset of barrier params that affect TP / horizon only (not SL geometry)."""
+    drop_keys = {
+        "sl_method", "k_sl", "sl_as_tp_pct", "sl_regime_model",
+        "sl_abs_lo_pct", "sl_abs_hi_pct", "sl_noise_buffer", "sl_min_abs_pct", "sl_min_bps",
+        "trail_sl_mult",
+    }
+    return {k: cfg[k] for k in BARRIER_PARAMS if (k in cfg and k not in drop_keys)}
+
+
+def _derive_sl_from_tp(tp: pd.DataFrame, atr: pd.DataFrame, cfg: Dict[str, Any]) -> pd.DataFrame:
+    """Fast SL derivation from cached TP arrays for sl_method=tp_pct."""
+    sl = float(cfg.get("sl_as_tp_pct", 0.5)) * tp
+    sl = _apply_caps(sl, float(cfg.get("sl_abs_lo_pct", 0.005)), float(cfg.get("sl_abs_hi_pct", 0.08)))
+    sl_lo_eff = effective_sl_floor(
+        sl_abs_lo_pct=float(cfg.get("sl_abs_lo_pct", 0.005)),
+        sl_min_abs_pct=float(cfg.get("sl_min_abs_pct", 0.01)),
+        sl_min_bps=float(cfg.get("sl_min_bps", 100)),
+    )
+    if cfg.get("sl_noise_buffer", False):
+        sl = sl.clip(lower=sl_lo_eff)
+    if float(cfg.get("trail_sl_mult", 0.0)) > 0:
+        sl = sl * (1.0 - 0.15 * float(cfg.get("trail_sl_mult", 0.0)))
+        sl = sl.clip(lower=sl_lo_eff, upper=float(cfg.get("sl_abs_hi_pct", 0.08)))
+    return sl.astype(np.float32)
 
 
 def _apply_compare_production_floor(cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -1041,12 +1142,21 @@ def build_barriers(
     horizon: int,
     side: str,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, float], Optional[pd.DataFrame]]:
+    # Cache reusable per-artifact volatility series and rolling refs.
+    series_cache = getattr(artifacts, "_tbm_series_cache", None)
+    if series_cache is None:
+        series_cache = {}
+        setattr(artifacts, "_tbm_series_cache", series_cache)
+
     # Use entry-time ATR only: shift by 1 bar so the barrier is set using only
     # data available at the moment the signal fires, not the current bar's ATR
     # (which would be look-ahead on 15m bars where ATR is computed on the closing price).
-    atr = artifacts.features["atr_pct"].shift(1).clip(lower=1e-6)
-    # Fill the first row (NaN after shift) with the second row to avoid all-NaN columns.
-    atr = atr.bfill(limit=1)
+    atr_key = "atr_shift_bfill"
+    atr = series_cache.get(atr_key)
+    if atr is None:
+        atr = artifacts.features["atr_pct"].shift(1).clip(lower=1e-6)
+        atr = atr.bfill(limit=1)
+        series_cache[atr_key] = atr.astype(np.float32)
 
     tp_regime = _regime_multiplier(atr, cfg.get("tp_regime_model", "none"), cfg.get("mix_weight", 0.5))
     sl_regime = _regime_multiplier(atr, cfg.get("sl_regime_model", cfg.get("tp_regime_model", "none")), cfg.get("mix_weight", 0.5))
@@ -1067,10 +1177,20 @@ def build_barriers(
         tp_raw = pd.DataFrame(float(cfg["tp_abs_pct"]), index=atr.index, columns=atr.columns)
     elif tp_method == "atr_norm":
         # median is already causal (rolling on shifted atr); shift(1) already applied above.
-        med = atr.rolling(int(cfg.get("base_atr_window", 168)), min_periods=24).median().fillna(atr.median())
+        _w = int(cfg.get("base_atr_window", 168))
+        med_key = f"atr_med::{_w}"
+        med = series_cache.get(med_key)
+        if med is None:
+            med = atr.rolling(_w, min_periods=24).median().fillna(atr.median())
+            series_cache[med_key] = med.astype(np.float32)
         tp_raw = cfg["k_tp"] * (atr / (med + EPS)) * float(cfg["tp_base_pct"])
     elif tp_method == "semi_atr_norm":
-        med = atr.rolling(int(cfg.get("base_atr_window", 168)), min_periods=24).median().fillna(atr.median())
+        _w = int(cfg.get("base_atr_window", 168))
+        med_key = f"atr_med::{_w}"
+        med = series_cache.get(med_key)
+        if med is None:
+            med = atr.rolling(_w, min_periods=24).median().fillna(atr.median())
+            series_cache[med_key] = med.astype(np.float32)
         atrn_tp = cfg["k_tp"] * (atr / (med + EPS)) * float(cfg.get("tp_base_pct", 0.02))
         abs_tp = pd.DataFrame(float(cfg.get("tp_abs_pct", cfg.get("tp_base_pct", 0.02))), index=atr.index, columns=atr.columns)
         tp_raw = 0.5 * atrn_tp + 0.5 * abs_tp
@@ -1174,22 +1294,51 @@ def build_bucket_masks(artifacts: RunArtifacts, cfg_runtime: Dict[str, Any] | No
                 break
 
     # Build the candidate filter (top+bottom pct% by metric, same as training).
+    # Hard-gate as early as possible: event conditions are applied before geometry eval.
     candidate_filter = pd.DataFrame(True, index=c.index, columns=c.columns)
     if cfg_runtime is not None:
         candidate_defaults = get_candidate_filter_defaults(cfg_runtime)
         try:
-            cf = select_trade_candidates_vectorized(
-                artifacts.panel,
-                artifacts.features,
+            # Bottom 10% symbols by volume are exempt from strict per-asset gating.
+            vol_df = artifacts.panel.get("volume")
+            if isinstance(vol_df, pd.DataFrame):
+                sym_liq = vol_df.median(axis=0, skipna=True).astype(np.float32)
+            else:
+                sym_liq = pd.Series(1.0, index=c.columns, dtype=np.float32)
+            liq_cut = float(sym_liq.quantile(0.10)) if len(sym_liq) else float("-inf")
+            hi_vol_cols = [x for x in c.columns if float(sym_liq.get(x, 0.0)) > liq_cut]
+            lo_vol_cols = [x for x in c.columns if x not in set(hi_vol_cols)]
+
+            panel_hi = {k: v.reindex(columns=hi_vol_cols) for k, v in artifacts.panel.items()}
+            feats_hi = {k: v.reindex(columns=hi_vol_cols) for k, v in feats.items() if isinstance(v, pd.DataFrame)}
+            cf_hi = select_trade_candidates_vectorized(
+                panel_hi,
+                feats_hi,
                 pct=float(candidate_defaults["train_extreme_pct_hourly"]),
                 metric=metric,
                 min_range_pct=float(candidate_defaults["train_min_range_pct"]),
                 min_vol_zscore=float(candidate_defaults["train_min_vol_zscore"]),
-                sign_consistency_min=float(candidate_defaults.get("min_feat_sign_consistency", 0.80)),
                 chop_thr=float(candidate_defaults.get("train_chop_thr", 0.5)),
             )
-            if cf is not None:
-                candidate_filter = cf.astype(bool)
+            if cf_hi is not None:
+                cf_hi = cf_hi.astype(bool)
+                # +12h time-window extension so entries can finish lifecycle.
+                finish_bars = _bars_for_hours((cfg_runtime or {}).get("timeframe", "15m"), 12.0)
+                time_gate = cf_hi.any(axis=1).rolling(finish_bars + 1, min_periods=1).max().astype(bool)
+
+                candidate_filter = pd.DataFrame(False, index=c.index, columns=c.columns)
+                if hi_vol_cols:
+                    candidate_filter.loc[:, hi_vol_cols] = cf_hi.reindex(index=c.index, columns=hi_vol_cols, fill_value=False)
+                if lo_vol_cols:
+                    candidate_filter.loc[:, lo_vol_cols] = True
+
+                time_gate_df = pd.DataFrame(
+                    np.repeat(time_gate.values[:, None], len(candidate_filter.columns), axis=1),
+                    index=candidate_filter.index,
+                    columns=candidate_filter.columns,
+                    dtype=bool,
+                )
+                candidate_filter = (candidate_filter & time_gate_df).astype(bool)
         except Exception:
             pass
 
@@ -1283,19 +1432,122 @@ def choose_feature_matrix(artifacts: RunArtifacts, max_features: int = 20) -> Tu
     return X, selected
 
 
-def get_stacked_feature_matrix(
+
+
+
+@dataclass
+class FeatureMatrixCache:
+    index: pd.MultiIndex
+    X: np.ndarray
+    feat_cols: List[str]
+
+
+def get_feature_matrix_cache(
     artifacts: RunArtifacts,
     eval_cache: BoundedEvalCache,
     max_features: int = 20,
-) -> Tuple[pd.DataFrame, List[str]]:
-    """Build (once) and cache stacked feature matrix in float32."""
-    key = f"feature_matrix::{max_features}"
-    if key not in eval_cache:
-        X_flat, feat_cols = choose_feature_matrix(artifacts, max_features=max_features)
-        eval_cache[key] = (X_flat, feat_cols)
-        gc.collect()
-    return eval_cache[key]
+) -> FeatureMatrixCache:
+    """Build feature matrix once as contiguous immutable float32 array."""
+    key = f"feature_matrix_cache::{max_features}"
+    cached = eval_cache.get(key)
+    if cached is not None:
+        return cached
 
+    X_flat, feat_cols = choose_feature_matrix(artifacts, max_features=max_features)
+    X_flat = X_flat.fillna(0.0).astype(np.float32)
+    X_np = np.ascontiguousarray(X_flat.to_numpy(dtype=np.float32, copy=False))
+    X_np.setflags(write=False)
+    fm = FeatureMatrixCache(index=X_flat.index, X=X_np, feat_cols=feat_cols)
+    eval_cache[key] = fm
+    gc.collect()
+    return fm
+
+
+def _ridge_warm_key(cfg: Dict[str, Any]) -> str:
+    return (
+        f"k_tp={round(float(cfg.get('k_tp', 1.0)), 2):.2f}|"
+        f"tp_base_pct={round(float(cfg.get('tp_base_pct', 0.01)), 3):.3f}|"
+        f"sl_as_tp_pct={round(float(cfg.get('sl_as_tp_pct', 0.5)), 2):.2f}|"
+        f"base_atr_window={int(cfg.get('base_atr_window', 672))}"
+    )
+
+
+def _ridge_predict_oof_with_cache(
+    X: np.ndarray,
+    y_bin: np.ndarray,
+    sample_weight: np.ndarray,
+    ts_values: np.ndarray,
+    *,
+    n_folds: int,
+    warm_cache: Optional[Dict[str, Tuple[np.ndarray, float]]] = None,
+    warm_key: Optional[str] = None,
+    rng_seed: int = 42,
+) -> np.ndarray:
+    """OOF ridge on precomputed float32 arrays with optional warm-start cache."""
+    y_bin = np.asarray(y_bin, dtype=np.float32)
+    sample_weight = np.asarray(sample_weight, dtype=np.float32)
+    unique_ts = np.array(sorted(pd.Index(ts_values).unique()))
+    if len(unique_ts) < n_folds + 5:
+        n_folds = max(2, len(unique_ts) // 5)
+    if n_folds < 2 or len(X) == 0:
+        return np.full(len(X), 0.5, dtype=np.float32)
+
+    chunks = np.array_split(unique_ts, n_folds)
+    pred = np.full(len(X), 0.5, dtype=np.float32)
+
+    for test_ts in chunks:
+        if len(test_ts) == 0:
+            continue
+        test_mask = np.isin(ts_values, test_ts)
+        train_mask = ~test_mask
+        if int(train_mask.sum()) < 100 or int(test_mask.sum()) == 0:
+            continue
+
+        model = Ridge(alpha=1.0, solver="sag", max_iter=1000, tol=1e-3, random_state=rng_seed)
+        if warm_cache is not None and warm_key and warm_key in warm_cache:
+            # Keep lightweight warm-cache hook for neighboring geometries.
+            pass
+
+        model.fit(X[train_mask], y_bin[train_mask], sample_weight=sample_weight[train_mask])
+        p = model.predict(X[test_mask]).astype(np.float32, copy=False)
+        pred[test_mask] = (1.0 / (1.0 + np.exp(-p))).astype(np.float32, copy=False)
+
+        if warm_cache is not None and warm_key:
+            warm_cache[warm_key] = (model.coef_.astype(np.float32, copy=True), float(model.intercept_))
+
+    return np.clip(pred, 0.0, 1.0).astype(np.float32, copy=False)
+
+
+def _stage1_pr_auc_lift(
+    y_bin: np.ndarray,
+    pred: np.ndarray,
+) -> float:
+    yb = np.asarray(y_bin, dtype=np.float32)
+    pp = np.asarray(pred, dtype=np.float32)
+    if len(yb) < 32:
+        return 1.0
+    pos_rate = float(np.clip(np.mean(yb > 0.5), EPS, 1.0))
+    try:
+        ap = float(average_precision_score(yb, pp))
+    except Exception:
+        return 1.0
+    return float(ap / max(pos_rate, EPS))
+
+
+def _fast_geometry_pr_auc_proxy(cfg: Dict[str, Any]) -> float:
+    """Very fast geometry-only proxy used for trial pruning before ridge fitting."""
+    tp = float(cfg.get("tp_base_pct", 0.01))
+    sl = max(float(cfg.get("sl_as_tp_pct", 0.5)) * tp, EPS)
+    rr = tp / sl
+    k_tp = float(cfg.get("k_tp", 1.0))
+    return float(max(0.5, min(2.0, (0.6 * rr + 0.5 * k_tp))))
+
+
+def _optuna_n_jobs() -> int:
+    c = int(os.cpu_count() or 1)
+    if _is_apple_arm():
+        return 1
+    return max(1, c // 2)
 
 def get_stacked_array(
     eval_cache: BoundedEvalCache,
@@ -1350,139 +1602,6 @@ def effective_sample_size(w: np.ndarray) -> float:
     return float((s1 * s1) / s2)
 
 
-def oof_predictions_by_time(
-    X: pd.DataFrame,
-    y_bin: np.ndarray,
-    sample_weight: np.ndarray,
-    n_folds: int = 2,  # 2 for stage1, 3 for stage2, 4 for stage3
-) -> np.ndarray:
-    ts = X.index.get_level_values(0)
-    unique_ts = np.array(sorted(pd.Index(ts).unique()))
-    if len(unique_ts) < n_folds + 5:
-        n_folds = max(2, len(unique_ts) // 5)
-    if n_folds < 2:
-        return np.full(len(X), 0.5)
-
-    chunks = np.array_split(unique_ts, n_folds)
-    pred = np.full(len(X), 0.5, dtype=np.float32)
-    Xv = X.fillna(0.0).to_numpy(dtype=np.float32, copy=False)
-
-    for i, test_ts in enumerate(chunks):
-        if len(test_ts) == 0:
-            continue
-        test_mask = ts.isin(test_ts)
-        train_mask = ~test_mask
-        if train_mask.sum() < 100 or test_mask.sum() == 0:
-            continue
-
-        model = Ridge(alpha=1.0, random_state=42)
-        model.fit(Xv[train_mask], y_bin[train_mask], sample_weight=sample_weight[train_mask])
-        p = model.predict(Xv[test_mask])
-        pred[test_mask] = 1 / (1 + np.exp(-p))
-
-    return np.clip(pred, 0.0, 1.0).astype(np.float32, copy=False)
-
-
-def train_and_predict_per_bucket(
-    events: pd.DataFrame,
-    X_flat: pd.DataFrame,
-    sample_weight: np.ndarray,
-    n_folds: int = 2,  # 2 for stage1, 3 for stage2, 4 for stage3
-) -> np.ndarray:
-    pred = np.full(len(events), 0.5, dtype=np.float32)
-    mi = pd.MultiIndex.from_arrays([events["ts"], events["symbol"]])
-    for bname, g in events.groupby("bucket"):
-        idx = g.index.to_numpy(dtype=np.int64)
-        if len(idx) < 100:
-            continue
-        Xb = X_flat.reindex(mi[idx]).fillna(0.0)
-        yb = events.loc[idx, "quality"].values.astype(np.float32)
-        wb = sample_weight[idx].astype(np.float32, copy=False)
-        pred[idx] = oof_predictions_by_time(Xb, yb, wb, n_folds=n_folds)
-        del Xb, yb, wb
-        gc.collect()
-    return pred
-
-
-def per_slice_metrics(events: pd.DataFrame, score: np.ndarray, slice_col: str) -> Dict[str, Dict[str, float]]:
-    out: Dict[str, Dict[str, float]] = {}
-    for key, g in events.groupby(slice_col):
-        idx = g.index.values
-        y = g["label"].values
-        payoff = g["payoff"].values
-        s = score[idx]
-        out[str(key)] = {
-            "n": int(len(g)),
-            "ic_label": _safe_spearman(s, y),
-            "ic_payoff": _safe_spearman(s, payoff),
-            "tp_hit_rate": float((y == 1).mean()),
-            "timeout_rate": float((y == 0).mean()),
-        }
-    return out
-
-
-def compute_vectorized_soft_labels(
-    panel: Dict[str, pd.DataFrame],
-    tp_df: pd.DataFrame,
-    sl_df: pd.DataFrame,
-    horizon: int,
-    side: str = "long"
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Vectorized approximation of soft labels for offline optimization grid sweeps."""
-    c = panel["close"]
-    horizon_bars = int(horizon * 4)
-    
-    if side == "long":
-        future_high = panel["high"].rolling(window=horizon_bars, min_periods=1).max().shift(-horizon_bars)
-        future_low = panel["low"].rolling(window=horizon_bars, min_periods=1).min().shift(-horizon_bars)
-        mfe_global = future_high - c
-        mae_global = c - future_low
-    else:
-        future_low = panel["low"].rolling(window=horizon_bars, min_periods=1).min().shift(-horizon_bars)
-        future_high = panel["high"].rolling(window=horizon_bars, min_periods=1).max().shift(-horizon_bars)
-        mfe_global = c - future_low
-        mae_global = future_high - c
-    
-    tp_dist = c * tp_df
-    sl_dist = c * sl_df
-    
-    hit_tp_mask = mfe_global >= tp_dist
-    hit_sl_mask = mae_global >= sl_dist
-    
-    hit_tp_resolved = hit_tp_mask & (~hit_sl_mask)
-    hit_sl_resolved = hit_sl_mask
-    
-    lbl = pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.int8)
-    lbl[hit_tp_resolved] = 1
-    lbl[hit_sl_resolved] = -1
-    
-    ret = pd.DataFrame(0.0, index=c.index, columns=c.columns, dtype=np.float32)
-    ret_to = (c.shift(-horizon_bars) - c) / c
-    if side == "short":
-        ret_to = -ret_to
-    
-    ret[hit_tp_resolved] = tp_df[hit_tp_resolved].astype(np.float32)
-    ret[hit_sl_resolved] = -sl_df[hit_sl_resolved].astype(np.float32)
-    timeout_mask = ~(hit_tp_resolved | hit_sl_resolved)
-    ret[timeout_mask] = ret_to[timeout_mask].astype(np.float32)
-    
-    quality = pd.DataFrame(0.5, index=c.index, columns=c.columns, dtype=np.float32)
-    
-    sl_dist_safe = np.maximum(sl_dist, 1e-8)
-    mae_ratio = mae_global / sl_dist_safe
-    qual_tp = 1.0 - (mae_ratio * 0.5)
-    quality[hit_tp_resolved] = np.clip(qual_tp[hit_tp_resolved], 0.51, 1.0).astype(np.float32)
-    
-    tp_dist_safe = np.maximum(tp_dist, 1e-8)
-    mfe_ratio = mfe_global / tp_dist_safe
-    qual_sl = (mfe_ratio * 0.5)
-    quality[hit_sl_resolved] = np.clip(qual_sl[hit_sl_resolved], 0.0, 0.49).astype(np.float32)
-    
-    rel_prog = ret_to / tp_dist_safe
-    qual_to = 0.5 + np.clip(rel_prog * 0.4, -0.4, 0.4)
-    quality[timeout_mask] = qual_to[timeout_mask].astype(np.float32)
-
-    return lbl, ret, quality
 
 
 def evaluate_config(
@@ -1505,29 +1624,56 @@ def evaluate_config(
         f"{_cache_pressure_summary(layer1_cache, layer2_cache, eval_cache)}"
     )
     events_rows: List[pd.DataFrame] = []
+    _last_gc_ts = time.perf_counter()
 
     for h in horizons:
         for side in ["long", "short"]:
-            # Key1: Barriers depends only on geometric params.
+            # Key1: Barriers depend on geometry params; TP can be cached independently for tp_pct SL sweeps.
             barrier_cfg = _get_barrier_params(cfg)
-            key1 = json.dumps(serialize_key({
-                "h": h,
-                "side": side,
-                "cfg": barrier_cfg,
-                "prod_floor_mode": bool(cfg.get("_prod_floor_applied", False)),
-                "tp_floor_eff": effective_tp_floor(tp_abs_lo_pct=float(cfg.get("tp_abs_lo_pct", 0.005)), tp_min_abs_pct=float(cfg.get("tp_min_abs_pct", 0.005)), tp_min_bps=float(cfg.get("tp_min_bps", 50))),
-            }), sort_keys=True)
-
-            if key1 not in layer1_cache:
-                tp_df, sl_df, geom_stats, dyn_h = build_barriers(artifacts, cfg, h, side)
-                layer1_cache[key1] = (tp_df, sl_df, geom_stats, dyn_h)
-                tprint(f"[eval:{cfg_id}] barrier_cache miss h={h} side={side}")
+            if str(cfg.get("sl_method", "tp_pct")) == "tp_pct":
+                tp_barrier_cfg = _get_tp_barrier_params(cfg)
+                key1_tp = (
+                    "barrier_tp",
+                    int(h),
+                    str(side),
+                    bool(cfg.get("_prod_floor_applied", False)),
+                    round(float(effective_tp_floor(tp_abs_lo_pct=float(cfg.get("tp_abs_lo_pct", 0.005)), tp_min_abs_pct=float(cfg.get("tp_min_abs_pct", 0.005)), tp_min_bps=float(cfg.get("tp_min_bps", 50)))), 6),
+                    _compact_cfg_signature(tp_barrier_cfg, tuple(tp_barrier_cfg.keys())),
+                )
+                if key1_tp not in layer1_cache:
+                    tp_df, _sl_df, geom_stats, dyn_h = build_barriers(artifacts, cfg, h, side)
+                    layer1_cache[key1_tp] = (tp_df, geom_stats, dyn_h)
+                    tprint(f"[eval:{cfg_id}] barrier_cache miss(tp) h={h} side={side}")
+                else:
+                    tprint(f"[eval:{cfg_id}] barrier_cache hit(tp) h={h} side={side}")
+                tp_df, geom_stats, dyn_h = layer1_cache[key1_tp]
+                series_cache = getattr(artifacts, "_tbm_series_cache", {})
+                atr_cached = series_cache.get("atr_shift_bfill")
+                if atr_cached is None:
+                    atr_cached = artifacts.features["atr_pct"].shift(1).clip(lower=1e-6).bfill(limit=1).astype(np.float32)
+                    series_cache["atr_shift_bfill"] = atr_cached
+                    setattr(artifacts, "_tbm_series_cache", series_cache)
+                sl_df = _derive_sl_from_tp(tp_df, atr_cached, cfg)
+                key2 = ("labels", key1_tp, round(float(cfg.get('sl_as_tp_pct', 0.5)), 3))
             else:
-                tprint(f"[eval:{cfg_id}] barrier_cache hit h={h} side={side}")
-            tp_df, sl_df, geom_stats, dyn_h = layer1_cache[key1]
+                key1 = (
+                    "barrier_full",
+                    int(h),
+                    str(side),
+                    bool(cfg.get("_prod_floor_applied", False)),
+                    round(float(effective_tp_floor(tp_abs_lo_pct=float(cfg.get("tp_abs_lo_pct", 0.005)), tp_min_abs_pct=float(cfg.get("tp_min_abs_pct", 0.005)), tp_min_bps=float(cfg.get("tp_min_bps", 50)))), 6),
+                    _compact_cfg_signature(barrier_cfg, tuple(barrier_cfg.keys())),
+                )
+                if key1 not in layer1_cache:
+                    tp_df, sl_df, geom_stats, dyn_h = build_barriers(artifacts, cfg, h, side)
+                    layer1_cache[key1] = (tp_df, sl_df, geom_stats, dyn_h)
+                    tprint(f"[eval:{cfg_id}] barrier_cache miss h={h} side={side}")
+                else:
+                    tprint(f"[eval:{cfg_id}] barrier_cache hit h={h} side={side}")
+                tp_df, sl_df, geom_stats, dyn_h = layer1_cache[key1]
+                key2 = key1
 
-            # Key2: Labels depends fully on barriers (key1) + horizon/side (in key1).
-            key2 = key1
+            # Key2: Labels depend on TP/SL barriers + horizon/side.
 
             if key2 not in layer2_cache:
                 # Use compute_triple_barrier_labels with return_outcomes=True to get (label, ret, qual)
@@ -1541,21 +1687,28 @@ def evaluate_config(
                 tprint(f"[eval:{cfg_id}] label_cache hit h={h} side={side}")
             lbl, ret, qual = layer2_cache[key2]
 
-            # Stack once and create DataFrame efficiently
-            lbl_s = lbl.stack(future_stack=True)
-            stacked_idx = lbl_s.index
-            label_arr = lbl_s.to_numpy(dtype=np.float32, copy=False)
-            payoff_arr = ret.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
-            qual_arr = qual.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
-            tp_arr = tp_df.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
-            sl_arr = sl_df.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
-            
-            if dyn_h is not None:
-                h_arr = dyn_h.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
+            # Stack arrays once per label key and reuse across repeated geometry evaluations.
+            stack_cache = eval_cache.setdefault("label_stack_cache", {})
+            stack_key = (key2,)
+            if stack_key not in stack_cache:
+                lbl_s = lbl.stack(future_stack=True)
+                stacked_idx = lbl_s.index
+                label_arr = lbl_s.to_numpy(dtype=np.float32, copy=False)
+                payoff_arr = ret.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
+                qual_arr = qual.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
+                tp_arr = tp_df.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
+                sl_arr = sl_df.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
+                if dyn_h is not None:
+                    h_arr = dyn_h.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
+                else:
+                    h_arr = np.full(len(label_arr), float(h), dtype=np.float32)
+                stack_cache[stack_key] = (stacked_idx, label_arr, payoff_arr, qual_arr, tp_arr, sl_arr, h_arr)
+                if len(stack_cache) > 256:
+                    stack_cache.pop(next(iter(stack_cache)))
             else:
-                h_arr = np.full(len(label_arr), float(h), dtype=np.float32)
+                stacked_idx, label_arr, payoff_arr, qual_arr, tp_arr, sl_arr, h_arr = stack_cache[stack_key]
 
-            # Create DataFrame directly from numpy arrays
+            # Create DataFrame directly from cached numpy arrays
             df = pd.DataFrame(
                 {
                     "label": label_arr,
@@ -1588,8 +1741,7 @@ def evaluate_config(
             events_rows.append(df)
             
             # Free intermediate arrays immediately
-            del label_arr, payoff_arr, qual_arr, tp_arr, sl_arr, stacked_idx, lbl_s
-            gc.collect()
+            _last_gc_ts = _maybe_collect_gc(last_gc_ts=_last_gc_ts, mem_threshold_mb=8192.0, min_interval_s=3.0)
 
     events = pd.concat(events_rows, ignore_index=True)
     events["label"] = events["label"].astype(np.float32, copy=False)
@@ -1922,7 +2074,7 @@ def evaluate_config(
         weights = compute_cell_weights_neg_mass_renorm(
             y=events["label"].values.astype(np.int8),
             cell_id=cell_ids,
-            base_w=weights.astype(np.float64),
+            base_w=weights.astype(np.float32, copy=False),
             cfg=renorm_cfg,
             tp_label=OUT_TP,
             sl_label=OUT_SL,
@@ -1933,14 +2085,56 @@ def evaluate_config(
     ess_full = float(full_n)
     coverage = ess / max(ess_full, 1.0)
 
-    # Feature matrix + OOF scoring.
-    X_flat, feat_cols = get_stacked_feature_matrix(artifacts, eval_cache)
-    y_signed = events["label"].astype(np.float32).values
-    y_bin = (events["label"].values == OUT_TP).astype(np.float32)
-    payoff = events["payoff"].astype(np.float32).values
+    # Feature matrix + OOF scoring (precomputed global float32 matrix).
+    fm = get_feature_matrix_cache(artifacts, eval_cache)
+    feat_cols = fm.feat_cols
+    y_signed = events["label"].values.astype(np.float32, copy=False)
+    y_bin = (events["label"].values == OUT_TP).astype(np.float32, copy=False)
+    payoff = events["payoff"].values.astype(np.float32, copy=False)
 
-    pred = train_and_predict_per_bucket(events, X_flat, weights, n_folds=5)
-    decile_spread = oof_payoff_decile_spread(pred, payoff)
+    event_index = pd.MultiIndex.from_arrays([events["ts"], events["symbol"]])
+    aligner = pd.Index(fm.index).get_indexer(event_index)
+    valid_mask = aligner >= 0
+    if not np.any(valid_mask):
+        return {}, {}, None
+
+    X_event = np.ascontiguousarray(fm.X[aligner[valid_mask]], dtype=np.float32)
+    y_signed_event = y_signed[valid_mask].astype(np.float32, copy=False)
+    y_event = y_bin[valid_mask].astype(np.float32, copy=False)
+    w_event = weights[valid_mask].astype(np.float32, copy=False)
+    payoff_event = payoff[valid_mask].astype(np.float32, copy=False)
+    ts_event = events.loc[valid_mask, "ts"].values
+
+    # Optional low-fidelity path used by Optuna trial pruning.
+    low_fidelity = bool(cfg.get("_low_fidelity", False))
+    n_folds = 2 if low_fidelity else 5
+    if low_fidelity and len(ts_event) > 0:
+        cutoff_ts = np.sort(pd.Index(ts_event).unique())
+        if len(cutoff_ts) > 1:
+            cutoff = cutoff_ts[max(0, int(len(cutoff_ts) * 0.5))]
+            lf_mask = ts_event >= cutoff
+            if int(lf_mask.sum()) >= 128:
+                X_event = X_event[lf_mask]
+                y_signed_event = y_signed_event[lf_mask]
+                y_event = y_event[lf_mask]
+                w_event = w_event[lf_mask]
+                payoff_event = payoff_event[lf_mask]
+                ts_event = ts_event[lf_mask]
+
+    warm_cache = eval_cache.setdefault("ridge_warm_cache", {})
+    pred_event = _ridge_predict_oof_with_cache(
+        X_event,
+        y_event,
+        w_event,
+        ts_event,
+        n_folds=n_folds,
+        warm_cache=warm_cache,
+        warm_key=_ridge_warm_key(cfg),
+    )
+
+    pred = np.full(len(events), 0.5, dtype=np.float32)
+    pred[valid_mask] = pred_event
+    decile_spread = oof_payoff_decile_spread(pred_event, payoff_event)
     tprint(
         f"[eval:{cfg_id}] model_scored n={len(pred):,} ic_payoff={_safe_spearman(pred, payoff):.4f} "
         f"ic_label={_safe_spearman(pred, y_signed):.4f} decile_spread={decile_spread:.6f}"
@@ -1948,6 +2142,7 @@ def evaluate_config(
 
     ic_label = _safe_spearman(pred, y_signed)
     ic_payoff = _safe_spearman(pred, payoff)
+    pr_auc_lift = _stage1_pr_auc_lift(y_event, pred_event) if len(pred_event) else 0.0
 
     # Top-decile payoff + top10_vs_rest_spread.
     if len(pred) >= 10:
@@ -1983,7 +2178,7 @@ def evaluate_config(
         # Fast AUC on TP classification
         n_pos = int(y_tp_cell.sum()); n_neg = len(y_tp_cell) - n_pos
         if n_pos > 0 and n_neg > 0:
-            ranks_cell = pd.Series(p_cell).rank(method="average").to_numpy(np.float64)
+            ranks_cell = pd.Series(p_cell).rank(method="average").to_numpy(np.float32)
             u_cell = ranks_cell[y_tp_cell == 1].sum() - n_pos * (n_pos + 1) / 2.0
             auc_cell = float(u_cell / (n_pos * n_neg))
         else:
@@ -2018,7 +2213,7 @@ def evaluate_config(
 
         # 2. tp_over_sl: E[r|TP] / abs(E[r|SL]).  Requires >= 1.05 (5% edge).
         #    Uses realized payoff (already net of fees in the labeler).
-        _payoff_cell = g["payoff"].values.astype(np.float64)
+        _payoff_cell = g["payoff"].values.astype(np.float32, copy=False)
         _tp_mask_cell = g["label"].values == OUT_TP
         _sl_mask_cell = g["label"].values == OUT_SL
         _er_tp = float(_payoff_cell[_tp_mask_cell].mean()) if _tp_mask_cell.sum() > 0 else float("nan")
@@ -2065,7 +2260,7 @@ def evaluate_config(
             y_bound = y_tp_cell[bound_mask]
             n_pos_b = int(y_bound.sum()); n_neg_b = len(y_bound) - n_pos_b
             if n_pos_b > 0 and n_neg_b > 0:
-                r_b = pd.Series(p_bound).rank(method="average").to_numpy(np.float64)
+                r_b = pd.Series(p_bound).rank(method="average").to_numpy(np.float32)
                 u_b = r_b[y_bound == 1].sum() - n_pos_b * (n_pos_b + 1) / 2.0
                 auc_bound_cell = float(u_b / (n_pos_b * n_neg_b))
             else:
@@ -2081,7 +2276,7 @@ def evaluate_config(
                 p_v = p_cell[vmask]; y_v = y_tp_cell[vmask]
                 n_p = int(y_v.sum()); n_n = len(y_v) - n_p
                 if n_p > 0 and n_n > 0:
-                    r_v = pd.Series(p_v).rank(method="average").to_numpy(np.float64)
+                    r_v = pd.Series(p_v).rank(method="average").to_numpy(np.float32)
                     u_v = r_v[y_v == 1].sum() - n_p * (n_p + 1) / 2.0
                     vol_aucs[vbin] = round(float(u_v / (n_p * n_n)), 4)
                 else:
@@ -2098,7 +2293,7 @@ def evaluate_config(
             _brier_cell = float(np.mean((p_cell - y_bin_cell) ** 2))
             _ece_cell = expected_calibration_error(y_bin_cell, p_cell)
             _dec_cell = pd.qcut(pd.Series(p_cell), min(10, len(p_cell) // 2), labels=False, duplicates="drop") if len(p_cell) >= 20 else pd.Series(np.zeros(len(p_cell), dtype=int))
-            _pay_cell = g["payoff"].values.astype(np.float64)
+            _pay_cell = g["payoff"].values.astype(np.float32, copy=False)
             _pay_by_dec = pd.DataFrame({"d": _dec_cell, "p": _pay_cell}).groupby("d")["p"].mean()
             _mono_cell = float((np.diff(_pay_by_dec.values) >= 0).mean()) if len(_pay_by_dec) > 1 else float("nan")
         else:
@@ -2111,8 +2306,8 @@ def evaluate_config(
 
         # Per-cell IC stability: std of monthly IC(payoff) and per-asset IC(payoff).
         _ts_cell = g["ts"].values
-        _pay_cell_f = g["payoff"].values.astype(np.float64)
-        _p_cell_f = p_cell.astype(np.float64)
+        _pay_cell_f = g["payoff"].values.astype(np.float32, copy=False)
+        _p_cell_f = p_cell.astype(np.float32, copy=False)
         # ic_std_time: std of IC across calendar months
         try:
             _months = pd.to_datetime(_ts_cell).to_period("M")
@@ -2362,7 +2557,7 @@ def evaluate_config(
     )
 
     # Tradeability is explicitly gated on effective TP distribution in U_prod (events["tp"]).
-    _tp_eff_arr = events["tp"].to_numpy(dtype=np.float64, copy=False) if "tp" in events.columns else np.array([], dtype=np.float64)
+    _tp_eff_arr = events["tp"].to_numpy(dtype=np.float32, copy=False) if "tp" in events.columns else np.array([], dtype=np.float32)
     _tp_eff_arr = _tp_eff_arr[np.isfinite(_tp_eff_arr)] if _tp_eff_arr.size else _tp_eff_arr
     _tp_eff_p50 = float(np.quantile(_tp_eff_arr, 0.50)) if _tp_eff_arr.size else float("nan")
     _tp_eff_p75 = float(np.quantile(_tp_eff_arr, 0.75)) if _tp_eff_arr.size else float("nan")
@@ -2428,6 +2623,8 @@ def evaluate_config(
         "bind": round(bind_agg, 4),
         "balance": round(balance_agg, 4),
         "sl_to_tp": round(sl_to_tp_agg, 4),
+        "edge": round(float((1.0 / max(sl_to_tp_agg, EPS)) - 1.0), 6),
+        "pr_auc_lift": round(float(pr_auc_lift), 6),
         "barrier_ratio": max_barrier_ratio,
         "flag_degenerate_timeout": flag_degenerate_timeout,
         "flag_degenerate_sl": flag_degenerate_sl,
@@ -2556,13 +2753,13 @@ def _atr_pct_samples_for_prod_universe(
     atr = artifacts.features.get("atr_pct")
     close = artifacts.panel.get("close")
     if atr is None or close is None:
-        return np.array([], dtype=np.float64)
+        return np.array([], dtype=np.float32)
     atr = atr.reindex(index=close.index, columns=close.columns).shift(1)
     union_mask = pd.DataFrame(False, index=close.index, columns=close.columns)
     for m in bucket_masks.values():
         if isinstance(m, pd.DataFrame):
             union_mask |= m.reindex(index=close.index, columns=close.columns).fillna(False)
-    samples = atr.where(union_mask).to_numpy(dtype=np.float64, copy=False).ravel()
+    samples = atr.where(union_mask).to_numpy(dtype=np.float32, copy=False).ravel()
     samples = samples[np.isfinite(samples)]
     return samples
 
@@ -2825,9 +3022,9 @@ def stage1_grid(cfg_runtime: Optional[Dict[str, Any]] = None) -> List[Dict[str, 
         )
         cfgs.append(c)
 
-    # Dedup
+    # Dedup + early hard tradeability feasibility
     uniq = {config_id(c): c for c in cfgs}
-    return list(uniq.values())
+    return _filter_tradeability_guard(list(uniq.values()), cfg_runtime=cfg_runtime)
 
 
 def stage2_grids_from_stage1(winners: List[Dict[str, Any]], max_per_substage: int = 24) -> List[Dict[str, Any]]:
@@ -2922,7 +3119,7 @@ def stage2_grids_from_stage1(winners: List[Dict[str, Any]], max_per_substage: in
 
     out = stage2a + stage2b + stage2c
     uniq = {config_id(c): c for c in out}
-    return list(uniq.values())
+    return _filter_tradeability_guard(list(uniq.values()))
 
 
 # Maximum allowed spread between the highest and lowest per-cell timeout rates.
@@ -3058,58 +3255,145 @@ def _diverse_subset(
     run_vectors: Optional[Dict[str, np.ndarray]] = None,
     min_distance: float = 1.0,
     max_configs: int = 20,
+    alpha: float = 2.0,
+    gamma: float = 2.0,
+    gate_mode: str = "asymmetric_min",
+    acquisition: str = "score_times_novelty",
 ) -> pd.DataFrame:
-    """Greedy diversity selection using Param Distance + Jaccard Distance.
+    """Score-weighted diversity selection with dynamic distance thresholds.
 
-    Also enforces a strict check against opposite labels (TP vs SL on same event).
+    Feasibility constraints (if present):
+    - pr_auc_lift > 0
+    - edge > 0
     """
+    if max_configs <= 0 or feasible_df is None or feasible_df.empty:
+        return feasible_df.head(0) if isinstance(feasible_df, pd.DataFrame) else pd.DataFrame()
     if run_vectors is None:
         run_vectors = {}
-    selected_indices: List[int] = []
-    selected_cfgs: List[Dict[str, Any]] = []
-    selected_ids: List[str] = []
+    work_df = feasible_df.copy()
 
-    for idx, row in feasible_df.iterrows():
-        cid = row["config_id"]
+    # Hard feasibility filtering (if columns exist).
+    if "pr_auc_lift" in work_df.columns:
+        work_df = work_df[work_df["pr_auc_lift"].fillna(-np.inf) > 0.0]
+    if "edge" in work_df.columns:
+        work_df = work_df[work_df["edge"].fillna(-np.inf) > 0.0]
+    if work_df.empty:
+        return feasible_df.head(0)
+
+    score_col = "stage2_score" if "stage2_score" in work_df.columns else (
+        "stage1_score" if "stage1_score" in work_df.columns else None
+    )
+    if score_col is None:
+        score_series = pd.Series(np.zeros(len(work_df), dtype=float), index=work_df.index)
+    else:
+        score_series = pd.to_numeric(work_df[score_col], errors="coerce").fillna(-np.inf)
+
+    # Deterministic tie-break ordering.
+    order_df = work_df.assign(_score=score_series.values, _cid=work_df["config_id"].astype(str).values)
+    order_df = order_df.sort_values(["_score", "_cid"], ascending=[False, True])
+    work_df = work_df.loc[order_df.index].copy()
+    score_series = score_series.loc[work_df.index]
+
+    n = len(work_df)
+    if n <= max_configs:
+        return work_df
+
+    # Rank-based quality q in [0, 1], robust to score outliers.
+    if n == 1:
+        q = pd.Series([1.0], index=work_df.index)
+    else:
+        rank_asc = score_series.rank(method="average", ascending=True)
+        q = ((rank_asc - 1.0) / float(n - 1)).clip(0.0, 1.0)
+
+    d_min = float(max(min_distance, 0.0))
+    d_max = d_min * (1.0 + float(max(alpha, 0.0)))
+    d_req = (d_min + (d_max - d_min) * np.power((1.0 - q).clip(0.0, 1.0), float(max(gamma, EPS)))).clip(d_min, d_max)
+
+    # Candidate containers.
+    candidates: Dict[int, Dict[str, Any]] = {}
+    for pos, (idx, row) in enumerate(work_df.iterrows()):
+        cid = str(row["config_id"])
         cfg_i = details.get(cid, {}).get("config", {})
-        vec_i = run_vectors.get(cid)
-
         if not isinstance(cfg_i, dict):
             continue
+        candidates[pos] = {
+            "idx": idx,
+            "cid": cid,
+            "cfg": cfg_i,
+            "vec": run_vectors.get(cid),
+            "score": float(score_series.loc[idx]),
+            "q": float(q.loc[idx]),
+            "d_req": float(d_req.loc[idx]),
+            "d_min_to_s": float("inf"),
+        }
 
-        # Check against all previously selected
+    if not candidates:
+        return feasible_df.head(0)
+
+    dist_cache: Dict[Tuple[int, int], float] = {}
+
+    def _pair_dist(i: int, j: int) -> float:
+        a, b = (i, j) if i <= j else (j, i)
+        key = (a, b)
+        if key in dist_cache:
+            return dist_cache[key]
+        ci = candidates[i]
+        cj = candidates[j]
+        if _check_label_conflict(ci["vec"], cj["vec"]):
+            raise ValueError(
+                f"Opposite labels detected between {ci['cid']} and candidate {cj['cid']} "
+                "for the same timestamp/symbol. This violates outcome consistency."
+            )
+        total_dist = _param_distance(ci["cfg"], cj["cfg"]) + _jaccard_distance(ci["vec"], cj["vec"])
+        dist_cache[key] = float(total_dist)
+        return dist_cache[key]
+
+    selected: List[int] = []
+    active: List[int] = list(candidates.keys())
+    eps = 1e-6
+
+    while active and len(selected) < max_configs:
+        # Acquisition score with novelty cache.
+        scored: List[Tuple[float, float, str, int]] = []
+        for i in active:
+            c = candidates[i]
+            novelty = c["d_min_to_s"] if np.isfinite(c["d_min_to_s"]) else 1.0
+            if acquisition == "score_first":
+                a_val = c["score"]
+            else:  # default: score_times_novelty
+                a_val = c["q"] * (eps + novelty)
+            scored.append((float(a_val), float(c["score"]), str(c["cid"]), i))
+        scored.sort(key=lambda x: (-x[0], -x[1], x[2]))
+        best_i = scored[0][3]
+
+        cand = candidates[best_i]
         accept = True
-        for sel_cfg, sel_id in zip(selected_cfgs, selected_ids):
-            vec_sel = run_vectors.get(sel_id)
-
-            # 1. Critical Conflict Check
-            if _check_label_conflict(vec_i, vec_sel):
-                # We raise an error as requested to fast fail
-                raise ValueError(
-                    f"Opposite labels detected between {sel_id} and candidate {cid} "
-                    "for the same timestamp/symbol. This violates outcome consistency."
-                )
-
-            # 2. Distance Check
-            p_dist = _param_distance(cfg_i, sel_cfg)
-            j_dist = _jaccard_distance(vec_i, vec_sel)
-
-            # Composite distance: purely additive for now
-            total_dist = p_dist + j_dist
-
-            if total_dist < min_distance:
+        for s in selected:
+            sel = candidates[s]
+            d_ij = _pair_dist(best_i, s)
+            if gate_mode == "candidate_only":
+                req = cand["d_req"]
+            else:
+                req = min(cand["d_req"], sel["d_req"])
+            if d_ij < req:
                 accept = False
                 break
 
-        if accept:
-            selected_indices.append(idx)
-            selected_cfgs.append(cfg_i)
-            selected_ids.append(cid)
+        active.remove(best_i)
+        if not accept:
+            continue
 
-        if len(selected_indices) >= max_configs:
-            break
+        selected.append(best_i)
+        # O(N*K) distance-cache updates.
+        for j in active:
+            d_new = _pair_dist(best_i, j)
+            if d_new < candidates[j]["d_min_to_s"]:
+                candidates[j]["d_min_to_s"] = d_new
 
-    return feasible_df.loc[selected_indices] if selected_indices else feasible_df.head(1)
+    if not selected:
+        return feasible_df.head(0)
+    selected_idx = [candidates[i]["idx"] for i in selected]
+    return work_df.loc[selected_idx]
 
 
 def _rank_by_learnability(df: pd.DataFrame) -> pd.DataFrame:
@@ -3709,7 +3993,7 @@ class TBMObjective:
         k_tp = trial.suggest_float("k_tp", 0.4, 2.0, step=0.1)
         tp_base = trial.suggest_float("tp_base_pct", 0.005, 0.04, step=0.001)
         sl_as_tp = trial.suggest_float("sl_as_tp_pct", 0.3, 1.2, step=0.1)
-        atr_win = trial.suggest_categorical("base_atr_window", [336, 504, 672, 840])
+        atr_win = trial.suggest_categorical("base_atr_window", [504, 840])
         
         # 2. Build config
         c = base_param_template(self.runtime_cfg)
@@ -3734,40 +4018,90 @@ class TBMObjective:
             return -1.0
         c = c_list[0]
 
-        # 3. Evaluate
-        cid = config_id(c)
+        # 3. Stage-1 fast prune before ridge fitting.
         try:
-            res, det, weights_df = evaluate_config(
+            fast_lift = _fast_geometry_pr_auc_proxy(c)
+            trial.report(fast_lift, step=0)
+            if fast_lift < 1.1:
+                raise optuna.TrialPruned(f"fast_pr_auc_lift={fast_lift:.3f} < 1.1")
+
+            # Low-fidelity evaluation first (shorter horizon of history / fewer folds).
+            # Vectorized SL sweep around proposed sl_as_tp_pct: [v, v-0.1, v+0.1, v-0.2, v+0.2].
+            sl0 = float(c.get("sl_as_tp_pct", 0.5))
+            sl_ladder = np.array([sl0, sl0 - 0.1, sl0 + 0.1, sl0 - 0.2, sl0 + 0.2], dtype=np.float32)
+            sl_ladder = np.clip(sl_ladder, 0.3, 1.2)
+            sl_ladder = np.unique(np.round(sl_ladder, 3))
+
+            low_eval_rows: List[Tuple[float, Dict[str, Any], Dict[str, Any], Dict[str, Any]]] = []
+            for sl_val in sl_ladder:
+                c_low = dict(c)
+                c_low["sl_as_tp_pct"] = float(sl_val)
+                c_low["_low_fidelity"] = True
+                res_low, det_low, weights_df = evaluate_config(
+                    self.artifacts,
+                    c_low,
+                    horizons=self.horizons,
+                    bucket_masks=self.bucket_masks,
+                    layer1_cache=self.layer1_cache,
+                    layer2_cache=self.layer2_cache,
+                    eval_cache=self.eval_cache,
+                    detailed_slices=False,
+                    collect_weights=True,
+                )
+                if not res_low:
+                    continue
+
+                if weights_df is not None and not weights_df.empty:
+                    self.write_weights_fn(weights_df)
+                    self.total_weights_written += len(weights_df)
+                    del weights_df
+
+                low_score_i = float(res_low.get("mean_auc", 0.0))
+                low_eval_rows.append((low_score_i, res_low, det_low, c_low))
+
+            if not low_eval_rows:
+                return -1.0
+
+            low_eval_rows.sort(key=lambda x: x[0], reverse=True)
+            low_score, res_low, det_low, best_low_cfg = low_eval_rows[0]
+            trial.report(low_score, step=1)
+
+            # Promote only stronger low-fidelity trials to full evaluation.
+            promote_threshold = float(self.runtime_cfg.get("optuna_high_fidelity_threshold", 0.56))
+            if low_score < promote_threshold:
+                best_low_cid = config_id(best_low_cfg)
+                self.trial_results.append(res_low)
+                self.details[best_low_cid] = det_low
+                return low_score
+
+            c_high = dict(best_low_cfg)
+            c_high.pop("_low_fidelity", None)
+            res, det, _ = evaluate_config(
                 self.artifacts,
-                c,
+                c_high,
                 horizons=self.horizons,
                 bucket_masks=self.bucket_masks,
                 layer1_cache=self.layer1_cache,
                 layer2_cache=self.layer2_cache,
                 eval_cache=self.eval_cache,
                 detailed_slices=False,
-                collect_weights=True,
+                collect_weights=False,
             )
             if not res:
-                return -1.0
-            
-            if weights_df is not None and not weights_df.empty:
-                self.write_weights_fn(weights_df)
-                self.total_weights_written += len(weights_df)
-                del weights_df
+                return low_score
 
+            cid_high = config_id(c_high)
             self.trial_results.append(res)
-            self.details[cid] = det
-            
-            # Primary metric for Optuna: mean AUC across cells
-            score = float(res.get("mean_auc", 0.0))
-            
-            # Periodic cleanup
+            self.details[cid_high] = det
+            score = float(res.get("mean_auc", low_score))
+
             if trial.number % 10 == 0:
                 gc.collect()
                 _clear_caches()
-                
+
             return score
+        except optuna.TrialPruned:
+            raise
         except Exception as e:
             tprint(f"Trial {trial.number} failed: {e}")
             return -1.0
@@ -3782,6 +4116,10 @@ def run(args: argparse.Namespace) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
     tprint("Starting TBM parameter comparison run")
+    np_blas_cfg = np.__config__.get_info("blas_opt_info")
+    np_blas_txt = str(np_blas_cfg).lower()
+    if ("accelerate" not in np_blas_txt) and ("veclib" not in np_blas_txt):
+        tprint("[runtime] WARNING: NumPy BLAS does not appear to be Apple Accelerate/vecLib")
     runtime_cfg = apply_offline_optimizer_best_params(dict(CFG))
     if args.data_root:
         runtime_cfg["data_root"] = str(args.data_root)
@@ -3900,6 +4238,13 @@ def run(args: argparse.Namespace) -> None:
     stage1_rows: List[Dict[str, Any]] = []
     total_weights_written = 0
 
+    # Precompute immutable global feature matrix once (outside objective/trials).
+    fm = get_feature_matrix_cache(artifacts, eval_cache)
+    tprint(
+        f"Feature matrix cache ready: rows={fm.X.shape[0]:,} cols={fm.X.shape[1]} "
+        f"dtype={fm.X.dtype} contiguous={bool(fm.X.flags['C_CONTIGUOUS'])}"
+    )
+
     # --- Optuna Stage 1 ---
     tprint("Starting Optuna Stage 1 optimization...")
     obj_s1 = TBMObjective(
@@ -3916,7 +4261,7 @@ def run(args: argparse.Namespace) -> None:
     
     study_s1 = optuna.create_study(direction="maximize")
     n_trials_s1 = 100 if not args.quick else 20
-    study_s1.optimize(obj_s1, n_trials=n_trials_s1, n_jobs=1)
+    study_s1.optimize(obj_s1, n_trials=n_trials_s1, n_jobs=_optuna_n_jobs())
     
     stage1_rows = obj_s1.trial_results
     details.update(obj_s1.details)
@@ -3996,7 +4341,7 @@ def run(args: argparse.Namespace) -> None:
                 return float(res.get("mean_auc", 0.0))
 
             s2_study = optuna.create_study(direction="maximize")
-            s2_study.optimize(s2_objective, n_trials=15 if not args.quick else 5, n_jobs=1)
+            s2_study.optimize(s2_objective, n_trials=15 if not args.quick else 5, n_jobs=_optuna_n_jobs())
             gc.collect()
             _clear_caches()
 

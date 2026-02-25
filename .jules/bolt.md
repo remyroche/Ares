@@ -109,3 +109,14 @@ Result: `calculate_entropy_statistics_numba` speedup >700x (2.11s -> 0.003s). Fu
 ## 2026-02-16 - Parallelizing Numba Kernels
 Learning: Even with Numba-jitted inner functions, iterating over DataFrame columns in Python using `apply_to_frame` or `apply_to_matrix` incurs significant overhead, especially for operations with low per-column complexity (like RSI, rolling max/min, pct_change).
 Action: Always prefer `prange` loops inside a parallel Numba kernel over Python-level iteration when processing DataFrames column-wise. This yielded 3-13x speedups for common indicators.
+
+## 2026-02-18 - Rolling Rank and Liquidity Feature Optimization
+
+**Learning:**
+1. **Pandas Rolling Rank Overhead:** Pandas `rolling().rank(pct=True)` is slow (likely O(N*W log W) or generic O(N*W) with python overhead). A Numba implementation scanning the window (O(N*W)) beats it significantly, especially when parallelized across columns.
+2. **Behavioral Compatibility (min_periods):** When replacing Pandas rolling functions with optimized Numba versions, subtle behavior changes in `min_periods` (defaulting to `window` vs `1`) can alter the output for the initial `window` samples. Explicitly handling `min_periods` is required to match Pandas exactly, especially for `rank` where small-window percentiles are degenerate.
+3. **Liquidity Feature Speedup:** Replacing Pandas `rolling(720).mean()` with Numba rolling mean on large datasets provides substantial speedups, while also potentially increasing data availability by using `min_periods=1` logic implicitly.
+
+**Action:**
+1. Implemented `_numba_rolling_rank_parallel` and `numba_rolling_rank` with `min_periods` support.
+2. Replaced `rolling().rank()` in `compute_vol_regime_features` and `rolling().mean()` in `compute_liquidity_features` with Numba equivalents.

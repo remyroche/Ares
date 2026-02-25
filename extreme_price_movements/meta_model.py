@@ -27,7 +27,9 @@ from extreme_price_movements.utils import tprint
 from extreme_price_movements.policy_ml import (
     MetaClassifierSelectionConfig,
     pick_meta_classifier_by_utility_top30,
+    expected_utility,
 )
+from extreme_price_movements.calibration import TemperatureScaling
 
 META_CLASS_ORDER = np.array([0, 1, 2], dtype=np.int64)
 
@@ -540,6 +542,12 @@ class MetaClassifierModel:
         self.report_rows: List[dict] = []
         self.label_threshold: float = 0.26  # default
         self.score_sign: int = 1
+        self.calibrator: Optional[TemperatureScaling] = None
+
+    def predict_expected_utility(self, X_meta, u_tp: float, u_to: float, u_sl: float) -> np.ndarray:
+        """Compute expected utility from predicted class probabilities."""
+        probs = self.predict_proba(X_meta)
+        return expected_utility(probs, u_tp, u_to, u_sl)
 
     def prepare_meta_features(self, preds, feats_df, pred_col_name="pred_logit"):
         p = np.clip(np.asarray(preds, dtype=float), 1e-4, 1 - 1e-4)
@@ -645,7 +653,7 @@ class MetaClassifierModel:
         return out
 
     # ── CV evaluation ────────────────────────────────────────────────
-    def _cv_evaluate(self, kind, params, X, y, sw=None) -> Tuple[np.ndarray, float]:
+    def _cv_evaluate(self, kind, params, X, y, sw=None, to_fraction_cap=None) -> Tuple[np.ndarray, float]:
         """3-fold purged CV. Returns (oof_probs, brier_score).
         oof_probs shape: (N, 3).
         """
@@ -657,6 +665,31 @@ class MetaClassifierModel:
             X_tr, X_va = X[tr], X[va]
             y_tr, y_va = y[tr], y[va]
             sw_tr = None if sw is None else sw[tr]
+
+            # Spec C1: Stratified subsampling of Timeouts (TO) in training fold
+            if to_fraction_cap is not None:
+                is_to = (y_tr == 1) # Class 1 = TO
+                idx_to = np.where(is_to)[0]
+                idx_other = np.where(~is_to)[0]
+                n_other = len(idx_other)
+
+                # Max allowed TO count to respect cap
+                # n_to / (n_to + n_other) <= cap => n_to <= n_other * cap / (1 - cap)
+                cap = float(to_fraction_cap)
+                if 0 < cap < 1.0 and n_other > 0:
+                    max_to = int(n_other * cap / (1.0 - cap))
+                    if len(idx_to) > max_to:
+                        # Fixed seed for reproducibility per fold
+                        rng = np.random.RandomState(42 + len(idx_to))
+                        keep_to = rng.choice(idx_to, max_to, replace=False)
+                        keep_idx = np.concatenate([idx_other, keep_to])
+                        rng.shuffle(keep_idx)
+
+                        X_tr = X_tr[keep_idx]
+                        y_tr = y_tr[keep_idx]
+                        if sw_tr is not None:
+                            sw_tr = sw_tr[keep_idx]
+
             try:
                 model = self._fit_one(kind, params, X_tr, y_tr, X_va, y_va, sw=sw_tr)
                 pp = self._predict_proba(model, X_va)
@@ -702,7 +735,8 @@ class MetaClassifierModel:
     @staticmethod
     def _compute_clf_metrics(oof: np.ndarray, y_class: np.ndarray,
                              y_ret: np.ndarray, groups=None,
-                             fee: float = 0.005) -> dict:
+                             fee: float = 0.005,
+                             u_tp: float = 1.0, u_to: float = 0.0, u_sl: float = -3.0) -> dict:
         """Compute classifier metrics: EV, Brier, Accuracy, PnL."""
         from sklearn.metrics import log_loss, brier_score_loss, accuracy_score
         mask = np.isfinite(oof).all(axis=1) & np.isfinite(y_ret)
@@ -711,9 +745,8 @@ class MetaClassifierModel:
         if n < 20:
             return {"n": n}
 
-        # EV calculation: P(TP)*2 - P(SL)*1 (assuming 2:1 ratio standard)
-        # TP=class 2, SL=class 0.
-        ev_vec = pred[:, 2] * 2.0 - pred[:, 0] * 1.0
+        # EV calculation: Standardized EU
+        ev_vec = expected_utility(pred, u_tp, u_to, u_sl)
 
         try:
             ll = float(log_loss(y_c, np.clip(pred, 1e-7, 1 - 1e-7)))
@@ -735,8 +768,12 @@ class MetaClassifierModel:
             mean_ret = float(np.mean(trade_rets))
             win_rate = float(np.mean(trade_rets > 0))
 
+            # Spec A2: EU-based metrics
+            mean_eu = float(np.mean(ev_vec[idx_top]))
+
             metrics[f"ev_top{frac_pct}_ret"] = mean_ret
             metrics[f"ev_top{frac_pct}_wr"] = win_rate
+            metrics[f"ev_top{frac_pct}_eu"] = mean_eu
 
         # Calibration (Brier for TP class)
         y_tp = (y_c == 2).astype(int)
@@ -793,7 +830,8 @@ class MetaClassifierModel:
             realized_u_policy: Optional[np.ndarray] = None,
             selection_cfg: Optional[MetaClassifierSelectionConfig] = None,
             y_class_override: Optional[np.ndarray] = None,
-            trade_mask: Optional[np.ndarray] = None):
+            trade_mask: Optional[np.ndarray] = None,
+            to_fraction_cap: Optional[float] = None):
         """Race classifiers using multi-barrier labels (multiclass if vol_proxy provided)."""
         import time as _time
         _t0 = _time.monotonic()
@@ -861,24 +899,41 @@ class MetaClassifierModel:
         else:
             realized_u_policy = np.asarray(realized_u_policy, dtype=float)
 
+        # Spec D1: Reserve time-based calibration split (last 15%)
+        n = len(Xv)
+        n_cal = max(50, int(0.15 * n))
+        n_train = n - n_cal
+
+        X_train, X_cal = Xv[:n_train], Xv[n_train:]
+        y_train, y_cal = y_class[:n_train], y_class[n_train:]
+        w_train = sw_combined[:n_train]
+
+        # Diagnostics
+        tprint(f"  Training/Calibration split: {n_train} / {n_cal} (last 15% reserved)")
+
         for name, cand in candidates.items():
             kind = cand["kind"]
             params = dict(cand["params"])
 
             try:
-                oof, logloss = self._cv_evaluate(kind, params, Xv, y_class, sw_combined)
+                # CV on training portion only
+                oof_train, logloss = self._cv_evaluate(kind, params, X_train, y_train, w_train, to_fraction_cap=to_fraction_cap)
             except Exception as exc:
                 tprint(f"    {name} failed: {exc}")
                 continue
 
             metrics = self._compute_clf_metrics(
-                oof, y_class, y_ret_np, groups=groups, fee=self.FEE_PER_ROUND_TRIP)
+                oof_train, y_train, y_ret_np[:n_train],
+                groups=groups[:n_train] if groups is not None else None,
+                fee=self.FEE_PER_ROUND_TRIP,
+                u_tp=selection_cfg.u_tp, u_to=selection_cfg.u_to, u_sl=selection_cfg.u_sl
+            )
             sel = pick_meta_classifier_by_utility_top30(
-                y_true=y_class,
-                p_pred=oof,
-                realized_u_policy=realized_u_policy,
+                y_true=y_train,
+                p_pred=oof_train,
+                realized_u_policy=realized_u_policy[:n_train],
                 cfg=selection_cfg,
-                trade_mask=trade_mask,
+                trade_mask=trade_mask[:n_train] if trade_mask is not None else None,
             )
             metrics["model"] = name
             metrics["logloss_cv"] = logloss
@@ -888,7 +943,7 @@ class MetaClassifierModel:
             metrics["passed_econ"] = float(sel.get("passed_econ", 0.0))
 
             records.append(metrics)
-            scored.append((name, kind, params, oof, y_class, metrics, sel))
+            scored.append((name, kind, params, oof_train, y_train, metrics, sel))
             tprint(
                 f"    {name}: LogLoss={logloss:.4f}, Acc={metrics.get('accuracy',0):.3f}, "
                 f"TopU={sel.get('selection_score', float('nan')):.5f}, "
@@ -911,16 +966,23 @@ class MetaClassifierModel:
             raise RuntimeError("No classifier candidates completed")
 
         self.label_threshold = 0.0 # Not used in multiclass
-        self.oof_probs = best_rec["oof"] # (N, 3)
+        # We store OOF probabilities aligned to the full dataset.
+        # Since we only did CV on Train split, we can't fully fill OOF for Calib split via CV without leakage.
+        # But we will predict on Calib split using the final model later.
+        # For now, let's pad OOF with NaNs or keep just Train OOF?
+        # Actually, best_rec['oof'] is length n_train.
+        # We should store full length OOF if possible for downstream analysis.
+        self.oof_probs = np.full((n, 3), np.nan, dtype=float)
+        self.oof_probs[:n_train] = best_rec["oof"]
+
         self._model_type = best_rec["name"]
         self.report_rows = records
 
-        # Final fit on all data with best config
+        # Final fit on training data
         kind = best_rec["kind"]
         params = best_rec["params"]
         y_final = best_rec["y_class"]
         
-        # Safety: ensure at least 2 classes for Classifier (especially LogisticRegression)
         unique_classes = np.unique(y_final)
         if len(unique_classes) < 2:
             tprint(f"  WARNING: Meta labels for {self.strategy_name} have only one class: {unique_classes}. Skipping final fit.")
@@ -933,11 +995,45 @@ class MetaClassifierModel:
             f"(SelScore={float(_sel_best.get('selection_score', float('nan'))):.5f}, "
             f"LogLoss={float(_sel_best.get('logloss', float('nan'))):.4f}, "
             f"TopRealU={float(_sel_best.get('top_realized_u_mean', float('nan'))):.5f}). "
-            f"Fitting final model..."
+            f"Fitting final model on {n_train} samples..."
         )
 
-        final_model = self._fit_one(kind, params, Xv, y_final, Xv, y_final,
-                                    sw=sw_combined)
+        final_model = self._fit_one(kind, params, X_train, y_train, X_train, y_train,
+                                    sw=w_train)
+
+        # Spec D2: Post-hoc temperature scaling on Calibration set
+        self.calibrator = TemperatureScaling()
+        # Get uncalibrated probs on calibration set
+        probs_cal = self._predict_proba(final_model, X_cal)
+        self.calibrator.fit(probs_cal, y_cal)
+
+        # Spec D3: Calibration diagnostics (ECE on calibration set)
+        probs_cal_post = self.calibrator.predict(probs_cal)
+        # Compute ECE for TP class (class 2) as primary signal proxy
+        y_tp_cal = (y_cal == 2).astype(int)
+        p_tp_cal = probs_cal_post[:, 2]
+        n_bins = 10
+        bin_edges = np.linspace(0.0, 1.0, n_bins + 1)
+        ece = 0.0
+        for b in range(n_bins):
+            lo, hi = bin_edges[b], bin_edges[b+1]
+            mask = (p_tp_cal >= lo) & (p_tp_cal < hi)
+            if b == n_bins - 1:
+                mask = (p_tp_cal >= lo) & (p_tp_cal <= hi)
+            if mask.sum() > 0:
+                bin_acc = float(np.mean(y_tp_cal[mask]))
+                bin_conf = float(np.mean(p_tp_cal[mask]))
+                ece += abs(bin_acc - bin_conf) * (mask.sum() / len(p_tp_cal))
+
+        tprint(f"  Calibration: fitted Temperature={self.calibrator.temperature:.4f} on {n_cal} samples. ECE(TP)={ece:.4f}")
+
+        # Store calibrated probs for Calib split in oof_probs
+        self.oof_probs[n_train:] = probs_cal_post
+
+        # Apply calibration to the training OOFs as well to ensure consistency
+        # This makes the entire OOF vector "calibrated" (though T is learned on the tail)
+        self.oof_probs[:n_train] = self.calibrator.predict(self.oof_probs[:n_train])
+
         self.model = {"kind": kind, "models": [final_model], "multiclass": True}
 
         # Save race report
@@ -972,4 +1068,9 @@ class MetaClassifierModel:
         row_sums = out.sum(axis=1)
         assert out.shape[1] == 3, f"Expected multiclass probabilities of shape (N,3), got {out.shape}"
         assert np.all(np.abs(row_sums - 1.0) < 1e-3), "Predicted probabilities must sum to ~1"
+
+        # Apply calibration if available
+        if self.calibrator is not None:
+            out = self.calibrator.predict(out)
+
         return out

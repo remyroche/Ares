@@ -332,7 +332,7 @@ def run_ridge_sizer(cfg, ts_override=None):
 
 
 def run_all(cfg, ts_override=None):
-    """Run download -> features -> train (includes labels) -> ridge_sizer -> optimise in order.
+    """Run download -> features -> train (includes labels) -> optimise (learn entry) -> ridge_sizer -> optimise (sizing) in order.
     
     Note: 'train' already refreshes labels internally.
     Note: 'optimise' triggers backtest internally if backtest_results.csv is missing,
@@ -342,7 +342,18 @@ def run_all(cfg, ts_override=None):
     run_download(cfg)
     run_features(cfg, ts_override=ts_override)
     run_train(cfg, ts_override=ts_override)
+
+    # 1. Optimise: learn entry policy (fill model + delta) using default sizing/risk
+    #    This ensures ridge_sizer sees the correct trade filter.
+    tprint("STEP: OPTIMISE (Phase 1 - Entry Policy)")
+    run_optimise(cfg, ts_override=ts_override)
+
+    # 2. Ridge Sizer: learn meta-model weights using the optimized entry policy
+    tprint("STEP: RIDGE SIZER")
     run_ridge_sizer(cfg, ts_override=ts_override)
+
+    # 3. Optimise: re-run to allow scalar position sizing (Step 40) to use fresh ridge weights
+    tprint("STEP: OPTIMISE (Phase 2 - Sizing with Ridge Weights)")
     run_optimise(cfg, ts_override=ts_override)
 
     # Final Summary

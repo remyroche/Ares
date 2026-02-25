@@ -627,76 +627,64 @@ def _numba_rolling_mean_1d(x, window):
 
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_rolling_std_1d(x, window):
-    """Single-pass rolling std with K-shift for numerical stability."""
+    """
+    Single-pass rolling std with O(N) K-shift incremental updates.
+    """
     n = len(x)
     out = np.full(n, np.nan, dtype=np.float32)
     
     if window <= 0:
         return out
     
-    # Circular buffer for K-shift
-    window_vals = np.empty(window, dtype=np.float64)
-    window_valid = np.zeros(window, dtype=np.bool_)
+    # Circular buffer to track outgoing values
+    buf = np.empty(window, dtype=np.float64)
+    buf_valid = np.zeros(window, dtype=np.bool_)
     buf_idx = 0
     
+    K = 0.0
+    K_set = False
+
+    sum_d = 0.0
+    sum_d_sq = 0.0
+    count = 0
+
     for i in range(n):
         val_in = x[i]
+        in_valid = not np.isnan(val_in)
         
-        # Store in circular buffer
-        if not np.isnan(val_in):
-            window_vals[buf_idx] = val_in
-            window_valid[buf_idx] = True
+        # Remove outgoing (only if window is full)
+        if i >= window:
+            out_idx = buf_idx
+            if buf_valid[out_idx]:
+                d_out = buf[out_idx] - K
+                sum_d -= d_out
+                sum_d_sq -= d_out * d_out
+                count -= 1
+        
+        # Add incoming
+        if in_valid:
+            if not K_set:
+                K = val_in
+                K_set = True
+            
+            d_in = val_in - K
+            sum_d += d_in
+            sum_d_sq += d_in * d_in
+            count += 1
+            
+            buf[buf_idx] = val_in
+            buf_valid[buf_idx] = True
         else:
-            window_valid[buf_idx] = False
+            buf_valid[buf_idx] = False
+
         buf_idx = (buf_idx + 1) % window
-        
-        if i >= window - 1:
-            # Compute K-shift variance
-            K = 0.0
-            K_set = False
-            sum_d = 0.0
-            sum_d_sq = 0.0
-            count = 0
-            
-            for j in range(window):
-                idx = (buf_idx + j) % window
-                if window_valid[idx]:
-                    v = window_vals[idx]
-                    if not K_set:
-                        K = v
-                        K_set = True
-                    d = v - K
-                    sum_d += d
-                    sum_d_sq += d * d
-                    count += 1
-            
-            if count > 1:
-                var_num = sum_d_sq - (sum_d * sum_d) / count
-                if var_num < 0:
-                    var_num = 0.0
-                out[i] = np.float32(np.sqrt(var_num / (count - 1)))
-        
-        else:
-            # Warmup
-            if not np.isnan(val_in):
-                if i == 0:
-                    K = val_in
-                    K_set = True
-                    sum_d = 0.0
-                    sum_d_sq = 0.0
-                    count = 1
-                else:
-                    d = val_in - K
-                    sum_d += d
-                    sum_d_sq += d * d
-                    count += 1
-                
-                if count > 1:
-                    var_num = sum_d_sq - (sum_d * sum_d) / count
-                    if var_num < 0:
-                        var_num = 0.0
-                    out[i] = np.float32(np.sqrt(var_num / (count - 1)))
-    
+
+        if count > 1:
+            var_num = sum_d_sq - (sum_d * sum_d) / count
+            if var_num < 0:
+                var_num = 0.0
+            out[i] = np.float32(np.sqrt(var_num / (count - 1)))
+
     return out
 
 
@@ -1559,19 +1547,50 @@ def numba_pct_change(df, n):
 
 def numba_rolling_corr(df1, df2, n):
     tprint(f"Entering function: numba_rolling_corr in fast_funcs.py")
-    return apply_to_frame_binary(df1, df2, _numba_rolling_correlation, n)
+    # Optimized parallel implementation
+    is_series1 = isinstance(df1, pd.Series)
+    is_series2 = isinstance(df2, pd.Series)
+
+    if is_series1: df1 = df1.to_frame()
+    if is_series2: df2 = df2.to_frame()
+
+    # Align columns
+    common = df1.columns.intersection(df2.columns)
+    if len(common) == 0:
+        out_df = pd.DataFrame(index=df1.index, columns=df1.columns, dtype=np.float32)
+        out_df[:] = np.nan
+        if is_series1: return out_df[out_df.columns[0]]
+        return out_df
+
+    m1 = df1[common].to_numpy(dtype=np.float32, copy=False)
+    m2 = df2[common].to_numpy(dtype=np.float32, copy=False)
+
+    res = _numba_rolling_corr_parallel(m1, m2, n)
+
+    # Reconstruct DataFrame
+    res_common = pd.DataFrame(res, index=df1.index, columns=common)
+
+    if not res_common.columns.equals(df1.columns):
+        out_df = res_common.reindex(columns=df1.columns)
+    else:
+        out_df = res_common
+
+    if is_series1:
+        return out_df[out_df.columns[0]]
+
+    return out_df
 
 def numba_rolling_mean(df, n):
     # tprint(f"Entering function: numba_rolling_mean in fast_funcs.py")
-    return apply_to_frame(df, _numba_rolling_mean_nan_safe, n)
+    return numba_rolling_mean_parallel(df, n)
 
 def numba_rolling_std(df, n):
     # tprint(f"Entering function: numba_rolling_std in fast_funcs.py")
-    return apply_to_frame(df, _numba_rolling_std_nan_safe, n)
+    return numba_rolling_std_parallel(df, n)
 
 def numba_ewma(df, alpha, adjust=False):
     """Public EWMA wrapper for DataFrame/Series."""
-    return apply_to_frame(df, _numba_ewma_nan_safe, np.float32(alpha), adjust)
+    return numba_ewma_parallel(df, alpha=np.float32(alpha), adjust=adjust)
 
 def compute_peak_labels_and_weights(close_df, atr_df, horizon, near_k, rev_k, is_uptrend, max_near_pct=0.02, min_rev_pct=0.005):
     tprint(f"Entering function: compute_peak_labels_and_weights in fast_funcs.py")
@@ -2416,3 +2435,104 @@ def numba_adx(high_df, low_df, close_df, n):
         return adx_df[cols[0]], dip_df[cols[0]], dim_df[cols[0]]
 
     return adx_df, dip_df, dim_df
+
+@jit(nopython=True, nogil=True, cache=True)
+def _numba_rolling_corr_1d_k_shift(x, y, window):
+    """
+    Rolling correlation with K-shift for numerical stability.
+    O(N) time complexity using incremental updates.
+    """
+    n = len(x)
+    out = np.full(n, np.nan, dtype=np.float32)
+
+    if window <= 0:
+        return out
+
+    # K-shift constants: use first valid values to center
+    kx = 0.0
+    ky = 0.0
+
+    # Find first valid x for K
+    for i in range(n):
+        if not np.isnan(x[i]):
+            kx = x[i]
+            break
+
+    # Find first valid y for K
+    for i in range(n):
+        if not np.isnan(y[i]):
+            ky = y[i]
+            break
+
+    sx = 0.0
+    sy = 0.0
+    sxx = 0.0
+    syy = 0.0
+    sxy = 0.0
+
+    count = 0
+
+    for i in range(n):
+        vx = x[i]
+        vy = y[i]
+
+        # Entering
+        valid_in = not (np.isnan(vx) or np.isnan(vy))
+        if valid_in:
+            dx = vx - kx
+            dy = vy - ky
+            sx += dx
+            sy += dy
+            sxx += dx * dx
+            syy += dy * dy
+            sxy += dx * dy
+            count += 1
+
+        # Leaving
+        if i >= window:
+            rx = x[i - window]
+            ry = y[i - window]
+            valid_out = not (np.isnan(rx) or np.isnan(ry))
+            if valid_out:
+                dx = rx - kx
+                dy = ry - ky
+                sx -= dx
+                sy -= dy
+                sxx -= dx * dx
+                syy -= dy * dy
+                sxy -= dx * dy
+                count -= 1
+
+        if i >= window - 1:
+            if count < 2:
+                out[i] = 0.0
+            else:
+                inv_c = 1.0 / count
+                mx = sx * inv_c
+                my = sy * inv_c
+
+                # Var = E[x^2] - (E[x])^2
+                varx = (sxx * inv_c) - (mx * mx)
+                vary = (syy * inv_c) - (my * my)
+                cov = (sxy * inv_c) - (mx * my)
+
+                if varx <= 1e-12 or vary <= 1e-12:
+                    out[i] = 0.0
+                else:
+                    denom = np.sqrt(varx * vary)
+                    if denom <= 1e-12:
+                        out[i] = 0.0
+                    else:
+                        out[i] = cov / denom
+
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_corr_parallel(mat1, mat2, window):
+    n_rows, n_cols = mat1.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_corr_1d_k_shift(mat1[:, j], mat2[:, j], window)
+
+    return out

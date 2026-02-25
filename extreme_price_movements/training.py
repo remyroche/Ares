@@ -2558,10 +2558,39 @@ def build_hourly_training_set_and_weights(
     is_tp = (lbl_vals == OUT_TP)
     is_sl = (lbl_vals == OUT_SL)
     is_to = (lbl_vals == OUT_TO)
+    # timeout_weight is now a base scalar for the dynamic formula
     timeout_weight = float(cfg.get("timeout_weight", 0.2))
     w_outcome[is_tp] = qual_vals[is_tp]
     w_outcome[is_sl] = 1.0 - qual_vals[is_sl]
-    w_outcome[is_to] = timeout_weight
+
+    # Dynamic TO weighting: wTO = 1 + 1.5 * (1 - s)^2 where s = (r - SL)/(TP - SL) normalized to [0,1]
+    # Then scaled by timeout_weight (0.2)
+    if np.any(is_to):
+        r_to = pnl[is_to]
+        # Barriers are distances (positive) -> SL level = -sl, TP level = +tp
+        sl_dist = sl_vals[is_to]
+        tp_dist = tp_vals[is_to]
+        denom = tp_dist + sl_dist
+        # s = position in range [SL, TP], 0=SL, 1=TP
+        s_score = np.clip((r_to + sl_dist) / (denom + 1e-9), 0.0, 1.0)
+        # Weight shape: quadratic increase towards SL
+        # s=1 (TP) -> w=1.0, s=0 (SL) -> w=2.5
+        w_to_dynamic = 1.0 + 1.5 * ((1.0 - s_score) ** 2)
+
+        # Apply base scalar
+        w_to_final = w_to_dynamic * timeout_weight
+
+        # Floor constraint: avg(TO) must be >= 0.1 * avg(SL)
+        if np.any(is_sl):
+            avg_sl = np.mean(w_outcome[is_sl])
+            avg_to = np.mean(w_to_final)
+            target_avg_to = 0.1 * avg_sl
+            if avg_to < target_avg_to and avg_to > 1e-12:
+                boost = target_avg_to / avg_to
+                w_to_final *= boost
+                tprint(f"TO Weight Boosted: avg_to={avg_to:.4f} -> {avg_to*boost:.4f} (target 0.1*SL={target_avg_to:.4f})")
+
+        w_outcome[is_to] = w_to_final
 
     # Clip weights (configurable; tighter defaults to reduce peaky calibration artifacts)
     w_clip_min = float(cfg.get("outcome_weight_clip_min", 0.5))
@@ -2656,30 +2685,30 @@ def build_hourly_training_set_and_weights(
     w_mix = _normalize_cross_sectional(event_ts, w_mix)
     w_mix = w_mix / max(np.nanmean(w_mix), 1e-12)
 
-    # Negative mass renormalization (Timeout downweighting)
-    if bool(cfg.get("use_neg_mass_renorm", True)):
-        renorm_cfg = NegMassRenormCfg(
-            w_to_min=float(cfg.get("neg_mass_w_to_min", 0.2)),
-            w_to_max=float(cfg.get("neg_mass_w_to_max", 1.0)),
-            rho_pos_over_neg=float(cfg.get("neg_mass_rho", 1.0)),
-        )
-        # We treat the whole training set as one 'cell' for renormalization purpose here
-        cell_ids = np.zeros(len(lbl_vals), dtype=np.int32)
-
-        w_mix = compute_cell_weights_neg_mass_renorm(
-            y=lbl_vals,
-            cell_id=cell_ids,
-            base_w=w_mix,
-            cfg=renorm_cfg,
-            tp_label=OUT_TP,
-            sl_label=OUT_SL,
-            to_label=OUT_TO,
-        )
-
-        n_tp_renorm = (lbl_vals == OUT_TP).sum()
-        n_sl_renorm = (lbl_vals == OUT_SL).sum()
-        n_to_renorm = (lbl_vals == OUT_TO).sum()
-        tprint(f"Renormalized Weights: TP={n_tp_renorm} SL={n_sl_renorm} TO={n_to_renorm}")
+    # Negative mass renormalization (Timeout downweighting) - DISABLED in favor of dynamic wTO logic
+    # if bool(cfg.get("use_neg_mass_renorm", True)):
+    #     renorm_cfg = NegMassRenormCfg(
+    #         w_to_min=float(cfg.get("neg_mass_w_to_min", 0.2)),
+    #         w_to_max=float(cfg.get("neg_mass_w_to_max", 1.0)),
+    #         rho_pos_over_neg=float(cfg.get("neg_mass_rho", 1.0)),
+    #     )
+    #     # We treat the whole training set as one 'cell' for renormalization purpose here
+    #     cell_ids = np.zeros(len(lbl_vals), dtype=np.int32)
+    #
+    #     w_mix = compute_cell_weights_neg_mass_renorm(
+    #         y=lbl_vals,
+    #         cell_id=cell_ids,
+    #         base_w=w_mix,
+    #         cfg=renorm_cfg,
+    #         tp_label=OUT_TP,
+    #         sl_label=OUT_SL,
+    #         to_label=OUT_TO,
+    #     )
+    #
+    #     n_tp_renorm = (lbl_vals == OUT_TP).sum()
+    #     n_sl_renorm = (lbl_vals == OUT_SL).sum()
+    #     n_to_renorm = (lbl_vals == OUT_TO).sum()
+    #     tprint(f"Renormalized Weights: TP={n_tp_renorm} SL={n_sl_renorm} TO={n_to_renorm}")
 
     weights_raw = w_mix.astype(np.float32)
 

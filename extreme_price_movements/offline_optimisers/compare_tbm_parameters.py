@@ -25,7 +25,6 @@ import hashlib
 import json
 import math
 import os
-import platform
 import resource
 import time
 from dataclasses import dataclass
@@ -94,10 +93,6 @@ from extreme_price_movements.production_sl_tp_policy import (
 
 EPS = 1e-12
 TBM_CACHE_VERSION = 2
-
-# Cache TP construction for tp_pct SL sweeps (same TP anchor reused across SL multipliers).
-_TP_ANCHOR_CACHE: Dict[Tuple[Any, ...], Tuple[pd.DataFrame, pd.DataFrame, Dict[str, float], Optional[pd.DataFrame], float]] = {}
-_CANDIDATE_MASK_CACHE: Dict[Tuple[Any, ...], pd.DataFrame] = {}
 ACTIVE_TEST_FEATURE_KEYS = list(TEST_FEATURE_KEYS)
 
 
@@ -239,19 +234,6 @@ def _load_features_from_data_root(
     out = {k: pd.DataFrame(v).sort_index() for k, v in feat_buf.items()}
     tprint(f"Loaded {len(out)} features (configured key universe only)")
     return out
-
-
-def _candidate_pct_schedule_for_stage(stage_name: str, base_pct: float) -> Tuple[float, ...]:
-    """Candidate extreme-event percentile schedule by optimization stage.
-
-    Stage-3/refine runs use a slightly broader sweep to test sensitivity of label density.
-    """
-    base = float(base_pct)
-    if "stage3" in str(stage_name).lower() or "s2_refine" in str(stage_name).lower():
-        vals = sorted({base, 0.05, 0.04})
-    else:
-        vals = [base]
-    return tuple(float(v) for v in vals if 0.0 < float(v) < 1.0)
 
 
 def _build_tbm_learnability_report_rows(
@@ -1058,7 +1040,6 @@ def build_barriers(
     cfg: Dict[str, Any],
     horizon: int,
     side: str,
-    sl_as_tp_override: Optional[float] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, float], Optional[pd.DataFrame]]:
     # Use entry-time ATR only: shift by 1 bar so the barrier is set using only
     # data available at the moment the signal fires, not the current bar's ATR
@@ -1075,55 +1056,6 @@ def build_barriers(
 
     tp_method = cfg["tp_method"]
     sl_method = cfg["sl_method"]
-
-    # TP-anchor cache for tp_pct SL sweep: compute TP once per (cfg sans SL multiplier, side, horizon).
-    sl_as_tp_eff = float(cfg.get("sl_as_tp_pct", 0.5)) if sl_as_tp_override is None else float(sl_as_tp_override)
-    _tp_cache_key = None
-    if sl_method == "tp_pct":
-        _tp_cache_key = (
-            id(artifacts.features.get("atr_pct")),
-            int(horizon),
-            str(side),
-            str(tp_method),
-            float(cfg.get("k_tp", 1.0)),
-            float(cfg.get("tp_base_pct", cfg.get("tp_abs_pct", 0.02))),
-            float(cfg.get("tp_abs_pct", cfg.get("tp_base_pct", 0.02))),
-            float(cfg.get("tp_abs_lo_pct", 0.005)),
-            float(cfg.get("tp_abs_hi_pct", 0.08)),
-            float(cfg.get("tp_min_abs_pct", 0.005)),
-            float(cfg.get("tp_min_bps", 50)),
-            float(cfg.get("horizon_alpha", 0.5)),
-            float(cfg.get("horizon_base", 4.0)),
-            str(cfg.get("horizon_scaling", "none")),
-            int(cfg.get("base_atr_window", 168)),
-            str(cfg.get("tp_time_decay", "none")),
-            float(cfg.get("tp_side_skew", 0.0)),
-            str(cfg.get("tp_regime_model", "none")),
-            float(cfg.get("mix_weight", 0.5)),
-            bool(cfg.get("use_dynamic_horizon", False)),
-            float(cfg.get("dynamic_horizon_z_lo", -1.0)),
-            float(cfg.get("dynamic_horizon_z_hi", 2.0)),
-            float(cfg.get("dynamic_horizon_max_scale_add", 0.5)),
-        )
-        _cached = _TP_ANCHOR_CACHE.get(_tp_cache_key)
-        if _cached is not None:
-            tp_cached, atr_cached, out_stats_cached, dyn_h_cached, tp_lo_eff_cached = _cached
-            sl = sl_as_tp_eff * tp_cached
-            sl = _apply_caps(sl, float(cfg.get("sl_abs_lo_pct", 0.005)), float(cfg.get("sl_abs_hi_pct", 0.08)))
-            sl_lo_eff = effective_sl_floor(
-                sl_abs_lo_pct=float(cfg.get("sl_abs_lo_pct", 0.005)),
-                sl_min_abs_pct=float(cfg.get("sl_min_abs_pct", 0.01)),
-                sl_min_bps=float(cfg.get("sl_min_bps", 100)),
-            )
-            if cfg.get("sl_noise_buffer", False):
-                sl = sl.clip(lower=sl_lo_eff)
-            if float(cfg.get("trail_sl_mult", 0.0)) > 0:
-                sl = sl * (1.0 - 0.15 * float(cfg.get("trail_sl_mult", 0.0)))
-                sl = sl.clip(lower=sl_lo_eff, upper=float(cfg.get("sl_abs_hi_pct", 0.08)))
-            out_stats = dict(out_stats_cached)
-            out_stats["sl_mean"] = float(np.nanmean(sl.values))
-            out_stats["sl_floor_eff"] = float(sl_lo_eff)
-            return tp_cached.astype(np.float32), sl.astype(np.float32), out_stats, dyn_h_cached
 
     if tp_method == "atr_mult":
         tp_raw = cfg["k_tp"] * side_mult * atr * tp_regime
@@ -1177,7 +1109,7 @@ def build_barriers(
 
     # SL must be derived from effective TP (post-scale/post-clip) when sl_method=tp_pct.
     if sl_method == "tp_pct":
-        sl = sl_as_tp_eff * tp
+        sl = float(cfg["sl_as_tp_pct"]) * tp
     elif sl_method == "atr_mult":
         sl = float(cfg["k_sl"]) * atr * sl_regime
     elif sl_method == "absolute":
@@ -1207,15 +1139,6 @@ def build_barriers(
     }
     if dyn_stats:
         out_stats.update(dyn_stats)
-
-    if _tp_cache_key is not None:
-        _TP_ANCHOR_CACHE[_tp_cache_key] = (
-            tp.astype(np.float32),
-            atr.astype(np.float32),
-            dict(out_stats),
-            dyn_horizon,
-            float(tp_lo_eff),
-        )
 
     return tp.astype(np.float32), sl.astype(np.float32), out_stats, dyn_horizon
 
@@ -1254,48 +1177,19 @@ def build_bucket_masks(artifacts: RunArtifacts, cfg_runtime: Dict[str, Any] | No
     candidate_filter = pd.DataFrame(True, index=c.index, columns=c.columns)
     if cfg_runtime is not None:
         candidate_defaults = get_candidate_filter_defaults(cfg_runtime)
-        pct_sched = _candidate_pct_schedule_for_stage(
-            str(cfg_runtime.get("mode", "")),
-            float(candidate_defaults["train_extreme_pct_hourly"]),
-        )
         try:
-            cf_list: List[pd.DataFrame] = []
-            for _pct in pct_sched:
-                _cand_key = (
-                    id(artifacts.features.get(metric)),
-                    id(artifacts.features.get("range_12h_pct")),
-                    id(artifacts.features.get("volatility_zscore")),
-                    id(artifacts.features.get("mkt_rv_48h", artifacts.features.get("mkt_rv_24h"))),
-                    id(artifacts.features.get("chop_score")),
-                    id(artifacts.panel.get("close")),
-                    float(_pct),
-                    str(metric),
-                    float(candidate_defaults["train_min_range_pct"]),
-                    float(candidate_defaults["train_min_vol_zscore"]),
-                    float(candidate_defaults.get("min_feat_sign_consistency", 0.80)),
-                    float(candidate_defaults.get("train_chop_thr", 0.5)),
-                )
-                _cached_cf = _CANDIDATE_MASK_CACHE.get(_cand_key)
-                if _cached_cf is None:
-                    _cached_cf = select_trade_candidates_vectorized(
-                        artifacts.panel,
-                        artifacts.features,
-                        pct=float(_pct),
-                        metric=metric,
-                        min_range_pct=float(candidate_defaults["train_min_range_pct"]),
-                        min_vol_zscore=float(candidate_defaults["train_min_vol_zscore"]),
-                        sign_consistency_min=float(candidate_defaults.get("min_feat_sign_consistency", 0.80)),
-                        chop_thr=float(candidate_defaults.get("train_chop_thr", 0.5)),
-                    )
-                    if _cached_cf is not None:
-                        _CANDIDATE_MASK_CACHE[_cand_key] = _cached_cf
-                if _cached_cf is not None:
-                    cf_list.append(_cached_cf.astype(bool))
-
-            if cf_list:
-                candidate_filter = cf_list[0].reindex(index=c.index, columns=c.columns).fillna(False).astype(bool)
-                for _cf in cf_list[1:]:
-                    candidate_filter |= _cf.reindex(index=c.index, columns=c.columns).fillna(False).astype(bool)
+            cf = select_trade_candidates_vectorized(
+                artifacts.panel,
+                artifacts.features,
+                pct=float(candidate_defaults["train_extreme_pct_hourly"]),
+                metric=metric,
+                min_range_pct=float(candidate_defaults["train_min_range_pct"]),
+                min_vol_zscore=float(candidate_defaults["train_min_vol_zscore"]),
+                sign_consistency_min=float(candidate_defaults.get("min_feat_sign_consistency", 0.80)),
+                chop_thr=float(candidate_defaults.get("train_chop_thr", 0.5)),
+            )
+            if cf is not None:
+                candidate_filter = cf.astype(bool)
         except Exception:
             pass
 
@@ -1304,11 +1198,7 @@ def build_bucket_masks(artifacts: RunArtifacts, cfg_runtime: Dict[str, Any] | No
     # "down" movers = bottom pct% (worst performers): used by MR_long + TF_short
     if metric in feats:
         df_metric = feats[metric]
-        _rank_key = (id(df_metric), str(metric), "pct_rank")
-        ranks = _CANDIDATE_MASK_CACHE.get(_rank_key)  # type: ignore[assignment]
-        if ranks is None or not isinstance(ranks, pd.DataFrame):
-            ranks = df_metric.rank(axis=1, method="first", na_option="keep", pct=True)
-            _CANDIDATE_MASK_CACHE[_rank_key] = ranks
+        ranks = df_metric.rank(axis=1, method="first", na_option="keep", pct=True)
         up_zone   = (ranks > 0.5).fillna(False).astype(bool)
         down_zone = (ranks <= 0.5).fillna(False).astype(bool)
     else:
@@ -2043,34 +1933,19 @@ def evaluate_config(
     ess_full = float(full_n)
     coverage = ess / max(ess_full, 1.0)
 
-    # Structural fail-fast: skip OOF ML pass for non-viable configs.
-    bind_agg_pre = float(tp_hit_agg + sl_hit_agg)
-    min_cov_threshold = float(cfg.get("min_coverage_threshold", 0.2))
-    min_bind_threshold = float(cfg.get("min_bind_threshold", 0.2))
-    if (coverage < min_cov_threshold) or (bind_agg_pre < min_bind_threshold):
-        tprint(
-            f"[eval:{cfg_id}] fail-fast skip ML: coverage={coverage:.3f} bind={bind_agg_pre:.3f} "
-            f"(min_cov={min_cov_threshold:.2f}, min_bind={min_bind_threshold:.2f})"
-        )
-        pred = np.full(len(events), 0.5, dtype=np.float32)
-    else:
-        # Feature matrix + OOF scoring.
-        X_flat, feat_cols = get_stacked_feature_matrix(artifacts, eval_cache)
-        y_signed = events["label"].astype(np.float32).values
-        y_bin = (events["label"].values == OUT_TP).astype(np.float32)
-        payoff = events["payoff"].astype(np.float32).values
-
-        pred = train_and_predict_per_bucket(events, X_flat, weights, n_folds=5)
-        decile_spread = oof_payoff_decile_spread(pred, payoff)
-        tprint(
-            f"[eval:{cfg_id}] model_scored n={len(pred):,} ic_payoff={_safe_spearman(pred, payoff):.4f} "
-            f"ic_label={_safe_spearman(pred, y_signed):.4f} decile_spread={decile_spread:.6f}"
-        )
-
-    # Shared scoring vectors
+    # Feature matrix + OOF scoring.
+    X_flat, feat_cols = get_stacked_feature_matrix(artifacts, eval_cache)
     y_signed = events["label"].astype(np.float32).values
     y_bin = (events["label"].values == OUT_TP).astype(np.float32)
     payoff = events["payoff"].astype(np.float32).values
+
+    pred = train_and_predict_per_bucket(events, X_flat, weights, n_folds=5)
+    decile_spread = oof_payoff_decile_spread(pred, payoff)
+    tprint(
+        f"[eval:{cfg_id}] model_scored n={len(pred):,} ic_payoff={_safe_spearman(pred, payoff):.4f} "
+        f"ic_label={_safe_spearman(pred, y_signed):.4f} decile_spread={decile_spread:.6f}"
+    )
+
     ic_label = _safe_spearman(pred, y_signed)
     ic_payoff = _safe_spearman(pred, payoff)
 
@@ -3901,11 +3776,6 @@ class TBMObjective:
 def run(args: argparse.Namespace) -> None:
     t0 = time.perf_counter()
 
-    # Safe parallelism default: use 2 workers, but cap on Apple Silicon to avoid known stability issues.
-    _requested_jobs = max(1, int(getattr(args, "n_jobs", 2)))
-    _is_apple_arm = (platform.system() == "Darwin" and platform.machine() in {"arm64", "aarch64"})
-    optuna_n_jobs = 1 if _is_apple_arm else min(2, _requested_jobs)
-
     # Clear caches at the start of each run
     _clear_caches()
     output_path = Path(args.output)
@@ -4046,7 +3916,7 @@ def run(args: argparse.Namespace) -> None:
     
     study_s1 = optuna.create_study(direction="maximize")
     n_trials_s1 = 100 if not args.quick else 20
-    study_s1.optimize(obj_s1, n_trials=n_trials_s1, n_jobs=optuna_n_jobs)
+    study_s1.optimize(obj_s1, n_trials=n_trials_s1, n_jobs=1)
     
     stage1_rows = obj_s1.trial_results
     details.update(obj_s1.details)
@@ -4093,62 +3963,40 @@ def run(args: argparse.Namespace) -> None:
                 tp_base = trial.suggest_float("tp_base_pct", max(0.005, base_tp - 0.005), min(0.05, base_tp + 0.005), step=0.001)
                 sl_as_tp = trial.suggest_float("sl_as_tp_pct", 0.3, 1.2, step=0.1)
 
-                # Vectorized SL sweep around TP anchor: evaluate a small SL ladder per trial.
-                sl_candidates = sorted(set([
-                    float(sl_as_tp),
-                    max(0.2, float(sl_as_tp) - 0.1),
-                    min(1.4, float(sl_as_tp) + 0.1),
-                    max(0.2, float(sl_as_tp) - 0.2),
-                    min(1.4, float(sl_as_tp) + 0.2),
-                ]))
+                c = dict(winner_cfg)
+                c.update({
+                    "mode": f"optuna_s2_refine_{i}",
+                    "k_tp": float(k_tp),
+                    "tp_base_pct": float(tp_base),
+                    "tp_abs_pct": float(tp_base),
+                    "sl_as_tp_pct": float(sl_as_tp),
+                })
 
-                best_score = -1.0
-                best_pack = None
-                for _sl in sl_candidates:
-                    c = dict(winner_cfg)
-                    c.update({
-                        "mode": f"optuna_s2_refine_{i}",
-                        "k_tp": float(k_tp),
-                        "tp_base_pct": float(tp_base),
-                        "tp_abs_pct": float(tp_base),
-                        "sl_as_tp_pct": float(_sl),
-                    })
+                res, det, weights_df = evaluate_config(
+                    artifacts,
+                    c,
+                    horizons=horizons,
+                    bucket_masks=bucket_masks,
+                    layer1_cache=layer1_cache,
+                    layer2_cache=layer2_cache,
+                    eval_cache=eval_cache,
+                    detailed_slices=False,
+                    collect_weights=True,
+                )
+                if not res: return -1.0
 
-                    res, det, weights_df = evaluate_config(
-                        artifacts,
-                        c,
-                        horizons=horizons,
-                        bucket_masks=bucket_masks,
-                        layer1_cache=layer1_cache,
-                        layer2_cache=layer2_cache,
-                        eval_cache=eval_cache,
-                        detailed_slices=False,
-                        collect_weights=True,
-                    )
-                    if not res:
-                        continue
-
-                    score = float(res.get("mean_auc", 0.0))
-                    if score > best_score:
-                        best_score = score
-                        best_pack = (dict(c), dict(res), det, weights_df)
-
-                if best_pack is None:
-                    return -1.0
-
-                c_best, res_best, det_best, weights_best = best_pack
-                if weights_best is not None and not weights_best.empty:
-                    write_weights_streaming(weights_best)
+                if weights_df is not None and not weights_df.empty:
+                    write_weights_streaming(weights_df)
                     nonlocal total_weights_written
-                    total_weights_written += len(weights_best)
-                    del weights_best
+                    total_weights_written += len(weights_df)
+                    del weights_df
 
-                stage2_rows.append(res_best)
-                details[config_id(c_best)] = det_best
-                return float(res_best.get("mean_auc", 0.0))
+                stage2_rows.append(res)
+                details[config_id(c)] = det
+                return float(res.get("mean_auc", 0.0))
 
             s2_study = optuna.create_study(direction="maximize")
-            s2_study.optimize(s2_objective, n_trials=15 if not args.quick else 5, n_jobs=optuna_n_jobs)
+            s2_study.optimize(s2_objective, n_trials=15 if not args.quick else 5, n_jobs=1)
             gc.collect()
             _clear_caches()
 
@@ -4510,7 +4358,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p.add_argument("--horizons", default="2,4,8", help="Comma-separated horizons in hours")
     p.add_argument("--max-configs", type=int, default=20, help="Max configs when --quick")
     p.add_argument("--max-stage2-configs", type=int, default=24, help="Max configs per Stage2 substage (hierarchical cap)")
-    p.add_argument("--n-jobs", type=int, default=2, help="Optuna worker jobs (default 2; auto-capped to 1 on Apple Silicon)")
     p.add_argument("--lookback-years", type=int, default=2, help="Years of history to keep")
     p.add_argument("--weights-output", default="", help="Optional sample-weights parquet output path")
     p.add_argument("--tbm-cache-max-mb", type=int, default=1536, help="Max on-disk persisted TBM cache size in MB")

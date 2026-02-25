@@ -55,6 +55,10 @@ from .gate_metrics import compute_stage_gate_metrics
 
 import os
 import json
+import hashlib
+import pickle
+import platform
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -1080,6 +1084,107 @@ OUT_SL = np.int8(0)
 OUT_TO = np.int8(1)
 OUT_TP = np.int8(2)
 
+
+def _stable_cfg_subset_hash(cfg: dict, horizons: list[int], trade_sides: list[str]) -> str:
+    """Stable hash for TB/geometry cache invalidation across equivalent configs."""
+    cache_keys = [
+        "label_round_trip_fee_pct", "label_min_tp_hit_rate", "label_min_tp_hit_rate_h2",
+        "label_max_timeout_rate", "label_max_timeout_rate_h2", "label_min_net_rr", "label_min_net_rr_h2",
+        "label_min_events_h2", "label_h2_rescue_topk", "label_h4_rescue_topk", "label_h8_rescue_topk",
+        "barrier_disp_floor", "barrier_z_max", "barrier_k_reg", "barrier_m_lo", "barrier_m_hi",
+        "barrier_sl_lo", "barrier_sl_hi", "barrier_z_gate", "label_horizon_base", "barrier_tp_lo",
+        "barrier_tp_lo_h2", "barrier_tp_hi", "barrier_k_tp_grid", "barrier_sl_base_grid",
+        "label_use_production_tp_floor", "use_dynamic_horizon", "dynamic_horizon_z_lo",
+        "dynamic_horizon_z_hi", "dynamic_horizon_max_scale_add", "use_standalone_sl",
+    ]
+    payload = {
+        "cfg": {k: cfg.get(k) for k in cache_keys},
+        "horizons": [int(h) for h in horizons],
+        "trade_sides": [str(s) for s in trade_sides],
+        "py": platform.python_version(),
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:16]
+
+
+def _tb_cache_dir(cfg: dict, run_id: str) -> str:
+    return os.path.join(cfg["data_root"], "artifacts", run_id, "labels", "tb_cache")
+
+
+def _tb_cache_paths(cfg: dict, run_id: str, H: int, side: str, kind: str, config_hash: str) -> tuple[str, str, str]:
+    root = _tb_cache_dir(cfg, run_id)
+    stem = f"H{int(H)}_{str(side)}_{str(kind)}_{config_hash}"
+    return (
+        os.path.join(root, f"tb_{stem}.pkl"),
+        os.path.join(root, f"geom_{stem}.pkl"),
+        os.path.join(root, f"events_{stem}.npz"),
+    )
+
+
+def _save_event_index_artifact(path: str, event_ts, event_sym, symbol_vocab: dict[str, int]) -> None:
+    if event_ts is None or event_sym is None or len(event_ts) == 0:
+        return
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    ts_ns = pd.to_datetime(event_ts, utc=True).view("i8")
+    sym_ids = np.asarray([symbol_vocab.get(str(s), -1) for s in event_sym], dtype=np.int32)
+    np.savez_compressed(path, entry_ts_ns=ts_ns.astype(np.int64), symbol_id=sym_ids)
+
+
+def _choose_parallel_cells(n_cells: int, cfg: dict) -> int:
+    if n_cells <= 1:
+        return 1
+    max_workers = int(cfg.get("label_parallel_max_workers", 4))
+    # Default to modest thread fan-out on Apple Silicon; avoid memory spikes.
+    if platform.system() == "Darwin" and platform.machine().lower() in {"arm64", "aarch64"}:
+        max_workers = min(max_workers, int(cfg.get("label_parallel_max_workers_m1", 4)))
+    max_workers = max(1, max_workers)
+    return min(max_workers, n_cells)
+
+
+def _downcast_label_dataset_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Downcast generated label datasets to compact dtypes (float32/int32) where safe."""
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return df
+    out = df.copy()
+    for col in out.columns:
+        s = out[col]
+        if pd.api.types.is_float_dtype(s.dtype):
+            out[col] = s.astype(np.float32, copy=False)
+        elif pd.api.types.is_integer_dtype(s.dtype):
+            if str(col).startswith("__y") or str(col).endswith("_id"):
+                out[col] = s.astype(np.int32, copy=False)
+            else:
+                out[col] = pd.to_numeric(s, downcast="integer")
+    return out
+
+
+def _downcast_tb_triplet(tb_triplet):
+    """Normalize TB cache payload dtypes for memory and serialization stability."""
+    tb_labels, tb_returns, tb_quality = tb_triplet
+    if isinstance(tb_labels, pd.DataFrame):
+        tb_labels = tb_labels.astype(np.int8, copy=False)
+    if isinstance(tb_returns, pd.DataFrame):
+        tb_returns = tb_returns.astype(np.float32, copy=False)
+    if isinstance(tb_quality, pd.DataFrame):
+        tb_quality = tb_quality.astype(np.float32, copy=False)
+    return (tb_labels, tb_returns, tb_quality)
+
+
+def _downcast_geom_payload(geom_payload: dict):
+    """Normalize geometry cache payload dtypes for memory and serialization stability."""
+    if not isinstance(geom_payload, dict):
+        return geom_payload
+    out = dict(geom_payload)
+    for k in ("n_tp", "n_sl", "n_to"):
+        df = out.get(k)
+        if isinstance(df, pd.DataFrame):
+            out[k] = df.astype(np.float32, copy=False)
+    if "n_geom" in out:
+        try:
+            out["n_geom"] = int(out["n_geom"])
+        except Exception:
+            pass
+    return out
+
 class AlphaHorizonEnsemble:
     """Average probabilities across multiple horizon-specific alpha models."""
     def __init__(self, members):
@@ -2059,7 +2164,8 @@ def build_hourly_training_set_and_weights(
     panel, feats, mkt_gates, cfg, syms, ts_end, p_exh_hist, H, model_kind,
     trend_filter=None, feature_key=None, extra_feature_keys=None,
     label_method="atr", fixed_tp=0.05, fixed_sl=0.025, side="long",
-    _cached_cand_mask=None, _cached_tb=None, _tb_cache=None
+    _cached_cand_mask=None, _cached_tb=None, _tb_cache=None,
+    _precomputed_events=None, _geom_frames=None
 ):
     tprint(f"Entering function: build_hourly_training_set_and_weights in training.py")
     empty_out = (None, None, None, None, None, None, None)
@@ -2255,19 +2361,22 @@ def build_hourly_training_set_and_weights(
             )
             window_cand_aligned = window_cand
 
-    sub_mask = window_cand_aligned[valid_syms]
-    rows_idx, cols_idx = np.where(sub_mask.values)
-    tprint(f"Candidate events: {len(rows_idx)}")
-    if len(rows_idx) == 0:
-        tprint(
-            "No rows generated for training set: candidate event extraction returned 0 "
-            f"(sub_mask_shape={sub_mask.shape})"
-        )
-        return empty_out
+    if _precomputed_events is not None:
+        event_ts, event_sym, entry_ts = _precomputed_events
+    else:
+        sub_mask = window_cand_aligned[valid_syms]
+        rows_idx, cols_idx = np.where(sub_mask.values)
+        tprint(f"Candidate events: {len(rows_idx)}")
+        if len(rows_idx) == 0:
+            tprint(
+                "No rows generated for training set: candidate event extraction returned 0 "
+                f"(sub_mask_shape={sub_mask.shape})"
+            )
+            return empty_out
 
-    event_ts = sub_mask.index[rows_idx]
-    event_sym = np.array(valid_syms)[cols_idx]
-    entry_ts = event_ts + pd.Timedelta(hours=1)
+        event_ts = sub_mask.index[rows_idx]
+        event_sym = np.array(valid_syms)[cols_idx]
+        entry_ts = event_ts + pd.Timedelta(hours=1)
 
     # Diagnostic: log gap rate (should now be 0% after pre-filtering)
     n_pre_entry = len(event_ts)
@@ -2295,8 +2404,8 @@ def build_hourly_training_set_and_weights(
         )
         return empty_out
 
-    # Trend filter
-    if trend_filter and "trend_pct" in feats:
+    # Trend filter (skip when already precomputed upstream for this side/kind)
+    if _precomputed_events is None and trend_filter and "trend_pct" in feats:
         trend_vals = _fast_lookup(feats["trend_pct"], event_ts, event_sym)
         trend_vals = np.nan_to_num(trend_vals, nan=0.0)
         trend_dir = np.sign(trend_vals)
@@ -2521,8 +2630,15 @@ def build_hourly_training_set_and_weights(
     w_class = np.clip(w_class, 0.85, 1.25)
 
     # Consensus weight from geometry votes (timeouts ignored)
-    n_tp = np.nan_to_num(_fast_lookup(feats.get("__geom_n_tp__", pd.DataFrame(0, index=tb_labels.index, columns=tb_labels.columns)), event_ts, event_sym), nan=0.0)
-    n_sl = np.nan_to_num(_fast_lookup(feats.get("__geom_n_sl__", pd.DataFrame(0, index=tb_labels.index, columns=tb_labels.columns)), event_ts, event_sym), nan=0.0)
+    if _geom_frames is None:
+        _geom_tp_df = feats.get("__geom_n_tp__", pd.DataFrame(0, index=tb_labels.index, columns=tb_labels.columns))
+        _geom_sl_df = feats.get("__geom_n_sl__", pd.DataFrame(0, index=tb_labels.index, columns=tb_labels.columns))
+    else:
+        _geom_tp_df = _geom_frames.get("n_tp", pd.DataFrame(0, index=tb_labels.index, columns=tb_labels.columns))
+        _geom_sl_df = _geom_frames.get("n_sl", pd.DataFrame(0, index=tb_labels.index, columns=tb_labels.columns))
+
+    n_tp = np.nan_to_num(_fast_lookup(_geom_tp_df, event_ts, event_sym), nan=0.0)
+    n_sl = np.nan_to_num(_fast_lookup(_geom_sl_df, event_ts, event_sym), nan=0.0)
     n_res = n_tp + n_sl
     c_cons = (n_tp - n_sl) / np.maximum(1.0, n_res)
     A = float(cfg.get("consensus_amp", 0.25))
@@ -3709,9 +3825,9 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                 # Since `w` is now an array, w_sum must be calculated per-bar.
                 w_sum = w_tp + w_sl + w_to
                 
-                n_tp_df = pd.DataFrame(w_tp, index=panel["close"].index, columns=panel["close"].columns)
-                n_sl_df = pd.DataFrame(w_sl, index=panel["close"].index, columns=panel["close"].columns)
-                n_to_df = pd.DataFrame(w_to, index=panel["close"].index, columns=panel["close"].columns)
+                n_tp_df = pd.DataFrame(w_tp.astype(np.float32, copy=False), index=panel["close"].index, columns=panel["close"].columns)
+                n_sl_df = pd.DataFrame(w_sl.astype(np.float32, copy=False), index=panel["close"].index, columns=panel["close"].columns)
+                n_to_df = pd.DataFrame(w_to.astype(np.float32, copy=False), index=panel["close"].index, columns=panel["close"].columns)
 
                 # w_sum is now a DataFrame-like object, not a scalar.
                 # Denominator for agg_ret and agg_qual must be per-bar.
@@ -3732,9 +3848,9 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                         f"tp={_tp_post:.3%} sl={_sl_post:.3%} to={_to_post:.3%}"
                     )
 
-                tb_labels = pd.DataFrame(agg_lbl, index=panel["close"].index, columns=panel["close"].columns)
-                tb_returns = pd.DataFrame(agg_ret, index=panel["close"].index, columns=panel["close"].columns)
-                tb_quality = pd.DataFrame(agg_qual, index=panel["close"].index, columns=panel["close"].columns)
+                tb_labels = pd.DataFrame(agg_lbl.astype(np.int8, copy=False), index=panel["close"].index, columns=panel["close"].columns)
+                tb_returns = pd.DataFrame(agg_ret.astype(np.float32, copy=False), index=panel["close"].index, columns=panel["close"].columns)
+                tb_quality = pd.DataFrame(agg_qual.astype(np.float32, copy=False), index=panel["close"].index, columns=panel["close"].columns)
 
                 tb_cache[(int(H), side, k_label)] = (tb_labels, tb_returns, tb_quality)
                 geom_cache[(int(H), side, k_label)] = {"n_tp": n_tp_df, "n_sl": n_sl_df, "n_to": n_to_df, "n_geom": len(geom_runs)}
@@ -3848,71 +3964,186 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, 
     # 2. Alpha Models (MR/TF)
     trade_sides = ["long", "short"]
     kinds = ["mr", "tf"]
-    horizons = cfg["label_horizons_hours"]
+    horizons = horizons or cfg["label_horizons_hours"]
 
-    # Pre-compute triple-barrier labels with geometry-grid aggregation per (H, side)
-    tb_cache, geom_cache = build_grid_aggregated_tb_cache(
-        panel=panel,
-        feats=feats,
-        cfg=cfg,
-        horizons=horizons,
-        trade_sides=trade_sides,
-    )
+    run_id = pd.Timestamp(ts).strftime("%Y%m%d_%H%M%S")
+    cfg_hash = _stable_cfg_subset_hash(cfg, horizons, trade_sides)
+    symbol_vocab = {str(s): i for i, s in enumerate(sorted(map(str, panel["close"].columns)))}
 
-    if geom_cache:
-        any_key = next(iter(geom_cache.keys()))
-        feats["__geom_n_tp__"] = geom_cache[any_key]["n_tp"]
-        feats["__geom_n_sl__"] = geom_cache[any_key]["n_sl"]
-        feats["__geom_n_to__"] = geom_cache[any_key]["n_to"]
+    # Pre-compute/load triple-barrier labels with geometry-grid aggregation per (H, side, kind)
+    tb_cache: dict = {}
+    geom_cache: dict = {}
+    missing_cells: list[tuple[int, str, str]] = []
+    for H in horizons:
+        for side in trade_sides:
+            for k in kinds:
+                p_tb, p_geom, _ = _tb_cache_paths(cfg, run_id, H, side, k, cfg_hash)
+                if os.path.exists(p_tb) and os.path.exists(p_geom):
+                    try:
+                        with open(p_tb, "rb") as fh:
+                            tb_cache[(int(H), side, k)] = _downcast_tb_triplet(pickle.load(fh))
+                        with open(p_geom, "rb") as fh:
+                            geom_cache[(int(H), side, k)] = _downcast_geom_payload(pickle.load(fh))
+                        continue
+                    except Exception as _e_cache:
+                        tprint(f"TB cache read failed for H={H} side={side} kind={k}: {_e_cache}")
+                missing_cells.append((int(H), side, k))
 
+    if missing_cells:
+        miss_h = sorted({c[0] for c in missing_cells})
+        miss_sides = sorted({c[1] for c in missing_cells})
+        tprint(f"TB cache miss: {len(missing_cells)} cells; recomputing horizons={miss_h} sides={miss_sides}")
+        _tb_new, _geom_new = build_grid_aggregated_tb_cache(
+            panel=panel,
+            feats=feats,
+            cfg=cfg,
+            horizons=miss_h,
+            trade_sides=miss_sides,
+        )
+        for H, side, k in missing_cells:
+            key = (int(H), side, k)
+            if key not in _tb_new or key not in _geom_new:
+                continue
+            tb_cache[key] = _downcast_tb_triplet(_tb_new[key])
+            geom_cache[key] = _downcast_geom_payload(_geom_new[key])
+            p_tb, p_geom, _ = _tb_cache_paths(cfg, run_id, H, side, k, cfg_hash)
+            os.makedirs(os.path.dirname(p_tb), exist_ok=True)
+            with open(p_tb, "wb") as fh:
+                pickle.dump(tb_cache[key], fh, protocol=pickle.HIGHEST_PROTOCOL)
+            with open(p_geom, "wb") as fh:
+                pickle.dump(geom_cache[key], fh, protocol=pickle.HIGHEST_PROTOCOL)
+
+    def _prepare_events_once_for_side_kind(_side: str, _kind: str):
+        ts_start = ts - pd.Timedelta(hours=int(cfg["train_lookback_hours"]))
+        min_h = int(min(horizons))
+        ts_end_adj = ts - pd.Timedelta(hours=min_h + 8)
+        window_cand = cached_cand_mask.loc[(cached_cand_mask.index >= ts_start) & (cached_cand_mask.index <= ts_end_adj)]
+        if window_cand.empty:
+            return None
+
+        valid_syms = [s for s in syms if s in window_cand.columns and s in panel["close"].columns]
+        if not valid_syms:
+            return None
+
+        tb_key = (min_h, _side, _kind)
+        _tb = tb_cache.get(tb_key)
+        if _tb is None:
+            return None
+        tb_labels = _tb[0]
+
+        try:
+            cand_ns = pd.to_datetime(window_cand.index, utc=True).view("i8")
+            valid_entry_ns = pd.to_datetime(tb_labels.index, utc=True).view("i8") - int(pd.Timedelta(hours=1).value)
+            align_mask = np.isin(cand_ns, valid_entry_ns)
+            window_cand_aligned = window_cand.iloc[align_mask] if align_mask.any() else window_cand
+        except Exception:
+            valid_entry_times = tb_labels.index - pd.Timedelta(hours=1)
+            window_cand_aligned = window_cand[window_cand.index.isin(valid_entry_times)]
+            if window_cand_aligned.empty:
+                window_cand_aligned = window_cand
+
+        sub_mask = window_cand_aligned[valid_syms]
+        rows_idx, cols_idx = np.where(sub_mask.values)
+        if len(rows_idx) == 0:
+            return None
+
+        event_ts = sub_mask.index[rows_idx]
+        event_sym = np.array(valid_syms)[cols_idx]
+        entry_ts = event_ts + pd.Timedelta(hours=1)
+
+        if "trend_pct" in feats:
+            cand_filter, move_bucket, _ = _strategy_bucket_context(_side, _kind)
+            del cand_filter
+            trend_vals = _fast_lookup(feats["trend_pct"], event_ts, event_sym)
+            trend_vals = np.nan_to_num(trend_vals, nan=0.0)
+            trend_dir = np.sign(trend_vals)
+            keep = (trend_dir > 0) if move_bucket == "up" else (trend_dir <= 0)
+            event_ts = event_ts[keep]
+            event_sym = event_sym[keep]
+            entry_ts = entry_ts[keep]
+
+        return (event_ts, event_sym, entry_ts)
+
+    precomputed_events = {(side, k): _prepare_events_once_for_side_kind(side, k) for side in trade_sides for k in kinds}
+
+    tasks = []
     for side in trade_sides:
         for k in kinds:
             trade_side = side
             cand_filter, move_bucket, strategy_label = _strategy_bucket_context(trade_side, k)
-            trend_filter = move_bucket
-
             feat_key = "tf_feature_keys" if k == "tf" else "mr_feature_keys"
-
             fixed_tp = 0.05
             fixed_sl = 0.025
-
             for H in horizons:
-                tprint(
-                    f"Generating labels: trade_side={trade_side}, kind={k}, "
-                    f"move_bucket={move_bucket}, candidate_bucket={cand_filter}, "
-                    f"strategy={strategy_label}, H={H}"
-                )
+                tasks.append((int(H), side, k, move_bucket, strategy_label, cand_filter, feat_key, fixed_tp, fixed_sl))
 
-                if (H, side, k) in geom_cache:
-                    feats["__geom_n_tp__"] = geom_cache[(H, side, k)]["n_tp"]
-                    feats["__geom_n_sl__"] = geom_cache[(H, side, k)]["n_sl"]
-                    feats["__geom_n_to__"] = geom_cache[(H, side, k)]["n_to"]
+    def _run_one_cell(task):
+        H, side, k, move_bucket, strategy_label, cand_filter, feat_key, fixed_tp, fixed_sl = task
+        tprint(
+            f"Generating labels: trade_side={side}, kind={k}, move_bucket={move_bucket}, "
+            f"candidate_bucket={cand_filter}, strategy={strategy_label}, H={H}"
+        )
+        _tb_key = (H, side, k)
+        _geom = geom_cache.get(_tb_key)
 
-                _tb_key = (H, side, k)
-                X, y, y_ret, cols, w, meta_idx, lbl_vals = build_hourly_training_set_and_weights(
-                    panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, H, k,
-                    trend_filter=trend_filter, feature_key=feat_key,
-                    extra_feature_keys=cfg.get("meta_feature_keys", []),
-                    label_method="triple_barrier",
-                    fixed_tp=fixed_tp, fixed_sl=fixed_sl, side=side,
-                    _cached_cand_mask=cached_cand_mask,
-                    _cached_tb=tb_cache.get(_tb_key)
-                )
-                tb_cache.pop(_tb_key, None)
-                geom_cache.pop(_tb_key, None)
+        _pre = precomputed_events.get((side, k))
+        if _pre is not None:
+            _ts_ev, _sym_ev, _entry_ev = _pre
+            _mask_h = _ts_ev <= (ts - pd.Timedelta(hours=H + 8))
+            _pre_h = (_ts_ev[_mask_h], _sym_ev[_mask_h], _entry_ev[_mask_h])
+            if len(_pre_h[0]) == 0:
+                _pre_h = None
+        else:
+            _pre_h = None
 
+        X, y, y_ret, cols, w, meta_idx, lbl_vals = build_hourly_training_set_and_weights(
+            panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, H, k,
+            trend_filter=move_bucket, feature_key=feat_key,
+            extra_feature_keys=cfg.get("meta_feature_keys", []),
+            label_method="triple_barrier",
+            fixed_tp=fixed_tp, fixed_sl=fixed_sl, side=side,
+            _cached_cand_mask=cached_cand_mask,
+            _cached_tb=tb_cache.get(_tb_key),
+            _precomputed_events=_pre_h,
+            _geom_frames=_geom,
+        )
+
+        _, _, p_evt = _tb_cache_paths(cfg, run_id, H, side, k, cfg_hash)
+        if _pre_h is not None:
+            _save_event_index_artifact(p_evt, _pre_h[2], _pre_h[1], symbol_vocab)
+
+        return (H, side, k, X, y, y_ret, w, meta_idx, lbl_vals)
+
+    n_workers = _choose_parallel_cells(len(tasks), cfg)
+    if bool(cfg.get("label_parallel_enable", True)) and n_workers > 1:
+        tprint(f"Parallel label cell execution enabled: workers={n_workers}, cells={len(tasks)}")
+        with ThreadPoolExecutor(max_workers=n_workers) as ex:
+            futs = [ex.submit(_run_one_cell, t) for t in tasks]
+            for fut in as_completed(futs):
+                H, side, k, X, y, y_ret, w, meta_idx, lbl_vals = fut.result()
                 if X is not None:
                     df_out = X.copy()
                     df_out["__y_bin__"] = y
                     df_out["__y_ret__"] = y_ret
-                    df_out["__y_outcome__"] = lbl_vals  # Outcomes: 2=TP, 1=TIMEOUT, 0=SL
+                    df_out["__y_outcome__"] = lbl_vals
                     df_out["__w__"] = w
-
                     if meta_idx is not None:
                         df_out["__ts__"] = meta_idx["ts"]
                         df_out["__symbol__"] = meta_idx["symbol"]
-
                     datasets[f"train_{side}_{k}_{H}"] = df_out
+    else:
+        for t in tasks:
+            H, side, k, X, y, y_ret, w, meta_idx, lbl_vals = _run_one_cell(t)
+            if X is not None:
+                df_out = X.copy()
+                df_out["__y_bin__"] = y
+                df_out["__y_ret__"] = y_ret
+                df_out["__y_outcome__"] = lbl_vals
+                df_out["__w__"] = w
+                if meta_idx is not None:
+                    df_out["__ts__"] = meta_idx["ts"]
+                    df_out["__symbol__"] = meta_idx["symbol"]
+                datasets[f"train_{side}_{k}_{H}"] = df_out
 
     # 3. Exhaustion Models
     lookback = cfg["exh_train_lookback_hours"]
@@ -3935,6 +4166,10 @@ def generate_label_datasets(panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, 
     gamma_df = build_gamma_dataset(panel, feats, cfg, syms)
     if gamma_df is not None:
         datasets["gamma_model"] = gamma_df
+
+    for _k, _v in list(datasets.items()):
+        if isinstance(_v, pd.DataFrame):
+            datasets[_k] = _downcast_label_dataset_df(_v)
 
     return datasets
 

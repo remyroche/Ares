@@ -372,12 +372,8 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
     mkt_df = compute_market_features(panel, cfg["market_basket"])
     mkt_gates = add_regime_gates(mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
 
-    label_feature_keys = set(cfg.get("exh_feature_keys", []))
-    label_feature_keys.update(cfg.get("spike_feature_keys", []))
-    label_feature_keys.update(cfg.get("tf_feature_keys", []))
-    label_feature_keys.update(cfg.get("mr_feature_keys", []))
-    label_feature_keys.update(cfg.get("meta_feature_keys", []))
-    label_feature_keys.update({"atr_pct", "ret1h", "ret24h"})
+    # Keep feature-key selection consistent with the shared cache/feature generation logic.
+    label_feature_keys = _expected_feature_keys_from_cfg(cfg)
     feats = load_features_selected(
         ts_sig,
         cfg["data_root"],

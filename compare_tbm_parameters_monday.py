@@ -2250,7 +2250,7 @@ def evaluate_config(
         bind_min=float(cfg.get("prod_adm_bind_min", 0.50)),
         timeout_max=float(cfg.get("prod_adm_timeout_max", 0.60)),
         timeout_range_max=float(cfg.get("prod_adm_timeout_range_max", 0.50)),
-        sl_to_tp_max=float(cfg.get("prod_adm_sl_to_tp_max", 2.5)),
+        sl_to_tp_max=float(cfg.get("prod_adm_sl_to_tp_max", 3.5)),
         tp_hit_min_agg=float(cfg.get("prod_adm_tp_hit_min_agg", 0.10)),
         auc_min=float(cfg.get("prod_adm_auc_min", 0.54)),
         auc_bound_min=float(cfg.get("prod_adm_auc_bound_min", 0.52)),

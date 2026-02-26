@@ -28,7 +28,7 @@ from .sample_weight_optimization import (
     log_weight_statistics,
     select_test_feature_frame,
 )
-from .offline_optimisers.params_store import apply_offline_optimizer_best_params, load_tbm_geometry_grid, CANDIDATE_BEST_PARAMS_CSV
+from .offline_optimisers.params_store import apply_offline_optimizer_best_params, load_tbm_geometry_grid, load_tbm_best_params_per_bucket, load_tbm_best_params_per_cell, CANDIDATE_BEST_PARAMS_CSV
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import roc_auc_score
 from scipy.stats import spearmanr
@@ -3362,15 +3362,36 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                     "tp_floor_shares": [],
                     "tp_ceil_shares": [],
                 }
-                # Resolve validated triplets (k_tp, sl, atr_window) for this cell.
-                # Each triplet is one optimizer-validated config; the window is part of the
-                # config, not a separate axis.
-                _cell_key_exact = f"{k_label.upper()}_{side}_H{H}"
+                # ── Per-cell/bucket geometry override (Native downstream integration) ────────
+                # If per-cell winners exist (from current optimization run), use the
+                # specific winning triplet for this exact bucket-horizon cell.
+                # Bucket mapping: (long, tf) -> TF_long, (short, mr) -> MR_short, etc.
+                _bname = f"{k_label.upper()}_{side}"
+                _cell_key_exact = f"{_bname}_H{H}"
+                
+                # Load per-cell mapping (preferred) or per-bucket mapping (fallback)
+                _p_cell_best = load_tbm_best_params_per_cell()
+                _cell_winner = _p_cell_best.get(_cell_key_exact)
+                if not _cell_winner:
+                    _cell_winner = _p_cell_best.get(_bname) # Bucket-level fallback
+                
+                # Check for validated triplets first (legacy/per-cell grid)
                 _cell_data = _per_cell.get(_cell_key_exact, {})
                 _validated_triplets = _cell_data.get("validated_triplets") or []
+                
+                # If a winner exists (cell or bucket), it overrides everything for native downstream usage.
+                if _cell_winner:
+                    _w_k_tp  = float(_cell_winner.get("k_tp", 1.0))
+                    _w_sl    = float(_cell_winner.get("sl_as_tp_pct", 0.5))
+                    _w_atr   = int(_cell_winner.get("base_atr_window", 24 * 30))
+                    _tag = "native_cell" if "cell_key" in _cell_winner else "native_bucket"
+                    tprint(f"  [{_tag}] {_cell_key_exact} -> using winner: k_tp={_w_k_tp} sl={_w_sl} atr={_w_atr}")
+                    _validated_triplets = [(_w_k_tp, _w_sl, _w_atr)]
+                
                 if not _validated_triplets:
                     _fallback_win = _cell_data.get("atr_window") or _tbm_grid.get("atr_window") or int(cfg.get("barrier_atr_window", 24 * 30))
                     _validated_triplets = [(k, s, _fallback_win) for k in tp_mults for s in sl_base_mults]
+                
                 _cell_windows = sorted(set(t[2] for t in _validated_triplets))
                 tprint(
                     f"Pre-computing geometry labels H={H} side={side} kind={k_label} "

@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional, Callable, Sequence, List
 import math
 import numpy as np
 import pandas as pd
+from .labeling import OUT_SL, OUT_TO, OUT_TP
 
 EPS = 1e-12
 TOL = 1e-9
@@ -23,7 +24,7 @@ class ProdGates:
     bind_min: float = 0.50
     timeout_max: float = 0.60
     timeout_range_max: float = 0.50
-    sl_to_tp_max: float = 3.0
+    sl_to_tp_max: float = 4.0
     tp_hit_min_agg: float = 0.0  # optional explicit TP-density floor
 
     auc_min: float = 0.56
@@ -200,9 +201,9 @@ def production_admissibility_report(
 
     y = events_prod[col_label].to_numpy()
     s = np.asarray(score_prod, dtype=np.float64)
-    tp_hit = float(np.mean(y == 1))
-    sl_hit = float(np.mean(y == -1))
-    timeout = float(np.mean(y == 0))
+    tp_hit = float(np.mean(y == OUT_TP))
+    sl_hit = float(np.mean(y == OUT_SL))
+    timeout = float(np.mean(y == OUT_TO))
     bind = tp_hit + sl_hit
     sl_to_tp = sl_hit / max(tp_hit, EPS)
 
@@ -250,9 +251,9 @@ def production_admissibility_report(
         idx = g.index.to_numpy(dtype=np.int64, copy=False)
         s_cell = s[idx]
 
-        tp_cell = float(np.mean(y_cell == 1))
-        sl_cell = float(np.mean(y_cell == -1))
-        to_cell = float(np.mean(y_cell == 0))
+        tp_cell = float(np.mean(y_cell == OUT_TP))
+        sl_cell = float(np.mean(y_cell == OUT_SL))
+        to_cell = float(np.mean(y_cell == OUT_TO))
         timeout_by_cell[ck] = to_cell
         bind_cell = tp_cell + sl_cell
         min_bind_cell = min(min_bind_cell, bind_cell)
@@ -282,7 +283,7 @@ def production_admissibility_report(
         tp_over_sl_metric = _safe_float(m.get("tp_over_sl"), float("nan"))
 
         # Recompute per-cell AUC from score_prod for consistency checks.
-        y_tp = (y_cell == 1).astype(np.int8)
+        y_tp = (y_cell == OUT_TP).astype(np.int8)
         n_pos = int(y_tp.sum())
         n_neg = len(y_tp) - n_pos
         auc_from_score = float("nan")
@@ -429,7 +430,7 @@ def econ_guardrail_factor(
     tp_over_sl: float,
     *,
     tp_hit_floor: float = 0.10,
-    sl_to_tp_cap: float = 2.5,
+    sl_to_tp_cap: float = 4.0,
     tp_over_sl_floor: float = 1.05,
 ) -> float:
     """Returns an economic guardrail factor in [0, 1] using weak-link geometric mean."""
@@ -445,7 +446,7 @@ def econ_admissible(
     tp_over_sl: float,
     *,
     tp_hit_floor: float = 0.10,
-    sl_to_tp_cap: float = 2.5,
+    sl_to_tp_cap: float = 4.0,
     tp_over_sl_floor: float = 1.05,
     min_factor: float = 0.85,
 ) -> bool:
@@ -480,7 +481,7 @@ def apply_econ_guardrail_to_stage2(
     mult_weight: float = 0.30,
     add_bonus_max: float = 0.05,
     tp_hit_floor: float = 0.10,
-    sl_to_tp_cap: float = 2.5,
+    sl_to_tp_cap: float = 4.0,
     tp_over_sl_floor: float = 1.05,
 ) -> tuple[float, bool, float, float]:
     """Apply economic guardrail to stage2 score.

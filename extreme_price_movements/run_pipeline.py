@@ -8,6 +8,13 @@ Usage:
 import sys
 import os
 
+# Avoid expensive/warning-prone Matplotlib cache initialization under read-only HOME.
+_mpl_cfg = os.environ.setdefault("MPLCONFIGDIR", "/tmp/mplconfig_epm")
+try:
+    os.makedirs(_mpl_cfg, exist_ok=True)
+except Exception:
+    pass
+
 # Add parent directory to Python path to allow imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
@@ -33,7 +40,6 @@ from extreme_price_movements.pipeline_steps import (
 )
 from extreme_price_movements.optimise import run_optimise_step, Policy
 from extreme_price_movements.pipeline_steps import run_ridge_sizer_step
-from extreme_price_movements.breakdown_diagnostics import run_breakdown_diagnostics
 
 # SINGLE SOURCE OF TRUTH FOR FEES - All fee configuration comes from these constants
 # Spot trading fees (default)
@@ -61,6 +67,30 @@ def _append_suffix(path: str, suffix: str) -> str:
     if norm.endswith(suffix):
         return norm
     return f"{norm}{suffix}"
+
+
+def _resolve_path(base_dir: str, path: str) -> str:
+    if not path:
+        return path
+    if os.path.isabs(path):
+        return os.path.normpath(path)
+    return os.path.normpath(os.path.join(base_dir, path))
+
+
+def _normalize_cfg_paths(cfg: dict) -> None:
+    """
+    Normalize relative config paths to stable absolute paths independent of cwd.
+
+    data_root in CFG defaults to "../data" and is intended relative to the
+    package directory (extreme_price_movements/), while reports_root/hf_data_dir
+    are project-root relative.
+    """
+    module_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(module_dir)
+
+    cfg["data_root"] = _resolve_path(module_dir, str(cfg.get("data_root", "../data")))
+    cfg["reports_root"] = _resolve_path(project_root, str(cfg.get("reports_root", "extreme_price_movements/reports")))
+    cfg["hf_data_dir"] = _resolve_path(project_root, str(cfg.get("hf_data_dir", "extreme_price_movements/15m_ohlcv")))
 
 
 def _configure_report_roots(cfg: dict) -> None:
@@ -164,7 +194,41 @@ def _label_artifacts_ready(cfg, ts_sig):
             return False
     return True
 
+
+def _gc_checkpoint(tag: str) -> int:
+    """Trigger GC and emit a short checkpoint log."""
+    import gc
+
+    collected = gc.collect()
+    tprint(f"GC[{tag}]: collected={collected}")
+    return collected
+
+
+def _cache_checkpoint(tag: str) -> None:
+    """Clear known runtime cache directories and emit a short checkpoint log."""
+    import shutil
+
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    cache_dirs = [
+        os.path.join(project_root, "cache"),
+        os.path.join(project_root, "data_cache"),
+    ]
+    for cdir in cache_dirs:
+        if os.path.exists(cdir):
+            try:
+                shutil.rmtree(cdir)
+                tprint(f"CACHE[{tag}]: cleared {cdir}")
+            except Exception as e:
+                tprint(f"CACHE[{tag}]: failed {cdir}: {e}")
+
+
+def _maintenance_checkpoint(tag: str) -> None:
+    """Run cache cleanup + GC checkpoint."""
+    _cache_checkpoint(tag)
+    _gc_checkpoint(tag)
+
 def run_labels(cfg, horizons=None, ts_override=None):
+    _maintenance_checkpoint("labels:start")
     if ts_override:
         try:
             ts_sig = pd.to_datetime(ts_override, format="%Y%m%d_%H%M%S").tz_localize("UTC")
@@ -185,9 +249,11 @@ def run_labels(cfg, horizons=None, ts_override=None):
     run_label_generation_step_v2(ts_sig, None, cfg, store, None, horizons=horizons)
 
     tprint("LABELS PIPELINE COMPLETE")
+    _maintenance_checkpoint("labels:end")
 
 
 def run_features(cfg, ts_override=None, force_recompute: bool = False):
+    _maintenance_checkpoint("features:start")
     if ts_override:
         try:
             ts_sig = pd.to_datetime(ts_override, format="%Y%m%d_%H%M%S").tz_localize("UTC")
@@ -206,9 +272,11 @@ def run_features(cfg, ts_override=None, force_recompute: bool = False):
     run_feature_generation_step(ts_sig, None, cfg, store, force_full_recompute=bool(force_recompute))
 
     tprint("FEATURES PIPELINE COMPLETE")
+    _maintenance_checkpoint("features:end")
 
 
 def run_backtest(cfg, ts_override=None):
+    _maintenance_checkpoint("backtest:start")
     if ts_override:
         try:
             ts_sig = pd.to_datetime(ts_override, format="%Y%m%d_%H%M%S").tz_localize("UTC")
@@ -231,9 +299,11 @@ def run_backtest(cfg, ts_override=None):
     store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
     run_backtest_step(ts_sig, None, cfg, store, state_file)
     tprint("BACKTEST PIPELINE COMPLETE")
+    _maintenance_checkpoint("backtest:end")
 
 
 def run_train(cfg, ts_override=None):
+    _maintenance_checkpoint("train:start")
     if ts_override:
         try:
             ts_sig = pd.to_datetime(ts_override, format="%Y%m%d_%H%M%S").tz_localize("UTC")
@@ -271,9 +341,11 @@ def run_train(cfg, ts_override=None):
             tprint(f"WARNING: breakdown diagnostics failed: {e}")
     else:
         tprint("TRAINING PIPELINE FAILED")
+    _maintenance_checkpoint("train:end")
 
 
 def run_risk_opt(cfg, ts_override=None):
+    _maintenance_checkpoint("risk_opt:start")
     if ts_override:
         try:
             ts_sig = pd.to_datetime(ts_override, format="%Y%m%d_%H%M%S").tz_localize("UTC")
@@ -293,12 +365,14 @@ def run_risk_opt(cfg, ts_override=None):
     store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
     run_risk_optimization_step(ts_sig, None, cfg, store, state_file)
     tprint("RISK OPTIMIZATION COMPLETE")
+    _maintenance_checkpoint("risk_opt:end")
 
 
 
 
 def run_ridge_sizer(cfg, ts_override=None):
     """Run ridge position sizer on meta model OOF predictions."""
+    _maintenance_checkpoint("ridge_sizer:start")
     if ts_override:
         try:
             ts_sig = pd.to_datetime(ts_override, format="%Y%m%d_%H%M%S").tz_localize("UTC")
@@ -329,6 +403,7 @@ def run_ridge_sizer(cfg, ts_override=None):
             tprint(f"WARNING: breakdown diagnostics failed: {e}")
     else:
         tprint("RIDGE SIZER: No results (possibly no meta OOF predictions found)")
+    _maintenance_checkpoint("ridge_sizer:end")
 
 
 def run_all(cfg, ts_override=None):
@@ -339,22 +414,29 @@ def run_all(cfg, ts_override=None):
           then runs the tpsl_optimiser pipeline (TP/SL calibration, loss limiter,
           profit exit, position sizing, holdout evaluation).
     """
+    _maintenance_checkpoint("run_all:start")
     run_download(cfg)
+    _maintenance_checkpoint("run_all:after_download")
     run_features(cfg, ts_override=ts_override)
+    _maintenance_checkpoint("run_all:after_features")
     run_train(cfg, ts_override=ts_override)
+    _maintenance_checkpoint("run_all:after_train")
 
     # 1. Optimise: learn entry policy (fill model + delta) using default sizing/risk
     #    This ensures ridge_sizer sees the correct trade filter.
     tprint("STEP: OPTIMISE (Phase 1 - Entry Policy)")
     run_optimise(cfg, ts_override=ts_override)
+    _maintenance_checkpoint("run_all:after_optimise_phase1")
 
     # 2. Ridge Sizer: learn meta-model weights using the optimized entry policy
     tprint("STEP: RIDGE SIZER")
     run_ridge_sizer(cfg, ts_override=ts_override)
+    _maintenance_checkpoint("run_all:after_ridge_sizer")
 
     # 3. Optimise: re-run to allow scalar position sizing (Step 40) to use fresh ridge weights
     tprint("STEP: OPTIMISE (Phase 2 - Sizing with Ridge Weights)")
     run_optimise(cfg, ts_override=ts_override)
+    _maintenance_checkpoint("run_all:after_optimise_phase2")
 
     # Final Summary
     if ts_override:
@@ -399,10 +481,12 @@ def run_all(cfg, ts_override=None):
                 tprint("==============================\n")
             except Exception as e:
                 tprint(f"Could not read results for summary: {e}")
+    _maintenance_checkpoint("run_all:end")
 
 
 def run_train_meta(cfg, ts_override=None):
     """Re-run only meta model training, reusing existing base models."""
+    _maintenance_checkpoint("train_meta:start")
     if ts_override:
         try:
             ts_sig = pd.to_datetime(ts_override, format="%Y%m%d_%H%M%S").tz_localize("UTC")
@@ -444,9 +528,11 @@ def run_train_meta(cfg, ts_override=None):
         tprint("TRAIN_META PIPELINE COMPLETE")
     else:
         tprint("TRAIN_META PIPELINE FAILED")
+    _maintenance_checkpoint("train_meta:end")
 
 
 def run_optimise(cfg, ts_override=None):
+    _maintenance_checkpoint("optimise:start")
     if ts_override:
         try:
             ts_sig = pd.to_datetime(ts_override, format="%Y%m%d_%H%M%S").tz_localize("UTC")
@@ -503,6 +589,7 @@ def run_optimise(cfg, ts_override=None):
         tprint(f"Optimise bucket report: {rp}")
     except Exception as _re:
         tprint(f"WARNING: optimise bucket report failed: {_re}")
+    _maintenance_checkpoint("optimise:end")
 
 def clear_caches():
     """Force garbage collection and clear the on-disk caches before a run."""
@@ -532,6 +619,8 @@ def clear_caches():
 
 def run_breakdown_diagnostics_integration(cfg: dict, ts_sig: pd.Timestamp) -> None:
     """Run breakdown diagnostics integrated into pipeline steps."""
+    from extreme_price_movements.breakdown_diagnostics import run_breakdown_diagnostics
+
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     run_dir = os.path.join(cfg["data_root"], "artifacts", run_id)
     
@@ -640,6 +729,7 @@ def main():
 
     cfg = CFG.copy()
     _apply_fee_model(cfg, BASE_ROUND_TRIP_FEE_PCT)
+    _normalize_cfg_paths(cfg)
     if args.perps:
         cfg["use_perps"] = True
         cfg["data_root"] = _append_suffix(cfg.get("data_root", "../data"), "_perp")

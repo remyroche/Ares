@@ -11,6 +11,8 @@ REPORTS_DIR = OFFLINE_OPTIMISERS_DIR / "reports"
 
 CANDIDATE_BEST_PARAMS_CSV = REPORTS_DIR / "candidate_thresholds_best_params.csv"
 TBM_BEST_PARAMS_CSV = REPORTS_DIR / "tbm_best_params.csv"
+TBM_BEST_PARAMS_PER_BUCKET_CSV = REPORTS_DIR / "tbm_best_params_per_bucket.csv"
+TBM_BEST_PARAMS_PER_CELL_CSV = REPORTS_DIR / "tbm_best_params_per_cell.csv"
 TBM_GEOMETRY_GRID_CSV = REPORTS_DIR / "tbm_geometry_grid.csv"
 SAMPLE_WEIGHT_BEST_PARAMS_CSV = REPORTS_DIR / "sample_weight_best_params.csv"
 
@@ -163,6 +165,134 @@ def save_best_params_csv(path: Path, best_params: Dict[str, Any], metadata: Dict
     payload["saved_at"] = pd.Timestamp.utcnow().isoformat()
     pd.DataFrame([payload]).to_csv(path, index=False)
     return path
+
+
+def load_tbm_best_params_per_bucket() -> Dict[str, Dict[str, Any]]:
+    """Load per-bucket best TBM params from tbm_best_params_per_bucket.csv.
+
+    Returns a dict keyed by bucket name (e.g. 'TF_long', 'MR_short').
+    Each value is a dict of barrier params ready for injection into cfg.
+    Falls back to empty dict if the file does not exist.
+    """
+    import pandas as pd
+
+    if not TBM_BEST_PARAMS_PER_BUCKET_CSV.exists():
+        return {}
+    try:
+        df = pd.read_csv(TBM_BEST_PARAMS_PER_BUCKET_CSV)
+        if df.empty:
+            return {}
+        result: Dict[str, Dict[str, Any]] = {}
+        for _, row in df.iterrows():
+            bkt = str(row.get("bucket", ""))
+            if not bkt:
+                continue
+            result[bkt] = {k: _coerce_numeric_if_possible(_to_scalar(v)) for k, v in row.items()}
+        return result
+    except Exception:
+        return {}
+
+
+def load_tbm_best_params_per_cell() -> Dict[str, Dict[str, Any]]:
+    """Load per-cell best TBM params from tbm_best_params_per_cell.csv.
+
+    Returns a dict keyed by cell name (e.g. 'TF_long_H4', 'MR_short_H8').
+    Each value is a dict of barrier params ready for injection into cfg.
+    Falls back to per-bucket params if the cell-specific file is missing.
+    """
+    import pandas as pd
+
+    if not TBM_BEST_PARAMS_PER_CELL_CSV.exists():
+        return load_tbm_best_params_per_bucket()
+    try:
+        df = pd.read_csv(TBM_BEST_PARAMS_PER_CELL_CSV)
+        if df.empty:
+            return load_tbm_best_params_per_bucket()
+        result: Dict[str, Dict[str, Any]] = {}
+        for _, row in df.iterrows():
+            cell = str(row.get("cell_key", ""))
+            if not cell:
+                # Fallback to bucket if cell_key is missing
+                cell = str(row.get("bucket", ""))
+            if not cell:
+                continue
+            result[cell] = {k: _coerce_numeric_if_possible(_to_scalar(v)) for k, v in row.items()}
+        return result
+    except Exception:
+        return load_tbm_best_params_per_bucket()
+
+
+_TBM_BUCKET_KEY_MAP = {
+    "k_tp": "barrier_k_tp",
+    "sl_as_tp_pct": "barrier_sl_base_mult",
+    "tp_abs_lo_pct": "barrier_tp_lo",
+    "tp_abs_hi_pct": "barrier_tp_hi",
+    "sl_abs_lo_pct": "barrier_sl_lo",
+    "sl_abs_hi_pct": "barrier_sl_hi",
+    "tp_base_pct": "barrier_tp_base_pct",
+    "tp_method": "barrier_tp_method",
+    "sl_method": "barrier_sl_method",
+    "base_atr_window": "barrier_atr_window",
+    "horizon_base": "label_horizon_base",
+    "horizon_scaling": "label_horizon_scaling",
+    "mode": "barrier_mode",
+}
+
+
+def apply_per_bucket_tbm_params_to_cfg(
+    bucket: str,
+    cfg: Dict[str, Any],
+    *,
+    per_bucket_params: Dict[str, Dict[str, Any]] | None = None,
+    fallback_to_global: bool = True,
+) -> Dict[str, Any]:
+    """Inject the winning TBM barrier geometry for ``bucket`` into ``cfg``.
+
+    Parameters
+    ----------
+    bucket:
+        One of TBM_BUCKET_NAMES ('TF_long', 'TF_short', 'MR_long', 'MR_short').
+    cfg:
+        The run config dict to update in-place (a deepcopy is returned).
+    per_bucket_params:
+        Pre-loaded output of load_tbm_best_params_per_bucket() — avoids re-reading
+        the CSV on every call.  If None, the file is read on demand.
+    fallback_to_global:
+        If True and no per-bucket entry is found for ``bucket``, falls back to the
+        global TBM best params (apply_offline_optimizer_best_params).
+
+    Returns
+    -------
+    A shallow copy of ``cfg`` with barrier keys injected.
+    """
+    import logging as _logging
+    _log = _logging.getLogger("params_store")
+
+    if per_bucket_params is None:
+        per_bucket_params = load_tbm_best_params_per_bucket()
+
+    bkt_params = per_bucket_params.get(bucket)
+    if not bkt_params:
+        if fallback_to_global:
+            _log.warning(
+                "[params_store] No per-bucket params for bucket=%s — falling back to global best", bucket
+            )
+            return apply_offline_optimizer_best_params(cfg)
+        return cfg
+
+    from copy import deepcopy
+    merged = deepcopy(cfg)
+    injected: Dict[str, Any] = {}
+    for src, dst in _TBM_BUCKET_KEY_MAP.items():
+        if src in bkt_params and bkt_params[src] is not None:
+            merged[dst] = bkt_params[src]
+            injected[dst] = bkt_params[src]
+    _log.info(
+        "[params_store] Per-bucket TBM params for %s: %s",
+        bucket,
+        "  ".join(f"{k}={v}" for k, v in sorted(injected.items())),
+    )
+    return merged
 
 
 def apply_offline_optimizer_best_params(cfg: Dict[str, Any]) -> Dict[str, Any]:

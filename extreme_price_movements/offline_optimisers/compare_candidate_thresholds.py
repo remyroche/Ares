@@ -23,7 +23,7 @@ import logging
 from copy import deepcopy
 from collections import OrderedDict
 from typing import Dict, Optional, Any, Iterable
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
 
 import numpy as np
@@ -1115,7 +1115,7 @@ def evaluate_training_slices(
                     feats["__geom_n_tp__"] = geom_cache_by_h_side[(h, side)]["n_tp"]
                     feats["__geom_n_sl__"] = geom_cache_by_h_side[(h, side)]["n_sl"]
                     feats["__geom_n_to__"] = geom_cache_by_h_side[(h, side)]["n_to"]
-                X, y_bin, y_ret, cols, w, meta_idx = build_hourly_training_set_and_weights(
+                X, y_bin, y_ret, cols, w, meta_idx, _ = build_hourly_training_set_and_weights(
                     panel=panel,
                     feats=feats,
                     mkt_gates=mkt_gates,
@@ -1503,13 +1503,28 @@ def _conditional_expand_with_z_and_sign(
         expanded |= cond
         fill_mask = (sign_out == 0) & cond & (shifted_sign != 0)
         sign_out = sign_out.where(~fill_mask, shifted_sign)
-
     sign_out = sign_out.where(expanded, 0).astype(np.int8)
     return expanded.fillna(False), sign_out
 
 
+# Optimization Constants
+DETECTION_PASS_SYMBOL_STEP = 10
+VERIFICATION_PASS_TOP_N = 30
+PARALLEL_WORKERS = 2  # As requested: x2
+
+# Global storage for parallel workers to avoid redundant pickling of large data
+_WORKER_CONTEXT = {}
+
+def _init_worker_context(context_dict: dict):
+    """Initialize global context in worker processes."""
+    global _WORKER_CONTEXT
+    _WORKER_CONTEXT = context_dict
+    import gc
+    gc.collect()
+
 # =============================================================================
-# Candidate Selection Functions
+# Logging and Utilities
+# Selection Functions
 # =============================================================================
 
 def precompute_selection_metrics(feats: dict, float_dtype: np.dtype) -> dict:
@@ -3272,6 +3287,190 @@ def load_panel_from_store(
 # Main Comparison Runner
 # =============================================================================
 
+def evaluate_single_config(cfg: dict) -> tuple[dict, list[dict]]:
+    """
+    Worker function to evaluate a single configuration.
+    Uses global _WORKER_CONTEXT for large shared data objects.
+    """
+    global _WORKER_CONTEXT
+    
+    # Unpack context
+    precomputed = _WORKER_CONTEXT["precomputed"]
+    available_model_features = _WORKER_CONTEXT["available_model_features"]
+    metric_by_mode = _WORKER_CONTEXT["metric_by_mode"]
+    filter_mask_pack = _WORKER_CONTEXT["filter_mask_pack"]
+    vol_tail_arr = _WORKER_CONTEXT["vol_tail_arr"]
+    entropy_tail_arr = _WORKER_CONTEXT["entropy_tail_arr"]
+    panel = _WORKER_CONTEXT["panel"]
+    feats = _WORKER_CONTEXT["feats"]
+    runtime_cfg = _WORKER_CONTEXT["runtime_cfg"]
+    barrier_defaults = _WORKER_CONTEXT["barrier_defaults"]
+    shared_geometry_key = _WORKER_CONTEXT["shared_geometry_key"]
+    shared_geometry_value = _WORKER_CONTEXT["shared_geometry_value"]
+    float_dtype = _WORKER_CONTEXT["float_dtype"]
+    save_sample_weights = _WORKER_CONTEXT["save_sample_weights"]
+    output_path = _WORKER_CONTEXT["output_path"]
+    feature_path = _WORKER_CONTEXT["feature_path"]
+    symbol_step_base = _WORKER_CONTEXT["symbol_step_base"]
+    
+    config_id = cfg["config_id"]
+    mode = cfg["mode"]
+    pct = cfg["pct"]
+    is_pass1 = cfg.get("pass") == 1
+    skip_training_slices = cfg.get("skip_training_slices", False)
+    symbol_step_mult = cfg.get("symbol_step_mult", 1)
+    
+    # Internal caches for this worker task
+    base_mask_cache = {}
+    training_slice_cache = {}
+    training_slice_geometry_cache = OrderedDict()
+    
+    try:
+        # 1. Candidate Selection
+        min_range_pct = cfg.get("min_range_pct")
+        min_vol_zscore = cfg.get("min_vol_zscore")
+        min_sign_consistency = None
+        expansion_name = cfg.get("expansion_name", "none")
+        expansion_offsets = cfg.get("expansion_offsets", [])
+        
+        metric_for_mode = metric_by_mode.get(mode)
+        prefilter_arr = None
+        low_count_policy = str(cfg.get("cusum_low_count_policy", "keep_all"))
+        
+        if mode == "cusum":
+            cusum_pack = precomputed.get("cusum_pack", {})
+            strength_by_h = cusum_pack.get("strength_by_h", {})
+            cusum_h = float(cfg.get("cusum_h", 6.0))
+            metric_for_mode = strength_by_h.get(f"{cusum_h:.1f}")
+            if metric_for_mode is None:
+                raise ValueError(f"CUSUM metric unavailable for h={cusum_h:.1f}")
+
+        # Filter masks
+        if filter_mask_pack is not None:
+            prefilter_arr = np.array(filter_mask_pack.get("true_arr"), copy=True, dtype=bool)
+            if min_range_pct is not None:
+                range_mask = filter_mask_pack["range_masks"].get(float(min_range_pct))
+                if range_mask is not None: prefilter_arr &= range_mask
+            if min_vol_zscore is not None:
+                vol_mask = filter_mask_pack["vol_masks"].get(float(min_vol_zscore))
+                if vol_mask is not None: prefilter_arr &= vol_mask
+        
+        if mode == "cusum" and metric_for_mode is not None:
+            trig = metric_for_mode.to_numpy(dtype=np.float32, copy=False)
+            trig_mask = np.isfinite(trig) & (np.abs(trig) > 0)
+            prefilter_arr = trig_mask if prefilter_arr is None else (prefilter_arr & trig_mask)
+
+        # Selection
+        candidate_mask_base, side_sign_base = select_candidates_cross_sectional(
+            metric_for_mode, pct, filter_masks=filter_mask_pack,
+            min_range_pct=min_range_pct, min_vol_zscore=min_vol_zscore,
+            base_mask_cache=base_mask_cache,
+            base_cache_key=(mode, float(pct), low_count_policy),
+            return_sign=True, prefilter_arr=prefilter_arr,
+            low_count_policy=low_count_policy
+        )
+
+        if mode == "cusum":
+            cusum_pack = precomputed.get("cusum_pack", {})
+            z_df = cusum_pack.get("z")
+            z_gate = float(cfg.get("cusum_z_gate", 2.0))
+            if isinstance(z_df, pd.DataFrame):
+                z_gate_mask = z_df.abs().ge(z_gate).reindex(index=candidate_mask_base.index, columns=candidate_mask_base.columns).fillna(False)
+                candidate_mask_base = (candidate_mask_base & z_gate_mask).fillna(False)
+                side_sign_base = side_sign_base.where(candidate_mask_base, 0).astype(np.int8)
+
+        # Expansion
+        if mode == "cusum" and expansion_offsets:
+            cusum_pack = precomputed.get("cusum_pack", {})
+            z_df = cusum_pack.get("z")
+            ret_df = feats.get("ret1h") if isinstance(feats.get("ret1h"), pd.DataFrame) else feats.get("ret6h")
+            candidate_mask_metrics, side_sign_metrics = _conditional_expand_with_z_and_sign(
+                base_mask=candidate_mask_base, base_sign=side_sign_base,
+                offsets=expansion_offsets, z_df=z_df, ret_df=ret_df,
+                sigma_df=cusum_pack.get("sigma"),
+                z_min=float(cfg.get("cusum_expand_z_min", 1.0)),
+                sign_pct=float(cfg.get("cusum_expand_sign_pct", 0.6)),
+                consistency_bars=int(cfg.get("cusum_expand_consistency_bars", 5)),
+                vol_ratio=float(cfg.get("cusum_expand_vol_ratio", 1.2)),
+            )
+        else:
+            candidate_mask_metrics = expand_candidate_mask(candidate_mask_base, expansion_offsets)
+            side_sign_metrics = side_sign_base.copy()
+            if expansion_offsets:
+                for off in expansion_offsets:
+                    shifted = side_sign_base.shift(int(off)).fillna(0).astype(np.int8)
+                    fill_mask = (side_sign_metrics == 0) & (shifted != 0)
+                    side_sign_metrics = side_sign_metrics.where(~fill_mask, shifted)
+            side_sign_metrics = side_sign_metrics.where(candidate_mask_metrics, 0).astype(np.int8)
+        
+        # Tail Filter
+        tail_mode = cfg.get("tail_filter_mode", "none")
+        tail_frac = float(cfg.get("tail_filter_top_frac", 0.20))
+        if tail_mode.lower() not in {"none", "off", ""}:
+            _tail_arr = apply_tail_filter_on_prefilter(
+                prefilter_arr=candidate_mask_metrics.to_numpy(dtype=bool, copy=False),
+                tail_mode=tail_mode, top_frac=tail_frac,
+                vol_tail_arr=vol_tail_arr, entropy_tail_arr=entropy_tail_arr
+            )
+            candidate_mask_metrics = pd.DataFrame(_tail_arr, index=candidate_mask_metrics.index, columns=candidate_mask_metrics.columns, dtype=bool)
+            side_sign_metrics = side_sign_metrics.where(candidate_mask_metrics, 0).astype(np.int8)
+
+        # Symbol Subsampling
+        current_step = symbol_step_base * symbol_step_mult
+        if current_step > 1:
+            keep_cols = list(candidate_mask_metrics.columns[::current_step])
+            candidate_mask_metrics = candidate_mask_metrics.reindex(columns=keep_cols, fill_value=False)
+            side_sign_metrics = side_sign_metrics.reindex(columns=keep_cols, fill_value=0).astype(np.int8)
+
+        # 2. Learnability
+        metrics = compute_learnability_metrics(
+            candidate_mask=candidate_mask_metrics,
+            precomputed=precomputed,
+            available_features=available_model_features,
+            float_dtype=float_dtype,
+            side_sign=side_sign_metrics,
+            use_extratrees=cfg.get("use_extratrees", False),
+            oof_max_samples=(OOF_MAX_SAMPLES // 2 if is_pass1 else OOF_MAX_SAMPLES),
+            oof_n_splits=cfg.get("oof_n_splits", 3)
+        )
+
+        # 3. Training Slices (Detailed Verification only)
+        slice_rows = []
+        if not skip_training_slices:
+            candidate_mask_panel = align_candidate_mask_to_panel_symbols(candidate_mask_metrics, panel)
+            cfg_variant = deepcopy(runtime_cfg)
+            # ... fill barrier params ...
+            
+            shared_geom = shared_geometry_value if shared_geometry_key is not None else None
+            
+            slice_rows = evaluate_training_slices(
+                candidate_mask=candidate_mask_panel,
+                feats=feats, panel=panel,
+                cfg_variant=cfg_variant,
+                horizons=cfg_variant.get("label_horizons_hours", [2, 4, 8]),
+                cache=training_slice_cache,
+                precomputed_geometry=shared_geom,
+                config_id=config_id
+            )
+            metrics.update(aggregate_slice_rows(slice_rows))
+
+        result = {
+            "config_id": config_id, "mode": mode, "pct": pct,
+            "min_range_pct": min_range_pct, "min_vol_zscore": min_vol_zscore,
+            "expansion_name": expansion_name,
+            **metrics
+        }
+        
+        # Cleanup
+        del candidate_mask_metrics, side_sign_metrics
+        gc.collect()
+        
+        return result, slice_rows
+        
+    except Exception as e:
+        return {"config_id": config_id, "error": str(e)}, []
+
+
 def run_comparison(
     feature_path: Optional[str],
     panel_path: Optional[str],
@@ -3689,27 +3888,26 @@ def run_comparison(
     else:
         tail_variants = [("", requested_tail_mode)]
 
-    if len(tail_variants) > 1:
-        expanded_tail_configs = []
-        for cfg in configs:
+    # Selective Tail Filter expansion: 
+    # Only test tail variants on "FULL" configs to reduce the search space.
+    configs_with_tail = []
+    for cfg in configs:
+        is_full = "_FULL" in str(cfg.get("config_id", ""))
+        if is_full:
             for suffix, mode_name in tail_variants:
                 cfg_t = dict(cfg)
                 cfg_t["tail_filter_mode"] = mode_name
-                cfg_t["tail_filter_top_frac"] = 0.10 if mode_name.endswith("top10") else (0.30 if mode_name.endswith("top30") else (0.20 if mode_name.endswith("top20") else tail_top_frac))
+                cfg_t["tail_filter_top_frac"] = (0.10 if mode_name.endswith("top10") else (0.30 if mode_name.endswith("top30") else 0.20))
                 cfg_t["config_id"] = f"{cfg['config_id']}_{suffix}" if suffix else cfg["config_id"]
-                expanded_tail_configs.append(cfg_t)
-        configs = expanded_tail_configs
-        tlog(
-            "Tail filter auto-compare enabled: "
-            f"variants={[m for _, m in tail_variants]}, top_frac={tail_top_frac:.0%}, "
-            f"expanded_configs={len(configs)}"
-        )
-    else:
-        mode_name = tail_variants[0][1]
-        for cfg in configs:
-            cfg["tail_filter_mode"] = mode_name
-            cfg["tail_filter_top_frac"] = tail_top_frac
-        tlog(f"Tail filter fixed mode: {mode_name}, top_frac={tail_top_frac:.0%}")
+                configs_with_tail.append(cfg_t)
+        else:
+            suffix, mode_name = tail_variants[0]
+            cfg_t = dict(cfg)
+            cfg_t["tail_filter_mode"] = mode_name
+            cfg_t["config_id"] = f"{cfg['config_id']}_{suffix}" if suffix else cfg["config_id"]
+            configs_with_tail.append(cfg_t)
+    configs = configs_with_tail
+    tlog(f"Config expansion (Selective Tail): {len(configs)} configs total")
 
     # Final safety dedupe for config ids before execution.
     cfg_map = {str(c["config_id"]): c for c in configs}
@@ -3821,463 +4019,73 @@ def run_comparison(
     except Exception as exc:
         tlog(f"Shared geometry prewarm skipped: {exc}")
 
-    tlog(f"Prepared {len(configs)} configs for execution")
+    # =============================================================================
+    # TWO-PASS PARALLEL ENGINE
+    # =============================================================================
+    
+    context = {
+        "precomputed": precomputed,
+        "available_model_features": available_model_features,
+        "metric_by_mode": metric_by_mode,
+        "filter_mask_pack": filter_mask_pack,
+        "vol_tail_arr": vol_tail_arr,
+        "entropy_tail_arr": entropy_tail_arr,
+        "panel": panel,
+        "feats": feats,
+        "runtime_cfg": runtime_cfg,
+        "barrier_defaults": barrier_defaults,
+        "shared_geometry_key": shared_geometry_key,
+        "shared_geometry_value": shared_geometry_value,
+        "float_dtype": float_dtype,
+        "save_sample_weights": save_sample_weights,
+        "output_path": output_path,
+        "feature_path": feature_path,
+        "symbol_step_base": int(symbol_step)
+    }
+
+    # PASS 1: DETECTION
+    tlog(f"Starting Detection Pass (Pass 1): {len(configs)} configs")
+    for cfg in configs:
+        cfg["pass"] = 1
+        cfg["skip_training_slices"] = True
+        cfg["symbol_step_mult"] = DETECTION_PASS_SYMBOL_STEP // symbol_step if symbol_step > 0 else 1
+        cfg["use_extratrees"] = False
+        cfg["oof_n_splits"] = 1
+
+    pass1_results = []
+    with ProcessPoolExecutor(max_workers=PARALLEL_WORKERS, initializer=_init_worker_context, initargs=(context,)) as executor:
+        futures = {executor.submit(evaluate_single_config, cfg): cfg for cfg in configs}
+        for i, future in enumerate(as_completed(futures)):
+            res, _ = future.result()
+            pass1_results.append(res)
+            if (i+1) % 50 == 0: tlog(f"Detection Pass Progress: {i+1}/{len(configs)}")
+
+    pass1_df = pd.DataFrame(pass1_results)
+    pass1_df["sort_score"] = pass1_df.get("auc", 0).fillna(0) + pass1_df.get("ic", 0).abs().fillna(0)
+    top_ids = set(pass1_df.sort_values("sort_score", ascending=False).head(VERIFICATION_PASS_TOP_N)["config_id"])
+    
+    # PASS 2: VERIFICATION
+    configs_v = [cfg for cfg in configs if cfg["config_id"] in top_ids]
+    for cfg in configs_v:
+        cfg["pass"] = 2
+        cfg["skip_training_slices"] = False
+        cfg["symbol_step_mult"] = 1
+        cfg["use_extratrees"] = use_extratrees
+        cfg["oof_n_splits"] = STAGE23_OOF_SPLITS
+
+    tlog(f"Starting Verification Pass (Pass 2): {len(configs_v)} configs")
     results = []
     slice_results = []
-    sample_weight_rows: list[dict] = []
-    
-    for cfg in configs:
-        config_id = cfg["config_id"]
-        mode = cfg["mode"]
-        pct = cfg["pct"]
-        candidate_mask_metrics = None
-        candidate_mask_panel = None
-        side_sign_metrics = None
-        side_sign_panel = None
-        
-        logger.info("-" * 40)
-        stage_label = infer_stage_label(config_id)
-        is_stage1 = stage_label == "Stage 1"
-        logger.info(f"Running config [{stage_label}]: {config_id} (mode={mode}, pct={pct})")
-        tlog(f"Config start: {config_id} | tail_mode={cfg.get('tail_filter_mode', tail_filter_mode)} top_frac={float(cfg.get('tail_filter_top_frac', tail_filter_top_frac)):.0%}")
-        
-        try:
-            if mode not in {"fixed", "atr", "atr_vol_weight", "cusum"}:
-                raise ValueError(f"Unsupported mode in default sweep: '{mode}'")
-            if mode != "cusum" and mode not in metric_by_mode:
-                raise ValueError(f"Required features missing for mode '{mode}'")
+    with ProcessPoolExecutor(max_workers=PARALLEL_WORKERS, initializer=_init_worker_context, initargs=(context,)) as executor:
+        futures = {executor.submit(evaluate_single_config, cfg): cfg for cfg in configs_v}
+        for i, future in enumerate(as_completed(futures)):
+            res, s_rows = future.result()
+            results.append(res)
+            slice_results.extend(s_rows)
+            tlog(f"Verification Pass Progress: {i+1}/{len(configs_v)}")
 
-            # Extract filter parameters from config
-            min_range_pct = cfg.get("min_range_pct")
-            min_vol_zscore = cfg.get("min_vol_zscore")
-            min_sign_consistency = None
-            expansion_name = cfg.get("expansion_name", "none")
-            expansion_offsets = cfg.get("expansion_offsets", [])
+    tlog("Two-pass parallel execution complete")
 
-            tlog(f"Selecting candidates: mode={mode}, pct={pct}")
-            metric_for_mode = metric_by_mode.get(mode)
-            prefilter_arr = None
-            low_count_policy = str(cfg.get("cusum_low_count_policy", "keep_all"))
-            if mode == "cusum":
-                cusum_pack = metric_pack.get("cusum_pack", {}) if isinstance(metric_pack, dict) else {}
-                strength_by_h = cusum_pack.get("strength_by_h", {}) if isinstance(cusum_pack, dict) else {}
-                cusum_h = float(cfg.get("cusum_h", default_cusum_h))
-                metric_for_mode = strength_by_h.get(f"{cusum_h:.1f}")
-                if metric_for_mode is None:
-                    raise ValueError(f"CUSUM metric unavailable for h={cusum_h:.1f}")
-
-            # Pre-ranking quality filters: rank only among valid points.
-            if filter_mask_pack is not None:
-                prefilter_arr = np.array(filter_mask_pack.get("true_arr"), copy=True, dtype=bool)
-                if min_range_pct is not None:
-                    range_mask = filter_mask_pack["range_masks"].get(float(min_range_pct))
-                    if range_mask is not None:
-                        prefilter_arr &= range_mask
-                if min_vol_zscore is not None:
-                    vol_mask = filter_mask_pack["vol_masks"].get(float(min_vol_zscore))
-                    if vol_mask is not None:
-                        prefilter_arr &= vol_mask
-            if mode == "cusum" and metric_for_mode is not None:
-                trig = metric_for_mode.to_numpy(dtype=np.float32, copy=False)
-                trig_mask = np.isfinite(trig) & (np.abs(trig) > 0)
-                prefilter_arr = trig_mask if prefilter_arr is None else (prefilter_arr & trig_mask)
-
-            candidate_mask_base, side_sign_base = select_candidates_cross_sectional(
-                metric_for_mode,
-                pct,
-                filter_masks=filter_mask_pack,
-                min_range_pct=min_range_pct,
-                min_vol_zscore=min_vol_zscore,
-                min_sign_consistency=min_sign_consistency,
-                base_mask_cache=base_mask_cache,
-                base_cache_key=(mode, float(pct), low_count_policy),
-                return_sign=True,
-                prefilter_arr=prefilter_arr,
-                low_count_policy=low_count_policy,
-            )
-            # Troubleshooting: show where candidates are filtered out.
-            raw_cached = base_mask_cache.get((mode, float(pct), low_count_policy))
-            raw_base_arr = raw_cached[0] if isinstance(raw_cached, tuple) else raw_cached
-            if raw_base_arr is not None:
-                n_raw = int(raw_base_arr.sum())
-                dbg_arr = np.array(raw_base_arr, copy=True, dtype=bool)
-                n_after_range = n_raw
-                n_after_vol = n_raw
-                if min_range_pct is not None:
-                    range_mask = filter_mask_pack["range_masks"].get(float(min_range_pct))
-                    if range_mask is not None:
-                        dbg_arr &= range_mask
-                        n_after_range = int(dbg_arr.sum())
-                if min_vol_zscore is not None:
-                    vol_mask = filter_mask_pack["vol_masks"].get(float(min_vol_zscore))
-                    if vol_mask is not None:
-                        dbg_arr &= vol_mask
-                        n_after_vol = int(dbg_arr.sum())
-                tlog(
-                    "Candidate filter breakdown: "
-                    f"raw={n_raw}, after_range={n_after_range}, "
-                    f"after_vol={n_after_vol}"
-                )
-            if mode == "cusum":
-                cusum_pack = metric_pack.get("cusum_pack", {}) if isinstance(metric_pack, dict) else {}
-                z_df = cusum_pack.get("z") if isinstance(cusum_pack, dict) else None
-                z_gate = float(cfg.get("cusum_z_gate", default_cusum_z_gate))
-                if isinstance(z_df, pd.DataFrame):
-                    z_gate_mask = z_df.abs().ge(z_gate).reindex(index=candidate_mask_base.index, columns=candidate_mask_base.columns).fillna(False)
-                    candidate_mask_base = (candidate_mask_base & z_gate_mask).fillna(False)
-                    side_sign_base = side_sign_base.where(candidate_mask_base, 0).astype(np.int8)
-                    tlog(f"CUSUM z-gate applied: z>={z_gate:.2f}")
-
-            base_selected_n = int(candidate_mask_base.to_numpy(dtype=bool, copy=False).sum())
-            tlog(f"Candidate base mask: selected={base_selected_n}")
-
-            if mode == "cusum" and expansion_offsets:
-                cusum_pack = metric_pack.get("cusum_pack", {}) if isinstance(metric_pack, dict) else {}
-                z_df = cusum_pack.get("z") if isinstance(cusum_pack, dict) else None
-                ret_df = feats.get("ret1h") if isinstance(feats.get("ret1h"), pd.DataFrame) else feats.get("ret6h")
-                candidate_mask_metrics, side_sign_metrics = _conditional_expand_with_z_and_sign(
-                    base_mask=candidate_mask_base,
-                    base_sign=side_sign_base,
-                    offsets=expansion_offsets,
-                    z_df=z_df if isinstance(z_df, pd.DataFrame) else None,
-                    ret_df=ret_df if isinstance(ret_df, pd.DataFrame) else None,
-                    sigma_df=(cusum_pack.get("sigma") if isinstance(cusum_pack.get("sigma"), pd.DataFrame) else None),
-                    z_min=float(cfg.get("cusum_expand_z_min", 1.0)),
-                    sign_pct=float(cfg.get("cusum_expand_sign_pct", 0.6)),
-                    consistency_bars=int(cfg.get("cusum_expand_consistency_bars", 5)),
-                    vol_ratio=float(cfg.get("cusum_expand_vol_ratio", 1.2)),
-                )
-            else:
-                candidate_mask_metrics = expand_candidate_mask(candidate_mask_base, expansion_offsets)
-                side_sign_metrics = side_sign_base.copy()
-                if expansion_offsets:
-                    for off in expansion_offsets:
-                        shifted = side_sign_base.shift(int(off)).fillna(0).astype(np.int8)
-                        # Preserve first non-zero sign when expanded overlap occurs.
-                        fill_mask = (side_sign_metrics == 0) & (shifted != 0)
-                        side_sign_metrics = side_sign_metrics.where(~fill_mask, shifted)
-                side_sign_metrics = side_sign_metrics.where(candidate_mask_metrics, 0).astype(np.int8)
-            expanded_selected_n = int(candidate_mask_metrics.to_numpy(dtype=bool, copy=False).sum())
-            # Tail exclusion as final post-selection step (after expansion) to avoid early high-dimensional pruning.
-            _tail_mode_cfg = cfg.get("tail_filter_mode", tail_filter_mode)
-            _tail_frac_cfg = float(cfg.get("tail_filter_top_frac", tail_filter_top_frac))
-            if str(_tail_mode_cfg).lower() not in {"none", "off", ""}:
-                _tail_arr = apply_tail_filter_on_prefilter(
-                    prefilter_arr=candidate_mask_metrics.to_numpy(dtype=bool, copy=False),
-                    tail_mode=_tail_mode_cfg,
-                    top_frac=_tail_frac_cfg,
-                    vol_tail_arr=vol_tail_arr,
-                    entropy_tail_arr=entropy_tail_arr,
-                )
-                candidate_mask_metrics = pd.DataFrame(_tail_arr, index=candidate_mask_metrics.index, columns=candidate_mask_metrics.columns, dtype=bool)
-                side_sign_metrics = side_sign_metrics.where(candidate_mask_metrics, 0).astype(np.int8)
-                expanded_selected_n = int(candidate_mask_metrics.to_numpy(dtype=bool, copy=False).sum())
-            if expansion_offsets:
-                tlog(
-                    f"Applied candidate expansion ({expansion_name}): offsets={expansion_offsets}, "
-                    f"selected={expanded_selected_n}"
-                )
-            else:
-                tlog(f"Candidate expansion skipped: selected={expanded_selected_n}")
-
-            stage_symbol_step = STAGE1_SYMBOL_SUBSAMPLE_STEP if is_stage1 else STAGE23_SYMBOL_SUBSAMPLE_STEP
-            if stage_symbol_step > 1:
-                keep_cols = list(candidate_mask_metrics.columns[::stage_symbol_step])
-                if keep_cols and len(keep_cols) < candidate_mask_metrics.shape[1]:
-                    candidate_mask_metrics = candidate_mask_metrics.reindex(columns=keep_cols, fill_value=False)
-                    side_sign_metrics = side_sign_metrics.reindex(columns=keep_cols, fill_value=0).astype(np.int8)
-                    stage1_selected_n = int(candidate_mask_metrics.to_numpy(dtype=bool, copy=False).sum())
-                    tlog(
-                        f"{stage_label} symbol subsample applied: "
-                        f"step={stage_symbol_step}, cols={len(keep_cols)}, selected={stage1_selected_n}"
-                    )
-
-            # Keep learnability metrics in feature-space coordinates; build a separate
-            # panel-aligned mask only for training-slice stage.
-            candidate_mask_panel = align_candidate_mask_to_panel_symbols(candidate_mask_metrics, panel)
-            side_sign_panel = side_sign_metrics.reindex(
-                index=candidate_mask_panel.index,
-                columns=candidate_mask_panel.columns,
-                fill_value=0,
-            ).astype(np.int8)
-            side_sign_panel = side_sign_panel.where(candidate_mask_panel, 0).astype(np.int8)
-            aligned_selected_n = int(candidate_mask_panel.to_numpy(dtype=bool, copy=False).sum())
-            panel_overlap_cols = int(
-                len(candidate_mask_panel.columns.intersection(panel["close"].columns))
-            ) if "close" in panel else 0
-            tlog(
-                f"Candidate alignment: selected={aligned_selected_n}, "
-                f"cols={candidate_mask_panel.shape[1]}, panel_overlap_cols={panel_overlap_cols}"
-            )
-            if base_selected_n > 0 and aligned_selected_n == 0:
-                tlog(
-                    "Troubleshoot: candidates collapsed to zero after expansion/alignment. "
-                    "Check filter thresholds and symbol naming consistency."
-                )
-            del candidate_mask_base
-            
-            # Compute metrics
-            tlog(f"Computing learnability metrics: {config_id}")
-            oof_n_splits = STAGE1_OOF_SPLITS if is_stage1 else STAGE23_OOF_SPLITS
-            oof_max_samples = STAGE1_OOF_MAX_SAMPLES if is_stage1 else OOF_MAX_SAMPLES
-            metrics = compute_learnability_metrics(
-                candidate_mask=candidate_mask_metrics,
-                precomputed=precomputed,
-                available_features=available_model_features,
-                float_dtype=float_dtype,
-                side_sign=side_sign_metrics,
-                use_extratrees=use_extratrees,
-                oof_max_samples=oof_max_samples,
-                oof_n_splits=oof_n_splits,
-            )
-
-            cfg_variant = deepcopy(runtime_cfg)
-            cfg_variant["train_extreme_pct_hourly"] = pct
-            
-            # Unified barrier factory params (v3 - single source of truth)
-            # These replace the old train_tp_lo, train_tp_hi, train_sl_mult params
-            cfg_variant["barrier_k_tp"] = float(cfg.get("barrier_k_tp", barrier_defaults["barrier_k_tp"]))
-            cfg_variant["barrier_sl_base_mult"] = float(cfg.get("barrier_sl_base_mult", barrier_defaults["barrier_sl_base_mult"]))
-            cfg_variant["barrier_disp_floor"] = float(cfg.get("barrier_disp_floor", barrier_defaults["barrier_disp_floor"]))
-            cfg_variant["barrier_z_max"] = float(cfg.get("barrier_z_max", barrier_defaults["barrier_z_max"]))
-            cfg_variant["barrier_k_reg"] = float(cfg.get("barrier_k_reg", barrier_defaults["barrier_k_reg"]))
-            cfg_variant["barrier_m_lo"] = float(cfg.get("barrier_m_lo", barrier_defaults["barrier_m_lo"]))
-            cfg_variant["barrier_m_hi"] = float(cfg.get("barrier_m_hi", barrier_defaults["barrier_m_hi"]))
-            cfg_variant["barrier_sl_lo"] = float(cfg.get("barrier_sl_lo", barrier_defaults["barrier_sl_lo"]))
-            cfg_variant["barrier_sl_hi"] = float(cfg.get("barrier_sl_hi", barrier_defaults["barrier_sl_hi"]))
-            cfg_variant["barrier_z_gate"] = float(cfg.get("barrier_z_gate", barrier_defaults["barrier_z_gate"]))
-            cfg_variant["barrier_tp_lo"] = float(cfg.get("barrier_tp_lo", barrier_defaults["barrier_tp_lo"]))
-            cfg_variant["barrier_tp_hi"] = float(cfg.get("barrier_tp_hi", barrier_defaults["barrier_tp_hi"]))
-            cfg_variant["label_horizon_base"] = float(cfg.get("label_horizon_base", barrier_defaults["label_horizon_base"]))
-
-            horizons_hours = list(cfg_variant.get("label_horizons_hours", [2, 4, 8]))
-            if any(float(h) <= 2.0 for h in horizons_hours):
-                cfg_variant["barrier_tp_lo"] = min(float(cfg_variant["barrier_tp_lo"]), 0.004)
-            elif any(float(h) <= 4.0 for h in horizons_hours):
-                cfg_variant["barrier_tp_lo"] = min(float(cfg_variant["barrier_tp_lo"]), 0.008)
-            cfg_variant["barrier_tp_hi"] = max(float(cfg_variant["barrier_tp_hi"]), float(cfg_variant["barrier_tp_lo"]))
-            
-            if cfg.get("min_range_pct") is not None:
-                cfg_variant["train_min_range_pct"] = float(cfg["min_range_pct"])
-            if cfg.get("min_vol_zscore") is not None:
-                cfg_variant["train_min_vol_zscore"] = float(cfg["min_vol_zscore"])
-
-            training_cache_key = (
-                fingerprint_candidate_mask(candidate_mask_panel),
-                float(cfg_variant.get("train_extreme_pct_hourly", 0.0)),
-                cfg_variant.get("train_min_range_pct"),
-                cfg_variant.get("train_min_vol_zscore"),
-                cfg_variant.get("min_feat_sign_consistency"),
-                cfg_variant.get("barrier_k_tp"),
-                cfg_variant.get("barrier_sl_base_mult"),
-                cfg_variant.get("barrier_disp_floor"),
-                tuple(expansion_offsets),
-                tuple(cfg_variant.get("label_horizons_hours", [2, 4, 8])),
-            )
-            geometry_cache_key = (
-                tuple(cfg_variant.get("label_horizons_hours", [2, 4, 8])),
-                cfg_variant.get("barrier_k_tp"),
-                cfg_variant.get("barrier_sl_base_mult"),
-                cfg_variant.get("barrier_disp_floor"),
-                cfg_variant.get("barrier_z_max"),
-                cfg_variant.get("barrier_k_reg"),
-                cfg_variant.get("barrier_m_lo"),
-                cfg_variant.get("barrier_m_hi"),
-                cfg_variant.get("barrier_sl_lo"),
-                cfg_variant.get("barrier_sl_hi"),
-                cfg_variant.get("barrier_z_gate"),
-                cfg_variant.get("barrier_tp_lo"),
-                cfg_variant.get("barrier_tp_hi"),
-            )
-
-            if disable_training_slices:
-                tlog("Training-slice stage skipped: disabled after prior structural precheck failure")
-                training_slice_rows = []
-            else:
-                ok_slices, why_not = training_slice_precheck(candidate_mask_panel, panel)
-                if not ok_slices:
-                    tlog(f"Training-slice stage skipped: {why_not}")
-                    if why_not in {
-                        "panel.close missing",
-                        "no symbol overlap between candidate mask and panel close",
-                    }:
-                        disable_training_slices = True
-                    training_slice_rows = []
-                else:
-                    tlog(f"Evaluating training slices: {config_id}")
-                    shared_geom = (
-                        shared_geometry_value
-                        if shared_geometry_key is not None and geometry_cache_key == shared_geometry_key
-                        else None
-                    )
-                    panel_trim, feats_trim = trim_to_candidate_time_window(
-                        panel=panel,
-                        feats=feats,
-                        candidate_mask=candidate_mask_panel,
-                        pad_bars_after=20,
-                    )
-                    training_slice_rows = evaluate_training_slices(
-                        candidate_mask=candidate_mask_panel,
-                        feats=feats_trim,
-                        panel=panel_trim,
-                        cfg_variant=cfg_variant,
-                        horizons=cfg_variant.get("label_horizons_hours", [2, 4, 8]),
-                        cache=training_slice_cache,
-                        cache_key=training_cache_key,
-                        sample_frac=SAMPLE_FRAC,
-                        geometry_cache=training_slice_geometry_cache,
-                        geometry_cache_key=geometry_cache_key,
-                        precomputed_geometry=shared_geom,
-                        sample_weight_sink=sample_weight_rows if save_sample_weights else None,
-                        config_id=config_id,
-                    )
-            for r in training_slice_rows:
-                slice_results.append(
-                    {
-                        "config_id": config_id,
-                        "mode": mode,
-                        "pct": pct,
-                        "min_range_pct": cfg.get("min_range_pct", None),
-                        "min_vol_zscore": cfg.get("min_vol_zscore", None),
-                        "min_sign_consistency": cfg.get("min_sign_consistency", None),
-                        "barrier_k_tp": cfg.get("barrier_k_tp", 1.0),
-                        "barrier_sl_base_mult": cfg.get("barrier_sl_base_mult", 0.5),
-                        "barrier_disp_floor": cfg.get("barrier_disp_floor", 0.1),
-                        "expansion_name": expansion_name,
-                        "expansion_offsets": ",".join(str(o) for o in expansion_offsets) if expansion_offsets else "",
-                        **r,
-                    }
-                )
-            metrics.update(aggregate_slice_rows(training_slice_rows))
-            
-            result = {
-                "config_id": config_id,
-                "mode": mode,
-                "pct": pct,
-                "min_range_pct": cfg.get("min_range_pct", None),
-                "min_vol_zscore": cfg.get("min_vol_zscore", None),
-                "min_sign_consistency": cfg.get("min_sign_consistency", None),
-                "barrier_k_tp": cfg.get("barrier_k_tp", 1.0),
-                "barrier_sl_base_mult": cfg.get("barrier_sl_base_mult", 0.5),
-                "barrier_disp_floor": cfg.get("barrier_disp_floor", 0.1),
-                "expansion_name": expansion_name,
-                "expansion_offsets": ",".join(str(o) for o in expansion_offsets) if expansion_offsets else "",
-                **metrics
-            }
-            
-            results.append(result)
-            
-            logger.info(
-                f"  Candidates/timestamp: {metrics['n_candidates_mean']:.3f} "
-                f"(rate={metrics.get('candidate_rate', 0.0):.4%})"
-            )
-            logger.info(f"  IC: {metrics['ic']:.4f} ± {metrics['ic_std']:.4f}")
-            logger.info(f"  KS: {metrics['ks_stat']:.4f}, SNR: {metrics['snr']:.4f}")
-            logger.info(f"  Class balance: {metrics['class_balance']:.2%}")
-            logger.info(f"  Sharpe: {metrics['sharpe']:.2f}")
-            logger.info(
-                f"  HitRate: {metrics['hit_rate']:.2%} | Sortino: {metrics['sortino']:.2f} | "
-                f"Return(bps): {metrics['mean_return_bps']:.2f} ± {metrics['volatility_bps']:.2f}"
-            )
-            logger.info(f"  Clf AUC: {metrics.get('auc', 0.0):.4f} | Brier: {metrics.get('brier', 0.0):.4f}")
-            logger.info(
-                f"  OOF provenance: IC[{metrics.get('ic_source','none')} n={int(metrics.get('ic_oof_n',0))}] "
-                f"AUC[{metrics.get('auc_source','none')} n={int(metrics.get('auc_oof_n',0))}] "
-                f"Brier[{metrics.get('brier_source','none')} n={int(metrics.get('brier_oof_n',0))}]"
-            )
-            logger.info(
-                f"  SliceSharpe: {metrics['slice_overall_sharpe']:.2f} | "
-                f"SliceSortino: {metrics['slice_overall_sortino']:.2f} | "
-                f"SliceOpp/Day: {metrics.get('slice_overall_opportunities_per_day', 0.0):.2f} | "
-                f"SliceN: {metrics['slice_total_samples']}"
-            )
-            logger.info(
-                f"  TP:SL used: {float(cfg.get('barrier_k_tp', 1.0)):.2f}:{float(cfg.get('barrier_sl_base_mult', 0.5)):.2f}"
-            )
-            tlog(f"Config done: {config_id}")
-            
-            # Free memory
-            del candidate_mask_metrics
-            del candidate_mask_panel
-            del side_sign_metrics
-            del side_sign_panel
-            del metrics
-            gc.collect()
-            
-        except Exception as e:
-            logger.exception(f"Failed to run config {config_id}: {e}")
-            results.append({
-                "config_id": config_id,
-                "mode": mode,
-                "pct": pct,
-                "min_range_pct": cfg.get("min_range_pct", None),
-                "min_vol_zscore": cfg.get("min_vol_zscore", None),
-                "min_sign_consistency": cfg.get("min_sign_consistency", None),
-                "barrier_k_tp": cfg.get("barrier_k_tp", 1.0),
-                "barrier_sl_base_mult": cfg.get("barrier_sl_base_mult", 0.5),
-                "barrier_disp_floor": cfg.get("barrier_disp_floor", 0.1),
-                "expansion_name": cfg.get("expansion_name", "none"),
-                "expansion_offsets": ",".join(str(o) for o in cfg.get("expansion_offsets", [])) if cfg.get("expansion_offsets") else "",
-                "n_candidates_mean": np.nan,
-                "ic": np.nan,
-                "ic_std": np.nan,
-                "ks_stat": np.nan,
-                "snr": np.nan,
-                "class_balance": np.nan,
-                "mean_feat_ic": np.nan,
-                "sharpe": np.nan,
-                "candidate_rate": np.nan,
-                "mean_return_bps": np.nan,
-                "volatility_bps": np.nan,
-                "sortino": np.nan,
-                "hit_rate": np.nan,
-                "tail_ratio": np.nan,
-                "ic_spearman": np.nan,
-                "oof_mae": np.nan,
-                "oof_directional_acc": np.nan,
-                "ic_source": "none",
-                "ic_oof_n": 0,
-                "auc_source": "none",
-                "auc_oof_n": 0,
-                "brier_source": "none",
-                "brier_oof_n": 0,
-                "auc": np.nan,
-                "brier": np.nan,
-                "ridge_alpha": RIDGE_SCREEN_ALPHA,
-                "ridge_top_frac": RIDGE_SCREEN_TOP_FRAC,
-                "ridge_selected_k_mean": np.nan,
-                "ridge_jaccard_median": np.nan,
-                "ridge_replacement_rate_median": np.nan,
-                "mean_abs_ret6h": np.nan,
-                "median_abs_ret6h": np.nan,
-                "ret6h_q01": np.nan,
-                "ret6h_q05": np.nan,
-                "atr_mean": np.nan,
-                "atr_q10": np.nan,
-                "atr_q50": np.nan,
-                "atr_q90": np.nan,
-                "atr_decile_worst": -1,
-                "atr_decile_worst_share": np.nan,
-                "atr_decile_pnl_json": "{}",
-                "slice_overall_sharpe": np.nan,
-                "slice_overall_sortino": np.nan,
-                "slice_overall_opportunities_per_day": np.nan,
-                "slice_total_samples": 0,
-                "slice_metrics_json": "{}",
-                "error": str(e)
-            })
-        finally:
-            candidate_mask_metrics = None
-            candidate_mask_panel = None
-            side_sign_metrics = None
-            side_sign_panel = None
-            feature_cache = precomputed.get("feature_series_cache")
-            if isinstance(feature_cache, dict) and feature_cache:
-                feature_cache.clear()
-                tlog(f"Per-config cleanup: cleared stacked feature cache for {config_id}")
-            gc.collect()
-            tlog(f"Config cleanup done: {config_id}")
-    
     tlog("Building results dataframe")
     # Create results DataFrame
     results_df = pd.DataFrame(results)

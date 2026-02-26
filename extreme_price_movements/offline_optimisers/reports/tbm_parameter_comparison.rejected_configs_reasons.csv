@@ -1,717 +1,197 @@
 config_id,bucket,reason
-CFG4E480D167D,optuna_s2_refine_0,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.6092, recomputed=0.3628, tol=0.0300)"
-CFG4E480D167D,optuna_s2_refine_0,"MR_long_H4 auc_label mismatch vs score_prod (provided=0.5715, recomputed=0.3620, tol=0.0300)"
-CFG4E480D167D,optuna_s2_refine_0,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.5435, recomputed=0.3613, tol=0.0300)"
-CFG4E480D167D,optuna_s2_refine_0,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.6333, recomputed=0.3403, tol=0.0300)"
-CFG4E480D167D,optuna_s2_refine_0,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5988, recomputed=0.3428, tol=0.0300)"
-CFG4E480D167D,optuna_s2_refine_0,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5545, recomputed=0.3584, tol=0.0300)"
-CFG4E480D167D,optuna_s2_refine_0,"TF_long_H2 auc_label mismatch vs score_prod (provided=0.5759, recomputed=0.4350, tol=0.0300)"
-CFG4E480D167D,optuna_s2_refine_0,"TF_long_H4 auc_label mismatch vs score_prod (provided=0.5587, recomputed=0.4324, tol=0.0300)"
-CFG4E480D167D,optuna_s2_refine_0,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5465, recomputed=0.4250, tol=0.0300)"
-CFG4E480D167D,optuna_s2_refine_0,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.6286, recomputed=0.3368, tol=0.0300)"
-CFG4E480D167D,optuna_s2_refine_0,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5993, recomputed=0.3341, tol=0.0300)"
-CFG4E480D167D,optuna_s2_refine_0,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5740, recomputed=0.3366, tol=0.0300)"
-CFG4E480D167D,optuna_s2_refine_0,min_cell_bind_prod 0.152 < bind_cell_min 0.380
-CFG4E480D167D,optuna_s2_refine_0,bind_prod_agg 0.275 < bind_min 0.500
-CFG4E480D167D,optuna_s2_refine_0,min_cell_tp_sep 0.0357 < tp_sep_min 0.0400
-CFG4E480D167D,optuna_s2_refine_0,min_cell_ap_lift 1.109 < ap_lift_min 1.200
-CFG4E480D167D,optuna_s2_refine_0,tp_floor_bind_prod_agg 41.1% > tp_floor_bind_max_agg 20.0%
-CFG4E480D167D,optuna_s2_refine_0,max_cell_tp_floor_bind_prod 62.7% > tp_floor_bind_max_cell 35.0%
-CFG4E480D167D,optuna_s2_refine_0,floor-dominance combined guardrail: min_cell_auc 0.5435 < required 0.5600 when TP floor-binding is high
-CFG4B85CC3C1F,optuna_s2_refine_0,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.5592, recomputed=0.4156, tol=0.0300)"
-CFG4B85CC3C1F,optuna_s2_refine_0,"MR_long_H4 auc_label mismatch vs score_prod (provided=0.5402, recomputed=0.4167, tol=0.0300)"
-CFG4B85CC3C1F,optuna_s2_refine_0,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.5273, recomputed=0.4210, tol=0.0300)"
-CFG4B85CC3C1F,optuna_s2_refine_0,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.6184, recomputed=0.3320, tol=0.0300)"
-CFG4B85CC3C1F,optuna_s2_refine_0,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5916, recomputed=0.3457, tol=0.0300)"
-CFG4B85CC3C1F,optuna_s2_refine_0,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5610, recomputed=0.3779, tol=0.0300)"
-CFG4B85CC3C1F,optuna_s2_refine_0,"TF_long_H2 auc_label mismatch vs score_prod (provided=0.5266, recomputed=0.4895, tol=0.0300)"
-CFG4B85CC3C1F,optuna_s2_refine_0,"TF_long_H4 auc_label mismatch vs score_prod (provided=0.5244, recomputed=0.4889, tol=0.0300)"
-CFG4B85CC3C1F,optuna_s2_refine_0,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5312, recomputed=0.4842, tol=0.0300)"
-CFG4B85CC3C1F,optuna_s2_refine_0,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.6111, recomputed=0.3365, tol=0.0300)"
-CFG4B85CC3C1F,optuna_s2_refine_0,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5873, recomputed=0.3434, tol=0.0300)"
-CFG4B85CC3C1F,optuna_s2_refine_0,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5763, recomputed=0.3666, tol=0.0300)"
-CFG4B85CC3C1F,optuna_s2_refine_0,min_cell_bind_prod 0.211 < bind_cell_min 0.380
-CFG4B85CC3C1F,optuna_s2_refine_0,bind_prod_agg 0.320 < bind_min 0.500
-CFG4B85CC3C1F,optuna_s2_refine_0,min_cell_auc 0.5244 < auc_min 0.5400
-CFG4B85CC3C1F,optuna_s2_refine_0,min_cell_tp_sep 0.0307 < tp_sep_min 0.0400
-CFG4B85CC3C1F,optuna_s2_refine_0,min_cell_ap_lift 1.067 < ap_lift_min 1.200
-CFG4B85CC3C1F,optuna_s2_refine_0,tp_floor_bind_prod_agg 42.0% > tp_floor_bind_max_agg 20.0%
-CFG4B85CC3C1F,optuna_s2_refine_0,max_cell_tp_floor_bind_prod 63.3% > tp_floor_bind_max_cell 35.0%
-CFG4B85CC3C1F,optuna_s2_refine_0,floor-dominance combined guardrail: min_cell_auc 0.5244 < required 0.5600 when TP floor-binding is high
-CFGF55DCB1273,optuna_s2_refine_3,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.5247, recomputed=0.4750, tol=0.0300)"
-CFGF55DCB1273,optuna_s2_refine_3,"MR_long_H4 auc_label mismatch vs score_prod (provided=0.5222, recomputed=0.4743, tol=0.0300)"
-CFGF55DCB1273,optuna_s2_refine_3,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.5203, recomputed=0.4764, tol=0.0300)"
-CFGF55DCB1273,optuna_s2_refine_3,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5986, recomputed=0.3729, tol=0.0300)"
-CFGF55DCB1273,optuna_s2_refine_3,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5830, recomputed=0.3961, tol=0.0300)"
-CFGF55DCB1273,optuna_s2_refine_3,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5490, recomputed=0.4336, tol=0.0300)"
-CFGF55DCB1273,optuna_s2_refine_3,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5212, recomputed=0.4905, tol=0.0300)"
-CFGF55DCB1273,optuna_s2_refine_3,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.6075, recomputed=0.3585, tol=0.0300)"
-CFGF55DCB1273,optuna_s2_refine_3,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5922, recomputed=0.3839, tol=0.0300)"
-CFGF55DCB1273,optuna_s2_refine_3,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5741, recomputed=0.4060, tol=0.0300)"
-CFGF55DCB1273,optuna_s2_refine_3,min_cell_bind_prod 0.354 < bind_cell_min 0.380
-CFGF55DCB1273,optuna_s2_refine_3,bind_prod_agg 0.460 < bind_min 0.500
-CFGF55DCB1273,optuna_s2_refine_3,min_cell_tp_over_sl 1.031 < tp_over_sl_min 1.050
-CFGF55DCB1273,optuna_s2_refine_3,min_cell_auc 0.5034 < auc_min 0.5400
-CFGF55DCB1273,optuna_s2_refine_3,min_cell_auc_bound 0.4967 < auc_bound_min 0.5200
-CFGF55DCB1273,optuna_s2_refine_3,min_cell_tp_sep 0.0086 < tp_sep_min 0.0400
-CFGF55DCB1273,optuna_s2_refine_3,min_cell_ap_lift 1.014 < ap_lift_min 1.200
-CFGF55DCB1273,optuna_s2_refine_3,tp_floor_bind_prod_agg 23.5% > tp_floor_bind_max_agg 20.0%
-CFGF55DCB1273,optuna_s2_refine_3,max_cell_tp_floor_bind_prod 61.5% > tp_floor_bind_max_cell 35.0%
-CFGF55DCB1273,optuna_s2_refine_3,floor-dominance combined guardrail: min_cell_auc 0.5034 < required 0.5600 when TP floor-binding is high
-CFG35A6C3DC8D,optuna_stage1,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.5167, recomputed=0.4862, tol=0.0300)"
-CFG35A6C3DC8D,optuna_stage1,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5695, recomputed=0.4152, tol=0.0300)"
-CFG35A6C3DC8D,optuna_stage1,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5626, recomputed=0.4297, tol=0.0300)"
-CFG35A6C3DC8D,optuna_stage1,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5330, recomputed=0.4611, tol=0.0300)"
-CFG35A6C3DC8D,optuna_stage1,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5285, recomputed=0.4984, tol=0.0300)"
-CFG35A6C3DC8D,optuna_stage1,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.5797, recomputed=0.4008, tol=0.0300)"
-CFG35A6C3DC8D,optuna_stage1,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5742, recomputed=0.4138, tol=0.0300)"
-CFG35A6C3DC8D,optuna_stage1,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5588, recomputed=0.4283, tol=0.0300)"
-CFG35A6C3DC8D,optuna_stage1,min_cell_bind_prod 0.296 < bind_cell_min 0.380
-CFG35A6C3DC8D,optuna_stage1,bind_prod_agg 0.408 < bind_min 0.500
-CFG35A6C3DC8D,optuna_stage1,min_cell_auc 0.5018 < auc_min 0.5400
-CFG35A6C3DC8D,optuna_stage1,min_cell_auc_bound 0.4989 < auc_bound_min 0.5200
-CFG35A6C3DC8D,optuna_stage1,min_cell_tp_sep 0.0167 < tp_sep_min 0.0400
-CFG35A6C3DC8D,optuna_stage1,min_cell_ap_lift 1.033 < ap_lift_min 1.200
-CFG35A6C3DC8D,optuna_stage1,tp_floor_bind_prod_agg 22.6% > tp_floor_bind_max_agg 20.0%
-CFG35A6C3DC8D,optuna_stage1,max_cell_tp_floor_bind_prod 59.9% > tp_floor_bind_max_cell 35.0%
-CFGA7747CC1D6,optuna_stage1,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5665, recomputed=0.4373, tol=0.0300)"
-CFGA7747CC1D6,optuna_stage1,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5584, recomputed=0.4447, tol=0.0300)"
-CFGA7747CC1D6,optuna_stage1,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5324, recomputed=0.4766, tol=0.0300)"
-CFGA7747CC1D6,optuna_stage1,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5287, recomputed=0.4926, tol=0.0300)"
-CFGA7747CC1D6,optuna_stage1,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.5878, recomputed=0.4116, tol=0.0300)"
-CFGA7747CC1D6,optuna_stage1,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5810, recomputed=0.4256, tol=0.0300)"
-CFGA7747CC1D6,optuna_stage1,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5583, recomputed=0.4463, tol=0.0300)"
-CFGA7747CC1D6,optuna_stage1,min_cell_auc 0.5050 < auc_min 0.5400
-CFGA7747CC1D6,optuna_stage1,min_cell_auc_bound 0.5004 < auc_bound_min 0.5200
-CFGA7747CC1D6,optuna_stage1,min_cell_tp_sep 0.0271 < tp_sep_min 0.0400
-CFGA7747CC1D6,optuna_stage1,min_cell_ap_lift 1.040 < ap_lift_min 1.200
-CFGFAC4CAC355,optuna_s2_refine_2,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.5244, recomputed=0.4897, tol=0.0300)"
-CFGFAC4CAC355,optuna_s2_refine_2,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5584, recomputed=0.4581, tol=0.0300)"
-CFGFAC4CAC355,optuna_s2_refine_2,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5485, recomputed=0.4619, tol=0.0300)"
-CFGFAC4CAC355,optuna_s2_refine_2,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5374, recomputed=0.4725, tol=0.0300)"
-CFGFAC4CAC355,optuna_s2_refine_2,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5347, recomputed=0.4948, tol=0.0300)"
-CFGFAC4CAC355,optuna_s2_refine_2,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.5752, recomputed=0.4402, tol=0.0300)"
-CFGFAC4CAC355,optuna_s2_refine_2,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5707, recomputed=0.4464, tol=0.0300)"
-CFGFAC4CAC355,optuna_s2_refine_2,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5534, recomputed=0.4559, tol=0.0300)"
-CFGFAC4CAC355,optuna_s2_refine_2,min_cell_auc 0.5028 < auc_min 0.5400
-CFGFAC4CAC355,optuna_s2_refine_2,min_cell_auc_bound 0.4937 < auc_bound_min 0.5200
-CFGFAC4CAC355,optuna_s2_refine_2,min_cell_tp_sep 0.0194 < tp_sep_min 0.0400
-CFGFAC4CAC355,optuna_s2_refine_2,min_cell_ap_lift 1.062 < ap_lift_min 1.200
-CFG00BD3190B8,optuna_stage1,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.4709, recomputed=0.5475, tol=0.0300)"
-CFG00BD3190B8,optuna_stage1,"MR_long_H4 auc_label mismatch vs score_prod (provided=0.5255, recomputed=0.4353, tol=0.0300)"
-CFG00BD3190B8,optuna_stage1,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.5118, recomputed=0.4323, tol=0.0300)"
-CFG00BD3190B8,optuna_stage1,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5349, recomputed=0.4812, tol=0.0300)"
-CFG00BD3190B8,optuna_stage1,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5540, recomputed=0.3780, tol=0.0300)"
-CFG00BD3190B8,optuna_stage1,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5385, recomputed=0.3898, tol=0.0300)"
-CFG00BD3190B8,optuna_stage1,"TF_long_H2 auc_label mismatch vs score_prod (provided=0.4736, recomputed=0.5822, tol=0.0300)"
-CFG00BD3190B8,optuna_stage1,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5367, recomputed=0.4834, tol=0.0300)"
-CFG00BD3190B8,optuna_stage1,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.5241, recomputed=0.4880, tol=0.0300)"
-CFG00BD3190B8,optuna_stage1,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5623, recomputed=0.3660, tol=0.0300)"
-CFG00BD3190B8,optuna_stage1,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5530, recomputed=0.3627, tol=0.0300)"
-CFG00BD3190B8,optuna_stage1,min_cell_bind_prod 0.130 < bind_cell_min 0.380
-CFG00BD3190B8,optuna_stage1,bind_prod_agg 0.243 < bind_min 0.500
-CFG00BD3190B8,optuna_stage1,min_cell_auc 0.4709 < auc_min 0.5400
-CFG00BD3190B8,optuna_stage1,min_cell_auc_bound 0.4410 < auc_bound_min 0.5200
-CFG00BD3190B8,optuna_stage1,min_cell_tp_sep -0.0026 < tp_sep_min 0.0400
-CFG00BD3190B8,optuna_stage1,min_cell_ap_lift 0.960 < ap_lift_min 1.200
-CFG00BD3190B8,optuna_stage1,tp_floor_bind_prod_agg 37.7% > tp_floor_bind_max_agg 20.0%
-CFG00BD3190B8,optuna_stage1,max_cell_tp_floor_bind_prod 69.6% > tp_floor_bind_max_cell 35.0%
-CFG00BD3190B8,optuna_stage1,floor-dominance combined guardrail: min_cell_auc 0.4709 < required 0.5600 when TP floor-binding is high
-CFGE8A3F3F154,optuna_s2_refine_1,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5685, recomputed=0.4335, tol=0.0300)"
-CFGE8A3F3F154,optuna_s2_refine_1,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5628, recomputed=0.4437, tol=0.0300)"
-CFGE8A3F3F154,optuna_s2_refine_1,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5371, recomputed=0.4752, tol=0.0300)"
-CFGE8A3F3F154,optuna_s2_refine_1,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5292, recomputed=0.4945, tol=0.0300)"
-CFGE8A3F3F154,optuna_s2_refine_1,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.6006, recomputed=0.4052, tol=0.0300)"
-CFGE8A3F3F154,optuna_s2_refine_1,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5863, recomputed=0.4221, tol=0.0300)"
-CFGE8A3F3F154,optuna_s2_refine_1,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5572, recomputed=0.4466, tol=0.0300)"
-CFGE8A3F3F154,optuna_s2_refine_1,min_cell_auc 0.4963 < auc_min 0.5400
-CFGE8A3F3F154,optuna_s2_refine_1,min_cell_auc_bound 0.4891 < auc_bound_min 0.5200
-CFGE8A3F3F154,optuna_s2_refine_1,min_cell_tp_sep 0.0089 < tp_sep_min 0.0400
-CFGE8A3F3F154,optuna_s2_refine_1,min_cell_ap_lift 1.018 < ap_lift_min 1.200
-CFGC8F6871CD7,optuna_stage1,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5752, recomputed=0.4376, tol=0.0300)"
-CFGC8F6871CD7,optuna_stage1,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5618, recomputed=0.4511, tol=0.0300)"
-CFGC8F6871CD7,optuna_stage1,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5502, recomputed=0.4629, tol=0.0300)"
-CFGC8F6871CD7,optuna_stage1,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5265, recomputed=0.4941, tol=0.0300)"
-CFGC8F6871CD7,optuna_stage1,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.5856, recomputed=0.4363, tol=0.0300)"
-CFGC8F6871CD7,optuna_stage1,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5717, recomputed=0.4487, tol=0.0300)"
-CFGC8F6871CD7,optuna_stage1,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5547, recomputed=0.4662, tol=0.0300)"
-CFGC8F6871CD7,optuna_stage1,min_cell_auc 0.5045 < auc_min 0.5400
-CFGC8F6871CD7,optuna_stage1,min_cell_auc_bound 0.4982 < auc_bound_min 0.5200
-CFGC8F6871CD7,optuna_stage1,min_cell_tp_sep 0.0217 < tp_sep_min 0.0400
-CFGC8F6871CD7,optuna_stage1,min_cell_ap_lift 1.056 < ap_lift_min 1.200
-CFG4380DCD426,optuna_stage1,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5747, recomputed=0.4284, tol=0.0300)"
-CFG4380DCD426,optuna_stage1,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5696, recomputed=0.4417, tol=0.0300)"
-CFG4380DCD426,optuna_stage1,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5459, recomputed=0.4684, tol=0.0300)"
-CFG4380DCD426,optuna_stage1,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5272, recomputed=0.4932, tol=0.0300)"
-CFG4380DCD426,optuna_stage1,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.6026, recomputed=0.4096, tol=0.0300)"
-CFG4380DCD426,optuna_stage1,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5878, recomputed=0.4270, tol=0.0300)"
-CFG4380DCD426,optuna_stage1,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5589, recomputed=0.4516, tol=0.0300)"
-CFG4380DCD426,optuna_stage1,min_cell_auc 0.5005 < auc_min 0.5400
-CFG4380DCD426,optuna_stage1,min_cell_auc_bound 0.4935 < auc_bound_min 0.5200
-CFG4380DCD426,optuna_stage1,min_cell_tp_sep 0.0080 < tp_sep_min 0.0400
-CFG4380DCD426,optuna_stage1,min_cell_ap_lift 1.021 < ap_lift_min 1.200
-CFG396CDD5194,optuna_stage1,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.4172, recomputed=0.5909, tol=0.0300)"
-CFG396CDD5194,optuna_stage1,"MR_long_H4 auc_label mismatch vs score_prod (provided=0.6190, recomputed=0.3033, tol=0.0300)"
-CFG396CDD5194,optuna_stage1,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.5704, recomputed=0.3088, tol=0.0300)"
-CFG396CDD5194,optuna_stage1,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.4444, recomputed=0.5513, tol=0.0300)"
-CFG396CDD5194,optuna_stage1,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.6235, recomputed=0.3131, tol=0.0300)"
-CFG396CDD5194,optuna_stage1,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5752, recomputed=0.3234, tol=0.0300)"
-CFG396CDD5194,optuna_stage1,"TF_long_H2 auc_label mismatch vs score_prod (provided=0.4393, recomputed=0.6192, tol=0.0300)"
-CFG396CDD5194,optuna_stage1,"TF_long_H4 auc_label mismatch vs score_prod (provided=0.6077, recomputed=0.3594, tol=0.0300)"
-CFG396CDD5194,optuna_stage1,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5671, recomputed=0.3600, tol=0.0300)"
-CFG396CDD5194,optuna_stage1,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.4188, recomputed=0.5665, tol=0.0300)"
-CFG396CDD5194,optuna_stage1,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.6369, recomputed=0.2866, tol=0.0300)"
-CFG396CDD5194,optuna_stage1,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5930, recomputed=0.2900, tol=0.0300)"
-CFG396CDD5194,optuna_stage1,min_cell_bind_prod 0.085 < bind_cell_min 0.380
-CFG396CDD5194,optuna_stage1,bind_prod_agg 0.198 < bind_min 0.500
-CFG396CDD5194,optuna_stage1,min_cell_auc 0.4172 < auc_min 0.5400
-CFG396CDD5194,optuna_stage1,min_cell_auc_bound 0.3849 < auc_bound_min 0.5200
-CFG396CDD5194,optuna_stage1,min_cell_tp_sep -0.1121 < tp_sep_min 0.0400
-CFG396CDD5194,optuna_stage1,min_cell_ap_lift 0.817 < ap_lift_min 1.200
-CFG396CDD5194,optuna_stage1,tp_floor_bind_prod_agg 58.4% > tp_floor_bind_max_agg 20.0%
-CFG396CDD5194,optuna_stage1,max_cell_tp_floor_bind_prod 66.9% > tp_floor_bind_max_cell 35.0%
-CFG396CDD5194,optuna_stage1,floor-dominance combined guardrail: min_cell_auc 0.4172 < required 0.5600 when TP floor-binding is high
-CFG146DDD9E83,optuna_s2_refine_2,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.5270, recomputed=0.4914, tol=0.0300)"
-CFG146DDD9E83,optuna_s2_refine_2,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5688, recomputed=0.4496, tol=0.0300)"
-CFG146DDD9E83,optuna_s2_refine_2,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5639, recomputed=0.4577, tol=0.0300)"
-CFG146DDD9E83,optuna_s2_refine_2,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5518, recomputed=0.4639, tol=0.0300)"
-CFG146DDD9E83,optuna_s2_refine_2,"TF_long_H4 auc_label mismatch vs score_prod (provided=0.5285, recomputed=0.4968, tol=0.0300)"
-CFG146DDD9E83,optuna_s2_refine_2,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5384, recomputed=0.4882, tol=0.0300)"
-CFG146DDD9E83,optuna_s2_refine_2,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.5866, recomputed=0.4460, tol=0.0300)"
-CFG146DDD9E83,optuna_s2_refine_2,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5750, recomputed=0.4534, tol=0.0300)"
-CFG146DDD9E83,optuna_s2_refine_2,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5578, recomputed=0.4604, tol=0.0300)"
-CFG146DDD9E83,optuna_s2_refine_2,min_cell_auc 0.5117 < auc_min 0.5400
-CFG146DDD9E83,optuna_s2_refine_2,min_cell_auc_bound 0.5048 < auc_bound_min 0.5200
-CFG146DDD9E83,optuna_s2_refine_2,min_cell_tp_sep 0.0259 < tp_sep_min 0.0400
-CFG146DDD9E83,optuna_s2_refine_2,min_cell_ap_lift 1.086 < ap_lift_min 1.200
-CFGAA4B9062F1,optuna_s2_refine_2,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.5267, recomputed=0.4905, tol=0.0300)"
-CFGAA4B9062F1,optuna_s2_refine_2,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5689, recomputed=0.4495, tol=0.0300)"
-CFGAA4B9062F1,optuna_s2_refine_2,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5593, recomputed=0.4593, tol=0.0300)"
-CFGAA4B9062F1,optuna_s2_refine_2,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5514, recomputed=0.4630, tol=0.0300)"
-CFGAA4B9062F1,optuna_s2_refine_2,"TF_long_H4 auc_label mismatch vs score_prod (provided=0.5284, recomputed=0.4963, tol=0.0300)"
-CFGAA4B9062F1,optuna_s2_refine_2,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5392, recomputed=0.4863, tol=0.0300)"
-CFGAA4B9062F1,optuna_s2_refine_2,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.5831, recomputed=0.4453, tol=0.0300)"
-CFGAA4B9062F1,optuna_s2_refine_2,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5745, recomputed=0.4525, tol=0.0300)"
-CFGAA4B9062F1,optuna_s2_refine_2,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5570, recomputed=0.4608, tol=0.0300)"
-CFGAA4B9062F1,optuna_s2_refine_2,min_cell_auc 0.5052 < auc_min 0.5400
-CFGAA4B9062F1,optuna_s2_refine_2,min_cell_auc_bound 0.4977 < auc_bound_min 0.5200
-CFGAA4B9062F1,optuna_s2_refine_2,min_cell_tp_sep 0.0197 < tp_sep_min 0.0400
-CFGAA4B9062F1,optuna_s2_refine_2,min_cell_ap_lift 1.060 < ap_lift_min 1.200
-CFG3F6BAA3DCF,optuna_stage1,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.4999, recomputed=0.5346, tol=0.0300)"
-CFG3F6BAA3DCF,optuna_stage1,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5864, recomputed=0.4295, tol=0.0300)"
-CFG3F6BAA3DCF,optuna_stage1,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5726, recomputed=0.4457, tol=0.0300)"
-CFG3F6BAA3DCF,optuna_stage1,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5598, recomputed=0.4577, tol=0.0300)"
-CFG3F6BAA3DCF,optuna_stage1,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.5984, recomputed=0.4265, tol=0.0300)"
-CFG3F6BAA3DCF,optuna_stage1,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5831, recomputed=0.4400, tol=0.0300)"
-CFG3F6BAA3DCF,optuna_stage1,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5656, recomputed=0.4551, tol=0.0300)"
-CFG3F6BAA3DCF,optuna_stage1,min_cell_auc 0.4999 < auc_min 0.5400
-CFG3F6BAA3DCF,optuna_stage1,min_cell_auc_bound 0.4923 < auc_bound_min 0.5200
-CFG3F6BAA3DCF,optuna_stage1,min_cell_tp_sep 0.0151 < tp_sep_min 0.0400
-CFG3F6BAA3DCF,optuna_stage1,min_cell_ap_lift 1.041 < ap_lift_min 1.200
-CFGAA81A8C6FE,optuna_s2_refine_4,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.4788, recomputed=0.5440, tol=0.0300)"
-CFGAA81A8C6FE,optuna_s2_refine_4,"MR_long_H4 auc_label mismatch vs score_prod (provided=0.4780, recomputed=0.5496, tol=0.0300)"
-CFGAA81A8C6FE,optuna_s2_refine_4,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.4796, recomputed=0.5470, tol=0.0300)"
-CFGAA81A8C6FE,optuna_s2_refine_4,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5781, recomputed=0.4457, tol=0.0300)"
-CFGAA81A8C6FE,optuna_s2_refine_4,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5383, recomputed=0.4412, tol=0.0300)"
-CFGAA81A8C6FE,optuna_s2_refine_4,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5311, recomputed=0.4640, tol=0.0300)"
-CFGAA81A8C6FE,optuna_s2_refine_4,"TF_long_H2 auc_label mismatch vs score_prod (provided=0.4769, recomputed=0.5738, tol=0.0300)"
-CFGAA81A8C6FE,optuna_s2_refine_4,"TF_long_H4 auc_label mismatch vs score_prod (provided=0.4947, recomputed=0.5640, tol=0.0300)"
-CFGAA81A8C6FE,optuna_s2_refine_4,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.5613, recomputed=0.4485, tol=0.0300)"
-CFGAA81A8C6FE,optuna_s2_refine_4,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5478, recomputed=0.4228, tol=0.0300)"
-CFGAA81A8C6FE,optuna_s2_refine_4,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5418, recomputed=0.4251, tol=0.0300)"
-CFGAA81A8C6FE,optuna_s2_refine_4,min_cell_bind_prod 0.231 < bind_cell_min 0.380
-CFGAA81A8C6FE,optuna_s2_refine_4,bind_prod_agg 0.348 < bind_min 0.500
-CFGAA81A8C6FE,optuna_s2_refine_4,min_cell_tp_over_sl 1.019 < tp_over_sl_min 1.050
-CFGAA81A8C6FE,optuna_s2_refine_4,min_cell_auc 0.4769 < auc_min 0.5400
-CFGAA81A8C6FE,optuna_s2_refine_4,min_cell_auc_bound 0.4518 < auc_bound_min 0.5200
-CFGAA81A8C6FE,optuna_s2_refine_4,min_cell_tp_sep -0.0191 < tp_sep_min 0.0400
-CFGAA81A8C6FE,optuna_s2_refine_4,min_cell_ap_lift 0.963 < ap_lift_min 1.200
-CFGAA81A8C6FE,optuna_s2_refine_4,tp_floor_bind_prod_agg 36.6% > tp_floor_bind_max_agg 20.0%
-CFGAA81A8C6FE,optuna_s2_refine_4,max_cell_tp_floor_bind_prod 68.9% > tp_floor_bind_max_cell 35.0%
-CFGAA81A8C6FE,optuna_s2_refine_4,floor-dominance combined guardrail: min_cell_auc 0.4769 < required 0.5600 when TP floor-binding is high
-CFG4E95AE55F4,optuna_stage1,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.4655, recomputed=0.5489, tol=0.0300)"
-CFG4E95AE55F4,optuna_stage1,"MR_long_H4 auc_label mismatch vs score_prod (provided=0.4655, recomputed=0.5509, tol=0.0300)"
-CFG4E95AE55F4,optuna_stage1,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.5063, recomputed=0.4506, tol=0.0300)"
-CFG4E95AE55F4,optuna_stage1,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5607, recomputed=0.3400, tol=0.0300)"
-CFG4E95AE55F4,optuna_stage1,"TF_long_H2 auc_label mismatch vs score_prod (provided=0.4818, recomputed=0.5563, tol=0.0300)"
-CFG4E95AE55F4,optuna_stage1,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5345, recomputed=0.4758, tol=0.0300)"
-CFG4E95AE55F4,optuna_stage1,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5541, recomputed=0.3482, tol=0.0300)"
-CFG4E95AE55F4,optuna_stage1,min_cell_bind_prod 0.151 < bind_cell_min 0.380
-CFG4E95AE55F4,optuna_stage1,bind_prod_agg 0.360 < bind_min 0.500
-CFG4E95AE55F4,optuna_stage1,min_cell_auc 0.4655 < auc_min 0.5400
-CFG4E95AE55F4,optuna_stage1,min_cell_auc_bound 0.4482 < auc_bound_min 0.5200
-CFG4E95AE55F4,optuna_stage1,min_cell_tp_sep -0.0114 < tp_sep_min 0.0400
-CFG4E95AE55F4,optuna_stage1,min_cell_ap_lift 0.941 < ap_lift_min 1.200
-CFG4E95AE55F4,optuna_stage1,tp_floor_bind_prod_agg 44.0% > tp_floor_bind_max_agg 20.0%
-CFG4E95AE55F4,optuna_stage1,max_cell_tp_floor_bind_prod 62.2% > tp_floor_bind_max_cell 35.0%
-CFG4E95AE55F4,optuna_stage1,floor-dominance combined guardrail: min_cell_auc 0.4655 < required 0.5600 when TP floor-binding is high
-CFGE254CAC633,optuna_stage1,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.4908, recomputed=0.5268, tol=0.0300)"
-CFGE254CAC633,optuna_stage1,"MR_long_H4 auc_label mismatch vs score_prod (provided=0.4790, recomputed=0.5332, tol=0.0300)"
-CFGE254CAC633,optuna_stage1,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.4655, recomputed=0.6091, tol=0.0300)"
-CFGE254CAC633,optuna_stage1,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5228, recomputed=0.4840, tol=0.0300)"
-CFGE254CAC633,optuna_stage1,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5403, recomputed=0.4026, tol=0.0300)"
-CFGE254CAC633,optuna_stage1,"TF_long_H2 auc_label mismatch vs score_prod (provided=0.4898, recomputed=0.5338, tol=0.0300)"
-CFGE254CAC633,optuna_stage1,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.4918, recomputed=0.6117, tol=0.0300)"
-CFGE254CAC633,optuna_stage1,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.5451, recomputed=0.4689, tol=0.0300)"
-CFGE254CAC633,optuna_stage1,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5500, recomputed=0.4548, tol=0.0300)"
-CFGE254CAC633,optuna_stage1,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5221, recomputed=0.4398, tol=0.0300)"
-CFGE254CAC633,optuna_stage1,min_cell_bind_prod 0.170 < bind_cell_min 0.380
-CFGE254CAC633,optuna_stage1,bind_prod_agg 0.384 < bind_min 0.500
-CFGE254CAC633,optuna_stage1,min_cell_auc 0.4655 < auc_min 0.5400
-CFGE254CAC633,optuna_stage1,min_cell_auc_bound 0.3885 < auc_bound_min 0.5200
-CFGE254CAC633,optuna_stage1,min_cell_tp_sep -0.0363 < tp_sep_min 0.0400
-CFGE254CAC633,optuna_stage1,min_cell_ap_lift 0.940 < ap_lift_min 1.200
-CFGE254CAC633,optuna_stage1,tp_floor_bind_prod_agg 44.0% > tp_floor_bind_max_agg 20.0%
-CFGE254CAC633,optuna_stage1,max_cell_tp_floor_bind_prod 62.3% > tp_floor_bind_max_cell 35.0%
-CFGE254CAC633,optuna_stage1,floor-dominance combined guardrail: min_cell_auc 0.4655 < required 0.5600 when TP floor-binding is high
-CFG7B24427562,optuna_s2_refine_4,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.4682, recomputed=0.5337, tol=0.0300)"
-CFG7B24427562,optuna_s2_refine_4,"MR_long_H4 auc_label mismatch vs score_prod (provided=0.4647, recomputed=0.5398, tol=0.0300)"
-CFG7B24427562,optuna_s2_refine_4,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5449, recomputed=0.4604, tol=0.0300)"
-CFG7B24427562,optuna_s2_refine_4,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5229, recomputed=0.4819, tol=0.0300)"
-CFG7B24427562,optuna_s2_refine_4,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5255, recomputed=0.3911, tol=0.0300)"
-CFG7B24427562,optuna_s2_refine_4,"TF_long_H2 auc_label mismatch vs score_prod (provided=0.4633, recomputed=0.5755, tol=0.0300)"
-CFG7B24427562,optuna_s2_refine_4,"TF_long_H4 auc_label mismatch vs score_prod (provided=0.4980, recomputed=0.5677, tol=0.0300)"
-CFG7B24427562,optuna_s2_refine_4,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.5433, recomputed=0.4610, tol=0.0300)"
-CFG7B24427562,optuna_s2_refine_4,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5308, recomputed=0.4632, tol=0.0300)"
-CFG7B24427562,optuna_s2_refine_4,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5240, recomputed=0.4056, tol=0.0300)"
-CFG7B24427562,optuna_s2_refine_4,min_cell_bind_prod 0.111 < bind_cell_min 0.380
-CFG7B24427562,optuna_s2_refine_4,bind_prod_agg 0.287 < bind_min 0.500
-CFG7B24427562,optuna_s2_refine_4,min_cell_auc 0.4633 < auc_min 0.5400
-CFG7B24427562,optuna_s2_refine_4,min_cell_auc_bound 0.4412 < auc_bound_min 0.5200
-CFG7B24427562,optuna_s2_refine_4,min_cell_tp_sep -0.0258 < tp_sep_min 0.0400
-CFG7B24427562,optuna_s2_refine_4,min_cell_ap_lift 0.927 < ap_lift_min 1.200
-CFG7B24427562,optuna_s2_refine_4,tp_floor_bind_prod_agg 54.1% > tp_floor_bind_max_agg 20.0%
-CFG7B24427562,optuna_s2_refine_4,max_cell_tp_floor_bind_prod 70.7% > tp_floor_bind_max_cell 35.0%
-CFG7B24427562,optuna_s2_refine_4,floor-dominance combined guardrail: min_cell_auc 0.4633 < required 0.5600 when TP floor-binding is high
-CFG822ADDBB32,optuna_stage1,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.4609, recomputed=0.6493, tol=0.0300)"
-CFG822ADDBB32,optuna_stage1,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5882, recomputed=0.4238, tol=0.0300)"
-CFG822ADDBB32,optuna_stage1,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5605, recomputed=0.4475, tol=0.0300)"
-CFG822ADDBB32,optuna_stage1,"TF_long_H2 auc_label mismatch vs score_prod (provided=0.4777, recomputed=0.5523, tol=0.0300)"
-CFG822ADDBB32,optuna_stage1,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.4944, recomputed=0.6291, tol=0.0300)"
-CFG822ADDBB32,optuna_stage1,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.5953, recomputed=0.4109, tol=0.0300)"
-CFG822ADDBB32,optuna_stage1,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5740, recomputed=0.4150, tol=0.0300)"
-CFG822ADDBB32,optuna_stage1,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.4817, recomputed=0.5522, tol=0.0300)"
-CFG822ADDBB32,optuna_stage1,min_cell_bind_prod 0.161 < bind_cell_min 0.380
-CFG822ADDBB32,optuna_stage1,bind_prod_agg 0.354 < bind_min 0.500
-CFG822ADDBB32,optuna_stage1,min_cell_tp_over_sl 0.998 < tp_over_sl_min 1.050
-CFG822ADDBB32,optuna_stage1,min_cell_auc 0.4609 < auc_min 0.5400
-CFG822ADDBB32,optuna_stage1,min_cell_auc_bound 0.3543 < auc_bound_min 0.5200
-CFG822ADDBB32,optuna_stage1,min_cell_tp_sep -0.0628 < tp_sep_min 0.0400
-CFG822ADDBB32,optuna_stage1,min_cell_ap_lift 0.935 < ap_lift_min 1.200
-CFG822ADDBB32,optuna_stage1,tp_floor_bind_prod_agg 52.8% > tp_floor_bind_max_agg 20.0%
-CFG822ADDBB32,optuna_stage1,max_cell_tp_floor_bind_prod 70.1% > tp_floor_bind_max_cell 35.0%
-CFG822ADDBB32,optuna_stage1,floor-dominance combined guardrail: min_cell_auc 0.4609 < required 0.5600 when TP floor-binding is high
-CFG2D058933B4,optuna_s2_refine_4,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.4514, recomputed=0.5692, tol=0.0300)"
-CFG2D058933B4,optuna_s2_refine_4,"MR_long_H4 auc_label mismatch vs score_prod (provided=0.5469, recomputed=0.3879, tol=0.0300)"
-CFG2D058933B4,optuna_s2_refine_4,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.5195, recomputed=0.3791, tol=0.0300)"
-CFG2D058933B4,optuna_s2_refine_4,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5678, recomputed=0.3455, tol=0.0300)"
-CFG2D058933B4,optuna_s2_refine_4,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5368, recomputed=0.3554, tol=0.0300)"
-CFG2D058933B4,optuna_s2_refine_4,"TF_long_H2 auc_label mismatch vs score_prod (provided=0.4690, recomputed=0.5906, tol=0.0300)"
-CFG2D058933B4,optuna_s2_refine_4,"TF_long_H4 auc_label mismatch vs score_prod (provided=0.5453, recomputed=0.4715, tol=0.0300)"
-CFG2D058933B4,optuna_s2_refine_4,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5406, recomputed=0.4501, tol=0.0300)"
-CFG2D058933B4,optuna_s2_refine_4,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5741, recomputed=0.3402, tol=0.0300)"
-CFG2D058933B4,optuna_s2_refine_4,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5523, recomputed=0.3336, tol=0.0300)"
-CFG2D058933B4,optuna_s2_refine_4,min_cell_bind_prod 0.110 < bind_cell_min 0.380
-CFG2D058933B4,optuna_s2_refine_4,bind_prod_agg 0.226 < bind_min 0.500
-CFG2D058933B4,optuna_s2_refine_4,min_cell_auc 0.4514 < auc_min 0.5400
-CFG2D058933B4,optuna_s2_refine_4,min_cell_auc_bound 0.4317 < auc_bound_min 0.5200
-CFG2D058933B4,optuna_s2_refine_4,min_cell_tp_sep 0.0002 < tp_sep_min 0.0400
-CFG2D058933B4,optuna_s2_refine_4,min_cell_ap_lift 0.928 < ap_lift_min 1.200
-CFG2D058933B4,optuna_s2_refine_4,tp_floor_bind_prod_agg 39.2% > tp_floor_bind_max_agg 20.0%
-CFG2D058933B4,optuna_s2_refine_4,max_cell_tp_floor_bind_prod 71.3% > tp_floor_bind_max_cell 35.0%
-CFG2D058933B4,optuna_s2_refine_4,floor-dominance combined guardrail: min_cell_auc 0.4514 < required 0.5600 when TP floor-binding is high
-CFG76FB8B5E59,optuna_stage1,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.4400, recomputed=0.5752, tol=0.0300)"
-CFG76FB8B5E59,optuna_stage1,"MR_long_H4 auc_label mismatch vs score_prod (provided=0.5109, recomputed=0.4701, tol=0.0300)"
-CFG76FB8B5E59,optuna_stage1,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.5084, recomputed=0.4684, tol=0.0300)"
-CFG76FB8B5E59,optuna_stage1,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5864, recomputed=0.3429, tol=0.0300)"
-CFG76FB8B5E59,optuna_stage1,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5639, recomputed=0.3743, tol=0.0300)"
-CFG76FB8B5E59,optuna_stage1,"TF_long_H2 auc_label mismatch vs score_prod (provided=0.4918, recomputed=0.5450, tol=0.0300)"
-CFG76FB8B5E59,optuna_stage1,"TF_long_H4 auc_label mismatch vs score_prod (provided=0.4978, recomputed=0.5640, tol=0.0300)"
-CFG76FB8B5E59,optuna_stage1,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5112, recomputed=0.5449, tol=0.0300)"
-CFG76FB8B5E59,optuna_stage1,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.5551, recomputed=0.4547, tol=0.0300)"
-CFG76FB8B5E59,optuna_stage1,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5794, recomputed=0.3482, tol=0.0300)"
-CFG76FB8B5E59,optuna_stage1,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5643, recomputed=0.3725, tol=0.0300)"
-CFG76FB8B5E59,optuna_stage1,min_cell_bind_prod 0.213 < bind_cell_min 0.380
-CFG76FB8B5E59,optuna_stage1,bind_prod_agg 0.351 < bind_min 0.500
-CFG76FB8B5E59,optuna_stage1,min_cell_auc 0.4400 < auc_min 0.5400
-CFG76FB8B5E59,optuna_stage1,min_cell_auc_bound 0.4265 < auc_bound_min 0.5200
-CFG76FB8B5E59,optuna_stage1,min_cell_tp_sep -0.0129 < tp_sep_min 0.0400
-CFG76FB8B5E59,optuna_stage1,min_cell_ap_lift 0.887 < ap_lift_min 1.200
-CFG76FB8B5E59,optuna_stage1,tp_floor_bind_prod_agg 31.3% > tp_floor_bind_max_agg 20.0%
-CFG76FB8B5E59,optuna_stage1,max_cell_tp_floor_bind_prod 60.1% > tp_floor_bind_max_cell 35.0%
-CFG76FB8B5E59,optuna_stage1,floor-dominance combined guardrail: min_cell_auc 0.4400 < required 0.5600 when TP floor-binding is high
-CFGFF047B8525,optuna_stage1,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.4376, recomputed=0.5700, tol=0.0300)"
-CFGFF047B8525,optuna_stage1,"MR_long_H4 auc_label mismatch vs score_prod (provided=0.4431, recomputed=0.5645, tol=0.0300)"
-CFGFF047B8525,optuna_stage1,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.5286, recomputed=0.3686, tol=0.0300)"
-CFGFF047B8525,optuna_stage1,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5263, recomputed=0.4826, tol=0.0300)"
-CFGFF047B8525,optuna_stage1,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5372, recomputed=0.3513, tol=0.0300)"
-CFGFF047B8525,optuna_stage1,"TF_long_H2 auc_label mismatch vs score_prod (provided=0.4556, recomputed=0.5999, tol=0.0300)"
-CFGFF047B8525,optuna_stage1,"TF_long_H4 auc_label mismatch vs score_prod (provided=0.4889, recomputed=0.5855, tol=0.0300)"
-CFGFF047B8525,optuna_stage1,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5395, recomputed=0.4614, tol=0.0300)"
-CFGFF047B8525,optuna_stage1,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5481, recomputed=0.3298, tol=0.0300)"
-CFGFF047B8525,optuna_stage1,min_cell_bind_prod 0.099 < bind_cell_min 0.380
-CFGFF047B8525,optuna_stage1,bind_prod_agg 0.265 < bind_min 0.500
-CFGFF047B8525,optuna_stage1,min_cell_auc 0.4376 < auc_min 0.5400
-CFGFF047B8525,optuna_stage1,min_cell_auc_bound 0.4174 < auc_bound_min 0.5200
-CFGFF047B8525,optuna_stage1,min_cell_tp_sep -0.0122 < tp_sep_min 0.0400
-CFGFF047B8525,optuna_stage1,min_cell_ap_lift 0.873 < ap_lift_min 1.200
-CFGFF047B8525,optuna_stage1,tp_floor_bind_prod_agg 53.8% > tp_floor_bind_max_agg 20.0%
-CFGFF047B8525,optuna_stage1,max_cell_tp_floor_bind_prod 70.0% > tp_floor_bind_max_cell 35.0%
-CFGFF047B8525,optuna_stage1,floor-dominance combined guardrail: min_cell_auc 0.4376 < required 0.5600 when TP floor-binding is high
-CFG27B71D9F9C,optuna_s2_refine_0,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.5975, recomputed=0.3970, tol=0.0300)"
-CFG27B71D9F9C,optuna_s2_refine_0,"MR_long_H4 auc_label mismatch vs score_prod (provided=0.5745, recomputed=0.3869, tol=0.0300)"
-CFG27B71D9F9C,optuna_s2_refine_0,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.5418, recomputed=0.3792, tol=0.0300)"
-CFG27B71D9F9C,optuna_s2_refine_0,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.6224, recomputed=0.3736, tol=0.0300)"
-CFG27B71D9F9C,optuna_s2_refine_0,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5939, recomputed=0.3770, tol=0.0300)"
-CFG27B71D9F9C,optuna_s2_refine_0,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5435, recomputed=0.3821, tol=0.0300)"
-CFG27B71D9F9C,optuna_s2_refine_0,"TF_long_H2 auc_label mismatch vs score_prod (provided=0.5720, recomputed=0.4575, tol=0.0300)"
-CFG27B71D9F9C,optuna_s2_refine_0,"TF_long_H4 auc_label mismatch vs score_prod (provided=0.5572, recomputed=0.4521, tol=0.0300)"
-CFG27B71D9F9C,optuna_s2_refine_0,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5461, recomputed=0.4388, tol=0.0300)"
-CFG27B71D9F9C,optuna_s2_refine_0,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.6171, recomputed=0.3730, tol=0.0300)"
-CFG27B71D9F9C,optuna_s2_refine_0,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5936, recomputed=0.3704, tol=0.0300)"
-CFG27B71D9F9C,optuna_s2_refine_0,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5625, recomputed=0.3683, tol=0.0300)"
-CFG27B71D9F9C,optuna_s2_refine_0,min_cell_bind_prod 0.136 < bind_cell_min 0.380
-CFG27B71D9F9C,optuna_s2_refine_0,bind_prod_agg 0.265 < bind_min 0.500
-CFG27B71D9F9C,optuna_s2_refine_0,min_cell_tp_sep 0.0272 < tp_sep_min 0.0400
-CFG27B71D9F9C,optuna_s2_refine_0,min_cell_ap_lift 1.103 < ap_lift_min 1.200
-CFG27B71D9F9C,optuna_s2_refine_0,tp_floor_bind_prod_agg 23.5% > tp_floor_bind_max_agg 20.0%
-CFG27B71D9F9C,optuna_s2_refine_0,max_cell_tp_floor_bind_prod 61.3% > tp_floor_bind_max_cell 35.0%
-CFG27B71D9F9C,optuna_s2_refine_0,floor-dominance combined guardrail: min_cell_auc 0.5418 < required 0.5600 when TP floor-binding is high
-CFG409321255B,optuna_s2_refine_3,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.5850, recomputed=0.4133, tol=0.0300)"
-CFG409321255B,optuna_s2_refine_3,"MR_long_H4 auc_label mismatch vs score_prod (provided=0.5687, recomputed=0.3992, tol=0.0300)"
-CFG409321255B,optuna_s2_refine_3,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.5406, recomputed=0.3989, tol=0.0300)"
-CFG409321255B,optuna_s2_refine_3,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.6135, recomputed=0.3839, tol=0.0300)"
-CFG409321255B,optuna_s2_refine_3,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5849, recomputed=0.3869, tol=0.0300)"
-CFG409321255B,optuna_s2_refine_3,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5410, recomputed=0.4014, tol=0.0300)"
-CFG409321255B,optuna_s2_refine_3,"TF_long_H2 auc_label mismatch vs score_prod (provided=0.5638, recomputed=0.4673, tol=0.0300)"
-CFG409321255B,optuna_s2_refine_3,"TF_long_H4 auc_label mismatch vs score_prod (provided=0.5517, recomputed=0.4611, tol=0.0300)"
-CFG409321255B,optuna_s2_refine_3,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5433, recomputed=0.4565, tol=0.0300)"
-CFG409321255B,optuna_s2_refine_3,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.6126, recomputed=0.3823, tol=0.0300)"
-CFG409321255B,optuna_s2_refine_3,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5889, recomputed=0.3798, tol=0.0300)"
-CFG409321255B,optuna_s2_refine_3,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5600, recomputed=0.3843, tol=0.0300)"
-CFG409321255B,optuna_s2_refine_3,min_cell_bind_prod 0.147 < bind_cell_min 0.380
-CFG409321255B,optuna_s2_refine_3,bind_prod_agg 0.276 < bind_min 0.500
-CFG409321255B,optuna_s2_refine_3,min_cell_tp_sep 0.0249 < tp_sep_min 0.0400
-CFG409321255B,optuna_s2_refine_3,min_cell_ap_lift 1.099 < ap_lift_min 1.200
-CFG409321255B,optuna_s2_refine_3,tp_floor_bind_prod_agg 22.9% > tp_floor_bind_max_agg 20.0%
-CFG409321255B,optuna_s2_refine_3,max_cell_tp_floor_bind_prod 60.4% > tp_floor_bind_max_cell 35.0%
-CFG409321255B,optuna_s2_refine_3,floor-dominance combined guardrail: min_cell_auc 0.5406 < required 0.5600 when TP floor-binding is high
-CFG17A5200BC4,optuna_s2_refine_0,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.5870, recomputed=0.4108, tol=0.0300)"
-CFG17A5200BC4,optuna_s2_refine_0,"MR_long_H4 auc_label mismatch vs score_prod (provided=0.5691, recomputed=0.3973, tol=0.0300)"
-CFG17A5200BC4,optuna_s2_refine_0,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.5404, recomputed=0.3967, tol=0.0300)"
-CFG17A5200BC4,optuna_s2_refine_0,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.6142, recomputed=0.3828, tol=0.0300)"
-CFG17A5200BC4,optuna_s2_refine_0,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5864, recomputed=0.3853, tol=0.0300)"
-CFG17A5200BC4,optuna_s2_refine_0,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5407, recomputed=0.3993, tol=0.0300)"
-CFG17A5200BC4,optuna_s2_refine_0,"TF_long_H2 auc_label mismatch vs score_prod (provided=0.5650, recomputed=0.4663, tol=0.0300)"
-CFG17A5200BC4,optuna_s2_refine_0,"TF_long_H4 auc_label mismatch vs score_prod (provided=0.5526, recomputed=0.4599, tol=0.0300)"
-CFG17A5200BC4,optuna_s2_refine_0,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5449, recomputed=0.4535, tol=0.0300)"
-CFG17A5200BC4,optuna_s2_refine_0,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.6136, recomputed=0.3808, tol=0.0300)"
-CFG17A5200BC4,optuna_s2_refine_0,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5889, recomputed=0.3788, tol=0.0300)"
-CFG17A5200BC4,optuna_s2_refine_0,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5604, recomputed=0.3819, tol=0.0300)"
-CFG17A5200BC4,optuna_s2_refine_0,min_cell_bind_prod 0.145 < bind_cell_min 0.380
-CFG17A5200BC4,optuna_s2_refine_0,bind_prod_agg 0.275 < bind_min 0.500
-CFG17A5200BC4,optuna_s2_refine_0,min_cell_tp_sep 0.0255 < tp_sep_min 0.0400
-CFG17A5200BC4,optuna_s2_refine_0,min_cell_ap_lift 1.100 < ap_lift_min 1.200
-CFG17A5200BC4,optuna_s2_refine_0,tp_floor_bind_prod_agg 22.9% > tp_floor_bind_max_agg 20.0%
-CFG17A5200BC4,optuna_s2_refine_0,max_cell_tp_floor_bind_prod 60.6% > tp_floor_bind_max_cell 35.0%
-CFG17A5200BC4,optuna_s2_refine_0,floor-dominance combined guardrail: min_cell_auc 0.5404 < required 0.5600 when TP floor-binding is high
-CFG94F9735631,optuna_s2_refine_3,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.5308, recomputed=0.4676, tol=0.0300)"
-CFG94F9735631,optuna_s2_refine_3,"MR_long_H4 auc_label mismatch vs score_prod (provided=0.5378, recomputed=0.4499, tol=0.0300)"
-CFG94F9735631,optuna_s2_refine_3,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.5278, recomputed=0.4491, tol=0.0300)"
-CFG94F9735631,optuna_s2_refine_3,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5788, recomputed=0.4047, tol=0.0300)"
-CFG94F9735631,optuna_s2_refine_3,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5641, recomputed=0.4109, tol=0.0300)"
-CFG94F9735631,optuna_s2_refine_3,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5323, recomputed=0.4434, tol=0.0300)"
-CFG94F9735631,optuna_s2_refine_3,"TF_long_H2 auc_label mismatch vs score_prod (provided=0.5305, recomputed=0.4953, tol=0.0300)"
-CFG94F9735631,optuna_s2_refine_3,"TF_long_H4 auc_label mismatch vs score_prod (provided=0.5313, recomputed=0.4924, tol=0.0300)"
-CFG94F9735631,optuna_s2_refine_3,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5400, recomputed=0.4885, tol=0.0300)"
-CFG94F9735631,optuna_s2_refine_3,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.5822, recomputed=0.4018, tol=0.0300)"
-CFG94F9735631,optuna_s2_refine_3,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5714, recomputed=0.3996, tol=0.0300)"
-CFG94F9735631,optuna_s2_refine_3,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5591, recomputed=0.4167, tol=0.0300)"
-CFG94F9735631,optuna_s2_refine_3,min_cell_bind_prod 0.210 < bind_cell_min 0.380
-CFG94F9735631,optuna_s2_refine_3,bind_prod_agg 0.330 < bind_min 0.500
-CFG94F9735631,optuna_s2_refine_3,min_cell_auc 0.5278 < auc_min 0.5400
-CFG94F9735631,optuna_s2_refine_3,min_cell_tp_sep 0.0285 < tp_sep_min 0.0400
-CFG94F9735631,optuna_s2_refine_3,min_cell_ap_lift 1.086 < ap_lift_min 1.200
-CFG94F9735631,optuna_s2_refine_3,tp_floor_bind_prod_agg 22.2% > tp_floor_bind_max_agg 20.0%
-CFG94F9735631,optuna_s2_refine_3,max_cell_tp_floor_bind_prod 59.1% > tp_floor_bind_max_cell 35.0%
-CFG5B98323ABE,optuna_s2_refine_3,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.5678, recomputed=0.4343, tol=0.0300)"
-CFG5B98323ABE,optuna_s2_refine_3,"MR_long_H4 auc_label mismatch vs score_prod (provided=0.5630, recomputed=0.4171, tol=0.0300)"
-CFG5B98323ABE,optuna_s2_refine_3,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.5383, recomputed=0.4239, tol=0.0300)"
-CFG5B98323ABE,optuna_s2_refine_3,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5999, recomputed=0.3989, tol=0.0300)"
-CFG5B98323ABE,optuna_s2_refine_3,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5742, recomputed=0.4025, tol=0.0300)"
-CFG5B98323ABE,optuna_s2_refine_3,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5282, recomputed=0.4287, tol=0.0300)"
-CFG5B98323ABE,optuna_s2_refine_3,"TF_long_H2 auc_label mismatch vs score_prod (provided=0.5522, recomputed=0.4816, tol=0.0300)"
-CFG5B98323ABE,optuna_s2_refine_3,"TF_long_H4 auc_label mismatch vs score_prod (provided=0.5439, recomputed=0.4753, tol=0.0300)"
-CFG5B98323ABE,optuna_s2_refine_3,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5410, recomputed=0.4780, tol=0.0300)"
-CFG5B98323ABE,optuna_s2_refine_3,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.6022, recomputed=0.3960, tol=0.0300)"
-CFG5B98323ABE,optuna_s2_refine_3,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5815, recomputed=0.3927, tol=0.0300)"
-CFG5B98323ABE,optuna_s2_refine_3,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5584, recomputed=0.4033, tol=0.0300)"
-CFG5B98323ABE,optuna_s2_refine_3,min_cell_bind_prod 0.164 < bind_cell_min 0.380
-CFG5B98323ABE,optuna_s2_refine_3,bind_prod_agg 0.291 < bind_min 0.500
-CFG5B98323ABE,optuna_s2_refine_3,min_cell_auc 0.5282 < auc_min 0.5400
-CFG5B98323ABE,optuna_s2_refine_3,min_cell_tp_sep 0.0244 < tp_sep_min 0.0400
-CFG5B98323ABE,optuna_s2_refine_3,min_cell_ap_lift 1.077 < ap_lift_min 1.200
-CFG5B98323ABE,optuna_s2_refine_3,tp_floor_bind_prod_agg 21.8% > tp_floor_bind_max_agg 20.0%
-CFG5B98323ABE,optuna_s2_refine_3,max_cell_tp_floor_bind_prod 58.3% > tp_floor_bind_max_cell 35.0%
-CFGFFBBC4232E,optuna_s2_refine_4,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.5838, recomputed=0.4045, tol=0.0300)"
-CFGFFBBC4232E,optuna_s2_refine_4,"MR_long_H4 auc_label mismatch vs score_prod (provided=0.5567, recomputed=0.3948, tol=0.0300)"
-CFGFFBBC4232E,optuna_s2_refine_4,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.5284, recomputed=0.3806, tol=0.0300)"
-CFGFFBBC4232E,optuna_s2_refine_4,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5975, recomputed=0.3797, tol=0.0300)"
-CFGFFBBC4232E,optuna_s2_refine_4,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5695, recomputed=0.3848, tol=0.0300)"
-CFGFFBBC4232E,optuna_s2_refine_4,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5390, recomputed=0.3855, tol=0.0300)"
-CFGFFBBC4232E,optuna_s2_refine_4,"TF_long_H2 auc_label mismatch vs score_prod (provided=0.5686, recomputed=0.4606, tol=0.0300)"
-CFGFFBBC4232E,optuna_s2_refine_4,"TF_long_H4 auc_label mismatch vs score_prod (provided=0.5566, recomputed=0.4549, tol=0.0300)"
-CFGFFBBC4232E,optuna_s2_refine_4,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5520, recomputed=0.4255, tol=0.0300)"
-CFGFFBBC4232E,optuna_s2_refine_4,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.5978, recomputed=0.3826, tol=0.0300)"
-CFGFFBBC4232E,optuna_s2_refine_4,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5808, recomputed=0.3753, tol=0.0300)"
-CFGFFBBC4232E,optuna_s2_refine_4,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5592, recomputed=0.3622, tol=0.0300)"
-CFGFFBBC4232E,optuna_s2_refine_4,min_cell_bind_prod 0.107 < bind_cell_min 0.380
-CFGFFBBC4232E,optuna_s2_refine_4,bind_prod_agg 0.221 < bind_min 0.500
-CFGFFBBC4232E,optuna_s2_refine_4,min_cell_auc 0.5284 < auc_min 0.5400
-CFGFFBBC4232E,optuna_s2_refine_4,min_cell_tp_sep 0.0135 < tp_sep_min 0.0400
-CFGFFBBC4232E,optuna_s2_refine_4,min_cell_ap_lift 1.065 < ap_lift_min 1.200
-CFGFFBBC4232E,optuna_s2_refine_4,tp_floor_bind_prod_agg 28.1% > tp_floor_bind_max_agg 20.0%
-CFGFFBBC4232E,optuna_s2_refine_4,max_cell_tp_floor_bind_prod 70.7% > tp_floor_bind_max_cell 35.0%
-CFGFFBBC4232E,optuna_s2_refine_4,floor-dominance combined guardrail: min_cell_auc 0.5284 < required 0.5600 when TP floor-binding is high
-CFGFB09B20D38,optuna_stage1,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.4971, recomputed=0.5321, tol=0.0300)"
-CFGFB09B20D38,optuna_stage1,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.5197, recomputed=0.4811, tol=0.0300)"
-CFGFB09B20D38,optuna_stage1,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5494, recomputed=0.4608, tol=0.0300)"
-CFGFB09B20D38,optuna_stage1,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5500, recomputed=0.4610, tol=0.0300)"
-CFGFB09B20D38,optuna_stage1,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5341, recomputed=0.4667, tol=0.0300)"
-CFGFB09B20D38,optuna_stage1,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5421, recomputed=0.5021, tol=0.0300)"
-CFGFB09B20D38,optuna_stage1,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.5605, recomputed=0.4532, tol=0.0300)"
-CFGFB09B20D38,optuna_stage1,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5628, recomputed=0.4474, tol=0.0300)"
-CFGFB09B20D38,optuna_stage1,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5578, recomputed=0.4418, tol=0.0300)"
-CFGFB09B20D38,optuna_stage1,min_cell_bind_prod 0.277 < bind_cell_min 0.380
-CFGFB09B20D38,optuna_stage1,bind_prod_agg 0.382 < bind_min 0.500
-CFGFB09B20D38,optuna_stage1,min_cell_auc 0.4971 < auc_min 0.5400
-CFGFB09B20D38,optuna_stage1,min_cell_auc_bound 0.4811 < auc_bound_min 0.5200
-CFGFB09B20D38,optuna_stage1,min_cell_tp_sep 0.0167 < tp_sep_min 0.0400
-CFGFB09B20D38,optuna_stage1,min_cell_ap_lift 1.049 < ap_lift_min 1.200
-CFG025A5FEA5A,optuna_s2_refine_1,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5902, recomputed=0.4009, tol=0.0300)"
-CFG025A5FEA5A,optuna_s2_refine_1,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5759, recomputed=0.4233, tol=0.0300)"
-CFG025A5FEA5A,optuna_s2_refine_1,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5427, recomputed=0.4618, tol=0.0300)"
-CFG025A5FEA5A,optuna_s2_refine_1,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5239, recomputed=0.4879, tol=0.0300)"
-CFG025A5FEA5A,optuna_s2_refine_1,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.6205, recomputed=0.3740, tol=0.0300)"
-CFG025A5FEA5A,optuna_s2_refine_1,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5997, recomputed=0.3980, tol=0.0300)"
-CFG025A5FEA5A,optuna_s2_refine_1,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5664, recomputed=0.4335, tol=0.0300)"
-CFG025A5FEA5A,optuna_s2_refine_1,min_cell_tp_over_sl 0.952 < tp_over_sl_min 1.050
-CFG025A5FEA5A,optuna_s2_refine_1,min_cell_auc 0.4950 < auc_min 0.5400
-CFG025A5FEA5A,optuna_s2_refine_1,min_cell_auc_bound 0.4893 < auc_bound_min 0.5200
-CFG025A5FEA5A,optuna_s2_refine_1,min_cell_tp_sep 0.0027 < tp_sep_min 0.0400
-CFG025A5FEA5A,optuna_s2_refine_1,min_cell_ap_lift 1.001 < ap_lift_min 1.200
-CFG025A5FEA5A,optuna_s2_refine_1,max_cell_tp_floor_bind_prod 54.7% > tp_floor_bind_max_cell 35.0%
-CFG426AFD386B,optuna_s2_refine_3,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5938, recomputed=0.4159, tol=0.0300)"
-CFG426AFD386B,optuna_s2_refine_3,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5729, recomputed=0.4413, tol=0.0300)"
-CFG426AFD386B,optuna_s2_refine_3,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5443, recomputed=0.4794, tol=0.0300)"
-CFG426AFD386B,optuna_s2_refine_3,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.6032, recomputed=0.4102, tol=0.0300)"
-CFG426AFD386B,optuna_s2_refine_3,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5843, recomputed=0.4372, tol=0.0300)"
-CFG426AFD386B,optuna_s2_refine_3,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5525, recomputed=0.4742, tol=0.0300)"
-CFG426AFD386B,optuna_s2_refine_3,min_cell_tp_over_sl 0.883 < tp_over_sl_min 1.050
-CFG426AFD386B,optuna_s2_refine_3,min_cell_auc 0.5151 < auc_min 0.5400
-CFG426AFD386B,optuna_s2_refine_3,min_cell_auc_bound 0.5115 < auc_bound_min 0.5200
-CFG426AFD386B,optuna_s2_refine_3,min_cell_tp_sep 0.0235 < tp_sep_min 0.0400
-CFG426AFD386B,optuna_s2_refine_3,min_cell_ap_lift 1.066 < ap_lift_min 1.200
-CFG5748DB09C2,optuna_s2_refine_1,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.6032, recomputed=0.3934, tol=0.0300)"
-CFG5748DB09C2,optuna_s2_refine_1,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5842, recomputed=0.4244, tol=0.0300)"
-CFG5748DB09C2,optuna_s2_refine_1,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5463, recomputed=0.4674, tol=0.0300)"
-CFG5748DB09C2,optuna_s2_refine_1,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5254, recomputed=0.4903, tol=0.0300)"
-CFG5748DB09C2,optuna_s2_refine_1,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.6319, recomputed=0.3700, tol=0.0300)"
-CFG5748DB09C2,optuna_s2_refine_1,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.6021, recomputed=0.4030, tol=0.0300)"
-CFG5748DB09C2,optuna_s2_refine_1,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5664, recomputed=0.4437, tol=0.0300)"
-CFG5748DB09C2,optuna_s2_refine_1,min_cell_tp_over_sl 0.870 < tp_over_sl_min 1.050
-CFG5748DB09C2,optuna_s2_refine_1,min_cell_auc 0.5074 < auc_min 0.5400
-CFG5748DB09C2,optuna_s2_refine_1,min_cell_auc_bound 0.5037 < auc_bound_min 0.5200
-CFG5748DB09C2,optuna_s2_refine_1,min_cell_tp_sep 0.0119 < tp_sep_min 0.0400
-CFG5748DB09C2,optuna_s2_refine_1,min_cell_ap_lift 1.035 < ap_lift_min 1.200
-CFGA6BD4B3C74,optuna_s2_refine_2,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5708, recomputed=0.4291, tol=0.0300)"
-CFGA6BD4B3C74,optuna_s2_refine_2,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5609, recomputed=0.4476, tol=0.0300)"
-CFGA6BD4B3C74,optuna_s2_refine_2,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5347, recomputed=0.4739, tol=0.0300)"
-CFGA6BD4B3C74,optuna_s2_refine_2,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5263, recomputed=0.4873, tol=0.0300)"
-CFGA6BD4B3C74,optuna_s2_refine_2,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.5937, recomputed=0.4142, tol=0.0300)"
-CFGA6BD4B3C74,optuna_s2_refine_2,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5815, recomputed=0.4274, tol=0.0300)"
-CFGA6BD4B3C74,optuna_s2_refine_2,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5535, recomputed=0.4543, tol=0.0300)"
-CFGA6BD4B3C74,optuna_s2_refine_2,min_cell_tp_over_sl 0.964 < tp_over_sl_min 1.050
-CFGA6BD4B3C74,optuna_s2_refine_2,min_cell_auc 0.4995 < auc_min 0.5400
-CFGA6BD4B3C74,optuna_s2_refine_2,min_cell_auc_bound 0.4936 < auc_bound_min 0.5200
-CFGA6BD4B3C74,optuna_s2_refine_2,min_cell_tp_sep 0.0161 < tp_sep_min 0.0400
-CFGA6BD4B3C74,optuna_s2_refine_2,min_cell_ap_lift 1.041 < ap_lift_min 1.200
-CFG83F897D542,optuna_s2_refine_1,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.4867, recomputed=0.5329, tol=0.0300)"
-CFG83F897D542,optuna_s2_refine_1,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5871, recomputed=0.4087, tol=0.0300)"
-CFG83F897D542,optuna_s2_refine_1,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5768, recomputed=0.4303, tol=0.0300)"
-CFG83F897D542,optuna_s2_refine_1,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5423, recomputed=0.4673, tol=0.0300)"
-CFG83F897D542,optuna_s2_refine_1,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5236, recomputed=0.4905, tol=0.0300)"
-CFG83F897D542,optuna_s2_refine_1,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.6195, recomputed=0.3825, tol=0.0300)"
-CFG83F897D542,optuna_s2_refine_1,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5954, recomputed=0.4070, tol=0.0300)"
-CFG83F897D542,optuna_s2_refine_1,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5631, recomputed=0.4410, tol=0.0300)"
-CFG83F897D542,optuna_s2_refine_1,min_cell_tp_over_sl 0.954 < tp_over_sl_min 1.050
-CFG83F897D542,optuna_s2_refine_1,min_cell_auc 0.4867 < auc_min 0.5400
-CFG83F897D542,optuna_s2_refine_1,min_cell_auc_bound 0.4794 < auc_bound_min 0.5200
-CFG83F897D542,optuna_s2_refine_1,min_cell_tp_sep 0.0047 < tp_sep_min 0.0400
-CFG83F897D542,optuna_s2_refine_1,min_cell_ap_lift 0.985 < ap_lift_min 1.200
-CFGD24DB649F0,optuna_s2_refine_1,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.5368, recomputed=0.4794, tol=0.0300)"
-CFGD24DB649F0,optuna_s2_refine_1,"MR_long_H4 auc_label mismatch vs score_prod (provided=0.5398, recomputed=0.4653, tol=0.0300)"
-CFGD24DB649F0,optuna_s2_refine_1,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.5270, recomputed=0.4654, tol=0.0300)"
-CFGD24DB649F0,optuna_s2_refine_1,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5674, recomputed=0.4287, tol=0.0300)"
-CFGD24DB649F0,optuna_s2_refine_1,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5587, recomputed=0.4373, tol=0.0300)"
-CFGD24DB649F0,optuna_s2_refine_1,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5281, recomputed=0.4652, tol=0.0300)"
-CFGD24DB649F0,optuna_s2_refine_1,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5424, recomputed=0.5098, tol=0.0300)"
-CFGD24DB649F0,optuna_s2_refine_1,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.5808, recomputed=0.4279, tol=0.0300)"
-CFGD24DB649F0,optuna_s2_refine_1,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5672, recomputed=0.4319, tol=0.0300)"
-CFGD24DB649F0,optuna_s2_refine_1,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5544, recomputed=0.4431, tol=0.0300)"
-CFGD24DB649F0,optuna_s2_refine_1,min_cell_bind_prod 0.215 < bind_cell_min 0.380
-CFGD24DB649F0,optuna_s2_refine_1,bind_prod_agg 0.342 < bind_min 0.500
-CFGD24DB649F0,optuna_s2_refine_1,min_cell_auc 0.5228 < auc_min 0.5400
-CFGD24DB649F0,optuna_s2_refine_1,min_cell_auc_bound 0.5114 < auc_bound_min 0.5200
-CFGD24DB649F0,optuna_s2_refine_1,min_cell_tp_sep 0.0238 < tp_sep_min 0.0400
-CFGD24DB649F0,optuna_s2_refine_1,min_cell_ap_lift 1.080 < ap_lift_min 1.200
-CFGF911B27330,optuna_stage1,"MR_long_H4 auc_label mismatch vs score_prod (provided=0.5358, recomputed=0.4872, tol=0.0300)"
-CFGF911B27330,optuna_stage1,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.5306, recomputed=0.4675, tol=0.0300)"
-CFGF911B27330,optuna_stage1,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5591, recomputed=0.4536, tol=0.0300)"
-CFGF911B27330,optuna_stage1,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5458, recomputed=0.4619, tol=0.0300)"
-CFGF911B27330,optuna_stage1,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5329, recomputed=0.4650, tol=0.0300)"
-CFGF911B27330,optuna_stage1,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5434, recomputed=0.4996, tol=0.0300)"
-CFGF911B27330,optuna_stage1,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.5559, recomputed=0.4562, tol=0.0300)"
-CFGF911B27330,optuna_stage1,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5563, recomputed=0.4561, tol=0.0300)"
-CFGF911B27330,optuna_stage1,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5519, recomputed=0.4538, tol=0.0300)"
-CFGF911B27330,optuna_stage1,min_cell_bind_prod 0.239 < bind_cell_min 0.380
-CFGF911B27330,optuna_stage1,bind_prod_agg 0.354 < bind_min 0.500
-CFGF911B27330,optuna_stage1,min_cell_auc 0.5214 < auc_min 0.5400
-CFGF911B27330,optuna_stage1,min_cell_auc_bound 0.5141 < auc_bound_min 0.5200
-CFGF911B27330,optuna_stage1,min_cell_tp_sep 0.0202 < tp_sep_min 0.0400
-CFGF911B27330,optuna_stage1,min_cell_ap_lift 1.091 < ap_lift_min 1.200
-CFG7445862039,optuna_s2_refine_0,"MR_long_H4 auc_label mismatch vs score_prod (provided=0.5398, recomputed=0.4843, tol=0.0300)"
-CFG7445862039,optuna_s2_refine_0,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.5352, recomputed=0.4673, tol=0.0300)"
-CFG7445862039,optuna_s2_refine_0,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5533, recomputed=0.4592, tol=0.0300)"
-CFG7445862039,optuna_s2_refine_0,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5474, recomputed=0.4640, tol=0.0300)"
-CFG7445862039,optuna_s2_refine_0,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5383, recomputed=0.4646, tol=0.0300)"
-CFG7445862039,optuna_s2_refine_0,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5457, recomputed=0.5015, tol=0.0300)"
-CFG7445862039,optuna_s2_refine_0,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.5531, recomputed=0.4610, tol=0.0300)"
-CFG7445862039,optuna_s2_refine_0,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5518, recomputed=0.4617, tol=0.0300)"
-CFG7445862039,optuna_s2_refine_0,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5516, recomputed=0.4569, tol=0.0300)"
-CFG7445862039,optuna_s2_refine_0,min_cell_bind_prod 0.253 < bind_cell_min 0.380
-CFG7445862039,optuna_s2_refine_0,bind_prod_agg 0.369 < bind_min 0.500
-CFG7445862039,optuna_s2_refine_0,min_cell_auc 0.5189 < auc_min 0.5400
-CFG7445862039,optuna_s2_refine_0,min_cell_auc_bound 0.5058 < auc_bound_min 0.5200
-CFG7445862039,optuna_s2_refine_0,min_cell_tp_sep 0.0196 < tp_sep_min 0.0400
-CFG7445862039,optuna_s2_refine_0,min_cell_ap_lift 1.084 < ap_lift_min 1.200
-CFG196768B916,optuna_s2_refine_2,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.5270, recomputed=0.4869, tol=0.0300)"
-CFG196768B916,optuna_s2_refine_2,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5561, recomputed=0.4678, tol=0.0300)"
-CFG196768B916,optuna_s2_refine_2,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5463, recomputed=0.4679, tol=0.0300)"
-CFG196768B916,optuna_s2_refine_2,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5396, recomputed=0.4692, tol=0.0300)"
-CFG196768B916,optuna_s2_refine_2,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5391, recomputed=0.4949, tol=0.0300)"
-CFG196768B916,optuna_s2_refine_2,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.5660, recomputed=0.4539, tol=0.0300)"
-CFG196768B916,optuna_s2_refine_2,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5625, recomputed=0.4581, tol=0.0300)"
-CFG196768B916,optuna_s2_refine_2,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5567, recomputed=0.4566, tol=0.0300)"
-CFG196768B916,optuna_s2_refine_2,bind_prod_agg 0.499 < bind_min 0.500
-CFG196768B916,optuna_s2_refine_2,min_cell_auc 0.5039 < auc_min 0.5400
-CFG196768B916,optuna_s2_refine_2,min_cell_auc_bound 0.4919 < auc_bound_min 0.5200
-CFG196768B916,optuna_s2_refine_2,min_cell_tp_sep 0.0201 < tp_sep_min 0.0400
-CFG196768B916,optuna_s2_refine_2,min_cell_ap_lift 1.063 < ap_lift_min 1.200
-CFG62C9B61A6A,optuna_stage1,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.4834, recomputed=0.5217, tol=0.0300)"
-CFG62C9B61A6A,optuna_stage1,"MR_long_H4 auc_label mismatch vs score_prod (provided=0.4899, recomputed=0.5210, tol=0.0300)"
-CFG62C9B61A6A,optuna_stage1,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5790, recomputed=0.4425, tol=0.0300)"
-CFG62C9B61A6A,optuna_stage1,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5612, recomputed=0.4465, tol=0.0300)"
-CFG62C9B61A6A,optuna_stage1,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5329, recomputed=0.4559, tol=0.0300)"
-CFG62C9B61A6A,optuna_stage1,"TF_long_H2 auc_label mismatch vs score_prod (provided=0.4502, recomputed=0.5938, tol=0.0300)"
-CFG62C9B61A6A,optuna_stage1,"TF_long_H4 auc_label mismatch vs score_prod (provided=0.4814, recomputed=0.5785, tol=0.0300)"
-CFG62C9B61A6A,optuna_stage1,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5166, recomputed=0.5631, tol=0.0300)"
-CFG62C9B61A6A,optuna_stage1,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.5868, recomputed=0.4337, tol=0.0300)"
-CFG62C9B61A6A,optuna_stage1,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5777, recomputed=0.4334, tol=0.0300)"
-CFG62C9B61A6A,optuna_stage1,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5527, recomputed=0.4392, tol=0.0300)"
-CFG62C9B61A6A,optuna_stage1,min_cell_bind_prod 0.256 < bind_cell_min 0.380
-CFG62C9B61A6A,optuna_stage1,bind_prod_agg 0.478 < bind_min 0.500
-CFG62C9B61A6A,optuna_stage1,min_cell_auc 0.4502 < auc_min 0.5400
-CFG62C9B61A6A,optuna_stage1,min_cell_auc_bound 0.4255 < auc_bound_min 0.5200
-CFG62C9B61A6A,optuna_stage1,min_cell_tp_sep -0.0268 < tp_sep_min 0.0400
-CFG62C9B61A6A,optuna_stage1,min_cell_ap_lift 0.887 < ap_lift_min 1.200
-CFG0C331BFAB8,optuna_stage1,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.6461, recomputed=0.3689, tol=0.0300)"
-CFG0C331BFAB8,optuna_stage1,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.6151, recomputed=0.3858, tol=0.0300)"
-CFG0C331BFAB8,optuna_stage1,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5702, recomputed=0.3892, tol=0.0300)"
-CFG0C331BFAB8,optuna_stage1,"TF_long_H2 auc_label mismatch vs score_prod (provided=0.4180, recomputed=0.6232, tol=0.0300)"
-CFG0C331BFAB8,optuna_stage1,"TF_long_H4 auc_label mismatch vs score_prod (provided=0.4597, recomputed=0.6157, tol=0.0300)"
-CFG0C331BFAB8,optuna_stage1,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5046, recomputed=0.5937, tol=0.0300)"
-CFG0C331BFAB8,optuna_stage1,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.6326, recomputed=0.3843, tol=0.0300)"
-CFG0C331BFAB8,optuna_stage1,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5997, recomputed=0.3885, tol=0.0300)"
-CFG0C331BFAB8,optuna_stage1,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5769, recomputed=0.3956, tol=0.0300)"
-CFG0C331BFAB8,optuna_stage1,min_cell_bind_prod 0.230 < bind_cell_min 0.380
-CFG0C331BFAB8,optuna_stage1,bind_prod_agg 0.449 < bind_min 0.500
-CFG0C331BFAB8,optuna_stage1,min_cell_auc 0.4180 < auc_min 0.5400
-CFG0C331BFAB8,optuna_stage1,min_cell_auc_bound 0.3839 < auc_bound_min 0.5200
-CFG0C331BFAB8,optuna_stage1,min_cell_tp_sep -0.0403 < tp_sep_min 0.0400
-CFG0C331BFAB8,optuna_stage1,min_cell_ap_lift 0.809 < ap_lift_min 1.200
-CFG0C331BFAB8,optuna_stage1,tp_floor_bind_prod_agg 23.6% > tp_floor_bind_max_agg 20.0%
-CFG5CFFE0DB0A,optuna_stage1,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5881, recomputed=0.4382, tol=0.0300)"
-CFG5CFFE0DB0A,optuna_stage1,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5915, recomputed=0.4409, tol=0.0300)"
-CFG5CFFE0DB0A,optuna_stage1,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5606, recomputed=0.4610, tol=0.0300)"
-CFG5CFFE0DB0A,optuna_stage1,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.5306, recomputed=0.4971, tol=0.0300)"
-CFG5CFFE0DB0A,optuna_stage1,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.6157, recomputed=0.4338, tol=0.0300)"
-CFG5CFFE0DB0A,optuna_stage1,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.6013, recomputed=0.4466, tol=0.0300)"
-CFG5CFFE0DB0A,optuna_stage1,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5697, recomputed=0.4545, tol=0.0300)"
-CFG5CFFE0DB0A,optuna_stage1,min_cell_auc 0.5164 < auc_min 0.5400
-CFG5CFFE0DB0A,optuna_stage1,min_cell_auc_bound 0.5107 < auc_bound_min 0.5200
-CFG5CFFE0DB0A,optuna_stage1,min_cell_tp_sep 0.0191 < tp_sep_min 0.0400
-CFG5CFFE0DB0A,optuna_stage1,min_cell_ap_lift 1.058 < ap_lift_min 1.200
-CFG3A89116080,optuna_stage1,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5990, recomputed=0.4108, tol=0.0300)"
-CFG3A89116080,optuna_stage1,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5809, recomputed=0.4358, tol=0.0300)"
-CFG3A89116080,optuna_stage1,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5534, recomputed=0.4724, tol=0.0300)"
-CFG3A89116080,optuna_stage1,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.6151, recomputed=0.4012, tol=0.0300)"
-CFG3A89116080,optuna_stage1,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5881, recomputed=0.4325, tol=0.0300)"
-CFG3A89116080,optuna_stage1,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5543, recomputed=0.4697, tol=0.0300)"
-CFG3A89116080,optuna_stage1,min_cell_tp_over_sl 0.883 < tp_over_sl_min 1.050
-CFG3A89116080,optuna_stage1,min_cell_auc 0.5086 < auc_min 0.5400
-CFG3A89116080,optuna_stage1,min_cell_auc_bound 0.5047 < auc_bound_min 0.5200
-CFG3A89116080,optuna_stage1,min_cell_tp_sep 0.0130 < tp_sep_min 0.0400
-CFG3A89116080,optuna_stage1,min_cell_ap_lift 1.040 < ap_lift_min 1.200
-CFG6AFB76559A,optuna_stage1,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.5450, recomputed=0.4961, tol=0.0300)"
-CFG6AFB76559A,optuna_stage1,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.6285, recomputed=0.4173, tol=0.0300)"
-CFG6AFB76559A,optuna_stage1,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5913, recomputed=0.4431, tol=0.0300)"
-CFG6AFB76559A,optuna_stage1,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5563, recomputed=0.4497, tol=0.0300)"
-CFG6AFB76559A,optuna_stage1,"TF_long_H2 auc_label mismatch vs score_prod (provided=0.4652, recomputed=0.5672, tol=0.0300)"
-CFG6AFB76559A,optuna_stage1,"TF_long_H4 auc_label mismatch vs score_prod (provided=0.4756, recomputed=0.5536, tol=0.0300)"
-CFG6AFB76559A,optuna_stage1,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.4800, recomputed=0.5406, tol=0.0300)"
-CFG6AFB76559A,optuna_stage1,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.5935, recomputed=0.4574, tol=0.0300)"
-CFG6AFB76559A,optuna_stage1,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5615, recomputed=0.4510, tol=0.0300)"
-CFG6AFB76559A,optuna_stage1,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5426, recomputed=0.4551, tol=0.0300)"
-CFG6AFB76559A,optuna_stage1,min_cell_tp_over_sl 0.836 < tp_over_sl_min 1.050
-CFG6AFB76559A,optuna_stage1,min_cell_auc 0.4652 < auc_min 0.5400
-CFG6AFB76559A,optuna_stage1,min_cell_auc_bound 0.4606 < auc_bound_min 0.5200
-CFG6AFB76559A,optuna_stage1,min_cell_tp_sep -0.0327 < tp_sep_min 0.0400
-CFG6AFB76559A,optuna_stage1,min_cell_ap_lift 0.910 < ap_lift_min 1.200
-CFGFAE48179F7,optuna_s2_refine_4,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.4722, recomputed=0.5371, tol=0.0300)"
-CFGFAE48179F7,optuna_s2_refine_4,"MR_long_H4 auc_label mismatch vs score_prod (provided=0.4667, recomputed=0.5306, tol=0.0300)"
-CFGFAE48179F7,optuna_s2_refine_4,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.4848, recomputed=0.5314, tol=0.0300)"
-CFGFAE48179F7,optuna_s2_refine_4,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.6640, recomputed=0.3532, tol=0.0300)"
-CFGFAE48179F7,optuna_s2_refine_4,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.6315, recomputed=0.3679, tol=0.0300)"
-CFGFAE48179F7,optuna_s2_refine_4,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5966, recomputed=0.3899, tol=0.0300)"
-CFGFAE48179F7,optuna_s2_refine_4,"TF_long_H2 auc_label mismatch vs score_prod (provided=0.4206, recomputed=0.6201, tol=0.0300)"
-CFGFAE48179F7,optuna_s2_refine_4,"TF_long_H4 auc_label mismatch vs score_prod (provided=0.4417, recomputed=0.6041, tol=0.0300)"
-CFGFAE48179F7,optuna_s2_refine_4,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.4789, recomputed=0.5764, tol=0.0300)"
-CFGFAE48179F7,optuna_s2_refine_4,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.6557, recomputed=0.3626, tol=0.0300)"
-CFGFAE48179F7,optuna_s2_refine_4,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.6283, recomputed=0.3658, tol=0.0300)"
-CFGFAE48179F7,optuna_s2_refine_4,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5948, recomputed=0.3860, tol=0.0300)"
-CFGFAE48179F7,optuna_s2_refine_4,min_cell_tp_over_sl 0.860 < tp_over_sl_min 1.050
-CFGFAE48179F7,optuna_s2_refine_4,min_cell_auc 0.4206 < auc_min 0.5400
-CFGFAE48179F7,optuna_s2_refine_4,min_cell_auc_bound 0.4081 < auc_bound_min 0.5200
-CFGFAE48179F7,optuna_s2_refine_4,min_cell_tp_sep -0.0513 < tp_sep_min 0.0400
-CFGFAE48179F7,optuna_s2_refine_4,min_cell_ap_lift 0.825 < ap_lift_min 1.200
-CFGD39B427CE1,optuna_stage1,"MR_long_H2 auc_label mismatch vs score_prod (provided=0.4945, recomputed=0.5352, tol=0.0300)"
-CFGD39B427CE1,optuna_stage1,"MR_long_H4 auc_label mismatch vs score_prod (provided=0.4842, recomputed=0.5376, tol=0.0300)"
-CFGD39B427CE1,optuna_stage1,"MR_long_H8 auc_label mismatch vs score_prod (provided=0.4567, recomputed=0.6046, tol=0.0300)"
-CFGD39B427CE1,optuna_stage1,"MR_short_H2 auc_label mismatch vs score_prod (provided=0.5554, recomputed=0.4597, tol=0.0300)"
-CFGD39B427CE1,optuna_stage1,"MR_short_H4 auc_label mismatch vs score_prod (provided=0.5577, recomputed=0.4711, tol=0.0300)"
-CFGD39B427CE1,optuna_stage1,"MR_short_H8 auc_label mismatch vs score_prod (provided=0.5281, recomputed=0.4671, tol=0.0300)"
-CFGD39B427CE1,optuna_stage1,"TF_long_H2 auc_label mismatch vs score_prod (provided=0.4890, recomputed=0.5365, tol=0.0300)"
-CFGD39B427CE1,optuna_stage1,"TF_long_H8 auc_label mismatch vs score_prod (provided=0.4825, recomputed=0.5863, tol=0.0300)"
-CFGD39B427CE1,optuna_stage1,"TF_short_H2 auc_label mismatch vs score_prod (provided=0.5785, recomputed=0.4446, tol=0.0300)"
-CFGD39B427CE1,optuna_stage1,"TF_short_H4 auc_label mismatch vs score_prod (provided=0.5678, recomputed=0.4420, tol=0.0300)"
-CFGD39B427CE1,optuna_stage1,"TF_short_H8 auc_label mismatch vs score_prod (provided=0.5344, recomputed=0.4430, tol=0.0300)"
-CFGD39B427CE1,optuna_stage1,min_cell_bind_prod 0.264 < bind_cell_min 0.380
-CFGD39B427CE1,optuna_stage1,bind_prod_agg 0.486 < bind_min 0.500
-CFGD39B427CE1,optuna_stage1,min_cell_tp_over_sl 0.834 < tp_over_sl_min 1.050
-CFGD39B427CE1,optuna_stage1,min_cell_auc 0.4567 < auc_min 0.5400
-CFGD39B427CE1,optuna_stage1,min_cell_auc_bound 0.3989 < auc_bound_min 0.5200
-CFGD39B427CE1,optuna_stage1,min_cell_tp_sep -0.0557 < tp_sep_min 0.0400
-CFGD39B427CE1,optuna_stage1,min_cell_ap_lift 0.926 < ap_lift_min 1.200
-CFGD39B427CE1,optuna_stage1,tp_floor_bind_prod_agg 39.1% > tp_floor_bind_max_agg 20.0%
-CFGD39B427CE1,optuna_stage1,max_cell_tp_floor_bind_prod 58.9% > tp_floor_bind_max_cell 35.0%
+CFG42AE1B4F0D,optuna_s2_refine_0,sl_to_tp_prod_agg 5.54x > sl_to_tp_max 2.50x
+CFG42AE1B4F0D,optuna_s2_refine_0,max_cell_sl_to_tp_prod 6.42x > sl_to_tp_max 2.50x
+CFG42AE1B4F0D,optuna_s2_refine_0,min_cell_auc 0.5119 < auc_min 0.5400
+CFG42AE1B4F0D,optuna_s2_refine_0,min_cell_auc_bound 0.5025 < auc_bound_min 0.5200
+CFG42AE1B4F0D,optuna_s2_refine_0,min_cell_ap_lift 1.138 < ap_lift_min 1.200
+CFG42AE1B4F0D,optuna_s2_refine_0,tp_floor_bind_prod_agg 27.9% > tp_floor_bind_max_agg 20.0%
+CFG42AE1B4F0D,optuna_s2_refine_0,max_cell_tp_floor_bind_prod 71.1% > tp_floor_bind_max_cell 35.0%
+CFG42AE1B4F0D,optuna_s2_refine_0,floor-dominance combined guardrail: min_cell_auc 0.5119 < required 0.5600 when TP floor-binding is high
+CFG77F7A25933,optuna_s2_refine_0,sl_to_tp_prod_agg 3.80x > sl_to_tp_max 2.50x
+CFG77F7A25933,optuna_s2_refine_0,max_cell_sl_to_tp_prod 4.32x > sl_to_tp_max 2.50x
+CFG77F7A25933,optuna_s2_refine_0,min_cell_auc 0.4952 < auc_min 0.5400
+CFG77F7A25933,optuna_s2_refine_0,min_cell_auc_bound 0.4331 < auc_bound_min 0.5200
+CFG77F7A25933,optuna_s2_refine_0,min_cell_tp_sep 0.0084 < tp_sep_min 0.0400
+CFG77F7A25933,optuna_s2_refine_0,min_cell_ap_lift 1.034 < ap_lift_min 1.200
+CFG77F7A25933,optuna_s2_refine_0,tp_floor_bind_prod_agg 28.3% > tp_floor_bind_max_agg 20.0%
+CFG77F7A25933,optuna_s2_refine_0,max_cell_tp_floor_bind_prod 71.5% > tp_floor_bind_max_cell 35.0%
+CFG77F7A25933,optuna_s2_refine_0,floor-dominance combined guardrail: min_cell_auc 0.4952 < required 0.5600 when TP floor-binding is high
+CFG4029237894,optuna_stage1,sl_to_tp_prod_agg 3.20x > sl_to_tp_max 2.50x
+CFG4029237894,optuna_stage1,max_cell_sl_to_tp_prod 3.82x > sl_to_tp_max 2.50x
+CFG4029237894,optuna_stage1,min_cell_auc 0.4905 < auc_min 0.5400
+CFG4029237894,optuna_stage1,min_cell_auc_bound 0.4355 < auc_bound_min 0.5200
+CFG4029237894,optuna_stage1,min_cell_tp_sep 0.0119 < tp_sep_min 0.0400
+CFG4029237894,optuna_stage1,min_cell_ap_lift 1.033 < ap_lift_min 1.200
+CFG4029237894,optuna_stage1,tp_floor_bind_prod_agg 27.3% > tp_floor_bind_max_agg 20.0%
+CFG4029237894,optuna_stage1,max_cell_tp_floor_bind_prod 70.4% > tp_floor_bind_max_cell 35.0%
+CFG4029237894,optuna_stage1,floor-dominance combined guardrail: min_cell_auc 0.4905 < required 0.5600 when TP floor-binding is high
+CFG36DBF80311,optuna_stage1,tp_hit_prod_agg 0.099 < tp_hit_min_agg 0.100
+CFG36DBF80311,optuna_stage1,sl_to_tp_prod_agg 4.07x > sl_to_tp_max 2.50x
+CFG36DBF80311,optuna_stage1,max_cell_sl_to_tp_prod 4.70x > sl_to_tp_max 2.50x
+CFG36DBF80311,optuna_stage1,min_cell_auc 0.4895 < auc_min 0.5400
+CFG36DBF80311,optuna_stage1,min_cell_auc_bound 0.4453 < auc_bound_min 0.5200
+CFG36DBF80311,optuna_stage1,min_cell_tp_sep 0.0086 < tp_sep_min 0.0400
+CFG36DBF80311,optuna_stage1,min_cell_ap_lift 1.029 < ap_lift_min 1.200
+CFGA04FF89F3D,optuna_stage1,sl_to_tp_prod_agg 4.60x > sl_to_tp_max 2.50x
+CFGA04FF89F3D,optuna_stage1,max_cell_sl_to_tp_prod 4.94x > sl_to_tp_max 2.50x
+CFGA04FF89F3D,optuna_stage1,min_cell_auc 0.4838 < auc_min 0.5400
+CFGA04FF89F3D,optuna_stage1,min_cell_auc_bound 0.4182 < auc_bound_min 0.5200
+CFGA04FF89F3D,optuna_stage1,min_cell_tp_sep -0.0054 < tp_sep_min 0.0400
+CFGA04FF89F3D,optuna_stage1,min_cell_ap_lift 0.995 < ap_lift_min 1.200
+CFGA04FF89F3D,optuna_stage1,tp_floor_bind_prod_agg 25.9% > tp_floor_bind_max_agg 20.0%
+CFGA04FF89F3D,optuna_stage1,max_cell_tp_floor_bind_prod 67.5% > tp_floor_bind_max_cell 35.0%
+CFGA04FF89F3D,optuna_stage1,floor-dominance combined guardrail: min_cell_auc 0.4838 < required 0.5600 when TP floor-binding is high
+CFG6CE62DC758,optuna_s2_refine_0,tp_hit_prod_agg 0.088 < tp_hit_min_agg 0.100
+CFG6CE62DC758,optuna_s2_refine_0,sl_to_tp_prod_agg 6.67x > sl_to_tp_max 2.50x
+CFG6CE62DC758,optuna_s2_refine_0,max_cell_sl_to_tp_prod 7.19x > sl_to_tp_max 2.50x
+CFG6CE62DC758,optuna_s2_refine_0,min_cell_auc 0.4813 < auc_min 0.5400
+CFG6CE62DC758,optuna_s2_refine_0,min_cell_auc_bound 0.4342 < auc_bound_min 0.5200
+CFG6CE62DC758,optuna_s2_refine_0,min_cell_tp_sep 0.0025 < tp_sep_min 0.0400
+CFG6CE62DC758,optuna_s2_refine_0,min_cell_ap_lift 1.009 < ap_lift_min 1.200
+CFG6CE62DC758,optuna_s2_refine_0,tp_floor_bind_prod_agg 24.4% > tp_floor_bind_max_agg 20.0%
+CFG6CE62DC758,optuna_s2_refine_0,max_cell_tp_floor_bind_prod 66.3% > tp_floor_bind_max_cell 35.0%
+CFG6CE62DC758,optuna_s2_refine_0,floor-dominance combined guardrail: min_cell_auc 0.4813 < required 0.5600 when TP floor-binding is high
+CFGB2F898B70C,optuna_s2_refine_0,tp_hit_prod_agg 0.085 < tp_hit_min_agg 0.100
+CFGB2F898B70C,optuna_s2_refine_0,sl_to_tp_prod_agg 5.00x > sl_to_tp_max 2.50x
+CFGB2F898B70C,optuna_s2_refine_0,max_cell_sl_to_tp_prod 5.80x > sl_to_tp_max 2.50x
+CFGB2F898B70C,optuna_s2_refine_0,min_cell_auc 0.4775 < auc_min 0.5400
+CFGB2F898B70C,optuna_s2_refine_0,min_cell_auc_bound 0.4256 < auc_bound_min 0.5200
+CFGB2F898B70C,optuna_s2_refine_0,min_cell_tp_sep -0.0018 < tp_sep_min 0.0400
+CFGB2F898B70C,optuna_s2_refine_0,min_cell_ap_lift 0.988 < ap_lift_min 1.200
+CFG6D8F4ECD70,optuna_s2_refine_0,tp_hit_prod_agg 0.083 < tp_hit_min_agg 0.100
+CFG6D8F4ECD70,optuna_s2_refine_0,sl_to_tp_prod_agg 5.70x > sl_to_tp_max 2.50x
+CFG6D8F4ECD70,optuna_s2_refine_0,max_cell_sl_to_tp_prod 6.52x > sl_to_tp_max 2.50x
+CFG6D8F4ECD70,optuna_s2_refine_0,min_cell_auc 0.4758 < auc_min 0.5400
+CFG6D8F4ECD70,optuna_s2_refine_0,min_cell_auc_bound 0.4195 < auc_bound_min 0.5200
+CFG6D8F4ECD70,optuna_s2_refine_0,min_cell_tp_sep -0.0035 < tp_sep_min 0.0400
+CFG6D8F4ECD70,optuna_s2_refine_0,min_cell_ap_lift 0.979 < ap_lift_min 1.200
+CFGDBC2151978,optuna_stage1,tp_hit_prod_agg 0.070 < tp_hit_min_agg 0.100
+CFGDBC2151978,optuna_stage1,sl_to_tp_prod_agg 7.29x > sl_to_tp_max 2.50x
+CFGDBC2151978,optuna_stage1,max_cell_sl_to_tp_prod 8.28x > sl_to_tp_max 2.50x
+CFGDBC2151978,optuna_stage1,min_cell_auc 0.4667 < auc_min 0.5400
+CFGDBC2151978,optuna_stage1,min_cell_auc_bound 0.4020 < auc_bound_min 0.5200
+CFGDBC2151978,optuna_stage1,min_cell_tp_sep -0.0102 < tp_sep_min 0.0400
+CFGDBC2151978,optuna_stage1,min_cell_ap_lift 0.941 < ap_lift_min 1.200
+CFG2005ACDBC7,optuna_stage1,tp_hit_prod_agg 0.058 < tp_hit_min_agg 0.100
+CFG2005ACDBC7,optuna_stage1,sl_to_tp_prod_agg 9.64x > sl_to_tp_max 2.50x
+CFG2005ACDBC7,optuna_stage1,max_cell_sl_to_tp_prod 10.54x > sl_to_tp_max 2.50x
+CFG2005ACDBC7,optuna_stage1,min_cell_auc 0.4552 < auc_min 0.5400
+CFG2005ACDBC7,optuna_stage1,min_cell_auc_bound 0.3902 < auc_bound_min 0.5200
+CFG2005ACDBC7,optuna_stage1,min_cell_tp_sep -0.0127 < tp_sep_min 0.0400
+CFG2005ACDBC7,optuna_stage1,min_cell_ap_lift 0.906 < ap_lift_min 1.200
+CFG6581306DCA,optuna_stage1,bind_prod_agg 0.446 < bind_min 0.500
+CFG6581306DCA,optuna_stage1,tp_hit_prod_agg 0.064 < tp_hit_min_agg 0.100
+CFG6581306DCA,optuna_stage1,sl_to_tp_prod_agg 5.96x > sl_to_tp_max 2.50x
+CFG6581306DCA,optuna_stage1,max_cell_sl_to_tp_prod 7.01x > sl_to_tp_max 2.50x
+CFG6581306DCA,optuna_stage1,min_cell_auc 0.4855 < auc_min 0.5400
+CFG6581306DCA,optuna_stage1,min_cell_auc_bound 0.4438 < auc_bound_min 0.5200
+CFG6581306DCA,optuna_stage1,min_cell_tp_sep 0.0038 < tp_sep_min 0.0400
+CFG6581306DCA,optuna_stage1,min_cell_ap_lift 1.014 < ap_lift_min 1.200
+CFG7CD9BB2C68,optuna_stage1,bind_prod_agg 0.422 < bind_min 0.500
+CFG7CD9BB2C68,optuna_stage1,tp_hit_prod_agg 0.076 < tp_hit_min_agg 0.100
+CFG7CD9BB2C68,optuna_stage1,sl_to_tp_prod_agg 4.52x > sl_to_tp_max 2.50x
+CFG7CD9BB2C68,optuna_stage1,max_cell_sl_to_tp_prod 5.62x > sl_to_tp_max 2.50x
+CFG7CD9BB2C68,optuna_stage1,min_cell_auc 0.4735 < auc_min 0.5400
+CFG7CD9BB2C68,optuna_stage1,min_cell_auc_bound 0.4247 < auc_bound_min 0.5200
+CFG7CD9BB2C68,optuna_stage1,min_cell_tp_sep -0.0032 < tp_sep_min 0.0400
+CFG7CD9BB2C68,optuna_stage1,min_cell_ap_lift 0.969 < ap_lift_min 1.200
+CFG659E5347F8,optuna_stage1,bind_prod_agg 0.487 < bind_min 0.500
+CFG659E5347F8,optuna_stage1,tp_hit_prod_agg 0.075 < tp_hit_min_agg 0.100
+CFG659E5347F8,optuna_stage1,sl_to_tp_prod_agg 5.45x > sl_to_tp_max 2.50x
+CFG659E5347F8,optuna_stage1,max_cell_sl_to_tp_prod 6.53x > sl_to_tp_max 2.50x
+CFG659E5347F8,optuna_stage1,min_cell_auc 0.4691 < auc_min 0.5400
+CFG659E5347F8,optuna_stage1,min_cell_auc_bound 0.4122 < auc_bound_min 0.5200
+CFG659E5347F8,optuna_stage1,min_cell_tp_sep -0.0070 < tp_sep_min 0.0400
+CFG659E5347F8,optuna_stage1,min_cell_ap_lift 0.952 < ap_lift_min 1.200
+CFGCBE37D7CFE,optuna_stage1,min_cell_bind_prod 0.373 < bind_cell_min 0.380
+CFGCBE37D7CFE,optuna_stage1,sl_to_tp_prod_agg 4.03x > sl_to_tp_max 2.50x
+CFGCBE37D7CFE,optuna_stage1,max_cell_sl_to_tp_prod 4.52x > sl_to_tp_max 2.50x
+CFGCBE37D7CFE,optuna_stage1,min_cell_auc 0.4487 < auc_min 0.5400
+CFGCBE37D7CFE,optuna_stage1,min_cell_auc_bound 0.4411 < auc_bound_min 0.5200
+CFGCBE37D7CFE,optuna_stage1,min_cell_tp_sep -0.0027 < tp_sep_min 0.0400
+CFGCBE37D7CFE,optuna_stage1,min_cell_ap_lift 0.939 < ap_lift_min 1.200
+CFGCBE37D7CFE,optuna_stage1,tp_floor_bind_prod_agg 38.4% > tp_floor_bind_max_agg 20.0%
+CFGCBE37D7CFE,optuna_stage1,max_cell_tp_floor_bind_prod 71.0% > tp_floor_bind_max_cell 35.0%
+CFGCBE37D7CFE,optuna_stage1,floor-dominance combined guardrail: min_cell_auc 0.4487 < required 0.5600 when TP floor-binding is high
+CFG080414BD3C,optuna_stage1,min_cell_bind_prod 0.250 < bind_cell_min 0.380
+CFG080414BD3C,optuna_stage1,bind_prod_agg 0.305 < bind_min 0.500
+CFG080414BD3C,optuna_stage1,tp_hit_prod_agg 0.041 < tp_hit_min_agg 0.100
+CFG080414BD3C,optuna_stage1,timeout_prod_agg 0.695 > timeout_max 0.600
+CFG080414BD3C,optuna_stage1,sl_to_tp_prod_agg 6.51x > sl_to_tp_max 2.50x
+CFG080414BD3C,optuna_stage1,max_cell_sl_to_tp_prod 13.90x > sl_to_tp_max 2.50x
+CFG080414BD3C,optuna_stage1,min_cell_auc 0.5290 < auc_min 0.5400
+CFG080414BD3C,optuna_stage1,min_cell_auc_bound 0.4947 < auc_bound_min 0.5200
+CFG080414BD3C,optuna_stage1,min_cell_tp_sep 0.0108 < tp_sep_min 0.0400
+CFG080414BD3C,optuna_stage1,min_cell_ap_lift 1.194 < ap_lift_min 1.200
+CFG90A3E2DD0C,optuna_stage1,min_cell_bind_prod 0.347 < bind_cell_min 0.380
+CFG90A3E2DD0C,optuna_stage1,bind_prod_agg 0.379 < bind_min 0.500
+CFG90A3E2DD0C,optuna_stage1,tp_hit_prod_agg 0.080 < tp_hit_min_agg 0.100
+CFG90A3E2DD0C,optuna_stage1,timeout_prod_agg 0.621 > timeout_max 0.600
+CFG90A3E2DD0C,optuna_stage1,sl_to_tp_prod_agg 3.76x > sl_to_tp_max 2.50x
+CFG90A3E2DD0C,optuna_stage1,max_cell_sl_to_tp_prod 5.10x > sl_to_tp_max 2.50x
+CFG90A3E2DD0C,optuna_stage1,min_cell_auc 0.4810 < auc_min 0.5400
+CFG90A3E2DD0C,optuna_stage1,min_cell_auc_bound 0.4361 < auc_bound_min 0.5200
+CFG90A3E2DD0C,optuna_stage1,min_cell_tp_sep 0.0056 < tp_sep_min 0.0400
+CFG90A3E2DD0C,optuna_stage1,min_cell_ap_lift 1.014 < ap_lift_min 1.200
+CFG3836150E4C,optuna_stage1,min_cell_bind_prod 0.338 < bind_cell_min 0.380
+CFG3836150E4C,optuna_stage1,bind_prod_agg 0.373 < bind_min 0.500
+CFG3836150E4C,optuna_stage1,tp_hit_prod_agg 0.065 < tp_hit_min_agg 0.100
+CFG3836150E4C,optuna_stage1,timeout_prod_agg 0.627 > timeout_max 0.600
+CFG3836150E4C,optuna_stage1,sl_to_tp_prod_agg 4.75x > sl_to_tp_max 2.50x
+CFG3836150E4C,optuna_stage1,max_cell_sl_to_tp_prod 6.16x > sl_to_tp_max 2.50x
+CFG3836150E4C,optuna_stage1,min_cell_auc 0.4758 < auc_min 0.5400
+CFG3836150E4C,optuna_stage1,min_cell_auc_bound 0.4301 < auc_bound_min 0.5200
+CFG3836150E4C,optuna_stage1,min_cell_tp_sep 0.0002 < tp_sep_min 0.0400
+CFG3836150E4C,optuna_stage1,min_cell_ap_lift 0.977 < ap_lift_min 1.200
+CFGBA6FE5FEF7,optuna_stage1,min_cell_bind_prod 0.260 < bind_cell_min 0.380
+CFGBA6FE5FEF7,optuna_stage1,bind_prod_agg 0.314 < bind_min 0.500
+CFGBA6FE5FEF7,optuna_stage1,tp_hit_prod_agg 0.040 < tp_hit_min_agg 0.100
+CFGBA6FE5FEF7,optuna_stage1,timeout_prod_agg 0.686 > timeout_max 0.600
+CFGBA6FE5FEF7,optuna_stage1,sl_to_tp_prod_agg 6.77x > sl_to_tp_max 2.50x
+CFGBA6FE5FEF7,optuna_stage1,max_cell_sl_to_tp_prod 14.23x > sl_to_tp_max 2.50x
+CFGBA6FE5FEF7,optuna_stage1,min_cell_auc 0.5059 < auc_min 0.5400
+CFGBA6FE5FEF7,optuna_stage1,min_cell_auc_bound 0.4647 < auc_bound_min 0.5200
+CFGBA6FE5FEF7,optuna_stage1,min_cell_tp_sep 0.0059 < tp_sep_min 0.0400
+CFGBA6FE5FEF7,optuna_stage1,min_cell_ap_lift 1.087 < ap_lift_min 1.200
+CFG4AD861F7FD,optuna_stage1,min_cell_bind_prod 0.273 < bind_cell_min 0.380
+CFG4AD861F7FD,optuna_stage1,bind_prod_agg 0.315 < bind_min 0.500
+CFG4AD861F7FD,optuna_stage1,tp_hit_prod_agg 0.045 < tp_hit_min_agg 0.100
+CFG4AD861F7FD,optuna_stage1,timeout_prod_agg 0.685 > timeout_max 0.600
+CFG4AD861F7FD,optuna_stage1,sl_to_tp_prod_agg 5.97x > sl_to_tp_max 2.50x
+CFG4AD861F7FD,optuna_stage1,max_cell_sl_to_tp_prod 10.39x > sl_to_tp_max 2.50x
+CFG4AD861F7FD,optuna_stage1,min_cell_auc 0.4978 < auc_min 0.5400
+CFG4AD861F7FD,optuna_stage1,min_cell_auc_bound 0.4553 < auc_bound_min 0.5200
+CFG4AD861F7FD,optuna_stage1,min_cell_tp_sep 0.0061 < tp_sep_min 0.0400
+CFG4AD861F7FD,optuna_stage1,min_cell_ap_lift 1.060 < ap_lift_min 1.200
+CFGE5B3DA1E47,optuna_stage1,min_cell_bind_prod 0.268 < bind_cell_min 0.380
+CFGE5B3DA1E47,optuna_stage1,bind_prod_agg 0.312 < bind_min 0.500
+CFGE5B3DA1E47,optuna_stage1,tp_hit_prod_agg 0.045 < tp_hit_min_agg 0.100
+CFGE5B3DA1E47,optuna_stage1,timeout_prod_agg 0.688 > timeout_max 0.600
+CFGE5B3DA1E47,optuna_stage1,sl_to_tp_prod_agg 5.94x > sl_to_tp_max 2.50x
+CFGE5B3DA1E47,optuna_stage1,max_cell_sl_to_tp_prod 10.33x > sl_to_tp_max 2.50x
+CFGE5B3DA1E47,optuna_stage1,min_cell_auc 0.4979 < auc_min 0.5400
+CFGE5B3DA1E47,optuna_stage1,min_cell_auc_bound 0.4558 < auc_bound_min 0.5200
+CFGE5B3DA1E47,optuna_stage1,min_cell_tp_sep 0.0060 < tp_sep_min 0.0400
+CFGE5B3DA1E47,optuna_stage1,min_cell_ap_lift 1.061 < ap_lift_min 1.200
+CFG66DA4C63BF,optuna_stage1,min_cell_bind_prod 0.200 < bind_cell_min 0.380
+CFG66DA4C63BF,optuna_stage1,timeout_range_prod 0.600 > timeout_range_max 0.500
+CFG66DA4C63BF,optuna_stage1,sl_to_tp_prod_agg 3.06x > sl_to_tp_max 2.50x
+CFG66DA4C63BF,optuna_stage1,max_cell_sl_to_tp_prod 3.35x > sl_to_tp_max 2.50x
+CFG66DA4C63BF,optuna_stage1,min_cell_auc 0.4828 < auc_min 0.5400
+CFG66DA4C63BF,optuna_stage1,min_cell_auc_bound 0.4828 < auc_bound_min 0.5200
+CFG66DA4C63BF,optuna_stage1,min_cell_tp_sep -0.0027 < tp_sep_min 0.0400
+CFG66DA4C63BF,optuna_stage1,min_cell_ap_lift 0.989 < ap_lift_min 1.200
+CFG66DA4C63BF,optuna_stage1,tp_floor_bind_prod_agg 48.1% > tp_floor_bind_max_agg 20.0%
+CFG66DA4C63BF,optuna_stage1,max_cell_tp_floor_bind_prod 66.9% > tp_floor_bind_max_cell 35.0%
+CFG66DA4C63BF,optuna_stage1,floor-dominance combined guardrail: min_cell_auc 0.4828 < required 0.5600 when TP floor-binding is high
+CFG9CAB36B40C,optuna_stage1,min_cell_bind_prod 0.210 < bind_cell_min 0.380
+CFG9CAB36B40C,optuna_stage1,timeout_range_prod 0.526 > timeout_range_max 0.500
+CFG9CAB36B40C,optuna_stage1,sl_to_tp_prod_agg 2.94x > sl_to_tp_max 2.50x
+CFG9CAB36B40C,optuna_stage1,max_cell_sl_to_tp_prod 3.34x > sl_to_tp_max 2.50x
+CFG9CAB36B40C,optuna_stage1,min_cell_auc 0.4791 < auc_min 0.5400
+CFG9CAB36B40C,optuna_stage1,min_cell_auc_bound 0.4351 < auc_bound_min 0.5200
+CFG9CAB36B40C,optuna_stage1,min_cell_tp_sep 0.0022 < tp_sep_min 0.0400
+CFG9CAB36B40C,optuna_stage1,min_cell_ap_lift 1.014 < ap_lift_min 1.200
+CFG9CAB36B40C,optuna_stage1,tp_floor_bind_prod_agg 60.3% > tp_floor_bind_max_agg 20.0%
+CFG9CAB36B40C,optuna_stage1,max_cell_tp_floor_bind_prod 69.2% > tp_floor_bind_max_cell 35.0%
+CFG9CAB36B40C,optuna_stage1,floor-dominance combined guardrail: min_cell_auc 0.4791 < required 0.5600 when TP floor-binding is high

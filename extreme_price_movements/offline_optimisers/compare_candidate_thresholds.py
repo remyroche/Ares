@@ -425,6 +425,9 @@ def apply_tail_filter_on_prefilter(
     n_rows = out.shape[0]
     q = 1.0 - frac
 
+    vol_thrs = []
+    ent_thrs = []
+
     for i in range(n_rows):
         row_base = out[i]
         if int(row_base.sum()) < 8:
@@ -439,6 +442,7 @@ def apply_tail_filter_on_prefilter(
             if int(valid.sum()) >= 8:
                 thr = np.nanquantile(row_vol[valid], q)
                 drop_vol = valid & (row_vol >= thr)
+                vol_thrs.append(float(thr))
 
         if entropy_tail_arr is not None and mode in {"entropy_top", "entropy_top10", "entropy_top20", "entropy_top30", "vol_or_entropy_top10", "vol_or_entropy_top20", "vol_or_entropy_top30"}:
             row_ent = entropy_tail_arr[i]
@@ -446,6 +450,7 @@ def apply_tail_filter_on_prefilter(
             if int(valid.sum()) >= 8:
                 thr = np.nanquantile(row_ent[valid], q)
                 drop_entropy = valid & (row_ent >= thr)
+                ent_thrs.append(float(thr))
 
         if mode in {"vol24_top", "vol24_top10", "vol24_top20", "vol24_top30"} and drop_vol is not None:
             out[i] = row_base & (~drop_vol)
@@ -458,6 +463,14 @@ def apply_tail_filter_on_prefilter(
                 out[i] = row_base & (~drop_vol)
             elif drop_entropy is not None:
                 out[i] = row_base & (~drop_entropy)
+
+    if vol_thrs or ent_thrs:
+        msg = f"Tail filter thresholds (mean): mode={mode}"
+        if vol_thrs:
+            msg += f", vol_thr={np.mean(vol_thrs):.4f}"
+        if ent_thrs:
+            msg += f", entropy_thr={np.mean(ent_thrs):.4f}"
+        tlog(msg)
 
     return out
 
@@ -1462,49 +1475,6 @@ def _compute_cusum_strength_from_z(
     return pd.DataFrame(out, index=z_df.index, columns=z_df.columns, dtype=np.float32)
 
 
-def _conditional_expand_with_z_and_sign(
-    base_mask: pd.DataFrame,
-    base_sign: pd.DataFrame,
-    offsets: Iterable[int],
-    z_df: Optional[pd.DataFrame],
-    ret_df: Optional[pd.DataFrame],
-    sigma_df: Optional[pd.DataFrame] = None,
-    z_min: float = 1.0,
-    sign_pct: float = 0.6,
-    consistency_bars: int = 5,
-    vol_ratio: float = 1.2,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Expand candidates but keep only bars supported by z-gate + sign consistency."""
-    expanded = base_mask.copy()
-    sign_out = base_sign.copy().astype(np.int8)
-    if not offsets:
-        return expanded, sign_out
-
-    for off in offsets:
-        shifted_mask = base_mask.shift(int(off)).fillna(False)
-        shifted_sign = base_sign.shift(int(off)).fillna(0).astype(np.int8)
-
-        cond = shifted_mask
-        if z_df is not None:
-            z_shift = z_df.shift(int(off))
-            cond = cond & z_shift.abs().ge(float(z_min)).fillna(False)
-        if ret_df is not None:
-            r_shift = ret_df.shift(int(off))
-            sign_match = (np.sign(r_shift) == shifted_sign).where(shifted_sign != 0, False)
-            sm = sign_match.rolling(int(max(1, consistency_bars)), min_periods=1).mean()
-            cond = cond & sm.ge(float(sign_pct)).fillna(False)
-        if sigma_df is not None:
-            sig_shift = sigma_df.shift(int(off))
-            sig_base = sigma_df.where(base_mask)
-            sig_base_med = sig_base.rolling(int(max(2, consistency_bars)), min_periods=1).median()
-            vr = sig_shift / (sig_base_med + EPS)
-            cond = cond & vr.ge(float(vol_ratio)).fillna(False)
-
-        expanded |= cond
-        fill_mask = (sign_out == 0) & cond & (shifted_sign != 0)
-        sign_out = sign_out.where(~fill_mask, shifted_sign)
-    sign_out = sign_out.where(expanded, 0).astype(np.int8)
-    return expanded.fillna(False), sign_out
 
 
 # Optimization Constants
@@ -1527,20 +1497,45 @@ def _init_worker_context(context_dict: dict):
 # Selection Functions
 # =============================================================================
 
-def precompute_selection_metrics(feats: dict, float_dtype: np.dtype) -> dict:
+def precompute_selection_metrics(feats: dict, panel: dict, float_dtype: np.dtype) -> dict:
     """Precompute selection metrics once and reuse across configs.
 
-    ATR-normalized paths use robust ATR denominator (winsorized + EWM smoothed)
-    consistently to reduce denominator noise/spikes.
+    Uses a 12h signed range metric for Fixed/ATR/AVW modes as requested.
+    ATR-normalized paths use robust ATR denominator (winsorized + EWM smoothed).
     """
-    ret_base = feats.get("ret6h")
-    if ret_base is None:
-        ret_base = feats.get("ret24h")
-    if ret_base is None:
-        raise ValueError("ret6h/ret24h not found in features")
-    ret_base = ret_base.astype(float_dtype, copy=False)
+    # 1. Compute Signed Range 12h: (High12 - Low12) / Low12 * Sign(Close - Close12)
+    close = panel["close"]
+    high = panel["high"]
+    low = panel["low"]
 
-    metrics = {"fixed": ret_base}
+    # Reindex panel to features just in case of mismatch
+    target_idx = next(iter(feats.values())).index
+    target_cols = next(iter(feats.values())).columns
+
+    c = close.reindex(index=target_idx, columns=target_cols).astype(float_dtype, copy=False)
+    h = high.reindex(index=target_idx, columns=target_cols).astype(float_dtype, copy=False)
+    l = low.reindex(index=target_idx, columns=target_cols).astype(float_dtype, copy=False)
+
+    h12 = h.rolling(12, min_periods=12).max()
+    l12 = l.rolling(12, min_periods=12).min()
+    c12 = c.shift(12)
+
+    range_pct = (h12 - l12) / (l12 + EPS)
+    direction = np.sign(c - c12)
+    # Fallback to simple return sign if range is zero or nan
+    direction = np.where(direction == 0, 1, direction)
+
+    signed_range_12h = (range_pct * direction).astype(float_dtype, copy=False)
+
+    # For backward compatibility / fallback if 12h fails (shouldn't if panel is good)
+    if signed_range_12h.isna().all().all():
+        logger.warning("Signed Range 12h computation failed (all NaN). Fallback to ret6h/24h.")
+        ret_base = feats.get("ret6h")
+        if ret_base is None:
+            ret_base = feats.get("ret24h")
+        signed_range_12h = ret_base.astype(float_dtype, copy=False)
+
+    metrics = {"fixed": signed_range_12h}
 
     atr_effective = None
     atr_pct = feats.get("atr_pct")
@@ -1548,12 +1543,13 @@ def precompute_selection_metrics(feats: dict, float_dtype: np.dtype) -> dict:
         atr_pack = preprocess_atr(atr_pct.astype(float_dtype, copy=False))
         # Use robust denominator everywhere for ATR mode.
         atr_effective = atr_pack["atr_robust"].astype(float_dtype, copy=False)
-        metrics["atr"] = (ret_base / atr_pack["atr_robust"]).astype(float_dtype, copy=False)
+        metrics["atr"] = (signed_range_12h / atr_pack["atr_robust"]).astype(float_dtype, copy=False)
 
     cusum_pack: Dict[str, Any] = {"z": None, "sigma": None, "strength_by_h": {}, "atr_adjusted": False}
     ret_for_cusum = feats.get("ret1h")
+    # If 12h range fallback was used, ret_for_cusum might differ, but CUSUM needs 1h usually.
     if ret_for_cusum is None:
-        ret_for_cusum = ret_base
+        ret_for_cusum = feats.get("ret6h")
     ret_for_cusum = ret_for_cusum.astype(float_dtype, copy=False)
     if isinstance(atr_effective, pd.DataFrame):
         atr_for_cusum = atr_effective.reindex(index=ret_for_cusum.index, columns=ret_for_cusum.columns)
@@ -1602,10 +1598,10 @@ def precompute_selection_metrics(feats: dict, float_dtype: np.dtype) -> dict:
     if rvol_z is not None and volu_z is not None:
         vol_combined = ((rvol_z.astype(float_dtype, copy=False) + volu_z.astype(float_dtype, copy=False)) / 2).astype(float_dtype, copy=False)
         vol_tilt = (1.0 + 0.12 * vol_combined.clip(lower=0.0, upper=3.0)).astype(float_dtype, copy=False)
-        atr_base = metrics.get("atr", ret_base).astype(float_dtype, copy=False)
+        atr_base = metrics.get("atr", signed_range_12h).astype(float_dtype, copy=False)
         metrics["atr_vol_weight"] = (atr_base * vol_tilt).astype(float_dtype, copy=False)
     else:
-        metrics["atr_vol_weight"] = metrics.get("atr", ret_base).astype(float_dtype, copy=False)
+        metrics["atr_vol_weight"] = metrics.get("atr", signed_range_12h).astype(float_dtype, copy=False)
 
     return {
         "metrics": metrics,
@@ -1778,18 +1774,32 @@ def compute_cross_sectional_base_mask_and_sign(
 
 
 def expand_candidate_mask(base_mask: pd.DataFrame, offsets: list[int]) -> pd.DataFrame:
-    """Expand candidate timestamps using vectorized binary dilation."""
+    """
+    Expand candidate timestamps to include future timestamps (forward-looking only).
+
+    This replaces simple binary dilation with a forward-fill logic.
+    If offsets are [1, 2, 3], it means for a signal at t, we also mark t+1, t+2, t+3 as candidates.
+    It does not look backward.
+    """
     if not offsets:
         return base_mask
-    arr = base_mask.to_numpy(dtype=bool, copy=False)
-    max_lag = int(max(abs(int(o)) for o in offsets))
-    struct = np.zeros((2 * max_lag + 1, 1), dtype=bool)
-    center = max_lag
-    struct[center, 0] = True
-    for off in offsets:
-        struct[center + int(off), 0] = True
-    expanded = binary_dilation(arr, structure=struct)
-    return pd.DataFrame(expanded, index=base_mask.index, columns=base_mask.columns, dtype=bool)
+
+    # Offsets should be positive integers representing future steps.
+    # Filter out any non-positive offsets just in case, though config usually provides [2, 4, 6, 8] etc.
+    future_offsets = sorted([int(o) for o in offsets if int(o) > 0])
+
+    if not future_offsets:
+        return base_mask
+
+    # Start with the base mask
+    expanded = base_mask.copy()
+
+    # Or-accumulate forward shifts
+    # Using shift(1) moves t to t+1. So if we want to include t+1, we shift(1).
+    for off in future_offsets:
+        expanded |= base_mask.shift(off).fillna(False)
+
+    return expanded
 
 
 def select_candidates_cross_sectional(
@@ -3380,28 +3390,22 @@ def evaluate_single_config(cfg: dict) -> tuple[dict, list[dict]]:
                 side_sign_base = side_sign_base.where(candidate_mask_base, 0).astype(np.int8)
 
         # Expansion
-        if mode == "cusum" and expansion_offsets:
-            cusum_pack = precomputed.get("cusum_pack", {})
-            z_df = cusum_pack.get("z")
-            ret_df = feats.get("ret1h") if isinstance(feats.get("ret1h"), pd.DataFrame) else feats.get("ret6h")
-            candidate_mask_metrics, side_sign_metrics = _conditional_expand_with_z_and_sign(
-                base_mask=candidate_mask_base, base_sign=side_sign_base,
-                offsets=expansion_offsets, z_df=z_df, ret_df=ret_df,
-                sigma_df=cusum_pack.get("sigma"),
-                z_min=float(cfg.get("cusum_expand_z_min", 1.0)),
-                sign_pct=float(cfg.get("cusum_expand_sign_pct", 0.6)),
-                consistency_bars=int(cfg.get("cusum_expand_consistency_bars", 5)),
-                vol_ratio=float(cfg.get("cusum_expand_vol_ratio", 1.2)),
-            )
-        else:
-            candidate_mask_metrics = expand_candidate_mask(candidate_mask_base, expansion_offsets)
-            side_sign_metrics = side_sign_base.copy()
-            if expansion_offsets:
-                for off in expansion_offsets:
-                    shifted = side_sign_base.shift(int(off)).fillna(0).astype(np.int8)
-                    fill_mask = (side_sign_metrics == 0) & (shifted != 0)
-                    side_sign_metrics = side_sign_metrics.where(~fill_mask, shifted)
-            side_sign_metrics = side_sign_metrics.where(candidate_mask_metrics, 0).astype(np.int8)
+        # Standard Expansion: Binary dilation (forward-looking only)
+        # Note: Conditional expansion (CUSUM z-gate) has been removed.
+        candidate_mask_metrics = expand_candidate_mask(candidate_mask_base, expansion_offsets)
+        side_sign_metrics = side_sign_base.copy()
+
+        # Propagate signs to expanded timestamps
+        if expansion_offsets:
+            future_offsets = sorted([int(o) for o in expansion_offsets if int(o) > 0])
+            for off in future_offsets:
+                # Shift base sign forward to align with the expanded mask time
+                shifted = side_sign_base.shift(off).fillna(0).astype(np.int8)
+                # Fill zeros where we don't have a sign yet
+                fill_mask = (side_sign_metrics == 0) & (shifted != 0)
+                side_sign_metrics = side_sign_metrics.where(~fill_mask, shifted)
+
+        side_sign_metrics = side_sign_metrics.where(candidate_mask_metrics, 0).astype(np.int8)
         
         # Tail Filter
         tail_mode = cfg.get("tail_filter_mode", "none")
@@ -3940,9 +3944,10 @@ def run_comparison(
         target_columns=metric_ref.columns,
         float_dtype=float_dtype,
     )
+    # Permutation entropy excluded as per instruction.
     entropy_tail_arr = _resolve_feature_aligned_array(
         feats,
-        ["spectral_entropy_ret_24", "shannon_entropy_ret_16", "perm_entropy_ret_24", "volume_entropy_24"],
+        ["spectral_entropy_ret_24", "shannon_entropy_ret_16", "volume_entropy_24"],
         target_index=metric_ref.index,
         target_columns=metric_ref.columns,
         float_dtype=float_dtype,

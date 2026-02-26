@@ -2054,7 +2054,7 @@ def evaluate_config(
         stacked_index,
         dtype=np.float32,
     )
-    atr = np.nan_to_num(atr, nan=0.0, copy=False)
+    atr = np.nan_to_num(atr, nan=0.0, copy=True)
     ratio = np.divide(atr, roll + EPS, out=np.ones_like(atr, dtype=np.float32), where=np.isfinite(roll))
 
     atr_s = pd.Series(atr, index=stacked_index, dtype=np.float32)
@@ -4678,7 +4678,10 @@ def run(args: argparse.Namespace) -> None:
         details.update(obj_s1.details)
         total_weights_written += obj_s1.total_weights_written
         # Per-cell summary
-        _best = study_s1.best_trial if study_s1.best_trial else None
+        try:
+            _best = study_s1.best_trial
+        except ValueError:
+            _best = None
         _best_val = f"{_best.value:.4f}" if _best and _best.value is not None else "N/A"
         tprint(
             f"--- Cell {bkt} H{hor} complete: "

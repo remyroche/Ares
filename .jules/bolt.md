@@ -109,3 +109,12 @@ Result: `calculate_entropy_statistics_numba` speedup >700x (2.11s -> 0.003s). Fu
 ## 2026-02-16 - Parallelizing Numba Kernels
 Learning: Even with Numba-jitted inner functions, iterating over DataFrame columns in Python using `apply_to_frame` or `apply_to_matrix` incurs significant overhead, especially for operations with low per-column complexity (like RSI, rolling max/min, pct_change).
 Action: Always prefer `prange` loops inside a parallel Numba kernel over Python-level iteration when processing DataFrames column-wise. This yielded 3-13x speedups for common indicators.
+
+## 2026-02-26 - Fused Rolling Entropy Proxy Optimization
+
+**Learning:** The "entropy proxy" feature calculation (`_rolling_shannon_entropy_df`) was extremely inefficient because it relied on pandas `.rolling()` with 7 separate method calls per window step (4 quantiles, mean, std, median). This resulted in 7 passes over the data and significant Pandas overhead.
+
+**Action:** Replaced the pandas implementation with a single **fused Numba kernel** (`_numba_rolling_entropy_proxy`). The kernel computes all statistics (quantiles via buffer sort, mean, std) in a **single pass** over the window.
+- **Speedup:** 12.39x (0.84s -> 0.068s for 5000x50 array).
+- **Correctness:** Verified to be identical (max diff 0.000000).
+- **Technique:** Use `parallel=True` with `prange` for column-wise parallelization, and fused logic inside the inner loop to maximize cache locality and minimize Python overhead.

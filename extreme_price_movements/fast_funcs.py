@@ -2536,3 +2536,100 @@ def _numba_rolling_corr_parallel(mat1, mat2, window):
         out[:, j] = _numba_rolling_corr_1d_k_shift(mat1[:, j], mat2[:, j], window)
 
     return out
+
+@jit(nopython=True, nogil=True, cache=True)
+def _numba_rolling_entropy_proxy_1d(x, window):
+    n = len(x)
+    out = np.full(n, np.nan, dtype=np.float32)
+
+    # Buffer for sorting
+    buf = np.empty(window, dtype=np.float32)
+
+    min_periods = max(4, window // 2)
+
+    for i in range(n):
+        # Window end is i (inclusive), start is i - window + 1
+        # This computes the metric for the window ending at i.
+
+        start = i - window + 1
+        if start < 0:
+            start = 0
+        end = i + 1
+
+        count = 0
+        sum_val = 0.0
+        sum_sq = 0.0
+
+        for j in range(start, end):
+            val = x[j]
+            if not np.isnan(val):
+                buf[count] = val
+                sum_val += val
+                sum_sq += val * val
+                count += 1
+
+        if count < min_periods:
+            continue
+
+        # Compute mean, std
+        mu = sum_val / count
+        # ddof=0 for std
+        var = (sum_sq / count) - (mu * mu)
+        if var < 0: var = 0.0
+        sd = np.sqrt(var)
+        if sd < 1e-12: sd = 1e-12
+
+        # Sort buffer to get quantiles
+        valid_buf = buf[:count]
+        valid_buf.sort() # In-place sort
+
+        def get_quantile(q, sorted_arr, c):
+            idx = q * (c - 1)
+            lower = int(idx)
+            upper = int(np.ceil(idx))
+            frac = idx - lower
+            val_l = sorted_arr[lower]
+            val_u = sorted_arr[upper]
+            return val_l + (val_u - val_l) * frac
+
+        q01 = get_quantile(0.01, valid_buf, count)
+        q25 = get_quantile(0.25, valid_buf, count)
+        q50 = get_quantile(0.50, valid_buf, count) # median
+        q75 = get_quantile(0.75, valid_buf, count)
+        q99 = get_quantile(0.99, valid_buf, count)
+
+        # Logic
+        iqr = abs(q75 - q25)
+        full_range = abs(q99 - q01)
+        if full_range < 1e-12: full_range = 1e-12
+
+        spread_ratio = min(max(iqr / full_range, 0.0), 1.0)
+
+        skew_proxy = min(max(abs(mu - q50) / sd, 0.0), 3.0)
+
+        entropy = spread_ratio * min(max(1.0 - skew_proxy / 6.0, 0.5), 1.0)
+        out[i] = entropy
+
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_entropy_proxy_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_entropy_proxy_1d(mat[:, j], window)
+    return out
+
+def numba_rolling_entropy_proxy(df, window):
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rolling_entropy_proxy_parallel(mat, window)
+
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+    return res_df

@@ -1634,13 +1634,16 @@ def _fast_auc_binary(y_bin: np.ndarray, pred: np.ndarray) -> float:
 
 def _optuna_objective_score(res: Dict[str, Any]) -> float:
     """Stable scalar objective derived from evaluate_config() outputs."""
-    auc_min = _safe_float(res.get("min_cell_auc", float("nan")), float("nan"))
-    if math.isfinite(auc_min):
-        return float(auc_min)
+    stage2 = _safe_float(res.get("stage2_score", float("nan")), float("nan"))
+    if math.isfinite(stage2):
+        return float(stage2)
     auc_med = _safe_float(res.get("median_cell_auc", float("nan")), float("nan"))
     if math.isfinite(auc_med):
         return float(auc_med)
-    return float(_safe_float(res.get("stage2_score", -1.0), -1.0))
+    auc_min = _safe_float(res.get("min_cell_auc", float("nan")), float("nan"))
+    if math.isfinite(auc_min):
+        return float(auc_min)
+    return -1.0
 
 
 def _fast_geometry_pr_auc_proxy(cfg: Dict[str, Any]) -> float:
@@ -1657,6 +1660,15 @@ def _optuna_n_jobs() -> int:
     if _is_apple_arm():
         return 1
     return max(1, c // 2)
+
+
+def _optuna_sampler() -> optuna.samplers.TPESampler:
+    return optuna.samplers.TPESampler(
+        multivariate=True,
+        constant_liar=True,
+        n_startup_trials=25,
+        gamma=lambda n: min(0.4, 10 / max(n, 1)),
+    )
 
 def get_stacked_array(
     eval_cache: BoundedEvalCache,
@@ -2543,12 +2555,41 @@ def evaluate_config(
     median_cell_dir_superiority = float(np.median(cell_dir_sups)) if cell_dir_sups else float("nan")
     max_barrier_ratio = float(np.max(cell_barrier_ratios)) if cell_barrier_ratios else float("nan")
 
+    # For cell-specific Optuna, ensure aggregation is strictly per-cell (not across canonical cells).
+    if target_cell_filter:
+        _tb, _th = target_cell_filter
+        _tm = bucket_h_metrics.get((_tb, _th), {})
+        _auc_v = float(_tm.get("auc_label", float("nan")))
+        _auc_b_v = float(_tm.get("auc_bound", float("nan")))
+        _sep_v = float(_tm.get("tp_sep_top10", float("nan")))
+        _ap_v = float(_tm.get("ap_lift", float("nan")))
+        _tpsl_v = float(_tm.get("tp_over_sl", float("nan")))
+        _dir_v = float(_tm.get("dir_superiority_top_decile", float("nan")))
+        _ic_lbl_v = float(_tm.get("ic_label", float("nan")))
+        min_cell_auc = median_cell_auc = _auc_v
+        min_cell_auc_bound = median_cell_auc_bound = _auc_b_v
+        min_cell_tp_sep = median_cell_tp_sep = (0.0 if math.isnan(_sep_v) else _sep_v)
+        min_cell_ap_lift = median_cell_ap_lift = _ap_v
+        min_cell_tp_over_sl = median_cell_tp_over_sl = _tpsl_v
+        min_cell_dir_superiority = median_cell_dir_superiority = _dir_v
+        min_cell_ic_label = median_cell_ic_label = (0.0 if math.isnan(_ic_lbl_v) else _ic_lbl_v)
+
     # Config-level bind/balance (aggregate across all events).
     tp_hit_agg = float((events["label"] == OUT_TP).mean()) if len(events) else 0.0
     sl_hit_agg = float((events["label"] == OUT_SL).mean()) if len(events) else 0.0
     bind_agg = tp_hit_agg + sl_hit_agg
     balance_agg = min(tp_hit_agg, sl_hit_agg) / max(max(tp_hit_agg, sl_hit_agg), EPS)
     sl_to_tp_agg = sl_hit_agg / max(tp_hit_agg, EPS)
+    _tp_vals_agg = events.loc[events["label"] == OUT_TP, "payoff"].to_numpy(dtype=np.float32, copy=False) if len(events) else np.array([], dtype=np.float32)
+    _sl_vals_agg = events.loc[events["label"] == OUT_SL, "payoff"].to_numpy(dtype=np.float32, copy=False) if len(events) else np.array([], dtype=np.float32)
+    _tp_count = int(_tp_vals_agg.size)
+    _sl_count = int(_sl_vals_agg.size)
+    _min_edge_count = int(cfg.get("min_payoff_edge_count", 30))
+    tp_med_agg = float(np.median(_tp_vals_agg)) if _tp_vals_agg.size else EPS
+    sl_med_agg = float(np.median(np.abs(_sl_vals_agg))) if _sl_vals_agg.size else EPS
+    edge = float(math.log(max(tp_hit_agg, EPS) * max(tp_med_agg, EPS) / max(sl_hit_agg * sl_med_agg, EPS)))
+    # Use neutral payoff-edge contribution when TP/SL sample support is too thin.
+    payoff_edge = edge if (_tp_count >= _min_edge_count and _sl_count >= _min_edge_count) else 0.0
 
     # Degeneracy flags.
     timeout_agg = float((events["label"] == OUT_TO).mean()) if len(events) else 1.0
@@ -2626,45 +2667,67 @@ def evaluate_config(
         - 0.2 * float((events["label"] == OUT_TO).mean() if len(events) else 1.0)
     )
 
-    # Learnability-focused stage2_score.
-    # Primary: AUC on TP classification (median across cells) + TP separation in top-10% score.
-    # Secondary: sortino as payoff quality guard, ic_snr as stability.
-    # Degeneracy penalties: low coverage/bind (multiplicative), top10_vs_rest<0, min_cell_ic_label<-0.02.
-    _auc_term = (median_cell_auc - 0.5) * 4.0 if not math.isnan(median_cell_auc) else 0.0  # centre at 0.5, scale to ~[-2,+2]
-    _sep_term = median_cell_tp_sep * 10.0                  # TP sep typically 0-0.05 → scale to 0-0.5
-    # Secondary objective: directional superiority in top decile (E[r|TP,top10] / abs(E[r|SL,top10])).
-    # Bonus for dir_sup > 1.0 (TP payoff exceeds SL loss in top decile), capped at +0.2.
-    _dir_sup_term = 0.0
-    if not math.isnan(median_cell_dir_superiority):
-        _dir_sup_term = float(np.clip((median_cell_dir_superiority - 1.0) * 0.2, -0.2, 0.2))
-    # Secondary objective: payoff edge (E[r|TP] / abs(E[r|SL])).
-    # Bonus for tp_over_sl > 1.05, capped at +0.1.
-    _tp_over_sl_term = 0.0
-    if not math.isnan(median_cell_tp_over_sl):
-        _tp_over_sl_term = float(np.clip((median_cell_tp_over_sl - 1.0) * 0.1, -0.1, 0.1))
-    stage2_score = (
-        0.35 * _auc_term
-        + 0.25 * _sep_term
-        + 0.15 * sortino
-        + 0.10 * ic_snr
-        + 0.10 * _dir_sup_term
-        + 0.05 * _tp_over_sl_term
-        - 0.10 * float(ic_time.std() if ic_time.size else 0.0)
-    )
-    # Multiplicative penalties: prevent degenerate low-n or pure-timeout configs from winning.
-    stage2_score *= math.sqrt(max(coverage, 0.0))          # coverage ∈ [0,1] → sqrt shrinks low-n
-    stage2_score *= max(bind_agg, 0.0)                     # bind ∈ [0,1] → zero-out pure-timeout configs
-    # Additive penalties for learnability failures.
-    if top10_vs_rest_spread < 0.0:
-        stage2_score -= 0.05                               # top10 by score not better than rest → weak ranking
-    if min_cell_ic_label < -0.02:
-        stage2_score -= 0.05                               # at least one cell has inverted label IC
-    if worst_bucket_ic < -0.1:
-        stage2_score -= 0.5
-    # Additive penalty for failing payoff edge: tp_over_sl < 1.0 globally means SL losses exceed TP gains.
-    if not math.isnan(min_cell_tp_over_sl) and min_cell_tp_over_sl < 1.0:
-        stage2_score -= 0.10
+    # Learnability-focused stage2_score (Optuna-proof):
+    # - normalize each component to bounded scales to prevent metric-range domination
+    # - keep instability/degeneracy penalties smooth and capped (<=50% of reward)
+    _auc_raw = median_cell_auc if not math.isnan(median_cell_auc) else 0.5
+    _auc_score = float(np.clip(2.0 * (_auc_raw - 0.5), -1.0, 1.0))
 
+    _sep_score = float(np.tanh(median_cell_tp_sep / 0.03)) if not math.isnan(median_cell_tp_sep) else 0.0
+    _sortino_score = float(np.tanh(sortino / 3.0))
+    _snr_score = float(np.tanh(ic_snr / 2.0))
+
+    _dir_sup_score = 0.0
+    if not math.isnan(median_cell_dir_superiority):
+        _dir_sup_score = float(np.tanh((median_cell_dir_superiority - 1.0) / 0.25))
+
+    _tp_over_sl_score = 0.0
+    if not math.isnan(median_cell_tp_over_sl) and median_cell_tp_over_sl > 0.0:
+        _tp_over_sl_score = float(np.tanh(math.log(max(median_cell_tp_over_sl, EPS)) / 0.35))
+    payoff_edge_score = float(np.tanh(payoff_edge / 0.75))
+
+    # Rewards are bounded to approximately [-1, +1] each.
+    _reward = (
+        0.24 * _auc_score
+        + 0.16 * _sep_score
+        + 0.12 * _sortino_score
+        + 0.10 * _snr_score
+        + 0.10 * _dir_sup_score
+        + 0.08 * _tp_over_sl_score
+        + 0.10 * payoff_edge_score
+    )
+
+    # Smooth penalties (all in [0,1] scale, then bounded to <=50% of |reward|).
+    _ic_std = float(ic_time.std() if ic_time.size else 0.0)
+    _instability_pen = float(cfg.get("stage2_penalty_instability_w", 0.20)) * max(0.0, (_ic_std - float(cfg.get("stage2_ic_std_target", 0.12))) / max(float(cfg.get("stage2_ic_std_target", 0.12)), EPS)) ** 2
+    _coverage_pen = float(cfg.get("stage2_penalty_coverage_w", 0.20)) * max(0.0, (float(cfg.get("stage2_target_coverage", 0.45)) - coverage) / max(float(cfg.get("stage2_target_coverage", 0.45)), EPS))
+    _timeout_pen = float(cfg.get("stage2_penalty_timeout_w", 0.25)) * max(0.0, timeout_agg - float(cfg.get("stage2_timeout_target", 0.55)))
+    _bind_pen = float(cfg.get("stage2_penalty_bind_w", 0.25)) * max(0.0, float(cfg.get("stage2_bind_target", 0.35)) - bind_agg)
+
+    _raw_penalty = _instability_pen + _coverage_pen + _timeout_pen + _bind_pen
+    _penalty_cap = 0.5 * max(abs(_reward), 0.10)
+    _bounded_penalty = min(_raw_penalty, _penalty_cap)
+    stage2_score = _reward - _bounded_penalty
+
+    # Keep mild multiplicative regularization, bounded away from zero.
+    stage2_score *= max(0.70, math.sqrt(max(coverage, 0.0)))
+    stage2_score *= max(0.70, max(bind_agg, 0.0))
+
+    # Additive penalties for clear learnability failures.
+    if top10_vs_rest_spread < 0.0:
+        stage2_score -= 0.03
+    if min_cell_ic_label < -0.02:
+        stage2_score -= 0.03
+    if worst_bucket_ic < -0.1:
+        stage2_score -= 0.10
+    if not math.isnan(min_cell_tp_over_sl) and min_cell_tp_over_sl < 1.0:
+        stage2_score -= 0.05
+
+    # Keep stage2_score defined for sparse-trade/partial-metric runs; reserve missing only for invalid evals.
+    stage2_missing = False
+    if not math.isfinite(stage2_score):
+        stage2_missing = True
+        stage2_score = -1.0
     # Economic guardrail: hard constraints + bounded stage2 adjustment.
     _econ_tp_hit_floor = float(cfg.get("econ_tp_hit_floor", 0.10))
     _econ_sl_to_tp_cap = float(cfg.get("econ_sl_to_tp_cap", 3.5))
@@ -2694,6 +2757,9 @@ def evaluate_config(
         sl_to_tp_cap=_econ_sl_to_tp_cap,
         tp_over_sl_floor=_econ_tp_over_sl_floor,
     )
+    if not math.isfinite(stage2_score):
+        stage2_missing = True
+        stage2_score = -1.0
     hard_gate = bool(hard_gate and econ_ok)
 
     # Production-aligned admissibility on U_prod (post candidate/quantile/RR filters).
@@ -2809,7 +2875,11 @@ def evaluate_config(
         "bind": round(bind_agg, 4),
         "balance": round(balance_agg, 4),
         "sl_to_tp": round(sl_to_tp_agg, 4),
-        "edge": round(float((1.0 / max(sl_to_tp_agg, EPS)) - 1.0), 6),
+        "payoff_edge": round(float(payoff_edge), 6),
+        "edge": round(float(edge), 6),
+        "payoff_edge_support_tp": int(_tp_count),
+        "payoff_edge_support_sl": int(_sl_count),
+        "payoff_edge_min_count": int(_min_edge_count),
         "pr_auc_lift": round(float(pr_auc_lift), 6),
         "barrier_ratio": max_barrier_ratio,
         "flag_degenerate_timeout": flag_degenerate_timeout,
@@ -2824,6 +2894,17 @@ def evaluate_config(
         "worst_bucket_IC": worst_bucket_ic,
         "stage1_score": stage1_score,
         "stage2_score": stage2_score,
+        "stage2_missing": bool(stage2_missing),
+        "stage2_reward": float(_reward),
+        "stage2_penalty_raw": float(_raw_penalty),
+        "stage2_penalty_bounded": float(_bounded_penalty),
+        "stage2_auc_score": float(_auc_score),
+        "stage2_sep_score": float(_sep_score),
+        "stage2_sortino_score": float(_sortino_score),
+        "stage2_ic_snr_score": float(_snr_score),
+        "stage2_dir_sup_score": float(_dir_sup_score),
+        "stage2_tp_over_sl_score": float(_tp_over_sl_score),
+        "stage2_payoff_edge_score": float(payoff_edge_score),
         # brier/ece/mono: median across cells (per-cell values in bucket_horizon_metrics)
         "brier": brier,
         "ece": ece,
@@ -3444,16 +3525,16 @@ def _diverse_subset(
     run_vectors: Optional[Dict[str, np.ndarray]] = None,
     min_distance: float = 1.0,
     max_configs: int = 20,
-    alpha: float = 2.0,
+    alpha: float = 0.7,
     gamma: float = 2.0,
     gate_mode: str = "asymmetric_min",
-    acquisition: str = "score_times_novelty",
+    acquisition: str = "score_novelty_power",
+    preselected_cids: Optional[List[str]] = None,
+    anchor_high: int = 4,
 ) -> pd.DataFrame:
-    """Score-weighted diversity selection with dynamic distance thresholds.
+    """Score-biased diversity selection.
 
-    Feasibility constraints (if present):
-    - pr_auc_lift > 0
-    - edge > 0
+    Keeps exploration but prioritizes high stage2_score candidates.
     """
     if max_configs <= 0 or feasible_df is None or feasible_df.empty:
         return feasible_df.head(0) if isinstance(feasible_df, pd.DataFrame) else pd.DataFrame()
@@ -3461,45 +3542,44 @@ def _diverse_subset(
         run_vectors = {}
     work_df = feasible_df.copy()
 
-    # Hard feasibility filtering (if columns exist).
+    # Hard feasibility filtering.
     if "pr_auc_lift" in work_df.columns:
-        work_df = work_df[work_df["pr_auc_lift"].fillna(-np.inf) > 0.0]
+        _pr = pd.to_numeric(work_df["pr_auc_lift"], errors="coerce")
+        work_df = work_df[_pr.fillna(-np.inf) > 0.0]
     if "edge" in work_df.columns:
-        work_df = work_df[work_df["edge"].fillna(-np.inf) > 0.0]
+        _ed = pd.to_numeric(work_df["edge"], errors="coerce")
+        work_df = work_df[_ed.fillna(-np.inf) > 0.0]
     if work_df.empty:
         return feasible_df.head(0)
 
-    score_col = "stage2_score" if "stage2_score" in work_df.columns else (
-        "stage1_score" if "stage1_score" in work_df.columns else None
-    )
-    if score_col is None:
-        score_series = pd.Series(np.zeros(len(work_df), dtype=float), index=work_df.index)
-    else:
-        score_series = pd.to_numeric(work_df[score_col], errors="coerce").fillna(-np.inf)
+    _s2 = pd.to_numeric(work_df.get("stage2_score", pd.Series(np.nan, index=work_df.index)), errors="coerce")
+    _s1 = pd.to_numeric(work_df.get("stage1_score", pd.Series(-np.inf, index=work_df.index)), errors="coerce").fillna(-np.inf)
+    score_series = _s2.where(_s2.notna(), _s1).fillna(-np.inf)
 
-    # Deterministic tie-break ordering.
     order_df = work_df.assign(_score=score_series.values, _cid=work_df["config_id"].astype(str).values)
     order_df = order_df.sort_values(["_score", "_cid"], ascending=[False, True])
     work_df = work_df.loc[order_df.index].copy()
     score_series = score_series.loc[work_df.index]
 
+    # Never admit from bottom 50% by score.
+    if len(work_df) > 1:
+        _rank = score_series.rank(method="first", ascending=False)
+        work_df = work_df[_rank <= max(1, int(math.ceil(len(work_df) * 0.5)))].copy()
+        score_series = score_series.loc[work_df.index]
+    if work_df.empty:
+        return feasible_df.head(0)
+
     n = len(work_df)
-    if n <= max_configs:
-        return work_df
-
-    # Rank-based quality q in [0, 1], robust to score outliers.
+    # Rank-normalized score s in [0,1]
     if n == 1:
-        q = pd.Series([1.0], index=work_df.index)
+        s_norm = pd.Series([1.0], index=work_df.index)
     else:
-        rank_asc = score_series.rank(method="average", ascending=True)
-        q = ((rank_asc - 1.0) / float(n - 1)).clip(0.0, 1.0)
-
-    d_min = float(max(min_distance, 0.0))
-    d_max = d_min * (1.0 + float(max(alpha, 0.0)))
-    d_req = (d_min + (d_max - d_min) * np.power((1.0 - q).clip(0.0, 1.0), float(max(gamma, EPS)))).clip(d_min, d_max)
+        rank_desc = score_series.rank(method="first", ascending=False)
+        s_norm = (1.0 - (rank_desc - 1.0) / float(n - 1)).clip(0.0, 1.0)
 
     # Candidate containers.
     candidates: Dict[int, Dict[str, Any]] = {}
+    idx_to_pos: Dict[Any, int] = {}
     for pos, (idx, row) in enumerate(work_df.iterrows()):
         cid = str(row["config_id"])
         cfg_i = details.get(cid, {}).get("config", {})
@@ -3511,10 +3591,10 @@ def _diverse_subset(
             "cfg": cfg_i,
             "vec": run_vectors.get(cid),
             "score": float(score_series.loc[idx]),
-            "q": float(q.loc[idx]),
-            "d_req": float(d_req.loc[idx]),
+            "s_norm": float(s_norm.loc[idx]),
             "d_min_to_s": float("inf"),
         }
+        idx_to_pos[idx] = pos
 
     if not candidates:
         return feasible_df.head(0)
@@ -3533,38 +3613,64 @@ def _diverse_subset(
                 f"Opposite labels detected between {ci['cid']} and candidate {cj['cid']} "
                 "for the same timestamp/symbol. This violates outcome consistency."
             )
-        total_dist = _param_distance(ci["cfg"], cj["cfg"]) + _jaccard_distance(ci["vec"], cj["vec"])
+        param_d = _param_distance(ci["cfg"], cj["cfg"])
+        # Score-adaptive label weighting: high-score configs rely more on param diversity.
+        s_pair = max(ci["s_norm"], cj["s_norm"])
+        label_weight = 1.0 - s_pair
+        total_dist = param_d + label_weight * _jaccard_distance(ci["vec"], cj["vec"])
         dist_cache[key] = float(total_dist)
         return dist_cache[key]
 
     selected: List[int] = []
+    selected_set: Set[int] = set()
     active: List[int] = list(candidates.keys())
-    eps = 1e-6
 
+    # Preselect anchors (best configs per caller).
+    if preselected_cids:
+        _cid_to_pos = {candidates[p]["cid"]: p for p in active}
+        for cid in preselected_cids:
+            p = _cid_to_pos.get(str(cid))
+            if p is None or p in selected_set:
+                continue
+            selected.append(p)
+            selected_set.add(p)
+            if p in active:
+                active.remove(p)
+
+    # Phase A: quality anchors (allow close high-score configs).
+    anchor_target = min(max_configs, max(anchor_high, len(selected)))
+    while active and len(selected) < anchor_target:
+        best_i = max(active, key=lambda i: (candidates[i]["s_norm"], candidates[i]["score"], candidates[i]["cid"]))
+        active.remove(best_i)
+        selected.append(best_i)
+        selected_set.add(best_i)
+
+    # Initialize novelty cache after anchors.
+    for j in active:
+        if selected:
+            candidates[j]["d_min_to_s"] = min(_pair_dist(j, s) for s in selected)
+        else:
+            candidates[j]["d_min_to_s"] = 1.0
+
+    # Phase B: diversity expansion.
+    d_min = float(max(min_distance, 0.0))
     while active and len(selected) < max_configs:
-        # Acquisition score with novelty cache.
         scored: List[Tuple[float, float, str, int]] = []
         for i in active:
             c = candidates[i]
             novelty = c["d_min_to_s"] if np.isfinite(c["d_min_to_s"]) else 1.0
-            if acquisition == "score_first":
-                a_val = c["score"]
-            else:  # default: score_times_novelty
-                a_val = c["q"] * (eps + novelty)
-            scored.append((float(a_val), float(c["score"]), str(c["cid"]), i))
+            n_norm = float(np.tanh(max(novelty, 0.0)))
+            # J = s^alpha * n^(1-alpha)
+            a_val = float((max(c["s_norm"], 0.0) ** float(alpha)) * (max(n_norm, 0.0) ** float(1.0 - alpha)))
+            scored.append((a_val, float(c["score"]), str(c["cid"]), i))
         scored.sort(key=lambda x: (-x[0], -x[1], x[2]))
         best_i = scored[0][3]
-
         cand = candidates[best_i]
+
         accept = True
         for s in selected:
-            sel = candidates[s]
             d_ij = _pair_dist(best_i, s)
-            if gate_mode == "candidate_only":
-                req = cand["d_req"]
-            else:
-                req = min(cand["d_req"], sel["d_req"])
-            if d_ij < req:
+            if d_ij < d_min:
                 accept = False
                 break
 
@@ -3573,7 +3679,7 @@ def _diverse_subset(
             continue
 
         selected.append(best_i)
-        # O(N*K) distance-cache updates.
+        selected_set.add(best_i)
         for j in active:
             d_new = _pair_dist(best_i, j)
             if d_new < candidates[j]["d_min_to_s"]:
@@ -3586,17 +3692,21 @@ def _diverse_subset(
 
 
 def _rank_by_learnability(df: pd.DataFrame) -> pd.DataFrame:
-    """Sort a feasible-set DataFrame by the canonical learnability ranking:
-    min_auc (3dp bucketed) → min_tp_sep → cell_dispersion asc → timeout_range asc → min_auc_bound.
-    Returns a new sorted DataFrame."""
-    _min_auc = (df["min_cell_auc"].fillna(0.0) * 1000).round() / 1000
-    _min_sep = df["min_cell_tp_sep"].fillna(0.0)
-    _disp = df["cell_dispersion"].fillna(999.0)
-    _to_r = df["timeout_range"].fillna(999.0) if "timeout_range" in df.columns else pd.Series(0.0, index=df.index)
-    _min_auc_b = df["min_cell_auc_bound"].fillna(0.0) if "min_cell_auc_bound" in df.columns else _min_auc
-    return df.assign(_ma=_min_auc, _ms=_min_sep, _d=_disp, _tr=_to_r, _mab=_min_auc_b).sort_values(
-        ["_ma", "_ms", "_d", "_tr", "_mab"], ascending=[False, False, True, True, False]
-    ).drop(columns=["_ma", "_ms", "_d", "_tr", "_mab"])
+    """Canonical ranking for promotion/diversity input.
+
+    Primary objective is stage2_score (fallback stage1_score if missing), then
+    learnability tie-breakers.
+    """
+    _s2 = pd.to_numeric(df.get("stage2_score", pd.Series(np.nan, index=df.index)), errors="coerce")
+    _s1 = pd.to_numeric(df.get("stage1_score", pd.Series(-np.inf, index=df.index)), errors="coerce").fillna(-np.inf)
+    _score = _s2.where(_s2.notna(), _s1).fillna(-np.inf)
+    _min_auc = (df["min_cell_auc"].fillna(0.0) * 1000).round() / 1000 if "min_cell_auc" in df.columns else pd.Series(0.0, index=df.index)
+    _min_sep = df["min_cell_tp_sep"].fillna(0.0) if "min_cell_tp_sep" in df.columns else pd.Series(0.0, index=df.index)
+    _disp = df["cell_dispersion"].fillna(999.0) if "cell_dispersion" in df.columns else pd.Series(999.0, index=df.index)
+    _to_r = df["timeout_range"].fillna(999.0) if "timeout_range" in df.columns else pd.Series(999.0, index=df.index)
+    return df.assign(_sc=_score, _ma=_min_auc, _ms=_min_sep, _d=_disp, _tr=_to_r).sort_values(
+        ["_sc", "_ma", "_ms", "_d", "_tr"], ascending=[False, False, False, True, True]
+    ).drop(columns=["_sc", "_ma", "_ms", "_d", "_tr"])
 
 
 def promote_stage1(stage1_results: pd.DataFrame, top_k: int = 10) -> List[str]:
@@ -3737,7 +3847,15 @@ def _build_per_cell_feasible_sets(
         feasible = _rank_by_learnability(feasible)
 
         # Diversity control — target max_configs_per_cell but ensure at least 2.
-        diverse = _diverse_subset(feasible, details, min_distance=min_distance, max_configs=max_configs_per_cell)
+        
+        _anchor_cid = str(feasible.iloc[0]["config_id"]) if not feasible.empty else None
+        diverse = _diverse_subset(
+            feasible,
+            details,
+            min_distance=min_distance,
+            max_configs=max_configs_per_cell,
+            preselected_cids=[_anchor_cid] if _anchor_cid else None,
+        )
         # If diversity filter left only 1 config, relax min_distance to get a second.
         if len(diverse) < 2 and len(feasible) >= 2:
             diverse = _diverse_subset(feasible, details, min_distance=min_distance * 0.5, max_configs=max_configs_per_cell)
@@ -4178,6 +4296,7 @@ class TBMObjective:
         self.details = {}
         self.total_weights_written = 0
         self.target_cell = target_cell
+        self.trial_metric_history: List[Dict[str, float]] = []
 
     def __call__(self, trial: optuna.Trial) -> float:
         # 1. Suggest parameters
@@ -4257,6 +4376,17 @@ class TBMObjective:
             low_eval_rows.sort(key=lambda x: x[0], reverse=True)
             low_score, res_low, det_low, best_low_cfg = low_eval_rows[0]
             trial.report(low_score, step=1)
+            trial.set_user_attr("low_stage2_score", float(low_score))
+            trial.set_user_attr("low_auc", float(_safe_float(res_low.get("median_cell_auc", float("nan")), float("nan"))))
+            trial.set_user_attr("low_ic_snr", float(_safe_float(res_low.get("ic_snr", float("nan")), float("nan"))))
+            trial.set_user_attr("low_tp_sep", float(_safe_float(res_low.get("median_cell_tp_sep", float("nan")), float("nan"))))
+            trial.set_user_attr("low_dir_sup", float(_safe_float(res_low.get("median_cell_dir_superiority", float("nan")), float("nan"))))
+            trial.set_user_attr("low_payoff_edge", float(_safe_float(res_low.get("payoff_edge", float("nan")), float("nan"))))
+
+            _low_auc = float(_safe_float(res_low.get("median_cell_auc", float("nan")), float("nan")))
+            _low_ess = float(_safe_float(res_low.get("ess", float("nan")), float("nan")))
+            if (math.isfinite(_low_auc) and _low_auc < 0.52) or (math.isfinite(_low_ess) and _low_ess < 500):
+                raise optuna.TrialPruned(f"low_fidelity_gate failed: auc={_low_auc:.4f} ess={_low_ess:.1f}")
 
             # Promote only stronger low-fidelity trials to full evaluation.
             promote_threshold = float(self.runtime_cfg.get("optuna_high_fidelity_threshold", 0.56))
@@ -4287,6 +4417,55 @@ class TBMObjective:
             self.trial_results.append(res)
             self.details[cid_high] = det
             score = _optuna_objective_score(res)
+
+            _m_auc = float(_safe_float(res.get("median_cell_auc", float("nan")), float("nan")))
+            _m_ic_snr = float(_safe_float(res.get("ic_snr", float("nan")), float("nan")))
+            _m_tp_sep = float(_safe_float(res.get("median_cell_tp_sep", float("nan")), float("nan")))
+            _m_dir_sup = float(_safe_float(res.get("median_cell_dir_superiority", float("nan")), float("nan")))
+            _m_payoff = float(_safe_float(res.get("payoff_edge", float("nan")), float("nan")))
+            _m_ess = float(_safe_float(res.get("ess", float("nan")), float("nan")))
+            trial.report(score, step=2)
+            trial.set_user_attr("stage2_score", float(score))
+            trial.set_user_attr("auc", _m_auc)
+            trial.set_user_attr("ic_snr", _m_ic_snr)
+            trial.set_user_attr("tp_sep", _m_tp_sep)
+            trial.set_user_attr("dir_sup", _m_dir_sup)
+            trial.set_user_attr("payoff_edge", _m_payoff)
+            trial.set_user_attr("ess", _m_ess)
+
+            # Early-pruning safety gates.
+            if (math.isfinite(_m_auc) and _m_auc < 0.52) or (math.isfinite(_m_ess) and _m_ess < 500):
+                raise optuna.TrialPruned(f"hard_gate failed: auc={_m_auc:.4f} ess={_m_ess:.1f}")
+
+            # History-based adaptive pruning (after enough trials).
+            cur_metrics = {
+                "auc": _m_auc,
+                "ic_snr": _m_ic_snr,
+                "tp_sep": _m_tp_sep,
+                "dir_sup": _m_dir_sup,
+                "payoff": _m_payoff,
+            }
+            self.trial_metric_history.append(cur_metrics)
+            valid_hist = [h for h in self.trial_metric_history if all(math.isfinite(float(h.get(k, float("nan")))) for k in ("auc", "ic_snr", "tp_sep", "dir_sup", "payoff"))]
+            if trial.number >= 30 and len(valid_hist) >= 10:
+                med = {k: float(np.median([h[k] for h in valid_hist])) for k in ("auc", "ic_snr", "tp_sep", "dir_sup", "payoff")}
+                _available = [k for k in med.keys() if math.isfinite(cur_metrics.get(k, float("nan")))]
+                _below = sum(cur_metrics[k] < med[k] for k in _available)
+                if len(_available) >= 3 and (_below / len(_available)) >= 0.8:
+                    raise optuna.TrialPruned(f"median_guard pruned: {_below}/{len(_available)} metrics below medians")
+            if trial.number >= 50 and len(valid_hist) >= 20:
+                q25_auc = float(np.quantile([h["auc"] for h in valid_hist], 0.25))
+                q25_snr = float(np.quantile([h["ic_snr"] for h in valid_hist], 0.25))
+                q10_dir = float(np.quantile([h["dir_sup"] for h in valid_hist], 0.10))
+                q10_pay = float(np.quantile([h["payoff"] for h in valid_hist], 0.10))
+                _weak_signal = (_m_auc < q25_auc) and (_m_ic_snr < q25_snr)
+                _weak_edge = (_m_dir_sup < q10_dir) and (_m_payoff < q10_pay)
+                if _weak_signal or _weak_edge:
+                    raise optuna.TrialPruned(
+                        "quantile_guard pruned: "
+                        f"weak_signal={_weak_signal} weak_edge={_weak_edge} "
+                        f"(auc<{q25_auc:.4f}, ic_snr<{q25_snr:.4f}, dir_sup<{q10_dir:.4f}, payoff<{q10_pay:.4f})"
+                    )
 
             # Verbose logging of trial results — match detail level of global mode
             _cell_tag = f"{self.target_cell[0]}_H{self.target_cell[1]}" if self.target_cell else "global"
@@ -4490,7 +4669,7 @@ def run(args: argparse.Namespace) -> None:
             target_cell=(bkt, hor)
         )
         
-        study_s1 = optuna.create_study(direction="maximize")
+        study_s1 = optuna.create_study(direction="maximize", sampler=_optuna_sampler())
         # Fewer trials per cell now that we have 12 cells (e.g., 30 per cell x 12 = 360 total)
         n_trials_s1 = 40 if not args.quick else 10
         study_s1.optimize(obj_s1, n_trials=n_trials_s1, n_jobs=_optuna_n_jobs())
@@ -4582,7 +4761,7 @@ def run(args: argparse.Namespace) -> None:
                 details[config_id(c)] = det
                 return _optuna_objective_score(res)
 
-            s2_study = optuna.create_study(direction="maximize")
+            s2_study = optuna.create_study(direction="maximize", sampler=_optuna_sampler())
             s2_study.optimize(s2_objective, n_trials=15 if not args.quick else 5, n_jobs=_optuna_n_jobs())
             gc.collect()
             _clear_caches()
@@ -4687,7 +4866,30 @@ def run(args: argparse.Namespace) -> None:
         tprint(f"Global feasible pool: {len(_best_pool)} configs (tier={_tier})")
 
         # ── Step 3: diversity control on global pool ──────────────────────────
-        _diverse_pool = _diverse_subset(_best_pool, details, min_distance=1.0, max_configs=20)
+        # Top-slice expansion for score-biased diversity.
+        _score_s2 = pd.to_numeric(_best_pool.get("stage2_score", pd.Series(np.nan, index=_best_pool.index)), errors="coerce")
+        _score_s1 = pd.to_numeric(_best_pool.get("stage1_score", pd.Series(-np.inf, index=_best_pool.index)), errors="coerce").fillna(-np.inf)
+        _score = _score_s2.where(_score_s2.notna(), _score_s1).fillna(-np.inf)
+        _sorted_best = _best_pool.assign(_score=_score).sort_values("_score", ascending=False).drop(columns=["_score"])
+
+        _candidate_set = _sorted_best.head(min(50, len(_sorted_best))).copy()
+        _diverse_pool = _diverse_subset(_candidate_set, details, min_distance=1.0, max_configs=20)
+        if len(_diverse_pool) < min(20, len(_candidate_set)) and len(_sorted_best) > len(_candidate_set):
+            _candidate_set = _sorted_best.head(min(100, len(_sorted_best))).copy()
+            _diverse_pool = _diverse_subset(_candidate_set, details, min_distance=1.0, max_configs=20)
+        if len(_diverse_pool) < min(20, len(_candidate_set)):
+            for _d in (0.9, 0.8, 0.7, 0.6, 0.5):
+                _diverse_pool = _diverse_subset(_candidate_set, details, min_distance=float(_d), max_configs=20)
+                if len(_diverse_pool) >= min(20, len(_candidate_set)):
+                    break
+
+        if _diverse_pool.empty and len(_best_pool) > 0:
+            _pr_s = pd.to_numeric(_best_pool.get("pr_auc_lift", pd.Series(np.nan, index=_best_pool.index)), errors="coerce")
+            _ed_s = pd.to_numeric(_best_pool.get("edge", pd.Series(np.nan, index=_best_pool.index)), errors="coerce")
+            tprint(
+                "[global_diversity] empty after top-slice expansion; "
+                f"best_pool={len(_best_pool)} pr_auc_lift>0={int(_pr_s.gt(0).sum())} edge>0={int(_ed_s.gt(0).sum())}"
+            )
         tprint(f"Global diverse pool: {len(_diverse_pool)} configs after diversity filter")
 
         # ── Step 4: global best (fallback for downstream consumers) ──────────
@@ -4814,6 +5016,7 @@ def run(args: argparse.Namespace) -> None:
             # Downstream steps can call load_tbm_best_params_per_bucket()[bucket] to get the
             # barrier geometry for that specific bucket/regime.
             _bucket_best_rows: list = []
+            per_cell_rows: list = []
             for _bkt in TBM_BUCKET_NAMES:
                 _bdf = _grid_df[_grid_df["bucket"] == _bkt].copy()
                 if _bdf.empty:

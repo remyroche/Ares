@@ -1475,49 +1475,6 @@ def _compute_cusum_strength_from_z(
     return pd.DataFrame(out, index=z_df.index, columns=z_df.columns, dtype=np.float32)
 
 
-def _conditional_expand_with_z_and_sign(
-    base_mask: pd.DataFrame,
-    base_sign: pd.DataFrame,
-    offsets: Iterable[int],
-    z_df: Optional[pd.DataFrame],
-    ret_df: Optional[pd.DataFrame],
-    sigma_df: Optional[pd.DataFrame] = None,
-    z_min: float = 1.0,
-    sign_pct: float = 0.6,
-    consistency_bars: int = 5,
-    vol_ratio: float = 1.2,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Expand candidates but keep only bars supported by z-gate + sign consistency."""
-    expanded = base_mask.copy()
-    sign_out = base_sign.copy().astype(np.int8)
-    if not offsets:
-        return expanded, sign_out
-
-    for off in offsets:
-        shifted_mask = base_mask.shift(int(off)).fillna(False)
-        shifted_sign = base_sign.shift(int(off)).fillna(0).astype(np.int8)
-
-        cond = shifted_mask
-        if z_df is not None:
-            z_shift = z_df.shift(int(off))
-            cond = cond & z_shift.abs().ge(float(z_min)).fillna(False)
-        if ret_df is not None:
-            r_shift = ret_df.shift(int(off))
-            sign_match = (np.sign(r_shift) == shifted_sign).where(shifted_sign != 0, False)
-            sm = sign_match.rolling(int(max(1, consistency_bars)), min_periods=1).mean()
-            cond = cond & sm.ge(float(sign_pct)).fillna(False)
-        if sigma_df is not None:
-            sig_shift = sigma_df.shift(int(off))
-            sig_base = sigma_df.where(base_mask)
-            sig_base_med = sig_base.rolling(int(max(2, consistency_bars)), min_periods=1).median()
-            vr = sig_shift / (sig_base_med + EPS)
-            cond = cond & vr.ge(float(vol_ratio)).fillna(False)
-
-        expanded |= cond
-        fill_mask = (sign_out == 0) & cond & (shifted_sign != 0)
-        sign_out = sign_out.where(~fill_mask, shifted_sign)
-    sign_out = sign_out.where(expanded, 0).astype(np.int8)
-    return expanded.fillna(False), sign_out
 
 
 # Optimization Constants
@@ -1817,18 +1774,32 @@ def compute_cross_sectional_base_mask_and_sign(
 
 
 def expand_candidate_mask(base_mask: pd.DataFrame, offsets: list[int]) -> pd.DataFrame:
-    """Expand candidate timestamps using vectorized binary dilation."""
+    """
+    Expand candidate timestamps to include future timestamps (forward-looking only).
+
+    This replaces simple binary dilation with a forward-fill logic.
+    If offsets are [1, 2, 3], it means for a signal at t, we also mark t+1, t+2, t+3 as candidates.
+    It does not look backward.
+    """
     if not offsets:
         return base_mask
-    arr = base_mask.to_numpy(dtype=bool, copy=False)
-    max_lag = int(max(abs(int(o)) for o in offsets))
-    struct = np.zeros((2 * max_lag + 1, 1), dtype=bool)
-    center = max_lag
-    struct[center, 0] = True
-    for off in offsets:
-        struct[center + int(off), 0] = True
-    expanded = binary_dilation(arr, structure=struct)
-    return pd.DataFrame(expanded, index=base_mask.index, columns=base_mask.columns, dtype=bool)
+
+    # Offsets should be positive integers representing future steps.
+    # Filter out any non-positive offsets just in case, though config usually provides [2, 4, 6, 8] etc.
+    future_offsets = sorted([int(o) for o in offsets if int(o) > 0])
+
+    if not future_offsets:
+        return base_mask
+
+    # Start with the base mask
+    expanded = base_mask.copy()
+
+    # Or-accumulate forward shifts
+    # Using shift(1) moves t to t+1. So if we want to include t+1, we shift(1).
+    for off in future_offsets:
+        expanded |= base_mask.shift(off).fillna(False)
+
+    return expanded
 
 
 def select_candidates_cross_sectional(
@@ -3419,28 +3390,22 @@ def evaluate_single_config(cfg: dict) -> tuple[dict, list[dict]]:
                 side_sign_base = side_sign_base.where(candidate_mask_base, 0).astype(np.int8)
 
         # Expansion
-        if mode == "cusum" and expansion_offsets:
-            cusum_pack = precomputed.get("cusum_pack", {})
-            z_df = cusum_pack.get("z")
-            ret_df = feats.get("ret1h") if isinstance(feats.get("ret1h"), pd.DataFrame) else feats.get("ret6h")
-            candidate_mask_metrics, side_sign_metrics = _conditional_expand_with_z_and_sign(
-                base_mask=candidate_mask_base, base_sign=side_sign_base,
-                offsets=expansion_offsets, z_df=z_df, ret_df=ret_df,
-                sigma_df=cusum_pack.get("sigma"),
-                z_min=float(cfg.get("cusum_expand_z_min", 1.0)),
-                sign_pct=float(cfg.get("cusum_expand_sign_pct", 0.6)),
-                consistency_bars=int(cfg.get("cusum_expand_consistency_bars", 5)),
-                vol_ratio=float(cfg.get("cusum_expand_vol_ratio", 1.2)),
-            )
-        else:
-            candidate_mask_metrics = expand_candidate_mask(candidate_mask_base, expansion_offsets)
-            side_sign_metrics = side_sign_base.copy()
-            if expansion_offsets:
-                for off in expansion_offsets:
-                    shifted = side_sign_base.shift(int(off)).fillna(0).astype(np.int8)
-                    fill_mask = (side_sign_metrics == 0) & (shifted != 0)
-                    side_sign_metrics = side_sign_metrics.where(~fill_mask, shifted)
-            side_sign_metrics = side_sign_metrics.where(candidate_mask_metrics, 0).astype(np.int8)
+        # Standard Expansion: Binary dilation (forward-looking only)
+        # Note: Conditional expansion (CUSUM z-gate) has been removed.
+        candidate_mask_metrics = expand_candidate_mask(candidate_mask_base, expansion_offsets)
+        side_sign_metrics = side_sign_base.copy()
+
+        # Propagate signs to expanded timestamps
+        if expansion_offsets:
+            future_offsets = sorted([int(o) for o in expansion_offsets if int(o) > 0])
+            for off in future_offsets:
+                # Shift base sign forward to align with the expanded mask time
+                shifted = side_sign_base.shift(off).fillna(0).astype(np.int8)
+                # Fill zeros where we don't have a sign yet
+                fill_mask = (side_sign_metrics == 0) & (shifted != 0)
+                side_sign_metrics = side_sign_metrics.where(~fill_mask, shifted)
+
+        side_sign_metrics = side_sign_metrics.where(candidate_mask_metrics, 0).astype(np.int8)
         
         # Tail Filter
         tail_mode = cfg.get("tail_filter_mode", "none")

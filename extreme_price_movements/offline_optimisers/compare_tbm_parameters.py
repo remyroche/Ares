@@ -4492,7 +4492,7 @@ def run(args: argparse.Namespace) -> None:
         
         study_s1 = optuna.create_study(direction="maximize")
         # Fewer trials per cell now that we have 12 cells (e.g., 30 per cell x 12 = 360 total)
-        n_trials_s1 = 40 if not args.quick else 10
+        n_trials_s1 = 160 if not args.quick else 10
         study_s1.optimize(obj_s1, n_trials=n_trials_s1, n_jobs=_optuna_n_jobs())
         
         stage1_rows.extend(obj_s1.trial_results)

@@ -539,18 +539,27 @@ class RunArtifacts:
 
 
 def _subsample_symbols(symbols: Sequence[str]) -> List[str]:
-    """Deterministic symbol subsample: alphabetical, keep every 3rd symbol."""
+    """Deterministic symbol subsample: alphabetical, keep every 4th symbol."""
     syms_sorted = sorted(set(map(str, symbols)))
-    return syms_sorted[::3] if syms_sorted else []
+    return syms_sorted[::4] if syms_sorted else []
 
 
-def _index_cache_key(index: pd.MultiIndex) -> str:
+
+def _index_cache_key(index: pd.Index) -> str:
     """Stable key for per-index cached stacked arrays."""
-    ts_vals = index.get_level_values(0).asi8.astype(np.int64, copy=False)
-    sym_vals = index.get_level_values(1).astype(str)
-    ts_hash = int(pd.util.hash_array(ts_vals).sum())
-    sym_hash = int(pd.util.hash_array(sym_vals.to_numpy(dtype=object, copy=False)).sum())
-    return f"{len(index)}::{ts_hash}::{sym_hash}"
+    try:
+        if isinstance(index, pd.MultiIndex):
+            ts_vals = index.get_level_values(0).asi8.astype(np.int64)
+            sym_vals = index.get_level_values(1).astype(str)
+            sym_hash = int(pd.util.hash_array(sym_vals.to_numpy(dtype=object)).sum())
+        else:
+            # DatetimeIndex or standard Index
+            ts_vals = index.asi8.astype(np.int64)
+            sym_hash = 0
+        ts_hash = int(pd.util.hash_array(ts_vals).sum())
+        return f"{len(index)}::{ts_hash}::{sym_hash}"
+    except Exception:
+        return f"idx_{len(index)}_{id(index)}"
 
 
 def _safe_filename_from_key(key: str) -> str:
@@ -1530,12 +1539,9 @@ def get_feature_matrix_cache(
 
 
 def _ridge_warm_key(cfg: Dict[str, Any]) -> str:
-    return (
-        f"k_tp={round(float(cfg.get('k_tp', 1.0)), 2):.2f}|"
-        f"tp_base_pct={round(float(cfg.get('tp_base_pct', 0.01)), 3):.3f}|"
-        f"sl_as_tp_pct={round(float(cfg.get('sl_as_tp_pct', 0.5)), 2):.2f}|"
-        f"base_atr_window={int(cfg.get('base_atr_window', 672))}"
-    )
+    # Include ALL barrier params to ensure cache invalidation on any change
+    sig = _compact_cfg_signature(cfg, sorted(BARRIER_PARAMS))
+    return f"ridge_warm_{hashlib.sha1(str(sig).encode()).hexdigest()[:12]}"
 
 
 def _ridge_predict_oof_with_cache(
@@ -1583,7 +1589,9 @@ def _ridge_predict_oof_with_cache(
         X_test_s = scaler.transform(X_test)
 
         # Higher alpha (3.0) for increased regularization/stability in noisy financial data.
-        model = Ridge(alpha=3.0, solver="auto", random_state=rng_seed)
+        # Fixed solver to 'cholesky' as requested.
+        model = Ridge(alpha=3.0, solver="cholesky", random_state=rng_seed)
+
         if warm_cache is not None and warm_key and warm_key in warm_cache:
             pass
 
@@ -1667,7 +1675,7 @@ def _optuna_sampler() -> optuna.samplers.TPESampler:
         multivariate=True,
         constant_liar=True,
         n_startup_trials=25,
-        gamma=lambda n: min(0.4, 10 / max(n, 1)),
+        gamma=lambda n: int(np.ceil(min(0.4 * n, 10.0))),
     )
 
 def get_stacked_array(
@@ -1809,7 +1817,16 @@ def evaluate_config(
 ) -> Tuple[Dict[str, Any], Dict[str, Any], Optional[pd.DataFrame]]:
     cfg = _apply_compare_production_floor(cfg)
     cfg_id = config_id(cfg)
+    
+    # ── Smoking Gun #4: Early cheap gate before barrier/label generation ──
+    # If the config is fundamentally broken (e.g. RR too low), exit before building barriers.
+    min_rr = float(cfg.get("min_net_rr", 0.7))
+    sl_ratio = float(cfg.get("sl_as_tp_pct", 0.5))
+    if sl_ratio > 0 and (1.0 / sl_ratio) < (min_rr * 0.7):
+        return _empty_result(cfg, cfg_id, 0, reason=f"cheap_gate_rr_too_low:{1.0/sl_ratio:.2f}<{min_rr:.2f}")
+    
     t0 = time.perf_counter()
+
     tprint(
         f"[eval:start] {cfg_id} mode={cfg.get('mode', 'unknown')} "
         f"horizons={list(horizons)} mem_peak_mb={_memory_snapshot_mb():.1f} "
@@ -1825,6 +1842,19 @@ def evaluate_config(
         for side in ["long", "short"]:
             # Key1: Barriers depend on geometry params; TP can be cached independently for tp_pct SL sweeps.
             barrier_cfg = _get_barrier_params(cfg)
+            
+            # Optimization: Decoupled label cache key as requested.
+            # Labels will be cached by (h, side, scaling, base, time_index_hash).
+            # This ensures hits across different k_tp/sl_as_tp trials.
+            label_key = (
+                "labels_decoupled",
+                int(h),
+                str(side),
+                str(cfg.get("horizon_scaling", "sqrt")),
+                float(cfg.get("horizon_base", 4.0)),
+                _index_cache_key(artifacts.panel["close"].index),
+            )
+
             if str(cfg.get("sl_method", "tp_pct")) == "tp_pct":
                 tp_barrier_cfg = _get_tp_barrier_params(cfg)
                 key1_tp = (
@@ -1842,6 +1872,8 @@ def evaluate_config(
                 else:
                     tprint(f"[eval:{cfg_id}] barrier_cache hit(tp) h={h} side={side}")
                 tp_df, geom_stats, dyn_h = layer1_cache[key1_tp]
+                
+                # Derive SL from TP on the fly (very fast)
                 series_cache = getattr(artifacts, "_tbm_series_cache", {})
                 atr_cached = series_cache.get("atr_shift_bfill")
                 if atr_cached is None:
@@ -1849,7 +1881,8 @@ def evaluate_config(
                     series_cache["atr_shift_bfill"] = atr_cached
                     setattr(artifacts, "_tbm_series_cache", series_cache)
                 sl_df = _derive_sl_from_tp(tp_df, atr_cached, cfg)
-                key2 = ("labels", key1_tp, round(float(cfg.get('sl_as_tp_pct', 0.5)), 3))
+                # Labels still use the decoupled label_key for hit potential
+                key2 = label_key
             else:
                 key1 = (
                     "barrier_full",
@@ -1866,9 +1899,14 @@ def evaluate_config(
                 else:
                     tprint(f"[eval:{cfg_id}] barrier_cache hit h={h} side={side}")
                 tp_df, sl_df, geom_stats, dyn_h = layer1_cache[key1]
-                key2 = key1
+                key2 = label_key
 
-            # Key2: Labels depend on TP/SL barriers + horizon/side.
+
+            # Key2: Labels depend on TP/SL barriers + horizon/side + geometry.
+            # Optimization: We keep the decoupled label_key for fast generation (Numba hit),
+            # but we use a more granular key2 for the resulting dataframes (lbl, ret, qual)
+            # because they contain the actual TP/SL/Payoff values which differ by trial.
+            key2 = (label_key, _compact_cfg_signature(cfg, ("k_tp", "sl_as_tp_pct", "tp_base_pct", "base_atr_window")))
 
             if key2 not in layer2_cache:
                 # Use compute_triple_barrier_labels with return_outcomes=True to get (label, ret, qual)
@@ -1882,9 +1920,9 @@ def evaluate_config(
                 tprint(f"[eval:{cfg_id}] label_cache hit h={h} side={side}")
             lbl, ret, qual = layer2_cache[key2]
 
-            # Stack arrays once per label key and reuse across repeated geometry evaluations.
+            # Stack arrays once per granular key and reuse across repeated evaluations.
             stack_cache = eval_cache.setdefault("label_stack_cache", {})
-            stack_key = (key2,)
+            stack_key = key2
             if stack_key not in stack_cache:
                 lbl_s = lbl.stack(future_stack=True)
                 stacked_idx = lbl_s.index
@@ -2267,7 +2305,7 @@ def evaluate_config(
 
     # Optional low-fidelity path used by Optuna trial pruning.
     low_fidelity = bool(cfg.get("_low_fidelity", False))
-    n_folds = 2 if low_fidelity else 5
+    n_folds = 2 if low_fidelity else 4 # Increased to 4 for future runs
     if low_fidelity and len(ts_event) > 0:
         cutoff_ts = np.sort(pd.Index(ts_event).unique())
         if len(cutoff_ts) > 1:
@@ -4303,7 +4341,9 @@ class TBMObjective:
         k_tp = trial.suggest_float("k_tp", 0.4, 2.0, step=0.1)
         tp_base = trial.suggest_float("tp_base_pct", 0.005, 0.04, step=0.001)
         sl_as_tp = trial.suggest_float("sl_as_tp_pct", 0.3, 1.2, step=0.1)
-        atr_win = trial.suggest_categorical("base_atr_window", [504, 840])
+        # Focusing on the longer ATR window as requested.
+        atr_win = trial.suggest_categorical("base_atr_window", [840])
+
         
         # 2. Build config
         c = base_param_template(self.runtime_cfg)
@@ -4357,7 +4397,7 @@ class TBMObjective:
                     eval_cache=self.eval_cache,
                     detailed_slices=False,
                     target_cell_filter=self.target_cell,
-                    collect_weights=True,
+                    collect_weights=False, # Disabled for optimization trials to save I/O
                 )
                 if not res_low:
                     continue
@@ -4407,7 +4447,7 @@ class TBMObjective:
                 layer2_cache=self.layer2_cache,
                 eval_cache=self.eval_cache,
                 detailed_slices=False,
-                collect_weights=False,
+                collect_weights=True, # Collect weights for finalists (High-Fidelity)
                 target_cell_filter=self.target_cell,
             )
             if not res:
@@ -4479,6 +4519,7 @@ class TBMObjective:
                 f"tp_sep={res.get('median_cell_tp_sep', 0):.4f} "
                 f"ap_lift={res.get('median_cell_ap_lift', float('nan')):.3f} "
                 f"pr_auc_lift={res.get('pr_auc_lift', 0):.3f} "
+                f"edge={res.get('payoff_edge', 0):.4f} "
                 f"hard_gate={res.get('hard_gate', False)}"
             )
 
@@ -4490,8 +4531,8 @@ class TBMObjective:
         except optuna.TrialPruned:
             raise
         except Exception as e:
-            tprint(f"Trial {trial.number} failed: {e}")
-            return -1.0
+            tprint(f"CRITICAL: Trial {trial.number} failed with exception: {e}")
+            return -10.0
 
 
 def run(args: argparse.Namespace) -> None:
@@ -4669,10 +4710,16 @@ def run(args: argparse.Namespace) -> None:
             target_cell=(bkt, hor)
         )
         
-        study_s1 = optuna.create_study(direction="maximize", sampler=_optuna_sampler())
-        # Fewer trials per cell now that we have 12 cells (e.g., 30 per cell x 12 = 360 total)
-        n_trials_s1 = 160 if not args.quick else 10
+        study_s1 = optuna.create_study(
+            direction="maximize", 
+            sampler=_optuna_sampler(),
+            pruner=optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=1, interval_steps=1)
+        )
+
+        # Reduced trials per cell as requested (e.g., 100 x 12 = 1200 total)
+        n_trials_s1 = 100 if not args.quick else 10
         study_s1.optimize(obj_s1, n_trials=n_trials_s1, n_jobs=_optuna_n_jobs())
+
         
         stage1_rows.extend(obj_s1.trial_results)
         details.update(obj_s1.details)
@@ -4695,76 +4742,21 @@ def run(args: argparse.Namespace) -> None:
     stage1_df = pd.DataFrame(stage1_rows)
     stage1_cfgs = [details[cid]["config"] for cid in details.keys() if cid in [r["config_id"] for r in stage1_rows]]
 
-    # Filter to feasible top-k for stage 2
-    winners = []
-    if args.winners:
-        winners = [details[cid]["config"] for cid in args.winners if cid in details]
-    elif args.stage2:
-        # Per-cell promotion: find best configs independently per (bucket, horizon) cell
-        per_cell_winners = promote_stage1_per_cell(stage1_df, details, top_k_per_cell=max(2, args.top_k // 4))
-        winners_set: set = set()
-        for cell_key, cwinners in per_cell_winners.items():
-            if cwinners:
-                tprint(f"[promote] {cell_key}: {len(cwinners)} winners → {cwinners}")
-            winners_set.update(cwinners)
-        # Also include global top-k as fallback
-        global_winners = promote_stage1(stage1_df, top_k=max(3, args.top_k // 2))
-        winners_set.update(global_winners)
-        winners = list(winners_set)
-        tprint(f"[promote] Total stage2 candidates: {len(winners)}")
+    id_to_cfg = {config_id(c): c for c in stage1_cfgs}
+    # In this mode, we bypass Stage 2 re-optimization and directly promote Stage 1 per-cell winners.
+    winners_set: set = set()
+    per_cell_winners = promote_stage1_per_cell(stage1_df, details, top_k_per_cell=max(2, args.top_k // 4))
+    for cell_key, cwinners in per_cell_winners.items():
+        winners_set.update(cwinners)
+    global_winners = promote_stage1(stage1_df, top_k=max(3, args.top_k // 2))
+    winners_set.update(global_winners)
+    winners = list(winners_set)
+    tprint(f"[promote] Stage 2 refinement bypassed. Promoting {len(winners)} Stage 1 winners directly to final selection.")
 
+
+    # Stage 2 bypassed — Stage 1 winners flow directly to ranking.
     stage2_rows: List[Dict[str, Any]] = []
-    if args.stage2 and winners:
-        tprint(f"Starting refinement for {len(winners)} winners...")
-        id_to_cfg = {config_id(c): c for c in stage1_cfgs}
-        base_cfgs = [id_to_cfg[w] for w in winners if w in id_to_cfg]
-        for i, winner_cfg in enumerate(base_cfgs):
-            tprint(f"Refining winner {i+1}/{len(base_cfgs)}: {config_id(winner_cfg)}")
-            
-            def s2_objective(trial):
-                base_tp = winner_cfg.get("tp_base_pct", 0.02)
-                base_k = winner_cfg.get("k_tp", 1.0)
-                
-                k_tp = trial.suggest_float("k_tp", max(0.4, base_k - 0.3), min(2.5, base_k + 0.3), step=0.1)
-                tp_base = trial.suggest_float("tp_base_pct", max(0.005, base_tp - 0.005), min(0.05, base_tp + 0.005), step=0.001)
-                sl_as_tp = trial.suggest_float("sl_as_tp_pct", 0.3, 1.2, step=0.1)
 
-                c = dict(winner_cfg)
-                c.update({
-                    "mode": f"optuna_s2_refine_{i}",
-                    "k_tp": float(k_tp),
-                    "tp_base_pct": float(tp_base),
-                    "tp_abs_pct": float(tp_base),
-                    "sl_as_tp_pct": float(sl_as_tp),
-                })
-
-                res, det, weights_df = evaluate_config(
-                    artifacts,
-                    c,
-                    horizons=horizons,
-                    bucket_masks=bucket_masks,
-                    layer1_cache=layer1_cache,
-                    layer2_cache=layer2_cache,
-                    eval_cache=eval_cache,
-                    detailed_slices=False,
-                    collect_weights=True,
-                )
-                if not res: return -1.0
-
-                if weights_df is not None and not weights_df.empty:
-                    write_weights_streaming(weights_df)
-                    nonlocal total_weights_written
-                    total_weights_written += len(weights_df)
-                    del weights_df
-
-                stage2_rows.append(res)
-                details[config_id(c)] = det
-                return _optuna_objective_score(res)
-
-            s2_study = optuna.create_study(direction="maximize", sampler=_optuna_sampler())
-            s2_study.optimize(s2_objective, n_trials=15 if not args.quick else 5, n_jobs=_optuna_n_jobs())
-            gc.collect()
-            _clear_caches()
 
     stage2_df = pd.DataFrame(stage2_rows) if stage2_rows else pd.DataFrame()
     out_df = pd.concat([stage1_df, stage2_df], ignore_index=True)

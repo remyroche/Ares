@@ -275,7 +275,11 @@ def production_admissibility_report(
             else:
                 max_sl_floor_bind_cell = max(max_sl_floor_bind_cell, sl_fb)
 
-        m = bucket_horizon_metrics_prod.get(ck, {})
+        # Support both string keys (CANON_CELLS format) and tuple keys ((bucket, horizon) format)
+        m = bucket_horizon_metrics_prod.get(ck)
+        if m is None:
+            m = bucket_horizon_metrics_prod.get((b, h), {})
+        
         auc = _safe_float(m.get("auc_label"), float("nan"))
         auc_b = _safe_float(m.get("auc_bound"), float("nan"))
         sep = _safe_float(m.get("tp_sep_top10"), float("nan"))

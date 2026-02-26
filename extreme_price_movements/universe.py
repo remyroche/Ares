@@ -1,5 +1,6 @@
 import requests
 import pandas as pd
+import time
 from dataclasses import dataclass
 import os
 import glob
@@ -10,6 +11,22 @@ BINANCE_API = "https://api.binance.com"
 
 def fetch_binance_cross_margin_pairs():
     tprint(f"Entering function: fetch_binance_cross_margin_pairs in universe.py")
+    cache_file = os.path.join(os.path.dirname(__file__), ".margin_universe_cache.json")
+    
+    # Check disk cache first
+    try:
+        if os.path.exists(cache_file):
+            mtime = os.path.getmtime(cache_file)
+            # Use cache if it's less than 24h old
+            if (time.time() - mtime) < 86400:
+                import json
+                with open(cache_file, "r") as f:
+                    margin_pairs = json.load(f)
+                tprint(f"Loaded {len(margin_pairs)} cross margin pairs from disk cache.")
+                return margin_pairs
+    except Exception as e:
+        tprint(f"Warning: Failed to read margin universe cache: {e}")
+
     # Use public exchangeInfo endpoint instead of SAPI
     r = requests.get(f"{BINANCE_API}/api/v3/exchangeInfo", timeout=30)
     r.raise_for_status()
@@ -21,6 +38,14 @@ def fetch_binance_cross_margin_pairs():
          if s.get("isMarginTradingAllowed", False):
              margin_pairs.append(s)
              
+    # Update disk cache
+    try:
+        import json
+        with open(cache_file, "w") as f:
+            json.dump(margin_pairs, f)
+    except Exception as e:
+        tprint(f"Warning: Failed to write margin universe cache: {e}")
+
     tprint(f"Fetched {len(margin_pairs)} cross margin pairs from exchangeInfo.")
     return margin_pairs
 

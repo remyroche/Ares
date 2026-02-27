@@ -61809,3 +61809,259 @@ SIMD Extensions:
 [2026-02-27 07:15:58 UTC] [eval:CFG0F7BB63B81] barrier_cache hit(tp) h=8 side=short
 [2026-02-27 07:15:59 UTC] [eval:CFG0F7BB63B81] label_cache miss h=8 side=short
 [2026-02-27 07:15:59 UTC] [eval:CFG0F7BB63B81] raw_events=703,616 mem_peak_mb=1571.0
+[2026-02-27 07:15:59 UTC] [eval:CFG0F7BB63B81] funnel(rr≥0.40) long_H8: 351,803→250,722  short_H8: 351,813→250,729  |  rr_kept min=71.3% median=71.3%
+[2026-02-27 07:16:00 UTC] [eval:CFG0F7BB63B81] candidate_prefilter_kept=159,266/703,616
+[2026-02-27 07:16:00 UTC] [eval:CFG0F7BB63B81] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:16:01 UTC] [eval:CFG0F7BB63B81] rr_filter_kept=21,169/26,270 min_net_rr=0.400
+[2026-02-27 07:16:01 UTC] [eval:CFG0F7BB63B81] OOF direction flip applied for MR_short_H8: auc_before=0.4926 < 0.5000
+[2026-02-27 07:16:01 UTC] [eval:CFG0F7BB63B81] model_scored n=21,169 ic_payoff=0.0073 ic_label=-0.0104 decile_spread=-0.000135
+[2026-02-27 07:16:02 UTC] [eval:done] CFG0F7BB63B81 stage1=-0.0272 stage2=0.0377 coverage=0.624 ess=16389.9 tp=0.287 timeout=0.145 decile_spread=-0.000135 hard_gate=False elapsed_s=4.47 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=779)
+[2026-02-27 07:16:03 UTC] [eval:start] CFG1AEF3E45E4 mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=779)
+[2026-02-27 07:16:03 UTC] [eval:CFG1AEF3E45E4] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:16:03 UTC] [eval:CFG1AEF3E45E4] label_cache miss h=8 side=long
+[2026-02-27 07:16:03 UTC] [eval:CFG1AEF3E45E4] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:16:03 UTC] [eval:CFG1AEF3E45E4] label_cache miss h=8 side=short
+[2026-02-27 07:16:04 UTC] [eval:CFG1AEF3E45E4] raw_events=703,616 mem_peak_mb=1571.0
+[2026-02-27 07:16:04 UTC] [eval:CFG1AEF3E45E4] funnel(rr≥0.40) long_H8: 351,803→250,722  short_H8: 351,813→250,729  |  rr_kept min=71.3% median=71.3%
+[2026-02-27 07:16:04 UTC] [eval:CFG1AEF3E45E4] candidate_prefilter_kept=159,266/703,616
+[2026-02-27 07:16:05 UTC] [eval:CFG1AEF3E45E4] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:16:05 UTC] [eval:CFG1AEF3E45E4] rr_filter_kept=21,169/26,270 min_net_rr=0.400
+[2026-02-27 07:16:06 UTC] [eval:CFG1AEF3E45E4] OOF direction flip applied for MR_short_H8: auc_before=0.4919 < 0.5000
+[2026-02-27 07:16:06 UTC] [eval:CFG1AEF3E45E4] model_scored n=21,169 ic_payoff=0.0010 ic_label=-0.0070 decile_spread=-0.000026
+[2026-02-27 07:16:07 UTC] [eval:done] CFG1AEF3E45E4 stage1=-0.0315 stage2=0.0117 coverage=0.651 ess=17090.3 tp=0.294 timeout=0.154 decile_spread=-0.000026 hard_gate=False elapsed_s=3.85 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=779)
+[2026-02-27 07:16:07 UTC] [eval:start] CFG0244CFAB1D mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=779)
+[2026-02-27 07:16:07 UTC] [eval:CFG0244CFAB1D] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:16:07 UTC] [eval:CFG0244CFAB1D] label_cache miss h=8 side=long
+[2026-02-27 07:16:08 UTC] [eval:CFG0244CFAB1D] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:16:08 UTC] [eval:CFG0244CFAB1D] label_cache miss h=8 side=short
+[2026-02-27 07:16:08 UTC] [eval:CFG0244CFAB1D] raw_events=703,616 mem_peak_mb=1571.0
+[2026-02-27 07:16:08 UTC] [eval:CFG0244CFAB1D] funnel(rr≥0.40) long_H8: 351,803→250,722  short_H8: 351,813→250,729  |  rr_kept min=71.3% median=71.3%
+[2026-02-27 07:16:09 UTC] [eval:CFG0244CFAB1D] candidate_prefilter_kept=159,266/703,616
+[2026-02-27 07:16:09 UTC] [eval:CFG0244CFAB1D] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:16:09 UTC] [eval:CFG0244CFAB1D] rr_filter_kept=21,169/26,270 min_net_rr=0.400
+[2026-02-27 07:16:09 UTC] [eval:CFG0244CFAB1D] OOF direction flip applied for MR_short_H8: auc_before=0.4875 < 0.5000
+[2026-02-27 07:16:09 UTC] [eval:CFG0244CFAB1D] model_scored n=21,169 ic_payoff=-0.0076 ic_label=-0.0150 decile_spread=-0.000294
+[2026-02-27 07:16:10 UTC] [eval:done] CFG0244CFAB1D stage1=-0.0376 stage2=0.0171 coverage=0.675 ess=17729.9 tp=0.306 timeout=0.167 decile_spread=-0.000294 hard_gate=False elapsed_s=2.87 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=779)
+[I 2026-02-27 08:16:10,872] Trial 87 pruned. low_fidelity_gate failed: auc=0.4844 ess=16389.9
+[2026-02-27 07:16:11 UTC] [prod_aligned_tp] applied ladder to 1 base cfgs -> 1 cfgs (tp_base_count=5, tp_abs_lo_pct>=0.0200, q50=0.0144, q75=0.0193, q90=0.0257)
+[2026-02-27 07:16:11 UTC] [eval:start] CFG9082BAF389 mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=779)
+[2026-02-27 07:16:12 UTC] [eval:CFG9082BAF389] barrier_cache miss(tp) h=8 side=long
+[2026-02-27 07:16:12 UTC] [eval:CFG9082BAF389] label_cache miss h=8 side=long
+[2026-02-27 07:16:13 UTC] [eval:CFG9082BAF389] barrier_cache miss(tp) h=8 side=short
+[2026-02-27 07:16:13 UTC] [eval:CFG9082BAF389] label_cache miss h=8 side=short
+[2026-02-27 07:16:13 UTC] [eval:CFG9082BAF389] raw_events=703,545 mem_peak_mb=1571.0
+[2026-02-27 07:16:14 UTC] [eval:CFG9082BAF389] funnel(rr≥0.40) long_H8: 351,737→350,504  short_H8: 351,808→350,575  |  rr_kept min=99.6% median=99.6%
+[2026-02-27 07:16:15 UTC] [eval:CFG9082BAF389] candidate_prefilter_kept=159,255/703,545
+[2026-02-27 07:16:15 UTC] [eval:CFG9082BAF389] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:16:16 UTC] [eval:CFG9082BAF389] rr_filter_kept=25,953/26,270 min_net_rr=0.400
+[2026-02-27 07:16:16 UTC] [eval:CFG9082BAF389] model_scored n=25,953 ic_payoff=0.0136 ic_label=-0.0312 decile_spread=0.001998
+[2026-02-27 07:16:17 UTC] [eval:done] CFG9082BAF389 stage1=-0.0607 stage2=0.1949 coverage=0.701 ess=18407.2 tp=0.148 timeout=0.291 decile_spread=0.001998 hard_gate=False elapsed_s=6.23 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=780)
+[2026-02-27 07:16:17 UTC] [eval:start] CFGCFB6092F9F mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=780)
+[2026-02-27 07:16:17 UTC] [eval:CFGCFB6092F9F] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:16:17 UTC] [eval:CFGCFB6092F9F] label_cache miss h=8 side=long
+[2026-02-27 07:16:18 UTC] [eval:CFGCFB6092F9F] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:16:18 UTC] [eval:CFGCFB6092F9F] label_cache miss h=8 side=short
+[2026-02-27 07:16:19 UTC] [eval:CFGCFB6092F9F] raw_events=703,533 mem_peak_mb=1571.0
+[2026-02-27 07:16:19 UTC] [eval:CFGCFB6092F9F] funnel(rr≥0.40) long_H8: 351,734→350,501  short_H8: 351,799→350,566  |  rr_kept min=99.6% median=99.6%
+[2026-02-27 07:16:20 UTC] [eval:CFGCFB6092F9F] candidate_prefilter_kept=159,254/703,533
+[2026-02-27 07:16:20 UTC] [eval:CFGCFB6092F9F] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:16:21 UTC] [eval:CFGCFB6092F9F] rr_filter_kept=25,953/26,270 min_net_rr=0.400
+[2026-02-27 07:16:21 UTC] [eval:CFGCFB6092F9F] model_scored n=25,953 ic_payoff=0.0125 ic_label=-0.0261 decile_spread=0.002246
+[2026-02-27 07:16:22 UTC] [eval:done] CFGCFB6092F9F stage1=-0.0715 stage2=0.1942 coverage=0.686 ess=18032.3 tp=0.162 timeout=0.343 decile_spread=0.002246 hard_gate=False elapsed_s=4.90 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=781)
+[2026-02-27 07:16:23 UTC] [eval:start] CFGD0166AC470 mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=781)
+[2026-02-27 07:16:23 UTC] [eval:CFGD0166AC470] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:16:23 UTC] [eval:CFGD0166AC470] label_cache miss h=8 side=long
+[2026-02-27 07:16:23 UTC] [eval:CFGD0166AC470] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:16:23 UTC] [eval:CFGD0166AC470] label_cache miss h=8 side=short
+[2026-02-27 07:16:24 UTC] [eval:CFGD0166AC470] raw_events=703,522 mem_peak_mb=1571.0
+[2026-02-27 07:16:24 UTC] [eval:CFGD0166AC470] funnel(rr≥0.40) long_H8: 351,732→350,499  short_H8: 351,790→350,557  |  rr_kept min=99.6% median=99.6%
+[2026-02-27 07:16:25 UTC] [eval:CFGD0166AC470] candidate_prefilter_kept=159,251/703,522
+[2026-02-27 07:16:25 UTC] [eval:CFGD0166AC470] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:16:26 UTC] [eval:CFGD0166AC470] rr_filter_kept=25,953/26,270 min_net_rr=0.400
+[2026-02-27 07:16:26 UTC] [eval:CFGD0166AC470] model_scored n=25,953 ic_payoff=0.0072 ic_label=-0.0224 decile_spread=0.002197
+[2026-02-27 07:16:28 UTC] [eval:done] CFGD0166AC470 stage1=-0.0845 stage2=0.1906 coverage=0.672 ess=17661.6 tp=0.174 timeout=0.396 decile_spread=0.002197 hard_gate=False elapsed_s=5.09 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=782)
+[I 2026-02-27 08:16:28,423] Trial 88 finished with value: 0.19494430712391891 and parameters: {'k_tp': 0.8, 'tp_base_pct': 0.029, 'sl_as_tp_pct': 0.3, 'base_atr_window': 840}. Best is trial 49 with value: 0.2541083973257994.
+[2026-02-27 07:16:28 UTC] [prod_aligned_tp] applied ladder to 1 base cfgs -> 1 cfgs (tp_base_count=5, tp_abs_lo_pct>=0.0200, q50=0.0144, q75=0.0193, q90=0.0257)
+[2026-02-27 07:16:28 UTC] [eval:start] CFGA1A3B7025B mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=782)
+[2026-02-27 07:16:29 UTC] [eval:CFGA1A3B7025B] barrier_cache miss(tp) h=8 side=long
+[2026-02-27 07:16:29 UTC] [eval:CFGA1A3B7025B] label_cache miss h=8 side=long
+[2026-02-27 07:16:31 UTC] [eval:CFGA1A3B7025B] barrier_cache miss(tp) h=8 side=short
+[2026-02-27 07:16:31 UTC] [eval:CFGA1A3B7025B] label_cache miss h=8 side=short
+[2026-02-27 07:16:32 UTC] [eval:CFGA1A3B7025B] raw_events=703,576 mem_peak_mb=1571.0
+[2026-02-27 07:16:32 UTC] [eval:CFGA1A3B7025B] funnel(rr≥0.40) long_H8: 351,767→340,325  short_H8: 351,809→340,367  |  rr_kept min=96.7% median=96.7%
+[2026-02-27 07:16:32 UTC] [eval:CFGA1A3B7025B] candidate_prefilter_kept=159,261/703,576
+[2026-02-27 07:16:32 UTC] [eval:CFGA1A3B7025B] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:16:32 UTC] [eval:CFGA1A3B7025B] rr_filter_kept=25,398/26,270 min_net_rr=0.400
+[2026-02-27 07:16:33 UTC] [eval:CFGA1A3B7025B] model_scored n=25,398 ic_payoff=0.0159 ic_label=0.0007 decile_spread=0.000961
+[2026-02-27 07:16:34 UTC] [eval:done] CFGA1A3B7025B stage1=-0.0389 stage2=0.2537 coverage=0.675 ess=17720.2 tp=0.207 timeout=0.212 decile_spread=0.000961 hard_gate=False elapsed_s=6.13 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=782)
+[2026-02-27 07:16:35 UTC] [eval:start] CFG6D514EDBFD mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=782)
+[2026-02-27 07:16:35 UTC] [eval:CFG6D514EDBFD] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:16:35 UTC] [eval:CFG6D514EDBFD] label_cache miss h=8 side=long
+[2026-02-27 07:16:35 UTC] [eval:CFG6D514EDBFD] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:16:35 UTC] [eval:CFG6D514EDBFD] label_cache miss h=8 side=short
+[2026-02-27 07:16:35 UTC] [eval:CFG6D514EDBFD] raw_events=703,575 mem_peak_mb=1571.0
+[2026-02-27 07:16:36 UTC] [eval:CFG6D514EDBFD] funnel(rr≥0.40) long_H8: 351,767→340,325  short_H8: 351,808→340,366  |  rr_kept min=96.7% median=96.7%
+[2026-02-27 07:16:36 UTC] [eval:CFG6D514EDBFD] candidate_prefilter_kept=159,261/703,575
+[2026-02-27 07:16:36 UTC] [eval:CFG6D514EDBFD] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:16:36 UTC] [eval:CFG6D514EDBFD] rr_filter_kept=25,398/26,270 min_net_rr=0.400
+[2026-02-27 07:16:37 UTC] [eval:CFG6D514EDBFD] model_scored n=25,398 ic_payoff=0.0363 ic_label=0.0080 decile_spread=0.001464
+[2026-02-27 07:16:38 UTC] [eval:done] CFG6D514EDBFD stage1=-0.0350 stage2=0.2475 coverage=0.679 ess=17829.1 tp=0.217 timeout=0.235 decile_spread=0.001464 hard_gate=False elapsed_s=2.97 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=782)
+[2026-02-27 07:16:38 UTC] [eval:start] CFG9734CCB543 mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=782)
+[2026-02-27 07:16:38 UTC] [eval:CFG9734CCB543] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:16:38 UTC] [eval:CFG9734CCB543] label_cache miss h=8 side=long
+[2026-02-27 07:16:38 UTC] [eval:CFG9734CCB543] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:16:38 UTC] [eval:CFG9734CCB543] label_cache miss h=8 side=short
+[2026-02-27 07:16:39 UTC] [eval:CFG9734CCB543] raw_events=703,569 mem_peak_mb=1571.0
+[2026-02-27 07:16:39 UTC] [eval:CFG9734CCB543] funnel(rr≥0.40) long_H8: 351,765→340,323  short_H8: 351,804→340,362  |  rr_kept min=96.7% median=96.7%
+[2026-02-27 07:16:39 UTC] [eval:CFG9734CCB543] candidate_prefilter_kept=159,261/703,569
+[2026-02-27 07:16:40 UTC] [eval:CFG9734CCB543] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:16:40 UTC] [eval:CFG9734CCB543] rr_filter_kept=25,398/26,270 min_net_rr=0.400
+[2026-02-27 07:16:40 UTC] [eval:CFG9734CCB543] OOF direction flip applied for MR_short_H8: auc_before=0.4963 < 0.5000
+[2026-02-27 07:16:40 UTC] [eval:CFG9734CCB543] model_scored n=25,398 ic_payoff=-0.0339 ic_label=-0.0137 decile_spread=-0.001085
+[2026-02-27 07:16:42 UTC] [eval:done] CFG9734CCB543 stage1=-0.0703 stage2=-0.0038 coverage=0.679 ess=17840.8 tp=0.232 timeout=0.267 decile_spread=-0.001085 hard_gate=False elapsed_s=3.65 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=782)
+[2026-02-27 07:16:42 UTC] [eval:start] CFGE532F243A1 mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=782)
+[2026-02-27 07:16:42 UTC] [eval:CFGE532F243A1] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:16:42 UTC] [eval:CFGE532F243A1] label_cache miss h=8 side=long
+[2026-02-27 07:16:43 UTC] [eval:CFGE532F243A1] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:16:43 UTC] [eval:CFGE532F243A1] label_cache miss h=8 side=short
+[2026-02-27 07:16:43 UTC] [eval:CFGE532F243A1] raw_events=703,563 mem_peak_mb=1571.0
+[2026-02-27 07:16:44 UTC] [eval:CFGE532F243A1] funnel(rr≥0.40) long_H8: 351,764→340,322  short_H8: 351,799→340,357  |  rr_kept min=96.7% median=96.7%
+[2026-02-27 07:16:45 UTC] [eval:CFGE532F243A1] candidate_prefilter_kept=159,260/703,563
+[2026-02-27 07:16:45 UTC] [eval:CFGE532F243A1] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:16:45 UTC] [eval:CFGE532F243A1] rr_filter_kept=25,398/26,270 min_net_rr=0.400
+[2026-02-27 07:16:46 UTC] [eval:CFGE532F243A1] OOF direction flip applied for MR_short_H8: auc_before=0.4956 < 0.5000
+[2026-02-27 07:16:46 UTC] [eval:CFGE532F243A1] model_scored n=25,398 ic_payoff=-0.0284 ic_label=-0.0106 decile_spread=-0.001301
+[2026-02-27 07:16:47 UTC] [eval:done] CFGE532F243A1 stage1=-0.0750 stage2=-0.0081 coverage=0.708 ess=18589.7 tp=0.245 timeout=0.301 decile_spread=-0.001301 hard_gate=False elapsed_s=4.63 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=783)
+[2026-02-27 07:16:47 UTC] [eval:start] CFG8B506EC793 mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=783)
+[2026-02-27 07:16:47 UTC] [eval:CFG8B506EC793] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:16:47 UTC] [eval:CFG8B506EC793] label_cache miss h=8 side=long
+[2026-02-27 07:16:47 UTC] [eval:CFG8B506EC793] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:16:48 UTC] [eval:CFG8B506EC793] label_cache miss h=8 side=short
+[2026-02-27 07:16:48 UTC] [eval:CFG8B506EC793] raw_events=703,552 mem_peak_mb=1571.0
+[2026-02-27 07:16:48 UTC] [eval:CFG8B506EC793] funnel(rr≥0.40) long_H8: 351,762→340,320  short_H8: 351,790→340,348  |  rr_kept min=96.7% median=96.7%
+[2026-02-27 07:16:49 UTC] [eval:CFG8B506EC793] candidate_prefilter_kept=159,257/703,552
+[2026-02-27 07:16:49 UTC] [eval:CFG8B506EC793] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:16:50 UTC] [eval:CFG8B506EC793] rr_filter_kept=25,398/26,270 min_net_rr=0.400
+[2026-02-27 07:16:50 UTC] [eval:CFG8B506EC793] OOF direction flip applied for MR_short_H8: auc_before=0.4959 < 0.5000
+[2026-02-27 07:16:50 UTC] [eval:CFG8B506EC793] model_scored n=25,398 ic_payoff=-0.0242 ic_label=-0.0108 decile_spread=-0.001938
+[2026-02-27 07:16:51 UTC] [eval:done] CFG8B506EC793 stage1=-0.0807 stage2=-0.0153 coverage=0.731 ess=19216.2 tp=0.257 timeout=0.337 decile_spread=-0.001938 hard_gate=False elapsed_s=4.12 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=784)
+[I 2026-02-27 08:16:52,065] Trial 89 finished with value: 0.25367614300813546 and parameters: {'k_tp': 0.8, 'tp_base_pct': 0.021, 'sl_as_tp_pct': 0.5, 'base_atr_window': 840}. Best is trial 49 with value: 0.2541083973257994.
+[2026-02-27 07:16:52 UTC] [prod_aligned_tp] applied ladder to 1 base cfgs -> 1 cfgs (tp_base_count=5, tp_abs_lo_pct>=0.0200, q50=0.0144, q75=0.0193, q90=0.0257)
+[I 2026-02-27 08:16:52,467] Trial 90 pruned. fast_pr_auc_lift=0.800 < 1.1
+[2026-02-27 07:16:52 UTC] [prod_aligned_tp] applied ladder to 1 base cfgs -> 1 cfgs (tp_base_count=5, tp_abs_lo_pct>=0.0200, q50=0.0144, q75=0.0193, q90=0.0257)
+[2026-02-27 07:16:52 UTC] [eval:start] CFG29D2EE064F mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=784)
+[2026-02-27 07:16:53 UTC] [eval:CFG29D2EE064F] barrier_cache miss(tp) h=8 side=long
+[2026-02-27 07:16:53 UTC] [eval:CFG29D2EE064F] label_cache miss h=8 side=long
+[2026-02-27 07:16:55 UTC] [eval:CFG29D2EE064F] barrier_cache miss(tp) h=8 side=short
+[2026-02-27 07:16:55 UTC] [eval:CFG29D2EE064F] label_cache miss h=8 side=short
+[2026-02-27 07:16:55 UTC] [eval:CFG29D2EE064F] raw_events=703,588 mem_peak_mb=1571.0
+[2026-02-27 07:16:55 UTC] [eval:CFG29D2EE064F] funnel(rr≥0.40) long_H8: 351,778→324,141  short_H8: 351,810→324,171  |  rr_kept min=92.1% median=92.1%
+[2026-02-27 07:16:56 UTC] [eval:CFG29D2EE064F] candidate_prefilter_kept=159,261/703,588
+[2026-02-27 07:16:56 UTC] [eval:CFG29D2EE064F] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:16:57 UTC] [eval:CFG29D2EE064F] rr_filter_kept=24,699/26,270 min_net_rr=0.400
+[2026-02-27 07:16:57 UTC] [eval:CFG29D2EE064F] model_scored n=24,699 ic_payoff=0.0451 ic_label=0.0245 decile_spread=0.000704
+[2026-02-27 07:16:58 UTC] [eval:done] CFG29D2EE064F stage1=-0.0228 stage2=0.0214 coverage=0.662 ess=17391.0 tp=0.242 timeout=0.196 decile_spread=0.000704 hard_gate=False elapsed_s=5.99 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=784)
+[2026-02-27 07:16:59 UTC] [eval:start] CFG2A6908764C mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=784)
+[2026-02-27 07:16:59 UTC] [eval:CFG2A6908764C] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:16:59 UTC] [eval:CFG2A6908764C] label_cache miss h=8 side=long
+[2026-02-27 07:16:59 UTC] [eval:CFG2A6908764C] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:16:59 UTC] [eval:CFG2A6908764C] label_cache miss h=8 side=short
+[2026-02-27 07:17:00 UTC] [eval:CFG2A6908764C] raw_events=703,584 mem_peak_mb=1571.0
+[2026-02-27 07:17:00 UTC] [eval:CFG2A6908764C] funnel(rr≥0.40) long_H8: 351,776→324,139  short_H8: 351,808→324,169  |  rr_kept min=92.1% median=92.1%
+[2026-02-27 07:17:00 UTC] [eval:CFG2A6908764C] candidate_prefilter_kept=159,261/703,584
+[2026-02-27 07:17:01 UTC] [eval:CFG2A6908764C] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:17:01 UTC] [eval:CFG2A6908764C] rr_filter_kept=24,699/26,270 min_net_rr=0.400
+[2026-02-27 07:17:01 UTC] [eval:CFG2A6908764C] OOF direction flip applied for MR_short_H8: auc_before=0.4974 < 0.5000
+[2026-02-27 07:17:01 UTC] [eval:CFG2A6908764C] model_scored n=24,699 ic_payoff=-0.0421 ic_label=-0.0212 decile_spread=-0.001168
+[2026-02-27 07:17:02 UTC] [eval:done] CFG2A6908764C stage1=-0.0631 stage2=-0.0334 coverage=0.701 ess=18423.3 tp=0.255 timeout=0.218 decile_spread=-0.001168 hard_gate=False elapsed_s=3.68 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=784)
+[2026-02-27 07:17:03 UTC] [eval:start] CFGB518D19ED3 mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=784)
+[2026-02-27 07:17:03 UTC] [eval:CFGB518D19ED3] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:17:03 UTC] [eval:CFGB518D19ED3] label_cache miss h=8 side=long
+[2026-02-27 07:17:03 UTC] [eval:CFGB518D19ED3] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:17:03 UTC] [eval:CFGB518D19ED3] label_cache miss h=8 side=short
+[2026-02-27 07:17:04 UTC] [eval:CFGB518D19ED3] raw_events=703,577 mem_peak_mb=1571.0
+[2026-02-27 07:17:04 UTC] [eval:CFGB518D19ED3] funnel(rr≥0.40) long_H8: 351,775→324,138  short_H8: 351,802→324,163  |  rr_kept min=92.1% median=92.1%
+[2026-02-27 07:17:04 UTC] [eval:CFGB518D19ED3] candidate_prefilter_kept=159,260/703,577
+[2026-02-27 07:17:04 UTC] [eval:CFGB518D19ED3] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:17:05 UTC] [eval:CFGB518D19ED3] rr_filter_kept=24,699/26,270 min_net_rr=0.400
+[2026-02-27 07:17:05 UTC] [eval:CFGB518D19ED3] OOF direction flip applied for MR_short_H8: auc_before=0.4911 < 0.5000
+[2026-02-27 07:17:05 UTC] [eval:CFGB518D19ED3] model_scored n=24,699 ic_payoff=-0.0328 ic_label=-0.0153 decile_spread=-0.001075
+[2026-02-27 07:17:07 UTC] [eval:done] CFGB518D19ED3 stage1=-0.0652 stage2=-0.0065 coverage=0.734 ess=19288.0 tp=0.271 timeout=0.246 decile_spread=-0.001075 hard_gate=False elapsed_s=3.86 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=784)
+[2026-02-27 07:17:07 UTC] [eval:start] CFG2160F87D8D mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=784)
+[2026-02-27 07:17:07 UTC] [eval:CFG2160F87D8D] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:17:07 UTC] [eval:CFG2160F87D8D] label_cache miss h=8 side=long
+[2026-02-27 07:17:08 UTC] [eval:CFG2160F87D8D] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:17:08 UTC] [eval:CFG2160F87D8D] label_cache miss h=8 side=short
+[2026-02-27 07:17:09 UTC] [eval:CFG2160F87D8D] raw_events=703,575 mem_peak_mb=1571.0
+[2026-02-27 07:17:09 UTC] [eval:CFG2160F87D8D] funnel(rr≥0.40) long_H8: 351,775→324,138  short_H8: 351,800→324,161  |  rr_kept min=92.1% median=92.1%
+[2026-02-27 07:17:09 UTC] [eval:CFG2160F87D8D] candidate_prefilter_kept=159,260/703,575
+[2026-02-27 07:17:09 UTC] [eval:CFG2160F87D8D] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:17:10 UTC] [eval:CFG2160F87D8D] rr_filter_kept=24,699/26,270 min_net_rr=0.400
+[2026-02-27 07:17:10 UTC] [eval:CFG2160F87D8D] OOF direction flip applied for MR_short_H8: auc_before=0.4913 < 0.5000
+[2026-02-27 07:17:10 UTC] [eval:CFG2160F87D8D] model_scored n=24,699 ic_payoff=-0.0275 ic_label=-0.0127 decile_spread=-0.001513
+[2026-02-27 07:17:12 UTC] [eval:done] CFG2160F87D8D stage1=-0.0685 stage2=-0.0154 coverage=0.756 ess=19872.6 tp=0.284 timeout=0.273 decile_spread=-0.001513 hard_gate=False elapsed_s=4.75 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=784)
+[2026-02-27 07:17:12 UTC] [eval:start] CFG57DF420985 mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=784)
+[2026-02-27 07:17:12 UTC] [eval:CFG57DF420985] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:17:13 UTC] [eval:CFG57DF420985] label_cache miss h=8 side=long
+[2026-02-27 07:17:13 UTC] [eval:CFG57DF420985] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:17:13 UTC] [eval:CFG57DF420985] label_cache miss h=8 side=short
+[2026-02-27 07:17:14 UTC] [eval:CFG57DF420985] raw_events=703,565 mem_peak_mb=1571.0
+[2026-02-27 07:17:14 UTC] [eval:CFG57DF420985] funnel(rr≥0.40) long_H8: 351,773→324,136  short_H8: 351,792→324,153  |  rr_kept min=92.1% median=92.1%
+[2026-02-27 07:17:14 UTC] [eval:CFG57DF420985] candidate_prefilter_kept=159,257/703,565
+[2026-02-27 07:17:14 UTC] [eval:CFG57DF420985] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:17:15 UTC] [eval:CFG57DF420985] rr_filter_kept=24,699/26,270 min_net_rr=0.400
+[2026-02-27 07:17:15 UTC] [eval:CFG57DF420985] OOF direction flip applied for MR_short_H8: auc_before=0.4907 < 0.5000
+[2026-02-27 07:17:15 UTC] [eval:CFG57DF420985] model_scored n=24,699 ic_payoff=-0.0243 ic_label=-0.0141 decile_spread=-0.001935
+[2026-02-27 07:17:17 UTC] [eval:done] CFG57DF420985 stage1=-0.0731 stage2=-0.0346 coverage=0.776 ess=20391.0 tp=0.297 timeout=0.302 decile_spread=-0.001935 hard_gate=False elapsed_s=4.14 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=784)
+[I 2026-02-27 08:17:17,308] Trial 91 finished with value: 0.021379168884069936 and parameters: {'k_tp': 0.8, 'tp_base_pct': 0.018000000000000002, 'sl_as_tp_pct': 0.6000000000000001, 'base_atr_window': 840}. Best is trial 49 with value: 0.2541083973257994.
+[2026-02-27 07:17:17 UTC] [prod_aligned_tp] applied ladder to 1 base cfgs -> 1 cfgs (tp_base_count=5, tp_abs_lo_pct>=0.0200, q50=0.0144, q75=0.0193, q90=0.0257)
+[2026-02-27 07:17:17 UTC] [eval:start] CFG93595482AC mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=784)
+[2026-02-27 07:17:18 UTC] [eval:CFG93595482AC] barrier_cache miss(tp) h=8 side=long
+[2026-02-27 07:17:18 UTC] [eval:CFG93595482AC] label_cache miss h=8 side=long
+[2026-02-27 07:17:19 UTC] [eval:CFG93595482AC] barrier_cache miss(tp) h=8 side=short
+[2026-02-27 07:17:19 UTC] [eval:CFG93595482AC] label_cache miss h=8 side=short
+[2026-02-27 07:17:20 UTC] [eval:CFG93595482AC] raw_events=703,597 mem_peak_mb=1571.0
+[2026-02-27 07:17:20 UTC] [eval:CFG93595482AC] funnel(rr≥0.40) long_H8: 351,787→317,494  short_H8: 351,810→317,515  |  rr_kept min=90.3% median=90.3%
+[2026-02-27 07:17:21 UTC] [eval:CFG93595482AC] candidate_prefilter_kept=159,262/703,597
+[2026-02-27 07:17:21 UTC] [eval:CFG93595482AC] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:17:22 UTC] [eval:CFG93595482AC] rr_filter_kept=24,390/26,270 min_net_rr=0.400
+[2026-02-27 07:17:22 UTC] [eval:CFG93595482AC] model_scored n=24,390 ic_payoff=0.0406 ic_label=0.0217 decile_spread=0.000515
+[2026-02-27 07:17:23 UTC] [eval:done] CFG93595482AC stage1=-0.0226 stage2=0.0168 coverage=0.665 ess=17477.1 tp=0.249 timeout=0.187 decile_spread=0.000515 hard_gate=False elapsed_s=5.79 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=785)
+[2026-02-27 07:17:23 UTC] [eval:start] CFG1F615B07E9 mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=785)
+[2026-02-27 07:17:23 UTC] [eval:CFG1F615B07E9] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:17:23 UTC] [eval:CFG1F615B07E9] label_cache miss h=8 side=long
+[2026-02-27 07:17:23 UTC] [eval:CFG1F615B07E9] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:17:24 UTC] [eval:CFG1F615B07E9] label_cache miss h=8 side=short
+[2026-02-27 07:17:24 UTC] [eval:CFG1F615B07E9] raw_events=703,596 mem_peak_mb=1571.0
+[2026-02-27 07:17:24 UTC] [eval:CFG1F615B07E9] funnel(rr≥0.40) long_H8: 351,787→317,494  short_H8: 351,809→317,514  |  rr_kept min=90.3% median=90.3%
+[2026-02-27 07:17:25 UTC] [eval:CFG1F615B07E9] candidate_prefilter_kept=159,262/703,596
+[2026-02-27 07:17:25 UTC] [eval:CFG1F615B07E9] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:17:26 UTC] [eval:CFG1F615B07E9] rr_filter_kept=24,390/26,270 min_net_rr=0.400
+[2026-02-27 07:17:26 UTC] [eval:CFG1F615B07E9] OOF direction flip applied for MR_short_H8: auc_before=0.4913 < 0.5000
+[2026-02-27 07:17:26 UTC] [eval:CFG1F615B07E9] model_scored n=24,390 ic_payoff=-0.0425 ic_label=-0.0222 decile_spread=-0.001113
+[2026-02-27 07:17:27 UTC] [eval:done] CFG1F615B07E9 stage1=-0.0607 stage2=-0.0292 coverage=0.703 ess=18472.6 tp=0.262 timeout=0.206 decile_spread=-0.001113 hard_gate=False elapsed_s=3.49 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=786)
+[2026-02-27 07:17:27 UTC] [eval:start] CFGE5CF687E77 mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=786)
+[2026-02-27 07:17:27 UTC] [eval:CFGE5CF687E77] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:17:27 UTC] [eval:CFGE5CF687E77] label_cache miss h=8 side=long
+[2026-02-27 07:17:27 UTC] [eval:CFGE5CF687E77] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:17:28 UTC] [eval:CFGE5CF687E77] label_cache miss h=8 side=short
+[2026-02-27 07:17:28 UTC] [eval:CFGE5CF687E77] raw_events=703,590 mem_peak_mb=1571.0
+[2026-02-27 07:17:28 UTC] [eval:CFGE5CF687E77] funnel(rr≥0.40) long_H8: 351,785→317,492  short_H8: 351,805→317,510  |  rr_kept min=90.3% median=90.3%
+[2026-02-27 07:17:29 UTC] [eval:CFGE5CF687E77] candidate_prefilter_kept=159,262/703,590
+[2026-02-27 07:17:29 UTC] [eval:CFGE5CF687E77] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:17:30 UTC] [eval:CFGE5CF687E77] rr_filter_kept=24,390/26,270 min_net_rr=0.400
+[2026-02-27 07:17:30 UTC] [eval:CFGE5CF687E77] OOF direction flip applied for MR_short_H8: auc_before=0.4828 < 0.5000
+[2026-02-27 07:17:30 UTC] [eval:CFGE5CF687E77] model_scored n=24,390 ic_payoff=-0.0308 ic_label=-0.0151 decile_spread=-0.001049
+[2026-02-27 07:17:30 UTC] [eval:done] CFGE5CF687E77 stage1=-0.0611 stage2=-0.0025 coverage=0.736 ess=19334.1 tp=0.277 timeout=0.231 decile_spread=-0.001049 hard_gate=False elapsed_s=3.42 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=787)
+[2026-02-27 07:17:31 UTC] [eval:start] CFG5099F20353 mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=787)
+[2026-02-27 07:17:31 UTC] [eval:CFG5099F20353] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:17:31 UTC] [eval:CFG5099F20353] label_cache miss h=8 side=long
+[2026-02-27 07:17:31 UTC] [eval:CFG5099F20353] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:17:31 UTC] [eval:CFG5099F20353] label_cache miss h=8 side=short
+[2026-02-27 07:17:32 UTC] [eval:CFG5099F20353] raw_events=703,584 mem_peak_mb=1571.0
+[2026-02-27 07:17:32 UTC] [eval:CFG5099F20353] funnel(rr≥0.40) long_H8: 351,784→317,491  short_H8: 351,800→317,505  |  rr_kept min=90.3% median=90.3%
+[2026-02-27 07:17:33 UTC] [eval:CFG5099F20353] candidate_prefilter_kept=159,261/703,584
+[2026-02-27 07:17:33 UTC] [eval:CFG5099F20353] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:17:33 UTC] [eval:CFG5099F20353] rr_filter_kept=24,390/26,270 min_net_rr=0.400
+[2026-02-27 07:17:34 UTC] [eval:CFG5099F20353] OOF direction flip applied for MR_short_H8: auc_before=0.4837 < 0.5000
+[2026-02-27 07:17:34 UTC] [eval:CFG5099F20353] model_scored n=24,390 ic_payoff=-0.0300 ic_label=-0.0158 decile_spread=-0.001145

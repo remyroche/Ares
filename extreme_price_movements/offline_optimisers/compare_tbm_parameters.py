@@ -1826,6 +1826,9 @@ def evaluate_config(
         return _empty_result(cfg, cfg_id, 0, reason=f"cheap_gate_rr_too_low:{1.0/sl_ratio:.2f}<{min_rr:.2f}")
     
     t0 = time.perf_counter()
+    fast_mode = bool(cfg.get("_low_fidelity", False)) and not bool(collect_weights)
+    if fast_mode:
+        detailed_slices = False
 
     tprint(
         f"[eval:start] {cfg_id} mode={cfg.get('mode', 'unknown')} "
@@ -1993,22 +1996,29 @@ def evaluate_config(
     # Per-(side,horizon) funnel: raw → prefilter → rr → final counts.
     # Printed before any further filtering so the user can see where events are lost.
     _funnel_rows = []
-    for (_side, _h), _g in events.groupby(["side", "horizon"], observed=True):
-        _n_raw = len(_g)
-        _fee = float(cfg.get("fee_pct", 0.5)) / 100.0
-        _slip = float(cfg.get("slip_buffer", 0.1)) / 100.0
-        _tp_net = _g["tp"] - _fee - _slip
-        _sl_net = _g["sl"] + _fee + _slip
-        _rr = _tp_net / np.maximum(_sl_net, EPS)
-        _min_rr = float(cfg.get("min_net_rr", 0.7))
-        _n_rr = int((_rr >= _min_rr).sum())
+    _fee = float(cfg.get("fee_pct", 0.5)) / 100.0
+    _slip = float(cfg.get("slip_buffer", 0.1)) / 100.0
+    _min_rr = float(cfg.get("min_net_rr", 0.7))
+    _tp_net_all = events["tp"].to_numpy(dtype=np.float32, copy=False) - _fee - _slip
+    _sl_net_all = events["sl"].to_numpy(dtype=np.float32, copy=False) + _fee + _slip
+    _rr_all = _tp_net_all / np.maximum(_sl_net_all, EPS)
+    _rr_ok_all = _rr_all >= _min_rr
+    _side_vals = events["side"].astype(str).to_numpy()
+    _h_vals = events["horizon"].to_numpy(dtype=np.int16, copy=False)
+    _keys = np.char.add(np.char.add(_side_vals.astype(str), "|"), _h_vals.astype(str))
+    _u_keys, _inv = np.unique(_keys, return_inverse=True)
+    for _i, _k in enumerate(_u_keys):
+        _mask = (_inv == _i)
+        _n_raw = int(_mask.sum())
+        _n_rr = int(_rr_ok_all[_mask].sum())
+        _side, _h = _k.split("|")
         _funnel_rows.append({"side": _side, "h": int(_h), "n_raw": _n_raw, "n_rr": _n_rr})
     if _funnel_rows:
-        _fn = pd.DataFrame(_funnel_rows).sort_values(["side", "h"])
-        _parts = [f"{r.side}_H{r.h}: {r.n_raw:,}→{r.n_rr:,}" for _, r in _fn.iterrows()]
-        _rr_fracs = [r.n_rr / max(r.n_raw, 1) for _, r in _fn.iterrows()]
+        _funnel_rows = sorted(_funnel_rows, key=lambda r: (str(r["side"]), int(r["h"])))
+        _parts = [f"{r['side']}_H{r['h']}: {r['n_raw']:,}→{r['n_rr']:,}" for r in _funnel_rows]
+        _rr_fracs = [r["n_rr"] / max(r["n_raw"], 1) for r in _funnel_rows]
         tprint(
-            f"[eval:{cfg_id}] funnel(rr≥{float(cfg.get('min_net_rr',0.7)):.2f}) "
+            f"[eval:{cfg_id}] funnel(rr≥{_min_rr:.2f}) "
             + "  ".join(_parts)
             + f"  |  rr_kept min={min(_rr_fracs)*100:.1f}% median={float(np.median(_rr_fracs))*100:.1f}%"
         )
@@ -2030,16 +2040,8 @@ def evaluate_config(
     pre_candidate_n = len(events)
     if np.any(candidate_mask):
         events = events.loc[candidate_mask].copy().reset_index(drop=True)
-        stacked_index = pd.MultiIndex.from_arrays([events["ts"], events["symbol"]])
-        stack_key = _index_cache_key(stacked_index)
-        cache_bucket_stack = eval_cache.setdefault("bucket_stack", {})
-        if stack_key in cache_bucket_stack:
-            bucket_map = cache_bucket_stack[stack_key]
-        else:
-            bucket_map = {}
-            for bname, bmask in bucket_masks.items():
-                bucket_map[bname] = bmask.stack().reindex(stacked_index).fillna(False).to_numpy(dtype=bool)
-            cache_bucket_stack[stack_key] = bucket_map
+        # Reuse already-cached bucket masks by slicing with candidate_mask (same row order).
+        bucket_map = {k: v[candidate_mask] for k, v in bucket_map.items()}
     else:
         events = events.iloc[0:0].copy()
     tprint(f"[eval:{cfg_id}] candidate_prefilter_kept={len(events):,}/{pre_candidate_n:,}")
@@ -2120,17 +2122,28 @@ def evaluate_config(
         dtype=np.float32,
     )
     keep_mask = np.ones(len(events), dtype=bool)
-    full_bucket_counts = events.groupby("bucket").size().to_dict()
+    _bkt_vals_full = events["bucket"].astype(str).to_numpy()
+    _u_bkt_full, _cnt_bkt_full = np.unique(_bkt_vals_full, return_counts=True)
+    full_bucket_counts = {str(k): int(v) for k, v in zip(_u_bkt_full, _cnt_bkt_full)}
     if cfg.get("use_quantile_filter", False):
         lo = float(cfg.get("quantile_lo", 0.2))
         hi = float(cfg.get("quantile_hi", 0.8))
-        basis_s = pd.Series(basis, index=stacked_index, dtype=np.float32)
-        by_ts = basis_s.groupby(level=0)
-        lo_map = by_ts.quantile(lo)
-        hi_map = by_ts.quantile(hi)
-        ts_idx = stacked_index.get_level_values(0)
-        lo_t = ts_idx.map(lo_map).to_numpy(dtype=np.float32, copy=False)
-        hi_t = ts_idx.map(hi_map).to_numpy(dtype=np.float32, copy=False)
+        _qb_cache = eval_cache.setdefault("quantile_bounds_cache", {})
+        _qb_key = (_index_cache_key(stacked_index), str(quant_basis), round(lo, 6), round(hi, 6))
+        _qb_val = _qb_cache.get(_qb_key)
+        if _qb_val is None:
+            basis_s = pd.Series(basis, index=stacked_index, dtype=np.float32)
+            by_ts = basis_s.groupby(level=0)
+            lo_map = by_ts.quantile(lo)
+            hi_map = by_ts.quantile(hi)
+            ts_idx = stacked_index.get_level_values(0)
+            lo_t = ts_idx.map(lo_map).to_numpy(dtype=np.float32, copy=False)
+            hi_t = ts_idx.map(hi_map).to_numpy(dtype=np.float32, copy=False)
+            _qb_cache[_qb_key] = (lo_t, hi_t)
+            if len(_qb_cache) > 64:
+                _qb_cache.pop(next(iter(_qb_cache)))
+        else:
+            lo_t, hi_t = _qb_val
         keep_mask = (basis <= lo_t) | (basis >= hi_t)
         keep_mask &= np.isfinite(basis)
         min_keep = float(cfg.get("min_keep_fraction", 0.5))
@@ -2145,7 +2158,7 @@ def evaluate_config(
         f"[eval:{cfg_id}] quantile_filter_kept={len(events):,}/{full_n:,} "
         f"({(len(events)/max(full_n,1))*100:.1f}%)"
     )
-    gc.collect()
+    _last_gc_ts = _maybe_collect_gc(last_gc_ts=_last_gc_ts, mem_threshold_mb=8192.0, min_interval_s=5.0)
 
     # Filter constraints.
     fee = float(cfg.get("fee_pct", 0.5)) / 100.0
@@ -2164,6 +2177,7 @@ def evaluate_config(
 
     pre_rr_n = len(events)
     events = events[events["net_rr"] >= min_rr].reset_index(drop=True)
+    rr_keep_rate = float(len(events) / max(pre_rr_n, 1))
     tprint(
         f"[eval:{cfg_id}] rr_filter_kept={len(events):,}/{pre_rr_n:,} min_net_rr={min_rr:.3f}"
     )
@@ -2332,10 +2346,13 @@ def evaluate_config(
     horizon_event = events.loc[valid_mask, "horizon"].values
     
     unique_cells = sorted(list(bucket_h_metrics.keys()))
+    flipped_cells = 0
+    modeled_cells = 0
     for _bkt, _h in unique_cells:
         _bmask = (bucket_event == _bkt) & (horizon_event == _h)
         if _bmask.sum() < 64:  # Minimum events for stable Ridge
             continue
+        modeled_cells += 1
             
         _warm_key = _ridge_warm_key(cfg) + f":{_bkt}_H{_h}"
         _pred_cell = _ridge_predict_oof_with_cache(
@@ -2353,11 +2370,18 @@ def evaluate_config(
             _auc_cell = _fast_auc_binary(y_event[_bmask], _pred_cell)
             if math.isfinite(_auc_cell) and _auc_cell < flip_thr:
                 _pred_cell = (1.0 - _pred_cell).astype(np.float32, copy=False)
+                flipped_cells += 1
                 tprint(
                     f"[eval:{cfg_id}] OOF direction flip applied for {_bkt}_H{_h}: "
                     f"auc_before={_auc_cell:.4f} < {flip_thr:.4f}"
                 )
         pred_event[_bmask] = _pred_cell
+
+    oof_flip_rate = (float(flipped_cells) / float(modeled_cells)) if modeled_cells > 0 else 0.0
+    tprint(
+        f"[eval:{cfg_id}] flip_summary flipped_cells={flipped_cells}/{modeled_cells} "
+        f"flip_rate={oof_flip_rate:.3f}"
+    )
 
 
     pred = np.full(len(events), 0.5, dtype=np.float32)
@@ -2637,13 +2661,20 @@ def evaluate_config(
 
     # Time/asset IC stability.
     ic_time = []
-    for _, g in events.groupby("ts"):
-        idx = g.index.values
-        ic_time.append(_safe_spearman(pred[idx], g["payoff"].values))
+    _ts_vals = events["ts"].to_numpy()
+    _u_ts, _inv_ts = np.unique(_ts_vals, return_inverse=True)
+    _pay_vals = events["payoff"].to_numpy(dtype=np.float32, copy=False)
+    for _i in range(len(_u_ts)):
+        _m = (_inv_ts == _i)
+        if int(_m.sum()) >= 5:
+            ic_time.append(_safe_spearman(pred[_m], _pay_vals[_m]))
     ic_asset = []
-    for _, g in events.groupby("symbol"):
-        idx = g.index.values
-        ic_asset.append(_safe_spearman(pred[idx], g["payoff"].values))
+    _sym_vals = events["symbol"].to_numpy()
+    _u_sym, _inv_sym = np.unique(_sym_vals, return_inverse=True)
+    for _i in range(len(_u_sym)):
+        _m = (_inv_sym == _i)
+        if int(_m.sum()) >= 5:
+            ic_asset.append(_safe_spearman(pred[_m], _pay_vals[_m]))
 
     ic_time = np.array(ic_time, dtype=float)
     ic_asset = np.array(ic_asset, dtype=float)
@@ -2670,7 +2701,37 @@ def evaluate_config(
     min_cell_brier = float(np.min(_cell_briers)) if _cell_briers else float("nan")
     min_cell_mono = float(np.min(_cell_monos)) if _cell_monos else float("nan")
 
-    per_bucket = per_slice_metrics(events, pred, "bucket")
+    if fast_mode:
+        per_bucket = {}
+        _b = events["bucket"].astype(str).to_numpy()
+        _lbl = events["label"].to_numpy(dtype=np.float32, copy=False)
+        _pay = events["payoff"].to_numpy(dtype=np.float32, copy=False)
+        _pr = pred.astype(np.float32, copy=False)
+        for _name in np.unique(_b):
+            _m = (_b == _name)
+            if int(_m.sum()) == 0:
+                continue
+            _l = _lbl[_m]
+            per_bucket[str(_name)] = {
+                "n": int(_m.sum()),
+                "tp_hit": float(np.mean(_l == OUT_TP)),
+                "sl_hit": float(np.mean(_l == OUT_SL)),
+                "timeout": float(np.mean(_l == OUT_TO)),
+                "payoff_mean": float(np.mean(_pay[_m])) if _m.any() else 0.0,
+                "ic_payoff": float(_safe_spearman(_pr[_m], _pay[_m])),
+                "ic_label": float(_safe_spearman(_pr[_m], _l)),
+            }
+        per_bucket["Global"] = {
+            "n": int(len(_b)),
+            "tp_hit": float(np.mean(_lbl == OUT_TP)) if len(_lbl) else 0.0,
+            "sl_hit": float(np.mean(_lbl == OUT_SL)) if len(_lbl) else 0.0,
+            "timeout": float(np.mean(_lbl == OUT_TO)) if len(_lbl) else 1.0,
+            "payoff_mean": float(np.mean(_pay)) if len(_pay) else 0.0,
+            "ic_payoff": float(_safe_spearman(_pr, _pay)),
+            "ic_label": float(_safe_spearman(_pr, _lbl)),
+        }
+    else:
+        per_bucket = per_slice_metrics(events, pred, "bucket")
     bucket_ics = [m["ic_payoff"] for k, m in per_bucket.items() if k != "Global"]
     bucket_ic_labels = [m["ic_label"] for k, m in per_bucket.items() if k != "Global"]
     worst_bucket_ic = min(bucket_ics, default=0.0)
@@ -2678,7 +2739,9 @@ def evaluate_config(
     mean_bucket_ic_label = float(np.mean(bucket_ic_labels)) if bucket_ic_labels else 0.0
 
     min_cov_threshold = float(cfg.get("min_coverage_threshold", 0.2))
-    bucket_counts_after = events.groupby("bucket").size().to_dict()
+    _bkt_vals_after = events["bucket"].astype(str).to_numpy()
+    _u_bkt_after, _cnt_bkt_after = np.unique(_bkt_vals_after, return_counts=True)
+    bucket_counts_after = {str(k): int(v) for k, v in zip(_u_bkt_after, _cnt_bkt_after)}
     bucket_coverages = []
     for b, n_full in full_bucket_counts.items():
         n_kept = bucket_counts_after.get(b, 0)
@@ -2745,7 +2808,22 @@ def evaluate_config(
     _raw_penalty = _instability_pen + _coverage_pen + _timeout_pen + _bind_pen
     _penalty_cap = 0.5 * max(abs(_reward), 0.10)
     _bounded_penalty = min(_raw_penalty, _penalty_cap)
-    stage2_score = _reward - _bounded_penalty
+
+    # RR-keep penalty: discourage pathological regions where too few events survive RR filter.
+    _rr_floor_map = {
+        2: float(cfg.get("stage2_rr_keep_floor_h2", 0.50)),
+        4: float(cfg.get("stage2_rr_keep_floor_h4", 0.55)),
+        8: float(cfg.get("stage2_rr_keep_floor_h8", 0.60)),
+    }
+    _target_h = int(target_cell_filter[1]) if target_cell_filter else int(cfg.get("horizon_base", 4))
+    rr_floor = float(_rr_floor_map.get(_target_h, float(cfg.get("stage2_rr_keep_floor_default", 0.55))))
+    rr_gap = max(0.0, (rr_floor - rr_keep_rate) / max(rr_floor, EPS))
+    _rr_pen_w = float(cfg.get("stage2_penalty_rr_keep_w", 0.10))
+    _rr_pen_base = _rr_pen_w * (rr_gap ** 1.5)
+    # Normalize to stage2 reward/penalty scale and cap at a bounded additive impact.
+    _rr_keep_pen = 0.10 * float(np.tanh(_rr_pen_base / 0.10))
+
+    stage2_score = _reward - _bounded_penalty - _rr_keep_pen
 
     # Keep mild multiplicative regularization, bounded away from zero.
     stage2_score *= max(0.70, math.sqrt(max(coverage, 0.0)))
@@ -2943,6 +3021,9 @@ def evaluate_config(
         "stage2_dir_sup_score": float(_dir_sup_score),
         "stage2_tp_over_sl_score": float(_tp_over_sl_score),
         "stage2_payoff_edge_score": float(payoff_edge_score),
+        "rr_keep_rate": float(rr_keep_rate),
+        "rr_keep_floor": float(rr_floor),
+        "stage2_rr_keep_penalty": float(_rr_keep_pen),
         # brier/ece/mono: median across cells (per-cell values in bucket_horizon_metrics)
         "brier": brier,
         "ece": ece,
@@ -2950,6 +3031,9 @@ def evaluate_config(
         "min_cell_brier": round(min_cell_brier, 5) if not math.isnan(min_cell_brier) else float("nan"),
         "min_cell_mono": round(min_cell_mono, 4) if not math.isnan(min_cell_mono) else float("nan"),
         "oof_payoff_decile_spread": decile_spread,
+        "oof_flip_rate": oof_flip_rate,
+        "oof_flipped_cells": int(flipped_cells),
+        "oof_modeled_cells": int(modeled_cells),
         "hard_gate": bool(hard_gate),
         "pass_cells": pass_cells,
         "total_cells": total_cells,
@@ -3035,7 +3119,7 @@ def evaluate_config(
         f"{_cache_pressure_summary(layer1_cache, layer2_cache, eval_cache)}"
     )
     del events, pred, y_signed, y_bin, payoff, weights
-    gc.collect()
+    _last_gc_ts = _maybe_collect_gc(last_gc_ts=_last_gc_ts, mem_threshold_mb=8192.0, min_interval_s=5.0)
 
     return summary, detail, weights_df
 
@@ -3569,6 +3653,7 @@ def _diverse_subset(
     acquisition: str = "score_novelty_power",
     preselected_cids: Optional[List[str]] = None,
     anchor_high: int = 4,
+    score_keep_fraction: float = 0.8,
 ) -> pd.DataFrame:
     """Score-biased diversity selection.
 
@@ -3599,10 +3684,11 @@ def _diverse_subset(
     work_df = work_df.loc[order_df.index].copy()
     score_series = score_series.loc[work_df.index]
 
-    # Never admit from bottom 50% by score.
+    # Keep a broad high-quality tranche to preserve diversity while avoiding weak tails.
     if len(work_df) > 1:
+        _keep_frac = float(np.clip(score_keep_fraction, 0.30, 1.00))
         _rank = score_series.rank(method="first", ascending=False)
-        work_df = work_df[_rank <= max(1, int(math.ceil(len(work_df) * 0.5)))].copy()
+        work_df = work_df[_rank <= max(1, int(math.ceil(len(work_df) * _keep_frac)))].copy()
         score_series = score_series.loc[work_df.index]
     if work_df.empty:
         return feasible_df.head(0)
@@ -3893,10 +3979,11 @@ def _build_per_cell_feasible_sets(
             min_distance=min_distance,
             max_configs=max_configs_per_cell,
             preselected_cids=[_anchor_cid] if _anchor_cid else None,
+            score_keep_fraction=0.85,
         )
         # If diversity filter left only 1 config, relax min_distance to get a second.
         if len(diverse) < 2 and len(feasible) >= 2:
-            diverse = _diverse_subset(feasible, details, min_distance=min_distance * 0.5, max_configs=max_configs_per_cell)
+            diverse = _diverse_subset(feasible, details, min_distance=min_distance * 0.5, max_configs=max_configs_per_cell, score_keep_fraction=0.85)
         if len(diverse) < 2 and len(feasible) >= 2:
             diverse = feasible.head(2)  # last resort: top-2 by learnability rank
 
@@ -4066,9 +4153,9 @@ def _build_per_bucket_feasible_sets(
         feasible = _rank_by_learnability(feasible)
 
         # Diversity control — ensure at least 2 configs.
-        diverse = _diverse_subset(feasible, details, min_distance=min_distance, max_configs=max_configs_per_bucket)
+        diverse = _diverse_subset(feasible, details, min_distance=min_distance, max_configs=max_configs_per_bucket, score_keep_fraction=0.85)
         if len(diverse) < 2 and len(feasible) >= 2:
-            diverse = _diverse_subset(feasible, details, min_distance=min_distance * 0.5, max_configs=max_configs_per_bucket)
+            diverse = _diverse_subset(feasible, details, min_distance=min_distance * 0.5, max_configs=max_configs_per_bucket, score_keep_fraction=0.85)
         if len(diverse) < 2 and len(feasible) >= 2:
             diverse = feasible.head(2)
 
@@ -4370,51 +4457,66 @@ class TBMObjective:
 
         # 3. Stage-1 fast prune before ridge fitting.
         try:
+            # Tradeable TP-anchor guardrail: constrain effective TP anchor to 1%-4%.
+            # For ATR-normalized TP methods, include average ATR normalization effect.
+            _tp_base = float(c.get("tp_base_pct", c.get("tp_abs_pct", 0.01)))
+            _k_tp = float(c.get("k_tp", 1.0))
+            _tp_method = str(c.get("tp_method", ""))
+            _atr_norm_mean = 1.0
+            if _tp_method in {"atr_norm", "semi_atr_norm"}:
+                _w = int(c.get("base_atr_window", 168))
+                _r_key = f"tp_anchor_atr_norm_mean::{_w}"
+                _cached = eval_cache.get(_r_key, None) if hasattr(eval_cache, "get") else None
+                if _cached is None:
+                    _atr_src = _get_barrier_atr_frame(self.artifacts).replace([np.inf, -np.inf], np.nan)
+                    _med = _atr_src.rolling(_w, min_periods=24).median().fillna(_atr_src.median())
+                    _ratio = (_atr_src / (_med + EPS)).to_numpy(dtype=np.float32, copy=False).ravel()
+                    _ratio = _ratio[np.isfinite(_ratio)]
+                    _atr_norm_mean = float(np.nanmean(_ratio)) if _ratio.size else 1.0
+                    _atr_norm_mean = float(np.clip(_atr_norm_mean, 0.5, 2.0))
+                    try:
+                        eval_cache[_r_key] = _atr_norm_mean
+                    except Exception:
+                        pass
+                else:
+                    _atr_norm_mean = float(_cached)
+            tp_anchor_eff = _k_tp * _tp_base * _atr_norm_mean
+            if tp_anchor_eff < 0.01 or tp_anchor_eff > 0.04:
+                raise optuna.TrialPruned(
+                    f"tp_anchor_out_of_range={tp_anchor_eff:.4f} "
+                    f"(raw={_k_tp * _tp_base:.4f}, atr_norm_mean={_atr_norm_mean:.3f}) not in [0.0100, 0.0400]"
+                )
+
             fast_lift = _fast_geometry_pr_auc_proxy(c)
             trial.report(fast_lift, step=0)
             if fast_lift < 1.1:
                 raise optuna.TrialPruned(f"fast_pr_auc_lift={fast_lift:.3f} < 1.1")
 
             # Low-fidelity evaluation first (shorter horizon of history / fewer folds).
-            # Vectorized SL sweep around proposed sl_as_tp_pct: [v, v-0.1, v+0.1, v-0.2, v+0.2].
-            sl0 = float(c.get("sl_as_tp_pct", 0.5))
-            sl_ladder = np.array([sl0, sl0 - 0.1, sl0 + 0.1, sl0 - 0.2, sl0 + 0.2], dtype=np.float32)
-            sl_ladder = np.clip(sl_ladder, 0.3, 1.2)
-            sl_ladder = np.unique(np.round(sl_ladder, 3))
-
-            low_eval_rows: List[Tuple[float, Dict[str, Any], Dict[str, Any], Dict[str, Any]]] = []
-            for sl_val in sl_ladder:
-                c_low = dict(c)
-                c_low["sl_as_tp_pct"] = float(sl_val)
-                c_low["_low_fidelity"] = True
-                res_low, det_low, weights_df = evaluate_config(
-                    self.artifacts,
-                    c_low,
-                    horizons=self.horizons,
-                    bucket_masks=self.bucket_masks,
-                    layer1_cache=self.layer1_cache,
-                    layer2_cache=self.layer2_cache,
-                    eval_cache=self.eval_cache,
-                    detailed_slices=False,
-                    target_cell_filter=self.target_cell,
-                    collect_weights=False, # Disabled for optimization trials to save I/O
-                )
-                if not res_low:
-                    continue
-
-                if weights_df is not None and not weights_df.empty:
-                    self.write_weights_fn(weights_df)
-                    self.total_weights_written += len(weights_df)
-                    del weights_df
-
-                low_score_i = _optuna_objective_score(res_low)
-                low_eval_rows.append((low_score_i, res_low, det_low, c_low))
-
-            if not low_eval_rows:
+            # Evaluate exactly the Optuna-suggested SL value; sampler explores SL dimension.
+            best_low_cfg = dict(c)
+            best_low_cfg["_low_fidelity"] = True
+            res_low, det_low, weights_df = evaluate_config(
+                self.artifacts,
+                best_low_cfg,
+                horizons=self.horizons,
+                bucket_masks=self.bucket_masks,
+                layer1_cache=self.layer1_cache,
+                layer2_cache=self.layer2_cache,
+                eval_cache=self.eval_cache,
+                detailed_slices=False,
+                target_cell_filter=self.target_cell,
+                collect_weights=False, # Disabled for optimization trials to save I/O
+            )
+            if not res_low:
                 return -1.0
 
-            low_eval_rows.sort(key=lambda x: x[0], reverse=True)
-            low_score, res_low, det_low, best_low_cfg = low_eval_rows[0]
+            if weights_df is not None and not weights_df.empty:
+                self.write_weights_fn(weights_df)
+                self.total_weights_written += len(weights_df)
+                del weights_df
+
+            low_score = _optuna_objective_score(res_low)
             trial.report(low_score, step=1)
             trial.set_user_attr("low_stage2_score", float(low_score))
             trial.set_user_attr("low_auc", float(_safe_float(res_low.get("median_cell_auc", float("nan")), float("nan"))))
@@ -4425,8 +4527,19 @@ class TBMObjective:
 
             _low_auc = float(_safe_float(res_low.get("median_cell_auc", float("nan")), float("nan")))
             _low_ess = float(_safe_float(res_low.get("ess", float("nan")), float("nan")))
+            _low_flip_rate = float(_safe_float(res_low.get("oof_flip_rate", float("nan")), float("nan")))
+            _low_ic_lbl = float(_safe_float(res_low.get("median_cell_ic_label", float("nan")), float("nan")))
             if (math.isfinite(_low_auc) and _low_auc < 0.52) or (math.isfinite(_low_ess) and _low_ess < 500):
                 raise optuna.TrialPruned(f"low_fidelity_gate failed: auc={_low_auc:.4f} ess={_low_ess:.1f}")
+            if (
+                math.isfinite(_low_flip_rate)
+                and math.isfinite(_low_ic_lbl)
+                and _low_flip_rate >= 0.75
+                and _low_ic_lbl < 0.0
+            ):
+                raise optuna.TrialPruned(
+                    f"low_fidelity_gate failed: flip_rate={_low_flip_rate:.3f} median_ic_label={_low_ic_lbl:.4f}"
+                )
 
             # Promote only stronger low-fidelity trials to full evaluation.
             promote_threshold = float(self.runtime_cfg.get("optuna_high_fidelity_threshold", 0.56))
@@ -4713,11 +4826,11 @@ def run(args: argparse.Namespace) -> None:
         study_s1 = optuna.create_study(
             direction="maximize", 
             sampler=_optuna_sampler(),
-            pruner=optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=1, interval_steps=1)
+            pruner=optuna.pruners.PercentilePruner(40.0, n_startup_trials=5, n_warmup_steps=1, interval_steps=1)
         )
 
-        # Reduced trials per cell as requested (e.g., 100 x 12 = 1200 total)
-        n_trials_s1 = 100 if not args.quick else 10
+        # Reduced trials per cell as requested (e.g., 150 x 12 = 1800 total)
+        n_trials_s1 = 150 if not args.quick else 10
         study_s1.optimize(obj_s1, n_trials=n_trials_s1, n_jobs=_optuna_n_jobs())
 
         
@@ -4865,13 +4978,13 @@ def run(args: argparse.Namespace) -> None:
         _sorted_best = _best_pool.assign(_score=_score).sort_values("_score", ascending=False).drop(columns=["_score"])
 
         _candidate_set = _sorted_best.head(min(50, len(_sorted_best))).copy()
-        _diverse_pool = _diverse_subset(_candidate_set, details, min_distance=1.0, max_configs=20)
+        _diverse_pool = _diverse_subset(_candidate_set, details, min_distance=1.0, max_configs=20, score_keep_fraction=0.90)
         if len(_diverse_pool) < min(20, len(_candidate_set)) and len(_sorted_best) > len(_candidate_set):
             _candidate_set = _sorted_best.head(min(100, len(_sorted_best))).copy()
-            _diverse_pool = _diverse_subset(_candidate_set, details, min_distance=1.0, max_configs=20)
+            _diverse_pool = _diverse_subset(_candidate_set, details, min_distance=1.0, max_configs=20, score_keep_fraction=0.90)
         if len(_diverse_pool) < min(20, len(_candidate_set)):
             for _d in (0.9, 0.8, 0.7, 0.6, 0.5):
-                _diverse_pool = _diverse_subset(_candidate_set, details, min_distance=float(_d), max_configs=20)
+                _diverse_pool = _diverse_subset(_candidate_set, details, min_distance=float(_d), max_configs=20, score_keep_fraction=0.90)
                 if len(_diverse_pool) >= min(20, len(_candidate_set)):
                     break
 

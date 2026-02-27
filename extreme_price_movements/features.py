@@ -448,44 +448,15 @@ def _robust_obs_var_per_col(df: pd.DataFrame) -> np.ndarray:
 def _kalman_local_level_df(y_df: pd.DataFrame, lambda_qr: float, r_base: np.ndarray | None = None):
     """Local-level Kalman filter: y_t = x_t + eps_t, x_t = x_{t-1} + eta_t."""
     y = y_df.to_numpy(dtype=np.float64)
-    t_len, n_cols = y.shape
     r = _robust_obs_var_per_col(y_df) if r_base is None else np.asarray(r_base, dtype=np.float64)
-    r = np.clip(r, 1e-8, None)
-    q = np.clip(lambda_qr, 1e-8, None) * r
 
-    x = np.full_like(y, np.nan, dtype=np.float64)
-    innov_var = np.full_like(y, np.nan, dtype=np.float64)
-    p_state = np.full_like(y, np.nan, dtype=np.float64)
-
-    # initialize from first finite observation or zero fallback
-    first_obs = np.where(np.isfinite(y[0]), y[0], 0.0)
-    x_prev = first_obs.copy()
-    p_prev = r.copy()
-
-    for t in range(t_len):
-        y_t = y[t]
-        x_pred = x_prev
-        p_pred = p_prev + q
-
-        s_t = p_pred + r
-        k_t = p_pred / np.clip(s_t, 1e-12, None)
-        innov_t = y_t - x_pred
-
-        valid = np.isfinite(y_t)
-        x_new = np.where(valid, x_pred + k_t * innov_t, x_pred)
-        p_new = np.where(valid, (1.0 - k_t) * p_pred, p_pred)
-
-        x[t] = x_new
-        innov_var[t] = s_t
-        p_state[t] = p_new
-
-        x_prev = x_new
-        p_prev = p_new
+    # Use optimized Numba implementation
+    x_out, innov_var_out, p_state_out = ff.numba_kalman_filter(y, float(lambda_qr), r)
 
     return (
-        pd.DataFrame(x, index=y_df.index, columns=y_df.columns).astype(np.float32),
-        pd.DataFrame(innov_var, index=y_df.index, columns=y_df.columns).astype(np.float32),
-        pd.DataFrame(p_state, index=y_df.index, columns=y_df.columns).astype(np.float32),
+        pd.DataFrame(x_out, index=y_df.index, columns=y_df.columns).astype(np.float32),
+        pd.DataFrame(innov_var_out, index=y_df.index, columns=y_df.columns).astype(np.float32),
+        pd.DataFrame(p_state_out, index=y_df.index, columns=y_df.columns).astype(np.float32),
         pd.Series(r.astype(np.float32), index=y_df.columns),
     )
 

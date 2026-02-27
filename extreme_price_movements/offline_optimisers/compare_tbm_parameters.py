@@ -4376,45 +4376,31 @@ class TBMObjective:
                 raise optuna.TrialPruned(f"fast_pr_auc_lift={fast_lift:.3f} < 1.1")
 
             # Low-fidelity evaluation first (shorter horizon of history / fewer folds).
-            # Vectorized SL sweep around proposed sl_as_tp_pct: [v, v-0.1, v+0.1, v-0.2, v+0.2].
-            sl0 = float(c.get("sl_as_tp_pct", 0.5))
-            sl_ladder = np.array([sl0, sl0 - 0.1, sl0 + 0.1, sl0 - 0.2, sl0 + 0.2], dtype=np.float32)
-            sl_ladder = np.clip(sl_ladder, 0.3, 1.2)
-            sl_ladder = np.unique(np.round(sl_ladder, 3))
+            c_low = dict(c)
+            c_low["_low_fidelity"] = True
+            res_low, det_low, weights_df = evaluate_config(
+                self.artifacts,
+                c_low,
+                horizons=self.horizons,
+                bucket_masks=self.bucket_masks,
+                layer1_cache=self.layer1_cache,
+                layer2_cache=self.layer2_cache,
+                eval_cache=self.eval_cache,
+                detailed_slices=False,
+                target_cell_filter=self.target_cell,
+                collect_weights=False,  # Disabled for optimization trials to save I/O
+            )
 
-            low_eval_rows: List[Tuple[float, Dict[str, Any], Dict[str, Any], Dict[str, Any]]] = []
-            for sl_val in sl_ladder:
-                c_low = dict(c)
-                c_low["sl_as_tp_pct"] = float(sl_val)
-                c_low["_low_fidelity"] = True
-                res_low, det_low, weights_df = evaluate_config(
-                    self.artifacts,
-                    c_low,
-                    horizons=self.horizons,
-                    bucket_masks=self.bucket_masks,
-                    layer1_cache=self.layer1_cache,
-                    layer2_cache=self.layer2_cache,
-                    eval_cache=self.eval_cache,
-                    detailed_slices=False,
-                    target_cell_filter=self.target_cell,
-                    collect_weights=False, # Disabled for optimization trials to save I/O
-                )
-                if not res_low:
-                    continue
-
-                if weights_df is not None and not weights_df.empty:
-                    self.write_weights_fn(weights_df)
-                    self.total_weights_written += len(weights_df)
-                    del weights_df
-
-                low_score_i = _optuna_objective_score(res_low)
-                low_eval_rows.append((low_score_i, res_low, det_low, c_low))
-
-            if not low_eval_rows:
+            if not res_low:
                 return -1.0
 
-            low_eval_rows.sort(key=lambda x: x[0], reverse=True)
-            low_score, res_low, det_low, best_low_cfg = low_eval_rows[0]
+            if weights_df is not None and not weights_df.empty:
+                self.write_weights_fn(weights_df)
+                self.total_weights_written += len(weights_df)
+                del weights_df
+
+            low_score = _optuna_objective_score(res_low)
+            best_low_cfg = c_low
             trial.report(low_score, step=1)
             trial.set_user_attr("low_stage2_score", float(low_score))
             trial.set_user_attr("low_auc", float(_safe_float(res_low.get("median_cell_auc", float("nan")), float("nan"))))

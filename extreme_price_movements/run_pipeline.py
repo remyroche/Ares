@@ -80,17 +80,13 @@ def _resolve_path(base_dir: str, path: str) -> str:
 def _normalize_cfg_paths(cfg: dict) -> None:
     """
     Normalize relative config paths to stable absolute paths independent of cwd.
-
-    data_root in CFG defaults to "../data" and is intended relative to the
-    package directory (extreme_price_movements/), while reports_root/hf_data_dir
-    are project-root relative.
     """
-    module_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(module_dir)
+    # Resolve paths relative to the project root (parent of this script's directory)
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-    cfg["data_root"] = _resolve_path(module_dir, str(cfg.get("data_root", "../data")))
-    cfg["reports_root"] = _resolve_path(project_root, str(cfg.get("reports_root", "extreme_price_movements/reports")))
-    cfg["hf_data_dir"] = _resolve_path(project_root, str(cfg.get("hf_data_dir", "extreme_price_movements/15m_ohlcv")))
+    cfg["data_root"] = _resolve_path(project_root, str(cfg.get("data_root", "data")))
+    cfg["reports_root"] = _resolve_path(project_root, str(cfg.get("reports_root", "reports")))
+    cfg["hf_data_dir"] = _resolve_path(project_root, str(cfg.get("hf_data_dir", "15m_ohlcv")))
 
 
 def _configure_report_roots(cfg: dict) -> None:
@@ -256,7 +252,8 @@ def run_features(cfg, ts_override=None, force_recompute: bool = False):
     _maintenance_checkpoint("features:start")
     if ts_override:
         try:
-            ts_sig = pd.to_datetime(ts_override, format="%Y%m%d_%H%M%S").tz_localize("UTC")
+            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
+            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
         except ValueError:
             ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
     else:
@@ -279,7 +276,8 @@ def run_backtest(cfg, ts_override=None):
     _maintenance_checkpoint("backtest:start")
     if ts_override:
         try:
-            ts_sig = pd.to_datetime(ts_override, format="%Y%m%d_%H%M%S").tz_localize("UTC")
+            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
+            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
         except ValueError:
             ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
     else:
@@ -302,11 +300,12 @@ def run_backtest(cfg, ts_override=None):
     _maintenance_checkpoint("backtest:end")
 
 
-def run_train(cfg, ts_override=None):
+def run_train(cfg, ts_override=None, base_only=False, meta_only=False):
     _maintenance_checkpoint("train:start")
     if ts_override:
         try:
-            ts_sig = pd.to_datetime(ts_override, format="%Y%m%d_%H%M%S").tz_localize("UTC")
+            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
+            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
         except ValueError:
             ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
     else:
@@ -315,7 +314,7 @@ def run_train(cfg, ts_override=None):
             tprint("ERROR: No feature directories found. Run feature_generation first.")
             return
 
-    tprint(f"Train mode. ts_sig={ts_sig}")
+    tprint(f"Train mode. ts_sig={ts_sig} base_only={base_only} meta_only={meta_only}")
 
     # TP/SL optimisation happens during label generation (see training.generate_label_datasets).
     # Check if labels already exist before refreshing to avoid unnecessary recomputation.
@@ -323,6 +322,9 @@ def run_train(cfg, ts_override=None):
     if _label_artifacts_ready(cfg, ts_sig):
         tprint("Label artifacts already exist, skipping label refresh...")
     else:
+        if meta_only:
+             tprint("ERROR: meta_only requested but labels are missing. Run labels mode first.")
+             return
         tprint("Refreshing labels to optimise TP:SL widths before model training (optimise_tpsl_ratio)...")
         run_label_generation_step_v2(ts_sig, None, cfg, store, None)
 
@@ -330,7 +332,11 @@ def run_train(cfg, ts_override=None):
         tprint("ERROR: Label generation did not produce required artifacts. Aborting training.")
         return
 
-    state = run_training_step(ts_sig, cfg, store=store, margin_symbols=None)
+    if meta_only:
+        run_train_meta(cfg, ts_override=ts_override)
+        return
+
+    state = run_training_step(ts_sig, cfg, store=store, margin_symbols=None, base_only=base_only)
     if state:
         tprint("TRAINING PIPELINE COMPLETE")
         
@@ -348,7 +354,8 @@ def run_risk_opt(cfg, ts_override=None):
     _maintenance_checkpoint("risk_opt:start")
     if ts_override:
         try:
-            ts_sig = pd.to_datetime(ts_override, format="%Y%m%d_%H%M%S").tz_localize("UTC")
+            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
+            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
         except ValueError:
             ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
     else:
@@ -375,7 +382,8 @@ def run_ridge_sizer(cfg, ts_override=None):
     _maintenance_checkpoint("ridge_sizer:start")
     if ts_override:
         try:
-            ts_sig = pd.to_datetime(ts_override, format="%Y%m%d_%H%M%S").tz_localize("UTC")
+            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
+            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
         except ValueError:
             ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
     else:
@@ -441,7 +449,8 @@ def run_all(cfg, ts_override=None):
     # Final Summary
     if ts_override:
         try:
-            ts_sig = pd.to_datetime(ts_override, format="%Y%m%d_%H%M%S").tz_localize("UTC")
+            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
+            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
         except ValueError:
             ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
     else:
@@ -489,7 +498,8 @@ def run_train_meta(cfg, ts_override=None):
     _maintenance_checkpoint("train_meta:start")
     if ts_override:
         try:
-            ts_sig = pd.to_datetime(ts_override, format="%Y%m%d_%H%M%S").tz_localize("UTC")
+            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
+            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
         except ValueError:
             ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
     else:
@@ -535,7 +545,8 @@ def run_optimise(cfg, ts_override=None):
     _maintenance_checkpoint("optimise:start")
     if ts_override:
         try:
-            ts_sig = pd.to_datetime(ts_override, format="%Y%m%d_%H%M%S").tz_localize("UTC")
+            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
+            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
         except ValueError:
             ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
     else:
@@ -573,6 +584,7 @@ def run_optimise(cfg, ts_override=None):
         trades=trades, atr_15m=atr_15m, output_path=params_path,
         policy=Policy(mode="train_baseline", params_path=params_path),
         state_path=state_file if os.path.exists(state_file) else None,
+        store_base_dir=cfg.get("data_root"),
     )
     tprint(f"OPTIMISE COMPLETE: {params_path}")
     
@@ -585,7 +597,7 @@ def run_optimise(cfg, ts_override=None):
     try:
         from extreme_price_movements.reports.bucket_report import report_optimise
         run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
-        rp = report_optimise(run_id, cfg["data_root"])
+        rp = report_optimise(run_id, cfg["data_root"], base_dir=cfg.get('reports_root'))
         tprint(f"Optimise bucket report: {rp}")
     except Exception as _re:
         tprint(f"WARNING: optimise bucket report failed: {_re}")
@@ -725,6 +737,8 @@ def main():
     parser.add_argument("--force-feature-recompute", action="store_true", help="Force full recompute in features mode")
     parser.add_argument("--horizons", type=int, nargs="+", default=[2, 4, 8], help="Horizons to use for labels/training")
     parser.add_argument("--ts", dest="ts_override", help="Timestamp override (YYYYMMDD_HHMMSS)")
+    parser.add_argument("--base-only", action="store_true", help="Only train base models (alpha, spike, exh)")
+    parser.add_argument("--meta-only", action="store_true", help="Only train meta models (runs train_meta)")
     args = parser.parse_args()
 
     cfg = CFG.copy()
@@ -732,15 +746,9 @@ def main():
     _normalize_cfg_paths(cfg)
     if args.perps:
         cfg["use_perps"] = True
-        cfg["data_root"] = _append_suffix(cfg.get("data_root", "../data"), "_perp")
-        cfg["reports_root"] = _append_suffix(
-            cfg.get("reports_root", os.path.join("extreme_price_movements", "reports")),
-            "_perp",
-        )
-        cfg["hf_data_dir"] = _append_suffix(
-            cfg.get("hf_data_dir", os.path.join("extreme_price_movements", "15m_ohlcv")),
-            "_perp",
-        )
+        cfg["data_root"] = _append_suffix(cfg.get("data_root", "data"), "_perp")
+        cfg["reports_root"] = _append_suffix(cfg.get("reports_root", "reports"), "_perp")
+        cfg["hf_data_dir"] = _append_suffix(cfg.get("hf_data_dir", "15m_ohlcv"), "_perp")
         os.environ["EPM_HF_DATA_DIR"] = str(cfg["hf_data_dir"])
         cfg = enable_perp_feature_keys(cfg)
         # Perp-mode fee model: 0.10% round-trip (5 bps/side).
@@ -755,7 +763,7 @@ def main():
     elif args.mode == "features":
         run_features(cfg, ts_override=args.ts_override, force_recompute=bool(args.force_feature_recompute))
     elif args.mode == "train":
-        run_train(cfg, ts_override=args.ts_override)
+        run_train(cfg, ts_override=args.ts_override, base_only=args.base_only, meta_only=args.meta_only)
     elif args.mode == "train_meta":
         run_train_meta(cfg, ts_override=args.ts_override)
     elif args.mode == "ridge_sizer":

@@ -3,7 +3,7 @@
 Usage example:
     python -m extreme_price_movements.offline_optimisers.preds_metrics_computations \
       --input data/artifacts/<run_id>/meta_oof/meta_oof_long_tf_H4.parquet \
-      --outdir extreme_price_movements/offline_optimisers/reports/preds_metrics \
+      --outdir offline_optimisers/reports/preds_metrics \
       --ret-all
 
 Expected minimum columns (or accepted aliases):
@@ -28,6 +28,9 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 from scipy import stats as scipy_stats
+
+from extreme_price_movements.utils import tprint
+from extreme_price_movements.path_utils import resolve_data_root, resolve_reports_dir
 
 FEE_RT: np.float32 = np.float32(0.005)  # legacy default (0.5% round-trip)
 FEE_LEVELS: Tuple[float, ...] = (0.002, 0.005)  # 0.2% and 0.5% round-trip
@@ -898,7 +901,7 @@ def compute_topk_metrics(
 def _normalize_meta_columns(df: pd.DataFrame) -> pd.DataFrame:
     col_map = {}
     aliases = {
-        "ts": ["ts", "timestamp", "__ts__"],
+        "ts": ["ts", "timestamp", "__ts__", "index"],
         "score": ["score", "oof_pred", "pred", "oof_probs", "base_score"],
         "asset": ["asset", "symbol", "__symbol__", "asset_id"],
     }
@@ -1193,20 +1196,20 @@ Examples:
   # Meta-model OOF (single horizon):
   python -m extreme_price_movements.offline_optimisers.preds_metrics_computations \\
     --input data/artifacts/20260214_190000/meta_oof/meta_oof_long_tf_H4.parquet \\
-    --outdir extreme_price_movements/offline_optimisers/reports/preds_metrics/long_tf
+    --outdir offline_optimisers/reports/preds_metrics/long_tf
 
   # Ridge sizer OOF (cross-horizon combined signal) with regime features + optimise params:
   python -m extreme_price_movements.offline_optimisers.preds_metrics_computations \\
     --input data/artifacts/20260214_190000/ridge_sizer/ridge_sizer_oof.parquet \\
-    --outdir extreme_price_movements/offline_optimisers/reports/preds_metrics/ridge \\
+    --outdir offline_optimisers/reports/preds_metrics/ridge \\
     --regime-parquet data/artifacts/20260214_190000/labels/train_long_tf_4.parquet \\
-    --optimise-params extreme_price_movements/reports/20260214_190000/bucket_params.json
+    --optimise-params reports/20260214_190000/bucket_params.json
 """,
     )
     parser.add_argument("--input", required=True, help="Path to OOF CSV/Parquet")
     parser.add_argument(
         "--outdir",
-        default="extreme_price_movements/offline_optimisers/reports/preds_metrics",
+        default="offline_optimisers/reports/preds_metrics",
         help="Output directory for CSV diagnostics",
     )
     parser.add_argument("--ret-column", help="Explicit forward return column to use")

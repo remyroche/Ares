@@ -1,5 +1,5 @@
 # Base Training Report — 20260214_190000
-Generated: 2026-02-22 14:49 UTC
+Generated: 2026-02-27 08:12 UTC
 
 ## Alpha Model Performance per (Bucket, Horizon)
 | Bucket | H | Winner algo | AUC (raw) | AUC (weighted) | IC | Prec@10 | N features |
@@ -20,7 +20,7 @@ Generated: 2026-02-22 14:49 UTC
 ## Per-Bucket Summary (median across horizons)
 | Bucket | Deployed Hs | Primary H | Median AUC (weighted) | Median IC |
 |---|---|---|---|---|
-| MR_long | [2, 4, 8] | 8 | — | — |
+| MR_long | [2, 4, 8] | 2 | — | — |
 | MR_short | [2, 4, 8] | 8 | — | — |
-| TF_long | [2, 4, 8] | 2 | — | — |
-| TF_short | [2, 4, 8] | 4 | — | — |
+| TF_long | [2, 4, 8] | 4 | — | — |
+| TF_short | [2, 4, 8] | 2 | — | — |

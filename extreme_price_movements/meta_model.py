@@ -5,8 +5,8 @@ Optional Optuna HPO on the winner.
 """
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
+from pathlib import Path
 
 import importlib.util
 import numpy as np
@@ -24,6 +24,7 @@ from extreme_price_movements.feature_selection_extreme_events import (
 )
 from extreme_price_movements.purged_cv import PurgedKFold
 from extreme_price_movements.utils import tprint
+from extreme_price_movements.path_utils import resolve_reports_dir
 from extreme_price_movements.policy_ml import (
     MetaClassifierSelectionConfig,
     pick_meta_classifier_by_utility_top30,
@@ -46,7 +47,7 @@ def _safe_spearman(a, b):
 
 
 class MetaModel:
-    def __init__(self, strategy_name: Optional[str] = None):
+    def __init__(self, strategy_name: Optional[str] = None, reports_dir: str | Path | None = None):
         self.strategy_name = strategy_name
         self.model = None
         self._model_type = None
@@ -54,6 +55,7 @@ class MetaModel:
         self.oof_probs: Optional[np.ndarray] = None
         self.report_rows: List[dict] = []
         self.score_sign: int = 1
+        self._reports_dir = resolve_reports_dir(reports_dir)
 
     def prepare_meta_features(self, preds, feats_df, pred_col_name="pred_logit"):
         p = np.clip(np.asarray(preds, dtype=float), 1e-4, 1 - 1e-4)
@@ -493,7 +495,7 @@ class MetaModel:
         self.report_rows = records
 
         # Save race report
-        report_dir = Path("extreme_price_movements/reports")
+        report_dir = self._reports_dir
         report_dir.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(records).to_csv(
             report_dir / f"meta_model_{self.strategy_name or 'generic'}_race.csv",
@@ -531,7 +533,7 @@ class MetaClassifierModel:
     LABEL_THRESHOLDS = [0.39, 0.26, 0.13]  # top-K fractions
     FEE_PER_ROUND_TRIP = 0.005  # 0.5% total round-trip fee
 
-    def __init__(self, strategy_name: Optional[str] = None):
+    def __init__(self, strategy_name: Optional[str] = None, reports_dir: str | Path | None = None):
         self.strategy_name = strategy_name
         self.model = None
         self._model_type: Optional[str] = None
@@ -540,6 +542,7 @@ class MetaClassifierModel:
         self.report_rows: List[dict] = []
         self.label_threshold: float = 0.26  # default
         self.score_sign: int = 1
+        self._reports_dir = resolve_reports_dir(reports_dir)
 
     def prepare_meta_features(self, preds, feats_df, pred_col_name="pred_logit"):
         p = np.clip(np.asarray(preds, dtype=float), 1e-4, 1 - 1e-4)
@@ -941,7 +944,7 @@ class MetaClassifierModel:
         self.model = {"kind": kind, "models": [final_model], "multiclass": True}
 
         # Save race report
-        report_dir = Path("extreme_price_movements/reports")
+        report_dir = self._reports_dir
         report_dir.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(records).to_csv(
             report_dir / f"meta_clf_{self.strategy_name or 'generic'}_race.csv",

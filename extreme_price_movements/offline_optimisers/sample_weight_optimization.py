@@ -19,10 +19,10 @@ try:
 except Exception:  # pragma: no cover - optional dependency
     optuna = None
 
-from ..purged_cv import IntervalPurgedKFold
-from ..utils import tprint
-from ..config import CFG, TEST_FEATURE_KEYS
-from ..training_defaults import get_sample_weight_opt_defaults, get_sample_weight_eval_model_defaults
+from extreme_price_movements.purged_cv import IntervalPurgedKFold
+from extreme_price_movements.utils import tprint
+from extreme_price_movements.config import CFG, TEST_FEATURE_KEYS
+from extreme_price_movements.training_defaults import get_sample_weight_opt_defaults, get_sample_weight_eval_model_defaults
 
 
 EPS = 1e-8
@@ -346,7 +346,10 @@ def check_component_redundancy(
 
     for i in range(len(arrays)):
         for j in range(i + 1, len(arrays)):
-            r, _ = spearmanr(arrays[i], arrays[j])
+            if np.std(arrays[i]) < 1e-12 or np.std(arrays[j]) < 1e-12:
+                r = 0.0
+            else:
+                r, _ = spearmanr(arrays[i], arrays[j])
             r = float(0.0 if not np.isfinite(r) else r)
             max_corr = max(max_corr, abs(r))
             if abs(r) > threshold:

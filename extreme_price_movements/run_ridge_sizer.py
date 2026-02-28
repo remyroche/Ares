@@ -108,13 +108,19 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
     
     # Parse model names into (base_bucket, col_name)
     # Patterns: long_mr_H2 -> (long_mr, reg_H2), long_mr_clf -> (long_mr, clf),
-    #           long_mr -> (long_mr, reg)  [legacy single-regressor format]
+    #           long_mr_utility -> (long_mr, utility), etc.
     _h_pat = re.compile(r'^(.+)_H(\d+)$')
+    _aux_heads = {'utility', 'mae_q70', 'mfe', 'dur'}
     buckets = {}
     for name, df in raw_dfs.items():
         if name.endswith("_clf"):
             bucket = name[:-4]
             col_name = "clf"
+        elif any(name.endswith(f"_{h}") for h in _aux_heads):
+            # Find which aux head it is
+            h_suffix = next(h for h in _aux_heads if name.endswith(f"_{h}"))
+            bucket = name[:-(len(h_suffix)+1)]
+            col_name = h_suffix
         else:
             m = _h_pat.match(name)
             if m:

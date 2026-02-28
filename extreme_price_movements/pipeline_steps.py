@@ -65,7 +65,9 @@ def _expected_feature_keys_from_cfg(cfg) -> set[str]:
 def _align_features_to_panel(feats: dict, panel: dict[str, pd.DataFrame], symbols: list[str]) -> dict:
     close = panel["close"]
     out = {}
-    for k, df in feats.items():
+    keys = list(feats.keys())
+    for k in keys:
+        df = feats.pop(k)
         if not isinstance(df, pd.DataFrame):
             continue
         idx = df.index
@@ -74,7 +76,10 @@ def _align_features_to_panel(feats: dict, panel: dict[str, pd.DataFrame], symbol
                 df.index = idx.tz_localize("UTC")
             else:
                 df.index = idx.tz_convert("UTC")
-        out[k] = df.reindex(index=close.index, columns=symbols).astype(np.float32)
+        out[k] = df.reindex(index=close.index, columns=symbols).astype(np.float32, copy=False)
+        del df
+    import gc as _gc
+    _gc.collect()
     return out
 
 
@@ -414,16 +419,16 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
         save_artifact_df(df, cfg["data_root"], run_id, "labels", name)
 
     try:
-        rp = report_labels(run_id, cfg["data_root"], cfg)
+        rp = report_labels(run_id, cfg["data_root"], cfg, base_dir=cfg.get('reports_root'))
         tprint(f"Label bucket report: {rp}")
     except Exception as _re:
         tprint(f"WARNING: label bucket report failed: {_re}")
     tprint("STEP: LABEL GENERATION COMPLETE")
 
-def run_training_step(ts_sig, cfg, store=None, margin_symbols=None):
+def run_training_step(ts_sig, cfg, store=None, margin_symbols=None, base_only=False):
     """Train all models from label artifacts. Saves trained state to disk."""
     cfg = apply_offline_optimizer_best_params(dict(cfg))
-    tprint("STEP: MODEL TRAINING START")
+    tprint(f"STEP: MODEL TRAINING START (base_only={base_only})")
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     datasets = {}
@@ -539,7 +544,7 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None):
     # Inject run_id so meta OOF files are saved to the correct artifacts directory
     cfg["run_id"] = run_id
     with Timer("Model Training"):
-        trained_bundle = train_models_from_artifacts(datasets, cfg)
+        trained_bundle = train_models_from_artifacts(datasets, cfg, train_meta=not base_only)
         alpha_metrics = trained_bundle.get("alpha_oof_metrics", {}) if trained_bundle else {}
     
     # Specialist Models are now trained inside train_models_from_artifacts
@@ -636,6 +641,7 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None):
             datasets=datasets or {},
             specialist_models=bundle.get("specialist_models") if bundle else None,
             extra_info=alpha_metrics,
+            base_dir=cfg.get('reports_root'),
         )
         tprint(f"Training report saved to {report_path}")
     except Exception as e:
@@ -643,12 +649,12 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None):
 
     # Per-bucket/horizon detailed reports
     try:
-        rp = report_base_training(run_id, bundle or {}, cfg)
+        rp = report_base_training(run_id, bundle or {}, cfg, base_dir=cfg.get('reports_root'))
         tprint(f"Base training bucket report: {rp}")
     except Exception as _re:
         tprint(f"WARNING: base training bucket report failed: {_re}")
     try:
-        rp = report_meta_training(run_id, cfg["data_root"], bundle or {}, cfg)
+        rp = report_meta_training(run_id, cfg["data_root"], bundle or {}, cfg, base_dir=cfg.get('reports_root'))
         tprint(f"Meta training bucket report: {rp}")
     except Exception as _re:
         tprint(f"WARNING: meta training bucket report failed: {_re}")
@@ -661,7 +667,7 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
     """Run ridge position sizer to learn optimal meta model combination weights.
     
     Processes each bucket (long_mr, long_tf, short_mr, short_tf) separately,
-    combining per-horizon regressors (H2, H4, H8) + classifier + agreement
+    combining per-horizon regressors (H1, H2, H4) + classifier + agreement
     features into a single Ridge combiner per bucket.
     
     Args:
@@ -898,7 +904,7 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
         "directions": {d: r['buckets'] for d, r in all_direction_results.items()},
     }
     try:
-        rp = report_ridge_sizer(run_id, _ridge_result)
+        rp = report_ridge_sizer(run_id, _ridge_result, base_dir=cfg.get('reports_root'))
         tprint(f"Ridge sizer bucket report: {rp}")
     except Exception as _re:
         tprint(f"WARNING: ridge sizer bucket report failed: {_re}")
@@ -1066,6 +1072,7 @@ def run_risk_optimization_step(ts_sig, margin_symbols, cfg, store, state_file):
             run_id=run_id,
             cfg=cfg,
             granular_risk=granular,
+            base_dir=cfg.get('reports_root'),
         )
         tprint(f"Risk optimization report saved to {report_path}")
     except Exception as e:
@@ -1986,6 +1993,7 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                 trades=test_trades,
                 signal_params=best_signal_params,
                 fee_rate=(cost.fee_side + cost.slippage_side),
+                base_dir=cfg.get('reports_root'),
             )
             tprint(f"Backtest report saved to {report_path}")
         except Exception as e:

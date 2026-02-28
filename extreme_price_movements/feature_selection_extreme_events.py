@@ -658,6 +658,9 @@ def mdi_feature_selection_v3(
         if not splits_curr:
              tprint("MDI: No splits for current subsample. Breaking.")
              break
+        
+        import gc
+        gc.collect()
 
         depth = suggest_depth(p, X_curr_np.shape[0])
 
@@ -808,19 +811,25 @@ def mdi_feature_selection_v3(
         metrics_df_sorted = metrics_df.sort_values('composite_rank')
 
         # If we reached the target, we are done
+        # RFE: Prune bottom 25% features (but at least 1, and no more than needed to reach end_features)
         if p <= end_features:
             tprint(f"MDI RFE: Reached target {p} features. Stopping.")
             break
 
-        # Determine how many to drop
-        remove_features = p - end_features
-        n_drop = int(remove_features / 4) + 5
-        n_drop = min(n_drop, remove_features)
-
-        tprint(f"MDI RFE: p={p}, dropping {n_drop} features. (Next p={p-n_drop})")
-
-        survivors = metrics_df_sorted.index[:-n_drop].tolist()
-        current_features = survivors
+        n_to_drop = max(1, int(p * 0.25))
+        if p - n_to_drop < end_features:
+            n_to_drop = max(0, p - end_features)
+        
+        if n_to_drop == 0:
+            tprint("MDI: Targeted feature count reached.")
+            break
+            
+        tprint(f"MDI: Dropping {n_to_drop} features (remaining: {p - n_to_drop})...")
+        current_features = metrics_df_sorted.index[:-n_to_drop].tolist()
+        
+        # Memory cleanup after each RFE iteration
+        del X_curr_np
+        gc.collect()
 
     # --- Post-Loop Cumulative Cap for Noise Tail Removal ---
     # Even if RFE stopped at end_features (or if we just ran once),
@@ -938,6 +947,8 @@ def mdi_feature_selection_v3(
     
     selected = selected_by_cap
 
+    import gc
+    gc.collect()
     return MDISelectionResult(metrics_df_sorted, selected, kept_features)
 
 # Backwards compatibility alias if needed, or update call sites

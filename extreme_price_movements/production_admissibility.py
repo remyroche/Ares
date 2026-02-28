@@ -133,7 +133,7 @@ def compute_prod_aligned_tp_params(
                     "atr_q": float(atr_q),
                     "q": qvf,
                     "alpha": alpha_i,
-                    "scaling": {"s2": float(s2), "s4": float(s4), "s8": float(s8)},
+                    "scaling": {"s1": float(s1), "s2": float(s2), "s4": float(s4), "s8": float(s8)},
                     "tp_center_h2": float(tp_center_h2),
                 }
             )

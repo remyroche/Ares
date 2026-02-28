@@ -92,7 +92,8 @@ def equity_curve_from_returns(r: np.ndarray, equity0: float = 1.0) -> np.ndarray
     """Build compounded equity curve from per-period returns."""
     r = np.asarray(r, dtype=float)
     if np.any(r <= -1.0):
-        raise ValueError("r_t <= -1 found; log-growth undefined.")
+        # Clip to -0.9999 to allow log computation while reflecting catastrophic loss
+        r = np.clip(r, -0.9999, None)
     return float(equity0) * np.cumprod(1.0 + r)
 
 

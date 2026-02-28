@@ -40,22 +40,37 @@ try:
 except Exception:
     lgb = None
 
-# Add project root to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
 # Re-use from extreme_price_movements
-from extreme_price_movements.purged_cv import PurgedKFold
-from extreme_price_movements.config import (
-    TEST_FEATURE_KEYS,
-    CFG,
-    PERP_FEATURE_KEYS,
-    enable_perp_feature_keys,
-)
-from extreme_price_movements.data_store import (
-    load_features as load_features_pipeline,
-    PartitionedOHLCVStore,
-    to_panel,
-)
+try:
+    from ..purged_cv import PurgedKFold
+    from ..config import (
+        TEST_FEATURE_KEYS,
+        CFG,
+        PERP_FEATURE_KEYS,
+        enable_perp_feature_keys,
+    )
+    from ..data_store import (
+        load_features as load_features_pipeline,
+        PartitionedOHLCVStore,
+        to_panel,
+    )
+except ImportError:
+    # Fallback for direct execution
+    from extreme_price_movements.purged_cv import PurgedKFold
+    from extreme_price_movements.config import (
+        TEST_FEATURE_KEYS,
+        CFG,
+        PERP_FEATURE_KEYS,
+        enable_perp_feature_keys,
+    )
+    from extreme_price_movements.data_store import (
+        load_features as load_features_pipeline,
+        PartitionedOHLCVStore,
+        to_panel,
+    )
+
+MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+PACKAGE_ROOT = os.path.dirname(MODULE_DIR)
 from extreme_price_movements.training import (
     build_hourly_training_set_and_weights,
     build_grid_aggregated_tb_cache,
@@ -125,11 +140,18 @@ def _append_suffix(path: str, suffix: str) -> str:
 
 def _resolve_runtime_cfg(*, perps: bool = False, data_root: Optional[str] = None) -> dict:
     cfg = apply_offline_optimizer_best_params(deepcopy(CFG))
+    # Normalize core paths relative to package root
+    cfg["data_root"] = _resolve_path(cfg.get("data_root", "data"))
+    cfg["reports_root"] = _resolve_path(cfg.get("reports_root", "reports"))
+    cfg["hf_data_dir"] = _resolve_path(cfg.get("hf_data_dir", "15m_ohlcv"))
+
     if data_root:
-        cfg["data_root"] = str(data_root)
+        cfg["data_root"] = _resolve_path(str(data_root))
     if perps:
         cfg["use_perps"] = True
-        cfg["data_root"] = _append_suffix(cfg.get("data_root", "../data"), "_perp")
+        cfg["data_root"] = _resolve_path(_append_suffix(cfg.get("data_root", "data"), "_perp"))
+        cfg["reports_root"] = _resolve_path(_append_suffix(cfg.get("reports_root", "reports"), "_perp"))
+        cfg["hf_data_dir"] = _resolve_path(_append_suffix(cfg.get("hf_data_dir", "15m_ohlcv"), "_perp"))
         cfg = enable_perp_feature_keys(cfg)
         existing_test = list(cfg.get("test_feature_keys", TEST_FEATURE_KEYS))
         cfg["test_feature_keys"] = list(dict.fromkeys(existing_test + list(PERP_FEATURE_KEYS)))
@@ -149,6 +171,14 @@ def _resolve_runtime_cfg(*, perps: bool = False, data_root: Optional[str] = None
         new_default=BASE_ROUND_TRIP_FEE_DEC,
     )
     return cfg
+
+
+def _resolve_path(path: str) -> str:
+    if not path:
+        return path
+    if os.path.isabs(path):
+        return os.path.normpath(path)
+    return os.path.normpath(os.path.join(PACKAGE_ROOT, path))
 
 
 def _find_latest_feature_dir(data_root: str) -> Optional[str]:

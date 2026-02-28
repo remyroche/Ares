@@ -50,15 +50,13 @@ from sklearn.metrics import average_precision_score
 from joblib import Parallel, delayed
 import optuna
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+MODULE_DIR = Path(__file__).resolve().parent
+PACKAGE_ROOT = MODULE_DIR.parent
 import sys
 import platform
 
 if sys.version_info < (3, 10):
     raise RuntimeError("compare_tbm_parameters.py requires Python >= 3.10")
-
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
 
 from extreme_price_movements.data_store import to_panel
 from extreme_price_movements.labeling import compute_triple_barrier_labels, OUT_SL, OUT_TO, OUT_TP
@@ -140,6 +138,14 @@ def _bars_for_hours(timeframe: str, hours: float) -> int:
         step_min = 15.0
     step_min = max(step_min, 1.0)
     return max(1, int(round((float(hours) * 60.0) / step_min)))
+
+
+def _resolve_path(path: str) -> str:
+    if not path:
+        return path
+    if os.path.isabs(path):
+        return os.path.normpath(path)
+    return os.path.normpath(os.path.join(PACKAGE_ROOT, path))
 
 
 def _append_suffix(path: str, suffix: str) -> str:
@@ -4024,7 +4030,7 @@ def _per_bucket_metrics_from_details(
 ) -> Dict[str, Any]:
     """Extract per-bucket aggregate metrics from bucket_horizon_metrics for one bucket.
 
-    Uses only the 3 horizon cells belonging to `bucket_name` (e.g. "MR_long_H2/H4/H8").
+    Uses only the 3 horizon cells belonging to `bucket_name` (e.g. "MR_long_H1/H2/H4").
     Falls back to global_row values for coverage/ess (which are config-level, not per-bucket).
     """
     bh = details.get(cid, {}).get("bucket_horizon_metrics", {})
@@ -5115,7 +5121,7 @@ def run(args: argparse.Namespace) -> None:
                 tprint(f"  {ck:<18}: {len(cg):>2} configs  k_tp={_k}  sl={_s}")
 
             # ── Step 7: per-bucket best params (one winner per bucket) ──────────
-            # Selects the rank-1 config per bucket (aggregated across all horizons H2/H4/H8)
+            # Selects the rank-1 config per bucket (aggregated across all horizons H1/H2/H4)
             # using a composite learnability score and saves to tbm_best_params_per_bucket.csv.
             # Format: one row per bucket, same columns as tbm_best_params.csv + bucket col.
             # Downstream steps can call load_tbm_best_params_per_bucket()[bucket] to get the
@@ -5256,7 +5262,7 @@ def run(args: argparse.Namespace) -> None:
         from extreme_price_movements.reports.bucket_report import report_compare_tbm
         import re as _re
         _run_id = _re.sub(r"[^0-9_]", "", str(Path(output_path).stem)) or "tbm_run"
-        _rp = report_compare_tbm(_run_id, str(TBM_GEOMETRY_GRID_CSV))
+        _rp = report_compare_tbm(_run_id, str(TBM_GEOMETRY_GRID_CSV), base_dir=cfg.get('reports_root'))
         tprint(f"TBM geometry bucket report: {_rp}")
     except Exception as _rpe:
         tprint(f"WARNING: TBM geometry bucket report failed: {_rpe}")

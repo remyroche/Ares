@@ -428,7 +428,7 @@ def select_gated_features(
             # Warn on low skill (IC < 0.02)
             if skill is not None and skill < 0.02:
                 try:
-                    from src.utils.tprint import tprint_warning
+                    from .src_utils_tprint import tprint_warning
                     tprint_warning(f"⚠️ Gate '{feat_name}' has low skill: IC={skill:.4f}")
                 except ImportError:
                     pass
@@ -436,7 +436,7 @@ def select_gated_features(
             # Warn on extreme prevalence (< 5% or > 50%)
             if p < 0.05 or p > 0.50:
                 try:
-                    from src.utils.tprint import tprint_warning
+                    from .src_utils_tprint import tprint_warning
                     tprint_warning(f"⚠️ Gate '{feat_name}' has extreme prevalence: {p:.2%}")
                 except ImportError:
                     pass

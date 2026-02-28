@@ -2,28 +2,42 @@ import numpy as np
 import pandas as pd
 from numba import jit, prange
 
-# TODO: DECOUPLE src dependencies for standalone module
-# These functions should be implemented locally or vendored into this module
-# Currently used: _numba_rolling_mean_nan_safe, _numba_rolling_std_nan_safe, 
-#                 _numba_rolling_median, _numba_rolling_correlation
-# Unused imports: _numba_ewma, _numba_rolling_vwap, _numba_rolling_kurt,
-#                 _numba_rolling_skew, _numba_rolling_slope, _numba_rolling_rsquared,
-#                 _numba_rolling_sum (have local _numba_rolling_sum_nan_safe)
-from src.utils.numba_funcs import (
-    _numba_rolling_mean_nan_safe,
-    _numba_rolling_std_nan_safe,
-    _numba_ewma,
-    _numba_rolling_vwap,
-    _numba_rolling_kurt,
-    _numba_rolling_skew,
-    _numba_rolling_slope,
-    _numba_rolling_rsquared,
-    _numba_rolling_median,
-    _numba_rolling_sum,
-    _numba_rolling_correlation,
-    _numba_rolling_mad
-)
-from .utils import tprint
+# Local duplicated functions for self-contained module
+try:
+    from .src_utils_numba_funcs import (
+        _numba_rolling_mean_nan_safe,
+        _numba_rolling_std_nan_safe,
+        _numba_ewma,
+        _numba_rolling_vwap,
+        _numba_rolling_kurt,
+        _numba_rolling_skew,
+        _numba_rolling_slope,
+        _numba_rolling_rsquared,
+        _numba_rolling_median,
+        _numba_rolling_sum,
+        _numba_rolling_correlation,
+        _numba_rolling_mad
+    )
+except ImportError:
+    # Fallback for direct execution
+    from src_utils_numba_funcs import (
+        _numba_rolling_mean_nan_safe,
+        _numba_rolling_std_nan_safe,
+        _numba_ewma,
+        _numba_rolling_vwap,
+        _numba_rolling_kurt,
+        _numba_rolling_skew,
+        _numba_rolling_slope,
+        _numba_rolling_rsquared,
+        _numba_rolling_median,
+        _numba_rolling_sum,
+        _numba_rolling_correlation,
+        _numba_rolling_mad
+    )
+try:
+    from .utils import tprint
+except ImportError:
+    from utils import tprint
 
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_ewma_nan_safe(x, alpha, adjust=False):

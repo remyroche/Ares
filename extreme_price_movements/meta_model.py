@@ -42,7 +42,10 @@ def _safe_spearman(a, b):
     mask = np.isfinite(a) & np.isfinite(b)
     if mask.sum() < 10:
         return 0.0
-    rho, _ = spearmanr(a[mask], b[mask])
+    va, vb = a[mask], b[mask]
+    if np.std(va) < 1e-12 or np.std(vb) < 1e-12:
+        return 0.0
+    rho, _ = spearmanr(va, vb)
     return float(rho) if np.isfinite(rho) else 0.0
 
 

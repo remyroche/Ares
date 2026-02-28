@@ -510,6 +510,11 @@ def run_train_meta(cfg, ts_override=None):
 
     from extreme_price_movements.main import train_daily_meta
     store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+    
+    # Verify that before training the meta model, we optimise the TP & SL values.
+    tprint("Optimising TP:SL before meta-training...")
+    run_risk_opt(cfg, ts_override=ts_override)
+    
     ex = make_perp_exchange() if bool(cfg.get("use_perps", False)) else make_spot_exchange()
     result = train_daily_meta(ts_sig, None, cfg, store, ex)
     if result:

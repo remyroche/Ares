@@ -39,7 +39,7 @@ from extreme_price_movements.pipeline_steps import (
     run_risk_optimization_step,
 )
 from extreme_price_movements.optimise import run_optimise_step, Policy
-from extreme_price_movements.pipeline_steps import run_ridge_sizer_step
+from extreme_price_movements.pipeline_steps import run_sizer_step
 
 # SINGLE SOURCE OF TRUTH FOR FEES - All fee configuration comes from these constants
 # Spot trading fees (default)
@@ -377,9 +377,10 @@ def run_risk_opt(cfg, ts_override=None):
 
 
 
-def run_ridge_sizer(cfg, ts_override=None):
-    """Run ridge position sizer on meta model OOF predictions."""
-    _maintenance_checkpoint("ridge_sizer:start")
+
+def run_sizer(cfg, ts_override=None):
+    """Run configured sizer backend on meta model OOF predictions."""
+    _maintenance_checkpoint("sizer:start")
     if ts_override:
         try:
             _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
@@ -399,10 +400,10 @@ def run_ridge_sizer(cfg, ts_override=None):
         tprint(f"ERROR: Trained state not found at {state_file}. Run 'train' mode first.")
         return
 
-    tprint(f"Ridge Sizer mode. ts_sig={ts_sig}")
-    result = run_ridge_sizer_step(ts_sig, cfg, state_file)
+    tprint(f"Sizer mode. ts_sig={ts_sig} backend={cfg.get('position_sizer_backend', 'ridge')}")
+    result = run_sizer_step(ts_sig, cfg, state_file)
     if result:
-        tprint(f"RIDGE SIZER COMPLETE — {len(result.get('weights', {}))} weights learned")
+        tprint(f"SIZER COMPLETE — backend={cfg.get('position_sizer_backend', 'ridge')}")
         
         # Run breakdown diagnostics after ridge sizer
         try:
@@ -410,9 +411,14 @@ def run_ridge_sizer(cfg, ts_override=None):
         except Exception as e:
             tprint(f"WARNING: breakdown diagnostics failed: {e}")
     else:
-        tprint("RIDGE SIZER: No results (possibly no meta OOF predictions found)")
-    _maintenance_checkpoint("ridge_sizer:end")
+        tprint("SIZER: No results (possibly no meta OOF predictions found)")
+    _maintenance_checkpoint("sizer:end")
 
+
+
+def run_ridge_sizer(cfg, ts_override=None):
+    """Backward-compatible alias for sizer mode."""
+    return run_sizer(cfg, ts_override=ts_override)
 
 def run_all(cfg, ts_override=None):
     """Run download -> features -> train (includes labels) -> optimise (learn entry) -> ridge_sizer -> optimise (sizing) in order.
@@ -438,8 +444,8 @@ def run_all(cfg, ts_override=None):
 
     # 2. Ridge Sizer: learn meta-model weights using the optimized entry policy
     tprint("STEP: RIDGE SIZER")
-    run_ridge_sizer(cfg, ts_override=ts_override)
-    _maintenance_checkpoint("run_all:after_ridge_sizer")
+    run_sizer(cfg, ts_override=ts_override)
+    _maintenance_checkpoint("run_all:after_sizer")
 
     # 3. Optimise: re-run to allow scalar position sizing (Step 40) to use fresh ridge weights
     tprint("STEP: OPTIMISE (Phase 2 - Sizing with Ridge Weights)")
@@ -736,7 +742,7 @@ def run_breakdown_diagnostics_standalone(cfg: dict, ts_override: str = None) -> 
 def main():
     clear_caches()
     parser = argparse.ArgumentParser(description="Extreme Price Movements Pipeline")
-    parser.add_argument("mode", choices=["download", "labels", "features", "train", "train_meta", "ridge_sizer", "backtest", "optimize_risk", "optimise", "run", "breakdown_diagnostics"],
+    parser.add_argument("mode", choices=["download", "labels", "features", "train", "train_meta", "ridge_sizer", "sizer", "backtest", "optimize_risk", "optimise", "run", "breakdown_diagnostics"],
                         help="Pipeline mode to run")
     parser.add_argument("-perps", "--perps", action="store_true", help="Run pipeline in perps mode (isolated *_perp roots)")
     parser.add_argument("--force-feature-recompute", action="store_true", help="Force full recompute in features mode")
@@ -761,6 +767,8 @@ def main():
 
     _configure_report_roots(cfg)
 
+    tprint(f"Sizer backend resolved: {cfg.get('position_sizer_backend', 'ridge')} (enabled={bool(cfg.get('position_sizer_enabled', False))})")
+
     if args.mode == "download":
         run_download(cfg)
     elif args.mode == "labels":
@@ -773,6 +781,8 @@ def main():
         run_train_meta(cfg, ts_override=args.ts_override)
     elif args.mode == "ridge_sizer":
         run_ridge_sizer(cfg, ts_override=args.ts_override)
+    elif args.mode == "sizer":
+        run_sizer(cfg, ts_override=args.ts_override)
     elif args.mode == "backtest":
         run_backtest(cfg, ts_override=args.ts_override)
     elif args.mode == "optimize_risk":

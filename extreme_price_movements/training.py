@@ -52,6 +52,7 @@ from .policy_ml import (
 )
 from .production_admissibility import ProdGates, production_admissibility_report
 from .gate_metrics import compute_stage_gate_metrics
+from .meta_training.utility_smooth import smooth_utility_from_log_heads, smooth_utility_loss
 
 import os
 import json
@@ -4447,19 +4448,12 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
         Missing labels are handled via placeholder target + zero sample_weight (no semantic fallback).
         """
         from .purged_cv import PurgedKFold as _PKF
-        from sklearn.linear_model import HuberRegressor
         from sklearn.ensemble import ExtraTreesRegressor
-        from sklearn.metrics import mean_absolute_error as _mae_loss
 
         try:
             from lightgbm import LGBMRegressor
         except Exception:
             LGBMRegressor = None
-        try:
-            from xgboost import XGBRegressor
-        except Exception:
-            XGBRegressor = None
-
         _Xdf_in = X_num if isinstance(X_num, pd.DataFrame) else pd.DataFrame(np.asarray(X_num, dtype=float), columns=[f"f_{i}" for i in range(np.asarray(X_num).shape[1])])
         Xv = np.asarray(_Xdf_in.values, dtype=float)
         n = len(Xv)
@@ -4481,12 +4475,10 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
         y_dur_raw = _arr(y_dur)
         dur_c = np.asarray(dur_censored, dtype=bool)[:n] if dur_censored is not None else np.zeros(n, dtype=bool)
 
-        valid_u = np.isfinite(y_u_raw)
         valid_mae = np.isfinite(y_mae_raw)
         valid_mfe = np.isfinite(y_mfe_raw)
         valid_dur = np.isfinite(y_dur_raw)
 
-        y_u_fit = np.where(valid_u, y_u_raw, 0.0)
         y_mae_fit = np.where(valid_mae, y_mae_raw, 0.0)
         y_mfe_fit = np.where(valid_mfe, y_mfe_raw, 0.0)
         y_dur_fit = np.where(valid_dur, y_dur_raw, 0.0)
@@ -4496,11 +4488,17 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
         oof_mfe = np.full(n, np.nan, dtype=float)
         oof_dur = np.full(n, np.nan, dtype=float)
 
+        util_cfg_nested = (cfg.get("meta", {}) or {}).get("utility_smooth", {}) if isinstance(cfg.get("meta", {}), dict) else {}
+        utility_tp = float(util_cfg_nested.get("tp", cfg.get("meta_utility_smooth_tp", 0.02)))
+        utility_sl = float(util_cfg_nested.get("sl", cfg.get("meta_utility_smooth_sl", 0.01)))
+        utility_alpha = float(util_cfg_nested.get("alpha", cfg.get("meta_utility_smooth_alpha", 15.0)))
+        utility_loss_name = str(util_cfg_nested.get("loss", cfg.get("meta_utility_smooth_loss", "huber"))).lower()
+        utility_loss_weight = float(util_cfg_nested.get("loss_weight", cfg.get("meta_utility_smooth_loss_weight", 1.0)))
+
         _pkf_shared = _PKF(n_splits=3, purge=int(cv_embargo_bars), embargo=int(cv_embargo_bars))
         _splits_shared = list(_pkf_shared.split(Xv))
 
         # keep selector simple/robust: all numeric features
-        idx_u = np.arange(Xv.shape[1], dtype=int)
         idx_q = np.arange(Xv.shape[1], dtype=int)
         idx_mfe = np.arange(Xv.shape[1], dtype=int)
         idx_dur = np.arange(Xv.shape[1], dtype=int)
@@ -4530,13 +4528,6 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                     w *= np.clip(mult, 0.75, 1.25)
             return _normalize_clip_weights(w)
 
-        def _weighted_mae(y_true, y_pred, w):
-            m = np.isfinite(y_true) & np.isfinite(y_pred) & (w > 0)
-            if m.sum() == 0:
-                return np.inf
-            return float(np.sum(np.abs(y_true[m] - y_pred[m]) * w[m]) / max(np.sum(w[m]), 1e-12))
-
-        _u_winners = []
         for tr, va in _splits_shared:
             tr_idx = tr[tm[tr]]
             va_idx = va[tm[va]]
@@ -4545,51 +4536,6 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
 
             Xu_tr = Xv[tr_idx]
             Xu_va = Xv[va_idx]
-
-            # Utility head: weighted model race
-            w_u = (valid_u.astype(float) * tm.astype(float))
-            alpha_u = float(cfg.get("aux_u_weight_alpha", 0.7))
-            mag = np.clip(np.abs(y_u_fit), 1e-9, None) ** alpha_u
-            mag = np.where(np.isfinite(mag), mag, 1.0)
-            w_u *= np.clip(mag, 0.75, 1.25)
-            w_u = _normalize_clip_weights(w_u)
-            w_u_tr = w_u[tr_idx]
-
-            util_candidates = []
-            util_candidates.append(("huber", HuberRegressor(epsilon=1.35, alpha=1e-3)))
-            util_candidates.append(("et", ExtraTreesRegressor(n_estimators=200, max_depth=6, min_samples_leaf=20, random_state=42, n_jobs=2)))
-            if XGBRegressor is not None:
-                util_candidates.append(("xgb", XGBRegressor(
-                    n_estimators=300,
-                    max_depth=5,
-                    learning_rate=0.05,
-                    subsample=0.8,
-                    colsample_bytree=0.8,
-                    reg_alpha=0.0,
-                    reg_lambda=5.0,
-                    random_state=42,
-                    n_jobs=2,
-                    num_parallel_tree=8,
-                    objective="reg:squarederror",
-                )))
-
-            best_u_pred = None
-            best_u_name = None
-            best_u_score = np.inf
-            for nm, mdl in util_candidates:
-                try:
-                    mdl.fit(Xu_tr[:, idx_u], y_u_fit[tr_idx], sample_weight=w_u_tr)
-                    pred_va = mdl.predict(Xu_va[:, idx_u])
-                    score = _weighted_mae(y_u_fit[va_idx], pred_va, w_u[va_idx])
-                    if score < best_u_score:
-                        best_u_score = score
-                        best_u_pred = pred_va
-                        best_u_name = nm
-                except Exception:
-                    continue
-            if best_u_pred is not None:
-                oof_u[va_idx] = best_u_pred
-                _u_winners.append(best_u_name or "unknown")
 
             # MAE q70 head
             w_mae = _normalize_clip_weights(valid_mae.astype(float) * tm.astype(float))
@@ -4657,14 +4603,14 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             return o.astype(np.float32)
 
         _fs_report = {
-            "u": {"n_in": int(_Xdf_in.shape[1]), "n_selected": int(len(idx_u))},
+            "u": {"n_in": int(_Xdf_in.shape[1]), "n_selected": int(len(idx_q))},
             "mae_q70": {"n_in": int(_Xdf_in.shape[1]), "n_selected": int(len(idx_q))},
             "mfe": {"n_in": int(_Xdf_in.shape[1]), "n_selected": int(len(idx_mfe))},
             "dur": {"n_in": int(_Xdf_in.shape[1]), "n_selected": int(len(idx_dur))},
             "config": {
                 "weights": "per-head-validity+train-only-tail",
                 "dur_censor_weight": float(cfg.get("aux_dur_censor_weight", 0.25)),
-                "utility_race_winners": _u_winners,
+                "utility_head": "deterministic_from_mfe_mae",
             },
         }
         try:
@@ -4678,11 +4624,42 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
         except Exception as _e_fsrep:
             tprint(f"Warning: failed to persist fs report for {bucket_id}: {_e_fsrep}")
 
+        oof_log_mae_q70_hat = _fill(oof_mae_q70, y_mae_fit)
+        oof_log_mfe_hat = _fill(oof_mfe, y_mfe_fit)
+        oof_u_hat = smooth_utility_from_log_heads(
+            log_mfe=oof_log_mfe_hat,
+            log_mae=oof_log_mae_q70_hat,
+            tp=utility_tp,
+            sl=utility_sl,
+            alpha=utility_alpha,
+        ).astype(np.float32)
+        u_target = smooth_utility_from_log_heads(
+            log_mfe=y_mfe_fit,
+            log_mae=y_mae_fit,
+            tp=utility_tp,
+            sl=utility_sl,
+            alpha=utility_alpha,
+        )
+        u_loss = smooth_utility_loss(oof_u_hat, u_target, loss=utility_loss_name)
+        u_corr = float(spearmanr(oof_u_hat, u_target).correlation) if np.isfinite(u_target).sum() > 5 else float("nan")
+        tprint(
+            f"  utility_smooth[{bucket_id or 'bucket'}]: loss={u_loss:.6f} weighted={utility_loss_weight * u_loss:.6f} corr={u_corr:.4f} "
+            f"mfe_hat_mean={float(np.nanmean(oof_log_mfe_hat)):.4f} mae_hat_mean={float(np.nanmean(oof_log_mae_q70_hat)):.4f} "
+            f"u_hat_mean={float(np.nanmean(oof_u_hat)):.5f} u_target_mean={float(np.nanmean(u_target)):.5f}"
+        )
+
         return {
-            "oof_u_hat": _fill(oof_u, y_u_fit),
-            "oof_log_mae_q70_hat": _fill(oof_mae_q70, y_mae_fit),
-            "oof_log_mfe_hat": _fill(oof_mfe, y_mfe_fit),
+            "oof_u_hat": oof_u_hat,
+            "oof_log_mae_q70_hat": oof_log_mae_q70_hat,
+            "oof_log_mfe_hat": oof_log_mfe_hat,
             "oof_log_dur_hat": _fill(oof_dur, y_dur_fit),
+            "oof_u_target": u_target.astype(np.float32),
+            "utility_smooth_metrics": {
+                "loss": float(u_loss),
+                "loss_weight": float(utility_loss_weight),
+                "loss_name": utility_loss_name,
+                "corr_spearman": float(u_corr),
+            },
             "fs_report": _fs_report,
         }
 
@@ -6631,29 +6608,71 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
                 }
                 tprint(f"  Passing 15m data to optimizer ({len(indices)} events)")
 
-            summary = run_tp_sl_selection_fast(
-                X=full_X,
-                open_=full_open,
-                high=full_high,
-                low=full_low,
-                close=full_close,
-                atr_pct=full_atr,
-                z=full_z,
-                atr_base_pct=full_atr_base,
-                event_idx=indices,
-                horizon=24,
-                max_events=2000,
-                tp_mult_grid=[0.4, 0.5, 0.6, 0.8, 1.0, 1.25, 1.5],
-                sl_mult_grid=[0.10, 0.15, 0.18, 0.25, 0.30, 0.40, 0.50],
-                trail_mult_grid=[0.15, 0.25, 0.35, 0.50],
-                lo_grid=[0.01, 0.02, 0.03, 0.04],
-                hi_grid=[0.05, 0.06, 0.07],
-                z_max_grid=[2.5, 3.0, 3.5],
-                entry_mode="next_open",
-                event_time_idx=time_indices,
-                fee_bps=float(cfg.get("fee_bps", 25.0)),
-                **_15m_kwargs
-            )
+            _tp_opt = str(cfg.get("tp_sl_search_optimizer", "legacy")).lower()
+            if _tp_opt == "new":
+                from types import SimpleNamespace as _SNS
+                from .position_sizer.tp_sl_selection import CompositeObjectiveConfig as _COCfg, select_best_tp_sl as _select_best_tp_sl
+                _cocfg = _COCfg(
+                    mar=float(cfg.get("objective_mar", 0.0)),
+                    eps_log=float(cfg.get("objective_eps_log", 1e-12)),
+                    eps_sortino=float(cfg.get("objective_eps_sortino", 1e-12)),
+                    mode=str(cfg.get("objective_composite_mode", "hard_gate")),
+                    q_top=float(cfg.get("objective_composite_q_top", 0.95)),
+                    selection=str(cfg.get("objective_composite_selection", "min_std")),
+                    min_trades_per_fold=int(cfg.get("tp_sl_search_min_trades_per_fold", 200)),
+                    elg_scale=float(cfg.get("objective_scaling_elg_scale", 10000.0)),
+                    mnpt_scale=float(cfg.get("objective_scaling_mnpt_scale", 10000.0)),
+                    elg_min=float(cfg.get("objective_clipping_elg_min", -1.0)),
+                    elg_max=float(cfg.get("objective_clipping_elg_max", 1.0)),
+                    sortino_min=float(cfg.get("objective_clipping_sortino_min", -10.0)),
+                    sortino_max=float(cfg.get("objective_clipping_sortino_max", 10.0)),
+                    mnpt_min=float(cfg.get("objective_clipping_mnpt_min", -1.0)),
+                    mnpt_max=float(cfg.get("objective_clipping_mnpt_max", 1.0)),
+                )
+                _sel = _select_best_tp_sl(
+                    open_=full_open,
+                    close=full_close,
+                    event_idx=indices,
+                    timestamps=time_indices,
+                    tp_mult_grid=cfg.get("tp_sl_search_k_tp_grid", [0.8, 1.0, 1.25, 1.5]),
+                    sl_mult_grid=cfg.get("tp_sl_search_k_sl_grid", [0.1, 0.15, 0.25, 0.4]),
+                    cfg=_cocfg,
+                )
+                _best = _sel.get("best") or {}
+                _cand = _best.get("candidate", (cfg.get("tp_mult", 1.0), cfg.get("sl_mult", 0.5)))
+                summary = _SNS(
+                    final_tp_mult=float(_cand[0]),
+                    final_sl_mult=float(_cand[1]),
+                    final_trail_mult=float(cfg.get("trail_mult", 0.25)),
+                    final_lo=float(cfg.get("vol_lo", 0.02)),
+                    final_hi=float(cfg.get("vol_hi", 0.06)),
+                    final_z_max=float(cfg.get("vol_z_max", 3.0)),
+                    outer_results=[],
+                )
+            else:
+                summary = run_tp_sl_selection_fast(
+                    X=full_X,
+                    open_=full_open,
+                    high=full_high,
+                    low=full_low,
+                    close=full_close,
+                    atr_pct=full_atr,
+                    z=full_z,
+                    atr_base_pct=full_atr_base,
+                    event_idx=indices,
+                    horizon=24,
+                    max_events=2000,
+                    tp_mult_grid=[0.4, 0.5, 0.6, 0.8, 1.0, 1.25, 1.5],
+                    sl_mult_grid=[0.10, 0.15, 0.18, 0.25, 0.30, 0.40, 0.50],
+                    trail_mult_grid=[0.15, 0.25, 0.35, 0.50],
+                    lo_grid=[0.01, 0.02, 0.03, 0.04],
+                    hi_grid=[0.05, 0.06, 0.07],
+                    z_max_grid=[2.5, 3.0, 3.5],
+                    entry_mode="next_open",
+                    event_time_idx=time_indices,
+                    fee_bps=float(cfg.get("fee_bps", 25.0)),
+                    **_15m_kwargs
+                )
 
             # Enforce hard constraints on optimized values
             _opt_bp_risk = 0.5 * (summary.final_lo + summary.final_hi)

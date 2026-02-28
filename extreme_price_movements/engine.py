@@ -1023,6 +1023,72 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
             sym_best[s] = o
     final_orders = list(sym_best.values())
 
+    # Optional runtime integration with new position_sizer backend.
+    _ps_backend = str(cfg.get("position_sizer_backend", "ridge")).lower()
+    _ps_bundle_path = (risk_config or {}).get("position_sizer_bundle_path") if isinstance(risk_config, dict) else None
+    if _ps_backend == "new" and _ps_bundle_path:
+        try:
+            from extreme_price_movements.position_sizer.runtime import (
+                load_bundle as _ps_load_bundle,
+                predict_all as _ps_predict_all,
+                compute_ev_risk as _ps_compute_ev_risk,
+                gate_and_size as _ps_gate_and_size,
+            )
+            from extreme_price_movements.position_sizer.sizer import PositionSizerConfig as _PSCfg
+            _bundle = _ps_load_bundle(_ps_bundle_path, allow_unknown_version=bool(cfg.get("position_sizer_allow_unknown_bundle_version", False)))
+            _Xps = pd.DataFrame({"score": [float(o["score"]) for o in final_orders]})
+            _pred = _ps_predict_all(_bundle, _Xps)
+            _tp_sl_runtime = _bundle.tp_sl_defaults if (getattr(_bundle, "tp_sl_defaults", None) and not bool(cfg.get("tp_sl_override", False))) else None
+            _exp_q = float(_bundle.config.get("exp_win_quantile", cfg.get("position_sizer_exp_win_quantile", 0.50)))
+            _risk_q = float(_bundle.config.get("risk_loss_quantile", cfg.get("position_sizer_risk_loss_quantile", 0.90)))
+            _costs_mode = str(_bundle.config.get("costs_mode", cfg.get("position_sizer_costs_mode", "included_in_labels")))
+            _psc = _PSCfg(
+                ev_threshold=float(cfg.get("position_sizer_ev_threshold", 0.0)),
+                trade_percentile_threshold=float(cfg.get("ranking_trade_percentile_threshold", 0.90)),
+                rank_exponent=float(cfg.get("ranking_rank_exponent", 2.0)),
+                size_k=float(cfg.get("ranking_size_k", 1.0)),
+                max_position_size=float(cfg.get("ranking_max_position_size", 1.0)),
+                risk_epsilon=float(cfg.get("ranking_risk_epsilon", 1e-6)),
+                exp_win_quantile=_exp_q,
+                risk_loss_quantile=_risk_q,
+                costs_mode=_costs_mode,
+                p_min=float(cfg.get("position_sizer_p_min", 1e-3)),
+                alpha_power=float(cfg.get("score_sharpening_alpha_power", 2.0)),
+                score_temperature=float(cfg.get("score_sharpening_score_temperature", 0.7)),
+                turnover_lambda=float(cfg.get("turnover_control_turnover_lambda", 0.0)),
+            )
+            _costs = 0.0 if _costs_mode == "included_in_labels" else float(cfg.get("ridge_cost_pct", cfg.get("fee_bps", 25.0)/10000.0))
+            _ev, _rk = _ps_compute_ev_risk(_pred, costs=_costs, cfg=_psc)
+            _allow, _size = _ps_gate_and_size(_ev, _rk, cfg=_psc, alpha_score=np.asarray([o["score"] for o in final_orders], dtype=float))
+            _new_orders = []
+            for _o, _a, _w, _e, _r in zip(final_orders, _allow, _size, _ev, _rk):
+                if bool(_a) and np.isfinite(_w) and abs(float(_w)) > 0:
+                    _o["weight"] = float(abs(_w))
+                    _o["ps_ev"] = float(_e)
+                    _o["ps_risk"] = float(_r)
+                    if _tp_sl_runtime is not None:
+                        _o["tp_default_k_tp"] = float(_tp_sl_runtime.get("k_tp", np.nan))
+                        _o["tp_default_k_sl"] = float(_tp_sl_runtime.get("k_sl", np.nan))
+                    _new_orders.append(_o)
+            _gated_out = 1.0 - float(np.mean(_allow.astype(float))) if len(_allow) else 1.0
+            _avg_size = float(np.mean(np.abs(_size[_allow]))) if np.any(_allow) else 0.0
+            _pnan = float(np.mean(~np.isfinite(_pred.get("pwin", np.array([]))))) if len(_pred.get("pwin", [])) else 0.0
+            tprint(
+                f"PositionSizer(new): used Wq={_exp_q:.2f} Lq={_risk_q:.2f} gated_out={_gated_out:.2%} "
+                f"avg_size_if_trade={_avg_size:.5f} pwin_nan_frac={_pnan:.3%}"
+            )
+            cfg["sizer_backend_used"] = "new"
+            if _new_orders:
+                return _new_orders
+            return []
+        except Exception as _e_ps:
+            _allow_fallback = bool(cfg.get("position_sizer_allow_fallback", False))
+            cfg["sizer_backend_used"] = "ridge_fallback" if _allow_fallback else "new_failed"
+            if _allow_fallback:
+                tprint(f"ERROR: new position_sizer runtime failed; using ridge fallback: {_e_ps}")
+            else:
+                raise RuntimeError(f"new position_sizer runtime failed: {_e_ps}")
+
     if size_q50 is None or size_q90 is None:
         arr = np.array([abs(o["score"]) for o in final_orders], dtype=np.float64)
         size_q50 = float(np.quantile(arr, 0.5)) if arr.size else 0.0

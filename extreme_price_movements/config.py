@@ -284,6 +284,75 @@ CFG = {
     "meta_clf_min_lift_vs_baseline": 0.0,
     "meta_clf_dynamic_utility_from_realized": True,
     "meta_clf_require_positive_oof_utility": True,
+    # Smooth utility proxy computed deterministically from predicted MFE/MAE.
+    "meta_utility_smooth_tp": 0.02,
+    "meta_utility_smooth_sl": 0.01,
+    "meta_utility_smooth_alpha": 15.0,
+    "meta_utility_smooth_use_predicted_mfe_mae": True,
+    "meta_utility_smooth_loss": "huber",
+    "meta_utility_smooth_loss_weight": 1.0,
+
+    # Two-stage/three-head position sizer defaults.
+    "position_sizer_enabled": False,
+    "position_sizer_backend": "ridge",  # ridge | new
+    "position_sizer_allow_fallback": False,
+    "position_sizer_allow_unknown_bundle_version": False,
+    "position_sizer_ev_threshold": 0.0,
+    "position_sizer_costs_mode": "included_in_labels",
+    "position_sizer_exp_win_quantile": 0.50,
+    "position_sizer_risk_loss_quantile": 0.90,
+    "position_sizer_calibration_method": "isotonic",
+    "position_sizer_calibration_scope": "regime",
+    "position_sizer_calibration_rolling_window": 2000,
+    "position_sizer_p_min": 1e-3,
+
+    # Soft pwin label from MFE/MAE smooth TP/SL proxy
+    "position_sizer_pwin_soft_label_enabled": False,
+    "position_sizer_pwin_soft_label_tp": 0.02,
+    "position_sizer_pwin_soft_label_sl": 0.01,
+    "position_sizer_pwin_soft_label_alpha": 15.0,
+    "position_sizer_pwin_soft_label_target_mapping": "linear_to_01",
+    "position_sizer_pwin_soft_label_loss": "bce",
+    "position_sizer_pwin_soft_label_use_log_excursions": False,
+    "position_sizer_pwin_soft_label_log_eps": 1e-12,
+
+    # Ranking-based allocation engine (capital allocation > prediction IC)
+    "ranking_trade_percentile_threshold": 0.90,
+    "ranking_rank_exponent": 2.0,
+    "ranking_size_k": 1.0,
+    "ranking_max_position_size": 1.0,
+    "ranking_risk_epsilon": 1e-6,
+
+    # Optional score sharpening (no retraining)
+    "score_sharpening_alpha_power": 2.0,
+    "score_sharpening_score_temperature": 0.7,
+
+    # Turnover regularization hook (for future allocator objective)
+    "turnover_control_turnover_lambda": 0.0,
+
+    # TP/SL default selection for classifier-facing defaults.
+    "tp_sl_search_enabled": False,
+    "tp_sl_search_optimizer": "legacy",  # legacy | new
+    "tp_sl_override": False,
+    "tp_sl_search_k_tp_grid": [0.8, 1.0, 1.25, 1.5, 2.0],
+    "tp_sl_search_k_sl_grid": [0.5, 0.75, 1.0, 1.25],
+    "tp_sl_search_alpha_sigmoid": 15.0,
+    "tp_sl_search_min_trades_per_fold": 200,
+
+    "objective_mar": 0.0,
+    "objective_eps_log": 1e-12,
+    "objective_eps_sortino": 1e-12,
+    "objective_composite_mode": "hard_gate",
+    "objective_composite_q_top": 0.95,
+    "objective_composite_selection": "min_std",
+    "objective_scaling_elg_scale": 10000.0,
+    "objective_scaling_mnpt_scale": 10000.0,
+    "objective_clipping_elg_min": -1.0,
+    "objective_clipping_elg_max": 1.0,
+    "objective_clipping_sortino_min": -10.0,
+    "objective_clipping_sortino_max": 10.0,
+    "objective_clipping_mnpt_min": -1.0,
+    "objective_clipping_mnpt_max": 1.0,
 
     # Ridge sizer target selection objective
     "sizer_select_metric": "topq_u_policy",

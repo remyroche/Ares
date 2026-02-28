@@ -26,6 +26,7 @@ from extreme_price_movements.feature_selection_extreme_events import (
 from extreme_price_movements.purged_cv import PurgedKFold
 from extreme_price_movements.quantile_feature_selection_extreme_events import mdi_feature_selection_v3
 from extreme_price_movements.utils import tprint
+from extreme_price_movements.path_utils import resolve_reports_dir
 from extreme_price_movements.huber_nnls import HuberNNLS
 
 
@@ -106,7 +107,7 @@ class _SplineQuantile:
 
 
 class MetaModel:
-    def __init__(self, strategy_name: Optional[str] = None):
+    def __init__(self, strategy_name: Optional[str] = None, reports_dir: str | Path | None = None):
         self.strategy_name = strategy_name
         self.model = None
         self._model_type = None
@@ -117,6 +118,7 @@ class MetaModel:
         self.report_rows: List[dict] = []
         self.score_sign: int = 1
         self._selected_features_by_pool: Dict[str, List[str]] = {}
+        self._reports_dir = resolve_reports_dir(reports_dir)
 
     def prepare_meta_features(self, preds, feats_df, pred_col_name="pred_logit"):
         p = np.clip(np.asarray(preds, dtype=float), 1e-4, 1 - 1e-4)
@@ -725,7 +727,7 @@ class MetaModel:
         return best
 
     def _write_model_reports(self, model_scores: List[dict], oof: np.ndarray, y: np.ndarray):
-        report_dir = Path("extreme_price_movements/reports")
+        report_dir = self._reports_dir
         report_dir.mkdir(parents=True, exist_ok=True)
 
         pred = np.asarray(oof, dtype=float)

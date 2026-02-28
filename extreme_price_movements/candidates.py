@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from .utils import tprint
 from scipy.ndimage import binary_dilation
+from .fast_funcs import numba_sign_consistency
 
 _RANK_CACHE = {}
 
@@ -166,6 +167,7 @@ def select_trade_candidates_vectorized(
     min_range_pct=0.07,
     min_vol_zscore=1.5,
     chop_thr=0.5,
+    sign_consistency_min=None,
 ):
     """
     Vectorized candidate selection with time expansion and volatility filtering.
@@ -256,6 +258,16 @@ def select_trade_candidates_vectorized(
         chop_mask = feats["chop_score"] < chop_thr
     else:
         chop_mask = pd.DataFrame(True, index=vol_mask.index, columns=vol_mask.columns)
+
+    # Filter 6: Sign Consistency (conviction filter)
+    if sign_consistency_min is not None and sign_consistency_min > 0:
+        if "close" in panel:
+            consistency_df = numba_sign_consistency(panel["close"], window=12)
+            consistency_mask = (consistency_df >= sign_consistency_min).reindex(index=vol_mask.index, columns=vol_mask.columns).fillna(False)
+            base_mask = base_mask & consistency_mask
+        else:
+            tprint("Warning: 'close' not in panel, skipping sign consistency filter.")
+
     # Combine filters into base mask
     base_mask = base_mask & vol_mask & event_mask & chop_mask
 

@@ -380,6 +380,11 @@ def calculate_selection_score(
         prec_25 = np.average(y_sorted[:n_25], weights=w_sorted[:n_25])
         metrics["Prec_Top25"] = float(prec_25)
 
+        # Top 30%
+        n_30 = max(1, int(len(y_sorted) * 0.30))
+        prec_30 = np.average(y_sorted[:n_30], weights=w_sorted[:n_30])
+        metrics["Prec_Top30"] = float(prec_30)
+
         # Top 40%
         n_40 = max(1, int(len(y_sorted) * 0.40))
         prec_40 = np.average(y_sorted[:n_40], weights=w_sorted[:n_40])
@@ -387,6 +392,7 @@ def calculate_selection_score(
     else:
         metrics["Prec_Top10"] = 0.0
         metrics["Prec_Top25"] = 0.0
+        metrics["Prec_Top30"] = 0.0
         metrics["Prec_Top40"] = 0.0
 
     # -------------------------

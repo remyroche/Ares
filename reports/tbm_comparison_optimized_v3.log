@@ -62065,3 +62065,580 @@ SIMD Extensions:
 [2026-02-27 07:17:33 UTC] [eval:CFG5099F20353] rr_filter_kept=24,390/26,270 min_net_rr=0.400
 [2026-02-27 07:17:34 UTC] [eval:CFG5099F20353] OOF direction flip applied for MR_short_H8: auc_before=0.4837 < 0.5000
 [2026-02-27 07:17:34 UTC] [eval:CFG5099F20353] model_scored n=24,390 ic_payoff=-0.0300 ic_label=-0.0158 decile_spread=-0.001145
+[2026-02-27 07:17:35 UTC] [eval:done] CFG5099F20353 stage1=-0.0662 stage2=-0.0118 coverage=0.759 ess=19943.7 tp=0.291 timeout=0.257 decile_spread=-0.001145 hard_gate=False elapsed_s=4.31 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=788)
+[2026-02-27 07:17:35 UTC] [eval:start] CFG059596DA8C mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=788)
+[2026-02-27 07:17:35 UTC] [eval:CFG059596DA8C] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:17:36 UTC] [eval:CFG059596DA8C] label_cache miss h=8 side=long
+[2026-02-27 07:17:36 UTC] [eval:CFG059596DA8C] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:17:36 UTC] [eval:CFG059596DA8C] label_cache miss h=8 side=short
+[2026-02-27 07:17:36 UTC] [eval:CFG059596DA8C] raw_events=703,578 mem_peak_mb=1571.0
+[2026-02-27 07:17:37 UTC] [eval:CFG059596DA8C] funnel(rr≥0.40) long_H8: 351,782→317,489  short_H8: 351,796→317,501  |  rr_kept min=90.3% median=90.3%
+[2026-02-27 07:17:38 UTC] [eval:CFG059596DA8C] candidate_prefilter_kept=159,258/703,578
+[2026-02-27 07:17:38 UTC] [eval:CFG059596DA8C] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:17:39 UTC] [eval:CFG059596DA8C] rr_filter_kept=24,390/26,270 min_net_rr=0.400
+[2026-02-27 07:17:39 UTC] [eval:CFG059596DA8C] OOF direction flip applied for MR_short_H8: auc_before=0.4855 < 0.5000
+[2026-02-27 07:17:39 UTC] [eval:CFG059596DA8C] model_scored n=24,390 ic_payoff=-0.0220 ic_label=-0.0131 decile_spread=-0.002033
+[2026-02-27 07:17:40 UTC] [eval:done] CFG059596DA8C stage1=-0.0684 stage2=-0.0327 coverage=0.778 ess=20443.5 tp=0.305 timeout=0.285 decile_spread=-0.002033 hard_gate=False elapsed_s=4.18 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[I 2026-02-27 08:17:40,347] Trial 92 finished with value: 0.016793615710543514 and parameters: {'k_tp': 0.6000000000000001, 'tp_base_pct': 0.023000000000000003, 'sl_as_tp_pct': 0.6000000000000001, 'base_atr_window': 840}. Best is trial 49 with value: 0.2541083973257994.
+[2026-02-27 07:17:40 UTC] [prod_aligned_tp] applied ladder to 1 base cfgs -> 1 cfgs (tp_base_count=5, tp_abs_lo_pct>=0.0200, q50=0.0144, q75=0.0193, q90=0.0257)
+[2026-02-27 07:17:40 UTC] [eval:start] CFGA0506E32BF mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:17:41 UTC] [eval:CFGA0506E32BF] barrier_cache miss(tp) h=8 side=long
+[2026-02-27 07:17:41 UTC] [eval:CFGA0506E32BF] label_cache miss h=8 side=long
+[2026-02-27 07:17:42 UTC] [eval:CFGA0506E32BF] barrier_cache miss(tp) h=8 side=short
+[2026-02-27 07:17:42 UTC] [eval:CFGA0506E32BF] label_cache miss h=8 side=short
+[2026-02-27 07:17:43 UTC] [eval:CFGA0506E32BF] raw_events=703,588 mem_peak_mb=1571.0
+[2026-02-27 07:17:43 UTC] [eval:CFGA0506E32BF] funnel(rr≥0.40) long_H8: 351,778→324,141  short_H8: 351,810→324,171  |  rr_kept min=92.1% median=92.1%
+[2026-02-27 07:17:43 UTC] [eval:CFGA0506E32BF] candidate_prefilter_kept=159,261/703,588
+[2026-02-27 07:17:43 UTC] [eval:CFGA0506E32BF] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:17:44 UTC] [eval:CFGA0506E32BF] rr_filter_kept=24,699/26,270 min_net_rr=0.400
+[2026-02-27 07:17:44 UTC] [eval:CFGA0506E32BF] model_scored n=24,699 ic_payoff=0.0271 ic_label=0.0267 decile_spread=0.000616
+[2026-02-27 07:17:45 UTC] [eval:done] CFGA0506E32BF stage1=-0.0276 stage2=0.0209 coverage=0.652 ess=17120.1 tp=0.235 timeout=0.183 decile_spread=0.000616 hard_gate=False elapsed_s=5.15 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:17:45 UTC] [eval:start] CFG47D9AEC419 mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:17:45 UTC] [eval:CFG47D9AEC419] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:17:45 UTC] [eval:CFG47D9AEC419] label_cache miss h=8 side=long
+[2026-02-27 07:17:46 UTC] [eval:CFG47D9AEC419] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:17:46 UTC] [eval:CFG47D9AEC419] label_cache miss h=8 side=short
+[2026-02-27 07:17:46 UTC] [eval:CFG47D9AEC419] raw_events=703,588 mem_peak_mb=1571.0
+[2026-02-27 07:17:46 UTC] [eval:CFG47D9AEC419] funnel(rr≥0.40) long_H8: 351,778→324,141  short_H8: 351,810→324,171  |  rr_kept min=92.1% median=92.1%
+[2026-02-27 07:17:47 UTC] [eval:CFG47D9AEC419] candidate_prefilter_kept=159,261/703,588
+[2026-02-27 07:17:47 UTC] [eval:CFG47D9AEC419] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:17:47 UTC] [eval:CFG47D9AEC419] rr_filter_kept=24,699/26,270 min_net_rr=0.400
+[2026-02-27 07:17:47 UTC] [eval:CFG47D9AEC419] model_scored n=24,699 ic_payoff=0.0451 ic_label=0.0245 decile_spread=0.000704
+[2026-02-27 07:17:48 UTC] [eval:done] CFG47D9AEC419 stage1=-0.0228 stage2=0.0214 coverage=0.662 ess=17391.0 tp=0.242 timeout=0.196 decile_spread=0.000704 hard_gate=False elapsed_s=2.81 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:17:49 UTC] [eval:start] CFG0972EEAF62 mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:17:49 UTC] [eval:CFG0972EEAF62] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:17:49 UTC] [eval:CFG0972EEAF62] label_cache miss h=8 side=long
+[2026-02-27 07:17:49 UTC] [eval:CFG0972EEAF62] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:17:49 UTC] [eval:CFG0972EEAF62] label_cache miss h=8 side=short
+[2026-02-27 07:17:49 UTC] [eval:CFG0972EEAF62] raw_events=703,584 mem_peak_mb=1571.0
+[2026-02-27 07:17:50 UTC] [eval:CFG0972EEAF62] funnel(rr≥0.40) long_H8: 351,776→324,139  short_H8: 351,808→324,169  |  rr_kept min=92.1% median=92.1%
+[2026-02-27 07:17:50 UTC] [eval:CFG0972EEAF62] candidate_prefilter_kept=159,261/703,584
+[2026-02-27 07:17:50 UTC] [eval:CFG0972EEAF62] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:17:51 UTC] [eval:CFG0972EEAF62] rr_filter_kept=24,699/26,270 min_net_rr=0.400
+[2026-02-27 07:17:51 UTC] [eval:CFG0972EEAF62] OOF direction flip applied for MR_short_H8: auc_before=0.4974 < 0.5000
+[2026-02-27 07:17:51 UTC] [eval:CFG0972EEAF62] model_scored n=24,699 ic_payoff=-0.0421 ic_label=-0.0212 decile_spread=-0.001168
+[2026-02-27 07:17:52 UTC] [eval:done] CFG0972EEAF62 stage1=-0.0631 stage2=-0.0334 coverage=0.701 ess=18423.3 tp=0.255 timeout=0.218 decile_spread=-0.001168 hard_gate=False elapsed_s=3.10 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[I 2026-02-27 08:17:52,410] Trial 93 finished with value: 0.021379169445231768 and parameters: {'k_tp': 0.6000000000000001, 'tp_base_pct': 0.024, 'sl_as_tp_pct': 0.3, 'base_atr_window': 840}. Best is trial 49 with value: 0.2541083973257994.
+[2026-02-27 07:17:52 UTC] [prod_aligned_tp] applied ladder to 1 base cfgs -> 1 cfgs (tp_base_count=5, tp_abs_lo_pct>=0.0200, q50=0.0144, q75=0.0193, q90=0.0257)
+[2026-02-27 07:17:52 UTC] [eval:start] CFGC88C53BD9F mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:17:53 UTC] [eval:CFGC88C53BD9F] barrier_cache miss(tp) h=8 side=long
+[2026-02-27 07:17:53 UTC] [eval:CFGC88C53BD9F] label_cache miss h=8 side=long
+[2026-02-27 07:17:54 UTC] [eval:CFGC88C53BD9F] barrier_cache miss(tp) h=8 side=short
+[2026-02-27 07:17:55 UTC] [eval:CFGC88C53BD9F] label_cache miss h=8 side=short
+[2026-02-27 07:17:55 UTC] [eval:CFGC88C53BD9F] raw_events=703,573 mem_peak_mb=1571.0
+[2026-02-27 07:17:56 UTC] [eval:CFGC88C53BD9F] funnel(rr≥0.40) long_H8: 351,764→344,777  short_H8: 351,809→344,822  |  rr_kept min=98.0% median=98.0%
+[2026-02-27 07:17:56 UTC] [eval:CFGC88C53BD9F] candidate_prefilter_kept=159,261/703,573
+[2026-02-27 07:17:56 UTC] [eval:CFGC88C53BD9F] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:17:56 UTC] [eval:CFGC88C53BD9F] rr_filter_kept=25,602/26,270 min_net_rr=0.400
+[2026-02-27 07:17:57 UTC] [eval:CFGC88C53BD9F] model_scored n=25,602 ic_payoff=0.0174 ic_label=-0.0052 decile_spread=0.000610
+[2026-02-27 07:17:58 UTC] [eval:done] CFGC88C53BD9F stage1=-0.0420 stage2=0.2523 coverage=0.682 ess=17922.1 tp=0.194 timeout=0.228 decile_spread=0.000610 hard_gate=False elapsed_s=5.92 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:17:58 UTC] [eval:start] CFGE66896B0F1 mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:17:58 UTC] [eval:CFGE66896B0F1] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:17:58 UTC] [eval:CFGE66896B0F1] label_cache miss h=8 side=long
+[2026-02-27 07:17:59 UTC] [eval:CFGE66896B0F1] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:17:59 UTC] [eval:CFGE66896B0F1] label_cache miss h=8 side=short
+[2026-02-27 07:18:00 UTC] [eval:CFGE66896B0F1] raw_events=703,569 mem_peak_mb=1571.0
+[2026-02-27 07:18:00 UTC] [eval:CFGE66896B0F1] funnel(rr≥0.40) long_H8: 351,762→344,775  short_H8: 351,807→344,820  |  rr_kept min=98.0% median=98.0%
+[2026-02-27 07:18:00 UTC] [eval:CFGE66896B0F1] candidate_prefilter_kept=159,261/703,569
+[2026-02-27 07:18:00 UTC] [eval:CFGE66896B0F1] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:18:01 UTC] [eval:CFGE66896B0F1] rr_filter_kept=25,602/26,270 min_net_rr=0.400
+[2026-02-27 07:18:01 UTC] [eval:CFGE66896B0F1] model_scored n=25,602 ic_payoff=0.0288 ic_label=-0.0006 decile_spread=0.001017
+[2026-02-27 07:18:02 UTC] [eval:done] CFGE66896B0F1 stage1=-0.0427 stage2=0.2419 coverage=0.683 ess=17934.7 tp=0.205 timeout=0.255 decile_spread=0.001017 hard_gate=False elapsed_s=3.71 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:02 UTC] [eval:start] CFG8C898EADD7 mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:02 UTC] [eval:CFG8C898EADD7] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:18:03 UTC] [eval:CFG8C898EADD7] label_cache miss h=8 side=long
+[2026-02-27 07:18:03 UTC] [eval:CFG8C898EADD7] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:18:03 UTC] [eval:CFG8C898EADD7] label_cache miss h=8 side=short
+[2026-02-27 07:18:04 UTC] [eval:CFG8C898EADD7] raw_events=703,561 mem_peak_mb=1571.0
+[2026-02-27 07:18:04 UTC] [eval:CFG8C898EADD7] funnel(rr≥0.40) long_H8: 351,761→344,774  short_H8: 351,800→344,813  |  rr_kept min=98.0% median=98.0%
+[2026-02-27 07:18:04 UTC] [eval:CFG8C898EADD7] candidate_prefilter_kept=159,260/703,561
+[2026-02-27 07:18:04 UTC] [eval:CFG8C898EADD7] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:18:05 UTC] [eval:CFG8C898EADD7] rr_filter_kept=25,602/26,270 min_net_rr=0.400
+[2026-02-27 07:18:05 UTC] [eval:CFG8C898EADD7] OOF direction flip applied for MR_short_H8: auc_before=0.4971 < 0.5000
+[2026-02-27 07:18:05 UTC] [eval:CFG8C898EADD7] model_scored n=25,602 ic_payoff=-0.0312 ic_label=-0.0065 decile_spread=-0.001598
+[2026-02-27 07:18:06 UTC] [eval:done] CFG8C898EADD7 stage1=-0.0748 stage2=-0.0052 coverage=0.676 ess=17755.0 tp=0.221 timeout=0.292 decile_spread=-0.001598 hard_gate=False elapsed_s=3.88 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:07 UTC] [eval:start] CFG47C73FE6FA mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:07 UTC] [eval:CFG47C73FE6FA] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:18:07 UTC] [eval:CFG47C73FE6FA] label_cache miss h=8 side=long
+[2026-02-27 07:18:07 UTC] [eval:CFG47C73FE6FA] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:18:07 UTC] [eval:CFG47C73FE6FA] label_cache miss h=8 side=short
+[2026-02-27 07:18:08 UTC] [eval:CFG47C73FE6FA] raw_events=703,557 mem_peak_mb=1571.0
+[2026-02-27 07:18:08 UTC] [eval:CFG47C73FE6FA] funnel(rr≥0.40) long_H8: 351,761→344,774  short_H8: 351,796→344,809  |  rr_kept min=98.0% median=98.0%
+[2026-02-27 07:18:08 UTC] [eval:CFG47C73FE6FA] candidate_prefilter_kept=159,259/703,557
+[2026-02-27 07:18:08 UTC] [eval:CFG47C73FE6FA] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:18:09 UTC] [eval:CFG47C73FE6FA] rr_filter_kept=25,602/26,270 min_net_rr=0.400
+[2026-02-27 07:18:09 UTC] [eval:CFG47C73FE6FA] OOF direction flip applied for MR_short_H8: auc_before=0.4936 < 0.5000
+[2026-02-27 07:18:09 UTC] [eval:CFG47C73FE6FA] model_scored n=25,602 ic_payoff=-0.0259 ic_label=-0.0078 decile_spread=-0.001079
+[2026-02-27 07:18:10 UTC] [eval:done] CFG47C73FE6FA stage1=-0.0803 stage2=-0.0035 coverage=0.690 ess=18116.5 tp=0.233 timeout=0.330 decile_spread=-0.001079 hard_gate=False elapsed_s=3.16 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:10 UTC] [eval:start] CFG36D084F886 mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:10 UTC] [eval:CFG36D084F886] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:18:10 UTC] [eval:CFG36D084F886] label_cache miss h=8 side=long
+[2026-02-27 07:18:11 UTC] [eval:CFG36D084F886] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:18:11 UTC] [eval:CFG36D084F886] label_cache miss h=8 side=short
+[2026-02-27 07:18:11 UTC] [eval:CFG36D084F886] raw_events=703,540 mem_peak_mb=1571.0
+[2026-02-27 07:18:11 UTC] [eval:CFG36D084F886] funnel(rr≥0.40) long_H8: 351,758→344,771  short_H8: 351,782→344,795  |  rr_kept min=98.0% median=98.0%
+[2026-02-27 07:18:12 UTC] [eval:CFG36D084F886] candidate_prefilter_kept=159,256/703,540
+[2026-02-27 07:18:12 UTC] [eval:CFG36D084F886] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:18:12 UTC] [eval:CFG36D084F886] rr_filter_kept=25,602/26,270 min_net_rr=0.400
+[2026-02-27 07:18:12 UTC] [eval:CFG36D084F886] OOF direction flip applied for MR_short_H8: auc_before=0.4964 < 0.5000
+[2026-02-27 07:18:12 UTC] [eval:CFG36D084F886] model_scored n=25,602 ic_payoff=-0.0222 ic_label=-0.0071 decile_spread=-0.001808
+[2026-02-27 07:18:13 UTC] [eval:done] CFG36D084F886 stage1=-0.0868 stage2=-0.0199 coverage=0.713 ess=18717.5 tp=0.244 timeout=0.369 decile_spread=-0.001808 hard_gate=False elapsed_s=2.78 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[I 2026-02-27 08:18:14,188] Trial 94 finished with value: 0.25225491244423304 and parameters: {'k_tp': 0.9, 'tp_base_pct': 0.02, 'sl_as_tp_pct': 0.5, 'base_atr_window': 840}. Best is trial 49 with value: 0.2541083973257994.
+[2026-02-27 07:18:14 UTC] [prod_aligned_tp] applied ladder to 1 base cfgs -> 1 cfgs (tp_base_count=5, tp_abs_lo_pct>=0.0200, q50=0.0144, q75=0.0193, q90=0.0257)
+[2026-02-27 07:18:14 UTC] [eval:start] CFGD2519DCB5B mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:15 UTC] [eval:CFGD2519DCB5B] barrier_cache miss(tp) h=8 side=long
+[2026-02-27 07:18:15 UTC] [eval:CFGD2519DCB5B] label_cache miss h=8 side=long
+[2026-02-27 07:18:16 UTC] [eval:CFGD2519DCB5B] barrier_cache miss(tp) h=8 side=short
+[2026-02-27 07:18:16 UTC] [eval:CFGD2519DCB5B] label_cache miss h=8 side=short
+[2026-02-27 07:18:17 UTC] [eval:CFGD2519DCB5B] raw_events=703,565 mem_peak_mb=1571.0
+[2026-02-27 07:18:17 UTC] [eval:CFGD2519DCB5B] funnel(rr≥0.40) long_H8: 351,756→346,937  short_H8: 351,809→346,990  |  rr_kept min=98.6% median=98.6%
+[2026-02-27 07:18:17 UTC] [eval:CFGD2519DCB5B] candidate_prefilter_kept=159,259/703,565
+[2026-02-27 07:18:17 UTC] [eval:CFGD2519DCB5B] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:18:18 UTC] [eval:CFGD2519DCB5B] rr_filter_kept=25,703/26,270 min_net_rr=0.400
+[2026-02-27 07:18:18 UTC] [eval:CFGD2519DCB5B] model_scored n=25,703 ic_payoff=0.0121 ic_label=-0.0148 decile_spread=0.000155
+[2026-02-27 07:18:19 UTC] [eval:done] CFGD2519DCB5B stage1=-0.0471 stage2=0.2478 coverage=0.687 ess=18037.4 tp=0.183 timeout=0.240 decile_spread=0.000155 hard_gate=False elapsed_s=5.51 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:20 UTC] [eval:start] CFG39661085FE mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:20 UTC] [eval:CFG39661085FE] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:18:20 UTC] [eval:CFG39661085FE] label_cache miss h=8 side=long
+[2026-02-27 07:18:20 UTC] [eval:CFG39661085FE] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:18:20 UTC] [eval:CFG39661085FE] label_cache miss h=8 side=short
+[2026-02-27 07:18:21 UTC] [eval:CFG39661085FE] raw_events=703,561 mem_peak_mb=1571.0
+[2026-02-27 07:18:21 UTC] [eval:CFG39661085FE] funnel(rr≥0.40) long_H8: 351,754→346,935  short_H8: 351,807→346,988  |  rr_kept min=98.6% median=98.6%
+[2026-02-27 07:18:21 UTC] [eval:CFG39661085FE] candidate_prefilter_kept=159,259/703,561
+[2026-02-27 07:18:21 UTC] [eval:CFG39661085FE] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:18:22 UTC] [eval:CFG39661085FE] rr_filter_kept=25,703/26,270 min_net_rr=0.400
+[2026-02-27 07:18:22 UTC] [eval:CFG39661085FE] OOF direction flip applied for MR_short_H8: auc_before=0.4974 < 0.5000
+[2026-02-27 07:18:22 UTC] [eval:CFG39661085FE] model_scored n=25,703 ic_payoff=-0.0212 ic_label=0.0095 decile_spread=-0.000842
+[2026-02-27 07:18:23 UTC] [eval:done] CFG39661085FE stage1=-0.0673 stage2=-0.0085 coverage=0.684 ess=17970.8 tp=0.195 timeout=0.272 decile_spread=-0.000842 hard_gate=False elapsed_s=3.10 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:23 UTC] [eval:start] CFGBC7882996D mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:23 UTC] [eval:CFGBC7882996D] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:18:23 UTC] [eval:CFGBC7882996D] label_cache miss h=8 side=long
+[2026-02-27 07:18:24 UTC] [eval:CFGBC7882996D] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:18:24 UTC] [eval:CFGBC7882996D] label_cache miss h=8 side=short
+[2026-02-27 07:18:24 UTC] [eval:CFGBC7882996D] raw_events=703,552 mem_peak_mb=1571.0
+[2026-02-27 07:18:24 UTC] [eval:CFGBC7882996D] funnel(rr≥0.40) long_H8: 351,753→346,934  short_H8: 351,799→346,980  |  rr_kept min=98.6% median=98.6%
+[2026-02-27 07:18:24 UTC] [eval:CFGBC7882996D] candidate_prefilter_kept=159,258/703,552
+[2026-02-27 07:18:25 UTC] [eval:CFGBC7882996D] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:18:25 UTC] [eval:CFGBC7882996D] rr_filter_kept=25,703/26,270 min_net_rr=0.400
+[2026-02-27 07:18:25 UTC] [eval:CFGBC7882996D] OOF direction flip applied for MR_short_H8: auc_before=0.4895 < 0.5000
+[2026-02-27 07:18:25 UTC] [eval:CFGBC7882996D] model_scored n=25,703 ic_payoff=-0.0221 ic_label=0.0041 decile_spread=-0.000672
+[2026-02-27 07:18:26 UTC] [eval:done] CFGBC7882996D stage1=-0.0756 stage2=-0.0002 coverage=0.676 ess=17750.6 tp=0.210 timeout=0.312 decile_spread=-0.000672 hard_gate=False elapsed_s=2.77 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:26 UTC] [eval:start] CFGE6A872F580 mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:26 UTC] [eval:CFGE6A872F580] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:18:26 UTC] [eval:CFGE6A872F580] label_cache miss h=8 side=long
+[2026-02-27 07:18:27 UTC] [eval:CFGE6A872F580] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:18:27 UTC] [eval:CFGE6A872F580] label_cache miss h=8 side=short
+[2026-02-27 07:18:27 UTC] [eval:CFGE6A872F580] raw_events=703,543 mem_peak_mb=1571.0
+[2026-02-27 07:18:27 UTC] [eval:CFGE6A872F580] funnel(rr≥0.40) long_H8: 351,751→346,932  short_H8: 351,792→346,973  |  rr_kept min=98.6% median=98.6%
+[2026-02-27 07:18:28 UTC] [eval:CFGE6A872F580] candidate_prefilter_kept=159,255/703,543
+[2026-02-27 07:18:28 UTC] [eval:CFGE6A872F580] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:18:28 UTC] [eval:CFGE6A872F580] rr_filter_kept=25,703/26,270 min_net_rr=0.400
+[2026-02-27 07:18:28 UTC] [eval:CFGE6A872F580] OOF direction flip applied for MR_short_H8: auc_before=0.4898 < 0.5000
+[2026-02-27 07:18:28 UTC] [eval:CFGE6A872F580] model_scored n=25,703 ic_payoff=-0.0222 ic_label=-0.0045 decile_spread=-0.000657
+[2026-02-27 07:18:29 UTC] [eval:done] CFGE6A872F580 stage1=-0.0837 stage2=-0.0050 coverage=0.671 ess=17617.6 tp=0.222 timeout=0.352 decile_spread=-0.000657 hard_gate=False elapsed_s=2.75 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[I 2026-02-27 08:18:29,818] Trial 95 finished with value: 0.24784452214070662 and parameters: {'k_tp': 0.7000000000000001, 'tp_base_pct': 0.027, 'sl_as_tp_pct': 0.4, 'base_atr_window': 840}. Best is trial 49 with value: 0.2541083973257994.
+[2026-02-27 07:18:29 UTC] [prod_aligned_tp] applied ladder to 1 base cfgs -> 1 cfgs (tp_base_count=5, tp_abs_lo_pct>=0.0200, q50=0.0144, q75=0.0193, q90=0.0257)
+[I 2026-02-27 08:18:29,951] Trial 96 pruned. fast_pr_auc_lift=1.017 < 1.1
+[2026-02-27 07:18:30 UTC] [prod_aligned_tp] applied ladder to 1 base cfgs -> 1 cfgs (tp_base_count=5, tp_abs_lo_pct>=0.0200, q50=0.0144, q75=0.0193, q90=0.0257)
+[2026-02-27 07:18:30 UTC] [eval:start] CFGE3D30151C2 mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:30 UTC] [eval:CFGE3D30151C2] barrier_cache miss(tp) h=8 side=long
+[2026-02-27 07:18:30 UTC] [eval:CFGE3D30151C2] label_cache miss h=8 side=long
+[2026-02-27 07:18:32 UTC] [eval:CFGE3D30151C2] barrier_cache miss(tp) h=8 side=short
+[2026-02-27 07:18:32 UTC] [eval:CFGE3D30151C2] label_cache miss h=8 side=short
+[2026-02-27 07:18:32 UTC] [eval:CFGE3D30151C2] raw_events=703,584 mem_peak_mb=1571.0
+[2026-02-27 07:18:32 UTC] [eval:CFGE3D30151C2] funnel(rr≥0.40) long_H8: 351,774→332,610  short_H8: 351,810→332,646  |  rr_kept min=94.6% median=94.6%
+[2026-02-27 07:18:32 UTC] [eval:CFGE3D30151C2] candidate_prefilter_kept=159,261/703,584
+[2026-02-27 07:18:33 UTC] [eval:CFGE3D30151C2] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:18:33 UTC] [eval:CFGE3D30151C2] rr_filter_kept=25,058/26,270 min_net_rr=0.400
+[2026-02-27 07:18:33 UTC] [eval:CFGE3D30151C2] model_scored n=25,058 ic_payoff=0.0253 ic_label=0.0164 decile_spread=0.000694
+[2026-02-27 07:18:34 UTC] [eval:done] CFGE3D30151C2 stage1=-0.0309 stage2=0.2522 coverage=0.663 ess=17424.9 tp=0.223 timeout=0.194 decile_spread=0.000694 hard_gate=False elapsed_s=4.77 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:34 UTC] [eval:start] CFG2C454C819F mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:34 UTC] [eval:CFG2C454C819F] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:18:35 UTC] [eval:CFG2C454C819F] label_cache miss h=8 side=long
+[2026-02-27 07:18:35 UTC] [eval:CFG2C454C819F] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:18:35 UTC] [eval:CFG2C454C819F] label_cache miss h=8 side=short
+[2026-02-27 07:18:35 UTC] [eval:CFG2C454C819F] raw_events=703,584 mem_peak_mb=1571.0
+[2026-02-27 07:18:35 UTC] [eval:CFG2C454C819F] funnel(rr≥0.40) long_H8: 351,774→332,610  short_H8: 351,810→332,646  |  rr_kept min=94.6% median=94.6%
+[2026-02-27 07:18:36 UTC] [eval:CFG2C454C819F] candidate_prefilter_kept=159,261/703,584
+[2026-02-27 07:18:36 UTC] [eval:CFG2C454C819F] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:18:36 UTC] [eval:CFG2C454C819F] rr_filter_kept=25,058/26,270 min_net_rr=0.400
+[2026-02-27 07:18:37 UTC] [eval:CFG2C454C819F] model_scored n=25,058 ic_payoff=0.0394 ic_label=0.0167 decile_spread=0.000902
+[2026-02-27 07:18:37 UTC] [eval:done] CFG2C454C819F stage1=-0.0286 stage2=0.2512 coverage=0.671 ess=17620.1 tp=0.231 timeout=0.212 decile_spread=0.000902 hard_gate=False elapsed_s=2.87 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:38 UTC] [eval:start] CFG3E7FA4494E mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:38 UTC] [eval:CFG3E7FA4494E] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:18:38 UTC] [eval:CFG3E7FA4494E] label_cache miss h=8 side=long
+[2026-02-27 07:18:38 UTC] [eval:CFG3E7FA4494E] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:18:38 UTC] [eval:CFG3E7FA4494E] label_cache miss h=8 side=short
+[2026-02-27 07:18:39 UTC] [eval:CFG3E7FA4494E] raw_events=703,579 mem_peak_mb=1571.0
+[2026-02-27 07:18:39 UTC] [eval:CFG3E7FA4494E] funnel(rr≥0.40) long_H8: 351,772→332,608  short_H8: 351,807→332,643  |  rr_kept min=94.6% median=94.6%
+[2026-02-27 07:18:39 UTC] [eval:CFG3E7FA4494E] candidate_prefilter_kept=159,261/703,579
+[2026-02-27 07:18:39 UTC] [eval:CFG3E7FA4494E] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:18:40 UTC] [eval:CFG3E7FA4494E] rr_filter_kept=25,058/26,270 min_net_rr=0.400
+[2026-02-27 07:18:40 UTC] [eval:CFG3E7FA4494E] OOF direction flip applied for MR_short_H8: auc_before=0.4980 < 0.5000
+[2026-02-27 07:18:40 UTC] [eval:CFG3E7FA4494E] model_scored n=25,058 ic_payoff=-0.0399 ic_label=-0.0194 decile_spread=-0.001306
+[2026-02-27 07:18:41 UTC] [eval:done] CFG3E7FA4494E stage1=-0.0665 stage2=-0.0035 coverage=0.693 ess=18212.0 tp=0.245 timeout=0.238 decile_spread=-0.001306 hard_gate=False elapsed_s=3.06 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:41 UTC] [eval:start] CFG804DFF703D mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:41 UTC] [eval:CFG804DFF703D] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:18:41 UTC] [eval:CFG804DFF703D] label_cache miss h=8 side=long
+[2026-02-27 07:18:41 UTC] [eval:CFG804DFF703D] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:18:41 UTC] [eval:CFG804DFF703D] label_cache miss h=8 side=short
+[2026-02-27 07:18:42 UTC] [eval:CFG804DFF703D] raw_events=703,572 mem_peak_mb=1571.0
+[2026-02-27 07:18:42 UTC] [eval:CFG804DFF703D] funnel(rr≥0.40) long_H8: 351,771→332,607  short_H8: 351,801→332,637  |  rr_kept min=94.6% median=94.6%
+[2026-02-27 07:18:42 UTC] [eval:CFG804DFF703D] candidate_prefilter_kept=159,260/703,572
+[2026-02-27 07:18:42 UTC] [eval:CFG804DFF703D] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:18:42 UTC] [eval:CFG804DFF703D] rr_filter_kept=25,058/26,270 min_net_rr=0.400
+[2026-02-27 07:18:43 UTC] [eval:CFG804DFF703D] OOF direction flip applied for MR_short_H8: auc_before=0.4931 < 0.5000
+[2026-02-27 07:18:43 UTC] [eval:CFG804DFF703D] model_scored n=25,058 ic_payoff=-0.0315 ic_label=-0.0130 decile_spread=-0.000954
+[2026-02-27 07:18:43 UTC] [eval:done] CFG804DFF703D stage1=-0.0694 stage2=-0.0042 coverage=0.726 ess=19071.5 tp=0.260 timeout=0.268 decile_spread=-0.000954 hard_gate=False elapsed_s=2.51 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:44 UTC] [eval:start] CFG27D6187A94 mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:44 UTC] [eval:CFG27D6187A94] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:18:44 UTC] [eval:CFG27D6187A94] label_cache miss h=8 side=long
+[2026-02-27 07:18:44 UTC] [eval:CFG27D6187A94] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:18:44 UTC] [eval:CFG27D6187A94] label_cache miss h=8 side=short
+[2026-02-27 07:18:44 UTC] [eval:CFG27D6187A94] raw_events=703,568 mem_peak_mb=1571.0
+[2026-02-27 07:18:44 UTC] [eval:CFG27D6187A94] funnel(rr≥0.40) long_H8: 351,771→332,607  short_H8: 351,797→332,633  |  rr_kept min=94.6% median=94.6%
+[2026-02-27 07:18:44 UTC] [eval:CFG27D6187A94] candidate_prefilter_kept=159,259/703,568
+[2026-02-27 07:18:44 UTC] [eval:CFG27D6187A94] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:18:45 UTC] [eval:CFG27D6187A94] rr_filter_kept=25,058/26,270 min_net_rr=0.400
+[2026-02-27 07:18:45 UTC] [eval:CFG27D6187A94] OOF direction flip applied for MR_short_H8: auc_before=0.4911 < 0.5000
+[2026-02-27 07:18:45 UTC] [eval:CFG27D6187A94] model_scored n=25,058 ic_payoff=-0.0221 ic_label=-0.0096 decile_spread=-0.001030
+[2026-02-27 07:18:45 UTC] [eval:done] CFG27D6187A94 stage1=-0.0717 stage2=-0.0063 coverage=0.749 ess=19686.5 tp=0.273 timeout=0.299 decile_spread=-0.001030 hard_gate=False elapsed_s=1.90 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[I 2026-02-27 08:18:46,132] Trial 97 finished with value: 0.2521816383991091 and parameters: {'k_tp': 0.7000000000000001, 'tp_base_pct': 0.022000000000000002, 'sl_as_tp_pct': 0.5, 'base_atr_window': 840}. Best is trial 49 with value: 0.2541083973257994.
+[2026-02-27 07:18:46 UTC] [prod_aligned_tp] applied ladder to 1 base cfgs -> 1 cfgs (tp_base_count=5, tp_abs_lo_pct>=0.0200, q50=0.0144, q75=0.0193, q90=0.0257)
+[2026-02-27 07:18:46 UTC] [eval:start] CFG4374C167B9 mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:46 UTC] [eval:CFG4374C167B9] barrier_cache miss(tp) h=8 side=long
+[2026-02-27 07:18:46 UTC] [eval:CFG4374C167B9] label_cache miss h=8 side=long
+[2026-02-27 07:18:47 UTC] [eval:CFG4374C167B9] barrier_cache miss(tp) h=8 side=short
+[2026-02-27 07:18:47 UTC] [eval:CFG4374C167B9] label_cache miss h=8 side=short
+[2026-02-27 07:18:47 UTC] [eval:CFG4374C167B9] raw_events=703,578 mem_peak_mb=1571.0
+[2026-02-27 07:18:47 UTC] [eval:CFG4374C167B9] funnel(rr≥0.40) long_H8: 351,769→336,948  short_H8: 351,809→336,988  |  rr_kept min=95.8% median=95.8%
+[2026-02-27 07:18:48 UTC] [eval:CFG4374C167B9] candidate_prefilter_kept=159,261/703,578
+[2026-02-27 07:18:48 UTC] [eval:CFG4374C167B9] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:18:48 UTC] [eval:CFG4374C167B9] rr_filter_kept=25,235/26,270 min_net_rr=0.400
+[2026-02-27 07:18:48 UTC] [eval:CFG4374C167B9] model_scored n=25,235 ic_payoff=0.0209 ic_label=0.0095 decile_spread=0.000821
+[2026-02-27 07:18:49 UTC] [eval:done] CFG4374C167B9 stage1=-0.0348 stage2=0.2540 coverage=0.669 ess=17571.3 tp=0.215 timeout=0.204 decile_spread=0.000821 hard_gate=False elapsed_s=3.04 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:49 UTC] [eval:start] CFG9A599DBF6D mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:49 UTC] [eval:CFG9A599DBF6D] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:18:49 UTC] [eval:CFG9A599DBF6D] label_cache miss h=8 side=long
+[2026-02-27 07:18:49 UTC] [eval:CFG9A599DBF6D] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:18:49 UTC] [eval:CFG9A599DBF6D] label_cache miss h=8 side=short
+[2026-02-27 07:18:49 UTC] [eval:CFG9A599DBF6D] raw_events=703,578 mem_peak_mb=1571.0
+[2026-02-27 07:18:49 UTC] [eval:CFG9A599DBF6D] funnel(rr≥0.40) long_H8: 351,769→336,948  short_H8: 351,809→336,988  |  rr_kept min=95.8% median=95.8%
+[2026-02-27 07:18:50 UTC] [eval:CFG9A599DBF6D] candidate_prefilter_kept=159,261/703,578
+[2026-02-27 07:18:50 UTC] [eval:CFG9A599DBF6D] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:18:50 UTC] [eval:CFG9A599DBF6D] rr_filter_kept=25,235/26,270 min_net_rr=0.400
+[2026-02-27 07:18:50 UTC] [eval:CFG9A599DBF6D] model_scored n=25,235 ic_payoff=0.0378 ic_label=0.0122 decile_spread=0.001356
+[2026-02-27 07:18:51 UTC] [eval:done] CFG9A599DBF6D stage1=-0.0317 stage2=0.2495 coverage=0.675 ess=17734.9 tp=0.224 timeout=0.223 decile_spread=0.001356 hard_gate=False elapsed_s=1.55 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:51 UTC] [eval:start] CFG209C54BB14 mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:51 UTC] [eval:CFG209C54BB14] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:18:51 UTC] [eval:CFG209C54BB14] label_cache miss h=8 side=long
+[2026-02-27 07:18:51 UTC] [eval:CFG209C54BB14] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:18:51 UTC] [eval:CFG209C54BB14] label_cache miss h=8 side=short
+[2026-02-27 07:18:51 UTC] [eval:CFG209C54BB14] raw_events=703,571 mem_peak_mb=1571.0
+[2026-02-27 07:18:51 UTC] [eval:CFG209C54BB14] funnel(rr≥0.40) long_H8: 351,767→336,946  short_H8: 351,804→336,983  |  rr_kept min=95.8% median=95.8%
+[2026-02-27 07:18:52 UTC] [eval:CFG209C54BB14] candidate_prefilter_kept=159,261/703,571
+[2026-02-27 07:18:52 UTC] [eval:CFG209C54BB14] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:18:52 UTC] [eval:CFG209C54BB14] rr_filter_kept=25,235/26,270 min_net_rr=0.400
+[2026-02-27 07:18:52 UTC] [eval:CFG209C54BB14] OOF direction flip applied for MR_short_H8: auc_before=0.4947 < 0.5000
+[2026-02-27 07:18:52 UTC] [eval:CFG209C54BB14] model_scored n=25,235 ic_payoff=-0.0342 ic_label=-0.0163 decile_spread=-0.001084
+[2026-02-27 07:18:53 UTC] [eval:done] CFG209C54BB14 stage1=-0.0672 stage2=-0.0018 coverage=0.688 ess=18064.7 tp=0.239 timeout=0.252 decile_spread=-0.001084 hard_gate=False elapsed_s=2.05 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:53 UTC] [eval:start] CFGEDC9BF0CEC mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:53 UTC] [eval:CFGEDC9BF0CEC] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:18:53 UTC] [eval:CFGEDC9BF0CEC] label_cache miss h=8 side=long
+[2026-02-27 07:18:53 UTC] [eval:CFGEDC9BF0CEC] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:18:53 UTC] [eval:CFGEDC9BF0CEC] label_cache miss h=8 side=short
+[2026-02-27 07:18:54 UTC] [eval:CFGEDC9BF0CEC] raw_events=703,565 mem_peak_mb=1571.0
+[2026-02-27 07:18:54 UTC] [eval:CFGEDC9BF0CEC] funnel(rr≥0.40) long_H8: 351,766→336,945  short_H8: 351,799→336,978  |  rr_kept min=95.8% median=95.8%
+[2026-02-27 07:18:54 UTC] [eval:CFGEDC9BF0CEC] candidate_prefilter_kept=159,260/703,565
+[2026-02-27 07:18:54 UTC] [eval:CFGEDC9BF0CEC] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:18:54 UTC] [eval:CFGEDC9BF0CEC] rr_filter_kept=25,235/26,270 min_net_rr=0.400
+[2026-02-27 07:18:54 UTC] [eval:CFGEDC9BF0CEC] OOF direction flip applied for MR_short_H8: auc_before=0.4919 < 0.5000
+[2026-02-27 07:18:54 UTC] [eval:CFGEDC9BF0CEC] model_scored n=25,235 ic_payoff=-0.0306 ic_label=-0.0128 decile_spread=-0.001268
+[2026-02-27 07:18:55 UTC] [eval:done] CFGEDC9BF0CEC stage1=-0.0725 stage2=-0.0038 coverage=0.717 ess=18848.5 tp=0.252 timeout=0.284 decile_spread=-0.001268 hard_gate=False elapsed_s=1.99 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:55 UTC] [eval:start] CFG8B6B172852 mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:55 UTC] [eval:CFG8B6B172852] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:18:55 UTC] [eval:CFG8B6B172852] label_cache miss h=8 side=long
+[2026-02-27 07:18:56 UTC] [eval:CFG8B6B172852] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:18:56 UTC] [eval:CFG8B6B172852] label_cache miss h=8 side=short
+[2026-02-27 07:18:56 UTC] [eval:CFG8B6B172852] raw_events=703,558 mem_peak_mb=1571.0
+[2026-02-27 07:18:56 UTC] [eval:CFG8B6B172852] funnel(rr≥0.40) long_H8: 351,764→336,943  short_H8: 351,794→336,973  |  rr_kept min=95.8% median=95.8%
+[2026-02-27 07:18:56 UTC] [eval:CFG8B6B172852] candidate_prefilter_kept=159,257/703,558
+[2026-02-27 07:18:57 UTC] [eval:CFG8B6B172852] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:18:57 UTC] [eval:CFG8B6B172852] rr_filter_kept=25,235/26,270 min_net_rr=0.400
+[2026-02-27 07:18:57 UTC] [eval:CFG8B6B172852] OOF direction flip applied for MR_short_H8: auc_before=0.4909 < 0.5000
+[2026-02-27 07:18:57 UTC] [eval:CFG8B6B172852] model_scored n=25,235 ic_payoff=-0.0223 ic_label=-0.0097 decile_spread=-0.001324
+[2026-02-27 07:18:58 UTC] [eval:done] CFG8B6B172852 stage1=-0.0759 stage2=-0.0111 coverage=0.741 ess=19475.3 tp=0.265 timeout=0.318 decile_spread=-0.001324 hard_gate=False elapsed_s=2.41 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[I 2026-02-27 08:18:58,491] Trial 98 finished with value: 0.25402419031777956 and parameters: {'k_tp': 0.7000000000000001, 'tp_base_pct': 0.023000000000000003, 'sl_as_tp_pct': 0.5, 'base_atr_window': 840}. Best is trial 49 with value: 0.2541083973257994.
+[2026-02-27 07:18:58 UTC] [prod_aligned_tp] applied ladder to 1 base cfgs -> 1 cfgs (tp_base_count=5, tp_abs_lo_pct>=0.0200, q50=0.0144, q75=0.0193, q90=0.0257)
+[2026-02-27 07:18:58 UTC] [eval:start] CFG4CEA92D63A mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:18:59 UTC] [eval:CFG4CEA92D63A] barrier_cache miss(tp) h=8 side=long
+[2026-02-27 07:18:59 UTC] [eval:CFG4CEA92D63A] label_cache miss h=8 side=long
+[2026-02-27 07:19:00 UTC] [eval:CFG4CEA92D63A] barrier_cache miss(tp) h=8 side=short
+[2026-02-27 07:19:00 UTC] [eval:CFG4CEA92D63A] label_cache miss h=8 side=short
+[2026-02-27 07:19:00 UTC] [eval:CFG4CEA92D63A] raw_events=703,612 mem_peak_mb=1571.0
+[2026-02-27 07:19:00 UTC] [eval:CFG4CEA92D63A] funnel(rr≥0.40) long_H8: 351,801→250,720  short_H8: 351,811→250,727  |  rr_kept min=71.3% median=71.3%
+[2026-02-27 07:19:00 UTC] [eval:CFG4CEA92D63A] candidate_prefilter_kept=159,266/703,612
+[2026-02-27 07:19:00 UTC] [eval:CFG4CEA92D63A] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:19:01 UTC] [eval:CFG4CEA92D63A] rr_filter_kept=21,169/26,270 min_net_rr=0.400
+[2026-02-27 07:19:01 UTC] [eval:CFG4CEA92D63A] OOF direction flip applied for MR_short_H8: auc_before=0.4846 < 0.5000
+[2026-02-27 07:19:01 UTC] [eval:CFG4CEA92D63A] model_scored n=21,169 ic_payoff=-0.0080 ic_label=-0.0164 decile_spread=-0.000689
+[2026-02-27 07:19:01 UTC] [eval:done] CFG4CEA92D63A stage1=-0.0415 stage2=0.0101 coverage=0.698 ess=18333.9 tp=0.323 timeout=0.185 decile_spread=-0.000689 hard_gate=False elapsed_s=3.43 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:19:02 UTC] [eval:start] CFGECE2521482 mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=789)
+[2026-02-27 07:19:02 UTC] [eval:CFGECE2521482] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:19:02 UTC] [eval:CFGECE2521482] label_cache miss h=8 side=long
+[2026-02-27 07:19:02 UTC] [eval:CFGECE2521482] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:19:02 UTC] [eval:CFGECE2521482] label_cache miss h=8 side=short
+[2026-02-27 07:19:02 UTC] [eval:CFGECE2521482] raw_events=703,605 mem_peak_mb=1571.0
+[2026-02-27 07:19:03 UTC] [eval:CFGECE2521482] funnel(rr≥0.40) long_H8: 351,800→250,719  short_H8: 351,805→250,721  |  rr_kept min=71.3% median=71.3%
+[2026-02-27 07:19:04 UTC] [eval:CFGECE2521482] candidate_prefilter_kept=159,265/703,605
+[2026-02-27 07:19:04 UTC] [eval:CFGECE2521482] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:19:05 UTC] [eval:CFGECE2521482] rr_filter_kept=21,169/26,270 min_net_rr=0.400
+[2026-02-27 07:19:05 UTC] [eval:CFGECE2521482] OOF direction flip applied for MR_short_H8: auc_before=0.4839 < 0.5000
+[2026-02-27 07:19:05 UTC] [eval:CFGECE2521482] model_scored n=21,169 ic_payoff=-0.0085 ic_label=-0.0163 decile_spread=-0.001042
+[2026-02-27 07:19:05 UTC] [eval:done] CFGECE2521482 stage1=-0.0459 stage2=-0.0154 coverage=0.716 ess=18809.5 tp=0.340 timeout=0.206 decile_spread=-0.001042 hard_gate=False elapsed_s=3.46 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=791)
+[2026-02-27 07:19:05 UTC] [eval:start] CFGD0036ED6A7 mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=791)
+[2026-02-27 07:19:05 UTC] [eval:CFGD0036ED6A7] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:19:05 UTC] [eval:CFGD0036ED6A7] label_cache miss h=8 side=long
+[2026-02-27 07:19:06 UTC] [eval:CFGD0036ED6A7] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:19:06 UTC] [eval:CFGD0036ED6A7] label_cache miss h=8 side=short
+[2026-02-27 07:19:06 UTC] [eval:CFGD0036ED6A7] raw_events=703,603 mem_peak_mb=1571.0
+[2026-02-27 07:19:06 UTC] [eval:CFGD0036ED6A7] funnel(rr≥0.40) long_H8: 351,800→228,954  short_H8: 351,803→228,954  |  rr_kept min=65.1% median=65.1%
+[2026-02-27 07:19:07 UTC] [eval:CFGD0036ED6A7] candidate_prefilter_kept=159,265/703,603
+[2026-02-27 07:19:07 UTC] [eval:CFGD0036ED6A7] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:19:07 UTC] [eval:CFGD0036ED6A7] rr_filter_kept=19,953/26,270 min_net_rr=0.400
+[2026-02-27 07:19:07 UTC] [eval:CFGD0036ED6A7] OOF direction flip applied for MR_short_H8: auc_before=0.4877 < 0.5000
+[2026-02-27 07:19:07 UTC] [eval:CFGD0036ED6A7] model_scored n=19,953 ic_payoff=-0.0144 ic_label=-0.0186 decile_spread=-0.002121
+[2026-02-27 07:19:08 UTC] [eval:done] CFGD0036ED6A7 stage1=-0.0524 stage2=-0.0639 coverage=0.686 ess=18017.1 tp=0.353 timeout=0.227 decile_spread=-0.002121 hard_gate=False elapsed_s=2.46 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=792)
+[2026-02-27 07:19:08 UTC] [eval:start] CFG4AA6AAC4AB mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=792)
+[2026-02-27 07:19:08 UTC] [eval:CFG4AA6AAC4AB] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:19:08 UTC] [eval:CFG4AA6AAC4AB] label_cache miss h=8 side=long
+[2026-02-27 07:19:08 UTC] [eval:CFG4AA6AAC4AB] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:19:09 UTC] [eval:CFG4AA6AAC4AB] label_cache miss h=8 side=short
+[2026-02-27 07:19:09 UTC] [eval:CFG4AA6AAC4AB] raw_events=703,600 mem_peak_mb=1571.0
+[2026-02-27 07:19:09 UTC] [eval:CFG4AA6AAC4AB] funnel(rr≥0.40) long_H8: 351,800→201,677  short_H8: 351,800→201,677  |  rr_kept min=57.3% median=57.3%
+[2026-02-27 07:19:10 UTC] [eval:CFG4AA6AAC4AB] candidate_prefilter_kept=159,264/703,600
+[2026-02-27 07:19:10 UTC] [eval:CFG4AA6AAC4AB] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:19:11 UTC] [eval:CFG4AA6AAC4AB] rr_filter_kept=18,188/26,270 min_net_rr=0.400
+[2026-02-27 07:19:11 UTC] [eval:CFG4AA6AAC4AB] OOF direction flip applied for MR_short_H8: auc_before=0.4900 < 0.5000
+[2026-02-27 07:19:11 UTC] [eval:CFG4AA6AAC4AB] model_scored n=18,188 ic_payoff=-0.0152 ic_label=-0.0175 decile_spread=-0.001816
+[2026-02-27 07:19:11 UTC] [eval:done] CFG4AA6AAC4AB stage1=-0.0579 stage2=-0.1470 coverage=0.631 ess=16571.0 tp=0.361 timeout=0.254 decile_spread=-0.001816 hard_gate=False elapsed_s=3.12 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=794)
+[2026-02-27 07:19:11 UTC] [eval:start] CFG8E7417E291 mode=optuna_s1_MR_short_H8 horizons=[8] mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=794)
+[2026-02-27 07:19:11 UTC] [eval:CFG8E7417E291] barrier_cache hit(tp) h=8 side=long
+[2026-02-27 07:19:12 UTC] [eval:CFG8E7417E291] label_cache miss h=8 side=long
+[2026-02-27 07:19:12 UTC] [eval:CFG8E7417E291] barrier_cache hit(tp) h=8 side=short
+[2026-02-27 07:19:12 UTC] [eval:CFG8E7417E291] label_cache miss h=8 side=short
+[2026-02-27 07:19:12 UTC] [eval:CFG8E7417E291] raw_events=703,592 mem_peak_mb=1571.0
+[2026-02-27 07:19:12 UTC] [eval:CFG8E7417E291] funnel(rr≥0.40) long_H8: 351,798→171,435  short_H8: 351,794→171,435  |  rr_kept min=48.7% median=48.7%
+[2026-02-27 07:19:13 UTC] [eval:CFG8E7417E291] candidate_prefilter_kept=159,262/703,592
+[2026-02-27 07:19:13 UTC] [eval:CFG8E7417E291] quantile_filter_kept=26,270/26,270 (100.0%)
+[2026-02-27 07:19:14 UTC] [eval:CFG8E7417E291] rr_filter_kept=16,319/26,270 min_net_rr=0.400
+[2026-02-27 07:19:14 UTC] [eval:CFG8E7417E291] OOF direction flip applied for MR_short_H8: auc_before=0.4911 < 0.5000
+[2026-02-27 07:19:14 UTC] [eval:CFG8E7417E291] model_scored n=16,319 ic_payoff=-0.0148 ic_label=-0.0191 decile_spread=-0.001016
+[2026-02-27 07:19:15 UTC] [eval:done] CFG8E7417E291 stage1=-0.0629 stage2=-0.1772 coverage=0.570 ess=14973.3 tp=0.368 timeout=0.281 decile_spread=-0.001016 hard_gate=False elapsed_s=3.09 mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=795)
+[I 2026-02-27 08:19:15,273] Trial 99 pruned. low_fidelity_gate failed: auc=0.4791 ess=18333.9
+[2026-02-27 07:19:15 UTC] --- Cell MR_short H8 complete: trials=100 best=0.2541 mem=1571MB ---
+[2026-02-27 07:19:16 UTC] Cleared caches and ran gc.collect()
+[2026-02-27 07:19:16 UTC] [per_cell] WARNING: using all 963 configs as fallback (no structural filter passed)
+[2026-02-27 07:19:16 UTC] [per_cell] MR_long_H2: 2 diverse configs (tier=-1, feasible_pool=49, avg_auc=0.5646)
+[2026-02-27 07:19:16 UTC] [per_cell] MR_long_H4: 2 diverse configs (tier=-1, feasible_pool=44, avg_auc=0.5835)
+[2026-02-27 07:19:17 UTC] [per_cell] MR_long_H8: 2 diverse configs (tier=-1, feasible_pool=39, avg_auc=0.5936)
+[2026-02-27 07:19:17 UTC] [per_cell] MR_short_H2: 2 diverse configs (tier=-1, feasible_pool=62, avg_auc=0.5686)
+[2026-02-27 07:19:17 UTC] [per_cell] MR_short_H4: 2 diverse configs (tier=-1, feasible_pool=67, avg_auc=0.5788)
+[2026-02-27 07:19:17 UTC] [per_cell] MR_short_H8: 2 diverse configs (tier=-1, feasible_pool=70, avg_auc=0.5633)
+[2026-02-27 07:19:17 UTC] [per_cell] TF_long_H2: 2 diverse configs (tier=-1, feasible_pool=65, avg_auc=0.5987)
+[2026-02-27 07:19:17 UTC] [per_cell] TF_long_H4: 2 diverse configs (tier=-1, feasible_pool=67, avg_auc=0.5638)
+[2026-02-27 07:19:17 UTC] [per_cell] TF_long_H8: 2 diverse configs (tier=-1, feasible_pool=76, avg_auc=0.5659)
+[2026-02-27 07:19:17 UTC] [per_cell] TF_short_H2: 2 diverse configs (tier=-1, feasible_pool=72, avg_auc=0.5881)
+[2026-02-27 07:19:17 UTC] [per_cell] TF_short_H4: 2 diverse configs (tier=-1, feasible_pool=73, avg_auc=0.5575)
+[2026-02-27 07:19:17 UTC] [per_cell] TF_short_H8: 2 diverse configs (tier=-1, feasible_pool=81, avg_auc=0.5537)
+[2026-02-27 07:19:17 UTC] [promote] Stage 2 refinement bypassed. Promoting 23 Stage 1 winners directly to final selection.
+[2026-02-27 07:19:17 UTC] Scoring complete: total_rows=963 stage1_rows=963 stage2_rows=0 mem_peak_mb=1571.0
+[2026-02-27 07:19:18 UTC] Saved production-aligned diversity report: reports/tbm_comparison.prod_aligned_diversity.csv
+[2026-02-27 07:19:18 UTC] Saved production-aligned tradeability report: reports/tbm_comparison.prod_aligned_tradeability.csv
+[2026-02-27 07:19:19 UTC] Saved learnability CSV: reports/tbm__learnability_report.csv
+[2026-02-27 07:19:19 UTC] [feasible_set] Tier 1 used (relaxed learnability gates): 336 configs
+[2026-02-27 07:19:19 UTC] Global feasible pool: 336 configs (tier=1)
+[2026-02-27 07:19:19 UTC] [global_diversity] empty after top-slice expansion; best_pool=336 pr_auc_lift>0=336 edge>0=0
+[2026-02-27 07:19:19 UTC] Global diverse pool: 0 configs after diversity filter
+[2026-02-27 07:19:19 UTC] Saved global best params CSV: /Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/reports/tbm_best_params.csv (best=CFG2A48F481BD)
+[2026-02-27 07:19:19 UTC] [per_cell] WARNING: using all 963 configs as fallback (no structural filter passed)
+[2026-02-27 07:19:19 UTC] [per_cell] MR_long_H2: 10 diverse configs (tier=-1, feasible_pool=49, avg_auc=0.5574)
+[2026-02-27 07:19:19 UTC] [per_cell] MR_long_H4: 10 diverse configs (tier=-1, feasible_pool=44, avg_auc=0.5684)
+[2026-02-27 07:19:19 UTC] [per_cell] MR_long_H8: 10 diverse configs (tier=-1, feasible_pool=39, avg_auc=0.5876)
+[2026-02-27 07:19:19 UTC] [per_cell] MR_short_H2: 10 diverse configs (tier=-1, feasible_pool=62, avg_auc=0.5542)
+[2026-02-27 07:19:19 UTC] [per_cell] MR_short_H4: 10 diverse configs (tier=-1, feasible_pool=67, avg_auc=0.5670)
+[2026-02-27 07:19:19 UTC] [per_cell] MR_short_H8: 10 diverse configs (tier=-1, feasible_pool=70, avg_auc=0.5503)
+[2026-02-27 07:19:19 UTC] [per_cell] TF_long_H2: 10 diverse configs (tier=-1, feasible_pool=65, avg_auc=0.5680)
+[2026-02-27 07:19:19 UTC] [per_cell] TF_long_H4: 10 diverse configs (tier=-1, feasible_pool=67, avg_auc=0.5633)
+[2026-02-27 07:19:20 UTC] [per_cell] TF_long_H8: 10 diverse configs (tier=-1, feasible_pool=76, avg_auc=0.5591)
+[2026-02-27 07:19:20 UTC] [per_cell] TF_short_H2: 10 diverse configs (tier=-1, feasible_pool=72, avg_auc=0.5755)
+[2026-02-27 07:19:20 UTC] [per_cell] TF_short_H4: 10 diverse configs (tier=-1, feasible_pool=73, avg_auc=0.5675)
+[2026-02-27 07:19:20 UTC] [per_cell] TF_short_H8: 10 diverse configs (tier=-1, feasible_pool=81, avg_auc=0.5596)
+[2026-02-27 07:19:20 UTC] Saved geometry grid CSV: /Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/reports/tbm_geometry_grid.csv (129 rows across 12 cells, 4 buckets)
+[2026-02-27 07:19:20 UTC]   MR_long_H2        : 10 configs  k_tp=[0.5, 0.6, 1.0, 1.1, 1.3, 1.4, 1.5, 1.9]  sl=[0.4, 0.5, 0.6]
+[2026-02-27 07:19:20 UTC]   MR_long_H4        : 11 configs  k_tp=[0.6, 1.0, 1.1, 1.2, 1.3, 1.5, 1.9, 2.0]  sl=[0.3, 0.5, 0.6]
+[2026-02-27 07:19:20 UTC]   MR_long_H8        : 11 configs  k_tp=[0.9, 1.1, 1.2, 1.5, 1.6, 1.7, 1.8, 1.9]  sl=[0.5, 0.6, 0.7, 1.0]
+[2026-02-27 07:19:20 UTC]   MR_short_H2       : 10 configs  k_tp=[0.7, 1.1, 1.2, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9]  sl=[0.4, 0.5, 0.6]
+[2026-02-27 07:19:20 UTC]   MR_short_H4       : 10 configs  k_tp=[0.9, 1.6, 1.7, 1.8, 2.0]  sl=[0.4, 0.5, 0.6, 0.7]
+[2026-02-27 07:19:20 UTC]   MR_short_H8       : 13 configs  k_tp=[0.6, 0.7, 0.8, 0.9, 1.0, 1.1]  sl=[0.3, 0.4, 0.6, 0.7]
+[2026-02-27 07:19:20 UTC]   TF_long_H2        : 13 configs  k_tp=[0.7, 0.8, 1.3, 1.5, 1.6, 1.7, 1.9]  sl=[0.4, 0.7, 0.8]
+[2026-02-27 07:19:20 UTC]   TF_long_H4        : 11 configs  k_tp=[0.5, 0.6, 0.7, 0.8, 0.9, 1.1, 1.6]  sl=[0.3, 0.5, 0.7]
+[2026-02-27 07:19:20 UTC]   TF_long_H8        : 10 configs  k_tp=[0.6, 0.9, 1.2, 1.3, 1.5, 1.6, 2.0]  sl=[0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+[2026-02-27 07:19:20 UTC]   TF_short_H2       : 10 configs  k_tp=[0.6, 0.8, 0.9, 1.5, 1.6]  sl=[0.3, 0.4, 0.6, 0.9]
+[2026-02-27 07:19:20 UTC]   TF_short_H4       : 10 configs  k_tp=[0.5, 0.6, 0.7, 0.8, 1.0, 1.4, 1.5, 1.6]  sl=[0.3, 0.4, 0.6, 0.8]
+[2026-02-27 07:19:20 UTC]   TF_short_H8       : 10 configs  k_tp=[0.9, 1.0, 1.1, 1.2, 1.3, 1.5, 1.8]  sl=[0.3, 0.4, 0.5, 0.9]
+[2026-02-27 07:19:20 UTC] [bucket_best] TF_long: winner=CFG08646BF66B k_tp=0.7 sl=0.4 atr=840 auc=0.6087 tp_sep=0.1769
+[2026-02-27 07:19:20 UTC] [bucket_best] TF_short: winner=CFG1B283AEDE0 k_tp=0.8 sl=0.6 atr=840 auc=0.5847 tp_sep=0.0757
+[2026-02-27 07:19:20 UTC] [bucket_best] MR_long: winner=CFG15076385CD k_tp=1.8 sl=0.7 atr=840 auc=0.5909 tp_sep=0.0739
+[2026-02-27 07:19:20 UTC] [bucket_best] MR_short: winner=CFG30DE063959 k_tp=2.0 sl=0.7 atr=840 auc=0.5891 tp_sep=0.0657
+[2026-02-27 07:19:20 UTC] Saved per-bucket best params: /Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/reports/tbm_best_params_per_bucket.csv (4 buckets)
+[2026-02-27 07:19:20 UTC] Saved per-cell best params to /Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/reports/tbm_best_params_per_cell.csv
+[2026-02-27 07:19:20 UTC] Saved CSV: reports/tbm_comparison.csv
+[2026-02-27 07:19:20 UTC] Saved JSON: reports/tbm_comparison.json
+[2026-02-27 07:19:20 UTC] ====================================================================================================
+[2026-02-27 07:19:20 UTC] WINNING GEOMETRY SUMMARY  (top 5  ranked: health_gates → min_auc → min_tp_sep → cell_dispersion → timeout_range → min_auc_bound)
+[2026-02-27 07:19:20 UTC] ====================================================================================================
+[2026-02-27 07:19:20 UTC] 
+#1  CFGC3CCFF74D7  mode=atr_norm  hard_gate=False
+[2026-02-27 07:19:20 UTC]     Geometry : k_tp=1.2  sl_as_tp_pct=0.4  tp_base_pct=0.029  atr_window=840  horizon_scaling=sqrt  regime=none
+[2026-02-27 07:19:20 UTC]     Floors   : tp_abs_lo=0.005  sl_abs_lo=0.005  tp_abs_hi=0.06  sl_noise_buffer=True
+[2026-02-27 07:19:20 UTC]     Outcome  : tp_hit=0.094  sl_hit=0.313  timeout=0.593  bind=0.407  balance=0.300  sl_to_tp=3.34x
+[2026-02-27 07:19:20 UTC]     Signal   : ic_payoff=-0.0146  ic_snr=0.0000  sortino=0.0723  payoff_top10%=6.0bps  top10_vs_rest=2.3bps
+[2026-02-27 07:19:20 UTC]     Learn    : min_auc=0.6128  median_auc=0.6128  min_auc_bound=0.6448  median_auc_bound=0.6448  min_tp_sep=5.60pp  median_tp_sep=5.60pp
+[2026-02-27 07:19:20 UTC]     Learn2   : median_ic_label=-0.0494  min_ic_label=-0.0494  timeout_range=0.407
+[2026-02-27 07:19:20 UTC]     Stability: pass_cells=0/12  min_cell_payoff=nanbps  cell_dispersion=nanbps  coverage=0.577
+[2026-02-27 07:19:20 UTC]     Cell                     n      tp     sl     to   bind h_eff     auc  auc_bnd   ic_lbl     sep%  ok
+[2026-02-27 07:19:20 UTC]     MR_long_H2               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     MR_long_H4               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     MR_long_H8               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     MR_short_H2              0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     MR_short_H4              0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     MR_short_H8              0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     TF_long_H2               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     TF_long_H4               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     TF_long_H8               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     TF_short_H2         25,723   0.094  0.313  0.593  0.407   2.00  0.6128   0.6448  -0.0494    +5.60  ✗
+[2026-02-27 07:19:20 UTC]     TF_short_H4              0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     TF_short_H8              0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC] 
+#2  CFGC146F87EA1  mode=atr_norm  hard_gate=False
+[2026-02-27 07:19:20 UTC]     Geometry : k_tp=1.1  sl_as_tp_pct=0.4  tp_base_pct=0.032  atr_window=840  horizon_scaling=sqrt  regime=none
+[2026-02-27 07:19:20 UTC]     Floors   : tp_abs_lo=0.005  sl_abs_lo=0.005  tp_abs_hi=0.06  sl_noise_buffer=True
+[2026-02-27 07:19:20 UTC]     Outcome  : tp_hit=0.091  sl_hit=0.311  timeout=0.598  bind=0.402  balance=0.294  sl_to_tp=3.40x
+[2026-02-27 07:19:20 UTC]     Signal   : ic_payoff=-0.0145  ic_snr=0.0000  sortino=0.0733  payoff_top10%=6.2bps  top10_vs_rest=2.4bps
+[2026-02-27 07:19:20 UTC]     Learn    : min_auc=0.6127  median_auc=0.6127  min_auc_bound=0.6440  median_auc_bound=0.6440  min_tp_sep=5.50pp  median_tp_sep=5.50pp
+[2026-02-27 07:19:20 UTC]     Learn2   : median_ic_label=-0.0508  min_ic_label=-0.0508  timeout_range=0.402
+[2026-02-27 07:19:20 UTC]     Stability: pass_cells=0/12  min_cell_payoff=nanbps  cell_dispersion=nanbps  coverage=0.573
+[2026-02-27 07:19:20 UTC]     Cell                     n      tp     sl     to   bind h_eff     auc  auc_bnd   ic_lbl     sep%  ok
+[2026-02-27 07:19:20 UTC]     MR_long_H2               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     MR_long_H4               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     MR_long_H8               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     MR_short_H2              0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     MR_short_H4              0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     MR_short_H8              0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     TF_long_H2               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     TF_long_H4               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     TF_long_H8               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     TF_short_H2         25,751   0.091  0.311  0.598  0.402   2.00  0.6127   0.6440  -0.0508    +5.50  ✗
+[2026-02-27 07:19:20 UTC]     TF_short_H4              0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     TF_short_H8              0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC] 
+#3  CFG66167A6FF8  mode=atr_norm  hard_gate=False
+[2026-02-27 07:19:20 UTC]     Geometry : k_tp=1.2  sl_as_tp_pct=0.4  tp_base_pct=0.03  atr_window=840  horizon_scaling=sqrt  regime=none
+[2026-02-27 07:19:20 UTC]     Floors   : tp_abs_lo=0.005  sl_abs_lo=0.005  tp_abs_hi=0.06  sl_noise_buffer=True
+[2026-02-27 07:19:20 UTC]     Outcome  : tp_hit=0.094  sl_hit=0.337  timeout=0.569  bind=0.431  balance=0.279  sl_to_tp=3.59x
+[2026-02-27 07:19:20 UTC]     Signal   : ic_payoff=-0.0163  ic_snr=0.0000  sortino=0.1109  payoff_top10%=12.4bps  top10_vs_rest=5.4bps
+[2026-02-27 07:19:20 UTC]     Learn    : min_auc=0.6086  median_auc=0.6086  min_auc_bound=0.6446  median_auc_bound=0.6446  min_tp_sep=5.90pp  median_tp_sep=5.90pp
+[2026-02-27 07:19:20 UTC]     Learn2   : median_ic_label=-0.0643  min_ic_label=-0.0643  timeout_range=0.431
+[2026-02-27 07:19:20 UTC]     Stability: pass_cells=0/12  min_cell_payoff=nanbps  cell_dispersion=nanbps  coverage=0.613
+[2026-02-27 07:19:20 UTC]     Cell                     n      tp     sl     to   bind h_eff     auc  auc_bnd   ic_lbl     sep%  ok
+[2026-02-27 07:19:20 UTC]     MR_long_H2               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     MR_long_H4               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     MR_long_H8               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     MR_short_H2              0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     MR_short_H4              0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     MR_short_H8              0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     TF_long_H2               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     TF_long_H4               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     TF_long_H8               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     TF_short_H2              0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     TF_short_H4         26,168   0.094  0.337  0.569  0.431   4.00  0.6086   0.6446  -0.0643    +5.90  ✗
+[2026-02-27 07:19:20 UTC]     TF_short_H8              0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC] 
+#4  CFGF501F645B3  mode=atr_norm  hard_gate=False
+[2026-02-27 07:19:20 UTC]     Geometry : k_tp=1.3  sl_as_tp_pct=0.4  tp_base_pct=0.028  atr_window=840  horizon_scaling=sqrt  regime=none
+[2026-02-27 07:19:20 UTC]     Floors   : tp_abs_lo=0.005  sl_abs_lo=0.005  tp_abs_hi=0.06  sl_noise_buffer=True
+[2026-02-27 07:19:20 UTC]     Outcome  : tp_hit=0.093  sl_hit=0.335  timeout=0.573  bind=0.427  balance=0.277  sl_to_tp=3.61x
+[2026-02-27 07:19:20 UTC]     Signal   : ic_payoff=-0.0163  ic_snr=0.0000  sortino=0.1102  payoff_top10%=12.4bps  top10_vs_rest=5.5bps
+[2026-02-27 07:19:20 UTC]     Learn    : min_auc=0.6092  median_auc=0.6092  min_auc_bound=0.6449  median_auc_bound=0.6449  min_tp_sep=5.86pp  median_tp_sep=5.86pp
+[2026-02-27 07:19:20 UTC]     Learn2   : median_ic_label=-0.0645  min_ic_label=-0.0645  timeout_range=0.427
+[2026-02-27 07:19:20 UTC]     Stability: pass_cells=0/12  min_cell_payoff=nanbps  cell_dispersion=nanbps  coverage=0.610
+[2026-02-27 07:19:20 UTC]     Cell                     n      tp     sl     to   bind h_eff     auc  auc_bnd   ic_lbl     sep%  ok
+[2026-02-27 07:19:20 UTC]     MR_long_H2               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     MR_long_H4               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     MR_long_H8               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     MR_short_H2              0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     MR_short_H4              0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     MR_short_H8              0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     TF_long_H2               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     TF_long_H4               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     TF_long_H8               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     TF_short_H2              0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     TF_short_H4         26,175   0.093  0.335  0.573  0.427   4.00  0.6092   0.6449  -0.0645    +5.86  ✗
+[2026-02-27 07:19:20 UTC]     TF_short_H8              0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC] 
+#5  CFG52D2B027DE  mode=atr_norm  hard_gate=False
+[2026-02-27 07:19:20 UTC]     Geometry : k_tp=1.0  sl_as_tp_pct=0.4  tp_base_pct=0.038  atr_window=840  horizon_scaling=sqrt  regime=none
+[2026-02-27 07:19:20 UTC]     Floors   : tp_abs_lo=0.005  sl_abs_lo=0.005  tp_abs_hi=0.06  sl_noise_buffer=True
+[2026-02-27 07:19:20 UTC]     Outcome  : tp_hit=0.087  sl_hit=0.323  timeout=0.591  bind=0.409  balance=0.269  sl_to_tp=3.72x
+[2026-02-27 07:19:20 UTC]     Signal   : ic_payoff=-0.0170  ic_snr=0.0000  sortino=0.1080  payoff_top10%=12.3bps  top10_vs_rest=5.2bps
+[2026-02-27 07:19:20 UTC]     Learn    : min_auc=0.6087  median_auc=0.6087  min_auc_bound=0.6422  median_auc_bound=0.6422  min_tp_sep=5.40pp  median_tp_sep=5.40pp
+[2026-02-27 07:19:20 UTC]     Learn2   : median_ic_label=-0.0662  min_ic_label=-0.0662  timeout_range=0.409
+[2026-02-27 07:19:20 UTC]     Stability: pass_cells=0/12  min_cell_payoff=nanbps  cell_dispersion=nanbps  coverage=0.592
+[2026-02-27 07:19:20 UTC]     Cell                     n      tp     sl     to   bind h_eff     auc  auc_bnd   ic_lbl     sep%  ok
+[2026-02-27 07:19:20 UTC]     MR_long_H2               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     MR_long_H4               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     MR_long_H8               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     MR_short_H2              0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     MR_short_H4              0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     MR_short_H8              0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     TF_long_H2               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     TF_long_H4               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     TF_long_H8               0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     TF_short_H2              0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC]     TF_short_H4         26,201   0.087  0.323  0.591  0.409   4.00  0.6087   0.6422  -0.0662    +5.40  ✗
+[2026-02-27 07:19:20 UTC]     TF_short_H8              0   0.000  0.000  1.000  0.000    nan     n/a      n/a      n/a      n/a  ✗TP
+[2026-02-27 07:19:20 UTC] 
+====================================================================================================
+[2026-02-27 07:19:20 UTC] PER-CELL FEASIBLE SET SUMMARY  (bucket × horizon → diverse geometry grid)
+[2026-02-27 07:19:20 UTC]   Cell               n_configs  k_tp values                     sl values             atr_win  best_auc  best_sep%
+[2026-02-27 07:19:20 UTC]   MR_long_H2                10  [0.5, 0.6, 1.0, 1.1, 1.3, 1.4, 1.5, 1.9]  [0.4, 0.5, 0.6]           840    0.5820    +5.79pp
+[2026-02-27 07:19:20 UTC]   MR_long_H4                11  [0.6, 1.0, 1.1, 1.2, 1.3, 1.5, 1.9, 2.0]  [0.3, 0.5, 0.6]           840    0.5846    +6.37pp
+[2026-02-27 07:19:20 UTC]   MR_long_H8                11  [0.9, 1.1, 1.2, 1.5, 1.6, 1.7, 1.8, 1.9]  [0.5, 0.6, 0.7, 1.0]      840    0.5939    +7.53pp
+[2026-02-27 07:19:20 UTC]   MR_short_H2               10  [0.7, 1.1, 1.2, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9]  [0.4, 0.5, 0.6]           840    0.5769    +5.60pp
+[2026-02-27 07:19:20 UTC]   MR_short_H4               10  [0.9, 1.6, 1.7, 1.8, 2.0]       [0.4, 0.5, 0.6, 0.7]      840    0.5891    +7.14pp
+[2026-02-27 07:19:20 UTC]   MR_short_H8               13  [0.6, 0.7, 0.8, 0.9, 1.0, 1.1]  [0.3, 0.4, 0.6, 0.7]      840    0.5727    +7.97pp
+[2026-02-27 07:19:20 UTC]   TF_long_H2                13  [0.7, 0.8, 1.3, 1.5, 1.6, 1.7, 1.9]  [0.4, 0.7, 0.8]           840    0.6087   +17.69pp
+[2026-02-27 07:19:20 UTC]   TF_long_H4                11  [0.5, 0.6, 0.7, 0.8, 0.9, 1.1, 1.6]  [0.3, 0.5, 0.7]           840    0.6047    +6.77pp
+[2026-02-27 07:19:20 UTC]   TF_long_H8                10  [0.6, 0.9, 1.2, 1.3, 1.5, 1.6, 2.0]  [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]      840    0.5742    +6.39pp
+[2026-02-27 07:19:20 UTC]   TF_short_H2               10  [0.6, 0.8, 0.9, 1.5, 1.6]       [0.3, 0.4, 0.6, 0.9]      840    0.6027    +7.57pp
+[2026-02-27 07:19:20 UTC]   TF_short_H4               10  [0.5, 0.6, 0.7, 0.8, 1.0, 1.4, 1.5, 1.6]  [0.3, 0.4, 0.6, 0.8]      840    0.6033    +7.74pp
+[2026-02-27 07:19:20 UTC]   TF_short_H8               10  [0.9, 1.0, 1.1, 1.2, 1.3, 1.5, 1.8]  [0.3, 0.4, 0.5, 0.9]      840    0.5844    +6.91pp
+[2026-02-27 07:19:20 UTC] ====================================================================================================
+[2026-02-27 07:19:20 UTC] MODE COMPARISON  (ranked by min_auc)
+[2026-02-27 07:19:20 UTC]   mode                        n   timeout   tp_hit    bind   min_auc_best   min_tp_sep_best   timeout_range_best
+[2026-02-27 07:19:20 UTC]   optuna_s1_MR_long_H2       94     0.556    0.114   0.444         0.6410             5.95pp               0.0649
+[2026-02-27 07:19:20 UTC]   optuna_s1_MR_long_H4       71     0.543    0.111   0.457         0.6211             6.53pp               0.0964
+[2026-02-27 07:19:20 UTC]   optuna_s1_MR_long_H8       66     0.584    0.103   0.416         0.6045             7.88pp               0.1707
+[2026-02-27 07:19:20 UTC]   optuna_s1_MR_short_H2      78     0.531    0.134   0.469         0.6108             7.86pp               0.0915
+[2026-02-27 07:19:20 UTC]   optuna_s1_MR_short_H4      78     0.444    0.156   0.556         0.6049             7.21pp               0.1280
+[2026-02-27 07:19:20 UTC]   optuna_s1_MR_short_H8      72     0.316    0.193   0.684         0.5862            19.43pp               0.2050
+[2026-02-27 07:19:20 UTC]   optuna_s1_TF_long_H2       82     0.608    0.138   0.392         0.6409            17.69pp               0.0557
+[2026-02-27 07:19:20 UTC]   optuna_s1_TF_long_H4       78     0.508    0.145   0.492         0.6081             7.05pp               0.0942
+[2026-02-27 07:19:20 UTC]   optuna_s1_TF_long_H8       82     0.487    0.169   0.513         0.5764             8.73pp               0.2068
+[2026-02-27 07:19:20 UTC]   optuna_s1_TF_short_H2      87     0.512    0.146   0.488         0.6347             7.78pp               0.0556
+[2026-02-27 07:19:20 UTC]   optuna_s1_TF_short_H4      89     0.454    0.169   0.546         0.6117             7.74pp               0.0995
+[2026-02-27 07:19:20 UTC]   optuna_s1_TF_short_H8      86     0.327    0.185   0.673         0.5848             9.11pp               0.2453
+[2026-02-27 07:19:20 UTC] ====================================================================================================
+[2026-02-27 07:19:20 UTC] TBM geometry bucket report: /Users/remyroche/Documents/Ares/extreme_price_movements/reports/_/bucket_report_compare_tbm.md
+[2026-02-27 07:19:20 UTC] Run completed in 30590.90s with mem_peak_mb=1571.0 cache_sizes(layer1=10, layer2=10, eval_keys=9, bucket_stack_keys=795)

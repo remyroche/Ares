@@ -24,6 +24,8 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
+from extreme_price_movements.path_utils import resolve_reports_dir
+
 DEFAULT_REPORTS_DIR = Path(__file__).parent
 
 _BUCKETS = ["MR_long", "MR_short", "TF_long", "TF_short"]
@@ -31,8 +33,8 @@ _HORIZONS = [2, 4, 8]
 _CELL_KEYS = [f"{b}_H{h}" for b in _BUCKETS for h in _HORIZONS]
 
 
-def _ensure_dir(run_id: str) -> Path:
-    reports_dir = Path(os.environ.get("EPM_REPORTS_DIR", str(DEFAULT_REPORTS_DIR)))
+def _ensure_dir(run_id: str, base_dir: str | Path | None = None) -> Path:
+    reports_dir = resolve_reports_dir(base_dir)
     d = reports_dir / run_id
     d.mkdir(parents=True, exist_ok=True)
     return d
@@ -60,8 +62,8 @@ def _md_table(headers: List[str], rows: List[List[str]]) -> List[str]:
     return lines
 
 
-def _save(run_id: str, step: str, lines: List[str], df: Optional[pd.DataFrame] = None) -> str:
-    out = _ensure_dir(run_id)
+def _save(run_id: str, step: str, lines: List[str], df: Optional[pd.DataFrame] = None, base_dir: str | Path | None = None) -> str:
+    out = _ensure_dir(run_id, base_dir=base_dir)
     md_path = out / f"bucket_report_{step}.md"
     md_path.write_text("\n".join(lines))
     if df is not None and not df.empty:
@@ -73,7 +75,7 @@ def _save(run_id: str, step: str, lines: List[str], df: Optional[pd.DataFrame] =
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 1: compare_tbm — geometry grid quality
 # ─────────────────────────────────────────────────────────────────────────────
-def report_compare_tbm(run_id: str, grid_csv_path: str) -> str:
+def report_compare_tbm(run_id: str, grid_csv_path: str, base_dir: str | Path | None = None) -> str:
     """Generate per-cell geometry quality report from tbm_geometry_grid.csv."""
     ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     lines = [f"# TBM Geometry Grid Report — {run_id}", f"Generated: {ts}\n"]
@@ -82,7 +84,7 @@ def report_compare_tbm(run_id: str, grid_csv_path: str) -> str:
         df = pd.read_csv(grid_csv_path)
     except Exception as e:
         lines.append(f"ERROR: Could not load grid CSV: {e}")
-        return _save(run_id, "compare_tbm", lines)
+        return _save(run_id, "compare_tbm", lines, base_dir=base_dir)
 
     lines.append(f"**Grid CSV**: `{grid_csv_path}`")
     lines.append(f"**Total rows**: {len(df)}  |  **Cells covered**: {df['cell_key'].nunique() if 'cell_key' in df.columns else '?'} / 12\n")
@@ -124,13 +126,13 @@ def report_compare_tbm(run_id: str, grid_csv_path: str) -> str:
     lines.extend(_md_table(bkt_headers, bkt_rows))
     lines.append("")
 
-    return _save(run_id, "compare_tbm", lines, df)
+    return _save(run_id, "compare_tbm", lines, df, base_dir=base_dir)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 2: labels — label distribution per (bucket, horizon)
 # ─────────────────────────────────────────────────────────────────────────────
-def report_labels(run_id: str, data_root: str, cfg: Dict[str, Any]) -> str:
+def report_labels(run_id: str, data_root: str, cfg: Dict[str, Any], base_dir: str | Path | None = None) -> str:
     ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     lines = [f"# Label Generation Report — {run_id}", f"Generated: {ts}\n"]
     horizons = cfg.get("label_horizons_hours", [2, 4, 8])
@@ -207,13 +209,13 @@ def report_labels(run_id: str, data_root: str, cfg: Dict[str, Any]) -> str:
     lines.append("")
 
     out_df = pd.DataFrame(rows_data) if rows_data else pd.DataFrame()
-    return _save(run_id, "labels", lines, out_df)
+    return _save(run_id, "labels", lines, out_df, base_dir=base_dir)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 3: base_training — alpha model AUC/IC per (bucket, horizon)
 # ─────────────────────────────────────────────────────────────────────────────
-def report_base_training(run_id: str, bundle: Dict[str, Any], cfg: Dict[str, Any]) -> str:
+def report_base_training(run_id: str, bundle: Dict[str, Any], cfg: Dict[str, Any], base_dir: str | Path | None = None) -> str:
     ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     lines = [f"# Base Training Report — {run_id}", f"Generated: {ts}\n"]
     horizons = cfg.get("label_horizons_hours", [2, 4, 8])
@@ -271,13 +273,13 @@ def report_base_training(run_id: str, bundle: Dict[str, Any], cfg: Dict[str, Any
     lines.append("")
 
     out_df = pd.DataFrame(rows_data) if rows_data else pd.DataFrame()
-    return _save(run_id, "base_training", lines, out_df)
+    return _save(run_id, "base_training", lines, out_df, base_dir=base_dir)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 4: meta_training — meta model IC/AUC per (bucket, horizon)
 # ─────────────────────────────────────────────────────────────────────────────
-def report_meta_training(run_id: str, data_root: str, bundle: Dict[str, Any], cfg: Dict[str, Any]) -> str:
+def report_meta_training(run_id: str, data_root: str, bundle: Dict[str, Any], cfg: Dict[str, Any], base_dir: str | Path | None = None) -> str:
     ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     lines = [f"# Meta Training Report — {run_id}", f"Generated: {ts}\n"]
 
@@ -289,33 +291,31 @@ def report_meta_training(run_id: str, data_root: str, bundle: Dict[str, Any], cf
     lines.append(f"**Meta OOF files found**: {len(oof_files)}\n")
 
     table_rows = []
-    headers = ["Model", "N samples", "IC (payoff)", "AUC", "Prec@10", "Mean pred", "Std pred"]
+    headers = ["Model", "N samples", "IC (payoff)", "AUC", "Prec@10", "U_IC", "MAE_IC", "MFE_IC", "DUR_IC"]
 
     for pf in oof_files:
         model_name = pf.stem.replace("meta_oof_", "")
         try:
             df = pd.read_parquet(pf)
         except Exception:
-            table_rows.append([model_name, "ERR", "—", "—", "—", "—", "—"])
+            table_rows.append([model_name, "ERR", "—", "—", "—", "—", "—", "—", "—"])
             continue
         n = len(df)
-        if "oof_pred" not in df.columns:
-            table_rows.append([model_name, str(n), "no oof_pred", "—", "—", "—", "—"])
-            continue
-        pred = df["oof_pred"].values.astype(float)
-        mean_p = _fmt(float(np.nanmean(pred)))
-        std_p = _fmt(float(np.nanstd(pred)))
-        # IC on return if available
+        
+        # Payoff IC
+        pred = df["oof_pred"].values.astype(float) if "oof_pred" in df.columns else (df["oof_ev"].values.astype(float) if "oof_ev" in df.columns else None)
         ic = float("nan")
-        auc = float("nan")
-        prec10 = float("nan")
-        if "return" in df.columns:
+        if pred is not None and "return" in df.columns:
             ret = df["return"].values.astype(float)
             valid = np.isfinite(pred) & np.isfinite(ret)
             if valid.sum() >= 10:
                 from scipy.stats import spearmanr
                 ic = float(spearmanr(pred[valid], ret[valid]).correlation)
-        if "label" in df.columns:
+        
+        # AUC / Prec@10
+        auc = float("nan")
+        prec10 = float("nan")
+        if pred is not None and "label" in df.columns:
             y = (df["label"].values == 1).astype(float)
             n_pos = int(y.sum()); n_neg = len(y) - n_pos
             if n_pos > 0 and n_neg > 0:
@@ -325,9 +325,32 @@ def report_meta_training(run_id: str, data_root: str, bundle: Dict[str, Any], cf
             if len(pred) >= 10:
                 top10 = pred >= np.quantile(pred, 0.90)
                 prec10 = float(y[top10].mean()) if top10.any() else float("nan")
-        table_rows.append([model_name, f"{n:,}", _fmt(ic), _fmt(auc), _fmt(prec10), mean_p, std_p])
-        rows_data.append({"model": model_name, "n": n, "ic": ic, "auc": auc,
-                           "prec_at_10": prec10, "mean_pred": float(np.nanmean(pred))})
+
+        # Aux Heads ICs
+        u_ic = float("nan")
+        mae_ic = float("nan")
+        mfe_ic = float("nan")
+        dur_ic = float("nan")
+        from scipy.stats import spearmanr
+        def _sic(a, b):
+            mask = np.isfinite(a) & np.isfinite(b)
+            if mask.sum() < 10: return float("nan")
+            return float(spearmanr(a[mask], b[mask]).correlation)
+
+        if "oof_u_hat" in df.columns and "u_policy_net" in df.columns:
+            u_ic = _sic(df["oof_u_hat"].values, df["u_policy_net"].values)
+        if "oof_log_mae_q70_hat" in df.columns and "mae_ret" in df.columns:
+            u_mae = df["mae_ret"].values / np.clip(df["__barrier_pct__"].values if "__barrier_pct__" in df.columns else 1.0, 1e-6, None)
+            mae_ic = _sic(df["oof_log_mae_q70_hat"].values, np.log1p(np.clip(u_mae, 0, None)))
+        if "oof_log_mfe_hat" in df.columns and "mfe_ret" in df.columns:
+            u_mfe = df["mfe_ret"].values / np.clip(df["__barrier_pct__"].values if "__barrier_pct__" in df.columns else 1.0, 1e-6, None)
+            mfe_ic = _sic(df["oof_log_mfe_hat"].values, np.log1p(np.clip(u_mfe, 0, None)))
+        if "oof_log_dur_hat" in df.columns and "duration" in df.columns:
+            dur_ic = _sic(df["oof_log_dur_hat"].values, np.log1p(np.clip(df["duration"].values, 0, None)))
+
+        table_rows.append([model_name, f"{n:,}", _fmt(ic), _fmt(auc), _fmt(prec10), _fmt(u_ic), _fmt(mae_ic), _fmt(mfe_ic), _fmt(dur_ic)])
+        rows_data.append({"model": model_name, "n": n, "ic": ic, "auc": auc, "prec_at_10": prec10, 
+                           "u_ic": u_ic, "mae_ic": mae_ic, "mfe_ic": mfe_ic, "dur_ic": dur_ic})
 
     lines.append("## Meta OOF Predictions per Model")
     lines.extend(_md_table(headers, table_rows))
@@ -364,19 +387,19 @@ def report_meta_training(run_id: str, data_root: str, bundle: Dict[str, Any], cf
     lines.append("")
 
     out_df = pd.DataFrame(rows_data) if rows_data else pd.DataFrame()
-    return _save(run_id, "meta_training", lines, out_df)
+    return _save(run_id, "meta_training", lines, out_df, base_dir=base_dir)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 5: ridge_sizer — weights + IC per bucket
 # ─────────────────────────────────────────────────────────────────────────────
-def report_ridge_sizer(run_id: str, result: Dict[str, Any]) -> str:
+def report_ridge_sizer(run_id: str, result: Dict[str, Any], base_dir: str | Path | None = None) -> str:
     ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     lines = [f"# Ridge Position Sizer Report — {run_id}", f"Generated: {ts}\n"]
 
     if not result:
         lines.append("No ridge sizer results available.")
-        return _save(run_id, "ridge_sizer", lines)
+        return _save(run_id, "ridge_sizer", lines, base_dir=base_dir)
 
     rows_data = []
     directions = result.get("directions", {})
@@ -415,13 +438,13 @@ def report_ridge_sizer(run_id: str, result: Dict[str, Any]) -> str:
         lines.append("")
 
     out_df = pd.DataFrame(rows_data) if rows_data else pd.DataFrame()
-    return _save(run_id, "ridge_sizer", lines, out_df)
+    return _save(run_id, "ridge_sizer", lines, out_df, base_dir=base_dir)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 6: optimise — backtest PnL/Sharpe/WR per bucket
 # ─────────────────────────────────────────────────────────────────────────────
-def report_optimise(run_id: str, data_root: str) -> str:
+def report_optimise(run_id: str, data_root: str, base_dir: str | Path | None = None) -> str:
     ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     lines = [f"# Optimise Step Report — {run_id}", f"Generated: {ts}\n"]
 
@@ -430,13 +453,13 @@ def report_optimise(run_id: str, data_root: str) -> str:
 
     if not backtest_path.exists():
         lines.append(f"No backtest results found at `{backtest_path}`.")
-        return _save(run_id, "optimise", lines)
+        return _save(run_id, "optimise", lines, base_dir=base_dir)
 
     try:
         trades = pd.read_csv(backtest_path)
     except Exception as e:
         lines.append(f"ERROR loading backtest results: {e}")
-        return _save(run_id, "optimise", lines)
+        return _save(run_id, "optimise", lines, base_dir=base_dir)
 
     lines.append(f"**Total trades**: {len(trades):,}\n")
 
@@ -499,4 +522,4 @@ def report_optimise(run_id: str, data_root: str) -> str:
             lines.append(f"WARNING: Could not load bucket params: {e}\n")
 
     out_df = pd.DataFrame(rows_data) if rows_data else pd.DataFrame()
-    return _save(run_id, "optimise", lines, out_df)
+    return _save(run_id, "optimise", lines, out_df, base_dir=base_dir)

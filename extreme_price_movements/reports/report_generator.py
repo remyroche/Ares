@@ -13,13 +13,14 @@ import pandas as pd
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
+from extreme_price_movements.path_utils import resolve_reports_dir
 
 
 DEFAULT_REPORTS_DIR = Path(__file__).parent
 
 
-def _ensure_dir(run_id: str) -> Path:
-    reports_dir = Path(os.environ.get("EPM_REPORTS_DIR", str(DEFAULT_REPORTS_DIR)))
+def _ensure_dir(run_id: str, base_dir: str | Path | None = None) -> Path:
+    reports_dir = resolve_reports_dir(base_dir)
     d = reports_dir / run_id
     d.mkdir(parents=True, exist_ok=True)
     return d
@@ -45,8 +46,9 @@ def generate_training_report(
     datasets: Dict[str, Any],
     specialist_models: Optional[Dict] = None,
     extra_info: Optional[Dict] = None,
+    base_dir: str | Path | None = None,
 ) -> str:
-    out = _ensure_dir(run_id)
+    out = _ensure_dir(run_id, base_dir=base_dir)
     lines = []
     ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 
@@ -360,8 +362,9 @@ def generate_risk_report(
     cfg: Dict[str, Any],
     granular_risk: Dict[str, Any],
     optimization_details: Optional[Dict[str, Any]] = None,
+    base_dir: str | Path | None = None,
 ) -> str:
-    out = _ensure_dir(run_id)
+    out = _ensure_dir(run_id, base_dir=base_dir)
     lines = []
     ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 
@@ -425,8 +428,9 @@ def generate_backtest_report(
     trades: List[Dict],
     signal_params: Dict[str, Any],
     fee_rate: float,
+    base_dir: str | Path | None = None,
 ) -> str:
-    out = _ensure_dir(run_id)
+    out = _ensure_dir(run_id, base_dir=base_dir)
     lines = []
     ts_now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 

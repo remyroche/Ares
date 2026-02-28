@@ -905,6 +905,66 @@ def load_features(ts: pd.Timestamp, root_dir: str) -> dict:
     return feats_out
 
 
+class LazyFeatureDict:
+    def __init__(self, raw_data_buffers):
+        self._raw = raw_data_buffers
+        self._assembled = {}
+
+    def __getitem__(self, k):
+        if k in self._assembled:
+            return self._assembled[k]
+        if k in self._raw:
+            from extreme_price_movements.utils import tprint
+            tprint(f"Lazy-assembling DataFrame for '{k}'...")
+            data = self._raw.pop(k)
+            clean_data = {}
+            for sym, (idx_vals, val_array) in data.items():
+                clean_data[sym] = pd.Series(val_array, index=idx_vals)
+            df = pd.DataFrame(clean_data).sort_index()
+            self._assembled[k] = df
+            return df
+        raise KeyError(k)
+
+    def __contains__(self, k):
+        return k in self._assembled or k in self._raw
+
+    def keys(self):
+        return list(self._assembled.keys()) + list(self._raw.keys())
+        
+    def __iter__(self):
+        return iter(self.keys())
+
+    def __len__(self):
+        return len(self.keys())
+
+    def get(self, k, default=None):
+        try:
+            return self[k]
+        except KeyError:
+            return default
+            
+    def items(self):
+        for k in self.keys():
+            yield k, self[k]
+            
+    def values(self):
+        for k in self.keys():
+            yield self[k]
+            
+    def pop(self, k, default=None):
+        if k in self._assembled:
+            return self._assembled.pop(k)
+        if k in self._raw:
+            val = self[k]
+            del self._assembled[k]
+            return val
+        if default is not None:
+            return default
+        raise KeyError(k)
+        
+    def copy(self):
+        return self
+
 def load_features_selected(
     ts: pd.Timestamp,
     root_dir: str,
@@ -923,15 +983,17 @@ def load_features_selected(
     ts_str = ts.strftime("%Y%m%d_%H%M%S")
     in_dir = os.path.join(root_dir, "features", ts_str)
     if not os.path.exists(in_dir):
+        tprint(f"load_features_selected: in_dir not found: {in_dir} (cwd={os.getcwd()})")
         return None
 
     files = sorted(glob.glob(os.path.join(in_dir, "symbol=*.parquet")))
     if not files:
+        tprint(f"load_features_selected: no symbol=*.parquet files found in {in_dir}")
         return None
 
     feature_set = set(feature_keys) if feature_keys else None
     symbol_set = set(map(str, symbols)) if symbols else None
-    feat_buffers: dict[str, dict[str, pd.Series]] = {}
+    feat_buffers: dict[str, dict[str, tuple]] = {}
 
     tprint(
         f"Found {len(files)} feature files in {in_dir}. "
@@ -977,6 +1039,8 @@ def load_features_selected(
                 continue
 
             df = pd.read_parquet(fpath, columns=cols_to_read)
+            if not df.index.is_unique:
+                df = df[~df.index.duplicated(keep='last')]
 
             if "__symbol__" in df.columns:
                 if not df.empty:
@@ -996,12 +1060,13 @@ def load_features_selected(
                     )
                 continue
 
+            idx_vals = df.index.values
             for k in df.columns:
                 if feature_set is not None and k not in feature_set:
                     continue
                 if k not in feat_buffers:
                     feat_buffers[k] = {}
-                feat_buffers[k][real_sym] = pd.to_numeric(df[k], errors="coerce").astype(np.float32, copy=False)
+                feat_buffers[k][real_sym] = (idx_vals, pd.to_numeric(df[k], errors="coerce").astype(np.float32, copy=False).values)
 
             del df
             if i % progress_every == 0 or i == total_files:
@@ -1016,26 +1081,8 @@ def load_features_selected(
     if not feat_buffers:
         return None
 
-    feats_out = {}
-    
-    tprint(f"Starting to assemble DataFrames for {len(feat_buffers)} features...")
-    for j, (k, data) in enumerate(feat_buffers.items()):
-        if j % 10 == 0:
-            tprint(f"  Assembling df for '{k}' ({j+1}/{len(feat_buffers)})...")
-        # Removing duplicates before dataframe construction to prevent cartesian explosion
-        # in case there are overlapping timestamps in the parquets.
-        clean_data = {}
-        for sym, ser in data.items():
-            if not ser.index.is_unique:
-                ser = ser[~ser.index.duplicated(keep='last')]
-            clean_data[sym] = ser
-            
-        feats_out[k] = pd.DataFrame(clean_data).sort_index()
-
-    tprint(f"Loaded {len(feats_out)} selected feature matrices.")
-
-    tprint(f"Loaded {len(feats_out)} selected feature matrices.")
-    return feats_out
+    tprint(f"Loaded raw arrays for {len(feat_buffers)} features. Returning LazyFeatureDict proxy.")
+    return LazyFeatureDict(feat_buffers)
 
 
 def check_data_health(df: pd.DataFrame, timeframe="1h") -> dict:
@@ -1117,5 +1164,9 @@ def load_artifact_df(root_dir: str, run_id: str, category: str, name: str) -> pd
     fpath = os.path.join(root_dir, "artifacts", run_id, category, f"{name}.parquet")
     if os.path.exists(fpath):
         tprint(f"Loading artifact: {fpath}")
-        return pd.read_parquet(fpath)
+        df = pd.read_parquet(fpath)
+        # Downcast floats to float32 to save memory
+        for col in df.select_dtypes(include=[np.float64]).columns:
+            df[col] = df[col].astype(np.float32)
+        return df
     return None

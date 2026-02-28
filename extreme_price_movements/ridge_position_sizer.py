@@ -44,6 +44,7 @@ except ImportError:
     prange = range
 
 from extreme_price_movements.utils import tprint
+from extreme_price_movements.path_utils import resolve_reports_dir, resolve_data_root
 from extreme_price_movements.tpsl_optimiser.metrics_utils import compute_comprehensive_metrics
 
 
@@ -1835,56 +1836,44 @@ class RidgePositionSizer:
         else:
             sort_order = None
         
-        # Compute average PnL per selected trade (net of transaction costs)
-        # This prevents PnL from scaling with the number of time slices
+        # Compute base metrics (net of transaction costs)
         n_selected = len(selected_returns)
-        pnl_total = float(np.mean(selected_returns)) - self.cost_pct if n_selected > 0 else -self.cost_pct
+        net_returns = selected_returns - self.cost_pct
+        total_pnl = float(np.sum(net_returns))
         
-        # Compute per-day metrics (log-growth per unit time)
-        pnl_per_day = pnl_total # Fallback
-        trades_per_day = 0.0
-        n_days = 1.0
-
-        # Aggregate to daily returns if timestamps available
-        if ts_masked is not None and len(selected_returns) > 1:
-            selected_ts_sorted = ts_masked[selected_indices][sort_order] if sort_order is not None else ts_masked[selected_indices]
-
-            if selected_ts_sorted is not None:
-                # Convert to pandas for easy daily aggregation
-                try:
-                    # Calculate net returns for daily aggregation
-                    # selected_returns is GROSS (true_raw), so subtract cost
-                    net_returns = selected_returns - self.cost_pct
-
-                    dates_series = pd.to_datetime(selected_ts_sorted).date
-                    daily_df = pd.DataFrame({
-                        'return': net_returns,
-                        'date': dates_series
-                    })
-
-                    # Sum log returns per day (assuming returns are log-returns)
-                    daily_returns = daily_df.groupby('date')['return'].sum().values
-
-                    # Compute mean daily return (growth per day)
-                    pnl_per_day = float(np.mean(daily_returns))
-
-                    # Calculate number of days in the OOF period (from ts_masked)
-                    # Use all valid OOF timestamps, not just selected trades, to capture non-trading days correctly
-                    unique_dates = np.unique(pd.to_datetime(ts_masked).date)
-                    n_days = max(1, len(unique_dates))
-
-                    trades_per_day = float(n_selected) / float(n_days)
-
-                except (ValueError, TypeError, AttributeError):
-                    # Fall back to unaggregated returns if date parsing fails
-                    daily_returns = selected_returns - self.cost_pct
-                    pnl_per_day = pnl_total
-            else:
-                daily_returns = selected_returns - self.cost_pct
-                pnl_per_day = pnl_total
+        # Determine frequency metrics
+        import pandas as pd
+        if ts_masked is not None and len(ts_masked) > 0:
+            ts_conv = pd.to_datetime(ts_masked)
+            n_days = (ts_conv.max() - ts_conv.min()).total_seconds() / 86400.0
+            n_days = max(1.0/24.0, n_days)
+            pnl_per_day = total_pnl / n_days
+            trades_per_day = n_selected / n_days
         else:
-            daily_returns = selected_returns - self.cost_pct
-            pnl_per_day = pnl_total
+            n_days = 1.0
+            pnl_per_day = total_pnl
+            trades_per_day = float(n_selected)
+
+        # Aggregate to daily returns for risk metrics (Sortino/MaxDD)
+        daily_returns = net_returns # Fallback
+        if ts_masked is not None and len(selected_returns) > 0:
+            try:
+                selected_ts_sorted = ts_masked[selected_indices][sort_order] if sort_order is not None else ts_masked[selected_indices]
+                dates_series = pd.to_datetime(selected_ts_sorted).date
+                daily_df = pd.DataFrame({
+                    'return': net_returns,
+                    'date': dates_series
+                })
+                daily_sum_mapped = daily_df.groupby('date')['return'].sum()
+                
+                # Create full calendar series to include zero-return days
+                unique_dates = np.unique(pd.to_datetime(ts_masked).date)
+                full_daily = pd.Series(0.0, index=unique_dates)
+                full_daily.update(daily_sum_mapped)
+                daily_returns = full_daily.values
+            except Exception:
+                # Fallback to per-trade returns if date aggregation fails
+                daily_returns = net_returns
 
         # Unique symbols metrics
         unique_symbols_selected = 0
@@ -1938,7 +1927,7 @@ class RidgePositionSizer:
             'alpha': alpha,
             'delta': delta,
             'gamma': gamma,
-            'PnL_total': pnl_total,
+            'PnL_total': total_pnl,
             'PnL_per_day': pnl_per_day,
             'Trades_per_day': trades_per_day,
             'Unique_Symbols_Selected': unique_symbols_selected,
@@ -2055,10 +2044,8 @@ class RidgePositionSizer:
             _u_policy = np.asarray(trade_outcomes["u_policy"].values, dtype=float)
         _trade_mask = np.asarray(trade_outcomes["trade_mask"].values, dtype=bool) if "trade_mask" in trade_outcomes.columns else np.ones(len(X), dtype=bool)
         if self.select_metric == "topq_u_policy" and _u_policy is None:
-            raise ValueError(
-                "Ridge sizer requires trade_outcomes['u_policy'] when sizer_select_metric='topq_u_policy'. "
-                "Ensure meta OOF artifacts persist policy utility labels."
-            )
+            tprint("  WARNING: sizer_select_metric='topq_u_policy' requested but u_policy_net missing. Falling back to 'ic'.")
+            self.select_metric = "ic"
         tgt_name, y, race_log = run_ridge_target_race(
             X, y_gross, symbols, timestamps,
             alpha=0.5, cost_pct=self.cost_pct,
@@ -2132,7 +2119,7 @@ class RidgePositionSizer:
                     msg += "New Best Sortino!"
                     
                 if is_best:
-                    tprint(f"    Trial {trial.number} {msg}PnL/Day={pnl:.6f}, Trades/Day={trades_per_day:.1f}, Sortino={sortino:.3f}, MaxDD={maxdd:.4f} | "
+                    tprint(f"    Trial {trial.number} {msg}PnL/Day={pnl:.6f}, Trades/Day={trades_per_day:.4f}, Sortino={sortino:.3f}, MaxDD={maxdd:.4f} | "
                            f"Params: alpha={trial.params.get('alpha'):.5f}, delta={trial.params.get('delta'):.3f}, gamma={trial.params.get('gamma'):.3f}")
 
         sampler = optuna.samplers.NSGAIISampler(seed=42)
@@ -2463,10 +2450,13 @@ def run_ridge_position_sizer_step(
         metrics['cv_best_winrate'] = float(best_row['WinRate'])
         metrics['cv_best_n_selected'] = int(best_row['N_selected'])
     
+    data_root = resolve_data_root(cfg.get('data_root') if cfg else None)
+    reports_dir = resolve_reports_dir(cfg.get('reports_root') if cfg else None)
+
     # Save model
     if save_model:
         run_id = run_id or datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        model_dir = Path("extreme_price_movements/models")
+        model_dir = data_root / "models"
         model_dir.mkdir(parents=True, exist_ok=True)
         model_path = model_dir / f"ridge_position_sizer_{run_id}.json"
         sizer.save(model_path)
@@ -2474,7 +2464,6 @@ def run_ridge_position_sizer_step(
     
     # Save CV results
     if sizer.cv_results_ is not None:
-        reports_dir = Path("extreme_price_movements/reports")
         reports_dir.mkdir(parents=True, exist_ok=True)
         cv_path = reports_dir / f"ridge_position_sizer_cv_{run_id or 'latest'}.csv"
         sizer.cv_results_.to_csv(cv_path, index=False)
@@ -2501,7 +2490,7 @@ def run_ridge_position_sizer_step(
         else:
             oof_payload["asset"] = "ALL"
         oof_df_out = pd.DataFrame(oof_payload)
-        _oof_dir = Path("data") / "artifacts" / (run_id or "latest") / "ridge_sizer"
+        _oof_dir = data_root / "artifacts" / (run_id or "latest") / "ridge_sizer"
         _oof_dir.mkdir(parents=True, exist_ok=True)
         _oof_path = _oof_dir / "ridge_sizer_oof.parquet"
         oof_df_out.to_parquet(_oof_path, index=False)
@@ -2520,11 +2509,9 @@ def run_ridge_position_sizer_step(
         diag_df["score"] = scores
 
         # Determine output path
-        reports_dir = Path("extreme_price_movements/reports")
-        reports_dir.mkdir(parents=True, exist_ok=True)
-
         b_name = bucket_name if bucket_name else "unknown_bucket"
         r_id = run_id if run_id else "latest"
+        reports_dir.mkdir(parents=True, exist_ok=True)
         plot_path = reports_dir / f"trade_quality_{b_name}_{r_id}.png"
 
         generate_trade_quality_plot(

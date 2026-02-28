@@ -448,6 +448,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             fold_p10 = [] # Prec Top 10%
             fold_p20 = [] # Prec Top 20%
             fold_p25 = [] # Prec Top 25%
+            fold_p30 = [] # Prec Top 30%
             fold_p40 = [] # Prec Top 40%
             fold_logloss = []
             fold_accuracy = []
@@ -540,6 +541,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     fold_p10.append(metrics.get("Prec_Top10", np.nan))
                     fold_p20.append(metrics.get("Prec_Top20", np.nan))
                     fold_p25.append(metrics.get("Prec_Top25", np.nan))
+                    fold_p30.append(metrics.get("Prec_Top30", np.nan))
                     fold_p40.append(metrics.get("Prec_Top40", np.nan))
                     # fold_p40 handled below if needed, but metrics returns it
                     
@@ -590,6 +592,8 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
                 top10_mask = topk_mask(oof_cal[valid], 0.10, groups=groups_arr[valid] if groups_arr is not None else None)
                 ece10 = ece_at_mask(y_hard[valid], oof_cal[valid], top10_mask, n_bins=10, w=sample_weight[valid] if sample_weight is not None else None)
+                top30_mask = topk_mask(oof_cal[valid], 0.30, groups=groups_arr[valid] if groups_arr is not None else None)
+                ece30 = ece_at_mask(y_hard[valid], oof_cal[valid], top30_mask, n_bins=10, w=sample_weight[valid] if sample_weight is not None else None)
                 curve = calibration_curve_bins(y_hard[valid], oof_cal[valid], n_bins=10)
                 profile = calibration_profile(curve)
 
@@ -599,6 +603,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     "alpha_train_loss": train_loss,
                     "rank_components": comps,
                     "ece_top10": ece10,
+                    "ece_top30": ece30,
                     "calibration_curve": curve,
                     "calibration_profile": profile,
                     "AUC": oof_metrics["AUC"],
@@ -612,6 +617,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     "Prec20": oof_metrics.get("Prec_Top20", np.nan),
                     "CV_Prec20": np.nanstd(fold_p20) / (np.nanmean(fold_p20) + 1e-9),
                     "Prec25": oof_metrics.get("Prec_Top25", np.nan),
+                    "Prec30": oof_metrics.get("Prec_Top30", np.nan),
                     "Prec40": oof_metrics.get("Prec_Top40", np.nan),
                     "std_score": std_score,
                     "LogLoss": log_loss(y_hard[valid], np.clip(oof_cal[valid], 1e-7, 1-1e-7)),
@@ -896,13 +902,14 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
         # Recap
         tprint("\n=== Model Race Recap ===")
-        tprint(f"{'Model':<15} {'RankSc':>8} {'RcAUC':>8} {'RcIC':>8} {'RcBSS':>8} {'RcBrier':>8} {'RaceP10':>8} {'RaceP40':>8} {'LL':>8} {'ECE10':>8}")
-        tprint("-" * 112)
+        tprint(f"{'Model':<15} {'RankSc':>8} {'RcAUC':>8} {'RcIC':>8} {'RcBSS':>8} {'RcBrier':>8} {'RaceP10':>8} {'RaceP30':>8} {'RaceP40':>8} {'LL':>8} {'ECE10':>8} {'ECE30':>8}")
+        tprint("-" * 122)
 
         sorted_models = sorted(detailed_metrics.items(), key=lambda x: x[1]['rank_score'], reverse=True)
         for name, m in sorted_models:
             ece10 = m.get('ece_top10', np.nan)
-            tprint(f"{name:<15} {m['rank_score']:8.4f} {m['AUC']:8.4f} {m['IC']:8.4f} {m['BSS']:8.4f} {m.get('Brier',0):8.4f} {m['Prec10']:8.4f} {m['Prec40']:8.4f} {m['LogLoss']:8.4f} {ece10:8.4f}")
+            ece30 = m.get('ece_top30', np.nan)
+            tprint(f"{name:<15} {m['rank_score']:8.4f} {m['AUC']:8.4f} {m['IC']:8.4f} {m['BSS']:8.4f} {m.get('Brier',0):8.4f} {m['Prec10']:8.4f} {m.get('Prec30', np.nan):8.4f} {m['Prec40']:8.4f} {m['LogLoss']:8.4f} {ece10:8.4f} {ece30:8.4f}")
         tprint("========================\n")
 
         # 3. Final Retraining (raw model, no calibration wrapper)

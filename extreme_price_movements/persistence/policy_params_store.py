@@ -4,18 +4,30 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-STORE_PATH = Path("extreme_price_movements/artifacts/policy_params_store.json")
+DEFAULT_STORE_PATH = Path("artifacts/policy_params_store.json")
 
 
-def load_params_store() -> dict:
-    if not STORE_PATH.exists():
+def _resolve_store_path(base_dir: str | Path | None = None) -> Path:
+    if base_dir is None:
+        # default to module-relative artifacts directory
+        return Path(__file__).resolve().parent.parent / DEFAULT_STORE_PATH
+    base = Path(base_dir)
+    if base.is_file():
+        return base
+    return (base / DEFAULT_STORE_PATH).resolve()
+
+
+def load_params_store(base_dir: str | Path | None = None) -> dict:
+    store_path = _resolve_store_path(base_dir)
+    if not store_path.exists():
         return {}
-    return json.loads(STORE_PATH.read_text())
+    return json.loads(store_path.read_text())
 
 
-def save_params_store(store: dict) -> None:
-    STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    STORE_PATH.write_text(json.dumps(store, indent=2, sort_keys=True))
+def save_params_store(store: dict, base_dir: str | Path | None = None) -> None:
+    store_path = _resolve_store_path(base_dir)
+    store_path.parent.mkdir(parents=True, exist_ok=True)
+    store_path.write_text(json.dumps(store, indent=2, sort_keys=True))
 
 
 def store_best_params(store: dict, version_key: str, bucket_id: str, params: dict, metrics: dict) -> dict:

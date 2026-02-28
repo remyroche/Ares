@@ -120,16 +120,27 @@ def _adapt_backtest_columns(trades: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def run_optimise_step(trades: pd.DataFrame, atr_15m: pd.Series, output_path: str, policy: Policy | None = None, state_path: str | None = None, cost: CostModel | None = None, enforce_threaded_exit_stream: bool = True) -> dict:
+def run_optimise_step(
+    trades: pd.DataFrame,
+    atr_15m: pd.Series,
+    output_path: str,
+    policy: Policy | None = None,
+    state_path: str | None = None,
+    cost: CostModel | None = None,
+    enforce_threaded_exit_stream: bool = True,
+    store_base_dir: str | Path | None = None,
+) -> dict:
     """Run the optimisation pipeline for TP/SL and position sizing.
-    
+
     Args:
         trades: DataFrame with backtest trade results
         atr_15m: Series with 15-minute ATR values
         output_path: Path to save optimisation results
         policy: Policy configuration (mode, params_path, ridge_weights_path)
         state_path: Optional path to trained_state.pkl for loading ridge weights
-        
+        store_base_dir: Optional base directory whose `artifacts/` folder should
+            hold the policy params store (defaults to module-local artifacts)
+
     Returns:
         Dict with optimisation results per bucket
     """
@@ -174,7 +185,7 @@ def run_optimise_step(trades: pd.DataFrame, atr_15m: pd.Series, output_path: str
     cost_hash = hashlib.sha256(json.dumps(cost_dict, sort_keys=True).encode("utf-8")).hexdigest()[:10]
     emit_run_header(tprint=tprint, run_id=run_id, policy_version=policy_version, cost_model=cost_dict, extra={"n_buckets": len(buckets)})
 
-    store = load_params_store()
+    store = load_params_store(store_base_dir)
     version_key = f"{policy_version}|{cost_hash}"
 
     for bucket in buckets:
@@ -362,5 +373,5 @@ def run_optimise_step(trades: pd.DataFrame, atr_15m: pd.Series, output_path: str
         consolidated_df.to_csv(csv_path, index=False)
         tprint(f"optimise: detailed report saved={csv_path}")
 
-    save_params_store(store)
+    save_params_store(store, store_base_dir)
     return all_out

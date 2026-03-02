@@ -6718,6 +6718,120 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
 
             oof_df.to_parquet(meta_oof_path, index=False)
             tprint(f"Saved meta OOF predictions for {key} to {meta_oof_path}")
+
+    # Train position-sizer probabilistic/quantile trees in meta step so they share
+    # the same meta feature keys and selector pipeline context.
+    if bool(cfg.get("position_sizer_enabled", False)) and bool(cfg.get("position_sizer_train_in_meta", True)):
+        try:
+            from extreme_price_movements.position_sizer.training_orchestrator import train_position_sizer_models as _train_ps_models
+            _ps_buckets = {}
+            for _b in ["long_mr", "long_tf", "short_mr", "short_tf"]:
+                _util_key = f"{_b}_utility"
+                _md = _bucket_metadata.get(_util_key, {})
+                _aux = _aux_head_oof.get(_b, {})
+                if not isinstance(_aux, dict):
+                    continue
+                _n = len(np.asarray(_aux.get("oof_u_hat", []), dtype=float))
+                if _n <= 0:
+                    continue
+                _oof = pd.DataFrame({
+                    "score": np.asarray(_aux.get("oof_u_hat", np.zeros(_n)), dtype=float),
+                    "oof_u_hat": np.asarray(_aux.get("oof_u_hat", np.zeros(_n)), dtype=float),
+                    "oof_log_mae_q70_hat": np.asarray(_aux.get("oof_log_mae_q70_hat", np.zeros(_n)), dtype=float),
+                    "oof_log_mfe_hat": np.asarray(_aux.get("oof_log_mfe_hat", np.zeros(_n)), dtype=float),
+                })
+                _out = pd.DataFrame({
+                    "return": np.asarray(_md.get("__y_ret__", np.zeros(_n)), dtype=float)[:_n],
+                    "mfe_ret": np.asarray(_md.get("__mfe_ret__", np.zeros(_n)), dtype=float)[:_n],
+                    "mae_ret": np.asarray(_md.get("__mae_ret__", np.zeros(_n)), dtype=float)[:_n],
+                    "timestamp": pd.to_datetime(_md.get("__ts__", np.arange(_n))),
+                    "symbol": np.asarray(_md.get("__symbol__", np.array(["UNK"] * _n)), dtype=object)[:_n],
+                })
+                for _cn in _ps_regime_cols:
+                    if _cn in _md:
+                        _oof[_cn] = np.asarray(_md[_cn])[:_n]
+                _ps_buckets[_b] = {"oof": _oof, "outcomes": _out}
+            if _ps_buckets:
+                _ps_rows = []
+                for _b, _pack in _ps_buckets.items():
+                    _oof = _pack.get("oof")
+                    _out = _pack.get("outcomes")
+                    if _oof is None or _out is None or len(_oof) != len(_out):
+                        continue
+                    _df = pd.DataFrame(index=np.arange(len(_oof)))
+                    _df["score"] = np.asarray(_oof.get("score", pd.Series(np.zeros(len(_oof)))).values, dtype=float)
+                    _df["pnl_label"] = np.asarray(_out.get("return", pd.Series(np.zeros(len(_out)))).values, dtype=float)
+                    _df["mfe"] = np.asarray(_out.get("mfe_ret", pd.Series(np.zeros(len(_out)))).values, dtype=float)
+                    _df["mae"] = np.asarray(_out.get("mae_ret", pd.Series(np.zeros(len(_out)))).values, dtype=float)
+                    _df["timestamp"] = np.asarray(_out.get("timestamp", pd.Series(np.arange(len(_out)))).values)
+                    _df["symbol"] = np.asarray(_out.get("symbol", pd.Series(["UNK"] * len(_out))).values)
+                    _df["bucket"] = _b
+                    for _c in _oof.columns:
+                        if _c in _df.columns:
+                            continue
+                        try:
+                            _v = pd.to_numeric(_oof[_c], errors="coerce").astype(float)
+                            if np.isfinite(_v).any():
+                                _df[_c] = _v.values
+                        except Exception:
+                            continue
+                    _ps_rows.append(_df)
+                if _ps_rows:
+                    _ps_df = pd.concat(_ps_rows, axis=0, ignore_index=True)
+                    _forbid = {"pnl_label", "mfe", "mae", "timestamp", "symbol", "bucket", "return", "is_long", "index"}
+                    _priority = [str(c) for c in cfg.get("position_sizer_feature_priority", ["score"]) if isinstance(c, str)]
+                    _num_cols = [c for c in _ps_df.columns if c not in _forbid and pd.api.types.is_numeric_dtype(_ps_df[c])]
+                    _feature_cols = []
+                    for _c in _priority + _ps_regime_cols + _num_cols:
+                        if _c in _num_cols and _c not in _feature_cols:
+                            _feature_cols.append(_c)
+                    if not _feature_cols:
+                        _feature_cols = ["score"] if "score" in _ps_df.columns else ["pnl_label"]
+                    _ps_train = _train_ps_models(ps_df=_ps_df, feature_cols=_feature_cols, cfg=cfg)
+                    from extreme_price_movements.position_sizer.runtime import PositionSizerBundle, compute_schema_hash, make_bundle_metadata
+                    _git_sha = ""
+                    try:
+                        import subprocess as _sp
+                        _git_sha = _sp.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
+                    except Exception:
+                        _git_sha = ""
+                    _q_cfg = {
+                        "exp_win_quantile": float(_ps_train["exp_win_quantile"]),
+                        "risk_loss_quantile": float(_ps_train["risk_loss_quantile"]),
+                        "costs_mode": str(_ps_train["costs_mode"]),
+                    }
+                    _schema_hash = compute_schema_hash(_feature_cols, extra=_q_cfg)
+                    _meta = make_bundle_metadata(git_sha=_git_sha)
+                    _bundle = PositionSizerBundle(
+                        feature_cols=list(_feature_cols),
+                        pwin_model=_ps_train["pwin_model"],
+                        win_model=_ps_train["win_model"],
+                        loss_model=_ps_train["loss_model"],
+                        tp_sl_defaults=None,
+                        config={
+                            "backend": "new",
+                            "soft_label_enabled": bool(_ps_train.get("soft_label_enabled", False)),
+                            "calibration_scope": str(cfg.get("position_sizer_calibration_scope", "regime")),
+                            "exp_win_quantile": float(_ps_train["exp_win_quantile"]),
+                            "risk_loss_quantile": float(_ps_train["risk_loss_quantile"]),
+                            "costs_mode": str(_ps_train["costs_mode"]),
+                        },
+                        version="v1",
+                        bundle_version=1,
+                        created_at=_meta.get("created_at", ""),
+                        git_sha=_meta.get("git_sha", ""),
+                        schema_hash=_schema_hash,
+                    )
+                    _ps_out = os.path.join(cfg.get("data_root", "data"), "artifacts", _run_id, "position_sizer")
+                    os.makedirs(_ps_out, exist_ok=True)
+                    _bundle_path = os.path.join(_ps_out, "position_sizer_bundle.pkl")
+                    with open(_bundle_path, "wb") as _f:
+                        pickle.dump(_bundle, _f)
+                    with open(os.path.join(_ps_out, "position_sizer_bundle.json"), "w") as _f:
+                        json.dump({"bundle_path": _bundle_path, "feature_cols": _feature_cols, "version": "v1", "bundle_version": 1}, _f, indent=2)
+                    tprint("Meta training: position sizer bundle trained from meta buckets.")
+        except Exception as _e_ps_meta:
+            tprint(f"Warning: meta position-sizer training failed: {_e_ps_meta}")
     
     tprint(f"train_meta_models_from_artifacts: done ({_time.monotonic()-_t0_meta:.1f}s), {len(meta_models)} meta models")
     return meta_models, meta_gate_results

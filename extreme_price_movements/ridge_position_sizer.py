@@ -1197,7 +1197,7 @@ def run_ridge_target_race(
     require_positive_topq_u: bool = True,
     topq_min_samples: int = 50,
     trade_mask: np.ndarray | None = None,
-    tree_probe: bool = True,
+    tree_probe: bool = False,
 ) -> tuple:
     """Race target representations for Ridge position sizer.
 
@@ -1349,7 +1349,7 @@ def run_ridge_target_race(
             best_y = y_cand
 
     winner_model_metrics: Dict[str, Any] = {}
-    if tree_probe:
+    if False and tree_probe:
         def _eval_model_cv(model_name: str, model_factory):
             fold_size = n // 3
             ics_loc = []

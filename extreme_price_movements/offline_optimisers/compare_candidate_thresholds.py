@@ -82,6 +82,8 @@ from extreme_price_movements.training_defaults import (
     get_barrier_factory_defaults,
     get_target_race_model_defaults,
 )
+from extreme_price_movements.labeling import OUT_SL, OUT_TP
+from extreme_price_movements.hf_data_loader import HF_DATA_DIR, get_15m_ohlcv
 from extreme_price_movements.offline_optimisers.params_store import (
     REPORTS_DIR,
     save_best_params_csv,
@@ -180,6 +182,123 @@ def _resolve_path(path: str) -> str:
         return os.path.normpath(path)
     return os.path.normpath(os.path.join(PACKAGE_ROOT, path))
 
+
+
+
+def _symbol_to_ccxt(symbol: str) -> str:
+    s = str(symbol or "").upper().replace("/", "")
+    for quote in ("USDT", "USDC", "BUSD", "EUR", "BTC", "ETH"):
+        if s.endswith(quote) and len(s) > len(quote):
+            return f"{s[:-len(quote)]}/{quote}"
+    return symbol
+
+
+def _load_or_download_15m(symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timestamp, hf_data_dir: Optional[str] = None) -> pd.DataFrame:
+    clean = str(symbol or "").replace("/", "").lower()
+    base_dir = os.path.abspath(hf_data_dir) if hf_data_dir else str(HF_DATA_DIR)
+    path = os.path.join(base_dir, f"{clean}_15m.parquet")
+    if os.path.exists(path):
+        try:
+            df = pd.read_parquet(path)
+            idx = pd.to_datetime(df.index)
+            df.index = idx.tz_localize("UTC") if idx.tz is None else idx.tz_convert("UTC")
+            return df.loc[(df.index >= start_ts) & (df.index <= end_ts), ["open", "high", "low", "close"]]
+        except Exception:
+            pass
+    try:
+        import ccxt  # type: ignore
+        ex = ccxt.binance({"enableRateLimit": True})
+        hours = max(1, int(np.ceil((end_ts - start_ts).total_seconds() / 3600.0)))
+        got = get_15m_ohlcv(ex, _symbol_to_ccxt(symbol), start_ts, max_hold_hours=hours)
+        if got is None or got.empty:
+            return pd.DataFrame()
+        return got.loc[(got.index >= start_ts) & (got.index <= end_ts), ["open", "high", "low", "close"]]
+    except Exception:
+        return pd.DataFrame()
+
+
+def _resolve_15m_conflict(bar_close: float, tp_price: float, sl_price: float, trailing_price: Optional[float] = None) -> str:
+    d = {"TP": abs(float(bar_close) - float(tp_price)), "SL": abs(float(bar_close) - float(sl_price))}
+    if trailing_price is not None and np.isfinite(trailing_price):
+        d["TRAILING"] = abs(float(bar_close) - float(trailing_price))
+    priority = {"SL": 0, "TRAILING": 1, "TP": 2}
+    return sorted(d.items(), key=lambda kv: (kv[1], priority.get(kv[0], 99)))[0][0]
+
+
+def _refine_tb_cache_with_15m(panel: dict, tb_cache_by_h_side: dict, geom_cache_by_h_side: dict, cfg: dict) -> dict:
+    close_df = panel.get("close")
+    high_df = panel.get("high")
+    low_df = panel.get("low")
+    if not isinstance(close_df, pd.DataFrame) or not isinstance(high_df, pd.DataFrame) or not isinstance(low_df, pd.DataFrame):
+        return tb_cache_by_h_side
+    hf_dir = cfg.get("hf_data_dir")
+    out = dict(tb_cache_by_h_side)
+    for (h, side), triplet in list(tb_cache_by_h_side.items()):
+        geom = geom_cache_by_h_side.get((h, side), {})
+        tp_dist_df = geom.get("tp_dist")
+        sl_dist_df = geom.get("sl_dist")
+        if not isinstance(tp_dist_df, pd.DataFrame) or not isinstance(sl_dist_df, pd.DataFrame):
+            continue
+        lbl, ret, qual = triplet
+        lbl2, ret2, qual2 = lbl.copy(), ret.copy(), qual.copy()
+        for sym in close_df.columns:
+            if sym not in lbl2.columns or sym not in tp_dist_df.columns or sym not in sl_dist_df.columns:
+                continue
+            c = close_df[sym].to_numpy(dtype=np.float64, copy=False)
+            hh = high_df[sym].to_numpy(dtype=np.float64, copy=False)
+            ll = low_df[sym].to_numpy(dtype=np.float64, copy=False)
+            tpv = tp_dist_df[sym].to_numpy(dtype=np.float64, copy=False)
+            slv = sl_dist_df[sym].to_numpy(dtype=np.float64, copy=False)
+            lab = lbl2[sym].to_numpy(dtype=np.int8, copy=False)
+            idx = close_df.index
+            for i in range(len(c) - 1):
+                entry = c[i]
+                if not np.isfinite(entry) or entry <= 0 or not np.isfinite(tpv[i]) or tpv[i] <= 0 or not np.isfinite(slv[i]) or slv[i] <= 0:
+                    continue
+                tp_price = entry * (1.0 + tpv[i]) if side == "long" else entry * (1.0 - tpv[i])
+                sl_price = entry * (1.0 - slv[i]) if side == "long" else entry * (1.0 + slv[i])
+                cutoff = idx[i] + pd.Timedelta(hours=float(h))
+                amb_j = -1
+                for j in range(i + 1, len(c)):
+                    if idx[j] > cutoff:
+                        break
+                    hit_tp = (hh[j] >= tp_price) if side == "long" else (ll[j] <= tp_price)
+                    hit_sl = (ll[j] <= sl_price) if side == "long" else (hh[j] >= sl_price)
+                    if hit_tp and hit_sl:
+                        amb_j = j
+                        break
+                    if hit_tp or hit_sl:
+                        break
+                if amb_j < 0:
+                    continue
+                start_15m = idx[amb_j].floor("1h")
+                end_15m = idx[amb_j]
+                hf = _load_or_download_15m(sym, start_15m, end_15m, hf_data_dir=hf_dir)
+                if hf.empty:
+                    continue
+                resolved = None
+                for _, row in hf.iterrows():
+                    h15 = float(row["high"]); l15 = float(row["low"]); c15 = float(row["close"])
+                    hit_tp_15 = (h15 >= tp_price) if side == "long" else (l15 <= tp_price)
+                    hit_sl_15 = (l15 <= sl_price) if side == "long" else (h15 >= sl_price)
+                    if hit_tp_15 and hit_sl_15:
+                        resolved = _resolve_15m_conflict(c15, tp_price, sl_price)
+                        break
+                    if hit_tp_15:
+                        resolved = "TP"; break
+                    if hit_sl_15:
+                        resolved = "SL"; break
+                if resolved == "TP":
+                    lab[i] = OUT_TP
+                    ret2.iat[i, ret2.columns.get_loc(sym)] = float(abs(tpv[i]))
+                    qual2.iat[i, qual2.columns.get_loc(sym)] = max(float(qual2.iat[i, qual2.columns.get_loc(sym)]), 0.51)
+                elif resolved == "SL":
+                    lab[i] = OUT_SL
+                    ret2.iat[i, ret2.columns.get_loc(sym)] = -float(abs(slv[i]))
+                    qual2.iat[i, qual2.columns.get_loc(sym)] = min(float(qual2.iat[i, qual2.columns.get_loc(sym)]), 0.49)
+            lbl2[sym] = lab
+        out[(h, side)] = (lbl2, ret2, qual2)
+    return out
 
 def _find_latest_feature_dir(data_root: str) -> Optional[str]:
     feat_dir = os.path.join(data_root, "features")
@@ -888,8 +1007,14 @@ def load_persisted_geometry_cache(cache_dir: str) -> Optional[tuple[dict, dict]]
             n_tp = pd.read_parquet(os.path.join(cache_dir, item["geom_n_tp"]))
             n_sl = pd.read_parquet(os.path.join(cache_dir, item["geom_n_sl"]))
             n_to = pd.read_parquet(os.path.join(cache_dir, item["geom_n_to"]))
+            tp_dist = pd.read_parquet(os.path.join(cache_dir, item["geom_tp_dist"])) if item.get("geom_tp_dist") else None
+            sl_dist = pd.read_parquet(os.path.join(cache_dir, item["geom_sl_dist"])) if item.get("geom_sl_dist") else None
             tb_cache_by_h_side[(h, side)] = (lbl, ret, qual)
-            geom_cache_by_h_side[(h, side)] = {"n_tp": n_tp, "n_sl": n_sl, "n_to": n_to}
+            geom_pack = {"n_tp": n_tp, "n_sl": n_sl, "n_to": n_to}
+            if tp_dist is not None and sl_dist is not None:
+                geom_pack["tp_dist"] = tp_dist
+                geom_pack["sl_dist"] = sl_dist
+            geom_cache_by_h_side[(h, side)] = geom_pack
         return tb_cache_by_h_side, geom_cache_by_h_side
     except Exception as exc:
         tlog(f"Persisted geometry cache load failed: {exc}")
@@ -927,6 +1052,8 @@ def save_persisted_geometry_cache(
                 "geom_n_tp": f"{base}_geom_n_tp.parquet",
                 "geom_n_sl": f"{base}_geom_n_sl.parquet",
                 "geom_n_to": f"{base}_geom_n_to.parquet",
+                "geom_tp_dist": f"{base}_geom_tp_dist.parquet",
+                "geom_sl_dist": f"{base}_geom_sl_dist.parquet",
             }
             lbl.to_parquet(os.path.join(cache_dir, files["tb_labels"]), compression="zstd")
             ret.to_parquet(os.path.join(cache_dir, files["tb_returns"]), compression="zstd")
@@ -934,6 +1061,12 @@ def save_persisted_geometry_cache(
             geom_pack["n_tp"].to_parquet(os.path.join(cache_dir, files["geom_n_tp"]), compression="zstd")
             geom_pack["n_sl"].to_parquet(os.path.join(cache_dir, files["geom_n_sl"]), compression="zstd")
             geom_pack["n_to"].to_parquet(os.path.join(cache_dir, files["geom_n_to"]), compression="zstd")
+            if "tp_dist" in geom_pack and "sl_dist" in geom_pack:
+                geom_pack["tp_dist"].to_parquet(os.path.join(cache_dir, files["geom_tp_dist"]), compression="zstd")
+                geom_pack["sl_dist"].to_parquet(os.path.join(cache_dir, files["geom_sl_dist"]), compression="zstd")
+            else:
+                files["geom_tp_dist"] = None
+                files["geom_sl_dist"] = None
             entries.append({"h": int(h), "side": side, **files})
 
         manifest = {
@@ -1063,6 +1196,7 @@ def evaluate_training_slices(
 
     if precomputed_geometry is not None:
         tb_cache_by_h_side, geom_cache_by_h_side = precomputed_geometry
+        tb_cache_by_h_side = _refine_tb_cache_with_15m(panel, tb_cache_by_h_side, geom_cache_by_h_side, cfg_variant)
         tlog("Training-slice geometry reuse: using precomputed shared geometry")
     elif (
         geometry_cache is not None
@@ -1070,6 +1204,7 @@ def evaluate_training_slices(
         and geometry_cache_key in geometry_cache
     ):
         tb_cache_by_h_side, geom_cache_by_h_side = geometry_cache[geometry_cache_key]
+        tb_cache_by_h_side = _refine_tb_cache_with_15m(panel, tb_cache_by_h_side, geom_cache_by_h_side, cfg_variant)
         if isinstance(geometry_cache, OrderedDict):
             geometry_cache.move_to_end(geometry_cache_key)
         tlog(
@@ -1093,6 +1228,7 @@ def evaluate_training_slices(
             horizons=horizons,
             trade_sides=["long", "short"],
         )
+        tb_cache_by_h_side = _refine_tb_cache_with_15m(panel, tb_cache_by_h_side, geom_cache_by_h_side, cfg_variant)
         if geometry_cache is not None and geometry_cache_key is not None:
             if isinstance(geometry_cache, OrderedDict):
                 cache_geometry_entry(geometry_cache, geometry_cache_key, (tb_cache_by_h_side, geom_cache_by_h_side))
@@ -3704,6 +3840,7 @@ def run_comparison(
             horizons=[base_h],
             trade_sides=["long", "short"],
         )
+        tb_cache_base = _refine_tb_cache_with_15m(panel, tb_cache_base, _geom_cache_base, runtime_cfg)
         long_pair = tb_cache_base.get((base_h, "long"))
         short_pair = tb_cache_base.get((base_h, "short"))
         if long_pair is not None and short_pair is not None:

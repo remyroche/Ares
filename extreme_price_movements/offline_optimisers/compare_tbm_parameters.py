@@ -108,6 +108,7 @@ from extreme_price_movements.production_sl_tp_policy import (
     SLTPPolicy,
     expand_configs_wide_sl_tp_additive_superiority,
 )
+from extreme_price_movements.hf_data_loader import HF_DATA_DIR, get_15m_ohlcv
 
 
 EPS = 1e-12
@@ -204,6 +205,125 @@ def _safe_float(v: Any, default: float = 0.0) -> float:
         return x if np.isfinite(x) else float(default)
     except Exception:
         return float(default)
+
+
+def _symbol_to_hf_ccxt(symbol: str) -> str:
+    s = str(symbol or "").upper().replace("/", "")
+    for quote in ("USDT", "USDC", "BUSD", "EUR", "BTC", "ETH"):
+        if s.endswith(quote) and len(s) > len(quote):
+            return f"{s[:-len(quote)]}/{quote}"
+    return symbol
+
+
+def _load_or_download_15m(symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timestamp) -> pd.DataFrame:
+    clean = str(symbol or "").replace("/", "").lower()
+    path = HF_DATA_DIR / f"{clean}_15m.parquet"
+    if path.exists():
+        try:
+            df = pd.read_parquet(path)
+            idx = pd.to_datetime(df.index)
+            df.index = idx.tz_localize("UTC") if idx.tz is None else idx.tz_convert("UTC")
+            return df.loc[(df.index >= start_ts) & (df.index <= end_ts), ["open", "high", "low", "close"]]
+        except Exception:
+            pass
+
+    try:
+        import ccxt  # type: ignore
+        ex = ccxt.binance({"enableRateLimit": True})
+        got = get_15m_ohlcv(ex, _symbol_to_hf_ccxt(symbol), start_ts, max_hold_hours=max(1, int(math.ceil((end_ts - start_ts).total_seconds() / 3600.0))))
+        if got is None or got.empty:
+            return pd.DataFrame()
+        return got.loc[(got.index >= start_ts) & (got.index <= end_ts), ["open", "high", "low", "close"]]
+    except Exception:
+        return pd.DataFrame()
+
+
+def _resolve_barrier_conflict_15m(*, side: str, bar_close: float, tp_price: float, sl_price: float, trailing_price: Optional[float] = None) -> Optional[str]:
+    hits: Dict[str, float] = {"TP": abs(bar_close - tp_price), "SL": abs(bar_close - sl_price)}
+    if trailing_price is not None and np.isfinite(trailing_price):
+        hits["TRAILING"] = abs(bar_close - trailing_price)
+    order = {"SL": 0, "TRAILING": 1, "TP": 2}
+    items = sorted(hits.items(), key=lambda kv: (kv[1], order.get(kv[0], 99)))
+    return items[0][0] if items else None
+
+
+def _refine_ambiguous_labels_with_15m(
+    panel: Dict[str, pd.DataFrame],
+    tp_df: pd.DataFrame,
+    sl_df: pd.DataFrame,
+    lbl: pd.DataFrame,
+    ret: pd.DataFrame,
+    qual: pd.DataFrame,
+    h: int,
+    side: str,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    close_df = panel.get("close")
+    high_df = panel.get("high")
+    low_df = panel.get("low")
+    if close_df is None or high_df is None or low_df is None:
+        return lbl, ret, qual
+
+    lbl2, ret2, qual2 = lbl.copy(), ret.copy(), qual.copy()
+    for sym in close_df.columns:
+        c = close_df[sym].to_numpy(dtype=np.float64, copy=False)
+        hh = high_df[sym].to_numpy(dtype=np.float64, copy=False)
+        ll = low_df[sym].to_numpy(dtype=np.float64, copy=False)
+        tpv = tp_df[sym].to_numpy(dtype=np.float64, copy=False)
+        slv = sl_df[sym].to_numpy(dtype=np.float64, copy=False)
+        lab = lbl2[sym].to_numpy(dtype=np.int8, copy=False)
+        idx = close_df.index
+        n = len(c)
+        for i in range(n - 1):
+            entry = c[i]
+            if not np.isfinite(entry) or entry <= 0 or not np.isfinite(tpv[i]) or not np.isfinite(slv[i]):
+                continue
+            tp_price = entry * (1.0 + tpv[i]) if side == "long" else entry * (1.0 - tpv[i])
+            sl_price = entry * (1.0 - slv[i]) if side == "long" else entry * (1.0 + slv[i])
+            cutoff = idx[i] + pd.Timedelta(hours=float(h))
+            first_ambiguous_j = -1
+            for j in range(i + 1, n):
+                if idx[j] > cutoff:
+                    break
+                hit_tp = (hh[j] >= tp_price) if side == "long" else (ll[j] <= tp_price)
+                hit_sl = (ll[j] <= sl_price) if side == "long" else (hh[j] >= sl_price)
+                if hit_tp and hit_sl:
+                    first_ambiguous_j = j
+                    break
+                if hit_tp or hit_sl:
+                    break
+            if first_ambiguous_j < 0:
+                continue
+            start_15m = idx[first_ambiguous_j].floor("1h")
+            end_15m = idx[first_ambiguous_j]
+            hf = _load_or_download_15m(sym, start_15m, end_15m)
+            if hf.empty:
+                continue
+            resolved = None
+            for _, row in hf.iterrows():
+                h15 = float(row["high"])
+                l15 = float(row["low"])
+                c15 = float(row["close"])
+                hit_tp_15 = (h15 >= tp_price) if side == "long" else (l15 <= tp_price)
+                hit_sl_15 = (l15 <= sl_price) if side == "long" else (h15 >= sl_price)
+                if hit_tp_15 and hit_sl_15:
+                    resolved = _resolve_barrier_conflict_15m(side=side, bar_close=c15, tp_price=tp_price, sl_price=sl_price)
+                    break
+                if hit_tp_15:
+                    resolved = "TP"
+                    break
+                if hit_sl_15:
+                    resolved = "SL"
+                    break
+            if resolved == "TP":
+                lab[i] = OUT_TP
+                ret2.iat[i, ret2.columns.get_loc(sym)] = float(tpv[i])
+                qual2.iat[i, qual2.columns.get_loc(sym)] = max(float(qual2.iat[i, qual2.columns.get_loc(sym)]), 0.51)
+            elif resolved == "SL":
+                lab[i] = OUT_SL
+                ret2.iat[i, ret2.columns.get_loc(sym)] = -float(slv[i])
+                qual2.iat[i, qual2.columns.get_loc(sym)] = min(float(qual2.iat[i, qual2.columns.get_loc(sym)]), 0.49)
+        lbl2[sym] = lab
+    return lbl2, ret2, qual2
 
 
 def _find_latest_feature_ts(data_root: str) -> Optional[pd.Timestamp]:
@@ -2129,6 +2249,9 @@ def evaluate_config(
                 # This matches training.py's labeling logic including dynamic horizon support.
                 lbl, ret, qual = compute_triple_barrier_labels(
                     artifacts.panel, tp_df, sl_df, h, side=side, return_outcomes=True, horizons_frame=dyn_h
+                )
+                lbl, ret, qual = _refine_ambiguous_labels_with_15m(
+                    artifacts.panel, tp_df, sl_df, lbl, ret, qual, h, side
                 )
                 layer2_cache[key2] = (lbl, ret, qual)
                 tprint(f"[eval:{cfg_id}] label_cache miss h={h} side={side}")

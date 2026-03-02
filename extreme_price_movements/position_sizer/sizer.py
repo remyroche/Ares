@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 import numpy as np
+from ..utils import tprint
 
 
 @dataclass
@@ -21,6 +22,7 @@ class PositionSizerConfig:
 
 
 def percentile_rank(value: float, universe):
+    tprint(f"Entering function: percentile_rank in sizer.py")
     vals = np.asarray(universe, dtype=float)
     vals = vals[np.isfinite(vals)]
     if len(vals) == 0:
@@ -32,6 +34,7 @@ def percentile_rank(value: float, universe):
 
 
 def conviction_threshold_from_opportunities(opportunity_evs, trade_percentile_threshold: float = 0.90):
+    tprint(f"Entering function: conviction_threshold_from_opportunities in sizer.py")
     evs = np.asarray(opportunity_evs, dtype=float)
     evs = evs[np.isfinite(evs)]
     if len(evs) == 0:
@@ -41,12 +44,14 @@ def conviction_threshold_from_opportunities(opportunity_evs, trade_percentile_th
 
 
 def sharpen_alpha_score(alpha_score: float, alpha_power: float = 2.0):
+    tprint(f"Entering function: sharpen_alpha_score in sizer.py")
     a = float(alpha_score)
     p = float(max(alpha_power, 1e-8))
     return float(np.sign(a) * (abs(a) ** p))
 
 
 def temperature_scale_score(alpha_score: float, score_temperature: float = 0.7):
+    tprint(f"Entering function: temperature_scale_score in sizer.py")
     t = float(max(score_temperature, 1e-8))
     return float(np.tanh(float(alpha_score) / t))
 
@@ -63,6 +68,7 @@ def size_position(
     opportunity_evs=None,
     alpha_score: float = 1.0,
 ):
+    tprint(f"Entering function: size_position in sizer.py")
     p = float(np.clip(pwin_hat, cfg.p_min, 1.0 - cfg.p_min))
     w_win = float(qwin80_hat if cfg.exp_win_quantile >= 0.8 else qwin50_hat)
     l_loss = float(qloss90_hat if cfg.risk_loss_quantile >= 0.9 else qloss50_hat)
@@ -111,6 +117,7 @@ def size_position(
 
 
 def size_positions_ranked(ev_hat, risk_hat, alpha_score, cfg: PositionSizerConfig, group_ids=None):
+    tprint(f"Entering function: size_positions_ranked in sizer.py")
     ev_hat = np.asarray(ev_hat, dtype=float)
     risk_hat = np.asarray(risk_hat, dtype=float)
     alpha_score = np.asarray(alpha_score, dtype=float)

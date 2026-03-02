@@ -7715,12 +7715,17 @@ def optimize_risk_params(panel, feats, mkt_gates, cfg, train_syms, ts, p_exh_his
 
     tprint("Flattening panel data for pooled optimization...")
 
-    # 15m precision is NOT used in the optimizer — the build_event_cache_15m
-    # requires a contiguous 15m array aligned 4:1 with the full 1h panel,
-    # which would require downloading 90 days of 15m data per symbol (~400 symbols).
-    # 1h resolution is sufficient for grid search; 15m is used in backtest engine per-trade.
-    use_15m = False
+    # We enable 15m precision for the optimizer as requested.
+    use_15m = True
     exchange = None
+    try:
+        import ccxt
+        exchange = ccxt.binance({
+            'enableRateLimit': True,
+        })
+    except ImportError:
+        tprint("WARNING: ccxt not installed. Cannot download 15m data for optimizer.")
+        use_15m = False
 
     # Memory optimization: limit pooled optimization to a representative subset (top 150 assets)
     # processing 600+ assets over 90 days causes OOM during flattening.

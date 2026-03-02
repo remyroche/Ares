@@ -48,6 +48,8 @@ def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl
     quality = np.zeros(n, dtype=np.float32)
     returns = np.zeros(n, dtype=np.float32)
     exit_idxs = np.zeros(n, dtype=np.int64)
+    conflict_j = np.full(n, -1, dtype=np.int64)
+    conflict_j = np.full(n, -1, dtype=np.int64)
 
     limit_ns_base = int(horizon * 3600 * 1_000_000_000)
 
@@ -149,19 +151,14 @@ def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl
                 if hh >= sl_price: hit_sl = True
                 if ll <= tp_price: hit_tp = True
 
-            # If both hit in same bar, assume Worst Case (SL first) or check Open?
-            # Standard conservative: SL first unless Open gap passed TP?
-            # Let's assume Worst Case (SL) if ambiguous.
-
             if hit_sl and hit_tp:
-                # Ambiguous bar - Assume SL
+                # Record conflict for post-processing
+                conflict_j[i] = j
+
+                # Default assume SL if not resolved later
                 outcomes[i] = OUT_SL
                 returns[i] = -sl
                 exit_idxs[i] = j
-                # Loss Quality: did we see profit first?
-                # f(MAE, MFE). Here we hit SL, so MAE >= SL_dist.
-                # Quality depends on MFE seen before? We track MFE of *this* bar too.
-                # MFE/TP_dist.
                 den_tp = max(entry_p * abs(activation), _QUALITY_EPS)
                 qual_raw = (mfe_val / den_tp) * 0.5
                 qual = _soft_squash_pos(qual_raw)
@@ -223,7 +220,7 @@ def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl
     # Numba compatibility: avoid nan_to_num keyword args unsupported in some versions.
     quality = np.nan_to_num(quality)
     quality = np.clip(quality, 0.0, 1.0).astype(np.float32)
-    return outcomes, returns, quality, exit_idxs
+    return outcomes, returns, quality, exit_idxs, conflict_j
 
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_trailing_atr_labeling(
@@ -400,6 +397,7 @@ def _numba_triple_barrier(times, opens, highs, lows, closes, tp_arr, sl_arr, hor
     labels = np.zeros(n, dtype=np.int8)
     returns = np.zeros(n, dtype=np.float32)
     exit_idxs = np.zeros(n, dtype=np.int64)
+    conflict_j = np.full(n, -1, dtype=np.int64)
 
     limit_ns_base = int(horizon * 3600 * 1_000_000_000)
 
@@ -471,9 +469,22 @@ def _numba_triple_barrier(times, opens, highs, lows, closes, tp_arr, sl_arr, hor
                     break
                 continue
 
-            # Check stop-loss
+            # Check Stop-Loss and Activation
+            hit_sl_this_bar = False
+            hit_act_this_bar = False
+
             if side == 1:
-                if ll <= sl_price:
+                if ll <= sl_price: hit_sl_this_bar = True
+                if hh >= activation_price: hit_act_this_bar = True
+            else:
+                if hh >= sl_price: hit_sl_this_bar = True
+                if ll <= activation_price: hit_act_this_bar = True
+
+            if hit_sl_this_bar and hit_act_this_bar:
+                conflict_j[i] = j
+
+            if side == 1:
+                if hit_sl_this_bar:
                     ret = (sl_price / entry_p) - 1.0
                     returns[i] = ret
                     labels[i] = OUT_TP if trailing_active else OUT_SL
@@ -481,7 +492,7 @@ def _numba_triple_barrier(times, opens, highs, lows, closes, tp_arr, sl_arr, hor
                     exit_found = True
                     break
             else:
-                if hh >= sl_price:
+                if hit_sl_this_bar:
                     ret = (entry_p / sl_price) - 1.0
                     returns[i] = ret
                     labels[i] = OUT_TP if trailing_active else OUT_SL
@@ -550,7 +561,7 @@ def _numba_triple_barrier(times, opens, highs, lows, closes, tp_arr, sl_arr, hor
                 returns[i] = (entry_p / closes[n-1]) - 1.0
             exit_idxs[i] = n - 1
 
-    return labels, returns, exit_idxs
+    return labels, returns, exit_idxs, conflict_j
 
 def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_outcomes=False, horizons_frame=None):
     """
@@ -633,13 +644,13 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
         h_arr_custom = horizons_frame[asset].to_numpy(dtype=np.float32) if (horizons_frame is not None and asset in horizons_frame.columns) else None
 
         if return_outcomes:
-            out, rets, qual, _ = _numba_triple_barrier_outcomes(
+            out, rets, qual, _, conflict_j = _numba_triple_barrier_outcomes(
                 times, o_arr, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int, horizons_arr=h_arr_custom
             )
-            return asset, out, rets, qual
+            return asset, out, rets, qual, conflict_j, tp_arr, sl_arr
         else:
-            lbs, rets, _ = _numba_triple_barrier(times, o_arr, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int, horizons_arr=h_arr_custom)
-            return asset, lbs, rets, None
+            lbs, rets, _, conflict_j = _numba_triple_barrier(times, o_arr, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int, horizons_arr=h_arr_custom)
+            return asset, lbs, rets, None, conflict_j, tp_arr, sl_arr
 
     # OPTIMIZATION: Use all available cores for parallel processing
     n_jobs_cap = 8
@@ -651,7 +662,80 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
         delayed(_process_asset)(asset) for asset in assets
     )
 
-    for asset, lbs_or_out, rets, qual in results:
+    for asset, lbs_or_out, rets, qual, conflict_j, tp_arr, sl_arr in results:
+        # Check for conflicts
+        ambiguous_indices = np.where(conflict_j != -1)[0]
+        if len(ambiguous_indices) > 0:
+            try:
+                from extreme_price_movements.hf_data_loader import _load_existing_data
+                df_15m = _load_existing_data(asset)
+                if not df_15m.empty:
+                    c_arr = c[asset].to_numpy()
+                    for i in ambiguous_indices:
+                        j = conflict_j[i]
+                        # Fetch 15m data for the hour corresponding to conflict_j
+                        t_1h = c.index[j]
+                        t_end = t_1h + pd.Timedelta(hours=1) - pd.Timedelta(milliseconds=1)
+                        hf = df_15m.loc[t_1h:t_end]
+                        if hf.empty:
+                            continue
+
+                        entry_p = c_arr[i]
+                        activation = tp_arr[i]
+                        sl_dist = sl_arr[i]
+
+                        tp_price = entry_p * (1.0 + activation) if side_int == 1 else entry_p * (1.0 - activation)
+                        sl_price = entry_p * (1.0 - sl_dist) if side_int == 1 else entry_p * (1.0 + sl_dist)
+
+                        resolved = None
+
+                        # Loop through the 15m bars inside this 1h bar
+                        for _, row in hf.iterrows():
+                            h15 = float(row["high"])
+                            l15 = float(row["low"])
+                            c15 = float(row["close"])
+
+                            hit_tp_15 = (h15 >= tp_price) if side_int == 1 else (l15 <= tp_price)
+                            hit_sl_15 = (l15 <= sl_price) if side_int == 1 else (h15 >= sl_price)
+
+                            if hit_tp_15 and hit_sl_15:
+                                d_tp = abs(c15 - tp_price)
+                                d_sl = abs(c15 - sl_price)
+                                if d_tp < d_sl:
+                                    resolved = "TP"
+                                else:
+                                    resolved = "SL"
+                                break
+                            elif hit_tp_15:
+                                resolved = "TP"
+                                break
+                            elif hit_sl_15:
+                                resolved = "SL"
+                                break
+
+                        if resolved == "TP":
+                            if return_outcomes:
+                                lbs_or_out[i] = OUT_TP
+                                rets[i] = activation
+                                if qual is not None:
+                                    qual[i] = max(qual[i], 0.51)
+                            else:
+                                lbs_or_out[i] = OUT_TP  # _numba_triple_barrier uses OUT_TP (which is 2) for trailing_active exit. But wait, in _numba_triple_barrier there is NO fixed TP exit. It only has OUT_TP if trailing_active else OUT_SL.
+                                rets[i] = activation
+                        elif resolved == "SL":
+                            if return_outcomes:
+                                lbs_or_out[i] = OUT_SL
+                                rets[i] = -sl_dist
+                                if qual is not None:
+                                    qual[i] = min(qual[i], 0.49)
+                            else:
+                                lbs_or_out[i] = OUT_SL
+                                if side_int == 1: rets[i] = (sl_price / entry_p) - 1.0
+                                else: rets[i] = (entry_p / sl_price) - 1.0
+
+            except Exception as e:
+                pass
+
         out_labels[asset] = lbs_or_out
         out_returns[asset] = rets
         if return_outcomes and qual is not None:

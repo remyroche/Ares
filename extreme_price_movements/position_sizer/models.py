@@ -1,3 +1,4 @@
+from src.utils.tprint import tprint
 from dataclasses import dataclass
 
 import numpy as np
@@ -18,17 +19,23 @@ except Exception:  # pragma: no cover
 
 
 def _sigmoid(z):
+    tprint(f"Entering function: _sigmoid in {__name__}")
+    tprint(f"_sigmoid params: z={z}")
     z = np.asarray(z, dtype=float)
     z = np.clip(z, -60.0, 60.0)
     return 1.0 / (1.0 + np.exp(-z))
 
 
 def _logit(p):
+    tprint(f"Entering function: _logit in {__name__}")
+    tprint(f"_logit params: p={p}")
     x = np.clip(np.asarray(p, dtype=float), 1e-6, 1.0 - 1e-6)
     return np.log(x / (1.0 - x))
 
 
 def _safe_corr(a, b):
+    tprint(f"Entering function: _safe_corr in {__name__}")
+    tprint(f"_safe_corr params: a={a}, b={b}")
     a = np.asarray(a, dtype=float)
     b = np.asarray(b, dtype=float)
     m = np.isfinite(a) & np.isfinite(b)
@@ -39,6 +46,8 @@ def _safe_corr(a, b):
 
 
 def _safe_weight(sample_weight, n):
+    tprint(f"Entering function: _safe_weight in {__name__}")
+    tprint(f"_safe_weight params: sample_weight={sample_weight}, n={n}")
     if sample_weight is None:
         return None
     w = np.asarray(sample_weight, dtype=float)
@@ -51,6 +60,8 @@ def _safe_weight(sample_weight, n):
 
 
 def _weighted_mean(x, w=None):
+    tprint(f"Entering function: _weighted_mean in {__name__}")
+    tprint(f"_weighted_mean params: x={x}, w={w}")
     x = np.asarray(x, dtype=float)
     if w is None:
         return float(np.mean(x))
@@ -62,9 +73,13 @@ def _weighted_mean(x, w=None):
 
 class IdentityCalibrator:
     def fit(self, p_raw, y_true, sample_weight=None):
+        tprint(f"Entering function: fit in {__name__}")
+        tprint(f"fit params: self={self}, p_raw={p_raw}, y_true={y_true}, sample_weight={sample_weight}")
         return self
 
     def predict(self, p_raw):
+        tprint(f"Entering function: predict in {__name__}")
+        tprint(f"predict params: self={self}, p_raw={p_raw}")
         return np.clip(np.asarray(p_raw, dtype=float), 1e-6, 1.0 - 1e-6)
 
 
@@ -72,6 +87,8 @@ class SoftLabelSigmoidCalibrator:
     """Platt-like calibrator trained directly on soft labels."""
 
     def __init__(self, lr=0.05, n_iter=600, l2=1e-1, coef_cap=8.0):
+        tprint(f"Entering function: __init__ in {__name__}")
+        tprint(f"__init__ params: self={self}, lr={lr}, n_iter={n_iter}, l2={l2}, coef_cap={coef_cap}")
         self.lr = float(lr)
         self.n_iter = int(n_iter)
         self.l2 = float(l2)
@@ -80,6 +97,8 @@ class SoftLabelSigmoidCalibrator:
         self.b_ = 0.0
 
     def fit(self, p_raw, y_true, sample_weight=None):
+        tprint(f"Entering function: fit in {__name__}")
+        tprint(f"fit params: self={self}, p_raw={p_raw}, y_true={y_true}, sample_weight={sample_weight}")
         x = _logit(p_raw)
         y = np.clip(np.asarray(y_true, dtype=float), 0.0, 1.0)
         w = _safe_weight(sample_weight, len(y))
@@ -106,12 +125,16 @@ class SoftLabelSigmoidCalibrator:
         return self
 
     def predict(self, p_raw):
+        tprint(f"Entering function: predict in {__name__}")
+        tprint(f"predict params: self={self}, p_raw={p_raw}")
         x = _logit(p_raw)
         p = _sigmoid(self.a_ * x + self.b_)
         return np.clip(np.asarray(p, dtype=float), 1e-6, 1.0 - 1e-6)
 
 
 def _fit_isotonic(p_raw, y_true, sample_weight=None):
+    tprint(f"Entering function: _fit_isotonic in {__name__}")
+    tprint(f"_fit_isotonic params: p_raw={p_raw}, y_true={y_true}, sample_weight={sample_weight}")
     cal = IsotonicRegression(out_of_bounds="clip")
     sw = _safe_weight(sample_weight, len(y_true))
     if sw is None:
@@ -129,6 +152,8 @@ def _fit_calibrator(
     sample_weight=None,
     regularization_level="strong",
 ):
+    tprint(f"Entering function: _fit_calibrator in {__name__}")
+    tprint(f"_fit_calibrator params: p_raw={p_raw}, y_true={y_true}, method={method}, min_samples_isotonic={min_samples_isotonic}, sample_weight={sample_weight}, regularization_level={regularization_level}")
     p = np.asarray(p_raw, dtype=float)
     y = np.asarray(y_true, dtype=float)
     n = len(y)
@@ -150,6 +175,8 @@ def _fit_calibrator(
 
 
 def _bce_soft(y_hat, y_soft, sample_weight=None):
+    tprint(f"Entering function: _bce_soft in {__name__}")
+    tprint(f"_bce_soft params: y_hat={y_hat}, y_soft={y_soft}, sample_weight={sample_weight}")
     y_hat = np.clip(np.asarray(y_hat, dtype=float), 1e-9, 1.0 - 1e-9)
     y_soft = np.clip(np.asarray(y_soft, dtype=float), 0.0, 1.0)
     w = _safe_weight(sample_weight, len(y_hat))
@@ -158,6 +185,8 @@ def _bce_soft(y_hat, y_soft, sample_weight=None):
 
 
 def _ece(y_true, y_prob, n_bins=20, sample_weight=None):
+    tprint(f"Entering function: _ece in {__name__}")
+    tprint(f"_ece params: y_true={y_true}, y_prob={y_prob}, n_bins={n_bins}, sample_weight={sample_weight}")
     y = np.clip(np.asarray(y_true, dtype=float), 0.0, 1.0)
     p = np.clip(np.asarray(y_prob, dtype=float), 0.0, 1.0)
     w = _safe_weight(sample_weight, len(y))
@@ -186,6 +215,8 @@ def _ece(y_true, y_prob, n_bins=20, sample_weight=None):
 
 
 def _regularization_presets(level="strong"):
+    tprint(f"Entering function: _regularization_presets in {__name__}")
+    tprint(f"_regularization_presets params: level={level}")
     level = str(level).lower()
     if level == "medium":
         return {
@@ -322,6 +353,8 @@ def _fit_pwin_base_model(
     base_engine="extratrees",
     regularization_level="strong",
 ):
+    tprint(f"Entering function: _fit_pwin_base_model in {__name__}")
+    tprint(f"_fit_pwin_base_model params: X_train={X_train}, y_train={y_train}, X_cal={X_cal}, y_cal={y_cal}, sample_weight_train={sample_weight_train}, base_engine={base_engine}, regularization_level={regularization_level}")
     base_engine = str(base_engine).lower()
     presets = _regularization_presets(regularization_level)
     if base_engine == "xgb":
@@ -364,6 +397,8 @@ class CalibratedPWinModel:
     diagnostics: dict | None = None
 
     def _base_scores(self, X):
+        tprint(f"Entering function: _base_scores in {__name__}")
+        tprint(f"_base_scores params: self={self}, X={X}")
         if hasattr(self.base_model, "predict_proba"):
             p = np.asarray(self.base_model.predict_proba(X)[:, 1], dtype=float)
         else:
@@ -371,6 +406,8 @@ class CalibratedPWinModel:
         return np.clip(p, 1e-6, 1.0 - 1e-6)
 
     def predict_proba(self, X, regime_labels=None, row_ids=None):
+        tprint(f"Entering function: predict_proba in {__name__}")
+        tprint(f"predict_proba params: self={self}, X={X}, regime_labels={regime_labels}, row_ids={row_ids}")
         p_raw = self._base_scores(X)
         p_cal = np.asarray(self.global_calibrator.predict(p_raw), dtype=float)
 
@@ -397,6 +434,8 @@ class CalibratedPWinModel:
 
 
 def _compute_metrics(prefix, y_true, y_prob, sample_weight=None, y_hard_ref=None):
+    tprint(f"Entering function: _compute_metrics in {__name__}")
+    tprint(f"_compute_metrics params: prefix={prefix}, y_true={y_true}, y_prob={y_prob}, sample_weight={sample_weight}, y_hard_ref={y_hard_ref}")
     out = {
         f"bce_{prefix}": _bce_soft(y_prob, y_true, sample_weight=sample_weight),
         f"brier_{prefix}": _weighted_mean((np.asarray(y_true) - np.asarray(y_prob)) ** 2, sample_weight),
@@ -428,6 +467,8 @@ def train_pwin_classifier(
     sample_weight=None,
     diagnostics_walkforward_blocks=0,
 ):
+    tprint(f"Entering function: train_pwin_classifier in {__name__}")
+    tprint(f"train_pwin_classifier params: X={X}, pwin_target={pwin_target}, calibration_mode={calibration_mode}, regime_labels={regime_labels}, rolling_window={rolling_window}, y_hard_ref={y_hard_ref}, pnl_ref={pnl_ref}, base_engine={base_engine}, regularization_level={regularization_level}, calibrator_method={calibrator_method}, min_samples_isotonic={min_samples_isotonic}, calibration_frac={calibration_frac}, calibration_min_samples={calibration_min_samples}, sample_weight={sample_weight}, diagnostics_walkforward_blocks={diagnostics_walkforward_blocks}")
     """Train pwin with soft labels and strict forward-only calibration."""
     X = np.asarray(X, dtype=float)
     y_soft = np.clip(np.asarray(pwin_target, dtype=float), 0.0, 1.0)
@@ -585,18 +626,26 @@ def train_pwin_classifier(
 
 class _ConstantRegressor:
     def __init__(self, value):
+        tprint(f"Entering function: __init__ in {__name__}")
+        tprint(f"__init__ params: self={self}, value={value}")
         self.value = float(value)
 
     def predict(self, X):
+        tprint(f"Entering function: predict in {__name__}")
+        tprint(f"predict params: self={self}, X={X}")
         X = np.asarray(X)
         return np.full(len(X), self.value, dtype=float)
 
 
 class _LogQuantileModel:
     def __init__(self, model):
+        tprint(f"Entering function: __init__ in {__name__}")
+        tprint(f"__init__ params: self={self}, model={model}")
         self.model = model
 
     def predict(self, X):
+        tprint(f"Entering function: predict in {__name__}")
+        tprint(f"predict params: self={self}, X={X}")
         yp = np.asarray(self.model.predict(X), dtype=float)
         yp = np.maximum(yp, 0.0)
         return np.maximum(np.expm1(yp), 0.0)
@@ -606,10 +655,14 @@ class _DeltaQuantileModel:
     """q_high = q_low + max(delta, 0) in log space, then expm1."""
 
     def __init__(self, low_model, delta_model):
+        tprint(f"Entering function: __init__ in {__name__}")
+        tprint(f"__init__ params: self={self}, low_model={low_model}, delta_model={delta_model}")
         self.low_model = low_model
         self.delta_model = delta_model
 
     def predict(self, X):
+        tprint(f"Entering function: predict in {__name__}")
+        tprint(f"predict params: self={self}, X={X}")
         low = np.asarray(self.low_model.predict(X), dtype=float)
         dlt = np.asarray(self.delta_model.predict(X), dtype=float)
         out = np.maximum(low, 0.0) + np.maximum(dlt, 0.0)
@@ -617,6 +670,8 @@ class _DeltaQuantileModel:
 
 
 def _fit_quantile_base(X, y_log, tau, engine, regularization_level):
+    tprint(f"Entering function: _fit_quantile_base in {__name__}")
+    tprint(f"_fit_quantile_base params: X={X}, y_log={y_log}, tau={tau}, engine={engine}, regularization_level={regularization_level}")
     presets = _regularization_presets(regularization_level)
     engine = str(engine).lower()
     if engine == "xgb":
@@ -656,6 +711,8 @@ def _fit_quantile_base(X, y_log, tau, engine, regularization_level):
 
 
 def _fit_quantile(X, y, tau, engine="sklearn", regularization_level="strong"):
+    tprint(f"Entering function: _fit_quantile in {__name__}")
+    tprint(f"_fit_quantile params: X={X}, y={y}, tau={tau}, engine={engine}, regularization_level={regularization_level}")
     X = np.asarray(X, dtype=float)
     y = np.asarray(y, dtype=float)
     y = np.maximum(y, 0.0)
@@ -673,6 +730,8 @@ def train_win_quantile_regressor(
     regularization_level="strong",
     delta_quantile=False,
 ):
+    tprint(f"Entering function: train_win_quantile_regressor in {__name__}")
+    tprint(f"train_win_quantile_regressor params: X={X}, y_win_mag={y_win_mag}, base_engine={base_engine}, regularization_level={regularization_level}, delta_quantile={delta_quantile}")
     X = np.asarray(X, dtype=float)
     y_win_mag = np.asarray(y_win_mag, dtype=float)
     mask = np.isfinite(y_win_mag) & (y_win_mag > 0)
@@ -698,6 +757,8 @@ def train_loss_quantile_regressor(
     regularization_level="strong",
     delta_quantile=False,
 ):
+    tprint(f"Entering function: train_loss_quantile_regressor in {__name__}")
+    tprint(f"train_loss_quantile_regressor params: X={X}, y_loss_mag={y_loss_mag}, base_engine={base_engine}, regularization_level={regularization_level}, delta_quantile={delta_quantile}")
     X = np.asarray(X, dtype=float)
     y_loss_mag = np.asarray(y_loss_mag, dtype=float)
     mask = np.isfinite(y_loss_mag) & (y_loss_mag > 0)
@@ -717,6 +778,8 @@ def train_loss_quantile_regressor(
 
 
 def predict_quantiles(model_pack: dict, X, high_key: str, low_key: str = "q50"):
+    tprint(f"Entering function: predict_quantiles in {__name__}")
+    tprint(f"predict_quantiles params: model_pack={model_pack}, X={X}, high_key={high_key}, low_key={low_key}")
     low = np.maximum(model_pack[low_key].predict(X), 0.0)
     high = np.maximum(model_pack[high_key].predict(X), 0.0)
     high = np.maximum(high, low)

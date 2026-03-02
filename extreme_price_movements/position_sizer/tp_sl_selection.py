@@ -3,6 +3,8 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from extreme_price_movements.utils import tprint
+
 
 @dataclass
 class CompositeObjectiveConfig:
@@ -24,6 +26,7 @@ class CompositeObjectiveConfig:
 
 
 def expected_log_growth(r_t, eps_log: float = 1e-12) -> float:
+    tprint(f"Entering function: expected_log_growth in tp_sl_selection.py")
     r = np.asarray(r_t, dtype=float)
     if r.size == 0:
         return float("nan")
@@ -32,6 +35,7 @@ def expected_log_growth(r_t, eps_log: float = 1e-12) -> float:
 
 
 def sortino_ratio(r_t, mar: float = 0.0, eps_sortino: float = 1e-12) -> float:
+    tprint(f"Entering function: sortino_ratio in tp_sl_selection.py")
     r = np.asarray(r_t, dtype=float)
     if r.size == 0:
         return float("nan")
@@ -42,6 +46,7 @@ def sortino_ratio(r_t, mar: float = 0.0, eps_sortino: float = 1e-12) -> float:
 
 
 def mean_net_pnl_per_trade(pnl_net) -> float:
+    tprint(f"Entering function: mean_net_pnl_per_trade in tp_sl_selection.py")
     p = np.asarray(pnl_net, dtype=float)
     if p.size == 0:
         return float("nan")
@@ -49,6 +54,7 @@ def mean_net_pnl_per_trade(pnl_net) -> float:
 
 
 def composite_objective(elg: float, sr: float, mnpt: float, cfg: CompositeObjectiveConfig) -> float:
+    tprint(f"Entering function: composite_objective in tp_sl_selection.py")
     elg_s = np.clip(elg * float(cfg.elg_scale), cfg.elg_min, cfg.elg_max)
     sr_s = np.clip(sr, cfg.sortino_min, cfg.sortino_max)
     mnpt_s = np.clip(mnpt * float(cfg.mnpt_scale), cfg.mnpt_min, cfg.mnpt_max)
@@ -62,6 +68,7 @@ def composite_objective(elg: float, sr: float, mnpt: float, cfg: CompositeObject
 
 
 def evaluate_fold_metrics(r_t, pnl_net, cfg: CompositeObjectiveConfig) -> dict:
+    tprint(f"Entering function: evaluate_fold_metrics in tp_sl_selection.py")
     pnl = np.asarray(pnl_net, dtype=float)
     n_trades = int(len(pnl))
     elg = expected_log_growth(r_t, eps_log=cfg.eps_log)
@@ -83,6 +90,7 @@ def evaluate_fold_metrics(r_t, pnl_net, cfg: CompositeObjectiveConfig) -> dict:
 
 
 def aggregate_candidate_folds(candidate_to_fold_metrics: dict) -> pd.DataFrame:
+    tprint(f"Entering function: aggregate_candidate_folds in tp_sl_selection.py")
     rows = []
     for cand, folds in candidate_to_fold_metrics.items():
         obj = np.array([f.get("Objective", np.nan) for f in folds], dtype=float)
@@ -107,6 +115,7 @@ def aggregate_candidate_folds(candidate_to_fold_metrics: dict) -> pd.DataFrame:
 
 
 def select_robust_default(summary_df: pd.DataFrame, cfg: CompositeObjectiveConfig) -> dict:
+    tprint(f"Entering function: select_robust_default in tp_sl_selection.py")
     if summary_df.empty:
         raise ValueError("summary_df is empty")
 
@@ -129,6 +138,7 @@ def select_robust_default(summary_df: pd.DataFrame, cfg: CompositeObjectiveConfi
 
 
 def build_tp_sl_grid(k_tp_grid, k_sl_grid) -> list[tuple[float, float]]:
+    tprint(f"Entering function: build_tp_sl_grid in tp_sl_selection.py")
     return [(float(tp), float(sl)) for tp in k_tp_grid for sl in k_sl_grid]
 
 
@@ -146,6 +156,7 @@ def select_best_tp_sl(
 
     Returns dict with selected candidate and summary table.
     """
+    tprint(f"Entering function: select_best_tp_sl in tp_sl_selection.py")
     cfg = cfg or CompositeObjectiveConfig()
     open_arr = np.asarray(open_, dtype=float)
     close_arr = np.asarray(close, dtype=float)

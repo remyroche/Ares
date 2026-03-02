@@ -4,7 +4,7 @@ import numpy as np
 
 from .dataset import build_pwin_dataset, build_win_quantile_dataset, build_loss_quantile_dataset
 from .models import train_pwin_classifier, train_win_quantile_regressor, train_loss_quantile_regressor
-
+from extreme_price_movements.utils import tprint
 
 def _pinball_loss(y_true, y_pred, q: float) -> float:
     y = np.asarray(y_true, dtype=float)
@@ -46,6 +46,7 @@ def _quantile_metrics(y_true, q50, qh, qh_level: float) -> dict:
 
 def train_position_sizer_models(ps_df, feature_cols: list[str], cfg: dict):
     """Train p(win) + win/loss quantile heads for the position-sizer bundle."""
+    tprint("Starting train_position_sizer_models")
     soft_cfg = {
         "enabled": bool(cfg.get("position_sizer_pwin_soft_label_enabled", False)),
         "tp": float(cfg.get("position_sizer_pwin_soft_label_tp", 0.02)),
@@ -67,8 +68,11 @@ def train_position_sizer_models(ps_df, feature_cols: list[str], cfg: dict):
     quant_delta = bool(cfg.get("position_sizer_quantile_delta", False))
     pwin_wf_blocks = int(cfg.get("position_sizer_pwin_walkforward_blocks", 0))
 
+    tprint("Building pwin dataset")
     ds = build_pwin_dataset(ps_df, feature_cols=feature_cols, pnl_col="pnl_label", mfe_col="mfe", mae_col="mae", pwin_soft_cfg=soft_cfg)
     reg_labels = ps_df["bucket"].values if "bucket" in ps_df.columns else None
+
+    tprint("Training pwin classifier")
     pwin_model = train_pwin_classifier(
         ds.X.values,
         ds.pwin_target,
@@ -86,8 +90,13 @@ def train_position_sizer_models(ps_df, feature_cols: list[str], cfg: dict):
         diagnostics_walkforward_blocks=pwin_wf_blocks,
     )
 
+    tprint("Building win quantile dataset")
     Xw, yw = build_win_quantile_dataset(ps_df, feature_cols=feature_cols, pnl_col="pnl_label")
+
+    tprint("Building loss quantile dataset")
     Xl, yl = build_loss_quantile_dataset(ps_df, feature_cols=feature_cols, pnl_col="pnl_label")
+
+    tprint("Training win quantile regressor")
     win_model = train_win_quantile_regressor(
         Xw.values,
         yw,
@@ -95,6 +104,8 @@ def train_position_sizer_models(ps_df, feature_cols: list[str], cfg: dict):
         regularization_level=reg_level,
         delta_quantile=quant_delta,
     )
+
+    tprint("Training loss quantile regressor")
     loss_model = train_loss_quantile_regressor(
         Xl.values,
         yl,
@@ -156,6 +167,7 @@ def train_position_sizer_models(ps_df, feature_cols: list[str], cfg: dict):
                 )
             diag["per_bucket"][b] = bb
 
+    tprint("Finished train_position_sizer_models")
     return {
         "pwin_model": pwin_model,
         "win_model": win_model,

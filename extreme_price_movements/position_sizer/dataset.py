@@ -3,6 +3,12 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+try:
+    from src.utils.tprint import tprint_info, tprint_warning
+except ImportError:
+    def tprint_info(msg): print(f"[INFO] {msg}")
+    def tprint_warning(msg): print(f"[WARNING] {msg}")
+
 
 def _sigmoid(x):
     x = np.asarray(x, dtype=float)
@@ -66,6 +72,7 @@ def build_position_sizer_dataset(
     mae_col: str = "mae",
     pwin_soft_cfg: dict | None = None,
 ) -> PositionSizerDataset:
+    tprint_info(f"Building PositionSizerDataset from DataFrame with shape {df.shape} and {len(feature_cols)} features")
     pnl = np.asarray(df[pnl_col].values, dtype=float)
     y_win = (pnl > 0.0).astype(np.int8)
     winners_mask = pnl > 0.0
@@ -80,6 +87,7 @@ def build_position_sizer_dataset(
     soft_enabled = bool(soft_cfg.get("enabled", False))
 
     if soft_enabled:
+        tprint_info(f"Computing soft labels with config: {soft_cfg}")
         u_soft, pwin_target = _compute_soft_labels(
             mfe=mfe,
             mae=mae,
@@ -90,9 +98,11 @@ def build_position_sizer_dataset(
             log_eps=float(soft_cfg.get("log_eps", 1e-12)),
         )
     else:
+        tprint_info("Soft labels disabled. Using hard labels based on pnl > 0")
         u_soft = np.where(y_win > 0, 1.0, -1.0)
         pwin_target = y_win.astype(float)
 
+    tprint_info(f"Dataset built successfully. Winners: {np.sum(winners_mask)}, Losers: {np.sum(losers_mask)}")
     return PositionSizerDataset(
         X=df[feature_cols].copy().fillna(0.0),
         y_win=y_win,
@@ -108,16 +118,21 @@ def build_position_sizer_dataset(
 
 
 def build_pwin_dataset(df: pd.DataFrame, feature_cols: list[str], **kwargs) -> PositionSizerDataset:
+    tprint_info("Building pwin dataset")
     return build_position_sizer_dataset(df=df, feature_cols=feature_cols, **kwargs)
 
 
 def build_win_quantile_dataset(df: pd.DataFrame, feature_cols: list[str], pnl_col: str = "pnl_label") -> tuple[pd.DataFrame, np.ndarray]:
+    tprint_info("Building win quantile dataset")
     ds = build_position_sizer_dataset(df=df, feature_cols=feature_cols, pnl_col=pnl_col)
     mask = np.isfinite(ds.y_win_mag)
+    tprint_info(f"Win quantile dataset returned {np.sum(mask)} finite samples")
     return ds.X.loc[mask].reset_index(drop=True), np.asarray(ds.y_win_mag[mask], dtype=float)
 
 
 def build_loss_quantile_dataset(df: pd.DataFrame, feature_cols: list[str], pnl_col: str = "pnl_label") -> tuple[pd.DataFrame, np.ndarray]:
+    tprint_info("Building loss quantile dataset")
     ds = build_position_sizer_dataset(df=df, feature_cols=feature_cols, pnl_col=pnl_col)
     mask = np.isfinite(ds.y_loss_mag)
+    tprint_info(f"Loss quantile dataset returned {np.sum(mask)} finite samples")
     return ds.X.loc[mask].reset_index(drop=True), np.asarray(ds.y_loss_mag[mask], dtype=float)

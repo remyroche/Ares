@@ -920,6 +920,9 @@ CFG = {
         "regime_transition_entropy_48h", "complexity_regime_24h",
         "trend_regime_switch_12h", "vol_regime_switch_12h",
         "vol_concentration_12", "volume_entropy_12", "volume_entropy_24", "volatility_zscore",
+        "clv_t", "body_ratio_15m", "rejection_proxy",
+        "range_norm_12", "sv_imb_12", "press_12", "impact_12", "ts_12", "prog_eff_12", "pers_12", "hh_count_12", "ll_count_12", "skew_12", "climax_range_12", "climax_vol_12", "z_vwap_12", "z_r_12", "bb_pos_12",
+        "range_norm_24", "sv_imb_24", "press_24", "impact_24", "ts_24", "prog_eff_24", "pers_24", "hh_count_24", "ll_count_24", "skew_24", "climax_range_24", "climax_vol_24", "z_vwap_24", "z_r_24", "bb_pos_24",
     ],
     # Kind-specific overlays for meta models (added on top of meta_feature_keys)
     "mr_meta_feature_keys": [

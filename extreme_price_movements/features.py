@@ -2693,6 +2693,74 @@ def _compute_features_impl(panel, mkt_gates, cfg):
         # Positive value = Longs are trapped (Price below VWAP)
         feats[f"trapped_longs_{n}"] = ((vwap_n - c_log) / (feats["atr_ln"] + 1e-12)).clip(lower=0).astype(np.float32)
 
+    feats["clv_t"] = (((c_log - l) - (h - c_log)) / ((h - l) + 1e-9)).astype(np.float32)
+
+    tr_15m = np.maximum(h - l, np.maximum((h - c_log.shift(1)).abs(), (l - c_log.shift(1)).abs()))
+    body_ratio_15m = (c_log - o).abs() / ((h - l) + 1e-9)
+    feats["body_ratio_15m"] = body_ratio_15m.astype(np.float32)
+
+    upper_wick = (h - np.maximum(o, c_log)).clip(lower=0)
+    lower_wick = (np.minimum(o, c_log) - l).clip(lower=0)
+    feats["rejection_proxy"] = ((lower_wick - upper_wick) / ((h - l) + 1e-9)).astype(np.float32)
+
+    sv = v * np.sign(c_log - c_log.shift(1))
+    c_log_diff1 = c_log.diff(1)
+    c_log_diff1_abs = c_log_diff1.abs()
+    c_log_diff1_sign = np.sign(c_log_diff1)
+    press_base = ((c_log - o) / ((h - l) + 1e-9)) * v
+    h_minus_l = h - l
+
+    for n in [12, 24]:
+        atr_15m_n = ff.numba_ewma(tr_15m, 2.0 / (n + 1.0), False)
+        feats[f"range_norm_{n}"] = (h_minus_l / (atr_15m_n + 1e-12)).astype(np.float32)
+
+        sv_sum_n = ff.numba_rolling_sum(sv, n)
+        v_sum_n = ff.numba_rolling_sum(v, n)
+        feats[f"sv_imb_{n}"] = (sv_sum_n / (v_sum_n + 1e-12)).astype(np.float32)
+
+        feats[f"press_{n}"] = ff.numba_rolling_mean(press_base, n).astype(np.float32)
+
+        feats[f"impact_{n}"] = ff.numba_rolling_mean(c_log_diff1_abs / (v + 1e-9), n).astype(np.float32)
+
+        ts_mean_n = ff.numba_rolling_mean(c_log_diff1, n)
+        ts_std_n = ff.numba_rolling_std(c_log_diff1, n)
+        feats[f"ts_{n}"] = (ts_mean_n / (ts_std_n + 1e-12)).astype(np.float32)
+
+        prog_n = (c_log - c_log.shift(n)).abs()
+        feats[f"prog_eff_{n}"] = (prog_n / (v_sum_n + 1e-12)).astype(np.float32)
+
+        feats[f"pers_{n}"] = ff.numba_rolling_mean(c_log_diff1_sign, n).astype(np.float32)
+
+        hh_count_n = ff.numba_rolling_sum((h > h.shift(1)).astype(np.float32), n)
+        feats[f"hh_count_{n}"] = hh_count_n.astype(np.float32)
+
+        ll_count_n = ff.numba_rolling_sum((l < l.shift(1)).astype(np.float32), n)
+        feats[f"ll_count_{n}"] = ll_count_n.astype(np.float32)
+
+        feats[f"skew_{n}"] = ff.apply_to_frame(c_log_diff1, ff._numba_rolling_skew, n).astype(np.float32)
+
+        climax_range_med_n = ff.apply_to_frame(h_minus_l, ff._numba_rolling_median, n)
+        feats[f"climax_range_{n}"] = (h_minus_l / (climax_range_med_n + 1e-12)).astype(np.float32)
+
+        climax_vol_med_n = ff.apply_to_frame(v, ff._numba_rolling_median, n)
+        feats[f"climax_vol_{n}"] = (v / (climax_vol_med_n + 1e-12)).astype(np.float32)
+
+        vwap_z_n = pd.DataFrame(index=c_log.index, columns=c_log.columns, dtype=np.float32)
+        for col in c_log.columns:
+            p_arr = c_log[col].to_numpy(dtype=np.float32)
+            v_arr = v[col].to_numpy(dtype=np.float32)
+            vwap_z_n[col] = ff._numba_rolling_vwap(p_arr, v_arr, n)
+
+        diff_vwap = c_log - vwap_z_n
+        std_vwap = ff.numba_rolling_std(diff_vwap, n)
+        feats[f"z_vwap_{n}"] = (diff_vwap / (std_vwap + 1e-12)).astype(np.float32)
+
+        feats[f"z_r_{n}"] = ((c_log_diff1 - ts_mean_n) / (ts_std_n + 1e-12)).astype(np.float32)
+
+        c_log_mean_n = ff.numba_rolling_mean(c_log, n)
+        c_log_std_n = ff.numba_rolling_std(c_log, n)
+        feats[f"bb_pos_{n}"] = ((c_log - c_log_mean_n) / (c_log_std_n + 1e-12)).astype(np.float32)
+
     # 5. Volume Node Features (HVN/LVN)
     # Loop over columns, construct DF, call function, stack results
     tprint("Computing HVN/LVN features...")

@@ -1985,7 +1985,7 @@ class RidgePositionSizer:
         """Evaluate hyperparameters using purged cross-validation.
         
         Computes metrics using a realistic trading policy:
-        1. Select top-k% predictions per time slice
+        1. Select top-k% predictions globally (across symbols and time)
         2. Compute returns with proper time ordering
         3. Aggregate to daily returns for Sortino/MaxDD
         
@@ -2063,34 +2063,18 @@ class RidgePositionSizer:
         ts_masked = timestamps[mask] if timestamps is not None else None
         sym_masked = symbols[mask] if symbols is not None else None
         
-        # Apply top-k% selection policy PER TIMESTAMP SLICE
-        # This is more realistic: at each timestamp, we select top-k assets
-        selected_indices = []
-        
-        if ts_masked is not None:
-            # Group by timestamp and select top-k within each group
-            import pandas as pd
-            df = pd.DataFrame({
-                'pred': pred,
-                'true': true,
-                'true_raw': true_raw,
-                'ts': ts_masked,
-                'orig_idx': np.arange(len(pred))
-            })
-            
-            for ts_val, group in df.groupby('ts'):
-                n_in_group = len(group)
-                k = max(1, int(self.top_k_pct * n_in_group))
-                # Select top-k by prediction within this timestamp
-                top_k_local = group.nlargest(k, 'pred')['orig_idx'].values
-                selected_indices.extend(top_k_local)
-            
-            selected_indices = np.array(selected_indices)
-        else:
-            # Fallback: global top-k if no timestamps
-            k = max(1, int(self.top_k_pct * len(pred)))
-            selected_indices = np.argpartition(pred, -k)[-k:]
-        
+        # Global ranking policy (across symbols AND time), hard-capped at top 30%.
+        effective_top_k_pct = min(float(self.top_k_pct), 0.30)
+        k = max(1, int(effective_top_k_pct * len(pred)))
+        selected_indices = np.argpartition(pred, -k)[-k:]
+
+        # linear_5_15 sizing over globally selected ranks.
+        sel_pred = pred[selected_indices]
+        order = np.argsort(sel_pred)
+        rank_local = np.empty(len(sel_pred), dtype=float)
+        rank_local[order] = (np.arange(len(sel_pred), dtype=float) + 0.5) / max(len(sel_pred), 1)
+        pos_frac = 0.05 + 0.10 * rank_local
+
         # Get returns for selected trades (use true_raw for financial metrics)
         selected_returns = true_raw[selected_indices]
         
@@ -2099,12 +2083,13 @@ class RidgePositionSizer:
             selected_ts = ts_masked[selected_indices]
             sort_order = np.argsort(selected_ts)
             selected_returns = selected_returns[sort_order]
+            pos_frac = pos_frac[sort_order]
         else:
             sort_order = None
         
         # Compute base metrics (net of transaction costs)
         n_selected = len(selected_returns)
-        net_returns = selected_returns - self.cost_pct
+        net_returns = (selected_returns - self.cost_pct) * pos_frac
         total_pnl = float(np.sum(net_returns))
         
         # Determine frequency metrics
@@ -2853,13 +2838,25 @@ def run_oof_grid_backtest(
 ) -> pd.DataFrame:
     """Run a compact OOF backtest grid on sizer rankings and limit offsets.
 
-    Expected columns: ts, asset, close, side, sizer_score_oof, opt_limit_offset_pct, fwd_ret_H4.
+    Expected columns include full path arrays for policy utility simulation:
+    ts, asset, close, side, sizer_score_oof, opt_limit_offset_pct,
+    future_highs, future_lows, future_closes, entry_price, is_long.
     """
     if oof_df.empty:
         return pd.DataFrame()
     df = oof_df.copy()
+    req_cols = {
+        "ts", "asset", "sizer_score_oof", "opt_limit_offset_pct",
+        "future_highs", "future_lows", "future_closes", "entry_price", "is_long",
+    }
+    missing = [c for c in sorted(req_cols) if c not in df.columns]
+    if missing:
+        raise ValueError(
+            "run_oof_grid_backtest requires policy-path columns and does not support "
+            f"fwd_ret_H4 fallback. Missing: {missing}"
+        )
     df["ts"] = pd.to_datetime(df["ts"], utc=True, errors="coerce")
-    df = df.dropna(subset=["ts", "asset", "sizer_score_oof", "fwd_ret_H4"]).sort_values(["ts", "asset"])
+    df = df.dropna(subset=["ts", "asset", "sizer_score_oof"]).sort_values(["ts", "asset"])
     if df.empty:
         return pd.DataFrame()
     df["side"] = df.get("side", "LONG").fillna("LONG")
@@ -2867,86 +2864,196 @@ def run_oof_grid_backtest(
     df["opt_limit_offset_pct"] = np.maximum(df.get("opt_limit_offset_pct", 0.0).astype(float), 0.0)
     df["week_avg"] = df.groupby("asset")["sizer_score_oof"].transform(lambda s: s.rolling("7D", min_periods=1).mean())
     df["dev"] = df["sizer_score_oof"] - df["week_avg"]
-    df["rank_pct"] = df.groupby("ts")["dev"].rank(method="first", pct=True)
+    # Rank globally across symbols AND time (not cross-sectional per timestamp).
+    df["rank_pct"] = df["dev"].rank(method="first", pct=True)
+    # Hard policy cap: never trade outside top 30% by global rank.
+    df = df[df["rank_pct"] >= 0.70].copy()
+    if df.empty:
+        return pd.DataFrame()
 
-    configs = []
+    def _size_linear_5_15(rank_pct: np.ndarray, threshold: float) -> np.ndarray:
+        u = np.clip((rank_pct - threshold) / max(1.0 - threshold, 1e-9), 0.0, 1.0)
+        return 0.05 + 0.10 * u
+
+    def _size_convex_power(rank_pct: np.ndarray, threshold: float, p: float = 1.75) -> np.ndarray:
+        u = np.clip((rank_pct - threshold) / max(1.0 - threshold, 1e-9), 0.0, 1.0)
+        return 0.05 + 0.10 * np.power(u, float(p))
+
+    def _size_concave_power(rank_pct: np.ndarray, threshold: float, p: float = 0.70) -> np.ndarray:
+        u = np.clip((rank_pct - threshold) / max(1.0 - threshold, 1e-9), 0.0, 1.0)
+        return 0.05 + 0.10 * np.power(u, float(max(p, 1e-6)))
+
+    def _size_quantile_steps(rank_pct: np.ndarray, threshold: float) -> np.ndarray:
+        u = np.clip((rank_pct - threshold) / max(1.0 - threshold, 1e-9), 0.0, 1.0)
+        out = np.full(len(u), 0.05, dtype=float)
+        out[u >= (1.0 / 3.0)] = 0.09
+        out[u >= (2.0 / 3.0)] = 0.15
+        return out
+
+    def _size_soft_capped_exp(rank_pct: np.ndarray, threshold: float, beta: float = 3.0) -> np.ndarray:
+        u = np.clip((rank_pct - threshold) / max(1.0 - threshold, 1e-9), 0.0, 1.0)
+        den = max(1.0 - np.exp(-float(beta)), 1e-9)
+        z = (1.0 - np.exp(-float(beta) * u)) / den
+        return 0.05 + 0.10 * z
+
+    size_methods = {
+        "linear_5_15": _size_linear_5_15,
+        "convex_power": _size_convex_power,
+        "concave_power": _size_concave_power,
+        "quantile_step": _size_quantile_steps,
+        "soft_capped_exp": _size_soft_capped_exp,
+    }
+
+    # Phase 1: backtest all non-sizing params using linear_5_15 only.
+    phase1 = []
     for q in (0.30, 0.10, 0.05):
+        threshold = max(1.0 - q, 0.70)
         for offset_mode in ("optimizer", "fixed_0_15"):
             for ratio in ("2:1", "3:2", "4:2"):
-                for sizing in ("fixed_10", "linear_5_15"):
-                    threshold = 1.0 - q
-                    sel = df[df["rank_pct"] >= threshold].copy()
-                    if sel.empty:
+                sel = df[df["rank_pct"] >= threshold].copy()
+                if sel.empty:
+                    continue
+                frac = _size_linear_5_15(sel["rank_pct"].values, threshold)
+                offset_pct = sel["opt_limit_offset_pct"] if offset_mode == "optimizer" else 0.0015
+                net = []
+                frac_valid = []
+                frac_all = _size_linear_5_15(sel["rank_pct"].values, threshold)
+                for j, (_, r) in enumerate(sel.iterrows()):
+                    highs = np.asarray(r["future_highs"], dtype=float)
+                    lows = np.asarray(r["future_lows"], dtype=float)
+                    closes = np.asarray(r["future_closes"], dtype=float)
+                    if highs.size == 0 or lows.size == 0 or closes.size == 0:
                         continue
-                    frac = 0.10 if sizing == "fixed_10" else (0.05 + np.clip((sel["rank_pct"] - threshold) / max(1 - threshold, 1e-9), 0, 1) * 0.10)
-                    offset_pct = sel["opt_limit_offset_pct"] if offset_mode == "optimizer" else 0.0015
-                    # Prefer shared policy simulator if forward path arrays are available.
-                    if all(c in sel.columns for c in ("future_highs", "future_lows", "future_closes", "entry_price", "is_long")):
-                        net = []
-                        for _, r in sel.iterrows():
-                            try:
-                                highs = np.asarray(r["future_highs"], dtype=float)
-                                lows = np.asarray(r["future_lows"], dtype=float)
-                                closes = np.asarray(r["future_closes"], dtype=float)
-
-                                entry_px = float(r["entry_price"])
-                                sl_mult = float(r.get("label_policy_sl_atr_mult", np.nan))
-                                tp_ratio = float(r.get("label_policy_tp_sl_ratio", np.nan))
-                                atr_entry = float(r.get("atr_12_15m", np.nan))
-                                if np.isfinite(sl_mult) and np.isfinite(tp_ratio) and np.isfinite(atr_entry):
-                                    sl_abs = max(sl_mult * max(atr_entry, 1e-9), 1e-9)
-                                    tp_abs = tp_ratio * sl_abs
-                                    sl_pct = sl_abs / max(entry_px, 1e-9)
-                                    tp_pct = tp_abs / max(entry_px, 1e-9)
-                                else:
-                                    tp_pct = 0.005
-                                    sl_pct = 0.0025
-
-                                trailing_pct = float(r.get("label_policy_giveback_pct", 0.0))
-                                max_bars = int(r.get("label_policy_max_hold_bars", 48))
-                                util = _simulate_policy_utility_from_arrays(
-                                    entry_price=entry_px,
-                                    is_long=bool(r["is_long"]),
-                                    future_highs=highs,
-                                    future_lows=lows,
-                                    future_closes=closes,
-                                    tp_pct=tp_pct,
-                                    sl_pct=sl_pct,
-                                    trailing_pct=trailing_pct,
-                                    max_bars=min(max_bars, len(highs)),
-                                    cost_pct=fee_roundtrip,
-                                )
-                                net.append(util - float(offset_pct.loc[r.name]))
-                            except Exception:
-                                net.append(float(r["fwd_ret_H4"]) - float(offset_pct.loc[r.name]) - fee_roundtrip)
-                        net = np.asarray(net, dtype=float)
+                    entry_px = float(r["entry_price"])
+                    sl_mult = float(r.get("label_policy_sl_atr_mult", np.nan))
+                    tp_ratio = float(r.get("label_policy_tp_sl_ratio", np.nan))
+                    atr_entry = float(r.get("atr_12_15m", np.nan))
+                    if np.isfinite(sl_mult) and np.isfinite(tp_ratio) and np.isfinite(atr_entry):
+                        sl_abs = max(sl_mult * max(atr_entry, 1e-9), 1e-9)
+                        tp_abs = tp_ratio * sl_abs
+                        sl_pct = sl_abs / max(entry_px, 1e-9)
+                        tp_pct = tp_abs / max(entry_px, 1e-9)
                     else:
-                        # OOF proxy fallback when bar-path arrays are unavailable.
-                        gross = sel["fwd_ret_H4"].astype(float) - offset_pct.astype(float)
-                        net = gross - fee_roundtrip
-                    pnl = start_equity * frac.values * net.values
-                    trades = len(pnl)
-                    wins = int((pnl > 0).sum())
-                    days = max((sel["ts"].max() - sel["ts"].min()).days, 1)
-                    dd = np.minimum.accumulate(np.cumsum(pnl) - np.maximum.accumulate(np.cumsum(pnl)))
-                    maxdd = float(abs(dd.min())) if len(dd) else 0.0
-                    sortino = float(np.mean(net) / (np.std(np.minimum(net, 0.0)) + 1e-9) * np.sqrt(365))
-                    ulcer = float(np.sqrt(np.mean(np.square(dd)))) if len(dd) else 0.0
-                    configs.append({
-                        "quantile": q,
-                        "entry_offset_mode": offset_mode,
-                        "tp_sl_ratio": ratio,
-                        "sizing_mode": sizing,
-                        "net_pnl": float(np.sum(pnl)),
-                        "trades_per_day": float(trades / days),
-                        "sortino": sortino,
-                        "maxdd": maxdd,
-                        "ulcer": ulcer,
-                        "tuw_max_days": 0.0,
-                        "expectancy_per_trade": float(np.mean(pnl)) if trades else 0.0,
-                        "win_rate": float(wins / max(trades, 1)),
-                    })
-    return pd.DataFrame(configs)
+                        tp_pct = 0.005
+                        sl_pct = 0.0025
+                    trailing_pct = float(r.get("label_policy_giveback_pct", 0.0))
+                    max_bars = int(r.get("label_policy_max_hold_bars", 48))
+                    util = _simulate_policy_utility_from_arrays(
+                        entry_price=entry_px,
+                        is_long=bool(r["is_long"]),
+                        future_highs=highs,
+                        future_lows=lows,
+                        future_closes=closes,
+                        tp_pct=tp_pct,
+                        sl_pct=sl_pct,
+                        trailing_pct=trailing_pct,
+                        max_bars=min(max_bars, len(highs)),
+                        cost_pct=fee_roundtrip,
+                    )
+                    net.append(float(util - float(offset_pct.loc[r.name])))
+                    frac_valid.append(float(frac_all[j]))
+                if not net:
+                    continue
+                net_arr = np.asarray(net, dtype=float)
+                frac_arr = np.asarray(frac_valid, dtype=float)
+                pnl = start_equity * frac_arr * net_arr
+                trades = len(pnl)
+                wins = int((pnl > 0).sum())
+                days = max((sel["ts"].max() - sel["ts"].min()).days, 1)
+                dd = np.minimum.accumulate(np.cumsum(pnl) - np.maximum.accumulate(np.cumsum(pnl)))
+                phase1.append({
+                    "phase": "phase1_non_sizing_grid",
+                    "quantile": q,
+                    "entry_offset_mode": offset_mode,
+                    "tp_sl_ratio": ratio,
+                    "sizing_mode": "linear_5_15",
+                    "net_pnl": float(np.sum(pnl)),
+                    "trades_per_day": float(trades / days),
+                    "sortino": float(np.mean(net_arr) / (np.std(np.minimum(net_arr, 0.0)) + 1e-9) * np.sqrt(365)),
+                    "maxdd": float(abs(dd.min())) if len(dd) else 0.0,
+                    "ulcer": float(np.sqrt(np.mean(np.square(dd)))) if len(dd) else 0.0,
+                    "tuw_max_days": 0.0,
+                    "expectancy_per_trade": float(np.mean(pnl)) if trades else 0.0,
+                    "win_rate": float(wins / max(trades, 1)),
+                })
+    if not phase1:
+        return pd.DataFrame()
+    phase1_df = pd.DataFrame(phase1)
+    winner = phase1_df.loc[phase1_df["net_pnl"].idxmax()]
+    win_q = float(winner["quantile"])
+    win_threshold = max(1.0 - win_q, 0.70)
+    win_offset_mode = str(winner["entry_offset_mode"])
+    win_ratio = str(winner["tp_sl_ratio"])
+
+    # Phase 2: keep winning non-sizing config and compare sizing families.
+    sel = df[df["rank_pct"] >= win_threshold].copy()
+    if sel.empty:
+        return phase1_df
+    offset_pct = sel["opt_limit_offset_pct"] if win_offset_mode == "optimizer" else 0.0015
+    row_nets = []
+    kept_idx = []
+    for j, (_, r) in enumerate(sel.iterrows()):
+        highs = np.asarray(r["future_highs"], dtype=float)
+        lows = np.asarray(r["future_lows"], dtype=float)
+        closes = np.asarray(r["future_closes"], dtype=float)
+        if highs.size == 0 or lows.size == 0 or closes.size == 0:
+            continue
+        entry_px = float(r["entry_price"])
+        sl_mult = float(r.get("label_policy_sl_atr_mult", np.nan))
+        tp_ratio = float(r.get("label_policy_tp_sl_ratio", np.nan))
+        atr_entry = float(r.get("atr_12_15m", np.nan))
+        if np.isfinite(sl_mult) and np.isfinite(tp_ratio) and np.isfinite(atr_entry):
+            sl_abs = max(sl_mult * max(atr_entry, 1e-9), 1e-9)
+            tp_abs = tp_ratio * sl_abs
+            sl_pct = sl_abs / max(entry_px, 1e-9)
+            tp_pct = tp_abs / max(entry_px, 1e-9)
+        else:
+            tp_pct = 0.005
+            sl_pct = 0.0025
+        trailing_pct = float(r.get("label_policy_giveback_pct", 0.0))
+        max_bars = int(r.get("label_policy_max_hold_bars", 48))
+        util = _simulate_policy_utility_from_arrays(
+            entry_price=entry_px,
+            is_long=bool(r["is_long"]),
+            future_highs=highs,
+            future_lows=lows,
+            future_closes=closes,
+            tp_pct=tp_pct,
+            sl_pct=sl_pct,
+            trailing_pct=trailing_pct,
+            max_bars=min(max_bars, len(highs)),
+            cost_pct=fee_roundtrip,
+        )
+        row_nets.append(float(util - float(offset_pct.loc[r.name])))
+        kept_idx.append(j)
+    if not row_nets:
+        return phase1_df
+    net_ref = np.asarray(row_nets, dtype=float)
+    sel_kept = sel.iloc[kept_idx].copy()
+    days = max((sel["ts"].max() - sel["ts"].min()).days, 1)
+    phase2 = []
+    for name, fn in size_methods.items():
+        frac = np.asarray(fn(sel_kept["rank_pct"].values, win_threshold), dtype=float)
+        pnl = start_equity * frac * net_ref
+        trades = len(pnl)
+        wins = int((pnl > 0).sum())
+        dd = np.minimum.accumulate(np.cumsum(pnl) - np.maximum.accumulate(np.cumsum(pnl)))
+        phase2.append({
+            "phase": "phase2_sizing_compare",
+            "quantile": win_q,
+            "entry_offset_mode": win_offset_mode,
+            "tp_sl_ratio": win_ratio,
+            "sizing_mode": name,
+            "net_pnl": float(np.sum(pnl)),
+            "trades_per_day": float(trades / days),
+            "sortino": float(np.mean(net_ref) / (np.std(np.minimum(net_ref, 0.0)) + 1e-9) * np.sqrt(365)),
+            "maxdd": float(abs(dd.min())) if len(dd) else 0.0,
+            "ulcer": float(np.sqrt(np.mean(np.square(dd)))) if len(dd) else 0.0,
+            "tuw_max_days": 0.0,
+            "expectancy_per_trade": float(np.mean(pnl)) if trades else 0.0,
+            "win_rate": float(wins / max(trades, 1)),
+        })
+    return pd.concat([phase1_df, pd.DataFrame(phase2)], ignore_index=True)
 
 def run_ridge_position_sizer_step(
     oof_preds: pd.DataFrame,
@@ -3053,12 +3160,21 @@ def run_ridge_position_sizer_step(
         'target_race_metrics': getattr(sizer, 'target_race_metrics_', None),
         'n_models': len(weights),
         'n_trades': len(trade_outcomes),
+        'sizer_uses_linear_5_15_training_eval': True,
     }
     if isinstance(policy_opt_meta, dict):
         metrics['label_policy_optimizer'] = policy_opt_meta
     ridge_diag = _compute_ridge_weight_diagnostics(weights=weights, oof_preds=oof_preds, sizer=sizer)
     if ridge_diag:
         metrics["weight_diagnostics"] = ridge_diag
+
+    # Confirmation diagnostics for utility/offset model families and feature alignment.
+    metrics["utility_policy_model_family"] = "ridge"
+    metrics["offset_model_family"] = "ridge" if sizer.limit_offset_pipeline_ is not None else None
+    metrics["sizer_feature_names"] = list(sizer.model_names_ or [])
+    metrics["offset_feature_names"] = list(sizer.limit_offset_features_ or [])
+    offset_base = [c for c in (sizer.limit_offset_features_ or []) if c != "sizer_score_oof"]
+    metrics["offset_base_features_match_sizer_features"] = bool(offset_base == list(sizer.model_names_ or []))
     
     # Add CV results summary
     if sizer.cv_results_ is not None:
@@ -3160,6 +3276,15 @@ def run_ridge_position_sizer_step(
             oof_payload["side"] = np.where(np.asarray(trade_outcomes['is_long'].values[:n_oof], dtype=bool), "LONG", "SHORT")
         if 'entry_price' in trade_outcomes.columns:
             oof_payload["close"] = np.asarray(trade_outcomes['entry_price'].values[:n_oof], dtype=np.float32)
+        # Required policy-path columns for OOF backtest (no proxy fallback supported).
+        for col in (
+            "future_highs", "future_lows", "future_closes",
+            "entry_price", "is_long",
+            "label_policy_sl_atr_mult", "label_policy_tp_sl_ratio",
+            "atr_12_15m", "label_policy_giveback_pct", "label_policy_max_hold_bars",
+        ):
+            if col in trade_outcomes.columns:
+                oof_payload[col] = trade_outcomes[col].values[:n_oof]
         oof_df_out = pd.DataFrame(oof_payload)
         _oof_dir = data_root / "artifacts" / (run_id or "latest") / "ridge_sizer"
         _oof_dir.mkdir(parents=True, exist_ok=True)
@@ -3168,12 +3293,16 @@ def run_ridge_position_sizer_step(
         metrics['oof_parquet_path'] = str(_oof_path)
         tprint(f"Saved Ridge sizer OOF parquet to {_oof_path}")
 
-        bt_df = run_oof_grid_backtest(oof_df_out)
-        if not bt_df.empty:
-            _bt_path = _oof_dir / "ridge_sizer_oof_backtest_grid.csv"
-            bt_df.to_csv(_bt_path, index=False)
-            metrics['oof_backtest_grid_path'] = str(_bt_path)
-            tprint(f"Saved Ridge OOF backtest grid to {_bt_path}")
+        try:
+            bt_df = run_oof_grid_backtest(oof_df_out)
+            if not bt_df.empty:
+                _bt_path = _oof_dir / "ridge_sizer_oof_backtest_grid.csv"
+                bt_df.to_csv(_bt_path, index=False)
+                metrics['oof_backtest_grid_path'] = str(_bt_path)
+                tprint(f"Saved Ridge OOF backtest grid to {_bt_path}")
+        except ValueError as e:
+            metrics['oof_backtest_grid_error'] = str(e)
+            tprint(f"WARNING: Ridge OOF backtest grid skipped: {e}")
 
     # Generate Trade Quality Diagnostic Plot
     try:

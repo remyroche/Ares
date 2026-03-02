@@ -656,7 +656,10 @@ def _meta_predict_or_fallback(meta_model, p_alpha, grp_df, label, side_key, mr_h
     if meta_model is None:
         return (p_alpha - 0.5) * 0.1, np.ones(len(p_alpha), dtype=bool)
 
-    num = grp_df.select_dtypes(include=[np.number]).copy()
+    # We want ALL numeric features, but let's ensure we get the full set.
+    # In some cases select_dtypes might miss bools/ints, but it should get most.
+    # Just to be safe, we pass all numeric columns that the meta model might need.
+    num = grp_df.select_dtypes(include=[np.number, bool]).copy()
     X_meta = meta_model.prepare_meta_features(p_alpha, num, pred_col_name="pred_logit")
 
     # REPLICATE training.py derived feature logic
@@ -965,7 +968,14 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
                 source_regime_features = {"rv_12h", "rv_24h", "vol_z_base", "vol_z24_base", "ret6h", "trend_pct_base"}
                 interaction_base_features = {"vol_z", "mkt_rv_ratio", "ambig", "exh_qual", "trend_pct", "trend_t", "trend_z_t", "spike_score", "grind_score", "chop_score"}
 
-                all_keys = all_fcols_mr | all_fcols_tf | set(cfg.get("spike_feature_keys", [])) | _meta_feature_keys_union(cfg) | source_regime_features | interaction_base_features
+                # Also include ALL keys used for position sizer
+                ps_keys = set(str(c) for c in cfg.get("position_sizer_regime_feature_keys", []) if isinstance(c, str) and c)
+                all_keys = all_fcols_mr | all_fcols_tf | set(cfg.get("spike_feature_keys", [])) | _meta_feature_keys_union(cfg) | source_regime_features | interaction_base_features | ps_keys
+
+                # IMPORTANT: ensure we also load everything the meta models might have been trained on
+                all_keys.update(cfg.get("meta_feature_keys", []))
+                all_keys.update(cfg.get("mr_meta_feature_keys", []))
+                all_keys.update(cfg.get("tf_meta_feature_keys", []))
                 
                 for k in all_keys:
                     fk = feats.get(k)
@@ -1187,6 +1197,23 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
             }
             for _cn in _ps_runtime_cols:
                 if _cn in grp.columns:
+                    try:
+                        _row[_cn] = float(grp.loc[idx, _cn])
+                    except Exception:
+                        _row[_cn] = 0.0
+            # Also include meta features that might be needed downstream
+            meta_cols = set(cfg.get("meta_feature_keys", [])) | set(cfg.get("mr_meta_feature_keys", [])) | set(cfg.get("tf_meta_feature_keys", []))
+            for _cn in meta_cols:
+                if _cn in grp.columns and _cn not in _row:
+                    try:
+                        _row[_cn] = float(grp.loc[idx, _cn])
+                    except Exception:
+                        _row[_cn] = 0.0
+
+            # Ensure basic interaction columns and raw values are passed
+            _extra_cols = ["vol_z", "mkt_rv_ratio", "ambig", "exh_qual", "trend_pct", "trend_t", "trend_z_t", "spike_score", "grind_score", "chop_score", "rv_12h", "rv_24h", "vol_z_base", "vol_z24_base", "ret6h", "trend_pct_base", "G_VOL", "G_TREND"]
+            for _cn in _extra_cols:
+                if _cn in grp.columns and _cn not in _row:
                     try:
                         _row[_cn] = float(grp.loc[idx, _cn])
                     except Exception:
@@ -1420,10 +1447,24 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
             _gated_out = 1.0 - float(np.mean(_allow.astype(float))) if len(_allow) else 1.0
             _avg_size = float(np.mean(np.abs(_size[_allow]))) if np.any(_allow) else 0.0
             _pnan = float(np.mean(~np.isfinite(_pred.get("pwin", np.array([]))))) if len(_pred.get("pwin", [])) else 0.0
+
+            # Diagnostic stats
+            _ev_arr = np.asarray(_ev, dtype=float)
+            _rk_arr = np.asarray(_rk, dtype=float)
+            _ev_fin = _ev_arr[np.isfinite(_ev_arr)]
+            _rk_fin = _rk_arr[np.isfinite(_rk_arr)]
+            _ev_diag = f"mean={_ev_fin.mean():.4f} P10={np.percentile(_ev_fin, 10):.4f} P50={np.percentile(_ev_fin, 50):.4f} P90={np.percentile(_ev_fin, 90):.4f}" if len(_ev_fin) else "N/A"
+            _rk_diag = f"mean={_rk_fin.mean():.4f} P10={np.percentile(_rk_fin, 10):.4f} P50={np.percentile(_rk_fin, 50):.4f} P90={np.percentile(_rk_fin, 90):.4f}" if len(_rk_fin) else "N/A"
+            _ev_thr = _psc.ev_threshold
+
             tprint(
                 f"PositionSizer(new): used Wq={_exp_q:.2f} Lq={_risk_q:.2f} gated_out={_gated_out:.2%} "
                 f"avg_size_if_trade={_avg_size:.5f} pwin_nan_frac={_pnan:.3%}"
             )
+            tprint(
+                f"  -> EV stats (thr={_ev_thr}): {_ev_diag} | Risk stats: {_rk_diag}"
+            )
+
             cfg["sizer_backend_used"] = "new"
             if _new_orders:
                 _diag["after_new_sizer"] = int(len(_new_orders))

@@ -1920,7 +1920,18 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                     size_mult = throttle_factor
 
             # Count currently open trades and their total weight at this timestamp
-            open_trades = [tr for tr in trades if pd.Timestamp(tr["entry_ts"]) <= t < pd.Timestamp(tr["exit_ts"])]
+            open_trades = []
+            for tr in trades:
+                _tr_entry = pd.Timestamp(tr["entry_ts"])
+                _tr_exit = pd.Timestamp(tr["exit_ts"])
+                if t.tz is not None and _tr_entry.tz is None:
+                    _tr_entry = _tr_entry.tz_localize(t.tz)
+                    _tr_exit = _tr_exit.tz_localize(t.tz)
+                elif t.tz is None and _tr_entry.tz is not None:
+                    _tr_entry = _tr_entry.tz_convert(None)
+                    _tr_exit = _tr_exit.tz_convert(None)
+                if _tr_entry <= t < _tr_exit:
+                    open_trades.append(tr)
             open_count = len(open_trades)
             open_weight = sum(abs(tr.get("weight", 0.0)) for tr in open_trades)
             remaining_slots = max(0, max_concurrent - open_count)

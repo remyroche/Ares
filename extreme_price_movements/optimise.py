@@ -173,6 +173,20 @@ def run_optimise_step(
     m50 = load_step_module("50_eval_holdout_report.py")
     mw = load_step_module("write_params_json.py")
 
+    # Pre-load 15m data for all trades to avoid redundant disk I/O / OOM during TP/SL calibration
+    df_15m_dict = {}
+    if "asset" in trades.columns and "timestamp" in trades.columns:
+        from extreme_price_movements.hf_data_loader import _load_existing_data
+        unique_assets = trades["asset"].unique()
+        for asset in unique_assets:
+            asset_trades = trades[trades["asset"] == asset]
+            min_ts = pd.to_datetime(asset_trades["timestamp"].min(), utc=True)
+            max_ts = pd.to_datetime(asset_trades["timestamp"].max(), utc=True) + pd.Timedelta(hours=24) # Pad with 24h
+
+            df_15m = _load_existing_data(asset)
+            if not df_15m.empty:
+                df_15m_dict[asset] = df_15m.loc[min_ts:max_ts]
+
     buckets = list(pd.Series(trades["bucket"].astype(str).unique()).sort_values())[:4]
     all_out = {}
 
@@ -248,7 +262,7 @@ def run_optimise_step(
 
         # Step 10: TP/SL Calibration
         tp_sl, trials_10 = m10.calibrate_tp_sl(
-            bucket_df, atr_scale, test_split_idx=split_idx, fee_pct=fee_pct, cost=cost,
+            bucket_df, atr_scale, df_15m_dict=df_15m_dict, test_split_idx=split_idx, fee_pct=fee_pct, cost=cost,
             init_params=params_init.get("tp_sl", params_init)
         )
         trials_10["bucket"] = bucket

@@ -580,6 +580,7 @@ def apply_training_filters(
     min_sign_consistency: Optional[float] = None,
 ) -> pd.DataFrame:
     """Apply training-like candidate prefilters to a candidate mask."""
+    _ = min_sign_consistency  # Deprecated: sign-consistency criterion removed.
     filt = pd.DataFrame(True, index=candidate_mask.index, columns=candidate_mask.columns)
 
     if min_range_pct is not None:
@@ -597,18 +598,6 @@ def apply_training_filters(
             vol_feat = feats.get("vol_z")
         if vol_feat is not None:
             filt &= vol_feat >= float(min_vol_zscore)
-
-    if min_sign_consistency is not None:
-        sc_feat = feats.get("sign_consistency")
-        if sc_feat is None:
-            base_ret = feats.get("ret6h")
-            if base_ret is None:
-                base_ret = feats.get("ret24h")
-            if base_ret is not None:
-                sign_mean = np.sign(base_ret).rolling(12, min_periods=6).mean().abs()
-                sc_feat = sign_mean.astype(np.float32)
-        if sc_feat is not None:
-            filt &= sc_feat >= float(min_sign_consistency)
 
     return (candidate_mask & filt).fillna(False)
 
@@ -1714,6 +1703,7 @@ def apply_quality_filters_array(
     min_sign_consistency: Optional[float] = None,
 ) -> np.ndarray:
     """Apply quality filters in-place on a bool ndarray to avoid DataFrame copies."""
+    _ = min_sign_consistency  # Deprecated: sign-consistency criterion removed.
     if filter_masks is None:
         return base_mask_arr
 
@@ -1727,10 +1717,6 @@ def apply_quality_filters_array(
         vol_mask = filter_masks["vol_masks"].get(float(min_vol_zscore))
         if vol_mask is not None:
             filtered &= vol_mask
-    if min_sign_consistency is not None:
-        sc_mask = filter_masks["sc_masks"].get(float(min_sign_consistency))
-        if sc_mask is not None:
-            filtered &= sc_mask
     return filtered
 
 
@@ -3768,7 +3754,6 @@ def run_comparison(
     default_pct = float(candidate_defaults["train_extreme_pct_hourly"])
     default_range_pct = float(candidate_defaults["train_min_range_pct"])
     default_vol_zscore = 1.5
-    default_sign_consistency = float(candidate_defaults["min_feat_sign_consistency"])
     default_tp_lo = float(barrier_defaults["barrier_tp_lo"])
     default_tp_hi = float(barrier_defaults["barrier_tp_hi"])
     default_k_tp = float(barrier_defaults["barrier_k_tp"])
@@ -3794,7 +3779,7 @@ def run_comparison(
     
     # =============================================================================
     # STAGE 1: Filter sweep (54 configs)
-    # 3 modes × 2 pct values × (4 range + 3 vol + 2 sign-consistency)
+    # 3 modes × 2 pct values × (range + vol filter sweeps)
     # No expansions in this stage - just filter sweeps to find best values
     # =============================================================================
     tlog("Stage 1 setup: building filter-sweep configs")

@@ -675,6 +675,23 @@ def append_symbol_features(parquet_path: str, symbol: str, new_data: pd.DataFram
     if existing is not None:
         existing_aligned = existing.reindex(columns=all_cols)
         before_rows = len(existing_aligned)
+
+        # Preserve schema-critical features even if the current append is all-NaN.
+        # Dropping these columns (e.g. atr_pct) causes downstream symbol intersection collapse.
+        required_cols = {"atr_pct"}
+        existing_all_na = existing_aligned.isna().all(axis=0)
+        new_all_na = new_aligned.isna().all(axis=0)
+        drop_cols = [
+            c
+            for c in all_cols
+            if bool(existing_all_na.get(c, True))
+            and bool(new_all_na.get(c, True))
+            and c not in required_cols
+        ]
+        if drop_cols:
+            existing_aligned = existing_aligned.drop(columns=drop_cols, errors="ignore")
+            new_aligned = new_aligned.drop(columns=drop_cols, errors="ignore")
+
         combined = pd.concat([existing_aligned, new_aligned])
     else:
         before_rows = 0

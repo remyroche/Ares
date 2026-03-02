@@ -286,12 +286,19 @@ def report_meta_training(run_id: str, data_root: str, bundle: Dict[str, Any], cf
     meta_oof_dir = Path(data_root) / "artifacts" / run_id / "meta_oof"
     rows_data = []
 
-    # Load all meta OOF parquet files
-    oof_files = sorted(meta_oof_dir.glob("meta_oof_*.parquet")) if meta_oof_dir.exists() else []
+    # Load downstream meta heads only (exclude legacy _reg/_clf and per-horizon files).
+    import re as _re
+    _exclude_pat = _re.compile(r'(_H\d+|_dur|_reg|_clf)$')
+    _include_pat = _re.compile(r'(_utility|_mae_q70|_mfe|_early_inval)$')
+    oof_files = sorted([
+        f for f in (meta_oof_dir.glob("meta_oof_*.parquet") if meta_oof_dir.exists() else [])
+        if (not _exclude_pat.search(f.stem.replace("meta_oof_", "")))
+        and _include_pat.search(f.stem.replace("meta_oof_", ""))
+    ])
     lines.append(f"**Meta OOF files found**: {len(oof_files)}\n")
 
     table_rows = []
-    headers = ["Model", "N samples", "IC (payoff)", "AUC", "Prec@10", "U_IC", "MAE_IC", "MFE_IC", "DUR_IC"]
+    headers = ["Model", "N samples", "IC (payoff)", "AUC", "Prec@10", "U_IC", "MAE_IC", "MFE_IC"]
 
     for pf in oof_files:
         model_name = pf.stem.replace("meta_oof_", "")
@@ -326,11 +333,31 @@ def report_meta_training(run_id: str, data_root: str, bundle: Dict[str, Any], cf
                 top10 = pred >= np.quantile(pred, 0.90)
                 prec10 = float(y[top10].mean()) if top10.any() else float("nan")
 
+        # --- early_inval: score as AUC vs binary label (IC vs return is structurally negative) ---
+        if model_name.endswith("_early_inval") and pred is not None and "early_inval" in df.columns:
+            y_ei = df["early_inval"].values.astype(float)
+            valid_ei = np.isfinite(pred) & np.isfinite(y_ei)
+            if valid_ei.sum() >= 10:
+                n_pos_ei = int(y_ei[valid_ei].sum())
+                n_neg_ei = int(valid_ei.sum()) - n_pos_ei
+                if n_pos_ei > 0 and n_neg_ei > 0:
+                    ranks_ei = pd.Series(pred[valid_ei]).rank(method="average").to_numpy(float)
+                    u_ei = ranks_ei[y_ei[valid_ei] == 1].sum() - n_pos_ei * (n_pos_ei + 1) / 2.0
+                    auc = float(u_ei / (n_pos_ei * n_neg_ei))
+                    top10_ei = pred[valid_ei] >= np.quantile(pred[valid_ei], 0.90)
+                    prec10 = float(y_ei[valid_ei][top10_ei].mean()) if top10_ei.any() else float("nan")
+                    ic = float("nan")  # IC vs return is structurally misleading here
+
         # Aux Heads ICs
+        # MAE and MFE are stored as absolute magnitudes (always positive)
+        # The model predictions are also positive (log of absolute values)
+        # Sign = 1.0 for both long and short (no flip needed)
+        mae_sign = 1.0
+        mfe_sign = 1.0
+        
         u_ic = float("nan")
         mae_ic = float("nan")
         mfe_ic = float("nan")
-        dur_ic = float("nan")
         from scipy.stats import spearmanr
         def _sic(a, b):
             mask = np.isfinite(a) & np.isfinite(b)
@@ -341,34 +368,26 @@ def report_meta_training(run_id: str, data_root: str, bundle: Dict[str, Any], cf
             u_ic = _sic(df["oof_u_hat"].values, df["u_policy_net"].values)
         if "oof_log_mae_q70_hat" in df.columns and "mae_ret" in df.columns:
             u_mae = df["mae_ret"].values / np.clip(df["__barrier_pct__"].values if "__barrier_pct__" in df.columns else 1.0, 1e-6, None)
-            mae_ic = _sic(df["oof_log_mae_q70_hat"].values, np.log1p(np.clip(u_mae, 0, None)))
+            mae_ic = _sic(df["oof_log_mae_q70_hat"].values, np.log1p(np.clip(mae_sign * u_mae, 0, None)))
         if "oof_log_mfe_hat" in df.columns and "mfe_ret" in df.columns:
             u_mfe = df["mfe_ret"].values / np.clip(df["__barrier_pct__"].values if "__barrier_pct__" in df.columns else 1.0, 1e-6, None)
-            mfe_ic = _sic(df["oof_log_mfe_hat"].values, np.log1p(np.clip(u_mfe, 0, None)))
-        if "oof_log_dur_hat" in df.columns and "duration" in df.columns:
-            dur_ic = _sic(df["oof_log_dur_hat"].values, np.log1p(np.clip(df["duration"].values, 0, None)))
+            mfe_ic = _sic(df["oof_log_mfe_hat"].values, np.log1p(np.clip(mfe_sign * u_mfe, 0, None)))
 
-        table_rows.append([model_name, f"{n:,}", _fmt(ic), _fmt(auc), _fmt(prec10), _fmt(u_ic), _fmt(mae_ic), _fmt(mfe_ic), _fmt(dur_ic)])
-        rows_data.append({"model": model_name, "n": n, "ic": ic, "auc": auc, "prec_at_10": prec10, 
-                           "u_ic": u_ic, "mae_ic": mae_ic, "mfe_ic": mfe_ic, "dur_ic": dur_ic})
+        table_rows.append([model_name, f"{n:,}", _fmt(ic), _fmt(auc), _fmt(prec10), _fmt(u_ic), _fmt(mae_ic), _fmt(mfe_ic)])
+        rows_data.append({"model": model_name, "n": n, "ic": ic, "auc": auc, "prec_at_10": prec10,
+                           "u_ic": u_ic, "mae_ic": mae_ic, "mfe_ic": mfe_ic})
 
     lines.append("## Meta OOF Predictions per Model")
     lines.extend(_md_table(headers, table_rows))
     lines.append("")
 
-    # Per-bucket summary: group by base bucket (strip _H{n} / _clf suffix)
+    # Per-bucket summary: group by base bucket (strip all known model-type suffixes)
     import re
-    _h_pat = re.compile(r'^(.+)_H\d+$')
-    _clf_pat = re.compile(r'^(.+)_clf$')
+    _suffix_pat = re.compile(r'^(.+?)(_H\d+|_reg|_clf|_early_inval|_utility|_mae_q70|_mfe|_dur)$')
     bucket_groups: Dict[str, List[Dict]] = {}
     for r in rows_data:
-        m = _h_pat.match(r["model"])
-        if m:
-            bkt = m.group(1)
-        elif _clf_pat.match(r["model"]):
-            bkt = _clf_pat.match(r["model"]).group(1)
-        else:
-            bkt = r["model"]
+        m = _suffix_pat.match(r["model"])
+        bkt = m.group(1) if m else r["model"]
         bucket_groups.setdefault(bkt, []).append(r)
 
     lines.append("## Per-Bucket Summary")
@@ -448,56 +467,9 @@ def report_optimise(run_id: str, data_root: str, base_dir: str | Path | None = N
     ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     lines = [f"# Optimise Step Report — {run_id}", f"Generated: {ts}\n"]
 
-    backtest_path = Path(data_root) / "artifacts" / run_id / "backtest_results.csv"
     bucket_params_path = Path(data_root) / "artifacts" / run_id / "models" / "bucket_params.json"
 
-    if not backtest_path.exists():
-        lines.append(f"No backtest results found at `{backtest_path}`.")
-        return _save(run_id, "optimise", lines, base_dir=base_dir)
-
-    try:
-        trades = pd.read_csv(backtest_path)
-    except Exception as e:
-        lines.append(f"ERROR loading backtest results: {e}")
-        return _save(run_id, "optimise", lines, base_dir=base_dir)
-
-    lines.append(f"**Total trades**: {len(trades):,}\n")
-
-    # Determine bucket column
-    bkt_col = None
-    for c in ["bucket", "strategy", "side_kind", "kind"]:
-        if c in trades.columns:
-            bkt_col = c
-            break
-
     rows_data = []
-
-    if bkt_col and "pnl" in trades.columns:
-        lines.append("## Per-Bucket Performance")
-        headers = ["Bucket", "N trades", "Total PnL", "Win Rate", "Avg PnL", "Sharpe (approx)", "Max DD"]
-        table_rows = []
-        for bkt, grp in trades.groupby(bkt_col):
-            n = len(grp)
-            total_pnl = float(grp["pnl"].sum())
-            wr = float((grp["pnl"] > 0).mean())
-            avg_pnl = float(grp["pnl"].mean())
-            pnl_std = float(grp["pnl"].std()) if n > 1 else 0.0
-            sharpe = avg_pnl / max(pnl_std, 1e-9) * math.sqrt(n)
-            cum = grp["pnl"].cumsum()
-            max_dd = float((cum - cum.cummax()).min())
-            table_rows.append([bkt, f"{n:,}", _fmt(total_pnl, 4), _pct(wr), _fmt(avg_pnl, 5),
-                                _fmt(sharpe, 3), _fmt(max_dd, 4)])
-            rows_data.append({"bucket": bkt, "n": n, "total_pnl": total_pnl, "win_rate": wr,
-                               "avg_pnl": avg_pnl, "sharpe": sharpe, "max_dd": max_dd})
-        lines.extend(_md_table(headers, table_rows))
-        lines.append("")
-    else:
-        # Global summary only
-        if "pnl" in trades.columns:
-            total_pnl = float(trades["pnl"].sum())
-            wr = float((trades["pnl"] > 0).mean())
-            lines.append(f"**Total PnL**: {total_pnl:.4f}  |  **Win Rate**: {_pct(wr)}  |  **N**: {len(trades):,}")
-            lines.append("")
 
     # Bucket params if available
     if bucket_params_path.exists():
@@ -505,21 +477,83 @@ def report_optimise(run_id: str, data_root: str, base_dir: str | Path | None = N
         try:
             with open(bucket_params_path) as f:
                 bp = json.load(f)
-            buckets_bp = bp.get("buckets", bp)
-            lines.append("## Optimised Bucket Parameters")
-            bp_headers = ["Bucket", "TP mult", "SL mult", "Trail mult", "Max hold h"]
-            bp_rows = []
-            for bkt, params in buckets_bp.items():
-                if isinstance(params, dict):
-                    bp_rows.append([bkt,
-                                    _fmt(params.get("tp_mult", float("nan")), 3),
-                                    _fmt(params.get("sl_mult", float("nan")), 3),
-                                    _fmt(params.get("trail_mult", float("nan")), 3),
-                                    str(params.get("max_hold_hours", "—"))])
-            lines.extend(_md_table(bp_headers, bp_rows))
+            buckets_bp = bp.get("buckets", bp) if isinstance(bp, dict) else {}
+            if not isinstance(buckets_bp, dict) or not buckets_bp:
+                lines.append(f"No bucket payload in `{bucket_params_path}`.")
+                return _save(run_id, "optimise", lines, base_dir=base_dir)
+
+            # Per-bucket holdout metrics from optimiser evaluation (source of truth).
+            table_rows = []
+            all_ledger_rows = 0
+            starts = []
+            ends = []
+            for bkt, payload in buckets_bp.items():
+                if not isinstance(payload, dict):
+                    continue
+                ev = payload.get("evaluation", {}) if isinstance(payload.get("evaluation", {}), dict) else {}
+                tpsl = payload.get("tp_sl", {}) if isinstance(payload.get("tp_sl", {}), dict) else {}
+                holdout_n = int(ev.get("holdout_trades", 0) or 0)
+                holdout_pnl = float(ev.get("holdout_pnl_net", 0.0) or 0.0)
+                holdout_wr = float(ev.get("holdout_win_rate", 0.0) or 0.0)
+                avg_pnl = (holdout_pnl / holdout_n) if holdout_n > 0 else 0.0
+                ledger_path = ev.get("holdout_ledger_path")
+                if isinstance(ledger_path, str) and ledger_path:
+                    lp = Path(ledger_path)
+                    if not lp.is_absolute():
+                        lp = (Path(data_root) / "artifacts" / run_id / "models" / lp.name).resolve()
+                    if lp.exists():
+                        try:
+                            ldf = pd.read_csv(lp, usecols=["t_entry"])
+                            if not ldf.empty:
+                                ts = pd.to_datetime(ldf["t_entry"], unit="ns", errors="coerce")
+                                starts.append(ts.min())
+                                ends.append(ts.max())
+                                all_ledger_rows += int(len(ldf))
+                        except Exception:
+                            pass
+
+                table_rows.append([
+                    bkt,
+                    f"{holdout_n:,}",
+                    _fmt(holdout_pnl, 5),
+                    _pct(holdout_wr),
+                    _fmt(avg_pnl, 5),
+                    _fmt(float(tpsl.get("tp_mult", float("nan"))), 3),
+                    _fmt(float(tpsl.get("sl_mult", float("nan"))), 3),
+                ])
+                rows_data.append({
+                    "bucket": bkt,
+                    "n": holdout_n,
+                    "total_pnl": holdout_pnl,
+                    "win_rate": holdout_wr,
+                    "avg_pnl": avg_pnl,
+                    "tp_mult": float(tpsl.get("tp_mult", float("nan"))),
+                    "sl_mult": float(tpsl.get("sl_mult", float("nan"))),
+                })
+
+            total_n = int(sum(r["n"] for r in rows_data)) if rows_data else 0
+            total_pnl = float(sum(r["total_pnl"] for r in rows_data)) if rows_data else 0.0
+            wr_num = float(sum(r["win_rate"] * r["n"] for r in rows_data)) if rows_data else 0.0
+            wr_den = float(sum(r["n"] for r in rows_data)) if rows_data else 0.0
+            wr_w = (wr_num / wr_den) if wr_den > 0 else 0.0
+            lines.append(f"**Total holdout trades**: {total_n:,}  |  **Total holdout PnL (net)**: {_fmt(total_pnl, 5)}  |  **Weighted holdout WR**: {_pct(wr_w)}")
+            if starts and ends:
+                _s = min(starts)
+                _e = max(ends)
+                if pd.notna(_s) and pd.notna(_e):
+                    days = max(1, int((pd.Timestamp(_e) - pd.Timestamp(_s)).total_seconds() / 86400))
+                    lines.append(f"**Holdout period**: `{pd.Timestamp(_s).strftime('%Y-%m-%d %H:%M')} → {pd.Timestamp(_e).strftime('%Y-%m-%d %H:%M')}` (~{days} days)")
+            if all_ledger_rows:
+                lines.append(f"**Ledger rows across buckets**: {all_ledger_rows:,}")
+            lines.append("")
+            lines.append("## Per-Bucket Holdout Performance (from bucket_params evaluation)")
+            headers = ["Bucket", "N trades", "Total PnL", "Win Rate", "Avg PnL", "TP mult", "SL mult"]
+            lines.extend(_md_table(headers, table_rows))
             lines.append("")
         except Exception as e:
             lines.append(f"WARNING: Could not load bucket params: {e}\n")
+    else:
+        lines.append(f"No bucket params found at `{bucket_params_path}`.")
 
     out_df = pd.DataFrame(rows_data) if rows_data else pd.DataFrame()
     return _save(run_id, "optimise", lines, out_df, base_dir=base_dir)

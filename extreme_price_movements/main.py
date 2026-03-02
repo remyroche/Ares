@@ -378,7 +378,7 @@ def execute_hourly(ts_sig, margin_symbols, cfg, store, ex, state, logger, model_
         move_threshold=cfg.get("inference_event_threshold", 0.07),
         perf_pct=cfg.get("inference_perf_pct", 0.10),
         draw_window_hours=cfg.get("inference_draw_window_hours", 8),
-        sign_consistency_min=cfg.get("inference_sign_consistency_min", 0.80),
+        sign_consistency_min=None,
     )
     if move_syms:
         _update_tradeable_basket(state, ts_sig, move_syms, cfg.get("inference_basket_ttl_hours", 24))

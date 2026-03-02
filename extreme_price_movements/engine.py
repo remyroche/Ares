@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from typing import Tuple, List, Dict, Optional
 
 from extreme_price_movements.pnl import CostModel
 from extreme_price_movements.pnl_asserts import assert_units
@@ -14,6 +15,85 @@ from extreme_price_movements.training import (
     scaled_atr_pct
 )
 from extreme_price_movements.candidates import select_trade_candidates_hourly, entry_price_next_hour_open
+from extreme_price_movements.limit_order_pricer import (
+    estimate_entry_limit_offset,
+    estimate_exit_limit_offset,
+    estimate_fill_probability,
+    check_limit_order_fill,
+    get_limit_price_for_order,
+    get_fee_for_order_type,
+    create_limit_order_config,
+)
+
+def _meta_feature_keys_union(cfg) -> set[str]:
+    keys = set(cfg.get("meta_feature_keys", []) or [])
+    keys.update(cfg.get("mr_meta_feature_keys", []) or [])
+    keys.update(cfg.get("tf_meta_feature_keys", []) or [])
+    return {k for k in keys if isinstance(k, str) and k}
+
+
+def _apply_exit_limit_order(
+    current_price: float,
+    is_long: bool,
+    limit_offset_pct: float,
+    high_price: float,
+    low_price: float,
+    trigger_price: float,
+) -> Tuple[float, bool]:
+    """Apply exit limit order with proper high/low validation.
+    
+    For exit limits, we check if price moved in our favor enough to hit
+    the limit price. If the limit order fills, we get better execution.
+    
+    Args:
+        current_price: The current close price
+        is_long: True for long position
+        limit_offset_pct: Exit limit offset as fraction
+        high_price: Bar high price
+        low_price: Bar low price
+        trigger_price: The price that triggered the exit (SL/TP/close)
+    
+    Returns:
+        Tuple of (exit_price, did_fill)
+            - exit_price: The actual exit price (better if limit filled)
+            - did_fill: True if limit order filled
+    """
+    if limit_offset_pct <= 0:
+        return current_price, False
+    
+    # Calculate target limit price
+    if is_long:
+        # For long: exit at higher price = sell at limit (better than close)
+        # Target: we want to sell, so limit price is above current
+        limit_price = trigger_price * (1.0 + limit_offset_pct)
+        
+        # Check if price moved up to hit our limit
+        # For long exit: we want high to reach or exceed limit_price
+        did_fill = high_price >= limit_price
+        
+        if did_fill:
+            # Fill at limit price (better than trigger)
+            exit_price = limit_price
+        else:
+            # No fill - exit at current (worse than limit)
+            exit_price = current_price
+    else:
+        # For short: exit at lower price = buy back at limit (better than close)
+        # Target: we want to buy, so limit price is below current
+        limit_price = trigger_price * (1.0 - limit_offset_pct)
+        
+        # Check if price moved down to hit our limit
+        # For short exit: we want low to reach or go below limit_price
+        did_fill = low_price <= limit_price
+        
+        if did_fill:
+            # Fill at limit price (better than trigger)
+            exit_price = limit_price
+        else:
+            # No fill - exit at current (worse than limit)
+            exit_price = current_price
+    
+    return float(exit_price), bool(did_fill)
 
 def _estimate_global_percentile(score, q50, q90, q95=None, q98=None):
     """Linearly interpolate global percentile for a score magnitude."""
@@ -204,21 +284,56 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
         l_data = l_s
         c_data = c_s
 
+    # Optional predictive context passed through cfg by callers.
+    extras = cfg.get("extras", {}) if isinstance(cfg, dict) else {}
+    if not isinstance(extras, dict):
+        extras = {}
+
     # Limit Order Fill Logic (Post-prediction offset)
     use_limit = cfg.get("use_limit_orders", False)
-    limit_offset_bps = float(cfg.get("limit_offset_bps", 0.0))
+    use_mae_mfe_offset = cfg.get("use_mae_mfe_limit_offset", False)
+    
+    # Check if we have MAE/MFE predictions available in extras
+    mae_hat = float(extras.get("mae_hat", 0.0))
+    mfe_hat = float(extras.get("mfe_hat", 0.0))
+    u_hat = float(extras.get("u_hat", 0.0))
+    
+    # Determine limit offset: use MAE/MFE-based estimation if available
+    if use_limit and use_mae_mfe_offset and (mae_hat > 0 or mfe_hat > 0):
+        # Use MAE/MFE-based dynamic offset
+        limit_offset_bps = estimate_entry_limit_offset(
+            mae_hat=mae_hat,
+            mfe_hat=mfe_hat,
+            u_hat=u_hat,
+            confidence=0.5,  # Could be derived from prediction confidence
+            fee_market=cfg.get("fee_bps_market", 25.0) / 10000.0,
+            fee_limit=cfg.get("fee_bps_limit_entry", 10.0) / 10000.0,
+            cfg=cfg,
+        )
+    else:
+        # Use static offset from config
+        limit_offset_bps = float(cfg.get("limit_offset_bps", 0.0))
+    
     limit_offset_pct = limit_offset_bps / 10000.0
     
+    # Use the new pricer function for proper long/short handling with high/low
+    is_long_side = (side == "long")
+    
     if use_limit and limit_offset_pct > 0:
-        if side == "long":
-            limit_px = entry_px * (1.0 - limit_offset_pct)
-        else:
-            limit_px = entry_px * (1.0 + limit_offset_pct)
-            
-        # Check first 4 bars for fill (1h or 15m depending on precision)
+        # Calculate limit price using proper logic for long/short
+        limit_px = get_limit_price_for_order(
+            signal_price=entry_px,
+            offset_bps=limit_offset_bps,
+            is_long=is_long_side,
+            high_price=None,  # Will check per-bar
+            low_price=None,
+        )
+        
+        # Check first 4 bars for fill using proper high/low prices
         fill_window = path[:4]
         filled = False
         fill_ts = ts_entry
+        actual_fill_price = entry_px  # Default to signal price if no limit
         
         for ts in fill_window:
             if ts not in h_data.index or ts not in l_data.index:
@@ -227,26 +342,32 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
             bar_l = l_data.loc[ts]
             bar_h = h_data.loc[ts]
             
-            if side == "long" and bar_l <= limit_px:
+            # Use proper fill check with high/low
+            did_fill, fill_price = check_limit_order_fill(
+                limit_price=limit_px,
+                is_long=is_long_side,
+                high_price=bar_h,
+                low_price=bar_l,
+                open_price=c_data.loc[ts] if ts in c_data.index else entry_px,
+            )
+            
+            if did_fill:
                 filled = True
                 fill_ts = ts
-                break
-            elif side == "short" and bar_h >= limit_px:
-                filled = True
-                fill_ts = ts
+                actual_fill_price = fill_price
                 break
         
         if not filled:
             return 0.0, ts_entry, "limit_not_filled", _empty_extras
         
         # Update entry price and start time to fill event
-        entry_px = limit_px
+        entry_px = actual_fill_price
         ts_entry = fill_ts
         # Resume simulation from fill_ts
         path = path[path.get_loc(fill_ts):]
         
-        # For this simulation, we'll use 0.20% if filled via limit
-        cfg["fee_bps"] = 20.0
+        # Use limit order fee
+        cfg["fee_bps"] = cfg.get("fee_bps_limit_entry", 10.0)
         filled_via_limit = True
     else:
         filled_via_limit = False
@@ -255,7 +376,21 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
         return 0.0, ts_entry, "no_path", _empty_extras
 
     # Exit limit offset logic
+    use_exit_limit = cfg.get("use_exit_limit_orders", False)
     exit_limit_offset_bps = float(cfg.get("exit_limit_offset_bps", 0.0))
+    
+    # Use MAE/MFE-based exit offset if enabled
+    if use_exit_limit and use_mae_mfe_offset and (mae_hat > 0 or mfe_hat > 0):
+        # Calculate profit locked for adaptive exit offset
+        # This would need to be computed during simulation
+        exit_limit_offset_bps = estimate_exit_limit_offset(
+            mfe_hat=mfe_hat,
+            duration_hat=float(extras.get("dur_hat", 1.0)),
+            profit_locked=0.0,  # Will be updated during simulation
+            mae_hat=mae_hat,
+            cfg=cfg,
+        )
+    
     exit_limit_offset_pct = exit_limit_offset_bps / 10000.0
 
     # MAE/MFE tracking
@@ -391,11 +526,15 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
             if kill_score > 0:
                 # Apply exit limit padding
                 exit_price = cc
+                exit_filled_via_limit = False
                 if exit_limit_offset_pct > 0:
-                    if side == "long":
-                        exit_price = max(cc, cc * (1.0 + exit_limit_offset_pct))
-                    else:
-                        exit_price = min(cc, cc * (1.0 - exit_limit_offset_pct))
+                    # Use proper high/low validation
+                    is_long_side = (side == "long")
+                    limit_px = get_limit_price_for_order(cc, exit_limit_offset_bps, is_long_side, hh, ll)
+                    did_fill, actual_exit_px = check_limit_order_fill(limit_px, is_long_side, hh, ll, cc)
+                    if did_fill:
+                        exit_price = actual_exit_px
+                        exit_filled_via_limit = True
 
                 ret = (exit_price / entry_px) - 1.0 if side == "long" else (entry_px / exit_price) - 1.0
                 extras = {
@@ -406,6 +545,7 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
                     "tp_pct": activation_dist / entry_px,
                     "exit_stage": exit_stage,
                     "filled_via_limit": filled_via_limit,
+                    "exit_filled_via_limit": exit_filled_via_limit,
                     "exit_limit_bonus": abs(exit_price - cc) / entry_px,
                 }
                 return ret, ts, "early_invalidation", extras
@@ -419,11 +559,15 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
         if hit_sl:
             # Apply exit limit padding
             exit_price = sl_price
+            exit_filled_via_limit = False
             if exit_limit_offset_pct > 0:
-                if side == "long":
-                    exit_price = max(sl_price, sl_price * (1.0 + exit_limit_offset_pct))
-                else:
-                    exit_price = min(sl_price, sl_price * (1.0 - exit_limit_offset_pct))
+                # Use proper high/low validation
+                is_long_side = (side == "long")
+                limit_px = get_limit_price_for_order(sl_price, exit_limit_offset_bps, is_long_side, hh, ll)
+                did_fill, actual_exit_px = check_limit_order_fill(limit_px, is_long_side, hh, ll, sl_price)
+                if did_fill:
+                    exit_price = actual_exit_px
+                    exit_filled_via_limit = True
             
             ret = (exit_price / entry_px) - 1.0 if side == "long" else (entry_px / exit_price) - 1.0
             if exit_stage >= 1:
@@ -440,6 +584,7 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
                 "tp_pct": activation_dist / entry_px,
                 "exit_stage": exit_stage,
                 "filled_via_limit": filled_via_limit,
+                "exit_filled_via_limit": exit_filled_via_limit,
                 "exit_limit_bonus": abs(exit_price - sl_price) / entry_px,
             }
             return ret, ts, reason, extras
@@ -450,11 +595,15 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
     
     # Apply exit limit padding
     exit_price = last_close
+    exit_filled_via_limit = False
     if exit_limit_offset_pct > 0:
-        if side == "long":
-            exit_price = max(last_close, last_close * (1.0 + exit_limit_offset_pct))
-        else:
-            exit_price = min(last_close, last_close * (1.0 - exit_limit_offset_pct))
+        # Use proper high/low validation
+        is_long_side = (side == "long")
+        limit_px = get_limit_price_for_order(last_close, exit_limit_offset_bps, is_long_side, hh, ll)
+        did_fill, actual_exit_px = check_limit_order_fill(limit_px, is_long_side, hh, ll, last_close)
+        if did_fill:
+            exit_price = actual_exit_px
+            exit_filled_via_limit = True
             
     extras = {
         "mae_pct": mae_px / entry_px,
@@ -466,6 +615,7 @@ def simulate_trade_hourly(o_s, h_s, l_s, c_s, feats_s, ts_entry, entry_px, side,
         "tp_pct": activation_dist / entry_px,
         "exit_stage": exit_stage,
         "filled_via_limit": filled_via_limit,
+        "exit_filled_via_limit": exit_filled_via_limit,
         "exit_limit_bonus": abs(exit_price - last_close) / entry_px,
     }
     if side == "long":
@@ -671,10 +821,15 @@ def _meta_predict_or_fallback(meta_model, p_alpha, grp_df, label, side_key, mr_h
 
 
 def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand, current_positions_syms, tradeable_candidates=None):
+    _dbg = bool(cfg.get("debug_signal_generation", False))
     if ts_sig not in mkt_gates.index:
+        if _dbg:
+            tprint(f"    SideScoreDiag ts={ts_sig} drop=missing_mkt_gate")
         return pd.DataFrame()
 
     candidates = set(tradeable_candidates or [])
+    cand_seed = int(len(candidates))
+    cand_from_extremes = 0
     if not candidates:
         lookback_offsets = [0, 4, 8, 12, 16]
         for offset in lookback_offsets:
@@ -693,9 +848,18 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
                 )
                 candidates.update(top)
                 candidates.update(bot)
+                cand_from_extremes += int(len(top) + len(bot))
 
+    cand_pre_pos = int(len(candidates))
     candidates = [s for s in candidates if s not in current_positions_syms]
+    cand_post_pos = int(len(candidates))
     if not candidates:
+        if _dbg:
+            tprint(
+                f"    SideScoreDiag ts={ts_sig} drop=no_candidates "
+                f"seed={cand_seed} from_extremes={cand_from_extremes} "
+                f"cand_pre_pos={cand_pre_pos} cand_post_pos={cand_post_pos}"
+            )
         return pd.DataFrame()
 
     mrk = mkt_gates.loc[ts_sig]
@@ -717,18 +881,61 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
         except KeyError:
             pass
 
+    trend_cov = int(len(trend_map))
     rows = []
+    miss_side_bundle = 0
+    miss_model_stack = 0
+    skipped_trend0 = 0
+    row_exceptions = {}
+    _feat_ts_cache = {}
+
+    def _resolve_feature_ts(df):
+        key = id(df)
+        cached = _feat_ts_cache.get(key)
+        if cached is not None:
+            return cached
+        idx = getattr(df, "index", None)
+        resolved = None
+        if idx is not None:
+            if ts_sig in idx:
+                resolved = ts_sig
+            else:
+                ts_tz = getattr(ts_sig, "tzinfo", None)
+                idx_tz = getattr(idx, "tz", None)
+                try:
+                    if idx_tz is None and ts_tz is not None:
+                        ts_alt = ts_sig.tz_localize(None)
+                        if ts_alt in idx:
+                            resolved = ts_alt
+                    elif idx_tz is not None and ts_tz is None:
+                        ts_alt = pd.Timestamp(ts_sig, tz=idx_tz)
+                        if ts_alt in idx:
+                            resolved = ts_alt
+                    elif idx_tz is not None and ts_tz is not None and str(idx_tz) != str(ts_sig.tz):
+                        ts_alt = ts_sig.tz_convert(idx_tz)
+                        if ts_alt in idx:
+                            resolved = ts_alt
+                except Exception:
+                    resolved = None
+        _feat_ts_cache[key] = resolved
+        return resolved
     for sym in candidates:
         try:
             t_dir = trend_map.get(sym, 0)
-            if t_dir == 0: continue # Skip if no trend info
+            if t_dir == 0:
+                skipped_trend0 += 1
+                continue # Skip if no trend info
 
             p_lag = 0.5
             if ts_lag in p_exh_cand.index and sym in p_exh_cand.columns:
                 p_lag = float(p_exh_cand.loc[ts_lag, sym])
             for side_key in ["long", "short"]:
                 m_bundle = alpha_models.get(side_key)
-                if not m_bundle or not m_bundle.get("mr") or not m_bundle.get("tf"):
+                if not m_bundle:
+                    miss_side_bundle += 1
+                    continue
+                if not m_bundle.get("mr") or not m_bundle.get("tf"):
+                    miss_model_stack += 1
                     continue
                 model_mr = m_bundle["mr"]["model"]
                 model_tf = m_bundle["tf"]["model"]
@@ -758,18 +965,47 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
                 source_regime_features = {"rv_12h", "rv_24h", "vol_z_base", "vol_z24_base", "ret6h", "trend_pct_base"}
                 interaction_base_features = {"vol_z", "mkt_rv_ratio", "ambig", "exh_qual", "trend_pct", "trend_t", "trend_z_t", "spike_score", "grind_score", "chop_score"}
 
-                all_keys = all_fcols_mr | all_fcols_tf | set(cfg.get("spike_feature_keys", [])) | set(cfg.get("meta_feature_keys", [])) | source_regime_features | interaction_base_features
+                all_keys = all_fcols_mr | all_fcols_tf | set(cfg.get("spike_feature_keys", [])) | _meta_feature_keys_union(cfg) | source_regime_features | interaction_base_features
                 
                 for k in all_keys:
-                    if k in feats and sym in feats[k].columns:
-                        rec[k] = float(feats[k].loc[ts_sig, sym])
+                    fk = feats.get(k)
+                    if fk is None or not hasattr(fk, "columns") or sym not in fk.columns:
+                        continue
+                    ts_feat = _resolve_feature_ts(fk)
+                    if ts_feat is None:
+                        continue
+                    try:
+                        rec[k] = float(fk.at[ts_feat, sym])
+                    except Exception:
+                        continue
                 rows.append(rec)
-        except Exception:
+        except Exception as exc:
+            _ename = type(exc).__name__
+            row_exceptions[_ename] = int(row_exceptions.get(_ename, 0)) + 1
             continue
 
     df_all = pd.DataFrame(rows)
     if df_all.empty:
+        if _dbg:
+            _ex_summary = ",".join(f"{k}:{v}" for k, v in sorted(row_exceptions.items(), key=lambda kv: kv[1], reverse=True)[:3]) or "none"
+            tprint(
+                f"    SideScoreDiag ts={ts_sig} drop=no_rows "
+                f"cand_post_pos={cand_post_pos} trend_cov={trend_cov} "
+                f"skip_trend0={skipped_trend0} miss_side={miss_side_bundle} miss_stack={miss_model_stack} "
+                f"exc={_ex_summary}"
+            )
         return pd.DataFrame()
+
+    if _dbg:
+        _ex_summary = ",".join(f"{k}:{v}" for k, v in sorted(row_exceptions.items(), key=lambda kv: kv[1], reverse=True)[:2]) or "none"
+        tprint(
+            f"    SideScoreDiag ts={ts_sig} ok "
+            f"seed={cand_seed} from_extremes={cand_from_extremes} "
+            f"cand_pre_pos={cand_pre_pos} cand_post_pos={cand_post_pos} "
+            f"trend_cov={trend_cov} rows={len(df_all)} "
+            f"skip_trend0={skipped_trend0} miss_side={miss_side_bundle} miss_stack={miss_model_stack} "
+            f"exc={_ex_summary}"
+        )
 
     spike_keys = cfg.get("spike_feature_keys", [])
     if spike_model:
@@ -814,21 +1050,50 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
     else:
         df_all["trap_quality"] = 1.0
     
-    # Gamma Specialist: Predicted Volatility
+    # Gamma Specialist: Volatility Regime (GMM-based)
     gamma_model = specialist_models.get("gamma_model") if specialist_models else None
-    if gamma_model and gamma_model.selected_features_:
-        gamma_cols = gamma_model.selected_features_
-        available_gamma_cols = [c for c in gamma_cols if c in df_all.columns]
-        if len(available_gamma_cols) == len(gamma_cols):
-            X_gamma = df_all[gamma_cols].fillna(0.0)
-            predicted_vol = gamma_model.predict(X_gamma)
-            df_all["predicted_vol_6h"] = predicted_vol
+    if gamma_model is not None:
+        # Check if it's the new GMM model or old regression model
+        if hasattr(gamma_model, 'score_samples'):
+            # New GMM-based gamma model
+            from extreme_price_movements.gamma_specialist import GAMMA_FEATURE_KEYS
+            gamma_cols = GAMMA_FEATURE_KEYS
+            available_gamma_cols = [c for c in gamma_cols if c in df_all.columns]
+            if available_gamma_cols:
+                try:
+                    X_gamma = df_all[available_gamma_cols].fillna(0.0)
+                    # Get high volatility regime probability
+                    gamma_scores = gamma_model.score_samples(X_gamma)
+                    df_all["gamma_vol_regime_score"] = gamma_scores
+                    # Keep backward compatibility
+                    df_all["predicted_vol_6h"] = 1.0 + gamma_scores  # Higher = more volatile
+                except Exception:
+                    df_all["predicted_vol_6h"] = 1.0
+                    df_all["gamma_vol_regime_score"] = 0.5
+            else:
+                df_all["predicted_vol_6h"] = 1.0
+                df_all["gamma_vol_regime_score"] = 0.5
+        elif hasattr(gamma_model, 'selected_features_') and gamma_model.selected_features_:
+            # Old ExtraTrees-based gamma model (backward compatibility)
+            gamma_cols = gamma_model.selected_features_
+            available_gamma_cols = [c for c in gamma_cols if c in df_all.columns]
+            if len(available_gamma_cols) == len(gamma_cols):
+                X_gamma = df_all[gamma_cols].fillna(0.0)
+                predicted_vol = gamma_model.predict(X_gamma)
+                df_all["predicted_vol_6h"] = predicted_vol
+                df_all["gamma_vol_regime_score"] = np.clip(predicted_vol / 0.05, 0, 1)  # Approximate
+            else:
+                df_all["predicted_vol_6h"] = 1.0
+                df_all["gamma_vol_regime_score"] = 0.5
         else:
-            df_all["predicted_vol_6h"] = 1.0  # Default to normal volatility
+            df_all["predicted_vol_6h"] = 1.0
+            df_all["gamma_vol_regime_score"] = 0.5
     else:
         df_all["predicted_vol_6h"] = 1.0
+        df_all["gamma_vol_regime_score"] = 0.5
 
     score_rows = []
+    _ps_runtime_cols = [str(c) for c in cfg.get("position_sizer_regime_feature_keys", []) if isinstance(c, str) and c]
     for side_key, grp in df_all.groupby("side_key"):
         first = grp.iloc[0]
         model_mr = first["model_mr"]; model_tf = first["model_tf"]
@@ -882,39 +1147,69 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
             p_tf = model_tf.predict(X_tf_pred)
             tf_h_preds["pred_tf_H2"] = p_tf # Minimal fallback
 
-        meta_mr = meta_models.get(f"{side_key}_mr") or meta_models.get(f"{side_key}_mr_clf")
-        meta_tf = meta_models.get(f"{side_key}_tf") or meta_models.get(f"{side_key}_tf_clf")
+        # Accept legacy and current meta head key naming.
+        _mr_meta_keys = [
+            f"{side_key}_mr",
+            f"{side_key}_mr_reg",
+            f"{side_key}_mr_clf",
+            f"{side_key}_mr_utility",
+            f"{side_key}_mr_mae_q70",
+            f"{side_key}_mr_mfe",
+        ]
+        _tf_meta_keys = [
+            f"{side_key}_tf",
+            f"{side_key}_tf_reg",
+            f"{side_key}_tf_clf",
+            f"{side_key}_tf_utility",
+            f"{side_key}_tf_mae_q70",
+            f"{side_key}_tf_mfe",
+        ]
+        meta_mr = next((meta_models.get(_k) for _k in _mr_meta_keys if meta_models.get(_k) is not None), None)
+        meta_tf = next((meta_models.get(_k) for _k in _tf_meta_keys if meta_models.get(_k) is not None), None)
 
 
         s_mr, fb_mr = _meta_predict_or_fallback(meta_mr, p_mr, grp, "mr", side_key, mr_h_preds, tf_h_preds, cfg=cfg)
         s_tf, fb_tf = _meta_predict_or_fallback(meta_tf, p_tf, grp, "tf", side_key, mr_h_preds, tf_h_preds, cfg=cfg)
 
         for i, idx in enumerate(grp.index):
-            score_rows.append({
+            _row = {
                 "symbol": grp.loc[idx, "symbol"],
                 "side_key": side_key,
                 "score_mr": float(s_mr[i]),
                 "score_tf": float(s_tf[i]),
+                "reg_mr_live": float(p_mr[i]),
+                "reg_tf_live": float(p_tf[i]),
                 "trend_dir": int(grp.loc[idx, "trend_dir"]),
                 "trap_quality": float(grp.loc[idx, "trap_quality"]),
                 "predicted_vol_6h": float(grp.loc[idx, "predicted_vol_6h"]),
                 "used_fallback_mr": bool(fb_mr[i]),
                 "used_fallback_tf": bool(fb_tf[i]),
-            })
+            }
+            for _cn in _ps_runtime_cols:
+                if _cn in grp.columns:
+                    try:
+                        _row[_cn] = float(grp.loc[idx, _cn])
+                    except Exception:
+                        _row[_cn] = 0.0
+            score_rows.append(_row)
 
     return pd.DataFrame(score_rows)
 
 def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config, cfg, p_exh_cand, current_positions_syms, tradeable_candidates=None):
     if ts_sig not in mkt_gates.index:
+        if bool(cfg.get("debug_signal_generation", False)):
+            tprint(f"    SignalGenDiag ts={ts_sig} dropped: ts not in mkt_gates.index")
         return []
 
     signal_params = (risk_config or {}).get("signal_params", {}) if isinstance(risk_config, dict) else {}
     thr_long = float(signal_params.get("thr_long", cfg.get("thr_long", 0.01)))
     # Unified score convention: higher score is always better (long and short).
     # For short buckets we keep side information separate from score orientation.
-    thr_short = float(signal_params.get("thr_short", cfg.get("thr_short", -0.01)))
+    thr_short = float(signal_params.get("thr_short", cfg.get("thr_short", 0.01)))
     k_long = int(signal_params.get("k_long", cfg.get("k_long", 10)))
     k_short = int(signal_params.get("k_short", cfg.get("k_short", 10)))
+    k_frac_long = signal_params.get("k_frac_long", cfg.get("k_frac_long", None))
+    k_frac_short = signal_params.get("k_frac_short", cfg.get("k_frac_short", None))
 
     size_min = float(signal_params.get("size_min", 0.03))
     size_max = float(signal_params.get("size_max", 0.15))
@@ -924,9 +1219,21 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
     size_q50 = signal_params.get("size_q50")
     size_q90 = signal_params.get("size_q90")
 
+    _dbg = bool(cfg.get("debug_signal_generation", False))
+    _diag = {
+        "sc_rows": 0,
+        "potential": 0,
+        "after_k": 0,
+        "after_global_gate": 0,
+        "after_symbol_dedup": 0,
+        "after_new_sizer": 0,
+    }
     sc_df = _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand, current_positions_syms, tradeable_candidates=tradeable_candidates)
     if sc_df.empty:
+        if _dbg:
+            tprint(f"    SignalGenDiag ts={ts_sig} sc_rows=0 (no candidates from side-score stage)")
         return []
+    _diag["sc_rows"] = int(len(sc_df))
 
     if "used_fallback_mr" in sc_df.columns and "used_fallback_tf" in sc_df.columns:
         fb_any = (sc_df["used_fallback_mr"] | sc_df["used_fallback_tf"]).astype(float)
@@ -945,6 +1252,8 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
     score_scale = signal_params.get("score_scale_params", {}) if isinstance(signal_params, dict) else {}
 
     final_orders = []
+    _ps_runtime_cols = [str(c) for c in cfg.get("position_sizer_regime_feature_keys", []) if isinstance(c, str) and c]
+    _ps_runtime_cols += ["reg_mr_live", "reg_tf_live", "trap_quality", "predicted_vol_6h", "trend_dir"]
     for row in sc_df.to_dict('records'):
         sym = row["symbol"]
         side_key = row["side_key"]
@@ -968,36 +1277,60 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
             if t_dir > 0:
                 mode = "best"
                 thr = float(signal_params.get(f"thr_tf_{mode}", thr_long))
-                if s_tf > thr:
+                if s_tf >= thr:
                     potential_signal = {"symbol": sym, "side": "long", "score": s_tf, "dom": "tf", "mode": mode}
             else:
                 mode = "worst"
                 thr = float(signal_params.get(f"thr_mr_{mode}", thr_long))
-                if s_mr > thr:
+                if s_mr >= thr:
                     potential_signal = {"symbol": sym, "side": "long", "score": s_mr, "dom": "mr", "mode": mode}
         else: # side_key == "short"
+            s_mr_cmp = abs(s_mr)
+            s_tf_cmp = abs(s_tf)
             if t_dir > 0:
                 mode = "best"
                 thr = float(signal_params.get(f"thr_mr_{mode}", thr_short))
-                if s_mr > thr:
-                    potential_signal = {"symbol": sym, "side": "short", "score": s_mr, "dom": "mr", "mode": mode}
+                if s_mr_cmp >= thr:
+                    potential_signal = {"symbol": sym, "side": "short", "score": s_mr_cmp, "dom": "mr", "mode": mode}
             else:
                 mode = "worst"
                 thr = float(signal_params.get(f"thr_tf_{mode}", thr_short))
-                if s_tf > thr:
-                    potential_signal = {"symbol": sym, "side": "short", "score": s_tf, "dom": "tf", "mode": mode}
+                if s_tf_cmp >= thr:
+                    potential_signal = {"symbol": sym, "side": "short", "score": s_tf_cmp, "dom": "tf", "mode": mode}
 
         if potential_signal:
+            # Keep position-sizer runtime features on each order.
+            for _cn in _ps_runtime_cols:
+                if _cn in row:
+                    potential_signal[_cn] = row[_cn]
             final_orders.append(potential_signal)
+    _diag["potential"] = int(len(final_orders))
 
     if not final_orders:
+        if _dbg:
+            tprint(
+                f"    SignalGenDiag ts={ts_sig} sc_rows={_diag['sc_rows']} potential=0 "
+                f"thr_long={thr_long:.6f} thr_short={thr_short:.6f}"
+            )
         return []
 
     longs = [o for o in final_orders if o["side"] == "long"]
     shorts = [o for o in final_orders if o["side"] == "short"]
     longs.sort(key=lambda x: x["score"], reverse=True)
     shorts.sort(key=lambda x: x["score"], reverse=True)
-    final_orders = longs[:k_long] + shorts[:k_short]
+    try:
+        if k_frac_long is not None:
+            _kfl = float(k_frac_long)
+            if 0.0 < _kfl <= 1.0:
+                k_long = max(1, int(np.ceil(len(longs) * _kfl))) if longs else 0
+        if k_frac_short is not None:
+            _kfs = float(k_frac_short)
+            if 0.0 < _kfs <= 1.0:
+                k_short = max(1, int(np.ceil(len(shorts) * _kfs))) if shorts else 0
+    except Exception:
+        pass
+    final_orders = longs[:max(0, k_long)] + shorts[:max(0, k_short)]
+    _diag["after_k"] = int(len(final_orders))
     
     # --- Global Percentile Gating ---
     # Gating based on global distribution of scores (across all assets and time)
@@ -1013,6 +1346,7 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
         if len(filtered) < len(final_orders):
             # tprint(f"  Global gate (>{score_gate_q:.1%}) filtered {len(final_orders) - len(filtered)} signals")
             final_orders = filtered
+    _diag["after_global_gate"] = int(len(final_orders))
 
     # Symbol mutual exclusivity: if same symbol has both long and short signals,
     # keep only the stronger one (higher |score|) to prevent ping-pong losses
@@ -1022,6 +1356,7 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
         if s not in sym_best or abs(o["score"]) > abs(sym_best[s]["score"]):
             sym_best[s] = o
     final_orders = list(sym_best.values())
+    _diag["after_symbol_dedup"] = int(len(final_orders))
 
     # Optional runtime integration with new position_sizer backend.
     _ps_backend = str(cfg.get("position_sizer_backend", "ridge")).lower()
@@ -1036,7 +1371,19 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
             )
             from extreme_price_movements.position_sizer.sizer import PositionSizerConfig as _PSCfg
             _bundle = _ps_load_bundle(_ps_bundle_path, allow_unknown_version=bool(cfg.get("position_sizer_allow_unknown_bundle_version", False)))
-            _Xps = pd.DataFrame({"score": [float(o["score"]) for o in final_orders]})
+            _Xps = pd.DataFrame(index=np.arange(len(final_orders)))
+            for _c in list(getattr(_bundle, "feature_cols", []) or []):
+                if _c == "score":
+                    _Xps[_c] = [float(o["score"]) for o in final_orders]
+                else:
+                    _vals = []
+                    for _o in final_orders:
+                        try:
+                            _v = float(_o.get(_c, 0.0))
+                            _vals.append(_v if np.isfinite(_v) else 0.0)
+                        except Exception:
+                            _vals.append(0.0)
+                    _Xps[_c] = _vals
             _pred = _ps_predict_all(_bundle, _Xps)
             _tp_sl_runtime = _bundle.tp_sl_defaults if (getattr(_bundle, "tp_sl_defaults", None) and not bool(cfg.get("tp_sl_override", False))) else None
             _exp_q = float(_bundle.config.get("exp_win_quantile", cfg.get("position_sizer_exp_win_quantile", 0.50)))
@@ -1079,7 +1426,58 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
             )
             cfg["sizer_backend_used"] = "new"
             if _new_orders:
+                _diag["after_new_sizer"] = int(len(_new_orders))
+                if _dbg:
+                    tprint(
+                        f"    SignalGenDiag ts={ts_sig} sc_rows={_diag['sc_rows']} potential={_diag['potential']} "
+                        f"after_k={_diag['after_k']} after_gate={_diag['after_global_gate']} "
+                        f"after_dedup={_diag['after_symbol_dedup']} after_new={_diag['after_new_sizer']}"
+                    )
                 return _new_orders
+            # Prevent full runtime collapse to an empty book when gate settings are too strict.
+            if bool(cfg.get("position_sizer_no_trade_fallback", True)) and len(final_orders) > 0:
+                _frac = float(cfg.get("position_sizer_no_trade_fallback_frac", 0.10))
+                _frac = min(1.0, max(0.01, _frac))
+                _k_keep = max(1, int(np.ceil(len(final_orders) * _frac)))
+                _ev_arr = np.asarray(_ev, dtype=float)
+                _rk_arr = np.asarray(_rk, dtype=float)
+                _ord = np.argsort(np.where(np.isfinite(_ev_arr), _ev_arr, -np.inf))[::-1]
+                _kept = 0
+                _fallback_orders = []
+                for _ix in _ord:
+                    if _kept >= _k_keep:
+                        break
+                    _o = final_orders[int(_ix)]
+                    _o["weight"] = float(max(
+                        float(cfg.get("position_sizer_no_trade_fallback_weight", 0.05)),
+                        float(cfg.get("position_size_min", 0.03)),
+                    ))
+                    _o["ps_ev"] = float(_ev_arr[int(_ix)]) if np.isfinite(_ev_arr[int(_ix)]) else 0.0
+                    _o["ps_risk"] = float(_rk_arr[int(_ix)]) if np.isfinite(_rk_arr[int(_ix)]) else 0.0
+                    if _tp_sl_runtime is not None:
+                        _o["tp_default_k_tp"] = float(_tp_sl_runtime.get("k_tp", np.nan))
+                        _o["tp_default_k_sl"] = float(_tp_sl_runtime.get("k_sl", np.nan))
+                    _fallback_orders.append(_o)
+                    _kept += 1
+                tprint(
+                    f"PositionSizer(new): no-trade fallback engaged keep={len(_fallback_orders)}/{len(final_orders)} "
+                    f"frac={_frac:.2f}"
+                )
+                if _fallback_orders:
+                    _diag["after_new_sizer"] = int(len(_fallback_orders))
+                    if _dbg:
+                        tprint(
+                            f"    SignalGenDiag ts={ts_sig} sc_rows={_diag['sc_rows']} potential={_diag['potential']} "
+                            f"after_k={_diag['after_k']} after_gate={_diag['after_global_gate']} "
+                            f"after_dedup={_diag['after_symbol_dedup']} after_new={_diag['after_new_sizer']} (fallback)"
+                        )
+                    return _fallback_orders
+            if _dbg:
+                tprint(
+                    f"    SignalGenDiag ts={ts_sig} sc_rows={_diag['sc_rows']} potential={_diag['potential']} "
+                    f"after_k={_diag['after_k']} after_gate={_diag['after_global_gate']} "
+                    f"after_dedup={_diag['after_symbol_dedup']} after_new=0"
+                )
             return []
         except Exception as _e_ps:
             _allow_fallback = bool(cfg.get("position_sizer_allow_fallback", False))
@@ -1135,4 +1533,10 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
                     break
         orders_out.append(ord)
 
+    if _dbg:
+        tprint(
+            f"    SignalGenDiag ts={ts_sig} sc_rows={_diag['sc_rows']} potential={_diag['potential']} "
+            f"after_k={_diag['after_k']} after_gate={_diag['after_global_gate']} "
+            f"after_dedup={_diag['after_symbol_dedup']} final_nonnew={len(orders_out)}"
+        )
     return orders_out

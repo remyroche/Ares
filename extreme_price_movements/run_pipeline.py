@@ -7,9 +7,19 @@ Usage:
 """
 import sys
 import os
+import warnings
 
 # Avoid expensive/warning-prone Matplotlib cache initialization under read-only HOME.
 _mpl_cfg = os.environ.setdefault("MPLCONFIGDIR", "/tmp/mplconfig_epm")
+os.environ.setdefault("MPLBACKEND", "Agg")
+_loky_cpu = str(os.environ.get("LOKY_MAX_CPU_COUNT", "")).strip()
+if not _loky_cpu.isdigit():
+    os.environ["LOKY_MAX_CPU_COUNT"] = str(os.cpu_count() or 1)
+warnings.filterwarnings(
+    "ignore",
+    message="Could not find the number of physical cores for the following reason:",
+    category=UserWarning,
+)
 try:
     os.makedirs(_mpl_cfg, exist_ok=True)
 except Exception:
@@ -47,6 +57,10 @@ BASE_ROUND_TRIP_FEE_PCT = 0.3  # 0.3% round-trip = 0.15% per side (15 bps)
 # Perpetual trading fees (when --perps flag used)  
 PERP_ROUND_TRIP_FEE_PCT = 0.1  # 0.1% round-trip = 0.05% per side (5 bps)
 
+# Market order fee per side (used when not using limit orders)
+MARKET_ORDER_FEE_BPS = 25.0  # 0.25% per side
+# Limit order fee per side (used when limit order fills)
+LIMIT_ORDER_FEE_BPS = 10.0   # 0.10% per side
 
 
 def _apply_fee_model(cfg: dict, round_trip_fee_pct: float) -> None:
@@ -60,6 +74,16 @@ def _apply_fee_model(cfg: dict, round_trip_fee_pct: float) -> None:
     cfg["optimiser_fee_pct"] = fee_dec
     cfg["ridge_cost_pct"] = fee_dec
     cfg["limit_fill_fee_bps"] = side_bps
+    
+    # New fee structure for limit orders
+    cfg["fee_bps_market"] = MARKET_ORDER_FEE_BPS
+    cfg["fee_bps_limit_entry"] = LIMIT_ORDER_FEE_BPS
+    cfg["fee_bps_limit_exit"] = LIMIT_ORDER_FEE_BPS
+    cfg["fee_bps_market_exit"] = MARKET_ORDER_FEE_BPS
+    
+    # Enable MAE/MFE-based limit offset estimation
+    cfg["use_mae_mfe_limit_offset"] = True
+    cfg["use_exit_limit_orders"] = True
 
 
 def _append_suffix(path: str, suffix: str) -> str:
@@ -400,10 +424,22 @@ def run_sizer(cfg, ts_override=None):
         tprint(f"ERROR: Trained state not found at {state_file}. Run 'train' mode first.")
         return
 
-    tprint(f"Sizer mode. ts_sig={ts_sig} backend={cfg.get('position_sizer_backend', 'ridge')}")
+    tprint(f"Sizer mode. ts_sig={ts_sig} backend={cfg.get('position_sizer_backend', 'new')}")
     result = run_sizer_step(ts_sig, cfg, state_file)
     if result:
-        tprint(f"SIZER COMPLETE — backend={cfg.get('position_sizer_backend', 'ridge')}")
+        tprint(f"SIZER COMPLETE — backend={cfg.get('position_sizer_backend', 'new')}")
+
+        # Generate OOS backtest metrics immediately after sizer training.
+        if bool(cfg.get("sizer_run_oos_backtest", True)):
+            try:
+                tprint("SIZER: running OOS backtest with updated sizer bundle...")
+                store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+                bt_cfg = dict(cfg)
+                bt_cfg["sizer_oos_mode"] = True
+                run_backtest_step(ts_sig, None, bt_cfg, store, state_file)
+                tprint("SIZER: OOS backtest complete.")
+            except Exception as e:
+                tprint(f"WARNING: sizer OOS backtest failed: {e}")
         
         # Run breakdown diagnostics after ridge sizer
         try:
@@ -417,8 +453,10 @@ def run_sizer(cfg, ts_override=None):
 
 
 def run_ridge_sizer(cfg, ts_override=None):
-    """Backward-compatible alias for sizer mode."""
-    return run_sizer(cfg, ts_override=ts_override)
+    """Legacy ridge mode is disabled; keep explicit entrypoint for clear erroring."""
+    raise RuntimeError(
+        "ridge_sizer mode is disabled. Use: python3 extreme_price_movements/run_pipeline.py sizer"
+    )
 
 def run_all(cfg, ts_override=None):
     """Run download -> features -> train (includes labels) -> optimise (learn entry) -> ridge_sizer -> optimise (sizing) in order.
@@ -767,7 +805,7 @@ def main():
 
     _configure_report_roots(cfg)
 
-    tprint(f"Sizer backend resolved: {cfg.get('position_sizer_backend', 'ridge')} (enabled={bool(cfg.get('position_sizer_enabled', False))})")
+    tprint(f"Sizer backend resolved: {cfg.get('position_sizer_backend', 'new')} (enabled={bool(cfg.get('position_sizer_enabled', False))})")
 
     if args.mode == "download":
         run_download(cfg)

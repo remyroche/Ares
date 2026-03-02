@@ -260,22 +260,22 @@ def pick_meta_classifier_by_utility_top30(
     tm = np.ones(len(y_true), dtype=bool) if trade_mask is None else np.asarray(trade_mask, dtype=bool)
     tm = tm[:len(y_true)]
 
-    # Handle invalid values in predictions and sanitize for scoring/utility.
-    invalid_pred = ~np.isfinite(p_pred)
-    if np.any(invalid_pred[tm]):
-        tprint("Warning: non-finite values found in predictions; sanitizing and using fallback log loss")
-        ll = 999.0
-    else:
-        ll = float(log_loss(y_true[tm], p_pred[tm], labels=[0, 1, 2])) if np.any(tm) else 999.0
-    passed_gate = ll <= float(cfg.max_logloss)
-
-    # Ensure utility ranking remains finite even if a candidate produced bad rows.
+    # Sanitize probabilities before ALL metric computations (including log_loss).
     p_pred = np.where(np.isfinite(p_pred), p_pred, 0.0)
     p_pred = np.clip(p_pred, 0.0, None)
     row_sum = p_pred.sum(axis=1, keepdims=True)
     safe = row_sum[:, 0] > 1e-12
     p_pred[safe] = p_pred[safe] / row_sum[safe]
     p_pred[~safe] = np.array([1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0], dtype=float)
+    p_pred = np.clip(p_pred, 1e-12, 1.0)
+    p_pred = p_pred / np.clip(p_pred.sum(axis=1, keepdims=True), 1e-12, None)
+
+    try:
+        ll = float(log_loss(y_true[tm], p_pred[tm], labels=[0, 1, 2])) if np.any(tm) else 999.0
+    except Exception:
+        tprint("Warning: failed to compute classifier log_loss after probability sanitation")
+        ll = 999.0
+    passed_gate = ll <= float(cfg.max_logloss)
 
     # Dynamic utility weights from realized outcomes on this OOF vector.
     if bool(cfg.dynamic_utility_from_realized):

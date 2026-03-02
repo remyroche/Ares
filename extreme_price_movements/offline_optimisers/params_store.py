@@ -309,7 +309,7 @@ def apply_offline_optimizer_best_params(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
     cand = _read_best_params_csv(CANDIDATE_BEST_PARAMS_CSV)
     if cand:
-        for key in ("train_extreme_pct_hourly", "train_min_range_pct", "train_min_vol_zscore", "min_feat_sign_consistency"):
+        for key in ("train_extreme_pct_hourly", "train_min_range_pct", "train_min_vol_zscore"):
             if key in cand and cand[key] is not None:
                 merged[key] = cand[key]
 

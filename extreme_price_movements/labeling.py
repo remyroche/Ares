@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import platform
 from numba import jit
-from joblib import Parallel, delayed
+from joblib import Parallel, delayed, cpu_count
 from .fast_funcs import simulate_trade_numba
 
 OUT_SL = np.int8(0)
@@ -642,7 +642,6 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
             return asset, lbs, rets, None
 
     # OPTIMIZATION: Use all available cores for parallel processing
-    from joblib import cpu_count
     n_jobs_cap = 8
     if platform.system() == "Darwin" and platform.machine().lower() in {"arm64", "aarch64"}:
         # Keep memory pressure bounded on Apple Silicon unified memory.

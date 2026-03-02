@@ -134,7 +134,11 @@ def size_positions_ranked(ev_hat, risk_hat, alpha_score, cfg: PositionSizerConfi
         rank_g = np.empty(len(ev_g), dtype=float)
         rank_g[order] = (np.arange(len(ev_g), dtype=float) + 0.5) / max(len(ev_g), 1)
         conviction = rank_g ** float(max(cfg.rank_exponent, 1e-8))
-        gate = rank_g >= float(cfg.trade_percentile_threshold)
+        q = float(np.clip(cfg.trade_percentile_threshold, 0.0, 1.0))
+        ev_cut = float(np.quantile(ev_g, q)) if len(ev_g) else float("inf")
+        gate_rank = ev_g >= ev_cut
+        gate_ev = ev_g > float(cfg.ev_threshold)
+        gate = gate_rank & gate_ev
 
         alpha_sharp = np.sign(alpha_g) * (np.abs(alpha_g) ** float(max(cfg.alpha_power, 1e-8)))
         scaled = np.tanh(alpha_sharp / float(max(cfg.score_temperature, 1e-8)))

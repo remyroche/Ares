@@ -45,10 +45,15 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from scipy.stats import spearmanr
 from sklearn.linear_model import Ridge
+from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.preprocessing import RobustScaler
 from sklearn.metrics import average_precision_score
 from joblib import Parallel, delayed
 import optuna
+try:
+    import xgboost as xgb  # type: ignore
+except Exception:  # pragma: no cover - optional dependency fallback
+    xgb = None
 
 MODULE_DIR = Path(__file__).resolve().parent
 PACKAGE_ROOT = MODULE_DIR.parent
@@ -1105,6 +1110,199 @@ def _safe_spearman(a: np.ndarray, b: np.ndarray) -> float:
     return float(r) if np.isfinite(r) else 0.0
 
 
+@dataclass
+class LearnabilityWeights:
+    w_auc_bound: float = 0.28
+    w_tp_sep: float = 0.18
+    tp_sep_saturation_k: float = 0.03
+    w_ap_lift: float = 0.06
+    w_sortino: float = 0.08
+    w_ic_snr: float = 0.08
+    w_dir_sup: float = 0.08
+    w_tp_over_sl: float = 0.08
+    w_payoff_edge: float = 0.08
+    w_ece: float = 0.22
+    w_brier: float = 0.16
+    w_bind: float = 0.32
+    w_timeout: float = 0.32
+    w_ic_std_time: float = 0.26
+    w_ic_std_asset: float = 0.14
+    w_coverage: float = 0.18
+    w_probe: float = 0.12
+    w_gap: float = 0.15
+    w_horizon_consistency: float = 0.08
+
+
+def _resolve_learnability_weights(
+    cfg: Dict[str, Any],
+    target_horizon: Optional[int] = None,
+    target_bucket: Optional[str] = None,
+) -> LearnabilityWeights:
+    w = LearnabilityWeights(
+        w_auc_bound=float(cfg.get("stage2_w_auc_bound", 0.28)),
+        w_tp_sep=float(cfg.get("stage2_w_tp_sep", 0.18)),
+        tp_sep_saturation_k=float(cfg.get("stage2_tp_sep_saturation_k", 0.03)),
+        w_ap_lift=float(cfg.get("stage2_w_ap_lift", 0.06)),
+        w_sortino=float(cfg.get("stage2_w_sortino", 0.08)),
+        w_ic_snr=float(cfg.get("stage2_w_ic_snr", 0.08)),
+        w_dir_sup=float(cfg.get("stage2_w_dir_sup", 0.08)),
+        w_tp_over_sl=float(cfg.get("stage2_w_tp_over_sl", 0.08)),
+        w_payoff_edge=float(cfg.get("stage2_w_payoff_edge", 0.08)),
+        w_ece=float(cfg.get("stage2_w_ece", 0.22)),
+        w_brier=float(cfg.get("stage2_w_brier", 0.16)),
+        w_bind=float(cfg.get("stage2_w_bind", 0.32)),
+        w_timeout=float(cfg.get("stage2_w_timeout", 0.32)),
+        w_ic_std_time=float(cfg.get("stage2_w_ic_std_time", 0.26)),
+        w_ic_std_asset=float(cfg.get("stage2_w_ic_std_asset", 0.14)),
+        w_coverage=float(cfg.get("stage2_w_coverage", 0.18)),
+        w_probe=float(cfg.get("stage2_w_probe", 0.12)),
+        w_gap=float(cfg.get("stage2_w_gap", 0.15)),
+        w_horizon_consistency=float(cfg.get("stage2_w_horizon_consistency", 0.08)),
+    )
+    if target_horizon is not None:
+        sfx = f"_h{int(target_horizon)}"
+        for field_name in w.__dataclass_fields__.keys():
+            k = f"stage2_{field_name}{sfx}"
+            if k in cfg:
+                setattr(w, field_name, float(cfg[k]))
+    if target_bucket:
+        bkey = str(target_bucket).lower()
+        for field_name in w.__dataclass_fields__.keys():
+            k = f"stage2_{field_name}_{bkey}"
+            if k in cfg:
+                setattr(w, field_name, float(cfg[k]))
+    return w
+
+
+def _score_saturated_tp_sep(tp_sep: float, saturation_k: float) -> float:
+    if not math.isfinite(tp_sep) or tp_sep <= 0.0:
+        return 0.0
+    s = max(float(saturation_k), EPS)
+    return float(1.0 - math.exp(-float(tp_sep) / s))
+
+
+def _auc_lower_bound(auc: float, n_obs: int, z: float = 1.96) -> float:
+    if not math.isfinite(auc):
+        return float("nan")
+    n = max(int(n_obs), 1)
+    var = max(auc * (1.0 - auc), 0.25) / float(n)
+    return float(auc - z * math.sqrt(max(var, EPS)))
+
+
+def _strict_walk_forward_probe_auc(
+    X: np.ndarray,
+    y: np.ndarray,
+    ts: np.ndarray,
+    w: Optional[np.ndarray],
+    cfg: Dict[str, Any],
+    fast_mode: bool = False,
+) -> Tuple[float, float, str, int, int]:
+    if len(y) < int(cfg.get("stage2_probe_min_rows", 400)):
+        return float("nan"), float("nan"), "insufficient_rows", 0, 0
+    _u_ts = np.sort(pd.Index(ts).unique())
+    train_frac = float(cfg.get("stage2_probe_train_fraction", 0.7))
+    min_train = int(cfg.get("stage2_probe_min_train_rows", 200))
+    min_val = int(cfg.get("stage2_probe_min_val_rows", 120))
+    if len(_u_ts) >= 10:
+        split_idx = max(1, int(len(_u_ts) * train_frac))
+        split_idx = min(split_idx, len(_u_ts) - 1)
+        split_ts = _u_ts[split_idx]
+        train_mask = ts < split_ts
+        val_mask = ~train_mask
+    else:
+        # Fallback: strictly forward by row order when timestamp granularity is coarse.
+        n = len(y)
+        cut = max(1, min(n - 1, int(n * train_frac)))
+        train_mask = np.zeros(n, dtype=bool)
+        train_mask[:cut] = True
+        val_mask = ~train_mask
+    n_tr = int(train_mask.sum())
+    n_va = int(val_mask.sum())
+    if n_tr < min_train or n_va < min_val:
+        return float("nan"), float("nan"), "insufficient_split", n_tr, n_va
+    y_tr = y[train_mask]
+    y_va = y[val_mask]
+    if np.unique(y_tr).size < 2 or np.unique(y_va).size < 2:
+        return float("nan"), float("nan"), "single_class_split", n_tr, n_va
+
+    X_tr = X[train_mask]
+    X_va = X[val_mask]
+    w_tr = None if w is None else w[train_mask]
+    engine = str(cfg.get("stage2_probe_engine", "xgb" if xgb is not None else "extratrees")).lower()
+    pred = None
+    try:
+        if engine == "xgb" and xgb is not None:
+            probe = xgb.XGBRegressor(
+                objective="reg:squarederror",
+                n_estimators=int(cfg.get("stage2_probe_xgb_n_estimators", 400 if not fast_mode else 150)),
+                max_depth=int(cfg.get("stage2_probe_xgb_max_depth", 3)),
+                min_child_weight=float(cfg.get("stage2_probe_xgb_min_child_weight", 40.0)),
+                gamma=float(cfg.get("stage2_probe_xgb_gamma", 4.0)),
+                subsample=float(cfg.get("stage2_probe_xgb_subsample", 0.7)),
+                colsample_bytree=float(cfg.get("stage2_probe_xgb_colsample_bytree", 0.7)),
+                reg_alpha=float(cfg.get("stage2_probe_xgb_reg_alpha", 2.0)),
+                reg_lambda=float(cfg.get("stage2_probe_xgb_reg_lambda", 15.0)),
+                learning_rate=float(cfg.get("stage2_probe_xgb_eta", 0.05)),
+                tree_method="hist",
+                random_state=42,
+                n_jobs=1,
+            )
+            probe.fit(X_tr, y_tr, sample_weight=w_tr)
+            pred = probe.predict(X_va)
+        else:
+            probe = ExtraTreesRegressor(
+                n_estimators=int(cfg.get("stage2_probe_et_n_estimators", 500 if not fast_mode else 200)),
+                min_samples_leaf=int(cfg.get("stage2_probe_et_min_samples_leaf", 80)),
+                min_samples_split=int(cfg.get("stage2_probe_et_min_samples_split", 400)),
+                max_features=float(cfg.get("stage2_probe_et_max_features", 0.35)),
+                bootstrap=True,
+                max_samples=float(cfg.get("stage2_probe_et_max_samples", 0.7)),
+                random_state=42,
+                n_jobs=1,
+            )
+            probe.fit(X_tr, y_tr, sample_weight=w_tr)
+            pred = probe.predict(X_va)
+    except Exception:
+        return float("nan"), float("nan"), "fit_failed", n_tr, n_va
+
+    pred = np.asarray(pred, dtype=np.float32)
+    auc = _fast_auc_binary(y_va.astype(np.float32), pred)
+    auc_b = _auc_lower_bound(float(auc), int(val_mask.sum()))
+    return float(auc), float(auc_b), "ok", n_tr, n_va
+
+
+def _horizon_consistency_penalty(
+    bucket_h_metrics: Dict[Tuple[str, int], Dict[str, Any]],
+    cfg: Dict[str, Any],
+) -> float:
+    if not bucket_h_metrics:
+        return 0.0
+    bucket_to_cells: Dict[str, List[Dict[str, Any]]] = {}
+    for (bkt, _h), met in bucket_h_metrics.items():
+        bucket_to_cells.setdefault(str(bkt), []).append(met)
+    penalties: List[float] = []
+    ratio_band = float(cfg.get("stage2_horizon_ratio_band", 1.25))
+    tpsl_band = float(cfg.get("stage2_horizon_tp_over_sl_band", 1.5))
+    label_band = float(cfg.get("stage2_horizon_label_mean_band", 0.20))
+    for cells in bucket_to_cells.values():
+        ratios = [float(c.get("barrier_ratio", float("nan"))) for c in cells]
+        tpsls = [float(c.get("tp_over_sl", float("nan"))) for c in cells]
+        lbl_means = [float(c.get("base_rate", float("nan"))) for c in cells]
+        ratios = [x for x in ratios if math.isfinite(x) and x > 0]
+        tpsls = [x for x in tpsls if math.isfinite(x) and x > 0]
+        lbl_means = [x for x in lbl_means if math.isfinite(x)]
+        if len(ratios) >= 2:
+            span = max(ratios) / max(min(ratios), EPS)
+            penalties.append(max(0.0, span - ratio_band) / max(ratio_band, EPS))
+        if len(tpsls) >= 2:
+            span = max(tpsls) / max(min(tpsls), EPS)
+            penalties.append(max(0.0, span - tpsl_band) / max(tpsl_band, EPS))
+        if len(lbl_means) >= 2:
+            drift = max(lbl_means) - min(lbl_means)
+            penalties.append(max(0.0, drift - label_band) / max(label_band, EPS))
+    return float(np.mean(penalties)) if penalties else 0.0
+
+
 def expected_calibration_error(y: np.ndarray, p: np.ndarray, n_bins: int = 10) -> float:
     y = np.asarray(y, dtype=float)
     p = np.asarray(p, dtype=float)
@@ -1764,10 +1962,12 @@ def _empty_result(
     cfg_id: str,
     full_n: int,
     reason: str = "empty",
+    stage2_rescore: bool = False,
 ) -> tuple:
     """Return a zero-filled (summary, detail, None) triple for fast-path exits."""
     summary = {
         "config_id": cfg_id,
+        "evaluation_stage": "stage2_rescore" if stage2_rescore else "stage1",
         "mode": cfg.get("mode", "unknown"),
         "k_tp": cfg.get("k_tp"),
         "sl_method": cfg.get("sl_method"),
@@ -1781,6 +1981,9 @@ def _empty_result(
         "ess": 0.0, "ess_full": float(full_n), "coverage": 0.0,
         "ic_std_time": 0.0, "ic_std_asset": 0.0, "worst_bucket_IC": 0.0,
         "stage1_score": -10.0, "stage2_score": -10.0,
+        "probe_auc": float("nan"), "probe_auc_bound": float("nan"),
+        "probe_status": "not_run",
+        "probe_n_train": 0, "probe_n_val": 0,
         "brier": 0.0, "ece": 0.0, "monotonicity": 0.0,
         "oof_payoff_decile_spread": 0.0, "hard_gate": False,
         "pass_cells": 0, "total_cells": 0, "worst_bucket_coverage": 0.0,
@@ -1820,6 +2023,7 @@ def evaluate_config(
     detailed_slices: bool = False,
     collect_weights: bool = False,
     target_cell_filter: Optional[Tuple[str, int]] = None,
+    stage2_rescore: bool = False,
 ) -> Tuple[Dict[str, Any], Dict[str, Any], Optional[pd.DataFrame]]:
     cfg = _apply_compare_production_floor(cfg)
     cfg_id = config_id(cfg)
@@ -1829,7 +2033,10 @@ def evaluate_config(
     min_rr = float(cfg.get("min_net_rr", 0.7))
     sl_ratio = float(cfg.get("sl_as_tp_pct", 0.5))
     if sl_ratio > 0 and (1.0 / sl_ratio) < (min_rr * 0.7):
-        return _empty_result(cfg, cfg_id, 0, reason=f"cheap_gate_rr_too_low:{1.0/sl_ratio:.2f}<{min_rr:.2f}")
+        return _empty_result(
+            cfg, cfg_id, 0, reason=f"cheap_gate_rr_too_low:{1.0/sl_ratio:.2f}<{min_rr:.2f}",
+            stage2_rescore=stage2_rescore
+        )
     
     t0 = time.perf_counter()
     fast_mode = bool(cfg.get("_low_fidelity", False)) and not bool(collect_weights)
@@ -2073,7 +2280,7 @@ def evaluate_config(
         _bkt, _h = target_cell_filter
         events = events[np.array((events["bucket"] == _bkt) & (events["horizon"] == _h))].copy().reset_index(drop=True)
         if events.empty:
-            return _empty_result(cfg, cfg_id, 0, f"no_events_for_cell_{_bkt}_H{_h}")
+            return _empty_result(cfg, cfg_id, 0, f"no_events_for_cell_{_bkt}_H{_h}", stage2_rescore=stage2_rescore)
         # Note: bucket_masks local shadow used for per-slice metrics (optional, mostly for safety)
         bucket_masks = {b: (events["bucket"] == b) for b in (["MR_long", "MR_short", "TF_long", "TF_short", "Candidate", "Global"])}
         # Rebuild stacked_index after cell-filtering so all downstream arrays match
@@ -2188,7 +2395,7 @@ def evaluate_config(
         f"[eval:{cfg_id}] rr_filter_kept={len(events):,}/{pre_rr_n:,} min_net_rr={min_rr:.3f}"
     )
     if events.empty:
-        return _empty_result(cfg, cfg_id, full_n, reason="empty_after_rr_filter")
+        return _empty_result(cfg, cfg_id, full_n, reason="empty_after_rr_filter", stage2_rescore=stage2_rescore)
 
     # ── Early exit: skip expensive metrics if TP:SL ratio is catastrophically bad (>1:5) ──
     _agg_tp = float((events["label"] == OUT_TP).mean())
@@ -2196,7 +2403,9 @@ def evaluate_config(
     _agg_sl_to_tp = _agg_sl / max(_agg_tp, EPS)
     if _agg_sl_to_tp > 5.0:
         tprint(f"[eval:{cfg_id}] EARLY_EXIT sl_to_tp={_agg_sl_to_tp:.2f}x > 5.0 — skipping learnability metrics")
-        return _empty_result(cfg, cfg_id, full_n, reason=f"sl_to_tp_too_high:{_agg_sl_to_tp:.2f}x")
+        return _empty_result(
+            cfg, cfg_id, full_n, reason=f"sl_to_tp_too_high:{_agg_sl_to_tp:.2f}x", stage2_rescore=stage2_rescore
+        )
 
     pass_cells = 0
     # Pre-initialize all 12 canonical cells with n=0 defaults so cells with zero
@@ -2228,7 +2437,7 @@ def evaluate_config(
         for h in _CANONICAL_HORIZONS
     }
     total_cells = len(bucket_h_metrics)
-    for (b, h), g in events.groupby(["bucket", "horizon"]):
+    for (b, h), g in events.groupby(["bucket", "horizon"], observed=False):
         n_eval_kept = int(len(g))
         tp_hit_kept = float((g["label"] == OUT_TP).mean())
         timeout_kept = float((g["label"] == OUT_TO).mean())
@@ -2419,11 +2628,11 @@ def evaluate_config(
     # contaminate the metric because TF and MR models score on different distributions.
     # Pre-compute per-bucket top-decile thresholds.
     _bucket_top10_thresh: Dict[str, float] = {}
-    for _bname, _bg in events.groupby("bucket"):
+    for _bname, _bg in events.groupby("bucket", observed=False):
         _bp = pred[_bg.index.values]
         _bucket_top10_thresh[str(_bname)] = float(np.quantile(_bp, 0.90)) if len(_bp) >= 10 else float("inf")
 
-    for (b, h), g in events.groupby(["bucket", "horizon"]):
+    for (b, h), g in events.groupby(["bucket", "horizon"], observed=False):
         if (b, h) not in bucket_h_metrics:
             continue
         idx = g.index.values
@@ -2505,7 +2714,7 @@ def evaluate_config(
     # auc_bound: AUC restricted to bound events (TP or SL only, timeouts excluded).
     # This is a cleaner learnability signal: timeouts are uninformative for TP classification.
     # auc_vol_low/mid/high: AUC split by vol_quintile coarse bins (Q1-2 / Q3 / Q4-5).
-    for (b, h), g in events.groupby(["bucket", "horizon"]):
+    for (b, h), g in events.groupby(["bucket", "horizon"], observed=False):
         if (b, h) not in bucket_h_metrics:
             continue
         idx = g.index.values
@@ -2547,13 +2756,19 @@ def evaluate_config(
 
         # Per-cell calibration & stability metrics (previously global-only).
         y_bin_cell = y_tp_cell  # already computed above as (label==1)
-        if len(p_cell) >= 10:
+        if len(p_cell) >= 20:
             _brier_cell = float(np.mean((p_cell - y_bin_cell) ** 2))
             _ece_cell = expected_calibration_error(y_bin_cell, p_cell)
-            _dec_cell = pd.qcut(pd.Series(p_cell), min(10, len(p_cell) // 2), labels=False, duplicates="drop") if len(p_cell) >= 20 else pd.Series(np.zeros(len(p_cell), dtype=int))
-            _pay_cell = g["payoff"].values.astype(np.float32, copy=False)
-            _pay_by_dec = pd.DataFrame({"d": _dec_cell, "p": _pay_cell}).groupby("d")["p"].mean()
-            _mono_cell = float((np.diff(_pay_by_dec.values) >= 0).mean()) if len(_pay_by_dec) > 1 else float("nan")
+            
+            # Increased granularity for monotonicity (up to 20 bins for better resolution)
+            _n_bins_mono = min(20, len(p_cell) // 10)
+            if _n_bins_mono >= 2:
+                _dec_cell = pd.qcut(pd.Series(p_cell), _n_bins_mono, labels=False, duplicates="drop")
+                _pay_cell = g["payoff"].values.astype(np.float32, copy=False)
+                _pay_by_dec = pd.DataFrame({"d": _dec_cell, "p": _pay_cell}).groupby("d")["p"].mean()
+                _mono_cell = float((np.diff(_pay_by_dec.values) >= 0).mean()) if len(_pay_by_dec) > 1 else float("nan")
+            else:
+                _mono_cell = float("nan")
         else:
             _brier_cell = float("nan")
             _ece_cell = float("nan")
@@ -2622,6 +2837,16 @@ def evaluate_config(
     min_cell_dir_superiority = float(np.min(cell_dir_sups)) if cell_dir_sups else float("nan")
     median_cell_dir_superiority = float(np.median(cell_dir_sups)) if cell_dir_sups else float("nan")
     max_barrier_ratio = float(np.max(cell_barrier_ratios)) if cell_barrier_ratios else float("nan")
+    # Effective label mass proxy for probability learnability.
+    effective_pos_mass = 0.0
+    effective_neg_mass = 0.0
+    for _cm in bucket_h_metrics.values():
+        _n_cell = float(_cm.get("n", 0.0))
+        _br = float(_cm.get("base_rate", float("nan")))
+        if _n_cell <= 0 or not math.isfinite(_br):
+            continue
+        effective_pos_mass += _n_cell * _br
+        effective_neg_mass += _n_cell * max(0.0, 1.0 - _br)
 
     # For cell-specific Optuna, ensure aggregation is strictly per-cell (not across canonical cells).
     if target_cell_filter:
@@ -2705,6 +2930,7 @@ def evaluate_config(
     ic_std_time_median = float(np.median(_cell_ic_std_times)) if _cell_ic_std_times else float("nan")
     ic_std_asset_median = float(np.median(_cell_ic_std_assets)) if _cell_ic_std_assets else float("nan")
     min_cell_brier = float(np.min(_cell_briers)) if _cell_briers else float("nan")
+    min_cell_ece = float(np.min(_cell_eces)) if _cell_eces else float("nan")
     min_cell_mono = float(np.min(_cell_monos)) if _cell_monos else float("nan")
 
     if fast_mode:
@@ -2774,13 +3000,25 @@ def evaluate_config(
         - 0.2 * float((events["label"] == OUT_TO).mean() if len(events) else 1.0)
     )
 
-    # Learnability-focused stage2_score (Optuna-proof):
-    # - normalize each component to bounded scales to prevent metric-range domination
-    # - keep instability/degeneracy penalties smooth and capped (<=50% of reward)
-    _auc_raw = median_cell_auc if not math.isnan(median_cell_auc) else 0.5
+    # Learnability-focused stage2_score:
+    # prioritize auc_bound, saturating TP-separation rewards, explicit calibration penalties,
+    # stronger instability/censoring penalties, and optional tree learnability probe.
+    _target_h = int(target_cell_filter[1]) if target_cell_filter else int(cfg.get("horizon_base", 4))
+    _target_b = str(target_cell_filter[0]) if target_cell_filter else None
+    _lw = _resolve_learnability_weights(cfg, target_horizon=_target_h, target_bucket=_target_b)
+
+    _auc_raw = median_cell_auc_bound if not math.isnan(median_cell_auc_bound) else (
+        median_cell_auc if not math.isnan(median_cell_auc) else 0.5
+    )
     _auc_score = float(np.clip(2.0 * (_auc_raw - 0.5), -1.0, 1.0))
 
-    _sep_score = float(np.tanh(median_cell_tp_sep / 0.03)) if not math.isnan(median_cell_tp_sep) else 0.0
+    _sep_score = _score_saturated_tp_sep(
+        median_cell_tp_sep if not math.isnan(median_cell_tp_sep) else 0.0,
+        _lw.tp_sep_saturation_k,
+    )
+    _ap_lift_score = 0.0
+    if not math.isnan(median_cell_ap_lift):
+        _ap_lift_score = float(np.tanh((median_cell_ap_lift - 1.0) / 0.50))
     _sortino_score = float(np.tanh(sortino / 3.0))
     _snr_score = float(np.tanh(ic_snr / 2.0))
 
@@ -2793,25 +3031,38 @@ def evaluate_config(
         _tp_over_sl_score = float(np.tanh(math.log(max(median_cell_tp_over_sl, EPS)) / 0.35))
     payoff_edge_score = float(np.tanh(payoff_edge / 0.75))
 
-    # Rewards are bounded to approximately [-1, +1] each.
     _reward = (
-        0.24 * _auc_score
-        + 0.16 * _sep_score
-        + 0.12 * _sortino_score
-        + 0.10 * _snr_score
-        + 0.10 * _dir_sup_score
-        + 0.08 * _tp_over_sl_score
-        + 0.10 * payoff_edge_score
+        _lw.w_auc_bound * _auc_score
+        + _lw.w_tp_sep * _sep_score
+        + _lw.w_ap_lift * _ap_lift_score
+        + _lw.w_sortino * _sortino_score
+        + _lw.w_ic_snr * _snr_score
+        + _lw.w_dir_sup * _dir_sup_score
+        + _lw.w_tp_over_sl * _tp_over_sl_score
+        + _lw.w_payoff_edge * payoff_edge_score
     )
 
-    # Smooth penalties (all in [0,1] scale, then bounded to <=50% of |reward|).
-    _ic_std = float(ic_time.std() if ic_time.size else 0.0)
-    _instability_pen = float(cfg.get("stage2_penalty_instability_w", 0.20)) * max(0.0, (_ic_std - float(cfg.get("stage2_ic_std_target", 0.12))) / max(float(cfg.get("stage2_ic_std_target", 0.12)), EPS)) ** 2
-    _coverage_pen = float(cfg.get("stage2_penalty_coverage_w", 0.20)) * max(0.0, (float(cfg.get("stage2_target_coverage", 0.45)) - coverage) / max(float(cfg.get("stage2_target_coverage", 0.45)), EPS))
-    _timeout_pen = float(cfg.get("stage2_penalty_timeout_w", 0.25)) * max(0.0, timeout_agg - float(cfg.get("stage2_timeout_target", 0.55)))
-    _bind_pen = float(cfg.get("stage2_penalty_bind_w", 0.25)) * max(0.0, float(cfg.get("stage2_bind_target", 0.35)) - bind_agg)
+    # Smooth penalties (scaled then bounded to <=55% of |reward|).
+    _ic_std_time = 0.0 if math.isnan(ic_std_time_median) else float(ic_std_time_median)
+    _ic_std_asset = 0.0 if math.isnan(ic_std_asset_median) else float(ic_std_asset_median)
+    _ic_std_target = float(cfg.get("stage2_ic_std_target", 0.12))
+    _instability_pen = _lw.w_ic_std_time * max(0.0, (_ic_std_time - _ic_std_target) / max(_ic_std_target, EPS)) ** 2
+    _instability_asset_pen = _lw.w_ic_std_asset * max(0.0, (_ic_std_asset - _ic_std_target) / max(_ic_std_target, EPS)) ** 2
+    _coverage_pen = _lw.w_coverage * max(0.0, (float(cfg.get("stage2_target_coverage", 0.45)) - coverage) / max(float(cfg.get("stage2_target_coverage", 0.45)), EPS))
+    _timeout_pen = _lw.w_timeout * max(0.0, timeout_agg - float(cfg.get("stage2_timeout_target", 0.55)))
+    _bind_pen = _lw.w_bind * max(0.0, float(cfg.get("stage2_bind_target", 0.35)) - bind_agg)
+    _ece_pen = _lw.w_ece * max(0.0, 0.0 if math.isnan(ece) else float(ece))
+    _brier_pen = _lw.w_brier * max(0.0, 0.0 if math.isnan(brier) else float(brier))
 
-    _raw_penalty = _instability_pen + _coverage_pen + _timeout_pen + _bind_pen
+    _raw_penalty = (
+        _instability_pen
+        + _instability_asset_pen
+        + _coverage_pen
+        + _timeout_pen
+        + _bind_pen
+        + _ece_pen
+        + _brier_pen
+    )
     _penalty_cap = 0.5 * max(abs(_reward), 0.10)
     _bounded_penalty = min(_raw_penalty, _penalty_cap)
 
@@ -2821,7 +3072,6 @@ def evaluate_config(
         4: float(cfg.get("stage2_rr_keep_floor_h4", 0.55)),
         8: float(cfg.get("stage2_rr_keep_floor_h8", 0.60)),
     }
-    _target_h = int(target_cell_filter[1]) if target_cell_filter else int(cfg.get("horizon_base", 4))
     rr_floor = float(_rr_floor_map.get(_target_h, float(cfg.get("stage2_rr_keep_floor_default", 0.55))))
     rr_gap = max(0.0, (rr_floor - rr_keep_rate) / max(rr_floor, EPS))
     _rr_pen_w = float(cfg.get("stage2_penalty_rr_keep_w", 0.10))
@@ -2830,6 +3080,29 @@ def evaluate_config(
     _rr_keep_pen = 0.10 * float(np.tanh(_rr_pen_base / 0.10))
 
     stage2_score = _reward - _bounded_penalty - _rr_keep_pen
+
+    _horizon_cons_pen = _lw.w_horizon_consistency * _horizon_consistency_penalty(bucket_h_metrics, cfg)
+    stage2_score -= _horizon_cons_pen
+
+    probe_auc = float("nan")
+    probe_auc_bound = float("nan")
+    probe_gap_penalty = 0.0
+    probe_status = "disabled"
+    probe_n_train = 0
+    probe_n_val = 0
+    _probe_default = bool(stage2_rescore and not fast_mode)
+    probe_enabled = bool(cfg.get("stage2_probe_enabled", _probe_default))
+    if stage2_rescore and bool(cfg.get("stage2_probe_force_on_rescore", True)):
+        probe_enabled = True
+    if probe_enabled:
+        probe_auc, probe_auc_bound, probe_status, probe_n_train, probe_n_val = _strict_walk_forward_probe_auc(
+            X_event, y_event, ts_event, w_event, cfg, fast_mode=fast_mode
+        )
+        if math.isfinite(probe_auc_bound):
+            stage2_score += _lw.w_probe * max(0.0, (probe_auc_bound - 0.5) * 2.0)
+        if math.isfinite(probe_auc):
+            probe_gap_penalty = _lw.w_gap * max(0.0, _auc_raw - probe_auc)
+            stage2_score -= probe_gap_penalty
 
     # Keep mild multiplicative regularization, bounded away from zero.
     stage2_score *= max(0.70, math.sqrt(max(coverage, 0.0)))
@@ -2978,6 +3251,7 @@ def evaluate_config(
 
     summary = {
         "config_id": cfg_id,
+        "evaluation_stage": "stage2_rescore" if stage2_rescore else "stage1",
         "mode": cfg.get("mode", "unknown"),
         "k_tp": cfg.get("k_tp"),
         "sl_method": cfg.get("sl_method"),
@@ -3030,11 +3304,19 @@ def evaluate_config(
         "rr_keep_rate": float(rr_keep_rate),
         "rr_keep_floor": float(rr_floor),
         "stage2_rr_keep_penalty": float(_rr_keep_pen),
+        "stage2_horizon_consistency_penalty": float(_horizon_cons_pen),
+        "stage2_probe_gap_penalty": float(probe_gap_penalty),
+        "probe_auc": float(probe_auc),
+        "probe_auc_bound": float(probe_auc_bound),
+        "probe_status": str(probe_status),
+        "probe_n_train": int(probe_n_train),
+        "probe_n_val": int(probe_n_val),
         # brier/ece/mono: median across cells (per-cell values in bucket_horizon_metrics)
         "brier": brier,
         "ece": ece,
         "monotonicity": mono,
         "min_cell_brier": round(min_cell_brier, 5) if not math.isnan(min_cell_brier) else float("nan"),
+        "min_cell_ece": round(min_cell_ece, 5) if not math.isnan(min_cell_ece) else float("nan"),
         "min_cell_mono": round(min_cell_mono, 4) if not math.isnan(min_cell_mono) else float("nan"),
         "oof_payoff_decile_spread": decile_spread,
         "oof_flip_rate": oof_flip_rate,
@@ -3064,6 +3346,8 @@ def evaluate_config(
         "median_cell_tp_over_sl": round(median_cell_tp_over_sl, 4) if not math.isnan(median_cell_tp_over_sl) else float("nan"),
         "min_cell_dir_superiority": round(min_cell_dir_superiority, 4) if not math.isnan(min_cell_dir_superiority) else float("nan"),
         "median_cell_dir_superiority": round(median_cell_dir_superiority, 4) if not math.isnan(median_cell_dir_superiority) else float("nan"),
+        "effective_pos_mass": float(effective_pos_mass),
+        "effective_neg_mass": float(effective_neg_mass),
         "prod_admissible_tier0": bool(prod_admissibility.get("admissible_tier0", False)),
         "prod_adm_failures": int(len(prod_admissibility.get("failures", []))),
         "econ_ok": bool(econ_ok),
@@ -3533,26 +3817,30 @@ _PROMOTE_MAX_TIMEOUT: float = 0.60    # aggregate timeout rate
 _PROMOTE_MIN_TP_SEP: float = 0.05     # min_cell_tp_sep floor (5pp)
 _PROMOTE_MIN_AUC: float = 0.56        # min_cell_auc floor (lowered from 0.57 for crypto noise)
 _PROMOTE_MIN_AP_LIFT: float = 1.25    # AP / base_rate — model must lift precision 25% above random
-_PROMOTE_MIN_TP_OVER_SL: float = 1.05 # E[r|TP] / abs(E[r|SL]) — 5% payoff edge required
+_PROMOTE_MIN_TP_OVER_SL: float = 1.30 # E[r|TP] / abs(E[r|SL]) — 30% payoff edge required to survive 50bps fees
 _PROMOTE_MAX_SL_TO_TP: float = 3      # SL-hit / TP-hit ratio cap — informational only; fee_ev gate is the binding constraint
 _MAX_BARRIER_RATIO: float = 1.0       # SL-mean / TP-mean cap — ensures SL isn't too high compared to TP
 _AVG_AUC_THRESHOLD: float = 0.54      # Minimum average AUC for the selected set of geometries
-_ROUND_TRIP_FEE: float = 0.003        # 0.3% round-trip fee (entry + exit) applied to both TP and SL legs
+_PROMOTE_MAX_ECE: float = 0.30        # Calibration viability gate (lower is better)
+_PROMOTE_MAX_BRIER: float = 0.22      # Calibration viability gate (lower is better)
+_PROMOTE_MIN_EFFECTIVE_POS: float = 250.0  # Effective positive label mass proxy floor
+_PROMOTE_MIN_EFFECTIVE_NEG: float = 250.0  # Effective negative label mass proxy floor
+_ROUND_TRIP_FEE: float = 0.005        # 0.5% round-trip fee (entry + exit) applied to both TP and SL legs
 _PROMOTE_MIN_FEE_EV: float = 0.0      # fee-adjusted EV must be > 0: tp_hit*(tp_mean-fee) - sl_hit*(sl_mean+fee) > 0
 
 # Tier definitions for the feasible-set builder.
-# Each tier is a tuple of (cov_min, bind_min, timeout_max, tp_sep_min, auc_min, ap_lift_min, tp_over_sl_min).
+# Each tier is a tuple of:
+# (cov_min, bind_min, timeout_max, tp_sep_min, auc_bound_min, ap_lift_min,
+#  tp_over_sl_min, ece_max, brier_max, eff_pos_min, eff_neg_min)
 # bind_min here is the GLOBAL aggregate gate; per-cell uses _PROMOTE_MIN_BIND_CELL.
 # Tier 0: all gates active.
-# Tiers 1-2: relax learnability gates (tp_sep, auc, ap_lift) but keep structural + payoff edge.
-# Tier 3: structural-only — only reached when nothing passes any learnability gate.
-_FEASIBLE_TIERS: List[Tuple[float, float, float, float, float, float, float]] = [
-    # (cov_min, bind_min, to_max, tp_sep_min, auc_min, ap_lift_min, tp_over_sl_min)
-    (_PROMOTE_MIN_COVERAGE, _PROMOTE_MIN_BIND, _PROMOTE_MAX_TIMEOUT, _PROMOTE_MIN_TP_SEP, _PROMOTE_MIN_AUC, _PROMOTE_MIN_AP_LIFT, _PROMOTE_MIN_TP_OVER_SL),  # Tier 0: full
-    (_PROMOTE_MIN_COVERAGE, _PROMOTE_MIN_BIND, _PROMOTE_MAX_TIMEOUT, 0.02,                 0.54,              1.10,                 _PROMOTE_MIN_TP_OVER_SL),  # Tier 1: relax auc/sep/ap_lift
-    (_PROMOTE_MIN_COVERAGE, _PROMOTE_MIN_BIND, _PROMOTE_MAX_TIMEOUT, 0.0,                  0.52,              0.0,                  _PROMOTE_MIN_TP_OVER_SL),  # Tier 2: relax further, keep payoff edge
-    # Tier 3: structural-only — learnability + payoff gates fully dropped.
-    (_PROMOTE_MIN_COVERAGE, _PROMOTE_MIN_BIND, _PROMOTE_MAX_TIMEOUT, 0.0,                  0.0,               0.0,                  0.0),
+# Tiers 1-2: relax learnability gates (tp_sep/auc/ap_lift/calibration/mass) but keep structural + payoff edge.
+# Tier 3: structural-only — reached only when all learnability-aware tiers fail.
+_FEASIBLE_TIERS: List[Tuple[float, float, float, float, float, float, float, float, float, float, float]] = [
+    (_PROMOTE_MIN_COVERAGE, _PROMOTE_MIN_BIND, _PROMOTE_MAX_TIMEOUT, _PROMOTE_MIN_TP_SEP, _PROMOTE_MIN_AUC, _PROMOTE_MIN_AP_LIFT, _PROMOTE_MIN_TP_OVER_SL, _PROMOTE_MAX_ECE, _PROMOTE_MAX_BRIER, _PROMOTE_MIN_EFFECTIVE_POS, _PROMOTE_MIN_EFFECTIVE_NEG),  # Tier 0
+    (_PROMOTE_MIN_COVERAGE, _PROMOTE_MIN_BIND, _PROMOTE_MAX_TIMEOUT, 0.02, 0.54, 1.10, _PROMOTE_MIN_TP_OVER_SL, 0.36, 0.26, 150.0, 150.0),  # Tier 1
+    (_PROMOTE_MIN_COVERAGE, _PROMOTE_MIN_BIND, _PROMOTE_MAX_TIMEOUT, 0.0, 0.52, 0.0, _PROMOTE_MIN_TP_OVER_SL, 0.45, 0.30, 80.0, 80.0),      # Tier 2
+    (_PROMOTE_MIN_COVERAGE, _PROMOTE_MIN_BIND, _PROMOTE_MAX_TIMEOUT, 0.0, 0.0, 0.0, 0.0, 999.0, 999.0, 0.0, 0.0),                             # Tier 3
 ]
 
 
@@ -3564,7 +3852,7 @@ def _build_feasible_set(
 
     Returns (feasible_df, tier_used) where tier_used is 0 (strictest) to 3 (structural only).
     Structural gates (coverage/bind/timeout) are NEVER relaxed.
-    Learnability gates (tp_sep, auc, ap_lift) relax across tiers.
+    Learnability gates (tp_sep, auc_bound, ap_lift, calibration, effective label mass) relax across tiers.
     Payoff edge gate (tp_over_sl) is kept through Tier 2, dropped only at Tier 3.
     If no config passes even Tier 3, returns (df, -1).
 
@@ -3573,7 +3861,10 @@ def _build_feasible_set(
     Also applies sl_to_tp cap if the column is present.
     """
     _bind_floor = _PROMOTE_MIN_BIND_CELL if per_cell else _PROMOTE_MIN_BIND
-    for tier, (cov_min, bind_min, to_max, sep_min, auc_min, ap_lift_min, tp_over_sl_min) in enumerate(_FEASIBLE_TIERS):
+    for tier, (
+        cov_min, bind_min, to_max, sep_min, auc_min, ap_lift_min, tp_over_sl_min,
+        ece_max, brier_max, eff_pos_min, eff_neg_min
+    ) in enumerate(_FEASIBLE_TIERS):
         _bind_gate = max(bind_min * (_PROMOTE_MIN_BIND_CELL / _PROMOTE_MIN_BIND), _bind_floor) if per_cell else bind_min
         mask = pd.Series(True, index=df.index)
         if "coverage" in df.columns:
@@ -3584,12 +3875,26 @@ def _build_feasible_set(
             mask = mask & (df["timeout_rate"] <= to_max)
         if sep_min > 0.0 and "min_cell_tp_sep" in df.columns:
             mask = mask & (df["min_cell_tp_sep"].fillna(0.0) >= sep_min)
-        if auc_min > 0.0 and "min_cell_auc" in df.columns:
-            mask = mask & (df["min_cell_auc"].fillna(0.0) >= auc_min)
+        if auc_min > 0.0:
+            auc_col = "min_cell_auc_bound" if "min_cell_auc_bound" in df.columns else "min_cell_auc"
+            if auc_col in df.columns:
+                mask = mask & (pd.to_numeric(df[auc_col], errors="coerce").fillna(0.0) >= auc_min)
         if ap_lift_min > 0.0 and "min_cell_ap_lift" in df.columns:
             mask = mask & (df["min_cell_ap_lift"].fillna(0.0) >= ap_lift_min)
         if tp_over_sl_min > 0.0 and "min_cell_tp_over_sl" in df.columns:
             mask = mask & (df["min_cell_tp_over_sl"].fillna(0.0) >= tp_over_sl_min)
+        if ece_max < 999.0:
+            _ece_col = "min_cell_ece" if "min_cell_ece" in df.columns else ("ece" if "ece" in df.columns else None)
+            if _ece_col:
+                mask = mask & (pd.to_numeric(df[_ece_col], errors="coerce").fillna(999.0) <= ece_max)
+        if brier_max < 999.0:
+            _br_col = "min_cell_brier" if "min_cell_brier" in df.columns else ("brier" if "brier" in df.columns else None)
+            if _br_col:
+                mask = mask & (pd.to_numeric(df[_br_col], errors="coerce").fillna(999.0) <= brier_max)
+        if eff_pos_min > 0.0 and "effective_pos_mass" in df.columns:
+            mask = mask & (pd.to_numeric(df["effective_pos_mass"], errors="coerce").fillna(0.0) >= eff_pos_min)
+        if eff_neg_min > 0.0 and "effective_neg_mass" in df.columns:
+            mask = mask & (pd.to_numeric(df["effective_neg_mass"], errors="coerce").fillna(0.0) >= eff_neg_min)
         # Fee-adjusted EV gate: tp_hit*(tp_mean - fee) - sl_hit*(sl_mean + fee) > 0.
         # This is a hard tradeability constraint applied at ALL tiers — a geometry that
         # cannot generate positive expected value after 0.3% round-trip fees is not tradeable
@@ -3660,6 +3965,7 @@ def _diverse_subset(
     preselected_cids: Optional[List[str]] = None,
     anchor_high: int = 4,
     score_keep_fraction: float = 0.8,
+    behavior_alpha: float = 0.7,
 ) -> pd.DataFrame:
     """Score-biased diversity selection.
 
@@ -3670,6 +3976,14 @@ def _diverse_subset(
     if run_vectors is None:
         run_vectors = {}
     work_df = feasible_df.copy()
+    # Remove duplicate configs/parameter tuples before diversity scoring.
+    if "config_id" in work_df.columns:
+        work_df = work_df.drop_duplicates(subset=["config_id"], keep="first")
+    _param_dup_cols = [c for c in ("k_tp", "sl_as_tp_pct", "base_atr_window", "tp_base_pct") if c in work_df.columns]
+    if _param_dup_cols:
+        work_df = work_df.sort_values("config_id" if "config_id" in work_df.columns else work_df.columns[0]).drop_duplicates(
+            subset=_param_dup_cols, keep="first"
+        )
 
     # Hard feasibility filtering.
     if "pr_auc_lift" in work_df.columns:
@@ -3730,6 +4044,39 @@ def _diverse_subset(
         return feasible_df.head(0)
 
     dist_cache: Dict[Tuple[int, int], float] = {}
+    # Behavior embedding matrix for label dynamics diversity.
+    behavior_cols = [
+        "cell_target_mean", "cell_target_std",
+        "min_cell_tp_sep", "min_cell_ap_lift", "min_cell_tp_over_sl", "sl_to_tp",
+        "bind", "timeout_rate", "min_cell_ece", "min_cell_brier",
+        "ic_std_time", "ic_std_asset", "barrier_ratio",
+        "effective_pos_mass", "effective_neg_mass",
+    ]
+    if "cell_target_mean" not in work_df.columns:
+        if "tp_hit_rate" in work_df.columns and "sl_hit_rate" in work_df.columns:
+            work_df["cell_target_mean"] = pd.to_numeric(work_df["tp_hit_rate"], errors="coerce").fillna(0.0) - pd.to_numeric(work_df["sl_hit_rate"], errors="coerce").fillna(0.0)
+        elif "tp_hit_rate" in work_df.columns:
+            work_df["cell_target_mean"] = pd.to_numeric(work_df["tp_hit_rate"], errors="coerce").fillna(0.0)
+        else:
+            work_df["cell_target_mean"] = 0.0
+    if "cell_target_std" not in work_df.columns:
+        work_df["cell_target_std"] = pd.to_numeric(work_df.get("cell_dispersion", pd.Series(np.nan, index=work_df.index)), errors="coerce").fillna(0.0)
+    if "timeout_rate" not in work_df.columns and "cell_timeout" in work_df.columns:
+        work_df["timeout_rate"] = pd.to_numeric(work_df["cell_timeout"], errors="coerce").fillna(1.0)
+    bcols_present = [c for c in behavior_cols if c in work_df.columns]
+    behavior_arr = np.zeros((len(work_df), 0), dtype=np.float32)
+    if bcols_present:
+        bdf = work_df[bcols_present].apply(pd.to_numeric, errors="coerce")
+        for c in bcols_present:
+            _med = float(np.nanmedian(bdf[c].to_numpy(dtype=float))) if np.isfinite(np.nanmedian(bdf[c].to_numpy(dtype=float))) else 0.0
+            bdf[c] = bdf[c].fillna(_med)
+        bvals = bdf.to_numpy(dtype=np.float32, copy=False)
+        # Robust normalization to keep each behavior axis comparable.
+        med = np.median(bvals, axis=0)
+        q75 = np.percentile(bvals, 75, axis=0)
+        q25 = np.percentile(bvals, 25, axis=0)
+        scale = np.maximum(q75 - q25, 1e-6)
+        behavior_arr = (bvals - med) / scale
 
     def _pair_dist(i: int, j: int) -> float:
         a, b = (i, j) if i <= j else (j, i)
@@ -3744,10 +4091,19 @@ def _diverse_subset(
                 "for the same timestamp/symbol. This violates outcome consistency."
             )
         param_d = _param_distance(ci["cfg"], cj["cfg"])
-        # Score-adaptive label weighting: high-score configs rely more on param diversity.
+        # Score-adaptive label weighting: high-score configs rely less on run-vector novelty.
         s_pair = max(ci["s_norm"], cj["s_norm"])
         label_weight = 1.0 - s_pair
-        total_dist = param_d + label_weight * _jaccard_distance(ci["vec"], cj["vec"])
+        jaccard_d = _jaccard_distance(ci["vec"], cj["vec"])
+        param_label_d = param_d + label_weight * jaccard_d
+        if behavior_arr.shape[1] > 0:
+            vi = behavior_arr[i]
+            vj = behavior_arr[j]
+            beh_d = float(np.linalg.norm(vi - vj) / math.sqrt(float(behavior_arr.shape[1])))
+        else:
+            beh_d = 0.0
+        beh_alpha = float(np.clip(behavior_alpha, 0.0, 1.0))
+        total_dist = (beh_alpha * beh_d) + ((1.0 - beh_alpha) * param_label_d)
         dist_cache[key] = float(total_dist)
         return dist_cache[key]
 
@@ -3827,16 +4183,25 @@ def _rank_by_learnability(df: pd.DataFrame) -> pd.DataFrame:
     Primary objective is stage2_score (fallback stage1_score if missing), then
     learnability tie-breakers.
     """
+    if df is None or df.empty:
+        return df
     _s2 = pd.to_numeric(df.get("stage2_score", pd.Series(np.nan, index=df.index)), errors="coerce")
     _s1 = pd.to_numeric(df.get("stage1_score", pd.Series(-np.inf, index=df.index)), errors="coerce").fillna(-np.inf)
     _score = _s2.where(_s2.notna(), _s1).fillna(-np.inf)
-    _min_auc = (df["min_cell_auc"].fillna(0.0) * 1000).round() / 1000 if "min_cell_auc" in df.columns else pd.Series(0.0, index=df.index)
+    _min_auc = (df["min_cell_auc_bound"].fillna(0.0) * 1000).round() / 1000 if "min_cell_auc_bound" in df.columns else (
+        (df["min_cell_auc"].fillna(0.0) * 1000).round() / 1000 if "min_cell_auc" in df.columns else pd.Series(0.0, index=df.index)
+    )
     _min_sep = df["min_cell_tp_sep"].fillna(0.0) if "min_cell_tp_sep" in df.columns else pd.Series(0.0, index=df.index)
     _disp = df["cell_dispersion"].fillna(999.0) if "cell_dispersion" in df.columns else pd.Series(999.0, index=df.index)
     _to_r = df["timeout_range"].fillna(999.0) if "timeout_range" in df.columns else pd.Series(999.0, index=df.index)
-    return df.assign(_sc=_score, _ma=_min_auc, _ms=_min_sep, _d=_disp, _tr=_to_r).sort_values(
-        ["_sc", "_ma", "_ms", "_d", "_tr"], ascending=[False, False, False, True, True]
-    ).drop(columns=["_sc", "_ma", "_ms", "_d", "_tr"])
+    _ece = df["min_cell_ece"].fillna(999.0) if "min_cell_ece" in df.columns else (df["ece"].fillna(999.0) if "ece" in df.columns else pd.Series(999.0, index=df.index))
+    _brier = df["min_cell_brier"].fillna(999.0) if "min_cell_brier" in df.columns else (df["brier"].fillna(999.0) if "brier" in df.columns else pd.Series(999.0, index=df.index))
+    _ic_t = df["ic_std_time"].fillna(999.0) if "ic_std_time" in df.columns else pd.Series(999.0, index=df.index)
+    _ic_a = df["ic_std_asset"].fillna(999.0) if "ic_std_asset" in df.columns else pd.Series(999.0, index=df.index)
+    return df.assign(_sc=_score, _ma=_min_auc, _ms=_min_sep, _d=_disp, _tr=_to_r, _ece=_ece, _brier=_brier, _ict=_ic_t, _ica=_ic_a).sort_values(
+        ["_sc", "_ma", "_ms", "_ece", "_brier", "_ict", "_ica", "_d", "_tr"],
+        ascending=[False, False, False, True, True, True, True, True, True],
+    ).drop(columns=["_sc", "_ma", "_ms", "_d", "_tr", "_ece", "_brier", "_ict", "_ica"])
 
 
 def promote_stage1(stage1_results: pd.DataFrame, top_k: int = 10) -> List[str]:
@@ -3938,6 +4303,22 @@ def _build_per_cell_feasible_sets(
                 fee_ev_cell = _tp_h * (_tp_m - _ROUND_TRIP_FEE) - _sl_h * (_sl_m + _ROUND_TRIP_FEE)
             else:
                 fee_ev_cell = float("nan")
+            # Strict filters (Hard Exclusion)
+            # 1. Negative or zero TP separation
+            if sep_cell <= 0:
+                continue
+            # 2. Too few samples
+            if cell_m.get("n", 0) < 2000:
+                continue
+            # 3. Pathological monotonicity
+            mono_cell = cell_m.get("monotonicity", float("nan"))
+            if not math.isnan(mono_cell) and mono_cell < 0.2:
+                continue
+            _n_cell = float(cell_m.get("n", 0.0))
+            _base_rate_cell = float(cell_m.get("base_rate", float("nan")))
+            _eff_pos_cell = (_n_cell * _base_rate_cell) if math.isfinite(_base_rate_cell) else float("nan")
+            _eff_neg_cell = (_n_cell * max(0.0, 1.0 - _base_rate_cell)) if math.isfinite(_base_rate_cell) else float("nan")
+
             cell_rows.append({
                 "config_id": cid,
                 "min_cell_auc": auc_cell if not math.isnan(auc_cell) else 0.0,
@@ -3954,6 +4335,11 @@ def _build_per_cell_feasible_sets(
                 "min_cell_dir_superiority": dir_sup_cell if not math.isnan(dir_sup_cell) else 0.0,
                 "barrier_ratio": barrier_ratio_cell if not math.isnan(barrier_ratio_cell) else 999.0,
                 "fee_ev": fee_ev_cell,
+                "monotonicity": mono_cell,
+                "min_cell_brier": cell_m.get("brier", float("nan")),
+                "min_cell_ece": cell_m.get("ece", float("nan")),
+                "effective_pos_mass": _eff_pos_cell if math.isfinite(_eff_pos_cell) else 0.0,
+                "effective_neg_mass": _eff_neg_cell if math.isfinite(_eff_neg_cell) else 0.0,
             })
 
         if not cell_rows:
@@ -4057,6 +4443,8 @@ def _per_bucket_metrics_from_details(
     tp_over   = [c.get("tp_over_sl",   float("nan")) for c in cells]
     sl_to_tps = [c.get("sl_to_tp",     float("nan")) for c in cells]
     barrier_rs= [c.get("barrier_ratio",float("nan")) for c in cells]
+    eces      = [c.get("ece",          float("nan")) for c in cells]
+    briers    = [c.get("brier",        float("nan")) for c in cells]
     payoffs   = [c.get("payoff_mean",  float("nan")) for c in cells]
     disps     = [c.get("payoff_mean",  float("nan")) for c in cells]
 
@@ -4073,11 +4461,18 @@ def _per_bucket_metrics_from_details(
     # Fee-adjusted EV: min across the bucket's cells.
     # EV = tp_hit*(tp_mean - fee) - sl_hit*(sl_mean + fee)
     fee_evs = []
+    eff_pos_mass = 0.0
+    eff_neg_mass = 0.0
     for c in cells:
         _tp_h = c.get("tp_hit", float("nan"))
         _sl_h = c.get("sl_hit", float("nan"))
         _tp_m = c.get("tp_mean", float("nan"))
         _sl_m = c.get("sl_mean", float("nan"))
+        _n = float(c.get("n", 0.0))
+        _br = float(c.get("base_rate", float("nan")))
+        if _n > 0 and math.isfinite(_br):
+            eff_pos_mass += _n * _br
+            eff_neg_mass += _n * max(0.0, 1.0 - _br)
         if not any(math.isnan(v) for v in [_tp_h, _sl_h, _tp_m, _sl_m]):
             fee_evs.append(_tp_h * (_tp_m - _ROUND_TRIP_FEE) - _sl_h * (_sl_m + _ROUND_TRIP_FEE))
     fee_ev_min = float(np.min(fee_evs)) if fee_evs else float("nan")
@@ -4098,11 +4493,15 @@ def _per_bucket_metrics_from_details(
         "min_cell_tp_sep":    round(_safe_min(tp_seps), 5)  if not math.isnan(_safe_min(tp_seps)) else 0.0,
         "min_cell_ap_lift":   round(_safe_min(ap_lifts), 4) if not math.isnan(_safe_min(ap_lifts)) else 0.0,
         "min_cell_tp_over_sl":round(_safe_min(tp_over), 4)  if not math.isnan(_safe_min(tp_over)) else 0.0,
+        "min_cell_ece":       round(_safe_min(eces), 5) if not math.isnan(_safe_min(eces)) else float("nan"),
+        "min_cell_brier":     round(_safe_min(briers), 5) if not math.isnan(_safe_min(briers)) else float("nan"),
         "bind":               round(bind_min, 4)             if not math.isnan(bind_min)           else 0.0,
         "timeout_rate":       round(_safe_min(timeouts), 4)  if not math.isnan(_safe_min(timeouts)) else 1.0,
         "sl_to_tp":           round(sl_to_tp_max, 4)         if not math.isnan(sl_to_tp_max)       else 999.0,
         "barrier_ratio":      round(barrier_max, 4)          if not math.isnan(barrier_max)        else 999.0,
         "fee_ev":             round(fee_ev_min, 6)           if not math.isnan(fee_ev_min)         else float("nan"),
+        "effective_pos_mass": float(eff_pos_mass),
+        "effective_neg_mass": float(eff_neg_mass),
     }
 
 
@@ -4432,7 +4831,9 @@ class TBMObjective:
     def __call__(self, trial: optuna.Trial) -> float:
         # 1. Suggest parameters
         k_tp = trial.suggest_float("k_tp", 0.4, 2.0, step=0.1)
-        tp_base = trial.suggest_float("tp_base_pct", 0.005, 0.04, step=0.001)
+        # Minimum tp_base_pct increased to 0.012 (120bps) to ensure H2 barriers (sqrt(H/4)*floor) 
+        # are at least ~85bps, providing a safety buffer for 50bps round fees.
+        tp_base = trial.suggest_float("tp_base_pct", 0.012, 0.045, step=0.001)
         sl_as_tp = trial.suggest_float("sl_as_tp_pct", 0.3, 1.2, step=0.1)
         # Focusing on the longer ATR window as requested.
         atr_win = trial.suggest_categorical("base_atr_window", [840])
@@ -4472,7 +4873,7 @@ class TBMObjective:
             if _tp_method in {"atr_norm", "semi_atr_norm"}:
                 _w = int(c.get("base_atr_window", 168))
                 _r_key = f"tp_anchor_atr_norm_mean::{_w}"
-                _cached = eval_cache.get(_r_key, None) if hasattr(eval_cache, "get") else None
+                _cached = self.eval_cache.get(_r_key, None) if hasattr(self.eval_cache, "get") else None
                 if _cached is None:
                     _atr_src = _get_barrier_atr_frame(self.artifacts).replace([np.inf, -np.inf], np.nan)
                     _med = _atr_src.rolling(_w, min_periods=24).median().fillna(_atr_src.median())
@@ -4481,7 +4882,7 @@ class TBMObjective:
                     _atr_norm_mean = float(np.nanmean(_ratio)) if _ratio.size else 1.0
                     _atr_norm_mean = float(np.clip(_atr_norm_mean, 0.5, 2.0))
                     try:
-                        eval_cache[_r_key] = _atr_norm_mean
+                        self.eval_cache[_r_key] = _atr_norm_mean
                     except Exception:
                         pass
                 else:
@@ -4741,7 +5142,7 @@ def run(args: argparse.Namespace) -> None:
             raise ValueError("Could not auto-detect features. Please provide --features path.")
 
     artifacts = align_artifacts(panel, features, lookback_years=args.lookback_years)
-    # Inject candidate-threshold best params (min_feat_sign_consistency, train_extreme_pct_hourly,
+    # Inject candidate-threshold best params (train_extreme_pct_hourly,
     # train_min_range_pct, train_min_vol_zscore) from CANDIDATE_BEST_PARAMS_CSV into runtime_cfg
     # so build_bucket_masks uses the optimised values, not hardcoded defaults.
     runtime_cfg = apply_offline_optimizer_best_params(dict(runtime_cfg))
@@ -4862,7 +5263,7 @@ def run(args: argparse.Namespace) -> None:
     stage1_cfgs = [details[cid]["config"] for cid in details.keys() if cid in [r["config_id"] for r in stage1_rows]]
 
     id_to_cfg = {config_id(c): c for c in stage1_cfgs}
-    # In this mode, we bypass Stage 2 re-optimization and directly promote Stage 1 per-cell winners.
+    # Promote Stage-1 winners, then run mandatory Stage-2 rescore pass (no re-optimization).
     winners_set: set = set()
     per_cell_winners = promote_stage1_per_cell(stage1_df, details, top_k_per_cell=max(2, args.top_k // 4))
     for cell_key, cwinners in per_cell_winners.items():
@@ -4870,15 +5271,43 @@ def run(args: argparse.Namespace) -> None:
     global_winners = promote_stage1(stage1_df, top_k=max(3, args.top_k // 2))
     winners_set.update(global_winners)
     winners = list(winners_set)
-    tprint(f"[promote] Stage 2 refinement bypassed. Promoting {len(winners)} Stage 1 winners directly to final selection.")
+    tprint(f"[promote] Stage-1 winners selected for Stage-2 rescore: {len(winners)}")
 
-
-    # Stage 2 bypassed — Stage 1 winners flow directly to ranking.
     stage2_rows: List[Dict[str, Any]] = []
-
+    if winners:
+        if not args.stage2:
+            tprint("[stage2_rescore] --no-stage2 ignored for final export consistency; running mandatory Stage-2 pass")
+        stage2_cfgs = [id_to_cfg[cid] for cid in winners if cid in id_to_cfg]
+        tprint(f"[stage2_rescore] evaluating {len(stage2_cfgs)} promoted winners with full Stage-2 objective")
+        for _i, cfg_s2 in enumerate(stage2_cfgs, 1):
+            try:
+                res_s2, det_s2, _ = evaluate_config(
+                    artifacts,
+                    cfg_s2,
+                    horizons=horizons,
+                    bucket_masks=bucket_masks,
+                    layer1_cache=layer1_cache,
+                    layer2_cache=layer2_cache,
+                    eval_cache=eval_cache,
+                    detailed_slices=False,
+                    collect_weights=False,
+                    target_cell_filter=None,
+                    stage2_rescore=True,
+                )
+                if res_s2:
+                    stage2_rows.append(res_s2)
+                    details[str(res_s2.get("config_id"))] = det_s2
+                tprint(f"[stage2_rescore] {_i}/{len(stage2_cfgs)} done cfg={config_id(cfg_s2)}")
+            except Exception as _s2e:
+                tprint(f"[stage2_rescore] warning cfg={config_id(cfg_s2)} failed: {_s2e}")
 
     stage2_df = pd.DataFrame(stage2_rows) if stage2_rows else pd.DataFrame()
-    out_df = pd.concat([stage1_df, stage2_df], ignore_index=True)
+    if not stage2_df.empty:
+        _s2_ids = set(stage2_df["config_id"].astype(str).tolist())
+        out_df = stage1_df[~stage1_df["config_id"].astype(str).isin(_s2_ids)].copy()
+        out_df = pd.concat([out_df, stage2_df], ignore_index=True)
+    else:
+        out_df = stage1_df.copy()
     # Two-level learnability sort:
     # Level 1 (hard flags, binary): hard_gate / timeout_range_ok / all_cells_pass /
     #   geometry-health gates (coverage, bind, timeout, min_tp_sep, min_auc floors).
@@ -4905,27 +5334,45 @@ def run(args: argparse.Namespace) -> None:
     _bind_ok = (out_df["bind"] >= _PROMOTE_MIN_BIND).astype(int) if "bind" in out_df.columns else pd.Series(1, index=out_df.index)
     _to_ok = (out_df["timeout_rate"] <= _PROMOTE_MAX_TIMEOUT).astype(int) if "timeout_rate" in out_df.columns else pd.Series(1, index=out_df.index)
     _sep_ok = (out_df["min_cell_tp_sep"].fillna(0.0) >= _PROMOTE_MIN_TP_SEP).astype(int) if "min_cell_tp_sep" in out_df.columns else pd.Series(1, index=out_df.index)
-    _auc_ok = (out_df["min_cell_auc"].fillna(0.0) >= _PROMOTE_MIN_AUC).astype(int) if "min_cell_auc" in out_df.columns else pd.Series(1, index=out_df.index)
-    out_df["_health_flags"] = _cov_ok + _bind_ok + _to_ok + _sep_ok + _auc_ok  # 0-5; sort desc
+    _auc_col = "min_cell_auc_bound" if "min_cell_auc_bound" in out_df.columns else ("min_cell_auc" if "min_cell_auc" in out_df.columns else None)
+    _auc_ok = (out_df[_auc_col].fillna(0.0) >= _PROMOTE_MIN_AUC).astype(int) if _auc_col else pd.Series(1, index=out_df.index)
+    _ece_ok = (out_df.get("min_cell_ece", out_df.get("ece", pd.Series(0.0, index=out_df.index))).fillna(999.0) <= _PROMOTE_MAX_ECE).astype(int)
+    _brier_ok = (out_df.get("min_cell_brier", out_df.get("brier", pd.Series(0.0, index=out_df.index))).fillna(999.0) <= _PROMOTE_MAX_BRIER).astype(int)
+    _epos_ok = (out_df.get("effective_pos_mass", pd.Series(0.0, index=out_df.index)).fillna(0.0) >= _PROMOTE_MIN_EFFECTIVE_POS).astype(int)
+    _eneg_ok = (out_df.get("effective_neg_mass", pd.Series(0.0, index=out_df.index)).fillna(0.0) >= _PROMOTE_MIN_EFFECTIVE_NEG).astype(int)
+    out_df["_health_flags"] = _cov_ok + _bind_ok + _to_ok + _sep_ok + _auc_ok + _ece_ok + _brier_ok + _epos_ok + _eneg_ok
     # Bucket min_auc to 3dp so configs that differ by <0.001 are treated as tied
     # and min_tp_sep (the more discriminating learnability signal) breaks the tie.
-    _min_auc_col = (out_df["min_cell_auc"].fillna(0.0) * 1000).round() / 1000
+    _min_auc_source = "min_cell_auc_bound" if "min_cell_auc_bound" in out_df.columns else "min_cell_auc"
+    _min_auc_col = (out_df[_min_auc_source].fillna(0.0) * 1000).round() / 1000 if _min_auc_source in out_df.columns else pd.Series(0.0, index=out_df.index)
     _min_sep_col = out_df["min_cell_tp_sep"].fillna(0.0)
     _disp_col = out_df["cell_dispersion"].fillna(999.0)
     _to_range_col = out_df["timeout_range"].fillna(999.0) if "timeout_range" in out_df.columns else pd.Series(0.0, index=out_df.index)
     _min_auc_b_col = out_df["min_cell_auc_bound"].fillna(0.0) if "min_cell_auc_bound" in out_df.columns else _min_auc_col
+    _score_s2 = pd.to_numeric(out_df.get("stage2_score", pd.Series(np.nan, index=out_df.index)), errors="coerce")
+    _score_s1 = pd.to_numeric(out_df.get("stage1_score", pd.Series(-np.inf, index=out_df.index)), errors="coerce").fillna(-np.inf)
+    _score_col = _score_s2.where(_score_s2.notna(), _score_s1).fillna(-np.inf)
     out_df = out_df.assign(
+        _score_sort=_score_col,
         _min_auc_sort=_min_auc_col,
         _min_sep_sort=_min_sep_col,
         _disp_sort=_disp_col,
         _to_range_sort=_to_range_col,
         _min_auc_b_sort=_min_auc_b_col,
     ).sort_values(
-        ["hard_gate", "_to_range_ok", "_all_cells_pass", "_health_flags",
+        ["hard_gate", "_to_range_ok", "_all_cells_pass", "_health_flags", "_score_sort",
          "_min_auc_sort", "_min_sep_sort", "_disp_sort", "_to_range_sort", "_min_auc_b_sort"],
-        ascending=[False, False, False, False, False, False, True, True, False],
-    ).drop(columns=["_all_cells_pass", "_to_range_ok", "_health_flags",
+        ascending=[False, False, False, False, False, False, False, True, True, False],
+    ).drop(columns=["_all_cells_pass", "_to_range_ok", "_health_flags", "_score_sort",
                     "_min_auc_sort", "_min_sep_sort", "_disp_sort", "_to_range_sort", "_min_auc_b_sort"])
+    
+    # 1) Exact duplicates cleanup (config_id + mode)
+    if not out_df.empty:
+        _n_before = len(out_df)
+        out_df = out_df.drop_duplicates(subset=["config_id", "mode"], keep="first")
+        if len(out_df) < _n_before:
+            tprint(f"[cleanup] Deduplicated out_df: {_n_before} -> {len(out_df)} rows")
+
     tprint(
         f"Scoring complete: total_rows={len(out_df)} stage1_rows={len(stage1_df)} stage2_rows={len(stage2_df)} "
         f"mem_peak_mb={_memory_snapshot_mb():.1f}"
@@ -4975,6 +5422,11 @@ def run(args: argparse.Namespace) -> None:
         _best_pool, _tier = _build_feasible_set(_struct_pool)
         _best_pool = _rank_by_learnability(_best_pool)
         tprint(f"Global feasible pool: {len(_best_pool)} configs (tier={_tier})")
+        if not _best_pool.empty and "stage2_score" in _best_pool.columns:
+            _top_s2 = pd.to_numeric(_best_pool["stage2_score"], errors="coerce").fillna(-np.inf).iloc[0]
+            _max_s2 = pd.to_numeric(_best_pool["stage2_score"], errors="coerce").fillna(-np.inf).max()
+            if _top_s2 + 1e-12 < _max_s2:
+                raise AssertionError("Stage-2 ordering violation: best_pool is not headed by max stage2_score")
 
         # ── Step 3: diversity control on global pool ──────────────────────────
         # Top-slice expansion for score-biased diversity.
@@ -5052,6 +5504,13 @@ def run(args: argparse.Namespace) -> None:
                     "tp_abs_lo_pct": float(cfg_i.get("tp_abs_lo_pct", float("nan"))),
                     "sl_abs_lo_pct": float(cfg_i.get("sl_abs_lo_pct", float("nan"))),
                     "mode": str(cfg_i.get("mode", "")).split("_2A")[0].split("_refine")[0],
+                    "stage2_score": float(crow.get("stage2_score", float("nan"))),
+                    "stage1_score": float(crow.get("stage1_score", float("nan"))),
+                    "probe_auc": float(crow.get("probe_auc", float("nan"))),
+                    "probe_auc_bound": float(crow.get("probe_auc_bound", float("nan"))),
+                    "probe_status": str(crow.get("probe_status", "")),
+                    "probe_n_train": int(_safe_float(crow.get("probe_n_train", 0), 0)),
+                    "probe_n_val": int(_safe_float(crow.get("probe_n_val", 0), 0)),
                     "cell_auc": float(cell_m_i.get("auc_label", float("nan"))),
                     "cell_auc_bound": float(cell_m_i.get("auc_bound", float("nan"))),
                     "cell_tp_sep": float(cell_m_i.get("tp_sep_top10", float("nan"))),
@@ -5092,6 +5551,13 @@ def run(args: argparse.Namespace) -> None:
                 "tp_abs_lo_pct": float(_fb_params.get("tp_abs_lo_pct", float("nan"))),
                 "sl_abs_lo_pct": float(_fb_params.get("sl_abs_lo_pct", float("nan"))),
                 "mode": str(_fb_params.get("mode", "")).split("_2A")[0].split("_refine")[0],
+                "stage2_score": float("nan"),
+                "stage1_score": float("nan"),
+                "probe_auc": float("nan"),
+                "probe_auc_bound": float("nan"),
+                "probe_status": "fallback",
+                "probe_n_train": 0,
+                "probe_n_val": 0,
                 "cell_auc": float("nan"), "cell_auc_bound": float("nan"),
                 "cell_tp_sep": float("nan"), "cell_timeout": float("nan"),
                 "cell_bind": float("nan"), "cell_ap_lift": float("nan"),
@@ -5105,6 +5571,15 @@ def run(args: argparse.Namespace) -> None:
 
         if _grid_rows:
             _grid_df = pd.DataFrame(_grid_rows).dropna(subset=["k_tp", "sl_as_tp_pct"])
+            
+            # 2) Deduplicate by (cell_key, params) to remove redundant signals
+            _param_cols = ["cell_key", "k_tp", "sl_as_tp_pct", "base_atr_window", "tp_base_pct", "tp_abs_lo_pct", "sl_abs_lo_pct"]
+            _param_cols = [c for c in _param_cols if c in _grid_df.columns]
+            _n_grid_before = len(_grid_df)
+            _grid_df = _grid_df.sort_values("rank").drop_duplicates(subset=_param_cols, keep="first")
+            if len(_grid_df) < _n_grid_before:
+                tprint(f"[cleanup] Deduplicated geometry grid: {_n_grid_before} -> {len(_grid_df)} rows")
+
             REPORTS_DIR.mkdir(parents=True, exist_ok=True)
             _grid_df.to_csv(TBM_GEOMETRY_GRID_CSV, index=False)
             _cells_covered = _grid_df["cell_key"].nunique()
@@ -5155,8 +5630,9 @@ def run(args: argparse.Namespace) -> None:
                     _bdf_valid = _bdf.copy() # Fallback
 
                 # Aggregate per-config metrics across horizons (mean of valid cells)
-                _metr_cols = ["cell_auc", "cell_tp_sep", "cell_ap_lift", "cell_tp_over_sl",
-                              "cell_auc_bound", "cell_timeout", "cell_bind"]
+                _metr_cols = ["stage2_score", "cell_auc", "cell_tp_sep", "cell_ap_lift", "cell_tp_over_sl",
+                              "cell_auc_bound", "cell_timeout", "cell_bind", "cell_ece", "cell_brier",
+                              "cell_ic_std_time", "cell_ic_std_asset"]
                 _full_agg = {
                     "rank": "min",
                     "k_tp": "first",
@@ -5174,13 +5650,22 @@ def run(args: argparse.Namespace) -> None:
 
                 # Per-cell winners (new logic)
                 for cell_key, cell_group in _bdf_valid.groupby("cell_key"):
-                    # Composite learnability score for per-cell selection
-                    cell_group["_score"] = (
-                        cell_group.get("cell_auc", pd.Series(0.5, index=cell_group.index)).fillna(0.5)
-                        + cell_group.get("cell_tp_sep", pd.Series(0.0, index=cell_group.index)).fillna(0.0) * 3.0
-                        + cell_group.get("cell_ap_lift", pd.Series(1.0, index=cell_group.index)).fillna(1.0) * 0.5
+                    _cell_stage2 = pd.to_numeric(cell_group.get("stage2_score", pd.Series(np.nan, index=cell_group.index)), errors="coerce")
+                    _cell_aucb = pd.to_numeric(cell_group.get("cell_auc_bound", pd.Series(np.nan, index=cell_group.index)), errors="coerce").fillna(0.0)
+                    _cell_sep = pd.to_numeric(cell_group.get("cell_tp_sep", pd.Series(np.nan, index=cell_group.index)), errors="coerce").fillna(0.0)
+                    _cell_ece = pd.to_numeric(cell_group.get("cell_ece", pd.Series(np.nan, index=cell_group.index)), errors="coerce").fillna(999.0)
+                    _cell_brier = pd.to_numeric(cell_group.get("cell_brier", pd.Series(np.nan, index=cell_group.index)), errors="coerce").fillna(999.0)
+                    cell_group = cell_group.assign(
+                        _score=_cell_stage2.fillna(-np.inf),
+                        _aucb=_cell_aucb,
+                        _sep=_cell_sep,
+                        _ece=_cell_ece,
+                        _brier=_cell_brier,
                     )
-                    _win_cfg = cell_group.sort_values("_score", ascending=False).iloc[0]
+                    _win_cfg = cell_group.sort_values(
+                        ["_score", "_aucb", "_sep", "_ece", "_brier"],
+                        ascending=[False, False, False, True, True]
+                    ).iloc[0]
                     _win_cid = str(_win_cfg["config_id"])
                     _win_cfg_details = details.get(_win_cid, {}).get("config", {})
                     _cell_bucket, _cell_horizon = cell_key.rsplit("_", 1)
@@ -5191,18 +5676,28 @@ def run(args: argparse.Namespace) -> None:
                     _cell_payload["horizon"] = _cell_horizon
                     _cell_payload["config_id"] = _win_cid
                     _cell_payload["cell_auc"] = float(_win_cfg.get("cell_auc", 0.5))
+                    _cell_payload["cell_auc_bound"] = float(_win_cfg.get("cell_auc_bound", float("nan")))
                     _cell_payload["cell_tp_sep"] = float(_win_cfg.get("cell_tp_sep", 0.0))
                     _cell_payload["cell_ap_lift"] = float(_win_cfg.get("cell_ap_lift", 1.0))
+                    _cell_payload["cell_ece"] = float(_win_cfg.get("cell_ece", float("nan")))
+                    _cell_payload["cell_brier"] = float(_win_cfg.get("cell_brier", float("nan")))
+                    _cell_payload["cell_bind"] = float(_win_cfg.get("cell_bind", float("nan")))
+                    _cell_payload["cell_timeout"] = float(_win_cfg.get("cell_timeout", float("nan")))
+                    _cell_payload["cell_ic_std_time"] = float(_win_cfg.get("cell_ic_std_time", float("nan")))
+                    _cell_payload["cell_ic_std_asset"] = float(_win_cfg.get("cell_ic_std_asset", float("nan")))
+                    _cell_payload["stage2_score"] = float(_win_cfg.get("stage2_score", float("nan")))
                     _cell_payload["cell_score"] = float(_win_cfg["_score"])
                     per_cell_rows.append(_cell_payload)
 
-                # Composite learnability score: auc + tp_sep × 3 + ap_lift × 0.5
-                _bdf_agg["_score"] = (
-                    _bdf_agg.get("cell_auc", pd.Series(0.5, index=_bdf_agg.index)).fillna(0.5)
-                    + _bdf_agg.get("cell_tp_sep", pd.Series(0.0, index=_bdf_agg.index)).fillna(0.0) * 3.0
-                    + _bdf_agg.get("cell_ap_lift", pd.Series(1.0, index=_bdf_agg.index)).fillna(1.0) * 0.5
+                _bdf_agg["_score"] = pd.to_numeric(_bdf_agg.get("stage2_score", pd.Series(np.nan, index=_bdf_agg.index)), errors="coerce").fillna(-np.inf)
+                _bdf_agg["_aucb"] = pd.to_numeric(_bdf_agg.get("cell_auc_bound", pd.Series(np.nan, index=_bdf_agg.index)), errors="coerce").fillna(0.0)
+                _bdf_agg["_sep"] = pd.to_numeric(_bdf_agg.get("cell_tp_sep", pd.Series(np.nan, index=_bdf_agg.index)), errors="coerce").fillna(0.0)
+                _bdf_agg["_ece"] = pd.to_numeric(_bdf_agg.get("cell_ece", pd.Series(np.nan, index=_bdf_agg.index)), errors="coerce").fillna(999.0)
+                _bdf_agg["_brier"] = pd.to_numeric(_bdf_agg.get("cell_brier", pd.Series(np.nan, index=_bdf_agg.index)), errors="coerce").fillna(999.0)
+                _bdf_agg = _bdf_agg.sort_values(
+                    ["_score", "_aucb", "_sep", "_ece", "_brier"],
+                    ascending=[False, False, False, True, True]
                 )
-                _bdf_agg = _bdf_agg.sort_values("_score", ascending=False)
                 _bkt_winner = _bdf_agg.iloc[0]
                 _bkt_cid = str(_bkt_winner["config_id"])
                 _bkt_cfg = details.get(_bkt_cid, {}).get("config", {})
@@ -5233,6 +5728,11 @@ def run(args: argparse.Namespace) -> None:
                     "bucket_tp_over_sl": float(_bkt_winner.get("cell_tp_over_sl", float("nan"))),
                     "bucket_timeout": float(_bkt_winner.get("cell_timeout", float("nan"))),
                     "bucket_bind": float(_bkt_winner.get("cell_bind", float("nan"))),
+                    "bucket_ece": float(_bkt_winner.get("cell_ece", float("nan"))),
+                    "bucket_brier": float(_bkt_winner.get("cell_brier", float("nan"))),
+                    "bucket_ic_std_time": float(_bkt_winner.get("cell_ic_std_time", float("nan"))),
+                    "bucket_ic_std_asset": float(_bkt_winner.get("cell_ic_std_asset", float("nan"))),
+                    "bucket_stage2_score": float(_bkt_winner.get("stage2_score", float("nan"))),
                     "learnability_score": float(_bkt_winner["_score"]),
                     "saved_at": pd.Timestamp.utcnow().isoformat(),
                 }
@@ -5262,7 +5762,7 @@ def run(args: argparse.Namespace) -> None:
         from extreme_price_movements.reports.bucket_report import report_compare_tbm
         import re as _re
         _run_id = _re.sub(r"[^0-9_]", "", str(Path(output_path).stem)) or "tbm_run"
-        _rp = report_compare_tbm(_run_id, str(TBM_GEOMETRY_GRID_CSV), base_dir=cfg.get('reports_root'))
+        _rp = report_compare_tbm(_run_id, str(TBM_GEOMETRY_GRID_CSV), base_dir=runtime_cfg.get('reports_root'))
         tprint(f"TBM geometry bucket report: {_rp}")
     except Exception as _rpe:
         tprint(f"WARNING: TBM geometry bucket report failed: {_rpe}")

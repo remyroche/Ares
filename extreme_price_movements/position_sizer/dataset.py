@@ -94,7 +94,7 @@ def build_position_sizer_dataset(
         pwin_target = y_win.astype(float)
 
     return PositionSizerDataset(
-        X=df[feature_cols].copy(),
+        X=df[feature_cols].copy().fillna(0.0),
         y_win=y_win,
         pwin_target=np.asarray(pwin_target, dtype=float),
         y_win_mag=y_win_mag,

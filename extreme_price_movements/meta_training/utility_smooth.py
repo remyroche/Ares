@@ -22,6 +22,30 @@ def smooth_utility_from_log_heads(log_mfe, log_mae, tp: float, sl: float, alpha:
     return smooth_utility_from_mfe_mae(mfe=mfe, mae=mae, tp=tp, sl=sl, alpha=alpha)
 
 
+def smooth_utility_from_log_heads_standardized(
+    log_mfe,
+    log_mae,
+    tp: float,
+    sl: float,
+    alpha: float,
+    mfe_mean: float,
+    mfe_std: float,
+    mae_mean: float,
+    mae_std: float,
+):
+    """Utility map from z-scored log heads with thresholds converted to z-space."""
+    log_mfe = np.asarray(log_mfe, dtype=float)
+    log_mae = np.asarray(log_mae, dtype=float)
+    _mfe_std = max(float(mfe_std), 1e-9)
+    _mae_std = max(float(mae_std), 1e-9)
+    z_mfe = (log_mfe - float(mfe_mean)) / _mfe_std
+    z_mae = (log_mae - float(mae_mean)) / _mae_std
+    z_tp = (np.log1p(max(float(tp), 0.0)) - float(mfe_mean)) / _mfe_std
+    z_sl = (np.log1p(max(float(sl), 0.0)) - float(mae_mean)) / _mae_std
+    a = float(max(alpha, 1e-8))
+    return float(tp) * sigmoid(a * (z_mfe - z_tp)) - float(sl) * sigmoid(a * (z_mae - z_sl))
+
+
 def smooth_utility_loss(y_hat, y_true, loss: str = "huber", delta: float = 1.0):
     err = np.asarray(y_hat, dtype=float) - np.asarray(y_true, dtype=float)
     if loss == "mse":

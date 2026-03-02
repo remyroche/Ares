@@ -59,6 +59,10 @@ class MetaModel:
         self.report_rows: List[dict] = []
         self.score_sign: int = 1
         self._reports_dir = resolve_reports_dir(reports_dir)
+        self.selector_cfg: Dict[str, object] = {}
+        self.selector_report_dir: Optional[str] = None
+        self.selector_prev_selected: Optional[Sequence[str]] = None
+        self.selector_family_map: Dict[str, str] = {}
 
     def prepare_meta_features(self, preds, feats_df, pred_col_name="pred_logit"):
         p = np.clip(np.asarray(preds, dtype=float), 1e-4, 1 - 1e-4)
@@ -113,12 +117,37 @@ class MetaModel:
             y_scaled = y_scaled / y_std
 
         try:
+            _sel_cfg = dict(self.selector_cfg or {})
             # Single broad MDI v3 pass — high floor, no aggressive refinement
             fs1 = mdi_feature_selection_v3(
                 X, y_scaled, min_features=30, end_features=max_features,
                 selector_y=y,
                 selector_target="regression",
                 selector_loss="huber",
+                selector_head_name=f"meta_{self.strategy_name or 'default'}",
+                selector_report_dir=self.selector_report_dir,
+                selector_prev_selected=list(self.selector_prev_selected) if self.selector_prev_selected is not None else None,
+                selector_family_map=dict(self.selector_family_map or {}),
+                selector_focus_top_frac=float(_sel_cfg.get("selector_focus_top_frac", 0.30)),
+                selector_top_metric=_sel_cfg.get("selector_top_metric", "ic_top"),
+                selector_frequency_hit_mode=str(_sel_cfg.get("selector_frequency_hit_mode", "relative")),
+                selector_frequency_hit_quantile=float(_sel_cfg.get("selector_frequency_hit_quantile", 0.80)),
+                selector_frequency_hit_abs=float(_sel_cfg.get("selector_frequency_hit_abs", 1e-6)),
+                selector_interaction_mode=str(_sel_cfg.get("selector_interaction_mode", "tree_path_lift")),
+                selector_interaction_topk_pairs=int(_sel_cfg.get("selector_interaction_topk_pairs", 100)),
+                selector_interaction_max_pairs_per_feature=int(_sel_cfg.get("selector_interaction_max_pairs_per_feature", 8)),
+                selector_interaction_corr_penalty=bool(_sel_cfg.get("selector_interaction_corr_penalty", True)),
+                selector_family_penalty=bool(_sel_cfg.get("selector_family_penalty", True)),
+                selector_emit_report=bool(_sel_cfg.get("selector_emit_report", True)),
+                selector_hysteresis_margin=float(_sel_cfg.get("selector_hysteresis_margin", 0.05)),
+                selector_min_overlap=float(_sel_cfg.get("selector_min_overlap", 0.70)),
+                composite_weights={
+                    "top30": float(_sel_cfg.get("top30", 0.35)),
+                    "global": float(_sel_cfg.get("global", 0.20)),
+                    "stability": float(_sel_cfg.get("stability", 0.25)),
+                    "frequency": float(_sel_cfg.get("frequency", 0.15)),
+                    "interaction": float(_sel_cfg.get("interaction", 0.05)),
+                },
                 max_features_pct=0.90,
             )
             selected = list(fs1.selected_features)
@@ -152,7 +181,7 @@ class MetaModel:
         # 2. Huber Regressor (Robust objective)
         candidates["huber"] = {
             "kind": "huber",
-            "params": {"epsilon": 1.35, "alpha": 0.001, "fit_intercept": True},
+            "params": {"epsilon": 1.35, "alpha": 0.001, "fit_intercept": True, "max_iter": 1000},
             "tail_lambda": 0.0,
         }
 
@@ -176,13 +205,13 @@ class MetaModel:
             "tail_lambda": 2.0,
         }
 
-        # 5. XGB basic (reg:squarederror) — heavily regularised for small meta datasets
+        # 5. XGB basic (reg:squarederror) — regularised for small meta datasets
         if xgb is not None:
             _xgb_common = {
-                "max_depth": 4, "learning_rate": 0.03, "n_estimators": 800,
-                "subsample": 0.65, "colsample_bytree": 0.60,
-                "reg_alpha": 2.0, "reg_lambda": 15.0,
-                "min_child_weight": 10, "gamma": 1.0, "max_delta_step": 1.0,
+                "max_depth": 6, "learning_rate": 0.03, "n_estimators": 600,
+                "subsample": 0.7, "colsample_bytree": 0.7,
+                "reg_alpha": 0.1, "reg_lambda": 1.0,
+                "min_child_weight": 10, "gamma": 0.5, "max_delta_step": 1.0,
                 "tree_method": "hist", "random_state": 42, "n_jobs": 3,
                 "verbosity": 0,
             }
@@ -191,10 +220,10 @@ class MetaModel:
                 "params": {"objective": "reg:squarederror", **_xgb_common},
                 "tail_lambda": 0.0,
             }
-            # Robust objective candidate if available (Pseudohuber)
+            # Robust objective candidate (MAE)
             candidates["xgb_robust"] = {
                 "kind": "xgb",
-                "params": {"objective": "reg:pseudohubererror", **_xgb_common},
+                "params": {"objective": "reg:absoluteerror", **_xgb_common},
                 "tail_lambda": 0.0,
             }
 
@@ -564,8 +593,7 @@ class MetaClassifierModel:
         candidates["ridge_clf"] = {
             "kind": "ridge_clf",
             "params": {"C": 0.1, "penalty": "l2", "solver": "lbfgs",
-                       "max_iter": 1000, "class_weight": "balanced",
-                       "multi_class": "multinomial"},
+                       "max_iter": 35000, "tol": 1e-4, "class_weight": "balanced"},
         }
 
         # 2. ExtraTrees Classifier
@@ -650,6 +678,22 @@ class MetaClassifierModel:
         assert out.shape[1] == 3, f"Expected 3 classes after alignment, got {out.shape}"
         return out
 
+    @staticmethod
+    def _sanitize_multiclass_proba(p: np.ndarray, n_classes: int = 3) -> np.ndarray:
+        """Clip/normalize per-row probabilities and guarantee finite simplex rows."""
+        pp = np.asarray(p, dtype=np.float64)
+        if pp.ndim != 2 or pp.shape[1] != int(n_classes):
+            raise ValueError(f"Expected shape (N,{n_classes}) probabilities, got {pp.shape}")
+        pp = np.where(np.isfinite(pp), pp, 0.0)
+        pp = np.clip(pp, 0.0, None)
+        row_sum = pp.sum(axis=1, keepdims=True)
+        safe = row_sum[:, 0] > 1e-12
+        if np.any(safe):
+            pp[safe] = pp[safe] / row_sum[safe]
+        if np.any(~safe):
+            pp[~safe] = np.full((int(np.sum(~safe)), n_classes), 1.0 / float(n_classes), dtype=np.float64)
+        return pp
+
     # ── CV evaluation ────────────────────────────────────────────────
     def _cv_evaluate(self, kind, params, X, y, sw=None) -> Tuple[np.ndarray, float]:
         """3-fold purged CV. Returns (oof_probs, brier_score).
@@ -699,7 +743,8 @@ class MetaClassifierModel:
         # Let's use LogLoss.
         from sklearn.metrics import log_loss
         try:
-            score = log_loss(y[mask], oof[mask])
+            oof_ll = self._sanitize_multiclass_proba(oof[mask], n_classes=3)
+            score = log_loss(y[mask], oof_ll, labels=[0, 1, 2])
         except Exception:
             score = 999.0
         return oof, score
@@ -716,13 +761,14 @@ class MetaClassifierModel:
         n = len(pred)
         if n < 20:
             return {"n": n}
+        pred = MetaClassifierModel._sanitize_multiclass_proba(pred, n_classes=3)
 
         # EV calculation: P(TP)*2 - P(SL)*1 (assuming 2:1 ratio standard)
         # TP=class 2, SL=class 0.
         ev_vec = pred[:, 2] * 2.0 - pred[:, 0] * 1.0
 
         try:
-            ll = float(log_loss(y_c, np.clip(pred, 1e-7, 1 - 1e-7)))
+            ll = float(log_loss(y_c, pred, labels=[0, 1, 2]))
         except Exception:
             ll = float("nan")
 

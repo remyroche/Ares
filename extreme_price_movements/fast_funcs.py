@@ -1283,18 +1283,18 @@ def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend,
             continue
 
         if is_uptrend: # Looking for Peak (Top)
-            # 1. Find Forward Max (Peak)
-            fwd_max = -np.inf
+            # 1. Find Forward Max (Peak) - Vectorized
+            window = close[start_search:end_search]
+            fwd_max = -1.0e18 
             idx_max = -1
-
-            for j in range(start_search, end_search):
-                val = close[j]
-                if not np.isnan(val):
-                    if val > fwd_max:
-                        fwd_max = val
-                        idx_max = j
-
-            if idx_max == -1: continue
+            for j in range(len(window)):
+                v = window[j]
+                if not np.isnan(v) and v > fwd_max:
+                    fwd_max = v
+                    idx_max = start_search + j
+            
+            if idx_max == -1:
+                continue
 
             # 2. Check Peak Proximity
             if curr_p < (fwd_max - near_dist):
@@ -1307,16 +1307,19 @@ def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend,
             if idx_max >= end_search - 1:
                 continue
 
-            # Find Max Reversal (Min Price after Peak)
-            fwd_min_after = np.inf
-
-            for j in range(idx_max + 1, end_search):
-                val = close[j]
-                if not np.isnan(val):
-                    if val < fwd_min_after:
-                        fwd_min_after = val
-
-            if fwd_min_after == np.inf: continue
+            # Find Max Reversal (Min Price after Peak) - Vectorized
+            after_peak_window = close[idx_max + 1:end_search]
+            fwd_min_after = 1.0e18
+            found_min = False
+            for j in range(len(after_peak_window)):
+                v = after_peak_window[j]
+                if not np.isnan(v):
+                    if v < fwd_min_after:
+                        fwd_min_after = v
+                    found_min = True
+            
+            if not found_min:
+                continue
 
             # Check if reversal is big enough
             reversal_size = fwd_max - fwd_min_after
@@ -1333,22 +1336,20 @@ def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend,
                 # Let's assume input `atr` is raw price units.
                 atr_pct_approx = curr_atr / curr_p if curr_p > 0 else 0.0
                 
-                # Volatility Boost Factor: e.g. if ATR=2%, boost=3x. If ATR=0.5%, boost=1.5x.
-                vol_boost = 1.0 + 2.0 * min(atr_pct_approx / 0.01, 5.0) # Cap at 5% ATR (11x boost)
+                # Volatility Boost Factor: smooth scaling with ATR%
+                # No hard cap - allows natural scaling based on volatility
+                vol_boost = 1.0 + 2.0 * (atr_pct_approx / 0.01)
 
                 X_val = fwd_max - curr_p
                 Y_val = reversal_size
 
-                # Protect X=0
-                X_safe = max(X_val, 1e-4)
+                # Scale-invariant: normalize X and Y by price
+                X_ratio = X_val / curr_p if curr_p > 0 else 0.0
+                Y_ratio = Y_val / curr_p if curr_p > 0 else 0.0
+                X_safe = max(X_ratio, 1e-4)
 
-                # Original: term = Y_val / ((X_safe**2) * curr_atr)
-                # New: term = Y_val / (X_safe**2)  (Pure Price Action intensity)
-                # Note: this makes term scale with 1/Price. 
-                # To be scale-invariant, we should normalize X and Y by Price?
-                # User didn't explicitly ask for scale invariance, but "intensity" usually relative.
-                # However, sticking to User's specific "remove ATR from denominator" request:
-                term = Y_val / (X_safe**2)
+                # Scale-invariant term: reversal intensity relative to price
+                term = Y_ratio / (X_safe ** 2)
                 
                 # Apply Vol Boost
                 weights[i] = np.log1p(term) * vol_boost
@@ -1363,18 +1364,18 @@ def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend,
                 labels[i] = float(soft_lbl)
                 
         else: # Looking for Trough (Bottom)
-            # 1. Find Forward Min (Trough)
-            fwd_min = np.inf
+            # 1. Find Forward Min (Trough) - Vectorized
+            window = close[start_search:end_search]
+            fwd_min = 1.0e18
             idx_min = -1
-
-            for j in range(start_search, end_search):
-                val = close[j]
-                if not np.isnan(val):
-                    if val < fwd_min:
-                        fwd_min = val
-                        idx_min = j
-
-            if idx_min == -1: continue
+            for j in range(len(window)):
+                v = window[j]
+                if not np.isnan(v) and v < fwd_min:
+                    fwd_min = v
+                    idx_min = start_search + j
+            
+            if idx_min == -1:
+                continue
 
             # 2. Check Trough Proximity (Relaxed/Soft)
             # We now allow samples even if slightly outside strict near_dist, 
@@ -1390,30 +1391,38 @@ def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend,
             if idx_min >= end_search - 1:
                 continue
 
-            # Find Max Reversal (Max Price after Trough)
-            fwd_max_after = -np.inf
-            for j in range(idx_min + 1, end_search):
-                val = close[j]
-                if not np.isnan(val):
-                    if val > fwd_max_after:
-                        fwd_max_after = val
-
-            if fwd_max_after == -np.inf: continue
+            # Find Max Reversal (Max Price after Trough) - Vectorized
+            after_trough_window = close[idx_min + 1:end_search]
+            fwd_max_after = -1.0e18
+            found_max = False
+            for j in range(len(after_trough_window)):
+                v = after_trough_window[j]
+                if not np.isnan(v):
+                    if v > fwd_max_after:
+                        fwd_max_after = v
+                    found_max = True
+            
+            if not found_max:
+                continue
 
             reversal_size = fwd_max_after - fwd_min
             if reversal_size >= limit_dist:
                 
                 # Weight Calculation (Fat Tail Logic)
                 atr_pct_approx = curr_atr / curr_p if curr_p > 0 else 0.0
-                vol_boost = 1.0 + 2.0 * min(atr_pct_approx / 0.01, 5.0) 
+                # Volatility Boost Factor: smooth scaling - no hard cap
+                vol_boost = 1.0 + 2.0 * (atr_pct_approx / 0.01)
 
                 X_val = curr_p - fwd_min
                 Y_val = reversal_size
 
-                X_safe = max(X_val, 1e-4)
+                # Scale-invariant: normalize by price
+                X_ratio = X_val / curr_p if curr_p > 0 else 0.0
+                Y_ratio = Y_val / curr_p if curr_p > 0 else 0.0
+                X_safe = max(X_ratio, 1e-4)
                 
-                # Remove ATR from denominator
-                term = Y_val / (X_safe**2)
+                # Scale-invariant term
+                term = Y_ratio / (X_safe ** 2)
                 weights[i] = np.log1p(term) * vol_boost
 
                 # Soft Label

@@ -1,233 +1,139 @@
 """
-Gamma Specialist: ExtraTrees regression for volatility magnitude prediction.
+Gamma Specialist: GMM for current volatility regime detection.
 
-Predicts realized volatility over the next 6 hours to enable dynamic
-risk adjustment (stop-loss, take-profit, position sizing).
+Uses GMM clustering to identify current volatility regimes (low/medium/high)
+for dynamic risk adjustment (stop-loss, take-profit, position sizing).
 """
 
 import numpy as np
 import pandas as pd
-from sklearn.base import BaseEstimator, RegressorMixin
-from sklearn.ensemble import ExtraTreesRegressor
-from sklearn.model_selection import KFold
+from sklearn.mixture import GaussianMixture
+from sklearn.preprocessing import StandardScaler
 from extreme_price_movements.utils import tprint
-from extreme_price_movements.fast_funcs import compute_gamma_labels
-from extreme_price_movements.purged_cv import PurgedKFold
 
 
-# Feature set for volatility prediction (25 features)
+# Feature set for volatility regime detection (reduced to 9 core features)
+# Organized by concept for GMM clustering
 GAMMA_FEATURE_KEYS = [
-    # Current Volatility State
-    "atr_pct", "vol_z", "volatility_zscore", "vol_z_30_calm",
+    # 1. Core Volatility Level (absolute)
+    "atr_pct",        # ATR as % - main volatility measure
     
-    # Volatility Dynamics
-    "atr_slope", "vol_expansion_ratio", "vol_compression",
+    # 2. Volatility Regime (relative to history)  
+    "vol_z",          # Z-score of current vol vs history
     
-    # Vol-of-Vol (Regime Change Indicators)
-    "vov_ratio", "vov_fast_slow_ratio", "vov_interaction",
-    "vov_iqr_20", "vov_mad_20",
+    # 3. Volatility Dynamics (rate of change)
+    "vol_expansion_ratio",  # Recent vs historical vol (expansion signal)
     
-    # Price Action Intensity
-    "range_24h_pct", "range_12h_pct", "rv_24h", "rv_12h", "rv_6h",
+    # 4. Vol-of-Vol (regime change indicator)
+    "vov_ratio",      # Vol of vol - captures regime transitions
     
-    # Jump/Shock Indicators
-    "jump_rate_10h", "atr_expansion", "accel", "accel_5h",
+    # 5. Price Range (intensity)
+    "range_24h_pct",  # 24h high-low range %
     
-    # Market Context
-    "mkt_rv_ratio", "skew",
+    # 6. Realized Volatility (multiple horizons, keep one)
+    "rv_24h",         # 24h realized vol (most stable)
     
-    # Exhaustion Interaction
-    "overext", "blowoff_risk",
+    # 7. Jump/Shock Detection
+    "jump_rate_10h",  # Jump frequency - captures spike events
+    
+    # 8. Volatility Compression (mean-reversion signal)
+    "vol_compression", # Compression before expansion
+    
+    # 9. Market Context
+    "skew",           # Return skew - asymmetric volatility
 ]
 
+# Volatility regime labels (for semantic meaning)
+VOLATILITY_REGIMES = {
+    0: "low",      # Low volatility regime
+    1: "medium",   # Medium volatility regime  
+    2: "high",     # High volatility regime
+}
 
-class GammaModel(BaseEstimator, RegressorMixin):
+
+class GammaGMM:
     """
-    ExtraTrees Regressor for volatility magnitude prediction.
+    GMM for volatility regime detection.
+    Clusters current volatility features into regimes.
     """
     
-    def __init__(self, n_estimators=300, max_depth=10, n_select=20,
-                 min_samples_leaf=50, min_impurity_decrease=1e-5, 
-                 ccp_alpha=0.05, random_state=42, n_jobs=3):
-        self.n_estimators = n_estimators
-        self.max_depth = max_depth
-        self.min_samples_leaf = min_samples_leaf
-        self.min_impurity_decrease = min_impurity_decrease
-        self.ccp_alpha = ccp_alpha
-        self.n_select = n_select
+    def __init__(self, n_components=3, random_state=42):
+        self.n_components = n_components
         self.random_state = random_state
-        self.n_jobs = n_jobs
+        self.gmm = None
+        self.scaler = None
+        self.selected_features_ = GAMMA_FEATURE_KEYS
+        self.regime_means_ = None  # Mean volatility by regime
         
-        self.model = None
-        self.selected_features_ = None
-    
-    def fit(self, X, y, sample_weight=None):
-        """Fit the Gamma model with feature selection."""
-        tprint(f"  GammaModel: Running feature selection (target={self.n_select})...")
+    def fit(self, X, sample_weight=None):
+        """Fit the GMM model on volatility features."""
+        tprint(f"  GammaGMM: Fitting GMM with {self.n_components} components...")
         
-        # 1. Feature Selection (MDI)
-        selector = ExtraTreesRegressor(
-            n_estimators=50, 
-            max_depth=6, 
-            max_features="sqrt",
-            random_state=self.random_state, 
-            n_jobs=self.n_jobs
-        )
-        selector.fit(X, y, sample_weight=sample_weight)
+        # Standardize features
+        self.scaler = StandardScaler()
+        X_scaled = self.scaler.fit_transform(X)
         
-        importances = selector.feature_importances_
-        indices = np.argsort(importances)[::-1]
-        top_n = min(self.n_select, X.shape[1])
-        self.selected_features_ = X.columns[indices[:top_n]].tolist()
-        
-        tprint(f"  GammaModel: Selected {len(self.selected_features_)} features")
-        
-        X_sel = X[self.selected_features_]
-        
-        # 2. Main Model Training
-        tprint(f"  GammaModel: Training ExtraTreesRegressor...")
-        self.model = ExtraTreesRegressor(
-            n_estimators=self.n_estimators,
-            max_depth=self.max_depth,
-            min_samples_leaf=self.min_samples_leaf,
-            min_impurity_decrease=self.min_impurity_decrease,
-            ccp_alpha=self.ccp_alpha,
-            max_features="sqrt",
-            bootstrap=False,
+        # Fit GMM
+        self.gmm = GaussianMixture(
+            n_components=self.n_components,
+            covariance_type='diag',
+            max_iter=200,
+            n_init=3,
             random_state=self.random_state,
-            n_jobs=self.n_jobs
+            verbose=0
         )
+        self.gmm.fit(X_scaled)
         
-        self.model.fit(X_sel, y, sample_weight=sample_weight)
+        # Compute mean volatility by regime (for semantic ordering)
+        # We'll use the mean of atr_pct (first feature) within each cluster
+        if "atr_pct" in X.columns:
+            atr_idx = list(X.columns).index("atr_pct")
+            self.regime_means_ = self.gmm.means_[:, atr_idx]
+        else:
+            self.regime_means_ = np.mean(X_scaled, axis=1)
+        
+        # Sort regimes by volatility (low to high)
+        self.regime_order_ = np.argsort(self.regime_means_)
+        self.regime_mapping_ = {old: new for new, old in enumerate(self.regime_order_)}
+        
+        tprint(f"  GammaGMM: Fitted. Regime means (ordered): {self.regime_means_[self.regime_order_]}")
         
         return self
     
     def predict(self, X):
-        """Predict volatility magnitude."""
-        if self.model is None:
-            raise ValueError("Model not fitted")
-        
-        X_sel = X[self.selected_features_]
-        return self.model.predict(X_sel)
-
-    def compute_oof_predictions(self, X, y):
-        """Compute OOF predictions for Gamma Model."""
-        tprint("  GammaModel: Computing OOF predictions...")
-
-        # Use simple KFold for regression if time-dependency is loose,
-        # but PurgedKFold is better for time-series.
-        # Using PurgedKFold(n_splits=5)
-        kf = PurgedKFold(n_splits=5, purge=2, embargo=0) # minimal purge for speed
-
-        oof_preds = np.full(len(y), np.nan, dtype=np.float32)
-
-        # Ensure array
-        if isinstance(X, pd.DataFrame):
-            X_arr = X.values.astype(np.float32)
-            cols = X.columns
-        else:
-            X_arr = X
-            cols = None
-
-        y_arr = np.array(y, dtype=np.float32)
-
-        # If selected features already known, use them. Else use all?
-        # fit() selects features. If we haven't fit, we don't know features.
-        # Assume full fit happens later or we do feature selection inside fold?
-        # Doing FS inside fold is expensive.
-        # We will use all features for OOF if not selected, or pre-select?
-        # Let's perform a quick pre-selection on full data first if self.selected_features_ is None.
-
-        if self.selected_features_ is None and cols is not None:
-             # Quick fit to get features
-             self.fit(X, y) # This sets self.selected_features_
-
-        if self.selected_features_ is not None and cols is not None:
-             # Map selected features to indices
-             col_idx = [cols.get_loc(c) for c in self.selected_features_]
-             X_use = X_arr[:, col_idx]
-        else:
-             X_use = X_arr
-
-        for i, (train_idx, test_idx) in enumerate(kf.split(X_use)):
-            X_train, X_test = X_use[train_idx], X_use[test_idx]
-            y_train = y_arr[train_idx]
-
-            # Train fold model
-            est = ExtraTreesRegressor(
-                n_estimators=self.n_estimators // 2, # reduced for speed in OOF
-                max_depth=self.max_depth,
-                min_samples_leaf=self.min_samples_leaf,
-                min_impurity_decrease=self.min_impurity_decrease,
-                ccp_alpha=self.ccp_alpha,
-                max_features="sqrt",
-                bootstrap=False,
-                random_state=self.random_state + i,
-                n_jobs=self.n_jobs
-            )
-            est.fit(X_train, y_train)
-            oof_preds[test_idx] = est.predict(X_test)
-
-        return oof_preds
-
-
-def compute_gamma_weights(y_gamma, base_weights):
-    """
-    Compute Huber-style weights to downweight extreme outliers.
+        """Predict volatility regime (0=low, 1=medium, 2=high)."""
+        X_scaled = self.scaler.transform(X)
+        # Map to ordered regimes
+        predictions = self.gmm.predict(X_scaled)
+        return np.array([self.regime_mapping_.get(p, p) for p in predictions])
     
-    Args:
-        y_gamma: Target gamma values
-        base_weights: Base sample weights
+    def predict_proba(self, X):
+        """Predict regime probabilities."""
+        X_scaled = self.scaler.transform(X)
+        probs = self.gmm.predict_proba(X_scaled)
+        # Reorder columns to match regime mapping
+        new_probs = np.zeros_like(probs)
+        for old, new in self.regime_mapping_.items():
+            new_probs[:, new] = probs[:, old]
+        return new_probs
     
-    Returns:
-        Adjusted weights
-    """
-    median = np.median(y_gamma)
-    mad = np.median(np.abs(y_gamma - median))
-    z_score = (y_gamma - median) / (1.4826 * mad + 1e-9)
-    
-    # Huber threshold: |z| > 2.5 gets downweighted
-    huber_weights = np.where(
-        np.abs(z_score) > 2.5, 
-        2.5 / (np.abs(z_score) + 1e-9), 
-        1.0
-    )
-    
-    return base_weights * huber_weights
+    def score_samples(self, X):
+        """Get log-likelihood scores (used like other specialist scores)."""
+        X_scaled = self.scaler.transform(X)
+        # Return probability of high volatility regime (regime 2)
+        probs = self.predict_proba(X)
+        return probs[:, 2]  # High volatility probability
 
 
 def build_gamma_dataset(panel, feats, cfg, syms):
     """
-    Build training dataset for Gamma Specialist.
-    Returns: DataFrame with features and 'y_gamma' column.
+    Build training dataset for Gamma Specialist (Volatility Regime).
+    Returns: DataFrame with features.
     """
     tprint(f"Building Gamma Specialist dataset...")
     
-    # 1. Generate gamma labels
-    horizon = cfg.get("gamma_horizon", 6)
-    tprint(f"  Computing gamma labels (horizon={horizon})...")
-    gamma_labels = compute_gamma_labels(panel, feats, horizon=horizon)
-    
-    # 2. Build feature matrix
-    tprint(f"  Building feature matrix ({len(GAMMA_FEATURE_KEYS)} features)...")
     data_list = []
-    
     for sym in syms:
-        if sym not in gamma_labels.columns:
-            continue
-        
-        # Get gamma labels for this symbol
-        y_sym = gamma_labels[sym].dropna()
-        
-        if len(y_sym) < 100:
-            continue
-        
-        # Extract features for this symbol using reindexing
-        valid_idx = y_sym.index.intersection(feats[GAMMA_FEATURE_KEYS[0]].index)
-        if len(valid_idx) < 100: continue
-        
-        y_sym = y_sym.loc[valid_idx]
-
         # Check all features exist
         X_df_list = []
         valid_feats = True
@@ -235,21 +141,19 @@ def build_gamma_dataset(panel, feats, cfg, syms):
             if k not in feats or sym not in feats[k].columns:
                 valid_feats = False
                 break
-            X_df_list.append(feats[k][sym].reindex(valid_idx))
+            X_df_list.append(feats[k][sym])
             
         if not valid_feats: continue
 
         X_sym = pd.concat(X_df_list, axis=1)
         X_sym.columns = GAMMA_FEATURE_KEYS
+        X_sym["symbol"] = sym
 
-        # Combine
-        combined = X_sym.copy()
-        combined["y_gamma"] = y_sym.values
-        combined["symbol"] = sym
-        combined = combined.dropna()
-        
-        if len(combined) > 0:
-            data_list.append(combined)
+        # Drop NaNs
+        X_sym = X_sym.dropna()
+
+        if len(X_sym) > 0:
+            data_list.append(X_sym)
             
     if not data_list:
         tprint("  ERROR: No valid training data for Gamma Specialist")
@@ -265,87 +169,58 @@ def build_gamma_dataset(panel, feats, cfg, syms):
 
 def train_gamma_from_dataset(dataset, cfg):
     """
-    Train Gamma Specialist from pre-built dataset.
+    Train Gamma Specialist GMM from pre-built dataset.
+    Uses current volatility features to cluster into regimes.
     """
-    tprint("Training Gamma Specialist (ExtraTrees Regression) from dataset...")
+    tprint("Training Gamma Specialist (GMM for Volatility Regime) from dataset...")
 
     if dataset is None or dataset.empty:
         tprint("  ERROR: Dataset is empty.")
         return None
 
-    X = dataset[GAMMA_FEATURE_KEYS]
-    y = dataset["y_gamma"].values.astype(np.float32)
+    X = dataset[GAMMA_FEATURE_KEYS].copy()
+    
+    # Handle missing values
+    X = X.fillna(0.0)
     
     tprint(f"  Training data: {len(X)} samples, {X.shape[1]} features")
-    tprint(f"  Gamma range: [{y.min():.3f}, {y.max():.3f}], mean={y.mean():.3f}")
     
-    # Subsample for speed (ExtraTrees on 2.4M rows is slow)
-    max_gamma_samples = cfg.get("gamma_max_train_samples", 300_000)
+    # Subsample for GMM fitting (GMM on millions of rows is slow)
+    max_gamma_samples = cfg.get("gamma_max_gmm_samples", 300_000)
     if len(X) > max_gamma_samples:
         rng = np.random.RandomState(cfg.get("random_state", 42))
         idx_sub = rng.choice(len(X), max_gamma_samples, replace=False)
-        X = X.iloc[idx_sub].reset_index(drop=True)
-        y = y[idx_sub]
-        tprint(f"  Subsampled {max_gamma_samples} / {len(dataset)} for training")
+        X_fit = X.iloc[idx_sub].reset_index(drop=True)
+        tprint(f"  Subsampled {max_gamma_samples} / {len(X)} for GMM fitting")
+    else:
+        X_fit = X
     
-    # 3. Compute sample weights (Huber-style for robustness)
-    base_weights = np.ones(len(y), dtype=np.float32)
-    sample_weights = compute_gamma_weights(y, base_weights)
+    # Fit GMM
+    n_components = cfg.get("gamma_n_components", 3)
+    model = GammaGMM(n_components=n_components, random_state=cfg.get("random_state", 42))
+    model.fit(X_fit)
     
-    tprint(f"  Applied Huber weighting (downweighted {(sample_weights < 1.0).sum()} outliers)")
-    
-    # 4. Train model
-    model = GammaModel(
-        n_estimators=cfg.get("gamma_n_estimators", 300),
-        max_depth=cfg.get("gamma_max_depth", 10),
-        n_select=cfg.get("gamma_n_select", 20),
-        min_samples_leaf=cfg.get("gamma_min_samples_leaf", 50),
-        min_impurity_decrease=cfg.get("gamma_min_impurity_decrease", 1e-5),
-        ccp_alpha=cfg.get("gamma_ccp_alpha", 0.05),
-        random_state=cfg.get("random_state", 42),
-        n_jobs=cfg.get("n_jobs", 3)
-    )
-    
-    model.fit(X, y, sample_weight=sample_weights)
-    
-    # 5. Validation metrics
-    y_pred = model.predict(X)
-    
-    from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
-    
-    r2 = r2_score(y, y_pred)
-    mae = mean_absolute_error(y, y_pred)
-    rmse = np.sqrt(mean_squared_error(y, y_pred))
-    
-    tprint(f"  R² Score: {r2:.3f}")
-    tprint(f"  MAE: {mae:.3f}")
-    tprint(f"  RMSE: {rmse:.3f}")
-    
-    # Regime accuracy
-    def classify_regime(gamma_val):
-        if gamma_val < 0.5:
-            return 0  # Dead
-        elif gamma_val < 1.0:
-            return 1  # Normal
-        elif gamma_val < 2.0:
-            return 2  # High_Vol
-        else:
-            return 3  # Explosive
-    
-    y_regime = np.array([classify_regime(v) for v in y])
-    y_pred_regime = np.array([classify_regime(v) for v in y_pred])
-    
-    regime_acc = (y_regime == y_pred_regime).mean()
-    tprint(f"  Regime Classification Accuracy: {regime_acc:.1%}")
-    
-    tprint("✅ Gamma Specialist training complete")
+    # Generate scores on full dataset for validation
+    all_scores = model.score_samples(X)
+    tprint(f"  Gamma regime scores: mean={all_scores.mean():.3f}, std={all_scores.std():.3f}")
     
     return model
 
 
+# ============================================================================
+# DEPRECATED: Old ExtraTrees-based Gamma Model
+# ============================================================================
+# The GammaModel class and related functions have been replaced by GammaGMM.
+# Keeping stub for backward compatibility during migration.
+
+class GammaModel:
+    """DEPRECATED: Use GammaGMM instead."""
+    pass
+
+
 def train_gamma_specialist(panel, feats, cfg, syms, ts_end):
     """
-    Train Gamma Specialist regression model (Legacy wrapper).
+    Train Gamma Specialist GMM model (Legacy wrapper).
     """
     ds = build_gamma_dataset(panel, feats, cfg, syms)
     return train_gamma_from_dataset(ds, cfg)

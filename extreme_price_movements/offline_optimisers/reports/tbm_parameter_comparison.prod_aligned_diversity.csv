@@ -1,3 +1,13 @@
 bucket,unique_tp_base_pct,unique_tp_eff_h2,unique_tp_eff_h4,unique_tp_eff_h8,h2_min,h2_max,diversity_pass
-optuna_s2_refine_0,0,1,1,1,0.01,0.01,False
-optuna_stage1,0,1,1,1,0.01,0.01,False
+optuna_s1_MR_long_H2,0,1,1,1,0.01,0.01,False
+optuna_s1_MR_long_H4,0,1,1,1,0.01,0.01,False
+optuna_s1_MR_long_H8,0,1,1,1,0.01,0.01,False
+optuna_s1_MR_short_H2,0,1,1,1,0.01,0.01,False
+optuna_s1_MR_short_H4,0,1,1,1,0.01,0.01,False
+optuna_s1_MR_short_H8,0,1,1,1,0.01,0.01,False
+optuna_s1_TF_long_H2,0,1,1,1,0.01,0.01,False
+optuna_s1_TF_long_H4,0,1,1,1,0.01,0.01,False
+optuna_s1_TF_long_H8,0,1,1,1,0.01,0.01,False
+optuna_s1_TF_short_H2,0,1,1,1,0.01,0.01,False
+optuna_s1_TF_short_H4,0,1,1,1,0.01,0.01,False
+optuna_s1_TF_short_H8,0,1,1,1,0.01,0.01,False

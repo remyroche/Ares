@@ -13,6 +13,7 @@ import pandas as pd
 from scipy.stats import spearmanr
 from sklearn.base import clone
 from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor
+from sklearn.linear_model import Ridge
 
 try:
     import optuna
@@ -395,14 +396,17 @@ def log_weight_statistics(weights: np.ndarray, era_indices: np.ndarray, name: st
 def _make_model(model_family: str, random_state: int, cfg_runtime: Optional[Dict[str, Any]] = None):
     fam = model_family.lower()
     model_defaults = get_sample_weight_eval_model_defaults(cfg_runtime if cfg_runtime is not None else CFG)
+    ridge_defaults = dict(model_defaults.get("ridge", {}))
     et_defaults = dict(model_defaults.get("extratrees", {}))
     rf_defaults = dict(model_defaults.get("randomforest", {}))
 
-    if fam == "randomforest":
+    if fam == "ridge":
+        return Ridge(**ridge_defaults)
+    elif fam == "randomforest":
         return RandomForestRegressor(**rf_defaults, random_state=random_state)
 
-    # ExtraTrees is the canonical fallback to match training-side optimizer defaults.
-    return ExtraTreesRegressor(**et_defaults, random_state=random_state)
+    # Ridge is the canonical fallback for fast, stable evaluation
+    return Ridge(**ridge_defaults)
 
 
 def _safe_ic(y_true: np.ndarray, y_pred: np.ndarray) -> float:

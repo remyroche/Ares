@@ -4,13 +4,16 @@ Robust MDI Feature Selection with Quantile-Transformed Correlations v3
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 from collections import defaultdict
 import importlib.util
+import json
+import os
 
 from numba import jit, prange
 import numpy as np
 import pandas as pd
+from scipy.stats import rankdata
 from sklearn.base import clone
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.linear_model import SGDRegressor
@@ -333,6 +336,11 @@ class MDISelectionResult:
     metrics_table: pd.DataFrame
     selected_features: List[str]
     kept_after_dedupe: List[str]
+    top30_metric_table: Optional[pd.DataFrame] = None
+    stability_table: Optional[pd.DataFrame] = None
+    interaction_table: Optional[pd.DataFrame] = None
+    final_score_table: Optional[pd.DataFrame] = None
+    summary: Optional[Dict[str, Any]] = None
 
 
 def _emit_mdi_noise_diagnostics(
@@ -379,6 +387,216 @@ def _emit_mdi_noise_diagnostics(
     if np.isfinite(mean_model_fit_score) and mean_model_fit_score < -0.05:
         tprint("MDI diagnostics: Model quality risk — negative OOF R² suggests model is mostly fitting noise.")
 
+
+def _robust_norm(v: np.ndarray) -> np.ndarray:
+    v = np.asarray(v, dtype=float)
+    v = np.where(np.isfinite(v), v, 0.0)
+    lo = float(np.min(v)) if v.size else 0.0
+    hi = float(np.max(v)) if v.size else 1.0
+    if hi - lo < 1e-12:
+        return np.zeros_like(v, dtype=float)
+    return (v - lo) / (hi - lo)
+
+
+def _safe_spearman_np(a: np.ndarray, b: np.ndarray) -> float:
+    a = np.asarray(a, dtype=float)
+    b = np.asarray(b, dtype=float)
+    m = np.isfinite(a) & np.isfinite(b)
+    if np.sum(m) < 5:
+        return 0.0
+    aa = a[m]
+    bb = b[m]
+    if float(np.std(aa)) < 1e-12 or float(np.std(bb)) < 1e-12:
+        return 0.0
+    ra = rankdata(aa, method="average")
+    rb = rankdata(bb, method="average")
+    aa0 = ra - float(np.mean(ra))
+    bb0 = rb - float(np.mean(rb))
+    den = float(np.sqrt(np.sum(aa0 * aa0) * np.sum(bb0 * bb0)))
+    if den < 1e-12:
+        return 0.0
+    return float(np.sum(aa0 * bb0) / den)
+
+
+def _subset_top_metric(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    target: str,
+    top_metric: str,
+    top_frac: float,
+    tail_q: float,
+) -> float:
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    m = np.isfinite(y_true) & np.isfinite(y_pred)
+    if np.sum(m) < 8:
+        return 0.0
+    yt = y_true[m]
+    yp = y_pred[m]
+    n = len(yt)
+    k = max(1, int(np.ceil(float(top_frac) * n)))
+    idx_top = np.argpartition(yp, -k)[-k:]
+
+    if top_metric == "top30_mean_utility":
+        return float(np.mean(yt[idx_top])) if len(idx_top) else 0.0
+    if target in {"classification", "binary", "clf"} or top_metric == "precision_top":
+        y_bin = (yt >= 0.5).astype(float)
+        return float(np.mean(y_bin[idx_top])) if len(idx_top) else 0.0
+    if top_metric == "weighted_tail":
+        q = float(np.nanquantile(yt, tail_q))
+        w = np.clip(yt - q, 0.0, None)
+        if np.sum(w) < 1e-12:
+            return _safe_spearman_np(yp[idx_top], yt[idx_top])
+        return float(np.sum(w[idx_top] * yt[idx_top]) / max(np.sum(w[idx_top]), 1e-12))
+    # default regression/quantile contract: Spearman in top segment.
+    return _safe_spearman_np(yp[idx_top], yt[idx_top])
+
+
+def _restricted_permutation_importance(
+    model,
+    X_subset: np.ndarray,
+    y_subset: np.ndarray,
+    feature_idx: np.ndarray,
+    metric_fn,
+    rng: np.random.RandomState,
+) -> np.ndarray:
+    p = X_subset.shape[1]
+    out = np.zeros(p, dtype=float)
+    if X_subset.shape[0] < 8 or len(feature_idx) == 0:
+        return out
+    base_pred = model.predict(X_subset)
+    base_score = float(metric_fn(y_subset, base_pred))
+    xw = np.array(X_subset, copy=True)
+    n = xw.shape[0]
+    for j in feature_idx:
+        perm_idx = rng.permutation(n)
+        col = xw[:, j].copy()
+        xw[:, j] = col[perm_idx]
+        s = float(metric_fn(y_subset, model.predict(xw)))
+        out[j] = max(0.0, base_score - s)
+        xw[:, j] = col
+    return out
+
+
+def _extract_top_path_pair_scores(
+    model,
+    X_top: np.ndarray,
+    feature_names: Sequence[str],
+    rng: np.random.RandomState,
+    max_trees: int = 64,
+    max_rows: int = 512,
+) -> Dict[Tuple[str, str], float]:
+    out: Dict[Tuple[str, str], float] = {}
+    if X_top.shape[0] < 5 or not hasattr(model, "estimators_"):
+        return out
+    if X_top.shape[0] > max_rows:
+        ridx = rng.choice(X_top.shape[0], size=max_rows, replace=False)
+        X_top = X_top[ridx]
+    ests = list(getattr(model, "estimators_", []) or [])
+    if len(ests) == 0:
+        return out
+    if len(ests) > max_trees:
+        pick = rng.choice(len(ests), size=max_trees, replace=False)
+        ests = [ests[int(i)] for i in pick]
+
+    feat_occ: Dict[str, float] = defaultdict(float)
+    pair_occ: Dict[Tuple[str, str], float] = defaultdict(float)
+    n_paths = 0.0
+    for est in ests:
+        try:
+            path = est.decision_path(X_top)
+            tree_feat = est.tree_.feature
+        except Exception:
+            continue
+        for r in range(X_top.shape[0]):
+            st = int(path.indptr[r])
+            en = int(path.indptr[r + 1])
+            nodes = path.indices[st:en]
+            feats = sorted({int(tree_feat[n]) for n in nodes if int(tree_feat[n]) >= 0 and int(tree_feat[n]) < len(feature_names)})
+            if not feats:
+                continue
+            n_paths += 1.0
+            names = [feature_names[f] for f in feats]
+            for a in names:
+                feat_occ[a] += 1.0
+            for i in range(len(names)):
+                for j in range(i + 1, len(names)):
+                    a, b = names[i], names[j]
+                    pair_occ[(a, b)] += 1.0
+
+    if n_paths < 1:
+        return out
+    for (a, b), c_ab in pair_occ.items():
+        p_ab = c_ab / n_paths
+        p_a = feat_occ[a] / n_paths
+        p_b = feat_occ[b] / n_paths
+        lift = p_ab / max(p_a * p_b, 1e-9)
+        out[(a, b)] = float(max(lift, 0.0))
+    return out
+
+
+def _feature_family(name: str, family_map: Optional[Dict[str, str]] = None) -> str:
+    if isinstance(family_map, dict) and name in family_map:
+        return str(family_map[name])
+    return str(name).split("_")[0]
+
+
+def _apply_overlap_hysteresis(
+    selected: List[str],
+    ranked_all: List[str],
+    score_map: Dict[str, float],
+    anchors: Sequence[str],
+    prev_selected: Sequence[str],
+    min_overlap: float,
+    margin: float,
+) -> Tuple[List[str], Dict[str, float]]:
+    sel = list(selected)
+    prev = [f for f in prev_selected if f in ranked_all]
+    if len(prev) == 0 or len(sel) == 0:
+        return sel, {"overlap_before": 1.0, "overlap_after": 1.0, "swaps": 0.0}
+    n = len(sel)
+    anchors_set = set(anchors)
+    overlap_before = len(set(sel) & set(prev)) / max(1, len(set(prev)))
+
+    swaps = 0
+    newcomers = [f for f in sel if f not in prev and f not in anchors_set]
+    prev_out = [f for f in prev if f not in sel]
+    newcomers = sorted(newcomers, key=lambda z: score_map.get(z, -1e18))
+    prev_out = sorted(prev_out, key=lambda z: score_map.get(z, -1e18), reverse=True)
+    for old in prev_out:
+        if not newcomers:
+            break
+        new = newcomers[0]
+        s_old = score_map.get(old, -1e18)
+        s_new = score_map.get(new, -1e18)
+        if s_new < s_old * (1.0 + float(margin)):
+            sel.remove(new)
+            if old not in sel:
+                sel.append(old)
+            newcomers.pop(0)
+            swaps += 1
+
+    overlap_now = len(set(sel) & set(prev)) / max(1, len(set(prev)))
+    if overlap_now < float(min_overlap):
+        need = int(np.ceil(float(min_overlap) * len(set(prev)))) - len(set(sel) & set(prev))
+        for old in prev_out:
+            if need <= 0:
+                break
+            if old in sel:
+                continue
+            drop_candidates = [x for x in sel if x not in anchors_set and x not in prev]
+            if not drop_candidates:
+                break
+            drop = min(drop_candidates, key=lambda z: score_map.get(z, -1e18))
+            sel.remove(drop)
+            sel.append(old)
+            need -= 1
+            swaps += 1
+
+    sel = [f for f in ranked_all if f in set(sel)][:n]
+    overlap_after = len(set(sel) & set(prev)) / max(1, len(set(prev)))
+    return sel, {"overlap_before": float(overlap_before), "overlap_after": float(overlap_after), "swaps": float(swaps)}
+
 def mdi_feature_selection_v3(
     X: pd.DataFrame,
     y: Union[pd.Series, np.ndarray],
@@ -401,9 +619,29 @@ def mdi_feature_selection_v3(
     selector_target: str = "regression",
     selector_loss: Optional[str] = None,
     selector_alpha: Optional[float] = None,
+    composite_weights: Optional[Dict[str, float]] = None,
     selector_y: Optional[Union[pd.Series, np.ndarray]] = None,
     candidate_cols: Optional[Sequence[str]] = None,
     cv_splits: Optional[Sequence[Tuple[np.ndarray, np.ndarray]]] = None,
+    selector_head_name: Optional[str] = None,
+    selector_focus_top_frac: float = 0.30,
+    selector_top_metric: Optional[str] = None,
+    selector_top_tail_quantile: float = 0.70,
+    selector_frequency_hit_mode: str = "relative",
+    selector_frequency_hit_quantile: float = 0.80,
+    selector_frequency_hit_abs: float = 1e-6,
+    selector_interaction_mode: str = "tree_path_lift",
+    selector_interaction_topk_pairs: int = 100,
+    selector_interaction_max_pairs_per_feature: int = 8,
+    selector_interaction_corr_penalty: bool = True,
+    selector_family_penalty: bool = True,
+    selector_emit_report: bool = True,
+    selector_report_dir: Optional[str] = None,
+    selector_anchor_features: Optional[Sequence[str]] = None,
+    selector_prev_selected: Optional[Sequence[str]] = None,
+    selector_hysteresis_margin: float = 0.05,
+    selector_min_overlap: float = 0.70,
+    selector_family_map: Optional[Dict[str, str]] = None,
 ) -> MDISelectionResult:
     """
     Robust MDI Feature Selection with Quantile-Transformed Correlations v3.
@@ -610,20 +848,89 @@ def mdi_feature_selection_v3(
     if _sel_target == "quantile":
         assert _sel_alpha is not None, "selector_alpha must be provided when selector_target='quantile'"
 
+    # Composite ranking weights can be caller-provided, otherwise adapt by selector semantics.
+    # Keys: share, depth, cov; values must sum > 0.
+    _w_default = {"share": 0.50, "depth": 0.30, "cov": 0.20}
+    _loss_hint = str(_sel_loss or "").lower()
+    if _sel_target in {"classification", "binary", "clf"}:
+        _w_default = {"share": 0.60, "depth": 0.20, "cov": 0.20}
+    elif _sel_target == "quantile" or "quantile" in _loss_hint:
+        _w_default = {"share": 0.35, "depth": 0.25, "cov": 0.40}
+    elif "huber" in _loss_hint:
+        _w_default = {"share": 0.45, "depth": 0.35, "cov": 0.20}
+    _w = dict(_w_default)
+    if isinstance(composite_weights, dict):
+        for _k in ("share", "depth", "cov"):
+            if _k in composite_weights:
+                try:
+                    _w[_k] = float(composite_weights[_k])
+                except Exception:
+                    pass
+    _sum_w = max(float(_w["share"] + _w["depth"] + _w["cov"]), 1e-12)
+    _w = {k: float(v) / _sum_w for k, v in _w.items()}
+
+    _head_name = str(selector_head_name or "default")
+    _target_name = str(_sel_target).lower()
+    _top_frac = float(np.clip(selector_focus_top_frac, 0.05, 0.80))
+    _top_metric = str(selector_top_metric).lower().strip() if selector_top_metric else ""
+    if not _top_metric:
+        _top_metric = "precision_top" if _target_name in {"classification", "binary", "clf"} else "ic_top"
+    _tail_q = float(np.clip(selector_top_tail_quantile, 0.50, 0.99))
+    _is_utility_head = ("utility" in _head_name.lower()) or (_top_metric == "top30_mean_utility")
+
+    # Final selection weights (phase-B defaults + utility conservative override)
+    _final_w = {
+        "top30": 0.35,
+        "global": 0.20,
+        "stability": 0.25,
+        "frequency": 0.15,
+        "interaction": 0.05,
+    }
+    if _is_utility_head:
+        _final_w = {
+            "top30": 0.30,
+            "global": 0.15,
+            "stability": 0.30,
+            "frequency": 0.20,
+            "interaction": 0.05,
+        }
+    if isinstance(composite_weights, dict):
+        if any(k in composite_weights for k in _final_w):
+            for k in _final_w:
+                if k in composite_weights:
+                    try:
+                        _final_w[k] = float(composite_weights[k])
+                    except Exception:
+                        pass
+            _sw = max(sum(_final_w.values()), 1e-12)
+            _final_w = {k: float(v) / _sw for k, v in _final_w.items()}
+
     if len(current_features) > 4 * end_features:
-        tprint(f"MDI: Running Linear ElasticNet prescreen on {len(current_features)} features...")
+        # SGDRegressor only accepts regression losses ('huber', 'squared_error', etc.)
+        # If the outer selector target is classification, we use huber as a robust linear proxy.
+        _prescreen_loss = str(_sel_loss).lower()
+        if _prescreen_loss in {"binary_logloss", "log_loss", "cross_entropy", "binary"}:
+            _prescreen_loss = "huber"
+            
         prescreened_features = linear_prescreen_enet(
             X[current_features],
             y_np,
             n_select=end_features,
             multiplier=4,
-            loss=str(_sel_loss),
+            loss=_prescreen_loss,
         )
         tprint(f"MDI: ElasticNet prescreen reduced features from {len(current_features)} to {len(prescreened_features)}")
         current_features = prescreened_features
 
     metrics_df_sorted = pd.DataFrame()
     mean_model_fit_score = float("nan")
+    last_fold_share: List[np.ndarray] = []
+    last_fold_top_imp: List[np.ndarray] = []
+    last_fold_rest_imp: List[np.ndarray] = []
+    last_pair_scores: List[Dict[Tuple[str, str], float]] = []
+    last_top_metrics: List[Dict[str, float]] = []
+    last_features: List[str] = []
+    last_metrics_df: Optional[pd.DataFrame] = None
 
     # Cache supported params once
     base_params = base_model.get_params() if hasattr(base_model, 'get_params') else {}
@@ -669,6 +976,11 @@ def mdi_feature_selection_v3(
         sq_sums = {k: np.zeros(p, dtype=np.float64) for k in ['share', 'freq', 'mdi_depth', 'mdi_cov']}
         counts = {k: 0 for k in ['share', 'freq', 'mdi_depth', 'mdi_cov']}
         pos_counts = {k: np.zeros(p, dtype=np.float64) for k in ['share', 'freq', 'mdi_depth', 'mdi_cov']}
+        fold_share_curr: List[np.ndarray] = []
+        fold_top_imp_curr: List[np.ndarray] = []
+        fold_rest_imp_curr: List[np.ndarray] = []
+        fold_pair_curr: List[Dict[Tuple[str, str], float]] = []
+        fold_top_metrics_curr: List[Dict[str, float]] = []
 
         valid_folds = 0
         fold_fit_scores: List[float] = []
@@ -775,6 +1087,45 @@ def mdi_feature_selection_v3(
                 pos_counts[k] += (v > 0).astype(np.float64)
                 counts[k] += 1
 
+            fold_share_curr.append(share.copy())
+            if len(val_idx) >= 12:
+                X_val = X_curr_np[val_idx]
+                y_val = y_curr_np[val_idx]
+                y_pred_val = m.predict(X_val)
+                n_top = max(3, int(np.ceil(_top_frac * len(val_idx))))
+                idx_top = np.argpartition(y_pred_val, -n_top)[-n_top:]
+                idx_rest = np.setdiff1d(np.arange(len(val_idx)), idx_top, assume_unique=False)
+                _metric_fn = lambda yy, pp: _subset_top_metric(
+                    yy, pp, _target_name, _top_metric, _top_frac, _tail_q
+                )
+                top_metric_val = _subset_top_metric(y_val, y_pred_val, _target_name, _top_metric, _top_frac, _tail_q)
+                fold_top_metrics_curr.append({"metric": float(top_metric_val), "n_top": float(len(idx_top))})
+
+                _perm_topk = min(max(16, int(np.sqrt(p) * 4)), p)
+                _cand = np.argsort(share)[-_perm_topk:]
+                _rng_fold = np.random.RandomState(int(random_state + valid_folds + p))
+                imp_top = _restricted_permutation_importance(
+                    m, X_val[idx_top], y_val[idx_top], _cand, _metric_fn, _rng_fold
+                )
+                if len(idx_rest) >= 8:
+                    imp_rest = _restricted_permutation_importance(
+                        m, X_val[idx_rest], y_val[idx_rest], _cand, _metric_fn, _rng_fold
+                    )
+                else:
+                    imp_rest = np.zeros(p, dtype=float)
+                fold_top_imp_curr.append(np.asarray(imp_top, dtype=float))
+                fold_rest_imp_curr.append(np.asarray(imp_rest, dtype=float))
+
+                if str(selector_interaction_mode).lower() != "off":
+                    pair_score = _extract_top_path_pair_scores(
+                        m,
+                        X_val[idx_top],
+                        current_features,
+                        _rng_fold,
+                        max_trees=64,
+                    )
+                    fold_pair_curr.append(pair_score)
+
             valid_folds += 1
 
         if valid_folds == 0:
@@ -803,20 +1154,34 @@ def mdi_feature_selection_v3(
 
         # Final Ranking
         metrics_df['composite_rank'] = (
-            metrics_df['share_stab'].rank(ascending=False) * 0.5 +
-            metrics_df['mdi_depth_stab'].rank(ascending=False) * 0.3 +
-            metrics_df['mdi_cov_stab'].rank(ascending=False) * 0.2
+            metrics_df['share_stab'].rank(ascending=False) * float(_w["share"]) +
+            metrics_df['mdi_depth_stab'].rank(ascending=False) * float(_w["depth"]) +
+            metrics_df['mdi_cov_stab'].rank(ascending=False) * float(_w["cov"])
         ).rank()
 
         metrics_df_sorted = metrics_df.sort_values('composite_rank')
+        last_fold_share = fold_share_curr
+        last_fold_top_imp = fold_top_imp_curr
+        last_fold_rest_imp = fold_rest_imp_curr
+        last_pair_scores = fold_pair_curr
+        last_top_metrics = fold_top_metrics_curr
+        last_features = list(current_features)
+        last_metrics_df = metrics_df.copy()
 
         # If we reached the target, we are done
-        # RFE: Prune bottom 25% features (but at least 1, and no more than needed to reach end_features)
+        # RFE: Adaptive prune rate with target-aware linear decay + fixed bonus drop.
         if p <= end_features:
             tprint(f"MDI RFE: Reached target {p} features. Stopping.")
             break
 
-        n_to_drop = max(1, int(p * 0.25))
+        # Adaptive RFE drop schedule:
+        # linearly decay drop rate from 50% (at p = 6x target) to 5% (at p = 1x target),
+        # then add a fixed +5 drop bonus (bounded by target floor).
+        _ratio = float(p) / max(float(end_features), 1.0)
+        _ratio_c = float(np.clip(_ratio, 1.0, 6.0))
+        _drop_rate = 0.05 + ((_ratio_c - 1.0) * (0.50 - 0.05) / (6.0 - 1.0))
+        n_to_drop = int(np.floor(float(p) * _drop_rate)) + 5
+        n_to_drop = max(1, n_to_drop)
         if p - n_to_drop < end_features:
             n_to_drop = max(0, p - end_features)
         
@@ -824,132 +1189,239 @@ def mdi_feature_selection_v3(
             tprint("MDI: Targeted feature count reached.")
             break
             
-        tprint(f"MDI: Dropping {n_to_drop} features (remaining: {p - n_to_drop})...")
+        tprint(
+            f"MDI: Dropping {n_to_drop} features (remaining: {p - n_to_drop}) "
+            f"[adaptive rate={_drop_rate:.3f}, p/target={_ratio:.2f}, bonus=+5]"
+        )
         current_features = metrics_df_sorted.index[:-n_to_drop].tolist()
         
         # Memory cleanup after each RFE iteration
         del X_curr_np
         gc.collect()
 
-    # --- Post-Loop Cumulative Cap for Noise Tail Removal ---
-    # Even if RFE stopped at end_features (or if we just ran once),
-    # we apply the cumulative cap to ensure we don't keep weak noise.
-    
-    # --- Post-Loop Advanced Cumulative Cap ---
-    # metric_df_sorted is ordered by composite_rank (best to worst).
-    
-    # 1. Compute Effective Importance (Penalize Instability)
-    # share_eff = max(0, mu - 0.5 * std)
-    # We estimate std from stability score: stab = mu * (hit / cv). 
-    # But we have 'share_mu' and 'share_stab'.
-    # Actually, we calculated:
-    # cv = sd / mu
-    # stab = mu * (hit / cv) = mu * hit * mu / sd = (mu^2 * hit) / sd?
-    # No, we need original sd.
-    # We don't have raw sd in the dataframe, but we can approximate or just use share_mu for now
-    # if we didn't save sd. 
-    # Wait, we constructed agg with separate columns? 
-    # "agg[f'{metric}_mu']" and "agg[f'{metric}_stab']".
-    # We did not save sigma directly in the dataframe construction earlier in the code.
-    # Let's verify `metrics_df` creation block (lines 589-590).
-    # It only has _mu and _stab.
-    # We can reconstruct sd from stab if hit is known (hit not saved).
-    # OR we just rely on composite_rank which uses stability.
-    
-    # User requested: "share_eff = metrics_df['share_mu'] - z * metrics_df['share_std']"
-    # To support this, I should have saved share_std.
-    # Since I cannot easily change the loop (it's inside the function above), 
-    # I will modify the Aggregation step (lines 574-590) to include `_std`. 
-    # BUT I am in `multi_replace`, I can't easily jump back up.
-    # Workaround: Use `share_stab` as a proxy for robust importance.
-    # `share_stab` IS stability-weighted importance.
-    # let's use `share_mu` for mass, but rely on `composite_rank` for ordering?
-    # User explicitly asked for "Effective Importance" formula.
-    # I will assume I can edit the aggregation block in a separate chunk.
-    # YES, I will add a chunk to save `_std` first.
-    
-    # --- Post-Loop Advanced Cumulative Cap ---
-    # metric_df_sorted is ordered by composite_rank (best to worst).
-    
-    # 1. Compute Effective Importance (Penalize Instability)
-    # share_eff = max(0, mu - 0.5 * std)
-    z = 0.5
-    share_mu = metrics_df_sorted['share_mu'].values.astype(np.float64)
-    share_std = metrics_df_sorted['share_std'].values.astype(np.float64)
-    
-    share_eff = np.maximum(0.0, share_mu - z * share_std)
-    
-    # 2. Normalize Effective Importance
-    total_eff = np.sum(share_eff)
-    if total_eff > 1e-12:
-        share_norm = share_eff / total_eff
-    else:
-        # Fallback: if effective importance is zero (all noisy), use straight mu
+    if last_metrics_df is None or last_metrics_df.empty:
+        return MDISelectionResult(pd.DataFrame(), [], kept_features)
+
+    metrics_df = last_metrics_df.copy()
+    feat_order = list(metrics_df.index)
+    p_last = len(feat_order)
+
+    share_mu = metrics_df["share_mu"].to_numpy(dtype=float)
+    share_std = metrics_df["share_std"].to_numpy(dtype=float)
+    share_eff = np.maximum(0.0, share_mu - 0.5 * share_std)
+    total_eff = float(np.sum(share_eff))
+    if total_eff <= 1e-12:
         tprint("MDI: Effective importance is zero (high noise). Falling back to share_mu.")
-        _emit_mdi_noise_diagnostics(X_np_full, y_np, metrics_df_sorted, mean_model_fit_score)
-        share_norm = share_mu / (np.sum(share_mu) + 1e-12)
-
-    # 3. Cumulative Cutoff
+        _emit_mdi_noise_diagnostics(X_np_full, y_np, metrics_df, mean_model_fit_score)
+        share_eff = np.maximum(0.0, share_mu)
+        total_eff = max(float(np.sum(share_eff)), 1e-12)
+    share_norm = share_eff / total_eff
     cumsum = np.cumsum(share_norm)
-    
-    # 4. Find Cutoff Index (Inclusive)
-    # searchsorted returns first index i where cumsum[i] >= cap.
-    # We want to include this index i because it's the one that crosses the threshold.
-    cutoff_idx = np.searchsorted(cumsum, cumulative_cap)
-    
-    # Clip to valid range
-    cutoff_idx = min(cutoff_idx, len(metrics_df_sorted) - 1)
-    
-    # Selected Count Candidates
-    # +1 because slice is exclusive [0 : cutoff_idx+1] includes index cutoff_idx
+    cutoff_idx = int(np.searchsorted(cumsum, cumulative_cap))
+    cutoff_idx = min(cutoff_idx, len(metrics_df) - 1)
     n_selected_cap = cutoff_idx + 1
+    n_total = len(metrics_df)
+    n_max_hard = min(max(int(n_total * max_features_pct), min_features), n_total)
+    n_min_hard = min(min_features, n_total)
+    n_final = min(max(n_selected_cap, n_min_hard), n_max_hard)
 
-    # 5. Apply Hard Guardrails
-    n_total = len(metrics_df_sorted)
-    n_max_hard = int(n_total * max_features_pct)
-    # Ensure max is at least min if possible
-    n_max_hard = max(n_max_hard, min_features)
-    n_max_hard = min(n_max_hard, n_total) # Cap at physical limit
-    
-    n_min_hard = min(min_features, n_total) # Can't select more than we have
-    
-    # Enforce constraints order: Min -> Cap -> Max
-    # "At least min_features" (unless total is smaller)
-    # "At most max_features"
-    # Actually, if we set max < min, we have a conflict.
-    # Logic: Prioritize Min floor (sanity) over Max ceiling? 
-    # Usually Max ceiling is for performance/noise control. Min floor is for signal capture.
-    # If Max Pct is tiny (e.g. 10%), but we need 5 features, we should take 5.
-    
-    # Effective count
-    n_final = max(n_selected_cap, n_min_hard)
-    n_final = min(n_final, n_max_hard) 
-    # If n_max_hard < n_min_hard (e.g. max=1, min=2 due to rounding), 
-    # the above line would force it down to 1.
-    # But we did `n_max_hard = max(n_max_hard, min_features)` above.
-    # So n_max_hard >= min_features (unless n_total is small).
-    # Correct.
-    
-    # 6. Apply Tail Filter (Optional but recommended)
-    # Instead of breaking EARLY, we just count how many of the TOP N_FINAL actually pass min_share?
-    # User issue: "result: you may end up selecting far less than 98% mass"
-    # Logic: We stick to the Rank order. We just select Top N_FINAL.
-    # We do NOT filter out items within the Top N_FINAL that have low share, 
-    # because they might be high-stability (composite rank).
-    # If a feature is Rank #3 but has small share, we Keep it.
-    
-    selected_by_cap = metrics_df_sorted.index[:n_final].tolist()
-    
-    tprint(f"MDI Cap: Selected {n_final} features (Cap {cumulative_cap:.0%}, Eff. Mass {cumsum[min(n_final-1, len(cumsum)-1)]:.3f}). Constraints: {n_min_hard} <= N <= {n_max_hard}")
-    
-    # tprint(f"MDI Cap: Selected {n_final} features (Cap {cumulative_cap:.0%}, Eff. Mass {cumsum[min(n_final-1, len(cumsum)-1)]:.3f}). Constraints: {n_min_hard} <= N <= {n_max_hard}")
-    pass # Logging handled above
-    
-    selected = selected_by_cap
+    # Fold-level ranking stability and thresholded frequency
+    if len(last_fold_share) > 0:
+        fs = np.vstack(last_fold_share)
+        ranks = np.argsort(np.argsort(-fs, axis=1), axis=1) + 1
+        med_rank = np.median(ranks, axis=0)
+        mad_rank = np.mean(np.abs(ranks - med_rank), axis=0)
+        stability_score = np.clip(1.0 - (mad_rank / max(float(np.max(mad_rank)), 1e-12)), 0.0, 1.0)
+
+        hits = np.zeros(p_last, dtype=float)
+        for row in fs:
+            row = np.asarray(row, dtype=float)
+            nz = row[row > 0]
+            thr_rel = float(np.quantile(nz, selector_frequency_hit_quantile)) if nz.size > 0 else np.inf
+            thr_abs = float(selector_frequency_hit_abs) * max(float(np.sum(np.abs(row))), 1e-12)
+            thr = max(thr_rel, thr_abs) if str(selector_frequency_hit_mode).lower() == "relative" else thr_abs
+            if not np.isfinite(thr):
+                continue
+            hits += (row >= thr).astype(float)
+        frequency_score = np.clip(hits / max(float(len(last_fold_share)), 1.0), 0.0, 1.0)
+    else:
+        med_rank = np.full(p_last, np.nan, dtype=float)
+        mad_rank = np.full(p_last, np.nan, dtype=float)
+        stability_score = np.zeros(p_last, dtype=float)
+        frequency_score = np.zeros(p_last, dtype=float)
+
+    # Top30 attribution
+    if len(last_fold_top_imp) > 0:
+        imp_top = np.vstack(last_fold_top_imp)
+        imp_rest = np.vstack(last_fold_rest_imp) if len(last_fold_rest_imp) == len(last_fold_top_imp) else np.zeros_like(imp_top)
+        top_support_raw = np.median(imp_top, axis=0)
+        top_lift_raw = np.median(imp_top - imp_rest, axis=0)
+    else:
+        top_support_raw = np.zeros(p_last, dtype=float)
+        top_lift_raw = np.zeros(p_last, dtype=float)
+
+    # Interaction lift aggregation
+    pair_agg: Dict[Tuple[str, str], List[float]] = defaultdict(list)
+    for d in last_pair_scores:
+        for k, v in d.items():
+            if np.isfinite(v):
+                pair_agg[k].append(float(v))
+    pair_rows = []
+    interaction_support_raw = np.zeros(p_last, dtype=float)
+    idx_map = {f: i for i, f in enumerate(feat_order)}
+    # Build cheap correlation proxy once on top candidate interaction features.
+    base_pairs = [((a, b), float(np.mean(vs))) for (a, b), vs in pair_agg.items() if len(vs) > 0]
+    base_pairs = sorted(base_pairs, key=lambda z: z[1], reverse=True)
+    pre_n = max(int(selector_interaction_topk_pairs) * 3, int(selector_interaction_topk_pairs), 64)
+    base_pairs = base_pairs[:pre_n]
+    corr_lookup: Dict[Tuple[str, str], float] = {}
+    if selector_interaction_corr_penalty and len(base_pairs) > 0:
+        top_feats = sorted({f for (ab, _) in base_pairs for f in ab if f in idx_map})
+        max_corr_feats = max(32, min(512, int(selector_interaction_topk_pairs) * 4))
+        top_feats = top_feats[:max_corr_feats]
+        if len(top_feats) >= 2:
+            cols = [name_to_idx[f] for f in top_feats]
+            X_corr = np.nan_to_num(X_np_full[:, cols], nan=0.0)
+            cmat = np.corrcoef(X_corr, rowvar=False)
+            for i, fa in enumerate(top_feats):
+                for j in range(i + 1, len(top_feats)):
+                    fb = top_feats[j]
+                    c = float(cmat[i, j]) if np.isfinite(cmat[i, j]) else 0.0
+                    corr_lookup[(fa, fb)] = c
+                    corr_lookup[(fb, fa)] = c
+
+    for (a, b), lift_mean in base_pairs:
+        score = float(lift_mean)
+        if selector_family_penalty and _feature_family(a, selector_family_map) == _feature_family(b, selector_family_map):
+            score *= 0.8
+        if selector_interaction_corr_penalty:
+            c = float(corr_lookup.get((a, b), 0.0))
+            if abs(c) > 0.85:
+                score *= 0.7
+        pair_rows.append({"feature_a": a, "feature_b": b, "lift": float(lift_mean), "final_pair_score": score})
+
+    if len(pair_rows) > 0:
+        pair_df = pd.DataFrame(pair_rows).sort_values("final_pair_score", ascending=False)
+        if selector_interaction_topk_pairs > 0:
+            pair_df = pair_df.head(int(selector_interaction_topk_pairs)).copy()
+        feat_pair_scores: Dict[str, List[float]] = defaultdict(list)
+        for _, r in pair_df.iterrows():
+            feat_pair_scores[str(r["feature_a"])].append(float(r["final_pair_score"]))
+            feat_pair_scores[str(r["feature_b"])].append(float(r["final_pair_score"]))
+        for f, vals in feat_pair_scores.items():
+            vals_sorted = sorted(vals, reverse=True)[: max(1, int(selector_interaction_max_pairs_per_feature))]
+            interaction_support_raw[idx_map[f]] = float(np.sum(vals_sorted))
+    else:
+        pair_df = pd.DataFrame(columns=["feature_a", "feature_b", "lift", "final_pair_score"])
+
+    # Final score components
+    top30_support = _robust_norm(top_support_raw)
+    top30_lift = _robust_norm(top_lift_raw)
+    global_importance = _robust_norm(share_mu)
+    interaction_support = _robust_norm(interaction_support_raw)
+
+    metrics_df["top30_support"] = top30_support.astype(np.float32)
+    metrics_df["top30_lift"] = top30_lift.astype(np.float32)
+    metrics_df["global_importance"] = global_importance.astype(np.float32)
+    metrics_df["stability_score"] = np.asarray(stability_score, dtype=np.float32)
+    metrics_df["frequency_score"] = np.asarray(frequency_score, dtype=np.float32)
+    metrics_df["interaction_support"] = interaction_support.astype(np.float32)
+    metrics_df["median_rank"] = np.asarray(med_rank, dtype=np.float32)
+    metrics_df["mean_abs_rank_dev"] = np.asarray(mad_rank, dtype=np.float32)
+    metrics_df["final_score"] = (
+        float(_final_w["top30"]) * metrics_df["top30_support"]
+        + float(_final_w["global"]) * metrics_df["global_importance"]
+        + float(_final_w["stability"]) * metrics_df["stability_score"]
+        + float(_final_w["frequency"]) * metrics_df["frequency_score"]
+        + float(_final_w["interaction"]) * metrics_df["interaction_support"]
+    ).astype(np.float32)
+    metrics_df["final_rank"] = metrics_df["final_score"].rank(ascending=False, method="average")
+    metrics_df_sorted = metrics_df.sort_values("final_score", ascending=False)
+
+    selected = metrics_df_sorted.index[:n_final].tolist()
+    anchors = [f for f in (selector_anchor_features or []) if f in metrics_df_sorted.index]
+    for f in anchors:
+        if f not in selected:
+            selected.append(f)
+    selected = [f for f in metrics_df_sorted.index if f in set(selected)][: max(n_final, len(anchors))]
+
+    score_map = {f: float(s) for f, s in metrics_df_sorted["final_score"].items()}
+    if selector_prev_selected:
+        selected, hyst_stats = _apply_overlap_hysteresis(
+            selected=selected,
+            ranked_all=list(metrics_df_sorted.index),
+            score_map=score_map,
+            anchors=anchors,
+            prev_selected=list(selector_prev_selected),
+            min_overlap=float(selector_min_overlap),
+            margin=float(selector_hysteresis_margin),
+        )
+    else:
+        hyst_stats = {"overlap_before": 1.0, "overlap_after": 1.0, "swaps": 0.0}
+
+    tprint(
+        f"MDI Cap: Selected {len(selected)} features (Cap {cumulative_cap:.0%}, "
+        f"Eff. Mass {cumsum[min(max(len(selected)-1, 0), len(cumsum)-1)]:.3f}). "
+        f"Constraints: {n_min_hard} <= N <= {n_max_hard}"
+    )
+
+    top30_metric_table = pd.DataFrame(last_top_metrics) if len(last_top_metrics) else pd.DataFrame(columns=["metric", "n_top"])
+    stability_table = metrics_df_sorted[["median_rank", "mean_abs_rank_dev", "stability_score", "frequency_score"]].copy()
+    final_score_table = metrics_df_sorted[
+        ["final_score", "top30_support", "top30_lift", "global_importance", "stability_score", "frequency_score", "interaction_support"]
+    ].copy()
+    summary = {
+        "selector_head_name": _head_name,
+        "selector_target": _target_name,
+        "selector_top_metric": _top_metric,
+        "selector_focus_top_frac": _top_frac,
+        "weights": {k: float(v) for k, v in _final_w.items()},
+        "n_train_features": int(p_last),
+        "n_selected": int(len(selected)),
+        "anchor_count": int(len(anchors)),
+        "selected_anchor_count": int(sum(1 for x in selected if x in set(anchors))),
+        "overlap_before": float(hyst_stats.get("overlap_before", 1.0)),
+        "overlap_after": float(hyst_stats.get("overlap_after", 1.0)),
+        "hysteresis_swaps": float(hyst_stats.get("swaps", 0.0)),
+    }
+
+    if selector_emit_report:
+        try:
+            _base_report_dir = selector_report_dir
+            if _base_report_dir is None:
+                _base_report_dir = os.path.join("data", "artifacts", "default", "fs_reports")
+            _safe_head = "".join(ch if ch.isalnum() or ch in ("_", "-", ".") else "_" for ch in _head_name)
+            _out_dir = os.path.join(_base_report_dir, _safe_head)
+            os.makedirs(_out_dir, exist_ok=True)
+            metrics_df_sorted.to_csv(os.path.join(_out_dir, "metrics_features.csv"), index=True)
+            try:
+                metrics_df_sorted.to_parquet(os.path.join(_out_dir, "metrics_features.parquet"), index=True)
+            except Exception:
+                pass
+            pair_df.to_csv(os.path.join(_out_dir, "pairs.csv"), index=False)
+            try:
+                pair_df.to_parquet(os.path.join(_out_dir, "pairs.parquet"), index=False)
+            except Exception:
+                pass
+            with open(os.path.join(_out_dir, "selected_features.json"), "w", encoding="utf-8") as f:
+                json.dump({"selected_features": selected, "anchors": anchors}, f, indent=2)
+            with open(os.path.join(_out_dir, "summary.json"), "w", encoding="utf-8") as f:
+                json.dump(summary, f, indent=2)
+        except Exception as _e_report:
+            tprint(f"MDI: failed to emit selector report for {_head_name}: {_e_report}")
 
     import gc
     gc.collect()
-    return MDISelectionResult(metrics_df_sorted, selected, kept_features)
+    return MDISelectionResult(
+        metrics_table=metrics_df_sorted,
+        selected_features=selected,
+        kept_after_dedupe=kept_features,
+        top30_metric_table=top30_metric_table,
+        stability_table=stability_table,
+        interaction_table=pair_df,
+        final_score_table=final_score_table,
+        summary=summary,
+    )
 
 # Backwards compatibility alias if needed, or update call sites
 mdi_feature_selection_leakage_safe = mdi_feature_selection_v3

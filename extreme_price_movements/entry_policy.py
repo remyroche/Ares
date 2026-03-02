@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 import numpy as np
+from extreme_price_movements.limit_order_pricer import estimate_entry_limit_offset
 
 
 def _sigmoid(x: float) -> float:
@@ -32,6 +33,14 @@ def _get_metric(features: Dict[str, Any], key: str, default: float) -> float:
     return vv
 
 
+def _to_excursion_fraction(v: float) -> float:
+    x = float(v) if np.isfinite(v) else 0.0
+    if abs(x) < 0.20:
+        # Often log1p(head/barrier)-style values in [0, ~0.2]
+        x = float(np.expm1(np.clip(x, -20.0, 20.0)))
+    return float(np.clip(abs(x), 0.0, 1.0))
+
+
 def compute_entry_policy_decision(
     entry_px: float,
     atr_frac: float,
@@ -44,6 +53,7 @@ def compute_entry_policy_decision(
     model = ep.get("model", {}) if isinstance(ep.get("model", {}), dict) else {}
     obj = ep.get("objective", {}) if isinstance(ep.get("objective", {}), dict) else {}
     adapt = ep.get("adaptation", {}) if isinstance(ep.get("adaptation", {}), dict) else {}
+    offset_engine = ep.get("offset_engine", {}) if isinstance(ep.get("offset_engine", {}), dict) else {}
     f = features or {}
 
     u_z = _get_metric(f, "u_hat_z", float(np.tanh(score)))
@@ -75,12 +85,44 @@ def compute_entry_policy_decision(
             best_delta = d
             best_p = pfill
 
-    place = bool(best_eu >= min_eu)
     atr_frac = float(np.clip(atr_frac, 1e-4, 0.5))
     entry_px = float(max(entry_px, 1e-9))
+    policy_offset_bps = float(np.clip(best_delta * atr_frac * 10000.0, 0.0, 1000.0))
+
+    # Alternate MAE/MFE estimator offset, blended under one policy controller.
+    mae_raw = _get_metric(f, "mae_hat", _get_metric(f, "mae_hat_z", 0.0))
+    mfe_raw = _get_metric(f, "mfe_hat", _get_metric(f, "mfe_hat_z", 0.0))
+    u_raw = _get_metric(f, "u_hat", _get_metric(f, "u_hat_z", 0.0))
+    mae_frac = _to_excursion_fraction(mae_raw)
+    mfe_frac = _to_excursion_fraction(mfe_raw)
+    conf = _sigmoid(abs(_get_metric(f, "u_hat_z", 0.0)))
+    estimator_offset_bps = float(
+        estimate_entry_limit_offset(
+            mae_hat=mae_frac,
+            mfe_hat=mfe_frac,
+            u_hat=u_raw,
+            confidence=conf,
+        )
+    )
+    estimator_offset_bps = float(np.clip(estimator_offset_bps, 0.0, 1000.0))
+
+    engine_mode = str(offset_engine.get("mode", "policy_only")).lower()
+    blend_lambda = float(np.clip(offset_engine.get("lambda", 0.0), 0.0, 1.0))
+    if engine_mode == "estimator_only":
+        limit_offset_bps = estimator_offset_bps
+    elif engine_mode == "blended":
+        limit_offset_bps = (1.0 - blend_lambda) * policy_offset_bps + blend_lambda * estimator_offset_bps
+    else:
+        engine_mode = "policy_only"
+        blend_lambda = 0.0
+        limit_offset_bps = policy_offset_bps
+    limit_offset_bps = float(np.clip(limit_offset_bps, 0.0, 1000.0))
+    limit_offset_pct = float(np.clip(limit_offset_bps / 10000.0, 0.0, 0.10))
+    best_delta = float(np.clip(limit_offset_pct / max(atr_frac, 1e-6), 0.0, 10.0))
     delta_price = best_delta * atr_frac * entry_px
-    limit_offset_pct = float(np.clip(delta_price / entry_px, 0.0, 0.10))
-    limit_offset_bps = limit_offset_pct * 10000.0
+    best_p = _sigmoid(alpha0 + alpha_u * u_z - alpha_mae * mae_z - beta_delta * best_delta)
+    best_eu = best_p * (a * u_z + best_delta - lambda_risk * mae_z - c_atr)
+    place = bool(best_eu >= min_eu)
 
     q_sl = float(adapt.get("q_sl", 1.3))
     eta = float(adapt.get("eta_stop", 0.4))
@@ -120,6 +162,10 @@ def compute_entry_policy_decision(
         "eu_star": float(best_eu),
         "place_order": place,
         "limit_offset_bps_dynamic": float(limit_offset_bps),
+        "limit_offset_bps_policy": float(policy_offset_bps),
+        "limit_offset_bps_estimator": float(estimator_offset_bps),
+        "offset_engine_mode": str(engine_mode),
+        "offset_engine_lambda": float(blend_lambda),
         "entry_px_fill": float(max(entry_px - delta_price, 1e-9)),
         "sl_distance_atr_eff": sl_distance_atr_eff,
         "tp_distance_atr_eff": tp_distance_atr_eff,
@@ -129,4 +175,3 @@ def compute_entry_policy_decision(
         "kill_c_eff": kill_c_eff,
         "max_hold_hours_eff": max_hold_hours_eff,
     }
-

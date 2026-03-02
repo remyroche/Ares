@@ -212,7 +212,19 @@ def run_optimise_step(
         if bucket_df.empty:
             tprint(f"optimise: bucket={bucket} no eligible trades after entry policy filter")
             continue
-        entry_policy_payload = m05.build_entry_policy_payload(fill_model, step05_cfg, fill_meta)
+        _off_meta = {
+            "mode": str(pol_eval.attrs.get("offset_engine_mode", "policy_only")),
+            "lambda": float(pol_eval.attrs.get("offset_engine_lambda", 0.0)),
+            "oos_score": float(pol_eval.attrs.get("offset_engine_oos_score", 0.0)),
+            "oos_mean_eu": float(pol_eval.attrs.get("offset_engine_oos_mean_eu", 0.0)),
+            "oos_place_rate": float(pol_eval.attrs.get("offset_engine_oos_place_rate", 0.0)),
+        }
+        entry_policy_payload = m05.build_entry_policy_payload(
+            fill_model,
+            step05_cfg,
+            fill_meta,
+            offset_engine_meta=_off_meta,
+        )
         trials_05 = pd.DataFrame(
             {
                 "delta_atr_star": bucket_df.get("delta_atr_star", pd.Series(dtype=float)).values,

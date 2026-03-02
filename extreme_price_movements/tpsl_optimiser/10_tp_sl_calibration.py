@@ -17,7 +17,9 @@ class TpSlCalibrationConfig:
     lo: float = 0.6
     hi: float = 2.5
     tp_grid: tuple[float, ...] = (2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 6.0, 7.0, 8.0)
-    sl_ratio_grid: tuple[float, ...] = (1.25, 1.0, 0.75, 0.66, 0.5, 0.33, 0.25)
+    # sl_ratio == TP/SL reward-to-risk ratio. Keep >= 1.5 by default.
+    sl_ratio_grid: tuple[float, ...] = (2.5, 2.0, 1.75, 1.5, 1.25, 1.0, 0.75, 0.66, 0.5, 0.33, 0.25)
+    min_rr_ratio: float = 1.5
 
 
 def _ewm_halflife(s: pd.Series, hl_bars: int) -> pd.Series:
@@ -87,6 +89,9 @@ def calibrate_tp_sl(trades: pd.DataFrame, atr_scale: pd.Series, cfg: TpSlCalibra
             combos.append((tp0, tp0 / sl0))
 
     for tp_mult, sl_ratio in combos:
+        # Hard floor: do not allow reward-to-risk below configured minimum.
+        if float(sl_ratio) < float(cfg.min_rr_ratio):
+            continue
         sl_mult = tp_mult / sl_ratio
 
         tp_pct = tp_mult * df["atr_scale"].to_numpy()
@@ -110,6 +115,7 @@ def calibrate_tp_sl(trades: pd.DataFrame, atr_scale: pd.Series, cfg: TpSlCalibra
             "tp_mult": tp_mult,
             "sl_mult": sl_mult,
             "sl_ratio": sl_ratio,
+            "rr_ratio": float(sl_ratio),
             "train_pnl": pnl,
             "train_sortino": sortino,
         }
@@ -149,6 +155,7 @@ def calibrate_tp_sl(trades: pd.DataFrame, atr_scale: pd.Series, cfg: TpSlCalibra
     best_params = {
         "tp_mult": float(best[0]),
         "sl_mult": float(best[1]),
+        "rr_ratio": float(best[0] / max(best[1], 1e-12)),
         "atr_scale_lo": cfg.lo,
         "atr_scale_hi": cfg.hi,
     }

@@ -20,7 +20,6 @@ def get_candidate_filter_defaults(cfg: Dict[str, Any] | None = None) -> Dict[str
         "train_extreme_pct_hourly": float(c.get("train_extreme_pct_hourly", c.get("trade_extreme_pct", 0.05))),
         "train_min_range_pct": float(c.get("train_min_range_pct", 0.07)),
         "train_min_vol_zscore": float(c.get("train_min_vol_zscore", 1.6)),
-        "min_feat_sign_consistency": float(c.get("min_feat_sign_consistency", 0.70)),
         "train_chop_thr": float(c.get("train_chop_thr", 0.5)),
     }
 
@@ -47,7 +46,7 @@ def get_barrier_factory_defaults(cfg: Dict[str, Any] | None = None) -> Dict[str,
 def get_sample_weight_opt_defaults(cfg: Dict[str, Any] | None = None) -> Dict[str, Any]:
     c = _cfg_or_default(cfg)
     return {
-        "sample_weight_opt_model_family": str(c.get("sample_weight_opt_model_family", "ExtraTrees")),
+        "sample_weight_opt_model_family": str(c.get("sample_weight_opt_model_family", "ridge")),
         "sample_weight_opt_n_splits": int(c.get("sample_weight_opt_n_splits", 5)),
         "sample_weight_opt_embargo_bars": int(c.get("sample_weight_opt_embargo_bars", 10)),
         "sample_weight_opt_min_n_eff_ratio": float(c.get("sample_weight_opt_min_n_eff_ratio", 0.30)),
@@ -99,6 +98,11 @@ def get_sample_weight_eval_model_defaults(cfg: Dict[str, Any] | None = None) -> 
     """Evaluation-model defaults used by sample-weight optimisation CV scoring."""
     c = _cfg_or_default(cfg)
     return {
+        "ridge": {
+            "alpha": float(c.get("sample_weight_eval_ridge_alpha", 3.0)),
+            "solver": c.get("sample_weight_eval_ridge_solver", "cholesky"),
+            "random_state": int(c.get("sample_weight_eval_ridge_random_state", 42)),
+        },
         "extratrees": {
             "n_estimators": int(c.get("sample_weight_eval_et_n_estimators", 50)),
             "max_depth": int(c.get("sample_weight_eval_et_max_depth", 6)),

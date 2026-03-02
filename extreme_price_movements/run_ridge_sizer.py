@@ -68,6 +68,78 @@ def find_latest_run_id(data_root: str) -> str:
     return run_dirs[0].name
 
 
+
+def load_base_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataFrame]:
+    """Load base model OOF predictions from a training run.
+    
+    Loads OOF predictions from the base training (before meta model).
+    These are stored in data/artifacts/{run_id}/oof/ directory.
+    
+    Returns a dict keyed by bucket (e.g. 'long_mr') where each value is a
+    DataFrame with base model prediction columns (base_H2, base_H4).
+    """
+    import re as re2
+    base_oof_dir = Path(data_root) / "artifacts" / run_id / "oof"
+    
+    if not base_oof_dir.exists():
+        tprint(f"WARNING: Base OOF directory not found at {base_oof_dir}, skipping base model predictions")
+        return {}
+    
+    # Load all parquet files
+    raw_dfs = {}
+    for parquet_file in base_oof_dir.glob("oof_*.parquet"):
+        model_name = parquet_file.stem.replace("oof_", "")
+        df = pd.read_parquet(parquet_file)
+        raw_dfs[model_name] = df
+    
+    if not raw_dfs:
+        tprint(f"WARNING: No base OOF parquet files found in {base_oof_dir}, skipping base model predictions")
+        return {}
+    
+    # Parse model names into (base_bucket, horizon)
+    # Patterns: long_mr_H2 -> (long_mr, H2), long_tf_H4 -> (long_tf, H4)
+    h_pat = re2.compile(r'^(.+)_H(\d+)$')
+    buckets = {}
+    for name, df in raw_dfs.items():
+        m = h_pat.match(name)
+        if m:
+            bucket = m.group(1)
+            _h = int(m.group(2))
+            if _h not in (2, 4):
+                continue
+            col_name = f"base_H{_h}"
+        else:
+            # Fallback: treat entire name as bucket
+            bucket = name
+            col_name = "base"
+        
+        if bucket not in buckets:
+            buckets[bucket] = {}
+        buckets[bucket][col_name] = df
+    
+    result = {}
+    for bucket, model_dfs in buckets.items():
+        # Use first available df as base (for length and metadata)
+        base_df = next(iter(model_dfs.values()))
+        n = len(base_df)
+        combined = pd.DataFrame(index=range(n))
+        
+        # Add all base prediction columns
+        for col_name, mdf in sorted(model_dfs.items()):
+            if len(mdf) == n:
+                # Use oof_prob as the base model prediction
+                combined[col_name] = mdf["oof_prob"].values
+        
+        # Add metadata for joining with meta OOF
+        combined["index"] = base_df["index"].values
+        combined["timestamp"] = base_df["timestamp"].values
+        combined["symbol"] = base_df["symbol"].values
+        
+        result[bucket] = combined
+    
+    tprint(f"Loaded base OOF predictions for {len(result)} buckets: {list(result.keys())}")
+    return result
+
 def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataFrame]:
     """Load meta model OOF predictions from a training run.
     
@@ -85,6 +157,9 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
     if not meta_oof_dir.exists():
         raise FileNotFoundError(f"No meta OOF directory at {meta_oof_dir}")
     
+    # Load base OOF predictions first
+    base_oofs = load_base_oof_predictions(data_root, run_id)
+    
     # Load all parquet files
     raw_dfs = {}
     for parquet_file in meta_oof_dir.glob("meta_oof_*.parquet"):
@@ -101,16 +176,16 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
         all(c in df.columns for c in ("oof_p_sl", "oof_p_to", "oof_p_tp"))
         for df in raw_dfs.values()
     )
-    assert _meta_prob_available, (
-        "Sizing must use meta classifier probabilities when TO excluded in base. "
-        "Missing oof_p_sl/oof_p_to/oof_p_tp in meta OOF artifacts."
-    )
+    if not _meta_prob_available:
+        tprint("WARNING: Meta classifier probabilities (oof_p_sl/oof_p_to/oof_p_tp) not found in meta OOF artifacts; continuing with regression/aux heads only.")
+    else:
+        tprint("Meta classifier probabilities found in meta OOF artifacts.")
     
     # Parse model names into (base_bucket, col_name)
     # Patterns: long_mr_H2 -> (long_mr, reg_H2), long_mr_clf -> (long_mr, clf),
     #           long_mr_utility -> (long_mr, utility), etc.
     _h_pat = re.compile(r'^(.+)_H(\d+)$')
-    _aux_heads = {'utility', 'mae_q70', 'mfe', 'dur'}
+    _aux_heads = {'utility', 'mae_q70', 'mfe'}
     buckets = {}
     for name, df in raw_dfs.items():
         if name.endswith("_clf"):
@@ -124,8 +199,11 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
         else:
             m = _h_pat.match(name)
             if m:
+                _h = int(m.group(2))
+                if _h not in (2, 4):
+                    continue
                 bucket = m.group(1)
-                col_name = f"reg_H{m.group(2)}"
+                col_name = f"reg_H{_h}"
             else:
                 bucket = name
                 col_name = "reg"
@@ -173,20 +251,39 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
         # Include aux head OOFs and realized outcomes for diagnostics
         aux_cols = [
             "timestamp", "symbol", "return", "is_long", "index",
-            "oof_u_hat", "oof_log_mae_q70_hat", "oof_log_mfe_hat", "oof_log_dur_hat",
-            "mae_ret", "mfe_ret", "duration", "u_policy_net", "exit_code"
+            "oof_u_hat", "oof_log_mae_q70_hat", "oof_log_mfe_hat",
+            "mae_ret", "mfe_ret", "u_policy_net", "exit_code"
         ]
         for col in aux_cols:
             if col in base_df.columns:
                 combined[col] = base_df[col].values
         
         result[bucket] = combined
+        
+        # Merge base OOF predictions if available (same bucket only)
+        # Base buckets: long_mr, long_tf, short_mr, short_tf
+        # Meta buckets: long_mr_reg, long_mr_early_inval, etc.
+        # Match by prefix (e.g., long_mr_reg -> long_mr)
+        if base_oofs:
+            for base_bucket, base_df in base_oofs.items():
+                if bucket.startswith(base_bucket):
+                    base_cols = [c for c in base_df.columns if c.startswith('base_')]
+                    if base_cols:
+                        if 'index' in combined.columns and 'index' in base_df.columns:
+                            base_by_idx = base_df.set_index('index')
+                            for col in base_cols:
+                                if col in base_by_idx.columns:
+                                    combined[col] = combined['index'].map(base_by_idx[col])
+                            tprint(f"  Merged base OOF {base_cols} into {bucket} (base: {base_bucket})")
+                    break
     
     tprint(f"Loaded OOF predictions for {len(result)} buckets: {list(result.keys())}")
 
+    # These are metadata columns to exclude from features
+    # Note: oof_u_hat, oof_log_mae_q70_hat, oof_log_mfe_hat, oof_log_dur_hat 
+    # are now included as features (meta model auxiliary predictions)
     _meta_set = {
         "timestamp", "symbol", "return", "is_long", "index",
-        "oof_u_hat", "oof_log_mae_q70_hat", "oof_log_mfe_hat", "oof_log_dur_hat",
         "mae_ret", "mfe_ret", "duration", "u_policy_net", "exit_code"
     }
     for bk, bdf in result.items():
@@ -228,8 +325,8 @@ def load_trade_outcomes(data_root: str, run_id: str, oof_df: pd.DataFrame) -> pd
 
         # Copy aux diagnostic columns
         aux_cols = [
-            "oof_u_hat", "oof_log_mae_q70_hat", "oof_log_mfe_hat", "oof_log_dur_hat",
-            "mae_ret", "mfe_ret", "duration"
+            "oof_u_hat", "oof_log_mae_q70_hat", "oof_log_mfe_hat",
+            "mae_ret", "mfe_ret"
         ]
         for c in aux_cols:
             if c in oof_df.columns:

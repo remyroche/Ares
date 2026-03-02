@@ -5,6 +5,7 @@ from typing import Dict, Iterable, Tuple
 
 import numpy as np
 import pandas as pd
+from extreme_price_movements.limit_order_pricer import estimate_entry_limit_offset
 
 
 EPS = 1e-12
@@ -32,6 +33,9 @@ class EntryOffsetConfig:
     lock_amt_k_u: float = 0.08
     kill_c_k_mae: float = 0.08
     hold_h_k_dur: float = 0.20
+    offset_engine_modes: Tuple[str, ...] = ("policy_only", "estimator_only", "blended")
+    offset_blend_lambdas: Tuple[float, ...] = (0.25, 0.50, 0.75)
+    offset_engine_oos_frac: float = 0.30
 
     @property
     def delta_atr_grid(self) -> np.ndarray:
@@ -223,23 +227,106 @@ def choose_entry_offsets(
     alpha_u = float(model_params.get("alpha_u", cfg.alpha_u_default))
     alpha_mae = float(model_params.get("alpha_mae", cfg.alpha_mae_default))
     beta = float(model_params.get("beta_delta", cfg.beta_default))
+    n = len(df)
 
-    eu_rows = []
     best_idx = np.zeros(len(df), dtype=int)
     best_eu = np.full(len(df), -np.inf, dtype=float)
     best_pf = np.zeros(len(df), dtype=float)
     for i, d in enumerate(delta_grid):
         pfill = _sigmoid(alpha0 + alpha_u * u - alpha_mae * mae - beta * d)
         eu = pfill * (cfg.a * u + d - cfg.lambda_risk * mae - cfg.c_atr)
-        eu_rows.append(pd.DataFrame({"delta_atr": d, "p_fill": pfill, "expected_utility": eu}))
         mask = eu > best_eu
         best_eu[mask] = eu[mask]
         best_idx[mask] = i
         best_pf[mask] = pfill[mask]
 
-    delta_star = delta_grid[best_idx]
-    place = best_eu >= float(cfg.min_expected_utility)
-    delta_price = delta_star * atr * signal_px
+    delta_policy = np.asarray(delta_grid[best_idx], dtype=float)
+    offset_policy_bps = np.clip((delta_policy * atr) * 10000.0, 0.0, 1000.0)
+
+    # Estimator mode: MAE/MFE-derived offset in bps.
+    def _to_frac(v: np.ndarray, kind: str) -> np.ndarray:
+        x = np.asarray(v, dtype=float)
+        if kind == "mae":
+            if np.nanmedian(np.abs(x[np.isfinite(x)])) < 0.20:
+                y = np.expm1(np.clip(x, -20, 20))
+            else:
+                y = np.clip(np.abs(x), 0.0, None)
+        elif kind == "mfe":
+            if np.nanmedian(np.abs(x[np.isfinite(x)])) < 0.20:
+                y = np.expm1(np.clip(x, -20, 20))
+            else:
+                y = np.clip(np.abs(x), 0.0, None)
+        else:
+            y = x
+        y = np.where(np.isfinite(y), y, 0.0)
+        return np.clip(y, 0.0, 1.0)
+
+    mae_frac = _to_frac(np.asarray(df["mae_hat"].values, dtype=float), "mae")
+    mfe_frac = _to_frac(np.asarray(df["mfe_hat"].values, dtype=float), "mfe")
+    u_raw = np.asarray(df["u_hat"].values, dtype=float)
+    conf = 1.0 / (1.0 + np.exp(-np.clip(np.abs(u), -10.0, 10.0)))
+    offset_est_bps = np.zeros(n, dtype=float)
+    for i in range(n):
+        offset_est_bps[i] = float(
+            estimate_entry_limit_offset(
+                mae_hat=float(mae_frac[i]),
+                mfe_hat=float(mfe_frac[i]),
+                u_hat=float(u_raw[i] if np.isfinite(u_raw[i]) else 0.0),
+                confidence=float(conf[i]),
+            )
+        )
+    offset_est_bps = np.where(np.isfinite(offset_est_bps), offset_est_bps, 0.0)
+    offset_est_bps = np.clip(offset_est_bps, 0.0, 1000.0)
+
+    def _eval_candidate(offset_bps: np.ndarray) -> Dict[str, np.ndarray | float]:
+        off = np.asarray(offset_bps, dtype=float)
+        off = np.clip(np.where(np.isfinite(off), off, 0.0), 0.0, 1000.0)
+        delta = np.clip((off / 10000.0) / np.maximum(atr, 1e-6), 0.0, cfg.delta_atr_max)
+        pfill = _sigmoid(alpha0 + alpha_u * u - alpha_mae * mae - beta * delta)
+        eu = pfill * (cfg.a * u + delta - cfg.lambda_risk * mae - cfg.c_atr)
+        place = eu >= float(cfg.min_expected_utility)
+        split = int(np.floor((1.0 - float(np.clip(cfg.offset_engine_oos_frac, 0.05, 0.95))) * n))
+        split = int(np.clip(split, 1, max(n - 1, 1)))
+        idx = slice(split, n) if n >= 2 else slice(0, n)
+        mean_eu = float(np.nanmean(eu[idx])) if n > 0 else -np.inf
+        place_rate = float(np.mean(place[idx])) if n > 0 else 0.0
+        score = float(mean_eu + 0.02 * place_rate)
+        return {
+            "offset_bps": off,
+            "delta": delta,
+            "pfill": pfill,
+            "eu": eu,
+            "place": place,
+            "score": score,
+            "mean_eu": mean_eu,
+            "place_rate": place_rate,
+        }
+
+    candidates = []
+    for mode in cfg.offset_engine_modes:
+        m = str(mode).lower()
+        if m == "policy_only":
+            ev = _eval_candidate(offset_policy_bps)
+            candidates.append({"mode": m, "lambda": 0.0, "eval": ev})
+        elif m == "estimator_only":
+            ev = _eval_candidate(offset_est_bps)
+            candidates.append({"mode": m, "lambda": 1.0, "eval": ev})
+        elif m == "blended":
+            for lam in cfg.offset_blend_lambdas:
+                _lam = float(np.clip(lam, 0.0, 1.0))
+                off = (1.0 - _lam) * offset_policy_bps + _lam * offset_est_bps
+                ev = _eval_candidate(off)
+                candidates.append({"mode": m, "lambda": _lam, "eval": ev})
+    if not candidates:
+        candidates = [{"mode": "policy_only", "lambda": 0.0, "eval": _eval_candidate(offset_policy_bps)}]
+    best = max(candidates, key=lambda c: float(c["eval"]["score"]))
+
+    offset_star_bps = np.asarray(best["eval"]["offset_bps"], dtype=float)
+    delta_star = np.asarray(best["eval"]["delta"], dtype=float)
+    place = np.asarray(best["eval"]["place"], dtype=bool)
+    best_eu = np.asarray(best["eval"]["eu"], dtype=float)
+    best_pf = np.asarray(best["eval"]["pfill"], dtype=float)
+    delta_price = (offset_star_bps / 10000.0) * signal_px
 
     out = df.copy()
     out["delta_atr_star"] = delta_star
@@ -247,8 +334,18 @@ def choose_entry_offsets(
     out["p_fill_star"] = best_pf
     out["eu_star"] = best_eu
     out["place_order"] = place.astype(bool)
+    out["limit_offset_bps_dynamic"] = offset_star_bps
+    out["limit_offset_bps_policy"] = offset_policy_bps
+    out["limit_offset_bps_estimator"] = offset_est_bps
+    out["offset_engine_mode"] = str(best["mode"])
+    out["offset_engine_lambda"] = float(best["lambda"])
     out["entry_px_fill"] = np.maximum(signal_px - delta_price, EPS)
     out["delta_atr_grid"] = [delta_grid.tolist()] * len(out)
+    out.attrs["offset_engine_mode"] = str(best["mode"])
+    out.attrs["offset_engine_lambda"] = float(best["lambda"])
+    out.attrs["offset_engine_oos_score"] = float(best["eval"]["score"])
+    out.attrs["offset_engine_oos_mean_eu"] = float(best["eval"]["mean_eu"])
+    out.attrs["offset_engine_oos_place_rate"] = float(best["eval"]["place_rate"])
     return out
 
 
@@ -336,8 +433,10 @@ def build_entry_policy_payload(
     model_params: Dict[str, float],
     cfg: EntryOffsetConfig,
     fallback_meta: Dict[str, str] | None = None,
+    offset_engine_meta: Dict[str, float | str] | None = None,
 ) -> Dict[str, object]:
     fallback_meta = fallback_meta or {}
+    offset_engine_meta = offset_engine_meta or {}
     return {
         "model": {
             "alpha0": float(model_params.get("alpha0", cfg.alpha0_default)),
@@ -370,5 +469,11 @@ def build_entry_policy_payload(
             "mae_zscore_used": True,
             "source_quality": str(fallback_meta.get("source_quality", "unknown")),
         },
+        "offset_engine": {
+            "mode": str(offset_engine_meta.get("mode", "policy_only")),
+            "lambda": float(offset_engine_meta.get("lambda", 0.0)),
+            "oos_score": float(offset_engine_meta.get("oos_score", 0.0)),
+            "oos_mean_eu": float(offset_engine_meta.get("oos_mean_eu", 0.0)),
+            "oos_place_rate": float(offset_engine_meta.get("oos_place_rate", 0.0)),
+        },
     }
-

@@ -17,9 +17,16 @@ Inputs:
 Max features produced here: 18 (all HVN/LVN-centric).
 """
 
+import warnings
+
 import numpy as np
 import pandas as pd
 from numpy.lib.stride_tricks import sliding_window_view
+
+# Suppress expected RuntimeWarnings from nanmin/nanmean on all-NaN slices
+# These are handled gracefully by checking has_valid before using the results
+warnings.filterwarnings('ignore', message='.*All-NaN slice.*')
+warnings.filterwarnings('ignore', message='.*Mean of empty slice.*')
 
 def hvn_lvn_features_ohlcv(
     df: pd.DataFrame,
@@ -138,9 +145,10 @@ def hvn_lvn_features_ohlcv(
         # LVN "depth" (thinness)
         hist_nz = hist.copy()
         hist_nz[hist_nz <= 0] = np.nan
+        has_valid = ~np.all(np.isnan(hist_nz), axis=1)
         min_nz = np.nanmin(hist_nz, axis=1)
-        mean_nz = np.nanmean(hist_nz, axis=1) + eps
-        lvn_depth[out_end] = min_nz / mean_nz
+        mean_nz = np.nanmean(hist_nz, axis=1)
+        lvn_depth[out_end] = np.where(has_valid, min_nz / (mean_nz + eps), np.nan)
 
         # --- Nearest HVN above/below from top-k bins ---
         k = min(topk_hvn, vp_bins)

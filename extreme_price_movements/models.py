@@ -1,11 +1,11 @@
+from .utils import tprint
 import numpy as np
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import ElasticNet, LogisticRegression
-from .utils import tprint
 
 def make_elasticnet_reg(alpha=1e-3, l1_ratio=0.2):
-    tprint(f"Entering function: make_elasticnet_reg in models.py")
+    tprint(f"Entering function: make_elasticnet_reg in {__name__}")
     tprint(f"make_elasticnet_reg params: alpha={alpha}, l1_ratio={l1_ratio}")
     return Pipeline([
         ("scaler", StandardScaler(with_mean=True, with_std=True)),
@@ -19,7 +19,7 @@ def make_elasticnet_reg(alpha=1e-3, l1_ratio=0.2):
     ])
 
 def make_exhaustion_model(C=1.0, l1_ratio=0.3):
-    tprint(f"Entering function: make_exhaustion_model in models.py")
+    tprint(f"Entering function: make_exhaustion_model in {__name__}")
     tprint(f"make_exhaustion_model params: C={C}, l1_ratio={l1_ratio}")
     return Pipeline([
         ("scaler", StandardScaler(with_mean=True, with_std=True)),

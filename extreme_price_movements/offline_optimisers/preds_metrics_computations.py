@@ -27,6 +27,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+import os
 from scipy import stats as scipy_stats
 
 from extreme_price_movements.utils import tprint
@@ -304,6 +305,8 @@ def apply_tpsl_proxy(
     sl: float,
     fee_rt: float = float(FEE_RT),
     mode: str = "optimistic",
+    df: Optional[pd.DataFrame] = None,
+    side_int: int = 1,
 ) -> np.ndarray:
     """Apply TP/SL proxy and return per-row net returns.
 
@@ -323,6 +326,111 @@ def apply_tpsl_proxy(
 
     hit_tp = fwd_ret >= tp
     hit_sl = fwd_ret <= -sl
+
+    # Double hit resolution using 15m data if available
+    double_hit_mask = hit_tp & hit_sl
+
+    # Actually, in standard proxy fwd_ret can't hit both if tp>0 and sl>0
+    # But if it's based on high/low in some future change, this mask would be non-empty.
+    # To be robust and fulfill the requirement, we check 1h bars specifically.
+    if df is not None and "ts" in df.columns and "asset" in df.columns and mode in ("mid", "optimise"):
+        for asset, asset_df in df.groupby("asset"):
+            path_pq = f"extreme_price_movements/15m_ohlcv/{asset}.parquet"
+            path_csv = f"extreme_price_movements/15m_ohlcv/{asset}.csv"
+            df_15 = None
+            if os.path.exists(path_pq):
+                try: df_15 = pd.read_parquet(path_pq)
+                except Exception: pass
+            elif os.path.exists(path_csv):
+                try:
+                    df_15 = pd.read_csv(path_csv)
+                    if 'timestamp' in df_15.columns:
+                        df_15['timestamp'] = pd.to_datetime(df_15['timestamp'], utc=True)
+                        df_15.set_index('timestamp', inplace=True)
+                    elif 'ts' in df_15.columns:
+                        df_15['ts'] = pd.to_datetime(df_15['ts'], utc=True)
+                        df_15.set_index('ts', inplace=True)
+                except Exception: pass
+
+            if df_15 is None or df_15.empty:
+                continue
+
+            if not pd.api.types.is_datetime64_any_dtype(df_15.index):
+                df_15.index = pd.to_datetime(df_15.index, utc=True)
+            df_15 = df_15.sort_index()
+            times_15m = df_15.index.to_numpy(dtype="datetime64[ns]").view(np.int64)
+            highs_15m = df_15['high'].to_numpy(dtype=np.float32)
+            lows_15m = df_15['low'].to_numpy(dtype=np.float32)
+            closes_15m = df_15['close'].to_numpy(dtype=np.float32)
+
+            # Check for double hits on 1h bars for active trades
+            for idx in asset_df.index:
+                if pos_w[idx] <= 0:
+                    continue
+                # If we consider fwd_ret as proxy, double hit is rare.
+                # But we will check the 15m data exactly.
+                t_ambig = pd.to_datetime(asset_df.loc[idx, 'ts'], utc=True).value
+                t_next = t_ambig + int(3600 * 1_000_000_000)
+
+                # We need entry price to do exact bounds. We approximate entry_p = 1.0
+                # and scale tp/sl to pct.
+                # Actually, 15m data has absolute prices.
+                start_idx = np.searchsorted(times_15m, t_ambig, side='left')
+                end_idx = np.searchsorted(times_15m, t_next, side='left')
+
+                if start_idx >= end_idx or start_idx >= len(closes_15m):
+                    continue
+
+                entry_p = closes_15m[start_idx] # Approximation for entry
+                if side_int == 1:
+                    sl_price = entry_p * (1.0 - sl)
+                    tp_price = entry_p * (1.0 + tp)
+                else:
+                    sl_price = entry_p * (1.0 + sl)
+                    tp_price = entry_p * (1.0 - tp)
+
+                resolved = False
+                for k in range(start_idx, end_idx):
+                    hh = highs_15m[k]
+                    ll = lows_15m[k]
+                    cc = closes_15m[k]
+
+                    bar_hit_tp = False
+                    bar_hit_sl = False
+
+                    if side_int == 1:
+                        if ll <= sl_price: bar_hit_sl = True
+                        if hh >= tp_price: bar_hit_tp = True
+                    else:
+                        if hh >= sl_price: bar_hit_sl = True
+                        if ll <= tp_price: bar_hit_tp = True
+
+                    if bar_hit_tp and not bar_hit_sl:
+                        hit_tp[idx] = True
+                        hit_sl[idx] = False
+                        fwd_ret[idx] = tp
+                        resolved = True
+                        break
+                    elif bar_hit_sl and not bar_hit_tp:
+                        hit_sl[idx] = True
+                        hit_tp[idx] = False
+                        fwd_ret[idx] = -sl
+                        resolved = True
+                        break
+                    elif bar_hit_sl and bar_hit_tp:
+                        # Ambiguous inside 15m bar
+                        d_tp = abs(cc - tp_price)
+                        d_sl = abs(cc - sl_price)
+                        if d_tp < d_sl:
+                            hit_tp[idx] = True
+                            hit_sl[idx] = False
+                            fwd_ret[idx] = tp
+                        else:
+                            hit_sl[idx] = True
+                            hit_tp[idx] = False
+                            fwd_ret[idx] = -sl
+                        resolved = True
+                        break
 
     if mode == "optimistic":
         realised = np.where(hit_tp, tp, np.where(hit_sl, -sl, fwd_ret)).astype(np.float32)
@@ -438,6 +546,8 @@ def compute_pnl_with_fees(
     tp: float,
     sl: float,
     mode: str = "mid",
+    df: Optional[pd.DataFrame] = None,
+    side_int: int = 1,
 ) -> Dict[str, Dict[str, float]]:
     """Compute expected PnL at both standard fee levels (0.2% and 0.5% round-trip).
 
@@ -446,7 +556,7 @@ def compute_pnl_with_fees(
     """
     results: Dict[str, Dict[str, float]] = {}
     for fee in FEE_LEVELS:
-        net = apply_tpsl_proxy(fwd_ret, pos_w, tp=tp, sl=sl, fee_rt=fee, mode=mode)
+        net = apply_tpsl_proxy(fwd_ret, pos_w, tp=tp, sl=sl, fee_rt=fee, mode=mode, df=df, side_int=side_int)
         kpis = compute_strategy_kpis(net, fee_rt=fee)
         label = f"fee_{int(fee * 1000)}bps"
         results[label] = kpis
@@ -461,11 +571,13 @@ def run_proxy_grid(
     mode: str = "optimistic",
     ret_col: str = "fwd_ret",
     fee_levels: Tuple[float, ...] = FEE_LEVELS,
+    side: str = "long",
 ) -> pd.DataFrame:
     """Run proxy TP/SL grid. Reports KPIs at every fee level in fee_levels."""
     fwd = df[ret_col].to_numpy(dtype=np.float32)
     rows = []
     primary_fee_label = f"fee_{int(fee_levels[0] * 1000)}bps"
+    side_int = 1 if side == "long" else -1
     for sel in selections:
         pos_w = infer_positions_top_frac(df, sel.top_frac, by=by)
         for spec in tpsl:
@@ -482,7 +594,7 @@ def run_proxy_grid(
                 **hr,
             }
             for fee in fee_levels:
-                net = apply_tpsl_proxy(fwd, pos_w, tp=spec.tp, sl=sl, fee_rt=fee, mode=mode)
+                net = apply_tpsl_proxy(fwd, pos_w, tp=spec.tp, sl=sl, fee_rt=fee, mode=mode, df=df, side_int=side_int)
                 k = compute_strategy_kpis(net, fee_rt=fee)
                 fee_label = f"fee_{int(fee * 1000)}bps"
                 for kname, kval in k.items():
@@ -992,9 +1104,9 @@ def analyse_predictions(
     ll = lead_lag_sanity(df, by_ts="ts", ret_col=ret_eff_col)
 
     # --- Proxy grids: optimistic, pessimistic, mid (realistic) ---
-    grid_opt = run_proxy_grid(df, mode="optimistic", ret_col=ret_eff_col)
-    grid_pess = run_proxy_grid(df, mode="pessimistic", ret_col=ret_eff_col)
-    grid_mid = run_proxy_grid(df, mode="mid", ret_col=ret_eff_col)
+    grid_opt = run_proxy_grid(df, mode="optimistic", ret_col=ret_eff_col, side=side_norm)
+    grid_pess = run_proxy_grid(df, mode="pessimistic", ret_col=ret_eff_col, side=side_norm)
+    grid_mid = run_proxy_grid(df, mode="mid", ret_col=ret_eff_col, side=side_norm)
 
     # --- Optimise-step policy simulation ---
     opt_params = _load_optimise_params(optimise_params_path)
@@ -1008,6 +1120,7 @@ def analyse_predictions(
         tpsl=opt_tpsl_spec,
         mode="optimise",
         ret_col=ret_eff_col,
+        side=side_norm,
     )
 
     # --- Regime bucket analysis ---

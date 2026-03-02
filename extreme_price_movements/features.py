@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import pandas as pd
 import hashlib
@@ -8,11 +10,18 @@ from joblib import Memory
 from extreme_price_movements.utils import tprint, check_inf_nan
 from extreme_price_movements.feature_transforms import CausalFeatureTransformer
 from extreme_price_movements.time_utils import ensure_utc
-from extreme_price_movements.frac_diff_adaptive import find_min_ffd, frac_diff_ffd
+from extreme_price_movements.frac_diff_adaptive import find_min_ffd, frac_diff_ffd, get_weights_ffd
 from extreme_price_movements.validation import validate_panel
 from extreme_price_movements.gated_features import add_accept_gate_features, add_gate_features, add_gate_interaction_panel
 from extreme_price_movements.perp_features import compute_features as compute_perp_features
 import extreme_price_movements.fast_funcs as ff
+
+# Suppress expected RuntimeWarnings from nanmin/nanmean/nanmax on all-NaN slices
+# These are handled gracefully by replacing with 0 later in the pipeline
+warnings.filterwarnings('ignore', message='.*All-NaN slice.*')
+warnings.filterwarnings('ignore', message='.*Mean of empty slice.*')
+# Suppress divide warnings from correlation calculations when stddev is 0
+warnings.filterwarnings('ignore', message='.*invalid value encountered.*')
 
 # Initialize joblib cache
 _cache = Memory("./cache/features", verbose=0)
@@ -32,8 +41,60 @@ def _col_data_hash(arr):
     """Fast hash of column data for cache key."""
     return hashlib.md5(np.ascontiguousarray(arr).tobytes()).hexdigest()[:16]
 
-def zscore_rolling(x: pd.DataFrame, n: int):
-    return ff.numba_zscore(x, n)
+def _rolling_winsorize_causal(x: pd.DataFrame, window: int, q_lo: float, q_hi: float) -> pd.DataFrame:
+    """Winsorize using causal rolling quantile bands (shifted by 1)."""
+    if window <= 1:
+        return x.astype(np.float32)
+    lo = ff.numba_rolling_quantile(x, window, float(q_lo)).shift(1)
+    hi = ff.numba_rolling_quantile(x, window, float(q_hi)).shift(1)
+    return x.clip(lower=lo, upper=hi).astype(np.float32)
+
+
+def zscore_rolling(
+    x: pd.DataFrame,
+    n: int,
+    *,
+    winsorize: bool = True,
+    q_lo: float = 0.01,
+    q_hi: float = 0.99,
+    std_floor: float = 1e-6,
+    use_ewma: bool = False,
+    ewma_span: int | None = None,
+):
+    """
+    Guarded rolling z-score.
+    - Optional causal winsorization before mean/std
+    - Std floor guard (flatline windows -> 0)
+    - Optional EWMA mean/std mode for faster adaptation
+    """
+    x_in = x.astype(np.float32)
+    x_proc = _rolling_winsorize_causal(x_in, max(2, int(n)), q_lo, q_hi) if winsorize else x_in
+
+    if use_ewma:
+        span = max(2, int(ewma_span or n))
+        alpha = 2.0 / (span + 1.0)
+        mu = ff.numba_ewma(x_proc, alpha, False).shift(1)
+        dev2 = (x_proc - mu) ** 2
+        var = ff.numba_ewma(dev2, alpha, False).shift(1)
+        sd = np.sqrt(var.clip(lower=0))
+    else:
+        mu = ff.numba_rolling_mean(x_proc, max(2, int(n)))
+        sd = ff.numba_rolling_std(x_proc, max(2, int(n)))
+
+    z = (x_proc - mu) / (sd + 1e-12)
+    z = z.where(sd >= float(std_floor), 0.0)
+    return z.astype(np.float32)
+
+
+def robust_zscore_rolling(
+    x: pd.DataFrame,
+    n: int,
+    *,
+    quantile: float = 0.50,
+    eps: float = 1e-6,
+):
+    """Robust rolling z-score: anchor=Q(quantile), scale=MAD."""
+    return ff.numba_rolling_robust_zscore(x.astype(np.float32), int(n), float(quantile), float(eps)).astype(np.float32)
 
 def rsi(close: pd.DataFrame, n: int):
     return ff.numba_rsi(close, n)
@@ -61,11 +122,42 @@ def _transform_close_fixed_ffd(
     df_den = ff.numba_ewma(df_log, 2.0 / 6.0, False)
 
     out = pd.DataFrame(index=df.index, columns=df.columns, dtype=np.float32)
+    fallback_d_values = [float(x) for x in (0.6, 0.5, 0.4)]
+    d_candidates = []
+    for cand in [float(d)] + fallback_d_values:
+        if cand not in d_candidates:
+            d_candidates.append(cand)
+    win_by_d = {cand: int(len(get_weights_ffd(cand, float(thres)))) for cand in d_candidates}
+    fallback_used = 0
+    direct_used = 0
     total_cols = len(df_den.columns)
     for i, col in enumerate(df_den.columns):
-        out[col] = frac_diff_ffd(df_den[col], d=float(d), thres=float(thres)).astype(np.float32)
+        ser = df_den[col]
+        valid_n = int(ser.notna().sum())
+
+        d_use = None
+        for cand in d_candidates:
+            if win_by_d[cand] <= valid_n:
+                d_use = cand
+                break
+
+        if d_use is None:
+            # Series is too short for all configured FFD windows: keep denoised log-close
+            # rather than generating all-NaN features.
+            out[col] = ser.astype(np.float32)
+            direct_used += 1
+        else:
+            if d_use != float(d):
+                fallback_used += 1
+            out[col] = frac_diff_ffd(ser, d=float(d_use), thres=float(thres)).astype(np.float32)
+
         if (i + 1) % 10 == 0 or (i + 1) == total_cols:
             tprint(f"Fixed FFD ({_label}, d={d:.2f}): {i+1}/{total_cols}")
+    if fallback_used > 0 or direct_used > 0:
+        tprint(
+            f"Fixed FFD ({_label}, d={d:.2f}) short-history fallback: "
+            f"d-fallback={fallback_used}, direct-denoised={direct_used}, total={total_cols}"
+        )
     return out
 
 def atr_percent(high: pd.DataFrame, low: pd.DataFrame, close: pd.DataFrame, n: int):
@@ -400,7 +492,10 @@ def add_regime_gates(mkt_df: pd.DataFrame, gate_vol_lookback_hours: int, gate_tr
 
 def compute_vol_regime_features(close_df: pd.DataFrame, vol_window: int = 24, pct_window: int = 252):
     """Compute volatility-regime features from close prices."""
-    ret = np.log(close_df / close_df.shift(1))
+    # Use np.maximum to avoid log(0) or negative values in the ratio
+    ratio = close_df / close_df.shift(1)
+    ratio_safe = np.maximum(ratio, 1e-9)
+    ret = np.log(ratio_safe)
     rv = ret.rolling(vol_window).std().shift(1)
 
     vol_pct = rv.rolling(pct_window).rank(pct=True).clip(0.0, 1.0)
@@ -948,7 +1043,11 @@ def _compute_features_impl(panel, mkt_gates, cfg):
         feats[f"ffd_amihud_{d_tag}"] = ff.numba_rolling_mean(illiq_raw, 24).fillna(0).astype(np.float32)
         vr = v * diff.abs()
         ema_vr = ema(vr, 24)
-        feats[f"ffd_vol_range_shock_{d_tag}"] = (vr / (ema_vr + 1e-12)).astype(np.float32)
+        ratio_floor = float(cfg.get("ratio_denom_floor", 1e-6))
+        vr_ratio = vr / ema_vr.abs().clip(lower=ratio_floor)
+        if bool(cfg.get("ratio_use_log", True)):
+            vr_ratio = np.log1p(vr_ratio.clip(lower=0))
+        feats[f"ffd_vol_range_shock_{d_tag}"] = vr_ratio.astype(np.float32)
 
     # Distance-from-mean-reversion features (d=0.4)
     for d in [0.4]:
@@ -990,20 +1089,20 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     # range_XXh_pct is max_h - min_l. inputs are log-FFD, so diff is %-ish.
     # Do NOT divide by c (FFD) as it crosses 0.
-    feats["range_24h_pct"] = (h_24 - l_24).astype(np.float32)
-    feats["range_12h_pct"] = (h_12 - l_12).astype(np.float32)
-    feats["range_16h_pct"] = (h_16 - l_16).astype(np.float32)
+    # Use np.where to handle cases where rolling windows produce NaN
+    feats["range_24h_pct"] = np.where(np.isfinite(h_24) & np.isfinite(l_24), (h_24 - l_24), 0.0).astype(np.float32)
+    feats["range_12h_pct"] = np.where(np.isfinite(h_12) & np.isfinite(l_12), (h_12 - l_12), 0.0).astype(np.float32)
+    feats["range_16h_pct"] = np.where(np.isfinite(h_16) & np.isfinite(l_16), (h_16 - l_16), 0.0).astype(np.float32)
     del h_24, l_24, h_12, l_12, h_16, l_16
 
     # Volatility Z-score (using Log-ATR robust z-score)
     # Baseline: 90 days. x = log(ATR/Close).
-    # Z = (x - Q(0.45)) / (1.4826 * MAD)
+    # Z = (x - Q(0.50)) / (1.4826 * MAD)
     # atr_base is raw ATR (price units), so we normalize by C
     vol_proxy = (atr_base / (c + 1e-12))
     log_vol = np.log(vol_proxy + 1e-9).astype(np.float32)
-    feats["volatility_zscore"] = ff.numba_rolling_robust_zscore(
-        log_vol, window=24 * 90, quantile=0.45
-    ).astype(np.float32)
+    vol_z = robust_zscore_rolling(log_vol, 24 * 90, quantile=0.50)
+    feats["volatility_zscore"] = np.where(np.isfinite(vol_z), vol_z, 0.0).astype(np.float32)
     del vol_proxy, log_vol
 
     feats["qv"] = (c * v).astype(np.float32)
@@ -1170,16 +1269,32 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["momentum_accel"] = feats["ret1h"].diff().astype(np.float32)
 
     log_v = v
-    mu_lv = ff.numba_rolling_mean(log_v, cfg["volz_n"])
-    sd_lv = ff.numba_rolling_std(log_v, cfg["volz_n"])
-    feats["rvol_z"] = ((log_v - mu_lv) / (sd_lv + 1e-12)).astype(np.float32)
+    feats["rvol_z"] = zscore_rolling(
+        log_v,
+        cfg["volz_n"],
+        winsorize=bool(cfg.get("zscore_winsorize", True)),
+        q_lo=float(cfg.get("zscore_winsor_q_lo", 0.01)),
+        q_hi=float(cfg.get("zscore_winsor_q_hi", 0.99)),
+        std_floor=float(cfg.get("zscore_std_floor", 1e-6)),
+        use_ewma=bool(cfg.get("zscore_use_ewma", False)),
+        ewma_span=int(cfg.get("zscore_ewma_span", cfg["volz_n"])),
+    ).astype(np.float32)
 
     vr = v * feats["ret1h"].abs()
     ema_vr = ema(vr, 24)
-    feats["vol_range_shock"] = (vr / (ema_vr + 1e-12)).astype(np.float32)
+    ratio_floor = float(cfg.get("ratio_denom_floor", 1e-6))
+    ema_vr_floor = ema_vr.abs().clip(lower=ratio_floor)
+    vol_range_ratio = vr / ema_vr_floor
+    if bool(cfg.get("ratio_use_log", True)):
+        vol_range_ratio = np.log1p(vol_range_ratio.clip(lower=0))
+    feats["vol_range_shock"] = vol_range_ratio.astype(np.float32)
 
     v_max = ff.numba_rolling_max(v, 24)
-    feats["climax_decay"] = (v_max / (v + 1e-12)).astype(np.float32)
+    v_floor = v.abs().clip(lower=ratio_floor)
+    climax_ratio = v_max / v_floor
+    if bool(cfg.get("ratio_use_log", True)):
+        climax_ratio = np.log1p(climax_ratio.clip(lower=0))
+    feats["climax_decay"] = climax_ratio.astype(np.float32)
 
     cum_sv = ff.numba_rolling_sum(signed_vol, 24)
     # Correlation uses internal robust logic, but fillna(0) is good
@@ -1191,7 +1306,11 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     sig_s = ff.numba_rolling_std(feats["ret1h"], 6)
     sig_m = ff.numba_rolling_std(feats["ret1h"], 18)
-    feats["vol_compression"] = (sig_s / (sig_m + 1e-12)).astype(np.float32)
+    sig_m_floor = sig_m.abs().clip(lower=ratio_floor)
+    vol_comp = sig_s / sig_m_floor
+    if bool(cfg.get("ratio_use_log", False)):
+        vol_comp = np.log1p(vol_comp.clip(lower=0))
+    feats["vol_compression"] = vol_comp.astype(np.float32)
 
     rv_ratio_s = mkt_gates["mkt_rv_ratio"].reindex(c.index).astype(np.float32)
     rv_ratio = pd.DataFrame(np.repeat(rv_ratio_s.to_numpy()[:,None], c.shape[1], axis=1),
@@ -1215,9 +1334,30 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     def pick_by_rv(fast_df, base_df, slow_df):
         rr = rv_ratio
+        smooth_span = max(1, int(cfg.get("rv_selector_smooth_span", 6)))
+        if smooth_span > 1:
+            rr = ff.numba_ewma(rr, 2.0 / (smooth_span + 1.0), False)
+        fast_thr = float(cfg["rv_ratio_fast_thr"])
+        slow_thr = float(cfg["rv_ratio_slow_thr"])
+        mode = str(cfg.get("rv_selector_mode", "blend")).lower()
+
+        if mode == "blend" and fast_thr > slow_thr:
+            mid = 0.5 * (fast_thr + slow_thr)
+            half = max(0.5 * (fast_thr - slow_thr), 1e-6)
+            dist = ((rr - mid).abs() / half).clip(upper=1.0)
+            w_base = (1.0 - dist).clip(lower=0.0, upper=1.0)
+            rem = 1.0 - w_base
+            w_fast_side = ((rr - mid) / half).clip(lower=0.0, upper=1.0)
+            w_slow_side = ((mid - rr) / half).clip(lower=0.0, upper=1.0)
+            w_fast = rem * w_fast_side
+            w_slow = rem * w_slow_side
+            out = w_fast * fast_df + w_base * base_df + w_slow * slow_df
+            return out.astype(np.float32)
+
+        hyst = max(0.0, float(cfg.get("rv_selector_hysteresis", 0.02)))
         out = base_df.copy()
-        out = out.where(~(rr > cfg["rv_ratio_fast_thr"]), fast_df)
-        out = out.where(~(rr < cfg["rv_ratio_slow_thr"]), slow_df)
+        out = out.where(~(rr > (fast_thr + hyst)), fast_df)
+        out = out.where(~(rr < (slow_thr - hyst)), slow_df)
         return out.astype(np.float32)
 
     rsi_fast = rsi(c, max(2, int(cfg["rsi_n"] * 0.5)))
@@ -1243,7 +1383,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     # Amihud Z-score (Illiquidity Z-score, lower is better)
     # Use robust Z-score over long window (30d)
     amihud_log = np.log(feats["amihud_illiq"] + 1e-12)
-    feats["amihud_z"] = ff.numba_rolling_robust_zscore(amihud_log, window=24*30, quantile=0.50).astype(np.float32)
+    feats["amihud_z"] = robust_zscore_rolling(amihud_log, 24 * 30, quantile=0.50).astype(np.float32)
     del amihud_log
 
     # Liquidity Gates (0 = average, -1 = good liquidity, -2 = excellent)
@@ -1276,7 +1416,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     vol_sd_30d = ff.numba_rolling_std(v, 24 * 30)
     feats["volu_z"] = ((v - vol_mu_30d) / (vol_sd_30d + 1e-12)).astype(np.float32)
     del max_bar, sign_max_bar, q90_dx, vol_mu_30d, vol_sd_30d
-    feats["vol_z_30_calm"] = ff.numba_rolling_robust_zscore(np.log(feats["atr_pct_base"] + 1e-9), window=24 * 30, quantile=0.45).astype(np.float32)
+    feats["vol_z_30_calm"] = robust_zscore_rolling(np.log(feats["atr_pct_base"] + 1e-9), 24 * 30, quantile=0.50).astype(np.float32)
     feats["volume_price_corr_10h"] = ff.numba_rolling_corr(feats["ret1h"].abs(), v, 10).fillna(0).astype(np.float32)
 
     sma_fast = ff.numba_rolling_mean(c_context, max(24, int(cfg["trend_sma_n"] * 0.5)))
@@ -1983,26 +2123,40 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     local_low = ff.numba_rolling_min(l, 10)
     local_high = ff.numba_rolling_max(h, 10)
     draw_num = np.where((ret_w > 0).to_numpy(), (c - local_low).to_numpy(), (c - local_high).to_numpy())
-    feats["draw_sym_10h"] = (np.sign(ret_w) * pd.DataFrame(draw_num, index=c.index, columns=c.columns) / (c + 1e-12)).astype(np.float32)
-    feats["draw_extreme_10h"] = feats["draw_sym_10h"].abs().astype(np.float32)
+    # Use safe division with proper handling of non-finite values
+    draw_sym = np.where(
+        np.isfinite(draw_num) & np.isfinite(c) & (c.abs() > 1e-12),
+        np.sign(ret_w) * draw_num / (c + 1e-12),
+        0.0
+    )
+    feats["draw_sym_10h"] = draw_sym.astype(np.float32)
+    feats["draw_extreme_10h"] = np.abs(draw_sym).astype(np.float32)
 
     hi_24_prev = ff.numba_rolling_max(h.shift(1), 24)
     lo_24_prev = ff.numba_rolling_min(l.shift(1), 24)
     up_break = c - hi_24_prev
     dn_break = c - lo_24_prev
-    choose_up = (up_break.abs() >= dn_break.abs())
-    feats["breakout_24h"] = np.where(choose_up, up_break, dn_break).astype(np.float32) / (c + 1e-12)
-    feats["breakout_24h"] = feats["breakout_24h"].astype(np.float32)
+    choose_up = (np.abs(up_break) >= np.abs(dn_break))
+    # Use safe division with proper handling of non-finite values
+    breakout_raw = np.where(choose_up, up_break, dn_break).astype(np.float32)
+    feats["breakout_24h"] = np.where(
+        np.isfinite(breakout_raw) & np.isfinite(c) & (np.abs(c) > 1e-12),
+        breakout_raw / (c + 1e-12),
+        0.0
+    ).astype(np.float32)
 
     abs_net_score = feats["accept"] + reject_like
-    feats["meta_abs_net_x_breakout"] = (abs_net_score * feats["breakout_24h"].abs()).astype(np.float32)
-    feats["meta_abs_net_x_drawext"] = (abs_net_score * feats["draw_extreme_10h"]).astype(np.float32)
+    feats["meta_abs_net_x_breakout"] = (abs_net_score * np.abs(feats["breakout_24h"])).astype(np.float32)
+    feats["meta_abs_net_x_drawext"] = (abs_net_score * np.abs(feats["draw_extreme_10h"])).astype(np.float32)
     feats["meta_abs_net_x_vov_ratio"] = (abs_net_score * (feats["vov_ratio"] - 1.0).clip(lower=0)).astype(np.float32)
-    feats["meta_alignment"] = (np.sign(feats["accept"] - reject_like) * np.sign(feats["ret5h"])).astype(np.float32)
+    # Safe meta_alignment computation
+    accept_diff = feats["accept"] - reject_like
+    ret5h_safe = np.where(np.isfinite(feats["ret5h"]), feats["ret5h"], 0.0)
+    feats["meta_alignment"] = (np.sign(accept_diff) * np.sign(ret5h_safe)).astype(np.float32)
     feats["meta_signal_x_accel"] = ((feats["accept"] - reject_like) * feats["accel_5h"]).astype(np.float32)
 
     # Regime interactions using base-model agreement-weighted success signal.
-    base_agreement = (1.0 - (feats["accept"] - reject_like).abs()).clip(0.0, 1.0)
+    base_agreement = (1.0 - np.abs(feats["accept"] - reject_like)).clip(0.0, 1.0)
     p_success_df = (((feats["accept"] + reject_like) * 0.5) * base_agreement).astype(np.float32)
     vol_high = feats.get("vol_high", pd.DataFrame(0.0, index=c.index, columns=c.columns, dtype=np.float32))
     cusum_high = feats.get("cusum_high", pd.DataFrame(0.0, index=c.index, columns=c.columns, dtype=np.float32))
@@ -2031,8 +2185,8 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     # 1. Multi-timeframe momentum divergence: short vs long disagreement
     #    Sign disagreement between 2h and 24h returns — captures regime transitions
-    sign_2h = np.sign(feats["ret2h"])
-    sign_24h = np.sign(feats["ret24h"])
+    sign_2h = np.sign(np.where(np.isfinite(feats["ret2h"]), feats["ret2h"], 0.0))
+    sign_24h = np.sign(np.where(np.isfinite(feats["ret24h"]), feats["ret24h"], 0.0))
     feats["mtf_divergence"] = (sign_2h * sign_24h * -1.0).astype(np.float32)  # +1 = diverging
     #    Magnitude-weighted divergence
     feats["mtf_div_mag"] = ((feats["ret2h"] - feats["ret24h"] / 12.0) / (feats["rv_6h"] + 1e-12)).clip(-10, 10).astype(np.float32)
@@ -2069,7 +2223,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     # 4. Signed volume divergence: volume trend vs price trend disagreement
     vol_trend = ff.numba_rolling_sum(v, 6) - ff.numba_rolling_sum(v, 24) / 4.0
-    price_trend = feats["ret6h"]
+    price_trend = np.where(np.isfinite(feats["ret6h"]), feats["ret6h"], 0.0)
     feats["vol_price_diverge"] = (np.sign(vol_trend) * np.sign(price_trend) * -1.0).astype(np.float32)
 
     # 5. Alpha asymmetry-volatility features (MR/TF, long/short)
@@ -2158,9 +2312,23 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     ).astype(np.float32)
     # Normalised market trend strength (in vol units)
     mkt_trend_z = mkt_trend_bc / (mkt_rv_bc * np.sqrt(24) + 1e-12)
-    feats["dist_vwap_resid"] = (feats["dist_vwap_norm"] - 0.5 * mkt_trend_z).astype(np.float32)
-    feats["dist_ema_fast_resid"] = (feats["dist_ema_fast"] - 0.5 * mkt_trend_z).astype(np.float32)
-    feats["trend_pct_resid"] = (feats["trend_pct"] - 0.5 * mkt_trend_z).astype(np.float32)
+    # Use safe operations for residual features
+    mkt_trend_z_safe = np.where(np.isfinite(mkt_trend_z), mkt_trend_z, 0.0)
+    feats["dist_vwap_resid"] = np.where(
+        np.isfinite(feats["dist_vwap_norm"]) & np.isfinite(mkt_trend_z_safe),
+        (feats["dist_vwap_norm"] - 0.5 * mkt_trend_z_safe),
+        0.0
+    ).astype(np.float32)
+    feats["dist_ema_fast_resid"] = np.where(
+        np.isfinite(feats["dist_ema_fast"]) & np.isfinite(mkt_trend_z_safe),
+        (feats["dist_ema_fast"] - 0.5 * mkt_trend_z_safe),
+        0.0
+    ).astype(np.float32)
+    feats["trend_pct_resid"] = np.where(
+        np.isfinite(feats["trend_pct"]) & np.isfinite(mkt_trend_z_safe),
+        (feats["trend_pct"] - 0.5 * mkt_trend_z_safe),
+        0.0
+    ).astype(np.float32)
 
     # =====================================================================
     # OHLCV-Based Trend Quality Features (Report 2026-02-12)
@@ -2297,6 +2465,38 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     feats["complexity_regime_24h"] = (
         0.5 * feats["regime_transition_entropy_12h"]
         + 0.5 * feats["regime_transition_entropy_48h"]
+    ).astype(np.float32)
+
+    # ---------------------------------------------------------------------
+    # Extended 4-day regime features for medium-term market structure
+    # ---------------------------------------------------------------------
+    # 4-day volatility regime (96-hour rolling z-score)
+    feats["vol_regime_z_4d"] = zscore_rolling(feats["rv_24h"], 96).fillna(0).astype(np.float32)
+    
+    # 4-day trend strength (normalized by local volatility)
+    feats["trend_strength_4d"] = (
+        ff.numba_rolling_mean(feats["ret24h"], 96) / 
+        (ff.numba_rolling_std(feats["ret24h"], 96) * np.sqrt(96.0) + 1e-12)
+    ).clip(-3, 3).astype(np.float32)
+    
+    # 4-day regime stability (inverse of regime changes over 96 hours)
+    trend_switch_4d = ff.numba_rolling_sum(trend_switch_evt, 96)
+    vol_switch_4d = ff.numba_rolling_sum(vol_switch_evt, 96)
+    feats["regime_stability_4d"] = (
+        1.0 / (1.0 + trend_switch_4d + vol_switch_4d)
+    ).astype(np.float32)
+    
+    # 4-day volatility persistence (autocorrelation of volatility)
+    vol_persistence_4d = ff.numba_rolling_corr(
+        feats["rv_24h"], feats["rv_24h"].shift(96), 96
+    ).fillna(0).clip(-1, 1).astype(np.float32)
+    feats["vol_persistence_4d"] = vol_persistence_4d
+    
+    # 4-day average trend regime duration (vectorized)
+    # Average duration = window / (number of trend changes + 1)
+    trend_changes_4d = ff.numba_rolling_sum(trend_change_evt, 96)
+    feats["trend_regime_duration_4d"] = (
+        96.0 / (trend_changes_4d + 1.0)
     ).astype(np.float32)
 
     # Regime interaction terms requested in config

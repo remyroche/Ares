@@ -43,6 +43,13 @@ from extreme_price_movements.reports.bucket_report import (
 )
 from extreme_price_movements.entry_policy import compute_entry_policy_decision, flatten_bucket_policy
 
+def _meta_feature_keys_union(cfg) -> set[str]:
+    keys = set(cfg.get("meta_feature_keys", []) or [])
+    keys.update(cfg.get("mr_meta_feature_keys", []) or [])
+    keys.update(cfg.get("tf_meta_feature_keys", []) or [])
+    return {k for k in keys if isinstance(k, str) and k}
+
+
 def _expected_feature_keys_from_cfg(cfg) -> set[str]:
     keys: set[str] = set()
     for name in (
@@ -50,7 +57,6 @@ def _expected_feature_keys_from_cfg(cfg) -> set[str]:
         "spike_feature_keys",
         "tf_feature_keys",
         "mr_feature_keys",
-        "meta_feature_keys",
         "test_feature_keys",
     ):
         vals = cfg.get(name, [])
@@ -58,6 +64,7 @@ def _expected_feature_keys_from_cfg(cfg) -> set[str]:
             for v in vals:
                 if isinstance(v, str) and v:
                     keys.add(v)
+    keys.update(_meta_feature_keys_union(cfg))
     # Core features that downstream logic assumes are present.
     keys.update({"atr_pct", "ret1h", "ret24h"})
     return keys
@@ -82,6 +89,87 @@ def _align_features_to_panel(feats: dict, panel: dict[str, pd.DataFrame], symbol
     import gc as _gc
     _gc.collect()
     return out
+
+
+def _ensure_atr_pct_feature(
+    feats: dict,
+    panel: dict[str, pd.DataFrame],
+    cfg: dict,
+    symbols: list[str] | None = None,
+) -> dict:
+    """
+    Ensure feats['atr_pct'] exists with coverage for requested symbols.
+    Backfills missing/all-NaN symbol columns from panel OHLC using a causal ATR%.
+    """
+    if feats is None:
+        return feats
+    if not isinstance(panel, dict) or any(k not in panel for k in ("high", "low", "close")):
+        return feats
+
+    high = panel["high"]
+    low = panel["low"]
+    close = panel["close"]
+    if not isinstance(high, pd.DataFrame) or not isinstance(low, pd.DataFrame) or not isinstance(close, pd.DataFrame):
+        return feats
+
+    target_syms = list(symbols) if symbols is not None else list(close.columns)
+    if not target_syms:
+        return feats
+
+    get_fn = getattr(feats, "get", None)
+    if get_fn is None:
+        return feats
+
+    atr_existing = get_fn("atr_pct")
+    if not isinstance(atr_existing, pd.DataFrame):
+        atr_existing = pd.DataFrame(index=close.index)
+    else:
+        atr_existing = atr_existing.reindex(index=close.index)
+
+    missing_syms = []
+    for s in target_syms:
+        if s not in atr_existing.columns:
+            missing_syms.append(s)
+        else:
+            col = pd.to_numeric(atr_existing[s], errors="coerce")
+            if bool(col.isna().all()):
+                missing_syms.append(s)
+
+    if not missing_syms:
+        atr_ready = atr_existing.reindex(columns=target_syms).astype(np.float32, copy=False)
+        try:
+            feats["atr_pct"] = atr_ready
+        except Exception:
+            if hasattr(feats, "_assembled"):
+                feats._assembled["atr_pct"] = atr_ready
+        return feats
+
+    atr_n = int(cfg.get("atr_n", 14))
+    atr_n = max(2, atr_n)
+    alpha = 1.0 / float(atr_n)
+
+    h = high.reindex(columns=missing_syms).astype(np.float32, copy=False)
+    l = low.reindex(columns=missing_syms).astype(np.float32, copy=False)
+    c = close.reindex(columns=missing_syms).astype(np.float32, copy=False)
+    pc = c.shift(1)
+    tr = np.maximum(h - l, np.maximum((h - pc).abs(), (l - pc).abs()))
+    atr = tr.ewm(alpha=alpha, adjust=False, min_periods=1).mean()
+    atr_pct = (atr / (c.abs() + 1e-12)).replace([np.inf, -np.inf], np.nan).astype(np.float32)
+
+    if missing_syms:
+        # Use combine_first to avoid duplicate columns if there's any overlap
+        atr_out = atr_pct.combine_first(atr_existing)
+    else:
+        atr_out = atr_existing
+
+    atr_ready = atr_out.reindex(columns=target_syms).astype(np.float32, copy=False)
+    try:
+        feats["atr_pct"] = atr_ready
+    except Exception:
+        if hasattr(feats, "_assembled"):
+            feats._assembled["atr_pct"] = atr_ready
+    tprint(f"Backfilled atr_pct from panel OHLC for {len(missing_syms)} symbols.")
+    return feats
 
 
 def _feature_structural_gaps(
@@ -117,6 +205,127 @@ def _feature_structural_gaps(
                 partial.append(k)
                 continue
     return missing, partial
+
+
+def _generate_feature_health_reports(ts_sig: pd.Timestamp, data_root: str) -> dict | None:
+    """
+    Build feature quality reports from saved per-symbol parquet files.
+    Outputs:
+      - feature_health_symbol_summary.csv
+      - feature_health_feature_detail.csv
+    """
+    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    in_dir = os.path.join(data_root, "features", run_id)
+    files = sorted(glob.glob(os.path.join(in_dir, "symbol=*.parquet")))
+    if not files:
+        tprint(f"Feature health report: no feature files in {in_dir}")
+        return None
+
+    out_dir = os.path.join(data_root, "artifacts", run_id, "features")
+    os.makedirs(out_dir, exist_ok=True)
+    summary_path = os.path.join(out_dir, "feature_health_symbol_summary.csv")
+    detail_path = os.path.join(out_dir, "feature_health_feature_detail.csv")
+
+    symbol_rows: list[dict] = []
+    detail_rows: list[dict] = []
+
+    total_files = len(files)
+    progress_every = 25 if total_files >= 200 else 10
+
+    for i, fpath in enumerate(files, start=1):
+        try:
+            df = pd.read_parquet(fpath)
+        except Exception as exc:
+            tprint(f"Feature health report: failed to read {fpath}: {exc}")
+            continue
+
+        if "__symbol__" in df.columns and not df.empty:
+            symbol = str(df["__symbol__"].iloc[0])
+            feat_cols = [c for c in df.columns if c != "__symbol__"]
+        else:
+            symbol = os.path.basename(fpath).replace("symbol=", "").replace(".parquet", "").replace("_", "/", 1)
+            feat_cols = list(df.columns)
+
+        rows = int(len(df))
+        n_features = int(len(feat_cols))
+        if rows == 0 or n_features == 0:
+            symbol_rows.append(
+                {
+                    "symbol": symbol,
+                    "rows": rows,
+                    "n_features": n_features,
+                    "nan_cells": 0,
+                    "nan_pct_overall": 0.0,
+                    "all_nan_features": 0,
+                    "constant_features": 0,
+                }
+            )
+            continue
+
+        feat_df = df[feat_cols].apply(pd.to_numeric, errors="coerce")
+        nan_counts = feat_df.isna().sum(axis=0).astype(np.int64)
+        uniq_counts = feat_df.nunique(dropna=True).astype(np.int64)
+        all_nan_mask = nan_counts == rows
+        const_mask = (uniq_counts <= 1) & (~all_nan_mask)
+
+        nan_cells = int(nan_counts.sum())
+        total_cells = int(rows * n_features)
+        symbol_rows.append(
+            {
+                "symbol": symbol,
+                "rows": rows,
+                "n_features": n_features,
+                "nan_cells": nan_cells,
+                "nan_pct_overall": float(100.0 * nan_cells / max(total_cells, 1)),
+                "all_nan_features": int(all_nan_mask.sum()),
+                "constant_features": int(const_mask.sum()),
+            }
+        )
+
+        for c in feat_cols:
+            nan_c = int(nan_counts[c])
+            detail_rows.append(
+                {
+                    "symbol": symbol,
+                    "feature": c,
+                    "rows": rows,
+                    "nan_count": nan_c,
+                    "nan_pct": float(100.0 * nan_c / max(rows, 1)),
+                    "is_all_nan": bool(all_nan_mask[c]),
+                    "is_constant_non_nan": bool(const_mask[c]),
+                }
+            )
+
+        if i % progress_every == 0 or i == total_files:
+            tprint(
+                f"Feature health report progress: {i}/{total_files} files "
+                f"({(i / total_files) * 100:.1f}%)"
+            )
+
+    if not symbol_rows:
+        tprint("Feature health report: no rows produced.")
+        return None
+
+    summary_df = pd.DataFrame(symbol_rows).sort_values("symbol")
+    detail_df = pd.DataFrame(detail_rows).sort_values(["symbol", "feature"])
+    summary_df.to_csv(summary_path, index=False)
+    detail_df.to_csv(detail_path, index=False)
+
+    n_all_nan_features = int(detail_df["is_all_nan"].sum()) if not detail_df.empty else 0
+    n_const_features = int(detail_df["is_constant_non_nan"].sum()) if not detail_df.empty else 0
+    tprint(
+        f"Feature health report saved: {summary_path}, {detail_path} | "
+        f"symbols={len(summary_df)} all_nan_feature_rows={n_all_nan_features} "
+        f"constant_feature_rows={n_const_features}"
+    )
+
+    return {
+        "summary_path": summary_path,
+        "detail_path": detail_path,
+        "symbols": int(len(summary_df)),
+        "all_nan_feature_rows": n_all_nan_features,
+        "constant_feature_rows": n_const_features,
+    }
 
 
 def _scan_feature_cache_light(
@@ -389,6 +598,7 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
     if feats is None or len(feats) == 0:
         tprint("ERROR: Features not found. Run feature_generation first.")
         return
+    feats = _ensure_atr_pct_feature(feats, panel, cfg, symbols=train_syms)
 
     # Restrict to symbols present in both panel and features
     sample_feat = next(iter(feats.values()))
@@ -467,7 +677,7 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None, base_only=Fa
             tprint("Loading features and panel for Spike Anatomy generation...")
             train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=ts_sig)
             spike_feature_keys = set(cfg.get("spike_feature_keys", []))
-            spike_feature_keys.update(cfg.get("meta_feature_keys", []))
+            spike_feature_keys.update(_meta_feature_keys_union(cfg))
             spike_feature_keys.update({"atr_pct", "ret1h", "ret24h"})
             feats = load_features_selected(
                 ts_sig,
@@ -486,6 +696,7 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None, base_only=Fa
                 
                 if dfs:
                     panel = to_panel(dfs)
+                    feats = _ensure_atr_pct_feature(feats, panel, cfg, symbols=train_syms)
                     mkt_df = compute_market_features(panel, cfg["market_basket"])
                     mkt_gates = add_regime_gates(mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
                     
@@ -544,6 +755,22 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None, base_only=Fa
     # 2. Train models
     # Inject run_id so meta OOF files are saved to the correct artifacts directory
     cfg["run_id"] = run_id
+    # Selector hysteresis can warm-start from a previous run when available.
+    if not cfg.get("prev_run_id"):
+        try:
+            _art_dir = os.path.join(cfg["data_root"], "artifacts")
+            _prev_runs = sorted(
+                [
+                    d for d in os.listdir(_art_dir)
+                    if d != run_id and os.path.isdir(os.path.join(_art_dir, d))
+                ],
+                reverse=True,
+            )
+            if _prev_runs:
+                cfg["prev_run_id"] = _prev_runs[0]
+                tprint(f"Selector warm-start previous run: {cfg['prev_run_id']}")
+        except Exception as _e_prev:
+            tprint(f"Selector warm-start discovery skipped: {_e_prev}")
     with Timer("Model Training"):
         trained_bundle = train_models_from_artifacts(datasets, cfg, train_meta=not base_only)
         alpha_metrics = trained_bundle.get("alpha_oof_metrics", {}) if trained_bundle else {}
@@ -740,8 +967,8 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
     # -------------------------------------------------------------------------
     _meta_cols = {
         "timestamp", "symbol", "return", "is_long", "index",
-        "oof_u_hat", "oof_log_mae_q70_hat", "oof_log_mfe_hat", "oof_log_dur_hat",
-        "mae_ret", "mfe_ret", "duration", "u_policy_net", "exit_code"
+        "oof_u_hat", "oof_log_mae_q70_hat", "oof_log_mfe_hat",
+        "mae_ret", "mfe_ret", "u_policy_net", "exit_code"
     }
     direction_groups = {"long": {}, "short": {}}
     for bucket_name, oof_preds in bucket_oofs.items():
@@ -958,34 +1185,125 @@ def run_position_sizer_step(cfg, data_bundle, artifacts, logger):
         ps_df = data_bundle["position_sizer_df"].copy()
     else:
         rows = []
+        _exclude = {"timestamp", "symbol", "return", "is_long", "index"}
         for _bucket, pack in (data_bundle.get("buckets", {}) or {}).items():
             oof = pack.get("oof")
             out = pack.get("outcomes")
             if oof is None or out is None or len(oof) != len(out):
                 continue
-            pred_cols = [c for c in oof.columns if c not in {"timestamp", "symbol", "return", "is_long", "index"}]
+            pred_cols = [c for c in oof.columns if c not in _exclude]
             if not pred_cols:
                 continue
-            score_col = "reg_mean" if "reg_mean" in oof.columns else pred_cols[0]
-            _df = pd.DataFrame({
-                "score": np.asarray(oof[score_col].values, dtype=float),
-                "pnl_label": np.asarray(out.get("return", pd.Series(np.zeros(len(out)))).values, dtype=float),
-                "mfe": np.asarray(out.get("mfe_ret", pd.Series(np.zeros(len(out)))).values, dtype=float),
-                "mae": np.asarray(out.get("mae_ret", pd.Series(np.zeros(len(out)))).values, dtype=float),
-                "timestamp": np.asarray(out.get("timestamp", pd.Series(np.arange(len(out)))).values),
-                "symbol": np.asarray(out.get("symbol", pd.Series(["UNK"] * len(out))).values),
-                "bucket": _bucket,
-            })
+            score_col = "reg_mean" if "reg_mean" in oof.columns else ("reg" if "reg" in oof.columns else pred_cols[0])
+            _df = pd.DataFrame(index=np.arange(len(oof)))
+            _df["score"] = np.asarray(oof[score_col].values, dtype=float)
+            _df["pnl_label"] = np.asarray(out.get("return", pd.Series(np.zeros(len(out)))).values, dtype=float)
+            _df["mfe"] = np.asarray(out.get("mfe_ret", pd.Series(np.zeros(len(out)))).values, dtype=float)
+            _df["mae"] = np.asarray(out.get("mae_ret", pd.Series(np.zeros(len(out)))).values, dtype=float)
+            _df["timestamp"] = np.asarray(out.get("timestamp", pd.Series(np.arange(len(out)))).values)
+            _df["symbol"] = np.asarray(out.get("symbol", pd.Series(["UNK"] * len(out))).values)
+            _df["bucket"] = _bucket
+            # Add all numeric OOF prediction/regime features as model inputs.
+            for _c in pred_cols:
+                if _c in _df.columns:
+                    continue
+                try:
+                    _v = pd.to_numeric(oof[_c], errors="coerce").astype(float)
+                    if np.isfinite(_v).any():
+                        _df[_c] = _v.values
+                except Exception:
+                    continue
             rows.append(_df)
         if not rows:
             log("Position sizer: no usable data, skipping.")
             return artifacts
         ps_df = pd.concat(rows, axis=0, ignore_index=True)
 
-    feature_cols = [c for c in ["score"] if c in ps_df.columns]
+    # Derived normalized excursion ratio from predicted heads.
+    _eps = 1e-9
+    if "oof_log_mfe_hat" in ps_df.columns and "oof_log_mae_q70_hat" in ps_df.columns:
+        _mfe_hat = np.expm1(pd.to_numeric(ps_df["oof_log_mfe_hat"], errors="coerce").values.astype(float))
+        _mae_hat = np.expm1(pd.to_numeric(ps_df["oof_log_mae_q70_hat"], errors="coerce").values.astype(float))
+        ps_df["mfe_mae_ratio_hat"] = _mfe_hat / np.maximum(_mae_hat, _eps)
+        ps_df["mfe_mae_ratio_hat"] = np.where(np.isfinite(ps_df["mfe_mae_ratio_hat"]), ps_df["mfe_mae_ratio_hat"], 0.0)
+
+    _regime = [str(c) for c in cfg.get("position_sizer_regime_feature_keys", []) if isinstance(c, str)]
+    _missing_regime_in_df = [c for c in _regime if c not in ps_df.columns]
+    if _missing_regime_in_df and {"timestamp", "symbol"}.issubset(ps_df.columns):
+        try:
+            _run_id = str(artifacts.get("run_id", "")).strip()
+            _ts_ref = pd.to_datetime(_run_id, format="%Y%m%d_%H%M%S", utc=True)
+            _data_root = str(artifacts.get("data_root", cfg.get("data_root", "data")))
+            _syms_raw = pd.Series(ps_df["symbol"]).astype(str).dropna().unique().tolist()
+            _syms_query = sorted(
+                set(_syms_raw)
+                | {s.replace("_", "/", 1) for s in _syms_raw if "_" in s}
+                | {s.replace("/", "_", 1) for s in _syms_raw if "/" in s}
+            )
+            _feat_reg = load_features_selected(
+                _ts_ref,
+                _data_root,
+                feature_keys=_missing_regime_in_df,
+                symbols=_syms_query,
+            )
+            _ts_vals = pd.to_datetime(ps_df["timestamp"], utc=True, errors="coerce").dt.tz_convert(None)
+            _sym_vals = pd.Series(ps_df["symbol"]).astype(str).values
+            _sym_codes, _sym_uniques = pd.factorize(_sym_vals, sort=False)
+            _rows_by_sym = [np.where(_sym_codes == i)[0] for i in range(len(_sym_uniques))]
+            _added = []
+            for _k in _missing_regime_in_df:
+                _dfk = _feat_reg.get(_k)
+                if _dfk is None or not isinstance(_dfk, pd.DataFrame) or _dfk.empty:
+                    continue
+                _feat_idx = pd.DatetimeIndex(_dfk.index)
+                _tpos = _feat_idx.get_indexer(_ts_vals)
+                _out = np.full(len(ps_df), np.nan, dtype=np.float64)
+                _cols = set(_dfk.columns.astype(str))
+                for _sym, _ridx in zip(_sym_uniques, _rows_by_sym):
+                    _cands = [_sym]
+                    if "_" in _sym:
+                        _cands.append(_sym.replace("_", "/", 1))
+                    if "/" in _sym:
+                        _cands.append(_sym.replace("/", "_", 1))
+                    _col = next((c for c in _cands if c in _cols), None)
+                    if _col is None:
+                        continue
+                    _tp = _tpos[_ridx]
+                    _valid = _tp >= 0
+                    if not np.any(_valid):
+                        continue
+                    _src = _dfk[_col].to_numpy(dtype=np.float64, copy=False)
+                    _tmp = np.full(len(_ridx), np.nan, dtype=np.float64)
+                    _tmp[_valid] = _src[_tp[_valid]]
+                    _out[_ridx] = _tmp
+                if np.isfinite(_out).any():
+                    ps_df[_k] = _out
+                    _added.append(_k)
+            if _added:
+                log(
+                    "Position sizer regime enrich: "
+                    f"added={len(_added)}/{len(_missing_regime_in_df)} from feature store."
+                )
+        except Exception as _e:
+            log(f"WARNING: Position sizer regime enrich failed: {_e}")
+
+    _forbid = {"pnl_label", "mfe", "mae", "timestamp", "symbol", "bucket", "return", "is_long", "index"}
+    _priority = [str(c) for c in cfg.get("position_sizer_feature_priority", ["score"]) if isinstance(c, str)]
+    _num_cols = [c for c in ps_df.columns if c not in _forbid and pd.api.types.is_numeric_dtype(ps_df[c])]
+    feature_cols = []
+    for _c in _priority + _regime + _num_cols:
+        if _c in _num_cols and _c not in feature_cols:
+            feature_cols.append(_c)
     if not feature_cols:
-        num_cols = [c for c in ps_df.columns if c not in {"pnl_label", "mfe", "mae", "timestamp", "symbol", "bucket"} and pd.api.types.is_numeric_dtype(ps_df[c])]
-        feature_cols = num_cols[:8] if num_cols else ["pnl_label"]
+        feature_cols = ["score"] if "score" in ps_df.columns else ["pnl_label"]
+    _regime_present = [c for c in _regime if c in feature_cols]
+    _regime_missing = [c for c in _regime if c not in _regime_present]
+    log(
+        "Position sizer regime features: "
+        f"configured={len(_regime)} present={len(_regime_present)} missing={len(_regime_missing)}"
+    )
+    if _regime_missing:
+        log(f"Position sizer regime features missing: {_regime_missing}")
 
     soft_cfg = {
         "enabled": bool(cfg.get("position_sizer_pwin_soft_label_enabled", False)),
@@ -998,6 +1316,15 @@ def run_position_sizer_step(cfg, data_bundle, artifacts, logger):
     exp_win_q = float(cfg.get("position_sizer_exp_win_quantile", 0.50))
     risk_loss_q = float(cfg.get("position_sizer_risk_loss_quantile", 0.90))
     costs_mode = str(cfg.get("position_sizer_costs_mode", "included_in_labels"))
+    pwin_base_engine = str(cfg.get("position_sizer_pwin_base_engine", "extratrees")).lower()
+    quant_base_engine = str(cfg.get("position_sizer_quantile_base_engine", "sklearn")).lower()
+    reg_level = str(cfg.get("position_sizer_regularization_level", "strong")).lower()
+    calibrator_method = str(cfg.get("position_sizer_calibrator_method", "auto")).lower()
+    min_iso = int(cfg.get("position_sizer_min_samples_isotonic", 1200))
+    calib_frac = float(cfg.get("position_sizer_calibration_frac", 0.20))
+    calib_min = int(cfg.get("position_sizer_calibration_min_samples", 200))
+    quant_delta = bool(cfg.get("position_sizer_quantile_delta", False))
+    pwin_wf_blocks = int(cfg.get("position_sizer_pwin_walkforward_blocks", 0))
 
     ds = build_pwin_dataset(ps_df, feature_cols=feature_cols, pnl_col="pnl_label", mfe_col="mfe", mae_col="mae", pwin_soft_cfg=soft_cfg)
     reg_labels = ps_df["bucket"].values if "bucket" in ps_df.columns else None
@@ -1009,12 +1336,31 @@ def run_position_sizer_step(cfg, data_bundle, artifacts, logger):
         rolling_window=int(cfg.get("position_sizer_calibration_rolling_window", 2000)),
         y_hard_ref=ds.y_win,
         pnl_ref=ps_df["pnl_label"].values if "pnl_label" in ps_df.columns else None,
+        base_engine=pwin_base_engine,
+        regularization_level=reg_level,
+        calibrator_method=calibrator_method,
+        min_samples_isotonic=min_iso,
+        calibration_frac=calib_frac,
+        calibration_min_samples=calib_min,
+        diagnostics_walkforward_blocks=pwin_wf_blocks,
     )
 
     Xw, yw = build_win_quantile_dataset(ps_df, feature_cols=feature_cols, pnl_col="pnl_label")
     Xl, yl = build_loss_quantile_dataset(ps_df, feature_cols=feature_cols, pnl_col="pnl_label")
-    win_model = train_win_quantile_regressor(Xw.values, yw)
-    loss_model = train_loss_quantile_regressor(Xl.values, yl)
+    win_model = train_win_quantile_regressor(
+        Xw.values,
+        yw,
+        base_engine=quant_base_engine,
+        regularization_level=reg_level,
+        delta_quantile=quant_delta,
+    )
+    loss_model = train_loss_quantile_regressor(
+        Xl.values,
+        yl,
+        base_engine=quant_base_engine,
+        regularization_level=reg_level,
+        delta_quantile=quant_delta,
+    )
 
     tp_sl_defaults = None
     if bool(cfg.get("tp_sl_search_enabled", False)) and str(cfg.get("tp_sl_search_optimizer", "legacy")) == "new":
@@ -1106,6 +1452,9 @@ def run_position_sizer_step(cfg, data_bundle, artifacts, logger):
     manifest = {
         "bundle_path": bundle_path,
         "feature_cols": feature_cols,
+        "regime_feature_keys_configured": _regime,
+        "regime_feature_keys_used": _regime_present,
+        "regime_feature_keys_missing": _regime_missing,
         "tp_sl_defaults": tp_sl_defaults,
         "version": "v1",
         "bundle_version": 1,
@@ -1134,10 +1483,13 @@ def run_position_sizer_step(cfg, data_bundle, artifacts, logger):
 
 
 def run_sizer_step(ts_sig, cfg, state_file):
-    backend = str(cfg.get("position_sizer_backend", "ridge")).lower()
+    backend = str(cfg.get("position_sizer_backend", "new")).lower()
     tprint(f"STEP: SIZER START (backend={backend})")
     if backend == "ridge":
-        return run_ridge_sizer_step(ts_sig, cfg, state_file)
+        raise ValueError(
+            "position_sizer_backend='ridge' is disabled. "
+            "Use position_sizer_backend='new' (EV decomposition backend)."
+        )
     if backend != "new":
         raise ValueError(f"Unknown position_sizer_backend={backend}")
 
@@ -1201,48 +1553,62 @@ def compute_regime_boundaries(feats):
 
 
 def _extract_required_features(bundle, cfg):
-    """Dynamically extract only the required features from the model bundle."""
-    # Features needed for risk optimization, gates, and regime boundaries
+    """Extract required features strictly from configured feature-key lists."""
+    _ = bundle  # Keep signature stable; loading is intentionally config-key driven.
+
+    # Minimal runtime essentials for candidate generation, backtest windowing, and regime boundaries.
     req_feats = {
-        "atr_pct", "clv_mean_24", "ret24h", "ret24h_z", "efficiency", "exh_qual", 
-        "volatility_zscore", "ret1h", "range_12h_pct",
-        "rv_12h", "rv_24h", "vol_z_base", "vol_z24_base", "ret6h", "trend_pct_base"
+        "atr_pct",
+        "ret1h",
+        "ret24h",
+        "range_12h_pct",
+        "volatility_zscore",
+        "rv_12h",
+        "rv_24h",
+        "vol_z_base",
+        "vol_z24_base",
+        "ret6h",
+        "trend_pct_base",
     }
 
     dev_metric = cfg.get("trade_deviation_metric", "dist_ema_fast")
     if dev_metric:
-        req_feats.add(dev_metric)
-        
-    req_feats.update(cfg.get("spike_feature_keys", []))
-    req_feats.update(cfg.get("meta_feature_keys", []))
-        
-    if not bundle:
-        return list(req_feats)
-        
-    # 1. Base model features
-    alpha_models = bundle.get("alpha_models", {})
-    for side in ["long", "short"]:
-        for k in ["mr", "tf"]:
-            model_wrapper = alpha_models.get(side, {}).get(k)
-            if not model_wrapper:
-                continue
-            if "models_by_h" in model_wrapper:
-                for h, model_h in model_wrapper["models_by_h"].items():
-                    req_feats.update(model_h.get("selected_features", []))
-                    req_feats.update(model_h.get("feat_cols", []))
-            elif "feat_cols" in model_wrapper:
-                req_feats.update(model_wrapper["feat_cols"])
+        req_feats.add(str(dev_metric))
 
-    # 2. Meta model features
-    meta_models = bundle.get("meta_models", {})
-    for _meta_key, meta_model in meta_models.items():
-        if hasattr(meta_model, "selected_features") and meta_model.selected_features:
-            req_feats.update(meta_model.selected_features)
-            
-    # Filter out dynamically generated prediction columns
-    req_feats = {f for f in req_feats if not f.startswith("pred_")}
-    
-    return list(req_feats)
+    # Sizer-triggered OOS backtest: keep feature loading constrained to
+    # position-sizer relevant context only.
+    if bool(cfg.get("sizer_oos_mode", False)):
+        reg_keys = cfg.get("position_sizer_regime_feature_keys", [])
+        if isinstance(reg_keys, (list, tuple, set)):
+            req_feats.update(str(v) for v in reg_keys if isinstance(v, str) and v)
+        out = sorted({f for f in req_feats if not str(f).startswith("pred_")})
+        tprint(f"Feature load whitelist (sizer_oos_mode): keys={len(out)} (position-sizer relevant)")
+        return out
+
+    # Only configured feature-key baskets are allowed.
+    key_lists = [
+        "exh_feature_keys",
+        "spike_feature_keys",
+        "tf_feature_keys",
+        "mr_feature_keys",
+        "meta_feature_keys",
+        "mr_meta_feature_keys",
+        "tf_meta_feature_keys",
+        "position_sizer_regime_feature_keys",
+    ]
+    for kname in key_lists:
+        vals = cfg.get(kname, [])
+        if isinstance(vals, (list, tuple, set)):
+            req_feats.update(str(v) for v in vals if isinstance(v, str) and v)
+
+    # Include merged meta union (meta + overlays) for safety.
+    req_feats.update(_meta_feature_keys_union(cfg))
+
+    # Drop dynamic prediction columns from config baskets if present.
+    req_feats = {f for f in req_feats if not str(f).startswith("pred_")}
+    out = sorted(req_feats)
+    tprint(f"Feature load whitelist: keys={len(out)} (config-only)")
+    return out
 
 def run_risk_optimization_step(ts_sig, margin_symbols, cfg, store, state_file):
     tprint("STEP: RISK OPTIMIZATION START")
@@ -1290,6 +1656,7 @@ def run_risk_optimization_step(ts_sig, margin_symbols, cfg, store, state_file):
     if feats is None:
         tprint("ERROR: Features not found for risk optimization.")
         return
+    feats = _ensure_atr_pct_feature(feats, panel, cfg, symbols=train_syms)
 
     # Compute stable regime boundaries for meta-models
     cfg["granular_regime_boundaries"] = compute_regime_boundaries(feats)
@@ -1345,6 +1712,65 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
     
     bundle = model_state.get("bundle")
 
+    def _ensure_meta_aliases(_bundle):
+        if not isinstance(_bundle, dict):
+            return
+        _meta = _bundle.get("meta_models")
+        if not isinstance(_meta, dict) or not _meta:
+            return
+        for _side in ("long", "short"):
+            for _kind in ("mr", "tf"):
+                _base = f"{_side}_{_kind}"
+                _reg = _meta.get(f"{_base}_reg")
+                _clf = _meta.get(f"{_base}_clf") or _meta.get(f"{_base}_early_inval")
+                if _base not in _meta and _reg is not None:
+                    _meta[_base] = _reg
+                if f"{_base}_clf" not in _meta and _clf is not None:
+                    _meta[f"{_base}_clf"] = _clf
+        _bundle["meta_models"] = _meta
+
+    def _log_meta_head_coverage(_bundle):
+        _meta = _bundle.get("meta_models") if isinstance(_bundle, dict) else {}
+        if not isinstance(_meta, dict):
+            _meta = {}
+        _suffixes = ("_reg", "_clf", "_utility", "_mae_q70", "_mfe")
+        _req = []
+        for _side in ("long", "short"):
+            for _kind in ("mr", "tf"):
+                _base = f"{_side}_{_kind}"
+                _req.extend([f"{_base}{_s}" for _s in _suffixes])
+        _present = [k for k in _req if k in _meta]
+        _missing = [k for k in _req if k not in _meta]
+        tprint(
+            "Meta head coverage: "
+            f"present={len(_present)}/{len(_req)} missing={len(_missing)}"
+        )
+        if _missing:
+            tprint(f"Meta head coverage missing keys: {_missing[:12]}{' ...' if len(_missing) > 12 else ''}")
+
+    _ensure_meta_aliases(bundle)
+    if isinstance(bundle, dict):
+        _meta_now = bundle.get("meta_models")
+        _meta_count = len(_meta_now) if isinstance(_meta_now, dict) else 0
+        if _meta_count == 0:
+            try:
+                _meta_state_file = os.path.join(os.path.dirname(state_file), "model_state_meta.pkl")
+                if os.path.exists(_meta_state_file):
+                    with open(_meta_state_file, "rb") as _mf:
+                        _meta_state = pickle.load(_mf)
+                    _meta_bundle = _meta_state.get("bundle", {}) if isinstance(_meta_state, dict) else {}
+                    _meta_models = _meta_bundle.get("meta_models", {}) if isinstance(_meta_bundle, dict) else {}
+                    if isinstance(_meta_models, dict) and len(_meta_models) > 0:
+                        bundle["meta_models"] = _meta_models
+                        _ensure_meta_aliases(bundle)
+                        tprint(
+                            "Backtest state patch: loaded meta_models from model_state_meta.pkl "
+                            f"(count={len(_meta_models)})"
+                        )
+            except Exception as _e_meta_patch:
+                tprint(f"WARNING: failed to patch meta_models from model_state_meta.pkl: {_e_meta_patch}")
+    _log_meta_head_coverage(bundle)
+
     train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=ts_sig)
     dfs = {}
     lookback_days = max(90, int(cfg["fetch_years"] * 365))
@@ -1363,7 +1789,11 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
     mkt_gates = add_regime_gates(mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
     # Load only required features to prevent OOM
     req_feats = _extract_required_features(bundle, cfg)
-    feats = load_features_selected(ts_sig, cfg["data_root"], feature_keys=req_feats)
+    feats = load_features_selected(ts_sig, cfg["data_root"], feature_keys=req_feats, symbols=train_syms)
+    if feats is None:
+        tprint("ERROR: Features not found for backtest.")
+        return
+    feats = _ensure_atr_pct_feature(feats, panel, cfg, symbols=train_syms)
 
     # Compute stable regime boundaries for meta-models
     cfg["granular_regime_boundaries"] = compute_regime_boundaries(feats)
@@ -1374,17 +1804,73 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
     if p_exh_hist is None:
         p_exh_hist = generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_sig, cfg["train_lookback_hours"], train_syms)
 
-    test_days = cfg.get("oos_holdout_days", 14)
+    test_days_cfg = int(cfg.get("oos_holdout_days", 730))
+    test_days = max(730, test_days_cfg)
+    if test_days != test_days_cfg:
+        tprint(f"Backtest OOS holdout_days raised to minimum: cfg={test_days_cfg} -> used={test_days}")
     start_ts = ts_sig - pd.Timedelta(days=test_days)
     end_ts = ts_sig - pd.Timedelta(hours=24)
+    
+    idx_tz = feats["ret1h"].index.tz
+    if idx_tz is None and start_ts.tz is not None:
+        start_ts = start_ts.tz_localize(None)
+        end_ts = end_ts.tz_localize(None)
+    elif idx_tz is not None and start_ts.tz is None:
+        start_ts = start_ts.tz_localize(idx_tz)
+        end_ts = end_ts.tz_localize(idx_tz)
+
+    # Align market-gates index timezone with feature index timezone to avoid
+    # silent empty intersections in signal generation.
+    mkt_idx_tz = mkt_gates.index.tz if hasattr(mkt_gates, "index") else None
+    if idx_tz is None and mkt_idx_tz is not None:
+        mkt_gates = mkt_gates.copy()
+        mkt_gates.index = mkt_gates.index.tz_localize(None)
+    elif idx_tz is not None and mkt_idx_tz is None:
+        mkt_gates = mkt_gates.copy()
+        mkt_gates.index = mkt_gates.index.tz_localize(idx_tz)
+
     valid_ts = [t for t in feats["ret1h"].index if t >= start_ts and t <= end_ts]
     tprint(f"Running backtest over {len(valid_ts)} hours...")
+    if bool(cfg.get("signal_opt_debug", True)):
+        _mkt_idx = mkt_gates.index if hasattr(mkt_gates, "index") else []
+        _ov = int(sum(1 for t in valid_ts if t in _mkt_idx))
+        tprint(
+            "SignalOptIndexDiag: "
+            f"valid_ts={len(valid_ts)} mkt_gates_idx={len(_mkt_idx)} overlap={_ov} "
+            f"overlap_pct={(100.0 * _ov / max(1, len(valid_ts))):.1f}%"
+        )
+        if _ov == 0 and len(valid_ts) and len(_mkt_idx):
+            tprint(
+                "SignalOptIndexDiag sample: "
+                f"valid_ts[0]={valid_ts[0]} mkt_idx[0]={_mkt_idx[0]}"
+            )
     if len(valid_ts) < 48:
         tprint("Not enough timestamps for backtest optimization.")
         return
 
     o_s = panel["open"]; h_s = panel["high"]; l_s = panel["low"]; c_s = panel["close"]
     atr_s = feats["atr_pct"]
+
+    # Ensure all runtime panels share the same timezone semantics as feature index.
+    def _align_idx_tz(obj, target_tz):
+        if not hasattr(obj, "index"):
+            return obj
+        obj_tz = obj.index.tz
+        if target_tz is None and obj_tz is not None:
+            out = obj.copy()
+            out.index = out.index.tz_localize(None)
+            return out
+        if target_tz is not None and obj_tz is None:
+            out = obj.copy()
+            out.index = out.index.tz_localize(target_tz)
+            return out
+        return obj
+
+    o_s = _align_idx_tz(o_s, idx_tz)
+    h_s = _align_idx_tz(h_s, idx_tz)
+    l_s = _align_idx_tz(l_s, idx_tz)
+    c_s = _align_idx_tz(c_s, idx_tz)
+    atr_s = _align_idx_tz(atr_s, idx_tz)
     risk_conf = model_state.get("risk_params", {}) or {}
     bundle = model_state.get("bundle")
     _ps_manifest = model_state.get("position_sizer", {}) if isinstance(model_state, dict) else {}
@@ -1399,8 +1885,17 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
         run_id=run_id,
         policy_version=str(run_id),
         cost_model={"fee_side": float(cost.fee_side), "slippage_side": float(cost.slippage_side), "round_trip": float(cost.round_trip)},
-        extra={"stage": "backtest_signal_optimization", "sizer_backend_used": str(cfg.get("sizer_backend_used", cfg.get("position_sizer_backend", "ridge")))},
+        extra={"stage": "backtest_signal_optimization", "sizer_backend_used": str(cfg.get("sizer_backend_used", cfg.get("position_sizer_backend", "new")))},
     )
+    if bool(cfg.get("signal_opt_debug", True)):
+        tprint(
+            "SignalOptConfig: "
+            f"use_limit_orders={bool(cfg.get('use_limit_orders', False))} "
+            f"limit_offset_bps={float(cfg.get('limit_offset_bps', 0.0)):.1f} "
+            f"exit_limit_offset_bps={float(cfg.get('exit_limit_offset_bps', 0.0)):.1f} "
+            f"position_sizer_backend={cfg.get('position_sizer_backend', 'new')} "
+            f"ranking_trade_percentile_threshold={float(cfg.get('ranking_trade_percentile_threshold', 0.90)):.2f}"
+        )
 
     def rank01(x: np.ndarray, higher_is_better: bool = True) -> np.ndarray:
         x = np.asarray(x, dtype=np.float64)
@@ -1432,6 +1927,16 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
         trades = []
         local_risk = dict(risk_conf)
         local_risk["signal_params"] = signal_params
+        diag = {
+            "hours_total": int(len(ts_list)),
+            "hours_with_orders": 0,
+            "orders_post_signal": 0,
+            "orders_after_budget": 0,
+            "skipped_policy_place_order": 0,
+            "skipped_missing_open": 0,
+            "executed_trades": 0,
+            "reason_counts": {},
+        }
         max_concurrent = int(cfg.get("max_concurrent_trades", 5))
         max_portfolio_weight = float(cfg.get("max_portfolio_weight", 0.25))
 
@@ -1447,6 +1952,15 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
         from collections import defaultdict
         daily_bucket_counts = defaultdict(lambda: defaultdict(int))  # date -> bucket -> count
         daily_total_counts = defaultdict(int)  # date -> total count
+        if bool(cfg.get("signal_opt_debug", True)):
+            tprint(
+                "  RunSlice start: "
+                f"hours={len(ts_list)} thr_long={float(signal_params.get('thr_long', 0.0)):.6f} "
+                f"thr_short={float(signal_params.get('thr_short', 0.0)):.6f} "
+                f"score_gate_q={float(signal_params.get('score_gate_q', 0.0)):.2f} "
+                f"k_frac_long={signal_params.get('k_frac_long', None)} "
+                f"k_frac_short={signal_params.get('k_frac_short', None)}"
+            )
 
         for i, t in enumerate(ts_list):
             if i % 20 == 0:
@@ -1468,6 +1982,9 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
             remaining_slots = max(0, max_concurrent - open_count)
             remaining_weight = max(0.0, max_portfolio_weight - open_weight)
             orders = generate_hourly_signals(t, feats, mkt_gates, bundle, local_risk, cfg, p_exh_hist, [])
+            if orders:
+                diag["hours_with_orders"] += 1
+                diag["orders_post_signal"] += int(len(orders))
             orders = orders[:remaining_slots]  # cap to available slots
             # Apply regime throttle to order weights
             if size_mult < 1.0:
@@ -1493,6 +2010,7 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                     continue
                 budget_filtered.append(o)
             orders = budget_filtered
+            diag["orders_after_budget"] += int(len(orders))
             for order in orders:
                 sym = order["symbol"]
                 side = order["side"]
@@ -1502,6 +2020,7 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
 
                 entry_ts = t + pd.Timedelta(hours=1)
                 if entry_ts not in o_s.index or sym not in o_s.columns:
+                    diag["skipped_missing_open"] += 1
                     continue
                 entry_px = float(o_s.loc[entry_ts, sym])
 
@@ -1535,6 +2054,7 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                     },
                 )
                 if not bool(pol.get("place_order", True)):
+                    diag["skipped_policy_place_order"] += 1
                     continue
 
                 k_sl = rp.get("k_sl", cfg["risk_k_sl"])
@@ -1557,7 +2077,7 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                 if tp_mult is not None: temp_cfg["tp_mult"] = tp_mult
                 if sl_mult is not None: temp_cfg["sl_mult"] = sl_mult
                 temp_cfg["trail_mult"] = trail_mult
-                temp_cfg["use_limit_orders"] = True
+                temp_cfg["use_limit_orders"] = bool(cfg.get("use_limit_orders", True))
                 temp_cfg["limit_offset_bps"] = float(pol.get("limit_offset_bps_dynamic", temp_cfg.get("limit_offset_bps", cfg.get("limit_offset_bps", 0.0))))
                 temp_cfg["trail_mult"] = float(pol.get("trail_mult_eff", temp_cfg.get("trail_mult", trail_mult)))
                 temp_cfg["giveback_pct"] = float(pol.get("giveback_pct_eff", temp_cfg.get("giveback_pct", cfg.get("giveback_pct", 0.005))))
@@ -1600,16 +2120,26 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                 
                 # Dynamic cost model: handle limit fills and conditional fee concessions
                 fee_reduction_reasons = ["stop_loss", "early_invalidation", "giveback_exit"]
-                baseline_fee_side = float(cfg.get("fee_bps", 35.0)) / 10000.0
                 
-                # Entry fee: optional limit-fill fee override
-                entry_fee = float(cfg.get("limit_fill_fee_bps", 10.0)) / 10000.0 if trade_extras.get("filled_via_limit") else baseline_fee_side
+                # Use new fee structure: market vs limit order fees
+                baseline_fee_side = float(cfg.get("fee_bps_market", 25.0)) / 10000.0
                 
-                # Exit fee: apply 15bps concession for specific reasons, floor at 20bps
-                if reason in fee_reduction_reasons:
+                # Entry fee: use limit fee if filled via limit order
+                if trade_extras.get("filled_via_limit"):
+                    entry_fee = float(cfg.get("fee_bps_limit_entry", 10.0)) / 10000.0
+                else:
+                    entry_fee = baseline_fee_side
+                
+                # Exit fee: determine if using limit order exit or market order exit
+                # If exit reason is not timeout and we're using exit limits
+                use_exit_limit = cfg.get("use_exit_limit_orders", False)
+                if use_exit_limit and reason not in ["time_exit", "timeout"]:
+                    exit_fee = float(cfg.get("fee_bps_limit_exit", 10.0)) / 10000.0
+                elif reason in fee_reduction_reasons:
+                    # Apply concession for specific exit reasons
                     exit_fee = max(0.0020, baseline_fee_side - 0.0015)
                 else:
-                    exit_fee = baseline_fee_side
+                    exit_fee = float(cfg.get("fee_bps_market_exit", 25.0)) / 10000.0
                 
                 # Aggregate into symmetric CostModel for trade_return_net (expects fee_side * 2)
                 avg_fee_side = (entry_fee + exit_fee) / 2.0
@@ -1640,6 +2170,7 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                     "bars_to_mfe": trade_extras.get("bars_to_mfe", 0),
                     "exit_stage": trade_extras.get("exit_stage", 0),
                     "filled_via_limit": trade_extras.get("filled_via_limit", False),
+                    "exit_filled_via_limit": trade_extras.get("exit_filled_via_limit", False),
                     "exit_limit_bonus": trade_extras.get("exit_limit_bonus", 0.0),
                     "u_hat_z": pol.get("u_hat_z", 0.0),
                     "mae_hat_z": pol.get("mae_hat_z", 0.0),
@@ -1668,6 +2199,9 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                     trade_record["mkt_rv"] = float(mrk.get("mkt_rv", 0.0)) if "mkt_rv" in mrk.index else 0.0
                     trade_record["mkt_ret24h"] = float(mrk.get("mkt_ret24h", 0.0)) if "mkt_ret24h" in mrk.index else 0.0
                 trades.append(trade_record)
+                diag["executed_trades"] += 1
+                _rs = str(reason)
+                diag["reason_counts"][_rs] = int(diag["reason_counts"].get(_rs, 0) + 1)
                 # Update daily concentration counters
                 daily_bucket_counts[trade_date][bucket_label] += 1
                 daily_total_counts[trade_date] += 1
@@ -1713,6 +2247,86 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                 avg_lmt_g = float(np.mean(limit_gross_rets)) if limit_gross_rets else 0.0
                 tprint(f"    {rs.ljust(20)}: Count={len(rs_rows):<3} | Market Gross: {avg_mkt_g*100:6.3f}% | Limit Gross: {avg_lmt_g*100:6.3f}% | Delta: +{(avg_lmt_g - avg_mkt_g)*100:5.3f}%")
 
+            # === Detailed PnL Comparison Metrics ===
+            try:
+                from extreme_price_movements.limit_order_pricer import compute_pnl_comparison_metrics, compute_exit_limit_fill_impact
+                
+                # Convert trades list to DataFrame for metrics computation
+                trades_df = pd.DataFrame(trades)
+                
+                # Validate required columns exist before computing metrics
+                required_cols = ["entry_px"]
+                if not all(col in trades_df.columns for col in required_cols):
+                    tprint(f"  WARNING: Skipping PnL comparison - missing required columns: {required_cols}")
+                elif trades_df.empty:
+                    tprint("  WARNING: Skipping PnL comparison - no trades to analyze")
+                else:
+                    # Get exit price from trade records
+                    if "exit_px" not in trades_df.columns and "gross_ret" in trades_df.columns:
+                        # Calculate exit price from gross return
+                        trades_df["is_long"] = (trades_df["side"] == "long").astype(int)
+                        trades_df["exit_px"] = np.where(
+                            trades_df["is_long"] == 1,
+                            trades_df["entry_px"] * (1.0 + trades_df["gross_ret"]),
+                            trades_df["entry_px"] * (1.0 - trades_df["gross_ret"])
+                        )
+                
+                # Compute comprehensive PnL comparison metrics
+                comparison_metrics = compute_pnl_comparison_metrics(
+                    trades_df,
+                    entry_offset_bps=entry_bps,
+                    exit_offset_bps=exit_bps,
+                    mae_hat_col="mae_hat_z",
+                    mfe_hat_col="mfe_hat_z",
+                    is_long_col="is_long",
+                    entry_price_col="entry_px",
+                    exit_price_col="exit_px",
+                    fee_limit_entry=float(cfg.get("fee_bps_limit_entry", 10.0)) / 10000.0,
+                    fee_limit_exit=float(cfg.get("fee_bps_limit_exit", 10.0)) / 10000.0,
+                    fee_market_entry=float(cfg.get("fee_bps_market", 25.0)) / 10000.0,
+                    fee_market_exit=float(cfg.get("fee_bps_market_exit", 25.0)) / 10000.0,
+                )
+                
+                # Print detailed comparison
+                tprint(f"\n  === Detailed PnL Comparison (Solution A vs B vs Market) ===")
+                tprint(f"    Total Trades: {comparison_metrics['n_trades']}")
+                tprint(f"    Fee Savings (Entry): {comparison_metrics['fee_savings_entry']*10000:.1f} bps")
+                tprint(f"    Fee Savings (Exit): {comparison_metrics['fee_savings_exit']*10000:.1f} bps")
+                
+                tprint(f"\n  --- Mean PnL by Strategy ---")
+                tprint(f"    Baseline (Limit Entry):    {comparison_metrics['baseline']['mean']*100:7.3f}% | Sharpe: {comparison_metrics['baseline']['sharpe']:.2f} | Win Rate: {comparison_metrics['baseline']['win_rate']*100:.1f}%")
+                tprint(f"    Solution A (New TP/SL):   {comparison_metrics['solution_a']['mean']*100:7.3f}% | Sharpe: {comparison_metrics['solution_a']['sharpe']:.2f} | Win Rate: {comparison_metrics['solution_a']['win_rate']*100:.1f}%")
+                tprint(f"    Solution B (Same Dist):   {comparison_metrics['solution_b']['mean']*100:7.3f}% | Sharpe: {comparison_metrics['solution_b']['sharpe']:.2f} | Win Rate: {comparison_metrics['solution_b']['win_rate']*100:.1f}%")
+                tprint(f"    Market Order (No Offset): {comparison_metrics['market_order']['mean']*100:7.3f}% | Sharpe: {comparison_metrics['market_order']['sharpe']:.2f} | Win Rate: {comparison_metrics['market_order']['win_rate']*100:.1f}%")
+                
+                tprint(f"\n  --- PnL Differences ---")
+                tprint(f"    Solution A vs Baseline: {comparison_metrics['diff_a_vs_baseline']*100:+6.3f}%")
+                tprint(f"    Solution B vs Baseline: {comparison_metrics['diff_b_vs_baseline']*100:+6.3f}%")
+                tprint(f"    Solution A vs Market:   {comparison_metrics['diff_a_vs_market']*100:+6.3f}%")
+                tprint(f"    Solution B vs Market:   {comparison_metrics['diff_b_vs_market']*100:+6.3f}%")
+                
+                # Compute exit limit fill impact if exit_filled data is available
+                exit_impact = compute_exit_limit_fill_impact(
+                    trades_df,
+                    exit_filled_col="exit_filled_via_limit",
+                    exit_price_col="exit_px",
+                    entry_price_col="entry_px",
+                    is_long_col="is_long",
+                )
+                
+                if "error" not in exit_impact:
+                    tprint(f"\n  --- Exit Limit Order Fill Impact ---")
+                    tprint(f"    Total Trades: {exit_impact['total_trades']}")
+                    tprint(f"    Exit via Limit: {exit_impact['exit_limit_filled']} ({exit_impact['fill_rate']*100:.1f}%)")
+                    tprint(f"    Exit via Market: {exit_impact['exit_limit_not_filled']}")
+                    if "mean_pnl_filled" in exit_impact:
+                        tprint(f"    Mean PnL (Filled): {exit_impact['mean_pnl_filled']*100:.3f}%")
+                    if "mean_pnl_not_filled" in exit_impact:
+                        tprint(f"    Mean PnL (Not Filled): {exit_impact['mean_pnl_not_filled']*100:.3f}%")
+                
+            except Exception as e:
+                tprint(f"  WARNING: Could not compute detailed PnL comparison: {e}")
+
             emit_bucket_summary(
                 tprint=tprint,
                 run_id=run_id,
@@ -1749,23 +2363,32 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
             tprint(f"    MAE >= 0.4%: {mae_40bps:.1f}% of trades")
             tprint(f"    MAE >= 0.5%: {mae_50bps:.1f}% of trades\n")
         
-        return trades
+        if not trades and bool(cfg.get("signal_opt_debug", True)):
+            tprint(
+                "  SignalDiag[n=0]: "
+                f"hours={diag['hours_total']} hours_with_orders={diag['hours_with_orders']} "
+                f"orders_post_signal={diag['orders_post_signal']} orders_after_budget={diag['orders_after_budget']} "
+                f"policy_blocked={diag['skipped_policy_place_order']} missing_open={diag['skipped_missing_open']}"
+            )
+
+        return trades, diag
 
     split = max(24, int(len(valid_ts) * 0.2))  # 20% for signal calibration, 80% for OOS test
     train_ts = valid_ts[:split]
     test_ts = valid_ts[split:]
 
-    raw_train = run_slice(train_ts, {
+    raw_train, _raw_diag = run_slice(train_ts, {
         "thr_long": -1e9, "thr_short": 1e9,
         "k_long": cfg.get("k_long", 10), "k_short": cfg.get("k_short", 10),
         "size_min": 0.03, "size_max": 0.15, "size_k": 2.0, "size_x0": 0.5, "size_zcap": 4.0,
     })
     train_abs = np.array([abs(t["score"]) for t in raw_train], dtype=np.float64)
     q50 = float(np.quantile(train_abs, 0.5)) if train_abs.size else 0.0
+    q75 = float(np.quantile(train_abs, 0.75)) if train_abs.size else max(q50, 1e-6)
     q90 = float(np.quantile(train_abs, 0.9)) if train_abs.size else max(q50 + 1e-6, 1e-3)
     q95 = float(np.quantile(train_abs, 0.95)) if train_abs.size else max(q90 + 1e-6, 1.1 * q90)
     q98 = float(np.quantile(train_abs, 0.98)) if train_abs.size else max(q95 + 1e-6, 1.1 * q95)
-    tprint(f"Global Score Distribution: P50={q50:.6f}, P90={q90:.6f}, P95={q95:.6f}, P98={q98:.6f}")
+    tprint(f"Global Score Distribution: P50={q50:.6f}, P75={q75:.6f}, P90={q90:.6f}, P95={q95:.6f}, P98={q98:.6f}")
 
     # Calibrate long/short meta-score comparability on train only.
     side_frames = []
@@ -1828,36 +2451,54 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
     else:
         score_scale_params = {}
 
-    thr_long_grid = [0.00, 0.02]
-    thr_short_grid = [0.00]
+    def _uniq_sorted(vals):
+        out = []
+        for v in vals:
+            vv = float(max(0.0, v))
+            if np.isfinite(vv):
+                out.append(vv)
+        return sorted(set(out))
+
+    thr_long_grid = _uniq_sorted([0.0, q50, q75, q90])
+    thr_short_grid = _uniq_sorted([0.0, q50, q75, q90])
     x0_grid = [0.5, 0.7, 0.9]
     k_grid = [2.0, 4.0]
+    score_gate_q_grid = [0.0, 0.50, 0.70]
+    top_frac = float(cfg.get("signal_top_frac", 0.30))
 
     combos = []
     for tl in thr_long_grid:
         for ts_ in thr_short_grid:
             for x0 in x0_grid:
                 for k in k_grid:
-                    params = {
-                        "thr_long": tl,
-                        "thr_short": -ts_,
-                        "k_long": cfg.get("k_long", 10),
-                        "k_short": cfg.get("k_short", 10),
-                        "size_min": 0.03,
-                        "size_max": 0.15,
-                        "size_k": k,
-                        "size_x0": x0,
-                        "size_zcap": 4.0,
-                        "size_q50": q50,
-                        "size_q90": q90,
-                        "size_q95": q95,
-                        "size_q98": q98,
-                        "score_scale_params": score_scale_params,
-                    }
-                    tr = run_slice(train_ts, params)
-                    pnl, sortino, max_dd, win_rate, count = compute_metrics(tr)
-                    tprint(f"SignalOpt tl={tl:.3f} ts={-ts_:.3f} k={k:.2f} x0={x0:.2f} -> pnl={pnl:.6f} sortino={sortino:.6f} maxdd={max_dd:.6f} wr={win_rate:.2f} n={count}")
-                    combos.append((params, pnl, sortino, max_dd))
+                    for score_gate_q in score_gate_q_grid:
+                        params = {
+                            "thr_long": tl,
+                            "thr_short": ts_,
+                            "k_long": cfg.get("k_long", 10),
+                            "k_short": cfg.get("k_short", 10),
+                            "k_frac_long": top_frac,
+                            "k_frac_short": top_frac,
+                            "score_gate_q": score_gate_q,
+                            "size_min": 0.03,
+                            "size_max": 0.15,
+                            "size_k": k,
+                            "size_x0": x0,
+                            "size_zcap": 4.0,
+                            "size_q50": q50,
+                            "size_q90": q90,
+                            "size_q95": q95,
+                            "size_q98": q98,
+                            "score_scale_params": score_scale_params,
+                        }
+                        tr, _diag = run_slice(train_ts, params)
+                        pnl, sortino, max_dd, win_rate, count = compute_metrics(tr)
+                        tprint(
+                            f"SignalOpt tl={tl:.6f} ts={ts_:.6f} gate_q={score_gate_q:.2f} "
+                            f"k={k:.2f} x0={x0:.2f} -> pnl={pnl:.6f} sortino={sortino:.6f} "
+                            f"maxdd={max_dd:.6f} wr={win_rate:.2f} n={count}"
+                        )
+                        combos.append((params, pnl, sortino, max_dd))
 
     if combos:
         pnls = np.array([c[1] for c in combos], dtype=np.float64)
@@ -1868,8 +2509,10 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
         best_signal_params = combos[best_i][0]
     else:
         best_signal_params = {
-            "thr_long": cfg.get("thr_long", 0.01), "thr_short": cfg.get("thr_short", -0.01),
+            "thr_long": cfg.get("thr_long", q75), "thr_short": cfg.get("thr_short", q75),
             "k_long": cfg.get("k_long", 10), "k_short": cfg.get("k_short", 10),
+            "k_frac_long": top_frac, "k_frac_short": top_frac,
+            "score_gate_q": 0.70,
             "size_min": 0.03, "size_max": 0.15, "size_k": 2.0, "size_x0": 0.5,
             "size_zcap": 4.0, "size_q50": q50, "size_q90": q90, "size_q95": q95, "size_q98": q98,
             "score_scale_params": score_scale_params,
@@ -1877,10 +2520,18 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
 
     tprint(f"Selected signal params: {best_signal_params}")
 
-    test_trades = run_slice(test_ts, best_signal_params)
+    test_trades, test_diag = run_slice(test_ts, best_signal_params)
     pnl, sortino, max_dd, win_rate, count = compute_metrics(test_trades)
     avg_pnl = pnl / count if count > 0 else 0.0
     tprint(f"Backtest OOS Result: Trades={count}, PnL={pnl:.6f}, AvgPnL={avg_pnl:.6f}, Sortino={sortino:.6f}, MaxDD={max_dd:.6f}, WinRate={win_rate:.2f}")
+    if bool(cfg.get("signal_opt_debug", True)):
+        tprint(
+            "OOS SignalDiag: "
+            f"hours={test_diag.get('hours_total', 0)} hours_with_orders={test_diag.get('hours_with_orders', 0)} "
+            f"orders_post_signal={test_diag.get('orders_post_signal', 0)} orders_after_budget={test_diag.get('orders_after_budget', 0)} "
+            f"policy_blocked={test_diag.get('skipped_policy_place_order', 0)} missing_open={test_diag.get('skipped_missing_open', 0)} "
+            f"executed={test_diag.get('executed_trades', 0)} reasons={test_diag.get('reason_counts', {})}"
+        )
 
     # Breakdown
     if test_trades:
@@ -2393,6 +3044,7 @@ def run_feature_generation_step(ts_sig, margin_symbols, cfg, store, force_full_r
                 f"Features already exist and cover full target period: "
                 f"{_n_feats} features × {_n_syms} symbols. Skipping recomputation."
             )
+            _generate_feature_health_reports(ts_sig, cfg["data_root"])
             tprint("STEP: FEATURE GENERATION COMPLETE (cached)")
             return
 
@@ -2449,13 +3101,19 @@ def run_feature_generation_step(ts_sig, margin_symbols, cfg, store, force_full_r
             }
             feats_chunk, feat_index, feat_columns = compute_features_hourly(panel_chunk, mkt_gates.copy(), cfg)
 
-            unresolved = [k for k in backfill_keys if k not in feats_chunk]
-            if unresolved:
-                unresolved_union.update(unresolved)
-            feats_chunk = {k: v for k, v in feats_chunk.items() if k in backfill_set}
+            if backfill_keys and not force_full_recompute:
+                unresolved = [k for k in backfill_keys if k not in feats_chunk]
+                if unresolved:
+                    unresolved_union.update(unresolved)
+                feats_chunk = {k: v for k, v in feats_chunk.items() if k in backfill_set}
+                
             tprint(f"[Feature chunk {ci}/{total_chunks}] saving {len(feats_chunk)} keys")
             if feats_chunk:
-                chunk_cutoffs = {s: tail_cutoffs[s] for s in chunk_syms if s in tail_cutoffs}
+                if backfill_keys and not force_full_recompute:
+                    chunk_cutoffs = {s: tail_cutoffs[s] for s in chunk_syms if s in tail_cutoffs}
+                else:
+                    chunk_cutoffs = None
+                    
                 save_features(
                     feats_chunk,
                     ts_sig,
@@ -2521,4 +3179,5 @@ def run_feature_generation_step(ts_sig, margin_symbols, cfg, store, force_full_r
             tprint("No feature keys selected for save after missing/new filter; nothing to write.")
 
     tprint(f"Generated features for {len(loaded_syms)} symbols.")
+    _generate_feature_health_reports(ts_sig, cfg["data_root"])
     tprint("STEP: FEATURE GENERATION COMPLETE")

@@ -22,7 +22,7 @@ import os
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -1197,6 +1197,7 @@ def run_ridge_target_race(
     require_positive_topq_u: bool = True,
     topq_min_samples: int = 50,
     trade_mask: np.ndarray | None = None,
+    tree_probe: bool = True,
 ) -> tuple:
     """Race target representations for Ridge position sizer.
 
@@ -1257,6 +1258,7 @@ def run_ridge_target_race(
     best_ic = -np.inf
     best_name = "winsorized"
     best_y = candidates["winsorized"]
+    candidate_rows: List[Dict[str, Any]] = []
 
     for tname, y_cand in candidates.items():
         fin = np.isfinite(y_cand)
@@ -1328,6 +1330,15 @@ def run_ridge_target_race(
         race_log.append(
             f"      {tname}: IC={mean_ic:.4f} ({len(ics)} folds) TopQMeanU={topq_u:.6f} n_top={topq_n} gate={pass_gate}"
         )
+        candidate_rows.append(
+            {
+                "target_name": tname,
+                "ridge_ic": float(mean_ic),
+                "ridge_topq_u": float(topq_u) if np.isfinite(topq_u) else float("nan"),
+                "ridge_topq_n": int(topq_n),
+                "ridge_pass_gate": bool(pass_gate),
+            }
+        )
 
         score = (topq_u if pass_gate else -1e12) if select_metric == "topq_u_policy" else mean_ic
         if not np.isfinite(score):
@@ -1337,8 +1348,107 @@ def run_ridge_target_race(
             best_name = tname
             best_y = y_cand
 
+    winner_model_metrics: Dict[str, Any] = {}
+    if tree_probe:
+        def _eval_model_cv(model_name: str, model_factory):
+            fold_size = n // 3
+            ics_loc = []
+            oof_pred = np.full(n, np.nan, dtype=float)
+            for fold in range(3):
+                val_start = fold * fold_size
+                val_end = val_start + fold_size if fold < 2 else n
+                train_end = max(0, val_start - 12)
+                if train_end < 50:
+                    continue
+                tr_idx = np.arange(0, train_end)
+                va_idx = np.arange(val_start, val_end)
+                X_tr, X_va = X[tr_idx], X[va_idx]
+                y_tr = best_y[tr_idx]
+                y_va_ret = returns[va_idx]
+                mu = np.nanmean(X_tr, axis=0)
+                sd = np.nanstd(X_tr, axis=0)
+                sd = np.where(sd < 1e-9, 1.0, sd)
+                X_tr_s = (X_tr - mu) / sd
+                X_va_s = (X_va - mu) / sd
+                try:
+                    mdl = model_factory()
+                    mdl.fit(X_tr_s, y_tr)
+                    pred = np.asarray(mdl.predict(X_va_s), dtype=float)
+                    oof_pred[va_idx] = pred
+                    if np.std(pred) < 1e-12 or np.std(y_va_ret) < 1e-12:
+                        ic_fold = 0.0
+                    else:
+                        ic_fold = float(spearmanr(pred, y_va_ret).correlation)
+                    if np.isfinite(ic_fold):
+                        ics_loc.append(ic_fold)
+                except Exception:
+                    continue
+            mean_ic_loc = float(np.mean(ics_loc)) if ics_loc else float("nan")
+            topq_u_loc = float("nan")
+            topq_n_loc = 0
+            if u_policy is not None:
+                up = np.asarray(u_policy, dtype=float)
+                _tm = np.ones(len(oof_pred), dtype=bool) if trade_mask is None else np.asarray(trade_mask[:len(oof_pred)], dtype=bool)
+                mask = np.isfinite(oof_pred) & np.isfinite(up[:len(oof_pred)]) & _tm
+                if np.any(mask):
+                    pred_use = oof_pred[mask]
+                    up_use = up[:len(oof_pred)][mask]
+                    k_top = max(1, int(np.ceil(float(topq) * len(pred_use))))
+                    idx_top = np.argsort(pred_use)[-k_top:]
+                    topq_u_loc = float(np.mean(up_use[idx_top]))
+                    topq_n_loc = int(k_top)
+            return {
+                "model_name": model_name,
+                "ic": mean_ic_loc,
+                "topq_u": topq_u_loc,
+                "topq_n": int(topq_n_loc),
+            }
+
+        winner_model_metrics["ridge"] = next(
+            (r for r in candidate_rows if r.get("target_name") == best_name),
+            {"target_name": best_name},
+        )
+        try:
+            from sklearn.ensemble import ExtraTreesRegressor
+            winner_model_metrics["extratrees"] = _eval_model_cv(
+                "extratrees",
+                lambda: ExtraTreesRegressor(
+                    n_estimators=200,
+                    min_samples_leaf=80,
+                    min_samples_split=200,
+                    max_features="sqrt",
+                    bootstrap=True,
+                    max_samples=0.7,
+                    random_state=42,
+                    n_jobs=1,
+                ),
+            )
+        except Exception:
+            pass
+        try:
+            from sklearn.ensemble import HistGradientBoostingRegressor
+            winner_model_metrics["hgbt"] = _eval_model_cv(
+                "hgbt",
+                lambda: HistGradientBoostingRegressor(
+                    loss="squared_error",
+                    max_depth=3,
+                    max_iter=220,
+                    min_samples_leaf=80,
+                    l2_regularization=0.2,
+                    learning_rate=0.05,
+                    random_state=42,
+                ),
+            )
+        except Exception:
+            pass
+
     race_log.append(f"    Winner: {best_name} (score={best_ic:.6f}, metric={select_metric})")
-    return best_name, best_y, race_log
+    race_diag = {
+        "select_metric": str(select_metric),
+        "candidate_metrics": candidate_rows,
+        "winner_model_metrics": winner_model_metrics,
+    }
+    return best_name, best_y, race_log, race_diag
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1542,6 +1652,7 @@ class RidgePositionSizer:
         self.weights_: Optional[np.ndarray] = None
         self.model_names_: Optional[List[str]] = None
         self.best_params_: Optional[Dict] = None
+        self.target_race_metrics_: Optional[Dict[str, Any]] = None
         self.cv_results_: Optional[pd.DataFrame] = None
         self.scaler_: Optional[PredictionScaler] = None
         self.is_fitted_: bool = False
@@ -2046,7 +2157,7 @@ class RidgePositionSizer:
         if self.select_metric == "topq_u_policy" and _u_policy is None:
             tprint("  WARNING: sizer_select_metric='topq_u_policy' requested but u_policy_net missing. Falling back to 'ic'.")
             self.select_metric = "ic"
-        tgt_name, y, race_log = run_ridge_target_race(
+        tgt_name, y, race_log, race_diag = run_ridge_target_race(
             X, y_gross, symbols, timestamps,
             alpha=0.5, cost_pct=self.cost_pct,
             select_metric=self.select_metric,
@@ -2059,6 +2170,7 @@ class RidgePositionSizer:
         for line in race_log:
             tprint(line)
         self.best_target_name_ = tgt_name
+        self.target_race_metrics_ = race_diag
         
         # NOTE: Do NOT scale globally here - scaling is done per-fold in _evaluate_params
         # to prevent data leakage. The final scaler is fit after CV on all data.
@@ -2093,7 +2205,7 @@ class RidgePositionSizer:
                 metrics.get("MaxDD", 99.0)
             )
 
-        n_trials = min(150, self.n_grid_points * self.n_grid_points * 5)
+        n_trials = min(150, self.n_grid_points * self.n_grid_points * 4)
         tprint(f"  Evaluating {n_trials} hyperparameter combinations via Optuna...")
         
         class OptunaLogger:
@@ -2286,6 +2398,7 @@ class RidgePositionSizer:
             'model_names': self.model_names_,
             'best_params': self.best_params_,
             'best_target_name': getattr(self, 'best_target_name_', None),
+            'target_race_metrics': getattr(self, 'target_race_metrics_', None),
             'gamma_range': self.gamma_range,
             'alpha_range': self.alpha_range,
             'delta_range': self.delta_range,
@@ -2331,6 +2444,7 @@ class RidgePositionSizer:
         instance.weights_ = np.array(save_dict['weights']) if save_dict['weights'] else None
         instance.model_names_ = save_dict['model_names']
         instance.best_params_ = save_dict['best_params']
+        instance.target_race_metrics_ = save_dict.get('target_race_metrics')
         instance.is_fitted_ = True
         
         # Restore scaler
@@ -2347,6 +2461,69 @@ class RidgePositionSizer:
 # ═══════════════════════════════════════════════════════════════════════════════
 # Pipeline Integration Function
 # ═══════════════════════════════════════════════════════════════════════════════
+
+def _compute_ridge_weight_diagnostics(
+    weights: Dict[str, float],
+    oof_preds: Optional[pd.DataFrame] = None,
+    sizer: Optional["RidgePositionSizer"] = None,
+) -> Dict[str, Any]:
+    """Compute lightweight concentration diagnostics for ridge weight behavior."""
+    if not weights:
+        return {}
+    names = list(weights.keys())
+    w = np.asarray([float(weights[k]) for k in names], dtype=float)
+    absw = np.abs(w)
+    sum_abs = float(np.sum(absw))
+    if sum_abs <= 0.0:
+        p = np.zeros_like(absw)
+    else:
+        p = absw / sum_abs
+    diag: Dict[str, Any] = {
+        "weight_l1": sum_abs,
+        "weight_l2": float(np.linalg.norm(w)),
+        "weight_max_abs": float(np.max(absw)),
+        "weight_top1_share": float(np.max(p)) if p.size else 0.0,
+        "weight_top2_share": float(np.sum(np.sort(p)[-2:])) if p.size >= 2 else float(np.sum(p)),
+        "weight_top3_share": float(np.sum(np.sort(p)[-3:])) if p.size >= 3 else float(np.sum(p)),
+        "weight_effective_n_models": float(1.0 / np.sum(np.square(p))) if np.sum(np.square(p)) > 0 else 0.0,
+        "weight_entropy": float(-np.sum(np.where(p > 0.0, p * np.log(p), 0.0))),
+    }
+    horizon_shares: Dict[str, float] = {}
+    for h in ("H2", "H4", "H8"):
+        m = np.array([f"_{h}" in n for n in names], dtype=bool)
+        horizon_shares[h] = float(np.sum(absw[m]) / sum_abs) if sum_abs > 0 else 0.0
+    diag["weight_share_by_horizon"] = horizon_shares
+
+    # Correlation proxy with combined OOF signal (vectorized and cheap).
+    if (
+        oof_preds is not None
+        and sizer is not None
+        and getattr(sizer, "scaler_", None) is not None
+        and getattr(sizer, "weights_", None) is not None
+        and names
+    ):
+        present = [c for c in names if c in oof_preds.columns]
+        if present:
+            X_raw = np.nan_to_num(oof_preds[present].values, nan=0.0, posinf=0.0, neginf=0.0)
+            X_scaled = sizer.scaler_.transform(X_raw)
+            w_aligned = np.asarray([weights[c] for c in present], dtype=float)
+            score = X_scaled @ w_aligned
+            xc = X_scaled - X_scaled.mean(axis=0, keepdims=True)
+            yc = score - float(score.mean())
+            denom = np.sqrt(np.sum(xc * xc, axis=0)) * np.sqrt(np.sum(yc * yc))
+            corr = np.zeros(len(present), dtype=float)
+            valid = denom > 1e-12
+            if np.any(valid):
+                corr[valid] = (xc[:, valid].T @ yc) / denom[valid]
+            contrib_df = pd.DataFrame({
+                "model_name": present,
+                "weight": w_aligned,
+                "abs_weight": np.abs(w_aligned),
+                "weight_share_abs": np.abs(w_aligned) / max(float(np.sum(np.abs(w_aligned))), 1e-12),
+                "corr_with_combined_score": corr,
+            }).sort_values("abs_weight", ascending=False)
+            diag["top_model_contributors"] = contrib_df.head(15).to_dict(orient="records")
+    return diag
 
 def run_ridge_position_sizer_step(
     oof_preds: pd.DataFrame,
@@ -2432,9 +2609,13 @@ def run_ridge_position_sizer_step(
         'weights': weights,
         'best_params': sizer.best_params_,
         'best_target_name': getattr(sizer, 'best_target_name_', None),
+        'target_race_metrics': getattr(sizer, 'target_race_metrics_', None),
         'n_models': len(weights),
         'n_trades': len(trade_outcomes),
     }
+    ridge_diag = _compute_ridge_weight_diagnostics(weights=weights, oof_preds=oof_preds, sizer=sizer)
+    if ridge_diag:
+        metrics["weight_diagnostics"] = ridge_diag
     
     # Add CV results summary
     if sizer.cv_results_ is not None:
@@ -2468,6 +2649,44 @@ def run_ridge_position_sizer_step(
         cv_path = reports_dir / f"ridge_position_sizer_cv_{run_id or 'latest'}.csv"
         sizer.cv_results_.to_csv(cv_path, index=False)
         metrics['cv_results_path'] = str(cv_path)
+    _trm = getattr(sizer, "target_race_metrics_", None)
+    if isinstance(_trm, dict):
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        trm_path = reports_dir / f"ridge_position_sizer_target_race_{run_id or 'latest'}.json"
+        with open(trm_path, "w") as f:
+            json.dump(_trm, f, indent=2)
+        metrics["target_race_metrics_path"] = str(trm_path)
+        cand = _trm.get("candidate_metrics", [])
+        if cand:
+            pd.DataFrame(cand).to_csv(
+                reports_dir / f"ridge_position_sizer_target_race_candidates_{run_id or 'latest'}.csv",
+                index=False,
+            )
+        winner_mm = _trm.get("winner_model_metrics")
+        if isinstance(winner_mm, dict) and winner_mm:
+            wm_rows = []
+            for mk, mv in winner_mm.items():
+                if isinstance(mv, dict):
+                    row = {"model_name": mk}
+                    row.update(mv)
+                    wm_rows.append(row)
+            if wm_rows:
+                pd.DataFrame(wm_rows).to_csv(
+                    reports_dir / f"ridge_position_sizer_target_race_winner_models_{run_id or 'latest'}.csv",
+                    index=False,
+                )
+    if ridge_diag:
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        diag_path = reports_dir / f"ridge_position_sizer_weight_diag_{run_id or 'latest'}.json"
+        with open(diag_path, "w") as f:
+            json.dump(ridge_diag, f, indent=2)
+        metrics["weight_diagnostics_path"] = str(diag_path)
+        _top = ridge_diag.get("top_model_contributors")
+        if _top:
+            pd.DataFrame(_top).to_csv(
+                reports_dir / f"ridge_position_sizer_weight_diag_top_{run_id or 'latest'}.csv",
+                index=False,
+            )
 
     # Export OOF parquet for preds_metrics_computations.py diagnostics
     # score = Ridge combined signal; fwd_ret_H4 = raw trade return (proxy for H4)

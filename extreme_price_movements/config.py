@@ -258,6 +258,12 @@ CFG = {
     "mfe_mae_w_min": 0.5,      # Minimum weight floor
     "mfe_mae_tau": 1.0,        # Scaling factor (d/tau)
     "mfe_mae_cost_floor": 0.001,  # Cost floor for touch margin penalty
+    # MR path-aware weighting (de-emphasize raw magnitude, emphasize efficient path)
+    "mr_weight_magnitude_power": 0.35,
+    "mr_weight_mfe_tau": 1.0,
+    "mr_weight_mae_tau": 1.0,
+    # MR utility target: velocity decay horizon for bars_to_mfe penalty
+    "mr_utility_horizon_bars": 8,
 
     # Meta model sample weighting
     # Magnitude sigmoid: w = 1 + alpha * sigmoid((|ret| - q70) / std)
@@ -275,6 +281,7 @@ CFG = {
     "meta_clf_use_engine_labels": True,
     # Remove classifier heads from meta race by default (regression heads only)
     "meta_race_include_classifiers": False,
+    "meta_train_regression_bucket_model": True,
     # Meta classifier utility-based winner selection (logloss remains a gate)
     "meta_clf_max_logloss": 1.10,
     "meta_clf_u_tp": 1.0,
@@ -288,14 +295,55 @@ CFG = {
     # Smooth utility proxy computed deterministically from predicted MFE/MAE.
     "meta_utility_smooth_tp": 0.02,
     "meta_utility_smooth_sl": 0.01,
-    "meta_utility_smooth_alpha": 15.0,
+    "meta_utility_smooth_alpha": 6.0,
+    "meta_utility_smooth_alpha_grid": [2.0, 4.0, 6.0, 8.0, 10.0, 12.0],
+    "meta_utility_smooth_tp_quantile": 0.60,
+    "meta_utility_smooth_sl_quantile": 0.60,
+    "meta_utility_smooth_quantile_blend": 0.50,
+    "meta_utility_smooth_tp_min": 0.003,
+    "meta_utility_smooth_tp_max": 0.250,
+    "meta_utility_smooth_sl_min": 0.002,
+    "meta_utility_smooth_sl_max": 0.250,
+    "meta_utility_smooth_use_zscore": True,
     "meta_utility_smooth_use_predicted_mfe_mae": True,
     "meta_utility_smooth_loss": "huber",
     "meta_utility_smooth_loss_weight": 1.0,
+    # MAE auxiliary head target / weighting race
+    "aux_mae_target_variants": ["rank_pct", "qbin_mid"],
+    "aux_mae_weight_variants": ["none", "asymmetric_tail", "symmetric_tail", "top30_tail"],
+    "aux_mae_qbin_bins": 20,
+    "aux_mfe_target_variants": ["rank_pct", "qbin_mid"],
+    "aux_mfe_weight_variants": ["none", "asymmetric_tail", "symmetric_tail", "top30_tail"],
+    "aux_mfe_qbin_bins": 20,
+    "aux_head_rank_tail_start": 0.70,
+    "aux_head_rank_tail_amp": 0.50,
+    # Aux-head selection objective (top-trade focused)
+    "aux_head_select_top_frac": 0.30,
+    "aux_head_select_w_ic_top": 0.70,
+    "aux_head_select_w_ic_all": 0.10,
+    "aux_head_select_w_mono": 0.10,
+    "aux_head_select_w_stability": 0.15,
+    "aux_head_select_w_stability_top30": 0.15,
+    "aux_head_select_w_ece_top": 0.20,
+    "aux_head_weight_lambda_grid": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+    "aux_head_weight_min_gain_vs_none": 1e-4,
+    "aux_head_weight_topk_tolerance": 1e-4,
+    # Stage-1 ablation uses one comparator model to avoid combinatorial explosion.
+    "aux_head_ablation_model": "extratrees",
+    "aux_head_ablation_et_estimators": 120,
+    "aux_head_ablation_lgbm_estimators": 200,
+    "aux_head_weight_optuna_trials": 12,
+    "aux_head_weight_optuna_inner_splits": 3,
+    "aux_head_ridge_alpha_min": 1e-3,
+    "aux_head_ridge_alpha_max": 100.0,
+    "aux_head_ridge_alpha_default": 1.0,
+    # Stage-2 model race is run only on the target/weight winner from stage-1.
+    "aux_head_run_model_race_on_winner": True,
+    "aux_head_model_race_candidates": ["lgbm", "extratrees", "ridge"],
 
     # Two-stage/three-head position sizer defaults.
-    "position_sizer_enabled": False,
-    "position_sizer_backend": "ridge",  # ridge | new
+    "position_sizer_enabled": True,
+    "position_sizer_backend": "new",  # new (ridge backend deprecated/disabled)
     "position_sizer_allow_fallback": False,
     "position_sizer_allow_unknown_bundle_version": False,
     "position_sizer_ev_threshold": 0.0,
@@ -316,6 +364,44 @@ CFG = {
     "position_sizer_pwin_soft_label_loss": "bce",
     "position_sizer_pwin_soft_label_use_log_excursions": False,
     "position_sizer_pwin_soft_label_log_eps": 1e-12,
+    # Position-sizer features from meta OOF + regime context.
+    "position_sizer_feature_priority": [
+        "score",
+        "reg",
+        "reg_mean",
+        "reg_std",
+        "reg_range",
+        "utility",
+        "mae_q70",
+        "mfe",
+        "early_inval",
+        "oof_u_hat",
+        "oof_log_mae_q70_hat",
+        "oof_log_mfe_hat",
+        "mfe_mae_ratio_hat",
+    ],
+    "position_sizer_regime_feature_keys": [
+        "vol_regime_z",
+        "is_high_vol_regime",
+        "is_low_vol_regime",
+        "trend_regime",
+        "is_trending",
+        "is_ranging",
+        "liq_regime",
+        "regime_stability_24h",
+        "trend_regime_switch_12h",
+        "vol_regime_switch_12h",
+        "complexity_regime_24h",
+        # 4-day regime features
+        "vol_regime_z_4d",
+        "trend_strength_4d",
+        "regime_stability_4d",
+        "vol_persistence_4d",
+        "trend_regime_duration_4d",
+    ],
+    # When running `run_pipeline.py sizer`, also run OOS backtest to emit
+    # financial metrics (PnL/Sortino/etc.) with the freshly trained sizer.
+    "sizer_run_oos_backtest": True,
 
     # Ranking-based allocation engine (capital allocation > prediction IC)
     "ranking_trade_percentile_threshold": 0.90,
@@ -477,7 +563,6 @@ CFG = {
     # stability gating (per trade, not per day)
     "coef_persist_window": 60,
     "min_feat_nonzero_rate": 0.30,
-    "min_feat_sign_consistency": 0.70,
     "min_model_stability_to_trade": 0.15,
 
     # causal cols for interaction toggles
@@ -626,7 +711,7 @@ CFG = {
     "fee_bps": 25.0,
     "borrow_apr": 0.20,
 
-    "oos_holdout_days": 14,    # 14-day holdout for quick verification of global ranking
+    "oos_holdout_days": 730,   # Enforce >= 2 years OOS holdout for robust signal evaluation
 
     # Trailing Profit Risk Params (used in backtest & live, all vol-scaled)
     # Target absolute: TP ~2%, SL ~0.7% (with median barrier_pct ~4%)
@@ -750,6 +835,11 @@ CFG = {
         # OHLCV-based mean-reversion quality features (Report 2026-02-12)
         "trend_strength_vs_reversion", "support_quality_score", "dip_velocity",
         "dip_volume_profile", "reversion_target_distance",
+        # Reversal mechanics and trap context
+        "bounce_signal", "volume_capitulation", "trap_strength", "entry_quality_composite", "trap_quality",
+        "mr_soft", "mr_potential", "mr_potential_exhaust", "climax", "vol_exhaust", "mr_climax",
+        "shock_decay", "pct_extreme", "mr_pct", "stall", "mr_failure",
+        "impulse_reversal", "impulse_reversal_short", "breakout_min", "pct_breakout_t",
         # New Indicators
         "trapped_longs_12", "dist_vwap_12_atr", "vp_dist_poc_atr", "vp_in_poc_zone",
         "vortex_diff_14", "adx_7",
@@ -824,7 +914,97 @@ CFG = {
         "t_be_proxy", "t_pl_proxy", "t_trail_proxy",
         "shock_12h", "shock_vol_ratio", "dist_from_low_event_12h", "dist_from_high_event_12h",
         "dist_from_low_vol", "dist_from_high_vol",
+        # Regime/liquidity/complexity features for meta utility/IC robustness
+        "amihud_z", "amihud_illiq", "liq_regime", "rvol_hod_base", "mkt_rv_pct",
+        "vol_regime_z", "regime_stability_24h", "regime_transition_entropy_12h",
+        "regime_transition_entropy_48h", "complexity_regime_24h",
+        "trend_regime_switch_12h", "vol_regime_switch_12h",
+        "vol_concentration_12", "volume_entropy_12", "volume_entropy_24", "volatility_zscore",
     ],
+    # Kind-specific overlays for meta models (added on top of meta_feature_keys)
+    "mr_meta_feature_keys": [
+        "impulse_reversal", "impulse_reversal_short", "breakout_min", "pct_breakout_t",
+        "dip_velocity", "dip_volume_profile", "support_quality_score", "reversion_target_distance",
+        "trend_strength_vs_reversion", "mr_tape",
+        # MR path quality and trap filtering
+        "vol_compression", "climax_decay", "shock_rel", "vol_price_diverge",
+        "rsi_z_x_regime_vol", "down_up_vol_ratio_8", "down_up_vol_ratio_24",
+        "vol_shock_asym_4_12", "vol_shock_asym_8_24", "draw_sym_10h", "atr_pct_change",
+    ],
+    "tf_meta_feature_keys": [
+        "tf_tape", "tf_minus_mr", "accept_gt66", "retest_accept", "tf_qual",
+        "breakout_confirmed", "trend_retest_success_rate", "trend_regime_stability",
+        "trend_age_hours", "higher_highs_count_48h",
+        # TF continuation quality
+        "trend_regime", "is_trending", "trend_snr", "trend_overextension_z",
+        "volume_trend_alignment", "impulse_ratio_24", "breakout_t",
+        "vol_expansion_ratio", "vol_z_x_regime_trend",
+    ],
+    # Selector v3 configs (top30-focused, per-head)
+    "selector_feature_family_map": {},
+    "base_selector_cfg": {
+        "selector_focus_top_frac": 0.30,
+        "selector_top_metric": None,
+        "selector_frequency_hit_mode": "relative",
+        "selector_frequency_hit_quantile": 0.80,
+        "selector_frequency_hit_abs": 1e-6,
+        "selector_interaction_mode": "tree_path_lift",
+        "selector_interaction_topk_pairs": 100,
+        "selector_interaction_max_pairs_per_feature": 8,
+        "selector_interaction_corr_penalty": True,
+        "selector_family_penalty": True,
+        "selector_emit_report": True,
+        "selector_hysteresis_margin": 0.05,
+        "selector_min_overlap": 0.70,
+        "top30": 0.35,
+        "global": 0.20,
+        "stability": 0.25,
+        "frequency": 0.15,
+        "interaction": 0.05,
+    },
+    "meta_selector_cfg": {
+        "selector_focus_top_frac": 0.30,
+        "selector_top_metric": "ic_top",
+        "selector_frequency_hit_mode": "relative",
+        "selector_frequency_hit_quantile": 0.80,
+        "selector_frequency_hit_abs": 1e-6,
+        "selector_interaction_mode": "tree_path_lift",
+        "selector_interaction_topk_pairs": 100,
+        "selector_interaction_max_pairs_per_feature": 8,
+        "selector_interaction_corr_penalty": True,
+        "selector_family_penalty": True,
+        "selector_emit_report": True,
+        "selector_hysteresis_margin": 0.05,
+        "selector_min_overlap": 0.70,
+        "top30": 0.35,
+        "global": 0.20,
+        "stability": 0.25,
+        "frequency": 0.15,
+        "interaction": 0.05,
+    },
+    "aux_mae_selector_cfg": {
+        "selector_focus_top_frac": 0.30,
+        "selector_top_metric": "ic_top",
+        "selector_emit_report": True,
+    },
+    "aux_mfe_selector_cfg": {
+        "selector_focus_top_frac": 0.30,
+        "selector_top_metric": "ic_top",
+        "selector_emit_report": True,
+    },
+    "aux_utility_selector_cfg": {
+        "selector_focus_top_frac": 0.30,
+        "selector_top_metric": "top30_mean_utility",
+        "selector_emit_report": True,
+        "top30": 0.30,
+        "global": 0.15,
+        "stability": 0.30,
+        "frequency": 0.20,
+        "interaction": 0.05,
+    },
+    # Backward-compatible selector aliases
+    "base_mdi_selector_target": "classification",
+    "base_mdi_selector_loss": "binary_logloss",
 
     # Unified learnability-test feature basket used by research comparison scripts
     "test_feature_keys": TEST_FEATURE_KEYS,
@@ -834,7 +1014,6 @@ CFG = {
     "inference_event_threshold": 0.07,
     "inference_perf_pct": 0.10,
     "inference_draw_window_hours": 8,
-    "inference_sign_consistency_min": 0.80,
     "inference_basket_ttl_hours": 24,
     
     # High-frequency simulation
@@ -844,7 +1023,27 @@ CFG = {
     "use_limit_orders": True,    # Enable limit orders per user request
     "limit_offset_bps": 20.0,    # 0.2% entry offset (buy lower / sell higher)
     "exit_limit_offset_bps": 20.0,  # 0.2% exit offset for testing
-    "fee_bps": 35.0,  # Based on requested 0.35% round trip
+    "signal_opt_debug": True,    # Emit detailed signal-optimization diagnostics
+    "debug_signal_generation": True,  # Emit per-timestamp signal-generation stage counts
+    "fee_bps": 35.0,  # Default fee (used when not using limit orders)
+    
+    # Fee Structure (Market vs Limit)
+    "fee_bps_market": 25.0,      # 0.25% per side for market orders (50 bps RT)
+    "fee_bps_limit_entry": 10.0, # 0.10% per side for limit order entry (20 bps RT)
+    "fee_bps_limit_exit": 10.0,  # 0.10% per side for limit order exit (20 bps RT)
+    "fee_bps_market_exit": 25.0, # 0.25% per side if using market order for exit
+    
+    # Limit Order Price Estimation (MAE/MFE-based)
+    "use_mae_mfe_limit_offset": True,  # Use MAE/MFE predictions for limit offset
+    "limit_offset_min_bps": 5.0,       # Minimum limit offset in bps
+    "limit_offset_max_bps": 50.0,      # Maximum limit offset in bps
+    "limit_fill_model_type": "heuristic",  # heuristic | learned
+    "limit_fill_vol_regime_weight": 0.3,  # How much vol regime reduces fill prob
+    "limit_fill_liquidity_bonus": 0.2,    # Liquidity adjustment to fill prob
+    
+    # Exit Limit Orders
+    "use_exit_limit_orders": True,    # Enable limit orders for exits
+    "exit_limit_offset_adaptive": True,  # Adapt exit offset based on profit locked
     
     # Risk logging
     "verbose_risk_logging": False,  # Enable detailed per-trade TP/SL logging

@@ -1299,6 +1299,53 @@ def run_position_sizer_step(cfg, data_bundle, artifacts, logger):
         log(f"Position sizer regime features missing: {_regime_missing}")
 
     _ps_train = train_position_sizer_models(ps_df=ps_df, feature_cols=feature_cols, cfg=cfg)
+    _ps_diag = dict(_ps_train.get("diagnostics", {}) or {})
+    _ps_cfg = dict(_ps_train.get("training_config", {}) or {})
+    if _ps_cfg:
+        log(
+            "PositionSizer models trained: "
+            f"pwin={_ps_cfg.get('pwin_base_engine')} "
+            f"quant={_ps_cfg.get('quantile_base_engine')} "
+            f"reg={_ps_cfg.get('regularization_level')} "
+            f"cal={_ps_cfg.get('calibrator_method')} "
+            f"delta={_ps_cfg.get('quantile_delta')}"
+        )
+    _pdiag = dict(_ps_diag.get("pwin", {}) or {})
+    if _pdiag:
+        log(
+            "PositionSizer pwin diag: "
+            f"auc_cal={_pdiag.get('auc_cal', float('nan')):.4f} "
+            f"bce_cal={_pdiag.get('bce_cal', float('nan')):.4f} "
+            f"ece_cal={_pdiag.get('ece_cal', float('nan')):.4f}"
+        )
+    _wdiag = dict(_ps_diag.get("win_quantiles", {}) or {})
+    _ldiag = dict(_ps_diag.get("loss_quantiles", {}) or {})
+    if _wdiag:
+        log(
+            "PositionSizer win-quantile diag: "
+            f"pin50={_wdiag.get('pinball_q50', float('nan')):.6f} "
+            f"pinH={_wdiag.get('pinball_qh', float('nan')):.6f} "
+            f"cov50={_wdiag.get('coverage_q50', float('nan')):.3f} "
+            f"covH={_wdiag.get('coverage_qh', float('nan')):.3f}"
+        )
+    if _ldiag:
+        log(
+            "PositionSizer loss-quantile diag: "
+            f"pin50={_ldiag.get('pinball_q50', float('nan')):.6f} "
+            f"pinH={_ldiag.get('pinball_qh', float('nan')):.6f} "
+            f"cov50={_ldiag.get('coverage_q50', float('nan')):.3f} "
+            f"covH={_ldiag.get('coverage_qh', float('nan')):.3f}"
+        )
+    for _b, _bd in sorted((_ps_diag.get("per_bucket", {}) or {}).items()):
+        _bp = dict((_bd or {}).get("pwin", {}) or {})
+        _bw = dict((_bd or {}).get("win_quantiles", {}) or {})
+        _bl = dict((_bd or {}).get("loss_quantiles", {}) or {})
+        log(
+            f"  [bucket={_b}] pwin_n={_bp.get('n', 0)} "
+            f"pwin_mean_pred={_bp.get('mean_pred', float('nan')):.4f} "
+            f"win_pinH={_bw.get('pinball_qh', float('nan')):.6f} "
+            f"loss_pinH={_bl.get('pinball_qh', float('nan')):.6f}"
+        )
     pwin_model = _ps_train["pwin_model"]
     win_model = _ps_train["win_model"]
     loss_model = _ps_train["loss_model"]
@@ -1366,6 +1413,8 @@ def run_position_sizer_step(cfg, data_bundle, artifacts, logger):
         "exp_win_quantile": exp_win_q,
         "risk_loss_quantile": risk_loss_q,
         "costs_mode": costs_mode,
+        "training_config": _ps_cfg,
+        "training_diagnostics": _ps_diag,
     }
     _schema_hash = compute_schema_hash(feature_cols, extra=_q_cfg)
     _meta = make_bundle_metadata(git_sha=_git_sha)
@@ -1411,6 +1460,8 @@ def run_position_sizer_step(cfg, data_bundle, artifacts, logger):
     }
     with open(os.path.join(output_dir, "position_sizer_bundle.json"), "w") as f:
         json.dump(manifest, f, indent=2)
+    with open(os.path.join(output_dir, "position_sizer_training_diagnostics.json"), "w") as f:
+        json.dump({"training_config": _ps_cfg, "diagnostics": _ps_diag}, f, indent=2)
 
     state_file = artifacts.get("state_file")
     if state_file and os.path.exists(state_file):

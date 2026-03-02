@@ -584,6 +584,14 @@ def run_train_meta(cfg, ts_override=None):
         except Exception as e:
             tprint(f"WARNING: breakdown diagnostics failed: {e}")
             
+        # Train the new EV-decomposition position sizer immediately after meta training.
+        if bool(cfg.get("position_sizer_enabled", False)):
+            try:
+                tprint("TRAIN_META: running position sizer training (models.py + orchestrator)...")
+                run_sizer(cfg, ts_override=run_id)
+            except Exception as e:
+                tprint(f"WARNING: train_meta position sizer step failed: {e}")
+
         tprint("TRAIN_META PIPELINE COMPLETE")
     else:
         tprint("TRAIN_META PIPELINE FAILED")

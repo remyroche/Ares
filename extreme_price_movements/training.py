@@ -3984,6 +3984,8 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                 w_to = np.sum(w_3d * mask_to, axis=0)
                 agg_ret_num = np.sum(w_3d * ret_stack, axis=0)
                 agg_qual_num = np.sum(w_3d * qual_stack, axis=0)
+                tp_dist_num = np.sum(w_3d * np.where(mask_tp, ret_stack, 0.0), axis=0)
+                sl_dist_num = np.sum(w_3d * np.where(mask_sl, -ret_stack, 0.0), axis=0)
 
                 # Since `w` is now an array, w_sum must be calculated per-bar.
                 w_sum = w_tp + w_sl + w_to
@@ -3991,6 +3993,8 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                 n_tp_df = pd.DataFrame(w_tp.astype(np.float32, copy=False), index=panel["close"].index, columns=panel["close"].columns)
                 n_sl_df = pd.DataFrame(w_sl.astype(np.float32, copy=False), index=panel["close"].index, columns=panel["close"].columns)
                 n_to_df = pd.DataFrame(w_to.astype(np.float32, copy=False), index=panel["close"].index, columns=panel["close"].columns)
+                tp_dist_df = pd.DataFrame((tp_dist_num / np.where(w_tp > 0, w_tp, 1.0)).astype(np.float32, copy=False), index=panel["close"].index, columns=panel["close"].columns)
+                sl_dist_df = pd.DataFrame((sl_dist_num / np.where(w_sl > 0, w_sl, 1.0)).astype(np.float32, copy=False), index=panel["close"].index, columns=panel["close"].columns)
 
                 # w_sum is now a DataFrame-like object, not a scalar.
                 # Denominator for agg_ret and agg_qual must be per-bar.
@@ -4016,14 +4020,21 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                 tb_quality = pd.DataFrame(agg_qual.astype(np.float32, copy=False), index=panel["close"].index, columns=panel["close"].columns)
 
                 tb_cache[(int(H), side, k_label)] = (tb_labels, tb_returns, tb_quality)
-                geom_cache[(int(H), side, k_label)] = {"n_tp": n_tp_df, "n_sl": n_sl_df, "n_to": n_to_df, "n_geom": len(geom_runs)}
+                geom_cache[(int(H), side, k_label)] = {
+                    "n_tp": n_tp_df,
+                    "n_sl": n_sl_df,
+                    "n_to": n_to_df,
+                    "tp_dist": tp_dist_df,
+                    "sl_dist": sl_dist_df,
+                    "n_geom": len(geom_runs),
+                }
 
                 # Free large per-cell intermediates immediately to avoid OOM accumulation.
                 # geom_runs holds full-panel lbl/ret/qual arrays; _raw_tb_cache holds all
                 # prior cells' arrays; _barrier_base_cache holds rolling-window bases.
                 del lbl_stack, ret_stack, qual_stack, mask_tp, mask_sl, mask_to
                 del w_3d, dynamic_modifier_3d, atr_ratio_3d, k_tps_norm_3d
-                del w_tp, w_sl, w_to, agg_ret_num, agg_qual_num, w_sum, denom
+                del w_tp, w_sl, w_to, agg_ret_num, agg_qual_num, tp_dist_num, sl_dist_num, w_sum, denom
                 del agg_ret, agg_qual, agg_lbl
                 for _g in geom_runs:
                     _g.pop("lbl", None)

@@ -380,6 +380,23 @@ CFG = {
         "oof_log_mfe_hat",
         "mfe_mae_ratio_hat",
     ],
+    "limit_offset_sizer": [
+        "vol_regime_z",
+        "trend_regime",
+        "regime_stability_24h",
+        "trend_regime_switch_12h",
+        "vol_regime_switch_12h",
+        "complexity_regime_24h",
+        "vol_regime_z_4d",
+        "trend_strength_4d",
+        "regime_stability_4d",
+        "vol_persistence_4d",
+        "trend_regime_duration_4d",
+        "regime_transition_entropy_48h", "complexity_regime_24h",
+        "vol_concentration_12", "volume_entropy_12", "volatility_zscore",
+        "clv_t", "body_ratio_15m", "rejection_proxy",
+        "range_norm_12", "sv_imb_24", "press_24", "impact_24", "ts_24"
+    ],
     "position_sizer_regime_feature_keys": [
         "vol_regime_z",
         "is_high_vol_regime",

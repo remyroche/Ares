@@ -1159,15 +1159,8 @@ def run_position_sizer_step(cfg, data_bundle, artifacts, logger):
         log("Position sizer disabled; skipping new position sizer step.")
         return artifacts
 
-    from extreme_price_movements.position_sizer.dataset import (
-        build_pwin_dataset,
-        build_win_quantile_dataset,
-        build_loss_quantile_dataset,
-    )
-    from extreme_price_movements.position_sizer.models import (
-        train_pwin_classifier,
-        train_win_quantile_regressor,
-        train_loss_quantile_regressor,
+    from extreme_price_movements.position_sizer.training_orchestrator import (
+        train_position_sizer_models,
     )
     from extreme_price_movements.position_sizer.runtime import PositionSizerBundle, compute_schema_hash, make_bundle_metadata
     from extreme_price_movements.position_sizer.tp_sl_selection import (
@@ -1205,7 +1198,7 @@ def run_position_sizer_step(cfg, data_bundle, artifacts, logger):
             _df["bucket"] = _bucket
             # Add all numeric OOF prediction/regime features as model inputs.
             for _c in pred_cols:
-                if _c in _df.columns:
+                if _c == score_col or _c in _df.columns:
                     continue
                 try:
                     _v = pd.to_numeric(oof[_c], errors="coerce").astype(float)
@@ -1305,62 +1298,13 @@ def run_position_sizer_step(cfg, data_bundle, artifacts, logger):
     if _regime_missing:
         log(f"Position sizer regime features missing: {_regime_missing}")
 
-    soft_cfg = {
-        "enabled": bool(cfg.get("position_sizer_pwin_soft_label_enabled", False)),
-        "tp": float(cfg.get("position_sizer_pwin_soft_label_tp", 0.02)),
-        "sl": float(cfg.get("position_sizer_pwin_soft_label_sl", 0.01)),
-        "alpha": float(cfg.get("position_sizer_pwin_soft_label_alpha", 15.0)),
-        "use_log_excursions": bool(cfg.get("position_sizer_pwin_soft_label_use_log_excursions", False)),
-        "log_eps": float(cfg.get("position_sizer_pwin_soft_label_log_eps", 1e-12)),
-    }
-    exp_win_q = float(cfg.get("position_sizer_exp_win_quantile", 0.50))
-    risk_loss_q = float(cfg.get("position_sizer_risk_loss_quantile", 0.90))
-    costs_mode = str(cfg.get("position_sizer_costs_mode", "included_in_labels"))
-    pwin_base_engine = str(cfg.get("position_sizer_pwin_base_engine", "extratrees")).lower()
-    quant_base_engine = str(cfg.get("position_sizer_quantile_base_engine", "sklearn")).lower()
-    reg_level = str(cfg.get("position_sizer_regularization_level", "strong")).lower()
-    calibrator_method = str(cfg.get("position_sizer_calibrator_method", "auto")).lower()
-    min_iso = int(cfg.get("position_sizer_min_samples_isotonic", 1200))
-    calib_frac = float(cfg.get("position_sizer_calibration_frac", 0.20))
-    calib_min = int(cfg.get("position_sizer_calibration_min_samples", 200))
-    quant_delta = bool(cfg.get("position_sizer_quantile_delta", False))
-    pwin_wf_blocks = int(cfg.get("position_sizer_pwin_walkforward_blocks", 0))
-
-    ds = build_pwin_dataset(ps_df, feature_cols=feature_cols, pnl_col="pnl_label", mfe_col="mfe", mae_col="mae", pwin_soft_cfg=soft_cfg)
-    reg_labels = ps_df["bucket"].values if "bucket" in ps_df.columns else None
-    pwin_model = train_pwin_classifier(
-        ds.X.values,
-        ds.pwin_target,
-        calibration_mode=str(cfg.get("position_sizer_calibration_scope", "regime")),
-        regime_labels=reg_labels,
-        rolling_window=int(cfg.get("position_sizer_calibration_rolling_window", 2000)),
-        y_hard_ref=ds.y_win,
-        pnl_ref=ps_df["pnl_label"].values if "pnl_label" in ps_df.columns else None,
-        base_engine=pwin_base_engine,
-        regularization_level=reg_level,
-        calibrator_method=calibrator_method,
-        min_samples_isotonic=min_iso,
-        calibration_frac=calib_frac,
-        calibration_min_samples=calib_min,
-        diagnostics_walkforward_blocks=pwin_wf_blocks,
-    )
-
-    Xw, yw = build_win_quantile_dataset(ps_df, feature_cols=feature_cols, pnl_col="pnl_label")
-    Xl, yl = build_loss_quantile_dataset(ps_df, feature_cols=feature_cols, pnl_col="pnl_label")
-    win_model = train_win_quantile_regressor(
-        Xw.values,
-        yw,
-        base_engine=quant_base_engine,
-        regularization_level=reg_level,
-        delta_quantile=quant_delta,
-    )
-    loss_model = train_loss_quantile_regressor(
-        Xl.values,
-        yl,
-        base_engine=quant_base_engine,
-        regularization_level=reg_level,
-        delta_quantile=quant_delta,
-    )
+    _ps_train = train_position_sizer_models(ps_df=ps_df, feature_cols=feature_cols, cfg=cfg)
+    pwin_model = _ps_train["pwin_model"]
+    win_model = _ps_train["win_model"]
+    loss_model = _ps_train["loss_model"]
+    exp_win_q = float(_ps_train["exp_win_quantile"])
+    risk_loss_q = float(_ps_train["risk_loss_quantile"])
+    costs_mode = str(_ps_train["costs_mode"])
 
     tp_sl_defaults = None
     if bool(cfg.get("tp_sl_search_enabled", False)) and str(cfg.get("tp_sl_search_optimizer", "legacy")) == "new":
@@ -1433,7 +1377,7 @@ def run_position_sizer_step(cfg, data_bundle, artifacts, logger):
         tp_sl_defaults=tp_sl_defaults,
         config={
             "backend": "new",
-            "soft_label_enabled": soft_cfg["enabled"],
+            "soft_label_enabled": bool(_ps_train.get("soft_label_enabled", False)),
             "calibration_scope": str(cfg.get("position_sizer_calibration_scope", "regime")),
             "exp_win_quantile": exp_win_q,
             "risk_loss_quantile": risk_loss_q,

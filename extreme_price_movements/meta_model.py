@@ -1,4 +1,4 @@
-"""Simple meta model with 5-candidate race: Ridge, ExtraTrees, ExtraTrees+tail-weighting, XGB, XGB-quantile.
+"""Simple meta model with candidate race: Ridge, ExtraTrees, XGB variants.
 
 No strict guardrails, no monotone constraints. Winner selection by Spearman IC on OOF.
 Optional Optuna HPO on the winner.
@@ -168,7 +168,7 @@ class MetaModel:
 
     # ── Candidate definitions ────────────────────────────────────────────
     def _build_candidates(self) -> Dict[str, dict]:
-        """Candidates: Ridge, Huber, ET, ET+tail, XGB."""
+        """Candidates: Ridge, ExtraTrees, XGB variants."""
         candidates = {}
 
         # 1. Ridge (RobustScaler + Ridge)
@@ -178,14 +178,7 @@ class MetaModel:
             "tail_lambda": 0.0,
         }
 
-        # 2. Huber Regressor (Robust objective)
-        candidates["huber"] = {
-            "kind": "huber",
-            "params": {"epsilon": 1.35, "alpha": 0.001, "fit_intercept": True, "max_iter": 1000},
-            "tail_lambda": 0.0,
-        }
-
-        # 3. ExtraTrees (baseline)
+        # 2. ExtraTrees (baseline)
         candidates["extratrees"] = {
             "kind": "extratrees",
             "params": {
@@ -195,17 +188,7 @@ class MetaModel:
             "tail_lambda": 0.0,
         }
 
-        # 4. ExtraTrees + tail-weighting (λ=2.0, no monotone constraints)
-        candidates["extratrees_tailweighted"] = {
-            "kind": "extratrees",
-            "params": {
-                "n_estimators": 300, "max_depth": 8, "min_samples_leaf": 40,
-                "max_features": "sqrt", "n_jobs": 3, "random_state": 42,
-            },
-            "tail_lambda": 2.0,
-        }
-
-        # 5. XGB basic (reg:squarederror) — regularised for small meta datasets
+        # 3. XGB basic (reg:squarederror) — regularised for small meta datasets
         if xgb is not None:
             _xgb_common = {
                 "max_depth": 6, "learning_rate": 0.03, "n_estimators": 600,
@@ -237,14 +220,6 @@ class MetaModel:
                 ("ridge", Ridge(**params)),
             ])
             model.fit(X_tr, y_tr, ridge__sample_weight=sw)
-            return model
-        if kind == "huber":
-            from sklearn.linear_model import HuberRegressor
-            model = Pipeline([
-                ("scaler", RobustScaler()),
-                ("huber", HuberRegressor(**params)),
-            ])
-            model.fit(X_tr, y_tr, huber__sample_weight=sw)
             return model
         if kind == "extratrees":
             model = ExtraTreesRegressor(**params)
@@ -509,7 +484,7 @@ class MetaModel:
         tprint(f"  HPO done ({_time.monotonic()-_t0:.1f}s). Fitting final model...")
 
         # Final fit on all data
-        if len(np.unique(y_fit)) < 2 and kind in ["ridge", "huber"]:
+        if len(np.unique(y_fit)) < 2 and kind in ["ridge"]:
             tprint(f"  WARNING: Final fit on single-class data ({np.unique(y_fit)}), returning trivial model")
             # For regressors, we could return a constant model, but _fit_one expects a pipeline.
             # Let's just catch the error or ensure y_fit has at least some noise.

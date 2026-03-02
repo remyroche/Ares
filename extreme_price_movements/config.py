@@ -380,6 +380,23 @@ CFG = {
         "oof_log_mfe_hat",
         "mfe_mae_ratio_hat",
     ],
+    "limit_offset_sizer": [
+        "vol_regime_z",
+        "trend_regime",
+        "regime_stability_24h",
+        "trend_regime_switch_12h",
+        "vol_regime_switch_12h",
+        "complexity_regime_24h",
+        "vol_regime_z_4d",
+        "trend_strength_4d",
+        "regime_stability_4d",
+        "vol_persistence_4d",
+        "trend_regime_duration_4d",
+        "regime_transition_entropy_48h", "complexity_regime_24h",
+        "vol_concentration_12", "volume_entropy_12", "volatility_zscore",
+        "clv_t", "body_ratio_15m", "rejection_proxy",
+        "range_norm_12", "sv_imb_24", "press_24", "impact_24", "ts_24"
+    ],
     "position_sizer_regime_feature_keys": [
         "vol_regime_z",
         "is_high_vol_regime",
@@ -920,6 +937,9 @@ CFG = {
         "regime_transition_entropy_48h", "complexity_regime_24h",
         "trend_regime_switch_12h", "vol_regime_switch_12h",
         "vol_concentration_12", "volume_entropy_12", "volume_entropy_24", "volatility_zscore",
+        "clv_t", "body_ratio_15m", "rejection_proxy",
+        "range_norm_12", "sv_imb_12", "press_12", "impact_12", "ts_12", "prog_eff_12", "pers_12", "hh_count_12", "ll_count_12", "skew_12", "climax_range_12", "climax_vol_12", "z_vwap_12", "z_r_12", "bb_pos_12",
+        "range_norm_24", "sv_imb_24", "press_24", "impact_24", "ts_24", "prog_eff_24", "pers_24", "hh_count_24", "ll_count_24", "skew_24", "climax_range_24", "climax_vol_24", "z_vwap_24", "z_r_24", "bb_pos_24",
     ],
     # Kind-specific overlays for meta models (added on top of meta_feature_keys)
     "mr_meta_feature_keys": [

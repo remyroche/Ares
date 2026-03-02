@@ -8,6 +8,7 @@ from .fast_funcs import simulate_trade_numba
 OUT_SL = np.int8(0)
 OUT_TO = np.int8(1)
 OUT_TP = np.int8(2)
+OUT_AMBIGUOUS = np.int8(3)
 _QUALITY_EPS = 1e-9
 
 @jit(nopython=True, nogil=True, cache=True)
@@ -154,18 +155,12 @@ def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl
             # Let's assume Worst Case (SL) if ambiguous.
 
             if hit_sl and hit_tp:
-                # Ambiguous bar - Assume SL
-                outcomes[i] = OUT_SL
-                returns[i] = -sl
+                # Ambiguous bar
+                outcomes[i] = OUT_AMBIGUOUS
+                returns[i] = 0.0
                 exit_idxs[i] = j
-                # Loss Quality: did we see profit first?
-                # f(MAE, MFE). Here we hit SL, so MAE >= SL_dist.
-                # Quality depends on MFE seen before? We track MFE of *this* bar too.
-                # MFE/TP_dist.
-                den_tp = max(entry_p * abs(activation), _QUALITY_EPS)
-                qual_raw = (mfe_val / den_tp) * 0.5
-                qual = _soft_squash_pos(qual_raw)
-                quality[i] = _clip_scalar(qual, 0.0, 0.49)
+                # Loss Quality placeholder
+                quality[i] = 0.0
                 exit_found = True
                 break
 
@@ -633,13 +628,13 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
         h_arr_custom = horizons_frame[asset].to_numpy(dtype=np.float32) if (horizons_frame is not None and asset in horizons_frame.columns) else None
 
         if return_outcomes:
-            out, rets, qual, _ = _numba_triple_barrier_outcomes(
+            out, rets, qual, e_idxs = _numba_triple_barrier_outcomes(
                 times, o_arr, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int, horizons_arr=h_arr_custom
             )
-            return asset, out, rets, qual
+            return asset, out, rets, qual, e_idxs
         else:
-            lbs, rets, _ = _numba_triple_barrier(times, o_arr, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int, horizons_arr=h_arr_custom)
-            return asset, lbs, rets, None
+            lbs, rets, e_idxs = _numba_triple_barrier(times, o_arr, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int, horizons_arr=h_arr_custom)
+            return asset, lbs, rets, None, e_idxs
 
     # OPTIMIZATION: Use all available cores for parallel processing
     n_jobs_cap = 8
@@ -651,11 +646,138 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
         delayed(_process_asset)(asset) for asset in assets
     )
 
-    for asset, lbs_or_out, rets, qual in results:
+    out_exit_idxs = {}
+
+    for asset, lbs_or_out, rets, qual, e_idxs in results:
         out_labels[asset] = lbs_or_out
         out_returns[asset] = rets
+        out_exit_idxs[asset] = e_idxs
         if return_outcomes and qual is not None:
             out_quality[asset] = qual
+
+    # Resolve ambiguous bars using 15m data or heuristics
+    import ccxt
+    from extreme_price_movements.hf_data_loader import get_15m_ohlcv
+    from extreme_price_movements.utils import tprint
+
+    exchange = None
+
+    for asset in assets:
+        col_labels = out_labels[asset].values
+        ambiguous_indices = np.where(col_labels == OUT_AMBIGUOUS)[0]
+        if len(ambiguous_indices) == 0:
+            continue
+
+        c_arr = c[asset].to_numpy()
+        o_arr = o[asset].to_numpy()
+        h_arr = h[asset].to_numpy()
+        l_arr = l[asset].to_numpy()
+        e_idxs = out_exit_idxs[asset]
+
+        if tp_is_scalar:
+            tp_arr = np.full(len(c_arr), tp_scalar_val, dtype=np.float32)
+        else:
+            tp_arr = tp_df[asset].to_numpy() if asset in tp_df.columns else np.full(len(c_arr), np.nan, dtype=np.float32)
+
+        if sl_is_scalar:
+            sl_arr = np.full(len(c_arr), sl_scalar_val, dtype=np.float32)
+        else:
+            sl_arr = sl_df[asset].to_numpy() if asset in sl_df.columns else np.full(len(c_arr), np.nan, dtype=np.float32)
+
+        for i in ambiguous_indices:
+            j = e_idxs[i]
+            entry_p = c_arr[i]
+            open_p = o_arr[j]
+            high_p = h_arr[j]
+            low_p = l_arr[j]
+            close_p = c_arr[j]
+
+            activation = tp_arr[i]
+            sl_val = sl_arr[i]
+
+            if side_int == 1:
+                sl_price = entry_p * (1.0 - sl_val)
+                tp_price = entry_p * (1.0 + activation)
+            else:
+                sl_price = entry_p * (1.0 + sl_val)
+                tp_price = entry_p * (1.0 - activation)
+
+            resolved = False
+            resolved_outcome = OUT_SL
+            resolved_return = -sl_val
+
+            try:
+                # Ambiguous bar timestamp
+                bar_ts = pd.Timestamp(times[j], unit='ns', tz='UTC')
+
+                if exchange is None:
+                    exchange = ccxt.binance({'enableRateLimit': True})
+
+                # Fetch 24 hours of 15m data starting from the ambiguous bar
+                df_15m = get_15m_ohlcv(exchange, asset, bar_ts, max_hold_hours=24)
+
+                if not df_15m.empty:
+                    sub_df = df_15m[df_15m.index >= bar_ts]
+                    for _, row in sub_df.iterrows():
+                        sub_h = row['high']
+                        sub_l = row['low']
+
+                        hit_tp = False
+                        hit_sl = False
+
+                        if side_int == 1:
+                            if sub_l <= sl_price: hit_sl = True
+                            if sub_h >= tp_price: hit_tp = True
+                        else:
+                            if sub_h >= sl_price: hit_sl = True
+                            if sub_l <= tp_price: hit_tp = True
+
+                        if hit_tp and hit_sl:
+                            # 15m is also ambiguous! Use fallback
+                            break
+                        elif hit_tp:
+                            resolved_outcome = OUT_TP
+                            resolved_return = activation
+                            resolved = True
+                            break
+                        elif hit_sl:
+                            resolved_outcome = OUT_SL
+                            resolved_return = -sl_val
+                            resolved = True
+                            break
+
+                        # Stop if price went beyond the 1h (or whatever) bar's High/Low
+                        if sub_h > high_p or sub_l < low_p:
+                            pass # Keep searching until we hit one
+            except Exception as e:
+                tprint(f"Warning: Failed to fetch 15m data for {asset} at {bar_ts}: {e}")
+
+            if not resolved:
+                # Fallback
+                if side_int == 1:
+                    if close_p > open_p:
+                        resolved_outcome = OUT_TP
+                        resolved_return = activation
+                    else:
+                        resolved_outcome = OUT_SL
+                        resolved_return = -sl_val
+                else:
+                    if close_p < open_p:
+                        resolved_outcome = OUT_TP
+                        resolved_return = activation
+                    else:
+                        resolved_outcome = OUT_SL
+                        resolved_return = -sl_val
+
+            out_labels.iloc[i, out_labels.columns.get_loc(asset)] = resolved_outcome
+            out_returns.iloc[i, out_returns.columns.get_loc(asset)] = resolved_return
+
+            if return_outcomes:
+                # Loss/Win quality placeholder
+                if resolved_outcome == OUT_TP:
+                    out_quality.iloc[i, out_quality.columns.get_loc(asset)] = 1.0 # Clean win approx
+                else:
+                    out_quality.iloc[i, out_quality.columns.get_loc(asset)] = 0.0 # Clean loss approx
 
     if return_outcomes:
         return out_labels, out_returns, out_quality

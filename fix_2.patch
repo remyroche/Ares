@@ -1,0 +1,14 @@
+--- extreme_price_movements/engine.py
++++ extreme_price_movements/engine.py
+@@ -655,7 +655,10 @@
+     if meta_model is None:
+         return (p_alpha - 0.5) * 0.1, np.ones(len(p_alpha), dtype=bool)
+
+-    num = grp_df.select_dtypes(include=[np.number]).copy()
++    # We want ALL numeric features, but let's ensure we get the full set.
++    # In some cases select_dtypes might miss bools/ints, but it should get most.
++    # Just to be safe, we pass all numeric columns that the meta model might need.
++    num = grp_df.select_dtypes(include=[np.number, bool]).copy()
+     X_meta = meta_model.prepare_meta_features(p_alpha, num, pred_col_name="pred_logit")
+
+     # REPLICATE training.py derived feature logic

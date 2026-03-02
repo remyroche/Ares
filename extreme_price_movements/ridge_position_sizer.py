@@ -28,6 +28,9 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
 from scipy.stats import rankdata, spearmanr
+from sklearn.linear_model import Ridge
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 
 try:
     from numba import jit, prange
@@ -46,6 +49,7 @@ except ImportError:
 from extreme_price_movements.utils import tprint
 from extreme_price_movements.path_utils import resolve_reports_dir, resolve_data_root
 from extreme_price_movements.tpsl_optimiser.metrics_utils import compute_comprehensive_metrics
+from extreme_price_movements.label_policy_optimizer import optimize_label_policy
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -137,58 +141,78 @@ def simulate_trade_exit(
             if h > peak:
                 peak = h
             
-            # Check if both TP and SL are hit in this bar
+            # Check triggered exits in this bar
             tp_hit = h >= tp_price
             sl_hit = l <= sl_price
-            
-            if tp_hit and sl_hit:
-                # Both hit - choose the one closest to entry (happened first)
-                # For a long: if TP is closer to entry than SL, TP happened first
-                tp_distance = tp_price - entry_price
-                sl_distance = entry_price - sl_price
-                if tp_distance <= sl_distance:
-                    return tp_price, bar, 0
-                else:
-                    return sl_price, bar, 1
-            elif tp_hit:
-                return tp_price, bar, 0
-            elif sl_hit:
-                return sl_price, bar, 1
-            
             # Check trailing exit (only if we have profit)
+            trailing_hit = False
+            trailing_price = 0.0
             if peak > entry_price:
                 trailing_price = peak * (1.0 - trailing_pct)
-                if l <= trailing_price:
-                    return trailing_price, bar, 2
+                trailing_hit = l <= trailing_price
+
+            if tp_hit or sl_hit or trailing_hit:
+                # Resolve collisions by CLOSE proximity to barrier.
+                # Deterministic tie-break: worst outcome first (SL > TRAILING > TP).
+                best_price = c
+                best_reason = 3
+                best_dist = 1e100
+                best_rank = 10
+
+                if sl_hit:
+                    d = abs(c - sl_price)
+                    if d < best_dist or (d == best_dist and 0 < best_rank):
+                        best_price, best_reason, best_dist, best_rank = sl_price, 1, d, 0
+
+                if trailing_hit:
+                    d = abs(c - trailing_price)
+                    if d < best_dist or (d == best_dist and 1 < best_rank):
+                        best_price, best_reason, best_dist, best_rank = trailing_price, 2, d, 1
+
+                if tp_hit:
+                    d = abs(c - tp_price)
+                    if d < best_dist or (d == best_dist and 2 < best_rank):
+                        best_price, best_reason, best_dist, best_rank = tp_price, 0, d, 2
+
+                return best_price, bar, best_reason
         else:
             # Short position logic
             # Update trough for trailing calculation
             if l < trough:
                 trough = l
             
-            # Check if both TP and SL are hit in this bar
+            # Check triggered exits in this bar
             tp_hit = l <= tp_price
             sl_hit = h >= sl_price
-            
-            if tp_hit and sl_hit:
-                # Both hit - choose the one closest to entry (happened first)
-                # For a short: if TP is closer to entry than SL, TP happened first
-                tp_distance = entry_price - tp_price
-                sl_distance = sl_price - entry_price
-                if tp_distance <= sl_distance:
-                    return tp_price, bar, 0
-                else:
-                    return sl_price, bar, 1
-            elif tp_hit:
-                return tp_price, bar, 0
-            elif sl_hit:
-                return sl_price, bar, 1
-            
             # Check trailing exit (only if we have profit)
+            trailing_hit = False
+            trailing_price = 0.0
             if trough < entry_price:
                 trailing_price = trough * (1.0 + trailing_pct)
-                if h >= trailing_price:
-                    return trailing_price, bar, 2
+                trailing_hit = h >= trailing_price
+
+            if tp_hit or sl_hit or trailing_hit:
+                best_price = c
+                best_reason = 3
+                best_dist = 1e100
+                best_rank = 10
+
+                if sl_hit:
+                    d = abs(c - sl_price)
+                    if d < best_dist or (d == best_dist and 0 < best_rank):
+                        best_price, best_reason, best_dist, best_rank = sl_price, 1, d, 0
+
+                if trailing_hit:
+                    d = abs(c - trailing_price)
+                    if d < best_dist or (d == best_dist and 1 < best_rank):
+                        best_price, best_reason, best_dist, best_rank = trailing_price, 2, d, 1
+
+                if tp_hit:
+                    d = abs(c - tp_price)
+                    if d < best_dist or (d == best_dist and 2 < best_rank):
+                        best_price, best_reason, best_dist, best_rank = tp_price, 0, d, 2
+
+                return best_price, bar, best_reason
     
     # Timeout - exit at close of last bar
     return closes[max_bars - 1], max_bars - 1, 3
@@ -367,6 +391,127 @@ def compute_trade_labels(
     yi = log_returns - cost_pct
     
     return yi.astype(np.float64)
+
+
+def _simulate_policy_utility_from_arrays(
+    entry_price: float,
+    is_long: bool,
+    future_highs: np.ndarray,
+    future_lows: np.ndarray,
+    future_closes: np.ndarray,
+    tp_pct: float,
+    sl_pct: float,
+    trailing_pct: float,
+    max_bars: int,
+    cost_pct: float,
+) -> float:
+    """Compute policy utility using the shared `simulate_trade_exit` implementation."""
+    if is_long:
+        tp_price = entry_price * (1.0 + tp_pct)
+        sl_price = entry_price * (1.0 - sl_pct)
+    else:
+        tp_price = entry_price * (1.0 - tp_pct)
+        sl_price = entry_price * (1.0 + sl_pct)
+
+    exit_price, _, _ = simulate_trade_exit(
+        highs=np.asarray(future_highs, dtype=np.float64),
+        lows=np.asarray(future_lows, dtype=np.float64),
+        closes=np.asarray(future_closes, dtype=np.float64),
+        entry_price=float(entry_price),
+        is_long=bool(is_long),
+        tp_price=float(tp_price),
+        sl_price=float(sl_price),
+        trailing_pct=float(trailing_pct),
+        max_bars=int(max_bars),
+    )
+    if is_long:
+        ret = np.log(max(exit_price, 1e-12) / max(entry_price, 1e-12))
+    else:
+        ret = np.log(max(entry_price, 1e-12) / max(exit_price, 1e-12))
+    return float(ret - cost_pct)
+
+
+def compute_optimal_limit_offset_labels(
+    trade_outcomes: pd.DataFrame,
+    tick_size: float = 0.1,
+    k_max: int = 5,
+    entry_fill_horizon_bars: int = 4,
+    max_hold_bars: int = 48,
+    tp_pct: float = 0.005,
+    sl_pct: float = 0.0025,
+    trailing_pct: float = 0.0,
+    cost_pct: float = 0.002,
+    eta: float = 0.0,
+    tie_break_smallest_k: bool = True,
+) -> Optional[np.ndarray]:
+    """Build k* labels via discrete argmax utility over limit offsets (0..k_max).
+
+    Uses shared `simulate_trade_exit` through `_simulate_policy_utility_from_arrays`.
+    Returns None when required path/price columns are unavailable.
+    """
+    req_cols = {"entry_price", "is_long", "future_highs", "future_lows", "future_closes"}
+    if not req_cols.issubset(set(trade_outcomes.columns)):
+        return None
+
+    k_labels = np.zeros(len(trade_outcomes), dtype=float)
+    for i, row in enumerate(trade_outcomes.itertuples(index=False)):
+        entry_price = float(getattr(row, "entry_price"))
+        is_long = bool(getattr(row, "is_long"))
+        highs = np.asarray(getattr(row, "future_highs"), dtype=float)
+        lows = np.asarray(getattr(row, "future_lows"), dtype=float)
+        closes = np.asarray(getattr(row, "future_closes"), dtype=float)
+        if len(highs) == 0 or len(lows) == 0 or len(closes) == 0:
+            k_labels[i] = 0.0
+            continue
+        h_fill = min(int(entry_fill_horizon_bars), len(highs))
+        best_k = 0
+        best_u = -1e18
+        # If label-policy params are attached by label_policy_optimizer, consume them.
+        row_sl_atr_mult = float(getattr(row, "label_policy_sl_atr_mult", np.nan))
+        row_tp_sl_ratio = float(getattr(row, "label_policy_tp_sl_ratio", np.nan))
+        row_max_hold_bars = int(getattr(row, "label_policy_max_hold_bars", max_hold_bars))
+        row_giveback_pct = float(getattr(row, "label_policy_giveback_pct", trailing_pct))
+
+        if np.isfinite(row_sl_atr_mult) and np.isfinite(row_tp_sl_ratio):
+            atr_entry = float(getattr(row, "atr_12_15m", 0.0))
+            sl_abs = max(row_sl_atr_mult * max(atr_entry, 1e-9), 1e-9)
+            tp_abs = row_tp_sl_ratio * sl_abs
+            eff_sl_pct = sl_abs / max(entry_price, 1e-9)
+            eff_tp_pct = tp_abs / max(entry_price, 1e-9)
+        else:
+            eff_sl_pct = sl_pct
+            eff_tp_pct = tp_pct
+
+        for k in range(int(k_max) + 1):
+            limit_price = entry_price - tick_size * k if is_long else entry_price + tick_size * k
+            if is_long:
+                hit_idx = np.where(lows[:h_fill] <= limit_price)[0]
+            else:
+                hit_idx = np.where(highs[:h_fill] >= limit_price)[0]
+            if hit_idx.size == 0:
+                u = 0.0
+            else:
+                fill_i = int(hit_idx[0])
+                h2 = highs[fill_i: fill_i + max_hold_bars]
+                l2 = lows[fill_i: fill_i + max_hold_bars]
+                c2 = closes[fill_i: fill_i + max_hold_bars]
+                u = _simulate_policy_utility_from_arrays(
+                    entry_price=limit_price,
+                    is_long=is_long,
+                    future_highs=h2,
+                    future_lows=l2,
+                    future_closes=c2,
+                    tp_pct=eff_tp_pct,
+                    sl_pct=eff_sl_pct,
+                    trailing_pct=row_giveback_pct,
+                    max_bars=max(1, min(row_max_hold_bars, len(h2))),
+                    cost_pct=cost_pct,
+                ) - eta * float(fill_i + 1)
+            if (u > best_u) or (u == best_u and ((k < best_k) if tie_break_smallest_k else (k > best_k))):
+                best_u = u
+                best_k = k
+        k_labels[i] = float(best_k)
+    return k_labels
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1620,6 +1765,8 @@ class RidgePositionSizer:
         select_topq: float = 0.30,
         require_positive_topq_u: bool = True,
         topq_min_samples: int = 50,
+        winsor_q_low: float = 0.01,
+        winsor_q_high: float = 0.99,
     ):
         """Initialize the Ridge Position Sizer.
         
@@ -1647,6 +1794,8 @@ class RidgePositionSizer:
         self.select_topq = float(select_topq)
         self.require_positive_topq_u = bool(require_positive_topq_u)
         self.topq_min_samples = int(topq_min_samples)
+        self.winsor_q_low = float(winsor_q_low)
+        self.winsor_q_high = float(winsor_q_high)
         
         # Fitted attributes
         self.weights_: Optional[np.ndarray] = None
@@ -1655,6 +1804,12 @@ class RidgePositionSizer:
         self.target_race_metrics_: Optional[Dict[str, Any]] = None
         self.cv_results_: Optional[pd.DataFrame] = None
         self.scaler_: Optional[PredictionScaler] = None
+        self.ridge_pipeline_: Optional[Pipeline] = None
+        self.limit_offset_pipeline_: Optional[Pipeline] = None
+        self.limit_offset_features_: Optional[List[str]] = None
+        self.oof_policy_pred_: Optional[np.ndarray] = None
+        self.oof_limit_offset_pred_: Optional[np.ndarray] = None
+        self.limit_offset_diag_: Optional[Dict[str, Any]] = None
         self.is_fitted_: bool = False
         
     def _compute_sample_weights(
@@ -2139,7 +2294,7 @@ class RidgePositionSizer:
             groups = groups[:n]
         if symbols is not None:
             symbols = symbols[:n]
-        
+
         # Handle NaN/Inf in predictions
         X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
         y_gross = np.nan_to_num(y_gross, nan=0.0, posinf=0.0, neginf=0.0)
@@ -2171,6 +2326,9 @@ class RidgePositionSizer:
             tprint(line)
         self.best_target_name_ = tgt_name
         self.target_race_metrics_ = race_diag
+        if _u_policy is not None:
+            tprint("  Using policy-aware utility labels (u_policy) as authoritative Ridge target")
+            y = np.nan_to_num(_u_policy[:n], nan=0.0, posinf=0.0, neginf=0.0)
         
         # NOTE: Do NOT scale globally here - scaling is done per-fold in _evaluate_params
         # to prevent data leakage. The final scaler is fit after CV on all data.
@@ -2270,27 +2428,127 @@ class RidgePositionSizer:
                f"gamma={self.best_params_['gamma']:.3f}, "
                f"J_zscore={self.best_params_['J_zscore']:.4f}")
         
-        # Fit final scaler on all data (after CV to avoid data leakage)
-        self.scaler_ = PredictionScaler()
-        X_scaled = self.scaler_.fit_transform(X)
-        
-        # Fit final weights on all data (scaled)
-        self.weights_ = self._fit_weights(
-            X_scaled, y,
-            self.best_params_['alpha'],
-            self.best_params_['delta'],
-            self.best_params_['gamma'],
-        )
+        # Train EV replacement model: StandardScaler + Ridge on policy-aware labels
+        alpha_final = float(self.best_params_['alpha'])
+        self.ridge_pipeline_ = Pipeline([
+            ("scaler", StandardScaler()),
+            ("ridge", Ridge(alpha=alpha_final, fit_intercept=True, random_state=self.random_state)),
+        ])
+        self.ridge_pipeline_.fit(X, y)
+
+        # Fold-safe OOF predictions for ridge utility model with train-fold winsorization
+        from extreme_price_movements.purged_cv import PurgedKFold
+        if timestamps is not None:
+            pkf = PurgedKFold(n_splits=3, purge=43200, embargo=43200, times=timestamps)
+        else:
+            pkf = PurgedKFold(n_splits=3, purge=12, embargo=12)
+        split_args = [X]
+        if groups is not None:
+            split_args.append(groups)
+        oof_policy_pred = np.full(len(y), np.nan)
+        for train_idx, val_idx in pkf.split(*split_args):
+            y_train = y[train_idx]
+            q_lo = float(np.quantile(y_train, self.winsor_q_low))
+            q_hi = float(np.quantile(y_train, self.winsor_q_high))
+            y_train_w = np.clip(y_train, q_lo, q_hi)
+            ridge_fold = Pipeline([
+                ("scaler", StandardScaler()),
+                ("ridge", Ridge(alpha=alpha_final, fit_intercept=True, random_state=self.random_state)),
+            ])
+            ridge_fold.fit(X[train_idx], y_train_w)
+            oof_policy_pred[val_idx] = ridge_fold.predict(X[val_idx])
+        self.oof_policy_pred_ = oof_policy_pred
+
+        ridge_est = self.ridge_pipeline_.named_steps["ridge"]
+        self.weights_ = np.asarray(ridge_est.coef_, dtype=float)
+        self.scaler_ = None
+
+        # Optional second ridge model for passive limit offset target (ticks 0..5)
+        k_col = None
+        for candidate_col in ("k_star", "optimal_offset_ticks", "limit_offset_k", "target_offset_ticks"):
+            if candidate_col in trade_outcomes.columns:
+                k_col = candidate_col
+                break
+        self.oof_limit_offset_pred_ = None
+        if k_col is not None:
+            k_target = np.clip(np.nan_to_num(trade_outcomes[k_col].values[:n], nan=0.0), 0.0, 5.0)
+        else:
+            k_built = compute_optimal_limit_offset_labels(
+                trade_outcomes.iloc[:n],
+                tick_size=0.1,
+                k_max=5,
+                entry_fill_horizon_bars=4,
+                max_hold_bars=48,
+                tp_pct=0.005,
+                sl_pct=0.0025,
+                trailing_pct=0.0,
+                cost_pct=self.cost_pct,
+                eta=0.0,
+                tie_break_smallest_k=True,
+            )
+            if k_built is not None:
+                k_col = "k_star_built_from_policy"
+                k_target = np.clip(np.nan_to_num(k_built, nan=0.0), 0.0, 5.0)
+
+        if k_col is not None:
+            # Leakage guard: offset model can use sizer OOF predictions only.
+            offset_X = np.asarray(X, dtype=float)
+            if self.oof_policy_pred_ is not None and len(self.oof_policy_pred_) == len(offset_X):
+                offset_X = np.column_stack([offset_X, np.asarray(self.oof_policy_pred_, dtype=float)])
+                self.limit_offset_features_ = list(self.model_names_) + ["sizer_score_oof"]
+            else:
+                self.limit_offset_features_ = list(self.model_names_)
+
+            self.limit_offset_pipeline_ = Pipeline([
+                ("scaler", StandardScaler()),
+                ("ridge", Ridge(alpha=alpha_final, fit_intercept=True, random_state=self.random_state)),
+            ])
+            self.limit_offset_pipeline_.fit(offset_X, k_target)
+            oof_k = np.full(len(k_target), np.nan)
+            for train_idx, val_idx in pkf.split(*split_args):
+                if self.oof_policy_pred_ is not None and len(self.oof_policy_pred_) == len(X):
+                    x_tr = np.column_stack([X[train_idx], self.oof_policy_pred_[train_idx]])
+                    x_va = np.column_stack([X[val_idx], self.oof_policy_pred_[val_idx]])
+                else:
+                    x_tr = X[train_idx]
+                    x_va = X[val_idx]
+                mdl = Pipeline([
+                    ("scaler", StandardScaler()),
+                    ("ridge", Ridge(alpha=alpha_final, fit_intercept=True, random_state=self.random_state)),
+                ])
+                mdl.fit(x_tr, k_target[train_idx])
+                oof_k[val_idx] = np.clip(mdl.predict(x_va), 0.0, 5.0)
+            self.oof_limit_offset_pred_ = oof_k
+
+            # Degeneracy diagnostics on rounded execution offsets.
+            k_exec = np.clip(np.rint(oof_k), 0, 5).astype(int)
+            counts = np.bincount(k_exec, minlength=6)
+            frac_zero = float(counts[0] / max(counts.sum(), 1))
+            frac_five = float(counts[5] / max(counts.sum(), 1))
+            self.limit_offset_diag_ = {
+                "counts": counts.tolist(),
+                "frac_k0": frac_zero,
+                "frac_k5": frac_five,
+                "is_degenerate": bool((frac_zero >= 0.80) or (frac_five >= 0.80)),
+            }
+            if self.limit_offset_diag_["is_degenerate"]:
+                tprint(
+                    "  WARNING: passive offset prediction degeneracy detected "
+                    f"(k0={frac_zero:.2%}, k5={frac_five:.2%}). "
+                    "Consider tighter winsorization, k_cont target, or soft-argmax label tuning."
+                )
+
+            tprint(f"  Trained passive limit offset Ridge model using target '{k_col}'")
         
         self.is_fitted_ = True
 
         # Store OOF inputs for downstream diagnostics / preds_metrics_computations
         self.oof_preds_ = oof_preds.copy() if isinstance(oof_preds, pd.DataFrame) else pd.DataFrame(X, columns=self.model_names_)
-        self.oof_targets_ = y_gross.copy()
+        self.oof_targets_ = y.copy()
         self.oof_timestamps_ = np.asarray(timestamps).copy() if timestamps is not None else None
         self.oof_symbols_ = np.asarray(symbols).copy() if symbols is not None else None
 
-        tprint(f"RidgePositionSizer.fit: Done. Weights: {self.weights_}")
+        tprint(f"RidgePositionSizer.fit: Done. Ridge features={len(self.model_names_)}")
 
         return self
     
@@ -2314,11 +2572,29 @@ class RidgePositionSizer:
         X = model_preds[self.model_names_].values
         X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
         
-        # Apply saved scaler
-        if self.scaler_ is not None:
+        if self.ridge_pipeline_ is not None:
+            return self.ridge_pipeline_.predict(X)
+        if self.scaler_ is not None and self.weights_ is not None:
             X = self.scaler_.transform(X)
-        
-        return X @ self.weights_
+            return X @ self.weights_
+        if self.weights_ is not None:
+            return X @ self.weights_
+        raise RuntimeError("No fitted prediction backend found")
+
+    def predict_limit_offset_ticks(self, model_preds: pd.DataFrame) -> np.ndarray:
+        """Predict passive limit offset in ticks (clamped to [0, 5])."""
+        if self.limit_offset_pipeline_ is None:
+            raise RuntimeError("Limit offset model not trained")
+        if self.limit_offset_features_ is None:
+            raise RuntimeError("Limit offset features missing")
+        if "sizer_score_oof" in self.limit_offset_features_:
+            base_features = [c for c in self.limit_offset_features_ if c != "sizer_score_oof"]
+            x_base = np.nan_to_num(model_preds[base_features].values, nan=0.0, posinf=0.0, neginf=0.0)
+            sizer_score = self.predict(model_preds)
+            X = np.column_stack([x_base, sizer_score])
+        else:
+            X = np.nan_to_num(model_preds[self.limit_offset_features_].values, nan=0.0, posinf=0.0, neginf=0.0)
+        return np.clip(self.limit_offset_pipeline_.predict(X), 0.0, 5.0)
     
     def get_weights(self) -> Dict[str, float]:
         """Return learned combination weights per model.
@@ -2408,6 +2684,18 @@ class RidgePositionSizer:
             'top_k_pct': self.top_k_pct,
             'scaler_means': self.scaler_.means_.tolist() if self.scaler_ else None,
             'scaler_stds': self.scaler_.stds_.tolist() if self.scaler_ else None,
+            'winsor_q_low': self.winsor_q_low,
+            'winsor_q_high': self.winsor_q_high,
+            'ridge_coef': self.ridge_pipeline_.named_steps['ridge'].coef_.tolist() if self.ridge_pipeline_ is not None else None,
+            'ridge_intercept': float(self.ridge_pipeline_.named_steps['ridge'].intercept_) if self.ridge_pipeline_ is not None else None,
+            'ridge_scaler_mean': self.ridge_pipeline_.named_steps['scaler'].mean_.tolist() if self.ridge_pipeline_ is not None else None,
+            'ridge_scaler_scale': self.ridge_pipeline_.named_steps['scaler'].scale_.tolist() if self.ridge_pipeline_ is not None else None,
+            'limit_offset_features': self.limit_offset_features_,
+            'limit_offset_coef': self.limit_offset_pipeline_.named_steps['ridge'].coef_.tolist() if self.limit_offset_pipeline_ is not None else None,
+            'limit_offset_intercept': float(self.limit_offset_pipeline_.named_steps['ridge'].intercept_) if self.limit_offset_pipeline_ is not None else None,
+            'limit_offset_scaler_mean': self.limit_offset_pipeline_.named_steps['scaler'].mean_.tolist() if self.limit_offset_pipeline_ is not None else None,
+            'limit_offset_scaler_scale': self.limit_offset_pipeline_.named_steps['scaler'].scale_.tolist() if self.limit_offset_pipeline_ is not None else None,
+            'limit_offset_diag': self.limit_offset_diag_,
         }
         
         path = Path(path)
@@ -2439,6 +2727,8 @@ class RidgePositionSizer:
             sum_to_one=save_dict['sum_to_one'],
             non_negative=save_dict['non_negative'],
             top_k_pct=save_dict.get('top_k_pct', 0.30),
+            winsor_q_low=float(save_dict.get('winsor_q_low', 0.01)),
+            winsor_q_high=float(save_dict.get('winsor_q_high', 0.99)),
         )
         
         instance.weights_ = np.array(save_dict['weights']) if save_dict['weights'] else None
@@ -2452,6 +2742,36 @@ class RidgePositionSizer:
             instance.scaler_ = PredictionScaler()
             instance.scaler_.means_ = np.array(save_dict['scaler_means'])
             instance.scaler_.stds_ = np.array(save_dict['scaler_stds'])
+
+        if save_dict.get('ridge_coef') is not None:
+            rp = Pipeline([
+                ('scaler', StandardScaler()),
+                ('ridge', Ridge(alpha=float(instance.best_params_.get('alpha', 1.0)), fit_intercept=True, random_state=instance.random_state)),
+            ])
+            rp.named_steps['scaler'].mean_ = np.array(save_dict['ridge_scaler_mean'], dtype=float)
+            rp.named_steps['scaler'].scale_ = np.array(save_dict['ridge_scaler_scale'], dtype=float)
+            rp.named_steps['scaler'].var_ = rp.named_steps['scaler'].scale_ ** 2
+            rp.named_steps['scaler'].n_features_in_ = len(rp.named_steps['scaler'].mean_)
+            rp.named_steps['ridge'].coef_ = np.array(save_dict['ridge_coef'], dtype=float)
+            rp.named_steps['ridge'].intercept_ = float(save_dict.get('ridge_intercept', 0.0))
+            rp.named_steps['ridge'].n_features_in_ = len(rp.named_steps['ridge'].coef_)
+            instance.ridge_pipeline_ = rp
+
+        if save_dict.get('limit_offset_coef') is not None:
+            lp = Pipeline([
+                ('scaler', StandardScaler()),
+                ('ridge', Ridge(alpha=float(instance.best_params_.get('alpha', 1.0)), fit_intercept=True, random_state=instance.random_state)),
+            ])
+            lp.named_steps['scaler'].mean_ = np.array(save_dict['limit_offset_scaler_mean'], dtype=float)
+            lp.named_steps['scaler'].scale_ = np.array(save_dict['limit_offset_scaler_scale'], dtype=float)
+            lp.named_steps['scaler'].var_ = lp.named_steps['scaler'].scale_ ** 2
+            lp.named_steps['scaler'].n_features_in_ = len(lp.named_steps['scaler'].mean_)
+            lp.named_steps['ridge'].coef_ = np.array(save_dict['limit_offset_coef'], dtype=float)
+            lp.named_steps['ridge'].intercept_ = float(save_dict.get('limit_offset_intercept', 0.0))
+            lp.named_steps['ridge'].n_features_in_ = len(lp.named_steps['ridge'].coef_)
+            instance.limit_offset_pipeline_ = lp
+            instance.limit_offset_features_ = save_dict.get('limit_offset_features')
+        instance.limit_offset_diag_ = save_dict.get('limit_offset_diag')
         
         tprint(f"RidgePositionSizer loaded from {path}")
         
@@ -2525,6 +2845,109 @@ def _compute_ridge_weight_diagnostics(
             diag["top_model_contributors"] = contrib_df.head(15).to_dict(orient="records")
     return diag
 
+
+def run_oof_grid_backtest(
+    oof_df: pd.DataFrame,
+    start_equity: float = 100000.0,
+    fee_roundtrip: float = 0.002,
+) -> pd.DataFrame:
+    """Run a compact OOF backtest grid on sizer rankings and limit offsets.
+
+    Expected columns: ts, asset, close, side, sizer_score_oof, opt_limit_offset_pct, fwd_ret_H4.
+    """
+    if oof_df.empty:
+        return pd.DataFrame()
+    df = oof_df.copy()
+    df["ts"] = pd.to_datetime(df["ts"], utc=True, errors="coerce")
+    df = df.dropna(subset=["ts", "asset", "sizer_score_oof", "fwd_ret_H4"]).sort_values(["ts", "asset"])
+    if df.empty:
+        return pd.DataFrame()
+    df["side"] = df.get("side", "LONG").fillna("LONG")
+    df["close"] = np.maximum(df.get("close", 1.0).astype(float), 1e-9)
+    df["opt_limit_offset_pct"] = np.maximum(df.get("opt_limit_offset_pct", 0.0).astype(float), 0.0)
+    df["week_avg"] = df.groupby("asset")["sizer_score_oof"].transform(lambda s: s.rolling("7D", min_periods=1).mean())
+    df["dev"] = df["sizer_score_oof"] - df["week_avg"]
+    df["rank_pct"] = df.groupby("ts")["dev"].rank(method="first", pct=True)
+
+    configs = []
+    for q in (0.30, 0.10, 0.05):
+        for offset_mode in ("optimizer", "fixed_0_15"):
+            for ratio in ("2:1", "3:2", "4:2"):
+                for sizing in ("fixed_10", "linear_5_15"):
+                    threshold = 1.0 - q
+                    sel = df[df["rank_pct"] >= threshold].copy()
+                    if sel.empty:
+                        continue
+                    frac = 0.10 if sizing == "fixed_10" else (0.05 + np.clip((sel["rank_pct"] - threshold) / max(1 - threshold, 1e-9), 0, 1) * 0.10)
+                    offset_pct = sel["opt_limit_offset_pct"] if offset_mode == "optimizer" else 0.0015
+                    # Prefer shared policy simulator if forward path arrays are available.
+                    if all(c in sel.columns for c in ("future_highs", "future_lows", "future_closes", "entry_price", "is_long")):
+                        net = []
+                        for _, r in sel.iterrows():
+                            try:
+                                highs = np.asarray(r["future_highs"], dtype=float)
+                                lows = np.asarray(r["future_lows"], dtype=float)
+                                closes = np.asarray(r["future_closes"], dtype=float)
+
+                                entry_px = float(r["entry_price"])
+                                sl_mult = float(r.get("label_policy_sl_atr_mult", np.nan))
+                                tp_ratio = float(r.get("label_policy_tp_sl_ratio", np.nan))
+                                atr_entry = float(r.get("atr_12_15m", np.nan))
+                                if np.isfinite(sl_mult) and np.isfinite(tp_ratio) and np.isfinite(atr_entry):
+                                    sl_abs = max(sl_mult * max(atr_entry, 1e-9), 1e-9)
+                                    tp_abs = tp_ratio * sl_abs
+                                    sl_pct = sl_abs / max(entry_px, 1e-9)
+                                    tp_pct = tp_abs / max(entry_px, 1e-9)
+                                else:
+                                    tp_pct = 0.005
+                                    sl_pct = 0.0025
+
+                                trailing_pct = float(r.get("label_policy_giveback_pct", 0.0))
+                                max_bars = int(r.get("label_policy_max_hold_bars", 48))
+                                util = _simulate_policy_utility_from_arrays(
+                                    entry_price=entry_px,
+                                    is_long=bool(r["is_long"]),
+                                    future_highs=highs,
+                                    future_lows=lows,
+                                    future_closes=closes,
+                                    tp_pct=tp_pct,
+                                    sl_pct=sl_pct,
+                                    trailing_pct=trailing_pct,
+                                    max_bars=min(max_bars, len(highs)),
+                                    cost_pct=fee_roundtrip,
+                                )
+                                net.append(util - float(offset_pct.loc[r.name]))
+                            except Exception:
+                                net.append(float(r["fwd_ret_H4"]) - float(offset_pct.loc[r.name]) - fee_roundtrip)
+                        net = np.asarray(net, dtype=float)
+                    else:
+                        # OOF proxy fallback when bar-path arrays are unavailable.
+                        gross = sel["fwd_ret_H4"].astype(float) - offset_pct.astype(float)
+                        net = gross - fee_roundtrip
+                    pnl = start_equity * frac.values * net.values
+                    trades = len(pnl)
+                    wins = int((pnl > 0).sum())
+                    days = max((sel["ts"].max() - sel["ts"].min()).days, 1)
+                    dd = np.minimum.accumulate(np.cumsum(pnl) - np.maximum.accumulate(np.cumsum(pnl)))
+                    maxdd = float(abs(dd.min())) if len(dd) else 0.0
+                    sortino = float(np.mean(net) / (np.std(np.minimum(net, 0.0)) + 1e-9) * np.sqrt(365))
+                    ulcer = float(np.sqrt(np.mean(np.square(dd)))) if len(dd) else 0.0
+                    configs.append({
+                        "quantile": q,
+                        "entry_offset_mode": offset_mode,
+                        "tp_sl_ratio": ratio,
+                        "sizing_mode": sizing,
+                        "net_pnl": float(np.sum(pnl)),
+                        "trades_per_day": float(trades / days),
+                        "sortino": sortino,
+                        "maxdd": maxdd,
+                        "ulcer": ulcer,
+                        "tuw_max_days": 0.0,
+                        "expectancy_per_trade": float(np.mean(pnl)) if trades else 0.0,
+                        "win_rate": float(wins / max(trades, 1)),
+                    })
+    return pd.DataFrame(configs)
+
 def run_ridge_position_sizer_step(
     oof_preds: pd.DataFrame,
     trade_outcomes: pd.DataFrame,
@@ -2586,6 +3009,22 @@ def run_ridge_position_sizer_step(
     top_k_pct = cfg.get('top_k_pct', 0.30)
     
     # Initialize sizer
+    policy_opt_meta = None
+    if bool(cfg.get("label_policy_optimizer_enabled", True)):
+        try:
+            trade_outcomes, policy_opt_meta = optimize_label_policy(
+                trade_outcomes=trade_outcomes,
+                oof_preds=oof_preds,
+                timestamps=timestamps,
+                symbols=symbols,
+                groups=groups,
+                cfg=cfg,
+                simulate_trade_exit_fn=simulate_trade_exit,
+            )
+            tprint("Label policy optimization completed before Ridge training")
+        except Exception as e:
+            tprint(f"WARNING: label policy optimizer failed, continuing with existing labels: {e}")
+
     sizer = RidgePositionSizer(
         gamma_range=gamma_range,
         alpha_range=alpha_range,
@@ -2597,6 +3036,8 @@ def run_ridge_position_sizer_step(
         select_topq=float(cfg.get('sizer_topq', 0.30)),
         require_positive_topq_u=bool(cfg.get('sizer_require_positive_topq_u', True)),
         topq_min_samples=int(cfg.get('sizer_topq_min_samples', 50)),
+        winsor_q_low=float(cfg.get('sizer_winsor_q_low', 0.01)),
+        winsor_q_high=float(cfg.get('sizer_winsor_q_high', 0.99)),
     )
     
     # Fit
@@ -2613,6 +3054,8 @@ def run_ridge_position_sizer_step(
         'n_models': len(weights),
         'n_trades': len(trade_outcomes),
     }
+    if isinstance(policy_opt_meta, dict):
+        metrics['label_policy_optimizer'] = policy_opt_meta
     ridge_diag = _compute_ridge_weight_diagnostics(weights=weights, oof_preds=oof_preds, sizer=sizer)
     if ridge_diag:
         metrics["weight_diagnostics"] = ridge_diag
@@ -2692,10 +3135,7 @@ def run_ridge_position_sizer_step(
     # score = Ridge combined signal; fwd_ret_H4 = raw trade return (proxy for H4)
     if sizer.oof_preds_ is not None and sizer.oof_targets_ is not None:
         n_oof = len(sizer.oof_targets_)
-        X_oof_scaled = sizer.scaler_.transform(
-            np.nan_to_num(sizer.oof_preds_.values, nan=0.0, posinf=0.0, neginf=0.0)
-        )
-        oof_score = X_oof_scaled @ sizer.weights_
+        oof_score = sizer.predict(sizer.oof_preds_)
         oof_payload: dict = {
             "score": oof_score.astype(np.float32),
             "fwd_ret_H4": sizer.oof_targets_.astype(np.float32),
@@ -2708,6 +3148,18 @@ def run_ridge_position_sizer_step(
             oof_payload["asset"] = sizer.oof_symbols_.astype(str)
         else:
             oof_payload["asset"] = "ALL"
+        if getattr(sizer, 'oof_policy_pred_', None) is not None:
+            oof_payload["sizer_score_oof"] = np.asarray(sizer.oof_policy_pred_, dtype=np.float32)
+        if getattr(sizer, 'oof_limit_offset_pred_', None) is not None:
+            k_hat = np.asarray(sizer.oof_limit_offset_pred_, dtype=np.float32)
+            oof_payload["opt_limit_offset_ticks"] = k_hat
+            tick_size = float(cfg.get('TICK_SIZE', 0.1))
+            close_proxy = np.maximum(np.asarray(trade_outcomes.get('entry_price', pd.Series(np.ones(n_oof))).values[:n_oof], dtype=float), 1e-9)
+            oof_payload["opt_limit_offset_pct"] = ((tick_size * k_hat) / close_proxy).astype(np.float32)
+        if 'is_long' in trade_outcomes.columns:
+            oof_payload["side"] = np.where(np.asarray(trade_outcomes['is_long'].values[:n_oof], dtype=bool), "LONG", "SHORT")
+        if 'entry_price' in trade_outcomes.columns:
+            oof_payload["close"] = np.asarray(trade_outcomes['entry_price'].values[:n_oof], dtype=np.float32)
         oof_df_out = pd.DataFrame(oof_payload)
         _oof_dir = data_root / "artifacts" / (run_id or "latest") / "ridge_sizer"
         _oof_dir.mkdir(parents=True, exist_ok=True)
@@ -2715,6 +3167,13 @@ def run_ridge_position_sizer_step(
         oof_df_out.to_parquet(_oof_path, index=False)
         metrics['oof_parquet_path'] = str(_oof_path)
         tprint(f"Saved Ridge sizer OOF parquet to {_oof_path}")
+
+        bt_df = run_oof_grid_backtest(oof_df_out)
+        if not bt_df.empty:
+            _bt_path = _oof_dir / "ridge_sizer_oof_backtest_grid.csv"
+            bt_df.to_csv(_bt_path, index=False)
+            metrics['oof_backtest_grid_path'] = str(_bt_path)
+            tprint(f"Saved Ridge OOF backtest grid to {_bt_path}")
 
     # Generate Trade Quality Diagnostic Plot
     try:

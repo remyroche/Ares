@@ -395,7 +395,8 @@ CFG = {
         "regime_transition_entropy_48h", "complexity_regime_24h",
         "vol_concentration_12", "volume_entropy_12", "volatility_zscore",
         "clv_t", "body_ratio_15m", "rejection_proxy",
-        "range_norm_12", "sv_imb_24", "press_24", "impact_24", "ts_24"
+        "range_norm_12", "sv_imb_24", "press_24", "impact_24", "ts_24",
+        "atr_12_15m", "Upside", "Downside", "EdgeSharpe",
     ],
     "position_sizer_regime_feature_keys": [
         "vol_regime_z",
@@ -463,6 +464,23 @@ CFG = {
     "sizer_topq": 0.30,
     "sizer_require_positive_topq_u": True,
     "sizer_topq_min_samples": 50,
+    "sizer_winsor_q_low": 0.01,
+    "sizer_winsor_q_high": 0.99,
+
+    # Passive limit offset optimizer constants
+    "TICK_SIZE": 0.1,
+    "K_MAX": 5,
+    "HORIZON_15M_BARS": 4,
+    "HORIZON_1H_BARS": 1,
+    "UTILITY_LAMBDA": 0.0,
+    "UTILITY_ETA": 0.0,
+    "SOFTARGMAX_TAU": 1.0,
+    "label_policy_optimizer_enabled": True,
+    "label_policy_probe_alpha": 1.0,
+    "label_policy_sortino_beta": 0.01,
+    "label_policy_lambda": 0.5,
+    "label_policy_max_timeout": 0.80,
+    "label_policy_plateau_eps": 0.02,
     # Economic gate on base race: require positive realized return in top-k OOF slice
     "base_require_positive_oof_expectancy": True,
     "base_oof_expectancy_top_frac": 0.30,

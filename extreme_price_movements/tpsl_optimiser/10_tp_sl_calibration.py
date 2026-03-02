@@ -3,12 +3,179 @@ from __future__ import annotations
 from dataclasses import dataclass
 from itertools import product
 from typing import Dict, Iterable, Tuple
+import os
 
 import numpy as np
 import pandas as pd
 
 from extreme_price_movements.pnl import CostModel
 from extreme_price_movements.tpsl_optimiser.metrics_utils import compute_comprehensive_metrics
+import ccxt
+
+def get_15m_data_for_trades(trades: pd.DataFrame, hf_data_dir: str = "extreme_price_movements/15m_ohlcv") -> dict:
+    """
+    Loads 15m OHLCV data for all unique assets found in the trades dataframe.
+    Looks in hf_data_dir directory.
+    If not found, calls get_15m_ohlcv to download it for the time range.
+    Returns a dict mapping asset -> pd.DataFrame (indexed by datetime).
+    """
+    from extreme_price_movements.hf_data_loader import get_15m_ohlcv
+    data_15m = {}
+
+    if "asset" not in trades.columns or "timestamp" not in trades.columns:
+        return data_15m
+
+    unique_assets = trades["asset"].unique()
+
+    # We will instantiate binance just in case we need to download.
+    exchange = ccxt.binance()
+
+    for asset in unique_assets:
+        path_pq = os.path.join(hf_data_dir, f"{asset}.parquet")
+        path_csv = os.path.join(hf_data_dir, f"{asset}.csv")
+
+        df_15 = None
+        if os.path.exists(path_pq):
+            df_15 = pd.read_parquet(path_pq)
+        elif os.path.exists(path_csv):
+            df_15 = pd.read_csv(path_csv)
+            if 'timestamp' in df_15.columns:
+                df_15['timestamp'] = pd.to_datetime(df_15['timestamp'], utc=True)
+                df_15.set_index('timestamp', inplace=True)
+            elif 'ts' in df_15.columns:
+                df_15['ts'] = pd.to_datetime(df_15['ts'], utc=True)
+                df_15.set_index('ts', inplace=True)
+
+        if df_15 is None or df_15.empty:
+            # Not found on disk, so we download it
+            asset_trades = trades[trades["asset"] == asset]
+            min_ts = pd.to_datetime(asset_trades["timestamp"].min(), utc=True)
+            max_ts = pd.to_datetime(asset_trades["timestamp"].max(), utc=True)
+            if pd.isnull(min_ts) or pd.isnull(max_ts):
+                continue
+
+            # max_hold_hours based on the gap between min and max ts
+            gap_hours = max(1, int((max_ts - min_ts).total_seconds() / 3600)) + 12
+
+            try:
+                # Need to map asset format if needed, typically 'BTC/USDT' vs 'BTCUSDT'
+                # Just assume standard ccxt symbol format if we don't know it, or maybe append /USDT
+                # In extreme_price_movements it's typically just 'BTC', 'ETH' or 'BTCUSDT'
+                symbol = asset if '/' in asset else f"{asset.replace('USDT', '')}/USDT"
+
+                df_15 = get_15m_ohlcv(exchange, symbol, min_ts, max_hold_hours=gap_hours)
+            except Exception as e:
+                print(f"Failed to download 15m data for {asset}: {e}")
+
+        if df_15 is not None and not df_15.empty:
+            if not pd.api.types.is_datetime64_any_dtype(df_15.index):
+                df_15.index = pd.to_datetime(df_15.index, utc=True)
+            df_15 = df_15.sort_index()
+            data_15m[asset] = df_15
+
+    return data_15m
+
+def precompute_15m_bars_for_trades(trades: pd.DataFrame, data_15m: dict) -> list:
+    """
+    Precomputes the relevant 15m bars for each trade so we don't index/mask
+    inside the nested optimization loop.
+    Returns a list of length len(trades). Each element is either None
+    or a 2D numpy array: [[high, low, close], ...]
+    """
+    bars_list = []
+
+    if "timestamp" not in trades.columns or "asset" not in trades.columns:
+        return [None] * len(trades)
+
+    for i in range(len(trades)):
+        asset = trades["asset"].values[i]
+        if asset not in data_15m:
+            bars_list.append(None)
+            continue
+
+        df_15 = data_15m[asset]
+        ts = pd.to_datetime(trades["timestamp"].values[i], utc=True)
+        end_ts = ts + pd.Timedelta(hours=1)
+
+        mask = (df_15.index >= ts) & (df_15.index < end_ts)
+        bars = df_15.loc[mask]
+
+        if bars.empty:
+            bars_list.append(None)
+        else:
+            bars_arr = bars[['high', 'low', 'close']].to_numpy(dtype=float)
+            bars_list.append(bars_arr)
+
+    return bars_list
+
+def resolve_double_hits_fast(
+    trades: pd.DataFrame,
+    base_ret: np.ndarray,
+    tp_pct: np.ndarray,
+    sl_pct: np.ndarray,
+    bars_list: list
+) -> np.ndarray:
+    clipped = np.clip(base_ret, -sl_pct, tp_pct)
+
+    if not bars_list:
+        return clipped
+
+    resolved = clipped.copy()
+
+    is_long_arr = trades["is_long"].values
+    entry_p_arr = trades["entry_price"].values
+
+    for i in range(len(trades)):
+        bars = bars_list[i]
+        if bars is None:
+            continue
+
+        entry_p = float(entry_p_arr[i])
+        if entry_p <= 0:
+            continue
+
+        tp = float(tp_pct[i])
+        sl = float(sl_pct[i])
+        is_long = int(is_long_arr[i])
+
+        if is_long == 1:
+            sl_price = entry_p * (1.0 - sl)
+            tp_price = entry_p * (1.0 + tp)
+        else:
+            sl_price = entry_p * (1.0 + sl)
+            tp_price = entry_p * (1.0 - tp)
+
+        for j in range(bars.shape[0]):
+            hh = bars[j, 0]
+            ll = bars[j, 1]
+            cc = bars[j, 2]
+
+            bar_hit_tp = False
+            bar_hit_sl = False
+
+            if is_long == 1:
+                if ll <= sl_price: bar_hit_sl = True
+                if hh >= tp_price: bar_hit_tp = True
+            else:
+                if hh >= sl_price: bar_hit_sl = True
+                if ll <= tp_price: bar_hit_tp = True
+
+            if bar_hit_tp and not bar_hit_sl:
+                resolved[i] = tp
+                break
+            elif bar_hit_sl and not bar_hit_tp:
+                resolved[i] = -sl
+                break
+            elif bar_hit_sl and bar_hit_tp:
+                d_tp = abs(cc - tp_price)
+                d_sl = abs(cc - sl_price)
+                if d_tp < d_sl:
+                    resolved[i] = tp
+                else:
+                    resolved[i] = -sl
+                break
+
+    return resolved
 
 
 @dataclass(frozen=True)
@@ -68,6 +235,9 @@ def calibrate_tp_sl(trades: pd.DataFrame, atr_scale: pd.Series, cfg: TpSlCalibra
                         (df["exit_price"] - df["entry_price"]) / df["entry_price"],
                         (df["entry_price"] - df["exit_price"]) / df["entry_price"])
 
+    data_15m = get_15m_data_for_trades(df)
+    bars_list = precompute_15m_bars_for_trades(df, data_15m)
+
     # Split for optimization vs reporting
     n = len(df)
     split = test_split_idx if test_split_idx > 0 else n  # Default to full sample if split=0
@@ -99,7 +269,7 @@ def calibrate_tp_sl(trades: pd.DataFrame, atr_scale: pd.Series, cfg: TpSlCalibra
 
         # Apply TP/SL logic (Gross returns clipped)
         # Note: logic assumes exit at TP or SL if touched.
-        clipped = np.clip(base_ret, -sl_pct, tp_pct)
+        clipped = resolve_double_hits_fast(df, base_ret, tp_pct, sl_pct, bars_list)
 
         # --- Train Selection ---
         train_ret = clipped[train_mask]

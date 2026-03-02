@@ -1,7 +1,13 @@
 import numpy as np
 import pandas as pd
+import warnings
+import ccxt
+from extreme_price_movements.hf_data_loader import get_15m_ohlcv
 import platform
 from numba import jit
+import warnings
+import ccxt
+from extreme_price_movements.hf_data_loader import get_15m_ohlcv
 from joblib import Parallel, delayed, cpu_count
 from .fast_funcs import simulate_trade_numba
 
@@ -48,6 +54,7 @@ def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl
     quality = np.zeros(n, dtype=np.float32)
     returns = np.zeros(n, dtype=np.float32)
     exit_idxs = np.zeros(n, dtype=np.int64)
+    ambiguous_flags = np.zeros(n, dtype=np.bool_)
 
     limit_ns_base = int(horizon * 3600 * 1_000_000_000)
 
@@ -154,18 +161,36 @@ def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl
             # Let's assume Worst Case (SL) if ambiguous.
 
             if hit_sl and hit_tp:
-                # Ambiguous bar - Assume SL
-                outcomes[i] = OUT_SL
-                returns[i] = -sl
-                exit_idxs[i] = j
-                # Loss Quality: did we see profit first?
-                # f(MAE, MFE). Here we hit SL, so MAE >= SL_dist.
-                # Quality depends on MFE seen before? We track MFE of *this* bar too.
-                # MFE/TP_dist.
-                den_tp = max(entry_p * abs(activation), _QUALITY_EPS)
-                qual_raw = (mfe_val / den_tp) * 0.5
-                qual = _soft_squash_pos(qual_raw)
-                quality[i] = _clip_scalar(qual, 0.0, 0.49)
+                ambiguous_flags[i] = True
+                # Ambiguous bar - Fallback logic: close proximity to extrema
+                # Consider it a win if close price of the ambiguous bar is closer to the high (for longs) / low (for shorts)
+                dist_to_high = abs(hh - cc)
+                dist_to_low = abs(ll - cc)
+
+                if side == 1:
+                    win_condition = dist_to_high < dist_to_low
+                else:
+                    win_condition = dist_to_low < dist_to_high
+
+                if win_condition:
+                    outcomes[i] = OUT_TP
+                    returns[i] = activation
+                    exit_idxs[i] = j
+                    time_elapsed = max(0, tt - entry_t)
+                    time_penalty = min(0.15, 0.15 * (time_elapsed / max(limit_ns, 1)))
+                    den_sl = max(entry_p * abs(sl), _QUALITY_EPS)
+                    mae_ratio = mae_val / den_sl
+                    qual = 1.0 - (mae_ratio * 0.5) - time_penalty
+                    quality[i] = _clip_scalar(qual, 0.51, 1.0)
+                else:
+                    outcomes[i] = OUT_SL
+                    returns[i] = -sl
+                    exit_idxs[i] = j
+                    den_tp = max(entry_p * abs(activation), _QUALITY_EPS)
+                    qual_raw = (mfe_val / den_tp) * 0.5
+                    qual = _soft_squash_pos(qual_raw)
+                    quality[i] = _clip_scalar(qual, 0.0, 0.49)
+
                 exit_found = True
                 break
 
@@ -223,7 +248,7 @@ def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl
     # Numba compatibility: avoid nan_to_num keyword args unsupported in some versions.
     quality = np.nan_to_num(quality)
     quality = np.clip(quality, 0.0, 1.0).astype(np.float32)
-    return outcomes, returns, quality, exit_idxs
+    return outcomes, returns, quality, exit_idxs, ambiguous_flags
 
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_trailing_atr_labeling(

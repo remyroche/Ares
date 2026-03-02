@@ -319,6 +319,7 @@ class EventCache:
     entry_px: np.ndarray    # (m,)
     rH: np.ndarray          # (m, horizon) high normalized return: H/entry - 1
     rL: np.ndarray          # (m, horizon) low  normalized return: L/entry - 1
+    rC: np.ndarray          # (m, horizon) close normalized return: C/entry - 1
     rC_end: np.ndarray      # (m,) close normalized return at horizon end: C_end/entry - 1
     rL_prefix_min: np.ndarray # (m, horizon) normalized low prefix-min for AE (long)
     rH_prefix_max: np.ndarray # (m, horizon) normalized high prefix-max for AE (short)
@@ -364,7 +365,7 @@ def build_event_cache(
         return EventCache(
             event_idx=np.zeros(0, dtype=np.int32),
             entry_px=np.zeros(0, dtype=np.float32),
-            rH=z, rL=z, rC_end=np.zeros(0, dtype=np.float32),
+            rH=z, rL=z, rC=z, rC_end=np.zeros(0, dtype=np.float32),
             rL_prefix_min=z,
             rH_prefix_max=z,
             horizon=HN,
@@ -376,11 +377,13 @@ def build_event_cache(
 
     H = high[widx]  # (m,H)
     L = low[widx]
+    C = close[widx]
     C_end = close[widx[:, -1]]  # (m,)
 
     denom = np.maximum(entry_px, eps).astype(np.float32, copy=False)
     rH = (H / denom[:, None]) - 1.0
     rL = (L / denom[:, None]) - 1.0
+    rC = (C / denom[:, None]) - 1.0
     rC_end = (C_end / denom) - 1.0
 
     # Memory-optimized Prefix calculation on normalized returns (Fix #9)
@@ -392,6 +395,7 @@ def build_event_cache(
         entry_px=entry_px.astype(np.float32, copy=False),
         rH=rH.astype(np.float32, copy=False),
         rL=rL.astype(np.float32, copy=False),
+        rC=rC.astype(np.float32, copy=False),
         rC_end=rC_end.astype(np.float32, copy=False),
         rL_prefix_min=rL_prefix_min,
         rH_prefix_max=rH_prefix_max,
@@ -452,7 +456,7 @@ def build_event_cache_15m(
         return EventCache(
             event_idx=np.zeros(0, dtype=np.int32),
             entry_px=np.zeros(0, dtype=np.float32),
-            rH=z, rL=z, rC_end=np.zeros(0, dtype=np.float32),
+            rH=z, rL=z, rC=z, rC_end=np.zeros(0, dtype=np.float32),
             rL_prefix_min=z, rH_prefix_max=z,
             horizon=HN_15m, side=side
         )
@@ -462,11 +466,13 @@ def build_event_cache_15m(
 
     H = high_15m[widx]
     L = low_15m[widx]
+    C = close_15m[widx]
     C_end = close_15m[widx[:, -1]]
 
     denom = np.maximum(entry_px, eps).astype(np.float32, copy=False)
     rH = (H / denom[:, None]) - 1.0
     rL = (L / denom[:, None]) - 1.0
+    rC = (C / denom[:, None]) - 1.0
     rC_end = (C_end / denom) - 1.0
 
     rL_prefix_min = np.minimum.accumulate(rL, axis=1).astype(np.float32, copy=False)
@@ -477,6 +483,7 @@ def build_event_cache_15m(
         entry_px=entry_px.astype(np.float32, copy=False),
         rH=rH.astype(np.float32, copy=False),
         rL=rL.astype(np.float32, copy=False),
+        rC=rC.astype(np.float32, copy=False),
         rC_end=rC_end.astype(np.float32, copy=False),
         rL_prefix_min=rL_prefix_min,
         rH_prefix_max=rH_prefix_max,
@@ -545,24 +552,50 @@ def label_from_cache(
     pt_t = np.where(pt_any, hit_pt.argmax(axis=1), sentinel).astype(np.int32, copy=False)
     sl_t = np.where(sl_any, hit_sl.argmax(axis=1), sentinel).astype(np.int32, copy=False)
 
-    # Pessimistic ambiguity resolution: if same bar, SL wins
     ambiguous = (pt_t == sl_t) & (pt_t <= HN - 1)
     pt_first = (pt_t < sl_t)
     sl_first = (sl_t < pt_t)
-    # Explicitly pull out ambiguous for diagnostics
-    # Note: pt_first and sl_first don't include ambiguous (which is pt_t == sl_t)
+
+    # Ambiguity resolution: use close price proximity to extreme (high/low depending on trade side)
+    ambiguous_pt = np.zeros(m, dtype=bool)
+    ambiguous_sl = np.zeros(m, dtype=bool)
+
+    if np.any(ambiguous):
+        ambig_idx = np.where(ambiguous)[0]
+        ambig_t = pt_t[ambig_idx]
+
+        # We need to extract the corresponding elements from rH, rL, rC
+        # We use advanced indexing: cache.rH[ambig_idx, ambig_t]
+        rH_ambig = cache.rH[ambig_idx, ambig_t]
+        rL_ambig = cache.rL[ambig_idx, ambig_t]
+        rC_ambig = cache.rC[ambig_idx, ambig_t]
+
+        dist_to_high = np.abs(rH_ambig - rC_ambig)
+        dist_to_low = np.abs(rL_ambig - rC_ambig)
+
+        if cache.side == "long":
+            ambig_pt_mask = dist_to_high < dist_to_low
+        else:
+            ambig_pt_mask = dist_to_low < dist_to_high
+
+        ambig_pt_global_idx = ambig_idx[ambig_pt_mask]
+        ambig_sl_global_idx = ambig_idx[~ambig_pt_mask]
+
+        ambiguous_pt[ambig_pt_global_idx] = True
+        ambiguous_sl[ambig_sl_global_idx] = True
+
+    # Update pt_first and sl_first with resolved ambiguities
+    pt_first = pt_first | ambiguous_pt
+    sl_first = sl_first | ambiguous_sl
 
     exit_kind = np.zeros(m, dtype=np.int8)
     exit_kind[pt_first] = 1
-    # Consistent Ambiguity Resolution (Fix #2, #5, #10):
-    # Treat ambiguous (same-bar PT/SL) as SL (-1) for both y_bin and y_ret.
-    # We set exit_kind=2 explicitly so we can mask it in diagnostics, 
-    # but the implementation below treats it as SL.
     exit_kind[sl_first] = -1
+    # We still keep ambiguous flag for diagnostics if needed, but they are resolved now.
     exit_kind[ambiguous] = 2
 
-    # For labels/returns, resolve pessimistically (ambiguous => SL wins)
-    sl_pessimistic = sl_first | ambiguous
+    # For labels/returns, we no longer need sl_pessimistic. We use sl_first
+    sl_resolved = sl_first
 
     y_ret = np.zeros(m, dtype=np.float32)
 
@@ -582,9 +615,9 @@ def label_from_cache(
         trail_ret = np.maximum(peak_mfe - trail_dist[pt_idx], tp_thr[pt_idx])
         y_ret[pt_first] = trail_ret.astype(np.float32, copy=False)
 
-    y_ret[sl_pessimistic] = -sl_thr[sl_pessimistic]
+    y_ret[sl_resolved] = -sl_thr[sl_resolved]
     
-    time_mask = ~(pt_first | sl_pessimistic)
+    time_mask = ~(pt_first | sl_resolved)
     if np.any(time_mask):
         if cache.side == "long":
             y_ret[time_mask] = cache.rC_end[time_mask]
@@ -1118,6 +1151,7 @@ def run_tp_sl_selection_fast(
         entry_px=cache.entry_px[sort_order],
         rH=cache.rH[sort_order],
         rL=cache.rL[sort_order],
+        rC=cache.rC[sort_order],
         rC_end=cache.rC_end[sort_order],
         rL_prefix_min=cache.rL_prefix_min[sort_order],
         rH_prefix_max=cache.rH_prefix_max[sort_order],

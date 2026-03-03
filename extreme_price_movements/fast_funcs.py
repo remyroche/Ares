@@ -2294,128 +2294,120 @@ def _numba_adx_1d(high, low, close, n):
     ADX Indicator
     Returns: (ADX, DI+, DI-)
     Uses Wilder's Smoothing (alpha=1/n)
+
+    Optimized version: O(1) auxiliary memory. Eliminates 4 O(N) allocations.
     """
     l = len(close)
     adx = np.full(l, np.nan, dtype=np.float32)
     di_plus = np.full(l, np.nan, dtype=np.float32)
     di_minus = np.full(l, np.nan, dtype=np.float32)
 
-    # Alpha for Wilder's Smoothing
-    alpha = 1.0 / n
+    if l <= n:
+        return adx, di_plus, di_minus
 
-    # State variables for smoothing
     s_tr = 0.0
-    s_dm_plus = 0.0
-    s_dm_minus = 0.0
+    s_dm_p = 0.0
+    s_dm_m = 0.0
 
-    # Compute TR, DM+, DM- arrays first
-    tr_arr = np.zeros(l, dtype=np.float32)
-    dm_p_arr = np.zeros(l, dtype=np.float32)
-    dm_m_arr = np.zeros(l, dtype=np.float32)
-
-    tr_arr[0] = high[0] - low[0] # Approx
-
-    for i in range(1, l):
+    # Initialization period (1 to n)
+    for i in range(1, n + 1):
+        if i >= l: break
         h = high[i]; l_curr = low[i]; c_prev = close[i-1]
         h_prev = high[i-1]; l_prev = low[i-1]
 
-        # TR
         v1 = h - l_curr
         v2 = abs(h - c_prev)
         v3 = abs(l_curr - c_prev)
-        tr_arr[i] = max(v1, max(v2, v3))
+        tr = max(v1, max(v2, v3))
 
-        # DM
         up_move = h - h_prev
         dn_move = l_prev - l_curr
 
-        if up_move > dn_move and up_move > 0:
-            dm_p_arr[i] = up_move
-        else:
-            dm_p_arr[i] = 0.0
+        dm_p = up_move if (up_move > dn_move and up_move > 0) else 0.0
+        dm_m = dn_move if (dn_move > up_move and dn_move > 0) else 0.0
 
-        if dn_move > up_move and dn_move > 0:
-            dm_m_arr[i] = dn_move
-        else:
-            dm_m_arr[i] = 0.0
+        s_tr += tr
+        s_dm_p += dm_p
+        s_dm_m += dm_m
 
-    # Initialization period
-    sum_tr = 0.0
-    sum_dm_p = 0.0
-    sum_dm_m = 0.0
-
-    for i in range(1, n + 1):
-        if i < l:
-            sum_tr += tr_arr[i]
-            sum_dm_p += dm_p_arr[i]
-            sum_dm_m += dm_m_arr[i]
-
-    # State for TR/DM
-    s_tr = sum_tr
-    s_dm_p = sum_dm_p
-    s_dm_m = sum_dm_m
-
-    # First point (at index N)
-    dx = 0.0
     if n < l:
-        if s_tr > 0:
-            dip = 100 * s_dm_p / s_tr
-            dim = 100 * s_dm_m / s_tr
-        else:
-            dip = 0.0; dim = 0.0
+        dip = np.float32(100.0) * s_dm_p / s_tr if s_tr > 0 else np.float32(0.0)
+        dim = np.float32(100.0) * s_dm_m / s_tr if s_tr > 0 else np.float32(0.0)
 
         di_plus[n] = dip
         di_minus[n] = dim
 
         denom = dip + dim
-        dx = 100 * abs(dip - dim) / denom if denom > 0 else 0.0
+        dx = np.float32(100.0) * abs(dip - dim) / denom if denom > 0 else np.float32(0.0)
 
-    # We will accumulate DX sum for second smoothing
-    sum_dx = dx # Initial DX
+        # Accumulate first n DX values
+        dx_sum = dx
 
-    # DX Buffer
-    dx_buffer = np.zeros(l, dtype=np.float32)
-    if n < l:
-        dx_buffer[n] = dx
+        for i in range(n + 1, min(2 * n, l)):
+            h = high[i]; l_curr = low[i]; c_prev = close[i-1]
+            h_prev = high[i-1]; l_prev = low[i-1]
 
-    for i in range(n + 1, l):
-        # Update Smooth Sums
-        s_tr = s_tr - (s_tr / n) + tr_arr[i]
-        s_dm_p = s_dm_p - (s_dm_p / n) + dm_p_arr[i]
-        s_dm_m = s_dm_m - (s_dm_m / n) + dm_m_arr[i]
+            v1 = h - l_curr
+            v2 = abs(h - c_prev)
+            v3 = abs(l_curr - c_prev)
+            tr = max(v1, max(v2, v3))
 
-        if s_tr > 0:
-            dip = 100 * s_dm_p / s_tr
-            dim = 100 * s_dm_m / s_tr
-        else:
-            dip = 0.0; dim = 0.0
+            up_move = h - h_prev
+            dn_move = l_prev - l_curr
 
-        di_plus[i] = dip
-        di_minus[i] = dim
+            dm_p = up_move if (up_move > dn_move and up_move > 0) else 0.0
+            dm_m = dn_move if (dn_move > up_move and dn_move > 0) else 0.0
 
-        denom = dip + dim
-        dx = 100 * abs(dip - dim) / denom if denom > 0 else 0.0
-        dx_buffer[i] = dx
+            s_tr = s_tr - (s_tr / n) + tr
+            s_dm_p = s_dm_p - (s_dm_p / n) + dm_p
+            s_dm_m = s_dm_m - (s_dm_m / n) + dm_m
 
-    # Now Smooth DX to get ADX
-    # First ADX is average of first N DX values (which start at index N)
-    # So first ADX is at index 2N - 1
+            dip = np.float32(100.0) * s_dm_p / s_tr if s_tr > 0 else np.float32(0.0)
+            dim = np.float32(100.0) * s_dm_m / s_tr if s_tr > 0 else np.float32(0.0)
 
-    if (2 * n - 1) < l:
-        sum_dx_init = 0.0
-        for i in range(n, 2 * n):
-            sum_dx_init += dx_buffer[i]
+            di_plus[i] = dip
+            di_minus[i] = dim
 
-        adx_val = sum_dx_init / n
-        adx[2*n - 1] = adx_val
+            denom = dip + dim
+            dx = np.float32(100.0) * abs(dip - dim) / denom if denom > 0 else np.float32(0.0)
+            dx_sum += dx
 
-        prev_adx = adx_val
+        if (2 * n - 1) < l:
+            prev_adx = dx_sum / n
+            adx[2 * n - 1] = prev_adx
 
-        for i in range(2 * n, l):
-            # ADX[i] = (ADX[i-1] * (N-1) + DX[i]) / N
-            curr_adx = (prev_adx * (n - 1) + dx_buffer[i]) / n
-            adx[i] = curr_adx
-            prev_adx = curr_adx
+            # Continuing for the rest of the array
+            for i in range(2 * n, l):
+                h = high[i]; l_curr = low[i]; c_prev = close[i-1]
+                h_prev = high[i-1]; l_prev = low[i-1]
+
+                v1 = h - l_curr
+                v2 = abs(h - c_prev)
+                v3 = abs(l_curr - c_prev)
+                tr = max(v1, max(v2, v3))
+
+                up_move = h - h_prev
+                dn_move = l_prev - l_curr
+
+                dm_p = up_move if (up_move > dn_move and up_move > 0) else 0.0
+                dm_m = dn_move if (dn_move > up_move and dn_move > 0) else 0.0
+
+                s_tr = s_tr - (s_tr / n) + tr
+                s_dm_p = s_dm_p - (s_dm_p / n) + dm_p
+                s_dm_m = s_dm_m - (s_dm_m / n) + dm_m
+
+                dip = np.float32(100.0) * s_dm_p / s_tr if s_tr > 0 else np.float32(0.0)
+                dim = np.float32(100.0) * s_dm_m / s_tr if s_tr > 0 else np.float32(0.0)
+
+                di_plus[i] = dip
+                di_minus[i] = dim
+
+                denom = dip + dim
+                dx = np.float32(100.0) * abs(dip - dim) / denom if denom > 0 else np.float32(0.0)
+
+                curr_adx = (prev_adx * (n - 1) + dx) / n
+                adx[i] = curr_adx
+                prev_adx = curr_adx
 
     return adx, di_plus, di_minus
 

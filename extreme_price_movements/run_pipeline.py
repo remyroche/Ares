@@ -536,13 +536,23 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
         tprint("TRAINING PIPELINE FAILED")
     _maintenance_checkpoint("train:end")
 
+def run_risk_opt(cfg, ts_override=None, parsed_ts_sig=None, skip_maintenance=False, store=None):
+    if not skip_maintenance:
+        _maintenance_checkpoint("risk_opt:start")
 
-def run_risk_opt(cfg, ts_override=None, store=None):
-    _maintenance_checkpoint("risk_opt:start")
-    ts_sig = _resolve_ts_sig(cfg, ts_override)
-    if ts_sig is None:
-        tprint("ERROR: No feature directories found.")
-        return
+    if parsed_ts_sig:
+        ts_sig = parsed_ts_sig
+    elif ts_override:
+        try:
+            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
+            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
+        except ValueError:
+            ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
+    else:
+        ts_sig = _find_latest_feature_ts(cfg["data_root"])
+        if ts_sig is None:
+            tprint("ERROR: No feature directories found.")
+            return
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     import os
@@ -555,8 +565,14 @@ def run_risk_opt(cfg, ts_override=None, store=None):
     tprint("RISK OPTIMIZATION COMPLETE")
     _maintenance_checkpoint("risk_opt:end")
 
+    if store is None:
+        store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
 
+    run_risk_optimization_step(ts_sig, None, cfg, store, state_file)
+    tprint("RISK OPTIMIZATION COMPLETE")
 
+    if not skip_maintenance:
+        _maintenance_checkpoint("risk_opt:end")
 
 
 def run_sizer(cfg, ts_override=None, store=None):
@@ -715,38 +731,34 @@ def run_train_meta(cfg, ts_override=None, store=None):
     
     # Verify that before training the meta model, we optimise the TP & SL values.
     tprint("Optimising TP:SL before meta-training...")
-    run_risk_opt(cfg, ts_override=ts_override)
+    run_risk_opt(cfg, parsed_ts_sig=ts_sig, skip_maintenance=True, store=store)
     
     ex = make_perp_exchange() if bool(cfg.get("use_perps", False)) else make_spot_exchange()
     result = train_daily_meta(ts_sig, None, cfg, store, ex)
     if result:
-        import pickle as _pkl
+        import joblib
+        import gc
         run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
         models_dir = os.path.join(cfg["data_root"], "artifacts", run_id, "models")
         os.makedirs(models_dir, exist_ok=True)
         meta_state_path = os.path.join(models_dir, "model_state_meta.pkl")
-        with open(meta_state_path, "wb") as f:
-            _pkl.dump(result, f)
-        tprint(f"Meta model state saved to {meta_state_path}")
+
+        joblib.dump(result, meta_state_path)
+        tprint(f"Meta model state saved to {meta_state_path} using joblib")
 
         # Backward compatibility for existing spot-only workflows that expect
         # the legacy CWD artifact.
         if not bool(cfg.get("use_perps", False)):
-            with open("model_state.pkl", "wb") as f:
-                _pkl.dump(result, f)
-            tprint("Meta model state also saved to legacy model_state.pkl")
-        
-        # Run breakdown diagnostics after meta training
-        try:
-            run_breakdown_diagnostics_integration(cfg, ts_sig)
-        except Exception as e:
-            tprint(f"WARNING: breakdown diagnostics failed: {e}")
+            joblib.dump(result, "model_state.pkl")
+            tprint("Meta model state also saved to legacy model_state.pkl using joblib")
 
-        # NOTE: The Ridge position sizer (which combines meta-model OOF outputs into a
-        # position-sizing signal) must NOT be auto-triggered here. It is trained exclusively
-        # by the explicit `sizer` / `ridge_sizer` pipeline step to avoid double-training.
-        # The EV-decomposition heads (pwin, win/loss quantiles) trained above by
-        # train_position_sizer_models() inside train_daily_meta ARE the train_meta output.
+        # Free memory before moving on
+        del result
+        gc.collect()
+
+        # NOTE: Breakdown diagnostics removed here as they require the ridge sizer
+        # to represent the final trading policy correctly.
+        # Meta-layer metrics (AUC, Lift, IC) are logged naturally during train_daily_meta.
 
         tprint("TRAIN_META PIPELINE COMPLETE")
     else:

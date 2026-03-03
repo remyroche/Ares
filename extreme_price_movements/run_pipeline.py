@@ -363,7 +363,7 @@ def _label_artifacts_ready(cfg, ts_sig):
     """Check whether core label artifacts exist for this run timestamp."""
     import os
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
-    horizons = cfg.get("label_horizons_hours", [])
+    horizons = cfg.get("label_horizons_hours", [1, 2, 4])
     required = [
         "exhaustion_history",
     ]
@@ -392,19 +392,48 @@ def _gc_checkpoint(tag: str) -> int:
 
 
 def _cache_checkpoint(tag: str) -> None:
-    """Clear known runtime cache directories and emit a short checkpoint log."""
+    """Clear known runtime cache directories dynamically based on available RAM."""
     import shutil
+    import time
+    try:
+        import psutil
+        vm = psutil.virtual_memory()
+        mem_available_gb = vm.available / (1024 ** 3)
+        mem_percent = vm.percent
+    except ImportError:
+        mem_available_gb = 0.0
+        mem_percent = 100.0
 
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     cache_dirs = [
         os.path.join(project_root, "cache"),
         os.path.join(project_root, "data_cache"),
     ]
+
+    # If memory is plentiful (>16GB available, <75% used), keep files modified in the last 10 minutes
+    purge_all = (mem_available_gb < 16.0) or (mem_percent > 75.0)
+    current_time = time.time()
+    max_age_seconds = 600 # 10 minutes
+
     for cdir in cache_dirs:
         if os.path.exists(cdir):
             try:
-                shutil.rmtree(cdir)
-                tprint(f"CACHE[{tag}]: cleared {cdir}")
+                if purge_all:
+                    shutil.rmtree(cdir)
+                    tprint(f"CACHE[{tag}]: aggressively cleared {cdir} (mem_avail={mem_available_gb:.1f}GB, used={mem_percent}%)")
+                else:
+                    purged_count = 0
+                    for root, dirs, files in os.walk(cdir, topdown=False):
+                        for name in files:
+                            fpath = os.path.join(root, name)
+                            if (current_time - os.path.getmtime(fpath)) > max_age_seconds:
+                                os.remove(fpath)
+                                purged_count += 1
+                        for name in dirs:
+                            dpath = os.path.join(root, name)
+                            if not os.listdir(dpath): # remove empty directories
+                                os.rmdir(dpath)
+                    tprint(f"CACHE[{tag}]: dynamically purged {purged_count} old files from {cdir} (mem_avail={mem_available_gb:.1f}GB)")
             except Exception as e:
                 tprint(f"CACHE[{tag}]: failed {cdir}: {e}")
 
@@ -418,7 +447,8 @@ def run_labels(cfg, horizons=None, ts_override=None):
     _maintenance_checkpoint("labels:start")
     if ts_override:
         try:
-            ts_sig = pd.to_datetime(ts_override, format="%Y%m%d_%H%M%S").tz_localize("UTC")
+            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
+            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
         except ValueError:
             ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
     else:
@@ -432,7 +462,7 @@ def run_labels(cfg, horizons=None, ts_override=None):
     store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
 
     # No exchange needed — data already in store, features already on disk
-    horizons = horizons or [1, 2, 4]
+    horizons = horizons or cfg.get("label_horizons_hours", [1, 2, 4])
     run_label_generation_step_v2(ts_sig, None, cfg, store, None, horizons=horizons)
 
     tprint("LABELS PIPELINE COMPLETE")

@@ -220,6 +220,16 @@ class PartitionedOHLCVStore:
         self.timeframe = timeframe
         self.ohlcv_dir = os.path.join(root_dir, "ohlcv")
         os.makedirs(self.ohlcv_dir, exist_ok=True)
+        self._cache = {}
+
+    def evict(self, symbol: str = None):
+        """Clear cached DataFrames to prevent memory bloat during sequential processing."""
+        if symbol is None:
+            self._cache.clear()
+            tprint("PartitionedOHLCVStore: evicted all symbols from cache")
+        elif symbol in self._cache:
+            del self._cache[symbol]
+            tprint(f"PartitionedOHLCVStore: evicted {symbol} from cache")
 
     def _get_symbol_dir(self, symbol: str) -> str:
         safe_sym = symbol.replace("/", "_")
@@ -268,6 +278,14 @@ class PartitionedOHLCVStore:
             return pd.DataFrame(columns=["open","high","low","close","volume"]).set_index(
                 pd.DatetimeIndex([], tz="UTC", name="ts")
             )
+
+        if symbol in self._cache:
+            df = self._cache[symbol]
+            if start_ts is not None:
+                df = df[df.index >= start_ts]
+            if end_ts is not None:
+                df = df[df.index <= end_ts]
+            return df
 
         try:
             # 1. Gather and filter files by timestamp BEFORE reading
@@ -328,7 +346,9 @@ class PartitionedOHLCVStore:
             if end_ts is not None:
                 df = df[df.index <= end_ts]
 
-            return self._downcast(df)
+            result = self._downcast(df)
+            self._cache[symbol] = result
+            return result
         except Exception as e:
             tprint(f"Error loading {symbol}: {e}")
             return pd.DataFrame(columns=["open","high","low","close","volume"]).set_index(

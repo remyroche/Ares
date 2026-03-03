@@ -223,7 +223,7 @@ def _symbol_to_hf_ccxt(symbol: str) -> str:
     return raw.replace("_", "/")
 
 
-def _load_or_download_15m(symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timestamp) -> pd.DataFrame:
+def _load_or_download_15m(symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timestamp, *, allow_download: bool = False) -> pd.DataFrame:
     """Load or download 15m data with global memory caching."""
     clean = str(symbol or "").replace("/", "").replace("_", "").lower()
     ccxt_symbol = _symbol_to_hf_ccxt(symbol)
@@ -233,7 +233,7 @@ def _load_or_download_15m(symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timest
     if clean in cache:
         df = cache[clean]
         if df.empty: return df
-        return df.loc[(df.index >= start_ts) & (df.index <= end_ts), ["open", "high", "low", "close"]]
+        return df.loc[(df.index >= start_ts) & (df.index <= end_ts), ["open", "high", "low", "close"]].astype(np.float32, copy=False)
 
     # 2. Check Disk
     path = HF_DATA_DIR / f"{clean}_15m.parquet"
@@ -249,6 +249,8 @@ def _load_or_download_15m(symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timest
             pass
 
     # 3. Download (Slowest)
+    if not allow_download:
+        return pd.DataFrame()
     try:
         if ccxt_symbol in _HF_15M_FAILED_SYMBOLS:
             return pd.DataFrame()
@@ -298,6 +300,7 @@ def _refine_ambiguous_labels_with_15m(
     qual: pd.DataFrame,
     h: int,
     side: str,
+    cfg: Optional[Dict[str, Any]] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     close_df = panel.get("close")
     high_df = panel.get("high")
@@ -315,13 +318,13 @@ def _refine_ambiguous_labels_with_15m(
     n_jobs = 4 if len(symbols) > 10 else 1
 
     def _process_symbol(sym: str):
-        c = close_df[sym].to_numpy(dtype=np.float64, copy=False)
-        hh = high_df[sym].to_numpy(dtype=np.float64, copy=False)
-        ll = low_df[sym].to_numpy(dtype=np.float64, copy=False)
-        tpv = tp_df[sym].to_numpy(dtype=np.float64, copy=False)
-        slv = sl_df[sym].to_numpy(dtype=np.float64, copy=False)
+        c = close_df[sym].to_numpy(dtype=np.float32, copy=False)
+        hh = high_df[sym].to_numpy(dtype=np.float32, copy=False)
+        ll = low_df[sym].to_numpy(dtype=np.float32, copy=False)
+        tpv = tp_df[sym].to_numpy(dtype=np.float32, copy=False)
+        slv = sl_df[sym].to_numpy(dtype=np.float32, copy=False)
         lab = lbl[sym].to_numpy(dtype=np.int8, copy=True)
-        rets_sym = ret[sym].to_numpy(dtype=np.float64, copy=True)
+        rets_sym = ret[sym].to_numpy(dtype=np.float32, copy=True)
         qual_sym = qual[sym].to_numpy(dtype=np.float32, copy=True)
         
         n = len(c)
@@ -351,35 +354,43 @@ def _refine_ambiguous_labels_with_15m(
             return sym, lab, rets_sym, qual_sym
 
         # Pre-load HF data for the ENTIRE symbol range once
-        start_full = idx[ambiguous_j_list[0][1]].floor("1h")
-        end_full = idx[ambiguous_j_list[-1][1]].floor("1h") + pd.Timedelta(hours=1)
-        hf_full = _load_or_download_15m(sym, start_full, end_full)
+        start_full = idx[ambiguous_j_list[0][1]].floor("15min")
+        end_full = min(idx[ambiguous_j_list[-1][0]] + pd.Timedelta(hours=float(h)), idx[-1])
+        allow_download = bool((cfg or {}).get("allow_15m_download", False))
+        hf_full = _load_or_download_15m(sym, start_full, end_full, allow_download=allow_download)
         if hf_full.empty:
             return sym, lab, rets_sym, qual_sym
 
         # Optimization: Pre-convert HF to numpy for faster iteration
         hf_idx = hf_full.index
-        hf_o = hf_full["open"].to_numpy(dtype=np.float64)
-        hf_h = hf_full["high"].to_numpy(dtype=np.float64)
-        hf_l = hf_full["low"].to_numpy(dtype=np.float64)
-        hf_c = hf_full["close"].to_numpy(dtype=np.float64)
+        hf_h = hf_full["high"].to_numpy(dtype=np.float32, copy=False)
+        hf_l = hf_full["low"].to_numpy(dtype=np.float32, copy=False)
+        hf_c = hf_full["close"].to_numpy(dtype=np.float32, copy=False)
 
         for i, first_ambiguous_j, tp_price, sl_price, tp_val, sl_val in ambiguous_j_list:
-            start_15m = idx[first_ambiguous_j].floor("1h")
-            end_15m = start_15m + pd.Timedelta(hours=1)
+            start_15m = idx[first_ambiguous_j].floor("15min")
+            end_15m = min(idx[i] + pd.Timedelta(hours=float(h)), idx[-1])
             
             # Slice hf_full using index logic (faster than row iteration)
             mask = (hf_idx >= start_15m) & (hf_idx < end_15m)
             idxs15 = np.where(mask)[0]
             
             resolved = None
+            if idxs15.size == 0:
+                continue
+            range_abs = float(np.nanmax(hf_h[idxs15]) - np.nanmin(hf_l[idxs15]))
+            threshold_abs = float(c[i] * min(abs(tp_val), abs(sl_val)))
+            if (not np.isfinite(range_abs)) or (range_abs <= max(threshold_abs, 0.0)):
+                continue
             for k in idxs15:
-                o15, h15, l15 = hf_o[k], hf_h[k], hf_l[k]
+                h15, l15, c15 = hf_h[k], hf_l[k], hf_c[k]
                 hit_tp_15 = (h15 >= tp_price) if side == "long" else (l15 <= tp_price)
                 hit_sl_15 = (l15 <= sl_price) if side == "long" else (h15 >= sl_price)
                 
                 if hit_tp_15 and hit_sl_15:
-                    resolved = _resolve_barrier_conflict_15m(side=side, bar_open=o15, tp_price=tp_price, sl_price=sl_price)
+                    d_tp = abs(c15 - h15) if side == "long" else abs(c15 - l15)
+                    d_sl = abs(c15 - l15) if side == "long" else abs(c15 - h15)
+                    resolved = "TP" if d_tp < d_sl else "SL"
                     break
                 if hit_tp_15:
                     resolved = "TP"; break
@@ -2350,7 +2361,7 @@ def evaluate_config(
                     artifacts.panel, tp_df, sl_df, h, side=side, return_outcomes=True, horizons_frame=dyn_h
                 )
                 lbl, ret, qual = _refine_ambiguous_labels_with_15m(
-                    artifacts.panel, tp_df, sl_df, lbl, ret, qual, h, side
+                    artifacts.panel, tp_df, sl_df, lbl, ret, qual, h, side, cfg=cfg
                 )
                 layer2_cache[key2] = (lbl, ret, qual)
                 tprint(f"[eval:{cfg_id}] label_cache miss h={h} side={side}")

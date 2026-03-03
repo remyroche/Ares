@@ -105,8 +105,6 @@ def load_base_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
         if m:
             bucket = m.group(1)
             _h = int(m.group(2))
-            if _h not in (2, 4):
-                continue
             col_name = f"base_H{_h}"
         else:
             # Fallback: treat entire name as bucket
@@ -200,8 +198,6 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
             m = _h_pat.match(name)
             if m:
                 _h = int(m.group(2))
-                if _h not in (2, 4):
-                    continue
                 bucket = m.group(1)
                 col_name = f"reg_H{_h}"
             else:

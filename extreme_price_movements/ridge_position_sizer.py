@@ -50,6 +50,7 @@ from extreme_price_movements.utils import tprint
 from extreme_price_movements.path_utils import resolve_reports_dir, resolve_data_root
 from extreme_price_movements.tpsl_optimiser.metrics_utils import compute_comprehensive_metrics
 from extreme_price_movements.label_policy_optimizer import optimize_label_policy
+from extreme_price_movements.elasticnet_feature_selection import run_fold_safe_feature_pruning_and_elasticnet
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1796,6 +1797,8 @@ class RidgePositionSizer:
         self.oof_policy_pred_: Optional[np.ndarray] = None
         self.oof_limit_offset_pred_: Optional[np.ndarray] = None
         self.limit_offset_diag_: Optional[Dict[str, Any]] = None
+        self.feature_selection_diag_: Optional[Dict[str, Any]] = None
+        self.offset_feature_selection_diag_: Optional[Dict[str, Any]] = None
         self.is_fitted_: bool = False
         
     def _compute_sample_weights(
@@ -2421,8 +2424,30 @@ class RidgePositionSizer:
                f"gamma={self.best_params_['gamma']:.3f}, "
                f"J_zscore={self.best_params_['J_zscore']:.4f}")
         
+        # Fold-safe feature pruning + ElasticNet tuning before final Ridge training.
+        base_feature_names = list(self.model_names_ or [])
+        fs_diag = run_fold_safe_feature_pruning_and_elasticnet(
+            X=X,
+            y=y,
+            feature_names=base_feature_names,
+            timestamps=timestamps,
+            outer_splits=4,
+            inner_splits=4,
+            top_q=max(0.05, min(0.30, float(self.select_topq))),
+            max_samples=5000,
+            random_state=int(self.random_state),
+        )
+        selected_features = [f for f in fs_diag.get("selected_features", []) if f in base_feature_names]
+        if not selected_features:
+            selected_features = base_feature_names
+        selected_idx = np.asarray([base_feature_names.index(f) for f in selected_features], dtype=np.int32)
+        X = np.asarray(X[:, selected_idx], dtype=np.float32, order='C')
+        self.model_names_ = selected_features
+        self.feature_selection_diag_ = fs_diag
+        tprint(f"  Feature selection (sizer): kept {len(selected_features)}/{len(base_feature_names)} features")
+
         # Train EV replacement model: StandardScaler + Ridge on policy-aware labels
-        alpha_final = float(self.best_params_['alpha'])
+        alpha_final = float(fs_diag.get('alpha', self.best_params_['alpha']))
         self.ridge_pipeline_ = Pipeline([
             ("scaler", StandardScaler()),
             ("ridge", Ridge(alpha=alpha_final, fit_intercept=True, random_state=self.random_state)),
@@ -2485,29 +2510,53 @@ class RidgePositionSizer:
 
         if k_col is not None:
             # Leakage guard: offset model can use sizer OOF predictions only.
-            offset_X = np.asarray(X, dtype=float)
+            offset_X = np.asarray(X, dtype=np.float32)
             if self.oof_policy_pred_ is not None and len(self.oof_policy_pred_) == len(offset_X):
-                offset_X = np.column_stack([offset_X, np.asarray(self.oof_policy_pred_, dtype=float)])
-                self.limit_offset_features_ = list(self.model_names_) + ["sizer_score_oof"]
+                offset_X = np.column_stack([offset_X, np.asarray(self.oof_policy_pred_, dtype=np.float32)])
+                offset_feature_names = list(self.model_names_) + ["sizer_score_oof"]
             else:
-                self.limit_offset_features_ = list(self.model_names_)
+                offset_feature_names = list(self.model_names_)
 
+            # Independent fold-safe feature selection for offset optimization.
+            ofs_diag = run_fold_safe_feature_pruning_and_elasticnet(
+                X=offset_X,
+                y=k_target,
+                feature_names=offset_feature_names,
+                timestamps=timestamps,
+                outer_splits=4,
+                inner_splits=4,
+                top_q=max(0.05, min(0.30, float(self.select_topq))),
+                max_samples=5000,
+                random_state=int(self.random_state),
+            )
+            offset_selected = [f for f in ofs_diag.get("selected_features", []) if f in offset_feature_names]
+            if not offset_selected:
+                offset_selected = offset_feature_names
+            offset_idx = np.asarray([offset_feature_names.index(f) for f in offset_selected], dtype=np.int32)
+            offset_X = np.asarray(offset_X[:, offset_idx], dtype=np.float32, order='C')
+            self.limit_offset_features_ = offset_selected
+            self.offset_feature_selection_diag_ = ofs_diag
+            tprint(f"  Feature selection (offset): kept {len(offset_selected)}/{len(offset_feature_names)} features")
+
+            alpha_offset = float(ofs_diag.get('alpha', alpha_final))
             self.limit_offset_pipeline_ = Pipeline([
                 ("scaler", StandardScaler()),
-                ("ridge", Ridge(alpha=alpha_final, fit_intercept=True, random_state=self.random_state)),
+                ("ridge", Ridge(alpha=alpha_offset, fit_intercept=True, random_state=self.random_state)),
             ])
             self.limit_offset_pipeline_.fit(offset_X, k_target)
             oof_k = np.full(len(k_target), np.nan)
             for train_idx, val_idx in pkf.split(*split_args):
                 if self.oof_policy_pred_ is not None and len(self.oof_policy_pred_) == len(X):
-                    x_tr = np.column_stack([X[train_idx], self.oof_policy_pred_[train_idx]])
-                    x_va = np.column_stack([X[val_idx], self.oof_policy_pred_[val_idx]])
+                    x_tr_full = np.column_stack([X[train_idx], self.oof_policy_pred_[train_idx]])
+                    x_va_full = np.column_stack([X[val_idx], self.oof_policy_pred_[val_idx]])
                 else:
-                    x_tr = X[train_idx]
-                    x_va = X[val_idx]
+                    x_tr_full = X[train_idx]
+                    x_va_full = X[val_idx]
+                x_tr = x_tr_full[:, offset_idx]
+                x_va = x_va_full[:, offset_idx]
                 mdl = Pipeline([
                     ("scaler", StandardScaler()),
-                    ("ridge", Ridge(alpha=alpha_final, fit_intercept=True, random_state=self.random_state)),
+                    ("ridge", Ridge(alpha=alpha_offset, fit_intercept=True, random_state=self.random_state)),
                 ])
                 mdl.fit(x_tr, k_target[train_idx])
                 oof_k[val_idx] = np.clip(mdl.predict(x_va), 0.0, 5.0)
@@ -2536,7 +2585,7 @@ class RidgePositionSizer:
         self.is_fitted_ = True
 
         # Store OOF inputs for downstream diagnostics / preds_metrics_computations
-        self.oof_preds_ = oof_preds.copy() if isinstance(oof_preds, pd.DataFrame) else pd.DataFrame(X, columns=self.model_names_)
+        self.oof_preds_ = oof_preds[self.model_names_].copy() if isinstance(oof_preds, pd.DataFrame) else pd.DataFrame(X, columns=self.model_names_)
         self.oof_targets_ = y.copy()
         self.oof_timestamps_ = np.asarray(timestamps).copy() if timestamps is not None else None
         self.oof_symbols_ = np.asarray(symbols).copy() if symbols is not None else None
@@ -2691,6 +2740,8 @@ class RidgePositionSizer:
             'limit_offset_scaler_mean': self.limit_offset_pipeline_.named_steps['scaler'].mean_.tolist() if self.limit_offset_pipeline_ is not None else None,
             'limit_offset_scaler_scale': self.limit_offset_pipeline_.named_steps['scaler'].scale_.tolist() if self.limit_offset_pipeline_ is not None else None,
             'limit_offset_diag': self.limit_offset_diag_,
+            'feature_selection_diag': self.feature_selection_diag_,
+            'offset_feature_selection_diag': self.offset_feature_selection_diag_,
         }
         
         path = Path(path)
@@ -2769,6 +2820,8 @@ class RidgePositionSizer:
             instance.limit_offset_pipeline_ = lp
             instance.limit_offset_features_ = save_dict.get('limit_offset_features')
         instance.limit_offset_diag_ = save_dict.get('limit_offset_diag')
+        instance.feature_selection_diag_ = save_dict.get('feature_selection_diag')
+        instance.offset_feature_selection_diag_ = save_dict.get('offset_feature_selection_diag')
         
         tprint(f"RidgePositionSizer loaded from {path}")
         

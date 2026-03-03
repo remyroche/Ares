@@ -183,7 +183,7 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
     # Patterns: long_mr_H2 -> (long_mr, reg_H2), long_mr_clf -> (long_mr, clf),
     #           long_mr_utility -> (long_mr, utility), etc.
     _h_pat = re.compile(r'^(.+)_H(\d+)$')
-    _aux_heads = {'utility', 'mae_q70', 'mfe'}
+    _aux_heads = {'utility', 'mae_q70', 'mfe', 'early_inval'}
     buckets = {}
     for name, df in raw_dfs.items():
         if name.endswith("_clf"):
@@ -272,7 +272,11 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
                                     combined[col] = combined['index'].map(base_by_idx[col])
                             tprint(f"  Merged base OOF {base_cols} into {bucket} (base: {base_bucket})")
                     break
-    
+
+        base_feature_cols = [c for c in combined.columns if c.startswith('base_')]
+        if not base_feature_cols:
+            tprint(f"  WARNING: {bucket} has no base model OOF features merged; ridge combiner will run meta-only for this bucket")
+
     tprint(f"Loaded OOF predictions for {len(result)} buckets: {list(result.keys())}")
 
     # These are metadata columns to exclude from features

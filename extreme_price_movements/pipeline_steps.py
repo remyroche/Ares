@@ -30,8 +30,6 @@ from extreme_price_movements.telemetry.tprint_hooks import emit_bucket_summary, 
 from extreme_price_movements.ridge_position_sizer import (
     RidgePositionSizer,
     run_ridge_position_sizer_step,
-    load_meta_oof_predictions,
-    load_trade_outcomes_from_oof,
 )
 from extreme_price_movements.offline_optimisers.params_store import apply_offline_optimizer_best_params
 from extreme_price_movements.reports.bucket_report import (

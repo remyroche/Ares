@@ -28,6 +28,7 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
 from scipy.stats import rankdata, spearmanr
+from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.linear_model import Ridge
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -1797,6 +1798,8 @@ class RidgePositionSizer:
         self.oof_policy_pred_: Optional[np.ndarray] = None
         self.oof_limit_offset_pred_: Optional[np.ndarray] = None
         self.limit_offset_diag_: Optional[Dict[str, Any]] = None
+        self.policy_model_bundle_: Optional[Dict[str, Any]] = None
+        self.limit_offset_model_bundle_: Optional[Dict[str, Any]] = None
         self.feature_selection_diag_: Optional[Dict[str, Any]] = None
         self.offset_feature_selection_diag_: Optional[Dict[str, Any]] = None
         self.is_fitted_: bool = False
@@ -2423,8 +2426,9 @@ class RidgePositionSizer:
                f"delta={self.best_params_['delta']:.3f}, "
                f"gamma={self.best_params_['gamma']:.3f}, "
                f"J_zscore={self.best_params_['J_zscore']:.4f}")
+        sample_weight = self._compute_sample_weights(y, float(self.best_params_.get('gamma', 1.0)))
         
-        # Fold-safe feature pruning + ElasticNet tuning before final Ridge training.
+        # Fold-safe feature pruning + ElasticNet tuning before model-race training.
         base_feature_names = list(self.model_names_ or [])
         fs_diag = run_fold_safe_feature_pruning_and_elasticnet(
             X=X,
@@ -2446,15 +2450,6 @@ class RidgePositionSizer:
         self.feature_selection_diag_ = fs_diag
         tprint(f"  Feature selection (sizer): kept {len(selected_features)}/{len(base_feature_names)} features")
 
-        # Train EV replacement model: StandardScaler + Ridge on policy-aware labels
-        alpha_final = float(fs_diag.get('alpha', self.best_params_['alpha']))
-        self.ridge_pipeline_ = Pipeline([
-            ("scaler", StandardScaler()),
-            ("ridge", Ridge(alpha=alpha_final, fit_intercept=True, random_state=self.random_state)),
-        ])
-        self.ridge_pipeline_.fit(X, y)
-
-        # Fold-safe OOF predictions for ridge utility model with train-fold winsorization
         from extreme_price_movements.purged_cv import PurgedKFold
         if timestamps is not None:
             pkf = PurgedKFold(n_splits=3, purge=43200, embargo=43200, times=timestamps)
@@ -2463,125 +2458,473 @@ class RidgePositionSizer:
         split_args = [X]
         if groups is not None:
             split_args.append(groups)
-        oof_policy_pred = np.full(len(y), np.nan)
-        for train_idx, val_idx in pkf.split(*split_args):
-            y_train = y[train_idx]
-            q_lo = float(np.quantile(y_train, self.winsor_q_low))
-            q_hi = float(np.quantile(y_train, self.winsor_q_high))
-            y_train_w = np.clip(y_train, q_lo, q_hi)
-            ridge_fold = Pipeline([
-                ("scaler", StandardScaler()),
-                ("ridge", Ridge(alpha=alpha_final, fit_intercept=True, random_state=self.random_state)),
-            ])
-            ridge_fold.fit(X[train_idx], y_train_w)
-            oof_policy_pred[val_idx] = ridge_fold.predict(X[val_idx])
-        self.oof_policy_pred_ = oof_policy_pred
+        cv_splits = list(pkf.split(*split_args))
 
-        ridge_est = self.ridge_pipeline_.named_steps["ridge"]
-        self.weights_ = np.asarray(ridge_est.coef_, dtype=float)
+        race_cfg = {}
+        if hasattr(trade_outcomes, "attrs") and isinstance(trade_outcomes.attrs, dict):
+            race_cfg = trade_outcomes.attrs.get("sizer_race_cfg", {}) or {}
+
+        squash_fn = str((race_cfg or {}).get("sizer_race_squash_fn", "tanh")).lower()
+        squash_k = float((race_cfg or {}).get("sizer_race_squash_k", 1.0))
+        use_isotonic = bool((race_cfg or {}).get("sizer_race_use_isotonic", False))
+        smoother_kinds = list((race_cfg or {}).get("sizer_race_smoothers", ["ridge", "huber"]))
+        if not smoother_kinds:
+            smoother_kinds = ["ridge", "huber"]
+        top_frac = float((race_cfg or {}).get("sizer_race_top_frac", 0.30))
+        top_frac = min(max(top_frac, 0.01), 0.95)
+        top30_boost = float((race_cfg or {}).get("sizer_race_top30_boost", 2.0))
+        use_two_pass = bool((race_cfg or {}).get("sizer_race_use_two_pass", False))
+        require_sortino_top = bool((race_cfg or {}).get("sizer_race_require_sortino_top", False))
+        pnl_top_floor = float((race_cfg or {}).get("sizer_race_min_pnl_top", 0.0))
+
+        def _extract_aux_vec(df: pd.DataFrame, names: list[str], default: float = 0.0) -> np.ndarray:
+            for n in names:
+                if n in df.columns:
+                    v = np.asarray(df[n].values[:len(y)], dtype=float)
+                    return np.where(np.isfinite(v), v, default)
+            return np.full(len(y), default, dtype=float)
+
+        p_early_vec = _extract_aux_vec(oof_preds, ["early_inval", "oof_p_early_inval", "pred_early_inval"], default=0.0)
+        mae_vec = _extract_aux_vec(oof_preds, ["mae_q70", "oof_log_mae_q70_hat", "mae_ret"], default=0.0)
+        mfe_vec = _extract_aux_vec(oof_preds, ["mfe", "oof_log_mfe_hat", "mfe_ret"], default=0.0)
+        if "oof_log_mae_q70_hat" in oof_preds.columns and "mae_q70" not in oof_preds.columns:
+            mae_vec = np.expm1(np.clip(mae_vec, -20.0, 20.0))
+        if "oof_log_mfe_hat" in oof_preds.columns and "mfe" not in oof_preds.columns:
+            mfe_vec = np.expm1(np.clip(mfe_vec, -20.0, 20.0))
+        mae_vec = np.maximum(mae_vec, 0.0)
+        mfe_vec = np.maximum(mfe_vec, 0.0)
+
+        def _phase1_weights(
+            w_base: np.ndarray,
+            p_early: np.ndarray,
+            mae_q70: np.ndarray,
+            mfe: np.ndarray | None = None,
+            fold_train_idx: np.ndarray | None = None,
+        ) -> np.ndarray:
+            gamma_g = float((race_cfg or {}).get("sizer_phase1_gamma_g", 2.0))
+            eps_gate = float((race_cfg or {}).get("sizer_phase1_eps_gate", 0.05))
+            c_mae = float((race_cfg or {}).get("sizer_phase1_c_mae", 1.0))
+            mfe_lambda = float((race_cfg or {}).get("sizer_phase1_mfe_lambda", 0.25))
+            mfe_tau = float((race_cfg or {}).get("sizer_phase1_mfe_tau", 1.0))
+            w_min = float((race_cfg or {}).get("sizer_phase1_w_min", 0.1))
+            w_max = float((race_cfg or {}).get("sizer_phase1_w_max", 10.0))
+
+            w = np.asarray(w_base, dtype=float).copy()
+            p = np.clip(np.asarray(p_early, dtype=float), 0.0, 1.0)
+            gate = np.maximum(eps_gate, 1.0 - p) ** gamma_g
+
+            idx = np.arange(len(w)) if fold_train_idx is None else np.asarray(fold_train_idx, dtype=int)
+            idx = idx[(idx >= 0) & (idx < len(w))]
+            if len(idx) == 0:
+                idx = np.arange(len(w))
+
+            mae_train = np.asarray(mae_q70, dtype=float)[idx]
+            mae_train = mae_train[np.isfinite(mae_train)]
+            mae_med = float(np.median(mae_train)) if len(mae_train) else 1.0
+            mae_med = max(mae_med, 1e-12)
+            mae_n = np.clip(np.asarray(mae_q70, dtype=float) / mae_med, 0.0, 50.0)
+            risk = 1.0 / (1.0 + c_mae * mae_n)
+
+            opp = 1.0
+            if mfe is not None:
+                mfe_train = np.asarray(mfe, dtype=float)[idx]
+                mfe_train = mfe_train[np.isfinite(mfe_train)]
+                mfe_med = float(np.median(mfe_train)) if len(mfe_train) else 1.0
+                mfe_med = max(mfe_med, 1e-12)
+                mfe_n = np.clip(np.asarray(mfe, dtype=float) / mfe_med, 0.0, 50.0)
+                opp = 1.0 + mfe_lambda * np.tanh((mfe_n - 1.0) / max(mfe_tau, 1e-6))
+
+            w1 = w * gate * risk * opp
+            w1 = np.clip(np.where(np.isfinite(w1), w1, w), w_min, w_max)
+            w1 *= (np.mean(w) / (np.mean(w1) + 1e-12))
+            return w1
+
+        def _top_mask_from_score(score: np.ndarray, top_frac_local: float, order_index: np.ndarray) -> np.ndarray:
+            n = len(score)
+            k = max(1, int(np.ceil(float(top_frac_local) * max(n, 1))))
+            # stable deterministic ranking: score desc, then original index asc
+            ord_idx = np.lexsort((np.asarray(order_index, dtype=np.int64), -np.asarray(score, dtype=float)))
+            keep = np.zeros(n, dtype=bool)
+            keep[ord_idx[:k]] = True
+            return keep
+
+        def _apply_squash(v):
+            vv = np.asarray(v, dtype=float)
+            if squash_fn == "sigmoid":
+                return np.clip(1.0 / (1.0 + np.exp(-squash_k * vv)), 0.0, 1.0)
+            return np.clip(np.tanh(squash_k * vv), -1.0, 1.0)
+
+        def _daily_metrics(y_part, size_part, ts_part):
+            pnl = np.asarray(y_part, dtype=float) * np.asarray(size_part, dtype=float)
+            if ts_part is None:
+                daily = pnl
+            else:
+                d = pd.DataFrame({"ts": pd.to_datetime(ts_part), "pnl": pnl})
+                d["day"] = d["ts"].dt.floor("D")
+                daily = d.groupby("day", sort=True)["pnl"].sum().values
+            if len(daily) == 0:
+                return {"pnl_per_day": -1e9, "sortino": -1e9, "ulcer": 1e9, "tuw": 1.0}
+            eq = np.cumsum(daily) + 1.0
+            peak = np.maximum.accumulate(eq)
+            dd = (eq - peak) / np.maximum(peak, 1e-12)
+            downside = daily[daily < 0]
+            downside_dev = float(np.sqrt(np.mean(downside * downside)) + 1e-12) if len(downside) else 1e-12
+            sortino = float(np.mean(daily) / downside_dev)
+            ulcer = float(np.sqrt(np.mean((dd * 100.0) ** 2)))
+            tuw = float(np.mean(eq < peak))
+            return {
+                "pnl_per_day": float(np.mean(daily)),
+                "sortino": sortino,
+                "ulcer": ulcer,
+                "tuw": tuw,
+            }
+
+        def _fit_base(name, X_tr, y_tr, X_va, y_va, w_tr):
+            name = str(name)
+            if name == "ridge":
+                base = Pipeline([
+                    ("scaler", StandardScaler(with_mean=True, with_std=True)),
+                    ("model", Ridge(alpha=float((race_cfg or {}).get("race_alpha_ridge", 1.0)), fit_intercept=True, random_state=42)),
+                ])
+                base.fit(X_tr, y_tr, model__sample_weight=w_tr)
+                return base
+            if name == "et":
+                base = ExtraTreesRegressor(
+                    n_estimators=800, random_state=42, n_jobs=3, max_depth=5,
+                    min_samples_leaf=80, min_samples_split=200, max_features="sqrt",
+                    max_leaf_nodes=256, bootstrap=True, max_samples=0.7,
+                    criterion="squared_error",
+                )
+                base.fit(X_tr, y_tr, sample_weight=w_tr)
+                return base
+            if name == "lgbm":
+                try:
+                    from lightgbm import LGBMRegressor
+                except Exception:
+                    return None
+                base = LGBMRegressor(
+                    objective="huber", boosting_type="gbdt", random_state=42, n_jobs=3,
+                    learning_rate=0.03, n_estimators=3000, max_depth=5, num_leaves=24,
+                    min_data_in_leaf=300, min_sum_hessian_in_leaf=5.0, feature_fraction=0.5,
+                    bagging_fraction=0.6, bagging_freq=1, lambda_l1=5.0, lambda_l2=20.0,
+                    min_gain_to_split=0.5, max_bin=128,
+                )
+                base.fit(
+                    X_tr, y_tr, sample_weight=w_tr,
+                    eval_set=[(X_va, y_va)], eval_metric="l2",
+                    callbacks=[__import__("lightgbm").early_stopping(200, verbose=False)],
+                )
+                return base
+            return None
+
+        def _build_smoother(kind):
+            if str(kind) == "huber":
+                from sklearn.linear_model import HuberRegressor
+                return Pipeline([
+                    ("scaler", StandardScaler()),
+                    ("model", HuberRegressor(epsilon=1.35, alpha=float((race_cfg or {}).get("sizer_race_smoother_alpha", 1.0)), fit_intercept=True, max_iter=2000)),
+                ])
+            return Pipeline([
+                ("scaler", StandardScaler()),
+                ("model", Ridge(alpha=float((race_cfg or {}).get("sizer_race_smoother_alpha", 1.0)), fit_intercept=True, random_state=42)),
+            ])
+
+        def _run_policy_candidate(base_name, smoother_name):
+            oof_size = np.full(len(y), np.nan)
+            fold_rows = []
+            for tr_idx, va_idx in cv_splits:
+                X_tr, y_tr = X[tr_idx], y[tr_idx]
+                X_va, y_va = X[va_idx], y[va_idx]
+                w_full = _phase1_weights(sample_weight, p_early_vec, mae_vec, mfe_vec, fold_train_idx=tr_idx)
+                w_tr = w_full[tr_idx] if w_full is not None else None
+                base = _fit_base(base_name, X_tr, y_tr, X_va, y_va, w_tr)
+                if base is None:
+                    return None
+                p_tr = np.asarray(base.predict(X_tr), dtype=float)
+                if use_two_pass and top30_boost > 0.0:
+                    top_tr = _top_mask_from_score(p_tr, top_frac, tr_idx)
+                    w_tr2 = np.asarray(w_tr, dtype=float) * (1.0 + top30_boost * top_tr.astype(float))
+                    w_tr2 = np.clip(w_tr2, 0.1, 100.0)
+                    base = _fit_base(base_name, X_tr, y_tr, X_va, y_va, w_tr2)
+                    if base is None:
+                        return None
+                    p_tr = np.asarray(base.predict(X_tr), dtype=float)
+                p_va = np.asarray(base.predict(X_va), dtype=float)
+                smoother = _build_smoother(smoother_name)
+                try:
+                    smoother.fit(p_tr.reshape(-1, 1), y_tr, model__sample_weight=w_tr)
+                except TypeError:
+                    smoother.fit(p_tr.reshape(-1, 1), y_tr)
+                s_tr = np.asarray(smoother.predict(p_tr.reshape(-1, 1)), dtype=float)
+                s_va = np.asarray(smoother.predict(p_va.reshape(-1, 1)), dtype=float)
+                if use_isotonic:
+                    try:
+                        from sklearn.isotonic import IsotonicRegression
+                        iso = IsotonicRegression(out_of_bounds="clip")
+                        iso.fit(s_tr, y_tr)
+                        s_va = iso.predict(s_va)
+                    except Exception:
+                        pass
+
+                size_va = _apply_squash(s_va)
+                top_mask = _top_mask_from_score(s_va, top_frac, va_idx)
+                size_va_top = np.where(top_mask, size_va, 0.0)
+                oof_size[va_idx] = size_va
+
+                ts_va = timestamps[va_idx] if timestamps is not None else None
+                m_all = _daily_metrics(y_gross[va_idx], size_va, ts_va)
+                m_top = _daily_metrics(y_gross[va_idx], size_va_top, ts_va)
+                fold_rows.append({
+                    "pnl_per_day_all": float(m_all["pnl_per_day"]),
+                    "sortino_all": float(m_all["sortino"]),
+                    "ulcer_all": float(m_all["ulcer"]),
+                    "tuw_all": float(m_all["tuw"]),
+                    "pnl_per_day_top": float(m_top["pnl_per_day"]),
+                    "sortino_top": float(m_top["sortino"]),
+                    "ulcer_top": float(m_top["ulcer"]),
+                    "tuw_top": float(m_top["tuw"]),
+                    "pnl_lift": float(m_top["pnl_per_day"] - m_all["pnl_per_day"]),
+                    "n_top": int(np.sum(top_mask)),
+                })
+
+            if not fold_rows:
+                return None
+            agg = {
+                "mu_pnl_all": float(np.mean([r["pnl_per_day_all"] for r in fold_rows])),
+                "mu_sortino_all": float(np.mean([r["sortino_all"] for r in fold_rows])),
+                "mu_ulcer_all": float(np.mean([r["ulcer_all"] for r in fold_rows])),
+                "mu_tuw_all": float(np.mean([r["tuw_all"] for r in fold_rows])),
+                "sigma_pnl_all": float(np.std([r["pnl_per_day_all"] for r in fold_rows])),
+                "mu_pnl_top": float(np.mean([r["pnl_per_day_top"] for r in fold_rows])),
+                "mu_sortino_top": float(np.mean([r["sortino_top"] for r in fold_rows])),
+                "mu_ulcer_top": float(np.mean([r["ulcer_top"] for r in fold_rows])),
+                "mu_tuw_top": float(np.mean([r["tuw_top"] for r in fold_rows])),
+                "sigma_pnl_top": float(np.std([r["pnl_per_day_top"] for r in fold_rows])),
+                "mu_pnl_lift": float(np.mean([r["pnl_lift"] for r in fold_rows])),
+            }
+            agg["stab_pen_top"] = float(agg["sigma_pnl_top"] / (abs(agg["mu_pnl_top"]) + 1e-12))
+            agg["stab_pen_all"] = float(agg["sigma_pnl_all"] / (abs(agg["mu_pnl_all"]) + 1e-12))
+            agg["passed_top_gate"] = bool(agg["mu_pnl_top"] > pnl_top_floor and ((agg["mu_sortino_top"] > 0.0) if require_sortino_top else True))
+            return {"oof_size": oof_size, "fold_metrics": fold_rows, "agg": agg}
+
+        race_results = {}
+        for base_name in ["ridge", "et", "lgbm"]:
+            for sm_name in smoother_kinds:
+                key = f"{base_name}+{sm_name}"
+                out = _run_policy_candidate(base_name, sm_name)
+                if out is not None:
+                    race_results[key] = out
+
+        if not race_results:
+            raise RuntimeError("Sizer model race produced no valid candidates")
+
+        cand_all = list(race_results.keys())
+        gated = [k for k in cand_all if bool(race_results[k]["agg"].get("passed_top_gate", False))]
+        cand = gated if gated else cand_all
+
+        def _z(arr: np.ndarray) -> np.ndarray:
+            arr = np.asarray(arr, dtype=float)
+            return (arr - np.mean(arr)) / (np.std(arr) + 1e-12)
+
+        mu_pnl_top = np.asarray([race_results[k]["agg"]["mu_pnl_top"] for k in cand], dtype=float)
+        mu_sort_top = np.asarray([race_results[k]["agg"]["mu_sortino_top"] for k in cand], dtype=float)
+        mu_ulc_top = np.asarray([race_results[k]["agg"]["mu_ulcer_top"] for k in cand], dtype=float)
+        mu_tuw_top = np.asarray([race_results[k]["agg"]["mu_tuw_top"] for k in cand], dtype=float)
+        mu_pnl_all = np.asarray([race_results[k]["agg"]["mu_pnl_all"] for k in cand], dtype=float)
+        mu_sort_all = np.asarray([race_results[k]["agg"]["mu_sortino_all"] for k in cand], dtype=float)
+        mu_ulc_all = np.asarray([race_results[k]["agg"]["mu_ulcer_all"] for k in cand], dtype=float)
+        mu_tuw_all = np.asarray([race_results[k]["agg"]["mu_tuw_all"] for k in cand], dtype=float)
+        stab_top = np.asarray([race_results[k]["agg"]["stab_pen_top"] for k in cand], dtype=float)
+        stab_all = np.asarray([race_results[k]["agg"]["stab_pen_all"] for k in cand], dtype=float)
+
+        scores = (
+            1.5 * _z(mu_pnl_top)
+            + 1.00 * _z(mu_sort_top)
+            - 0.50 * _z(mu_ulc_top)
+            - 0.50 * _z(mu_tuw_top)
+            + 0.35 * _z(mu_pnl_all)
+            + 0.25 * _z(mu_sort_all)
+            - 0.15 * _z(mu_ulc_all)
+            - 0.15 * _z(mu_tuw_all)
+            - 0.40 * stab_top
+            - 0.20 * stab_all
+        )
+
+        score_rows = []
+        for k in cand_all:
+            race_results[k]["agg"]["composite_score"] = float("-inf")
+        for i, k in enumerate(cand):
+            race_results[k]["agg"]["composite_score"] = float(scores[i])
+
+        for k in cand_all:
+            row = {"candidate": k, **race_results[k]["agg"]}
+            _fm = race_results[k].get("fold_metrics", [])
+            row["fold_pnl_all"] = [float(r["pnl_per_day_all"]) for r in _fm]
+            row["fold_pnl_top"] = [float(r["pnl_per_day_top"]) for r in _fm]
+            row["fold_sortino_all"] = [float(r["sortino_all"]) for r in _fm]
+            row["fold_sortino_top"] = [float(r["sortino_top"]) for r in _fm]
+            score_rows.append(row)
+        self.cv_results_ = pd.DataFrame(score_rows)
+
+        # Tie-breakers: higher pnl_top, higher sortino_top, lower ulcer_top, lower tuw_top
+        ranked = sorted(
+            cand,
+            key=lambda k: (
+                float(race_results[k]["agg"]["composite_score"]),
+                float(race_results[k]["agg"]["mu_pnl_top"]),
+                float(race_results[k]["agg"]["mu_sortino_top"]),
+                -float(race_results[k]["agg"]["mu_ulcer_top"]),
+                -float(race_results[k]["agg"]["mu_tuw_top"]),
+            ),
+            reverse=True,
+        )
+        winner_name = ranked[0]
+        base_winner, smoother_winner = winner_name.split("+")
+        tprint(f"  Sizer model race winner: {winner_name} score={race_results[winner_name]['agg']['composite_score']:.4f}")
+        self.best_params_["race_winner"] = winner_name
+        # Fit winner on full data for inference bundle
+        base_final = _fit_base(base_winner, X, y, X, y, sample_weight)
+        pred_full = np.asarray(base_final.predict(X), dtype=float)
+        smoother_final = _build_smoother(smoother_winner)
+        try:
+            smoother_final.fit(pred_full.reshape(-1, 1), y, model__sample_weight=sample_weight)
+        except TypeError:
+            smoother_final.fit(pred_full.reshape(-1, 1), y)
+        iso_final = None
+        if use_isotonic:
+            try:
+                from sklearn.isotonic import IsotonicRegression
+                s_full = np.asarray(smoother_final.predict(pred_full.reshape(-1, 1)), dtype=float)
+                iso_final = IsotonicRegression(out_of_bounds="clip")
+                iso_final.fit(s_full, y)
+            except Exception:
+                iso_final = None
+
+        self.policy_model_bundle_ = {
+            "base_name": base_winner,
+            "smoother_name": smoother_winner,
+            "base_model": base_final,
+            "smoother_model": smoother_final,
+            "isotonic_model": iso_final,
+            "squash_fn": squash_fn,
+            "squash_k": squash_k,
+            "use_isotonic": bool(iso_final is not None),
+            "race_results": {k: v["agg"] for k, v in race_results.items()},
+        }
+        self.oof_policy_pred_ = np.asarray(race_results[winner_name]["oof_size"], dtype=float)
+        self.ridge_pipeline_ = None
+
+        # proxy "weights" output for compatibility
+        self.weights_ = np.zeros(len(self.model_names_), dtype=float)
+        if base_winner == "ridge" and hasattr(base_final, "named_steps"):
+            try:
+                self.weights_ = np.asarray(base_final.named_steps["model"].coef_, dtype=float)
+            except Exception:
+                pass
+        elif hasattr(base_final, "feature_importances_"):
+            imp = np.asarray(base_final.feature_importances_, dtype=float)
+            s_imp = float(np.sum(np.abs(imp))) + 1e-12
+            self.weights_ = imp / s_imp
         self.scaler_ = None
 
-        # Optional second ridge model for passive limit offset target (ticks 0..5)
+        # Limit-offset model race (same folds/features/weights, no squash)
         k_col = None
         for candidate_col in ("k_star", "optimal_offset_ticks", "limit_offset_k", "target_offset_ticks"):
             if candidate_col in trade_outcomes.columns:
                 k_col = candidate_col
                 break
         self.oof_limit_offset_pred_ = None
+        self.limit_offset_pipeline_ = None
         if k_col is not None:
             k_target = np.clip(np.nan_to_num(trade_outcomes[k_col].values[:n], nan=0.0), 0.0, 5.0)
         else:
             k_built = compute_optimal_limit_offset_labels(
-                trade_outcomes.iloc[:n],
-                tick_size=0.1,
-                k_max=5,
-                entry_fill_horizon_bars=4,
-                max_hold_bars=48,
-                tp_pct=0.005,
-                sl_pct=0.0025,
-                trailing_pct=0.0,
-                cost_pct=self.cost_pct,
-                eta=0.0,
-                tie_break_smallest_k=True,
+                trade_outcomes.iloc[:n], tick_size=0.1, k_max=5, entry_fill_horizon_bars=4,
+                max_hold_bars=48, tp_pct=0.005, sl_pct=0.0025, trailing_pct=0.0,
+                cost_pct=self.cost_pct, eta=0.0, tie_break_smallest_k=True,
             )
             if k_built is not None:
                 k_col = "k_star_built_from_policy"
                 k_target = np.clip(np.nan_to_num(k_built, nan=0.0), 0.0, 5.0)
 
         if k_col is not None:
-            # Leakage guard: offset model can use sizer OOF predictions only.
             offset_X = np.asarray(X, dtype=np.float32)
             if self.oof_policy_pred_ is not None and len(self.oof_policy_pred_) == len(offset_X):
                 offset_X = np.column_stack([offset_X, np.asarray(self.oof_policy_pred_, dtype=np.float32)])
                 offset_feature_names = list(self.model_names_) + ["sizer_score_oof"]
             else:
                 offset_feature_names = list(self.model_names_)
+            self.limit_offset_features_ = offset_feature_names
 
-            # Independent fold-safe feature selection for offset optimization.
-            ofs_diag = run_fold_safe_feature_pruning_and_elasticnet(
-                X=offset_X,
-                y=k_target,
-                feature_names=offset_feature_names,
-                timestamps=timestamps,
-                outer_splits=4,
-                inner_splits=4,
-                top_q=max(0.05, min(0.30, float(self.select_topq))),
-                max_samples=5000,
-                random_state=int(self.random_state),
-            )
-            offset_selected = [f for f in ofs_diag.get("selected_features", []) if f in offset_feature_names]
-            if not offset_selected:
-                offset_selected = offset_feature_names
-            offset_idx = np.asarray([offset_feature_names.index(f) for f in offset_selected], dtype=np.int32)
-            offset_X = np.asarray(offset_X[:, offset_idx], dtype=np.float32, order='C')
-            self.limit_offset_features_ = offset_selected
-            self.offset_feature_selection_diag_ = ofs_diag
-            tprint(f"  Feature selection (offset): kept {len(offset_selected)}/{len(offset_feature_names)} features")
+            def _run_offset_candidate(base_name, smoother_name):
+                oof_k = np.full(len(k_target), np.nan)
+                fold_mae = []
+                for tr_idx, va_idx in cv_splits:
+                    X_tr, y_tr = offset_X[tr_idx], k_target[tr_idx]
+                    X_va, y_va = offset_X[va_idx], k_target[va_idx]
+                    w_full = _phase1_weights(sample_weight, p_early_vec, mae_vec, mfe_vec, fold_train_idx=tr_idx)
+                    w_tr = w_full[tr_idx] if w_full is not None else None
+                    base = _fit_base(base_name, X_tr, y_tr, X_va, y_va, w_tr)
+                    if base is None:
+                        return None
+                    p_tr = np.asarray(base.predict(X_tr), dtype=float)
+                    p_va = np.asarray(base.predict(X_va), dtype=float)
+                    smoother = _build_smoother(smoother_name)
+                    try:
+                        smoother.fit(p_tr.reshape(-1, 1), y_tr, model__sample_weight=w_tr)
+                    except TypeError:
+                        smoother.fit(p_tr.reshape(-1, 1), y_tr)
+                    s_va = np.asarray(smoother.predict(p_va.reshape(-1, 1)), dtype=float)
+                    if use_isotonic:
+                        try:
+                            from sklearn.isotonic import IsotonicRegression
+                            s_tr = np.asarray(smoother.predict(p_tr.reshape(-1, 1)), dtype=float)
+                            iso = IsotonicRegression(out_of_bounds="clip")
+                            iso.fit(s_tr, y_tr)
+                            s_va = iso.predict(s_va)
+                        except Exception:
+                            pass
+                    pred = np.clip(s_va, 0.0, 5.0)
+                    oof_k[va_idx] = pred
+                    fold_mae.append(float(np.mean(np.abs(pred - y_va))))
+                if not fold_mae:
+                    return None
+                return {"oof": oof_k, "mu_mae": float(np.mean(fold_mae)), "sigma_mae": float(np.std(fold_mae))}
 
-            alpha_offset = float(ofs_diag.get('alpha', alpha_final))
-            self.limit_offset_pipeline_ = Pipeline([
-                ("scaler", StandardScaler()),
-                ("ridge", Ridge(alpha=alpha_offset, fit_intercept=True, random_state=self.random_state)),
-            ])
-            self.limit_offset_pipeline_.fit(offset_X, k_target)
-            oof_k = np.full(len(k_target), np.nan)
-            for train_idx, val_idx in pkf.split(*split_args):
-                if self.oof_policy_pred_ is not None and len(self.oof_policy_pred_) == len(X):
-                    x_tr_full = np.column_stack([X[train_idx], self.oof_policy_pred_[train_idx]])
-                    x_va_full = np.column_stack([X[val_idx], self.oof_policy_pred_[val_idx]])
-                else:
-                    x_tr_full = X[train_idx]
-                    x_va_full = X[val_idx]
-                x_tr = x_tr_full[:, offset_idx]
-                x_va = x_va_full[:, offset_idx]
-                mdl = Pipeline([
-                    ("scaler", StandardScaler()),
-                    ("ridge", Ridge(alpha=alpha_offset, fit_intercept=True, random_state=self.random_state)),
-                ])
-                mdl.fit(x_tr, k_target[train_idx])
-                oof_k[val_idx] = np.clip(mdl.predict(x_va), 0.0, 5.0)
-            self.oof_limit_offset_pred_ = oof_k
+            offset_race = {}
+            for b in ["ridge", "et", "lgbm"]:
+                for sm in smoother_kinds:
+                    key = f"{b}+{sm}"
+                    out = _run_offset_candidate(b, sm)
+                    if out is not None:
+                        offset_race[key] = out
+            if offset_race:
+                offset_winner = min(offset_race.keys(), key=lambda k: (offset_race[k]["mu_mae"], offset_race[k]["sigma_mae"]))
+                b_w, s_w = offset_winner.split("+")
+                b_final = _fit_base(b_w, offset_X, k_target, offset_X, k_target, sample_weight)
+                p_full = np.asarray(b_final.predict(offset_X), dtype=float)
+                s_final = _build_smoother(s_w)
+                try:
+                    s_final.fit(p_full.reshape(-1, 1), k_target, model__sample_weight=sample_weight)
+                except TypeError:
+                    s_final.fit(p_full.reshape(-1, 1), k_target)
+                self.limit_offset_model_bundle_ = {
+                    "base_name": b_w,
+                    "smoother_name": s_w,
+                    "base_model": b_final,
+                    "smoother_model": s_final,
+                    "isotonic_model": None,
+                    "race": {k: {"mu_mae": v["mu_mae"], "sigma_mae": v["sigma_mae"]} for k, v in offset_race.items()},
+                    "winner": offset_winner,
+                }
+                self.oof_limit_offset_pred_ = np.clip(offset_race[offset_winner]["oof"], 0.0, 5.0)
+                self.limit_offset_diag_ = {
+                    "winner": offset_winner,
+                    "target_column": k_col,
+                    "race": self.limit_offset_model_bundle_["race"],
+                }
+                tprint(f"  Trained passive limit offset model race winner='{offset_winner}' target='{k_col}'")
 
-            # Degeneracy diagnostics on rounded execution offsets.
-            k_exec = np.clip(np.rint(oof_k), 0, 5).astype(int)
-            counts = np.bincount(k_exec, minlength=6)
-            frac_zero = float(counts[0] / max(counts.sum(), 1))
-            frac_five = float(counts[5] / max(counts.sum(), 1))
-            self.limit_offset_diag_ = {
-                "counts": counts.tolist(),
-                "frac_k0": frac_zero,
-                "frac_k5": frac_five,
-                "is_degenerate": bool((frac_zero >= 0.80) or (frac_five >= 0.80)),
-            }
-            if self.limit_offset_diag_["is_degenerate"]:
-                tprint(
-                    "  WARNING: passive offset prediction degeneracy detected "
-                    f"(k0={frac_zero:.2%}, k5={frac_five:.2%}). "
-                    "Consider tighter winsorization, k_cont target, or soft-argmax label tuning."
-                )
-
-            tprint(f"  Trained passive limit offset Ridge model using target '{k_col}'")
-        
         self.is_fitted_ = True
 
         # Store OOF inputs for downstream diagnostics / preds_metrics_computations
@@ -2614,6 +2957,19 @@ class RidgePositionSizer:
         X = model_preds[self.model_names_].values
         X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
         
+        if self.policy_model_bundle_ is not None:
+            base = self.policy_model_bundle_.get("base_model")
+            smoother = self.policy_model_bundle_.get("smoother_model")
+            iso = self.policy_model_bundle_.get("isotonic_model")
+            squash_fn = str(self.policy_model_bundle_.get("squash_fn", "tanh")).lower()
+            squash_k = float(self.policy_model_bundle_.get("squash_k", 1.0))
+            pred_base = np.asarray(base.predict(X), dtype=float)
+            s = np.asarray(smoother.predict(pred_base.reshape(-1, 1)), dtype=float)
+            if iso is not None:
+                s = np.asarray(iso.predict(s), dtype=float)
+            if squash_fn == "sigmoid":
+                return np.clip(1.0 / (1.0 + np.exp(-squash_k * s)), 0.0, 1.0)
+            return np.clip(np.tanh(squash_k * s), -1.0, 1.0)
         if self.ridge_pipeline_ is not None:
             return self.ridge_pipeline_.predict(X)
         if self.scaler_ is not None and self.weights_ is not None:
@@ -2625,8 +2981,6 @@ class RidgePositionSizer:
 
     def predict_limit_offset_ticks(self, model_preds: pd.DataFrame) -> np.ndarray:
         """Predict passive limit offset in ticks (clamped to [0, 5])."""
-        if self.limit_offset_pipeline_ is None:
-            raise RuntimeError("Limit offset model not trained")
         if self.limit_offset_features_ is None:
             raise RuntimeError("Limit offset features missing")
         if "sizer_score_oof" in self.limit_offset_features_:
@@ -2636,6 +2990,17 @@ class RidgePositionSizer:
             X = np.column_stack([x_base, sizer_score])
         else:
             X = np.nan_to_num(model_preds[self.limit_offset_features_].values, nan=0.0, posinf=0.0, neginf=0.0)
+        if self.limit_offset_model_bundle_ is not None:
+            base = self.limit_offset_model_bundle_.get("base_model")
+            smoother = self.limit_offset_model_bundle_.get("smoother_model")
+            iso = self.limit_offset_model_bundle_.get("isotonic_model")
+            p = np.asarray(base.predict(X), dtype=float)
+            s = np.asarray(smoother.predict(p.reshape(-1, 1)), dtype=float)
+            if iso is not None:
+                s = np.asarray(iso.predict(s), dtype=float)
+            return np.clip(s, 0.0, 5.0)
+        if self.limit_offset_pipeline_ is None:
+            raise RuntimeError("Limit offset model not trained")
         return np.clip(self.limit_offset_pipeline_.predict(X), 0.0, 5.0)
     
     def get_weights(self) -> Dict[str, float]:
@@ -3264,8 +3629,12 @@ def run_ridge_position_sizer_step(
         metrics["weight_diagnostics"] = ridge_diag
 
     # Confirmation diagnostics for utility/offset model families and feature alignment.
-    metrics["utility_policy_model_family"] = "ridge"
-    metrics["offset_model_family"] = "ridge" if sizer.limit_offset_pipeline_ is not None else None
+    _util_bundle = getattr(sizer, "policy_model_bundle_", None) or {}
+    _offset_bundle = getattr(sizer, "limit_offset_model_bundle_", None) or {}
+    metrics["utility_policy_model_family"] = str(_util_bundle.get("base_name", "ridge"))
+    metrics["utility_smoother_family"] = str(_util_bundle.get("smoother_name", "ridge"))
+    metrics["offset_model_family"] = str(_offset_bundle.get("base_name", "ridge")) if (_offset_bundle or sizer.limit_offset_pipeline_ is not None) else None
+    metrics["offset_smoother_family"] = str(_offset_bundle.get("smoother_name", "ridge")) if (_offset_bundle or sizer.limit_offset_pipeline_ is not None) else None
     metrics["sizer_feature_names"] = list(sizer.model_names_ or [])
     metrics["offset_feature_names"] = list(sizer.limit_offset_features_ or [])
     offset_base = [c for c in (sizer.limit_offset_features_ or []) if c != "sizer_score_oof"]

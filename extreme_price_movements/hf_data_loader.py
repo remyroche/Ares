@@ -26,7 +26,13 @@ def _get_parquet_path(symbol: str) -> Path:
 
 
 def _load_existing_data(symbol: str) -> pd.DataFrame:
-    """Load existing 15m data from parquet if available."""
+    """Load existing 15m data from parquet if available.
+
+    Falls back to the USDT-quoted variant if the requested quote currency
+    (USDC, BUSD, EUR, etc.) doesn't have a cached parquet yet but the same
+    base asset does under USDT. Price series are equivalent for barrier
+    refinement purposes.
+    """
     path = _get_parquet_path(symbol)
     if path.exists():
         try:
@@ -40,7 +46,29 @@ def _load_existing_data(symbol: str) -> pd.DataFrame:
         except Exception as e:
             tprint(f"WARNING: Failed to load {path}: {e}")
             return pd.DataFrame()
+
+    # Fallback: try USDT variant for non-USDT quoted symbols
+    _FALLBACK_QUOTES = ("USDC", "BUSD", "EUR")
+    sym_up = symbol.replace("/", "").replace("_", "").upper()
+    for q in _FALLBACK_QUOTES:
+        if sym_up.endswith(q):
+            base = sym_up[:-len(q)]
+            fallback_path = HF_DATA_DIR / f"{base.lower()}usdt_15m.parquet"
+            if fallback_path.exists():
+                try:
+                    df = pd.read_parquet(fallback_path)
+                    idx = pd.to_datetime(df.index)
+                    if idx.tz is None:
+                        df.index = idx.tz_localize("UTC")
+                    else:
+                        df.index = idx.tz_convert("UTC")
+                    return df
+                except Exception:
+                    pass
+            break
+
     return pd.DataFrame()
+
 
 
 def _save_data(symbol: str, df: pd.DataFrame):
@@ -261,3 +289,96 @@ def clear_cache(symbol: str = None):
         for path in HF_DATA_DIR.glob("*_15m.parquet"):
             path.unlink()
         tprint("Cleared all 15m cache")
+
+
+def bulk_sync_15m_universe(
+    symbols: list,
+    since_ts: pd.Timestamp,
+    until_ts: pd.Timestamp | None = None,
+    quotes: tuple = ("USDT", "USDC", "BUSD"),
+    skip_existing: bool = True,
+) -> dict:
+    """Download 15m OHLCV for every symbol in the universe, covering all quote currencies.
+
+    Unlike the previous bulk download which only fetched USDT pairs, this function
+    expands each base asset to all requested `quotes` and downloads any variant
+    that is missing or stale.
+
+    Args:
+        symbols : List of trading pairs in any format, e.g. 'BTC/USDT', 'BTC_USDC', 'BTCUSDT'.
+        since_ts: Start of the desired 15m range (UTC).
+        until_ts: End of the desired range; defaults to now.
+        quotes  : Quote currencies to ensure coverage for.
+        skip_existing: If True, skips symbols already fully covered.
+
+    Returns:
+        dict mapping symbol → 'ok' | 'skipped' | 'failed'
+    """
+    import ccxt as _ccxt
+
+    if until_ts is None:
+        until_ts = pd.Timestamp.now(tz="UTC")
+
+    since_ts = since_ts.tz_localize("UTC") if since_ts.tz is None else since_ts.tz_convert("UTC")
+    until_ts = until_ts.tz_localize("UTC") if until_ts.tz is None else until_ts.tz_convert("UTC")
+
+    # Extract unique base assets from symbol list
+    _KNOWN_QUOTES = {"USDT", "USDC", "BUSD", "EUR", "BTC", "ETH"}
+    base_assets: set[str] = set()
+    for sym in symbols:
+        clean = sym.replace("/", "").replace("_", "").upper()
+        for q in sorted(_KNOWN_QUOTES, key=len, reverse=True):
+            if clean.endswith(q) and len(clean) > len(q):
+                base_assets.add(clean[:-len(q)])
+                break
+
+    # Build the full set of symbols to sync
+    target_symbols: list[str] = []
+    for base in sorted(base_assets):
+        for q in quotes:
+            target_symbols.append(f"{base}/{q}")
+
+    tprint(f"bulk_sync_15m_universe: {len(base_assets)} base assets × {len(quotes)} quotes = {len(target_symbols)} symbols to check")
+
+    ex = _ccxt.binance({"enableRateLimit": True})
+
+    # Fetch exchange markets once to validate which symbols actually exist
+    try:
+        markets = ex.load_markets()
+        valid_ccxt = set(markets.keys())
+    except Exception as e:
+        tprint(f"WARNING: Could not load markets: {e}. Proceeding without validation.")
+        valid_ccxt = None
+
+    results: dict = {}
+    skipped = already_ok = failed = ok = 0
+
+    for sym in target_symbols:
+        if valid_ccxt is not None and sym not in valid_ccxt:
+            results[sym] = "not_listed"
+            skipped += 1
+            continue
+
+        if skip_existing:
+            existing = _load_existing_data(sym)
+            if not existing.empty and existing.index.min() <= since_ts and existing.index.max() >= until_ts:
+                results[sym] = "skipped"
+                already_ok += 1
+                continue
+
+        try:
+            df = sync_15m_ohlcv_range(ex, sym, since_ts, until_ts, full_backfill=True)
+            if df is not None and not df.empty:
+                results[sym] = "ok"
+                ok += 1
+            else:
+                results[sym] = "empty"
+                failed += 1
+        except Exception as e:
+            tprint(f"bulk_sync: failed {sym}: {e}")
+            results[sym] = "failed"
+            failed += 1
+
+    tprint(f"bulk_sync_15m_universe done: ok={ok} skipped={already_ok} not_listed={skipped} failed/empty={failed}")
+    return results
+

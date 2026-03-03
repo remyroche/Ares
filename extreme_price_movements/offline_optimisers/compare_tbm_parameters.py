@@ -237,6 +237,17 @@ def _load_or_download_15m(symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timest
 
     # 2. Check Disk
     path = HF_DATA_DIR / f"{clean}_15m.parquet"
+    if not path.exists():
+        # Fallback: try USDT variant for USDC/BUSD/EUR-quoted symbols
+        _FALLBACK_QUOTES = ("USDC", "BUSD", "EUR")
+        clean_up = clean.upper()
+        for q in _FALLBACK_QUOTES:
+            if clean_up.endswith(q):
+                base = clean_up[:-len(q)].lower()
+                fallback_path = HF_DATA_DIR / f"{base}usdt_15m.parquet"
+                if fallback_path.exists():
+                    path = fallback_path
+                break
     if path.exists():
         try:
             df = pd.read_parquet(path)
@@ -447,7 +458,7 @@ def _load_panel_from_store(cfg: Dict[str, Any]) -> Tuple[Optional[Dict[str, pd.D
         
         # Get margin symbols
         try:
-            mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
+            mu = refresh_margin_universe_daily(None, quotes=("USDT",))
             margin_symbols = mu.symbols if mu else []
         except Exception:
             margin_symbols = []
@@ -471,9 +482,9 @@ def _load_panel_from_store(cfg: Dict[str, Any]) -> Tuple[Optional[Dict[str, pd.D
                 all_syms = list(set(all_syms) | set(ohlcv_syms))
                 tprint(f"Augmented symbol universe from local ohlcv: +{len(set(ohlcv_syms))} symbols")
         
-        # Use a configurable subsample step; default keeps all symbols.
-        # The previous hardcoded [::3] could collapse coverage and create empty cells.
-        _step = max(1, int(cfg.get("tbm_symbol_subsample_step", 3)))
+        # Use a configurable subsample step; default keeps 1/2 of symbols (USDT-only universe).
+        # Previously 3 (1/3 of all quotes), now 2 (1/2 of USDT-only) for better coverage with native data.
+        _step = max(1, int(cfg.get("tbm_symbol_subsample_step", 2)))
         train_syms = sorted(all_syms)[::_step]
         # Keep an upper bound for runtime/memory control (default aligns with training universe size).
         _max_syms = int(cfg.get("tbm_max_symbols", cfg.get("fetch_symbols_M", 600)))

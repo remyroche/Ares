@@ -634,7 +634,22 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
         tprint(f"Label bucket report: {rp}")
     except Exception as _re:
         tprint(f"WARNING: label bucket report failed: {_re}")
+
+    try:
+        success_path = os.path.join(cfg["data_root"], "artifacts", run_id, "labels", "_SUCCESS")
+        with open(success_path, "w") as f:
+            f.write(ts_sig.isoformat())
+    except Exception as e:
+        tprint(f"WARNING: failed to write _SUCCESS file: {e}")
+
     tprint("STEP: LABEL GENERATION COMPLETE")
+
+    # Clean up heavy dataframes before exiting
+    del datasets
+    del panel
+    del feats
+    import gc
+    gc.collect()
 
 def run_training_step(ts_sig, cfg, store=None, margin_symbols=None, base_only=False):
     """Train all models from label artifacts. Saves trained state to disk."""
@@ -888,6 +903,12 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None, base_only=Fa
         tprint(f"WARNING: meta training bucket report failed: {_re}")
 
     tprint("STEP: MODEL TRAINING COMPLETE")
+
+    # Release large training artifacts to avoid memory pressure in subsequent steps
+    del datasets
+    import gc
+    gc.collect()
+
     return state
 
 

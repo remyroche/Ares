@@ -363,6 +363,13 @@ def _label_artifacts_ready(cfg, ts_sig):
     """Check whether core label artifacts exist for this run timestamp."""
     import os
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+
+    # 1. Check for the definitive _SUCCESS flag
+    success_path = os.path.join(cfg["data_root"], "artifacts", run_id, "labels", "_SUCCESS")
+    if os.path.exists(success_path):
+        return True
+
+    # 2. Fallback check for older runs before _SUCCESS was added
     horizons = cfg.get("label_horizons_hours", [])
     required = [
         "exhaustion_history",
@@ -379,6 +386,7 @@ def _label_artifacts_ready(cfg, ts_sig):
         fpath = os.path.join(cfg["data_root"], "artifacts", run_id, "labels", f"{name}.parquet")
         if not os.path.exists(fpath):
             return False
+
     return True
 
 
@@ -409,23 +417,54 @@ def _cache_checkpoint(tag: str) -> None:
                 tprint(f"CACHE[{tag}]: failed {cdir}: {e}")
 
 
-def _maintenance_checkpoint(tag: str) -> None:
-    """Run cache cleanup + GC checkpoint."""
-    _cache_checkpoint(tag)
+def _get_memory_usage() -> float:
+    """Returns the current system memory usage as a percentage."""
+    try:
+        with open('/proc/meminfo', 'r') as f:
+            meminfo = f.readlines()
+        mem_total = 0
+        mem_available = 0
+        for line in meminfo:
+            if line.startswith("MemTotal:"):
+                mem_total = int(line.split()[1])
+            elif line.startswith("MemAvailable:"):
+                mem_available = int(line.split()[1])
+        if mem_total > 0:
+            return 100.0 * (1.0 - mem_available / mem_total)
+    except Exception:
+        pass
+    return 0.0
+
+def _maintenance_checkpoint(tag: str, force: bool = False) -> None:
+    """Run cache cleanup + GC checkpoint only if memory is critically high or forced."""
+    mem_usage = _get_memory_usage()
+
+    # Always run Python GC to clean up loose references between pipeline steps
     _gc_checkpoint(tag)
 
-def run_labels(cfg, horizons=None, ts_override=None):
-    _maintenance_checkpoint("labels:start")
+    # Only destroy disk cache if we are under severe memory pressure or forced
+    if force or mem_usage > 85.0:
+        if mem_usage > 0:
+            tprint(f"Memory usage high ({mem_usage:.1f}%) or forced. Flushing disk cache.")
+        _cache_checkpoint(tag)
+
+def _resolve_timestamp(cfg: dict, ts_override: str = None):
     if ts_override:
         try:
-            ts_sig = pd.to_datetime(ts_override, format="%Y%m%d_%H%M%S").tz_localize("UTC")
+            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
+            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
         except ValueError:
             ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
     else:
-        ts_sig = _find_latest_feature_ts(cfg["data_root"])
-        if ts_sig is None:
-            tprint("ERROR: No feature directories found. Run feature_generation first.")
-            return
+        ts_sig = _find_latest_feature_ts(cfg.get("data_root", "data"))
+    return ts_sig
+
+
+def run_labels(cfg, horizons=None, ts_override=None):
+    _maintenance_checkpoint("labels:start")
+    ts_sig = _resolve_timestamp(cfg, ts_override)
+    if ts_sig is None:
+        raise RuntimeError("ERROR: No feature directories found. Run feature_generation first.")
 
     tprint(f"Labels mode. ts_sig={ts_sig} horizons={horizons}")
 
@@ -441,17 +480,9 @@ def run_labels(cfg, horizons=None, ts_override=None):
 
 def run_features(cfg, ts_override=None, force_recompute: bool = False):
     _maintenance_checkpoint("features:start")
-    if ts_override:
-        try:
-            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
-            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
-        except ValueError:
-            ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
-    else:
-        # Re-use latest existing feature timestamp if available, else current hour
-        ts_sig = _find_latest_feature_ts(cfg["data_root"])
-        if ts_sig is None:
-            ts_sig = pd.Timestamp.utcnow().floor("h")
+    ts_sig = _resolve_timestamp(cfg, ts_override)
+    if ts_sig is None:
+        ts_sig = pd.Timestamp.utcnow().floor("h")
     tprint(f"Features mode. Target ts_sig={ts_sig}")
 
     store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
@@ -465,24 +496,15 @@ def run_features(cfg, ts_override=None, force_recompute: bool = False):
 
 def run_backtest(cfg, ts_override=None):
     _maintenance_checkpoint("backtest:start")
-    if ts_override:
-        try:
-            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
-            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
-        except ValueError:
-            ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
-    else:
-        ts_sig = _find_latest_feature_ts(cfg["data_root"])
-        if ts_sig is None:
-            tprint("ERROR: No feature directories found.")
-            return
+    ts_sig = _resolve_timestamp(cfg, ts_override)
+    if ts_sig is None:
+        raise RuntimeError("ERROR: No feature directories found. Run feature_generation first.")
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     import os
     state_file = os.path.join(cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl")
     if not os.path.exists(state_file):
-        tprint(f"ERROR: Trained state not found at {state_file}. Run 'train' mode first.")
-        return
+        raise RuntimeError(f"ERROR: Trained state not found at {state_file}. Run 'train' mode first.")
 
     tprint(f"Backtest mode. ts_sig={ts_sig}")
     store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
@@ -493,35 +515,15 @@ def run_backtest(cfg, ts_override=None):
 
 def run_train(cfg, ts_override=None, base_only=False, meta_only=False):
     _maintenance_checkpoint("train:start")
-    if ts_override:
-        try:
-            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
-            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
-        except ValueError:
-            ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
-    else:
-        ts_sig = _find_latest_feature_ts(cfg["data_root"])
-        if ts_sig is None:
-            tprint("ERROR: No feature directories found. Run feature_generation first.")
-            return
+    ts_sig = _resolve_timestamp(cfg, ts_override)
+    if ts_sig is None:
+        raise RuntimeError("ERROR: No feature directories found. Run feature_generation first.")
 
     tprint(f"Train mode. ts_sig={ts_sig} base_only={base_only} meta_only={meta_only}")
 
-    # TP/SL optimisation happens during label generation (see training.generate_label_datasets).
-    # Check if labels already exist before refreshing to avoid unnecessary recomputation.
     store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
-    if _label_artifacts_ready(cfg, ts_sig):
-        tprint("Label artifacts already exist, skipping label refresh...")
-    else:
-        if meta_only:
-             tprint("ERROR: meta_only requested but labels are missing. Run labels mode first.")
-             return
-        tprint("Refreshing labels to optimise TP:SL widths before model training (optimise_tpsl_ratio)...")
-        run_label_generation_step_v2(ts_sig, None, cfg, store, None)
-
     if not _label_artifacts_ready(cfg, ts_sig):
-        tprint("ERROR: Label generation did not produce required artifacts. Aborting training.")
-        return
+        raise RuntimeError("ERROR: Label artifacts not found. Run 'labels' mode first.")
 
     if meta_only:
         run_train_meta(cfg, ts_override=ts_override)
@@ -537,23 +539,15 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False):
         except Exception as e:
             tprint(f"WARNING: breakdown diagnostics failed: {e}")
     else:
-        tprint("TRAINING PIPELINE FAILED")
+        raise RuntimeError("TRAINING PIPELINE FAILED")
     _maintenance_checkpoint("train:end")
 
 
 def run_risk_opt(cfg, ts_override=None):
     _maintenance_checkpoint("risk_opt:start")
-    if ts_override:
-        try:
-            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
-            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
-        except ValueError:
-            ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
-    else:
-        ts_sig = _find_latest_feature_ts(cfg["data_root"])
-        if ts_sig is None:
-            tprint("ERROR: No feature directories found.")
-            return
+    ts_sig = _resolve_timestamp(cfg, ts_override)
+    if ts_sig is None:
+        raise RuntimeError("ERROR: No feature directories found. Run feature_generation first.")
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     import os
@@ -572,24 +566,15 @@ def run_risk_opt(cfg, ts_override=None):
 def run_sizer(cfg, ts_override=None):
     """Run configured sizer backend on meta model OOF predictions."""
     _maintenance_checkpoint("sizer:start")
-    if ts_override:
-        try:
-            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
-            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
-        except ValueError:
-            ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
-    else:
-        ts_sig = _find_latest_feature_ts(cfg["data_root"])
-        if ts_sig is None:
-            tprint("ERROR: No feature directories found.")
-            return
+    ts_sig = _resolve_timestamp(cfg, ts_override)
+    if ts_sig is None:
+        raise RuntimeError("ERROR: No feature directories found. Run feature_generation first.")
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     import os
     state_file = os.path.join(cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl")
     if not os.path.exists(state_file):
-        tprint(f"ERROR: Trained state not found at {state_file}. Run 'train' mode first.")
-        return
+        raise RuntimeError(f"ERROR: Trained state not found at {state_file}. Run 'train' mode first.")
 
     tprint(f"Sizer mode. ts_sig={ts_sig} backend={cfg.get('position_sizer_backend', 'new')}")
     result = run_sizer_step(ts_sig, cfg, state_file)
@@ -658,14 +643,7 @@ def run_all(cfg, ts_override=None):
     _maintenance_checkpoint("run_all:after_optimise_phase2")
 
     # Final Summary
-    if ts_override:
-        try:
-            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
-            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
-        except ValueError:
-            ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
-    else:
-        ts_sig = _find_latest_feature_ts(cfg["data_root"])
+    ts_sig = _resolve_timestamp(cfg, ts_override)
 
     if ts_sig:
         run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
@@ -707,17 +685,9 @@ def run_all(cfg, ts_override=None):
 def run_train_meta(cfg, ts_override=None):
     """Re-run only meta model training, reusing existing base models."""
     _maintenance_checkpoint("train_meta:start")
-    if ts_override:
-        try:
-            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
-            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
-        except ValueError:
-            ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
-    else:
-        ts_sig = _find_latest_feature_ts(cfg["data_root"])
-        if ts_sig is None:
-            tprint("ERROR: No feature directories found.")
-            return
+    ts_sig = _resolve_timestamp(cfg, ts_override)
+    if ts_sig is None:
+        raise RuntimeError("ERROR: No feature directories found. Run feature_generation first.")
 
     from extreme_price_movements.main import train_daily_meta
     store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
@@ -759,23 +729,15 @@ def run_train_meta(cfg, ts_override=None):
 
         tprint("TRAIN_META PIPELINE COMPLETE")
     else:
-        tprint("TRAIN_META PIPELINE FAILED")
+        raise RuntimeError("TRAIN_META PIPELINE FAILED")
     _maintenance_checkpoint("train_meta:end")
 
 
 def run_optimise(cfg, ts_override=None):
     _maintenance_checkpoint("optimise:start")
-    if ts_override:
-        try:
-            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
-            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
-        except ValueError:
-            ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
-    else:
-        ts_sig = _find_latest_feature_ts(cfg["data_root"])
-        if ts_sig is None:
-            tprint("ERROR: No feature directories found.")
-            return
+    ts_sig = _resolve_timestamp(cfg, ts_override)
+    if ts_sig is None:
+        raise RuntimeError("ERROR: No feature directories found. Run feature_generation first.")
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     import os
@@ -785,8 +747,7 @@ def run_optimise(cfg, ts_override=None):
         tprint("Backtest results not found. Running backtest to generate trade data for optimiser...")
         run_backtest(cfg, ts_override=ts_override)
         if not os.path.exists(backtest_file):
-            tprint(f"ERROR: Backtest still not found at {backtest_file}. Aborting optimise.")
-            return
+            raise RuntimeError(f"ERROR: Backtest still not found at {backtest_file}. Aborting optimise.")
     trades = pd.read_csv(backtest_file, low_memory=False)
     trades = _downcast_numeric_frame(trades)
     trades.attrs["threaded_exit_stream"] = True  # Inject attribute stripped by CSV save
@@ -936,16 +897,9 @@ def run_breakdown_diagnostics_integration(cfg: dict, ts_sig: pd.Timestamp) -> No
 
 def run_breakdown_diagnostics_standalone(cfg: dict, ts_override: str = None) -> None:
     """Standalone breakdown diagnostics mode."""
-    if ts_override:
-        try:
-            ts_sig = pd.to_datetime(ts_override, format="%Y%m%d_%H%M%S").tz_localize("UTC")
-        except ValueError:
-            ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
-    else:
-        ts_sig = _find_latest_feature_ts(cfg["data_root"])
-        if ts_sig is None:
-            tprint("ERROR: No feature directories found.")
-            return
+    ts_sig = _resolve_timestamp(cfg, ts_override)
+    if ts_sig is None:
+        raise RuntimeError("ERROR: No feature directories found.")
     
     tprint(f"Breakdown Diagnostics mode. ts_sig={ts_sig}")
     run_breakdown_diagnostics_integration(cfg, ts_sig)

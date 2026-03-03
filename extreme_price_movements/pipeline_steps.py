@@ -172,6 +172,17 @@ def _ensure_atr_pct_feature(
     return feats
 
 
+def _downcast_numeric_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """Downcast numeric columns to reduce memory footprint."""
+    for col in df.columns:
+        dt = df[col].dtype
+        if pd.api.types.is_float_dtype(dt):
+            df[col] = pd.to_numeric(df[col], downcast="float")
+        elif pd.api.types.is_integer_dtype(dt):
+            df[col] = pd.to_numeric(df[col], downcast="integer")
+    return df
+
+
 def _feature_structural_gaps(
     feats: dict,
     expected_keys: set[str],
@@ -550,7 +561,12 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
     with Timer("Data Load"):
         for s in train_syms:
             df = store.load(s)
-            if not df.empty: dfs[s] = df[df.index <= ts_sig].tail(24*lookback_days)
+            if not df.empty:
+                df_tail = df[df.index <= ts_sig].tail(24*lookback_days)
+                dfs[s] = _downcast_numeric_frame(df_tail)
+            # Evict from the store's internal cache immediately after processing
+            if hasattr(store, 'evict'):
+                store.evict(s)
 
     if bool(cfg.get("label_diagnostics_mode", False)) and dfs:
         _lens = np.array([len(df) for df in dfs.values()], dtype=np.int64)
@@ -617,6 +633,7 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
 
     # 1. Exhaustion History
     p_exh_hist = generate_exhaustion_history(panel, feats, mkt_gates, cfg, ts_sig, cfg["train_lookback_hours"], train_syms)
+    p_exh_hist = _downcast_numeric_frame(p_exh_hist)
 
     # Save Exhaustion History
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
@@ -627,7 +644,8 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
     datasets = generate_label_datasets(panel, feats, mkt_gates, cfg, train_syms, ts_sig, p_exh_hist, horizons=horizons)
 
     for name, df in datasets.items():
-        save_artifact_df(df, cfg["data_root"], run_id, "labels", name)
+        df_downcast = _downcast_numeric_frame(df)
+        save_artifact_df(df_downcast, cfg["data_root"], run_id, "labels", name)
 
     try:
         rp = report_labels(run_id, cfg["data_root"], cfg, base_dir=cfg.get('reports_root'))

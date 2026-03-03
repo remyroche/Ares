@@ -563,13 +563,6 @@ def run_risk_opt(cfg, ts_override=None, parsed_ts_sig=None, skip_maintenance=Fal
         store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
     run_risk_optimization_step(ts_sig, None, cfg, store, state_file)
     tprint("RISK OPTIMIZATION COMPLETE")
-    _maintenance_checkpoint("risk_opt:end")
-
-    if store is None:
-        store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
-
-    run_risk_optimization_step(ts_sig, None, cfg, store, state_file)
-    tprint("RISK OPTIMIZATION COMPLETE")
 
     if not skip_maintenance:
         _maintenance_checkpoint("risk_opt:end")
@@ -745,12 +738,6 @@ def run_train_meta(cfg, ts_override=None, store=None):
 
         joblib.dump(result, meta_state_path)
         tprint(f"Meta model state saved to {meta_state_path} using joblib")
-
-        # Backward compatibility for existing spot-only workflows that expect
-        # the legacy CWD artifact.
-        if not bool(cfg.get("use_perps", False)):
-            joblib.dump(result, "model_state.pkl")
-            tprint("Meta model state also saved to legacy model_state.pkl using joblib")
 
         # Free memory before moving on
         del result

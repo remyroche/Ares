@@ -926,7 +926,15 @@ class MetaClassifierModel:
         gated = [r for r in scored if bool(r[6].get("passed_gate", 0.0) > 0.5 and r[6].get("passed_econ", 0.0) > 0.5)]
         pool = gated if gated else scored
         if pool:
-            _best = max(pool, key=lambda r: float(r[6].get("selection_score", -1e18)))
+            # Primary objective: utility-top30 selection score.
+            # Tie-breakers: lower logloss, then higher accuracy.
+            def _clf_rank_key(r):
+                sel_score = float(r[6].get("selection_score", -1e18))
+                logloss = float(r[5].get("logloss", r[5].get("logloss_cv", 1e18)))
+                acc = float(r[5].get("accuracy", -1e18))
+                return (sel_score, -logloss, acc)
+
+            _best = max(pool, key=_clf_rank_key)
             best_rec = {
                 "name": _best[0], "kind": _best[1], "params": _best[2],
                 "oof": _best[3], "y_class": _best[4],

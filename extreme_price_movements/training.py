@@ -5565,6 +5565,8 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                 _best_alpha = float(_a)
         utility_alpha = _best_alpha
 
+        # IMPORTANT: utility OOF is derived strictly from OOF MAE/MFE predictions
+        # (never from in-fold/final fits) to prevent leakage into ridge-sizer training.
         oof_u_hat = np.asarray(
             _utility_from_logs(oof_log_mfe_hat, oof_log_mae_q70_hat, utility_alpha),
             dtype=float,

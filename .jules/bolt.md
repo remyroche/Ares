@@ -118,3 +118,7 @@ Action: Always prefer `prange` loops inside a parallel Numba kernel over Python-
 - **Speedup:** 12.39x (0.84s -> 0.068s for 5000x50 array).
 - **Correctness:** Verified to be identical (max diff 0.000000).
 - **Technique:** Use `parallel=True` with `prange` for column-wise parallelization, and fused logic inside the inner loop to maximize cache locality and minimize Python overhead.
+
+## 2025-02-17 - [Optimizing _numba_adx_1d for O(1) auxiliary memory]
+Learning: Numba loops can often be restructured to avoid allocating O(N) temporary arrays for sequential calculations like Wilder's Smoothing, eliminating memory allocation overhead which constitutes a significant portion of execution time for small rolling/incremental calculations. By combining loops and managing a sliding window of state, multiple O(N) allocations (`tr_arr`, `dm_p_arr`, `dm_m_arr`, `dx_buffer`) were eliminated for `_numba_adx_1d`.
+Action: Look for Numba functions that allocate `np.zeros(l)` or `np.empty(l)` where `l` is the length of the entire time series just to hold intermediate values that are only used sequentially.

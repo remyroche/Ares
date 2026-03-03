@@ -2023,20 +2023,41 @@ def _ridge_predict_oof_with_cache(
         X_test_s = scaler.transform(X_test)
 
         # Higher alpha (3.0) for increased regularization/stability in noisy financial data.
-        # Fixed solver to 'cholesky' as requested.
-        model = Ridge(alpha=3.0, solver="cholesky", random_state=rng_seed)
+        alpha = 3.0
 
         if warm_cache is not None and warm_key and warm_key in warm_cache:
             pass
 
-        model.fit(X_train_s, y_train, sample_weight=w_train)
-        p = model.predict(X_test_s).astype(np.float32, copy=False)
+        # Fast closed-form Ridge Regression
+        sw_sum = np.sum(w_train)
+        X_mean = (w_train @ X_train_s) / sw_sum
+        y_mean = np.dot(w_train, y_train) / sw_sum
+
+        X_c = X_train_s - X_mean
+        y_c = y_train - y_mean
+
+        WX_c = X_c * w_train[:, np.newaxis]
+
+        A = X_c.T @ WX_c
+        # Add Ridge penalty
+        A.flat[::X_train_s.shape[1]+1] += alpha
+        b = WX_c.T @ y_c
+
+        try:
+            coef = np.linalg.solve(A, b)
+        except np.linalg.LinAlgError:
+            # Fallback for singular matrix
+            coef = np.linalg.lstsq(A, b, rcond=None)[0]
+
+        intercept = y_mean - np.dot(X_mean, coef)
+
+        p = (X_test_s @ coef + intercept).astype(np.float32, copy=False)
         # For Ridge on binary targets, raw p is a better probability proxy than sigmoid(p).
         p_clipped = np.clip(p, 0.0, 1.0)
         pred[test_mask] = p_clipped.astype(np.float32, copy=False)
 
         if warm_cache is not None and warm_key:
-            warm_cache[warm_key] = (model.coef_.astype(np.float32, copy=True), float(model.intercept_))
+            warm_cache[warm_key] = (coef.astype(np.float32, copy=True), float(intercept))
 
     return pred
 
@@ -2120,12 +2141,12 @@ def get_stacked_array(
     *,
     dtype: np.dtype,
 ) -> np.ndarray:
-    """Cache DataFrame.stack().reindex(...) as dense numpy array."""
+    """Cache DataFrame.stack().reindex(...) as contiguous dense numpy array."""
     cache = eval_cache.setdefault(cache_name, {})
     key = f"{_index_cache_key(stacked_index)}::{id(frame)}"
     if key not in cache:
         arr = frame.stack().reindex(stacked_index).to_numpy(dtype=dtype, copy=False)
-        cache[key] = np.asarray(arr, dtype=dtype)
+        cache[key] = np.ascontiguousarray(arr, dtype=dtype)
     return cache[key]
 
 

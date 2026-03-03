@@ -121,6 +121,31 @@ def generate_training_report(
                 f"| {model_name} | {len(feat_cols)} | {auc} | {ic} | {sharpe} | "
                 f"{win_rate} | {p10} | {p40} | {at10} | {at30} | {avg_ret} | {n_trades} | {best_iter} |"
             )
+
+            # Horizon breakdown
+            if "models_by_h" in model_info:
+                models_by_h = model_info["models_by_h"]
+                for h in sorted([k for k in models_by_h.keys() if isinstance(k, (int, float))]):
+                    sub = models_by_h[h]
+                    h_name = f"{model_name}_H{h}"
+                    h_cols = sub.get("feat_cols", [])
+                    h_diag = sub.get("alpha_diag", {})
+
+                    h_auc = _fmt(h_diag.get('auc', 0.0)) if h_diag.get('auc') else "N/A"
+                    h_ic = _fmt(h_diag.get('ic', 0.0)) if h_diag.get('ic') else "N/A"
+                    h_sharpe = _fmt(h_diag.get('sharpe', 0.0)) if h_diag.get('sharpe') else "N/A"
+                    h_wr = _pct(h_diag.get('win_rate', 0.0)) if h_diag.get('win_rate') else "N/A"
+                    h_p10 = _fmt(h_diag.get('prec10', 0.0)) if h_diag.get('prec10') is not None else "N/A"
+                    h_p40 = _fmt(h_diag.get('prec40', 0.0)) if h_diag.get('prec40') is not None else "N/A"
+                    h_at10 = _fmt(h_diag.get('avg_trades_day_10', 0.0)) if h_diag.get('avg_trades_day_10') is not None else "N/A"
+                    h_at30 = _fmt(h_diag.get('avg_trades_day_30', 0.0)) if h_diag.get('avg_trades_day_30') is not None else "N/A"
+                    h_ret = _fmt(h_diag.get('avg_return', 0.0), 6) if h_diag.get('avg_return') else "N/A"
+                    h_tr = h_diag.get('n_trades', 0) if h_diag.get('n_trades') else "N/A"
+
+                    lines.append(
+                        f"| {h_name} | {len(h_cols)} | {h_auc} | {h_ic} | {h_sharpe} | "
+                        f"{h_wr} | {h_p10} | {h_p40} | {h_at10} | {h_at30} | {h_ret} | {h_tr} | - |"
+                    )
     lines.append("")
 
     # Per-horizon alpha view (if quality gate report is available)

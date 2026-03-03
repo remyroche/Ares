@@ -1958,15 +1958,15 @@ def expand_candidate_mask(base_mask: pd.DataFrame, offsets: list[int]) -> pd.Dat
     if not future_offsets:
         return base_mask
 
-    # Start with the base mask
-    expanded = base_mask.copy()
+    arr = base_mask.to_numpy(dtype=bool, copy=False)
+    expanded_arr = np.array(arr, copy=True)
+    n_rows = arr.shape[0]
 
-    # Or-accumulate forward shifts
-    # Using shift(1) moves t to t+1. So if we want to include t+1, we shift(1).
     for off in future_offsets:
-        expanded |= base_mask.shift(off).fillna(False)
+        if off < n_rows:
+            expanded_arr[off:] |= arr[:-off]
 
-    return expanded
+    return pd.DataFrame(expanded_arr, index=base_mask.index, columns=base_mask.columns)
 
 
 def select_candidates_cross_sectional(
@@ -2049,6 +2049,8 @@ class DataContainer:
         columns: pd.Index,
         feature_names: list[str],
         float_dtype: np.dtype,
+        pop_features: bool = False,
+        keep_keys: set = None,
     ):
         self.index = index
         self.columns = columns
@@ -2067,6 +2069,8 @@ class DataContainer:
             ):
                 df = df.reindex(index=index, columns=columns)
             self.feat_arr[f] = np.ascontiguousarray(df.to_numpy(dtype=float_dtype, copy=False))
+            if pop_features and keep_keys is not None and f not in keep_keys:
+                feats.pop(f, None)
 
     def get_feature_matrix(
         self,
@@ -2512,8 +2516,12 @@ def _ridge_select_topk(
     if n_features <= k:
         return np.arange(n_features, dtype=np.int32)
 
-    scaler = RobustScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
+    # Fast pure-numpy RobustScaler (median and IQR)
+    q25, med, q75 = np.nanpercentile(X_train, [25, 50, 75], axis=0)
+    iqr = q75 - q25
+    iqr[iqr == 0] = 1.0
+    X_train_scaled = (X_train - med) / iqr
+    np.nan_to_num(X_train_scaled, copy=False)
 
     ridge = Ridge(alpha=alpha)
     ridge.fit(X_train_scaled, y_train, sample_weight=sample_weight)
@@ -2853,25 +2861,53 @@ def compute_learnability_metrics(
         candidate_returns_full = candidate_returns_raw
         candidate_labels_full = base_long["label"].to_numpy(dtype=np.float32, copy=False)[flat_idx]
 
-    # Label robustness: if barrier labels are degenerate or missing, fallback to
-    # direction-of-return proxy to keep class metrics meaningful.
+    # Label robustness: if barrier labels are degenerate or missing, short-circuit
+    # and fail the config since it lacks signal-to-noise required for triple-barrier learning.
     lbl_valid = np.isfinite(candidate_labels_full)
     pos_rate_raw = float(np.mean(candidate_labels_full[lbl_valid] > 0.5)) if np.any(lbl_valid) else float("nan")
     if (not np.any(lbl_valid)) or (np.isfinite(pos_rate_raw) and (pos_rate_raw < 0.01 or pos_rate_raw > 0.99)):
-        proxy_labels = (candidate_returns_full > 0).astype(np.float32, copy=False)
-        if np.any(lbl_valid):
-            candidate_labels_full = np.where(lbl_valid, candidate_labels_full, proxy_labels).astype(np.float32, copy=False)
-        else:
-            candidate_labels_full = proxy_labels.astype(np.float32, copy=False)
-        # If original labels are almost single-class, fully switch to proxy.
-        if np.isfinite(pos_rate_raw) and (pos_rate_raw < 0.01 or pos_rate_raw > 0.99):
-            candidate_labels_full = proxy_labels.astype(np.float32, copy=False)
-        pos_rate_new = float(np.mean(candidate_labels_full > 0.5)) if len(candidate_labels_full) > 0 else 0.0
-        tlog(
-            "Metrics labels fallback applied: "
-            f"orig_pos_rate={pos_rate_raw if np.isfinite(pos_rate_raw) else float('nan'):.4f}, "
-            f"new_pos_rate={pos_rate_new:.4f}"
+        logger.warning(
+            "Degenerate label distribution detected. "
+            f"pos_rate_raw={pos_rate_raw if np.isfinite(pos_rate_raw) else float('nan'):.4f}. "
+            "Short-circuiting metrics computation as signal-to-noise is poor."
         )
+        return {
+            "n_candidates_mean": 0,
+            "ic": 0,
+            "ic_std": 0,
+            "ks_stat": 0,
+            "snr": 0,
+            "class_balance": pos_rate_raw if np.isfinite(pos_rate_raw) else 0.0,
+            "mean_feat_ic": 0,
+            "sharpe": 0,
+            "candidate_rate": 0,
+            "mean_return_bps": 0,
+            "volatility_bps": 0,
+            "sortino": 0,
+            "hit_rate": 0,
+            "tail_ratio": 0,
+            "ic_spearman": 0,
+            "oof_mae": 0,
+            "oof_directional_acc": 0,
+            "auc": 0,
+            "brier": 0,
+            "ridge_alpha": RIDGE_SCREEN_ALPHA,
+            "ridge_top_frac": RIDGE_SCREEN_TOP_FRAC,
+            "ridge_selected_k_mean": 0,
+            "ridge_jaccard_median": 0,
+            "ridge_replacement_rate_median": 0,
+            "mean_abs_ret6h": 0,
+            "median_abs_ret6h": 0,
+            "ret6h_q01": 0,
+            "ret6h_q05": 0,
+            "atr_mean": 0,
+            "atr_q10": 0,
+            "atr_q50": 0,
+            "atr_q90": 0,
+            "atr_decile_worst": -1,
+            "atr_decile_worst_share": np.nan,
+            "atr_decile_pnl_json": "{}",
+        }
 
     valid_mask = np.isfinite(candidate_returns_full) & np.isfinite(candidate_target_full)
     candidate_returns_raw = candidate_returns_full[valid_mask]
@@ -3464,6 +3500,135 @@ def load_panel_from_store(
 # Main Comparison Runner
 # =============================================================================
 
+
+def build_candidate_mask(cfg: dict, context: dict) -> tuple:
+    precomputed = context["precomputed"]
+    metric_by_mode = context["metric_by_mode"]
+    filter_mask_pack = context["filter_mask_pack"]
+    vol_tail_arr = context["vol_tail_arr"]
+    entropy_tail_arr = context["entropy_tail_arr"]
+    float_dtype = context["float_dtype"]
+    symbol_step_base = context["symbol_step_base"]
+
+    mode = cfg["mode"]
+    pct = cfg["pct"]
+    symbol_step_mult = cfg.get("symbol_step_mult", 1)
+
+    # 1. Candidate Selection
+    min_range_pct = cfg.get("min_range_pct")
+    min_vol_zscore = cfg.get("min_vol_zscore")
+    min_sign_consistency = None
+    expansion_name = cfg.get("expansion_name", "none")
+    expansion_offsets = cfg.get("expansion_offsets", [])
+
+    metric_for_mode = metric_by_mode.get(mode)
+    prefilter_arr = None
+    low_count_policy = str(cfg.get("cusum_low_count_policy", "keep_all"))
+
+    if mode == "cusum":
+        cusum_pack = precomputed.get("cusum_pack", {})
+        strength_by_h = cusum_pack.get("strength_by_h", {})
+        cusum_h = float(cfg.get("cusum_h", 6.0))
+        metric_for_mode = strength_by_h.get(f"{cusum_h:.1f}")
+        if metric_for_mode is None:
+            raise ValueError(f"CUSUM metric unavailable for h={cusum_h:.1f}")
+
+    # Filter masks
+    if filter_mask_pack is not None:
+        prefilter_arr = np.array(filter_mask_pack.get("true_arr"), copy=True, dtype=bool)
+        if min_range_pct is not None:
+            range_mask = filter_mask_pack["range_masks"].get(float(min_range_pct))
+            if range_mask is not None: prefilter_arr &= range_mask
+        if min_vol_zscore is not None:
+            vol_mask = filter_mask_pack["vol_masks"].get(float(min_vol_zscore))
+            if vol_mask is not None: prefilter_arr &= vol_mask
+
+    if mode == "cusum" and metric_for_mode is not None:
+        trig = metric_for_mode.to_numpy(dtype=np.float32, copy=False)
+        trig_mask = np.isfinite(trig) & (np.abs(trig) > 0)
+        prefilter_arr = trig_mask if prefilter_arr is None else (prefilter_arr & trig_mask)
+
+    # Selection
+    base_mask_cache = {}
+    candidate_mask_base, side_sign_base = select_candidates_cross_sectional(
+        metric_for_mode, pct, filter_masks=filter_mask_pack,
+        min_range_pct=min_range_pct, min_vol_zscore=min_vol_zscore,
+        base_mask_cache=base_mask_cache,
+        base_cache_key=(mode, float(pct), low_count_policy),
+        return_sign=True, prefilter_arr=prefilter_arr,
+        low_count_policy=low_count_policy
+    )
+
+    if mode == "cusum":
+        cusum_pack = precomputed.get("cusum_pack", {})
+        z_df = cusum_pack.get("z")
+        z_gate = float(cfg.get("cusum_z_gate", 2.0))
+        if isinstance(z_df, pd.DataFrame):
+            z_arr = z_df.reindex(index=candidate_mask_base.index, columns=candidate_mask_base.columns).to_numpy(dtype=float_dtype, copy=False)
+            z_gate_mask = np.nan_to_num(np.abs(z_arr), nan=0.0) >= z_gate
+            mask_arr = candidate_mask_base.to_numpy(dtype=bool, copy=False) & z_gate_mask
+            candidate_mask_base = pd.DataFrame(mask_arr, index=candidate_mask_base.index, columns=candidate_mask_base.columns, dtype=bool)
+
+            sign_arr = side_sign_base.to_numpy(dtype=np.int8, copy=False)
+            sign_arr = np.where(mask_arr, sign_arr, 0)
+            side_sign_base = pd.DataFrame(sign_arr, index=side_sign_base.index, columns=side_sign_base.columns, dtype=np.int8)
+
+    # Expansion
+    # Standard Expansion: Binary dilation (forward-looking only)
+    candidate_mask_metrics = expand_candidate_mask(candidate_mask_base, expansion_offsets)
+
+    # Pure numpy sign propagation for expanded timestamps
+    sign_arr = side_sign_base.to_numpy(dtype=np.int8, copy=False)
+    metrics_sign_arr = np.array(sign_arr, copy=True)
+    metrics_mask_arr = candidate_mask_metrics.to_numpy(dtype=bool, copy=False)
+
+    if expansion_offsets:
+        future_offsets = sorted([int(o) for o in expansion_offsets if int(o) > 0])
+        n_rows = sign_arr.shape[0]
+        for off in future_offsets:
+            if off < n_rows:
+                shifted = np.zeros_like(sign_arr)
+                shifted[off:] = sign_arr[:-off]
+                fill_mask = (metrics_sign_arr == 0) & (shifted != 0)
+                metrics_sign_arr[fill_mask] = shifted[fill_mask]
+
+    metrics_sign_arr = np.where(metrics_mask_arr, metrics_sign_arr, 0)
+    side_sign_metrics = pd.DataFrame(metrics_sign_arr, index=candidate_mask_metrics.index, columns=candidate_mask_metrics.columns, dtype=np.int8)
+
+    # Tail Filter
+    tail_mode = cfg.get("tail_filter_mode", "none")
+    tail_frac = float(cfg.get("tail_filter_top_frac", 0.20))
+    if tail_mode.lower() not in {"none", "off", ""}:
+        _tail_arr = apply_tail_filter_on_prefilter(
+            prefilter_arr=candidate_mask_metrics.to_numpy(dtype=bool, copy=False),
+            tail_mode=tail_mode, top_frac=tail_frac,
+            vol_tail_arr=vol_tail_arr, entropy_tail_arr=entropy_tail_arr
+        )
+        candidate_mask_metrics = pd.DataFrame(_tail_arr, index=candidate_mask_metrics.index, columns=candidate_mask_metrics.columns, dtype=bool)
+        side_sign_metrics = side_sign_metrics.where(candidate_mask_metrics, 0).astype(np.int8)
+
+    # Symbol Subsampling
+    current_step = symbol_step_base * symbol_step_mult
+    if current_step > 1:
+        keep_cols = list(candidate_mask_metrics.columns[::current_step])
+        candidate_mask_metrics = candidate_mask_metrics.reindex(columns=keep_cols, fill_value=False)
+        side_sign_metrics = side_sign_metrics.reindex(columns=keep_cols, fill_value=0).astype(np.int8)
+
+    row_idx, col_idx = np.nonzero(candidate_mask_metrics.to_numpy(dtype=bool, copy=False))
+    signs = side_sign_metrics.to_numpy(dtype=np.int8, copy=False)[row_idx, col_idx]
+    # We will just return the sparse coordinates
+    return row_idx, col_idx, signs
+
+def precompute_all_candidate_masks(configs: list, context: dict) -> dict:
+    """Precomputes candidate masks for all configs serially in the main process."""
+    import numpy as np
+    import pandas as pd
+    masks = {}
+    for cfg in configs:
+        row_idx, col_idx, signs = build_candidate_mask(cfg, context)
+        masks[cfg["config_id"]] = (row_idx, col_idx, signs)
+    return masks
+
 def evaluate_single_config(cfg: dict) -> tuple[dict, list[dict]]:
     """
     Worker function to evaluate a single configuration.
@@ -3503,95 +3668,25 @@ def evaluate_single_config(cfg: dict) -> tuple[dict, list[dict]]:
     training_slice_geometry_cache = OrderedDict()
     
     try:
-        # 1. Candidate Selection
-        min_range_pct = cfg.get("min_range_pct")
-        min_vol_zscore = cfg.get("min_vol_zscore")
-        min_sign_consistency = None
-        expansion_name = cfg.get("expansion_name", "none")
-        expansion_offsets = cfg.get("expansion_offsets", [])
+        # Retrieve precomputed sparse mask from context
+        row_idx, col_idx, signs = _WORKER_CONTEXT["precomputed_masks"][config_id]
         
+        # Reconstruct DataFrame masks from sparse representation
         metric_for_mode = metric_by_mode.get(mode)
-        prefilter_arr = None
-        low_count_policy = str(cfg.get("cusum_low_count_policy", "keep_all"))
+        if metric_for_mode is None:
+             metric_for_mode = next(iter(metric_by_mode.values()))
+
+        mask_arr = np.zeros_like(metric_for_mode.to_numpy(dtype=bool, copy=False), dtype=bool)
+        sign_arr = np.zeros_like(mask_arr, dtype=np.int8)
         
-        if mode == "cusum":
-            cusum_pack = precomputed.get("cusum_pack", {})
-            strength_by_h = cusum_pack.get("strength_by_h", {})
-            cusum_h = float(cfg.get("cusum_h", 6.0))
-            metric_for_mode = strength_by_h.get(f"{cusum_h:.1f}")
-            if metric_for_mode is None:
-                raise ValueError(f"CUSUM metric unavailable for h={cusum_h:.1f}")
-
-        # Filter masks
-        if filter_mask_pack is not None:
-            prefilter_arr = np.array(filter_mask_pack.get("true_arr"), copy=True, dtype=bool)
-            if min_range_pct is not None:
-                range_mask = filter_mask_pack["range_masks"].get(float(min_range_pct))
-                if range_mask is not None: prefilter_arr &= range_mask
-            if min_vol_zscore is not None:
-                vol_mask = filter_mask_pack["vol_masks"].get(float(min_vol_zscore))
-                if vol_mask is not None: prefilter_arr &= vol_mask
+        mask_arr[row_idx, col_idx] = True
+        sign_arr[row_idx, col_idx] = signs
         
-        if mode == "cusum" and metric_for_mode is not None:
-            trig = metric_for_mode.to_numpy(dtype=np.float32, copy=False)
-            trig_mask = np.isfinite(trig) & (np.abs(trig) > 0)
-            prefilter_arr = trig_mask if prefilter_arr is None else (prefilter_arr & trig_mask)
-
-        # Selection
-        candidate_mask_base, side_sign_base = select_candidates_cross_sectional(
-            metric_for_mode, pct, filter_masks=filter_mask_pack,
-            min_range_pct=min_range_pct, min_vol_zscore=min_vol_zscore,
-            base_mask_cache=base_mask_cache,
-            base_cache_key=(mode, float(pct), low_count_policy),
-            return_sign=True, prefilter_arr=prefilter_arr,
-            low_count_policy=low_count_policy
-        )
-
-        if mode == "cusum":
-            cusum_pack = precomputed.get("cusum_pack", {})
-            z_df = cusum_pack.get("z")
-            z_gate = float(cfg.get("cusum_z_gate", 2.0))
-            if isinstance(z_df, pd.DataFrame):
-                z_gate_mask = z_df.abs().ge(z_gate).reindex(index=candidate_mask_base.index, columns=candidate_mask_base.columns).fillna(False)
-                candidate_mask_base = (candidate_mask_base & z_gate_mask).fillna(False)
-                side_sign_base = side_sign_base.where(candidate_mask_base, 0).astype(np.int8)
-
-        # Expansion
-        # Standard Expansion: Binary dilation (forward-looking only)
-        # Note: Conditional expansion (CUSUM z-gate) has been removed.
-        candidate_mask_metrics = expand_candidate_mask(candidate_mask_base, expansion_offsets)
-        side_sign_metrics = side_sign_base.copy()
-
-        # Propagate signs to expanded timestamps
-        if expansion_offsets:
-            future_offsets = sorted([int(o) for o in expansion_offsets if int(o) > 0])
-            for off in future_offsets:
-                # Shift base sign forward to align with the expanded mask time
-                shifted = side_sign_base.shift(off).fillna(0).astype(np.int8)
-                # Fill zeros where we don't have a sign yet
-                fill_mask = (side_sign_metrics == 0) & (shifted != 0)
-                side_sign_metrics = side_sign_metrics.where(~fill_mask, shifted)
-
-        side_sign_metrics = side_sign_metrics.where(candidate_mask_metrics, 0).astype(np.int8)
+        candidate_mask_metrics = pd.DataFrame(mask_arr, index=metric_for_mode.index, columns=metric_for_mode.columns, dtype=bool)
+        side_sign_metrics = pd.DataFrame(sign_arr, index=metric_for_mode.index, columns=metric_for_mode.columns, dtype=np.int8)
         
-        # Tail Filter
-        tail_mode = cfg.get("tail_filter_mode", "none")
-        tail_frac = float(cfg.get("tail_filter_top_frac", 0.20))
-        if tail_mode.lower() not in {"none", "off", ""}:
-            _tail_arr = apply_tail_filter_on_prefilter(
-                prefilter_arr=candidate_mask_metrics.to_numpy(dtype=bool, copy=False),
-                tail_mode=tail_mode, top_frac=tail_frac,
-                vol_tail_arr=vol_tail_arr, entropy_tail_arr=entropy_tail_arr
-            )
-            candidate_mask_metrics = pd.DataFrame(_tail_arr, index=candidate_mask_metrics.index, columns=candidate_mask_metrics.columns, dtype=bool)
-            side_sign_metrics = side_sign_metrics.where(candidate_mask_metrics, 0).astype(np.int8)
-
-        # Symbol Subsampling
-        current_step = symbol_step_base * symbol_step_mult
-        if current_step > 1:
-            keep_cols = list(candidate_mask_metrics.columns[::current_step])
-            candidate_mask_metrics = candidate_mask_metrics.reindex(columns=keep_cols, fill_value=False)
-            side_sign_metrics = side_sign_metrics.reindex(columns=keep_cols, fill_value=0).astype(np.int8)
+        # We don't need to re-run symbol subsampling here because row_idx, col_idx were extracted
+        # AFTER symbol subsampling inside build_candidate_mask.
 
         # 2. Learnability
         metrics = compute_learnability_metrics(
@@ -3887,6 +3982,8 @@ def run_comparison(
         columns=base_ref_df.columns,
         feature_names=available_model_features,
         float_dtype=float_dtype,
+        pop_features=True,
+        keep_keys=structural_keys,
     )
     precomputed["data_container"] = data_container
     tlog("Built long-form base table + pre-aligned DataContainer arrays")
@@ -4214,6 +4311,10 @@ def run_comparison(
         "feature_path": feature_path,
         "symbol_step_base": int(symbol_step)
     }
+
+    tlog(f"Precomputing {len(configs)} candidate masks in main process")
+    context["precomputed_masks"] = precompute_all_candidate_masks(configs, context)
+    tlog("Candidate masks precomputed and stored in context")
 
     # PASS 1: DETECTION
     tlog(f"Starting Detection Pass (Pass 1): {len(configs)} configs")

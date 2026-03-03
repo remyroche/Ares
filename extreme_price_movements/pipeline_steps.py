@@ -1094,7 +1094,7 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
     for direction, res in all_direction_results.items():
         all_weights.update(res['weights'])
         for bkt in res['buckets']:
-            all_params[bkt] = res['params']
+            all_params[bkt] = res['params'].get(bkt, {})
         all_metrics[direction] = res['metrics']
 
     import json

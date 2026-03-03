@@ -233,7 +233,7 @@ def _load_or_download_15m(symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timest
     if clean in cache:
         df = cache[clean]
         if df.empty: return df
-        return df.loc[(df.index >= start_ts) & (df.index <= end_ts), ["open", "high", "low", "close"]].astype(np.float32, copy=False)
+        return df.loc[(df.index >= start_ts) & (df.index <= end_ts), ["open", "high", "low", "close"]].astype(np.float32, copy=True)
 
     # 2. Check Disk
     path = HF_DATA_DIR / f"{clean}_15m.parquet"

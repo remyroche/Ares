@@ -228,7 +228,7 @@ def simulate_trade_exit_batch(
     n_trades = len(entry_prices)
     exit_prices = np.empty(n_trades, dtype=np.float64)
     exit_bars = np.empty(n_trades, dtype=np.int64)
-    exit_reasons = np.empty(n_trades, dtype=np.int64)
+    exit_reasons = np.empty(n_trades, dtype=np.int8)
     
     for i in prange(n_trades):
         exit_prices[i], exit_bars[i], exit_reasons[i] = simulate_trade_exit(
@@ -729,7 +729,7 @@ def compute_policy_aware_labels_batch(
 
     # Pre-allocate dense blocks once to avoid list append + np.array conversion.
     entry_prices_arr = np.empty(n_candidates, dtype=np.float64)
-    is_longs_arr = np.empty(n_candidates, dtype=np.int64)
+    is_longs_arr = np.empty(n_candidates, dtype=np.int8)
     tp_prices_arr = np.empty(n_candidates, dtype=np.float64)
     sl_prices_arr = np.empty(n_candidates, dtype=np.float64)
     trailing_pcts_arr = np.full(n_candidates, float(trailing_pct), dtype=np.float64)

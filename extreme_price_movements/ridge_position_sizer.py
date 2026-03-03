@@ -79,6 +79,7 @@ class ExitReason(Enum):
 def simulate_trade_exit(
     highs: np.ndarray,
     lows: np.ndarray,
+    opens: np.ndarray,
     closes: np.ndarray,
     entry_price: float,
     is_long: bool,
@@ -87,38 +88,10 @@ def simulate_trade_exit(
     trailing_pct: float,
     max_bars: int,
 ) -> Tuple[float, int, int]:
-    """Simulate trade exit using TP/SL/trailing rules.
-    
-    This is a Numba-optimized simulator that processes price bars sequentially
-    to determine the actual exit price based on the trading policy.
-    
-    The order of checking is important:
-    1. Update peak/trough for trailing calculations
-    2. Check TP hit (take-profit)
-    3. Check SL hit (stop-loss)
-    4. Check trailing exit (if profit has been made)
-    
-    TODO: The trailing exit logic uses a simplified `peak * (1 - trailing_pct)` 
-    formula. Consider integrating the full tpsl_optimiser policy which has
-    more sophisticated parameters (act_n, be_act_n, d_min, d_max) for 
-    activation threshold and break-even triggers.
-    
-    Args:
-        highs: Array of future high prices (length >= max_bars)
-        lows: Array of future low prices (length >= max_bars)
-        closes: Array of future close prices (length >= max_bars)
-        entry_price: Entry price of the trade
-        is_long: True for long position, False for short
-        tp_price: Take-profit price level
-        sl_price: Stop-loss price level
-        trailing_pct: Trailing percentage (e.g., 0.5 = 50% of peak retracement)
-        max_bars: Maximum number of bars to hold before timeout
-    
-    Returns:
-        Tuple of (exit_price, exit_bar, exit_reason):
-        - exit_price: The price at which the trade exited
-        - exit_bar: The bar index (0-based) when exit occurred
-        - exit_reason: 0=TP, 1=SL, 2=Trailing, 3=Timeout
+    """Simulate one trade exit with TP/SL/trailing barriers and timeout.
+
+    Returns `(exit_price, exit_bar, exit_reason)` where reasons are:
+    `0=TP`, `1=SL`, `2=Trailing`, `3=Timeout`.
     """
     peak = entry_price
     trough = entry_price
@@ -126,10 +99,11 @@ def simulate_trade_exit(
     for bar in range(max_bars):
         h = highs[bar]
         l = lows[bar]
+        o = opens[bar]
         c = closes[bar]
         
         # Check for NaN (synthetic padded data) - force timeout
-        if np.isnan(h) or np.isnan(l) or np.isnan(c):
+        if np.isnan(h) or np.isnan(l) or np.isnan(o) or np.isnan(c):
             # Return at the last valid close
             for prev_bar in range(bar - 1, -1, -1):
                 if not np.isnan(closes[prev_bar]):
@@ -160,17 +134,17 @@ def simulate_trade_exit(
                 best_rank = 10
 
                 if sl_hit:
-                    d = abs(c - sl_price)
+                    d = abs(o - sl_price)
                     if d < best_dist or (d == best_dist and 0 < best_rank):
                         best_price, best_reason, best_dist, best_rank = sl_price, 1, d, 0
 
                 if trailing_hit:
-                    d = abs(c - trailing_price)
+                    d = abs(o - trailing_price)
                     if d < best_dist or (d == best_dist and 1 < best_rank):
                         best_price, best_reason, best_dist, best_rank = trailing_price, 2, d, 1
 
                 if tp_hit:
-                    d = abs(c - tp_price)
+                    d = abs(o - tp_price)
                     if d < best_dist or (d == best_dist and 2 < best_rank):
                         best_price, best_reason, best_dist, best_rank = tp_price, 0, d, 2
 
@@ -198,17 +172,17 @@ def simulate_trade_exit(
                 best_rank = 10
 
                 if sl_hit:
-                    d = abs(c - sl_price)
+                    d = abs(o - sl_price)
                     if d < best_dist or (d == best_dist and 0 < best_rank):
                         best_price, best_reason, best_dist, best_rank = sl_price, 1, d, 0
 
                 if trailing_hit:
-                    d = abs(c - trailing_price)
+                    d = abs(o - trailing_price)
                     if d < best_dist or (d == best_dist and 1 < best_rank):
                         best_price, best_reason, best_dist, best_rank = trailing_price, 2, d, 1
 
                 if tp_hit:
-                    d = abs(c - tp_price)
+                    d = abs(o - tp_price)
                     if d < best_dist or (d == best_dist and 2 < best_rank):
                         best_price, best_reason, best_dist, best_rank = tp_price, 0, d, 2
 
@@ -222,6 +196,7 @@ def simulate_trade_exit(
 def simulate_trade_exit_batch(
     highs: np.ndarray,
     lows: np.ndarray,
+    opens: np.ndarray,
     closes: np.ndarray,
     entry_prices: np.ndarray,
     is_longs: np.ndarray,
@@ -237,6 +212,7 @@ def simulate_trade_exit_batch(
     Args:
         highs: 2D array of shape (n_trades, max_bars) with future high prices
         lows: 2D array of shape (n_trades, max_bars) with future low prices
+        opens: 2D array of shape (n_trades, max_bars) with future open prices
         closes: 2D array of shape (n_trades, max_bars) with future close prices
         entry_prices: Array of entry prices for each trade
         is_longs: Binary array (1 for long, 0 for short) for each trade
@@ -255,7 +231,7 @@ def simulate_trade_exit_batch(
     
     for i in prange(n_trades):
         exit_prices[i], exit_bars[i], exit_reasons[i] = simulate_trade_exit(
-            highs[i], lows[i], closes[i],
+            highs[i], lows[i], opens[i], closes[i],
             entry_prices[i],
             bool(is_longs[i]),
             tp_prices[i],
@@ -396,6 +372,7 @@ def compute_trade_labels(
 def _simulate_policy_utility_from_arrays(
     entry_price: float,
     is_long: bool,
+    future_opens: np.ndarray,
     future_highs: np.ndarray,
     future_lows: np.ndarray,
     future_closes: np.ndarray,
@@ -416,6 +393,7 @@ def _simulate_policy_utility_from_arrays(
     exit_price, _, _ = simulate_trade_exit(
         highs=np.asarray(future_highs, dtype=np.float64),
         lows=np.asarray(future_lows, dtype=np.float64),
+        opens=np.asarray(future_opens, dtype=np.float64),
         closes=np.asarray(future_closes, dtype=np.float64),
         entry_price=float(entry_price),
         is_long=bool(is_long),
@@ -449,7 +427,7 @@ def compute_optimal_limit_offset_labels(
     Uses shared `simulate_trade_exit` through `_simulate_policy_utility_from_arrays`.
     Returns None when required path/price columns are unavailable.
     """
-    req_cols = {"entry_price", "is_long", "future_highs", "future_lows", "future_closes"}
+    req_cols = {"entry_price", "is_long", "future_opens", "future_highs", "future_lows", "future_closes"}
     if not req_cols.issubset(set(trade_outcomes.columns)):
         return None
 
@@ -457,10 +435,11 @@ def compute_optimal_limit_offset_labels(
     for i, row in enumerate(trade_outcomes.itertuples(index=False)):
         entry_price = float(getattr(row, "entry_price"))
         is_long = bool(getattr(row, "is_long"))
+        opens = np.asarray(getattr(row, "future_opens"), dtype=float)
         highs = np.asarray(getattr(row, "future_highs"), dtype=float)
         lows = np.asarray(getattr(row, "future_lows"), dtype=float)
         closes = np.asarray(getattr(row, "future_closes"), dtype=float)
-        if len(highs) == 0 or len(lows) == 0 or len(closes) == 0:
+        if len(opens) == 0 or len(highs) == 0 or len(lows) == 0 or len(closes) == 0:
             k_labels[i] = 0.0
             continue
         h_fill = min(int(entry_fill_horizon_bars), len(highs))
@@ -492,12 +471,14 @@ def compute_optimal_limit_offset_labels(
                 u = 0.0
             else:
                 fill_i = int(hit_idx[0])
+                o2 = opens[fill_i: fill_i + max_hold_bars]
                 h2 = highs[fill_i: fill_i + max_hold_bars]
                 l2 = lows[fill_i: fill_i + max_hold_bars]
                 c2 = closes[fill_i: fill_i + max_hold_bars]
                 u = _simulate_policy_utility_from_arrays(
                     entry_price=limit_price,
                     is_long=is_long,
+                    future_opens=o2,
                     future_highs=h2,
                     future_lows=l2,
                     future_closes=c2,
@@ -637,6 +618,7 @@ def compute_policy_aware_labels(
                 continue
             
             # Get arrays for this trade
+            future_opens = opens[symbol].iloc[entry_idx:end_idx].values.astype(np.float64)
             future_highs = highs[symbol].iloc[entry_idx:end_idx].values.astype(np.float64)
             future_lows = lows[symbol].iloc[entry_idx:end_idx].values.astype(np.float64)
             future_closes = closes[symbol].iloc[entry_idx:end_idx].values.astype(np.float64)
@@ -647,7 +629,7 @@ def compute_policy_aware_labels(
             
             # Run simulator
             exit_price, exit_bar, exit_reason_int = simulate_trade_exit(
-                future_highs, future_lows, future_closes,
+                future_highs, future_lows, future_opens, future_closes,
                 float(entry_price),
                 is_long,
                 float(tp_price),
@@ -794,6 +776,7 @@ def compute_policy_aware_labels_batch(
             if entry_idx >= end_idx:
                 continue
             
+            future_opens = opens[symbol].iloc[entry_idx:end_idx].values.astype(np.float64)
             future_highs = highs[symbol].iloc[entry_idx:end_idx].values.astype(np.float64)
             future_lows = lows[symbol].iloc[entry_idx:end_idx].values.astype(np.float64)
             future_closes = closes[symbol].iloc[entry_idx:end_idx].values.astype(np.float64)
@@ -807,6 +790,7 @@ def compute_policy_aware_labels_batch(
             if actual_bars < max_bars:
                 pad_size = max_bars - actual_bars
                 # Use NaN for padded values - simulator will handle timeout at actual_bars
+                future_opens = np.concatenate([future_opens, np.full(pad_size, np.nan)])
                 future_highs = np.concatenate([future_highs, np.full(pad_size, np.nan)])
                 future_lows = np.concatenate([future_lows, np.full(pad_size, np.nan)])
                 future_closes = np.concatenate([future_closes, np.full(pad_size, np.nan)])
@@ -817,6 +801,7 @@ def compute_policy_aware_labels_batch(
             tp_prices.append(tp_price)
             sl_prices.append(sl_price)
             trailing_pcts.append(trailing_pct)
+            opens_arrays.append(future_opens[:max_bars])
             highs_arrays.append(future_highs[:max_bars])
             lows_arrays.append(future_lows[:max_bars])
             closes_arrays.append(future_closes[:max_bars])
@@ -836,13 +821,14 @@ def compute_policy_aware_labels_batch(
     tp_prices_arr = np.array(tp_prices, dtype=np.float64)
     sl_prices_arr = np.array(sl_prices, dtype=np.float64)
     trailing_pcts_arr = np.array(trailing_pcts, dtype=np.float64)
+    opens_arr = np.array(opens_arrays, dtype=np.float64)
     highs_arr = np.array(highs_arrays, dtype=np.float64)
     lows_arr = np.array(lows_arrays, dtype=np.float64)
     closes_arr = np.array(closes_arrays, dtype=np.float64)
     
     # Run batch simulation
     exit_prices, exit_bars, exit_reasons = simulate_trade_exit_batch(
-        highs_arr, lows_arr, closes_arr,
+        highs_arr, lows_arr, opens_arr, closes_arr,
         entry_prices_arr, is_longs_arr,
         tp_prices_arr, sl_prices_arr, trailing_pcts_arr,
         max_bars,
@@ -2847,7 +2833,7 @@ def run_oof_grid_backtest(
     df = oof_df.copy()
     req_cols = {
         "ts", "asset", "sizer_score_oof", "opt_limit_offset_pct",
-        "future_highs", "future_lows", "future_closes", "entry_price", "is_long",
+        "future_opens", "future_highs", "future_lows", "future_closes", "entry_price", "is_long",
     }
     missing = [c for c in sorted(req_cols) if c not in df.columns]
     if missing:
@@ -2914,44 +2900,54 @@ def run_oof_grid_backtest(
                 if sel.empty:
                     continue
                 frac = _size_linear_5_15(sel["rank_pct"].values, threshold)
-                offset_pct = sel["opt_limit_offset_pct"] if offset_mode == "optimizer" else 0.0015
+                offset_pct = sel["opt_limit_offset_pct"] if offset_mode == "optimizer" else pd.Series(0.0015, index=sel.index)
                 net = []
                 frac_valid = []
                 frac_all = _size_linear_5_15(sel["rank_pct"].values, threshold)
                 for j, (_, r) in enumerate(sel.iterrows()):
-                    highs = np.asarray(r["future_highs"], dtype=float)
-                    lows = np.asarray(r["future_lows"], dtype=float)
-                    closes = np.asarray(r["future_closes"], dtype=float)
-                    if highs.size == 0 or lows.size == 0 or closes.size == 0:
-                        continue
-                    entry_px = float(r["entry_price"])
-                    sl_mult = float(r.get("label_policy_sl_atr_mult", np.nan))
-                    tp_ratio = float(r.get("label_policy_tp_sl_ratio", np.nan))
-                    atr_entry = float(r.get("atr_12_15m", np.nan))
-                    if np.isfinite(sl_mult) and np.isfinite(tp_ratio) and np.isfinite(atr_entry):
-                        sl_abs = max(sl_mult * max(atr_entry, 1e-9), 1e-9)
-                        tp_abs = tp_ratio * sl_abs
-                        sl_pct = sl_abs / max(entry_px, 1e-9)
-                        tp_pct = tp_abs / max(entry_px, 1e-9)
-                    else:
-                        tp_pct = 0.005
-                        sl_pct = 0.0025
-                    trailing_pct = float(r.get("label_policy_giveback_pct", 0.0))
-                    max_bars = int(r.get("label_policy_max_hold_bars", 48))
-                    util = _simulate_policy_utility_from_arrays(
-                        entry_price=entry_px,
-                        is_long=bool(r["is_long"]),
-                        future_highs=highs,
-                        future_lows=lows,
-                        future_closes=closes,
-                        tp_pct=tp_pct,
-                        sl_pct=sl_pct,
-                        trailing_pct=trailing_pct,
-                        max_bars=min(max_bars, len(highs)),
-                        cost_pct=fee_roundtrip,
-                    )
-                    net.append(float(util - float(offset_pct.loc[r.name])))
-                    frac_valid.append(float(frac_all[j]))
+                    try:
+                        opens = np.asarray(r["future_opens"], dtype=float)
+                        highs = np.asarray(r["future_highs"], dtype=float)
+                        lows = np.asarray(r["future_lows"], dtype=float)
+                        closes = np.asarray(r["future_closes"], dtype=float)
+                        
+                        if opens.size == 0 or highs.size == 0 or lows.size == 0 or closes.size == 0:
+                            continue
+
+                        entry_px_raw = float(r["entry_price"])
+                        e_price = entry_px_raw - offset_pct.loc[r.name] * entry_px_raw
+                        
+                        sl_mult = float(r.get("label_policy_sl_atr_mult", np.nan))
+                        tp_ratio = float(r.get("label_policy_tp_sl_ratio", np.nan))
+                        atr_entry = float(r.get("atr_12_15m", np.nan))
+                        if np.isfinite(sl_mult) and np.isfinite(tp_ratio) and np.isfinite(atr_entry):
+                            sl_abs = max(sl_mult * max(atr_entry, 1e-9), 1e-9)
+                            tp_abs = tp_ratio * sl_abs
+                            sl_pct = sl_abs / max(entry_px_raw, 1e-9) # Use raw entry_px for SL/TP % calculation
+                            tp_pct = tp_abs / max(entry_px_raw, 1e-9)
+                        else:
+                            tp_pct = 0.005
+                            sl_pct = 0.0025
+                        trailing_pct = float(r.get("label_policy_giveback_pct", 0.0))
+                        max_bars = int(r.get("label_policy_max_hold_bars", 48))
+                        
+                        ut = _simulate_policy_utility_from_arrays(
+                            entry_price=e_price,
+                            is_long=bool(r["is_long"]),
+                            future_opens=opens,
+                            future_highs=highs,
+                            future_lows=lows,
+                            future_closes=closes,
+                            tp_pct=tp_pct,
+                            sl_pct=sl_pct,
+                            trailing_pct=trailing_pct,
+                            max_bars=min(max_bars, len(highs)),
+                            cost_pct=fee_roundtrip,
+                        )
+                        net.append(float(ut))
+                        frac_valid.append(float(frac_all[j]))
+                    except Exception:
+                        continue # Skip rows with malformed policy path data
                 if not net:
                     continue
                 net_arr = np.asarray(net, dtype=float)
@@ -2989,43 +2985,57 @@ def run_oof_grid_backtest(
     sel = df[df["rank_pct"] >= win_threshold].copy()
     if sel.empty:
         return phase1_df
-    offset_pct = sel["opt_limit_offset_pct"] if win_offset_mode == "optimizer" else 0.0015
+    # FIX #9: ensure offset_pct is always a Series so .loc[r.name] is safe.
+    if win_offset_mode == "optimizer":
+        offset_pct = sel["opt_limit_offset_pct"]
+    else:
+        offset_pct = pd.Series(0.0015, index=sel.index)
     row_nets = []
     kept_idx = []
     for j, (_, r) in enumerate(sel.iterrows()):
-        highs = np.asarray(r["future_highs"], dtype=float)
-        lows = np.asarray(r["future_lows"], dtype=float)
-        closes = np.asarray(r["future_closes"], dtype=float)
-        if highs.size == 0 or lows.size == 0 or closes.size == 0:
-            continue
-        entry_px = float(r["entry_price"])
-        sl_mult = float(r.get("label_policy_sl_atr_mult", np.nan))
-        tp_ratio = float(r.get("label_policy_tp_sl_ratio", np.nan))
-        atr_entry = float(r.get("atr_12_15m", np.nan))
-        if np.isfinite(sl_mult) and np.isfinite(tp_ratio) and np.isfinite(atr_entry):
-            sl_abs = max(sl_mult * max(atr_entry, 1e-9), 1e-9)
-            tp_abs = tp_ratio * sl_abs
-            sl_pct = sl_abs / max(entry_px, 1e-9)
-            tp_pct = tp_abs / max(entry_px, 1e-9)
-        else:
-            tp_pct = 0.005
-            sl_pct = 0.0025
-        trailing_pct = float(r.get("label_policy_giveback_pct", 0.0))
-        max_bars = int(r.get("label_policy_max_hold_bars", 48))
-        util = _simulate_policy_utility_from_arrays(
-            entry_price=entry_px,
-            is_long=bool(r["is_long"]),
-            future_highs=highs,
-            future_lows=lows,
-            future_closes=closes,
-            tp_pct=tp_pct,
-            sl_pct=sl_pct,
-            trailing_pct=trailing_pct,
-            max_bars=min(max_bars, len(highs)),
-            cost_pct=fee_roundtrip,
-        )
-        row_nets.append(float(util - float(offset_pct.loc[r.name])))
-        kept_idx.append(j)
+        try:
+            opens = np.asarray(r["future_opens"], dtype=float)
+            highs = np.asarray(r["future_highs"], dtype=float)
+            lows = np.asarray(r["future_lows"], dtype=float)
+            closes = np.asarray(r["future_closes"], dtype=float)
+            
+            if opens.size == 0 or highs.size == 0 or lows.size == 0 or closes.size == 0:
+                continue
+
+            entry_px_raw = float(r["entry_price"])
+            e_price = entry_px_raw - offset_pct.loc[r.name] * entry_px_raw
+            
+            sl_mult = float(r.get("label_policy_sl_atr_mult", np.nan))
+            tp_ratio = float(r.get("label_policy_tp_sl_ratio", np.nan))
+            atr_entry = float(r.get("atr_12_15m", np.nan))
+            if np.isfinite(sl_mult) and np.isfinite(tp_ratio) and np.isfinite(atr_entry):
+                sl_abs = max(sl_mult * max(atr_entry, 1e-9), 1e-9)
+                tp_abs = tp_ratio * sl_abs
+                sl_pct = sl_abs / max(entry_px_raw, 1e-9)
+                tp_pct = tp_abs / max(entry_px_raw, 1e-9)
+            else:
+                tp_pct = 0.005
+                sl_pct = 0.0025
+            trailing_pct = float(r.get("label_policy_giveback_pct", 0.0))
+            max_bars = int(r.get("label_policy_max_hold_bars", 48))
+            
+            ut = _simulate_policy_utility_from_arrays(
+                entry_price=e_price,
+                is_long=bool(r["is_long"]),
+                future_opens=opens,
+                future_highs=highs,
+                future_lows=lows,
+                future_closes=closes,
+                tp_pct=tp_pct,
+                sl_pct=sl_pct,
+                trailing_pct=trailing_pct,
+                max_bars=min(max_bars, len(highs)),
+                cost_pct=fee_roundtrip,
+            )
+            row_nets.append(float(ut))
+            kept_idx.append(j)
+        except Exception:
+            continue # Skip rows with malformed policy path data
     if not row_nets:
         return phase1_df
     net_ref = np.asarray(row_nets, dtype=float)
@@ -3278,8 +3288,8 @@ def run_ridge_position_sizer_step(
             oof_payload["close"] = np.asarray(trade_outcomes['entry_price'].values[:n_oof], dtype=np.float32)
         # Required policy-path columns for OOF backtest (no proxy fallback supported).
         for col in (
-            "future_highs", "future_lows", "future_closes",
-            "entry_price", "is_long",
+            "future_opens", "future_highs", "future_lows", "future_closes",
+            "entry_price", "is_long", "sizer_score_oof", "opt_limit_offset_pct",
             "label_policy_sl_atr_mult", "label_policy_tp_sl_ratio",
             "atr_12_15m", "label_policy_giveback_pct", "label_policy_max_hold_bars",
         ):
@@ -3300,9 +3310,9 @@ def run_ridge_position_sizer_step(
                 bt_df.to_csv(_bt_path, index=False)
                 metrics['oof_backtest_grid_path'] = str(_bt_path)
                 tprint(f"Saved Ridge OOF backtest grid to {_bt_path}")
-        except ValueError as e:
+        except Exception as e:  # FIX #11: catch AttributeError and any other errors, not just ValueError
             metrics['oof_backtest_grid_error'] = str(e)
-            tprint(f"WARNING: Ridge OOF backtest grid skipped: {e}")
+            tprint(f"WARNING: Ridge OOF backtest grid skipped: {type(e).__name__}: {e}")
 
     # Generate Trade Quality Diagnostic Plot
     try:

@@ -4,6 +4,7 @@ import platform
 from numba import jit
 from joblib import Parallel, delayed, cpu_count
 from .fast_funcs import simulate_trade_numba
+from .utils import tprint
 
 OUT_SL = np.int8(0)
 OUT_TO = np.int8(1)
@@ -662,79 +663,111 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
         delayed(_process_asset)(asset) for asset in assets
     )
 
+    # FIX #4: Pre-load 15m HF data once per asset (batch I/O) before iterating results.
+    # Avoids one disk read per conflict; loads lazily only for assets that actually have conflicts.
+    _hf_cache: dict = {}
+
+    def _get_hf_data(asset: str):
+        """Return cached 15m DataFrame for asset; loads from disk on first call."""
+        if asset not in _hf_cache:
+            try:
+                from extreme_price_movements.hf_data_loader import _load_existing_data
+                _hf_cache[asset] = _load_existing_data(asset)
+            except Exception as _e:
+                tprint(f"labeling: WARNING could not load 15m HF data for {asset}: {_e}")
+                _hf_cache[asset] = pd.DataFrame()
+        return _hf_cache[asset]
+
     for asset, lbs_or_out, rets, qual, conflict_j, tp_arr, sl_arr in results:
         # Check for conflicts
         ambiguous_indices = np.where(conflict_j != -1)[0]
         if len(ambiguous_indices) > 0:
-            try:
-                from extreme_price_movements.hf_data_loader import _load_existing_data
-                df_15m = _load_existing_data(asset)
-                if not df_15m.empty:
-                    c_arr = c[asset].to_numpy()
-                    for i in ambiguous_indices:
-                        j = conflict_j[i]
-                        # Fetch 15m data for the hour corresponding to conflict_j
-                        t_1h = c.index[j]
-                        t_end = t_1h + pd.Timedelta(hours=1) - pd.Timedelta(milliseconds=1)
+            # FIX #4: use cached per-asset 15m data (loaded once above, not per conflict).
+            df_15m = _get_hf_data(asset)
+            if not df_15m.empty:
+                # FIX #2: entry_p must come from the open of bar i+1 (trade entry), not bar i close.
+                # The labeling uses closes[i] as entry (signal at close), so we use that consistently.
+                c_arr = c[asset].to_numpy()
+                for i in ambiguous_indices:
+                    j = conflict_j[i]
+                    # Fetch 15m data for the hour corresponding to conflict bar j
+                    t_1h = c.index[j]
+                    t_end = t_1h + pd.Timedelta(hours=1) - pd.Timedelta(milliseconds=1)
+                    try:
                         hf = df_15m.loc[t_1h:t_end]
-                        if hf.empty:
-                            continue
+                    except Exception as _e:
+                        tprint(f"labeling: WARNING 15m slice failed for {asset} bar {j}: {_e}")
+                        continue
+                    if hf.empty:
+                        continue
 
-                        entry_p = c_arr[i]
-                        activation = tp_arr[i]
-                        sl_dist = sl_arr[i]
+                    # FIX #2: entry_p is closes[i] (signal price — consistent with Numba labelers).
+                    # tp_arr[i] is the activation/TP threshold (pct from entry).
+                    # Derive the actual SL price using sl_arr[i] as the fixed SL pct distance:
+                    #   - _numba_triple_barrier: sl_arr = fixed SL distance (pct) from entry.
+                    #   - _numba_triple_barrier_outcomes: same convention.
+                    # This is also how sl_price was computed inside the numba kernels.
+                    entry_p = float(c_arr[i])
+                    activation = float(tp_arr[i])  # TP distance (pct) from entry
+                    sl_pct = float(sl_arr[i])       # Fixed SL distance (pct) from entry
 
-                        tp_price = entry_p * (1.0 + activation) if side_int == 1 else entry_p * (1.0 - activation)
-                        sl_price = entry_p * (1.0 - sl_dist) if side_int == 1 else entry_p * (1.0 + sl_dist)
+                    tp_price = entry_p * (1.0 + activation) if side_int == 1 else entry_p * (1.0 - activation)
+                    sl_price = entry_p * (1.0 - sl_pct) if side_int == 1 else entry_p * (1.0 + sl_pct)
 
-                        resolved = None
+                    resolved = None
 
-                        # Loop through the 15m bars inside this 1h bar
-                        for _, row in hf.iterrows():
-                            h15 = float(row["high"])
-                            l15 = float(row["low"])
-                            c15 = float(row["close"])
+                    # Walk 15m bars inside this 1h conflict bar to determine which hit first.
+                    for _, row in hf.iterrows():
+                        o15 = float(row["open"])
+                        h15 = float(row["high"])
+                        l15 = float(row["low"])
+                        c15 = float(row["close"])
 
-                            hit_tp_15 = (h15 >= tp_price) if side_int == 1 else (l15 <= tp_price)
-                            hit_sl_15 = (l15 <= sl_price) if side_int == 1 else (h15 >= sl_price)
+                        hit_tp_15 = (h15 >= tp_price) if side_int == 1 else (l15 <= tp_price)
+                        hit_sl_15 = (l15 <= sl_price) if side_int == 1 else (h15 >= sl_price)
 
-                            if hit_tp_15 and hit_sl_15:
-                                d_tp = abs(c15 - tp_price)
-                                d_sl = abs(c15 - sl_price)
-                                if d_tp < d_sl:
-                                    resolved = "TP"
-                                else:
-                                    resolved = "SL"
-                                break
-                            elif hit_tp_15:
-                                resolved = "TP"
-                                break
-                            elif hit_sl_15:
-                                resolved = "SL"
-                                break
+                        if hit_tp_15 and hit_sl_15:
+                            # Both in same 15m bar — use open proximity as tie-break.
+                            # Momentum entering the bar likely hit the closer barrier first.
+                            d_tp = abs(o15 - tp_price)
+                            d_sl = abs(o15 - sl_price)
+                            resolved = "TP" if d_tp < d_sl else "SL"
+                            break
+                        elif hit_tp_15:
+                            resolved = "TP"
+                            break
+                        elif hit_sl_15:
+                            resolved = "SL"
+                            break
 
-                        if resolved == "TP":
-                            if return_outcomes:
-                                lbs_or_out[i] = OUT_TP
-                                rets[i] = activation
-                                if qual is not None:
-                                    qual[i] = max(qual[i], 0.51)
+                    if resolved == "TP":
+                        if return_outcomes:
+                            lbs_or_out[i] = OUT_TP
+                            rets[i] = activation
+                            if qual is not None:
+                                qual[i] = max(qual[i], 0.51)
+                        else:
+                            # In _numba_triple_barrier the trailing stop exits label OUT_TP when
+                            # trailing_active is True at SL hit time. A genuine TP-before-SL
+                            # resolution means we should label it as a non-loss outcome.
+                            lbs_or_out[i] = OUT_TP
+                            rets[i] = activation
+                    elif resolved == "SL":
+                        if return_outcomes:
+                            lbs_or_out[i] = OUT_SL
+                            rets[i] = -sl_pct
+                            if qual is not None:
+                                qual[i] = min(qual[i], 0.49)
+                        else:
+                            lbs_or_out[i] = OUT_SL
+                            # FIX #2: compute SL return from actual sl_price, not from sl_arr directly.
+                            if side_int == 1:
+                                rets[i] = (sl_price / entry_p) - 1.0
                             else:
-                                lbs_or_out[i] = OUT_TP  # _numba_triple_barrier uses OUT_TP (which is 2) for trailing_active exit. But wait, in _numba_triple_barrier there is NO fixed TP exit. It only has OUT_TP if trailing_active else OUT_SL.
-                                rets[i] = activation
-                        elif resolved == "SL":
-                            if return_outcomes:
-                                lbs_or_out[i] = OUT_SL
-                                rets[i] = -sl_dist
-                                if qual is not None:
-                                    qual[i] = min(qual[i], 0.49)
-                            else:
-                                lbs_or_out[i] = OUT_SL
-                                if side_int == 1: rets[i] = (sl_price / entry_p) - 1.0
-                                else: rets[i] = (entry_p / sl_price) - 1.0
-
-            except Exception as e:
-                pass
+                                rets[i] = (entry_p / sl_price) - 1.0
+            else:
+                # FIX #1: log that 15m data is unavailable; label remains the numba default (SL).
+                tprint(f"labeling: WARNING no 15m HF data for {asset}; {len(ambiguous_indices)} ambiguous bars left as SL (numba default)")
 
         out_labels[asset] = lbs_or_out
         out_returns[asset] = rets

@@ -173,7 +173,10 @@ def run_optimise_step(
     m50 = load_step_module("50_eval_holdout_report.py")
     mw = load_step_module("write_params_json.py")
 
-    # Pre-load 15m data for all trades to avoid redundant disk I/O / OOM during TP/SL calibration
+    # Pre-load 15m data for all trades to avoid redundant disk I/O during TP/SL calibration.
+    # FIX #12: slice to the relevant time window *before* storing, so we don't hold the full
+    # multi-year history of each asset in memory.
+    # FIX #13: log a warning per asset if the load raises an exception.
     df_15m_dict = {}
     if "asset" in trades.columns and "timestamp" in trades.columns:
         from extreme_price_movements.hf_data_loader import _load_existing_data
@@ -181,10 +184,20 @@ def run_optimise_step(
         for asset in unique_assets:
             asset_trades = trades[trades["asset"] == asset]
             min_ts = pd.to_datetime(asset_trades["timestamp"].min(), utc=True)
-            max_ts = pd.to_datetime(asset_trades["timestamp"].max(), utc=True) + pd.Timedelta(hours=24) # Pad with 24h
+            # FIX #12: use per-trade max_hold from column when available; fall back to 24h pad.
+            if "label_policy_max_hold_bars" in asset_trades.columns:
+                max_hold_h = float(asset_trades["label_policy_max_hold_bars"].max() / 4.0)
+            else:
+                max_hold_h = 24.0
+            max_ts = pd.to_datetime(asset_trades["timestamp"].max(), utc=True) + pd.Timedelta(hours=max_hold_h)
 
-            df_15m = _load_existing_data(asset)
+            try:
+                df_15m = _load_existing_data(asset)
+            except Exception as _e:
+                tprint(f"optimise: WARNING could not load 15m data for {asset}: {_e} — double-hit resolution unavailable for this asset")
+                continue
             if not df_15m.empty:
+                # Slice first, then store — avoids holding full history in memory.
                 df_15m_dict[asset] = df_15m.loc[min_ts:max_ts]
 
     buckets = list(pd.Series(trades["bucket"].astype(str).unique()).sort_values())[:4]

@@ -31,6 +31,7 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 import argparse
+from typing import Optional
 import pandas as pd
 
 from extreme_price_movements.config import CFG, enable_perp_feature_keys
@@ -137,16 +138,21 @@ def _find_latest_feature_ts(data_root):
 def run_download(cfg):
     """Download OHLCV data from Binance for the full training universe."""
     import time as _time
+    from extreme_price_movements.hf_data_loader import sync_15m_ohlcv_range
+
     tprint("STEP: DOWNLOAD START")
     store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
     use_perps = bool(cfg.get("use_perps", False))
+    _check_complete = str(os.environ.get("EPM_DOWNLOAD_CHECK_COMPLETE", str(cfg.get("download_check_complete", True)))).strip().lower() in {"1", "true", "yes", "y", "on"}
+    _missing_lt_days = float(os.environ.get("EPM_DOWNLOAD_SKIP_LT_DAYS", cfg.get("download_skip_if_missing_lt_days", 3.0)) or 0.0)
 
     # --- Freshness check: skip download if data is < 6 days old ---
     import glob as _glob, json as _json
     _FRESHNESS_DAYS = 6
+    _force_download = str(os.environ.get("EPM_DOWNLOAD_FORCE", str(cfg.get("download_force", False)))).strip().lower() in {"1", "true", "yes", "y", "on"}
     _meta_dir = store.ohlcv_dir
     _meta_files = _glob.glob(os.path.join(_meta_dir, "*.meta.json"))
-    if _meta_files:
+    if _meta_files and (not _force_download) and (not _check_complete):
         _latest_ms = 0
         for mf in _meta_files[:20]:  # sample up to 20 symbols
             try:
@@ -163,33 +169,181 @@ def run_download(cfg):
                 tprint(f"Data is {_age.total_seconds()/3600:.1f}h old (< {_FRESHNESS_DAYS}d). Skipping download.")
                 tprint("STEP: DOWNLOAD COMPLETE (fresh)")
                 return
+    elif _force_download:
+        tprint("Freshness gate bypassed (download_force=True)")
 
     ex = make_perp_exchange() if use_perps else make_spot_exchange()
 
     mu = refresh_margin_universe_daily(None, quotes=("USDT", "USDC", "BUSD", "EUR"))
     fetch_syms = build_fetch_universe(mu.symbols, cfg["market_basket"], cfg["fetch_symbols_M"])
-    tprint(f"Download universe: {len(fetch_syms)} symbols")
+    _base_n = len(fetch_syms)
+
+    # Runtime overrides for parallel download orchestrations.
+    _order = str(os.environ.get("EPM_DOWNLOAD_SYMBOL_ORDER", cfg.get("download_symbol_order", "volume"))).strip().lower()
+    _stride = max(1, int(os.environ.get("EPM_DOWNLOAD_SYMBOL_STRIDE", cfg.get("download_symbol_stride", 1))))
+    _offset = max(0, int(os.environ.get("EPM_DOWNLOAD_SYMBOL_OFFSET", cfg.get("download_symbol_offset", 0))))
+    _max_symbols = int(os.environ.get("EPM_DOWNLOAD_MAX_SYMBOLS", cfg.get("download_max_symbols", 0)) or 0)
+    _part_count = max(1, int(os.environ.get("EPM_DOWNLOAD_PARTITION_COUNT", cfg.get("download_partition_count", 1))))
+    _part_id = max(0, int(os.environ.get("EPM_DOWNLOAD_PARTITION_ID", cfg.get("download_partition_id", 0))))
+    if _part_id >= _part_count:
+        _part_id = _part_count - 1
+
+    # Disjoint partitioning is based on canonical alpha order to avoid overlap
+    # between multiple concurrent downloaders.
+    _alpha = sorted(fetch_syms)
+    if _part_count > 1:
+        _selected = [s for i, s in enumerate(_alpha) if (i % _part_count) == _part_id]
+    else:
+        _selected = _alpha
+
+    if _order in {"alpha_desc", "reverse_alpha", "reverse_alphabetical"}:
+        fetch_syms = sorted(_selected, reverse=True)
+    elif _order in {"alpha_asc", "alphabetical"}:
+        fetch_syms = sorted(_selected)
+    else:
+        _sel = set(_selected)
+        fetch_syms = [s for s in fetch_syms if s in _sel]
+
+    if _stride > 1 or _offset > 0:
+        fetch_syms = fetch_syms[_offset::_stride]
+
+    if _max_symbols > 0:
+        fetch_syms = fetch_syms[:_max_symbols]
+
+    tprint(
+        f"Download universe: {len(fetch_syms)} symbols "
+        f"(base={_base_n}, order={_order}, stride={_stride}, offset={_offset}, "
+        f"partition={_part_id}/{_part_count}, max={_max_symbols if _max_symbols > 0 else 'all'})"
+    )
 
     fetch_years = cfg.get("fetch_years", 3)
     since = pd.Timestamp.utcnow() - pd.Timedelta(days=int(fetch_years * 365))
     since_ms = int(since.value // 10**6)
+    now_utc = pd.Timestamp.now(tz="UTC")
+    since_1h = since.floor("1h")
+    now_1h = now_utc.floor("1h")
+    since_15m = since.floor("15min")
+    now_15m = now_utc.floor("15min")
 
-    success, fail = 0, 0
-    for i, sym in enumerate(fetch_syms):
+    def _panel_complete(df: Optional[pd.DataFrame], start_ts: pd.Timestamp, end_ts: pd.Timestamp, freq: str) -> bool:
+        if df is None or df.empty:
+            return False
+        idx = df.index if isinstance(df.index, pd.DatetimeIndex) else pd.to_datetime(df.index)
+        if idx.tz is None:
+            idx = idx.tz_localize("UTC")
+        else:
+            idx = idx.tz_convert("UTC")
+        window = idx[(idx >= start_ts) & (idx <= end_ts)]
+        if len(window) == 0:
+            return False
+        expected = len(pd.date_range(start=start_ts, end=end_ts, freq=freq, tz="UTC"))
+        return (len(window) == expected) and (window.min() <= start_ts) and (window.max() >= end_ts)
+
+    def _panel_missing_days(df: Optional[pd.DataFrame], start_ts: pd.Timestamp, end_ts: pd.Timestamp, freq: str) -> float:
+        expected = len(pd.date_range(start=start_ts, end=end_ts, freq=freq, tz="UTC"))
+        if expected <= 0:
+            return 0.0
+        if df is None or df.empty:
+            return float((end_ts - start_ts) / pd.Timedelta(days=1))
+        idx = df.index if isinstance(df.index, pd.DatetimeIndex) else pd.to_datetime(df.index)
+        if idx.tz is None:
+            idx = idx.tz_localize("UTC")
+        else:
+            idx = idx.tz_convert("UTC")
+        window = idx[(idx >= start_ts) & (idx <= end_ts)]
+        observed = len(pd.DatetimeIndex(window).unique())
+        missing_bars = max(0, expected - observed)
+        step = pd.to_timedelta(freq)
+        return float((missing_bars * step) / pd.Timedelta(days=1))
+
+    def _symbol_status_1h(sym: str) -> Tuple[bool, float]:
         try:
-            if use_perps:
-                store.update_symbol_perp(ex, sym, since_ms)
-            else:
-                store.update_symbol(ex, sym, since_ms)
-            success += 1
+            df_local = store.load(sym)
+            return (
+                _panel_complete(df_local, since_1h, now_1h, "1h"),
+                _panel_missing_days(df_local, since_1h, now_1h, "1h"),
+            )
+        except Exception:
+            return False, 1e9
+
+    def _symbol_status_15m(sym: str) -> Tuple[bool, float]:
+        try:
+            from extreme_price_movements.hf_data_loader import _load_existing_data
+            df_local = _load_existing_data(sym)
+            return (
+                _panel_complete(df_local, since_15m, now_15m, "15min"),
+                _panel_missing_days(df_local, since_15m, now_15m, "15min"),
+            )
+        except Exception:
+            return False, 1e9
+
+    success_1h, fail_1h = 0, 0
+    success_15m, fail_15m = 0, 0
+    skip_1h, skip_15m = 0, 0
+    skip_small_1h, skip_small_15m = 0, 0
+    for i, sym in enumerate(fetch_syms):
+        if _check_complete:
+            complete_1h, missing_1h_days = _symbol_status_1h(sym)
+            complete_15m, missing_15m_days = _symbol_status_15m(sym)
+        else:
+            complete_1h, complete_15m = False, False
+            missing_1h_days, missing_15m_days = 1e9, 1e9
+
+        if complete_1h:
+            skip_1h += 1
+        elif missing_1h_days < _missing_lt_days:
+            skip_1h += 1
+            skip_small_1h += 1
+        else:
+            try:
+                if use_perps:
+                    store.update_symbol_perp(ex, sym, since_ms)
+                else:
+                    store.update_symbol(ex, sym, since_ms)
+                success_1h += 1
+            except Exception as e:
+                fail_1h += 1
+                tprint(f"  FAIL 1h {sym}: {e}")
+
+        if complete_15m:
+            skip_15m += 1
+        elif missing_15m_days < _missing_lt_days:
+            skip_15m += 1
+            skip_small_15m += 1
+        else:
+            try:
+                df_15m = sync_15m_ohlcv_range(
+                    ex,
+                    sym,
+                    since,
+                    pd.Timestamp.now(tz="UTC"),
+                    full_backfill=bool(cfg.get("download_15m_full_backfill", True)),
+                )
+                if df_15m is None or df_15m.empty:
+                    fail_15m += 1
+                    tprint(f"  FAIL 15m {sym}: empty range")
+                else:
+                    success_15m += 1
+            except Exception as e:
+                fail_15m += 1
+                tprint(f"  FAIL 15m {sym}: {e}")
+
+        try:
             if (i + 1) % 10 == 0:
-                tprint(f"  Download progress: {i+1}/{len(fetch_syms)} (ok={success}, fail={fail})")
-        except Exception as e:
-            fail += 1
-            tprint(f"  FAIL {sym}: {e}")
+                tprint(
+                    f"  Download progress: {i+1}/{len(fetch_syms)} "
+                    f"(1h ok={success_1h}, 1h skip={skip_1h} [<{_missing_lt_days:g}d={skip_small_1h}], 1h fail={fail_1h}, "
+                    f"15m ok={success_15m}, 15m skip={skip_15m} [<{_missing_lt_days:g}d={skip_small_15m}], 15m fail={fail_15m})"
+                )
+        except Exception:
+            pass
         _time.sleep(0.1)  # gentle rate limit
 
-    tprint(f"STEP: DOWNLOAD COMPLETE — {success} ok, {fail} failed out of {len(fetch_syms)}")
+    tprint(
+        f"STEP: DOWNLOAD COMPLETE — symbols={len(fetch_syms)} "
+        f"(1h ok={success_1h}, 1h skip={skip_1h} [<{_missing_lt_days:g}d={skip_small_1h}], 1h fail={fail_1h}; "
+        f"15m ok={success_15m}, 15m skip={skip_15m} [<{_missing_lt_days:g}d={skip_small_15m}], 15m fail={fail_15m})"
+    )
 
 
 def _label_artifacts_ready(cfg, ts_sig):
@@ -583,14 +737,12 @@ def run_train_meta(cfg, ts_override=None):
             run_breakdown_diagnostics_integration(cfg, ts_sig)
         except Exception as e:
             tprint(f"WARNING: breakdown diagnostics failed: {e}")
-            
-        # Train the new EV-decomposition position sizer immediately after meta training.
-        if bool(cfg.get("position_sizer_enabled", False)):
-            try:
-                tprint("TRAIN_META: running position sizer training (models.py + orchestrator)...")
-                run_sizer(cfg, ts_override=run_id)
-            except Exception as e:
-                tprint(f"WARNING: train_meta position sizer step failed: {e}")
+
+        # NOTE: The Ridge position sizer (which combines meta-model OOF outputs into a
+        # position-sizing signal) must NOT be auto-triggered here. It is trained exclusively
+        # by the explicit `sizer` / `ridge_sizer` pipeline step to avoid double-training.
+        # The EV-decomposition heads (pwin, win/loss quantiles) trained above by
+        # train_position_sizer_models() inside train_daily_meta ARE the train_meta output.
 
         tprint("TRAIN_META PIPELINE COMPLETE")
     else:

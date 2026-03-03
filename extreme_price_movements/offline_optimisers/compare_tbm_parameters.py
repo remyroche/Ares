@@ -114,6 +114,13 @@ from extreme_price_movements.hf_data_loader import HF_DATA_DIR, get_15m_ohlcv
 EPS = 1e-12
 TBM_CACHE_VERSION = 2
 ACTIVE_TEST_FEATURE_KEYS = list(TEST_FEATURE_KEYS)
+USE_15M_REFINEMENT = True  # Feature toggle to disable 15m data download/refinement
+_HF_15M_FAILED_SYMBOLS: set[str] = set()
+_HF_15M_MEMORY_CACHE: Dict[str, pd.DataFrame] = {}
+
+
+def _get_global_hf_cache() -> Dict[str, pd.DataFrame]:
+    return _HF_15M_MEMORY_CACHE
 
 
 def _is_apple_arm() -> bool:
@@ -208,40 +215,75 @@ def _safe_float(v: Any, default: float = 0.0) -> float:
 
 
 def _symbol_to_hf_ccxt(symbol: str) -> str:
-    s = str(symbol or "").upper().replace("/", "")
+    raw = str(symbol or "").upper().strip()
+    s = raw.replace("/", "").replace("_", "").replace("-", "").replace(" ", "")
     for quote in ("USDT", "USDC", "BUSD", "EUR", "BTC", "ETH"):
         if s.endswith(quote) and len(s) > len(quote):
             return f"{s[:-len(quote)]}/{quote}"
-    return symbol
+    return raw.replace("_", "/")
 
 
 def _load_or_download_15m(symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timestamp) -> pd.DataFrame:
-    clean = str(symbol or "").replace("/", "").lower()
+    """Load or download 15m data with global memory caching."""
+    clean = str(symbol or "").replace("/", "").replace("_", "").lower()
+    ccxt_symbol = _symbol_to_hf_ccxt(symbol)
+    
+    # 1. Check Memory Cache first (fastest)
+    cache = _get_global_hf_cache()
+    if clean in cache:
+        df = cache[clean]
+        if df.empty: return df
+        return df.loc[(df.index >= start_ts) & (df.index <= end_ts), ["open", "high", "low", "close"]]
+
+    # 2. Check Disk
     path = HF_DATA_DIR / f"{clean}_15m.parquet"
     if path.exists():
         try:
             df = pd.read_parquet(path)
-            idx = pd.to_datetime(df.index)
+            idx = df.index if isinstance(df.index, pd.DatetimeIndex) else pd.to_datetime(df.index)
             df.index = idx.tz_localize("UTC") if idx.tz is None else idx.tz_convert("UTC")
-            return df.loc[(df.index >= start_ts) & (df.index <= end_ts), ["open", "high", "low", "close"]]
+            df = df[["open", "high", "low", "close"]].astype(np.float32)
+            cache[clean] = df # Cache full DF
+            return df.loc[(df.index >= start_ts) & (df.index <= end_ts)]
         except Exception:
             pass
 
+    # 3. Download (Slowest)
     try:
+        if ccxt_symbol in _HF_15M_FAILED_SYMBOLS:
+            return pd.DataFrame()
         import ccxt  # type: ignore
         ex = ccxt.binance({"enableRateLimit": True})
-        got = get_15m_ohlcv(ex, _symbol_to_hf_ccxt(symbol), start_ts, max_hold_hours=max(1, int(math.ceil((end_ts - start_ts).total_seconds() / 3600.0))))
+        # Note: we download a larger window to reduce future hits
+        got = get_15m_ohlcv(ex, ccxt_symbol, start_ts, max_hold_hours=24)
         if got is None or got.empty:
+            _HF_15M_FAILED_SYMBOLS.add(ccxt_symbol)
+            cache[clean] = pd.DataFrame()
             return pd.DataFrame()
-        return got.loc[(got.index >= start_ts) & (got.index <= end_ts), ["open", "high", "low", "close"]]
-    except Exception:
+        
+        got = got[["open", "high", "low", "close"]].astype(np.float32)
+        # Update cache with what we just got (merged if we were smarter, but get_15m_ohlcv handles disk merge)
+        # Actually, let's just re-load from disk to be sure we have the full merged version
+        if path.exists():
+             df = pd.read_parquet(path)
+             idx = df.index if isinstance(df.index, pd.DatetimeIndex) else pd.to_datetime(df.index)
+             df.index = idx.tz_localize("UTC") if idx.tz is None else idx.tz_convert("UTC")
+             df = df[["open", "high", "low", "close"]].astype(np.float32)
+             cache[clean] = df
+             return df.loc[(df.index >= start_ts) & (df.index <= end_ts)]
+             
+        cache[clean] = got
+        return got.loc[(got.index >= start_ts) & (got.index <= end_ts)]
+    except Exception as exc:
+        _HF_15M_FAILED_SYMBOLS.add(ccxt_symbol)
+        tprint(f"15m download disabled for {ccxt_symbol} after failure: {exc}")
         return pd.DataFrame()
 
 
-def _resolve_barrier_conflict_15m(*, side: str, bar_close: float, tp_price: float, sl_price: float, trailing_price: Optional[float] = None) -> Optional[str]:
-    hits: Dict[str, float] = {"TP": abs(bar_close - tp_price), "SL": abs(bar_close - sl_price)}
+def _resolve_barrier_conflict_15m(*, side: str, bar_open: float, tp_price: float, sl_price: float, trailing_price: Optional[float] = None) -> Optional[str]:
+    hits: Dict[str, float] = {"TP": abs(bar_open - tp_price), "SL": abs(bar_open - sl_price)}
     if trailing_price is not None and np.isfinite(trailing_price):
-        hits["TRAILING"] = abs(bar_close - trailing_price)
+        hits["TRAILING"] = abs(bar_open - trailing_price)
     order = {"SL": 0, "TRAILING": 1, "TP": 2}
     items = sorted(hits.items(), key=lambda kv: (kv[1], order.get(kv[0], 99)))
     return items[0][0] if items else None
@@ -260,69 +302,111 @@ def _refine_ambiguous_labels_with_15m(
     close_df = panel.get("close")
     high_df = panel.get("high")
     low_df = panel.get("low")
-    if close_df is None or high_df is None or low_df is None:
+    if not USE_15M_REFINEMENT or close_df is None or high_df is None or low_df is None:
         return lbl, ret, qual
 
-    lbl2, ret2, qual2 = lbl.copy(), ret.copy(), qual.copy()
-    for sym in close_df.columns:
+    symbols = close_df.columns
+    idx = close_df.index
+    
+    # ── Smoking Gun #1 Bottleneck Fix: Parallelize symbol refinement & Bulk-load 15m ──
+    # We use joblib Parallel with threads because 15m resolution is primarily I/O and light logic.
+    n_jobs = _safe_parallel_jobs(len(symbols), cap=4) if not _is_apple_arm() else 1 
+    # Wait, even on Apple Silicon, threading is OK for I/O. Let's force a bit of parallelism.
+    n_jobs = 4 if len(symbols) > 10 else 1
+
+    def _process_symbol(sym: str):
         c = close_df[sym].to_numpy(dtype=np.float64, copy=False)
         hh = high_df[sym].to_numpy(dtype=np.float64, copy=False)
         ll = low_df[sym].to_numpy(dtype=np.float64, copy=False)
         tpv = tp_df[sym].to_numpy(dtype=np.float64, copy=False)
         slv = sl_df[sym].to_numpy(dtype=np.float64, copy=False)
-        lab = lbl2[sym].to_numpy(dtype=np.int8, copy=False)
-        idx = close_df.index
+        lab = lbl[sym].to_numpy(dtype=np.int8, copy=True)
+        rets_sym = ret[sym].to_numpy(dtype=np.float64, copy=True)
+        qual_sym = qual[sym].to_numpy(dtype=np.float32, copy=True)
+        
         n = len(c)
+        # Find all ambiguous indices first to avoid entering the loop if not needed
+        ambiguous_j_list = []
         for i in range(n - 1):
-            entry = c[i]
-            if not np.isfinite(entry) or entry <= 0 or not np.isfinite(tpv[i]) or not np.isfinite(slv[i]):
+            if not np.isfinite(c[i]) or c[i] <= 0 or not np.isfinite(tpv[i]) or not np.isfinite(slv[i]):
                 continue
-            tp_price = entry * (1.0 + tpv[i]) if side == "long" else entry * (1.0 - tpv[i])
-            sl_price = entry * (1.0 - slv[i]) if side == "long" else entry * (1.0 + slv[i])
+            tp_price = c[i] * (1.0 + tpv[i]) if side == "long" else c[i] * (1.0 - tpv[i])
+            sl_price = c[i] * (1.0 - slv[i]) if side == "long" else c[i] * (1.0 + slv[i])
             cutoff = idx[i] + pd.Timedelta(hours=float(h))
+            
             first_ambiguous_j = -1
             for j in range(i + 1, n):
-                if idx[j] > cutoff:
-                    break
+                if idx[j] > cutoff: break
                 hit_tp = (hh[j] >= tp_price) if side == "long" else (ll[j] <= tp_price)
                 hit_sl = (ll[j] <= sl_price) if side == "long" else (hh[j] >= sl_price)
                 if hit_tp and hit_sl:
                     first_ambiguous_j = j
                     break
-                if hit_tp or hit_sl:
-                    break
-            if first_ambiguous_j < 0:
-                continue
+                if hit_tp or hit_sl: break
+            
+            if first_ambiguous_j >= 0:
+                ambiguous_j_list.append((i, first_ambiguous_j, tp_price, sl_price, tpv[i], slv[i]))
+
+        if not ambiguous_j_list:
+            return sym, lab, rets_sym, qual_sym
+
+        # Pre-load HF data for the ENTIRE symbol range once
+        start_full = idx[ambiguous_j_list[0][1]].floor("1h")
+        end_full = idx[ambiguous_j_list[-1][1]].floor("1h") + pd.Timedelta(hours=1)
+        hf_full = _load_or_download_15m(sym, start_full, end_full)
+        if hf_full.empty:
+            return sym, lab, rets_sym, qual_sym
+
+        # Optimization: Pre-convert HF to numpy for faster iteration
+        hf_idx = hf_full.index
+        hf_o = hf_full["open"].to_numpy(dtype=np.float64)
+        hf_h = hf_full["high"].to_numpy(dtype=np.float64)
+        hf_l = hf_full["low"].to_numpy(dtype=np.float64)
+        hf_c = hf_full["close"].to_numpy(dtype=np.float64)
+
+        for i, first_ambiguous_j, tp_price, sl_price, tp_val, sl_val in ambiguous_j_list:
             start_15m = idx[first_ambiguous_j].floor("1h")
-            end_15m = idx[first_ambiguous_j]
-            hf = _load_or_download_15m(sym, start_15m, end_15m)
-            if hf.empty:
-                continue
+            end_15m = start_15m + pd.Timedelta(hours=1)
+            
+            # Slice hf_full using index logic (faster than row iteration)
+            mask = (hf_idx >= start_15m) & (hf_idx < end_15m)
+            idxs15 = np.where(mask)[0]
+            
             resolved = None
-            for _, row in hf.iterrows():
-                h15 = float(row["high"])
-                l15 = float(row["low"])
-                c15 = float(row["close"])
+            for k in idxs15:
+                o15, h15, l15 = hf_o[k], hf_h[k], hf_l[k]
                 hit_tp_15 = (h15 >= tp_price) if side == "long" else (l15 <= tp_price)
                 hit_sl_15 = (l15 <= sl_price) if side == "long" else (h15 >= sl_price)
+                
                 if hit_tp_15 and hit_sl_15:
-                    resolved = _resolve_barrier_conflict_15m(side=side, bar_close=c15, tp_price=tp_price, sl_price=sl_price)
+                    resolved = _resolve_barrier_conflict_15m(side=side, bar_open=o15, tp_price=tp_price, sl_price=sl_price)
                     break
                 if hit_tp_15:
-                    resolved = "TP"
-                    break
+                    resolved = "TP"; break
                 if hit_sl_15:
-                    resolved = "SL"
-                    break
+                    resolved = "SL"; break
+            
             if resolved == "TP":
                 lab[i] = OUT_TP
-                ret2.iat[i, ret2.columns.get_loc(sym)] = float(tpv[i])
-                qual2.iat[i, qual2.columns.get_loc(sym)] = max(float(qual2.iat[i, qual2.columns.get_loc(sym)]), 0.51)
+                rets_sym[i] = float(tp_val)
+                qual_sym[i] = np.float32(max(float(qual_sym[i]), 0.51))
             elif resolved == "SL":
                 lab[i] = OUT_SL
-                ret2.iat[i, ret2.columns.get_loc(sym)] = -float(slv[i])
-                qual2.iat[i, qual2.columns.get_loc(sym)] = min(float(qual2.iat[i, qual2.columns.get_loc(sym)]), 0.49)
+                rets_sym[i] = -float(sl_val)
+                qual_sym[i] = np.float32(min(float(qual_sym[i]), 0.49))
+        
+        return sym, lab, rets_sym, qual_sym
+
+    results = Parallel(n_jobs=n_jobs, prefer="threads")(
+        delayed(_process_symbol)(s) for s in symbols
+    )
+
+    lbl2, ret2, qual2 = lbl.copy(), ret.copy(), qual.copy()
+    for sym, lab, rets_sym, qual_sym in results:
         lbl2[sym] = lab
+        ret2[sym] = rets_sym
+        qual2[sym] = qual_sym
+    
     return lbl2, ret2, qual2
 
 
@@ -357,23 +441,37 @@ def _load_panel_from_store(cfg: Dict[str, Any]) -> Tuple[Optional[Dict[str, pd.D
         except Exception:
             margin_symbols = []
         
-        # Use market_basket from config and limit total symbols
+        # Use market_basket from config
         market_basket = cfg.get("market_basket", [])
         all_syms = list(set(margin_symbols + market_basket))
+
+        # Always augment with local store symbols so offline optimization is not
+        # constrained by a small/temporary live margin universe response.
+        ohlcv_dir = os.path.join(cfg["data_root"], "ohlcv")
+        ohlcv_syms: List[str] = []
+        if os.path.exists(ohlcv_dir):
+            for name in os.listdir(ohlcv_dir):
+                full = os.path.join(ohlcv_dir, name)
+                if os.path.isdir(full):
+                    ohlcv_syms.append(name)
+                elif name.endswith(".meta.json"):
+                    ohlcv_syms.append(name.replace(".meta.json", ""))
+            if ohlcv_syms:
+                all_syms = list(set(all_syms) | set(ohlcv_syms))
+                tprint(f"Augmented symbol universe from local ohlcv: +{len(set(ohlcv_syms))} symbols")
         
-        # Fallback: if no symbols found via universe/basket, look into ohlcv directory
-        if not all_syms:
-            ohlcv_dir = os.path.join(cfg["data_root"], "ohlcv")
-            if os.path.exists(ohlcv_dir):
-                all_syms = [d for d in os.listdir(ohlcv_dir) if os.path.isdir(os.path.join(ohlcv_dir, d))]
-                tprint(f"No universe symbols found, fallback to ohlcv dir: found {len(all_syms)} symbols")
-        
-        # Aggressive subsample: take every 3rd asset (alphabetical) for Stage 1
-        train_syms = sorted(all_syms)[::3]
-        # Limit to max 150 symbols for Stage 1 balanced runs
-        train_syms = train_syms[:150]
-        
-        tprint(f"Loading panel from store for {len(train_syms)} symbols (Stage 1 subsampled)")
+        # Use a configurable subsample step; default keeps all symbols.
+        # The previous hardcoded [::3] could collapse coverage and create empty cells.
+        _step = max(1, int(cfg.get("tbm_symbol_subsample_step", 3)))
+        train_syms = sorted(all_syms)[::_step]
+        # Keep an upper bound for runtime/memory control (default aligns with training universe size).
+        _max_syms = int(cfg.get("tbm_max_symbols", cfg.get("fetch_symbols_M", 600)))
+        train_syms = train_syms[: max(1, _max_syms)]
+
+        tprint(
+            f"Loading panel from store for {len(train_syms)} symbols "
+            f"(subsample_step={_step})"
+        )
         dfs: Dict[str, pd.DataFrame] = {}
         for sym in train_syms:
             try:
@@ -670,9 +768,8 @@ class RunArtifacts:
 
 
 def _subsample_symbols(symbols: Sequence[str]) -> List[str]:
-    """Deterministic symbol subsample: alphabetical, keep every 4th symbol."""
-    syms_sorted = sorted(set(map(str, symbols)))
-    return syms_sorted[::4] if syms_sorted else []
+    """Return sorted unique symbols (subsampling is handled during loading to avoid double-filtering)."""
+    return sorted(set(map(str, symbols)))
 
 
 
@@ -1741,6 +1838,8 @@ def build_bucket_masks(artifacts: RunArtifacts, cfg_runtime: Dict[str, Any] | No
     # "down" movers = bottom pct% (worst performers): used by MR_long + TF_short
     if metric in feats:
         df_metric = feats[metric]
+        if int(df_metric.shape[1]) < 50:
+            raise ValueError(f"Fast fail: not enough symbols for cross-sectional ranking (found {df_metric.shape[1]}, need >= 50).")
         ranks = df_metric.rank(axis=1, method="first", na_option="keep", pct=True)
         up_zone   = (ranks > 0.5).fillna(False).astype(bool)
         down_zone = (ranks <= 0.5).fillna(False).astype(bool)
@@ -5368,7 +5467,7 @@ def run(args: argparse.Namespace) -> None:
         details.update(obj_s1.details)
         total_weights_written += obj_s1.total_weights_written
         # Per-cell summary
-        _best = study_s1.best_trial if study_s1.best_trial else None
+        _best = study_s1.best_trial
         _best_val = f"{_best.value:.4f}" if _best and _best.value is not None else "N/A"
         tprint(
             f"--- Cell {bkt} H{hor} complete: "

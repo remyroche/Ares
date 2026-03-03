@@ -202,6 +202,20 @@ CFG = {
     "timeframe": "1h",
     "fetch_years": 4,
     "fetch_symbols_M": 600,
+    # Download controls (run_pipeline.py download)
+    # - order: volume | alpha_asc | alpha_desc
+    # - stride: process every Nth symbol (2 ~= half runtime/symbols)
+    # - max_symbols: 0 keeps all post-stride symbols
+    "download_symbol_order": "alpha_desc",
+    "download_symbol_stride": 2,
+    "download_symbol_offset": 0,
+    "download_max_symbols": 0,
+    "download_partition_count": 1,
+    "download_partition_id": 0,
+    "download_force": False,
+    "download_check_complete": True,
+    "download_skip_if_missing_lt_days": 3.0,
+    "download_15m_full_backfill": True,
 
     # feature transformation remediation
     "ffd_d_values": [0.4, 0.5, 0.6],

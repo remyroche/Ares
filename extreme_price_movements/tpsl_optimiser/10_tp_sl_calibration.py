@@ -73,8 +73,12 @@ def fast_resolve_hits(
                 hit = True
                 break
             elif bar_hit_sl and bar_hit_tp:
-                d_tp = abs(cc - tp_price)
-                d_sl = abs(cc - sl_price)
+                # Double hit in the same bar. Use the open price (approximated by previous close
+                # or entry price if it's the first bar) to determine which was closer.
+                bar_open = all_closes[j - 1] if j > start_idx else entry_prices[i]
+                d_tp = abs(bar_open - tp_price)
+                d_sl = abs(bar_open - sl_price)
+                
                 if d_tp < d_sl:
                     resolved[i] = tp
                 else:
@@ -173,20 +177,30 @@ def calibrate_tp_sl(trades: pd.DataFrame, atr_scale: pd.Series, df_15m_dict: Dic
     current_idx = 0
 
     if df_15m_dict is not None and "asset" in df.columns and "timestamp" in df.columns:
-        # Sort by asset and timestamp to align easily, but we iterate over original indices
         assets = df["asset"].values
         timestamps = pd.to_datetime(df["timestamp"], utc=True)
-        max_hold = pd.Timedelta(hours=getattr(df, "max_hold_hours", 24))
 
-        # We need a quick way to slice the 15m data per trade
+        # FIX #6: Read per-trade max_hold_hours from a column when available.
+        # `getattr(df, "max_hold_hours", 24)` always returned 24 because DataFrames
+        # don't carry that attribute. Use the column value (label_policy_max_hold_bars
+        # divided by 4 bars/h) when available; fall back to 24h sentinel.
+        _DEFAULT_MAX_HOLD_H = 24
+        if "label_policy_max_hold_bars" in df.columns:
+            # bars are 15-minute bars → 4 bars per hour
+            max_hold_hours_arr = (df["label_policy_max_hold_bars"].to_numpy(dtype=float) / 4.0)
+            # Clamp: at least 1h, at most 7 days
+            max_hold_hours_arr = np.clip(max_hold_hours_arr, 1.0, 7 * 24.0)
+        else:
+            max_hold_hours_arr = np.full(n, float(_DEFAULT_MAX_HOLD_H))
+
+        _assets_missing_15m = set()
         for i in range(n):
             asset = assets[i]
             if asset in df_15m_dict:
                 df_15 = df_15m_dict[asset]
                 ts = timestamps.iloc[i]
-                ts_end = ts + max_hold
+                ts_end = ts + pd.Timedelta(hours=float(max_hold_hours_arr[i]))
 
-                # Slicing the dataframe
                 mask = (df_15.index >= ts) & (df_15.index < ts_end)
                 bars = df_15.loc[mask]
 
@@ -200,6 +214,8 @@ def calibrate_tp_sl(trades: pd.DataFrame, atr_scale: pd.Series, df_15m_dict: Dic
                     all_closes_list.append(bars["close"].to_numpy(dtype=np.float64))
 
                     current_idx += bar_len
+            else:
+                _assets_missing_15m.add(asset)
 
     if all_highs_list:
         all_highs = np.concatenate(all_highs_list)
@@ -229,7 +245,8 @@ def calibrate_tp_sl(trades: pd.DataFrame, atr_scale: pd.Series, df_15m_dict: Dic
 
         # Apply TP/SL logic (Gross returns clipped)
         # Note: logic assumes exit at TP or SL if touched.
-        if df_15m_dict is not None and "asset" in df.columns and "timestamp" in df.columns and len(all_highs) > 0:
+        _has_15m = df_15m_dict is not None and "asset" in df.columns and "timestamp" in df.columns and len(all_highs) > 0
+        if _has_15m:
             clipped = fast_resolve_hits(
                 n,
                 trade_starts,
@@ -244,6 +261,12 @@ def calibrate_tp_sl(trades: pd.DataFrame, atr_scale: pd.Series, df_15m_dict: Dic
                 entry_prices
             )
         else:
+            # FIX #8: Log once so the operator knows simulation is coarse (no intrabar resolution).
+            from extreme_price_movements.utils import tprint as _tprint
+            _tprint(
+                "calibrate_tp_sl: WARNING falling back to np.clip (no 15m data available). "
+                "Double-hit bars cannot be resolved intrabar — returns may be biased."
+            )
             clipped = np.clip(base_ret, -sl_pct_arr, tp_pct_arr)
 
         # --- Train Selection ---

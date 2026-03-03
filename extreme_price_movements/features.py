@@ -2494,7 +2494,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     
     # 4-day average trend regime duration (vectorized)
     # Average duration = window / (number of trend changes + 1)
-    trend_changes_4d = ff.numba_rolling_sum(trend_change_evt, 96)
+    trend_changes_4d = ff.numba_rolling_sum(trend_sign_change, 96)
     feats["trend_regime_duration_4d"] = (
         96.0 / (trend_changes_4d + 1.0)
     ).astype(np.float32)

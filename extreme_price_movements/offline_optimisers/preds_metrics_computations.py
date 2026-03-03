@@ -419,8 +419,10 @@ def apply_tpsl_proxy(
                         break
                     elif bar_hit_sl and bar_hit_tp:
                         # Ambiguous inside 15m bar
-                        d_tp = abs(cc - tp_price)
-                        d_sl = abs(cc - sl_price)
+                        # Approximate open price using previous close or entry
+                        bar_open = closes_15m[k - 1] if k > start_idx else entry_p
+                        d_tp = abs(bar_open - tp_price)
+                        d_sl = abs(bar_open - sl_price)
                         if d_tp < d_sl:
                             hit_tp[idx] = True
                             hit_sl[idx] = False

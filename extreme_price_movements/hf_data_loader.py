@@ -20,8 +20,8 @@ HF_DATA_DIR.mkdir(exist_ok=True)
 
 def _get_parquet_path(symbol: str) -> Path:
     """Get parquet file path for a symbol."""
-    # Normalize symbol: BTC/USDT -> btcusdt
-    clean_symbol = symbol.replace("/", "").lower()
+    # Normalize symbol: BTC/USDT -> btcusdt, BTC_USDT -> btcusdt
+    clean_symbol = symbol.replace("/", "").replace("_", "").lower()
     return HF_DATA_DIR / f"{clean_symbol}_15m.parquet"
 
 
@@ -183,6 +183,66 @@ def get_15m_ohlcv(exchange: ccxt.Exchange, symbol: str, entry_ts: pd.Timestamp, 
     else:
         # Use existing data
         return existing_df.loc[entry_ts:download_end]
+
+
+def sync_15m_ohlcv_range(
+    exchange: ccxt.Exchange,
+    symbol: str,
+    since_ts: pd.Timestamp,
+    until_ts: pd.Timestamp | None = None,
+    full_backfill: bool = True,
+) -> pd.DataFrame:
+    """Ensure local 15m cache covers [since_ts, until_ts] for symbol."""
+    if since_ts.tz is None:
+        since_ts = since_ts.tz_localize("UTC")
+    else:
+        since_ts = since_ts.tz_convert("UTC")
+
+    if until_ts is None:
+        until_ts = pd.Timestamp.now(tz="UTC")
+    elif until_ts.tz is None:
+        until_ts = until_ts.tz_localize("UTC")
+    else:
+        until_ts = until_ts.tz_convert("UTC")
+
+    if until_ts <= since_ts:
+        return pd.DataFrame()
+
+    existing_df = _load_existing_data(symbol)
+    if not existing_df.empty:
+        ex_start = existing_df.index.min()
+        ex_end = existing_df.index.max()
+        if ex_start <= since_ts and ex_end >= until_ts:
+            return existing_df.loc[(existing_df.index >= since_ts) & (existing_df.index <= until_ts)]
+
+    if full_backfill:
+        dl_start = since_ts
+    elif not existing_df.empty:
+        ex_end = existing_df.index.max()
+        dl_start = max(since_ts, ex_end + pd.Timedelta(minutes=15))
+    else:
+        dl_start = since_ts
+
+    if dl_start >= until_ts:
+        if existing_df.empty:
+            return pd.DataFrame()
+        return existing_df.loc[(existing_df.index >= since_ts) & (existing_df.index <= until_ts)]
+
+    new_df = _download_from_exchange(exchange, symbol, dl_start, until_ts)
+    if new_df.empty:
+        if existing_df.empty:
+            return pd.DataFrame()
+        return existing_df.loc[(existing_df.index >= since_ts) & (existing_df.index <= until_ts)]
+
+    if existing_df.empty:
+        combined_df = new_df
+    else:
+        combined_df = pd.concat([existing_df, new_df])
+        combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
+        combined_df = combined_df.sort_index()
+
+    _save_data(symbol, combined_df)
+    return combined_df.loc[(combined_df.index >= since_ts) & (combined_df.index <= until_ts)]
 
 
 def clear_cache(symbol: str = None):

@@ -217,10 +217,10 @@ def _load_or_download_15m(symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timest
         return pd.DataFrame()
 
 
-def _resolve_15m_conflict(bar_close: float, tp_price: float, sl_price: float, trailing_price: Optional[float] = None) -> str:
-    d = {"TP": abs(float(bar_close) - float(tp_price)), "SL": abs(float(bar_close) - float(sl_price))}
+def _resolve_15m_conflict(bar_open: float, tp_price: float, sl_price: float, trailing_price: Optional[float] = None) -> str:
+    d = {"TP": abs(float(bar_open) - float(tp_price)), "SL": abs(float(bar_open) - float(sl_price))}
     if trailing_price is not None and np.isfinite(trailing_price):
-        d["TRAILING"] = abs(float(bar_close) - float(trailing_price))
+        d["TRAILING"] = abs(float(bar_open) - float(trailing_price))
     priority = {"SL": 0, "TRAILING": 1, "TP": 2}
     return sorted(d.items(), key=lambda kv: (kv[1], priority.get(kv[0], 99)))[0][0]
 
@@ -278,11 +278,11 @@ def _refine_tb_cache_with_15m(panel: dict, tb_cache_by_h_side: dict, geom_cache_
                     continue
                 resolved = None
                 for _, row in hf.iterrows():
-                    h15 = float(row["high"]); l15 = float(row["low"]); c15 = float(row["close"])
+                    o15 = float(row["open"]); h15 = float(row["high"]); l15 = float(row["low"]); c15 = float(row["close"])
                     hit_tp_15 = (h15 >= tp_price) if side == "long" else (l15 <= tp_price)
                     hit_sl_15 = (l15 <= sl_price) if side == "long" else (h15 >= sl_price)
                     if hit_tp_15 and hit_sl_15:
-                        resolved = _resolve_15m_conflict(c15, tp_price, sl_price)
+                        resolved = _resolve_15m_conflict(o15, tp_price, sl_price)
                         break
                     if hit_tp_15:
                         resolved = "TP"; break

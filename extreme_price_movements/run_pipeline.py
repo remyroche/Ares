@@ -132,6 +132,19 @@ def _downcast_numeric_frame(df: pd.DataFrame) -> pd.DataFrame:
             df[col] = pd.to_numeric(df[col], downcast="integer")
     return df
 
+
+def _resolve_ts_sig(cfg: dict, ts_override=None) -> pd.Timestamp:
+    if ts_override:
+        try:
+            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
+            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
+        except ValueError:
+            ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
+    else:
+        ts_sig = _find_latest_feature_ts(cfg.get("data_root", "data"))
+    return ts_sig
+
+
 def _find_latest_feature_ts(data_root):
     """Find the latest feature timestamp directory."""
     import os, glob
@@ -392,8 +405,15 @@ def _gc_checkpoint(tag: str) -> int:
 
 
 def _cache_checkpoint(tag: str) -> None:
-    """Clear known runtime cache directories and emit a short checkpoint log."""
+    """Clear known runtime cache directories only if memory is running low."""
     import shutil
+    import psutil
+
+    mem = psutil.virtual_memory()
+    # Only blast cache if available memory is under 25% or we have less than 4GB free
+    if mem.percent < 75.0 and mem.available > 4 * 1024 * 1024 * 1024:
+        tprint(f"CACHE[{tag}]: skipped cache wipe (mem_avail={mem.available/1e9:.1f}GB)")
+        return
 
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     cache_dirs = [
@@ -414,22 +434,17 @@ def _maintenance_checkpoint(tag: str) -> None:
     _cache_checkpoint(tag)
     _gc_checkpoint(tag)
 
-def run_labels(cfg, horizons=None, ts_override=None):
+def run_labels(cfg, horizons=None, ts_override=None, store=None):
     _maintenance_checkpoint("labels:start")
-    if ts_override:
-        try:
-            ts_sig = pd.to_datetime(ts_override, format="%Y%m%d_%H%M%S").tz_localize("UTC")
-        except ValueError:
-            ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
-    else:
-        ts_sig = _find_latest_feature_ts(cfg["data_root"])
-        if ts_sig is None:
-            tprint("ERROR: No feature directories found. Run feature_generation first.")
-            return
+    ts_sig = _resolve_ts_sig(cfg, ts_override)
+    if ts_sig is None:
+        tprint("ERROR: No feature directories found. Run feature_generation first.")
+        return
 
     tprint(f"Labels mode. ts_sig={ts_sig} horizons={horizons}")
 
-    store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+    if store is None:
+        store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
 
     # No exchange needed — data already in store, features already on disk
     horizons = horizons or [1, 2, 4]
@@ -439,22 +454,15 @@ def run_labels(cfg, horizons=None, ts_override=None):
     _maintenance_checkpoint("labels:end")
 
 
-def run_features(cfg, ts_override=None, force_recompute: bool = False):
+def run_features(cfg, ts_override=None, force_recompute: bool = False, store=None):
     _maintenance_checkpoint("features:start")
-    if ts_override:
-        try:
-            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
-            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
-        except ValueError:
-            ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
-    else:
-        # Re-use latest existing feature timestamp if available, else current hour
-        ts_sig = _find_latest_feature_ts(cfg["data_root"])
-        if ts_sig is None:
-            ts_sig = pd.Timestamp.utcnow().floor("h")
+    ts_sig = _resolve_ts_sig(cfg, ts_override)
+    if ts_sig is None:
+        ts_sig = pd.Timestamp.utcnow().floor("h")
     tprint(f"Features mode. Target ts_sig={ts_sig}")
 
-    store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+    if store is None:
+        store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
 
     # Pass None for margin_symbols to trigger auto-refresh in universe logic
     run_feature_generation_step(ts_sig, None, cfg, store, force_full_recompute=bool(force_recompute))
@@ -463,19 +471,12 @@ def run_features(cfg, ts_override=None, force_recompute: bool = False):
     _maintenance_checkpoint("features:end")
 
 
-def run_backtest(cfg, ts_override=None):
+def run_backtest(cfg, ts_override=None, store=None):
     _maintenance_checkpoint("backtest:start")
-    if ts_override:
-        try:
-            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
-            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
-        except ValueError:
-            ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
-    else:
-        ts_sig = _find_latest_feature_ts(cfg["data_root"])
-        if ts_sig is None:
-            tprint("ERROR: No feature directories found.")
-            return
+    ts_sig = _resolve_ts_sig(cfg, ts_override)
+    if ts_sig is None:
+        tprint("ERROR: No feature directories found.")
+        return
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     import os
@@ -485,31 +486,26 @@ def run_backtest(cfg, ts_override=None):
         return
 
     tprint(f"Backtest mode. ts_sig={ts_sig}")
-    store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+    if store is None:
+        store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
     run_backtest_step(ts_sig, None, cfg, store, state_file)
     tprint("BACKTEST PIPELINE COMPLETE")
     _maintenance_checkpoint("backtest:end")
 
 
-def run_train(cfg, ts_override=None, base_only=False, meta_only=False):
+def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=None):
     _maintenance_checkpoint("train:start")
-    if ts_override:
-        try:
-            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
-            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
-        except ValueError:
-            ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
-    else:
-        ts_sig = _find_latest_feature_ts(cfg["data_root"])
-        if ts_sig is None:
-            tprint("ERROR: No feature directories found. Run feature_generation first.")
-            return
+    ts_sig = _resolve_ts_sig(cfg, ts_override)
+    if ts_sig is None:
+        tprint("ERROR: No feature directories found. Run feature_generation first.")
+        return
 
     tprint(f"Train mode. ts_sig={ts_sig} base_only={base_only} meta_only={meta_only}")
 
     # TP/SL optimisation happens during label generation (see training.generate_label_datasets).
     # Check if labels already exist before refreshing to avoid unnecessary recomputation.
-    store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+    if store is None:
+        store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
     if _label_artifacts_ready(cfg, ts_sig):
         tprint("Label artifacts already exist, skipping label refresh...")
     else:
@@ -540,7 +536,6 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False):
         tprint("TRAINING PIPELINE FAILED")
     _maintenance_checkpoint("train:end")
 
-
 def run_risk_opt(cfg, ts_override=None, parsed_ts_sig=None, skip_maintenance=False, store=None):
     if not skip_maintenance:
         _maintenance_checkpoint("risk_opt:start")
@@ -564,6 +559,11 @@ def run_risk_opt(cfg, ts_override=None, parsed_ts_sig=None, skip_maintenance=Fal
     state_file = os.path.join(cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl")
 
     tprint(f"Risk Optimization mode. ts_sig={ts_sig}")
+    if store is None:
+        store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+    run_risk_optimization_step(ts_sig, None, cfg, store, state_file)
+    tprint("RISK OPTIMIZATION COMPLETE")
+    _maintenance_checkpoint("risk_opt:end")
 
     if store is None:
         store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
@@ -575,20 +575,13 @@ def run_risk_opt(cfg, ts_override=None, parsed_ts_sig=None, skip_maintenance=Fal
         _maintenance_checkpoint("risk_opt:end")
 
 
-def run_sizer(cfg, ts_override=None):
+def run_sizer(cfg, ts_override=None, store=None):
     """Run configured sizer backend on meta model OOF predictions."""
     _maintenance_checkpoint("sizer:start")
-    if ts_override:
-        try:
-            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
-            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
-        except ValueError:
-            ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
-    else:
-        ts_sig = _find_latest_feature_ts(cfg["data_root"])
-        if ts_sig is None:
-            tprint("ERROR: No feature directories found.")
-            return
+    ts_sig = _resolve_ts_sig(cfg, ts_override)
+    if ts_sig is None:
+        tprint("ERROR: No feature directories found.")
+        return
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     import os
@@ -606,9 +599,19 @@ def run_sizer(cfg, ts_override=None):
         if bool(cfg.get("sizer_run_oos_backtest", True)):
             try:
                 tprint("SIZER: running OOS backtest with updated sizer bundle...")
-                store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+                if store is None:
+                    store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
                 bt_cfg = dict(cfg)
                 bt_cfg["sizer_oos_mode"] = True
+
+                # We need to downcast the trades DataFrame to float32 before generating the backtest
+                # This is a memory optimization
+                trades_path = os.path.join(cfg["data_root"], "artifacts", ts_sig.strftime("%Y%m%d_%H%M%S"), "backtest_results.csv")
+                if os.path.exists(trades_path):
+                    trades = pd.read_csv(trades_path, low_memory=False)
+                    trades = _downcast_numeric_frame(trades)
+                    trades.to_csv(trades_path, index=False)
+
                 run_backtest_step(ts_sig, None, bt_cfg, store, state_file)
                 tprint("SIZER: OOS backtest complete.")
             except Exception as e:
@@ -619,20 +622,18 @@ def run_sizer(cfg, ts_override=None):
             run_breakdown_diagnostics_integration(cfg, ts_sig)
         except Exception as e:
             tprint(f"WARNING: breakdown diagnostics failed: {e}")
+
+        _maintenance_checkpoint("sizer:end")
+        return True
     else:
         tprint("SIZER: No results (possibly no meta OOF predictions found)")
-    _maintenance_checkpoint("sizer:end")
+        _maintenance_checkpoint("sizer:end")
+        return False
 
 
-
-def run_ridge_sizer(cfg, ts_override=None):
-    """Legacy ridge mode is disabled; keep explicit entrypoint for clear erroring."""
-    raise RuntimeError(
-        "ridge_sizer mode is disabled. Use: python3 extreme_price_movements/run_pipeline.py sizer"
-    )
 
 def run_all(cfg, ts_override=None):
-    """Run download -> features -> train (includes labels) -> optimise (learn entry) -> ridge_sizer -> optimise (sizing) in order.
+    """Run download -> features -> train (includes labels) -> optimise (learn entry) -> sizer -> optimise (sizing) in order.
     
     Note: 'train' already refreshes labels internally.
     Note: 'optimise' triggers backtest internally if backtest_results.csv is missing,
@@ -642,36 +643,42 @@ def run_all(cfg, ts_override=None):
     _maintenance_checkpoint("run_all:start")
     run_download(cfg)
     _maintenance_checkpoint("run_all:after_download")
-    run_features(cfg, ts_override=ts_override)
+
+    # Instantiate store once for use across steps
+    store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+
+    run_features(cfg, ts_override=ts_override, store=store)
     _maintenance_checkpoint("run_all:after_features")
-    run_train(cfg, ts_override=ts_override)
+    run_train(cfg, ts_override=ts_override, store=store)
     _maintenance_checkpoint("run_all:after_train")
 
     # 1. Optimise: learn entry policy (fill model + delta) using default sizing/risk
     #    This ensures ridge_sizer sees the correct trade filter.
     tprint("STEP: OPTIMISE (Phase 1 - Entry Policy)")
-    run_optimise(cfg, ts_override=ts_override)
+    success = run_optimise(cfg, ts_override=ts_override, store=store)
+    if not success:
+        tprint("ERROR: Phase 1 Optimise failed. Aborting pipeline.")
+        return
     _maintenance_checkpoint("run_all:after_optimise_phase1")
 
-    # 2. Ridge Sizer: learn meta-model weights using the optimized entry policy
-    tprint("STEP: RIDGE SIZER")
-    run_sizer(cfg, ts_override=ts_override)
+    # 2. Sizer: learn meta-model weights using the optimized entry policy
+    tprint("STEP: SIZER")
+    success = run_sizer(cfg, ts_override=ts_override, store=store)
+    if not success:
+        tprint("ERROR: Sizer step failed. Aborting pipeline.")
+        return
     _maintenance_checkpoint("run_all:after_sizer")
 
     # 3. Optimise: re-run to allow scalar position sizing (Step 40) to use fresh ridge weights
     tprint("STEP: OPTIMISE (Phase 2 - Sizing with Ridge Weights)")
-    run_optimise(cfg, ts_override=ts_override)
+    success = run_optimise(cfg, ts_override=ts_override, store=store)
+    if not success:
+        tprint("ERROR: Phase 2 Optimise failed. Aborting pipeline.")
+        return
     _maintenance_checkpoint("run_all:after_optimise_phase2")
 
     # Final Summary
-    if ts_override:
-        try:
-            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
-            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
-        except ValueError:
-            ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
-    else:
-        ts_sig = _find_latest_feature_ts(cfg["data_root"])
+    ts_sig = _resolve_ts_sig(cfg, ts_override)
 
     if ts_sig:
         run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
@@ -710,23 +717,17 @@ def run_all(cfg, ts_override=None):
     _maintenance_checkpoint("run_all:end")
 
 
-def run_train_meta(cfg, ts_override=None):
+def run_train_meta(cfg, ts_override=None, store=None):
     """Re-run only meta model training, reusing existing base models."""
     _maintenance_checkpoint("train_meta:start")
-    if ts_override:
-        try:
-            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
-            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
-        except ValueError:
-            ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
-    else:
-        ts_sig = _find_latest_feature_ts(cfg["data_root"])
-        if ts_sig is None:
-            tprint("ERROR: No feature directories found.")
-            return
+    ts_sig = _resolve_ts_sig(cfg, ts_override)
+    if ts_sig is None:
+        tprint("ERROR: No feature directories found.")
+        return
 
     from extreme_price_movements.main import train_daily_meta
-    store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+    if store is None:
+        store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
     
     # Verify that before training the meta model, we optimise the TP & SL values.
     tprint("Optimising TP:SL before meta-training...")
@@ -765,19 +766,12 @@ def run_train_meta(cfg, ts_override=None):
     _maintenance_checkpoint("train_meta:end")
 
 
-def run_optimise(cfg, ts_override=None):
+def run_optimise(cfg, ts_override=None, store=None):
     _maintenance_checkpoint("optimise:start")
-    if ts_override:
-        try:
-            _ts_str = str(ts_override).split("_v")[0] if "_v" in str(ts_override) else str(ts_override)
-            ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
-        except ValueError:
-            ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
-    else:
-        ts_sig = _find_latest_feature_ts(cfg["data_root"])
-        if ts_sig is None:
-            tprint("ERROR: No feature directories found.")
-            return
+    ts_sig = _resolve_ts_sig(cfg, ts_override)
+    if ts_sig is None:
+        tprint("ERROR: No feature directories found.")
+        return False
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     import os
@@ -785,10 +779,10 @@ def run_optimise(cfg, ts_override=None):
     backtest_file = os.path.join(cfg["data_root"], "artifacts", run_id, "backtest_results.csv")
     if not os.path.exists(backtest_file):
         tprint("Backtest results not found. Running backtest to generate trade data for optimiser...")
-        run_backtest(cfg, ts_override=ts_override)
+        run_backtest(cfg, ts_override=ts_override, store=store)
         if not os.path.exists(backtest_file):
             tprint(f"ERROR: Backtest still not found at {backtest_file}. Aborting optimise.")
-            return
+            return False
     trades = pd.read_csv(backtest_file, low_memory=False)
     trades = _downcast_numeric_frame(trades)
     trades.attrs["threaded_exit_stream"] = True  # Inject attribute stripped by CSV save
@@ -827,6 +821,7 @@ def run_optimise(cfg, ts_override=None):
     except Exception as _re:
         tprint(f"WARNING: optimise bucket report failed: {_re}")
     _maintenance_checkpoint("optimise:end")
+    return True
 
 def clear_caches():
     """Force garbage collection and clear the on-disk caches before a run."""
@@ -938,16 +933,10 @@ def run_breakdown_diagnostics_integration(cfg: dict, ts_sig: pd.Timestamp) -> No
 
 def run_breakdown_diagnostics_standalone(cfg: dict, ts_override: str = None) -> None:
     """Standalone breakdown diagnostics mode."""
-    if ts_override:
-        try:
-            ts_sig = pd.to_datetime(ts_override, format="%Y%m%d_%H%M%S").tz_localize("UTC")
-        except ValueError:
-            ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
-    else:
-        ts_sig = _find_latest_feature_ts(cfg["data_root"])
-        if ts_sig is None:
-            tprint("ERROR: No feature directories found.")
-            return
+    ts_sig = _resolve_ts_sig(cfg, ts_override)
+    if ts_sig is None:
+        tprint("ERROR: No feature directories found.")
+        return
     
     tprint(f"Breakdown Diagnostics mode. ts_sig={ts_sig}")
     run_breakdown_diagnostics_integration(cfg, ts_sig)
@@ -956,7 +945,7 @@ def run_breakdown_diagnostics_standalone(cfg: dict, ts_override: str = None) -> 
 def main():
     clear_caches()
     parser = argparse.ArgumentParser(description="Extreme Price Movements Pipeline")
-    parser.add_argument("mode", choices=["download", "labels", "features", "train", "train_meta", "ridge_sizer", "sizer", "backtest", "optimize_risk", "optimise", "run", "breakdown_diagnostics"],
+    parser.add_argument("mode", choices=["download", "labels", "features", "train", "train_meta", "sizer", "backtest", "optimize_risk", "optimise", "run", "breakdown_diagnostics"],
                         help="Pipeline mode to run")
     parser.add_argument("-perps", "--perps", action="store_true", help="Run pipeline in perps mode (isolated *_perp roots)")
     parser.add_argument("--force-feature-recompute", action="store_true", help="Force full recompute in features mode")
@@ -993,8 +982,6 @@ def main():
         run_train(cfg, ts_override=args.ts_override, base_only=args.base_only, meta_only=args.meta_only)
     elif args.mode == "train_meta":
         run_train_meta(cfg, ts_override=args.ts_override)
-    elif args.mode == "ridge_sizer":
-        run_ridge_sizer(cfg, ts_override=args.ts_override)
     elif args.mode == "sizer":
         run_sizer(cfg, ts_override=args.ts_override)
     elif args.mode == "backtest":

@@ -10,6 +10,17 @@ PERP_FEATURE_KEYS = [
     for k in get_perp_feature_names()
 ]
 
+
+FEATURE_KEYS_15M_OHLCV = [
+    "clv_t", "body_ratio_15m", "rejection_proxy",
+    "range_norm_12", "sv_imb_12", "press_12", "impact_12", "ts_12",
+    "prog_eff_12", "pers_12", "hh_count_12", "ll_count_12", "skew_12",
+    "climax_range_12", "climax_vol_12", "z_vwap_12", "z_r_12", "bb_pos_12",
+    "range_norm_24", "sv_imb_24", "press_24", "impact_24", "ts_24",
+    "prog_eff_24", "pers_24", "hh_count_24", "ll_count_24", "skew_24",
+    "climax_range_24", "climax_vol_24", "z_vwap_24", "z_r_24", "bb_pos_24",
+]
+
 neutral_feature_keys = [
     "rsi", "vol_z", "atr_pct", "mkt_rv_ratio", "skew", 
     "trend_snr", "efficiency", "vol_asym", "momentum_accel",
@@ -617,6 +628,8 @@ CFG = {
     # causal cols for interaction toggles
     # Added new features for TF/MR/Meta
     "drop_raw_causal": True,
+    # Enable/disable 15m OHLCV-derived feature family across train/inference feature lists.
+    "enable_15m_ohlcv_features": True,
     "causal_cols": [
         "ret24h", "rsi", "vol_z", "atr_pct", "trend_pct", "rv_2h", "rv_4h", "rv_24h",
         "p_exh_lag1",
@@ -1123,3 +1136,27 @@ def enable_perp_feature_keys(cfg: dict) -> dict:
     for k in ("tf_feature_keys", "mr_feature_keys", "meta_feature_keys"):
         out[k] = _append_missing(out.get(k, []), PERP_FEATURE_KEYS)
     return out
+
+
+def apply_15m_feature_toggle(cfg: dict) -> dict:
+    """Apply 15m OHLCV feature family toggle to runtime feature key lists."""
+    out = dict(cfg)
+    target_lists = (
+        "causal_cols",
+        "tf_feature_keys",
+        "mr_feature_keys",
+        "meta_feature_keys",
+        "limit_offset_sizer",
+    )
+
+    enabled = bool(out.get("enable_15m_ohlcv_features", True))
+    for k in target_lists:
+        existing = list(out.get(k, []) or [])
+        if enabled:
+            out[k] = _append_missing(existing, FEATURE_KEYS_15M_OHLCV)
+        else:
+            out[k] = [f for f in existing if f not in FEATURE_KEYS_15M_OHLCV]
+    return out
+
+
+CFG = apply_15m_feature_toggle(CFG)

@@ -612,7 +612,7 @@ def compute_policy_aware_labels(
                 entry_idx = opens.index.get_loc(ts)
             
             # Extract future price arrays
-            end_idx = min(entry_idx + max_bars, len(opens) - 1)
+            end_idx = min(entry_idx + max_bars, len(opens))
             
             if entry_idx >= end_idx:
                 continue
@@ -690,181 +690,174 @@ def compute_policy_aware_labels_batch(
     bars_per_hour: int = 4,
 ) -> pd.DataFrame:
     """Batch version of compute_policy_aware_labels for better performance.
-    
-    Uses the parallel Numba simulator for improved throughput on large datasets.
-    
-    Args:
-        Same as compute_policy_aware_labels
-    
-    Returns:
-        Same as compute_policy_aware_labels
+
+    Uses the parallel Numba simulator and preallocated arrays to reduce
+    Python overhead and transient memory allocations.
     """
-    # Extract policy parameters
     tp_mult = policy_params.get('tp_mult', 3.0)
     sl_mult = policy_params.get('sl_mult', 1.0)
     trailing_pct = policy_params.get('trailing_pct', 0.5)
     atr_dict = policy_params.get('atr', {})
-    
-    # Calculate max bars
+
     max_bars = max_hold_hours * bars_per_hour
-    
-    # Get price data from panel
+
     opens = price_panel.get('open')
     highs = price_panel.get('high')
     lows = price_panel.get('low')
     closes = price_panel.get('close')
-    
+
     if opens is None or highs is None or lows is None or closes is None:
         raise ValueError("price_panel must contain 'open', 'high', 'low', 'close' DataFrames")
-    
-    # Ensure timestamps are datetime
+
     candidates_df = candidates_df.copy()
     if not pd.api.types.is_datetime64_any_dtype(candidates_df['timestamp']):
         candidates_df['timestamp'] = pd.to_datetime(candidates_df['timestamp'])
-    
-    # Prepare batch arrays
+
     n_candidates = len(candidates_df)
-    
-    # Storage for valid trades
-    valid_indices = []
-    entry_prices = []
-    is_longs = []
-    tp_prices = []
-    sl_prices = []
-    trailing_pcts = []
-    highs_arrays = []
-    lows_arrays = []
-    closes_arrays = []
-    timestamps = []
-    symbols = []
-    exit_times_list = []
-    
-    for idx, row in candidates_df.iterrows():
-        ts = row['timestamp']
-        symbol = row['symbol']
-        is_long = bool(row['is_long'])
-        entry_price = row['entry_price']
-        
-        # Get ATR for this symbol
+    if n_candidates == 0:
+        return pd.DataFrame()
+
+    ts_values = pd.to_datetime(candidates_df['timestamp'])
+    symbol_values = candidates_df['symbol'].to_numpy()
+    is_long_values = candidates_df['is_long'].to_numpy(dtype=bool)
+    entry_price_values = np.asarray(candidates_df['entry_price'].to_numpy(), dtype=np.float64)
+
+    # Pre-index timestamps once (monotonic index expected for price panels).
+    price_index = opens.index
+    left_idx = price_index.searchsorted(ts_values, side='left')
+
+    # Pre-allocate dense blocks once to avoid list append + np.array conversion.
+    entry_prices_arr = np.empty(n_candidates, dtype=np.float64)
+    is_longs_arr = np.empty(n_candidates, dtype=np.int64)
+    tp_prices_arr = np.empty(n_candidates, dtype=np.float64)
+    sl_prices_arr = np.empty(n_candidates, dtype=np.float64)
+    trailing_pcts_arr = np.full(n_candidates, float(trailing_pct), dtype=np.float64)
+    opens_arr = np.full((n_candidates, max_bars), np.nan, dtype=np.float64)
+    highs_arr = np.full((n_candidates, max_bars), np.nan, dtype=np.float64)
+    lows_arr = np.full((n_candidates, max_bars), np.nan, dtype=np.float64)
+    closes_arr = np.full((n_candidates, max_bars), np.nan, dtype=np.float64)
+    entry_indices = np.empty(n_candidates, dtype=np.int64)
+    actual_bars_arr = np.empty(n_candidates, dtype=np.int64)
+
+    timestamps: List[pd.Timestamp] = []
+    symbols: List[str] = []
+    valid_count = 0
+
+    # Cache symbol vectors to avoid repeated pandas indexing in the hot loop.
+    symbol_cache: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = {}
+
+    for i in range(n_candidates):
+        ts = ts_values[i]
+        symbol = symbol_values[i]
+        is_long = bool(is_long_values[i])
+        entry_price = float(entry_price_values[i])
+
         if isinstance(atr_dict, dict):
             atr = atr_dict.get(symbol, 0.02)
         elif isinstance(atr_dict, pd.Series):
             atr = atr_dict.get(symbol, 0.02)
         else:
             atr = 0.02
-        
-        # Calculate TP/SL prices
+
         if is_long:
             tp_price = entry_price * (1 + tp_mult * atr)
             sl_price = entry_price * (1 - sl_mult * atr)
         else:
             tp_price = entry_price * (1 - tp_mult * atr)
             sl_price = entry_price * (1 + sl_mult * atr)
-        
-        # Get future price data
+
+        entry_idx = int(left_idx[i])
+        if entry_idx >= len(price_index):
+            continue
+
         try:
-            if ts not in opens.index:
-                future_mask = opens.index >= ts
-                if not future_mask.any():
-                    continue
-                entry_idx = future_mask.argmax()
-            else:
-                entry_idx = opens.index.get_loc(ts)
-            
-            end_idx = min(entry_idx + max_bars, len(opens) - 1)
-            
+            if symbol not in symbol_cache:
+                symbol_cache[symbol] = (
+                    np.asarray(opens[symbol].values, dtype=np.float64),
+                    np.asarray(highs[symbol].values, dtype=np.float64),
+                    np.asarray(lows[symbol].values, dtype=np.float64),
+                    np.asarray(closes[symbol].values, dtype=np.float64),
+                )
+            open_vec, high_vec, low_vec, close_vec = symbol_cache[symbol]
+
+            end_idx = min(entry_idx + max_bars, len(open_vec))
             if entry_idx >= end_idx:
                 continue
-            
-            future_opens = opens[symbol].iloc[entry_idx:end_idx].values.astype(np.float64)
-            future_highs = highs[symbol].iloc[entry_idx:end_idx].values.astype(np.float64)
-            future_lows = lows[symbol].iloc[entry_idx:end_idx].values.astype(np.float64)
-            future_closes = closes[symbol].iloc[entry_idx:end_idx].values.astype(np.float64)
-            
-            actual_bars = len(future_highs)
-            if actual_bars == 0:
+
+            actual_bars = int(end_idx - entry_idx)
+            if actual_bars <= 0:
                 continue
-            
-            # Pad arrays to max_bars if needed, but use NaN for padding
-            # to indicate synthetic data (will force timeout at actual_bars)
-            if actual_bars < max_bars:
-                pad_size = max_bars - actual_bars
-                # Use NaN for padded values - simulator will handle timeout at actual_bars
-                future_opens = np.concatenate([future_opens, np.full(pad_size, np.nan)])
-                future_highs = np.concatenate([future_highs, np.full(pad_size, np.nan)])
-                future_lows = np.concatenate([future_lows, np.full(pad_size, np.nan)])
-                future_closes = np.concatenate([future_closes, np.full(pad_size, np.nan)])
-            
-            valid_indices.append(idx)
-            entry_prices.append(entry_price)
-            is_longs.append(int(is_long))
-            tp_prices.append(tp_price)
-            sl_prices.append(sl_price)
-            trailing_pcts.append(trailing_pct)
-            opens_arrays.append(future_opens[:max_bars])
-            highs_arrays.append(future_highs[:max_bars])
-            lows_arrays.append(future_lows[:max_bars])
-            closes_arrays.append(future_closes[:max_bars])
+
+            slot = valid_count
+            entry_prices_arr[slot] = entry_price
+            is_longs_arr[slot] = int(is_long)
+            tp_prices_arr[slot] = tp_price
+            sl_prices_arr[slot] = sl_price
+            entry_indices[slot] = entry_idx
+            actual_bars_arr[slot] = actual_bars
+
+            opens_arr[slot, :actual_bars] = open_vec[entry_idx:end_idx]
+            highs_arr[slot, :actual_bars] = high_vec[entry_idx:end_idx]
+            lows_arr[slot, :actual_bars] = low_vec[entry_idx:end_idx]
+            closes_arr[slot, :actual_bars] = close_vec[entry_idx:end_idx]
+
             timestamps.append(ts)
             symbols.append(symbol)
-            exit_times_list.append((entry_idx, opens.index, actual_bars))  # Track actual bars
-            
+            valid_count += 1
+
         except (KeyError, IndexError):
             continue
-    
-    if len(valid_indices) == 0:
+
+    if valid_count == 0:
         return pd.DataFrame()
-    
-    # Convert to arrays
-    entry_prices_arr = np.array(entry_prices, dtype=np.float64)
-    is_longs_arr = np.array(is_longs, dtype=np.int64)
-    tp_prices_arr = np.array(tp_prices, dtype=np.float64)
-    sl_prices_arr = np.array(sl_prices, dtype=np.float64)
-    trailing_pcts_arr = np.array(trailing_pcts, dtype=np.float64)
-    opens_arr = np.array(opens_arrays, dtype=np.float64)
-    highs_arr = np.array(highs_arrays, dtype=np.float64)
-    lows_arr = np.array(lows_arrays, dtype=np.float64)
-    closes_arr = np.array(closes_arrays, dtype=np.float64)
-    
-    # Run batch simulation
+
+    entry_prices_arr = entry_prices_arr[:valid_count]
+    is_longs_arr = is_longs_arr[:valid_count]
+    tp_prices_arr = tp_prices_arr[:valid_count]
+    sl_prices_arr = sl_prices_arr[:valid_count]
+    trailing_pcts_arr = trailing_pcts_arr[:valid_count]
+    opens_arr = opens_arr[:valid_count]
+    highs_arr = highs_arr[:valid_count]
+    lows_arr = lows_arr[:valid_count]
+    closes_arr = closes_arr[:valid_count]
+    entry_indices = entry_indices[:valid_count]
+    actual_bars_arr = actual_bars_arr[:valid_count]
+
     exit_prices, exit_bars, exit_reasons = simulate_trade_exit_batch(
         highs_arr, lows_arr, opens_arr, closes_arr,
         entry_prices_arr, is_longs_arr,
         tp_prices_arr, sl_prices_arr, trailing_pcts_arr,
         max_bars,
     )
-    
-    # Build results DataFrame
+
     exit_reason_map = {
         0: ExitReason.TP_HIT,
         1: ExitReason.SL_HIT,
         2: ExitReason.TRAILING_EXIT,
         3: ExitReason.TIMEOUT,
     }
-    
+
     results = []
-    for i, orig_idx in enumerate(valid_indices):
+    for i in range(valid_count):
         is_long = bool(is_longs_arr[i])
-        exit_price = exit_prices[i]
-        entry_price = entry_prices_arr[i]
+        exit_price = float(exit_prices[i])
+        entry_price = float(entry_prices_arr[i])
         exit_bar = int(exit_bars[i])
         exit_reason_int = int(exit_reasons[i])
-        
-        # Get exit time and actual bars
-        entry_idx, price_index, actual_bars = exit_times_list[i]
-        # Clamp exit_bar to actual_bars for timestamp lookup
+
+        entry_idx = int(entry_indices[i])
+        actual_bars = int(actual_bars_arr[i])
         clamped_bar = min(exit_bar, actual_bars - 1)
         exit_time = price_index[min(entry_idx + clamped_bar, len(price_index) - 1)]
-        
-        # Compute label
+
         if is_long:
             label = np.log(exit_price / entry_price) - cost_pct
         else:
             label = np.log(entry_price / exit_price) - cost_pct
-        
+
         if not np.isfinite(label):
             label = 0.0
-        
+
         results.append({
             'timestamp': timestamps[i],
             'symbol': symbols[i],
@@ -875,10 +868,10 @@ def compute_policy_aware_labels_batch(
             'exit_reason': exit_reason_map.get(exit_reason_int, ExitReason.TIMEOUT),
             'label': label,
             'exit_bar': exit_bar,
-            'tp_price': tp_prices_arr[i],
-            'sl_price': sl_prices_arr[i],
+            'tp_price': float(tp_prices_arr[i]),
+            'sl_price': float(sl_prices_arr[i]),
         })
-    
+
     return pd.DataFrame(results)
 
 
@@ -1746,6 +1739,8 @@ class RidgePositionSizer:
         sum_to_one: bool = True,
         non_negative: bool = True,
         top_k_pct: float = 0.30,
+        top_k_hard_cap: float | None = 0.30,
+        returns_are_net: bool = True,
         random_state: int = 42,
         select_metric: str = "topq_u_policy",
         select_topq: float = 0.30,
@@ -1765,6 +1760,8 @@ class RidgePositionSizer:
             sum_to_one: If True, constrain weights to sum to 1
             non_negative: If True, constrain weights to be non-negative
             top_k_pct: Percentage of top predictions to select for evaluation
+            top_k_hard_cap: Optional hard cap applied to top_k_pct during evaluation
+            returns_are_net: True if `return`/labels already include costs
             random_state: Random seed for reproducibility
         """
         self.gamma_range = gamma_range
@@ -1775,6 +1772,9 @@ class RidgePositionSizer:
         self.sum_to_one = sum_to_one
         self.non_negative = non_negative
         self.top_k_pct = top_k_pct
+        self.top_k_hard_cap = None if top_k_hard_cap is None else float(top_k_hard_cap)
+        self.returns_are_net = bool(returns_are_net)
+        self._top_k_cap_warned = False
         self.random_state = random_state
         self.select_metric = str(select_metric)
         self.select_topq = float(select_topq)
@@ -2049,8 +2049,17 @@ class RidgePositionSizer:
         ts_masked = timestamps[mask] if timestamps is not None else None
         sym_masked = symbols[mask] if symbols is not None else None
         
-        # Global ranking policy (across symbols AND time), hard-capped at top 30%.
-        effective_top_k_pct = min(float(self.top_k_pct), 0.30)
+        # Global ranking policy (across symbols AND time) with optional hard cap.
+        effective_top_k_pct = float(self.top_k_pct)
+        if self.top_k_hard_cap is not None:
+            effective_top_k_pct_capped = min(effective_top_k_pct, float(self.top_k_hard_cap))
+            if (effective_top_k_pct_capped < effective_top_k_pct) and (not self._top_k_cap_warned):
+                tprint(
+                    f"  top_k_pct capped by top_k_hard_cap: requested={effective_top_k_pct:.3f}, "
+                    f"effective={effective_top_k_pct_capped:.3f}"
+                )
+                self._top_k_cap_warned = True
+            effective_top_k_pct = effective_top_k_pct_capped
         k = max(1, int(effective_top_k_pct * len(pred)))
         selected_indices = np.argpartition(pred, -k)[-k:]
 
@@ -2212,36 +2221,49 @@ class RidgePositionSizer:
             # Long format: pivot to wide
             pred_wide = oof_preds.pivot(columns='model_name', values='pred')
             self.model_names_ = list(pred_wide.columns)
-            X = pred_wide.values
+            X = np.asarray(pred_wide.values, dtype=np.float32)
         else:
             # Wide format: one column per model
             self.model_names_ = list(oof_preds.columns)
-            X = oof_preds.values
+            X = np.asarray(oof_preds.values, dtype=np.float32)
         
         # Compute gross and net returns
         # y_gross is for diagnostic metrics and IC (no cost subtraction)
         # y_net is for optimization targets (includes cost subtraction)
+        self._top_k_cap_warned = False
         if labels is not None:
-            y_net = np.asarray(labels, dtype=float)
-            y_gross = y_net + self.cost_pct # Back out cost to get gross
-            tprint(f"  Using provided labels (net): mean={np.mean(y_net):.6f}, std={np.std(y_net):.6f}")
+            y_arr = np.asarray(labels, dtype=np.float32)
+            if self.returns_are_net:
+                y_net = y_arr
+                y_gross = (y_net + np.float32(self.cost_pct)).astype(np.float32, copy=False)
+                tprint(f"  Using provided labels (net): mean={np.mean(y_net):.6f}, std={np.std(y_net):.6f}")
+            else:
+                y_gross = y_arr
+                y_net = (y_gross - np.float32(self.cost_pct)).astype(np.float32, copy=False)
+                tprint(f"  Using provided labels (gross): mean={np.mean(y_gross):.6f}, std={np.std(y_gross):.6f}")
         elif 'return' in trade_outcomes.columns:
-            y_net = np.asarray(trade_outcomes['return'].values, dtype=float)
-            y_gross = y_net + self.cost_pct # Back out cost to get gross
-            tprint(f"  Using returns from trade_outcomes (net): mean={np.mean(y_net):.6f}, std={np.std(y_net):.6f}")
+            y_arr = np.asarray(trade_outcomes['return'].values, dtype=np.float32)
+            if self.returns_are_net:
+                y_net = y_arr
+                y_gross = (y_net + np.float32(self.cost_pct)).astype(np.float32, copy=False)
+                tprint(f"  Using returns from trade_outcomes (net): mean={np.mean(y_net):.6f}, std={np.std(y_net):.6f}")
+            else:
+                y_gross = y_arr
+                y_net = (y_gross - np.float32(self.cost_pct)).astype(np.float32, copy=False)
+                tprint(f"  Using returns from trade_outcomes (gross): mean={np.mean(y_gross):.6f}, std={np.std(y_gross):.6f}")
         elif all(c in trade_outcomes.columns for c in ['entry_price', 'exit_price', 'is_long']):
             y_gross = compute_trade_labels(
                 trade_outcomes['entry_price'].values,
                 trade_outcomes['exit_price'].values,
                 trade_outcomes['is_long'].values,
                 0.0, # GROSS returns
-            )
+            ).astype(np.float32, copy=False)
             y_net = compute_trade_labels(
                 trade_outcomes['entry_price'].values,
                 trade_outcomes['exit_price'].values,
                 trade_outcomes['is_long'].values,
                 self.cost_pct, # NET returns
-            )
+            ).astype(np.float32, copy=False)
             tprint(f"  Computed labels (gross): mean={np.mean(y_gross):.6f}, std={np.std(y_gross):.6f}")
         else:
             raise ValueError(
@@ -2267,18 +2289,18 @@ class RidgePositionSizer:
             symbols = symbols[:n]
 
         # Handle NaN/Inf in predictions
-        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
-        y_gross = np.nan_to_num(y_gross, nan=0.0, posinf=0.0, neginf=0.0)
-        y_net = np.nan_to_num(y_net, nan=0.0, posinf=0.0, neginf=0.0)
+        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32, copy=False)
+        y_gross = np.nan_to_num(y_gross, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32, copy=False)
+        y_net = np.nan_to_num(y_net, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32, copy=False)
         
         # Run target representation race to find best y for this bucket
         tprint("  Running target representation race...")
         # Note: race expects gross returns for IC evaluation, but candidate targets built off y_net
         _u_policy = None
         if "u_policy_net" in trade_outcomes.columns:
-            _u_policy = np.asarray(trade_outcomes["u_policy_net"].values, dtype=float)
+            _u_policy = np.asarray(trade_outcomes["u_policy_net"].values, dtype=np.float32)
         elif "u_policy" in trade_outcomes.columns:
-            _u_policy = np.asarray(trade_outcomes["u_policy"].values, dtype=float)
+            _u_policy = np.asarray(trade_outcomes["u_policy"].values, dtype=np.float32)
         _trade_mask = np.asarray(trade_outcomes["trade_mask"].values, dtype=bool) if "trade_mask" in trade_outcomes.columns else np.ones(len(X), dtype=bool)
         if self.select_metric == "topq_u_policy" and _u_policy is None:
             tprint("  WARNING: sizer_select_metric='topq_u_policy' requested but u_policy_net missing. Falling back to 'ic'.")
@@ -2299,7 +2321,7 @@ class RidgePositionSizer:
         self.target_race_metrics_ = race_diag
         if _u_policy is not None:
             tprint("  Using policy-aware utility labels (u_policy) as authoritative Ridge target")
-            y = np.nan_to_num(_u_policy[:n], nan=0.0, posinf=0.0, neginf=0.0)
+            y = np.nan_to_num(_u_policy[:n], nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32, copy=False)
         
         # NOTE: Do NOT scale globally here - scaling is done per-fold in _evaluate_params
         # to prevent data leakage. The final scaler is fit after CV on all data.
@@ -2653,6 +2675,8 @@ class RidgePositionSizer:
             'sum_to_one': self.sum_to_one,
             'non_negative': self.non_negative,
             'top_k_pct': self.top_k_pct,
+            'top_k_hard_cap': self.top_k_hard_cap,
+            'returns_are_net': self.returns_are_net,
             'scaler_means': self.scaler_.means_.tolist() if self.scaler_ else None,
             'scaler_stds': self.scaler_.stds_.tolist() if self.scaler_ else None,
             'winsor_q_low': self.winsor_q_low,
@@ -2698,6 +2722,8 @@ class RidgePositionSizer:
             sum_to_one=save_dict['sum_to_one'],
             non_negative=save_dict['non_negative'],
             top_k_pct=save_dict.get('top_k_pct', 0.30),
+            top_k_hard_cap=save_dict.get('top_k_hard_cap', 0.30),
+            returns_are_net=bool(save_dict.get('returns_are_net', True)),
             winsor_q_low=float(save_dict.get('winsor_q_low', 0.01)),
             winsor_q_high=float(save_dict.get('winsor_q_high', 0.99)),
         )
@@ -3104,6 +3130,8 @@ def run_ridge_position_sizer_step(
             - n_grid_points: Number of grid points for search
             - cost_pct: Transaction cost percentage
             - top_k_pct: Percentage of top predictions to select
+            - top_k_hard_cap: Optional hard cap for top_k_pct during evaluation
+            - returns_are_net: Whether provided returns/labels already include cost
         save_model: If True, save the fitted model to disk
         run_id: Optional run ID for saving
         labels: Optional pre-computed labels (log returns). If provided,
@@ -3124,6 +3152,8 @@ def run_ridge_position_sizer_step(
     n_grid_points = cfg.get('n_grid_points', 10)
     cost_pct = cfg.get('cost_pct', 0.005)
     top_k_pct = cfg.get('top_k_pct', 0.30)
+    top_k_hard_cap = cfg.get('top_k_hard_cap', 0.30)
+    returns_are_net = bool(cfg.get('returns_are_net', True))
     
     # Initialize sizer
     policy_opt_meta = None
@@ -3149,6 +3179,8 @@ def run_ridge_position_sizer_step(
         n_grid_points=n_grid_points,
         cost_pct=cost_pct,
         top_k_pct=top_k_pct,
+        top_k_hard_cap=top_k_hard_cap,
+        returns_are_net=returns_are_net,
         select_metric=cfg.get('sizer_select_metric', 'topq_u_policy'),
         select_topq=float(cfg.get('sizer_topq', 0.30)),
         require_positive_topq_u=bool(cfg.get('sizer_require_positive_topq_u', True)),

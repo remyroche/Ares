@@ -2656,3 +2656,108 @@ def numba_rolling_entropy_proxy(df, window):
     if is_series:
         return res_df[res_df.columns[0]]
     return res_df
+
+@jit(nopython=True, nogil=True, cache=True)
+def _numba_kalman_filter_1d(y, lambda_qr, r_scalar):
+    """
+    Local-level Kalman filter for 1D array.
+    y_t = x_t + eps_t, x_t = x_{t-1} + eta_t
+    """
+    n = len(y)
+
+    # Check if we have valid input
+    if n == 0:
+        empty = np.full(n, np.nan, dtype=np.float64)
+        return empty, empty, empty
+
+    # Convert inputs to float64 for precision
+    r = max(float(r_scalar), 1e-8)
+    # q is derived from lambda_qr * r
+    q = max(float(lambda_qr), 1e-8) * r
+
+    x_out = np.full(n, np.nan, dtype=np.float64)
+    innov_var_out = np.full(n, np.nan, dtype=np.float64)
+    p_state_out = np.full(n, np.nan, dtype=np.float64)
+
+    # Initialize state (Matches original implementation: use y[0] if valid, else 0.0)
+    # We do NOT search forward/backfill, to preserve causality/exact behavior.
+    val_0 = y[0]
+    if not np.isnan(val_0):
+        x_prev = val_0
+    else:
+        x_prev = 0.0
+
+    p_prev = r
+
+    # Process all steps
+    for t in range(n):
+        y_t = y[t]
+
+        # Predict
+        x_pred = x_prev
+        p_pred = p_prev + q
+
+        # Update
+        s_t = p_pred + r
+        # Avoid division by zero
+        s_t_inv = 1.0 / s_t if s_t > 1e-12 else 1e12
+
+        k_t = p_pred * s_t_inv
+        innov_t = y_t - x_pred
+
+        valid = not np.isnan(y_t)
+
+        if valid:
+            x_new = x_pred + k_t * innov_t
+            p_new = (1.0 - k_t) * p_pred
+        else:
+            x_new = x_pred
+            p_new = p_pred
+
+        # Store outputs
+        x_out[t] = x_new
+        innov_var_out[t] = s_t
+        p_state_out[t] = p_new
+
+        # Move to next step
+        x_prev = x_new
+        p_prev = p_new
+
+    return x_out, innov_var_out, p_state_out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_kalman_filter_parallel(y_mat, lambda_qr, r_vec):
+    n_rows, n_cols = y_mat.shape
+
+    x_out = np.empty((n_rows, n_cols), dtype=np.float64)
+    innov_out = np.empty((n_rows, n_cols), dtype=np.float64)
+    p_out = np.empty((n_rows, n_cols), dtype=np.float64)
+
+    for j in prange(n_cols):
+        # r_vec[j] is the observation variance for column j
+        col_x, col_innov, col_p = _numba_kalman_filter_1d(y_mat[:, j], lambda_qr, r_vec[j])
+        x_out[:, j] = col_x
+        innov_out[:, j] = col_innov
+        p_out[:, j] = col_p
+
+    return x_out, innov_out, p_out
+
+def numba_kalman_filter(y_arr, lambda_qr, r_arr):
+    """
+    Apply local level Kalman filter to 2D array.
+    y_arr: (T, N) float64 array of observations
+    lambda_qr: float scalar
+    r_arr: (N,) float64 array of observation variances per column
+    """
+    # Ensure inputs are correct type/shape for Numba
+    y = np.ascontiguousarray(y_arr, dtype=np.float64)
+    r = np.ascontiguousarray(r_arr, dtype=np.float64)
+
+    if y.ndim == 1:
+        # Handle 1D case by reshaping or calling 1D directly?
+        # Parallel kernel expects 2D. Reshape 1D -> (T, 1)
+        y = y.reshape(-1, 1)
+        if np.isscalar(r) or r.size == 1:
+            r = np.array([r], dtype=np.float64)
+
+    return _numba_kalman_filter_parallel(y, lambda_qr, r)

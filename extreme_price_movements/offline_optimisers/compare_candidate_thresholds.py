@@ -203,7 +203,7 @@ def _load_or_download_15m(symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timest
             idx = pd.to_datetime(df.index)
             df.index = idx.tz_localize("UTC") if idx.tz is None else idx.tz_convert("UTC")
             out = df.loc[(df.index >= start_ts) & (df.index <= end_ts), ["open", "high", "low", "close"]]
-            return out.astype(np.float32, copy=False)
+            return out.astype(np.float32, copy=True)
         except Exception:
             pass
     if not allow_download:

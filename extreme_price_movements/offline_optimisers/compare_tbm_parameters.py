@@ -1580,7 +1580,7 @@ def _regime_multiplier(atr_pct: pd.DataFrame, model: str, mix_weight: float = 0.
     ratio = (atr_pct / roll).replace([np.inf, -np.inf], np.nan).fillna(1.0)
     ratio = ratio.clip(0.5, 2.0)
 
-    shock = atr_pct.pct_change().abs().rolling(24, min_periods=4).mean().fillna(0.0)
+    shock = atr_pct.pct_change(fill_method=None).abs().rolling(24, min_periods=4).mean().fillna(0.0)
     shock = (1.0 + shock).clip(0.7, 2.2)
 
     if model == "none":
@@ -1895,12 +1895,12 @@ def make_quantile_basis(artifacts: RunArtifacts, basis: str) -> pd.DataFrame:
         for k in ["vol_z", "rvol_z", "volume_entropy_12"]:
             if k in feats:
                 return feats[k]
-        return artifacts.panel["volume"].pct_change().abs()
+        return artifacts.panel["volume"].pct_change(fill_method=None).abs()
     if basis == "trend":
         for k in ["trend_snr", "tf_bias", "trend_regime"]:
             if k in feats:
                 return feats[k]
-        return c.pct_change(6)
+        return c.pct_change(6, fill_method=None)
 
     parts = []
     for k in ["atr_pct", "trend_snr", "vol_z", "rsi"]:
@@ -1913,7 +1913,7 @@ def make_quantile_basis(artifacts: RunArtifacts, basis: str) -> pd.DataFrame:
         parts.append((x - x.rolling(72, min_periods=8).median()) / (x.rolling(72, min_periods=8).std() + EPS))
     if parts:
         return sum(parts) / len(parts)
-    return c.pct_change().abs()
+    return c.pct_change(fill_method=None).abs()
 
 
 def choose_feature_matrix(artifacts: RunArtifacts, max_features: int = 20) -> Tuple[pd.DataFrame, List[str]]:
@@ -5499,8 +5499,12 @@ def run(args: argparse.Namespace) -> None:
         details.update(obj_s1.details)
         total_weights_written += obj_s1.total_weights_written
         # Per-cell summary
-        _best = study_s1.best_trial
-        _best_val = f"{_best.value:.4f}" if _best and _best.value is not None else "N/A"
+        try:
+            _best = study_s1.best_trial
+            _best_val = f"{_best.value:.4f}" if _best.value is not None else "N/A"
+        except (ValueError, RuntimeError):
+            _best = None
+            _best_val = "N/A"
         tprint(
             f"--- Cell {bkt} H{hor} complete: "
             f"trials={len(study_s1.trials)} best={_best_val} "

@@ -68,6 +68,30 @@ def _expected_feature_keys_from_cfg(cfg) -> set[str]:
     return keys
 
 
+def _labeling_feature_keys(cfg) -> set[str]:
+    """Minimal feature set for label generation only.
+
+    Labeling needs:
+    - Candidate masking: ret24h, range_12h_pct, volatility_zscore, chop_score, mkt_rv_24h, mkt_rv_48h
+    - Exhaustion history: cfg['exh_feature_keys']
+    - ATR-pct for barrier calibration: atr_pct
+    - Core ret1h for any cross-section ranking.
+
+    It does NOT need spike_feature_keys, meta_feature_keys, tf_feature_keys, mr_feature_keys which
+    are only used in actual model training and would cause an OOM during label generation.
+    """
+    keys: set[str] = {
+        "ret24h", "ret1h", "atr_pct",
+        "range_12h_pct", "volatility_zscore",
+        "chop_score", "mkt_rv_24h", "mkt_rv_48h",
+    }
+    # Add exhaustion-specific feature keys (generally small set)
+    exh_keys = cfg.get("exh_feature_keys", [])
+    if isinstance(exh_keys, (list, tuple)):
+        keys.update(k for k in exh_keys if isinstance(k, str) and k)
+    return keys
+
+
 def _align_features_to_panel(feats: dict, panel: dict[str, pd.DataFrame], symbols: list[str]) -> dict:
     close = panel["close"]
     out = {}
@@ -586,7 +610,7 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
     mkt_gates = add_regime_gates(mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
 
     # Keep feature-key selection consistent with the shared cache/feature generation logic.
-    label_feature_keys = _expected_feature_keys_from_cfg(cfg)
+    label_feature_keys = _labeling_feature_keys(cfg)
     feats = load_features_selected(
         ts_sig,
         cfg["data_root"],

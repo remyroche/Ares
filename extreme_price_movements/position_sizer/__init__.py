@@ -19,9 +19,9 @@ from .tp_sl_selection import (
     select_best_tp_sl,
 )
 from .runtime import (
-    PositionSizerBundle,
-    load_bundle,
-    predict_all,
+    EVDecompositionBundle,
+    load_ev_decomposition_bundle,
+    predict_ev_components,
     compute_ev_risk,
     gate_and_size,
 )
@@ -59,9 +59,9 @@ __all__ = [
     "temperature_scale_score",
     "size_position",
     "size_positions_ranked",
-    "PositionSizerBundle",
-    "load_bundle",
-    "predict_all",
+    "EVDecompositionBundle",
+    "load_ev_decomposition_bundle",
+    "predict_ev_components",
     "compute_ev_risk",
     "gate_and_size",
 ]

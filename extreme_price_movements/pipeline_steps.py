@@ -1005,7 +1005,15 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
             oof_pred_df = oof_preds[pred_cols].copy()
             timestamps = trade_outcomes['timestamp'].values if 'timestamp' in trade_outcomes.columns else None
             symbols    = trade_outcomes['symbol'].values    if 'symbol'    in trade_outcomes.columns else None
-            tprint(f"    {bucket_name}: {len(oof_pred_df)} rows, features={pred_cols}")
+            _ev_cols = {"oof_u_hat", "oof_log_mae_q70_hat", "oof_log_mfe_hat"}
+            _ev_present = [c for c in pred_cols if c in _ev_cols]
+            _other_meta = [c for c in pred_cols if c not in _ev_cols]
+            tprint(
+                f"    {bucket_name}: {len(oof_pred_df)} rows, features={len(pred_cols)} "
+                f"(ev_heads={len(_ev_present)} other_meta={len(_other_meta)})"
+            )
+            if _other_meta:
+                tprint(f"      other meta features used by ridge: {_other_meta}")
 
             # Policy-aligned trade mask for ridge sizer (entry policy can reduce trade count).
             _bp_key = bucket_name.upper()
@@ -1055,7 +1063,11 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
                 for wname, wval in bkt_weights.items():
                     dir_weights[f"{bucket_name}_{wname}"] = wval
                 dir_params[bucket_name] = sizer.best_params_
-                dir_metrics[bucket_name] = metrics
+                _metrics_ext = dict(metrics or {})
+                _metrics_ext["feature_columns"] = list(pred_cols)
+                _metrics_ext["ev_head_feature_count"] = int(len(_ev_present))
+                _metrics_ext["other_meta_feature_count"] = int(len(_other_meta))
+                dir_metrics[bucket_name] = _metrics_ext
                 tprint(f"    {bucket_name} weights: {bkt_weights}")
             except Exception as e:
                 tprint(f"    {bucket_name} failed: {e}")
@@ -1145,377 +1157,10 @@ def run_ridge_sizer_step(ts_sig, cfg, state_file):
     }
 
 
-def run_position_sizer_step(cfg, data_bundle, artifacts, logger):
-    """Train and persist the new position sizer bundle.
-
-    Args:
-        cfg: full config dict
-        data_bundle: dict containing either `position_sizer_df` or per-bucket oof/outcomes
-        artifacts: dict with paths (expects `output_dir`, optional `state_file`, `run_id`, `data_root`)
-        logger: callable logger
-    """
-    log = logger or tprint
-    if not bool(cfg.get("position_sizer_enabled", False)):
-        log("Position sizer disabled; skipping new position sizer step.")
-        return artifacts
-
-    from extreme_price_movements.position_sizer.training_orchestrator import (
-        train_position_sizer_models,
-    )
-    from extreme_price_movements.position_sizer.runtime import PositionSizerBundle, compute_schema_hash, make_bundle_metadata
-    from extreme_price_movements.position_sizer.tp_sl_selection import (
-        CompositeObjectiveConfig,
-        evaluate_fold_metrics,
-        aggregate_candidate_folds,
-        select_robust_default,
-        build_tp_sl_grid,
-    )
-
-    output_dir = artifacts.get("output_dir") or os.path.join(artifacts.get("data_root", cfg.get("data_root", "data")), "artifacts", artifacts.get("run_id", "latest"), "position_sizer")
-    os.makedirs(output_dir, exist_ok=True)
-
-    if "position_sizer_df" in data_bundle:
-        ps_df = data_bundle["position_sizer_df"].copy()
-    else:
-        rows = []
-        _exclude = {"timestamp", "symbol", "return", "is_long", "index"}
-        for _bucket, pack in (data_bundle.get("buckets", {}) or {}).items():
-            oof = pack.get("oof")
-            out = pack.get("outcomes")
-            if oof is None or out is None or len(oof) != len(out):
-                continue
-            pred_cols = [c for c in oof.columns if c not in _exclude]
-            if not pred_cols:
-                continue
-            score_col = "reg_mean" if "reg_mean" in oof.columns else ("reg" if "reg" in oof.columns else pred_cols[0])
-            _df = pd.DataFrame(index=np.arange(len(oof)))
-            _df["score"] = np.asarray(oof[score_col].values, dtype=float)
-            _df["pnl_label"] = np.asarray(out.get("return", pd.Series(np.zeros(len(out)))).values, dtype=float)
-            _df["mfe"] = np.asarray(out.get("mfe_ret", pd.Series(np.zeros(len(out)))).values, dtype=float)
-            _df["mae"] = np.asarray(out.get("mae_ret", pd.Series(np.zeros(len(out)))).values, dtype=float)
-            _df["timestamp"] = np.asarray(out.get("timestamp", pd.Series(np.arange(len(out)))).values)
-            _df["symbol"] = np.asarray(out.get("symbol", pd.Series(["UNK"] * len(out))).values)
-            _df["bucket"] = _bucket
-            # Add all numeric OOF prediction/regime features as model inputs.
-            for _c in pred_cols:
-                if _c == score_col or _c in _df.columns:
-                    continue
-                try:
-                    _v = pd.to_numeric(oof[_c], errors="coerce").astype(float)
-                    if np.isfinite(_v).any():
-                        _df[_c] = _v.values
-                except Exception:
-                    continue
-            rows.append(_df)
-        if not rows:
-            log("Position sizer: no usable data, skipping.")
-            return artifacts
-        ps_df = pd.concat(rows, axis=0, ignore_index=True)
-
-    # Derived normalized excursion ratio from predicted heads.
-    _eps = 1e-9
-    if "oof_log_mfe_hat" in ps_df.columns and "oof_log_mae_q70_hat" in ps_df.columns:
-        _mfe_hat = np.expm1(pd.to_numeric(ps_df["oof_log_mfe_hat"], errors="coerce").values.astype(float))
-        _mae_hat = np.expm1(pd.to_numeric(ps_df["oof_log_mae_q70_hat"], errors="coerce").values.astype(float))
-        ps_df["mfe_mae_ratio_hat"] = _mfe_hat / np.maximum(_mae_hat, _eps)
-        ps_df["mfe_mae_ratio_hat"] = np.where(np.isfinite(ps_df["mfe_mae_ratio_hat"]), ps_df["mfe_mae_ratio_hat"], 0.0)
-
-    _regime = [str(c) for c in cfg.get("position_sizer_regime_feature_keys", []) if isinstance(c, str)]
-    _missing_regime_in_df = [c for c in _regime if c not in ps_df.columns]
-    if _missing_regime_in_df and {"timestamp", "symbol"}.issubset(ps_df.columns):
-        try:
-            _run_id = str(artifacts.get("run_id", "")).strip()
-            _ts_ref = pd.to_datetime(_run_id, format="%Y%m%d_%H%M%S", utc=True)
-            _data_root = str(artifacts.get("data_root", cfg.get("data_root", "data")))
-            _syms_raw = pd.Series(ps_df["symbol"]).astype(str).dropna().unique().tolist()
-            _syms_query = sorted(
-                set(_syms_raw)
-                | {s.replace("_", "/", 1) for s in _syms_raw if "_" in s}
-                | {s.replace("/", "_", 1) for s in _syms_raw if "/" in s}
-            )
-            _feat_reg = load_features_selected(
-                _ts_ref,
-                _data_root,
-                feature_keys=_missing_regime_in_df,
-                symbols=_syms_query,
-            )
-            _ts_vals = pd.to_datetime(ps_df["timestamp"], utc=True, errors="coerce").dt.tz_convert(None)
-            _sym_vals = pd.Series(ps_df["symbol"]).astype(str).values
-            _sym_codes, _sym_uniques = pd.factorize(_sym_vals, sort=False)
-            _rows_by_sym = [np.where(_sym_codes == i)[0] for i in range(len(_sym_uniques))]
-            _added = []
-            for _k in _missing_regime_in_df:
-                _dfk = _feat_reg.get(_k)
-                if _dfk is None or not isinstance(_dfk, pd.DataFrame) or _dfk.empty:
-                    continue
-                _feat_idx = pd.DatetimeIndex(_dfk.index)
-                _tpos = _feat_idx.get_indexer(_ts_vals)
-                _out = np.full(len(ps_df), np.nan, dtype=np.float64)
-                _cols = set(_dfk.columns.astype(str))
-                for _sym, _ridx in zip(_sym_uniques, _rows_by_sym):
-                    _cands = [_sym]
-                    if "_" in _sym:
-                        _cands.append(_sym.replace("_", "/", 1))
-                    if "/" in _sym:
-                        _cands.append(_sym.replace("/", "_", 1))
-                    _col = next((c for c in _cands if c in _cols), None)
-                    if _col is None:
-                        continue
-                    _tp = _tpos[_ridx]
-                    _valid = _tp >= 0
-                    if not np.any(_valid):
-                        continue
-                    _src = _dfk[_col].to_numpy(dtype=np.float64, copy=False)
-                    _tmp = np.full(len(_ridx), np.nan, dtype=np.float64)
-                    _tmp[_valid] = _src[_tp[_valid]]
-                    _out[_ridx] = _tmp
-                if np.isfinite(_out).any():
-                    ps_df[_k] = _out
-                    _added.append(_k)
-            if _added:
-                log(
-                    "Position sizer regime enrich: "
-                    f"added={len(_added)}/{len(_missing_regime_in_df)} from feature store."
-                )
-        except Exception as _e:
-            log(f"WARNING: Position sizer regime enrich failed: {_e}")
-
-    _forbid = {"pnl_label", "mfe", "mae", "timestamp", "symbol", "bucket", "return", "is_long", "index"}
-    _priority = [str(c) for c in cfg.get("position_sizer_feature_priority", ["score"]) if isinstance(c, str)]
-    _num_cols = [c for c in ps_df.columns if c not in _forbid and pd.api.types.is_numeric_dtype(ps_df[c])]
-    feature_cols = []
-    for _c in _priority + _regime + _num_cols:
-        if _c in _num_cols and _c not in feature_cols:
-            feature_cols.append(_c)
-    if not feature_cols:
-        feature_cols = ["score"] if "score" in ps_df.columns else ["pnl_label"]
-    _regime_present = [c for c in _regime if c in feature_cols]
-    _regime_missing = [c for c in _regime if c not in _regime_present]
-    log(
-        "Position sizer regime features: "
-        f"configured={len(_regime)} present={len(_regime_present)} missing={len(_regime_missing)}"
-    )
-    if _regime_missing:
-        log(f"Position sizer regime features missing: {_regime_missing}")
-
-    _ps_train = train_position_sizer_models(ps_df=ps_df, feature_cols=feature_cols, cfg=cfg)
-    _ps_diag = dict(_ps_train.get("diagnostics", {}) or {})
-    _ps_cfg = dict(_ps_train.get("training_config", {}) or {})
-    if _ps_cfg:
-        log(
-            "PositionSizer models trained: "
-            f"pwin={_ps_cfg.get('pwin_base_engine')} "
-            f"quant={_ps_cfg.get('quantile_base_engine')} "
-            f"reg={_ps_cfg.get('regularization_level')} "
-            f"cal={_ps_cfg.get('calibrator_method')} "
-            f"delta={_ps_cfg.get('quantile_delta')}"
-        )
-    _pdiag = dict(_ps_diag.get("pwin", {}) or {})
-    if _pdiag:
-        log(
-            "PositionSizer pwin diag: "
-            f"auc_cal={_pdiag.get('auc_cal', float('nan')):.4f} "
-            f"bce_cal={_pdiag.get('bce_cal', float('nan')):.4f} "
-            f"ece_cal={_pdiag.get('ece_cal', float('nan')):.4f}"
-        )
-    _wdiag = dict(_ps_diag.get("win_quantiles", {}) or {})
-    _ldiag = dict(_ps_diag.get("loss_quantiles", {}) or {})
-    if _wdiag:
-        log(
-            "PositionSizer win-quantile diag: "
-            f"pin50={_wdiag.get('pinball_q50', float('nan')):.6f} "
-            f"pinH={_wdiag.get('pinball_qh', float('nan')):.6f} "
-            f"cov50={_wdiag.get('coverage_q50', float('nan')):.3f} "
-            f"covH={_wdiag.get('coverage_qh', float('nan')):.3f}"
-        )
-    if _ldiag:
-        log(
-            "PositionSizer loss-quantile diag: "
-            f"pin50={_ldiag.get('pinball_q50', float('nan')):.6f} "
-            f"pinH={_ldiag.get('pinball_qh', float('nan')):.6f} "
-            f"cov50={_ldiag.get('coverage_q50', float('nan')):.3f} "
-            f"covH={_ldiag.get('coverage_qh', float('nan')):.3f}"
-        )
-    for _b, _bd in sorted((_ps_diag.get("per_bucket", {}) or {}).items()):
-        _bp = dict((_bd or {}).get("pwin", {}) or {})
-        _bw = dict((_bd or {}).get("win_quantiles", {}) or {})
-        _bl = dict((_bd or {}).get("loss_quantiles", {}) or {})
-        log(
-            f"  [bucket={_b}] pwin_n={_bp.get('n', 0)} "
-            f"pwin_mean_pred={_bp.get('mean_pred', float('nan')):.4f} "
-            f"win_pinH={_bw.get('pinball_qh', float('nan')):.6f} "
-            f"loss_pinH={_bl.get('pinball_qh', float('nan')):.6f}"
-        )
-    pwin_model = _ps_train["pwin_model"]
-    win_model = _ps_train["win_model"]
-    loss_model = _ps_train["loss_model"]
-    exp_win_q = float(_ps_train["exp_win_quantile"])
-    risk_loss_q = float(_ps_train["risk_loss_quantile"])
-    costs_mode = str(_ps_train["costs_mode"])
-
-    tp_sl_defaults = None
-    if bool(cfg.get("tp_sl_search_enabled", False)) and str(cfg.get("tp_sl_search_optimizer", "legacy")) == "new":
-        cand_metrics = {}
-        k_tp_grid = cfg.get("tp_sl_search_k_tp_grid", [1.0])
-        k_sl_grid = cfg.get("tp_sl_search_k_sl_grid", [1.0])
-        cobj = CompositeObjectiveConfig(
-            mar=float(cfg.get("objective_mar", 0.0)),
-            eps_log=float(cfg.get("objective_eps_log", 1e-12)),
-            eps_sortino=float(cfg.get("objective_eps_sortino", 1e-12)),
-            mode=str(cfg.get("objective_composite_mode", "hard_gate")),
-            q_top=float(cfg.get("objective_composite_q_top", 0.95)),
-            selection=str(cfg.get("objective_composite_selection", "min_std")),
-            min_trades_per_fold=int(cfg.get("tp_sl_search_min_trades_per_fold", 200)),
-            elg_scale=float(cfg.get("objective_scaling_elg_scale", 10000.0)),
-            mnpt_scale=float(cfg.get("objective_scaling_mnpt_scale", 10000.0)),
-            elg_min=float(cfg.get("objective_clipping_elg_min", -1.0)),
-            elg_max=float(cfg.get("objective_clipping_elg_max", 1.0)),
-            sortino_min=float(cfg.get("objective_clipping_sortino_min", -10.0)),
-            sortino_max=float(cfg.get("objective_clipping_sortino_max", 10.0)),
-            mnpt_min=float(cfg.get("objective_clipping_mnpt_min", -1.0)),
-            mnpt_max=float(cfg.get("objective_clipping_mnpt_max", 1.0)),
-        )
-        ts = pd.to_datetime(ps_df["timestamp"], utc=True, errors="coerce") if "timestamp" in ps_df.columns else pd.Series(np.arange(len(ps_df)))
-        split_ids = pd.qcut(np.arange(len(ps_df)), q=min(3, max(1, len(ps_df)//200)), labels=False, duplicates="drop") if len(ps_df) > 0 else np.array([])
-        for k_tp, k_sl in build_tp_sl_grid(k_tp_grid, k_sl_grid):
-            folds = []
-            for sid in np.unique(split_ids):
-                m = np.asarray(split_ids == sid)
-                pnl = np.asarray(ps_df.loc[m, "pnl_label"].values, dtype=float)
-                pnl_adj = np.where(pnl >= 0.0, pnl * float(k_tp), pnl * float(k_sl))
-                if "timestamp" in ps_df.columns:
-                    grp = pd.DataFrame({"ts": ts[m], "p": pnl_adj}).groupby("ts", as_index=False)["p"].sum()
-                    r_t = grp["p"].values
-                else:
-                    r_t = pnl_adj
-                folds.append(evaluate_fold_metrics(r_t=r_t, pnl_net=pnl_adj, cfg=cobj))
-            cand_metrics[(float(k_tp), float(k_sl))] = folds
-        summary_df = aggregate_candidate_folds(cand_metrics)
-        summary_df["selection_window"] = "in_fold_selection"
-        summary_df["evaluation_window"] = "fold_holdout"
-        best = select_robust_default(summary_df, cobj)
-        tp_sl_defaults = {
-            "k_tp": float(best["candidate"][0]),
-            "k_sl": float(best["candidate"][1]),
-            "objective_mean": float(best.get("Objective_mean", np.nan)),
-            "objective_std": float(best.get("Objective_std", np.nan)),
-            "objective_worst": float(best.get("Objective_worst", np.nan)),
-        }
-        summary_df.to_csv(os.path.join(output_dir, "tp_sl_selection_summary.csv"), index=False)
-
-    _git_sha = ""
-    try:
-        import subprocess as _sp
-        _git_sha = _sp.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
-    except Exception:
-        _git_sha = ""
-    _q_cfg = {
-        "exp_win_quantile": exp_win_q,
-        "risk_loss_quantile": risk_loss_q,
-        "costs_mode": costs_mode,
-        "training_config": _ps_cfg,
-        "training_diagnostics": _ps_diag,
-    }
-    _schema_hash = compute_schema_hash(feature_cols, extra=_q_cfg)
-    _meta = make_bundle_metadata(git_sha=_git_sha)
-    bundle = PositionSizerBundle(
-        feature_cols=list(feature_cols),
-        pwin_model=pwin_model,
-        win_model=win_model,
-        loss_model=loss_model,
-        tp_sl_defaults=tp_sl_defaults,
-        config={
-            "backend": "new",
-            "soft_label_enabled": bool(_ps_train.get("soft_label_enabled", False)),
-            "calibration_scope": str(cfg.get("position_sizer_calibration_scope", "regime")),
-            "exp_win_quantile": exp_win_q,
-            "risk_loss_quantile": risk_loss_q,
-            "costs_mode": costs_mode,
-        },
-        version="v1",
-        bundle_version=1,
-        created_at=_meta.get("created_at", ""),
-        git_sha=_meta.get("git_sha", ""),
-        schema_hash=_schema_hash,
-    )
-
-    bundle_path = os.path.join(output_dir, "position_sizer_bundle.pkl")
-    with open(bundle_path, "wb") as f:
-        pickle.dump(bundle, f)
-    manifest = {
-        "bundle_path": bundle_path,
-        "feature_cols": feature_cols,
-        "regime_feature_keys_configured": _regime,
-        "regime_feature_keys_used": _regime_present,
-        "regime_feature_keys_missing": _regime_missing,
-        "tp_sl_defaults": tp_sl_defaults,
-        "version": "v1",
-        "bundle_version": 1,
-        "created_at": bundle.created_at,
-        "git_sha": bundle.git_sha,
-        "schema_hash": bundle.schema_hash,
-        "exp_win_quantile": exp_win_q,
-        "risk_loss_quantile": risk_loss_q,
-        "costs_mode": costs_mode,
-    }
-    with open(os.path.join(output_dir, "position_sizer_bundle.json"), "w") as f:
-        json.dump(manifest, f, indent=2)
-    with open(os.path.join(output_dir, "position_sizer_training_diagnostics.json"), "w") as f:
-        json.dump({"training_config": _ps_cfg, "diagnostics": _ps_diag}, f, indent=2)
-
-    state_file = artifacts.get("state_file")
-    if state_file and os.path.exists(state_file):
-        with open(state_file, "rb") as f:
-            state = pickle.load(f)
-        state["position_sizer"] = manifest
-        with open(state_file, "wb") as f:
-            pickle.dump(state, f)
-
-    artifacts = dict(artifacts)
-    artifacts["position_sizer"] = manifest
-    log(f"STEP: POSITION SIZER COMPLETE — bundle={bundle_path} Wq={exp_win_q:.2f} Lq={risk_loss_q:.2f} costs_mode={costs_mode}")
-    return artifacts
-
-
 def run_sizer_step(ts_sig, cfg, state_file):
-    backend = str(cfg.get("position_sizer_backend", "new")).lower()
-    tprint(f"STEP: SIZER START (backend={backend})")
-    if backend == "ridge":
-        raise ValueError(
-            "position_sizer_backend='ridge' is disabled. "
-            "Use position_sizer_backend='new' (EV decomposition backend)."
-        )
-    if backend != "new":
-        raise ValueError(f"Unknown position_sizer_backend={backend}")
-
-    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
-    data_root = cfg.get("data_root", "data")
-    from extreme_price_movements.run_ridge_sizer import (
-        load_meta_oof_predictions as load_bucket_oofs,
-        load_trade_outcomes,
-    )
-    try:
-        bucket_oofs = load_bucket_oofs(data_root, run_id)
-    except FileNotFoundError as e:
-        tprint(f"WARNING: {e}")
-        tprint("Skipping new position sizer step - no meta OOF predictions found.")
-        return None
-
-    buckets = {}
-    for bucket_name, oof_preds in bucket_oofs.items():
-        try:
-            trade_outcomes = load_trade_outcomes(data_root, run_id, oof_preds)
-        except FileNotFoundError:
-            continue
-        buckets[bucket_name] = {"oof": oof_preds, "outcomes": trade_outcomes}
-
-    artifacts = {
-        "run_id": run_id,
-        "data_root": data_root,
-        "output_dir": os.path.join(data_root, "artifacts", run_id, "position_sizer"),
-        "state_file": state_file,
-    }
-    return run_position_sizer_step(cfg=cfg, data_bundle={"buckets": buckets}, artifacts=artifacts, logger=tprint)
+    """Run offline ridge sizing/offset optimization using meta OOF outputs."""
+    tprint("STEP: SIZER START (ridge)")
+    return run_ridge_sizer_step(ts_sig, cfg, state_file)
 
 
 def compute_regime_boundaries(feats):
@@ -1571,13 +1216,13 @@ def _extract_required_features(bundle, cfg):
         req_feats.add(str(dev_metric))
 
     # Sizer-triggered OOS backtest: keep feature loading constrained to
-    # position-sizer relevant context only.
+    # EV-decomposition relevant context only.
     if bool(cfg.get("sizer_oos_mode", False)):
         reg_keys = cfg.get("position_sizer_regime_feature_keys", [])
         if isinstance(reg_keys, (list, tuple, set)):
             req_feats.update(str(v) for v in reg_keys if isinstance(v, str) and v)
         out = sorted({f for f in req_feats if not str(f).startswith("pred_")})
-        tprint(f"Feature load whitelist (sizer_oos_mode): keys={len(out)} (position-sizer relevant)")
+        tprint(f"Feature load whitelist (sizer_oos_mode): keys={len(out)} (EV-decomposition relevant)")
         return out
 
     # Only configured feature-key baskets are allowed.
@@ -1868,9 +1513,9 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
     atr_s = _align_idx_tz(atr_s, idx_tz)
     risk_conf = model_state.get("risk_params", {}) or {}
     bundle = model_state.get("bundle")
-    _ps_manifest = model_state.get("position_sizer", {}) if isinstance(model_state, dict) else {}
+    _ps_manifest = model_state.get("ev_decomposition", {}) if isinstance(model_state, dict) else {}
     if isinstance(_ps_manifest, dict) and _ps_manifest.get("bundle_path"):
-        risk_conf["position_sizer_bundle_path"] = _ps_manifest.get("bundle_path")
+        risk_conf["ev_decomposition_bundle_path"] = _ps_manifest.get("bundle_path")
 
     fee_bps = cfg.get("fee_bps", 25.0)
     cost = CostModel(fee_side=float(fee_bps) / 10000.0, slippage_side=float(cfg.get("slippage_bps", 0.0)) / 10000.0)
@@ -1880,7 +1525,7 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
         run_id=run_id,
         policy_version=str(run_id),
         cost_model={"fee_side": float(cost.fee_side), "slippage_side": float(cost.slippage_side), "round_trip": float(cost.round_trip)},
-        extra={"stage": "backtest_signal_optimization", "sizer_backend_used": str(cfg.get("sizer_backend_used", cfg.get("position_sizer_backend", "new")))},
+        extra={"stage": "backtest_signal_optimization", "sizer_backend_used": str(cfg.get("sizer_backend_used", "ridge"))},
     )
     if bool(cfg.get("signal_opt_debug", True)):
         tprint(
@@ -1888,7 +1533,7 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
             f"use_limit_orders={bool(cfg.get('use_limit_orders', False))} "
             f"limit_offset_bps={float(cfg.get('limit_offset_bps', 0.0)):.1f} "
             f"exit_limit_offset_bps={float(cfg.get('exit_limit_offset_bps', 0.0)):.1f} "
-            f"position_sizer_backend={cfg.get('position_sizer_backend', 'new')} "
+            f"sizer_backend=ridge "
             f"ranking_trade_percentile_threshold={float(cfg.get('ranking_trade_percentile_threshold', 0.90)):.2f}"
         )
 

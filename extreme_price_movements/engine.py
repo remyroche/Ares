@@ -1326,7 +1326,7 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
                     potential_signal = {"symbol": sym, "side": "short", "score": s_tf_cmp, "dom": "tf", "mode": mode}
 
         if potential_signal:
-            # Keep position-sizer runtime features on each order.
+            # Keep EV-decomposition runtime features on each order.
             for _cn in _ps_runtime_cols:
                 if _cn in row:
                     potential_signal[_cn] = row[_cn]
@@ -1385,19 +1385,21 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
     final_orders = list(sym_best.values())
     _diag["after_symbol_dedup"] = int(len(final_orders))
 
-    # Optional runtime integration with new position_sizer backend.
-    _ps_backend = str(cfg.get("position_sizer_backend", "ridge")).lower()
-    _ps_bundle_path = (risk_config or {}).get("position_sizer_bundle_path") if isinstance(risk_config, dict) else None
-    if _ps_backend == "new" and _ps_bundle_path:
+    # Runtime integration with EV decomposition bundle backend.
+    _ps_backend = str(cfg.get("position_sizer_backend", "ev_decomposition")).lower()
+    # Intentional: no legacy backend/value fallback (e.g., "new") and no legacy manifest-key fallback.
+    # Runtime EV decomposition activates only when backend=ev_decomposition and bundle path is explicit.
+    _ps_bundle_path = (risk_config or {}).get("ev_decomposition_bundle_path") if isinstance(risk_config, dict) else None
+    if _ps_backend == "ev_decomposition" and _ps_bundle_path:
         try:
             from extreme_price_movements.position_sizer.runtime import (
-                load_bundle as _ps_load_bundle,
-                predict_all as _ps_predict_all,
+                load_ev_decomposition_bundle as _ps_load_bundle,
+                predict_ev_components as _ps_predict_all,
                 compute_ev_risk as _ps_compute_ev_risk,
                 gate_and_size as _ps_gate_and_size,
             )
             from extreme_price_movements.position_sizer.sizer import PositionSizerConfig as _PSCfg
-            _bundle = _ps_load_bundle(_ps_bundle_path, allow_unknown_version=bool(cfg.get("position_sizer_allow_unknown_bundle_version", False)))
+            _bundle = _ps_load_bundle(_ps_bundle_path, allow_unknown_version=bool(cfg.get("ev_decomposition_allow_unknown_bundle_version", False)))
             _Xps = pd.DataFrame(index=np.arange(len(final_orders)))
             for _c in list(getattr(_bundle, "feature_cols", []) or []):
                 if _c == "score":
@@ -1458,14 +1460,14 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
             _ev_thr = _psc.ev_threshold
 
             tprint(
-                f"PositionSizer(new): used Wq={_exp_q:.2f} Lq={_risk_q:.2f} gated_out={_gated_out:.2%} "
+                f"EVDecomposition runtime: used Wq={_exp_q:.2f} Lq={_risk_q:.2f} gated_out={_gated_out:.2%} "
                 f"avg_size_if_trade={_avg_size:.5f} pwin_nan_frac={_pnan:.3%}"
             )
             tprint(
                 f"  -> EV stats (thr={_ev_thr}): {_ev_diag} | Risk stats: {_rk_diag}"
             )
 
-            cfg["sizer_backend_used"] = "new"
+            cfg["sizer_backend_used"] = "ev_decomposition"
             if _new_orders:
                 _diag["after_new_sizer"] = int(len(_new_orders))
                 if _dbg:
@@ -1501,7 +1503,7 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
                     _fallback_orders.append(_o)
                     _kept += 1
                 tprint(
-                    f"PositionSizer(new): no-trade fallback engaged keep={len(_fallback_orders)}/{len(final_orders)} "
+                    f"EVDecomposition runtime: no-trade fallback engaged keep={len(_fallback_orders)}/{len(final_orders)} "
                     f"frac={_frac:.2f}"
                 )
                 if _fallback_orders:
@@ -1522,11 +1524,11 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
             return []
         except Exception as _e_ps:
             _allow_fallback = bool(cfg.get("position_sizer_allow_fallback", False))
-            cfg["sizer_backend_used"] = "ridge_fallback" if _allow_fallback else "new_failed"
+            cfg["sizer_backend_used"] = "ridge_fallback" if _allow_fallback else "ev_decomposition_failed"
             if _allow_fallback:
-                tprint(f"ERROR: new position_sizer runtime failed; using ridge fallback: {_e_ps}")
+                tprint(f"ERROR: ev_decomposition runtime failed; using ridge fallback: {_e_ps}")
             else:
-                raise RuntimeError(f"new position_sizer runtime failed: {_e_ps}")
+                raise RuntimeError(f"ev_decomposition runtime failed: {_e_ps}")
 
     if size_q50 is None or size_q90 is None:
         arr = np.array([abs(o["score"]) for o in final_orders], dtype=np.float64)

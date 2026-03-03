@@ -590,10 +590,10 @@ def run_sizer(cfg, ts_override=None, store=None):
         tprint(f"ERROR: Trained state not found at {state_file}. Run 'train' mode first.")
         return
 
-    tprint(f"Sizer mode. ts_sig={ts_sig} backend={cfg.get('position_sizer_backend', 'new')}")
+    tprint(f"Sizer mode (ridge). ts_sig={ts_sig}")
     result = run_sizer_step(ts_sig, cfg, state_file)
     if result:
-        tprint(f"SIZER COMPLETE — backend={cfg.get('position_sizer_backend', 'new')}")
+        tprint("SIZER COMPLETE — ridge")
 
         # Generate OOS backtest metrics immediately after sizer training.
         if bool(cfg.get("sizer_run_oos_backtest", True)):
@@ -970,7 +970,7 @@ def main():
 
     _configure_report_roots(cfg)
 
-    tprint(f"Sizer backend resolved: {cfg.get('position_sizer_backend', 'new')} (enabled={bool(cfg.get('position_sizer_enabled', False))})")
+    tprint(f"Sizer policy: ridge offline optimizer (ev_decomposition_enabled={bool(cfg.get('ev_decomposition_enabled', cfg.get('position_sizer_enabled', False)))})")
 
     if args.mode == "download":
         run_download(cfg)

@@ -1700,7 +1700,7 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
     tprint("STEP: BACKTEST START")
     if not os.path.exists(state_file):
         tprint("State file not found.")
-        return
+        return False
 
     with open(state_file, "rb") as f:
         model_state = pickle.load(f)
@@ -2894,8 +2894,8 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
 
     if test_trades:
         df_res = pd.DataFrame(test_trades)
-        out_path = os.path.join(cfg["data_root"], "artifacts", run_id, "backtest_results.csv")
-        df_res.to_csv(out_path, index=False)
+        out_path = os.path.join(cfg["data_root"], "artifacts", run_id, "backtest_results.parquet")
+        df_res.to_parquet(out_path, index=False)
         tprint(f"Detailed results saved to {out_path}")
 
     # Generate backtest report
@@ -2919,6 +2919,7 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
         pickle.dump(model_state, f)
     tprint("Saved optimized signal params to trained state for inference use.")
     tprint("STEP: BACKTEST COMPLETE")
+    return True
 
 def run_feature_generation_step(ts_sig, margin_symbols, cfg, store, force_full_recompute: bool = False):
     tprint("STEP: FEATURE GENERATION START")

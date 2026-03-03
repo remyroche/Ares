@@ -49,6 +49,9 @@ from extreme_price_movements.pipeline_steps import (
     run_backtest_step,
     run_risk_optimization_step,
 )
+import pickle as _pkl
+import gc
+
 from extreme_price_movements.optimise import run_optimise_step, Policy
 from extreme_price_movements.pipeline_steps import run_sizer_step
 
@@ -384,7 +387,6 @@ def _label_artifacts_ready(cfg, ts_sig):
 
 def _gc_checkpoint(tag: str) -> int:
     """Trigger GC and emit a short checkpoint log."""
-    import gc
 
     collected = gc.collect()
     tprint(f"GC[{tag}]: collected={collected}")
@@ -478,7 +480,6 @@ def run_backtest(cfg, ts_override=None):
             return
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
-    import os
     state_file = os.path.join(cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl")
     if not os.path.exists(state_file):
         tprint(f"ERROR: Trained state not found at {state_file}. Run 'train' mode first.")
@@ -486,9 +487,13 @@ def run_backtest(cfg, ts_override=None):
 
     tprint(f"Backtest mode. ts_sig={ts_sig}")
     store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
-    run_backtest_step(ts_sig, None, cfg, store, state_file)
-    tprint("BACKTEST PIPELINE COMPLETE")
+    success = run_backtest_step(ts_sig, None, cfg, store, state_file)
+    if success:
+        tprint("BACKTEST PIPELINE COMPLETE")
+    else:
+        tprint("BACKTEST PIPELINE FAILED")
     _maintenance_checkpoint("backtest:end")
+    return success
 
 
 def run_train(cfg, ts_override=None, base_only=False, meta_only=False):
@@ -556,7 +561,6 @@ def run_risk_opt(cfg, ts_override=None):
             return
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
-    import os
     state_file = os.path.join(cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl")
 
     tprint(f"Risk Optimization mode. ts_sig={ts_sig}")
@@ -585,7 +589,6 @@ def run_sizer(cfg, ts_override=None):
             return
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
-    import os
     state_file = os.path.join(cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl")
     if not os.path.exists(state_file):
         tprint(f"ERROR: Trained state not found at {state_file}. Run 'train' mode first.")
@@ -629,7 +632,7 @@ def run_all(cfg, ts_override=None):
     """Run download -> features -> train (includes labels) -> optimise (learn entry) -> ridge_sizer -> optimise (sizing) in order.
     
     Note: 'train' already refreshes labels internally.
-    Note: 'optimise' triggers backtest internally if backtest_results.csv is missing,
+    Note: 'optimise' triggers backtest internally if backtest_results.parquet is missing,
           then runs the tpsl_optimiser pipeline (TP/SL calibration, loss limiter,
           profit exit, position sizing, holdout evaluation).
     """
@@ -669,12 +672,11 @@ def run_all(cfg, ts_override=None):
 
     if ts_sig:
         run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
-        import os
-        res_path = os.path.join(cfg["data_root"], "artifacts", run_id, "backtest_results.csv")
+        res_path = os.path.join(cfg["data_root"], "artifacts", run_id, "backtest_results.parquet")
         if os.path.exists(res_path):
             tprint("\n=== FINAL PIPELINE SUMMARY ===")
             try:
-                df = pd.read_csv(res_path)
+                df = pd.read_parquet(res_path)
                 count = len(df)
 
                 # Gross vs net summary with explicit distinction.
@@ -729,7 +731,6 @@ def run_train_meta(cfg, ts_override=None):
     ex = make_perp_exchange() if bool(cfg.get("use_perps", False)) else make_spot_exchange()
     result = train_daily_meta(ts_sig, None, cfg, store, ex)
     if result:
-        import pickle as _pkl
         run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
         models_dir = os.path.join(cfg["data_root"], "artifacts", run_id, "models")
         os.makedirs(models_dir, exist_ok=True)
@@ -778,28 +779,32 @@ def run_optimise(cfg, ts_override=None):
             return
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
-    import os
     state_file = os.path.join(cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl")
-    backtest_file = os.path.join(cfg["data_root"], "artifacts", run_id, "backtest_results.csv")
+    backtest_file = os.path.join(cfg["data_root"], "artifacts", run_id, "backtest_results.parquet")
     if not os.path.exists(backtest_file):
         tprint("Backtest results not found. Running backtest to generate trade data for optimiser...")
-        run_backtest(cfg, ts_override=ts_override)
-        if not os.path.exists(backtest_file):
-            tprint(f"ERROR: Backtest still not found at {backtest_file}. Aborting optimise.")
+        success = run_backtest(cfg, ts_override=ts_override)
+        if not success or not os.path.exists(backtest_file):
+            tprint(f"ERROR: Backtest failed or still not found at {backtest_file}. Aborting optimise.")
             return
-    trades = pd.read_csv(backtest_file, low_memory=False)
-    trades = _downcast_numeric_frame(trades)
-    trades.attrs["threaded_exit_stream"] = True  # Inject attribute stripped by CSV save
+
+    trades = pd.read_parquet(backtest_file)
+    trades.attrs["threaded_exit_stream"] = True  # Inject attribute stripped by save
+
     if "optimiser_fee_pct" in cfg:
         try:
             trades.attrs["fee_pct"] = float(cfg["optimiser_fee_pct"])
-        except Exception:
-            pass
+        except ValueError as e:
+            tprint(f"WARNING: Invalid optimiser_fee_pct in config: {cfg['optimiser_fee_pct']} - {e}")
+        except Exception as e:
+            tprint(f"WARNING: Failed to set fee_pct: {e}")
+
     if "atr_pct_15m" in trades.columns:
         atr_15m = trades["atr_pct_15m"]
     elif "atr" in trades.columns:
         atr_15m = trades["atr"]
     else:
+        tprint("WARNING: ATR columns missing... defaulting to 0.01")
         atr_15m = pd.Series(0.01, index=trades.index)
 
     params_path = os.path.join(cfg["data_root"], "artifacts", run_id, "models", "bucket_params.json")
@@ -811,6 +816,11 @@ def run_optimise(cfg, ts_override=None):
     )
     tprint(f"OPTIMISE COMPLETE: {params_path}")
     
+    # Clear large trades DataFrame from memory before running diagnostics
+    del trades
+    del atr_15m
+    gc.collect()
+
     # Run breakdown diagnostics after optimization
     try:
         run_breakdown_diagnostics_integration(cfg, ts_sig)
@@ -819,7 +829,6 @@ def run_optimise(cfg, ts_override=None):
     
     try:
         from extreme_price_movements.reports.bucket_report import report_optimise
-        run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
         rp = report_optimise(run_id, cfg["data_root"], base_dir=cfg.get('reports_root'))
         tprint(f"Optimise bucket report: {rp}")
     except Exception as _re:
@@ -828,8 +837,6 @@ def run_optimise(cfg, ts_override=None):
 
 def clear_caches():
     """Force garbage collection and clear the on-disk caches before a run."""
-    import gc
-    import os
     import shutil
 
     # 1. Force Python garbage collection

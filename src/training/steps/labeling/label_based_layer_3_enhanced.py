@@ -983,7 +983,7 @@ def _compute_global_features_cached(df: pd.DataFrame, net_returns: pd.Series) ->
         if 'volatility_1d' in df.columns:
             features['vol_at_signal'] = df['volatility_1d']
             if asset_col:
-                features['volatility_risk_ratio'] = df['volatility_1d'] / df.groupby(asset_col)['volatility_1d'].transform(lambda x: x.rolling(50).mean())
+                features['volatility_risk_ratio'] = df['volatility_1d'] / df.groupby(asset_col)['volatility_1d'].rolling(50).mean().reset_index(level=0, drop=True)
             else:
                 features['volatility_risk_ratio'] = df['volatility_1d'] / df['volatility_1d'].rolling(50).mean()
         
@@ -1888,6 +1888,49 @@ def _logit(p: np.ndarray) -> np.ndarray:
 
 
 # -----------------------------------------------------------
+# Geometry-Specific Feature Generation
+# -----------------------------------------------------------
+
+
+def _generate_geometry_specific_nn_features(
+    market_data: pd.DataFrame,
+    geometry_horizon: float,
+    embed_dim: int = 8
+) -> pd.DataFrame:
+    """
+    Generate NN sequence features with sequence length adapted to geometry horizon.
+
+    Args:
+        market_data: OHLCV data
+        geometry_horizon: The effective horizon of the geometry (in bars)
+        embed_dim: Embedding dimension
+
+    Returns:
+        DataFrame with NN embedding features
+    """
+
+    # Scale sequence length based on geometry horizon
+    # Default is 24 bars, scale proportionally but keep reasonable bounds
+    default_seq_len = 24
+    scale_factor = geometry_horizon / default_seq_len
+    seq_len = max(8, min(48, int(default_seq_len * scale_factor)))
+
+    try:
+        nn_df = generate_nn_sequence_embeddings(
+            market_data=market_data,
+            encoder_type="stacked",
+            seq_len=seq_len,
+            embed_dim=embed_dim,
+            use_conv=True,
+            use_lstm=True,
+            use_attention=False
+        )
+        return nn_df if nn_df is not None else pd.DataFrame(index=market_data.index)
+    except Exception as e:
+        print(f"⚠️ Geometry-specific NN features failed: {e}")
+        return pd.DataFrame(index=market_data.index)
+
+# -----------------------------------------------------------
 # Training Pipeline Components
 # -----------------------------------------------------------
 
@@ -2129,6 +2172,29 @@ def layer3_analyst_lgbm(
 
     candidate_features = []
     candidate_features.extend(safe_base_cols)
+
+    # Geometry-specific features have been removed as requested
+    def generate_features_for_geometry(alpha: float, geometry_id: str = "default"):
+        """Generate features for a specific geometry with given alpha parameter"""
+        try:
+            # Horizon based on geometry alpha parameter
+            # Enforce strictly 12 or 48 bar horizons based on alpha
+            if alpha < 0.5:
+                geometry_horizon = 12  # Short-term for low alpha
+            else:
+                geometry_horizon = 48  # Long-term for high alpha
+
+            print(f"   Geometry {geometry_id}: alpha={alpha:.2f} -> horizon={geometry_horizon} bars")
+
+            # Geometry-specific regime features have been disabled
+
+            # Geometry-specific NN features have been disabled
+
+            print(f"     Geometry-specific features disabled for {geometry_id}")
+
+        except Exception as e:
+            print(f"     Error in geometry {geometry_id}: {e}")
+            pass
 
     candidate_feature_pool = [
         'ensemble_prob', 'max_base_prob', 'min_base_prob', 'base_prob_range',
@@ -2488,6 +2554,10 @@ def layer3_analyst_lgbm(
         df[f'{gid}_sigma'] = sigma
         df[f'{gid}_sig_x_vol'] = sig * sigma
         
+        # Generate geometry-specific features - REMOVED
+        # Geometry-specific features have been disabled
+        generate_features_for_geometry(alpha, gid)
+
         # Collect only global features for this geometry
         geometry_features = global_features  # Only global features
         
@@ -2566,9 +2636,7 @@ def layer3_analyst_lgbm(
     
     # Targets
     # A. Alpha Target: Vol-Standardized Return
-    # Predict FORWARD returns (Shifted -1)
-    forward_returns = ret_series.shift(-1).fillna(0)
-    y_alpha = _calculate_alpha_target(forward_returns.values, vol_series.values)
+    y_alpha = _calculate_alpha_target(ret_series.values, vol_series.values)
     
     # B. Prob Target: Binary (0/1)
     # Ensure strict binary for classifier

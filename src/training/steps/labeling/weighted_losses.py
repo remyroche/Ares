@@ -5,10 +5,6 @@ Implements De Prado's approach to sample-weighted loss functions:
 1. Absolute Return Weighting: Weight samples by |r| for PnL focus
 2. Enhanced Weighted Log-Loss: Custom loss for big moves emphasis
 3. Financial Loss Functions: PnL-oriented loss calculations
-<<<<<<< HEAD
-4. Asymmetric / Downside Losses: Penalize adverse outcomes more heavily
-=======
->>>>>>> origin/codex/analyze-process-improvement-for-stuck-execution
 
 These losses force models to be accurate on high-impact moves while allowing
 flexibility on small, noisy trades.
@@ -30,11 +26,7 @@ except ImportError:
     def tprint_success(msg): print(f"[SUCCESS] {msg}")
     def tprint_warning(msg): print(f"[WARNING] {msg}")
     def tprint_error(msg): print(f"[ERROR] {msg}")
-<<<<<<< HEAD
-
-=======
     def tprint_error(msg): print(f"[ERROR] {msg}")
->>>>>>> origin/codex/analyze-process-improvement-for-stuck-execution
 from .invariant_risk_minimization import FinancialIRM, IRMLossFunction, apply_irm_training, quick_irm_evaluation
 
 def compute_absolute_return_weights(
@@ -136,90 +128,6 @@ def compute_pnl_weighted_loss(
     
     return np.mean(weighted_loss)
 
-<<<<<<< HEAD
-# ===== Asymmetric / Downside Losses =====
-
-class AsymmetricHuberLoss(nn.Module):
-    """
-    Asymmetric Huber Loss that penalizes adverse errors (wrong direction)
-    more heavily than magnitude errors in the correct direction.
-
-    Formula:
-    L(y, p) =
-      if sign(y) == sign(p):
-         0.5 * error^2                  (if |error| < delta)
-         delta * (|error| - 0.5*delta)  (if |error| >= delta)
-      else (wrong direction):
-         penalty_factor * (0.5 * error^2)
-
-    This encourages the model to be 'conservative' about sign changes but
-    accurate on magnitude when correct.
-    """
-    def __init__(self, delta: float = 1.0, penalty_factor: float = 2.0, reduction: str = 'mean'):
-        super().__init__()
-        self.delta = delta
-        self.penalty_factor = penalty_factor
-        self.reduction = reduction
-
-    def forward(self, y_pred: torch.Tensor, y_true: torch.Tensor) -> torch.Tensor:
-        error = y_true - y_pred
-        abs_error = torch.abs(error)
-
-        # Standard Huber
-        quadratic = 0.5 * error ** 2
-        linear = self.delta * (abs_error - 0.5 * self.delta)
-        base_loss = torch.where(abs_error < self.delta, quadratic, linear)
-
-        # Asymmetric penalty for sign mismatch (adverse PnL potential)
-        # Note: y_true and y_pred are often in [-1, 1] for signals
-        # If signs differ, y_true * y_pred < 0
-        sign_mismatch = (y_true * y_pred) < 0
-
-        weighted_loss = torch.where(sign_mismatch, base_loss * self.penalty_factor, base_loss)
-
-        if self.reduction == 'mean':
-            return torch.mean(weighted_loss)
-        elif self.reduction == 'sum':
-            return torch.sum(weighted_loss)
-        return weighted_loss
-
-class DownsideMSELoss(nn.Module):
-    """
-    MSE Loss that penalizes negative P&L implications (Predicted * Actual < 0)
-    much more heavily.
-    """
-    def __init__(self, adverse_weight: float = 5.0, reduction: str = 'mean'):
-        super().__init__()
-        self.adverse_weight = adverse_weight
-        self.reduction = reduction
-
-    def forward(self, y_pred: torch.Tensor, y_true: torch.Tensor) -> torch.Tensor:
-        mse = (y_true - y_pred) ** 2
-
-        # Adverse: We predicted Long (Positive), Actual was Short (Negative) OR vice versa
-        # In regression context, we care about the implied PnL: y_pred * y_true
-        # If PnL < 0, it's an adverse error.
-
-        # Note: If target is raw return, this works directly.
-        # If target is binary label, use standard CrossEntropy/Focal.
-        # Assuming y_true is continuous return proxy here.
-
-        pnl_proxy = y_pred * y_true
-        weights = torch.ones_like(mse)
-        weights[pnl_proxy < 0] = self.adverse_weight
-
-        loss = weights * mse
-
-        if self.reduction == 'mean':
-            return torch.mean(loss)
-        elif self.reduction == 'sum':
-            return torch.sum(loss)
-        return loss
-
-# ===== Existing Losses =====
-
-=======
->>>>>>> origin/codex/analyze-process-improvement-for-stuck-execution
 class WeightedLogLoss(nn.Module):
     """
     PyTorch implementation of weighted log loss with absolute return weighting.
@@ -773,7 +681,4 @@ def evaluate_model_invariance(
             'error': str(e),
             'environments': []
         }
-<<<<<<< HEAD
-=======
 
->>>>>>> origin/codex/analyze-process-improvement-for-stuck-execution

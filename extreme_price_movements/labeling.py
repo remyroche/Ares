@@ -663,6 +663,8 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
         delayed(_process_asset)(asset) for asset in assets
     )
 
+    horizon_td = pd.Timedelta(hours=float(horizon))
+
     # FIX #4: Pre-load 15m HF data once per asset (batch I/O) before iterating results.
     # Avoids one disk read per conflict; loads lazily only for assets that actually have conflicts.
     _hf_cache: dict = {}
@@ -687,12 +689,14 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
             if not df_15m.empty:
                 # FIX #2: entry_p must come from the open of bar i+1 (trade entry), not bar i close.
                 # The labeling uses closes[i] as entry (signal at close), so we use that consistently.
-                c_arr = c[asset].to_numpy()
+                c_arr = c[asset].to_numpy(dtype=np.float32, copy=False)
                 for i in ambiguous_indices:
                     j = conflict_j[i]
-                    # Fetch 15m data for the hour corresponding to conflict bar j
+                    # Fetch 15m data from the first ambiguous 1h bar until event horizon.
+                    # This 15m-first window is more granular than single-hour tie-breaks.
                     t_1h = c.index[j]
-                    t_end = t_1h + pd.Timedelta(hours=1) - pd.Timedelta(milliseconds=1)
+                    t_cutoff = min(c.index[i] + horizon_td, c.index[-1])
+                    t_end = t_cutoff - pd.Timedelta(milliseconds=1)
                     try:
                         hf = df_15m.loc[t_1h:t_end]
                     except Exception as _e:
@@ -714,14 +718,25 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
                     tp_price = entry_p * (1.0 + activation) if side_int == 1 else entry_p * (1.0 - activation)
                     sl_price = entry_p * (1.0 - sl_pct) if side_int == 1 else entry_p * (1.0 + sl_pct)
 
+                    # First-pass TBM gate: skip expensive walk when the whole 15m window
+                    # does not move enough to reach either barrier.
+                    hf_h = hf["high"].to_numpy(dtype=np.float32, copy=False)
+                    hf_l = hf["low"].to_numpy(dtype=np.float32, copy=False)
+                    hf_c = hf["close"].to_numpy(dtype=np.float32, copy=False)
+                    if hf_h.size == 0 or hf_l.size == 0:
+                        continue
+                    window_range = float(np.nanmax(hf_h) - np.nanmin(hf_l))
+                    range_threshold = float(entry_p * min(abs(activation), abs(sl_pct)))
+                    if not np.isfinite(window_range) or window_range <= max(range_threshold, 0.0):
+                        continue
+
                     resolved = None
 
                     # Walk 15m bars inside this 1h conflict bar to determine which hit first.
-                    for _, row in hf.iterrows():
-                        o15 = float(row["open"])
-                        h15 = float(row["high"])
-                        l15 = float(row["low"])
-                        c15 = float(row["close"])
+                    for k in range(len(hf_h)):
+                        h15 = float(hf_h[k])
+                        l15 = float(hf_l[k])
+                        c15 = float(hf_c[k])
 
                         hit_tp_15 = (h15 >= tp_price) if side_int == 1 else (l15 <= tp_price)
                         hit_sl_15 = (l15 <= sl_price) if side_int == 1 else (h15 >= sl_price)
@@ -729,8 +744,10 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
                         if hit_tp_15 and hit_sl_15:
                             # Both in same 15m bar — use open proximity as tie-break.
                             # Momentum entering the bar likely hit the closer barrier first.
-                            d_tp = abs(o15 - tp_price)
-                            d_sl = abs(o15 - sl_price)
+                            # Prefer the side where close is nearer the boundary,
+                            # making 15m close-vs-extreme directional confirmation explicit.
+                            d_tp = abs(c15 - h15) if side_int == 1 else abs(c15 - l15)
+                            d_sl = abs(c15 - l15) if side_int == 1 else abs(c15 - h15)
                             resolved = "TP" if d_tp < d_sl else "SL"
                             break
                         elif hit_tp_15:

@@ -193,7 +193,7 @@ def _symbol_to_ccxt(symbol: str) -> str:
     return symbol
 
 
-def _load_or_download_15m(symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timestamp, hf_data_dir: Optional[str] = None) -> pd.DataFrame:
+def _load_or_download_15m(symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timestamp, hf_data_dir: Optional[str] = None, allow_download: bool = False) -> pd.DataFrame:
     clean = str(symbol or "").replace("/", "").lower()
     base_dir = os.path.abspath(hf_data_dir) if hf_data_dir else str(HF_DATA_DIR)
     path = os.path.join(base_dir, f"{clean}_15m.parquet")
@@ -202,9 +202,12 @@ def _load_or_download_15m(symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timest
             df = pd.read_parquet(path)
             idx = pd.to_datetime(df.index)
             df.index = idx.tz_localize("UTC") if idx.tz is None else idx.tz_convert("UTC")
-            return df.loc[(df.index >= start_ts) & (df.index <= end_ts), ["open", "high", "low", "close"]]
+            out = df.loc[(df.index >= start_ts) & (df.index <= end_ts), ["open", "high", "low", "close"]]
+            return out.astype(np.float32, copy=False)
         except Exception:
             pass
+    if not allow_download:
+        return pd.DataFrame()
     try:
         import ccxt  # type: ignore
         ex = ccxt.binance({"enableRateLimit": True})
@@ -212,7 +215,8 @@ def _load_or_download_15m(symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timest
         got = get_15m_ohlcv(ex, _symbol_to_ccxt(symbol), start_ts, max_hold_hours=hours)
         if got is None or got.empty:
             return pd.DataFrame()
-        return got.loc[(got.index >= start_ts) & (got.index <= end_ts), ["open", "high", "low", "close"]]
+        out = got.loc[(got.index >= start_ts) & (got.index <= end_ts), ["open", "high", "low", "close"]]
+        return out.astype(np.float32, copy=False)
     except Exception:
         return pd.DataFrame()
 
@@ -244,11 +248,11 @@ def _refine_tb_cache_with_15m(panel: dict, tb_cache_by_h_side: dict, geom_cache_
         for sym in close_df.columns:
             if sym not in lbl2.columns or sym not in tp_dist_df.columns or sym not in sl_dist_df.columns:
                 continue
-            c = close_df[sym].to_numpy(dtype=np.float64, copy=False)
-            hh = high_df[sym].to_numpy(dtype=np.float64, copy=False)
-            ll = low_df[sym].to_numpy(dtype=np.float64, copy=False)
-            tpv = tp_dist_df[sym].to_numpy(dtype=np.float64, copy=False)
-            slv = sl_dist_df[sym].to_numpy(dtype=np.float64, copy=False)
+            c = close_df[sym].to_numpy(dtype=np.float32, copy=False)
+            hh = high_df[sym].to_numpy(dtype=np.float32, copy=False)
+            ll = low_df[sym].to_numpy(dtype=np.float32, copy=False)
+            tpv = tp_dist_df[sym].to_numpy(dtype=np.float32, copy=False)
+            slv = sl_dist_df[sym].to_numpy(dtype=np.float32, copy=False)
             lab = lbl2[sym].to_numpy(dtype=np.int8, copy=False)
             idx = close_df.index
             for i in range(len(c) - 1):
@@ -271,18 +275,29 @@ def _refine_tb_cache_with_15m(panel: dict, tb_cache_by_h_side: dict, geom_cache_
                         break
                 if amb_j < 0:
                     continue
-                start_15m = idx[amb_j].floor("1h")
-                end_15m = idx[amb_j]
-                hf = _load_or_download_15m(sym, start_15m, end_15m, hf_data_dir=hf_dir)
+                start_15m = idx[amb_j].floor("15min")
+                end_15m = min(idx[i] + pd.Timedelta(hours=float(h)), idx[-1])
+                hf = _load_or_download_15m(sym, start_15m, end_15m, hf_data_dir=hf_dir, allow_download=bool(cfg.get("allow_15m_download", False)))
                 if hf.empty:
                     continue
+                h15_arr = hf["high"].to_numpy(dtype=np.float32, copy=False)
+                l15_arr = hf["low"].to_numpy(dtype=np.float32, copy=False)
+                c15_arr = hf["close"].to_numpy(dtype=np.float32, copy=False)
+                if h15_arr.size == 0:
+                    continue
+                threshold_abs = float(entry * min(abs(tpv[i]), abs(slv[i])))
+                window_range = float(np.nanmax(h15_arr) - np.nanmin(l15_arr))
+                if (not np.isfinite(window_range)) or (window_range <= max(threshold_abs, 0.0)):
+                    continue
                 resolved = None
-                for _, row in hf.iterrows():
-                    o15 = float(row["open"]); h15 = float(row["high"]); l15 = float(row["low"]); c15 = float(row["close"])
+                for k in range(len(h15_arr)):
+                    h15 = float(h15_arr[k]); l15 = float(l15_arr[k]); c15 = float(c15_arr[k])
                     hit_tp_15 = (h15 >= tp_price) if side == "long" else (l15 <= tp_price)
                     hit_sl_15 = (l15 <= sl_price) if side == "long" else (h15 >= sl_price)
                     if hit_tp_15 and hit_sl_15:
-                        resolved = _resolve_15m_conflict(o15, tp_price, sl_price)
+                        d_tp = abs(c15 - h15) if side == "long" else abs(c15 - l15)
+                        d_sl = abs(c15 - l15) if side == "long" else abs(c15 - h15)
+                        resolved = "TP" if d_tp < d_sl else "SL"
                         break
                     if hit_tp_15:
                         resolved = "TP"; break

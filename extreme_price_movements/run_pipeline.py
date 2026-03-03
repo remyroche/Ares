@@ -120,6 +120,18 @@ def _configure_report_roots(cfg: dict) -> None:
         os.environ["EPM_REPORTS_DIR"] = str(report_root)
 
 
+
+
+def _downcast_numeric_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """Downcast numeric columns to reduce optimiser memory footprint."""
+    for col in df.columns:
+        dt = df[col].dtype
+        if pd.api.types.is_float_dtype(dt):
+            df[col] = pd.to_numeric(df[col], downcast="float")
+        elif pd.api.types.is_integer_dtype(dt):
+            df[col] = pd.to_numeric(df[col], downcast="integer")
+    return df
+
 def _find_latest_feature_ts(data_root):
     """Find the latest feature timestamp directory."""
     import os, glob
@@ -137,6 +149,7 @@ def _find_latest_feature_ts(data_root):
 
 def run_download(cfg):
     """Download OHLCV data from Binance for the full training universe."""
+    cfg.setdefault("allow_15m_download", False)
     import time as _time
     from extreme_price_movements.hf_data_loader import sync_15m_ohlcv_range
 
@@ -419,7 +432,7 @@ def run_labels(cfg, horizons=None, ts_override=None):
     store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
 
     # No exchange needed — data already in store, features already on disk
-    horizons = horizons or [2, 4, 8]
+    horizons = horizons or [1, 2, 4]
     run_label_generation_step_v2(ts_sig, None, cfg, store, None, horizons=horizons)
 
     tprint("LABELS PIPELINE COMPLETE")
@@ -774,7 +787,8 @@ def run_optimise(cfg, ts_override=None):
         if not os.path.exists(backtest_file):
             tprint(f"ERROR: Backtest still not found at {backtest_file}. Aborting optimise.")
             return
-    trades = pd.read_csv(backtest_file)
+    trades = pd.read_csv(backtest_file, low_memory=False)
+    trades = _downcast_numeric_frame(trades)
     trades.attrs["threaded_exit_stream"] = True  # Inject attribute stripped by CSV save
     if "optimiser_fee_pct" in cfg:
         try:
@@ -944,7 +958,7 @@ def main():
                         help="Pipeline mode to run")
     parser.add_argument("-perps", "--perps", action="store_true", help="Run pipeline in perps mode (isolated *_perp roots)")
     parser.add_argument("--force-feature-recompute", action="store_true", help="Force full recompute in features mode")
-    parser.add_argument("--horizons", type=int, nargs="+", default=[2, 4, 8], help="Horizons to use for labels/training")
+    parser.add_argument("--horizons", type=int, nargs="+", default=[1, 2, 4], help="Horizons to use for labels/training")
     parser.add_argument("--ts", dest="ts_override", help="Timestamp override (YYYYMMDD_HHMMSS)")
     parser.add_argument("--base-only", action="store_true", help="Only train base models (alpha, spike, exh)")
     parser.add_argument("--meta-only", action="store_true", help="Only train meta models (runs train_meta)")

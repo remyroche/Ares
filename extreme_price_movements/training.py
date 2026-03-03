@@ -6730,9 +6730,9 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             oof_df.to_parquet(meta_oof_path, index=False)
             tprint(f"Saved meta OOF predictions for {key} to {meta_oof_path}")
 
-    # Train position-sizer probabilistic/quantile trees in meta step so they share
+    # Train EV-decomposition probabilistic/quantile heads in meta step so they share
     # the same meta feature keys and selector pipeline context.
-    if bool(cfg.get("position_sizer_enabled", False)) and bool(cfg.get("position_sizer_train_in_meta", True)):
+    if bool(cfg.get("ev_decomposition_enabled", False)) and bool(cfg.get("ev_decomposition_train_in_meta", True)):
         try:
             from extreme_price_movements.position_sizer.training_orchestrator import train_position_sizer_models as _train_ps_models
             _ps_buckets = {}
@@ -6799,7 +6799,17 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                     if not _feature_cols:
                         _feature_cols = ["score"] if "score" in _ps_df.columns else ["pnl_label"]
                     _ps_train = _train_ps_models(ps_df=_ps_df, feature_cols=_feature_cols, cfg=cfg)
-                    from extreme_price_movements.position_sizer.runtime import PositionSizerBundle, compute_schema_hash, make_bundle_metadata
+                    _ev_diag = dict(_ps_train.get("diagnostics", {}) or {})
+                    _ev_train_cfg = dict(_ps_train.get("training_config", {}) or {})
+                    if _ev_train_cfg:
+                        tprint(
+                            "Meta EV decomposition models trained: "
+                            f"pwin={_ev_train_cfg.get('pwin_base_engine')} "
+                            f"quant={_ev_train_cfg.get('quantile_base_engine')} "
+                            f"reg={_ev_train_cfg.get('regularization_level')} "
+                            f"cal={_ev_train_cfg.get('calibrator_method')}"
+                        )
+                    from extreme_price_movements.position_sizer.runtime import EVDecompositionBundle, compute_schema_hash, make_bundle_metadata
                     _git_sha = ""
                     try:
                         import subprocess as _sp
@@ -6813,14 +6823,14 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                     }
                     _schema_hash = compute_schema_hash(_feature_cols, extra=_q_cfg)
                     _meta = make_bundle_metadata(git_sha=_git_sha)
-                    _bundle = PositionSizerBundle(
+                    _bundle = EVDecompositionBundle(
                         feature_cols=list(_feature_cols),
                         pwin_model=_ps_train["pwin_model"],
                         win_model=_ps_train["win_model"],
                         loss_model=_ps_train["loss_model"],
                         tp_sl_defaults=None,
                         config={
-                            "backend": "new",
+                            "backend": "ev_decomposition",
                             "soft_label_enabled": bool(_ps_train.get("soft_label_enabled", False)),
                             "calibration_scope": str(cfg.get("position_sizer_calibration_scope", "regime")),
                             "exp_win_quantile": float(_ps_train["exp_win_quantile"]),
@@ -6833,16 +6843,30 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                         git_sha=_meta.get("git_sha", ""),
                         schema_hash=_schema_hash,
                     )
-                    _ps_out = os.path.join(cfg.get("data_root", "data"), "artifacts", _run_id, "position_sizer")
+                    _ps_out = os.path.join(cfg.get("data_root", "data"), "artifacts", _run_id, "ev_decomposition")
                     os.makedirs(_ps_out, exist_ok=True)
-                    _bundle_path = os.path.join(_ps_out, "position_sizer_bundle.pkl")
+                    _bundle_path = os.path.join(_ps_out, "ev_decomposition_bundle.pkl")
                     with open(_bundle_path, "wb") as _f:
                         pickle.dump(_bundle, _f)
-                    with open(os.path.join(_ps_out, "position_sizer_bundle.json"), "w") as _f:
-                        json.dump({"bundle_path": _bundle_path, "feature_cols": _feature_cols, "version": "v1", "bundle_version": 1}, _f, indent=2)
-                    tprint("Meta training: position sizer bundle trained from meta buckets.")
+                    _manifest = {"bundle_path": _bundle_path, "feature_cols": _feature_cols, "version": "v1", "bundle_version": 1}
+                    with open(os.path.join(_ps_out, "ev_decomposition_bundle.json"), "w") as _f:
+                        json.dump(_manifest, _f, indent=2)
+                    with open(os.path.join(_ps_out, "ev_decomposition_training_diagnostics.json"), "w") as _f:
+                        json.dump({"training_config": _ev_train_cfg, "diagnostics": _ev_diag}, _f, indent=2)
+                    _state_path = os.path.join(cfg.get("data_root", "data"), "artifacts", _run_id, "models", "trained_state.pkl")
+                    if os.path.exists(_state_path):
+                        try:
+                            with open(_state_path, "rb") as _f:
+                                _state = pickle.load(_f)
+                            if isinstance(_state, dict):
+                                _state["ev_decomposition"] = dict(_manifest)
+                                with open(_state_path, "wb") as _f:
+                                    pickle.dump(_state, _f)
+                        except Exception as _e_state:
+                            tprint(f"Warning: failed to update trained_state with ev_decomposition manifest: {_e_state}")
+                    tprint("Meta training: EV decomposition bundle trained from meta buckets.")
         except Exception as _e_ps_meta:
-            tprint(f"Warning: meta position-sizer training failed: {_e_ps_meta}")
+            tprint(f"Warning: meta EV decomposition training failed: {_e_ps_meta}")
     
     tprint(f"train_meta_models_from_artifacts: done ({_time.monotonic()-_t0_meta:.1f}s), {len(meta_models)} meta models")
     return meta_models, meta_gate_results

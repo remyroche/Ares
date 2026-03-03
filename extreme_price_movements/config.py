@@ -368,7 +368,9 @@ CFG = {
 
     # Two-stage/three-head position sizer defaults.
     "position_sizer_enabled": True,
-    "position_sizer_backend": "new",  # new (ridge backend deprecated/disabled)
+    "ev_decomposition_enabled": True,
+    "ev_decomposition_train_in_meta": True,
+    "position_sizer_backend": "ev_decomposition",  # ev_decomposition runtime bundle backend (offline sizer mode is ridge)
     "position_sizer_allow_fallback": False,
     "position_sizer_allow_unknown_bundle_version": False,
     "position_sizer_ev_threshold": 0.0,

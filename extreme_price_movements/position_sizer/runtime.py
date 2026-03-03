@@ -13,7 +13,7 @@ SUPPORTED_BUNDLE_VERSION = 1
 
 
 @dataclass
-class PositionSizerBundle:
+class EVDecompositionBundle:
     feature_cols: list[str]
     pwin_model: object
     win_model: dict
@@ -27,29 +27,31 @@ class PositionSizerBundle:
     schema_hash: str = ""
 
 
+
 def compute_schema_hash(feature_cols: list[str], extra: dict | None = None) -> str:
-    tprint("Computing schema hash")
+    tprint("Computing EV decomposition schema hash")
     payload = {"feature_cols": list(feature_cols), "extra": extra or {}}
     return hashlib.sha256(repr(payload).encode("utf-8")).hexdigest()
 
 
-def load_bundle(bundle_path, allow_unknown_version: bool = False) -> PositionSizerBundle:
-    tprint(f"Loading PositionSizerBundle from {bundle_path}")
+def load_ev_decomposition_bundle(bundle_path, allow_unknown_version: bool = False) -> EVDecompositionBundle:
+    tprint(f"Loading EVDecompositionBundle from {bundle_path}")
     with open(bundle_path, "rb") as f:
         obj = pickle.load(f)
-    if isinstance(obj, PositionSizerBundle):
+    if isinstance(obj, EVDecompositionBundle):
         b = obj
     else:
-        b = PositionSizerBundle(**obj)
+        b = EVDecompositionBundle(**obj)
 
     if not int(getattr(b, "bundle_version", 1)) == SUPPORTED_BUNDLE_VERSION and not allow_unknown_version:
-        tprint(f"Unsupported PositionSizerBundle version={getattr(b, 'bundle_version', 'NA')} (supported={SUPPORTED_BUNDLE_VERSION})")
+        tprint(f"Unsupported EVDecompositionBundle version={getattr(b, 'bundle_version', 'NA')} (supported={SUPPORTED_BUNDLE_VERSION})")
         raise RuntimeError(
-            f"Unsupported PositionSizerBundle version={getattr(b, 'bundle_version', 'NA')} "
+            f"Unsupported EVDecompositionBundle version={getattr(b, 'bundle_version', 'NA')} "
             f"(supported={SUPPORTED_BUNDLE_VERSION})"
         )
-    tprint(f"Successfully loaded PositionSizerBundle version {getattr(b, 'bundle_version', 'NA')}")
+    tprint(f"Successfully loaded EVDecompositionBundle version {getattr(b, 'bundle_version', 'NA')}")
     return b
+
 
 
 def _ensure_X(X_batch, feature_cols):
@@ -57,8 +59,8 @@ def _ensure_X(X_batch, feature_cols):
     if isinstance(X_batch, pd.DataFrame):
         missing = [c for c in feature_cols if c not in X_batch.columns]
         if missing:
-            tprint(f"Missing required position_sizer features: {missing[:10]}")
-            raise ValueError(f"Missing required position_sizer features: {missing[:10]}")
+            tprint(f"Missing required EV decomposition features: {missing[:10]}")
+            raise ValueError(f"Missing required EV decomposition features: {missing[:10]}")
         X_df = X_batch.loc[:, feature_cols].copy()
     else:
         arr = np.asarray(X_batch, dtype=float)
@@ -75,21 +77,21 @@ def _ensure_X(X_batch, feature_cols):
         X_df[c] = pd.to_numeric(X_df[c], errors="coerce")
     if X_df[feature_cols].isna().any().any():
         bad = X_df[feature_cols].isna().sum()
-        tprint(f"NaNs found in position_sizer features: {bad[bad > 0].to_dict()}")
-        raise ValueError(f"NaNs found in position_sizer features: {bad[bad > 0].to_dict()}")
+        tprint(f"NaNs found in EV decomposition features: {bad[bad > 0].to_dict()}")
+        raise ValueError(f"NaNs found in EV decomposition features: {bad[bad > 0].to_dict()}")
     tprint("X_batch validation successful")
     return X_df
 
 
-def predict_all(bundle: PositionSizerBundle, X_batch, regime_labels=None, row_ids=None) -> dict:
-    tprint("Predicting with position sizer bundle models")
+def predict_ev_components(bundle: EVDecompositionBundle, X_batch, regime_labels=None, row_ids=None) -> dict:
+    tprint("Predicting with EV decomposition bundle models")
     X_df = _ensure_X(X_batch, bundle.feature_cols)
     pwin = bundle.pwin_model.predict_proba(X_df.values, regime_labels=regime_labels, row_ids=row_ids)[:, 1]
     qwin50 = np.maximum(bundle.win_model["q50"].predict(X_df.values), 0.0)
     qwin80 = np.maximum(bundle.win_model["q80"].predict(X_df.values), qwin50)
     qloss50 = np.maximum(bundle.loss_model["q50"].predict(X_df.values), 0.0)
     qloss90 = np.maximum(bundle.loss_model["q90"].predict(X_df.values), qloss50)
-    tprint("Predictions completed successfully")
+    tprint("EV decomposition predictions completed successfully")
     return {
         "pwin": pwin,
         "qwin50": qwin50,
@@ -97,6 +99,7 @@ def predict_all(bundle: PositionSizerBundle, X_batch, regime_labels=None, row_id
         "qloss50": qloss50,
         "qloss90": qloss90,
     }
+
 
 
 def compute_ev_risk(preds: dict, costs: float, cfg: PositionSizerConfig):

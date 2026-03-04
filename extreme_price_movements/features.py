@@ -2,6 +2,7 @@ import warnings
 
 import numpy as np
 import pandas as pd
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import hashlib
 import os
 import pickle
@@ -740,6 +741,17 @@ def compute_features_hourly(panel, mkt_gates, cfg):
     """
     return _compute_features_impl(panel, mkt_gates, cfg)
 
+
+def _compute_hvn_col(col, o_col, h_col, l_col, c_col, v_col):
+    df_col = pd.DataFrame({
+        "open": o_col,
+        "high": h_col,
+        "low": l_col,
+        "close": c_col,
+        "volume": v_col
+    })
+    return col, hvn_lvn_features_ohlcv(df_col)
+
 def _compute_features_impl(panel, mkt_gates, cfg):
     tprint("Features: compute base matrices")
     
@@ -1258,11 +1270,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     atr_ema_s = ema(atr_base, 24)
     feats["atr_slope"] = ((atr_ema_f - atr_ema_s) / (atr_ema_s + 1e-12)).astype(np.float32)
 
-    vwap_24 = pd.DataFrame(index=c.index, columns=c.columns, dtype=np.float32)
-    for col in c.columns:
-        p_arr = c[col].to_numpy(dtype=np.float32)
-        v_arr = v[col].to_numpy(dtype=np.float32)
-        vwap_24[col] = ff._numba_rolling_vwap(p_arr, v_arr, 24)
+    vwap_24 = ff.numba_rolling_vwap(c, v, 24)
 
     feats["dist_vwap_norm"] = ((c - vwap_24) / (atr_base + 1e-12)).astype(np.float32)
 
@@ -1545,13 +1553,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     l_prev = l.shift(1)
 
     def _rolling_bars_since_extreme(df: pd.DataFrame, window: int, mode: str) -> pd.DataFrame:
-        fn = np.argmax if mode == "max" else np.argmin
-        out = pd.DataFrame(index=df.index, columns=df.columns, dtype=np.float32)
-        for _col in df.columns:
-            _s = pd.to_numeric(df[_col], errors="coerce")
-            _bs = _s.rolling(window, min_periods=1).apply(lambda x: float(len(x) - 1 - fn(np.asarray(x, dtype=float))), raw=True)
-            out[_col] = _bs.astype(np.float32)
-        return out
+        return ff.numba_rolling_bars_since_extreme(df, window, mode)
 
     # Time since local peak/trough in the last 12h window (all windows end at t-1)
     time_since_peak_12h = _rolling_bars_since_extreme(h_prev, 12, "max")
@@ -2347,11 +2349,15 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     trend_age_cumsum = trend_sign_change.cumsum()
     # Within each trend regime, count bars (per-column run-length encoding)
     # For each column: age = row_number - first_row_of_current_regime + 1
-    _rank = trend_age_cumsum.copy()
-    for col in _rank.columns:
-        _s = trend_age_cumsum[col]
-        _rank[col] = _s.groupby(_s).cumcount() + 1
-    feats["trend_age_hours"] = _rank.astype(np.float32).fillna(1)
+    # Vectorized computation instead of groupby loop
+    _v = trend_sign_change.values
+    _idx = np.arange(len(_v))[:, None]
+    _last_change = np.where(_v == 1, _idx, 0)
+    _last_change = np.maximum.accumulate(_last_change, axis=0)
+    _rank = _idx - _last_change + 1
+    feats["trend_age_hours"] = pd.DataFrame(
+        _rank, index=trend_age_cumsum.index, columns=trend_age_cumsum.columns
+    ).astype(np.float32).fillna(1)
 
     # higher_highs_count_48h: Count of higher highs in last 48 hours (trend quality)
     # A higher high is when current high > previous high
@@ -2678,11 +2684,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     # "Distance from the average entry price of the last N hours"
     # We use c_log and v (log-vol) for VWAP proxy in log-space
     for n in [12, 24, 96]:
-        vwap_n = pd.DataFrame(index=c_log.index, columns=c_log.columns, dtype=np.float32)
-        for col in c_log.columns:
-            p_arr = c_log[col].to_numpy(dtype=np.float32)
-            v_arr = v[col].to_numpy(dtype=np.float32)
-            vwap_n[col] = ff._numba_rolling_vwap(p_arr, v_arr, n)
+        vwap_n = ff.numba_rolling_vwap(c_log, v, n)
 
         # Distance normalized by ATR (atr_base is raw ATR, atr_ln is log-ATR)
         # Since we are in log-space, (c_log - vwap_log) is a percentage diff.
@@ -2745,11 +2747,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
         climax_vol_med_n = ff.apply_to_frame(v, ff._numba_rolling_median, n)
         feats[f"climax_vol_{n}"] = (v / (climax_vol_med_n + 1e-12)).astype(np.float32)
 
-        vwap_z_n = pd.DataFrame(index=c_log.index, columns=c_log.columns, dtype=np.float32)
-        for col in c_log.columns:
-            p_arr = c_log[col].to_numpy(dtype=np.float32)
-            v_arr = v[col].to_numpy(dtype=np.float32)
-            vwap_z_n[col] = ff._numba_rolling_vwap(p_arr, v_arr, n)
+        vwap_z_n = ff.numba_rolling_vwap(c_log, v, n)
 
         diff_vwap = c_log - vwap_z_n
         std_vwap = ff.numba_rolling_std(diff_vwap, n)
@@ -2779,26 +2777,29 @@ def _compute_features_impl(panel, mkt_gates, cfg):
         sample_res = hvn_lvn_features_ohlcv(df_first)
         hvn_keys = list(sample_res.columns)
 
-        # Initialize containers
         hvn_results = {k: pd.DataFrame(index=c_log.index, columns=c_log.columns, dtype=np.float32) for k in hvn_keys}
-
         total_cols = len(c_log.columns)
-        for i, col in enumerate(c_log.columns):
-            if (i+1) % 50 == 0:
-                tprint(f"HVN/LVN: {i+1}/{total_cols}")
 
-            df_col = pd.DataFrame({
-                "open": o[col],
-                "high": h[col],
-                "low": l[col],
-                "close": c_log[col],
-                "volume": v[col]
-            })
+        # Parallel execution using ProcessPoolExecutor
+        import multiprocessing
+        max_workers = min(8, multiprocessing.cpu_count())
 
-            res_df = hvn_lvn_features_ohlcv(df_col)
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures = []
+            for col in c_log.columns:
+                futures.append(
+                    executor.submit(_compute_hvn_col, col, o[col], h[col], l[col], c_log[col], v[col])
+                )
 
-            for k in hvn_keys:
-                hvn_results[k][col] = res_df[k].values.astype(np.float32)
+            completed = 0
+            for future in as_completed(futures):
+                col, res_df = future.result()
+                for k in hvn_keys:
+                    hvn_results[k][col] = res_df[k].values.astype(np.float32)
+
+                completed += 1
+                if completed % 50 == 0:
+                    tprint(f"HVN/LVN: {completed}/{total_cols}")
 
         # Add to main feats with prefix
         for k, df_res in hvn_results.items():

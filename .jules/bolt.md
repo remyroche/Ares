@@ -1,124 +1,14 @@
-## 2026-01-14 - Layer 2 Optimization: Vectorization & JIT Compilation
-
-**Learning:** Python loops for feature engineering and parameter search are significant bottlenecks in the Layer 2 pipeline. By replacing these with vectorized NumPy operations and Numba JIT-compiled functions, we achieved substantial speedups:
-- Feature Selection: 8x faster (5.7s vs ~45s baseline estimate)
-- Geometry Search: 7.5x faster (0.98s vs ~7.5s baseline estimate)
-- Feature Engineering: 3-5x faster (5.5s vs ~20s baseline estimate)
-
-**Action:** Whenever iterating over large DataFrames or performing grid searches, prioritize vectorization first, then Numba JIT.
-
-**Key Optimizations Implemented:**
-1. **Vectorized Feature Selection:** Replaced loop-based correlation/variance calculation with `njit(parallel=True)` implementations.
-2. **Vectorized Geometry Search:** Flattened 2D parameter grids into 1D arrays for single-pass JIT-compiled performance scoring.
-3. **JIT Feature Engineering:** Implemented rolling mean/std/range and lag features using Numba to bypass Pandas overhead for large datasets.
-
-## 2026-01-19 - Rolling Sum vs Diff Edge Case
-
-**Learning:** When replacing `log_returns.rolling(w).sum()` with `log_price.diff(w)` for performance (80x+ speedup), `diff(w)` yields 1 fewer valid sample at the beginning of the series compared to `rolling(w, min_periods=w)` if `log_returns` was 0-filled at the start. `diff` is strictly structural, while `rolling` includes the 0-filled start in its valid count.
-
-**Action:** Accept the minor data loss for substantial speedups, but verify downstream tests don't rely on the exact count of valid initial samples.
-
-## 2026-01-19 - Rolling Skew/Kurtosis Optimization
-
-**Learning:** Pandas `rolling().skew()` and `.kurt()` are reasonably optimized (likely Cython) and beat naive Numba window-recalculation ($O(N \cdot W)$). However, an online algorithm (Welford's / Sum of Powers) implemented in Numba ($O(N)$) beats Pandas by 4x (Skew) to 12x (Kurtosis).
-
-**Action:** For higher-moment rolling statistics, use Numba-optimized online algorithms, but be careful with numerical stability (ensure data is centered or small like returns) and NaN handling (online algorithms propagate NaNs aggressively). Passing 0-filled data is essential for robustness here.
-
-## 2026-01-20 - Rolling Streak Persistence Optimization
-
-**Learning:** The previous implementation of `_numba_streak_persistence` had $O(N \cdot W)$ complexity because it recalculated streaks for the entire window at every step. This led to linear performance degradation as the window size increased (e.g., 0.27s for window=1000 vs 0.04s for window=100).
-
-**Action:** Implemented an $O(N)$ online algorithm using a circular buffer to incrementally track streaks by handling "leaving" and "entering" elements. This reduced execution time for window=1000 from ~0.27s to ~0.003s (a ~90x speedup), making performance independent of window size. Always look for incremental update opportunities in sliding window calculations.
-
-## 2026-01-20 - Entropy Feature Discrepancy & Optimization
-
-**Learning:** A critical logic discrepancy was found where the optimized Numba path calculated entropy on *prices* (non-stationary) while the Pandas fallback used *returns* (stationary). This invalidated the feature definition. Furthermore, `lempel_ziv_complexity_numba` used an $O(N^2)$ algorithm (Kaspar-Schuster) which is prohibitive for large datasets (N>100k).
-
-**Action:** Always verify that optimized implementations (Numba/Cython) receive the same transformed input (e.g., returns) as the reference implementation. For quadratic algorithms like LZ complexity, enforce a `max_lookback` (e.g., 5000) to cap complexity at $O(N \cdot K)$, trading infinite memory for linear performance scaling.
-
-## 2026-01-23 - Entropy Statistics & Volatility Loop Optimization
-
-**Learning:** `calculate_entropy_statistics_numba` was using a naive sliding window loop recalculating `np.mean` and `np.std` at every step, leading to $O(N \cdot W)$ complexity. Additionally, `vectorized_entropy_features` used a pure Python loop for rolling volatility, which was a massive bottleneck (10s execution time vs <1s optimized).
-Also, `fastmath=True` in Numba functions can break `np.isfinite` checks for NaNs in certain environments, leading to incorrect results (e.g. Entropy=0.0).
-
-**Action:**
-1. Replaced naive window loops with O(N) online rolling statistics (`_numba_rolling_mean`, `_numba_rolling_std`).
-2. Replaced Python loops with Numba-optimized equivalents.
-3. Disabled `fastmath` for functions requiring robust NaN handling (`shannon_entropy_numba`).
-Result: `calculate_entropy_statistics_numba` speedup >700x (2.11s -> 0.003s). Full feature generation speedup ~10x (10s -> 0.8s).
-
-## 2026-01-27 - Rolling VWAP Optimization
-
-**Learning:** Pandas `rolling()` operations are flexible but can be slow for composite metrics like VWAP (`sum(pv)/sum(v)`), which require two rolling aggregations and intermediate Series. A Numba $O(N)$ implementation using single-pass sliding window sums achieved a ~6.5x speedup. Careful handling of `min_periods=1` logic (accumulating until window is full) and NaN propagation (ignoring missing values in sums, but invalidating result if volume is zero) was required to match Pandas exactly.
-
-**Action:** For composite rolling metrics (e.g., VWAP, correlation), implement single-pass O(N) Numba functions instead of chaining multiple Pandas rolling calls. Verify `min_periods` and NaN behavior against the reference implementation.
-
-## 2026-02-02 - Rolling Price Jump Frequency Optimization
-
-**Learning:** `_numba_price_jump_frequency` was O(N*W) because it recalculated mean and std for the window at every step using `np.mean` and `np.std`. Even with JIT, this is inefficient. Replacing these with incremental O(1) updates (using Welford's or sum/sq_sum tracking) reduced complexity to O(N * (W/k))—we still iterate to count jumps, but the expensive mean/std calculation is gone. This achieved a ~2.7x speedup for typical window sizes.
-
-**Action:** When implementing rolling features that require window statistics (mean, std) for thresholding, always maintain these statistics incrementally (O(1)) rather than recalculating them (O(W)), even if the subsequent logic (like counting outliers) requires iterating the window. Every O(W) reduction inside the main loop counts.
-
-## 2026-02-04 - Rolling Mean/Std Nan-Safe Optimization
-
-**Learning:** Naive sliding window implementations for "nan-safe" rolling statistics ($O(N \cdot W)$) are extremely slow for large windows.
-- `_numba_rolling_mean_nan_safe`: Was scanning the window for every element to skip NaNs. Optimized to $O(N)$ by tracking `sum` and `count` incrementally. Speedup: ~10x (2.8s -> 0.28s for N=1M, W=1000).
-- `_numba_rolling_std_nan_safe`: Was doing TWO passes over the window (Mean then Variance). Optimized to $O(N)$ using online variance update (tracking `sum`, `sum_sq`, `count`). Speedup: ~230x (4.25s -> 0.018s).
-
-**Action:** Always prefer $O(N)$ incremental updates for rolling statistics, even when handling NaNs requires conditional logic. The speedup is massive for W > 100.
-
-## 2026-02-05 - Rolling Min/Max Optimization
-
-**Learning:** `_numba_rolling_max` and `min` were implemented using a naive $O(N \cdot W)$ sliding window loop. This scales linearly with window size and is very slow for large windows (e.g. 463x slower for W=5000). Replacing this with a monotonic deque implementation reduces complexity to amortized $O(N)$, resulting in constant time execution regardless of window size.
-
-**Action:** Always use monotonic deques for rolling min/max operations instead of naive iteration over the window.
-
-## 2026-02-05 - Rolling Quantile Partitioning vs Sorting
-
-**Learning:** For rolling quantile (and median) calculations in Numba where $O(N)$ online update algorithms (like Two Heaps) are complex to implement correctly with NaNs:
--   `Reuse Buffer + Sort` (sorting the window buffer every step) is $O(N \cdot W \log W)$. It is slow for large W.
--   `Reuse Buffer + Partition` (using `np.partition` for finding kth element) is $O(N \cdot W)$ for each quantile.
--   Even though `np.partition` creates a copy in Numba (currently), it outperformed Allocation+Sort by ~4.5x for W=1000.
--   Reusing the buffer for collection avoids $N$ allocations, which is a massive win for GC and speed.
-
-**Action:** Use `np.partition` instead of `sort` for rolling quantile calculations if exact sorted order isn't required (only k-th element). Ensure to reuse the collection buffer to minimize allocation overhead.
-
-## 2026-02-09 - Fused Rolling Z-Score & Numerical Stability
-
-**Learning:**
-1. The previous `numba_zscore` implementation performed two sequential passes (rolling mean, then rolling std), limiting performance.
-2. The naive variance formula (`sum_sq - sum^2/n`) suffered from catastrophic cancellation for large input values with small variance (e.g., price data), leading to erroneous huge Z-scores when intermediate variance underflowed to zero or negative.
-3. Standard `float32` precision is insufficient for naive variance calculation on price-level data without centering.
-
-**Action:**
-1. Implemented a **fused parallel kernel** for rolling Z-score, calculating mean and std in a single pass. This achieved a **4x speedup** (0.044s -> 0.011s for 1M elements).
-2. Introduced an **"Assumed Mean" centering technique** (subtracting the first valid value `K` from all elements in the window) to the variance accumulation logic. This completely resolves numerical instability for large inputs without the complexity of Welford's algorithm for sliding windows.
-
-## 2026-02-16 - Parallelizing ATR Calculation with Numba
-
-**Learning:** Iterating over DataFrame columns in Python to apply a Numba kernel (`for c in cols: kernel(...)`) is significantly slower than passing the entire matrix to a parallel Numba kernel (`prange`), especially for wide DataFrames (e.g., 5000 columns).
-
-**Insight:** The overhead of Python loops, `enumerate`, and repeated `to_numpy()` calls dominates execution time. Converting the entire DataFrame to a contiguous 2D Numpy array once and iterating with `prange` yielded a ~150-280x speedup (1.9s -> 0.01s).
-
-**Action:** When optimizing element-wise or column-wise operations on DataFrames in `fast_funcs.py`, always prefer:
-1. Align inputs using `index.intersection()` once.
-2. Convert to 2D float32 Numpy arrays.
-3. Use a `@jit(parallel=True)` kernel with `prange(n_cols)`.
-4. Reindex the output DataFrame to match the input structure if necessary.
-
-## 2026-02-16 - Parallelizing Numba Kernels
-Learning: Even with Numba-jitted inner functions, iterating over DataFrame columns in Python using `apply_to_frame` or `apply_to_matrix` incurs significant overhead, especially for operations with low per-column complexity (like RSI, rolling max/min, pct_change).
-Action: Always prefer `prange` loops inside a parallel Numba kernel over Python-level iteration when processing DataFrames column-wise. This yielded 3-13x speedups for common indicators.
-
-## 2026-02-26 - Fused Rolling Entropy Proxy Optimization
-
-**Learning:** The "entropy proxy" feature calculation (`_rolling_shannon_entropy_df`) was extremely inefficient because it relied on pandas `.rolling()` with 7 separate method calls per window step (4 quantiles, mean, std, median). This resulted in 7 passes over the data and significant Pandas overhead.
-
-**Action:** Replaced the pandas implementation with a single **fused Numba kernel** (`_numba_rolling_entropy_proxy`). The kernel computes all statistics (quantiles via buffer sort, mean, std) in a **single pass** over the window.
-- **Speedup:** 12.39x (0.84s -> 0.068s for 5000x50 array).
-- **Correctness:** Verified to be identical (max diff 0.000000).
-- **Technique:** Use `parallel=True` with `prange` for column-wise parallelization, and fused logic inside the inner loop to maximize cache locality and minimize Python overhead.
-
-## 2025-02-17 - [Optimizing _numba_adx_1d for O(1) auxiliary memory]
-Learning: Numba loops can often be restructured to avoid allocating O(N) temporary arrays for sequential calculations like Wilder's Smoothing, eliminating memory allocation overhead which constitutes a significant portion of execution time for small rolling/incremental calculations. By combining loops and managing a sliding window of state, multiple O(N) allocations (`tr_arr`, `dm_p_arr`, `dm_m_arr`, `dx_buffer`) were eliminated for `_numba_adx_1d`.
-Action: Look for Numba functions that allocate `np.zeros(l)` or `np.empty(l)` where `l` is the length of the entire time series just to hold intermediate values that are only used sequentially.
+## 2026-03-04 - Parallelizing Numba Rolling VWAP and Fallbacks
+Learning: Iterating over DataFrame columns in Python using a Numba JIT function (`ff._numba_rolling_vwap`) inside a loop incurs massive overhead. Furthermore, when parallelizing this function with `prange` inside `_numba_rolling_vwap_parallel`, it is even faster to inline the 1D logic directly into the 2D loop rather than calling the 1D Numba function inside the parallel loop.
+Action: Implement `_numba_rolling_vwap_parallel` with the logic fully inlined within the 2D `prange` loop. Crucially, when updating Numba-related fallback imports in `src_utils_numba_funcs.py` for environments without Numba, ensure `prange = range` is set in the `except ImportError` block to prevent `NameError` exceptions.## 2026-03-04 - Vectorized Run-Length Encoding for Regimes
+Learning: Calculating run-length encoding across a DataFrame's columns using `groupby().cumcount()` on each column individually is extremely slow due to Python looping overhead.
+Action: A vectorized approach using NumPy's `np.maximum.accumulate` to track the last change index along axis 0 is significantly faster. Instead of grouping, subtract the row index from the last index where a regime change occurred.
+## 2026-03-04 - JIT Rolling Argmax Optimization
+Learning: `pd.rolling(window).apply(np.argmax)` inside a loop over DataFrame columns is phenomenally slow due to the overhead of setting up thousands of Pandas Series operations.
+Action: Replacing this logic with a custom parallelized Numba kernel (`_numba_rolling_bars_since_extreme_parallel`) that computes the distance from the last peak/trough reduced execution time for a 100k x 50 dataset from 22.6s to 0.12s (~190x speedup). Always favor custom JIT kernels over Pandas `apply` in performance-critical paths.
+## 2026-03-04 - Fractionally Differentiated Features Parallelization
+Learning: Fractional differentiation `_numba_apply_weights` was iteratively applied column-by-column in a Python loop in `features.py`. The convolution approach can be significantly sped up across columns using `@jit(parallel=True)`.
+Action: Vectorize `_numba_apply_weights` across columns with `prange` into `_numba_apply_weights_parallel`. Group columns by their calculated `d_use` value and apply `frac_diff_ffd` natively on DataFrame chunks rather than processing column by column.
+## 2026-03-04 - ProcessPoolExecutor for Independent Columns
+Learning: Functions like `hvn_lvn_features_ohlcv` process single-asset (column-wise) data using NumPy `sliding_window_view` and `np.digitize`. When applied sequentially across a wide panel, they create massive bottlenecks (e.g. 52 seconds for 50 cols). Because they don't share state and release the GIL effectively within NumPy, they are prime candidates for multiprocessing.
+Action: Used `concurrent.futures.ProcessPoolExecutor` to farm out column-level work. Using `min(8, multiprocessing.cpu_count())` workers yielded a 3.1x speedup (52.2s -> 16.7s).

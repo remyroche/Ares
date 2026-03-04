@@ -7,10 +7,11 @@ import numpy as np
 import math
 
 try:
-    from numba import jit
+    from numba import jit, prange
     NUMBA_AVAILABLE = True
 except ImportError:
     NUMBA_AVAILABLE = False
+    prange = range
     def jit(*args, **kwargs):
         def decorator(func):
             return func
@@ -615,3 +616,67 @@ def _numba_rolling_mad(x, window):
         output[i] = mad
 
     return output
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_vwap_parallel(price_mat, volume_mat, window):
+    n_rows, n_cols = price_mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        sum_pv = 0.0
+        sum_v = 0.0
+        for i in range(n_rows):
+            out[i, j] = np.nan
+            p = price_mat[i, j]
+            v = volume_mat[i, j]
+
+            if not np.isnan(p) and not np.isnan(v):
+                sum_v += v
+                sum_pv += p * v
+
+            if i >= window:
+                p_old = price_mat[i - window, j]
+                v_old = volume_mat[i - window, j]
+
+                if not np.isnan(p_old) and not np.isnan(v_old):
+                    sum_v -= v_old
+                    sum_pv -= p_old * v_old
+
+            if sum_v > 1e-9:
+                out[i, j] = sum_pv / sum_v
+
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_bars_since_extreme_parallel(mat, window, mode):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        for i in range(n_rows):
+            start_idx = max(0, i - window + 1)
+            length = i - start_idx + 1
+
+            if length == 0:
+                out[i, j] = np.nan
+                continue
+
+            # Need to find argmax or argmin
+            best_idx = 0
+            best_val = mat[start_idx, j]
+
+            for k in range(1, length):
+                val = mat[start_idx + k, j]
+                if mode == 1: # max
+                    if val > best_val or np.isnan(best_val):
+                        best_val = val
+                        best_idx = k
+                else: # min
+                    if val < best_val or np.isnan(best_val):
+                        best_val = val
+                        best_idx = k
+
+            # Distance from end of window
+            out[i, j] = float(length - 1 - best_idx)
+
+    return out

@@ -3365,25 +3365,10 @@ def run_oof_grid_backtest(
         u = np.clip((rank_pct - threshold) / max(1.0 - threshold, 1e-9), 0.0, 1.0)
         return 0.05 + 0.10 * np.power(u, float(max(p, 1e-6)))
 
-    def _size_quantile_steps(rank_pct: np.ndarray, threshold: float) -> np.ndarray:
-        u = np.clip((rank_pct - threshold) / max(1.0 - threshold, 1e-9), 0.0, 1.0)
-        out = np.full(len(u), 0.05, dtype=float)
-        out[u >= (1.0 / 3.0)] = 0.09
-        out[u >= (2.0 / 3.0)] = 0.15
-        return out
-
-    def _size_soft_capped_exp(rank_pct: np.ndarray, threshold: float, beta: float = 3.0) -> np.ndarray:
-        u = np.clip((rank_pct - threshold) / max(1.0 - threshold, 1e-9), 0.0, 1.0)
-        den = max(1.0 - np.exp(-float(beta)), 1e-9)
-        z = (1.0 - np.exp(-float(beta) * u)) / den
-        return 0.05 + 0.10 * z
-
     size_methods = {
         "linear_5_15": _size_linear_5_15,
         "convex_power": _size_convex_power,
         "concave_power": _size_concave_power,
-        "quantile_step": _size_quantile_steps,
-        "soft_capped_exp": _size_soft_capped_exp,
     }
 
     # Phase 1: backtest all non-sizing params using linear_5_15 only.
@@ -3816,6 +3801,49 @@ def run_ridge_position_sizer_step(
                 bt_df.to_csv(_bt_path, index=False)
                 metrics['oof_backtest_grid_path'] = str(_bt_path)
                 tprint(f"Saved Ridge OOF backtest grid to {_bt_path}")
+
+                # Extract and log Phase 2 sizing comparison metrics (post limit-offset opt)
+                phase2_df = bt_df[bt_df["phase"] == "phase2_sizing_compare"]
+                if not phase2_df.empty:
+                    # Score function: PnL + Sortino factor
+                    def _score(row):
+                        return row["net_pnl"] + 10000.0 * row["sortino"]
+
+                    phase2_df = phase2_df.copy()
+                    phase2_df["_score"] = phase2_df.apply(_score, axis=1)
+                    phase2_df = phase2_df.sort_values("_score", ascending=False)
+
+                    best_row = phase2_df.iloc[0]
+                    worst_row = phase2_df.iloc[-1]
+
+                    tprint("=" * 80)
+                    tprint("POSITION SIZING IMPACT (Post-Limit Offset Optimisation)")
+                    tprint("=" * 80)
+                    tprint(f"  Best Mode : {best_row['sizing_mode']}")
+                    tprint(f"    PnL     : {best_row['net_pnl']:.2f}")
+                    tprint(f"    Sortino : {best_row['sortino']:.3f}")
+                    tprint(f"    MaxDD   : {best_row['maxdd']:.4f}")
+                    tprint(f"  Worst Mode: {worst_row['sizing_mode']}")
+                    tprint(f"    PnL     : {worst_row['net_pnl']:.2f}")
+                    tprint(f"    Sortino : {worst_row['sortino']:.3f}")
+                    tprint(f"    MaxDD   : {worst_row['maxdd']:.4f}")
+                    tprint("=" * 80)
+
+                    metrics['sizing_impact'] = {
+                        "best": {
+                            "mode": best_row["sizing_mode"],
+                            "pnl": float(best_row["net_pnl"]),
+                            "sortino": float(best_row["sortino"]),
+                            "maxdd": float(best_row["maxdd"]),
+                        },
+                        "worst": {
+                            "mode": worst_row["sizing_mode"],
+                            "pnl": float(worst_row["net_pnl"]),
+                            "sortino": float(worst_row["sortino"]),
+                            "maxdd": float(worst_row["maxdd"]),
+                        }
+                    }
+
         except Exception as e:  # FIX #11: catch AttributeError and any other errors, not just ValueError
             metrics['oof_backtest_grid_error'] = str(e)
             tprint(f"WARNING: Ridge OOF backtest grid skipped: {type(e).__name__}: {e}")

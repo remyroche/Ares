@@ -3976,12 +3976,14 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                 k_tps_norm_3d = k_tps_norm.reshape(-1, 1, 1)
                 
                 # Calculate dynamic modifier (G, M, N)
-                # Clip the exponent to prevent inf/overflow in np.exp
-                exponent = np.clip(0.5 * (atr_ratio_3d - 1.0) * k_tps_norm_3d, -20.0, 20.0)
+                # Clip the exponent to prevent inf/overflow in np.exp.
+                # Replace NaNs with 0.0 before exponentiation.
+                exponent = np.nan_to_num(0.5 * (atr_ratio_3d - 1.0) * k_tps_norm_3d, nan=0.0)
+                exponent = np.clip(exponent, -20.0, 20.0)
                 dynamic_modifier_3d = np.exp(exponent)
                 
                 # Expand base weights: (G,) -> (G, 1, 1)
-                rr_weights_3d = rr_weights.reshape(-1, 1, 1)
+                rr_weights_3d = np.nan_to_num(rr_weights, nan=1.0).reshape(-1, 1, 1)
                 
                 # Final broadcasted weights: (G, M, N)
                 # Clip final weights to prevent extreme values dominating the aggregation
@@ -3991,28 +3993,38 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                 w_tp = np.sum(w_3d * mask_tp, axis=0)
                 w_sl = np.sum(w_3d * mask_sl, axis=0)
                 w_to = np.sum(w_3d * mask_to, axis=0)
-                agg_ret_num = np.sum(w_3d * ret_stack, axis=0)
-                agg_qual_num = np.sum(w_3d * qual_stack, axis=0)
-                tp_dist_num = np.sum(w_3d * np.where(mask_tp, ret_stack, 0.0), axis=0)
-                sl_dist_num = np.sum(w_3d * np.where(mask_sl, -ret_stack, 0.0), axis=0)
+                agg_ret_num = np.sum(w_3d * np.nan_to_num(ret_stack, nan=0.0), axis=0)
+                agg_qual_num = np.sum(w_3d * np.nan_to_num(qual_stack, nan=0.0), axis=0)
+                tp_dist_num = np.sum(w_3d * np.where(mask_tp, np.nan_to_num(ret_stack, nan=0.0), 0.0), axis=0)
+                sl_dist_num = np.sum(w_3d * np.where(mask_sl, -np.nan_to_num(ret_stack, nan=0.0), 0.0), axis=0)
 
                 # Since `w` is now an array, w_sum must be calculated per-bar.
                 w_sum = w_tp + w_sl + w_to
                 
-                n_tp_df = pd.DataFrame(w_tp.astype(np.float32, copy=False), index=panel["close"].index, columns=panel["close"].columns)
-                n_sl_df = pd.DataFrame(w_sl.astype(np.float32, copy=False), index=panel["close"].index, columns=panel["close"].columns)
-                n_to_df = pd.DataFrame(w_to.astype(np.float32, copy=False), index=panel["close"].index, columns=panel["close"].columns)
-                tp_dist_df = pd.DataFrame((tp_dist_num / np.where(w_tp > 0, w_tp, 1.0)).astype(np.float32, copy=False), index=panel["close"].index, columns=panel["close"].columns)
-                sl_dist_df = pd.DataFrame((sl_dist_num / np.where(w_sl > 0, w_sl, 1.0)).astype(np.float32, copy=False), index=panel["close"].index, columns=panel["close"].columns)
+                n_tp_df = pd.DataFrame(np.nan_to_num(w_tp, nan=0.0).astype(np.float32, copy=False), index=panel["close"].index, columns=panel["close"].columns)
+                n_sl_df = pd.DataFrame(np.nan_to_num(w_sl, nan=0.0).astype(np.float32, copy=False), index=panel["close"].index, columns=panel["close"].columns)
+                n_to_df = pd.DataFrame(np.nan_to_num(w_to, nan=0.0).astype(np.float32, copy=False), index=panel["close"].index, columns=panel["close"].columns)
+
+                # Protect against division by zero and invalid floats
+                tp_denom = np.where(w_tp > 0, w_tp, 1.0)
+                sl_denom = np.where(w_sl > 0, w_sl, 1.0)
+                tp_dist_val = np.nan_to_num(tp_dist_num / tp_denom, nan=0.0)
+                sl_dist_val = np.nan_to_num(sl_dist_num / sl_denom, nan=0.0)
+
+                tp_dist_df = pd.DataFrame(tp_dist_val.astype(np.float32, copy=False), index=panel["close"].index, columns=panel["close"].columns)
+                sl_dist_df = pd.DataFrame(sl_dist_val.astype(np.float32, copy=False), index=panel["close"].index, columns=panel["close"].columns)
 
                 # w_sum is now a DataFrame-like object, not a scalar.
                 # Denominator for agg_ret and agg_qual must be per-bar.
                 denom = np.where(w_sum > 0, w_sum, 1.0) # Avoid division by zero
 
-                agg_ret = (agg_ret_num / denom).astype(np.float32)
-                agg_qual = np.clip((agg_qual_num / denom), 0.0, 1.0).astype(np.float32)
+                agg_ret = np.nan_to_num(agg_ret_num / denom, nan=0.0).astype(np.float32)
+                agg_qual = np.clip(np.nan_to_num(agg_qual_num / denom, nan=0.0), 0.0, 1.0).astype(np.float32)
 
-                agg_lbl = np.where(n_tp_df.values > n_sl_df.values, OUT_TP, np.where(n_sl_df.values > n_tp_df.values, OUT_SL, OUT_TO)).astype(np.int8)
+                # Convert to integer arrays for robust condition checking
+                v_tp = np.nan_to_num(n_tp_df.values, nan=0.0)
+                v_sl = np.nan_to_num(n_sl_df.values, nan=0.0)
+                agg_lbl = np.where(v_tp > v_sl, OUT_TP, np.where(v_sl > v_tp, OUT_SL, OUT_TO)).astype(np.int8)
 
                 if _diag_labels:
                     _n_lbl = agg_lbl.size

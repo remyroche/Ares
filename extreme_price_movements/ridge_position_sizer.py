@@ -2428,9 +2428,9 @@ class RidgePositionSizer:
                f"J_zscore={self.best_params_['J_zscore']:.4f}")
         sample_weight = self._compute_sample_weights(y, float(self.best_params_.get('gamma', 1.0)))
         
-        # Fold-safe feature pruning + ElasticNet tuning before model-race training.
+        # Fold-safe feature pruning + ElasticNet tuning for Ridge
         base_feature_names = list(self.model_names_ or [])
-        fs_diag = run_fold_safe_feature_pruning_and_elasticnet(
+        fs_diag_ridge = run_fold_safe_feature_pruning_and_elasticnet(
             X=X,
             y=y,
             feature_names=base_feature_names,
@@ -2441,14 +2441,60 @@ class RidgePositionSizer:
             max_samples=5000,
             random_state=int(self.random_state),
         )
-        selected_features = [f for f in fs_diag.get("selected_features", []) if f in base_feature_names]
-        if not selected_features:
-            selected_features = base_feature_names
-        selected_idx = np.asarray([base_feature_names.index(f) for f in selected_features], dtype=np.int32)
-        X = np.asarray(X[:, selected_idx], dtype=np.float32, order='C')
-        self.model_names_ = selected_features
-        self.feature_selection_diag_ = fs_diag
-        tprint(f"  Feature selection (sizer): kept {len(selected_features)}/{len(base_feature_names)} features")
+
+        ridge_selected_features = [f for f in fs_diag_ridge.get("selected_features", []) if f in base_feature_names]
+        if not ridge_selected_features:
+            ridge_selected_features = base_feature_names
+        ridge_selected_idx = np.asarray([base_feature_names.index(f) for f in ridge_selected_features], dtype=np.int32)
+        X_ridge = np.asarray(X[:, ridge_selected_idx], dtype=np.float32, order='C')
+
+        # New Feature Pruning for Tree Models (LGBM)
+        from extreme_price_movements.feature_select.run import run_feature_selection
+        from extreme_price_movements.feature_select.cv import CVConfig
+        from extreme_price_movements.feature_select.scoring import UtilityConfig, FeatureSelectConfig
+        import pandas as pd
+
+        df_X = pd.DataFrame(X, columns=base_feature_names)
+        time_s = pd.Series(timestamps) if timestamps is not None else None
+
+        cv_cfg = CVConfig(n_splits=3, min_train_size=max(100, len(y)//4), val_size=max(100, len(y)//4))
+        util_cfg = UtilityConfig(utility_mode="topq_mean", topq=max(0.05, min(0.30, float(self.select_topq))))
+        fs_cfg = FeatureSelectConfig(min_features=5, n_repeats_perm=5, confirm_mode="single_seed_fast")
+
+        lgbm_p = {
+            "learning_rate": 0.05,
+            "max_depth": 3,
+            "n_estimators": 200,
+            "early_stopping_rounds": 20
+        }
+
+        try:
+            tree_fs_res = run_feature_selection(
+                X=df_X, y=y, groups=None, time_index=time_s,
+                model_kind="regression", quantile_alpha=None,
+                cv_config=cv_cfg, lgbm_params=lgbm_p,
+                utility_config=util_cfg, fs_config=fs_cfg,
+                random_seed=int(self.random_state),
+                output_dir="artifacts"
+            )
+            tree_selected_features = [f for f in tree_fs_res.selected_features if f in base_feature_names]
+            if not tree_selected_features:
+                tree_selected_features = base_feature_names
+        except Exception as e:
+            tprint(f"  WARNING: Tree feature selection failed ({e}), falling back to all features.")
+            tree_selected_features = base_feature_names
+
+        tree_selected_idx = np.asarray([base_feature_names.index(f) for f in tree_selected_features], dtype=np.int32)
+        X_tree = np.asarray(X[:, tree_selected_idx], dtype=np.float32, order='C')
+
+        # We will use self.model_names_ = (base_feature_names) but override X down the line
+        # when passing into _run_policy_candidate
+        self.model_names_ridge_ = ridge_selected_features
+        self.model_names_tree_ = tree_selected_features
+        self.model_names_ = base_feature_names
+
+        self.feature_selection_diag_ = {"ridge": fs_diag_ridge}
+        tprint(f"  Feature selection (sizer): kept {len(ridge_selected_features)} for Ridge, {len(tree_selected_features)} for Trees (out of {len(base_feature_names)})")
 
         from extreme_price_movements.purged_cv import PurgedKFold
         if timestamps is not None:
@@ -2782,9 +2828,13 @@ class RidgePositionSizer:
         base_winner, smoother_winner = winner_name.split("+")
         tprint(f"  Sizer model race winner: {winner_name} score={race_results[winner_name]['agg']['composite_score']:.4f}")
         self.best_params_["race_winner"] = winner_name
-        # Fit winner on full data for inference bundle
-        base_final = _fit_base(base_winner, X, y, X, y, sample_weight)
-        pred_full = np.asarray(base_final.predict(X), dtype=float)
+
+        # Fit winner on full data for inference bundle with proper feature set
+        X_final = X_ridge if base_winner == "ridge" else X_tree
+        self.model_names_final_ = self.model_names_ridge_ if base_winner == "ridge" else self.model_names_tree_
+
+        base_final = _fit_base(base_winner, X_final, y, X_final, y, sample_weight)
+        pred_full = np.asarray(base_final.predict(X_final), dtype=float)
         smoother_final = _build_smoother(smoother_winner)
         try:
             smoother_final.fit(pred_full.reshape(-1, 1), y, model__sample_weight=sample_weight)
@@ -2825,6 +2875,8 @@ class RidgePositionSizer:
             imp = np.asarray(base_final.feature_importances_, dtype=float)
             s_imp = float(np.sum(np.abs(imp))) + 1e-12
             self.weights_ = imp / s_imp
+        # update model_names_ so compatibility is maintained
+        self.model_names_ = self.model_names_final_
         self.scaler_ = None
 
         # Limit-offset model race (same folds/features/weights, no squash)

@@ -242,6 +242,24 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
         elif len(reg_cols) == 1:
             combined["reg_mean"] = combined[reg_cols[0]].values
             combined["reg_std"] = 0.0
+
+        # -------------------------------------------------------------
+        # Synthesize interaction features from auxiliary heads
+        # -------------------------------------------------------------
+        # Require base_df to have the auxiliary heads available
+        if all(c in base_df.columns for c in ["oof_log_mfe_hat", "oof_log_mae_q70_hat"]):
+            _mfe_hat = base_df["oof_log_mfe_hat"].values
+            _mae_hat = base_df["oof_log_mae_q70_hat"].values
+            combined["risk_reward_ratio"] = _mfe_hat / (_mae_hat + 1e-6)
+            combined["risk_adjusted_pred"] = combined["reg_mean"].values - 0.5 * _mae_hat
+
+        if "oof_u_hat" in base_df.columns:
+            _u_hat = base_df["oof_u_hat"].values
+            # Sigmoid of utility
+            _sigmoid_u = 1.0 / (1.0 + np.exp(-_u_hat))
+            combined["high_utility_pred"] = combined["reg_mean"].values * _sigmoid_u
+            combined["utility_disagreement"] = np.abs(combined["reg_mean"].values - _u_hat)
+
         
         # Attach metadata from base
         # Include aux head OOFs and realized outcomes for diagnostics

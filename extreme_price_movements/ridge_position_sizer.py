@@ -2885,28 +2885,34 @@ class RidgePositionSizer:
                 p_tr = np.asarray(base.predict(X_tr), dtype=float)
                 p_va = np.asarray(base.predict(X_va), dtype=float)
 
-                # Apply top-30% calibration specifically for ET and XGB
+                # Apply smooth tail-weighted calibration specifically for ET and XGB
                 # This ensures the model's confidence distribution maps correctly
-                # in the critical tail region.
+                # in the critical tail region, without hard thresholding.
                 top_calibrator = None
                 if base_name in ["et", "xgb"]:
-                    # identify top 30% in training fold
-                    top_mask_tr = _top_mask_from_score(p_tr, top_frac, tr_idx)
-                    if np.any(top_mask_tr):
-                        p_tr_top = p_tr[top_mask_tr]
-                        y_tr_top = y_tr[top_mask_tr]
-                        w_tr_top = w_tr[top_mask_tr] if w_tr is not None else None
+                    try:
+                        from sklearn.isotonic import IsotonicRegression
 
-                        try:
-                            from sklearn.isotonic import IsotonicRegression
-                            top_calibrator = IsotonicRegression(out_of_bounds="clip")
-                            top_calibrator.fit(p_tr_top, y_tr_top, sample_weight=w_tr_top)
+                        # Generate smooth weights emphasizing p >= 0.70
+                        q_70 = np.nanquantile(p_tr, 1.0 - top_frac)
+                        score_std = np.nanstd(p_tr)
+                        temperature = max(0.25 * score_std, 1e-6)
+                        alpha_calib = top30_boost if use_two_pass else 2.0
 
-                            # transform inputs before they hit the smoother
-                            p_tr = top_calibrator.predict(p_tr)
-                            p_va = top_calibrator.predict(p_va)
-                        except Exception:
-                            top_calibrator = None
+                        # sigmoid function: 1 / (1 + exp(-(p - q_70) / T))
+                        sigmoid_weights = 1.0 / (1.0 + np.exp(-(p_tr - q_70) / temperature))
+
+                        w_calib = np.ones(len(p_tr), dtype=float) if w_tr is None else np.asarray(w_tr, dtype=float).copy()
+                        w_calib = w_calib * (1.0 + alpha_calib * sigmoid_weights)
+
+                        top_calibrator = IsotonicRegression(out_of_bounds="clip")
+                        top_calibrator.fit(p_tr, y_tr, sample_weight=w_calib)
+
+                        # transform inputs before they hit the smoother
+                        p_tr = top_calibrator.predict(p_tr)
+                        p_va = top_calibrator.predict(p_va)
+                    except Exception:
+                        top_calibrator = None
 
                 smoother = _build_smoother(smoother_name)
                 try:
@@ -3050,20 +3056,28 @@ class RidgePositionSizer:
         base_final = _fit_base(base_winner, X_final, y, X_final, y, sample_weight)
         pred_full = np.asarray(base_final.predict(X_final), dtype=float)
 
-        # Apply top-30% calibration to final bundle for ET and XGB
+        # Apply smooth tail-weighted calibration to final bundle for ET and XGB
         top_calibrator_final = None
         if base_winner in ["et", "xgb"]:
-            # dummy order index using range
-            top_mask_full = _top_mask_from_score(pred_full, top_frac, np.arange(len(pred_full)))
-            if np.any(top_mask_full):
-                try:
-                    from sklearn.isotonic import IsotonicRegression
-                    top_calibrator_final = IsotonicRegression(out_of_bounds="clip")
-                    w_top = sample_weight[top_mask_full] if sample_weight is not None else None
-                    top_calibrator_final.fit(pred_full[top_mask_full], y[top_mask_full], sample_weight=w_top)
-                    pred_full = top_calibrator_final.predict(pred_full)
-                except Exception:
-                    top_calibrator_final = None
+            try:
+                from sklearn.isotonic import IsotonicRegression
+
+                # Generate smooth weights emphasizing p >= 0.70
+                q_70 = np.nanquantile(pred_full, 1.0 - top_frac)
+                score_std = np.nanstd(pred_full)
+                temperature = max(0.25 * score_std, 1e-6)
+                alpha_calib = top30_boost if use_two_pass else 2.0
+
+                sigmoid_weights = 1.0 / (1.0 + np.exp(-(pred_full - q_70) / temperature))
+
+                w_calib = np.ones(len(pred_full), dtype=float) if sample_weight is None else np.asarray(sample_weight, dtype=float).copy()
+                w_calib = w_calib * (1.0 + alpha_calib * sigmoid_weights)
+
+                top_calibrator_final = IsotonicRegression(out_of_bounds="clip")
+                top_calibrator_final.fit(pred_full, y, sample_weight=w_calib)
+                pred_full = top_calibrator_final.predict(pred_full)
+            except Exception:
+                top_calibrator_final = None
 
         smoother_final = _build_smoother(smoother_winner)
         try:

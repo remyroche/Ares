@@ -755,17 +755,6 @@ def run_train_meta(cfg, ts_override=None, store=None):
 
 def run_optimise(cfg, ts_override=None, store=None):
     _maintenance_checkpoint("optimise:start")
-
-    # Use directly 15m data rather than 1h data to avoid repeated Python loops over 15m data.
-    # Adjust the horizons accordingly (multiply by 4).
-    cfg = cfg.copy()
-    cfg["timeframe"] = "15m"
-    if "label_horizons_hours" in cfg:
-        cfg["label_horizons_hours"] = [h * 4 for h in cfg["label_horizons_hours"]]
-
-    if store is None or getattr(store, "timeframe", None) != "15m":
-        store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe="15m")
-
     ts_sig = _resolve_ts_sig(cfg, ts_override)
     if ts_sig is None:
         tprint("ERROR: No feature directories found.")

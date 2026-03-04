@@ -195,9 +195,10 @@ def calibrate_tp_sl(trades: pd.DataFrame, atr_scale: pd.Series, df_15m_dict: Dic
 
         _assets_missing_15m = set()
         # Cache sorted indices per asset to avoid repeated searchsorted overhead
+        # Normalize to tz-naive datetime64[ns] to ensure safe monotonic comparison
         _asset_idx_cache = {}
         for asset, df_15 in df_15m_dict.items():
-            _asset_idx_cache[asset] = df_15.index.to_numpy()
+            _asset_idx_cache[asset] = pd.to_datetime(df_15.index).tz_convert('UTC').tz_localize(None).to_numpy(dtype='datetime64[ns]')
 
         for i in range(n):
             asset = assets[i]
@@ -208,8 +209,11 @@ def calibrate_tp_sl(trades: pd.DataFrame, atr_scale: pd.Series, df_15m_dict: Dic
                 ts = timestamps.iloc[i]
                 ts_end = ts + pd.Timedelta(hours=float(max_hold_hours_arr[i]))
 
-                start_idx = np.searchsorted(idx_arr, ts.to_datetime64(), side='left')
-                end_idx = np.searchsorted(idx_arr, ts_end.to_datetime64(), side='left')
+                ts_ns = np.datetime64(ts.tz_convert('UTC').tz_localize(None), 'ns')
+                ts_end_ns = np.datetime64(ts_end.tz_convert('UTC').tz_localize(None), 'ns')
+
+                start_idx = np.searchsorted(idx_arr, ts_ns, side='left')
+                end_idx = np.searchsorted(idx_arr, ts_end_ns, side='left')
 
                 if start_idx < end_idx:
                     bar_len = end_idx - start_idx

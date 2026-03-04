@@ -2343,11 +2343,15 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     trend_age_cumsum = trend_sign_change.cumsum()
     # Within each trend regime, count bars (per-column run-length encoding)
     # For each column: age = row_number - first_row_of_current_regime + 1
-    _rank = trend_age_cumsum.copy()
-    for col in _rank.columns:
-        _s = trend_age_cumsum[col]
-        _rank[col] = _s.groupby(_s).cumcount() + 1
-    feats["trend_age_hours"] = _rank.astype(np.float32).fillna(1)
+    # Vectorized computation instead of groupby loop
+    _v = trend_sign_change.values
+    _idx = np.arange(len(_v))[:, None]
+    _last_change = np.where(_v == 1, _idx, 0)
+    _last_change = np.maximum.accumulate(_last_change, axis=0)
+    _rank = _idx - _last_change + 1
+    feats["trend_age_hours"] = pd.DataFrame(
+        _rank, index=trend_age_cumsum.index, columns=trend_age_cumsum.columns
+    ).astype(np.float32).fillna(1)
 
     # higher_highs_count_48h: Count of higher highs in last 48 hours (trend quality)
     # A higher high is when current high > previous high

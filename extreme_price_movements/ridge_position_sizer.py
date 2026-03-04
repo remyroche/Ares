@@ -1158,6 +1158,84 @@ def validate_price_panel(
 EPS = 1e-12
 
 
+def make_confidence_conditional_regression_objective(
+    alpha=3.0,          # boosts error penalty in high-confidence region
+    threshold=0.0,      # location of confidence boundary in prediction space
+    temperature=0.5,    # softness of transition (larger = smoother)
+    lambda_conf=0.005,  # >0 encourages coverage/confidence (prevents "all low confidence")
+    hess_floor=1e-6,    # numerical stability
+    use_magnitude=False,# if True, gate on |prediction| instead of prediction
+    eps=1e-6
+):
+    """
+    Two-term objective aligned with "only trust predictions when confident":
+
+      L_i = 0.5 * w(pred) * (pred - y)^2  -  lambda_conf * g(pred)
+
+    where:
+      g(pred) in [0,1] is a smooth "confidence gate"
+      w(pred) = 1 + alpha * g(pred)
+    """
+
+    def sigmoid(x):
+        # numerically stable sigmoid
+        x = np.clip(x, -60.0, 60.0)
+        return 1.0 / (1.0 + np.exp(-x))
+
+    def objective(y_true, y_pred):
+        y_true = np.asarray(y_true, dtype=np.float64)
+        y_pred = np.asarray(y_pred, dtype=np.float64)
+
+        e = y_pred - y_true  # error
+
+        # ----- gate g(pred) and its derivatives g', g'' -----
+        if use_magnitude:
+            # smooth |pred|
+            a = np.sqrt(y_pred**2 + eps)
+            z = (a - threshold) / temperature
+            s = sigmoid(z)
+            t = s * (1.0 - s)
+
+            a_prime = y_pred / a
+            a_second = eps / (a**3)
+
+            z_prime = a_prime / temperature
+            z_second = a_second / temperature
+
+            g = s
+            g_prime = t * z_prime
+            g_second = t * (1.0 - 2.0 * s) * (z_prime**2) + t * z_second
+        else:
+            z = (y_pred - threshold) / temperature
+            s = sigmoid(z)
+            t = s * (1.0 - s)
+
+            g = s
+            g_prime = t / temperature
+            g_second = t * (1.0 - 2.0 * s) / (temperature**2)
+
+        # ----- confidence-weighted squared loss term -----
+        w = 1.0 + alpha * g
+        w_prime = alpha * g_prime
+        w_second = alpha * g_second
+
+        # L1 = 0.5*w*e^2
+        grad = w * e + 0.5 * w_prime * (e**2)
+        hess = w + 2.0 * w_prime * e + 0.5 * w_second * (e**2)
+
+        # ----- confidence reward term -----
+        if lambda_conf != 0.0:
+            grad -= lambda_conf * g_prime
+            hess -= lambda_conf * g_second
+
+        # keep Hessian positive for XGBoost
+        hess = np.maximum(hess, hess_floor)
+
+        return grad, hess
+
+    return objective
+
+
 def _ewma_vol_series(returns: pd.Series, span: int = 96) -> pd.Series:
     """Backward-looking EWMA vol proxy (no leakage)."""
     mu = returns.ewm(span=span, adjust=False).mean()
@@ -2701,22 +2779,37 @@ class RidgePositionSizer:
                 )
                 base.fit(X_tr, y_tr, sample_weight=w_tr)
                 return base
-            if name == "lgbm":
+            if name == "xgb":
                 try:
-                    from lightgbm import LGBMRegressor
+                    import xgboost as xgb
                 except Exception:
                     return None
-                base = LGBMRegressor(
-                    objective="huber", boosting_type="gbdt", random_state=42, n_jobs=3,
-                    learning_rate=0.03, n_estimators=3000, max_depth=5, num_leaves=24,
-                    min_data_in_leaf=300, min_sum_hessian_in_leaf=5.0, feature_fraction=0.7,
-                    bagging_fraction=0.7, bagging_freq=1, lambda_l1=5.0, lambda_l2=20.0,
-                    min_gain_to_split=0.5, max_bin=128, max_delta_step=2.0, feature_fraction_bynode=0.8,
+                obj_func = make_confidence_conditional_regression_objective(
+                    alpha=3.0,
+                    threshold=0.0,
+                    temperature=0.5,
+                    lambda_conf=0.01,
+                    use_magnitude=False
+                )
+                base = xgb.XGBRegressor(
+                    n_estimators=3000,
+                    learning_rate=0.03,
+                    max_depth=5,
+                    subsample=0.7,
+                    colsample_bytree=0.7,
+                    colsample_bylevel=0.8,
+                    max_delta_step=2.0,
+                    tree_method="hist",
+                    random_state=42,
+                    n_jobs=3,
+                    objective=obj_func,
                 )
                 base.fit(
-                    X_tr, y_tr, sample_weight=w_tr,
-                    eval_set=[(X_va, y_va)], eval_metric="l2",
-                    callbacks=[__import__("lightgbm").early_stopping(200, verbose=False)],
+                    X_tr, y_tr,
+                    sample_weight=w_tr,
+                    eval_set=[(X_va, y_va)],
+                    verbose=False,
+                    early_stopping_rounds=100
                 )
                 return base
             return None
@@ -2791,6 +2884,30 @@ class RidgePositionSizer:
 
                 p_tr = np.asarray(base.predict(X_tr), dtype=float)
                 p_va = np.asarray(base.predict(X_va), dtype=float)
+
+                # Apply top-30% calibration specifically for ET and XGB
+                # This ensures the model's confidence distribution maps correctly
+                # in the critical tail region.
+                top_calibrator = None
+                if base_name in ["et", "xgb"]:
+                    # identify top 30% in training fold
+                    top_mask_tr = _top_mask_from_score(p_tr, top_frac, tr_idx)
+                    if np.any(top_mask_tr):
+                        p_tr_top = p_tr[top_mask_tr]
+                        y_tr_top = y_tr[top_mask_tr]
+                        w_tr_top = w_tr[top_mask_tr] if w_tr is not None else None
+
+                        try:
+                            from sklearn.isotonic import IsotonicRegression
+                            top_calibrator = IsotonicRegression(out_of_bounds="clip")
+                            top_calibrator.fit(p_tr_top, y_tr_top, sample_weight=w_tr_top)
+
+                            # transform inputs before they hit the smoother
+                            p_tr = top_calibrator.predict(p_tr)
+                            p_va = top_calibrator.predict(p_va)
+                        except Exception:
+                            top_calibrator = None
+
                 smoother = _build_smoother(smoother_name)
                 try:
                     smoother.fit(p_tr.reshape(-1, 1), y_tr, model__sample_weight=w_tr)
@@ -2798,6 +2915,8 @@ class RidgePositionSizer:
                     smoother.fit(p_tr.reshape(-1, 1), y_tr)
                 s_tr = np.asarray(smoother.predict(p_tr.reshape(-1, 1)), dtype=float)
                 s_va = np.asarray(smoother.predict(p_va.reshape(-1, 1)), dtype=float)
+
+                # We still keep the secondary global isotonic block if use_isotonic is True
                 if use_isotonic:
                     try:
                         from sklearn.isotonic import IsotonicRegression
@@ -2849,7 +2968,7 @@ class RidgePositionSizer:
             return {"oof_size": oof_size, "fold_metrics": fold_rows, "agg": agg}
 
         race_results = {}
-        for base_name in ["ridge", "et", "lgbm"]:
+        for base_name in ["ridge", "et", "xgb"]:
             for sm_name in smoother_kinds:
                 key = f"{base_name}+{sm_name}"
                 out = _run_policy_candidate(base_name, sm_name)
@@ -2930,11 +3049,28 @@ class RidgePositionSizer:
 
         base_final = _fit_base(base_winner, X_final, y, X_final, y, sample_weight)
         pred_full = np.asarray(base_final.predict(X_final), dtype=float)
+
+        # Apply top-30% calibration to final bundle for ET and XGB
+        top_calibrator_final = None
+        if base_winner in ["et", "xgb"]:
+            # dummy order index using range
+            top_mask_full = _top_mask_from_score(pred_full, top_frac, np.arange(len(pred_full)))
+            if np.any(top_mask_full):
+                try:
+                    from sklearn.isotonic import IsotonicRegression
+                    top_calibrator_final = IsotonicRegression(out_of_bounds="clip")
+                    w_top = sample_weight[top_mask_full] if sample_weight is not None else None
+                    top_calibrator_final.fit(pred_full[top_mask_full], y[top_mask_full], sample_weight=w_top)
+                    pred_full = top_calibrator_final.predict(pred_full)
+                except Exception:
+                    top_calibrator_final = None
+
         smoother_final = _build_smoother(smoother_winner)
         try:
             smoother_final.fit(pred_full.reshape(-1, 1), y, model__sample_weight=sample_weight)
         except TypeError:
             smoother_final.fit(pred_full.reshape(-1, 1), y)
+
         iso_final = None
         if use_isotonic:
             try:
@@ -2949,6 +3085,7 @@ class RidgePositionSizer:
             "base_name": base_winner,
             "smoother_name": smoother_winner,
             "base_model": base_final,
+            "top_calibrator": top_calibrator_final,
             "smoother_model": smoother_final,
             "isotonic_model": iso_final,
             "squash_fn": squash_fn,
@@ -3039,7 +3176,7 @@ class RidgePositionSizer:
                 return {"oof": oof_k, "mu_mae": float(np.mean(fold_mae)), "sigma_mae": float(np.std(fold_mae))}
 
             offset_race = {}
-            for b in ["ridge", "et", "lgbm"]:
+            for b in ["ridge", "et", "xgb"]:
                 for sm in smoother_kinds:
                     key = f"{b}+{sm}"
                     out = _run_offset_candidate(b, sm)
@@ -3106,11 +3243,17 @@ class RidgePositionSizer:
         
         if self.policy_model_bundle_ is not None:
             base = self.policy_model_bundle_.get("base_model")
+            top_calibrator = self.policy_model_bundle_.get("top_calibrator")
             smoother = self.policy_model_bundle_.get("smoother_model")
             iso = self.policy_model_bundle_.get("isotonic_model")
             squash_fn = str(self.policy_model_bundle_.get("squash_fn", "tanh")).lower()
             squash_k = float(self.policy_model_bundle_.get("squash_k", 1.0))
             pred_base = np.asarray(base.predict(X), dtype=float)
+
+            # Apply top-30% calibrator if available
+            if top_calibrator is not None:
+                pred_base = np.asarray(top_calibrator.predict(pred_base), dtype=float)
+
             s = np.asarray(smoother.predict(pred_base.reshape(-1, 1)), dtype=float)
             if iso is not None:
                 s = np.asarray(iso.predict(s), dtype=float)

@@ -2519,7 +2519,7 @@ class RidgePositionSizer:
         top_frac = float((race_cfg or {}).get("sizer_race_top_frac", 0.30))
         top_frac = min(max(top_frac, 0.01), 0.95)
         top30_boost = float((race_cfg or {}).get("sizer_race_top30_boost", 2.0))
-        use_two_pass = bool((race_cfg or {}).get("sizer_race_use_two_pass", False))
+        use_two_pass = bool((race_cfg or {}).get("sizer_race_use_two_pass", True))
         require_sortino_top = bool((race_cfg or {}).get("sizer_race_require_sortino_top", False))
         pnl_top_floor = float((race_cfg or {}).get("sizer_race_min_pnl_top", 0.0))
 

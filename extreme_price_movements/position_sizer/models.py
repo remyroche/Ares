@@ -605,7 +605,7 @@ def train_pwin_classifier(
         rolling_edges = sorted(set(rolling_edges))
         rolling_calibrators = []
         for i in range(len(rolling_edges) - 1):
-            lo, _hi = rolling_edges[i], rolling_edges[i + 1]
+            lo, _ = rolling_edges[i], rolling_edges[i + 1]
             if lo < 80:
                 rolling_calibrators.append(IdentityCalibrator())
                 continue

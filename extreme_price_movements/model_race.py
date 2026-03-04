@@ -81,7 +81,8 @@ def _safe_binary_calibrate(preds, y_true, min_unique=20, min_samples=100):
             return preds, None, "identity"
 
     try:
-        iso = IsotonicRegression(out_of_bounds='clip', y_min=0.05, y_max=0.95)
+        # Explicitly set increasing="auto" to handle inverted probabilities
+        iso = IsotonicRegression(out_of_bounds='clip', y_min=0.05, y_max=0.95, increasing="auto")
         iso.fit(x, y)
         out = preds.copy()
         out[valid] = iso.predict(x)
@@ -271,7 +272,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             "n_jobs": 2,
             "random_state": 42,
             "verbose": -1,
-            "is_unbalance": True,  # Handle class imbalance for better PR-AUC
+            # removed is_unbalance=True because we set scale_pos_weight dynamically per fold
             "objective": "xentropy",
             "metric": ["auc", "average_precision"],
         }
@@ -291,7 +292,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             "random_seed": 42,
             "allow_writing_files": False,
             "eval_metric": "PRAUC",  # Direct PR-AUC optimization
-            "auto_class_weights": "Balanced",  # Handle class imbalance
+            # removed auto_class_weights="Balanced" because we set scale_pos_weight dynamically per fold
         }
         if CatBoostClassifier is not None:
             candidates["catboost"] = Float64Wrapper(CatBoostClassifier(**cb_params))
@@ -505,7 +506,11 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     self._fit_model(cal_clone, X_tr_cal_train, y_tr_cal_train, X_val=X_val, y_val=y_val_fit, sample_weight=w_tr_cal_train)
                     
                     # Fit the calibrator on the validation split
-                    calibrator = CalibratedClassifierCV(cal_clone, cv="prefit", method="isotonic")
+                    try:
+                        from sklearn.frozen import FrozenEstimator
+                        calibrator = CalibratedClassifierCV(estimator=FrozenEstimator(cal_clone), cv=None, ensemble=False, method="isotonic")
+                    except ImportError:
+                        calibrator = CalibratedClassifierCV(cal_clone, cv="prefit", method="isotonic")
                     calibrator.fit(X_tr_cal_val, y_tr_cal_val)
                     
                     # Predict calibrated (but biased) probabilities on the actual OOF validation set

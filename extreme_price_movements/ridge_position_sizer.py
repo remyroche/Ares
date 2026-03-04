@@ -3641,7 +3641,7 @@ def run_ridge_position_sizer_step(
     metrics["offset_base_features_match_sizer_features"] = bool(offset_base == list(sizer.model_names_ or []))
     
     # Add CV results summary
-    if sizer.cv_results_ is not None:
+    if sizer.cv_results_ is not None and 'J_zscore' in sizer.cv_results_.columns:
         best_idx = sizer.cv_results_['J_zscore'].idxmax()
         best_row = sizer.cv_results_.loc[best_idx]
         metrics['cv_best_pnl_total'] = float(best_row['PnL_total'])

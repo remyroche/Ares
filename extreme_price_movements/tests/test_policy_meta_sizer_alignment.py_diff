@@ -1,0 +1,14 @@
+--- extreme_price_movements/tests/test_policy_meta_sizer_alignment.py
++++ extreme_price_movements/tests/test_policy_meta_sizer_alignment.py
+@@ -73,6 +73,11 @@
+     n = 60
+     oof = pd.DataFrame({"m1": np.random.randn(n), "m2": np.random.randn(n)})
+     outcomes = pd.DataFrame({"return": np.random.randn(n) * 0.01, "is_long": np.ones(n)})
++    outcomes["future_highs"] = [np.ones(10) for _ in range(n)]
++    outcomes["future_lows"] = [np.ones(10) for _ in range(n)]
++    outcomes["future_closes"] = [np.ones(10) for _ in range(n)]
++    outcomes["entry_price"] = np.ones(n)
++    outcomes["atr_12_15m"] = np.ones(n) * 0.01
+     with pytest.raises(ValueError, match="u_policy"):
+         run_ridge_position_sizer_step(
+             oof_preds=oof,

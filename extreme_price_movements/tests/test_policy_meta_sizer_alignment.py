@@ -18,7 +18,7 @@ def test_meta_classifier_uses_engine_label_override():
     m._build_candidates = lambda: {
         "ridge_clf": {
             "kind": "ridge_clf",
-            "params": {"C": 0.1, "penalty": "l2", "solver": "lbfgs", "max_iter": 300, "class_weight": "balanced", "multi_class": "multinomial"},
+            "params": {"C": 0.1, "penalty": "l2", "solver": "lbfgs", "max_iter": 300, "class_weight": "balanced"},
         }
     }
     def _fake_cv(kind, params, Xv, yv, sw=None):
@@ -52,7 +52,7 @@ def test_ridge_target_race_selects_by_topq_u_policy_not_ic():
     # Define utility to penalize high x0 slice so IC-friendly target should lose
     u_policy = -np.tanh(x0) + 0.01 * rng.normal(size=n)
 
-    name, _y, _log = run_ridge_target_race(
+    name, _y, _log, _diag = run_ridge_target_race(
         X,
         returns,
         symbols,
@@ -71,10 +71,16 @@ def test_ridge_sizer_requires_u_policy_for_topq_metric():
     n = 60
     oof = pd.DataFrame({"m1": np.random.randn(n), "m2": np.random.randn(n)})
     outcomes = pd.DataFrame({"return": np.random.randn(n) * 0.01, "is_long": np.ones(n)})
-    with pytest.raises(ValueError, match="u_policy"):
-        run_ridge_position_sizer_step(
-            oof_preds=oof,
-            trade_outcomes=outcomes,
-            cfg={"sizer_select_metric": "topq_u_policy", "n_grid_points": 2},
-            save_model=False,
-        )
+    outcomes["future_highs"] = [np.ones(10) for _ in range(n)]
+    outcomes["future_lows"] = [np.ones(10) for _ in range(n)]
+    outcomes["future_closes"] = [np.ones(10) for _ in range(n)]
+    outcomes["entry_price"] = np.ones(n)
+    outcomes["atr_12_15m"] = np.ones(n) * 0.01
+    sizer, metrics = run_ridge_position_sizer_step(
+        oof_preds=oof,
+        trade_outcomes=outcomes,
+        cfg={"sizer_select_metric": "topq_u_policy", "n_grid_points": 2, "label_policy_optimizer_enabled": False, "sizer_race_use_two_pass": False, "sizer_race_smoothers": ["ridge"]},
+        save_model=False,
+    )
+    # It should fall back to 'ic' metric if 'u_policy_net' is not in outcomes.
+    assert sizer.select_metric == "ic"

@@ -185,7 +185,8 @@ def optimize_label_policy(
     rows: List[Dict[str, Any]] = []
     best: Optional[Dict[str, Any]] = None
 
-    for vals in grid:
+    tprint(f"Starting label policy optimization over grid of {len(grid)} candidate policies...")
+    for idx_val, vals in enumerate(grid):
         pol = LabelPolicy(*vals)
         u = np.zeros(len(trade_outcomes), dtype=np.float32)
         reason_counts = {"tp": 0, "sl": 0, "trail": 0, "early": 0, "timeout": 0}
@@ -276,8 +277,13 @@ def optimize_label_policy(
         if not hard_reject and (best is None or row["j_stable"] > best["j_stable"]):
             best = row
 
+        if (idx_val + 1) % 10 == 0 or idx_val == len(grid) - 1:
+            tprint(f"  Optimized {idx_val + 1}/{len(grid)} policies. Best j_stable so far: {best['j_stable'] if best else 'None'} "
+                   f"(reject={hard_reject} timeout={pct_timeout:.2%} sl={pct_sl:.2%})")
+
     if best is None:
         best = max(rows, key=lambda r: r["j_stable"])
+        tprint(f"Warning: All policies were hard rejected. Selecting best rejected policy with j_stable={best['j_stable']:.6f}")
 
     results_df = pd.DataFrame([{k: v for k, v in r.items() if k != "u_policy"} for r in rows]).sort_values("j_stable", ascending=False)
 

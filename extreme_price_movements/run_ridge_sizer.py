@@ -37,6 +37,7 @@ from extreme_price_movements.ridge_position_sizer import (
 )
 from extreme_price_movements.utils import tprint
 from extreme_price_movements.entry_policy import compute_entry_policy_decision, flatten_bucket_policy
+from extreme_price_movements.hf_data_loader import _load_existing_data
 
 
 def find_latest_run_id(data_root: str) -> str:
@@ -340,6 +341,8 @@ def load_trade_outcomes(data_root: str, run_id: str, oof_df: pd.DataFrame) -> pd
             outcomes["u_policy"] = oof_df["u_policy"].values
         if "exit_code" in oof_df.columns:
             outcomes["exit_code"] = oof_df["exit_code"].values
+        if "entry_price" in oof_df.columns:
+            outcomes["entry_price"] = oof_df["entry_price"].values
 
         # Copy aux diagnostic columns
         aux_cols = [
@@ -351,20 +354,126 @@ def load_trade_outcomes(data_root: str, run_id: str, oof_df: pd.DataFrame) -> pd
                 outcomes[c] = oof_df[c].values
 
         tprint(f"Constructed trade outcomes from OOF context: {len(outcomes)} trades")
-        return outcomes
-    
-    # Fallback: try to load from separate file
-    outcomes_path = Path(data_root) / "artifacts" / run_id / "trade_outcomes.parquet"
-    
-    if outcomes_path.exists():
-        df = pd.read_parquet(outcomes_path)
-        tprint(f"Loaded trade outcomes from {outcomes_path}: {len(df)} trades")
-        return df
-    
-    raise FileNotFoundError(
-        f"No trade outcomes found. The OOF predictions must include 'return' column, "
-        f"or trade_outcomes.parquet must exist at {outcomes_path}"
-    )
+    else:
+        # Fallback: try to load from separate file
+        outcomes_path = Path(data_root) / "artifacts" / run_id / "trade_outcomes.parquet"
+
+        if outcomes_path.exists():
+            outcomes = pd.read_parquet(outcomes_path)
+            tprint(f"Loaded trade outcomes from {outcomes_path}: {len(outcomes)} trades")
+        else:
+            raise FileNotFoundError(
+                f"No trade outcomes found. The OOF predictions must include 'return' column, "
+                f"or trade_outcomes.parquet must exist at {outcomes_path}"
+            )
+
+    # Populate 15m path features directly
+    if "symbol" in outcomes.columns and "timestamp" in outcomes.columns:
+        tprint("Populating 15m future paths for policy optimization from HF data cache...")
+        future_opens = []
+        future_highs = []
+        future_lows = []
+        future_closes = []
+        atr_15m = []
+
+        if 'mae_ret' in outcomes.columns:
+            atr_source = outcomes['mae_ret'].values
+        elif 'atr' in outcomes.columns:
+            atr_source = outcomes['atr'].values
+        else:
+            atr_source = np.full(len(outcomes), 0.02)
+
+        # Iterate per symbol to efficiently load cached _load_existing_data
+        outcomes_with_index = outcomes.copy()
+        outcomes_with_index['_orig_idx'] = np.arange(len(outcomes))
+
+        all_future_opens = np.empty(len(outcomes), dtype=object)
+        all_future_highs = np.empty(len(outcomes), dtype=object)
+        all_future_lows = np.empty(len(outcomes), dtype=object)
+        all_future_closes = np.empty(len(outcomes), dtype=object)
+        all_atr_15m = np.empty(len(outcomes), dtype=float)
+
+        grouped = outcomes_with_index.groupby('symbol')
+        for symbol, group in grouped:
+            try:
+                df_15m = _load_existing_data(symbol, allow_quote_fallback=True)
+                if df_15m.empty:
+                    # Fill empty lists
+                    for idx in group['_orig_idx']:
+                        all_future_opens[idx] = np.array([], dtype=float)
+                        all_future_highs[idx] = np.array([], dtype=float)
+                        all_future_lows[idx] = np.array([], dtype=float)
+                        all_future_closes[idx] = np.array([], dtype=float)
+                        all_atr_15m[idx] = float(atr_source[idx])
+                    continue
+
+                ts_values = pd.to_datetime(group['timestamp']).dt.tz_localize(None) if pd.to_datetime(group['timestamp']).dt.tz is not None else pd.to_datetime(group['timestamp'])
+                df_15m_index = df_15m.index.tz_localize(None) if df_15m.index.tz is not None else df_15m.index
+
+                open_arr = df_15m['open'].values
+                high_arr = df_15m['high'].values
+                low_arr = df_15m['low'].values
+                close_arr = df_15m['close'].values
+
+                left_indices = df_15m_index.searchsorted(ts_values, side='left')
+
+                for i, (_, row) in enumerate(group.iterrows()):
+                    orig_idx = row['_orig_idx']
+                    idx = left_indices[i]
+
+                    if idx >= len(df_15m):
+                        all_future_opens[orig_idx] = np.array([], dtype=float)
+                        all_future_highs[orig_idx] = np.array([], dtype=float)
+                        all_future_lows[orig_idx] = np.array([], dtype=float)
+                        all_future_closes[orig_idx] = np.array([], dtype=float)
+                        all_atr_15m[orig_idx] = float(atr_source[orig_idx])
+                        continue
+
+                    # 6 hours = 24 bars
+                    end_idx = min(idx + 24, len(df_15m))
+                    all_future_opens[orig_idx] = np.asarray(open_arr[idx:end_idx], dtype=np.float64)
+                    all_future_highs[orig_idx] = np.asarray(high_arr[idx:end_idx], dtype=np.float64)
+                    all_future_lows[orig_idx] = np.asarray(low_arr[idx:end_idx], dtype=np.float64)
+                    all_future_closes[orig_idx] = np.asarray(close_arr[idx:end_idx], dtype=np.float64)
+
+                    # Compute ATR(12) or use fallback
+                    if idx >= 13:
+                        tr = np.maximum(
+                            high_arr[idx-12:idx] - low_arr[idx-12:idx],
+                            np.maximum(
+                                np.abs(high_arr[idx-12:idx] - close_arr[idx-13:idx-1]),
+                                np.abs(low_arr[idx-12:idx] - close_arr[idx-13:idx-1])
+                            )
+                        )
+                        atr_val = float(np.mean(tr) / close_arr[idx-1])
+                        all_atr_15m[orig_idx] = atr_val if np.isfinite(atr_val) else float(atr_source[orig_idx])
+                    else:
+                        all_atr_15m[orig_idx] = float(atr_source[orig_idx])
+
+            except Exception as e:
+                # On error, fill empty
+                for idx in group['_orig_idx']:
+                    all_future_opens[idx] = np.array([], dtype=float)
+                    all_future_highs[idx] = np.array([], dtype=float)
+                    all_future_lows[idx] = np.array([], dtype=float)
+                    all_future_closes[idx] = np.array([], dtype=float)
+                    all_atr_15m[idx] = float(atr_source[idx])
+
+        outcomes['future_opens'] = all_future_opens.tolist()
+        outcomes['future_highs'] = all_future_highs.tolist()
+        outcomes['future_lows'] = all_future_lows.tolist()
+        outcomes['future_closes'] = all_future_closes.tolist()
+        outcomes['atr_12_15m'] = all_atr_15m.tolist()
+
+        if "entry_price" not in outcomes.columns:
+            # We don't have entry_price, use closes at `ts` as fallback if available
+            entry_prices = np.full(len(outcomes), 1.0, dtype=float)
+            for i, p in enumerate(outcomes['future_opens']):
+                if len(p) > 0:
+                    entry_prices[i] = p[0]
+            outcomes['entry_price'] = entry_prices
+
+    return outcomes
 
 
 def load_tpsl_params(data_root: str, run_id: str) -> Optional[Dict]:

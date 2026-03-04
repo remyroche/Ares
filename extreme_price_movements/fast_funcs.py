@@ -9,6 +9,7 @@ try:
         _numba_rolling_std_nan_safe,
         _numba_ewma,
         _numba_rolling_vwap,
+        _numba_rolling_vwap_parallel,
         _numba_rolling_kurt,
         _numba_rolling_skew,
         _numba_rolling_slope,
@@ -25,6 +26,7 @@ except ImportError:
         _numba_rolling_std_nan_safe,
         _numba_ewma,
         _numba_rolling_vwap,
+        _numba_rolling_vwap_parallel,
         _numba_rolling_kurt,
         _numba_rolling_skew,
         _numba_rolling_slope,
@@ -2644,6 +2646,28 @@ def numba_rolling_entropy_proxy(df, window):
     res = _numba_rolling_entropy_proxy_parallel(mat, window)
 
     res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+    return res_df
+
+def numba_rolling_vwap(price_df, volume_df, n):
+    """Wrapper for parallel rolling vwap computation."""
+    is_series = isinstance(price_df, pd.Series)
+    if is_series:
+        price_df = price_df.to_frame()
+        volume_df = volume_df.to_frame()
+
+    idx = price_df.index.intersection(volume_df.index)
+    cols = price_df.columns.intersection(volume_df.columns)
+
+    p_mat = price_df.loc[idx, cols].to_numpy(dtype=np.float32)
+    v_mat = volume_df.loc[idx, cols].to_numpy(dtype=np.float32)
+
+    res_mat = _numba_rolling_vwap_parallel(p_mat, v_mat, int(n))
+
+    res_df = pd.DataFrame(res_mat, index=idx, columns=cols)
+    res_df = res_df.reindex(index=price_df.index, columns=price_df.columns)
 
     if is_series:
         return res_df[res_df.columns[0]]

@@ -1258,11 +1258,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     atr_ema_s = ema(atr_base, 24)
     feats["atr_slope"] = ((atr_ema_f - atr_ema_s) / (atr_ema_s + 1e-12)).astype(np.float32)
 
-    vwap_24 = pd.DataFrame(index=c.index, columns=c.columns, dtype=np.float32)
-    for col in c.columns:
-        p_arr = c[col].to_numpy(dtype=np.float32)
-        v_arr = v[col].to_numpy(dtype=np.float32)
-        vwap_24[col] = ff._numba_rolling_vwap(p_arr, v_arr, 24)
+    vwap_24 = ff.numba_rolling_vwap(c, v, 24)
 
     feats["dist_vwap_norm"] = ((c - vwap_24) / (atr_base + 1e-12)).astype(np.float32)
 
@@ -2678,11 +2674,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     # "Distance from the average entry price of the last N hours"
     # We use c_log and v (log-vol) for VWAP proxy in log-space
     for n in [12, 24, 96]:
-        vwap_n = pd.DataFrame(index=c_log.index, columns=c_log.columns, dtype=np.float32)
-        for col in c_log.columns:
-            p_arr = c_log[col].to_numpy(dtype=np.float32)
-            v_arr = v[col].to_numpy(dtype=np.float32)
-            vwap_n[col] = ff._numba_rolling_vwap(p_arr, v_arr, n)
+        vwap_n = ff.numba_rolling_vwap(c_log, v, n)
 
         # Distance normalized by ATR (atr_base is raw ATR, atr_ln is log-ATR)
         # Since we are in log-space, (c_log - vwap_log) is a percentage diff.
@@ -2745,11 +2737,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
         climax_vol_med_n = ff.apply_to_frame(v, ff._numba_rolling_median, n)
         feats[f"climax_vol_{n}"] = (v / (climax_vol_med_n + 1e-12)).astype(np.float32)
 
-        vwap_z_n = pd.DataFrame(index=c_log.index, columns=c_log.columns, dtype=np.float32)
-        for col in c_log.columns:
-            p_arr = c_log[col].to_numpy(dtype=np.float32)
-            v_arr = v[col].to_numpy(dtype=np.float32)
-            vwap_z_n[col] = ff._numba_rolling_vwap(p_arr, v_arr, n)
+        vwap_z_n = ff.numba_rolling_vwap(c_log, v, n)
 
         diff_vwap = c_log - vwap_z_n
         std_vwap = ff.numba_rolling_std(diff_vwap, n)

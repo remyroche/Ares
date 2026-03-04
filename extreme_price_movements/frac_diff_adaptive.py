@@ -101,21 +101,21 @@ def _frac_diff_ffd_numpy(x: np.ndarray, d: float, thres: float = 1e-5) -> np.nda
     w = get_weights_ffd(d, thres)
     return _numba_apply_weights(x, w)
 
-def frac_diff_ffd(series: pd.Series, d: float, thres: float = 1e-5) -> pd.Series:
+def frac_diff_ffd(series, d: float, thres: float = 1e-5):
     """
     Apply fractional differentiation with fixed-width window.
-    
-    Args:
-        series: Input time series
-        d: Differentiation order
-        thres: Weight truncation threshold
-        
-    Returns:
-        Fractionally differentiated series
+    Accepts pd.Series or pd.DataFrame.
     """
-    x = series.to_numpy(dtype=np.float64)
-    out = _frac_diff_ffd_numpy(x, d, thres)
-    return pd.Series(out, index=series.index, name=series.name)
+    import pandas as pd
+    is_series = isinstance(series, pd.Series)
+    if is_series:
+        x_np = series.to_numpy(dtype=np.float64)
+        out_np = _frac_diff_ffd_numpy(x_np, d, thres)
+        return pd.Series(out_np, index=series.index, name=series.name)
+    else:
+        x_mat = series.to_numpy(dtype=np.float64)
+        out_mat = _frac_diff_ffd_numpy_parallel(x_mat, d, thres)
+        return pd.DataFrame(out_mat, index=series.index, columns=series.columns)
 
 def adf_test(
     series: Union[pd.Series, np.ndarray],
@@ -350,3 +350,34 @@ def compute_weight_window_sizes(d_values, thres: float = 1e-5) -> dict:
             "compute_cost": f"O(N x {k})",
         }
     return out
+
+from numba import prange
+
+@jit(nopython=True, nogil=True, cache=True, parallel=True)
+def _numba_apply_weights_parallel(x_mat: np.ndarray, weights: np.ndarray) -> np.ndarray:
+    n_rows, n_cols = x_mat.shape
+    window = len(weights)
+    out = np.full((n_rows, n_cols), np.nan, dtype=np.float64)
+
+    if window > n_rows:
+        return out
+
+    for j in prange(n_cols):
+        for i in range(window - 1, n_rows):
+            s = 0.0
+            valid = True
+            for k in range(window):
+                val = x_mat[i - window + 1 + k, j]
+                if np.isnan(val):
+                    valid = False
+                    break
+                s += weights[k] * val
+
+            if valid:
+                out[i, j] = s
+
+    return out
+
+def _frac_diff_ffd_numpy_parallel(x_mat: np.ndarray, d: float, thres: float = 1e-5) -> np.ndarray:
+    w = get_weights_ffd(d, thres)
+    return _numba_apply_weights_parallel(x_mat, w)

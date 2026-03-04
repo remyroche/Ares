@@ -194,24 +194,31 @@ def calibrate_tp_sl(trades: pd.DataFrame, atr_scale: pd.Series, df_15m_dict: Dic
             max_hold_hours_arr = np.full(n, float(_DEFAULT_MAX_HOLD_H))
 
         _assets_missing_15m = set()
+        # Cache sorted indices per asset to avoid repeated searchsorted overhead
+        _asset_idx_cache = {}
+        for asset, df_15 in df_15m_dict.items():
+            _asset_idx_cache[asset] = df_15.index.to_numpy()
+
         for i in range(n):
             asset = assets[i]
             if asset in df_15m_dict:
                 df_15 = df_15m_dict[asset]
+                idx_arr = _asset_idx_cache[asset]
+
                 ts = timestamps.iloc[i]
                 ts_end = ts + pd.Timedelta(hours=float(max_hold_hours_arr[i]))
 
-                mask = (df_15.index >= ts) & (df_15.index < ts_end)
-                bars = df_15.loc[mask]
+                start_idx = np.searchsorted(idx_arr, ts.to_datetime64(), side='left')
+                end_idx = np.searchsorted(idx_arr, ts_end.to_datetime64(), side='left')
 
-                if not bars.empty:
-                    bar_len = len(bars)
+                if start_idx < end_idx:
+                    bar_len = end_idx - start_idx
                     trade_starts[i] = current_idx
                     trade_ends[i] = current_idx + bar_len
 
-                    all_highs_list.append(bars["high"].to_numpy(dtype=np.float64))
-                    all_lows_list.append(bars["low"].to_numpy(dtype=np.float64))
-                    all_closes_list.append(bars["close"].to_numpy(dtype=np.float64))
+                    all_highs_list.append(df_15["high"].iloc[start_idx:end_idx].to_numpy(dtype=np.float64))
+                    all_lows_list.append(df_15["low"].iloc[start_idx:end_idx].to_numpy(dtype=np.float64))
+                    all_closes_list.append(df_15["close"].iloc[start_idx:end_idx].to_numpy(dtype=np.float64))
 
                     current_idx += bar_len
             else:

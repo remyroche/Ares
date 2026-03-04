@@ -78,11 +78,11 @@ def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl
         stall_threshold = 0.5 * activation
 
         if side == 1:  # Long
-            sl_price = entry_p * (1.0 - sl)
-            tp_price = entry_p * (1.0 + activation)
+            sl_price = entry_p * (1.0 - abs(sl))
+            tp_price = entry_p * (1.0 + abs(activation))
         else:  # Short
-            sl_price = entry_p * (1.0 + sl)
-            tp_price = entry_p * (1.0 - activation)
+            sl_price = entry_p * (1.0 + abs(sl))
+            tp_price = entry_p * (1.0 - abs(activation))
 
         exit_found = False
 
@@ -264,8 +264,8 @@ def _resolve_conflicts_with_15m_numba(
         if not np.isfinite(activation) or not np.isfinite(sl_pct):
             continue
 
-        tp_price = entry_p * (1.0 + activation) if side_int == 1 else entry_p * (1.0 - activation)
-        sl_price = entry_p * (1.0 - sl_pct) if side_int == 1 else entry_p * (1.0 + sl_pct)
+        tp_price = entry_p * (1.0 + abs(activation)) if side_int == 1 else entry_p * (1.0 - abs(activation))
+        sl_price = entry_p * (1.0 - abs(sl_pct)) if side_int == 1 else entry_p * (1.0 + abs(sl_pct))
 
         start_t = c_times_ns[j]
         cutoff_t = c_times_ns[i] + horizon_ns
@@ -523,12 +523,12 @@ def _numba_triple_barrier(times, opens, highs, lows, closes, tp_arr, sl_arr, hor
         stall_threshold = 0.5 * activation  # MFE must exceed 50% of activation by half-horizon
 
         if side == 1:  # Long
-            sl_price = entry_p * (1.0 - sl)
-            activation_price = entry_p * (1.0 + activation)
+            sl_price = entry_p * (1.0 - abs(sl))
+            activation_price = entry_p * (1.0 + abs(activation))
             extreme = entry_p
         else:  # Short
-            sl_price = entry_p * (1.0 + sl)
-            activation_price = entry_p * (1.0 - activation)
+            sl_price = entry_p * (1.0 + abs(sl))
+            activation_price = entry_p * (1.0 - abs(activation))
             extreme = entry_p
 
         trailing_active = False

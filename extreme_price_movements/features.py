@@ -707,61 +707,6 @@ def compute_regime_features(c, h, l, v, atr_base, mkt_gates):
     feats["cusum_strength_norm"] = cusum_strength_norm
     feats["cusum_high"] = cusum_high
 
-    # 9. Range-based liquidity proxy
-    eps_price = 1e-9
-    log_range = np.log((h + eps_price) / (l + eps_price))
-    dollar_vol = c * v
-
-    window_hours = 72
-    num = ff.numba_rolling_sum(log_range, window_hours)
-    den = ff.numba_rolling_sum(dollar_vol, window_hours)
-
-    liq_3d = (num / (den + eps_price)).shift(1).astype(np.float32)
-    feats["liq_3d"] = liq_3d
-
-    # 10. Trend (3 days ADX * directionality)
-    # Using existing ATR functions
-    up = (h - h.shift(1)).clip(lower=0)
-    down = (l.shift(1) - l).clip(lower=0)
-    plus_dm = np.where(up > down, up, 0.0)
-    minus_dm = np.where(down > up, down, 0.0)
-    plus_dm = pd.DataFrame(plus_dm, index=h.index, columns=h.columns)
-    minus_dm = pd.DataFrame(minus_dm, index=h.index, columns=h.columns)
-
-    tr = atr_percent(h, l, c, 1) * c # Approximate TR
-    # Smoothing TR and DM using EMA for ADX (72 hours = 3 days)
-    atr_72 = ema(tr, 72)
-    plus_di = 100 * ema(plus_dm, 72) / (atr_72 + eps_price)
-    minus_di = 100 * ema(minus_dm, 72) / (atr_72 + eps_price)
-
-    dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di + eps_price)
-    adx_72 = ema(dx, 72)
-    directionality = np.where(plus_di > minus_di, 1, -1)
-
-    feats["trend_3d"] = (adx_72 * directionality).shift(1).astype(np.float32)
-
-    # 11. Volatility (3 days ATR)
-    atr_3d = atr_percent(h, l, c, 72)
-    feats["volatility_3d"] = atr_3d.shift(1).astype(np.float32)
-
-    # 12. Entropy (3 days Shannon)
-    entropy_3d = _rolling_shannon_entropy_df(c, 72)
-    feats["entropy_3d"] = entropy_3d.shift(1).astype(np.float32)
-
-    # 13. Volume z-score (vs 3 days)
-    vol_z_score_3d = zscore_rolling(v, 72)
-    feats["volume_z_score_3d"] = vol_z_score_3d.shift(1).astype(np.float32)
-
-    # 14. Vol z-score (vs 3 days)
-    # Vol computed as 24h rolling std of hourly returns, so we z-score it over 72h
-    vol_z_score_3d = zscore_rolling(rv_24, 72)
-    feats["vol_z_score_3d"] = vol_z_score_3d.shift(1).astype(np.float32)
-
-    # 15. EMA diff (vs 3 days, ATR-normalized)
-    ema_72 = ema(c, 72)
-    ema_diff_3d = (c - ema_72) / (atr_72 + eps_price)
-    feats["ema_diff_3d"] = ema_diff_3d.shift(1).astype(np.float32)
-
     assert float(feats["vol_percentile"].max().max()) <= 1.0 + 1e-6
     assert float(feats["vol_percentile"].min().min()) >= -1e-6
     assert float(feats["vol_high"].min().min()) >= -1e-6

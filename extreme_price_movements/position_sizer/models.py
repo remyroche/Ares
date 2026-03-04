@@ -1,11 +1,12 @@
-from src.utils.tprint import tprint
 from dataclasses import dataclass
 
 import numpy as np
 from scipy.stats import spearmanr
 from sklearn.ensemble import ExtraTreesRegressor, GradientBoostingRegressor
 from sklearn.isotonic import IsotonicRegression
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import average_precision_score, log_loss, roc_auc_score
+
+from src.utils.tprint import tprint
 
 try:
     from sklearn.ensemble import HistGradientBoostingRegressor
@@ -74,7 +75,9 @@ def _weighted_mean(x, w=None):
 class IdentityCalibrator:
     def fit(self, p_raw, y_true, sample_weight=None):
         tprint(f"Entering function: fit in {__name__}")
-        tprint(f"fit params: self={self}, p_raw={p_raw}, y_true={y_true}, sample_weight={sample_weight}")
+        tprint(
+            f"fit params: self={self}, p_raw={p_raw}, y_true={y_true}, sample_weight={sample_weight}"
+        )
         return self
 
     def predict(self, p_raw):
@@ -88,7 +91,9 @@ class SoftLabelSigmoidCalibrator:
 
     def __init__(self, lr=0.05, n_iter=600, l2=1e-1, coef_cap=8.0):
         tprint(f"Entering function: __init__ in {__name__}")
-        tprint(f"__init__ params: self={self}, lr={lr}, n_iter={n_iter}, l2={l2}, coef_cap={coef_cap}")
+        tprint(
+            f"__init__ params: self={self}, lr={lr}, n_iter={n_iter}, l2={l2}, coef_cap={coef_cap}"
+        )
         self.lr = float(lr)
         self.n_iter = int(n_iter)
         self.l2 = float(l2)
@@ -98,7 +103,9 @@ class SoftLabelSigmoidCalibrator:
 
     def fit(self, p_raw, y_true, sample_weight=None):
         tprint(f"Entering function: fit in {__name__}")
-        tprint(f"fit params: self={self}, p_raw={p_raw}, y_true={y_true}, sample_weight={sample_weight}")
+        tprint(
+            f"fit params: self={self}, p_raw={p_raw}, y_true={y_true}, sample_weight={sample_weight}"
+        )
         x = _logit(p_raw)
         y = np.clip(np.asarray(y_true, dtype=float), 0.0, 1.0)
         w = _safe_weight(sample_weight, len(y))
@@ -134,13 +141,19 @@ class SoftLabelSigmoidCalibrator:
 
 def _fit_isotonic(p_raw, y_true, sample_weight=None):
     tprint(f"Entering function: _fit_isotonic in {__name__}")
-    tprint(f"_fit_isotonic params: p_raw={p_raw}, y_true={y_true}, sample_weight={sample_weight}")
+    tprint(
+        f"_fit_isotonic params: p_raw={p_raw}, y_true={y_true}, sample_weight={sample_weight}"
+    )
     cal = IsotonicRegression(out_of_bounds="clip")
     sw = _safe_weight(sample_weight, len(y_true))
     if sw is None:
         cal.fit(np.asarray(p_raw, dtype=float), np.asarray(y_true, dtype=float))
     else:
-        cal.fit(np.asarray(p_raw, dtype=float), np.asarray(y_true, dtype=float), sample_weight=sw)
+        cal.fit(
+            np.asarray(p_raw, dtype=float),
+            np.asarray(y_true, dtype=float),
+            sample_weight=sw,
+        )
     return cal
 
 
@@ -153,7 +166,9 @@ def _fit_calibrator(
     regularization_level="strong",
 ):
     tprint(f"Entering function: _fit_calibrator in {__name__}")
-    tprint(f"_fit_calibrator params: p_raw={p_raw}, y_true={y_true}, method={method}, min_samples_isotonic={min_samples_isotonic}, sample_weight={sample_weight}, regularization_level={regularization_level}")
+    tprint(
+        f"_fit_calibrator params: p_raw={p_raw}, y_true={y_true}, method={method}, min_samples_isotonic={min_samples_isotonic}, sample_weight={sample_weight}, regularization_level={regularization_level}"
+    )
     p = np.asarray(p_raw, dtype=float)
     y = np.asarray(y_true, dtype=float)
     n = len(y)
@@ -176,7 +191,9 @@ def _fit_calibrator(
 
 def _bce_soft(y_hat, y_soft, sample_weight=None):
     tprint(f"Entering function: _bce_soft in {__name__}")
-    tprint(f"_bce_soft params: y_hat={y_hat}, y_soft={y_soft}, sample_weight={sample_weight}")
+    tprint(
+        f"_bce_soft params: y_hat={y_hat}, y_soft={y_soft}, sample_weight={sample_weight}"
+    )
     y_hat = np.clip(np.asarray(y_hat, dtype=float), 1e-9, 1.0 - 1e-9)
     y_soft = np.clip(np.asarray(y_soft, dtype=float), 0.0, 1.0)
     w = _safe_weight(sample_weight, len(y_hat))
@@ -186,7 +203,9 @@ def _bce_soft(y_hat, y_soft, sample_weight=None):
 
 def _ece(y_true, y_prob, n_bins=20, sample_weight=None):
     tprint(f"Entering function: _ece in {__name__}")
-    tprint(f"_ece params: y_true={y_true}, y_prob={y_prob}, n_bins={n_bins}, sample_weight={sample_weight}")
+    tprint(
+        f"_ece params: y_true={y_true}, y_prob={y_prob}, n_bins={n_bins}, sample_weight={sample_weight}"
+    )
     y = np.clip(np.asarray(y_true, dtype=float), 0.0, 1.0)
     p = np.clip(np.asarray(y_prob, dtype=float), 0.0, 1.0)
     w = _safe_weight(sample_weight, len(y))
@@ -354,7 +373,9 @@ def _fit_pwin_base_model(
     regularization_level="strong",
 ):
     tprint(f"Entering function: _fit_pwin_base_model in {__name__}")
-    tprint(f"_fit_pwin_base_model params: X_train={X_train}, y_train={y_train}, X_cal={X_cal}, y_cal={y_cal}, sample_weight_train={sample_weight_train}, base_engine={base_engine}, regularization_level={regularization_level}")
+    tprint(
+        f"_fit_pwin_base_model params: X_train={X_train}, y_train={y_train}, X_cal={X_cal}, y_cal={y_cal}, sample_weight_train={sample_weight_train}, base_engine={base_engine}, regularization_level={regularization_level}"
+    )
     base_engine = str(base_engine).lower()
     presets = _regularization_presets(regularization_level)
     if base_engine == "xgb":
@@ -407,11 +428,17 @@ class CalibratedPWinModel:
 
     def predict_proba(self, X, regime_labels=None, row_ids=None):
         tprint(f"Entering function: predict_proba in {__name__}")
-        tprint(f"predict_proba params: self={self}, X={X}, regime_labels={regime_labels}, row_ids={row_ids}")
+        tprint(
+            f"predict_proba params: self={self}, X={X}, regime_labels={regime_labels}, row_ids={row_ids}"
+        )
         p_raw = self._base_scores(X)
         p_cal = np.asarray(self.global_calibrator.predict(p_raw), dtype=float)
 
-        if self.calibration_mode == "regime" and regime_labels is not None and self.regime_calibrators:
+        if (
+            self.calibration_mode == "regime"
+            and regime_labels is not None
+            and self.regime_calibrators
+        ):
             regs = np.asarray(regime_labels)
             for reg, cal in self.regime_calibrators.items():
                 m = regs == reg
@@ -419,7 +446,9 @@ class CalibratedPWinModel:
                     p_cal[m] = np.asarray(cal.predict(p_raw[m]), dtype=float)
         elif self.calibration_mode == "rolling" and self.rolling_calibrators:
             if row_ids is None:
-                p_cal = np.asarray(self.rolling_calibrators[-1].predict(p_raw), dtype=float)
+                p_cal = np.asarray(
+                    self.rolling_calibrators[-1].predict(p_raw), dtype=float
+                )
             else:
                 ids = np.asarray(row_ids)
                 for i, cal in enumerate(self.rolling_calibrators):
@@ -435,18 +464,45 @@ class CalibratedPWinModel:
 
 def _compute_metrics(prefix, y_true, y_prob, sample_weight=None, y_hard_ref=None):
     tprint(f"Entering function: _compute_metrics in {__name__}")
-    tprint(f"_compute_metrics params: prefix={prefix}, y_true={y_true}, y_prob={y_prob}, sample_weight={sample_weight}, y_hard_ref={y_hard_ref}")
+    tprint(
+        f"_compute_metrics params: prefix={prefix}, y_true={y_true}, y_prob={y_prob}, sample_weight={sample_weight}, y_hard_ref={y_hard_ref}"
+    )
+    y_true_arr = np.asarray(y_true)
+    y_prob_arr = np.asarray(y_prob)
     out = {
-        f"bce_{prefix}": _bce_soft(y_prob, y_true, sample_weight=sample_weight),
-        f"brier_{prefix}": _weighted_mean((np.asarray(y_true) - np.asarray(y_prob)) ** 2, sample_weight),
-        f"ece_{prefix}": _ece(y_true, y_prob, n_bins=20, sample_weight=sample_weight),
-        f"spearman_{prefix}": _safe_corr(y_prob, y_true),
+        f"logloss_{prefix}": _bce_soft(
+            y_prob_arr, y_true_arr, sample_weight=sample_weight
+        ),
+        f"brier_{prefix}": _weighted_mean(
+            (y_true_arr - y_prob_arr) ** 2, sample_weight
+        ),
+        f"ece_{prefix}": _ece(
+            y_true_arr, y_prob_arr, n_bins=20, sample_weight=sample_weight
+        ),
+        f"spearman_{prefix}": _safe_corr(y_prob_arr, y_true_arr),
     }
-    if y_hard_ref is not None and len(y_hard_ref) == len(y_prob) and len(np.unique(y_hard_ref)) > 1:
+    # Backward compat
+    out[f"bce_{prefix}"] = out[f"logloss_{prefix}"]
+
+    if (
+        y_hard_ref is not None
+        and len(y_hard_ref) == len(y_prob)
+        and len(np.unique(y_hard_ref)) > 1
+    ):
         try:
-            out[f"auc_{prefix}"] = float(roc_auc_score(np.asarray(y_hard_ref, dtype=int), y_prob))
+            out[f"roc_auc_{prefix}"] = float(
+                roc_auc_score(np.asarray(y_hard_ref, dtype=int), y_prob_arr)
+            )
         except Exception:
-            out[f"auc_{prefix}"] = float("nan")
+            out[f"roc_auc_{prefix}"] = float("nan")
+        try:
+            out[f"pr_auc_{prefix}"] = float(
+                average_precision_score(np.asarray(y_hard_ref, dtype=int), y_prob_arr)
+            )
+        except Exception:
+            out[f"pr_auc_{prefix}"] = float("nan")
+        # Backward compat
+        out[f"auc_{prefix}"] = out[f"roc_auc_{prefix}"]
     return out
 
 
@@ -468,7 +524,9 @@ def train_pwin_classifier(
     diagnostics_walkforward_blocks=0,
 ):
     tprint(f"Entering function: train_pwin_classifier in {__name__}")
-    tprint(f"train_pwin_classifier params: X={X}, pwin_target={pwin_target}, calibration_mode={calibration_mode}, regime_labels={regime_labels}, rolling_window={rolling_window}, y_hard_ref={y_hard_ref}, pnl_ref={pnl_ref}, base_engine={base_engine}, regularization_level={regularization_level}, calibrator_method={calibrator_method}, min_samples_isotonic={min_samples_isotonic}, calibration_frac={calibration_frac}, calibration_min_samples={calibration_min_samples}, sample_weight={sample_weight}, diagnostics_walkforward_blocks={diagnostics_walkforward_blocks}")
+    tprint(
+        f"train_pwin_classifier params: X={X}, pwin_target={pwin_target}, calibration_mode={calibration_mode}, regime_labels={regime_labels}, rolling_window={rolling_window}, y_hard_ref={y_hard_ref}, pnl_ref={pnl_ref}, base_engine={base_engine}, regularization_level={regularization_level}, calibrator_method={calibrator_method}, min_samples_isotonic={min_samples_isotonic}, calibration_frac={calibration_frac}, calibration_min_samples={calibration_min_samples}, sample_weight={sample_weight}, diagnostics_walkforward_blocks={diagnostics_walkforward_blocks}"
+    )
     """Train pwin with soft labels and strict forward-only calibration."""
     X = np.asarray(X, dtype=float)
     y_soft = np.clip(np.asarray(pwin_target, dtype=float), 0.0, 1.0)
@@ -539,13 +597,15 @@ def train_pwin_classifier(
             regime_calibrators[reg] = cal
             regime_diag[str(reg)]["method"] = meth
     elif calibration_mode == "rolling":
-        rolling_edges = list(range(0, n + int(max(50, rolling_window)), int(max(50, rolling_window))))
+        rolling_edges = list(
+            range(0, n + int(max(50, rolling_window)), int(max(50, rolling_window)))
+        )
         if rolling_edges[-1] != n:
             rolling_edges.append(n)
         rolling_edges = sorted(set(rolling_edges))
         rolling_calibrators = []
         for i in range(len(rolling_edges) - 1):
-            lo, _hi = rolling_edges[i], rolling_edges[i + 1]
+            lo, _ = rolling_edges[i], rolling_edges[i + 1]
             if lo < 80:
                 rolling_calibrators.append(IdentityCalibrator())
                 continue
@@ -571,7 +631,10 @@ def train_pwin_classifier(
         rolling_edges=rolling_edges,
     )
     row_ids = np.arange(n)
-    p_cal_all = np.asarray(model.predict_proba(X, regime_labels=regime_labels, row_ids=row_ids)[:, 1], dtype=float)
+    p_cal_all = np.asarray(
+        model.predict_proba(X, regime_labels=regime_labels, row_ids=row_ids)[:, 1],
+        dtype=float,
+    )
     p_cal_cal = p_cal_all[idx_cal]
 
     diag = {
@@ -586,8 +649,22 @@ def train_pwin_classifier(
         "train_end": int(train_end),
         "regime_calibration": regime_diag,
     }
-    diag.update(_compute_metrics("cal", y_cal, p_cal_cal, sample_weight=w_cal, y_hard_ref=(np.asarray(y_hard_ref)[idx_cal] if y_hard_ref is not None else None)))
-    diag.update(_compute_metrics("all", y_soft, p_cal_all, sample_weight=w_all, y_hard_ref=y_hard_ref))
+    diag.update(
+        _compute_metrics(
+            "cal",
+            y_cal,
+            p_cal_cal,
+            sample_weight=w_cal,
+            y_hard_ref=(
+                np.asarray(y_hard_ref)[idx_cal] if y_hard_ref is not None else None
+            ),
+        )
+    )
+    diag.update(
+        _compute_metrics(
+            "all", y_soft, p_cal_all, sample_weight=w_all, y_hard_ref=y_hard_ref
+        )
+    )
     # Backward-compatible keys
     diag["bce"] = float(diag.get("bce_all", np.nan))
     diag["brier"] = float(diag.get("brier_all", np.nan))
@@ -595,8 +672,12 @@ def train_pwin_classifier(
     diag["spearman_pwin_soft"] = float(diag.get("spearman_all", np.nan))
 
     if pnl_ref is not None and len(pnl_ref) == n:
-        diag["spearman_vs_realized_pnl_all"] = _safe_corr(p_cal_all, np.asarray(pnl_ref, dtype=float))
-        diag["spearman_vs_realized_pnl_cal"] = _safe_corr(p_cal_cal, np.asarray(pnl_ref, dtype=float)[idx_cal])
+        diag["spearman_vs_realized_pnl_all"] = _safe_corr(
+            p_cal_all, np.asarray(pnl_ref, dtype=float)
+        )
+        diag["spearman_vs_realized_pnl_cal"] = _safe_corr(
+            p_cal_cal, np.asarray(pnl_ref, dtype=float)[idx_cal]
+        )
 
     wf_blocks = int(max(0, diagnostics_walkforward_blocks))
     if wf_blocks >= 2 and len(idx_cal) >= wf_blocks * 30:
@@ -610,14 +691,28 @@ def train_pwin_classifier(
             m = (row_ids >= lo) & (row_ids < hi)
             if np.sum(m) < 20:
                 continue
-            wf_rows.append({
-                "block": int(i),
-                "n": int(np.sum(m)),
-                "bce": _bce_soft(p_cal_all[m], y_soft[m], sample_weight=(w_all[m] if w_all is not None else None)),
-                "brier": _weighted_mean((y_soft[m] - p_cal_all[m]) ** 2, (w_all[m] if w_all is not None else None)),
-                "ece": _ece(y_soft[m], p_cal_all[m], n_bins=20, sample_weight=(w_all[m] if w_all is not None else None)),
-                "spearman": _safe_corr(p_cal_all[m], y_soft[m]),
-            })
+            wf_rows.append(
+                {
+                    "block": int(i),
+                    "n": int(np.sum(m)),
+                    "bce": _bce_soft(
+                        p_cal_all[m],
+                        y_soft[m],
+                        sample_weight=(w_all[m] if w_all is not None else None),
+                    ),
+                    "brier": _weighted_mean(
+                        (y_soft[m] - p_cal_all[m]) ** 2,
+                        (w_all[m] if w_all is not None else None),
+                    ),
+                    "ece": _ece(
+                        y_soft[m],
+                        p_cal_all[m],
+                        n_bins=20,
+                        sample_weight=(w_all[m] if w_all is not None else None),
+                    ),
+                    "spearman": _safe_corr(p_cal_all[m], y_soft[m]),
+                }
+            )
         diag["walkforward_oos"] = wf_rows
 
     model.diagnostics = diag
@@ -656,7 +751,9 @@ class _DeltaQuantileModel:
 
     def __init__(self, low_model, delta_model):
         tprint(f"Entering function: __init__ in {__name__}")
-        tprint(f"__init__ params: self={self}, low_model={low_model}, delta_model={delta_model}")
+        tprint(
+            f"__init__ params: self={self}, low_model={low_model}, delta_model={delta_model}"
+        )
         self.low_model = low_model
         self.delta_model = delta_model
 
@@ -671,12 +768,16 @@ class _DeltaQuantileModel:
 
 def _fit_quantile_base(X, y_log, tau, engine, regularization_level):
     tprint(f"Entering function: _fit_quantile_base in {__name__}")
-    tprint(f"_fit_quantile_base params: X={X}, y_log={y_log}, tau={tau}, engine={engine}, regularization_level={regularization_level}")
+    tprint(
+        f"_fit_quantile_base params: X={X}, y_log={y_log}, tau={tau}, engine={engine}, regularization_level={regularization_level}"
+    )
     presets = _regularization_presets(regularization_level)
     engine = str(engine).lower()
     if engine == "xgb":
         if XGBRegressor is None:
-            raise RuntimeError("xgboost is not available, cannot use quantile engine='xgb'")
+            raise RuntimeError(
+                "xgboost is not available, cannot use quantile engine='xgb'"
+            )
         params = dict(presets["xgb_quantile"])
         params["objective"] = "reg:quantileerror"
         params["quantile_alpha"] = float(tau)
@@ -712,14 +813,18 @@ def _fit_quantile_base(X, y_log, tau, engine, regularization_level):
 
 def _fit_quantile(X, y, tau, engine="sklearn", regularization_level="strong"):
     tprint(f"Entering function: _fit_quantile in {__name__}")
-    tprint(f"_fit_quantile params: X={X}, y={y}, tau={tau}, engine={engine}, regularization_level={regularization_level}")
+    tprint(
+        f"_fit_quantile params: X={X}, y={y}, tau={tau}, engine={engine}, regularization_level={regularization_level}"
+    )
     X = np.asarray(X, dtype=float)
     y = np.asarray(y, dtype=float)
     y = np.maximum(y, 0.0)
     if len(y) < 50:
         return _ConstantRegressor(float(np.nanmedian(y) if len(y) else 0.0))
     y_log = np.log1p(y)
-    m = _fit_quantile_base(X, y_log, tau=tau, engine=engine, regularization_level=regularization_level)
+    m = _fit_quantile_base(
+        X, y_log, tau=tau, engine=engine, regularization_level=regularization_level
+    )
     return _LogQuantileModel(m)
 
 
@@ -731,21 +836,47 @@ def train_win_quantile_regressor(
     delta_quantile=False,
 ):
     tprint(f"Entering function: train_win_quantile_regressor in {__name__}")
-    tprint(f"train_win_quantile_regressor params: X={X}, y_win_mag={y_win_mag}, base_engine={base_engine}, regularization_level={regularization_level}, delta_quantile={delta_quantile}")
+    tprint(
+        f"train_win_quantile_regressor params: X={X}, y_win_mag={y_win_mag}, base_engine={base_engine}, regularization_level={regularization_level}, delta_quantile={delta_quantile}"
+    )
     X = np.asarray(X, dtype=float)
     y_win_mag = np.asarray(y_win_mag, dtype=float)
     mask = np.isfinite(y_win_mag) & (y_win_mag > 0)
     Xm = X[mask]
     ym = y_win_mag[mask]
-    q50 = _fit_quantile(Xm, ym, 0.50, engine=base_engine, regularization_level=regularization_level)
+    q50 = _fit_quantile(
+        Xm, ym, 0.50, engine=base_engine, regularization_level=regularization_level
+    )
     if not bool(delta_quantile):
-        q80 = _fit_quantile(Xm, ym, 0.80, engine=base_engine, regularization_level=regularization_level)
+        q80 = _fit_quantile(
+            Xm, ym, 0.80, engine=base_engine, regularization_level=regularization_level
+        )
     else:
         ylog = np.log1p(ym)
-        low_log = np.asarray(q50.model.predict(Xm), dtype=float) if isinstance(q50, _LogQuantileModel) else np.log1p(np.maximum(q50.predict(Xm), 0.0))
+        low_log = (
+            np.asarray(q50.model.predict(Xm), dtype=float)
+            if isinstance(q50, _LogQuantileModel)
+            else np.log1p(np.maximum(q50.predict(Xm), 0.0))
+        )
         delta = np.maximum(ylog - np.maximum(low_log, 0.0), 0.0)
-        delta_model = _fit_quantile_base(Xm, delta, tau=0.80, engine=base_engine, regularization_level=regularization_level)
-        low_model = q50.model if isinstance(q50, _LogQuantileModel) else _fit_quantile_base(Xm, ylog, tau=0.50, engine=base_engine, regularization_level=regularization_level)
+        delta_model = _fit_quantile_base(
+            Xm,
+            delta,
+            tau=0.80,
+            engine=base_engine,
+            regularization_level=regularization_level,
+        )
+        low_model = (
+            q50.model
+            if isinstance(q50, _LogQuantileModel)
+            else _fit_quantile_base(
+                Xm,
+                ylog,
+                tau=0.50,
+                engine=base_engine,
+                regularization_level=regularization_level,
+            )
+        )
         q80 = _DeltaQuantileModel(low_model=low_model, delta_model=delta_model)
     return {"q50": q50, "q80": q80}
 
@@ -758,28 +889,56 @@ def train_loss_quantile_regressor(
     delta_quantile=False,
 ):
     tprint(f"Entering function: train_loss_quantile_regressor in {__name__}")
-    tprint(f"train_loss_quantile_regressor params: X={X}, y_loss_mag={y_loss_mag}, base_engine={base_engine}, regularization_level={regularization_level}, delta_quantile={delta_quantile}")
+    tprint(
+        f"train_loss_quantile_regressor params: X={X}, y_loss_mag={y_loss_mag}, base_engine={base_engine}, regularization_level={regularization_level}, delta_quantile={delta_quantile}"
+    )
     X = np.asarray(X, dtype=float)
     y_loss_mag = np.asarray(y_loss_mag, dtype=float)
     mask = np.isfinite(y_loss_mag) & (y_loss_mag > 0)
     Xm = X[mask]
     ym = y_loss_mag[mask]
-    q50 = _fit_quantile(Xm, ym, 0.50, engine=base_engine, regularization_level=regularization_level)
+    q50 = _fit_quantile(
+        Xm, ym, 0.50, engine=base_engine, regularization_level=regularization_level
+    )
     if not bool(delta_quantile):
-        q90 = _fit_quantile(Xm, ym, 0.90, engine=base_engine, regularization_level=regularization_level)
+        q90 = _fit_quantile(
+            Xm, ym, 0.90, engine=base_engine, regularization_level=regularization_level
+        )
     else:
         ylog = np.log1p(ym)
-        low_log = np.asarray(q50.model.predict(Xm), dtype=float) if isinstance(q50, _LogQuantileModel) else np.log1p(np.maximum(q50.predict(Xm), 0.0))
+        low_log = (
+            np.asarray(q50.model.predict(Xm), dtype=float)
+            if isinstance(q50, _LogQuantileModel)
+            else np.log1p(np.maximum(q50.predict(Xm), 0.0))
+        )
         delta = np.maximum(ylog - np.maximum(low_log, 0.0), 0.0)
-        delta_model = _fit_quantile_base(Xm, delta, tau=0.90, engine=base_engine, regularization_level=regularization_level)
-        low_model = q50.model if isinstance(q50, _LogQuantileModel) else _fit_quantile_base(Xm, ylog, tau=0.50, engine=base_engine, regularization_level=regularization_level)
+        delta_model = _fit_quantile_base(
+            Xm,
+            delta,
+            tau=0.90,
+            engine=base_engine,
+            regularization_level=regularization_level,
+        )
+        low_model = (
+            q50.model
+            if isinstance(q50, _LogQuantileModel)
+            else _fit_quantile_base(
+                Xm,
+                ylog,
+                tau=0.50,
+                engine=base_engine,
+                regularization_level=regularization_level,
+            )
+        )
         q90 = _DeltaQuantileModel(low_model=low_model, delta_model=delta_model)
     return {"q50": q50, "q90": q90}
 
 
 def predict_quantiles(model_pack: dict, X, high_key: str, low_key: str = "q50"):
     tprint(f"Entering function: predict_quantiles in {__name__}")
-    tprint(f"predict_quantiles params: model_pack={model_pack}, X={X}, high_key={high_key}, low_key={low_key}")
+    tprint(
+        f"predict_quantiles params: model_pack={model_pack}, X={X}, high_key={high_key}, low_key={low_key}"
+    )
     low = np.maximum(model_pack[low_key].predict(X), 0.0)
     high = np.maximum(model_pack[high_key].predict(X), 0.0)
     high = np.maximum(high, low)

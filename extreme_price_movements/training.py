@@ -3976,13 +3976,16 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                 k_tps_norm_3d = k_tps_norm.reshape(-1, 1, 1)
                 
                 # Calculate dynamic modifier (G, M, N)
-                dynamic_modifier_3d = np.exp(0.5 * (atr_ratio_3d - 1.0) * k_tps_norm_3d)
+                # Clip the exponent to prevent inf/overflow in np.exp
+                exponent = np.clip(0.5 * (atr_ratio_3d - 1.0) * k_tps_norm_3d, -20.0, 20.0)
+                dynamic_modifier_3d = np.exp(exponent)
                 
                 # Expand base weights: (G,) -> (G, 1, 1)
                 rr_weights_3d = rr_weights.reshape(-1, 1, 1)
                 
                 # Final broadcasted weights: (G, M, N)
-                w_3d = rr_weights_3d * dynamic_modifier_3d
+                # Clip final weights to prevent extreme values dominating the aggregation
+                w_3d = np.clip(rr_weights_3d * dynamic_modifier_3d, 0.0, 1e6)
                 
                 # 4. Multiply and sum across geometry axis (axis=0) to collapse to (M, N)
                 w_tp = np.sum(w_3d * mask_tp, axis=0)
@@ -4007,7 +4010,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                 denom = np.where(w_sum > 0, w_sum, 1.0) # Avoid division by zero
 
                 agg_ret = (agg_ret_num / denom).astype(np.float32)
-                agg_qual = (agg_qual_num / denom).astype(np.float32)
+                agg_qual = np.clip((agg_qual_num / denom), 0.0, 1.0).astype(np.float32)
 
                 agg_lbl = np.where(n_tp_df.values > n_sl_df.values, OUT_TP, np.where(n_sl_df.values > n_tp_df.values, OUT_SL, OUT_TO)).astype(np.int8)
 

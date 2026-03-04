@@ -3976,7 +3976,10 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                 k_tps_norm_3d = k_tps_norm.reshape(-1, 1, 1)
                 
                 # Calculate dynamic modifier (G, M, N)
-                dynamic_modifier_3d = np.exp(0.5 * (atr_ratio_3d - 1.0) * k_tps_norm_3d)
+                # Clip the exponent term to avoid overflow to infinity
+                exponent = 0.5 * (atr_ratio_3d - 1.0) * k_tps_norm_3d
+                exponent = np.clip(exponent, -20.0, 20.0)
+                dynamic_modifier_3d = np.exp(exponent)
                 
                 # Expand base weights: (G,) -> (G, 1, 1)
                 rr_weights_3d = rr_weights.reshape(-1, 1, 1)

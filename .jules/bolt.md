@@ -6,3 +6,6 @@ Action: A vectorized approach using NumPy's `np.maximum.accumulate` to track the
 ## 2026-03-04 - JIT Rolling Argmax Optimization
 Learning: `pd.rolling(window).apply(np.argmax)` inside a loop over DataFrame columns is phenomenally slow due to the overhead of setting up thousands of Pandas Series operations.
 Action: Replacing this logic with a custom parallelized Numba kernel (`_numba_rolling_bars_since_extreme_parallel`) that computes the distance from the last peak/trough reduced execution time for a 100k x 50 dataset from 22.6s to 0.12s (~190x speedup). Always favor custom JIT kernels over Pandas `apply` in performance-critical paths.
+## 2026-03-04 - Fractionally Differentiated Features Parallelization
+Learning: Fractional differentiation `_numba_apply_weights` was iteratively applied column-by-column in a Python loop in `features.py`. The convolution approach can be significantly sped up across columns using `@jit(parallel=True)`.
+Action: Vectorize `_numba_apply_weights` across columns with `prange` into `_numba_apply_weights_parallel`. Group columns by their calculated `d_use` value and apply `frac_diff_ffd` natively on DataFrame chunks rather than processing column by column.

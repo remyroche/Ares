@@ -1396,6 +1396,10 @@ def run_ridge_target_race(
         fold_size = n // 3
         ics = []
         oof_pred = np.full(n, np.nan, dtype=float)
+        fold_topq_u_list = []
+        fold_prec_list = []
+        fold_lift_list = []
+
         for fold in range(3):
             val_start = fold * fold_size
             val_end = val_start + fold_size if fold < 2 else n
@@ -1429,6 +1433,27 @@ def run_ridge_target_race(
                     ic_fold = float(spearmanr(pred, y_va_ret).correlation)
                 if np.isfinite(ic_fold):
                     ics.append(ic_fold)
+
+                # Track per-fold TopQ utility for stability penalty
+                if select_metric == "topq_u_policy" and u_policy is not None:
+                    up = np.asarray(u_policy, dtype=float)
+                    _tm = np.ones(len(oof_pred), dtype=bool) if trade_mask is None else np.asarray(trade_mask[:len(oof_pred)], dtype=bool)
+
+                    # Compute only on valid current fold indices
+                    valid_fold = np.isfinite(pred) & np.isfinite(up[va_idx]) & _tm[va_idx]
+                    if np.any(valid_fold):
+                        pred_fold_valid = pred[valid_fold]
+                        up_fold_valid = up[va_idx][valid_fold]
+                        k_top = max(1, int(np.ceil(float(topq) * len(pred_fold_valid))))
+                        idx_top = np.argsort(pred_fold_valid)[-k_top:]
+                        fold_topq_u_list.append(float(np.mean(up_fold_valid[idx_top])))
+
+                        # Compute precision@30 and lift@30
+                        ret_fold_valid = returns[va_idx][valid_fold]
+                        overall_prec = float(np.mean(ret_fold_valid > 0))
+                        top_prec = float(np.mean(ret_fold_valid[idx_top] > 0))
+                        fold_prec_list.append(top_prec)
+                        fold_lift_list.append(top_prec / max(overall_prec, 1e-9))
             except Exception:
                 continue
 
@@ -1436,8 +1461,12 @@ def run_ridge_target_race(
 
         # Primary selector: top-q realized policy utility
         topq_u = float("nan")
+        topq_u_std = float("nan")
         topq_n = 0
+        prec_30 = float("nan")
+        lift_30 = float("nan")
         pass_gate = True
+
         if select_metric == "topq_u_policy":
             if u_policy is None:
                 raise ValueError("u_policy is required when select_metric='topq_u_policy'")
@@ -1447,26 +1476,55 @@ def run_ridge_target_race(
             if np.any(mask):
                 pred_use = oof_pred[mask]
                 up_use = up[:len(oof_pred)][mask]
+                ret_use = returns[:len(oof_pred)][mask]
+
                 k_top = max(1, int(np.ceil(float(topq) * len(pred_use))))
                 idx_top = np.argsort(pred_use)[-k_top:]
+
+                # Global TopQ metrics
                 topq_u = float(np.mean(up_use[idx_top]))
                 topq_n = int(k_top)
+
+                # Fold stability penalty
+                if len(fold_topq_u_list) >= 2:
+                    topq_u_std = float(np.std(fold_topq_u_list))
+                else:
+                    topq_u_std = 0.0
+
+                # Precision & Lift
+                overall_prec = float(np.mean(ret_use > 0))
+                prec_30 = float(np.mean(ret_use[idx_top] > 0))
+                lift_30 = float(prec_30 / max(overall_prec, 1e-9))
+
                 pass_gate = (topq_n >= int(topq_min_samples)) and ((topq_u > 0.0) if bool(require_positive_topq_u) else True)
 
+        # Composite score: mean - lambda * std
+        composite_score = float("-inf")
+        if pass_gate and select_metric == "topq_u_policy" and np.isfinite(topq_u):
+            stability_penalty_lambda = 0.5
+            composite_score = topq_u - (stability_penalty_lambda * topq_u_std if np.isfinite(topq_u_std) else 0.0)
+        elif not pass_gate:
+            composite_score = -1e12
+
         race_log.append(
-            f"      {tname}: IC={mean_ic:.4f} ({len(ics)} folds) TopQMeanU={topq_u:.6f} n_top={topq_n} gate={pass_gate}"
+            f"      {tname}: IC={mean_ic:.4f} TopQMeanU={topq_u:.6f} (std={topq_u_std:.6f}) "
+            f"score={composite_score:.6f} P@30={prec_30:.3f} Lift@30={lift_30:.3f} gate={pass_gate}"
         )
         candidate_rows.append(
             {
                 "target_name": tname,
                 "ridge_ic": float(mean_ic),
                 "ridge_topq_u": float(topq_u) if np.isfinite(topq_u) else float("nan"),
+                "ridge_topq_u_std": float(topq_u_std) if np.isfinite(topq_u_std) else float("nan"),
+                "ridge_composite_score": float(composite_score),
+                "precision_at_30": float(prec_30) if np.isfinite(prec_30) else float("nan"),
+                "lift_at_30": float(lift_30) if np.isfinite(lift_30) else float("nan"),
                 "ridge_topq_n": int(topq_n),
                 "ridge_pass_gate": bool(pass_gate),
             }
         )
 
-        score = (topq_u if pass_gate else -1e12) if select_metric == "topq_u_policy" else mean_ic
+        score = composite_score if select_metric == "topq_u_policy" else mean_ic
         if not np.isfinite(score):
             score = -1e12
         if score > best_ic:
@@ -2651,9 +2709,9 @@ class RidgePositionSizer:
                 base = LGBMRegressor(
                     objective="huber", boosting_type="gbdt", random_state=42, n_jobs=3,
                     learning_rate=0.03, n_estimators=3000, max_depth=5, num_leaves=24,
-                    min_data_in_leaf=300, min_sum_hessian_in_leaf=5.0, feature_fraction=0.5,
-                    bagging_fraction=0.6, bagging_freq=1, lambda_l1=5.0, lambda_l2=20.0,
-                    min_gain_to_split=0.5, max_bin=128,
+                    min_data_in_leaf=300, min_sum_hessian_in_leaf=5.0, feature_fraction=0.7,
+                    bagging_fraction=0.7, bagging_freq=1, lambda_l1=5.0, lambda_l2=20.0,
+                    min_gain_to_split=0.5, max_bin=128, max_delta_step=2.0, feature_fraction_bynode=0.8,
                 )
                 base.fit(
                     X_tr, y_tr, sample_weight=w_tr,
@@ -2683,18 +2741,55 @@ class RidgePositionSizer:
                 X_va, y_va = X[va_idx], y[va_idx]
                 w_full = _phase1_weights(sample_weight, p_early_vec, mae_vec, mfe_vec, fold_train_idx=tr_idx)
                 w_tr = w_full[tr_idx] if w_full is not None else None
-                base = _fit_base(base_name, X_tr, y_tr, X_va, y_va, w_tr)
+
+                if use_two_pass and top30_boost > 0.0:
+                    # Inner K-Fold to generate OOS predictions for the training set
+                    from sklearn.model_selection import KFold
+                    inner_cv = KFold(n_splits=3, shuffle=False)
+                    p_tr_oos = np.full(len(X_tr), np.nan, dtype=float)
+
+                    for inner_tr, inner_va in inner_cv.split(X_tr):
+                        X_inner_tr, y_inner_tr = X_tr[inner_tr], y_tr[inner_tr]
+                        X_inner_va, y_inner_va = X_tr[inner_va], y_tr[inner_va]
+                        w_inner_tr = w_tr[inner_tr] if w_tr is not None else None
+
+                        inner_base = _fit_base(base_name, X_inner_tr, y_inner_tr, X_inner_va, y_inner_va, w_inner_tr)
+                        if inner_base is not None:
+                            p_tr_oos[inner_va] = np.asarray(inner_base.predict(X_inner_va), dtype=float)
+
+                    # Fallback to in-sample if inner CV completely fails
+                    valid_oos = np.isfinite(p_tr_oos)
+                    if not valid_oos.all():
+                        fallback_base = _fit_base(base_name, X_tr, y_tr, X_va, y_va, w_tr)
+                        if fallback_base is not None:
+                            p_tr_oos[~valid_oos] = np.asarray(fallback_base.predict(X_tr[~valid_oos]), dtype=float)
+
+                    if np.isfinite(p_tr_oos).all():
+                        # Smooth tail weighting using sigmoid
+                        # s_i = score
+                        # T = temperature (e.g., 0.25 * std(score))
+                        # beta = boost strength
+                        q_thresh = np.nanquantile(p_tr_oos, 1.0 - top_frac)
+                        score_std = np.nanstd(p_tr_oos)
+                        temperature = max(0.25 * score_std, 1e-6)
+
+                        # sigmoid function: 1 / (1 + exp(-(s_i - q) / T))
+                        sigmoid_weights = 1.0 / (1.0 + np.exp(-(p_tr_oos - q_thresh) / temperature))
+
+                        w_tr2 = np.asarray(w_tr, dtype=float) * (1.0 + top30_boost * sigmoid_weights)
+                        w_tr2 = np.clip(w_tr2, 0.1, 100.0)
+
+                        # Retrain on full training set with smooth boosted weights
+                        base = _fit_base(base_name, X_tr, y_tr, X_va, y_va, w_tr2)
+                    else:
+                        base = _fit_base(base_name, X_tr, y_tr, X_va, y_va, w_tr)
+                else:
+                    base = _fit_base(base_name, X_tr, y_tr, X_va, y_va, w_tr)
+
                 if base is None:
                     return None
+
                 p_tr = np.asarray(base.predict(X_tr), dtype=float)
-                if use_two_pass and top30_boost > 0.0:
-                    top_tr = _top_mask_from_score(p_tr, top_frac, tr_idx)
-                    w_tr2 = np.asarray(w_tr, dtype=float) * (1.0 + top30_boost * top_tr.astype(float))
-                    w_tr2 = np.clip(w_tr2, 0.1, 100.0)
-                    base = _fit_base(base_name, X_tr, y_tr, X_va, y_va, w_tr2)
-                    if base is None:
-                        return None
-                    p_tr = np.asarray(base.predict(X_tr), dtype=float)
                 p_va = np.asarray(base.predict(X_va), dtype=float)
                 smoother = _build_smoother(smoother_name)
                 try:

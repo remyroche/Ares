@@ -25,6 +25,9 @@ def main():
     parser.add_argument("--since", default="2023-01-01", help="Start date for backfill (YYYY-MM-DD)")
     parser.add_argument("--quotes", nargs="+", default=["USDT", "USDC", "BUSD"], help="Quote currencies to cover")
     parser.add_argument("--no-skip", action="store_true", help="Re-download even if already cached")
+    parser.add_argument("--symbol-order", choices=["alpha_asc", "alpha_desc"], default="alpha_asc", help="Symbol traversal order")
+    parser.add_argument("--partition-count", type=int, default=1, help="Total number of parallel partitions")
+    parser.add_argument("--partition-id", type=int, default=0, help="Zero-based partition id")
     args = parser.parse_args()
 
     since_ts = pd.Timestamp(args.since, tz="UTC")
@@ -46,6 +49,7 @@ def main():
         sys.exit(1)
 
     tprint(f"Universe: {len(symbols)} symbols. Syncing 15m data ({args.since} → now) for quotes: {args.quotes}")
+    tprint(f"Order={args.symbol_order}, partition={args.partition_id}/{args.partition_count}")
 
     results = bulk_sync_15m_universe(
         symbols=symbols,
@@ -53,6 +57,9 @@ def main():
         until_ts=until_ts,
         quotes=tuple(args.quotes),
         skip_existing=not args.no_skip,
+        symbol_order=args.symbol_order,
+        partition_count=args.partition_count,
+        partition_id=args.partition_id,
     )
 
     # Summary

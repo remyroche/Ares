@@ -29,6 +29,7 @@ import multiprocessing
 import numpy as np
 import pandas as pd
 from scipy import stats
+from numba import jit
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.linear_model import Ridge
@@ -103,6 +104,9 @@ logger = logging.getLogger(__name__)
 
 OOF_MAX_SAMPLES = 600_000
 OOF_RIDGE_MAX_TRAIN_SAMPLES = 700_000
+OOF_POS_MAX_SAMPLES = 3_000
+OOF_MAX_TOTAL_SAMPLES = 120_000
+OOF_CLF_MAX_TRAIN_SAMPLES = 250_000
 FEATURE_CHUNK_SIZE = 8
 _PSUTIL_WARNED = False
 MAX_GEOMETRY_CACHE_KEYS = 1
@@ -194,6 +198,11 @@ def _symbol_to_ccxt(symbol: str) -> str:
 
 
 def _load_or_download_15m(symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timestamp, hf_data_dir: Optional[str] = None, allow_download: bool = False) -> pd.DataFrame:
+    # Normalize request window to UTC-aware for safe comparisons against UTC-indexed 15m cache.
+    start_ts = pd.Timestamp(start_ts)
+    end_ts = pd.Timestamp(end_ts)
+    start_ts = start_ts.tz_localize("UTC") if start_ts.tzinfo is None else start_ts.tz_convert("UTC")
+    end_ts = end_ts.tz_localize("UTC") if end_ts.tzinfo is None else end_ts.tz_convert("UTC")
     clean = str(symbol or "").replace("/", "").lower()
     base_dir = os.path.abspath(hf_data_dir) if hf_data_dir else str(HF_DATA_DIR)
     path = os.path.join(base_dir, f"{clean}_15m.parquet")
@@ -229,6 +238,128 @@ def _resolve_15m_conflict(bar_open: float, tp_price: float, sl_price: float, tra
     return sorted(d.items(), key=lambda kv: (kv[1], priority.get(kv[0], 99)))[0][0]
 
 
+@jit(nopython=True, nogil=True, cache=True)
+def _find_ambiguous_conflicts_numba(
+    times_ns: np.ndarray,
+    highs: np.ndarray,
+    lows: np.ndarray,
+    closes: np.ndarray,
+    tpv: np.ndarray,
+    slv: np.ndarray,
+    horizon_hours: float,
+    side_int: int,
+) -> np.ndarray:
+    """Return conflict_j (1h index of first TP/SL co-hit bar) per entry i, else -1."""
+    n = len(closes)
+    conflict_j = np.full(n, -1, dtype=np.int64)
+    h_ns = int(horizon_hours * 3600.0 * 1_000_000_000.0)
+    for i in range(n - 1):
+        entry = closes[i]
+        tp = tpv[i]
+        sl = slv[i]
+        if not np.isfinite(entry) or entry <= 0.0:
+            continue
+        if not np.isfinite(tp) or tp <= 0.0 or not np.isfinite(sl) or sl <= 0.0:
+            continue
+        tp_price = entry * (1.0 + tp) if side_int == 1 else entry * (1.0 - tp)
+        sl_price = entry * (1.0 - sl) if side_int == 1 else entry * (1.0 + sl)
+        cutoff_t = times_ns[i] + h_ns
+        for j in range(i + 1, n):
+            if times_ns[j] > cutoff_t:
+                break
+            hit_tp = (highs[j] >= tp_price) if side_int == 1 else (lows[j] <= tp_price)
+            hit_sl = (lows[j] <= sl_price) if side_int == 1 else (highs[j] >= sl_price)
+            if hit_tp and hit_sl:
+                conflict_j[i] = j
+                break
+            if hit_tp or hit_sl:
+                break
+    return conflict_j
+
+
+@jit(nopython=True, nogil=True, cache=True)
+def _resolve_conflicts_with_15m_numba_local(
+    ambiguous_i: np.ndarray,
+    conflict_j: np.ndarray,
+    times_ns: np.ndarray,
+    closes: np.ndarray,
+    tpv: np.ndarray,
+    slv: np.ndarray,
+    hf_times_ns: np.ndarray,
+    hf_high: np.ndarray,
+    hf_low: np.ndarray,
+    hf_close: np.ndarray,
+    horizon_hours: float,
+    side_int: int,
+) -> np.ndarray:
+    """Resolve ambiguous TP/SL conflicts directly on 15m arrays."""
+    resolved = np.zeros(len(ambiguous_i), dtype=np.int8)  # 0=unresolved,1=TP,2=SL
+    if len(ambiguous_i) == 0 or len(hf_times_ns) == 0:
+        return resolved
+    h_ns = int(horizon_hours * 3600.0 * 1_000_000_000.0)
+    last_t = times_ns[len(times_ns) - 1]
+    end_minus_1ms = 1_000_000
+    for a in range(len(ambiguous_i)):
+        i = int(ambiguous_i[a])
+        j = int(conflict_j[i])
+        if j < 0:
+            continue
+        entry = closes[i]
+        tp = tpv[i]
+        sl = slv[i]
+        if not np.isfinite(entry) or entry <= 0.0:
+            continue
+        if not np.isfinite(tp) or not np.isfinite(sl):
+            continue
+        tp_price = entry * (1.0 + tp) if side_int == 1 else entry * (1.0 - tp)
+        sl_price = entry * (1.0 - sl) if side_int == 1 else entry * (1.0 + sl)
+
+        start_t = times_ns[j]
+        cutoff_t = times_ns[i] + h_ns
+        if cutoff_t > last_t:
+            cutoff_t = last_t
+        end_t = cutoff_t - end_minus_1ms
+        if end_t < start_t:
+            continue
+        s = np.searchsorted(hf_times_ns, start_t, side="left")
+        e = np.searchsorted(hf_times_ns, end_t, side="right")
+        if e <= s:
+            continue
+
+        lo_min = hf_low[s]
+        hi_max = hf_high[s]
+        for k in range(s + 1, e):
+            lv = hf_low[k]
+            hv = hf_high[k]
+            if lv < lo_min:
+                lo_min = lv
+            if hv > hi_max:
+                hi_max = hv
+        window_range = hi_max - lo_min
+        range_threshold = entry * min(abs(tp), abs(sl))
+        if (not np.isfinite(window_range)) or (window_range <= max(range_threshold, 0.0)):
+            continue
+
+        for k in range(s, e):
+            h15 = hf_high[k]
+            l15 = hf_low[k]
+            c15 = hf_close[k]
+            hit_tp = (h15 >= tp_price) if side_int == 1 else (l15 <= tp_price)
+            hit_sl = (l15 <= sl_price) if side_int == 1 else (h15 >= sl_price)
+            if hit_tp and hit_sl:
+                d_tp = abs(c15 - h15) if side_int == 1 else abs(c15 - l15)
+                d_sl = abs(c15 - l15) if side_int == 1 else abs(c15 - h15)
+                resolved[a] = 1 if d_tp < d_sl else 2
+                break
+            if hit_tp:
+                resolved[a] = 1
+                break
+            if hit_sl:
+                resolved[a] = 2
+                break
+    return resolved
+
+
 def _refine_tb_cache_with_15m(panel: dict, tb_cache_by_h_side: dict, geom_cache_by_h_side: dict, cfg: dict) -> dict:
     close_df = panel.get("close")
     high_df = panel.get("high")
@@ -245,6 +376,9 @@ def _refine_tb_cache_with_15m(panel: dict, tb_cache_by_h_side: dict, geom_cache_
             continue
         lbl, ret, qual = triplet
         lbl2, ret2, qual2 = lbl.copy(), ret.copy(), qual.copy()
+        side_int = 1 if side == "long" else -1
+        idx = close_df.index
+        times_ns = idx.to_numpy(dtype="datetime64[ns]").view(np.int64)
         for sym in close_df.columns:
             if sym not in lbl2.columns or sym not in tp_dist_df.columns or sym not in sl_dist_df.columns:
                 continue
@@ -254,63 +388,72 @@ def _refine_tb_cache_with_15m(panel: dict, tb_cache_by_h_side: dict, geom_cache_
             tpv = tp_dist_df[sym].to_numpy(dtype=np.float32, copy=False)
             slv = sl_dist_df[sym].to_numpy(dtype=np.float32, copy=False)
             lab = lbl2[sym].to_numpy(dtype=np.int8, copy=False)
-            idx = close_df.index
-            for i in range(len(c) - 1):
-                entry = c[i]
-                if not np.isfinite(entry) or entry <= 0 or not np.isfinite(tpv[i]) or tpv[i] <= 0 or not np.isfinite(slv[i]) or slv[i] <= 0:
-                    continue
-                tp_price = entry * (1.0 + tpv[i]) if side == "long" else entry * (1.0 - tpv[i])
-                sl_price = entry * (1.0 - slv[i]) if side == "long" else entry * (1.0 + slv[i])
-                cutoff = idx[i] + pd.Timedelta(hours=float(h))
-                amb_j = -1
-                for j in range(i + 1, len(c)):
-                    if idx[j] > cutoff:
-                        break
-                    hit_tp = (hh[j] >= tp_price) if side == "long" else (ll[j] <= tp_price)
-                    hit_sl = (ll[j] <= sl_price) if side == "long" else (hh[j] >= sl_price)
-                    if hit_tp and hit_sl:
-                        amb_j = j
-                        break
-                    if hit_tp or hit_sl:
-                        break
-                if amb_j < 0:
-                    continue
-                start_15m = idx[amb_j].floor("15min")
-                end_15m = min(idx[i] + pd.Timedelta(hours=float(h)), idx[-1])
-                hf = _load_or_download_15m(sym, start_15m, end_15m, hf_data_dir=hf_dir, allow_download=bool(cfg.get("allow_15m_download", False)))
-                if hf.empty:
-                    continue
-                h15_arr = hf["high"].to_numpy(dtype=np.float32, copy=False)
-                l15_arr = hf["low"].to_numpy(dtype=np.float32, copy=False)
-                c15_arr = hf["close"].to_numpy(dtype=np.float32, copy=False)
-                if h15_arr.size == 0:
-                    continue
-                threshold_abs = float(entry * min(abs(tpv[i]), abs(slv[i])))
-                window_range = float(np.nanmax(h15_arr) - np.nanmin(l15_arr))
-                if (not np.isfinite(window_range)) or (window_range <= max(threshold_abs, 0.0)):
-                    continue
-                resolved = None
-                for k in range(len(h15_arr)):
-                    h15 = float(h15_arr[k]); l15 = float(l15_arr[k]); c15 = float(c15_arr[k])
-                    hit_tp_15 = (h15 >= tp_price) if side == "long" else (l15 <= tp_price)
-                    hit_sl_15 = (l15 <= sl_price) if side == "long" else (h15 >= sl_price)
-                    if hit_tp_15 and hit_sl_15:
-                        d_tp = abs(c15 - h15) if side == "long" else abs(c15 - l15)
-                        d_sl = abs(c15 - l15) if side == "long" else abs(c15 - h15)
-                        resolved = "TP" if d_tp < d_sl else "SL"
-                        break
-                    if hit_tp_15:
-                        resolved = "TP"; break
-                    if hit_sl_15:
-                        resolved = "SL"; break
-                if resolved == "TP":
-                    lab[i] = OUT_TP
-                    ret2.iat[i, ret2.columns.get_loc(sym)] = float(abs(tpv[i]))
-                    qual2.iat[i, qual2.columns.get_loc(sym)] = max(float(qual2.iat[i, qual2.columns.get_loc(sym)]), 0.51)
-                elif resolved == "SL":
-                    lab[i] = OUT_SL
-                    ret2.iat[i, ret2.columns.get_loc(sym)] = -float(abs(slv[i]))
-                    qual2.iat[i, qual2.columns.get_loc(sym)] = min(float(qual2.iat[i, qual2.columns.get_loc(sym)]), 0.49)
+            conflict_j = _find_ambiguous_conflicts_numba(
+                times_ns=times_ns,
+                highs=hh,
+                lows=ll,
+                closes=c,
+                tpv=tpv,
+                slv=slv,
+                horizon_hours=float(h),
+                side_int=side_int,
+            )
+            ambiguous_i = np.where(conflict_j >= 0)[0]
+            if ambiguous_i.size == 0:
+                lbl2[sym] = lab
+                continue
+
+            # Load once per symbol for the full 1h panel span; resolve conflicts directly on 15m arrays.
+            start_15m = idx[0].floor("15min")
+            end_15m = idx[-1]
+            hf = _load_or_download_15m(
+                sym,
+                start_15m,
+                end_15m,
+                hf_data_dir=hf_dir,
+                allow_download=bool(cfg.get("allow_15m_download", False)),
+            )
+            if hf.empty:
+                lbl2[sym] = lab
+                continue
+
+            hf_times_ns = (
+                pd.to_datetime(hf.index, utc=True)
+                .tz_localize(None)
+                .to_numpy(dtype="datetime64[ns]")
+                .view(np.int64)
+            )
+            h15_arr = hf["high"].to_numpy(dtype=np.float32, copy=False)
+            l15_arr = hf["low"].to_numpy(dtype=np.float32, copy=False)
+            c15_arr = hf["close"].to_numpy(dtype=np.float32, copy=False)
+
+            resolved = _resolve_conflicts_with_15m_numba_local(
+                ambiguous_i=ambiguous_i.astype(np.int64, copy=False),
+                conflict_j=conflict_j.astype(np.int64, copy=False),
+                times_ns=times_ns,
+                closes=c,
+                tpv=tpv,
+                slv=slv,
+                hf_times_ns=hf_times_ns,
+                hf_high=h15_arr,
+                hf_low=l15_arr,
+                hf_close=c15_arr,
+                horizon_hours=float(h),
+                side_int=side_int,
+            )
+            tp_idx = ambiguous_i[resolved == 1]
+            sl_idx = ambiguous_i[resolved == 2]
+
+            if tp_idx.size > 0:
+                lab[tp_idx] = OUT_TP
+                ret2.loc[idx[tp_idx], sym] = np.abs(tpv[tp_idx]).astype(np.float32, copy=False)
+                q_tp = qual2.loc[idx[tp_idx], sym].to_numpy(dtype=np.float32, copy=False)
+                qual2.loc[idx[tp_idx], sym] = np.maximum(q_tp, 0.51)
+            if sl_idx.size > 0:
+                lab[sl_idx] = OUT_SL
+                ret2.loc[idx[sl_idx], sym] = -np.abs(slv[sl_idx]).astype(np.float32, copy=False)
+                q_sl = qual2.loc[idx[sl_idx], sym].to_numpy(dtype=np.float32, copy=False)
+                qual2.loc[idx[sl_idx], sym] = np.minimum(q_sl, 0.49)
             lbl2[sym] = lab
         out[(h, side)] = (lbl2, ret2, qual2)
     return out
@@ -655,6 +798,12 @@ def to_panel_dict(panel_df: pd.DataFrame) -> dict:
     df = panel_df.copy()
     df[ts_col] = pd.to_datetime(df[ts_col], utc=True, errors="coerce").dt.tz_localize(None)
     df = df.dropna(subset=[ts_col, sym_col])
+    # Normalize to feature-style symbols (e.g. BTC_USDT -> BTC/USDT) for deterministic joins.
+    df[sym_col] = (
+        df[sym_col]
+        .astype(str)
+        .str.replace("_", "/", n=1, regex=False)
+    )
 
     panel = {}
     for col in ["open", "high", "low", "close", "volume"]:
@@ -1678,13 +1827,53 @@ def precompute_selection_metrics(feats: dict, panel: dict, float_dtype: np.dtype
     high = panel["high"]
     low = panel["low"]
 
-    # Reindex panel to features just in case of mismatch
+    # Reindex panel to features with strict index/symbol alignment checks.
     target_idx = next(iter(feats.values())).index
     target_cols = next(iter(feats.values())).columns
 
-    c = close.reindex(index=target_idx, columns=target_cols).astype(float_dtype, copy=False)
-    h = high.reindex(index=target_idx, columns=target_cols).astype(float_dtype, copy=False)
-    l = low.reindex(index=target_idx, columns=target_cols).astype(float_dtype, copy=False)
+    def _align_panel_frame(df: pd.DataFrame, name: str) -> pd.DataFrame:
+        if not isinstance(df, pd.DataFrame):
+            raise ValueError(f"panel.{name} missing or invalid")
+        src = df
+        # First try exact symbols.
+        if not target_cols.isin(src.columns).all():
+            norm_to_src: dict[str, str] = {}
+            dup_norm: set[str] = set()
+            for c0 in src.columns:
+                k = _normalize_symbol(c0)
+                if k in norm_to_src and norm_to_src[k] != c0:
+                    dup_norm.add(k)
+                else:
+                    norm_to_src[k] = c0
+            for k in dup_norm:
+                norm_to_src.pop(k, None)
+            rename_map: dict[Any, Any] = {}
+            for tgt in target_cols:
+                mapped = norm_to_src.get(_normalize_symbol(tgt))
+                if mapped is not None:
+                    rename_map[mapped] = tgt
+            if rename_map:
+                src = src.rename(columns=rename_map)
+                if src.columns.has_duplicates:
+                    src = src.T.groupby(level=0).last().T
+        idx_overlap = int(target_idx.isin(src.index).sum())
+        col_overlap = int(target_cols.isin(src.columns).sum())
+        if idx_overlap == 0 or col_overlap == 0:
+            raise ValueError(
+                f"panel/{name} alignment failure: idx_overlap={idx_overlap}/{len(target_idx)}, "
+                f"col_overlap={col_overlap}/{len(target_cols)}"
+            )
+        aligned = src.reindex(index=target_idx, columns=target_cols).astype(float_dtype, copy=False)
+        finite_ratio = float(np.isfinite(aligned.to_numpy(dtype=np.float32, copy=False)).mean())
+        if finite_ratio <= 0.0:
+            raise ValueError(
+                f"panel/{name} aligned but fully non-finite; check timestamp/symbol normalization"
+            )
+        return aligned
+
+    c = _align_panel_frame(close, "close")
+    h = _align_panel_frame(high, "high")
+    l = _align_panel_frame(low, "low")
 
     h12 = h.rolling(12, min_periods=12).max()
     l12 = l.rolling(12, min_periods=12).min()
@@ -1697,13 +1886,8 @@ def precompute_selection_metrics(feats: dict, panel: dict, float_dtype: np.dtype
 
     signed_range_12h = (range_pct * direction).astype(float_dtype, copy=False)
 
-    # For backward compatibility / fallback if 12h fails (shouldn't if panel is good)
     if signed_range_12h.isna().all().all():
-        logger.warning("Signed Range 12h computation failed (all NaN). Fallback to ret6h/24h.")
-        ret_base = feats.get("ret6h")
-        if ret_base is None:
-            ret_base = feats.get("ret24h")
-        signed_range_12h = ret_base.astype(float_dtype, copy=False)
+        raise ValueError("Signed Range 12h computation produced all-NaN values after strict panel alignment")
 
     metrics = {"fixed": signed_range_12h}
 
@@ -1717,7 +1901,6 @@ def precompute_selection_metrics(feats: dict, panel: dict, float_dtype: np.dtype
 
     cusum_pack: Dict[str, Any] = {"z": None, "sigma": None, "strength_by_h": {}, "atr_adjusted": False}
     ret_for_cusum = feats.get("ret1h")
-    # If 12h range fallback was used, ret_for_cusum might differ, but CUSUM needs 1h usually.
     if ret_for_cusum is None:
         ret_for_cusum = feats.get("ret6h")
     ret_for_cusum = ret_for_cusum.astype(float_dtype, copy=False)
@@ -2547,6 +2730,122 @@ def _uniform_subsample_idx(n: int, k: int, seed: int) -> np.ndarray:
     return idx.astype(np.int32, copy=False)
 
 
+def _label_aware_subsample_idx(
+    y_cls: np.ndarray,
+    *,
+    max_pos: int,
+    max_total: int,
+    seed: int,
+) -> np.ndarray:
+    """Cap positives and downsample negatives proportionally to preserve class prior."""
+    y = np.asarray(y_cls)
+    n = int(len(y))
+    if n == 0:
+        return np.empty(0, dtype=np.int32)
+    if max_total <= 0:
+        max_total = n
+
+    pos_idx = np.flatnonzero(y > 0.5)
+    neg_idx = np.flatnonzero(y <= 0.5)
+    n_pos = int(len(pos_idx))
+    n_neg = int(len(neg_idx))
+
+    if n_pos == 0 or n_neg == 0:
+        k = min(n, int(max_total))
+        return _uniform_subsample_idx(n, k, seed=seed)
+
+    rng = np.random.default_rng(seed)
+    keep_pos = min(n_pos, int(max_pos))
+    if keep_pos < n_pos:
+        pos_sel = rng.choice(pos_idx, size=keep_pos, replace=False)
+    else:
+        pos_sel = pos_idx
+
+    # Preserve original class ratio among kept rows.
+    neg_target = int(round((n_neg / max(n_pos, 1)) * keep_pos))
+    neg_sel_n = min(n_neg, max(1, neg_target))
+    if neg_sel_n < n_neg:
+        neg_sel = rng.choice(neg_idx, size=neg_sel_n, replace=False)
+    else:
+        neg_sel = neg_idx
+
+    chosen = np.concatenate([pos_sel, neg_sel]).astype(np.int32, copy=False)
+    if len(chosen) > int(max_total):
+        # Second-stage cap, keep prevalence stable by scaling both classes.
+        scale = float(max_total) / float(len(chosen))
+        keep_pos2 = max(1, min(len(pos_sel), int(round(len(pos_sel) * scale))))
+        keep_neg2 = max(1, min(len(neg_sel), int(round(len(neg_sel) * scale))))
+        if keep_pos2 < len(pos_sel):
+            pos_sel = rng.choice(pos_sel, size=keep_pos2, replace=False)
+        if keep_neg2 < len(neg_sel):
+            neg_sel = rng.choice(neg_sel, size=keep_neg2, replace=False)
+        chosen = np.concatenate([pos_sel, neg_sel]).astype(np.int32, copy=False)
+
+    chosen.sort()
+    return chosen
+
+
+def _label_aware_subsample_idx_per_bucket(
+    y_cls: np.ndarray,
+    bucket_ids: np.ndarray,
+    *,
+    max_pos_per_bucket: int,
+    max_total: int,
+    seed: int,
+) -> np.ndarray:
+    """Apply label-aware subsampling independently per bucket, then merge."""
+    y = np.asarray(y_cls)
+    b = np.asarray(bucket_ids)
+    n = int(len(y))
+    if n == 0:
+        return np.empty(0, dtype=np.int32)
+    if len(b) != n:
+        return _label_aware_subsample_idx(
+            y,
+            max_pos=max_pos_per_bucket,
+            max_total=max_total,
+            seed=seed,
+        )
+
+    selected_parts: list[np.ndarray] = []
+    rng = np.random.default_rng(seed)
+    for i, bucket in enumerate(pd.unique(pd.Series(b))):
+        m = (b == bucket)
+        idx_bucket = np.flatnonzero(m)
+        if len(idx_bucket) == 0:
+            continue
+        local = _label_aware_subsample_idx(
+            y[idx_bucket],
+            max_pos=max_pos_per_bucket,
+            max_total=len(idx_bucket),
+            seed=(seed + i * 1009),
+        )
+        if len(local) > 0:
+            selected_parts.append(idx_bucket[local].astype(np.int32, copy=False))
+
+    if not selected_parts:
+        return np.empty(0, dtype=np.int32)
+    chosen = np.concatenate(selected_parts).astype(np.int32, copy=False)
+
+    if len(chosen) > int(max_total):
+        # Keep bucket composition approximately stable under global cap.
+        keep_n = int(max_total)
+        b_sel = b[chosen]
+        final_parts: list[np.ndarray] = []
+        for bucket in pd.unique(pd.Series(b_sel)):
+            idx_b = chosen[b_sel == bucket]
+            n_target = max(1, int(round(len(idx_b) * (keep_n / len(chosen)))))
+            if n_target < len(idx_b):
+                idx_b = rng.choice(idx_b, size=n_target, replace=False)
+            final_parts.append(np.asarray(idx_b, dtype=np.int32))
+        chosen = np.concatenate(final_parts).astype(np.int32, copy=False)
+        if len(chosen) > keep_n:
+            chosen = rng.choice(chosen, size=keep_n, replace=False).astype(np.int32, copy=False)
+
+    chosen.sort()
+    return chosen
+
+
 def run_oof_cv(
     X: np.ndarray,
     y: np.ndarray,
@@ -2733,6 +3032,20 @@ def run_oof_cv_classifier(
         X_train, X_val = X[train_idx], X[val_idx]
         y_train = y_cls[train_idx]
         sw_train = sample_weights[train_idx] if sample_weights is not None else None
+
+        # Keep classifier fit bounded on very large folds.
+        if len(train_idx) > OOF_CLF_MAX_TRAIN_SAMPLES:
+            clf_sub_idx = _label_aware_subsample_idx(
+                y_train,
+                max_pos=OOF_POS_MAX_SAMPLES,
+                max_total=OOF_CLF_MAX_TRAIN_SAMPLES,
+                seed=(random_state + fold_i * 2029),
+            )
+            X_train = X_train[clf_sub_idx]
+            y_train = y_train[clf_sub_idx]
+            if sw_train is not None:
+                sw_train = sw_train[clf_sub_idx]
+            tlog(f"OOF-CLF fold {fold_i}: train subsample {len(clf_sub_idx)}/{len(train_idx)}")
 
         selected_idx = _ridge_select_topk(
             X_train=X_train,
@@ -3078,13 +3391,28 @@ def compute_learnability_metrics(
             ts_vals = np.asarray(candidate_mask.index.to_numpy()[candidate_row_idx])[valid_rows]
 
             if len(y) >= 100:
+                y_cls_oof = (candidate_labels_full[valid_rows] > 0.5).astype(np.int8, copy=False)
                 if len(y) > int(oof_max_samples):
                     n_before_oof = len(y)
-                    sub_idx = _uniform_subsample_idx(len(y), int(oof_max_samples), seed=42)
+                    cap_total = min(int(oof_max_samples), int(OOF_MAX_TOTAL_SAMPLES))
+                    # Per-bucket cap: apply positive cap independently to long/short candidate buckets.
+                    # Buckets are inferred from candidate side sign used to build directional targets.
+                    bucket_ids = np.where(candidate_signs[valid_rows] >= 0, 1, -1).astype(np.int8, copy=False)
+                    sub_idx = _label_aware_subsample_idx_per_bucket(
+                        y_cls_oof,
+                        bucket_ids=bucket_ids,
+                        max_pos_per_bucket=int(OOF_POS_MAX_SAMPLES),
+                        max_total=cap_total,
+                        seed=42,
+                    )
                     X = X[sub_idx]
                     y = y[sub_idx]
                     ts_vals = ts_vals[sub_idx]
-                    tlog(f"Metrics: OOF downsample applied {len(y)}/{n_before_oof} rows")
+                    y_cls_oof = y_cls_oof[sub_idx]
+                    tlog(
+                        f"Metrics: OOF label-aware downsample {len(y)}/{n_before_oof} "
+                        f"(pos={int((y_cls_oof>0.5).sum())}, neg={int((y_cls_oof<=0.5).sum())})"
+                    )
                 tlog(f"Metrics: running OOF CV on {X.shape[0]}x{X.shape[1]}")
                 oof, oof_diag = run_oof_cv(
                     X,
@@ -3120,8 +3448,7 @@ def compute_learnability_metrics(
                     ic, ic_std, ic_spearman, oof_mae, oof_directional_acc = 0, 0, 0, 0, 0
 
                 # Always compute classification diagnostics from OOF regression scores.
-                y_cls_raw = candidate_labels_full[valid_rows]
-                y_cls = (y_cls_raw > 0.5).astype(np.int8, copy=False)
+                y_cls = y_cls_oof
                 if len(y_cls) >= 100 and y_cls.sum() > 0 and y_cls.sum() < len(y_cls):
                     y_cls_valid = y_cls[oof_valid].astype(np.int32, copy=False)
                     score_valid = oof[oof_valid].astype(np.float64, copy=False)
@@ -3140,8 +3467,6 @@ def compute_learnability_metrics(
 
                 # If classifier OOF is enabled, override with calibrated probability metrics.
                 if use_extratrees:
-                    y_cls_raw = candidate_labels_full[valid_rows]
-                    y_cls = (y_cls_raw > 0.5).astype(np.int8, copy=False)
                     if len(y_cls) >= 100 and y_cls.sum() > 0 and y_cls.sum() < len(y_cls):
                         oof_proba = run_oof_cv_classifier(
                             X,
@@ -3239,7 +3564,7 @@ def compute_learnability_metrics(
 # Data Loading Functions
 # =============================================================================
 
-def load_features_from_parquet(feature_path: str) -> dict:
+def load_features_from_parquet(feature_path: str, wanted_features: Optional[set[str]] = None) -> dict:
     """
     Load feature data from parquet files.
     
@@ -3248,11 +3573,24 @@ def load_features_from_parquet(feature_path: str) -> dict:
     - A single parquet file with multi-index (timestamp, symbol)
     """
     feats = {}
+    wanted = {str(f) for f in wanted_features} if wanted_features else None
     
     if os.path.isfile(feature_path):
         # Single parquet file
         logger.info(f"Loading features from single file: {feature_path}")
-        df = pd.read_parquet(feature_path)
+        read_columns = None
+        if wanted:
+            try:
+                import pyarrow.parquet as pq
+
+                parquet_cols = list(pq.ParquetFile(feature_path).schema.names)
+                metadata_cols = {"feature", "timestamp", "ts", "datetime", "date", "open_time", "symbol", "__symbol__"}
+                read_columns = [c for c in parquet_cols if c in wanted or c in metadata_cols]
+                if not read_columns:
+                    read_columns = None
+            except Exception:
+                read_columns = None
+        df = pd.read_parquet(feature_path, columns=read_columns)
         
         # Check if multi-index
         if isinstance(df.index, pd.MultiIndex):
@@ -3266,6 +3604,8 @@ def load_features_from_parquet(feature_path: str) -> dict:
             else:
                 # Assume columns are features
                 for col in df.columns:
+                    if wanted and col not in wanted:
+                        continue
                     feat_df = df[[col]].unstack()
                     feat_df.columns = feat_df.columns.droplevel(0)
                     feats[col] = feat_df
@@ -3273,29 +3613,45 @@ def load_features_from_parquet(feature_path: str) -> dict:
             # Assume columns are symbols, need to check format
             logger.warning("Unexpected parquet format, attempting to load as-is")
             for col in df.columns:
+                if wanted and col not in wanted:
+                    continue
                 feats[col] = df[[col]]
     
     elif os.path.isdir(feature_path):
         # Directory with parquet files
         logger.info(f"Loading features from directory: {feature_path}")
         
-        for fname in os.listdir(feature_path):
-            if fname.endswith(".parquet"):
-                fpath = os.path.join(feature_path, fname)
-                feat_name = fname.replace(".parquet", "")
-                try:
-                    df = pd.read_parquet(fpath)
-                    
-                    # Check format
-                    if isinstance(df.index, pd.MultiIndex):
-                        df = df.unstack()
-                        if df.columns.nlevels > 1:
-                            df.columns = df.columns.droplevel(0)
-                    
-                    feats[feat_name] = df
-                    logger.debug(f"Loaded {feat_name}: {df.shape}")
-                except Exception as e:
-                    logger.warning(f"Failed to load {fname}: {e}")
+        parquet_fnames = [f for f in os.listdir(feature_path) if f.endswith(".parquet")]
+        if wanted:
+            wanted_files = {f"{k}.parquet" for k in wanted}
+            selected_fnames = [f for f in parquet_fnames if f in wanted_files]
+            if selected_fnames:
+                parquet_fnames = selected_fnames
+                tlog(
+                    "Generic feature loader projection: "
+                    f"{len(selected_fnames)}/{len(wanted)} requested feature files matched"
+                )
+            else:
+                tlog("Generic feature loader projection: no requested feature filenames matched; loading all parquet files")
+
+        for fname in parquet_fnames:
+            fpath = os.path.join(feature_path, fname)
+            feat_name = fname.replace(".parquet", "")
+            try:
+                df = pd.read_parquet(fpath)
+
+                # Check format
+                if isinstance(df.index, pd.MultiIndex):
+                    df = df.unstack()
+                    if df.columns.nlevels > 1:
+                        df.columns = df.columns.droplevel(0)
+
+                if wanted and feat_name not in wanted:
+                    continue
+                feats[feat_name] = df
+                logger.debug(f"Loaded {feat_name}: {df.shape}")
+            except Exception as e:
+                logger.warning(f"Failed to load {fname}: {e}")
         
         logger.info(f"Loaded {len(feats)} features")
     
@@ -3531,7 +3887,32 @@ def build_candidate_mask(cfg: dict, context: dict) -> tuple:
         cusum_h = float(cfg.get("cusum_h", 6.0))
         metric_for_mode = strength_by_h.get(f"{cusum_h:.1f}")
         if metric_for_mode is None:
-            raise ValueError(f"CUSUM metric unavailable for h={cusum_h:.1f}")
+            # Fallback: use nearest available CUSUM horizon instead of hard-failing config generation.
+            if strength_by_h:
+                avail_h = []
+                for k in strength_by_h.keys():
+                    try:
+                        avail_h.append(float(k))
+                    except Exception:
+                        continue
+                if avail_h:
+                    nearest_h = min(avail_h, key=lambda x: abs(x - cusum_h))
+                    metric_for_mode = strength_by_h.get(f"{nearest_h:.1f}")
+                    tlog(
+                        f"CUSUM h={cusum_h:.1f} unavailable; "
+                        f"falling back to nearest available h={nearest_h:.1f}"
+                    )
+                else:
+                    metric_for_mode = next(iter(strength_by_h.values()))
+            if metric_for_mode is None:
+                metric_for_mode = metric_by_mode.get("fixed")
+                if metric_for_mode is not None:
+                    tlog(
+                        f"CUSUM h={cusum_h:.1f} unavailable and no CUSUM grid found; "
+                        "falling back to fixed metric for candidate mask generation"
+                    )
+                else:
+                    raise ValueError(f"CUSUM metric unavailable for h={cusum_h:.1f}")
 
     # Filter masks
     if filter_mask_pack is not None:
@@ -3793,34 +4174,36 @@ def run_comparison(
     )
     tlog(f"OOF estimator for this run: {'LGBM' if (use_extratrees and lgb is not None) else ('ExtraTrees' if use_extratrees else 'Ridge')}")
 
+    requested_model_features = runtime_cfg.get("test_feature_keys", TEST_FEATURE_KEYS)
+    if max_features is not None and max_features > 0:
+        requested_model_features = requested_model_features[:max_features]
+    requested_model_features = [str(f) for f in requested_model_features]
+    structural_keys = {
+        "ret6h",
+        "ret24h",
+        "ret1h",
+        "atr_pct",
+        "trend_pct",
+        "range_12h_pct",
+        "range_16h_pct",
+        "range_pct",
+        "volatility_zscore",
+        "vol_z",
+        "rvol_z",
+        "volu_z",
+        "sign_consistency",
+        "sign_consistency_12h",
+    }
+    wanted_features = set(requested_model_features) | structural_keys
+    tlog(
+        "Feature projection request: "
+        f"requested_model={len(requested_model_features)}, structural={len(structural_keys)}"
+    )
+
     if symbol_files:
         # Pipeline format: per-symbol files, need to parse timestamp from path
         logger.info("Detected pipeline per-symbol format")
-        requested_model_features = runtime_cfg.get("test_feature_keys", TEST_FEATURE_KEYS)
-        if max_features is not None and max_features > 0:
-            requested_model_features = requested_model_features[:max_features]
-        requested_model_features = [str(f) for f in requested_model_features]
-        structural_keys = {
-            "ret6h",
-            "ret24h",
-            "ret1h",
-            "atr_pct",
-            "trend_pct",
-            "range_12h_pct",
-            "range_16h_pct",
-            "range_pct",
-            "volatility_zscore",
-            "vol_z",
-            "rvol_z",
-            "volu_z",
-            "sign_consistency",
-            "sign_consistency_12h",
-        }
-        wanted_features = set(requested_model_features) | structural_keys
-        tlog(
-            "Selective pipeline load: "
-            f"requested_model={len(requested_model_features)}, structural={len(structural_keys)}"
-        )
+        tlog("Selective pipeline load enabled")
         feats = load_selected_features_from_symbol_parquets(
             feature_dir=feature_path,
             wanted_features=wanted_features,
@@ -3832,8 +4215,8 @@ def run_comparison(
         gc.collect()
     else:
         # Generic format: per-feature files
-        tlog("Loading generic feature parquet layout")
-        feats = load_features_from_parquet(feature_path)
+        tlog("Loading generic feature parquet layout with projection")
+        feats = load_features_from_parquet(feature_path, wanted_features=wanted_features)
         feats = cast_features_dtype(feats, float_dtype=float_dtype)
         gc.collect()
 
@@ -3891,21 +4274,6 @@ def run_comparison(
     tlog(f"Using {len(available_model_features)} test features")
 
     # OOM guard: keep only model features plus minimal structural inputs.
-    structural_keys = {
-        "ret6h",
-        "ret24h",
-        "atr_pct",
-        "trend_pct",
-        "range_12h_pct",
-        "range_16h_pct",
-        "range_pct",
-        "volatility_zscore",
-        "vol_z",
-        "rvol_z",
-        "volu_z",
-        "sign_consistency",
-        "sign_consistency_12h",
-    }
     keep_feature_keys = structural_keys | set(available_model_features)
     before_feature_count = len(feats)
     feats = {k: v for k, v in feats.items() if k in keep_feature_keys}
@@ -3932,7 +4300,7 @@ def run_comparison(
     tlog(f"Loaded panel with close shape={panel['close'].shape}")
 
     tlog("Precomputing selection metrics")
-    metric_pack = precompute_selection_metrics(feats, float_dtype=float_dtype)
+    metric_pack = precompute_selection_metrics(feats, panel, float_dtype=float_dtype)
     metric_by_mode = metric_pack["metrics"]
     tlog(f"Precomputed metric modes: {list(metric_by_mode.keys())}")
 
@@ -4325,13 +4693,44 @@ def run_comparison(
         cfg["use_extratrees"] = False
         cfg["oof_n_splits"] = 1
 
-    pass1_results = []
-    with ProcessPoolExecutor(max_workers=PARALLEL_WORKERS, initializer=_init_worker_context, initargs=(context,)) as executor:
-        futures = {executor.submit(evaluate_single_config, cfg): cfg for cfg in configs}
-        for i, future in enumerate(as_completed(futures)):
-            res, _ = future.result()
-            pass1_results.append(res)
-            if (i+1) % 50 == 0: tlog(f"Detection Pass Progress: {i+1}/{len(configs)}")
+    def _run_pass(cfg_list: list[dict], *, pass_name: str, collect_slices: bool, progress_every: int) -> tuple[list[dict], list[dict]]:
+        results_out: list[dict] = []
+        slices_out: list[dict] = []
+        try:
+            with ProcessPoolExecutor(max_workers=PARALLEL_WORKERS, initializer=_init_worker_context, initargs=(context,)) as executor:
+                futures = {executor.submit(evaluate_single_config, cfg): cfg for cfg in cfg_list}
+                for i, future in enumerate(as_completed(futures), start=1):
+                    res, s_rows = future.result()
+                    results_out.append(res)
+                    if collect_slices and s_rows:
+                        slices_out.extend(s_rows)
+                    if i % max(1, progress_every) == 0 or i == len(cfg_list):
+                        tlog(f"{pass_name} Progress: {i}/{len(cfg_list)}")
+        except Exception as exc:
+            msg = str(exc)
+            sem_perm = ("SC_SEM_NSEMS_MAX" in msg) or isinstance(exc, PermissionError)
+            if not sem_perm:
+                raise
+            tlog(
+                f"{pass_name}: process-pool unavailable ({exc}); "
+                "falling back to sequential execution"
+            )
+            _init_worker_context(context)
+            for i, cfg in enumerate(cfg_list, start=1):
+                res, s_rows = evaluate_single_config(cfg)
+                results_out.append(res)
+                if collect_slices and s_rows:
+                    slices_out.extend(s_rows)
+                if i % max(1, progress_every) == 0 or i == len(cfg_list):
+                    tlog(f"{pass_name} Progress: {i}/{len(cfg_list)}")
+        return results_out, slices_out
+
+    pass1_results, _ = _run_pass(
+        configs,
+        pass_name="Detection Pass",
+        collect_slices=False,
+        progress_every=50,
+    )
 
     pass1_df = pd.DataFrame(pass1_results)
     pass1_df["sort_score"] = pass1_df.get("auc", 0).fillna(0) + pass1_df.get("ic", 0).abs().fillna(0)
@@ -4347,15 +4746,12 @@ def run_comparison(
         cfg["oof_n_splits"] = STAGE23_OOF_SPLITS
 
     tlog(f"Starting Verification Pass (Pass 2): {len(configs_v)} configs")
-    results = []
-    slice_results = []
-    with ProcessPoolExecutor(max_workers=PARALLEL_WORKERS, initializer=_init_worker_context, initargs=(context,)) as executor:
-        futures = {executor.submit(evaluate_single_config, cfg): cfg for cfg in configs_v}
-        for i, future in enumerate(as_completed(futures)):
-            res, s_rows = future.result()
-            results.append(res)
-            slice_results.extend(s_rows)
-            tlog(f"Verification Pass Progress: {i+1}/{len(configs_v)}")
+    results, slice_results = _run_pass(
+        configs_v,
+        pass_name="Verification Pass",
+        collect_slices=True,
+        progress_every=1,
+    )
 
     tlog("Two-pass parallel execution complete")
 

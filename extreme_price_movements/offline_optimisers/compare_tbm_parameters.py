@@ -51,6 +51,16 @@ from sklearn.metrics import average_precision_score
 from joblib import Parallel, delayed
 import optuna
 try:
+    import numba  # type: ignore
+    from numba import njit as _njit
+    _NUMBA_OK = True
+except ImportError:  # pragma: no cover
+    _NUMBA_OK = False
+    def _njit(*args, **kwargs):  # type: ignore
+        """Passthrough when numba is unavailable."""
+        def _dec(fn): return fn
+        return _dec
+try:
     import xgboost as xgb  # type: ignore
 except Exception:  # pragma: no cover - optional dependency fallback
     xgb = None
@@ -117,6 +127,7 @@ ACTIVE_TEST_FEATURE_KEYS = list(TEST_FEATURE_KEYS)
 USE_15M_REFINEMENT = True  # Feature toggle to disable 15m data download/refinement
 _HF_15M_FAILED_SYMBOLS: set[str] = set()
 _HF_15M_MEMORY_CACHE: Dict[str, pd.DataFrame] = {}
+_HF_15M_LOCAL_AVAILABLE: Dict[str, bool] = {}
 
 
 def _get_global_hf_cache() -> Dict[str, pd.DataFrame]:
@@ -129,8 +140,6 @@ def _is_apple_arm() -> bool:
 
 def _safe_parallel_jobs(n_items: int, cap: int = 8) -> int:
     if n_items <= 1:
-        return 1
-    if _is_apple_arm():
         return 1
     cpu = int(os.cpu_count() or 1)
     return max(1, min(cap, n_items, max(1, cpu // 2)))
@@ -223,6 +232,27 @@ def _symbol_to_hf_ccxt(symbol: str) -> str:
     return raw.replace("_", "/")
 
 
+def _has_local_15m_cache(symbol: str) -> bool:
+    """Fast local-availability check for 15m parquet (memoized)."""
+    clean = str(symbol or "").replace("/", "").replace("_", "").lower()
+    cached = _HF_15M_LOCAL_AVAILABLE.get(clean)
+    if cached is not None:
+        return bool(cached)
+
+    path = HF_DATA_DIR / f"{clean}_15m.parquet"
+    available = path.exists()
+    if not available:
+        # Fallback: non-USDT quote can reuse USDT cache when available.
+        clean_up = clean.upper()
+        for q in ("USDC", "BUSD", "EUR"):
+            if clean_up.endswith(q):
+                base = clean_up[:-len(q)].lower()
+                available = (HF_DATA_DIR / f"{base}usdt_15m.parquet").exists()
+                break
+    _HF_15M_LOCAL_AVAILABLE[clean] = bool(available)
+    return bool(available)
+
+
 def _load_or_download_15m(symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timestamp, *, allow_download: bool = False) -> pd.DataFrame:
     """Load or download 15m data with global memory caching."""
     clean = str(symbol or "").replace("/", "").replace("_", "").lower()
@@ -255,12 +285,15 @@ def _load_or_download_15m(symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timest
             df.index = idx.tz_localize("UTC") if idx.tz is None else idx.tz_convert("UTC")
             df = df[["open", "high", "low", "close"]].astype(np.float32)
             cache[clean] = df # Cache full DF
+            _HF_15M_LOCAL_AVAILABLE[clean] = True
             return df.loc[(df.index >= start_ts) & (df.index <= end_ts)]
         except Exception:
             pass
 
     # 3. Download (Slowest)
     if not allow_download:
+        cache[clean] = pd.DataFrame()
+        _HF_15M_LOCAL_AVAILABLE[clean] = False
         return pd.DataFrame()
     try:
         if ccxt_symbol in _HF_15M_FAILED_SYMBOLS:
@@ -283,9 +316,11 @@ def _load_or_download_15m(symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timest
              df.index = idx.tz_localize("UTC") if idx.tz is None else idx.tz_convert("UTC")
              df = df[["open", "high", "low", "close"]].astype(np.float32)
              cache[clean] = df
+             _HF_15M_LOCAL_AVAILABLE[clean] = True
              return df.loc[(df.index >= start_ts) & (df.index <= end_ts)]
              
         cache[clean] = got
+        _HF_15M_LOCAL_AVAILABLE[clean] = True
         return got.loc[(got.index >= start_ts) & (got.index <= end_ts)]
     except Exception as exc:
         _HF_15M_FAILED_SYMBOLS.add(ccxt_symbol)
@@ -321,12 +356,11 @@ def _refine_ambiguous_labels_with_15m(
 
     symbols = close_df.columns
     idx = close_df.index
+    allow_download = bool((cfg or {}).get("allow_15m_download", False))
     
     # ── Smoking Gun #1 Bottleneck Fix: Parallelize symbol refinement & Bulk-load 15m ──
     # We use joblib Parallel with threads because 15m resolution is primarily I/O and light logic.
-    n_jobs = _safe_parallel_jobs(len(symbols), cap=4) if not _is_apple_arm() else 1 
-    # Wait, even on Apple Silicon, threading is OK for I/O. Let's force a bit of parallelism.
-    n_jobs = 4 if len(symbols) > 10 else 1
+    n_jobs = _safe_parallel_jobs(len(symbols), cap=6)
 
     def _process_symbol(sym: str):
         c = close_df[sym].to_numpy(dtype=np.float32, copy=False)
@@ -337,12 +371,24 @@ def _refine_ambiguous_labels_with_15m(
         lab = lbl[sym].to_numpy(dtype=np.int8, copy=True)
         rets_sym = ret[sym].to_numpy(dtype=np.float32, copy=True)
         qual_sym = qual[sym].to_numpy(dtype=np.float32, copy=True)
+
+        # If no local 15m cache exists and downloading is disabled, refinement cannot help.
+        # Exit before the O(n*horizon) ambiguous-scan loop.
+        if not allow_download and not _has_local_15m_cache(sym):
+            return sym, lab, rets_sym, qual_sym
         
         n = len(c)
         # Find all ambiguous indices first to avoid entering the loop if not needed
         ambiguous_j_list = []
-        for i in range(n - 1):
-            if not np.isfinite(c[i]) or c[i] <= 0 or not np.isfinite(tpv[i]) or not np.isfinite(slv[i]):
+        
+        # ── CRITICAL OPTIMIZATION: Instant Vectorized Skip ──
+        # pure Python loops over 17,500 elements take huge CPU time just to check `continue` blocks.
+        # Find exactly the tiny number of indices (usually ~10) that are finite and valid in a single C call.
+        valid_mask_i = np.isfinite(c) & (c > 0) & np.isfinite(tpv) & np.isfinite(slv)
+        valid_indices = np.where(valid_mask_i)[0]
+        
+        for i in valid_indices:
+            if i >= n - 1:
                 continue
             tp_price = c[i] * (1.0 + tpv[i]) if side == "long" else c[i] * (1.0 - tpv[i])
             sl_price = c[i] * (1.0 - slv[i]) if side == "long" else c[i] * (1.0 + slv[i])
@@ -364,10 +410,11 @@ def _refine_ambiguous_labels_with_15m(
         if not ambiguous_j_list:
             return sym, lab, rets_sym, qual_sym
 
-        # Pre-load HF data for the ENTIRE symbol range once
-        start_full = idx[ambiguous_j_list[0][1]].floor("15min")
+        # P1 FIX: use min(j) across all ambiguous entries, not just ambiguous_j_list[0][1].
+        # The list is ordered by i (entry bar), but a later i can have an earlier first_ambiguous_j,
+        # so using [0][1] could miss required 15m bars at the start of the range.
+        start_full = min(idx[entry[1]] for entry in ambiguous_j_list).floor("15min")
         end_full = min(idx[ambiguous_j_list[-1][0]] + pd.Timedelta(hours=float(h)), idx[-1])
-        allow_download = bool((cfg or {}).get("allow_15m_download", False))
         hf_full = _load_or_download_15m(sym, start_full, end_full, allow_download=allow_download)
         if hf_full.empty:
             return sym, lab, rets_sym, qual_sym
@@ -382,9 +429,13 @@ def _refine_ambiguous_labels_with_15m(
             start_15m = idx[first_ambiguous_j].floor("15min")
             end_15m = min(idx[i] + pd.Timedelta(hours=float(h)), idx[-1])
             
-            # Slice hf_full using index logic (faster than row iteration)
-            mask = (hf_idx >= start_15m) & (hf_idx < end_15m)
-            idxs15 = np.where(mask)[0]
+            # Use np.searchsorted for O(log n) slice instead of O(n) boolean mask
+            hf_ns = hf_idx.asi8  # int64 nanoseconds, already sorted
+            lo_ns = start_15m.value
+            hi_ns = end_15m.value
+            i_lo = np.searchsorted(hf_ns, lo_ns, side="left")
+            i_hi = np.searchsorted(hf_ns, hi_ns, side="left")
+            idxs15 = np.arange(i_lo, i_hi, dtype=np.intp)
             
             resolved = None
             if idxs15.size == 0:
@@ -397,7 +448,7 @@ def _refine_ambiguous_labels_with_15m(
                 h15, l15, c15 = hf_h[k], hf_l[k], hf_c[k]
                 hit_tp_15 = (h15 >= tp_price) if side == "long" else (l15 <= tp_price)
                 hit_sl_15 = (l15 <= sl_price) if side == "long" else (h15 >= sl_price)
-                
+
                 if hit_tp_15 and hit_sl_15:
                     d_tp = abs(c15 - h15) if side == "long" else abs(c15 - l15)
                     d_sl = abs(c15 - l15) if side == "long" else abs(c15 - h15)
@@ -467,27 +518,28 @@ def _load_panel_from_store(cfg: Dict[str, Any]) -> Tuple[Optional[Dict[str, pd.D
         market_basket = cfg.get("market_basket", [])
         all_syms = list(set(margin_symbols + market_basket))
 
-        # Always augment with local store symbols so offline optimization is not
-        # constrained by a small/temporary live margin universe response.
+        # Augment with local store symbols (USDT-only to stay consistent with the
+        # margin universe quote filter set above).
         ohlcv_dir = os.path.join(cfg["data_root"], "ohlcv")
         ohlcv_syms: List[str] = []
         if os.path.exists(ohlcv_dir):
             for name in os.listdir(ohlcv_dir):
                 full = os.path.join(ohlcv_dir, name)
-                if os.path.isdir(full):
-                    ohlcv_syms.append(name)
-                elif name.endswith(".meta.json"):
-                    ohlcv_syms.append(name.replace(".meta.json", ""))
+                sym = name.replace(".meta.json", "") if name.endswith(".meta.json") else (name if os.path.isdir(full) else None)
+                if sym is not None and sym.upper().endswith("USDT"):
+                    ohlcv_syms.append(sym)
             if ohlcv_syms:
                 all_syms = list(set(all_syms) | set(ohlcv_syms))
-                tprint(f"Augmented symbol universe from local ohlcv: +{len(set(ohlcv_syms))} symbols")
-        
+                tprint(f"Augmented symbol universe from local ohlcv (USDT-only): +{len(set(ohlcv_syms))} symbols")
+
         # Use a configurable subsample step; default keeps 1/2 of symbols (USDT-only universe).
         # Previously 3 (1/3 of all quotes), now 2 (1/2 of USDT-only) for better coverage with native data.
         _step = max(1, int(cfg.get("tbm_symbol_subsample_step", 2)))
         train_syms = sorted(all_syms)[::_step]
-        # Keep an upper bound for runtime/memory control (default aligns with training universe size).
-        _max_syms = int(cfg.get("tbm_max_symbols", cfg.get("fetch_symbols_M", 600)))
+        # Cap: honour explicit override; otherwise use half the live margin universe size
+        # so "step=2" truly means 1/2 of the USDT margin universe (not 1/2 of local store).
+        _default_max = max(1, len(margin_symbols) // 2) if margin_symbols else int(cfg.get("fetch_symbols_M", 600))
+        _max_syms = int(cfg.get("tbm_max_symbols", _default_max))
         train_syms = train_syms[: max(1, _max_syms)]
 
         tprint(
@@ -727,39 +779,40 @@ class LRUCache(dict):
 
 class BoundedEvalCache:
     """
-    Bounded cache for eval_cache with automatic eviction of oldest entries.
-    Handles nested dicts for bucket_stack and other eval caches.
+    Bounded LRU cache for eval_cache with automatic eviction of oldest entries.
+    Thread-safe via RLock for use with parallel Optuna jobs (n_jobs > 1).
     """
     def __init__(self, max_size=20):
+        import threading
         self.max_size = max_size
         self._cache: Dict[str, Any] = {}
         self._access_order: List[str] = []
+        self._lock = threading.RLock()  # P2 FIX: thread-safe for parallel Optuna
 
     def __contains__(self, key: str) -> bool:
         return key in self._cache
 
     def __getitem__(self, key: str) -> Any:
-        if key in self._cache:
-            # Move to end (most recently used)
-            self._access_order.remove(key)
-            self._access_order.append(key)
-            return self._cache[key]
-        raise KeyError(key)
+        with self._lock:
+            if key in self._cache:
+                self._access_order.remove(key)
+                self._access_order.append(key)
+                return self._cache[key]
+            raise KeyError(key)
 
     def __setitem__(self, key: str, value: Any) -> None:
-        if key in self._cache:
-            self._access_order.remove(key)
-        elif len(self._cache) >= self.max_size:
-            # Evict oldest
-            oldest = self._access_order.pop(0)
-            old_val = self._cache.pop(oldest, None)
-            # If it's a dict with large arrays, try to free memory
-            if isinstance(old_val, dict):
-                for v in old_val.values():
-                    if isinstance(v, np.ndarray):
-                        del v
-        self._cache[key] = value
-        self._access_order.append(key)
+        with self._lock:
+            if key in self._cache:
+                self._access_order.remove(key)
+            elif len(self._cache) >= self.max_size:
+                oldest = self._access_order.pop(0)
+                old_val = self._cache.pop(oldest, None)
+                if isinstance(old_val, dict):
+                    for v in old_val.values():
+                        if isinstance(v, np.ndarray):
+                            del v
+            self._cache[key] = value
+            self._access_order.append(key)
 
     def get(self, key: str, default: Any = None) -> Any:
         try:
@@ -775,8 +828,9 @@ class BoundedEvalCache:
 
     def clear(self) -> None:
         """Clear all cached items and free memory."""
-        self._cache.clear()
-        self._access_order.clear()
+        with self._lock:
+            self._cache.clear()
+            self._access_order.clear()
         gc.collect()
 
     def __len__(self) -> int:
@@ -787,6 +841,7 @@ class BoundedEvalCache:
 class RunArtifacts:
     panel: Dict[str, pd.DataFrame]
     features: Dict[str, pd.DataFrame]
+    panel_15m: Optional[Dict[str, pd.DataFrame]] = None
 
 
 def _subsample_symbols(symbols: Sequence[str]) -> List[str]:
@@ -1248,7 +1303,30 @@ def align_artifacts(
     elif _is_standardized_like_atr(f_out["atr_pct"]):
         tprint("[align_artifacts] WARNING atr_pct appears normalized (contains negatives); barriers will use atr_pct_raw.")
 
-    out = RunArtifacts(panel=p_out, features=f_out)
+    tprint(f"Loading 15m high-fidelity panel for {len(cols)} symbols...")
+    from joblib import Parallel, delayed
+    start_ts = idx.min()
+    end_ts = idx.max() + pd.Timedelta(hours=48)
+    
+    def _fetch(sym):
+        return sym, _load_or_download_15m(sym, start_ts, end_ts, allow_download=False)
+        
+    results = Parallel(n_jobs=_safe_parallel_jobs(len(cols), cap=8))(
+        delayed(_fetch)(sym) for sym in cols
+    )
+    
+    sym_dfs = {sym: df for sym, df in results if df is not None and not df.empty}
+    p15_out = None
+    if sym_dfs:
+        p15_out = {}
+        for k in ["open", "high", "low", "close"]:
+            series_dict = {sym: df[k] for sym, df in sym_dfs.items()}
+            # Fast vectorized outer-join
+            df_k = pd.DataFrame(series_dict)
+            df_k = df_k.reindex(columns=cols)
+            p15_out[k] = df_k.astype(np.float32)
+
+    out = RunArtifacts(panel=p_out, features=f_out, panel_15m=p15_out)
     tprint(
         f"Aligned artifacts ready: bars={len(idx)}, symbols={len(cols)}, "
         f"feature_frames={len(f_out)}, mem_peak_mb={_memory_snapshot_mb():.1f}"
@@ -2028,16 +2106,25 @@ def _ridge_predict_oof_with_cache(
         w_train = sample_weight[train_mask]
         X_test = X[test_mask]
 
-        # Robust standardisation: Use RobustScaler to handle extreme outliers common in financial returns.
-        scaler = RobustScaler()
-        X_train_s = scaler.fit_transform(X_train)
-        X_test_s = scaler.transform(X_test)
+        # Robust standardisation: vectorised numpy (avoids sklearn object overhead per fold).
+        # median + IQR computed once over train set, applied to both train and test.
+        q25 = np.percentile(X_train, 25, axis=0).astype(np.float32)
+        q75 = np.percentile(X_train, 75, axis=0).astype(np.float32)
+        iqr = np.where(q75 - q25 > 1e-8, q75 - q25, 1.0).astype(np.float32)
+        med = np.median(X_train, axis=0).astype(np.float32)
+        X_train_s = ((X_train - med) / iqr).astype(np.float32)
+        X_test_s = ((X_test - med) / iqr).astype(np.float32)
 
         # Higher alpha (3.0) for increased regularization/stability in noisy financial data.
         alpha = 3.0
 
+        # P2 FIX: warm-cache — reuse coef/intercept from a previously solved similar fold
+        # to skip the expensive linalg.solve when a warm solution exists.
         if warm_cache is not None and warm_key and warm_key in warm_cache:
-            pass
+            coef_w, intercept_w = warm_cache[warm_key]
+            p = (X_test_s @ coef_w + intercept_w).astype(np.float32, copy=False)
+            pred[test_mask] = np.clip(p, 0.0, 1.0)
+            continue
 
         # Fast closed-form Ridge Regression
         sw_sum = np.sum(w_train)
@@ -2130,10 +2217,15 @@ def _fast_geometry_pr_auc_proxy(cfg: Dict[str, Any]) -> float:
 
 
 def _optuna_n_jobs() -> int:
+    env_jobs = os.environ.get("EPM_TBM_OPTUNA_N_JOBS", "").strip()
+    if env_jobs:
+        try:
+            return max(1, int(env_jobs))
+        except Exception:
+            pass
     c = int(os.cpu_count() or 1)
-    if _is_apple_arm():
-        return 1
-    return max(1, c // 2)
+    # Conservative default to reduce first-wave cache miss contention/memory spikes.
+    return max(1, min(2, c // 2))
 
 
 def _optuna_sampler() -> optuna.samplers.TPESampler:
@@ -2313,7 +2405,26 @@ def evaluate_config(
     events_rows: List[pd.DataFrame] = []
     # If target_cell_filter is provided (for cell-specific Optuna), only compute barriers for that horizon.
     _active_horizons = [target_cell_filter[1]] if target_cell_filter else horizons
-    # l1_keys = [_barrier_cache_key(cfg, h) for h in _active_horizons] # This line was removed as it's not used directly in the loop structure.
+    
+    # ── Pre-compute Bucket Map ──
+    # The evaluation requires knowing which candidate symbols belong to `up` or `down` zones
+    # BEFORE running the triple barrier labeler so we can fast-sample the labels.
+    _panel_idx = artifacts.panel["close"].index
+    _panel_cols = artifacts.panel["close"].columns
+    _idx_flat = pd.MultiIndex.from_product([_panel_idx, _panel_cols], names=["ts", "symbol"])
+    _stack_key = _index_cache_key(_idx_flat)
+    
+    cache_bucket_stack = eval_cache.setdefault("bucket_stack", {})
+    if _stack_key in cache_bucket_stack:
+        bucket_map = cache_bucket_stack[_stack_key]
+    else:
+        bucket_map = {}
+        for bname, bmask in bucket_masks.items():
+            # Align mask to panel shape in case of mismatch, then stack
+            aligned_bmask = bmask.reindex(index=_panel_idx, columns=_panel_cols, fill_value=False)
+            bucket_map[bname] = aligned_bmask.stack().to_numpy(dtype=bool, copy=False)
+        cache_bucket_stack[_stack_key] = bucket_map
+        
     _last_gc_ts = time.perf_counter()
 
     for h in _active_horizons:
@@ -2387,14 +2498,98 @@ def evaluate_config(
             key2 = (label_key, _compact_cfg_signature(cfg, ("k_tp", "sl_as_tp_pct", "tp_base_pct", "base_atr_window")))
 
             if key2 not in layer2_cache:
-                # Use compute_triple_barrier_labels with return_outcomes=True to get (label, ret, qual)
-                # This matches training.py's labeling logic including dynamic horizon support.
-                lbl, ret, qual = compute_triple_barrier_labels(
-                    artifacts.panel, tp_df, sl_df, h, side=side, return_outcomes=True, horizons_frame=dyn_h
+                # ── Fast Targeting: Find Valid TP Hits First ──
+                # 1. Run the ultra-fast Numba labeler without 15m refinement.
+                # 2. Identify all `TP` hits across the 5-year history.
+                # 3. Sample exactly 2000 of them (and proportional negatives).
+                # 4. Only run the slow 15m refinement on this tiny subset.
+                lbl_fast, _, _ = compute_triple_barrier_labels(
+                    artifacts.panel, tp_df, sl_df, h, side=side, return_outcomes=True, horizons_frame=dyn_h, resolve_conflicts=False
                 )
-                lbl, ret, qual = _refine_ambiguous_labels_with_15m(
-                    artifacts.panel, tp_df, sl_df, lbl, ret, qual, h, side, cfg=cfg
-                )
+                
+                # Active candidates for all directions (we subsample across ALL, not just one side)
+                # This guarantees both TF and MR buckets always have event representation.
+                up_cand_mask = bucket_map["up"]
+                down_cand_mask = bucket_map["down"]
+                all_cand_mask = up_cand_mask | down_cand_mask
+                
+                lbl_arr = lbl_fast.to_numpy(dtype=np.int8).ravel()
+                
+                # ── Bucket-Stratified Subsampling ──
+                # Split candidates into UP (TF_long / MR_short) and DOWN (MR_long / TF_short) strata.
+                # Without stratification, the global random sample can be 100% UP, leaving MR_long empty.
+                _MAX_TP = 2000
+                _TP_PER_STRATA = _MAX_TP // 2  # 1000 TPs from each direction
+                _rng_lb = np.random.default_rng(42)
+                
+                keep_global_list = []
+                for strat_mask in [up_cand_mask.ravel(), down_cand_mask.ravel()]:
+                    strat_pos = np.where(strat_mask)[0]
+                    strat_lbls = lbl_arr[strat_pos]
+                    tp_idx = np.where(strat_lbls == 2)[0]
+                    neg_idx = np.where(strat_lbls != 2)[0]
+                    if len(tp_idx) == 0:
+                        continue
+                    n_tp = min(len(tp_idx), _TP_PER_STRATA)
+                    tp_keep = _rng_lb.choice(tp_idx, size=n_tp, replace=False)
+                    keep_ratio = n_tp / len(tp_idx)
+                    n_neg = int(len(neg_idx) * keep_ratio)
+                    if n_neg > 0 and len(neg_idx) > 0:
+                        neg_keep = _rng_lb.choice(neg_idx, size=min(n_neg, len(neg_idx)), replace=False)
+                        keep_local = np.concatenate([tp_keep, neg_keep])
+                    else:
+                        keep_local = tp_keep
+                    keep_global_list.append(strat_pos[keep_local])
+                
+                if keep_global_list:
+                    keep_global = np.concatenate(keep_global_list)
+                    tight_mask_arr = np.zeros(lbl_arr.shape[0], dtype=bool)
+                    tight_mask_arr[keep_global] = True
+                    tight_mask_df = pd.DataFrame(tight_mask_arr.reshape(tp_df.shape), index=tp_df.index, columns=tp_df.columns)
+                    
+                    # Log the cross-asset spread for the final subsample
+                    unique_assets_hit = (tight_mask_df.sum(axis=0) > 0).sum()
+                    total_tp = sum(len(np.where(lbl_arr[np.where(m.ravel())[0]] == 2)[0]) 
+                                   for m in [up_cand_mask.ravel(), down_cand_mask.ravel()])
+                    tprint(f"[eval:{cfg_id}] subsampled {len(keep_global):,} events (2x stratified) spread across {unique_assets_hit} unique assets")
+                    
+                    _sampled_tp = tp_df.where(tight_mask_df, np.nan)
+                    _sampled_sl = sl_df.where(tight_mask_df, np.nan)
+                else:
+                    # No candidates at all — return early
+                    _sampled_tp = tp_df
+                    _sampled_sl = sl_df
+                    tprint(f"[eval:{cfg_id}] WARNING: no TP candidates found in any bucket stratum, using full array")
+
+                # ── Final Compute ──
+                # Use the heavily downsampled TP/SL barriers to compute the final label array.
+                # If the 15m panel is available, we pass it natively into Numba (bypassing slow Python refinement).
+                if getattr(artifacts, "panel_15m", None) is not None:
+                    _panel_15m = artifacts.panel_15m
+                    _idx_15m = _panel_15m["close"].index
+                    _idx_1h = artifacts.panel["close"].index
+                    
+                    # Reindex downsampled bounds to 15m domain (fills NaNs for non-hour bars)
+                    # Numba skips NaNs instantly, computing only valid 1h entries but tracking paths on 15m resolution.
+                    _tp_15m = _sampled_tp.reindex(_idx_15m)
+                    _sl_15m = _sampled_sl.reindex(_idx_15m)
+                    _dyn_h_15m = dyn_h.reindex(_idx_15m) if dyn_h is not None else None
+                    
+                    lbl_15m, ret_15m, qual_15m = compute_triple_barrier_labels(
+                        _panel_15m, _tp_15m, _sl_15m, h, side=side, return_outcomes=True, horizons_frame=_dyn_h_15m, resolve_conflicts=False
+                    )
+                    
+                    # Project perfectly computed outcomes back to 1h domain
+                    lbl = lbl_15m.reindex(_idx_1h).fillna(0)
+                    ret = ret_15m.reindex(_idx_1h).fillna(0)
+                    qual = qual_15m.reindex(_idx_1h).fillna(0)
+                else:
+                    lbl, ret, qual = compute_triple_barrier_labels(
+                        artifacts.panel, _sampled_tp, _sampled_sl, h, side=side, return_outcomes=True, horizons_frame=dyn_h
+                    )
+                    lbl, ret, qual = _refine_ambiguous_labels_with_15m(
+                        artifacts.panel, _sampled_tp, _sampled_sl, lbl, ret, qual, h, side, cfg=cfg
+                    )
                 layer2_cache[key2] = (lbl, ret, qual)
                 tprint(f"[eval:{cfg_id}] label_cache miss h={h} side={side}")
             else:
@@ -2405,24 +2600,41 @@ def evaluate_config(
             stack_cache = eval_cache.setdefault("label_stack_cache", {})
             stack_key = key2
             if stack_key not in stack_cache:
-                lbl_s = lbl.stack(future_stack=True)
-                stacked_idx = lbl_s.index
-                label_arr = lbl_s.to_numpy(dtype=np.float32, copy=False)
-                payoff_arr = ret.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
-                qual_arr = qual.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
-                tp_arr = tp_df.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
-                sl_arr = sl_df.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
+                # Utilize instant Numpy `.ravel()` instead of slow Pandas `.stack()` 
+                # because we already computed the guaranteed dense MultiIndex `_idx_flat`.
+                label_arr = lbl.to_numpy(dtype=np.float32, copy=False).ravel()
+                payoff_arr = ret.to_numpy(dtype=np.float32, copy=False).ravel()
+                qual_arr = qual.to_numpy(dtype=np.float32, copy=False).ravel()
+                
+                # IMPORTANT FIX: Must use the DOWNSAMPLED barrier arrays.
+                # If we used the original dense `tp_df`, we would inject 6 million rows of NaN labels.
+                tp_arr = _sampled_tp.to_numpy(dtype=np.float32, copy=False).ravel()
+                sl_arr = _sampled_sl.to_numpy(dtype=np.float32, copy=False).ravel()
+                
+                # ── CRITICAL FIX: Memory Protection ──
+                # The arrays above contain 7 million elements, 99.9% of which are NaN
+                # due to our pre-labeling mask. We strip the NaNs raw in Numpy first.
+                valid_mask_flat = ~np.isnan(sl_arr)
+                
+                stacked_idx = _idx_flat[valid_mask_flat]
+                label_arr = label_arr[valid_mask_flat]
+                payoff_arr = payoff_arr[valid_mask_flat]
+                qual_arr = qual_arr[valid_mask_flat]
+                tp_arr = tp_arr[valid_mask_flat]
+                sl_arr = sl_arr[valid_mask_flat]
+                
                 if dyn_h is not None:
-                    h_arr = dyn_h.stack(future_stack=True).to_numpy(dtype=np.float32, copy=False)
+                    h_arr = dyn_h.to_numpy(dtype=np.float32, copy=False).ravel()[valid_mask_flat]
                 else:
                     h_arr = np.full(len(label_arr), float(h), dtype=np.float32)
+                
                 stack_cache[stack_key] = (stacked_idx, label_arr, payoff_arr, qual_arr, tp_arr, sl_arr, h_arr)
                 if len(stack_cache) > 256:
                     stack_cache.pop(next(iter(stack_cache)))
             else:
                 stacked_idx, label_arr, payoff_arr, qual_arr, tp_arr, sl_arr, h_arr = stack_cache[stack_key]
 
-            # Create DataFrame directly from cached numpy arrays
+            # Create DataFrame directly from cached masked numpy arrays (now only ~4,000 rows, not 7,000,000)
             df = pd.DataFrame(
                 {
                     "label": label_arr,
@@ -2435,9 +2647,6 @@ def evaluate_config(
                 index=stacked_idx
             )
             df.index.names = ["ts", "symbol"]
-            
-            # Early filtering: drop NaNs before concatenation
-            df = df.dropna(subset=["label", "payoff", "quality", "tp", "sl"])
             
             # Early filtering: drop timeouts early if they won't pass min_raw_events
             # This reduces memory before pd.concat
@@ -2501,27 +2710,30 @@ def evaluate_config(
             + f"  |  rr_kept min={min(_rr_fracs)*100:.1f}% median={float(np.median(_rr_fracs))*100:.1f}%"
         )
 
-    # Bucket tagging.
-    stacked_index = pd.MultiIndex.from_arrays([events["ts"], events["symbol"]])
-    stack_key = _index_cache_key(stacked_index)
-    cache_bucket_stack = eval_cache.setdefault("bucket_stack", {})
-    if stack_key in cache_bucket_stack:
-        bucket_map = cache_bucket_stack[stack_key]
-    else:
-        bucket_map: Dict[str, np.ndarray] = {}
-        for bname, bmask in bucket_masks.items():
-            bucket_map[bname] = bmask.stack().reindex(stacked_index).fillna(False).to_numpy(dtype=bool)
-        cache_bucket_stack[stack_key] = bucket_map
+    tprint(f"[eval:{cfg_id}] Step 2 (Assembly) took {time.perf_counter() - t0:.2f}s")
+    _t1 = time.perf_counter()
+
+    tprint(f"[eval:{cfg_id}] Step 2 (Assembly) took {time.perf_counter() - t0:.2f}s")
+    _t1 = time.perf_counter()
 
     # Hard candidate pre-filter: keep only rows in the candidate mask.
-    candidate_mask = bucket_map["Candidate"]
+    stacked_index = pd.MultiIndex.from_arrays([events["ts"], events["symbol"]])
+    # Re-align bucket_map from the original full-panel grid to the actual populated events
+    # We use an inner join equivalent via indexers
+    _flat_panel_idx = pd.MultiIndex.from_product([_panel_idx, _panel_cols], names=["ts", "symbol"])
+    _aligner = _flat_panel_idx.get_indexer(stacked_index)
+    
+    _cand_mask = bucket_map["Candidate"][_aligner]
+    
     pre_candidate_n = len(events)
-    if np.any(candidate_mask):
-        events = events.loc[candidate_mask].copy().reset_index(drop=True)
-        # Reuse already-cached bucket masks by slicing with candidate_mask (same row order).
-        bucket_map = {k: v[candidate_mask] for k, v in bucket_map.items()}
+    if np.any(_cand_mask):
+        events = events.iloc[_cand_mask].copy().reset_index(drop=True)
+        # Create a new local mapping strictly for this iteration's matched events row-slice
+        local_bucket_map = {k: v[_aligner][_cand_mask] for k, v in bucket_map.items()}
     else:
         events = events.iloc[0:0].copy()
+        local_bucket_map = {k: np.array([], dtype=bool) for k in bucket_map.keys()}
+        
     tprint(f"[eval:{cfg_id}] candidate_prefilter_kept={len(events):,}/{pre_candidate_n:,}")
 
     # Assign bucket from side × move_direction, matching _strategy_bucket_context:
@@ -2529,8 +2741,8 @@ def evaluate_config(
     #   (short, up)   → MR_short  (sell_rips)
     #   (long,  down) → MR_long   (buy_dips)
     #   (short, down) → TF_short  (sell_weakness)
-    up_mask   = bucket_map["up"]
-    down_mask = bucket_map["down"]
+    up_mask   = local_bucket_map["up"]
+    down_mask = local_bucket_map["down"]
     side_arr  = events["side"].astype(str).to_numpy()
     bucket = np.full(len(events), "Global", dtype=object)
     bucket[(side_arr == "long")  & up_mask]   = "TF_long"
@@ -2550,6 +2762,9 @@ def evaluate_config(
         bucket_masks = {b: (events["bucket"] == b) for b in (["MR_long", "MR_short", "TF_long", "TF_short", "Candidate", "Global"])}
         # Rebuild stacked_index after cell-filtering so all downstream arrays match
         stacked_index = pd.MultiIndex.from_arrays([events["ts"], events["symbol"]])
+
+    tprint(f"[eval:{cfg_id}] Step 3 (Bucketing) took {time.perf_counter() - _t1:.2f}s")
+    _t2 = time.perf_counter()
 
     # Regime and quintile slices for Stage 2.
     atr_source = _get_barrier_atr_frame(artifacts)
@@ -2611,12 +2826,14 @@ def evaluate_config(
         _qb_val = _qb_cache.get(_qb_key)
         if _qb_val is None:
             basis_s = pd.Series(basis, index=stacked_index, dtype=np.float32)
+            tprint(f"[eval:{cfg_id}] TRACE: groupby quantiles start")
             by_ts = basis_s.groupby(level=0)
             lo_map = by_ts.quantile(lo)
             hi_map = by_ts.quantile(hi)
             ts_idx = stacked_index.get_level_values(0)
             lo_t = ts_idx.map(lo_map).to_numpy(dtype=np.float32, copy=False)
             hi_t = ts_idx.map(hi_map).to_numpy(dtype=np.float32, copy=False)
+            tprint(f"[eval:{cfg_id}] TRACE: groupby quantiles end, lo_t={len(lo_t)}")
             _qb_cache[_qb_key] = (lo_t, hi_t)
             if len(_qb_cache) > 64:
                 _qb_cache.pop(next(iter(_qb_cache)))
@@ -2743,6 +2960,10 @@ def evaluate_config(
             "ic_payoff": float("nan"),
         }
 
+    tprint(f"[eval:{cfg_id}] Step 4 (Quantile/Filter/Buckets) took {time.perf_counter() - _t2:.2f}s")
+    _t3 = time.perf_counter()
+    tprint(f"[eval:{cfg_id}] TRACE: starting compute_weights")
+
     weights = compute_weights(events, cfg)
 
     # Negative mass renormalization (Timeout downweighting)
@@ -2775,9 +2996,12 @@ def evaluate_config(
     ess = effective_sample_size(weights)
     ess_full = float(full_n)
     coverage = ess / max(ess_full, 1.0)
+    
+    tprint(f"[eval:{cfg_id}] TRACE: starting feature layout extraction fm")
 
     # Feature matrix + OOF scoring (precomputed global float32 matrix).
     fm = get_feature_matrix_cache(artifacts, eval_cache)
+    tprint(f"[eval:{cfg_id}] TRACE: finished format fm, shape={fm.shape if hasattr(fm, 'shape') else 'cached'}")
     feat_cols = fm.feat_cols
     y_signed = events["label"].values.astype(np.float32, copy=False)
     y_bin = (events["label"].values == OUT_TP).astype(np.float32, copy=False)
@@ -2789,6 +3013,36 @@ def evaluate_config(
     if not np.any(valid_mask):
         return {}, {}, None
 
+    # ── Global Event Subsampling ──
+    # Cap positive samples per cell at 2,000, and downsample negatives proportionally.
+    # This preserves the TP / non-TP class ratio while bounding total size.
+    _MAX_POS_PER_CELL = 2000
+    _rng = np.random.default_rng(42)
+    _bkt_h = events["bucket"].astype(str) + "_" + events["horizon"].astype(str)
+    
+    _keep_indices = []
+    for _cell in np.unique(_bkt_h.values):
+        _cell_idx = np.where((_bkt_h.values == _cell) & valid_mask)[0]
+        _pos_mask = y_bin[_cell_idx] == 1.0
+        _pos_idx = _cell_idx[_pos_mask]
+        _neg_idx = _cell_idx[~_pos_mask]
+        
+        if len(_pos_idx) > _MAX_POS_PER_CELL:
+            _keep_ratio = _MAX_POS_PER_CELL / len(_pos_idx)
+            _sub_pos = _rng.choice(_pos_idx, size=_MAX_POS_PER_CELL, replace=False)
+            _num_neg_keep = int(len(_neg_idx) * _keep_ratio)
+            _sub_neg = _rng.choice(_neg_idx, size=_num_neg_keep, replace=False)
+            _keep_indices.extend(_sub_pos)
+            _keep_indices.extend(_sub_neg)
+        else:
+            _keep_indices.extend(_cell_idx)
+            
+    if _keep_indices:
+        _keep_indices = np.sort(np.array(_keep_indices))
+        new_valid = np.zeros_like(valid_mask, dtype=bool)
+        new_valid[_keep_indices] = True
+        valid_mask = new_valid
+
     X_event = np.ascontiguousarray(fm.X[aligner[valid_mask]], dtype=np.float32)
     y_signed_event = y_signed[valid_mask].astype(np.float32, copy=False)
     y_event = y_bin[valid_mask].astype(np.float32, copy=False)
@@ -2799,7 +3053,7 @@ def evaluate_config(
 
     # Optional low-fidelity path used by Optuna trial pruning.
     low_fidelity = bool(cfg.get("_low_fidelity", False))
-    n_folds = 2 if low_fidelity else 4 # Increased to 4 for future runs
+    n_folds = 2 if low_fidelity else 3  # 2 folds for ranking proxy; 3 for full-fidelity evaluation
     if low_fidelity and len(ts_event) > 0:
         cutoff_ts = np.sort(pd.Index(ts_event).unique())
         if len(cutoff_ts) > 1:
@@ -2835,6 +3089,7 @@ def evaluate_config(
         modeled_cells += 1
             
         _warm_key = _ridge_warm_key(cfg) + f":{_bkt}_H{_h}"
+
         _pred_cell = _ridge_predict_oof_with_cache(
             X_event[_bmask],
             y_event[_bmask],
@@ -5094,16 +5349,51 @@ class TBMObjective:
         self.trial_metric_history: List[Dict[str, float]] = []
 
     def __call__(self, trial: optuna.Trial) -> float:
-        # 1. Suggest parameters
+        # ── Pre-compute ATR normalisation mean so we can constrain the search space ──
+        # This avoids wasting trials on tp_base_pct values that, after ATR scaling,
+        # would produce a tp_anchor outside [0.01, 0.04] and be immediately pruned.
+        _TP_ANCHOR_LO = 0.01
+        _TP_ANCHOR_HI = 0.04
+        _atr_norm_mean = 1.0
+        _atr_win = 840  # fixed for now (only categorical choice)
+        _r_key = f"tp_anchor_atr_norm_mean::{_atr_win}"
+        _cached = self.eval_cache.get(_r_key, None) if hasattr(self.eval_cache, "get") else None
+        if _cached is not None:
+            _atr_norm_mean = float(_cached)
+        else:
+            try:
+                _atr_src = _get_barrier_atr_frame(self.artifacts).replace([np.inf, -np.inf], np.nan)
+                _med = _atr_src.rolling(_atr_win, min_periods=24).median().fillna(_atr_src.median())
+                _ratio = (_atr_src / (_med + EPS)).to_numpy(dtype=np.float32, copy=False).ravel()
+                _ratio = _ratio[np.isfinite(_ratio)]
+                _atr_norm_mean = float(np.clip(np.nanmean(_ratio) if _ratio.size else 1.0, 0.5, 2.0))
+                try:
+                    self.eval_cache[_r_key] = _atr_norm_mean
+                except Exception:
+                    pass
+            except Exception:
+                _atr_norm_mean = 1.0
+
+        # 1. Suggest parameters — tp_base_pct bounds derived so anchor is always in [0.01, 0.04]
         k_tp = trial.suggest_float("k_tp", 0.4, 2.0, step=0.1)
-        # Minimum tp_base_pct increased to 0.012 (120bps) to ensure H2 barriers (sqrt(H/4)*floor) 
+        # Minimum tp_base_pct increased to 0.012 (120bps) to ensure H2 barriers (sqrt(H/4)*floor)
         # are at least ~85bps, providing a safety buffer for 50bps round fees.
-        tp_base = trial.suggest_float("tp_base_pct", 0.012, 0.045, step=0.001)
+        _tp_base_lo = max(0.012, round(_TP_ANCHOR_LO / (k_tp * _atr_norm_mean), 4))
+        _tp_base_hi = min(0.045, round(_TP_ANCHOR_HI / (k_tp * _atr_norm_mean), 4))
+        if _tp_base_lo >= _tp_base_hi:
+            # Edge case: k_tp or atr_norm_mean extreme — fall back to full range and let guard catch
+            _tp_base_lo, _tp_base_hi = 0.012, 0.045
+        # Round to nearest step=0.001 boundary
+        _tp_base_lo = round(math.ceil(_tp_base_lo * 1000) / 1000, 3)
+        _tp_base_hi = round(math.floor(_tp_base_hi * 1000) / 1000, 3)
+        if _tp_base_lo > _tp_base_hi:
+            _tp_base_lo = _tp_base_hi
+
+        tp_base = trial.suggest_float("tp_base_pct", _tp_base_lo, _tp_base_hi, step=0.001)
         sl_as_tp = trial.suggest_float("sl_as_tp_pct", 0.3, 1.2, step=0.1)
         # Focusing on the longer ATR window as requested.
         atr_win = trial.suggest_categorical("base_atr_window", [840])
 
-        
         # 2. Build config
         c = base_param_template(self.runtime_cfg)
         c.update({
@@ -5129,40 +5419,24 @@ class TBMObjective:
 
         # 3. Stage-1 fast prune before ridge fitting.
         try:
-            # Tradeable TP-anchor guardrail: constrain effective TP anchor to 1%-4%.
-            # For ATR-normalized TP methods, include average ATR normalization effect.
+            # Safety-net: tp_anchor guard (should rarely fire now that sampling is constrained)
             _tp_base = float(c.get("tp_base_pct", c.get("tp_abs_pct", 0.01)))
             _k_tp = float(c.get("k_tp", 1.0))
             _tp_method = str(c.get("tp_method", ""))
-            _atr_norm_mean = 1.0
-            if _tp_method in {"atr_norm", "semi_atr_norm"}:
-                _w = int(c.get("base_atr_window", 168))
-                _r_key = f"tp_anchor_atr_norm_mean::{_w}"
-                _cached = self.eval_cache.get(_r_key, None) if hasattr(self.eval_cache, "get") else None
-                if _cached is None:
-                    _atr_src = _get_barrier_atr_frame(self.artifacts).replace([np.inf, -np.inf], np.nan)
-                    _med = _atr_src.rolling(_w, min_periods=24).median().fillna(_atr_src.median())
-                    _ratio = (_atr_src / (_med + EPS)).to_numpy(dtype=np.float32, copy=False).ravel()
-                    _ratio = _ratio[np.isfinite(_ratio)]
-                    _atr_norm_mean = float(np.nanmean(_ratio)) if _ratio.size else 1.0
-                    _atr_norm_mean = float(np.clip(_atr_norm_mean, 0.5, 2.0))
-                    try:
-                        self.eval_cache[_r_key] = _atr_norm_mean
-                    except Exception:
-                        pass
-                else:
-                    _atr_norm_mean = float(_cached)
-            tp_anchor_eff = _k_tp * _tp_base * _atr_norm_mean
-            if tp_anchor_eff < 0.01 or tp_anchor_eff > 0.04:
+            _anchor_norm = _atr_norm_mean if _tp_method in {"atr_norm", "semi_atr_norm"} else 1.0
+            tp_anchor_eff = _k_tp * _tp_base * _anchor_norm
+            if tp_anchor_eff < _TP_ANCHOR_LO or tp_anchor_eff > _TP_ANCHOR_HI:
                 raise optuna.TrialPruned(
                     f"tp_anchor_out_of_range={tp_anchor_eff:.4f} "
-                    f"(raw={_k_tp * _tp_base:.4f}, atr_norm_mean={_atr_norm_mean:.3f}) not in [0.0100, 0.0400]"
+                    f"(raw={_k_tp * _tp_base:.4f}, atr_norm_mean={_anchor_norm:.3f}) not in "
+                    f"[{_TP_ANCHOR_LO:.4f}, {_TP_ANCHOR_HI:.4f}]"
                 )
 
-            fast_lift = _fast_geometry_pr_auc_proxy(c)
-            trial.report(fast_lift, step=0)
-            if fast_lift < 1.1:
-                raise optuna.TrialPruned(f"fast_pr_auc_lift={fast_lift:.3f} < 1.1")
+            geometry_edge = _fast_geometry_pr_auc_proxy(c)
+            trial.report(geometry_edge, step=0)
+            if geometry_edge < 1.1:
+                raise optuna.TrialPruned(f"geometry_edge={geometry_edge:.3f} < 1.1 (no positive edge expected)")
+
 
             # Low-fidelity evaluation first (shorter horizon of history / fewer folds).
             # Evaluate exactly the Optuna-suggested SL value; sampler explores SL dimension.
@@ -5223,7 +5497,7 @@ class TBMObjective:
 
             c_high = dict(best_low_cfg)
             c_high.pop("_low_fidelity", None)
-            res, det, _ = evaluate_config(
+            res, det, weights_df_high = evaluate_config(
                 self.artifacts,
                 c_high,
                 horizons=self.horizons,
@@ -5232,9 +5506,14 @@ class TBMObjective:
                 layer2_cache=self.layer2_cache,
                 eval_cache=self.eval_cache,
                 detailed_slices=False,
-                collect_weights=True, # Collect weights for finalists (High-Fidelity)
+                collect_weights=True,  # P1 FIX: actually stream weights from high-fidelity finalist
                 target_cell_filter=self.target_cell,
             )
+            # Stream high-fidelity weights immediately (previously discarded with _)
+            if weights_df_high is not None and not weights_df_high.empty:
+                self.write_weights_fn(weights_df_high)
+                self.total_weights_written += len(weights_df_high)
+                del weights_df_high
             if not res:
                 return low_score
 
@@ -5308,9 +5587,9 @@ class TBMObjective:
                 f"hard_gate={res.get('hard_gate', False)}"
             )
 
-            if trial.number % 10 == 0:
+            # Reduce GC frequency: every 25 trials is sufficient (was every 10, hurts JIT cache)
+            if trial.number % 25 == 0:
                 gc.collect()
-                _clear_caches()
 
             return score
         except optuna.TrialPruned:

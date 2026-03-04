@@ -25,7 +25,7 @@ def _get_parquet_path(symbol: str) -> Path:
     return HF_DATA_DIR / f"{clean_symbol}_15m.parquet"
 
 
-def _load_existing_data(symbol: str) -> pd.DataFrame:
+def _load_existing_data(symbol: str, allow_quote_fallback: bool = True) -> pd.DataFrame:
     """Load existing 15m data from parquet if available.
 
     Falls back to the USDT-quoted variant if the requested quote currency
@@ -46,6 +46,9 @@ def _load_existing_data(symbol: str) -> pd.DataFrame:
         except Exception as e:
             tprint(f"WARNING: Failed to load {path}: {e}")
             return pd.DataFrame()
+
+    if not allow_quote_fallback:
+        return pd.DataFrame()
 
     # Fallback: try USDT variant for non-USDT quoted symbols
     _FALLBACK_QUOTES = ("USDC", "BUSD", "EUR")
@@ -236,38 +239,61 @@ def sync_15m_ohlcv_range(
     if until_ts <= since_ts:
         return pd.DataFrame()
 
-    existing_df = _load_existing_data(symbol)
+    # Strict check: only this exact symbol/quote cache should determine coverage.
+    existing_df = _load_existing_data(symbol, allow_quote_fallback=False)
     if not existing_df.empty:
         ex_start = existing_df.index.min()
         ex_end = existing_df.index.max()
         if ex_start <= since_ts and ex_end >= until_ts:
             return existing_df.loc[(existing_df.index >= since_ts) & (existing_df.index <= until_ts)]
 
-    if full_backfill:
-        dl_start = since_ts
-    elif not existing_df.empty:
-        ex_end = existing_df.index.max()
-        dl_start = max(since_ts, ex_end + pd.Timedelta(minutes=15))
-    else:
-        dl_start = since_ts
-
-    if dl_start >= until_ts:
-        if existing_df.empty:
-            return pd.DataFrame()
-        return existing_df.loc[(existing_df.index >= since_ts) & (existing_df.index <= until_ts)]
-
-    new_df = _download_from_exchange(exchange, symbol, dl_start, until_ts)
-    if new_df.empty:
-        if existing_df.empty:
-            return pd.DataFrame()
-        return existing_df.loc[(existing_df.index >= since_ts) & (existing_df.index <= until_ts)]
-
+    # Build missing ranges and only download gaps instead of re-downloading covered periods.
+    download_ranges: list[tuple[pd.Timestamp, pd.Timestamp]] = []
     if existing_df.empty:
-        combined_df = new_df
+        download_ranges.append((since_ts, until_ts))
     else:
-        combined_df = pd.concat([existing_df, new_df])
-        combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
-        combined_df = combined_df.sort_index()
+        ex_start = existing_df.index.min()
+        ex_end = existing_df.index.max()
+
+        if full_backfill:
+            # Legacy behavior: force a single pass from since_ts, may overlap.
+            download_ranges.append((since_ts, until_ts))
+        else:
+            # Missing history before current cache start.
+            if since_ts < ex_start:
+                left_end = min(until_ts, ex_start - pd.Timedelta(minutes=15))
+                if since_ts <= left_end:
+                    download_ranges.append((since_ts, left_end))
+
+            # Missing tail after current cache end.
+            if until_ts > ex_end:
+                right_start = max(since_ts, ex_end + pd.Timedelta(minutes=15))
+                if right_start <= until_ts:
+                    download_ranges.append((right_start, until_ts))
+
+    if not download_ranges:
+        if existing_df.empty:
+            return pd.DataFrame()
+        return existing_df.loc[(existing_df.index >= since_ts) & (existing_df.index <= until_ts)]
+
+    chunks: list[pd.DataFrame] = []
+    for dl_start, dl_end in download_ranges:
+        if dl_start >= dl_end:
+            continue
+        new_df = _download_from_exchange(exchange, symbol, dl_start, dl_end)
+        if not new_df.empty:
+            chunks.append(new_df)
+
+    if existing_df.empty and not chunks:
+        return pd.DataFrame()
+    if not chunks:
+        return existing_df.loc[(existing_df.index >= since_ts) & (existing_df.index <= until_ts)]
+
+    combined_parts = [existing_df] if not existing_df.empty else []
+    combined_parts.extend(chunks)
+    combined_df = pd.concat(combined_parts)
+    combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
+    combined_df = combined_df.sort_index()
 
     _save_data(symbol, combined_df)
     return combined_df.loc[(combined_df.index >= since_ts) & (combined_df.index <= until_ts)]
@@ -297,6 +323,10 @@ def bulk_sync_15m_universe(
     until_ts: pd.Timestamp | None = None,
     quotes: tuple = ("USDT", "USDC", "BUSD"),
     skip_existing: bool = True,
+    symbol_order: str = "alpha_asc",
+    partition_count: int = 1,
+    partition_id: int = 0,
+    exchange_preference: tuple[str, ...] = ("binance", "binanceus"),
 ) -> dict:
     """Download 15m OHLCV for every symbol in the universe, covering all quote currencies.
 
@@ -310,6 +340,10 @@ def bulk_sync_15m_universe(
         until_ts: End of the desired range; defaults to now.
         quotes  : Quote currencies to ensure coverage for.
         skip_existing: If True, skips symbols already fully covered.
+        symbol_order: alpha_asc (default) or alpha_desc.
+        partition_count: Number of workers partitioning the symbol list.
+        partition_id: Zero-based worker id within [0, partition_count).
+        exchange_preference: CCXT exchange ids to try in order.
 
     Returns:
         dict mapping symbol → 'ok' | 'skipped' | 'failed'
@@ -323,51 +357,119 @@ def bulk_sync_15m_universe(
     until_ts = until_ts.tz_localize("UTC") if until_ts.tz is None else until_ts.tz_convert("UTC")
 
     # Extract unique base assets from symbol list
-    _KNOWN_QUOTES = {"USDT", "USDC", "BUSD", "EUR", "BTC", "ETH"}
+    requested_quotes = tuple(q.upper() for q in quotes)
+    _KNOWN_QUOTES = {
+        *requested_quotes,
+        "USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI",
+        "EUR", "BTC", "ETH", "BNB", "TRY", "BRL",
+    }
+
+    def _parse_base_quote(raw_symbol: str) -> tuple[str, str] | tuple[None, None]:
+        sym = raw_symbol.strip().upper()
+        if not sym:
+            return None, None
+
+        if "/" in sym:
+            parts = sym.split("/", 1)
+            if len(parts) == 2 and parts[0] and parts[1]:
+                return parts[0], parts[1]
+            return None, None
+
+        if "_" in sym:
+            parts = sym.split("_", 1)
+            if len(parts) == 2 and parts[0] and parts[1]:
+                return parts[0], parts[1]
+            return None, None
+
+        compact = sym.replace("-", "")
+        for q in sorted(_KNOWN_QUOTES, key=len, reverse=True):
+            if compact.endswith(q) and len(compact) > len(q):
+                return compact[:-len(q)], q
+
+        # If only base asset is provided (e.g. BTC), caller-supplied quotes expand it.
+        if compact.isascii() and compact.isalnum():
+            return compact, ""
+
+        return None, None
+
     base_assets: set[str] = set()
     for sym in symbols:
-        clean = sym.replace("/", "").replace("_", "").upper()
-        for q in sorted(_KNOWN_QUOTES, key=len, reverse=True):
-            if clean.endswith(q) and len(clean) > len(q):
-                base_assets.add(clean[:-len(q)])
-                break
+        base, _quote = _parse_base_quote(str(sym))
+        if base and base.isascii() and base.isalnum():
+            base_assets.add(base)
 
     # Build the full set of symbols to sync
     target_symbols: list[str] = []
     for base in sorted(base_assets):
-        for q in quotes:
+        for q in requested_quotes:
             target_symbols.append(f"{base}/{q}")
 
-    tprint(f"bulk_sync_15m_universe: {len(base_assets)} base assets × {len(quotes)} quotes = {len(target_symbols)} symbols to check")
+    if symbol_order == "alpha_desc":
+        target_symbols = sorted(target_symbols, reverse=True)
+    else:
+        target_symbols = sorted(target_symbols)
 
-    ex = _ccxt.binance({"enableRateLimit": True})
+    if partition_count < 1:
+        raise ValueError("partition_count must be >= 1")
+    if partition_id < 0 or partition_id >= partition_count:
+        raise ValueError("partition_id must be in [0, partition_count)")
 
-    # Fetch exchange markets once to validate which symbols actually exist
-    try:
-        markets = ex.load_markets()
-        valid_ccxt = set(markets.keys())
-    except Exception as e:
-        tprint(f"WARNING: Could not load markets: {e}. Proceeding without validation.")
-        valid_ccxt = None
+    if partition_count > 1:
+        target_symbols = target_symbols[partition_id::partition_count]
+
+    tprint(
+        "bulk_sync_15m_universe: "
+        f"{len(base_assets)} base assets × {len(requested_quotes)} quotes -> {len(target_symbols)} symbols "
+        f"(order={symbol_order}, partition={partition_id}/{partition_count})"
+    )
+
+    ex = None
+    valid_ccxt = None
+    bootstrap_errors: list[str] = []
+    for ex_id in exchange_preference:
+        try:
+            ex_cls = getattr(_ccxt, ex_id)
+        except AttributeError:
+            bootstrap_errors.append(f"{ex_id}: unknown exchange id")
+            continue
+
+        candidate = ex_cls({"enableRateLimit": True})
+        try:
+            markets = candidate.load_markets()
+            ex = candidate
+            valid_ccxt = set(markets.keys())
+            tprint(f"Using exchange '{ex_id}' with {len(valid_ccxt)} listed markets")
+            break
+        except Exception as e:
+            bootstrap_errors.append(f"{ex_id}: {e}")
+            continue
+
+    if ex is None or valid_ccxt is None:
+        tprint("ERROR: Could not initialize any exchange. Aborting bulk sync.")
+        for err in bootstrap_errors:
+            tprint(f"  - {err}")
+        return {sym: "bootstrap_failed" for sym in target_symbols}
 
     results: dict = {}
     skipped = already_ok = failed = ok = 0
 
     for sym in target_symbols:
-        if valid_ccxt is not None and sym not in valid_ccxt:
+        if sym not in valid_ccxt:
             results[sym] = "not_listed"
             skipped += 1
             continue
 
         if skip_existing:
-            existing = _load_existing_data(sym)
+            # Strict coverage check for this exact symbol (no quote fallback).
+            existing = _load_existing_data(sym, allow_quote_fallback=False)
             if not existing.empty and existing.index.min() <= since_ts and existing.index.max() >= until_ts:
                 results[sym] = "skipped"
                 already_ok += 1
                 continue
 
         try:
-            df = sync_15m_ohlcv_range(ex, sym, since_ts, until_ts, full_backfill=True)
+            # Incremental mode avoids re-downloading periods already cached.
+            df = sync_15m_ohlcv_range(ex, sym, since_ts, until_ts, full_backfill=False)
             if df is not None and not df.empty:
                 results[sym] = "ok"
                 ok += 1
@@ -381,4 +483,3 @@ def bulk_sync_15m_universe(
 
     tprint(f"bulk_sync_15m_universe done: ok={ok} skipped={already_ok} not_listed={skipped} failed/empty={failed}")
     return results
-

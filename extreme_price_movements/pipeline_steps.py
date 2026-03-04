@@ -41,6 +41,41 @@ from extreme_price_movements.reports.bucket_report import (
 )
 from extreme_price_movements.entry_policy import compute_entry_policy_decision, flatten_bucket_policy
 
+# Priority order for quote-currency deduplication.
+_QUOTE_PRIORITY: list[str] = ["USDT", "USDC", "BUSD", "EUR"]
+
+
+def _dedup_universe_by_base(symbols: list[str]) -> list[str]:
+    """Return at most one symbol per base asset, preferring the highest-priority quote.
+
+    Priority: USDT > USDC > BUSD > EUR. If a base asset has none of those quotes,
+    it is kept as-is (preserves non-stablecoin pairs like BTC/ETH).
+
+    Examples:
+        [ETH/USDT, ETH/USDC, BTC/USDT] -> [ETH/USDT, BTC/USDT]
+        [SOL/USDC, SOL/BUSD]            -> [SOL/USDC]
+    """
+    _KNOWN_QUOTES = set(_QUOTE_PRIORITY)
+
+    def _parse(sym: str) -> tuple[str, str]:
+        """Return (base, quote) parsed from any separator format."""
+        clean = sym.replace("/", "").replace("_", "").upper()
+        for q in sorted(_KNOWN_QUOTES, key=len, reverse=True):
+            if clean.endswith(q) and len(clean) > len(q):
+                return clean[: -len(q)], q
+        return clean, ""  # unknown quote — treat as unique
+
+    best: dict[str, tuple[int, str]] = {}  # base -> (priority_rank, original_sym)
+    for sym in symbols:
+        base, quote = _parse(sym)
+        rank = _QUOTE_PRIORITY.index(quote) if quote in _QUOTE_PRIORITY else len(_QUOTE_PRIORITY)
+        if base not in best or rank < best[base][0]:
+            best[base] = (rank, sym)
+
+    deduped = sorted(v for _, v in best.values())
+    return deduped
+
+
 def _meta_feature_keys_union(cfg) -> set[str]:
     keys = set(cfg.get("meta_feature_keys", []) or [])
     keys.update(cfg.get("mr_meta_feature_keys", []) or [])
@@ -84,7 +119,16 @@ def _labeling_feature_keys(cfg) -> set[str]:
         "ret24h", "ret1h", "atr_pct",
         "range_12h_pct", "volatility_zscore",
         "chop_score", "mkt_rv_24h", "mkt_rv_48h",
+        # Required by _build_optimal_candidate_mask → select_trade_candidates_vectorized.
+        # Without this the candidate mask is None and label generation crashes.
+        "dist_ema_fast",
+        # Required by _prepare_events_once_for_side_kind for trend-direction bucket filter.
+        "trend_pct",
     }
+    # Also honour any custom trade_deviation_metric (may differ from dist_ema_fast)
+    dev_metric = cfg.get("trade_deviation_metric", "dist_ema_fast")
+    if isinstance(dev_metric, str) and dev_metric:
+        keys.add(dev_metric)
     # Add exhaustion-specific feature keys (generally small set)
     exh_keys = cfg.get("exh_feature_keys", [])
     if isinstance(exh_keys, (list, tuple)):
@@ -562,7 +606,10 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
         train_syms = sorted(list(set(train_syms).union(set(cfg.get("market_basket", [])))))
     else:
         train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=ts_sig)
-    tprint(f"Universe: {len(train_syms)} symbols")
+    tprint(f"Universe before dedup: {len(train_syms)} symbols")
+    train_syms = _dedup_universe_by_base(train_syms)
+    tprint(f"Universe after base-asset dedup (USDT>USDC>BUSD>EUR): {len(train_syms)} symbols")
+
 
     # Load Data & Features
     dfs = {}

@@ -56,6 +56,9 @@ def build_trap_dataset(panel, feats, cfg, syms):
         
         # Extract features for this symbol
         # Use pandas reindexing for speed instead of loop
+        if TRAP_FEATURE_KEYS[0] not in feats:
+            tprint("  WARNING: Trap feature keys not available (label step uses minimal feature set). Skipping trap dataset.")
+            return None
         valid_idx = y_sym.index.intersection(feats[TRAP_FEATURE_KEYS[0]].index)
         if len(valid_idx) < 100: continue
         

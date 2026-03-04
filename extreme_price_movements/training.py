@@ -2818,7 +2818,7 @@ def build_hourly_training_set_and_weights(
         _policy_bars_to_mfe_vals if _policy_bars_to_mfe_vals is not None else np.maximum(1, _dur_vals),
         dtype=np.int16,
     )
-    _is_mr = str(k).lower() == "mr"
+    _is_mr = str(model_kind).lower() == "mr"
     if _is_mr:
         _mr_sl = np.clip(np.asarray(sl_vals, dtype=np.float64), 1e-6, None)
         _mr_mae_ratio = np.clip(np.asarray(mae_vals, dtype=np.float64) / _mr_sl, 0.0, 3.0)
@@ -3818,6 +3818,12 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                 else:
                     geom_desc = []
                     no_hit_rates = []
+                    def _fmt_count(v):
+                        try:
+                            iv = int(v)
+                            return str(iv) if iv >= 0 else "NA"
+                        except Exception:
+                            return "NA"
                     for _g in geom_runs:
                         _no_hit = max(0.0, 1.0 - _g["tp_hit"] - _g["sl_hit"] - _g["to_rate"])
                         no_hit_rates.append(_no_hit)
@@ -3826,7 +3832,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                             f"sl_hit={_g['sl_hit']:.3%}, timeout={_g['to_rate']:.3%}, no_hit={_no_hit:.3%}, "
                             f"n={int(_g['n_events'])}, auc_b={_g['auc_bound']:.3f}, sep={_g['tp_sep_top10']*100:.2f}pp, "
                             f"bind_raw={_g['bind']:.3f}, edge={_g['tp_over_sl']:.2f}, w={_g['rr_weight']:.3f}, "
-                            f"n_candidates={int(_g.get('n_candidates', -1))}, n_rr_kept={int(_g.get('n_rr_kept', -1))})"
+                            f"n_candidates={_fmt_count(_g.get('n_candidates'))}, n_rr_kept={_fmt_count(_g.get('n_rr_kept'))})"
                         )
                     tprint(
                         f"Accepted geometries H={H} side={side} kind={k_label}: {len(geom_runs)} | "

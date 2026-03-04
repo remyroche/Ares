@@ -2658,8 +2658,30 @@ class RidgePositionSizer:
                 base.fit(
                     X_tr, y_tr, sample_weight=w_tr,
                     eval_set=[(X_va, y_va)], eval_metric="l2",
-                    callbacks=[__import__("lightgbm").early_stopping(200, verbose=False)],
+                    callbacks=[__import__("lightgbm").early_stopping(100, verbose=False)],
                 )
+                return base
+            if name == "xgb":
+                try:
+                    from xgboost import XGBRegressor
+                except Exception:
+                    return None
+                base = XGBRegressor(
+                    num_parallel_tree=50,
+                    booster="gbtree",
+                    colsample_bytree=0.7,
+                    subsample=0.7,
+                    max_depth=5,
+                    learning_rate=0.04,
+                    min_child_weight=200,
+                    gamma=2.0,
+                    reg_lambda=20.0,
+                    reg_alpha=1.0,
+                    n_estimators=20,
+                    random_state=42,
+                    n_jobs=3
+                )
+                base.fit(X_tr, y_tr, sample_weight=w_tr)
                 return base
             return None
 
@@ -2754,7 +2776,7 @@ class RidgePositionSizer:
             return {"oof_size": oof_size, "fold_metrics": fold_rows, "agg": agg}
 
         race_results = {}
-        for base_name in ["ridge", "et", "lgbm"]:
+        for base_name in ["ridge", "et", "lgbm", "xgb"]:
             for sm_name in smoother_kinds:
                 key = f"{base_name}+{sm_name}"
                 out = _run_policy_candidate(base_name, sm_name)

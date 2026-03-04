@@ -436,6 +436,7 @@ CFG = {
         "utility_disagreement",
     ],
     "limit_offset_sizer": [
+        "liq_3d", "trend_3d", "volatility_3d", "entropy_3d", "volume_z_score_3d", "vol_z_score_3d", "ema_diff_3d",
         "score",
         "reg",
         "reg_mean",
@@ -677,6 +678,7 @@ CFG = {
     # Enable/disable 15m OHLCV-derived feature family across train/inference feature lists.
     "enable_15m_ohlcv_features": True,
     "causal_cols": [
+        "liq_3d", "trend_3d", "volatility_3d", "entropy_3d", "volume_z_score_3d", "vol_z_score_3d", "ema_diff_3d",
         "ret24h", "rsi", "vol_z", "atr_pct", "trend_pct", "rv_2h", "rv_4h", "rv_24h",
         "p_exh_lag1",
         "a_funding_proxy",
@@ -955,6 +957,7 @@ CFG = {
 
     # Meta Learner
     "meta_feature_keys": [
+        "liq_3d", "trend_3d", "volatility_3d", "entropy_3d", "volume_z_score_3d", "vol_z_score_3d", "ema_diff_3d",
         "ambig", "stage_tf", "stage_blowoff", "stage_mr", "exh_qual",
         "accept", "accept_bin3", "accept_gt85", "rv_ratio_6_24",
         "G_TF_TREND", "vol_z_x_trend_t",

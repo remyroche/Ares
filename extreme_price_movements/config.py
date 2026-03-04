@@ -24,7 +24,8 @@ FEATURE_KEYS_15M_OHLCV = [
 neutral_feature_keys = [
     "rsi", "vol_z", "atr_pct", "mkt_rv_ratio", "skew", 
     "trend_snr", "efficiency", "vol_asym", "momentum_accel",
-    "dist_stack", "stage_blowoff", "exh_qual", "volatility_zscore"
+    "dist_stack", "stage_blowoff", "exh_qual", "volatility_zscore",
+    "dv_z", "rng_z", "impact_z", "liq_score", "liq_state"
 ]
 
 MODEL_FEATURES = [
@@ -393,6 +394,9 @@ CFG = {
     "position_sizer_pwin_soft_label_log_eps": 1e-12,
     # Position-sizer features from meta OOF + regime context.
     "position_sizer_feature_priority": [
+        "impact_z",
+        "dv_z",
+        "rng_z",
         "score",
         "reg",
         "reg_mean",
@@ -436,6 +440,9 @@ CFG = {
         "utility_disagreement",
     ],
     "limit_offset_sizer": [
+        "impact_z",
+        "dv_z",
+        "rng_z",
         "score",
         "reg",
         "reg_mean",
@@ -677,6 +684,7 @@ CFG = {
     # Enable/disable 15m OHLCV-derived feature family across train/inference feature lists.
     "enable_15m_ohlcv_features": True,
     "causal_cols": [
+        "dv_z", "rng_z", "impact_z", "liq_score", "liq_state",
         "ret24h", "rsi", "vol_z", "atr_pct", "trend_pct", "rv_2h", "rv_4h", "rv_24h",
         "p_exh_lag1",
         "a_funding_proxy",
@@ -1015,6 +1023,8 @@ CFG = {
         # New Indicators
         "vp_profile_concentration", "vp_profile_entropy", "vp_lvn_depth_ratio",
         "adx_14_slope", "trapped_longs_96",
+        # New Liquidity features
+        "liq_score", "rng_z", "impact_z",
         # Event-timing + policy-normalized stage features (entry-time only)
         "time_since_peak_12h", "time_since_trough_12h", "time_since_event_extreme_12h",
         "second_leg_accel_1h", "second_leg_accel_2h", "second_leg_accel_vol_1h", "second_leg_accel_vol_2h",

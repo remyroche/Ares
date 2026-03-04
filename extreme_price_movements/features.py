@@ -822,7 +822,34 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     # Raw ATR% = ATR(h_raw, l_raw, c_raw, 14) / c_raw  (fraction, not log-differenced)
     _raw_atr = ff.numba_atr_no_norm(h_raw, l_raw, c_raw, n=cfg["atr_n"])
     _raw_atr_pct = (_raw_atr / (c_raw + 1e-12)).astype(np.float32)
-    del h_raw, l_raw, _raw_atr
+    del _raw_atr
+
+    # --- Liquidity Features (User Request) ---
+    # Must compute before deleting h_raw, l_raw, c_raw, v_raw
+    # Volume is in panel still, so we can access it
+    _v_raw = panel["volume"].astype(np.float32)
+    _v_raw.index = new_idx
+    _rng = np.log(h_raw / np.maximum(l_raw, 1e-12)).astype(np.float32)
+    _dollar_vol = (c_raw * _v_raw).astype(np.float32)
+    _rng_sum_48 = ff.numba_rolling_sum(_rng, 48)
+    _dv_sum_48 = ff.numba_rolling_sum(_dollar_vol, 48)
+    _impact = (_rng_sum_48 / np.maximum(_dv_sum_48, 1e-12)).astype(np.float32)
+    _dv_log = np.log(np.maximum(_dollar_vol, 1e-12)).astype(np.float32)
+    def _zscore(x: pd.DataFrame) -> pd.DataFrame:
+        return (x - x.mean()) / x.std()
+
+    _liq_feats_temp = {}
+    _liq_feats_temp["dv_z"] = _zscore(_dv_log).astype(np.float32)
+    _liq_feats_temp["rng_z"] = _zscore(_rng).astype(np.float32)
+    _liq_feats_temp["impact_z"] = _zscore(_impact).astype(np.float32)
+    _liq_score = (_liq_feats_temp["dv_z"] - _liq_feats_temp["rng_z"] - _liq_feats_temp["impact_z"]).astype(np.float32)
+    _liq_feats_temp["liq_score"] = _zscore(_liq_score).astype(np.float32)
+
+    # Global rank to simulate qcut
+    _liq_pct = _liq_feats_temp["liq_score"].rank(pct=True).fillna(0.5)
+    _liq_feats_temp["liq_state"] = np.floor(_liq_pct.clip(0, 0.9999) * 5).astype(np.float32)
+
+    del h_raw, l_raw, _v_raw, _rng, _dollar_vol, _rng_sum_48, _dv_sum_48, _impact, _dv_log, _liq_score, _liq_pct
     gc.collect()
 
     c_log = _safe_log_df(c_raw, eps=safe_log_eps)
@@ -851,6 +878,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     panel.clear()
 
     feats = {}
+    feats.update(_liq_feats_temp)
 
     # Correct return naming: log returns from log close
     feats["lr_1h"] = c_log.diff(1).astype(np.float32)
@@ -2829,7 +2857,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     )
 
     skip_transform_set = {
-        "sin_hod", "cos_hod", "sin_dow", "cos_dow", "range_24h_pct", "range_12h_pct",
+        "liq_state", "sin_hod", "cos_hod", "sin_dow", "cos_dow", "range_24h_pct", "range_12h_pct",
         "volatility_zscore", "breakout_24h", "draw_sym_10h", "draw_extreme_10h",
         "G_VOL_LIQ_GT1", "G_VOL_LIQ_GT2", "G_VOL_LIQ_GT3", "G_LIQ_GOOD", "G_LIQ_GREAT", "G_LIQ_EXCEL",
         "mtf_divergence", "vol_price_diverge", "meta_alignment",

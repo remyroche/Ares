@@ -35,6 +35,7 @@ def block_permutation_importance(
     else:
         blocks.append(np.arange(n_samples))
 
+    # Downcast arrays internally for block permutation
     for i, feature in enumerate(feature_names):
         for r in range(n_repeats):
             X_perm = X_val.copy()

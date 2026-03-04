@@ -92,6 +92,13 @@ def run_rfe(
             X_tr, y_tr = X.iloc[train_idx][current_features].copy(), y[train_idx]
             X_va, y_va = X.iloc[val_idx][current_features].copy(), y[val_idx]
 
+            # Downcast to float32
+            for col in current_features:
+                if X_tr[col].dtype == 'float64':
+                    X_tr[col] = X_tr[col].astype('float32')
+                if X_va[col].dtype == 'float64':
+                    X_va[col] = X_va[col].astype('float32')
+
             # Add sample_weight back if present in original X
             if 'sample_weight' in X.columns:
                 X_tr['sample_weight'] = X.iloc[train_idx]['sample_weight']

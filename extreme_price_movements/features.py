@@ -2,6 +2,7 @@ import warnings
 
 import numpy as np
 import pandas as pd
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import hashlib
 import os
 import pickle
@@ -739,6 +740,17 @@ def compute_features_hourly(panel, mkt_gates, cfg):
     by save_features, and the joblib serialization doubled peak memory.
     """
     return _compute_features_impl(panel, mkt_gates, cfg)
+
+
+def _compute_hvn_col(col, o_col, h_col, l_col, c_col, v_col):
+    df_col = pd.DataFrame({
+        "open": o_col,
+        "high": h_col,
+        "low": l_col,
+        "close": c_col,
+        "volume": v_col
+    })
+    return col, hvn_lvn_features_ohlcv(df_col)
 
 def _compute_features_impl(panel, mkt_gates, cfg):
     tprint("Features: compute base matrices")
@@ -2765,26 +2777,29 @@ def _compute_features_impl(panel, mkt_gates, cfg):
         sample_res = hvn_lvn_features_ohlcv(df_first)
         hvn_keys = list(sample_res.columns)
 
-        # Initialize containers
         hvn_results = {k: pd.DataFrame(index=c_log.index, columns=c_log.columns, dtype=np.float32) for k in hvn_keys}
-
         total_cols = len(c_log.columns)
-        for i, col in enumerate(c_log.columns):
-            if (i+1) % 50 == 0:
-                tprint(f"HVN/LVN: {i+1}/{total_cols}")
 
-            df_col = pd.DataFrame({
-                "open": o[col],
-                "high": h[col],
-                "low": l[col],
-                "close": c_log[col],
-                "volume": v[col]
-            })
+        # Parallel execution using ProcessPoolExecutor
+        import multiprocessing
+        max_workers = min(8, multiprocessing.cpu_count())
 
-            res_df = hvn_lvn_features_ohlcv(df_col)
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures = []
+            for col in c_log.columns:
+                futures.append(
+                    executor.submit(_compute_hvn_col, col, o[col], h[col], l[col], c_log[col], v[col])
+                )
 
-            for k in hvn_keys:
-                hvn_results[k][col] = res_df[k].values.astype(np.float32)
+            completed = 0
+            for future in as_completed(futures):
+                col, res_df = future.result()
+                for k in hvn_keys:
+                    hvn_results[k][col] = res_df[k].values.astype(np.float32)
+
+                completed += 1
+                if completed % 50 == 0:
+                    tprint(f"HVN/LVN: {completed}/{total_cols}")
 
         # Add to main feats with prefix
         for k, df_res in hvn_results.items():

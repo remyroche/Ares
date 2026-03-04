@@ -10,6 +10,7 @@ try:
         _numba_ewma,
         _numba_rolling_vwap,
         _numba_rolling_vwap_parallel,
+        _numba_rolling_bars_since_extreme_parallel,
         _numba_rolling_kurt,
         _numba_rolling_skew,
         _numba_rolling_slope,
@@ -27,6 +28,7 @@ except ImportError:
         _numba_ewma,
         _numba_rolling_vwap,
         _numba_rolling_vwap_parallel,
+        _numba_rolling_bars_since_extreme_parallel,
         _numba_rolling_kurt,
         _numba_rolling_skew,
         _numba_rolling_slope,
@@ -2668,6 +2670,23 @@ def numba_rolling_vwap(price_df, volume_df, n):
 
     res_df = pd.DataFrame(res_mat, index=idx, columns=cols)
     res_df = res_df.reindex(index=price_df.index, columns=price_df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+    return res_df
+
+
+def numba_rolling_bars_since_extreme(df, window, mode="max"):
+    """Wrapper for parallel bars since rolling argmax/argmin."""
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
+    mat = df.to_numpy(dtype=np.float32)
+    mode_int = 1 if mode == "max" else 0
+    res_mat = _numba_rolling_bars_since_extreme_parallel(mat, int(window), mode_int)
+
+    res_df = pd.DataFrame(res_mat, index=df.index, columns=df.columns)
 
     if is_series:
         return res_df[res_df.columns[0]]

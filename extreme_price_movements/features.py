@@ -1541,13 +1541,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     l_prev = l.shift(1)
 
     def _rolling_bars_since_extreme(df: pd.DataFrame, window: int, mode: str) -> pd.DataFrame:
-        fn = np.argmax if mode == "max" else np.argmin
-        out = pd.DataFrame(index=df.index, columns=df.columns, dtype=np.float32)
-        for _col in df.columns:
-            _s = pd.to_numeric(df[_col], errors="coerce")
-            _bs = _s.rolling(window, min_periods=1).apply(lambda x: float(len(x) - 1 - fn(np.asarray(x, dtype=float))), raw=True)
-            out[_col] = _bs.astype(np.float32)
-        return out
+        return ff.numba_rolling_bars_since_extreme(df, window, mode)
 
     # Time since local peak/trough in the last 12h window (all windows end at t-1)
     time_since_peak_12h = _rolling_bars_since_extreme(h_prev, 12, "max")

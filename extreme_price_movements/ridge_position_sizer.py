@@ -3528,7 +3528,7 @@ def _compute_ridge_weight_diagnostics(
         "weight_entropy": float(-np.sum(np.where(p > 0.0, p * np.log(p), 0.0))),
     }
     horizon_shares: Dict[str, float] = {}
-    for h in ("H2", "H4", "H8"):
+    for h in ("H1", "H2", "H4", "H8"):
         m = np.array([f"_{h}" in n for n in names], dtype=bool)
         horizon_shares[h] = float(np.sum(absw[m]) / sum_abs) if sum_abs > 0 else 0.0
     diag["weight_share_by_horizon"] = horizon_shares

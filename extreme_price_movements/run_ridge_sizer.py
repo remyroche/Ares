@@ -98,7 +98,7 @@ def load_base_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
         return {}
     
     # Parse model names into (base_bucket, horizon)
-    # Patterns: long_mr_H2 -> (long_mr, H2), long_tf_H4 -> (long_tf, H4)
+    # Patterns: long_mr_H1 -> (long_mr, H1), long_mr_H2 -> (long_mr, H2), long_tf_H4 -> (long_tf, H4)
     h_pat = re2.compile(r'^(.+)_H(\d+)$')
     buckets = {}
     for name, df in raw_dfs.items():
@@ -142,9 +142,9 @@ def load_base_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
 def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataFrame]:
     """Load meta model OOF predictions from a training run.
     
-    Handles per-horizon regressors (e.g. long_mr_H2, long_mr_H4, long_mr_H8)
+    Handles per-horizon regressors (e.g. long_mr_H1, long_mr_H2, long_mr_H4, long_mr_H8)
     and classifiers (e.g. long_mr_clf). Groups by base bucket and returns a
-    DataFrame per bucket with columns: reg_H2, reg_H4, reg_H8, clf, plus
+    DataFrame per bucket with columns: reg_H1, reg_H2, reg_H4, reg_H8, clf, plus
     agreement/disagreement features.
     
     Returns a dict keyed by bucket (e.g. 'long_mr') where each value is a
@@ -181,7 +181,7 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
         tprint("Meta classifier probabilities found in meta OOF artifacts.")
     
     # Parse model names into (base_bucket, col_name)
-    # Patterns: long_mr_H2 -> (long_mr, reg_H2), long_mr_clf -> (long_mr, clf),
+    # Patterns: long_mr_H1 -> (long_mr, reg_H1), long_mr_H2 -> (long_mr, reg_H2), long_mr_clf -> (long_mr, clf),
     #           long_mr_utility -> (long_mr, utility), etc.
     _h_pat = re.compile(r'^(.+)_H(\d+)$')
     _aux_heads = {'utility', 'mae_q70', 'mfe', 'early_inval'}
@@ -320,7 +320,7 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
         "mae_q70", "mfe", "early_inval", "oof_u_hat", "oof_log_mae_q70_hat", 
         "oof_log_mfe_hat", "mfe_mae_ratio_hat", "Upside", "Downside", 
         "EdgeSharpe", "risk_reward_ratio", "high_utility_pred", 
-        "risk_adjusted_pred", "utility_disagreement", "base_H2", "base_H4", "base_H8"
+        "risk_adjusted_pred", "utility_disagreement", "base_H1", "base_H2", "base_H4", "base_H8"
     }
     missing_feats = missing_feats - known_preds
 

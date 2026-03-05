@@ -7448,11 +7448,22 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                 pred_h[f"pred_H{h}"] = p_h
                 p_oof_avg_parts.append(p_h)
 
-            # Ensure side-level meta models see all same-side base outputs (TF + MR)
-            for k_other in kinds:
-                other_horizon_dfs, _ = _collect_horizon_oof(side, k_other)
-                for h in [2, 4, 8]:
-                    col_name = f"pred_{k_other}_H{h}"
+            # Determine related bucket that triggers on the same market direction
+            # long TF & short MR (market goes up)
+            # long MR & short TF (market goes down)
+            if side == "long" and k == "tf":
+                related_side, related_kind = "short", "mr"
+            elif side == "short" and k == "mr":
+                related_side, related_kind = "long", "tf"
+            elif side == "long" and k == "mr":
+                related_side, related_kind = "short", "tf"
+            else: # short TF
+                related_side, related_kind = "long", "mr"
+
+            for s_other, k_other in [(side, "mr" if k == "tf" else "tf"), (related_side, related_kind)]:
+                other_horizon_dfs, _ = _collect_horizon_oof(s_other, k_other)
+                for h in [1, 2, 4, 8]:
+                    col_name = f"pred_{s_other}_{k_other}_H{h}"
                     if col_name in pred_h.columns:
                         continue
                     if h in other_horizon_dfs:
@@ -7463,7 +7474,7 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                     else:
                         pred_h[col_name] = np.full(len(df), 0.5, dtype=np.float32)
             tprint(
-                f"  Meta {side}_{k}: added same-side TF/MR base OOF features "
+                f"  Meta {side}_{k}: added same-side ({side}_{'mr' if k == 'tf' else 'tf'}) and same-direction ({related_side}_{related_kind}) base OOF features "
                 f"(cols={len([c for c in pred_h.columns if c.startswith('pred_')])})"
             )
 

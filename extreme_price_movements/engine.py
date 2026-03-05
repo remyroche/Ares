@@ -679,10 +679,45 @@ def _meta_predict_or_fallback(meta_model, p_alpha, grp_df, label, side_key, mr_h
             X_meta[f"pred_logit_H{h}"] = _lg_h.astype(np.float32)
             _logit_parts.append(_lg_h)
     
+    # Determine related side/kind logic similar to training.py
+    # long TF & short MR (market goes up)
+    # long MR & short TF (market goes down)
+    k_this = label # "mr" or "tf"
+    if side_key == "long" and k_this == "tf":
+        related_side, related_kind = "short", "mr"
+    elif side_key == "short" and k_this == "mr":
+        related_side, related_kind = "long", "tf"
+    elif side_key == "long" and k_this == "mr":
+        related_side, related_kind = "short", "tf"
+    else: # short TF
+        related_side, related_kind = "long", "mr"
+
+    # In engine.py we don't easily have predictions from the OTHER side available in this local scope yet.
+    # Currently engine processes `grp` where side_key is fixed (e.g. side_key = "long").
+    # The models for `short` side aren't predicting on the `long` candidates in this loop.
+    # To fix this, we map what we DO have. If missing, the model will fallback (or impute 0.5).
+    # Since `engine.py` is live trading generation, the meta_models were trained with `pred_long_mr_H2` etc.
+    # We must construct those column names so predict() doesn't fail.
+
     # Store all individual scale predictions (meta model often selects them)
     for k, v in mr_h_preds.items():
+        # Rewrite the name slightly to match the cross-kind naming expected by the meta model
+        # `mr_h_preds` represents the current side's MR predictions
+        # The meta model expects names like `pred_long_mr_H2`
+        # In engine, mr_h_preds keys are like `pred_mr_H2`. We should map them.
+        h_suffix = k.split("_")[-1] # e.g. "H2", "H1"
+        if "pred_mr_" in k:
+            X_meta[f"pred_{side_key}_mr_{h_suffix}"] = v.astype(np.float32)
+            # Add fallback 0.5 for the related side
+            X_meta[f"pred_{related_side}_{related_kind}_{h_suffix}"] = np.full(len(v), 0.5, dtype=np.float32)
         X_meta[k] = v.astype(np.float32)
     for k, v in tf_h_preds.items():
+        h_suffix = k.split("_")[-1] # e.g. "H2", "H1"
+        if "pred_tf_" in k:
+            X_meta[f"pred_{side_key}_tf_{h_suffix}"] = v.astype(np.float32)
+            # Add fallback 0.5 for the related side
+            if f"pred_{related_side}_{related_kind}_{h_suffix}" not in X_meta:
+                 X_meta[f"pred_{related_side}_{related_kind}_{h_suffix}"] = np.full(len(v), 0.5, dtype=np.float32)
         X_meta[k] = v.astype(np.float32)
 
     # 2. Disagreement features

@@ -9356,7 +9356,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
 
                 race = ModelRace(kind=k, n_splits=2)
                 groups = df["__ts__"].values if "__ts__" in df.columns else None
-                race.fit(X_sel, y, sample_weight=w, returns=y_ret, groups=groups)
+                symbols = df["__symbol__"].values if "__symbol__" in df.columns else None
+                race.fit(X_sel, y, sample_weight=w, returns=y_ret, groups=groups, symbols=symbols)
                 score = race.metrics.get(race.best_model_name, -1.0)
                 dm = race.detailed_metrics.get(race.best_model_name, {})
                 # Race CV AUC = fold-averaged AUC during model selection

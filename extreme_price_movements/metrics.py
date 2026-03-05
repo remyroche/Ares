@@ -124,6 +124,7 @@ def calculate_selection_score(
     trade_returns,
     *,
     sample_weight=None,
+    symbols=None,
     # ---- Position sizing ----
     size_mode="rank",       # "linear"|"rank"|"sigmoid"|"centered"
     min_pos=0.0,              # long-only default. set -1..1 for long/short with centered mode
@@ -178,6 +179,12 @@ def calculate_selection_score(
     y_prob_m = y_prob[m]
     r_m = r[m]
     y_true_m = (y_true[m] >= 0.5).astype(int) if y_true is not None else None
+
+    symbols_m = None
+    if symbols is not None:
+        symbols = np.asarray(symbols)
+        symbols = symbols[:n]
+        symbols_m = symbols[m]
 
     # Handle sample weights
     w_m = None
@@ -301,7 +308,11 @@ def calculate_selection_score(
     if np.nanstd(y_prob_m) < 1e-12 or np.nanstd(u) < 1e-12:
         uic = 0.0
     else:
-        uic = spearmanr(y_prob_m, u, nan_policy="omit").correlation
+        if symbols_m is not None:
+            from extreme_price_movements.model_scoring import ic_cross_sectional
+            uic = ic_cross_sectional(y_prob_m, u, groups=symbols_m)
+        else:
+            uic = spearmanr(y_prob_m, u, nan_policy="omit").correlation
         uic = 0.0 if (uic is None or not np.isfinite(uic)) else float(uic)
 
     # Sigmoid scaling for IC to prevent hard cap saturation
@@ -423,7 +434,11 @@ def calculate_selection_score(
     # Or keep original IC? The new logic uses Utility IC.
     # We can add standard IC too.
     try:
-        std_ic = spearmanr(y_prob_m, r_m, nan_policy="omit").correlation
+        if symbols_m is not None:
+            from extreme_price_movements.model_scoring import ic_cross_sectional
+            std_ic = ic_cross_sectional(y_prob_m, r_m, groups=symbols_m)
+        else:
+            std_ic = spearmanr(y_prob_m, r_m, nan_policy="omit").correlation
         metrics["Standard_IC"] = float(std_ic) if (std_ic is not None and np.isfinite(std_ic)) else 0.0
     except:
         metrics["Standard_IC"] = 0.0

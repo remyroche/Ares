@@ -97,9 +97,10 @@ def _safe_binary_calibrate(preds, y_true, min_unique=20, min_samples=100):
             return preds, None, "identity"
 
 
-def calculate_selection_score(y_true, y_prob, y_ret, sample_weight=None, **kwargs):
+def calculate_selection_score(y_true, y_prob, y_ret, sample_weight=None, symbols=None, **kwargs):
     """Backward-compatible wrapper exposing legacy AUC/BSS/IC keys for tests/logs."""
     from extreme_price_movements.metrics import calculate_selection_score as _calc
+    from extreme_price_movements.model_scoring import ic_cross_sectional
     out = _calc(y_true, y_prob, y_ret, sample_weight=sample_weight, **kwargs)
     y_true = np.asarray(y_true)
     y_prob = np.asarray(y_prob)
@@ -113,7 +114,12 @@ def calculate_selection_score(y_true, y_prob, y_ret, sample_weight=None, **kwarg
     brier_ref = float(np.mean((base - y_true) ** 2))
     out["BSS"] = 1.0 - (brier / max(1e-9, brier_ref))
     try:
-        out["IC"] = float(np.corrcoef(rankdata(y_prob), rankdata(y_ret))[0, 1])
+        if symbols is not None:
+            out["IC"] = float(ic_cross_sectional(y_prob, y_ret, groups=symbols))
+            if np.isnan(out["IC"]):
+                out["IC"] = 0.0
+        else:
+            out["IC"] = float(np.corrcoef(rankdata(y_prob), rankdata(y_ret))[0, 1])
     except Exception:
         out["IC"] = 0.0
     return out
@@ -344,12 +350,14 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
         model.fit(X_tr, y_tr, **fit_kwargs)
 
-    def fit(self, X, y, sample_weight=None, returns=None, groups=None):
+    def fit(self, X, y, sample_weight=None, returns=None, groups=None, symbols=None):
         """
         X: features
         y: binary target
         sample_weight: weights for training
         returns: continuous returns for IC calculation (validation)
+        groups: typically timestamps for time-based splitting
+        symbols: symbol array for per-asset IC calculation
         """
         tprint(f"Entering function: fit in model_race.py")
         self.oof_probs = None  # Will store OOF predictions from best model
@@ -366,6 +374,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         else:
             returns = np.asarray(returns, dtype=np.float64)
         groups_arr = None if groups is None else np.asarray(groups)
+        symbols_arr = None if symbols is None else np.asarray(symbols)
 
         # Optimize: Convert to numpy once if possible (and suitable for all models)
         # ExtraTrees/XGBoost prefer numpy. CatBoost handles both but numpy is fine if no categorical features.
@@ -831,11 +840,17 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             oof_logloss = log_loss(y_hard, np.clip(oof_probs, 1e-7, 1-1e-7))
             oof_accuracy = accuracy_score(y_hard, oof_probs > 0.5)
             if returns is not None and np.std(oof_probs) > 1e-9 and np.std(returns) > 1e-9:
-                oof_ic = np.corrcoef(rankdata(oof_probs), rankdata(returns))[0, 1]
+                if symbols_arr is not None:
+                    from extreme_price_movements.model_scoring import ic_cross_sectional
+                    oof_ic = ic_cross_sectional(oof_probs, returns, groups=symbols_arr)
+                    if np.isnan(oof_ic):
+                        oof_ic = 0.0
+                else:
+                    oof_ic = np.corrcoef(rankdata(oof_probs), rankdata(returns))[0, 1]
             else:
                 oof_ic = 0.0
             # OOF selection score (same weights as race)
-            oof_sel = calculate_selection_score(y_hard, oof_probs, returns, sample_weight=sample_weight, w_bss=0.20, w_realized=0.55, w_uic=0.25)
+            oof_sel = calculate_selection_score(y_hard, oof_probs, returns, sample_weight=sample_weight, symbols=symbols_arr, w_bss=0.20, w_realized=0.55, w_uic=0.25)
             tprint(f"Winner OOF Metrics: AUC={oof_auc:.4f}  IC={oof_ic:.4f}  LogLoss={oof_logloss:.4f}  Acc={oof_accuracy:.4f}  SelScore={oof_sel['Selection_Score']:.4f}")
             
             # --- Post-hoc Isotonic Calibration ---

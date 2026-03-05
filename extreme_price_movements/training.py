@@ -93,6 +93,19 @@ from .trap_specialist import (
 from .utils import tprint
 
 
+_EXP_INPUT_CLIP = 60.0
+_EXP_OUTPUT_MAX = 1e12
+
+
+def _safe_exp_bounded(x, exp_clip: float = _EXP_INPUT_CLIP, out_max: float = _EXP_OUTPUT_MAX):
+    """Numerically stable exp with bounded input/output and finite guarantees."""
+    x_arr = np.asarray(x, dtype=np.float64)
+    x_clip = np.clip(x_arr, -abs(float(exp_clip)), abs(float(exp_clip)))
+    out = np.exp(x_clip)
+    out = np.where(np.isfinite(out), out, float(out_max))
+    return np.clip(out, 0.0, float(out_max))
+
+
 # =============================================================================
 # UNIFIED BARRIER FACTORY - Canonical TP/SL geometry (best-of-both pipelines)
 # =============================================================================
@@ -181,7 +194,10 @@ def _compute_barrier_base(
     atr_disp = np.maximum(atr_mad, disp_floor * atr_median)
     z_score = (atr_pct - atr_median) / (atr_disp + 1e-12)
     z_clipped = np.clip(z_score, -z_max, z_max)
-    m_clipped = np.clip(np.exp(k_reg * z_clipped), m_lo, m_hi)
+    m_clipped = np.clip(_safe_exp_bounded(k_reg * z_clipped), m_lo, m_hi)
+    if not np.isfinite(m_clipped.to_numpy(dtype=np.float64, copy=False)).all():
+        tprint("WARNING: Non-finite barrier multipliers detected in _compute_barrier_base; sanitizing to bounds.")
+        m_clipped = m_clipped.replace([np.inf, -np.inf], np.nan).fillna(float(m_hi)).clip(lower=float(m_lo), upper=float(m_hi))
     z_norm = np.clip((z_clipped - z_gate) / (z_max - z_gate), 0, 1)
     sl_mult = sl_mult_lo + (sl_mult_hi - sl_mult_lo) * z_norm
     return {
@@ -252,7 +268,10 @@ def compute_barrier_factory(
         )
         atr_disp = np.maximum(atr_mad, disp_floor * atr_median)
         z_clipped = np.clip((atr_pct - atr_median) / (atr_disp + 1e-12), -z_max, z_max)
-        m_clipped = np.clip(np.exp(k_reg * z_clipped), m_lo, m_hi)
+        m_clipped = np.clip(_safe_exp_bounded(k_reg * z_clipped), m_lo, m_hi)
+        if not np.isfinite(m_clipped.to_numpy(dtype=np.float64, copy=False)).all():
+            tprint("WARNING: Non-finite barrier multipliers detected in compute_barrier_factory; sanitizing to bounds.")
+            m_clipped = m_clipped.replace([np.inf, -np.inf], np.nan).fillna(float(m_hi)).clip(lower=float(m_lo), upper=float(m_hi))
         z_norm = np.clip((z_clipped - z_gate) / (z_max - z_gate), 0, 1)
         sl_mult = sl_mult_lo + (sl_mult_hi - sl_mult_lo) * z_norm
 
@@ -3592,46 +3611,48 @@ def build_hourly_training_set_and_weights(
     returns = df["y_ret"].values
 
     # Extract selection metric values for event scoring.
-    # Prefer range_16h_pct; fall back to compatible range proxies.
-    selection_metric_name = None
-    for metric_key in ("range_16h_pct", "range_12h_pct", "range_pct", "range_24h_pct"):
-        if metric_key in feats:
-            selection_metric_name = metric_key
-            tprint(
-                f"Using selection metric '{selection_metric_name}' for event scoring"
-            )
-            break
-    selection_metric_values = None
-    if selection_metric_name is not None:
-        # Look up the metric values at event times and symbols
-        metric_raw = _fast_lookup(
-            feats[selection_metric_name], df["ts"].values, df["symbol"].values
+    # Hard requirement: range_pct must exist and have high non-null coverage.
+    selection_metric_name = "range_pct"
+    if selection_metric_name not in feats:
+        raise RuntimeError(
+            "Missing required selection metric 'range_pct' in features. "
+            "Fallback metrics are disabled by policy."
         )
-        metric_raw = np.asarray(metric_raw, dtype=np.float32)
-        finite = np.isfinite(metric_raw)
-        if finite.sum() >= 32:
-            metric_f = metric_raw[finite]
-            m_std = float(np.nanstd(metric_f))
-            m_span = float(
-                np.nanpercentile(metric_f, 95) - np.nanpercentile(metric_f, 5)
-            )
-            if m_std > 1e-8 and m_span > 1e-8:
-                selection_metric_values = np.nan_to_num(metric_raw, nan=0.0)
-                tprint(
-                    f"Extracted selection metric '{selection_metric_name}' for event scoring"
-                )
-            else:
-                tprint(
-                    f"Warning: Selection metric '{selection_metric_name}' is near-constant "
-                    f"(std={m_std:.3e}, p95-p05={m_span:.3e}); using fallback"
-                )
-        else:
-            tprint(
-                f"Warning: Selection metric '{selection_metric_name}' has low finite coverage "
-                f"({int(finite.sum())}/{len(metric_raw)}); using fallback"
-            )
-    else:
-        tprint("Warning: Selection metric not found in features, using fallback")
+
+    metric_raw = _fast_lookup(
+        feats[selection_metric_name], df["ts"].values, df["symbol"].values
+    )
+    metric_raw = np.asarray(metric_raw, dtype=np.float32)
+    finite = np.isfinite(metric_raw)
+    finite_n = int(finite.sum())
+    total_n = int(len(metric_raw))
+    if finite_n <= 0:
+        raise RuntimeError(
+            "Required selection metric 'range_pct' contains no finite values after alignment."
+        )
+
+    min_cov = float(cfg.get("range_pct_min_coverage", 0.95))
+    cov = float(finite_n / max(total_n, 1))
+    if cov < min_cov:
+        raise RuntimeError(
+            f"Required selection metric 'range_pct' has insufficient finite coverage: "
+            f"{finite_n}/{total_n} ({cov:.1%}) < required {min_cov:.1%}."
+        )
+
+    metric_f = metric_raw[finite]
+    m_std = float(np.nanstd(metric_f))
+    m_span = float(np.nanpercentile(metric_f, 95) - np.nanpercentile(metric_f, 5))
+    if not (m_std > 1e-8 and m_span > 1e-8):
+        raise RuntimeError(
+            "Required selection metric 'range_pct' is near-constant "
+            f"(std={m_std:.3e}, p95-p05={m_span:.3e}); aborting."
+        )
+
+    selection_metric_values = np.nan_to_num(metric_raw, nan=0.0)
+    tprint(
+        f"Extracted required selection metric '{selection_metric_name}' for event scoring "
+        f"(coverage={cov:.1%})"
+    )
 
     weights = compute_sample_weights_with_uniqueness(
         label_times=label_times,

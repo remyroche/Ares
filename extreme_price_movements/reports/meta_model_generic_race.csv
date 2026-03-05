@@ -1,0 +1,5 @@
+model,kind,tail_lambda,composite,ic,ic_mh,n
+ridge,ridge,0.0,0.0,0.0,0.0,6
+extratrees,extratrees,0.0,0.0,0.0,0.0,6
+xgb_basic,xgb,0.0,0.0,0.0,0.0,6
+xgb_robust,xgb,0.0,0.0,0.0,0.0,6

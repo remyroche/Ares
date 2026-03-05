@@ -85,8 +85,8 @@ def generate_training_report(
 
     # Summary table
     lines.append("\n### Performance Summary")
-    lines.append("| Model | Features | AUC | IC | Sharpe | Win Rate | Prec@10 | Prec@40 | AvgTr/day@10 | AvgTr/day@30 | Avg Return | Trades | Best Iter |")
-    lines.append("|-------|----------|-----|----|---------| ---------|---------|---------|-------------|-------------|------------|--------|-----------|")
+    lines.append("| Model | Features | AUC | IC | Sharpe | Win Rate | Prec@10 | Prec@30 | Lift@30 | Prec@40 | AvgTr/day@10 | AvgTr/day@30 | Avg Return | Trades | Best Iter |")
+    lines.append("|-------|----------|-----|----|---------|----------|---------|---------|---------|---------|-------------|-------------|------------|--------|-----------|")
 
     for side in ["long", "short"]:
         side_bundle = alpha_models.get(side, {})
@@ -111,6 +111,8 @@ def generate_training_report(
             sharpe = _fmt(oof.get('sharpe', 0.0)) if oof.get('sharpe') else "N/A"
             win_rate = _pct(oof.get('win_rate', 0.0)) if oof.get('win_rate') else "N/A"
             p10 = _fmt(oof.get('prec10', 0.0)) if oof.get('prec10') is not None else "N/A"
+            p30 = _fmt(oof.get('prec30', 0.0)) if oof.get('prec30') is not None else "N/A"
+            lift30 = _fmt(oof.get('lift30', 0.0)) if oof.get('lift30') is not None else "N/A"
             p40 = _fmt(oof.get('prec40', 0.0)) if oof.get('prec40') is not None else "N/A"
             at10 = _fmt(oof.get('avg_trades_day_10', 0.0)) if oof.get('avg_trades_day_10') is not None else "N/A"
             at30 = _fmt(oof.get('avg_trades_day_30', 0.0)) if oof.get('avg_trades_day_30') is not None else "N/A"
@@ -119,7 +121,7 @@ def generate_training_report(
 
             lines.append(
                 f"| {model_name} | {len(feat_cols)} | {auc} | {ic} | {sharpe} | "
-                f"{win_rate} | {p10} | {p40} | {at10} | {at30} | {avg_ret} | {n_trades} | {best_iter} |"
+                f"{win_rate} | {p10} | {p30} | {lift30} | {p40} | {at10} | {at30} | {avg_ret} | {n_trades} | {best_iter} |"
             )
     lines.append("")
 

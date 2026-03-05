@@ -2,8 +2,8 @@
   "bucket_params|408b5f895c": {
     "LONG_MR": {
       "metrics": {
-        "holdout_pnl_net": 291007493907.6492,
-        "holdout_trades": 8,
+        "holdout_pnl_net": 0.17836385026945997,
+        "holdout_trades": 19,
         "holdout_win_rate": 1.0
       },
       "params": {
@@ -52,6 +52,13 @@
             "delta_atr_max": 3.0,
             "lambda_risk": 1.0,
             "min_expected_utility": 0.0
+          },
+          "offset_engine": {
+            "lambda": 0.0,
+            "mode": "policy_only",
+            "oos_mean_eu": 0.8913593786739961,
+            "oos_place_rate": 0.8888888888888888,
+            "oos_score": 0.9091371564517738
           }
         },
         "loss_limiter": {
@@ -65,12 +72,6 @@
         "position_sizing": {
           "c0": 0.55,
           "k": 20.0,
-          "ridge_weights": {
-            "short_tf_clf": 1.0,
-            "short_tf_early_inval_reg": 0.0,
-            "short_tf_early_inval_reg_mean": 2.7755575615628914e-17,
-            "short_tf_early_inval_reg_std": 1.0000000000000002
-          },
           "s_max": 0.15,
           "s_min": 0.03
         },
@@ -84,11 +85,12 @@
         "tp_sl": {
           "atr_scale_hi": 2.5,
           "atr_scale_lo": 0.6,
-          "sl_mult": 6.4,
-          "tp_mult": 8.0
+          "rr_ratio": 2.5,
+          "sl_mult": 0.8,
+          "tp_mult": 2.0
         }
       },
-      "ts": "2026-02-27T08:24:11.389342+00:00"
+      "ts": "2026-03-05T10:17:09.802756+00:00"
     },
     "LONG_TF": {
       "metrics": {

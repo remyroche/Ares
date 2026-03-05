@@ -125,12 +125,12 @@ class Float64Wrapper(BaseEstimator, ClassifierMixin):
     def __init__(self, estimator=None):
         self.estimator = estimator
 
-    def fit(self, X, y, sample_weight=None):
+    def fit(self, X, y, sample_weight=None, **kwargs):
         self.classes_ = np.unique(y)
         if sample_weight is not None:
-            self.estimator.fit(X, y, sample_weight=sample_weight)
+            self.estimator.fit(X, y, sample_weight=sample_weight, **kwargs)
         else:
-            self.estimator.fit(X, y)
+            self.estimator.fit(X, y, **kwargs)
         return self
 
     def predict_proba(self, X):
@@ -291,7 +291,6 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             "random_seed": 42,
             "allow_writing_files": False,
             "eval_metric": "PRAUC",  # Direct PR-AUC optimization
-            "auto_class_weights": "Balanced",  # Handle class imbalance
         }
         if CatBoostClassifier is not None:
             candidates["catboost"] = Float64Wrapper(CatBoostClassifier(**cb_params))
@@ -305,22 +304,26 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
         pos_weight = self._compute_pos_weight(y_tr)
 
-        if isinstance(model, ScaledLogisticRegression):
-            # Safe to set because we updated __init__
-            model.set_params(class_weight={0: 1.0, 1: pos_weight})
-        elif isinstance(model, ExtraTreesClassifier):
-            model.set_params(class_weight={0: 1.0, 1: pos_weight})
+        # Handle Float64Wrapper
+        inner = model.estimator if isinstance(model, Float64Wrapper) else model
 
-        if CatBoostClassifier is not None and isinstance(model, CatBoostClassifier):
-            model.set_params(scale_pos_weight=pos_weight)
+        if isinstance(inner, ScaledLogisticRegression):
+            # Safe to set because we updated __init__
+            inner.set_params(class_weight={0: 1.0, 1: pos_weight})
+        elif isinstance(inner, ExtraTreesClassifier):
+            inner.set_params(class_weight={0: 1.0, 1: pos_weight})
+
+        if CatBoostClassifier is not None and isinstance(inner, CatBoostClassifier):
+            # CatBoost requires scale_pos_weight for custom class weighting
+            inner.set_params(scale_pos_weight=pos_weight)
             if X_val is not None and y_val is not None:
                 fit_kwargs.update({
                     "eval_set": (X_val, y_val),
                     "early_stopping_rounds": self.race_early_stopping_rounds,
                     "use_best_model": True,
                 })
-        elif XGBClassifier is not None and isinstance(model, XGBClassifier):
-            model.set_params(scale_pos_weight=pos_weight, eval_metric="auc")
+        elif XGBClassifier is not None and isinstance(inner, XGBClassifier):
+            inner.set_params(scale_pos_weight=pos_weight, eval_metric="auc")
             if X_val is not None and y_val is not None:
                 fit_kwargs.update({
                     "eval_set": [(X_val, y_val)],
@@ -328,8 +331,8 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     # early_stopping_rounds deprecated in fit, use constructor or callbacks if needed
                     # For simple race, we can omit it or relying on constructor
                 })
-        elif LGBMClassifier is not None and isinstance(model, LGBMClassifier):
-            model.set_params(scale_pos_weight=pos_weight)
+        elif LGBMClassifier is not None and isinstance(inner, LGBMClassifier):
+            inner.set_params(scale_pos_weight=pos_weight)
             if X_val is not None and y_val is not None:
                 fit_kwargs.update({
                     "eval_set": [(X_val, y_val)],
@@ -952,10 +955,9 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         # But wait! If we leave 'best_model' as raw, then predict_proba applies isotonic.
         # That logic is sound.
         
-        if sample_weight is not None:
-             self.best_model.fit(X, y_hard, sample_weight=sample_weight)
-        else:
-             self.best_model.fit(X, y_hard)
+        # Use _fit_model so that class weights and other dynamics are applied correctly,
+        # even without early stopping (no eval_set passed).
+        self._fit_model(self.best_model, X, y_hard, sample_weight=sample_weight)
              
         # Extract feature importances if possible
         try:

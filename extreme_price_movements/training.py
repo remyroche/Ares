@@ -1833,6 +1833,20 @@ def _strategy_bucket_context(trade_side: str, model_kind: str) -> tuple:
         return cand_filter, move_bucket, "sell_weakness"
 
 
+def _trend_direction_keep_mask(trend_vals, trend_filter: str) -> np.ndarray:
+    """Return a strict directional mask for trend filtering.
+
+    Notes:
+    - Neutral (0.0) trend values are excluded for both directions.
+    - Non-finite values are excluded (instead of being coerced to 0.0 and leaking into "down").
+    """
+    arr = np.asarray(trend_vals, dtype=float)
+    finite = np.isfinite(arr)
+    if str(trend_filter).lower() == "up":
+        return finite & (arr > 0.0)
+    return finite & (arr < 0.0)
+
+
 def _meta_feature_keys_for_kind(cfg: dict, kind: str | None = None) -> list[str]:
     """Return shared meta features plus optional kind-specific overlay."""
     base = list(cfg.get("meta_feature_keys", []) or [])
@@ -2014,10 +2028,7 @@ def build_exhaustion_Xy(
         common_idx = X.index.intersection(trend_vals.index)
         X = X.loc[common_idx]
         trend_vals = trend_vals.loc[common_idx]
-        if trend_filter == "up":
-            keep = trend_vals > 0
-        else:
-            keep = trend_vals <= 0
+        keep = _trend_direction_keep_mask(trend_vals.values, trend_filter)
         X = X[keep]
         y_ser = (
             pd.DataFrame(y, index=t_index, columns=valid_syms)
@@ -2960,12 +2971,7 @@ def build_hourly_training_set_and_weights(
     # Trend filter (skip when already precomputed upstream for this side/kind)
     if _precomputed_events is None and trend_filter and "trend_pct" in feats:
         trend_vals = _fast_lookup(feats["trend_pct"], event_ts, event_sym)
-        trend_vals = np.nan_to_num(trend_vals, nan=0.0)
-        trend_dir = np.sign(trend_vals)
-        if trend_filter == "up":
-            keep = trend_dir > 0
-        else:
-            keep = trend_dir <= 0
+        keep = _trend_direction_keep_mask(trend_vals, trend_filter)
         n_pre_trend = len(event_ts)
         n_trend_drop = int((~keep).sum())
         if n_trend_drop > 0:
@@ -5249,9 +5255,7 @@ def generate_label_datasets(
             cand_filter, move_bucket, _ = _strategy_bucket_context(_side, _kind)
             del cand_filter
             trend_vals = _fast_lookup(feats["trend_pct"], event_ts, event_sym)
-            trend_vals = np.nan_to_num(trend_vals, nan=0.0)
-            trend_dir = np.sign(trend_vals)
-            keep = (trend_dir > 0) if move_bucket == "up" else (trend_dir <= 0)
+            keep = _trend_direction_keep_mask(trend_vals, move_bucket)
             event_ts = event_ts[keep]
             event_sym = event_sym[keep]
             entry_ts = entry_ts[keep]
@@ -10379,11 +10383,7 @@ def optimize_risk_params(
 
                 for sym in cands:
                     tv = trend_vals[sym]
-                    tdir = np.sign(tv) if tv != 0 else 1.0
-
-                    if trend_filter == "up" and tdir <= 0:
-                        continue
-                    if trend_filter == "down" and tdir > 0:
+                    if not _trend_direction_keep_mask([tv], trend_filter)[0]:
                         continue
 
                     # Found a candidate

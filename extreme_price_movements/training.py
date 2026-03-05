@@ -930,7 +930,16 @@ def _base_model_report_entry(
         "worst_fold_delta_logloss_ge_0_5pct_improve": worst_fold_imp >= -0.005,
     }
 
-    # Raw AUC and IC for summary table
+    # Raw AUC and ICs for summary table.
+    #
+    # NOTE:
+    # - For alpha classifiers, AUC is defined against y_bin (TP hit vs not-TP).
+    # - Spearman vs y_ret can legitimately have opposite sign when return magnitudes
+    #   are asymmetric (e.g., many correctly-ranked TP events but a few large losses).
+    #
+    # To avoid reporting confusion ("good AUC, negative IC"), we report:
+    #   * ic:     rank correlation vs y_bin (classification-consistent IC)
+    #   * ic_ret: rank correlation vs y_ret (economic utility orientation)
     from sklearn.metrics import roc_auc_score as _roc_auc_score
 
     try:
@@ -939,11 +948,13 @@ def _base_model_report_entry(
         )
     except Exception:
         raw_auc = 0.5
-    raw_ic = _safe_spearman(oof_probs, y_ret)
+    raw_ic_bin = _safe_spearman(oof_probs, y_bin)
+    raw_ic_ret = _safe_spearman(oof_probs, y_ret)
 
     metrics = {
         "auc": raw_auc,
-        "ic": raw_ic,
+        "ic": raw_ic_bin,
+        "ic_ret": raw_ic_ret,
         "logloss": float(ll),
         "pr_auc": pr_auc,
         "pr_auc_threshold": pr_auc_threshold,
@@ -1206,7 +1217,7 @@ def print_training_gate_report(report_payload):
         winners = base_items  # fallback: show all if no winner flag
     if winners:
         tprint("\n--- BASE MODELS (Race Winners) ---")
-        hdr = f"{'Model':<32} {'AUC':>7} {'IC':>7} {'LogLoss':>8} {'PR-AUC':>7} {'Lift@20':>8} {'BrierImp':>9}"
+        hdr = f"{'Model':<32} {'AUC':>7} {'IC_bin':>7} {'IC_ret':>7} {'LogLoss':>8} {'PR-AUC':>7} {'Lift@20':>8} {'BrierImp':>9}"
         tprint(hdr)
         tprint("-" * len(hdr))
         for it in winners:
@@ -1214,12 +1225,13 @@ def print_training_gate_report(report_payload):
             name = it.get("model", "?")
             auc = m.get("auc", float("nan"))
             ic = m.get("ic", float("nan"))
+            ic_ret = m.get("ic_ret", float("nan"))
             ll = m.get("logloss", float("nan"))
             prauc = m.get("pr_auc", float("nan"))
             lift = m.get("lift_at_20pct", float("nan"))
             brimp = m.get("brier_improvement", float("nan"))
             tprint(
-                f"{name:<32} {auc:>7.4f} {ic:>7.4f} {ll:>8.4f} {prauc:>7.4f} {lift:>8.3f} {brimp:>8.1%}"
+                f"{name:<32} {auc:>7.4f} {ic:>7.4f} {ic_ret:>7.4f} {ll:>8.4f} {prauc:>7.4f} {lift:>8.3f} {brimp:>8.1%}"
             )
     else:
         tprint("\n--- BASE MODELS: none ---")

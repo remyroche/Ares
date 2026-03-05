@@ -223,6 +223,16 @@ def _safe_float(v: Any, default: float = 0.0) -> float:
         return float(default)
 
 
+def _sanitize_quality_array(values: np.ndarray, *, fallback: float = 0.5) -> np.ndarray:
+    """Guarantee finite quality scores in [0,1] and emit warning on repair."""
+    arr = np.asarray(values, dtype=np.float32)
+    bad = ~np.isfinite(arr)
+    if np.any(bad):
+        tprint(f"WARNING: quality contains {int(bad.sum())} non-finite values; replacing with fallback={float(fallback):.3f}")
+    arr = np.nan_to_num(arr, nan=float(fallback), posinf=float(fallback), neginf=float(fallback))
+    return np.clip(arr, 0.0, 1.0)
+
+
 def _symbol_to_hf_ccxt(symbol: str) -> str:
     raw = str(symbol or "").upper().strip()
     s = raw.replace("/", "").replace("_", "").replace("-", "").replace(" ", "")
@@ -2038,6 +2048,7 @@ class FeatureMatrixCache:
     index: pd.MultiIndex
     X: np.ndarray
     feat_cols: List[str]
+    global_aligner: np.ndarray
 
 
 def get_feature_matrix_cache(
@@ -2055,7 +2066,17 @@ def get_feature_matrix_cache(
     X_flat = X_flat.fillna(0.0).astype(np.float32)
     X_np = np.ascontiguousarray(X_flat.to_numpy(dtype=np.float32, copy=False))
     X_np.setflags(write=False)
-    fm = FeatureMatrixCache(index=X_flat.index, X=X_np, feat_cols=feat_cols)
+    panel_idx = artifacts.panel["close"].index
+    panel_cols = artifacts.panel["close"].columns
+    panel_flat_idx = pd.MultiIndex.from_product([panel_idx, panel_cols], names=["ts", "symbol"])
+    global_aligner = pd.Index(X_flat.index).get_indexer(panel_flat_idx).astype(np.int64, copy=False)
+
+    fm = FeatureMatrixCache(
+        index=X_flat.index,
+        X=X_np,
+        feat_cols=feat_cols,
+        global_aligner=np.ascontiguousarray(global_aligner, dtype=np.int64),
+    )
     eval_cache[key] = fm
     gc.collect()
     return fm
@@ -2207,15 +2228,6 @@ def _optuna_objective_score(res: Dict[str, Any]) -> float:
     return -1.0
 
 
-def _fast_geometry_pr_auc_proxy(cfg: Dict[str, Any]) -> float:
-    """Very fast geometry-only proxy used for trial pruning before ridge fitting."""
-    tp = float(cfg.get("tp_base_pct", 0.01))
-    sl = max(float(cfg.get("sl_as_tp_pct", 0.5)) * tp, EPS)
-    rr = tp / sl
-    k_tp = float(cfg.get("k_tp", 1.0))
-    return float(max(0.5, min(2.0, (0.6 * rr + 0.5 * k_tp))))
-
-
 def _optuna_n_jobs() -> int:
     env_jobs = os.environ.get("EPM_TBM_OPTUNA_N_JOBS", "").strip()
     if env_jobs:
@@ -2235,23 +2247,6 @@ def _optuna_sampler() -> optuna.samplers.TPESampler:
         n_startup_trials=25,
         gamma=lambda n: int(np.ceil(min(0.4 * n, 10.0))),
     )
-
-def get_stacked_array(
-    eval_cache: BoundedEvalCache,
-    cache_name: str,
-    frame: pd.DataFrame,
-    stacked_index: pd.MultiIndex,
-    *,
-    dtype: np.dtype,
-) -> np.ndarray:
-    """Cache DataFrame.stack().reindex(...) as contiguous dense numpy array."""
-    cache = eval_cache.setdefault(cache_name, {})
-    key = f"{_index_cache_key(stacked_index)}::{id(frame)}"
-    if key not in cache:
-        arr = frame.stack().reindex(stacked_index).to_numpy(dtype=dtype, copy=False)
-        cache[key] = np.ascontiguousarray(arr, dtype=dtype)
-    return cache[key]
-
 
 def compute_weights(events: pd.DataFrame, cfg: Dict[str, Any]) -> np.ndarray:
     scheme = cfg.get("weighting_scheme", "none")
@@ -2386,6 +2381,12 @@ def evaluate_config(
     # If the config is fundamentally broken (e.g. RR too low), exit before building barriers.
     min_rr = float(cfg.get("min_net_rr", 0.7))
     sl_ratio = float(cfg.get("sl_as_tp_pct", 0.5))
+    sl_ratio_floor = float(cfg.get("tbm_sl_as_tp_pct_min", 0.4))
+    if sl_ratio < sl_ratio_floor:
+        return _empty_result(
+            cfg, cfg_id, 0, reason=f"cheap_gate_sl_as_tp_too_low:{sl_ratio:.3f}<{sl_ratio_floor:.3f}",
+            stage2_rescore=stage2_rescore
+        )
     if sl_ratio > 0 and (1.0 / sl_ratio) < (min_rr * 0.7):
         return _empty_result(
             cfg, cfg_id, 0, reason=f"cheap_gate_rr_too_low:{1.0/sl_ratio:.2f}<{min_rr:.2f}",
@@ -2617,6 +2618,7 @@ def evaluate_config(
                 valid_mask_flat = ~np.isnan(sl_arr)
                 
                 stacked_idx = _idx_flat[valid_mask_flat]
+                panel_idx_arr = np.flatnonzero(valid_mask_flat).astype(np.int64, copy=False)
                 label_arr = label_arr[valid_mask_flat]
                 payoff_arr = payoff_arr[valid_mask_flat]
                 qual_arr = qual_arr[valid_mask_flat]
@@ -2628,11 +2630,11 @@ def evaluate_config(
                 else:
                     h_arr = np.full(len(label_arr), float(h), dtype=np.float32)
                 
-                stack_cache[stack_key] = (stacked_idx, label_arr, payoff_arr, qual_arr, tp_arr, sl_arr, h_arr)
+                stack_cache[stack_key] = (stacked_idx, panel_idx_arr, label_arr, payoff_arr, qual_arr, tp_arr, sl_arr, h_arr)
                 if len(stack_cache) > 256:
                     stack_cache.pop(next(iter(stack_cache)))
             else:
-                stacked_idx, label_arr, payoff_arr, qual_arr, tp_arr, sl_arr, h_arr = stack_cache[stack_key]
+                stacked_idx, panel_idx_arr, label_arr, payoff_arr, qual_arr, tp_arr, sl_arr, h_arr = stack_cache[stack_key]
 
             # Create DataFrame directly from cached masked numpy arrays (now only ~4,000 rows, not 7,000,000)
             df = pd.DataFrame(
@@ -2643,6 +2645,7 @@ def evaluate_config(
                     "tp": tp_arr,
                     "sl": sl_arr,
                     "horizon_eff": h_arr,
+                    "__panel_idx__": panel_idx_arr,
                 },
                 index=stacked_idx
             )
@@ -2669,7 +2672,7 @@ def evaluate_config(
     events = pd.concat(events_rows, ignore_index=True)
     events["label"] = events["label"].astype(np.float32, copy=False)
     events["payoff"] = events["payoff"].astype(np.float32, copy=False)
-    events["quality"] = events["quality"].astype(np.float32, copy=False)
+    events["quality"] = _sanitize_quality_array(events["quality"].to_numpy(dtype=np.float32, copy=False))
     events["tp"] = events["tp"].astype(np.float32, copy=False)
     events["sl"] = events["sl"].astype(np.float32, copy=False)
     events["horizon"] = events["horizon"].astype(np.int16, copy=False)
@@ -2717,19 +2720,14 @@ def evaluate_config(
     _t1 = time.perf_counter()
 
     # Hard candidate pre-filter: keep only rows in the candidate mask.
-    stacked_index = pd.MultiIndex.from_arrays([events["ts"], events["symbol"]])
-    # Re-align bucket_map from the original full-panel grid to the actual populated events
-    # We use an inner join equivalent via indexers
-    _flat_panel_idx = pd.MultiIndex.from_product([_panel_idx, _panel_cols], names=["ts", "symbol"])
-    _aligner = _flat_panel_idx.get_indexer(stacked_index)
-    
-    _cand_mask = bucket_map["Candidate"][_aligner]
+    event_panel_idx = events["__panel_idx__"].to_numpy(dtype=np.int64, copy=False)
+    _cand_mask = bucket_map["Candidate"][event_panel_idx]
     
     pre_candidate_n = len(events)
     if np.any(_cand_mask):
         events = events.iloc[_cand_mask].copy().reset_index(drop=True)
         # Create a new local mapping strictly for this iteration's matched events row-slice
-        local_bucket_map = {k: v[_aligner][_cand_mask] for k, v in bucket_map.items()}
+        local_bucket_map = {k: v[event_panel_idx][_cand_mask] for k, v in bucket_map.items()}
     else:
         events = events.iloc[0:0].copy()
         local_bucket_map = {k: np.array([], dtype=bool) for k in bucket_map.keys()}
@@ -2760,39 +2758,37 @@ def evaluate_config(
             return _empty_result(cfg, cfg_id, 0, f"no_events_for_cell_{_bkt}_H{_h}", stage2_rescore=stage2_rescore)
         # Note: bucket_masks local shadow used for per-slice metrics (optional, mostly for safety)
         bucket_masks = {b: (events["bucket"] == b) for b in (["MR_long", "MR_short", "TF_long", "TF_short", "Candidate", "Global"])}
-        # Rebuild stacked_index after cell-filtering so all downstream arrays match
-        stacked_index = pd.MultiIndex.from_arrays([events["ts"], events["symbol"]])
+        # Event index alignment remains via __panel_idx__ (no MultiIndex reindex required).
 
     tprint(f"[eval:{cfg_id}] Step 3 (Bucketing) took {time.perf_counter() - _t1:.2f}s")
     _t2 = time.perf_counter()
 
     # Regime and quintile slices for Stage 2.
+    event_panel_idx = events["__panel_idx__"].to_numpy(dtype=np.int64, copy=False)
     atr_source = _get_barrier_atr_frame(artifacts)
-    atr = get_stacked_array(
-        eval_cache,
-        "atr_stack",
-        atr_source,
-        stacked_index,
-        dtype=np.float32,
-    )
+    atr_flat = eval_cache.get("atr_flat")
+    if atr_flat is None:
+        atr_flat = np.ascontiguousarray(atr_source.to_numpy(dtype=np.float32, copy=False).ravel())
+        eval_cache["atr_flat"] = atr_flat
+    atr = atr_flat[event_panel_idx]
     atr_roll = eval_cache.get("atr_roll_14d")
     if atr_roll is None:
         atr_roll = atr_source.rolling(24 * 14, min_periods=24).median().astype(np.float32)
         eval_cache["atr_roll_14d"] = atr_roll
         gc.collect()
-    roll = get_stacked_array(
-        eval_cache,
-        "atr_roll_stack",
-        atr_roll,
-        stacked_index,
-        dtype=np.float32,
-    )
+    atr_roll_flat = eval_cache.get("atr_roll_flat")
+    if atr_roll_flat is None:
+        atr_roll_flat = np.ascontiguousarray(atr_roll.to_numpy(dtype=np.float32, copy=False).ravel())
+        eval_cache["atr_roll_flat"] = atr_roll_flat
+    roll = atr_roll_flat[event_panel_idx]
     atr = np.nan_to_num(atr, nan=0.0, copy=False)
     ratio = np.divide(atr, roll + EPS, out=np.ones_like(atr, dtype=np.float32), where=np.isfinite(roll))
 
-    atr_s = pd.Series(atr, index=stacked_index, dtype=np.float32)
-    ts_counts = atr_s.groupby(level=0).transform("count").to_numpy(dtype=np.int32, copy=False)
-    rank_pct = atr_s.groupby(level=0).rank(method="first", pct=True).to_numpy(dtype=np.float32, copy=False)
+    ts_vals_for_grp = pd.to_datetime(events["ts"].to_numpy(copy=False))
+    atr_s = pd.Series(atr, dtype=np.float32)
+    grp = atr_s.groupby(ts_vals_for_grp)
+    ts_counts = grp.transform("count").to_numpy(dtype=np.int32, copy=False)
+    rank_pct = grp.rank(method="first", pct=True).to_numpy(dtype=np.float32, copy=False)
     q = np.full(len(events), 2, dtype=np.int16)
     valid_q = (ts_counts > 5) & np.isfinite(rank_pct)
     q[valid_q] = np.minimum((rank_pct[valid_q] * 5.0).astype(np.int16), 4)
@@ -2807,13 +2803,12 @@ def evaluate_config(
     if basis_frame_key not in eval_cache:
         eval_cache[basis_frame_key] = make_quantile_basis(artifacts, quant_basis).astype(np.float32)
         gc.collect()
-    basis = get_stacked_array(
-        eval_cache,
-        "quant_basis_stack",
-        eval_cache[basis_frame_key],
-        stacked_index,
-        dtype=np.float32,
-    )
+    basis_flat_key = f"quant_basis_flat::{quant_basis}"
+    basis_flat = eval_cache.get(basis_flat_key)
+    if basis_flat is None:
+        basis_flat = np.ascontiguousarray(eval_cache[basis_frame_key].to_numpy(dtype=np.float32, copy=False).ravel())
+        eval_cache[basis_flat_key] = basis_flat
+    basis = basis_flat[event_panel_idx]
     keep_mask = np.ones(len(events), dtype=bool)
     _bkt_vals_full = events["bucket"].astype(str).to_numpy()
     _u_bkt_full, _cnt_bkt_full = np.unique(_bkt_vals_full, return_counts=True)
@@ -2822,15 +2817,15 @@ def evaluate_config(
         lo = float(cfg.get("quantile_lo", 0.2))
         hi = float(cfg.get("quantile_hi", 0.8))
         _qb_cache = eval_cache.setdefault("quantile_bounds_cache", {})
-        _qb_key = (_index_cache_key(stacked_index), str(quant_basis), round(lo, 6), round(hi, 6))
+        _qb_key = (_index_cache_key(pd.Index(ts_vals_for_grp)), str(quant_basis), round(lo, 6), round(hi, 6))
         _qb_val = _qb_cache.get(_qb_key)
         if _qb_val is None:
-            basis_s = pd.Series(basis, index=stacked_index, dtype=np.float32)
+            basis_s = pd.Series(basis, index=ts_vals_for_grp, dtype=np.float32)
             tprint(f"[eval:{cfg_id}] TRACE: groupby quantiles start")
             by_ts = basis_s.groupby(level=0)
             lo_map = by_ts.quantile(lo)
             hi_map = by_ts.quantile(hi)
-            ts_idx = stacked_index.get_level_values(0)
+            ts_idx = ts_vals_for_grp
             lo_t = ts_idx.map(lo_map).to_numpy(dtype=np.float32, copy=False)
             hi_t = ts_idx.map(hi_map).to_numpy(dtype=np.float32, copy=False)
             tprint(f"[eval:{cfg_id}] TRACE: groupby quantiles end, lo_t={len(lo_t)}")
@@ -3007,8 +3002,8 @@ def evaluate_config(
     y_bin = (events["label"].values == OUT_TP).astype(np.float32, copy=False)
     payoff = events["payoff"].values.astype(np.float32, copy=False)
 
-    event_index = pd.MultiIndex.from_arrays([events["ts"], events["symbol"]])
-    aligner = pd.Index(fm.index).get_indexer(event_index)
+    event_panel_idx = events["__panel_idx__"].to_numpy(dtype=np.int64, copy=False)
+    aligner = fm.global_aligner[event_panel_idx]
     valid_mask = aligner >= 0
     if not np.any(valid_mask):
         return {}, {}, None
@@ -4487,16 +4482,13 @@ def _diverse_subset(
     score_keep_fraction: float = 0.8,
     behavior_alpha: float = 0.7,
 ) -> pd.DataFrame:
-    """Score-biased diversity selection.
-
-    Keeps exploration but prioritizes high stage2_score candidates.
-    """
+    """Greedy Maximum Marginal Relevance (MMR) selection in normalized parameter space."""
     if max_configs <= 0 or feasible_df is None or feasible_df.empty:
         return feasible_df.head(0) if isinstance(feasible_df, pd.DataFrame) else pd.DataFrame()
     if run_vectors is None:
         run_vectors = {}
+
     work_df = feasible_df.copy()
-    # Remove duplicate configs/parameter tuples before diversity scoring.
     if "config_id" in work_df.columns:
         work_df = work_df.drop_duplicates(subset=["config_id"], keep="first")
     _param_dup_cols = [c for c in ("k_tp", "sl_as_tp_pct", "base_atr_window", "tp_base_pct") if c in work_df.columns]
@@ -4505,7 +4497,6 @@ def _diverse_subset(
             subset=_param_dup_cols, keep="first"
         )
 
-    # Hard feasibility filtering.
     if "pr_auc_lift" in work_df.columns:
         _pr = pd.to_numeric(work_df["pr_auc_lift"], errors="coerce")
         work_df = work_df[_pr.fillna(-np.inf) > 0.0]
@@ -4524,7 +4515,6 @@ def _diverse_subset(
     work_df = work_df.loc[order_df.index].copy()
     score_series = score_series.loc[work_df.index]
 
-    # Keep a broad high-quality tranche to preserve diversity while avoiding weak tails.
     if len(work_df) > 1:
         _keep_frac = float(np.clip(score_keep_fraction, 0.30, 1.00))
         _rank = score_series.rank(method="first", ascending=False)
@@ -4534,166 +4524,129 @@ def _diverse_subset(
         return feasible_df.head(0)
 
     n = len(work_df)
-    # Rank-normalized score s in [0,1]
     if n == 1:
-        s_norm = pd.Series([1.0], index=work_df.index)
+        s_norm = np.asarray([1.0], dtype=np.float64)
     else:
-        rank_desc = score_series.rank(method="first", ascending=False)
-        s_norm = (1.0 - (rank_desc - 1.0) / float(n - 1)).clip(0.0, 1.0)
+        s_vals = score_series.to_numpy(dtype=np.float64, copy=False)
+        s_min = float(np.nanmin(s_vals))
+        s_max = float(np.nanmax(s_vals))
+        if math.isfinite(s_max - s_min) and (s_max - s_min) > 1e-12:
+            s_norm = np.clip((s_vals - s_min) / (s_max - s_min), 0.0, 1.0)
+        else:
+            rank_desc = score_series.rank(method="first", ascending=False).to_numpy(dtype=np.float64)
+            s_norm = np.clip(1.0 - (rank_desc - 1.0) / float(max(n - 1, 1)), 0.0, 1.0)
 
-    # Candidate containers.
-    candidates: Dict[int, Dict[str, Any]] = {}
-    idx_to_pos: Dict[Any, int] = {}
-    for pos, (idx, row) in enumerate(work_df.iterrows()):
-        cid = str(row["config_id"])
+    cids = work_df["config_id"].astype(str).to_numpy()
+    keep_mask = np.ones(n, dtype=bool)
+    for i, cid in enumerate(cids):
         cfg_i = details.get(cid, {}).get("config", {})
         if not isinstance(cfg_i, dict):
-            continue
-        candidates[pos] = {
-            "idx": idx,
-            "cid": cid,
-            "cfg": cfg_i,
-            "vec": run_vectors.get(cid),
-            "score": float(score_series.loc[idx]),
-            "s_norm": float(s_norm.loc[idx]),
-            "d_min_to_s": float("inf"),
-        }
-        idx_to_pos[idx] = pos
-
-    if not candidates:
+            keep_mask[i] = False
+    if not keep_mask.any():
         return feasible_df.head(0)
+    if not keep_mask.all():
+        work_df = work_df.iloc[np.flatnonzero(keep_mask)].copy()
+        score_series = score_series.loc[work_df.index]
+        cids = cids[keep_mask]
+        s_norm = s_norm[keep_mask]
+        n = len(work_df)
 
-    dist_cache: Dict[Tuple[int, int], float] = {}
-    # Behavior embedding matrix for label dynamics diversity.
-    behavior_cols = [
-        "cell_target_mean", "cell_target_std",
-        "min_cell_tp_sep", "min_cell_ap_lift", "min_cell_tp_over_sl", "sl_to_tp",
-        "bind", "timeout_rate", "min_cell_ece", "min_cell_brier",
-        "ic_std_time", "ic_std_asset", "barrier_ratio",
-        "effective_pos_mass", "effective_neg_mass",
-    ]
-    if "cell_target_mean" not in work_df.columns:
-        if "tp_hit_rate" in work_df.columns and "sl_hit_rate" in work_df.columns:
-            work_df["cell_target_mean"] = pd.to_numeric(work_df["tp_hit_rate"], errors="coerce").fillna(0.0) - pd.to_numeric(work_df["sl_hit_rate"], errors="coerce").fillna(0.0)
-        elif "tp_hit_rate" in work_df.columns:
-            work_df["cell_target_mean"] = pd.to_numeric(work_df["tp_hit_rate"], errors="coerce").fillna(0.0)
-        else:
-            work_df["cell_target_mean"] = 0.0
-    if "cell_target_std" not in work_df.columns:
-        work_df["cell_target_std"] = pd.to_numeric(work_df.get("cell_dispersion", pd.Series(np.nan, index=work_df.index)), errors="coerce").fillna(0.0)
-    if "timeout_rate" not in work_df.columns and "cell_timeout" in work_df.columns:
-        work_df["timeout_rate"] = pd.to_numeric(work_df["cell_timeout"], errors="coerce").fillna(1.0)
-    bcols_present = [c for c in behavior_cols if c in work_df.columns]
-    behavior_arr = np.zeros((len(work_df), 0), dtype=np.float32)
-    if bcols_present:
-        bdf = work_df[bcols_present].apply(pd.to_numeric, errors="coerce")
-        for c in bcols_present:
-            _med = float(np.nanmedian(bdf[c].to_numpy(dtype=float))) if np.isfinite(np.nanmedian(bdf[c].to_numpy(dtype=float))) else 0.0
-            bdf[c] = bdf[c].fillna(_med)
-        bvals = bdf.to_numpy(dtype=np.float32, copy=False)
-        # Robust normalization to keep each behavior axis comparable.
-        med = np.median(bvals, axis=0)
-        q75 = np.percentile(bvals, 75, axis=0)
-        q25 = np.percentile(bvals, 25, axis=0)
-        scale = np.maximum(q75 - q25, 1e-6)
-        behavior_arr = (bvals - med) / scale
+    param_cols = ["k_tp", "sl_as_tp_pct", "base_atr_window", "tp_base_pct"]
+    p_df = work_df[param_cols].apply(pd.to_numeric, errors="coerce")
+    p_fill = p_df.fillna(p_df.median(numeric_only=True)).fillna(0.0)
+    p_vals = p_fill.to_numpy(dtype=np.float64, copy=False)
+    p_min = np.min(p_vals, axis=0)
+    p_max = np.max(p_vals, axis=0)
+    p_scale = np.maximum(p_max - p_min, 1e-9)
+    p_norm = (p_vals - p_min) / p_scale
+    p_weights = np.asarray([1.0, 1.4, 0.8, 1.2], dtype=np.float64)
+    p_weights = p_weights / max(float(np.sum(p_weights)), EPS)
 
-    def _pair_dist(i: int, j: int) -> float:
-        a, b = (i, j) if i <= j else (j, i)
-        key = (a, b)
-        if key in dist_cache:
-            return dist_cache[key]
-        ci = candidates[i]
-        cj = candidates[j]
-        if _check_label_conflict(ci["vec"], cj["vec"]):
-            raise ValueError(
-                f"Opposite labels detected between {ci['cid']} and candidate {cj['cid']} "
-                "for the same timestamp/symbol. This violates outcome consistency."
-            )
-        param_d = _param_distance(ci["cfg"], cj["cfg"])
-        # Score-adaptive label weighting: high-score configs rely less on run-vector novelty.
-        s_pair = max(ci["s_norm"], cj["s_norm"])
-        label_weight = 1.0 - s_pair
-        jaccard_d = _jaccard_distance(ci["vec"], cj["vec"])
-        param_label_d = param_d + label_weight * jaccard_d
-        if behavior_arr.shape[1] > 0:
-            vi = behavior_arr[i]
-            vj = behavior_arr[j]
-            beh_d = float(np.linalg.norm(vi - vj) / math.sqrt(float(behavior_arr.shape[1])))
-        else:
-            beh_d = 0.0
-        beh_alpha = float(np.clip(behavior_alpha, 0.0, 1.0))
-        total_dist = (beh_alpha * beh_d) + ((1.0 - beh_alpha) * param_label_d)
-        dist_cache[key] = float(total_dist)
-        return dist_cache[key]
+    diff = p_norm[:, None, :] - p_norm[None, :, :]
+    dist_mat = np.sqrt(np.sum((diff * diff) * p_weights[None, None, :], axis=2, dtype=np.float64))
+
+    # Safety consistency check only when run vectors exist.
+    vecs = [run_vectors.get(cid) for cid in cids]
+    has_vec = [v is not None for v in vecs]
+    if any(has_vec):
+        for i in range(n):
+            if not has_vec[i]:
+                continue
+            for j in range(i + 1, n):
+                if has_vec[j] and _check_label_conflict(vecs[i], vecs[j]):
+                    raise ValueError(
+                        f"Opposite labels detected between {cids[i]} and candidate {cids[j]} "
+                        "for the same timestamp/symbol. This violates outcome consistency."
+                    )
 
     selected: List[int] = []
-    selected_set: Set[int] = set()
-    active: List[int] = list(candidates.keys())
+    active: List[int] = list(range(n))
 
-    # Preselect anchors (best configs per caller).
+    first_i = None
     if preselected_cids:
-        _cid_to_pos = {candidates[p]["cid"]: p for p in active}
+        cid_to_pos = {cid: i for i, cid in enumerate(cids)}
         for cid in preselected_cids:
-            p = _cid_to_pos.get(str(cid))
-            if p is None or p in selected_set:
-                continue
-            selected.append(p)
-            selected_set.add(p)
-            if p in active:
-                active.remove(p)
-
-    # Phase A: quality anchors (allow close high-score configs).
-    anchor_target = min(max_configs, max(anchor_high, len(selected)))
-    while active and len(selected) < anchor_target:
-        best_i = max(active, key=lambda i: (candidates[i]["s_norm"], candidates[i]["score"], candidates[i]["cid"]))
-        active.remove(best_i)
-        selected.append(best_i)
-        selected_set.add(best_i)
-
-    # Initialize novelty cache after anchors.
-    for j in active:
-        if selected:
-            candidates[j]["d_min_to_s"] = min(_pair_dist(j, s) for s in selected)
-        else:
-            candidates[j]["d_min_to_s"] = 1.0
-
-    # Phase B: diversity expansion.
-    d_min = float(max(min_distance, 0.0))
-    while active and len(selected) < max_configs:
-        scored: List[Tuple[float, float, str, int]] = []
-        for i in active:
-            c = candidates[i]
-            novelty = c["d_min_to_s"] if np.isfinite(c["d_min_to_s"]) else 1.0
-            n_norm = float(np.tanh(max(novelty, 0.0)))
-            # J = s^alpha * n^(1-alpha)
-            a_val = float((max(c["s_norm"], 0.0) ** float(alpha)) * (max(n_norm, 0.0) ** float(1.0 - alpha)))
-            scored.append((a_val, float(c["score"]), str(c["cid"]), i))
-        scored.sort(key=lambda x: (-x[0], -x[1], x[2]))
-        best_i = scored[0][3]
-        cand = candidates[best_i]
-
-        accept = True
-        for s in selected:
-            d_ij = _pair_dist(best_i, s)
-            if d_ij < d_min:
-                accept = False
+            p = cid_to_pos.get(str(cid))
+            if p is not None:
+                first_i = p
                 break
+    if first_i is None:
+        score_vals = score_series.to_numpy(dtype=np.float64, copy=False)
+        first_i = int(max(active, key=lambda i: (s_norm[i], score_vals[i], cids[i])))
 
-        active.remove(best_i)
-        if not accept:
+    selected.append(first_i)
+    active.remove(first_i)
+
+    if active:
+        d_min_to_selected = dist_mat[np.ix_(active, selected)].min(axis=1)
+    else:
+        d_min_to_selected = np.asarray([], dtype=np.float64)
+
+    d_min = float(max(min_distance, 0.0))
+    auc_arr = pd.to_numeric(work_df.get("min_cell_auc", pd.Series(np.nan, index=work_df.index)), errors="coerce").to_numpy(dtype=np.float64, copy=False)
+    learnability_floor = float(
+        np.clip(np.nanmedian(auc_arr) if np.isfinite(auc_arr).any() else 0.52, 0.50, 0.60)
+    )
+    lam = float(np.clip(alpha, 0.5, 0.9))
+    score_vals = score_series.to_numpy(dtype=np.float64, copy=False)
+
+    while active and len(selected) < max_configs:
+        n_norm = (
+            np.clip(d_min_to_selected / max(d_min, 1e-9), 0.0, 1.0)
+            if d_min > 0
+            else np.tanh(np.clip(d_min_to_selected, 0.0, None))
+        )
+        active_auc = auc_arr[np.asarray(active, dtype=int)]
+        low_auc_mask = np.isfinite(active_auc) & (active_auc < learnability_floor)
+        if np.any(low_auc_mask):
+            n_norm = n_norm.copy()
+            n_norm[low_auc_mask] = 0.0
+
+        mmr = lam * s_norm[np.asarray(active, dtype=int)] + (1.0 - lam) * n_norm
+        order = np.lexsort((np.asarray([cids[i] for i in active], dtype=object), -score_vals[np.asarray(active, dtype=int)], -mmr))
+        best_local = int(order[0])
+        best_i = int(active[best_local])
+
+        if d_min > 0 and len(selected) > 0 and float(dist_mat[best_i, np.asarray(selected, dtype=int)].min()) < d_min:
+            del active[best_local]
+            d_min_to_selected = np.delete(d_min_to_selected, best_local)
             continue
 
         selected.append(best_i)
-        selected_set.add(best_i)
-        for j in active:
-            d_new = _pair_dist(best_i, j)
-            if d_new < candidates[j]["d_min_to_s"]:
-                candidates[j]["d_min_to_s"] = d_new
+        del active[best_local]
+        d_min_to_selected = np.delete(d_min_to_selected, best_local)
+        if active:
+            active_idx = np.asarray(active, dtype=int)
+            d_new = dist_mat[active_idx, best_i]
+            if d_min_to_selected.size == 0:
+                d_min_to_selected = d_new.copy()
+            else:
+                d_min_to_selected = np.minimum(d_min_to_selected, d_new)
 
     if not selected:
         return feasible_df.head(0)
-    selected_idx = [candidates[i]["idx"] for i in selected]
+
+    selected_idx = work_df.index.to_numpy()[np.asarray(selected, dtype=int)]
     return work_df.loc[selected_idx]
 
 
@@ -5390,7 +5343,8 @@ class TBMObjective:
             _tp_base_lo = _tp_base_hi
 
         tp_base = trial.suggest_float("tp_base_pct", _tp_base_lo, _tp_base_hi, step=0.001)
-        sl_as_tp = trial.suggest_float("sl_as_tp_pct", 0.3, 1.2, step=0.1)
+        sl_as_tp_floor = float(self.runtime_cfg.get("tbm_sl_as_tp_pct_min", 0.4))
+        sl_as_tp = trial.suggest_float("sl_as_tp_pct", sl_as_tp_floor, 1.2, step=0.1)
         # Focusing on the longer ATR window as requested.
         atr_win = trial.suggest_categorical("base_atr_window", [840])
 
@@ -5431,12 +5385,6 @@ class TBMObjective:
                     f"(raw={_k_tp * _tp_base:.4f}, atr_norm_mean={_anchor_norm:.3f}) not in "
                     f"[{_TP_ANCHOR_LO:.4f}, {_TP_ANCHOR_HI:.4f}]"
                 )
-
-            geometry_edge = _fast_geometry_pr_auc_proxy(c)
-            trial.report(geometry_edge, step=0)
-            if geometry_edge < 1.1:
-                raise optuna.TrialPruned(f"geometry_edge={geometry_edge:.3f} < 1.1 (no positive edge expected)")
-
 
             # Low-fidelity evaluation first (shorter horizon of history / fewer folds).
             # Evaluate exactly the Optuna-suggested SL value; sampler explores SL dimension.
@@ -5781,7 +5729,7 @@ def run(args: argparse.Namespace) -> None:
         )
 
         # Reduced trials per cell as requested (e.g., 150 x 12 = 1800 total)
-        n_trials_s1 = 150 if not args.quick else 10
+        n_trials_s1 = 100 if not args.quick else 10
         study_s1.optimize(obj_s1, n_trials=n_trials_s1, n_jobs=_optuna_n_jobs())
 
         

@@ -91,6 +91,7 @@ def get_tbm_optimizer_defaults(cfg: Dict[str, Any] | None = None) -> Dict[str, A
         "base_atr_window": int(c.get("tbm_base_atr_window", 168)),
         "fee_pct": float(c.get("tbm_fee_pct", c.get("fee_pct", 0.5))),
         "slip_buffer": float(c.get("tbm_slip_buffer", c.get("slip_buffer", 0.1))),
+        "tbm_sl_as_tp_pct_min": float(c.get("tbm_sl_as_tp_pct_min", 0.4)),
     }
 
 

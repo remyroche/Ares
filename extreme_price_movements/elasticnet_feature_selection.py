@@ -175,7 +175,7 @@ def run_fold_safe_feature_pruning_and_elasticnet(
     feature_names: Sequence[str],
     timestamps: Optional[np.ndarray] = None,
     *,
-    corr_threshold: float = 0.95,
+    corr_threshold: float = 0.97,
     n_bins_x: int = 16,
     n_bins_y: int = 16,
     l1_ratio_grid: Sequence[float] = (0.05, 0.1, 0.2, 0.4, 0.6),
@@ -188,8 +188,177 @@ def run_fold_safe_feature_pruning_and_elasticnet(
     n_bootstrap_mi: int = 5,
     max_bootstrap_samples: int = 3000,
     stability_penalty_weight: float = 0.10,
+    rfe_max_drop: int = 5,
+    rfe_min_features: int = 10,
+    rfe_max_iterations: int = 10,
 ) -> Dict[str, Any]:
-    """Run leakage-safe clustering+MI feature selection and ElasticNet tuning."""
+    """Run leakage-safe clustering+MI feature selection with RFE-style ElasticNet pruning.
+    
+    Process:
+    1. Correlation clustering (0.97 threshold) + MI pre-selection
+    2. RFE-style iterative ElasticNet pruning:
+       - Run ElasticNet with CV to get coefficients
+       - Remove features with smallest |coefficients| (up to rfe_max_drop)
+       - Repeat until score stops improving or min features reached
+    3. Stability-based final selection across outer folds
+    """
+    
+    def _run_elasticnet_cv_with_coeffs(
+        X_tr: np.ndarray,
+        y_tr: np.ndarray,
+        times_tr: Optional[np.ndarray],
+        alpha_grid: Sequence[float],
+        l1_ratio_grid: Sequence[float],
+        top_q: float,
+        inner_splits: int,
+        stability_penalty_weight: float,
+    ) -> Tuple[float, float, np.ndarray, List[Dict[str, float]]]:
+        """Run ElasticNet with CV and return best params, coefficients, and all results."""
+        inner = PurgedKFold(
+            n_splits=max(2, int(inner_splits)),
+            purge=43200 if times_tr is not None else 12,
+            embargo=43200 if times_tr is not None else 12,
+            times=times_tr,
+        )
+        
+        inner_folds = [(np.asarray(tr, dtype=np.int32), np.asarray(va, dtype=np.int32)) 
+                       for tr, va in inner.split(X_tr)]
+        fold_payload = []
+        for in_tr, in_va in inner_folds:
+            fold_times = times_tr[in_va] if times_tr is not None and len(times_tr) == len(X_tr) else None
+            fold_payload.append((X_tr[in_tr], y_tr[in_tr], X_tr[in_va], y_tr[in_va], fold_times))
+        
+        best_mean = -np.inf
+        best_key = None
+        best_alpha = alpha_grid[0]
+        best_l1 = l1_ratio_grid[0]
+        rows: List[Dict[str, float]] = []
+        
+        for alpha in alpha_grid:
+            for l1r in l1_ratio_grid:
+                scores = []
+                coefs = []
+                for x_tr, y_tr_fold, x_va, y_va, fold_times in fold_payload:
+                    scaler = StandardScaler()
+                    x_tr_s = scaler.fit_transform(x_tr)
+                    x_va_s = scaler.transform(x_va)
+                    enet = ElasticNet(
+                        alpha=float(alpha),
+                        l1_ratio=float(l1r),
+                        fit_intercept=True,
+                        max_iter=10000,
+                        tol=1e-4,
+                        random_state=random_state,
+                    )
+                    enet.fit(x_tr_s, y_tr_fold)
+                    yhat = enet.predict(x_va_s)
+                    scores.append(_topq_daily_aggregated_score(y_va, yhat, q=top_q, times=fold_times, clip_score_q=(0.01, 0.99)))
+                    coefs.append(np.abs(enet.coef_))
+                
+                n_scores = len(scores)
+                if n_scores == 0:
+                    continue
+                mean_s = float(np.mean(scores)) if n_scores else float('-inf')
+                std_s = float(np.std(scores, ddof=1)) if n_scores > 1 else 0.0
+                se_s = std_s / np.sqrt(n_scores) if n_scores else 0.0
+                adj_s = float(mean_s - float(stability_penalty_weight) * std_s)
+                
+                row = {
+                    "alpha": float(alpha),
+                    "l1_ratio": float(l1r),
+                    "mean_score": mean_s,
+                    "std_score": std_s,
+                    "se_score": se_s,
+                    "adjusted_score": adj_s,
+                }
+                rows.append(row)
+                key = (float(alpha), float(l1r))
+                if (adj_s > best_mean) or (np.isclose(adj_s, best_mean) and (best_key is None or key > best_key)):
+                    best_mean = adj_s
+                    best_key = key
+                    best_alpha = alpha
+                    best_l1 = l1r
+        
+        # Get coefficients with best params
+        best_coefs = None
+        if best_key is not None:
+            for x_tr, y_tr_fold, _, _, _ in fold_payload:
+                scaler = StandardScaler()
+                x_tr_s = scaler.fit_transform(x_tr)
+                enet = ElasticNet(
+                    alpha=float(best_alpha),
+                    l1_ratio=float(best_l1),
+                    fit_intercept=True,
+                    max_iter=10000,
+                    tol=1e-4,
+                    random_state=random_state,
+                )
+                enet.fit(x_tr_s, y_tr_fold)
+                if best_coefs is None:
+                    best_coefs = np.abs(enet.coef_)
+                else:
+                    best_coefs += np.abs(enet.coef_)
+            best_coefs /= len(fold_payload) if fold_payload else 1
+        
+        return best_alpha, best_l1, best_coefs if best_coefs is not None else np.zeros(X_tr.shape[1]), rows
+    
+    def _run_rfe_elasticnet(
+        X_tr: np.ndarray,
+        y_tr: np.ndarray,
+        times_tr: Optional[np.ndarray],
+        current_features: List[int],
+        alpha_grid: Sequence[float],
+        l1_ratio_grid: Sequence[float],
+        top_q: float,
+        inner_splits: int,
+        stability_penalty_weight: float,
+        rfe_max_drop: int,
+        rfe_min_features: int,
+        rfe_max_iterations: int,
+    ) -> List[int]:
+        """Run RFE-style ElasticNet to iteratively prune features."""
+        selected_idx = list(current_features)
+        best_score = -np.inf
+        
+        for iteration in range(rfe_max_iterations):
+            if len(selected_idx) <= rfe_min_features:
+                break
+            
+            X_curr = X_tr[:, selected_idx]
+            
+            best_alpha, best_l1, coefs, cv_rows = _run_elasticnet_cv_with_coeffs(
+                X_curr, y_tr, times_tr, alpha_grid, l1_ratio_grid, top_q,
+                inner_splits, stability_penalty_weight
+            )
+            
+            if coefs is None or len(coefs) == 0:
+                break
+            
+            # Get current score
+            current_score = -np.inf
+            for row in cv_rows:
+                if row["alpha"] == best_alpha and row["l1_ratio"] == best_l1:
+                    current_score = row["adjusted_score"]
+                    break
+            
+            if current_score < best_score and iteration > 0:
+                # Score didn't improve, stop (but allow first iteration)
+                break
+            
+            best_score = current_score
+            
+            # Sort features by coefficient magnitude (ascending)
+            n_drop = min(rfe_max_drop, max(1, len(selected_idx) - rfe_min_features))
+            coef_order = np.argsort(coefs)
+            features_to_remove = set(coef_order[:n_drop])
+            
+            selected_idx = [selected_idx[i] for i in range(len(selected_idx)) if i not in features_to_remove]
+            
+            if len(selected_idx) <= rfe_min_features:
+                break
+        
+        return selected_idx
+    
     if alpha_grid is None:
         alpha_grid = np.logspace(-4, 1.5, 12)
 
@@ -259,87 +428,40 @@ def run_fold_safe_feature_pruning_and_elasticnet(
             selected_idx.append(int(comp_arr[order[0]]))
 
         selected_idx = sorted(set(selected_idx))
-        sel_names = [str(feature_names[i]) for i in selected_idx]
-
+        
+        # Run RFE-style ElasticNet pruning
         inner_times = times[tr_idx] if times is not None and len(times) == n else None
-        inner = PurgedKFold(
-            n_splits=max(2, int(inner_splits)),
-            purge=43200 if inner_times is not None else 12,
-            embargo=43200 if inner_times is not None else 12,
-            times=inner_times,
-        )
-
-        rows: List[Dict[str, float]] = []
-        best_mean = -np.inf
-        best_key = None
-
-        Xsel = np.asarray(Xtr[:, selected_idx], dtype=np.float32, order='C')
-        inner_folds = [(np.asarray(tr, dtype=np.int32), np.asarray(va, dtype=np.int32)) for tr, va in inner.split(Xsel)]
-        fold_payload = []
-        for in_tr, in_va in inner_folds:
-            fold_payload.append((
-                Xsel[in_tr],
-                ytr[in_tr],
-                Xsel[in_va],
-                ytr[in_va],
-                (inner_times[in_va] if inner_times is not None and len(inner_times) == len(Xsel) else None),
-            ))
-
-        for alpha in alpha_grid:
-            for l1r in l1_ratio_grid:
-                scores = []
-                for x_tr, y_tr, x_va, y_va, fold_times in fold_payload:
-                    scaler = StandardScaler()
-                    x_tr_s = scaler.fit_transform(x_tr)
-                    x_va_s = scaler.transform(x_va)
-                    enet = ElasticNet(
-                        alpha=float(alpha),
-                        l1_ratio=float(l1r),
-                        fit_intercept=True,
-                        max_iter=10000,
-                        tol=1e-4,
-                        random_state=random_state,
-                    )
-                    enet.fit(x_tr_s, y_tr)
-                    yhat = enet.predict(x_va_s)
-                    scores.append(_topq_daily_aggregated_score(y_va, yhat, q=top_q, times=fold_times, clip_score_q=(0.01, 0.99)))
-                n_scores = len(scores)
-                if n_scores == 0:
-                    continue
-                mean_s = float(np.mean(scores)) if n_scores else float('-inf')
-                std_s = float(np.std(scores, ddof=1)) if n_scores > 1 else 0.0
-                se_s = std_s / np.sqrt(n_scores) if n_scores else 0.0
-                adj_s = float(mean_s - float(stability_penalty_weight) * std_s)
-                row = {
-                    "alpha": float(alpha),
-                    "l1_ratio": float(l1r),
-                    "mean_score": mean_s,
-                    "std_score": std_s,
-                    "se_score": se_s,
-                    "adjusted_score": adj_s,
-                }
-                rows.append(row)
-                key = (float(alpha), float(l1r))
-                if (adj_s > best_mean) or (np.isclose(adj_s, best_mean) and (best_key is None or key > best_key)):
-                    best_mean = adj_s
-                    best_key = key
-
-        if not rows:
+        
+        if len(selected_idx) > rfe_min_features:
+            selected_idx = _run_rfe_elasticnet(
+                Xtr, ytr, inner_times, selected_idx,
+                alpha_grid, l1_ratio_grid, top_q,
+                inner_splits, stability_penalty_weight,
+                rfe_max_drop, rfe_min_features, rfe_max_iterations
+            )
+        
+        sel_names = [str(feature_names[i]) for i in selected_idx]
+        
+        # Final ElasticNet CV with selected features to get best alpha/l1 and table
+        Xsel = np.asarray(Xtr[:, selected_idx], dtype=np.float32, order='C') if len(selected_idx) > 0 else np.empty((Xtr.shape[0], 0), dtype=np.float32)
+        
+        if len(selected_idx) == 0:
             chosen_alpha, chosen_l1 = float(alpha_grid[0]), float(l1_ratio_grid[0])
-            table_out: List[Dict[str, float]] = []
+            table_out = []
         else:
-            best_row = max(rows, key=lambda r: (r["adjusted_score"], r["alpha"], r["l1_ratio"]))
+            chosen_alpha, chosen_l1, _, table_out = _run_elasticnet_cv_with_coeffs(
+                Xsel, ytr, inner_times, alpha_grid, l1_ratio_grid, top_q,
+                inner_splits, stability_penalty_weight
+                    )
+        
+        # Add eligible flag to table_out
+        if table_out and len(table_out) > 0:
+            best_row = max(table_out, key=lambda r: (r["adjusted_score"], r["alpha"], r["l1_ratio"]))
             cutoff = float(best_row["adjusted_score"] - best_row["se_score"])
             eps = 1e-12
-            eligible = [r for r in rows if r["adjusted_score"] >= (cutoff - eps)]
-            chosen = max(eligible, key=lambda r: (r["alpha"], r["l1_ratio"], r["adjusted_score"]))
-            chosen_alpha, chosen_l1 = float(chosen["alpha"]), float(chosen["l1_ratio"])
-            table_out = []
-            for r in rows:
-                rr = dict(r)
-                rr["eligible"] = 1.0 if r in eligible else 0.0
-                table_out.append(rr)
-
+            for r in table_out:
+                r["eligible"] = 1.0 if r["adjusted_score"] >= (cutoff - eps) else 0.0
+        
         fold_results.append(
             FoldSelectionResult(
                 fold_id=fold_id,

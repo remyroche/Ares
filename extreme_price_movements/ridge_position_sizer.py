@@ -2595,7 +2595,7 @@ class RidgePositionSizer:
 
         cv_cfg = CVConfig(n_splits=3, min_train_size=max(100, len(y)//4), val_size=max(100, len(y)//4))
         util_cfg = UtilityConfig(utility_mode="topq_mean", topq=max(0.05, min(0.30, float(self.select_topq))))
-        fs_cfg = FeatureSelectConfig(min_features=5, n_repeats_perm=5, confirm_mode="single_seed_fast")
+        fs_cfg = FeatureSelectConfig(min_features=10, n_repeats_perm=5, confirm_mode="single_seed_fast")
 
         lgbm_p = {
             "learning_rate": 0.05,
@@ -3851,6 +3851,57 @@ def run_ridge_position_sizer_step(
     tprint("RIDGE POSITION SIZER STEP")
     tprint("=" * 80)
     
+    def _compute_oof_rank_metrics(
+        scores: np.ndarray,
+        returns: np.ndarray,
+        timestamps: np.ndarray | None = None,
+        start_equity: float = 100000.0,
+    ) -> Dict[str, Any]:
+        """Compute metrics for top-K% ranks based on OOF scores."""
+        scores = np.asarray(scores, dtype=float)
+        returns = np.asarray(returns, dtype=float)
+        valid = np.isfinite(scores) & np.isfinite(returns)
+        if not np.any(valid):
+            return {}
+        scores, returns = scores[valid], returns[valid]
+        ts = timestamps[valid] if timestamps is not None else np.arange(len(returns))
+        rank_pct = (np.argsort(np.argsort(scores)) + 1) / len(scores)
+        
+        result = {}
+        for top_pct in [0.30, 0.20, 0.10]:
+            thresh = 1.0 - top_pct
+            mask = rank_pct >= thresh
+            if not np.any(mask):
+                continue
+            rets, ts_masked = returns[mask], ts[mask]
+            frac = np.full(len(rets), 0.10)
+            pnl = start_equity * frac * rets
+            n_trades = len(pnl)
+            if n_trades == 0:
+                continue
+            days = max(int(ts_masked[-1] - ts_masked[0]) + 1, 1) if timestamps is not None else max(len(ts_masked), 1)
+            pnl_total, pnl_per_trade = float(np.sum(pnl)), float(np.mean(pnl))
+            trades_per_day = float(n_trades / days)
+            cum_pnl, peak = np.cumsum(pnl), np.maximum.accumulate(cum_pnl)
+            dd = peak - cum_pnl
+            maxdd, tuw = float(np.max(dd)), float(np.mean(dd > 0)) if len(dd) > 0 else 0.0
+            downside = pnl[pnl < 0]
+            down_std = float(np.std(downside)) if len(downside) > 0 else 1e-9
+            sortino = float(np.mean(pnl) / down_std * np.sqrt(365)) if down_std > 0 else 0.0
+            ulcer = float(np.sqrt(np.mean(np.square(dd)))) if len(dd) > 0 else 0.0
+            prefix = f"oof_top{int(top_pct*100)}"
+            result.update({
+                f"{prefix}_pnl_total": pnl_total,
+                f"{prefix}_pnl_per_trade": pnl_per_trade,
+                f"{prefix}_trades_per_day": trades_per_day,
+                f"{prefix}_ulcer": ulcer,
+                f"{prefix}_sortino": sortino,
+                f"{prefix}_maxdd": maxdd,
+                f"{prefix}_time_under_water": tuw,
+                f"{prefix}_n_trades": n_trades,
+            })
+        return result
+    
     # Extract configuration
     cfg = cfg or {}
     gamma_range = cfg.get('gamma_range', (0.0, 0.8))
@@ -3942,6 +3993,14 @@ def run_ridge_position_sizer_step(
         metrics['cv_best_ic'] = float(best_row['IC'])
         metrics['cv_best_winrate'] = float(best_row['WinRate'])
         metrics['cv_best_n_selected'] = int(best_row['N_selected'])
+    
+    # Compute OOF rank-based metrics (top30%, top20%, top10%)
+    if sizer.oof_preds_ is not None and sizer.oof_targets_ is not None:
+        oof_score = sizer.predict(sizer.oof_preds_)
+        oof_targets = sizer.oof_targets_
+        oof_ts = getattr(sizer, 'oof_timestamps_', None)
+        rank_metrics = _compute_oof_rank_metrics(oof_score, oof_targets, oof_ts)
+        metrics.update(rank_metrics)
     
     data_root = resolve_data_root(cfg.get('data_root') if cfg else None)
     reports_dir = resolve_reports_dir(cfg.get('reports_root') if cfg else None)

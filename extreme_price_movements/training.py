@@ -3730,9 +3730,15 @@ def build_hourly_training_set_and_weights(
     # so we must train on raw names too. Prefix with __meta_raw__ to avoid
     # collision with toggled columns and to survive drop_raw=True.
     meta_keys_cfg = _meta_feature_keys_for_kind(cfg, k)
+    _df_ts = df["ts"].values
+    _df_sym = df["symbol"].values
     for mk in meta_keys_cfg:
         if mk in df.columns:
             df[f"__meta_raw__{mk}"] = df[mk].values
+        elif mk in feats:
+            df[f"__meta_raw__{mk}"] = np.nan_to_num(
+                _fast_lookup(feats[mk], _df_ts, _df_sym), nan=0.0
+            ).astype(np.float32)
 
     df = apply_interaction_toggles(
         df, feat_keys, ["G_VOL", "G_TREND"], drop_raw=cfg["drop_raw_causal"]
@@ -4199,28 +4205,27 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                 _bname = f"{k_label.upper()}_{side}"
                 _cell_key_exact = f"{_bname}_H{H}"
 
-                # Load per-cell mapping (preferred) or per-bucket mapping (fallback)
+                # Load per-cell mapping for a diagnostic tag only; do NOT collapse to a single
+                # triplet — let the full geometry grid validated_triplets drive the sweep.
                 _p_cell_best = load_tbm_best_params_per_cell()
                 _cell_winner = _p_cell_best.get(_cell_key_exact)
                 if not _cell_winner:
                     _cell_winner = _p_cell_best.get(_bname)  # Bucket-level fallback
 
-                # Check for validated triplets first (legacy/per-cell grid)
+                # Check for validated triplets first (geometry grid — top-k per cell).
                 _cell_data = _per_cell.get(_cell_key_exact, {})
                 _validated_triplets = _cell_data.get("validated_triplets") or []
 
-                # If a winner exists (cell or bucket), it overrides everything for native downstream usage.
+                # Diagnostic: log how many validated triplets we're sweeping.
                 if _cell_winner:
-                    _w_k_tp = float(_cell_winner.get("k_tp", 1.0))
-                    _w_sl = float(_cell_winner.get("sl_as_tp_pct", 0.5))
-                    _w_atr = int(_cell_winner.get("base_atr_window", 24 * 30))
                     _tag = (
                         "native_cell" if "cell_key" in _cell_winner else "native_bucket"
                     )
                     tprint(
-                        f"  [{_tag}] {_cell_key_exact} -> using winner: k_tp={_w_k_tp} sl={_w_sl} atr={_w_atr}"
+                        f"  [{_tag}] {_cell_key_exact}: sweeping {len(_validated_triplets)} "
+                        f"validated geometry triplets (top-k TBM, no policy rollout). "
+                        f"Best single config: k_tp={_cell_winner.get('k_tp')} sl={_cell_winner.get('sl_as_tp_pct')}"
                     )
-                    _validated_triplets = [(_w_k_tp, _w_sl, _w_atr)]
 
                 if not _validated_triplets:
                     _fallback_win = (
@@ -10010,9 +10015,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
     return {
         "alpha_models": final_models,
         "alpha_oof_metrics": {
-            f"{side}_{kind}": final_models.get(side, {})
-            .get(kind, {})
-            .get("alpha_diag", {})
+            f"{side}_{kind}": ((final_models.get(side) or {}).get(kind) or {}).get("alpha_diag", {})
             for side in trade_sides
             for kind in kinds
         },

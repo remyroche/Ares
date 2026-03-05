@@ -83,6 +83,23 @@ def _meta_feature_keys_union(cfg) -> set[str]:
     return {k for k in keys if isinstance(k, str) and k}
 
 
+def _base_feature_keys_union(cfg) -> set[str]:
+    keys: set[str] = set()
+    for name in (
+        "exh_feature_keys",
+        "spike_feature_keys",
+        "tf_feature_keys",
+        "mr_feature_keys",
+        "test_feature_keys",
+    ):
+        vals = cfg.get(name, [])
+        if isinstance(vals, (list, tuple)):
+            for v in vals:
+                if isinstance(v, str) and v:
+                    keys.add(v)
+    return keys
+
+
 def _expected_feature_keys_from_cfg(cfg) -> set[str]:
     keys: set[str] = set()
     for name in (
@@ -104,35 +121,25 @@ def _expected_feature_keys_from_cfg(cfg) -> set[str]:
 
 
 def _labeling_feature_keys(cfg) -> set[str]:
-    """Minimal feature set for label generation only.
-
-    Labeling needs:
-    - Candidate masking: ret24h, range_12h_pct, volatility_zscore, chop_score, mkt_rv_24h, mkt_rv_48h
-    - Exhaustion history: cfg['exh_feature_keys']
-    - ATR-pct for barrier calibration: atr_pct
-    - Core ret1h for any cross-section ranking.
-
-    It does NOT need spike_feature_keys, meta_feature_keys, tf_feature_keys, mr_feature_keys which
-    are only used in actual model training and would cause an OOM during label generation.
+    """Returns the minimal set of expected feature keys for the label generation step.
+    
+    This optimization aggressively strips all base features, since labels only need a
+    few key metrics to compute barriers and filters. Final models will fetch their
+    full feature sets dynamically during 'base_training' to avoid OOM.
     """
-    keys: set[str] = {
+    keys = {
         "ret24h", "ret1h", "atr_pct",
         "range_12h_pct", "volatility_zscore",
         "chop_score", "mkt_rv_24h", "mkt_rv_48h",
-        # Required by _build_optimal_candidate_mask → select_trade_candidates_vectorized.
-        # Without this the candidate mask is None and label generation crashes.
         "dist_ema_fast",
-        # Required by _prepare_events_once_for_side_kind for trend-direction bucket filter.
         "trend_pct",
     }
-    # Also honour any custom trade_deviation_metric (may differ from dist_ema_fast)
     dev_metric = cfg.get("trade_deviation_metric", "dist_ema_fast")
     if isinstance(dev_metric, str) and dev_metric:
         keys.add(dev_metric)
-    # Add exhaustion-specific feature keys (generally small set)
     exh_keys = cfg.get("exh_feature_keys", [])
     if isinstance(exh_keys, (list, tuple)):
-        keys.update(k for k in exh_keys if isinstance(k, str) and k)
+        keys.update(exh_keys)
     return keys
 
 
@@ -820,6 +827,17 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None, base_only=Fa
         return None
 
     tprint(f"Loaded {len(datasets)} datasets total.")
+
+    from extreme_price_movements.training import train_models_from_artifacts
+    req_keys = list(_expected_feature_keys_from_cfg(cfg))
+    if base_only:
+        meta_keys = set(_meta_feature_keys_union(cfg))
+        base_keys = set(_base_feature_keys_union(cfg))
+        # Remove meta-only keys from required keys
+        req_keys = list(set(req_keys) - (meta_keys - base_keys))
+        tprint(f"Base-only mode: Loading {len(req_keys)} req features (excluded {len(meta_keys - base_keys)} meta-only keys)")
+        
+    datasets = inject_features_into_datasets(datasets, ts_sig, cfg, req_keys)
 
     # 2. Train models
     # Inject run_id so meta OOF files are saved to the correct artifacts directory
@@ -2901,3 +2919,132 @@ def run_feature_generation_step(ts_sig, margin_symbols, cfg, store, force_full_r
     tprint(f"Generated features for {len(loaded_syms)} symbols.")
     _generate_feature_health_reports(ts_sig, cfg["data_root"])
     tprint("STEP: FEATURE GENERATION COMPLETE")
+
+def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
+    from extreme_price_movements.utils import tprint
+    from extreme_price_movements.data_store import get_feature_path
+    from extreme_price_movements.trap_specialist import TRAP_FEATURE_KEYS
+    from extreme_price_movements.gamma_specialist import GAMMA_FEATURE_KEYS
+    import pandas as pd
+    import numpy as np
+    import os
+    import pyarrow.parquet as pq
+    
+    tprint("Resolving unique symbols and timestamps for feature injection...")
+    all_syms = set()
+    for name, df in datasets.items():
+        if "symbol" in df.columns:
+            all_syms.update(df["symbol"].unique())
+
+    if not all_syms:
+        return datasets
+
+    sorted_syms = sorted(all_syms)
+    
+    # Define per-dataset feature requirements to avoid OOM on large panels
+    dataset_features = {}
+    for name in datasets.keys():
+        if name == "trap_model":
+            dataset_features[name] = set(TRAP_FEATURE_KEYS)
+        elif name == "gamma_model":
+            dataset_features[name] = set(GAMMA_FEATURE_KEYS)
+        else:
+            dataset_features[name] = set(req_keys)
+
+    # Identify which keys are actually missing and needed for each dataset
+    missing_keys_per_dataset = {}
+    all_needed_keys = set()
+    for name, df in datasets.items():
+        missing = [k for k in dataset_features[name] if k not in df.columns]
+        if missing:
+            missing_keys_per_dataset[name] = missing
+            all_needed_keys.update(missing)
+    
+    if not all_needed_keys:
+        tprint("No features need injection (all already present).")
+        return datasets
+        
+    meta_keys_all = set(_meta_feature_keys_union(cfg))
+    sorted_missing_keys = sorted(all_needed_keys)
+    
+    # Pre-allocate target arrays
+    tprint(f"Pre-allocating injection buffers for {len(sorted_missing_keys)} features across {len(missing_keys_per_dataset)} datasets...")
+    target_buffers = {}
+    for name, missing in missing_keys_per_dataset.items():
+        df = datasets[name]
+        target_buffers[name] = {}
+        for k in missing:
+            target_buffers[name][k] = np.zeros(len(df), dtype=np.float32)
+            if k in meta_keys_all:
+                target_buffers[name][f"__meta_raw__{k}"] = np.zeros(len(df), dtype=np.float32)
+
+    tprint(f"Injecting features symbol-by-symbol for {len(sorted_syms)} symbols...")
+    import time
+    start_time = time.time()
+    
+    for i, s in enumerate(sorted_syms, 1):
+        if i % 100 == 0 or i == len(sorted_syms):
+            elapsed = time.time() - start_time
+            tprint(f"  Injection progress: {i}/{len(sorted_syms)} symbols (elapsed {elapsed:.1f}s)")
+            
+        fpath = get_feature_path(cfg["data_root"], ts_sig, s)
+        if not os.path.exists(fpath):
+            continue
+            
+        try:
+            # Determine which features to load for this symbol
+            needed_for_this_sym = set()
+            for name, missing in missing_keys_per_dataset.items():
+                if "symbol" in datasets[name].columns and (datasets[name]["symbol"] == s).any():
+                    needed_for_this_sym.update(missing)
+            
+            if not needed_for_this_sym:
+                continue
+
+            schema = pq.ParquetFile(fpath).schema.names
+            cols_to_load = [k for k in needed_for_this_sym if k in schema]
+            if not cols_to_load:
+                continue
+            
+            df_feat = pd.read_parquet(fpath, columns=cols_to_load)
+            if df_feat.empty:
+                continue
+            if not df_feat.index.is_unique:
+                df_feat = df_feat[~df_feat.index.duplicated(keep='last')]
+                
+            for name, missing in missing_keys_per_dataset.items():
+                df = datasets[name]
+                if "symbol" not in df.columns:
+                    continue
+                mask = (df["symbol"] == s)
+                if not mask.any():
+                    continue
+                
+                subset_df = df.loc[mask, ["ts"]]
+                cols_for_ds = [k for k in missing if k in df_feat.columns]
+                if not cols_for_ds:
+                    continue
+                    
+                merged = subset_df.merge(df_feat[cols_for_ds], left_on="ts", right_index=True, how="left").fillna(0.0)
+                
+                for k in cols_for_ds:
+                    vals = merged[k].values.astype(np.float32)
+                    target_buffers[name][k][mask] = vals
+                    if k in meta_keys_all and f"__meta_raw__{k}" in target_buffers[name]:
+                        target_buffers[name][f"__meta_raw__{k}"][mask] = vals
+                
+        except Exception as e:
+            tprint(f"  WARNING: Error injecting features for {s}: {e}")
+
+    tprint("Concatenating injected features...")
+    for name, cols_dict in target_buffers.items():
+        if cols_dict:
+            df = datasets[name]
+            new_df_cols = pd.DataFrame(cols_dict, index=df.index)
+            datasets[name] = pd.concat([df, new_df_cols], axis=1)
+            
+    tprint("Feature injection complete.")
+    import gc
+    gc.collect()
+    
+    return datasets

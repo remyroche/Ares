@@ -298,6 +298,91 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
 
     tprint(f"Loaded OOF predictions for {len(result)} buckets: {list(result.keys())}")
 
+    # Inject required config-defined features into the inference data
+    from extreme_price_movements.config import load_config
+    from extreme_price_movements.data_store import load_features_selected
+    from extreme_price_movements.training import _fast_lookup
+
+    cfg = load_config()
+    required_features = set()
+    required_features.update(cfg.get("position_sizer_feature_priority", []))
+    required_features.update(cfg.get("limit_offset_sizer", []))
+    required_features.update(cfg.get("position_sizer_regime_feature_keys", []))
+
+    # Identify missing features across all buckets
+    missing_feats = set()
+    for bdf in result.values():
+        missing_feats.update([f for f in required_features if f not in bdf.columns])
+    
+    # Remove known meta/prediction cols that aren't base features
+    known_preds = {
+        "score", "reg", "reg_mean", "reg_std", "reg_range", "utility", 
+        "mae_q70", "mfe", "early_inval", "oof_u_hat", "oof_log_mae_q70_hat", 
+        "oof_log_mfe_hat", "mfe_mae_ratio_hat", "Upside", "Downside", 
+        "EdgeSharpe", "risk_reward_ratio", "high_utility_pred", 
+        "risk_adjusted_pred", "utility_disagreement", "base_H2", "base_H4", "base_H8"
+    }
+    missing_feats = missing_feats - known_preds
+
+    if missing_feats:
+        tprint(f"Position sizer fetching {len(missing_feats)} missing config features...")
+        all_syms = set()
+        for bdf in result.values():
+            if "symbol" in bdf.columns:
+                all_syms.update(bdf["symbol"].unique())
+        
+        feats = load_features_selected(
+            data_root=data_root,
+            symbols=list(all_syms),
+            selected_features=list(missing_feats)
+        )
+        
+        if feats:
+            tprint("Injecting fetched features into position sizer datasets (memory optimized)...")
+            
+            # Identify missing features actually needed
+            needed_keys = set()
+            for bdf in result.values():
+                needed_keys.update([k for k in missing_feats if k not in bdf.columns])
+                
+            actual_missing = [k for k in needed_keys if k in feats]
+            tprint(f"Injecting {len(actual_missing)} features into sizer datasets...")
+            
+            # Temporary dict for new cols
+            new_cols_per_bucket = {bucket: {} for bucket in result.keys()}
+            
+            for i, k in enumerate(actual_missing, 1):
+                if i % 5 == 0:
+                    tprint(f"  Sizer feature injection progress: {i}/{len(actual_missing)}")
+                
+                feat_df = feats.pop(k)
+                
+                for bucket, bdf in result.items():
+                    if "timestamp" not in bdf.columns or "symbol" not in bdf.columns:
+                        continue
+                    if k in bdf.columns:
+                        continue
+                        
+                    _ts = pd.to_datetime(bdf["timestamp"]).values
+                    _sym = bdf["symbol"].values
+                    
+                    v = np.nan_to_num(
+                        _fast_lookup(feat_df, _ts, _sym), nan=0.0
+                    ).astype(np.float32)
+                    new_cols_per_bucket[bucket][k] = v
+                
+                del feat_df
+            
+            for bucket, new_cols in new_cols_per_bucket.items():
+                if new_cols:
+                    bdf = result[bucket]
+                    result[bucket] = pd.concat([bdf, pd.DataFrame(new_cols, index=bdf.index)], axis=1)
+                    
+            tprint("Position sizer feature injection complete.")
+            del feats
+            del new_cols_per_bucket
+            import gc; gc.collect()
+
     # These are metadata columns to exclude from features
     # Note: oof_u_hat, oof_log_mae_q70_hat, oof_log_mfe_hat, oof_log_dur_hat 
     # are now included as features (meta model auxiliary predictions)

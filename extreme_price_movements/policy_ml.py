@@ -61,8 +61,14 @@ def _reason_to_exit_code(reason: str, r_policy: float) -> int:
     rr = str(reason or "")
     if rr in {"stop_loss", "early_invalidation"}:
         return 0
-    if rr in {"trailing_stop", "take_profit", "tp", "giveback_exit"}:
+    if rr in {"take_profit", "tp"}:
         return 2
+    if rr in {"trailing_stop", "giveback_exit"}:
+        # Profitable trailing / giveback exits → TP; loss-making → SL.
+        # A trailing stop that ends in the red means the hard SL was hit after
+        # break-even ratcheted up but price reversed below entry — counts as SL
+        # from a sizing/risk perspective.
+        return 2 if float(r_policy) >= 0.0 else 0
     if rr in {"time_exit", "timeout", "no_entry", "limit_not_filled"}:
         return 1
     # Fallback by realized sign

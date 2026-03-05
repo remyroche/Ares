@@ -249,6 +249,11 @@ def train_daily(ts_sig, margin_symbols, cfg, store, ex):
         tprint("ERROR: No label datasets found. Run 'labels' mode first.")
         return None
 
+    from extreme_price_movements.pipeline_steps import _expected_feature_keys_from_cfg, inject_features_into_datasets
+    req_keys = _expected_feature_keys_from_cfg(cfg)
+    datasets = inject_features_into_datasets(datasets, ts_sig, cfg, req_keys)
+
+    from extreme_price_movements.training import train_models_from_artifacts
     with Timer("Model Training"):
         trained_bundle = train_models_from_artifacts(datasets, cfg, train_meta=True)
         tprint("Models trained.")
@@ -267,6 +272,15 @@ def train_daily_base(ts_sig, margin_symbols, cfg, store, ex):
     if not found_count:
         tprint("ERROR: No label datasets found. Run 'labels' mode first.")
         return None
+
+    from extreme_price_movements.pipeline_steps import _expected_feature_keys_from_cfg, inject_features_into_datasets, _meta_feature_keys_union, _base_feature_keys_union
+    from extreme_price_movements.training import train_models_from_artifacts
+    # _expected_feature_keys_from_cfg and union functions are in pipeline_steps
+    req_keys = _expected_feature_keys_from_cfg(cfg)
+    meta_keys = set(_meta_feature_keys_union(cfg))
+    base_keys = set(_base_feature_keys_union(cfg))
+    req_keys = list(set(req_keys) - (meta_keys - base_keys))
+    datasets = inject_features_into_datasets(datasets, ts_sig, cfg, req_keys)
 
     with Timer("Base Model Training"):
         trained_bundle = train_models_from_artifacts(datasets, cfg, train_meta=False)
@@ -310,6 +324,11 @@ def train_daily_meta(ts_sig, margin_symbols, cfg, store, ex):
     if not alpha_models:
         tprint("ERROR: No alpha models found in intermediate state.")
         return None
+
+    from extreme_price_movements.pipeline_steps import _expected_feature_keys_from_cfg, inject_features_into_datasets, _meta_feature_keys_union
+    meta_req_keys = _meta_feature_keys_union(cfg)
+    tprint(f"Injecting {len(meta_req_keys)} meta features into datasets for meta training...")
+    datasets = inject_features_into_datasets(datasets, ts_sig, cfg, meta_req_keys)
 
     with Timer("Meta Model Training"):
         from extreme_price_movements.training import train_meta_models_from_artifacts

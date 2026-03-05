@@ -563,7 +563,7 @@ CFG = {
     "base_require_positive_oof_expectancy": True,
     "base_oof_expectancy_top_frac": 0.30,
     # Use engine-identical rollout labels when creating training rows
-    "policy_rollout_labeling_enable": True,
+    "policy_rollout_labeling_enable": False,
     "sample_weight_opt_n_splits": 5,
     "sample_weight_opt_embargo_bars": 10,
     "cv_embargo_bars": 12,

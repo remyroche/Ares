@@ -9,12 +9,14 @@ Steps covered:
   - labels        : label distribution per (bucket, horizon)
   - base_training : alpha model AUC/IC per (bucket, horizon)
   - meta_training : meta model IC/AUC per (bucket, horizon)
+  - ev_decomposition : p(win), win quantile, loss quantile metrics per bucket
   - ridge_sizer   : ridge weights + IC per bucket
   - optimise      : backtest PnL/Sharpe/WR per bucket
 """
 
 from __future__ import annotations
 
+import json
 import math
 import os
 from datetime import datetime
@@ -227,7 +229,7 @@ def report_base_training(run_id: str, bundle: Dict[str, Any], cfg: Dict[str, Any
 
     rows_data = []
     table_rows = []
-    headers = ["Bucket", "H", "Winner algo", "AUC (raw)", "AUC (weighted)", "IC", "Prec@10", "N features"]
+    headers = ["Bucket", "H", "Winner algo", "AUC (raw)", "AUC (weighted)", "IC", "Prec@10", "Prec@30", "N features"]
 
     for side in sides:
         for kind in kinds:
@@ -244,11 +246,12 @@ def report_base_training(run_id: str, bundle: Dict[str, Any], cfg: Dict[str, Any
                 auc_w = _fmt(m.get("auc_weighted", float("nan")))
                 ic = _fmt(m.get("ic", float("nan")))
                 prec10 = _fmt(m.get("prec_at_10", float("nan")))
+                prec30 = _fmt(m.get("prec_at_30", float("nan")))
                 n_feats = m.get("n_features", kind_model.get("n_features", "—"))
-                table_rows.append([bkt_label, H, winner, auc_raw, auc_w, ic, prec10, n_feats])
+                table_rows.append([bkt_label, H, winner, auc_raw, auc_w, ic, prec10, prec30, n_feats])
                 rows_data.append({"bucket": bkt_label, "H": H, "winner": winner,
                                    "auc_raw": m.get("auc_raw"), "auc_weighted": m.get("auc_weighted"),
-                                   "ic": m.get("ic"), "prec_at_10": m.get("prec_at_10")})
+                                   "ic": m.get("ic"), "prec_at_10": m.get("prec_at_10"), "prec_at_30": m.get("prec_at_30")})
 
     lines.append("## Alpha Model Performance per (Bucket, Horizon)")
     lines.extend(_md_table(headers, table_rows))
@@ -410,6 +413,116 @@ def report_meta_training(run_id: str, data_root: str, bundle: Dict[str, Any], cf
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Step 4b: ev_decomposition — p(win), win quantile, loss quantile metrics per bucket
+# ─────────────────────────────────────────────────────────────────────────────
+def report_ev_decomposition(run_id: str, data_root: str, base_dir: str | Path | None = None) -> str:
+    """Generate EV decomposition diagnostics report from training diagnostics JSON."""
+    ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    lines = [f"# EV Decomposition Report — {run_id}", f"Generated: {ts}\n"]
+
+    diag_path = Path(data_root) / "artifacts" / run_id / "ev_decomposition" / "ev_decomposition_training_diagnostics.json"
+    
+    if not diag_path.exists():
+        lines.append(f"**Diagnostics file not found**: `{diag_path}`")
+        lines.append("\nEV decomposition may not have been trained (check cfg: ev_decomposition_enabled)")
+        return _save(run_id, "ev_decomposition", lines, base_dir=base_dir)
+
+    try:
+        import json
+        with open(diag_path) as f:
+            diag = json.load(f)
+    except Exception as e:
+        lines.append(f"ERROR: Could not load diagnostics JSON: {e}")
+        return _save(run_id, "ev_decomposition", lines, base_dir=base_dir)
+
+    training_config = diag.get("training_config", {})
+    diagnostics = diag.get("diagnostics", {})
+
+    lines.append("## Training Configuration")
+    lines.append(f"- **p(win) base engine**: {training_config.get('pwin_base_engine', '—')}")
+    lines.append(f"- **Quantile base engine**: {training_config.get('quantile_base_engine', '—')}")
+    lines.append(f"- **Regularization level**: {training_config.get('regularization_level', '—')}")
+    lines.append(f"- **Calibrator method**: {training_config.get('calibrator_method', '—')}")
+    lines.append(f"- **Quantile delta**: {training_config.get('quantile_delta', '—')}")
+    lines.append("")
+
+    # Overall p(win) metrics
+    pwin = diagnostics.get("pwin", {})
+    lines.append("## p(win) Model — Overall")
+    lines.append(f"- **Mean prediction**: {_fmt(pwin.get('pwin_mean_pred', float('nan')))}")
+    lines.append(f"- **Mean target**: {_fmt(pwin.get('pwin_mean_target', float('nan')))}")
+    if "auc" in pwin:
+        lines.append(f"- **AUC**: {_fmt(pwin.get('auc', float('nan')))}")
+    if "ece_top10" in pwin:
+        lines.append(f"- **ECE@10**: {_fmt(pwin.get('ece_top10', float('nan')))}")
+    if "prec_at_10" in pwin:
+        lines.append(f"- **Prec@10**: {_fmt(pwin.get('prec_at_10', float('nan')))}")
+    lines.append("")
+
+    # Win quantile metrics
+    wq = diagnostics.get("win_quantiles", {})
+    lines.append("## Win Quantiles — Overall")
+    win_headers = ["Metric", "Value"]
+    win_rows = [
+        ["N", wq.get("n", "—")],
+        ["Pinball Q50", _fmt(wq.get("pinball_q50", float('nan')))],
+        ["Pinball Q80", _fmt(wq.get("pinball_qh", float('nan')))],
+        ["Coverage Q50", _fmt(wq.get("coverage_q50", float('nan')))],
+        ["Coverage Q80", _fmt(wq.get("coverage_qh", float('nan')))],
+        ["Interval Width (mean)", _fmt(wq.get("interval_evaluation", float('nan')))],
+        ["Mean actual", _fmt(wq.get("mean_y", float('nan')))],
+        ["Mean Q50 pred", _fmt(wq.get("mean_q50", float('nan')))],
+        ["Mean Q80 pred", _fmt(wq.get("mean_qh", float('nan')))],
+    ]
+    lines.extend(_md_table(win_headers, win_rows))
+    lines.append("")
+
+    # Loss quantile metrics
+    lq = diagnostics.get("loss_quantiles", {})
+    lines.append("## Loss Quantiles — Overall")
+    loss_headers = ["Metric", "Value"]
+    loss_rows = [
+        ["N", lq.get("n", "—")],
+        ["Pinball Q50", _fmt(lq.get("pinball_q50", float('nan')))],
+        ["Pinball Q90", _fmt(lq.get("pinball_qh", float('nan')))],
+        ["Coverage Q50", _fmt(lq.get("coverage_q50", float('nan')))],
+        ["Coverage Q90", _fmt(lq.get("coverage_qh", float('nan')))],
+        ["Interval Width (mean)", _fmt(lq.get("interval_evaluation", float('nan')))],
+        ["Mean actual", _fmt(lq.get("mean_y", float('nan')))],
+        ["Mean Q50 pred", _fmt(lq.get("mean_q50", float('nan')))],
+        ["Mean Q90 pred", _fmt(lq.get("mean_qh", float('nan')))],
+    ]
+    lines.extend(_md_table(loss_headers, loss_rows))
+    lines.append("")
+
+    # Per-bucket breakdown
+    per_bucket = diagnostics.get("per_bucket", {})
+    if per_bucket:
+        lines.append("## Per-Bucket Breakdown")
+        bkt_headers = ["Bucket", "N", "p(win) pred", "p(win) target", "Win Q50 pinball", "Win Q80 pinball", "Loss Q50 pinball", "Loss Q90 pinball"]
+        bkt_rows = []
+        for bkt in sorted(per_bucket.keys()):
+            bb = per_bucket[bkt]
+            pw = bb.get("pwin", {})
+            wq_b = bb.get("win_quantiles", {})
+            lq_b = bb.get("loss_quantiles", {})
+            bkt_rows.append([
+                bkt,
+                pw.get("n", "—"),
+                _fmt(pw.get("mean_pred", float('nan'))),
+                _fmt(pw.get("mean_target", float('nan'))),
+                _fmt(wq_b.get("pinball_q50", float('nan'))),
+                _fmt(wq_b.get("pinball_qh", float('nan'))),
+                _fmt(lq_b.get("pinball_q50", float('nan'))),
+                _fmt(lq_b.get("pinball_qh", float('nan'))),
+            ])
+        lines.extend(_md_table(bkt_headers, bkt_rows))
+        lines.append("")
+
+    return _save(run_id, "ev_decomposition", lines, base_dir=base_dir)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Step 5: ridge_sizer — weights + IC per bucket
 # ─────────────────────────────────────────────────────────────────────────────
 def report_ridge_sizer(run_id: str, result: Dict[str, Any], base_dir: str | Path | None = None) -> str:
@@ -442,9 +555,61 @@ def report_ridge_sizer(run_id: str, result: Dict[str, Any], base_dir: str | Path
             top_w = max(bkt_weights.items(), key=lambda x: abs(x[1]), default=("—", float("nan")))
             top_w_str = f"{top_w[0].replace(bkt+'_', '')}={top_w[1]:.4f}" if top_w[0] != "—" else "—"
             table_rows.append([bkt, ic_train, ic_val, sharpe, n_w, top_w_str])
-            rows_data.append({"direction": direction, "bucket": bkt,
-                               "ic_train": m.get("ic_train"), "ic_val": m.get("ic_val"),
-                               "sharpe": m.get("sharpe"), "n_weights": n_w})
+            
+            # Build flat row with all weights + metrics
+            row = {
+                "direction": direction,
+                "bucket": bkt,
+                "ic_train": m.get("ic_train"),
+                "ic_val": m.get("ic_val"),
+                "sharpe": m.get("sharpe"),
+                "n_weights": n_w,
+            }
+            # Add all weights as JSON string (flat columns can have name collisions across buckets)
+            row["weights_json"] = json.dumps(bkt_weights) if bkt_weights else "{}"
+            # Add key metrics from internal dict
+            row["n_trades"] = m.get("n_trades")
+            row["n_models"] = m.get("n_models")
+            row["best_target_name"] = m.get("best_target_name")
+            row["cv_best_pnl_total"] = m.get("cv_best_pnl_total")
+            row["cv_best_sortino"] = m.get("cv_best_sortino")
+            row["cv_best_ic"] = m.get("cv_best_ic")
+            row["cv_best_winrate"] = m.get("cv_best_winrate")
+            row["cv_best_maxdd"] = m.get("cv_best_maxdd")
+            row["utility_policy_model_family"] = m.get("utility_policy_model_family")
+            row["utility_smoother_family"] = m.get("utility_smoother_family")
+            row["offset_model_family"] = m.get("offset_model_family")
+            row["offset_smoother_family"] = m.get("offset_smoother_family")
+            
+            # Add sizing impact if present
+            sizing_imp = m.get("sizing_impact")
+            if sizing_imp:
+                row["sizing_best_mode"] = sizing_imp.get("best", {}).get("mode")
+                row["sizing_best_pnl"] = sizing_imp.get("best", {}).get("pnl")
+                row["sizing_best_sortino"] = sizing_imp.get("best", {}).get("sortino")
+                row["sizing_worst_mode"] = sizing_imp.get("worst", {}).get("mode")
+                row["sizing_worst_pnl"] = sizing_imp.get("worst", {}).get("pnl")
+            
+            # Add weight diagnostics
+            wdiag = m.get("weight_diagnostics", {})
+            row["weight_l1"] = wdiag.get("weight_l1")
+            row["weight_l2"] = wdiag.get("weight_l2")
+            row["weight_max_abs"] = wdiag.get("weight_max_abs")
+            row["weight_top1_share"] = wdiag.get("weight_top1_share")
+            row["weight_effective_n_models"] = wdiag.get("weight_effective_n_models")
+            
+            # Add OOF rank-based metrics (top30, top20, top10)
+            for prefix in ["oof_top30", "oof_top20", "oof_top10"]:
+                row[f"{prefix}_pnl_total"] = m.get(f"{prefix}_pnl_total")
+                row[f"{prefix}_pnl_per_trade"] = m.get(f"{prefix}_pnl_per_trade")
+                row[f"{prefix}_trades_per_day"] = m.get(f"{prefix}_trades_per_day")
+                row[f"{prefix}_ulcer"] = m.get(f"{prefix}_ulcer")
+                row[f"{prefix}_sortino"] = m.get(f"{prefix}_sortino")
+                row[f"{prefix}_maxdd"] = m.get(f"{prefix}_maxdd")
+                row[f"{prefix}_time_under_water"] = m.get(f"{prefix}_time_under_water")
+                row[f"{prefix}_n_trades"] = m.get(f"{prefix}_n_trades")
+            
+            rows_data.append(row)
         lines.extend(_md_table(headers, table_rows))
         lines.append("")
 

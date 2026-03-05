@@ -447,7 +447,7 @@ def run_labels(cfg, horizons=None, ts_override=None, store=None):
         store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
 
     # No exchange needed — data already in store, features already on disk
-    horizons = horizons or [1, 2, 4]
+    horizons = horizons or [2, 4, 8]
     run_label_generation_step_v2(ts_sig, None, cfg, store, None, horizons=horizons)
 
     tprint("LABELS PIPELINE COMPLETE")

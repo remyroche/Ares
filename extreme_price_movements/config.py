@@ -250,7 +250,7 @@ CFG = {
     "market_basket": ["BTC/USDT","ETH/USDT","AVAX/USDT","SOL/USDT","XRP/USDT"],
 
     # training horizons to compare (1)
-    "label_horizons_hours": [1, 2, 4],
+    "label_horizons_hours": [2, 4, 8],
     "label_horizons_use_shorter_grid": False,  # Set to True to use [1, 2, 4] instead of [2, 4, 8]
     "label_tp_values_pct": [1.5, 2.0, 3.0, 4.0, 5.0, 6.0],
     "label_sl_values_pct": [0.5, 1.0, 2.0],

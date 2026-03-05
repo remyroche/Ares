@@ -1559,6 +1559,8 @@ def _aggregate_alpha_oof_metrics(
             "max_dd": float(sel_metrics.get("MaxDD", np.nan)),
             "sortino": float(sel_metrics.get("Sortino", np.nan)),
             "calmar": float(sel_metrics.get("Calmar", np.nan)),
+            "prec30": float(sel_metrics.get("Prec_Top30", np.nan)),
+            "lift30": float(sel_metrics.get("Lift_Top30", np.nan)),
         }
     )
 

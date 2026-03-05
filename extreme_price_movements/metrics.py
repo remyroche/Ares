@@ -400,11 +400,25 @@ def calculate_selection_score(
         n_40 = max(1, int(len(y_sorted) * 0.40))
         prec_40 = np.average(y_sorted[:n_40], weights=w_sorted[:n_40])
         metrics["Prec_Top40"] = float(prec_40)
+
+        # Lift calculation
+        base_rate = np.average(y_true_m, weights=w_m if w_m is not None else np.ones_like(y_true_m))
+        if base_rate > 1e-6:
+            metrics["Lift_Top10"] = float(prec_10 / base_rate)
+            metrics["Lift_Top20"] = float(np.average(y_sorted[:max(1, int(len(y_sorted)*0.20))], weights=w_sorted[:max(1, int(len(y_sorted)*0.20))]) / base_rate)
+            metrics["Lift_Top30"] = float(prec_30 / base_rate)
+        else:
+            metrics["Lift_Top10"] = 0.0
+            metrics["Lift_Top20"] = 0.0
+            metrics["Lift_Top30"] = 0.0
     else:
         metrics["Prec_Top10"] = 0.0
         metrics["Prec_Top25"] = 0.0
         metrics["Prec_Top30"] = 0.0
         metrics["Prec_Top40"] = 0.0
+        metrics["Lift_Top10"] = 0.0
+        metrics["Lift_Top20"] = 0.0
+        metrics["Lift_Top30"] = 0.0
 
     # -------------------------
     # 5) Composite

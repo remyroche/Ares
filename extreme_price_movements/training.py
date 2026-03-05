@@ -5097,6 +5097,37 @@ def generate_label_datasets(
     tprint(f"Entering function: generate_label_datasets in training.py")
     datasets = {}
 
+    # Check that TBM geometry grid has valid spread for each bucket
+    _tbm_grid = load_tbm_geometry_grid()
+    _per_cell = _tbm_grid.get("per_cell", {})
+    if _per_cell:
+        for cell_key, cell_data in _per_cell.items():
+            k_tp_grid = sorted(list(set(cell_data.get("k_tp_grid", []))))
+            sl_grid = sorted(list(set(cell_data.get("sl_base_grid", []))))
+
+            if len(k_tp_grid) < 5 or len(sl_grid) < 5:
+                # Some configurations use `validated_triplets`
+                triplets = cell_data.get("validated_triplets", [])
+                if triplets:
+                    tps = [t[0] for t in triplets]
+                    sls = [t[1] for t in triplets]
+                    k_tp_grid = sorted(list(set(tps)))
+                    sl_grid = sorted(list(set(sls)))
+
+            if len(k_tp_grid) < 5:
+                raise ValueError(f"Geometry check failed: Bucket {cell_key} has only {len(k_tp_grid)} different TP geometries (need >= 5).")
+            if len(sl_grid) < 5:
+                raise ValueError(f"Geometry check failed: Bucket {cell_key} has only {len(sl_grid)} different SL geometries (need >= 5).")
+
+            tp_min, tp_max = min(k_tp_grid), max(k_tp_grid)
+            sl_min, sl_max = min(sl_grid), max(sl_grid)
+
+            if tp_min > 0 and (tp_max / tp_min) < 1.5:
+                raise ValueError(f"Geometry check failed: Bucket {cell_key} TP geometries are not sufficiently different (ratio {tp_max/tp_min:.2f} < 1.5). TP min: {tp_min}, TP max: {tp_max}")
+
+            if sl_min > 0 and (sl_max / sl_min) < 1.5:
+                raise ValueError(f"Geometry check failed: Bucket {cell_key} SL geometries are not sufficiently different (ratio {sl_max/sl_min:.2f} < 1.5). SL min: {sl_min}, SL max: {sl_max}")
+
     # Always resolve + enforce persisted offline-optimal candidate ranges before any event generation.
     cfg = _resolve_training_cfg_with_offline_optimisers(cfg)
 

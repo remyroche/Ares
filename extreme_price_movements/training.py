@@ -5105,19 +5105,22 @@ def generate_label_datasets(
             k_tp_grid = sorted(list(set(cell_data.get("k_tp_grid", []))))
             sl_grid = sorted(list(set(cell_data.get("sl_base_grid", []))))
 
-            if len(k_tp_grid) < 5 or len(sl_grid) < 5:
-                # Some configurations use `validated_triplets`
-                triplets = cell_data.get("validated_triplets", [])
-                if triplets:
-                    tps = [t[0] for t in triplets]
-                    sls = [t[1] for t in triplets]
-                    k_tp_grid = sorted(list(set(tps)))
-                    sl_grid = sorted(list(set(sls)))
+            total_combinations = len(k_tp_grid) * len(sl_grid)
 
-            if len(k_tp_grid) < 5:
-                raise ValueError(f"Geometry check failed: Bucket {cell_key} has only {len(k_tp_grid)} different TP geometries (need >= 5).")
-            if len(sl_grid) < 5:
-                raise ValueError(f"Geometry check failed: Bucket {cell_key} has only {len(sl_grid)} different SL geometries (need >= 5).")
+            # Some configurations use `validated_triplets`
+            triplets = cell_data.get("validated_triplets", [])
+            if triplets:
+                tps = [t[0] for t in triplets]
+                sls = [t[1] for t in triplets]
+                k_tp_grid = sorted(list(set(tps)))
+                sl_grid = sorted(list(set(sls)))
+                total_combinations = len(set((t[0], t[1]) for t in triplets))
+
+            if total_combinations < 5:
+                raise ValueError(f"Geometry check failed: Bucket {cell_key} has only {total_combinations} total geometry combinations (need >= 5).")
+
+            if not k_tp_grid or not sl_grid:
+                raise ValueError(f"Geometry check failed: Bucket {cell_key} is missing TP or SL geometries.")
 
             tp_min, tp_max = min(k_tp_grid), max(k_tp_grid)
             sl_min, sl_max = min(sl_grid), max(sl_grid)

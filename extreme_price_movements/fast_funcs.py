@@ -15,6 +15,9 @@ try:
         _numba_rolling_skew,
         _numba_rolling_slope,
         _numba_rolling_rsquared,
+        _numba_rolling_slope_parallel,
+        _numba_rolling_rsquared_parallel,
+        _numba_rolling_skew_parallel,
         _numba_rolling_median,
         _numba_rolling_sum,
         _numba_rolling_correlation,
@@ -33,6 +36,9 @@ except ImportError:
         _numba_rolling_skew,
         _numba_rolling_slope,
         _numba_rolling_rsquared,
+        _numba_rolling_slope_parallel,
+        _numba_rolling_rsquared_parallel,
+        _numba_rolling_skew_parallel,
         _numba_rolling_median,
         _numba_rolling_sum,
         _numba_rolling_correlation,
@@ -2814,3 +2820,56 @@ def numba_rolling_bars_since_extreme(df, window, mode="max"):
     if is_series:
         return res_df[res_df.columns[0]]
     return res_df
+
+def numba_rolling_slope(df, n):
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rolling_slope_parallel(mat, n)
+
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+
+    return res_df
+
+def numba_rolling_rsquared(df, n):
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rolling_rsquared_parallel(mat, n)
+
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+
+    return res_df
+
+def numba_rolling_skew(df, n):
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rolling_skew_parallel(mat, n)
+
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+
+    return res_df
+
+def numba_rolling_std_nan_safe(df, n):
+    # This is an alias for numba_rolling_std which is parallelized and uses the nan safe implementation.
+    return numba_rolling_std(df, n)
+
+def numba_rolling_mean_nan_safe(df, n):
+    # This is an alias for numba_rolling_mean which is parallelized and uses the nan safe implementation.
+    return numba_rolling_mean(df, n)

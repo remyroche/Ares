@@ -1241,6 +1241,131 @@ def numba_grouped_rolling_mean(df: pd.DataFrame, group_series: pd.Series, window
 
     return res_df
 
+@jit(nopython=True, nogil=True, cache=True, parallel=True)
+def _numba_peak_label_and_weight_fast(close, atr, horizon, near_k, rev_k, is_uptrend, max_near_pct, min_rev_pct):
+    """
+    Fast vectorized peak/trough detection using NumPy operations and parallel loop.
+    Returns: (labels, weights)
+    """
+    from numba import prange
+    
+    n = len(close)
+    labels = np.zeros(n, dtype=np.float32)
+    weights = np.ones(n, dtype=np.float32)
+    
+    for i in prange(n - horizon):
+        curr_p = close[i]
+        curr_atr = atr[i]
+        
+        # Valid ATR check
+        if np.isnan(curr_atr) or curr_atr <= 0 or np.isnan(curr_p) or curr_p <= 0:
+            continue
+        
+        # Calculate distances
+        raw_limit = rev_k * curr_atr
+        raw_near = near_k * curr_atr
+        near_dist = min(raw_near, max_near_pct * curr_p)
+        limit_dist = max(raw_limit, min_rev_pct * curr_p)
+        
+        start_search = i + 1
+        end_search = min(n, i + 1 + horizon)
+        
+        if start_search >= end_search:
+            continue
+        
+        # Vectorized max/min using numpy operations on the window
+        window = close[start_search:end_search]
+        valid_mask = np.isfinite(window)
+        
+        if not np.any(valid_mask):
+            continue
+        
+        if is_uptrend:  # Looking for Peak
+            # Find forward max
+            fwd_max = np.nanmax(window)
+            idx_max = start_search + np.nanargmax(window)
+            
+            # Check proximity
+            if curr_p < (fwd_max - near_dist):
+                continue
+            
+            # Check reversal after peak
+            if idx_max >= end_search - 1:
+                continue
+            
+            after_peak = close[idx_max + 1:end_search]
+            valid_after = np.isfinite(after_peak)
+            if not np.any(valid_after):
+                continue
+            
+            fwd_min_after = np.nanmin(after_peak)
+            reversal_size = fwd_max - fwd_min_after
+            
+            if reversal_size >= limit_dist:
+                X_val = fwd_max - curr_p
+                Y_val = reversal_size
+                
+                # Volatility boost
+                atr_pct = curr_atr / curr_p
+                vol_boost = 1.0 + 2.0 * (atr_pct / 0.01)
+                
+                # Scale-invariant weighting
+                X_ratio = X_val / curr_p
+                Y_ratio = Y_val / curr_p
+                X_safe = max(X_ratio, 1e-4)
+                term = Y_ratio / (X_safe ** 2)
+                weights[i] = np.log1p(term) * vol_boost
+                
+                # Soft label
+                soft_lbl = 1.0 - (X_val / near_dist)
+                if soft_lbl < 0:
+                    soft_lbl = 0.0
+                labels[i] = soft_lbl
+        else:  # Looking for Trough
+            # Find forward min
+            fwd_min = np.nanmin(window)
+            idx_min = start_search + np.nanargmin(window)
+            
+            # Check proximity (relaxed)
+            if curr_p > (fwd_min + near_dist * 1.5):
+                continue
+            
+            # Check rally after trough
+            if idx_min >= end_search - 1:
+                continue
+            
+            after_trough = close[idx_min + 1:end_search]
+            valid_after = np.isfinite(after_trough)
+            if not np.any(valid_after):
+                continue
+            
+            fwd_max_after = np.nanmax(after_trough)
+            reversal_size = fwd_max_after - fwd_min
+            
+            if reversal_size >= limit_dist:
+                X_val = curr_p - fwd_min
+                Y_val = reversal_size
+                
+                # Volatility boost
+                atr_pct = curr_atr / curr_p
+                vol_boost = 1.0 + 2.0 * (atr_pct / 0.01)
+                
+                # Scale-invariant weighting
+                X_ratio = X_val / curr_p
+                Y_ratio = Y_val / curr_p
+                X_safe = max(X_ratio, 1e-4)
+                term = Y_ratio / (X_safe ** 2)
+                weights[i] = np.log1p(term) * vol_boost
+                
+                # Soft label
+                soft_lbl = 1.0 - (X_val / near_dist)
+                if soft_lbl < 0:
+                    soft_lbl = 0.0
+                labels[i] = soft_lbl
+    
+    return labels, weights
+
+
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_peak_label_and_weight(close, atr, horizon, near_k, rev_k, is_uptrend, max_near_pct, min_rev_pct):
     """
@@ -1622,10 +1747,7 @@ def numba_ewma(df, alpha, adjust=False):
 def compute_peak_labels_and_weights(close_df, atr_df, horizon, near_k, rev_k, is_uptrend, max_near_pct=0.02, min_rev_pct=0.005):
     tprint(f"Entering function: compute_peak_labels_and_weights in fast_funcs.py")
 
-    # We need a custom apply because we return TWO frames (labels, weights)
-    # The existing apply_to_frame_binary returns one.
-    # We'll implement a custom loop here since it's cleaner than modifying the generic helper.
-
+    # Use fast vectorized version with parallel processing
     cols = close_df.columns
     idx = close_df.index
 
@@ -1641,7 +1763,8 @@ def compute_peak_labels_and_weights(close_df, atr_df, horizon, near_k, rev_k, is
         c_arr = close_df[c].to_numpy(dtype=np.float32)
         a_arr = atr_df[c].to_numpy(dtype=np.float32)
 
-        l_arr, w_arr = _numba_peak_label_and_weight(
+        # Use fast vectorized version
+        l_arr, w_arr = _numba_peak_label_and_weight_fast(
             c_arr, a_arr,
             horizon, near_k, rev_k, is_uptrend,
             max_near_pct, min_rev_pct

@@ -30,9 +30,11 @@ from extreme_price_movements.path_utils import resolve_reports_dir
 
 DEFAULT_REPORTS_DIR = Path(__file__).parent
 
-_BUCKETS = ["MR_long", "MR_short", "TF_long", "TF_short"]
-_HORIZONS = [2, 4, 8]
-_CELL_KEYS = [f"{b}_H{h}" for b in _BUCKETS for h in _HORIZONS]
+from extreme_price_movements.config import CANON_BUCKETS, CANON_HORIZONS, CANON_CELLS
+
+_BUCKETS = CANON_BUCKETS
+_HORIZONS = CANON_HORIZONS
+# Remove H8 from cell keys - use CANON_CELLS
 
 
 def _ensure_dir(run_id: str, base_dir: str | Path | None = None) -> Path:
@@ -95,7 +97,7 @@ def report_compare_tbm(run_id: str, grid_csv_path: str, base_dir: str | Path | N
     lines.append("## Per-Cell Geometry Quality")
     headers = ["Cell", "N configs", "k_tp range", "sl range", "Best AUC", "Best TP-sep", "Best timeout", "Best bind", "Fallback?"]
     rows = []
-    for ck in _CELL_KEYS:
+    for ck in CANON_CELLS:
         sub = df[df["cell_key"] == ck] if "cell_key" in df.columns else pd.DataFrame()
         if sub.empty:
             rows.append([ck, "0", "—", "—", "—", "—", "—", "—", "⚠️ MISSING"])

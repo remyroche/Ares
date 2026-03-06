@@ -8856,6 +8856,17 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
     tprint(
         f"train_meta_models_from_artifacts: done ({_time.monotonic()-_t0_meta:.1f}s), {len(meta_models)} meta models"
     )
+
+    # Print selected features for each meta model
+    tprint("\n=== META MODEL SELECTED FEATURES (Top 20) ===")
+    for key, meta in meta_models.items():
+        if hasattr(meta, 'selected_features') and meta.selected_features:
+            feats = meta.selected_features[:20] if len(meta.selected_features) > 20 else meta.selected_features
+            tprint(f"\n{key} ({len(meta.selected_features)} total features):")
+            for i, f in enumerate(feats, 1):
+                tprint(f"  {i:2d}. {f}")
+    tprint("=== END META FEATURES ===\n")
+
     return meta_models, meta_gate_results
 
 

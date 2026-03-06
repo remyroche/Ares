@@ -985,11 +985,14 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     cols = X.columns
                 else:
                     cols = [f"f_{i}" for i in range(len(fi))]
-                top_idx = np.argsort(fi)[::-1][:5]
-                top_dict = {cols[i]: float(fi[i]) for i in top_idx}
-                tprint(f"Top 5 Feature Importances ({self.best_model_name}): {top_dict}")
+                # Print top 20 features sorted by importance
+                sorted_idx = np.argsort(fi)[::-1][:20]
+                tprint(f"\n=== BASE MODEL FEATURE IMPORTANCES ({self.best_model_name}) - Top 20 ===")
+                for i, idx in enumerate(sorted_idx):
+                    tprint(f"  {i+1:2d}. {cols[idx]}: {fi[idx]:.6f}")
+                tprint("=== END BASE MODEL FEATURES ===\n")
             else:
-                tprint(f"Top 5 Feature Importances ({self.best_model_name}): None (no feature_importances_)")
+                tprint(f"Feature Importances ({self.best_model_name}): None (no feature_importances_)")
         except Exception as e:
             tprint(f"Failed to get feature importances: {e}")
 

@@ -1,6 +1,14 @@
 # Central config. Keep it deterministic and explicit.
 from extreme_price_movements.perp_features import get_perp_feature_names
 
+# =============================================================================
+# CANONICAL Horizons & Buckets - Single Source of Truth
+# =============================================================================
+# H8 removed: poor signal (MR_long_H8: 0.017, TF_short_H8: 0.023)
+CANON_BUCKETS = ["MR_long", "MR_short", "TF_long", "TF_short"]
+CANON_HORIZONS = [1, 2, 4]  # hours - H8 removed due to poor signal
+CANON_CELLS = [f"{b}_H{h}" for b in CANON_BUCKETS for h in CANON_HORIZONS]
+
 
 _PERP_COLLISION_RENAMES = {
     "ret1h": "ret1h_perp",
@@ -250,7 +258,8 @@ CFG = {
     "market_basket": ["BTC/USDT","ETH/USDT","AVAX/USDT","SOL/USDT","XRP/USDT"],
 
     # training horizons to compare (1)
-    "label_horizons_hours": [2, 4, 8],
+    # H8 removed: poor signal (MR_long_H8: 0.017, TF_short_H8: 0.023)
+    "label_horizons_hours": [1, 2, 4],
     "label_horizons_use_shorter_grid": False,  # Set to True to use [1, 2, 4] instead of [2, 4, 8]
     "label_tp_values_pct": [1.5, 2.0, 3.0, 4.0, 5.0, 6.0],
     "label_sl_values_pct": [0.5, 1.0, 2.0],

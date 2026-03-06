@@ -5,6 +5,9 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict
 
+# Import canonical constants from central config
+from extreme_price_movements.config import CANON_BUCKETS, CANON_HORIZONS
+
 
 OFFLINE_OPTIMISERS_DIR = Path(__file__).resolve().parent
 REPORTS_DIR = OFFLINE_OPTIMISERS_DIR / "reports"
@@ -16,7 +19,9 @@ TBM_BEST_PARAMS_PER_CELL_CSV = REPORTS_DIR / "tbm_best_params_per_cell.csv"
 TBM_GEOMETRY_GRID_CSV = REPORTS_DIR / "tbm_geometry_grid.csv"
 SAMPLE_WEIGHT_BEST_PARAMS_CSV = REPORTS_DIR / "sample_weight_best_params.csv"
 
-TBM_BUCKET_NAMES = ["TF_long", "TF_short", "MR_long", "MR_short"]
+# Canonical constants - import from central config
+TBM_BUCKET_NAMES = CANON_BUCKETS
+TBM_HORIZONS = CANON_HORIZONS  # [2, 4] - H8 removed due to poor signal
 
 
 def _to_scalar(v: Any) -> Any:

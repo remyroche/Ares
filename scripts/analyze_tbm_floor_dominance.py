@@ -90,12 +90,14 @@ def _stack_frame(df: pd.DataFrame, name: str, side: str, h: int) -> pd.DataFrame
     return out
 
 
+from extreme_price_movements.config import CANON_HORIZONS
+
 def analyze_config(artifacts, bucket_masks, cfg, cfg_id: str):
     layer1, layer2, eval_cache = cmp.LRUCache(max_size=2), cmp.LRUCache(max_size=2), cmp.BoundedEvalCache(max_size=4)
     summary, detail, weights = cmp.evaluate_config(
         artifacts=artifacts,
         cfg=cfg,
-        horizons=[2, 4, 8],
+        horizons=CANON_HORIZONS,
         bucket_masks=bucket_masks,
         layer1_cache=layer1,
         layer2_cache=layer2,
@@ -107,7 +109,7 @@ def analyze_config(artifacts, bucket_masks, cfg, cfg_id: str):
         return {"config_id": cfg_id, "summary": summary, "detail": detail, "cell_table": pd.DataFrame(), "rank_penalty": None}
 
     comp_rows = []
-    for h in [2, 4, 8]:
+    for h in CANON_HORIZONS:
         for side in ["long", "short"]:
             atr, tp_raw, tp_scaled, tp_eff, sl_eff = _tp_components(artifacts, cfg, h, side)
             comp_rows.append(_stack_frame(atr, "atr_entry", side, h))

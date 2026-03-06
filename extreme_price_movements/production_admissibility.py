@@ -12,9 +12,7 @@ TOL = 1e-9
 # Policy proxy when net-TP quantiles are unavailable in this contract.
 TRADEABLE_TP_MIN = 0.015
 
-CANON_BUCKETS = ["MR_long", "MR_short", "TF_long", "TF_short"]
-CANON_H = [2, 4, 8]
-CANON_CELLS = [f"{b}_H{h}" for b in CANON_BUCKETS for h in CANON_H]
+from extreme_price_movements.config import CANON_BUCKETS, CANON_HORIZONS, CANON_CELLS
 
 
 @dataclass(frozen=True)

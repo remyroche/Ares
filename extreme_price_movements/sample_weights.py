@@ -31,14 +31,25 @@ def drawdown_aware_weights(dd: np.ndarray, k_dd: float = 5.0, k_early: float = 2
     if dd.size > 1:
         starts[1:] = ((dd[1:] > 0) & (dd[:-1] <= 0)).astype(float)
 
-    bonus = np.zeros_like(dd, dtype=float)
-    last_start = None
-    decay_tau = max(float(tau), 1e-6)
+    # Vectorized early bonus computation using cumulative max for start positions
+    # For each position, find the last drawdown start before it
+    last_start = np.zeros_like(dd, dtype=np.int64)
+    current_start = -1
     for t in range(dd.size):
         if starts[t] > 0:
-            last_start = t
-        if last_start is not None and dd[t] > 0:
-            bonus[t] = np.exp(-(t - last_start) / decay_tau)
+            current_start = t
+        last_start[t] = current_start
+    
+    # Vectorized bonus calculation
+    bonus = np.zeros_like(dd, dtype=float)
+    in_dd = dd > 0
+    valid = (last_start >= 0) & in_dd
+    if np.any(valid):
+        t_indices = np.arange(dd.size)
+        distances = t_indices - last_start
+        distances = distances * valid.astype(np.int64)
+        decay_tau = max(float(tau), 1e-6)
+        bonus = np.exp(-distances / decay_tau) * valid
 
     return w * (1.0 + k_early * bonus)
 

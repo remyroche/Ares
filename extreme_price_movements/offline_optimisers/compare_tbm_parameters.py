@@ -89,6 +89,7 @@ from extreme_price_movements.offline_optimisers.params_store import (
     TBM_BEST_PARAMS_PER_CELL_CSV,
     TBM_GEOMETRY_GRID_CSV,
     TBM_BUCKET_NAMES,
+    TBM_HORIZONS,  # Single source of truth for horizons
     save_best_params_csv,
     apply_offline_optimizer_best_params,
 )
@@ -419,9 +420,47 @@ def _refine_ambiguous_labels_with_15m(
     idx = close_df.index
     allow_download = bool((cfg or {}).get("allow_15m_download", False))
     
-    # ── Smoking Gun #1 Bottleneck Fix: Parallelize symbol refinement & Bulk-load 15m ──
-    # We use joblib Parallel with threads because 15m resolution is primarily I/O and light logic.
-    n_jobs = _safe_parallel_jobs(len(symbols), cap=6)
+    # ── Optimization: Batch pre-load 15m data for all symbols before parallel processing ──
+    n_jobs = _safe_parallel_jobs(len(symbols), cap=os.cpu_count() or 8)
+    
+    # Pre-load 15m data for all symbols that have local cache or allow download
+    # This avoids N sequential disk reads in the parallel workers
+    _15m_preloaded: Dict[str, pd.DataFrame] = {}
+    _symbols_needing_15m = []
+    
+    # First pass: identify which symbols need 15m data
+    for sym in symbols:
+        if allow_download or _has_local_15m_cache(sym):
+            _symbols_needing_15m.append(sym)
+    
+    # Batch load in parallel if there are symbols to load
+    if _symbols_needing_15m:
+        tprint(
+            f"[15m_refine] pre-loading {len(_symbols_needing_15m)}/{len(symbols)} symbols "
+            f"side={side} h={h} allow_download={allow_download}"
+        )
+        
+        def _preload_symbol(sym: str):
+            # Find the time range needed for this symbol by checking the panel
+            c_sym = close_df[sym]
+            tpv_sym = tp_df[sym]
+            slv_sym = sl_df[sym]
+            valid_mask = np.isfinite(c_sym) & (c_sym > 0) & np.isfinite(tpv_sym) & np.isfinite(slv_sym)
+            if not np.any(valid_mask):
+                return sym, pd.DataFrame()
+            # Use full time range of the panel for preloading
+            start_ts = c_sym.index.min()
+            end_ts = c_sym.index.max()
+            return sym, _load_or_download_15m(sym, start_ts, end_ts, allow_download=allow_download)
+        
+        # Parallel preload
+        preload_results = Parallel(n_jobs=min(n_jobs, len(_symbols_needing_15m)), prefer="threads")(
+            delayed(_preload_symbol)(s) for s in _symbols_needing_15m
+        )
+        for sym, hf_data in preload_results:
+            if not hf_data.empty:
+                _15m_preloaded[sym] = hf_data
+    
     t_refine0 = time.perf_counter()
     tprint(
         f"[15m_refine] start side={side} h={h} symbols={len(symbols)} "
@@ -478,7 +517,15 @@ def _refine_ambiguous_labels_with_15m(
         # so using [0][1] could miss required 15m bars at the start of the range.
         start_full = min(idx[entry[1]] for entry in ambiguous_j_list).floor("15min")
         end_full = min(idx[ambiguous_j_list[-1][0]] + pd.Timedelta(hours=float(h)), idx[-1])
-        hf_full = _load_or_download_15m(sym, start_full, end_full, allow_download=allow_download)
+        
+        # Use preloaded 15m data if available, otherwise load on-demand
+        if sym in _15m_preloaded:
+            hf_full = _15m_preloaded[sym]
+            # Slice to the required time range
+            hf_full = hf_full.loc[(hf_full.index >= start_full) & (hf_full.index <= end_full)]
+        else:
+            hf_full = _load_or_download_15m(sym, start_full, end_full, allow_download=allow_download)
+        
         if hf_full.empty:
             return sym, lab, rets_sym, qual_sym, int(len(ambiguous_j_list)), 0, 0
 
@@ -2780,8 +2827,8 @@ def evaluate_config(
                 # ── Bucket-Stratified Subsampling ──
                 # Split candidates into UP (TF_long / MR_short) and DOWN (MR_long / TF_short) strata.
                 # Without stratification, the global random sample can be 100% UP, leaving MR_long empty.
-                _MAX_TP = 2000
-                _TP_PER_STRATA = _MAX_TP // 2  # 1000 TPs from each direction
+                _MAX_TP = 3000
+                _TP_PER_STRATA = _MAX_TP // 2  # 1500 TPs from each direction
                 _rng_lb = np.random.default_rng(42)
                 
                 keep_global_list = []
@@ -3167,12 +3214,11 @@ def evaluate_config(
         "brier": float("nan"), "ece": float("nan"), "monotonicity": float("nan"),
         "ic_std_time": float("nan"), "ic_std_asset": float("nan"),
     }
-    _CANONICAL_BUCKETS = ["MR_long", "MR_short", "TF_long", "TF_short"]
-    _CANONICAL_HORIZONS = [2, 4, 8]
+    # Use canonical constants from params_store
     bucket_h_metrics = {
         (b, h): dict(_DEFAULT_CELL_METRICS)
-        for b in _CANONICAL_BUCKETS
-        for h in _CANONICAL_HORIZONS
+        for b in TBM_BUCKET_NAMES
+        for h in TBM_HORIZONS
     }
     total_cells = len(bucket_h_metrics)
     for (b, h), g in events.groupby(["bucket", "horizon"], observed=False):
@@ -3310,7 +3356,7 @@ def evaluate_config(
     n_folds = 2  # OOF-only evaluation path for optimization trials
 
     # Train separate per-(bucket, horizon) Ridge OOF models.
-    # Training per cell (12 models) prevents signal confounding across horizons.
+    # Training per cell (8 models) prevents signal confounding across horizons.
     pred_event = np.full(len(X_event), 0.5, dtype=np.float32)
     warm_cache = eval_cache.setdefault("ridge_warm_cache", {})
     bucket_event = events.loc[valid_mask, "bucket"].astype(str).values
@@ -3678,7 +3724,7 @@ def evaluate_config(
     sharpe = float(top_payoff.mean() / (top_payoff.std() + EPS))
 
     # brier/ece/mono/ic_std_time/ic_std_asset: derived from per-cell values (already in bucket_h_metrics)
-    # rather than computed globally (which would mix all 4 buckets × 3 horizons).
+    # rather than computed globally (which would mix all 4 buckets × 2 horizons).
     _cell_briers = [v["brier"] for v in bucket_h_metrics.values() if not math.isnan(v.get("brier", float("nan")))]
     _cell_eces = [v["ece"] for v in bucket_h_metrics.values() if not math.isnan(v.get("ece", float("nan")))]
     _cell_monos = [v["monotonicity"] for v in bucket_h_metrics.values() if not math.isnan(v.get("monotonicity", float("nan")))]
@@ -4246,7 +4292,7 @@ def _apply_prod_aligned_tp_centering(
         margin_mult=margin_mult,
         hard_min_tp=hard_min_tp,
         inflate=inflate,
-        horizons=(2, 4, 8),
+        horizons=(2, 4),
         h2_lower=h2_l,
         h2_upper=h2_u,
     )
@@ -5058,7 +5104,7 @@ def promote_stage1(stage1_results: pd.DataFrame, top_k: int = 10) -> List[str]:
 _CELL_KEYS = [
     f"{b}_H{h}"
     for b in ["MR_long", "MR_short", "TF_long", "TF_short"]
-    for h in [2, 4, 8]
+    for h in [2, 4]
 ]
 
 
@@ -5237,9 +5283,7 @@ def _build_per_cell_feasible_sets(
 # ---------------------------
 # Per-bucket feasible-set builder
 # ---------------------------
-_BUCKET_NAMES = ["TF_long", "TF_short", "MR_long", "MR_short"]
-_HORIZONS = [2, 4, 8]
-
+# Use canonical constants from params_store (TBM_BUCKET_NAMES, TBM_HORIZONS)
 
 def _per_bucket_metrics_from_details(
     cid: str,
@@ -5253,7 +5297,7 @@ def _per_bucket_metrics_from_details(
     Falls back to global_row values for coverage/ess (which are config-level, not per-bucket).
     """
     bh = details.get(cid, {}).get("bucket_horizon_metrics", {})
-    cell_keys = [f"{bucket_name}_H{h}" for h in _HORIZONS]
+    cell_keys = [f"{bucket_name}_H{h}" for h in TBM_HORIZONS]
     cells = [bh[k] for k in cell_keys if k in bh and bh[k]]
 
     if not cells:
@@ -5364,7 +5408,7 @@ def _build_per_bucket_feasible_sets(
 
     result: Dict[str, pd.DataFrame] = {}
 
-    for bucket_name in _BUCKET_NAMES:
+    for bucket_name in TBM_BUCKET_NAMES:
         bucket_rows = []
         for row in base_df.itertuples(index=False):
             row_s = pd.Series(row._asdict())
@@ -5688,7 +5732,7 @@ class TBMObjective:
         # This avoids wasting trials on tp_base_pct values that, after ATR scaling,
         # would produce a tp_anchor outside [0.01, 0.04] and be immediately pruned.
         _TP_ANCHOR_LO = 0.01
-        _TP_ANCHOR_HI = 0.04
+        _TP_ANCHOR_HI = 0.05
         _TP_BASE_PCT_LO = 0.012
         _TP_BASE_PCT_HI = 0.045
         _atr_norm_mean_ref = 1.0
@@ -5715,9 +5759,9 @@ class TBMObjective:
         k_tp_grid = list(self.grid_overrides.get("k_tp", []))
         k_tp_meta: Dict[str, Any] = {"proposal_mode": "override"}
         if not k_tp_grid:
-            k_tp_grid, k_tp_meta = _build_param_grid(0.4, 2.0)
+            k_tp_grid, k_tp_meta = _build_param_grid(0.3, 1.6)
         if not k_tp_grid:
-            k_tp_grid = [0.4, 2.0]
+            k_tp_grid = [0.3, 1.6]
         k_tp = float(trial.suggest_categorical("k_tp", k_tp_grid))
 
         tp_anchor_grid = list(self.grid_overrides.get("tp_anchor", []))
@@ -6002,7 +6046,7 @@ def run(args: argparse.Namespace) -> None:
     # Clear caches after loading data
     _clear_caches()
 
-    horizons = [2, 4, 8] if not args.horizons else [int(x) for x in args.horizons.split(",")]
+    horizons = [2, 4] if not args.horizons else [int(x) for x in args.horizons.split(",")]
 
     # Use bounded caches to prevent unbounded cache growth.
     layer1_cache: Dict[str, Any] = LRUCache(max_size=10)
@@ -6070,8 +6114,8 @@ def run(args: argparse.Namespace) -> None:
             f"{_cache_pressure_summary(layer1_cache, layer2_cache, eval_cache)}"
         )
         # Static categorical grids for this run/cell.
-        grid_k_tp, _ = _build_param_grid(0.4, 2.0)
-        grid_tp_anchor, _ = _build_param_grid(0.01, 0.04)
+        grid_k_tp, _ = _build_param_grid(0.3, 1.6)
+        grid_tp_anchor, _ = _build_param_grid(0.01, 0.05)
         grid_sl_full, _ = _build_sl_biased_grid(float(runtime_cfg.get("tbm_sl_as_tp_pct_min", 0.3)))
         tuple_eval_cache: Dict[Any, Tuple[float, Dict[str, Any], Dict[str, Any]]] = {}
 
@@ -6391,7 +6435,7 @@ def run(args: argparse.Namespace) -> None:
             tprint(f"Saved best_stage1 convenience params CSV: {TBM_BEST_PARAMS_CSV} (best_stage1={best_cid})")
 
         # ── Step 5: per-(bucket, horizon) feasible sets — canonical output ───
-        # 12 cells = 4 buckets × 3 horizons; up to max_configs_per_cell diverse configs per cell.
+        # 8 cells = 4 buckets × 2 horizons; up to max_configs_per_cell diverse configs per cell.
         # load_tbm_geometry_grid() collects all unique k_tp/sl_as_tp_pct per cell_key so
         # training.py sweeps the full set of selected geometries for each cell independently.
         per_cell_grids = _build_per_cell_feasible_sets(
@@ -6549,10 +6593,13 @@ def run(args: argparse.Namespace) -> None:
 
                 # ── Admissibility Filter (Production Guardrails) ───────────
                 # Only pick configs that are economically viable for production.
-                _bdf_valid = _bdf[
-                    (_bdf["cell_sl_to_tp"] <= 2.8) &  # Allow slight wiggle room above 2.5
-                    (_bdf["cell_bind"] >= 0.30)      # Minimum activity
-                ].copy()
+                if "cell_sl_to_tp" in _bdf.columns and "cell_bind" in _bdf.columns:
+                    _bdf_valid = _bdf[
+                        (_bdf["cell_sl_to_tp"] <= 2.8) &  # Allow slight wiggle room above 2.5
+                        (_bdf["cell_bind"] >= 0.30)      # Minimum activity
+                    ].copy()
+                else:
+                    _bdf_valid = _bdf.copy()
                 if _bdf_valid.empty:
                     _bdf_valid = _bdf.copy() # Fallback
 
@@ -6708,7 +6755,7 @@ def _log_prod_aligned_wiring(cfgs: List[Dict[str, Any]], stage_name: str) -> Non
         tprint(f"[prod_aligned_tp] {stage_name}: no configs")
         return
     n_with = sum(1 for c in cfgs if isinstance(c.get("prod_aligned_tp", None), dict) and bool(c.get("prod_aligned_tp")))
-    h_vals = sorted(set(int(h) for h in (2, 4, 8)))
+    h_vals = sorted(set(int(h) for h in (2, 4)))
     tprint(
         f"[prod_aligned_tp] {stage_name}: configs={len(cfgs)} with_prod_aligned_meta={n_with}/{len(cfgs)} "
         f"horizons={h_vals}"
@@ -6764,7 +6811,7 @@ def _build_prod_aligned_reports(
             "tp_over_sl_median_cell": float(_r.get("median_cell_tp_over_sl", float("nan"))),
             "min_cell_auc_bound": float(_r.get("min_cell_auc_bound", float("nan"))),
             "min_cell_tp_sep": float(_r.get("min_cell_tp_sep", float("nan"))),
-            "missing_cells": int(max(0, int(_r.get("total_cells", 0)) - int(_r.get("pass_cells", 0)))),
+            "missing_cells": int(max(0, int(_safe_float(_r.get("total_cells", 0))) - int(_safe_float(_r.get("pass_cells", 0))))),
         })
 
         fails = pa.get("failures", []) if isinstance(pa, dict) else []
@@ -6828,7 +6875,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p.set_defaults(stage2=True)
     p.add_argument("--top-k", type=int, default=10, help="Stage1 promotion top-k")
     p.add_argument("--winners", nargs="*", default=[], help="Explicit stage1 config IDs")
-    p.add_argument("--horizons", default="2,4,8", help="Comma-separated horizons in hours")
+    p.add_argument("--horizons", default="2,4", help="Comma-separated horizons in hours")
     p.add_argument("--max-configs", type=int, default=20, help="Max configs when --quick")
     p.add_argument("--max-stage2-configs", type=int, default=24, help="Max configs per Stage2 substage (hierarchical cap)")
     p.add_argument("--lookback-years", type=int, default=2, help="Years of history to keep")

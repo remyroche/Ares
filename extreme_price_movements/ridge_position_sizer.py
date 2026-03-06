@@ -3561,7 +3561,7 @@ def _compute_ridge_weight_diagnostics(
                 "weight_share_abs": np.abs(w_aligned) / max(float(np.sum(np.abs(w_aligned))), 1e-12),
                 "corr_with_combined_score": corr,
             }).sort_values("abs_weight", ascending=False)
-            diag["top_model_contributors"] = contrib_df.head(15).to_dict(orient="records")
+            diag["top_model_contributors"] = contrib_df.head(20).to_dict(orient="records")
     return diag
 
 
@@ -4189,8 +4189,12 @@ def run_ridge_position_sizer_step(
     tprint("-" * 80)
     tprint("Ridge Position Sizer Results:")
     tprint(f"  Models combined: {len(weights)}")
-    for name, w in weights.items():
-        tprint(f"    {name}: {w:.4f}")
+    # Print all models sorted by absolute weight (descending)
+    sorted_weights = sorted(weights.items(), key=lambda x: abs(x[1]), reverse=True)
+    tprint("\n=== RIDGE SIZER TOP FEATURES (ALL MODELS) ===")
+    for i, (name, w) in enumerate(sorted_weights, 1):
+        tprint(f"  {i:2d}. {name}: {w:+.6f}")
+    tprint("=== END RIDGE SIZER FEATURES ===\n")
     tprint(f"  Best hyperparameters:")
     if sizer.best_params_:
         tprint(f"    alpha: {sizer.best_params_['alpha']:.6f}")

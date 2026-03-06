@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import platform
-from numba import jit
+from numba import jit, prange
 from joblib import Parallel, delayed, cpu_count
 from .fast_funcs import simulate_trade_numba
 from .utils import tprint
@@ -24,6 +24,134 @@ def _soft_squash_pos(val):
     if val <= 0.0:
         return 0.0
     return val / (1.0 + val)
+
+# Fast version with serial loop and binary search
+@jit(nopython=True, nogil=True, cache=True, parallel=False)
+def _numba_triple_barrier_outcomes_fast(
+    times, opens, highs, lows, closes, tp_arr, sl_arr, horizon, side, horizons_arr=None
+):
+    """
+    Fast vectorized triple barrier outcomes using binary search for time windows.
+    Returns: outcomes, quality, returns, exit_idxs, conflict_j
+    """
+    # Remove nested import to fix Numba IMPORT_NAME error
+    
+    n = len(closes)
+    outcomes = np.zeros(n, dtype=np.int8)
+    quality = np.zeros(n, dtype=np.float32)
+    returns = np.zeros(n, dtype=np.float32)
+    exit_idxs = np.zeros(n, dtype=np.int64)
+    conflict_j = np.full(n, -1, dtype=np.int64)
+    
+    limit_ns_base = int(horizon * 3600 * 1_000_000_000)
+    
+    if horizons_arr is not None:
+        horizons_ns = (horizons_arr * 3600 * 1_000_000_000).astype(np.int64)
+    else:
+        horizons_ns = np.full(n, limit_ns_base, dtype=np.int64)
+    
+    cutoff_times = times + horizons_ns
+    
+    for i in prange(n - 1):
+        entry_p = closes[i]
+        entry_t = times[i]
+        
+        activation = tp_arr[i]
+        sl = sl_arr[i]
+        
+        if np.isnan(activation) or np.isnan(sl) or np.isnan(entry_p) or entry_p <= 0:
+            continue
+        
+        limit_ns = horizons_ns[i]
+        cutoff_t = cutoff_times[i]
+        stall_ns = limit_ns // 2
+        stall_t = entry_t + stall_ns
+        
+        den_tp = max(abs(entry_p * activation), _QUALITY_EPS)
+        
+        if side == 1:
+            sl_price = entry_p * (1.0 - sl)
+            tp_price = entry_p * (1.0 + activation)
+        else:
+            sl_price = entry_p * (1.0 + sl)
+            tp_price = entry_p * (1.0 - activation)
+        
+        j_start = i + 1
+        j_end = np.searchsorted(times, cutoff_t, side="right")
+        
+        if j_end <= j_start:
+            outcomes[i] = OUT_TO
+            exit_idxs[i] = j_start if j_start < n else n - 1
+            continue
+        
+        mfe_val = 0.0
+        mae_val = 0.0
+        
+        for j in range(j_start, min(j_end, n)):
+            tt = times[j]
+            hh = highs[j]
+            ll = lows[j]
+            cc = closes[j]
+            
+            # Update MFE/MAE
+            if side == 1:
+                cur_mfe = max(0.0, hh - entry_p)
+                cur_mae = max(0.0, entry_p - ll)
+            else:
+                cur_mfe = max(0.0, entry_p - ll)
+                cur_mae = max(0.0, hh - entry_p)
+            
+            if cur_mfe > mfe_val: mfe_val = cur_mfe
+            if cur_mae > mae_val: mae_val = cur_mae
+            
+            if np.isnan(hh) or np.isnan(ll):
+                if tt >= cutoff_t:
+                    outcomes[i] = OUT_TO
+                    returns[i] = (cc / entry_p - 1.0) if side == 1 else (entry_p / cc - 1.0)
+                    exit_idxs[i] = j
+                    rel_prog = returns[i] / den_tp
+                    quality[i] = 0.5 + _clip_scalar(rel_prog * 0.4, -0.4, 0.4)
+                    break
+                continue
+            
+            hit_tp = (hh >= tp_price) if side == 1 else (ll <= tp_price)
+            hit_sl = (ll <= sl_price) if side == 1 else (hh >= sl_price)
+            
+            if hit_tp and hit_sl:
+                conflict_j[i] = j
+                outcomes[i] = OUT_SL
+                returns[i] = -sl
+                exit_idxs[i] = j
+                qual_raw = (mfe_val / den_tp) * 0.5
+                quality[i] = _clip_scalar(_soft_squash_pos(qual_raw), 0.0, 0.49)
+                break
+            
+            if hit_sl:
+                outcomes[i] = OUT_SL
+                returns[i] = -sl
+                exit_idxs[i] = j
+                qual_raw = (mfe_val / den_tp) * 0.5
+                quality[i] = _clip_scalar(_soft_squash_pos(qual_raw), 0.0, 0.49)
+                break
+            
+            if hit_tp:
+                outcomes[i] = OUT_TP
+                returns[i] = activation
+                exit_idxs[i] = j
+                qual_raw = 1.0 - (mae_val / den_tp) * 0.5
+                quality[i] = _clip_scalar(_soft_squash_pos(qual_raw), 0.51, 1.0)
+                break
+            
+            if tt >= cutoff_t:
+                outcomes[i] = OUT_TO
+                returns[i] = (cc / entry_p - 1.0) if side == 1 else (entry_p / cc - 1.0)
+                exit_idxs[i] = j
+                rel_prog = returns[i] / den_tp
+                quality[i] = 0.5 + _clip_scalar(rel_prog * 0.4, -0.4, 0.4)
+                break
+    
+    return outcomes, quality, returns, exit_idxs, conflict_j
+
 
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_triple_barrier_outcomes(times, opens, highs, lows, closes, tp_arr, sl_arr, horizon, side, horizons_arr=None):
@@ -317,6 +445,71 @@ def _resolve_conflicts_with_15m_numba(
 
     return resolved
 
+@jit(nopython=True, nogil=True, cache=True, parallel=False)
+def _numba_trailing_atr_labeling_fast(
+    times, opens, highs, lows, closes, atr_pct,
+    k_sl, k_pt, k_tp, horizon_hours
+):
+    """
+    Fast vectorized trailing ATR labeling using binary search for time windows.
+    Uses parallel loop for independent entries.
+    """
+    # Remove nested import to fix Numba IMPORT_NAME error
+    
+    n = len(closes)
+    labels = np.zeros(n, dtype=np.int8)
+    returns = np.zeros(n, dtype=np.float32)
+    
+    limit_ns = horizon_hours * 3600 * 1_000_000_000
+    cutoff_times = times + limit_ns
+    
+    for i in prange(n - 1):
+        entry_p = closes[i]
+        atr = atr_pct[i]
+        
+        if np.isnan(entry_p) or entry_p <= 0 or np.isnan(atr) or atr <= 0:
+            continue
+        
+        # Calculate distances
+        raw_sl = k_sl * atr
+        sl_pct = min(max(raw_sl, 0.02), 0.05)
+        raw_pt = k_pt * atr
+        act_pct = min(max(raw_pt, 0.05), 0.10)
+        raw_tp = k_tp * atr
+        trail_pct = min(max(raw_tp, 0.02), 0.04)
+        
+        sl_dist = sl_pct * entry_p
+        act_dist = act_pct * entry_p
+        trail_dist = trail_pct * entry_p
+        
+        # Binary search for end index (O(log n) instead of O(horizon))
+        end_idx = np.searchsorted(times, cutoff_times[i], side="right")
+        
+        if end_idx <= i + 1:
+            continue
+        
+        o_slice = opens[i+1:end_idx]
+        h_slice = highs[i+1:end_idx]
+        l_slice = lows[i+1:end_idx]
+        c_slice = closes[i+1:end_idx]
+        
+        ret, idx_off, reason = simulate_trade_numba(
+            o_slice, h_slice, l_slice, c_slice,
+            entry_p, 1,  # Long
+            sl_dist, act_dist, trail_dist
+        )
+        
+        returns[i] = ret
+        if ret > 0:
+            labels[i] = 1
+        elif ret < 0:
+            labels[i] = -1
+        else:
+            labels[i] = 0
+    
+    return labels, returns
+
+
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_trailing_atr_labeling(
     times, opens, highs, lows, closes, atr_pct,
@@ -465,7 +658,8 @@ def compute_trailing_atr_labels(
         l_arr = l[asset].to_numpy(dtype=np.float32)
         atr_arr = atr_df[asset].to_numpy(dtype=np.float32)
 
-        lbs, rets = _numba_trailing_atr_labeling(
+        # Use fast vectorized version with parallel processing and binary search
+        lbs, rets = _numba_trailing_atr_labeling_fast(
             times, o_arr, h_arr, l_arr, c_arr, atr_arr,
             k_sl, k_pt, k_tp, horizon_hours
         )
@@ -474,6 +668,170 @@ def compute_trailing_atr_labels(
         out_returns[asset] = rets
 
     return out_labels, out_returns
+
+@jit(nopython=True, nogil=True, cache=True, parallel=False)
+def _numba_triple_barrier_fast(
+    times, opens, highs, lows, closes, tp_arr, sl_arr, horizon, side, horizons_arr=None
+):
+    """
+    Fast vectorized triple barrier labeling using binary search for time windows.
+    Uses parallel loops for independent entries.
+    
+    Returns: labels, returns, exit_idxs, conflict_j
+    """
+    # Remove nested import to fix Numba IMPORT_NAME error
+    
+    n = len(closes)
+    labels = np.zeros(n, dtype=np.int8)
+    returns = np.zeros(n, dtype=np.float32)
+    exit_idxs = np.zeros(n, dtype=np.int64)
+    conflict_j = np.full(n, -1, dtype=np.int64)
+    
+    limit_ns_base = int(horizon * 3600 * 1_000_000_000)
+    
+    # Pre-compute cutoff times for all entries (vectorized)
+    if horizons_arr is not None:
+        horizons_ns = (horizons_arr * 3600 * 1_000_000_000).astype(np.int64)
+    else:
+        horizons_ns = np.full(n, limit_ns_base, dtype=np.int64)
+    
+    cutoff_times = times + horizons_ns
+    
+    for i in prange(n - 1):
+        entry_p = closes[i]
+        entry_t = times[i]
+        
+        activation = tp_arr[i]
+        sl = sl_arr[i]
+        
+        # Early NaN exit
+        if np.isnan(activation) or np.isnan(sl) or np.isnan(entry_p) or entry_p <= 0:
+            continue
+        
+        limit_ns = horizons_ns[i]
+        cutoff_t = cutoff_times[i]
+        stall_ns = limit_ns // 2
+        stall_t = entry_t + stall_ns
+        
+        trail_dev = 0.5 * activation
+        stall_threshold = 0.5 * activation
+        
+        if side == 1:  # Long
+            sl_price = entry_p * (1.0 - sl)
+            activation_price = entry_p * (1.0 + activation)
+        else:  # Short
+            sl_price = entry_p * (1.0 + sl)
+            activation_price = entry_p * (1.0 - activation)
+        
+        # Binary search to find time window (O(log n) instead of O(n))
+        j_start = i + 1
+        j_end = np.searchsorted(times, cutoff_t, side="right")
+        
+        if j_end <= j_start:
+            # No bars within horizon
+            labels[i] = OUT_TO
+            returns[i] = 0.0
+            exit_idxs[i] = j_start if j_start < n else n - 1
+            continue
+        
+        trailing_active = False
+        exit_found = False
+        stall_checked = False
+        extreme = entry_p
+        
+        # Scan only within the time window
+        for j in range(j_start, min(j_end, n)):
+            tt = times[j]
+            hh = highs[j]
+            ll = lows[j]
+            cc = closes[j]
+            
+            # Handle NaN high/low
+            if np.isnan(hh) or np.isnan(ll):
+                if tt >= cutoff_t:
+                    labels[i] = OUT_TO
+                    returns[i] = (cc / entry_p - 1.0) if side == 1 else (entry_p / cc - 1.0)
+                    exit_idxs[i] = j
+                    exit_found = True
+                    break
+                continue
+            
+            # Check barriers
+            if side == 1:
+                hit_sl = ll <= sl_price
+                hit_tp = hh >= activation_price
+                if trailing_active:
+                    # Update trailing stop
+                    if hh > extreme:
+                        extreme = hh
+                    new_sl = extreme - (trail_dev * entry_p)
+                    if new_sl > sl_price:
+                        sl_price = new_sl
+                        hit_sl = ll <= sl_price  # Re-check with new stop
+                else:
+                    if hh > extreme:
+                        extreme = hh
+                    if extreme >= activation_price:
+                        trailing_active = True
+            else:
+                hit_sl = hh >= sl_price
+                hit_tp = ll <= activation_price
+                if trailing_active:
+                    if ll < extreme:
+                        extreme = ll
+                    new_sl = extreme + (trail_dev * entry_p)
+                    if new_sl < sl_price:
+                        sl_price = new_sl
+                        hit_sl = hh >= sl_price
+                else:
+                    if ll < extreme:
+                        extreme = ll
+                    if extreme <= activation_price:
+                        trailing_active = True
+            
+            # Conflict detection
+            if hit_sl and hit_tp:
+                conflict_j[i] = j
+            
+            # Exit on SL/TP
+            if hit_sl:
+                labels[i] = OUT_TP if trailing_active else OUT_SL
+                returns[i] = (sl_price / entry_p - 1.0) if side == 1 else (entry_p / sl_price - 1.0)
+                exit_idxs[i] = j
+                exit_found = True
+                break
+            
+            # Stall check at 50% horizon
+            if not stall_checked and not trailing_active and tt >= stall_t:
+                stall_checked = True
+                if side == 1:
+                    mfe = (extreme / entry_p) - 1.0
+                else:
+                    mfe = (entry_p / extreme) - 1.0
+                if mfe < stall_threshold:
+                    labels[i] = OUT_TO
+                    returns[i] = (cc / entry_p - 1.0) if side == 1 else (entry_p / cc - 1.0)
+                    exit_idxs[i] = j
+                    exit_found = True
+                    break
+            
+            # Exact cutoff - exit at close
+            if tt >= cutoff_t:
+                labels[i] = OUT_TO
+                returns[i] = (cc / entry_p - 1.0) if side == 1 else (entry_p / cc - 1.0)
+                exit_idxs[i] = j
+                exit_found = True
+                break
+        
+        if not exit_found:
+            # Timeout at end of window or data
+            final_idx = min(j_end, n - 1)
+            labels[i] = OUT_TO
+            returns[i] = (closes[final_idx] / entry_p - 1.0) if side == 1 else (entry_p / closes[final_idx] - 1.0)
+            exit_idxs[i] = final_idx
+    
+    return labels, returns, exit_idxs, conflict_j
+
 
 @jit(nopython=True, nogil=True, cache=True)
 def _numba_triple_barrier(times, opens, highs, lows, closes, tp_arr, sl_arr, horizon, side, horizons_arr=None):
@@ -741,12 +1099,12 @@ def compute_triple_barrier_labels(panel, tp, sl, horizon, side="long", return_ou
         h_arr_custom = horizons_frame[asset].to_numpy(dtype=np.float32) if (horizons_frame is not None and asset in horizons_frame.columns) else None
 
         if return_outcomes:
-            out, rets, qual, _, conflict_j = _numba_triple_barrier_outcomes(
+            out, rets, qual, _, conflict_j = _numba_triple_barrier_outcomes_fast(
                 times, o_arr, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int, horizons_arr=h_arr_custom
             )
             return asset, out, rets, qual, conflict_j, tp_arr, sl_arr
         else:
-            lbs, rets, _, conflict_j = _numba_triple_barrier(times, o_arr, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int, horizons_arr=h_arr_custom)
+            lbs, rets, _, conflict_j = _numba_triple_barrier_fast(times, o_arr, h_arr, l_arr, c_arr, tp_arr, sl_arr, horizon, side_int, horizons_arr=h_arr_custom)
             return asset, lbs, rets, None, conflict_j, tp_arr, sl_arr
 
     # OPTIMIZATION: Use all available cores for parallel processing

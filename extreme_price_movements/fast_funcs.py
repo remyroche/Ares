@@ -1247,8 +1247,6 @@ def _numba_peak_label_and_weight_fast(close, atr, horizon, near_k, rev_k, is_upt
     Fast vectorized peak/trough detection using NumPy operations and parallel loop.
     Returns: (labels, weights)
     """
-    from numba import prange
-    
     n = len(close)
     labels = np.zeros(n, dtype=np.float32)
     weights = np.ones(n, dtype=np.float32)
@@ -1272,19 +1270,20 @@ def _numba_peak_label_and_weight_fast(close, atr, horizon, near_k, rev_k, is_upt
         
         if start_search >= end_search:
             continue
-        
-        # Vectorized max/min using numpy operations on the window
-        window = close[start_search:end_search]
-        valid_mask = np.isfinite(window)
-        
-        if not np.any(valid_mask):
-            continue
-        
-        if is_uptrend:  # Looking for Peak
-            # Find forward max
-            fwd_max = np.nanmax(window)
-            idx_max = start_search + np.nanargmax(window)
             
+        if is_uptrend:  # Looking for Peak
+            window = close[start_search:end_search]
+            fwd_max = -1.0e18 
+            idx_max = -1
+            for j in range(len(window)):
+                v = window[j]
+                if not np.isnan(v) and v > fwd_max:
+                    fwd_max = v
+                    idx_max = start_search + j
+            
+            if idx_max == -1:
+                continue
+                
             # Check proximity
             if curr_p < (fwd_max - near_dist):
                 continue
@@ -1294,13 +1293,19 @@ def _numba_peak_label_and_weight_fast(close, atr, horizon, near_k, rev_k, is_upt
                 continue
             
             after_peak = close[idx_max + 1:end_search]
-            valid_after = np.isfinite(after_peak)
-            if not np.any(valid_after):
+            fwd_min_after = 1.0e18
+            found_min = False
+            for j in range(len(after_peak)):
+                v = after_peak[j]
+                if not np.isnan(v):
+                    if v < fwd_min_after:
+                        fwd_min_after = v
+                    found_min = True
+                    
+            if not found_min:
                 continue
             
-            fwd_min_after = np.nanmin(after_peak)
             reversal_size = fwd_max - fwd_min_after
-            
             if reversal_size >= limit_dist:
                 X_val = fwd_max - curr_p
                 Y_val = reversal_size
@@ -1320,12 +1325,20 @@ def _numba_peak_label_and_weight_fast(close, atr, horizon, near_k, rev_k, is_upt
                 soft_lbl = 1.0 - (X_val / near_dist)
                 if soft_lbl < 0:
                     soft_lbl = 0.0
-                labels[i] = soft_lbl
+                labels[i] = float(soft_lbl)
         else:  # Looking for Trough
-            # Find forward min
-            fwd_min = np.nanmin(window)
-            idx_min = start_search + np.nanargmin(window)
+            window = close[start_search:end_search]
+            fwd_min = 1.0e18 
+            idx_min = -1
+            for j in range(len(window)):
+                v = window[j]
+                if not np.isnan(v) and v < fwd_min:
+                    fwd_min = v
+                    idx_min = start_search + j
             
+            if idx_min == -1:
+                continue
+                
             # Check proximity (relaxed)
             if curr_p > (fwd_min + near_dist * 1.5):
                 continue
@@ -1335,13 +1348,19 @@ def _numba_peak_label_and_weight_fast(close, atr, horizon, near_k, rev_k, is_upt
                 continue
             
             after_trough = close[idx_min + 1:end_search]
-            valid_after = np.isfinite(after_trough)
-            if not np.any(valid_after):
+            fwd_max_after = -1.0e18
+            found_max = False
+            for j in range(len(after_trough)):
+                v = after_trough[j]
+                if not np.isnan(v):
+                    if v > fwd_max_after:
+                        fwd_max_after = v
+                    found_max = True
+                    
+            if not found_max:
                 continue
             
-            fwd_max_after = np.nanmax(after_trough)
             reversal_size = fwd_max_after - fwd_min
-            
             if reversal_size >= limit_dist:
                 X_val = curr_p - fwd_min
                 Y_val = reversal_size
@@ -1361,7 +1380,7 @@ def _numba_peak_label_and_weight_fast(close, atr, horizon, near_k, rev_k, is_upt
                 soft_lbl = 1.0 - (X_val / near_dist)
                 if soft_lbl < 0:
                     soft_lbl = 0.0
-                labels[i] = soft_lbl
+                labels[i] = float(soft_lbl)
     
     return labels, weights
 

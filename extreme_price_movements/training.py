@@ -195,9 +195,13 @@ def _compute_barrier_base(
     z_score = (atr_pct - atr_median) / (atr_disp + 1e-12)
     z_clipped = np.clip(z_score, -z_max, z_max)
     m_clipped = np.clip(_safe_exp_bounded(k_reg * z_clipped), m_lo, m_hi)
-    if not np.isfinite(m_clipped.to_numpy(dtype=np.float64, copy=False)).all():
+    if not np.isfinite(np.asarray(m_clipped, dtype=np.float64)).all():
         tprint("WARNING: Non-finite barrier multipliers detected in _compute_barrier_base; sanitizing to bounds.")
-        m_clipped = m_clipped.replace([np.inf, -np.inf], np.nan).fillna(float(m_hi)).clip(lower=float(m_lo), upper=float(m_hi))
+        if hasattr(m_clipped, "replace"):
+            m_clipped = m_clipped.replace([np.inf, -np.inf], np.nan).fillna(float(m_hi)).clip(lower=float(m_lo), upper=float(m_hi))
+        else:
+            m_clipped = np.where(np.isfinite(m_clipped), m_clipped, float(m_hi))
+            m_clipped = np.clip(m_clipped, float(m_lo), float(m_hi))
     z_norm = np.clip((z_clipped - z_gate) / (z_max - z_gate), 0, 1)
     sl_mult = sl_mult_lo + (sl_mult_hi - sl_mult_lo) * z_norm
     return {
@@ -269,9 +273,13 @@ def compute_barrier_factory(
         atr_disp = np.maximum(atr_mad, disp_floor * atr_median)
         z_clipped = np.clip((atr_pct - atr_median) / (atr_disp + 1e-12), -z_max, z_max)
         m_clipped = np.clip(_safe_exp_bounded(k_reg * z_clipped), m_lo, m_hi)
-        if not np.isfinite(m_clipped.to_numpy(dtype=np.float64, copy=False)).all():
+        if not np.isfinite(np.asarray(m_clipped, dtype=np.float64)).all():
             tprint("WARNING: Non-finite barrier multipliers detected in compute_barrier_factory; sanitizing to bounds.")
-            m_clipped = m_clipped.replace([np.inf, -np.inf], np.nan).fillna(float(m_hi)).clip(lower=float(m_lo), upper=float(m_hi))
+            if hasattr(m_clipped, "replace"):
+                m_clipped = m_clipped.replace([np.inf, -np.inf], np.nan).fillna(float(m_hi)).clip(lower=float(m_lo), upper=float(m_hi))
+            else:
+                m_clipped = np.where(np.isfinite(m_clipped), m_clipped, float(m_hi))
+                m_clipped = np.clip(m_clipped, float(m_lo), float(m_hi))
         z_norm = np.clip((z_clipped - z_gate) / (z_max - z_gate), 0, 1)
         sl_mult = sl_mult_lo + (sl_mult_hi - sl_mult_lo) * z_norm
 

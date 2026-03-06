@@ -680,3 +680,126 @@ def _numba_rolling_bars_since_extreme_parallel(mat, window, mode):
             out[i, j] = float(length - 1 - best_idx)
 
     return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_slope_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = np.nan
+        if n_rows < window:
+            continue
+
+        n_w = float(window)
+        sum_x = (n_w * (n_w - 1.0)) / 2.0
+        sum_x2 = (n_w * (n_w - 1.0) * (2.0 * n_w - 1.0)) / 6.0
+        denom = n_w * sum_x2 - sum_x**2
+
+        if denom == 0:
+            continue
+
+        for i in range(window - 1, n_rows):
+            sum_y = 0.0
+            sum_xy = 0.0
+            valid = True
+            for k in range(window):
+                val = mat[i - window + 1 + k, j]
+                if np.isnan(val):
+                    valid = False
+                    break
+                sum_y += val
+                sum_xy += k * val
+
+            if valid:
+                out[i, j] = (n_w * sum_xy - sum_x * sum_y) / denom
+
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_rsquared_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = np.nan
+        if n_rows < window:
+            continue
+
+        n_w = float(window)
+        sum_x = (n_w * (n_w - 1.0)) / 2.0
+        sum_x2 = (n_w * (n_w - 1.0) * (2.0 * n_w - 1.0)) / 6.0
+        denom_x = n_w * sum_x2 - sum_x**2
+
+        if denom_x <= 1e-12:
+            continue
+
+        for i in range(window - 1, n_rows):
+            sum_y = 0.0
+            sum_y2 = 0.0
+            sum_xy = 0.0
+            valid = True
+            for k in range(window):
+                val = mat[i - window + 1 + k, j]
+                if np.isnan(val):
+                    valid = False
+                    break
+                sum_y += val
+                sum_y2 += val * val
+                sum_xy += k * val
+
+            if valid:
+                denom_y = n_w * sum_y2 - sum_y**2
+                numerator = n_w * sum_xy - sum_x * sum_y
+
+                if denom_y > 1e-12:
+                    out[i, j] = (numerator * numerator) / (denom_x * denom_y)
+                else:
+                    out[i, j] = 0.0
+
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_skew_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = np.nan
+
+        if window < 3:
+            continue
+
+        if n_rows < window:
+            continue
+
+        w = float(window)
+
+        for i in range(window - 1, n_rows):
+            s1 = 0.0
+            s2 = 0.0
+            s3 = 0.0
+            valid = True
+            for k in range(window):
+                val = mat[i - window + 1 + k, j]
+                if np.isnan(val):
+                    valid = False
+                    break
+                s1 += val
+                s2 += val*val
+                s3 += val*val*val
+
+            if valid:
+                mean = s1 / w
+                var = (s2 / w) - (mean * mean)
+                m3 = (s3 / w) - 3.0 * mean * (s2 / w) + 2.0 * (mean * mean * mean)
+
+                if var > 1e-12:
+                    stdev = np.sqrt(var)
+                    pop_skew = m3 / (stdev * stdev * stdev)
+                    adj = np.sqrt(w * (w - 1.0)) / (w - 2.0)
+                    out[i, j] = adj * pop_skew
+                else:
+                    out[i, j] = 0.0
+
+    return out

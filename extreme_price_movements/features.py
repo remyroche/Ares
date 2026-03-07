@@ -743,6 +743,7 @@ def compute_features_hourly(panel, mkt_gates, cfg):
 
 
 def _compute_hvn_col(col, o_col, h_col, l_col, c_col, v_col):
+    from .volume_node_features import hvn_lvn_features_ohlcv
     df_col = pd.DataFrame({
         "open": o_col,
         "high": h_col,
@@ -751,6 +752,70 @@ def _compute_hvn_col(col, o_col, h_col, l_col, c_col, v_col):
         "volume": v_col
     })
     return col, hvn_lvn_features_ohlcv(df_col)
+
+
+def _compute_hvn_feature_frames(
+    o: pd.DataFrame,
+    h: pd.DataFrame,
+    l: pd.DataFrame,
+    c_log: pd.DataFrame,
+    v: pd.DataFrame,
+    hvn_keys: list[str],
+    compute_col_fn=None,
+) -> dict[str, pd.DataFrame]:
+    if compute_col_fn is None:
+        compute_col_fn = _compute_hvn_col
+
+    hvn_results = {
+        k: pd.DataFrame(index=c_log.index, columns=c_log.columns, dtype=np.float32)
+        for k in hvn_keys
+    }
+    total_cols = len(c_log.columns)
+
+    def _assign_hvn_result(col_name, res_df):
+        for k in hvn_keys:
+            hvn_results[k][col_name] = res_df[k].values.astype(np.float32)
+
+    import multiprocessing
+    max_workers = min(8, multiprocessing.cpu_count())
+
+    try:
+        os.sysconf("SC_SEM_NSEMS_MAX")
+        can_use_process_pool = True
+    except (AttributeError, ValueError, OSError, PermissionError):
+        can_use_process_pool = False
+
+    completed = 0
+    if can_use_process_pool and total_cols > 1:
+        try:
+            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                futures = []
+                for col in c_log.columns:
+                    futures.append(
+                        executor.submit(compute_col_fn, col, o[col], h[col], l[col], c_log[col], v[col])
+                    )
+
+                for future in as_completed(futures):
+                    col, res_df = future.result()
+                    _assign_hvn_result(col, res_df)
+                    completed += 1
+                    if completed % 50 == 0:
+                        tprint(f"HVN/LVN: {completed}/{total_cols}")
+        except (OSError, PermissionError) as e:
+            tprint(f"HVN/LVN: process pool unavailable ({e}); falling back to single-process.")
+            can_use_process_pool = False
+
+    if not can_use_process_pool or total_cols <= 1:
+        if total_cols > 1:
+            tprint("HVN/LVN: using single-process fallback.")
+        for col in c_log.columns:
+            _, res_df = compute_col_fn(col, o[col], h[col], l[col], c_log[col], v[col])
+            _assign_hvn_result(col, res_df)
+            completed += 1
+            if completed % 50 == 0:
+                tprint(f"HVN/LVN: {completed}/{total_cols}")
+
+    return hvn_results
 
 def _compute_features_impl(panel, mkt_gates, cfg):
     tprint("Features: compute base matrices")
@@ -2805,29 +2870,7 @@ def _compute_features_impl(panel, mkt_gates, cfg):
         sample_res = hvn_lvn_features_ohlcv(df_first)
         hvn_keys = list(sample_res.columns)
 
-        hvn_results = {k: pd.DataFrame(index=c_log.index, columns=c_log.columns, dtype=np.float32) for k in hvn_keys}
-        total_cols = len(c_log.columns)
-
-        # Parallel execution using ProcessPoolExecutor
-        import multiprocessing
-        max_workers = min(8, multiprocessing.cpu_count())
-
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
-            futures = []
-            for col in c_log.columns:
-                futures.append(
-                    executor.submit(_compute_hvn_col, col, o[col], h[col], l[col], c_log[col], v[col])
-                )
-
-            completed = 0
-            for future in as_completed(futures):
-                col, res_df = future.result()
-                for k in hvn_keys:
-                    hvn_results[k][col] = res_df[k].values.astype(np.float32)
-
-                completed += 1
-                if completed % 50 == 0:
-                    tprint(f"HVN/LVN: {completed}/{total_cols}")
+        hvn_results = _compute_hvn_feature_frames(o, h, l, c_log, v, hvn_keys)
 
         # Add to main feats with prefix
         for k, df_res in hvn_results.items():
@@ -2835,8 +2878,6 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     except Exception as e:
         tprint(f"WARNING: HVN/LVN calculation failed: {e}")
-        import traceback
-        traceback.print_exc()
 
     # Free target_proxy — no longer needed after gated feature selection
     del target_proxy, time_blocks, train_mask_proxy

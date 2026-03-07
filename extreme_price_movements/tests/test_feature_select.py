@@ -4,6 +4,11 @@ import pandas as pd
 from extreme_price_movements.feature_select.cv import CVConfig
 from extreme_price_movements.feature_select.scoring import UtilityConfig, FeatureSelectConfig
 from extreme_price_movements.feature_select.run import run_feature_selection
+from extreme_price_movements.feature_selection_extreme_events import (
+    linear_prescreen_enet,
+    mdi_feature_selection_v3,
+)
+from sklearn.ensemble import ExtraTreesRegressor
 
 def generate_synthetic_data(n_samples=2000, n_features=20, n_informative=3, seed=42):
     rng = np.random.RandomState(seed)
@@ -72,3 +77,37 @@ def test_feature_selection_regression():
     )
 
     assert "feat_0" in result.selected_features or "feat_1" in result.selected_features
+
+
+def test_linear_prescreen_enet_respects_max_drop_cap():
+    X, _, y = generate_synthetic_data(n_samples=1200, n_features=100, n_informative=5)
+    kept = linear_prescreen_enet(X, y, n_select=10, multiplier=4)
+    assert len(kept) == 75
+
+
+def test_mdi_drops_near_constant_features_before_selection():
+    X, _, y = generate_synthetic_data(n_samples=800, n_features=24, n_informative=4)
+    X["const_base"] = 1.0
+    X["const_base_G_VOL_0"] = 0.0
+    X["const_base_G_VOL_1"] = 1.0
+
+    res = mdi_feature_selection_v3(
+        X,
+        y,
+        base_model=ExtraTreesRegressor(
+            n_estimators=50,
+            max_depth=4,
+            min_samples_leaf=10,
+            random_state=42,
+            n_jobs=1,
+        ),
+        end_features=8,
+        min_features=5,
+        n_splits=2,
+        selector_target="regression",
+        selector_loss="huber",
+    )
+
+    assert "const_base" not in res.kept_after_dedupe
+    assert "const_base_G_VOL_0" not in res.kept_after_dedupe
+    assert "const_base_G_VOL_1" not in res.kept_after_dedupe

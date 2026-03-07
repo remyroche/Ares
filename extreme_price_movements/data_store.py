@@ -584,6 +584,28 @@ def _feature_meta_path(parquet_path: str) -> str:
     return parquet_path.replace(".parquet", ".meta.json")
 
 
+def _feature_lock_path(parquet_path: str) -> str:
+    return parquet_path + ".lock"
+
+
+def _atomic_write_parquet(df: pd.DataFrame, parquet_path: str):
+    tmp_path = parquet_path + ".tmp"
+    df.to_parquet(tmp_path)
+    os.replace(tmp_path, parquet_path)
+
+
+def _quarantine_corrupt_feature_file(parquet_path: str):
+    if not os.path.exists(parquet_path):
+        return
+    quarantine_path = parquet_path + ".corrupt"
+    if os.path.exists(quarantine_path):
+        os.remove(quarantine_path)
+    os.replace(parquet_path, quarantine_path)
+    meta_path = _feature_meta_path(parquet_path)
+    if os.path.exists(meta_path):
+        os.remove(meta_path)
+
+
 def _write_feature_metadata(parquet_path: str, symbol: str, index: pd.Index):
     meta_path = _feature_meta_path(parquet_path)
     if len(index) == 0:
@@ -662,47 +684,56 @@ def append_symbol_features(parquet_path: str, symbol: str, new_data: pd.DataFram
     new_data = new_data.sort_index()
     numeric_cols = [c for c in new_data.columns if c != "__symbol__"]
     new_data[numeric_cols] = new_data[numeric_cols].astype(np.float32)
+    os.makedirs(os.path.dirname(parquet_path), exist_ok=True)
+    lock_path = _feature_lock_path(parquet_path)
 
-    existing = None
-    if os.path.exists(parquet_path):
-        existing = pd.read_parquet(parquet_path)
-        if "__symbol__" in existing.columns:
-            existing = existing.drop(columns=["__symbol__"])
+    with FileLock(lock_path):
+        existing = None
+        if os.path.exists(parquet_path):
+            try:
+                existing = pd.read_parquet(parquet_path)
+            except Exception as e:
+                tprint(f"Warning: quarantining unreadable feature file {parquet_path}: {e}")
+                _quarantine_corrupt_feature_file(parquet_path)
+            else:
+                if "__symbol__" in existing.columns:
+                    existing = existing.drop(columns=["__symbol__"])
 
-    all_cols = sorted(set(new_data.columns) | (set(existing.columns) if existing is not None else set()))
-    new_aligned = new_data.reindex(columns=all_cols)
+        all_cols = sorted(set(new_data.columns) | (set(existing.columns) if existing is not None else set()))
+        new_aligned = new_data.reindex(columns=all_cols)
 
-    if existing is not None:
-        existing_aligned = existing.reindex(columns=all_cols)
-        before_rows = len(existing_aligned)
+        if existing is not None:
+            existing_aligned = existing.reindex(columns=all_cols)
+            before_rows = len(existing_aligned)
 
-        # Preserve schema-critical features even if the current append is all-NaN.
-        # Dropping these columns (e.g. atr_pct) causes downstream symbol intersection collapse.
-        required_cols = {"atr_pct"}
-        existing_all_na = existing_aligned.isna().all(axis=0)
-        new_all_na = new_aligned.isna().all(axis=0)
-        drop_cols = [
-            c
-            for c in all_cols
-            if bool(existing_all_na.get(c, True))
-            and bool(new_all_na.get(c, True))
-            and c not in required_cols
-        ]
-        if drop_cols:
-            existing_aligned = existing_aligned.drop(columns=drop_cols, errors="ignore")
-            new_aligned = new_aligned.drop(columns=drop_cols, errors="ignore")
+            # Preserve schema-critical features even if the current append is all-NaN.
+            # Dropping these columns (e.g. atr_pct) causes downstream symbol intersection collapse.
+            required_cols = {"atr_pct"}
+            existing_all_na = existing_aligned.isna().all(axis=0)
+            new_all_na = new_aligned.isna().all(axis=0)
+            drop_cols = [
+                c
+                for c in all_cols
+                if bool(existing_all_na.get(c, True))
+                and bool(new_all_na.get(c, True))
+                and c not in required_cols
+            ]
+            if drop_cols:
+                existing_aligned = existing_aligned.drop(columns=drop_cols, errors="ignore")
+                new_aligned = new_aligned.drop(columns=drop_cols, errors="ignore")
 
-        combined = pd.concat([existing_aligned, new_aligned])
-    else:
-        before_rows = 0
-        combined = new_aligned
+            combined = existing_aligned.reindex(existing_aligned.index.union(new_aligned.index)).sort_index()
+            combined.loc[new_aligned.index, new_aligned.columns] = new_aligned
+        else:
+            before_rows = 0
+            combined = new_aligned
 
-    combined = combined[~combined.index.duplicated(keep="last")].sort_index()
-    combined["__symbol__"] = symbol
-    combined.to_parquet(parquet_path)
-    _write_feature_metadata(parquet_path, symbol, combined.index)
+        combined = combined[~combined.index.duplicated(keep="last")].sort_index()
+        combined["__symbol__"] = symbol
+        _atomic_write_parquet(combined, parquet_path)
+        _write_feature_metadata(parquet_path, symbol, combined.index)
 
-    return len(combined) - before_rows
+        return len(combined) - before_rows
 
 
 def save_features(
@@ -1182,6 +1213,14 @@ def load_artifact_df(root_dir: str, run_id: str, category: str, name: str) -> pd
     if os.path.exists(fpath):
         tprint(f"Loading artifact: {fpath}")
         df = pd.read_parquet(fpath)
+        
+        # Normalize: ensure 'ts' and 'symbol' exist if their dunder versions do.
+        # This fixes inconsistencies between training.py and pipeline_steps.py.
+        if "__ts__" in df.columns and "ts" not in df.columns:
+            df["ts"] = df["__ts__"]
+        if "__symbol__" in df.columns and "symbol" not in df.columns:
+            df["symbol"] = df["__symbol__"]
+
         # Downcast floats to float32 to save memory
         for col in df.select_dtypes(include=[np.float64]).columns:
             df[col] = df[col].astype(np.float32)

@@ -21,6 +21,7 @@ class UtilityConfig:
 class FeatureSelectConfig:
     n_repeats_perm: int = 10
     min_features: int = 10
+    max_features: Optional[int] = None
     utility_drop_tol: float = 0.0
     confirm_drop: bool = True
     confirm_mode: Literal["full_cv", "single_seed_fast"] = "single_seed_fast"

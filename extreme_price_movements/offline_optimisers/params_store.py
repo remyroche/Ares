@@ -213,6 +213,8 @@ def load_tbm_best_params_per_cell() -> Dict[str, Dict[str, Any]]:
         df = pd.read_csv(TBM_BEST_PARAMS_PER_CELL_CSV)
         if df.empty:
             return load_tbm_best_params_per_bucket()
+        if "rank_in_cell" in df.columns:
+            df = df.sort_values(["cell_key", "rank_in_cell"], ascending=[True, True])
         result: Dict[str, Dict[str, Any]] = {}
         for _, row in df.iterrows():
             cell = str(row.get("cell_key", ""))
@@ -221,10 +223,37 @@ def load_tbm_best_params_per_cell() -> Dict[str, Dict[str, Any]]:
                 cell = str(row.get("bucket", ""))
             if not cell:
                 continue
+            if cell in result:
+                continue
             result[cell] = {k: _coerce_numeric_if_possible(_to_scalar(v)) for k, v in row.items()}
         return result
     except Exception:
         return load_tbm_best_params_per_bucket()
+
+
+def load_tbm_all_params_per_cell() -> Dict[str, list[Dict[str, Any]]]:
+    """Load the full ranked per-cell TBM params set from tbm_best_params_per_cell.csv."""
+    import pandas as pd
+
+    if not TBM_BEST_PARAMS_PER_CELL_CSV.exists():
+        return {}
+    try:
+        df = pd.read_csv(TBM_BEST_PARAMS_PER_CELL_CSV)
+        if df.empty:
+            return {}
+        if "rank_in_cell" in df.columns:
+            df = df.sort_values(["cell_key", "rank_in_cell"], ascending=[True, True])
+        result: Dict[str, list[Dict[str, Any]]] = {}
+        for _, row in df.iterrows():
+            cell = str(row.get("cell_key", "")) or str(row.get("bucket", ""))
+            if not cell:
+                continue
+            result.setdefault(cell, []).append(
+                {k: _coerce_numeric_if_possible(_to_scalar(v)) for k, v in row.items()}
+            )
+        return result
+    except Exception:
+        return {}
 
 
 _TBM_BUCKET_KEY_MAP = {

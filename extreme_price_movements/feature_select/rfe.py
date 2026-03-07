@@ -198,7 +198,7 @@ def run_rfe(
                 best_utility = max(best_utility, mean_utility)
 
         # Determine features to drop
-        n_drop = max(2, int(0.10 * (len(current_features) - fs_config.min_features)))
+        n_drop = max(2, int(0.15 * (len(current_features) - fs_config.min_features)))
         n_drop = min(n_drop, len(current_features) - fs_config.min_features)
 
         if n_drop <= 0:
@@ -207,5 +207,22 @@ def run_rfe(
         features_to_drop = feature_scores.tail(n_drop)["feature"].tolist()
         current_features = [f for f in current_features if f not in features_to_drop]
         rfe_trace[-1]["dropped_features"] = features_to_drop
+
+    if fs_config.max_features is not None and len(current_features) > int(fs_config.max_features):
+        feature_scores = feature_scores[feature_scores["feature"].isin(current_features)].copy()
+        feature_scores = feature_scores.sort_values("composite_score", ascending=False)
+        keep_n = max(int(fs_config.min_features), int(fs_config.max_features))
+        current_features = feature_scores.head(keep_n)["feature"].tolist()
+        rfe_trace.append({
+            "iter": iteration + 1,
+            "n_features": len(current_features),
+            "oos_utility_mean": float(best_utility) if np.isfinite(best_utility) else 0.0,
+            "oos_utility_ci_low": float("nan"),
+            "oos_utility_ci_high": float("nan"),
+            "oos_metric_mean": float("nan"),
+            "dropped_features": [],
+            "hard_cap_applied": True,
+            "max_features_cap": int(fs_config.max_features),
+        })
 
     return current_features, feature_scores, pd.DataFrame(rfe_trace)

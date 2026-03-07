@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from extreme_price_movements.label_policy_optimizer import optimize_label_policy
 from extreme_price_movements.meta_model import MetaClassifierModel
 from extreme_price_movements.policy_ml import MetaClassifierSelectionConfig
 from extreme_price_movements.ridge_position_sizer import run_ridge_target_race, run_ridge_position_sizer_step
@@ -81,3 +82,37 @@ def test_ridge_sizer_requires_u_policy_for_topq_metric():
         )
     except Exception:
         pass
+
+
+def test_policy_optimizer_subsamples_search_but_returns_full_length_labels():
+    n = 12
+    ts = pd.date_range("2026-01-01", periods=n, freq="1h", tz="UTC")
+    trade_outcomes = pd.DataFrame(
+        {
+            "entry_price": np.full(n, 100.0),
+            "is_long": np.array([True, False] * (n // 2) + [True] * (n % 2)),
+            "atr_12_15m": np.full(n, 0.5),
+            "future_opens": [np.full(24, 100.0)] * n,
+            "future_highs": [np.linspace(100.1, 101.0, 24)] * n,
+            "future_lows": [np.linspace(99.9, 99.0, 24)] * n,
+            "future_closes": [np.linspace(100.0, 100.5, 24)] * n,
+            "symbol": ["BTCUSDT"] * n,
+        }
+    )
+    oof_preds = pd.DataFrame({"m1": np.linspace(-1.0, 1.0, n), "m2": np.linspace(1.0, -1.0, n)})
+
+    out, meta = optimize_label_policy(
+        trade_outcomes=trade_outcomes,
+        oof_preds=oof_preds,
+        timestamps=ts.to_numpy(),
+        symbols=np.asarray(trade_outcomes["symbol"]),
+        groups=None,
+        cfg={"label_policy_max_samples": 5, "label_policy_sample_seed": 7},
+        simulate_trade_exit_fn=None,
+    )
+
+    assert len(out) == n
+    assert len(out["u_policy"]) == n
+    assert len(out["u_policy_net"]) == n
+    assert meta["search_rows"] == 5
+    assert meta["full_rows"] == n

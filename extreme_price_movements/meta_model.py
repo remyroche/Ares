@@ -63,6 +63,10 @@ class MetaModel:
         self.selector_report_dir: Optional[str] = None
         self.selector_prev_selected: Optional[Sequence[str]] = None
         self.selector_family_map: Dict[str, str] = {}
+        self.anchor_model = None
+        self.anchor_threshold: Optional[float] = None
+        self.anchor_gate_name: str = "all"
+        self.anchor_reject_score: Optional[float] = None
 
     def prepare_meta_features(self, preds, feats_df, pred_col_name="pred_logit"):
         p = np.clip(np.asarray(preds, dtype=float), 1e-4, 1 - 1e-4)
@@ -90,6 +94,73 @@ class MetaModel:
     def _inverse_signed_log(self, z: np.ndarray) -> np.ndarray:
         z = np.asarray(z, dtype=float)
         return np.sign(z) * np.expm1(np.abs(z))
+
+    def _prepare_fit_arrays(
+        self,
+        y: np.ndarray,
+        sw: Optional[np.ndarray],
+        tail_lambda: float,
+    ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+        y_fit = np.asarray(y, dtype=float).copy()
+        sw_fit = None if sw is None else np.asarray(sw, dtype=float).copy()
+
+        if tail_lambda > 0:
+            y_fit = self._signed_log(y_fit)
+            ramp = self._tail_ramp_weights(y_fit, tail_lambda, q0=0.70, q1=1.00)
+            sw_fit = ramp if sw_fit is None else (sw_fit * ramp)
+
+        finite_y = np.isfinite(y_fit)
+        if not finite_y.all():
+            fill = float(np.nanmedian(y_fit[finite_y])) if finite_y.any() else 0.0
+            y_fit = np.where(finite_y, y_fit, fill)
+
+        if sw_fit is not None:
+            finite_w = np.isfinite(sw_fit)
+            if not finite_w.all():
+                w_fill = float(np.nanmedian(sw_fit[finite_w])) if finite_w.any() else 1.0
+                sw_fit = np.where(finite_w, sw_fit, w_fill)
+
+        return y_fit, sw_fit
+
+    @staticmethod
+    def _top_slice_pnl(pred: np.ndarray, y: np.ndarray, frac: float = 0.30) -> float:
+        mask = np.isfinite(pred) & np.isfinite(y)
+        if mask.sum() == 0:
+            return float("-inf")
+        pred_f = np.asarray(pred[mask], dtype=float)
+        y_f = np.asarray(y[mask], dtype=float)
+        k = max(1, int(np.ceil(float(frac) * len(pred_f))))
+        idx = np.argpartition(pred_f, -k)[-k:]
+        return float(np.sum(y_f[idx]))
+
+    @staticmethod
+    def _gate_mask_from_scores(anchor_scores: np.ndarray, gate_name: str) -> np.ndarray:
+        scores = np.asarray(anchor_scores, dtype=float)
+        valid = np.isfinite(scores)
+        if gate_name == "all":
+            return valid.copy()
+        if not gate_name.startswith("top"):
+            raise ValueError(f"Unknown gate name: {gate_name}")
+        top_pct = int(gate_name[3:])
+        if valid.sum() == 0:
+            return np.zeros(len(scores), dtype=bool)
+        top_pct = max(1, min(100, top_pct))
+        q = 100.0 - float(top_pct)
+        thr = float(np.nanpercentile(scores[valid], q))
+        mask = valid & (scores >= thr)
+        if mask.sum() == 0:
+            best_idx = np.where(valid)[0][np.argmax(scores[valid])]
+            mask[best_idx] = True
+        return mask
+
+    @staticmethod
+    def _reject_floor(scores: np.ndarray) -> float:
+        pred = np.asarray(scores, dtype=float)
+        valid = pred[np.isfinite(pred)]
+        if valid.size == 0:
+            return -1e9
+        sigma = float(np.nanstd(valid))
+        return float(np.nanmin(valid) - max(sigma, 1e-6))
 
     # ── Tail-focused feature selection (light MDI for meta) ─────────────
     def _select_tail_features(
@@ -247,6 +318,15 @@ class MetaModel:
             model = self._fit_one(kind, params, X_tr, y_tr, X_va, y_va, sw=sw_tr)
             oof[va] = model.predict(X_va)
 
+        missing = ~np.isfinite(oof)
+        if np.any(missing):
+            fitted = np.isfinite(oof)
+            if np.any(fitted):
+                fill = float(np.nanmedian(oof[fitted]))
+            else:
+                fill = float(np.nanmedian(np.asarray(y, dtype=float))) if len(y) else 0.0
+            oof[missing] = fill
+
         mask = np.isfinite(oof)
         ic = _safe_spearman(oof[mask], y[mask])
         return oof, ic
@@ -386,70 +466,140 @@ class MetaModel:
         tprint(f"  Racing {len(candidates)} candidates ({_time.monotonic()-_t0:.1f}s)...")
 
         Xv = X_sel.to_numpy(dtype=np.float32)
+        gate_records = []
         records = []
         best_name = None
         best_ic = -1e18
         best_oof = None
+
+        ridge_cand = candidates.get("ridge")
+        if ridge_cand is None:
+            raise RuntimeError("MetaModel requires a ridge candidate for anchor gating")
+
+        ridge_y_fit, ridge_sw_fit = self._prepare_fit_arrays(
+            y_np, sw, float(ridge_cand.get("tail_lambda", 0.0))
+        )
+        ridge_anchor_oof, _ = self._cv_evaluate(
+            ridge_cand["kind"], ridge_cand["params"], Xv, ridge_y_fit, ridge_sw_fit
+        )
+        ridge_anchor_oof_orig = (
+            self._inverse_signed_log(ridge_anchor_oof)
+            if float(ridge_cand.get("tail_lambda", 0.0)) > 0 else ridge_anchor_oof
+        )
+
+        gate_variants = ["all", "top50", "top40", "top30", "top20", "top10"]
+        best_gate_name = "all"
+        best_gate_mask = np.isfinite(ridge_anchor_oof_orig)
+        best_gate_pnl = float("-inf")
+
+        for gate_name in gate_variants:
+            gate_mask = self._gate_mask_from_scores(ridge_anchor_oof_orig, gate_name)
+            gate_n = int(gate_mask.sum())
+            if gate_name != "all" and gate_n < 100:
+                tprint(f"  Ridge gate {gate_name}: skipped (n={gate_n})")
+                continue
+
+            gate_horizons = None
+            if y_per_horizon:
+                gate_horizons = {h: np.asarray(v, dtype=float)[gate_mask] for h, v in y_per_horizon.items()}
+            gate_y_fit = ridge_y_fit[gate_mask]
+            gate_sw_fit = None if ridge_sw_fit is None else ridge_sw_fit[gate_mask]
+            gate_oof, _ = self._cv_evaluate(
+                ridge_cand["kind"], ridge_cand["params"], Xv[gate_mask], gate_y_fit, gate_sw_fit
+            )
+            gate_oof_orig = (
+                self._inverse_signed_log(gate_oof)
+                if float(ridge_cand.get("tail_lambda", 0.0)) > 0 else gate_oof
+            )
+            gate_metrics = self._compute_oof_metrics(
+                gate_oof_orig,
+                y_np[gate_mask],
+                y_per_horizon=gate_horizons,
+            )
+            gate_pnl = self._top_slice_pnl(gate_oof_orig, y_np[gate_mask], frac=0.30)
+            gate_rec = {
+                "model": "ridge",
+                "gate": gate_name,
+                "n_gate": gate_n,
+                "gate_frac": float(gate_n) / max(len(y_np), 1),
+                "pnl_top30": gate_pnl,
+                **gate_metrics,
+            }
+            gate_records.append(gate_rec)
+            tprint(
+                f"  Ridge gate {gate_name}: n={gate_n}, pnl_top30={gate_pnl:.6f}, "
+                f"IC={gate_metrics.get('ic', 0.0):.4f}, spread10={gate_metrics.get('spread10', 0.0):.6f}"
+            )
+            if gate_pnl > best_gate_pnl:
+                best_gate_pnl = gate_pnl
+                best_gate_name = gate_name
+                best_gate_mask = gate_mask
+
+        self.anchor_gate_name = best_gate_name
+        tprint(
+            f"  Ridge anchor winner: {best_gate_name} "
+            f"(n={int(best_gate_mask.sum())}, pnl_top30={best_gate_pnl:.6f})"
+        )
+
+        gate_horizons = None
+        if y_per_horizon:
+            gate_horizons = {h: np.asarray(v, dtype=float)[best_gate_mask] for h, v in y_per_horizon.items()}
 
         for name, cand in candidates.items():
             kind = cand["kind"]
             params = cand["params"]
             tail_lambda = cand["tail_lambda"]
 
-            # Prepare target and weights for this candidate
-            y_fit = y_np.copy()
-            sw_fit = sw.copy() if sw is not None else None
-
-            if tail_lambda > 0:
-                y_fit = self._signed_log(y_fit)
-                ramp = self._tail_ramp_weights(y_fit, tail_lambda, q0=0.70, q1=1.00)
-                sw_fit = ramp if sw_fit is None else (sw_fit * ramp)
-
-            # Ensure finite
-            finite_y = np.isfinite(y_fit)
-            if not finite_y.all():
-                fill = float(np.nanmedian(y_fit[finite_y])) if finite_y.any() else 0.0
-                y_fit = np.where(finite_y, y_fit, fill)
-            if sw_fit is not None:
-                finite_w = np.isfinite(sw_fit)
-                if not finite_w.all():
-                    w_fill = float(np.nanmedian(sw_fit[finite_w])) if finite_w.any() else 1.0
-                    sw_fit = np.where(finite_w, sw_fit, w_fill)
+            y_fit_all, sw_fit_all = self._prepare_fit_arrays(y_np, sw, tail_lambda)
+            y_fit = y_fit_all[best_gate_mask]
+            sw_fit = None if sw_fit_all is None else sw_fit_all[best_gate_mask]
 
             try:
-                oof, ic = self._cv_evaluate(kind, params, Xv, y_fit, sw_fit)
-                # If tail-weighted, inverse-transform OOF for IC computation against original y
-                if tail_lambda > 0:
-                    oof_orig = self._inverse_signed_log(oof)
-                else:
-                    oof_orig = oof
+                oof_gate, _ = self._cv_evaluate(kind, params, Xv[best_gate_mask], y_fit, sw_fit)
+                oof_orig_gate = self._inverse_signed_log(oof_gate) if tail_lambda > 0 else oof_gate
             except Exception as exc:
                 tprint(f"  Candidate {name} failed: {exc}")
                 continue
 
-            # Comprehensive OOF metrics against original (unscaled) target
-            metrics = self._compute_oof_metrics(oof_orig, y_np,
-                                                y_per_horizon=y_per_horizon)
+            metrics = self._compute_oof_metrics(
+                oof_orig_gate,
+                y_np[best_gate_mask],
+                y_per_horizon=gate_horizons,
+            )
             ic_orig = metrics.get("ic", 0.0)
             ic_mh = metrics.get("ic_mh", ic_orig)
             ic_t30 = metrics.get("ic_top30", 0.0)
             spread10 = metrics.get("spread10", 0.0)
-            # Composite score: 40% IC_mh + 30% IC_t30 + 30% spread10 (normalized)
-            # IC_mh = avg Spearman(pred, r_h) across horizons — avoids dilution
-            # spread10 is in return units; scale by 100 to bring into ~IC range
             composite = 0.40 * ic_mh + 0.30 * ic_t30 + 0.30 * min(spread10 * 100, 1.0)
+            pnl_top30 = self._top_slice_pnl(oof_orig_gate, y_np[best_gate_mask], frac=0.30)
 
-            rec = {"model": name, "kind": kind, "tail_lambda": tail_lambda,
-                   "composite": composite, **metrics}
+            oof_full = np.full(len(y_np), np.nan, dtype=float)
+            oof_full[best_gate_mask] = oof_orig_gate
+            reject_floor = self._reject_floor(oof_orig_gate)
+            oof_full[~best_gate_mask] = reject_floor
+            oof_full[~np.isfinite(oof_full)] = reject_floor
+
+            rec = {
+                "model": name,
+                "kind": kind,
+                "tail_lambda": tail_lambda,
+                "gate": best_gate_name,
+                "n_gate": int(best_gate_mask.sum()),
+                "pnl_top30": pnl_top30,
+                "composite": composite,
+                **metrics,
+            }
             records.append(rec)
-            tprint(f"  {name}: IC={ic_orig:.4f}, IC_mh={ic_mh:.4f}, IC_t30={ic_t30:.4f}, "
-                   f"spread10={spread10:.6f}, ECE_t30={metrics.get('ece_top30',0):.3f}, "
+            tprint(f"  {name}@{best_gate_name}: IC={ic_orig:.4f}, IC_mh={ic_mh:.4f}, IC_t30={ic_t30:.4f}, "
+                   f"spread10={spread10:.6f}, pnl_top30={pnl_top30:.6f}, "
+                   f"ECE_t30={metrics.get('ece_top30',0):.3f}, "
                    f"win_t30={metrics.get('win_rate_top30',0):.1%}, composite={composite:.4f}")
 
             if composite > best_ic:
                 best_ic = composite
                 best_name = name
-                best_oof = oof_orig
+                best_oof = oof_full
+                self.anchor_reject_score = reject_floor
 
         if best_name is None:
             raise RuntimeError("No meta model candidates completed")
@@ -461,26 +611,14 @@ class MetaModel:
 
         tprint(f"  Winner: {best_name} (composite={best_ic:.4f}). Starting HPO ({_time.monotonic()-_t0:.1f}s)...")
 
-        # Prepare target for HPO and final fit
-        y_fit = y_np.copy()
-        sw_fit = sw.copy() if sw is not None else None
-        if tail_lambda > 0:
-            y_fit = self._signed_log(y_fit)
-            ramp = self._tail_ramp_weights(y_fit, tail_lambda, q0=0.70, q1=1.00)
-            sw_fit = ramp if sw_fit is None else (sw_fit * ramp)
-        finite_y = np.isfinite(y_fit)
-        if not finite_y.all():
-            fill = float(np.nanmedian(y_fit[finite_y])) if finite_y.any() else 0.0
-            y_fit = np.where(finite_y, y_fit, fill)
-        if sw_fit is not None:
-            finite_w = np.isfinite(sw_fit)
-            if not finite_w.all():
-                w_fill = float(np.nanmedian(sw_fit[finite_w])) if finite_w.any() else 1.0
-                sw_fit = np.where(finite_w, sw_fit, w_fill)
+        y_fit_all, sw_fit_all = self._prepare_fit_arrays(y_np, sw, tail_lambda)
+        y_fit = y_fit_all[best_gate_mask]
+        sw_fit = None if sw_fit_all is None else sw_fit_all[best_gate_mask]
 
         # Re-derive Xv from selected features (in case it was narrowed)
         Xv = X_meta[self.selected_features].to_numpy(dtype=np.float32)
-        tuned_params = self._optuna_hpo(best_name, kind, params, Xv, y_fit, sw_fit)
+        Xv_gate = Xv[best_gate_mask]
+        tuned_params = self._optuna_hpo(best_name, kind, params, Xv_gate, y_fit, sw_fit)
         tprint(f"  HPO done ({_time.monotonic()-_t0:.1f}s). Fitting final model...")
 
         # Final fit on all data
@@ -490,7 +628,23 @@ class MetaModel:
             # Let's just catch the error or ensure y_fit has at least some noise.
             pass
 
-        final_model = self._fit_one(kind, tuned_params, Xv, y_fit, Xv, y_fit, sw=sw_fit)
+        final_model = self._fit_one(kind, tuned_params, Xv_gate, y_fit, Xv_gate, y_fit, sw=sw_fit)
+
+        anchor_params = dict(ridge_cand["params"])
+        self.anchor_model = self._fit_one(
+            ridge_cand["kind"], anchor_params, Xv, ridge_y_fit, Xv, ridge_y_fit, sw=ridge_sw_fit
+        )
+        if best_gate_name == "all":
+            self.anchor_threshold = None
+        else:
+            anchor_oof_mask = np.isfinite(ridge_anchor_oof_orig)
+            if not anchor_oof_mask.any():
+                self.anchor_threshold = None
+            else:
+                top_pct = int(best_gate_name[3:])
+                self.anchor_threshold = float(
+                    np.nanpercentile(ridge_anchor_oof_orig[anchor_oof_mask], 100.0 - top_pct)
+                )
 
         self.model = {
             "kind": kind, "models": [final_model],
@@ -504,13 +658,18 @@ class MetaModel:
         # Save race report
         report_dir = self._reports_dir
         report_dir.mkdir(parents=True, exist_ok=True)
+        if gate_records:
+            pd.DataFrame(gate_records).to_csv(
+                report_dir / f"meta_model_{self.strategy_name or 'generic'}_ridge_gate_race.csv",
+                index=False,
+            )
         pd.DataFrame(records).to_csv(
             report_dir / f"meta_model_{self.strategy_name or 'generic'}_race.csv",
             index=False,
         )
 
         tprint(f"MetaModel.fit: {self.strategy_name} done ({_time.monotonic()-_t0:.1f}s). "
-               f"Winner={best_name}, IC={best_ic:.4f}")
+               f"Gate={best_gate_name}, Winner={best_name}, IC={best_ic:.4f}")
         return self
 
     def predict(self, X_meta):
@@ -521,6 +680,11 @@ class MetaModel:
         med_preds = np.median(preds, axis=0)
         if self.model.get("is_transformed", False):
             med_preds = self._inverse_signed_log(med_preds)
+        if self.anchor_model is not None and self.anchor_threshold is not None:
+            anchor_scores = np.asarray(self.anchor_model.predict(X), dtype=float)
+            gate_mask = np.isfinite(anchor_scores) & (anchor_scores >= float(self.anchor_threshold))
+            reject_floor = float(self.anchor_reject_score) if self.anchor_reject_score is not None else self._reject_floor(med_preds)
+            med_preds = np.where(gate_mask, med_preds, reject_floor)
         return int(self.score_sign) * med_preds
 
 

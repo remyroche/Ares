@@ -35,9 +35,22 @@ from extreme_price_movements.ridge_position_sizer import (
     prepare_policy_params_from_tpsl_optimiser,
     prepare_trade_outcomes_from_labels,
 )
-from extreme_price_movements.utils import tprint
+from extreme_price_movements.utils import tprint, log_pipeline_warning
 from extreme_price_movements.entry_policy import compute_entry_policy_decision, flatten_bucket_policy
 from extreme_price_movements.hf_data_loader import _load_existing_data
+
+
+def _fill_nonfinite_oof_vector(values, neutral: float = 0.0) -> np.ndarray:
+    arr = np.asarray(values, dtype=np.float64).copy()
+    finite = np.isfinite(arr)
+    if finite.all():
+        return arr
+    if finite.any():
+        fill = float(np.nanmedian(arr[finite]))
+    else:
+        fill = float(neutral)
+    arr[~finite] = fill
+    return arr
 
 
 def find_latest_run_id(data_root: str) -> str:
@@ -176,7 +189,7 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
         for df in raw_dfs.values()
     )
     if not _meta_prob_available:
-        tprint("WARNING: Meta classifier probabilities (oof_p_sl/oof_p_to/oof_p_tp) not found in meta OOF artifacts; continuing with regression/aux heads only.")
+        log_pipeline_warning("Meta classifier probabilities (oof_p_sl/oof_p_to/oof_p_tp) not found in meta OOF artifacts; continuing with regression/aux heads only.")
     else:
         tprint("Meta classifier probabilities found in meta OOF artifacts.")
     
@@ -190,6 +203,9 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
         if name.endswith("_clf"):
             bucket = name[:-4]
             col_name = "clf"
+        elif name.endswith("_reg"):
+            bucket = name[:-4]
+            col_name = "reg"
         elif any(name.endswith(f"_{h}") for h in _aux_heads):
             # Find which aux head it is
             h_suffix = next(h for h in _aux_heads if name.endswith(f"_{h}"))
@@ -219,7 +235,9 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
         reg_cols = []
         for col_name, mdf in sorted(model_dfs.items()):
             if len(mdf) == n:
-                combined[col_name] = mdf["oof_pred"].values
+                combined[col_name] = _fill_nonfinite_oof_vector(
+                    mdf["oof_pred"].values, neutral=0.0
+                )
                 if col_name.startswith("reg"):
                     reg_cols.append(col_name)
         
@@ -271,7 +289,12 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
         ]
         for col in aux_cols:
             if col in base_df.columns:
-                combined[col] = base_df[col].values
+                if col in {"timestamp", "symbol"}:
+                    combined[col] = base_df[col].values
+                else:
+                    combined[col] = _fill_nonfinite_oof_vector(
+                        base_df[col].values, neutral=0.0
+                    )
         
         result[bucket] = combined
         
@@ -299,11 +322,11 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
     tprint(f"Loaded OOF predictions for {len(result)} buckets: {list(result.keys())}")
 
     # Inject required config-defined features into the inference data
-    from extreme_price_movements.config import load_config
+    from extreme_price_movements.config import CFG
     from extreme_price_movements.data_store import load_features_selected
     from extreme_price_movements.training import _fast_lookup
 
-    cfg = load_config()
+    cfg = dict(CFG)
     required_features = set()
     required_features.update(cfg.get("position_sizer_feature_priority", []))
     required_features.update(cfg.get("limit_offset_sizer", []))
@@ -332,9 +355,10 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
                 all_syms.update(bdf["symbol"].unique())
         
         feats = load_features_selected(
-            data_root=data_root,
+            ts=pd.to_datetime(run_id, format="%Y%m%d_%H%M%S", utc=True),
+            root_dir=data_root,
+            feature_keys=list(missing_feats),
             symbols=list(all_syms),
-            selected_features=list(missing_feats)
         )
         
         if feats:
@@ -482,17 +506,19 @@ def load_trade_outcomes(data_root: str, run_id: str, oof_df: pd.DataFrame) -> pd
         for symbol, group in grouped:
             try:
                 df_15m = _load_existing_data(symbol, allow_quote_fallback=True)
+                orig_idx_arr = group['_orig_idx'].to_numpy(dtype=np.int64)
                 if df_15m.empty:
                     # Fill empty lists
-                    for idx in group['_orig_idx']:
-                        all_future_opens[idx] = np.array([], dtype=float)
-                        all_future_highs[idx] = np.array([], dtype=float)
-                        all_future_lows[idx] = np.array([], dtype=float)
-                        all_future_closes[idx] = np.array([], dtype=float)
-                        all_atr_15m[idx] = float(atr_source[idx])
+                    empty = np.array([], dtype=float)
+                    all_future_opens[orig_idx_arr] = [empty] * len(orig_idx_arr)
+                    all_future_highs[orig_idx_arr] = [empty] * len(orig_idx_arr)
+                    all_future_lows[orig_idx_arr] = [empty] * len(orig_idx_arr)
+                    all_future_closes[orig_idx_arr] = [empty] * len(orig_idx_arr)
+                    all_atr_15m[orig_idx_arr] = atr_source[orig_idx_arr].astype(float, copy=False)
                     continue
 
-                ts_values = pd.to_datetime(group['timestamp']).dt.tz_localize(None) if pd.to_datetime(group['timestamp']).dt.tz is not None else pd.to_datetime(group['timestamp'])
+                ts_series = pd.to_datetime(group['timestamp'])
+                ts_values = ts_series.dt.tz_localize(None) if ts_series.dt.tz is not None else ts_series
                 df_15m_index = df_15m.index.tz_localize(None) if df_15m.index.tz is not None else df_15m.index
 
                 open_arr = df_15m['open'].values
@@ -501,48 +527,60 @@ def load_trade_outcomes(data_root: str, run_id: str, oof_df: pd.DataFrame) -> pd
                 close_arr = df_15m['close'].values
 
                 left_indices = df_15m_index.searchsorted(ts_values, side='left')
+                valid = left_indices < len(df_15m)
+                invalid_idx = orig_idx_arr[~valid]
+                if len(invalid_idx) > 0:
+                    empty = np.array([], dtype=float)
+                    all_future_opens[invalid_idx] = [empty] * len(invalid_idx)
+                    all_future_highs[invalid_idx] = [empty] * len(invalid_idx)
+                    all_future_lows[invalid_idx] = [empty] * len(invalid_idx)
+                    all_future_closes[invalid_idx] = [empty] * len(invalid_idx)
+                    all_atr_15m[invalid_idx] = atr_source[invalid_idx].astype(float, copy=False)
 
-                for i, (_, row) in enumerate(group.iterrows()):
-                    orig_idx = row['_orig_idx']
-                    idx = left_indices[i]
+                if np.any(valid):
+                    valid_orig = orig_idx_arr[valid]
+                    valid_left = left_indices[valid].astype(np.int64, copy=False)
+                    valid_end = np.minimum(valid_left + 24, len(df_15m))
+                    all_future_opens[valid_orig] = [
+                        np.asarray(open_arr[s:e], dtype=np.float64) for s, e in zip(valid_left, valid_end)
+                    ]
+                    all_future_highs[valid_orig] = [
+                        np.asarray(high_arr[s:e], dtype=np.float64) for s, e in zip(valid_left, valid_end)
+                    ]
+                    all_future_lows[valid_orig] = [
+                        np.asarray(low_arr[s:e], dtype=np.float64) for s, e in zip(valid_left, valid_end)
+                    ]
+                    all_future_closes[valid_orig] = [
+                        np.asarray(close_arr[s:e], dtype=np.float64) for s, e in zip(valid_left, valid_end)
+                    ]
 
-                    if idx >= len(df_15m):
-                        all_future_opens[orig_idx] = np.array([], dtype=float)
-                        all_future_highs[orig_idx] = np.array([], dtype=float)
-                        all_future_lows[orig_idx] = np.array([], dtype=float)
-                        all_future_closes[orig_idx] = np.array([], dtype=float)
-                        all_atr_15m[orig_idx] = float(atr_source[orig_idx])
-                        continue
-
-                    # 6 hours = 24 bars
-                    end_idx = min(idx + 24, len(df_15m))
-                    all_future_opens[orig_idx] = np.asarray(open_arr[idx:end_idx], dtype=np.float64)
-                    all_future_highs[orig_idx] = np.asarray(high_arr[idx:end_idx], dtype=np.float64)
-                    all_future_lows[orig_idx] = np.asarray(low_arr[idx:end_idx], dtype=np.float64)
-                    all_future_closes[orig_idx] = np.asarray(close_arr[idx:end_idx], dtype=np.float64)
-
-                    # Compute ATR(12) or use fallback
-                    if idx >= 13:
-                        tr = np.maximum(
-                            high_arr[idx-12:idx] - low_arr[idx-12:idx],
+                    tr_full = np.full(len(close_arr), np.nan, dtype=np.float64)
+                    if len(close_arr) > 1:
+                        tr_full[1:] = np.maximum(
+                            high_arr[1:] - low_arr[1:],
                             np.maximum(
-                                np.abs(high_arr[idx-12:idx] - close_arr[idx-13:idx-1]),
-                                np.abs(low_arr[idx-12:idx] - close_arr[idx-13:idx-1])
+                                np.abs(high_arr[1:] - close_arr[:-1]),
+                                np.abs(low_arr[1:] - close_arr[:-1])
                             )
                         )
-                        atr_val = float(np.mean(tr) / close_arr[idx-1])
-                        all_atr_15m[orig_idx] = atr_val if np.isfinite(atr_val) else float(atr_source[orig_idx])
-                    else:
-                        all_atr_15m[orig_idx] = float(atr_source[orig_idx])
+                    tr_roll = pd.Series(tr_full).rolling(12, min_periods=12).mean().to_numpy(dtype=np.float64)
+                    atr_vals = atr_source[valid_orig].astype(np.float64, copy=False)
+                    atr_mask = valid_left >= 13
+                    if np.any(atr_mask):
+                        idx_prev = valid_left[atr_mask] - 1
+                        atr_calc = tr_roll[idx_prev] / np.maximum(close_arr[idx_prev], 1e-12)
+                        atr_vals = atr_vals.copy()
+                        atr_vals[atr_mask] = np.where(np.isfinite(atr_calc), atr_calc, atr_vals[atr_mask])
+                    all_atr_15m[valid_orig] = atr_vals
 
             except Exception as e:
                 # On error, fill empty
-                for idx in group['_orig_idx']:
-                    all_future_opens[idx] = np.array([], dtype=float)
-                    all_future_highs[idx] = np.array([], dtype=float)
-                    all_future_lows[idx] = np.array([], dtype=float)
-                    all_future_closes[idx] = np.array([], dtype=float)
-                    all_atr_15m[idx] = float(atr_source[idx])
+                empty = np.array([], dtype=float)
+                all_future_opens[orig_idx_arr] = [empty] * len(orig_idx_arr)
+                all_future_highs[orig_idx_arr] = [empty] * len(orig_idx_arr)
+                all_future_lows[orig_idx_arr] = [empty] * len(orig_idx_arr)
+                all_future_closes[orig_idx_arr] = [empty] * len(orig_idx_arr)
+                all_atr_15m[orig_idx_arr] = atr_source[orig_idx_arr].astype(float, copy=False)
 
         outcomes['future_opens'] = all_future_opens.tolist()
         outcomes['future_highs'] = all_future_highs.tolist()
@@ -797,7 +835,7 @@ def main():
                     trade_outcomes=trade_outcomes,
                     timestamps=timestamps,
                     cfg={'cost_pct': args.cost_pct},
-                    save_model=False,
+                    save_model=True,
                     run_id=run_id,
                     symbols=symbols,
                     bucket_name=bucket_name,
@@ -868,6 +906,31 @@ def main():
             tprint(f"    {name}: {w:.4f}")
     tprint(f"Output directory: {output_dir}")
     tprint("=" * 80)
+    
+    from extreme_price_movements.utils import dump_pipeline_warnings
+    dump_pipeline_warnings(run_id)
+
+    # Generate Automated Markdown Manifest
+    try:
+        report_path = Path(output_dir).parent / f"ridge_sizer_metrics_report.md"
+        with open(report_path, "w") as f:
+            f.write(f"# Ridge Position Sizer Metrics Report\n\n**Run ID:** {run_id}\n")
+            
+            for d, res in all_direction_results.items():
+                f.write(f"\n## Direction: {d.upper()}\n")
+                for bkt in res['buckets']:
+                    f.write(f"\n### Bucket: {bkt}\n")
+                    bkt_metrics = res['metrics'].get(bkt, {})
+                    winner = bkt_metrics.get("best_params", {}).get("race_winner", "Unknown")
+                    f.write(f"- **Race Winner**: `{winner}`\n")
+                    f.write("- **Metrics**:\n")
+                    f.write(f"  - **PnL/Day**: {bkt_metrics.get('cv_best_pnl_per_day', 0.0):.6f}\n")
+                    f.write(f"  - **Trades/Day**: {bkt_metrics.get('cv_best_trades_per_day', 0.0):.4f}\n")
+                    f.write(f"  - **Sortino**: {bkt_metrics.get('cv_best_sortino', 0.0):.4f}\n")
+                    f.write(f"  - **MaxDD**: {bkt_metrics.get('cv_best_maxdd', 0.0):.6f}\n")
+        tprint(f"Metrics report manifested to {report_path}")
+    except Exception as e:
+        tprint(f"WARNING: Failed to generate markdown manifest: {e}")
 
     return 0
 

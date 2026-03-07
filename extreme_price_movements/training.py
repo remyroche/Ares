@@ -46,6 +46,7 @@ from .model_scoring import (
 from .offline_optimisers.params_store import (
     CANDIDATE_BEST_PARAMS_CSV,
     apply_offline_optimizer_best_params,
+    load_tbm_all_params_per_cell,
     load_tbm_best_params_per_bucket,
     load_tbm_best_params_per_cell,
     load_tbm_geometry_grid,
@@ -104,6 +105,28 @@ def _safe_exp_bounded(x, exp_clip: float = _EXP_INPUT_CLIP, out_max: float = _EX
     out = np.exp(x_clip)
     out = np.where(np.isfinite(out), out, float(out_max))
     return np.clip(out, 0.0, float(out_max))
+
+
+def _stable_drawdown_proxy(returns: np.ndarray) -> np.ndarray:
+    """Compute drawdown from returns without overflowing cumulative products."""
+    r = np.asarray(returns, dtype=np.float64)
+    if r.size == 0:
+        return np.zeros(0, dtype=np.float64)
+    r = np.nan_to_num(r, nan=0.0, posinf=0.0, neginf=0.0)
+    # Keep log1p defined and avoid pathological values dominating the proxy.
+    r = np.clip(r, -0.999999, 10.0)
+    log_eq = np.cumsum(np.log1p(r))
+    log_peak = np.maximum.accumulate(log_eq)
+    dd = 1.0 - np.exp(np.clip(log_eq - log_peak, -700.0, 0.0))
+    dd = np.where(np.isfinite(dd), dd, 1.0)
+    return np.clip(dd, 0.0, 1.0)
+
+
+def _normalize_oof_timestamps_to_numpy(ts_like) -> np.ndarray:
+    ts = pd.to_datetime(ts_like)
+    if getattr(ts.dtype, "tz", None) is not None:
+        ts = ts.dt.tz_convert("UTC").dt.tz_localize(None)
+    return ts.to_numpy(dtype="datetime64[ns]")
 
 
 # =============================================================================
@@ -1720,7 +1743,20 @@ def compute_per_regime_metrics(
 def _fast_lookup(feat_df, event_ts, event_sym):
     """Fast extraction of values at (ts, sym) positions using numpy indexing.
     Returns 1D array of values. NaN where lookup fails."""
-    row_idx = feat_df.index.get_indexer(event_ts)
+    feat_index = feat_df.index
+    if isinstance(feat_index, pd.DatetimeIndex):
+        try:
+            if feat_index.tz is None:
+                row_keys = pd.DatetimeIndex(pd.to_datetime(event_ts)).tz_localize(None)
+            else:
+                row_keys = pd.DatetimeIndex(pd.to_datetime(event_ts, utc=True)).tz_convert(
+                    feat_index.tz
+                )
+            row_idx = feat_index.get_indexer(row_keys)
+        except Exception:
+            row_idx = feat_index.get_indexer(event_ts)
+    else:
+        row_idx = feat_index.get_indexer(event_ts)
     col_idx = feat_df.columns.get_indexer(event_sym)
     vals = feat_df.values
     # Mark invalid positions
@@ -3403,7 +3439,7 @@ def build_hourly_training_set_and_weights(
 
     # Build feature DataFrame
     # event_ts is a DatetimeIndex, event_sym is a numpy array
-    ts_arr = event_ts.values if hasattr(event_ts, "values") else event_ts
+    ts_arr = pd.DatetimeIndex(event_ts) if isinstance(event_ts, pd.DatetimeIndex) else event_ts
     sym_arr = event_sym.values if hasattr(event_sym, "values") else event_sym
     # Store raw triple-barrier label (-1, 0, 1) for timeout analysis
     _fee_rt = float(cfg.get("policy_fee_rt", 0.003))
@@ -3639,11 +3675,13 @@ def build_hourly_training_set_and_weights(
     returns = df["y_ret"].values
 
     # Extract selection metric values for event scoring.
-    # Hard requirement: range_pct must exist and have high non-null coverage.
-    selection_metric_name = "range_pct"
-    if selection_metric_name not in feats:
+    # Allow various range_pct feature names depending on generation settings.
+    valid_range_metrics = ["range_pct", "range_16h_pct", "range_12h_pct", "range_8h_pct", "range_24h_pct"]
+    selection_metric_name = next((m for m in valid_range_metrics if m in feats), None)
+    
+    if not selection_metric_name:
         raise RuntimeError(
-            "Missing required selection metric 'range_pct' in features. "
+            f"Missing required selection metric in features. Expected one of {valid_range_metrics}. "
             "Fallback metrics are disabled by policy."
         )
 
@@ -3656,14 +3694,14 @@ def build_hourly_training_set_and_weights(
     total_n = int(len(metric_raw))
     if finite_n <= 0:
         raise RuntimeError(
-            "Required selection metric 'range_pct' contains no finite values after alignment."
+            f"Required selection metric '{selection_metric_name}' contains no finite values after alignment."
         )
 
     min_cov = float(cfg.get("range_pct_min_coverage", 0.95))
     cov = float(finite_n / max(total_n, 1))
     if cov < min_cov:
         raise RuntimeError(
-            f"Required selection metric 'range_pct' has insufficient finite coverage: "
+            f"Required selection metric '{selection_metric_name}' has insufficient finite coverage: "
             f"{finite_n}/{total_n} ({cov:.1%}) < required {min_cov:.1%}."
         )
 
@@ -3672,7 +3710,7 @@ def build_hourly_training_set_and_weights(
     m_span = float(np.nanpercentile(metric_f, 95) - np.nanpercentile(metric_f, 5))
     if not (m_std > 1e-8 and m_span > 1e-8):
         raise RuntimeError(
-            "Required selection metric 'range_pct' is near-constant "
+            f"Required selection metric '{selection_metric_name}' is near-constant "
             f"(std={m_std:.3e}, p95-p05={m_span:.3e}); aborting."
         )
 
@@ -3692,9 +3730,7 @@ def build_hourly_training_set_and_weights(
 
     # Optional drawdown-aware weighting proxy for faster recovery and lower ulcer behavior.
     if bool(cfg.get("sample_weight_use_drawdown_component", True)):
-        eq_proxy = np.cumprod(1.0 + np.nan_to_num(returns, nan=0.0))
-        eq_peak = np.maximum.accumulate(eq_proxy)
-        dd_proxy = 1.0 - eq_proxy / np.maximum(eq_peak, 1e-12)
+        dd_proxy = _stable_drawdown_proxy(returns)
         dd_component = drawdown_aware_weights(
             dd_proxy,
             k_dd=float(cfg.get("sample_weight_drawdown_k_dd", 5.0)),
@@ -4257,6 +4293,7 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                 # Load per-cell mapping for a diagnostic tag only; do NOT collapse to a single
                 # triplet — let the full geometry grid validated_triplets drive the sweep.
                 _p_cell_best = load_tbm_best_params_per_cell()
+                _p_cell_all = load_tbm_all_params_per_cell()
                 _cell_winner = _p_cell_best.get(_cell_key_exact)
                 if not _cell_winner:
                     _cell_winner = _p_cell_best.get(_bname)  # Bucket-level fallback
@@ -4277,14 +4314,40 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, trade_sides):
                     )
 
                 if not _validated_triplets:
-                    _fallback_win = (
-                        _cell_data.get("atr_window")
+                    _fallback_win = int(
+                        (_cell_winner or {}).get("base_atr_window")
+                        or _cell_data.get("atr_window")
                         or _tbm_grid.get("atr_window")
                         or int(cfg.get("barrier_atr_window", 24 * 30))
                     )
-                    _validated_triplets = [
-                        (k, s, _fallback_win) for k in tp_mults for s in sl_base_mults
-                    ]
+                    _fallback_k = (_cell_winner or {}).get("k_tp")
+                    _fallback_sl = (_cell_winner or {}).get("sl_as_tp_pct")
+                    if _fallback_k is not None and _fallback_sl is not None:
+                        _cell_ranked = _p_cell_all.get(_cell_key_exact, [])
+                        if _cell_ranked:
+                            _validated_triplets = []
+                            for _row in _cell_ranked:
+                                _rk = _row.get("k_tp")
+                                _rs = _row.get("sl_as_tp_pct")
+                                _rw = int(_row.get("base_atr_window", _fallback_win))
+                                if _rk is None or _rs is None:
+                                    continue
+                                _triplet = (float(_rk), float(_rs), _rw)
+                                if _triplet not in _validated_triplets:
+                                    _validated_triplets.append(_triplet)
+                        else:
+                            _validated_triplets = [
+                                (float(_fallback_k), float(_fallback_sl), _fallback_win)
+                            ]
+                        tprint(
+                            f"  [native_fallback] {_cell_key_exact}: no validated triplets; "
+                            f"using {len(_validated_triplets)} persisted per-cell config(s); "
+                            f"best k_tp={_fallback_k} sl={_fallback_sl} atr={_fallback_win}"
+                        )
+                    else:
+                        _validated_triplets = [
+                            (k, s, _fallback_win) for k in tp_mults for s in sl_base_mults
+                        ]
 
                 _cell_windows = sorted(set(t[2] for t in _validated_triplets))
                 tprint(
@@ -7598,7 +7661,15 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                 continue
 
             # Bulk initialize to avoid fragmentation PerformanceWarnings
-            _feat_dict = {mk: df[f"{raw_prefix}{mk}"].values for mk in feat_cols}
+            _feat_dict = {}
+            for mk in feat_cols:
+                _col_val = df[f"{raw_prefix}{mk}"]
+                if isinstance(_col_val, pd.DataFrame):
+                    # Handle unexpected duplicate column names by taking the first one
+                    _feat_dict[mk] = _col_val.iloc[:, 0].values
+                else:
+                    _feat_dict[mk] = _col_val.values
+
             X_feats = (
                 pd.DataFrame(_feat_dict, index=df.index).fillna(0.0).astype(np.float32)
             )
@@ -8487,6 +8558,18 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
         _allowed_meta_suffixes.append("_clf")
     _allowed_meta_suffixes = tuple(_allowed_meta_suffixes)
 
+    def _fill_nonfinite_oof_vector(values, neutral: float = 0.0):
+        _arr = np.asarray(values, dtype=np.float64).copy()
+        _finite = np.isfinite(_arr)
+        if _finite.all():
+            return _arr
+        if _finite.any():
+            _fill = float(np.nanmedian(_arr[_finite]))
+        else:
+            _fill = float(neutral)
+        _arr[~_finite] = _fill
+        return _arr
+
     for key, meta in meta_models.items():
         if not key.endswith(_allowed_meta_suffixes):
             continue
@@ -8500,7 +8583,7 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             _is_clf_key = key.endswith("_clf")
             _is_ei_key = key.endswith("_early_inval")
             if _is_ei_key:
-                _oof_pred_1d = np.asarray(meta.oof_probs, dtype=float)
+                _oof_pred_1d = _fill_nonfinite_oof_vector(meta.oof_probs, neutral=0.5)
                 oof_df = pd.DataFrame(
                     {
                         "oof_pred": _oof_pred_1d,
@@ -8510,9 +8593,13 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                     }
                 )
             elif _is_clf_key and np.ndim(meta.oof_probs) == 2:
-                p_sl = np.asarray(meta.oof_probs[:, 0], dtype=float)
-                p_to = np.asarray(meta.oof_probs[:, 1], dtype=float)
-                p_tp = np.asarray(meta.oof_probs[:, 2], dtype=float)
+                p_sl = _fill_nonfinite_oof_vector(meta.oof_probs[:, 0], neutral=1.0 / 3.0)
+                p_to = _fill_nonfinite_oof_vector(meta.oof_probs[:, 1], neutral=1.0 / 3.0)
+                p_tp = _fill_nonfinite_oof_vector(meta.oof_probs[:, 2], neutral=1.0 / 3.0)
+                _row_sum = np.clip(p_sl + p_to + p_tp, 1e-9, None)
+                p_sl = p_sl / _row_sum
+                p_to = p_to / _row_sum
+                p_tp = p_tp / _row_sum
                 oof_ev = 2.0 * p_tp - p_sl
                 oof_df = pd.DataFrame(
                     {
@@ -8526,7 +8613,7 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
                     }
                 )
             else:
-                _oof_pred_1d = np.asarray(meta.oof_probs, dtype=float)
+                _oof_pred_1d = _fill_nonfinite_oof_vector(meta.oof_probs, neutral=0.0)
                 oof_df = pd.DataFrame(
                     {
                         "oof_pred": _oof_pred_1d,
@@ -8608,7 +8695,9 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models):
             if isinstance(_aux, dict):
                 for _cn in ["oof_u_hat", "oof_log_mae_q70_hat", "oof_log_mfe_hat"]:
                     if _cn in _aux and len(_aux[_cn]) == _n_meta:
-                        oof_df[_cn] = np.asarray(_aux[_cn], dtype=np.float32)
+                        oof_df[_cn] = _fill_nonfinite_oof_vector(
+                            _aux[_cn], neutral=0.0
+                        ).astype(np.float32, copy=False)
 
             oof_df.to_parquet(meta_oof_path, index=False)
             tprint(f"Saved meta OOF predictions for {key} to {meta_oof_path}")
@@ -9647,17 +9736,13 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True):
 
                 if _df_oof is not None:
                     if "__ts__" in _df_oof.columns:
-                        _payload["timestamp"] = (
-                            pd.to_datetime(_df_oof["__ts__"])
-                            .astype("datetime64[ns]")
-                            .values[:_n]
-                        )
+                        _payload["timestamp"] = _normalize_oof_timestamps_to_numpy(
+                            _df_oof["__ts__"]
+                        )[:_n]
                     elif "timestamp" in _df_oof.columns:
-                        _payload["timestamp"] = (
-                            pd.to_datetime(_df_oof["timestamp"])
-                            .astype("datetime64[ns]")
-                            .values[:_n]
-                        )
+                        _payload["timestamp"] = _normalize_oof_timestamps_to_numpy(
+                            _df_oof["timestamp"]
+                        )[:_n]
 
                     if "__symbol__" in _df_oof.columns:
                         _payload["symbol"] = (

@@ -31,6 +31,30 @@ def tprint(msg: str):
     sys.stdout.write(f"[{ts} UTC] {msg}\n")
     sys.stdout.flush()
 
+_PIPELINE_WARNINGS = []
+
+def log_pipeline_warning(msg: str):
+    """Log a non-fatal warning and store it for later dumping."""
+    tprint(f"WARNING: {msg}")
+    _PIPELINE_WARNINGS.append(msg)
+
+def dump_pipeline_warnings(run_id: str):
+    """Dump all accumulated warnings to the run's artifact directory."""
+    if not _PIPELINE_WARNINGS:
+        return
+    try:
+        from extreme_price_movements.path_utils import resolve_data_root
+        p = resolve_data_root() / "artifacts" / run_id / "pipeline_warnings.log"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        ts = pd.Timestamp.now('UTC').strftime("%Y-%m-%d %H:%M:%S")
+        with open(p, "a") as f:
+            for w in _PIPELINE_WARNINGS:
+                f.write(f"[{ts} UTC] {w}\n")
+        _PIPELINE_WARNINGS.clear()
+    except Exception as e:
+        tprint(f"Failed to dump warnings: {e}")
+
+
 class Timer:
     def __init__(self, label: str):
         tprint(f"Entering function: __init__ in utils.py")

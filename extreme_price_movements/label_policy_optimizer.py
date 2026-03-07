@@ -14,6 +14,9 @@ from sklearn.preprocessing import StandardScaler
 from extreme_price_movements.path_utils import resolve_reports_dir
 from extreme_price_movements.purged_cv import PurgedKFold
 from extreme_price_movements.utils import tprint
+from extreme_price_movements.metrics import _stable_equity_and_drawdown
+
+_NS_PER_DAY = 86_400_000_000_000
 
 
 @dataclass(frozen=True)
@@ -74,6 +77,7 @@ def _simulate_with_policy(
         exit_price, exit_bar, reason_i = simulate_trade_exit_fn(
             highs=np.asarray(highs[:max_bars], dtype=np.float64),
             lows=np.asarray(lows[:max_bars], dtype=np.float64),
+            opens=np.asarray(closes[:max_bars], dtype=np.float64),
             closes=np.asarray(closes[:max_bars], dtype=np.float64),
             entry_price=float(entry_price),
             is_long=bool(is_long),
@@ -101,18 +105,243 @@ def _topq_select_indices(ts: np.ndarray, symbols: np.ndarray, score: np.ndarray,
     return np.asarray(out, dtype=int)
 
 
+def _prepare_grouped_topq_inputs(ts: np.ndarray, symbols: np.ndarray) -> Dict[str, np.ndarray]:
+    ts_ns = pd.to_datetime(ts, utc=True, errors="coerce").view("i8")
+    sym_codes, _ = pd.factorize(np.asarray(symbols).astype(str), sort=True)
+    valid = np.isfinite(ts_ns.astype(np.float64))
+    order = np.lexsort((sym_codes[valid], ts_ns[valid]))
+    valid_idx = np.flatnonzero(valid)[order]
+    ts_sorted = ts_ns[valid_idx]
+    starts = np.flatnonzero(np.r_[True, ts_sorted[1:] != ts_sorted[:-1]])
+    ends = np.r_[starts[1:], len(valid_idx)]
+    return {
+        "valid_idx": valid_idx,
+        "starts": starts,
+        "ends": ends,
+        "ts_ns": ts_ns,
+    }
+
+
+def _topq_select_indices_fast(score: np.ndarray, q: float, grouped: Dict[str, np.ndarray]) -> np.ndarray:
+    valid_idx = grouped["valid_idx"]
+    starts = grouped["starts"]
+    ends = grouped["ends"]
+    if len(valid_idx) == 0:
+        return np.asarray([], dtype=np.int64)
+    score_valid = np.asarray(score, dtype=np.float64)[valid_idx]
+    chosen: List[np.ndarray] = []
+    for start, end in zip(starts, ends):
+        n = int(end - start)
+        if n <= 0:
+            continue
+        k = max(1, int(np.ceil(float(q) * n)))
+        local = score_valid[start:end]
+        if k >= n:
+            chosen.append(valid_idx[start:end])
+            continue
+        sel = np.argpartition(local, -k)[-k:]
+        chosen.append(valid_idx[start + sel])
+    if not chosen:
+        return np.asarray([], dtype=np.int64)
+    return np.concatenate(chosen).astype(np.int64, copy=False)
+
+
 def _daily_metrics_from_u(ts: np.ndarray, u_vals: np.ndarray, fee_roundtrip: float = 0.002) -> Tuple[float, float]:
     if len(u_vals) == 0:
         return 0.0, 0.0
     r_trade = np.exp(u_vals - fee_roundtrip) - 1.0
     df = pd.DataFrame({"ts": pd.to_datetime(ts), "r": r_trade})
     r_ts = df.groupby("ts", sort=True)["r"].mean()
-    r_day = r_ts.groupby(r_ts.index.floor("D")).sum()
-    eq = (1.0 + r_day).cumprod()
-    pnl = float(eq.iloc[-1] - 1.0) if len(eq) else 0.0
+    r_day = r_ts.groupby(r_ts.index.floor("D")).mean()
+    eq, _ = _stable_equity_and_drawdown(np.asarray(r_day.values, dtype=np.float64))
+    pnl = float(eq[-1] - 1.0) if eq.size else 0.0
     neg = np.minimum(r_day.values, 0.0)
     sortino = float((np.mean(r_day.values) / (np.std(neg) + 1e-9)) * np.sqrt(365.0)) if len(r_day) else 0.0
     return pnl, sortino
+
+
+def _daily_metrics_from_u_fast(ts: np.ndarray, u_vals: np.ndarray, fee_roundtrip: float = 0.002) -> Tuple[float, float]:
+    if len(u_vals) == 0:
+        return 0.0, 0.0
+    ts_ns = pd.to_datetime(ts, utc=True, errors="coerce").view("i8")
+    valid = np.isfinite(ts_ns.astype(np.float64)) & np.isfinite(u_vals)
+    if not np.any(valid):
+        return 0.0, 0.0
+    ts_ns = ts_ns[valid]
+    r_trade = np.exp(np.asarray(u_vals, dtype=np.float64)[valid] - fee_roundtrip) - 1.0
+    uniq_ts, inv_ts = np.unique(ts_ns, return_inverse=True)
+    ts_sum = np.bincount(inv_ts, weights=r_trade)
+    ts_cnt = np.bincount(inv_ts)
+    ts_mean = ts_sum / np.maximum(ts_cnt, 1)
+    days = uniq_ts // _NS_PER_DAY
+    uniq_days, inv_days = np.unique(days, return_inverse=True)
+    day_sum = np.bincount(inv_days, weights=ts_mean)
+    day_cnt = np.bincount(inv_days)
+    r_day = day_sum / np.maximum(day_cnt, 1)
+    if r_day.size == 0:
+        return 0.0, 0.0
+    r_day = np.clip(r_day, -0.999999, None)
+    eq, _ = _stable_equity_and_drawdown(r_day)
+    pnl = float(eq[-1] - 1.0) if eq.size else 0.0
+    neg = np.minimum(r_day, 0.0)
+    sortino = float((np.mean(r_day) / (np.std(neg) + 1e-9)) * np.sqrt(365.0))
+    return pnl, sortino
+
+
+def _format_policy_progress(row: Dict[str, Any]) -> str:
+    return (
+        f"j_stable={float(row['j_stable']):.6f} "
+        f"(j_mean={float(row['j_mean']):.6f}, j_std={float(row['j_std']):.6f}; "
+        f"q05 pnl={float(row['pnl_q05']):.6f} sortino={float(row['sortino_q05']):.3f} j={float(row['j_q05']):.6f}; "
+        f"q10 pnl={float(row['pnl_q10']):.6f} sortino={float(row['sortino_q10']):.3f} j={float(row['j_q10']):.6f}; "
+        f"q30 pnl={float(row['pnl_q30']):.6f} sortino={float(row['sortino_q30']):.3f} j={float(row['j_q30']):.6f}) "
+        f"params=[sl_atr={float(row['sl_atr_mult']):.2f}, tp_sl={float(row['tp_sl_ratio']):.2f}, "
+        f"hold={int(row['max_hold_bars'])}, trail_atr={float(row['trail_activate_atr']):.2f}, "
+        f"giveback={float(row['giveback_pct']):.2f}, early_deadline={int(row['early_exit_deadline_bars'])}, "
+        f"early_mfe={float(row['early_exit_mfe_atr']):.2f}] "
+        f"rates=[tp={float(row['pct_TP']):.2%}, sl={float(row['pct_SL']):.2%}, trail={float(row['pct_TRAIL']):.2%}, "
+        f"early={float(row['pct_EARLY']):.2%}, timeout={float(row['pct_TIMEOUT']):.2%}] "
+        f"proxy_pnl_q30={float(row.get('proxy_pnl_q30', 0.0)):.6f} "
+        f"hard_reject={bool(row['hard_reject'])} "
+        f"prefilter={str(row.get('prefilter_reason', '')) or 'none'}"
+    )
+
+
+def _build_proxy_anchor(X: np.ndarray) -> np.ndarray:
+    arr = np.asarray(X, dtype=np.float64)
+    if arr.ndim != 2 or arr.shape[0] == 0:
+        return np.asarray([], dtype=np.float64)
+    n, p = arr.shape
+    ranks = np.empty((n, p), dtype=np.float64)
+    for j in range(p):
+        col = arr[:, j]
+        order = np.argsort(col, kind="mergesort")
+        rank = np.empty(n, dtype=np.float64)
+        rank[order] = (np.arange(n, dtype=np.float64) + 0.5) / max(n, 1)
+        ranks[:, j] = rank
+    return np.nanmean(ranks, axis=1)
+
+
+def _policy_prefilter_reasons(
+    *,
+    policy: LabelPolicy,
+    pct_timeout: float,
+    pct_sl: float,
+    pct_trail: float,
+    pct_early: float,
+    frac_near0: float,
+    u_mean: float,
+    proxy_pnl_q30: float,
+    dynamic_u_floor: float,
+    dynamic_pnl_floor: float,
+) -> List[str]:
+    reasons: List[str] = []
+    if pct_timeout > 0.60:
+        reasons.append("timeout>60%")
+    if pct_sl > 0.80:
+        reasons.append("sl>80%")
+    if frac_near0 > 0.60:
+        reasons.append("near0>60%")
+    if pct_early < 0.01 or pct_early > 0.80:
+        reasons.append("early_outside_[1%,80%]")
+    if pct_trail < 0.01 or pct_trail > 0.80:
+        reasons.append("trail_outside_[1%,80%]")
+    if float(policy.giveback_pct) > 0.5 * float(policy.trail_activate_atr):
+        reasons.append("giveback>0.5x_trail_activate")
+    if float(policy.trail_activate_atr) > 5.0 * float(policy.giveback_pct):
+        reasons.append("trail_activate>5x_giveback")
+    if float(policy.trail_activate_atr) < 2.0 * float(policy.giveback_pct):
+        reasons.append("trail_activate<2x_giveback")
+    if (u_mean <= dynamic_u_floor) and (proxy_pnl_q30 <= dynamic_pnl_floor):
+        reasons.append("cheap_proxy_below_dynamic_floor")
+    return reasons
+
+
+def _stack_object_paths(values: Sequence[object], max_bars: int) -> Tuple[np.ndarray, np.ndarray]:
+    n = len(values)
+    out = np.full((n, max_bars), np.nan, dtype=np.float64)
+    lengths = np.zeros(n, dtype=np.int64)
+    for i, val in enumerate(values):
+        arr = np.asarray(val, dtype=np.float64)
+        use = min(len(arr), max_bars)
+        if use <= 0:
+            continue
+        out[i, :use] = arr[:use]
+        lengths[i] = use
+    return out, lengths
+
+
+def _simulate_policy_batch(
+    entry_prices: np.ndarray,
+    atr_entries: np.ndarray,
+    is_longs: np.ndarray,
+    opens_2d: np.ndarray,
+    highs_2d: np.ndarray,
+    lows_2d: np.ndarray,
+    closes_2d: np.ndarray,
+    path_lengths: np.ndarray,
+    policy: LabelPolicy,
+    cost_pct: float,
+) -> Tuple[np.ndarray, np.ndarray]:
+    from extreme_price_movements.ridge_position_sizer import simulate_trade_exit_batch
+
+    n = len(entry_prices)
+    if n == 0:
+        return np.asarray([], dtype=np.float32), np.zeros(5, dtype=np.int64)
+
+    atr_safe = np.maximum(np.asarray(atr_entries, dtype=np.float64), 1e-9)
+    is_long_bool = np.asarray(is_longs, dtype=bool)
+    max_bars = int(policy.max_hold_bars)
+    active_lens = np.minimum(np.asarray(path_lengths, dtype=np.int64), max_bars)
+
+    tp_dist = float(policy.tp_sl_ratio) * float(policy.sl_atr_mult) * atr_safe
+    sl_dist = float(policy.sl_atr_mult) * atr_safe
+    tp_prices = np.where(is_long_bool, entry_prices + tp_dist, entry_prices - tp_dist)
+    sl_prices = np.where(is_long_bool, entry_prices - sl_dist, entry_prices + sl_dist)
+
+    deadline = int(policy.early_exit_deadline_bars)
+    early_mask = np.zeros(n, dtype=bool)
+    if deadline > 0:
+        eligible = active_lens >= deadline
+        if np.any(eligible):
+            peak = np.nanmax(highs_2d[eligible, :deadline], axis=1)
+            trough = np.nanmin(lows_2d[eligible, :deadline], axis=1)
+            mfe = np.where(
+                is_long_bool[eligible],
+                (peak - entry_prices[eligible]) / atr_safe[eligible],
+                (entry_prices[eligible] - trough) / atr_safe[eligible],
+            )
+            early_mask[eligible] = mfe < float(policy.early_exit_mfe_atr)
+
+    trailing_pcts = np.full(n, float(policy.giveback_pct) if float(policy.trail_activate_atr) <= 1.0 else 0.0, dtype=np.float64)
+    exit_prices, exit_bars, exit_reasons = simulate_trade_exit_batch(
+        highs_2d,
+        lows_2d,
+        opens_2d,
+        closes_2d,
+        entry_prices.astype(np.float64, copy=False),
+        is_long_bool.astype(np.int64, copy=False),
+        tp_prices.astype(np.float64, copy=False),
+        sl_prices.astype(np.float64, copy=False),
+        trailing_pcts,
+        max_bars,
+    )
+
+    if np.any(early_mask):
+        early_idx = deadline - 1
+        early_rows = np.flatnonzero(early_mask)
+        exit_prices[early_rows] = closes_2d[early_rows, early_idx]
+        exit_bars[early_rows] = early_idx
+        exit_reasons[early_rows] = 4
+
+    log_ret = np.where(
+        is_long_bool,
+        np.log(np.maximum(exit_prices, 1e-12) / np.maximum(entry_prices, 1e-12)),
+        np.log(np.maximum(entry_prices, 1e-12) / np.maximum(exit_prices, 1e-12)),
+    )
+    u = np.nan_to_num(log_ret - cost_pct, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32, copy=False)
+    counts = np.bincount(exit_reasons.astype(np.int64, copy=False), minlength=5)
+    return u, counts
 
 
 def _ridge_probe_oof(
@@ -160,17 +389,53 @@ def optimize_label_policy(
     if not req.issubset(set(trade_outcomes.columns)):
         return trade_outcomes, {"status": "skipped", "reason": "missing_path_columns"}
 
-    ts = np.asarray(timestamps if timestamps is not None else trade_outcomes.get("timestamp", np.arange(len(trade_outcomes))))
-    sy = np.asarray(symbols if symbols is not None else trade_outcomes.get("symbol", np.array(["ALL"] * len(trade_outcomes))))
+    full_trade_outcomes = trade_outcomes.reset_index(drop=True).copy()
+    full_oof_preds = oof_preds.reset_index(drop=True).copy() if isinstance(oof_preds, pd.DataFrame) else oof_preds
+    full_timestamps = np.asarray(timestamps).copy() if timestamps is not None else None
+    full_symbols = np.asarray(symbols).copy() if symbols is not None else None
+    full_groups = np.asarray(groups).copy() if groups is not None else None
+
+    search_trade_outcomes = full_trade_outcomes
+    search_oof_preds = full_oof_preds
+    search_timestamps = full_timestamps
+    search_symbols = full_symbols
+    search_groups = full_groups
+
+    max_policy_samples = int(cfg.get("label_policy_max_samples", 10_000))
+    orig_n = len(full_trade_outcomes)
+    if orig_n > max_policy_samples > 0:
+        rng = np.random.default_rng(int(cfg.get("label_policy_sample_seed", 42)))
+        keep_idx = np.sort(rng.choice(orig_n, size=max_policy_samples, replace=False))
+        search_trade_outcomes = full_trade_outcomes.iloc[keep_idx].reset_index(drop=True)
+        if full_timestamps is not None:
+            search_timestamps = full_timestamps[keep_idx]
+        if full_symbols is not None:
+            search_symbols = full_symbols[keep_idx]
+        if full_groups is not None:
+            search_groups = full_groups[keep_idx]
+        if isinstance(full_oof_preds, pd.DataFrame):
+            search_oof_preds = full_oof_preds.iloc[keep_idx].reset_index(drop=True)
+        tprint(
+            f"Policy optimization subsampled to {max_policy_samples}/{orig_n} rows "
+            f"(seed={int(cfg.get('label_policy_sample_seed', 42))})"
+        )
+
+    ts = np.asarray(
+        search_timestamps if search_timestamps is not None else search_trade_outcomes.get("timestamp", np.arange(len(search_trade_outcomes)))
+    )
+    sy = np.asarray(
+        search_symbols if search_symbols is not None else search_trade_outcomes.get("symbol", np.array(["ALL"] * len(search_trade_outcomes)))
+    )
+    grouped_topq = _prepare_grouped_topq_inputs(ts, sy)
 
     # Keep feature extraction aligned with RidgePositionSizer.fit semantics.
-    if 'model_name' in oof_preds.columns and 'pred' in oof_preds.columns:
-        pred_wide = oof_preds.pivot(columns='model_name', values='pred')
+    if 'model_name' in search_oof_preds.columns and 'pred' in search_oof_preds.columns:
+        pred_wide = search_oof_preds.pivot(columns='model_name', values='pred')
         X_cols = list(pred_wide.columns)
         X = np.nan_to_num(pred_wide.to_numpy(dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0)
     else:
-        X_cols = list(oof_preds.columns)
-        X = np.nan_to_num(oof_preds[X_cols].to_numpy(dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0)
+        X_cols = list(search_oof_preds.columns)
+        X = np.nan_to_num(search_oof_preds[X_cols].to_numpy(dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0)
 
     grid = list(itertools.product(
         [0.8, 1.2, 1.6, 2.0],
@@ -184,79 +449,130 @@ def optimize_label_policy(
 
     rows: List[Dict[str, Any]] = []
     best: Optional[Dict[str, Any]] = None
+    entry_prices = np.asarray(search_trade_outcomes["entry_price"].to_numpy(), dtype=np.float64)
+    is_longs = np.asarray(search_trade_outcomes["is_long"].to_numpy(), dtype=bool)
+    atr_entries = np.asarray(search_trade_outcomes["atr_12_15m"].to_numpy(), dtype=np.float64)
+    closes_2d, close_lens = _stack_object_paths(search_trade_outcomes["future_closes"].values, max_bars=24)
+    highs_2d, high_lens = _stack_object_paths(search_trade_outcomes["future_highs"].values, max_bars=24)
+    lows_2d, low_lens = _stack_object_paths(search_trade_outcomes["future_lows"].values, max_bars=24)
+    if "future_opens" in search_trade_outcomes.columns:
+        opens_2d, open_lens = _stack_object_paths(search_trade_outcomes["future_opens"].values, max_bars=24)
+    else:
+        opens_2d = closes_2d.copy()
+        open_lens = close_lens.copy()
+    path_lengths = np.minimum(np.minimum(open_lens, high_lens), np.minimum(low_lens, close_lens))
+    fee_rt = float(cfg.get("policy_fee_rt", 0.002))
+    proxy_anchor = _build_proxy_anchor(X)
+    proxy_top30_idx = _topq_select_indices_fast(proxy_anchor, 0.30, grouped_topq)
+    past_u_means: List[float] = []
+    past_proxy_pnl_q30: List[float] = []
 
     tprint(f"Starting label policy optimization over grid of {len(grid)} candidate policies...")
     for idx_val, vals in enumerate(grid):
         pol = LabelPolicy(*vals)
-        u = np.zeros(len(trade_outcomes), dtype=np.float32)
-        reason_counts = {"tp": 0, "sl": 0, "trail": 0, "early": 0, "timeout": 0}
-        for i, row in enumerate(trade_outcomes.itertuples(index=False)):
-            entry = float(getattr(row, "entry_price"))
-            is_long = bool(getattr(row, "is_long"))
-            atr = float(getattr(row, "atr_12_15m"))
-            highs = np.asarray(getattr(row, "future_highs"), dtype=np.float64)
-            lows = np.asarray(getattr(row, "future_lows"), dtype=np.float64)
-            closes = np.asarray(getattr(row, "future_closes"), dtype=np.float64)
-            if len(highs) == 0 or len(lows) == 0 or len(closes) == 0:
-                u[i] = 0.0
-                reason_counts["timeout"] += 1
-                continue
-            ui, reason, _, _ = _simulate_with_policy(
-                simulate_trade_exit_fn,
-                entry_price=entry,
-                atr_entry=max(atr, 1e-9),
-                is_long=is_long,
-                highs=highs,
-                lows=lows,
-                closes=closes,
-                policy=pol,
-                cost_pct=float(cfg.get("policy_fee_rt", 0.002)),
-            )
-            u[i] = ui
-            reason_counts[reason] = reason_counts.get(reason, 0) + 1
-
-        score_oof = _ridge_probe_oof(
-            X=X,
-            y=u.astype(np.float32),
-            ts=ts,
-            groups=groups,
-            alpha=float(cfg.get("label_policy_probe_alpha", 1.0)),
-            winsor_q_low=float(cfg.get("sizer_winsor_q_low", 0.01)),
-            winsor_q_high=float(cfg.get("sizer_winsor_q_high", 0.99)),
+        u, reason_code_counts = _simulate_policy_batch(
+            entry_prices=entry_prices,
+            atr_entries=atr_entries,
+            is_longs=is_longs,
+            opens_2d=opens_2d,
+            highs_2d=highs_2d,
+            lows_2d=lows_2d,
+            closes_2d=closes_2d,
+            path_lengths=path_lengths,
+            policy=pol,
+            cost_pct=fee_rt,
         )
-
-        q_stats: Dict[float, Dict[str, float]] = {}
-        for q in (0.05, 0.10, 0.30):
-            idx = _topq_select_indices(ts, sy, score_oof, q)
-            pnl, sortino = _daily_metrics_from_u(ts[idx], u[idx], fee_roundtrip=float(cfg.get("policy_fee_rt", 0.002)))
-            beta = float(cfg.get("label_policy_sortino_beta", 0.01))
-            q_stats[q] = {
-                "pnl": float(pnl),
-                "sortino": float(sortino),
-                "j": float(pnl + beta * sortino),
-            }
+        reason_counts = {
+            "tp": int(reason_code_counts[0]),
+            "sl": int(reason_code_counts[1]),
+            "trail": int(reason_code_counts[2]),
+            "timeout": int(reason_code_counts[3]),
+            "early": int(reason_code_counts[4]),
+        }
 
         n = len(u)
         pct_timeout = reason_counts["timeout"] / max(n, 1)
         pct_sl = reason_counts["sl"] / max(n, 1)
+        pct_trail = reason_counts["trail"] / max(n, 1)
+        pct_early = reason_counts["early"] / max(n, 1)
         frac_near0 = float(np.mean(np.abs(u) < 1e-4))
+        u_mean = float(np.mean(u))
+        proxy_pnl_q30, _ = _daily_metrics_from_u_fast(ts[proxy_top30_idx], u[proxy_top30_idx], fee_roundtrip=fee_rt)
+        if idx_val >= 20 and past_u_means and past_proxy_pnl_q30:
+            dynamic_u_floor = 0.8 * float(np.median(np.asarray(past_u_means, dtype=np.float64)))
+            dynamic_pnl_floor = 0.8 * float(np.median(np.asarray(past_proxy_pnl_q30, dtype=np.float64)))
+        else:
+            dynamic_u_floor = 0.0
+            dynamic_pnl_floor = 0.0
+        prefilter_reasons = _policy_prefilter_reasons(
+            policy=pol,
+            pct_timeout=pct_timeout,
+            pct_sl=pct_sl,
+            pct_trail=pct_trail,
+            pct_early=pct_early,
+            frac_near0=frac_near0,
+            u_mean=u_mean,
+            proxy_pnl_q30=float(proxy_pnl_q30),
+            dynamic_u_floor=dynamic_u_floor,
+            dynamic_pnl_floor=dynamic_pnl_floor,
+        )
+        prefilter_reject = bool(prefilter_reasons)
+        past_u_means.append(u_mean)
+        past_proxy_pnl_q30.append(float(proxy_pnl_q30))
+
+        q_stats: Dict[float, Dict[str, float]] = {
+            0.05: {"pnl": 0.0, "sortino": 0.0, "j": -1e9},
+            0.10: {"pnl": 0.0, "sortino": 0.0, "j": -1e9},
+            0.30: {"pnl": 0.0, "sortino": 0.0, "j": -1e9},
+        }
+        if not prefilter_reject:
+            score_oof = _ridge_probe_oof(
+                X=X,
+                y=u.astype(np.float32),
+                ts=ts,
+                groups=search_groups,
+                alpha=float(cfg.get("label_policy_probe_alpha", 1.0)),
+                winsor_q_low=float(cfg.get("sizer_winsor_q_low", 0.01)),
+                winsor_q_high=float(cfg.get("sizer_winsor_q_high", 0.99)),
+            )
+
+            for q in (0.05, 0.10, 0.30):
+                idx = _topq_select_indices_fast(score_oof, q, grouped_topq)
+                pnl, sortino = _daily_metrics_from_u_fast(ts[idx], u[idx], fee_roundtrip=fee_rt)
+                beta = float(cfg.get("label_policy_sortino_beta", 0.01))
+                q_stats[q] = {
+                    "pnl": float(pnl),
+                    "sortino": float(sortino),
+                    "j": float(pnl + beta * sortino),
+                }
+
         fold_js = np.asarray([q_stats[0.05]["j"], q_stats[0.10]["j"], q_stats[0.30]["j"]], dtype=float)
         j_mean = float(np.mean(fold_js))
         j_std = float(np.std(fold_js))
         j_stable = float(j_mean - float(cfg.get("label_policy_lambda", 0.5)) * j_std)
-        hard_reject = bool((pct_timeout > float(cfg.get("label_policy_max_timeout", 0.80))) or (pct_sl > 0.80) or (frac_near0 > 0.70))
+        hard_reject = bool(
+            prefilter_reject
+            or (pct_timeout > float(cfg.get("label_policy_max_timeout", 0.80)))
+            or (pct_sl > 0.80)
+            or (frac_near0 > 0.70)
+        )
 
         row = {
             **asdict(pol),
-            "u_mean": float(np.mean(u)),
+            "u_mean": u_mean,
             "u_std": float(np.std(u)),
             "frac_pos": float(np.mean(u > 0.0)),
             "frac_near0": frac_near0,
             "pct_TP": reason_counts["tp"] / max(n, 1),
             "pct_SL": pct_sl,
-            "pct_TRAIL": reason_counts["trail"] / max(n, 1),
-            "pct_EARLY": reason_counts["early"] / max(n, 1),
+            "pct_TRAIL": pct_trail,
+            "pct_EARLY": pct_early,
             "pct_TIMEOUT": pct_timeout,
+            "proxy_pnl_q30": float(proxy_pnl_q30),
+            "dynamic_u_floor": dynamic_u_floor,
+            "dynamic_pnl_floor": dynamic_pnl_floor,
+            "prefilter_reject": prefilter_reject,
+            "prefilter_reason": "|".join(prefilter_reasons),
             "pnl_q05": q_stats[0.05]["pnl"],
             "pnl_q10": q_stats[0.10]["pnl"],
             "pnl_q30": q_stats[0.30]["pnl"],
@@ -278,8 +594,16 @@ def optimize_label_policy(
             best = row
 
         if (idx_val + 1) % 10 == 0 or idx_val == len(grid) - 1:
-            tprint(f"  Optimized {idx_val + 1}/{len(grid)} policies. Best j_stable so far: {best['j_stable'] if best else 'None'} "
-                   f"(reject={hard_reject} timeout={pct_timeout:.2%} sl={pct_sl:.2%})")
+            if best is not None:
+                tprint(
+                    f"  Optimized {idx_val + 1}/{len(grid)} policies. "
+                    f"Best so far: {_format_policy_progress(best)}"
+                )
+            else:
+                tprint(
+                    f"  Optimized {idx_val + 1}/{len(grid)} policies. "
+                    f"No non-rejected policy yet. Current: {_format_policy_progress(row)}"
+                )
 
     if best is None:
         best = max(rows, key=lambda r: r["j_stable"])
@@ -305,8 +629,36 @@ def optimize_label_policy(
         int(r["early_exit_deadline_bars"]), float(r["early_exit_mfe_atr"]),
     ) == chosen_key)
 
-    out = trade_outcomes.copy()
-    out["u_policy"] = np.asarray(chosen_row["u_policy"], dtype=np.float32)
+    full_entry_prices = np.asarray(full_trade_outcomes["entry_price"].to_numpy(), dtype=np.float64)
+    full_is_longs = np.asarray(full_trade_outcomes["is_long"].to_numpy(), dtype=bool)
+    full_atr_entries = np.asarray(full_trade_outcomes["atr_12_15m"].to_numpy(), dtype=np.float64)
+    full_closes_2d, full_close_lens = _stack_object_paths(full_trade_outcomes["future_closes"].values, max_bars=24)
+    full_highs_2d, full_high_lens = _stack_object_paths(full_trade_outcomes["future_highs"].values, max_bars=24)
+    full_lows_2d, full_low_lens = _stack_object_paths(full_trade_outcomes["future_lows"].values, max_bars=24)
+    if "future_opens" in full_trade_outcomes.columns:
+        full_opens_2d, full_open_lens = _stack_object_paths(full_trade_outcomes["future_opens"].values, max_bars=24)
+    else:
+        full_opens_2d = full_closes_2d.copy()
+        full_open_lens = full_close_lens.copy()
+    full_path_lengths = np.minimum(
+        np.minimum(full_open_lens, full_high_lens),
+        np.minimum(full_low_lens, full_close_lens),
+    )
+    full_u, full_reason_code_counts = _simulate_policy_batch(
+        entry_prices=full_entry_prices,
+        atr_entries=full_atr_entries,
+        is_longs=full_is_longs,
+        opens_2d=full_opens_2d,
+        highs_2d=full_highs_2d,
+        lows_2d=full_lows_2d,
+        closes_2d=full_closes_2d,
+        path_lengths=full_path_lengths,
+        policy=LabelPolicy(*chosen_key),
+        cost_pct=fee_rt,
+    )
+
+    out = full_trade_outcomes.copy()
+    out["u_policy"] = np.asarray(full_u, dtype=np.float32)
     out["u_policy_net"] = out["u_policy"]
     # Persist selected policy params onto rows so downstream Ridge models can consume
     # the exact same policy configuration (no hidden defaults divergence).
@@ -327,14 +679,19 @@ def optimize_label_policy(
         json.dump({
             "selected_policy": {k: v for k, v in chosen_row.items() if k != "u_policy"},
             "acceptance": {
-                "pct_TIMEOUT": float(chosen_row["pct_TIMEOUT"]),
-                "pct_SL": float(chosen_row["pct_SL"]),
-                "frac_near0": float(chosen_row["frac_near0"]),
-                "hard_reject": bool(chosen_row["hard_reject"]),
+                "search_pct_TIMEOUT": float(chosen_row["pct_TIMEOUT"]),
+                "search_pct_SL": float(chosen_row["pct_SL"]),
+                "search_frac_near0": float(chosen_row["frac_near0"]),
+                "search_hard_reject": bool(chosen_row["hard_reject"]),
+                "full_pct_TIMEOUT": float(full_reason_code_counts[3] / max(len(full_u), 1)),
+                "full_pct_SL": float(full_reason_code_counts[1] / max(len(full_u), 1)),
+                "full_frac_near0": float(np.mean(np.abs(full_u) < 1e-4)) if len(full_u) else 0.0,
             },
             "provenance": {
                 "grid_size": len(grid),
                 "x_cols": X_cols,
+                "search_rows": int(len(search_trade_outcomes)),
+                "full_rows": int(len(full_trade_outcomes)),
             },
         }, f, indent=2)
 
@@ -350,5 +707,7 @@ def optimize_label_policy(
         "feature_columns": X_cols,
         "target_column": "u_policy_net",
         "selected": {k: v for k, v in chosen_row.items() if k != "u_policy"},
+        "search_rows": int(len(search_trade_outcomes)),
+        "full_rows": int(len(full_trade_outcomes)),
     }
     return out, meta

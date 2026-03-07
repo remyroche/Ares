@@ -64,6 +64,20 @@ def _max_drawdown(equity_curve):
     return float(mdd) if np.isfinite(mdd) else 0.0
 
 
+def _stable_equity_and_drawdown(returns: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Compute multiplicative equity and drawdown without overflowing cumprod."""
+    r = np.asarray(returns, dtype=np.float64)
+    if r.size == 0:
+        return np.asarray([], dtype=np.float64), np.asarray([], dtype=np.float64)
+
+    clipped = np.clip(np.nan_to_num(r, nan=0.0), -0.999999, None)
+    log_eq = np.cumsum(np.log1p(clipped))
+    log_peak = np.maximum.accumulate(log_eq)
+    equity = np.exp(np.clip(log_eq - log_eq[0], -700.0, 700.0))
+    dd_series = 1.0 - np.exp(np.clip(log_eq - log_peak, -700.0, 0.0))
+    return equity, dd_series
+
+
 def _clip01(x):
     return float(np.clip(x, 0.0, 1.0))
 
@@ -237,12 +251,12 @@ def calculate_selection_score(
         # 1 - exp(equity - peak)
         dd_series = 1.0 - np.exp(equity - peak)
     else:
-        equity = np.nancumprod(1.0 + sized_r)
-        peak = np.maximum.accumulate(equity)
-        dd_series = (peak - equity) / np.maximum(peak, 1e-12)
+        # Evaluate chronological trade-size PnL for accurate Max Drawdown
+        equity, dd_series = _stable_equity_and_drawdown(sized_r)
 
     mu = float(np.nanmean(sized_r))
-    sd = float(np.nanstd(sized_r, ddof=1)) if len(sized_r) > 1 else 0.0
+    finite_n = int(np.isfinite(sized_r).sum())
+    sd = float(np.nanstd(sized_r, ddof=1)) if finite_n > 1 else 0.0
     sharpe_per_trade = mu / (sd + 1e-12)
     sharpe = sharpe_per_trade * np.sqrt(float(annualization_factor)) if annualization_factor is not None else sharpe_per_trade
 

@@ -1,0 +1,15 @@
+{
+  "weight_l1": 0.01659132826353016,
+  "weight_l2": 0.007150121414952961,
+  "weight_max_abs": 0.005954199004918337,
+  "weight_top1_share": 0.3588741606665948,
+  "weight_top2_share": 0.5369661657889679,
+  "weight_top3_share": 0.6291482961969439,
+  "weight_effective_n_models": 5.384377229809863,
+  "weight_entropy": 2.132482868326878,
+  "weight_share_by_horizon": {
+    "H2": 0.0,
+    "H4": 0.0,
+    "H8": 0.0
+  }
+}

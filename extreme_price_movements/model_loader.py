@@ -517,6 +517,20 @@ def load_full_state(run_id: str, data_root: str) -> dict:
             if os.path.exists(ridge_path):
                 state["bundle"]["ridge_weights"] = load_ridge_weights(ridge_path)
         
+        # Load full RidgePositionSizer bundle (for full inference with calibration)
+        # Model is saved to data_root/models/ridge_position_sizer_{run_id}.json
+        models_dir = os.path.join(data_root, "artifacts", run_id, "models")
+        ridge_model_path = os.path.join(models_dir, f"ridge_position_sizer_{run_id}.json")
+        if os.path.exists(ridge_model_path):
+            try:
+                from extreme_price_movements.ridge_position_sizer import RidgePositionSizer
+                state["ridge_sizer"] = RidgePositionSizer.load(ridge_model_path)
+                tprint(f"  Loaded RidgePositionSizer from {ridge_model_path}")
+            except Exception as e:
+                tprint(f"WARNING: Failed to load RidgePositionSizer: {e}")
+        else:
+            tprint(f"  RidgePositionSizer model not found at {ridge_model_path}")
+        
         # Load bucket params (optimized exit policy)
         bucket_params = load_bucket_params(run_id, data_root)
         state["bucket_params"] = bucket_params
@@ -526,9 +540,24 @@ def load_full_state(run_id: str, data_root: str) -> dict:
         
     except Exception as e:
         tprint(f"WARNING: Failed to load full state: {e}")
+        
+        # Try to load RidgePositionSizer even if state loading failed
+        # Model is saved to data_root/models/ridge_position_sizer_{run_id}.json
+        models_dir = os.path.join(data_root, "artifacts", run_id, "models")
+        ridge_model_path = os.path.join(models_dir, f"ridge_position_sizer_{run_id}.json")
+        ridge_sizer = None
+        if os.path.exists(ridge_model_path):
+            try:
+                from extreme_price_movements.ridge_position_sizer import RidgePositionSizer
+                ridge_sizer = RidgePositionSizer.load(ridge_model_path)
+                tprint(f"  Loaded RidgePositionSizer from fallback: {ridge_model_path}")
+            except Exception as ridge_e:
+                tprint(f"WARNING: Failed to load RidgePositionSizer in fallback: {ridge_e}")
+        
         return {
             "ts_trained": None,
             "bundle": load_model_bundle(run_id, data_root),
             "risk_params": {},
-            "bucket_params": {}
+            "bucket_params": {},
+            "ridge_sizer": ridge_sizer
         }

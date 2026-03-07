@@ -5249,12 +5249,20 @@ def _build_per_cell_feasible_sets(
             details,
             min_distance=min_distance,
             max_configs=max_configs_per_cell,
+            alpha=0.78,
             preselected_cids=[_anchor_cid] if _anchor_cid else None,
-            score_keep_fraction=0.85,
+            score_keep_fraction=0.75,
         )
         # If diversity filter left only 1 config, relax min_distance to get a second.
         if len(diverse) < 2 and len(feasible) >= 2:
-            diverse = _diverse_subset(feasible, details, min_distance=min_distance * 0.5, max_configs=max_configs_per_cell, score_keep_fraction=0.85)
+            diverse = _diverse_subset(
+                feasible,
+                details,
+                min_distance=min_distance * 0.5,
+                max_configs=max_configs_per_cell,
+                alpha=0.78,
+                score_keep_fraction=0.75,
+            )
         if len(diverse) < 2 and len(feasible) >= 2:
             diverse = feasible.head(2)  # last resort: top-2 by learnability rank
 
@@ -6622,7 +6630,8 @@ def run(args: argparse.Namespace) -> None:
                         _full_agg[c] = "mean"
                 _bdf_agg = _bdf_valid.groupby("config_id").agg(_full_agg).reset_index()
 
-                # Per-cell winners (new logic)
+                # Per-cell ranked configs. Persist the full ranked set so downstream
+                # consumers can recover more than the top-1 winner for each cell.
                 for cell_key, cell_group in _bdf_valid.groupby("cell_key"):
                     _cell_stage2 = pd.to_numeric(cell_group.get("stage2_score", pd.Series(np.nan, index=cell_group.index)), errors="coerce")
                     _cell_aucb = pd.to_numeric(cell_group.get("cell_auc_bound", pd.Series(np.nan, index=cell_group.index)), errors="coerce").fillna(0.0)
@@ -6636,32 +6645,33 @@ def run(args: argparse.Namespace) -> None:
                         _ece=_cell_ece,
                         _brier=_cell_brier,
                     )
-                    _win_cfg = cell_group.sort_values(
+                    _cell_ranked = cell_group.sort_values(
                         ["_score", "_aucb", "_sep", "_ece", "_brier"],
                         ascending=[False, False, False, True, True]
-                    ).iloc[0]
-                    _win_cid = str(_win_cfg["config_id"])
-                    _win_cfg_details = details.get(_win_cid, {}).get("config", {})
+                    ).reset_index(drop=True)
                     _cell_bucket, _cell_horizon = cell_key.rsplit("_", 1)
-
-                    _cell_payload = dict(_win_cfg_details)
-                    _cell_payload["cell_key"] = cell_key
-                    _cell_payload["bucket"] = _cell_bucket
-                    _cell_payload["horizon"] = _cell_horizon
-                    _cell_payload["config_id"] = _win_cid
-                    _cell_payload["cell_auc"] = float(_win_cfg.get("cell_auc", 0.5))
-                    _cell_payload["cell_auc_bound"] = float(_win_cfg.get("cell_auc_bound", float("nan")))
-                    _cell_payload["cell_tp_sep"] = float(_win_cfg.get("cell_tp_sep", 0.0))
-                    _cell_payload["cell_ap_lift"] = float(_win_cfg.get("cell_ap_lift", 1.0))
-                    _cell_payload["cell_ece"] = float(_win_cfg.get("cell_ece", float("nan")))
-                    _cell_payload["cell_brier"] = float(_win_cfg.get("cell_brier", float("nan")))
-                    _cell_payload["cell_bind"] = float(_win_cfg.get("cell_bind", float("nan")))
-                    _cell_payload["cell_timeout"] = float(_win_cfg.get("cell_timeout", float("nan")))
-                    _cell_payload["cell_ic_std_time"] = float(_win_cfg.get("cell_ic_std_time", float("nan")))
-                    _cell_payload["cell_ic_std_asset"] = float(_win_cfg.get("cell_ic_std_asset", float("nan")))
-                    _cell_payload["stage2_score"] = float(_win_cfg.get("stage2_score", float("nan")))
-                    _cell_payload["cell_score"] = float(_win_cfg["_score"])
-                    per_cell_rows.append(_cell_payload)
+                    for _rank_i, _row in _cell_ranked.iterrows():
+                        _cid = str(_row["config_id"])
+                        _cfg_details = details.get(_cid, {}).get("config", {})
+                        _cell_payload = dict(_cfg_details)
+                        _cell_payload["cell_key"] = cell_key
+                        _cell_payload["bucket"] = _cell_bucket
+                        _cell_payload["horizon"] = _cell_horizon
+                        _cell_payload["config_id"] = _cid
+                        _cell_payload["rank_in_cell"] = int(_rank_i + 1)
+                        _cell_payload["cell_auc"] = float(_row.get("cell_auc", 0.5))
+                        _cell_payload["cell_auc_bound"] = float(_row.get("cell_auc_bound", float("nan")))
+                        _cell_payload["cell_tp_sep"] = float(_row.get("cell_tp_sep", 0.0))
+                        _cell_payload["cell_ap_lift"] = float(_row.get("cell_ap_lift", 1.0))
+                        _cell_payload["cell_ece"] = float(_row.get("cell_ece", float("nan")))
+                        _cell_payload["cell_brier"] = float(_row.get("cell_brier", float("nan")))
+                        _cell_payload["cell_bind"] = float(_row.get("cell_bind", float("nan")))
+                        _cell_payload["cell_timeout"] = float(_row.get("cell_timeout", float("nan")))
+                        _cell_payload["cell_ic_std_time"] = float(_row.get("cell_ic_std_time", float("nan")))
+                        _cell_payload["cell_ic_std_asset"] = float(_row.get("cell_ic_std_asset", float("nan")))
+                        _cell_payload["stage2_score"] = float(_row.get("stage2_score", float("nan")))
+                        _cell_payload["cell_score"] = float(_row["_score"])
+                        per_cell_rows.append(_cell_payload)
 
                 _bdf_agg["_score"] = pd.to_numeric(_bdf_agg.get("stage2_score", pd.Series(np.nan, index=_bdf_agg.index)), errors="coerce").fillna(-np.inf)
                 _bdf_agg["_aucb"] = pd.to_numeric(_bdf_agg.get("cell_auc_bound", pd.Series(np.nan, index=_bdf_agg.index)), errors="coerce").fillna(0.0)

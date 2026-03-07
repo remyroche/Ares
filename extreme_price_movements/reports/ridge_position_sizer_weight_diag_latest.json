@@ -1,12 +1,12 @@
 {
-  "weight_l1": 0.002145974486920002,
-  "weight_l2": 0.0018514547656937655,
-  "weight_max_abs": 0.0018230810709757238,
-  "weight_top1_share": 0.8495352960101082,
+  "weight_l1": 0.9999999999989999,
+  "weight_l2": 0.7119431949185742,
+  "weight_max_abs": 0.5585794878423741,
+  "weight_top1_share": 0.5585794878429328,
   "weight_top2_share": 1.0,
   "weight_top3_share": 1.0,
-  "weight_effective_n_models": 1.3434542976697197,
-  "weight_entropy": 0.42351431769439485,
+  "weight_effective_n_models": 1.9729192651085712,
+  "weight_entropy": 0.6862682801513703,
   "weight_share_by_horizon": {
     "H2": 0.0,
     "H4": 0.0,

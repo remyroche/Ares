@@ -210,6 +210,7 @@ def linear_prescreen_enet(
     y: np.ndarray,
     n_select: int,
     multiplier: int = 4,
+    max_drop_frac: float = 0.25,
     l1_ratio: float = 0.2,
     alpha_lo: float = 0.01,
     alpha_hi: float = 1e1,
@@ -236,7 +237,9 @@ def linear_prescreen_enet(
     if X is None or X.empty:
         return []
     p = X.shape[1]
-    target_keep = int(np.clip(multiplier * int(n_select), 1, p))
+    target_keep_raw = int(np.clip(multiplier * int(n_select), 1, p))
+    min_keep_from_cap = int(np.ceil((1.0 - float(np.clip(max_drop_frac, 0.0, 0.95))) * p))
+    target_keep = int(np.clip(max(target_keep_raw, min_keep_from_cap), 1, p))
 
     y = np.asarray(y, dtype=float)
     # Scale target to unit variance for stable ElasticNet convergence
@@ -693,6 +696,23 @@ def mdi_feature_selection_v3(
         tprint("MDI: X became empty after cleaning. Returning empty result.")
         return MDISelectionResult(pd.DataFrame(), [], [])
 
+    near_const_std = np.nanstd(X.to_numpy(copy=False), axis=0)
+    near_const_mask = near_const_std < 1e-9
+    if near_const_mask.any():
+        near_const_cols = X.columns[near_const_mask].tolist()
+        interaction_cols = [
+            c for c in near_const_cols if "_G_VOL_" in c or "_G_TREND_" in c
+        ]
+        base_cols = [c for c in near_const_cols if c not in interaction_cols]
+        tprint(
+            f"MDI: Dropping {len(near_const_cols)} near-constant features before dedupe "
+            f"({len(base_cols)} base, {len(interaction_cols)} interaction)."
+        )
+        X = X.drop(columns=near_const_cols, errors="ignore")
+        if X.empty:
+            tprint("MDI: X became empty after near-constant pruning. Returning empty result.")
+            return MDISelectionResult(pd.DataFrame(), [], [])
+
     # Determine end_features if not provided
     if end_features is None:
         n_samples_full = len(X)
@@ -911,12 +931,28 @@ def mdi_feature_selection_v3(
         _prescreen_loss = str(_sel_loss).lower()
         if _prescreen_loss in {"binary_logloss", "log_loss", "cross_entropy", "binary"}:
             _prescreen_loss = "huber"
+        if _sel_target in {"classification", "binary", "clf"}:
+            _prescreen_l1_ratio = 0.65
+            _prescreen_alpha_lo = 1e-4
+            _prescreen_alpha_hi = 5.0
+        elif _sel_target == "quantile" or "quantile" in str(_sel_loss).lower():
+            _prescreen_l1_ratio = 0.45
+            _prescreen_alpha_lo = 5e-4
+            _prescreen_alpha_hi = 10.0
+        else:
+            _prescreen_l1_ratio = 0.35
+            _prescreen_alpha_lo = 1e-4
+            _prescreen_alpha_hi = 10.0
             
         prescreened_features = linear_prescreen_enet(
             X[current_features],
             y_np,
             n_select=end_features,
             multiplier=4,
+            max_drop_frac=0.25,
+            l1_ratio=_prescreen_l1_ratio,
+            alpha_lo=_prescreen_alpha_lo,
+            alpha_hi=_prescreen_alpha_hi,
             loss=_prescreen_loss,
         )
         tprint(f"MDI: ElasticNet prescreen reduced features from {len(current_features)} to {len(prescreened_features)}")
@@ -1175,12 +1211,13 @@ def mdi_feature_selection_v3(
             break
 
         # Adaptive RFE drop schedule:
-        # linearly decay drop rate from 50% (at p = 6x target) to 5% (at p = 1x target),
-        # then add a fixed +5 drop bonus (bounded by target floor).
+        # linearly decay drop rate from 40% (at p = 6x target) to 5% (at p = 1x target),
+        # then add a fixed +5 bonus drop (bounded by target floor).
         _ratio = float(p) / max(float(end_features), 1.0)
         _ratio_c = float(np.clip(_ratio, 1.0, 6.0))
-        _drop_rate = 0.05 + ((_ratio_c - 1.0) * (0.50 - 0.05) / (6.0 - 1.0))
-        n_to_drop = int(np.floor(float(p) * _drop_rate)) + 5
+        _drop_rate = 0.05 + ((_ratio_c - 1.0) * (0.40 - 0.05) / (6.0 - 1.0))
+        _bonus_drop = 5
+        n_to_drop = int(np.floor(float(p) * _drop_rate)) + _bonus_drop
         n_to_drop = max(1, n_to_drop)
         if p - n_to_drop < end_features:
             n_to_drop = max(0, p - end_features)
@@ -1191,7 +1228,7 @@ def mdi_feature_selection_v3(
             
         tprint(
             f"MDI: Dropping {n_to_drop} features (remaining: {p - n_to_drop}) "
-            f"[adaptive rate={_drop_rate:.3f}, p/target={_ratio:.2f}, bonus=+5]"
+            f"[adaptive rate={_drop_rate:.3f}, p/target={_ratio:.2f}, bonus=+{_bonus_drop}]"
         )
         current_features = metrics_df_sorted.index[:-n_to_drop].tolist()
         

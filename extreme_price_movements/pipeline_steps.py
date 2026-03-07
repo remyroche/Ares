@@ -431,6 +431,8 @@ def _scan_feature_cache_light(
     key_symbol_counts: dict[str, int] = {k: 0 for k in expected_keys}
     present_symbols: set[str] = set()
     uncovered_symbols: set[str] = set()
+    stale_symbols: set[str] = set()
+    full_rewrite_symbols: set[str] = set()
 
     total_files = len(files)
     progress_every = 100 if total_files >= 500 else 50
@@ -444,14 +446,21 @@ def _scan_feature_cache_light(
             first_ts, last_ts = get_feature_bounds(fpath)
             if first_ts is None or last_ts is None or first_ts > req_first or last_ts < req_last:
                 uncovered_symbols.add(sym)
+                stale_symbols.add(sym)
+                full_rewrite_symbols.add(sym)
 
         try:
             schema_names = set(pq.ParquetFile(fpath).schema.names)
         except Exception:
             schema_names = set()
+            if sym in required_bounds:
+                stale_symbols.add(sym)
+                full_rewrite_symbols.add(sym)
         feat_cols = [c for c in schema_names if c in expected_keys]
         for c in feat_cols:
             key_symbol_counts[c] += 1
+        if sym in required_bounds and not expected_keys.issubset(schema_names):
+            stale_symbols.add(sym)
 
         if i % progress_every == 0 or i == total_files:
             tprint(
@@ -461,6 +470,8 @@ def _scan_feature_cache_light(
 
     required_set = set(required_bounds.keys())
     missing_symbols = sorted(required_set - present_symbols)
+    stale_symbols.update(missing_symbols)
+    full_rewrite_symbols.update(missing_symbols)
     required_n = len(required_set)
 
     missing_keys: list[str] = []
@@ -483,6 +494,8 @@ def _scan_feature_cache_light(
         "required_symbol_count": required_n,
         "available_key_count": available_key_count,
         "missing_symbols": missing_symbols,
+        "stale_symbols": sorted(stale_symbols),
+        "full_rewrite_symbols": sorted(full_rewrite_symbols),
         "uncovered_symbols": sorted(uncovered_symbols),
         "missing_keys": missing_keys,
         "partial_keys": sorted(partial_keys),
@@ -566,6 +579,67 @@ def _build_tail_only_backfill_cutoffs(
         stats["eligible_tail_only"] += 1
 
     return cutoffs, stats
+
+
+def _load_close_panel_for_symbols(
+    store,
+    symbols: list[str],
+    ts_sig: pd.Timestamp,
+    lookback_days: int,
+) -> tuple[pd.DataFrame | None, list[str], list[str]]:
+    """Load only close series needed for cheap cache-completeness checks."""
+    close_map: dict[str, pd.Series] = {}
+    loaded_syms: list[str] = []
+    skipped_log: list[str] = []
+    min_rows = 24 * 60
+    for s in symbols:
+        df = store.load(s, columns=["close"], end_ts=ts_sig)
+        if df.empty:
+            skipped_log.append(f"{s}: Empty DataFrame")
+            continue
+        if len(df) < min_rows:
+            skipped_log.append(f"{s}: Insufficient data ({len(df)} rows < {min_rows})")
+            continue
+        last_ts = df.index[-1]
+        if (ts_sig - last_ts).days > 7:
+            skipped_log.append(f"{s}: Stale data (Last: {last_ts}, Target: {ts_sig})")
+            continue
+        ser = df["close"].tail(24 * lookback_days).rename(s)
+        close_map[s] = ser
+        loaded_syms.append(s)
+    if not close_map:
+        return None, loaded_syms, skipped_log
+    close_panel = pd.concat(close_map.values(), axis=1).sort_index()
+    return close_panel, loaded_syms, skipped_log
+
+
+def _derive_symbol_backfill_keys(
+    ts_sig: pd.Timestamp,
+    data_root: str,
+    expected_keys: set[str],
+    symbols: list[str],
+    full_rewrite_symbols: set[str],
+) -> list[str]:
+    """Return minimal key set needed for this symbol subset when full rewrites are not required."""
+    if not symbols:
+        return []
+    if any(str(s) in full_rewrite_symbols for s in symbols):
+        return sorted(expected_keys)
+
+    ts_str = ts_sig.strftime("%Y%m%d_%H%M%S")
+    in_dir = os.path.join(data_root, "features", ts_str)
+    missing_keys: set[str] = set()
+
+    for sym in symbols:
+        safe_sym = str(sym).replace("/", "_")
+        fpath = os.path.join(in_dir, f"symbol={safe_sym}.parquet")
+        try:
+            schema_names = set(pq.ParquetFile(fpath).schema.names)
+        except Exception:
+            return sorted(expected_keys)
+        missing_keys.update(expected_keys - schema_names)
+
+    return sorted(missing_keys)
 
 
 def _local_store_symbols(store) -> list[str]:
@@ -2684,24 +2758,100 @@ def run_feature_generation_step(ts_sig, margin_symbols, cfg, store, force_full_r
         if not train_syms:
             tprint("CRITICAL: no symbols available from local store fallback.")
             return
-    # Universe diagnostics still logged below; downstream skip reasons are explicit.
-
-    tprint(f"Universe (Top {cfg['fetch_symbols_M']} Vol + Basket + VarianceFilter): {len(train_syms)} symbols")
-    
-    # 2. Load Data
-    dfs = {}
-    lookback_days = max(180, int(cfg["fetch_years"] * 365))
-    
-    # Load Market Basket First (Critical)
     for s in cfg["market_basket"]:
         if s not in train_syms:
             train_syms.append(s)
-            
+    # Universe diagnostics still logged below; downstream skip reasons are explicit.
+
+    tprint(f"Universe (Top {cfg['fetch_symbols_M']} Vol + Basket + VarianceFilter): {len(train_syms)} symbols")
+
+    lookback_days = max(180, int(cfg["fetch_years"] * 365))
+
+    # 2. Early cache-completeness check using close-only loads.
+    stale_symbols_for_backfill: list[str] = []
+    full_rewrite_symbols_for_backfill: set[str] = set()
+    if existing_files and not force_full_recompute:
+        close_panel_light, loaded_close_syms, skipped_close = _load_close_panel_for_symbols(
+            store=store,
+            symbols=train_syms,
+            ts_sig=ts_sig,
+            lookback_days=lookback_days,
+        )
+        tprint(
+            f"Close-only cache precheck loaded {len(loaded_close_syms)} symbols. "
+            f"Skipped {len(skipped_close)}."
+        )
+        if close_panel_light is not None and not close_panel_light.empty:
+            scan = _scan_feature_cache_light(
+                ts_sig=ts_sig,
+                data_root=cfg["data_root"],
+                expected_keys=expected_keys,
+                panel_close=close_panel_light,
+            )
+            miss_keys = scan["missing_keys"] if scan else list(expected_keys)
+            partial_keys = scan["partial_keys"] if scan else []
+            backfill_keys = sorted(set(miss_keys + partial_keys))
+            stale_symbols_for_backfill = list(scan.get("stale_symbols", [])) if scan else []
+            full_rewrite_symbols_for_backfill = set(scan.get("full_rewrite_symbols", [])) if scan else set()
+            if backfill_keys:
+                tprint(
+                    f"Feature cache incomplete for {ts_sig}: "
+                    f"missing={len(miss_keys)} partial={len(partial_keys)}. "
+                    "Backfilling missing/partial features only."
+                )
+                if scan:
+                    tprint(
+                        f"Cache scan summary: files={scan['file_count']} "
+                        f"required_symbols={scan['required_symbol_count']} "
+                        f"available_expected_keys={scan['available_key_count']}/{len(expected_keys)}"
+                    )
+                    if scan["missing_symbols"]:
+                        tprint(
+                            "Missing symbol files: "
+                            + ", ".join(scan["missing_symbols"][:20])
+                            + (" ..." if len(scan["missing_symbols"]) > 20 else "")
+                        )
+                    if scan["uncovered_symbols"]:
+                        tprint(
+                            "Time-coverage mismatch symbols: "
+                            + ", ".join(scan["uncovered_symbols"][:20])
+                            + (" ..." if len(scan["uncovered_symbols"]) > 20 else "")
+                        )
+                if miss_keys:
+                    tprint("Missing keys: " + ", ".join(miss_keys[:30]) + (" ..." if len(miss_keys) > 30 else ""))
+                if partial_keys:
+                    tprint("Partial keys: " + ", ".join(partial_keys[:30]) + (" ..." if len(partial_keys) > 30 else ""))
+            else:
+                _n_syms = len(close_panel_light.columns)
+                _n_feats = len(expected_keys)
+                tprint(
+                    f"Features already exist and cover full target period: "
+                    f"{_n_feats} features × {_n_syms} symbols. Skipping recomputation."
+                )
+                _generate_feature_health_reports(ts_sig, cfg["data_root"])
+                tprint("STEP: FEATURE GENERATION COMPLETE (cached)")
+                return
+        else:
+            backfill_keys = sorted(expected_keys)
+
+    # 3. Load Data
+    dfs = {}
+
+    syms_to_load = list(train_syms)
+    if backfill_keys and not force_full_recompute and stale_symbols_for_backfill:
+        required_syms = sorted(set(stale_symbols_for_backfill).union(set(cfg["market_basket"])))
+        if required_syms:
+            syms_to_load = [s for s in train_syms if s in set(required_syms)]
+            tprint(
+                f"Backfill scope reduced to {len(syms_to_load)}/{len(train_syms)} symbols "
+                "(stale symbols + market basket)."
+            )
+
     loaded_syms = []
     skipped_log = []
 
     with Timer("Feature Gen Data Load"):
-        for s in train_syms:
+        for s in syms_to_load:
             df = store.load(s, end_ts=ts_sig) # Load up to ts_sig
             
             # Constraints Check
@@ -2735,56 +2885,8 @@ def run_feature_generation_step(ts_sig, margin_symbols, cfg, store, force_full_r
     # 3. Compute Features (Panel)
     tprint("Constructing Panel...")
     panel = to_panel(dfs)
-
-    # Strict cache completeness check against target period + symbol universe.
-    if existing_files and not force_full_recompute:
-        scan = _scan_feature_cache_light(
-            ts_sig=ts_sig,
-            data_root=cfg["data_root"],
-            expected_keys=expected_keys,
-            panel_close=panel["close"],
-        )
-        miss_keys = scan["missing_keys"] if scan else list(expected_keys)
-        partial_keys = scan["partial_keys"] if scan else []
-        backfill_keys = sorted(set(miss_keys + partial_keys))
-        if backfill_keys:
-            tprint(
-                f"Feature cache incomplete for {ts_sig}: "
-                f"missing={len(miss_keys)} partial={len(partial_keys)}. "
-                "Backfilling missing/partial features only."
-            )
-            if scan:
-                tprint(
-                    f"Cache scan summary: files={scan['file_count']} "
-                    f"required_symbols={scan['required_symbol_count']} "
-                    f"available_expected_keys={scan['available_key_count']}/{len(expected_keys)}"
-                )
-                if scan["missing_symbols"]:
-                    tprint(
-                        "Missing symbol files: "
-                        + ", ".join(scan["missing_symbols"][:20])
-                        + (" ..." if len(scan["missing_symbols"]) > 20 else "")
-                    )
-                if scan["uncovered_symbols"]:
-                    tprint(
-                        "Time-coverage mismatch symbols: "
-                        + ", ".join(scan["uncovered_symbols"][:20])
-                        + (" ..." if len(scan["uncovered_symbols"]) > 20 else "")
-                    )
-            if miss_keys:
-                tprint("Missing keys: " + ", ".join(miss_keys[:30]) + (" ..." if len(miss_keys) > 30 else ""))
-            if partial_keys:
-                tprint("Partial keys: " + ", ".join(partial_keys[:30]) + (" ..." if len(partial_keys) > 30 else ""))
-        else:
-            _n_syms = len(panel["close"].columns)
-            _n_feats = len(expected_keys)
-            tprint(
-                f"Features already exist and cover full target period: "
-                f"{_n_feats} features × {_n_syms} symbols. Skipping recomputation."
-            )
-            _generate_feature_health_reports(ts_sig, cfg["data_root"])
-            tprint("STEP: FEATURE GENERATION COMPLETE (cached)")
-            return
+    panel_close_ref = panel["close"].copy() if "close" in panel else None
+    panel_symbols = list(panel["close"].columns) if "close" in panel else list(loaded_syms)
 
     tprint("Computing Market Features...")
     mkt_df = compute_market_features(panel, cfg["market_basket"])
@@ -2840,10 +2942,17 @@ def run_feature_generation_step(ts_sig, margin_symbols, cfg, store, force_full_r
             feats_chunk, feat_index, feat_columns = compute_features_hourly(panel_chunk, mkt_gates.copy(), cfg)
 
             if backfill_keys and not force_full_recompute:
-                unresolved = [k for k in backfill_keys if k not in feats_chunk]
+                chunk_backfill_keys = _derive_symbol_backfill_keys(
+                    ts_sig=ts_sig,
+                    data_root=cfg["data_root"],
+                    expected_keys=backfill_set,
+                    symbols=chunk_syms,
+                    full_rewrite_symbols=full_rewrite_symbols_for_backfill,
+                )
+                unresolved = [k for k in chunk_backfill_keys if k not in feats_chunk]
                 if unresolved:
                     unresolved_union.update(unresolved)
-                feats_chunk = {k: v for k, v in feats_chunk.items() if k in backfill_set}
+                feats_chunk = {k: v for k, v in feats_chunk.items() if k in set(chunk_backfill_keys)}
                 
             tprint(f"[Feature chunk {ci}/{total_chunks}] saving {len(feats_chunk)} keys")
             if feats_chunk:
@@ -2878,13 +2987,20 @@ def run_feature_generation_step(ts_sig, margin_symbols, cfg, store, force_full_r
 
         if backfill_keys and not force_full_recompute:
             backfill_set = set(backfill_keys)
-            unresolved = sorted([k for k in backfill_keys if k not in feats])
-            feats = {k: v for k, v in feats.items() if k in backfill_set}
+            selected_backfill_keys = _derive_symbol_backfill_keys(
+                ts_sig=ts_sig,
+                data_root=cfg["data_root"],
+                expected_keys=backfill_set,
+                symbols=panel_symbols,
+                full_rewrite_symbols=full_rewrite_symbols_for_backfill,
+            )
+            unresolved = sorted([k for k in selected_backfill_keys if k not in feats])
+            feats = {k: v for k, v in feats.items() if k in set(selected_backfill_keys)}
             min_ts_by_symbol, tail_stats = _build_tail_only_backfill_cutoffs(
                 ts_sig=ts_sig,
                 data_root=cfg["data_root"],
-                panel_close=panel["close"],
-                backfill_keys=backfill_keys,
+                panel_close=panel_close_ref,
+                backfill_keys=selected_backfill_keys,
             )
             tprint(f"Computed + saving only missing/partial features: {len(feats)} keys")
             tprint(
@@ -2933,10 +3049,12 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
     tprint("Resolving unique symbols and timestamps for feature injection...")
     all_syms = set()
     for name, df in datasets.items():
-        if "symbol" in df.columns:
-            all_syms.update(df["symbol"].unique())
+        s_col = "symbol" if "symbol" in df.columns else ("__symbol__" if "__symbol__" in df.columns else None)
+        if s_col:
+            all_syms.update(df[s_col].unique())
 
     if not all_syms:
+        tprint("No symbols found in datasets for injection.")
         return datasets
 
     sorted_syms = sorted(all_syms)
@@ -2995,7 +3113,9 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
             # Determine which features to load for this symbol
             needed_for_this_sym = set()
             for name, missing in missing_keys_per_dataset.items():
-                if "symbol" in datasets[name].columns and (datasets[name]["symbol"] == s).any():
+                df = datasets[name]
+                s_col = "symbol" if "symbol" in df.columns else ("__symbol__" if "__symbol__" in df.columns else None)
+                if s_col and (df[s_col] == s).any():
                     needed_for_this_sym.update(missing)
             
             if not needed_for_this_sym:
@@ -3014,18 +3134,35 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
                 
             for name, missing in missing_keys_per_dataset.items():
                 df = datasets[name]
-                if "symbol" not in df.columns:
+                s_col = "symbol" if "symbol" in df.columns else ("__symbol__" if "__symbol__" in df.columns else None)
+                t_col = "ts" if "ts" in df.columns else ("__ts__" if "__ts__" in df.columns else None)
+                
+                if not s_col or not t_col:
                     continue
-                mask = (df["symbol"] == s)
+                
+                mask = (df[s_col] == s)
                 if not mask.any():
                     continue
                 
-                subset_df = df.loc[mask, ["ts"]]
+                subset_df = df.loc[mask, [t_col]]
                 cols_for_ds = [k for k in missing if k in df_feat.columns]
                 if not cols_for_ds:
                     continue
-                    
-                merged = subset_df.merge(df_feat[cols_for_ds], left_on="ts", right_index=True, how="left").fillna(0.0)
+                
+                # Align timezones if necessary to ensure merge works
+                idx_feat = df_feat.index
+                if hasattr(df[t_col], "dt") and hasattr(idx_feat, "tz"):
+                    if df[t_col].dt.tz is None and idx_feat.tz is not None:
+                        # Localize label ts to feature tz
+                        subset_df[t_col] = pd.to_datetime(subset_df[t_col], utc=True).dt.tz_convert(idx_feat.tz)
+                    elif df[t_col].dt.tz is not None and idx_feat.tz is None:
+                        # Localize feature index to label tz
+                        idx_feat = idx_feat.tz_localize("UTC").tz_convert(df[t_col].dt.tz)
+                    elif df[t_col].dt.tz is not None and idx_feat.tz is not None:
+                        # Convert label ts to feature tz
+                        subset_df[t_col] = df[t_col].dt.tz_convert(idx_feat.tz)
+
+                merged = subset_df.merge(df_feat[cols_for_ds], left_on=t_col, right_index=True, how="left").fillna(0.0)
                 
                 for k in cols_for_ds:
                     vals = merged[k].values.astype(np.float32)
@@ -3048,3 +3185,4 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
     gc.collect()
     
     return datasets
+

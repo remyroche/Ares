@@ -332,7 +332,9 @@ def train_daily_meta(ts_sig, margin_symbols, cfg, store, ex):
 
     with Timer("Meta Model Training"):
         from extreme_price_movements.training import train_meta_models_from_artifacts
-        meta_models, meta_gate_results = train_meta_models_from_artifacts(datasets, cfg, alpha_models)
+        meta_models, meta_gate_results = train_meta_models_from_artifacts(
+            datasets, cfg, alpha_models, base_variant_models={}
+        )
         tprint(f"Meta models trained: {len(meta_models)}")
 
     # Merge meta into base bundle

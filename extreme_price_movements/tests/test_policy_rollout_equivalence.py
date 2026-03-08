@@ -1,70 +1,42 @@
-import numpy as np
 import pandas as pd
 
-from extreme_price_movements.policy_ml import policy_rollout_engine, policy_rollout_ml
+from extreme_price_movements.policy_ml import policy_rollout_ml
 
 
-def _make_ohlc(n: int = 400, seed: int = 7) -> pd.DataFrame:
-    rng = np.random.default_rng(seed)
+def _make_trending_ohlc(direction: int, n: int = 80) -> pd.DataFrame:
     idx = pd.date_range("2024-01-01", periods=n, freq="h", tz="UTC")
-    ret = rng.normal(0.0, 0.003, size=n)
-    close = 100.0 * np.exp(np.cumsum(ret))
-    open_ = np.r_[close[0], close[:-1]]
-    span = np.abs(rng.normal(0.002, 0.001, size=n))
-    high = np.maximum(open_, close) * (1.0 + span)
-    low = np.minimum(open_, close) * (1.0 - span)
+    step = 0.01 if direction > 0 else -0.01
+    close = [100.0]
+    for _ in range(1, n):
+        close.append(close[-1] * (1.0 + step))
+    close = pd.Series(close, index=idx, dtype=float)
+    open_ = close.shift(1).fillna(close.iloc[0])
+    high = pd.concat([open_, close], axis=1).max(axis=1) * 1.002
+    low = pd.concat([open_, close], axis=1).min(axis=1) * 0.998
     return pd.DataFrame({"open": open_, "high": high, "low": low, "close": close}, index=idx)
 
 
-def test_policy_rollout_ml_matches_engine_codepath_random_samples():
-    ohlc = _make_ohlc()
-    atr = pd.Series(0.02, index=ohlc.index)
+def test_policy_rollout_ml_uses_sizer_aligned_tp_sl_semantics():
     policy_params = {
-        "tp_mult": 1.0,
-        "sl_mult": 0.5,
-        "trail_mult": 0.25,
-        "vol_lo": 0.03,
-        "vol_hi": 0.06,
-        "vol_z_max": 3.0,
-        "fee_bps": 0.0,
-        "be_threshold_pct": 0.005,
-        "be_buffer_pct": 0.0,
-        "profit_lock_pct": 0.015,
-        "profit_lock_amount": 0.003,
-        "giveback_pct": 0.005,
-        "max_loss_pct": 0.03,
-        "kill_a": 0.002,
-        "kill_b": 1.5,
-        "kill_c": 0.005,
-        "kill_min_bars": 2,
-        "use_limit_orders": False,
-        "use_exit_limits": False,
+        "policy_label_sl_atr_mult": 1.2,
+        "policy_label_tp_sl_ratio": 2.0,
+        "policy_label_trailing_pct": 0.35,
+        "policy_label_max_hold_hours": 24,
     }
+    for direction in (1, -1):
+        ohlc = _make_trending_ohlc(direction)
+        atr = pd.Series(0.02, index=ohlc.index)
+        out = policy_rollout_ml(
+            ohlc=ohlc,
+            atr_pct=atr,
+            t0=5,
+            direction=direction,
+            policy_params=policy_params,
+            max_hold_hours=24,
+        )
 
-    rng = np.random.default_rng(42)
-    starts = rng.integers(low=1, high=len(ohlc) - 50, size=100)
-
-    for t0 in starts:
-        for direction in (1, -1):
-            ml = policy_rollout_ml(
-                ohlc=ohlc,
-                atr_pct=atr,
-                t0=int(t0),
-                direction=direction,
-                policy_params=policy_params,
-                max_hold_hours=24,
-            )
-            eng = policy_rollout_engine(
-                ohlc=ohlc,
-                atr_pct=atr,
-                t0=int(t0),
-                direction=direction,
-                policy_params=policy_params,
-                max_hold_hours=24,
-            )
-
-            assert ml.exit_code == eng.exit_code
-            assert abs(ml.r_policy - eng.r_policy) <= 1e-12
-            assert abs(ml.mae - eng.mae) <= 1e-12
-            assert abs(ml.mfe - eng.mfe) <= 1e-12
-            assert ml.bars_held == eng.bars_held
+        assert out.exit_code == 2
+        assert out.r_policy > 0.0
+        assert out.bars_held >= 1
+        assert out.mfe >= 0.0
+        assert out.mae >= 0.0

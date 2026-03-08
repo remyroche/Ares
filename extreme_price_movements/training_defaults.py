@@ -18,6 +18,7 @@ def get_candidate_filter_defaults(cfg: Dict[str, Any] | None = None) -> Dict[str
     c = _cfg_or_default(cfg)
     return {
         "train_extreme_pct_hourly": float(c.get("train_extreme_pct_hourly", c.get("trade_extreme_pct", 0.05))),
+        "train_min_move_12h_pct": float(c.get("train_min_move_12h_pct", 0.06)),
         "train_min_range_pct": float(c.get("train_min_range_pct", 0.07)),
         "train_min_vol_zscore": float(c.get("train_min_vol_zscore", 1.6)),
         "train_chop_thr": float(c.get("train_chop_thr", 0.5)),

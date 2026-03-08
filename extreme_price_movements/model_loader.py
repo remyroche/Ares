@@ -22,6 +22,8 @@ import os
 import json
 import pickle
 import re
+import joblib
+import glob
 from pathlib import Path
 from typing import Any, Optional
 
@@ -72,6 +74,10 @@ def load_model_bundle(run_id: str, data_root: str) -> dict:
     - Meta models (from pickle)
     - Spike models (from pickle)
     - Specialist models (from pickle)
+    - Exhaustion models (from pickle)
+    - Alpha OOF metrics (from pickle)
+    - Quality gate report (from pickle)
+    - EV decomposition (from pickle)
     - Ridge position sizer weights (from JSON)
     
     Args:
@@ -88,6 +94,10 @@ def load_model_bundle(run_id: str, data_root: str) -> dict:
             "meta_models": {...},
             "spike_models": {...},
             "specialist_models": {...},
+            "exh_models": {...},
+            "alpha_oof_metrics": {...},
+            "quality_gate_report": {...},
+            "ev_decomposition": {...},
             "ridge_weights": {...}
         }
     """
@@ -99,6 +109,11 @@ def load_model_bundle(run_id: str, data_root: str) -> dict:
         "spike_models": {},
         "specialist_models": {},
         "ridge_weights": {},
+        "ridge_offset_model": {},
+        "exh_models": {},
+        "alpha_oof_metrics": {},
+        "quality_gate_report": {},
+        "ev_decomposition": {},
     }
     
     # Paths
@@ -137,14 +152,51 @@ def load_model_bundle(run_id: str, data_root: str) -> dict:
             bundle["specialist_models"] = specialist_models
         else:
             tprint("WARNING: No specialist models found in trained_state.pkl")
+        
+        # Load exhaustion models (up/down)
+        exh_models = load_exh_models(trained_state_path)
+        if exh_models:
+            bundle["exh_models"] = exh_models
+        else:
+            tprint("WARNING: No exhaustion models found in trained_state.pkl")
+        
+        # Load alpha OOF metrics
+        alpha_oof_metrics = load_alpha_oof_metrics(trained_state_path)
+        if alpha_oof_metrics:
+            bundle["alpha_oof_metrics"] = alpha_oof_metrics
+        else:
+            tprint("WARNING: No alpha OOF metrics found in trained_state.pkl")
+        
+        # Load quality gate report
+        quality_gate_report = load_quality_gate_report(trained_state_path)
+        if quality_gate_report:
+            bundle["quality_gate_report"] = quality_gate_report
+        else:
+            tprint("WARNING: No quality gate report found in trained_state.pkl")
+        
+        # Load EV decomposition (full bundle)
+        ev_decomposition = load_ev_decomposition(trained_state_path)
+        if ev_decomposition:
+            bundle["ev_decomposition"] = ev_decomposition
+        else:
+            tprint("WARNING: No EV decomposition found in trained_state.pkl")
     else:
         tprint(f"WARNING: Trained state file not found: {trained_state_path}")
     
-    # 3. Load ridge position sizer weights
+    # 3. Load ridge position sizer weights / offset optimizer metadata
     if os.path.exists(ridge_path):
         bundle["ridge_weights"] = load_ridge_weights(ridge_path)
     else:
         tprint(f"WARNING: Ridge sizer weights not found: {ridge_path}")
+
+    ridge_model_path = _find_ridge_sizer_model_path(run_id, data_root)
+    if ridge_model_path is not None:
+        try:
+            from extreme_price_movements.ridge_position_sizer import RidgePositionSizer
+            ridge_sizer = RidgePositionSizer.load(ridge_model_path)
+            bundle["ridge_offset_model"] = _ridge_offset_metadata_from_sizer(ridge_sizer)
+        except Exception as e:
+            tprint(f"WARNING: Failed to load ridge offset metadata: {e}")
     
     # Log summary
     alpha = bundle["alpha_models"]
@@ -156,7 +208,12 @@ def load_model_bundle(run_id: str, data_root: str) -> dict:
     tprint(f"  Meta models: {list(bundle['meta_models'].keys())}")
     tprint(f"  Spike models: {list(bundle['spike_models'].keys())}")
     tprint(f"  Specialist models: {list(bundle['specialist_models'].keys())}")
+    tprint(f"  Exhaustion models: {list(bundle['exh_models'].keys())}")
+    tprint(f"  Alpha OOF metrics: {list(bundle['alpha_oof_metrics'].keys())}")
+    tprint(f"  Quality gate report: {'present' if bundle['quality_gate_report'] else 'missing'}")
+    tprint(f"  EV decomposition: {'present' if bundle['ev_decomposition'] else 'missing'}")
     tprint(f"  Ridge weights: {list(bundle['ridge_weights'].keys())}")
+    tprint(f"  Ridge offset model: {'present' if bundle['ridge_offset_model'] else 'missing'}")
     
     return bundle
 
@@ -210,8 +267,10 @@ def load_alpha_models(native_dir: str) -> dict:
             from extreme_price_movements.model_race import ModelRace
             model = ModelRace.load_native(model_dir)
             
-            # Load sidecar for feat_cols
+            # Load feature columns from sidecar or columns.json.
+            # Newer native exports persist feature lists in columns.json.
             sidecar_path = os.path.join(model_dir, "sidecar.pkl")
+            columns_path = os.path.join(model_dir, "columns.json")
             feat_cols = []
             if os.path.exists(sidecar_path):
                 with open(sidecar_path, "rb") as f:
@@ -221,6 +280,21 @@ def load_alpha_models(native_dir: str) -> dict:
                         feat_cols = sidecar["feat_cols"]
                     elif "columns" in sidecar:
                         feat_cols = sidecar["columns"]
+                    elif "selected_features" in sidecar:
+                        feat_cols = sidecar["selected_features"]
+
+            if (not feat_cols) and os.path.exists(columns_path):
+                with open(columns_path, "r") as f:
+                    columns_info = json.load(f)
+                if isinstance(columns_info, dict):
+                    feat_cols = (
+                        columns_info.get("feat_cols")
+                        or columns_info.get("selected_features")
+                        or columns_info.get("columns")
+                        or []
+                    )
+                elif isinstance(columns_info, list):
+                    feat_cols = columns_info
             
             model_info = {
                 "model": model,
@@ -286,24 +360,51 @@ def load_meta_models_from_pickle(trained_state_path: str) -> dict:
         tprint(f"WARNING: Trained state file not found: {trained_state_path}")
         return {}
     
+    def _ensure_meta_aliases(meta_models: dict) -> dict:
+        if not isinstance(meta_models, dict):
+            return {}
+        meta_models = dict(meta_models)
+        for side in ("long", "short"):
+            for kind in ("mr", "tf"):
+                base = f"{side}_{kind}"
+                reg = meta_models.get(f"{base}_reg")
+                clf = meta_models.get(f"{base}_clf") or meta_models.get(f"{base}_early_inval")
+                if base not in meta_models and reg is not None:
+                    meta_models[base] = reg
+                if f"{base}_clf" not in meta_models and clf is not None:
+                    meta_models[f"{base}_clf"] = clf
+        return meta_models
+
+    def _extract_meta_models(state_obj) -> dict:
+        bundle = state_obj.get("bundle", state_obj) if isinstance(state_obj, dict) else {}
+        meta_models = bundle.get("meta_models", {}) if isinstance(bundle, dict) else {}
+        return _ensure_meta_aliases(meta_models)
+
     try:
         with open(trained_state_path, "rb") as f:
             state = pickle.load(f)
-        
-        # Extract bundle and meta_models
-        bundle = state.get("bundle", state)
-        meta_models = bundle.get("meta_models", {})
-        
-        if not meta_models:
-            tprint("  No meta_models found in trained state")
-            return {}
-        
-        tprint(f"  Loaded {len(meta_models)} meta models")
-        return meta_models
-        
+        meta_models = _extract_meta_models(state)
+        if meta_models:
+            tprint(f"  Loaded {len(meta_models)} meta models")
+            return meta_models
+        tprint("  No meta_models found in trained state")
     except Exception as e:
-        tprint(f"  WARNING: Failed to load meta models: {e}")
+        tprint(f"  WARNING: Failed to load meta models from trained_state.pkl: {e}")
+
+    meta_state_path = os.path.join(os.path.dirname(trained_state_path), "model_state_meta.pkl")
+    if not os.path.exists(meta_state_path):
         return {}
+
+    try:
+        meta_state = joblib.load(meta_state_path)
+        meta_models = _extract_meta_models(meta_state)
+        if meta_models:
+            tprint(f"  Loaded {len(meta_models)} meta models from model_state_meta.pkl")
+            return meta_models
+        tprint("  No meta_models found in model_state_meta.pkl")
+    except Exception as e:
+        tprint(f"  WARNING: Failed to load meta models from model_state_meta.pkl: {e}")
+    return {}
 
 
 def load_ridge_weights(ridge_path: str) -> dict:
@@ -334,6 +435,38 @@ def load_ridge_weights(ridge_path: str) -> dict:
     except Exception as e:
         tprint(f"  WARNING: Failed to load ridge weights: {e}")
         return {}
+
+
+def _find_ridge_sizer_model_path(run_id: str, data_root: str) -> Optional[str]:
+    artifact_models_dir = os.path.join(data_root, "artifacts", run_id, "models")
+    shared_models_dir = os.path.join(data_root, "models")
+    legacy_shared_models_dir = os.path.join("extreme_price_movements", data_root, "models")
+    preferred = [
+        os.path.join(artifact_models_dir, f"ridge_position_sizer_{run_id}.json"),
+        os.path.join(shared_models_dir, f"ridge_position_sizer_{run_id}.json"),
+        os.path.join(legacy_shared_models_dir, f"ridge_position_sizer_{run_id}.json"),
+    ]
+    for path in preferred:
+        if os.path.exists(path):
+            return path
+    candidates = sorted(
+        glob.glob(os.path.join(artifact_models_dir, "ridge_position_sizer_*.json"))
+        + glob.glob(os.path.join(shared_models_dir, "ridge_position_sizer_*.json"))
+        + glob.glob(os.path.join(legacy_shared_models_dir, "ridge_position_sizer_*.json"))
+    )
+    return candidates[-1] if candidates else None
+
+
+def _ridge_offset_metadata_from_sizer(ridge_sizer: Any) -> dict:
+    if ridge_sizer is None:
+        return {}
+    offset_bundle = getattr(ridge_sizer, "limit_offset_model_bundle_", None) or {}
+    return {
+        "base_name": offset_bundle.get("base_name"),
+        "smoother_name": offset_bundle.get("smoother_name"),
+        "features": list(getattr(ridge_sizer, "limit_offset_features_", None) or []),
+        "diag": dict(getattr(ridge_sizer, "limit_offset_diag_", None) or {}),
+    }
 
 
 def load_spike_models(trained_state_path: str) -> dict:
@@ -405,6 +538,154 @@ def load_specialist_models(trained_state_path: str) -> dict:
         
     except Exception as e:
         tprint(f"  WARNING: Failed to load specialist models: {e}")
+        return {}
+
+
+def load_exh_models(trained_state_path: str) -> dict:
+    """Load exhaustion models from trained_state.pkl.
+    
+    Args:
+        trained_state_path: Path to trained_state.pkl file
+        
+    Returns:
+        Dict of exhaustion models:
+        {
+            "up": ExhaustionModel,
+            "down": ExhaustionModel
+        }
+    """
+    if not os.path.exists(trained_state_path):
+        tprint(f"WARNING: Trained state file not found: {trained_state_path}")
+        return {}
+    
+    try:
+        with open(trained_state_path, "rb") as f:
+            state = pickle.load(f)
+        
+        bundle = state.get("bundle", state)
+        exh_models = bundle.get("exh_models", {})
+        
+        if not exh_models:
+            tprint("  No exh_models found in trained state")
+            return {}
+        
+        tprint(f"  Loaded {len(exh_models)} exhaustion models")
+        return exh_models
+        
+    except Exception as e:
+        tprint(f"  WARNING: Failed to load exhaustion models: {e}")
+        return {}
+
+
+def load_alpha_oof_metrics(trained_state_path: str) -> dict:
+    """Load alpha out-of-fold metrics from trained_state.pkl.
+    
+    Args:
+        trained_state_path: Path to trained_state.pkl file
+        
+    Returns:
+        Dict of OOF metrics per model:
+        {
+            "long_mr": {"oof_preds": [...], "oof_targets": [...], "metrics": {...}},
+            "long_tf": {...},
+            "short_mr": {...},
+            "short_tf": {...}
+        }
+    """
+    if not os.path.exists(trained_state_path):
+        tprint(f"WARNING: Trained state file not found: {trained_state_path}")
+        return {}
+    
+    try:
+        with open(trained_state_path, "rb") as f:
+            state = pickle.load(f)
+        
+        bundle = state.get("bundle", state)
+        alpha_oof_metrics = bundle.get("alpha_oof_metrics", {})
+        
+        if not alpha_oof_metrics:
+            tprint("  No alpha_oof_metrics found in trained state")
+            return {}
+        
+        tprint(f"  Loaded alpha OOF metrics for {len(alpha_oof_metrics)} models")
+        return alpha_oof_metrics
+        
+    except Exception as e:
+        tprint(f"  WARNING: Failed to load alpha OOF metrics: {e}")
+        return {}
+
+
+def load_quality_gate_report(trained_state_path: str) -> dict:
+    """Load quality gate report from trained_state.pkl.
+    
+    Args:
+        trained_state_path: Path to trained_state.pkl file
+        
+    Returns:
+        Dict of quality gate report:
+        {
+            "overall_pass": bool,
+            "checks": [...],
+            "warnings": [...],
+            "failures": [...]
+        }
+    """
+    if not os.path.exists(trained_state_path):
+        tprint(f"WARNING: Trained state file not found: {trained_state_path}")
+        return {}
+    
+    try:
+        with open(trained_state_path, "rb") as f:
+            state = pickle.load(f)
+        
+        bundle = state.get("bundle", state)
+        quality_gate_report = bundle.get("quality_gate_report", {})
+        
+        if not quality_gate_report:
+            tprint("  No quality_gate_report found in trained state")
+            return {}
+        
+        tprint(f"  Loaded quality gate report")
+        return quality_gate_report
+        
+    except Exception as e:
+        tprint(f"  WARNING: Failed to load quality gate report: {e}")
+        return {}
+
+
+def load_ev_decomposition(trained_state_path: str) -> dict:
+    """Load expected value decomposition from trained_state.pkl.
+    
+    Args:
+        trained_state_path: Path to trained_state.pkl file
+        
+    Returns:
+        Dict of EV decomposition components:
+        {
+            "components": {...},
+            "weights": {...},
+            "metadata": {...}
+        }
+    """
+    if not os.path.exists(trained_state_path):
+        tprint(f"WARNING: Trained state file not found: {trained_state_path}")
+        return {}
+    
+    try:
+        with open(trained_state_path, "rb") as f:
+            state = pickle.load(f)
+        
+        ev_decomposition = state.get("ev_decomposition", {})
+        
+        if not ev_decomposition:
+            tprint("  No ev_decomposition found in trained state")
+            return {}
+        
+        tprint(f"  Loaded EV decomposition")
+        return ev_decomposition
+        
+    except Exception as e:
+        tprint(f"  WARNING: Failed to load EV decomposition: {e}")
         return {}
 
 
@@ -510,6 +791,14 @@ def load_full_state(run_id: str, data_root: str) -> dict:
     try:
         with open(trained_state_path, "rb") as f:
             state = pickle.load(f)
+
+        if isinstance(state, dict):
+            bundle = state.get("bundle", {})
+            if isinstance(bundle, dict):
+                meta_models = bundle.get("meta_models", {})
+                if not isinstance(meta_models, dict) or len(meta_models) == 0:
+                    bundle["meta_models"] = load_meta_models_from_pickle(trained_state_path)
+                state["bundle"] = bundle
         
         # Also load ridge weights separately if not in state
         if "ridge_weights" not in state.get("bundle", {}):
@@ -517,19 +806,23 @@ def load_full_state(run_id: str, data_root: str) -> dict:
             if os.path.exists(ridge_path):
                 state["bundle"]["ridge_weights"] = load_ridge_weights(ridge_path)
         
-        # Load full RidgePositionSizer bundle (for full inference with calibration)
-        # Model is saved to data_root/models/ridge_position_sizer_{run_id}.json
-        models_dir = os.path.join(data_root, "artifacts", run_id, "models")
-        ridge_model_path = os.path.join(models_dir, f"ridge_position_sizer_{run_id}.json")
-        if os.path.exists(ridge_model_path):
+        # Load full RidgePositionSizer bundle (for full inference with calibration).
+        # Historical runs may store this either under:
+        #   data/artifacts/{run_id}/models/
+        # or:
+        #   data/models/
+        ridge_model_path = _find_ridge_sizer_model_path(run_id, data_root)
+        if ridge_model_path is not None:
             try:
                 from extreme_price_movements.ridge_position_sizer import RidgePositionSizer
                 state["ridge_sizer"] = RidgePositionSizer.load(ridge_model_path)
                 tprint(f"  Loaded RidgePositionSizer from {ridge_model_path}")
+                state.setdefault("bundle", {})
+                state["bundle"]["ridge_offset_model"] = _ridge_offset_metadata_from_sizer(state["ridge_sizer"])
             except Exception as e:
                 tprint(f"WARNING: Failed to load RidgePositionSizer: {e}")
         else:
-            tprint(f"  RidgePositionSizer model not found at {ridge_model_path}")
+            tprint("  RidgePositionSizer model not found in artifact or shared model directories")
         
         # Load bucket params (optimized exit policy)
         bucket_params = load_bucket_params(run_id, data_root)
@@ -541,12 +834,10 @@ def load_full_state(run_id: str, data_root: str) -> dict:
     except Exception as e:
         tprint(f"WARNING: Failed to load full state: {e}")
         
-        # Try to load RidgePositionSizer even if state loading failed
-        # Model is saved to data_root/models/ridge_position_sizer_{run_id}.json
-        models_dir = os.path.join(data_root, "artifacts", run_id, "models")
-        ridge_model_path = os.path.join(models_dir, f"ridge_position_sizer_{run_id}.json")
+        # Try to load RidgePositionSizer even if state loading failed.
+        ridge_model_path = _find_ridge_sizer_model_path(run_id, data_root)
         ridge_sizer = None
-        if os.path.exists(ridge_model_path):
+        if ridge_model_path is not None:
             try:
                 from extreme_price_movements.ridge_position_sizer import RidgePositionSizer
                 ridge_sizer = RidgePositionSizer.load(ridge_model_path)

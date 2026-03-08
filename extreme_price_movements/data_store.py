@@ -311,7 +311,35 @@ class PartitionedOHLCVStore:
                 if "ts" not in read_cols:
                     read_cols.append("ts")
 
-            df = pd.read_parquet(files_to_read, columns=read_cols)
+            # Read multiple parquet files - handle categorical type mismatches
+            # This fixes "Unable to merge: Field symbol has incompatible types" error
+            # that occurs when different parquet files have different categorical index types
+            try:
+                # Try with pandas default first
+                df = pd.read_parquet(files_to_read, columns=read_cols)
+                
+                # Convert any categorical columns to string to avoid downstream issues
+                for col in df.columns:
+                    if df[col].dtype.name == 'category':
+                        df[col] = df[col].astype(str)
+            except Exception as e:
+                # Fallback: read files one by one and concatenate
+                dfs = []
+                for fpath in files_to_read:
+                    try:
+                        part_df = pd.read_parquet(fpath, columns=read_cols)
+                        # Convert categorical columns to string
+                        for col in part_df.columns:
+                            if part_df[col].dtype.name == 'category':
+                                part_df[col] = part_df[col].astype(str)
+                        dfs.append(part_df)
+                    except Exception:
+                        continue
+                
+                if dfs:
+                    df = pd.concat(dfs, ignore_index=True)
+                else:
+                    df = pd.DataFrame(columns=read_cols) if read_cols else pd.DataFrame()
 
             if "ts" in df.columns:
                 df["ts"] = pd.to_datetime(df["ts"], utc=True)
@@ -336,7 +364,11 @@ class PartitionedOHLCVStore:
             )
 
     def save_partitioned(self, symbol: str, df: pd.DataFrame, defer_compact: bool = False):
-        if df.empty:
+        # Safely check if df is a valid DataFrame
+        try:
+            if df is None or not isinstance(df, (pd.DataFrame, pd.Series)) or (hasattr(df, 'empty') and df.empty):
+                return
+        except Exception:
             return
 
         df = self._downcast(df)
@@ -958,12 +990,13 @@ class LazyFeatureDict:
         self._raw = raw_data_buffers
         self._assembled = {}
 
-    def __getitem__(self, k):
+    def _assemble_key(self, k, log=True):
         if k in self._assembled:
             return self._assembled[k]
         if k in self._raw:
-            from extreme_price_movements.utils import tprint
-            tprint(f"Lazy-assembling DataFrame for '{k}'...")
+            if log:
+                from extreme_price_movements.utils import tprint
+                tprint(f"Lazy-assembling DataFrame for '{k}'...")
             data = self._raw.pop(k)
             clean_data = {}
             for sym, (idx_vals, val_array) in data.items():
@@ -972,6 +1005,9 @@ class LazyFeatureDict:
             self._assembled[k] = df
             return df
         raise KeyError(k)
+
+    def __getitem__(self, k):
+        return self._assemble_key(k, log=True)
 
     def __contains__(self, k):
         return k in self._assembled or k in self._raw
@@ -1011,13 +1047,37 @@ class LazyFeatureDict:
         raise KeyError(k)
         
     def copy(self):
-        return self
+        cloned = LazyFeatureDict({})
+        cloned._assembled = dict(self._assembled)
+        cloned._raw = {
+            k: dict(v) if isinstance(v, dict) else v
+            for k, v in self._raw.items()
+        }
+        return cloned
+
+    def materialize(self, keys=None, progress_every=25):
+        from extreme_price_movements.utils import tprint
+
+        target_keys = list(self.keys()) if keys is None else [k for k in keys if k in self]
+        total = len(target_keys)
+        if total == 0:
+            return
+        tprint(f"Pre-materializing {total} feature matrices for backtest runtime...")
+        for i, k in enumerate(target_keys, start=1):
+            self._assemble_key(k, log=False)
+            if i % progress_every == 0 or i == total:
+                tprint(
+                    f"  Feature materialization progress: {i}/{total} "
+                    f"({(100.0 * i / max(1, total)):.1f}%)"
+                )
 
 def load_features_selected(
     ts: pd.Timestamp,
     root_dir: str,
     feature_keys: list[str] | set[str] | tuple[str, ...] | None = None,
     symbols: list[str] | set[str] | tuple[str, ...] | None = None,
+    start_ts: pd.Timestamp | None = None,
+    end_ts: pd.Timestamp | None = None,
 ) -> dict:
     """
     Load a subset of features/symbols from disk.
@@ -1034,13 +1094,36 @@ def load_features_selected(
         tprint(f"load_features_selected: in_dir not found: {in_dir} (cwd={os.getcwd()})")
         return None
 
-    files = sorted(glob.glob(os.path.join(in_dir, "symbol=*.parquet")))
-    if not files:
-        tprint(f"load_features_selected: no symbol=*.parquet files found in {in_dir}")
-        return None
-
     feature_set = set(feature_keys) if feature_keys else None
     symbol_set = set(map(str, symbols)) if symbols else None
+    start_ts = pd.Timestamp(start_ts) if start_ts is not None else None
+    end_ts = pd.Timestamp(end_ts) if end_ts is not None else None
+    parquet_filters = []
+    if start_ts is not None:
+        parquet_filters.append(("ts", ">=", start_ts))
+    if end_ts is not None:
+        parquet_filters.append(("ts", "<=", end_ts))
+    if symbol_set is not None:
+        files = []
+        seen = set()
+        for sym in symbol_set:
+            safe_sym = sym.replace("/", "_")
+            fpath = os.path.join(in_dir, f"symbol={safe_sym}.parquet")
+            if os.path.exists(fpath) and fpath not in seen:
+                files.append(fpath)
+                seen.add(fpath)
+        if not files:
+            tprint(
+                f"load_features_selected: no requested symbol parquet files found in {in_dir} "
+                f"for {sorted(symbol_set)}"
+            )
+            return None
+    else:
+        files = sorted(glob.glob(os.path.join(in_dir, "symbol=*.parquet")))
+        if not files:
+            tprint(f"load_features_selected: no symbol=*.parquet files found in {in_dir}")
+            return None
+
     feat_buffers: dict[str, dict[str, tuple]] = {}
 
     tprint(
@@ -1086,7 +1169,22 @@ def load_features_selected(
                     )
                 continue
 
-            df = pd.read_parquet(fpath, columns=cols_to_read)
+            read_kwargs = {"columns": cols_to_read}
+            if parquet_filters:
+                read_kwargs["filters"] = parquet_filters
+            df = pd.read_parquet(fpath, **read_kwargs)
+            if start_ts is not None:
+                df = df[df.index >= start_ts]
+            if end_ts is not None:
+                df = df[df.index <= end_ts]
+            if df.empty:
+                if i % progress_every == 0 or i == total_files:
+                    elapsed = time.time() - start_load
+                    tprint(
+                        f"Selective feature load progress: {i}/{total_files} files "
+                        f"({(i / total_files) * 100:.1f}%) in {elapsed:.1f}s"
+                    )
+                continue
             if not df.index.is_unique:
                 df = df[~df.index.duplicated(keep='last')]
 

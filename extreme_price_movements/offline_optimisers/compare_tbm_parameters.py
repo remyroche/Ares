@@ -119,7 +119,12 @@ from extreme_price_movements.production_sl_tp_policy import (
     SLTPPolicy,
     expand_configs_wide_sl_tp_additive_superiority,
 )
-from extreme_price_movements.hf_data_loader import HF_DATA_DIR, get_15m_ohlcv
+from extreme_price_movements.hf_data_loader import (
+    HF_DATA_DIR,
+    HF_DATA_DIR_5M,
+    get_15m_ohlcv,
+    get_5m_ohlcv,
+)
 
 
 EPS = 1e-12
@@ -129,10 +134,17 @@ USE_15M_REFINEMENT = True  # Feature toggle to disable 15m data download/refinem
 _HF_15M_FAILED_SYMBOLS: set[str] = set()
 _HF_15M_MEMORY_CACHE: Dict[str, pd.DataFrame] = {}
 _HF_15M_LOCAL_AVAILABLE: Dict[str, bool] = {}
+_HF_5M_FAILED_SYMBOLS: set[str] = set()
+_HF_5M_MEMORY_CACHE: Dict[str, pd.DataFrame] = {}
+_HF_5M_LOCAL_AVAILABLE: Dict[str, bool] = {}
 
 
 def _get_global_hf_cache() -> Dict[str, pd.DataFrame]:
     return _HF_15M_MEMORY_CACHE
+
+
+def _get_global_hf_cache_5m() -> Dict[str, pd.DataFrame]:
+    return _HF_5M_MEMORY_CACHE
 
 
 def _is_apple_arm() -> bool:
@@ -273,6 +285,26 @@ def _has_local_15m_cache(symbol: str) -> bool:
     return bool(available)
 
 
+def _has_local_5m_cache(symbol: str) -> bool:
+    """Fast local-availability check for 5m parquet (memoized)."""
+    clean = str(symbol or "").replace("/", "").replace("_", "").lower()
+    cached = _HF_5M_LOCAL_AVAILABLE.get(clean)
+    if cached is not None:
+        return bool(cached)
+
+    path = HF_DATA_DIR_5M / f"{clean}_5m.parquet"
+    available = path.exists()
+    if not available:
+        clean_up = clean.upper()
+        for q in ("USDC", "BUSD", "EUR"):
+            if clean_up.endswith(q):
+                base = clean_up[:-len(q)].lower()
+                available = (HF_DATA_DIR_5M / f"{base}usdt_5m.parquet").exists()
+                break
+    _HF_5M_LOCAL_AVAILABLE[clean] = bool(available)
+    return bool(available)
+
+
 def _load_or_download_15m(symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timestamp, *, allow_download: bool = False) -> pd.DataFrame:
     """Load or download 15m data with global memory caching."""
     clean = str(symbol or "").replace("/", "").replace("_", "").lower()
@@ -348,6 +380,74 @@ def _load_or_download_15m(symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timest
         return pd.DataFrame()
 
 
+def _load_or_download_5m(symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timestamp, *, allow_download: bool = False) -> pd.DataFrame:
+    """Load or download 5m data with global memory caching."""
+    clean = str(symbol or "").replace("/", "").replace("_", "").lower()
+    ccxt_symbol = _symbol_to_hf_ccxt(symbol)
+
+    cache = _get_global_hf_cache_5m()
+    if clean in cache:
+        df = cache[clean]
+        if df.empty:
+            return df
+        return df.loc[(df.index >= start_ts) & (df.index <= end_ts), ["open", "high", "low", "close"]].astype(np.float32, copy=False)
+
+    path = HF_DATA_DIR_5M / f"{clean}_5m.parquet"
+    if not path.exists():
+        clean_up = clean.upper()
+        for q in ("USDC", "BUSD", "EUR"):
+            if clean_up.endswith(q):
+                base = clean_up[:-len(q)].lower()
+                fallback_path = HF_DATA_DIR_5M / f"{base}usdt_5m.parquet"
+                if fallback_path.exists():
+                    path = fallback_path
+                break
+    if path.exists():
+        try:
+            df = pd.read_parquet(path)
+            idx = df.index if isinstance(df.index, pd.DatetimeIndex) else pd.to_datetime(df.index)
+            df.index = idx.tz_localize("UTC") if idx.tz is None else idx.tz_convert("UTC")
+            df = df[["open", "high", "low", "close"]].astype(np.float32)
+            cache[clean] = df
+            _HF_5M_LOCAL_AVAILABLE[clean] = True
+            return df.loc[(df.index >= start_ts) & (df.index <= end_ts)]
+        except Exception:
+            pass
+
+    if not allow_download:
+        cache[clean] = pd.DataFrame()
+        _HF_5M_LOCAL_AVAILABLE[clean] = False
+        return pd.DataFrame()
+    try:
+        if ccxt_symbol in _HF_5M_FAILED_SYMBOLS:
+            return pd.DataFrame()
+        import ccxt  # type: ignore
+        ex = ccxt.binance({"enableRateLimit": True})
+        got = get_5m_ohlcv(ex, ccxt_symbol, start_ts, max_hold_hours=24)
+        if got is None or got.empty:
+            _HF_5M_FAILED_SYMBOLS.add(ccxt_symbol)
+            cache[clean] = pd.DataFrame()
+            return pd.DataFrame()
+
+        got = got[["open", "high", "low", "close"]].astype(np.float32)
+        if path.exists():
+            df = pd.read_parquet(path)
+            idx = df.index if isinstance(df.index, pd.DatetimeIndex) else pd.to_datetime(df.index)
+            df.index = idx.tz_localize("UTC") if idx.tz is None else idx.tz_convert("UTC")
+            df = df[["open", "high", "low", "close"]].astype(np.float32)
+            cache[clean] = df
+            _HF_5M_LOCAL_AVAILABLE[clean] = True
+            return df.loc[(df.index >= start_ts) & (df.index <= end_ts)]
+
+        cache[clean] = got
+        _HF_5M_LOCAL_AVAILABLE[clean] = True
+        return got.loc[(got.index >= start_ts) & (got.index <= end_ts)]
+    except Exception as exc:
+        _HF_5M_FAILED_SYMBOLS.add(ccxt_symbol)
+        tprint(f"5m download disabled for {ccxt_symbol} after failure: {exc}")
+        return pd.DataFrame()
+
+
 def _resolve_barrier_conflict_15m(*, side: str, bar_open: float, tp_price: float, sl_price: float, trailing_price: Optional[float] = None) -> Optional[str]:
     hits: Dict[str, float] = {"TP": abs(bar_open - tp_price), "SL": abs(bar_open - sl_price)}
     if trailing_price is not None and np.isfinite(trailing_price):
@@ -399,7 +499,7 @@ def _scan_first_ambiguous_hits(
     return out_i[:k], out_j[:k]
 
 
-def _refine_ambiguous_labels_with_15m(
+def _refine_ambiguous_labels_with_intrabar(
     panel: Dict[str, pd.DataFrame],
     tp_df: pd.DataFrame,
     sl_df: pd.DataFrame,
@@ -408,6 +508,9 @@ def _refine_ambiguous_labels_with_15m(
     qual: pd.DataFrame,
     h: int,
     side: str,
+    timeframe: str,
+    has_local_cache_fn,
+    load_or_download_fn,
     cfg: Optional[Dict[str, Any]] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     close_df = panel.get("close")
@@ -418,52 +521,46 @@ def _refine_ambiguous_labels_with_15m(
 
     symbols = close_df.columns
     idx = close_df.index
-    allow_download = bool((cfg or {}).get("allow_15m_download", False))
-    
-    # ── Optimization: Batch pre-load 15m data for all symbols before parallel processing ──
+    allow_key = "allow_15m_download" if timeframe == "15m" else "allow_5m_download"
+    allow_download = bool((cfg or {}).get(allow_key, False))
+    stage_label = f"{timeframe}_refine"
+
     n_jobs = _safe_parallel_jobs(len(symbols), cap=os.cpu_count() or 8)
-    
-    # Pre-load 15m data for all symbols that have local cache or allow download
-    # This avoids N sequential disk reads in the parallel workers
-    _15m_preloaded: Dict[str, pd.DataFrame] = {}
-    _symbols_needing_15m = []
-    
-    # First pass: identify which symbols need 15m data
+
+    preloaded: Dict[str, pd.DataFrame] = {}
+    symbols_needing_intrabar = []
     for sym in symbols:
-        if allow_download or _has_local_15m_cache(sym):
-            _symbols_needing_15m.append(sym)
-    
-    # Batch load in parallel if there are symbols to load
-    if _symbols_needing_15m:
+        if allow_download or has_local_cache_fn(sym):
+            symbols_needing_intrabar.append(sym)
+
+    if symbols_needing_intrabar:
         tprint(
-            f"[15m_refine] pre-loading {len(_symbols_needing_15m)}/{len(symbols)} symbols "
+            f"[{stage_label}] pre-loading {len(symbols_needing_intrabar)}/{len(symbols)} symbols "
             f"side={side} h={h} allow_download={allow_download}"
         )
-        
+
         def _preload_symbol(sym: str):
-            # Find the time range needed for this symbol by checking the panel
             c_sym = close_df[sym]
             tpv_sym = tp_df[sym]
             slv_sym = sl_df[sym]
             valid_mask = np.isfinite(c_sym) & (c_sym > 0) & np.isfinite(tpv_sym) & np.isfinite(slv_sym)
             if not np.any(valid_mask):
                 return sym, pd.DataFrame()
-            # Use full time range of the panel for preloading
             start_ts = c_sym.index.min()
             end_ts = c_sym.index.max()
-            return sym, _load_or_download_15m(sym, start_ts, end_ts, allow_download=allow_download)
-        
-        # Parallel preload
-        preload_results = Parallel(n_jobs=min(n_jobs, len(_symbols_needing_15m)), prefer="threads")(
-            delayed(_preload_symbol)(s) for s in _symbols_needing_15m
+            return sym, load_or_download_fn(sym, start_ts, end_ts, allow_download=allow_download)
+
+        preload_results = Parallel(n_jobs=min(n_jobs, len(symbols_needing_intrabar)), prefer="threads")(
+            delayed(_preload_symbol)(s) for s in symbols_needing_intrabar
         )
         for sym, hf_data in preload_results:
             if not hf_data.empty:
-                _15m_preloaded[sym] = hf_data
-    
+                preloaded[sym] = hf_data
+
     t_refine0 = time.perf_counter()
     tprint(
-        f"[15m_refine] start side={side} h={h} symbols={len(symbols)} "
+        f"[{stage_label}] start side={side} h={h} symbols={len(symbols)} "
+        f"coverage_candidates={len(symbols_needing_intrabar)} preloaded={len(preloaded)} "
         f"n_jobs={n_jobs} allow_download={allow_download} rss_mb={_memory_snapshot_mb():.0f}"
     )
 
@@ -477,17 +574,15 @@ def _refine_ambiguous_labels_with_15m(
         rets_sym = ret[sym].to_numpy(dtype=np.float32, copy=True)
         qual_sym = qual[sym].to_numpy(dtype=np.float32, copy=True)
 
-        # If no local 15m cache exists and downloading is disabled, refinement cannot help.
-        # Exit before the O(n*horizon) ambiguous-scan loop.
-        if not allow_download and not _has_local_15m_cache(sym):
-            return sym, lab, rets_sym, qual_sym, 0, 0, 0
+        if not allow_download and not has_local_cache_fn(sym):
+            return sym, lab, rets_sym, qual_sym, 0, 0, 0, 0, 0
         
         n = len(c)
         # Hybrid acceleration: vectorized candidate setup + compiled first-hit scan.
         valid_mask_i = np.isfinite(c) & (c > 0) & np.isfinite(tpv) & np.isfinite(slv)
         valid_indices = np.where(valid_mask_i)[0].astype(np.int64, copy=False)
         if valid_indices.size == 0:
-            return sym, lab, rets_sym, qual_sym, 0, 0, 0
+            return sym, lab, rets_sym, qual_sym, 0, 0, 0, 0, 0
 
         tp_price = c * ((1.0 + tpv) if side == "long" else (1.0 - tpv))
         sl_price = c * ((1.0 - slv) if side == "long" else (1.0 + slv))
@@ -505,49 +600,46 @@ def _refine_ambiguous_labels_with_15m(
             side_long=bool(side == "long"),
         )
         if amb_i.size == 0:
-            return sym, lab, rets_sym, qual_sym, 0, 0, 0
+            return sym, lab, rets_sym, qual_sym, 0, 0, 0, 0, 0
 
         ambiguous_j_list = [
             (int(i), int(j), float(tp_price[i]), float(sl_price[i]), float(tpv[i]), float(slv[i]))
             for i, j in zip(amb_i.tolist(), amb_j.tolist())
         ]
+        ambiguous_candidates = int(len(ambiguous_j_list))
 
         # P1 FIX: use min(j) across all ambiguous entries, not just ambiguous_j_list[0][1].
         # The list is ordered by i (entry bar), but a later i can have an earlier first_ambiguous_j,
         # so using [0][1] could miss required 15m bars at the start of the range.
-        start_full = min(idx[entry[1]] for entry in ambiguous_j_list).floor("15min")
+        start_full = min(idx[entry[1]] for entry in ambiguous_j_list).floor(timeframe)
         end_full = min(idx[ambiguous_j_list[-1][0]] + pd.Timedelta(hours=float(h)), idx[-1])
-        
-        # Use preloaded 15m data if available, otherwise load on-demand
-        if sym in _15m_preloaded:
-            hf_full = _15m_preloaded[sym]
-            # Slice to the required time range
+
+        if sym in preloaded:
+            hf_full = preloaded[sym]
             hf_full = hf_full.loc[(hf_full.index >= start_full) & (hf_full.index <= end_full)]
         else:
-            hf_full = _load_or_download_15m(sym, start_full, end_full, allow_download=allow_download)
-        
-        if hf_full.empty:
-            return sym, lab, rets_sym, qual_sym, int(len(ambiguous_j_list)), 0, 0
+            hf_full = load_or_download_fn(sym, start_full, end_full, allow_download=allow_download)
 
-        # Optimization: Pre-convert HF to numpy for faster iteration
+        if hf_full.empty:
+            return sym, lab, rets_sym, qual_sym, ambiguous_candidates, 0, 0, 1, ambiguous_candidates
+
         hf_idx = hf_full.index
         hf_h = hf_full["high"].to_numpy(dtype=np.float32, copy=False)
         hf_l = hf_full["low"].to_numpy(dtype=np.float32, copy=False)
         hf_c = hf_full["close"].to_numpy(dtype=np.float32, copy=False)
+        hf_ns = hf_idx.asi8
 
         resolved_cnt = 0
         for i, first_ambiguous_j, tp_price, sl_price, tp_val, sl_val in ambiguous_j_list:
-            start_15m = idx[first_ambiguous_j].floor("15min")
-            end_15m = min(idx[i] + pd.Timedelta(hours=float(h)), idx[-1])
-            
-            # Use np.searchsorted for O(log n) slice instead of O(n) boolean mask
-            hf_ns = hf_idx.asi8  # int64 nanoseconds, already sorted
-            lo_ns = start_15m.value
-            hi_ns = end_15m.value
+            start_tf = idx[first_ambiguous_j].floor(timeframe)
+            end_tf = min(idx[i] + pd.Timedelta(hours=float(h)), idx[-1])
+
+            lo_ns = start_tf.value
+            hi_ns = end_tf.value
             i_lo = np.searchsorted(hf_ns, lo_ns, side="left")
             i_hi = np.searchsorted(hf_ns, hi_ns, side="left")
             idxs15 = np.arange(i_lo, i_hi, dtype=np.intp)
-            
+
             resolved = None
             if idxs15.size == 0:
                 continue
@@ -584,7 +676,8 @@ def _refine_ambiguous_labels_with_15m(
                 qual_sym[i] = np.float32(min(float(qual_sym[i]), 0.49))
                 resolved_cnt += 1
         
-        return sym, lab, rets_sym, qual_sym, int(len(ambiguous_j_list)), int(resolved_cnt), int(len(hf_full))
+        unresolved_cnt = max(0, ambiguous_candidates - int(resolved_cnt))
+        return sym, lab, rets_sym, qual_sym, ambiguous_candidates, int(resolved_cnt), int(len(hf_full)), 0, unresolved_cnt
 
     results = Parallel(n_jobs=n_jobs, prefer="threads")(
         delayed(_process_symbol)(s) for s in symbols
@@ -594,26 +687,76 @@ def _refine_ambiguous_labels_with_15m(
     total_ambiguous = 0
     total_resolved = 0
     total_hf_rows = 0
-    for _i, (sym, lab, rets_sym, qual_sym, amb_cnt, resolved_cnt, hf_rows) in enumerate(results, 1):
+    symbols_with_ambiguous = 0
+    symbols_missing_intrabar = 0
+    total_unresolved = 0
+    for _i, (sym, lab, rets_sym, qual_sym, amb_cnt, resolved_cnt, hf_rows, missing_hf, unresolved_cnt) in enumerate(results, 1):
         lbl2[sym] = lab
         ret2[sym] = rets_sym
         qual2[sym] = qual_sym
         total_ambiguous += int(amb_cnt)
         total_resolved += int(resolved_cnt)
         total_hf_rows += int(hf_rows)
+        symbols_with_ambiguous += int(int(amb_cnt) > 0)
+        symbols_missing_intrabar += int(missing_hf)
+        total_unresolved += int(unresolved_cnt)
         if _should_log_progress(_i, len(results), every=100):
             tprint(
-                f"[15m_refine] merged {_i}/{len(results)} symbols "
-                f"ambiguous={total_ambiguous} resolved={total_resolved} "
+                f"[{stage_label}] merged {_i}/{len(results)} symbols "
+                f"ambiguous={total_ambiguous} resolved={total_resolved} unresolved={total_unresolved} "
+                f"sym_with_amb={symbols_with_ambiguous} sym_missing_hf={symbols_missing_intrabar} "
                 f"hf_rows={total_hf_rows} rss_mb={_memory_snapshot_mb():.0f}"
             )
     tprint(
-        f"[15m_refine] done side={side} h={h} symbols={len(results)} ambiguous={total_ambiguous} "
-        f"resolved={total_resolved} hf_rows={total_hf_rows} "
+        f"[{stage_label}] done side={side} h={h} symbols={len(results)} "
+        f"sym_with_amb={symbols_with_ambiguous} sym_missing_hf={symbols_missing_intrabar} "
+        f"ambiguous={total_ambiguous} resolved={total_resolved} unresolved={total_unresolved} "
+        f"resolution_rate={(float(total_resolved) / float(total_ambiguous)) if total_ambiguous else 0.0:.3f} "
+        f"hf_rows={total_hf_rows} "
         f"elapsed_s={time.perf_counter()-t_refine0:.2f} rss_mb={_memory_snapshot_mb():.0f}"
     )
-    
+
     return lbl2, ret2, qual2
+
+
+def _refine_ambiguous_labels_with_15m(
+    panel: Dict[str, pd.DataFrame],
+    tp_df: pd.DataFrame,
+    sl_df: pd.DataFrame,
+    lbl: pd.DataFrame,
+    ret: pd.DataFrame,
+    qual: pd.DataFrame,
+    h: int,
+    side: str,
+    cfg: Optional[Dict[str, Any]] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    return _refine_ambiguous_labels_with_intrabar(
+        panel, tp_df, sl_df, lbl, ret, qual, h, side,
+        timeframe="15min",
+        has_local_cache_fn=_has_local_15m_cache,
+        load_or_download_fn=_load_or_download_15m,
+        cfg=cfg,
+    )
+
+
+def _refine_ambiguous_labels_with_5m(
+    panel: Dict[str, pd.DataFrame],
+    tp_df: pd.DataFrame,
+    sl_df: pd.DataFrame,
+    lbl: pd.DataFrame,
+    ret: pd.DataFrame,
+    qual: pd.DataFrame,
+    h: int,
+    side: str,
+    cfg: Optional[Dict[str, Any]] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    return _refine_ambiguous_labels_with_intrabar(
+        panel, tp_df, sl_df, lbl, ret, qual, h, side,
+        timeframe="5min",
+        has_local_cache_fn=_has_local_5m_cache,
+        load_or_download_fn=_load_or_download_5m,
+        cfg=cfg,
+    )
 
 
 def _find_latest_feature_ts(data_root: str) -> Optional[pd.Timestamp]:
@@ -635,7 +778,7 @@ def _load_panel_from_store(cfg: Dict[str, Any]) -> Tuple[Optional[Dict[str, pd.D
     Returns (panel, symbols_used).
     """
     from extreme_price_movements.data_store import PartitionedOHLCVStore
-    from extreme_price_movements.universe import refresh_margin_universe_daily
+    from extreme_price_movements.universe import refresh_margin_universe_daily, apply_hardcoded_universe_exclusions
     
     try:
         store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
@@ -648,8 +791,8 @@ def _load_panel_from_store(cfg: Dict[str, Any]) -> Tuple[Optional[Dict[str, pd.D
             margin_symbols = []
         
         # Use market_basket from config
-        market_basket = cfg.get("market_basket", [])
-        all_syms = list(set(margin_symbols + market_basket))
+        market_basket = apply_hardcoded_universe_exclusions(list(cfg.get("market_basket", [])))
+        all_syms = apply_hardcoded_universe_exclusions(list(set(margin_symbols + market_basket)))
 
         # Augment with local store symbols (USDT-only to stay consistent with the
         # margin universe quote filter set above).
@@ -664,6 +807,7 @@ def _load_panel_from_store(cfg: Dict[str, Any]) -> Tuple[Optional[Dict[str, pd.D
             if ohlcv_syms:
                 all_syms = list(set(all_syms) | set(ohlcv_syms))
                 tprint(f"Augmented symbol universe from local ohlcv (USDT-only): +{len(set(ohlcv_syms))} symbols")
+        all_syms = apply_hardcoded_universe_exclusions(list(set(all_syms) | set(ohlcv_syms)))
 
         # Use a configurable subsample step; default keeps 1/2 of symbols (USDT-only universe).
         # Previously 3 (1/3 of all quotes), now 2 (1/2 of USDT-only) for better coverage with native data.
@@ -1447,9 +1591,15 @@ def align_artifacts(
     from joblib import Parallel, delayed
     start_ts = idx.min()
     end_ts = idx.max() + pd.Timedelta(hours=48)
+    allow_15m_download = bool(cfg.get("allow_15m_download", False))
     
     def _fetch(sym):
-        return sym, _load_or_download_15m(sym, start_ts, end_ts, allow_download=False)
+        return sym, _load_or_download_15m(
+            sym,
+            start_ts,
+            end_ts,
+            allow_download=allow_15m_download,
+        )
         
     results = Parallel(n_jobs=_safe_parallel_jobs(len(cols), cap=8))(
         delayed(_fetch)(sym) for sym in cols
@@ -2887,6 +3037,19 @@ def evaluate_config(
                     lbl_15m, ret_15m, qual_15m = compute_triple_barrier_labels(
                         _panel_15m, _tp_15m, _sl_15m, h, side=side, return_outcomes=True, horizons_frame=_dyn_h_15m, resolve_conflicts=False
                     )
+                    amb_before_5m = int(((lbl_15m.to_numpy(dtype=np.int8, copy=False) == OUT_SL) & (qual_15m.to_numpy(dtype=np.float32, copy=False) < 0.5)).sum())
+                    tprint(
+                        f"[5m_refine] invoke side={side} h={h} candidates={int(np.isfinite(_tp_15m.to_numpy(dtype=np.float32, copy=False)).sum())} "
+                        f"pre_5m_ambiguous_proxy={amb_before_5m}"
+                    )
+                    lbl_15m, ret_15m, qual_15m = _refine_ambiguous_labels_with_5m(
+                        _panel_15m, _tp_15m, _sl_15m, lbl_15m, ret_15m, qual_15m, h, side, cfg=cfg
+                    )
+                    amb_after_5m = int(((lbl_15m.to_numpy(dtype=np.int8, copy=False) == OUT_SL) & (qual_15m.to_numpy(dtype=np.float32, copy=False) < 0.5)).sum())
+                    tprint(
+                        f"[5m_refine] complete side={side} h={h} pre_5m_ambiguous_proxy={amb_before_5m} "
+                        f"post_5m_ambiguous_proxy={amb_after_5m} delta={amb_before_5m - amb_after_5m}"
+                    )
                     
                     # Project perfectly computed outcomes back to 1h domain
                     lbl = lbl_15m.reindex(_idx_1h).fillna(0)
@@ -3874,9 +4037,9 @@ def evaluate_config(
 
     # RR-keep penalty: discourage pathological regions where too few events survive RR filter.
     _rr_floor_map = {
+        1: float(cfg.get("stage2_rr_keep_floor_h1", 0.45)),
         2: float(cfg.get("stage2_rr_keep_floor_h2", 0.50)),
         4: float(cfg.get("stage2_rr_keep_floor_h4", 0.55)),
-        8: float(cfg.get("stage2_rr_keep_floor_h8", 0.60)),
     }
     rr_floor = float(_rr_floor_map.get(_target_h, float(cfg.get("stage2_rr_keep_floor_default", 0.55))))
     rr_gap = max(0.0, (rr_floor - rr_keep_rate) / max(rr_floor, EPS))
@@ -6798,9 +6961,9 @@ def _build_prod_aligned_reports(
             "config_id": cid,
             "tp_base_pct": tp_base,
             "sl_anchor_pct": tp_base * sl_as_tp if (math.isfinite(tp_base) and math.isfinite(sl_as_tp)) else float("nan"),
+            "tp_eff_h1": float(targets.get("H1", float("nan"))),
             "tp_eff_h2": float(targets.get("H2", float("nan"))),
             "tp_eff_h4": float(targets.get("H4", float("nan"))),
-            "tp_eff_h8": float(targets.get("H8", float("nan"))),
             "min_cell_auc_bound": float(_r.get("min_cell_auc_bound", _r.get("min_cell_auc", float("nan")))),
         })
 
@@ -6836,9 +6999,9 @@ def _build_prod_aligned_reports(
         div_df = pd.DataFrame(rows_div)
         grp = div_df.groupby("bucket", observed=True).agg(
             unique_tp_base_pct=("tp_base_pct", lambda x: int(pd.Series(x).dropna().round(6).nunique())),
+            unique_tp_eff_h1=("tp_eff_h1", lambda x: int(pd.Series(x).dropna().round(6).nunique())),
             unique_tp_eff_h2=("tp_eff_h2", lambda x: int(pd.Series(x).dropna().round(6).nunique())),
             unique_tp_eff_h4=("tp_eff_h4", lambda x: int(pd.Series(x).dropna().round(6).nunique())),
-            unique_tp_eff_h8=("tp_eff_h8", lambda x: int(pd.Series(x).dropna().round(6).nunique())),
             h2_min=("tp_eff_h2", "min"),
             h2_max=("tp_eff_h2", "max"),
             min_auc_bound=("min_cell_auc_bound", "min"),

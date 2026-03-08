@@ -734,12 +734,12 @@ def compute_funding_proxy(c, h, l, v, mkt_df):
 
     return (relative_premium + (0.5 * intensity)).astype(np.float32)
 
-def compute_features_hourly(panel, mkt_gates, cfg):
+def compute_features_hourly(panel, mkt_gates, cfg, requested_feature_keys=None):
     """
     Compute features. Joblib caching removed — features are persisted to parquet
     by save_features, and the joblib serialization doubled peak memory.
     """
-    return _compute_features_impl(panel, mkt_gates, cfg)
+    return _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=requested_feature_keys)
 
 
 def _compute_hvn_col(col, o_col, h_col, l_col, c_col, v_col):
@@ -817,8 +817,9 @@ def _compute_hvn_feature_frames(
 
     return hvn_results
 
-def _compute_features_impl(panel, mkt_gates, cfg):
+def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     tprint("Features: compute base matrices")
+    requested_feature_set = set(requested_feature_keys or [])
     
     # Check inputs
     # Check inputs (removing debug checks to reduce spam)
@@ -2854,30 +2855,37 @@ def _compute_features_impl(panel, mkt_gates, cfg):
 
     # 5. Volume Node Features (HVN/LVN)
     # Loop over columns, construct DF, call function, stack results
-    tprint("Computing HVN/LVN features...")
-    try:
-        from .volume_node_features import hvn_lvn_features_ohlcv
+    need_vp_features = (
+        not requested_feature_set
+        or any(str(k).startswith("vp_") for k in requested_feature_set)
+    )
+    if need_vp_features:
+        tprint("Computing HVN/LVN features...")
+        try:
+            from .volume_node_features import hvn_lvn_features_ohlcv
 
-        # Get feature names from a sample run
-        first_col = c_log.columns[0]
-        df_first = pd.DataFrame({
-            "open": o[first_col],
-            "high": h[first_col],
-            "low": l[first_col],
-            "close": c_log[first_col], # Use c_log, not FFD c
-            "volume": v[first_col]
-        })
-        sample_res = hvn_lvn_features_ohlcv(df_first)
-        hvn_keys = list(sample_res.columns)
+            # Get feature names from a sample run
+            first_col = c_log.columns[0]
+            df_first = pd.DataFrame({
+                "open": o[first_col],
+                "high": h[first_col],
+                "low": l[first_col],
+                "close": c_log[first_col], # Use c_log, not FFD c
+                "volume": v[first_col]
+            })
+            sample_res = hvn_lvn_features_ohlcv(df_first)
+            hvn_keys = list(sample_res.columns)
 
-        hvn_results = _compute_hvn_feature_frames(o, h, l, c_log, v, hvn_keys)
+            hvn_results = _compute_hvn_feature_frames(o, h, l, c_log, v, hvn_keys)
 
-        # Add to main feats with prefix
-        for k, df_res in hvn_results.items():
-            feats[f"vp_{k}"] = df_res
+            # Add to main feats with prefix
+            for k, df_res in hvn_results.items():
+                feats[f"vp_{k}"] = df_res
 
-    except Exception as e:
-        tprint(f"WARNING: HVN/LVN calculation failed: {e}")
+        except Exception as e:
+            tprint(f"WARNING: HVN/LVN calculation failed: {e}")
+    else:
+        tprint("Skipping HVN/LVN features: no vp_* keys requested")
 
     # Free target_proxy — no longer needed after gated feature selection
     del target_proxy, time_blocks, train_mask_proxy
@@ -2886,6 +2894,8 @@ def _compute_features_impl(panel, mkt_gates, cfg):
     del atr_base, atr, dir_s, rv6, rv12, rv_ratio, mkt_gates
     gc.collect()
 
+    if requested_feature_set:
+        feats = {k: v for k, v in feats.items() if k in requested_feature_set}
     tprint(f"Features: {len(feats)} features before CausalTransform. Applying transforms...")
     # Transform cache can be enabled for incremental/tail-only runs to persist parquet transforms.
     transform_cache_enabled = bool(cfg.get("feature_transform_cache_enabled", False))

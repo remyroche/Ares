@@ -19,9 +19,9 @@ class UtilityConfig:
 
 @dataclass
 class FeatureSelectConfig:
-    n_repeats_perm: int = 10
-    min_features: int = 10
-    max_features: Optional[int] = None
+    n_repeats_perm: int = 5
+    min_features: int = 15
+    max_features: Optional[int] = 40
     utility_drop_tol: float = 0.0
     confirm_drop: bool = True
     confirm_mode: Literal["full_cv", "single_seed_fast"] = "single_seed_fast"
@@ -29,8 +29,8 @@ class FeatureSelectConfig:
     min_presence: float = 0.4
     weights: dict = field(default_factory=lambda: {"wU": 0.5, "wS": 0.3, "wSt": 0.2})
     eps: float = 1e-12
-    shap_sample: int = 5000
-    perm_sample: int = 20000
+    shap_sample: int = 3000
+    perm_sample: int = 2000
 
 
 def compute_utility(

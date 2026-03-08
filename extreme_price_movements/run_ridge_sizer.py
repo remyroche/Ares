@@ -37,6 +37,28 @@ from extreme_price_movements.ridge_position_sizer import (
 )
 from extreme_price_movements.utils import tprint, log_pipeline_warning
 from extreme_price_movements.entry_policy import compute_entry_policy_decision, flatten_bucket_policy
+
+
+def format_return_as_pct(ret: float) -> str:
+    """Format return as percentage string.
+
+    Args:
+        ret: Return in decimal form (e.g., 0.01 for 1%)
+
+    Returns:
+        Formatted percentage string (e.g., "1.00%")
+    """
+    return f"{ret:.2%}"
+
+
+def format_metric_float(val: float, decimals: int = 6) -> str:
+    try:
+        v = float(val)
+    except Exception:
+        return "N/A"
+    if not np.isfinite(v):
+        return "N/A"
+    return f"{v:.{decimals}f}"
 from extreme_price_movements.hf_data_loader import _load_existing_data
 
 
@@ -82,6 +104,36 @@ def find_latest_run_id(data_root: str) -> str:
     return run_dirs[0].name
 
 
+def find_best_feature_snapshot_ts(data_root: str, run_id: str) -> pd.Timestamp:
+    requested_ts = pd.to_datetime(run_id, format="%Y%m%d_%H%M%S", utc=True)
+    feature_root = Path(data_root) / "features"
+    requested_dir = feature_root / run_id
+    if requested_dir.exists():
+        return requested_ts
+    if not feature_root.exists():
+        return requested_ts
+    candidates = sorted([p.name for p in feature_root.iterdir() if p.is_dir()])
+    if not candidates:
+        return requested_ts
+    chosen = candidates[-1]
+    if chosen != run_id:
+        tprint(
+            f"Feature snapshot for {run_id} not found; "
+            f"falling back to latest available feature cache {chosen}"
+        )
+    return pd.to_datetime(chosen, format="%Y%m%d_%H%M%S", utc=True)
+
+
+
+# Metadata columns to exclude from features (Realized outcomes and target-related leaks)
+_META_COLS = {
+    "timestamp", "symbol", "return", "is_long", "index",
+    "mae_ret", "mfe_ret", "duration", "u_policy", "u_policy_net", "exit_code",
+    "label_policy_sl_atr_mult", "label_policy_tp_sl_ratio",
+    "label_policy_max_hold_bars", "label_policy_giveback_pct",
+    "atr_12_15m", "early_deadline", "early_mfe",
+    "outcome_pnl", "outcome_sortino", "outcome_j"
+}
 
 def load_base_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataFrame]:
     """Load base model OOF predictions from a training run.
@@ -110,16 +162,19 @@ def load_base_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
         tprint(f"WARNING: No base OOF parquet files found in {base_oof_dir}, skipping base model predictions")
         return {}
     
-    # Parse model names into (base_bucket, horizon)
-    # Patterns: long_mr_H2 -> (long_mr, H2), long_tf_H4 -> (long_tf, H4)
-    h_pat = re2.compile(r'^(.+)_H(\d+)$')
+    # Parse model names into (base_bucket, horizon, optional geometry archetype)
+    # Patterns:
+    #   long_mr_H2 -> (long_mr, H2)
+    #   long_tf_H4_tight -> (long_tf, H4, tight)
+    h_pat = re2.compile(r'^(.+)_H(\d+)(?:_(tight|balanced|wide))?$')
     buckets = {}
     for name, df in raw_dfs.items():
         m = h_pat.match(name)
         if m:
             bucket = m.group(1)
             _h = int(m.group(2))
-            col_name = f"base_H{_h}"
+            _variant = m.group(3)
+            col_name = f"base_H{_h}" if not _variant else f"base_H{_h}_{_variant}"
         else:
             # Fallback: treat entire name as bucket
             bucket = name
@@ -143,21 +198,33 @@ def load_base_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
                 combined[col_name] = mdf["oof_prob"].values
         
         # Add metadata for joining with meta OOF
-        combined["index"] = base_df["index"].values
-        combined["timestamp"] = base_df["timestamp"].values
-        combined["symbol"] = base_df["symbol"].values
+        if "index" in base_df.columns:
+            combined["index"] = base_df["index"].values
+        else:
+            combined["index"] = range(n)
+            
+        if "timestamp" in base_df.columns:
+            combined["timestamp"] = base_df["timestamp"].values
+        if "symbol" in base_df.columns:
+            combined["symbol"] = base_df["symbol"].values
         
         result[bucket] = combined
     
     tprint(f"Loaded base OOF predictions for {len(result)} buckets: {list(result.keys())}")
     return result
 
-def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataFrame]:
+def load_meta_oof_predictions(
+    data_root: str,
+    run_id: str,
+    *,
+    require_meta_barrier_probs: bool = False,
+) -> Dict[str, pd.DataFrame]:
     """Load meta model OOF predictions from a training run.
     
-    Handles per-horizon regressors (e.g. long_mr_H2, long_mr_H4, long_mr_H8)
+    Handles per-horizon regressors from the canonical horizon set
+    (e.g. long_mr_H1, long_mr_H2, long_mr_H4)
     and classifiers (e.g. long_mr_clf). Groups by base bucket and returns a
-    DataFrame per bucket with columns: reg_H2, reg_H4, reg_H8, clf, plus
+    DataFrame per bucket with columns like reg_H1/reg_H2/reg_H4, clf, plus
     agreement/disagreement features.
     
     Returns a dict keyed by bucket (e.g. 'long_mr') where each value is a
@@ -189,7 +256,16 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
         for df in raw_dfs.values()
     )
     if not _meta_prob_available:
-        log_pipeline_warning("Meta classifier probabilities (oof_p_sl/oof_p_to/oof_p_tp) not found in meta OOF artifacts; continuing with regression/aux heads only.")
+        msg = (
+            "Meta classifier probabilities (oof_p_sl/oof_p_to/oof_p_tp) not found in meta OOF artifacts."
+        )
+        if require_meta_barrier_probs:
+            raise RuntimeError(
+                msg
+                + " Policy-aligned ridge sizer runs require these barrier probabilities. "
+                + "Rebuild meta_oof with classifier probability export enabled."
+            )
+        log_pipeline_warning(msg + " Continuing with regression/aux heads only.")
     else:
         tprint("Meta classifier probabilities found in meta OOF artifacts.")
     
@@ -197,12 +273,20 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
     # Patterns: long_mr_H2 -> (long_mr, reg_H2), long_mr_clf -> (long_mr, clf),
     #           long_mr_utility -> (long_mr, utility), etc.
     _h_pat = re.compile(r'^(.+)_H(\d+)$')
+    _tbm_pat = re.compile(r'^(.+)_(tbm_\d+_\d+)_h(\d+)$')
+    _risk_pat = re.compile(r'^(.+)_(mae|mfe)_h(\d+)$')
     _aux_heads = {'utility', 'mae_q70', 'mfe', 'early_inval'}
     buckets = {}
     for name, df in raw_dfs.items():
         if name.endswith("_clf"):
             bucket = name[:-4]
             col_name = "clf"
+        elif (_m_tbm := _tbm_pat.match(name)) is not None:
+            bucket = _m_tbm.group(1)
+            col_name = f"{_m_tbm.group(2)}_h{int(_m_tbm.group(3))}"
+        elif (_m_risk := _risk_pat.match(name)) is not None:
+            bucket = _m_risk.group(1)
+            col_name = f"{_m_risk.group(2)}_h{int(_m_risk.group(3))}"
         elif name.endswith("_reg"):
             bucket = name[:-4]
             col_name = "reg"
@@ -262,6 +346,22 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
             combined["reg_mean"] = combined[reg_cols[0]].values
             combined["reg_std"] = 0.0
 
+        tbm_cols = [c for c in combined.columns if c.startswith("tbm_")]
+        if tbm_cols:
+            tbm_vals = combined[tbm_cols].values
+            combined["tbm_mean"] = np.nanmean(tbm_vals, axis=1)
+            combined["tbm_std"] = np.nanstd(tbm_vals, axis=1)
+        mae_cols = [c for c in combined.columns if c.startswith("mae_h")]
+        if mae_cols:
+            mae_vals = combined[mae_cols].values
+            combined["mae_mean"] = np.nanmean(mae_vals, axis=1)
+            combined["mae_std"] = np.nanstd(mae_vals, axis=1)
+        mfe_cols = [c for c in combined.columns if c.startswith("mfe_h")]
+        if mfe_cols:
+            mfe_vals = combined[mfe_cols].values
+            combined["mfe_mean"] = np.nanmean(mfe_vals, axis=1)
+            combined["mfe_std"] = np.nanstd(mfe_vals, axis=1)
+
         # -------------------------------------------------------------
         # Synthesize interaction features from auxiliary heads
         # -------------------------------------------------------------
@@ -280,22 +380,66 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
             combined["utility_disagreement"] = np.abs(combined["reg_mean"].values - _u_hat)
 
         
-        # Attach metadata from base
-        # Include aux head OOFs and realized outcomes for diagnostics
+        # Attach metadata and realized outcomes for diagnostics
         aux_cols = [
             "timestamp", "symbol", "return", "is_long", "index",
+            "oof_p_sl", "oof_p_to", "oof_p_tp",
             "oof_u_hat", "oof_log_mae_q70_hat", "oof_log_mfe_hat",
-            "mae_ret", "mfe_ret", "u_policy_net", "exit_code"
+            "mae_ret", "mfe_ret", "u_policy_net", "u_policy", "exit_code",
+            "label_policy_sl_atr_mult", "label_policy_tp_sl_ratio",
+            "label_policy_max_hold_bars", "label_policy_giveback_pct",
+            "atr_12_15m"
         ]
         for col in aux_cols:
-            if col in base_df.columns:
+            # Check across all meta-model DataFrames for this bucket for the column
+            col_data = None
+            for m_df in model_dfs.values():
+                if col in m_df.columns:
+                    col_data = m_df[col].values
+                    break
+            
+            if col_data is not None:
                 if col in {"timestamp", "symbol"}:
-                    combined[col] = base_df[col].values
+                    combined[col] = col_data
                 else:
-                    combined[col] = _fill_nonfinite_oof_vector(
-                        base_df[col].values, neutral=0.0
-                    )
+                    combined[col] = _fill_nonfinite_oof_vector(col_data, neutral=0.0)
         
+        # ---------------------------------------------------------------------
+        # RECOVERY: Fetch missing timestamp/symbol from labels if possible
+        # ---------------------------------------------------------------------
+        if ("timestamp" not in combined.columns or "symbol" not in combined.columns) and "index" in combined.columns:
+            try:
+                # Find a label file to join with
+                labels_dir = Path(data_root) / "artifacts" / run_id / "labels"
+                if labels_dir.exists():
+                    # Prefer the bucket-specific training labels; generic exhaustion labels
+                    # can have unrelated row layouts and produce degenerate timestamp recovery.
+                    bucket_label_files = sorted(labels_dir.glob(f"train_{bucket}_*.parquet"))
+                    label_file = bucket_label_files[0] if bucket_label_files else next(labels_dir.glob("*.parquet"), None)
+                    
+                    if label_file:
+                        label_df = pd.read_parquet(label_file)
+                        ts_col = "__ts__" if "__ts__" in label_df.columns else ("ts" if "ts" in label_df.columns else ("timestamp" if "timestamp" in label_df.columns else None))
+                        sym_col = "__symbol__" if "__symbol__" in label_df.columns else ("symbol" if "symbol" in label_df.columns else None)
+                        if len(label_df) >= n:
+                            if "timestamp" not in combined.columns:
+                                if ts_col is not None:
+                                    combined["timestamp"] = combined["index"].map(label_df[ts_col])
+                            if "symbol" not in combined.columns and sym_col is not None:
+                                combined["symbol"] = combined["index"].map(label_df[sym_col])
+                        # Sanity check: if recovery still collapses to <= 2 days, discard it so downstream
+                        # consumers don't mistake it for a real intraday sample.
+                        if "timestamp" in combined.columns:
+                            _ts_chk = pd.to_datetime(combined["timestamp"], utc=True, errors="coerce")
+                            if _ts_chk.notna().sum() > 0 and _ts_chk.dt.floor("D").nunique() <= 2:
+                                tprint(f"  WARNING: Recovered timestamps for {bucket} from {label_file.name} look degenerate; dropping them")
+                                combined = combined.drop(columns=["timestamp"])
+                        
+                        if "timestamp" in combined.columns:
+                            tprint(f"  Successfully recovered timestamps for {bucket} from {label_file.name}")
+            except Exception as e:
+                tprint(f"  Warning: Metadata recovery failed for {bucket}: {e}")
+
         result[bucket] = combined
         
         # Merge base OOF predictions if available (same bucket only)
@@ -305,14 +449,23 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
         if base_oofs:
             for base_bucket, base_df in base_oofs.items():
                 if bucket.startswith(base_bucket):
+                    base_by_idx = base_df.set_index('index') if 'index' in base_df.columns else base_df
+                    # Merge base model features
                     base_cols = [c for c in base_df.columns if c.startswith('base_')]
-                    if base_cols:
-                        if 'index' in combined.columns and 'index' in base_df.columns:
-                            base_by_idx = base_df.set_index('index')
-                            for col in base_cols:
-                                if col in base_by_idx.columns:
-                                    combined[col] = combined['index'].map(base_by_idx[col])
-                            tprint(f"  Merged base OOF {base_cols} into {bucket} (base: {base_bucket})")
+                    if 'index' in combined.columns:
+                        for col in base_cols:
+                            if col in base_by_idx.columns:
+                                combined[col] = combined['index'].map(base_by_idx[col])
+                    
+                    # Merge essential metadata if still missing
+                    for meta_col in ["timestamp", "symbol"]:
+                        if meta_col not in combined.columns and meta_col in base_df.columns:
+                            if 'index' in combined.columns:
+                                combined[meta_col] = combined['index'].map(base_by_idx[meta_col])
+                            else:
+                                combined[meta_col] = base_df[meta_col].values
+                    
+                    tprint(f"  Merged base OOF metadata/features into {bucket} (base: {base_bucket})")
                     break
 
         base_feature_cols = [c for c in combined.columns if c.startswith('base_')]
@@ -339,11 +492,11 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
     
     # Remove known meta/prediction cols that aren't base features
     known_preds = {
-        "score", "reg", "reg_mean", "reg_std", "reg_range", "utility", 
-        "mae_q70", "mfe", "early_inval", "oof_u_hat", "oof_log_mae_q70_hat", 
-        "oof_log_mfe_hat", "mfe_mae_ratio_hat", "Upside", "Downside", 
-        "EdgeSharpe", "risk_reward_ratio", "high_utility_pred", 
-        "risk_adjusted_pred", "utility_disagreement", "base_H2", "base_H4", "base_H8"
+        "score", "reg", "reg_mean", "reg_std", "reg_range", "utility",
+        "mae_q70", "mfe", "early_inval", "oof_u_hat", "oof_log_mae_q70_hat",
+        "oof_log_mfe_hat", "oof_p_sl", "oof_p_to", "oof_p_tp", "mfe_mae_ratio_hat", "Upside", "Downside",
+        "EdgeSharpe", "risk_reward_ratio", "high_utility_pred",
+        "risk_adjusted_pred", "utility_disagreement", "base_H2", "base_H4"
     }
     missing_feats = missing_feats - known_preds
 
@@ -355,7 +508,7 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
                 all_syms.update(bdf["symbol"].unique())
         
         feats = load_features_selected(
-            ts=pd.to_datetime(run_id, format="%Y%m%d_%H%M%S", utc=True),
+            ts=find_best_feature_snapshot_ts(data_root, run_id),
             root_dir=data_root,
             feature_keys=list(missing_feats),
             symbols=list(all_syms),
@@ -410,15 +563,20 @@ def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
     # These are metadata columns to exclude from features
     # Note: oof_u_hat, oof_log_mae_q70_hat, oof_log_mfe_hat, oof_log_dur_hat 
     # are now included as features (meta model auxiliary predictions)
-    _meta_set = {
-        "timestamp", "symbol", "return", "is_long", "index",
-        "mae_ret", "mfe_ret", "duration", "u_policy_net", "exit_code"
-    }
     for bk, bdf in result.items():
-        pred_cols = [c for c in bdf.columns if c not in _meta_set]
+        pred_cols = [c for c in bdf.columns if c not in _META_COLS]
         tprint(f"  {bk}: {len(bdf)} samples, pred_cols={pred_cols}")
     return result
 
+
+def _load_separate_outcomes(data_root, run_id):
+    from pathlib import Path
+    outcomes_path = Path(data_root) / "artifacts" / run_id / "trade_outcomes.parquet"
+    if outcomes_path.exists():
+        outcomes = pd.read_parquet(outcomes_path)
+        tprint(f"Loaded trade outcomes from {outcomes_path}: {len(outcomes)} trades")
+        return outcomes
+    return None
 
 def load_trade_outcomes(data_root: str, run_id: str, oof_df: pd.DataFrame) -> pd.DataFrame:
     """Load or construct trade outcomes from OOF predictions data.
@@ -434,47 +592,79 @@ def load_trade_outcomes(data_root: str, run_id: str, oof_df: pd.DataFrame) -> pd
     Returns:
         DataFrame with columns [return, is_long] and optionally [timestamp, symbol]
     """
-    # Check if we have the return column directly in OOF data
-    if "return" in oof_df.columns:
-        outcomes = pd.DataFrame({
-            "return": oof_df["return"].values,
-            "is_long": oof_df["is_long"].values if "is_long" in oof_df.columns else 1,
-        })
-        if "timestamp" in oof_df.columns:
-            outcomes["timestamp"] = oof_df["timestamp"].values
-        if "symbol" in oof_df.columns:
-            outcomes["symbol"] = oof_df["symbol"].values
-        if "u_policy_net" in oof_df.columns:
-            outcomes["u_policy_net"] = oof_df["u_policy_net"].values
-        if "u_policy" in oof_df.columns:
-            outcomes["u_policy"] = oof_df["u_policy"].values
-        if "exit_code" in oof_df.columns:
-            outcomes["exit_code"] = oof_df["exit_code"].values
-        if "entry_price" in oof_df.columns:
-            outcomes["entry_price"] = oof_df["entry_price"].values
+    # CRITICAL FIX: Detect if returns are in percentage points
+    # Percentage-point returns have mean > 0.01 (1%)
+    # Decimal returns for 15m bars typically have mean < 0.01
+    # However, utility scores might be in 0.1-0.5 range.
+    # We only divide by 100 if we are absolutely sure it's percent points (> 50% mean).
+    raw_returns = np.asarray(oof_df["return"].values, dtype=np.float32)
+    if np.abs(np.mean(raw_returns)) > 0.5:
+        tprint(f"  WARNING: Returns appear to be in percentage points (mean={np.mean(raw_returns):.6f}). Converting to decimal.")
+        raw_returns = raw_returns / 100.0
 
-        # Copy aux diagnostic columns
-        aux_cols = [
-            "oof_u_hat", "oof_log_mae_q70_hat", "oof_log_mfe_hat",
-            "mae_ret", "mfe_ret"
-        ]
-        for c in aux_cols:
-            if c in oof_df.columns:
-                outcomes[c] = oof_df[c].values
+    # Keep returns as simple returns for PnL calculations
+    # Conversion to log returns happens in RidgePositionSizer.fit
+    outcomes = pd.DataFrame({
+        "return": raw_returns,
+        "is_long": oof_df["is_long"].values if "is_long" in oof_df.columns else 1,
+    })
+    if "timestamp" in oof_df.columns:
+        outcomes["timestamp"] = oof_df["timestamp"].values
+    if "symbol" in oof_df.columns:
+        outcomes["symbol"] = oof_df["symbol"].values
+    if "u_policy_net" in oof_df.columns:
+        # CRITICAL FIX: Detect if u_policy_net is in percentage points
+        raw_u_policy_net = np.asarray(oof_df["u_policy_net"].values, dtype=np.float32)
+        if np.abs(np.mean(raw_u_policy_net)) > 0.5:
+            tprint(f"  WARNING: u_policy_net appears to be in percentage points (mean={np.mean(raw_u_policy_net):.6f}). Converting to decimal.")
+            raw_u_policy_net = raw_u_policy_net / 100.0
+        outcomes["u_policy_net"] = raw_u_policy_net
+    if "u_policy" in oof_df.columns:
+        # CRITICAL FIX: Detect if u_policy is in percentage points
+        raw_u_policy = np.asarray(oof_df["u_policy"].values, dtype=np.float32)
+        if np.abs(np.mean(raw_u_policy)) > 0.5:
+            tprint(f"  WARNING: u_policy appears to be in percentage points (mean={np.mean(raw_u_policy):.6f}). Converting to decimal.")
+            raw_u_policy = raw_u_policy / 100.0
+        outcomes["u_policy"] = raw_u_policy
+    for c in oof_df.columns:
+        if c.startswith("u_tbm_"):
+            raw_u_tbm = np.asarray(oof_df[c].values, dtype=np.float32)
+            if np.abs(np.mean(raw_u_tbm)) > 0.5:
+                tprint(f"  WARNING: {c} appears to be in percentage points (mean={np.mean(raw_u_tbm):.6f}). Converting to decimal.")
+                raw_u_tbm = raw_u_tbm / 100.0
+            outcomes[c] = raw_u_tbm
+    if "exit_code" in oof_df.columns:
+        outcomes["exit_code"] = oof_df["exit_code"].values
+    if "entry_price" in oof_df.columns:
+        outcomes["entry_price"] = oof_df["entry_price"].values
 
-        tprint(f"Constructed trade outcomes from OOF context: {len(outcomes)} trades")
-    else:
-        # Fallback: try to load from separate file
-        outcomes_path = Path(data_root) / "artifacts" / run_id / "trade_outcomes.parquet"
+    # Policy-aware simulation columns
+    policy_cols = [
+        "label_policy_sl_atr_mult", "label_policy_tp_sl_ratio",
+        "label_policy_max_hold_bars", "label_policy_giveback_pct",
+        "atr_12_15m"
+    ]
+    for c in policy_cols:
+        if c in oof_df.columns:
+            outcomes[c] = oof_df[c].values
 
-        if outcomes_path.exists():
-            outcomes = pd.read_parquet(outcomes_path)
-            tprint(f"Loaded trade outcomes from {outcomes_path}: {len(outcomes)} trades")
-        else:
-            raise FileNotFoundError(
-                f"No trade outcomes found. The OOF predictions must include 'return' column, "
-                f"or trade_outcomes.parquet must exist at {outcomes_path}"
-            )
+    # Copy aux diagnostic columns
+    aux_cols = [
+        "oof_u_hat", "oof_log_mae_q70_hat", "oof_log_mfe_hat",
+        "mae_ret", "mfe_ret"
+    ]
+    for c in aux_cols:
+        if c in oof_df.columns:
+            outcomes[c] = oof_df[c].values
+
+    if "return" not in outcomes.columns:
+        # Final fallback: try separate file
+        sep_outcomes = _load_separate_outcomes(data_root, run_id)
+        if sep_outcomes is not None:
+            return sep_outcomes
+        raise FileNotFoundError(f"No 'return' column in OOF and no trade_outcomes.parquet found for {run_id}")
+
+    tprint(f"Constructed base trade outcomes from OOF context: {len(outcomes)} trades")
 
     # Populate 15m path features directly
     if "symbol" in outcomes.columns and "timestamp" in outcomes.columns:
@@ -720,8 +910,44 @@ def main():
     parser.add_argument(
         "--cost-pct",
         type=float,
-        default=0.005,
-        help="Transaction cost as decimal (default: 0.005 = 0.5%)"
+        default=0.0025,
+        help="Transaction cost as decimal (default: 0.0025 = 0.25%%)"
+    )
+    parser.add_argument(
+        "--n-jobs",
+        type=int,
+        default=4,
+        help="Number of parallel jobs"
+    )
+    parser.add_argument(
+        "--patience",
+        type=int,
+        default=20,
+        help="HPO patience"
+    )
+    parser.add_argument(
+        "--directions",
+        nargs="+",
+        default=["long", "short"],
+        help="Directions to run"
+    )
+    parser.add_argument(
+        "--buckets",
+        nargs="+",
+        default=None,
+        help="Specific buckets to run"
+    )
+    parser.add_argument(
+        "--n-trials",
+        type=int,
+        default=None,
+        help="Maximum trials per HPO stage"
+    )
+    parser.add_argument(
+        "--force-targets",
+        nargs="+",
+        default=None,
+        help="Optional shortlist of training targets to force-test for this run"
     )
     args = parser.parse_args()
     
@@ -735,11 +961,15 @@ def main():
     
     # Load OOF predictions per bucket
     try:
-        bucket_oofs = load_meta_oof_predictions(args.data_root, run_id)
-    except FileNotFoundError as e:
+        bucket_oofs = load_meta_oof_predictions(
+            args.data_root,
+            run_id,
+            require_meta_barrier_probs=True,
+        )
+    except (FileNotFoundError, RuntimeError) as e:
         tprint(f"Error: {e}")
-        tprint("Meta model OOF predictions not found.")
-        tprint("Ensure training.py has been run with meta model training enabled.")
+        tprint("Meta model OOF predictions are incomplete for a policy-aligned ridge sizer run.")
+        tprint("Ensure training.py has been run with meta model training enabled and barrier probabilities exported.")
         return 1
     
     # Set up output directory
@@ -754,12 +984,6 @@ def main():
     # long and short signals have incompatible return distributions and the
     # short_mr bucket has inverted IC.
     # -------------------------------------------------------------------------
-    _meta_cols = {
-        "timestamp", "symbol", "return", "is_long", "index",
-        "oof_u_hat", "oof_log_mae_q70_hat", "oof_log_mfe_hat", "oof_log_dur_hat",
-        "mae_ret", "mfe_ret", "duration", "u_policy_net", "exit_code"
-    }
-
     direction_groups = {"long": {}, "short": {}}
     for bucket_name, oof_preds in bucket_oofs.items():
         direction = "long" if bucket_name.startswith("long") else "short"
@@ -768,6 +992,8 @@ def main():
     all_direction_results = {}  # direction -> {weights, params, metrics, buckets}
 
     for direction, dir_buckets in direction_groups.items():
+        if args.directions and direction not in args.directions:
+            continue
         if not dir_buckets:
             continue
         tprint("=" * 80)
@@ -780,8 +1006,11 @@ def main():
         dir_weights: Dict = {}
         dir_params: Dict = {}
         dir_metrics: Dict = {}
+        last_best_params: Optional[Dict] = None
 
         for bucket_name, oof_preds in dir_buckets.items():
+            if args.buckets and bucket_name not in args.buckets:
+                continue
             try:
                 trade_outcomes = load_trade_outcomes(args.data_root, run_id, oof_preds)
             except FileNotFoundError as e:
@@ -791,12 +1020,15 @@ def main():
                 tprint(f"  Skipping {bucket_name}: missing 'return' column")
                 continue
 
-            pred_cols = [c for c in oof_preds.columns if c not in _meta_cols]
+            pred_cols = [c for c in oof_preds.columns if c not in _META_COLS]
             if not pred_cols:
                 tprint(f"  Skipping {bucket_name}: no prediction columns")
                 continue
             oof_pred_df = oof_preds[pred_cols].copy()
             tprint(f"  {bucket_name}: {len(oof_pred_df)} rows, features={pred_cols}")
+
+            # Initialize entry policy config (will be set inside if block)
+            _bp_cfg = {}
 
             # If optimize params are present for this bucket, align sizer rows to entry policy place-order mask.
             _run_models_path = Path(args.data_root) / "artifacts" / run_id / "models" / "bucket_params.json"
@@ -829,17 +1061,66 @@ def main():
             timestamps = trade_outcomes['timestamp'].values if 'timestamp' in trade_outcomes.columns else None
             symbols    = trade_outcomes['symbol'].values    if 'symbol'    in trade_outcomes.columns else None
 
+            # Load candidate threshold config (from compare_candidate_thresholds.py)
+            _candidate_cfg = None
+            try:
+                from extreme_price_movements.offline_optimisers.params_store import CANDIDATE_BEST_PARAMS_CSV
+                if CANDIDATE_BEST_PARAMS_CSV.exists():
+                    cand_df = pd.read_csv(CANDIDATE_BEST_PARAMS_CSV)
+                    # Get bucket-specific params
+                    bucket_row = cand_df[cand_df['bucket'] == bucket_name.upper()] if 'bucket' in cand_df.columns else None
+                    if bucket_row is not None and len(bucket_row) > 0:
+                        _candidate_cfg = {
+                            'extreme_price_pct': float(bucket_row.iloc[0].get('extreme_price_pct', 0.0)),
+                            'min_vol_zscore': float(bucket_row.iloc[0].get('min_vol_zscore', -10.0)),
+                        }
+                        tprint(f"  {bucket_name}: loaded candidate threshold config: {_candidate_cfg}")
+            except Exception as _e_cand:
+                tprint(f"  {bucket_name}: candidate threshold config not loaded ({_e_cand})")
+
+            # Load entry policy config
+            _entry_policy_cfg = _bp_cfg if _bp_cfg.get("entry_policy") else None
+
             try:
                 sizer, metrics = run_ridge_position_sizer_step(
                     oof_preds=oof_pred_df,
                     trade_outcomes=trade_outcomes,
                     timestamps=timestamps,
-                    cfg={'cost_pct': args.cost_pct},
+                    cfg={
+                        'cost_pct': args.cost_pct,
+                        'sizer_n_jobs': 1,
+                        'sizer_use_nested_cv': True,
+                        'sizer_stage1_n_trials': args.n_trials,
+                        'sizer_stage2_n_trials': args.n_trials,
+                        'sizer_tree_hpo_trials': args.n_trials,
+                        'patience': args.patience,
+                        'sizer_stage1_cv_folds': 3,
+                        'sizer_stage2_cv_folds': 3,
+                        'sizer_stage2_lock_formula': False,
+                        'sizer_target_train_fraction': 0.50,
+                        'sizer_oos_fraction': 0.30,
+                        'sizer_min_oos_days': 28,
+                        'sizer_repeated_oos_splits': 2,
+                        'sizer_max_fit_samples': 12000,
+                        'sizer_forced_target_candidates': args.force_targets,
+                        'label_policy_ab_tbm_grid': [
+                            {'name': 'tbm_50_25_h8', 'tp_pct': 0.0050, 'sl_pct': 0.0025, 'max_hold_bars': 8},
+                            {'name': 'tbm_50_25_h16', 'tp_pct': 0.0050, 'sl_pct': 0.0025, 'max_hold_bars': 16},
+                            {'name': 'tbm_50_25_h24', 'tp_pct': 0.0050, 'sl_pct': 0.0025, 'max_hold_bars': 24},
+                            {'name': 'tbm_100_50_h8', 'tp_pct': 0.0100, 'sl_pct': 0.0050, 'max_hold_bars': 8},
+                            {'name': 'tbm_100_50_h16', 'tp_pct': 0.0100, 'sl_pct': 0.0050, 'max_hold_bars': 16},
+                            {'name': 'tbm_100_50_h24', 'tp_pct': 0.0100, 'sl_pct': 0.0050, 'max_hold_bars': 24},
+                        ],
+                    },
                     save_model=True,
                     run_id=run_id,
                     symbols=symbols,
                     bucket_name=bucket_name,
+                    entry_policy_config=_entry_policy_cfg,
+                    candidate_threshold_config=_candidate_cfg,
+                    warm_start_params=last_best_params,
                 )
+                last_best_params = sizer.best_params_
                 bkt_weights = sizer.get_weights()
                 # Prefix with bucket name so the combined manifest stays unambiguous
                 for wname, wval in bkt_weights.items():
@@ -921,13 +1202,221 @@ def main():
                 for bkt in res['buckets']:
                     f.write(f"\n### Bucket: {bkt}\n")
                     bkt_metrics = res['metrics'].get(bkt, {})
-                    winner = bkt_metrics.get("best_params", {}).get("race_winner", "Unknown")
+                    best_p = bkt_metrics.get("best_params", {})
+                    winner = best_p.get("race_winner", "Unknown")
                     f.write(f"- **Race Winner**: `{winner}`\n")
-                    f.write("- **Metrics**:\n")
-                    f.write(f"  - **PnL/Day**: {bkt_metrics.get('cv_best_pnl_per_day', 0.0):.6f}\n")
+                    f.write(f"- **Limit Offset**: `{'enabled' if bkt_metrics.get('limit_offset_enabled') else 'disabled'}`\n")
+                    if bkt_metrics.get("selected_training_target_name"):
+                        f.write(
+                            f"- **Training Target**: `{bkt_metrics.get('selected_training_target_name')}` "
+                            f"(family=`{bkt_metrics.get('selected_training_target_family', 'unknown')}`)\n"
+                        )
+                    f.write(f"- **Ranking Gate (top_k_pct)**: `{best_p.get('ranking_top_k_pct', best_p.get('top_k_pct', 0.30)):.2%}`\n")
+                    f.write(f"- **Execution Top-K**: `{best_p.get('top_k_pct', 0.30):.2%}`\n")
+                    f.write(f"- **Position Sizing Formula**: `{best_p.get('sizing_formula', 'linear')}`\n")
+                    f.write(f"- **Base Size**: `{best_p.get('base_size', 0.05):.2%}`\n")
+                    f.write(f"- **Rank Multiplier**: `{best_p.get('rank_multiplier', 0.10):.2%}`\n")
+                    f.write(f"- **Squash Function**: `{best_p.get('squash_fn', 'tanh')}`\n")
+                    f.write(f"- **Squash k**: `{best_p.get('squash_k', 1.0):.2f}`\n")
+                    
+                    f.write("- **CV Performance (Aligned Holdouts)**:\n")
+                    if "cv_best_selector_column" in bkt_metrics:
+                        f.write(f"  - **CV Basis**: `{bkt_metrics.get('cv_best_selector_column')}`\n")
+                    f.write(f"  - **Total PnL**: {format_return_as_pct(bkt_metrics.get('cv_best_pnl_total', 0.0))}\n")
+                    f.write(f"  - **PnL/Day**: {format_return_as_pct(bkt_metrics.get('cv_best_pnl_per_day', 0.0))}\n")
                     f.write(f"  - **Trades/Day**: {bkt_metrics.get('cv_best_trades_per_day', 0.0):.4f}\n")
                     f.write(f"  - **Sortino**: {bkt_metrics.get('cv_best_sortino', 0.0):.4f}\n")
-                    f.write(f"  - **MaxDD**: {bkt_metrics.get('cv_best_maxdd', 0.0):.6f}\n")
+                    f.write(f"  - **MaxDD**: {format_return_as_pct(bkt_metrics.get('cv_best_maxdd', 0.0))}\n")
+                    f.write(f"  - **WinRate**: {bkt_metrics.get('cv_best_winrate', 0.0):.2%}\n")
+                    f.write(f"  - **Profit Factor**: {bkt_metrics.get('cv_best_profit_factor', 0.0):.2f}\n")
+                    f.write(f"  - **Avg Win/Loss**: {format_return_as_pct(bkt_metrics.get('cv_best_avg_win', 0.0))} / {format_return_as_pct(bkt_metrics.get('cv_best_avg_loss', 0.0))}\n")
+                    f.write(f"  - **Ulcer Index**: {bkt_metrics.get('cv_best_ulcer', 0.0):.4f}\n")
+                    f.write(f"  - **Time Under Water**: {format_return_as_pct(bkt_metrics.get('cv_best_tuw', 0.0))}\n")
+
+                    # Position Sizing Statistics
+                    pos_sizing = bkt_metrics.get('cv_best_pos_sizing', {})
+                    if pos_sizing:
+                        f.write("- **Position Sizing (CV Best)**:\n")
+                        f.write(f"  - **Formula**: {pos_sizing.get('sizing_formula', 'N/A')}, Squash: {pos_sizing.get('squash_fn', 'N/A')}, Squash k: {pos_sizing.get('squash_k', 0):.2f}\n")
+                        f.write(f"  - **Base Size**: {format_return_as_pct(pos_sizing.get('base_size', 0))}\n")
+                        f.write(f"  - **Rank Multiplier**: {format_return_as_pct(pos_sizing.get('rank_multiplier', 0))}\n")
+                        f.write(f"  - **Max Position**: {format_return_as_pct(pos_sizing.get('max_position', 0))} (capped at {format_return_as_pct(pos_sizing.get('position_hard_cap', 0))})\n")
+                        f.write(f"  - **Average Size**: {format_return_as_pct(pos_sizing.get('avg', 0))}\n")
+                        f.write(f"  - **Median Size**: {format_return_as_pct(pos_sizing.get('median', 0))}\n")
+                        f.write(f"  - **Size Range**: [{format_return_as_pct(pos_sizing.get('min', 0))}, {format_return_as_pct(pos_sizing.get('max', 0))}]\n")
+                        f.write(f"  - **Std Dev**: {format_return_as_pct(pos_sizing.get('std', 0))}\n")
+                        f.write(f"  - **Zero Positions**: {pos_sizing.get('n_zero', 0)}\n")
+                        f.write(f"  - **Max Positions**: {pos_sizing.get('n_max', 0)}\n")
+                    
+                    # OOF Rank Diagnostics (Fixed Span)
+                    f.write("- **OOF Calibration (Top Rank Diagnostics)**:\n")
+                    for top_q in [30, 20, 10]:
+                        prefix = f"oof_top{top_q}"
+                        if f"{prefix}_n_trades" in bkt_metrics:
+                            f.write(f"  - **Top {top_q}%**: Total PnL: {format_return_as_pct(bkt_metrics.get(f'{prefix}_pnl_total', 0.0))}, "
+                                    f"PnL/Day: {format_return_as_pct(bkt_metrics.get(f'{prefix}_pnl_per_day', 0.0))}, "
+                                    f"Trades/Day: {bkt_metrics.get(f'{prefix}_trades_per_day', 0.0):.2f}, "
+                                    f"Sortino: {bkt_metrics.get(f'{prefix}_sortino', 0.0):.4f}, "
+                                    f"MaxDD: {format_return_as_pct(bkt_metrics.get(f'{prefix}_maxdd', 0.0))}, "
+                                    f"WinRate: {bkt_metrics.get(f'{prefix}_win_rate', 0.0):.1%}, "
+                                    f"PF: {bkt_metrics.get(f'{prefix}_profit_factor', 0.0):.2f}, "
+                                    f"Avg Win/Loss: {format_return_as_pct(bkt_metrics.get(f'{prefix}_avg_win', 0.0))} / {format_return_as_pct(bkt_metrics.get(f'{prefix}_avg_loss', 0.0))}, "
+                                    f"Ulcer: {bkt_metrics.get(f'{prefix}_ulcer', 0.0):.4f}, "
+                                    f"TUW: {format_return_as_pct(bkt_metrics.get(f'{prefix}_time_under_water', 0.0))}, "
+                                    f"N: {bkt_metrics.get(f'{prefix}_n_trades', 0)}\n")
+
+                    waterfall = bkt_metrics.get("alpha_retention_waterfall", {})
+                    if waterfall:
+                        f.write("- **Alpha Retention Waterfall**:\n")
+                        f.write(f"  - **Best Raw Feature**: `{waterfall.get('best_raw_feature', 'N/A')}`\n")
+                        f.write(f"  - **Best Raw Feature IC**: {waterfall.get('best_raw_feature_ic', 0.0):.4f}\n")
+                        f.write(f"  - **Combined Score IC**: {waterfall.get('combined_score_ic', 0.0):.4f}\n")
+                        f.write(f"  - **OOF PnL No Offset**: {format_return_as_pct(waterfall.get('oof_pnl_total_no_offset', 0.0))} total, {format_return_as_pct(waterfall.get('oof_pnl_per_day_no_offset', 0.0))}/day\n")
+                        f.write(f"  - **OOF PnL With Offset**: {format_return_as_pct(waterfall.get('oof_pnl_total_with_offset', 0.0))} total, {format_return_as_pct(waterfall.get('oof_pnl_per_day_with_offset', 0.0))}/day\n")
+
+                    # Walk-Forward Validation Results (True OOS)
+                    full_oos = bkt_metrics.get("full_oos_metrics", {})
+                    oos = bkt_metrics.get("best_oos_metrics", {})
+                    rep_oos_rows = bkt_metrics.get("repeated_oos_results", []) or []
+                    if full_oos or oos:
+                        f.write("- **Walk-Forward Validation (Out-of-Sample)**:\n")
+                        if full_oos:
+                            f.write("  - **Full OOS Holdout**:\n")
+                            f.write(f"    - Limit Offset: `{full_oos.get('limit_offset_mode', 'disabled')}`\n")
+                            f.write(f"    - Total PnL: {format_return_as_pct(full_oos.get('PnL_total', 0.0))}\n")
+                            f.write(f"    - PnL/Day: {format_return_as_pct(full_oos.get('PnL_per_day', 0.0))}\n")
+                            f.write(f"    - Trades/Day: {full_oos.get('Trades_per_day', 0.0):.4f}\n")
+                            f.write(f"    - N_selected: {full_oos.get('N_selected', 0)} across {full_oos.get('N_days', 0.0):.1f} days\n")
+                            f.write("    - Trade Count Waterfall:\n")
+                            f.write(
+                                "      "
+                                f"raw={int(full_oos.get('N_raw_candidates', 0))} "
+                                f"({full_oos.get('Raw_candidates_per_day', 0.0):.2f}/day), "
+                                f"finite={int(full_oos.get('N_finite_scores', 0))} "
+                                f"({full_oos.get('Finite_scores_per_day', 0.0):.2f}/day), "
+                                f"topk={int(full_oos.get('N_after_topk', 0))} "
+                                f"({full_oos.get('Topk_candidates_per_day', 0.0):.2f}/day), "
+                                f"sized={int(full_oos.get('N_after_size', 0))} "
+                                f"({full_oos.get('Sized_candidates_per_day', 0.0):.2f}/day), "
+                                f"overlap_kept={int(full_oos.get('N_after_overlap', 0))} "
+                                f"({full_oos.get('Overlap_kept_per_day', 0.0):.2f}/day)\n"
+                            )
+                            f.write(f"    - Sortino: {full_oos.get('Sortino', 0.0):.4f}\n")
+                            f.write(f"    - Profit Factor: {full_oos.get('ProfitFactor', 0.0):.2f}\n")
+                        if "holdout_selector" in oos:
+                            f.write("  - **Repeated OOS Summary**:\n")
+                            f.write(f"    - OOS Basis: `{oos.get('holdout_selector')}`\n")
+                            f.write(f"    - Limit Offset: `{oos.get('limit_offset_mode', 'disabled')}`\n")
+                            f.write(f"    - Total PnL: {format_return_as_pct(oos.get('PnL_total', 0.0))}\n")
+                            f.write(f"    - PnL/Day: {format_return_as_pct(oos.get('PnL_per_day', 0.0))}\n")
+                            f.write(f"    - Trades/Day: {oos.get('Trades_per_day', 0.0):.4f}\n")
+                            f.write(f"    - N_selected: {oos.get('N_selected', 0)}\n")
+                            f.write(
+                                "    - Trade Count Waterfall: "
+                                f"raw={int(oos.get('N_raw_candidates', 0))}, "
+                                f"finite={int(oos.get('N_finite_scores', 0))}, "
+                                f"topk={int(oos.get('N_after_topk', 0))}, "
+                                f"sized={int(oos.get('N_after_size', 0))}, "
+                                f"overlap_kept={int(oos.get('N_after_overlap', 0))}\n"
+                            )
+                            f.write(f"    - Sortino: {oos.get('Sortino', 0.0):.4f}\n")
+                            f.write(f"    - MaxDD: {format_return_as_pct(oos.get('MaxDD', 0.0))}\n")
+                            f.write(f"    - WinRate: {oos.get('WinRate', 0.0):.2%}\n")
+                            f.write(f"    - Profit Factor: {oos.get('ProfitFactor', 0.0):.2f}\n")
+                            f.write(f"    - Avg Win/Loss: {format_return_as_pct(oos.get('AvgWin', 0.0))} / {format_return_as_pct(oos.get('AvgLoss', 0.0))}\n")
+                            f.write(f"    - Ulcer Index: {oos.get('Ulcer', 0.0):.4f}\n")
+                            f.write(f"    - Time Under Water: {format_return_as_pct(oos.get('TUW', 0.0))}\n")
+                            f.write(f"    - No Offset PnL: {format_return_as_pct(oos.get('PnL_total_no_offset', 0.0))} total, {format_return_as_pct(oos.get('PnL_per_day_no_offset', 0.0))}/day\n")
+                            f.write(f"    - No Offset Objective: {oos.get('ObjectiveScore_no_offset', 0.0):.4f}\n")
+                            if "repeated_min_selected_threshold" in oos:
+                                f.write(f"    - Repeated Holdout Min-N Gate: {oos.get('repeated_min_selected_threshold', 0)} (pass={bool(oos.get('repeated_median_selected_ok', True))})\n")
+                        if rep_oos_rows:
+                            med_n = float(np.median([float(r.get("N_selected", 0.0)) for r in rep_oos_rows]))
+                            med_days = float(np.median([float(r.get("N_days", 0.0)) for r in rep_oos_rows if "N_days" in r]))
+                            f.write(f"  - **Repeated Holdout Count**: {len(rep_oos_rows)}\n")
+                            f.write(f"  - **Repeated Median N_selected**: {med_n:.1f} across {med_days:.1f} days\n")
+
+                        # OOS Per-Decile Diagnostics
+                        f.write("- **OOS Per-Decile Diagnostics**:\n")
+                        for top_q in [30, 20, 10]:
+                            prefix = f"oos_top{top_q}"
+                            if f"{prefix}_n_trades" in oos:
+                                f.write(f"  - **Top {top_q}%**: Total PnL: {format_return_as_pct(oos.get(f'{prefix}_pnl_total', 0.0))}, "
+                                        f"PnL/Day: {format_return_as_pct(oos.get(f'{prefix}_pnl_per_day', 0.0))}, "
+                                        f"Trades/Day: {oos.get(f'{prefix}_trades_per_day', 0.0):.2f}, "
+                                        f"Sortino: {oos.get(f'{prefix}_sortino', 0.0):.4f}, "
+                                        f"MaxDD: {format_return_as_pct(oos.get(f'{prefix}_maxdd', 0.0))}, "
+                                        f"WinRate: {oos.get(f'{prefix}_win_rate', 0.0):.1%}, "
+                                        f"PF: {oos.get(f'{prefix}_profit_factor', 0.0):.2f}, "
+                                        f"Avg Win/Loss: {format_return_as_pct(oos.get(f'{prefix}_avg_win', 0.0))} / {format_return_as_pct(oos.get(f'{prefix}_avg_loss', 0.0))}, "
+                                        f"Ulcer: {oos.get(f'{prefix}_ulcer', 0.0):.4f}, "
+                                        f"TUW: {format_return_as_pct(oos.get(f'{prefix}_time_under_water', 0.0))}, "
+                                        f"N: {oos.get(f'{prefix}_n_trades', 0)}\n")
+                    
+                    # Top Features
+                    top_f = bkt_metrics.get("top_features", {})
+                    if top_f:
+                        f.write("- **Top 10 Sizer Features**:\n")
+                        for fname, fval in top_f.items():
+                            f.write(f"  - `{fname}`: {fval:.4f}\n")
+                    
+                    # Feature Selection Diagnostics
+                    fs_ridge = bkt_metrics.get("feature_selection_diag_ridge", {})
+                    fs_tree = bkt_metrics.get("feature_selection_diag_tree", {})
+                    if fs_ridge:
+                        sel = fs_ridge.get("selected_features", [])
+                        total = fs_ridge.get("total_features_input", len(sel))
+                        f.write(f"- **Feature Selection (Ridge)**: Kept {len(sel)}/{total} features.\n")
+                        if len(sel) < total:
+                            all_f = fs_ridge.get("all_features", [])
+                            pruned = [f for f in all_f if f not in sel]
+                            f.write(f"  - *Pruned*: {', '.join(pruned[:10])}{'...' if len(pruned) > 10 else ''}\n")
+                    
+                    if fs_tree and hasattr(fs_tree, 'selected_features'):
+                        sel = fs_tree.selected_features
+                        f.write(f"- **Feature Selection (Tree)**: Kept {len(sel)} features.\n")
+
+                    # Label Stability (from Policy Optimizer)
+                    low_opt = bkt_metrics.get("label_policy_optimizer", {})
+                    if low_opt:
+                        f.write("- **Label Stability (Sensitivity Analysis)**:\n")
+                        f.write(f"  - **Selected Policy**: {low_opt.get('best_policy_params', 'N/A')}\n")
+                        f.write(f"  - **J_stable**: {low_opt.get('best_j_stable', 0.0):.4f}\n")
+                        f.write(f"  - **TP Sweep Result**: {low_opt.get('tp_sensitivity', 'N/A')}\n")
+                        ab = low_opt.get("ab_test", {})
+                        if ab:
+                            opt_ab = ab.get("optimized_policy_target", {})
+                            best_tbm = ab.get("best_tbm_ridge_only", {})
+                            tbm_rows = ab.get("tbm_ridge_only_candidates", [])
+                            f.write("- **Policy Learnability A/B (Ridge Only)**:\n")
+                            f.write(f"  - **Winner**: `{ab.get('winner', 'N/A')}` (delta J_stable={ab.get('delta_j_stable', 0.0):.4f})\n")
+                            opt_fin = opt_ab.get("financials_full", {})
+                            f.write(f"  - **Optimized Policy Target**: J_stable={opt_ab.get('j_stable', 0.0):.4f}, J_mean={opt_ab.get('j_mean', 0.0):.4f}, J_std={opt_ab.get('j_std', 0.0):.4f}, Expectancy={format_return_as_pct(opt_fin.get('expectancy', 0.0))}, WinRate={opt_fin.get('win_rate', 0.0):.2%}, PF={opt_fin.get('profit_factor', 0.0):.2f}, Avg Win/Loss={format_return_as_pct(opt_fin.get('avg_win', 0.0))} / {format_return_as_pct(opt_fin.get('avg_loss', 0.0))}\n")
+                            if best_tbm:
+                                best_fin = best_tbm.get("financials_full", {})
+                                f.write(f"  - **Best TBM Ridge Baseline**: `{best_tbm.get('name', 'N/A')}` tp={best_tbm.get('tp_pct', 0.0):.2%}, sl={best_tbm.get('sl_pct', 0.0):.2%}, hold={best_tbm.get('max_hold_bars', 0)} bars, J_stable={best_tbm.get('j_stable', 0.0):.4f}, J_mean={best_tbm.get('j_mean', 0.0):.4f}, J_std={best_tbm.get('j_std', 0.0):.4f}, Expectancy={format_return_as_pct(best_fin.get('expectancy', 0.0))}, WinRate={best_fin.get('win_rate', 0.0):.2%}, PF={best_fin.get('profit_factor', 0.0):.2f}, Avg Win/Loss={format_return_as_pct(best_fin.get('avg_win', 0.0))} / {format_return_as_pct(best_fin.get('avg_loss', 0.0))}\n")
+                            if tbm_rows:
+                                f.write("  - **TBM Grid Leaderboard**:\n")
+                                for row in sorted(tbm_rows, key=lambda r: float(r.get("j_stable", -1e9)), reverse=True)[:4]:
+                                    fin = row.get("financials_full", {})
+                                    f.write(f"    - `{row.get('name', 'tbm')}`: J_stable={row.get('j_stable', 0.0):.4f}, tp={row.get('tp_pct', 0.0):.2%}, sl={row.get('sl_pct', 0.0):.2%}, hold={row.get('max_hold_bars', 0)}, Expectancy={format_return_as_pct(fin.get('expectancy', 0.0))}, WinRate={fin.get('win_rate', 0.0):.2%}, PF={fin.get('profit_factor', 0.0):.2f}\n")
+
+                    tf_ab = bkt_metrics.get("target_family_ab", {})
+                    if tf_ab:
+                        f.write("- **Target Family A/B (Sizer Level)**:\n")
+                        if tf_ab.get("status") == "ok":
+                            winner = tf_ab.get("winner", {}) or {}
+                            best_simpler = tf_ab.get("best_simpler", {}) or {}
+                            f.write(f"  - **Winner**: `{winner.get('target_name', 'N/A')}` family={winner.get('target_family', 'N/A')} score={winner.get('learnability_score', 0.0):.6f}, IC={winner.get('ridge_ic', 0.0):.4f}, TopQ Policy U={format_metric_float(winner.get('topq_policy_u_mean', 0.0), 6)}\n")
+                            if best_simpler:
+                                f.write(f"  - **Best Simpler Target**: `{best_simpler.get('target_name', 'N/A')}` family={best_simpler.get('target_family', 'N/A')} score={best_simpler.get('learnability_score', 0.0):.6f}, IC={best_simpler.get('ridge_ic', 0.0):.4f}, TopQ Policy U={format_metric_float(best_simpler.get('topq_policy_u_mean', 0.0), 6)}\n")
+                            f.write("  - **Leaderboard**:\n")
+                            for row in tf_ab.get("rows", [])[:6]:
+                                f.write(f"    - `{row.get('target_name', 'N/A')}` ({row.get('target_family', 'N/A')}): score={row.get('learnability_score', 0.0):.6f}, IC={row.get('ridge_ic', 0.0):.4f}, TopQ Policy U={format_metric_float(row.get('topq_policy_u_mean', 0.0), 6)}, std={format_metric_float(row.get('topq_policy_u_std', 0.0), 6)}\n")
+                        else:
+                            f.write(f"  - **Status**: `{tf_ab.get('status', 'unknown')}` ({tf_ab.get('reason', 'n/a')})\n")
+            
+            f.write("\n\n---\n*Report generated with Bias Mitigation (2-Step CV Gating & 48h Purging + Walk-Forward OOS)*\n")
         tprint(f"Metrics report manifested to {report_path}")
     except Exception as e:
         tprint(f"WARNING: Failed to generate markdown manifest: {e}")

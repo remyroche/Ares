@@ -117,7 +117,7 @@ def report_compare_tbm(run_id: str, grid_csv_path: str, base_dir: str | Path | N
     lines.append("")
 
     # Per-bucket summary
-    lines.append("## Per-Bucket Summary (across H2/H4/H8)")
+    lines.append("## Per-Bucket Summary (across H1/H2/H4)")
     bkt_headers = ["Bucket", "Cells populated", "Median AUC", "Median TP-sep", "Median bind"]
     bkt_rows = []
     for bkt in _BUCKETS:
@@ -663,6 +663,7 @@ def report_optimise(run_id: str, data_root: str, base_dir: str | Path | None = N
                 holdout_pnl = float(ev.get("holdout_pnl_net", 0.0) or 0.0)
                 holdout_wr = float(ev.get("holdout_win_rate", 0.0) or 0.0)
                 avg_pnl = (holdout_pnl / holdout_n) if holdout_n > 0 else 0.0
+                pnl_per_day = float("nan")
                 ledger_path = ev.get("holdout_ledger_path")
                 if isinstance(ledger_path, str) and ledger_path:
                     lp = Path(ledger_path)
@@ -676,6 +677,11 @@ def report_optimise(run_id: str, data_root: str, base_dir: str | Path | None = N
                                 starts.append(ts.min())
                                 ends.append(ts.max())
                                 all_ledger_rows += int(len(ldf))
+                                _s = ts.min()
+                                _e = ts.max()
+                                if pd.notna(_s) and pd.notna(_e):
+                                    _days = max((pd.Timestamp(_e) - pd.Timestamp(_s)).total_seconds() / 86400.0, 1.0 / 24.0)
+                                    pnl_per_day = holdout_pnl / float(_days)
                         except Exception:
                             pass
 
@@ -683,6 +689,7 @@ def report_optimise(run_id: str, data_root: str, base_dir: str | Path | None = N
                     bkt,
                     f"{holdout_n:,}",
                     _fmt(holdout_pnl, 5),
+                    _fmt(pnl_per_day, 5),
                     _pct(holdout_wr),
                     _fmt(avg_pnl, 5),
                     _fmt(float(tpsl.get("tp_mult", float("nan"))), 3),
@@ -692,6 +699,7 @@ def report_optimise(run_id: str, data_root: str, base_dir: str | Path | None = N
                     "bucket": bkt,
                     "n": holdout_n,
                     "total_pnl": holdout_pnl,
+                    "pnl_per_day": pnl_per_day,
                     "win_rate": holdout_wr,
                     "avg_pnl": avg_pnl,
                     "tp_mult": float(tpsl.get("tp_mult", float("nan"))),
@@ -709,12 +717,14 @@ def report_optimise(run_id: str, data_root: str, base_dir: str | Path | None = N
                 _e = max(ends)
                 if pd.notna(_s) and pd.notna(_e):
                     days = max(1, int((pd.Timestamp(_e) - pd.Timestamp(_s)).total_seconds() / 86400))
+                    total_pnl_per_day = total_pnl / max((pd.Timestamp(_e) - pd.Timestamp(_s)).total_seconds() / 86400.0, 1.0 / 24.0)
                     lines.append(f"**Holdout period**: `{pd.Timestamp(_s).strftime('%Y-%m-%d %H:%M')} → {pd.Timestamp(_e).strftime('%Y-%m-%d %H:%M')}` (~{days} days)")
+                    lines.append(f"**Aggregate holdout PnL/Day**: {_fmt(total_pnl_per_day, 5)}")
             if all_ledger_rows:
                 lines.append(f"**Ledger rows across buckets**: {all_ledger_rows:,}")
             lines.append("")
             lines.append("## Per-Bucket Holdout Performance (from bucket_params evaluation)")
-            headers = ["Bucket", "N trades", "Total PnL", "Win Rate", "Avg PnL", "TP mult", "SL mult"]
+            headers = ["Bucket", "N trades", "Total PnL", "PnL/Day", "Win Rate", "Avg PnL", "TP mult", "SL mult"]
             lines.extend(_md_table(headers, table_rows))
             lines.append("")
         except Exception as e:

@@ -7,6 +7,18 @@ from sklearn.metrics import brier_score_loss, roc_auc_score
 from scipy.stats import spearmanr
 from .utils import tprint
 
+try:
+    from numba import jit
+    NUMBA_AVAILABLE = True
+except ImportError:
+    NUMBA_AVAILABLE = False
+    def jit(*args, **kwargs):
+        def decorator(func):
+            return func
+        if len(args) == 1 and callable(args[0]):
+            return args[0]
+        return decorator
+
 class MetricsLogger:
     def __init__(self, log_dir="logs"):
         tprint(f"Entering function: __init__ in metrics.py")
@@ -65,11 +77,22 @@ def _max_drawdown(equity_curve):
 
 
 def _stable_equity_and_drawdown(returns: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Compute multiplicative equity and drawdown without overflowing cumprod."""
+    """Compute multiplicative equity and drawdown without overflowing cumprod.
+    
+    Uses Numba-optimized version when available for better performance.
+    """
     r = np.asarray(returns, dtype=np.float64)
     if r.size == 0:
         return np.asarray([], dtype=np.float64), np.asarray([], dtype=np.float64)
-
+    
+    # Use Numba version if available
+    if NUMBA_AVAILABLE:
+        try:
+            return _stable_equity_and_drawdown_numba(r)
+        except Exception:
+            pass  # Fall back to pure NumPy
+    
+    # Pure NumPy fallback
     clipped = np.clip(np.nan_to_num(r, nan=0.0), -0.999999, None)
     log_eq = np.cumsum(np.log1p(clipped))
     log_peak = np.maximum.accumulate(log_eq)

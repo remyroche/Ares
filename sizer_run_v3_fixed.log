@@ -1,0 +1,2170 @@
+[2026-03-08 14:04:58 UTC] ================================================================================
+[2026-03-08 14:04:58 UTC] RIDGE POSITION SIZER RUNNER
+[2026-03-08 14:04:58 UTC] ================================================================================
+[2026-03-08 14:04:58 UTC] Using run ID: 20260213_080000
+[2026-03-08 14:04:59 UTC] Loaded base OOF predictions for 4 buckets: ['long_mr', 'long_tf', 'short_mr', 'short_tf']
+[2026-03-08 14:04:59 UTC] WARNING: Meta classifier probabilities (oof_p_sl/oof_p_to/oof_p_tp) not found in meta OOF artifacts; continuing with regression/aux heads only.
+[2026-03-08 14:04:59 UTC]   Merged base OOF ['base_H2', 'base_H4', 'base_H8'] into long_tf (base: long_tf)
+[2026-03-08 14:04:59 UTC]   Merged base OOF ['base_H2', 'base_H4', 'base_H8'] into short_mr (base: short_mr)
+[2026-03-08 14:04:59 UTC]   Merged base OOF ['base_H2', 'base_H4', 'base_H8'] into short_tf (base: short_tf)
+[2026-03-08 14:04:59 UTC]   Merged base OOF ['base_H2', 'base_H4', 'base_H8'] into long_mr (base: long_mr)
+[2026-03-08 14:04:59 UTC] Loaded OOF predictions for 4 buckets: ['long_tf', 'short_mr', 'short_tf', 'long_mr']
+[2026-03-08 14:04:59 UTC] Entering function: retry_with_backoff in utils.py
+[2026-03-08 14:05:00 UTC] Position sizer fetching 49 missing config features...
+[2026-03-08 14:05:00 UTC] load_features_selected: in_dir not found: data/features/20260213_080000 (cwd=/Users/remyroche/Documents/Ares)
+[2026-03-08 14:05:00 UTC]   long_tf: 1830 samples, pred_cols=['clf', 'reg_H2', 'reg_H4', 'reg_H8', 'reg_mean', 'reg_std', 'reg_range', 'reg_sign_agree', 'reg_clf_agree', 'base_H2', 'base_H4', 'base_H8']
+[2026-03-08 14:05:00 UTC]   short_mr: 1830 samples, pred_cols=['clf', 'reg_H2', 'reg_H4', 'reg_H8', 'reg_mean', 'reg_std', 'reg_range', 'reg_sign_agree', 'reg_clf_agree', 'base_H2', 'base_H4', 'base_H8']
+[2026-03-08 14:05:00 UTC]   short_tf: 2282 samples, pred_cols=['clf', 'reg_H2', 'reg_H4', 'reg_H8', 'reg_mean', 'reg_std', 'reg_range', 'reg_sign_agree', 'reg_clf_agree', 'base_H2', 'base_H4', 'base_H8']
+[2026-03-08 14:05:00 UTC]   long_mr: 2282 samples, pred_cols=['clf', 'reg_H2', 'reg_H4', 'reg_H8', 'reg_mean', 'reg_std', 'reg_range', 'reg_sign_agree', 'reg_clf_agree', 'base_H2', 'base_H4', 'base_H8']
+[2026-03-08 14:05:00 UTC] ================================================================================
+[2026-03-08 14:05:00 UTC] Ridge Position Sizer — direction: LONG (['long_tf', 'long_mr'])
+[2026-03-08 14:05:00 UTC] Constructed trade outcomes from OOF context: 1830 trades
+[2026-03-08 14:05:00 UTC]   long_tf: 1830 rows, features=['clf', 'reg_H2', 'reg_H4', 'reg_H8', 'reg_mean', 'reg_std', 'reg_range', 'reg_sign_agree', 'reg_clf_agree', 'base_H2', 'base_H4', 'base_H8']
+[2026-03-08 14:05:00 UTC] ================================================================================
+[2026-03-08 14:05:00 UTC] RIDGE POSITION SIZER STEP
+[2026-03-08 14:05:00 UTC] ================================================================================
+[2026-03-08 14:05:00 UTC] Label policy optimization completed before Ridge training
+[2026-03-08 14:05:00 UTC] RidgePositionSizer.fit: Starting...
+[2026-03-08 14:05:00 UTC]   Using returns from trade_outcomes (net): mean=-0.000076, std=0.021332
+[2026-03-08 14:05:00 UTC]   Running target representation race...
+[2026-03-08 14:05:00 UTC]   WARNING: sizer_select_metric='topq_u_policy' requested but u_policy_net missing. Falling back to 'ic'.
+/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py:2438: ConstantInputWarning: An input array is constant; the correlation coefficient is not defined.
+  ic_fold = float(spearmanr(pred, y_va_ret).correlation)
+/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py:2438: ConstantInputWarning: An input array is constant; the correlation coefficient is not defined.
+  ic_fold = float(spearmanr(pred, y_va_ret).correlation)
+/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py:2438: ConstantInputWarning: An input array is constant; the correlation coefficient is not defined.
+  ic_fold = float(spearmanr(pred, y_va_ret).correlation)
+/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py:2438: ConstantInputWarning: An input array is constant; the correlation coefficient is not defined.
+  ic_fold = float(spearmanr(pred, y_va_ret).correlation)
+[2026-03-08 14:05:00 UTC]     Ridge target race: 4 candidates
+[2026-03-08 14:05:00 UTC]       winsorized: IC=0.1298 TopQMeanU=nan (std=nan) score=-inf P@30=nan Lift@30=nan gate=True
+[2026-03-08 14:05:00 UTC]       huber_adv: IC=0.1422 TopQMeanU=nan (std=nan) score=-inf P@30=nan Lift@30=nan gate=True
+[2026-03-08 14:05:00 UTC]       rolling_rank: IC=0.1394 TopQMeanU=nan (std=nan) score=-inf P@30=nan Lift@30=nan gate=True
+[2026-03-08 14:05:00 UTC]       rank_residual: IC=0.1479 TopQMeanU=nan (std=nan) score=-inf P@30=nan Lift@30=nan gate=True
+[2026-03-08 14:05:00 UTC]     Winner: rank_residual (score=0.147895, metric=ic)
+[2026-03-08 14:05:00 UTC]   Stage 1 HPO: evaluating 100 core combinations with 1-fold CV...
+[2026-03-08 14:05:03 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0990, global_avg_pos_frac=0.0661
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=146, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:03 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1047, global_avg_pos_frac=0.0822
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=47, n_max_positions=1
+  - n_trades=219, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:03 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=293, avg_return_raw=0.003396, avg_active_pos=0.0990, total_pnl=0.004351, pnl_per_day=0.004351, trades_per_day=439.00
+[2026-03-08 14:05:03 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=219, n_active=172, avg_return_raw=0.002015, avg_active_pos=0.1047, total_pnl=-0.005226, pnl_per_day=-0.005226, trades_per_day=219.00
+[2026-03-08 14:05:03 UTC]     [Stage1] Trial 0 Score=-0.000834, PnL/Day=-0.52%, Sortino=-0.456, Trades/Day=219.0000, Risk=7.691265, TempStab=0.502, MaxDD=0.0245, Ulcer=1.5575, net_win=0.342, PF=0.934, avg_win=0.000987, avg_loss=-0.000817, n_neg_days=97/219, n_neg_trades=97, mean_daily=-0.000024, PosSize: avg=8.22%, range=[0.00%, 15.00%] | Params: {'gamma': 0.0, 'alpha': 0.01, 'delta': 1.0, 'top_k_pct': 0.3, 'cooldown_hours': 2.0}
+[2026-03-08 14:05:03 UTC]     [Stage1] Trial 1 Score=0.000518, PnL/Day=0.44%, Sortino=0.189, Trades/Day=439.0000, Risk=9.830575, TempStab=0.521, MaxDD=0.0366, Ulcer=2.2607, net_win=0.255, PF=1.027, avg_win=0.001492, avg_loss=-0.000899, n_neg_days=181/439, n_neg_trades=181, mean_daily=0.000010, PosSize: avg=6.61%, range=[0.00%, 15.00%] | Params: {'gamma': 0.35401204522230023, 'alpha': 0.0005940036261741388, 'delta': 1.1326525311423268, 'top_k_pct': 0.6000000000000001, 'cooldown_hours': 2.0}
+[2026-03-08 14:05:03 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1054, global_avg_pos_frac=0.0687
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=204, n_max_positions=1
+  - n_trades=585, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:03 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1152, global_avg_pos_frac=0.0605
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=243, n_max_positions=1
+  - n_trades=512, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:03 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=585, n_active=381, avg_return_raw=0.003022, avg_active_pos=0.1054, total_pnl=0.027340, pnl_per_day=0.027340, trades_per_day=585.00
+[2026-03-08 14:05:03 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=512, n_active=269, avg_return_raw=0.002861, avg_active_pos=0.1152, total_pnl=-0.001617, pnl_per_day=-0.001617, trades_per_day=512.00
+[2026-03-08 14:05:03 UTC]     [Stage1] Trial 2 Score=0.004242, PnL/Day=2.73%, Sortino=0.893, Trades/Day=585.0000, Risk=7.770968, TempStab=0.465, MaxDD=0.0309, Ulcer=1.5800, net_win=0.275, PF=1.140, avg_win=0.001379, avg_loss=-0.000885, n_neg_days=220/585, n_neg_trades=220, mean_daily=0.000047, PosSize: avg=6.87%, range=[0.00%, 15.00%] | Params: {'gamma': 0.24594714455979833, 'alpha': 0.000207278735845806, 'delta': 1.3488080737086943, 'top_k_pct': 0.8, 'cooldown_hours': 4.0}
+[2026-03-08 14:05:03 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1132, global_avg_pos_frac=0.0501
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=122, n_max_positions=1
+  - n_trades=219, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:03 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=219, n_active=97, avg_return_raw=0.003471, avg_active_pos=0.1132, total_pnl=-0.008737, pnl_per_day=-0.008737, trades_per_day=219.00
+[2026-03-08 14:05:03 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1110, global_avg_pos_frac=0.0756
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=93, n_max_positions=1
+  - n_trades=292, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:03 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=199, avg_return_raw=0.002228, avg_active_pos=0.1110, total_pnl=-0.002472, pnl_per_day=-0.002472, trades_per_day=292.00
+[2026-03-08 14:05:03 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1052, global_avg_pos_frac=0.0821
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=48, n_max_positions=1
+  - n_trades=219, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:03 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=219, n_active=171, avg_return_raw=0.002015, avg_active_pos=0.1052, total_pnl=-0.005039, pnl_per_day=-0.005039, trades_per_day=219.00
+[2026-03-08 14:05:03 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1046, global_avg_pos_frac=0.0852
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=27, n_max_positions=1
+  - n_trades=146, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:03 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=146, n_active=119, avg_return_raw=0.003358, avg_active_pos=0.1046, total_pnl=0.011244, pnl_per_day=0.011244, trades_per_day=146.00
+[2026-03-08 14:05:03 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1064, global_avg_pos_frac=0.0962
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=14, n_max_positions=1
+  - n_trades=146, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:03 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=146, n_active=132, avg_return_raw=0.002794, avg_active_pos=0.1064, total_pnl=0.007482, pnl_per_day=0.007482, trades_per_day=146.00
+[2026-03-08 14:05:03 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0776, global_avg_pos_frac=0.0626
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=99, n_max_positions=1
+  - n_trades=512, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:03 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=512, n_active=413, avg_return_raw=0.002784, avg_active_pos=0.0776, total_pnl=-0.014938, pnl_per_day=-0.014938, trades_per_day=512.00
+[2026-03-08 14:05:03 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1069, global_avg_pos_frac=0.0974
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=13, n_max_positions=1
+  - n_trades=146, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:03 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=146, n_active=133, avg_return_raw=0.003343, avg_active_pos=0.1069, total_pnl=0.004636, pnl_per_day=0.004636, trades_per_day=146.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1187, global_avg_pos_frac=0.0692
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=244, n_max_positions=1
+  - n_trades=585, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=585, n_active=341, avg_return_raw=0.003105, avg_active_pos=0.1187, total_pnl=0.011921, pnl_per_day=0.011921, trades_per_day=585.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0972, global_avg_pos_frac=0.0392
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=349, n_max_positions=1
+  - n_trades=585, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=585, n_active=236, avg_return_raw=0.002539, avg_active_pos=0.0972, total_pnl=0.000973, pnl_per_day=0.000973, trades_per_day=585.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1162, global_avg_pos_frac=0.0571
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=186, n_max_positions=1
+  - n_trades=366, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=366, n_active=180, avg_return_raw=0.001907, avg_active_pos=0.1162, total_pnl=0.010254, pnl_per_day=0.010254, trades_per_day=366.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1197, global_avg_pos_frac=0.0621
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=176, n_max_positions=1
+  - n_trades=366, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=366, n_active=190, avg_return_raw=0.001849, avg_active_pos=0.1197, total_pnl=0.008568, pnl_per_day=0.008568, trades_per_day=366.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1076, global_avg_pos_frac=0.0776
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=102, n_max_positions=1
+  - n_trades=366, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=366, n_active=264, avg_return_raw=0.002759, avg_active_pos=0.1076, total_pnl=0.009829, pnl_per_day=0.009829, trades_per_day=366.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1026, global_avg_pos_frac=0.0783
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=104, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=335, avg_return_raw=0.003144, avg_active_pos=0.1026, total_pnl=0.019121, pnl_per_day=0.019121, trades_per_day=439.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0985, global_avg_pos_frac=0.0763
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=99, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=340, avg_return_raw=0.003183, avg_active_pos=0.0985, total_pnl=0.019311, pnl_per_day=0.019311, trades_per_day=439.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1173, global_avg_pos_frac=0.0687
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=121, n_max_positions=1
+  - n_trades=292, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=171, avg_return_raw=0.002371, avg_active_pos=0.1173, total_pnl=0.005456, pnl_per_day=0.005456, trades_per_day=292.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1094, global_avg_pos_frac=0.0749
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=92, n_max_positions=1
+  - n_trades=292, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=200, avg_return_raw=0.001619, avg_active_pos=0.1094, total_pnl=-0.015417, pnl_per_day=-0.015417, trades_per_day=292.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1205, global_avg_pos_frac=0.0861
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=146, n_max_positions=1
+  - n_trades=512, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1058, global_avg_pos_frac=0.0626
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=209, n_max_positions=1
+  - n_trades=512, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=512, n_active=366, avg_return_raw=0.002646, avg_active_pos=0.1205, total_pnl=0.045240, pnl_per_day=0.045240, trades_per_day=512.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=512, n_active=303, avg_return_raw=0.003114, avg_active_pos=0.1058, total_pnl=0.014692, pnl_per_day=0.014692, trades_per_day=512.00
+[2026-03-08 14:05:04 UTC]     [Stage1] Trial 21 Score=0.005984, PnL/Day=4.52%, Sortino=1.688, Trades/Day=512.0000, Risk=8.858994, TempStab=0.458, MaxDD=0.0383, Ulcer=1.9342, net_win=0.307, PF=1.214, avg_win=0.001635, avg_loss=-0.001012, n_neg_days=209/512, n_neg_trades=209, mean_daily=0.000088, PosSize: avg=8.61%, range=[0.00%, 15.00%] | Params: {'gamma': 0.1199303459119383, 'alpha': 0.002389790746630046, 'delta': 1.2898534798711265, 'top_k_pct': 0.7, 'cooldown_hours': 1.0}
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0947, global_avg_pos_frac=0.0583
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=225, n_max_positions=1
+  - n_trades=585, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=585, n_active=360, avg_return_raw=0.002448, avg_active_pos=0.0947, total_pnl=-0.002125, pnl_per_day=-0.002125, trades_per_day=585.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1165, global_avg_pos_frac=0.0687
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=210, n_max_positions=1
+  - n_trades=512, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=512, n_active=302, avg_return_raw=0.002251, avg_active_pos=0.1165, total_pnl=0.025014, pnl_per_day=0.025014, trades_per_day=512.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0814, global_avg_pos_frac=0.0637
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=111, n_max_positions=1
+  - n_trades=512, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=512, n_active=401, avg_return_raw=0.003433, avg_active_pos=0.0814, total_pnl=-0.010255, pnl_per_day=-0.010255, trades_per_day=512.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1121, global_avg_pos_frac=0.0732
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=203, n_max_positions=1
+  - n_trades=585, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=585, n_active=382, avg_return_raw=0.002387, avg_active_pos=0.1121, total_pnl=0.004138, pnl_per_day=0.004138, trades_per_day=585.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1090, global_avg_pos_frac=0.0655
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=175, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=264, avg_return_raw=0.003087, avg_active_pos=0.1090, total_pnl=0.032969, pnl_per_day=0.032969, trades_per_day=439.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1084, global_avg_pos_frac=0.0699
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=156, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC]     [Stage1] Trial 27 Score=0.007278, PnL/Day=3.30%, Sortino=1.435, Trades/Day=439.0000, Risk=5.891544, TempStab=0.466, MaxDD=0.0180, Ulcer=0.9641, net_win=0.260, PF=1.241, avg_win=0.001491, avg_loss=-0.000913, n_neg_days=150/439, n_neg_trades=150, mean_daily=0.000075, PosSize: avg=6.55%, range=[0.00%, 15.00%] | Params: {'gamma': 0.09244832524741958, 'alpha': 0.013079221155859407, 'delta': 1.139221639780236, 'top_k_pct': 0.6000000000000001, 'cooldown_hours': 4.0}
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=283, avg_return_raw=0.003346, avg_active_pos=0.1084, total_pnl=0.028693, pnl_per_day=0.028693, trades_per_day=439.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1087, global_avg_pos_frac=0.0666
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=170, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=269, avg_return_raw=0.003087, avg_active_pos=0.1087, total_pnl=0.028133, pnl_per_day=0.028133, trades_per_day=439.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1086, global_avg_pos_frac=0.0690
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=160, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=279, avg_return_raw=0.003267, avg_active_pos=0.1086, total_pnl=0.026877, pnl_per_day=0.026877, trades_per_day=439.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1083, global_avg_pos_frac=0.0678
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=164, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=275, avg_return_raw=0.003036, avg_active_pos=0.1083, total_pnl=0.017471, pnl_per_day=0.017471, trades_per_day=439.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1227, global_avg_pos_frac=0.0534
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=248, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=191, avg_return_raw=0.002276, avg_active_pos=0.1227, total_pnl=0.030153, pnl_per_day=0.030153, trades_per_day=439.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1085, global_avg_pos_frac=0.0647
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=177, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=262, avg_return_raw=0.003087, avg_active_pos=0.1085, total_pnl=0.039782, pnl_per_day=0.039782, trades_per_day=439.00
+[2026-03-08 14:05:04 UTC]     [Stage1] Trial 32 Score=0.008701, PnL/Day=3.98%, Sortino=1.731, Trades/Day=439.0000, Risk=5.903305, TempStab=0.463, MaxDD=0.0193, Ulcer=0.9735, net_win=0.264, PF=1.307, avg_win=0.001462, avg_loss=-0.000889, n_neg_days=146/439, n_neg_trades=146, mean_daily=0.000091, PosSize: avg=6.47%, range=[0.00%, 15.00%] | Params: {'gamma': 0.00663926183708724, 'alpha': 0.01210969789249879, 'delta': 0.8770237899660495, 'top_k_pct': 0.6000000000000001, 'cooldown_hours': 4.0}
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1123, global_avg_pos_frac=0.0678
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=145, n_max_positions=1
+  - n_trades=366, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=366, n_active=221, avg_return_raw=0.001988, avg_active_pos=0.1123, total_pnl=-0.004533, pnl_per_day=-0.004533, trades_per_day=366.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1137, global_avg_pos_frac=0.0696
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=142, n_max_positions=1
+  - n_trades=366, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=366, n_active=224, avg_return_raw=0.001988, avg_active_pos=0.1137, total_pnl=-0.001599, pnl_per_day=-0.001599, trades_per_day=366.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1039, global_avg_pos_frac=0.0662
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=186, n_max_positions=1
+  - n_trades=512, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=512, n_active=326, avg_return_raw=0.002873, avg_active_pos=0.1039, total_pnl=0.020627, pnl_per_day=0.020627, trades_per_day=512.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1050, global_avg_pos_frac=0.0660
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=190, n_max_positions=1
+  - n_trades=512, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=512, n_active=322, avg_return_raw=0.002873, avg_active_pos=0.1050, total_pnl=0.024059, pnl_per_day=0.024059, trades_per_day=512.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1065, global_avg_pos_frac=0.0541
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=252, n_max_positions=1
+  - n_trades=512, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=512, n_active=260, avg_return_raw=0.001842, avg_active_pos=0.1065, total_pnl=-0.020178, pnl_per_day=-0.020178, trades_per_day=512.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1120, global_avg_pos_frac=0.0513
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=238, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:04 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=201, avg_return_raw=0.001879, avg_active_pos=0.1120, total_pnl=0.010606, pnl_per_day=0.010606, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1158, global_avg_pos_frac=0.0696
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=175, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=264, avg_return_raw=0.002454, avg_active_pos=0.1158, total_pnl=0.018197, pnl_per_day=0.018197, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1133, global_avg_pos_frac=0.0516
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=239, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=200, avg_return_raw=0.002035, avg_active_pos=0.1133, total_pnl=0.007479, pnl_per_day=0.007479, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1147, global_avg_pos_frac=0.0734
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=158, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=281, avg_return_raw=0.004399, avg_active_pos=0.1147, total_pnl=0.031261, pnl_per_day=0.031261, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1082, global_avg_pos_frac=0.0690
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=159, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=280, avg_return_raw=0.003087, avg_active_pos=0.1082, total_pnl=0.021597, pnl_per_day=0.021597, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1017, global_avg_pos_frac=0.0758
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=112, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=327, avg_return_raw=0.002732, avg_active_pos=0.1017, total_pnl=0.022085, pnl_per_day=0.022085, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1037, global_avg_pos_frac=0.0510
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=260, n_max_positions=1
+  - n_trades=512, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=512, n_active=252, avg_return_raw=0.001994, avg_active_pos=0.1037, total_pnl=0.005620, pnl_per_day=0.005620, trades_per_day=512.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1087, global_avg_pos_frac=0.0645
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=208, n_max_positions=1
+  - n_trades=512, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=512, n_active=304, avg_return_raw=0.002880, avg_active_pos=0.1087, total_pnl=0.010692, pnl_per_day=0.010692, trades_per_day=512.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1182, global_avg_pos_frac=0.0678
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=156, n_max_positions=1
+  - n_trades=366, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=366, n_active=210, avg_return_raw=0.002788, avg_active_pos=0.1182, total_pnl=0.006576, pnl_per_day=0.006576, trades_per_day=366.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1137, global_avg_pos_frac=0.0680
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=147, n_max_positions=1
+  - n_trades=366, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=366, n_active=219, avg_return_raw=0.002293, avg_active_pos=0.1137, total_pnl=0.004696, pnl_per_day=0.004696, trades_per_day=366.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1090, global_avg_pos_frac=0.0691
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=134, n_max_positions=1
+  - n_trades=366, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=366, n_active=232, avg_return_raw=0.002464, avg_active_pos=0.1090, total_pnl=-0.007241, pnl_per_day=-0.007241, trades_per_day=366.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1223, global_avg_pos_frac=0.0580
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=269, n_max_positions=1
+  - n_trades=512, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=512, n_active=243, avg_return_raw=0.002631, avg_active_pos=0.1223, total_pnl=0.016539, pnl_per_day=0.016539, trades_per_day=512.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0980, global_avg_pos_frac=0.0534
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=233, n_max_positions=1
+  - n_trades=512, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=512, n_active=279, avg_return_raw=0.002937, avg_active_pos=0.0980, total_pnl=-0.024980, pnl_per_day=-0.024980, trades_per_day=512.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1045, global_avg_pos_frac=0.0750
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=124, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=315, avg_return_raw=0.003130, avg_active_pos=0.1045, total_pnl=0.024741, pnl_per_day=0.024741, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1039, global_avg_pos_frac=0.0739
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=127, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=312, avg_return_raw=0.003075, avg_active_pos=0.1039, total_pnl=0.022182, pnl_per_day=0.022182, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1085, global_avg_pos_frac=0.0689
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=160, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=279, avg_return_raw=0.003136, avg_active_pos=0.1085, total_pnl=0.026843, pnl_per_day=0.026843, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC]   Stage 2 HPO: evaluating 40 sizing combinations around best core params with 1-fold CV...
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1085, global_avg_pos_frac=0.0647
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=177, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=262, avg_return_raw=0.003087, avg_active_pos=0.1085, total_pnl=0.039782, pnl_per_day=0.039782, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1600 (base=0.0800, mult=0.0800, cap=0.2000)
+  - active_trades_avg_pos=0.1409, global_avg_pos_frac=0.0841
+  - range=[0.0000, 0.1600]
+  - n_zero_positions=177, n_max_positions=1
+  - n_trades=439, sizing_formula=concave, squash_fn=sigmoid, squash_k=0.75
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=262, avg_return_raw=0.003087, avg_active_pos=0.1409, total_pnl=0.052668, pnl_per_day=0.052668, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC]     [Stage2] Trial 0 Score=0.008701, PnL/Day=3.98%, Sortino=1.731, Trades/Day=439.0000, Risk=5.903305, TempStab=0.463, MaxDD=0.0193, Ulcer=0.9735, net_win=0.264, PF=1.307, avg_win=0.001462, avg_loss=-0.000889, n_neg_days=146/439, n_neg_trades=146, mean_daily=0.000091, PosSize: avg=6.47%, range=[0.00%, 15.00%] | Params: {'base_size': 0.05, 'rank_multiplier': 0.1, 'sizing_formula': 'linear', 'squash_fn': 'tanh', 'squash_k': 1.0}
+[2026-03-08 14:05:05 UTC]     [Stage2] Trial 1 Score=0.009578, PnL/Day=5.27%, Sortino=2.292, Trades/Day=439.0000, Risk=6.819179, TempStab=0.463, MaxDD=0.0251, Ulcer=1.2731, net_win=0.264, PF=1.310, avg_win=0.001920, avg_loss=-0.001165, n_neg_days=146/439, n_neg_trades=146, mean_daily=0.000120, PosSize: avg=8.41%, range=[0.00%, 16.00%] | Params: {'base_size': 0.08, 'rank_multiplier': 0.08, 'sizing_formula': 'concave', 'squash_fn': 'sigmoid', 'squash_k': 0.75}
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0600, mult=0.1400, cap=0.2000)
+  - active_trades_avg_pos=0.1667, global_avg_pos_frac=0.0995
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=177, n_max_positions=1
+  - n_trades=439, sizing_formula=concave, squash_fn=sigmoid, squash_k=1.75
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=262, avg_return_raw=0.003087, avg_active_pos=0.1667, total_pnl=0.061910, pnl_per_day=0.061910, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC]     [Stage2] Trial 2 Score=0.009981, PnL/Day=6.19%, Sortino=2.694, Trades/Day=439.0000, Risk=7.514067, TempStab=0.463, MaxDD=0.0295, Ulcer=1.5002, net_win=0.264, PF=1.309, avg_win=0.002263, avg_loss=-0.001374, n_neg_days=146/439, n_neg_trades=146, mean_daily=0.000141, PosSize: avg=9.95%, range=[0.00%, 20.00%] | Params: {'base_size': 0.06, 'rank_multiplier': 0.14, 'sizing_formula': 'concave', 'squash_fn': 'sigmoid', 'squash_k': 1.75}
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1100, mult=0.2000, cap=0.2000)
+  - active_trades_avg_pos=0.1945, global_avg_pos_frac=0.1161
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=177, n_max_positions=207
+  - n_trades=439, sizing_formula=sigmoid, squash_fn=tanh, squash_k=2.25
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=262, avg_return_raw=0.003087, avg_active_pos=0.1945, total_pnl=0.077393, pnl_per_day=0.077393, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC]     [Stage2] Trial 3 Score=0.011163, PnL/Day=7.74%, Sortino=3.368, Trades/Day=439.0000, Risk=8.242029, TempStab=0.466, MaxDD=0.0343, Ulcer=1.7381, net_win=0.264, PF=1.330, avg_win=0.002691, avg_loss=-0.001608, n_neg_days=146/439, n_neg_trades=146, mean_daily=0.000176, PosSize: avg=11.61%, range=[0.00%, 20.00%] | Params: {'base_size': 0.11, 'rank_multiplier': 0.2, 'sizing_formula': 'sigmoid', 'squash_fn': 'tanh', 'squash_k': 2.25}
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1200, mult=0.0800, cap=0.2000)
+  - active_trades_avg_pos=0.1809, global_avg_pos_frac=0.1080
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=177, n_max_positions=1
+  - n_trades=439, sizing_formula=concave, squash_fn=tanh, squash_k=2.50
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=262, avg_return_raw=0.003087, avg_active_pos=0.1809, total_pnl=0.067798, pnl_per_day=0.067798, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1000, mult=0.1400, cap=0.2000)
+  - active_trades_avg_pos=0.1848, global_avg_pos_frac=0.1103
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=177, n_max_positions=116
+  - n_trades=439, sizing_formula=sigmoid, squash_fn=tanh, squash_k=1.25
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=262, avg_return_raw=0.003087, avg_active_pos=0.1848, total_pnl=0.067740, pnl_per_day=0.067740, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0700, mult=0.1600, cap=0.2000)
+  - active_trades_avg_pos=0.1748, global_avg_pos_frac=0.1043
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=177, n_max_positions=116
+  - n_trades=439, sizing_formula=sigmoid, squash_fn=sigmoid, squash_k=2.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=262, avg_return_raw=0.003087, avg_active_pos=0.1748, total_pnl=0.062547, pnl_per_day=0.062547, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1800 (base=0.0800, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1154, global_avg_pos_frac=0.0688
+  - range=[0.0000, 0.1800]
+  - n_zero_positions=177, n_max_positions=1
+  - n_trades=439, sizing_formula=convex, squash_fn=tanh, squash_k=1.50
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=262, avg_return_raw=0.003087, avg_active_pos=0.1154, total_pnl=0.042121, pnl_per_day=0.042121, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1262, global_avg_pos_frac=0.0753
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=177, n_max_positions=1
+  - n_trades=439, sizing_formula=concave, squash_fn=sigmoid, squash_k=0.50
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=262, avg_return_raw=0.003087, avg_active_pos=0.1262, total_pnl=0.046923, pnl_per_day=0.046923, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.0700 (base=0.0300, mult=0.0400, cap=0.2000)
+  - active_trades_avg_pos=0.0605, global_avg_pos_frac=0.0361
+  - range=[0.0000, 0.0700]
+  - n_zero_positions=177, n_max_positions=1
+  - n_trades=439, sizing_formula=concave, squash_fn=sigmoid, squash_k=2.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=262, avg_return_raw=0.003087, avg_active_pos=0.0605, total_pnl=0.022552, pnl_per_day=0.022552, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1200, mult=0.2000, cap=0.2000)
+  - active_trades_avg_pos=0.1957, global_avg_pos_frac=0.1168
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=177, n_max_positions=217
+  - n_trades=439, sizing_formula=sigmoid, squash_fn=tanh, squash_k=2.50
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=262, avg_return_raw=0.003087, avg_active_pos=0.1957, total_pnl=0.079064, pnl_per_day=0.079064, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0300, mult=0.2000, cap=0.2000)
+  - active_trades_avg_pos=0.1814, global_avg_pos_frac=0.1083
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=177, n_max_positions=29
+  - n_trades=439, sizing_formula=concave, squash_fn=sigmoid, squash_k=1.25
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=262, avg_return_raw=0.003087, avg_active_pos=0.1814, total_pnl=0.067014, pnl_per_day=0.067014, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC]     [Stage2] Trial 11 Score=0.011339, PnL/Day=7.91%, Sortino=3.441, Trades/Day=439.0000, Risk=8.280382, TempStab=0.466, MaxDD=0.0345, Ulcer=1.7507, net_win=0.264, PF=1.335, avg_win=0.002719, avg_loss=-0.001619, n_neg_days=146/439, n_neg_trades=146, mean_daily=0.000180, PosSize: avg=11.68%, range=[0.00%, 20.00%] | Params: {'base_size': 0.12, 'rank_multiplier': 0.2, 'sizing_formula': 'sigmoid', 'squash_fn': 'tanh', 'squash_k': 2.5}
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1200, mult=0.2000, cap=0.2000)
+  - active_trades_avg_pos=0.1957, global_avg_pos_frac=0.1168
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=177, n_max_positions=217
+  - n_trades=439, sizing_formula=sigmoid, squash_fn=tanh, squash_k=2.50
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1200, mult=0.2000, cap=0.2000)
+  - active_trades_avg_pos=0.1957, global_avg_pos_frac=0.1168
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=177, n_max_positions=217
+  - n_trades=439, sizing_formula=sigmoid, squash_fn=tanh, squash_k=2.50
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=262, avg_return_raw=0.003087, avg_active_pos=0.1957, total_pnl=0.079064, pnl_per_day=0.079064, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=262, avg_return_raw=0.003087, avg_active_pos=0.1957, total_pnl=0.079064, pnl_per_day=0.079064, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1000, mult=0.1800, cap=0.2000)
+  - active_trades_avg_pos=0.1899, global_avg_pos_frac=0.1133
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=177, n_max_positions=193
+  - n_trades=439, sizing_formula=sigmoid, squash_fn=tanh, squash_k=2.50
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=262, avg_return_raw=0.003087, avg_active_pos=0.1899, total_pnl=0.073958, pnl_per_day=0.073958, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1000, mult=0.1800, cap=0.2000)
+  - active_trades_avg_pos=0.1899, global_avg_pos_frac=0.1133
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=177, n_max_positions=193
+  - n_trades=439, sizing_formula=sigmoid, squash_fn=tanh, squash_k=2.50
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=262, avg_return_raw=0.003087, avg_active_pos=0.1899, total_pnl=0.073958, pnl_per_day=0.073958, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0900, mult=0.1600, cap=0.2000)
+  - active_trades_avg_pos=0.1815, global_avg_pos_frac=0.1083
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=177, n_max_positions=47
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=2.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=262, avg_return_raw=0.003087, avg_active_pos=0.1815, total_pnl=0.066601, pnl_per_day=0.066601, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1000, mult=0.1600, cap=0.2000)
+  - active_trades_avg_pos=0.1890, global_avg_pos_frac=0.1128
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=177, n_max_positions=80
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=2.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=262, avg_return_raw=0.003087, avg_active_pos=0.1890, total_pnl=0.070100, pnl_per_day=0.070100, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1200, mult=0.1800, cap=0.2000)
+  - active_trades_avg_pos=0.1790, global_avg_pos_frac=0.1068
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=177, n_max_positions=59
+  - n_trades=439, sizing_formula=convex, squash_fn=tanh, squash_k=2.25
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=262, avg_return_raw=0.003087, avg_active_pos=0.1790, total_pnl=0.065159, pnl_per_day=0.065159, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1100, mult=0.1800, cap=0.2000)
+  - active_trades_avg_pos=0.1708, global_avg_pos_frac=0.1019
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=177, n_max_positions=37
+  - n_trades=439, sizing_formula=convex, squash_fn=tanh, squash_k=2.25
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=262, avg_return_raw=0.003087, avg_active_pos=0.1708, total_pnl=0.061851, pnl_per_day=0.061851, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1100, mult=0.1400, cap=0.2000)
+  - active_trades_avg_pos=0.1895, global_avg_pos_frac=0.1131
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=177, n_max_positions=158
+  - n_trades=439, sizing_formula=sigmoid, squash_fn=tanh, squash_k=1.75
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=262, avg_return_raw=0.003087, avg_active_pos=0.1895, total_pnl=0.071632, pnl_per_day=0.071632, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1100, mult=0.1400, cap=0.2000)
+  - active_trades_avg_pos=0.1895, global_avg_pos_frac=0.1131
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=177, n_max_positions=158
+  - n_trades=439, sizing_formula=sigmoid, squash_fn=tanh, squash_k=1.75
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=262, avg_return_raw=0.003087, avg_active_pos=0.1895, total_pnl=0.071632, pnl_per_day=0.071632, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1200, mult=0.2000, cap=0.2000)
+  - active_trades_avg_pos=0.1957, global_avg_pos_frac=0.1168
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=177, n_max_positions=217
+  - n_trades=439, sizing_formula=sigmoid, squash_fn=tanh, squash_k=2.50
+[2026-03-08 14:05:05 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=262, avg_return_raw=0.003087, avg_active_pos=0.1957, total_pnl=0.079064, pnl_per_day=0.079064, trades_per_day=439.00
+[2026-03-08 14:05:05 UTC]   Best params: alpha=0.012110, delta=0.877, gamma=0.007, top_k_pct=0.30, cooldown_hours=4.0, base_size=0.12, rank_multiplier=0.20, sizing_formula=sigmoid, squash_fn=tanh, squash_k=2.50, ObjectiveScore=0.0113, IntradayRisk=8.2804
+[2026-03-08 14:05:05 UTC]   Position Sizing: avg=11.68%, median=19.77%, range=[0.00%, 20.00%], max_position=20.00% (capped at 20.00%)
+[2026-03-08 14:05:05 UTC]   Thresholds: low=-0.000386, high=-0.000386
+[2026-03-08 14:05:05 UTC]   Evaluating final model on Walk-Forward OOS set (366 trades)...
+[2026-03-08 14:05:06 UTC]   WARNING: SLSQP optimization failed: Inequality constraints incompatible
+[2026-03-08 14:05:06 UTC]   Falling back to uniform weights
+[2026-03-08 14:05:06 UTC]   WARNING: SLSQP optimization failed: Inequality constraints incompatible
+[2026-03-08 14:05:06 UTC]   Falling back to uniform weights
+[2026-03-08 14:05:06 UTC]     Pre-offset OOS PnL/Day: 0.000000, ObjectiveScore: -1000000000.000000, IntradayRisk: 306.000000, MaxDD: 1.000000, Ulcer: 0.0000, TUW: 0.000
+[2026-03-08 14:05:06 UTC]   Performing final fit on Train+Val data...
+[2026-03-08 14:05:06 UTC]     [Feature Selection] Outer fold 1/3: train=354 samples
+[2026-03-08 14:05:06 UTC]       - 1 feature clusters identified (threshold=0.97)
+[2026-03-08 14:05:06 UTC]     [Feature Selection] Outer fold 2/3: train=720 samples
+[2026-03-08 14:05:06 UTC]       - 12 feature clusters identified (threshold=0.97)
+[2026-03-08 14:05:06 UTC]       - Starting RFE-style ElasticNet pruning: 12 candidates -> min 10
+[2026-03-08 14:05:06 UTC]       - RFE finished: 10 features selected
+[2026-03-08 14:05:07 UTC]     [Feature Selection] Outer fold 3/3: train=1086 samples
+[2026-03-08 14:05:07 UTC]       - 12 feature clusters identified (threshold=0.97)
+[2026-03-08 14:05:07 UTC]       - Starting RFE-style ElasticNet pruning: 12 candidates -> min 10
+[2026-03-08 14:05:07 UTC]       - RFE finished: 10 features selected
+[2026-03-08 14:05:09 UTC]   Launching Tree Feature Selection (LGBM RFE) on 1464 samples...
+[2026-03-08 14:05:09 UTC] Starting Feature Selection Process...
+[2026-03-08 14:05:09 UTC]       [run_rfe] Iteration 1: 12 features remaining
+[2026-03-08 14:05:10 UTC]       [run_rfe]   OOS Utility: 0.020873 (+/- 0.320584)
+[2026-03-08 14:05:10 UTC] Feature Selection complete. Selected 10 features.
+[2026-03-08 14:05:10 UTC]   Feature selection (sizer): kept 9 for Ridge, 10 for Trees (out of 12)
+[2026-03-08 14:05:16 UTC]   Sizer model race winner: xgb+huber score=2.2468
+[2026-03-08 14:05:16 UTC]   xgb won the sizer race. Launching two-layer tree HPO...
+[2026-03-08 14:05:16 UTC]   Layer 1 HPO: Optimizing primary parameters (n_estimators, max_depth, learning_rate, subsample, colsample_bytree)...
+[W 2026-03-08 15:05:16,597] Trial 0 failed with parameters: {'n_estimators': 300, 'max_depth': 5, 'learning_rate': 0.05, 'subsample': 0.7, 'colsample_bytree': 0.7, 'top_k_pct': 0.6000000000000001, 'cooldown_hours': 1.0} because of the following error: NameError("name 'pnl_per_day_top' is not defined").
+Traceback (most recent call last):
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 196, in _run_trial
+    value_or_values = func(trial)
+                      ^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 5592, in layer1_objective
+    f_pnl_day_list.append(float(pnl_per_day_top))
+                                ^^^^^^^^^^^^^^^
+NameError: name 'pnl_per_day_top' is not defined
+[W 2026-03-08 15:05:16,598] Trial 0 failed with value None.
+[W 2026-03-08 15:05:16,629] Trial 1 failed with parameters: {'n_estimators': 457, 'max_depth': 6, 'learning_rate': 0.025891045414945194, 'subsample': 0.3318809909228677, 'colsample_bytree': 0.836170369049076, 'top_k_pct': 0.6000000000000001, 'cooldown_hours': 5.0} because of the following error: NameError("name 'pnl_per_day_top' is not defined").
+Traceback (most recent call last):
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 196, in _run_trial
+    value_or_values = func(trial)
+                      ^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 5592, in layer1_objective
+    f_pnl_day_list.append(float(pnl_per_day_top))
+                                ^^^^^^^^^^^^^^^
+NameError: name 'pnl_per_day_top' is not defined
+[W 2026-03-08 15:05:16,629] Trial 1 failed with value None.
+[2026-03-08 14:05:16 UTC]   long_tf failed: name 'pnl_per_day_top' is not defined
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/run_ridge_sizer.py", line 950, in main
+    sizer, metrics = run_ridge_position_sizer_step(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 7470, in run_ridge_position_sizer_step
+    sizer.fit(oof_preds, trade_outcomes, timestamps=timestamps, groups=groups,
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 5630, in fit
+    layer1_study.optimize(layer1_objective, n_trials=layer1_trials, n_jobs=self.n_jobs)
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/study.py", line 451, in optimize
+    _optimize(
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 99, in _optimize
+    f.result()
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 159, in _optimize_sequential
+    frozen_trial = _run_trial(study, func, catch)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 247, in _run_trial
+    raise func_err
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 196, in _run_trial
+    value_or_values = func(trial)
+                      ^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 5592, in layer1_objective
+    f_pnl_day_list.append(float(pnl_per_day_top))
+                                ^^^^^^^^^^^^^^^
+NameError: name 'pnl_per_day_top' is not defined
+[2026-03-08 14:05:16 UTC] Constructed trade outcomes from OOF context: 2282 trades
+[2026-03-08 14:05:16 UTC]   long_mr: 2282 rows, features=['clf', 'reg_H2', 'reg_H4', 'reg_H8', 'reg_mean', 'reg_std', 'reg_range', 'reg_sign_agree', 'reg_clf_agree', 'base_H2', 'base_H4', 'base_H8']
+[2026-03-08 14:05:16 UTC] ================================================================================
+[2026-03-08 14:05:16 UTC] RIDGE POSITION SIZER STEP
+[2026-03-08 14:05:16 UTC] ================================================================================
+[2026-03-08 14:05:16 UTC] Label policy optimization completed before Ridge training
+[2026-03-08 14:05:16 UTC] RidgePositionSizer.fit: Starting...
+[2026-03-08 14:05:16 UTC]   Using returns from trade_outcomes (net): mean=0.000829, std=0.017134
+[2026-03-08 14:05:16 UTC]   Running target representation race...
+[2026-03-08 14:05:16 UTC]   WARNING: sizer_select_metric='topq_u_policy' requested but u_policy_net missing. Falling back to 'ic'.
+An input array is constant; the correlation coefficient is not defined.
+[2026-03-08 14:05:16 UTC]     Ridge target race: 4 candidates
+[2026-03-08 14:05:16 UTC]       winsorized: IC=0.0695 TopQMeanU=nan (std=nan) score=-inf P@30=nan Lift@30=nan gate=True
+[2026-03-08 14:05:16 UTC]       huber_adv: IC=0.0485 TopQMeanU=nan (std=nan) score=-inf P@30=nan Lift@30=nan gate=True
+[2026-03-08 14:05:16 UTC]       rolling_rank: IC=0.1188 TopQMeanU=nan (std=nan) score=-inf P@30=nan Lift@30=nan gate=True
+[2026-03-08 14:05:16 UTC]       rank_residual: IC=0.0221 TopQMeanU=nan (std=nan) score=-inf P@30=nan Lift@30=nan gate=True
+[2026-03-08 14:05:16 UTC]     Winner: rolling_rank (score=0.118794, metric=ic)
+[2026-03-08 14:05:16 UTC]   Stage 1 HPO: evaluating 100 core combinations with 1-fold CV...
+[2026-03-08 14:05:17 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1078, global_avg_pos_frac=0.0758
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=81, n_max_positions=1
+  - n_trades=273, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:17 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=273, n_active=192, avg_return_raw=0.005901, avg_active_pos=0.1078, total_pnl=0.102334, pnl_per_day=0.102334, trades_per_day=273.00
+[2026-03-08 14:05:17 UTC]     [Stage1] Trial 0 Score=0.023343, PnL/Day=10.23%, Sortino=7.162, Trades/Day=273.0000, Risk=5.341342, TempStab=0.448, MaxDD=0.0284, Ulcer=0.8839, net_win=0.330, PF=1.922, avg_win=0.002370, avg_loss=-0.001088, n_neg_days=102/273, n_neg_trades=102, mean_daily=0.000375, PosSize: avg=7.58%, range=[0.00%, 15.00%] | Params: {'gamma': 0.0, 'alpha': 0.01, 'delta': 1.0, 'top_k_pct': 0.3, 'cooldown_hours': 2.0}
+[2026-03-08 14:05:17 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1142, global_avg_pos_frac=0.0916
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=36, n_max_positions=1
+  - n_trades=182, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:17 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=182, n_active=146, avg_return_raw=0.005968, avg_active_pos=0.1142, total_pnl=0.074351, pnl_per_day=0.074351, trades_per_day=182.00
+[2026-03-08 14:05:17 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1165, global_avg_pos_frac=0.0565
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=235, n_max_positions=1
+  - n_trades=456, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:17 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=221, avg_return_raw=0.004936, avg_active_pos=0.1165, total_pnl=0.124576, pnl_per_day=0.124576, trades_per_day=456.00
+[2026-03-08 14:05:17 UTC]     [Stage1] Trial 3 Score=0.027912, PnL/Day=12.46%, Sortino=5.219, Trades/Day=456.0000, Risk=5.477034, TempStab=0.437, MaxDD=0.0291, Ulcer=0.8996, net_win=0.219, PF=1.915, avg_win=0.002607, avg_loss=-0.001125, n_neg_days=121/456, n_neg_trades=121, mean_daily=0.000273, PosSize: avg=5.65%, range=[0.00%, 15.00%] | Params: {'gamma': 0.5172323220991291, 'alpha': 0.0005658109441287436, 'delta': 1.81399368149096, 'top_k_pct': 0.5, 'cooldown_hours': 3.0}
+[2026-03-08 14:05:17 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1160, global_avg_pos_frac=0.0448
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=336, n_max_positions=1
+  - n_trades=547, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:17 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=547, n_active=211, avg_return_raw=0.004537, avg_active_pos=0.1160, total_pnl=0.127236, pnl_per_day=0.127236, trades_per_day=547.00
+[2026-03-08 14:05:17 UTC]     [Stage1] Trial 4 Score=0.032048, PnL/Day=12.72%, Sortino=4.444, Trades/Day=547.0000, Risk=4.907103, TempStab=0.440, MaxDD=0.0256, Ulcer=0.7435, net_win=0.179, PF=1.988, avg_win=0.002613, avg_loss=-0.001140, n_neg_days=113/547, n_neg_trades=113, mean_daily=0.000233, PosSize: avg=4.48%, range=[0.00%, 15.00%] | Params: {'gamma': 0.5622323572297288, 'alpha': 0.010899194659359663, 'delta': 1.488010026208522, 'top_k_pct': 0.6000000000000001, 'cooldown_hours': 4.0}
+[2026-03-08 14:05:17 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1140, global_avg_pos_frac=0.0477
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=318, n_max_positions=1
+  - n_trades=547, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:17 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=547, n_active=229, avg_return_raw=0.004379, avg_active_pos=0.1140, total_pnl=0.114418, pnl_per_day=0.114418, trades_per_day=547.00
+[2026-03-08 14:05:17 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1166, global_avg_pos_frac=0.0599
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=177, n_max_positions=1
+  - n_trades=364, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:17 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=187, avg_return_raw=0.005336, avg_active_pos=0.1166, total_pnl=0.123364, pnl_per_day=0.123364, trades_per_day=364.00
+[2026-03-08 14:05:17 UTC]     [Stage1] Trial 6 Score=0.033359, PnL/Day=12.34%, Sortino=6.475, Trades/Day=364.0000, Risk=4.707765, TempStab=0.440, MaxDD=0.0209, Ulcer=0.6610, net_win=0.242, PF=2.083, avg_win=0.002696, avg_loss=-0.001150, n_neg_days=99/364, n_neg_trades=99, mean_daily=0.000339, PosSize: avg=5.99%, range=[0.00%, 15.00%] | Params: {'gamma': 0.6490616833577716, 'alpha': 0.012230217812731679, 'delta': 0.9706373272698277, 'top_k_pct': 0.4, 'cooldown_hours': 1.0}
+[2026-03-08 14:05:18 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1118, global_avg_pos_frac=0.0294
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=470, n_max_positions=1
+  - n_trades=638, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:18 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=638, n_active=168, avg_return_raw=0.003859, avg_active_pos=0.1118, total_pnl=0.081580, pnl_per_day=0.081580, trades_per_day=638.00
+[2026-03-08 14:05:18 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1191, global_avg_pos_frac=0.0433
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=348, n_max_positions=1
+  - n_trades=547, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:18 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=547, n_active=199, avg_return_raw=0.004380, avg_active_pos=0.1191, total_pnl=0.102748, pnl_per_day=0.102748, trades_per_day=547.00
+[2026-03-08 14:05:18 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0994, global_avg_pos_frac=0.0955
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=7, n_max_positions=1
+  - n_trades=182, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:18 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=182, n_active=175, avg_return_raw=0.006727, avg_active_pos=0.0994, total_pnl=0.079691, pnl_per_day=0.079691, trades_per_day=182.00
+[2026-03-08 14:05:18 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1110, global_avg_pos_frac=0.1037
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=12, n_max_positions=1
+  - n_trades=182, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:18 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=182, n_active=170, avg_return_raw=0.005929, avg_active_pos=0.1110, total_pnl=0.069718, pnl_per_day=0.069718, trades_per_day=182.00
+[2026-03-08 14:05:18 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1089, global_avg_pos_frac=0.0314
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=389, n_max_positions=1
+  - n_trades=547, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:18 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=547, n_active=158, avg_return_raw=0.004192, avg_active_pos=0.1089, total_pnl=0.113724, pnl_per_day=0.113724, trades_per_day=547.00
+[2026-03-08 14:05:19 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1094, global_avg_pos_frac=0.0463
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=210, n_max_positions=1
+  - n_trades=364, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:19 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=154, avg_return_raw=0.005325, avg_active_pos=0.1094, total_pnl=0.068518, pnl_per_day=0.068518, trades_per_day=364.00
+[2026-03-08 14:05:20 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1408, global_avg_pos_frac=0.0534
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=226, n_max_positions=1
+  - n_trades=364, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:20 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=138, avg_return_raw=0.005267, avg_active_pos=0.1408, total_pnl=0.153102, pnl_per_day=0.153102, trades_per_day=364.00
+[2026-03-08 14:05:20 UTC]     [Stage1] Trial 12 Score=0.044601, PnL/Day=15.31%, Sortino=8.036, Trades/Day=364.0000, Risk=4.241180, TempStab=0.467, MaxDD=0.0221, Ulcer=0.5921, net_win=0.201, PF=2.609, avg_win=0.003401, avg_loss=-0.001464, n_neg_days=65/364, n_neg_trades=65, mean_daily=0.000421, PosSize: avg=5.34%, range=[0.00%, 15.00%] | Params: {'gamma': 0.7810668920152894, 'alpha': 0.018124910838529573, 'delta': 1.3950917020175775, 'top_k_pct': 0.4, 'cooldown_hours': 4.0}
+[2026-03-08 14:05:20 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1164, global_avg_pos_frac=0.0595
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=178, n_max_positions=1
+  - n_trades=364, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:20 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=186, avg_return_raw=0.005162, avg_active_pos=0.1164, total_pnl=0.115530, pnl_per_day=0.115530, trades_per_day=364.00
+[2026-03-08 14:05:21 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1296, global_avg_pos_frac=0.0538
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=213, n_max_positions=1
+  - n_trades=364, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:21 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=151, avg_return_raw=0.005324, avg_active_pos=0.1296, total_pnl=0.143422, pnl_per_day=0.143422, trades_per_day=364.00
+[2026-03-08 14:05:22 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1443, global_avg_pos_frac=0.0547
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=226, n_max_positions=3
+  - n_trades=364, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:22 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=138, avg_return_raw=0.005308, avg_active_pos=0.1443, total_pnl=0.060726, pnl_per_day=0.060726, trades_per_day=364.00
+[2026-03-08 14:05:22 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1203, global_avg_pos_frac=0.0274
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=563, n_max_positions=1
+  - n_trades=729, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:22 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=729, n_active=166, avg_return_raw=0.003732, avg_active_pos=0.1203, total_pnl=0.086227, pnl_per_day=0.086227, trades_per_day=729.00
+[2026-03-08 14:05:23 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1204, global_avg_pos_frac=0.0274
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=563, n_max_positions=1
+  - n_trades=729, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:23 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=729, n_active=166, avg_return_raw=0.003747, avg_active_pos=0.1204, total_pnl=0.086105, pnl_per_day=0.086105, trades_per_day=729.00
+[2026-03-08 14:05:23 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1158, global_avg_pos_frac=0.0598
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=132, n_max_positions=1
+  - n_trades=273, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:23 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=273, n_active=141, avg_return_raw=0.006307, avg_active_pos=0.1158, total_pnl=0.094967, pnl_per_day=0.094967, trades_per_day=273.00
+[2026-03-08 14:05:23 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1134, global_avg_pos_frac=0.0520
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=247, n_max_positions=1
+  - n_trades=456, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:23 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=209, avg_return_raw=0.005067, avg_active_pos=0.1134, total_pnl=0.129770, pnl_per_day=0.129770, trades_per_day=456.00
+[2026-03-08 14:05:24 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1163, global_avg_pos_frac=0.0673
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=115, n_max_positions=1
+  - n_trades=273, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:24 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=273, n_active=158, avg_return_raw=0.005633, avg_active_pos=0.1163, total_pnl=0.118455, pnl_per_day=0.118455, trades_per_day=273.00
+[2026-03-08 14:05:24 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1125, global_avg_pos_frac=0.0556
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=138, n_max_positions=1
+  - n_trades=273, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:24 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=273, n_active=135, avg_return_raw=0.006293, avg_active_pos=0.1125, total_pnl=0.061509, pnl_per_day=0.061509, trades_per_day=273.00
+[2026-03-08 14:05:24 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1092, global_avg_pos_frac=0.0596
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=207, n_max_positions=1
+  - n_trades=456, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:24 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=249, avg_return_raw=0.005143, avg_active_pos=0.1092, total_pnl=0.120649, pnl_per_day=0.120649, trades_per_day=456.00
+[2026-03-08 14:05:24 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1077, global_avg_pos_frac=0.0597
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=203, n_max_positions=1
+  - n_trades=456, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:24 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=253, avg_return_raw=0.005009, avg_active_pos=0.1077, total_pnl=0.111978, pnl_per_day=0.111978, trades_per_day=456.00
+[2026-03-08 14:05:24 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1178, global_avg_pos_frac=0.0519
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=255, n_max_positions=1
+  - n_trades=456, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:24 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=201, avg_return_raw=0.004971, avg_active_pos=0.1178, total_pnl=0.133317, pnl_per_day=0.133317, trades_per_day=456.00
+[2026-03-08 14:05:24 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1098, global_avg_pos_frac=0.0583
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=214, n_max_positions=1
+  - n_trades=456, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:24 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=242, avg_return_raw=0.004941, avg_active_pos=0.1098, total_pnl=0.114911, pnl_per_day=0.114911, trades_per_day=456.00
+[2026-03-08 14:05:25 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1301, global_avg_pos_frac=0.0540
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=213, n_max_positions=1
+  - n_trades=364, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:25 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=151, avg_return_raw=0.005402, avg_active_pos=0.1301, total_pnl=0.147010, pnl_per_day=0.147010, trades_per_day=364.00
+[2026-03-08 14:05:25 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1288, global_avg_pos_frac=0.0541
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=211, n_max_positions=1
+  - n_trades=364, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:25 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=153, avg_return_raw=0.005288, avg_active_pos=0.1288, total_pnl=0.146837, pnl_per_day=0.146837, trades_per_day=364.00
+[2026-03-08 14:05:25 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1281, global_avg_pos_frac=0.0546
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=209, n_max_positions=1
+  - n_trades=364, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:25 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=155, avg_return_raw=0.005330, avg_active_pos=0.1281, total_pnl=0.144716, pnl_per_day=0.144716, trades_per_day=364.00
+[2026-03-08 14:05:25 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1234, global_avg_pos_frac=0.0628
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=134, n_max_positions=1
+  - n_trades=273, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:25 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=273, n_active=139, avg_return_raw=0.006271, avg_active_pos=0.1234, total_pnl=0.128419, pnl_per_day=0.128419, trades_per_day=273.00
+[2026-03-08 14:05:26 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1445, global_avg_pos_frac=0.0572
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=165, n_max_positions=3
+  - n_trades=273, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:26 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=273, n_active=108, avg_return_raw=0.005999, avg_active_pos=0.1445, total_pnl=0.061154, pnl_per_day=0.061154, trades_per_day=273.00
+[2026-03-08 14:05:26 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1228, global_avg_pos_frac=0.0409
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=182, n_max_positions=1
+  - n_trades=273, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:26 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=273, n_active=91, avg_return_raw=0.006322, avg_active_pos=0.1228, total_pnl=0.054895, pnl_per_day=0.054895, trades_per_day=273.00
+[2026-03-08 14:05:26 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1319, global_avg_pos_frac=0.0544
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=214, n_max_positions=1
+  - n_trades=364, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:26 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=150, avg_return_raw=0.005354, avg_active_pos=0.1319, total_pnl=0.149468, pnl_per_day=0.149468, trades_per_day=364.00
+[2026-03-08 14:05:26 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1172, global_avg_pos_frac=0.0489
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=212, n_max_positions=1
+  - n_trades=364, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:26 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=152, avg_return_raw=0.005352, avg_active_pos=0.1172, total_pnl=0.074840, pnl_per_day=0.074840, trades_per_day=364.00
+[2026-03-08 14:05:26 UTC]   Stage 2 HPO: evaluating 40 sizing combinations around best core params with 1-fold CV...
+[2026-03-08 14:05:26 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1400 (base=0.0600, mult=0.0800, cap=0.2000)
+  - active_trades_avg_pos=0.1362, global_avg_pos_frac=0.0516
+  - range=[0.0000, 0.1400]
+  - n_zero_positions=226, n_max_positions=1
+  - n_trades=364, sizing_formula=concave, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:26 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=138, avg_return_raw=0.005267, avg_active_pos=0.1362, total_pnl=0.148491, pnl_per_day=0.148491, trades_per_day=364.00
+[2026-03-08 14:05:26 UTC]     [Stage2] Trial 1 Score=0.044258, PnL/Day=14.85%, Sortino=7.794, Trades/Day=364.0000, Risk=4.167635, TempStab=0.468, MaxDD=0.0211, Ulcer=0.5687, net_win=0.201, PF=2.620, avg_win=0.003290, avg_loss=-0.001410, n_neg_days=65/364, n_neg_trades=65, mean_daily=0.000408, PosSize: avg=5.16%, range=[0.00%, 14.00%] | Params: {'base_size': 0.06, 'rank_multiplier': 0.08, 'sizing_formula': 'concave', 'squash_fn': 'tanh', 'squash_k': 1.0}
+[2026-03-08 14:05:26 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1408, global_avg_pos_frac=0.0534
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=226, n_max_positions=1
+  - n_trades=364, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:26 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=138, avg_return_raw=0.005267, avg_active_pos=0.1408, total_pnl=0.153102, pnl_per_day=0.153102, trades_per_day=364.00
+[2026-03-08 14:05:26 UTC]     [Stage2] Trial 0 Score=0.044601, PnL/Day=15.31%, Sortino=8.036, Trades/Day=364.0000, Risk=4.241180, TempStab=0.467, MaxDD=0.0221, Ulcer=0.5921, net_win=0.201, PF=2.609, avg_win=0.003401, avg_loss=-0.001464, n_neg_days=65/364, n_neg_trades=65, mean_daily=0.000421, PosSize: avg=5.34%, range=[0.00%, 15.00%] | Params: {'base_size': 0.05, 'rank_multiplier': 0.1, 'sizing_formula': 'linear', 'squash_fn': 'tanh', 'squash_k': 1.0}
+[2026-03-08 14:05:26 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0900, mult=0.1400, cap=0.2000)
+  - active_trades_avg_pos=0.2000, global_avg_pos_frac=0.0758
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=226, n_max_positions=138
+  - n_trades=364, sizing_formula=linear, squash_fn=tanh, squash_k=2.25
+[2026-03-08 14:05:26 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=138, avg_return_raw=0.005267, avg_active_pos=0.2000, total_pnl=0.218438, pnl_per_day=0.218438, trades_per_day=364.00
+[2026-03-08 14:05:26 UTC]     [Stage2] Trial 3 Score=0.052241, PnL/Day=21.84%, Sortino=9.642, Trades/Day=364.0000, Risk=4.976554, TempStab=0.469, MaxDD=0.0305, Ulcer=0.8289, net_win=0.201, PF=2.629, avg_win=0.004830, avg_loss=-0.002064, n_neg_days=65/364, n_neg_trades=65, mean_daily=0.000600, PosSize: avg=7.58%, range=[0.00%, 20.00%] | Params: {'base_size': 0.09000000000000001, 'rank_multiplier': 0.14, 'sizing_formula': 'linear', 'squash_fn': 'tanh', 'squash_k': 2.25}
+[2026-03-08 14:05:26 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1700 (base=0.0900, mult=0.0800, cap=0.2000)
+  - active_trades_avg_pos=0.1698, global_avg_pos_frac=0.0644
+  - range=[0.0000, 0.1700]
+  - n_zero_positions=226, n_max_positions=0
+  - n_trades=364, sizing_formula=sigmoid, squash_fn=sigmoid, squash_k=1.50
+[2026-03-08 14:05:26 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=138, avg_return_raw=0.005267, avg_active_pos=0.1698, total_pnl=0.185438, pnl_per_day=0.185438, trades_per_day=364.00
+[2026-03-08 14:05:27 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0700, mult=0.0800, cap=0.2000)
+  - active_trades_avg_pos=0.1360, global_avg_pos_frac=0.0516
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=226, n_max_positions=1
+  - n_trades=364, sizing_formula=convex, squash_fn=sigmoid, squash_k=0.75
+[2026-03-08 14:05:27 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=138, avg_return_raw=0.005267, avg_active_pos=0.1360, total_pnl=0.147607, pnl_per_day=0.147607, trades_per_day=364.00
+[2026-03-08 14:05:27 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.0800 (base=0.0200, mult=0.0600, cap=0.2000)
+  - active_trades_avg_pos=0.0745, global_avg_pos_frac=0.0282
+  - range=[0.0000, 0.0800]
+  - n_zero_positions=226, n_max_positions=1
+  - n_trades=364, sizing_formula=linear, squash_fn=tanh, squash_k=2.25
+[2026-03-08 14:05:27 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=138, avg_return_raw=0.005267, avg_active_pos=0.0745, total_pnl=0.080939, pnl_per_day=0.080939, trades_per_day=364.00
+[2026-03-08 14:05:27 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1200 (base=0.0400, mult=0.0800, cap=0.2000)
+  - active_trades_avg_pos=0.1162, global_avg_pos_frac=0.0441
+  - range=[0.0000, 0.1200]
+  - n_zero_positions=226, n_max_positions=1
+  - n_trades=364, sizing_formula=concave, squash_fn=sigmoid, squash_k=1.75
+[2026-03-08 14:05:27 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=138, avg_return_raw=0.005267, avg_active_pos=0.1162, total_pnl=0.126647, pnl_per_day=0.126647, trades_per_day=364.00
+[2026-03-08 14:05:27 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1408, global_avg_pos_frac=0.0534
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=226, n_max_positions=1
+  - n_trades=364, sizing_formula=linear, squash_fn=tanh, squash_k=2.50
+[2026-03-08 14:05:27 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=138, avg_return_raw=0.005267, avg_active_pos=0.1408, total_pnl=0.153102, pnl_per_day=0.153102, trades_per_day=364.00
+[2026-03-08 14:05:27 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1800 (base=0.0200, mult=0.1600, cap=0.2000)
+  - active_trades_avg_pos=0.1614, global_avg_pos_frac=0.0612
+  - range=[0.0000, 0.1679]
+  - n_zero_positions=226, n_max_positions=0
+  - n_trades=364, sizing_formula=sigmoid, squash_fn=tanh, squash_k=0.50
+[2026-03-08 14:05:27 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=138, avg_return_raw=0.005267, avg_active_pos=0.1614, total_pnl=0.175735, pnl_per_day=0.175735, trades_per_day=364.00
+[2026-03-08 14:05:28 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1900 (base=0.0900, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1883, global_avg_pos_frac=0.0714
+  - range=[0.0000, 0.1893]
+  - n_zero_positions=226, n_max_positions=0
+  - n_trades=364, sizing_formula=sigmoid, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:28 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=138, avg_return_raw=0.005267, avg_active_pos=0.1883, total_pnl=0.205490, pnl_per_day=0.205490, trades_per_day=364.00
+[2026-03-08 14:05:28 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1000 (base=0.0400, mult=0.0600, cap=0.2000)
+  - active_trades_avg_pos=0.0945, global_avg_pos_frac=0.0358
+  - range=[0.0000, 0.1000]
+  - n_zero_positions=226, n_max_positions=1
+  - n_trades=364, sizing_formula=linear, squash_fn=sigmoid, squash_k=1.25
+[2026-03-08 14:05:28 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=138, avg_return_raw=0.005267, avg_active_pos=0.0945, total_pnl=0.102783, pnl_per_day=0.102783, trades_per_day=364.00
+[2026-03-08 14:05:28 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1200, mult=0.2000, cap=0.2000)
+  - active_trades_avg_pos=0.2000, global_avg_pos_frac=0.0758
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=226, n_max_positions=138
+  - n_trades=364, sizing_formula=convex, squash_fn=sigmoid, squash_k=2.00
+[2026-03-08 14:05:28 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=138, avg_return_raw=0.005267, avg_active_pos=0.2000, total_pnl=0.218438, pnl_per_day=0.218438, trades_per_day=364.00
+[2026-03-08 14:05:28 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1200, mult=0.2000, cap=0.2000)
+  - active_trades_avg_pos=0.2000, global_avg_pos_frac=0.0758
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=226, n_max_positions=138
+  - n_trades=364, sizing_formula=convex, squash_fn=sigmoid, squash_k=2.00
+[2026-03-08 14:05:28 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=138, avg_return_raw=0.005267, avg_active_pos=0.2000, total_pnl=0.218438, pnl_per_day=0.218438, trades_per_day=364.00
+[2026-03-08 14:05:28 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1200, mult=0.1600, cap=0.2000)
+  - active_trades_avg_pos=0.2000, global_avg_pos_frac=0.0758
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=226, n_max_positions=138
+  - n_trades=364, sizing_formula=sigmoid, squash_fn=tanh, squash_k=2.00
+[2026-03-08 14:05:28 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=138, avg_return_raw=0.005267, avg_active_pos=0.2000, total_pnl=0.218438, pnl_per_day=0.218438, trades_per_day=364.00
+[2026-03-08 14:05:28 UTC]   Best params: alpha=0.018125, delta=1.395, gamma=0.781, top_k_pct=0.30, cooldown_hours=4.0, base_size=0.09, rank_multiplier=0.14, sizing_formula=linear, squash_fn=tanh, squash_k=2.25, ObjectiveScore=0.0522, IntradayRisk=4.9766
+[2026-03-08 14:05:28 UTC]   Position Sizing: avg=7.58%, median=0.00%, range=[0.00%, 20.00%], max_position=20.00% (capped at 20.00%)
+[2026-03-08 14:05:28 UTC]   Thresholds: low=0.004788, high=0.004788
+[2026-03-08 14:05:28 UTC]   Evaluating final model on Walk-Forward OOS set (457 trades)...
+[2026-03-08 14:05:28 UTC]   WARNING: SLSQP optimization failed: Inequality constraints incompatible
+[2026-03-08 14:05:28 UTC]   Falling back to uniform weights
+[2026-03-08 14:05:28 UTC]   WARNING: SLSQP optimization failed: Inequality constraints incompatible
+[2026-03-08 14:05:28 UTC]   Falling back to uniform weights
+[2026-03-08 14:05:28 UTC]     Pre-offset OOS PnL/Day: 0.000000, ObjectiveScore: -1000000000.000000, IntradayRisk: 306.000000, MaxDD: 1.000000, Ulcer: 0.0000, TUW: 0.000
+[2026-03-08 14:05:28 UTC]   Performing final fit on Train+Val data...
+[2026-03-08 14:05:28 UTC]     [Feature Selection] Outer fold 1/3: train=445 samples
+[2026-03-08 14:05:28 UTC]       - 1 feature clusters identified (threshold=0.97)
+[2026-03-08 14:05:28 UTC]     [Feature Selection] Outer fold 2/3: train=901 samples
+[2026-03-08 14:05:28 UTC]       - 11 feature clusters identified (threshold=0.97)
+[2026-03-08 14:05:28 UTC]       - Starting RFE-style ElasticNet pruning: 11 candidates -> min 10
+[2026-03-08 14:05:29 UTC]       - RFE finished: 10 features selected
+[2026-03-08 14:05:29 UTC]     [Feature Selection] Outer fold 3/3: train=1357 samples
+[2026-03-08 14:05:29 UTC]       - 11 feature clusters identified (threshold=0.97)
+[2026-03-08 14:05:29 UTC]       - Starting RFE-style ElasticNet pruning: 11 candidates -> min 10
+[2026-03-08 14:05:29 UTC]       - RFE finished: 10 features selected
+[2026-03-08 14:05:29 UTC]   Launching Tree Feature Selection (LGBM RFE) on 1825 samples...
+[2026-03-08 14:05:29 UTC] Starting Feature Selection Process...
+[2026-03-08 14:05:29 UTC]       [run_rfe] Iteration 1: 12 features remaining
+[2026-03-08 14:05:29 UTC]       [run_rfe]   OOS Utility: 0.075979 (+/- 0.054248)
+[2026-03-08 14:05:29 UTC] Feature Selection complete. Selected 10 features.
+[2026-03-08 14:05:29 UTC]   Feature selection (sizer): kept 10 for Ridge, 10 for Trees (out of 12)
+[2026-03-08 14:05:35 UTC]   Sizer model race winner: xgb+ridge score=2.6160
+[2026-03-08 14:05:35 UTC]   xgb won the sizer race. Launching two-layer tree HPO...
+[2026-03-08 14:05:35 UTC]   Layer 1 HPO: Optimizing primary parameters (n_estimators, max_depth, learning_rate, subsample, colsample_bytree)...
+[W 2026-03-08 15:05:35,972] Trial 1 failed with parameters: {'n_estimators': 51, 'max_depth': 7, 'learning_rate': 0.07329106851541389, 'subsample': 0.793515514010628, 'colsample_bytree': 0.7053367179465141, 'top_k_pct': 0.30000000000000004, 'cooldown_hours': 6.0} because of the following error: NameError("name 'pnl_per_day_top' is not defined").
+Traceback (most recent call last):
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 196, in _run_trial
+    value_or_values = func(trial)
+                      ^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 5592, in layer1_objective
+    f_pnl_day_list.append(float(pnl_per_day_top))
+                                ^^^^^^^^^^^^^^^
+NameError: name 'pnl_per_day_top' is not defined
+[W 2026-03-08 15:05:35,973] Trial 1 failed with value None.
+[W 2026-03-08 15:05:36,022] Trial 0 failed with parameters: {'n_estimators': 300, 'max_depth': 5, 'learning_rate': 0.05, 'subsample': 0.7, 'colsample_bytree': 0.7, 'top_k_pct': 0.30000000000000004, 'cooldown_hours': 4.0} because of the following error: NameError("name 'pnl_per_day_top' is not defined").
+Traceback (most recent call last):
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 196, in _run_trial
+    value_or_values = func(trial)
+                      ^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 5592, in layer1_objective
+    f_pnl_day_list.append(float(pnl_per_day_top))
+                                ^^^^^^^^^^^^^^^
+NameError: name 'pnl_per_day_top' is not defined
+[W 2026-03-08 15:05:36,023] Trial 0 failed with value None.
+[2026-03-08 14:05:36 UTC]   long_mr failed: name 'pnl_per_day_top' is not defined
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/run_ridge_sizer.py", line 950, in main
+    sizer, metrics = run_ridge_position_sizer_step(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 7470, in run_ridge_position_sizer_step
+    sizer.fit(oof_preds, trade_outcomes, timestamps=timestamps, groups=groups,
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 5630, in fit
+    layer1_study.optimize(layer1_objective, n_trials=layer1_trials, n_jobs=self.n_jobs)
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/study.py", line 451, in optimize
+    _optimize(
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 99, in _optimize
+    f.result()
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 159, in _optimize_sequential
+    frozen_trial = _run_trial(study, func, catch)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 247, in _run_trial
+    raise func_err
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 196, in _run_trial
+    value_or_values = func(trial)
+                      ^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 5592, in layer1_objective
+    f_pnl_day_list.append(float(pnl_per_day_top))
+                                ^^^^^^^^^^^^^^^
+NameError: name 'pnl_per_day_top' is not defined
+[2026-03-08 14:05:36 UTC]   No weights produced for direction long, skipping
+[2026-03-08 14:05:36 UTC] ================================================================================
+[2026-03-08 14:05:36 UTC] Ridge Position Sizer — direction: SHORT (['short_mr', 'short_tf'])
+[2026-03-08 14:05:36 UTC] Constructed trade outcomes from OOF context: 1830 trades
+[2026-03-08 14:05:36 UTC]   short_mr: 1830 rows, features=['clf', 'reg_H2', 'reg_H4', 'reg_H8', 'reg_mean', 'reg_std', 'reg_range', 'reg_sign_agree', 'reg_clf_agree', 'base_H2', 'base_H4', 'base_H8']
+[2026-03-08 14:05:36 UTC] ================================================================================
+[2026-03-08 14:05:36 UTC] RIDGE POSITION SIZER STEP
+[2026-03-08 14:05:36 UTC] ================================================================================
+[2026-03-08 14:05:36 UTC] Label policy optimization completed before Ridge training
+[2026-03-08 14:05:36 UTC] RidgePositionSizer.fit: Starting...
+[2026-03-08 14:05:36 UTC]   Using returns from trade_outcomes (net): mean=0.000159, std=0.017622
+[2026-03-08 14:05:36 UTC]   Running target representation race...
+[2026-03-08 14:05:36 UTC]   WARNING: sizer_select_metric='topq_u_policy' requested but u_policy_net missing. Falling back to 'ic'.
+An input array is constant; the correlation coefficient is not defined.
+An input array is constant; the correlation coefficient is not defined.
+[2026-03-08 14:05:36 UTC]     Ridge target race: 4 candidates
+[2026-03-08 14:05:36 UTC]       winsorized: IC=0.0414 TopQMeanU=nan (std=nan) score=-inf P@30=nan Lift@30=nan gate=True
+[2026-03-08 14:05:36 UTC]       huber_adv: IC=0.0481 TopQMeanU=nan (std=nan) score=-inf P@30=nan Lift@30=nan gate=True
+[2026-03-08 14:05:36 UTC]       rolling_rank: IC=0.0378 TopQMeanU=nan (std=nan) score=-inf P@30=nan Lift@30=nan gate=True
+[2026-03-08 14:05:36 UTC]       rank_residual: IC=0.0810 TopQMeanU=nan (std=nan) score=-inf P@30=nan Lift@30=nan gate=True
+[2026-03-08 14:05:36 UTC]     Winner: rank_residual (score=0.081011, metric=ic)
+[2026-03-08 14:05:36 UTC]   Stage 1 HPO: evaluating 100 core combinations with 1-fold CV...
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1028, global_avg_pos_frac=0.0953
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=16, n_max_positions=1
+  - n_trades=219, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=219, n_active=203, avg_return_raw=0.005201, avg_active_pos=0.1028, total_pnl=0.043459, pnl_per_day=0.043459, trades_per_day=219.00
+[2026-03-08 14:05:36 UTC]     [Stage1] Trial 0 Score=0.015742, PnL/Day=4.35%, Sortino=3.791, Trades/Day=219.0000, Risk=3.965847, TempStab=0.590, MaxDD=0.0104, Ulcer=0.4622, net_win=0.425, PF=1.471, avg_win=0.001460, avg_loss=-0.000839, n_neg_days=110/219, n_neg_trades=110, mean_daily=0.000198, PosSize: avg=9.53%, range=[0.00%, 15.00%] | Params: {'gamma': 0.0, 'alpha': 0.01, 'delta': 1.0, 'top_k_pct': 0.3, 'cooldown_hours': 2.0}
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0979, global_avg_pos_frac=0.0898
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=24, n_max_positions=1
+  - n_trades=292, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=268, avg_return_raw=0.005009, avg_active_pos=0.0979, total_pnl=0.064414, pnl_per_day=0.064414, trades_per_day=292.00
+[2026-03-08 14:05:36 UTC]     [Stage1] Trial 1 Score=0.018427, PnL/Day=6.44%, Sortino=4.214, Trades/Day=292.0000, Risk=4.655435, TempStab=0.583, MaxDD=0.0172, Ulcer=0.6921, net_win=0.435, PF=1.562, avg_win=0.001409, avg_loss=-0.000812, n_neg_days=141/292, n_neg_trades=141, mean_daily=0.000221, PosSize: avg=8.98%, range=[0.00%, 15.00%] | Params: {'gamma': 0.3394588564365781, 'alpha': 0.00306262126684675, 'delta': 1.6434624910112055, 'top_k_pct': 0.4, 'cooldown_hours': 3.0}
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1083, global_avg_pos_frac=0.0639
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=210, n_max_positions=1
+  - n_trades=512, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=512, n_active=302, avg_return_raw=0.003499, avg_active_pos=0.1083, total_pnl=0.070052, pnl_per_day=0.070052, trades_per_day=512.00
+[2026-03-08 14:05:36 UTC]     [Stage1] Trial 3 Score=0.019617, PnL/Day=7.01%, Sortino=2.614, Trades/Day=512.0000, Risk=4.759551, TempStab=0.556, MaxDD=0.0196, Ulcer=0.6997, net_win=0.283, PF=1.493, avg_win=0.001462, avg_loss=-0.000904, n_neg_days=157/512, n_neg_trades=157, mean_daily=0.000137, PosSize: avg=6.39%, range=[0.00%, 15.00%] | Params: {'gamma': 0.27188192624185553, 'alpha': 0.002667404964721171, 'delta': 1.5454090824141073, 'top_k_pct': 0.7, 'cooldown_hours': 1.5}
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1186, global_avg_pos_frac=0.0432
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=372, n_max_positions=1
+  - n_trades=585, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=585, n_active=213, avg_return_raw=0.003715, avg_active_pos=0.1186, total_pnl=0.060899, pnl_per_day=0.060899, trades_per_day=585.00
+[2026-03-08 14:05:36 UTC]     [Stage1] Trial 2 Score=0.021085, PnL/Day=6.09%, Sortino=1.989, Trades/Day=585.0000, Risk=4.127434, TempStab=0.567, MaxDD=0.0125, Ulcer=0.4898, net_win=0.166, PF=1.520, avg_win=0.001835, avg_loss=-0.001010, n_neg_days=116/585, n_neg_trades=116, mean_daily=0.000104, PosSize: avg=4.32%, range=[0.00%, 15.00%] | Params: {'gamma': 0.42694057578130984, 'alpha': 0.06692854168964477, 'delta': 1.0222965158845545, 'top_k_pct': 0.8, 'cooldown_hours': 3.5}
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0984, global_avg_pos_frac=0.0828
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=58, n_max_positions=1
+  - n_trades=366, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=366, n_active=308, avg_return_raw=0.004162, avg_active_pos=0.0984, total_pnl=0.071209, pnl_per_day=0.071209, trades_per_day=366.00
+[2026-03-08 14:05:36 UTC]     [Stage1] Trial 4 Score=0.021410, PnL/Day=7.12%, Sortino=3.717, Trades/Day=366.0000, Risk=4.523486, TempStab=0.571, MaxDD=0.0171, Ulcer=0.6301, net_win=0.399, PF=1.543, avg_win=0.001386, avg_loss=-0.000810, n_neg_days=162/366, n_neg_trades=162, mean_daily=0.000195, PosSize: avg=8.28%, range=[0.00%, 15.00%] | Params: {'gamma': 0.0454919354806215, 'alpha': 0.00012717096433329, 'delta': 0.7129238380002041, 'top_k_pct': 0.5, 'cooldown_hours': 2.0}
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0988, global_avg_pos_frac=0.0961
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=6, n_max_positions=1
+  - n_trades=219, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=219, n_active=213, avg_return_raw=0.005170, avg_active_pos=0.0988, total_pnl=0.053709, pnl_per_day=0.053709, trades_per_day=219.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1113, global_avg_pos_frac=0.0812
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=79, n_max_positions=1
+  - n_trades=292, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1113, total_pnl=0.061808, pnl_per_day=0.061808, trades_per_day=292.00
+[2026-03-08 14:05:36 UTC]     [Stage1] Trial 6 Score=0.024373, PnL/Day=6.18%, Sortino=4.044, Trades/Day=292.0000, Risk=3.763289, TempStab=0.607, MaxDD=0.0107, Ulcer=0.3944, net_win=0.342, PF=1.579, avg_win=0.001686, avg_loss=-0.000945, n_neg_days=113/292, n_neg_trades=113, mean_daily=0.000212, PosSize: avg=8.12%, range=[0.00%, 15.00%] | Params: {'gamma': 0.33864844597633675, 'alpha': 0.0614812343022014, 'delta': 1.8003521488914087, 'top_k_pct': 0.4, 'cooldown_hours': 3.0}
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1044, global_avg_pos_frac=0.0579
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=228, n_max_positions=1
+  - n_trades=512, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=512, n_active=284, avg_return_raw=0.003783, avg_active_pos=0.1044, total_pnl=0.058134, pnl_per_day=0.058134, trades_per_day=512.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1029, global_avg_pos_frac=0.0746
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=141, n_max_positions=1
+  - n_trades=512, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=512, n_active=371, avg_return_raw=0.003384, avg_active_pos=0.1029, total_pnl=0.053249, pnl_per_day=0.053249, trades_per_day=512.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1115, global_avg_pos_frac=0.1077
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=5, n_max_positions=1
+  - n_trades=146, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=146, n_active=141, avg_return_raw=0.006080, avg_active_pos=0.1115, total_pnl=0.049990, pnl_per_day=0.049990, trades_per_day=146.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1131, global_avg_pos_frac=0.0615
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=267, n_max_positions=1
+  - n_trades=585, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=585, n_active=318, avg_return_raw=0.003612, avg_active_pos=0.1131, total_pnl=0.064354, pnl_per_day=0.064354, trades_per_day=585.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1116, global_avg_pos_frac=0.0637
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=157, n_max_positions=1
+  - n_trades=366, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=366, n_active=209, avg_return_raw=0.004465, avg_active_pos=0.1116, total_pnl=0.058557, pnl_per_day=0.058557, trades_per_day=366.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1062, global_avg_pos_frac=0.0906
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=54, n_max_positions=1
+  - n_trades=366, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=366, n_active=312, avg_return_raw=0.004221, avg_active_pos=0.1062, total_pnl=0.072916, pnl_per_day=0.072916, trades_per_day=366.00
+[2026-03-08 14:05:36 UTC]     [Stage1] Trial 12 Score=0.019795, PnL/Day=7.29%, Sortino=3.806, Trades/Day=366.0000, Risk=4.877007, TempStab=0.577, MaxDD=0.0191, Ulcer=0.7486, net_win=0.402, PF=1.502, avg_win=0.001484, avg_loss=-0.000881, n_neg_days=165/366, n_neg_trades=165, mean_daily=0.000199, PosSize: avg=9.06%, range=[0.00%, 15.00%] | Params: {'gamma': 0.01293710867771819, 'alpha': 0.0006736469091635191, 'delta': 0.5951124389590268, 'top_k_pct': 0.5, 'cooldown_hours': 4.0}
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1117, global_avg_pos_frac=0.0647
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=154, n_max_positions=1
+  - n_trades=366, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=366, n_active=212, avg_return_raw=0.004408, avg_active_pos=0.1117, total_pnl=0.060543, pnl_per_day=0.060543, trades_per_day=366.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1119, global_avg_pos_frac=0.0763
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=93, n_max_positions=1
+  - n_trades=292, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=199, avg_return_raw=0.004423, avg_active_pos=0.1119, total_pnl=0.058991, pnl_per_day=0.058991, trades_per_day=292.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1058, global_avg_pos_frac=0.0859
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=55, n_max_positions=1
+  - n_trades=292, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=237, avg_return_raw=0.004590, avg_active_pos=0.1058, total_pnl=0.062367, pnl_per_day=0.062367, trades_per_day=292.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1081, global_avg_pos_frac=0.0655
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=173, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=266, avg_return_raw=0.004014, avg_active_pos=0.1081, total_pnl=0.060015, pnl_per_day=0.060015, trades_per_day=439.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1040, global_avg_pos_frac=0.0746
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=124, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=315, avg_return_raw=0.003707, avg_active_pos=0.1040, total_pnl=0.078705, pnl_per_day=0.078705, trades_per_day=439.00
+[2026-03-08 14:05:36 UTC]     [Stage1] Trial 17 Score=0.022931, PnL/Day=7.87%, Sortino=3.425, Trades/Day=439.0000, Risk=4.622466, TempStab=0.582, MaxDD=0.0191, Ulcer=0.6675, net_win=0.349, PF=1.554, avg_win=0.001443, avg_loss=-0.000877, n_neg_days=162/439, n_neg_trades=162, mean_daily=0.000179, PosSize: avg=7.46%, range=[0.00%, 15.00%] | Params: {'gamma': 0.1858145122539578, 'alpha': 0.008667821205039936, 'delta': 1.7722450711493565, 'top_k_pct': 0.6000000000000001, 'cooldown_hours': 2.5}
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1053, global_avg_pos_frac=0.0746
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=128, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=311, avg_return_raw=0.003628, avg_active_pos=0.1053, total_pnl=0.071997, pnl_per_day=0.071997, trades_per_day=439.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1057, global_avg_pos_frac=0.0741
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=131, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=308, avg_return_raw=0.003617, avg_active_pos=0.1057, total_pnl=0.073903, pnl_per_day=0.073903, trades_per_day=439.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1076, global_avg_pos_frac=0.0767
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=126, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=313, avg_return_raw=0.003808, avg_active_pos=0.1076, total_pnl=0.081687, pnl_per_day=0.081687, trades_per_day=439.00
+[2026-03-08 14:05:36 UTC]     [Stage1] Trial 20 Score=0.022559, PnL/Day=8.17%, Sortino=3.555, Trades/Day=439.0000, Risk=4.854178, TempStab=0.577, MaxDD=0.0177, Ulcer=0.7302, net_win=0.349, PF=1.567, avg_win=0.001476, avg_loss=-0.000901, n_neg_days=160/439, n_neg_trades=160, mean_daily=0.000186, PosSize: avg=7.67%, range=[0.00%, 15.00%] | Params: {'gamma': 0.2745340291759696, 'alpha': 0.001088576252383784, 'delta': 1.7602024702127976, 'top_k_pct': 0.6000000000000001, 'cooldown_hours': 2.5}
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0982, global_avg_pos_frac=0.0969
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=2, n_max_positions=1
+  - n_trades=146, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=146, n_active=144, avg_return_raw=0.005439, avg_active_pos=0.0982, total_pnl=0.040593, pnl_per_day=0.040593, trades_per_day=146.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1145, global_avg_pos_frac=0.0666
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=153, n_max_positions=1
+  - n_trades=366, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=366, n_active=213, avg_return_raw=0.004110, avg_active_pos=0.1145, total_pnl=0.062323, pnl_per_day=0.062323, trades_per_day=366.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1111, global_avg_pos_frac=0.0732
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=125, n_max_positions=1
+  - n_trades=366, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=366, n_active=241, avg_return_raw=0.004237, avg_active_pos=0.1111, total_pnl=0.047741, pnl_per_day=0.047741, trades_per_day=366.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1060, global_avg_pos_frac=0.0856
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=56, n_max_positions=1
+  - n_trades=292, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=236, avg_return_raw=0.004534, avg_active_pos=0.1060, total_pnl=0.058916, pnl_per_day=0.058916, trades_per_day=292.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1078, global_avg_pos_frac=0.0960
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=24, n_max_positions=1
+  - n_trades=219, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1090, global_avg_pos_frac=0.0961
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=26, n_max_positions=1
+  - n_trades=219, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=219, n_active=195, avg_return_raw=0.005073, avg_active_pos=0.1078, total_pnl=0.054834, pnl_per_day=0.054834, trades_per_day=219.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=219, n_active=193, avg_return_raw=0.004963, avg_active_pos=0.1090, total_pnl=0.053352, pnl_per_day=0.053352, trades_per_day=219.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1112, global_avg_pos_frac=0.0575
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=212, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=439, n_active=227, avg_return_raw=0.004162, avg_active_pos=0.1112, total_pnl=0.061727, pnl_per_day=0.061727, trades_per_day=439.00
+[2026-03-08 14:05:36 UTC]   Stage 2 HPO: evaluating 40 sizing combinations around best core params with 1-fold CV...
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1000 (base=0.0600, mult=0.0400, cap=0.2000)
+  - active_trades_avg_pos=0.0912, global_avg_pos_frac=0.0665
+  - range=[0.0000, 0.1000]
+  - n_zero_positions=79, n_max_positions=1
+  - n_trades=292, sizing_formula=concave, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.0912, total_pnl=0.048711, pnl_per_day=0.048711, trades_per_day=292.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1113, global_avg_pos_frac=0.0812
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=79, n_max_positions=1
+  - n_trades=292, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1113, total_pnl=0.061808, pnl_per_day=0.061808, trades_per_day=292.00
+[2026-03-08 14:05:36 UTC]     [Stage2] Trial 1 Score=0.020047, PnL/Day=4.87%, Sortino=3.187, Trades/Day=292.0000, Risk=3.705822, TempStab=0.603, MaxDD=0.0093, Ulcer=0.3596, net_win=0.342, PF=1.551, avg_win=0.001371, avg_loss=-0.000782, n_neg_days=113/292, n_neg_trades=113, mean_daily=0.000167, PosSize: avg=6.65%, range=[0.00%, 10.00%] | Params: {'base_size': 0.06, 'rank_multiplier': 0.04, 'sizing_formula': 'concave', 'squash_fn': 'tanh', 'squash_k': 1.0}
+[2026-03-08 14:05:36 UTC]     [Stage2] Trial 0 Score=0.024373, PnL/Day=6.18%, Sortino=4.044, Trades/Day=292.0000, Risk=3.763289, TempStab=0.607, MaxDD=0.0107, Ulcer=0.3944, net_win=0.342, PF=1.579, avg_win=0.001686, avg_loss=-0.000945, n_neg_days=113/292, n_neg_trades=113, mean_daily=0.000212, PosSize: avg=8.12%, range=[0.00%, 15.00%] | Params: {'base_size': 0.05, 'rank_multiplier': 0.1, 'sizing_formula': 'linear', 'squash_fn': 'tanh', 'squash_k': 1.0}
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1100, mult=0.1400, cap=0.2000)
+  - active_trades_avg_pos=0.1906, global_avg_pos_frac=0.1390
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=79, n_max_positions=74
+  - n_trades=292, sizing_formula=linear, squash_fn=tanh, squash_k=1.50
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1906, total_pnl=0.101476, pnl_per_day=0.101476, trades_per_day=292.00
+[2026-03-08 14:05:36 UTC]     [Stage2] Trial 2 Score=0.027840, PnL/Day=10.15%, Sortino=6.142, Trades/Day=292.0000, Risk=4.910563, TempStab=0.602, MaxDD=0.0191, Ulcer=0.7479, net_win=0.342, PF=1.548, avg_win=0.002867, avg_loss=-0.001639, n_neg_days=113/292, n_neg_trades=113, mean_daily=0.000348, PosSize: avg=13.90%, range=[0.00%, 20.00%] | Params: {'base_size': 0.11, 'rank_multiplier': 0.14, 'sizing_formula': 'linear', 'squash_fn': 'tanh', 'squash_k': 1.5}
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1200, mult=0.1400, cap=0.2000)
+  - active_trades_avg_pos=0.1936, global_avg_pos_frac=0.1412
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=79, n_max_positions=162
+  - n_trades=292, sizing_formula=sigmoid, squash_fn=sigmoid, squash_k=2.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1936, total_pnl=0.103028, pnl_per_day=0.103028, trades_per_day=292.00
+[2026-03-08 14:05:36 UTC]     [Stage2] Trial 3 Score=0.027372, PnL/Day=10.30%, Sortino=6.126, Trades/Day=292.0000, Risk=5.026263, TempStab=0.600, MaxDD=0.0193, Ulcer=0.7863, net_win=0.342, PF=1.547, avg_win=0.002913, avg_loss=-0.001667, n_neg_days=113/292, n_neg_trades=113, mean_daily=0.000353, PosSize: avg=14.12%, range=[0.00%, 20.00%] | Params: {'base_size': 0.12, 'rank_multiplier': 0.14, 'sizing_formula': 'sigmoid', 'squash_fn': 'sigmoid', 'squash_k': 2.0}
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.0600 (base=0.0200, mult=0.0400, cap=0.2000)
+  - active_trades_avg_pos=0.0357, global_avg_pos_frac=0.0260
+  - range=[0.0000, 0.0600]
+  - n_zero_positions=79, n_max_positions=1
+  - n_trades=292, sizing_formula=convex, squash_fn=sigmoid, squash_k=2.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.0357, total_pnl=0.020559, pnl_per_day=0.020559, trades_per_day=292.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1600 (base=0.0800, mult=0.0800, cap=0.2000)
+  - active_trades_avg_pos=0.1113, global_avg_pos_frac=0.0812
+  - range=[0.0000, 0.1600]
+  - n_zero_positions=79, n_max_positions=1
+  - n_trades=292, sizing_formula=convex, squash_fn=tanh, squash_k=2.50
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1113, total_pnl=0.062135, pnl_per_day=0.062135, trades_per_day=292.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1800 (base=0.0600, mult=0.1200, cap=0.2000)
+  - active_trades_avg_pos=0.1535, global_avg_pos_frac=0.1120
+  - range=[0.0000, 0.1800]
+  - n_zero_positions=79, n_max_positions=1
+  - n_trades=292, sizing_formula=concave, squash_fn=sigmoid, squash_k=1.50
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1535, total_pnl=0.083080, pnl_per_day=0.083080, trades_per_day=292.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0500, mult=0.1800, cap=0.2000)
+  - active_trades_avg_pos=0.1594, global_avg_pos_frac=0.1163
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=79, n_max_positions=13
+  - n_trades=292, sizing_formula=linear, squash_fn=tanh, squash_k=1.25
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1594, total_pnl=0.089096, pnl_per_day=0.089096, trades_per_day=292.00
+[2026-03-08 14:05:36 UTC]     [Stage2] Trial 7 Score=0.029518, PnL/Day=8.91%, Sortino=5.829, Trades/Day=292.0000, Risk=4.248252, TempStab=0.608, MaxDD=0.0152, Ulcer=0.5481, net_win=0.342, PF=1.582, avg_win=0.002421, avg_loss=-0.001354, n_neg_days=113/292, n_neg_trades=113, mean_daily=0.000305, PosSize: avg=11.63%, range=[0.00%, 20.00%] | Params: {'base_size': 0.05, 'rank_multiplier': 0.18000000000000002, 'sizing_formula': 'linear', 'squash_fn': 'tanh', 'squash_k': 1.25}
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.0900 (base=0.0500, mult=0.0400, cap=0.2000)
+  - active_trades_avg_pos=0.0657, global_avg_pos_frac=0.0479
+  - range=[0.0000, 0.0900]
+  - n_zero_positions=79, n_max_positions=1
+  - n_trades=292, sizing_formula=convex, squash_fn=sigmoid, squash_k=2.25
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.0657, total_pnl=0.036322, pnl_per_day=0.036322, trades_per_day=292.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0900, mult=0.1200, cap=0.2000)
+  - active_trades_avg_pos=0.1832, global_avg_pos_frac=0.1336
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=79, n_max_positions=13
+  - n_trades=292, sizing_formula=concave, squash_fn=sigmoid, squash_k=1.50
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1832, total_pnl=0.098470, pnl_per_day=0.098470, trades_per_day=292.00
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1700 (base=0.1100, mult=0.0600, cap=0.2000)
+  - active_trades_avg_pos=0.1468, global_avg_pos_frac=0.1071
+  - range=[0.0000, 0.1700]
+  - n_zero_positions=79, n_max_positions=1
+  - n_trades=292, sizing_formula=linear, squash_fn=sigmoid, squash_k=2.25
+[2026-03-08 14:05:36 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1468, total_pnl=0.079120, pnl_per_day=0.079120, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0200, mult=0.2000, cap=0.2000)
+  - active_trades_avg_pos=0.1423, global_avg_pos_frac=0.1038
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=79, n_max_positions=6
+  - n_trades=292, sizing_formula=linear, squash_fn=tanh, squash_k=0.50
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1423, total_pnl=0.081010, pnl_per_day=0.081010, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0900, mult=0.2000, cap=0.2000)
+  - active_trades_avg_pos=0.2000, global_avg_pos_frac=0.1459
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=79, n_max_positions=213
+  - n_trades=292, sizing_formula=concave, squash_fn=tanh, squash_k=0.50
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.2000, total_pnl=0.105089, pnl_per_day=0.105089, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC]     [Stage2] Trial 12 Score=0.027039, PnL/Day=10.51%, Sortino=6.058, Trades/Day=292.0000, Risk=5.136999, TempStab=0.601, MaxDD=0.0208, Ulcer=0.8251, net_win=0.342, PF=1.540, avg_win=0.002998, avg_loss=-0.001723, n_neg_days=113/292, n_neg_trades=113, mean_daily=0.000360, PosSize: avg=14.59%, range=[0.00%, 20.00%] | Params: {'base_size': 0.09000000000000001, 'rank_multiplier': 0.2, 'sizing_formula': 'concave', 'squash_fn': 'tanh', 'squash_k': 0.5}
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0200, mult=0.2000, cap=0.2000)
+  - active_trades_avg_pos=0.1423, global_avg_pos_frac=0.1038
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=79, n_max_positions=6
+  - n_trades=292, sizing_formula=linear, squash_fn=tanh, squash_k=0.50
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1423, total_pnl=0.081010, pnl_per_day=0.081010, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0200, mult=0.2000, cap=0.2000)
+  - active_trades_avg_pos=0.1423, global_avg_pos_frac=0.1038
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=79, n_max_positions=6
+  - n_trades=292, sizing_formula=linear, squash_fn=tanh, squash_k=0.50
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1423, total_pnl=0.081010, pnl_per_day=0.081010, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0300, mult=0.1800, cap=0.2000)
+  - active_trades_avg_pos=0.1403, global_avg_pos_frac=0.1023
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=79, n_max_positions=4
+  - n_trades=292, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1403, total_pnl=0.079578, pnl_per_day=0.079578, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0400, mult=0.1600, cap=0.2000)
+  - active_trades_avg_pos=0.1519, global_avg_pos_frac=0.1108
+  - range=[0.0000, 0.1989]
+  - n_zero_positions=79, n_max_positions=0
+  - n_trades=292, sizing_formula=sigmoid, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1519, total_pnl=0.086553, pnl_per_day=0.086553, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC]     [Stage2] Trial 16 Score=0.029915, PnL/Day=8.66%, Sortino=5.663, Trades/Day=292.0000, Risk=4.176305, TempStab=0.607, MaxDD=0.0141, Ulcer=0.5081, net_win=0.342, PF=1.594, avg_win=0.002324, avg_loss=-0.001290, n_neg_days=113/292, n_neg_trades=113, mean_daily=0.000296, PosSize: avg=11.08%, range=[0.00%, 19.89%] | Params: {'base_size': 0.04, 'rank_multiplier': 0.16, 'sizing_formula': 'sigmoid', 'squash_fn': 'tanh', 'squash_k': 1.0}
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0400, mult=0.1600, cap=0.2000)
+  - active_trades_avg_pos=0.1468, global_avg_pos_frac=0.1071
+  - range=[0.0000, 0.1963]
+  - n_zero_positions=79, n_max_positions=0
+  - n_trades=292, sizing_formula=sigmoid, squash_fn=tanh, squash_k=0.75
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1468, total_pnl=0.083532, pnl_per_day=0.083532, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0400, mult=0.1600, cap=0.2000)
+  - active_trades_avg_pos=0.1557, global_avg_pos_frac=0.1136
+  - range=[0.0000, 0.1997]
+  - n_zero_positions=79, n_max_positions=0
+  - n_trades=292, sizing_formula=sigmoid, squash_fn=tanh, squash_k=1.25
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0400, mult=0.1600, cap=0.2000)
+  - active_trades_avg_pos=0.1557, global_avg_pos_frac=0.1136
+  - range=[0.0000, 0.1997]
+  - n_zero_positions=79, n_max_positions=0
+  - n_trades=292, sizing_formula=sigmoid, squash_fn=tanh, squash_k=1.25
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1557, total_pnl=0.088430, pnl_per_day=0.088430, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1557, total_pnl=0.088430, pnl_per_day=0.088430, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC]     [Stage2] Trial 18 Score=0.030075, PnL/Day=8.84%, Sortino=5.786, Trades/Day=292.0000, Risk=4.221009, TempStab=0.606, MaxDD=0.0145, Ulcer=0.5227, net_win=0.342, PF=1.590, avg_win=0.002382, avg_loss=-0.001325, n_neg_days=113/292, n_neg_trades=113, mean_daily=0.000303, PosSize: avg=11.36%, range=[0.00%, 19.97%] | Params: {'base_size': 0.04, 'rank_multiplier': 0.16, 'sizing_formula': 'sigmoid', 'squash_fn': 'tanh', 'squash_k': 1.25}
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0700, mult=0.1600, cap=0.2000)
+  - active_trades_avg_pos=0.1799, global_avg_pos_frac=0.1312
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=79, n_max_positions=114
+  - n_trades=292, sizing_formula=sigmoid, squash_fn=tanh, squash_k=1.75
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1799, total_pnl=0.097062, pnl_per_day=0.097062, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0700, mult=0.1600, cap=0.2000)
+  - active_trades_avg_pos=0.1799, global_avg_pos_frac=0.1312
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=79, n_max_positions=114
+  - n_trades=292, sizing_formula=sigmoid, squash_fn=tanh, squash_k=1.75
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1799, total_pnl=0.097062, pnl_per_day=0.097062, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0400, mult=0.1600, cap=0.2000)
+  - active_trades_avg_pos=0.1557, global_avg_pos_frac=0.1136
+  - range=[0.0000, 0.1997]
+  - n_zero_positions=79, n_max_positions=0
+  - n_trades=292, sizing_formula=sigmoid, squash_fn=tanh, squash_k=1.25
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1557, total_pnl=0.088430, pnl_per_day=0.088430, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1800 (base=0.0400, mult=0.1400, cap=0.2000)
+  - active_trades_avg_pos=0.1412, global_avg_pos_frac=0.1030
+  - range=[0.0000, 0.1797]
+  - n_zero_positions=79, n_max_positions=0
+  - n_trades=292, sizing_formula=sigmoid, squash_fn=tanh, squash_k=1.25
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1412, total_pnl=0.080003, pnl_per_day=0.080003, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1800 (base=0.0400, mult=0.1400, cap=0.2000)
+  - active_trades_avg_pos=0.1412, global_avg_pos_frac=0.1030
+  - range=[0.0000, 0.1797]
+  - n_zero_positions=79, n_max_positions=0
+  - n_trades=292, sizing_formula=sigmoid, squash_fn=tanh, squash_k=1.25
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1412, total_pnl=0.080003, pnl_per_day=0.080003, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0300, mult=0.1800, cap=0.2000)
+  - active_trades_avg_pos=0.1592, global_avg_pos_frac=0.1162
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=79, n_max_positions=35
+  - n_trades=292, sizing_formula=sigmoid, squash_fn=tanh, squash_k=1.25
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1592, total_pnl=0.090738, pnl_per_day=0.090738, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC]     [Stage2] Trial 25 Score=0.030511, PnL/Day=9.07%, Sortino=5.937, Trades/Day=292.0000, Risk=4.253030, TempStab=0.605, MaxDD=0.0147, Ulcer=0.5331, net_win=0.342, PF=1.591, avg_win=0.002441, avg_loss=-0.001358, n_neg_days=113/292, n_neg_trades=113, mean_daily=0.000311, PosSize: avg=11.62%, range=[0.00%, 20.00%] | Params: {'base_size': 0.03, 'rank_multiplier': 0.18000000000000002, 'sizing_formula': 'sigmoid', 'squash_fn': 'tanh', 'squash_k': 1.25}
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0300, mult=0.1800, cap=0.2000)
+  - active_trades_avg_pos=0.1592, global_avg_pos_frac=0.1162
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=79, n_max_positions=35
+  - n_trades=292, sizing_formula=sigmoid, squash_fn=tanh, squash_k=1.25
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1592, total_pnl=0.090738, pnl_per_day=0.090738, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0300, mult=0.1800, cap=0.2000)
+  - active_trades_avg_pos=0.1500, global_avg_pos_frac=0.1095
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=79, n_max_positions=10
+  - n_trades=292, sizing_formula=sigmoid, squash_fn=tanh, squash_k=0.75
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1500, total_pnl=0.085884, pnl_per_day=0.085884, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0300, mult=0.1800, cap=0.2000)
+  - active_trades_avg_pos=0.1500, global_avg_pos_frac=0.1095
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=79, n_max_positions=10
+  - n_trades=292, sizing_formula=sigmoid, squash_fn=tanh, squash_k=0.75
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1500, total_pnl=0.085884, pnl_per_day=0.085884, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0300, mult=0.1800, cap=0.2000)
+  - active_trades_avg_pos=0.1638, global_avg_pos_frac=0.1195
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=79, n_max_positions=66
+  - n_trades=292, sizing_formula=sigmoid, squash_fn=tanh, squash_k=1.75
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1638, total_pnl=0.091214, pnl_per_day=0.091214, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1600 (base=0.0600, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1354, global_avg_pos_frac=0.0988
+  - range=[0.0000, 0.1600]
+  - n_zero_positions=79, n_max_positions=0
+  - n_trades=292, sizing_formula=sigmoid, squash_fn=tanh, squash_k=1.75
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1354, total_pnl=0.074833, pnl_per_day=0.074833, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1600 (base=0.0600, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1341, global_avg_pos_frac=0.0978
+  - range=[0.0000, 0.1599]
+  - n_zero_positions=79, n_max_positions=0
+  - n_trades=292, sizing_formula=sigmoid, squash_fn=tanh, squash_k=1.50
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1341, total_pnl=0.074381, pnl_per_day=0.074381, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0500, mult=0.1800, cap=0.2000)
+  - active_trades_avg_pos=0.1714, global_avg_pos_frac=0.1250
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=79, n_max_positions=66
+  - n_trades=292, sizing_formula=sigmoid, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1714, total_pnl=0.094556, pnl_per_day=0.094556, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0500, mult=0.1800, cap=0.2000)
+  - active_trades_avg_pos=0.1714, global_avg_pos_frac=0.1250
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=79, n_max_positions=66
+  - n_trades=292, sizing_formula=sigmoid, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1714, total_pnl=0.094556, pnl_per_day=0.094556, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1700 (base=0.0300, mult=0.1400, cap=0.2000)
+  - active_trades_avg_pos=0.1312, global_avg_pos_frac=0.0957
+  - range=[0.0000, 0.1697]
+  - n_zero_positions=79, n_max_positions=0
+  - n_trades=292, sizing_formula=sigmoid, squash_fn=tanh, squash_k=1.25
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1700 (base=0.0300, mult=0.1400, cap=0.2000)
+  - active_trades_avg_pos=0.1312, global_avg_pos_frac=0.0957
+  - range=[0.0000, 0.1697]
+  - n_zero_positions=79, n_max_positions=0
+  - n_trades=292, sizing_formula=sigmoid, squash_fn=tanh, squash_k=1.25
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1312, total_pnl=0.074749, pnl_per_day=0.074749, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.1312, total_pnl=0.074749, pnl_per_day=0.074749, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1900 (base=0.0300, mult=0.1600, cap=0.2000)
+  - active_trades_avg_pos=0.0926, global_avg_pos_frac=0.0676
+  - range=[0.0000, 0.1900]
+  - n_zero_positions=79, n_max_positions=1
+  - n_trades=292, sizing_formula=convex, squash_fn=tanh, squash_k=1.25
+[2026-03-08 14:05:37 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=292, n_active=213, avg_return_raw=0.004613, avg_active_pos=0.0926, total_pnl=0.055962, pnl_per_day=0.055962, trades_per_day=292.00
+[2026-03-08 14:05:37 UTC]   Best params: alpha=0.061481, delta=1.800, gamma=0.339, top_k_pct=0.30, cooldown_hours=3.0, base_size=0.03, rank_multiplier=0.18, sizing_formula=sigmoid, squash_fn=tanh, squash_k=1.25, ObjectiveScore=0.0305, IntradayRisk=4.2530
+[2026-03-08 14:05:37 UTC]   Position Sizing: avg=11.62%, median=14.02%, range=[0.00%, 20.00%], max_position=20.00% (capped at 20.00%)
+[2026-03-08 14:05:37 UTC]   Thresholds: low=-0.013242, high=-0.013242
+[2026-03-08 14:05:37 UTC]   Evaluating final model on Walk-Forward OOS set (366 trades)...
+[2026-03-08 14:05:37 UTC]   WARNING: SLSQP optimization failed: Inequality constraints incompatible
+[2026-03-08 14:05:37 UTC]   Falling back to uniform weights
+[2026-03-08 14:05:37 UTC]   WARNING: SLSQP optimization failed: Inequality constraints incompatible
+[2026-03-08 14:05:37 UTC]   Falling back to uniform weights
+[2026-03-08 14:05:37 UTC]     Pre-offset OOS PnL/Day: 0.000000, ObjectiveScore: -1000000000.000000, IntradayRisk: 306.000000, MaxDD: 1.000000, Ulcer: 0.0000, TUW: 0.000
+[2026-03-08 14:05:37 UTC]   Performing final fit on Train+Val data...
+[2026-03-08 14:05:37 UTC]     [Feature Selection] Outer fold 1/3: train=354 samples
+[2026-03-08 14:05:37 UTC]       - 1 feature clusters identified (threshold=0.97)
+[2026-03-08 14:05:37 UTC]     [Feature Selection] Outer fold 2/3: train=720 samples
+[2026-03-08 14:05:37 UTC]       - 11 feature clusters identified (threshold=0.97)
+[2026-03-08 14:05:37 UTC]       - Starting RFE-style ElasticNet pruning: 11 candidates -> min 10
+[2026-03-08 14:05:37 UTC]       - RFE finished: 10 features selected
+[2026-03-08 14:05:38 UTC]     [Feature Selection] Outer fold 3/3: train=1086 samples
+[2026-03-08 14:05:38 UTC]       - 12 feature clusters identified (threshold=0.97)
+[2026-03-08 14:05:38 UTC]       - Starting RFE-style ElasticNet pruning: 12 candidates -> min 10
+[2026-03-08 14:05:38 UTC]       - RFE finished: 10 features selected
+[2026-03-08 14:05:38 UTC]   Launching Tree Feature Selection (LGBM RFE) on 1464 samples...
+[2026-03-08 14:05:38 UTC] Starting Feature Selection Process...
+[2026-03-08 14:05:38 UTC]       [run_rfe] Iteration 1: 12 features remaining
+[2026-03-08 14:05:39 UTC]       [run_rfe]   OOS Utility: 0.235457 (+/- 0.198174)
+[2026-03-08 14:05:39 UTC] Feature Selection complete. Selected 10 features.
+[2026-03-08 14:05:39 UTC]   Feature selection (sizer): kept 8 for Ridge, 10 for Trees (out of 12)
+[2026-03-08 14:05:45 UTC]   Sizer model race winner: xgb+ridge score=4.2854
+[2026-03-08 14:05:45 UTC]   xgb won the sizer race. Launching two-layer tree HPO...
+[2026-03-08 14:05:45 UTC]   Layer 1 HPO: Optimizing primary parameters (n_estimators, max_depth, learning_rate, subsample, colsample_bytree)...
+[W 2026-03-08 15:05:45,213] Trial 1 failed with parameters: {'n_estimators': 103, 'max_depth': 6, 'learning_rate': 0.0054333465477646396, 'subsample': 0.3025785319224075, 'colsample_bytree': 0.7445587043558212, 'top_k_pct': 0.8, 'cooldown_hours': 3.5} because of the following error: NameError("name 'pnl_per_day_top' is not defined").
+Traceback (most recent call last):
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 196, in _run_trial
+    value_or_values = func(trial)
+                      ^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 5592, in layer1_objective
+    f_pnl_day_list.append(float(pnl_per_day_top))
+                                ^^^^^^^^^^^^^^^
+NameError: name 'pnl_per_day_top' is not defined
+[W 2026-03-08 15:05:45,213] Trial 1 failed with value None.
+[W 2026-03-08 15:05:45,254] Trial 0 failed with parameters: {'n_estimators': 300, 'max_depth': 5, 'learning_rate': 0.05, 'subsample': 0.7, 'colsample_bytree': 0.7, 'top_k_pct': 0.8, 'cooldown_hours': 2.5} because of the following error: NameError("name 'pnl_per_day_top' is not defined").
+Traceback (most recent call last):
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 196, in _run_trial
+    value_or_values = func(trial)
+                      ^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 5592, in layer1_objective
+    f_pnl_day_list.append(float(pnl_per_day_top))
+                                ^^^^^^^^^^^^^^^
+NameError: name 'pnl_per_day_top' is not defined
+[W 2026-03-08 15:05:45,254] Trial 0 failed with value None.
+[2026-03-08 14:05:45 UTC]   short_mr failed: name 'pnl_per_day_top' is not defined
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/run_ridge_sizer.py", line 950, in main
+    sizer, metrics = run_ridge_position_sizer_step(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 7470, in run_ridge_position_sizer_step
+    sizer.fit(oof_preds, trade_outcomes, timestamps=timestamps, groups=groups,
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 5630, in fit
+    layer1_study.optimize(layer1_objective, n_trials=layer1_trials, n_jobs=self.n_jobs)
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/study.py", line 451, in optimize
+    _optimize(
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 99, in _optimize
+    f.result()
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 159, in _optimize_sequential
+    frozen_trial = _run_trial(study, func, catch)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 247, in _run_trial
+    raise func_err
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 196, in _run_trial
+    value_or_values = func(trial)
+                      ^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 5592, in layer1_objective
+    f_pnl_day_list.append(float(pnl_per_day_top))
+                                ^^^^^^^^^^^^^^^
+NameError: name 'pnl_per_day_top' is not defined
+[2026-03-08 14:05:45 UTC] Constructed trade outcomes from OOF context: 2282 trades
+[2026-03-08 14:05:45 UTC]   short_tf: 2282 rows, features=['clf', 'reg_H2', 'reg_H4', 'reg_H8', 'reg_mean', 'reg_std', 'reg_range', 'reg_sign_agree', 'reg_clf_agree', 'base_H2', 'base_H4', 'base_H8']
+[2026-03-08 14:05:45 UTC] ================================================================================
+[2026-03-08 14:05:45 UTC] RIDGE POSITION SIZER STEP
+[2026-03-08 14:05:45 UTC] ================================================================================
+[2026-03-08 14:05:45 UTC] Label policy optimization completed before Ridge training
+[2026-03-08 14:05:45 UTC] RidgePositionSizer.fit: Starting...
+[2026-03-08 14:05:45 UTC]   Using returns from trade_outcomes (net): mean=0.002157, std=0.018961
+[2026-03-08 14:05:45 UTC]   Running target representation race...
+[2026-03-08 14:05:45 UTC]   WARNING: sizer_select_metric='topq_u_policy' requested but u_policy_net missing. Falling back to 'ic'.
+An input array is constant; the correlation coefficient is not defined.
+An input array is constant; the correlation coefficient is not defined.
+[2026-03-08 14:05:45 UTC]     Ridge target race: 4 candidates
+[2026-03-08 14:05:45 UTC]       winsorized: IC=0.0628 TopQMeanU=nan (std=nan) score=-inf P@30=nan Lift@30=nan gate=True
+[2026-03-08 14:05:45 UTC]       huber_adv: IC=0.1159 TopQMeanU=nan (std=nan) score=-inf P@30=nan Lift@30=nan gate=True
+[2026-03-08 14:05:45 UTC]       rolling_rank: IC=0.0703 TopQMeanU=nan (std=nan) score=-inf P@30=nan Lift@30=nan gate=True
+[2026-03-08 14:05:45 UTC]       rank_residual: IC=0.1301 TopQMeanU=nan (std=nan) score=-inf P@30=nan Lift@30=nan gate=True
+[2026-03-08 14:05:45 UTC]     Winner: rank_residual (score=0.130073, metric=ic)
+[2026-03-08 14:05:45 UTC]   Stage 1 HPO: evaluating 100 core combinations with 1-fold CV...
+[2026-03-08 14:05:45 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0776, global_avg_pos_frac=0.0662
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=81, n_max_positions=1
+  - n_trades=547, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:45 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=547, n_active=466, avg_return_raw=0.007086, avg_active_pos=0.0776, total_pnl=0.179616, pnl_per_day=0.179616, trades_per_day=547.00
+[2026-03-08 14:05:45 UTC]     [Stage1] Trial 1 Score=0.083980, PnL/Day=17.96%, Sortino=6.273, Trades/Day=547.0000, Risk=3.285759, TempStab=0.714, MaxDD=0.0096, Ulcer=0.3050, net_win=0.386, PF=2.277, avg_win=0.001518, avg_loss=-0.000551, n_neg_days=255/547, n_neg_trades=255, mean_daily=0.000328, PosSize: avg=6.62%, range=[0.00%, 15.00%] | Params: {'gamma': 0.34772386181570747, 'alpha': 0.0007159708419852558, 'delta': 1.3745847026911195, 'top_k_pct': 0.6000000000000001, 'cooldown_hours': 1.0}
+[2026-03-08 14:05:45 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0700, global_avg_pos_frac=0.0700
+  - range=[0.0500, 0.1500]
+  - n_zero_positions=0, n_max_positions=1
+  - n_trades=273, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:45 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=273, n_active=273, avg_return_raw=0.009026, avg_active_pos=0.0700, total_pnl=0.126685, pnl_per_day=0.126685, trades_per_day=273.00
+[2026-03-08 14:05:46 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0724, global_avg_pos_frac=0.0724
+  - range=[0.0500, 0.1500]
+  - n_zero_positions=0, n_max_positions=1
+  - n_trades=182, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:46 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=182, n_active=182, avg_return_raw=0.010664, avg_active_pos=0.0724, total_pnl=0.107828, pnl_per_day=0.107828, trades_per_day=182.00
+[2026-03-08 14:05:46 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0729, global_avg_pos_frac=0.0729
+  - range=[0.0500, 0.1500]
+  - n_zero_positions=0, n_max_positions=1
+  - n_trades=182, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:46 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=182, n_active=182, avg_return_raw=0.011177, avg_active_pos=0.0729, total_pnl=0.113033, pnl_per_day=0.113033, trades_per_day=182.00
+[2026-03-08 14:05:47 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0716, global_avg_pos_frac=0.0716
+  - range=[0.0500, 0.1500]
+  - n_zero_positions=0, n_max_positions=1
+  - n_trades=182, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:47 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=182, n_active=182, avg_return_raw=0.010786, avg_active_pos=0.0716, total_pnl=0.108109, pnl_per_day=0.108109, trades_per_day=182.00
+[2026-03-08 14:05:47 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0730, global_avg_pos_frac=0.0730
+  - range=[0.0500, 0.1500]
+  - n_zero_positions=0, n_max_positions=1
+  - n_trades=364, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:47 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=364, avg_return_raw=0.008040, avg_active_pos=0.0730, total_pnl=0.151441, pnl_per_day=0.151441, trades_per_day=364.00
+[2026-03-08 14:05:48 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0804, global_avg_pos_frac=0.0659
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=115, n_max_positions=1
+  - n_trades=638, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:48 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=638, n_active=523, avg_return_raw=0.006864, avg_active_pos=0.0804, total_pnl=0.194918, pnl_per_day=0.194918, trades_per_day=638.00
+[2026-03-08 14:05:49 UTC]     [Stage1] Trial 6 Score=0.077352, PnL/Day=19.49%, Sortino=5.837, Trades/Day=638.0000, Risk=3.726150, TempStab=0.688, MaxDD=0.0113, Ulcer=0.4204, net_win=0.364, PF=2.172, avg_win=0.001557, avg_loss=-0.000571, n_neg_days=291/638, n_neg_trades=291, mean_daily=0.000306, PosSize: avg=6.59%, range=[0.00%, 15.00%] | Params: {'gamma': 0.3033630521331785, 'alpha': 0.01441931746005412, 'delta': 0.9586547014014788, 'top_k_pct': 0.7, 'cooldown_hours': 2.5}
+[2026-03-08 14:05:49 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0721, global_avg_pos_frac=0.0721
+  - range=[0.0500, 0.1500]
+  - n_zero_positions=0, n_max_positions=1
+  - n_trades=182, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:49 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=182, n_active=182, avg_return_raw=0.010590, avg_active_pos=0.0721, total_pnl=0.106924, pnl_per_day=0.106924, trades_per_day=182.00
+[2026-03-08 14:05:49 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0770, global_avg_pos_frac=0.0651
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=98, n_max_positions=1
+  - n_trades=638, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:49 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=638, n_active=540, avg_return_raw=0.006700, avg_active_pos=0.0770, total_pnl=0.180742, pnl_per_day=0.180742, trades_per_day=638.00
+[2026-03-08 14:05:49 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0813, global_avg_pos_frac=0.0738
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=42, n_max_positions=1
+  - n_trades=456, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:49 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.0813, total_pnl=0.189163, pnl_per_day=0.189163, trades_per_day=456.00
+[2026-03-08 14:05:49 UTC]     [Stage1] Trial 8 Score=0.091316, PnL/Day=18.92%, Sortino=7.925, Trades/Day=456.0000, Risk=3.133034, TempStab=0.725, MaxDD=0.0085, Ulcer=0.2880, net_win=0.421, PF=2.482, avg_win=0.001650, avg_loss=-0.000575, n_neg_days=222/456, n_neg_trades=222, mean_daily=0.000415, PosSize: avg=7.38%, range=[0.00%, 15.00%] | Params: {'gamma': 0.15934006423445554, 'alpha': 0.0006218302639157226, 'delta': 1.105181307423943, 'top_k_pct': 0.5, 'cooldown_hours': 2.0}
+[2026-03-08 14:05:50 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0789, global_avg_pos_frac=0.0739
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=29, n_max_positions=1
+  - n_trades=456, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:50 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=427, avg_return_raw=0.007845, avg_active_pos=0.0789, total_pnl=0.184163, pnl_per_day=0.184163, trades_per_day=456.00
+[2026-03-08 14:05:51 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0770, global_avg_pos_frac=0.0630
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=116, n_max_positions=1
+  - n_trades=638, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:51 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=638, n_active=522, avg_return_raw=0.006569, avg_active_pos=0.0770, total_pnl=0.185993, pnl_per_day=0.185993, trades_per_day=638.00
+[2026-03-08 14:05:51 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0790, global_avg_pos_frac=0.0740
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=29, n_max_positions=1
+  - n_trades=456, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:51 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=427, avg_return_raw=0.007845, avg_active_pos=0.0790, total_pnl=0.184311, pnl_per_day=0.184311, trades_per_day=456.00
+[2026-03-08 14:05:51 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0792, global_avg_pos_frac=0.0738
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=31, n_max_positions=1
+  - n_trades=456, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:51 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=425, avg_return_raw=0.007845, avg_active_pos=0.0792, total_pnl=0.184686, pnl_per_day=0.184686, trades_per_day=456.00
+[2026-03-08 14:05:51 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0788, global_avg_pos_frac=0.0738
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=29, n_max_positions=1
+  - n_trades=456, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:51 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=427, avg_return_raw=0.007845, avg_active_pos=0.0788, total_pnl=0.183958, pnl_per_day=0.183958, trades_per_day=456.00
+[2026-03-08 14:05:51 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0761, global_avg_pos_frac=0.0759
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=1, n_max_positions=1
+  - n_trades=364, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:51 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=363, avg_return_raw=0.008089, avg_active_pos=0.0761, total_pnl=0.156012, pnl_per_day=0.156012, trades_per_day=364.00
+[2026-03-08 14:05:51 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0754, global_avg_pos_frac=0.0754
+  - range=[0.0500, 0.1500]
+  - n_zero_positions=0, n_max_positions=1
+  - n_trades=364, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:51 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=364, avg_return_raw=0.008174, avg_active_pos=0.0754, total_pnl=0.157698, pnl_per_day=0.157698, trades_per_day=364.00
+[2026-03-08 14:05:52 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0801, global_avg_pos_frac=0.0656
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=99, n_max_positions=1
+  - n_trades=547, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:53 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=547, n_active=448, avg_return_raw=0.006962, avg_active_pos=0.0801, total_pnl=0.186184, pnl_per_day=0.186184, trades_per_day=547.00
+[2026-03-08 14:05:53 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0781, global_avg_pos_frac=0.0620
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=151, n_max_positions=1
+  - n_trades=729, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:53 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=729, n_active=578, avg_return_raw=0.006346, avg_active_pos=0.0781, total_pnl=0.193238, pnl_per_day=0.193238, trades_per_day=729.00
+[2026-03-08 14:05:53 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0760, global_avg_pos_frac=0.0611
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=143, n_max_positions=1
+  - n_trades=729, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:53 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=729, n_active=586, avg_return_raw=0.006243, avg_active_pos=0.0760, total_pnl=0.182704, pnl_per_day=0.182704, trades_per_day=729.00
+[2026-03-08 14:05:53 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0813, global_avg_pos_frac=0.0702
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=75, n_max_positions=1
+  - n_trades=547, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:53 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=547, n_active=472, avg_return_raw=0.006868, avg_active_pos=0.0813, total_pnl=0.179633, pnl_per_day=0.179633, trades_per_day=547.00
+[2026-03-08 14:05:54 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0789, global_avg_pos_frac=0.0739
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=29, n_max_positions=1
+  - n_trades=456, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:54 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=427, avg_return_raw=0.007845, avg_active_pos=0.0789, total_pnl=0.184175, pnl_per_day=0.184175, trades_per_day=456.00
+[2026-03-08 14:05:54 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0814, global_avg_pos_frac=0.0701
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=76, n_max_positions=1
+  - n_trades=547, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:54 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=547, n_active=471, avg_return_raw=0.006868, avg_active_pos=0.0814, total_pnl=0.180186, pnl_per_day=0.180186, trades_per_day=547.00
+[2026-03-08 14:05:54 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0788, global_avg_pos_frac=0.0738
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=29, n_max_positions=1
+  - n_trades=456, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:54 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=427, avg_return_raw=0.007845, avg_active_pos=0.0788, total_pnl=0.181749, pnl_per_day=0.181749, trades_per_day=456.00
+[2026-03-08 14:05:55 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0759, global_avg_pos_frac=0.0756
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=1, n_max_positions=1
+  - n_trades=364, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:55 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=363, avg_return_raw=0.008089, avg_active_pos=0.0759, total_pnl=0.155594, pnl_per_day=0.155594, trades_per_day=364.00
+[2026-03-08 14:05:55 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0732, global_avg_pos_frac=0.0732
+  - range=[0.0500, 0.1500]
+  - n_zero_positions=0, n_max_positions=1
+  - n_trades=364, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:55 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=364, n_active=364, avg_return_raw=0.008027, avg_active_pos=0.0732, total_pnl=0.151460, pnl_per_day=0.151460, trades_per_day=364.00
+[2026-03-08 14:05:55 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0736, global_avg_pos_frac=0.0736
+  - range=[0.0500, 0.1500]
+  - n_zero_positions=0, n_max_positions=1
+  - n_trades=273, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:55 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=273, n_active=273, avg_return_raw=0.008954, avg_active_pos=0.0736, total_pnl=0.131582, pnl_per_day=0.131582, trades_per_day=273.00
+[2026-03-08 14:05:55 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0795, global_avg_pos_frac=0.0715
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=46, n_max_positions=1
+  - n_trades=456, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:55 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=410, avg_return_raw=0.007841, avg_active_pos=0.0795, total_pnl=0.174996, pnl_per_day=0.174996, trades_per_day=456.00
+[2026-03-08 14:05:55 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0764, global_avg_pos_frac=0.0764
+  - range=[0.0500, 0.1500]
+  - n_zero_positions=0, n_max_positions=1
+  - n_trades=273, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:55 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=273, n_active=273, avg_return_raw=0.009225, avg_active_pos=0.0764, total_pnl=0.140377, pnl_per_day=0.140377, trades_per_day=273.00
+[2026-03-08 14:05:56 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0764, global_avg_pos_frac=0.0764
+  - range=[0.0500, 0.1500]
+  - n_zero_positions=0, n_max_positions=1
+  - n_trades=273, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:56 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=273, n_active=273, avg_return_raw=0.009225, avg_active_pos=0.0764, total_pnl=0.140356, pnl_per_day=0.140356, trades_per_day=273.00
+[2026-03-08 14:05:56 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0806, global_avg_pos_frac=0.0650
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=106, n_max_positions=1
+  - n_trades=547, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:56 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=547, n_active=441, avg_return_raw=0.007108, avg_active_pos=0.0806, total_pnl=0.188372, pnl_per_day=0.188372, trades_per_day=547.00
+[2026-03-08 14:05:56 UTC]   Stage 2 HPO: evaluating 40 sizing combinations around best core params with 1-fold CV...
+[2026-03-08 14:05:56 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0600, mult=0.2000, cap=0.2000)
+  - active_trades_avg_pos=0.0864, global_avg_pos_frac=0.0785
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=42, n_max_positions=20
+  - n_trades=456, sizing_formula=sigmoid, squash_fn=tanh, squash_k=1.50
+[2026-03-08 14:05:56 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.0864, total_pnl=0.241682, pnl_per_day=0.241682, trades_per_day=456.00
+[2026-03-08 14:05:56 UTC]     [Stage2] Trial 1 Score=0.111844, PnL/Day=24.17%, Sortino=10.126, Trades/Day=456.0000, Risk=3.238194, TempStab=0.736, MaxDD=0.0093, Ulcer=0.3201, net_win=0.421, PF=2.861, avg_win=0.001935, avg_loss=-0.000585, n_neg_days=222/456, n_neg_trades=222, mean_daily=0.000530, PosSize: avg=7.85%, range=[0.00%, 20.00%] | Params: {'base_size': 0.06, 'rank_multiplier': 0.2, 'sizing_formula': 'sigmoid', 'squash_fn': 'tanh', 'squash_k': 1.5}
+[2026-03-08 14:05:56 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0813, global_avg_pos_frac=0.0738
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=42, n_max_positions=1
+  - n_trades=456, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:05:56 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.0813, total_pnl=0.189163, pnl_per_day=0.189163, trades_per_day=456.00
+[2026-03-08 14:05:56 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1800 (base=0.0800, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0915, global_avg_pos_frac=0.0831
+  - range=[0.0000, 0.1800]
+  - n_zero_positions=42, n_max_positions=1
+  - n_trades=456, sizing_formula=convex, squash_fn=tanh, squash_k=2.00
+[2026-03-08 14:05:56 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.0915, total_pnl=0.206586, pnl_per_day=0.206586, trades_per_day=456.00
+[2026-03-08 14:05:56 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1700 (base=0.0700, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0808, global_avg_pos_frac=0.0734
+  - range=[0.0000, 0.1700]
+  - n_zero_positions=42, n_max_positions=1
+  - n_trades=456, sizing_formula=sigmoid, squash_fn=tanh, squash_k=2.50
+[2026-03-08 14:05:56 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.0808, total_pnl=0.206741, pnl_per_day=0.206741, trades_per_day=456.00
+[2026-03-08 14:05:56 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0400, mult=0.1800, cap=0.2000)
+  - active_trades_avg_pos=0.1386, global_avg_pos_frac=0.1258
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=42, n_max_positions=2
+  - n_trades=456, sizing_formula=concave, squash_fn=sigmoid, squash_k=0.50
+[2026-03-08 14:05:56 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.1386, total_pnl=0.320476, pnl_per_day=0.320476, trades_per_day=456.00
+[2026-03-08 14:05:56 UTC]     [Stage2] Trial 5 Score=0.118663, PnL/Day=32.05%, Sortino=13.427, Trades/Day=456.0000, Risk=3.756768, TempStab=0.724, MaxDD=0.0142, Ulcer=0.4880, net_win=0.421, PF=2.472, avg_win=0.002803, avg_loss=-0.000981, n_neg_days=222/456, n_neg_trades=222, mean_daily=0.000703, PosSize: avg=12.58%, range=[0.00%, 20.00%] | Params: {'base_size': 0.04, 'rank_multiplier': 0.18000000000000002, 'sizing_formula': 'concave', 'squash_fn': 'sigmoid', 'squash_k': 0.5}
+[2026-03-08 14:05:56 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1000, mult=0.1200, cap=0.2000)
+  - active_trades_avg_pos=0.1130, global_avg_pos_frac=0.1026
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=42, n_max_positions=17
+  - n_trades=456, sizing_formula=sigmoid, squash_fn=tanh, squash_k=2.25
+[2026-03-08 14:05:56 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.1130, total_pnl=0.280793, pnl_per_day=0.280793, trades_per_day=456.00
+[2026-03-08 14:05:57 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1000 (base=0.0200, mult=0.0800, cap=0.2000)
+  - active_trades_avg_pos=0.0450, global_avg_pos_frac=0.0409
+  - range=[0.0000, 0.1000]
+  - n_zero_positions=42, n_max_positions=1
+  - n_trades=456, sizing_formula=linear, squash_fn=tanh, squash_k=0.75
+[2026-03-08 14:05:57 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.0450, total_pnl=0.108562, pnl_per_day=0.108562, trades_per_day=456.00
+[2026-03-08 14:05:57 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1000, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1313, global_avg_pos_frac=0.1192
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=42, n_max_positions=1
+  - n_trades=456, sizing_formula=linear, squash_fn=tanh, squash_k=1.50
+[2026-03-08 14:05:57 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.1313, total_pnl=0.296084, pnl_per_day=0.296084, trades_per_day=456.00
+[2026-03-08 14:05:57 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0800, mult=0.1400, cap=0.2000)
+  - active_trades_avg_pos=0.1020, global_avg_pos_frac=0.0926
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=42, n_max_positions=9
+  - n_trades=456, sizing_formula=sigmoid, squash_fn=tanh, squash_k=1.25
+[2026-03-08 14:05:57 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.1020, total_pnl=0.257052, pnl_per_day=0.257052, trades_per_day=456.00
+[2026-03-08 14:05:57 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0700, mult=0.1600, cap=0.2000)
+  - active_trades_avg_pos=0.1172, global_avg_pos_frac=0.1064
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=42, n_max_positions=2
+  - n_trades=456, sizing_formula=sigmoid, squash_fn=tanh, squash_k=0.50
+[2026-03-08 14:05:57 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.1172, total_pnl=0.277762, pnl_per_day=0.277762, trades_per_day=456.00
+[2026-03-08 14:05:57 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1000, mult=0.1600, cap=0.2000)
+  - active_trades_avg_pos=0.1496, global_avg_pos_frac=0.1359
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=42, n_max_positions=11
+  - n_trades=456, sizing_formula=linear, squash_fn=tanh, squash_k=1.75
+[2026-03-08 14:05:57 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.1496, total_pnl=0.345239, pnl_per_day=0.345239, trades_per_day=456.00
+[2026-03-08 14:05:57 UTC]     [Stage2] Trial 10 Score=0.123075, PnL/Day=34.52%, Sortino=14.464, Trades/Day=456.0000, Risk=3.852581, TempStab=0.724, MaxDD=0.0153, Ulcer=0.5211, net_win=0.421, PF=2.469, avg_win=0.003022, avg_loss=-0.001059, n_neg_days=222/456, n_neg_trades=222, mean_daily=0.000757, PosSize: avg=13.59%, range=[0.00%, 20.00%] | Params: {'base_size': 0.1, 'rank_multiplier': 0.16, 'sizing_formula': 'linear', 'squash_fn': 'tanh', 'squash_k': 1.75}
+[2026-03-08 14:05:57 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1200, mult=0.1800, cap=0.2000)
+  - active_trades_avg_pos=0.1985, global_avg_pos_frac=0.1802
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=42, n_max_positions=326
+  - n_trades=456, sizing_formula=concave, squash_fn=sigmoid, squash_k=2.00
+[2026-03-08 14:05:57 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.1985, total_pnl=0.425893, pnl_per_day=0.425893, trades_per_day=456.00
+[2026-03-08 14:05:57 UTC]     [Stage2] Trial 12 Score=0.129496, PnL/Day=42.59%, Sortino=14.862, Trades/Day=456.0000, Risk=4.330944, TempStab=0.715, MaxDD=0.0199, Ulcer=0.6715, net_win=0.421, PF=2.348, avg_win=0.003863, avg_loss=-0.001423, n_neg_days=222/456, n_neg_trades=222, mean_daily=0.000934, PosSize: avg=18.02%, range=[0.00%, 20.00%] | Params: {'base_size': 0.12, 'rank_multiplier': 0.18000000000000002, 'sizing_formula': 'concave', 'squash_fn': 'sigmoid', 'squash_k': 2.0}
+[2026-03-08 14:05:57 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.0700 (base=0.0300, mult=0.0400, cap=0.2000)
+  - active_trades_avg_pos=0.0519, global_avg_pos_frac=0.0471
+  - range=[0.0000, 0.0700]
+  - n_zero_positions=42, n_max_positions=1
+  - n_trades=456, sizing_formula=concave, squash_fn=sigmoid, squash_k=0.50
+[2026-03-08 14:05:57 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.0519, total_pnl=0.116296, pnl_per_day=0.116296, trades_per_day=456.00
+[2026-03-08 14:05:57 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1200, mult=0.2000, cap=0.2000)
+  - active_trades_avg_pos=0.1997, global_avg_pos_frac=0.1813
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=42, n_max_positions=382
+  - n_trades=456, sizing_formula=concave, squash_fn=sigmoid, squash_k=2.00
+[2026-03-08 14:05:57 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.1997, total_pnl=0.426954, pnl_per_day=0.426954, trades_per_day=456.00
+[2026-03-08 14:05:57 UTC]     [Stage2] Trial 14 Score=0.129749, PnL/Day=42.70%, Sortino=14.831, Trades/Day=456.0000, Risk=4.332117, TempStab=0.714, MaxDD=0.0201, Ulcer=0.6718, net_win=0.421, PF=2.344, avg_win=0.003878, avg_loss=-0.001431, n_neg_days=222/456, n_neg_trades=222, mean_daily=0.000936, PosSize: avg=18.13%, range=[0.00%, 20.00%] | Params: {'base_size': 0.12, 'rank_multiplier': 0.2, 'sizing_formula': 'concave', 'squash_fn': 'sigmoid', 'squash_k': 2.0}
+[2026-03-08 14:05:57 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1600 (base=0.1200, mult=0.0400, cap=0.2000)
+  - active_trades_avg_pos=0.1419, global_avg_pos_frac=0.1289
+  - range=[0.0000, 0.1600]
+  - n_zero_positions=42, n_max_positions=1
+  - n_trades=456, sizing_formula=concave, squash_fn=sigmoid, squash_k=2.00
+[2026-03-08 14:05:57 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.1419, total_pnl=0.308753, pnl_per_day=0.308753, trades_per_day=456.00
+[2026-03-08 14:05:58 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1200, mult=0.2000, cap=0.2000)
+  - active_trades_avg_pos=0.1997, global_avg_pos_frac=0.1813
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=42, n_max_positions=382
+  - n_trades=456, sizing_formula=concave, squash_fn=sigmoid, squash_k=2.00
+[2026-03-08 14:05:58 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.1997, total_pnl=0.426954, pnl_per_day=0.426954, trades_per_day=456.00
+[2026-03-08 14:05:58 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1200, mult=0.2000, cap=0.2000)
+  - active_trades_avg_pos=0.1997, global_avg_pos_frac=0.1813
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=42, n_max_positions=382
+  - n_trades=456, sizing_formula=concave, squash_fn=sigmoid, squash_k=2.50
+[2026-03-08 14:05:58 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.1997, total_pnl=0.426954, pnl_per_day=0.426954, trades_per_day=456.00
+[2026-03-08 14:05:59 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1100, mult=0.2000, cap=0.2000)
+  - active_trades_avg_pos=0.1981, global_avg_pos_frac=0.1799
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=42, n_max_positions=322
+  - n_trades=456, sizing_formula=concave, squash_fn=sigmoid, squash_k=2.50
+[2026-03-08 14:05:59 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.1981, total_pnl=0.425553, pnl_per_day=0.425553, trades_per_day=456.00
+[2026-03-08 14:05:59 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1100, mult=0.2000, cap=0.2000)
+  - active_trades_avg_pos=0.1325, global_avg_pos_frac=0.1203
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=42, n_max_positions=6
+  - n_trades=456, sizing_formula=convex, squash_fn=sigmoid, squash_k=1.75
+[2026-03-08 14:05:59 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.1325, total_pnl=0.307044, pnl_per_day=0.307044, trades_per_day=456.00
+[2026-03-08 14:05:59 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0900, mult=0.1600, cap=0.2000)
+  - active_trades_avg_pos=0.1083, global_avg_pos_frac=0.0983
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=42, n_max_positions=2
+  - n_trades=456, sizing_formula=convex, squash_fn=sigmoid, squash_k=1.75
+[2026-03-08 14:05:59 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.1083, total_pnl=0.250011, pnl_per_day=0.250011, trades_per_day=456.00
+[2026-03-08 14:05:59 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0900, mult=0.1600, cap=0.2000)
+  - active_trades_avg_pos=0.1765, global_avg_pos_frac=0.1602
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=42, n_max_positions=50
+  - n_trades=456, sizing_formula=concave, squash_fn=sigmoid, squash_k=2.25
+[2026-03-08 14:05:59 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.1765, total_pnl=0.395065, pnl_per_day=0.395065, trades_per_day=456.00
+[2026-03-08 14:05:59 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.0900, mult=0.1800, cap=0.2000)
+  - active_trades_avg_pos=0.1847, global_avg_pos_frac=0.1677
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=42, n_max_positions=115
+  - n_trades=456, sizing_formula=concave, squash_fn=sigmoid, squash_k=2.25
+[2026-03-08 14:05:59 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.1847, total_pnl=0.408481, pnl_per_day=0.408481, trades_per_day=456.00
+[2026-03-08 14:06:00 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1200, mult=0.1800, cap=0.2000)
+  - active_trades_avg_pos=0.1985, global_avg_pos_frac=0.1802
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=42, n_max_positions=326
+  - n_trades=456, sizing_formula=concave, squash_fn=sigmoid, squash_k=2.25
+[2026-03-08 14:06:00 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.1985, total_pnl=0.425893, pnl_per_day=0.425893, trades_per_day=456.00
+[2026-03-08 14:06:00 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1200, mult=0.2000, cap=0.2000)
+  - active_trades_avg_pos=0.1997, global_avg_pos_frac=0.1813
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=42, n_max_positions=382
+  - n_trades=456, sizing_formula=concave, squash_fn=sigmoid, squash_k=2.50
+[2026-03-08 14:06:00 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.1997, total_pnl=0.426954, pnl_per_day=0.426954, trades_per_day=456.00
+[2026-03-08 14:06:00 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.2000 (base=0.1100, mult=0.2000, cap=0.2000)
+  - active_trades_avg_pos=0.1981, global_avg_pos_frac=0.1799
+  - range=[0.0000, 0.2000]
+  - n_zero_positions=42, n_max_positions=322
+  - n_trades=456, sizing_formula=concave, squash_fn=sigmoid, squash_k=2.50
+[2026-03-08 14:06:00 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=456, n_active=414, avg_return_raw=0.007955, avg_active_pos=0.1981, total_pnl=0.425553, pnl_per_day=0.425553, trades_per_day=456.00
+[2026-03-08 14:06:00 UTC]   Best params: alpha=0.000622, delta=1.105, gamma=0.159, top_k_pct=0.30, cooldown_hours=2.0, base_size=0.12, rank_multiplier=0.20, sizing_formula=concave, squash_fn=sigmoid, squash_k=2.50, ObjectiveScore=0.1297, IntradayRisk=4.3321
+[2026-03-08 14:06:00 UTC]   Position Sizing: avg=18.13%, median=20.00%, range=[0.00%, 20.00%], max_position=20.00% (capped at 20.00%)
+[2026-03-08 14:06:00 UTC]   Thresholds: low=-0.024753, high=-0.024753
+[2026-03-08 14:06:00 UTC]   Evaluating final model on Walk-Forward OOS set (457 trades)...
+[2026-03-08 14:06:00 UTC]   WARNING: SLSQP optimization failed: Inequality constraints incompatible
+[2026-03-08 14:06:00 UTC]   Falling back to uniform weights
+[2026-03-08 14:06:00 UTC]   WARNING: SLSQP optimization failed: Inequality constraints incompatible
+[2026-03-08 14:06:00 UTC]   Falling back to uniform weights
+[2026-03-08 14:06:00 UTC]     Pre-offset OOS PnL/Day: 0.000000, ObjectiveScore: -1000000000.000000, IntradayRisk: 306.000000, MaxDD: 1.000000, Ulcer: 0.0000, TUW: 0.000
+[2026-03-08 14:06:00 UTC]   Performing final fit on Train+Val data...
+[2026-03-08 14:06:00 UTC]     [Feature Selection] Outer fold 1/3: train=445 samples
+[2026-03-08 14:06:00 UTC]       - 1 feature clusters identified (threshold=0.97)
+[2026-03-08 14:06:00 UTC]     [Feature Selection] Outer fold 2/3: train=901 samples
+[2026-03-08 14:06:00 UTC]       - 11 feature clusters identified (threshold=0.97)
+[2026-03-08 14:06:00 UTC]       - Starting RFE-style ElasticNet pruning: 11 candidates -> min 10
+[2026-03-08 14:06:01 UTC]       - RFE finished: 10 features selected
+[2026-03-08 14:06:01 UTC]     [Feature Selection] Outer fold 3/3: train=1357 samples
+[2026-03-08 14:06:01 UTC]       - 11 feature clusters identified (threshold=0.97)
+[2026-03-08 14:06:01 UTC]       - Starting RFE-style ElasticNet pruning: 11 candidates -> min 10
+[2026-03-08 14:06:01 UTC]       - RFE finished: 10 features selected
+[2026-03-08 14:06:01 UTC]   Launching Tree Feature Selection (LGBM RFE) on 1825 samples...
+[2026-03-08 14:06:01 UTC] Starting Feature Selection Process...
+[2026-03-08 14:06:01 UTC]       [run_rfe] Iteration 1: 12 features remaining
+[2026-03-08 14:06:01 UTC]       [run_rfe]   OOS Utility: 0.041767 (+/- 0.073888)
+[2026-03-08 14:06:01 UTC] Feature Selection complete. Selected 10 features.
+[2026-03-08 14:06:01 UTC]   Feature selection (sizer): kept 9 for Ridge, 10 for Trees (out of 12)
+[2026-03-08 14:06:08 UTC]   Sizer model race winner: ridge+huber score=2.3339
+[2026-03-08 14:06:09 UTC]     Ridge Gate Model: Step 1 complete. Gating top 30.0% (547 samples) for Step 2 using ridge.
+[2026-03-08 14:06:09 UTC]   short_tf failed: Missing columns for compute_optimal_limit_offset_labels: {'entry_price', 'future_lows', 'future_closes', 'future_highs', 'future_opens'}. Please ensure run_ridge_sizer properly loads future 15m price panels.
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/run_ridge_sizer.py", line 950, in main
+    sizer, metrics = run_ridge_position_sizer_step(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 7470, in run_ridge_position_sizer_step
+    sizer.fit(oof_preds, trade_outcomes, timestamps=timestamps, groups=groups,
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 5893, in fit
+    k_built = compute_optimal_limit_offset_labels(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 1240, in compute_optimal_limit_offset_labels
+    raise ValueError(
+ValueError: Missing columns for compute_optimal_limit_offset_labels: {'entry_price', 'future_lows', 'future_closes', 'future_highs', 'future_opens'}. Please ensure run_ridge_sizer properly loads future 15m price panels.
+[2026-03-08 14:06:09 UTC]   No weights produced for direction short, skipping
+[2026-03-08 14:06:09 UTC] Saved combined manifest to data/artifacts/20260213_080000/ridge_sizer/sizer_weights.json
+[2026-03-08 14:06:09 UTC] ================================================================================
+[2026-03-08 14:06:09 UTC] RIDGE POSITION SIZER COMPLETE
+[2026-03-08 14:06:09 UTC] ================================================================================
+[2026-03-08 14:06:09 UTC] Output directory: data/artifacts/20260213_080000/ridge_sizer
+[2026-03-08 14:06:09 UTC] ================================================================================
+[2026-03-08 14:06:09 UTC] Metrics report manifested to data/artifacts/20260213_080000/ridge_sizer_metrics_report.md

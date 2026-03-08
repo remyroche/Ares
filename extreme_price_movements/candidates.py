@@ -56,6 +56,7 @@ def select_trade_candidates_vectorized(
     feats,
     pct=0.05,
     metric="ret24h",
+    min_move_12h_pct=None,
     min_range_pct=0.07,
     min_vol_zscore=1.5,
     chop_thr=0.5,
@@ -116,12 +117,23 @@ def select_trade_candidates_vectorized(
     # 2. Volatility & Event Filters (Apply BEFORE Expansion)
     # This ensures we select events where conditions were met AT THE TIME of the event.
 
-    # Filter 2: 12h High/Low range exceeds configured pct
-    if "range_12h_pct" in feats:
+    if min_move_12h_pct is not None:
+        if "ret12h" in feats:
+            move_metric = feats["ret12h"].abs()
+        else:
+            c = panel["close"]
+            move_metric = (c / (c.shift(12) + 1e-12) - 1.0).abs()
+        move_mask = move_metric > float(min_move_12h_pct)
+    else:
+        move_mask = pd.DataFrame(True, index=df_metric.index, columns=df_metric.columns)
+
+    # Optional legacy 12h high/low range gate.
+    if min_range_pct is None:
+        vol_mask = pd.DataFrame(True, index=df_metric.index, columns=df_metric.columns)
+    elif "range_12h_pct" in feats:
         vol_metric = feats["range_12h_pct"]
         vol_mask = vol_metric > min_range_pct
     else:
-        # Fallback if feature missing (legacy)
         c = panel["close"]
         h = panel["high"]
         l = panel["low"]
@@ -139,7 +151,38 @@ def select_trade_candidates_vectorized(
         mkt_vol_mean = mkt_vol.rolling(24*30, min_periods=100).mean().ffill().bfill()
         # Scale threshold: when market is more volatile, we want higher conviction (higher z-score)
         dynamic_thr = min_vol_zscore * (mkt_vol / (mkt_vol_mean + 1e-12)).clip(0.5, 2.0)
-        event_mask = feats["volatility_zscore"] > dynamic_thr
+        
+        # Align volatility_zscore with dynamic_thr before comparison.
+        # Use plain ndarrays and explicit broadcasting to avoid pandas/numpy
+        # producing an accidental (n_rows, n_rows) result for single-symbol inputs.
+        vol_zscore = feats["volatility_zscore"]
+        vol_zscore_values = np.asarray(
+            vol_zscore.reindex(index=vol_zscore.index, columns=vol_zscore.columns).to_numpy(copy=False)
+        )
+
+        if isinstance(dynamic_thr, pd.Series):
+            dynamic_thr_values = np.asarray(dynamic_thr.reindex(vol_zscore.index).to_numpy(copy=False), dtype=np.float32)
+            dynamic_thr_aligned = dynamic_thr_values.reshape(-1, 1)
+        elif isinstance(dynamic_thr, pd.DataFrame):
+            dynamic_thr_aligned = np.asarray(
+                dynamic_thr.reindex(index=vol_zscore.index, columns=vol_zscore.columns).to_numpy(copy=False),
+                dtype=np.float32,
+            )
+        else:
+            dynamic_thr_aligned = np.asarray(dynamic_thr, dtype=np.float32)
+            if dynamic_thr_aligned.ndim == 0:
+                dynamic_thr_aligned = np.full(vol_zscore_values.shape, float(dynamic_thr_aligned), dtype=np.float32)
+            elif dynamic_thr_aligned.ndim == 1:
+                dynamic_thr_aligned = dynamic_thr_aligned.reshape(-1, 1)
+
+        if dynamic_thr_aligned.shape != vol_zscore_values.shape:
+            dynamic_thr_aligned = np.broadcast_to(dynamic_thr_aligned, vol_zscore_values.shape)
+
+        event_mask = pd.DataFrame(
+            vol_zscore_values > dynamic_thr_aligned,
+            index=vol_zscore.index,
+            columns=vol_zscore.columns
+        )
     elif "volatility_zscore" in feats:
         event_mask = feats["volatility_zscore"] > min_vol_zscore
     else:
@@ -155,7 +198,7 @@ def select_trade_candidates_vectorized(
     _ = sign_consistency_min
 
     # Combine filters into base mask
-    base_mask = base_mask & vol_mask & event_mask & chop_mask
+    base_mask = base_mask & move_mask & vol_mask & event_mask & chop_mask
 
     # 3. Time Expansion
     # Two-stage expansion (entry-delay windows only, not TBM horizon cap):

@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from extreme_price_movements.label_policy_optimizer import optimize_label_policy
+from extreme_price_movements.label_policy_optimizer import _daily_metrics_from_u_fast, optimize_label_policy
 from extreme_price_movements.meta_model import MetaClassifierModel
 from extreme_price_movements.policy_ml import MetaClassifierSelectionConfig
 from extreme_price_movements.ridge_position_sizer import run_ridge_target_race, run_ridge_position_sizer_step
@@ -116,3 +116,15 @@ def test_policy_optimizer_subsamples_search_but_returns_full_length_labels():
     assert len(out["u_policy_net"]) == n
     assert meta["search_rows"] == 5
     assert meta["full_rows"] == n
+
+
+def test_label_policy_daily_metrics_do_not_double_charge_fees_or_explode_sortino():
+    ts = pd.date_range("2026-01-01", periods=6, freq="1D", tz="UTC").to_numpy()
+    gross = np.array([0.010, 0.012, -0.004, 0.011, -0.003, 0.009], dtype=np.float64)
+    u_net = np.log1p(gross)
+
+    pnl, sortino = _daily_metrics_from_u_fast(ts, u_net, fee_roundtrip=0.002)
+
+    assert pnl > 0.02
+    assert np.isfinite(sortino)
+    assert abs(sortino) <= 25.0

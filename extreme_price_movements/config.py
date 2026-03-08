@@ -257,10 +257,15 @@ CFG = {
     # market basket
     "market_basket": ["BTC/USDT","ETH/USDT","AVAX/USDT","SOL/USDT","XRP/USDT"],
 
-    # training horizons to compare (1)
-    # H8 removed: poor signal (MR_long_H8: 0.017, TF_short_H8: 0.023)
-    "label_horizons_hours": [1, 2, 4],
-    "label_horizons_use_shorter_grid": False,  # Set to True to use [1, 2, 4] instead of [2, 4, 8]
+    # training horizons to compare
+    # Canonical set is [1, 2, 4] hours. H1 added for entry timing; H8 removed.
+    "label_horizons_hours": CANON_HORIZONS,
+    "base_geometry_archetypes": ["tight", "balanced", "wide"],
+    "base_geometry_train_variants": True,
+    "base_geometry_grr_topk": 12,
+    "base_geometry_learnability_weight": 0.75,
+    "base_geometry_geometry_weight": 0.25,
+    "label_horizons_use_shorter_grid": True,
     "label_tp_values_pct": [1.5, 2.0, 3.0, 4.0, 5.0, 6.0],
     "label_sl_values_pct": [0.5, 1.0, 2.0],
     "label_round_trip_fee_pct": 0.5,
@@ -314,9 +319,31 @@ CFG = {
     "meta_sample_weight_opt_trials": 12,
     "meta_use_policy_value_target": True,
     "meta_clf_use_engine_labels": True,
-    # Remove classifier heads from meta race by default (regression heads only)
-    "meta_race_include_classifiers": False,
+    # Policy-aligned downstream sizing requires classifier barrier probabilities
+    # (oof_p_sl/oof_p_to/oof_p_tp) in meta_oof exports.
+    "meta_race_include_classifiers": True,
+    "meta_require_classifier_barrier_probs": True,
     "meta_train_regression_bucket_model": True,
+    "meta_training_pipeline_version": "aligned_map_v2",
+    "meta_train_save_legacy_setup": True,
+    "meta_parallel_forest_disable_hpo": True,
+    "meta_parallel_forest_num_parallel_tree": 160,
+    "meta_parallel_forest_rounds": 8,
+    "meta_parallel_forest_max_depth": 6,
+    "meta_parallel_forest_learning_rate": 0.05,
+    "meta_parallel_forest_reg_alpha": 2.0,
+    "meta_parallel_forest_reg_lambda": 20.0,
+    "meta_parallel_forest_min_child_weight": 48.0,
+    "meta_parallel_forest_gamma": 2.5,
+    "meta_map_tbm_geometries": [
+        {"name": "tbm_50_25", "tp_pct": 0.0050, "sl_pct": 0.0025},
+        {"name": "tbm_100_50", "tp_pct": 0.0100, "sl_pct": 0.0050},
+    ],
+    "meta_map_tbm_horizons": [1, 2, 4],
+    "meta_map_mae_horizons": [2, 4],
+    "meta_map_mfe_horizons": [2, 4],
+    "meta_map_weight_clip_lo": 0.85,
+    "meta_map_weight_clip_hi": 1.15,
     # Meta classifier utility-based winner selection (logloss remains a gate)
     "meta_clf_max_logloss": 1.10,
     "meta_clf_u_tp": 1.0,
@@ -373,8 +400,8 @@ CFG = {
     "aux_head_ridge_alpha_max": 100.0,
     "aux_head_ridge_alpha_default": 1.0,
     # Stage-2 model race is run only on the target/weight winner from stage-1.
-    "aux_head_run_model_race_on_winner": True,
-    "aux_head_model_race_candidates": ["lgbm", "extratrees", "ridge"],
+    "aux_head_run_model_race_on_winner": False,
+    "aux_head_model_race_candidates": ["xgb_parallel_forest"],
 
     # Two-stage/three-head position sizer defaults.
     "position_sizer_enabled": True,
@@ -555,7 +582,7 @@ CFG = {
     "sizer_winsor_q_high": 0.99,
 
     # Passive limit offset optimizer constants
-    "TICK_SIZE": 0.1,
+    "TICK_SIZE_BPS": 2.0,
     "K_MAX": 5,
     "HORIZON_15M_BARS": 4,
     "HORIZON_1H_BARS": 1,
@@ -571,8 +598,15 @@ CFG = {
     # Economic gate on base race: require positive realized return in top-k OOF slice
     "base_require_positive_oof_expectancy": True,
     "base_oof_expectancy_top_frac": 0.30,
-    # Use engine-identical rollout labels when creating training rows
-    "policy_rollout_labeling_enable": False,
+    # Use ridge-sizer-aligned rollout labels when creating training rows
+    "policy_rollout_labeling_enable": True,
+    # Static policy geometry used upstream for policy-aligned labels/classifier
+    # targets. This intentionally matches the ridge sizer's TP/SL/trailing
+    # family, but stays fixed rather than using per-run optimized params.
+    "policy_label_sl_atr_mult": 1.2,
+    "policy_label_tp_sl_ratio": 2.0,
+    "policy_label_trailing_pct": 0.35,
+    "policy_label_max_hold_hours": 24,
     "sample_weight_opt_n_splits": 5,
     "sample_weight_opt_embargo_bars": 10,
     "cv_embargo_bars": 12,
@@ -1079,13 +1113,18 @@ CFG = {
         "selector_frequency_hit_quantile": 0.80,
         "selector_frequency_hit_abs": 1e-6,
         "selector_interaction_mode": "tree_path_lift",
-        "selector_interaction_topk_pairs": 100,
-        "selector_interaction_max_pairs_per_feature": 8,
+        "selector_interaction_topk_pairs": 48,
+        "selector_interaction_max_pairs_per_feature": 4,
         "selector_interaction_corr_penalty": True,
         "selector_family_penalty": True,
         "selector_emit_report": True,
         "selector_hysteresis_margin": 0.05,
         "selector_min_overlap": 0.70,
+        "analysis_n_estimators": 192,
+        "analysis_max_samples": 3000,
+        "min_samples_leaf_pct": 0.015,
+        "selector_max_missing_frac": 0.15,
+        "selector_near_constant_dominance": 0.999,
         "top30": 0.35,
         "global": 0.20,
         "stability": 0.25,
@@ -1099,13 +1138,18 @@ CFG = {
         "selector_frequency_hit_quantile": 0.80,
         "selector_frequency_hit_abs": 1e-6,
         "selector_interaction_mode": "tree_path_lift",
-        "selector_interaction_topk_pairs": 100,
-        "selector_interaction_max_pairs_per_feature": 8,
+        "selector_interaction_topk_pairs": 48,
+        "selector_interaction_max_pairs_per_feature": 4,
         "selector_interaction_corr_penalty": True,
         "selector_family_penalty": True,
         "selector_emit_report": True,
         "selector_hysteresis_margin": 0.05,
         "selector_min_overlap": 0.70,
+        "analysis_n_estimators": 192,
+        "analysis_max_samples": 3000,
+        "min_samples_leaf_pct": 0.015,
+        "selector_max_missing_frac": 0.15,
+        "selector_near_constant_dominance": 0.999,
         "top30": 0.35,
         "global": 0.20,
         "stability": 0.25,
@@ -1113,14 +1157,54 @@ CFG = {
         "interaction": 0.05,
     },
     "aux_mae_selector_cfg": {
-        "selector_focus_top_frac": 0.30,
+        "selector_focus_top_frac": 0.40,
         "selector_top_metric": "ic_top",
+        "selector_frequency_hit_mode": "relative",
+        "selector_frequency_hit_quantile": 0.85,
+        "selector_frequency_hit_abs": 1e-6,
+        "selector_interaction_mode": "tree_path_lift",
+        "selector_interaction_topk_pairs": 32,
+        "selector_interaction_max_pairs_per_feature": 3,
+        "selector_interaction_corr_penalty": True,
+        "selector_family_penalty": True,
         "selector_emit_report": True,
+        "selector_hysteresis_margin": 0.04,
+        "selector_min_overlap": 0.75,
+        "analysis_n_estimators": 160,
+        "analysis_max_samples": 2500,
+        "min_samples_leaf_pct": 0.02,
+        "selector_max_missing_frac": 0.15,
+        "selector_near_constant_dominance": 0.999,
+        "top30": 0.20,
+        "global": 0.35,
+        "stability": 0.25,
+        "frequency": 0.15,
+        "interaction": 0.05,
     },
     "aux_mfe_selector_cfg": {
-        "selector_focus_top_frac": 0.30,
+        "selector_focus_top_frac": 0.25,
         "selector_top_metric": "ic_top",
+        "selector_frequency_hit_mode": "relative",
+        "selector_frequency_hit_quantile": 0.80,
+        "selector_frequency_hit_abs": 1e-6,
+        "selector_interaction_mode": "tree_path_lift",
+        "selector_interaction_topk_pairs": 40,
+        "selector_interaction_max_pairs_per_feature": 4,
+        "selector_interaction_corr_penalty": True,
+        "selector_family_penalty": True,
         "selector_emit_report": True,
+        "selector_hysteresis_margin": 0.05,
+        "selector_min_overlap": 0.70,
+        "analysis_n_estimators": 160,
+        "analysis_max_samples": 2500,
+        "min_samples_leaf_pct": 0.02,
+        "selector_max_missing_frac": 0.15,
+        "selector_near_constant_dominance": 0.999,
+        "top30": 0.40,
+        "global": 0.15,
+        "stability": 0.25,
+        "frequency": 0.15,
+        "interaction": 0.05,
     },
     "aux_utility_selector_cfg": {
         "selector_focus_top_frac": 0.30,
@@ -1148,6 +1232,8 @@ CFG = {
     
     # High-frequency simulation
     "use_15m_precision": True,  # Enable 15m OHLCV for trailing profit (requires CCXT exchange)
+    "allow_15m_download": True,  # Allow Binance-backed backfill of missing 15m ranges during label/TBM refinement
+    "allow_5m_download": True,   # Use 5m only for residual ambiguity solving after 15m refinement
     
     # Limit Order Simulation (Report 2026-02-22)
     "use_limit_orders": True,    # Enable limit orders per user request

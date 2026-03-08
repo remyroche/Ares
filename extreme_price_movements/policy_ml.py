@@ -57,6 +57,113 @@ class PolicyOutcome:
     reason: str
 
 
+def _get_static_sizer_policy_params(
+    policy_params: Dict[str, Any],
+    max_hold_hours: int,
+) -> Dict[str, float]:
+    """Build a fixed TP/SL policy aligned with the ridge sizer utility."""
+    sl_atr_mult = float(policy_params.get("policy_label_sl_atr_mult", 1.2))
+    tp_sl_ratio = float(policy_params.get("policy_label_tp_sl_ratio", 2.0))
+    trailing_pct = float(policy_params.get("policy_label_trailing_pct", 0.35))
+    hold_hours = int(policy_params.get("policy_label_max_hold_hours", max_hold_hours))
+    return {
+        "sl_atr_mult": max(sl_atr_mult, 1e-6),
+        "tp_sl_ratio": max(tp_sl_ratio, 1e-6),
+        "trailing_pct": float(np.clip(trailing_pct, 0.0, 0.95)),
+        "max_hold_hours": max(1, hold_hours),
+    }
+
+
+def _policy_rollout_sizer_aligned(
+    ohlc: pd.DataFrame,
+    atr_pct: pd.Series,
+    t0: int,
+    direction: int,
+    policy_params: Dict[str, Any],
+    max_hold_hours: int,
+) -> PolicyOutcome:
+    """Roll out trade with the same TP/SL/trailing semantics as the ridge sizer."""
+    from extreme_price_movements.ridge_position_sizer import simulate_trade_exit
+
+    if int(t0) < 0 or int(t0) >= len(ohlc.index):
+        return PolicyOutcome(0.0, 0, 1, 0.0, 0.0, "timeout")
+
+    static_policy = _get_static_sizer_policy_params(policy_params, max_hold_hours)
+    hold_hours = int(static_policy["max_hold_hours"])
+    idx = ohlc.index
+    ts_entry = idx[int(t0)]
+    entry_px = float(ohlc["open"].iloc[int(t0)])
+    if not np.isfinite(entry_px) or entry_px <= 0.0:
+        return PolicyOutcome(0.0, 0, 1, 0.0, 0.0, "timeout")
+
+    atr_here = float(atr_pct.loc[ts_entry]) if ts_entry in atr_pct.index else float(atr_pct.iloc[int(t0)]) if int(t0) < len(atr_pct) else 0.02
+    atr_here = max(float(np.nan_to_num(atr_here, nan=0.02)), 1e-6)
+    sl_abs = static_policy["sl_atr_mult"] * atr_here * entry_px
+    tp_abs = static_policy["tp_sl_ratio"] * sl_abs
+    is_long = int(direction) > 0
+    if is_long:
+        tp_price = entry_px + tp_abs
+        sl_price = entry_px - sl_abs
+    else:
+        tp_price = entry_px - tp_abs
+        sl_price = entry_px + sl_abs
+
+    start = int(t0) + 1
+    stop = min(len(ohlc), start + hold_hours)
+    if stop <= start:
+        return PolicyOutcome(0.0, 0, 1, 0.0, 0.0, "timeout")
+
+    o_arr = ohlc["open"].iloc[start:stop].to_numpy(dtype=np.float64, copy=False)
+    h_arr = ohlc["high"].iloc[start:stop].to_numpy(dtype=np.float64, copy=False)
+    l_arr = ohlc["low"].iloc[start:stop].to_numpy(dtype=np.float64, copy=False)
+    c_arr = ohlc["close"].iloc[start:stop].to_numpy(dtype=np.float64, copy=False)
+    if len(h_arr) == 0:
+        return PolicyOutcome(0.0, 0, 1, 0.0, 0.0, "timeout")
+
+    exit_price, exit_bar, exit_reason = simulate_trade_exit(
+        highs=h_arr,
+        lows=l_arr,
+        opens=o_arr,
+        closes=c_arr,
+        entry_price=float(entry_px),
+        is_long=bool(is_long),
+        tp_price=float(tp_price),
+        sl_price=float(sl_price),
+        trailing_pct=float(static_policy["trailing_pct"]),
+        max_bars=len(h_arr),
+    )
+    bars_held = int(max(1, exit_bar + 1))
+    if is_long:
+        gross = float(exit_price / (entry_px + 1e-12) - 1.0)
+        favorable = (h_arr / (entry_px + 1e-12)) - 1.0
+        adverse = (l_arr / (entry_px + 1e-12)) - 1.0
+        mfe = float(np.nanmax(np.clip(favorable, 0.0, None))) if len(favorable) else 0.0
+        mae = float(np.nanmax(np.clip(-adverse, 0.0, None))) if len(adverse) else 0.0
+    else:
+        gross = float(entry_px / (exit_price + 1e-12) - 1.0)
+        favorable = (entry_px / np.clip(l_arr, 1e-12, None)) - 1.0
+        adverse = (h_arr / (entry_px + 1e-12)) - 1.0
+        mfe = float(np.nanmax(np.clip(favorable, 0.0, None))) if len(favorable) else 0.0
+        mae = float(np.nanmax(np.clip(adverse, 0.0, None))) if len(adverse) else 0.0
+
+    if exit_reason == 1:
+        exit_code, reason = 0, "stop_loss"
+    elif exit_reason == 3:
+        exit_code, reason = 1, "timeout"
+    elif exit_reason in (0, 2):
+        exit_code, reason = 2, ("trailing_stop" if exit_reason == 2 else "take_profit")
+    else:
+        exit_code, reason = 1, "timeout"
+    return PolicyOutcome(
+        r_policy=float(gross),
+        bars_held=bars_held,
+        exit_code=int(exit_code),
+        mae=float(mae),
+        mfe=float(mfe),
+        reason=str(reason),
+    )
+
+
 def _reason_to_exit_code(reason: str, r_policy: float) -> int:
     rr = str(reason or "")
     if rr in {"stop_loss", "early_invalidation"}:
@@ -126,8 +233,8 @@ def policy_rollout_ml(
     policy_params: Dict[str, Any],
     max_hold_hours: int,
 ) -> PolicyOutcome:
-    """ML rollout wrapper; intentionally delegates to engine rollout path."""
-    return policy_rollout_engine(
+    """ML rollout wrapper aligned with the ridge-sizer TP/SL utility family."""
+    return _policy_rollout_sizer_aligned(
         ohlc=ohlc,
         atr_pct=atr_pct,
         t0=t0,
@@ -146,7 +253,7 @@ def compute_u_policy_labels(
     max_hold_hours: int,
     fee_rt: float = 0.003,
 ) -> Dict[str, np.ndarray]:
-    """Compute engine-aligned policy labels for provided event indices.
+    """Compute ridge-sizer-aligned policy labels for provided event indices.
 
     Returns arrays aligned to ``event_index`` with keys:
     ``r_policy``, ``u_policy``, ``exit_code``, ``mae``, ``mfe``, ``duration``.
@@ -165,7 +272,7 @@ def compute_u_policy_labels(
     for i, t0 in enumerate(idx):
         if int(t0) < 0 or int(t0) >= len(ohlc.index):
             continue
-        out = policy_rollout_engine(
+        out = policy_rollout_ml(
             ohlc=ohlc,
             atr_pct=atr_pct,
             t0=int(t0),

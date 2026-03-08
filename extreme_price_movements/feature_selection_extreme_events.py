@@ -606,10 +606,13 @@ def mdi_feature_selection_v3(
     base_model=None,
     n_splits: int = 6,
     purge: int = 5,
-    min_samples_leaf: int = 50,
-    min_samples_leaf_pct: float = 0.01,
+    min_samples_leaf: int = 64,
+    min_samples_leaf_pct: float = 0.015,
     min_impurity_decrease: float = 0.0,
-    analysis_n_estimators: int = 500, # Higher for 150-feature stability
+    analysis_n_estimators: int = 192,
+    analysis_max_samples: int = 3000,
+    selector_max_missing_frac: float = 0.15,
+    selector_near_constant_dominance: float = 0.999,
 
     pre_dedupe_threshold: float = 0.95, # Relaxed from 0.98 to 0.95 per plan
     random_state: int = 0,
@@ -686,6 +689,32 @@ def mdi_feature_selection_v3(
             return MDISelectionResult(pd.DataFrame(), [], [])
         X = X[list(candidate_cols)].copy()
 
+    missing_frac = X.isna().mean(axis=0)
+    drop_missing_cols = missing_frac[missing_frac > float(selector_max_missing_frac)].index.tolist()
+    if drop_missing_cols:
+        tprint(
+            f"MDI: Dropping {len(drop_missing_cols)} high-missingness features "
+            f"(threshold={float(selector_max_missing_frac):.2f})."
+        )
+        X = X.drop(columns=drop_missing_cols, errors="ignore")
+        if X.empty:
+            return MDISelectionResult(pd.DataFrame(), [], [])
+
+    dominant_rate = X.apply(
+        lambda s: float(s.value_counts(dropna=False, normalize=True).iloc[0])
+        if len(s) > 0 else 1.0,
+        axis=0,
+    )
+    drop_dom_cols = dominant_rate[dominant_rate >= float(selector_near_constant_dominance)].index.tolist()
+    if drop_dom_cols:
+        tprint(
+            f"MDI: Dropping {len(drop_dom_cols)} dominant-value features "
+            f"(threshold={float(selector_near_constant_dominance):.3f})."
+        )
+        X = X.drop(columns=drop_dom_cols, errors="ignore")
+        if X.empty:
+            return MDISelectionResult(pd.DataFrame(), [], [])
+
     # Robust cleaning using shared utility.
     # Feature selection can optimize against caller-provided target (`selector_y`),
     # defaulting to `y` when not provided.
@@ -725,9 +754,9 @@ def mdi_feature_selection_v3(
         end_features = min_features
 
     if base_model is None:
-        default_leaf = max(1, int(np.ceil(min_samples_leaf_pct * len(X))))
+        default_leaf = max(int(min_samples_leaf), int(np.ceil(min_samples_leaf_pct * len(X))))
         base_model = ExtraTreesRegressor(
-            n_estimators=500,
+            n_estimators=int(analysis_n_estimators),
             max_depth=None,
             min_samples_leaf=default_leaf,
             min_samples_split=max(2, 3 * default_leaf),
@@ -948,8 +977,8 @@ def mdi_feature_selection_v3(
             X[current_features],
             y_np,
             n_select=end_features,
-            multiplier=4,
-            max_drop_frac=0.25,
+            multiplier=5,
+            max_drop_frac=0.15,
             l1_ratio=_prescreen_l1_ratio,
             alpha_lo=_prescreen_alpha_lo,
             alpha_hi=_prescreen_alpha_hi,
@@ -976,7 +1005,10 @@ def mdi_feature_selection_v3(
         p = len(current_features)
 
         # Subsampling Logic - Limit to 5K events max for MDI
-        n_star = min(5000, max(30000, 300 * p, 2000 * end_features))
+        n_star = min(
+            int(max(256, analysis_max_samples)),
+            max(1200, 150 * p, 80 * end_features),
+        )
 
         if n_star < N:
              # Systematic sampling
@@ -1033,7 +1065,7 @@ def mdi_feature_selection_v3(
             if "n_estimators" in supported_params: params["n_estimators"] = analysis_n_estimators
 
             train_n = max(1, int(len(train_idx)))
-            leaf_samples = max(1, int(np.ceil(min_samples_leaf_pct * train_n)))
+            leaf_samples = max(int(min_samples_leaf), int(np.ceil(min_samples_leaf_pct * train_n)))
             if "min_samples_leaf" in supported_params: params["min_samples_leaf"] = leaf_samples
             if "min_samples_split" in supported_params: params["min_samples_split"] = max(2, 3 * leaf_samples)
 
@@ -1211,12 +1243,12 @@ def mdi_feature_selection_v3(
             break
 
         # Adaptive RFE drop schedule:
-        # linearly decay drop rate from 40% (at p = 6x target) to 5% (at p = 1x target),
-        # then add a fixed +5 bonus drop (bounded by target floor).
+        # linearly decay drop rate from 45% (at p = 6x target) to 8% (at p = 1x target),
+        # then add a fixed +6 bonus drop (bounded by target floor).
         _ratio = float(p) / max(float(end_features), 1.0)
         _ratio_c = float(np.clip(_ratio, 1.0, 6.0))
-        _drop_rate = 0.05 + ((_ratio_c - 1.0) * (0.40 - 0.05) / (6.0 - 1.0))
-        _bonus_drop = 5
+        _drop_rate = 0.08 + ((_ratio_c - 1.0) * (0.45 - 0.08) / (6.0 - 1.0))
+        _bonus_drop = 6
         n_to_drop = int(np.floor(float(p) * _drop_rate)) + _bonus_drop
         n_to_drop = max(1, n_to_drop)
         if p - n_to_drop < end_features:

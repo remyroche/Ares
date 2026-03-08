@@ -13,6 +13,7 @@ OFFLINE_OPTIMISERS_DIR = Path(__file__).resolve().parent
 REPORTS_DIR = OFFLINE_OPTIMISERS_DIR / "reports"
 
 CANDIDATE_BEST_PARAMS_CSV = REPORTS_DIR / "candidate_thresholds_best_params.csv"
+INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV = REPORTS_DIR / "inference_candidate_mask_best_params.csv"
 TBM_BEST_PARAMS_CSV = REPORTS_DIR / "tbm_best_params.csv"
 TBM_BEST_PARAMS_PER_BUCKET_CSV = REPORTS_DIR / "tbm_best_params_per_bucket.csv"
 TBM_BEST_PARAMS_PER_CELL_CSV = REPORTS_DIR / "tbm_best_params_per_cell.csv"
@@ -201,7 +202,7 @@ def load_tbm_best_params_per_bucket() -> Dict[str, Dict[str, Any]]:
 def load_tbm_best_params_per_cell() -> Dict[str, Dict[str, Any]]:
     """Load per-cell best TBM params from tbm_best_params_per_cell.csv.
 
-    Returns a dict keyed by cell name (e.g. 'TF_long_H4', 'MR_short_H8').
+    Returns a dict keyed by cell name (e.g. 'TF_long_H4', 'MR_short_H2').
     Each value is a dict of barrier params ready for injection into cfg.
     Falls back to per-bucket params if the cell-specific file is missing.
     """
@@ -343,7 +344,13 @@ def apply_offline_optimizer_best_params(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
     cand = _read_best_params_csv(CANDIDATE_BEST_PARAMS_CSV)
     if cand:
-        for key in ("train_extreme_pct_hourly", "train_min_range_pct", "train_min_vol_zscore"):
+        for key in (
+            "train_extreme_pct_hourly",
+            "train_min_move_12h_pct",
+            "train_min_range_pct",
+            "train_min_vol_zscore",
+            "train_candidate_metric",
+        ):
             if key in cand and cand[key] is not None:
                 merged[key] = cand[key]
 

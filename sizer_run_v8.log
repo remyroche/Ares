@@ -1,0 +1,393 @@
+[2026-03-08 14:52:50 UTC] ================================================================================
+[2026-03-08 14:52:50 UTC] RIDGE POSITION SIZER RUNNER
+[2026-03-08 14:52:50 UTC] ================================================================================
+[2026-03-08 14:52:50 UTC] Using run ID: 20260213_080000
+[2026-03-08 14:52:50 UTC] Loaded base OOF predictions for 4 buckets: ['long_mr', 'long_tf', 'short_mr', 'short_tf']
+[2026-03-08 14:52:50 UTC] WARNING: Meta classifier probabilities (oof_p_sl/oof_p_to/oof_p_tp) not found in meta OOF artifacts; continuing with regression/aux heads only.
+[2026-03-08 14:52:51 UTC]   Successfully recovered timestamps for long_tf from exh_down.parquet
+[2026-03-08 14:52:51 UTC]   Merged base OOF metadata/features into long_tf (base: long_tf)
+[2026-03-08 14:52:51 UTC]   Successfully recovered timestamps for short_mr from exh_down.parquet
+[2026-03-08 14:52:51 UTC]   Merged base OOF metadata/features into short_mr (base: short_mr)
+[2026-03-08 14:52:51 UTC]   Successfully recovered timestamps for short_tf from exh_down.parquet
+[2026-03-08 14:52:51 UTC]   Merged base OOF metadata/features into short_tf (base: short_tf)
+[2026-03-08 14:52:51 UTC]   Successfully recovered timestamps for long_mr from exh_down.parquet
+[2026-03-08 14:52:51 UTC]   Merged base OOF metadata/features into long_mr (base: long_mr)
+[2026-03-08 14:52:51 UTC] Loaded OOF predictions for 4 buckets: ['long_tf', 'short_mr', 'short_tf', 'long_mr']
+[2026-03-08 14:52:51 UTC] Entering function: retry_with_backoff in utils.py
+[2026-03-08 14:52:52 UTC] Position sizer fetching 49 missing config features...
+[2026-03-08 14:52:52 UTC] load_features_selected: in_dir not found: data/features/20260213_080000 (cwd=/Users/remyroche/Documents/Ares)
+[2026-03-08 14:52:52 UTC]   long_tf: 1830 samples, pred_cols=['clf', 'reg_H2', 'reg_H4', 'reg_H8', 'reg_mean', 'reg_std', 'reg_range', 'reg_sign_agree', 'reg_clf_agree', 'base_H2', 'base_H4', 'base_H8']
+[2026-03-08 14:52:52 UTC]   short_mr: 1830 samples, pred_cols=['clf', 'reg_H2', 'reg_H4', 'reg_H8', 'reg_mean', 'reg_std', 'reg_range', 'reg_sign_agree', 'reg_clf_agree', 'base_H2', 'base_H4', 'base_H8']
+[2026-03-08 14:52:52 UTC]   short_tf: 2282 samples, pred_cols=['clf', 'reg_H2', 'reg_H4', 'reg_H8', 'reg_mean', 'reg_std', 'reg_range', 'reg_sign_agree', 'reg_clf_agree', 'base_H2', 'base_H4', 'base_H8']
+[2026-03-08 14:52:52 UTC]   long_mr: 2282 samples, pred_cols=['clf', 'reg_H2', 'reg_H4', 'reg_H8', 'reg_mean', 'reg_std', 'reg_range', 'reg_sign_agree', 'reg_clf_agree', 'base_H2', 'base_H4', 'base_H8']
+[2026-03-08 14:52:52 UTC] ================================================================================
+[2026-03-08 14:52:52 UTC] Ridge Position Sizer — direction: LONG (['long_tf', 'long_mr'])
+[2026-03-08 14:52:52 UTC] Constructed base trade outcomes from OOF context: 1830 trades
+[2026-03-08 14:52:52 UTC] Populating 15m future paths for policy optimization from HF data cache...
+[2026-03-08 14:53:04 UTC]   long_tf: 1830 rows, features=['clf', 'reg_H2', 'reg_H4', 'reg_H8', 'reg_mean', 'reg_std', 'reg_range', 'reg_sign_agree', 'reg_clf_agree', 'base_H2', 'base_H4', 'base_H8']
+[2026-03-08 14:53:04 UTC] ================================================================================
+[2026-03-08 14:53:04 UTC] RIDGE POSITION SIZER STEP
+[2026-03-08 14:53:04 UTC] ================================================================================
+[2026-03-08 14:53:04 UTC] Starting label policy optimization over grid of 192 candidate policies...
+[2026-03-08 14:53:05 UTC]   Optimized 10/192 policies. Best so far: j_stable=-284994.178205 (j_mean=-282123.117954, j_std=5742.120502; q05 pnl=0.000000 sortino=-29024288.908 j=-290242.889080; q10 pnl=0.000000 sortino=-27796368.621 j=-277963.686212; q30 pnl=0.000000 sortino=-27816277.857 j=-278162.778571) params=[sl_atr=0.80, tp_sl=1.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=8, early_mfe=0.30] rates=[tp=7.16%, sl=9.62%, trail=24.86%, early=57.49%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:05 UTC]   Optimized 20/192 policies. Best so far: j_stable=-145351.793792 (j_mean=-134883.388030, j_std=20936.811525; q05 pnl=0.000000 sortino=-16311519.248 j=-163115.192478; q10 pnl=0.000000 sortino=-11303773.624 j=-113037.736235; q30 pnl=0.000000 sortino=-12849723.538 j=-128497.235377) params=[sl_atr=0.80, tp_sl=1.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.30] rates=[tp=7.16%, sl=10.05%, trail=29.78%, early=52.13%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:05 UTC]   Optimized 30/192 policies. Best so far: j_stable=-129514.445204 (j_mean=-120183.933456, j_std=18661.023497; q05 pnl=0.000000 sortino=-14454953.929 j=-144549.539287; q10 pnl=0.000000 sortino=-9922111.708 j=-99221.117085; q30 pnl=0.000000 sortino=-11678114.400 j=-116781.143996) params=[sl_atr=0.80, tp_sl=2.00, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.30] rates=[tp=6.12%, sl=10.05%, trail=30.82%, early=52.13%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:05 UTC]   Optimized 40/192 policies. Best so far: j_stable=-129514.445204 (j_mean=-120183.933456, j_std=18661.023497; q05 pnl=0.000000 sortino=-14454953.929 j=-144549.539287; q10 pnl=0.000000 sortino=-9922111.708 j=-99221.117085; q30 pnl=0.000000 sortino=-11678114.400 j=-116781.143996) params=[sl_atr=0.80, tp_sl=2.00, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.30] rates=[tp=6.12%, sl=10.05%, trail=30.82%, early=52.13%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:05 UTC]   Optimized 50/192 policies. Best so far: j_stable=-117054.434996 (j_mean=-108364.394077, j_std=17380.081838; q05 pnl=0.000000 sortino=-13001813.544 j=-130018.135444; q10 pnl=0.000000 sortino=-8746590.581 j=-87465.905815; q30 pnl=0.000000 sortino=-10760914.097 j=-107609.140974) params=[sl_atr=0.80, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.30] rates=[tp=5.41%, sl=10.05%, trail=31.53%, early=52.13%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:05 UTC]   Optimized 60/192 policies. Best so far: j_stable=-100217.438766 (j_mean=-94395.207532, j_std=11644.462468; q05 pnl=0.000000 sortino=-10685423.498 j=-106854.234985; q10 pnl=0.000000 sortino=-7883993.724 j=-78839.937243; q30 pnl=0.000000 sortino=-9749145.037 j=-97491.450368) params=[sl_atr=1.20, tp_sl=1.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.30] rates=[tp=6.01%, sl=8.47%, trail=32.51%, early=52.13%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:05 UTC]   Optimized 70/192 policies. Best so far: j_stable=-100217.438766 (j_mean=-94395.207532, j_std=11644.462468; q05 pnl=0.000000 sortino=-10685423.498 j=-106854.234985; q10 pnl=0.000000 sortino=-7883993.724 j=-78839.937243; q30 pnl=0.000000 sortino=-9749145.037 j=-97491.450368) params=[sl_atr=1.20, tp_sl=1.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.30] rates=[tp=6.01%, sl=8.47%, trail=32.51%, early=52.13%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:05 UTC]   Optimized 80/192 policies. Best so far: j_stable=-82159.363511 (j_mean=-76760.564465, j_std=10797.598092; q05 pnl=0.000000 sortino=-8695420.689 j=-86954.206890; q10 pnl=0.000000 sortino=-6181745.322 j=-61817.453219; q30 pnl=0.000000 sortino=-8151003.329 j=-81510.033286) params=[sl_atr=1.20, tp_sl=2.00, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.30] rates=[tp=5.19%, sl=8.47%, trail=33.33%, early=52.13%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:05 UTC]   Optimized 90/192 policies. Best so far: j_stable=-82159.363511 (j_mean=-76760.564465, j_std=10797.598092; q05 pnl=0.000000 sortino=-8695420.689 j=-86954.206890; q10 pnl=0.000000 sortino=-6181745.322 j=-61817.453219; q30 pnl=0.000000 sortino=-8151003.329 j=-81510.033286) params=[sl_atr=1.20, tp_sl=2.00, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.30] rates=[tp=5.19%, sl=8.47%, trail=33.33%, early=52.13%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:05 UTC]   Optimized 100/192 policies. Best so far: j_stable=-65505.807184 (j_mean=-60090.726486, j_std=10830.161395; q05 pnl=0.000000 sortino=-6705417.832 j=-67054.178320; q10 pnl=0.000000 sortino=-4479496.876 j=-44794.968756; q30 pnl=0.000000 sortino=-6842303.238 j=-68423.032384) params=[sl_atr=1.20, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.30] rates=[tp=4.75%, sl=8.47%, trail=33.77%, early=52.13%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:05 UTC]   Optimized 110/192 policies. Best so far: j_stable=-61498.128213 (j_mean=-55095.221416, j_std=12805.813593; q05 pnl=0.000000 sortino=-7152622.249 j=-71526.222485; q10 pnl=0.000000 sortino=-4028427.203 j=-40284.272028; q30 pnl=0.000000 sortino=-5347516.973 j=-53475.169735) params=[sl_atr=1.60, tp_sl=1.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.30] rates=[tp=5.96%, sl=6.34%, trail=34.70%, early=52.13%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:05 UTC]   Optimized 120/192 policies. Best so far: j_stable=-61498.128213 (j_mean=-55095.221416, j_std=12805.813593; q05 pnl=0.000000 sortino=-7152622.249 j=-71526.222485; q10 pnl=0.000000 sortino=-4028427.203 j=-40284.272028; q30 pnl=0.000000 sortino=-5347516.973 j=-53475.169735) params=[sl_atr=1.60, tp_sl=1.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.30] rates=[tp=5.96%, sl=6.34%, trail=34.70%, early=52.13%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:05 UTC]   Optimized 130/192 policies. Best so far: j_stable=-38966.607868 (j_mean=-32844.019752, j_std=12245.176232; q05 pnl=0.000000 sortino=-4645261.504 j=-46452.615039; q10 pnl=0.000000 sortino=-1676496.539 j=-16764.965391; q30 pnl=0.000000 sortino=-3531447.883 j=-35314.478826) params=[sl_atr=1.60, tp_sl=2.00, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.30] rates=[tp=4.81%, sl=6.34%, trail=35.85%, early=52.13%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:05 UTC]   Optimized 140/192 policies. Best so far: j_stable=-31775.057204 (j_mean=-24440.082060, j_std=14669.950288; q05 pnl=0.000000 sortino=-4227345.983 j=-42273.459831; q10 pnl=0.000000 sortino=-634248.145 j=-6342.481448; q30 pnl=0.000000 sortino=-2470430.490 j=-24704.304899) params=[sl_atr=1.60, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.30] rates=[tp=4.21%, sl=6.34%, trail=36.45%, early=52.13%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:05 UTC]   Optimized 150/192 policies. Best so far: j_stable=-31775.057204 (j_mean=-24440.082060, j_std=14669.950288; q05 pnl=0.000000 sortino=-4227345.983 j=-42273.459831; q10 pnl=0.000000 sortino=-634248.145 j=-6342.481448; q30 pnl=0.000000 sortino=-2470430.490 j=-24704.304899) params=[sl_atr=1.60, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.30] rates=[tp=4.21%, sl=6.34%, trail=36.45%, early=52.13%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:05 UTC]   Optimized 160/192 policies. Best so far: j_stable=-31775.057204 (j_mean=-24440.082060, j_std=14669.950288; q05 pnl=0.000000 sortino=-4227345.983 j=-42273.459831; q10 pnl=0.000000 sortino=-634248.145 j=-6342.481448; q30 pnl=0.000000 sortino=-2470430.490 j=-24704.304899) params=[sl_atr=1.60, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.30] rates=[tp=4.21%, sl=6.34%, trail=36.45%, early=52.13%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:05 UTC]   Optimized 170/192 policies. Best so far: j_stable=-31775.057204 (j_mean=-24440.082060, j_std=14669.950288; q05 pnl=0.000000 sortino=-4227345.983 j=-42273.459831; q10 pnl=0.000000 sortino=-634248.145 j=-6342.481448; q30 pnl=0.000000 sortino=-2470430.490 j=-24704.304899) params=[sl_atr=1.60, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.30] rates=[tp=4.21%, sl=6.34%, trail=36.45%, early=52.13%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:05 UTC]   Optimized 180/192 policies. Best so far: j_stable=-26718.841278 (j_mean=-20034.657029, j_std=13368.368498; q05 pnl=0.000000 sortino=-3718145.491 j=-37181.454907; q10 pnl=0.000000 sortino=-456485.277 j=-4564.852770; q30 pnl=0.000000 sortino=-1835766.341 j=-18357.663409) params=[sl_atr=2.00, tp_sl=2.00, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.30] rates=[tp=4.32%, sl=5.85%, trail=36.83%, early=52.13%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:05 UTC]   Optimized 190/192 policies. Best so far: j_stable=-18870.752378 (j_mean=-11004.814993, j_std=15731.874769; q05 pnl=0.000000 sortino=-3226421.723 j=-32264.217229; q10 pnl=0.000000 sortino=530521.957 j=5305.219572; q30 pnl=0.000000 sortino=-605544.732 j=-6055.447323) params=[sl_atr=2.00, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.30] rates=[tp=3.66%, sl=5.85%, trail=37.49%, early=52.13%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:05 UTC]   Optimized 192/192 policies. Best so far: j_stable=-18870.752378 (j_mean=-11004.814993, j_std=15731.874769; q05 pnl=0.000000 sortino=-3226421.723 j=-32264.217229; q10 pnl=0.000000 sortino=530521.957 j=5305.219572; q30 pnl=0.000000 sortino=-605544.732 j=-6055.447323) params=[sl_atr=2.00, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.30] rates=[tp=3.66%, sl=5.85%, trail=37.49%, early=52.13%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:05 UTC] Label policy optimizer selected policy with j_stable=-18870.752378 using 12 features and target=u_policy_net
+[2026-03-08 14:53:05 UTC] Label policy optimization completed before Ridge training
+[2026-03-08 14:53:05 UTC] Sizer.fit: trade_outcomes has 1830 rows, timestamps is len=1830
+[2026-03-08 14:53:05 UTC] RidgePositionSizer.fit: Starting...
+[2026-03-08 14:53:05 UTC]   Using returns from trade_outcomes (net): mean=-0.000076, std=0.021332
+[2026-03-08 14:53:05 UTC]   Running target representation race...
+[2026-03-08 14:53:06 UTC]     Ridge target race: 8 candidates
+[2026-03-08 14:53:06 UTC]       winsorized: IC=0.0400 TopQMeanU=0.000780 (std=0.002370) score=-0.000405 P@30=0.433 Lift@30=1.082 gate=True
+[2026-03-08 14:53:06 UTC]       winsorized_voladj: IC=0.0818 TopQMeanU=0.004222 (std=0.000831) score=0.003807 P@30=0.464 Lift@30=1.159 gate=True
+[2026-03-08 14:53:06 UTC]       huber_adv: IC=0.0000 TopQMeanU=-0.001484 (std=0.003142) score=-1000000000000.000000 P@30=0.375 Lift@30=0.937 gate=False
+[2026-03-08 14:53:06 UTC]       huber_adv_voladj: IC=0.0000 TopQMeanU=-0.001484 (std=0.003142) score=-1000000000000.000000 P@30=0.375 Lift@30=0.937 gate=False
+[2026-03-08 14:53:06 UTC]       rolling_rank: IC=0.0000 TopQMeanU=-0.001484 (std=0.003142) score=-1000000000000.000000 P@30=0.375 Lift@30=0.937 gate=False
+[2026-03-08 14:53:06 UTC]       rolling_rank_voladj: IC=0.0000 TopQMeanU=-0.001484 (std=0.003142) score=-1000000000000.000000 P@30=0.375 Lift@30=0.937 gate=False
+[2026-03-08 14:53:06 UTC]       rank_residual: IC=0.0000 TopQMeanU=-0.001484 (std=0.003142) score=-1000000000000.000000 P@30=0.375 Lift@30=0.937 gate=False
+[2026-03-08 14:53:06 UTC]       rank_residual_voladj: IC=0.0000 TopQMeanU=-0.001484 (std=0.003142) score=-1000000000000.000000 P@30=0.375 Lift@30=0.937 gate=False
+[2026-03-08 14:53:06 UTC]     Winner: winsorized_voladj (score=0.003807, metric=topq_u_policy)
+[2026-03-08 14:53:06 UTC]   Using policy-aware utility labels (u_policy) as authoritative Ridge target
+[2026-03-08 14:53:06 UTC]   Stage 1 HPO: evaluating 100 core combinations with 1-fold CV...
+[2026-03-08 14:53:08 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0970, global_avg_pos_frac=0.0212
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=343, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:53:08 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0761, global_avg_pos_frac=0.0334
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=123, n_max_positions=1
+  - n_trades=219, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:53:10 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=351, n_active=88, avg_return_raw=0.003165, avg_active_pos=0.0946, total_pnl=-0.004462, pnl_per_day=-0.004462, trades_per_day=351.00
+[2026-03-08 14:53:10 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=196, n_active=90, avg_return_raw=0.004668, avg_active_pos=0.0742, total_pnl=-0.004662, pnl_per_day=-0.004662, trades_per_day=196.00
+[2026-03-08 14:53:11 UTC]   long_tf failed: cannot access free variable 'row' where it is not associated with a value in enclosing scope
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/run_ridge_sizer.py", line 994, in main
+    sizer, metrics = run_ridge_position_sizer_step(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 7476, in run_ridge_position_sizer_step
+    sizer.fit(oof_preds, trade_outcomes, timestamps=timestamps, groups=groups,
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 4657, in fit
+    stage1_df, best_core_params = _run_stage1_hpo()
+                                  ^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 4574, in _run_stage1_hpo
+    study_stage1.optimize(
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/study.py", line 451, in optimize
+    _optimize(
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 99, in _optimize
+    f.result()
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 170, in _optimize_sequential
+    callback(study, frozen_trial)
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 4482, in __call__
+    f"Score={obj:.6f}, {pnl_label}={pnl*100.0:.2f}%, Sortino={sortino:.3f}, {trades_label}={trades_per_day:.2f}, WinRate={row.get('WinRate', 0.0):.1%}, "
+                                                                                                                          ^^^
+NameError: cannot access free variable 'row' where it is not associated with a value in enclosing scope
+[2026-03-08 14:53:11 UTC] Constructed base trade outcomes from OOF context: 2282 trades
+[2026-03-08 14:53:11 UTC] Populating 15m future paths for policy optimization from HF data cache...
+[2026-03-08 14:53:18 UTC]   long_mr: 2282 rows, features=['clf', 'reg_H2', 'reg_H4', 'reg_H8', 'reg_mean', 'reg_std', 'reg_range', 'reg_sign_agree', 'reg_clf_agree', 'base_H2', 'base_H4', 'base_H8']
+[2026-03-08 14:53:18 UTC] ================================================================================
+[2026-03-08 14:53:18 UTC] RIDGE POSITION SIZER STEP
+[2026-03-08 14:53:18 UTC] ================================================================================
+[2026-03-08 14:53:18 UTC] Starting label policy optimization over grid of 192 candidate policies...
+[2026-03-08 14:53:18 UTC]   Optimized 10/192 policies. Best so far: j_stable=-227116.536860 (j_mean=-175550.034915, j_std=103133.003890; q05 pnl=0.000000 sortino=-7849107.146 j=-78491.071457; q10 pnl=0.000000 sortino=-12979646.967 j=-129796.469671; q30 pnl=0.000000 sortino=-31836256.362 j=-318362.563616) params=[sl_atr=0.80, tp_sl=1.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=8, early_mfe=0.50] rates=[tp=6.44%, sl=10.08%, trail=19.54%, early=63.10%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:18 UTC]   Optimized 20/192 policies. Best so far: j_stable=-156542.224572 (j_mean=-111824.528428, j_std=89435.392288; q05 pnl=0.000000 sortino=-3669842.262 j=-36698.422625; q10 pnl=0.000000 sortino=-6126786.015 j=-61267.860151; q30 pnl=0.000000 sortino=-23750730.251 j=-237507.302509) params=[sl_atr=0.80, tp_sl=1.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=6.44%, sl=10.43%, trail=22.74%, early=59.55%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:18 UTC]   Optimized 30/192 policies. Best so far: j_stable=-136839.332730 (j_mean=-88256.106249, j_std=97166.452961; q05 pnl=0.000000 sortino=-213071.608 j=-2130.716076; q10 pnl=0.000000 sortino=-3858912.838 j=-38589.128376; q30 pnl=0.000000 sortino=-22404847.430 j=-224048.474296) params=[sl_atr=0.80, tp_sl=2.00, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=5.52%, sl=10.43%, trail=23.66%, early=59.55%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:18 UTC]   Optimized 40/192 policies. Best so far: j_stable=-136839.332730 (j_mean=-88256.106249, j_std=97166.452961; q05 pnl=0.000000 sortino=-213071.608 j=-2130.716076; q10 pnl=0.000000 sortino=-3858912.838 j=-38589.128376; q30 pnl=0.000000 sortino=-22404847.430 j=-224048.474296) params=[sl_atr=0.80, tp_sl=2.00, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=5.52%, sl=10.43%, trail=23.66%, early=59.55%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:18 UTC]   Optimized 50/192 policies. Best so far: j_stable=-119953.941233 (j_mean=-67558.146974, j_std=104791.588518; q05 pnl=0.000000 sortino=2930160.741 j=29301.607410; q10 pnl=0.000000 sortino=-1885123.133 j=-18851.231333; q30 pnl=0.000000 sortino=-21312481.700 j=-213124.816999) params=[sl_atr=0.80, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=4.91%, sl=10.43%, trail=24.28%, early=59.55%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:18 UTC]   Optimized 60/192 policies. Best so far: j_stable=-113954.890050 (j_mean=-61905.067589, j_std=104099.644921; q05 pnl=0.000000 sortino=3810463.836 j=38104.638361; q10 pnl=0.000000 sortino=-1834898.777 j=-18348.987767; q30 pnl=0.000000 sortino=-20547085.336 j=-205470.853361) params=[sl_atr=1.20, tp_sl=1.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=5.52%, sl=8.81%, trail=25.28%, early=59.55%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:18 UTC]   Optimized 70/192 policies. Best so far: j_stable=-113954.890050 (j_mean=-61905.067589, j_std=104099.644921; q05 pnl=0.000000 sortino=3810463.836 j=38104.638361; q10 pnl=0.000000 sortino=-1834898.777 j=-18348.987767; q30 pnl=0.000000 sortino=-20547085.336 j=-205470.853361) params=[sl_atr=1.20, tp_sl=1.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=5.52%, sl=8.81%, trail=25.28%, early=59.55%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:18 UTC]   Optimized 80/192 policies. Best so far: j_stable=-88234.514443 (j_mean=-30974.344838, j_std=114520.339209; q05 pnl=0.000000 sortino=8386193.792 j=83861.937917; q10 pnl=0.000000 sortino=1051066.470 j=10510.664698; q30 pnl=0.000000 sortino=-18729563.713 j=-187295.637131) params=[sl_atr=1.20, tp_sl=2.00, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=4.56%, sl=8.81%, trail=26.25%, early=59.55%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:18 UTC]   Optimized 90/192 policies. Best so far: j_stable=-88234.514443 (j_mean=-30974.344838, j_std=114520.339209; q05 pnl=0.000000 sortino=8386193.792 j=83861.937917; q10 pnl=0.000000 sortino=1051066.470 j=10510.664698; q30 pnl=0.000000 sortino=-18729563.713 j=-187295.637131) params=[sl_atr=1.20, tp_sl=2.00, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=4.56%, sl=8.81%, trail=26.25%, early=59.55%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:18 UTC]   Optimized 100/192 policies. Best so far: j_stable=-66992.907305 (j_mean=-5127.098899, j_std=123731.616812; q05 pnl=0.000000 sortino=12195836.495 j=121958.364951; q10 pnl=0.000000 sortino=3549942.163 j=35499.421630; q30 pnl=0.000000 sortino=-17283908.328 j=-172839.083279) params=[sl_atr=1.20, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=4.16%, sl=8.81%, trail=26.64%, early=59.55%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:18 UTC]   Optimized 110/192 policies. Best so far: j_stable=-66992.907305 (j_mean=-5127.098899, j_std=123731.616812; q05 pnl=0.000000 sortino=12195836.495 j=121958.364951; q10 pnl=0.000000 sortino=3549942.163 j=35499.421630; q30 pnl=0.000000 sortino=-17283908.328 j=-172839.083279) params=[sl_atr=1.20, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=4.16%, sl=8.81%, trail=26.64%, early=59.55%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:18 UTC]   Optimized 120/192 policies. Best so far: j_stable=-66992.907305 (j_mean=-5127.098899, j_std=123731.616812; q05 pnl=0.000000 sortino=12195836.495 j=121958.364951; q10 pnl=0.000000 sortino=3549942.163 j=35499.421630; q30 pnl=0.000000 sortino=-17283908.328 j=-172839.083279) params=[sl_atr=1.20, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=4.16%, sl=8.81%, trail=26.64%, early=59.55%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:18 UTC]   Optimized 130/192 policies. Best so far: j_stable=-46328.066369 (j_mean=12545.140563, j_std=117746.413864; q05 pnl=0.000000 sortino=13493405.827 j=134934.058267; q10 pnl=0.000000 sortino=4913637.383 j=49136.373835; q30 pnl=0.000000 sortino=-14643501.041 j=-146435.010414) params=[sl_atr=1.60, tp_sl=2.00, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=4.16%, sl=6.92%, trail=28.53%, early=59.55%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:18 UTC]   Optimized 140/192 policies. Best so far: j_stable=-37977.921479 (j_mean=20168.160517, j_std=116292.163991; q05 pnl=0.000000 sortino=13968908.492 j=139689.084919; q10 pnl=0.000000 sortino=5824359.449 j=58243.594495; q30 pnl=0.000000 sortino=-13742819.786 j=-137428.197864) params=[sl_atr=1.60, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=3.55%, sl=6.92%, trail=29.14%, early=59.55%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:18 UTC]   Optimized 150/192 policies. Best so far: j_stable=-37977.921479 (j_mean=20168.160517, j_std=116292.163991; q05 pnl=0.000000 sortino=13968908.492 j=139689.084919; q10 pnl=0.000000 sortino=5824359.449 j=58243.594495; q30 pnl=0.000000 sortino=-13742819.786 j=-137428.197864) params=[sl_atr=1.60, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=3.55%, sl=6.92%, trail=29.14%, early=59.55%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:18 UTC]   Optimized 160/192 policies. Best so far: j_stable=-37977.921479 (j_mean=20168.160517, j_std=116292.163991; q05 pnl=0.000000 sortino=13968908.492 j=139689.084919; q10 pnl=0.000000 sortino=5824359.449 j=58243.594495; q30 pnl=0.000000 sortino=-13742819.786 j=-137428.197864) params=[sl_atr=1.60, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=3.55%, sl=6.92%, trail=29.14%, early=59.55%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:18 UTC]   Optimized 170/192 policies. Best so far: j_stable=-37977.921479 (j_mean=20168.160517, j_std=116292.163991; q05 pnl=0.000000 sortino=13968908.492 j=139689.084919; q10 pnl=0.000000 sortino=5824359.449 j=58243.594495; q30 pnl=0.000000 sortino=-13742819.786 j=-137428.197864) params=[sl_atr=1.60, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=3.55%, sl=6.92%, trail=29.14%, early=59.55%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:18 UTC]   Optimized 180/192 policies. Best so far: j_stable=-33495.233367 (j_mean=24625.322936, j_std=116241.112607; q05 pnl=0.000000 sortino=14338424.423 j=143384.244232; q10 pnl=0.000000 sortino=6368484.516 j=63684.845163; q30 pnl=0.000000 sortino=-13319312.059 j=-133193.120587) params=[sl_atr=2.00, tp_sl=2.00, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=3.64%, sl=6.35%, trail=29.62%, early=59.55%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:18 UTC]   Optimized 190/192 policies. Best so far: j_stable=-25124.683501 (j_mean=31856.737037, j_std=113962.841077; q05 pnl=0.000000 sortino=14753234.961 j=147532.349609; q10 pnl=0.000000 sortino=7120770.691 j=71207.706911; q30 pnl=0.000000 sortino=-12316984.541 j=-123169.845409) params=[sl_atr=2.00, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=3.02%, sl=6.35%, trail=30.24%, early=59.55%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:18 UTC]   Optimized 192/192 policies. Best so far: j_stable=-25124.683501 (j_mean=31856.737037, j_std=113962.841077; q05 pnl=0.000000 sortino=14753234.961 j=147532.349609; q10 pnl=0.000000 sortino=7120770.691 j=71207.706911; q30 pnl=0.000000 sortino=-12316984.541 j=-123169.845409) params=[sl_atr=2.00, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=3.02%, sl=6.35%, trail=30.24%, early=59.55%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=False prefilter=none
+[2026-03-08 14:53:18 UTC] Label policy optimizer selected policy with j_stable=-25124.683501 using 12 features and target=u_policy_net
+[2026-03-08 14:53:18 UTC] Label policy optimization completed before Ridge training
+[2026-03-08 14:53:18 UTC] Sizer.fit: trade_outcomes has 2282 rows, timestamps is len=2282
+[2026-03-08 14:53:18 UTC] RidgePositionSizer.fit: Starting...
+[2026-03-08 14:53:18 UTC]   Using returns from trade_outcomes (net): mean=0.000829, std=0.017134
+[2026-03-08 14:53:18 UTC]   Running target representation race...
+[2026-03-08 14:53:19 UTC]     Ridge target race: 8 candidates
+[2026-03-08 14:53:19 UTC]       winsorized: IC=-0.0312 TopQMeanU=0.005036 (std=0.002094) score=0.003990 P@30=0.470 Lift@30=0.935 gate=True
+[2026-03-08 14:53:19 UTC]       winsorized_voladj: IC=-0.0039 TopQMeanU=0.004375 (std=0.002084) score=0.003333 P@30=0.522 Lift@30=1.038 gate=True
+[2026-03-08 14:53:19 UTC]       huber_adv: IC=0.0000 TopQMeanU=0.007221 (std=0.003879) score=0.005281 P@30=0.566 Lift@30=1.125 gate=True
+[2026-03-08 14:53:19 UTC]       huber_adv_voladj: IC=0.0000 TopQMeanU=0.007221 (std=0.003879) score=0.005281 P@30=0.566 Lift@30=1.125 gate=True
+[2026-03-08 14:53:19 UTC]       rolling_rank: IC=0.0000 TopQMeanU=0.007221 (std=0.003879) score=0.005281 P@30=0.566 Lift@30=1.125 gate=True
+[2026-03-08 14:53:19 UTC]       rolling_rank_voladj: IC=0.0000 TopQMeanU=0.007221 (std=0.003879) score=0.005281 P@30=0.566 Lift@30=1.125 gate=True
+[2026-03-08 14:53:19 UTC]       rank_residual: IC=0.0000 TopQMeanU=0.007221 (std=0.003879) score=0.005281 P@30=0.566 Lift@30=1.125 gate=True
+[2026-03-08 14:53:19 UTC]       rank_residual_voladj: IC=0.0000 TopQMeanU=0.007221 (std=0.003879) score=0.005281 P@30=0.566 Lift@30=1.125 gate=True
+[2026-03-08 14:53:19 UTC]     Winner: huber_adv (score=0.005281, metric=topq_u_policy)
+[2026-03-08 14:53:19 UTC]   Using policy-aware utility labels (u_policy) as authoritative Ridge target
+[2026-03-08 14:53:19 UTC]   Stage 1 HPO: evaluating 100 core combinations with 1-fold CV...
+[2026-03-08 14:53:19 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1143, global_avg_pos_frac=0.0192
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=531, n_max_positions=1
+  - n_trades=638, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:53:19 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0860, global_avg_pos_frac=0.0337
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=166, n_max_positions=1
+  - n_trades=273, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:53:19 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=421, n_active=74, avg_return_raw=0.004261, avg_active_pos=0.1134, total_pnl=0.061499, pnl_per_day=0.061499, trades_per_day=421.00
+[2026-03-08 14:53:19 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=241, n_active=95, avg_return_raw=0.007507, avg_active_pos=0.0857, total_pnl=0.069475, pnl_per_day=0.069475, trades_per_day=241.00
+[2026-03-08 14:53:19 UTC]   long_mr failed: cannot access free variable 'row' where it is not associated with a value in enclosing scope
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/run_ridge_sizer.py", line 994, in main
+    sizer, metrics = run_ridge_position_sizer_step(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 7476, in run_ridge_position_sizer_step
+    sizer.fit(oof_preds, trade_outcomes, timestamps=timestamps, groups=groups,
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 4657, in fit
+    stage1_df, best_core_params = _run_stage1_hpo()
+                                  ^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 4574, in _run_stage1_hpo
+    study_stage1.optimize(
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/study.py", line 451, in optimize
+    _optimize(
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 99, in _optimize
+    f.result()
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 170, in _optimize_sequential
+    callback(study, frozen_trial)
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 4482, in __call__
+    f"Score={obj:.6f}, {pnl_label}={pnl*100.0:.2f}%, Sortino={sortino:.3f}, {trades_label}={trades_per_day:.2f}, WinRate={row.get('WinRate', 0.0):.1%}, "
+                                                                                                                          ^^^
+NameError: cannot access free variable 'row' where it is not associated with a value in enclosing scope
+[2026-03-08 14:53:19 UTC]   No weights produced for direction long, skipping
+[2026-03-08 14:53:19 UTC] ================================================================================
+[2026-03-08 14:53:19 UTC] Ridge Position Sizer — direction: SHORT (['short_mr', 'short_tf'])
+[2026-03-08 14:53:19 UTC] Constructed base trade outcomes from OOF context: 1830 trades
+[2026-03-08 14:53:19 UTC] Populating 15m future paths for policy optimization from HF data cache...
+[2026-03-08 14:53:26 UTC]   short_mr: 1830 rows, features=['clf', 'reg_H2', 'reg_H4', 'reg_H8', 'reg_mean', 'reg_std', 'reg_range', 'reg_sign_agree', 'reg_clf_agree', 'base_H2', 'base_H4', 'base_H8']
+[2026-03-08 14:53:26 UTC] ================================================================================
+[2026-03-08 14:53:26 UTC] RIDGE POSITION SIZER STEP
+[2026-03-08 14:53:26 UTC] ================================================================================
+[2026-03-08 14:53:26 UTC] Starting label policy optimization over grid of 192 candidate policies...
+[2026-03-08 14:53:26 UTC]   Optimized 10/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=0.80, tp_sl=1.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=8, early_mfe=0.50] rates=[tp=1.86%, sl=10.44%, trail=12.13%, early=74.70%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:26 UTC]   Optimized 20/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=0.80, tp_sl=2.00, hold=24, trail_atr=0.80, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=3.44%, sl=20.87%, trail=0.00%, early=72.68%, timeout=3.01%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=trail_outside_[1%,80%]|cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:26 UTC]   Optimized 30/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=0.80, tp_sl=2.00, hold=24, trail_atr=1.20, giveback=0.50, early_deadline=8, early_mfe=0.50] rates=[tp=0.98%, sl=10.44%, trail=13.01%, early=74.70%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:26 UTC]   Optimized 40/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=0.80, tp_sl=2.50, hold=24, trail_atr=0.80, giveback=0.50, early_deadline=12, early_mfe=0.50] rates=[tp=2.62%, sl=21.48%, trail=0.00%, early=72.68%, timeout=3.22%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=trail_outside_[1%,80%]|giveback>0.5x_trail_activate|trail_activate<2x_giveback|cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:26 UTC]   Optimized 50/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=1.20, tp_sl=1.50, hold=24, trail_atr=0.80, giveback=0.35, early_deadline=8, early_mfe=0.50] rates=[tp=4.43%, sl=17.05%, trail=0.00%, early=74.70%, timeout=3.83%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=trail_outside_[1%,80%]|cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:26 UTC]   Optimized 60/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=1.20, tp_sl=1.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=0.98%, sl=10.38%, trail=15.08%, early=72.68%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:26 UTC]   Optimized 70/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=1.20, tp_sl=2.00, hold=24, trail_atr=0.80, giveback=0.50, early_deadline=8, early_mfe=0.50] rates=[tp=2.51%, sl=18.63%, trail=0.00%, early=74.70%, timeout=4.15%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=trail_outside_[1%,80%]|giveback>0.5x_trail_activate|trail_activate<2x_giveback|cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:26 UTC]   Optimized 80/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=1.20, tp_sl=2.00, hold=24, trail_atr=1.20, giveback=0.50, early_deadline=12, early_mfe=0.50] rates=[tp=0.60%, sl=10.38%, trail=15.46%, early=72.68%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:26 UTC]   Optimized 90/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=1.20, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=8, early_mfe=0.50] rates=[tp=0.33%, sl=9.18%, trail=14.92%, early=74.70%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:26 UTC]   Optimized 100/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=1.60, tp_sl=1.50, hold=24, trail_atr=0.80, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=3.61%, sl=18.47%, trail=0.00%, early=72.68%, timeout=5.25%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=trail_outside_[1%,80%]|cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:26 UTC]   Optimized 110/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=1.60, tp_sl=1.50, hold=24, trail_atr=1.20, giveback=0.50, early_deadline=8, early_mfe=0.50] rates=[tp=1.37%, sl=7.10%, trail=15.96%, early=74.70%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:26 UTC]   Optimized 120/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=1.60, tp_sl=2.00, hold=24, trail_atr=0.80, giveback=0.50, early_deadline=12, early_mfe=0.50] rates=[tp=2.57%, sl=19.29%, trail=0.00%, early=72.68%, timeout=5.46%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=trail_outside_[1%,80%]|giveback>0.5x_trail_activate|trail_activate<2x_giveback|cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:26 UTC]   Optimized 130/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=1.60, tp_sl=2.50, hold=24, trail_atr=0.80, giveback=0.35, early_deadline=8, early_mfe=0.50] rates=[tp=1.97%, sl=18.25%, trail=0.00%, early=74.70%, timeout=5.08%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=trail_outside_[1%,80%]|cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:26 UTC]   Optimized 140/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=1.60, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=0.66%, sl=8.25%, trail=17.54%, early=72.68%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:26 UTC]   Optimized 150/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=2.00, tp_sl=1.50, hold=24, trail_atr=0.80, giveback=0.50, early_deadline=8, early_mfe=0.50] rates=[tp=3.06%, sl=16.12%, trail=0.00%, early=74.70%, timeout=6.12%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=trail_outside_[1%,80%]|giveback>0.5x_trail_activate|trail_activate<2x_giveback|cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:26 UTC]   Optimized 160/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=2.00, tp_sl=1.50, hold=24, trail_atr=1.20, giveback=0.50, early_deadline=12, early_mfe=0.50] rates=[tp=1.04%, sl=7.65%, trail=17.76%, early=72.68%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:26 UTC]   Optimized 170/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=2.00, tp_sl=2.00, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=8, early_mfe=0.50] rates=[tp=0.77%, sl=6.61%, trail=17.05%, early=74.70%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:26 UTC]   Optimized 180/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=2.00, tp_sl=2.50, hold=24, trail_atr=0.80, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=1.53%, sl=18.85%, trail=0.00%, early=72.68%, timeout=6.94%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=trail_outside_[1%,80%]|cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:26 UTC]   Optimized 190/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=2.00, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.50, early_deadline=8, early_mfe=0.50] rates=[tp=0.55%, sl=6.61%, trail=17.27%, early=74.70%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:26 UTC]   Optimized 192/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=2.00, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.50, early_deadline=12, early_mfe=0.50] rates=[tp=0.55%, sl=7.65%, trail=18.25%, early=72.68%, timeout=0.87%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:26 UTC] Warning: All policies were hard rejected. Selecting best rejected policy with j_stable=-1000000000.000000
+[2026-03-08 14:53:26 UTC] Label policy optimizer selected policy with j_stable=-1000000000.000000 using 12 features and target=u_policy_net
+[2026-03-08 14:53:26 UTC] Label policy optimization completed before Ridge training
+[2026-03-08 14:53:26 UTC] Sizer.fit: trade_outcomes has 1830 rows, timestamps is len=1830
+[2026-03-08 14:53:26 UTC] RidgePositionSizer.fit: Starting...
+[2026-03-08 14:53:26 UTC]   Using returns from trade_outcomes (net): mean=0.000159, std=0.017622
+[2026-03-08 14:53:26 UTC]   Running target representation race...
+[2026-03-08 14:53:27 UTC]     Ridge target race: 8 candidates
+[2026-03-08 14:53:27 UTC]       winsorized: IC=0.0557 TopQMeanU=-0.004317 (std=0.003517) score=-1000000000000.000000 P@30=0.481 Lift@30=1.067 gate=False
+[2026-03-08 14:53:27 UTC]       winsorized_voladj: IC=0.0288 TopQMeanU=-0.001548 (std=0.002533) score=-1000000000000.000000 P@30=0.440 Lift@30=0.977 gate=False
+[2026-03-08 14:53:27 UTC]       huber_adv: IC=0.0000 TopQMeanU=0.000258 (std=0.002406) score=-0.000945 P@30=0.464 Lift@30=1.030 gate=True
+[2026-03-08 14:53:27 UTC]       huber_adv_voladj: IC=0.0000 TopQMeanU=0.000258 (std=0.002406) score=-0.000945 P@30=0.464 Lift@30=1.030 gate=True
+[2026-03-08 14:53:27 UTC]       rolling_rank: IC=0.0000 TopQMeanU=0.000258 (std=0.002406) score=-0.000945 P@30=0.464 Lift@30=1.030 gate=True
+[2026-03-08 14:53:27 UTC]       rolling_rank_voladj: IC=0.0000 TopQMeanU=0.000258 (std=0.002406) score=-0.000945 P@30=0.464 Lift@30=1.030 gate=True
+[2026-03-08 14:53:27 UTC]       rank_residual: IC=0.0000 TopQMeanU=0.000258 (std=0.002406) score=-0.000945 P@30=0.464 Lift@30=1.030 gate=True
+[2026-03-08 14:53:27 UTC]       rank_residual_voladj: IC=0.0000 TopQMeanU=0.000258 (std=0.002406) score=-0.000945 P@30=0.464 Lift@30=1.030 gate=True
+[2026-03-08 14:53:27 UTC]     Winner: huber_adv (score=-0.000945, metric=topq_u_policy)
+[2026-03-08 14:53:27 UTC]   Using policy-aware utility labels (u_policy) as authoritative Ridge target
+[2026-03-08 14:53:27 UTC]   Stage 1 HPO: evaluating 100 core combinations with 1-fold CV...
+[2026-03-08 14:53:27 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0995, global_avg_pos_frac=0.0500
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=109, n_max_positions=1
+  - n_trades=219, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:53:27 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=196, n_active=101, avg_return_raw=0.002941, avg_active_pos=0.0981, total_pnl=0.015740, pnl_per_day=0.015740, trades_per_day=196.00
+[2026-03-08 14:53:27 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.1257, global_avg_pos_frac=0.0315
+  - range=[0.0000, 0.1500]
+  - n_zero_positions=329, n_max_positions=1
+  - n_trades=439, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:53:27 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=357, n_active=98, avg_return_raw=0.004126, avg_active_pos=0.1248, total_pnl=0.018224, pnl_per_day=0.018224, trades_per_day=357.00
+[2026-03-08 14:53:27 UTC]   short_mr failed: cannot access free variable 'row' where it is not associated with a value in enclosing scope
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/run_ridge_sizer.py", line 994, in main
+    sizer, metrics = run_ridge_position_sizer_step(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 7476, in run_ridge_position_sizer_step
+    sizer.fit(oof_preds, trade_outcomes, timestamps=timestamps, groups=groups,
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 4657, in fit
+    stage1_df, best_core_params = _run_stage1_hpo()
+                                  ^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 4574, in _run_stage1_hpo
+    study_stage1.optimize(
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/study.py", line 451, in optimize
+    _optimize(
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 99, in _optimize
+    f.result()
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 170, in _optimize_sequential
+    callback(study, frozen_trial)
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 4482, in __call__
+    f"Score={obj:.6f}, {pnl_label}={pnl*100.0:.2f}%, Sortino={sortino:.3f}, {trades_label}={trades_per_day:.2f}, WinRate={row.get('WinRate', 0.0):.1%}, "
+                                                                                                                          ^^^
+NameError: cannot access free variable 'row' where it is not associated with a value in enclosing scope
+[2026-03-08 14:53:27 UTC] Constructed base trade outcomes from OOF context: 2282 trades
+[2026-03-08 14:53:27 UTC] Populating 15m future paths for policy optimization from HF data cache...
+[2026-03-08 14:53:34 UTC]   short_tf: 2282 rows, features=['clf', 'reg_H2', 'reg_H4', 'reg_H8', 'reg_mean', 'reg_std', 'reg_range', 'reg_sign_agree', 'reg_clf_agree', 'base_H2', 'base_H4', 'base_H8']
+[2026-03-08 14:53:34 UTC] ================================================================================
+[2026-03-08 14:53:34 UTC] RIDGE POSITION SIZER STEP
+[2026-03-08 14:53:34 UTC] ================================================================================
+[2026-03-08 14:53:35 UTC] Starting label policy optimization over grid of 192 candidate policies...
+[2026-03-08 14:53:35 UTC]   Optimized 10/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=0.80, tp_sl=1.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=8, early_mfe=0.50] rates=[tp=1.71%, sl=10.52%, trail=11.44%, early=75.50%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:35 UTC]   Optimized 20/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=0.80, tp_sl=2.00, hold=24, trail_atr=0.80, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=3.07%, sl=21.47%, trail=0.00%, early=72.44%, timeout=3.02%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=trail_outside_[1%,80%]|cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:35 UTC]   Optimized 30/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=0.80, tp_sl=2.00, hold=24, trail_atr=1.20, giveback=0.50, early_deadline=8, early_mfe=0.50] rates=[tp=0.92%, sl=10.52%, trail=12.23%, early=75.50%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:35 UTC]   Optimized 40/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=0.80, tp_sl=2.50, hold=24, trail_atr=0.80, giveback=0.50, early_deadline=12, early_mfe=0.50] rates=[tp=2.41%, sl=21.95%, trail=0.00%, early=72.44%, timeout=3.20%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=trail_outside_[1%,80%]|giveback>0.5x_trail_activate|trail_activate<2x_giveback|cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:35 UTC]   Optimized 50/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=1.20, tp_sl=1.50, hold=24, trail_atr=0.80, giveback=0.35, early_deadline=8, early_mfe=0.50] rates=[tp=3.86%, sl=17.09%, trail=0.00%, early=75.50%, timeout=3.55%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=trail_outside_[1%,80%]|cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:35 UTC]   Optimized 60/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=1.20, tp_sl=1.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=0.88%, sl=10.52%, trail=15.34%, early=72.44%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:35 UTC]   Optimized 70/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=1.20, tp_sl=2.00, hold=24, trail_atr=0.80, giveback=0.50, early_deadline=8, early_mfe=0.50] rates=[tp=2.28%, sl=18.36%, trail=0.00%, early=75.50%, timeout=3.86%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=trail_outside_[1%,80%]|giveback>0.5x_trail_activate|trail_activate<2x_giveback|cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:35 UTC]   Optimized 80/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=1.20, tp_sl=2.00, hold=24, trail_atr=1.20, giveback=0.50, early_deadline=12, early_mfe=0.50] rates=[tp=0.57%, sl=10.52%, trail=15.64%, early=72.44%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:35 UTC]   Optimized 90/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=1.20, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=8, early_mfe=0.50] rates=[tp=0.35%, sl=9.16%, trail=14.15%, early=75.50%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:35 UTC]   Optimized 100/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=1.60, tp_sl=1.50, hold=24, trail_atr=0.80, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=3.16%, sl=19.33%, trail=0.00%, early=72.44%, timeout=5.08%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=trail_outside_[1%,80%]|cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:35 UTC]   Optimized 110/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=1.60, tp_sl=1.50, hold=24, trail_atr=1.20, giveback=0.50, early_deadline=8, early_mfe=0.50] rates=[tp=1.18%, sl=7.36%, trail=15.12%, early=75.50%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:35 UTC]   Optimized 120/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=1.60, tp_sl=2.00, hold=24, trail_atr=0.80, giveback=0.50, early_deadline=12, early_mfe=0.50] rates=[tp=2.28%, sl=20.03%, trail=0.00%, early=72.44%, timeout=5.26%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=trail_outside_[1%,80%]|giveback>0.5x_trail_activate|trail_activate<2x_giveback|cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:35 UTC]   Optimized 130/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=1.60, tp_sl=2.50, hold=24, trail_atr=0.80, giveback=0.35, early_deadline=8, early_mfe=0.50] rates=[tp=1.71%, sl=18.19%, trail=0.00%, early=75.50%, timeout=4.60%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=trail_outside_[1%,80%]|cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:35 UTC]   Optimized 140/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=1.60, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=0.57%, sl=8.55%, trail=17.62%, early=72.44%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:35 UTC]   Optimized 150/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=2.00, tp_sl=1.50, hold=24, trail_atr=0.80, giveback=0.50, early_deadline=8, early_mfe=0.50] rates=[tp=2.76%, sl=16.26%, trail=0.00%, early=75.50%, timeout=5.48%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=trail_outside_[1%,80%]|giveback>0.5x_trail_activate|trail_activate<2x_giveback|cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:35 UTC]   Optimized 160/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=2.00, tp_sl=1.50, hold=24, trail_atr=1.20, giveback=0.50, early_deadline=12, early_mfe=0.50] rates=[tp=0.96%, sl=7.89%, trail=17.88%, early=72.44%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:35 UTC]   Optimized 170/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=2.00, tp_sl=2.00, hold=24, trail_atr=1.20, giveback=0.35, early_deadline=8, early_mfe=0.50] rates=[tp=0.66%, sl=6.79%, trail=16.21%, early=75.50%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:35 UTC]   Optimized 180/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=2.00, tp_sl=2.50, hold=24, trail_atr=0.80, giveback=0.35, early_deadline=12, early_mfe=0.50] rates=[tp=1.27%, sl=19.72%, trail=0.00%, early=72.44%, timeout=6.57%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=trail_outside_[1%,80%]|cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:35 UTC]   Optimized 190/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=2.00, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.50, early_deadline=8, early_mfe=0.50] rates=[tp=0.44%, sl=6.79%, trail=16.43%, early=75.50%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:35 UTC]   Optimized 192/192 policies. No non-rejected policy yet. Current: j_stable=-1000000000.000000 (j_mean=-1000000000.000000, j_std=0.000000; q05 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q10 pnl=0.000000 sortino=0.000 j=-1000000000.000000; q30 pnl=0.000000 sortino=0.000 j=-1000000000.000000) params=[sl_atr=2.00, tp_sl=2.50, hold=24, trail_atr=1.20, giveback=0.50, early_deadline=12, early_mfe=0.50] rates=[tp=0.44%, sl=7.89%, trail=18.40%, early=72.44%, timeout=0.83%] proxy_pnl_q30=0.000000 hard_reject=True prefilter=cheap_proxy_below_dynamic_floor
+[2026-03-08 14:53:35 UTC] Warning: All policies were hard rejected. Selecting best rejected policy with j_stable=-1000000000.000000
+[2026-03-08 14:53:35 UTC] Label policy optimizer selected policy with j_stable=-1000000000.000000 using 12 features and target=u_policy_net
+[2026-03-08 14:53:35 UTC] Label policy optimization completed before Ridge training
+[2026-03-08 14:53:35 UTC] Sizer.fit: trade_outcomes has 2282 rows, timestamps is len=2282
+[2026-03-08 14:53:35 UTC] RidgePositionSizer.fit: Starting...
+[2026-03-08 14:53:35 UTC]   Using returns from trade_outcomes (net): mean=0.002157, std=0.018961
+[2026-03-08 14:53:35 UTC]   Running target representation race...
+[2026-03-08 14:53:35 UTC]     Ridge target race: 8 candidates
+[2026-03-08 14:53:35 UTC]       winsorized: IC=0.0551 TopQMeanU=-0.010513 (std=0.001591) score=-1000000000000.000000 P@30=0.541 Lift@30=1.165 gate=False
+[2026-03-08 14:53:35 UTC]       winsorized_voladj: IC=0.0427 TopQMeanU=-0.007982 (std=0.000197) score=-1000000000000.000000 P@30=0.481 Lift@30=1.036 gate=False
+[2026-03-08 14:53:35 UTC]       huber_adv: IC=0.0000 TopQMeanU=-0.005917 (std=0.006275) score=-1000000000000.000000 P@30=0.448 Lift@30=0.965 gate=False
+[2026-03-08 14:53:35 UTC]       huber_adv_voladj: IC=0.0000 TopQMeanU=-0.005917 (std=0.006275) score=-1000000000000.000000 P@30=0.448 Lift@30=0.965 gate=False
+[2026-03-08 14:53:35 UTC]       rolling_rank: IC=0.0000 TopQMeanU=-0.005917 (std=0.006275) score=-1000000000000.000000 P@30=0.448 Lift@30=0.965 gate=False
+[2026-03-08 14:53:35 UTC]       rolling_rank_voladj: IC=0.0000 TopQMeanU=-0.005917 (std=0.006275) score=-1000000000000.000000 P@30=0.448 Lift@30=0.965 gate=False
+[2026-03-08 14:53:35 UTC]       rank_residual: IC=0.0000 TopQMeanU=-0.005917 (std=0.006275) score=-1000000000000.000000 P@30=0.448 Lift@30=0.965 gate=False
+[2026-03-08 14:53:35 UTC]       rank_residual_voladj: IC=0.0000 TopQMeanU=-0.005917 (std=0.006275) score=-1000000000000.000000 P@30=0.448 Lift@30=0.965 gate=False
+[2026-03-08 14:53:35 UTC]     Winner: winsorized (score=-1000000000000.000000, metric=topq_u_policy)
+[2026-03-08 14:53:35 UTC]   Using policy-aware utility labels (u_policy) as authoritative Ridge target
+[2026-03-08 14:53:35 UTC]   Stage 1 HPO: evaluating 100 core combinations with 1-fold CV...
+[2026-03-08 14:53:35 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0661, global_avg_pos_frac=0.0661
+  - range=[0.0500, 0.1500]
+  - n_zero_positions=0, n_max_positions=1
+  - n_trades=182, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:53:35 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=161, n_active=161, avg_return_raw=0.008132, avg_active_pos=0.0658, total_pnl=0.053733, pnl_per_day=0.053733, trades_per_day=161.00
+[2026-03-08 14:53:35 UTC] [PNL_VERIFY] Position Sizing Statistics:
+  - max_position=0.1500 (base=0.0500, mult=0.1000, cap=0.2000)
+  - active_trades_avg_pos=0.0679, global_avg_pos_frac=0.0679
+  - range=[0.0500, 0.1500]
+  - n_zero_positions=0, n_max_positions=1
+  - n_trades=273, sizing_formula=linear, squash_fn=tanh, squash_k=1.00
+[2026-03-08 14:53:35 UTC] [PNL_VERIFY] Raw PnL calculation: n_trades=228, n_active=228, avg_return_raw=0.007680, avg_active_pos=0.0674, total_pnl=0.074620, pnl_per_day=0.074620, trades_per_day=228.00
+[2026-03-08 14:53:35 UTC]   short_tf failed: cannot access free variable 'row' where it is not associated with a value in enclosing scope
+Traceback (most recent call last):
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/run_ridge_sizer.py", line 994, in main
+    sizer, metrics = run_ridge_position_sizer_step(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 7476, in run_ridge_position_sizer_step
+    sizer.fit(oof_preds, trade_outcomes, timestamps=timestamps, groups=groups,
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 4657, in fit
+    stage1_df, best_core_params = _run_stage1_hpo()
+                                  ^^^^^^^^^^^^^^^^^
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 4574, in _run_stage1_hpo
+    study_stage1.optimize(
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/study.py", line 451, in optimize
+    _optimize(
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 99, in _optimize
+    f.result()
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages/optuna/study/_optimize.py", line 170, in _optimize_sequential
+    callback(study, frozen_trial)
+  File "/Users/remyroche/Documents/Ares/extreme_price_movements/ridge_position_sizer.py", line 4482, in __call__
+    f"Score={obj:.6f}, {pnl_label}={pnl*100.0:.2f}%, Sortino={sortino:.3f}, {trades_label}={trades_per_day:.2f}, WinRate={net_win_rate:.1%}, "
+                                                                                                                          ^^^
+NameError: cannot access free variable 'row' where it is not associated with a value in enclosing scope
+[2026-03-08 14:53:35 UTC]   No weights produced for direction short, skipping
+[2026-03-08 14:53:35 UTC] Saved combined manifest to data/artifacts/20260213_080000/ridge_sizer/sizer_weights.json
+[2026-03-08 14:53:35 UTC] ================================================================================
+[2026-03-08 14:53:35 UTC] RIDGE POSITION SIZER COMPLETE
+[2026-03-08 14:53:35 UTC] ================================================================================
+[2026-03-08 14:53:35 UTC] Output directory: data/artifacts/20260213_080000/ridge_sizer
+[2026-03-08 14:53:35 UTC] ================================================================================
+[2026-03-08 14:53:35 UTC] Metrics report manifested to data/artifacts/20260213_080000/ridge_sizer_metrics_report.md

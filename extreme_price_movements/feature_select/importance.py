@@ -17,13 +17,33 @@ def block_permutation_importance(
     block_ids: Optional[np.ndarray],
     n_repeats: int,
     seed: int,
+    max_samples: int = 5000,
 ) -> pd.DataFrame:
     """Computes permutation importance per feature within optional blocks."""
     rng = np.random.RandomState(seed)
 
     n_samples = len(X_val)
-    n_features = len(feature_names)
+    if n_samples > max_samples:
+        indices = np.linspace(0, n_samples - 1, max_samples, dtype=np.int32)
+        X_val = X_val.iloc[indices].copy()
+        if hasattr(y_val, "iloc"):
+            y_val = y_val.iloc[indices].values
+        else:
+            y_val = np.asarray(y_val)[indices]
+        if hasattr(base_pred, "iloc"):
+            base_pred = base_pred.iloc[indices].values
+        else:
+            base_pred = np.asarray(base_pred)[indices]
+        if block_ids is not None:
+            block_ids = np.asarray(block_ids)[indices]
+        n_samples = len(X_val)
+    else:
+        y_val = np.asarray(y_val)
+        base_pred = np.asarray(base_pred)
+        if block_ids is not None:
+             block_ids = np.asarray(block_ids)
 
+    n_features = len(feature_names)
     delta_metrics = np.zeros((n_features, n_repeats))
     delta_utilities = np.zeros((n_features, n_repeats))
 

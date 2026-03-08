@@ -14,6 +14,7 @@ from extreme_price_movements.training import (
     apply_interaction_toggles,
     scaled_atr_pct
 )
+from extreme_price_movements.config import CANON_HORIZONS
 from extreme_price_movements.candidates import select_trade_candidates_hourly, entry_price_next_hour_open
 from extreme_price_movements.limit_order_pricer import (
     estimate_entry_limit_offset,
@@ -24,12 +25,33 @@ from extreme_price_movements.limit_order_pricer import (
     get_fee_for_order_type,
     create_limit_order_config,
 )
+# Import optimized prediction utilities
+try:
+    from extreme_price_movements.optimized_predictions import OptimizedMetaCombiner, BatchPredictor
+    _USE_OPTIMIZED_PREDICTIONS = True
+except ImportError:
+    _USE_OPTIMIZED_PREDICTIONS = False
+    tprint("WARNING: optimized_predictions module not found, using legacy implementation")
 
 def _meta_feature_keys_union(cfg) -> set[str]:
     keys = set(cfg.get("meta_feature_keys", []) or [])
     keys.update(cfg.get("mr_meta_feature_keys", []) or [])
     keys.update(cfg.get("tf_meta_feature_keys", []) or [])
     return {k for k in keys if isinstance(k, str) and k}
+
+
+def _normalize_ridge_bucket_params(params_per_bucket: dict, bucket_key: str) -> dict:
+    if not isinstance(params_per_bucket, dict):
+        return {}
+    direct = params_per_bucket.get(bucket_key)
+    if isinstance(direct, dict) and bucket_key in direct and isinstance(direct[bucket_key], dict):
+        return direct[bucket_key]
+    if isinstance(direct, dict):
+        return direct
+    for value in params_per_bucket.values():
+        if isinstance(value, dict) and bucket_key in value and isinstance(value[bucket_key], dict):
+            return value[bucket_key]
+    return {}
 
 
 def _apply_exit_limit_order(
@@ -637,12 +659,15 @@ def _bucket_mode_from_side_dom(side, dom):
 
 def _calculate_disagreement_features(meta_data, h_preds, kind_name):
     """Replicate training.py disagreement logic."""
-    p2 = h_preds.get(f"pred_{kind_name}_H2")
-    p4 = h_preds.get(f"pred_{kind_name}_H4")
-    p8 = h_preds.get(f"pred_{kind_name}_H8")
-    if p2 is not None and p4 is not None and p8 is not None:
-        stack = np.vstack([p2, p4, p8]).T.astype(np.float32)
-        pair_abs = (np.abs(p2 - p4) + np.abs(p2 - p8) + np.abs(p4 - p8)) / 3.0
+    preds = [h_preds.get(f"pred_{kind_name}_H{int(h)}") for h in CANON_HORIZONS]
+    preds = [p for p in preds if p is not None]
+    if len(preds) >= 2:
+        stack = np.vstack(preds).T.astype(np.float32)
+        pair_terms = []
+        for i in range(len(preds)):
+            for j in range(i + 1, len(preds)):
+                pair_terms.append(np.abs(preds[i] - preds[j]))
+        pair_abs = np.mean(np.vstack(pair_terms), axis=0) if pair_terms else np.zeros(len(stack), dtype=np.float32)
         vote_p = (stack > 0.5).mean(axis=1).astype(np.float32)
         meta_data[f"disagree_{kind_name}_std"] = np.std(stack, axis=1, dtype=np.float32)
         meta_data[f"disagree_{kind_name}_range"] = np.max(stack, axis=1) - np.min(stack, axis=1)
@@ -652,10 +677,81 @@ def _calculate_disagreement_features(meta_data, h_preds, kind_name):
     return None
 
 def _meta_predict_or_fallback(meta_model, p_alpha, grp_df, label, side_key, mr_h_preds, tf_h_preds, cfg=None):
-    """Predict with meta model; fall back to raw alpha if meta output is degenerate."""
-    if meta_model is None:
-        return (p_alpha - 0.5) * 0.1, np.ones(len(p_alpha), dtype=bool)
+    """Predict with meta model; disable signals entirely if meta output is unavailable.
 
+    Uses optimized prediction pipeline when available.
+    """
+    if meta_model is None:
+        tprint(f"  Meta {side_key}_{label}: DISABLED — no meta model available")
+        return np.full(len(p_alpha), np.nan, dtype=np.float64), np.ones(len(p_alpha), dtype=bool)
+
+    # Use optimized meta prediction if available
+    if _USE_OPTIMIZED_PREDICTIONS:
+        try:
+            import traceback
+            meta_combiner = OptimizedMetaCombiner(use_numba=True)
+            # Use adaptive batching for optimal performance
+            batch_predictor = BatchPredictor(batch_size=None, adaptive_batching=True)
+
+            # Prepare meta features fast
+            X_meta = meta_combiner.prepare_meta_features_fast(
+                p_alpha, mr_h_preds, tf_h_preds, grp_df, cfg
+            )
+
+            # Check feature coverage
+            if meta_model.selected_features:
+                available = set(X_meta.columns)
+                # Convert selected_features to list if it's not already
+                selected_features_list = list(meta_model.selected_features) if not isinstance(meta_model.selected_features, list) else meta_model.selected_features
+                selected = set(selected_features_list)
+                coverage = len(selected & available) / len(selected)
+
+                if coverage < 0.8:  # Require 80% coverage
+                    tprint(f"  Meta {side_key}_{label}: DISABLED — feature coverage {coverage:.0%} "
+                           f"({len(selected - available)} missing of {len(selected)})")
+                    return np.full(len(p_alpha), np.nan, dtype=np.float64), np.ones(len(p_alpha), dtype=bool)
+
+                # Fill missing features with 0
+                missing = selected - available
+                if missing:
+                    tprint(f"  Meta {side_key}_{label}: {len(missing)} features missing "
+                           f"(coverage {coverage:.0%}), filling with 0")
+                X_meta = X_meta.reindex(columns=selected_features_list, fill_value=0.0)
+
+            # Get features for prediction
+            # After reindex, X_meta already has correct column order
+            # Meta model expects a DataFrame, not numpy array
+            X_pred = X_meta
+
+            # Handle NaNs
+            X_pred = X_pred.fillna(0.0)
+            X_pred = X_pred.replace([np.inf, -np.inf], 0.0)
+
+            # Batch prediction
+            if hasattr(meta_model, "predict_proba"):
+                # For probabilistic models, use batch prediction
+                probs = batch_predictor.predict_batched(meta_model, X_pred, predict_proba=True, keep_dataframe=True)
+                # Class 2 is TP, Class 0 is SL. Score by EV proxy.
+                if probs.ndim == 2 and probs.shape[1] >= 3:
+                    s = probs[:, 2] * 2.0 - probs[:, 0] * 1.0
+                else:
+                    s = probs[:, 1] if probs.ndim == 2 else probs
+            else:
+                s = batch_predictor.predict_batched(meta_model, X_pred, keep_dataframe=True)
+
+            # Variance gate: only check on large batches (>=10 symbols)
+            if len(s) >= 10 and np.std(s) < 1e-6:
+                tprint(f"  Meta {side_key}_{label}: DISABLED — prediction std={np.std(s):.2e} (degenerate, n={len(s)})")
+                return np.full(len(p_alpha), np.nan, dtype=np.float64), np.ones(len(p_alpha), dtype=bool)
+
+            return s, np.zeros(len(p_alpha), dtype=bool)
+
+        except Exception as e:
+            tprint(f"WARNING: Optimized meta prediction failed, falling back to legacy: {e}")
+            tprint(f"Traceback: {traceback.format_exc()}")
+            # Fall through to legacy implementation
+
+    # Legacy implementation
     # We want ALL numeric features, but let's ensure we get the full set.
     # In some cases select_dtypes might miss bools/ints, but it should get most.
     # Just to be safe, we pass all numeric columns that the meta model might need.
@@ -666,19 +762,19 @@ def _meta_predict_or_fallback(meta_model, p_alpha, grp_df, label, side_key, mr_h
     # 1. Per-horizon logit features
     from scipy.special import logit as _logit_fn
     _logit_parts = []
-    for h in [2, 4, 8]:
+    for h in CANON_HORIZONS:
         # Collect from both h_preds sets
         ph = mr_h_preds.get(f"pred_H{h}")
         if ph is None:
             ph = tf_h_preds.get(f"pred_H{h}")
-        
+
         if ph is not None:
             X_meta[f"pred_H{h}"] = ph.astype(np.float32)
             _p_clip = np.clip(ph.astype(float), 1e-4, 1 - 1e-4)
             _lg_h = np.clip(_logit_fn(_p_clip), -4.0, 4.0)
             X_meta[f"pred_logit_H{h}"] = _lg_h.astype(np.float32)
             _logit_parts.append(_lg_h)
-    
+
     # Store all individual scale predictions (meta model often selects them)
     for k, v in mr_h_preds.items():
         X_meta[k] = v.astype(np.float32)
@@ -696,7 +792,7 @@ def _meta_predict_or_fallback(meta_model, p_alpha, grp_df, label, side_key, mr_h
         X_meta["agree_tf_minus_mr_avg"] = agree_tf_avg - agree_mr_avg
 
     # 4. Cross-kind per-horizon diff
-    for h in [2, 4, 8]:
+    for h in CANON_HORIZONS:
         pmr = mr_h_preds.get(f"pred_mr_H{h}")
         ptf = tf_h_preds.get(f"pred_tf_H{h}")
         if pmr is not None and ptf is not None:
@@ -709,7 +805,7 @@ def _meta_predict_or_fallback(meta_model, p_alpha, grp_df, label, side_key, mr_h
                               "trend_t", "trend_z_t", "spike_score", "grind_score", "chop_score"]:
             if interact_feat in X_meta.columns:
                 X_meta[f"pred_x_{interact_feat}"] = pl * X_meta[interact_feat].values
-        
+
         # Regime bucket interactions (G_VOL, G_TREND)
         for rcol in ["G_VOL", "G_TREND"]:
             if rcol in grp_df.columns:
@@ -727,35 +823,35 @@ def _meta_predict_or_fallback(meta_model, p_alpha, grp_df, label, side_key, mr_h
             "trend_12h": "ret6h",
             "trend_48h": "trend_pct_base",
         }
-        
+
         boundaries = cfg.get("granular_regime_boundaries", {}) if cfg else {}
-        
+
         for rname, src_col in _regime_map.items():
             if src_col in grp_df.columns:
                 # Source data exists: ensure derived columns are created to satisfy coverage check
                 # Even if we don't have enough valid symbols, we must have the columns.
                 for bkt in [0, 1, 2]:
                     X_meta[f"pred_x_{rname}_{bkt}"] = 0.0
-                
+
                 vals = grp_df[src_col].values.astype(float)
                 valid_mask = np.isfinite(vals)
-                
+
                 # Check for stable pre-calculated boundaries first
                 terciles = boundaries.get(rname)
-                
+
                 # If no stable boundaries, fallback to dynamic cross-sectional terciles
                 if terciles is None and valid_mask.sum() > 5:
                     try:
                         terciles = np.nanpercentile(vals[valid_mask], [33.3, 66.7]).tolist()
                     except Exception:
                         terciles = None
-                
+
                 if terciles:
                     # Apply thresholds
                     mask0 = (vals <= terciles[0])
                     mask1 = (vals > terciles[0]) & (vals < terciles[1])
                     mask2 = (vals >= terciles[1])
-                    
+
                     X_meta[f"pred_x_{rname}_0"] = pl * mask0.astype(float)
                     X_meta[f"pred_x_{rname}_1"] = pl * mask1.astype(float)
                     X_meta[f"pred_x_{rname}_2"] = pl * mask2.astype(float)
@@ -799,27 +895,26 @@ def _meta_predict_or_fallback(meta_model, p_alpha, grp_df, label, side_key, mr_h
             if missing:
                 missing_list = sorted(list(missing))
                 tprint(f"    Missing keys: {missing_list[:10]} {'...' if len(missing_list) > 10 else ''}")
-            # Strict: No signal if coverage is incomplete
-            return np.zeros(len(p_alpha), dtype=np.float64), np.ones(len(p_alpha), dtype=bool)
+            return np.full(len(p_alpha), np.nan, dtype=np.float64), np.ones(len(p_alpha), dtype=bool)
         if missing:
             tprint(f"  Meta {side_key}_{label}: {len(missing)} features missing "
                    f"(coverage {coverage:.0%}), filling with 0")
         X_meta = X_meta.reindex(columns=meta_model.selected_features, fill_value=0.0)
-    
+
     if hasattr(meta_model, "predict_proba"):
         probs = meta_model.predict_proba(X_meta)
         # Class 2 is TP, Class 0 is SL. Score by EV proxy.
         s = probs[:, 2] * 2.0 - probs[:, 0] * 1.0
     else:
         s = meta_model.predict(X_meta)
-        
+
     # Variance gate: only check on large batches (>=10 symbols).
     # On small batches, predictions can legitimately be similar.
     # The _center_scale degenerate guard in pipeline_steps.py
     # already protects against systematic degeneracy.
     if len(s) >= 10 and np.std(s) < 1e-6:
         tprint(f"  Meta {side_key}_{label}: DISABLED — prediction std={np.std(s):.2e} (degenerate, n={len(s)})")
-        return (p_alpha - 0.5) * 0.1, np.ones(len(p_alpha), dtype=bool)
+        return np.full(len(p_alpha), np.nan, dtype=np.float64), np.ones(len(p_alpha), dtype=bool)
     return s, np.zeros(len(p_alpha), dtype=bool)
 
 
@@ -885,7 +980,6 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
             pass
 
     trend_cov = int(len(trend_map))
-    rows = []
     miss_side_bundle = 0
     miss_model_stack = 0
     skipped_trend0 = 0
@@ -922,79 +1016,99 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
                     resolved = None
         _feat_ts_cache[key] = resolved
         return resolved
+    valid_symbols = []
     for sym in candidates:
+        if trend_map.get(sym, 0) == 0:
+            skipped_trend0 += 1
+            continue
+        valid_symbols.append(sym)
+    if not valid_symbols:
+        if _dbg:
+            tprint(
+                f"    SideScoreDiag ts={ts_sig} drop=no_rows "
+                f"cand_post_pos={cand_post_pos} trend_cov={trend_cov} "
+                f"skip_trend0={skipped_trend0} miss_side={miss_side_bundle} miss_stack={miss_model_stack} "
+                f"exc=none"
+            )
+        return pd.DataFrame()
+
+    bundle_feature_keys = set(cfg.get("spike_feature_keys", []))
+    bundle_feature_keys |= _meta_feature_keys_union(cfg)
+    bundle_feature_keys |= set(cfg.get("meta_feature_keys", []))
+    bundle_feature_keys |= set(cfg.get("mr_meta_feature_keys", []))
+    bundle_feature_keys |= set(cfg.get("tf_meta_feature_keys", []))
+    bundle_feature_keys |= {
+        "rv_12h", "rv_24h", "vol_z_base", "vol_z24_base", "ret6h", "trend_pct_base",
+        "vol_z", "mkt_rv_ratio", "ambig", "exh_qual", "trend_pct", "trend_t",
+        "trend_z_t", "spike_score", "grind_score", "chop_score",
+    }
+    bundle_feature_keys |= {
+        str(c) for c in cfg.get("position_sizer_regime_feature_keys", [])
+        if isinstance(c, str) and c
+    }
+    for side_key in ["long", "short"]:
+        m_bundle = alpha_models.get(side_key)
+        if not m_bundle:
+            miss_side_bundle += 1
+            continue
+        if not m_bundle.get("mr") or not m_bundle.get("tf"):
+            miss_model_stack += 1
+            continue
+        bundle_feature_keys |= set(m_bundle["mr"].get("feat_cols", []) or [])
+        bundle_feature_keys |= set(m_bundle["tf"].get("feat_cols", []) or [])
+        for _h_info in (m_bundle["mr"].get("models_by_h", {}) or {}).values():
+            bundle_feature_keys |= set(_h_info.get("feat_cols", []) or [])
+        for _h_info in (m_bundle["tf"].get("models_by_h", {}) or {}).values():
+            bundle_feature_keys |= set(_h_info.get("feat_cols", []) or [])
+
+    base_df = pd.DataFrame(index=pd.Index(valid_symbols, name="symbol"))
+    base_df["mkt_ret24h"] = float(mrk["mkt_ret24h"])
+    base_df["mkt_ret6h"] = float(mrk["mkt_ret6h"])
+    base_df["mkt_trend"] = float(mrk["mkt_trend"])
+    base_df["mkt_rv"] = float(mrk["mkt_rv"])
+    base_df["G_VOL"] = int(mrk["G_VOL"])
+    base_df["G_TREND"] = int(mrk["G_TREND"])
+    base_df["trend_dir"] = pd.Series({sym: int(trend_map[sym]) for sym in valid_symbols}, dtype=np.int8)
+
+    p_lag_series = pd.Series(0.5, index=base_df.index, dtype=np.float32)
+    if ts_lag in p_exh_cand.index:
+        shared_cols = [sym for sym in valid_symbols if sym in p_exh_cand.columns]
+        if shared_cols:
+            try:
+                p_lag_series.loc[shared_cols] = (
+                    p_exh_cand.loc[ts_lag, shared_cols].astype(np.float32).values
+                )
+            except Exception:
+                pass
+    base_df["p_exh_lag1"] = p_lag_series.values
+
+    for k in sorted(bundle_feature_keys):
+        fk = feats.get(k)
+        if fk is None or not hasattr(fk, "columns"):
+            continue
+        ts_feat = _resolve_feature_ts(fk)
+        if ts_feat is None:
+            continue
+        shared_cols = [sym for sym in valid_symbols if sym in fk.columns]
+        if not shared_cols:
+            continue
         try:
-            t_dir = trend_map.get(sym, 0)
-            if t_dir == 0:
-                skipped_trend0 += 1
-                continue # Skip if no trend info
-
-            p_lag = 0.5
-            if ts_lag in p_exh_cand.index and sym in p_exh_cand.columns:
-                p_lag = float(p_exh_cand.loc[ts_lag, sym])
-            for side_key in ["long", "short"]:
-                m_bundle = alpha_models.get(side_key)
-                if not m_bundle:
-                    miss_side_bundle += 1
-                    continue
-                if not m_bundle.get("mr") or not m_bundle.get("tf"):
-                    miss_model_stack += 1
-                    continue
-                model_mr = m_bundle["mr"]["model"]
-                model_tf = m_bundle["tf"]["model"]
-                fcols_mr = m_bundle["mr"]["feat_cols"]
-                fcols_tf = m_bundle["tf"]["feat_cols"]
-                # Multi-horizon models for averaging
-                mr_by_h = m_bundle["mr"].get("models_by_h", {})
-                tf_by_h = m_bundle["tf"].get("models_by_h", {})
-                rec = {
-                    "symbol": sym, "side_key": side_key, "model_mr": model_mr, "model_tf": model_tf,
-                    "feat_cols_mr": fcols_mr, "feat_cols_tf": fcols_tf,
-                    "mr_models_by_h": mr_by_h, "tf_models_by_h": tf_by_h,
-                    "mkt_ret24h": float(mrk["mkt_ret24h"]), "mkt_ret6h": float(mrk["mkt_ret6h"]),
-                    "mkt_trend": float(mrk["mkt_trend"]), "mkt_rv": float(mrk["mkt_rv"]),
-                    "G_VOL": int(mrk["G_VOL"]), "G_TREND": int(mrk["G_TREND"]), "p_exh_lag1": p_lag,
-                    "trend_dir": t_dir
-                }
-                # Collect feature columns from all horizons
-                all_fcols_mr = set(fcols_mr)
-                all_fcols_tf = set(fcols_tf)
-                for _h_info in mr_by_h.values():
-                    all_fcols_mr |= set(_h_info.get("feat_cols", []))
-                for _h_info in tf_by_h.values():
-                    all_fcols_tf |= set(_h_info.get("feat_cols", []))
-                
-                # IMPORTANT: Include source features for meta-interaction terms
-                source_regime_features = {"rv_12h", "rv_24h", "vol_z_base", "vol_z24_base", "ret6h", "trend_pct_base"}
-                interaction_base_features = {"vol_z", "mkt_rv_ratio", "ambig", "exh_qual", "trend_pct", "trend_t", "trend_z_t", "spike_score", "grind_score", "chop_score"}
-
-                # Also include ALL keys used for position sizer
-                ps_keys = set(str(c) for c in cfg.get("position_sizer_regime_feature_keys", []) if isinstance(c, str) and c)
-                all_keys = all_fcols_mr | all_fcols_tf | set(cfg.get("spike_feature_keys", [])) | _meta_feature_keys_union(cfg) | source_regime_features | interaction_base_features | ps_keys
-
-                # IMPORTANT: ensure we also load everything the meta models might have been trained on
-                all_keys.update(cfg.get("meta_feature_keys", []))
-                all_keys.update(cfg.get("mr_meta_feature_keys", []))
-                all_keys.update(cfg.get("tf_meta_feature_keys", []))
-                
-                for k in all_keys:
-                    fk = feats.get(k)
-                    if fk is None or not hasattr(fk, "columns") or sym not in fk.columns:
-                        continue
-                    ts_feat = _resolve_feature_ts(fk)
-                    if ts_feat is None:
-                        continue
-                    try:
-                        rec[k] = float(fk.at[ts_feat, sym])
-                    except Exception:
-                        continue
-                rows.append(rec)
+            vals = fk.loc[ts_feat, shared_cols]
+            if isinstance(vals, pd.Series):
+                base_df.loc[shared_cols, k] = vals.astype(np.float32).values
         except Exception as exc:
             _ename = type(exc).__name__
             row_exceptions[_ename] = int(row_exceptions.get(_ename, 0)) + 1
             continue
 
-    df_all = pd.DataFrame(rows)
+    df_all = pd.concat(
+        [
+            base_df.assign(symbol=base_df.index, side_key="long"),
+            base_df.assign(symbol=base_df.index, side_key="short"),
+        ],
+        axis=0,
+        ignore_index=True,
+    )
     if df_all.empty:
         if _dbg:
             _ex_summary = ",".join(f"{k}:{v}" for k, v in sorted(row_exceptions.items(), key=lambda kv: kv[1], reverse=True)[:3]) or "none"
@@ -1105,11 +1219,15 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
     score_rows = []
     _ps_runtime_cols = [str(c) for c in cfg.get("position_sizer_regime_feature_keys", []) if isinstance(c, str) and c]
     for side_key, grp in df_all.groupby("side_key"):
-        first = grp.iloc[0]
-        model_mr = first["model_mr"]; model_tf = first["model_tf"]
-        fcols_mr = first["feat_cols_mr"]; fcols_tf = first["feat_cols_tf"]
-        mr_by_h = first.get("mr_models_by_h", {})
-        tf_by_h = first.get("tf_models_by_h", {})
+        m_bundle = alpha_models.get(side_key)
+        if not m_bundle or not m_bundle.get("mr") or not m_bundle.get("tf"):
+            continue
+        model_mr = m_bundle["mr"]["model"]
+        model_tf = m_bundle["tf"]["model"]
+        fcols_mr = m_bundle["mr"]["feat_cols"]
+        fcols_tf = m_bundle["tf"]["feat_cols"]
+        mr_by_h = m_bundle["mr"].get("models_by_h", {})
+        tf_by_h = m_bundle["tf"].get("models_by_h", {})
 
         keys_mr = cfg.get("mr_feature_keys", cfg["causal_cols"])
         keys_tf = cfg.get("tf_feature_keys", cfg["causal_cols"])
@@ -1117,6 +1235,12 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
         # Store individual horizon predictions for meta-features
         mr_h_preds = {}
         tf_h_preds = {}
+        grp_mr = apply_interaction_toggles(
+            grp.copy(), keys_mr, ["G_VOL", "G_TREND"], drop_raw=cfg["drop_raw_causal"]
+        )
+        grp_tf = apply_interaction_toggles(
+            grp.copy(), keys_tf, ["G_VOL", "G_TREND"], drop_raw=cfg["drop_raw_causal"]
+        )
 
         # Multi-horizon MR prediction
         if mr_by_h:
@@ -1124,15 +1248,13 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
             for _h, _hi in mr_by_h.items():
                 _m = _hi["model"]
                 _fc = _hi.get("feat_cols", fcols_mr)
-                _grp = apply_interaction_toggles(grp.copy(), keys_mr, ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
-                _X = _grp.reindex(columns=_fc, fill_value=0.0).fillna(0.0).astype(np.float32)
+                _X = grp_mr.reindex(columns=_fc, fill_value=0.0).fillna(0.0).astype(np.float32)
                 _p = _m.predict(_X)
                 mr_preds_list.append(_p)
                 mr_h_preds[f"pred_mr_H{_h}"] = _p
                 mr_h_preds[f"pred_H{_h}"] = _p # Also generic name for meta-compat
             p_mr = np.mean(mr_preds_list, axis=0) if mr_preds_list else np.zeros(len(grp))
         else:
-            grp_mr = apply_interaction_toggles(grp.copy(), keys_mr, ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
             X_mr_pred = grp_mr.reindex(columns=fcols_mr, fill_value=0.0).fillna(0.0).astype(np.float32)
             p_mr = model_mr.predict(X_mr_pred)
             mr_h_preds["pred_mr_H2"] = p_mr # Minimal fallback
@@ -1143,8 +1265,7 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
             for _h, _hi in tf_by_h.items():
                 _m = _hi["model"]
                 _fc = _hi.get("feat_cols", fcols_tf)
-                _grp = apply_interaction_toggles(grp.copy(), keys_tf, ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
-                _X = _grp.reindex(columns=_fc, fill_value=0.0).fillna(0.0).astype(np.float32)
+                _X = grp_tf.reindex(columns=_fc, fill_value=0.0).fillna(0.0).astype(np.float32)
                 _p = _m.predict(_X)
                 tf_preds_list.append(_p)
                 tf_h_preds[f"pred_tf_H{_h}"] = _p
@@ -1152,7 +1273,6 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
                      tf_h_preds[f"pred_H{_h}"] = _p
             p_tf = np.mean(tf_preds_list, axis=0) if tf_preds_list else np.zeros(len(grp))
         else:
-            grp_tf = apply_interaction_toggles(grp.copy(), keys_tf, ["G_VOL","G_TREND"], drop_raw=cfg["drop_raw_causal"])
             X_tf_pred = grp_tf.reindex(columns=fcols_tf, fill_value=0.0).fillna(0.0).astype(np.float32)
             p_tf = model_tf.predict(X_tf_pred)
             tf_h_preds["pred_tf_H2"] = p_tf # Minimal fallback
@@ -1181,7 +1301,11 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
         s_mr, fb_mr = _meta_predict_or_fallback(meta_mr, p_mr, grp, "mr", side_key, mr_h_preds, tf_h_preds, cfg=cfg)
         s_tf, fb_tf = _meta_predict_or_fallback(meta_tf, p_tf, grp, "tf", side_key, mr_h_preds, tf_h_preds, cfg=cfg)
 
+        meta_disabled_rows = 0
         for i, idx in enumerate(grp.index):
+            if not np.isfinite(s_mr[i]) or not np.isfinite(s_tf[i]):
+                meta_disabled_rows += 1
+                continue
             _row = {
                 "symbol": grp.loc[idx, "symbol"],
                 "side_key": side_key,
@@ -1195,12 +1319,35 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
                 "used_fallback_mr": bool(fb_mr[i]),
                 "used_fallback_tf": bool(fb_tf[i]),
             }
+            for _name, _vals in mr_h_preds.items():
+                if i < len(_vals):
+                    _row[_name] = float(_vals[i])
+            for _name, _vals in tf_h_preds.items():
+                if i < len(_vals):
+                    _row[_name] = float(_vals[i])
+            _mr_h_vals = [float(v[i]) for _, v in sorted(mr_h_preds.items()) if _.startswith("pred_mr_H") and i < len(v)]
+            _tf_h_vals = [float(v[i]) for _, v in sorted(tf_h_preds.items()) if _.startswith("pred_tf_H") and i < len(v)]
+            if _mr_h_vals:
+                _row["reg_mr_mean"] = float(np.mean(_mr_h_vals))
+                _row["reg_mr_std"] = float(np.std(_mr_h_vals))
+            if _tf_h_vals:
+                _row["reg_tf_mean"] = float(np.mean(_tf_h_vals))
+                _row["reg_tf_std"] = float(np.std(_tf_h_vals))
             for _cn in _ps_runtime_cols:
                 if _cn in grp.columns:
                     try:
                         _row[_cn] = float(grp.loc[idx, _cn])
                     except Exception:
                         _row[_cn] = 0.0
+            for _cn in grp.columns:
+                if _cn in _row:
+                    continue
+                try:
+                    _val = grp.loc[idx, _cn]
+                    if isinstance(_val, (bool, int, float, np.integer, np.floating)) and np.isfinite(float(_val)):
+                        _row[_cn] = float(_val)
+                except Exception:
+                    continue
             # Also include meta features that might be needed downstream
             meta_cols = set(cfg.get("meta_feature_keys", [])) | set(cfg.get("mr_meta_feature_keys", [])) | set(cfg.get("tf_meta_feature_keys", []))
             for _cn in meta_cols:
@@ -1219,6 +1366,10 @@ def _build_side_score_df(ts_sig, feats, mkt_gates, model_bundle, cfg, p_exh_cand
                     except Exception:
                         _row[_cn] = 0.0
             score_rows.append(_row)
+        if _dbg and meta_disabled_rows:
+            tprint(
+                f"    SideScoreDiag ts={ts_sig} drop=meta_disabled rows={meta_disabled_rows} side={side_key}"
+            )
 
     return pd.DataFrame(score_rows)
 
@@ -1261,20 +1412,6 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
             tprint(f"    SignalGenDiag ts={ts_sig} sc_rows=0 (no candidates from side-score stage)")
         return []
     _diag["sc_rows"] = int(len(sc_df))
-
-    if "used_fallback_mr" in sc_df.columns and "used_fallback_tf" in sc_df.columns:
-        fb_any = (sc_df["used_fallback_mr"] | sc_df["used_fallback_tf"]).astype(float)
-        emit_bucket_summary(
-            tprint=tprint,
-            run_id=str(ts_sig),
-            bucket_id="META_ALL",
-            kind="meta_fallback",
-            stats={
-                "pct_fallback_used": float(fb_any.mean()),
-                "pct_meta_used": float(1.0 - fb_any.mean()),
-                "n_rows": int(len(sc_df)),
-            },
-        )
 
     score_scale = signal_params.get("score_scale_params", {}) if isinstance(signal_params, dict) else {}
 
@@ -1330,6 +1467,31 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
             for _cn in _ps_runtime_cols:
                 if _cn in row:
                     potential_signal[_cn] = row[_cn]
+            _bucket_key = f"{side_key}_{potential_signal['dom']}"
+            _prefix = potential_signal["dom"]
+            _h_vals = []
+            for _h in (1, 2, 4, 8):
+                _pred_key = f"pred_{_prefix}_H{_h}"
+                if _pred_key in row:
+                    _val = float(row[_pred_key])
+                    potential_signal[f"base_H{_h}"] = _val
+                    _h_vals.append(_val)
+            if _h_vals:
+                potential_signal["reg"] = float(np.mean(_h_vals))
+                potential_signal["reg_mean"] = float(np.mean(_h_vals))
+                potential_signal["reg_std"] = float(np.std(_h_vals))
+                potential_signal["reg_range"] = float(np.max(_h_vals) - np.min(_h_vals))
+            else:
+                potential_signal["reg"] = float(potential_signal["score"])
+                potential_signal["reg_mean"] = float(potential_signal["score"])
+                potential_signal["reg_std"] = 0.0
+                potential_signal["reg_range"] = 0.0
+            potential_signal["utility_disagreement"] = abs(
+                float(potential_signal["score"]) - float(potential_signal["reg_mean"])
+            )
+            potential_signal["high_utility_pred"] = float(potential_signal["reg_mean"])
+            potential_signal["risk_adjusted_pred"] = float(potential_signal["reg_mean"])
+            potential_signal["bucket_key"] = _bucket_key
             final_orders.append(potential_signal)
     _diag["potential"] = int(len(final_orders))
 
@@ -1385,89 +1547,72 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
     final_orders = list(sym_best.values())
     _diag["after_symbol_dedup"] = int(len(final_orders))
 
-    # Runtime integration with EV decomposition bundle backend.
-    _ps_backend = str(cfg.get("position_sizer_backend", "ev_decomposition")).lower()
-    # Intentional: no legacy backend/value fallback (e.g., "new") and no legacy manifest-key fallback.
-    # Runtime EV decomposition activates only when backend=ev_decomposition and bundle path is explicit.
-    _ps_bundle_path = (risk_config or {}).get("ev_decomposition_bundle_path") if isinstance(risk_config, dict) else None
-    if _ps_backend == "ev_decomposition" and _ps_bundle_path:
+    # Runtime integration with Ridge position sizer stack backend.
+    _ps_backend = str(cfg.get("position_sizer_backend", "ridge")).lower()
+    _ridge_manifest = (risk_config or {}).get("ridge_weights_manifest") if isinstance(risk_config, dict) else None
+    _ridge_sizer = (risk_config or {}).get("ridge_sizer") if isinstance(risk_config, dict) else None
+    if _ps_backend == "ridge" and isinstance(_ridge_manifest, dict):
         try:
-            from extreme_price_movements.position_sizer.runtime import (
-                load_ev_decomposition_bundle as _ps_load_bundle,
-                predict_ev_components as _ps_predict_all,
-                compute_ev_risk as _ps_compute_ev_risk,
-                gate_and_size as _ps_gate_and_size,
-            )
-            from extreme_price_movements.position_sizer.sizer import PositionSizerConfig as _PSCfg
-            _bundle = _ps_load_bundle(_ps_bundle_path, allow_unknown_version=bool(cfg.get("ev_decomposition_allow_unknown_bundle_version", False)))
-            _Xps = pd.DataFrame(index=np.arange(len(final_orders)))
-            for _c in list(getattr(_bundle, "feature_cols", []) or []):
-                if _c == "score":
-                    _Xps[_c] = [float(o["score"]) for o in final_orders]
-                else:
-                    _vals = []
-                    for _o in final_orders:
-                        try:
-                            _v = float(_o.get(_c, 0.0))
-                            _vals.append(_v if np.isfinite(_v) else 0.0)
-                        except Exception:
-                            _vals.append(0.0)
-                    _Xps[_c] = _vals
-            _pred = _ps_predict_all(_bundle, _Xps)
-            _tp_sl_runtime = _bundle.tp_sl_defaults if (getattr(_bundle, "tp_sl_defaults", None) and not bool(cfg.get("tp_sl_override", False))) else None
-            _exp_q = float(_bundle.config.get("exp_win_quantile", cfg.get("position_sizer_exp_win_quantile", 0.50)))
-            _risk_q = float(_bundle.config.get("risk_loss_quantile", cfg.get("position_sizer_risk_loss_quantile", 0.90)))
-            _costs_mode = str(_bundle.config.get("costs_mode", cfg.get("position_sizer_costs_mode", "included_in_labels")))
-            _psc = _PSCfg(
-                ev_threshold=float(cfg.get("position_sizer_ev_threshold", 0.0)),
-                trade_percentile_threshold=float(cfg.get("ranking_trade_percentile_threshold", 0.90)),
-                rank_exponent=float(cfg.get("ranking_rank_exponent", 2.0)),
-                size_k=float(cfg.get("ranking_size_k", 1.0)),
-                max_position_size=float(cfg.get("ranking_max_position_size", 1.0)),
-                risk_epsilon=float(cfg.get("ranking_risk_epsilon", 1e-6)),
-                exp_win_quantile=_exp_q,
-                risk_loss_quantile=_risk_q,
-                costs_mode=_costs_mode,
-                p_min=float(cfg.get("position_sizer_p_min", 1e-3)),
-                alpha_power=float(cfg.get("score_sharpening_alpha_power", 2.0)),
-                score_temperature=float(cfg.get("score_sharpening_score_temperature", 0.7)),
-                turnover_lambda=float(cfg.get("turnover_control_turnover_lambda", 0.0)),
-            )
-            _costs = 0.0 if _costs_mode == "included_in_labels" else float(cfg.get("ridge_cost_pct", cfg.get("fee_bps", 25.0)/10000.0))
-            _ev, _rk = _ps_compute_ev_risk(_pred, costs=_costs, cfg=_psc)
-            _allow, _size = _ps_gate_and_size(_ev, _rk, cfg=_psc, alpha_score=np.asarray([o["score"] for o in final_orders], dtype=float))
+            _weights = _ridge_manifest.get("weights", {}) or {}
+            _params_manifest = _ridge_manifest.get("params_per_bucket", {}) or {}
             _new_orders = []
-            for _o, _a, _w, _e, _r in zip(final_orders, _allow, _size, _ev, _rk):
-                if bool(_a) and np.isfinite(_w) and abs(float(_w)) > 0:
-                    _o["weight"] = float(abs(_w))
-                    _o["ps_ev"] = float(_e)
-                    _o["ps_risk"] = float(_r)
-                    if _tp_sl_runtime is not None:
-                        _o["tp_default_k_tp"] = float(_tp_sl_runtime.get("k_tp", np.nan))
-                        _o["tp_default_k_sl"] = float(_tp_sl_runtime.get("k_sl", np.nan))
+            for _bucket_key in sorted({o.get("bucket_key") for o in final_orders if o.get("bucket_key")}):
+                _bucket_orders = [o for o in final_orders if o.get("bucket_key") == _bucket_key]
+                if not _bucket_orders:
+                    continue
+                _bucket_params = _normalize_ridge_bucket_params(_params_manifest, _bucket_key)
+                _feature_names = [
+                    k[len(_bucket_key) + 1:]
+                    for k in _weights.keys()
+                    if isinstance(k, str) and k.startswith(f"{_bucket_key}_")
+                ]
+                if not _feature_names:
+                    continue
+                _X = pd.DataFrame(
+                    [{c: float(o.get(c, 0.0)) if np.isfinite(float(o.get(c, 0.0))) else 0.0 for c in _feature_names}
+                     for o in _bucket_orders],
+                    columns=_feature_names,
+                ).fillna(0.0)
+                _coef = np.asarray([float(_weights[f"{_bucket_key}_{c}"]) for c in _feature_names], dtype=float)
+                _raw = np.asarray(_X.values, dtype=float) @ _coef
+                _top_frac = float(_bucket_params.get("top_k_pct", 0.30) or 0.30)
+                _top_frac = min(1.0, max(0.05, _top_frac))
+                _k_keep = max(1, int(np.ceil(len(_bucket_orders) * _top_frac)))
+                _order = np.argsort(_raw)[::-1]
+                _allow_mask = np.zeros(len(_bucket_orders), dtype=bool)
+                _allow_mask[_order[:_k_keep]] = True
+                _base_size = float(_bucket_params.get("base_size", 0.05) or 0.05)
+                _rank_multiplier = float(_bucket_params.get("rank_multiplier", 0.10) or 0.10)
+                _squash_k = float(_bucket_params.get("squash_k", 1.0) or 1.0)
+                _sizing_formula = str(_bucket_params.get("sizing_formula", "linear") or "linear").lower()
+                if _sizing_formula == "sigmoid":
+                    _z = 1.0 / (1.0 + np.exp(-_squash_k * _raw))
+                elif _sizing_formula == "concave":
+                    _pos = np.clip(_raw, 0.0, None)
+                    _mx = np.max(_pos)
+                    _z = (_pos / _mx) ** _squash_k if _mx > 1e-9 else np.zeros_like(_pos)
+                else:
+                    _z = 0.5 * (1.0 + np.tanh(_squash_k * _raw))
+                _size = np.clip(_base_size + _rank_multiplier * _z, 0.0, 1.0)
+                _offset_ticks = np.zeros(len(_bucket_orders), dtype=float)
+                if _ridge_sizer is not None and len(_bucket_orders) > 2:
+                    try:
+                        _offset_ticks = np.asarray(
+                            _ridge_sizer.predict_limit_offset_ticks(_X.copy()),
+                            dtype=float,
+                        )
+                    except Exception:
+                        _offset_ticks = np.zeros(len(_bucket_orders), dtype=float)
+                for _ix, _o in enumerate(_bucket_orders):
+                    if not _allow_mask[_ix] or not np.isfinite(_size[_ix]) or _size[_ix] <= 0:
+                        continue
+                    _o["weight"] = float(abs(_size[_ix]))
+                    _o["ps_ev"] = float(_raw[_ix])
+                    _o["ps_risk"] = float(max(0.0, 1.0 - _z[_ix]))
+                    _o["limit_offset_ticks"] = float(_offset_ticks[_ix])
                     _new_orders.append(_o)
-            _gated_out = 1.0 - float(np.mean(_allow.astype(float))) if len(_allow) else 1.0
-            _avg_size = float(np.mean(np.abs(_size[_allow]))) if np.any(_allow) else 0.0
-            _pnan = float(np.mean(~np.isfinite(_pred.get("pwin", np.array([]))))) if len(_pred.get("pwin", [])) else 0.0
 
-            # Diagnostic stats
-            _ev_arr = np.asarray(_ev, dtype=float)
-            _rk_arr = np.asarray(_rk, dtype=float)
-            _ev_fin = _ev_arr[np.isfinite(_ev_arr)]
-            _rk_fin = _rk_arr[np.isfinite(_rk_arr)]
-            _ev_diag = f"mean={_ev_fin.mean():.4f} P10={np.percentile(_ev_fin, 10):.4f} P50={np.percentile(_ev_fin, 50):.4f} P90={np.percentile(_ev_fin, 90):.4f}" if len(_ev_fin) else "N/A"
-            _rk_diag = f"mean={_rk_fin.mean():.4f} P10={np.percentile(_rk_fin, 10):.4f} P50={np.percentile(_rk_fin, 50):.4f} P90={np.percentile(_rk_fin, 90):.4f}" if len(_rk_fin) else "N/A"
-            _ev_thr = _psc.ev_threshold
-
-            tprint(
-                f"EVDecomposition runtime: used Wq={_exp_q:.2f} Lq={_risk_q:.2f} gated_out={_gated_out:.2%} "
-                f"avg_size_if_trade={_avg_size:.5f} pwin_nan_frac={_pnan:.3%}"
-            )
-            tprint(
-                f"  -> EV stats (thr={_ev_thr}): {_ev_diag} | Risk stats: {_rk_diag}"
-            )
-
-            cfg["sizer_backend_used"] = "ev_decomposition"
+            cfg["sizer_backend_used"] = "ridge_stack"
             if _new_orders:
                 _diag["after_new_sizer"] = int(len(_new_orders))
                 if _dbg:
@@ -1477,44 +1622,6 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
                         f"after_dedup={_diag['after_symbol_dedup']} after_new={_diag['after_new_sizer']}"
                     )
                 return _new_orders
-            # Prevent full runtime collapse to an empty book when gate settings are too strict.
-            if bool(cfg.get("position_sizer_no_trade_fallback", True)) and len(final_orders) > 0:
-                _frac = float(cfg.get("position_sizer_no_trade_fallback_frac", 0.10))
-                _frac = min(1.0, max(0.01, _frac))
-                _k_keep = max(1, int(np.ceil(len(final_orders) * _frac)))
-                _ev_arr = np.asarray(_ev, dtype=float)
-                _rk_arr = np.asarray(_rk, dtype=float)
-                _ord = np.argsort(np.where(np.isfinite(_ev_arr), _ev_arr, -np.inf))[::-1]
-                _kept = 0
-                _fallback_orders = []
-                for _ix in _ord:
-                    if _kept >= _k_keep:
-                        break
-                    _o = final_orders[int(_ix)]
-                    _o["weight"] = float(max(
-                        float(cfg.get("position_sizer_no_trade_fallback_weight", 0.05)),
-                        float(cfg.get("position_size_min", 0.03)),
-                    ))
-                    _o["ps_ev"] = float(_ev_arr[int(_ix)]) if np.isfinite(_ev_arr[int(_ix)]) else 0.0
-                    _o["ps_risk"] = float(_rk_arr[int(_ix)]) if np.isfinite(_rk_arr[int(_ix)]) else 0.0
-                    if _tp_sl_runtime is not None:
-                        _o["tp_default_k_tp"] = float(_tp_sl_runtime.get("k_tp", np.nan))
-                        _o["tp_default_k_sl"] = float(_tp_sl_runtime.get("k_sl", np.nan))
-                    _fallback_orders.append(_o)
-                    _kept += 1
-                tprint(
-                    f"EVDecomposition runtime: no-trade fallback engaged keep={len(_fallback_orders)}/{len(final_orders)} "
-                    f"frac={_frac:.2f}"
-                )
-                if _fallback_orders:
-                    _diag["after_new_sizer"] = int(len(_fallback_orders))
-                    if _dbg:
-                        tprint(
-                            f"    SignalGenDiag ts={ts_sig} sc_rows={_diag['sc_rows']} potential={_diag['potential']} "
-                            f"after_k={_diag['after_k']} after_gate={_diag['after_global_gate']} "
-                            f"after_dedup={_diag['after_symbol_dedup']} after_new={_diag['after_new_sizer']} (fallback)"
-                        )
-                    return _fallback_orders
             if _dbg:
                 tprint(
                     f"    SignalGenDiag ts={ts_sig} sc_rows={_diag['sc_rows']} potential={_diag['potential']} "
@@ -1523,12 +1630,7 @@ def generate_hourly_signals(ts_sig, feats, mkt_gates, model_bundle, risk_config,
                 )
             return []
         except Exception as _e_ps:
-            _allow_fallback = bool(cfg.get("position_sizer_allow_fallback", False))
-            cfg["sizer_backend_used"] = "ridge_fallback" if _allow_fallback else "ev_decomposition_failed"
-            if _allow_fallback:
-                tprint(f"ERROR: ev_decomposition runtime failed; using ridge fallback: {_e_ps}")
-            else:
-                raise RuntimeError(f"ev_decomposition runtime failed: {_e_ps}")
+            raise RuntimeError(f"ridge stack runtime failed: {_e_ps}")
 
     if size_q50 is None or size_q90 is None:
         arr = np.array([abs(o["score"]) for o in final_orders], dtype=np.float64)

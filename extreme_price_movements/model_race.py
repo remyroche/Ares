@@ -159,6 +159,26 @@ class Float64Wrapper(BaseEstimator, ClassifierMixin):
         return self
 
 
+class NativeLGBMBoosterClassifier(BaseEstimator, ClassifierMixin):
+    """Minimal sklearn-like wrapper around a persisted LightGBM Booster."""
+
+    def __init__(self, booster=None):
+        self.booster = booster
+        self.classes_ = np.array([0, 1], dtype=np.int64)
+
+    def predict_proba(self, X):
+        if self.booster is None:
+            raise ValueError("LightGBM booster is not loaded")
+        proba = np.asarray(self.booster.predict(X), dtype=np.float64)
+        proba = np.clip(proba, 1e-6, 1.0 - 1e-6)
+        if proba.ndim == 2 and proba.shape[1] == 2:
+            return proba
+        return np.column_stack([1.0 - proba, proba])
+
+    def predict(self, X):
+        return (self.predict_proba(X)[:, 1] >= 0.5).astype(np.int8)
+
+
 class ScaledLogisticRegression(LogisticRegression):
     """
     Wrapper to apply StandardScaler internally, ensuring sample_weight 
@@ -225,82 +245,19 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         return apply_logit_shift(p_raw, state["delta_logit"], eps=state.get("eps", 1e-6))
 
     def _get_candidates(self, race_mode=True):
-        # Configure models
-        # ExtraTrees, XGBoost, LightGBM, CatBoost
-        
         candidates = {}
-        
-        # 1. ExtraTrees
+
+        # Base models are intentionally restricted to ExtraTrees only.
         et_params = {
             "n_estimators": 200 if race_mode else 800,
-            "max_depth": 7,
-            "min_samples_leaf": 50,
+            "max_depth": 6,
+            "min_samples_leaf": 64,
             "max_features": "sqrt",
             "n_jobs": 2,
             "random_state": 42
         }
         candidates["extratrees"] = Float64Wrapper(ExtraTreesClassifier(**et_params))
 
-        # 2. XGBoost
-        xgb_params = {
-            "n_estimators": 5 if race_mode else 10,  # Increase from 3/5
-            "num_parallel_tree": 150 if race_mode else 400,
-            "max_depth": 5,
-            "learning_rate": 0.05,
-            "reg_lambda": 15.0,
-            "reg_alpha": 0.0,
-            "min_child_weight": 40,
-            "tree_method": "hist",
-            "gamma": 1.0,                   
-            "subsample": 0.8,
-            "colsample_bytree": 0.8,
-            "n_jobs": 2,
-            "random_state": 42,
-            "enable_categorical": False,
-            "eval_metric": ["auc", "aucpr"],  # Track PR-AUC for ranking quality
-        }
-        if XGBClassifier is not None:
-            candidates["xgboost"] = Float64Wrapper(XGBClassifier(**xgb_params))
-
-        # 3. LightGBM
-        lgb_params = {
-            "n_estimators": 300 if race_mode else 1000,  # Increase from 200/800
-            "max_depth": 6,
-            "learning_rate": 0.05,
-            "subsample": 0.8,
-            "feature_fraction": 0.8,
-            "bagging_fraction": 0.8,
-            "bagging_freq": 1,
-            "lambda_l2": 15.0,
-            "lambda_l1": 0.0,
-            "colsample_bytree": 0.8,
-            "n_jobs": 2,
-            "random_state": 42,
-            "verbose": -1,
-            "is_unbalance": True,  # Handle class imbalance for better PR-AUC
-            "objective": "xentropy",
-            "metric": ["auc", "average_precision"],
-        }
-        if LGBMClassifier is not None:
-            candidates["lightgbm"] = Float64Wrapper(LGBMClassifier(**lgb_params))
-
-        # 4. CatBoost
-        cb_params = {
-            "iterations": 200 if race_mode else 800,
-            "l2_leaf_reg": 20.0,
-            "random_strength": 1.0,
-            "bagging_temperature": 1.0,
-            "depth": 5,
-            "learning_rate": 0.05,
-            "verbose": 0,
-            "thread_count": 2,
-            "random_seed": 42,
-            "allow_writing_files": False,
-            "eval_metric": "PRAUC",  # Direct PR-AUC optimization
-        }
-        if CatBoostClassifier is not None:
-            candidates["catboost"] = Float64Wrapper(CatBoostClassifier(**cb_params))
-        
         return candidates
 
     def _fit_model(self, model, X_tr, y_tr, X_val=None, y_val=None, sample_weight=None):
@@ -1097,11 +1054,8 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             inner = _XGB()
             inner.load_model(mp)
         elif mf.endswith(".lgb"):
-            from lightgbm import LGBMClassifier as _LGB
-            inner = _LGB()
-            inner._Booster = __import__("lightgbm").Booster(model_file=mp)
-            inner._fitted = True
-            inner._n_classes = 2
+            booster = __import__("lightgbm").Booster(model_file=mp)
+            inner = NativeLGBMBoosterClassifier(booster=booster)
         elif mf.endswith(".cbm"):
             from catboost import CatBoostClassifier as _CB
             inner = _CB()

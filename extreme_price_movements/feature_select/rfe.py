@@ -70,17 +70,64 @@ def run_rfe(
     utility_config: UtilityConfig,
     fs_config: FeatureSelectConfig,
     random_seed: int = 42,
+    max_samples: int = 8000,
 ) -> Tuple[List[str], pd.DataFrame, pd.DataFrame]:
     """Runs Recursive Feature Elimination with LightGBM."""
+    y = np.asarray(y)
+    if groups is not None:
+        groups = np.asarray(groups)
+    if time_index is not None:
+        time_index = np.asarray(time_index)
+
+    if len(X) > max_samples:
+        tprint(f"      [run_rfe] Subsampling from {len(X)} to {max_samples} for faster iterations")
+        indices = np.linspace(0, len(X) - 1, max_samples, dtype=np.int32)
+        X = X.iloc[indices].copy()
+        y = y[indices]
+        if groups is not None:
+            groups = groups[indices]
+        if time_index is not None:
+            time_index = time_index[indices]
+
     current_features = [c for c in X.columns if c != "sample_weight" and c != "realized_utility"]
+    min_features = max(1, min(int(fs_config.min_features), len(current_features)))
+    max_features = fs_config.max_features
+    if max_features is not None:
+        max_features = max(min_features, min(int(max_features), len(current_features)))
     splits = create_cv_splits(X, cv_config, time_index)
 
     rfe_trace = []
     iteration = 0
     best_utility = -np.inf
+    feature_scores = pd.DataFrame({
+        "feature": current_features,
+        "perm_importance_mean": np.nan,
+        "perm_importance_std": np.nan,
+        "shap_mean_abs": np.nan,
+        "shap_presence": np.nan,
+        "composite_score": np.nan,
+        "rank": np.arange(1, len(current_features) + 1, dtype=int),
+    })
 
-    while len(current_features) > fs_config.min_features:
+    if len(current_features) <= min_features:
+        tprint(
+            f"      [run_rfe] Skipping RFE: {len(current_features)} features <= min_features={min_features}"
+        )
+        rfe_trace.append({
+            "iter": 0,
+            "n_features": len(current_features),
+            "oos_utility_mean": float("nan"),
+            "oos_utility_ci_low": float("nan"),
+            "oos_utility_ci_high": float("nan"),
+            "oos_metric_mean": float("nan"),
+            "dropped_features": [],
+            "skipped_rfe": True,
+        })
+        return current_features, feature_scores, pd.DataFrame(rfe_trace)
+
+    while len(current_features) > min_features:
         iteration += 1
+        tprint(f"      [run_rfe] Iteration {iteration}: {len(current_features)} features remaining")
 
         # 1. Run CV
         fold_utilities = []
@@ -130,11 +177,13 @@ def run_rfe(
 
             # Compute Importance
             block_ids = groups[val_idx] if groups is not None else None
+            time_index_va = time_index[val_idx] if time_index is not None else None
 
             perm_df = block_permutation_importance(
                 model, X_va, y_va, val_pred, base_metric, base_utility,
                 current_features, metric_fn, utility_fn, block_ids,
-                fs_config.n_repeats_perm, random_seed + fold_idx
+                fs_config.n_repeats_perm, random_seed + fold_idx,
+                max_samples=fs_config.perm_sample
             )
             perm_results.append(perm_df)
 
@@ -145,7 +194,8 @@ def run_rfe(
 
         # Aggregate Importance
         mean_utility = np.mean(fold_utilities)
-        _, ci_low, ci_high = compute_bootstrap_ci(np.array(fold_utilities), seed=random_seed)
+        # Check if we have standard deviation or if this is too small
+        _, ci_low, ci_high = compute_bootstrap_ci(np.array(fold_utilities), n_boot=200, seed=random_seed)
         mean_metric = np.mean(fold_metrics)
 
         # Combine per-fold DataFrames
@@ -186,6 +236,7 @@ def run_rfe(
             "oos_utility_ci_high": ci_high,
             "oos_metric_mean": mean_metric,
         })
+        tprint(f"      [run_rfe]   OOS Utility: {mean_utility:.6f} (+/- {ci_high - mean_utility:.6f})")
 
         # Early stopping or utility check
         if iteration == 1:
@@ -198,8 +249,8 @@ def run_rfe(
                 best_utility = max(best_utility, mean_utility)
 
         # Determine features to drop
-        n_drop = max(2, int(0.15 * (len(current_features) - fs_config.min_features)))
-        n_drop = min(n_drop, len(current_features) - fs_config.min_features)
+        n_drop = max(2, int(0.15 * (len(current_features) - min_features)))
+        n_drop = min(n_drop, len(current_features) - min_features)
 
         if n_drop <= 0:
             break
@@ -208,10 +259,10 @@ def run_rfe(
         current_features = [f for f in current_features if f not in features_to_drop]
         rfe_trace[-1]["dropped_features"] = features_to_drop
 
-    if fs_config.max_features is not None and len(current_features) > int(fs_config.max_features):
+    if max_features is not None and len(current_features) > int(max_features):
         feature_scores = feature_scores[feature_scores["feature"].isin(current_features)].copy()
         feature_scores = feature_scores.sort_values("composite_score", ascending=False)
-        keep_n = max(int(fs_config.min_features), int(fs_config.max_features))
+        keep_n = max(min_features, int(max_features))
         current_features = feature_scores.head(keep_n)["feature"].tolist()
         rfe_trace.append({
             "iter": iteration + 1,
@@ -222,7 +273,7 @@ def run_rfe(
             "oos_metric_mean": float("nan"),
             "dropped_features": [],
             "hard_cap_applied": True,
-            "max_features_cap": int(fs_config.max_features),
+            "max_features_cap": int(max_features),
         })
 
     return current_features, feature_scores, pd.DataFrame(rfe_trace)

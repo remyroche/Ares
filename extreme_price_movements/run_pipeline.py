@@ -49,7 +49,11 @@ from extreme_price_movements.pipeline_steps import (
     run_backtest_step,
     run_risk_optimization_step,
 )
-from extreme_price_movements.optimise import run_optimise_step, Policy
+from extreme_price_movements.optimise import (
+    run_optimise_from_ridge_oof,
+    run_optimise_step,
+    Policy,
+)
 from extreme_price_movements.pipeline_steps import run_sizer_step
 
 # SINGLE SOURCE OF TRUTH FOR FEES - All fee configuration comes from these constants
@@ -519,11 +523,7 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
         tprint("ERROR: Label generation did not produce required artifacts. Aborting training.")
         return
 
-    if meta_only:
-        run_train_meta(cfg, ts_override=ts_override)
-        return
-
-    state = run_training_step(ts_sig, cfg, store=store, margin_symbols=None, base_only=base_only)
+    state = run_training_step(ts_sig, cfg, store=store, margin_symbols=None, base_only=base_only, meta_only=meta_only)
     if state:
         tprint("TRAINING PIPELINE COMPLETE")
         
@@ -761,12 +761,28 @@ def run_optimise(cfg, ts_override=None, store=None):
         return False
 
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    if bool(cfg.get("optimise_use_ridge_oof", False)):
+        try:
+            run_optimise_from_ridge_oof(
+                run_id=run_id,
+                data_root=cfg["data_root"],
+                fee_roundtrip=float(cfg.get("optimiser_fee_pct", 0.003)),
+                cooldown_hours=float(cfg.get("optimise_ridge_oof_cooldown_hours", 0.0)),
+            )
+        except Exception as exc:
+            tprint(f"ERROR: Ridge OOF optimise failed: {exc}")
+            return False
+        _maintenance_checkpoint("optimise:end")
+        return True
+
     import os
     state_file = os.path.join(cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl")
     backtest_file = os.path.join(cfg["data_root"], "artifacts", run_id, "backtest_results.csv")
     if not os.path.exists(backtest_file):
         tprint("Backtest results not found. Running backtest to generate trade data for optimiser...")
-        run_backtest(cfg, ts_override=ts_override, store=store)
+        bt_cfg = dict(cfg)
+        bt_cfg["offline_backtest_skip_universe_refresh"] = True
+        run_backtest(bt_cfg, ts_override=ts_override, store=store)
         if not os.path.exists(backtest_file):
             tprint(f"ERROR: Backtest still not found at {backtest_file}. Aborting optimise.")
             return False
@@ -791,6 +807,9 @@ def run_optimise(cfg, ts_override=None, store=None):
         policy=Policy(mode="train_baseline", params_path=params_path),
         state_path=state_file if os.path.exists(state_file) else None,
         store_base_dir=cfg.get("data_root"),
+        run_id=run_id,
+        data_root=cfg["data_root"],
+        ohlcv_store=store,
     )
     tprint(f"OPTIMISE COMPLETE: {params_path}")
     
@@ -940,6 +959,11 @@ def main():
     parser.add_argument("--ts", dest="ts_override", help="Timestamp override (YYYYMMDD_HHMMSS)")
     parser.add_argument("--base-only", action="store_true", help="Only train base models (alpha, spike, exh)")
     parser.add_argument("--meta-only", action="store_true", help="Only train meta models (runs train_meta)")
+    parser.add_argument(
+        "--optimise-use-ridge-oof",
+        action="store_true",
+        help="Run optimise in cheap Ridge/limit-offset OOF mode instead of using backtest_results.csv",
+    )
     args = parser.parse_args()
 
     cfg = CFG.copy()
@@ -956,6 +980,7 @@ def main():
         _apply_fee_model(cfg, PERP_ROUND_TRIP_FEE_PCT)
 
     _configure_report_roots(cfg)
+    cfg["optimise_use_ridge_oof"] = bool(args.optimise_use_ridge_oof)
 
     tprint(f"Sizer policy: ridge offline optimizer (ev_decomposition_enabled={bool(cfg.get('ev_decomposition_enabled', cfg.get('position_sizer_enabled', False)))})")
 

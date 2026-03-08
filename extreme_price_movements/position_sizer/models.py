@@ -418,8 +418,6 @@ class CalibratedPWinModel:
     diagnostics: dict | None = None
 
     def _base_scores(self, X):
-        tprint(f"Entering function: _base_scores in {__name__}")
-        tprint(f"_base_scores params: self={self}, X={X}")
         if hasattr(self.base_model, "predict_proba"):
             p = np.asarray(self.base_model.predict_proba(X)[:, 1], dtype=float)
         else:
@@ -427,10 +425,6 @@ class CalibratedPWinModel:
         return np.clip(p, 1e-6, 1.0 - 1e-6)
 
     def predict_proba(self, X, regime_labels=None, row_ids=None):
-        tprint(f"Entering function: predict_proba in {__name__}")
-        tprint(
-            f"predict_proba params: self={self}, X={X}, regime_labels={regime_labels}, row_ids={row_ids}"
-        )
         p_raw = self._base_scores(X)
         p_cal = np.asarray(self.global_calibrator.predict(p_raw), dtype=float)
 
@@ -726,8 +720,6 @@ class _ConstantRegressor:
         self.value = float(value)
 
     def predict(self, X):
-        tprint(f"Entering function: predict in {__name__}")
-        tprint(f"predict params: self={self}, X={X}")
         X = np.asarray(X)
         return np.full(len(X), self.value, dtype=float)
 
@@ -739,8 +731,6 @@ class _LogQuantileModel:
         self.model = model
 
     def predict(self, X):
-        tprint(f"Entering function: predict in {__name__}")
-        tprint(f"predict params: self={self}, X={X}")
         yp = np.asarray(self.model.predict(X), dtype=float)
         yp = np.maximum(yp, 0.0)
         return np.maximum(np.expm1(yp), 0.0)
@@ -758,8 +748,6 @@ class _DeltaQuantileModel:
         self.delta_model = delta_model
 
     def predict(self, X):
-        tprint(f"Entering function: predict in {__name__}")
-        tprint(f"predict params: self={self}, X={X}")
         low = np.asarray(self.low_model.predict(X), dtype=float)
         dlt = np.asarray(self.delta_model.predict(X), dtype=float)
         out = np.maximum(low, 0.0) + np.maximum(dlt, 0.0)

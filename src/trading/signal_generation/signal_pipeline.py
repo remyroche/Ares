@@ -627,7 +627,7 @@ class SignalGenerationPipeline:
         additional_features: Optional[Dict[str, Any]],
         timestamp: datetime,
         model_selection_result: Optional[ModelSelectionResult] = None
-    ) -> List[AnalystBaseOutput]:
+    ) -> List[AnalystOutput]:
         """Step 2: Run analyst base models sequentially with regime probabilities."""
         base_outputs = []
 

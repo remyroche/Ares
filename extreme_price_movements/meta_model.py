@@ -63,10 +63,11 @@ class MetaModel:
         self.selector_report_dir: Optional[str] = None
         self.selector_prev_selected: Optional[Sequence[str]] = None
         self.selector_family_map: Dict[str, str] = {}
-        self.anchor_model = None
-        self.anchor_threshold: Optional[float] = None
-        self.anchor_gate_name: str = "all"
-        self.anchor_reject_score: Optional[float] = None
+        self.candidate_mode: str = "race"
+        self.selector_target_override: Optional[str] = None
+        self.selector_loss_override: Optional[str] = None
+        self.disable_hpo: bool = False
+        self.xgb_parallel_forest_params: Optional[Dict[str, object]] = None
 
     def prepare_meta_features(self, preds, feats_df, pred_col_name="pred_logit"):
         p = np.clip(np.asarray(preds, dtype=float), 1e-4, 1 - 1e-4)
@@ -193,8 +194,8 @@ class MetaModel:
             fs1 = mdi_feature_selection_v3(
                 X, y_scaled, min_features=30, end_features=max_features,
                 selector_y=y,
-                selector_target="regression",
-                selector_loss="huber",
+                selector_target=str(self.selector_target_override or "regression"),
+                selector_loss=str(self.selector_loss_override or "huber"),
                 selector_head_name=f"meta_{self.strategy_name or 'default'}",
                 selector_report_dir=self.selector_report_dir,
                 selector_prev_selected=list(self.selector_prev_selected) if self.selector_prev_selected is not None else None,
@@ -210,6 +211,13 @@ class MetaModel:
                 selector_interaction_corr_penalty=bool(_sel_cfg.get("selector_interaction_corr_penalty", True)),
                 selector_family_penalty=bool(_sel_cfg.get("selector_family_penalty", True)),
                 selector_emit_report=bool(_sel_cfg.get("selector_emit_report", True)),
+                analysis_n_estimators=int(_sel_cfg.get("analysis_n_estimators", 192)),
+                analysis_max_samples=int(_sel_cfg.get("analysis_max_samples", 3000)),
+                min_samples_leaf_pct=float(_sel_cfg.get("min_samples_leaf_pct", 0.015)),
+                selector_max_missing_frac=float(_sel_cfg.get("selector_max_missing_frac", 0.15)),
+                selector_near_constant_dominance=float(
+                    _sel_cfg.get("selector_near_constant_dominance", 0.999)
+                ),
                 selector_hysteresis_margin=float(_sel_cfg.get("selector_hysteresis_margin", 0.05)),
                 selector_min_overlap=float(_sel_cfg.get("selector_min_overlap", 0.70)),
                 composite_weights={
@@ -240,6 +248,36 @@ class MetaModel:
     # ── Candidate definitions ────────────────────────────────────────────
     def _build_candidates(self) -> Dict[str, dict]:
         """Candidates: Ridge, ExtraTrees, XGB variants."""
+        if self.candidate_mode == "xgb_parallel_forest":
+            if xgb is None:
+                raise RuntimeError("xgboost is required for MetaModel candidate_mode='xgb_parallel_forest'")
+            _params = dict(self.xgb_parallel_forest_params or {})
+            if not _params:
+                _params = {
+                    "objective": "reg:squarederror",
+                    "n_estimators": 8,
+                    "num_parallel_tree": 160,
+                    "max_depth": 6,
+                    "learning_rate": 0.05,
+                    "subsample": 0.75,
+                    "colsample_bytree": 0.75,
+                    "reg_alpha": 2.0,
+                    "reg_lambda": 20.0,
+                    "min_child_weight": 48.0,
+                    "gamma": 2.5,
+                    "max_delta_step": 2.0,
+                    "tree_method": "hist",
+                    "random_state": 42,
+                    "n_jobs": 3,
+                    "verbosity": 0,
+                }
+            return {
+                "xgb_parallel_forest": {
+                    "kind": "xgb",
+                    "params": _params,
+                    "tail_lambda": 0.0,
+                }
+            }
         candidates = {}
 
         # 1. Ridge (RobustScaler + Ridge)
@@ -466,80 +504,14 @@ class MetaModel:
         tprint(f"  Racing {len(candidates)} candidates ({_time.monotonic()-_t0:.1f}s)...")
 
         Xv = X_sel.to_numpy(dtype=np.float32)
-        gate_records = []
         records = []
         best_name = None
         best_ic = -1e18
         best_oof = None
-
-        ridge_cand = candidates.get("ridge")
-        if ridge_cand is None:
-            raise RuntimeError("MetaModel requires a ridge candidate for anchor gating")
-
-        ridge_y_fit, ridge_sw_fit = self._prepare_fit_arrays(
-            y_np, sw, float(ridge_cand.get("tail_lambda", 0.0))
-        )
-        ridge_anchor_oof, _ = self._cv_evaluate(
-            ridge_cand["kind"], ridge_cand["params"], Xv, ridge_y_fit, ridge_sw_fit
-        )
-        ridge_anchor_oof_orig = (
-            self._inverse_signed_log(ridge_anchor_oof)
-            if float(ridge_cand.get("tail_lambda", 0.0)) > 0 else ridge_anchor_oof
-        )
-
-        gate_variants = ["all", "top50", "top40", "top30", "top20", "top10"]
         best_gate_name = "all"
-        best_gate_mask = np.isfinite(ridge_anchor_oof_orig)
-        best_gate_pnl = float("-inf")
-
-        for gate_name in gate_variants:
-            gate_mask = self._gate_mask_from_scores(ridge_anchor_oof_orig, gate_name)
-            gate_n = int(gate_mask.sum())
-            if gate_name != "all" and gate_n < 100:
-                tprint(f"  Ridge gate {gate_name}: skipped (n={gate_n})")
-                continue
-
-            gate_horizons = None
-            if y_per_horizon:
-                gate_horizons = {h: np.asarray(v, dtype=float)[gate_mask] for h, v in y_per_horizon.items()}
-            gate_y_fit = ridge_y_fit[gate_mask]
-            gate_sw_fit = None if ridge_sw_fit is None else ridge_sw_fit[gate_mask]
-            gate_oof, _ = self._cv_evaluate(
-                ridge_cand["kind"], ridge_cand["params"], Xv[gate_mask], gate_y_fit, gate_sw_fit
-            )
-            gate_oof_orig = (
-                self._inverse_signed_log(gate_oof)
-                if float(ridge_cand.get("tail_lambda", 0.0)) > 0 else gate_oof
-            )
-            gate_metrics = self._compute_oof_metrics(
-                gate_oof_orig,
-                y_np[gate_mask],
-                y_per_horizon=gate_horizons,
-            )
-            gate_pnl = self._top_slice_pnl(gate_oof_orig, y_np[gate_mask], frac=0.30)
-            gate_rec = {
-                "model": "ridge",
-                "gate": gate_name,
-                "n_gate": gate_n,
-                "gate_frac": float(gate_n) / max(len(y_np), 1),
-                "pnl_top30": gate_pnl,
-                **gate_metrics,
-            }
-            gate_records.append(gate_rec)
-            tprint(
-                f"  Ridge gate {gate_name}: n={gate_n}, pnl_top30={gate_pnl:.6f}, "
-                f"IC={gate_metrics.get('ic', 0.0):.4f}, spread10={gate_metrics.get('spread10', 0.0):.6f}"
-            )
-            if gate_pnl > best_gate_pnl:
-                best_gate_pnl = gate_pnl
-                best_gate_name = gate_name
-                best_gate_mask = gate_mask
-
-        self.anchor_gate_name = best_gate_name
-        tprint(
-            f"  Ridge anchor winner: {best_gate_name} "
-            f"(n={int(best_gate_mask.sum())}, pnl_top30={best_gate_pnl:.6f})"
-        )
+        best_gate_mask = np.isfinite(y_np)
+        if not best_gate_mask.any():
+            raise RuntimeError("MetaModel fit has no finite targets")
 
         gate_horizons = None
         if y_per_horizon:
@@ -575,9 +547,6 @@ class MetaModel:
 
             oof_full = np.full(len(y_np), np.nan, dtype=float)
             oof_full[best_gate_mask] = oof_orig_gate
-            reject_floor = self._reject_floor(oof_orig_gate)
-            oof_full[~best_gate_mask] = reject_floor
-            oof_full[~np.isfinite(oof_full)] = reject_floor
 
             rec = {
                 "model": name,
@@ -599,7 +568,6 @@ class MetaModel:
                 best_ic = composite
                 best_name = name
                 best_oof = oof_full
-                self.anchor_reject_score = reject_floor
 
         if best_name is None:
             raise RuntimeError("No meta model candidates completed")
@@ -618,7 +586,11 @@ class MetaModel:
         # Re-derive Xv from selected features (in case it was narrowed)
         Xv = X_meta[self.selected_features].to_numpy(dtype=np.float32)
         Xv_gate = Xv[best_gate_mask]
-        tuned_params = self._optuna_hpo(best_name, kind, params, Xv_gate, y_fit, sw_fit)
+        tuned_params = (
+            dict(params)
+            if self.disable_hpo
+            else self._optuna_hpo(best_name, kind, params, Xv_gate, y_fit, sw_fit)
+        )
         tprint(f"  HPO done ({_time.monotonic()-_t0:.1f}s). Fitting final model...")
 
         # Final fit on all data
@@ -629,22 +601,6 @@ class MetaModel:
             pass
 
         final_model = self._fit_one(kind, tuned_params, Xv_gate, y_fit, Xv_gate, y_fit, sw=sw_fit)
-
-        anchor_params = dict(ridge_cand["params"])
-        self.anchor_model = self._fit_one(
-            ridge_cand["kind"], anchor_params, Xv, ridge_y_fit, Xv, ridge_y_fit, sw=ridge_sw_fit
-        )
-        if best_gate_name == "all":
-            self.anchor_threshold = None
-        else:
-            anchor_oof_mask = np.isfinite(ridge_anchor_oof_orig)
-            if not anchor_oof_mask.any():
-                self.anchor_threshold = None
-            else:
-                top_pct = int(best_gate_name[3:])
-                self.anchor_threshold = float(
-                    np.nanpercentile(ridge_anchor_oof_orig[anchor_oof_mask], 100.0 - top_pct)
-                )
 
         self.model = {
             "kind": kind, "models": [final_model],
@@ -658,18 +614,13 @@ class MetaModel:
         # Save race report
         report_dir = self._reports_dir
         report_dir.mkdir(parents=True, exist_ok=True)
-        if gate_records:
-            pd.DataFrame(gate_records).to_csv(
-                report_dir / f"meta_model_{self.strategy_name or 'generic'}_ridge_gate_race.csv",
-                index=False,
-            )
         pd.DataFrame(records).to_csv(
             report_dir / f"meta_model_{self.strategy_name or 'generic'}_race.csv",
             index=False,
         )
 
         tprint(f"MetaModel.fit: {self.strategy_name} done ({_time.monotonic()-_t0:.1f}s). "
-               f"Gate={best_gate_name}, Winner={best_name}, IC={best_ic:.4f}")
+               f"Winner={best_name}, IC={best_ic:.4f}")
         return self
 
     def predict(self, X_meta):
@@ -680,11 +631,6 @@ class MetaModel:
         med_preds = np.median(preds, axis=0)
         if self.model.get("is_transformed", False):
             med_preds = self._inverse_signed_log(med_preds)
-        if self.anchor_model is not None and self.anchor_threshold is not None:
-            anchor_scores = np.asarray(self.anchor_model.predict(X), dtype=float)
-            gate_mask = np.isfinite(anchor_scores) & (anchor_scores >= float(self.anchor_threshold))
-            reject_floor = float(self.anchor_reject_score) if self.anchor_reject_score is not None else self._reject_floor(med_preds)
-            med_preds = np.where(gate_mask, med_preds, reject_floor)
         return int(self.score_sign) * med_preds
 
 
@@ -714,6 +660,12 @@ class MetaClassifierModel:
         self.label_threshold: float = 0.26  # default
         self.score_sign: int = 1
         self._reports_dir = resolve_reports_dir(reports_dir)
+        self.candidate_mode: str = "race"
+        self.selector_cfg: Dict[str, object] = {}
+        self.selector_report_dir: Optional[str] = None
+        self.selector_prev_selected: Optional[Sequence[str]] = None
+        self.selector_family_map: Dict[str, str] = {}
+        self.xgb_parallel_forest_params: Optional[Dict[str, object]] = None
 
     def prepare_meta_features(self, preds, feats_df, pred_col_name="pred_logit"):
         p = np.clip(np.asarray(preds, dtype=float), 1e-4, 1 - 1e-4)
@@ -726,6 +678,36 @@ class MetaClassifierModel:
         from sklearn.linear_model import LogisticRegression
         from sklearn.ensemble import ExtraTreesClassifier
 
+        if self.candidate_mode == "xgb_parallel_forest":
+            if xgb is None:
+                raise RuntimeError("xgboost is required for MetaClassifierModel candidate_mode='xgb_parallel_forest'")
+            _params = dict(self.xgb_parallel_forest_params or {})
+            if not _params:
+                _params = {
+                    "objective": "multi:softprob",
+                    "num_class": 3,
+                    "n_estimators": 8,
+                    "num_parallel_tree": 160,
+                    "max_depth": 6,
+                    "learning_rate": 0.05,
+                    "subsample": 0.75,
+                    "colsample_bytree": 0.75,
+                    "reg_alpha": 2.0,
+                    "reg_lambda": 20.0,
+                    "min_child_weight": 48.0,
+                    "gamma": 2.5,
+                    "tree_method": "hist",
+                    "random_state": 42,
+                    "n_jobs": 3,
+                    "verbosity": 0,
+                    "eval_metric": "mlogloss",
+                }
+            return {
+                "xgb_parallel_forest_clf": {
+                    "kind": "xgb_clf",
+                    "params": _params,
+                }
+            }
         candidates = {}
 
         # 1. Ridge (LogisticRegression with L2)
@@ -785,6 +767,11 @@ class MetaClassifierModel:
             model = catboost.CatBoostClassifier(**p)
             model.fit(X_tr, y_tr, sample_weight=sw,
                       eval_set=(X_va, y_va), early_stopping_rounds=50, verbose=False)
+            return model
+        if kind == "xgb_clf":
+            p = dict(params)
+            model = xgb.XGBClassifier(**p, early_stopping_rounds=50)
+            model.fit(X_tr, y_tr, sample_weight=sw, eval_set=[(X_va, y_va)], verbose=False)
             return model
         raise ValueError(f"Unknown classifier kind: {kind}")
 
@@ -987,20 +974,13 @@ class MetaClassifierModel:
             trade_mask: Optional[np.ndarray] = None):
         """Race classifiers using multi-barrier labels (multiclass if vol_proxy provided)."""
         import time as _time
+        from sklearn.ensemble import ExtraTreesClassifier
         _t0 = _time.monotonic()
         tprint(f"MetaClassifierModel.fit: {self.strategy_name} starting "
                f"(n={len(y_ret)}, feats={X_meta.shape[1]})")
         y_ret_np = np.asarray(y_ret, dtype=float)
         sw = None if sample_weight is None else np.asarray(sample_weight, dtype=float)
-
-        # Feature selection: use all features, drop near-constant
-        Xv_raw = X_meta.to_numpy(dtype=np.float32)
-        col_std = np.nanstd(Xv_raw, axis=0)
-        keep_cols = col_std > 1e-9
-        selected_cols = list(X_meta.columns[keep_cols])
-        self.selected_features = selected_cols
-        Xv = Xv_raw[:, keep_cols]
-        tprint(f"  Features: {X_meta.shape[1]} -> {len(selected_cols)}")
+        X_meta_work = X_meta
 
         # Build labels
         if y_class_override is not None:
@@ -1014,7 +994,7 @@ class MetaClassifierModel:
                 n_drop = int((~valid_vol).sum())
                 tprint(f"  Dropping {n_drop} samples with invalid vol_proxy.")
                 valid_idx = np.where(valid_vol)[0]
-                Xv = Xv[valid_idx]
+                X_meta_work = X_meta_work.iloc[valid_idx].reset_index(drop=True)
                 y_ret_np = y_ret_np[valid_idx]
                 if sw is not None:
                     sw = sw[valid_idx]
@@ -1039,6 +1019,76 @@ class MetaClassifierModel:
             sw_combined = sw_combined / max(float(np.mean(sw_combined)), 1e-12)
         else:
             sw_combined = w_barrier
+
+        # Target-aware classifier feature selection.
+        Xv_raw = X_meta_work.to_numpy(dtype=np.float32)
+        col_std = np.nanstd(Xv_raw, axis=0)
+        keep_cols = col_std > 1e-9
+        if np.sum(keep_cols) == 0:
+            keep_cols = np.ones(Xv_raw.shape[1], dtype=bool)
+        selected_cols = list(X_meta_work.columns[keep_cols])
+        X_sel = X_meta_work[selected_cols]
+        try:
+            _sel_cfg = dict(self.selector_cfg or {})
+            _fs = mdi_feature_selection_v3(
+                X_sel,
+                y_class,
+                base_model=ExtraTreesClassifier(
+                    n_estimators=int(_sel_cfg.get("analysis_n_estimators", 192)),
+                    max_depth=6,
+                    min_samples_leaf=40,
+                    max_features="sqrt",
+                    n_jobs=2,
+                    random_state=42,
+                    class_weight="balanced",
+                ),
+                sample_weight=sw_combined,
+                selector_y=y_class,
+                selector_target="classification",
+                selector_loss="multiclass_logloss",
+                selector_head_name=f"meta_clf_{self.strategy_name or 'default'}",
+                selector_report_dir=self.selector_report_dir,
+                selector_prev_selected=list(self.selector_prev_selected) if self.selector_prev_selected is not None else None,
+                selector_family_map=dict(self.selector_family_map or {}),
+                selector_focus_top_frac=float(_sel_cfg.get("selector_focus_top_frac", 0.30)),
+                selector_top_metric=_sel_cfg.get("selector_top_metric", "ic_top"),
+                selector_frequency_hit_mode=str(_sel_cfg.get("selector_frequency_hit_mode", "relative")),
+                selector_frequency_hit_quantile=float(_sel_cfg.get("selector_frequency_hit_quantile", 0.80)),
+                selector_frequency_hit_abs=float(_sel_cfg.get("selector_frequency_hit_abs", 1e-6)),
+                selector_interaction_mode=str(_sel_cfg.get("selector_interaction_mode", "tree_path_lift")),
+                selector_interaction_topk_pairs=int(_sel_cfg.get("selector_interaction_topk_pairs", 100)),
+                selector_interaction_max_pairs_per_feature=int(_sel_cfg.get("selector_interaction_max_pairs_per_feature", 8)),
+                selector_interaction_corr_penalty=bool(_sel_cfg.get("selector_interaction_corr_penalty", True)),
+                selector_family_penalty=bool(_sel_cfg.get("selector_family_penalty", True)),
+                selector_emit_report=bool(_sel_cfg.get("selector_emit_report", True)),
+                analysis_n_estimators=int(_sel_cfg.get("analysis_n_estimators", 192)),
+                analysis_max_samples=int(_sel_cfg.get("analysis_max_samples", 3000)),
+                min_samples_leaf_pct=float(_sel_cfg.get("min_samples_leaf_pct", 0.015)),
+                selector_max_missing_frac=float(_sel_cfg.get("selector_max_missing_frac", 0.15)),
+                selector_near_constant_dominance=float(
+                    _sel_cfg.get("selector_near_constant_dominance", 0.999)
+                ),
+                selector_hysteresis_margin=float(_sel_cfg.get("selector_hysteresis_margin", 0.05)),
+                selector_min_overlap=float(_sel_cfg.get("selector_min_overlap", 0.70)),
+                composite_weights={
+                    "top30": float(_sel_cfg.get("top30", 0.35)),
+                    "global": float(_sel_cfg.get("global", 0.20)),
+                    "stability": float(_sel_cfg.get("stability", 0.25)),
+                    "frequency": float(_sel_cfg.get("frequency", 0.15)),
+                    "interaction": float(_sel_cfg.get("interaction", 0.05)),
+                },
+                end_features=min(60, X_sel.shape[1]),
+                cumulative_cap=0.99,
+                min_share=0.0005,
+                min_features=min(30, max(8, X_sel.shape[1])),
+                max_features_pct=0.8,
+            )
+            selected_cols = list(_fs.selected_features)
+        except Exception as exc:
+            tprint(f"  Meta classifier feature selection failed ({exc}), using variance filter only")
+        self.selected_features = selected_cols
+        Xv = X_meta[self.selected_features].to_numpy(dtype=np.float32)
+        tprint(f"  Features: {X_meta.shape[1]} -> {len(self.selected_features)}")
 
         candidates = self._build_candidates()
         records = []

@@ -9,6 +9,7 @@ from sklearn.linear_model import ElasticNet
 from sklearn.preprocessing import StandardScaler
 
 from extreme_price_movements.purged_cv import PurgedKFold
+from extreme_price_movements.src_utils_tprint import tprint
 
 
 @dataclass
@@ -183,10 +184,10 @@ def run_fold_safe_feature_pruning_and_elasticnet(
     outer_splits: int = 4,
     inner_splits: int = 4,
     top_q: float = 0.10,
-    max_samples: int = 5000,
+    max_samples: int = 8000,
     random_state: int = 42,
-    n_bootstrap_mi: int = 5,
-    max_bootstrap_samples: int = 3000,
+    n_bootstrap_mi: int = 3,
+    max_bootstrap_samples: int = 2000,
     stability_penalty_weight: float = 0.10,
     rfe_max_drop: int = 5,
     rfe_min_features: int = 10,
@@ -246,7 +247,7 @@ def run_fold_safe_feature_pruning_and_elasticnet(
                         alpha=float(alpha),
                         l1_ratio=float(l1r),
                         fit_intercept=True,
-                        max_iter=10000,
+                        max_iter=50000,
                         tol=1e-4,
                         random_state=random_state,
                     )
@@ -289,7 +290,7 @@ def run_fold_safe_feature_pruning_and_elasticnet(
                     alpha=float(best_alpha),
                     l1_ratio=float(best_l1),
                     fit_intercept=True,
-                    max_iter=10000,
+                    max_iter=50000,
                     tol=1e-4,
                     random_state=random_state,
                 )
@@ -384,6 +385,7 @@ def run_fold_safe_feature_pruning_and_elasticnet(
     outer_folds = [(np.asarray(tr, dtype=np.int32), np.asarray(va, dtype=np.int32)) for tr, va in outer.split(Xf)]
 
     for fold_id, (tr_idx, _va_idx) in enumerate(outer_folds, start=1):
+        tprint(f"    [Feature Selection] Outer fold {fold_id}/{len(outer_folds)}: train={len(tr_idx)} samples")
         tr_idx = np.asarray(tr_idx, dtype=np.int32)
         sub_idx = _deterministic_subsample_idx(len(tr_idx), max_n=max_samples)
         tr_idx = tr_idx[sub_idx]
@@ -395,6 +397,7 @@ def run_fold_safe_feature_pruning_and_elasticnet(
         corr_abs = np.abs(corr)
         np.fill_diagonal(corr_abs, 1.0)
         clusters = _connected_components_from_corr(corr_abs, threshold=float(corr_threshold))
+        tprint(f"      - {len(clusters)} feature clusters identified (threshold={corr_threshold})")
 
         mi_vals, mi_std = _bootstrap_mi_stats(
             Xtr,
@@ -433,12 +436,14 @@ def run_fold_safe_feature_pruning_and_elasticnet(
         inner_times = times[tr_idx] if times is not None and len(times) == n else None
         
         if len(selected_idx) > rfe_min_features:
+            tprint(f"      - Starting RFE-style ElasticNet pruning: {len(selected_idx)} candidates -> min {rfe_min_features}")
             selected_idx = _run_rfe_elasticnet(
                 Xtr, ytr, inner_times, selected_idx,
                 alpha_grid, l1_ratio_grid, top_q,
                 inner_splits, stability_penalty_weight,
                 rfe_max_drop, rfe_min_features, rfe_max_iterations
             )
+            tprint(f"      - RFE finished: {len(selected_idx)} features selected")
         
         sel_names = [str(feature_names[i]) for i in selected_idx]
         

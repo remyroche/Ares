@@ -1,0 +1,28 @@
+Mar 08, 2026 18:01:21 (+00:00:00) - DataQualityFramework - INFO - ✅ Comprehensive duplicate analyzer integrated
+Mar 08, 2026 18:01:21 (+00:00:00) - DataQualityFramework - INFO - 🔧 Unified Data Quality Framework initialized (singleton)
+Mar 08, 2026 18:01:21 (+00:00:00) - System.tprint - INFO - DataQualityFramework initialization took 0.001s
+Mar 08, 2026 18:01:22 (+00:00:00) - ares.registry - INFO - Registered step: data_download
+Mar 08, 2026 18:01:22 (+00:00:00) - System.AdvancedQualityMetrics - INFO - 📊 AdvancedQualityMetrics initialized with tolerant parameters
+Mar 08, 2026 18:01:22 (+00:00:00) - System.tprint - INFO - AdvancedQualityMetrics initialization took 0.000s
+Mar 08, 2026 18:01:22 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 08, 2026 18:01:22 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 08, 2026 18:01:22 (+00:00:00) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 08, 2026 18:01:22 (+00:00:00) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 08, 2026 18:01:22 (+00:00:00) - DataCleanerManager - INFO - 🔧 DataCleanerManager initialized (singleton)
+Mar 08, 2026 18:01:22 (+00:00:00) - System.tprint - INFO - ✅ [features_common.utils] Math validation utilities loaded
+Mar 08, 2026 18:01:24 (+00:00:03) - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - M1 GPU Manager initialized - M1: True, Generation: m1, MPS: True
+Mar 08, 2026 18:01:24 (+00:00:03) - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - INFO - 🧠 M1 CPU Optimizer initialized for M1 (4P+4E cores)
+Mar 08, 2026 18:01:24 (+00:00:03) - src.features_common.backward_compatibility - INFO - Backward compatibility ensured for features_common
+Mar 08, 2026 18:01:25 (+00:00:03) - System.tprint - INFO - ✅ [features_common] All optimizations enabled by default
+Mar 08, 2026 18:01:25 (+00:00:03) - System.tprint - INFO - 🔧 [features_common] VectorBT integration available
+Mar 08, 2026 18:01:25 (+00:00:03) - System.tprint - INFO - 📊 [features_common] Performance monitoring enabled
+Mar 08, 2026 18:01:25 (+00:00:03) - System.tprint - WARNING - 💾 [features_common] Intelligent caching active
+Mar 08, 2026 18:01:25 (+00:00:03) - System.DataStreamingManager - INFO - 🚀 DataStreamingManager initialized (singleton): chunk_size=10000, memory_threshold=0.8
+Mar 08, 2026 18:01:25 (+00:00:03) - System.tprint - INFO - DataStreamingManager initialization took 0.000s
+Mar 08, 2026 18:01:25 (+00:00:03) - System.tprint - INFO - ✅ Custom logger available for MLCommon.ValidationUtils
+Mar 08, 2026 18:01:25 (+00:00:03) - System.CrossStepValidator - INFO - 🔍 CrossStepValidator initialized with comprehensive consistency rules
+Mar 08, 2026 18:01:25 (+00:00:03) - DataCleaner - INFO - Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+Mar 08, 2026 18:01:25 (+00:00:03) - System.tprint - INFO - DataCleaner(klines) initialization took 0.000s
+Mar 08, 2026 18:01:25 (+00:00:03) - System.UnifiedDataUtils - INFO - 🚀 Unified Data Utils initialized
+Mar 08, 2026 18:01:25 (+00:00:03) - params_store - INFO - [params_store] TBM best params loaded from /Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/reports/tbm_best_params.csv: config_id=CFGD5A43DFB5A  base_atr_window=840  k_tp=0.760343  sl_as_tp_pct=0.54  tp_base_pct=0.019302  mode=optuna_s1_TF_short_H4  horizon_scaling=sqrt
+Mar 08, 2026 18:01:25 (+00:00:03) - params_store - INFO - [params_store] Injected into cfg: barrier_atr_window=840  barrier_k_tp=0.760343  barrier_mode=optuna_s1_TF_short_H4  barrier_sl_base_mult=0.54  barrier_sl_hi=0.06  barrier_sl_lo=0.005  barrier_sl_method=tp_pct  barrier_tp_abs_pct=0.019302  barrier_tp_base_pct=0.019302  barrier_tp_hi=0.06  barrier_tp_lo=0.005  barrier_tp_method=atr_norm  label_horizon_base=4  label_horizon_scaling=sqrt

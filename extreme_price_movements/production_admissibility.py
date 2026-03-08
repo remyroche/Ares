@@ -72,7 +72,7 @@ def compute_prod_aligned_tp_params(
     margin_mult: float = 4.0,
     hard_min_tp: float = 0.02,
     inflate: float = 1.10,
-    horizons: Sequence[int] = (2, 4, 8),
+    horizons: Sequence[int] = None,  # Will default to CANON_HORIZONS if None
     h2_lower: float = 0.01,
     h2_upper: float = 0.04,
     q_grid: Sequence[float] = (0.50, 0.75, 0.90),
@@ -80,12 +80,17 @@ def compute_prod_aligned_tp_params(
 ) -> Dict[str, Any]:
     """Compute production-aligned TP centering params and a TP-base candidate ladder.
 
-    Candidate generation follows the H2/H4/H8 centering rule:
+    Candidate generation follows the H1/H2/H4 centering rule:
       tp_center_H2 = alpha * atr_q
       tp_eff_H2 = clip(tp_center_H2, [h2_lower, h2_upper])
       tp_base_pct = tp_eff_H2 / s(H2)
     with per-horizon implied diagnostics.
     """
+    # Default horizons to CANON_HORIZONS if not provided
+    if horizons is None:
+        from extreme_price_movements.config import CANON_HORIZONS
+        horizons = CANON_HORIZONS
+    
     arr = np.asarray(atr_pct_samples, dtype=np.float64)
     arr = arr[np.isfinite(arr)]
     if arr.size == 0:
@@ -98,7 +103,8 @@ def compute_prod_aligned_tp_params(
     scales = {h: float(horizon_scaling_fn(int(h))) for h in h_list}
     s2 = float(scales.get(2, horizon_scaling_fn(2)))
     s4 = float(scales.get(4, horizon_scaling_fn(4)))
-    s8 = float(scales.get(8, horizon_scaling_fn(8)))
+    # Only compute s8 if H8 is in the horizons list
+    s8 = float(scales.get(8, horizon_scaling_fn(8))) if 8 in h_list else None
 
     quantile_vals = {float(qv): float(np.quantile(arr, float(np.clip(qv, 0.0, 1.0)))) for qv in q_grid}
 
@@ -118,20 +124,32 @@ def compute_prod_aligned_tp_params(
             tp_base_pct = max(tp_base_pct, tp_min_tradeable / s_worst_safe)
             tp_base_pct *= float(inflate)
             tp_eff_h4 = tp_base_pct * s4
-            tp_eff_h8 = tp_base_pct * s8
+            # Only compute tp_eff_h8 if H8 is in the horizons
+            tp_eff_h8 = tp_base_pct * s8 if s8 is not None else None
+            
+            # Build tp_eff_targets and tp_eff_bands
+            tp_eff_targets = {"H2": float(tp_eff_h2), "H4": float(tp_eff_h4)}
+            tp_eff_bands = {
+                "H2": [float(h2_lower), float(h2_upper)],
+                "H4": [float(h2_lower) * (s4 / max(abs(s2), 1e-12)), float(h2_upper) * (s4 / max(abs(s2), 1e-12))],
+            }
+            if s8 is not None:
+                tp_eff_targets["H8"] = float(tp_eff_h8)
+                tp_eff_bands["H8"] = [float(h2_lower) * (s8 / max(abs(s2), 1e-12)), float(h2_upper) * (s8 / max(abs(s2), 1e-12))]
+            
+            scaling = {"s2": float(s2), "s4": float(s4)}
+            if s8 is not None:
+                scaling["s8"] = float(s8)
+            
             candidates.append(
                 {
                     "tp_base_pct": float(tp_base_pct),
-                    "tp_eff_targets": {"H2": float(tp_eff_h2), "H4": float(tp_eff_h4), "H8": float(tp_eff_h8)},
-                    "tp_eff_bands": {
-                        "H2": [float(h2_lower), float(h2_upper)],
-                        "H4": [float(h2_lower) * (s4 / max(abs(s2), 1e-12)), float(h2_upper) * (s4 / max(abs(s2), 1e-12))],
-                        "H8": [float(h2_lower) * (s8 / max(abs(s2), 1e-12)), float(h2_upper) * (s8 / max(abs(s2), 1e-12))],
-                    },
+                    "tp_eff_targets": tp_eff_targets,
+                    "tp_eff_bands": tp_eff_bands,
                     "atr_q": float(atr_q),
                     "q": qvf,
                     "alpha": alpha_i,
-                    "scaling": {"s2": float(s2), "s4": float(s4), "s8": float(s8)},
+                    "scaling": scaling,
                     "tp_center_h2": float(tp_center_h2),
                 }
             )

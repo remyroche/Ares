@@ -1,8 +1,20 @@
 """
-High-frequency (15m) OHLCV data loader for precise trailing profit simulation.
+High-frequency OHLCV data loader for precise trailing profit simulation.
 
-Downloads 15m data via CCXT and stores in parquet format.
+Downloads 5m and 15m data via CCXT and stores in parquet format.
 Checks local storage before downloading to avoid redundant API calls.
+
+Supported timeframes:
+- 5m (5-minute)
+- 15m (15-minute)
+
+Key functions:
+- get_15m_ohlcv: Get 15m data for a symbol, downloading if necessary
+- get_5m_ohlcv: Get 5m data for a symbol, downloading if necessary
+- sync_15m_ohlcv_range: Ensure local 15m cache covers a specific range
+- sync_5m_ohlcv_range: Ensure local 5m cache covers a specific range
+- fetch_ohlcv_5m: Fetch 5m data for a specific period on demand
+- fetch_specific_period: Fetch data for any timeframe on demand
 """
 
 import os
@@ -17,12 +29,23 @@ from extreme_price_movements.utils import tprint
 HF_DATA_DIR = Path(os.environ.get("EPM_HF_DATA_DIR", str(Path(__file__).parent / "15m_ohlcv")))
 HF_DATA_DIR.mkdir(exist_ok=True)
 
+# Storage directory for 5m data
+HF_DATA_DIR_5M = Path(os.environ.get("EPM_HF_DATA_DIR_5M", str(Path(__file__).parent / "5m_ohlcv")))
+HF_DATA_DIR_5M.mkdir(exist_ok=True)
+
 
 def _get_parquet_path(symbol: str) -> Path:
-    """Get parquet file path for a symbol."""
+    """Get parquet file path for a symbol (15m)."""
     # Normalize symbol: BTC/USDT -> btcusdt, BTC_USDT -> btcusdt
     clean_symbol = symbol.replace("/", "").replace("_", "").lower()
     return HF_DATA_DIR / f"{clean_symbol}_15m.parquet"
+
+
+def _get_parquet_path_5m(symbol: str) -> Path:
+    """Get parquet file path for a symbol (5m)."""
+    # Normalize symbol: BTC/USDT -> btcusdt, BTC_USDT -> btcusdt
+    clean_symbol = symbol.replace("/", "").replace("_", "").lower()
+    return HF_DATA_DIR_5M / f"{clean_symbol}_5m.parquet"
 
 
 def _load_existing_data(symbol: str, allow_quote_fallback: bool = True) -> pd.DataFrame:
@@ -73,6 +96,53 @@ def _load_existing_data(symbol: str, allow_quote_fallback: bool = True) -> pd.Da
     return pd.DataFrame()
 
 
+def _load_existing_data_5m(symbol: str, allow_quote_fallback: bool = True) -> pd.DataFrame:
+    """Load existing 5m data from parquet if available.
+
+    Falls back to the USDT-quoted variant if the requested quote currency
+    (USDC, BUSD, EUR, etc.) doesn't have a cached parquet yet but the same
+    base asset does under USDT.
+    """
+    path = _get_parquet_path_5m(symbol)
+    if path.exists():
+        try:
+            df = pd.read_parquet(path)
+            idx = pd.to_datetime(df.index)
+            if idx.tz is None:
+                df.index = idx.tz_localize("UTC")
+            else:
+                df.index = idx.tz_convert("UTC")
+            return df
+        except Exception as e:
+            tprint(f"WARNING: Failed to load {path}: {e}")
+            return pd.DataFrame()
+
+    if not allow_quote_fallback:
+        return pd.DataFrame()
+
+    # Fallback: try USDT variant for non-USDT quoted symbols
+    _FALLBACK_QUOTES = ("USDC", "BUSD", "EUR")
+    sym_up = symbol.replace("/", "").replace("_", "").upper()
+    for q in _FALLBACK_QUOTES:
+        if sym_up.endswith(q):
+            base = sym_up[:-len(q)]
+            fallback_path = HF_DATA_DIR_5M / f"{base.lower()}usdt_5m.parquet"
+            if fallback_path.exists():
+                try:
+                    df = pd.read_parquet(fallback_path)
+                    idx = pd.to_datetime(df.index)
+                    if idx.tz is None:
+                        df.index = idx.tz_localize("UTC")
+                    else:
+                        df.index = idx.tz_convert("UTC")
+                    return df
+                except Exception:
+                    pass
+            break
+
+    return pd.DataFrame()
+
+
 
 def _save_data(symbol: str, df: pd.DataFrame):
     """Save 15m data to parquet with float32 downcasting."""
@@ -88,15 +158,39 @@ def _save_data(symbol: str, df: pd.DataFrame):
     df.to_parquet(path, compression='snappy')
 
 
+def _save_data_5m(symbol: str, df: pd.DataFrame):
+    """Save 5m data to parquet with float32 downcasting."""
+    if df.empty:
+        return
+
+    # Downcast to float32
+    for col in ['open', 'high', 'low', 'close', 'volume']:
+        if col in df.columns:
+            df[col] = df[col].astype(np.float32)
+
+    path = _get_parquet_path_5m(symbol)
+    df.to_parquet(path, compression='snappy')
+
+
 def _download_from_exchange(exchange: ccxt.Exchange, symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timestamp) -> pd.DataFrame:
     """Download 15m OHLCV via CCXT."""
+    return _download_from_exchange_generic(exchange, symbol, '15m', start_ts, end_ts)
+
+
+def _download_from_exchange_5m(exchange: ccxt.Exchange, symbol: str, start_ts: pd.Timestamp, end_ts: pd.Timestamp) -> pd.DataFrame:
+    """Download 5m OHLCV via CCXT."""
+    return _download_from_exchange_generic(exchange, symbol, '5m', start_ts, end_ts)
+
+
+def _download_from_exchange_generic(exchange: ccxt.Exchange, symbol: str, timeframe: str, start_ts: pd.Timestamp, end_ts: pd.Timestamp) -> pd.DataFrame:
+    """Download OHLCV via CCXT for any timeframe."""
     start_ms = int(start_ts.timestamp() * 1000)
     end_ms = int(end_ts.timestamp() * 1000)
     
-    tprint(f"Downloading 15m data for {symbol}: {start_ts} to {end_ts}")
+    tprint(f"Downloading {timeframe} data for {symbol}: {start_ts} to {end_ts}")
     
     try:
-        # CCXT uses '15m' timeframe
+        # CCXT uses timeframe parameter
         all_ohlcv = []
         current_ms = start_ms
         
@@ -104,7 +198,7 @@ def _download_from_exchange(exchange: ccxt.Exchange, symbol: str, start_ts: pd.T
         while current_ms < end_ms:
             ohlcv = exchange.fetch_ohlcv(
                 symbol=symbol,
-                timeframe='15m',
+                timeframe=timeframe,
                 since=current_ms,
                 limit=1000  # Max per request
             )
@@ -139,7 +233,7 @@ def _download_from_exchange(exchange: ccxt.Exchange, symbol: str, start_ts: pd.T
         return df
     
     except Exception as e:
-        tprint(f"ERROR: Failed to download {symbol} 15m data: {e}")
+        tprint(f"ERROR: Failed to download {symbol} {timeframe} data: {e}")
         return pd.DataFrame()
 
 
@@ -299,22 +393,293 @@ def sync_15m_ohlcv_range(
     return combined_df.loc[(combined_df.index >= since_ts) & (combined_df.index <= until_ts)]
 
 
-def clear_cache(symbol: str = None):
+def get_5m_ohlcv(exchange: ccxt.Exchange, symbol: str, entry_ts: pd.Timestamp, max_hold_hours: int = 12) -> pd.DataFrame:
     """
-    Clear cached 15m data.
-    
+    Get 5m OHLCV data for a symbol, downloading if necessary.
+
+    Downloads 12 hours of data at once to cover typical holding periods.
+    Checks local parquet storage before downloading.
+    Overwrites existing data if there's overlap.
+
     Args:
-        symbol: If provided, clear only this symbol. Otherwise clear all.
+        exchange: CCXT exchange instance (e.g., ccxt.binance())
+        symbol: Trading pair in CCXT format (e.g., 'BTC/USDT')
+        entry_ts: Entry timestamp
+        max_hold_hours: Hours of data to ensure available (default 12)
+
+    Returns:
+        DataFrame with 5m OHLCV data
     """
-    if symbol:
-        path = _get_parquet_path(symbol)
-        if path.exists():
-            path.unlink()
-            tprint(f"Cleared 15m cache for {symbol}")
+    # Ensure UTC
+    if entry_ts.tz is None:
+        entry_ts = entry_ts.tz_localize('UTC')
     else:
-        for path in HF_DATA_DIR.glob("*_15m.parquet"):
-            path.unlink()
-        tprint("Cleared all 15m cache")
+        entry_ts = entry_ts.tz_convert('UTC')
+
+    # Download window: 12 hours from entry
+    download_start = entry_ts
+    download_end = entry_ts + pd.Timedelta(hours=max_hold_hours)
+
+    # Load existing data
+    existing_df = _load_existing_data_5m(symbol)
+
+    # Check if we need to download
+    need_download = False
+
+    if existing_df.empty:
+        need_download = True
+    else:
+        # Check coverage
+        existing_start = existing_df.index.min()
+        existing_end = existing_df.index.max()
+
+        # Need download if requested range is not fully covered
+        if download_start < existing_start or download_end > existing_end:
+            need_download = True
+
+    if need_download:
+        # Download new data
+        new_df = _download_from_exchange_5m(exchange, symbol, download_start, download_end)
+
+        if not new_df.empty:
+            if existing_df.empty:
+                # No existing data, just save new
+                combined_df = new_df
+            else:
+                # Merge with existing, overwriting overlaps
+                combined_df = pd.concat([existing_df, new_df])
+                combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
+                combined_df = combined_df.sort_index()
+
+            # Save updated data
+            _save_data_5m(symbol, combined_df)
+
+            # Return requested range
+            return combined_df.loc[entry_ts:download_end]
+        else:
+            # Download failed, return existing data if available
+            if not existing_df.empty:
+                return existing_df.loc[entry_ts:download_end]
+            return pd.DataFrame()
+    else:
+        # Use existing data
+        return existing_df.loc[entry_ts:download_end]
+
+
+def sync_5m_ohlcv_range(
+    exchange: ccxt.Exchange,
+    symbol: str,
+    since_ts: pd.Timestamp,
+    until_ts: pd.Timestamp | None = None,
+    full_backfill: bool = True,
+) -> pd.DataFrame:
+    """Ensure local 5m cache covers [since_ts, until_ts] for symbol."""
+    if since_ts.tz is None:
+        since_ts = since_ts.tz_localize("UTC")
+    else:
+        since_ts = since_ts.tz_convert("UTC")
+
+    if until_ts is None:
+        until_ts = pd.Timestamp.now(tz="UTC")
+    elif until_ts.tz is None:
+        until_ts = until_ts.tz_localize("UTC")
+    else:
+        until_ts = until_ts.tz_convert("UTC")
+
+    if until_ts <= since_ts:
+        return pd.DataFrame()
+
+    # Strict check: only this exact symbol/quote cache should determine coverage.
+    existing_df = _load_existing_data_5m(symbol, allow_quote_fallback=False)
+    if not existing_df.empty:
+        ex_start = existing_df.index.min()
+        ex_end = existing_df.index.max()
+        if ex_start <= since_ts and ex_end >= until_ts:
+            return existing_df.loc[(existing_df.index >= since_ts) & (existing_df.index <= until_ts)]
+
+    # Build missing ranges and only download gaps instead of re-downloading covered periods.
+    download_ranges: list[tuple[pd.Timestamp, pd.Timestamp]] = []
+    if existing_df.empty:
+        download_ranges.append((since_ts, until_ts))
+    else:
+        ex_start = existing_df.index.min()
+        ex_end = existing_df.index.max()
+
+        if full_backfill:
+            # Legacy behavior: force a single pass from since_ts, may overlap.
+            download_ranges.append((since_ts, until_ts))
+        else:
+            # Missing history before current cache start.
+            if since_ts < ex_start:
+                left_end = min(until_ts, ex_start - pd.Timedelta(minutes=5))
+                if since_ts <= left_end:
+                    download_ranges.append((since_ts, left_end))
+
+            # Missing tail after current cache end.
+            if until_ts > ex_end:
+                right_start = max(since_ts, ex_end + pd.Timedelta(minutes=5))
+                if right_start <= until_ts:
+                    download_ranges.append((right_start, until_ts))
+
+    if not download_ranges:
+        if existing_df.empty:
+            return pd.DataFrame()
+        return existing_df.loc[(existing_df.index >= since_ts) & (existing_df.index <= until_ts)]
+
+    chunks: list[pd.DataFrame] = []
+    for dl_start, dl_end in download_ranges:
+        if dl_start >= dl_end:
+            continue
+        new_df = _download_from_exchange_5m(exchange, symbol, dl_start, dl_end)
+        if not new_df.empty:
+            chunks.append(new_df)
+
+    if existing_df.empty and not chunks:
+        return pd.DataFrame()
+    if not chunks:
+        return existing_df.loc[(existing_df.index >= since_ts) & (existing_df.index <= until_ts)]
+
+    combined_parts = [existing_df] if not existing_df.empty else []
+    combined_parts.extend(chunks)
+    combined_df = pd.concat(combined_parts)
+    combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
+    combined_df = combined_df.sort_index()
+
+    _save_data_5m(symbol, combined_df)
+    return combined_df.loc[(combined_df.index >= since_ts) & (combined_df.index <= until_ts)]
+
+
+def fetch_ohlcv_5m(
+    exchange: ccxt.Exchange,
+    symbol: str,
+    start: pd.Timestamp,
+    end: pd.Timestamp | None = None,
+) -> pd.DataFrame:
+    """
+    Fetch 5m OHLCV data for a specific time period on demand.
+
+    This function fetches data for the exact period requested without
+    relying on cached data. More efficient than get_5m_ohlcv when
+    you know exactly what period you need.
+
+    Args:
+        exchange: CCXT exchange instance (e.g., ccxt.binance())
+        symbol: Trading pair in CCXT format (e.g., 'BTC/USDT')
+        start: Start timestamp
+        end: End timestamp (default: now)
+
+    Returns:
+        DataFrame with 5m OHLCV data for the requested period
+    """
+    # Ensure UTC
+    if start.tz is None:
+        start = start.tz_localize('UTC')
+    else:
+        start = start.tz_convert('UTC')
+
+    if end is None:
+        end = pd.Timestamp.now(tz='UTC')
+    elif end.tz is None:
+        end = end.tz_localize('UTC')
+    else:
+        end = end.tz_convert('UTC')
+
+    if end <= start:
+        return pd.DataFrame()
+
+    # Download the specific period
+    df = _download_from_exchange_5m(exchange, symbol, start, end)
+
+    return df
+
+
+def fetch_specific_period(
+    exchange: ccxt.Exchange,
+    symbol: str,
+    timeframe: str,
+    start: pd.Timestamp,
+    end: pd.Timestamp | None = None,
+    use_cache: bool = True,
+) -> pd.DataFrame:
+    """
+    Fetch OHLCV data for a specific time period on demand.
+
+    Efficiently fetches only the requested period, optionally using
+    cached data if available.
+
+    Args:
+        exchange: CCXT exchange instance (e.g., ccxt.binance())
+        symbol: Trading pair in CCXT format (e.g., 'BTC/USDT')
+        timeframe: Timeframe string ('1m', '5m', '15m', '1h', '4h', '1d', etc.)
+        start: Start timestamp
+        end: End timestamp (default: now)
+        use_cache: If True, check/use local cache; if False, always download fresh
+
+    Returns:
+        DataFrame with OHLCV data for the requested period
+    """
+    # Validate timeframe
+    valid_timeframes = ('1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '8h', '12h', '1d', '1w', '1M')
+    if timeframe not in valid_timeframes:
+        raise ValueError(f"Invalid timeframe: {timeframe}. Must be one of {valid_timeframes}")
+
+    # Ensure UTC
+    if start.tz is None:
+        start = start.tz_localize('UTC')
+    else:
+        start = start.tz_convert('UTC')
+
+    if end is None:
+        end = pd.Timestamp.now(tz='UTC')
+    elif end.tz is None:
+        end = end.tz_localize('UTC')
+    else:
+        end = end.tz_convert('UTC')
+
+    if end <= start:
+        return pd.DataFrame()
+
+    # Handle 15m and 5m with caching support
+    if use_cache:
+        if timeframe == '15m':
+            return sync_15m_ohlcv_range(exchange, symbol, start, end, full_backfill=False)
+        elif timeframe == '5m':
+            return sync_5m_ohlcv_range(exchange, symbol, start, end, full_backfill=False)
+
+    # For other timeframes or when not using cache, download directly
+    df = _download_from_exchange_generic(exchange, symbol, timeframe, start, end)
+    return df
+
+
+def clear_cache(symbol: str = None, timeframe: str = None):
+    """
+    Clear cached OHLCV data.
+
+    Args:
+        symbol: If provided, clear only this symbol.
+        timeframe: If provided, clear only this timeframe ('15m' or '5m'). Defaults to both.
+    """
+    if timeframe is None or timeframe == '15m':
+        if symbol:
+            path = _get_parquet_path(symbol)
+            if path.exists():
+                path.unlink()
+                tprint(f"Cleared 15m cache for {symbol}")
+        else:
+            for path in HF_DATA_DIR.glob("*_15m.parquet"):
+                path.unlink()
+            tprint("Cleared all 15m cache")
+
+    if timeframe is None or timeframe == '5m':
+        if symbol:
+            path = _get_parquet_path_5m(symbol)
+            if path.exists():
+                path.unlink()
+                tprint(f"Cleared 5m cache for {symbol}")
+        else:
+            for path in HF_DATA_DIR_5M.glob("*_5m.parquet"):
+                path.unlink()
+            tprint("Cleared all 5m cache")
 
 
 def bulk_sync_15m_universe(

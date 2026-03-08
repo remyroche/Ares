@@ -33,7 +33,7 @@ def test_compute_prod_aligned_tp_params_h2_floor_math():
     assert out["tp_abs_lo_pct"] == pytest.approx(0.02, rel=1e-9)
 
 
-def test_compute_prod_aligned_tp_params_emits_h2_h4_h8_candidates():
+def test_compute_prod_aligned_tp_params_emits_h1_h2_h4_candidates():
     atr_samples = [0.01, 0.015, 0.02, 0.03, 0.04, 0.05]
     out = compute_prod_aligned_tp_params(
         atr_pct_samples=atr_samples,
@@ -48,7 +48,7 @@ def test_compute_prod_aligned_tp_params_emits_h2_h4_h8_candidates():
     assert len(ladder) > 0
     first = ladder[0]
     assert "tp_eff_targets" in first and "H2" in first["tp_eff_targets"]
-    assert "tp_eff_bands" in first and "H8" in first["tp_eff_bands"]
+    assert "tp_eff_bands" in first and "H4" in first["tp_eff_bands"]
 
     # H2 target is explicitly clipped to [1%, 4%].
     assert 0.01 <= float(first["tp_eff_targets"]["H2"]) <= 0.04

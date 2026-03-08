@@ -3,6 +3,7 @@ import pickle
 import glob
 import time
 import json
+import joblib
 import pandas as pd
 import numpy as np
 import pyarrow.parquet as pq
@@ -21,8 +22,13 @@ from extreme_price_movements.data_store import (
 )
 from extreme_price_movements.training import generate_label_datasets, generate_exhaustion_history, optimize_risk_params, train_models_from_artifacts
 from extreme_price_movements.features import compute_market_features, add_regime_gates, compute_features_hourly
-from extreme_price_movements.universe import get_training_universe, refresh_margin_universe_daily
+from extreme_price_movements.universe import (
+    get_training_universe,
+    refresh_margin_universe_daily,
+    apply_hardcoded_universe_exclusions,
+)
 from extreme_price_movements.engine import simulate_trade_hourly, generate_hourly_signals, _build_side_score_df
+from extreme_price_movements.candidates import select_trade_candidates_vectorized
 from extreme_price_movements.metrics import MetricsLogger
 from extreme_price_movements.risk import TrailingStop
 from extreme_price_movements.reports.report_generator import generate_training_report, generate_risk_report, generate_backtest_report
@@ -31,6 +37,8 @@ from extreme_price_movements.ridge_position_sizer import (
     RidgePositionSizer,
     run_ridge_position_sizer_step,
 )
+from extreme_price_movements.model_loader import load_alpha_models
+from extreme_price_movements.position_sizer.runtime import load_ev_decomposition_bundle
 from extreme_price_movements.offline_optimisers.params_store import apply_offline_optimizer_best_params
 from extreme_price_movements.reports.bucket_report import (
     report_labels,
@@ -39,6 +47,7 @@ from extreme_price_movements.reports.bucket_report import (
     report_ridge_sizer,
     report_optimise,
 )
+from extreme_price_movements.config import CANON_HORIZONS
 from extreme_price_movements.entry_policy import compute_entry_policy_decision, flatten_bucket_policy
 
 # Priority order for quote-currency deduplication.
@@ -655,7 +664,7 @@ def _local_store_symbols(store) -> list[str]:
             continue
         raw = base.replace("symbol=", "")
         syms.append(raw.replace("_", "/", 1))
-    return sorted(set(syms))
+    return apply_hardcoded_universe_exclusions(syms)
 
 
 def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizons=None):
@@ -675,7 +684,7 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
             margin_symbols = list(cfg.get("market_basket", []))
     if _labels_use_store_universe:
         from extreme_price_movements.optimization_utils import filter_low_variance_assets
-        syms_all = sorted(set(margin_symbols).union(set(cfg.get("market_basket", []))))
+        syms_all = apply_hardcoded_universe_exclusions(list(set(margin_symbols).union(set(cfg.get("market_basket", [])))))
         tprint(f"Labels offline universe build: using local store symbols + basket ({len(syms_all)} symbols)")
         train_syms = filter_low_variance_assets(
             store,
@@ -684,11 +693,11 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
             threshold_pct=cfg["variance_filter_pct"],
             ts_sig=ts_sig,
         )
-        train_syms = sorted(list(set(train_syms).union(set(cfg.get("market_basket", [])))))
+        train_syms = apply_hardcoded_universe_exclusions(list(set(train_syms).union(set(cfg.get("market_basket", [])))))
     else:
         train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=ts_sig)
     tprint(f"Universe before dedup: {len(train_syms)} symbols")
-    train_syms = _dedup_universe_by_base(train_syms)
+    train_syms = apply_hardcoded_universe_exclusions(_dedup_universe_by_base(train_syms))
     tprint(f"Universe after base-asset dedup (USDT>USDC>BUSD>EUR): {len(train_syms)} symbols")
 
 
@@ -773,7 +782,7 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
     save_artifact_df(p_exh_hist, cfg["data_root"], run_id, "labels", "exhaustion_history")
 
     # 2. Label Datasets
-    horizons = horizons or cfg.get("label_horizons_hours", [2, 4, 8])
+    horizons = horizons or cfg.get("label_horizons_hours", list(CANON_HORIZONS))
     datasets = generate_label_datasets(panel, feats, mkt_gates, cfg, train_syms, ts_sig, p_exh_hist, horizons=horizons)
 
     for name, df in datasets.items():
@@ -786,7 +795,7 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
         tprint(f"WARNING: label bucket report failed: {_re}")
     tprint("STEP: LABEL GENERATION COMPLETE")
 
-def run_training_step(ts_sig, cfg, store=None, margin_symbols=None, base_only=False):
+def run_training_step(ts_sig, cfg, store=None, margin_symbols=None, base_only=False, meta_only=False):
     """Train all models from label artifacts. Saves trained state to disk."""
     cfg = apply_offline_optimizer_best_params(dict(cfg))
     tprint(f"STEP: MODEL TRAINING START (base_only={base_only})")
@@ -871,6 +880,10 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None, base_only=Fa
     horizons = cfg["label_horizons_hours"]
 
     found_count = 0
+    base_geometry_archetypes = [
+        str(v)
+        for v in cfg.get("base_geometry_archetypes", ["tight", "balanced", "wide"])
+    ]
     for side in trade_sides:
         for k in kinds:
             for H in horizons:
@@ -880,6 +893,14 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None, base_only=Fa
                     datasets[name] = df
                     found_count += 1
                     tprint(f"  Loaded {name}: {len(df)} rows")
+                for variant in base_geometry_archetypes:
+                    if variant == "balanced":
+                        continue
+                    vname = f"train_{side}_{k}_{H}_{variant}"
+                    df_v = load_artifact_df(cfg["data_root"], run_id, "labels", vname)
+                    if df_v is not None:
+                        datasets[vname] = df_v
+                        tprint(f"  Loaded {vname}: {len(df_v)} rows")
 
     # Exhaustion models
     for d in ["up", "down"]:
@@ -933,7 +954,7 @@ def run_training_step(ts_sig, cfg, store=None, margin_symbols=None, base_only=Fa
         except Exception as _e_prev:
             tprint(f"Selector warm-start discovery skipped: {_e_prev}")
     with Timer("Model Training"):
-        trained_bundle = train_models_from_artifacts(datasets, cfg, train_meta=not base_only)
+        trained_bundle = train_models_from_artifacts(datasets, cfg, train_meta=not base_only, train_base=not meta_only)
         alpha_metrics = trained_bundle.get("alpha_oof_metrics", {}) if trained_bundle else {}
     
     # Specialist Models are now trained inside train_models_from_artifacts
@@ -1354,8 +1375,31 @@ def compute_regime_boundaries(feats):
 
 
 def _extract_required_features(bundle, cfg):
-    """Extract required features strictly from configured feature-key lists."""
-    _ = bundle  # Keep signature stable; loading is intentionally config-key driven.
+    """Extract required features from the actual runtime bundle first, config second."""
+
+    def _add_model_feature_cols(_req, _model):
+        if _model is None:
+            return
+        for _attr in ("selected_features", "selected_features_", "feature_names_", "feature_cols"):
+            _vals = getattr(_model, _attr, None)
+            if isinstance(_vals, (list, tuple, set)):
+                _req.update(str(v) for v in _vals if isinstance(v, str) and v)
+
+    def _add_alpha_stack(_req, _alpha_models):
+        if not isinstance(_alpha_models, dict):
+            return
+        for _side_bundle in _alpha_models.values():
+            if not isinstance(_side_bundle, dict):
+                continue
+            for _kind_bundle in _side_bundle.values():
+                if not isinstance(_kind_bundle, dict):
+                    continue
+                _req.update(str(v) for v in _kind_bundle.get("feat_cols", []) if isinstance(v, str) and v)
+                _by_h = _kind_bundle.get("models_by_h", {})
+                if isinstance(_by_h, dict):
+                    for _info in _by_h.values():
+                        if isinstance(_info, dict):
+                            _req.update(str(v) for v in _info.get("feat_cols", []) if isinstance(v, str) and v)
 
     # Minimal runtime essentials for candidate generation, backtest windowing, and regime boundaries.
     req_feats = {
@@ -1376,6 +1420,27 @@ def _extract_required_features(bundle, cfg):
     if dev_metric:
         req_feats.add(str(dev_metric))
 
+    if isinstance(bundle, dict):
+        _add_alpha_stack(req_feats, bundle.get("alpha_models", {}))
+        _meta_models = bundle.get("meta_models", {})
+        if isinstance(_meta_models, dict):
+            for _meta in _meta_models.values():
+                _add_model_feature_cols(req_feats, _meta)
+        _spike = bundle.get("spike_models", {})
+        if isinstance(_spike, dict):
+            for _sp in _spike.values():
+                if isinstance(_sp, dict):
+                    req_feats.update(str(v) for v in _sp.get("columns", []) if isinstance(v, str) and v)
+                else:
+                    _add_model_feature_cols(req_feats, _sp)
+        _spec = bundle.get("specialist_models", {})
+        if isinstance(_spec, dict):
+            for _name, _mdl in _spec.items():
+                if isinstance(_mdl, dict):
+                    req_feats.update(str(v) for v in _mdl.get("columns", []) if isinstance(v, str) and v)
+                else:
+                    _add_model_feature_cols(req_feats, _mdl)
+
     # Sizer-triggered OOS backtest: keep feature loading constrained to
     # EV-decomposition relevant context only.
     if bool(cfg.get("sizer_oos_mode", False)):
@@ -1386,24 +1451,23 @@ def _extract_required_features(bundle, cfg):
         tprint(f"Feature load whitelist (sizer_oos_mode): keys={len(out)} (EV-decomposition relevant)")
         return out
 
-    # Only configured feature-key baskets are allowed.
-    key_lists = [
-        "exh_feature_keys",
-        "spike_feature_keys",
-        "tf_feature_keys",
-        "mr_feature_keys",
-        "meta_feature_keys",
-        "mr_meta_feature_keys",
-        "tf_meta_feature_keys",
-        "position_sizer_regime_feature_keys",
-    ]
-    for kname in key_lists:
-        vals = cfg.get(kname, [])
-        if isinstance(vals, (list, tuple, set)):
-            req_feats.update(str(v) for v in vals if isinstance(v, str) and v)
-
-    # Include merged meta union (meta + overlays) for safety.
-    req_feats.update(_meta_feature_keys_union(cfg))
+    # Config baskets are only used as a fallback for models that do not expose feature lists.
+    if len(req_feats) <= 16:
+        key_lists = [
+            "exh_feature_keys",
+            "spike_feature_keys",
+            "tf_feature_keys",
+            "mr_feature_keys",
+            "meta_feature_keys",
+            "mr_meta_feature_keys",
+            "tf_meta_feature_keys",
+            "position_sizer_regime_feature_keys",
+        ]
+        for kname in key_lists:
+            vals = cfg.get(kname, [])
+            if isinstance(vals, (list, tuple, set)):
+                req_feats.update(str(v) for v in vals if isinstance(v, str) and v)
+        req_feats.update(_meta_feature_keys_union(cfg))
 
     # Drop dynamic prediction columns from config baskets if present.
     req_feats = {f for f in req_feats if not str(f).startswith("pred_")}
@@ -1512,6 +1576,16 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
         model_state = pickle.load(f)
     
     bundle = model_state.get("bundle")
+    if isinstance(bundle, dict):
+        try:
+            native_dir = os.path.join(os.path.dirname(state_file), "native")
+            if os.path.isdir(native_dir):
+                native_alpha = load_alpha_models(native_dir)
+                if native_alpha:
+                    bundle["alpha_models"] = native_alpha
+                    tprint("Backtest state patch: refreshed alpha_models from native model store")
+        except Exception as _e_alpha_patch:
+            tprint(f"WARNING: failed to refresh alpha_models from native model store: {_e_alpha_patch}")
 
     def _ensure_meta_aliases(_bundle):
         if not isinstance(_bundle, dict):
@@ -1557,8 +1631,7 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
             try:
                 _meta_state_file = os.path.join(os.path.dirname(state_file), "model_state_meta.pkl")
                 if os.path.exists(_meta_state_file):
-                    with open(_meta_state_file, "rb") as _mf:
-                        _meta_state = pickle.load(_mf)
+                    _meta_state = joblib.load(_meta_state_file)
                     _meta_bundle = _meta_state.get("bundle", {}) if isinstance(_meta_state, dict) else {}
                     _meta_models = _meta_bundle.get("meta_models", {}) if isinstance(_meta_bundle, dict) else {}
                     if isinstance(_meta_models, dict) and len(_meta_models) > 0:
@@ -1590,11 +1663,31 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
     mkt_gates = add_regime_gates(mkt_df, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"])
     # Load only required features to prevent OOM
     req_feats = _extract_required_features(bundle, cfg)
-    feats = load_features_selected(ts_sig, cfg["data_root"], feature_keys=req_feats, symbols=train_syms)
+    feat_start_ts = None
+    feat_end_ts = ts_sig
+    if dfs:
+        try:
+            feat_start_ts = min(df.index.min() for df in dfs.values() if not df.empty)
+        except ValueError:
+            feat_start_ts = None
+    feats = load_features_selected(
+        ts_sig,
+        cfg["data_root"],
+        feature_keys=req_feats,
+        symbols=train_syms,
+        start_ts=feat_start_ts,
+        end_ts=feat_end_ts,
+    )
     if feats is None:
         tprint("ERROR: Features not found for backtest.")
         return
     feats = _ensure_atr_pct_feature(feats, panel, cfg, symbols=train_syms)
+
+    if hasattr(feats, "materialize"):
+        # Materialize runtime-required matrices once, before the hourly loop.
+        # This avoids repeated lazy assembly in the hot signal-generation path.
+        _materialize_keys = sorted(set(req_feats) | {"atr_pct"})
+        feats.materialize(_materialize_keys, progress_every=20)
 
     # Compute stable regime boundaries for meta-models
     cfg["granular_regime_boundaries"] = compute_regime_boundaries(feats)
@@ -1674,9 +1767,33 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
     atr_s = _align_idx_tz(atr_s, idx_tz)
     risk_conf = model_state.get("risk_params", {}) or {}
     bundle = model_state.get("bundle")
+    _ridge_weights_path = os.path.join(os.path.dirname(state_file), "..", "ridge_sizer", "sizer_weights.json")
+    _ridge_weights_path = os.path.normpath(_ridge_weights_path)
+    if os.path.exists(_ridge_weights_path):
+        try:
+            with open(_ridge_weights_path, "r") as _f_rw:
+                risk_conf["ridge_weights_manifest"] = json.load(_f_rw)
+        except Exception as _e_rw:
+            tprint(f"WARNING: failed to load ridge sizer weights manifest: {_e_rw}")
+    _ridge_model_path = os.path.join(cfg["data_root"], "models", f"ridge_position_sizer_{ts_sig.strftime('%Y%m%d_%H%M%S')}.json")
+    if not os.path.exists(_ridge_model_path):
+        _ridge_model_path = os.path.join("extreme_price_movements", "data", "models", f"ridge_position_sizer_{ts_sig.strftime('%Y%m%d_%H%M%S')}.json")
+    if os.path.exists(_ridge_model_path):
+        try:
+            risk_conf["ridge_sizer"] = RidgePositionSizer.load(_ridge_model_path)
+        except Exception as _e_rs:
+            tprint(f"WARNING: failed to load RidgePositionSizer for backtest runtime: {_e_rs}")
     _ps_manifest = model_state.get("ev_decomposition", {}) if isinstance(model_state, dict) else {}
     if isinstance(_ps_manifest, dict) and _ps_manifest.get("bundle_path"):
         risk_conf["ev_decomposition_bundle_path"] = _ps_manifest.get("bundle_path")
+        try:
+            risk_conf["ev_decomposition_bundle"] = load_ev_decomposition_bundle(
+                _ps_manifest.get("bundle_path"),
+                allow_unknown_version=bool(cfg.get("ev_decomposition_allow_unknown_bundle_version", False)),
+                verbose=True,
+            )
+        except Exception as _e_ps_bundle:
+            tprint(f"WARNING: failed to preload EVDecompositionBundle: {_e_ps_bundle}")
 
     fee_bps = cfg.get("fee_bps", 25.0)
     cost = CostModel(fee_side=float(fee_bps) / 10000.0, slippage_side=float(cfg.get("slippage_bps", 0.0)) / 10000.0)
@@ -1728,6 +1845,7 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
         trades = []
         local_risk = dict(risk_conf)
         local_risk["signal_params"] = signal_params
+        local_risk.setdefault("_candidate_ts_cache", {})
         diag = {
             "hours_total": int(len(ts_list)),
             "hours_with_orders": 0,
@@ -1753,6 +1871,18 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
         from collections import defaultdict
         daily_bucket_counts = defaultdict(lambda: defaultdict(int))  # date -> bucket -> count
         daily_total_counts = defaultdict(int)  # date -> total count
+
+        def _align_ts_like(ref_ts, other_ts):
+            ref = pd.Timestamp(ref_ts)
+            other = pd.Timestamp(other_ts)
+            if ref.tz is None and other.tz is not None:
+                return other.tz_convert(None)
+            if ref.tz is not None and other.tz is None:
+                return other.tz_localize(ref.tz)
+            if ref.tz is not None and other.tz is not None and str(ref.tz) != str(other.tz):
+                return other.tz_convert(ref.tz)
+            return other
+
         if bool(cfg.get("signal_opt_debug", True)):
             tprint(
                 "  RunSlice start: "
@@ -1762,6 +1892,39 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                 f"k_frac_long={signal_params.get('k_frac_long', None)} "
                 f"k_frac_short={signal_params.get('k_frac_short', None)}"
             )
+
+        _prefilter_key = (
+            float(cfg.get("trade_extreme_pct", 0.07)),
+            float(cfg.get("train_min_range_pct", 0.07)),
+            float(cfg.get("train_min_vol_zscore", 1.6)),
+        )
+        _candidate_ts = local_risk["_candidate_ts_cache"].get(_prefilter_key)
+        if _candidate_ts is None:
+            _mask = select_trade_candidates_vectorized(
+                panel,
+                feats,
+                pct=float(cfg.get("trade_extreme_pct", 0.07)),
+                metric="ret24h",
+                min_move_12h_pct=None,
+                min_range_pct=float(cfg.get("train_min_range_pct", 0.07)),
+                min_vol_zscore=float(cfg.get("train_min_vol_zscore", 1.6)),
+                chop_thr=1.0,
+            )
+            if _mask is not None:
+                _candidate_ts = set(_mask.index[_mask.any(axis=1)])
+            else:
+                _candidate_ts = set()
+            local_risk["_candidate_ts_cache"][_prefilter_key] = _candidate_ts
+        if _candidate_ts:
+            _ts_orig = len(ts_list)
+            ts_list = [t for t in ts_list if t in _candidate_ts]
+            if bool(cfg.get("signal_opt_debug", True)):
+                tprint(
+                    f"  Candidate timestamp prefilter kept {len(ts_list)}/{_ts_orig} hours "
+                    f"({(100.0 * len(ts_list) / max(1, _ts_orig)):.1f}%)"
+                )
+        elif bool(cfg.get("signal_opt_debug", True)):
+            tprint("  Candidate timestamp prefilter found no eligible hours")
 
         for i, t in enumerate(ts_list):
             if i % 20 == 0:
@@ -1779,15 +1942,12 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
             # Count currently open trades and their total weight at this timestamp
             open_trades = []
             for tr in trades:
-                _tr_entry = pd.Timestamp(tr["entry_ts"])
-                _tr_exit = pd.Timestamp(tr["exit_ts"])
-                if t.tz is not None and _tr_entry.tz is None:
-                    _tr_entry = _tr_entry.tz_localize(t.tz)
-                    _tr_exit = _tr_exit.tz_localize(t.tz)
-                elif t.tz is None and _tr_entry.tz is not None:
-                    _tr_entry = _tr_entry.tz_convert(None)
-                    _tr_exit = _tr_exit.tz_convert(None)
-                if _tr_entry <= t < _tr_exit:
+                _t_cmp = pd.Timestamp(t)
+                _tr_entry = _align_ts_like(_t_cmp, tr["entry_ts"])
+                _tr_exit = _align_ts_like(_t_cmp, tr["exit_ts"])
+                _t_cmp = _align_ts_like(_tr_entry, _t_cmp)
+                _tr_exit = _align_ts_like(_tr_entry, _tr_exit)
+                if _tr_entry <= _t_cmp < _tr_exit:
                     open_trades.append(tr)
             open_count = len(open_trades)
             open_weight = sum(abs(tr.get("weight", 0.0)) for tr in open_trades)
@@ -2754,12 +2914,12 @@ def run_feature_generation_step(ts_sig, margin_symbols, cfg, store, force_full_r
         tprint(f"WARNING: get_training_universe failed ({exc}); falling back to local store symbol discovery")
         train_syms = _local_store_symbols(store)
         if cfg.get("market_basket"):
-            train_syms = sorted(set(train_syms).union(set(cfg["market_basket"])))
+            train_syms = apply_hardcoded_universe_exclusions(list(set(train_syms).union(set(cfg["market_basket"]))))
         if not train_syms:
             tprint("CRITICAL: no symbols available from local store fallback.")
             return
     for s in cfg["market_basket"]:
-        if s not in train_syms:
+        if s in apply_hardcoded_universe_exclusions([s]) and s not in train_syms:
             train_syms.append(s)
     # Universe diagnostics still logged below; downstream skip reasons are explicit.
 
@@ -3185,4 +3345,3 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
     gc.collect()
     
     return datasets
-

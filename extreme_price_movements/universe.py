@@ -8,6 +8,29 @@ from extreme_price_movements.utils import tprint
 from extreme_price_movements.optimization_utils import filter_low_variance_assets
 
 BINANCE_API = "https://api.binance.com"
+HARDCODED_EXCLUDED_SYMBOLS = frozenset({
+    "CHESS/USDT",
+    "DATA/USDT",
+    "DF/USDT",
+})
+
+
+def _normalize_symbol(symbol: str) -> str:
+    return str(symbol or "").upper().replace("_", "/").strip()
+
+
+def apply_hardcoded_universe_exclusions(symbols: list[str]) -> list[str]:
+    cleaned = []
+    removed = 0
+    for sym in symbols:
+        norm = _normalize_symbol(sym)
+        if norm in HARDCODED_EXCLUDED_SYMBOLS:
+            removed += 1
+            continue
+        cleaned.append(norm)
+    if removed:
+        tprint(f"Hardcoded universe exclusions removed {removed} symbols: {sorted(HARDCODED_EXCLUDED_SYMBOLS)}")
+    return sorted(set(cleaned))
 
 def fetch_binance_cross_margin_pairs():
     tprint(f"Entering function: fetch_binance_cross_margin_pairs in universe.py")
@@ -100,7 +123,7 @@ def refresh_margin_universe_daily(cache: Optional[MarginUniverseCache], quotes=(
 
     tprint("Refreshing margin universe...")
     pairs = fetch_binance_cross_margin_pairs()
-    syms = margin_pairs_to_spot_symbols(pairs, quotes=quotes)
+    syms = apply_hardcoded_universe_exclusions(margin_pairs_to_spot_symbols(pairs, quotes=quotes))
     tprint(f"Refreshed margin universe: {len(syms)} symbols.")
     return MarginUniverseCache(symbols=syms, asof_day=today)
 
@@ -110,6 +133,8 @@ def build_fetch_universe(margin_symbols: list[str], market_basket: list[str], M:
     Always includes market_basket.
     """
     tprint(f"Entering function: build_fetch_universe in universe.py")
+    margin_symbols = apply_hardcoded_universe_exclusions(list(margin_symbols))
+    market_basket = apply_hardcoded_universe_exclusions(list(market_basket))
     tprint(f"Building universe from {len(margin_symbols)} margin symbols + {len(market_basket)} basket symbols (Top {M}).")
     try:
         tickers = fetch_24h_tickers()
@@ -132,13 +157,13 @@ def build_fetch_universe(margin_symbols: list[str], market_basket: list[str], M:
         top_m = [x[1] for x in scored[:M]]
         tprint(f"Selected top {len(top_m)} symbols by volume.")
 
-        final = sorted(set(top_m).union(set(market_basket)))
+        final = apply_hardcoded_universe_exclusions(list(set(top_m).union(set(market_basket))))
         tprint(f"Universe selected: {len(final)} symbols (Top {M} by vol + basket)")
         return final
 
     except Exception as e:
         tprint(f"Error fetching tickers for universe selection: {e}. Fallback to alphabet.")
-        return sorted(list(set(margin_symbols[:M]).union(set(market_basket))))
+        return apply_hardcoded_universe_exclusions(list(set(margin_symbols[:M]).union(set(market_basket))))
 
 def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
     """
@@ -158,7 +183,19 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
                 continue
             raw = base.replace("symbol=", "")
             out.append(raw.replace("_", "/", 1))
-        return sorted(set(out))
+        return apply_hardcoded_universe_exclusions(out)
+
+    offline_universe = bool(cfg.get("offline_backtest_skip_universe_refresh", False))
+    if offline_universe:
+        tprint("Training universe: offline mode enabled, skipping margin refresh and live ticker ranking.")
+        local_syms = _local_store_symbols(store)
+        base_syms = margin_symbols if margin_symbols is not None else local_syms
+        if not base_syms:
+            base_syms = list(cfg.get("market_basket", []))
+        syms_all = apply_hardcoded_universe_exclusions(list(set(base_syms).union(set(cfg["market_basket"]))))[: int(cfg.get("fetch_symbols_M", len(base_syms) or 0) or len(base_syms))]
+        train_syms = filter_low_variance_assets(store, syms_all, lookback_days=30, threshold_pct=cfg["variance_filter_pct"], ts_sig=ts_sig)
+        train_syms = apply_hardcoded_universe_exclusions(list(set(train_syms).union(set(cfg["market_basket"]))))
+        return train_syms
 
     if margin_symbols is None:
         # Fallback if not provided.
@@ -175,7 +212,7 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
 
     syms_all = build_fetch_universe(margin_symbols, cfg["market_basket"], cfg["fetch_symbols_M"])
     train_syms = filter_low_variance_assets(store, syms_all, lookback_days=30, threshold_pct=cfg["variance_filter_pct"], ts_sig=ts_sig)
-    train_syms = sorted(list(set(train_syms).union(set(cfg["market_basket"]))))
+    train_syms = apply_hardcoded_universe_exclusions(list(set(train_syms).union(set(cfg["market_basket"]))))
     return train_syms
 
 def select_live_candidates(margin_symbols: list[str], market_basket: list[str], pct: float = 0.05):
@@ -184,6 +221,8 @@ def select_live_candidates(margin_symbols: list[str], market_basket: list[str], 
     Returns list of symbols to fetch for 1h analysis.
     """
     tprint(f"Entering function: select_live_candidates in universe.py")
+    margin_symbols = apply_hardcoded_universe_exclusions(list(margin_symbols))
+    market_basket = apply_hardcoded_universe_exclusions(list(market_basket))
     tprint(f"Selecting live candidates from {len(margin_symbols)} margin symbols + {len(market_basket)} basket (pct={pct})")
     try:
         tickers = fetch_24h_tickers()

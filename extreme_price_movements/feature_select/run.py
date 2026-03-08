@@ -30,6 +30,7 @@ def run_feature_selection(
     fs_config: FeatureSelectConfig,
     random_seed: int = 42,
     output_dir: str = "artifacts",
+    max_samples: int = 8000,
 ) -> FeatureSelectResult:
     """
     Main entry point for LightGBM feature selection pipeline.
@@ -38,7 +39,8 @@ def run_feature_selection(
 
     selected_features, feature_scores, rfe_trace = run_rfe(
         X, y, groups, time_index, model_kind, quantile_alpha,
-        cv_config, lgbm_params, utility_config, fs_config, random_seed
+        cv_config, lgbm_params, utility_config, fs_config, random_seed,
+        max_samples=max_samples
     )
 
     result = FeatureSelectResult(

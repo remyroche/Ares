@@ -302,16 +302,16 @@ class LayerAPredictor:
         fs_cfg = POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG
         do_fs = fs_cfg.get("enabled", True)
 
-        # Choose grid size based on n_samples
+        # Choose grid size based on n_samples (small bucket relaxation)
         n_samples = len(X)
-        if n_samples > 1500:
-            alpha_grid = np.logspace(-4, 1, 14)
-            l1_grid = fs_cfg.get("l1_ratio_grid_large", [0.05, 0.15, 0.30, 0.50, 0.70, 0.90])
-            inner_cv = fs_cfg.get("inner_n_splits_large_bucket", 3)
+        if n_samples < 1200:
+            alpha_grid = np.logspace(-3, 0, 8)
+            l1_grid = fs_cfg.get("l1_ratio_grid_small", [0.10, 0.25, 0.50])
+            inner_cv = fs_cfg.get("inner_n_splits_default", 3)
         else:
             alpha_grid = np.logspace(-3, 0.5, 10)
-            l1_grid = fs_cfg.get("l1_ratio_grid_small", [0.15, 0.50, 0.85])
-            inner_cv = fs_cfg.get("inner_n_splits_default", 2)
+            l1_grid = fs_cfg.get("l1_ratio_grid_large", [0.15, 0.40, 0.70])
+            inner_cv = fs_cfg.get("inner_n_splits_default", 3)
 
         feature_names = POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"]
 
@@ -339,7 +339,9 @@ class LayerAPredictor:
                         l1_ratio_grid=l1_grid,
                         sample_weight_train=w_tr,
                         inner_n_splits=inner_cv,
-                        max_features_cap=fs_cfg["max_features_cap"]["edge"]
+                        max_features_cap=fs_cfg["max_features_cap"]["edge"],
+                        min_features_floor=fs_cfg["min_features_floor"]["edge"],
+                        sparsity_penalty=fs_cfg["sparsity_penalty"]["edge"]
                     )
                     sel_idx = fs_res["selected_idx"]
                 else:
@@ -407,7 +409,9 @@ class LayerAPredictor:
                 l1_ratio_grid=l1_grid,
                 sample_weight_train=sample_weight,
                 inner_n_splits=inner_cv,
-                max_features_cap=fs_cfg["max_features_cap"]["edge"]
+                max_features_cap=fs_cfg["max_features_cap"]["edge"],
+                        min_features_floor=fs_cfg["min_features_floor"]["edge"],
+                        sparsity_penalty=fs_cfg["sparsity_penalty"]["edge"]
             )
             self.final_selected_feature_idx_edge_ = final_fs_res["selected_idx"]
             self.feature_selection_results_edge_ = final_fs_res
@@ -431,14 +435,14 @@ class LayerAPredictor:
         fs_cfg = POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG
         do_fs = fs_cfg.get("enabled", True)
         n_samples = len(X)
-        if n_samples > 1500:
-            alpha_grid = np.logspace(-4, 1, 14)
-            l1_grid = fs_cfg.get("l1_ratio_grid_large", [0.05, 0.15, 0.30, 0.50, 0.70, 0.90])
-            inner_cv = fs_cfg.get("inner_n_splits_large_bucket", 3)
+        if n_samples < 1200:
+            alpha_grid = np.logspace(-3, 0, 8)
+            l1_grid = fs_cfg.get("l1_ratio_grid_small", [0.10, 0.25, 0.50])
+            inner_cv = fs_cfg.get("inner_n_splits_default", 3)
         else:
             alpha_grid = np.logspace(-3, 0.5, 10)
-            l1_grid = fs_cfg.get("l1_ratio_grid_small", [0.15, 0.50, 0.85])
-            inner_cv = fs_cfg.get("inner_n_splits_default", 2)
+            l1_grid = fs_cfg.get("l1_ratio_grid_large", [0.15, 0.40, 0.70])
+            inner_cv = fs_cfg.get("inner_n_splits_default", 3)
 
         feature_names = POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"]
 
@@ -457,7 +461,9 @@ class LayerAPredictor:
                     l1_ratio_grid=l1_grid,
                     sample_weight_train=w_tr,
                     inner_n_splits=inner_cv,
-                    max_features_cap=fs_cfg["max_features_cap"]["downside"]
+                    max_features_cap=fs_cfg["max_features_cap"]["downside"],
+                    min_features_floor=fs_cfg["min_features_floor"]["downside"],
+                    sparsity_penalty=fs_cfg["sparsity_penalty"]["downside"]
                 )
                 sel_idx = fs_res["selected_idx"]
             else:
@@ -504,7 +510,9 @@ class LayerAPredictor:
                 l1_ratio_grid=l1_grid,
                 sample_weight_train=sample_weight,
                 inner_n_splits=inner_cv,
-                max_features_cap=fs_cfg["max_features_cap"]["downside"]
+                max_features_cap=fs_cfg["max_features_cap"]["downside"],
+                    min_features_floor=fs_cfg["min_features_floor"]["downside"],
+                    sparsity_penalty=fs_cfg["sparsity_penalty"]["downside"]
             )
             self.final_selected_feature_idx_downside_ = final_fs_res["selected_idx"]
             self.feature_selection_results_downside_ = final_fs_res
@@ -537,14 +545,14 @@ class LayerAPredictor:
         fs_cfg = POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG
         do_fs = fs_cfg.get("enabled", True)
         n_samples = len(X_res)
-        if n_samples > 1500:
-            alpha_grid = np.logspace(-4, 1, 14)
-            l1_grid = fs_cfg.get("l1_ratio_grid_large", [0.05, 0.15, 0.30, 0.50, 0.70, 0.90])
-            inner_cv = fs_cfg.get("inner_n_splits_large_bucket", 3)
+        if n_samples < 1200:
+            alpha_grid = np.logspace(-3, 0, 8)
+            l1_grid = fs_cfg.get("l1_ratio_grid_small", [0.10, 0.25, 0.50])
+            inner_cv = fs_cfg.get("inner_n_splits_default", 3)
         else:
             alpha_grid = np.logspace(-3, 0.5, 10)
-            l1_grid = fs_cfg.get("l1_ratio_grid_small", [0.15, 0.50, 0.85])
-            inner_cv = fs_cfg.get("inner_n_splits_default", 2)
+            l1_grid = fs_cfg.get("l1_ratio_grid_large", [0.15, 0.40, 0.70])
+            inner_cv = fs_cfg.get("inner_n_splits_default", 3)
 
         feature_names = POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"]
 
@@ -561,7 +569,9 @@ class LayerAPredictor:
                     l1_ratio_grid=l1_grid,
                     sample_weight_train=w_tr,
                     inner_n_splits=inner_cv,
-                    max_features_cap=fs_cfg["max_features_cap"]["uncertainty"]
+                    max_features_cap=fs_cfg["max_features_cap"]["uncertainty"],
+                    min_features_floor=fs_cfg["min_features_floor"]["uncertainty"],
+                    sparsity_penalty=fs_cfg["sparsity_penalty"]["uncertainty"]
                 )
                 sel_idx = fs_res["selected_idx"]
             else:
@@ -594,7 +604,9 @@ class LayerAPredictor:
                 l1_ratio_grid=l1_grid,
                 sample_weight_train=w_res,
                 inner_n_splits=inner_cv,
-                max_features_cap=fs_cfg["max_features_cap"]["uncertainty"]
+                max_features_cap=fs_cfg["max_features_cap"]["uncertainty"],
+                    min_features_floor=fs_cfg["min_features_floor"]["uncertainty"],
+                    sparsity_penalty=fs_cfg["sparsity_penalty"]["uncertainty"]
             )
             self.final_selected_feature_idx_uncertainty_ = final_fs_res["selected_idx"]
             self.feature_selection_results_uncertainty_ = final_fs_res

@@ -100,9 +100,9 @@ def select_features_via_elasticnet(
     sample_weight_train: Optional[np.ndarray] = None,
     inner_n_splits: int = 2,
     max_features_cap: Optional[int] = None,
-    stability_weight: float = 0.15,
-    size_weight: float = 0.05,
-    selection_freq_threshold: float = 0.60,
+    min_features_floor: int = 5,
+    sparsity_penalty: float = 0.04,
+    selection_freq_threshold: float = 0.67,
     use_sign_consistency: bool = False,
 ) -> Dict:
 
@@ -194,11 +194,11 @@ def select_features_via_elasticnet(
                         consistencies.append(max(frac_pos, frac_neg))
                 if consistencies:
                     msc = float(np.mean(consistencies))
-                    stab_score = 0.6 * mean_sel_freq + 0.25 * mean_jaccard + 0.15 * msc
+                    stab_score = 0.55 * mean_sel_freq + 0.25 * mean_jaccard + 0.20 * msc
                 else:
-                    stab_score = 0.7 * mean_sel_freq + 0.3 * mean_jaccard
+                    stab_score = 0.65 * mean_sel_freq + 0.35 * mean_jaccard
             else:
-                stab_score = 0.7 * mean_sel_freq + 0.3 * mean_jaccard
+                stab_score = 0.65 * mean_sel_freq + 0.35 * mean_jaccard
 
             path_results.append({
                 "alpha": alpha,
@@ -234,6 +234,10 @@ def select_features_via_elasticnet(
             "mean_jaccard": 1.0,
             "mean_sign_consistency": None,
             "stability_score": 1.0,
+            "adjusted_score": 1.0,
+            "effective_selection_freq_threshold": selection_freq_threshold,
+            "model_feature_floor": min_features_floor,
+            "was_backfilled_to_floor": False,
             "path_table": pd.DataFrame()
         }
 
@@ -247,37 +251,63 @@ def select_features_via_elasticnet(
 
     candidates = df[df["mean_score"] >= thresh].copy()
 
-    # Sort by: sparsest -> most stable -> largest alpha
+    candidates["normalized_n_selected"] = candidates["n_selected"] / max(1, n_features)
+    candidates["adjusted_score"] = candidates["stability_score"] - sparsity_penalty * candidates["normalized_n_selected"]
+
+    # Sort by: highest stability-adjusted score -> sparsest -> larger alpha
     candidates = candidates.sort_values(
-        by=["n_selected", "stability_score", "alpha"],
-        ascending=[True, False, False]
+        by=["adjusted_score", "n_selected", "alpha"],
+        ascending=[False, True, False]
     )
 
     chosen = candidates.iloc[0]
-    for _, row in candidates.iterrows():
-        if row["n_selected"] > 0 and row["stability_score"] >= 0.55:
-            chosen = row
-            break
 
-    final_sel = chosen["selected_union"]
+    # Soft guard logic
+    if chosen["stability_score"] < 0.45 and len(candidates) > 1:
+        for _, row in candidates.iterrows():
+            if row["stability_score"] > chosen["stability_score"] + 0.10 and row["n_selected"] <= chosen["n_selected"] + 3:
+                chosen = row
+                break
 
-    # 7. Minimal zero-feature fallback
+    final_sel = list(chosen["selected_union"])
+    freqs = chosen["freqs"]
+
+    # Fallback if zero features chosen
     if len(final_sel) == 0:
         best_row = df.loc[best_idx]
-        fallback_sel = list(best_row["selected_union"])
-        if len(fallback_sel) == 0:
-            fallback_sel = list(range(min(n_features, 5)))
-        final_sel = fallback_sel
+        final_sel = list(best_row["selected_union"])
+        if len(final_sel) == 0:
+            final_sel = list(range(min(min_features_floor, n_features)))
 
-    # 6. Gentler final consolidation
-    freqs = chosen["freqs"]
-    consolidated = [i for i in final_sel if freqs[i] >= selection_freq_threshold]
-    min_keep = max(3, int(0.5 * len(final_sel)))
+    # Adaptive consolidation threshold logic
+    eff_sel_thresh = selection_freq_threshold
+    if inner_n_splits <= 2:
+        eff_sel_thresh = 0.50
+    elif inner_n_splits == 3:
+        eff_sel_thresh = 0.67
+
+    consolidated = [i for i in final_sel if freqs[i] >= eff_sel_thresh]
+    min_keep = max(min_features_floor, int(0.75 * len(final_sel)))
     if len(consolidated) >= min_keep:
         final_sel = consolidated
 
+    # Backfill if over-sparse (below model floor)
+    was_backfilled = False
+    if len(final_sel) < min_features_floor and n_features >= min_features_floor:
+        was_backfilled = True
+        needed = min_features_floor - len(final_sel)
+
+        # Priority 1: features ordered by selection frequency descending
+        avail = [i for i in range(n_features) if i not in final_sel]
+        avail = sorted(avail, key=lambda i: freqs[i], reverse=True)
+        final_sel.extend(avail[:needed])
+
     final_sel_idx = np.array(sorted(final_sel), dtype=int)
     final_names = [feature_names[i] for i in final_sel_idx]
+
+    # Update full table for diagnostics
+    df["normalized_n_selected"] = df["n_selected"] / max(1, n_features)
+    df["adjusted_score"] = df["stability_score"] - sparsity_penalty * df["normalized_n_selected"]
 
     return {
         "selected_idx": final_sel_idx,
@@ -292,7 +322,11 @@ def select_features_via_elasticnet(
         "n_features_selected": len(final_sel_idx),
         "selection_frequency": freqs,
         "mean_jaccard": chosen["mean_jaccard"],
-        "mean_sign_consistency": chosen["mean_sign_consistency"],
+        "mean_sign_consistency": chosen.get("mean_sign_consistency"),
         "stability_score": chosen["stability_score"],
+        "adjusted_score": chosen["adjusted_score"],
+        "effective_selection_freq_threshold": eff_sel_thresh,
+        "model_feature_floor": min_features_floor,
+        "was_backfilled_to_floor": was_backfilled,
         "path_table": df
     }

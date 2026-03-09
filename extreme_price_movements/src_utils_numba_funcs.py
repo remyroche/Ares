@@ -680,3 +680,23 @@ def _numba_rolling_bars_since_extreme_parallel(mat, window, mode):
             out[i, j] = float(length - 1 - best_idx)
 
     return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_slope_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_slope(mat[:, j], window)
+
+    return out
+
+@jit(nopython=True, parallel=True, cache=True)
+def _numba_rolling_skew_parallel(mat, window):
+    n_rows, n_cols = mat.shape
+    out = np.empty((n_rows, n_cols), dtype=np.float32)
+
+    for j in prange(n_cols):
+        out[:, j] = _numba_rolling_skew(mat[:, j], window)
+
+    return out

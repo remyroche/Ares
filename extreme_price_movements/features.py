@@ -1012,8 +1012,8 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         ffd_ema_24 = ff.numba_ewma(ffd_c_d, 2.0 / 25.0, False)
         feats[f"ffd_ema_spread_{d_tag}"] = (ffd_ema_6 - ffd_ema_24).astype(np.float32)
 
-        ffd_rv_12 = ff.apply_to_frame(feats[f"ffd_diff_1_{d_tag}"], ff._numba_rolling_std_nan_safe, 12)
-        ffd_rv_24 = ff.apply_to_frame(feats[f"ffd_diff_1_{d_tag}"], ff._numba_rolling_std_nan_safe, 24)
+        ffd_rv_12 = ff.numba_rolling_std(feats[f"ffd_diff_1_{d_tag}"], 12)
+        ffd_rv_24 = ff.numba_rolling_std(feats[f"ffd_diff_1_{d_tag}"], 24)
         feats[f"ffd_rv_12_{d_tag}"] = ffd_rv_12.astype(np.float32)
         feats[f"ffd_rv_24_{d_tag}"] = ffd_rv_24.astype(np.float32)
 
@@ -1031,7 +1031,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             d_tag = f"{int(round(d * 10)):02d}"
             d_series = ffd_close[d]
             for w in cfg.get("ffd_slope_windows", [12, 24]):
-                feats[f"ffd_slope_{d_tag}_{int(w)}"] = ff.apply_to_frame(d_series, ff._numba_rolling_slope, int(w)).astype(np.float32)
+                feats[f"ffd_slope_{d_tag}_{int(w)}"] = ff.numba_rolling_slope(d_series, int(w)).astype(np.float32)
             mr_w = int(cfg.get("ffd_mr_window", 24))
             mu = ff.numba_rolling_mean(d_series, mr_w)
             sd = ff.numba_rolling_std(d_series, mr_w)
@@ -1051,7 +1051,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             d_tag = f"{int(round(d * 10)):02d}"
             d_series = ffd_close[d]
             for w in cfg.get("ffd_slope_windows", [12, 24]):
-                feats[f"ffd_ctx_slope_{d_tag}_{int(w)}"] = ff.apply_to_frame(d_series, ff._numba_rolling_slope, int(w)).astype(np.float32)
+                feats[f"ffd_ctx_slope_{d_tag}_{int(w)}"] = ff.numba_rolling_slope(d_series, int(w)).astype(np.float32)
 
     def _pick_primary_d(preferred_d_values):
         for d in preferred_d_values:
@@ -1099,16 +1099,16 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     for d in [0.4, 0.6]:
         d_tag = f"{int(round(d * 10)):02d}"
         base_diff = feats[f"ffd_diff_1_{d_tag}"]
-        feats[f"ffd_rv_2h_{d_tag}"] = ff.apply_to_frame(base_diff, ff._numba_rolling_std_nan_safe, 2).astype(np.float32)
-        feats[f"ffd_rv_6h_{d_tag}"] = ff.apply_to_frame(base_diff, ff._numba_rolling_std_nan_safe, 6).astype(np.float32)
-        feats[f"ffd_rv_24h_{d_tag}"] = ff.apply_to_frame(base_diff, ff._numba_rolling_std_nan_safe, 24).astype(np.float32)
+        feats[f"ffd_rv_2h_{d_tag}"] = ff.numba_rolling_std(base_diff, 2).astype(np.float32)
+        feats[f"ffd_rv_6h_{d_tag}"] = ff.numba_rolling_std(base_diff, 6).astype(np.float32)
+        feats[f"ffd_rv_24h_{d_tag}"] = ff.numba_rolling_std(base_diff, 24).astype(np.float32)
 
     # Momentum acceleration features (d=0.6)
     for d in [0.6]:
         d_tag = f"{int(round(d * 10)):02d}"
         diff = feats[f"ffd_diff_1_{d_tag}"]
         feats[f"ffd_accel_{d_tag}"] = diff.diff().astype(np.float32)
-        vol = ff.apply_to_frame(diff, ff._numba_rolling_std_nan_safe, 24)
+        vol = ff.numba_rolling_std(diff, 24)
         feats[f"ffd_z_{d_tag}"] = (diff / (vol + 1e-12)).fillna(0).clip(-50, 50).astype(np.float32)
 
     # Volume-price correlation features (d=0.4,0.6)
@@ -1178,12 +1178,12 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["rsi_slope_base"] = rsi_base.diff(cfg["rsi_slope_n"]).astype(np.float32)
 
 
-    feats["rv_24h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 24)
-    feats["rv_2h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 2)
-    feats["rv_4h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 4)
-    feats["rv_6h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 6)
-    feats["rv_8h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 8)
-    feats["rv_12h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 12)
+    feats["rv_24h"] = ff.numba_rolling_std(feats["ret1h"], 24)
+    feats["rv_2h"] = ff.numba_rolling_std(feats["ret1h"], 2)
+    feats["rv_4h"] = ff.numba_rolling_std(feats["ret1h"], 4)
+    feats["rv_6h"] = ff.numba_rolling_std(feats["ret1h"], 6)
+    feats["rv_8h"] = ff.numba_rolling_std(feats["ret1h"], 8)
+    feats["rv_12h"] = ff.numba_rolling_std(feats["ret1h"], 12)
 
     # New Filter Features (Range & Vol Z-score)
     h_24 = ff.numba_rolling_max(h, 24)
@@ -1266,7 +1266,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     # 6. Skew Proxy (Close Location Value Mean)
     clv_raw_early = ((2 * c - h - l) / ((h - l) + 1e-9)).fillna(0)
-    feats["clv_mean_24"] = ff.apply_to_frame(clv_raw_early, ff._numba_rolling_mean_nan_safe, 24).fillna(0).astype(np.float32)
+    feats["clv_mean_24"] = ff.numba_rolling_mean(clv_raw_early, 24).fillna(0).astype(np.float32)
 
 
     # 7. Stabilization / Falling Knife Features (for long_mr)
@@ -1708,8 +1708,8 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["dist_from_high_vol"] = (dist_from_high / (vol_scale + eps)).astype(np.float32)
 
     # Realized volatility at longer horizons
-    feats["rv_48h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 48).astype(np.float32)
-    feats["rv_120h"] = ff.apply_to_frame(feats["ret1h"], ff._numba_rolling_std_nan_safe, 120).astype(np.float32)
+    feats["rv_48h"] = ff.numba_rolling_std(feats["ret1h"], 48).astype(np.float32)
+    feats["rv_120h"] = ff.numba_rolling_std(feats["ret1h"], 120).astype(np.float32)
     # Vol regime ratio: short-term vs multi-day vol
     feats["rv_ratio_24_120"] = (feats["rv_24h"] / (feats["rv_120h"] + 1e-12)).astype(np.float32)
 
@@ -2329,10 +2329,10 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     pos_sq = pos_ret * pos_ret
 
     # Downside / Upside semivariance
-    feats["downside_semivariance_8"] = ff.apply_to_frame(neg_sq, ff._numba_rolling_mean_nan_safe, 8).astype(np.float32)
-    feats["downside_semivariance_24"] = ff.apply_to_frame(neg_sq, ff._numba_rolling_mean_nan_safe, 24).astype(np.float32)
-    feats["upside_semivariance_8"] = ff.apply_to_frame(pos_sq, ff._numba_rolling_mean_nan_safe, 8).astype(np.float32)
-    feats["upside_semivariance_24"] = ff.apply_to_frame(pos_sq, ff._numba_rolling_mean_nan_safe, 24).astype(np.float32)
+    feats["downside_semivariance_8"] = ff.numba_rolling_mean(neg_sq, 8).astype(np.float32)
+    feats["downside_semivariance_24"] = ff.numba_rolling_mean(neg_sq, 24).astype(np.float32)
+    feats["upside_semivariance_8"] = ff.numba_rolling_mean(pos_sq, 8).astype(np.float32)
+    feats["upside_semivariance_24"] = ff.numba_rolling_mean(pos_sq, 24).astype(np.float32)
 
     # Downside / Upside volatility ratio (std ratio, not variance ratio)
     down_vol_8 = np.sqrt(feats["downside_semivariance_8"].clip(lower=0))
@@ -2833,12 +2833,12 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         ll_count_n = ff.numba_rolling_sum((l < l.shift(1)).astype(np.float32), n)
         feats[f"ll_count_{n}"] = ll_count_n.astype(np.float32)
 
-        feats[f"skew_{n}"] = ff.apply_to_frame(c_log_diff1, ff._numba_rolling_skew, n).astype(np.float32)
+        feats[f"skew_{n}"] = ff.numba_rolling_skew(c_log_diff1, n).astype(np.float32)
 
-        climax_range_med_n = ff.apply_to_frame(h_minus_l, ff._numba_rolling_median, n)
+        climax_range_med_n = ff.numba_rolling_median(h_minus_l, n)
         feats[f"climax_range_{n}"] = (h_minus_l / (climax_range_med_n + 1e-12)).astype(np.float32)
 
-        climax_vol_med_n = ff.apply_to_frame(v, ff._numba_rolling_median, n)
+        climax_vol_med_n = ff.numba_rolling_median(v, n)
         feats[f"climax_vol_{n}"] = (v / (climax_vol_med_n + 1e-12)).astype(np.float32)
 
         vwap_z_n = ff.numba_rolling_vwap(c_log, v, n)

@@ -1311,3 +1311,166 @@ def apply_15m_feature_toggle(cfg: dict) -> dict:
 
 
 CFG = apply_15m_feature_toggle(CFG)
+
+# ============================================================
+# Position Sizer V2 Feature Config
+# ============================================================
+
+POSITION_SIZER_V2_FEATURE_CONFIG = {
+    "shared_feature_keys": [
+        "oof_base_mean", "oof_base_std", "oof_base_min", "oof_base_max", "oof_base_range",
+        "oof_meta_pred", "oof_meta_minus_base_mean", "oof_top2_gap", "oof_sign_agreement_frac",
+        "oof_rank_among_candidates",
+        "ret_1", "ret_3", "ret_6", "ret_12", "ret_24",
+        "price_vs_ema_12_z", "price_vs_ema_24_z", "ema_12_minus_ema_24_z",
+        "trend_slope_12_z", "trend_slope_24_z",
+        "atr_pct", "range_1_atr", "range_3_atr", "rv_6", "rv_12", "rv_24", "rv_ratio_6_24",
+        "close_location_in_bar",
+        "volume_z_12", "volume_z_24", "dollar_vol_z_24", "spread_pct", "spread_to_atr",
+        "cost_to_atr", "slippage_proxy", "liquidity_shock_z",
+        "regime_trend_score", "regime_vol_score", "regime_liquidity_score",
+        "session_progress", "hour_sin", "hour_cos", "dow_sin", "dow_cos"
+    ],
+    "model1_edge_feature_keys": [
+        "oof_base_mean", "oof_base_std", "oof_meta_pred", "oof_top2_gap",
+        "oof_sign_agreement_frac", "ret_3", "ret_6", "ret_12", "price_vs_ema_12_z",
+        "ema_12_minus_ema_24_z", "atr_pct", "rv_ratio_6_24", "spread_to_atr",
+        "cost_to_atr", "regime_trend_score", "regime_vol_score", "session_progress",
+
+        "range_last_3bars_impulse_range", "volatility_contraction_ratio",
+        "ATR_decay_rate", "realized_vol_15m_realized_vol_2h", "micro_range_decay",
+        "wick_ratio_last_bar", "close_position_in_range", "rejection_ratio",
+        "impulse_participation_volume", "terminal_climax_volume",
+        "post_impulse_persistence", "reversal_bar_strength",
+        "bidirectional_range_ratio", "momentum_last_3bars_impulse_return",
+        "drift_after_impulse", "slope_last_n_bars", "impulse_volume_ratio",
+        "terminal_volume_ratio", "post_impulse_volume_persistence",
+        "impulse_volume_slope", "impulse_vol_ratio", "impulse_range_atr_ratio",
+        "vol_compression_ratio", "range_decay"
+    ],
+    "model2_downside_feature_keys": [
+        "oof_base_mean", "oof_base_std", "oof_meta_pred", "ret_1", "ret_3",
+        "close_location_in_bar", "range_1_atr", "atr_pct", "rv_6", "rv_24",
+        "downside_semivol_12", "spread_to_atr", "slippage_proxy",
+        "regime_vol_score", "regime_liquidity_score", "session_progress",
+
+        "impulse_speed", "impulse_acceleration", "wick_cluster_ratio",
+        "rejection_bar_count", "ATR_spike_ratio", "distance_to_local_high",
+        "distance_to_local_low", "distance_to_vwap", "climax_volume_ratio",
+        "reversal_volume_ratio", "rejection_volume_ratio", "terminal_vol_ratio",
+        "volatility_asymmetry"
+    ],
+    "model3_uncertainty_feature_keys": [
+        "oof_base_std", "oof_base_range", "oof_meta_minus_base_mean",
+        "oof_sign_agreement_frac", "edge_pred", "downside_pred",
+        "edge_minus_downside", "abs_edge_pred", "atr_pct", "rv_ratio_6_24",
+        "spread_to_atr", "cost_to_atr", "liquidity_shock_z",
+        "regime_vol_score", "regime_liquidity_score", "session_progress",
+
+        "vol_regime_transition", "ATR_ratio_short_long", "bar_direction_entropy",
+        "wick_entropy", "impulse_breakdown_score", "volume_volatility",
+        "volume_regime_shift", "volume_entropy", "return_per_volume",
+        "vol_of_vol", "vol_regime_shift", "range_cv", "return_vol_ratio"
+    ]
+}
+
+POSITION_SIZER_V2_FEATURE_FLAGS = {
+    "enable_model1_optional": False,
+    "enable_model2_optional": False,
+    "enable_model3_optional": False,
+}
+
+POSITION_SIZER_V2_BUCKETS = ["TF_up", "TF_down", "MR_up", "MR_down"]
+
+POSITION_SIZER_V2_BUCKET_CONFIG = {
+    "min_samples_total": 500,
+    "min_samples_per_fold": 100,
+    "min_active_trades_per_policy_eval": 30,
+}
+
+POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG = {
+    "enabled": True,
+    "alpha_grid_small": "np.logspace(-3, 0, 8)",
+    "alpha_grid_large": "np.logspace(-3, 0.5, 10)",
+    "l1_ratio_grid_small": [0.10, 0.25, 0.50],
+    "l1_ratio_grid_large": [0.15, 0.40, 0.70],
+    "inner_n_splits_default": 3,
+    "selection_rule": "one_std_stable_then_sparse",
+    "selection_freq_threshold": 0.67,
+    "sparsity_penalty": {
+        "edge": 0.04,
+        "downside": 0.035,
+        "uncertainty": 0.025,
+    },
+    "max_features_cap": {
+        "edge": 24,
+        "downside": 18,
+        "uncertainty": 14,
+    },
+    "min_features_floor": {
+        "edge": 9,
+        "downside": 7,
+        "uncertainty": 7,
+    },
+    "enable_sign_consistency": False,
+}
+
+
+
+
+POSITION_SIZER_V2_LAYER0_CONFIG = {
+    "enabled": True,
+
+    # Primary families
+    "families": [
+        "top_movers",
+        "std_threshold",
+        "abs_move_threshold",
+    ],
+
+    # Primary grid
+    "z_hours_grid": [8, 12, 16],
+    "top_w_pct_grid": [4, 6, 8],
+    "x_std_grid": [1.4, 1.6, 1.8],
+    "y_move_pct_grid": [4.0, 5.5, 7.0],
+
+    # Screening horizon
+    "phase1_forward_horizon_bars": 12,
+    "phase1_ret_threshold": 0.0,  # can later be ATR-normalized if needed
+
+    # Shortlist
+    "shortlist_max_candidates": 5,
+    "shortlist_max_per_family": 2,
+
+    # Quantity
+    "min_total_events": 300,
+    "min_active_days_fraction": 0.20,
+    "min_events_per_day": 1,
+    "max_events_per_day": 50,
+
+    # High / low viability
+    "min_high_events": 100,
+    "min_low_events": 100,
+
+    # Distinctness / learnability
+    "enable_regime_distinctness_check": True,
+    "enable_learnability_check": True,
+    "min_regime_distinctness_score": 1.1,
+    "min_predictability_gain": 0.0,
+
+    # Conditioners
+    "enable_secondary_conditioners": True,
+    "conditioner_modes": [
+        "none",
+        "monotonicity_adjust",
+        "volatility_adjust",
+        "alternation_adjust",
+        "liquidity_veto",
+    ],
+
+    # Dispersion cap
+    "max_allowed_dispersion_quantile": 0.75,
+
+    # Time scaling
+    "bars_per_hour": 4,  # assume 15m bars default
+}

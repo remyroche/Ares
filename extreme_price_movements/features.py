@@ -2964,3 +2964,672 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     tprint(f"Features: done ({len(feats)} keys)")
     return feats, _feat_index, _feat_columns
+
+# ============================================================
+# Position Sizer V2 Numba/Numpy Feature Builders
+# ============================================================
+import numpy as np
+from typing import Dict, List, Tuple
+from numba import njit
+
+@njit(cache=True)
+def rolling_mean_nb(x: np.ndarray, window: int) -> np.ndarray:
+    out = np.full_like(x, np.nan)
+    n = len(x)
+    if n == 0 or window <= 0:
+        return out
+
+    run_sum = 0.0
+    count = 0
+    for i in range(n):
+        val = x[i]
+        if not np.isnan(val):
+            run_sum += val
+            count += 1
+
+        if i >= window:
+            old_val = x[i - window]
+            if not np.isnan(old_val):
+                run_sum -= old_val
+                count -= 1
+
+        if count > 0:
+            out[i] = run_sum / count
+    return out
+
+@njit(cache=True)
+def ema_nb(x: np.ndarray, window: int) -> np.ndarray:
+    out = np.full_like(x, np.nan)
+    n = len(x)
+    if n == 0 or window <= 0:
+        return out
+
+    alpha = 2.0 / (window + 1.0)
+    ema = np.nan
+
+    for i in range(n):
+        val = x[i]
+        if not np.isnan(val):
+            if np.isnan(ema):
+                ema = val
+            else:
+                ema = val * alpha + ema * (1.0 - alpha)
+            out[i] = ema
+        else:
+            out[i] = ema
+    return out
+
+@njit(cache=True)
+def rolling_std_nb(x: np.ndarray, window: int) -> np.ndarray:
+    out = np.full_like(x, np.nan)
+    n = len(x)
+    if n == 0 or window <= 0:
+        return out
+
+    for i in range(n):
+        start = max(0, i - window + 1)
+        slice_x = x[start:i+1]
+
+        valid_count = 0
+        mean = 0.0
+        for val in slice_x:
+            if not np.isnan(val):
+                mean += val
+                valid_count += 1
+
+        if valid_count > 1:
+            mean /= valid_count
+            var = 0.0
+            for val in slice_x:
+                if not np.isnan(val):
+                    var += (val - mean)**2
+            out[i] = np.sqrt(var / (valid_count - 1))
+        elif valid_count == 1:
+            out[i] = 0.0
+
+    return out
+
+@njit(cache=True)
+def rolling_zscore_nb(x: np.ndarray, window: int) -> np.ndarray:
+    out = np.full_like(x, np.nan)
+    mean_arr = rolling_mean_nb(x, window)
+    std_arr = rolling_std_nb(x, window)
+
+    for i in range(len(x)):
+        std = std_arr[i]
+        if not np.isnan(std) and std > 1e-9:
+            out[i] = (x[i] - mean_arr[i]) / std
+        elif not np.isnan(x[i]) and not np.isnan(mean_arr[i]):
+            out[i] = 0.0
+    return out
+
+@njit(cache=True)
+def realized_vol_nb(ret: np.ndarray, window: int) -> np.ndarray:
+    return rolling_std_nb(ret, window)
+
+@njit(cache=True)
+def downside_semivol_nb(ret: np.ndarray, window: int) -> np.ndarray:
+    out = np.full_like(ret, np.nan)
+    n = len(ret)
+    if n == 0 or window <= 0:
+        return out
+
+    for i in range(n):
+        start = max(0, i - window + 1)
+        slice_ret = ret[start:i+1]
+
+        valid_count = 0
+        var = 0.0
+        for val in slice_ret:
+            if not np.isnan(val):
+                valid_count += 1
+                if val < 0:
+                    var += val**2
+
+        if valid_count > 1:
+            out[i] = np.sqrt(var / (valid_count - 1))
+        elif valid_count == 1:
+            out[i] = 0.0
+    return out
+
+@njit(cache=True)
+def close_location_in_bar_nb(high: np.ndarray, low: np.ndarray, close: np.ndarray) -> np.ndarray:
+    out = np.full_like(close, np.nan)
+    for i in range(len(close)):
+        rng = high[i] - low[i]
+        if not np.isnan(rng) and rng > 1e-9:
+            out[i] = (close[i] - low[i]) / rng
+        else:
+            out[i] = 0.5
+    return out
+
+@njit(cache=True)
+def range_over_atr_nb(high: np.ndarray, low: np.ndarray, atr: np.ndarray) -> np.ndarray:
+    out = np.full_like(high, np.nan)
+    for i in range(len(high)):
+        a = atr[i]
+        if not np.isnan(a) and a > 1e-9:
+            out[i] = (high[i] - low[i]) / a
+        else:
+            out[i] = 1.0
+    return out
+
+@njit(cache=True)
+def base_pred_summary_nb(base_pred_matrix: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    n, k = base_pred_matrix.shape
+
+    b_mean = np.zeros(n, dtype=np.float32)
+    b_std = np.zeros(n, dtype=np.float32)
+    b_min = np.zeros(n, dtype=np.float32)
+    b_max = np.zeros(n, dtype=np.float32)
+    b_range = np.zeros(n, dtype=np.float32)
+    sign_agree = np.zeros(n, dtype=np.float32)
+    top2_gap = np.zeros(n, dtype=np.float32)
+
+    for i in range(n):
+        row = base_pred_matrix[i, :]
+
+        valid_count = 0
+        r_mean = 0.0
+        for val in row:
+            if not np.isnan(val):
+                r_mean += val
+                valid_count += 1
+
+        if valid_count == 0:
+            continue
+
+        r_mean /= valid_count
+        b_mean[i] = r_mean
+
+        var = 0.0
+        r_min = 1e9
+        r_max = -1e9
+        pos_count = 0
+        neg_count = 0
+
+        for val in row:
+            if not np.isnan(val):
+                var += (val - r_mean)**2
+                if val < r_min: r_min = val
+                if val > r_max: r_max = val
+                if val > 0: pos_count += 1
+                elif val < 0: neg_count += 1
+
+        b_std[i] = np.sqrt(var / valid_count) if valid_count > 0 else 0.0
+        b_min[i] = r_min
+        b_max[i] = r_max
+        b_range[i] = r_max - r_min
+        sign_agree[i] = max(pos_count, neg_count) / valid_count
+
+        if valid_count >= 2:
+            sorted_vals = np.sort(row[~np.isnan(row)])
+            top2_gap[i] = sorted_vals[-1] - sorted_vals[-2]
+
+    return b_mean, b_std, b_min, b_max, b_range, sign_agree, top2_gap
+
+@njit(cache=True)
+def liquidity_shock_nb(short_vol: np.ndarray, long_vol: np.ndarray) -> np.ndarray:
+    out = np.zeros_like(short_vol)
+    for i in range(len(out)):
+        lv = long_vol[i]
+        sv = short_vol[i]
+        if not np.isnan(lv) and not np.isnan(sv) and lv > 1e-9:
+            out[i] = (sv - lv) / lv
+    return out
+
+def compute_returns_nb(close: np.ndarray, periods: int) -> np.ndarray:
+    out = np.full_like(close, np.nan)
+    n = len(close)
+    for i in range(periods, n):
+        old = close[i - periods]
+        if not np.isnan(old) and old > 1e-9:
+            out[i] = (close[i] - old) / old
+    return out
+
+
+@njit(cache=True)
+def rolling_sum_nb(x: np.ndarray, window: int) -> np.ndarray:
+    out = np.full_like(x, np.nan)
+    n = len(x)
+    if n == 0 or window <= 0:
+        return out
+    run_sum = 0.0
+    count = 0
+    for i in range(n):
+        val = x[i]
+        if not np.isnan(val):
+            run_sum += val
+            count += 1
+        if i >= window:
+            old_val = x[i - window]
+            if not np.isnan(old_val):
+                run_sum -= old_val
+                count -= 1
+        if count > 0:
+            out[i] = run_sum
+    return out
+
+@njit(cache=True)
+def rolling_max_nb(x: np.ndarray, window: int) -> np.ndarray:
+    out = np.full_like(x, np.nan)
+    n = len(x)
+    for i in range(n):
+        start = max(0, i - window + 1)
+        mx = -np.inf
+        valid = False
+        for j in range(start, i + 1):
+            if not np.isnan(x[j]):
+                valid = True
+                if x[j] > mx: mx = x[j]
+        if valid: out[i] = mx
+    return out
+
+@njit(cache=True)
+def rolling_min_nb(x: np.ndarray, window: int) -> np.ndarray:
+    out = np.full_like(x, np.nan)
+    n = len(x)
+    for i in range(n):
+        start = max(0, i - window + 1)
+        mn = np.inf
+        valid = False
+        for j in range(start, i + 1):
+            if not np.isnan(x[j]):
+                valid = True
+                if x[j] < mn: mn = x[j]
+        if valid: out[i] = mn
+    return out
+
+@njit(cache=True)
+def slope_nb(x: np.ndarray, window: int) -> np.ndarray:
+    out = np.full_like(x, np.nan)
+    n = len(x)
+    if n < 2 or window < 2: return out
+    for i in range(window - 1, n):
+        sum_x = 0.0; sum_y = 0.0; sum_xy = 0.0; sum_x2 = 0.0
+        count = 0
+        for j in range(window):
+            idx = i - window + 1 + j
+            y = x[idx]
+            if not np.isnan(y):
+                sum_x += j
+                sum_y += y
+                sum_xy += j * y
+                sum_x2 += j * j
+                count += 1
+        if count > 1:
+            mean_x = sum_x / count
+            mean_y = sum_y / count
+            num = sum_xy - count * mean_x * mean_y
+            den = sum_x2 - count * mean_x**2
+            if den > 1e-9:
+                out[i] = num / den
+            else:
+                out[i] = 0.0
+    return out
+
+@njit(cache=True)
+def vwap_nb(close: np.ndarray, volume: np.ndarray, window: int) -> np.ndarray:
+    out = np.full_like(close, np.nan)
+    n = len(close)
+    for i in range(n):
+        start = max(0, i - window + 1)
+        sum_cv = 0.0
+        sum_v = 0.0
+        for j in range(start, i + 1):
+            c = close[j]
+            v = volume[j]
+            if not np.isnan(c) and not np.isnan(v):
+                sum_cv += c * v
+                sum_v += v
+        if sum_v > 1e-9:
+            out[i] = sum_cv / sum_v
+        else:
+            out[i] = close[i]
+    return out
+
+@njit(cache=True)
+def entropy_nb(x: np.ndarray, window: int, n_bins: int = 5) -> np.ndarray:
+    out = np.full_like(x, np.nan)
+    n = len(x)
+    for i in range(window - 1, n):
+        start = i - window + 1
+        slice_x = x[start:i+1]
+        valid_x = []
+        for val in slice_x:
+            if not np.isnan(val): valid_x.append(val)
+
+        if len(valid_x) > 1:
+            mn = min(valid_x); mx = max(valid_x)
+            if mx > mn:
+                counts = np.zeros(n_bins)
+                step = (mx - mn) / n_bins
+                for val in valid_x:
+                    b = int((val - mn) / step)
+                    if b == n_bins: b -= 1
+                    counts[b] += 1
+                probs = counts / len(valid_x)
+                ent = 0.0
+                for p in probs:
+                    if p > 0: ent -= p * np.log2(p)
+                out[i] = ent
+            else:
+                out[i] = 0.0
+        elif len(valid_x) == 1:
+            out[i] = 0.0
+    return out
+
+@njit(cache=True)
+def binary_entropy_nb(x: np.ndarray, window: int) -> np.ndarray:
+    out = np.full_like(x, np.nan)
+    n = len(x)
+    for i in range(window - 1, n):
+        start = i - window + 1
+        pos_c = 0; neg_c = 0; tot = 0
+        for j in range(start, i + 1):
+            val = x[j]
+            if not np.isnan(val):
+                tot += 1
+                if val > 0: pos_c += 1
+                elif val < 0: neg_c += 1
+        if tot > 0:
+            p_pos = pos_c / tot
+            p_neg = neg_c / tot
+            ent = 0.0
+            if p_pos > 0: ent -= p_pos * np.log2(p_pos)
+            if p_neg > 0: ent -= p_neg * np.log2(p_neg)
+            out[i] = ent
+    return out
+
+
+def build_position_sizer_feature_frame(raw_inputs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+    close = np.ascontiguousarray(raw_inputs.get("close", np.empty(0)), dtype=np.float32)
+    high = np.ascontiguousarray(raw_inputs.get("high", np.empty(0)), dtype=np.float32)
+    low = np.ascontiguousarray(raw_inputs.get("low", np.empty(0)), dtype=np.float32)
+    volume = np.ascontiguousarray(raw_inputs.get("volume", np.empty(0)), dtype=np.float32)
+    atr = np.ascontiguousarray(raw_inputs.get("atr", np.empty(0)), dtype=np.float32)
+    spread = np.ascontiguousarray(raw_inputs.get("spread_pct", np.empty(0)), dtype=np.float32)
+    meta_pred = np.ascontiguousarray(raw_inputs.get("meta_oof_pred", np.empty(0)), dtype=np.float32)
+    base_pred_matrix = np.ascontiguousarray(raw_inputs.get("base_oof_pred_matrix", np.empty((len(close), 0))), dtype=np.float32)
+
+    n = len(close)
+    if n == 0:
+        return {}
+
+    # Basic state / Ensembles
+    b_mean, b_std, b_min, b_max, b_range, sign_agree, top2_gap = base_pred_summary_nb(base_pred_matrix)
+    ret_1 = compute_returns_nb(close, 1)
+    ret_3 = compute_returns_nb(close, 3)
+    ret_6 = compute_returns_nb(close, 6)
+    ret_12 = compute_returns_nb(close, 12)
+    ret_24 = compute_returns_nb(close, 24)
+
+    # Ranges & ATR
+    atr_pct = np.where(close > 1e-9, atr / close, 0.0).astype(np.float32)
+    bar_range = high - low
+    range_1 = range_over_atr_nb(high, low, atr)
+
+    high_3 = rolling_max_nb(high, 3)
+    low_3 = rolling_min_nb(low, 3)
+    range_3 = range_over_atr_nb(high_3, low_3, atr)
+    range_3_abs = high_3 - low_3
+
+    high_6 = rolling_max_nb(high, 6)
+    low_6 = rolling_min_nb(low, 6)
+    range_6_abs = high_6 - low_6
+
+    # Model 1 additions
+    impulse_range = range_6_abs # Proxy impulse window as 6 bars (1h=6h)
+    range_last_3bars_impulse_range = np.where(impulse_range > 1e-9, range_3_abs / impulse_range, 1.0).astype(np.float32)
+    volatility_contraction_ratio = np.where(rolling_mean_nb(bar_range, 24) > 1e-9, rolling_mean_nb(bar_range, 4) / rolling_mean_nb(bar_range, 24), 1.0).astype(np.float32)
+    atr_decay_rate = slope_nb(atr, 6).astype(np.float32) # Using short slope for decay rate
+
+    rv_1 = realized_vol_nb(ret_1, 1) # ~15m assuming 15m underlying or 1 bar
+    rv_2 = realized_vol_nb(ret_1, 2)
+    rv_4 = realized_vol_nb(ret_1, 4)
+    rv_6 = realized_vol_nb(ret_1, 6)
+    rv_12 = realized_vol_nb(ret_1, 12)
+    rv_24 = realized_vol_nb(ret_1, 24)
+    rv_48 = realized_vol_nb(ret_1, 48)
+
+    realized_vol_15m_2h = np.where(rv_2 > 1e-9, rv_1 / rv_2, 1.0).astype(np.float32) # Ratio approximation
+    micro_range_decay = slope_nb(bar_range, 3).astype(np.float32)
+
+    wick_ratio_last_bar = np.where(bar_range > 1e-9, np.minimum(high - np.maximum(close, opens:=np.roll(close, 1)), np.minimum(close, opens) - low) / bar_range, 0.0).astype(np.float32)
+    close_position_in_range = close_location_in_bar_nb(high, low, close).astype(np.float32)
+
+    # Simple rejection logic (wick > 50% bar)
+    rejection_ratio = np.where(bar_range > 1e-9, (np.maximum(high - np.maximum(close, opens), np.minimum(close, opens) - low)) / bar_range, 0.0)
+    rejection_ratio = rolling_mean_nb(rejection_ratio, 6).astype(np.float32)
+
+    vol_sum_3 = rolling_sum_nb(volume, 3)
+    vol_sum_4 = rolling_sum_nb(volume, 4)
+    vol_sum_6 = rolling_sum_nb(volume, 6)
+    vol_sum_12 = rolling_sum_nb(volume, 12)
+    vol_sum_24 = rolling_sum_nb(volume, 24)
+
+    mean_vol_24 = rolling_mean_nb(volume, 24)
+
+    impulse_participation_volume = np.where(mean_vol_24 > 1e-9, vol_sum_6 / (6 * mean_vol_24), 1.0).astype(np.float32)
+    terminal_climax_volume = np.where(mean_vol_24 > 1e-9, volume / mean_vol_24, 1.0).astype(np.float32)
+    post_impulse_persistence = np.where(vol_sum_6 > 1e-9, vol_sum_4 / vol_sum_6, 1.0).astype(np.float32)
+
+    reversal_bar_strength = np.where(bar_range > 1e-9, (close - opens) / bar_range, 0.0).astype(np.float32)
+    bidirectional_range_ratio = np.where(rolling_max_nb(high, 12) - rolling_min_nb(low, 12) > 1e-9, range_3_abs / (rolling_max_nb(high, 12) - rolling_min_nb(low, 12)), 1.0).astype(np.float32)
+
+    momentum_last_3bars_impulse_return = np.where(np.abs(ret_6) > 1e-9, ret_3 / ret_6, 0.0).astype(np.float32)
+    drift_after_impulse = slope_nb(close, 4).astype(np.float32)
+    slope_last_n_bars = slope_nb(close, 6).astype(np.float32)
+
+    impulse_volume_ratio = np.where(mean_vol_24 > 1e-9, vol_sum_12 / (12 * mean_vol_24), 1.0).astype(np.float32)
+    terminal_volume_ratio = np.where(vol_sum_6 > 1e-9, vol_sum_3 / (vol_sum_6/2), 1.0).astype(np.float32)
+    post_impulse_volume_persistence2 = np.where(vol_sum_6 > 1e-9, vol_sum_4 / (vol_sum_6 * 0.66), 1.0).astype(np.float32)
+    impulse_volume_slope = slope_nb(volume, 6).astype(np.float32)
+
+    impulse_vol_ratio = np.where(rv_48 > 1e-9, rv_12 / rv_48, 1.0).astype(np.float32)
+    impulse_range_atr_ratio = np.where(atr > 1e-9, range_6_abs / rolling_mean_nb(atr, 24), 1.0).astype(np.float32)
+    vol_compression_ratio = np.where(rv_6 > 1e-9, rv_4 / rv_6, 1.0).astype(np.float32)
+    range_decay = np.where(rolling_mean_nb(bar_range, 6) > 1e-9, rolling_mean_nb(bar_range, 3) / rolling_mean_nb(bar_range, 6), 1.0).astype(np.float32)
+
+    # Model 2 additions
+    impulse_speed = np.where(range_6_abs > 1e-9, ret_6 / range_6_abs, 0.0).astype(np.float32)
+    impulse_acceleration = slope_nb(ret_1, 6).astype(np.float32)
+    wick_cluster_ratio = rolling_mean_nb(wick_ratio_last_bar, 3).astype(np.float32)
+    rejection_bar_count = rolling_sum_nb(np.where(wick_ratio_last_bar > 0.4, 1.0, 0.0), 6).astype(np.float32)
+    atr_spike_ratio = np.where(rolling_mean_nb(atr, 24) > 1e-9, atr / rolling_mean_nb(atr, 24), 1.0).astype(np.float32)
+
+    high_12 = rolling_max_nb(high, 12)
+    low_12 = rolling_min_nb(low, 12)
+    distance_to_local_high = np.where(close > 1e-9, (high_12 - close) / close, 0.0).astype(np.float32)
+    distance_to_local_low = np.where(close > 1e-9, (close - low_12) / close, 0.0).astype(np.float32)
+
+    vwap_val = vwap_nb(close, volume, 24)
+    distance_to_vwap = np.where(vwap_val > 1e-9, (close - vwap_val) / vwap_val, 0.0).astype(np.float32)
+
+    climax_volume_ratio = np.where(mean_vol_24 > 1e-9, rolling_max_nb(volume, 6) / mean_vol_24, 1.0).astype(np.float32)
+
+    vol_countertrend = np.where(np.sign(ret_1) != np.sign(ret_6), volume, 0.0)
+    reversal_volume_ratio = np.where(vol_sum_6 > 1e-9, rolling_sum_nb(vol_countertrend, 6) / vol_sum_6, 0.0).astype(np.float32)
+
+    vol_wicks = np.where(wick_ratio_last_bar > 0.4, volume, 0.0)
+    mean_vol_12 = rolling_mean_nb(volume, 12)
+    rejection_volume_ratio = np.where(mean_vol_12 > 1e-9, rolling_sum_nb(vol_wicks, 6) / mean_vol_12, 0.0).astype(np.float32)
+
+    terminal_vol_ratio = np.where(rv_6 > 1e-9, rv_3:=realized_vol_nb(ret_1, 3) / rv_6, 1.0).astype(np.float32)
+
+    vol_up = rolling_sum_nb(np.where(ret_1 > 0, volume, 0.0), 12)
+    vol_down = rolling_sum_nb(np.where(ret_1 < 0, volume, 0.0), 12)
+    volatility_asymmetry = np.where(vol_up + vol_down > 1e-9, vol_up / (vol_up + vol_down), 0.5).astype(np.float32)
+
+    # Model 3 additions
+    vol_regime_transition = np.where(rolling_mean_nb(rv_24, 48) > 1e-9, rv_24 / rolling_mean_nb(rv_24, 48), 1.0).astype(np.float32)
+    atr_ratio_short_long = np.where(rolling_mean_nb(atr, 24) > 1e-9, rolling_mean_nb(atr, 3) / rolling_mean_nb(atr, 24), 1.0).astype(np.float32)
+
+    bar_direction_entropy = binary_entropy_nb(ret_1, 12).astype(np.float32)
+    wick_entropy = entropy_nb(wick_ratio_last_bar, 12).astype(np.float32)
+    impulse_breakdown_score = np.where(ret_6 > 1e-9, ret_3 / ret_6, 0.0).astype(np.float32) # Same proxy as momentum ratio
+
+    volume_volatility = np.where(mean_vol_12 > 1e-9, rolling_std_nb(volume, 12) / mean_vol_12, 0.0).astype(np.float32)
+    volume_regime_shift = np.where(mean_vol_24 > 1e-9, rolling_mean_nb(volume, 6) / mean_vol_24, 1.0).astype(np.float32)
+    volume_entropy = entropy_nb(volume, 12).astype(np.float32)
+
+    return_per_volume = np.where(volume > 1e-9, np.abs(ret_1) / volume, 0.0).astype(np.float32)
+
+    mean_rv_12 = rolling_mean_nb(rv_12, 12)
+    vol_of_vol = np.where(mean_rv_12 > 1e-9, rolling_std_nb(rv_12, 12) / mean_rv_12, 0.0).astype(np.float32)
+    vol_regime_shift_4_16 = np.where(rolling_mean_nb(rv_12, 16) > 1e-9, rolling_mean_nb(rv_12, 4) / rolling_mean_nb(rv_12, 16), 1.0).astype(np.float32)
+
+    range_cv = np.where(rolling_mean_nb(bar_range, 12) > 1e-9, rolling_std_nb(bar_range, 12) / rolling_mean_nb(bar_range, 12), 0.0).astype(np.float32)
+    return_vol_ratio = np.where(rv_12 > 1e-9, np.abs(ret_1) / rv_12, 0.0).astype(np.float32)
+
+    # Pre-existing standard features
+    ema_12 = ema_nb(close, 12)
+    ema_24 = ema_nb(close, 24)
+    price_vs_ema_12_z = np.where(ema_12 > 1e-9, (close - ema_12) / ema_12, 0.0).astype(np.float32)
+    price_vs_ema_24_z = np.where(ema_24 > 1e-9, (close - ema_24) / ema_24, 0.0).astype(np.float32)
+    ema_12_minus_ema_24_z = np.where(ema_24 > 1e-9, (ema_12 - ema_24) / ema_24, 0.0).astype(np.float32)
+    rv_ratio_6_24 = np.where(rv_24 > 1e-9, rv_6 / rv_24, 1.0).astype(np.float32)
+    dsv_12 = downside_semivol_nb(ret_1, 12)
+
+    vol_std_24 = rolling_std_nb(volume, 24)
+    volume_z_24 = np.where(vol_std_24 > 1e-9, (volume - mean_vol_24) / vol_std_24, 0.0).astype(np.float32)
+    volume_z_12 = np.where(rolling_std_nb(volume, 12) > 1e-9, (volume - mean_vol_12) / rolling_std_nb(volume, 12), 0.0).astype(np.float32)
+    dollar_vol_z_24 = volume_z_24 # Proxy
+
+    spread_to_atr = np.where(atr_pct > 1e-9, spread / atr_pct, 0.0).astype(np.float32)
+
+    regime_trend = np.ascontiguousarray(raw_inputs.get("regime_trend_score", np.zeros(n)), dtype=np.float32)
+    regime_vol = np.ascontiguousarray(raw_inputs.get("regime_vol_score", np.zeros(n)), dtype=np.float32)
+    regime_liq = np.ascontiguousarray(raw_inputs.get("regime_liquidity_score", np.zeros(n)), dtype=np.float32)
+    hod = raw_inputs.get("hour_of_day", np.zeros(n))
+    dow = raw_inputs.get("day_of_week", np.zeros(n))
+
+    hour_sin = np.sin(2 * np.pi * hod / 24.0).astype(np.float32)
+    hour_cos = np.cos(2 * np.pi * hod / 24.0).astype(np.float32)
+    dow_sin = np.sin(2 * np.pi * dow / 7.0).astype(np.float32)
+    dow_cos = np.cos(2 * np.pi * dow / 7.0).astype(np.float32)
+
+    feature_dict = {
+        "oof_base_mean": b_mean,
+        "oof_base_std": b_std,
+        "oof_base_min": b_min,
+        "oof_base_max": b_max,
+        "oof_base_range": b_range,
+        "oof_sign_agreement_frac": sign_agree,
+        "oof_top2_gap": top2_gap,
+        "oof_meta_pred": meta_pred,
+        "oof_meta_minus_base_mean": meta_pred - b_mean,
+        "oof_rank_among_candidates": np.zeros(n, dtype=np.float32), # Replaced dynamically cross-sectionally
+
+        "ret_1": ret_1, "ret_3": ret_3, "ret_6": ret_6, "ret_12": ret_12, "ret_24": ret_24,
+        "price_vs_ema_12_z": price_vs_ema_12_z, "price_vs_ema_24_z": price_vs_ema_24_z,
+        "ema_12_minus_ema_24_z": ema_12_minus_ema_24_z, "trend_slope_12_z": slope_last_n_bars,
+        "trend_slope_24_z": slope_nb(close, 24).astype(np.float32),
+
+        "atr_pct": atr_pct, "range_1_atr": range_1, "range_3_atr": range_3,
+        "rv_6": rv_6, "rv_12": rv_12, "rv_24": rv_24, "rv_ratio_6_24": rv_ratio_6_24,
+        "close_location_in_bar": close_position_in_range,
+        "downside_semivol_12": dsv_12,
+
+        "volume_z_12": volume_z_12, "volume_z_24": volume_z_24, "dollar_vol_z_24": dollar_vol_z_24,
+        "spread_pct": spread, "spread_to_atr": spread_to_atr, "cost_to_atr": spread_to_atr,
+        "slippage_proxy": spread_to_atr * 1.5, "liquidity_shock_z": liquidity_shock_nb(vol_sum_6, vol_sum_24).astype(np.float32),
+
+        "regime_trend_score": regime_trend, "regime_vol_score": regime_vol, "regime_liquidity_score": regime_liq,
+        "hour_sin": hour_sin, "hour_cos": hour_cos, "dow_sin": dow_sin, "dow_cos": dow_cos,
+        "session_progress": (hod / 24.0).astype(np.float32),
+
+        # --- NEW MODEL 1 ---
+        "range_last_3bars_impulse_range": range_last_3bars_impulse_range,
+        "volatility_contraction_ratio": volatility_contraction_ratio,
+        "ATR_decay_rate": atr_decay_rate,
+        "realized_vol_15m_realized_vol_2h": realized_vol_15m_2h,
+        "micro_range_decay": micro_range_decay,
+        "wick_ratio_last_bar": wick_ratio_last_bar,
+        "close_position_in_range": close_position_in_range,
+        "rejection_ratio": rejection_ratio,
+        "impulse_participation_volume": impulse_participation_volume,
+        "terminal_climax_volume": terminal_climax_volume,
+        "post_impulse_persistence": post_impulse_persistence,
+        "reversal_bar_strength": reversal_bar_strength,
+        "bidirectional_range_ratio": bidirectional_range_ratio,
+        "momentum_last_3bars_impulse_return": momentum_last_3bars_impulse_return,
+        "drift_after_impulse": drift_after_impulse,
+        "slope_last_n_bars": slope_last_n_bars,
+        "impulse_volume_ratio": impulse_volume_ratio,
+        "terminal_volume_ratio": terminal_volume_ratio,
+        "post_impulse_volume_persistence": post_impulse_volume_persistence2,
+        "impulse_volume_slope": impulse_volume_slope,
+        "impulse_vol_ratio": impulse_vol_ratio,
+        "impulse_range_atr_ratio": impulse_range_atr_ratio,
+        "vol_compression_ratio": vol_compression_ratio,
+        "range_decay": range_decay,
+
+        # --- NEW MODEL 2 ---
+        "impulse_speed": impulse_speed,
+        "impulse_acceleration": impulse_acceleration,
+        "wick_cluster_ratio": wick_cluster_ratio,
+        "rejection_bar_count": rejection_bar_count,
+        "ATR_spike_ratio": atr_spike_ratio,
+        "distance_to_local_high": distance_to_local_high,
+        "distance_to_local_low": distance_to_local_low,
+        "distance_to_vwap": distance_to_vwap,
+        "climax_volume_ratio": climax_volume_ratio,
+        "reversal_volume_ratio": reversal_volume_ratio,
+        "rejection_volume_ratio": rejection_volume_ratio,
+        "terminal_vol_ratio": terminal_vol_ratio,
+        "volatility_asymmetry": volatility_asymmetry,
+
+        # --- NEW MODEL 3 ---
+        "vol_regime_transition": vol_regime_transition,
+        "ATR_ratio_short_long": atr_ratio_short_long,
+        "bar_direction_entropy": bar_direction_entropy,
+        "wick_entropy": wick_entropy,
+        "impulse_breakdown_score": impulse_breakdown_score,
+        "volume_volatility": volume_volatility,
+        "volume_regime_shift": volume_regime_shift,
+        "volume_entropy": volume_entropy,
+        "return_per_volume": return_per_volume,
+        "vol_of_vol": vol_of_vol,
+        "vol_regime_shift": vol_regime_shift_4_16,
+        "range_cv": range_cv,
+        "return_vol_ratio": return_vol_ratio,
+    }
+
+    from extreme_price_movements.config import POSITION_SIZER_V2_FEATURE_CONFIG
+    for key in POSITION_SIZER_V2_FEATURE_CONFIG["shared_feature_keys"]:
+        if key not in feature_dict:
+            feature_dict[key] = np.zeros(n, dtype=np.float32)
+
+    for k in POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"] + POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"] + POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"]:
+        if k not in feature_dict and k not in ["edge_pred", "downside_pred", "edge_minus_downside", "abs_edge_pred"]:
+            feature_dict[k] = np.zeros(n, dtype=np.float32)
+
+    return feature_dict
+
+def assemble_feature_matrix(feature_dict: Dict[str, np.ndarray], keys: List[str]) -> np.ndarray:
+    """
+    Returns a contiguous float32 matrix given a dictionary and a list of keys.
+    Missing keys are filled with 0.0.
+    """
+    if not keys:
+        return np.empty((0, 0), dtype=np.float32)
+
+    n = 0
+    for v in feature_dict.values():
+        if isinstance(v, np.ndarray):
+            n = len(v)
+            break
+
+    if n == 0:
+        return np.empty((0, len(keys)), dtype=np.float32)
+
+    out = np.zeros((n, len(keys)), dtype=np.float32)
+
+    for i, k in enumerate(keys):
+        if k in feature_dict:
+            arr = feature_dict[k]
+            if len(arr) == n:
+                out[:, i] = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
+
+    return np.ascontiguousarray(out)

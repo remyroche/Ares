@@ -29,6 +29,7 @@ from scipy.stats import spearmanr
 from extreme_price_movements.purged_cv import PurgedKFold
 from extreme_price_movements.metrics import _stable_equity_and_drawdown
 from extreme_price_movements.utils import tprint
+from extreme_price_movements.mask_optimiser import optimize_layer0_masks
 from extreme_price_movements.label_policy_optimizer import LabelPolicy, _simulate_policy_batch
 from extreme_price_movements.position_sizer_v2_metrics import (
     compute_top_slice_metrics,

@@ -1414,3 +1414,31 @@ POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG = {
     },
     "enable_sign_consistency": False,
 }
+
+
+POSITION_SIZER_V2_LAYER0_CONFIG = {
+    "enabled": True,
+    "families": [
+        "top_movers",
+        "std_threshold",
+        "abs_move_threshold"
+    ],
+    "z_hours_grid": [8, 12, 16],
+    "top_w_pct_grid": [4, 6, 8],
+    "x_std_grid": [1.4, 1.6, 1.8],
+    "y_move_pct_grid": [4.0, 5.5, 7.0],
+    "phase1_forward_horizon_bars": 12,
+    "shortlist_max_candidates": 5,
+    "shortlist_max_per_family": 2,
+    "min_total_events": 300,
+    "min_active_days_fraction": 0.20,
+    "min_events_per_day": 1,
+    "max_events_per_day": 50,
+    "enable_learnability_check": True,
+    "enable_regime_distinctness_check": True,
+    "enable_bucket_viability_check": True,
+    "max_allowed_dispersion_quantile": 0.75,
+    "min_bucket_samples_total": 100,
+    "min_bucket_samples_per_fold": 30,
+    "min_bucket_active_days_fraction": 0.10,
+}

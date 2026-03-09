@@ -934,6 +934,12 @@ def optimize_layer0_masks(
     best_mask_high = candidate_masks[best_cand_name]["m_high"]
     best_mask_low = candidate_masks[best_cand_name]["m_low"]
 
+    try:
+        from extreme_price_movements.offline_optimisers.params_store import save_best_params_csv, INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV
+        save_best_params_csv(INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV, best_config, metadata={"source": "mask_optimiser"})
+    except Exception as e:
+        tprint(f"Failed to save best params: {e}")
+
     tprint(f"Layer 0 Complete. Selected: {best_config['name']} (Score: {best_config['shortlist_score']:.4f})")
 
     return {

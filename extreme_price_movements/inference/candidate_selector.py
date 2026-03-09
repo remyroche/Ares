@@ -13,63 +13,105 @@ import pandas as pd
 import numpy as np
 
 from extreme_price_movements.candidates import select_trade_candidates_vectorized
+from extreme_price_movements.mask_optimiser import _generate_event_masks
+from extreme_price_movements.inference.config import _resolve_runtime_cfg
 from extreme_price_movements.utils import tprint
-
-
-# Default thresholds (from offline optimization)
-DEFAULT_EXTREME_PCT = 0.05
-DEFAULT_MIN_MOVE_12H_PCT = 0.06
-DEFAULT_MIN_RANGE_PCT = 0.06
-DEFAULT_MIN_VOL_ZSCORE = 1.5
 
 
 def select_candidates(
     panel: Dict[str, pd.DataFrame],
     feats: Dict[str, pd.DataFrame],
-    extreme_pct: float = DEFAULT_EXTREME_PCT,
-    min_move_12h_pct: float = DEFAULT_MIN_MOVE_12H_PCT,
-    min_range_pct: float = DEFAULT_MIN_RANGE_PCT,
-    min_vol_zscore: float = DEFAULT_MIN_VOL_ZSCORE,
+    extreme_pct: Optional[float] = None,
+    min_move_12h_pct: Optional[float] = None,
+    min_range_pct: Optional[float] = None,
+    min_vol_zscore: Optional[float] = None,
     metric: str = "ret12h",
     chop_thr: float = 0.5,
 ) -> Tuple[List[str], List[str]]:
-    """Select trade candidates using vectorized candidate selection.
+    """Select trade candidates using mask optimiser logic.
     
-    Applies the candidate selection algorithm with configured thresholds
-    to identify potential long and short opportunities.
+    Applies the candidate selection algorithm with optimized parameters from
+    mask_optimiser.py instead of the legacy threshold selection.
     
     Args:
         panel: Price panel with open, high, low, close, volume DataFrames
         feats: Feature dictionary with computed market features
-        extreme_pct: Percentage of top/bottom performers to consider (default: 0.05)
-        min_range_pct: Minimum 12h high/low range percentage (default: 0.06)
-        min_vol_zscore: Minimum volatility z-score threshold (default: 1.5)
-        metric: Performance metric to rank by (default: "ret24h")
-        chop_thr: Maximum choppiness score threshold (default: 0.5)
+        extreme_pct: Kept for compatibility
+        min_move_12h_pct: Kept for compatibility
+        min_range_pct: Kept for compatibility
+        min_vol_zscore: Kept for compatibility
+        metric: Performance metric to rank by
+        chop_thr: Maximum choppiness score threshold
         
     Returns:
         Tuple of (long_candidates, short_candidates) - lists of symbol strings
     """
+    cfg = _resolve_runtime_cfg()
+    family = cfg.get("family", "top_movers")
+    param_val = float(cfg.get("param", 5.0))
+    z_hr = float(cfg.get("z_hours", 12.0))
+
     tprint(
-        f"Selecting candidates with extreme_pct={extreme_pct}, "
-        f"min_move_12h_pct={min_move_12h_pct}, min_vol_zscore={min_vol_zscore}"
+        f"Selecting candidates using mask_optimiser logic: family={family}, "
+        f"param={param_val}, z_hours={z_hr}"
     )
     
-    # Apply vectorized candidate selection
-    # Returns a boolean mask DataFrame
     try:
-        candidate_mask = select_trade_candidates_vectorized(
-            panel=panel,
-            feats=feats,
-            pct=extreme_pct,
-            metric=metric,
-            min_move_12h_pct=min_move_12h_pct,
-            min_range_pct=min_range_pct,
-            min_vol_zscore=min_vol_zscore,
-            chop_thr=chop_thr,
-        )
+        # Replicate _generate_event_masks inputs
+        c = panel["close"]
+        h = panel["high"]
+        l = panel["low"]
+
+        # Calculate moving metrics manually (like inside rolling_max_index_nb)
+        z_bars = int(z_hr * 4) # approx 15m bars
+
+        roll_h = h.rolling(z_bars, min_periods=1).max()
+        roll_l = l.rolling(z_bars, min_periods=1).min()
+
+        st_px = c.shift(z_bars).bfill()
+
+        up_move = ((roll_h - st_px) / (st_px + 1e-9)).fillna(0.0)
+        dn_move = ((st_px - roll_l) / (st_px + 1e-9)).fillna(0.0)
+
+        # For std_threshold
+        if "ret15m" not in feats:
+            ast_ret = c.pct_change()
+        else:
+            ast_ret = feats["ret15m"]
+
+        std_up = ast_ret.rolling(24 * 4, min_periods=1).std().fillna(0.0)
+        std_dn = std_up # Simplified
+
+        # We need an array-like timestamp for _generate_event_masks if we used it directly,
+        # but since we have a dataframe, we can apply the logic manually for the top_movers here
+        # or use it iteratively. Let's just implement the logic for DataFrame:
+
+        mask_h_df = pd.DataFrame(False, index=c.index, columns=c.columns)
+        mask_l_df = pd.DataFrame(False, index=c.index, columns=c.columns)
+
+        if family == "top_movers":
+            for ts, row in up_move.iterrows():
+                q = row.quantile(1.0 - param_val/100.0)
+                mask_h_df.loc[ts] = row >= q
+
+            for ts, row in dn_move.iterrows():
+                q = row.quantile(1.0 - param_val/100.0)
+                mask_l_df.loc[ts] = row >= q
+
+        elif family == "std_threshold":
+            mask_h_df = up_move >= (param_val * std_up)
+            mask_l_df = dn_move >= (param_val * std_dn)
+
+        elif family == "abs_move_threshold":
+            y_move = param_val / 100.0
+            mask_h_df = up_move >= y_move
+            mask_l_df = dn_move >= y_move
+
+        # Combine masks
+        candidate_mask = mask_h_df | mask_l_df
+
     except Exception as e:
-        tprint(f"Error in select_trade_candidates_vectorized: {e}")
+        tprint(f"Error in mask_optimiser candidate generation: {e}")
         import traceback
         tprint(f"Traceback: {traceback.format_exc()}")
         return [], []
@@ -127,42 +169,63 @@ def select_candidates_at_timestamp(
     panel: Dict[str, pd.DataFrame],
     feats: Dict[str, pd.DataFrame],
     ts: pd.Timestamp,
-    extreme_pct: float = DEFAULT_EXTREME_PCT,
-    min_move_12h_pct: float = DEFAULT_MIN_MOVE_12H_PCT,
-    min_range_pct: float = DEFAULT_MIN_RANGE_PCT,
-    min_vol_zscore: float = DEFAULT_MIN_VOL_ZSCORE,
+    extreme_pct: Optional[float] = None,
+    min_move_12h_pct: Optional[float] = None,
+    min_range_pct: Optional[float] = None,
+    min_vol_zscore: Optional[float] = None,
     metric: str = "ret12h",
     chop_thr: float = 0.5,
 ) -> Tuple[List[str], List[str]]:
-    """Select candidates at a specific timestamp.
-    
-    Similar to select_candidates but operates at a specific timestamp
-    rather than the latest available timestamp.
-    
-    Args:
-        panel: Price panel
-        feats: Feature dictionary
-        ts: Specific timestamp to evaluate
-        extreme_pct: Percentage of top/bottom performers
-        min_range_pct: Minimum range percentage
-        min_vol_zscore: Minimum volatility z-score
-        metric: Performance metric
-        chop_thr: Choppiness threshold
+    """Select candidates at a specific timestamp using mask_optimiser logic."""
+    cfg = _resolve_runtime_cfg()
+    family = cfg.get("family", "top_movers")
+    param_val = float(cfg.get("param", 5.0))
+    z_hr = float(cfg.get("z_hours", 12.0))
+
+    try:
+        c = panel["close"]
+        h = panel["high"]
+        l = panel["low"]
         
-    Returns:
-        Tuple of (long_candidates, short_candidates)
-    """
-    # Get candidate mask for all timestamps
-    candidate_mask = select_trade_candidates_vectorized(
-        panel=panel,
-        feats=feats,
-        pct=extreme_pct,
-        metric=metric,
-        min_move_12h_pct=min_move_12h_pct,
-        min_range_pct=min_range_pct,
-        min_vol_zscore=min_vol_zscore,
-        chop_thr=chop_thr,
-    )
+        z_bars = int(z_hr * 4)
+        roll_h = h.rolling(z_bars, min_periods=1).max()
+        roll_l = l.rolling(z_bars, min_periods=1).min()
+        st_px = c.shift(z_bars).bfill()
+
+        up_move = ((roll_h - st_px) / (st_px + 1e-9)).fillna(0.0)
+        dn_move = ((st_px - roll_l) / (st_px + 1e-9)).fillna(0.0)
+
+        if "ret15m" not in feats:
+            ast_ret = c.pct_change()
+        else:
+            ast_ret = feats["ret15m"]
+
+        std_up = ast_ret.rolling(24 * 4, min_periods=1).std().fillna(0.0)
+        std_dn = std_up
+
+        mask_h_df = pd.DataFrame(False, index=c.index, columns=c.columns)
+        mask_l_df = pd.DataFrame(False, index=c.index, columns=c.columns)
+
+        if family == "top_movers":
+            for _ts, row in up_move.iterrows():
+                q = row.quantile(1.0 - param_val/100.0)
+                mask_h_df.loc[_ts] = row >= q
+            for _ts, row in dn_move.iterrows():
+                q = row.quantile(1.0 - param_val/100.0)
+                mask_l_df.loc[_ts] = row >= q
+        elif family == "std_threshold":
+            mask_h_df = up_move >= (param_val * std_up)
+            mask_l_df = dn_move >= (param_val * std_dn)
+        elif family == "abs_move_threshold":
+            y_move = param_val / 100.0
+            mask_h_df = up_move >= y_move
+            mask_l_df = dn_move >= y_move
+
+        candidate_mask = mask_h_df | mask_l_df
+
+    except Exception as e:
+        tprint(f"Error in select_candidates_at_timestamp (mask_optimiser logic): {e}")
+        return [], []
     
     # Safely check for empty - handle case where candidate_mask might be a string or other type
     try:

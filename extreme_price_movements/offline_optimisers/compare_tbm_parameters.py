@@ -2174,52 +2174,66 @@ def build_bucket_masks(artifacts: RunArtifacts, cfg_runtime: Dict[str, Any] | No
                 metric = fallback
                 break
 
-    # Build the candidate filter (top+bottom pct% by metric, same as training).
-    # Hard-gate as early as possible: event conditions are applied before geometry eval.
+    # Build the candidate filter using mask_optimiser logic and config parameters.
     candidate_filter = pd.DataFrame(True, index=c.index, columns=c.columns)
     if cfg_runtime is not None:
-        candidate_defaults = get_candidate_filter_defaults(cfg_runtime)
         try:
-            # Bottom 10% symbols by volume are exempt from strict per-asset gating.
-            vol_df = artifacts.panel.get("volume")
-            if isinstance(vol_df, pd.DataFrame):
-                sym_liq = vol_df.median(axis=0, skipna=True).astype(np.float32)
-            else:
-                sym_liq = pd.Series(1.0, index=c.columns, dtype=np.float32)
-            liq_cut = float(sym_liq.quantile(0.10)) if len(sym_liq) else float("-inf")
-            hi_vol_cols = [x for x in c.columns if float(sym_liq.get(x, 0.0)) > liq_cut]
-            lo_vol_cols = [x for x in c.columns if x not in set(hi_vol_cols)]
+            family = cfg_runtime.get("family", "top_movers")
+            param_val = float(cfg_runtime.get("param", 5.0))
+            z_hr = float(cfg_runtime.get("z_hours", 12.0))
 
-            panel_hi = {k: v.reindex(columns=hi_vol_cols) for k, v in artifacts.panel.items()}
-            feats_hi = {k: v.reindex(columns=hi_vol_cols) for k, v in feats.items() if isinstance(v, pd.DataFrame)}
-            cf_hi = select_trade_candidates_vectorized(
-                panel_hi,
-                feats_hi,
-                pct=float(candidate_defaults["train_extreme_pct_hourly"]),
-                metric=metric,
-                min_range_pct=float(candidate_defaults["train_min_range_pct"]),
-                min_vol_zscore=float(candidate_defaults["train_min_vol_zscore"]),
-                chop_thr=float(candidate_defaults.get("train_chop_thr", 0.5)),
-            )
+            z_bars = int(z_hr * 4) # approx 15m bars
+            h_df = artifacts.panel["high"]
+            l_df = artifacts.panel["low"]
+
+            roll_h = h_df.rolling(z_bars, min_periods=1).max()
+            roll_l = l_df.rolling(z_bars, min_periods=1).min()
+            st_px = c.shift(z_bars).bfill()
+
+            up_move = ((roll_h - st_px) / (st_px + 1e-9)).fillna(0.0)
+            dn_move = ((st_px - roll_l) / (st_px + 1e-9)).fillna(0.0)
+
+            if "ret15m" not in feats:
+                ast_ret = c.pct_change()
+            else:
+                ast_ret = feats["ret15m"]
+
+            std_up = ast_ret.rolling(24 * 4, min_periods=1).std().fillna(0.0)
+            std_dn = std_up
+
+            mask_h_df = pd.DataFrame(False, index=c.index, columns=c.columns)
+            mask_l_df = pd.DataFrame(False, index=c.index, columns=c.columns)
+
+            if family == "top_movers":
+                for ts, row in up_move.iterrows():
+                    q = row.quantile(1.0 - param_val/100.0)
+                    mask_h_df.loc[ts] = row >= q
+                for ts, row in dn_move.iterrows():
+                    q = row.quantile(1.0 - param_val/100.0)
+                    mask_l_df.loc[ts] = row >= q
+            elif family == "std_threshold":
+                mask_h_df = up_move >= (param_val * std_up)
+                mask_l_df = dn_move >= (param_val * std_dn)
+            elif family == "abs_move_threshold":
+                y_move = param_val / 100.0
+                mask_h_df = up_move >= y_move
+                mask_l_df = dn_move >= y_move
+
+            cf_hi = mask_h_df | mask_l_df
+
             if cf_hi is not None:
                 cf_hi = cf_hi.astype(bool)
                 # +12h time-window extension so entries can finish lifecycle.
                 finish_bars = _bars_for_hours((cfg_runtime or {}).get("timeframe", "15m"), 12.0)
                 time_gate = cf_hi.any(axis=1).rolling(finish_bars + 1, min_periods=1).max().astype(bool)
 
-                candidate_filter = pd.DataFrame(False, index=c.index, columns=c.columns)
-                if hi_vol_cols:
-                    candidate_filter.loc[:, hi_vol_cols] = cf_hi.reindex(index=c.index, columns=hi_vol_cols, fill_value=False)
-                if lo_vol_cols:
-                    candidate_filter.loc[:, lo_vol_cols] = True
-
                 time_gate_df = pd.DataFrame(
-                    np.repeat(time_gate.values[:, None], len(candidate_filter.columns), axis=1),
-                    index=candidate_filter.index,
-                    columns=candidate_filter.columns,
+                    np.repeat(time_gate.values[:, None], len(cf_hi.columns), axis=1),
+                    index=cf_hi.index,
+                    columns=cf_hi.columns,
                     dtype=bool,
                 )
-                candidate_filter = (candidate_filter & time_gate_df).astype(bool)
+                candidate_filter = (cf_hi & time_gate_df).astype(bool)
         except Exception:
             pass
 

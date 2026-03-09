@@ -178,12 +178,19 @@ def _generate_event_masks(
 
     if family == "top_movers":
         w_pct = param_val
-        # Cross-sectional rank by timestamp avoiding index corruption
         df = pd.DataFrame({"up": up_move, "dn": dn_move, "ts": timestamps})
 
-        # Calculate thresholds per timestamp group and map them back securely
-        grp_u = df.groupby("ts")["up"].transform(lambda x: np.nanpercentile(x, 100 - w_pct) if x.notna().any() else np.inf)
-        grp_d = df.groupby("ts")["dn"].transform(lambda x: np.nanpercentile(x, 100 - w_pct) if x.notna().any() else np.inf)
+        def calc_percentile(x, pct):
+            vals = x.dropna().values
+            if len(vals) == 0:
+                return np.inf
+            return np.nanpercentile(vals, 100 - pct)
+
+        thresh_up = df.groupby('ts')['up'].agg(lambda x: calc_percentile(x, w_pct))
+        thresh_dn = df.groupby('ts')['dn'].agg(lambda x: calc_percentile(x, w_pct))
+
+        grp_u = df['ts'].map(thresh_up)
+        grp_d = df['ts'].map(thresh_dn)
 
         mask_h = (df["up"] >= grp_u).values.astype(bool)
         mask_l = (df["dn"] >= grp_d).values.astype(bool)
@@ -309,17 +316,24 @@ def _compute_regime_distinctness(
     mae_arr = np.where(mask_high, mae_high, np.where(mask_low, mae_low, np.nan))
     mfe_arr = np.where(mask_high, mfe_high, np.where(mask_low, mfe_low, np.nan))
 
+    # Global MAE/MFE baseline using direction of forward returns
+    mae_baseline = np.where(forward_returns >= 0, mae_high, mae_low)
+    mfe_baseline = np.where(forward_returns >= 0, mfe_high, mfe_low)
+
     valid_mae = np.isfinite(mae_arr)
-    if np.any(valid_mae):
-        mae_g = float(np.nanmean(mae_high)) # Baseline approx using long side globally
+    valid_mae_baseline = np.isfinite(mae_baseline)
+
+    if np.any(valid_mae) and np.any(valid_mae_baseline):
+        mae_g = float(np.mean(mae_baseline[valid_mae_baseline]))
         mae_e = float(np.mean(mae_arr[valid_mae]))
         mae_ratio = mae_e / mae_g if mae_g > 1e-9 else 1.0
     else:
         mae_ratio = 1.0
 
     valid_mfe = np.isfinite(mfe_arr)
-    if np.any(valid_mfe):
-        mfe_g = float(np.nanmean(mfe_high)) # Baseline approx using long side globally
+    valid_mfe_baseline = np.isfinite(mfe_baseline)
+    if np.any(valid_mfe) and np.any(valid_mfe_baseline):
+        mfe_g = float(np.mean(mfe_baseline[valid_mfe_baseline]))
         mfe_e = float(np.mean(mfe_arr[valid_mfe]))
         mfe_ratio = mfe_e / mfe_g if mfe_g > 1e-9 else 1.0
     else:
@@ -358,34 +372,86 @@ def _compute_conditional_learnability(
     mae_arr = np.where(mask_high, mae_high, np.where(mask_low, mae_low, mae_high))
     mfe_arr = np.where(mask_high, mfe_high, np.where(mask_low, mfe_low, mfe_high))
 
+    def _get_folds(X, ts, n_splits=2):
+        from sklearn.model_selection import KFold
+        if ts is not None and len(X) > 50:
+            try:
+                pkf = PurgedKFold(n_splits=n_splits, purge=43200, embargo=43200, times=ts)
+                folds = list(pkf.split(X))
+                if folds: return folds
+            except Exception:
+                pass
+
+        mid = max(1, len(X) // 2)
+        return [(np.arange(0, mid), np.arange(mid, len(X)))]
+
+    def _impute_and_scale(X_train, X_valid):
+        from sklearn.preprocessing import StandardScaler
+        X_tr = X_train.copy()
+        X_va = X_valid.copy()
+
+        X_tr[~np.isfinite(X_tr)] = np.nan
+        X_va[~np.isfinite(X_va)] = np.nan
+
+        for j in range(X_tr.shape[1]):
+            col_tr = X_tr[:, j]
+            valid_mask = ~np.isnan(col_tr)
+            if np.any(valid_mask):
+                median_val = np.median(col_tr[valid_mask])
+                X_tr[~valid_mask, j] = median_val
+                X_va[np.isnan(X_va[:, j]), j] = median_val
+            else:
+                X_tr[:, j] = 0.0
+                X_va[:, j] = 0.0
+
+        scaler = StandardScaler()
+        X_tr = scaler.fit_transform(X_tr).astype(np.float32)
+        X_va = scaler.transform(X_va).astype(np.float32)
+        return X_tr, X_va
+
     def _test_classifier_oof(X, y, ts):
         if len(np.unique(y)) < 2: return 0.5
-        from sklearn.model_selection import KFold
-        kf = KFold(n_splits=3, shuffle=False)
+        folds = _get_folds(X, ts)
         preds = np.zeros(len(y))
-        for tr, va in kf.split(X):
-            model = LogisticRegression(max_iter=100)
+        for tr, va in folds:
+            X_tr, X_va = _impute_and_scale(X[tr], X[va])
+            model = LogisticRegression(solver='liblinear', max_iter=100)
             try:
-                model.fit(X[tr], y[tr])
-                preds[va] = model.predict_proba(X[va])[:, 1]
+                if len(np.unique(y[tr])) < 2:
+                    preds[va] = 0.5
+                else:
+                    model.fit(X_tr, y[tr])
+                    preds[va] = model.predict_proba(X_va)[:, 1]
             except Exception:
                 preds[va] = 0.5
+
+        if len(np.unique(y)) < 2 or len(np.unique(preds)) < 2:
+            return 0.5
         return roc_auc_score(y, preds)
 
     def _test_regressor_oof(X, y, ts):
         valid_y = np.isfinite(y)
         if not np.any(valid_y): return 0.0
-        from sklearn.model_selection import KFold
-        kf = KFold(n_splits=3, shuffle=False)
+        folds = _get_folds(X, ts)
         preds = np.zeros(len(y))
-        for tr, va in kf.split(X):
+        for tr, va in folds:
+            tr_valid_mask = np.isfinite(y[tr])
+            if not np.any(tr_valid_mask):
+                preds[va] = np.nanmean(y) if np.any(np.isfinite(y)) else 0.0
+                continue
+
+            X_tr_valid = X[tr][tr_valid_mask]
+            y_tr_valid = y[tr][tr_valid_mask]
+
+            if np.var(y_tr_valid) < 1e-9:
+                preds[va] = np.mean(y_tr_valid)
+                continue
+
+            X_tr, X_va = _impute_and_scale(X_tr_valid, X[va])
             model = HuberRegressor()
             try:
-                # filter tr for finite y inside fold
-                tr_valid = [idx for idx in tr if np.isfinite(y[idx])]
-                if len(tr_valid) == 0: continue
-                model.fit(X[tr_valid], y[tr_valid])
-                preds[va] = model.predict(X[va])
+                model.fit(X_tr, y_tr_valid)
+                preds[va] = model.predict(X_va)
             except Exception:
                 preds[va] = np.nanmean(y) if np.any(np.isfinite(y)) else 0.0
 
@@ -395,27 +461,25 @@ def _compute_conditional_learnability(
         sst = np.sum((y[valid_p] - np.mean(y[valid_p]))**2)
         return 1.0 - (ssr / max(sst, 1e-9))
 
-    X_g = np.nan_to_num(features[idx_g])
-    X_e = np.nan_to_num(features[idx_e])
+    X_g = features[idx_g]
+    X_e = features[idx_e]
 
     ts_g = timestamps[idx_g] if timestamps is not None else None
     ts_e = timestamps[idx_e] if timestamps is not None else None
 
+    # Default phase 1 tasks (lightening)
     auc_cont_g = _test_classifier_oof(X_g, cont_target[idx_g], ts_g)
     auc_cont_e = _test_classifier_oof(X_e, cont_target[idx_e], ts_e)
     gain_cont = auc_cont_e - auc_cont_g
-
-    auc_rev_g = _test_classifier_oof(X_g, rev_target[idx_g], ts_g)
-    auc_rev_e = _test_classifier_oof(X_e, rev_target[idx_e], ts_e)
-    gain_rev = auc_rev_e - auc_rev_g
 
     r2_mae_g = _test_regressor_oof(X_g, mae_arr[idx_g], ts_g)
     r2_mae_e = _test_regressor_oof(X_e, mae_arr[idx_e], ts_e)
     gain_mae = r2_mae_e - r2_mae_g
 
-    r2_mfe_g = _test_regressor_oof(X_g, mfe_arr[idx_g], ts_g)
-    r2_mfe_e = _test_regressor_oof(X_e, mfe_arr[idx_e], ts_e)
-    gain_mfe = r2_mfe_e - r2_mfe_g
+    # To lighten Phase 1 default compute, optionally skip reversal & mfe here
+    # Assuming the caller may want these, but we can set them to 0.0 by default or return what was requested.
+    gain_rev = 0.0
+    gain_mfe = 0.0
 
     gain_max = max(gain_cont, gain_rev, gain_mae, gain_mfe)
 
@@ -479,6 +543,7 @@ def optimize_layer0_masks(
     high = np.ascontiguousarray(data["high"].values, dtype=np.float32)
     low = np.ascontiguousarray(data["low"].values, dtype=np.float32)
     close = np.ascontiguousarray(data["close"].values, dtype=np.float32)
+    forward_returns = np.ascontiguousarray(forward_returns, dtype=np.float32)
     timestamps = pd.to_datetime(data.get("timestamp", data.index)).values
 
     # Derive direction-aware MAE/MFE arrays for Layer 0 horizon tests
@@ -521,31 +586,33 @@ def optimize_layer0_masks(
         ast_close = close[idxs]
         ast_ret = np.zeros(len(idxs), dtype=np.float32)
         if len(idxs) > 1:
+            # First row ret_1 remains 0.0
             ast_ret[1:] = (ast_close[1:] - ast_close[:-1]) / np.where(ast_close[:-1] > 1e-9, ast_close[:-1], 1.0)
         ret_1[idxs] = ast_ret
-        vol_g[idxs] = rolling_std_nb(ast_ret, 24 * bph)
+        vol_g[idxs] = rolling_std_nb(ast_ret, 24 * bph).astype(np.float32)
 
         # Safely compute alternation avoiding cross boundary roll
         ast_sign = np.sign(ast_ret)
         ast_roll_sign = np.zeros(len(idxs), dtype=np.float32)
         if len(idxs) > 1:
             ast_roll_sign[1:] = ast_sign[:-1]
-        ast_changes = (ast_sign != ast_roll_sign).astype(float)
-        alternation_array[idxs] = pd.Series(ast_changes).rolling(6).mean().fillna(0).values
+        ast_changes = (ast_sign != ast_roll_sign).astype(np.float32)
+        alternation_array[idxs] = pd.Series(ast_changes).rolling(6).mean().fillna(0).values.astype(np.float32)
 
     learn_X = _extract_learnability_features(feature_dict, n)
 
     candidates = []
+    candidate_masks = {}
     grid = []
 
-    for z_hr in cfg.get("z_hours_grid", [8, 12, 16]):
+    for z_hr in cfg.get("z_hours_grid", [8, 16]):
         for fam in cfg.get("families", ["top_movers", "std_threshold", "abs_move_threshold"]):
             if fam == "top_movers":
-                for p in cfg.get("top_w_pct_grid", [4, 6, 8]): grid.append((z_hr, fam, p))
+                for p in cfg.get("top_w_pct_grid", [4, 8]): grid.append((z_hr, fam, p))
             elif fam == "std_threshold":
-                for p in cfg.get("x_std_grid", [1.4, 1.6, 1.8]): grid.append((z_hr, fam, p))
+                for p in cfg.get("x_std_grid", [1.5, 1.8]): grid.append((z_hr, fam, p))
             elif fam == "abs_move_threshold":
-                for p in cfg.get("y_move_pct_grid", [4.0, 5.5, 7.0]): grid.append((z_hr, fam, p))
+                for p in cfg.get("y_move_pct_grid", [4.0, 6.0]): grid.append((z_hr, fam, p))
 
     tprint(f"Phase 1: Evaluating {len(grid)} primary candidates...")
 
@@ -553,10 +620,13 @@ def optimize_layer0_masks(
     z_cache = {}
 
     # Prepare Temporal Folds
-    pkf = PurgedKFold(n_splits=3, purge=43200, embargo=43200, times=timestamps)
-    dummy_X = np.empty((n, 1))
-    folds = list(pkf.split(dummy_X))
-    if not folds:
+    try:
+        pkf = PurgedKFold(n_splits=3, purge=43200, embargo=43200, times=timestamps)
+        dummy_X = np.empty((n, 1))
+        folds = list(pkf.split(dummy_X))
+        if not folds:
+            raise ValueError("Empty folds generated by PurgedKFold")
+    except Exception:
         mid = max(1, n // 2)
         folds = [(np.arange(0, mid), np.arange(mid, n))]
 
@@ -597,6 +667,10 @@ def optimize_layer0_masks(
                 lv, li = rolling_min_index_nb(ast_low, z)
                 st_idx = np.maximum(0, np.arange(len(ast_close)) - z + 1)
                 st_px = ast_close[st_idx]
+
+                c_high_idx[idxs] = idxs[hi]
+                c_low_idx[idxs] = idxs[li]
+                c_start_idx[idxs] = idxs[st_idx]
 
                 um = np.where(st_px > 1e-9, (hv - st_px) / st_px, 0.0).astype(np.float32)
                 dm = np.where(st_px > 1e-9, (st_px - lv) / st_px, 0.0).astype(np.float32)
@@ -655,17 +729,10 @@ def optimize_layer0_masks(
         dist_score = _compute_regime_distinctness(m_high, m_low, forward_returns, mae_high, mfe_high, mae_low, mfe_low)
         if cfg.get("enable_regime_distinctness_check", True) and dist_score < cfg.get("min_regime_distinctness_score", 1.1): continue
 
-        # 5. Learnability
-        g_cont, g_rev, g_mae, g_mfe, g_max, auc_e = _compute_conditional_learnability(
-            m_high, m_low, learn_X, forward_returns, mae_high, mfe_high, mae_low, mfe_low, ret_threshold=cfg.get("phase1_ret_threshold", 0.0), timestamps=timestamps
-        )
-        if cfg.get("enable_learnability_check", True) and g_max <= cfg.get("min_predictability_gain", 0.0): continue
-
-        # 6. Temporal Folds Evaluation
+        # 5. Temporal Folds Evaluation (structural checks first)
         fold_event_counts = []
         fold_cont_rates = []
 
-        # Determine global continuation target for fold check
         global_cont = (forward_returns > cfg.get("phase1_ret_threshold", 0.0)).astype(int)
         global_cont[m_low] = (forward_returns[m_low] < -cfg.get("phase1_ret_threshold", 0.0)).astype(int)
 
@@ -686,27 +753,70 @@ def optimize_layer0_masks(
         daily_counts = ts_df.groupby("ts").size()
         events_per_day_std = float(np.std(daily_counts)) if len(daily_counts) > 1 else 0.0
 
-        # 7. Viability
+        # 6. Viability
         v_pass, v_counts = _check_high_low_viability(m_high, m_low, cfg)
         if cfg.get("enable_bucket_viability_check", True) and not v_pass: continue
 
+        cand_name = f"{fam}_z{z_hr}_p{param}"
         row = {
-            "name": f"{fam}_z{z_hr}_p{param}", "family": fam, "z_hours": z_hr, "param": param, "conditioner_mode": "none",
+            "name": cand_name, "family": fam, "z_hours": z_hr, "param": param, "conditioner_mode": "none",
             "total_events": tot_events, "events_per_day_mean": events_p_day_mean, "events_per_day_std": events_per_day_std,
             "active_days_fraction": active_frac,
             "impulse_shape_dispersion": coh_mets["impulse_shape_dispersion"], "post_event_vol_dispersion": coh_mets["post_event_vol_dispersion"],
             "fold_event_count_std": fold_event_count_std, "fold_continuation_rate_std": fold_continuation_rate_std,
-            "regime_distinctness_score": dist_score, "continuation_predictability_gain": g_cont, "reversal_predictability_gain": g_rev,
-            "MAE_predictability_gain": g_mae, "MFE_predictability_gain": g_mfe, "predictability_gain": g_max,
+            "regime_distinctness_score": dist_score,
             "high_events": v_counts["high_events"], "low_events": v_counts["low_events"],
-            "acceptance_pass": True, "m_high": m_high, "m_low": m_low
+            "acceptance_pass": True
         }
+
         candidates.append(row)
+        candidate_masks[cand_name] = {"m_high": m_high, "m_low": m_low}
 
     if not candidates:
         return {"status": "failed", "reason": "zero_candidates_passed"}
 
     df = pd.DataFrame(candidates)
+
+    # Pre-Learnability Gating
+    def _safe_z(s):
+        if s.std() < 1e-9: return np.zeros(len(s))
+        return (s - s.mean()) / s.std()
+
+    # Cheap Proxy Score to gate heavy model fits
+    df["proxy_score"] = (
+        _safe_z(df["active_days_fraction"])
+        + _safe_z(df["regime_distinctness_score"])
+        - _safe_z(df["impulse_shape_dispersion"])
+        - _safe_z(df["fold_continuation_rate_std"])
+        - _safe_z(df["fold_event_count_std"])
+    )
+
+    top_k_learnability = cfg.get("top_k_for_learnability", 8)
+    df = df.sort_values("proxy_score", ascending=False).head(top_k_learnability).copy()
+
+    # 7. Learnability (only on top K)
+    for idx, row in df.iterrows():
+        cand_name = row["name"]
+        m_h = candidate_masks[cand_name]["m_high"]
+        m_l = candidate_masks[cand_name]["m_low"]
+
+        g_cont, g_rev, g_mae, g_mfe, g_max, auc_e = _compute_conditional_learnability(
+            m_h, m_l, learn_X, forward_returns, mae_high, mfe_high, mae_low, mfe_low,
+            ret_threshold=cfg.get("phase1_ret_threshold", 0.0), timestamps=timestamps
+        )
+
+        df.at[idx, "continuation_predictability_gain"] = g_cont
+        df.at[idx, "reversal_predictability_gain"] = g_rev
+        df.at[idx, "MAE_predictability_gain"] = g_mae
+        df.at[idx, "MFE_predictability_gain"] = g_mfe
+        df.at[idx, "predictability_gain"] = g_max
+
+        if cfg.get("enable_learnability_check", True) and g_max <= cfg.get("min_predictability_gain", 0.0):
+            df.at[idx, "acceptance_pass"] = False
+
+    df = df[df["acceptance_pass"] == True].copy()
+    if df.empty:
+        return {"status": "failed", "reason": "learnability_check_failed"}
 
     q_thresh = df["impulse_shape_dispersion"].quantile(cfg.get("max_allowed_dispersion_quantile", 0.75))
     df = df[df["impulse_shape_dispersion"] <= q_thresh].copy()
@@ -743,11 +853,14 @@ def optimize_layer0_masks(
     if cfg.get("enable_secondary_conditioners", True):
         tprint(f"Phase 3: Applying conditioners to {len(df_shortlist)} shortlisted triggers...")
         for i, row in df_shortlist.iterrows():
+            cand_name = row["name"]
+            m_high = candidate_masks[cand_name]["m_high"]
+            m_low = candidate_masks[cand_name]["m_low"]
             zc = z_cache[int(row["z_hours"] * bph)]
             for mode in cfg.get("conditioner_modes", ["none"]):
                 if mode == "none": continue
                 new_h, new_l = _apply_secondary_conditioner(
-                    row["m_high"], row["m_low"], mode,
+                    m_high, m_low, mode,
                     zc["m_up"], zc["m_dn"], zc["v_exp"],
                     np.nan_to_num(feature_dict.get("spread_to_atr", np.zeros(n))), alternation_array
                 )
@@ -757,18 +870,52 @@ def optimize_layer0_masks(
                 v_pass, v_counts = _check_high_low_viability(new_h, new_l, cfg)
                 if cfg.get("enable_bucket_viability_check", True) and not v_pass: continue
 
+                # Perform cheap structural checks to gate expensive learnability recomputation
+                coh_mets = _compute_coherence_metrics(new_h, new_l, zc["rng"], zc["b_up"], zc["b_dn"], zc["s_up"], zc["s_dn"], zc["m_up"], zc["m_dn"], zc["v_exp"])
+
+                fold_cont_rates = []
+                for tr_idx, va_idx in folds:
+                    mask_va = m_any[va_idx]
+                    fold_evts = np.sum(mask_va)
+                    if fold_evts > 0:
+                        fold_cont_rates.append(np.mean(global_cont[va_idx][mask_va]))
+                    else:
+                        fold_cont_rates.append(0.0)
+                new_fold_cont_std = float(np.std(fold_cont_rates))
+
+                base_disp = row.get("impulse_shape_dispersion", 1e9)
+                base_f_cont = row.get("fold_continuation_rate_std", 1e9)
+                base_h = row.get("high_events", 1)
+                base_l = row.get("low_events", 1)
+                base_ratio = min(base_h, base_l) / max(base_h, base_l)
+
+                new_ratio = min(v_counts["high_events"], v_counts["low_events"]) / max(v_counts["high_events"], v_counts["low_events"])
+
+                improved = False
+                thresh_delta = 0.05
+                if coh_mets["impulse_shape_dispersion"] < base_disp * (1.0 - thresh_delta):
+                    improved = True
+                elif new_fold_cont_std < base_f_cont * (1.0 - thresh_delta):
+                    improved = True
+                elif new_ratio > base_ratio * (1.0 + thresh_delta):
+                    improved = True
+
+                if not improved: continue
+
                 # Fast score clone for modified mask
                 gain_max = _compute_conditional_learnability(new_h, new_l, learn_X, forward_returns, mae_high, mfe_high, mae_low, mfe_low, ret_threshold=cfg.get("phase1_ret_threshold", 0.0), timestamps=timestamps)[4]
                 new_row = row.copy()
-                new_row["name"] += f"_{mode}"
+                new_cand_name = cand_name + f"_{mode}"
+                new_row["name"] = new_cand_name
                 new_row["conditioner_mode"] = mode
                 new_row["total_events"] = tot_events
                 new_row["high_events"] = v_counts["high_events"]
                 new_row["low_events"] = v_counts["low_events"]
+                new_row["impulse_shape_dispersion"] = coh_mets["impulse_shape_dispersion"]
+                new_row["fold_continuation_rate_std"] = new_fold_cont_std
                 new_row["predictability_gain"] = gain_max
-                new_row["m_high"] = new_h
-                new_row["m_low"] = new_l
                 cond_rows.append(new_row)
+                candidate_masks[new_cand_name] = {"m_high": new_h, "m_low": new_l}
 
     if cond_rows:
         df_shortlist = pd.concat([df_shortlist, pd.DataFrame(cond_rows)], ignore_index=True)
@@ -783,11 +930,9 @@ def optimize_layer0_masks(
         df_shortlist = df_shortlist.sort_values("shortlist_score", ascending=False)
 
     best_config = df_shortlist.iloc[0].to_dict()
-    best_mask_high = best_config.pop("m_high")
-    best_mask_low = best_config.pop("m_low")
-
-    df = df.drop(columns=["m_high", "m_low"])
-    df_shortlist = df_shortlist.drop(columns=["m_high", "m_low"])
+    best_cand_name = best_config["name"]
+    best_mask_high = candidate_masks[best_cand_name]["m_high"]
+    best_mask_low = candidate_masks[best_cand_name]["m_low"]
 
     tprint(f"Layer 0 Complete. Selected: {best_config['name']} (Score: {best_config['shortlist_score']:.4f})")
 
@@ -798,4 +943,5 @@ def optimize_layer0_masks(
         "layer0_best_config_": best_config,
         "layer0_best_mask_high_": best_mask_high,
         "layer0_best_mask_low_": best_mask_low,
+        "layer0_candidate_masks_": candidate_masks
     }

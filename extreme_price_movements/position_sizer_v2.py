@@ -17,6 +17,9 @@ import itertools
 from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
+from extreme_price_movements.features import build_position_sizer_feature_frame, assemble_feature_matrix
+from extreme_price_movements.config import POSITION_SIZER_V2_FEATURE_CONFIG
+
 from sklearn.linear_model import HuberRegressor, Ridge
 from sklearn.preprocessing import StandardScaler
 from scipy.stats import spearmanr
@@ -345,6 +348,9 @@ class LayerAPredictor:
             y_final = candidates[best_name]
         self.edge_model.fit(X, y_final, sample_weight)
 
+        # Save winning target for dimension-safe residual generation in Model 3
+        self.model1_y_final_ = y_final
+
     def _run_model2_oof_eval(
         self,
         X: np.ndarray,
@@ -394,7 +400,7 @@ class LayerAPredictor:
     def _run_model3_oof_eval(
         self,
         X: np.ndarray,
-        raw_returns: np.ndarray,
+        y_winning_target: np.ndarray,
         timestamps: Optional[np.ndarray],
         sample_weight: Optional[np.ndarray]
     ):
@@ -403,7 +409,7 @@ class LayerAPredictor:
         if not np.any(valid_oof):
             return
 
-        y_true_for_res = raw_returns[valid_oof]
+        y_true_for_res = y_winning_target[valid_oof]
         residuals = y_true_for_res - self.model1_oof_pred_[valid_oof]
         X_res = X[valid_oof]
         w_res = sample_weight[valid_oof] if sample_weight is not None else None
@@ -431,9 +437,32 @@ class LayerAPredictor:
         # Fit final Uncertainty model
         self.uncertainty_model.fit(X_res, residuals, w_res)
 
-    def fit(self, X: np.ndarray, trade_outcomes: pd.DataFrame, y_raw_net_return: np.ndarray, y_downside: np.ndarray,
+    def fit(self, feature_dict: Dict[str, np.ndarray], trade_outcomes: pd.DataFrame, y_raw_net_return: np.ndarray, y_downside: np.ndarray,
             timestamps: Optional[np.ndarray] = None,
             sample_weight: Optional[np.ndarray] = None):
+
+        # 0. Feature Diagnostics
+        self.feature_coverage_report_ = {
+            "model1_requested": POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"],
+            "model2_requested": POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"],
+            "model3_requested": POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"],
+            "available_in_dict": list(feature_dict.keys()),
+        }
+
+        def _get_missing(requested):
+            return [k for k in requested if k not in feature_dict]
+
+        self.feature_coverage_report_["model1_missing"] = _get_missing(POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"])
+        self.feature_coverage_report_["model2_missing"] = _get_missing(POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"])
+        self.feature_coverage_report_["model3_missing"] = [k for k in POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"] if k not in feature_dict and k not in ["edge_pred", "downside_pred", "edge_minus_downside", "abs_edge_pred"]]
+
+
+        # 1. Assemble X1, X2
+        X1 = assemble_feature_matrix(feature_dict, POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"])
+        X2 = assemble_feature_matrix(feature_dict, POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"])
+
+        self.feature_coverage_report_["X1_shape"] = X1.shape
+        self.feature_coverage_report_["X2_shape"] = X2.shape
 
         # Bound/clip sample weights to prevent explosive leverage
         if sample_weight is not None:
@@ -441,28 +470,53 @@ class LayerAPredictor:
 
         # Orchestration steps as required:
         # a) run Model 1 target race with OOF preds, c) fits final model 1
-        self._run_model1_target_race(X, trade_outcomes, y_raw_net_return, timestamps, sample_weight)
+        self._run_model1_target_race(X1, trade_outcomes, y_raw_net_return, timestamps, sample_weight)
 
         # b) run Model 2 OOF eval, d) fits final model 2
-        self._run_model2_oof_eval(X, y_downside, timestamps, sample_weight)
+        self._run_model2_oof_eval(X2, y_downside, timestamps, sample_weight)
 
-        # e) fit final Model 3 on OOF residual target (includes its own OOF eval)
-        self._run_model3_oof_eval(X, y_raw_net_return, timestamps, sample_weight)
+        # Assemble X3 using OOF predictions
+        fd3 = feature_dict.copy()
+        fd3["edge_pred"] = self.model1_oof_pred_
+        fd3["downside_pred"] = self.model2_oof_pred_
+        valid12 = np.isfinite(self.model1_oof_pred_) & np.isfinite(self.model2_oof_pred_)
+        fd3["edge_minus_downside"] = np.where(valid12, self.model1_oof_pred_ - self.lambda_downside * self.model2_oof_pred_, 0.0)
+        fd3["abs_edge_pred"] = np.where(np.isfinite(self.model1_oof_pred_), np.abs(self.model1_oof_pred_), 0.0)
+
+        X3 = assemble_feature_matrix(fd3, POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"])
+        self.feature_coverage_report_["X3_shape"] = X3.shape
+
+        # e) fit final Model 3 on OOF residual target using the dimensionally accurate winning target
+        self._run_model3_oof_eval(X3, self.model1_y_final_, timestamps, sample_weight)
 
         self.is_fitted = True
         return self
 
-    def predict_components(self, X: np.ndarray) -> Dict[str, np.ndarray]:
+    def predict_components(self, feature_dict: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
         if not self.is_fitted:
             raise RuntimeError("LayerAPredictor not fitted")
+
+        X1 = assemble_feature_matrix(feature_dict, POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"])
+        X2 = assemble_feature_matrix(feature_dict, POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"])
+
+        edge_p = self.edge_model.predict(X1)
+        downside_p = self.downside_model.predict(X2)
+
+        fd3 = feature_dict.copy()
+        fd3["edge_pred"] = edge_p
+        fd3["downside_pred"] = downside_p
+        fd3["edge_minus_downside"] = edge_p - self.lambda_downside * downside_p
+        fd3["abs_edge_pred"] = np.abs(edge_p)
+        X3 = assemble_feature_matrix(fd3, POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"])
+
         return {
-            "edge": self.edge_model.predict(X),
-            "downside": self.downside_model.predict(X),
-            "uncertainty": self.uncertainty_model.predict(X)
+            "edge": edge_p,
+            "downside": downside_p,
+            "uncertainty": self.uncertainty_model.predict(X3)
         }
 
-    def predict_score(self, X: np.ndarray) -> np.ndarray:
-        comps = self.predict_components(X)
+    def predict_score(self, feature_dict: Dict[str, np.ndarray]) -> np.ndarray:
+        comps = self.predict_components(feature_dict)
         return comps["edge"] - (self.lambda_downside * comps["downside"]) - (self.eta_uncertainty * comps["uncertainty"])
 
     def initial_sizing(self, score: np.ndarray, threshold: float = 0.0, base_size: float = 0.05) -> np.ndarray:
@@ -859,13 +913,17 @@ class LayerCExecutionOptimizer:
         tprint(f"Layer C: Selected sizing mode '{self.sizing_mode}' with Utility={scored[0]['utility']:.4f}")
         return self.sizing_mode
 
-    def fit_limit_offset(self, X: np.ndarray, y_offset: np.ndarray, sample_weight: Optional[np.ndarray] = None):
+    def fit_limit_offset(self, feature_dict: Dict[str, np.ndarray], y_offset: np.ndarray, sample_weight: Optional[np.ndarray] = None):
+        X = assemble_feature_matrix(feature_dict, POSITION_SIZER_V2_FEATURE_CONFIG["shared_feature_keys"])
+
         X_scaled = self.scaler.fit_transform(X)
         self.limit_model.fit(X_scaled, y_offset, sample_weight=sample_weight)
         self.is_fitted = True
         return self
 
-    def predict_size_and_offset(self, X: np.ndarray, score: np.ndarray, threshold: float = 0.0, base_size: float = 0.05):
+    def predict_size_and_offset(self, feature_dict: Dict[str, np.ndarray], score: np.ndarray, threshold: float = 0.0, base_size: float = 0.05):
+        X = assemble_feature_matrix(feature_dict, POSITION_SIZER_V2_FEATURE_CONFIG["shared_feature_keys"])
+
         offset = np.zeros_like(score)
         if self.is_fitted:
             offset = self.limit_model.predict(self.scaler.transform(X))

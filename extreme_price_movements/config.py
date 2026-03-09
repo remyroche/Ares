@@ -1311,3 +1311,49 @@ def apply_15m_feature_toggle(cfg: dict) -> dict:
 
 
 CFG = apply_15m_feature_toggle(CFG)
+
+# ============================================================
+# Position Sizer V2 Feature Config
+# ============================================================
+
+POSITION_SIZER_V2_FEATURE_CONFIG = {
+    "shared_feature_keys": [
+        "oof_base_mean", "oof_base_std", "oof_base_min", "oof_base_max", "oof_base_range",
+        "oof_meta_pred", "oof_meta_minus_base_mean", "oof_top2_gap", "oof_sign_agreement_frac",
+        "oof_rank_among_candidates",
+        "ret_1", "ret_3", "ret_6", "ret_12", "ret_24",
+        "price_vs_ema_12_z", "price_vs_ema_24_z", "ema_12_minus_ema_24_z",
+        "trend_slope_12_z", "trend_slope_24_z",
+        "atr_pct", "range_1_atr", "range_3_atr", "rv_6", "rv_12", "rv_24", "rv_ratio_6_24",
+        "close_location_in_bar",
+        "volume_z_12", "volume_z_24", "dollar_vol_z_24", "spread_pct", "spread_to_atr",
+        "cost_to_atr", "slippage_proxy", "liquidity_shock_z",
+        "regime_trend_score", "regime_vol_score", "regime_liquidity_score",
+        "session_progress", "hour_sin", "hour_cos", "dow_sin", "dow_cos"
+    ],
+    "model1_edge_feature_keys": [
+        "oof_base_mean", "oof_base_std", "oof_meta_pred", "oof_top2_gap",
+        "oof_sign_agreement_frac", "ret_3", "ret_6", "ret_12", "price_vs_ema_12_z",
+        "ema_12_minus_ema_24_z", "atr_pct", "rv_ratio_6_24", "spread_to_atr",
+        "cost_to_atr", "regime_trend_score", "regime_vol_score", "session_progress"
+    ],
+    "model2_downside_feature_keys": [
+        "oof_base_mean", "oof_base_std", "oof_meta_pred", "ret_1", "ret_3",
+        "close_location_in_bar", "range_1_atr", "atr_pct", "rv_6", "rv_24",
+        "downside_semivol_12", "spread_to_atr", "slippage_proxy",
+        "regime_vol_score", "regime_liquidity_score", "session_progress"
+    ],
+    "model3_uncertainty_feature_keys": [
+        "oof_base_std", "oof_base_range", "oof_meta_minus_base_mean",
+        "oof_sign_agreement_frac", "edge_pred", "downside_pred",
+        "edge_minus_downside", "abs_edge_pred", "atr_pct", "rv_ratio_6_24",
+        "spread_to_atr", "cost_to_atr", "liquidity_shock_z",
+        "regime_vol_score", "regime_liquidity_score", "session_progress"
+    ]
+}
+
+POSITION_SIZER_V2_FEATURE_FLAGS = {
+    "enable_model1_optional": False,
+    "enable_model2_optional": False,
+    "enable_model3_optional": False,
+}

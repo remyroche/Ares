@@ -14,9 +14,9 @@ def test_meta_regression_gate_does_not_require_quantile_coverage():
 
     assert "Coverage" not in out
     assert "Pass_Coverage" not in out
-    assert "Pass_Robust_Loss" in out
-    assert "Pass_Bias" in out
-    assert "Pass_IC" in out
+    assert "Pass_Robust_Loss_Top40" in out
+    assert "Pass_Bias_Top40" in out
+    assert "Pass_IC_Top40" in out
 
 
 def test_quantile_meta_gate_keeps_coverage_metrics():
@@ -28,5 +28,5 @@ def test_quantile_meta_gate_keeps_coverage_metrics():
 
     out = compute_stage_gate_metrics(y_true, y_pred, model_type="quantile_meta")
 
-    assert "Coverage" in out
-    assert "Pass_Coverage" in out
+    assert "Coverage_Diff_Top40" in out
+    assert "Pass_Coverage_Top40" in out

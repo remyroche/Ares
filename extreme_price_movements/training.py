@@ -705,32 +705,24 @@ def _evaluate_target(score, y, cost=0.005):
         return -999.0
     df_ev["rank"] = df_ev["score"].rank(pct=True)
     df_ev["y_rank"] = df_ev["y"].rank(pct=True)
-    top_mask = df_ev["rank"] >= 0.7
-    top = df_ev[top_mask]
-    mean_net_top30 = top["y"].mean() - cost if len(top) > 0 else -cost
-    true_top30 = df_ev["y_rank"] >= 0.7
-    precision = (true_top30 & top_mask).sum() / max(top_mask.sum(), 1)
-    lift30 = precision / 0.30
-    if len(top) > 1:
-        ic_t30 = _safe_spearman(top["score"].values, top["y"].values)
-    else:
-        ic_t30 = 0.0
+
+    ic_global = _safe_spearman(df_ev["score"].values, df_ev["y"].values)
+
     df_ev["decile"] = (df_ev["rank"] * 10).astype(int).clip(upper=9)
     q_means = df_ev.groupby("decile")["y"].mean()
     if len(q_means) >= 10:
-        spread_q10_q5 = float(q_means.iloc[9] - q_means.iloc[4])
         spread_q10_q1 = float(q_means.iloc[9] - q_means.iloc[0])
     else:
-        spread_q10_q5, spread_q10_q1 = 0.0, 0.0
-    top_returns = top["y"] - cost if len(top) > 0 else pd.Series([0.0])
+        spread_q10_q1 = 0.0
+
+    all_returns = df_ev["y"] - cost
     stability = (
-        float(top_returns.mean() / top_returns.std()) if top_returns.std() > 0 else 0.0
+        float(all_returns.mean() / all_returns.std()) if all_returns.std() > 0 else 0.0
     )
+
+    # Neutral composite objective
     composite = (
-        2.0 * mean_net_top30
-        + 1.5 * (lift30 - 1.0)
-        + 1.5 * ic_t30
-        + 1.0 * spread_q10_q5
+        2.0 * ic_global
         + 1.0 * spread_q10_q1
         + 2.0 * stability
     )
@@ -2965,7 +2957,7 @@ def _optimize_training_sample_weights(
         n_splits=int(cfg.get("sample_weight_opt_n_splits", 5)),
         embargo_bars=int(cfg.get("sample_weight_opt_embargo_bars", 10)),
         min_n_eff_ratio=float(cfg.get("sample_weight_opt_min_n_eff_ratio", 0.30)),
-        max_top1pct=float(cfg.get("sample_weight_opt_max_top1pct", 0.10)),
+        max_top1pct=float(cfg.get("sample_weight_opt_max_top1pct", 0.05)),
         random_state=int(cfg.get("seed", 42)),
     )
 
@@ -6352,7 +6344,7 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models, base_variant_m
                     selector_prev_selected=_load_prev_selected(_head_key),
                     selector_family_map=_sel_family_map,
                     selector_focus_top_frac=float(
-                        _head_cfg.get("selector_focus_top_frac", 0.30)
+                        _head_cfg.get("selector_focus_top_frac", 1.0)
                     ),
                     selector_emit_report=bool(
                         _head_cfg.get("selector_emit_report", True)
@@ -6373,8 +6365,8 @@ def train_meta_models_from_artifacts(datasets, cfg, alpha_models, base_variant_m
                         _head_cfg.get("selector_near_constant_dominance", 0.999)
                     ),
                     composite_weights={
-                        "top30": float(_head_cfg.get("top30", 0.35)),
-                        "global": float(_head_cfg.get("global", 0.20)),
+                        "top30": float(_head_cfg.get("top30", 0.0)),
+                        "global": float(_head_cfg.get("global", 0.55)),
                         "stability": float(_head_cfg.get("stability", 0.25)),
                         "frequency": float(_head_cfg.get("frequency", 0.15)),
                         "interaction": float(_head_cfg.get("interaction", 0.05)),
@@ -10003,8 +9995,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             selector_report_dir=_selector_report_dir,
             selector_prev_selected=None,
             selector_family_map=dict(cfg.get("selector_feature_family_map", {}) or {}),
-            selector_focus_top_frac=float(_base_sel_cfg.get("selector_focus_top_frac", 0.30)),
-            selector_top_metric=_base_sel_cfg.get("selector_top_metric", None),
+            selector_focus_top_frac=float(_base_sel_cfg.get("selector_focus_top_frac", 1.0)),
+            selector_top_metric=_base_sel_cfg.get("selector_top_metric", "ic"),
             selector_frequency_hit_mode=str(_base_sel_cfg.get("selector_frequency_hit_mode", "relative")),
             selector_frequency_hit_quantile=float(_base_sel_cfg.get("selector_frequency_hit_quantile", 0.80)),
             selector_frequency_hit_abs=float(_base_sel_cfg.get("selector_frequency_hit_abs", 1e-6)),
@@ -10024,8 +10016,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             selector_hysteresis_margin=float(_base_sel_cfg.get("selector_hysteresis_margin", 0.05)),
             selector_min_overlap=float(_base_sel_cfg.get("selector_min_overlap", 0.70)),
             composite_weights={
-                "top30": float(_base_sel_cfg.get("top30", 0.35)),
-                "global": float(_base_sel_cfg.get("global", 0.20)),
+                "top30": float(_base_sel_cfg.get("top30", 0.0)),
+                "global": float(_base_sel_cfg.get("global", 0.55)),
                 "stability": float(_base_sel_cfg.get("stability", 0.25)),
                 "frequency": float(_base_sel_cfg.get("frequency", 0.15)),
                 "interaction": float(_base_sel_cfg.get("interaction", 0.05)),
@@ -10257,9 +10249,9 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                             cfg.get("selector_feature_family_map", {}) or {}
                         ),
                         selector_focus_top_frac=float(
-                            _base_sel_cfg.get("selector_focus_top_frac", 0.30)
+                            _base_sel_cfg.get("selector_focus_top_frac", 1.0)
                         ),
-                        selector_top_metric=_base_sel_cfg.get("selector_top_metric", None),
+                        selector_top_metric=_base_sel_cfg.get("selector_top_metric", "ic"),
                         selector_frequency_hit_mode=str(
                             _base_sel_cfg.get("selector_frequency_hit_mode", "relative")
                         ),
@@ -10311,8 +10303,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                             _base_sel_cfg.get("selector_min_overlap", 0.70)
                         ),
                         composite_weights={
-                            "top30": float(_base_sel_cfg.get("top30", 0.35)),
-                            "global": float(_base_sel_cfg.get("global", 0.20)),
+                            "top30": float(_base_sel_cfg.get("top30", 0.0)),
+                            "global": float(_base_sel_cfg.get("global", 0.55)),
                             "stability": float(_base_sel_cfg.get("stability", 0.25)),
                             "frequency": float(_base_sel_cfg.get("frequency", 0.15)),
                             "interaction": float(_base_sel_cfg.get("interaction", 0.05)),

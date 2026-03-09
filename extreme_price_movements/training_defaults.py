@@ -51,7 +51,7 @@ def get_sample_weight_opt_defaults(cfg: Dict[str, Any] | None = None) -> Dict[st
         "sample_weight_opt_n_splits": int(c.get("sample_weight_opt_n_splits", 5)),
         "sample_weight_opt_embargo_bars": int(c.get("sample_weight_opt_embargo_bars", 10)),
         "sample_weight_opt_min_n_eff_ratio": float(c.get("sample_weight_opt_min_n_eff_ratio", 0.30)),
-        "sample_weight_opt_max_top1pct": float(c.get("sample_weight_opt_max_top1pct", 0.10)),
+        "sample_weight_opt_max_top1pct": float(c.get("sample_weight_opt_max_top1pct", 0.05)),
         "sample_weight_vol_power": float(c.get("sample_weight_vol_power", 0.5)),
         "sample_weight_distance_k": float(c.get("sample_weight_distance_k", 0.5)),
         "sample_weight_distance_min_dist": float(c.get("sample_weight_distance_min_dist", 0.5)),

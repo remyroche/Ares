@@ -3607,13 +3607,6 @@ def build_position_sizer_feature_frame(raw_inputs: Dict[str, np.ndarray]) -> Dic
 
     return feature_dict
 
-    from extreme_price_movements.config import POSITION_SIZER_V2_FEATURE_CONFIG
-    for key in POSITION_SIZER_V2_FEATURE_CONFIG["shared_feature_keys"]:
-        if key not in feature_dict:
-            feature_dict[key] = np.zeros(n, dtype=np.float32)
-
-    return feature_dict
-
 def assemble_feature_matrix(feature_dict: Dict[str, np.ndarray], keys: List[str]) -> np.ndarray:
     """
     Returns a contiguous float32 matrix given a dictionary and a list of keys.

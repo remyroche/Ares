@@ -7,7 +7,9 @@ from extreme_price_movements.purged_cv import PurgedKFold
 
 def _compute_inner_splits(timestamps: Optional[np.ndarray], n_samples: int, n_splits: int) -> List[Tuple[np.ndarray, np.ndarray]]:
     if n_samples < max(20, n_splits * 5):
-        mid = n_samples // 2
+        mid = max(1, n_samples // 2)
+        if mid >= n_samples:
+            return []
         return [(np.arange(0, mid), np.arange(mid, n_samples))]
 
     cv = PurgedKFold(n_splits=n_splits, purge=43200, embargo=43200, times=timestamps)
@@ -18,7 +20,9 @@ def _compute_inner_splits(timestamps: Optional[np.ndarray], n_samples: int, n_sp
             splits.append((tr, va))
 
     if not splits:
-        mid = n_samples // 2
+        mid = max(1, n_samples // 2)
+        if mid >= n_samples:
+            return []
         return [(np.arange(0, mid), np.arange(mid, n_samples))]
     return splits
 
@@ -98,7 +102,7 @@ def select_features_via_elasticnet(
     alpha_grid: np.ndarray,
     l1_ratio_grid: List[float],
     sample_weight_train: Optional[np.ndarray] = None,
-    inner_n_splits: int = 2,
+    inner_n_splits: int = 3,
     max_features_cap: Optional[int] = None,
     min_features_floor: int = 5,
     sparsity_penalty: float = 0.04,
@@ -110,11 +114,29 @@ def select_features_via_elasticnet(
     if max_features_cap is None:
         max_features_cap = n_features
 
+    target_floor = min(min_features_floor, max_features_cap, n_features)
+
+    if model_kind == "edge":
+        sparsity_penalty_eff = 0.04
+    elif model_kind == "downside":
+        sparsity_penalty_eff = 0.035
+    elif model_kind == "uncertainty":
+        sparsity_penalty_eff = 0.025
+    else:
+        sparsity_penalty_eff = sparsity_penalty
+
+    if inner_n_splits <= 2:
+        eff_sel_thresh = 0.50
+    elif inner_n_splits == 3:
+        eff_sel_thresh = 2.0 / 3.0
+    else:
+        eff_sel_thresh = selection_freq_threshold
+
     splits = _compute_inner_splits(timestamps_train, n_samples, inner_n_splits)
     if not splits:
-        # Fallback block split
-        mid = n_samples // 2
-        splits = [(np.arange(0, mid), np.arange(mid, n_samples))]
+        mid = max(1, n_samples // 2)
+        if mid < n_samples:
+            splits = [(np.arange(0, mid), np.arange(mid, n_samples))]
 
     path_results = []
 
@@ -200,6 +222,9 @@ def select_features_via_elasticnet(
             else:
                 stab_score = 0.65 * mean_sel_freq + 0.35 * mean_jaccard
 
+            norm_n = n_sel / max(1, n_features)
+            adj_score = stab_score - sparsity_penalty_eff * norm_n
+
             path_results.append({
                 "alpha": alpha,
                 "l1_ratio": l1_ratio,
@@ -215,7 +240,9 @@ def select_features_via_elasticnet(
                 "selection_freq_min": sel_freq_min,
                 "selection_freq_mean": mean_sel_freq,
                 "selection_freq_max": sel_freq_max,
-                "mean_sign_consistency": msc
+                "mean_sign_consistency": msc,
+                "normalized_n_selected": norm_n,
+                "adjusted_score": adj_score
             })
 
             # Prune path: if all folds selected 0 features, no need to try larger alphas for this l1_ratio
@@ -223,22 +250,31 @@ def select_features_via_elasticnet(
                 break
 
     if not path_results:
+        fallback_n = min(n_features, max(1, min_features_floor))
+        fallback_idx = np.arange(fallback_n, dtype=int)
+        fallback_names = [feature_names[i] for i in fallback_idx]
+
         return {
-            "selected_idx": np.arange(n_features),
-            "selected_names": feature_names,
-            "best_alpha": 0.0, "best_l1_ratio": 0.0,
-            "chosen_alpha": 0.0, "chosen_l1_ratio": 0.0,
-            "best_score": 0.0, "score_std": 0.0, "threshold_score": 0.0,
-            "n_features_selected": n_features,
-            "selection_frequency": np.ones(n_features),
-            "mean_jaccard": 1.0,
+            "selected_idx": fallback_idx,
+            "selected_names": fallback_names,
+            "best_alpha": 0.0,
+            "best_l1_ratio": 0.0,
+            "chosen_alpha": 0.0,
+            "chosen_l1_ratio": 0.0,
+            "best_score": 0.0,
+            "score_std": 0.0,
+            "threshold_score": 0.0,
+            "n_features_selected": len(fallback_idx),
+            "selection_frequency": np.zeros(n_features),
+            "selected_feature_frequencies": np.zeros(len(fallback_idx)),
+            "mean_jaccard": 0.0,
             "mean_sign_consistency": None,
-            "stability_score": 1.0,
-            "adjusted_score": 1.0,
-            "effective_selection_freq_threshold": selection_freq_threshold,
-            "model_feature_floor": min_features_floor,
-            "was_backfilled_to_floor": False,
-            "path_table": pd.DataFrame()
+            "stability_score": 0.0,
+            "adjusted_score": 0.0,
+            "effective_selection_freq_threshold": eff_sel_thresh,
+            "model_feature_floor": target_floor,
+            "was_backfilled_to_floor": True,
+            "path_table": pd.DataFrame(),
         }
 
     df = pd.DataFrame(path_results)
@@ -251,8 +287,9 @@ def select_features_via_elasticnet(
 
     candidates = df[df["mean_score"] >= thresh].copy()
 
+    # Use effective sparsity penalty
     candidates["normalized_n_selected"] = candidates["n_selected"] / max(1, n_features)
-    candidates["adjusted_score"] = candidates["stability_score"] - sparsity_penalty * candidates["normalized_n_selected"]
+    candidates["adjusted_score"] = candidates["stability_score"] - sparsity_penalty_eff * candidates["normalized_n_selected"]
 
     # Sort by: highest stability-adjusted score -> sparsest -> larger alpha
     candidates = candidates.sort_values(
@@ -272,42 +309,37 @@ def select_features_via_elasticnet(
     final_sel = list(chosen["selected_union"])
     freqs = chosen["freqs"]
 
-    # Fallback if zero features chosen
+    # 7. Minimal zero-feature fallback using target_floor
     if len(final_sel) == 0:
         best_row = df.loc[best_idx]
         final_sel = list(best_row["selected_union"])
         if len(final_sel) == 0:
-            final_sel = list(range(min(min_features_floor, n_features)))
+            final_sel = list(range(target_floor))
 
-    # Adaptive consolidation threshold logic
-    eff_sel_thresh = selection_freq_threshold
-    if inner_n_splits <= 2:
-        eff_sel_thresh = 0.50
-    elif inner_n_splits == 3:
-        eff_sel_thresh = 0.67
-
+    # 6. Adaptive consolidation threshold logic
     consolidated = [i for i in final_sel if freqs[i] >= eff_sel_thresh]
-    min_keep = max(min_features_floor, int(0.75 * len(final_sel)))
+    min_keep = max(target_floor, int(0.75 * len(final_sel)))
     if len(consolidated) >= min_keep:
         final_sel = consolidated
 
-    # Backfill if over-sparse (below model floor)
+    # Backfill if over-sparse (below target_floor)
     was_backfilled = False
-    if len(final_sel) < min_features_floor and n_features >= min_features_floor:
+    if len(final_sel) < target_floor and n_features >= target_floor:
         was_backfilled = True
-        needed = min_features_floor - len(final_sel)
+        needed = target_floor - len(final_sel)
 
         # Priority 1: features ordered by selection frequency descending
         avail = [i for i in range(n_features) if i not in final_sel]
         avail = sorted(avail, key=lambda i: freqs[i], reverse=True)
         final_sel.extend(avail[:needed])
 
-    final_sel_idx = np.array(sorted(final_sel), dtype=int)
+    final_sel = sorted(set(final_sel))
+    final_sel_idx = np.array(final_sel, dtype=int)
     final_names = [feature_names[i] for i in final_sel_idx]
 
     # Update full table for diagnostics
     df["normalized_n_selected"] = df["n_selected"] / max(1, n_features)
-    df["adjusted_score"] = df["stability_score"] - sparsity_penalty * df["normalized_n_selected"]
+    df["adjusted_score"] = df["stability_score"] - sparsity_penalty_eff * df["normalized_n_selected"]
 
     return {
         "selected_idx": final_sel_idx,
@@ -321,12 +353,13 @@ def select_features_via_elasticnet(
         "threshold_score": thresh,
         "n_features_selected": len(final_sel_idx),
         "selection_frequency": freqs,
+        "selected_feature_frequencies": freqs[final_sel_idx],
         "mean_jaccard": chosen["mean_jaccard"],
         "mean_sign_consistency": chosen.get("mean_sign_consistency"),
         "stability_score": chosen["stability_score"],
         "adjusted_score": chosen["adjusted_score"],
         "effective_selection_freq_threshold": eff_sel_thresh,
-        "model_feature_floor": min_features_floor,
+        "model_feature_floor": target_floor,
         "was_backfilled_to_floor": was_backfilled,
         "path_table": df
     }

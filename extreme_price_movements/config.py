@@ -1335,20 +1335,42 @@ POSITION_SIZER_V2_FEATURE_CONFIG = {
         "oof_base_mean", "oof_base_std", "oof_meta_pred", "oof_top2_gap",
         "oof_sign_agreement_frac", "ret_3", "ret_6", "ret_12", "price_vs_ema_12_z",
         "ema_12_minus_ema_24_z", "atr_pct", "rv_ratio_6_24", "spread_to_atr",
-        "cost_to_atr", "regime_trend_score", "regime_vol_score", "session_progress"
+        "cost_to_atr", "regime_trend_score", "regime_vol_score", "session_progress",
+
+        "range_last_3bars_impulse_range", "volatility_contraction_ratio",
+        "ATR_decay_rate", "realized_vol_15m_realized_vol_2h", "micro_range_decay",
+        "wick_ratio_last_bar", "close_position_in_range", "rejection_ratio",
+        "impulse_participation_volume", "terminal_climax_volume",
+        "post_impulse_persistence", "reversal_bar_strength",
+        "bidirectional_range_ratio", "momentum_last_3bars_impulse_return",
+        "drift_after_impulse", "slope_last_n_bars", "impulse_volume_ratio",
+        "terminal_volume_ratio", "post_impulse_volume_persistence",
+        "impulse_volume_slope", "impulse_vol_ratio", "impulse_range_atr_ratio",
+        "vol_compression_ratio", "range_decay"
     ],
     "model2_downside_feature_keys": [
         "oof_base_mean", "oof_base_std", "oof_meta_pred", "ret_1", "ret_3",
         "close_location_in_bar", "range_1_atr", "atr_pct", "rv_6", "rv_24",
         "downside_semivol_12", "spread_to_atr", "slippage_proxy",
-        "regime_vol_score", "regime_liquidity_score", "session_progress"
+        "regime_vol_score", "regime_liquidity_score", "session_progress",
+
+        "impulse_speed", "impulse_acceleration", "wick_cluster_ratio",
+        "rejection_bar_count", "ATR_spike_ratio", "distance_to_local_high",
+        "distance_to_local_low", "distance_to_vwap", "climax_volume_ratio",
+        "reversal_volume_ratio", "rejection_volume_ratio", "terminal_vol_ratio",
+        "volatility_asymmetry"
     ],
     "model3_uncertainty_feature_keys": [
         "oof_base_std", "oof_base_range", "oof_meta_minus_base_mean",
         "oof_sign_agreement_frac", "edge_pred", "downside_pred",
         "edge_minus_downside", "abs_edge_pred", "atr_pct", "rv_ratio_6_24",
         "spread_to_atr", "cost_to_atr", "liquidity_shock_z",
-        "regime_vol_score", "regime_liquidity_score", "session_progress"
+        "regime_vol_score", "regime_liquidity_score", "session_progress",
+
+        "vol_regime_transition", "ATR_ratio_short_long", "bar_direction_entropy",
+        "wick_entropy", "impulse_breakdown_score", "volume_volatility",
+        "volume_regime_shift", "volume_entropy", "return_per_volume",
+        "vol_of_vol", "vol_regime_shift", "range_cv", "return_vol_ratio"
     ]
 }
 

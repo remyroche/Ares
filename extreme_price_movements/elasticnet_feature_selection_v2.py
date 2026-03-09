@@ -6,9 +6,21 @@ from scipy.stats import spearmanr
 from extreme_price_movements.purged_cv import PurgedKFold
 
 def _compute_inner_splits(timestamps: Optional[np.ndarray], n_samples: int, n_splits: int) -> List[Tuple[np.ndarray, np.ndarray]]:
+    if n_samples < max(20, n_splits * 5):
+        mid = n_samples // 2
+        return [(np.arange(0, mid), np.arange(mid, n_samples))]
+
     cv = PurgedKFold(n_splits=n_splits, purge=43200, embargo=43200, times=timestamps)
     dummy_X = np.empty((n_samples, 1))
-    return list(cv.split(dummy_X))
+    splits = []
+    for tr, va in cv.split(dummy_X):
+        if len(tr) > 0 and len(va) > 0:
+            splits.append((tr, va))
+
+    if not splits:
+        mid = n_samples // 2
+        return [(np.arange(0, mid), np.arange(mid, n_samples))]
+    return splits
 
 def compute_pairwise_jaccard(feature_sets: List[np.ndarray]) -> float:
     if len(feature_sets) < 2:
@@ -36,19 +48,44 @@ def score_fold(y_true: np.ndarray, y_pred: np.ndarray, model_kind: str) -> float
     y_p = y_pred[valid]
 
     if model_kind == "edge":
-        # Top-decile realized net
+        # Top-decile realized net + spearman tie break
         k = max(1, int(len(y_p) * 0.10))
         idx = np.argpartition(y_p, -k)[-k:]
-        return float(np.mean(y_t[idx]))
+        base = float(np.mean(y_t[idx]))
+        sp, _ = spearmanr(y_p, y_t)
+        sp = float(sp) if pd.notna(sp) else 0.0
+        return base + 0.05 * sp
 
     elif model_kind == "downside":
-        # Negative MAE (higher is better)
-        return -float(np.mean(np.abs(y_p - y_t)))
+        # Negative MAE + false safe penalty
+        mae = float(np.mean(np.abs(y_p - y_t)))
+
+        # false safe: pred in lowest 20%, true in highest 20%
+        safe_t = np.percentile(y_p, 20)
+        danger_t = np.percentile(y_t, 80)
+        pred_safe = y_p <= safe_t
+        if np.sum(pred_safe) > 0:
+            fsr = np.sum(pred_safe & (y_t >= danger_t)) / np.sum(pred_safe)
+        else:
+            fsr = 0.0
+
+        return -(mae + 0.5 * fsr)
 
     elif model_kind == "uncertainty":
-        # Correlation
-        corr, _ = spearmanr(y_p, y_t)
-        return float(corr) if pd.notna(corr) else 0.0
+        # Correlation - underestimation penalty
+        sp, _ = spearmanr(y_p, y_t)
+        sp = float(sp) if pd.notna(sp) else 0.0
+
+        # underestimation: pred in lowest 20%, true in highest 20%
+        low_unc_t = np.percentile(y_p, 20)
+        high_err_t = np.percentile(y_t, 80)
+        pred_low = y_p <= low_unc_t
+        if np.sum(pred_low) > 0:
+            uer = np.sum(pred_low & (y_t >= high_err_t)) / np.sum(pred_low)
+        else:
+            uer = 0.0
+
+        return sp - 0.25 * uer
 
     return 0.0
 
@@ -82,12 +119,12 @@ def select_features_via_elasticnet(
     path_results = []
 
     # Pre-scale standardizations per fold to save time
-    from extreme_price_movements.position_sizer_v2 import PredictionScaler
+    from sklearn.preprocessing import StandardScaler
     fold_data = []
     for tr, va in splits:
-        scaler = PredictionScaler()
-        x_tr_s = scaler.fit_transform(X_train[tr])
-        x_va_s = scaler.transform(X_train[va])
+        scaler = StandardScaler()
+        x_tr_s = scaler.fit_transform(np.nan_to_num(X_train[tr]))
+        x_va_s = scaler.transform(np.nan_to_num(X_train[va]))
         fold_data.append({
             "tr": tr, "va": va,
             "x_tr_s": x_tr_s, "x_va_s": x_va_s,
@@ -102,41 +139,66 @@ def select_features_via_elasticnet(
 
             all_zero_count = 0
 
+            fold_coef_signs = []
             for fd in fold_data:
-                model = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, max_iter=1000, random_state=42)
+                model = ElasticNet(alpha=float(alpha), l1_ratio=float(l1_ratio), max_iter=3000, tol=1e-3, random_state=42, selection="cyclic")
                 try:
                     model.fit(fd["x_tr_s"], fd["y_tr"], sample_weight=fd["w_tr"])
                     preds = model.predict(fd["x_va_s"])
                     score = score_fold(fd["y_va"], preds, model_kind)
-                    nonzero_idx = np.where(np.abs(model.coef_) > 1e-9)[0]
+                    coefs = model.coef_
+                    nonzero_idx = np.where(np.abs(coefs) > 1e-9)[0]
+                    signs = np.sign(coefs)
                 except Exception:
                     score = -1e9
                     nonzero_idx = np.array([], dtype=int)
+                    signs = np.zeros(n_features)
 
                 fold_scores.append(score)
                 fold_selected.append(nonzero_idx)
+                fold_coef_signs.append(signs)
+
                 if len(nonzero_idx) == 0:
                     all_zero_count += 1
 
-            # Combine selected features across folds (union)
             union_selected = set()
             for sel in fold_selected:
                 union_selected.update(sel)
 
             n_sel = len(union_selected)
             if n_sel > max_features_cap:
-                continue # Skip dense candidates
+                continue
 
-            # Selection frequency
             freqs = np.zeros(n_features)
             for sel in fold_selected:
                 freqs[sel] += 1
             freqs /= len(splits)
 
-            mean_sel_freq = float(np.mean(freqs[list(union_selected)])) if union_selected else 0.0
+            union_list = list(union_selected)
+            mean_sel_freq = float(np.mean(freqs[union_list])) if union_list else 0.0
+            sel_freq_min = float(np.min(freqs[union_list])) if union_list else 0.0
+            sel_freq_max = float(np.max(freqs[union_list])) if union_list else 0.0
+
             mean_jaccard = compute_pairwise_jaccard(fold_selected)
 
-            stab_score = 0.7 * mean_sel_freq + 0.3 * mean_jaccard
+            msc = None
+            if use_sign_consistency and union_list:
+                signs_mat = np.vstack(fold_coef_signs)
+                consistencies = []
+                for idx in union_list:
+                    col = signs_mat[:, idx]
+                    nz_col = col[col != 0]
+                    if len(nz_col) > 0:
+                        frac_pos = np.sum(nz_col > 0) / len(nz_col)
+                        frac_neg = np.sum(nz_col < 0) / len(nz_col)
+                        consistencies.append(max(frac_pos, frac_neg))
+                if consistencies:
+                    msc = float(np.mean(consistencies))
+                    stab_score = 0.6 * mean_sel_freq + 0.25 * mean_jaccard + 0.15 * msc
+                else:
+                    stab_score = 0.7 * mean_sel_freq + 0.3 * mean_jaccard
+            else:
+                stab_score = 0.7 * mean_sel_freq + 0.3 * mean_jaccard
 
             path_results.append({
                 "alpha": alpha,
@@ -144,11 +206,16 @@ def select_features_via_elasticnet(
                 "mean_score": float(np.mean(fold_scores)),
                 "std_score": float(np.std(fold_scores)),
                 "n_selected": n_sel,
-                "selected_union": list(union_selected),
+                "selected_union": union_list,
                 "mean_sel_freq": mean_sel_freq,
                 "mean_jaccard": mean_jaccard,
                 "stability_score": stab_score,
-                "freqs": freqs
+                "freqs": freqs,
+                "path_zero_fold_count": all_zero_count,
+                "selection_freq_min": sel_freq_min,
+                "selection_freq_mean": mean_sel_freq,
+                "selection_freq_max": sel_freq_max,
+                "mean_sign_consistency": msc
             })
 
             # Prune path: if all folds selected 0 features, no need to try larger alphas for this l1_ratio
@@ -186,7 +253,6 @@ def select_features_via_elasticnet(
         ascending=[True, False, False]
     )
 
-    # Optional guard: if sparsest has very bad stability (< 0.55), pick next
     chosen = candidates.iloc[0]
     for _, row in candidates.iterrows():
         if row["n_selected"] > 0 and row["stability_score"] >= 0.55:
@@ -194,14 +260,20 @@ def select_features_via_elasticnet(
             break
 
     final_sel = chosen["selected_union"]
-    if len(final_sel) == 0:
-        # Fallback to full features if everything pruned to 0
-        final_sel = list(range(n_features))
 
-    # Optional final consolidation: intersection with freq >= threshold
+    # 7. Minimal zero-feature fallback
+    if len(final_sel) == 0:
+        best_row = df.loc[best_idx]
+        fallback_sel = list(best_row["selected_union"])
+        if len(fallback_sel) == 0:
+            fallback_sel = list(range(min(n_features, 5)))
+        final_sel = fallback_sel
+
+    # 6. Gentler final consolidation
     freqs = chosen["freqs"]
     consolidated = [i for i in final_sel if freqs[i] >= selection_freq_threshold]
-    if len(consolidated) >= 1:
+    min_keep = max(3, int(0.5 * len(final_sel)))
+    if len(consolidated) >= min_keep:
         final_sel = consolidated
 
     final_sel_idx = np.array(sorted(final_sel), dtype=int)
@@ -220,7 +292,7 @@ def select_features_via_elasticnet(
         "n_features_selected": len(final_sel_idx),
         "selection_frequency": freqs,
         "mean_jaccard": chosen["mean_jaccard"],
-        "mean_sign_consistency": None,
+        "mean_sign_consistency": chosen["mean_sign_consistency"],
         "stability_score": chosen["stability_score"],
         "path_table": df
     }

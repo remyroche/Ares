@@ -25,7 +25,12 @@ from extreme_price_movements.purged_cv import PurgedKFold
 from extreme_price_movements.metrics import _stable_equity_and_drawdown
 from extreme_price_movements.utils import tprint
 from extreme_price_movements.label_policy_optimizer import LabelPolicy, _simulate_policy_batch
-
+from extreme_price_movements.position_sizer_v2_metrics import (
+    compute_top_slice_metrics,
+    compute_bucket_monotonicity,
+    compute_false_safe_rate,
+    compute_uncertainty_calibration
+)
 
 # ============================================================
 # Shared Configuration & Utilities
@@ -38,12 +43,10 @@ class PredictionScaler:
         self.scaler = StandardScaler()
 
     def fit_transform(self, X: np.ndarray) -> np.ndarray:
-        # Note: np.nan_to_num silently maps NaNs to zero before scaling.
         return self.scaler.fit_transform(np.nan_to_num(X))
 
     def transform(self, X: np.ndarray) -> np.ndarray:
         return self.scaler.transform(np.nan_to_num(X))
-
 
 def make_temporal_splits(
     timestamps: Optional[np.ndarray],
@@ -52,35 +55,18 @@ def make_temporal_splits(
     purge_units: int = 43200,
     embargo_units: int = 43200
 ) -> List[Tuple[np.ndarray, np.ndarray]]:
-    """
-    Creates temporal splits using PurgedKFold.
-    If timestamps are provided, purge/embargo are interpreted as seconds.
-    If timestamps are None, purge/embargo are interpreted as number of samples.
-    """
     cv = PurgedKFold(n_splits=n_splits, purge=purge_units, embargo=embargo_units, times=timestamps)
     dummy_X = np.empty((n_samples, 1))
     return list(cv.split(dummy_X))
 
-
 def build_log_clipped_target(returns: np.ndarray, clip_L: float = 0.02) -> np.ndarray:
-    """
-    T1 = log_clipped_winsorized_net
-    Signed-log clipped target as specified in Option A.
-    """
+    """T1 = log_clipped_winsorized_net"""
     clipped = np.clip(returns, -clip_L, clip_L)
     scale = np.std(clipped) if len(clipped) > 1 and np.std(clipped) > 1e-9 else 1.0
     return np.sign(clipped) * np.log1p(np.abs(clipped) / scale)
 
-
 def build_rank_target(returns: np.ndarray, timestamps: Optional[np.ndarray] = None, mode: str = "fold_local") -> np.ndarray:
-    """
-    T2 = rank_style_target
-    Generates rank-based targets based on explicitly defined modes.
-
-    Modes:
-      - 'per_timestamp': Cross-sectional rank within each timestamp.
-      - 'fold_local': Rank the provided subset globally (assumes it's already a fold subset).
-    """
+    """T2 = rank_style_target"""
     returns = np.asarray(returns)
     if mode == "per_timestamp" and timestamps is not None:
         ranks = np.empty_like(returns, dtype=float)
@@ -93,27 +79,85 @@ def build_rank_target(returns: np.ndarray, timestamps: Optional[np.ndarray] = No
             local_ranks[order] = (np.arange(len(local_rets)) + 0.5) / max(1, len(local_rets))
             ranks[idx] = local_ranks
         return (ranks * 2.0) - 1.0
-
     elif mode == "fold_local":
         order = np.argsort(returns)
         ranks = np.empty_like(returns, dtype=float)
         ranks[order] = (np.arange(len(returns)) + 0.5) / max(1, len(returns))
         return (ranks * 2.0) - 1.0
-
     else:
         raise ValueError(f"Unknown or unsupported rank target mode: {mode}")
 
+def build_robust_utility_target(
+    trade_outcomes: pd.DataFrame,
+    cost_pct: float = 0.002
+) -> np.ndarray:
+    """
+    T3 = robust_utility_target_simple_tbm
+    Fixed simple TBM geometry: SL in {1.0, 1.5} ATR, TP in {1.5, 2.0} * SL
+    No trailing, no early exit.
+    """
+    # Defensive path extraction
+    max_b = 24
+
+    n = len(trade_outcomes)
+    def _pad(series):
+        res = np.full((n, max_b), np.nan, dtype=np.float64)
+        lens = np.zeros(n, dtype=np.int64)
+        for i, arr in enumerate(series):
+            use = min(len(arr), max_b)
+            if use > 0:
+                res[i, :use] = arr[:use]
+                lens[i] = use
+        return res, lens
+
+    opens, _ = _pad(trade_outcomes["future_opens"].values)
+    highs, _ = _pad(trade_outcomes["future_highs"].values)
+    lows, _ = _pad(trade_outcomes["future_lows"].values)
+    closes, path_lens = _pad(trade_outcomes["future_closes"].values)
+
+    entry_px = trade_outcomes["entry_price"].values
+    atr = trade_outcomes["atr_12_15m"].values
+    is_long = trade_outcomes["is_long"].values
+
+    geometries = [
+        (1.0, 1.5),
+        (1.0, 2.0),
+        (1.5, 1.5),
+        (1.5, 2.0),
+    ]
+
+    u_acc = np.zeros(n, dtype=np.float32)
+    for sl, tp_ratio in geometries:
+        pol = LabelPolicy(
+            sl_atr_mult=sl,
+            tp_sl_ratio=tp_ratio,
+            max_hold_bars=max_b,
+            trail_activate_atr=1e9, # disabled
+            giveback_pct=0.0,
+            early_exit_deadline_bars=0,
+            early_exit_mfe_atr=0.0
+        )
+        u, _ = _simulate_policy_batch(
+            entry_px, atr, is_long, opens, highs, lows, closes, path_lens, pol, cost_pct
+        )
+        u_acc += u
+
+    # Mean utility across the fixed simple geometries
+    return u_acc / len(geometries)
+
+def build_volatility_normalized_target(returns: np.ndarray, atr_values: np.ndarray, entry_prices: np.ndarray) -> np.ndarray:
+    """
+    T4 = volatility_normalized_target
+    raw_return / max(atr_like_scale, eps)
+    """
+    atr_pct = atr_values / np.maximum(entry_prices, 1e-9)
+    return returns / np.maximum(atr_pct, 1e-6)
 
 # ============================================================
 # Layer A: Predictive models
 # ============================================================
 
 class Model1Edge:
-    """
-    Model 1: Edge model
-    Predict edge / expected return / expected utility proxy / rank score.
-    Uses HuberRegressor (or Ridge fallback) to maintain robustness.
-    """
     def __init__(self, target_name: str = "log_clipped_winsorized_net"):
         self.target_name = target_name
         self.model = HuberRegressor(epsilon=1.35, max_iter=2000)
@@ -124,11 +168,9 @@ class Model1Edge:
         X_scaled = self.scaler.fit_transform(X)
         try:
             self.model.fit(X_scaled, y, sample_weight=sample_weight)
-        except Exception as e:
-            # Silencing fallback log spam when used inside loops, but conceptually falls back
+        except Exception:
             self.model = Ridge(alpha=1.0)
             self.model.fit(X_scaled, y, sample_weight=sample_weight)
-
         self.is_fitted = True
         return self
 
@@ -139,10 +181,6 @@ class Model1Edge:
 
 
 class Model2Downside:
-    """
-    Model 2: Downside model
-    Predicts path downside using MAE_x / ATR as primary target using HuberRegressor.
-    """
     def __init__(self):
         self.model = HuberRegressor(epsilon=1.35, max_iter=2000)
         self.scaler = PredictionScaler()
@@ -155,7 +193,6 @@ class Model2Downside:
         except Exception:
             self.model = Ridge(alpha=1.0)
             self.model.fit(X_scaled, y_mae_atr, sample_weight=sample_weight)
-
         self.is_fitted = True
         return self
 
@@ -166,18 +203,12 @@ class Model2Downside:
 
 
 class Model3Uncertainty:
-    """
-    Model 3: Uncertainty model
-    Predicts future unreliability of Model 1.
-    Target is transformed regression target: log1p(abs(residual))
-    """
     def __init__(self):
         self.model = HuberRegressor(epsilon=1.35, max_iter=2000)
         self.scaler = PredictionScaler()
         self.is_fitted = False
 
     def fit(self, X: np.ndarray, residuals: np.ndarray, sample_weight: Optional[np.ndarray] = None):
-        # Transformed regression target: log1p(abs_residual)
         y_target = np.log1p(np.abs(residuals))
         X_scaled = self.scaler.fit_transform(X)
         try:
@@ -185,7 +216,6 @@ class Model3Uncertainty:
         except Exception:
             self.model = Ridge(alpha=1.0)
             self.model.fit(X_scaled, y_target, sample_weight=sample_weight)
-
         self.is_fitted = True
         return self
 
@@ -193,7 +223,6 @@ class Model3Uncertainty:
         if not self.is_fitted:
             raise RuntimeError("Model3Uncertainty not fitted")
         pred_log = self.model.predict(self.scaler.transform(X))
-        # Inverse transform
         return np.expm1(pred_log)
 
 
@@ -201,7 +230,7 @@ class LayerAPredictor:
     """
     Layer A Orchestrator:
     - Runs target race for Model 1 via temporal OOF.
-    - Fits Downside via temporal OOF.
+    - Runs temporal OOF for Model 2.
     - Fits Uncertainty strictly on Model 1 OOF residuals.
     - Fits final models.
     """
@@ -218,17 +247,22 @@ class LayerAPredictor:
         self.model1_target_race_results_ = None
         self.model1_best_target_name_ = None
         self.model1_oof_pred_ = None
+
         self.model2_eval_results_ = None
+        self.model2_oof_pred_ = None
+
         self.model3_eval_results_ = None
+        self.model3_oof_pred_ = None
 
     def _run_model1_target_race(
         self,
         X: np.ndarray,
+        trade_outcomes: pd.DataFrame,
         raw_returns: np.ndarray,
         timestamps: Optional[np.ndarray],
         sample_weight: Optional[np.ndarray]
     ):
-        """Runs temporal OOF for multiple target candidates, evaluates metrics, picks best."""
+        """Evaluates T1, T2, T3, T4. Picks winner via temporal OOF edge target score."""
         splits = make_temporal_splits(timestamps, n_samples=len(X), n_splits=3)
 
         candidates = {
@@ -237,6 +271,12 @@ class LayerAPredictor:
                 raw_returns,
                 timestamps,
                 mode="per_timestamp" if timestamps is not None else "fold_local"
+            ),
+            "robust_utility_target": build_robust_utility_target(trade_outcomes),
+            "volatility_normalized_target": build_volatility_normalized_target(
+                raw_returns,
+                trade_outcomes["atr_12_15m"].values,
+                trade_outcomes["entry_price"].values
             )
         }
 
@@ -247,11 +287,12 @@ class LayerAPredictor:
 
         for name, y_cand in candidates.items():
             oof_preds = np.full(len(X), np.nan)
-            fold_nets = []
+            fold_nets_10 = []
+            fold_nets_20 = []
 
             for tr_idx, val_idx in splits:
                 m = Model1Edge(target_name=name)
-                # Ensure rank target is fold-local if requested
+                # fold local for rank
                 if name == "rank_style_target" and timestamps is None:
                     y_tr = build_rank_target(raw_returns[tr_idx], mode="fold_local")
                 else:
@@ -263,21 +304,28 @@ class LayerAPredictor:
                 preds_val = m.predict(X[val_idx])
                 oof_preds[val_idx] = preds_val
 
-                # Evaluate fold: top-decile realized net return
-                k = max(1, int(0.10 * len(preds_val)))
-                top_idx = np.argpartition(preds_val, -k)[-k:]
-                top_ret = raw_returns[val_idx][top_idx]
-                fold_nets.append(float(np.mean(top_ret)))
+                top_mets = compute_top_slice_metrics(preds_val, raw_returns[val_idx], top_fracs=(0.1, 0.2))
+                fold_nets_10.append(top_mets["top_10_mean_net"])
+                fold_nets_20.append(top_mets["top_20_mean_net"])
 
-            mean_net = float(np.mean(fold_nets)) if fold_nets else 0.0
-            std_net = float(np.std(fold_nets)) if len(fold_nets) > 1 else 0.0
+            mean_net = float(np.mean(fold_nets_10)) if fold_nets_10 else 0.0
+            std_net = float(np.std(fold_nets_10)) if len(fold_nets_10) > 1 else 0.0
             score = mean_net - 0.5 * std_net
+
+            spear, _ = spearmanr(oof_preds[np.isfinite(oof_preds)], raw_returns[np.isfinite(oof_preds)], nan_policy="omit")
+            monot = compute_bucket_monotonicity(oof_preds[np.isfinite(oof_preds)], raw_returns[np.isfinite(oof_preds)])
+
+            full_top = compute_top_slice_metrics(oof_preds[np.isfinite(oof_preds)], raw_returns[np.isfinite(oof_preds)], (0.1,))
 
             race_results.append({
                 "target": name,
                 "score": score,
-                "mean_top_decile_net": mean_net,
-                "std_top_decile_net": std_net
+                "spearman_ic_mean": float(spear) if pd.notna(spear) else 0.0,
+                "top_decile_realized_net_mean": mean_net,
+                "top_quintile_realized_net_mean": float(np.mean(fold_nets_20)) if fold_nets_20 else 0.0,
+                "top_decile_hit_rate_mean": full_top["top_10_hit_rate"],
+                "score_bucket_monotonicity": monot,
+                "fold_stability_std": std_net
             })
 
             if score > best_score:
@@ -285,41 +333,121 @@ class LayerAPredictor:
                 best_name = name
                 best_oof = oof_preds
 
-        self.model1_target_race_results_ = race_results
+        self.model1_target_race_results_ = pd.DataFrame(race_results)
         self.model1_best_target_name_ = best_name
         self.model1_oof_pred_ = best_oof
 
-        # Refit final Edge model
+        # Fit final Edge
         self.edge_model = Model1Edge(target_name=best_name)
         if best_name == "rank_style_target" and timestamps is None:
             y_final = build_rank_target(raw_returns, mode="fold_local")
         else:
             y_final = candidates[best_name]
-
         self.edge_model.fit(X, y_final, sample_weight)
 
-    def fit(self, X: np.ndarray, y_raw_net_return: np.ndarray, y_downside: np.ndarray,
+    def _run_model2_oof_eval(
+        self,
+        X: np.ndarray,
+        y_downside: np.ndarray,
+        timestamps: Optional[np.ndarray],
+        sample_weight: Optional[np.ndarray]
+    ):
+        """OOF eval for Model 2 Downside."""
+        splits = make_temporal_splits(timestamps, n_samples=len(X), n_splits=3)
+        oof_preds = np.full(len(X), np.nan)
+
+        for tr_idx, val_idx in splits:
+            m = Model2Downside()
+            w_tr = sample_weight[tr_idx] if sample_weight is not None else None
+            # Robustness: winzorize extreme tails in downside target before fit
+            y_tr_down = np.clip(y_downside[tr_idx], 0.0, np.percentile(y_downside[tr_idx], 98))
+            m.fit(X[tr_idx], y_tr_down, w_tr)
+            oof_preds[val_idx] = m.predict(X[val_idx])
+
+        valid = np.isfinite(oof_preds)
+        if np.any(valid):
+            mae = float(np.mean(np.abs(oof_preds[valid] - y_downside[valid])))
+            monot = compute_bucket_monotonicity(oof_preds[valid], y_downside[valid])
+            fsr = compute_false_safe_rate(oof_preds[valid], y_downside[valid], low_q=0.2, high_q=0.8)
+
+            # Simple manual Huber eval
+            err = np.abs(oof_preds[valid] - y_downside[valid])
+            delta = 1.35
+            quad = np.minimum(err, delta)
+            lin = err - quad
+            hloss = float(np.mean(0.5 * quad**2 + delta * lin))
+        else:
+            mae = hloss = monot = fsr = 0.0
+
+        self.model2_eval_results_ = {
+            "oof_mae": mae,
+            "oof_huber_loss": hloss,
+            "downside_decile_monotonicity": monot,
+            "false_safe_rate": fsr
+        }
+        self.model2_oof_pred_ = oof_preds
+
+        # Fit final Downside model
+        y_final = np.clip(y_downside, 0.0, np.percentile(y_downside, 98))
+        self.downside_model.fit(X, y_final, sample_weight)
+
+    def _run_model3_oof_eval(
+        self,
+        X: np.ndarray,
+        raw_returns: np.ndarray,
+        timestamps: Optional[np.ndarray],
+        sample_weight: Optional[np.ndarray]
+    ):
+        """OOF eval for Uncertainty. Fits on Model 1 OOF residuals."""
+        valid_oof = np.isfinite(self.model1_oof_pred_)
+        if not np.any(valid_oof):
+            return
+
+        y_true_for_res = raw_returns[valid_oof]
+        residuals = y_true_for_res - self.model1_oof_pred_[valid_oof]
+        X_res = X[valid_oof]
+        w_res = sample_weight[valid_oof] if sample_weight is not None else None
+
+        splits = make_temporal_splits(timestamps[valid_oof] if timestamps is not None else None, n_samples=len(X_res), n_splits=3)
+        oof_preds = np.full(len(X_res), np.nan)
+
+        for tr_idx, val_idx in splits:
+            m = Model3Uncertainty()
+            w_tr = w_res[tr_idx] if w_res is not None else None
+            m.fit(X_res[tr_idx], residuals[tr_idx], w_tr)
+            oof_preds[val_idx] = m.predict(X_res[val_idx])
+
+        valid2 = np.isfinite(oof_preds)
+        realized_abs = np.abs(residuals)
+
+        if np.any(valid2):
+            calib = compute_uncertainty_calibration(oof_preds[valid2], realized_abs[valid2])
+        else:
+            calib = {}
+
+        self.model3_eval_results_ = calib
+        self.model3_oof_pred_ = oof_preds
+
+        # Fit final Uncertainty model
+        self.uncertainty_model.fit(X_res, residuals, w_res)
+
+    def fit(self, X: np.ndarray, trade_outcomes: pd.DataFrame, y_raw_net_return: np.ndarray, y_downside: np.ndarray,
             timestamps: Optional[np.ndarray] = None,
             sample_weight: Optional[np.ndarray] = None):
 
-        # 1. Edge Target Race (generates self.model1_oof_pred_)
-        self._run_model1_target_race(X, y_raw_net_return, timestamps, sample_weight)
+        # Bound/clip sample weights to prevent explosive leverage
+        if sample_weight is not None:
+            sample_weight = np.clip(sample_weight, 0.01, np.percentile(sample_weight, 99))
 
-        # 2. Downside Model
-        self.downside_model.fit(X, y_downside, sample_weight)
+        # Orchestration steps as required:
+        # a) run Model 1 target race with OOF preds, c) fits final model 1
+        self._run_model1_target_race(X, trade_outcomes, y_raw_net_return, timestamps, sample_weight)
 
-        # 3. Uncertainty Model (Strict OOF residuals)
-        # Handle cases where OOF has NaNs due to unpredicted boundary edges in Purged CV
-        valid_oof = np.isfinite(self.model1_oof_pred_)
-        if np.any(valid_oof):
-            y_true_for_res = y_raw_net_return[valid_oof]
-            residuals = y_true_for_res - self.model1_oof_pred_[valid_oof]
-            self.uncertainty_model.fit(X[valid_oof], residuals,
-                                       sample_weight[valid_oof] if sample_weight is not None else None)
-        else:
-            # Fallback if CV completely fails
-            residuals = y_raw_net_return - self.edge_model.predict(X)
-            self.uncertainty_model.fit(X, residuals, sample_weight)
+        # b) run Model 2 OOF eval, d) fits final model 2
+        self._run_model2_oof_eval(X, y_downside, timestamps, sample_weight)
+
+        # e) fit final Model 3 on OOF residual target (includes its own OOF eval)
+        self._run_model3_oof_eval(X, y_raw_net_return, timestamps, sample_weight)
 
         self.is_fitted = True
         return self
@@ -338,10 +466,6 @@ class LayerAPredictor:
         return comps["edge"] - (self.lambda_downside * comps["downside"]) - (self.eta_uncertainty * comps["uncertainty"])
 
     def initial_sizing(self, score: np.ndarray, threshold: float = 0.0, base_size: float = 0.05) -> np.ndarray:
-        """
-        Initial decision rule: select if score > threshold, size with linear map.
-        size = base_size * linear_map(score)
-        """
         active = score > threshold
         sizes = np.zeros_like(score)
         if np.any(active):
@@ -378,12 +502,10 @@ class LayerBPolicyOptimizer:
         self.best_policy = {}
         self.best_j = -1e9
 
-        # Fixed composite objective coefficients
         self.obj_a = 1.0 # Sortino weight
         self.obj_b = 1.0 # MaxDD weight
         self.obj_c = 1.0 # Instability weight
 
-        # Artifacts
         self.layer_b_candidate_table_ = None
         self.layer_b_selected_objective_components_ = None
 
@@ -398,13 +520,15 @@ class LayerBPolicyOptimizer:
     ) -> Dict[str, float]:
         """
         Evaluate a single LabelPolicy over temporal validation folds.
-        Computes the active mask locally per-fold based on the threshold percentile.
+        _simulate_policy_batch returns log-return-like utility per trade (u).
         """
         TIMEOUT_REASON_IDX = 3
         fold_pnl_days = []
         fold_sortinos = []
         fold_maxdds = []
         fold_timeout_rates = []
+
+        min_days_floor = 1.0 / 24.0 # Fix: lower floor for short intraday evaluation bounds
 
         for _, val_idx in splits:
             if len(val_idx) == 0:
@@ -443,6 +567,7 @@ class LayerBPolicyOptimizer:
             lows_2d, _ = _pad(trade_outcomes["future_lows"].values[active_val_idx], max_b)
             closes_2d, path_lens = _pad(trade_outcomes["future_closes"].values[active_val_idx], max_b)
 
+            # u is log-return-like utility returned by simulator
             u, reason_counts = _simulate_policy_batch(
                 entry_prices=entry_prices,
                 atr_entries=atr_entries,
@@ -463,16 +588,14 @@ class LayerBPolicyOptimizer:
                 fold_timeout_rates.append(1.0)
                 continue
 
-            # U is log-return-like utility.
             ret = np.expm1(u)
             pnl = float(np.sum(ret))
 
-            # Intraday exact fractional day count
             ts = pd.to_datetime(timestamps[active_val_idx])
-            days = max((ts.max() - ts.min()).total_seconds() / 86400.0, 1.0)
+            days = max((ts.max() - ts.min()).total_seconds() / 86400.0, min_days_floor)
             pnl_day = pnl / days
 
-            from extreme_price_movements.metrics import _stable_equity_and_drawdown
+            # Defensive check for stable_equity function mapping (already globally imported)
             _, dd = _stable_equity_and_drawdown(ret)
             maxDD = float(np.max(dd)) if len(dd) > 0 else 1.0
 
@@ -483,7 +606,10 @@ class LayerBPolicyOptimizer:
             fold_pnl_days.append(pnl_day)
             fold_sortinos.append(sortino)
             fold_maxdds.append(maxDD)
-            fold_timeout_rates.append(reason_counts[TIMEOUT_REASON_IDX] / len(u))
+
+            # Defensive index access for timeout reason code
+            to_idx = min(TIMEOUT_REASON_IDX, len(reason_counts) - 1)
+            fold_timeout_rates.append(reason_counts[to_idx] / len(u))
 
         return {
             "net_pnl_day": float(np.mean(fold_pnl_days)),
@@ -494,10 +620,6 @@ class LayerBPolicyOptimizer:
         }
 
     def _score_candidates(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """
-        Applies standardized composite scoring within the candidate set.
-        utility = z(net_pnl_day) + a*z(sortino) - b*z(maxDD) - c*z(instability)
-        """
         if not results:
             return []
 
@@ -517,13 +639,7 @@ class LayerBPolicyOptimizer:
 
         return sorted(results, key=lambda x: x["utility"], reverse=True)
 
-
     def optimize(self, scores: np.ndarray, trade_outcomes: pd.DataFrame, timestamps: np.ndarray):
-        """
-        1. Optimize exit geometry on top 40% trades (q=0.60)
-        2. Optimize selection boundary
-        3. Optimize time management
-        """
         splits = make_temporal_splits(timestamps, n_samples=len(scores), n_splits=3)
         candidate_table = []
 
@@ -536,7 +652,6 @@ class LayerBPolicyOptimizer:
         tprint("Layer B Step 1: Optimizing exit geometry over temporal folds...")
         step1_results = []
         for sl, tp, trail, gb in itertools.product(sl_cands, tp_cands, trail_cands, giveback_cands):
-            # Removed arbitrary trail < 2.0*gb constraint per Issue 8
             pol = LabelPolicy(
                 sl_atr_mult=sl, tp_sl_ratio=tp, max_hold_bars=24,
                 trail_activate_atr=trail, giveback_pct=gb,
@@ -545,12 +660,12 @@ class LayerBPolicyOptimizer:
             res = self._eval_policy_over_folds(pol, trade_outcomes, scores, threshold_q=0.60, splits=splits, timestamps=timestamps)
             res["step"] = 1
             res["policy_obj"] = pol
+            res["threshold_q"] = 0.60
             step1_results.append(res)
 
         step1_scored = self._score_candidates(step1_results)
         candidate_table.extend(step1_scored)
         best_geom = step1_scored[0]["policy_obj"]
-        tprint(f"Layer B Step 1 Winner: SL={best_geom.sl_atr_mult}, TP/SL={best_geom.tp_sl_ratio}, Utility={step1_scored[0]['utility']:.4f}")
 
         # --- Step 2: Selection Boundary ---
         tprint("Layer B Step 2: Optimizing selection boundary...")
@@ -565,7 +680,6 @@ class LayerBPolicyOptimizer:
         step2_scored = self._score_candidates(step2_results)
         candidate_table.extend(step2_scored)
         best_q = step2_scored[0]["threshold_q"]
-        tprint(f"Layer B Step 2 Winner: Threshold Q={best_q:.2f}, Utility={step2_scored[0]['utility']:.4f}")
 
         # --- Step 3: Time Management ---
         tprint("Layer B Step 3: Optimizing time management...")
@@ -584,25 +698,34 @@ class LayerBPolicyOptimizer:
             res = self._eval_policy_over_folds(pol, trade_outcomes, scores, threshold_q=best_q, splits=splits, timestamps=timestamps)
             res["step"] = 3
             res["policy_obj"] = pol
+            res["threshold_q"] = best_q
             step3_results.append(res)
 
         step3_scored = self._score_candidates(step3_results)
         candidate_table.extend(step3_scored)
         best_pol = step3_scored[0]["policy_obj"]
-        tprint(f"Layer B Step 3 Winner: Timeout={best_pol.max_hold_bars}, EarlyExit={best_pol.early_exit_deadline_bars} bars @ {best_pol.early_exit_mfe_atr} ATR, Utility={step3_scored[0]['utility']:.4f}")
 
-        # Artifact storage
+        # Artifact storage ensuring fully reconstructable records
         self.layer_b_candidate_table_ = pd.DataFrame([{
-            "step": r["step"], "sl": r["policy_obj"].sl_atr_mult, "tp_ratio": r["policy_obj"].tp_sl_ratio,
-            "max_hold": r["policy_obj"].max_hold_bars, "net_pnl_day": r["net_pnl_day"],
-            "sortino": r["sortino"], "maxDD": r["maxDD"], "instability": r["instability"],
+            "step": r["step"],
+            "threshold_q": r["threshold_q"],
+            "sl_atr_mult": r["policy_obj"].sl_atr_mult,
+            "tp_sl_ratio": r["policy_obj"].tp_sl_ratio,
+            "trail_activate_atr": r["policy_obj"].trail_activate_atr,
+            "giveback_pct": r["policy_obj"].giveback_pct,
+            "max_hold_bars": r["policy_obj"].max_hold_bars,
+            "early_exit_deadline_bars": r["policy_obj"].early_exit_deadline_bars,
+            "early_exit_mfe_atr": r["policy_obj"].early_exit_mfe_atr,
+            "net_pnl_day": r["net_pnl_day"],
+            "sortino": r["sortino"],
+            "maxDD": r["maxDD"],
+            "instability": r["instability"],
             "utility": r["utility"]
         } for r in candidate_table])
 
         self.layer_b_selected_objective_components_ = step3_scored[0]
         self.best_j = step3_scored[0]["utility"]
 
-        # Save threshold mapping to absolute score domain based on final full run
         final_thresh_val = np.percentile(scores, best_q * 100)
         self.best_policy = {
             "sl_atr_mult": best_pol.sl_atr_mult,
@@ -616,6 +739,7 @@ class LayerBPolicyOptimizer:
         }
         return self.best_policy
 
+
 # ============================================================
 # Layer C: Execution Optimization
 # ============================================================
@@ -623,6 +747,7 @@ class LayerBPolicyOptimizer:
 class LayerCExecutionOptimizer:
     """
     Layer C: Sizing mapping and Ridge Limit offset optimizer.
+    Limit offset semantic bounds: 0.0 to 5.0 explicitly in percentage points or ticks based on input.
     """
     def __init__(self, start_equity: float = 100000.0,
                  offset_min: float = 0.0, offset_max: float = 5.0, offset_unit: str = "ticks"):
@@ -642,7 +767,6 @@ class LayerCExecutionOptimizer:
         self.layer_c_candidate_table_ = None
 
     def _score_candidates(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Same standardized objective as Layer B."""
         if not results:
             return []
         z_pnl = _standardize([r["net_pnl_day"] for r in results])
@@ -663,12 +787,11 @@ class LayerCExecutionOptimizer:
         timestamps: np.ndarray,
         base_size: float = 0.05
     ):
-        """
-        Compare linear, convex, concave sizing curves over temporal folds based on Utility score.
-        """
         splits = make_temporal_splits(timestamps, n_samples=len(scores), n_splits=3)
         modes = ["linear", "convex", "concave"]
         mode_results = {m: {"fold_pnl_day": [], "fold_sortino": [], "fold_maxdd": []} for m in modes}
+
+        min_days_floor = 1.0 / 24.0 # Fix floor logic
 
         for _, val_idx in splits:
             if len(val_idx) == 0:
@@ -688,7 +811,7 @@ class LayerCExecutionOptimizer:
 
             s_act = s_val[active]
             r_act = r_val[active]
-            days = max((ts_val.max() - ts_val.min()).total_seconds() / 86400.0, 1.0)
+            days = max((ts_val.max() - ts_val.min()).total_seconds() / 86400.0, min_days_floor)
 
             s_min, s_max = s_act.min(), s_act.max()
             s_norm = (s_act - s_min) / max(s_max - s_min, 1e-9)
@@ -716,7 +839,6 @@ class LayerCExecutionOptimizer:
                 mode_results[m]["fold_sortino"].append(sortino)
                 mode_results[m]["fold_maxdd"].append(mdd)
 
-        # Aggregate
         eval_rows = []
         for m in modes:
             mr = mode_results[m]
@@ -725,7 +847,9 @@ class LayerCExecutionOptimizer:
                 "net_pnl_day": float(np.mean(mr["fold_pnl_day"])),
                 "sortino": float(np.mean(mr["fold_sortino"])),
                 "maxDD": float(np.mean(mr["fold_maxdd"])),
-                "instability": float(np.std(mr["fold_pnl_day"]))
+                "instability": float(np.std(mr["fold_pnl_day"])),
+                "threshold": threshold,
+                "base_size": base_size
             })
 
         scored = self._score_candidates(eval_rows)
@@ -736,7 +860,6 @@ class LayerCExecutionOptimizer:
         return self.sizing_mode
 
     def fit_limit_offset(self, X: np.ndarray, y_offset: np.ndarray, sample_weight: Optional[np.ndarray] = None):
-        """Train passive limit offset regression."""
         X_scaled = self.scaler.fit_transform(X)
         self.limit_model.fit(X_scaled, y_offset, sample_weight=sample_weight)
         self.is_fitted = True
@@ -775,7 +898,8 @@ def run_experiment_comparison(
     v2_returns_no_offset: np.ndarray,
     v2_returns_with_offset: np.ndarray,
     start_equity: float = 100000.0,
-):
+    timestamps: Optional[np.ndarray] = None
+) -> pd.DataFrame:
     """
     Produce final comparison report between Original setup,
     V2 (No offset), and V2 (With limit offset).
@@ -784,26 +908,58 @@ def run_experiment_comparison(
     tprint("FINAL EXPERIMENT COMPARISON")
     tprint("=" * 80)
 
+    rows = []
+
     def _eval(sz, rets, name):
         pnl_series = start_equity * sz * rets
         pnl = np.sum(pnl_series)
         neg = pnl_series[pnl_series < 0]
+        pos = pnl_series[pnl_series > 0]
+
         dd_dev = float(np.sqrt(np.mean(neg**2))) if len(neg) > 0 else 1e-3
         sortino = float(np.mean(pnl_series) / (dd_dev + 1e-9) * np.sqrt(365))
 
         _, dd = _stable_equity_and_drawdown(pnl_series)
         mdd = float(np.max(dd)) if len(dd) > 0 else 1.0
 
+        hit_rate = float(np.mean(pnl_series > 0)) if len(pnl_series) > 0 else 0.0
+        pf = float(np.sum(pos) / abs(np.sum(neg))) if len(neg) > 0 and abs(np.sum(neg)) > 1e-9 else float('inf') if len(pos) > 0 else 0.0
+
+        avg_win = float(np.mean(pos)) if len(pos) > 0 else 0.0
+        avg_loss = float(np.mean(neg)) if len(neg) > 0 else 0.0
+
+        trades = np.sum(sz > 0)
+        days = max(1.0, (pd.to_datetime(timestamps).max() - pd.to_datetime(timestamps).min()).total_seconds() / 86400.0) if timestamps is not None else 1.0
+        trades_per_day = float(trades / days)
+
+        row = {
+            "setup": name,
+            "net_pnl": pnl,
+            "sortino": sortino,
+            "maxDD": mdd,
+            "hit_rate": hit_rate,
+            "profit_factor": pf,
+            "avg_win": avg_win,
+            "avg_loss": avg_loss,
+            "trades_per_day": trades_per_day
+        }
+        rows.append(row)
+
         tprint(f"  {name}:")
-        tprint(f"    Net PnL: ${pnl:.2f}")
-        tprint(f"    Sortino: {sortino:.3f}")
-        tprint(f"    Max DD:  {mdd:.4%}")
+        tprint(f"    Net PnL:       ${pnl:.2f}")
+        tprint(f"    Sortino:       {sortino:.3f}")
+        tprint(f"    Max DD:        {mdd:.4%}")
+        tprint(f"    Hit Rate:      {hit_rate:.2%}")
+        tprint(f"    Profit Factor: {pf:.3f}")
+        tprint(f"    Trades/Day:    {trades_per_day:.2f}")
+        tprint(f"    Avg Win/Loss:  ${avg_win:.2f} / ${avg_loss:.2f}")
 
     _eval(baseline_sizes, baseline_returns, "Baseline (Original)")
     _eval(v2_sizes_no_offset, v2_returns_no_offset, "V2 (Layer A + Layer B policy + best Sizing)")
     _eval(v2_sizes_with_offset, v2_returns_with_offset, "V2 (Full) + Limit Offset Optimizer")
     tprint("=" * 80)
 
+    return pd.DataFrame(rows)
 
 # Layer B reporting expansion
 def generate_layer_b_deliverables(
@@ -812,9 +968,6 @@ def generate_layer_b_deliverables(
     trade_outcomes: pd.DataFrame,
     start_equity: float = 100000.0
 ):
-    """
-    Produce Layer B specific artifacts and financial metrics per spec.
-    """
     tprint("=" * 80)
     tprint("LAYER B DELIVERABLES: POLICY OPTIMIZATION")
     tprint("=" * 80)
@@ -834,9 +987,6 @@ def generate_target_race_report(
     y_oos_dict: Dict[str, np.ndarray],
     base_returns: np.ndarray,
 ):
-    """
-    Evaluate target proxies (e.g. Huber vs Winsorized) based on top-decile performance.
-    """
     tprint("=" * 80)
     tprint("MODEL 1 EDGE TARGET RACE DIAGNOSTICS")
     tprint("=" * 80)

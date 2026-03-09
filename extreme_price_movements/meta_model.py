@@ -200,8 +200,8 @@ class MetaModel:
                 selector_report_dir=self.selector_report_dir,
                 selector_prev_selected=list(self.selector_prev_selected) if self.selector_prev_selected is not None else None,
                 selector_family_map=dict(self.selector_family_map or {}),
-                selector_focus_top_frac=float(_sel_cfg.get("selector_focus_top_frac", 0.30)),
-                selector_top_metric=_sel_cfg.get("selector_top_metric", "ic_top"),
+                selector_focus_top_frac=float(_sel_cfg.get("selector_focus_top_frac", 1.0)),
+                selector_top_metric=_sel_cfg.get("selector_top_metric", "ic"),
                 selector_frequency_hit_mode=str(_sel_cfg.get("selector_frequency_hit_mode", "relative")),
                 selector_frequency_hit_quantile=float(_sel_cfg.get("selector_frequency_hit_quantile", 0.80)),
                 selector_frequency_hit_abs=float(_sel_cfg.get("selector_frequency_hit_abs", 1e-6)),
@@ -221,8 +221,8 @@ class MetaModel:
                 selector_hysteresis_margin=float(_sel_cfg.get("selector_hysteresis_margin", 0.05)),
                 selector_min_overlap=float(_sel_cfg.get("selector_min_overlap", 0.70)),
                 composite_weights={
-                    "top30": float(_sel_cfg.get("top30", 0.35)),
-                    "global": float(_sel_cfg.get("global", 0.20)),
+                    "top30": float(_sel_cfg.get("top30", 0.0)),
+                    "global": float(_sel_cfg.get("global", 0.55)),
                     "stability": float(_sel_cfg.get("stability", 0.25)),
                     "frequency": float(_sel_cfg.get("frequency", 0.15)),
                     "interaction": float(_sel_cfg.get("interaction", 0.05)),
@@ -542,7 +542,8 @@ class MetaModel:
             ic_mh = metrics.get("ic_mh", ic_orig)
             ic_t30 = metrics.get("ic_top30", 0.0)
             spread10 = metrics.get("spread10", 0.0)
-            composite = 0.40 * ic_mh + 0.30 * ic_t30 + 0.30 * min(spread10 * 100, 1.0)
+            # Neutral optimization across all deciles
+            composite = ic_mh
             pnl_top30 = self._top_slice_pnl(oof_orig_gate, y_np[best_gate_mask], frac=0.30)
 
             oof_full = np.full(len(y_np), np.nan, dtype=float)
@@ -1050,8 +1051,8 @@ class MetaClassifierModel:
                 selector_report_dir=self.selector_report_dir,
                 selector_prev_selected=list(self.selector_prev_selected) if self.selector_prev_selected is not None else None,
                 selector_family_map=dict(self.selector_family_map or {}),
-                selector_focus_top_frac=float(_sel_cfg.get("selector_focus_top_frac", 0.30)),
-                selector_top_metric=_sel_cfg.get("selector_top_metric", "ic_top"),
+                selector_focus_top_frac=float(_sel_cfg.get("selector_focus_top_frac", 1.0)),
+                selector_top_metric=_sel_cfg.get("selector_top_metric", "ic"),
                 selector_frequency_hit_mode=str(_sel_cfg.get("selector_frequency_hit_mode", "relative")),
                 selector_frequency_hit_quantile=float(_sel_cfg.get("selector_frequency_hit_quantile", 0.80)),
                 selector_frequency_hit_abs=float(_sel_cfg.get("selector_frequency_hit_abs", 1e-6)),
@@ -1071,8 +1072,8 @@ class MetaClassifierModel:
                 selector_hysteresis_margin=float(_sel_cfg.get("selector_hysteresis_margin", 0.05)),
                 selector_min_overlap=float(_sel_cfg.get("selector_min_overlap", 0.70)),
                 composite_weights={
-                    "top30": float(_sel_cfg.get("top30", 0.35)),
-                    "global": float(_sel_cfg.get("global", 0.20)),
+                    "top30": float(_sel_cfg.get("top30", 0.0)),
+                    "global": float(_sel_cfg.get("global", 0.55)),
                     "stability": float(_sel_cfg.get("stability", 0.25)),
                     "frequency": float(_sel_cfg.get("frequency", 0.15)),
                     "interaction": float(_sel_cfg.get("interaction", 0.05)),

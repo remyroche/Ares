@@ -1357,3 +1357,31 @@ POSITION_SIZER_V2_FEATURE_FLAGS = {
     "enable_model2_optional": False,
     "enable_model3_optional": False,
 }
+
+POSITION_SIZER_V2_BUCKETS = ["TF_up", "TF_down", "MR_up", "MR_down"]
+
+POSITION_SIZER_V2_BUCKET_CONFIG = {
+    "min_samples_total": 500,
+    "min_samples_per_fold": 100,
+    "min_active_trades_per_policy_eval": 30,
+}
+
+POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG = {
+    "enabled": True,
+    "alpha_grid_small": "np.logspace(-3, 0.5, 10)",
+    "alpha_grid_large": "np.logspace(-4, 1, 14)",
+    "l1_ratio_grid_small": [0.15, 0.50, 0.85],
+    "l1_ratio_grid_large": [0.05, 0.15, 0.30, 0.50, 0.70, 0.90],
+    "inner_n_splits_default": 2,
+    "inner_n_splits_large_bucket": 3,
+    "selection_rule": "one_std_sparsest_stable",
+    "selection_freq_threshold": 0.60,
+    "stability_weight": 0.15,
+    "size_weight": 0.05,
+    "max_features_cap": {
+        "edge": 25,
+        "downside": 20,
+        "uncertainty": 15,
+    },
+    "enable_sign_consistency": False,
+}

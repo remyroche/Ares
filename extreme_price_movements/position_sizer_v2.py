@@ -19,6 +19,8 @@ import numpy as np
 import pandas as pd
 from extreme_price_movements.features import build_position_sizer_feature_frame, assemble_feature_matrix
 from extreme_price_movements.config import POSITION_SIZER_V2_FEATURE_CONFIG
+from extreme_price_movements.elasticnet_feature_selection_v2 import select_features_via_elasticnet
+from extreme_price_movements.config import POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG
 
 from sklearn.linear_model import HuberRegressor, Ridge
 from sklearn.preprocessing import StandardScaler
@@ -257,6 +259,14 @@ class LayerAPredictor:
         self.model3_eval_results_ = None
         self.model3_oof_pred_ = None
 
+        # Feature Selection Artifacts
+        self.final_selected_feature_idx_edge_ = None
+        self.final_selected_feature_idx_downside_ = None
+        self.final_selected_feature_idx_uncertainty_ = None
+        self.feature_selection_results_edge_ = None
+        self.feature_selection_results_downside_ = None
+        self.feature_selection_results_uncertainty_ = None
+
     def _run_model1_target_race(
         self,
         X: np.ndarray,
@@ -288,23 +298,57 @@ class LayerAPredictor:
         best_name = "log_clipped_winsorized_net"
         best_oof = np.zeros(len(X))
 
+        # Pull FS Config
+        fs_cfg = POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG
+        do_fs = fs_cfg.get("enabled", True)
+
+        # Choose grid size based on n_samples
+        n_samples = len(X)
+        if n_samples > 1500:
+            alpha_grid = np.logspace(-4, 1, 14)
+            l1_grid = fs_cfg.get("l1_ratio_grid_large", [0.05, 0.15, 0.30, 0.50, 0.70, 0.90])
+            inner_cv = fs_cfg.get("inner_n_splits_large_bucket", 3)
+        else:
+            alpha_grid = np.logspace(-3, 0.5, 10)
+            l1_grid = fs_cfg.get("l1_ratio_grid_small", [0.15, 0.50, 0.85])
+            inner_cv = fs_cfg.get("inner_n_splits_default", 2)
+
+        feature_names = POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"]
+
         for name, y_cand in candidates.items():
             oof_preds = np.full(len(X), np.nan)
             fold_nets_10 = []
             fold_nets_20 = []
 
             for tr_idx, val_idx in splits:
-                m = Model1Edge(target_name=name)
-                # fold local for rank
                 if name == "rank_style_target" and timestamps is None:
                     y_tr = build_rank_target(raw_returns[tr_idx], mode="fold_local")
                 else:
                     y_tr = y_cand[tr_idx]
 
                 w_tr = sample_weight[tr_idx] if sample_weight is not None else None
-                m.fit(X[tr_idx], y_tr, w_tr)
 
-                preds_val = m.predict(X[val_idx])
+                if do_fs:
+                    fs_res = select_features_via_elasticnet(
+                        X_train=X[tr_idx],
+                        y_train=y_tr,
+                        timestamps_train=timestamps[tr_idx] if timestamps is not None else None,
+                        model_kind="edge",
+                        feature_names=feature_names,
+                        alpha_grid=alpha_grid,
+                        l1_ratio_grid=l1_grid,
+                        sample_weight_train=w_tr,
+                        inner_n_splits=inner_cv,
+                        max_features_cap=fs_cfg["max_features_cap"]["edge"]
+                    )
+                    sel_idx = fs_res["selected_idx"]
+                else:
+                    sel_idx = np.arange(X.shape[1])
+
+                m = Model1Edge(target_name=name)
+                m.fit(X[tr_idx][:, sel_idx], y_tr, w_tr)
+
+                preds_val = m.predict(X[val_idx][:, sel_idx])
                 oof_preds[val_idx] = preds_val
 
                 top_mets = compute_top_slice_metrics(preds_val, raw_returns[val_idx], top_fracs=(0.1, 0.2))
@@ -351,6 +395,28 @@ class LayerAPredictor:
         # Save winning target for dimension-safe residual generation in Model 3
         self.model1_y_final_ = y_final
 
+        # Perform Final Feature Selection for Model 1
+        if do_fs:
+            final_fs_res = select_features_via_elasticnet(
+                X_train=X,
+                y_train=y_final,
+                timestamps_train=timestamps,
+                model_kind="edge",
+                feature_names=feature_names,
+                alpha_grid=alpha_grid,
+                l1_ratio_grid=l1_grid,
+                sample_weight_train=sample_weight,
+                inner_n_splits=inner_cv,
+                max_features_cap=fs_cfg["max_features_cap"]["edge"]
+            )
+            self.final_selected_feature_idx_edge_ = final_fs_res["selected_idx"]
+            self.feature_selection_results_edge_ = final_fs_res
+        else:
+            self.final_selected_feature_idx_edge_ = np.arange(X.shape[1])
+            self.feature_selection_results_edge_ = None
+
+        self.edge_model.fit(X[:, self.final_selected_feature_idx_edge_], y_final, sample_weight)
+
     def _run_model2_oof_eval(
         self,
         X: np.ndarray,
@@ -362,13 +428,44 @@ class LayerAPredictor:
         splits = make_temporal_splits(timestamps, n_samples=len(X), n_splits=3)
         oof_preds = np.full(len(X), np.nan)
 
+        fs_cfg = POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG
+        do_fs = fs_cfg.get("enabled", True)
+        n_samples = len(X)
+        if n_samples > 1500:
+            alpha_grid = np.logspace(-4, 1, 14)
+            l1_grid = fs_cfg.get("l1_ratio_grid_large", [0.05, 0.15, 0.30, 0.50, 0.70, 0.90])
+            inner_cv = fs_cfg.get("inner_n_splits_large_bucket", 3)
+        else:
+            alpha_grid = np.logspace(-3, 0.5, 10)
+            l1_grid = fs_cfg.get("l1_ratio_grid_small", [0.15, 0.50, 0.85])
+            inner_cv = fs_cfg.get("inner_n_splits_default", 2)
+
+        feature_names = POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"]
+
         for tr_idx, val_idx in splits:
-            m = Model2Downside()
             w_tr = sample_weight[tr_idx] if sample_weight is not None else None
-            # Robustness: winzorize extreme tails in downside target before fit
             y_tr_down = np.clip(y_downside[tr_idx], 0.0, np.percentile(y_downside[tr_idx], 98))
-            m.fit(X[tr_idx], y_tr_down, w_tr)
-            oof_preds[val_idx] = m.predict(X[val_idx])
+
+            if do_fs:
+                fs_res = select_features_via_elasticnet(
+                    X_train=X[tr_idx],
+                    y_train=y_tr_down,
+                    timestamps_train=timestamps[tr_idx] if timestamps is not None else None,
+                    model_kind="downside",
+                    feature_names=feature_names,
+                    alpha_grid=alpha_grid,
+                    l1_ratio_grid=l1_grid,
+                    sample_weight_train=w_tr,
+                    inner_n_splits=inner_cv,
+                    max_features_cap=fs_cfg["max_features_cap"]["downside"]
+                )
+                sel_idx = fs_res["selected_idx"]
+            else:
+                sel_idx = np.arange(X.shape[1])
+
+            m = Model2Downside()
+            m.fit(X[tr_idx][:, sel_idx], y_tr_down, w_tr)
+            oof_preds[val_idx] = m.predict(X[val_idx][:, sel_idx])
 
         valid = np.isfinite(oof_preds)
         if np.any(valid):
@@ -395,7 +492,27 @@ class LayerAPredictor:
 
         # Fit final Downside model
         y_final = np.clip(y_downside, 0.0, np.percentile(y_downside, 98))
-        self.downside_model.fit(X, y_final, sample_weight)
+
+        if do_fs:
+            final_fs_res = select_features_via_elasticnet(
+                X_train=X,
+                y_train=y_final,
+                timestamps_train=timestamps,
+                model_kind="downside",
+                feature_names=feature_names,
+                alpha_grid=alpha_grid,
+                l1_ratio_grid=l1_grid,
+                sample_weight_train=sample_weight,
+                inner_n_splits=inner_cv,
+                max_features_cap=fs_cfg["max_features_cap"]["downside"]
+            )
+            self.final_selected_feature_idx_downside_ = final_fs_res["selected_idx"]
+            self.feature_selection_results_downside_ = final_fs_res
+        else:
+            self.final_selected_feature_idx_downside_ = np.arange(X.shape[1])
+            self.feature_selection_results_downside_ = None
+
+        self.downside_model.fit(X[:, self.final_selected_feature_idx_downside_], y_final, sample_weight)
 
     def _run_model3_oof_eval(
         self,
@@ -417,11 +534,42 @@ class LayerAPredictor:
         splits = make_temporal_splits(timestamps[valid_oof] if timestamps is not None else None, n_samples=len(X_res), n_splits=3)
         oof_preds = np.full(len(X_res), np.nan)
 
+        fs_cfg = POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG
+        do_fs = fs_cfg.get("enabled", True)
+        n_samples = len(X_res)
+        if n_samples > 1500:
+            alpha_grid = np.logspace(-4, 1, 14)
+            l1_grid = fs_cfg.get("l1_ratio_grid_large", [0.05, 0.15, 0.30, 0.50, 0.70, 0.90])
+            inner_cv = fs_cfg.get("inner_n_splits_large_bucket", 3)
+        else:
+            alpha_grid = np.logspace(-3, 0.5, 10)
+            l1_grid = fs_cfg.get("l1_ratio_grid_small", [0.15, 0.50, 0.85])
+            inner_cv = fs_cfg.get("inner_n_splits_default", 2)
+
+        feature_names = POSITION_SIZER_V2_FEATURE_CONFIG["model3_uncertainty_feature_keys"]
+
         for tr_idx, val_idx in splits:
-            m = Model3Uncertainty()
             w_tr = w_res[tr_idx] if w_res is not None else None
-            m.fit(X_res[tr_idx], residuals[tr_idx], w_tr)
-            oof_preds[val_idx] = m.predict(X_res[val_idx])
+            if do_fs:
+                fs_res = select_features_via_elasticnet(
+                    X_train=X_res[tr_idx],
+                    y_train=residuals[tr_idx],
+                    timestamps_train=timestamps[valid_oof][tr_idx] if timestamps is not None else None,
+                    model_kind="uncertainty",
+                    feature_names=feature_names,
+                    alpha_grid=alpha_grid,
+                    l1_ratio_grid=l1_grid,
+                    sample_weight_train=w_tr,
+                    inner_n_splits=inner_cv,
+                    max_features_cap=fs_cfg["max_features_cap"]["uncertainty"]
+                )
+                sel_idx = fs_res["selected_idx"]
+            else:
+                sel_idx = np.arange(X_res.shape[1])
+
+            m = Model3Uncertainty()
+            m.fit(X_res[tr_idx][:, sel_idx], residuals[tr_idx], w_tr)
+            oof_preds[val_idx] = m.predict(X_res[val_idx][:, sel_idx])
 
         valid2 = np.isfinite(oof_preds)
         realized_abs = np.abs(residuals)
@@ -435,7 +583,26 @@ class LayerAPredictor:
         self.model3_oof_pred_ = oof_preds
 
         # Fit final Uncertainty model
-        self.uncertainty_model.fit(X_res, residuals, w_res)
+        if do_fs:
+            final_fs_res = select_features_via_elasticnet(
+                X_train=X_res,
+                y_train=residuals,
+                timestamps_train=timestamps[valid_oof] if timestamps is not None else None,
+                model_kind="uncertainty",
+                feature_names=feature_names,
+                alpha_grid=alpha_grid,
+                l1_ratio_grid=l1_grid,
+                sample_weight_train=w_res,
+                inner_n_splits=inner_cv,
+                max_features_cap=fs_cfg["max_features_cap"]["uncertainty"]
+            )
+            self.final_selected_feature_idx_uncertainty_ = final_fs_res["selected_idx"]
+            self.feature_selection_results_uncertainty_ = final_fs_res
+        else:
+            self.final_selected_feature_idx_uncertainty_ = np.arange(X_res.shape[1])
+            self.feature_selection_results_uncertainty_ = None
+
+        self.uncertainty_model.fit(X_res[:, self.final_selected_feature_idx_uncertainty_], residuals, w_res)
 
     def fit(self, feature_dict: Dict[str, np.ndarray], trade_outcomes: pd.DataFrame, y_raw_net_return: np.ndarray, y_downside: np.ndarray,
             timestamps: Optional[np.ndarray] = None,
@@ -499,8 +666,8 @@ class LayerAPredictor:
         X1 = assemble_feature_matrix(feature_dict, POSITION_SIZER_V2_FEATURE_CONFIG["model1_edge_feature_keys"])
         X2 = assemble_feature_matrix(feature_dict, POSITION_SIZER_V2_FEATURE_CONFIG["model2_downside_feature_keys"])
 
-        edge_p = self.edge_model.predict(X1)
-        downside_p = self.downside_model.predict(X2)
+        edge_p = self.edge_model.predict(X1[:, self.final_selected_feature_idx_edge_])
+        downside_p = self.downside_model.predict(X2[:, self.final_selected_feature_idx_downside_])
 
         fd3 = feature_dict.copy()
         fd3["edge_pred"] = edge_p
@@ -512,7 +679,7 @@ class LayerAPredictor:
         return {
             "edge": edge_p,
             "downside": downside_p,
-            "uncertainty": self.uncertainty_model.predict(X3)
+            "uncertainty": self.uncertainty_model.predict(X3[:, self.final_selected_feature_idx_uncertainty_])
         }
 
     def predict_score(self, feature_dict: Dict[str, np.ndarray]) -> np.ndarray:
@@ -1078,3 +1245,126 @@ def generate_target_race_report(
         tprint(f"    Top 20% Net PnL: {pnl_20:.4f}")
 
     tprint("=" * 80)
+
+# ============================================================
+# Bucketed Orchestrator
+# ============================================================
+
+def run_bucketed_position_sizer_v2(
+    feature_dict: Dict[str, np.ndarray],
+    trade_outcomes: pd.DataFrame,
+    y_raw_net_return: np.ndarray,
+    y_downside: np.ndarray,
+    bucket_labels: np.ndarray,
+    timestamps: np.ndarray,
+    sample_weight: Optional[np.ndarray] = None,
+    lambda_downside: float = 0.5,
+    eta_uncertainty: float = 0.5,
+    cost_pct: float = 0.002,
+    start_equity: float = 100000.0
+) -> Dict[str, Any]:
+
+    from extreme_price_movements.config import POSITION_SIZER_V2_BUCKETS, POSITION_SIZER_V2_BUCKET_CONFIG
+
+    results = {}
+    summary_rows = []
+
+    min_samples = POSITION_SIZER_V2_BUCKET_CONFIG.get("min_samples_total", 500)
+
+    for bucket in POSITION_SIZER_V2_BUCKETS:
+        tprint("=" * 80)
+        tprint(f"PROCESSING BUCKET: {bucket}")
+        tprint("=" * 80)
+
+        mask = (bucket_labels == bucket)
+        n_bucket = int(np.sum(mask))
+
+        if n_bucket < min_samples:
+            tprint(f"  Skipping bucket {bucket} due to insufficient samples ({n_bucket} < {min_samples})")
+            summary_rows.append({
+                "bucket": bucket,
+                "n_samples": n_bucket,
+                "status": "skipped_insufficient_samples",
+                "model1_n_features": 0, "model2_n_features": 0, "model3_n_features": 0,
+                "model1_feature_stability": 0.0, "model2_feature_stability": 0.0, "model3_feature_stability": 0.0,
+                "final_policy_utility": 0.0, "final_sizing_mode": "none"
+            })
+            continue
+
+        def _slice_dict(d, m):
+            return {k: v[m] for k, v in d.items()}
+
+        fd_bucket = _slice_dict(feature_dict, mask)
+        outcomes_bucket = trade_outcomes.iloc[mask].reset_index(drop=True)
+        y_ret_bucket = y_raw_net_return[mask]
+        y_down_bucket = y_downside[mask]
+        ts_bucket = timestamps[mask]
+        sw_bucket = sample_weight[mask] if sample_weight is not None else None
+
+        # --- Layer A ---
+        predictor = LayerAPredictor(lambda_downside=lambda_downside, eta_uncertainty=eta_uncertainty)
+        predictor.fit(
+            feature_dict=fd_bucket,
+            trade_outcomes=outcomes_bucket,
+            y_raw_net_return=y_ret_bucket,
+            y_downside=y_down_bucket,
+            timestamps=ts_bucket,
+            sample_weight=sw_bucket
+        )
+
+        scores = predictor.predict_score(fd_bucket)
+
+        # Extract stability stats
+        fs1 = predictor.feature_selection_results_edge_
+        fs2 = predictor.feature_selection_results_downside_
+        fs3 = predictor.feature_selection_results_uncertainty_
+
+        # --- Layer B ---
+        b_opt = LayerBPolicyOptimizer(cost_pct=cost_pct)
+        best_policy = b_opt.optimize(scores, outcomes_bucket, ts_bucket)
+
+        # --- Layer C ---
+        c_opt = LayerCExecutionOptimizer(start_equity=start_equity)
+        sizing_mode = c_opt.optimize_sizing(
+            scores, y_ret_bucket,
+            threshold=best_policy["score_threshold"],
+            timestamps=ts_bucket
+        )
+
+        # For full implementation, limit offset regression requires its target.
+        # Left as placeholder fit for orchestrator architecture mapping.
+        c_opt.sizing_mode = sizing_mode
+
+        summary_rows.append({
+            "bucket": bucket,
+            "n_samples": n_bucket,
+            "status": "success",
+            "model1_n_features": len(predictor.final_selected_feature_idx_edge_) if fs1 else 0,
+            "model2_n_features": len(predictor.final_selected_feature_idx_downside_) if fs2 else 0,
+            "model3_n_features": len(predictor.final_selected_feature_idx_uncertainty_) if fs3 else 0,
+            "model1_feature_stability": float(fs1.get("stability_score", 0.0)) if isinstance(fs1, dict) else 0.0,
+            "model2_feature_stability": float(fs2.get("stability_score", 0.0)) if isinstance(fs2, dict) else 0.0,
+            "model3_feature_stability": float(fs3.get("stability_score", 0.0)) if isinstance(fs3, dict) else 0.0,
+            "final_policy_utility": float(b_opt.best_j),
+            "final_sizing_mode": str(sizing_mode)
+        })
+
+        results[bucket] = {
+            "layer_a": predictor,
+            "layer_b": b_opt,
+            "layer_c": c_opt,
+            "best_policy": best_policy,
+            "scores": scores,
+            "feature_selection_results_edge": fs1,
+            "feature_selection_results_downside": fs2,
+            "feature_selection_results_uncertainty": fs3,
+            "final_selected_feature_names_edge": fs1.get("selected_names", []) if isinstance(fs1, dict) else [],
+            "final_selected_feature_names_downside": fs2.get("selected_names", []) if isinstance(fs2, dict) else [],
+            "final_selected_feature_names_uncertainty": fs3.get("selected_names", []) if isinstance(fs3, dict) else [],
+        }
+
+    summary_df = pd.DataFrame(summary_rows)
+    return {
+        "bucket_results": results,
+        "bucket_summary_table_": summary_df
+    }

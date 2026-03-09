@@ -5,6 +5,16 @@ from sklearn.linear_model import ElasticNet
 from scipy.stats import spearmanr
 from extreme_price_movements.purged_cv import PurgedKFold
 
+def _backfill_to_floor(local_idx, freqs, floor, subset_size):
+    selected = list(local_idx)
+    target = min(floor, subset_size)
+    if len(selected) >= target:
+        return np.array(sorted(selected), dtype=int)
+    avail = [i for i in range(subset_size) if i not in selected]
+    avail = sorted(avail, key=lambda i: freqs[i], reverse=True)
+    selected.extend(avail[: target - len(selected)])
+    return np.array(sorted(set(selected)), dtype=int)
+
 def _compute_inner_splits(timestamps: Optional[np.ndarray], n_samples: int, n_splits: int) -> List[Tuple[np.ndarray, np.ndarray]]:
     if n_samples < max(20, n_splits * 5):
         mid = max(1, n_samples // 2)
@@ -362,4 +372,152 @@ def select_features_via_elasticnet(
         "model_feature_floor": target_floor,
         "was_backfilled_to_floor": was_backfilled,
         "path_table": df
+    }
+
+
+def select_features_via_staged_en_rfe(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    timestamps_train: Optional[np.ndarray],
+    model_kind: str,
+    feature_names: List[str],
+    sample_weight_train: Optional[np.ndarray] = None,
+    stage1_alpha_grid: Optional[np.ndarray] = None,
+    stage1_l1_ratio_grid: Optional[List[float]] = None,
+    stage2_alpha_grid: Optional[np.ndarray] = None,
+    stage2_l1_ratio_grid: Optional[List[float]] = None,
+    stage1_inner_n_splits: int = 3,
+    stage2_inner_n_splits: int = 5,
+    stage2_min_fold_hits: int = 3,
+    first_cut_keep_frac: float = 0.60,
+    first_cut_keep_k: Optional[int] = None,
+    max_features_cap: Optional[int] = None,
+    min_features_floor: int = 5,
+    do_final_refine: bool = True,
+    use_sign_consistency: bool = False,
+) -> Dict:
+
+    n_total_features = X_train.shape[1]
+
+    # Defaults
+    if stage1_alpha_grid is None:
+        stage1_alpha_grid = np.logspace(-3, 0.5, 8)
+    if stage1_l1_ratio_grid is None:
+        stage1_l1_ratio_grid = [0.15, 0.40, 0.70]
+
+    if stage2_alpha_grid is None:
+        stage2_alpha_grid = np.logspace(-3, 0.25, 6)
+    if stage2_l1_ratio_grid is None:
+        stage2_l1_ratio_grid = [0.20, 0.50]
+
+    # --- STAGE 1: PERFORMANCE-FIRST CUT ---
+    res1 = select_features_via_elasticnet(
+        X_train=X_train,
+        y_train=y_train,
+        timestamps_train=timestamps_train,
+        model_kind=model_kind,
+        feature_names=feature_names,
+        alpha_grid=stage1_alpha_grid,
+        l1_ratio_grid=stage1_l1_ratio_grid,
+        sample_weight_train=sample_weight_train,
+        inner_n_splits=stage1_inner_n_splits,
+        max_features_cap=max_features_cap,
+        min_features_floor=min_features_floor,
+        use_sign_consistency=use_sign_consistency
+    )
+
+    sel1_idx = res1["selected_idx"]
+    freqs1 = res1["selection_frequency"]
+
+    if first_cut_keep_k is not None:
+        target_k = first_cut_keep_k
+    else:
+        target_k = max(min_features_floor, int(np.ceil(first_cut_keep_frac * len(sel1_idx))))
+
+    target_k = min(target_k, len(sel1_idx))
+
+    # Rank Stage 1 features by frequency descending
+    sel1_ranked = sorted(sel1_idx, key=lambda i: freqs1[i], reverse=True)
+    first_cut_idx = np.array(sorted(sel1_ranked[:target_k]), dtype=int)
+
+    # Floor safety
+    first_cut_idx = _backfill_to_floor(first_cut_idx, freqs1, min_features_floor, n_total_features)
+
+    # --- STAGE 2: 5-FOLD STABILITY PRUNING ---
+    X2 = X_train[:, first_cut_idx]
+    names2 = [feature_names[i] for i in first_cut_idx]
+
+    res2 = select_features_via_elasticnet(
+        X_train=X2,
+        y_train=y_train,
+        timestamps_train=timestamps_train,
+        model_kind=model_kind,
+        feature_names=names2,
+        alpha_grid=stage2_alpha_grid,
+        l1_ratio_grid=stage2_l1_ratio_grid,
+        sample_weight_train=sample_weight_train,
+        inner_n_splits=stage2_inner_n_splits,
+        max_features_cap=max_features_cap,
+        min_features_floor=min_features_floor,
+        use_sign_consistency=use_sign_consistency
+    )
+
+    freqs2_local = res2["selection_frequency"]
+
+    # Pruning mask logic
+    stage2_keep_mask = freqs2_local >= (stage2_min_fold_hits / stage2_inner_n_splits)
+    pruned_local = np.where(stage2_keep_mask)[0]
+
+    # Floor safety
+    pruned_local = _backfill_to_floor(pruned_local, freqs2_local, min_features_floor, len(names2))
+
+    # Map back to global indices
+    pruned_idx_global = first_cut_idx[pruned_local]
+
+    # Decide if Stage 3 is necessary
+    pct_retained = len(pruned_idx_global) / max(1, len(first_cut_idx))
+    skip_stage3 = False
+    if not do_final_refine or pct_retained >= 0.90:
+        skip_stage3 = True
+
+    # --- STAGE 3: OPTIONAL FINAL REFINEMENT ---
+    if skip_stage3:
+        final_global_idx = pruned_idx_global
+        res3 = None
+    else:
+        X3 = X_train[:, pruned_idx_global]
+        names3 = [feature_names[i] for i in pruned_idx_global]
+
+        res3 = select_features_via_elasticnet(
+            X_train=X3,
+            y_train=y_train,
+            timestamps_train=timestamps_train,
+            model_kind=model_kind,
+            feature_names=names3,
+            alpha_grid=stage1_alpha_grid,
+            l1_ratio_grid=stage1_l1_ratio_grid,
+            sample_weight_train=sample_weight_train,
+            inner_n_splits=stage1_inner_n_splits, # Use 3 folds again
+            max_features_cap=max_features_cap,
+            min_features_floor=min_features_floor,
+            use_sign_consistency=use_sign_consistency
+        )
+
+        final_local = res3["selected_idx"]
+        final_global_idx = pruned_idx_global[final_local]
+
+    final_names = [feature_names[i] for i in final_global_idx]
+
+    return {
+        "selected_idx": final_global_idx,
+        "selected_names": final_names,
+        "stage1_result": res1,
+        "stage2_result": res2,
+        "stage3_result": res3,
+        "first_cut_idx": first_cut_idx,
+        "stage2_pruned_idx": pruned_idx_global,
+        "n_features_stage1": len(res1["selected_idx"]),
+        "n_features_first_cut": len(first_cut_idx),
+        "n_features_stage2": len(pruned_idx_global),
+        "n_features_final": len(final_global_idx),
     }

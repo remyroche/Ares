@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 from extreme_price_movements.features import build_position_sizer_feature_frame, assemble_feature_matrix
 from extreme_price_movements.config import POSITION_SIZER_V2_FEATURE_CONFIG
-from extreme_price_movements.elasticnet_feature_selection_v2 import select_features_via_elasticnet
+from extreme_price_movements.elasticnet_feature_selection_v2 import select_features_via_elasticnet, select_features_via_staged_en_rfe
 from extreme_price_movements.config import POSITION_SIZER_V2_FEATURE_SELECTION_CONFIG
 
 from sklearn.linear_model import HuberRegressor, Ridge
@@ -329,19 +329,22 @@ class LayerAPredictor:
                 w_tr = sample_weight[tr_idx] if sample_weight is not None else None
 
                 if do_fs:
-                    fs_res = select_features_via_elasticnet(
+                    fs_res = select_features_via_staged_en_rfe(
                         X_train=X[tr_idx],
                         y_train=y_tr,
                         timestamps_train=timestamps[tr_idx] if timestamps is not None else None,
                         model_kind="edge",
                         feature_names=feature_names,
-                        alpha_grid=alpha_grid,
-                        l1_ratio_grid=l1_grid,
                         sample_weight_train=w_tr,
-                        inner_n_splits=inner_cv,
+                        stage1_alpha_grid=alpha_grid,
+                        stage1_l1_ratio_grid=l1_grid,
+                        stage1_inner_n_splits=3,
+                        stage2_inner_n_splits=5,
+                        stage2_min_fold_hits=3,
+                        first_cut_keep_frac=0.70,
                         max_features_cap=fs_cfg["max_features_cap"]["edge"],
                         min_features_floor=fs_cfg["min_features_floor"]["edge"],
-                        sparsity_penalty=fs_cfg["sparsity_penalty"]["edge"]
+                        do_final_refine=True
                     )
                     sel_idx = fs_res["selected_idx"]
                 else:
@@ -451,19 +454,22 @@ class LayerAPredictor:
             y_tr_down = np.clip(y_downside[tr_idx], 0.0, np.percentile(y_downside[tr_idx], 98))
 
             if do_fs:
-                fs_res = select_features_via_elasticnet(
+                fs_res = select_features_via_staged_en_rfe(
                     X_train=X[tr_idx],
                     y_train=y_tr_down,
                     timestamps_train=timestamps[tr_idx] if timestamps is not None else None,
                     model_kind="downside",
                     feature_names=feature_names,
-                    alpha_grid=alpha_grid,
-                    l1_ratio_grid=l1_grid,
                     sample_weight_train=w_tr,
-                    inner_n_splits=inner_cv,
+                    stage1_alpha_grid=alpha_grid,
+                    stage1_l1_ratio_grid=l1_grid,
+                    stage1_inner_n_splits=3,
+                    stage2_inner_n_splits=5,
+                    stage2_min_fold_hits=3,
+                    first_cut_keep_frac=0.70,
                     max_features_cap=fs_cfg["max_features_cap"]["downside"],
                     min_features_floor=fs_cfg["min_features_floor"]["downside"],
-                    sparsity_penalty=fs_cfg["sparsity_penalty"]["downside"]
+                    do_final_refine=True
                 )
                 sel_idx = fs_res["selected_idx"]
             else:
@@ -559,19 +565,22 @@ class LayerAPredictor:
         for tr_idx, val_idx in splits:
             w_tr = w_res[tr_idx] if w_res is not None else None
             if do_fs:
-                fs_res = select_features_via_elasticnet(
+                fs_res = select_features_via_staged_en_rfe(
                     X_train=X_res[tr_idx],
                     y_train=residuals[tr_idx],
                     timestamps_train=timestamps[valid_oof][tr_idx] if timestamps is not None else None,
                     model_kind="uncertainty",
                     feature_names=feature_names,
-                    alpha_grid=alpha_grid,
-                    l1_ratio_grid=l1_grid,
                     sample_weight_train=w_tr,
-                    inner_n_splits=inner_cv,
+                    stage1_alpha_grid=alpha_grid,
+                    stage1_l1_ratio_grid=l1_grid,
+                    stage1_inner_n_splits=3,
+                    stage2_inner_n_splits=5,
+                    stage2_min_fold_hits=2, # Softer pruning
+                    first_cut_keep_frac=0.85, # Keep more features initially
                     max_features_cap=fs_cfg["max_features_cap"]["uncertainty"],
                     min_features_floor=fs_cfg["min_features_floor"]["uncertainty"],
-                    sparsity_penalty=fs_cfg["sparsity_penalty"]["uncertainty"]
+                    do_final_refine=True
                 )
                 sel_idx = fs_res["selected_idx"]
             else:

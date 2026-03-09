@@ -18,7 +18,9 @@ try:
         _numba_rolling_median,
         _numba_rolling_sum,
         _numba_rolling_correlation,
-        _numba_rolling_mad
+        _numba_rolling_mad,
+        _numba_rolling_slope_parallel,
+        _numba_rolling_skew_parallel
     )
 except ImportError:
     # Fallback for direct execution
@@ -2832,4 +2834,34 @@ def numba_rolling_bars_since_extreme(df, window, mode="max"):
 
     if is_series:
         return res_df[res_df.columns[0]]
+    return res_df
+
+def numba_rolling_slope(df, window):
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rolling_slope_parallel(mat, window)
+
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+
+    return res_df
+
+def numba_rolling_skew(df, window):
+    is_series = isinstance(df, pd.Series)
+    if is_series:
+        df = df.to_frame()
+
+    mat = df.to_numpy(dtype=np.float32, copy=False)
+    res = _numba_rolling_skew_parallel(mat, window)
+
+    res_df = pd.DataFrame(res, index=df.index, columns=df.columns)
+
+    if is_series:
+        return res_df[res_df.columns[0]]
+
     return res_df

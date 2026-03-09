@@ -1,0 +1,375 @@
+# Ridge Position Sizer Metrics Report
+
+**Run ID:** 20260213_080000
+
+## Direction: LONG
+
+### Bucket: long_tf
+- **Race Winner**: `champion_single+volatility_zscore`
+- **Limit Offset**: `enabled`
+- **Training Target**: `winsorized_net` (family=`regression`)
+- **Ranking Gate (top_k_pct)**: `30.00%`
+- **Execution Top-K**: `15.00%`
+- **Position Sizing Formula**: `linear`
+- **Base Size**: `8.00%`
+- **Rank Multiplier**: `12.00%`
+- **Squash Function**: `tanh`
+- **Squash k**: `1.00`
+- **CV Performance (Aligned Holdouts)**:
+  - **CV Basis**: `nested_joint_holdout_median`
+  - **Total PnL**: 0.23%
+  - **PnL/Day**: 0.00%
+  - **Trades/Day**: 0.4955
+  - **Sortino**: 0.6846
+  - **MaxDD**: 0.36%
+  - **WinRate**: 0.00%
+  - **Profit Factor**: 0.00
+  - **Avg Win/Loss**: 0.00% / 0.00%
+  - **Ulcer Index**: 0.2071
+  - **Time Under Water**: 60.34%
+- **OOF Calibration (Top Rank Diagnostics)**:
+  - **Top 30%**: Total PnL: -17.21%, PnL/Day: -0.05%, Trades/Day: 0.88, Sortino: -9.0874, MaxDD: 15.82%, WinRate: 41.1%, PF: 0.34, Avg Win/Loss: 0.10% / -0.12%, Ulcer: 9.0094, TUW: 98.99%, N: 297
+  - **Top 20%**: Total PnL: -12.58%, PnL/Day: -0.04%, Trades/Day: 0.61, Sortino: -9.4328, MaxDD: 11.94%, WinRate: 39.0%, PF: 0.33, Avg Win/Loss: 0.11% / -0.13%, Ulcer: 7.3025, TUW: 99.02%, N: 205
+  - **Top 10%**: Total PnL: -6.88%, PnL/Day: -0.02%, Trades/Day: 0.31, Sortino: -9.9995, MaxDD: 6.73%, WinRate: 39.6%, PF: 0.28, Avg Win/Loss: 0.10% / -0.12%, Ulcer: 4.6376, TUW: 99.06%, N: 106
+- **Alpha Retention Waterfall**:
+  - **Best Raw Feature**: `reg_H2`
+  - **Best Raw Feature IC**: 0.1578
+  - **Combined Score IC**: 0.1122
+  - **OOF PnL No Offset**: -9.99% total, -0.02%/day
+  - **OOF PnL With Offset**: -8.59% total, -0.02%/day
+- **Walk-Forward Validation (Out-of-Sample)**:
+  - **Full OOS Holdout**:
+    - Limit Offset: `model`
+    - Total PnL: 0.20%
+    - PnL/Day: 0.00%
+    - Trades/Day: 0.4564
+    - N_selected: 68 across 149.0 days
+    - Sortino: 0.2508
+    - Profit Factor: 1.06
+  - **Repeated OOS Summary**:
+    - OOS Basis: `full_walk_forward_oos_repeated_holdouts_too_sparse`
+    - Limit Offset: `model`
+    - Total PnL: 0.20%
+    - PnL/Day: 0.00%
+    - Trades/Day: 0.4564
+    - N_selected: 68
+    - Sortino: 0.2508
+    - MaxDD: 2.30%
+    - WinRate: 52.94%
+    - Profit Factor: 1.06
+    - Avg Win/Loss: 0.10% / -0.11%
+    - Ulcer Index: 1.4114
+    - Time Under Water: 94.12%
+    - No Offset PnL: -0.33% total, -0.00%/day
+    - No Offset Objective: -0.0005
+    - Repeated Holdout Min-N Gate: 25 (pass=True)
+  - **Repeated Holdout Count**: 2
+  - **Repeated Median N_selected**: 10.5 across 29.5 days
+- **OOS Per-Decile Diagnostics**:
+  - **Top 30%**: Total PnL: 2.99%, PnL/Day: 0.02%, Trades/Day: 0.78, Sortino: 3.8381, MaxDD: 0.96%, WinRate: 56.0%, PF: 1.86, Avg Win/Loss: 0.10% / -0.07%, Ulcer: 0.4010, TUW: 80.17%, N: 116
+  - **Top 20%**: Total PnL: 1.88%, PnL/Day: 0.01%, Trades/Day: 0.60, Sortino: 2.4131, MaxDD: 1.25%, WinRate: 57.8%, PF: 1.55, Avg Win/Loss: 0.10% / -0.09%, Ulcer: 0.6645, TUW: 85.56%, N: 90
+  - **Top 10%**: Total PnL: -0.88%, PnL/Day: -0.01%, Trades/Day: 0.31, Sortino: -1.1237, MaxDD: 2.09%, WinRate: 52.2%, PF: 0.70, Avg Win/Loss: 0.09% / -0.13%, Ulcer: 0.9179, TUW: 97.83%, N: 46
+- **Feature Selection (Ridge)**: Kept 9/9 features.
+- **Feature Selection (Tree)**: Kept 10 features.
+- **Label Stability (Sensitivity Analysis)**:
+  - **Selected Policy**: N/A
+  - **J_stable**: 0.0000
+  - **TP Sweep Result**: N/A
+- **Policy Learnability A/B (Ridge Only)**:
+  - **Winner**: `optimized_policy_target` (delta J_stable=2.2485)
+  - **Optimized Policy Target**: J_stable=3.2344, J_mean=3.3563, J_std=0.2438, Expectancy=0.11%, WinRate=55.52%, PF=1.30, Avg Win/Loss=0.90% / -0.86%
+  - **Best TBM Ridge Baseline**: `tbm_100_50_h16` tp=1.00%, sl=0.50%, hold=16 bars, J_stable=0.9859, J_mean=0.9964, J_std=0.0210, Expectancy=0.05%, WinRate=57.98%, PF=1.29, Avg Win/Loss=0.42% / -0.45%
+  - **TBM Grid Leaderboard**:
+    - `tbm_100_50_h16`: J_stable=0.9859, tp=1.00%, sl=0.50%, hold=16, Expectancy=0.05%, WinRate=57.98%, PF=1.29
+    - `tbm_100_50_h24`: J_stable=0.9859, tp=1.00%, sl=0.50%, hold=24, Expectancy=0.05%, WinRate=57.98%, PF=1.29
+    - `tbm_100_50_h8`: J_stable=0.9747, tp=1.00%, sl=0.50%, hold=8, Expectancy=0.05%, WinRate=57.92%, PF=1.29
+    - `tbm_50_25_h8`: J_stable=-0.9152, tp=0.50%, sl=0.25%, hold=8, Expectancy=-0.13%, WinRate=37.70%, PF=0.41
+- **Target Family A/B (Sizer Level)**:
+  - **Winner**: `raw_net` family=regression score=0.007734, IC=0.0285, TopQ Policy U=0.007879
+  - **Best Simpler Target**: `raw_net` family=regression score=0.007734, IC=0.0285, TopQ Policy U=0.007879
+  - **Leaderboard**:
+    - `raw_net` (regression): score=0.007734, IC=0.0285, TopQ Policy U=0.007879, std=0.000291
+    - `atr_normalized_u_policy` (utility): score=0.006948, IC=-0.0476, TopQ Policy U=0.007083, std=0.000269
+    - `huber_utility` (utility): score=0.006460, IC=-0.1019, TopQ Policy U=0.006729, std=0.000539
+    - `policy_utility` (utility): score=0.006300, IC=-0.0738, TopQ Policy U=0.006342, std=0.000083
+    - `hybrid_raw_huber` (hybrid): score=0.004951, IC=-0.0231, TopQ Policy U=0.005672, std=0.001442
+    - `tbm_100_50_h8` (utility): score=0.004068, IC=0.0402, TopQ Policy U=0.004370, std=0.000603
+
+### Bucket: long_mr
+- **Race Winner**: `champion_single+reg_mean`
+- **Limit Offset**: `enabled`
+- **Training Target**: `rank_net` (family=`ranking`)
+- **Ranking Gate (top_k_pct)**: `40.00%`
+- **Execution Top-K**: `20.00%`
+- **Position Sizing Formula**: `linear`
+- **Base Size**: `9.00%`
+- **Rank Multiplier**: `16.00%`
+- **Squash Function**: `tanh`
+- **Squash k**: `1.00`
+- **CV Performance (Aligned Holdouts)**:
+  - **CV Basis**: `nested_joint_holdout_median`
+  - **Total PnL**: 0.37%
+  - **PnL/Day**: 0.01%
+  - **Trades/Day**: 1.0668
+  - **Sortino**: 1.1561
+  - **MaxDD**: 0.31%
+  - **WinRate**: 0.00%
+  - **Profit Factor**: 0.00
+  - **Avg Win/Loss**: 0.00% / 0.00%
+  - **Ulcer Index**: 0.2415
+  - **Time Under Water**: 78.81%
+- **OOF Calibration (Top Rank Diagnostics)**:
+  - **Top 30%**: Total PnL: 170.76%, PnL/Day: 0.64%, Trades/Day: 1.25, Sortino: 2.1736, MaxDD: 85.40%, WinRate: 33.7%, PF: 1.21, Avg Win/Loss: 8.59% / -3.60%, Ulcer: 47.7057, TUW: 94.63%, N: 335
+  - **Top 20%**: Total PnL: 103.15%, PnL/Day: 0.39%, Trades/Day: 0.87, Sortino: 1.8112, MaxDD: 71.68%, WinRate: 34.5%, PF: 1.17, Avg Win/Loss: 9.03% / -4.08%, Ulcer: 32.5612, TUW: 93.53%, N: 232
+  - **Top 10%**: Total PnL: 37.51%, PnL/Day: 0.14%, Trades/Day: 0.46, Sortino: 1.1195, MaxDD: 70.02%, WinRate: 38.2%, PF: 1.10, Avg Win/Loss: 8.97% / -5.05%, Ulcer: 39.2413, TUW: 95.12%, N: 123
+- **Alpha Retention Waterfall**:
+  - **Best Raw Feature**: `reg_mean`
+  - **Best Raw Feature IC**: 0.1171
+  - **Combined Score IC**: 0.1171
+  - **OOF PnL No Offset**: 1.56% total, 0.00%/day
+  - **OOF PnL With Offset**: 2.35% total, 0.01%/day
+- **Walk-Forward Validation (Out-of-Sample)**:
+  - **Full OOS Holdout**:
+    - Limit Offset: `model`
+    - Total PnL: 0.71%
+    - PnL/Day: 0.01%
+    - Trades/Day: 0.6978
+    - N_selected: 97 across 139.0 days
+    - Sortino: 0.3678
+    - Profit Factor: 1.09
+  - **Repeated OOS Summary**:
+    - OOS Basis: `full_walk_forward_oos_repeated_holdouts_too_sparse`
+    - Limit Offset: `model`
+    - Total PnL: 0.71%
+    - PnL/Day: 0.01%
+    - Trades/Day: 0.6978
+    - N_selected: 97
+    - Sortino: 0.3678
+    - MaxDD: 2.81%
+    - WinRate: 68.04%
+    - Profit Factor: 1.09
+    - Avg Win/Loss: 0.13% / -0.26%
+    - Ulcer Index: 2.0188
+    - Time Under Water: 84.54%
+    - No Offset PnL: 0.42% total, 0.00%/day
+    - No Offset Objective: 0.0005
+    - Repeated Holdout Min-N Gate: 25 (pass=True)
+  - **Repeated Holdout Count**: 2
+  - **Repeated Median N_selected**: 15.0 across 34.0 days
+- **OOS Per-Decile Diagnostics**:
+  - **Top 30%**: Total PnL: 1.19%, PnL/Day: 0.01%, Trades/Day: 0.98, Sortino: 0.5356, MaxDD: 2.90%, WinRate: 67.6%, PF: 1.12, Avg Win/Loss: 0.12% / -0.23%, Ulcer: 1.6745, TUW: 85.29%, N: 136
+  - **Top 20%**: Total PnL: 0.71%, PnL/Day: 0.01%, Trades/Day: 0.70, Sortino: 0.3678, MaxDD: 2.81%, WinRate: 68.0%, PF: 1.09, Avg Win/Loss: 0.13% / -0.26%, Ulcer: 2.0188, TUW: 84.54%, N: 97
+  - **Top 10%**: Total PnL: 2.50%, PnL/Day: 0.02%, Trades/Day: 0.39, Sortino: 3.4428, MaxDD: 0.91%, WinRate: 74.1%, PF: 2.41, Avg Win/Loss: 0.11% / -0.13%, Ulcer: 0.2197, TUW: 44.44%, N: 54
+- **Feature Selection (Ridge)**: Kept 9/9 features.
+- **Feature Selection (Tree)**: Kept 29 features.
+- **Label Stability (Sensitivity Analysis)**:
+  - **Selected Policy**: N/A
+  - **J_stable**: 0.0000
+  - **TP Sweep Result**: N/A
+- **Policy Learnability A/B (Ridge Only)**:
+  - **Winner**: `tbm_100_50_h8` (delta J_stable=-2.2372)
+  - **Optimized Policy Target**: J_stable=-0.1448, J_mean=-0.1220, J_std=0.0457, Expectancy=-0.05%, WinRate=52.19%, PF=0.85, Avg Win/Loss=0.57% / -0.73%
+  - **Best TBM Ridge Baseline**: `tbm_100_50_h8` tp=1.00%, sl=0.50%, hold=8 bars, J_stable=2.0924, J_mean=2.1313, J_std=0.0779, Expectancy=0.09%, WinRate=59.47%, PF=1.60, Avg Win/Loss=0.39% / -0.36%
+  - **TBM Grid Leaderboard**:
+    - `tbm_100_50_h8`: J_stable=2.0924, tp=1.00%, sl=0.50%, hold=8, Expectancy=0.09%, WinRate=59.47%, PF=1.60
+    - `tbm_100_50_h16`: J_stable=2.0924, tp=1.00%, sl=0.50%, hold=16, Expectancy=0.09%, WinRate=59.47%, PF=1.60
+    - `tbm_100_50_h24`: J_stable=2.0924, tp=1.00%, sl=0.50%, hold=24, Expectancy=0.09%, WinRate=59.47%, PF=1.60
+    - `tbm_50_25_h8`: J_stable=-0.4979, tp=0.50%, sl=0.25%, hold=8, Expectancy=-0.09%, WinRate=41.19%, PF=0.54
+- **Target Family A/B (Sizer Level)**:
+  - **Winner**: `huber_utility` family=utility score=0.003251, IC=-0.0060, TopQ Policy U=0.003427
+  - **Best Simpler Target**: `huber_utility` family=utility score=0.003251, IC=-0.0060, TopQ Policy U=0.003427
+  - **Leaderboard**:
+    - `huber_utility` (utility): score=0.003251, IC=-0.0060, TopQ Policy U=0.003427, std=0.000352
+    - `policy_utility` (utility): score=0.002593, IC=-0.0019, TopQ Policy U=0.002896, std=0.000606
+    - `atr_normalized_u_policy` (utility): score=0.002517, IC=-0.0059, TopQ Policy U=0.002807, std=0.000580
+    - `simple_tbm_utility` (utility): score=0.002485, IC=-0.0535, TopQ Policy U=0.002695, std=0.000421
+    - `tbm_100_50_h8` (utility): score=0.002485, IC=-0.0535, TopQ Policy U=0.002695, std=0.000421
+    - `tbm_100_50_h16` (utility): score=0.002485, IC=-0.0535, TopQ Policy U=0.002695, std=0.000421
+
+## Direction: SHORT
+
+### Bucket: short_mr
+- **Race Winner**: `champion_single+reg_H4`
+- **Limit Offset**: `enabled`
+- **Training Target**: `rank_net` (family=`ranking`)
+- **Ranking Gate (top_k_pct)**: `50.00%`
+- **Execution Top-K**: `20.00%`
+- **Position Sizing Formula**: `linear`
+- **Base Size**: `10.00%`
+- **Rank Multiplier**: `16.00%`
+- **Squash Function**: `tanh`
+- **Squash k**: `1.00`
+- **CV Performance (Aligned Holdouts)**:
+  - **CV Basis**: `nested_joint_holdout_median`
+  - **Total PnL**: -0.48%
+  - **PnL/Day**: -0.01%
+  - **Trades/Day**: 0.4654
+  - **Sortino**: -1.5391
+  - **MaxDD**: 0.92%
+  - **WinRate**: 0.00%
+  - **Profit Factor**: 0.00
+  - **Avg Win/Loss**: 0.00% / 0.00%
+  - **Ulcer Index**: 0.6115
+  - **Time Under Water**: 81.77%
+- **OOF Calibration (Top Rank Diagnostics)**:
+  - **Top 30%**: Total PnL: 559.55%, PnL/Day: 1.66%, Trades/Day: 0.82, Sortino: 13.6387, MaxDD: 40.19%, WinRate: 33.8%, PF: 3.08, Avg Win/Loss: 8.82% / -1.46%, Ulcer: 8.3144, TUW: 76.98%, N: 278
+  - **Top 20%**: Total PnL: 489.97%, PnL/Day: 1.45%, Trades/Day: 0.58, Sortino: 16.3468, MaxDD: 35.64%, WinRate: 39.0%, PF: 3.40, Avg Win/Loss: 9.13% / -1.72%, Ulcer: 7.9145, TUW: 68.72%, N: 195
+  - **Top 10%**: Total PnL: 227.67%, PnL/Day: 0.67%, Trades/Day: 0.30, Sortino: 13.2940, MaxDD: 27.81%, WinRate: 41.2%, PF: 2.77, Avg Win/Loss: 8.48% / -2.14%, Ulcer: 8.7359, TUW: 67.65%, N: 102
+- **Alpha Retention Waterfall**:
+  - **Best Raw Feature**: `reg_H4`
+  - **Best Raw Feature IC**: 0.1688
+  - **Combined Score IC**: 0.1688
+  - **OOF PnL No Offset**: 0.23% total, 0.00%/day
+  - **OOF PnL With Offset**: 1.72% total, 0.00%/day
+- **Walk-Forward Validation (Out-of-Sample)**:
+  - **Full OOS Holdout**:
+    - Limit Offset: `model`
+    - Total PnL: 3.19%
+    - PnL/Day: 0.02%
+    - Trades/Day: 0.5369
+    - N_selected: 80 across 149.0 days
+    - Sortino: 4.0924
+    - Profit Factor: 1.94
+  - **Repeated OOS Summary**:
+    - OOS Basis: `full_walk_forward_oos_repeated_holdouts_too_sparse`
+    - Limit Offset: `model`
+    - Total PnL: 3.19%
+    - PnL/Day: 0.02%
+    - Trades/Day: 0.5369
+    - N_selected: 80
+    - Sortino: 4.0924
+    - MaxDD: 0.81%
+    - WinRate: 52.50%
+    - Profit Factor: 1.94
+    - Avg Win/Loss: 0.16% / -0.09%
+    - Ulcer Index: 0.4221
+    - Time Under Water: 71.25%
+    - No Offset PnL: 2.55% total, 0.02%/day
+    - No Offset Objective: 0.0082
+    - Repeated Holdout Min-N Gate: 25 (pass=True)
+  - **Repeated Holdout Count**: 2
+  - **Repeated Median N_selected**: 12.0 across 29.5 days
+- **OOS Per-Decile Diagnostics**:
+  - **Top 30%**: Total PnL: 1.13%, PnL/Day: 0.01%, Trades/Day: 0.81, Sortino: 1.1153, MaxDD: 1.24%, WinRate: 49.6%, PF: 1.17, Avg Win/Loss: 0.13% / -0.11%, Ulcer: 0.5564, TUW: 92.56%, N: 121
+  - **Top 20%**: Total PnL: 3.19%, PnL/Day: 0.02%, Trades/Day: 0.54, Sortino: 4.0924, MaxDD: 0.81%, WinRate: 52.5%, PF: 1.94, Avg Win/Loss: 0.16% / -0.09%, Ulcer: 0.4221, TUW: 71.25%, N: 80
+  - **Top 10%**: Total PnL: 3.76%, PnL/Day: 0.03%, Trades/Day: 0.28, Sortino: 4.8172, MaxDD: 0.46%, WinRate: 59.5%, PF: 3.44, Avg Win/Loss: 0.21% / -0.09%, Ulcer: 0.1165, TUW: 54.76%, N: 42
+- **Feature Selection (Ridge)**: Kept 9/9 features.
+- **Feature Selection (Tree)**: Kept 10 features.
+- **Label Stability (Sensitivity Analysis)**:
+  - **Selected Policy**: N/A
+  - **J_stable**: 0.0000
+  - **TP Sweep Result**: N/A
+- **Policy Learnability A/B (Ridge Only)**:
+  - **Winner**: `tbm_100_50_h8` (delta J_stable=-0.4047)
+  - **Optimized Policy Target**: J_stable=-0.4998, J_mean=-0.4974, J_std=0.0046, Expectancy=-0.10%, WinRate=46.50%, PF=0.82, Avg Win/Loss=0.92% / -0.98%
+  - **Best TBM Ridge Baseline**: `tbm_100_50_h8` tp=1.00%, sl=0.50%, hold=8 bars, J_stable=-0.0951, J_mean=-0.0936, J_std=0.0030, Expectancy=-0.04%, WinRate=49.18%, PF=0.84, Avg Win/Loss=0.43% / -0.49%
+  - **TBM Grid Leaderboard**:
+    - `tbm_100_50_h8`: J_stable=-0.0951, tp=1.00%, sl=0.50%, hold=8, Expectancy=-0.04%, WinRate=49.18%, PF=0.84
+    - `tbm_100_50_h16`: J_stable=-0.0951, tp=1.00%, sl=0.50%, hold=16, Expectancy=-0.04%, WinRate=49.18%, PF=0.84
+    - `tbm_100_50_h24`: J_stable=-0.0951, tp=1.00%, sl=0.50%, hold=24, Expectancy=-0.04%, WinRate=49.18%, PF=0.84
+    - `tbm_50_25_h8`: J_stable=-1.0232, tp=0.50%, sl=0.25%, hold=8, Expectancy=-0.19%, WinRate=28.91%, PF=0.26
+- **Target Family A/B (Sizer Level)**:
+  - **Winner**: `clipped_u_policy` family=utility score=0.003234, IC=-0.0884, TopQ Policy U=0.004839
+  - **Best Simpler Target**: `clipped_u_policy` family=utility score=0.003234, IC=-0.0884, TopQ Policy U=0.004839
+  - **Leaderboard**:
+    - `clipped_u_policy` (utility): score=0.003234, IC=-0.0884, TopQ Policy U=0.004839, std=0.003211
+    - `tbm_50_25_h8` (utility): score=0.002979, IC=0.0103, TopQ Policy U=0.004017, std=0.002077
+    - `tbm_50_25_h16` (utility): score=0.002979, IC=0.0103, TopQ Policy U=0.004017, std=0.002077
+    - `tbm_50_25_h24` (utility): score=0.002979, IC=0.0103, TopQ Policy U=0.004017, std=0.002077
+    - `rank_net` (ranking): score=0.002681, IC=-0.0259, TopQ Policy U=0.002815, std=0.000267
+    - `hybrid_raw_huber` (hybrid): score=0.002648, IC=-0.0691, TopQ Policy U=0.003607, std=0.001918
+
+### Bucket: short_tf
+- **Race Winner**: `champion_single+reg_H8`
+- **Limit Offset**: `enabled`
+- **Training Target**: `rank_net` (family=`ranking`)
+- **Ranking Gate (top_k_pct)**: `40.00%`
+- **Execution Top-K**: `15.00%`
+- **Position Sizing Formula**: `linear`
+- **Base Size**: `8.00%`
+- **Rank Multiplier**: `12.00%`
+- **Squash Function**: `tanh`
+- **Squash k**: `1.00`
+- **CV Performance (Aligned Holdouts)**:
+  - **CV Basis**: `nested_joint_holdout_median`
+  - **Total PnL**: 0.35%
+  - **PnL/Day**: 0.01%
+  - **Trades/Day**: 0.9190
+  - **Sortino**: 1.2250
+  - **MaxDD**: 0.53%
+  - **WinRate**: 0.00%
+  - **Profit Factor**: 0.00
+  - **Avg Win/Loss**: 0.00% / 0.00%
+  - **Ulcer Index**: 0.2857
+  - **Time Under Water**: 86.92%
+- **OOF Calibration (Top Rank Diagnostics)**:
+  - **Top 30%**: Total PnL: 544.48%, PnL/Day: 2.04%, Trades/Day: 1.31, Sortino: 6.6303, MaxDD: 49.55%, WinRate: 41.3%, PF: 1.76, Avg Win/Loss: 8.75% / -3.49%, Ulcer: 18.1479, TUW: 82.52%, N: 349
+  - **Top 20%**: Total PnL: 525.37%, PnL/Day: 1.97%, Trades/Day: 0.90, Sortino: 9.3900, MaxDD: 43.91%, WinRate: 48.8%, PF: 2.10, Avg Win/Loss: 8.59% / -3.90%, Ulcer: 14.9533, TUW: 76.25%, N: 240
+  - **Top 10%**: Total PnL: 333.67%, PnL/Day: 1.25%, Trades/Day: 0.48, Sortino: 12.1475, MaxDD: 48.74%, WinRate: 50.4%, PF: 2.54, Avg Win/Loss: 8.60% / -3.44%, Ulcer: 19.5076, TUW: 70.87%, N: 127
+- **Alpha Retention Waterfall**:
+  - **Best Raw Feature**: `reg_H8`
+  - **Best Raw Feature IC**: 0.1064
+  - **Combined Score IC**: 0.1064
+  - **OOF PnL No Offset**: -8.00% total, -0.02%/day
+  - **OOF PnL With Offset**: -6.72% total, -0.02%/day
+- **Walk-Forward Validation (Out-of-Sample)**:
+  - **Full OOS Holdout**:
+    - Limit Offset: `model`
+    - Total PnL: -1.68%
+    - PnL/Day: -0.01%
+    - Trades/Day: 0.5468
+    - N_selected: 76 across 139.0 days
+    - Sortino: -0.6393
+    - Profit Factor: 0.78
+  - **Repeated OOS Summary**:
+    - OOS Basis: `full_walk_forward_oos_repeated_holdouts_too_sparse`
+    - Limit Offset: `model`
+    - Total PnL: -1.68%
+    - PnL/Day: -0.01%
+    - Trades/Day: 0.5468
+    - N_selected: 76
+    - Sortino: -0.6393
+    - MaxDD: 4.30%
+    - WinRate: 51.32%
+    - Profit Factor: 0.78
+    - Avg Win/Loss: 0.16% / -0.21%
+    - Ulcer Index: 3.3178
+    - Time Under Water: 89.47%
+    - No Offset PnL: -2.16% total, -0.02%/day
+    - No Offset Objective: -0.0018
+    - Repeated Holdout Min-N Gate: 25 (pass=True)
+  - **Repeated Holdout Count**: 2
+  - **Repeated Median N_selected**: 12.5 across 34.0 days
+- **OOS Per-Decile Diagnostics**:
+  - **Top 30%**: Total PnL: -7.45%, PnL/Day: -0.05%, Trades/Day: 1.09, Sortino: -1.9827, MaxDD: 11.04%, WinRate: 49.0%, PF: 0.60, Avg Win/Loss: 0.15% / -0.24%, Ulcer: 6.8675, TUW: 96.69%, N: 151
+  - **Top 20%**: Total PnL: -8.37%, PnL/Day: -0.06%, Trades/Day: 0.74, Sortino: -1.8494, MaxDD: 10.51%, WinRate: 48.5%, PF: 0.50, Avg Win/Loss: 0.16% / -0.31%, Ulcer: 6.9070, TUW: 93.20%, N: 103
+  - **Top 10%**: Total PnL: -1.82%, PnL/Day: -0.01%, Trades/Day: 0.36, Sortino: -0.6989, MaxDD: 4.49%, WinRate: 50.0%, PF: 0.72, Avg Win/Loss: 0.19% / -0.26%, Ulcer: 3.2275, TUW: 90.00%, N: 50
+- **Feature Selection (Ridge)**: Kept 11/11 features.
+- **Feature Selection (Tree)**: Kept 20 features.
+- **Label Stability (Sensitivity Analysis)**:
+  - **Selected Policy**: N/A
+  - **J_stable**: 0.0000
+  - **TP Sweep Result**: N/A
+- **Policy Learnability A/B (Ridge Only)**:
+  - **Winner**: `tbm_100_50_h16` (delta J_stable=-0.8286)
+  - **Optimized Policy Target**: J_stable=-0.5257, J_mean=-0.5058, J_std=0.0398, Expectancy=-0.07%, WinRate=42.64%, PF=0.81, Avg Win/Loss=0.70% / -0.64%
+  - **Best TBM Ridge Baseline**: `tbm_100_50_h16` tp=1.00%, sl=0.50%, hold=16 bars, J_stable=0.3029, J_mean=0.3163, J_std=0.0268, Expectancy=-0.00%, WinRate=51.27%, PF=0.98, Avg Win/Loss=0.40% / -0.43%
+  - **TBM Grid Leaderboard**:
+    - `tbm_100_50_h16`: J_stable=0.3029, tp=1.00%, sl=0.50%, hold=16, Expectancy=-0.00%, WinRate=51.27%, PF=0.98
+    - `tbm_100_50_h24`: J_stable=0.3029, tp=1.00%, sl=0.50%, hold=24, Expectancy=-0.00%, WinRate=51.27%, PF=0.98
+    - `tbm_100_50_h8`: J_stable=0.2938, tp=1.00%, sl=0.50%, hold=8, Expectancy=-0.01%, WinRate=51.23%, PF=0.98
+    - `tbm_50_25_h8`: J_stable=-0.8697, tp=0.50%, sl=0.25%, hold=8, Expectancy=-0.15%, WinRate=32.69%, PF=0.33
+- **Target Family A/B (Sizer Level)**:
+  - **Winner**: `tbm_50_25_h8` family=utility score=0.000492, IC=-0.0667, TopQ Policy U=0.001339
+  - **Best Simpler Target**: `tbm_50_25_h8` family=utility score=0.000492, IC=-0.0667, TopQ Policy U=0.001339
+  - **Leaderboard**:
+    - `tbm_50_25_h8` (utility): score=0.000492, IC=-0.0667, TopQ Policy U=0.001339, std=0.001692
+    - `tbm_50_25_h16` (utility): score=0.000492, IC=-0.0667, TopQ Policy U=0.001339, std=0.001692
+    - `tbm_50_25_h24` (utility): score=0.000492, IC=-0.0667, TopQ Policy U=0.001339, std=0.001692
+    - `huber_utility` (utility): score=0.000434, IC=0.0245, TopQ Policy U=0.001260, std=0.001653
+    - `clipped_u_policy` (utility): score=0.000401, IC=-0.0144, TopQ Policy U=0.001827, std=0.002852
+    - `policy_utility` (utility): score=0.000169, IC=0.0190, TopQ Policy U=0.001197, std=0.002056
+
+
+---
+*Report generated with Bias Mitigation (2-Step CV Gating & 48h Purging + Walk-Forward OOS)*

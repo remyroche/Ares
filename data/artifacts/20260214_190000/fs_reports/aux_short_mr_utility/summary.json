@@ -1,0 +1,20 @@
+{
+  "selector_head_name": "aux_short_mr_utility",
+  "selector_target": "regression",
+  "selector_top_metric": "top30_mean_utility",
+  "selector_focus_top_frac": 0.3,
+  "weights": {
+    "top30": 0.3,
+    "global": 0.15,
+    "stability": 0.3,
+    "frequency": 0.2,
+    "interaction": 0.05
+  },
+  "n_train_features": 50,
+  "n_selected": 40,
+  "anchor_count": 0,
+  "selected_anchor_count": 0,
+  "overlap_before": 1.0,
+  "overlap_after": 1.0,
+  "hysteresis_swaps": 0.0
+}

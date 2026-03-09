@@ -49,10 +49,12 @@ Thumbs.db
 # ARES PROJECT SPECIFIC - DATA AND CACHE
 # =============================================================================
 # Data directories
-/data/
 /data_cache/
 /data_quality/
 /crypto_analysis/
+/data/features/
+/data/klines/
+/data/processed/
 
 # Database files
 *.db
@@ -267,4 +269,4 @@ versioned_artifacts/layer2_checkpoints/
 # =============================================================================
 # FEATURES
 # =============================================================================
-/data/features/
+# /data/features/ - already ignored above

@@ -1,0 +1,162 @@
+{
+  "weights": {
+    "long_mr_body_ratio_15m": -0.000137726980028674,
+    "long_mr_dv_z": 0.0003774220240302384,
+    "long_mr_impact_24": 0.0008081580745056272,
+    "long_mr_prog_eff_12": -0.0002707050007302314,
+    "long_mr_rng_z": -0.0008471767068840563,
+    "long_mr_vol_concentration_12": -0.00024852281785570085,
+    "long_mr_z_r_24": 0.0007638356764800847,
+    "long_mr_z_vwap_12": -0.00016773906827438623,
+    "long_mr_regime_transition_entropy_48h": 0.0007824560161679983,
+    "long_mr_ts_24": 0.0009651780128479004,
+    "short_tf_body_ratio_15m": -7.30711326468736e-05,
+    "short_tf_dv_z": 0.0010846579680219293,
+    "short_tf_impact_24": 0.0011699330061674118,
+    "short_tf_prog_eff_12": -0.0003907588543370366,
+    "short_tf_rng_z": -0.0022474033758044243,
+    "short_tf_vol_concentration_12": -0.00016354420222342014,
+    "short_tf_z_r_24": -0.0021029908675700426,
+    "short_tf_z_vwap_12": 2.9141840059310198e-05,
+    "short_tf_complexity_regime_24h": 0.0005689492099918425,
+    "short_tf_sv_imb_12": 0.000196801993297413
+  },
+  "params_per_bucket": {
+    "long_tf": {
+      "long_mr": {
+        "alpha": 0.00019808577794285133,
+        "delta": 0.5178830058386703,
+        "gamma": 0.6969481418899092,
+        "top_k_pct": 0.3,
+        "cooldown_hours": 4.0,
+        "base_size": 0.11,
+        "rank_multiplier": 0.14,
+        "sizing_formula": "concave",
+        "squash_fn": "tanh",
+        "squash_k": 2.25,
+        "ObjectiveScore": 0.26885891828245617,
+        "IntradayRisk": 0.51456409416172,
+        "threshold_low": -0.0027789650657568444,
+        "threshold_high": 0.0009539880098687536,
+        "nested_cv_used": false,
+        "race_winner": "ridge+ridge"
+      }
+    },
+    "long_mr": {
+      "long_mr": {
+        "alpha": 0.00019808577794285133,
+        "delta": 0.5178830058386703,
+        "gamma": 0.6969481418899092,
+        "top_k_pct": 0.3,
+        "cooldown_hours": 4.0,
+        "base_size": 0.11,
+        "rank_multiplier": 0.14,
+        "sizing_formula": "concave",
+        "squash_fn": "tanh",
+        "squash_k": 2.25,
+        "ObjectiveScore": 0.26885891828245617,
+        "IntradayRisk": 0.51456409416172,
+        "threshold_low": -0.0027789650657568444,
+        "threshold_high": 0.0009539880098687536,
+        "nested_cv_used": false,
+        "race_winner": "ridge+ridge"
+      }
+    },
+    "short_tf": {
+      "short_tf": {
+        "alpha": 0.00023359279353208541,
+        "delta": 1.1365366191341102,
+        "gamma": 0.7914119248880639,
+        "top_k_pct": 0.3,
+        "cooldown_hours": 2.0,
+        "base_size": 0.12,
+        "rank_multiplier": 0.2,
+        "sizing_formula": "concave",
+        "squash_fn": "tanh",
+        "squash_k": 2.25,
+        "ObjectiveScore": 0.3605018968156996,
+        "IntradayRisk": 0.3820932786713023,
+        "threshold_low": -0.0007087159153858015,
+        "threshold_high": 0.0003444723267229377,
+        "nested_cv_used": false,
+        "race_winner": "ridge+ridge"
+      }
+    },
+    "short_mr": {
+      "short_tf": {
+        "alpha": 0.00023359279353208541,
+        "delta": 1.1365366191341102,
+        "gamma": 0.7914119248880639,
+        "top_k_pct": 0.3,
+        "cooldown_hours": 2.0,
+        "base_size": 0.12,
+        "rank_multiplier": 0.2,
+        "sizing_formula": "concave",
+        "squash_fn": "tanh",
+        "squash_k": 2.25,
+        "ObjectiveScore": 0.3605018968156996,
+        "IntradayRisk": 0.3820932786713023,
+        "threshold_low": -0.0007087159153858015,
+        "threshold_high": 0.0003444723267229377,
+        "nested_cv_used": false,
+        "race_winner": "ridge+ridge"
+      }
+    }
+  },
+  "directions": {
+    "long": {
+      "buckets": [
+        "long_tf",
+        "long_mr"
+      ],
+      "params": {
+        "long_mr": {
+          "alpha": 0.00019808577794285133,
+          "delta": 0.5178830058386703,
+          "gamma": 0.6969481418899092,
+          "top_k_pct": 0.3,
+          "cooldown_hours": 4.0,
+          "base_size": 0.11,
+          "rank_multiplier": 0.14,
+          "sizing_formula": "concave",
+          "squash_fn": "tanh",
+          "squash_k": 2.25,
+          "ObjectiveScore": 0.26885891828245617,
+          "IntradayRisk": 0.51456409416172,
+          "threshold_low": -0.0027789650657568444,
+          "threshold_high": 0.0009539880098687536,
+          "nested_cv_used": false,
+          "race_winner": "ridge+ridge"
+        }
+      }
+    },
+    "short": {
+      "buckets": [
+        "short_tf",
+        "short_mr"
+      ],
+      "params": {
+        "short_tf": {
+          "alpha": 0.00023359279353208541,
+          "delta": 1.1365366191341102,
+          "gamma": 0.7914119248880639,
+          "top_k_pct": 0.3,
+          "cooldown_hours": 2.0,
+          "base_size": 0.12,
+          "rank_multiplier": 0.2,
+          "sizing_formula": "concave",
+          "squash_fn": "tanh",
+          "squash_k": 2.25,
+          "ObjectiveScore": 0.3605018968156996,
+          "IntradayRisk": 0.3820932786713023,
+          "threshold_low": -0.0007087159153858015,
+          "threshold_high": 0.0003444723267229377,
+          "nested_cv_used": false,
+          "race_winner": "ridge+ridge"
+        }
+      }
+    }
+  },
+  "run_id": "20260214_190000",
+  "timestamp": "2026-03-08T14:03:14.673777+00:00"
+}

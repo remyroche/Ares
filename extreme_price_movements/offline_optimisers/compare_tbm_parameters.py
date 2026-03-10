@@ -6255,6 +6255,8 @@ def run(args: argparse.Namespace) -> None:
     _clear_caches()
 
     horizons = [2, 4] if not args.horizons else [int(x) for x in args.horizons.split(",")]
+    # Do not compute TBM geometries for H1 (handled by regressors instead)
+    horizons = [h for h in horizons if h != 1]
 
     # Use bounded caches to prevent unbounded cache growth.
     layer1_cache: Dict[str, Any] = LRUCache(max_size=10)

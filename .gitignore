@@ -270,3 +270,4 @@ versioned_artifacts/layer2_checkpoints/
 # FEATURES
 # =============================================================================
 # /data/features/ - already ignored above
+ta-lib*

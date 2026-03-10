@@ -3728,6 +3728,23 @@ def build_hourly_training_set_and_weights(
         ).astype(np.float32)
         _y_ret_target = pnl.astype(np.float32)
 
+
+    if H == 1:
+        if "ret1h" in feats:
+            ret1h_df = feats["ret1h"]
+            rank_array = numba_rolling_cross_sectional_rank(ret1h_df.values, window=15*24)
+            rank_df = pd.DataFrame(rank_array, index=ret1h_df.index, columns=ret1h_df.columns)
+            y_bin = _fast_lookup(rank_df, entry_ts, event_sym)
+        else:
+            tprint("Warning: ret1h not found in feats, falling back to simple rank of event returns")
+            # Fallback if ret1h is not present
+            valid = np.isfinite(ret_vals)
+            y_bin = np.zeros_like(ret_vals, dtype=np.float32)
+            if np.any(valid):
+                ranks = pd.Series(ret_vals[valid]).rank(pct=True).values
+                y_bin[valid] = 2.0 * ranks - 1.0
+
+
     parts = {
         "ts": ts_arr,
         "symbol": sym_arr,
@@ -10066,8 +10083,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             base_model=mdi_base,
             sample_weight=w,
             selector_y=y,
-            selector_target=str(cfg.get("base_mdi_selector_target", "classification")),
-            selector_loss=str(cfg.get("base_mdi_selector_loss", "binary_logloss")),
+            selector_target="regression" if H == 1 else str(cfg.get("base_mdi_selector_target", "classification")),
+            selector_loss="mse" if H == 1 else str(cfg.get("base_mdi_selector_loss", "binary_logloss")),
             selector_head_name=_selector_head,
             selector_report_dir=_selector_report_dir,
             selector_prev_selected=None,
@@ -10107,7 +10124,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
         )
         selected_feats = list(sel_res.selected_features)
         X_sel = X[selected_feats]
-        race = ModelRace(kind=kind_name, n_splits=2)
+        race = ModelRace(kind=kind_name, n_splits=2, is_regressor=(horizon == 1))
         groups = df_variant["__ts__"].values if "__ts__" in df_variant.columns else None
         symbols = df_variant["__symbol__"].values if "__symbol__" in df_variant.columns else None
         race.fit(X_sel, y, sample_weight=w, returns=y_ret, groups=groups, symbols=symbols)
@@ -10402,13 +10419,13 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     X_sel = X[selected_feats]
                     cols = list(selected_feats)
 
-                    y_hard_check = (y >= 0.5).astype(int)
+                    y_hard_check = (y >= 0.0).astype(int) if H == 1 else (y >= 0.5).astype(int)
                     tprint(
                         f"  Class dist: 0={int((y_hard_check==0).sum())} ({(y_hard_check==0).mean()*100:.1f}%), "
                         f"1={int((y_hard_check==1).sum())} ({(y_hard_check==1).mean()*100:.1f}%)"
                     )
 
-                    race = ModelRace(kind=k, n_splits=2)
+                    race = ModelRace(kind=k, n_splits=2, is_regressor=(H == 1))
                     groups = df["__ts__"].values if "__ts__" in df.columns else None
                     symbols = df["__symbol__"].values if "__symbol__" in df.columns else None
                     race.fit(X_sel, y, sample_weight=w, returns=y_ret, groups=groups, symbols=symbols)
@@ -10430,7 +10447,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     _prev_global = float("nan")
                     if race.oof_probs is not None:
                         oof = race.oof_probs
-                        y_bin_oof = (y >= 0.5).astype(np.int8)
+                        y_bin_oof = (y >= 0.0).astype(np.int8) if H == 1 else (y >= 0.5).astype(np.int8)
                         # Recompute BSS from post-calibration OOF (same probs as all other metrics)
                         from sklearn.metrics import brier_score_loss as _bsl
 

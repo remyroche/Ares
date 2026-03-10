@@ -3,7 +3,7 @@ import pickle
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, ClassifierMixin, clone
-from sklearn.ensemble import ExtraTreesClassifier
+from sklearn.ensemble import ExtraTreesClassifier, ExtraTreesRegressor
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
@@ -106,7 +106,7 @@ def calculate_selection_score(y_true, y_prob, y_ret, sample_weight=None, symbols
     y_prob = np.asarray(y_prob)
     y_ret = np.asarray(y_ret)
     try:
-        out["AUC"] = float(roc_auc_score(y_true, y_prob)) if len(np.unique(y_true)) > 1 else 0.5
+        out["AUC"] = float(roc_auc_score(y_true >= 0.5, y_prob)) if len(np.unique(y_true >= 0.5)) > 1 else 0.5
     except Exception:
         out["AUC"] = 0.5
     brier = float(np.mean((y_prob - y_true) ** 2))
@@ -148,7 +148,7 @@ class Float64Wrapper(BaseEstimator, ClassifierMixin):
     def decision_function(self, X):
         if hasattr(self.estimator, 'decision_function'):
             return np.asarray(self.estimator.decision_function(X), dtype=np.float64)
-        return self.predict_proba(X)[:, 1]
+        return self.predict_proba(X)[:, 1] if not getattr(self, 'is_regressor', False) else self.predict(X)
 
     def get_params(self, deep=True):
         return {"estimator": self.estimator}
@@ -203,12 +203,13 @@ class ScaledLogisticRegression(LogisticRegression):
 
 
 class ModelRace(BaseEstimator, ClassifierMixin):
-    def __init__(self, kind="long", n_splits=5, race_sample_frac=0.5, race_early_stopping_rounds=50, max_label_horizon_hours=8):
+    def __init__(self, kind="long", n_splits=5, race_sample_frac=0.5, race_early_stopping_rounds=50, max_label_horizon_hours=8, is_regressor=False):
         self.kind = kind
         self.n_splits = n_splits
         self.race_sample_frac = race_sample_frac
         self.race_early_stopping_rounds = race_early_stopping_rounds
         self.max_label_horizon_hours = max_label_horizon_hours
+        self.is_regressor = is_regressor
         self.best_model = None
         self.best_model_name = None
         self.metrics = {}
@@ -256,7 +257,10 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             "n_jobs": 2,
             "random_state": 42
         }
-        candidates["extratrees"] = Float64Wrapper(ExtraTreesClassifier(**et_params))
+        if getattr(self, 'is_regressor', False):
+            candidates["extratrees"] = ExtraTreesRegressor(**et_params)
+        else:
+            candidates["extratrees"] = Float64Wrapper(ExtraTreesClassifier(**et_params))
 
         return candidates
 
@@ -265,7 +269,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         if sample_weight is not None:
             fit_kwargs["sample_weight"] = sample_weight
 
-        pos_weight = self._compute_pos_weight(y_tr)
+        pos_weight = self._compute_pos_weight(y_tr) if not getattr(self, 'is_regressor', False) else 1.0
 
         # Handle Float64Wrapper
         inner = model.estimator if isinstance(model, Float64Wrapper) else model
@@ -327,6 +331,8 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         y = np.asarray(y, dtype=np.float64)
         y = np.clip(y, 0.0, 1.0)
         y_hard = (y >= 0.5).astype(np.int8)
+        if getattr(self, 'is_regressor', False):
+            y_hard = y # Treat y_hard as raw values for regressor to avoid failing if there are no discrete classes
         if sample_weight is not None:
             sample_weight = np.asarray(sample_weight, dtype=np.float64)
         if returns is None:
@@ -478,7 +484,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
                     calibrator.fit(X_tr_cal_val, y_tr_cal_val)
                     
                     # Predict calibrated (but biased) probabilities on the actual OOF validation set
-                    probs_raw = calibrator.predict_proba(X_val)[:, 1]
+                    probs_raw = calibrator.predict_proba(X_val)[:, 1] if not getattr(self, 'is_regressor', False) else calibrator.predict(X_val)
                     
                     # --- Prior Correction (replaces in-fold Platt scaling) ---
                     # Tree models with scale_pos_weight / class_weight shift raw
@@ -767,10 +773,10 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             estimator = clone(oof_model)
             self._fit_model(estimator, X_tr, y_tr_fit, X_val=X_val, y_val=y_val_fit, sample_weight=w_tr)
             
-            oof_probs[val_idx] = estimator.predict_proba(X_val)[:, 1]
+            oof_probs[val_idx] = estimator.predict_proba(X_val)[:, 1] if not getattr(self, 'is_regressor', False) else estimator.predict(X_val)
             
             # Predict raw then apply fold bias correction contract.
-            probs_raw = estimator.predict_proba(X_val)[:, 1]
+            probs_raw = estimator.predict_proba(X_val)[:, 1] if not getattr(self, 'is_regressor', False) else estimator.predict(X_val)
             if sample_weight is not None:
                 w_tr_fold = sample_weight[train_idx]
                 den = float(np.sum(w_tr_fold))
@@ -959,6 +965,8 @@ class ModelRace(BaseEstimator, ClassifierMixin):
     def predict_proba_raw(self, X):
         if self.best_model is None:
             raise ValueError("ModelRace not fitted")
+        if getattr(self, 'is_regressor', False):
+            return safe_clip_proba(np.asarray(self.best_model.predict(X), dtype=np.float64), eps=1e-6)
         probs = np.asarray(self.best_model.predict_proba(X), dtype=np.float64)
         return safe_clip_proba(probs[:, 1], eps=1e-6)
 
@@ -994,7 +1002,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
     def predict(self, X):
         # Return probability class 1 (rank score, not calibrated probability)
-        return self.predict_proba(X)[:, 1]
+        return self.predict_proba(X)[:, 1] if not getattr(self, 'is_regressor', False) else self.predict(X)
 
     def strip_for_serialization(self):
         """Drop heavy internals not needed for inference or meta training."""

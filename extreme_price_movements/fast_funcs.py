@@ -2833,3 +2833,42 @@ def numba_rolling_bars_since_extreme(df, window, mode="max"):
     if is_series:
         return res_df[res_df.columns[0]]
     return res_df
+
+@jit(nopython=True, parallel=True, fastmath=True)
+def numba_rolling_cross_sectional_rank(values: np.ndarray, window: int) -> np.ndarray:
+    """
+    Computes a rolling 2D percentile rank.
+    For each (row, col), the value is ranked against all finite values in values[max(0, row-window+1):row+1, :].
+    Maps to [-1, 1].
+    """
+    n_rows, n_cols = values.shape
+    out = np.empty_like(values, dtype=np.float32)
+    out[:] = np.nan
+
+    for i in prange(n_rows):
+        start_idx = max(0, i - window + 1)
+
+        # Flatten the window
+        window_vals = values[start_idx:i+1, :].flatten()
+        # Remove NaNs
+        valid_vals = window_vals[np.isfinite(window_vals)]
+
+        n_valid = valid_vals.shape[0]
+        if n_valid < 2:
+            for j in range(n_cols):
+                if np.isfinite(values[i, j]):
+                    out[i, j] = 0.0
+            continue
+
+        # We need to sort to find ranks
+        sorted_vals = np.sort(valid_vals)
+
+        for j in range(n_cols):
+            v = values[i, j]
+            if np.isfinite(v):
+                # binary search for rank
+                idx = np.searchsorted(sorted_vals, v, side='right')
+                rank_pct = idx / n_valid
+                out[i, j] = 2.0 * rank_pct - 1.0
+
+    return out

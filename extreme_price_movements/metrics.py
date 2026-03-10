@@ -377,6 +377,9 @@ def calculate_selection_score(
     brier_basic = 0.0
     
     if y_true_m is not None:
+        # Convert to binary for BSS if continuous
+        if len(np.unique(y_true_m)) > 2:
+            y_true_m = (y_true_m >= 0.0).astype(int)
         p = np.clip(y_prob_m, 0.0, 1.0)
         
         # UNWEIGHTED prevalence for BSS reference
@@ -471,6 +474,9 @@ def calculate_selection_score(
 
     # Diagnostic keys
     if y_true_m is not None:
+        # Convert to binary for BSS if continuous
+        if len(np.unique(y_true_m)) > 2:
+            y_true_m = (y_true_m >= 0.0).astype(int)
         try:
              if len(np.unique(y_true_m)) > 1:
                  metrics["AUC"] = float(roc_auc_score(y_true_m, y_prob_m))

@@ -4836,7 +4836,7 @@ _PROMOTE_MAX_ECE: float = 0.30        # Calibration viability gate (lower is bet
 _PROMOTE_MAX_BRIER: float = 0.22      # Calibration viability gate (lower is better)
 _PROMOTE_MIN_EFFECTIVE_POS: float = 250.0  # Effective positive label mass proxy floor
 _PROMOTE_MIN_EFFECTIVE_NEG: float = 250.0  # Effective negative label mass proxy floor
-_ROUND_TRIP_FEE: float = 0.005        # 0.5% round-trip fee (entry + exit) applied to both TP and SL legs
+_ROUND_TRIP_FEE: float = 0.003        # 0.3% round-trip fee (entry + exit) applied to both TP and SL legs
 _PROMOTE_MIN_FEE_EV: float = 0.0      # fee-adjusted EV must be > 0: tp_hit*(tp_mean-fee) - sl_hit*(sl_mean+fee) > 0
 
 # Tier definitions for the feasible-set builder.

@@ -49,6 +49,7 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.isotonic import IsotonicRegression
 from sklearn.model_selection import TimeSeriesSplit
 from scipy.optimize import brentq
+from extreme_price_movements.tree_leaf_policy import tree_regularization_params
 from extreme_price_movements.calibration import (
     safe_clip_proba,
     compute_prevalences,
@@ -249,9 +250,13 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
         # Base models are intentionally restricted to ExtraTrees only.
         et_params = {
-            "n_estimators": 200 if race_mode else 800,
+            "n_estimators": 800,
             "max_depth": 6,
             "min_samples_leaf": 64,
+            "min_samples_split": 128,
+            "bootstrap": False,
+            "ccp_alpha": 1e-4,
+            "max_leaf_nodes": 512,
             "max_features": "sqrt",
             "n_jobs": 2,
             "random_state": 42
@@ -374,11 +379,16 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         candidates = self._get_candidates(race_mode=True)
         results = {}
 
-        # --- Dynamic Regularization (User Requested) ---
+        # --- Dynamic Tree Regularization ---
+        tree_dyn = tree_regularization_params(y, task_type="classification")
         n_pos = int(np.sum(y > 0)) if len(y) > 0 else 0
-        min_leaf_dyn = max(75, int(n_pos * 0.015))
-        min_cw_dyn = max(75, int(n_pos * 0.015 * 0.25))  # XGB hessian ~ 0.25 * count
-        tprint(f"ModelRace: Dynamic min_samples_leaf={min_leaf_dyn}, min_child_weight={min_cw_dyn} (pos={n_pos}, 1.5%)")
+        min_leaf_dyn = int(tree_dyn["min_samples_leaf"])
+        min_split_dyn = int(tree_dyn["min_samples_split"])
+        min_cw_dyn = max(1, int(np.ceil(0.25 * min_leaf_dyn)))  # XGB hessian-scaled analogue
+        tprint(
+            f"ModelRace: Dynamic min_samples_leaf={min_leaf_dyn}, min_samples_split={min_split_dyn}, "
+            f"min_child_weight={min_cw_dyn} (pos={n_pos}, pos_frac=1%)"
+        )
 
         def safe_slice(arr, idx):
             if hasattr(arr, "iloc"): return arr.iloc[idx]
@@ -393,9 +403,17 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             if hasattr(model, "estimator"): inner = model.estimator
             else: inner = model
 
-            # ExtraTrees
+            # ExtraTrees / RF
             if "min_samples_leaf" in inner.get_params():
                 inner.set_params(min_samples_leaf=min_leaf_dyn)
+            if "min_samples_split" in inner.get_params():
+                inner.set_params(min_samples_split=min_split_dyn)
+            if "bootstrap" in inner.get_params():
+                inner.set_params(bootstrap=False)
+            if "ccp_alpha" in inner.get_params():
+                inner.set_params(ccp_alpha=1e-4)
+            if "max_leaf_nodes" in inner.get_params():
+                inner.set_params(max_leaf_nodes=512)
             # LightGBM / CatBoost
             if "min_data_in_leaf" in inner.get_params():
                 inner.set_params(min_data_in_leaf=min_leaf_dyn)

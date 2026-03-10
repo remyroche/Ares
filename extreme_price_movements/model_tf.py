@@ -3,6 +3,7 @@ import pandas as pd
 from sklearn.pipeline import Pipeline
 from sklearn.linear_model import Lasso, ElasticNet
 from sklearn.ensemble import ExtraTreesRegressor
+from extreme_price_movements.tree_leaf_policy import tree_regularization_params
 from sklearn.preprocessing import StandardScaler
 from extreme_price_movements.utils import tprint
 from extreme_price_movements.feature_selection_extreme_events import (
@@ -64,10 +65,15 @@ class TFModel:
         n_select = min(60, max(1, n_samples // 100))
         tprint(f"TFModel: Running MDI feature selection. Target features={n_select}")
 
+        reg_tree = tree_regularization_params(y, task_type="regression")
         base_selector = ExtraTreesRegressor(
             n_estimators=500, # Increased per v3 request
             max_depth=None,   # Let v3 suggest depth
-            min_samples_leaf=50,
+            min_samples_leaf=reg_tree["min_samples_leaf"],
+            min_samples_split=reg_tree["min_samples_split"],
+            bootstrap=reg_tree["bootstrap"],
+            ccp_alpha=reg_tree["ccp_alpha"],
+            max_leaf_nodes=reg_tree["max_leaf_nodes"],
             max_features='sqrt',
             n_jobs=2,
             random_state=42

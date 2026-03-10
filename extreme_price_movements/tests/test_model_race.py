@@ -127,8 +127,8 @@ class TestModelRace(unittest.TestCase):
 
         self.assertTrue(len(race.seen_leaf) > 0)
         self.assertTrue(len(race.seen_child_weight) > 0)
-        self.assertIn(337, [v for v in race.seen_leaf if v is not None])
-        self.assertIn(84, [v for v in race.seen_child_weight if v is not None])
+        self.assertIn(225, [v for v in race.seen_leaf if v is not None])
+        self.assertIn(57, [v for v in race.seen_child_weight if v is not None])
 
 if __name__ == '__main__':
     unittest.main()

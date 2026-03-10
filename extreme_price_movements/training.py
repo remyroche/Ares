@@ -5599,6 +5599,7 @@ def generate_label_datasets(
     }
 
     tasks = []
+    _required_geometry_variants = ("tight", "wide")
     for side in trade_sides:
         for k in kinds:
             trade_side = side
@@ -5609,43 +5610,60 @@ def generate_label_datasets(
             fixed_tp = 0.05
             fixed_sl = 0.025
             for H in horizons:
-                tasks.append(
-                    (
-                        int(H),
-                        side,
-                        k,
-                        None,
-                        move_bucket,
-                        strategy_label,
-                        cand_filter,
-                        feat_key,
-                        fixed_tp,
-                        fixed_sl,
-                    )
-                )
-                if bool(cfg.get("base_geometry_train_variants", True)):
-                    for _variant in cfg.get(
-                        "base_geometry_archetypes", ["tight", "balanced", "wide"]
-                    ):
-                        _variant = str(_variant)
-                        if _variant == "balanced":
-                            continue
-                        if (int(H), side, k, _variant) not in tb_cache:
-                            continue
-                        tasks.append(
-                            (
-                                int(H),
-                                side,
-                                k,
-                                _variant,
-                                move_bucket,
-                                strategy_label,
-                                cand_filter,
-                                feat_key,
-                                fixed_tp,
-                                fixed_sl,
-                            )
+                H_int = int(H)
+                # Keep the H1 regressor/canonical path untouched; for classifier horizons,
+                # require both tight + wide and do not emit a canonical cell.
+                if H_int == 1:
+                    tasks.append(
+                        (
+                            H_int,
+                            side,
+                            k,
+                            None,
+                            move_bucket,
+                            strategy_label,
+                            cand_filter,
+                            feat_key,
+                            fixed_tp,
+                            fixed_sl,
                         )
+                    )
+                    continue
+
+                if not bool(cfg.get("base_geometry_train_variants", True)):
+                    tprint(
+                        f"Skipping classifier label cell {side}_{k}_H{H_int}: "
+                        "base_geometry_train_variants=False but tight/wide are mandatory."
+                    )
+                    continue
+
+                _missing_required = [
+                    _v
+                    for _v in _required_geometry_variants
+                    if (H_int, side, k, _v) not in tb_cache
+                ]
+                if _missing_required:
+                    tprint(
+                        f"Skipping classifier label cell {side}_{k}_H{H_int}: "
+                        f"missing required geometry variants={_missing_required}."
+                    )
+                    continue
+
+                for _variant in _required_geometry_variants:
+                    tasks.append(
+                        (
+                            H_int,
+                            side,
+                            k,
+                            _variant,
+                            move_bucket,
+                            strategy_label,
+                            cand_filter,
+                            feat_key,
+                            fixed_tp,
+                            fixed_sl,
+                        )
+                    )
 
     def _run_one_cell(task):
         (
@@ -5660,10 +5678,11 @@ def generate_label_datasets(
             fixed_tp,
             fixed_sl,
         ) = task
+        _variant_log = variant if variant is not None else "h1_regressor"
         tprint(
             f"Generating labels: trade_side={side}, kind={k}, move_bucket={move_bucket}, "
             f"candidate_bucket={cand_filter}, strategy={strategy_label}, H={H}, "
-            f"variant={variant or 'canonical'}"
+            f"variant={_variant_log}"
         )
         _tb_key = (H, side, k) if variant is None else (H, side, k, variant)
         _geom = geom_cache.get(_tb_key)
@@ -5757,6 +5776,26 @@ def generate_label_datasets(
                     else f"train_{side}_{k}_{H}_{variant}"
                 )
                 datasets[_ds_key] = df_out
+
+    # For classifier horizons (>H1), synthesize the base training dataset by
+    # concatenating required tight/wide variants. We retain the canonical key
+    # name for downstream compatibility only.
+    for side in trade_sides:
+        for k in kinds:
+            for H in horizons:
+                H_int = int(H)
+                if H_int == 1:
+                    continue
+                _tight_key = f"train_{side}_{k}_{H_int}_tight"
+                _wide_key = f"train_{side}_{k}_{H_int}_wide"
+                _base_key = f"train_{side}_{k}_{H_int}"
+                if _tight_key not in datasets or _wide_key not in datasets:
+                    continue
+                _parts = [datasets[_tight_key], datasets[_wide_key]]
+                _parts = [p for p in _parts if p is not None and not p.empty]
+                if not _parts:
+                    continue
+                datasets[_base_key] = pd.concat(_parts, axis=0, ignore_index=True)
 
     # 3. Exhaustion Models
     lookback = cfg["exh_train_lookback_hours"]

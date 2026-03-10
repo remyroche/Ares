@@ -82,6 +82,10 @@ def test_phase1_subsample_equivalence():
     rolling_std_dn = np.random.rand(100)
     asset_ids = np.zeros(100, dtype=np.int32)
     asset_ids[50:] = 1
+    asset_groups = {
+        0: np.where(asset_ids == 0)[0].astype(np.int32),
+        1: np.where(asset_ids == 1)[0].astype(np.int32),
+    }
 
     # Phase 1 mask: only take 1 asset
     phase1_mask = asset_ids == 0
@@ -89,7 +93,7 @@ def test_phase1_subsample_equivalence():
     # Generate full then slice
     m_h_f, m_l_f = _generate_event_masks_fast(
         "std_threshold", 1.0, up_move, dn_move,
-        rolling_std_up, rolling_std_dn, 2, asset_ids, 2
+        rolling_std_up, rolling_std_dn, asset_groups, 2
     )
     m_h_sub = m_h_f[phase1_mask]
 
@@ -108,3 +112,29 @@ def test_invalid_forward_row_exclusion():
         np.ones(6), np.ones(6), np.ones(6), np.ones(6)
     )
     assert isinstance(score, float)
+
+
+def test_dilate_mask_by_asset_handles_non_rectangular_rows():
+    from extreme_price_movements.mask_optimiser import dilate_mask_by_asset
+
+    # Local time series per asset are not interleaved in fixed rectangular spacing.
+    asset_groups = {
+        0: np.array([0, 2, 5], dtype=np.int32),
+        1: np.array([1, 3, 4], dtype=np.int32),
+    }
+    mask = np.array([True, False, False, True, False, False])
+    out = dilate_mask_by_asset(mask, asset_groups, duration_bars=2)
+
+    # asset 0: idx 0 -> idx 2; asset 1: idx 3 -> idx 4
+    expected = np.array([True, False, True, True, True, False])
+    assert np.array_equal(out, expected)
+
+
+def test_build_temporal_folds_fallback_uses_timestamp_groups():
+    ts = np.array([1, 1, 2, 2, 3, 3, 4, 4, 5, 5], dtype=np.int64)
+    folds = _build_temporal_folds(ts, ts.shape[0], n_splits=2)
+    for tr, va in folds:
+        tr_ts = set(ts[tr].tolist())
+        va_ts = set(ts[va].tolist())
+        assert tr_ts.isdisjoint(va_ts)
+        assert max(tr_ts) < min(va_ts)

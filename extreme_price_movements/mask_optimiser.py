@@ -580,10 +580,15 @@ def _compute_conditional_learnability(
     r2_mae_e = _test_regressor_oof(X_e, mae_arr[idx_e], ts_e)
     gain_mae = r2_mae_e - r2_mae_g
 
-    # To lighten Phase 1 default compute, optionally skip reversal & mfe here
-    # Assuming the caller may want these, but we can set them to 0.0 by default or return what was requested.
-    gain_rev = 0.0
-    gain_mfe = 0.0
+    # Full Reversal Predictability for MR model regimes
+    auc_rev_g = _test_classifier_oof(X_g, rev_target[idx_g], ts_g)
+    auc_rev_e = _test_classifier_oof(X_e, rev_target[idx_e], ts_e)
+    gain_rev = auc_rev_e - auc_rev_g
+
+    # Full MFE Predictability for TP proxy
+    r2_mfe_g = _test_regressor_oof(X_g, mfe_arr[idx_g], ts_g)
+    r2_mfe_e = _test_regressor_oof(X_e, mfe_arr[idx_e], ts_e)
+    gain_mfe = r2_mfe_e - r2_mfe_g
 
     gain_max = max(gain_cont, gain_rev, gain_mae, gain_mfe)
 

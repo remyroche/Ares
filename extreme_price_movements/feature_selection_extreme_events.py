@@ -12,6 +12,8 @@ import os
 
 from numba import jit, prange
 import numpy as np
+
+from .feature_views import get_feature_view
 import pandas as pd
 from scipy.stats import rankdata
 from sklearn.base import clone

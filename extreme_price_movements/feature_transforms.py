@@ -8,6 +8,7 @@ import pandas as pd
 import extreme_price_movements.fast_funcs as ff
 from scipy.stats import norm
 from .utils import tprint, check_inf_nan
+from .feature_family_registry import get_feature_family, FeatureFamily
 
 class CausalFeatureTransformer:
     _CACHE_VERSION = 1
@@ -41,13 +42,14 @@ class CausalFeatureTransformer:
 
     def transform(self, df: pd.DataFrame | np.ndarray, name: str = "unknown") -> pd.DataFrame | np.ndarray:
         """
-        Applies Log + Causal Z-Score + Clip (Parametric Winsorization Proxy).
-        O(N) complexity vs O(N*W) for rolling quantiles. ~300x Speedup.
+        Applies family-aware transforms (e.g. Log + Causal Z-Score + Clip).
         """
+        family = get_feature_family(name)
+
         if isinstance(df, np.ndarray):
             if df.size == 0:
                 return df.copy()
-            return self._apply_transform_numpy(df)
+            return self._apply_transform_numpy(df, family=family)
 
         if df.empty:
             return df.copy()
@@ -55,7 +57,7 @@ class CausalFeatureTransformer:
         df = df.sort_index()
 
         if not self.enable_cache:
-            result = self._apply_transform_matrix(df)
+            result = self._apply_transform_matrix(df, family=family)
             if self.debug:
                 check_inf_nan(result, name)
             return result
@@ -63,14 +65,14 @@ class CausalFeatureTransformer:
         cached = self._load_cache(name)
 
         if cached is None:
-            result = self._apply_transform_matrix(df)
+            result = self._apply_transform_matrix(df, family=family)
             self._write_cache(name, result)
             if self.debug:
                 check_inf_nan(result, name)
             return result
 
         cached_df = cached
-        result = self._reuse_cache(df, cached_df)
+        result = self._reuse_cache(df, cached_df, family=family)
         self._write_cache(name, result)
 
         if self.debug:
@@ -82,19 +84,34 @@ class CausalFeatureTransformer:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _apply_transform_numpy(self, mat: np.ndarray) -> np.ndarray:
+    def _apply_transform_numpy(self, mat: np.ndarray, family: str = None) -> np.ndarray:
         """Core transform on a contiguous float32 numpy array (T, C). Returns new array."""
+        if family == FeatureFamily.CATEGORICAL_OR_BUCKETED:
+            return mat.copy()
+
         mat = np.ascontiguousarray(mat, dtype=np.float32)
-        np.arcsinh(mat, out=mat)
-        mat = ff._numba_rolling_zscore_parallel(mat, self.roll_window)
+
+        do_arcsinh = (family == FeatureFamily.RISK_NORMALIZED_CONTINUOUS)
+        do_zscore = (family == FeatureFamily.RISK_NORMALIZED_CONTINUOUS)
+        do_clip = (family in [FeatureFamily.RISK_NORMALIZED_CONTINUOUS, FeatureFamily.ALREADY_STANDARDIZED, FeatureFamily.BOUNDED_GEOMETRY])
+
+        if do_arcsinh:
+            np.arcsinh(mat, out=mat)
+
+        if do_zscore:
+            mat = ff._numba_rolling_zscore_parallel(mat, self.roll_window)
+
         np.nan_to_num(mat, nan=0.0, posinf=0.0, neginf=0.0, copy=False)
-        np.clip(mat, -self.sigma_k, self.sigma_k, out=mat)
+
+        if do_clip:
+            np.clip(mat, -self.sigma_k, self.sigma_k, out=mat)
+
         return mat
 
-    def _apply_transform_matrix(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _apply_transform_matrix(self, df: pd.DataFrame, family: str = None) -> pd.DataFrame:
         if df.empty:
             return df.copy()
-        mat = self._apply_transform_numpy(df.to_numpy(dtype=np.float32, copy=False))
+        mat = self._apply_transform_numpy(df.to_numpy(dtype=np.float32, copy=False), family=family)
         return pd.DataFrame(mat, index=df.index, columns=df.columns)
 
     def transform_batch(
@@ -104,88 +121,83 @@ class CausalFeatureTransformer:
         chunk_size: int = 50,
     ) -> dict:
         """
-        Transform all features in batched stacked-matrix calls.
-
-        * Features in *skip_keys* are cast to float32 numpy but not transformed.
-        * Remaining features are grouped into chunks of *chunk_size*, stacked
-          into a single (T, chunk_size × S) matrix, transformed in one
-          ``_numba_rolling_zscore_parallel`` dispatch, then unstacked.
-        * Each chunk is freed before the next is processed, bounding peak
-          memory to  chunk_size × T × S × 4 bytes  above the final output.
-
-        Returns dict[str, np.ndarray] (float32, same shapes as input).
+        Transform all features in batched stacked-matrix calls, grouped by family.
         """
         import gc
 
         keys_skip = []
-        keys_xform = []
+        family_groups = {}
         for k in feats:
             if k in skip_keys:
                 keys_skip.append(k)
             else:
-                keys_xform.append(k)
+                family = get_feature_family(k)
+                if family not in family_groups:
+                    family_groups[family] = []
+                family_groups[family].append(k)
 
         # --- Cast skipped features to numpy float32 ---
         for k in keys_skip:
             v = feats[k]
             feats[k] = np.asarray(v, dtype=np.float32) if not isinstance(v, np.ndarray) else v.astype(np.float32, copy=False)
 
-        if not keys_xform:
+        n_total = sum(len(v) for v in family_groups.values())
+        if n_total == 0:
             return feats
 
-        # --- Process transformable features in chunks ---
-        n_total = len(keys_xform)
-        for chunk_start in range(0, n_total, chunk_size):
-            chunk_keys = keys_xform[chunk_start:chunk_start + chunk_size]
+        # --- Process transformable features by family and chunk ---
+        processed_count = 0
+        for family, keys_xform in family_groups.items():
+            tprint(f"  CausalTransform processing family: {family} ({len(keys_xform)} features)")
+            for chunk_start in range(0, len(keys_xform), chunk_size):
+                chunk_keys = keys_xform[chunk_start:chunk_start + chunk_size]
 
-            # Collect chunk arrays — each is (T, S)
-            chunk_arrays = []
-            for k in chunk_keys:
-                v = feats[k]
-                arr = np.asarray(v, dtype=np.float32) if not isinstance(v, np.ndarray) else v.astype(np.float32, copy=False)
-                chunk_arrays.append(arr)
-                feats[k] = None  # free original reference
+                # Collect chunk arrays
+                chunk_arrays = []
+                for k in chunk_keys:
+                    v = feats[k]
+                    arr = np.asarray(v, dtype=np.float32) if not isinstance(v, np.ndarray) else v.astype(np.float32, copy=False)
+                    chunk_arrays.append(arr)
+                    feats[k] = None  # free original reference
 
-            # Stack into (T, S*chunk) so _numba_rolling_zscore_parallel
-            # processes all columns in one parallel dispatch
-            stacked = np.concatenate(chunk_arrays, axis=1)  # (T, S*chunk)
-            del chunk_arrays
-            gc.collect()
+                stacked = np.concatenate(chunk_arrays, axis=1)
+                del chunk_arrays
+                gc.collect()
 
-            # Transform in-place where possible
-            stacked = self._apply_transform_numpy(stacked)
+                # Transform in-place using family policy
+                stacked = self._apply_transform_numpy(stacked, family=family)
 
-            # Unstack back into per-feature arrays
-            S = stacked.shape[1] // len(chunk_keys)
-            for ci, k in enumerate(chunk_keys):
-                feats[k] = np.ascontiguousarray(stacked[:, ci * S:(ci + 1) * S])
-            del stacked
-            gc.collect()
+                S = stacked.shape[1] // len(chunk_keys)
+                for ci, k in enumerate(chunk_keys):
+                    feats[k] = np.ascontiguousarray(stacked[:, ci * S:(ci + 1) * S])
+                del stacked
+                gc.collect()
 
-            tprint(f"  CausalTransform batch: {min(chunk_start + chunk_size, n_total)}/{n_total}")
+                processed_count += len(chunk_keys)
+                tprint(f"  CausalTransform batch: {processed_count}/{n_total}")
 
-        tprint(f"CausalTransform complete: {n_total} transformed, {len(keys_skip)} skipped")
+        tprint(f"CausalTransform complete: {n_total} transformed across {len(family_groups)} families, {len(keys_skip)} skipped")
         return feats
 
-    def _reuse_cache(self, df: pd.DataFrame, cached_df: pd.DataFrame) -> pd.DataFrame:
+    def _reuse_cache(self, df: pd.DataFrame, cached_df: pd.DataFrame, family: str = None) -> pd.DataFrame:
         try:
             cached_df = cached_df.sort_index()
         except Exception:
-            return self._apply_transform_matrix(df)
+            return self._apply_transform_matrix(df, family=family)
 
         cached_len = len(cached_df)
         df_len = len(df)
 
         if cached_len == 0:
-            return self._apply_transform_matrix(df)
+            return self._apply_transform_matrix(df, family=family)
 
         if cached_df.index[-1] > df.index[-1]:
             # Dataset shrank; safest to recompute.
-            return self._apply_transform_matrix(df)
+            return self._apply_transform_matrix(df, family=family)
 
         if not df.index[:cached_len].equals(cached_df.index):
             # Index mismatch, fallback to full recompute
-            return self._apply_transform_matrix(df)
+            return self._apply_transform_matrix(df, family=family)
 
         result = pd.DataFrame(index=df.index, columns=df.columns, dtype=np.float32)
 
@@ -195,13 +207,13 @@ class CausalFeatureTransformer:
 
         new_cols = [col for col in df.columns if col not in cached_df.columns]
         if new_cols:
-            new_transformed = self._apply_transform_matrix(df[new_cols])
+            new_transformed = self._apply_transform_matrix(df[new_cols], family=family)
             result.loc[:, new_cols] = new_transformed
 
         if df_len > cached_len:
             tail_start = max(0, cached_len - self.roll_window)
             tail_df = df.iloc[tail_start:]
-            tail_transformed = self._apply_transform_matrix(tail_df)
+            tail_transformed = self._apply_transform_matrix(tail_df, family=family)
             result.iloc[tail_start:] = tail_transformed.to_numpy()
             tprint(
                 f"CausalFeatureTransformer: reused {cached_len} rows, computed {df_len - cached_len} new rows"
@@ -213,7 +225,7 @@ class CausalFeatureTransformer:
 
         if result.isna().any().any():
             # Safety: fall back to full computation if any gaps remain
-            return self._apply_transform_matrix(df)
+            return self._apply_transform_matrix(df, family=family)
 
         return result
 
@@ -273,6 +285,13 @@ class CausalFeatureTransformer:
         df_to_store.to_parquet(tmp_data)
         os.replace(tmp_data, data_path)
 
+        try:
+            first_ts = df_to_store.index[0].isoformat() if len(df_to_store) else None
+            last_ts = df_to_store.index[-1].isoformat() if len(df_to_store) else None
+        except AttributeError:
+            first_ts = str(df_to_store.index[0]) if len(df_to_store) else None
+            last_ts = str(df_to_store.index[-1]) if len(df_to_store) else None
+
         meta = {
             "version": self._CACHE_VERSION,
             "roll_window": self.roll_window,
@@ -280,8 +299,8 @@ class CausalFeatureTransformer:
             "sigma_k": float(self.sigma_k),
             "rows": int(len(df_to_store)),
             "cols": list(df_to_store.columns),
-            "first_ts": df_to_store.index[0].isoformat() if len(df_to_store) else None,
-            "last_ts": df_to_store.index[-1].isoformat() if len(df_to_store) else None,
+            "first_ts": first_ts,
+            "last_ts": last_ts,
         }
 
         with open(tmp_meta, "w") as fp:

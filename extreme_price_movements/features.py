@@ -2894,6 +2894,13 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     del atr_base, atr, dir_s, rv6, rv12, rv_ratio, mkt_gates
     gc.collect()
 
+    # --- explicit peer-context and ts-percentile features ---
+    cs_feats = add_cross_sectional_peer_context_features(feats, min_group_size=5)
+    feats.update(cs_feats)
+
+    ts_feats = add_time_series_percentile_features(feats, lookback=720, min_history_fraction=0.25)
+    feats.update(ts_feats)
+
     if requested_feature_set:
         feats = {k: v for k, v in feats.items() if k in requested_feature_set}
     tprint(f"Features: {len(feats)} features before CausalTransform. Applying transforms...")
@@ -2919,6 +2926,12 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         "blowoff_risk_surprise", "exh_qual_surprise",
         "dist_vwap_resid", "dist_ema_fast_resid", "trend_pct_resid",
     }
+
+    # Add dynamically generated peer context and TS pct to skip set
+    for k in feats.keys():
+        if k.startswith("cs_rank_") or k.startswith("cs_rz_") or k.startswith("ts_pct_"):
+            skip_transform_set.add(k)
+
 
     for w in gate_windows:
         for prefix in ["s", "reject", "retest_accept", "tf_qual", "mr_qual", "vol_z", "liquidity"]:
@@ -3633,3 +3646,115 @@ def assemble_feature_matrix(feature_dict: Dict[str, np.ndarray], keys: List[str]
                 out[:, i] = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
 
     return np.ascontiguousarray(out)
+
+def add_cross_sectional_peer_context_features(feats: dict[str, pd.DataFrame], min_group_size: int = 5) -> dict[str, pd.DataFrame]:
+    """
+    Computes cross-sectional percentile ranks for select features to provide peer context.
+    Ranks are strictly causal (computed per-timestamp).
+    """
+    from .utils import tprint
+    tprint("Computing explicit cross-sectional peer-context features...")
+
+    # Candidates specifically requested for cross-sectional ranking
+    cs_candidates = {
+        # Momentum relative
+        "ret1h", "ret6h", "impulse", "trend_strength_4d", "trend_regime",
+        # Volatility relative
+        "atr_pct", "rv_6h", "rv_24h", "volatility_zscore",
+        # Activity relative
+        "vol_shock_z", "dollar_vol_z_24", "amihud_z", "volume_z_24", "vol_z",
+        # Geometry relative
+        "breakout_24h", "range_24h_pct", "range_zscore", "dist_ema_fast", "dist_vwap_norm"
+    }
+
+    added_feats = {}
+    total_added = 0
+
+    for candidate in cs_candidates:
+        if candidate in feats:
+            df = feats[candidate]
+            if not isinstance(df, pd.DataFrame):
+                continue
+
+            # rank(axis=1, pct=True) computes cross-sectional percentile
+            # We want to handle small cross sections safely.
+            valid_counts = df.notna().sum(axis=1)
+            mask = valid_counts < min_group_size
+
+            # 1) Compute Cross-Sectional Rank
+            cs_rank = df.rank(axis=1, pct=True)
+            if mask.any():
+                cs_rank.loc[mask, :] = 0.5
+            cs_rank = cs_rank.fillna(0.5).astype(np.float32)
+            added_feats[f"cs_rank_{candidate}"] = cs_rank
+
+            # 2) Compute Cross-Sectional Robust Z-score (cs_rz)
+            med = df.median(axis=1)
+            mad = (df.sub(med, axis=0)).abs().median(axis=1)
+
+            # MAD * 1.4826 for normal std proxy, bound by eps
+            eps = 1e-6
+            scale = (mad * 1.4826).clip(lower=eps)
+
+            cs_rz = df.sub(med, axis=0).div(scale, axis=0)
+
+            # Mask out insufficient group size with neutral 0.0
+            if mask.any():
+                cs_rz.loc[mask, :] = 0.0
+
+            # Fill NaNs with 0.0 (neutral)
+            cs_rz = cs_rz.fillna(0.0).astype(np.float32)
+            added_feats[f"cs_rz_{candidate}"] = cs_rz
+
+            total_added += 2
+
+    tprint(f"Added {total_added} cross-sectional peer-context features.")
+    return added_feats
+
+def add_time_series_percentile_features(feats: dict[str, pd.DataFrame], lookback: int = 720, min_history_fraction: float = 0.25) -> dict[str, pd.DataFrame]:
+    """
+    Computes rolling causal time-series percentile ranks for select features.
+    """
+    from .utils import tprint
+    import extreme_price_movements.fast_funcs as ff
+    tprint("Computing rolling time-series percentile companion features...")
+
+    # Candidates specifically requested for ts percentiles
+    ts_pct_candidates = {
+        # Price dynamics
+        "ret1h", "ret6h", "impulse", "trend_strength_4d", "trend_regime",
+        # Volatility & range
+        "atr_pct", "rv_6h", "rv_24h", "vol_compression_ratio",
+        # Activity
+        "vol_shock_z", "dollar_vol_z_24", "amihud_z",
+        # Geometry
+        "breakout_24h", "dist_ema_fast", "wick_ratio"
+    }
+
+    added_feats = {}
+    total_added = 0
+
+    for candidate in ts_pct_candidates:
+        if candidate in feats:
+            df = feats[candidate]
+            if not isinstance(df, pd.DataFrame):
+                continue
+
+            # Compute rolling rank percentile using fast_funcs
+            ts_pct = ff.numba_rolling_rank_pct(df, window=lookback)
+
+            # Mask out periods with insufficient history (e.g., < 25% of lookback)
+            valid_counts = df.notna().rolling(lookback, min_periods=1).sum()
+            min_required = int(lookback * min_history_fraction)
+            mask = valid_counts < min_required
+            if mask.any().any():
+                # Emit neutral 0.5 where history is too short
+                ts_pct = ts_pct.where(~mask, 0.5)
+
+            ts_pct = ts_pct.fillna(0.5).astype(np.float32)
+
+            added_feats[f"ts_pct_{candidate}"] = ts_pct
+            total_added += 1
+
+    tprint(f"Added {total_added} time-series percentile features.")
+    return added_feats

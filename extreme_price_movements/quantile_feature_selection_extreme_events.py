@@ -6,6 +6,8 @@ from typing import List, Optional, Sequence, Union
 
 import lightgbm as lgb
 import numpy as np
+
+from .feature_views import get_feature_view
 import pandas as pd
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import KFold

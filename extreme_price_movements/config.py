@@ -1316,6 +1316,9 @@ CFG = apply_15m_feature_toggle(CFG)
 # Position Sizer V2 Feature Config
 # ============================================================
 
+
+from .feature_views import get_feature_view
+
 POSITION_SIZER_V2_FEATURE_CONFIG = {
     "shared_feature_keys": [
         "oof_base_mean", "oof_base_std", "oof_base_min", "oof_base_max", "oof_base_range",

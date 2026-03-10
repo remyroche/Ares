@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
+from .feature_views import get_feature_view
 from sklearn.linear_model import ElasticNet
 from sklearn.preprocessing import StandardScaler
 

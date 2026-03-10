@@ -1,4 +1,5 @@
 import numpy as np
+from .feature_views import get_feature_view
 import pandas as pd
 from typing import List, Dict, Optional, Tuple, Any
 from sklearn.linear_model import ElasticNet
@@ -613,6 +614,15 @@ def select_features_via_staged_en_rfe(
     do_final_refine: bool = False,
     use_sign_consistency: bool = False,
 ) -> Dict:
+
+    # --- Ensure we only use X_linear view features ---
+    linear_cols_set = set(get_feature_view(feature_names, "X_linear"))
+    linear_indices = [i for i, col in enumerate(feature_names) if col in linear_cols_set]
+
+    if len(linear_indices) < len(feature_names):
+        tprint(f"EN RFE: Filtering {len(feature_names)} input features to {len(linear_indices)} linear view features.")
+        X_train = X_train[:, linear_indices]
+        feature_names = [feature_names[i] for i in linear_indices]
 
     n_total_features = X_train.shape[1]
     global_fallback_rank = _compute_fallback_ranking(X_train, y_train)

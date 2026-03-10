@@ -3064,15 +3064,20 @@ def evaluate_config(
                     lbl_15m, ret_15m, qual_15m = compute_triple_barrier_labels(
                         _panel_15m, _tp_15m, _sl_15m, h, side=side, return_outcomes=True, horizons_frame=_dyn_h_15m, resolve_conflicts=False
                     )
-                    amb_before_5m = int(((lbl_15m.to_numpy(dtype=np.int8, copy=False) == OUT_SL) & (qual_15m.to_numpy(dtype=np.float32, copy=False) < 0.5)).sum())
+
+                    # We must only count active candidates. The downsampled 15m arrays contain mostly NaNs.
+                    # np.isnan on float arrays is safe. We use the downsampled `_tp_15m` to find valid cells.
+                    valid_15m_mask = np.isfinite(_tp_15m.to_numpy(dtype=np.float32, copy=False))
+
+                    amb_before_5m = int((valid_15m_mask & (lbl_15m.to_numpy(dtype=np.int8, copy=False) == OUT_SL) & (qual_15m.to_numpy(dtype=np.float32, copy=False) < 0.5)).sum())
                     tprint(
-                        f"[5m_refine] invoke side={side} h={h} candidates={int(np.isfinite(_tp_15m.to_numpy(dtype=np.float32, copy=False)).sum())} "
+                        f"[5m_refine] invoke side={side} h={h} candidates={int(valid_15m_mask.sum())} "
                         f"pre_5m_ambiguous_proxy={amb_before_5m}"
                     )
                     lbl_15m, ret_15m, qual_15m = _refine_ambiguous_labels_with_5m(
                         _panel_15m, _tp_15m, _sl_15m, lbl_15m, ret_15m, qual_15m, h, side, cfg=cfg
                     )
-                    amb_after_5m = int(((lbl_15m.to_numpy(dtype=np.int8, copy=False) == OUT_SL) & (qual_15m.to_numpy(dtype=np.float32, copy=False) < 0.5)).sum())
+                    amb_after_5m = int((valid_15m_mask & (lbl_15m.to_numpy(dtype=np.int8, copy=False) == OUT_SL) & (qual_15m.to_numpy(dtype=np.float32, copy=False) < 0.5)).sum())
                     tprint(
                         f"[5m_refine] complete side={side} h={h} pre_5m_ambiguous_proxy={amb_before_5m} "
                         f"post_5m_ambiguous_proxy={amb_after_5m} delta={amb_before_5m - amb_after_5m}"

@@ -12,10 +12,96 @@ from typing import Dict, List, Tuple, Any, Optional
 import pandas as pd
 import numpy as np
 
-from extreme_price_movements.candidates import select_trade_candidates_vectorized
-from extreme_price_movements.mask_optimiser import _generate_event_masks
 from extreme_price_movements.inference.config import _resolve_runtime_cfg
 from extreme_price_movements.utils import tprint
+
+
+def _build_mask_for_mode(
+    panel: Dict[str, pd.DataFrame],
+    feats: Dict[str, pd.DataFrame],
+    mask_cfg: Dict[str, Any],
+) -> pd.DataFrame:
+    c = panel["close"]
+    h = panel["high"]
+    l = panel["low"]
+
+    family = str(mask_cfg.get("family", "top_movers"))
+    raw_param = mask_cfg.get("param", 5.0)
+    z_hr = float(mask_cfg.get("z_hours", 12.0))
+    duration_hr = float(mask_cfg.get("duration_hours", 1.0))
+    z_bars = max(1, int(z_hr * 4))
+
+    roll_h = h.rolling(z_bars, min_periods=1).max()
+    roll_l = l.rolling(z_bars, min_periods=1).min()
+    st_px = c.shift(z_bars).bfill()
+
+    up_move = ((roll_h - st_px) / (st_px + 1e-9)).fillna(0.0)
+    dn_move = ((st_px - roll_l) / (st_px + 1e-9)).fillna(0.0)
+    ast_ret = feats.get("ret15m", c.pct_change())
+    std_up = ast_ret.rolling(24 * 4, min_periods=1).std().fillna(0.0)
+    std_dn = std_up
+
+    mask_h_df = pd.DataFrame(False, index=c.index, columns=c.columns)
+    mask_l_df = pd.DataFrame(False, index=c.index, columns=c.columns)
+
+    if family == "top_movers":
+        param = float(raw_param)
+        for ts, row in up_move.iterrows():
+            q = row.quantile(1.0 - param / 100.0)
+            mask_h_df.loc[ts] = row >= q
+        for ts, row in dn_move.iterrows():
+            q = row.quantile(1.0 - param / 100.0)
+            mask_l_df.loc[ts] = row >= q
+    elif family == "std_threshold":
+        param = float(raw_param)
+        mask_h_df = up_move >= (param * std_up)
+        mask_l_df = dn_move >= (param * std_dn)
+    elif family == "abs_move_threshold":
+        y_move = float(raw_param) / 100.0
+        mask_h_df = up_move >= y_move
+        mask_l_df = dn_move >= y_move
+    elif family == "std_plus_abs":
+        if isinstance(raw_param, str):
+            import ast as python_ast
+
+            std_v, abs_v = python_ast.literal_eval(raw_param)
+        elif isinstance(raw_param, (list, tuple)):
+            std_v, abs_v = raw_param
+        else:
+            std_v, abs_v = float(raw_param), 6.0
+        y_move = float(abs_v) / 100.0
+        mask_h_df = (up_move >= (float(std_v) * std_up)) & (up_move >= y_move)
+        mask_l_df = (dn_move >= (float(std_v) * std_dn)) & (dn_move >= y_move)
+
+    if duration_hr > 1.0:
+        d_bars = max(1, int(duration_hr * 4))
+        mask_h_df = mask_h_df.rolling(d_bars, min_periods=1).max().astype(bool)
+        mask_l_df = mask_l_df.rolling(d_bars, min_periods=1).max().astype(bool)
+
+    return (mask_h_df | mask_l_df).astype(bool)
+
+
+def _up_down_zones(feats: Dict[str, pd.DataFrame], panel: Dict[str, pd.DataFrame], metric: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    if metric in feats:
+        metric_df = feats[metric]
+    else:
+        metric_df = panel["close"].pct_change(24).fillna(0.0)
+    ranks = metric_df.rank(axis=1, method="first", na_option="keep", pct=True)
+    up_zone = (ranks > 0.5).fillna(False).astype(bool)
+    down_zone = (ranks <= 0.5).fillna(False).astype(bool)
+    return up_zone, down_zone
+
+
+def _require_mode_cfg(cfg: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    mode_cfg = dict(cfg.get("candidate_mask_params_by_mode", {}) or {})
+    required = ["price_up_tf", "price_up_mr", "price_down_tf", "price_down_mr"]
+    missing = [m for m in required if m not in mode_cfg]
+    if missing:
+        raise ValueError(
+            "Per-mode mask params missing; refusing legacy fallback. "
+            f"missing={missing} available={sorted(mode_cfg.keys())}"
+        )
+    return mode_cfg
 
 
 def select_candidates(
@@ -36,10 +122,10 @@ def select_candidates(
     Args:
         panel: Price panel with open, high, low, close, volume DataFrames
         feats: Feature dictionary with computed market features
-        extreme_pct: Kept for compatibility
-        min_move_12h_pct: Kept for compatibility
-        min_range_pct: Kept for compatibility
-        min_vol_zscore: Kept for compatibility
+        extreme_pct: Deprecated and unsupported (raises)
+        min_move_12h_pct: Deprecated and unsupported (raises)
+        min_range_pct: Deprecated and unsupported (raises)
+        min_vol_zscore: Deprecated and unsupported (raises)
         metric: Performance metric to rank by
         chop_thr: Maximum choppiness score threshold
         
@@ -47,140 +133,41 @@ def select_candidates(
         Tuple of (long_candidates, short_candidates) - lists of symbol strings
     """
     cfg = _resolve_runtime_cfg()
-    family = cfg.get("family", "top_movers")
-    param_val = float(cfg.get("param", 5.0))
-    z_hr = float(cfg.get("z_hours", 12.0))
-
-    duration_hr = float(cfg.get("duration_hours", 1.0))
-
-    tprint(
-        f"Selecting candidates using mask_optimiser logic: family={family}, "
-        f"param={param_val}, z_hours={z_hr}, duration_hours={duration_hr}"
-    )
+    if any(v is not None for v in (extreme_pct, min_move_12h_pct, min_range_pct, min_vol_zscore)):
+        raise ValueError(
+            "Legacy threshold overrides are not supported after per-mode mask migration. "
+            "Use persisted candidate_mask_params_by_mode instead."
+        )
+    mode_cfg = _require_mode_cfg(cfg)
+    default_cfg = {
+        "family": cfg.get("family", "top_movers"),
+        "param": cfg.get("param", 5.0),
+        "z_hours": cfg.get("z_hours", 12.0),
+        "duration_hours": cfg.get("duration_hours", 1.0),
+    }
     
     try:
-        # Replicate _generate_event_masks inputs
-        c = panel["close"]
-        h = panel["high"]
-        l = panel["low"]
+        up_zone, down_zone = _up_down_zones(feats, panel, metric=metric)
+        m_up_tf = _build_mask_for_mode(panel, feats, mode_cfg.get("price_up_tf", default_cfg))
+        m_up_mr = _build_mask_for_mode(panel, feats, mode_cfg.get("price_up_mr", default_cfg))
+        m_down_tf = _build_mask_for_mode(panel, feats, mode_cfg.get("price_down_tf", default_cfg))
+        m_down_mr = _build_mask_for_mode(panel, feats, mode_cfg.get("price_down_mr", default_cfg))
 
-        # Calculate moving metrics manually (like inside rolling_max_index_nb)
-        z_bars = int(z_hr * 4) # approx 15m bars
-
-        roll_h = h.rolling(z_bars, min_periods=1).max()
-        roll_l = l.rolling(z_bars, min_periods=1).min()
-
-        st_px = c.shift(z_bars).bfill()
-
-        up_move = ((roll_h - st_px) / (st_px + 1e-9)).fillna(0.0)
-        dn_move = ((st_px - roll_l) / (st_px + 1e-9)).fillna(0.0)
-
-        # For std_threshold
-        if "ret15m" not in feats:
-            ast_ret = c.pct_change()
-        else:
-            ast_ret = feats["ret15m"]
-
-        std_up = ast_ret.rolling(24 * 4, min_periods=1).std().fillna(0.0)
-        std_dn = std_up # Simplified
-
-        # We need an array-like timestamp for _generate_event_masks if we used it directly,
-        # but since we have a dataframe, we can apply the logic manually for the top_movers here
-        # or use it iteratively. Let's just implement the logic for DataFrame:
-
-        mask_h_df = pd.DataFrame(False, index=c.index, columns=c.columns)
-        mask_l_df = pd.DataFrame(False, index=c.index, columns=c.columns)
-
-        if family == "top_movers":
-            for ts, row in up_move.iterrows():
-                q = row.quantile(1.0 - param_val/100.0)
-                mask_h_df.loc[ts] = row >= q
-
-            for ts, row in dn_move.iterrows():
-                q = row.quantile(1.0 - param_val/100.0)
-                mask_l_df.loc[ts] = row >= q
-
-        elif family == "std_threshold":
-            mask_h_df = up_move >= (param_val * std_up)
-            mask_l_df = dn_move >= (param_val * std_dn)
-
-        elif family == "abs_move_threshold":
-            y_move = param_val / 100.0
-            mask_h_df = up_move >= y_move
-            mask_l_df = dn_move >= y_move
-
-        elif family == "std_plus_abs":
-            # param_val can be a string "(std, abs)" from CSV or a tuple
-            if isinstance(param_val, str):
-                import ast as python_ast
-                std_v, abs_v = python_ast.literal_eval(param_val)
-            elif isinstance(param_val, (list, tuple)):
-                std_v, abs_v = param_val
-            else:
-                # Fallback if param_val is just a float (shouldn't happen with std_plus_abs)
-                std_v, abs_v = param_val, 6.0
-                
-            y_move = abs_v / 100.0
-            mask_h_df = (up_move >= (std_v * std_up)) & (up_move >= y_move)
-            mask_l_df = (dn_move >= (std_v * std_dn)) & (dn_move >= y_move)
-
-        # Apply duration dilation
-        if duration_hr > 1.0:
-            d_bars = int(duration_hr * 4)
-            mask_h_df = mask_h_df.rolling(d_bars, min_periods=1).max().astype(bool)
-            mask_l_df = mask_l_df.rolling(d_bars, min_periods=1).max().astype(bool)
-
-        # Combine masks
-        candidate_mask = mask_h_df | mask_l_df
+        long_mask = (up_zone & m_up_tf) | (down_zone & m_down_mr)
+        short_mask = (up_zone & m_up_mr) | (down_zone & m_down_tf)
 
     except Exception as e:
-        tprint(f"Error in mask_optimiser candidate generation: {e}")
-        import traceback
-        tprint(f"Traceback: {traceback.format_exc()}")
+        raise RuntimeError(f"Per-mode candidate mask generation failed: {e}") from e
+    
+    if long_mask.empty and short_mask.empty:
+        tprint("No candidates found - candidate masks are empty")
         return [], []
     
-    # Safely check for empty - handle case where candidate_mask might be a string or other type
-    try:
-        is_empty = candidate_mask is None or (hasattr(candidate_mask, 'empty') and candidate_mask.empty)
-    except Exception as e:
-        tprint(f"Error checking candidate_mask.empty: {e}, type: {type(candidate_mask)}")
-        is_empty = True
-    
-    if is_empty:
-        tprint("No candidates found - candidate mask is empty")
-        return [], []
-    
-    # Get the latest timestamp from the mask
-    latest_ts = candidate_mask.index[-1]
-    
-    # Extract symbols that are candidates at the latest timestamp
-    latest_mask = candidate_mask.loc[latest_ts]
-    
-    # Long candidates are those marked as True (top performers for long)
-    # Short candidates would need separate logic - for now we treat all True as candidates
-    # and distinguish by side based on return direction
-    
-    # Get all candidates at latest timestamp
-    candidate_symbols = latest_mask[latest_mask].index.tolist()
-    
-    # For each candidate, determine if it's long or short based on the metric
-    # If ret24h > 0, it's a long candidate; if < 0, it's a short candidate
-    long_candidates = []
-    short_candidates = []
-    
-    if metric in feats:
-        metric_series = feats[metric].loc[latest_ts]
-        for sym in candidate_symbols:
-            try:
-                val = metric_series[sym]
-                if pd.notna(val):
-                    if val > 0:
-                        long_candidates.append(sym)
-                    else:
-                        short_candidates.append(sym)
-            except (KeyError, TypeError):
-                # If we can't determine direction, include as both or skip
-                continue
+    latest_ts = long_mask.index[-1]
+    latest_long = long_mask.loc[latest_ts]
+    latest_short = short_mask.loc[latest_ts]
+    long_candidates = latest_long[latest_long].index.tolist()
+    short_candidates = latest_short[latest_short].index.tolist()
     
     tprint(f"Selected {len(long_candidates)} long candidates, "
            f"{len(short_candidates)} short candidates")
@@ -201,108 +188,45 @@ def select_candidates_at_timestamp(
 ) -> Tuple[List[str], List[str]]:
     """Select candidates at a specific timestamp using mask_optimiser logic."""
     cfg = _resolve_runtime_cfg()
-    family = cfg.get("family", "top_movers")
-    param_val = float(cfg.get("param", 5.0))
-    z_hr = float(cfg.get("z_hours", 12.0))
+    if any(v is not None for v in (extreme_pct, min_move_12h_pct, min_range_pct, min_vol_zscore)):
+        raise ValueError(
+            "Legacy threshold overrides are not supported after per-mode mask migration. "
+            "Use persisted candidate_mask_params_by_mode instead."
+        )
+    mode_cfg = _require_mode_cfg(cfg)
+    default_cfg = {
+        "family": cfg.get("family", "top_movers"),
+        "param": cfg.get("param", 5.0),
+        "z_hours": cfg.get("z_hours", 12.0),
+        "duration_hours": cfg.get("duration_hours", 1.0),
+    }
 
     try:
-        c = panel["close"]
-        h = panel["high"]
-        l = panel["low"]
-        
-        z_bars = int(z_hr * 4)
-        roll_h = h.rolling(z_bars, min_periods=1).max()
-        roll_l = l.rolling(z_bars, min_periods=1).min()
-        st_px = c.shift(z_bars).bfill()
+        up_zone, down_zone = _up_down_zones(feats, panel, metric=metric)
+        m_up_tf = _build_mask_for_mode(panel, feats, mode_cfg.get("price_up_tf", default_cfg))
+        m_up_mr = _build_mask_for_mode(panel, feats, mode_cfg.get("price_up_mr", default_cfg))
+        m_down_tf = _build_mask_for_mode(panel, feats, mode_cfg.get("price_down_tf", default_cfg))
+        m_down_mr = _build_mask_for_mode(panel, feats, mode_cfg.get("price_down_mr", default_cfg))
 
-        up_move = ((roll_h - st_px) / (st_px + 1e-9)).fillna(0.0)
-        dn_move = ((st_px - roll_l) / (st_px + 1e-9)).fillna(0.0)
-
-        if "ret15m" not in feats:
-            ast_ret = c.pct_change()
-        else:
-            ast_ret = feats["ret15m"]
-
-        std_up = ast_ret.rolling(24 * 4, min_periods=1).std().fillna(0.0)
-        std_dn = std_up
-
-        mask_h_df = pd.DataFrame(False, index=c.index, columns=c.columns)
-        mask_l_df = pd.DataFrame(False, index=c.index, columns=c.columns)
-
-        if family == "top_movers":
-            for _ts, row in up_move.iterrows():
-                q = row.quantile(1.0 - param_val/100.0)
-                mask_h_df.loc[_ts] = row >= q
-            for _ts, row in dn_move.iterrows():
-                q = row.quantile(1.0 - param_val/100.0)
-                mask_l_df.loc[_ts] = row >= q
-        elif family == "std_threshold":
-            mask_h_df = up_move >= (param_val * std_up)
-            mask_l_df = dn_move >= (param_val * std_dn)
-        elif family == "abs_move_threshold":
-            y_move = param_val / 100.0
-            mask_h_df = up_move >= y_move
-            mask_l_df = dn_move >= y_move
-
-        elif family == "std_plus_abs":
-            if isinstance(param_val, str):
-                import ast as python_ast
-                std_v, abs_v = python_ast.literal_eval(param_val)
-            elif isinstance(param_val, (list, tuple)):
-                std_v, abs_v = param_val
-            else:
-                std_v, abs_v = param_val, 6.0
-            y_move = abs_v / 100.0
-            mask_h_df = (up_move >= (std_v * std_up)) & (up_move >= y_move)
-            mask_l_df = (dn_move >= (std_v * std_dn)) & (dn_move >= y_move)
-
-        if duration_hr > 1.0:
-            d_bars = int(duration_hr * 4)
-            mask_h_df = mask_h_df.rolling(d_bars, min_periods=1).max().astype(bool)
-            mask_l_df = mask_l_df.rolling(d_bars, min_periods=1).max().astype(bool)
-
-        candidate_mask = mask_h_df | mask_l_df
+        long_mask = (up_zone & m_up_tf) | (down_zone & m_down_mr)
+        short_mask = (up_zone & m_up_mr) | (down_zone & m_down_tf)
 
     except Exception as e:
-        tprint(f"Error in select_candidates_at_timestamp (mask_optimiser logic): {e}")
-        return [], []
+        raise RuntimeError(f"Per-mode candidate mask generation at timestamp failed: {e}") from e
     
-    # Safely check for empty - handle case where candidate_mask might be a string or other type
-    try:
-        is_empty = candidate_mask is None or not isinstance(candidate_mask, (pd.DataFrame, pd.Series)) or (hasattr(candidate_mask, 'empty') and candidate_mask.empty)
-    except Exception as e:
-        tprint(f"Error checking candidate_mask.empty: {e}, type: {type(candidate_mask)}")
-        is_empty = True
-    
-    if is_empty:
+    if long_mask.empty and short_mask.empty:
         return [], []
     
     # Check if requested timestamp exists
-    if ts not in candidate_mask.index:
+    if ts not in long_mask.index:
         # Find nearest timestamp
         tprint(f"Timestamp {ts} not in mask, using nearest")
-        ts = candidate_mask.index[np.abs(candidate_mask.index - ts).argmin()]
+        ts = long_mask.index[np.abs(long_mask.index - ts).argmin()]
     
-    # Get candidates at this timestamp
-    ts_mask = candidate_mask.loc[ts]
-    candidate_symbols = ts_mask[ts_mask].index.tolist()
-    
-    # Determine long/short based on metric
-    long_candidates = []
-    short_candidates = []
-    
-    if metric in feats:
-        metric_series = feats[metric].loc[ts]
-        for sym in candidate_symbols:
-            try:
-                val = metric_series[sym]
-                if pd.notna(val):
-                    if val > 0:
-                        long_candidates.append(sym)
-                    else:
-                        short_candidates.append(sym)
-            except (KeyError, TypeError):
-                continue
+    long_candidates = long_mask.loc[ts]
+    short_candidates = short_mask.loc[ts]
+    long_candidates = long_candidates[long_candidates].index.tolist()
+    short_candidates = short_candidates[short_candidates].index.tolist()
     
     return long_candidates, short_candidates
 

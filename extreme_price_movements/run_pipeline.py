@@ -55,6 +55,7 @@ from extreme_price_movements.optimise import (
     Policy,
 )
 from extreme_price_movements.pipeline_steps import run_sizer_step
+from extreme_price_movements.offline_optimisers.params_store import apply_offline_optimizer_best_params
 
 # SINGLE SOURCE OF TRUTH FOR FEES - All fee configuration comes from these constants
 # Spot trading fees (default)
@@ -124,6 +125,13 @@ def _configure_report_roots(cfg: dict) -> None:
         os.environ["EPM_REPORTS_DIR"] = str(report_root)
 
 
+
+
+def _load_mask_params_by_mode(cfg: dict) -> dict:
+    """Refresh cfg with persisted offline optimizer params (including mask params by mode)."""
+    merged = apply_offline_optimizer_best_params(dict(cfg))
+    cfg.update(merged)
+    return dict(cfg.get("candidate_mask_params_by_mode", {}) or {})
 
 
 def _downcast_numeric_frame(df: pd.DataFrame) -> pd.DataFrame:
@@ -446,6 +454,7 @@ def run_labels(cfg, horizons=None, ts_override=None, store=None):
         return
 
     tprint(f"Labels mode. ts_sig={ts_sig} horizons={horizons}")
+    _load_mask_params_by_mode(cfg)
 
     if store is None:
         store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
@@ -464,6 +473,7 @@ def run_features(cfg, ts_override=None, force_recompute: bool = False, store=Non
     if ts_sig is None:
         ts_sig = pd.Timestamp.utcnow().floor("h")
     tprint(f"Features mode. Target ts_sig={ts_sig}")
+    _load_mask_params_by_mode(cfg)
 
     if store is None:
         store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
@@ -505,6 +515,7 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
         return
 
     tprint(f"Train mode. ts_sig={ts_sig} base_only={base_only} meta_only={meta_only}")
+    _load_mask_params_by_mode(cfg)
 
     # TP/SL optimisation happens during label generation (see training.generate_label_datasets).
     # Check if labels already exist before refreshing to avoid unnecessary recomputation.
@@ -584,6 +595,7 @@ def run_sizer(cfg, ts_override=None, store=None):
         return
 
     tprint(f"Sizer mode (ridge). ts_sig={ts_sig}")
+    _load_mask_params_by_mode(cfg)
     result = run_sizer_step(ts_sig, cfg, state_file)
     if result:
         tprint("SIZER COMPLETE — ridge")
@@ -718,6 +730,7 @@ def run_train_meta(cfg, ts_override=None, store=None):
         tprint("ERROR: No feature directories found.")
         return
 
+    _load_mask_params_by_mode(cfg)
     from extreme_price_movements.main import train_daily_meta
     if store is None:
         store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
@@ -756,6 +769,7 @@ def run_train_meta(cfg, ts_override=None, store=None):
 def run_optimise(cfg, ts_override=None, store=None):
     _maintenance_checkpoint("optimise:start")
     ts_sig = _resolve_ts_sig(cfg, ts_override)
+    _load_mask_params_by_mode(cfg)
     if ts_sig is None:
         tprint("ERROR: No feature directories found.")
         return False

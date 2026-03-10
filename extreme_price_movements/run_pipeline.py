@@ -126,6 +126,54 @@ def _configure_report_roots(cfg: dict) -> None:
 
 
 
+def _load_mask_params_by_mode(cfg: dict) -> dict:
+    """Load per-mode mask optimiser params if mode-specific CSVs exist."""
+    from pathlib import Path
+
+    reports_root = Path(str(cfg.get("reports_root") or "reports"))
+    csv_dir = reports_root / "offline_optimisers" / "reports"
+    mode_to_bucket = {
+        "price_up_tf": "TF_long",
+        "price_up_mr": "MR_short",
+        "price_down_tf": "TF_short",
+        "price_down_mr": "MR_long",
+    }
+    out: dict = {}
+    for mode in mode_to_bucket:
+        path = csv_dir / f"inference_candidate_mask_best_params_{mode}.csv"
+        if not path.exists():
+            continue
+        try:
+            df = pd.read_csv(path)
+            if df.empty:
+                continue
+            row = df.iloc[-1].to_dict()
+            out[mode] = {
+                k: row.get(k)
+                for k in ("family", "param", "z_hours", "conditioner_mode", "duration_hours")
+                if k in row
+            }
+        except Exception as exc:
+            tprint(f"WARNING: failed loading mask params for {mode} from {path}: {exc}")
+
+    if out:
+        cfg["candidate_mask_params_by_mode"] = out
+        cfg["candidate_mask_params_by_bucket"] = {
+            mode_to_bucket[m]: v for m, v in out.items() if m in mode_to_bucket
+        }
+        if "family" not in cfg and "price_up_tf" in out:
+            cfg.update(
+                {
+                    k: out["price_up_tf"].get(k)
+                    for k in ("family", "param", "z_hours", "conditioner_mode", "duration_hours")
+                    if k in out["price_up_tf"]
+                }
+            )
+        tprint(f"Loaded per-bucket mask optimiser params for modes={sorted(out.keys())}")
+    return out
+
+
+
 def _downcast_numeric_frame(df: pd.DataFrame) -> pd.DataFrame:
     """Downcast numeric columns to reduce optimiser memory footprint."""
     for col in df.columns:
@@ -446,6 +494,7 @@ def run_labels(cfg, horizons=None, ts_override=None, store=None):
         return
 
     tprint(f"Labels mode. ts_sig={ts_sig} horizons={horizons}")
+    _load_mask_params_by_mode(cfg)
 
     if store is None:
         store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
@@ -464,6 +513,7 @@ def run_features(cfg, ts_override=None, force_recompute: bool = False, store=Non
     if ts_sig is None:
         ts_sig = pd.Timestamp.utcnow().floor("h")
     tprint(f"Features mode. Target ts_sig={ts_sig}")
+    _load_mask_params_by_mode(cfg)
 
     if store is None:
         store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
@@ -505,6 +555,7 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
         return
 
     tprint(f"Train mode. ts_sig={ts_sig} base_only={base_only} meta_only={meta_only}")
+    _load_mask_params_by_mode(cfg)
 
     # TP/SL optimisation happens during label generation (see training.generate_label_datasets).
     # Check if labels already exist before refreshing to avoid unnecessary recomputation.
@@ -584,6 +635,7 @@ def run_sizer(cfg, ts_override=None, store=None):
         return
 
     tprint(f"Sizer mode (ridge). ts_sig={ts_sig}")
+    _load_mask_params_by_mode(cfg)
     result = run_sizer_step(ts_sig, cfg, state_file)
     if result:
         tprint("SIZER COMPLETE — ridge")
@@ -718,6 +770,7 @@ def run_train_meta(cfg, ts_override=None, store=None):
         tprint("ERROR: No feature directories found.")
         return
 
+    _load_mask_params_by_mode(cfg)
     from extreme_price_movements.main import train_daily_meta
     if store is None:
         store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
@@ -756,6 +809,7 @@ def run_train_meta(cfg, ts_override=None, store=None):
 def run_optimise(cfg, ts_override=None, store=None):
     _maintenance_checkpoint("optimise:start")
     ts_sig = _resolve_ts_sig(cfg, ts_override)
+    _load_mask_params_by_mode(cfg)
     if ts_sig is None:
         tprint("ERROR: No feature directories found.")
         return False
